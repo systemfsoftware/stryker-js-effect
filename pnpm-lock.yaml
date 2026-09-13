@@ -150,6 +150,9 @@ importers:
       '@systemfsoftware/all':
         specifier: 'catalog:'
         version: 2.0.2(effect@4.0.0-rc.112)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
+      '@systemfsoftware/effect-cell-types':
+        specifier: 'catalog:'
+        version: 8.1.0(effect@4.0.0-rc.112)
       '@systemfsoftware/effect-gherkin-spec':
         specifier: 'catalog:'
         version: 4.0.2(@effect/vitest@4.0.0-rc.112(effect@4.0.0-rc.112)(vitest@4.1.11))(effect@4.0.0-rc.112)(vitest@4.1.11)
@@ -1443,11 +1446,6 @@ packages:
     resolution: {integrity: sha512-1vEensfUNbfG5nS+KO6LpdrQM0sxYW/0ffe9Vq4PsG0zphhNXs6Zkk4QpriE4NFUpHoKdKVYRCGWhBFJrJqYOw==}
     engines: {node: '>=24'}
     hasBin: true
-
-  '@systemfsoftware/effect-cell-types@8.0.0':
-    resolution: {integrity: sha512-3SX+2vKC+poVGo+XhSNUW76q0bX/Sckw9s6J+TepJvj2qeRNNjTk3dfk8QKXODSE97JD9jYni2LLBnD54C07wQ==}
-    peerDependencies:
-      effect: 4.0.0-rc.112
 
   '@systemfsoftware/effect-cell-types@8.1.0':
     resolution: {integrity: sha512-LovbryJ3GuJ8i/D3a/yJSONcMLmktmlui9WE792ii7mqPEAQlx8F9TXLLdH7RMQrfBbTnMDGamNMxC+DxCmWsg==}
@@ -3236,10 +3234,6 @@ snapshots:
 
   '@systemfsoftware/arethetypeswrong-cli@4.1.0': {}
 
-  '@systemfsoftware/effect-cell-types@8.0.0(effect@4.0.0-rc.112)':
-    dependencies:
-      effect: 4.0.0-rc.112
-
   '@systemfsoftware/effect-cell-types@8.1.0(effect@4.0.0-rc.112)':
     dependencies:
       effect: 4.0.0-rc.112
@@ -3282,7 +3276,7 @@ snapshots:
     dependencies:
       '@oxc-project/types': 0.140.0
       '@oxlint/plugins': 1.82.0
-      '@systemfsoftware/effect-cell-types': 8.0.0(effect@4.0.0-rc.112)
+      '@systemfsoftware/effect-cell-types': 8.1.0(effect@4.0.0-rc.112)
       effect: 4.0.0-rc.112
       typescript: 7.0.2
 

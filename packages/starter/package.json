@@ -3,6 +3,7 @@
   "description": "TODO: one-line description",
   "devDependencies": {
     "@systemfsoftware/all": "catalog:",
+    "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/stryker-js-cli": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
@@ -47,8 +48,8 @@
     "build": "rimraf dist && tsdown",
     "clean": "rimraf dist",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
-    "mutation": "stryker run",
-    "mutation:full": "stryker run --force",
+    "mutation": "node ./node_modules/@systemfsoftware/stryker-js-cli/dist/main.mjs run",
+    "mutation:full": "node ./node_modules/@systemfsoftware/stryker-js-cli/dist/main.mjs run --force",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit"
   },
