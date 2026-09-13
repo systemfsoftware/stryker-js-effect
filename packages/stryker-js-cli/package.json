@@ -14,13 +14,13 @@
     "dist"
   ],
   "scripts": {
-    "clean": "rimraf dist",
-    "build": "tsdown",
-    "prepack": "pnpm build",
-    "typecheck": "tsc --noEmit --incremental",
     "attw": "attw --pack .",
+    "build": "tsdown",
+    "clean": "rimraf dist",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "prepare": "tsdown",
     "test": "vitest run",
-    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}"
+    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",

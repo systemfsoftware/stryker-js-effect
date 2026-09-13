@@ -20,7 +20,7 @@
   "scripts": {
     "clean": "rimraf dist",
     "build": "tsdown",
-    "typecheck": "tsc --noEmit --incremental",
+    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
     "attw": "attw --pack .",
     "test": "vitest run",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}"

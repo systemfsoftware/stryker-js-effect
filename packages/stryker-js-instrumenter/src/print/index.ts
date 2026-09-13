@@ -869,12 +869,12 @@ class PrintState {
       case 'accessor':
         this.out += `${fields.kind} `
         this.out += this.propertyKeyText(fields.key, fields.computed === true, PREC.Assignment)
-        this.printFunctionValue(fields.value as unknown as FunctionNode)
+        this.printFunctionTail(fields.value as unknown as FunctionNode)
         break
       case 'method':
         this.out += `${flagText(fields.async, 'async ')}${flagText(fields.generator, '*')}`
         this.out += this.propertyKeyText(fields.key, fields.computed === true, PREC.Assignment)
-        this.printFunctionValue(fields.value as unknown as FunctionNode)
+        this.printFunctionTail(fields.value as unknown as FunctionNode)
         break
       case 'shorthand':
         this.out += identifierName(fields.key)!
@@ -919,10 +919,6 @@ class PrintState {
 
   private printPropertyKeyForClass(key: { type: string }, computed: boolean): void {
     this.out += this.propertyKeyText(key, computed, PREC.Sequence)
-  }
-
-  private printFunctionValue(fn: FunctionNode): void {
-    this.printFunctionTail(fn)
   }
 
   private printFunctionTail(fn: FunctionNode): void {
