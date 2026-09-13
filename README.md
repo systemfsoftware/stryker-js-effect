@@ -1,179 +1,173 @@
-# starter
+# stryker-js-effect
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Effect: 4.x](https://img.shields.io/badge/Effect-4.0_RC-purple.svg)](https://effect.website)
-[![CI](https://github.com/systemfsoftware/starter/actions/workflows/ci.yml/badge.svg)](https://github.com/systemfsoftware/starter/actions/workflows/ci.yml)
+[![CI](https://github.com/systemfsoftware/stryker-js-effect/actions/workflows/ci.yml/badge.svg)](https://github.com/systemfsoftware/stryker-js-effect/actions)
 
-> 🏛️ **starter** is an opinionated monorepo template for serious TypeScript with Effect and AI coding agents.
-> 🔒 One architecture, zero knobs, and mechanical gates that reject the slop agents produce when left unconstrained.
-> 🚀 Built for engineers accountable for codebases where AI writes the commits.
-
----
-
-## 💡 Why
-
-AI coding agents produce TypeScript that compiles cleanly and passes shallow unit tests while quietly violating foundational architecture: ambient side effects inside decision logic, unchecked type assertions (`as Type`), and mock-heavy test suites that mask runtime breakage.
-
-`starter` establishes an uncompromising substrate. Invariants are not aspirational guidelines or doc comments; they are enforced mechanically by linter rules, complexity ceilings, mutation test floors, and continuous integration gates.
-
-| Concern                  | The Naive AI-Assisted Default                                | The Endgame Architecture (`starter`)                                 |
-| ------------------------ | ------------------------------------------------------------ | -------------------------------------------------------------------- |
-| **Domain Logic**         | ❌ Interleaved I/O, clocks, random generators, and mutations | ✅ Pure functions returning tagged `Decision` or `Refusal` unions    |
-| **Branching**            | ❌ Sprawling nested `if`/`else` and procedural loops         | ✅ Cyclomatic complexity 1 via exhaustive pattern matching (`Match`) |
-| **Boundary Data**        | ❌ Unchecked casts (`as unknown as Type`, `@ts-ignore`)      | ✅ Strict `Schema.decode` transforming raw bytes into branded types  |
-| **Effect Composition**   | ❌ Ambient services and eager promise invocations            | ✅ Lazy `Cell` workflows composed linearly via `.pipe()`             |
-| **Dependency Injection** | ❌ Captured instances and deep `provideService` calls        | ✅ Single `Cell.provide` at the root with `R = never` at the entry   |
-| **State Storage**        | ❌ Direct mutation and unvalidated store writes              | ✅ Tenant-bound store ports carrying write guard predicates          |
-| **Test Verification**    | ❌ Mock-heavy tests pinning internal implementation          | ✅ 100% mutation kill floor (`Stryker`) and property-based tests     |
-| **Configuration**        | ❌ Dozens of toggles that let agents bypass strictness       | ✅ Zero knobs — one proven opinionated toolchain end to end          |
-| **Package Entries**      | ❌ Star exports (`export *`) hiding dependency graphs        | ✅ Explicit named re-exports enumerated one line per symbol          |
-| **Refactoring**          | ❌ Patching around rotten legacy modules                     | ✅ Delete-first rebuild with published observable pinning            |
-
----
-
-## 📐 Architecture
-
-Every external interaction in a `starter` project follows the **I/O Sandwich**:
-
-```
-read (impure) ──► decode (pure) ──► decide (pure) ──► shape (pure) ──► write (impure)
-```
-
-1. 📥 **`read`** — Gathers raw input from ports and external systems.
-2. 🔍 **`decode`** — Validates unvalidated input into branded domain types using Schema.
-3. 🧠 **`decide`** — Executes domain logic with cyclomatic complexity 1 (zero I/O, zero ambient state).
-4. 📦 **`shape`** — Builds pure output documents and domain events from the decision.
-5. 📤 **`write`** — Persists changes, emits domain events, or returns responses.
-
-Phase ordering is guaranteed at compile time: each phase returns branded markers that the succeeding phase demands as input.
-
----
-
-## 🧰 Toolchain
-
-`starter` wires a modern, fast, and type-safe toolchain across the workspace:
-
-| Tool                      | Role & Configuration                                                                         |
-| ------------------------- | -------------------------------------------------------------------------------------------- |
-| ⚡ **pnpm Workspaces**    | Strict workspace dependency management with catalog versioning (`pnpm-workspace.yaml`)       |
-| 🏎️ **Turbo**               | High-performance task pipeline with cached builds, tests, and lint runs                      |
-| 🛡️ **Effect 4**            | The standard functional effect system (`^4.0.0-rc.112`)                                      |
-| 🔍 **oxlint**             | Rust-based linter enforcing strict TypeScript rules and `@systemfsoftware/all` house presets |
-| 🎨 **dprint**             | Fast, deterministic code and markdown formatting (`dprint.json`)                             |
-| 🧪 **Vitest**             | Fast unit and integration test runner with TypeScript support                                |
-| 🔬 **Stryker**            | Mutation testing ensuring tests fail when bugs are introduced                                |
-| 📦 **tsdown**             | Fast TypeScript bundler building dual ESM and type declarations                              |
-| 📝 **Changesets**         | Automated versioning and changelog generation with npm OIDC provenance                       |
-| 🪝 **Husky & Commitlint** | Git hooks enforcing conventional commit standards                                            |
-| 🌳 **Worktrunk Scripts**  | Deno-powered git worktree lifecycle hooks for isolated agent work                            |
-
----
-
-## 📁 Workspaces
-
-The repository is structured into two workspace roots defined in `pnpm-workspace.yaml`:
-
-```text
-.
-├── packages/           # Reusable libraries, engines, and domain cores
-│   ├── starter/        # Seed library template (rename to your package)
-│   ├── stryker-js-*/ … # The stryker fork family (see packages/*/README.md)
-│   └── toolchain/      # Private vitest config shared by the family
-├── apps/               # Declared workspace root for apps and CLI tools (added as needed)
-├── repos/              # Vendored subtrees (constitution, worktrunk-scripts)
-└── docs/               # Solutions, tooling decisions, and plans
-```
-
-- [`packages/starter`](packages/starter) — The starter package scaffold with pre-configured build, lint, test, and mutation configs.
-- [`packages/stryker-js-cli`](packages/stryker-js-cli) — The `stryker` CLI; the mutation engine, instrumenter, reporters, checkers, and plugin packages live beside it under `packages/`.
-
----
-
-## 🚀 Getting Started
-
-### 1. Create a Repository from Template
-
-Click the **Use this template** button on GitHub, or create a repository via the GitHub CLI:
+> 🔬 **stryker-js-effect** is the next-generation mutation testing framework for TypeScript and JavaScript, rebuilt natively on Effect 4.
+> 🤖 Line-by-line machine-readable NDJSON stream output and structured exit codes designed directly for CI workflows, automation runners, and AI coding agents.
+> 🛡️ Built for high-assurance codebases where line coverage is not enough and behavioral verification is required.
 
 ```bash
-gh repo create my-effect-project --template systemfsoftware/starter --public
-cd my-effect-project
-```
-
-### 2. Install Dependencies
-
-```bash
-pnpm install
-```
-
-### 3. Claim the Package
-
-1. Rename `packages/starter` to your desired package name (e.g., `packages/my-lib`).
-2. Update `name`, `description`, and `author` in `packages/starter/package.json`.
-3. Remove `"private": true` from `package.json` when you are ready to publish.
-
-### 4. Build and Verify
-
-```bash
-pnpm build
-pnpm check:ci
+pnpm add -D @systemfsoftware/stryker-js-cli
+pnpm exec stryker run
 ```
 
 ---
 
-## 🚦 Verification Gates
+## 🎯 What is Mutation Testing?
 
-All changes must satisfy local and continuous integration verification gates:
+Code coverage metrics only report which lines of source code your test runner executed; they cannot prove that your test assertions notice when business logic breaks. Mutation testing measures assertion strength by introducing deliberate syntax and logic alterations into your source files:
+
+- 💀 **Killed**: A test failed while the mutant was active, proving that your test suite caught the defect.
+- 🧟 **Survived**: All tests passed despite the mutant, exposing an untested logic branch or missing assertion.
+- ⏳ **Timeout**: The mutant induced an infinite loop or hanging operation, caught by sandbox execution limits.
+- 🚫 **No Coverage**: No test touched the mutated statement during the baseline dry run.
+
+A 100% mutation score demonstrates that every meaningful branch and condition is backed by a test that fails when behavior changes.
+
+---
+
+## 📡 Machine-Readable Stream Output
+
+The `stryker` CLI emits newline-delimited JSON (NDJSON) events directly to `stdout`. Continuous integration pipelines, monitoring workers, and AI coding agents can stream and parse these events line-by-line in real time without scraping ASCII progress bars or filtering terminal escape codes:
+
+```console
+$ pnpm exec stryker run
+{"kind":"stream","schemaVersion":"1.0","runId":"06FY3DSBM7TYC2RZQ0F3EGVZ88","mode":"machine","signal":"tty"}
+{"kind":"phase","phase":"instrument","elapsedMs":102}
+{"kind":"phase","phase":"dry-run","elapsedMs":6658}
+{"kind":"plan","total":2}
+{"kind":"verdict","schemaVersion":"1.0","score":100,"thresholds":{"high":100,"low":80,"break":0},"counts":{"killed":2,"survived":0,"timeout":0,"noCoverage":0},"reportFile":"reports/mutation/mutation.json"}
+```
+
+### Event Stream Protocol
+
+Every mutation run generates a predictable sequence of typed event objects:
+
+| `kind`    | Trigger                   | Payload Attributes                            |
+| --------- | ------------------------- | --------------------------------------------- |
+| `stream`  | Start of run              | `runId`, `mode`, `signal`, `schemaVersion`    |
+| `phase`   | Pipeline phase transition | `phase`, `elapsedMs`                          |
+| `plan`    | Mutant test plan ready    | `total`                                       |
+| `tick`    | Progress heartbeat        | `elapsedMs`, `completed`, `total`             |
+| `verdict` | Mutation run completion   | `score`, `thresholds`, `counts`, `reportFile` |
+| `error`   | Fatal execution error     | `failure`, `remediation`                      |
+
+Machine mode activates automatically whenever `stdout` is not an interactive terminal or when agent environment flags such as `AGENT`, `CLAUDECODE`, or `CODEX_SANDBOX` are detected. You can also explicitly enforce machine mode by setting `STRYKER_MODE=machine`.
+
+---
+
+## 🚦 Classified Exit Codes
+
+Stryker provides deterministic, granular exit codes so automation systems immediately recognize the failure mode without text parsing:
+
+| Exit Code | Classification | Meaning                                                     |
+| --------- | -------------- | ----------------------------------------------------------- |
+| `0`       | Success        | Mutation score cleared the configured `break` threshold     |
+| `1`       | Verdict Failed | Mutation score fell below the required `break` threshold    |
+| `2`       | Config Error   | Invalid configuration schema or unresolvable options        |
+| `3`       | Runtime Error  | Sandboxed test runner crashed or instrumenter failed        |
+| `4`       | Internal Error | Unhandled engine defect or unexpected internal fault        |
+| `128 + n` | Process Signal | Terminated by POSIX signal `n` (such as `130` for `SIGINT`) |
+
+When multiple conditions occur during execution, the highest pending exit class wins so critical runtime errors take precedence over standard test verdict failures.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Install CLI
+
+Add the CLI package to your repository development dependencies:
 
 ```bash
-# Format code and markdown
-pnpm format:check
-
-# Typecheck workspace packages
-pnpm typecheck
-
-# Run linter across packages
-pnpm lint
-
-# Run unit and integration tests
-pnpm test
-
-# Run mutation tests
-pnpm mutation
-
-# Run full CI suite locally
-pnpm check:ci
+pnpm add -D @systemfsoftware/stryker-js-cli
 ```
+
+### 2. Configure `stryker.config.json`
+
+Create a `stryker.config.json` configuration file at your project root:
+
+```json
+{
+  "$schema": "./node_modules/@systemfsoftware/stryker-js/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "plugins": [
+    "@systemfsoftware/stryker-js-vitest-runner",
+    "@systemfsoftware/stryker-js-typescript-checker"
+  ],
+  "mutate": [
+    "src/**/*.ts",
+    "!src/**/*.d.ts",
+    "!src/**/__tests__/**"
+  ],
+  "thresholds": {
+    "high": 100,
+    "low": 80,
+    "break": 100
+  }
+}
+```
+
+### 3. Run Mutation Tests
+
+Execute the mutation testing run:
+
+```bash
+pnpm exec stryker run
+```
+
+---
+
+## 📦 Workspace Packages
+
+This monorepo publishes a modular ecosystem of Effect 4 packages, plugins, and runners:
+
+| Package                                                                                    | Description                                                               |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| [`@systemfsoftware/stryker-js-cli`](packages/stryker-js-cli)                               | Terminal-facing CLI binary emitting machine-readable NDJSON streams       |
+| [`@systemfsoftware/stryker-js`](packages/stryker-js)                                       | Pure core domain vocabulary: ports, mutant schemas, exit classifications  |
+| [`@systemfsoftware/stryker-js-engine`](packages/stryker-js-engine)                         | Host-neutral mutation execution engine and test orchestration lifecycle   |
+| [`@systemfsoftware/stryker-js-instrumenter`](packages/stryker-js-instrumenter)             | AST instrumenter placing mutants via OXC parser and Babel transforms      |
+| [`@systemfsoftware/stryker-js-vitest-runner`](packages/stryker-js-vitest-runner)           | High-performance test-runner plugin integrating natively with Vitest      |
+| [`@systemfsoftware/stryker-js-typescript-checker`](packages/stryker-js-typescript-checker) | Fast type checker plugin validating mutants before execution (TS7 native) |
+| [`@systemfsoftware/stryker-js-html-reporter`](packages/stryker-js-html-reporter)           | Interactive HTML mutation report generator using custom elements          |
+| [`@systemfsoftware/stryker-plugins`](packages/stryker-plugins)                             | Domain-specific ignorers for Effect Schema brands and tagged variants     |
+| [`@systemfsoftware/stryker-test-contribution`](packages/stryker-test-contribution)         | Evaluator plugin enforcing that each test file kills distinct mutants     |
+
+---
+
+## ✨ Key Capabilities
+
+- 🧬 **Effect 4 Architecture**: Pure domain core with typed errors, explicit resource boundaries, and structured concurrency.
+- 🤖 **Agent-First Streaming**: Native line-by-line NDJSON event streaming designed for automated parsers, IDE tools, and AI agents.
+- ⚡ **OXC Speed**: High-performance AST parsing and mutant placement across modern TypeScript and ECMAScript.
+- 🔍 **Effect Schema Ignorers**: Built-in plugins to ignore equivalent mutants on Schema brand definitions and tagged union types.
+- 🎯 **Test Contribution Tracking**: Evaluator plugins ensuring every test file contributes unique mutant kills to the overall suite.
 
 ---
 
 ## ❓ Frequently Asked Questions
 
 <details>
-<summary><strong>Why does starter pin Effect 4 RC instead of Effect 3?</strong></summary>
+<summary><strong>How does this package family differ from upstream StrykerJS?</strong></summary>
 
-Effect 4 introduces first-class primitives for cell composition, branded type ordering, and modern schema transformations that enable the endgame architecture. `starter` targets the future of Effect rather than supporting legacy patterns.
-
-</details>
-
-<details>
-<summary><strong>Why are there no configuration options or preset levels?</strong></summary>
-
-Every configuration toggle provides a route for AI agents to downgrade verification standards and reintroduce slop. Zero knobs guarantees that all packages created from this template adhere to identical architectural standards.
+This repository is an Effect 4 native fork maintained by System F Software. It restructures the mutation engine into pure functional pipelines, replaces terminal UI scrapers with structured NDJSON streaming, and provides first-class plugins for Effect-TS applications.
 
 </details>
 
 <details>
-<summary><strong>How does mutation testing work in this template?</strong></summary>
+<summary><strong>Why do mutants survive on my Effect Schema definitions?</strong></summary>
 
-Stryker introduces deliberate syntax and logic mutations into your code and runs your test suite against each mutant. If your tests still pass when code behavior changes, the mutant survives and the gate fails. Domain decisions require a 100% kill score.
+Schema definitions and branded type markers often produce equivalent mutants that cannot be observed or failed at runtime. Install `@systemfsoftware/stryker-plugins` and enable `effect-schema-ignorer` in your `stryker.config.json` to filter them out automatically.
 
 </details>
 
 <details>
-<summary><strong>How do I migrate an existing codebase to this architecture?</strong></summary>
+<summary><strong>What versions of Node.js are supported?</strong></summary>
 
-Follow the strangler pattern: pin the published observable behavior of a module, delete the legacy file completely, and rebuild it from a blank page using pure I/O sandwiches. Never patch around a flawed core.
+All packages require Node.js 20 or later (`>=20.0.0`, with CLI packages targeting Node.js `>=20.19.0`).
 
 </details>
 
@@ -181,7 +175,7 @@ Follow the strangler pattern: pin the published observable behavior of a module,
 
 ## 🤝 Contributing
 
-Development setup, workflows, and PR guidelines are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+Development setup, verification gates, and pull request guidelines are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
