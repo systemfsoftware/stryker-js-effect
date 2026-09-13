@@ -1,0 +1,69 @@
+{
+  "name": "@systemfsoftware/stryker-js-cli",
+  "version": "8.0.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "packages/stryker-js-cli"
+  },
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect",
+  "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
+  "description": "The stryker command-line interface — terminal framing, run-event stream, and exit handling for the @systemfsoftware mutation engine.",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "tsdown",
+    "prepack": "pnpm build",
+    "typecheck": "tsc --noEmit --incremental",
+    "attw": "attw --pack .",
+    "test": "vitest run",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/platform-node-shared": "catalog:",
+    "@noble/hashes": "catalog:",
+    "@oxc-parser/binding-wasm32-wasi": "catalog:",
+    "@systemfsoftware/all": "catalog:",
+    "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/effect-cell-types": "catalog:",
+    "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/effect-schema-law": "catalog:",
+    "@systemfsoftware/effect-schema-vite": "catalog:",
+    "@systemfsoftware/stryker-js": "workspace:^",
+    "@systemfsoftware/stryker-js-engine": "workspace:^",
+    "@systemfsoftware/stryker-js-html-reporter": "workspace:^",
+    "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
+    "@systemfsoftware/stryker-js-vitest-runner": "workspace:^",
+    "@systemfsoftware/stryker-plugins": "workspace:^",
+    "@systemfsoftware/stryker-test-contribution": "workspace:^",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/vitest-config": "workspace:^",
+    "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "effect": "catalog:",
+    "mutation-testing-elements": "catalog:stryker",
+    "oxc-parser": "catalog:",
+    "oxlint": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "vite-tsconfig-paths": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "provenance": true
+  },
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "stryker": "./dist/main.mjs"
+  }
+}
