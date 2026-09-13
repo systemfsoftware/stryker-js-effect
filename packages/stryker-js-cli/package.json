@@ -18,7 +18,6 @@
     "build": "tsdown",
     "clean": "rimraf dist",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
-    "prepare": "tsdown",
     "test": "vitest run",
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit"
   },
