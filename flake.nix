@@ -1,5 +1,5 @@
 {
-  description = "starter toolchain — the formatter and runtimes the check chain shells out to";
+  description = "the formatter and runtimes the stryker-js-effect check chain shells out to";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

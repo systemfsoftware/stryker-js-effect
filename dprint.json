@@ -17,7 +17,6 @@
     "**/*-lock.json",
     "pnpm-lock.yaml",
     "coverage/**",
-    "reports/**",
     "**/snapshots/*.md",
     "repos/**",
     "packages/stryker-js-typescript-checker/testResources/**"

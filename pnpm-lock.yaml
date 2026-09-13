@@ -145,57 +145,6 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2
 
-  packages/starter:
-    devDependencies:
-      '@systemfsoftware/all':
-        specifier: 'catalog:'
-        version: 2.0.2(effect@4.0.0-rc.112)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
-      '@systemfsoftware/effect-cell-types':
-        specifier: 'catalog:'
-        version: 8.1.0(effect@4.0.0-rc.112)
-      '@systemfsoftware/effect-gherkin-spec':
-        specifier: 'catalog:'
-        version: 4.0.2(@effect/vitest@4.0.0-rc.112(effect@4.0.0-rc.112)(vitest@4.1.11))(effect@4.0.0-rc.112)(vitest@4.1.11)
-      '@systemfsoftware/stryker-js-cli':
-        specifier: workspace:^
-        version: link:../stryker-js-cli
-      '@systemfsoftware/stryker-js-typescript-checker':
-        specifier: workspace:^
-        version: link:../stryker-js-typescript-checker
-      '@systemfsoftware/stryker-js-vitest-runner':
-        specifier: workspace:^
-        version: link:../stryker-js-vitest-runner
-      '@systemfsoftware/stryker-plugins':
-        specifier: workspace:^
-        version: link:../stryker-plugins
-      '@systemfsoftware/stryker-test-contribution':
-        specifier: workspace:^
-        version: link:../stryker-test-contribution
-      '@systemfsoftware/tsconfig':
-        specifier: 'catalog:'
-        version: 1.3.4
-      '@types/node':
-        specifier: 'catalog:'
-        version: 24.13.3
-      effect:
-        specifier: 'catalog:'
-        version: 4.0.0-rc.112
-      oxlint:
-        specifier: 'catalog:'
-        version: 1.82.0(oxlint-tsgolint@7.0.2001)
-      rimraf:
-        specifier: 'catalog:'
-        version: 6.1.3
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.23.0(typescript@7.0.2)
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-      vitest:
-        specifier: 'catalog:'
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@4.1.11)(@vitest/coverage-v8@4.1.11)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.0))
-
   packages/stryker-js-cli:
     devDependencies:
       '@effect/platform-node':

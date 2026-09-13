@@ -1,96 +1,73 @@
 ---
-name: starter
-last_updated: 2026-09-12
+name: stryker-js-effect
+last_updated: 2026-09-13
 ---
 
-# starter Strategy
+# stryker-js-effect Strategy
 
 ## Purpose
 
-AI writes most of the code now, so precedent decides the shape — and the Effect
-idiom the ecosystem teaches, including the canonical exemplars it learns from
-(`mikearnaldi/effect-torch`), was authored for human hands. Agents reproduce it
-faithfully at volume, producing code that compiles, passes tests, and has thrown
-away the invariants that made Effect worth adopting, with nothing in the loop
-that rejects it. Maybe fine when AIs weren't programming everything; it isn't
-the endgame.
+Upstream StrykerJS fails modern CI pipelines and AI-assisted development loops in three critical ways:
+
+1. **Lost progress on cancel**: Terminating an in-flight mutation run discards all completed mutant results without producing a report, turning cancelled runs into wasted wall-clock time.
+2. **Brittle incremental cache**: The `stryker-incremental.json` cache goes stale easily, forcing teams to fall back to slow, full-suite mutation runs.
+3. **Black-box execution**: Upstream was built for human terminal observation via interactive TUIs, leaving automated pipelines and AI coding agents unable to monitor progress, estimate remaining work, or detect hanging runs.
 
 ## Positioning
 
-One opinionated shape, enforced end to end — zero knobs. The endgame ships as
-mechanism (the house lint preset, the complexity-1 gate on decisions, mutation
-floors, CI at error severity, the vendored constitution, the agent harness),
-never as documentation a reader can ignore: an invariant is carried by a gate
-that fails the build, or not carried at all. Effect 4 is the price of entry. The
-destination law itself lives in `repos/constitution/` and
-`skill://endgame-strangler`, not in this document.
+**Machine-first streaming**. We treat automation runners, CI pipelines, and AI coding agents as primary consumers rather than terminal scrapers. Real-time line-delimited NDJSON events on `stdout` and structured exit codes are our contract; formatted human output is secondary.
 
 ## Users
 
-**Primary:** The engineer accountable for a TypeScript/Effect tree that agents
-write into — solo, or leading a team that does. They're hiring starter to make
-the endgame shape the default, so correctness is enforced by CI rather than by
-their own review attention, and drift can't accumulate behind their back.
+**Primary:** Software engineers running mutation testing as an automated CI gate on high-assurance TypeScript and JavaScript codebases. They need reliable incremental runs and structured reports that never lose progress when jobs are cancelled.
+
+**Secondary:** AI coding agents and automated testing loops. They require continuous, machine-readable NDJSON streaming to track mutation test progress, detect stalls, and act on exact mutant outcomes in real time.
 
 ## Boundaries
 
-- No distribution work: the gates earn the stars, not the pitch.
-- No light preset, no opt-out, no `warn` severity — ever.
-- No second exemplar: the starter is the exemplar, and a demo app would drift from doctrine.
-- No Effect 3 compatibility surface: Effect 4 is the price of entry.
+- **No TUI-only features**: Every feature, progress metric, and report must be fully accessible via structured NDJSON events.
+- **No unverified incremental state**: Cache files must accurately represent completed mutants and survive aborted runs without corruption.
+- **No Effect 3 backwards compatibility**: Effect 4 RC is the foundation across all packages.
+- **Track upstream where practical**: Retain compatibility with standard Stryker config conventions while prioritizing pipeline reliability over interactive cosmetic parity.
 
-_Resist a change when:_ it buys adoption — or stars — by making the endgame shape optional.
+_Resist a change when:_ it optimizes for interactive terminal aesthetics at the expense of structured streaming reliability or machine-readable contracts.
 
-_Gate:_ review — the reviewer applies exactly the resist test above; a policy
-refusal has no command that can catch it, so the PR decision is the gate.
+_Gate:_ review — ensure every CLI behavior and engine state change is represented in the NDJSON stream protocol and covered by automated integration checks.
 
 ## Key metrics
 
-- **Stars** - the leading signal that serious people have found the kit; measured on GitHub (baseline: 1 star, 0 forks for `systemfsoftware/starter`, 2026-09-12).
-
-Single metric by decision: a deliberate launch-phase bet on attention, revisited
-**2026-12-12** (chosen here, 90 days out), when the adoption metric gets named.
-The template's usual 3-5 is knowingly unmet until then.
+- **Streaming responsiveness**: Wall-clock duration from CLI invocation to the first `stream` NDJSON event emitted on `stdout`.
+- **Incremental cache hit rate**: Percentage of eligible unchanged files successfully skipped across repeated mutation runs.
+- **Partial report retention**: Verification that 100% of cancelled/interrupted runs successfully flush partial mutant reports to disk.
+- **Package adoption**: Weekly install volume of `@systemfsoftware/stryker-js-cli` and runner plugins across CI workflows.
 
 ## Tracks
 
-### Template hardening via dogfooding a derived repo
+### Real-Time Streaming & Partial Reports
 
-A derived repo hits the real walls — `are-the-types-wrong-effect` did, and its
-fixes came back upstream as PR #8 (merge commit `7207d28`) — so field use is how
-the template learns where the shape leaks.
+Stream individual mutant evaluations to `stdout` as they complete and guarantee that partial reports are flushed when runs receive termination signals (`SIGINT`, `SIGTERM`).
 
-_Why it serves the approach:_ zero knobs only holds if the shape survives real
-work; the derived repo finds the holes before adopters do.
+_Why it serves the approach:_ Eliminates the black-box execution barrier for CI systems and coding agents while ensuring interrupted runs produce actionable diagnostic data.
 
-### The enforcement surface (gates, presets, constitution)
+### Robust Incremental State Engine
 
-The house oxlint preset (`@systemfsoftware/all`, `packages/starter/oxlint.config.ts`),
-the complexity-1 gate on decisions, mutation floors (stryker), CI at error
-severity (`pnpm check:ci`), and the vendored constitution (`repos/constitution/`).
+Redesign the incremental state store into a durable, crash-resilient format that safely captures mutant verdicts across both completed and aborted runs.
 
-_Why it serves the approach:_ the approach is mechanism over documentation — an
-invariant is carried by a gate, or not carried at all.
+_Why it serves the approach:_ Makes mutation testing practical for large codebases by turning incremental execution into a trustworthy, always-on default.
 
-### The agent harness
+### Modern Platform & Ecosystem Integration
 
-`AGENTS.md` and its gated Definition of Done, worktree lifecycle hooks
-(`repos/worktrunk-scripts/`), the worktree include whitelist, and the
-constitution as load-bearing context.
+Deliver zero-delay support for modern toolchains (TypeScript 7, Vitest, Node 22+) and native plugin ignorers for Effect Schema constructs.
 
-_Why it serves the approach:_ the agents are the writers, so the harness is the
-interface — it makes the endgame the path of least resistance.
+_Why it serves the approach:_ Enables teams working on modern Effect-TS codebases to adopt mutation testing without encountering false-positive mutant noise on type-level contracts.
 
 ## Milestones
 
-- **On Effect 4 stable** — the kit's pin (`effect: ^4.0.0-rc.112`, from the
-  `pnpm-workspace.yaml` catalog) moves to the stable line and the audience
-  arrives on it; the date is Effect's release schedule, not ours.
+- **2026-10-01** — Stable Release of `@systemfsoftware/stryker-js-cli` 8.1 with verified partial report recovery and TypeScript 7 out-of-the-box support.
+- **2026-11-15** — Resilient incremental cache engine landing across all workspace runner plugins.
 
 ## Brand
 
-**One-liner:** We embrace the ENDGAME.
+**One-liner:** Mutation testing built for machines, agents, and continuous delivery.
 
-**Key message:** The starter kit for anyone serious about writing TypeScript with
-Effect and AI. The shape is enforced, not documented — one architecture, zero
-knobs, gates that reject the slop precedent would otherwise produce.
+**Key message:** `@systemfsoftware/stryker-js-effect` replaces terminal scraping and brittle caching with real-time NDJSON streaming, resilient incremental state, and native Effect 4 architecture.

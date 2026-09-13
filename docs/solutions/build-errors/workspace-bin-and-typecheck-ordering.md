@@ -24,12 +24,11 @@ the code under test.
 
 ## Problem
 
-`@TODO/starter` runs its mutation leg through a binary owned by its workspace
-dependency `@systemfsoftware/stryker-js-cli`. The CLI declares
-`bin.stryker = ./dist/main.mjs` and publishes `files: [dist]`. In CI the install
-reports `Failed to create bin … ENOENT`, the later mutation task ends in
-`stryker: not found`, and the CLI's build in the same run succeeds — the bin was
-never created, so nothing was there to run.
+`packages/stryker-js-cli` declares `bin.stryker = ./dist/main.mjs` and publishes
+`files: [dist]`. A workspace consumer of that package creates the bin shim at
+install; in CI the install reports `Failed to create bin … ENOENT`, the later
+task that invokes the binary ends in `stryker: not found`, and the CLI's build in
+the same run succeeds — the bin was never created, so nothing was there to run.
 
 Independently, `typecheck` on four family packages failed with
 `TS2307: Cannot find module '<the package itself>'` from their own integration
@@ -88,8 +87,8 @@ typecheck.dependsOn = ["^build", "build"]
 "bin": { "stryker": "./dist/main.mjs" }
 "mutation": "stryker run"
 
-# RIGHT — published consumers get dist in the tarball; workspace consumers
-# run the entrypoint the graph has already built
+# RIGHT — published consumers get dist in the tarball; a workspace consumer
+# runs the entrypoint the graph has already built
 "mutation": "node ./node_modules/@systemfsoftware/stryker-js-cli/dist/main.mjs run"
 ```
 
@@ -106,8 +105,7 @@ turbo typecheck --force
 
 Confirm the ordering with the task graph rather than by reading `turbo.json`:
 `turbo query 'query { package(name: "<pkg>") { tasks { items { fullName directDependencies { items { fullName } } } } } }'`
-must list the package's own `#build` under its `#typecheck`, and the consumer's
-`#mutation` under the dependency's `#build`.
+must list the package's own `#build` under its `#typecheck`.
 
 Code smells that predict this class:
 
