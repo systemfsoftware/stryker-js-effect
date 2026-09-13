@@ -1,0 +1,64 @@
+{
+  "name": "@systemfsoftware/stryker-js-html-reporter",
+  "version": "3.0.3",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "packages/stryker-js-html-reporter"
+  },
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect",
+  "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
+  "description": "HTML reporter plugin for the @systemfsoftware mutation engine.",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
+    "attw": "attw --pack .",
+    "test": "vitest run",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint --format=${f:-default}"
+  },
+  "dependencies": {
+    "@effect/platform-node-shared": "catalog:",
+    "@systemfsoftware/effect-cell-types": "catalog:",
+    "@systemfsoftware/stryker-js": "workspace:^",
+    "mutation-testing-elements": "catalog:stryker"
+  },
+  "devDependencies": {
+    "@systemfsoftware/all": "catalog:",
+    "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/vitest-config": "workspace:^",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "exports": {
+      ".": "./dist/index.mjs",
+      "./package.json": "./package.json"
+    }
+  },
+  "peerDependencies": {
+    "effect": "catalog:"
+  },
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  }
+}

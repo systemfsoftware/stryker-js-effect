@@ -1,0 +1,74 @@
+{
+  "name": "@systemfsoftware/stryker-js-engine",
+  "version": "4.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "packages/stryker-js-engine"
+  },
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect",
+  "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
+  "description": "The host-neutral mutation engine — the run, its stages, and the ports a process entry binds to start it.",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
+    "test": "vitest run",
+    "build": "tsdown",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint --format=${f:-default}",
+    "attw": "attw --pack ."
+  },
+  "dependencies": {
+    "@noble/hashes": "catalog:",
+    "@opentelemetry/api": "^1.9.0",
+    "@systemfsoftware/effect-cell-types": "catalog:",
+    "@systemfsoftware/stryker-js": "workspace:^",
+    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
+    "diff-match-patch": "1.0.5",
+    "minimatch": "~10.2.4"
+  },
+  "peerDependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@std/jsonc": "catalog:",
+    "@systemfsoftware/all": "catalog:",
+    "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/vitest-config": "workspace:^",
+    "@types/diff-match-patch": "1.0.36",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "exports": {
+      ".": "./dist/index.mjs",
+      "./builtin-reporters": "./dist/builtin-reporters.mjs",
+      "./config/base": "./dist/config/base.mjs",
+      "./worker": "./dist/worker.mjs",
+      "./package.json": "./package.json"
+    }
+  },
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./builtin-reporters": "./dist/builtin-reporters.mjs",
+    "./config/base": "./dist/config/base.mjs",
+    "./worker": "./dist/worker.mjs",
+    "./package.json": "./package.json"
+  },
+  "inlinedDependencies": {
+    "@jsr/std__jsonc": "1.0.2"
+  }
+}

@@ -76,13 +76,16 @@ The repository is structured into two workspace roots defined in `pnpm-workspace
 ```text
 .
 ├── packages/           # Reusable libraries, engines, and domain cores
-│   └── starter/        # Seed library template (rename to your package)
+│   ├── starter/        # Seed library template (rename to your package)
+│   ├── stryker-js/ …   # The stryker-js fork family (see packages/*/README.md)
+│   └── toolchain/      # Private vitest config shared by the family
 ├── apps/               # Declared workspace root for apps and CLI tools (added as needed)
 ├── repos/              # Vendored subtrees (constitution, worktrunk-scripts)
 └── docs/               # Solutions, tooling decisions, and plans
 ```
 
 - [`packages/starter`](packages/starter) — The starter package scaffold with pre-configured build, lint, test, and mutation configs.
+- [`packages/stryker-js-cli`](packages/stryker-js-cli) — The `stryker` CLI; the mutation engine, instrumenter, reporters, checkers, and plugin packages live beside it under `packages/`.
 
 ---
 

@@ -1,1 +1,8 @@
-export const hello = (name: string): string => `hello ${name}`
+export {
+  type GreetingDecision,
+  GreetVisitor,
+  greetVisitor,
+  VisitorGreetedByFullName,
+  VisitorGreetedByGivenName,
+  VisitorNameRefused,
+} from './greet-visitor.workflow.js'
