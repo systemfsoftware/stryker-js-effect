@@ -1,7 +1,13 @@
-import type { CheckResult, CheckStatus, PassedCheckResult } from '@systemfsoftware/stryker-js'
-import type { Location, MutantStatus, MutantTestCoverage, Position, RunMutantResult } from '@systemfsoftware/stryker-js'
-import type * as schema from '@systemfsoftware/stryker-js'
-import type { MutantRunResult } from '@systemfsoftware/stryker-js'
+import type { CheckResult, CheckStatus, PassedCheckResult } from '@systemfsoftware/stryker-js-language'
+import type {
+  Location,
+  MutantStatus,
+  MutantTestCoverage,
+  Position,
+  RunMutantResult,
+} from '@systemfsoftware/stryker-js-language'
+import type * as schema from '@systemfsoftware/stryker-js-language'
+import type { MutantRunResult } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 
 interface MutantOutcome {

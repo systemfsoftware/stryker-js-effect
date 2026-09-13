@@ -1,5 +1,5 @@
-import { Ignorer } from '@systemfsoftware/stryker-js'
-import { declarePlugin } from '@systemfsoftware/stryker-js'
+import { Ignorer } from '@systemfsoftware/stryker-js-language'
+import { declarePlugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 

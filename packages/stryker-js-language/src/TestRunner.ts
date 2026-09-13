@@ -174,7 +174,7 @@ export interface TestRunnerService {
 }
 
 export class TestRunner
-  extends Context.Service<TestRunner, TestRunnerService>()('~@systemfsoftware/stryker-js/TestRunner')
+  extends Context.Service<TestRunner, TestRunnerService>()('~@systemfsoftware/stryker-js-language/TestRunner')
 {}
 
 export function testFilesProvided(options: { readonly testFiles?: readonly string[] }): boolean {

@@ -1,4 +1,4 @@
-import { Mutant } from '@systemfsoftware/stryker-js'
+import { Mutant } from '@systemfsoftware/stryker-js-language'
 import * as S from 'effect/Schema'
 
 const DiffChangesSchema = S.Struct({ added: S.Finite, removed: S.Finite })

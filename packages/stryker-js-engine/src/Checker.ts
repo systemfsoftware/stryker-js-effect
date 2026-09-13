@@ -8,11 +8,11 @@
  */
 
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import type { CheckResult } from '@systemfsoftware/stryker-js'
-import type { FileDescriptions } from '@systemfsoftware/stryker-js'
-import type { Mutant } from '@systemfsoftware/stryker-js'
-import type { RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js'
+import type { CheckResult } from '@systemfsoftware/stryker-js-language'
+import type { FileDescriptions } from '@systemfsoftware/stryker-js-language'
+import type { Mutant } from '@systemfsoftware/stryker-js-language'
+import type { RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-language'
+import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'

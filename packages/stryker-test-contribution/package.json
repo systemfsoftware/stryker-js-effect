@@ -39,7 +39,8 @@
     "attw": "attw --pack ."
   },
   "dependencies": {
-    "@systemfsoftware/stryker-js": "workspace:^"
+    "@systemfsoftware/stryker-js-language": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^"
   },
   "peerDependencies": {
     "effect": "catalog:"

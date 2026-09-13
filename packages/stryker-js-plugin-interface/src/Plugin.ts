@@ -1,3 +1,5 @@
+import { Checker, type Evaluator, Ignorer, Module, TestRunner } from '@systemfsoftware/stryker-js-language'
+import type { ReporterFactory, StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import * as Context from 'effect/Context'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -6,10 +8,6 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 
-import { Checker } from './Checker.js'
-import type { Evaluator } from './Evaluator.js'
-import { Ignorer } from './Ignorer.js'
-import { Module } from './Module.js'
 import {
   type PluginContribution,
   PluginKind,
@@ -18,9 +16,6 @@ import {
   PluginReporterContribution,
   Shadowing,
 } from './Plugin.schema.js'
-import type { ReporterFactory } from './ReporterEvent.schema.js'
-import type { StrykerOptions } from './Schema.js'
-import { TestRunner } from './TestRunner.js'
 
 export {
   type PluginContribution,
@@ -32,11 +27,11 @@ export {
 } from './Plugin.schema.js'
 
 export class RunConfiguration extends Context.Service<RunConfiguration, StrykerOptions>()(
-  '~@systemfsoftware/stryker-js/RunConfiguration',
+  '~@systemfsoftware/stryker-js-plugin-interface/RunConfiguration',
 ) {}
 
 export class SandboxDirectory extends Context.Service<SandboxDirectory, string>()(
-  '~@systemfsoftware/stryker-js/SandboxDirectory',
+  '~@systemfsoftware/stryker-js-plugin-interface/SandboxDirectory',
 ) {}
 
 export interface PluginInterfaces {

@@ -28,4 +28,6 @@ export interface CheckerService {
   ) => Effect.Effect<readonly (readonly string[])[], CheckerFailed>
 }
 
-export class Checker extends Context.Service<Checker, CheckerService>()('~@systemfsoftware/stryker-js/Checker') {}
+export class Checker
+  extends Context.Service<Checker, CheckerService>()('~@systemfsoftware/stryker-js-language/Checker')
+{}

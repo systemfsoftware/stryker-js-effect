@@ -10,8 +10,8 @@
 
 import * as Layer from 'effect/Layer'
 
-import { type FileDescriptions, INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js'
+import { type FileDescriptions, INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-language'
+import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import {
   type CompleteDryRunResult,
   type DryRunOptions,
@@ -22,7 +22,7 @@ import {
   type TestRunnerCapabilities,
   TestRunnerFailed,
   toMutantRunResult,
-} from '@systemfsoftware/stryker-js'
+} from '@systemfsoftware/stryker-js-language'
 import * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'

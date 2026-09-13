@@ -2,7 +2,7 @@
  * Mutator — every mutation operator and its registry.
  */
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
-import { type Location, Mutant as ApiMutant, type Position } from '@systemfsoftware/stryker-js'
+import { type Location, Mutant as ApiMutant, type Position } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
 import type {

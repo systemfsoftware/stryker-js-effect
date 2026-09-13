@@ -1,5 +1,5 @@
-import type { MutantCoverage } from '@systemfsoftware/stryker-js'
-import type { MutantActivation } from '@systemfsoftware/stryker-js'
+import type { MutantCoverage } from '@systemfsoftware/stryker-js-language'
+import type { MutantActivation } from '@systemfsoftware/stryker-js-language'
 
 /**
  * Types the context `inject()` reads in `stryker-setup.ts` and the task metadata

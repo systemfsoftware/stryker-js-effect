@@ -1,6 +1,6 @@
 import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
-import type { MutantStatus } from '@systemfsoftware/stryker-js'
-import type { MutationTestResult } from '@systemfsoftware/stryker-js'
+import type { MutantStatus } from '@systemfsoftware/stryker-js-language'
+import type { MutationTestResult } from '@systemfsoftware/stryker-js-language'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { FastCheck as fc } from 'effect/testing'

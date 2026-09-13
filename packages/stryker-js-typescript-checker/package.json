@@ -29,7 +29,8 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/stryker-js": "workspace:^",
+    "@systemfsoftware/stryker-js-language": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "effect": "catalog:",
     "typescript": "catalog:"
   },

@@ -8,10 +8,13 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 
-import type { PluginKind } from '@systemfsoftware/stryker-js'
-import type { AnyPluginContribution, ContributionOf, PluginContribution } from '@systemfsoftware/stryker-js'
-
-import { Module } from '@systemfsoftware/stryker-js'
+import { Module } from '@systemfsoftware/stryker-js-language'
+import type {
+  AnyPluginContribution,
+  ContributionOf,
+  PluginContribution,
+} from '@systemfsoftware/stryker-js-plugin-interface'
+import type { PluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
 import { defaultOptions, importModule } from './Config.js'
 import { StrykerError } from './stryker-error.schema.js'
 
