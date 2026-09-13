@@ -71,29 +71,6 @@
       ],
       "cache": true
     },
-    "mutation": {
-      "dependsOn": [
-        "^build"
-      ],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "stryker.config.json",
-        "vitest.config.ts",
-        "vitest.setup.ts",
-        "reports/stryker-incremental.json",
-        "!**/*.md"
-      ],
-      "outputs": [
-        "reports/mutation-report.html",
-        "reports/mutation-report.json"
-      ],
-      "env": [
-        "NODE_ENV",
-        "CI",
-        "AGENT"
-      ],
-      "cache": true
-    },
     "lint": {
       "inputs": [
         "$TURBO_DEFAULT$",

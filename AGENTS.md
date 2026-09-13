@@ -1,6 +1,9 @@
-# starter
+# stryker-js-effect
 
-Starter template for TypeScript / Effect libraries and tools.
+The home of the `@systemfsoftware/stryker-js-*` package family: the mutation
+engine (`stryker-js-language`), the plugin contract
+(`stryker-js-plugin-interface`), the CLI, instrumenter, reporters, checkers, and
+test-runner integration.
 
 ## Boundaries
 
