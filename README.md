@@ -101,7 +101,6 @@ Create `stryker.config.json` in your project root:
 
 ```json
 {
-  "$schema": "./node_modules/@systemfsoftware/stryker-js-language/schema/stryker-schema.json",
   "testRunner": "vitest",
   "plugins": [
     "@systemfsoftware/stryker-js-vitest-runner",
