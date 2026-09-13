@@ -1,14 +1,14 @@
 import { NodeFileSystem, NodePath, NodeSocketServer } from '@effect/platform-node'
-import { errorToString } from '@systemfsoftware/stryker-js'
-import { RunConfiguration, SandboxDirectory } from '@systemfsoftware/stryker-js'
+import { errorToString } from '@systemfsoftware/stryker-js-language'
 import type {
   CompleteDryRunResult,
   DryRunOptions,
   DryRunResult,
   MutantRunOptions,
   MutantRunResult,
-} from '@systemfsoftware/stryker-js'
-import { TestRunner, TestRunnerFailed } from '@systemfsoftware/stryker-js'
+} from '@systemfsoftware/stryker-js-language'
+import { TestRunner, TestRunnerFailed } from '@systemfsoftware/stryker-js-language'
+import { RunConfiguration, SandboxDirectory } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Match, Schema as S } from 'effect'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'

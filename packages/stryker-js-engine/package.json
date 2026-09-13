@@ -24,8 +24,9 @@
     "@noble/hashes": "catalog:",
     "@opentelemetry/api": "^1.9.0",
     "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/stryker-js": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
+    "@systemfsoftware/stryker-js-language": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "diff-match-patch": "1.0.5",
     "minimatch": "~10.2.4"
   },

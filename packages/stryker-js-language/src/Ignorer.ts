@@ -15,4 +15,6 @@ export interface IgnorerService {
   readonly shouldIgnore: (path: NodePath) => Option.Option<string>
 }
 
-export class Ignorer extends Context.Service<Ignorer, IgnorerService>()('~@systemfsoftware/stryker-js/Ignorer') {}
+export class Ignorer
+  extends Context.Service<Ignorer, IgnorerService>()('~@systemfsoftware/stryker-js-language/Ignorer')
+{}

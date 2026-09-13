@@ -1,6 +1,6 @@
-import type { RunMutantResult } from '@systemfsoftware/stryker-js'
-import type * as schema from '@systemfsoftware/stryker-js'
-import type { TestResult } from '@systemfsoftware/stryker-js'
+import type { RunMutantResult } from '@systemfsoftware/stryker-js-language'
+import type * as schema from '@systemfsoftware/stryker-js-language'
+import type { TestResult } from '@systemfsoftware/stryker-js-language'
 import * as HashMap from 'effect/HashMap'
 import * as Option from 'effect/Option'
 

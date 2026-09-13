@@ -24,4 +24,4 @@ export interface ModuleRequire {
 export class Module extends Context.Service<Module, {
   readonly createRequire: (filename: string | URL) => ModuleRequire
   readonly isBuiltin: (moduleName: string) => boolean
-}>()('@systemfsoftware/stryker-js/Module') {}
+}>()('@systemfsoftware/stryker-js-language/Module') {}

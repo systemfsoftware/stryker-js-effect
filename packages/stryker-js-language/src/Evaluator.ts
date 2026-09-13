@@ -13,5 +13,5 @@ export interface EvaluatorService {
 }
 
 export class Evaluator
-  extends Context.Service<Evaluator, EvaluatorService>()('~@systemfsoftware/stryker-js/Evaluator')
+  extends Context.Service<Evaluator, EvaluatorService>()('~@systemfsoftware/stryker-js-language/Evaluator')
 {}

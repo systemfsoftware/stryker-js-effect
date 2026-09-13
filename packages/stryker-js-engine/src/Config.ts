@@ -1,6 +1,6 @@
-import { Module } from '@systemfsoftware/stryker-js'
-import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js'
+import { Module } from '@systemfsoftware/stryker-js-language'
+import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-language'
+import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
@@ -1331,7 +1331,7 @@ export const defaultOptions: Effect.Effect<Immutable<StrykerOptions>, never, nev
 export const CONFIG_SYNTAX_HELP = `
 Example of how a config file should look:
 /**
-  * @type {import('@systemfsoftware/stryker-js').StrykerOptions}
+  * @type {import('@systemfsoftware/stryker-js-language').StrykerOptions}
   */
 export default {
   // You're options here!
@@ -1339,7 +1339,7 @@ export default {
 
 Or using commonjs:
 /**
-  * @type {import('@systemfsoftware/stryker-js').StrykerOptions}
+  * @type {import('@systemfsoftware/stryker-js-language').StrykerOptions}
   */
 module.exports = {
   // You're options here!

@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js'
+import { Mutant } from '@systemfsoftware/stryker-js-language'
 import * as Arr from 'effect/Array'
 import * as HashMap from 'effect/HashMap'
 import * as Option from 'effect/Option'

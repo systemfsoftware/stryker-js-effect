@@ -1,4 +1,4 @@
-import { declarePlugin } from '@systemfsoftware/stryker-js'
+import { declarePlugin } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import { testContributionEvaluatorLayer } from './test-contribution-evaluator.js'
 

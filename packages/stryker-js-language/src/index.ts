@@ -47,25 +47,6 @@ export {
   type TestPlan,
 } from './Mutant.js'
 export {
-  type AnyPluginContribution,
-  type ComposedPlugins,
-  composePlugins,
-  type ContributionOf,
-  declarePlugin,
-  type MergedPluginServices,
-  type PluginContribution,
-  type PluginEnvironment,
-  type PluginInterfaces,
-  PluginKind,
-  PluginLayerContribution,
-  type PluginLayerKind,
-  PluginReporterContribution,
-  RunConfiguration,
-  SandboxDirectory,
-  type SelectedReporterFactory,
-  Shadowing,
-} from './Plugin.js'
-export {
   type BrandingInformation,
   BrandingInformationSchema,
   type Dependencies,

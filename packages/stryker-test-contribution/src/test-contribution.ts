@@ -1,4 +1,4 @@
-import type * as schema from '@systemfsoftware/stryker-js'
+import type * as schema from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 
 export const defaultRequireTestContributionSuffixes = [

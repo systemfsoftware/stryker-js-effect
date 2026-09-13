@@ -1,9 +1,10 @@
+import type { ReporterFactory } from '@systemfsoftware/stryker-js-language'
+
 import * as S from 'effect/Schema'
 
 import type * as Layer from 'effect/Layer'
 
 import type { PluginEnvironment, PluginInterfaces } from './Plugin.js'
-import type { ReporterFactory } from './ReporterEvent.schema.js'
 
 export const PluginKind = S.Literals(['Checker', 'TestRunner', 'Reporter', 'Ignore', 'Evaluator'])
 export type PluginKind = typeof PluginKind.Type

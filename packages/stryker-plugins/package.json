@@ -62,7 +62,8 @@
     "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/effect-schema-vite": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
-    "@systemfsoftware/stryker-js": "workspace:^",
+    "@systemfsoftware/stryker-js-language": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/estree": "1.0.8",
     "@types/node": "catalog:",
@@ -74,7 +75,8 @@
     "vitest": "catalog:"
   },
   "peerDependencies": {
-    "@systemfsoftware/stryker-js": "workspace:^",
+    "@systemfsoftware/stryker-js-language": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "effect": "catalog:",
     "typescript": ">=5.0.0"
   },

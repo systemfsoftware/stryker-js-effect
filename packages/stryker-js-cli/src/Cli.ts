@@ -2,10 +2,6 @@ import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChild
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as NodeStdio from '@effect/platform-node/NodeStdio'
-import { Mutant } from '@systemfsoftware/stryker-js'
-import { type RunEvent, RunEvents } from '@systemfsoftware/stryker-js'
-import { RENDERED_OPTION_DEFAULTS } from '@systemfsoftware/stryker-js'
-import type { LogLevel, PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js'
 import {
   ConfigFileInvalidError,
   ConfigFileNotFoundError,
@@ -16,6 +12,10 @@ import {
   runMutationTest,
   strykerVersion,
 } from '@systemfsoftware/stryker-js-engine'
+import { Mutant } from '@systemfsoftware/stryker-js-language'
+import { type RunEvent, RunEvents } from '@systemfsoftware/stryker-js-language'
+import { RENDERED_OPTION_DEFAULTS } from '@systemfsoftware/stryker-js-language'
+import type { LogLevel, PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import * as Cause from 'effect/Cause'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'

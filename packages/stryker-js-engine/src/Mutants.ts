@@ -6,9 +6,14 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
-import { Mutant } from '@systemfsoftware/stryker-js'
-import type { Coverage, CoverageData, MutantStatus, TestPlan as MutantTestPlan } from '@systemfsoftware/stryker-js'
-import type { CompleteDryRunResult, TestResult } from '@systemfsoftware/stryker-js'
+import { Mutant } from '@systemfsoftware/stryker-js-language'
+import type {
+  Coverage,
+  CoverageData,
+  MutantStatus,
+  TestPlan as MutantTestPlan,
+} from '@systemfsoftware/stryker-js-language'
+import type { CompleteDryRunResult, TestResult } from '@systemfsoftware/stryker-js-language'
 
 import { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from './IncrementalDiff.schema.js'

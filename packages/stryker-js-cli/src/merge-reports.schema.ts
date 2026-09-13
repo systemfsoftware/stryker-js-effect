@@ -1,4 +1,4 @@
-import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js'
+import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-language'
 import * as S from 'effect/Schema'
 
 export class MergeReportsFailed extends S.TaggedError<MergeReportsFailed>()('MergeReportsFailed', {

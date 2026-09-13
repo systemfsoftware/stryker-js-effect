@@ -1,7 +1,9 @@
 /// <reference types="vitest/import-meta" />
 
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import * as schema from '@systemfsoftware/stryker-js'
+import { buildVerdictEnvelope, defaultOptions, generateRunId, strykerVersion } from '@systemfsoftware/stryker-js-engine'
+import type { ResolvedMode } from '@systemfsoftware/stryker-js-engine'
+import * as schema from '@systemfsoftware/stryker-js-language'
 import {
   Heartbeat,
   HelpRendered,
@@ -9,9 +11,7 @@ import {
   RunFailed,
   RunStarted,
   VerdictReached,
-} from '@systemfsoftware/stryker-js'
-import { buildVerdictEnvelope, defaultOptions, generateRunId, strykerVersion } from '@systemfsoftware/stryker-js-engine'
-import type { ResolvedMode } from '@systemfsoftware/stryker-js-engine'
+} from '@systemfsoftware/stryker-js-language'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'

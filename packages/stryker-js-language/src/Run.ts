@@ -39,7 +39,7 @@ export const planMutationRun = (command: PlanMutationRunCommand): MutationRunPla
   })
 
 export class RunEvents extends Context.Service<RunEvents, Queue.Queue<RunEvent, Cause.Done>>()(
-  '~@systemfsoftware/stryker-js/RunEvents',
+  '~@systemfsoftware/stryker-js-language/RunEvents',
 ) {}
 
 export interface RunIdentityShape {
@@ -48,7 +48,7 @@ export interface RunIdentityShape {
 }
 
 export class RunIdentity extends Context.Service<RunIdentity, RunIdentityShape>()(
-  '~@systemfsoftware/stryker-js/RunIdentity',
+  '~@systemfsoftware/stryker-js-language/RunIdentity',
 ) {}
 
 export interface MutationRunIo {

@@ -1,5 +1,5 @@
-import type { MetricsResult } from '@systemfsoftware/stryker-js'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js'
+import type { MetricsResult } from '@systemfsoftware/stryker-js-language'
+import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 
 import { ansi } from './Reporter.ansi.js'
