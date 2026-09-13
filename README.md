@@ -9,8 +9,8 @@
 > 🛡️ Built for high-assurance codebases where line coverage is not enough and behavioral verification is required.
 
 ```bash
-npm install --save-dev @systemfsoftware/stryker-js-cli
-npx stryker run
+pnpm add -D @systemfsoftware/stryker-js-cli
+pnpm exec stryker run
 ```
 
 ---
@@ -33,7 +33,7 @@ A 100% mutation score demonstrates that every meaningful branch and condition is
 The `stryker` CLI emits newline-delimited JSON (NDJSON) events directly to `stdout`. Continuous integration pipelines, monitoring workers, and AI coding agents can stream and parse these events line-by-line in real time without scraping ASCII progress bars or filtering terminal escape codes:
 
 ```console
-$ npx stryker run
+$ pnpm exec stryker run
 {"kind":"stream","schemaVersion":"1.0","runId":"06FY3DSBM7TYC2RZQ0F3EGVZ88","mode":"machine","signal":"tty"}
 {"kind":"phase","phase":"instrument","elapsedMs":102}
 {"kind":"phase","phase":"dry-run","elapsedMs":6658}
@@ -115,7 +115,7 @@ Create a `stryker.config.json` configuration file at your project root:
 Execute the mutation testing run:
 
 ```bash
-npx stryker run
+pnpm exec stryker run
 ```
 
 ---
