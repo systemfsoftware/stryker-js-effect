@@ -11,13 +11,17 @@
         "tsconfig.json",
         "tsconfig.*.json",
         "package.json",
-        "tsdown.config.*"
+        "tsdown.config.*",
+        "api-extractor.json",
+        "api-extractor.*.json",
+        "etc/*.api.md"
       ],
       "outputs": [
         "dist/**"
       ],
       "dependsOn": [
-        "^build"
+        "^build",
+        "^api:check"
       ]
     },
     "typecheck": {
@@ -31,7 +35,9 @@
       "outputs": [],
       "dependsOn": [
         "^build",
-        "build"
+        "^api:check",
+        "build",
+        "api:check"
       ],
       "cache": true
     },
@@ -54,12 +60,15 @@
         "src/**/*.spec.ts",
         "!**/README.md",
         "!**/AGENTS.md",
-        "!**/CHANGELOG.md"
+        "!**/CHANGELOG.md",
+        "!**/etc/*.api.md"
       ],
       "outputLogs": "errors-only",
       "dependsOn": [
         "^build",
-        "build"
+        "^api:check",
+        "build",
+        "api:check"
       ],
       "outputs": [],
       "env": [
@@ -75,12 +84,15 @@
         "oxlint.config.ts",
         "tsconfig.json",
         "tsconfig.*.json",
-        "!**/*.md"
+        "!**/*.md",
+        "!**/etc/*.api.md"
       ],
       "outputs": [],
       "dependsOn": [
         "^build",
-        "build"
+        "^api:check",
+        "build",
+        "api:check"
       ],
       "env": [
         "NODE_ENV",
@@ -97,11 +109,33 @@
         "package.json"
       ],
       "dependsOn": [
-        "build"
+        "^build",
+        "^api:check",
+        "build",
+        "api:check"
       ]
     },
     "clean": {
       "cache": false
+    },
+    "api:check": {
+      "outputLogs": "errors-only",
+      "inputs": [
+        "src/**",
+        "api-extractor.json",
+        "api-extractor.*.json",
+        "tsconfig.build.json",
+        "tsconfig.*.json",
+        "etc/*.api.md"
+      ],
+      "outputs": [
+        "dist/*.d.ts",
+        "etc/*.api.md",
+        "temp/**"
+      ],
+      "dependsOn": [
+        "build"
+      ]
     }
   }
 }

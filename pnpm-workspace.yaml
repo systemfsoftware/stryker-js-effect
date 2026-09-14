@@ -38,8 +38,8 @@ catalog:
   tsdown: ^0.23.0
   turbo: ^2.10.12
   typescript: ^7
-  vite-tsconfig-paths: ^6.1.1
   vitest: ^4
+  concurrently: ^10.0.5
 catalogMode: prefer
 catalogs:
   stryker:

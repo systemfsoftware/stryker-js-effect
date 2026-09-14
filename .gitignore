@@ -8,3 +8,4 @@ coverage/
 .direnv/
 result
 result-*
+temp/

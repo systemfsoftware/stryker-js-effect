@@ -18,9 +18,11 @@
   "scripts": {
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
-    "build": "tsdown",
+    "build": "tsdown && pnpm api:check",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint --format=${f:-default}",
-    "attw": "attw --pack ."
+    "attw": "attw --pack .",
+    "api:check": "tsdown && concurrently --kill-others-on-fail \"api-extractor run\" \"api-extractor run --config api-extractor.builtin-reporters.json\" \"api-extractor run --config api-extractor.base.json\" \"api-extractor run --config api-extractor.plugin-loader.json\" \"api-extractor run --config api-extractor.worker.json\"",
+    "api:update": "concurrently --kill-others-on-fail \"api-extractor run --local\" \"api-extractor run --local --config api-extractor.builtin-reporters.json\" \"api-extractor run --local --config api-extractor.base.json\" \"api-extractor run --local --config api-extractor.plugin-loader.json\" \"api-extractor run --local --config api-extractor.worker.json\""
   },
   "dependencies": {
     "@noble/hashes": "catalog:",
@@ -37,6 +39,7 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
+    "@microsoft/api-extractor": "catalog:",
     "@std/jsonc": "catalog:",
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
@@ -45,6 +48,7 @@
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/diff-match-patch": "1.0.36",
     "@types/node": "catalog:",
+    "concurrently": "catalog:",
     "effect": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",
