@@ -63,3 +63,4 @@ packages:
   - apps/*
   - packages/*
   - packages/toolchain/*
+  - packages/ignorers/*
