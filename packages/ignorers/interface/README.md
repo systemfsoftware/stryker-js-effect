@@ -3,31 +3,27 @@
 ![version](https://img.shields.io/npm/v/@systemfsoftware/stryker-ignorer-interface)
 ![license](https://img.shields.io/npm/l/@systemfsoftware/stryker-ignorer-interface)
 
-> The ignorer interface: declare the AST shape your rule reasons about as a Standard Schema, and ship a plain module with zero runtime dependencies.
+> The ignorer interface: the descriptor and the AST vocabulary an ignorer reasons
+> about, as types only — the package ships no runtime code.
 
 An ignorer is the smallest thing a StrykerJS-style mutation tool can load: a
-name and a synchronous decision over a path the host hands it. This
-package carries the whole author-facing surface — the schema toolkit, the node
-vocabulary, and the ancestor walk. It has **no**
-Effect dependency**, runtime or development: `dependencies` is empty, and the
-kitchen-sink family aggregate preset is replaced by
+name and a synchronous decision over a path the host hands it. This package
+carries the shapes of that contract and nothing that runs. It has **no** Effect
+dependency, runtime or development: `dependencies` is empty, no value is
+exported, and the kitchen-sink family aggregate preset is replaced by
 `@systemfsoftware/oxlint-ignorer-config`, which bans Effect imports outright.
 
-| Export                       | What it is                                                                                                                                                                                                                                                                                                                         |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PlainIgnorer`               | The descriptor: `{ name, shouldIgnore(path): string \| undefined }`                                                                                                                                                                                                                                                                |
-| `StandardSchemaV1`           | The [Standard Schema](https://standardschema.dev) types, imported from `@standard-schema/spec` and inlined into this package's published types                                                                                                                                                                                     |
-| toolkit                      | `string`, `literal`, `literals`, `unknown`, `struct`, `union`, `array`, `nonEmptyArray`, `optional`, `nullable`, `declared`, `suspend`, `is`, `validate`                                                                                                                                                                           |
-| vocabulary                   | the canonical ESTree kinds — `Identifier`, `StringLiteral`, `ObjectExpression`, `Property`, `ArrowFunctionExpression`, `FunctionExpression`, `MemberExpression`, `CallExpression`, `MetaProperty`, `BinaryExpression`, `IfStatement`, `ImportSpecifier`, `ImportNamespaceSpecifier`, `ImportDeclaration`, `Program`, `UnknownNode` |
-| predicates                   | one `is*` per kind, plus `AstNode`/`AstNodeType` over all sixteen                                                                                                                                                                                                                                                                  |
-| `NodePath`, `NodePathSchema` | the path shape the host hands `shouldIgnore`, and its validator                                                                                                                                                                                                                                                                    |
-| `ancestorsOf`                | the nearest-first ancestor walk over a `NodePath`                                                                                                                                                                                                                                                                                  |
+| Export         | What it is                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PlainIgnorer` | The descriptor: `{ name, shouldIgnore(path): string \| undefined }`                                                                                                                                                                                                                                                                                                                                                         |
+| vocabulary     | the canonical AST kinds, each an alias of its [`@oxc-project/types`](https://www.npmjs.com/package/@oxc-project/types) declaration — `Identifier`, `StringLiteral`, `ObjectExpression`, `Property`, `ArrowFunctionExpression`, `FunctionExpression`, `MemberExpression`, `CallExpression`, `MetaProperty`, `BinaryExpression`, `IfStatement`, `ImportSpecifier`, `ImportNamespaceSpecifier`, `ImportDeclaration`, `Program` |
+| `AstNodeType`  | the union of the fifteen kinds above plus `UnknownNode`                                                                                                                                                                                                                                                                                                                                                                     |
+| `UnknownNode`  | any node the vocabulary does not model: `{ readonly type: string }`                                                                                                                                                                                                                                                                                                                                                         |
+| `NodePath`     | the path shape the host hands `shouldIgnore`: the node, and the parent path or nothing                                                                                                                                                                                                                                                                                                                                      |
 
-A toolkit schema is a real `StandardSchemaV1` value: `struct` is inexact, so a
-host node carrying members this rule does not model still validates; `suspend`
-gives a self-referential schema a fixed recursion budget (`maxDepth`, default
-`6`) and reports issues past it instead of descending further. Validators are
-synchronous — the toolkit composes them directly rather than through a promise.
+Everything the package publishes is a type. A guard, a walk over the path, and a
+reason string are the ignorer's own code: the host never interprets a schema, it
+calls `shouldIgnore(path)` and uses what comes back.
 
 ## Install
 
@@ -38,19 +34,21 @@ pnpm add -D @systemfsoftware/stryker-ignorer-interface
 ## Write an ignorer
 
 ```ts
-import {
-  ancestorsOf,
-  isIdentifier,
-  isMemberExpression,
-  type PlainIgnorer,
-} from '@systemfsoftware/stryker-ignorer-interface'
+import type { NodePath, PlainIgnorer } from '@systemfsoftware/stryker-ignorer-interface'
 
 const isGenerated = (node: unknown): boolean =>
-  isMemberExpression(node) && isIdentifier(node.object) && node.object.name === '__generated'
+  typeof node === 'object' && node !== null && 'name' in node && node.name === '__generated'
+
+const inGeneratedCode = (path: NodePath): boolean => {
+  for (let current = path.parentPath; current; current = current.parentPath) {
+    if (isGenerated(current.node)) return true
+  }
+  return false
+}
 
 const myIgnorer: PlainIgnorer = {
   name: 'generated-code',
-  shouldIgnore: (path) => [...ancestorsOf(path)].some(isGenerated) ? 'the enclosing member is generated' : undefined,
+  shouldIgnore: (path) => (inGeneratedCode(path) ? 'the enclosing member is generated' : undefined),
 }
 
 export const strykerIgnorers = [myIgnorer]

@@ -1,6 +1,6 @@
 # AGENTS.md — `@systemfsoftware/stryker-ignorer-in-source-vitest-block`
 
-Stryker ignorer for in-source Vitest blocks: removes mutants inside an `if (import.meta.vitest)` guard. The guards are Standard Schema validators declared beside the decisions, and the package's only runtime dependency is `@systemfsoftware/stryker-ignorer-interface` — zero Effect is part of its identity. Root `AGENTS.md` governs.
+Stryker ignorer for in-source Vitest blocks: removes mutants inside an `if (import.meta.vitest)` guard. The guards are hand-written predicates declared beside the decisions, and the package's only dependency is `@systemfsoftware/stryker-ignorer-interface`, which ships the node types and nothing that runs — zero Effect is part of its identity. Root `AGENTS.md` governs.
 
 ## Rules
 
@@ -16,7 +16,7 @@ Stryker ignorer for in-source Vitest blocks: removes mutants inside an `if (impo
 The reviewer's decision on each `review`-gated row, shown as `wrong:`/`right:`:
 
 - **SP3** — `wrong:` registering a checker or runner contribution beside the ignorer; `right:` `src/mod.ts` exports `strykerIgnorers` and nothing that answers another mutation stage.
-- **SP5** — `wrong:` `"effect": "catalog:"` in `dependencies` or anywhere under `devDependencies`; `right:` `"@systemfsoftware/stryker-ignorer-interface": "workspace:^"` as the only runtime entry.
+- **SP5** — `wrong:` `"effect": "catalog:"` in `dependencies` or anywhere under `devDependencies`; `right:` `"@systemfsoftware/stryker-ignorer-interface": "workspace:^"` as the only `dependencies` entry.
 
 ## Verification
 

@@ -1,5 +1,6 @@
-import { ancestorsOf, type NodePath } from '@systemfsoftware/stryker-ignorer-interface'
+import type { NodePath } from '@systemfsoftware/stryker-ignorer-interface'
 
+import { ancestorsOf } from './AncestorWalk.js'
 import { decideInSourceTestIgnore, IN_SOURCE_TEST_IGNORED, isInSourceTestGuard } from './InSourceTestIgnore.js'
 
 const decisionAt = (ancestors: Iterable<unknown>): string | undefined => decideInSourceTestIgnore(ancestors)

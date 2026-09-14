@@ -1,5 +1,6 @@
-import { ancestorsOf, type NodePath } from '@systemfsoftware/stryker-ignorer-interface'
+import type { NodePath } from '@systemfsoftware/stryker-ignorer-interface'
 
+import { ancestorsOf } from './AncestorWalk.js'
 import { decideSchemaDeclarationIgnore } from './SchemaDeclarationIgnore.js'
 
 const decisionAt = (chain: readonly unknown[], position: number): string | undefined =>

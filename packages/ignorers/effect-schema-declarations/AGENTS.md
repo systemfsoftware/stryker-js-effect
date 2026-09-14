@@ -1,6 +1,6 @@
 # AGENTS.md — `@systemfsoftware/stryker-ignorer-effect-schema-declarations`
 
-Stryker ignorer for Effect Schema declarations: removes proven-equivalent mutants on brands, `TaggedClass`/`TaggedError` tags and field schemas, `optionalWith` defaults, and documentation annotations. The AST guards are Standard Schema validators declared by `@systemfsoftware/stryker-ignorer-interface`, the package's one runtime dependency; no Effect is imported, bundled, or depended on. Root `AGENTS.md` governs.
+Stryker ignorer for Effect Schema declarations: removes proven-equivalent mutants on brands, `TaggedClass`/`TaggedError` tags and field schemas, `optionalWith` defaults, and documentation annotations. The AST guards are this package's own predicates over the node shapes, whose types come from `@systemfsoftware/stryker-ignorer-interface` — the package's one dependency, and it ships types only; no Effect is imported, bundled, or depended on. Root `AGENTS.md` governs.
 
 ## Rules
 

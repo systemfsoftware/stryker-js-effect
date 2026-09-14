@@ -10,13 +10,13 @@
   },
   "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/ignorers/interface#readme",
   "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
-  "description": "The ignorer interface for StrykerJS-style mutation tooling — a zero-dependency Standard Schema toolkit, the canonical ESTree node vocabulary, the AST path shape and ancestor walker, and the case-table test harness. Publishes no Effect dependency.",
+  "description": "The ignorer interface for StrykerJS-style mutation tooling — the PlainIgnorer descriptor, the canonical AST node vocabulary, and the NodePath shape. Types only, with no runtime exports and no Effect dependency.",
   "keywords": [
     "stryker",
     "mutation-testing",
     "ignorer",
     "plugin",
-    "standard-schema",
+    "ast",
     "estree",
     "test-quality"
   ],
@@ -44,7 +44,6 @@
   "devDependencies": {
     "@microsoft/api-extractor": "catalog:",
     "@oxc-project/types": "catalog:",
-    "@standard-schema/spec": "jsr:^1.1.0",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",

@@ -1,9 +1,10 @@
-import { Identifier, is, literal, string, struct, union } from '@systemfsoftware/stryker-ignorer-interface'
+import type { Identifier } from '@systemfsoftware/stryker-ignorer-interface'
 
-export { Identifier }
+export type { Identifier }
 
 export interface AstLike {
   readonly type: string
+  readonly [key: string]: unknown
 }
 
 export interface MetaProperty {
@@ -29,42 +30,35 @@ export interface IfStatement {
   readonly test: AstLike
 }
 
-export const AstLike = struct({ type: string() })
-
-export const MetaProperty = struct({
-  type: literal('MetaProperty'),
-  meta: Identifier,
-  property: Identifier,
-})
-
-export const ImportMetaMember = struct({
-  type: literal('MemberExpression'),
-  object: MetaProperty,
-  property: Identifier,
-})
-
-export const BinaryExpression = struct({
-  type: literal('BinaryExpression'),
-  left: AstLike,
-  right: AstLike,
-})
-
-export const IfStatement = struct({
-  type: literal('IfStatement'),
-  test: AstLike,
-})
-
 export type AstNodeType = Identifier | MetaProperty | ImportMetaMember | BinaryExpression | IfStatement | AstLike
 
-export const AstNode = union([
-  Identifier,
-  MetaProperty,
-  ImportMetaMember,
-  BinaryExpression,
-  IfStatement,
-  AstLike,
-])
+const isObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 
-export const isImportMetaMember = (value: unknown): value is ImportMetaMember => is(ImportMetaMember, value)
-export const isBinaryExpression = (value: unknown): value is BinaryExpression => is(BinaryExpression, value)
-export const isIfStatement = (value: unknown): value is IfStatement => is(IfStatement, value)
+const hasStringType = (value: object): boolean => 'type' in value && typeof value.type === 'string'
+
+const isAstLike = (value: unknown): value is AstLike => isObject(value) && hasStringType(value)
+
+const isNodeOfType = (value: unknown, type: string): value is AstLike => isAstLike(value) && value.type === type
+
+const isIdentifier = (value: unknown): value is Identifier =>
+  isNodeOfType(value, 'Identifier') && typeof value['name'] === 'string'
+
+const hasIdentifierPair = (value: AstLike, first: string, second: string): boolean =>
+  isIdentifier(value[first]) && isIdentifier(value[second])
+
+const isMetaProperty = (value: unknown): value is MetaProperty =>
+  isNodeOfType(value, 'MetaProperty') && hasIdentifierPair(value, 'meta', 'property')
+
+const hasImportMetaPair = (value: AstLike): boolean =>
+  isMetaProperty(value['object']) && isIdentifier(value['property'])
+
+export const isImportMetaMember = (value: unknown): value is ImportMetaMember =>
+  isNodeOfType(value, 'MemberExpression') && hasImportMetaPair(value)
+
+const hasBinarySides = (value: AstLike): boolean => isAstLike(value['left']) && isAstLike(value['right'])
+
+export const isBinaryExpression = (value: unknown): value is BinaryExpression =>
+  isNodeOfType(value, 'BinaryExpression') && hasBinarySides(value)
+
+export const isIfStatement = (value: unknown): value is IfStatement =>
+  isNodeOfType(value, 'IfStatement') && isAstLike(value['test'])
