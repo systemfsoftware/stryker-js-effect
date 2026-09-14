@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@systemfsoftware/effect-cell-types": "catalog:",
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "effect": "catalog:"
   },
   "devDependencies": {
@@ -38,7 +39,6 @@
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/effect-schema-vite": "catalog:",
-    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",

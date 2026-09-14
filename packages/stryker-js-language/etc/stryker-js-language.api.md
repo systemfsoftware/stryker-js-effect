@@ -9,6 +9,7 @@ import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
 import * as HashMap from 'effect/HashMap';
+import { Node } from '@systemfsoftware/stryker-ignorer-interface';
 import * as Option from 'effect/Option';
 import * as Queue from 'effect/Queue';
 import * as S from 'effect/Schema';
@@ -425,7 +426,7 @@ export class Ignorer extends Ignorer_base {}
 // @public (undocumented)
 export interface IgnorerService {
     // (undocumented)
-    readonly shouldIgnore: (path: NodePath) => Option.Option<string>;
+    readonly shouldIgnore: (node: Node, ancestors: readonly Node[]) => Option.Option<string>;
 }
 
 // @public (undocumented)
@@ -812,14 +813,6 @@ export const MutationTestResultSchema: S.Struct<{
         readonly dependencies: S.optional<S.$Record<S.String, S.String>>;
     }>>;
 }>;
-
-// @public (undocumented)
-export interface NodePath {
-    // (undocumented)
-    readonly ancestors: readonly unknown[];
-    // (undocumented)
-    readonly node: unknown;
-}
 
 // @public (undocumented)
 export function normalizeFileName(fileName: string): string;

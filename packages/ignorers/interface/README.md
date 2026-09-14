@@ -7,21 +7,22 @@
 > about, as types only — the package ships no runtime code.
 
 An ignorer is the smallest thing a StrykerJS-style mutation tool can load: a
-name and a synchronous decision over a path the host hands it. This package
-carries the shapes of that contract and nothing that runs. It has **no** Effect
-dependency, runtime or development: `dependencies` is empty, no value is
-exported, and the kitchen-sink family aggregate preset is replaced by
-`@systemfsoftware/oxlint-ignorer-config`, which bans Effect imports outright.
+name and a synchronous decision over the node the host hands it, together with
+that node's ancestors. This package carries the shapes of that contract and
+nothing that runs. It has **no** Effect dependency, runtime or development:
+`dependencies` is empty, no value is exported, and the kitchen-sink family
+aggregate preset is replaced by `@systemfsoftware/oxlint-ignorer-config`, which
+bans Effect imports outright.
 
-| Export         | What it is                                                                                                                                                                                                                                                                                    |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PlainIgnorer` | The descriptor: `{ name, shouldIgnore(path): string \| undefined }`                                                                                                                                                                                                                           |
-| vocabulary     | the AST vocabulary, re-exported from [`@oxc-project/types`](https://www.npmjs.com/package/@oxc-project/types) and bundled into this package's own declarations, so a consumer installs nothing else — `Node`, `Expression`, `Statement`, `Program`, `Span`, and every concrete node interface |
-| `NodePath`     | the path shape the host hands `shouldIgnore`: the node and its ancestors, nearest first                                                                                                                                                                                                       |
+| Export     | What it is                                                                                                                                                                                                                                                                                                        |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Ignorer`  | The descriptor: `{ name, shouldIgnore(node, ancestors): string \| undefined }` — the node and its ancestors as typed positions, nearest first                                                                                                                                                                     |
+| vocabulary | the AST vocabulary, re-exported from [`@oxc-project/types`](https://www.npmjs.com/package/@oxc-project/types) with optional spans and bundled into this package's own declarations, so a consumer installs nothing else — `Node`, `Expression`, `Statement`, `Program`, `Span`, and every concrete node interface |
+| `Walker`   | the traversal shape a host implements: `enter`/`leave` receive each node and its ancestor stack — see the instrumenter's walker for the reference implementation over `oxc-walker`                                                                                                                                |
 
 Everything the package publishes is a type. A guard and a reason string are the
 ignorer's own code: the host never interprets a schema, it calls
-`shouldIgnore(path)` and uses what comes back.
+`shouldIgnore(node, ancestors)` and uses what comes back.
 
 ## Install
 
@@ -32,16 +33,14 @@ pnpm add -D @systemfsoftware/stryker-ignorer-interface
 ## Write an ignorer
 
 ```ts
-import type { NodePath, PlainIgnorer } from '@systemfsoftware/stryker-ignorer-interface'
+import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 
-const isGenerated = (node: unknown): boolean =>
-  typeof node === 'object' && node !== null && 'name' in node && node.name === '__generated'
+const isGenerated = (node: Node): boolean => 'name' in node && node.name === '__generated'
 
-const inGeneratedCode = (path: NodePath): boolean => path.ancestors.some(isGenerated)
-
-const myIgnorer: PlainIgnorer = {
+const myIgnorer: Ignorer = {
   name: 'generated-code',
-  shouldIgnore: (path) => (inGeneratedCode(path) ? 'the enclosing member is generated' : undefined),
+  shouldIgnore: (node, ancestors) =>
+    isGenerated(node) || ancestors.some(isGenerated) ? 'the enclosing member is generated' : undefined,
 }
 
 export const strykerIgnorers = [myIgnorer]

@@ -49,9 +49,9 @@ const isKeepCall = (node: unknown): node is { arguments: unknown[] } => {
 }
 
 const invertedKeepIgnorer: IgnorerService = {
-  shouldIgnore: (path) => {
-    let child: unknown = path.node
-    for (const ancestor of path.ancestors) {
+  shouldIgnore: (node, ancestors) => {
+    let child: unknown = node
+    for (const ancestor of ancestors) {
       if (isKeepCall(ancestor) && ancestor.arguments.includes(child)) {
         return Option.none()
       }
@@ -74,7 +74,7 @@ const isFlagIf = (node: unknown): boolean => {
 }
 
 const regionFlagIgnorer: IgnorerService = {
-  shouldIgnore: (path) => path.ancestors.some(isFlagIf) ? Option.some(INSIDE_FLAG) : Option.none(),
+  shouldIgnore: (_node, ancestors) => ancestors.some(isFlagIf) ? Option.some(INSIDE_FLAG) : Option.none(),
 }
 const countByMutator = (mutants: readonly Mutant[]): Record<string, number> => {
   const counts: Record<string, number> = {}
@@ -325,6 +325,58 @@ export function price(n) {
             for (const mutant of inner) {
               expect(mutant.status).toBe('Ignored')
               expect(mutant.statusReason).toBe(INSIDE_FLAG)
+            }
+          })
+        ),
+      ),
+    )
+    scenario(
+      'Every node consults the ignorer, including top-level nodes with empty ancestors',
+      Gherkin.Do.pipe(
+        Given('the baseline source')('source', () => Effect.succeed(PROBE_SOURCE)),
+        When('it is instrumented with the inverted ignorer selected')(
+          'result',
+          ({ source }: { source: string }) =>
+            instrument([{ name: '/tmp/probe.ts', content: source, mutate: true }], {
+              ignorers: [invertedKeepIgnorer],
+              excludedMutations: [],
+            }),
+        ),
+        Then('every mutant is ignored with the ignorer reason')((
+          { result }: { result: { mutants: readonly Mutant[] } },
+        ) =>
+          Effect.sync(() => {
+            expect(result.mutants.length).toBe(13)
+            for (const mutant of result.mutants) {
+              expect(mutant.status).toBe('Ignored')
+              expect(mutant.statusReason).toBe(OUTSIDE_KEEP)
+            }
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'With two ignorers both matching, the first registered ignorer wins',
+      Gherkin.Do.pipe(
+        Given('a file with a sibling function and an if (flag) block')('source', () => Effect.succeed(REGION_SOURCE)),
+        When('it is instrumented with the inverted ignorer before the region ignorer')(
+          'result',
+          ({ source }: { source: string }) =>
+            instrument([{ name: '/tmp/region.ts', content: source, mutate: true }], {
+              ignorers: [invertedKeepIgnorer, regionFlagIgnorer],
+              excludedMutations: [],
+            }),
+        ),
+        Then('the first ignorer reason wins even where both match')((
+          { result }: { result: { mutants: readonly Mutant[] } },
+        ) =>
+          Effect.sync(() => {
+            expect(result.mutants.length).toBeGreaterThan(0)
+            for (const mutant of result.mutants) {
+              expect(mutant.status).toBe('Ignored')
+              expect(mutant.statusReason).toBe(OUTSIDE_KEEP)
+              expect(mutant.statusReason).not.toBe(INSIDE_FLAG)
             }
           })
         ),

@@ -43,6 +43,7 @@
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
@@ -50,7 +51,6 @@
     "rimraf": "catalog:",
     "svelte": "5.55.1",
     "tsdown": "catalog:",
-    "type-fest": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
@@ -71,8 +71,5 @@
     "svelte": {
       "optional": true
     }
-  },
-  "inlinedDependencies": {
-    "type-fest": "4.41.0"
   }
 }

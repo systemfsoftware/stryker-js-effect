@@ -1,17 +1,9 @@
-import type { NodePath } from '@systemfsoftware/stryker-ignorer-interface'
+import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 
 import { decideSchemaDeclarationIgnore } from './SchemaDeclarationIgnore.js'
 
-const decisionAt = (chain: readonly unknown[], position: number): string | undefined =>
-  decideSchemaDeclarationIgnore(chain[position], chain[position + 1], chain[position + 2], chain[position + 3])
-
-const firstIgnoreReason = (path: NodePath): string | undefined => {
-  const chain = [path.node, ...path.ancestors]
-  return chain.reduce<string | undefined>((found, _, position) => found ?? decisionAt(chain, position), undefined)
-}
-
-export const strykerIgnorers = [
-  { name: 'effect-schema-declarations', shouldIgnore: firstIgnoreReason },
+export const strykerIgnorers: readonly Ignorer[] = [
+  { name: 'effect-schema-declarations', shouldIgnore: decideSchemaDeclarationIgnore },
 ]
 
 export {

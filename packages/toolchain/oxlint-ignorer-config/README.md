@@ -41,8 +41,9 @@ build a fixture by assertion — the decision may not.
 ## Writing an ignorer
 
 Author against `@systemfsoftware/stryker-ignorer-interface`: it publishes the
-entry contract (`{ name, shouldIgnore(path) }`), `NodePath`, and the AST
-vocabulary types. This preset is the lint half of that pair.
+entry contract (`{ name, shouldIgnore(node, ancestors) }` — typed positions,
+nearest first) and the AST vocabulary types. This preset is the lint half of
+that pair.
 
 ## Gates
 

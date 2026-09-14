@@ -1,9 +1,10 @@
 // oxlint-disable typescript/no-unsafe-type-assertion typescript/no-unnecessary-type-assertion
 
-import { type IgnorerService, type NodePath as IgnorerNodePath } from '@systemfsoftware/stryker-js-language'
+import { type IgnorerService } from '@systemfsoftware/stryker-js-language'
 import { INSTRUMENTER_CONSTANTS as ID } from '@systemfsoftware/stryker-js-language'
 import { type MutateDescription, type Position } from '@systemfsoftware/stryker-js-language'
 import { propertyPath, type StrykerOptions, strykerReportBugUrl } from '@systemfsoftware/stryker-js-language'
+import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -302,12 +303,12 @@ function mutatorWarning(directive: StrykerDirective, mutatorName: string, origin
   return `Unused 'Stryker ${label}' directive. Mutator with name '${mutatorName}' not found. Directive found at: ${originFileName}:${loc.start.line}:${loc.start.column}.`
 }
 
-function toIgnorerPath(path: TraversePath): IgnorerNodePath {
-  const ancestors: unknown[] = []
+function ancestorsOf(path: TraversePath): Node[] {
+  const ancestors: Node[] = []
   for (let current = path.parentPath; current !== null; current = current.parentPath) {
     ancestors.push(current.node)
   }
-  return { node: path.node, ancestors }
+  return ancestors
 }
 
 export function isTypeNode(path: TraversePath): boolean {
@@ -746,26 +747,32 @@ const INPUT_MODEL_OUTPUT_CONFIG_MSG =
 const SIGNAL_QUERY_OPTIONS_MSG =
   'Angular signal query options object cannot be mutated as that causes issues with the Angular compiler.'
 
-export function shouldIgnore(path: IgnorerNodePath): Option.Option<string> {
-  return Option.orElse(reasonAt(path), () => ancestorReason(path))
+export function shouldIgnore(node: Node, ancestors: readonly Node[]): Option.Option<string> {
+  return Option.orElse(reasonAt(node, ancestors), () => ancestorReason(node, ancestors))
 }
 
-function reasonAt(path: IgnorerNodePath): Option.Option<string> {
-  return Match.value(path).pipe(
-    Match.when(isInputModelOrOutputConfigurationObject, () => Option.some(INPUT_MODEL_OUTPUT_CONFIG_MSG)),
-    Match.when(isSignalQueryOptionsObject, () => Option.some(SIGNAL_QUERY_OPTIONS_MSG)),
+function reasonAt(node: Node, ancestors: readonly Node[], offset = 0): Option.Option<string> {
+  return Match.value(node).pipe(
+    Match.when(
+      (subject: Node) => isInputModelOrOutputConfigurationObject(subject, ancestors, offset),
+      () => Option.some(INPUT_MODEL_OUTPUT_CONFIG_MSG),
+    ),
+    Match.when(
+      (subject: Node) => isSignalQueryOptionsObject(subject, ancestors, offset),
+      () => Option.some(SIGNAL_QUERY_OPTIONS_MSG),
+    ),
     Match.orElse(() => Option.none<string>()),
   )
 }
 
-function ancestorReason(path: IgnorerNodePath): Option.Option<string> {
-  return path.ancestors
-    .map((_ancestor, index) => reasonAt(ancestorPath(path.ancestors, index)))
-    .find(Option.isSome) ?? Option.none()
-}
-
-function ancestorPath(ancestors: readonly unknown[], index: number): IgnorerNodePath {
-  return { node: ancestors[index], ancestors: ancestors.slice(index + 1) }
+function ancestorReason(node: Node, ancestors: readonly Node[]): Option.Option<string> {
+  return Option.flatMap(
+    Arr.findFirst(
+      ancestors.entries(),
+      ([position, ancestor]) => Option.isSome(reasonAt(ancestor, ancestors, position + 1)),
+    ),
+    ([position, ancestor]) => reasonAt(ancestor, ancestors, position + 1),
+  )
 }
 
 export const angularIgnorer: IgnorerService = {
@@ -779,22 +786,22 @@ function isClassFieldLike(node: unknown): boolean {
 const CLASS_FIELD_KINDS: readonly string[] = Object.freeze(['PropertyDefinition', 'AccessorProperty'])
 
 interface SignalCallSite {
-  readonly callee: unknown
-  readonly args: readonly unknown[]
-  readonly objectExpression: unknown
+  readonly callee: Node
+  readonly args: readonly Node[]
+  readonly objectExpression: Node
 }
 
-type OwnsCallSite = (owner: unknown) => boolean
+type OwnsCallSite = (owner: Node) => boolean
 
-function isInputModelOrOutputConfigurationObject(path: IgnorerNodePath): boolean {
-  return Option.match(signalCallSiteOf(path, isPropertyDefinitionField), {
+function isInputModelOrOutputConfigurationObject(node: Node, ancestors: readonly Node[], offset: number): boolean {
+  return Option.match(signalCallSiteOf(node, ancestors, offset, isPropertyDefinitionField), {
     onNone: () => false,
     onSome: (site) => isArgumentAt(site, signalIoArgumentIndex(site.callee)),
   })
 }
 
-function isSignalQueryOptionsObject(path: IgnorerNodePath): boolean {
-  return Option.match(signalCallSiteOf(path, isClassFieldLike), {
+function isSignalQueryOptionsObject(node: Node, ancestors: readonly Node[], offset: number): boolean {
+  return Option.match(signalCallSiteOf(node, ancestors, offset, isClassFieldLike), {
     onNone: () => false,
     onSome: (site) => isSignalQueryCall(site.callee) && isArgumentAt(site, Option.some(1)),
   })
@@ -804,59 +811,71 @@ function isPropertyDefinitionField(node: unknown): boolean {
   return nodeType(node) === 'PropertyDefinition'
 }
 
-/** The call that takes the object expression as an argument, when a field-like member owns it. */
 function signalCallSiteOf(
-  path: IgnorerNodePath,
+  node: Node,
+  ancestors: readonly Node[],
+  offset: number,
   ownsCallSite: OwnsCallSite,
 ): Option.Option<SignalCallSite> {
   return Option.flatMap(
-    ownedCallPath(path, ownsCallSite),
-    (callNode) => Option.map(callArgumentsOf(callNode), (call) => ({ ...call, objectExpression: path.node })),
+    ownedCallPath(node, ancestors, offset, ownsCallSite),
+    (callNode) => Option.map(callArgumentsOf(callNode), (call) => ({ ...call, objectExpression: node })),
   )
 }
 
-function ownedCallPath(path: IgnorerNodePath, ownsCallSite: OwnsCallSite): Option.Option<unknown> {
-  const argument = Option.filter(Option.some(path), (candidate) => isOwnedCallArgument(candidate, ownsCallSite))
-  return Option.flatMap(argument, () => Option.fromUndefinedOr(path.ancestors[0]))
+function ownedCallPath(
+  node: Node,
+  ancestors: readonly Node[],
+  offset: number,
+  ownsCallSite: OwnsCallSite,
+): Option.Option<Node> {
+  const argument = Option.filter(
+    Option.some(node),
+    (candidate) => isOwnedCallArgument(candidate, ancestors, offset, ownsCallSite),
+  )
+  return Option.flatMap(argument, () => Option.fromUndefinedOr(ancestors[offset]))
 }
 
-function isOwnedCallArgument(path: IgnorerNodePath, ownsCallSite: OwnsCallSite): boolean {
-  return isObjectArgumentOfCall(path) && ownsCallSiteOf(path, ownsCallSite)
+function isOwnedCallArgument(
+  node: Node,
+  ancestors: readonly Node[],
+  offset: number,
+  ownsCallSite: OwnsCallSite,
+): boolean {
+  return isObjectArgumentOfCall(node, ancestors, offset) && ownsCallSiteOf(ancestors, offset, ownsCallSite)
 }
 
-function isObjectArgumentOfCall(path: IgnorerNodePath): boolean {
-  return nodeType(path.node) === 'ObjectExpression' && parentIsCallExpression(path)
+function isObjectArgumentOfCall(node: Node, ancestors: readonly Node[], offset: number): boolean {
+  return nodeType(node) === 'ObjectExpression' && nodeType(ancestors[offset]) === 'CallExpression'
 }
 
-function parentIsCallExpression(path: IgnorerNodePath): boolean {
-  return nodeType(path.ancestors[0]) === 'CallExpression'
-}
-
-function ownsCallSiteOf(path: IgnorerNodePath, ownsCallSite: OwnsCallSite): boolean {
-  return Option.exists(Option.fromUndefinedOr(path.ancestors[1]), ownsCallSite)
+function ownsCallSiteOf(ancestors: readonly Node[], offset: number, ownsCallSite: OwnsCallSite): boolean {
+  return Option.exists(Option.fromUndefinedOr(ancestors[offset + 1]), ownsCallSite)
 }
 
 interface CallArguments {
-  readonly callee: unknown
-  readonly args: readonly unknown[]
+  readonly callee: Node
+  readonly args: readonly Node[]
 }
 
-function callArgumentsOf(callNode: unknown): Option.Option<CallArguments> {
+function callArgumentsOf(callNode: Node): Option.Option<CallArguments> {
   return Option.flatMap(
     Option.filter(Option.some(callNode), hasCallShape),
-    (call) => Option.map(argumentArrayOf(call['arguments']), (args) => ({ callee: call['callee'], args })),
+    (call) => Option.map(nodeArgumentArrayOf(call['arguments']), (args) => ({ callee: call['callee'], args })),
   )
 }
 
-function hasCallShape(callNode: unknown): callNode is { readonly callee: unknown; readonly arguments: unknown } {
+function hasCallShape(
+  callNode: Node,
+): callNode is Node & { readonly callee: Node; readonly arguments: unknown } {
   return Predicate.hasProperty(callNode, 'callee') && Predicate.hasProperty(callNode, 'arguments')
 }
 
-function argumentArrayOf(argument: unknown): Option.Option<readonly unknown[]> {
-  return Option.filter(Option.some(argument), isUnknownArray)
+function nodeArgumentArrayOf(argument: unknown): Option.Option<readonly Node[]> {
+  return Option.filter(Option.some(argument), isNodeArray)
 }
 
-function isUnknownArray(value: unknown): value is readonly unknown[] {
+function isNodeArray(value: unknown): value is readonly Node[] {
   return Array.isArray(value)
 }
 
@@ -884,6 +903,10 @@ function isSignalIoCall(callee: unknown): boolean {
 function isSignalQueryCall(callee: unknown): boolean {
   return isIdentifierIn(callee, ANGULAR_SIGNAL_QUERY_FUNCTIONS) ||
     isMemberExpressionWithIdentifier(callee, ANGULAR_SIGNAL_QUERY_FUNCTIONS, 'required')
+}
+
+function isCommentArray(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value)
 }
 
 function isArgumentAt(site: SignalCallSite, index: Option.Option<number>): boolean {
@@ -1047,7 +1070,7 @@ async function headerFor(root: Program): Promise<readonly Statement[]> {
 
 function leadingCommentsOf(root: Program): Option.Option<readonly unknown[]> {
   const firstStatement = root.body[0] as CommentBearing | undefined
-  return Option.filter(Option.fromNullishOr(firstStatement?.leadingComments), isUnknownArray)
+  return Option.filter(Option.fromNullishOr(firstStatement?.leadingComments), isCommentArray)
 }
 
 function commentedHeader(leadingComments: readonly unknown[], header: readonly Statement[]): Statement {
@@ -1366,12 +1389,12 @@ export const transformScript: AstTransformer<ScriptFormat> = async (
       end: positionFromLineTable(span.end, lineTable),
     }
   }
-  function ignoreMessageFor(path: TraversePath): string | undefined {
-    return Option.getOrUndefined(ignorerReason(toIgnorerPath(path)))
+  function ignoreMessageFor(node: Node, ancestors: readonly Node[]): string | undefined {
+    return Option.getOrUndefined(ignorerReason(node, ancestors))
   }
-  function ignorerReason(view: IgnorerNodePath): Option.Option<string> {
+  function ignorerReason(node: Node, ancestors: readonly Node[]): Option.Option<string> {
     return options.ignorers.reduce(
-      (reason, ignorer) => Option.orElse(reason, () => ignorer.shouldIgnore(view)),
+      (reason, ignorer) => Option.orElse(reason, () => ignorer.shouldIgnore(node, ancestors)),
       Option.none<string>(),
     )
   }
@@ -1384,24 +1407,38 @@ export const transformScript: AstTransformer<ScriptFormat> = async (
   }
 
   function mutablesFor(path: TraversePath): readonly Mutable[] {
-    const context = toMutatorContext(path)
+    const ancestors = ancestorsOf(path)
+    const context = toMutatorContext(ancestors)
     const line = getNodeLocation(path.node).start.line
     return mutatorEntries.flatMap(([mutatorName, mutate]) =>
-      [...mutate(path.node, context)].map((replacement) => mutableFor(path, mutatorName, replacement, line))
+      [...mutate(path.node, context)].map((replacement) =>
+        mutableFor(path.node, ancestors, mutatorName, replacement, line)
+      )
     )
   }
 
-  function mutableFor(path: TraversePath, mutatorName: string, replacement: Node, line: number): Mutable {
+  function mutableFor(
+    node: Node,
+    ancestors: readonly Node[],
+    mutatorName: string,
+    replacement: Node,
+    line: number,
+  ): Mutable {
     const mutableEntry: Mutable = { replacement, mutatorName }
-    const ignoreReason = ignoreReasonFor(path, mutatorName, line)
+    const ignoreReason = ignoreReasonFor(node, ancestors, mutatorName, line)
     if (ignoreReason !== undefined) {
       mutableEntry.ignoreReason = ignoreReason
     }
     return mutableEntry
   }
 
-  function ignoreReasonFor(path: TraversePath, mutatorName: string, line: number): string | undefined {
-    return directiveOrExclusion(mutatorName, line) ?? ignoreMessageFor(path)
+  function ignoreReasonFor(
+    node: Node,
+    ancestors: readonly Node[],
+    mutatorName: string,
+    line: number,
+  ): string | undefined {
+    return directiveOrExclusion(mutatorName, line) ?? ignoreMessageFor(node, ancestors)
   }
 
   function directiveOrExclusion(mutatorName: string, line: number): string | undefined {
@@ -1417,17 +1454,11 @@ export const transformScript: AstTransformer<ScriptFormat> = async (
   }
 }
 
-function toMutatorContext(path: TraversePath): MutatorContext {
-  const ancestors: Node[] = []
-  let current: TraversePath | null = path.parentPath
-  while (current !== null) {
-    ancestors.push(current.node)
-    current = current.parentPath
-  }
+function toMutatorContext(ancestors: readonly Node[]): MutatorContext {
   return {
     parent: ancestors[0],
     grandParent: ancestors[1],
-    ancestors,
+    ancestors: [...ancestors],
   }
 }
 

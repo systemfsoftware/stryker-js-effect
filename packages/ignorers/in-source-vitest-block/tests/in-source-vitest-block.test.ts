@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { IN_SOURCE_TEST_IGNORED, strykerIgnorers } from '@systemfsoftware/stryker-ignorer-in-source-vitest-block'
-import { type NodePath, type PlainIgnorer } from '@systemfsoftware/stryker-ignorer-interface'
+import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 
 import { binaryOf, guardOf, identifier, importMetaMember, metaOf } from './__fixtures__/InSourceTestAst.fixtures.js'
 
@@ -42,6 +42,11 @@ const CASES = {
       path: { node: identifier('x'), ancestors: [guardOf(importMetaMember('vitest'))] },
       reason: IN_SOURCE_TEST_IGNORED,
     },
+    {
+      name: 'A guard if statement consulted as the node itself matches',
+      path: { node: guardOf(importMetaMember('vitest')) },
+      reason: IN_SOURCE_TEST_IGNORED,
+    },
   ],
   kept: [
     {
@@ -53,7 +58,13 @@ const CASES = {
       path: {
         node: identifier('x'),
         ancestors: [
-          guardOf({ type: 'MemberExpression', object: metaOf('require', 'meta'), property: identifier('vitest') }),
+          guardOf({
+            type: 'MemberExpression',
+            object: metaOf('require', 'meta'),
+            property: identifier('vitest'),
+            optional: false,
+            computed: false,
+          }),
         ],
       },
     },
@@ -62,7 +73,13 @@ const CASES = {
       path: {
         node: identifier('x'),
         ancestors: [
-          guardOf({ type: 'MemberExpression', object: metaOf('import', 'cache'), property: identifier('vitest') }),
+          guardOf({
+            type: 'MemberExpression',
+            object: metaOf('import', 'cache'),
+            property: identifier('vitest'),
+            optional: false,
+            computed: false,
+          }),
         ],
       },
     },
@@ -89,35 +106,32 @@ const CASES = {
   ],
 }
 
-const ignorer: PlainIgnorer | undefined = strykerIgnorers[0]
+const ignorer: Ignorer | undefined = strykerIgnorers[0]
 if (ignorer === undefined) throw new Error('@systemfsoftware/stryker-ignorer-in-source-vitest-block exports no ignorer')
 
 interface CasePath {
-  readonly node: unknown
-  readonly ancestors?: readonly unknown[] | undefined
+  readonly node: Node
+  readonly ancestors?: readonly Node[] | undefined
 }
 
-const pathOf = (spec: CasePath): NodePath => ({ node: spec.node, ancestors: spec.ancestors ?? [] })
+const pathOf = (spec: CasePath): [node: Node, ancestors: readonly Node[]] => [spec.node, spec.ancestors ?? []]
 
 describe('in-source-vitest-block', () => {
   it('Should_Register_The_Descriptor', () => {
     expect(ignorer.name).toBe('in-source-vitest-block')
   })
   it.each(CASES.ignored)('ignores: $name', (testCase) => {
-    expect(ignorer.shouldIgnore(pathOf(testCase.path))).toBe(testCase.reason)
+    expect(ignorer.shouldIgnore(...pathOf(testCase.path))).toBe(testCase.reason)
   })
   it.each(CASES.kept)('keeps: $name', (testCase) => {
-    expect(ignorer.shouldIgnore(pathOf(testCase.path))).toBeUndefined()
+    expect(ignorer.shouldIgnore(...pathOf(testCase.path))).toBeUndefined()
   })
   it('ignores a literal whose ancestors carry the guard', () => {
     expect(
-      ignorer.shouldIgnore({
-        node: { type: 'Literal', value: 'production' },
-        ancestors: [
-          binaryOf(importMetaMember('vitest'), identifier('undefined')),
-          guardOf(importMetaMember('vitest')),
-        ],
-      }),
+      ignorer.shouldIgnore(identifier('production'), [
+        binaryOf(importMetaMember('vitest'), identifier('undefined')),
+        guardOf(importMetaMember('vitest')),
+      ]),
     ).toBe(IN_SOURCE_TEST_IGNORED)
   })
 })

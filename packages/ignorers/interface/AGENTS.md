@@ -1,8 +1,10 @@
 # AGENTS.md — `@systemfsoftware/stryker-ignorer-interface`
 
-The ignorer interface as types only: `PlainIgnorer`, the AST vocabulary
-re-exported from `@oxc-project/types` and bundled into this package's own
-declarations, and `NodePath`. The package publishes no value, no function, and
+The ignorer interface as types only: `Ignorer` — the descriptor whose decision
+receives the node and its ancestors as typed positions — the AST vocabulary
+re-exported from `@oxc-project/types` with optional spans and bundled into this
+package's own declarations, and the `Walker` traversal types a host implements.
+The package publishes no value, no function, and
 no schema — a guard and a reason string belong to the ignorer that needs them.
 Zero runtime dependencies and zero Effect is the package's identity — nothing
 that imports effect or a host package, at run time or in `devDependencies`, may
@@ -22,7 +24,7 @@ land here. Root `AGENTS.md` governs.
 The reviewer's decision on each `review`-gated row, shown as `wrong:`/`right:`:
 
 - **SI2** — `wrong:` `"effect": "catalog:"` in `dependencies` or anywhere under `devDependencies`; `right:` an empty `dependencies` and a `devDependencies` block holding only build tooling.
-- **SI4** — `wrong:` `shouldIgnore(path: NodePath): boolean | string`; `right:` `shouldIgnore(path: NodePath): string | undefined`.
+- **SI4** — `wrong:` `shouldIgnore(node: Node, ancestors: readonly Node[]): boolean | string`; `right:` `shouldIgnore(node: Node, ancestors: readonly Node[]): string | undefined`.
 
 ## Verification
 

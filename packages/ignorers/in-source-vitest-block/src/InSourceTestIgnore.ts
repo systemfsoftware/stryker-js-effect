@@ -4,6 +4,7 @@ import type {
   IfStatement,
   MemberExpression,
   MetaProperty,
+  Node,
 } from '@systemfsoftware/stryker-ignorer-interface'
 
 export const IN_SOURCE_TEST_IGNORED =
@@ -11,19 +12,15 @@ export const IN_SOURCE_TEST_IGNORED =
 
 export const VITEST_META_PROPERTY = 'vitest' as const
 
-interface TypedNode {
-  readonly type: string
-}
-
 const isObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 
-const hasStringType = (value: object): value is TypedNode => 'type' in value && typeof value.type === 'string'
+const hasStringType = (value: object): value is Node => 'type' in value && typeof value.type === 'string'
 
-const isAstLike = (value: unknown): value is TypedNode => isObject(value) && hasStringType(value)
+const isAstLike = (value: unknown): value is Node => isObject(value) && hasStringType(value)
 
-const isNodeOfType = (value: unknown, type: string): value is TypedNode => isAstLike(value) && value.type === type
+const isNodeOfType = (value: unknown, type: Node['type']): value is Node => isAstLike(value) && value.type === type
 
-const hasStringName = (value: TypedNode): boolean => 'name' in value && typeof value.name === 'string'
+const hasStringName = (value: Node): boolean => 'name' in value && typeof value.name === 'string'
 
 export const isIdentifierName = (value: unknown): value is IdentifierName =>
   isNodeOfType(value, 'Identifier') && hasStringName(value)
@@ -31,32 +28,32 @@ export const isIdentifierName = (value: unknown): value is IdentifierName =>
 const isNamed = (value: unknown, name: string): value is IdentifierName =>
   isIdentifierName(value) && value.name === name
 
-const hasMetaIdentifier = (value: TypedNode): boolean => 'meta' in value && isIdentifierName(value.meta)
+const hasMetaIdentifier = (value: Node): boolean => 'meta' in value && isIdentifierName(value.meta)
 
-const hasPropertyIdentifier = (value: TypedNode): boolean => 'property' in value && isIdentifierName(value.property)
+const hasPropertyIdentifier = (value: Node): boolean => 'property' in value && isIdentifierName(value.property)
 
-const hasIdentifierPair = (value: TypedNode): boolean => hasMetaIdentifier(value) && hasPropertyIdentifier(value)
+const hasIdentifierPair = (value: Node): boolean => hasMetaIdentifier(value) && hasPropertyIdentifier(value)
 
 const isMetaProperty = (value: unknown): value is MetaProperty =>
   isNodeOfType(value, 'MetaProperty') && hasIdentifierPair(value)
 
-const hasObjectMetaProperty = (value: TypedNode): boolean => 'object' in value && isMetaProperty(value.object)
+const hasObjectMetaProperty = (value: Node): boolean => 'object' in value && isMetaProperty(value.object)
 
-const hasImportMetaPair = (value: TypedNode): boolean => hasObjectMetaProperty(value) && hasPropertyIdentifier(value)
+const hasImportMetaPair = (value: Node): boolean => hasObjectMetaProperty(value) && hasPropertyIdentifier(value)
 
 export const isImportMetaMember = (value: unknown): value is MemberExpression =>
   isNodeOfType(value, 'MemberExpression') && hasImportMetaPair(value)
 
-const hasLeftAst = (value: TypedNode): boolean => 'left' in value && isAstLike(value.left)
+const hasLeftAst = (value: Node): boolean => 'left' in value && isAstLike(value.left)
 
-const hasRightAst = (value: TypedNode): boolean => 'right' in value && isAstLike(value.right)
+const hasRightAst = (value: Node): boolean => 'right' in value && isAstLike(value.right)
 
-const hasBinaryOperands = (value: TypedNode): boolean => hasLeftAst(value) && hasRightAst(value)
+const hasBinaryOperands = (value: Node): boolean => hasLeftAst(value) && hasRightAst(value)
 
 export const isBinaryExpression = (value: unknown): value is BinaryExpression =>
   isNodeOfType(value, 'BinaryExpression') && hasBinaryOperands(value)
 
-const hasTestAst = (value: TypedNode): boolean => 'test' in value && isAstLike(value.test)
+const hasTestAst = (value: Node): boolean => 'test' in value && isAstLike(value.test)
 
 export const isIfStatement = (value: unknown): value is IfStatement =>
   isNodeOfType(value, 'IfStatement') && hasTestAst(value)
@@ -84,5 +81,8 @@ const guardsOnImportMetaVitest = (test: unknown): boolean => isImportMetaVitest(
 export const isInSourceTestGuard = (node: unknown): boolean =>
   isIfStatement(node) && guardsOnImportMetaVitest(node.test)
 
-export const decideInSourceTestIgnore = (ancestors: Iterable<unknown>): string | undefined =>
-  [...ancestors].some(isInSourceTestGuard) ? IN_SOURCE_TEST_IGNORED : undefined
+const carriesInSourceTestGuard = (node: Node, ancestors: readonly Node[]): boolean =>
+  isInSourceTestGuard(node) || ancestors.some(isInSourceTestGuard)
+
+export const decideInSourceTestIgnore = (node: Node, ancestors: readonly Node[]): string | undefined =>
+  carriesInSourceTestGuard(node, ancestors) ? IN_SOURCE_TEST_IGNORED : undefined

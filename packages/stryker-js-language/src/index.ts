@@ -11,7 +11,7 @@ export {
 export { Evaluator, EvaluatorFailed, type EvaluatorService } from './Evaluator.js'
 export { classifyExit, EXIT_CODE, ExitClass, highestExitClass, resolveExitCode, verdictExitClass } from './ExitClass.js'
 export { ClassifyExitCommand, ClassifyExitDecision } from './ExitClass.schema.js'
-export { Ignorer, type IgnorerService, type NodePath } from './Ignorer.js'
+export { Ignorer, type IgnorerService } from './Ignorer.js'
 export {
   calculateMetrics,
   countMutants,
