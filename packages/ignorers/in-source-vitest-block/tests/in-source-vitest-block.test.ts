@@ -1,16 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { IN_SOURCE_TEST_IGNORED, strykerIgnorers } from '@systemfsoftware/stryker-ignorer-in-source-vitest-block'
-import { type PlainIgnorer } from '@systemfsoftware/stryker-ignorer-interface'
-import { IgnoreTester, type IgnoreTesterCases } from '@systemfsoftware/stryker-ignorer-interface/testing'
+import { type NodePath, type PlainIgnorer } from '@systemfsoftware/stryker-ignorer-interface'
 
 import { binaryOf, guardOf, identifier, importMetaMember, metaOf } from './__fixtures__/InSourceTestAst.fixtures.js'
 
-IgnoreTester.describe = describe
-IgnoreTester.it = it
-IgnoreTester.expect = expect
-
-const CASES: IgnoreTesterCases = {
+const CASES = {
   ignored: [
     {
       name: 'A bare vitest flag as the guard condition matches',
@@ -97,4 +92,27 @@ const CASES: IgnoreTesterCases = {
 const ignorer: PlainIgnorer | undefined = strykerIgnorers[0]
 if (ignorer === undefined) throw new Error('@systemfsoftware/stryker-ignorer-in-source-vitest-block exports no ignorer')
 
-IgnoreTester.run('in-source-vitest-block', ignorer, CASES)
+interface CasePath {
+  readonly node: unknown
+  readonly ancestors?: readonly unknown[] | undefined
+}
+
+const pathOf = (spec: CasePath): NodePath => ({
+  node: spec.node,
+  parentPath: (spec.ancestors ?? []).reduceRight<NodePath | null>(
+    (parentPath, ancestor) => ({ node: ancestor, parentPath }),
+    null,
+  ),
+})
+
+describe('in-source-vitest-block', () => {
+  it('Should_Register_The_Descriptor', () => {
+    expect(ignorer.name).toBe('in-source-vitest-block')
+  })
+  it.each(CASES.ignored)('ignores: $name', (testCase) => {
+    expect(ignorer.shouldIgnore(pathOf(testCase.path))).toBe(testCase.reason)
+  })
+  it.each(CASES.kept)('keeps: $name', (testCase) => {
+    expect(ignorer.shouldIgnore(pathOf(testCase.path))).toBeUndefined()
+  })
+})

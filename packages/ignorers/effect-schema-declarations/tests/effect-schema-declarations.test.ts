@@ -1,4 +1,4 @@
-import { IgnoreTester } from '@systemfsoftware/stryker-ignorer-interface/testing'
+import { type NodePath } from '@systemfsoftware/stryker-ignorer-interface'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -29,10 +29,6 @@ import {
   symbolForCall,
   taggedCall,
 } from './__fixtures__/EffectSchemaAst.fixtures.js'
-
-IgnoreTester.describe = describe
-IgnoreTester.it = it
-IgnoreTester.expect = expect
 
 const brandDescription = stringLiteral('MyBrand')
 const brandDescriptionCall = symbolForCall(brandDescription)
@@ -162,7 +158,7 @@ const secondArgumentCall = callOf(memberOf('S', 'annotations'), [
 const descriptor = strykerIgnorers[0]
 if (descriptor === undefined) throw new Error('the package publishes one ignorer descriptor')
 
-IgnoreTester.run('effect-schema-declarations', descriptor, {
+const CASES = {
   ignored: [
     {
       name: 'a `Symbol.for` description, which names a brand and carries no behaviour',
@@ -390,4 +386,29 @@ IgnoreTester.run('effect-schema-declarations', descriptor, {
       path: { node: computedKeyEntry.value, ancestors: [computedKeyEntry, computedKeyObject, computedKeyCall] },
     },
   ],
+}
+
+interface CasePath {
+  readonly node: unknown
+  readonly ancestors?: readonly unknown[] | undefined
+}
+
+const pathOf = (spec: CasePath): NodePath => ({
+  node: spec.node,
+  parentPath: (spec.ancestors ?? []).reduceRight<NodePath | null>(
+    (parentPath, ancestor) => ({ node: ancestor, parentPath }),
+    null,
+  ),
+})
+
+describe('effect-schema-declarations', () => {
+  it('Should_Register_The_Descriptor', () => {
+    expect(descriptor.name).toBe('effect-schema-declarations')
+  })
+  it.each(CASES.ignored)('ignores: $name', (testCase) => {
+    expect(descriptor.shouldIgnore(pathOf(testCase.path))).toBe(testCase.reason)
+  })
+  it.each(CASES.kept)('keeps: $name', (testCase) => {
+    expect(descriptor.shouldIgnore(pathOf(testCase.path))).toBeUndefined()
+  })
 })

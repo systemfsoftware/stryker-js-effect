@@ -15,7 +15,7 @@ or in `devDependencies`, may land here. Root `AGENTS.md` governs.
 | **SI3** | The published surface stays plain: no effect type and no host-package type appears on any exported signature.                      | `pnpm --filter @systemfsoftware/stryker-ignorer-interface test` |
 | **SI4** | Validators are synchronous: `validate` returns a result, never a promise. Composition throws on a thenable instead of awaiting it. | `pnpm --filter @systemfsoftware/stryker-ignorer-interface test` |
 | **SI5** | An ignorer's absence is never a reason: `shouldIgnore` returns a reason string or `undefined`, nothing else.                       | `pnpm --filter @systemfsoftware/stryker-ignorer-interface test` |
-| **SI6** | Every behavior is pinned by a case table through `IgnoreTester` — no FastCheck generator and no snapshot call in a committed test. | `pnpm --filter @systemfsoftware/stryker-ignorer-interface lint` |
+| **SI6** | Every behavior is pinned by a case table — no FastCheck generator and no snapshot call in a committed test.                        | `pnpm --filter @systemfsoftware/stryker-ignorer-interface lint` |
 | **SI7** | Every contract change is additive and structural — an ignorer built against an older contract still type-checks and loads.         | `review`                                                        |
 
 ## Verification

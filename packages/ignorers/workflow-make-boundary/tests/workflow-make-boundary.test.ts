@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { PlainIgnorer } from '@systemfsoftware/stryker-ignorer-interface'
-import {
-  type IgnorerPathSpec,
-  IgnoreTester,
-  type IgnoreTesterCases,
-} from '@systemfsoftware/stryker-ignorer-interface/testing'
+import type { NodePath, PlainIgnorer } from '@systemfsoftware/stryker-ignorer-interface'
 
 import { NOT_INSIDE_WORKFLOW_MAKE, strykerIgnorers } from '../src/mod.js'
 import {
@@ -30,6 +25,19 @@ import {
 
 const DESCRIPTOR_NAME = 'workflow-make-boundary'
 
+interface CasePath {
+  readonly node: unknown
+  readonly ancestors: readonly unknown[]
+}
+
+const pathOf = (spec: CasePath): NodePath => ({
+  node: spec.node,
+  parentPath: spec.ancestors.reduceRight<NodePath | null>(
+    (parentPath, ancestor) => ({ node: ancestor, parentPath }),
+    null,
+  ),
+})
+
 const descriptorOf = (ignorer: PlainIgnorer | undefined): PlainIgnorer => {
   if (ignorer === undefined) {
     throw new Error(`@systemfsoftware/stryker-ignorer-workflow-make-boundary exports no ${DESCRIPTOR_NAME} descriptor`)
@@ -37,13 +45,13 @@ const descriptorOf = (ignorer: PlainIgnorer | undefined): PlainIgnorer => {
   return ignorer
 }
 
-const spec = (node: unknown, ancestors: readonly unknown[]): IgnorerPathSpec => ({ node, ancestors })
+const spec = (node: unknown, ancestors: readonly unknown[]): CasePath => ({ node, ancestors })
 
 const argumentBody = (
   value: string,
   workflowCall: (body: unknown) => unknown,
   workflowImport: () => unknown,
-): IgnorerPathSpec => {
+): CasePath => {
   const mutant = stringLiteral(value)
   const body = makeBodyOf(mutant)
   const call = workflowCall(body)
@@ -51,9 +59,9 @@ const argumentBody = (
   return spec(mutant, [body, call, program])
 }
 
-const insideMakeBody = (): IgnorerPathSpec => argumentBody('decide', workflowMakeCallOf, workflowNamedImport)
+const insideMakeBody = (): CasePath => argumentBody('decide', workflowMakeCallOf, workflowNamedImport)
 
-const nestedInsideMakeBody = (): IgnorerPathSpec => {
+const nestedInsideMakeBody = (): CasePath => {
   const mutant = identifier('command')
   const callInside = callOf(memberOf('Result', 'succeed'), [mutant])
   const body = makeBodyOf(callInside)
@@ -62,22 +70,22 @@ const nestedInsideMakeBody = (): IgnorerPathSpec => {
   return spec(mutant, [callInside, body, call, program])
 }
 
-const moduleLevel = (): IgnorerPathSpec => {
+const moduleLevel = (): CasePath => {
   const mutant = stringLiteral('admit')
   const program = programOf([workflowNamedImport(), mutant])
   return spec(mutant, [program])
 }
 
-const noWorkflowImport = (): IgnorerPathSpec => {
+const noWorkflowImport = (): CasePath => {
   const mutant = stringLiteral('plug')
   const program = programOf([unrelatedImport('../local.js', 'Workflow'), mutant])
   return spec(mutant, [program])
 }
 
-const localWorkflowBinding = (): IgnorerPathSpec =>
+const localWorkflowBinding = (): CasePath =>
   argumentBody('local', workflowMakeCallOf, () => unrelatedImport('./local-workflow.js', 'Workflow'))
 
-const referencedFunction = (): IgnorerPathSpec => {
+const referencedFunction = (): CasePath => {
   const mutant = stringLiteral('decide')
   const body = makeBodyOf(mutant)
   const decision = constBindingOf('decision', body)
@@ -86,7 +94,7 @@ const referencedFunction = (): IgnorerPathSpec => {
   return spec(mutant, [mutant, body, decision, program])
 }
 
-const twoArgumentDecider = (): IgnorerPathSpec => {
+const twoArgumentDecider = (): CasePath => {
   const mutant = stringLiteral('decide')
   const body = makeBodyOf(mutant)
   const decision = constBindingOf('decision', body)
@@ -96,7 +104,7 @@ const twoArgumentDecider = (): IgnorerPathSpec => {
   return spec(mutant, [mutant, body, decision, program])
 }
 
-const twoArgumentInline = (): IgnorerPathSpec => {
+const twoArgumentInline = (): CasePath => {
   const mutant = stringLiteral('inline')
   const body = makeBodyOf(mutant)
   const call = workflowMakeCallOfTwo(identifier('Cmd'), body)
@@ -104,14 +112,14 @@ const twoArgumentInline = (): IgnorerPathSpec => {
   return spec(mutant, [body, call, program])
 }
 
-const missingFunction = (): IgnorerPathSpec => {
+const missingFunction = (): CasePath => {
   const mutant = stringLiteral('admit')
   const call = workflowMakeCallOf(identifier('decideElsewhere'))
   const program = programOf([workflowNamedImport(), call])
   return spec(mutant, [mutant, program])
 }
 
-const secondMakeCall = (): IgnorerPathSpec => {
+const secondMakeCall = (): CasePath => {
   const firstBody = makeBodyOf(identifier('first'))
   const mutant = stringLiteral('second')
   const secondBody = makeBodyOf(mutant)
@@ -120,7 +128,7 @@ const secondMakeCall = (): IgnorerPathSpec => {
   return spec(mutant, [secondBody, secondCall, program])
 }
 
-const nestedMake = (): IgnorerPathSpec => {
+const nestedMake = (): CasePath => {
   const mutant = stringLiteral('inner')
   const innerBody = makeBodyOf(mutant)
   const innerCall = workflowMakeCallOf(innerBody)
@@ -130,21 +138,21 @@ const nestedMake = (): IgnorerPathSpec => {
   return spec(mutant, [innerBody, innerCall, outerBody, outerCall, program])
 }
 
-const namespaceMake = (): IgnorerPathSpec =>
+const namespaceMake = (): CasePath =>
   argumentBody('namespace', workflowMakeCallOf, () => workflowNamespaceImport('Workflow'))
 
-const aliasedMake = (): IgnorerPathSpec =>
+const aliasedMake = (): CasePath =>
   argumentBody('aliased', (body) => workflowMakeCallOf(body, 'W'), () => workflowAliasedImport('W'))
 
-const totalBody = (): IgnorerPathSpec => argumentBody('total', workflowTotalCallOf, workflowNamedImport)
+const totalBody = (): CasePath => argumentBody('total', workflowTotalCallOf, workflowNamedImport)
 
-const namespaceTotal = (): IgnorerPathSpec =>
+const namespaceTotal = (): CasePath =>
   argumentBody('namespace', workflowTotalCallOf, () => workflowNamespaceImport('Workflow'))
 
-const aliasedTotal = (): IgnorerPathSpec =>
+const aliasedTotal = (): CasePath =>
   argumentBody('aliased', (body) => workflowTotalCallOf(body, 'W'), () => workflowAliasedImport('W'))
 
-const andThenArgument = (): { readonly make: IgnorerPathSpec; readonly andThen: IgnorerPathSpec } => {
+const andThenArgument = (): { readonly make: CasePath; readonly andThen: CasePath } => {
   const mutant = stringLiteral('step')
   const body = makeBodyOf(mutant)
   const makeCall = workflowMakeCallOf(body)
@@ -153,7 +161,7 @@ const andThenArgument = (): { readonly make: IgnorerPathSpec; readonly andThen: 
   return { make: spec(mutant, [body, makeCall, program]), andThen: spec(mutant, [body, andThenCall, program]) }
 }
 
-const composingAndThenOperand = (): IgnorerPathSpec => {
+const composingAndThenOperand = (): CasePath => {
   const mutant = stringLiteral('compose')
   const operandBody = makeBodyOf(mutant)
   const operand = constBindingOf('upstreamStep', operandBody)
@@ -162,7 +170,7 @@ const composingAndThenOperand = (): IgnorerPathSpec => {
   return spec(mutant, [mutant, operandBody, operand, program])
 }
 
-const descriptorTag = (): IgnorerPathSpec => {
+const descriptorTag = (): CasePath => {
   const tag = stringLiteral('Placed')
   const fields = { type: 'ObjectExpression' as const }
   const call = taggedCall('TaggedClass', tag, fields)
@@ -172,7 +180,7 @@ const descriptorTag = (): IgnorerPathSpec => {
 
 const AND_THEN_ARGUMENT = andThenArgument()
 
-const CASES: IgnoreTesterCases = {
+const CASES = {
   ignored: [
     {
       name: 'A mutant at module level outside any make body is ignored',
@@ -237,8 +245,16 @@ const CASES: IgnoreTesterCases = {
   ],
 }
 
-IgnoreTester.describe = describe
-IgnoreTester.it = it
-IgnoreTester.expect = expect
+const descriptor = descriptorOf(strykerIgnorers[0])
 
-IgnoreTester.run(DESCRIPTOR_NAME, descriptorOf(strykerIgnorers[0]), CASES)
+describe('workflow-make-boundary', () => {
+  it('Should_Register_The_Descriptor', () => {
+    expect(descriptor.name).toBe('workflow-make-boundary')
+  })
+  it.each(CASES.ignored)('ignores: $name', (testCase) => {
+    expect(descriptor.shouldIgnore(pathOf(testCase.path))).toBe(testCase.reason)
+  })
+  it.each(CASES.kept)('keeps: $name', (testCase) => {
+    expect(descriptor.shouldIgnore(pathOf(testCase.path))).toBeUndefined()
+  })
+})
