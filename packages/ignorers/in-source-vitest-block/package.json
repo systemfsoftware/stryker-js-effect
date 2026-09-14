@@ -39,19 +39,14 @@
     "attw": "attw --pack ."
   },
   "dependencies": {
-    "@systemfsoftware/stryker-ignorer": "workspace:^"
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^"
   },
   "devDependencies": {
-    "@effect/vitest": "catalog:",
-    "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
-    "@systemfsoftware/effect-gherkin-spec": "catalog:",
-    "@systemfsoftware/effect-schema-law": "catalog:",
-    "@systemfsoftware/effect-schema-vite": "catalog:",
+    "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
-    "effect": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
