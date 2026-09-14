@@ -1,49 +1,62 @@
-import house from '@systemfsoftware/oxlint-plugin'
-import {
-  options,
-  overrides,
-  plugins as recommendedPlugins,
-  rules as recommendedRules,
-} from '@systemfsoftware/oxlint-plugin-recommended'
-
-const jsPlugins = [
-  import.meta.resolve('@systemfsoftware/oxlint-plugin'),
-]
-
 /** @type {import('oxlint').OxlintConfig['plugins']} */
-const plugins = [
-  ...recommendedPlugins,
-  'jsdoc',
-  'node',
-  'oxc',
-  'promise',
-]
+const plugins = ['typescript', 'unicorn', 'oxc', 'import', 'promise', 'vitest']
+
+/** @type {import('oxlint').OxlintConfig['categories']} */
+const categories = {
+  correctness: 'error',
+  suspicious: 'error',
+  perf: 'error',
+  nursery: 'warn',
+}
 
 /** @type {import('oxlint').OxlintConfig['rules']} */
 const rules = {
-  ...recommendedRules,
-  ...house.configs.recommended.rules,
   'no-ternary': 'off',
-  'typescript/consistent-type-assertions': 'off',
+  'typescript/consistent-type-assertions': ['error', { assertionStyle: 'never' }],
+  'typescript/no-explicit-any': 'error',
+  'typescript/no-non-null-assertion': 'error',
+  'typescript/no-unsafe-argument': 'error',
+  'typescript/no-unsafe-assignment': 'error',
+  'typescript/no-unsafe-call': 'error',
+  'typescript/no-unsafe-return': 'error',
+  'typescript/no-unsafe-type-assertion': 'error',
+  eqeqeq: ['error', 'always', { null: 'ignore' }],
+  'no-var': 'error',
+  'prefer-const': 'error',
+  'no-else-return': 'error',
+  'no-lonely-if': 'error',
+  'no-implicit-coercion': 'error',
+  'no-return-assign': 'error',
+  'no-array-constructor': 'error',
+  'unicorn/prefer-node-protocol': 'error',
+  'unicorn/no-array-for-each': 'error',
+  'import/no-cycle': 'error',
+  'promise/param-names': 'error',
+  'vitest/no-focused-tests': 'error',
+  'vitest/no-conditional-expect': 'error',
   'no-restricted-imports': ['error', {
     patterns: [
       {
         regex: '^effect(?:/.*)?$',
-        message:
-          "Importing Effect is forbidden in an ignorer package — the interface package's Standard Schema toolkit replaces it.",
+        message: 'An ignorer package carries no Effect: its decision is plain data in, a value or a reason string out.',
       },
       {
         regex: '^@effect/.*$',
-        message: 'Importing @effect/* is forbidden in an ignorer package.',
+        message: 'An ignorer package carries no @effect/* import.',
       },
       {
         regex: '^@systemfsoftware/(?:all|effect-.*)$',
-        message: 'Importing the family Effect presets is forbidden in an ignorer package.',
+        message: 'The family Effect presets belong to the StrykerJS runtime, not to an ignorer package.',
+      },
+      {
+        regex: '^@systemfsoftware/oxlint-plugin(?:-recommended)?$',
+        message:
+          'An ignorer package is graded by its own preset (@systemfsoftware/oxlint-ignorer-config); it does not import the family rule packs.',
       },
       {
         regex: '^@systemfsoftware/stryker-js-.*$',
         message:
-          'Importing the StrykerJS runtime family is forbidden in an ignorer package — depend only on @systemfsoftware/stryker-ignorer-interface.',
+          'An ignorer package depends on @systemfsoftware/stryker-ignorer-interface and nothing else from the family.',
       },
     ],
   }],
@@ -64,7 +77,6 @@ const ignorePatterns = [
 
 /** @type {import('oxlint').OxlintConfig['overrides']} */
 const ignorerOverrides = [
-  ...overrides,
   {
     files: ['**/src/**'],
     rules: {
@@ -83,6 +95,7 @@ const ignorerOverrides = [
     ],
     rules: {
       complexity: 'off',
+      'typescript/consistent-type-assertions': 'off',
       'typescript/no-unsafe-type-assertion': 'off',
     },
   },
@@ -93,6 +106,7 @@ const ignorerOverrides = [
       '**/testResources/**',
     ],
     rules: {
+      'typescript/consistent-type-assertions': 'off',
       'typescript/no-unsafe-argument': 'off',
       'typescript/no-unsafe-assignment': 'off',
       'typescript/no-unsafe-call': 'off',
@@ -101,15 +115,14 @@ const ignorerOverrides = [
     },
   },
 ]
+
 /** @type {import('oxlint').OxlintConfig} */
 const ignorerConfig = {
   plugins: [...plugins],
-  jsPlugins: [...jsPlugins],
-  options: { ...options },
-  categories: { correctness: 'error' },
+  categories: { ...categories },
   rules: { ...rules },
   overrides: [...ignorerOverrides],
   ignorePatterns: [...ignorePatterns],
 }
 
-export { ignorePatterns, ignorerConfig as default, plugins, rules }
+export { categories, ignorePatterns, ignorerConfig as default, plugins, rules }

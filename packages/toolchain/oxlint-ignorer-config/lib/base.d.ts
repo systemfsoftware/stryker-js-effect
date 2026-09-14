@@ -1,8 +1,14 @@
 import { OxlintConfig } from 'oxlint'
 
-declare const plugins: NonNullable<OxlintConfig['plugins']>
-declare const rules: NonNullable<OxlintConfig['rules']>
-declare const ignorePatterns: readonly string[]
-declare const ignorerConfig: OxlintConfig
+export declare const categories: NonNullable<OxlintConfig['categories']>
 
-export { ignorePatterns, ignorerConfig as default, plugins, rules }
+export declare const ignorePatterns: readonly string[]
+
+declare const ignorerConfig: OxlintConfig
+export default ignorerConfig
+
+export declare const plugins: NonNullable<OxlintConfig['plugins']>
+
+export declare const rules: NonNullable<OxlintConfig['rules']>
+
+export {}
