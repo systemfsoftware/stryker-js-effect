@@ -22,8 +22,11 @@ jobs:
     env:
       CI: "true"
       OXLINT_FORMAT: github
+      TURBO_BASE: ${{ github.event.pull_request.base.sha || '' }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: cachix/install-nix-action@v31
       - name: dprint from the flake
         run: echo "$(nix build --no-link --print-out-paths .#dprint)/bin" >> "$GITHUB_PATH"
