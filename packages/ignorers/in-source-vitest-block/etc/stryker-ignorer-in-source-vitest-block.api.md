@@ -4,13 +4,11 @@
 
 ```ts
 
-import { NodePath } from '@systemfsoftware/stryker-ignorer-interface';
+import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
+import { Node as Node_2 } from '@systemfsoftware/stryker-ignorer-interface';
 
 // @public (undocumented)
-export const decideInSourceTestIgnore: (ancestors: Iterable<unknown>) => string | undefined;
-
-// @public (undocumented)
-export const firstIgnoreReason: (path: NodePath) => string | undefined;
+export const decideInSourceTestIgnore: (node: Node_2, ancestors: readonly Node_2[]) => string | undefined;
 
 // @public (undocumented)
 export const IN_SOURCE_TEST_IGNORED: 'inside an `if (import.meta.vitest)` block — test code, not production behaviour';
@@ -19,10 +17,7 @@ export const IN_SOURCE_TEST_IGNORED: 'inside an `if (import.meta.vitest)` block 
 export const isInSourceTestGuard: (node: unknown) => boolean;
 
 // @public (undocumented)
-export const strykerIgnorers: {
-    name: string;
-    shouldIgnore: typeof firstIgnoreReason;
-}[];
+export const strykerIgnorers: readonly Ignorer[];
 
 // (No @packageDocumentation comment for this package)
 
