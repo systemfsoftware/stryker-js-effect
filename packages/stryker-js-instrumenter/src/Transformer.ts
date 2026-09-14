@@ -7,46 +7,43 @@ import { propertyPath, type StrykerOptions, strykerReportBugUrl } from '@systemf
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import type {
-  ArrowFunctionExpression,
-  ClassExpression,
-  Comment,
-  Expression,
-  FunctionExpression,
-  Identifier,
-  MemberExpression,
-  Node,
-  Program,
-  Statement,
-} from 'estree'
 import path from 'node:path'
 
 import {
+  type ArrowFunctionExpression,
   arrowFunctionExpression,
   attachComments,
-  type AttachedComment,
   blockStatement,
   buildLineTable,
   callExpression,
+  type ClassExpression,
   cloneNode,
+  type Comment,
   conditionalExpression,
+  type Expression,
   expressionStatement,
+  type FunctionExpression,
+  type Identifier,
   identifier,
   ifStatement,
   isExpressionKind,
   isStatementKind,
+  type MemberExpression,
+  type Node,
   nodeType,
   positionFromLineTable,
+  type Program,
   returnStatement,
   sequenceExpression,
   spanOf,
+  type Statement,
   stringLiteral,
   switchCase,
   traverse,
   type TraversePath,
   variableDeclaration,
   variableDeclarator,
-} from './estree.js'
+} from './Ast.js'
 import { applyMutant, createMutant, type Mutable, type Mutant } from './Mutator.js'
 import { type MutatorContext, type MutatorOptions } from './Mutator.js'
 import { allMutators } from './Mutator.js'
@@ -1242,7 +1239,7 @@ export const transformScript: AstTransformer<ScriptFormat> = async (
 ) => {
   const lineTable = buildLineTable(rawContent)
 
-  attachComments(root, comments as readonly AttachedComment[], lineTable)
+  attachComments(root, comments, lineTable)
 
   const placementMap: PlacementMap = new Map()
 

@@ -6,10 +6,9 @@ import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import type { BaseNode, Program } from 'estree'
 import type { OxcError } from 'oxc-parser'
 import path from 'path'
-import { buildLineTable, positionFromLineTable } from './estree.js'
+import { type BaseNode, buildLineTable, positionFromLineTable, type Program } from './Ast.js'
 import { loadOxc } from './Oxc.js'
 import {
   ParseFailed,
@@ -125,9 +124,6 @@ export async function parseWithOxc(
   if (failure !== undefined) {
     throw failure
   }
-  // oxc's Program and comments are structurally the estree Program /
-  // SpannedComment shapes the rest of this package works with; the boundary
-  // casts name that contract once, and the scoped disables stay on those lines.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   const program = result.program as unknown as Program
   // oxlint-disable-next-line typescript/no-unnecessary-type-assertion typescript/no-unsafe-type-assertion

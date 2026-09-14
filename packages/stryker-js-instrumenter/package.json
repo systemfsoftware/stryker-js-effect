@@ -41,7 +41,6 @@
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
-    "@types/estree": "1.0.8",
     "@types/node": "catalog:",
     "estree-walker": "3.0.3",
     "oxlint": "catalog:",

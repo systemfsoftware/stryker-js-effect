@@ -2,39 +2,44 @@
  * Mutator — every mutation operator and its registry.
  */
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
+import type {
+  AssignmentExpression,
+  BinaryExpression,
+  ClassBody,
+  DoWhileStatement,
+  LogicalExpression,
+  MethodDefinition,
+  ObjectExpression,
+  ObjectProperty,
+  PrivateInExpression,
+  PropertyDefinition,
+  WhileStatement,
+} from '@oxc-project/types'
 import { type Location, Mutant as ApiMutant, type Position } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
 import type {
-  ArrayExpression as EstreeArrayExpression,
-  ArrowFunctionExpression as EstreeArrowFunctionExpression,
-  AssignmentExpression as EstreeAssignmentExpression,
-  BinaryExpression as EstreeBinaryExpression,
-  BlockStatement as EstreeBlockStatement,
-  ClassBody as EstreeClassBody,
-  DoWhileStatement as EstreeDoWhileStatement,
-  Expression as EstreeExpression,
-  ForStatement as EstreeForStatement,
-  Identifier as EstreeIdentifier,
-  IfStatement as EstreeIfStatement,
-  Literal as EstreeLiteral,
-  LogicalExpression as EstreeLogicalExpression,
-  MemberExpression as EstreeMemberExpression,
-  MethodDefinition as EstreeMethodDefinition,
-  NewExpression as EstreeNewExpression,
-  Node as EstreeNode,
-  ObjectExpression as EstreeObjectExpression,
-  Property as EstreeProperty,
-  PropertyDefinition as EstreePropertyDefinition,
-  SimpleCallExpression as EstreeCallExpression,
-  SpreadElement as EstreeSpreadElement,
-  SwitchCase as EstreeSwitchCase,
-  TemplateElement as EstreeTemplateElement,
-  TemplateLiteral as EstreeTemplateLiteral,
-  UnaryExpression as EstreeUnaryExpression,
-  UpdateExpression as EstreeUpdateExpression,
-  WhileStatement as EstreeWhileStatement,
-} from 'estree'
+  ArrayExpression,
+  ArrowFunctionExpression,
+  BlockStatement,
+  BooleanLiteral,
+  CallExpression,
+  Expression,
+  ForStatement,
+  Identifier,
+  IfStatement,
+  Literal,
+  MemberExpression,
+  NewExpression,
+  Node,
+  SpreadElement,
+  StringLiteral,
+  SwitchCase,
+  TemplateElement,
+  TemplateLiteral,
+  UnaryExpression,
+  UpdateExpression,
+} from './Ast.js'
 
 import {
   arrayExpression,
@@ -58,14 +63,14 @@ import {
   type TraversePath,
   unaryExpression,
   updateExpression,
-} from './estree.js'
+} from './Ast.js'
 import { printNode } from './print/index.js'
 
-export type Node = EstreeNode
+export type { Node }
 /**
  * Node identity: same kind, same span. oxc nodes always carry a range
  * (parsed with `range: true`), which is a stronger identity than the old
- * estree line/column loc.
+ * line/column loc.
  */
 export function eqNode(a: Node, b: Node): boolean {
   const identity = nodeIdentity(a)
@@ -464,11 +469,11 @@ function propertyOf(node: unknown, key: string): unknown {
   )
 }
 
-function isIdentifier(node: unknown): node is EstreeIdentifier {
+function isIdentifier(node: unknown): node is Identifier {
   return nodeType(node) === 'Identifier'
 }
 
-function isCallExpression(node: Node): node is EstreeCallExpression {
+function isCallExpression(node: Node): node is CallExpression {
   return node.type === 'CallExpression'
 }
 
@@ -484,7 +489,7 @@ const arithmeticOperatorReplacements = Object.freeze(
 
 const ARITHMETIC_OPERATOR_KEYS: readonly string[] = Object.keys(arithmeticOperatorReplacements)
 
-type ArithmeticBinary = EstreeBinaryExpression & { operator: keyof typeof arithmeticOperatorReplacements }
+type ArithmeticBinary = BinaryExpression & { operator: keyof typeof arithmeticOperatorReplacements }
 
 export const arithmeticOperatorMutator: Mutator = (node) =>
   Match.value(node).pipe(
@@ -493,28 +498,36 @@ export const arithmeticOperatorMutator: Mutator = (node) =>
   )
 
 function isArithmeticBinary(node: Node): node is ArithmeticBinary {
-  return node.type === 'BinaryExpression' && isSupportedArithmeticOperator(node.operator, node)
+  return isBinaryExpression(node) && isSupportedArithmeticOperator(node.operator, node)
 }
 
-function isSupportedArithmeticOperator(operator: string, node: EstreeBinaryExpression): boolean {
+function isBinaryExpression(node: Node): node is BinaryExpression {
+  return node.type === 'BinaryExpression' && !isPrivateInExpression(node)
+}
+
+function isPrivateInExpression(node: BinaryExpression | PrivateInExpression): node is PrivateInExpression {
+  return node.left.type === 'PrivateIdentifier'
+}
+
+function isSupportedArithmeticOperator(operator: string, node: BinaryExpression): boolean {
   return ARITHMETIC_OPERATOR_KEYS.includes(operator) && !isStringConcatenation(node)
 }
 
 /** `1 + x` is arithmetic; `"a" + x` concatenates, and there is nothing to mutate. */
-function isStringConcatenation(node: EstreeBinaryExpression): boolean {
+function isStringConcatenation(node: BinaryExpression): boolean {
   return isStringLike(node.right) || isStringLike(outerLeftOperand(node))
 }
 
 /** A chained `a + b + c` carries its value on the innermost left operand's right side. */
-function outerLeftOperand(node: EstreeBinaryExpression): unknown {
+function outerLeftOperand(node: BinaryExpression): unknown {
   if (node.left.type === 'BinaryExpression') {
     return node.left.right
   }
   return node.left
 }
 
-type ArrayConstructorCall = (EstreeCallExpression | EstreeNewExpression) & {
-  callee: EstreeIdentifier & { name: 'Array' }
+type ArrayConstructorCall = (CallExpression | NewExpression) & {
+  callee: Identifier & { name: 'Array' }
 }
 
 export const arrayDeclarationMutator: Mutator = (node) =>
@@ -524,11 +537,11 @@ export const arrayDeclarationMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-function isArrayExpression(node: Node): node is EstreeArrayExpression {
+function isArrayExpression(node: Node): node is ArrayExpression {
   return node.type === 'ArrayExpression'
 }
 
-function arrayDeclarationReplacement(array: EstreeArrayExpression): EstreeExpression {
+function arrayDeclarationReplacement(array: ArrayExpression): Expression {
   if (array.elements.length > 0) {
     return arrayExpression()
   }
@@ -539,15 +552,15 @@ function isArrayConstructorCall(node: Node): node is ArrayConstructorCall {
   return isCallOrNewExpression(node) && isArrayIdentifier(node.callee)
 }
 
-function isCallOrNewExpression(node: Node): node is EstreeCallExpression | EstreeNewExpression {
+function isCallOrNewExpression(node: Node): node is CallExpression | NewExpression {
   return node.type === 'CallExpression' || node.type === 'NewExpression'
 }
 
-function isArrayIdentifier(node: Node): node is EstreeIdentifier & { name: 'Array' } {
+function isArrayIdentifier(node: Node): node is Identifier & { name: 'Array' } {
   return node.type === 'Identifier' && node.name === 'Array'
 }
 
-function arrayConstructorReplacement(construct: ArrayConstructorCall): EstreeExpression {
+function arrayConstructorReplacement(construct: ArrayConstructorCall): Expression {
   const mutatedCallArgs = constructorArguments(construct.arguments)
   if (construct.type === 'NewExpression') {
     return newExpression(cloneNode(construct.callee), mutatedCallArgs)
@@ -555,7 +568,7 @@ function arrayConstructorReplacement(construct: ArrayConstructorCall): EstreeExp
   return callExpression(cloneNode(construct.callee), mutatedCallArgs)
 }
 
-function constructorArguments(args: ReadonlyArray<EstreeExpression | EstreeSpreadElement>): EstreeExpression[] {
+function constructorArguments(args: ReadonlyArray<Expression | SpreadElement>): Expression[] {
   if (args.length > 0) {
     return []
   }
@@ -568,15 +581,15 @@ export const arrowFunctionMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-function isExpressionBodiedArrow(node: Node): node is EstreeArrowFunctionExpression {
+function isExpressionBodiedArrow(node: Node): node is ArrowFunctionExpression {
   return node.type === 'ArrowFunctionExpression' && hasMutableArrowBody(node.body)
 }
 
-function hasMutableArrowBody(body: EstreeBlockStatement | EstreeExpression): boolean {
+function hasMutableArrowBody(body: BlockStatement | Expression): boolean {
   return body.type !== 'BlockStatement' && !isUndefinedExpression(body)
 }
 
-function isUndefinedExpression(node: EstreeBlockStatement | EstreeExpression): node is EstreeIdentifier {
+function isUndefinedExpression(node: BlockStatement | Expression): node is Identifier {
   return node.type === 'Identifier' && node.name === 'undefined'
 }
 
@@ -597,17 +610,13 @@ const assignmentOperatorReplacements = Object.freeze(
   } as const,
 )
 
-// estree merges string literals into `Literal` (numbers, booleans and regex
-// share the tag), so the string check inspects the value, not the tag.
-function isStringLike(value: unknown): value is EstreeTemplateLiteral | StringLiteral {
+function isStringLike(value: unknown): value is TemplateLiteral | StringLiteral {
   return isTemplateLiteral(value) || isStringLiteral(value)
 }
 
-function isTemplateLiteral(value: unknown): value is EstreeTemplateLiteral {
+function isTemplateLiteral(value: unknown): value is TemplateLiteral {
   return nodeType(value) === 'TemplateLiteral'
 }
-
-type StringLiteral = EstreeLiteral & { value: string }
 
 function isStringLiteral(value: unknown): value is StringLiteral {
   return nodeType(value) === 'Literal' && hasStringValue(value)
@@ -624,7 +633,7 @@ const stringAssignmentTypes = Object.freeze(['&&=', '||=', '??='])
 
 const ASSIGNMENT_OPERATOR_KEYS: readonly string[] = Object.keys(assignmentOperatorReplacements)
 
-type AssignmentBinary = EstreeAssignmentExpression & { operator: keyof typeof assignmentOperatorReplacements }
+type AssignmentBinary = AssignmentExpression & { operator: keyof typeof assignmentOperatorReplacements }
 
 export const assignmentOperatorMutator: Mutator = (node) =>
   Match.value(node).pipe(
@@ -638,11 +647,11 @@ function isMutatableAssignment(node: Node): node is AssignmentBinary {
   return node.type === 'AssignmentExpression' && isSupportedAssignment(node)
 }
 
-function isSupportedAssignment(node: EstreeAssignmentExpression): boolean {
+function isSupportedAssignment(node: AssignmentExpression): boolean {
   return ASSIGNMENT_OPERATOR_KEYS.includes(node.operator) && isSupportedAssignmentExpression(node)
 }
 
-function isSupportedAssignmentExpression(node: EstreeAssignmentExpression): boolean {
+function isSupportedAssignmentExpression(node: AssignmentExpression): boolean {
   return !isStringLike(node.right) || stringAssignmentTypes.includes(node.operator)
 }
 
@@ -653,38 +662,38 @@ function isMutableBlock(node: Node, context: MutatorContext): boolean {
   return node.type === 'BlockStatement' && isValid(node, context)
 }
 
-function isValid(node: EstreeBlockStatement, context: MutatorContext): boolean {
+function isValid(node: BlockStatement, context: MutatorContext): boolean {
   return !isEmpty(node) && !isInvalidConstructorBody(node, context)
 }
 
-function isEmpty(node: EstreeBlockStatement): boolean {
+function isEmpty(node: BlockStatement): boolean {
   return node.body.length === 0
 }
 
-function isInvalidConstructorBody(block: EstreeBlockStatement, context: MutatorContext): boolean {
+function isInvalidConstructorBody(block: BlockStatement, context: MutatorContext): boolean {
   const parent = context.parent
-  // estree: the constructor is a MethodDefinition whose `value` is the function
+  // oxc: the constructor is a MethodDefinition whose `value` is the function
   return isConstructorMethod(parent) && constructorBodyMatters(block, parent, context)
 }
 
-function isConstructorMethod(node: Node | undefined): node is EstreeMethodDefinition {
+function isConstructorMethod(node: Node | undefined): node is MethodDefinition {
   return isMethodDefinition(node) && node.kind === 'constructor'
 }
 
-function isMethodDefinition(node: Node | undefined): node is EstreeMethodDefinition {
+function isMethodDefinition(node: Node | undefined): node is MethodDefinition {
   return node?.type === 'MethodDefinition'
 }
 
 function constructorBodyMatters(
-  block: EstreeBlockStatement,
-  constructor: EstreeMethodDefinition,
+  block: BlockStatement,
+  constructor: MethodDefinition,
   context: MutatorContext,
 ): boolean {
   return containsSuperCall(block) && hasConstructorInitialization(constructor, context)
 }
 
 /** A derived constructor's body is load-bearing: it runs `super()` and seeds parameter properties. */
-function hasConstructorInitialization(constructor: EstreeMethodDefinition, context: MutatorContext): boolean {
+function hasConstructorInitialization(constructor: MethodDefinition, context: MutatorContext): boolean {
   return [constructor.value.params.some(isParameterProperty), hasInitializedProperties(context)].some(Boolean)
 }
 
@@ -699,7 +708,7 @@ function hasInitializedProperties(context: MutatorContext): boolean {
   return isClassBody(classBody) && classBody.body.some(isInitializedField)
 }
 
-function isClassBody(node: Node | undefined): node is EstreeClassBody {
+function isClassBody(node: Node | undefined): node is ClassBody {
   return node?.type === 'ClassBody'
 }
 
@@ -707,7 +716,7 @@ function isInitializedField(member: Node): boolean {
   return isPropertyDefinition(member) && isPresent(member.value)
 }
 
-function isPropertyDefinition(node: Node): node is EstreePropertyDefinition {
+function isPropertyDefinition(node: Node): node is PropertyDefinition {
   return node.type === 'PropertyDefinition'
 }
 
@@ -746,8 +755,6 @@ function containsSuperInValue(value: unknown): boolean {
   return containsSuperCall(value)
 }
 
-type BooleanLiteral = EstreeLiteral & { value: boolean }
-
 export const booleanLiteralMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isBooleanLiteral, (literal) => [booleanLiteral(!literal.value)]),
@@ -759,17 +766,17 @@ function isBooleanLiteral(node: Node): node is BooleanLiteral {
   return node.type === 'Literal' && typeof node.value === 'boolean'
 }
 
-function isNegatedPrefix(node: Node): node is EstreeUnaryExpression {
+function isNegatedPrefix(node: Node): node is UnaryExpression {
   return isUnaryExpression(node) && isNegation(node)
 }
 
-function isUnaryExpression(node: Node): node is EstreeUnaryExpression {
+function isUnaryExpression(node: Node): node is UnaryExpression {
   return node.type === 'UnaryExpression'
 }
 
-type NegatedPrefix = EstreeUnaryExpression & { operator: '!' }
+type NegatedPrefix = UnaryExpression & { operator: '!' }
 
-function isNegation(unary: EstreeUnaryExpression): unary is NegatedPrefix {
+function isNegation(unary: UnaryExpression): unary is NegatedPrefix {
   return unary.operator === '!' && unary.prefix
 }
 
@@ -803,23 +810,23 @@ function statementMutants(node: Node): readonly Node[] {
   )
 }
 
-function withEmptyTest(loop: EstreeForStatement): EstreeForStatement {
+function withEmptyTest(loop: ForStatement): ForStatement {
   const replacement = cloneNode(loop)
   replacement.test = booleanLiteral(false)
   return replacement
 }
 
-function withEmptyConsequent(switchCase: EstreeSwitchCase): EstreeSwitchCase {
+function withEmptyConsequent(switchCase: SwitchCase): SwitchCase {
   const replacement = cloneNode(switchCase)
   replacement.consequent = []
   return replacement
 }
 
-function isEmptyTestForStatement(node: Node): node is EstreeForStatement {
+function isEmptyTestForStatement(node: Node): node is ForStatement {
   return node.type === 'ForStatement' && node.test === null
 }
 
-function isNonEmptySwitchCase(node: Node): node is EstreeSwitchCase {
+function isNonEmptySwitchCase(node: Node): node is SwitchCase {
   return node.type === 'SwitchCase' && node.consequent.length > 0
 }
 
@@ -839,7 +846,7 @@ function logicalParentOperator(parent: Node | undefined): string | undefined {
   )
 }
 
-function isLogicalExpression(node: Node | undefined): node is EstreeLogicalExpression {
+function isLogicalExpression(node: Node | undefined): node is LogicalExpression {
   return node?.type === 'LogicalExpression'
 }
 
@@ -855,7 +862,7 @@ function isLoopStatement(node: Node | undefined): boolean {
   return isTestBearingStatement(node) && LOOP_STATEMENT_KINDS[node.type] === true
 }
 
-function isIfStatement(node: Node | undefined): node is EstreeIfStatement {
+function isIfStatement(node: Node | undefined): node is IfStatement {
   return node?.type === 'IfStatement'
 }
 
@@ -872,7 +879,7 @@ const TEST_BEARING_KINDS: Readonly<Record<string, true>> = {
   ForStatement: true,
 }
 
-type TestBearingStatement = EstreeIfStatement | EstreeWhileStatement | EstreeDoWhileStatement | EstreeForStatement
+type TestBearingStatement = IfStatement | WhileStatement | DoWhileStatement | ForStatement
 
 function isTestBearingStatement(node: Node | undefined): node is TestBearingStatement {
   return node !== undefined && TEST_BEARING_KINDS[node.type] === true
@@ -885,11 +892,11 @@ function testOfStatement(node: Node | undefined): Node | undefined {
   )
 }
 
-function isBooleanExpression(node: Node): node is EstreeBinaryExpression | EstreeLogicalExpression {
+function isBooleanExpression(node: Node): node is BinaryExpression | LogicalExpression {
   return isOperatorExpression(node) && booleanOperators.includes(node.operator)
 }
 
-function isOperatorExpression(node: Node): node is EstreeBinaryExpression | EstreeLogicalExpression {
+function isOperatorExpression(node: Node): node is BinaryExpression | LogicalExpression {
   return node.type === 'BinaryExpression' || node.type === 'LogicalExpression'
 }
 
@@ -906,7 +913,7 @@ const operators = {
 
 const EQUALITY_OPERATOR_KEYS: readonly string[] = Object.keys(operators)
 
-type EqualityBinary = EstreeBinaryExpression & { operator: keyof typeof operators }
+type EqualityBinary = BinaryExpression & { operator: keyof typeof operators }
 
 export const equalityOperatorMutator: Mutator = (node) =>
   Match.value(node).pipe(
@@ -932,7 +939,7 @@ const logicalOperatorReplacements = Object.freeze(
 
 const LOGICAL_OPERATOR_KEYS: readonly string[] = Object.keys(logicalOperatorReplacements)
 
-type LogicalBinary = EstreeLogicalExpression & { operator: keyof typeof logicalOperatorReplacements }
+type LogicalBinary = LogicalExpression & { operator: keyof typeof logicalOperatorReplacements }
 
 export const logicalOperatorMutator: Mutator = (node) =>
   Match.value(node).pipe(
@@ -980,13 +987,13 @@ for (const [key, value] of Object.entries(baseReplacements)) {
   }
 }
 
-interface NamedMember extends EstreeMemberExpression {
-  readonly property: EstreeIdentifier
-  readonly object: EstreeExpression
+interface NamedMember extends MemberExpression {
+  readonly property: Identifier
+  readonly object: Expression
 }
 
 interface MethodMutation {
-  readonly call: EstreeCallExpression
+  readonly call: CallExpression
   readonly callee: NamedMember
   readonly newName: string | null
 }
@@ -997,7 +1004,7 @@ export const methodExpressionMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-function methodCallMutants(call: EstreeCallExpression): readonly Node[] {
+function methodCallMutants(call: CallExpression): readonly Node[] {
   return Match.value(methodMutation(call)).pipe(
     Match.when(isMethodMutation, (mutation) => [methodExpressionReplacement(mutation)]),
     Match.orElse(() => NO_MUTANTS),
@@ -1009,7 +1016,7 @@ function isMethodMutation(mutation: MethodMutation | undefined): mutation is Met
 }
 
 /** The method this call replaces, or `undefined` when the call is not one this operator knows. */
-function methodMutation(call: EstreeCallExpression): MethodMutation | undefined {
+function methodMutation(call: CallExpression): MethodMutation | undefined {
   const callee = namedMethodCallee(call)
   return Match.value(callee).pipe(
     Match.when(undefined, () => undefined),
@@ -1017,14 +1024,14 @@ function methodMutation(call: EstreeCallExpression): MethodMutation | undefined 
   )
 }
 
-function mutationFor(call: EstreeCallExpression, callee: NamedMember): MethodMutation | undefined {
+function mutationFor(call: CallExpression, callee: NamedMember): MethodMutation | undefined {
   return Match.value(replacements.get(callee.property.name)).pipe(
     Match.when(undefined, () => undefined),
     Match.orElse((newName) => ({ call, callee, newName })),
   )
 }
 
-function namedMethodCallee(call: EstreeCallExpression): NamedMember | undefined {
+function namedMethodCallee(call: CallExpression): NamedMember | undefined {
   return Match.value(call.callee).pipe(
     Match.when(isNamedMember, (member) => member),
     Match.orElse(() => undefined),
@@ -1043,14 +1050,14 @@ function isNotSuperMember(member: NamedMember): boolean {
   return !isSuperType(member.object)
 }
 
-function methodExpressionReplacement(mutation: MethodMutation): EstreeExpression {
+function methodExpressionReplacement(mutation: MethodMutation): Expression {
   return Match.value(mutation.newName).pipe(
     Match.when(null, () => callExpression(cloneNode(mutation.callee.object), [], mutation.callee.optional === true)),
     Match.orElse((newName) => renamedMethodCall(mutation, newName)),
   )
 }
 
-function renamedMethodCall(mutation: MethodMutation, newName: string): EstreeExpression {
+function renamedMethodCall(mutation: MethodMutation, newName: string): Expression {
   const mutatedCallee = memberExpression(
     cloneNode(mutation.callee.object),
     identifier(newName),
@@ -1060,11 +1067,11 @@ function renamedMethodCall(mutation: MethodMutation, newName: string): EstreeExp
   return callExpression(mutatedCallee, spreadFreeArguments(mutation.call.arguments), mutation.call.optional === true)
 }
 
-function spreadFreeArguments(args: ReadonlyArray<EstreeExpression | EstreeSpreadElement>): EstreeExpression[] {
+function spreadFreeArguments(args: ReadonlyArray<Expression | SpreadElement>): Expression[] {
   return args.filter(isNotSpreadElement).map((argument) => cloneNode(argument))
 }
 
-function isNotSpreadElement(node: EstreeExpression | EstreeSpreadElement): node is EstreeExpression {
+function isNotSpreadElement(node: Expression | SpreadElement): node is Expression {
   return node.type !== 'SpreadElement'
 }
 
@@ -1074,7 +1081,7 @@ export const objectLiteralMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-function isNonEmptyObjectLiteral(node: Node): node is EstreeObjectExpression {
+function isNonEmptyObjectLiteral(node: Node): node is ObjectExpression {
   return node.type === 'ObjectExpression' && node.properties.length > 0
 }
 
@@ -1085,11 +1092,11 @@ export const optionalChainingMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-function isOptionalMember(node: Node): node is EstreeMemberExpression {
+function isOptionalMember(node: Node): node is MemberExpression {
   return node.type === 'MemberExpression' && node.optional === true
 }
 
-function isOptionalCall(node: Node): node is EstreeCallExpression {
+function isOptionalCall(node: Node): node is CallExpression {
   return node.type === 'CallExpression' && node.optional === true
 }
 
@@ -1099,7 +1106,7 @@ function withoutOptional<T extends Node & { optional?: boolean }>(node: T): T {
   return replacement
 }
 
-type RegexLiteral = EstreeLiteral & { regex: { pattern: string; flags: string } }
+type RegexLiteral = Literal & { regex: { pattern: string; flags: string } }
 
 export const regexMutator: Mutator = (node, context) =>
   Match.value(node).pipe(
@@ -1134,7 +1141,7 @@ function isRegExpConstructor(parent: Node | undefined): boolean {
   return isNewExpression(parent) && isRegExpIdentifier(parent.callee)
 }
 
-function isNewExpression(node: Node | undefined): node is EstreeNewExpression {
+function isNewExpression(node: Node | undefined): node is NewExpression {
   return node?.type === 'NewExpression'
 }
 
@@ -1168,14 +1175,14 @@ export const stringLiteralMutator: Mutator = (node, context) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-function templateMutants(template: EstreeTemplateLiteral): readonly Node[] {
+function templateMutants(template: TemplateLiteral): readonly Node[] {
   return Match.value(template.quasis[0]).pipe(
     Match.when(undefined, () => NO_MUTANTS),
     Match.orElse((first) => [emptyOrPlaceholderTemplate(template, first)]),
   )
 }
 
-function emptyOrPlaceholderTemplate(template: EstreeTemplateLiteral, first: EstreeTemplateElement): Node {
+function emptyOrPlaceholderTemplate(template: TemplateLiteral, first: TemplateElement): Node {
   const isEmptyTemplate = [template.quasis.length === 1, first.value.raw.length === 0].every(Boolean)
   return templateLiteral([templateElement(replacementText(isEmptyTemplate))], [])
 }
@@ -1223,7 +1230,7 @@ function isJsxOrExpressionRelated(parent: Node): boolean {
   return JSX_KINDS[parent.type] === true || isObjectMethod(parent)
 }
 
-function isObjectMethod(node: Node): node is EstreeProperty {
+function isObjectMethod(node: Node): node is ObjectProperty {
   return node.type === 'Property' && node.method === true
 }
 
@@ -1231,11 +1238,11 @@ function isObjectOrClassPropertyKey(parent: Node, child: Node): boolean {
   return isPropertyHost(parent) && isKeyOf(parent, child)
 }
 
-function isPropertyHost(node: Node): node is EstreeProperty | EstreePropertyDefinition {
+function isPropertyHost(node: Node): node is ObjectProperty | PropertyDefinition {
   return node.type === 'Property' || node.type === 'PropertyDefinition'
 }
 
-function isKeyOf(host: EstreeProperty | EstreePropertyDefinition, child: Node): boolean {
+function isKeyOf(host: ObjectProperty | PropertyDefinition, child: Node): boolean {
   return nodeType(host.key) !== undefined && host.key === child
 }
 
@@ -1245,7 +1252,7 @@ function isDisallowedCallExpression(parent: Node): boolean {
   return isCallExpression(parent) && DISALLOWED_CALLEES[calleeName(parent)] === true
 }
 
-function calleeName(parent: EstreeCallExpression): string {
+function calleeName(parent: CallExpression): string {
   return Match.value(parent.callee).pipe(
     Match.when(isIdentifier, (identifier) => identifier.name),
     Match.when(isImportCallee, () => 'import'),
@@ -1267,7 +1274,7 @@ const UnaryOperator = {
 
 const UNARY_OPERATOR_KEYS: readonly string[] = Object.keys(UnaryOperator)
 
-type SupportedUnaryExpression = EstreeUnaryExpression & { operator: keyof typeof UnaryOperator }
+type SupportedUnaryExpression = UnaryExpression & { operator: keyof typeof UnaryOperator }
 
 export const unaryOperatorMutator: Mutator = (node) =>
   Match.value(node).pipe(
@@ -1279,12 +1286,12 @@ function isSupportedUnaryExpression(node: Node): node is SupportedUnaryExpressio
   return isPrefixUnaryExpression(node) && isSupportedUnaryOperator(node.operator)
 }
 
-function isPrefixUnaryExpression(node: Node): node is EstreeUnaryExpression {
+function isPrefixUnaryExpression(node: Node): node is UnaryExpression {
   return node.type === 'UnaryExpression' && node.prefix
 }
 
 /** The sign-flipping unary becomes a flipped unary; `~x` loses its operator entirely. */
-function unaryOperatorReplacement(unary: SupportedUnaryExpression): EstreeExpression {
+function unaryOperatorReplacement(unary: SupportedUnaryExpression): Expression {
   const mutatedOperator = UnaryOperator[unary.operator]
   return Match.value(mutatedOperator).pipe(
     Match.when(isPlusOrMinus, (operator) => unaryExpression(operator, cloneNode(unary.argument))),
@@ -1313,7 +1320,7 @@ export const updateOperatorMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-function isUpdateExpression(node: Node): node is EstreeUpdateExpression {
+function isUpdateExpression(node: Node): node is UpdateExpression {
   return node.type === 'UpdateExpression'
 }
 

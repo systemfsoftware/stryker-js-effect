@@ -30,7 +30,7 @@ export interface InstrumentResult {
 
 export type { InstrumenterOptions }
 
-import { spanOf } from './estree.js'
+import { spanOf } from './Ast.js'
 import { toApiMutant } from './Mutator.js'
 import { type SpannedComment } from './Syntax.js'
 

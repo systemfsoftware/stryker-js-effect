@@ -1,31 +1,183 @@
 // oxlint-disable typescript/no-unsafe-type-assertion typescript/no-unnecessary-type-assertion
-// ^ An AST toolkit: builders and a walker over plain oxc nodes whose shapes the
-// type system cannot express (estree unions vs oxc serializer output).
-/**
- * ESTree toolkit — node builders, kind classification and a walker with
- * parent-chain paths. The walker replaces the previous traversal stack: oxc hands
- * back standard ESTree, so the instrumenter owns the traversal instead of
- * without pulling scope machinery along.
- */
+import type * as Oxc from '@oxc-project/types'
 import * as Predicate from 'effect/Predicate'
-import type {
-  BlockStatement,
-  Expression,
-  Identifier,
-  Node,
-  Program,
-  Statement,
-  TemplateElement,
-  UnaryOperator,
-} from 'estree'
 
 import { computeLineStarts, positionFromOffset } from './Syntax.js'
 
-export type { Expression, Program, Statement }
+type BuiltFrom<T, K extends keyof T = never> = Omit<T, K | 'start' | 'end' | 'range'> & Partial<Oxc.Span>
 
-// ---------------------------------------------------------------------------
-// Kind classification
-// ---------------------------------------------------------------------------
+export interface BaseNode {
+  type: string
+  start?: number
+  end?: number
+}
+
+export interface Identifier extends Partial<Oxc.Span> {
+  type: 'Identifier'
+  name: string
+}
+
+type RawOptional<T> = Omit<T, 'raw'> & { raw?: string | null }
+export type StringLiteral = RawOptional<BuiltFrom<Oxc.StringLiteral>>
+export type NumericLiteral = RawOptional<BuiltFrom<Oxc.NumericLiteral>>
+export type BooleanLiteral = RawOptional<BuiltFrom<Oxc.BooleanLiteral>>
+export type BigIntLiteral = RawOptional<BuiltFrom<Oxc.BigIntLiteral>>
+export type RegExpLiteral = RawOptional<BuiltFrom<Oxc.RegExpLiteral>>
+export type NullLiteral = BuiltFrom<Oxc.NullLiteral>
+export type Literal = StringLiteral | NumericLiteral | BooleanLiteral | NullLiteral | BigIntLiteral | RegExpLiteral
+
+export interface ArrayExpression extends BuiltFrom<Oxc.ArrayExpression, 'elements'> {
+  elements: Array<Expression | SpreadElement | null>
+}
+export type ObjectExpression = BuiltFrom<Oxc.ObjectExpression>
+export type SpreadElement = Oxc.SpreadElement
+export type Argument = Expression | SpreadElement
+
+export interface CallExpression extends BuiltFrom<Oxc.CallExpression, 'callee' | 'arguments'> {
+  callee: Expression
+  arguments: Array<Argument>
+}
+
+export interface NewExpression extends BuiltFrom<Oxc.NewExpression, 'callee' | 'arguments'> {
+  callee: Expression
+  arguments: Array<Argument>
+}
+
+export interface MemberExpression extends Partial<Oxc.Span> {
+  type: 'MemberExpression'
+  object: Expression
+  property: Expression | Oxc.PrivateIdentifier
+  computed: boolean
+  optional: boolean
+}
+
+export interface ArrowFunctionExpression
+  extends BuiltFrom<Oxc.ArrowFunctionExpression, 'params' | 'body' | 'id' | 'generator'>
+{
+  params: Array<Identifier | Oxc.ParamPattern>
+  body: Expression | BlockStatement
+  id?: null
+  generator?: false
+}
+
+export interface BlockStatement extends BuiltFrom<Oxc.BlockStatement, 'body'> {
+  body: Array<Statement>
+}
+
+export interface ExpressionStatement extends BuiltFrom<Oxc.ExpressionStatement, 'expression'> {
+  expression: Expression
+}
+
+export interface IfStatement extends BuiltFrom<Oxc.IfStatement, 'test' | 'consequent' | 'alternate'> {
+  test: Expression
+  consequent: Statement
+  alternate: Statement | null
+}
+
+export interface VariableDeclarator extends BuiltFrom<Oxc.VariableDeclarator, 'id' | 'init'> {
+  id: Identifier | Oxc.BindingPattern
+  init: Expression | null
+}
+
+export interface VariableDeclaration extends BuiltFrom<Oxc.VariableDeclaration, 'declarations'> {
+  declarations: Array<VariableDeclarator>
+}
+
+export interface ReturnStatement extends BuiltFrom<Oxc.ReturnStatement, 'argument'> {
+  argument: Expression | null
+}
+
+export interface SequenceExpression extends BuiltFrom<Oxc.SequenceExpression, 'expressions'> {
+  expressions: Array<Expression>
+}
+
+export interface ConditionalExpression
+  extends BuiltFrom<Oxc.ConditionalExpression, 'test' | 'consequent' | 'alternate'>
+{
+  test: Expression
+  consequent: Expression
+  alternate: Expression
+}
+
+export interface UnaryExpression extends BuiltFrom<Oxc.UnaryExpression, 'argument'> {
+  argument: Expression
+}
+
+export interface UpdateExpression extends BuiltFrom<Oxc.UpdateExpression, 'argument'> {
+  argument: Expression
+}
+
+export interface ForStatement extends BuiltFrom<Oxc.ForStatement, 'test'> {
+  test: Expression | null
+}
+
+export interface SwitchCase extends BuiltFrom<Oxc.SwitchCase, 'test' | 'consequent'> {
+  test: Expression | null
+  consequent: Array<Statement>
+}
+
+export type TemplateElement = BuiltFrom<Oxc.TemplateElement>
+
+export interface TemplateLiteral extends BuiltFrom<Oxc.TemplateLiteral, 'quasis' | 'expressions'> {
+  quasis: Array<TemplateElement>
+  expressions: Array<Expression>
+}
+
+export interface Function extends BuiltFrom<Oxc.Function, 'id'> {
+  id: Identifier | null
+}
+
+export interface Class extends BuiltFrom<Oxc.Class, 'id'> {
+  id: Identifier | null
+}
+
+export type ClassExpression = Class & { type: 'ClassExpression' }
+
+export type FunctionExpression = Function & { type: 'FunctionExpression' }
+
+export interface Program extends BuiltFrom<Oxc.Program, 'body' | 'hashbang'> {
+  body: Array<Oxc.Directive | Statement>
+  hashbang?: Oxc.Hashbang | null
+}
+
+type BuiltExpression =
+  | ArrayExpression
+  | ArrowFunctionExpression
+  | CallExpression
+  | Class
+  | ConditionalExpression
+  | Function
+  | Identifier
+  | Literal
+  | MemberExpression
+  | NewExpression
+  | ObjectExpression
+  | SequenceExpression
+  | TemplateLiteral
+  | UnaryExpression
+  | UpdateExpression
+
+type BuiltStatement =
+  | BlockStatement
+  | Class
+  | ExpressionStatement
+  | ForStatement
+  | Function
+  | IfStatement
+  | ReturnStatement
+  | VariableDeclaration
+
+type BuiltNode =
+  | BuiltExpression
+  | BuiltStatement
+  | Program
+  | SwitchCase
+  | TemplateElement
+  | VariableDeclarator
+
+export type Expression = Oxc.Expression | BuiltExpression
+export type Statement = Oxc.Statement | BuiltStatement
+export type Node = Oxc.Node | BuiltNode
 
 const EXPRESSION_KINDS: ReadonlySet<string> = new Set([
   'ArrayExpression',
@@ -94,20 +246,12 @@ const STATEMENT_KINDS: ReadonlySet<string> = new Set([
   'WithStatement',
 ])
 
-/**
- * The node's [start, end) offsets. oxc is invoked with `range: true`, so every
- * parsed node carries one; synthesized builders omit it.
- */
 export function spanOf(node: Node): { start: number; end: number } | undefined {
   const range = node.range
   if (range === undefined) return undefined
   return { start: range[0], end: range[1] }
 }
 
-/**
- * The node's `type` tag, for checks against kinds outside the @types/estree
- * union (TS and JSX extensions oxc emits).
- */
 export function nodeType(node: unknown): string | undefined {
   if (!isAstNode(node)) return undefined
   return node.type
@@ -122,11 +266,6 @@ export function isStatementKind(node: Node | undefined | null): boolean {
   const type = nodeType(node)
   return type !== undefined && STATEMENT_KINDS.has(type)
 }
-
-// ---------------------------------------------------------------------------
-// Builders — the shapes oxc's ESTree serializer emits, so a synthesized node
-// is indistinguishable from a parsed one when printed.
-// ---------------------------------------------------------------------------
 
 type Loc = { start: number; end: number } | undefined
 
@@ -204,8 +343,6 @@ export function arrowFunctionExpression(
   body: Expression | Statement,
   loc?: Loc,
 ): Expression {
-  // Callers pass `Expression` or `blockStatement()` output; estree narrows the
-  // field to `BlockStatement | Expression`, which this construction satisfies.
   const fnBody = body as BlockStatement | Expression
   return mark<Expression>(
     {
@@ -236,13 +373,13 @@ export function ifStatement(
   return mark<Statement>({ type: 'IfStatement', test, consequent, alternate: alternate ?? null }, loc)
 }
 
-export function variableDeclarator(id: Identifier, init: Expression | null, loc?: Loc): VariableDeclaratorNode {
-  return mark<VariableDeclaratorNode>({ type: 'VariableDeclarator', id, init }, loc)
+export function variableDeclarator(id: Identifier, init: Expression | null, loc?: Loc): VariableDeclarator {
+  return mark<VariableDeclarator>({ type: 'VariableDeclarator', id, init }, loc)
 }
 
 export function variableDeclaration(
   kind: 'const' | 'let' | 'var',
-  declarations: ReadonlyArray<VariableDeclaratorNode>,
+  declarations: ReadonlyArray<VariableDeclarator>,
   loc?: Loc,
 ): Statement {
   return mark<Statement>({ type: 'VariableDeclaration', kind, declarations: [...declarations] }, loc)
@@ -266,11 +403,10 @@ export function conditionalExpression(
 }
 
 export function unaryExpression(
-  operator: Extract<UnaryOperator, '+' | '-' | '!' | '~' | 'typeof' | 'void' | 'delete'>,
+  operator: Extract<Oxc.UnaryOperator, '+' | '-' | '!' | '~' | 'typeof' | 'void' | 'delete'>,
   argument: Expression,
   loc?: Loc,
 ): Expression {
-  // Synthesized unaries are always prefixed; the postfix case is UpdateExpression.
   return mark<Expression>({ type: 'UnaryExpression', operator, argument, prefix: true }, loc)
 }
 
@@ -279,7 +415,6 @@ export function updateExpression(operator: '++' | '--', argument: Expression, pr
 }
 
 export function templateElement(raw: string, loc?: Loc): TemplateElement {
-  // The only synthesized quasi is a single fully-tail element.
   return mark<TemplateElement>({ type: 'TemplateElement', value: { raw, cooked: raw }, tail: true }, loc)
 }
 
@@ -291,58 +426,31 @@ export function templateLiteral(
   return mark<Expression>({ type: 'TemplateLiteral', quasis: [...quasis], expressions: [...expressions] }, loc)
 }
 
-export function switchCase(test: Expression | null, consequent: ReadonlyArray<Statement>, loc?: Loc): SwitchCaseNode {
-  return mark<SwitchCaseNode>({ type: 'SwitchCase', test, consequent: [...consequent] }, loc)
+export function switchCase(test: Expression | null, consequent: ReadonlyArray<Statement>, loc?: Loc): SwitchCase {
+  return mark<SwitchCase>({ type: 'SwitchCase', test, consequent: [...consequent] }, loc)
 }
 
-/**
- * Deep clone of a plain ESTree node. oxc nodes are JSON-shaped, so
- * Deep clone over plain nodes: no prototypes to preserve.
- */
 export function cloneNode<T extends Node>(node: T): T {
   return structuredClone(node)
 }
 
-interface VariableDeclaratorNode {
-  type: 'VariableDeclarator'
-  id: Identifier
-  init: Expression | null
-}
-
-interface SwitchCaseNode {
-  type: 'SwitchCase'
-  test: Expression | null
-  consequent: Statement[]
-}
-
-// ---------------------------------------------------------------------------
-// Comments
-// ---------------------------------------------------------------------------
-
-export interface AttachedComment {
+export interface Comment {
   readonly type: 'Line' | 'Block'
   readonly value: string
   readonly start: number
   readonly end: number
+}
+
+export interface AttachedComment extends Comment {
   readonly loc?: { start: { line: number; column: number }; end: { line: number; column: number } }
 }
 
-/**
- * Attaches every comment to the node it precedes (`leadingComments`) or, when
- * no node follows it, to the node it trails (`trailingComments`). oxc ships
- * comments flat, and the Stryker directive pass reads `node.leadingComments`,
- * so the flat list is folded into the tree once per transform with the file's
- * line table in hand.
- */
 export function attachComments(
   root: Node,
-  comments: ReadonlyArray<AttachedComment>,
+  comments: ReadonlyArray<Comment>,
   lineTable: readonly number[],
 ): void {
   if (comments.length === 0) return
-  // The Program root is not a comment host: its span starts at the first
-  // statement, so a leading file comment would otherwise attach to it and
-  // never print. Candidates are the statements and expressions under it.
   const nodes = collectNodes(root).filter((entry) => entry.node !== root)
   nodes.sort((a, b) => a.start - b.start)
   const groups = groupComments(nodes, comments)
@@ -351,8 +459,8 @@ export function attachComments(
 }
 
 interface CommentGroups {
-  readonly leading: Map<Node, AttachedComment[]>
-  readonly trailing: Map<Node, AttachedComment[]>
+  readonly leading: Map<Node, Comment[]>
+  readonly trailing: Map<Node, Comment[]>
 }
 
 interface CommentHost {
@@ -360,20 +468,13 @@ interface CommentHost {
   readonly node: Node
 }
 
-function groupComments(nodes: ReadonlyArray<NodeEntry>, comments: ReadonlyArray<AttachedComment>): CommentGroups {
+function groupComments(nodes: ReadonlyArray<NodeEntry>, comments: ReadonlyArray<Comment>): CommentGroups {
   const groups: CommentGroups = { leading: new Map(), trailing: new Map() }
   for (const comment of comments) hostComment(nodes, comment, groups)
   return groups
 }
 
-/**
- * The map a comment is hosted in. A comment attaches to the node it precedes;
- * one that precedes nothing — a same-line trailing comment — attaches to the
- * nearest statement before it, because the statement printer is the only
- * emitter of trailing comments and an expression host would never reach the
- * output.
- */
-function hostComment(nodes: ReadonlyArray<NodeEntry>, comment: AttachedComment, groups: CommentGroups): void {
+function hostComment(nodes: ReadonlyArray<NodeEntry>, comment: Comment, groups: CommentGroups): void {
   const hosts: ReadonlyArray<{ readonly field: keyof CommentGroups; readonly node: Node | undefined }> = [
     { field: 'leading', node: followingNode(nodes, comment) },
     { field: 'trailing', node: precedingStatement(nodes, comment) },
@@ -382,20 +483,20 @@ function hostComment(nodes: ReadonlyArray<NodeEntry>, comment: AttachedComment, 
   if (host !== undefined) pushComment(groups[host.field], host.node, comment)
 }
 
-function followingNode(nodes: ReadonlyArray<NodeEntry>, comment: AttachedComment): Node | undefined {
+function followingNode(nodes: ReadonlyArray<NodeEntry>, comment: Comment): Node | undefined {
   const entry = nodes.find((candidate) => candidate.start >= comment.end)
   if (entry === undefined) return undefined
   return entry.node
 }
 
-function precedingStatement(nodes: ReadonlyArray<NodeEntry>, comment: AttachedComment): Node | undefined {
+function precedingStatement(nodes: ReadonlyArray<NodeEntry>, comment: Comment): Node | undefined {
   const entry = nodes.findLast((candidate) => candidate.end <= comment.start && isStatementKind(candidate.node))
   if (entry === undefined) return undefined
   return entry.node
 }
 
 function assignComments(
-  map: Map<Node, AttachedComment[]>,
+  map: Map<Node, Comment[]>,
   lineTable: readonly number[],
   field: 'leadingComments' | 'trailingComments',
 ): void {
@@ -411,7 +512,7 @@ function assignComments(
   }
 }
 
-function pushComment(map: Map<Node, AttachedComment[]>, node: Node, comment: AttachedComment): void {
+function pushComment(map: Map<Node, Comment[]>, node: Node, comment: Comment): void {
   const list = map.get(node)
   if (list === undefined) map.set(node, [comment])
   else list.push(comment)
@@ -423,7 +524,6 @@ interface NodeEntry {
   readonly end: number
 }
 
-/** oxc emits a node's children as a plain array the walker reads and replaces into. */
 const isNodeList = (value: unknown): value is Array<unknown> => Array.isArray(value)
 
 function collectNodes(node: unknown): NodeEntry[] {
@@ -466,23 +566,14 @@ export function isAstNode(value: unknown): value is Node & Record<string, unknow
   return Predicate.isObject(value) && typeof value['type'] === 'string'
 }
 
-// ---------------------------------------------------------------------------
-// Line table — delegates to Syntax's line starts; positions here are 1-based
-// (The `loc` shape the directive and API-location code compares).
-// ---------------------------------------------------------------------------
-
 export function buildLineTable(content: string): readonly number[] {
   return computeLineStarts(content)
 }
 
 export function positionFromLineTable(offset: number, lineTable: readonly number[]): { line: number; column: number } {
   const zeroBased = positionFromOffset(lineTable, offset)
-  return { line: zeroBased.line + 1, column: zeroBased.column }
+  return { line: zeroBased.line + 1, column: zeroBased.column + 1 }
 }
-
-// ---------------------------------------------------------------------------
-// Walker
-// ---------------------------------------------------------------------------
 
 export interface TraversePath {
   readonly node: Node
@@ -651,8 +742,6 @@ function createPath(
       context.stopped = true
     },
     find(predicate) {
-      // `path.find` includes the path itself: a node that registered as its
-      // own placement anchor wins over any ancestor.
       return nearest(path, predicate)
     },
     getStatementParent() {
@@ -724,7 +813,6 @@ function assignIndexed(
   listKey: string,
   replacement: Node,
 ): void {
-  // Array descent is inlined in `visitChild`, so a list key is always a single index.
   const index = Number(listKey)
   const container = parent[key]
   if (isIndexedList(container, index)) container[index] = replacement
