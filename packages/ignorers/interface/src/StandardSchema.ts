@@ -99,7 +99,7 @@ export const nullable = <Output>(schema: Schema<Output>): Schema<Output | null> 
   )
 }
 
-const fieldValue = (value: object, key: string): unknown => Reflect.get(value, key)
+const fieldValue = (value: object, key: string): unknown => (value as Record<string, unknown>)[key]
 
 const fieldsOf = (shape: Shape): ReadonlyArray<Field> =>
   Object.entries(shape).map(([key, schema]) => ({ key, check: checkOf(schema) }))
