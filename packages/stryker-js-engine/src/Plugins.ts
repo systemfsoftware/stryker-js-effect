@@ -10,8 +10,9 @@ import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 
+import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { Module } from '@systemfsoftware/stryker-js-language'
-import { Ignorer, type NodePath } from '@systemfsoftware/stryker-js-language'
+import { Ignorer } from '@systemfsoftware/stryker-js-language'
 import type {
   AnyPluginContribution,
   ContributionOf,
@@ -23,7 +24,7 @@ import { defaultOptions, importModule } from './Config.js'
 import { StrykerError } from './stryker-error.schema.js'
 
 import {
-  PlainIgnorerModuleSchema,
+  IgnorerModuleSchema,
   PluginLoadFailedError,
   PluginModuleSchema,
   PluginNotFoundError,
@@ -178,13 +179,13 @@ interface PluginModule {
   strykerPlugins: readonly PluginContribution<PluginKind>[]
 }
 
-interface PlainIgnorerEntry {
+interface IgnorerEntry {
   readonly name: string
-  shouldIgnore(path: NodePath): string | undefined
+  shouldIgnore(node: Node, ancestors: readonly Node[]): string | undefined
 }
 
-interface PlainIgnorerModule {
-  strykerIgnorers: readonly PlainIgnorerEntry[]
+interface IgnorerModule {
+  strykerIgnorers: readonly IgnorerEntry[]
 }
 
 interface SchemaValidationContribution {
@@ -426,12 +427,12 @@ const recoverPluginImportFailure = (
     Match.orElse(() => failPluginLoad(descriptor, error)),
   )
 
-const plainIgnorerContribution = (ignorer: PlainIgnorerEntry): PluginContribution<'Ignore'> =>
+const ignorerContribution = (ignorer: IgnorerEntry): PluginContribution<'Ignore'> =>
   declarePlugin(
     'Ignore',
     ignorer.name,
     Layer.succeed(Ignorer, {
-      shouldIgnore: (path) => Option.fromUndefinedOr(ignorer.shouldIgnore(path)),
+      shouldIgnore: (node, ancestors) => Option.fromUndefinedOr(ignorer.shouldIgnore(node, ancestors)),
     }),
   )
 
@@ -441,13 +442,13 @@ const modulePluginContributions = (module: unknown): readonly PluginContribution
     Match.orElse((): undefined => undefined),
   )
 
-const modulePlainIgnorers = (
+const moduleIgnorers = (
   module: unknown,
 ): Result.Result<readonly PluginContribution<'Ignore'>[] | undefined, S.SchemaError> =>
   Match.value(Predicate.hasProperty(module, 'strykerIgnorers')).pipe(
     Match.when(true, () =>
-      S.decodeUnknownResult(PlainIgnorerModuleSchema)(module).pipe(
-        Result.map((plain: PlainIgnorerModule) => plain.strykerIgnorers.map(plainIgnorerContribution)),
+      S.decodeUnknownResult(IgnorerModuleSchema)(module).pipe(
+        Result.map((ignorerModule: IgnorerModule) => ignorerModule.strykerIgnorers.map(ignorerContribution)),
       )),
     Match.orElse(() => Result.succeed(undefined)),
   )
@@ -477,9 +478,9 @@ const mergeContributions = (
 const pluginContributionsOf = (
   module: unknown,
 ): Result.Result<PluginContributions, S.SchemaError> =>
-  modulePlainIgnorers(module).pipe(
-    Result.map((plain) => ({
-      plugins: mergeContributions(modulePluginContributions(module), plain),
+  moduleIgnorers(module).pipe(
+    Result.map((ignorers) => ({
+      plugins: mergeContributions(modulePluginContributions(module), ignorers),
       schemaContribution: moduleSchemaContribution(module),
     })),
   )

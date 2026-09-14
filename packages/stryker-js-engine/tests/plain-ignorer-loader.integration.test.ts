@@ -1,7 +1,8 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import type { ThisExpression } from '@systemfsoftware/stryker-ignorer-interface'
 import { createDefaultOptions } from '@systemfsoftware/stryker-js-engine'
 import { create, createAll, loadPlugins, PluginLoadFailedError } from '@systemfsoftware/stryker-js-engine/plugin-loader'
-import { Ignorer, Module, type NodePath } from '@systemfsoftware/stryker-js-language'
+import { Ignorer, Module } from '@systemfsoftware/stryker-js-language'
 import type { ModuleRequire } from '@systemfsoftware/stryker-js-language'
 import { RunConfiguration, SandboxDirectory } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
@@ -61,7 +62,7 @@ const loadFixture = (name: string) =>
     Effect.provide(Layer.mergeAll(FileSystem.layerNoop({}), Path.layer, moduleLayer)),
   )
 
-const pathOf = (node: unknown): NodePath => ({ node, ancestors: [] })
+const anyNode: ThisExpression = { type: 'ThisExpression' }
 
 Feature('Loading plain ignorer plugins')
   .body(({ scenario }) => {
@@ -88,8 +89,8 @@ Feature('Loading plain ignorer plugins')
         ),
         Then('every entry registers under its name and its decisions flow through')((s) =>
           Effect.sync(() => {
-            expect(Option.getOrThrow(s.services.rule.shouldIgnore(pathOf('any-node')))).toBe('fixture reason')
-            expect(Option.isNone(s.services.never.shouldIgnore(pathOf('any-node')))).toBe(true)
+            expect(Option.getOrThrow(s.services.rule.shouldIgnore(anyNode, []))).toBe('fixture reason')
+            expect(Option.isNone(s.services.never.shouldIgnore(anyNode, []))).toBe(true)
           })
         ),
       ),

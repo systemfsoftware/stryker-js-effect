@@ -9,6 +9,7 @@ import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
 import * as HashMap from 'effect/HashMap';
+import { Node } from '@systemfsoftware/stryker-ignorer-interface';
 import * as Option from 'effect/Option';
 import * as Queue from 'effect/Queue';
 import * as S from 'effect/Schema';
@@ -424,10 +425,8 @@ export class Ignorer extends Ignorer_base {}
 
 // @public (undocumented)
 export interface IgnorerService {
-    // Warning: (ae-forgotten-export) The symbol "Node_2" needs to be exported by the entry point index.d.mts
-    //
     // (undocumented)
-    readonly shouldIgnore: (node: Node_2, ancestors: readonly Node_2[]) => Option.Option<string>;
+    readonly shouldIgnore: (node: Node, ancestors: readonly Node[]) => Option.Option<string>;
 }
 
 // @public (undocumented)
