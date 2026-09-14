@@ -20,7 +20,8 @@
     "coverage/**",
     "**/snapshots/*.md",
     "repos/**",
-    "packages/stryker-js-typescript-checker/testResources/**"
+    "packages/stryker-js-typescript-checker/testResources/**",
+    "packages/toolchain/oxlint-ignorer-config/lib/base.d.ts"
   ],
   "plugins": [
     "https://plugins.dprint.dev/typescript-0.96.1.wasm",
