@@ -8,7 +8,7 @@ catalog:
   "@commitlint/config-conventional": ^21.2.0
   "@commitlint/types": ^21.2.0
   "@effect/platform-node": 4.0.0-rc.112
-  "@effect/platform-node-shared": 4.0.0-rc.112
+  "@effect/platform-node-shared": 4.0.0-rc.114
   "@effect/vitest": 4.0.0-rc.112
   "@microsoft/api-extractor": ^7.59.1
   "@noble/hashes": 2.4.0
