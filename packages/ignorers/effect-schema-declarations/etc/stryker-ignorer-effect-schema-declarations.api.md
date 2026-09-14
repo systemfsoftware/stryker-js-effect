@@ -4,7 +4,8 @@
 
 ```ts
 
-import { NodePath } from '@systemfsoftware/stryker-ignorer-interface';
+import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
+import { Node as Node_2 } from '@systemfsoftware/stryker-ignorer-interface';
 
 // @public (undocumented)
 export const ANNOTATION_OBJECT_IGNORED: 'annotations object holding only documentation is a declaration, not behaviour';
@@ -22,19 +23,13 @@ export const CLASS_FIELDS_IGNORED: 'Schema.Class field schema is a declaration, 
 export const CLASS_ID_IGNORED: 'Schema.Class identifier is a declaration name, not behaviour';
 
 // @public (undocumented)
-export const decideSchemaDeclarationIgnore: (node: unknown, parent: unknown, grandparent?: unknown, ancestor?: unknown) => string | undefined;
-
-// @public (undocumented)
-export const firstIgnoreReason: (path: NodePath) => string | undefined;
+export const decideSchemaDeclarationIgnore: (node: Node_2, ancestors: readonly Node_2[]) => string | undefined;
 
 // @public (undocumented)
 export const OPTIONAL_DEFAULT_IGNORED: 'optionalWith default value is config, not behaviour';
 
 // @public (undocumented)
-export const strykerIgnorers: {
-    name: string;
-    shouldIgnore: typeof firstIgnoreReason;
-}[];
+export const strykerIgnorers: readonly Ignorer[];
 
 // @public (undocumented)
 export const SYMBOL_DESCRIPTION_IGNORED: 'Symbol.for() brand description is identity-only data, not behaviour';

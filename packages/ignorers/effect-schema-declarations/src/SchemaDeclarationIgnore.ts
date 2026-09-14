@@ -4,6 +4,7 @@ import type {
   Expression,
   IdentifierReference,
   MemberExpression,
+  Node,
   ObjectExpression,
   ObjectProperty,
   StringLiteral,
@@ -19,28 +20,24 @@ const DOCUMENTATION_KEYS: Record<string, true> = {
 
 export type DocumentationKey = 'identifier' | 'description' | 'title' | 'documentation' | 'examples'
 
-interface TypedNode {
-  readonly type: string
-}
-
 const isObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 
-const hasStringType = (value: object): value is TypedNode => 'type' in value && typeof value.type === 'string'
+const hasStringType = (value: object): value is Node => 'type' in value && typeof value.type === 'string'
 
-const isAstNode = (value: unknown): value is TypedNode => isObject(value) && hasStringType(value)
+const isAstNode = (value: unknown): value is Node => isObject(value) && hasStringType(value)
 
-const isNodeOfType = (value: unknown, type: string): value is TypedNode => isAstNode(value) && value.type === type
+const isNodeOfType = (value: unknown, type: Node['type']): value is Node => isAstNode(value) && value.type === type
 
-const hasStringName = (value: TypedNode): boolean => 'name' in value && typeof value.name === 'string'
+const hasStringName = (value: Node): boolean => 'name' in value && typeof value.name === 'string'
 
-const hasStringValue = (value: TypedNode): boolean => 'value' in value && typeof value.value === 'string'
+const hasStringValue = (value: Node): boolean => 'value' in value && typeof value.value === 'string'
 
 const isDocumentationKey = (value: unknown): value is DocumentationKey =>
   typeof value === 'string' && DOCUMENTATION_KEYS[value] === true
 
-const hasDocumentationName = (value: TypedNode): boolean => 'name' in value && isDocumentationKey(value.name)
+const hasDocumentationName = (value: Node): boolean => 'name' in value && isDocumentationKey(value.name)
 
-const hasDocumentationValue = (value: TypedNode): boolean => 'value' in value && isDocumentationKey(value.value)
+const hasDocumentationValue = (value: Node): boolean => 'value' in value && isDocumentationKey(value.value)
 
 const isIdentifierKeyNode = (value: unknown): boolean =>
   isNodeOfType(value, 'Identifier') && hasDocumentationName(value)
@@ -49,26 +46,25 @@ const isLiteralKeyNode = (value: unknown): boolean => isNodeOfType(value, 'Liter
 
 const isDocumentationKeyNode = (value: unknown): boolean => isIdentifierKeyNode(value) || isLiteralKeyNode(value)
 
-const hasObjectNode = (value: TypedNode): boolean => 'object' in value && isAstNode(value.object)
+const hasObjectNode = (value: Node): boolean => 'object' in value && isAstNode(value.object)
 
-const hasPropertyNode = (value: TypedNode): boolean => 'property' in value && isAstNode(value.property)
+const hasPropertyNode = (value: Node): boolean => 'property' in value && isAstNode(value.property)
 
-const hasMemberEnds = (value: TypedNode): boolean => hasObjectNode(value) && hasPropertyNode(value)
+const hasMemberEnds = (value: Node): boolean => hasObjectNode(value) && hasPropertyNode(value)
 
-const isAstNodeArray = (value: unknown): value is ReadonlyArray<TypedNode> =>
-  Array.isArray(value) && value.every(isAstNode)
+const isAstNodeArray = (value: unknown): value is ReadonlyArray<Node> => Array.isArray(value) && value.every(isAstNode)
 
-const hasCalleeNode = (value: TypedNode): boolean => 'callee' in value && isAstNode(value.callee)
+const hasCalleeNode = (value: Node): boolean => 'callee' in value && isAstNode(value.callee)
 
-const hasArgumentNodes = (value: TypedNode): boolean => 'arguments' in value && isAstNodeArray(value.arguments)
+const hasArgumentNodes = (value: Node): boolean => 'arguments' in value && isAstNodeArray(value.arguments)
 
-const hasCallEnds = (value: TypedNode): boolean => hasCalleeNode(value) && hasArgumentNodes(value)
+const hasCallEnds = (value: Node): boolean => hasCalleeNode(value) && hasArgumentNodes(value)
 
-const hasDocumentationKeyNode = (value: TypedNode): boolean => 'key' in value && isDocumentationKeyNode(value.key)
+const hasDocumentationKeyNode = (value: Node): boolean => 'key' in value && isDocumentationKeyNode(value.key)
 
-const hasComputedFalse = (value: TypedNode): boolean => 'computed' in value && value.computed === false
+const hasComputedFalse = (value: Node): boolean => 'computed' in value && value.computed === false
 
-const hasDocumentationPropertyFields = (value: TypedNode): boolean =>
+const hasDocumentationPropertyFields = (value: Node): boolean =>
   hasComputedFalse(value) && hasDocumentationKeyNode(value)
 
 const hasDocumentationEntries = (value: ReadonlyArray<unknown>): boolean =>
@@ -77,8 +73,7 @@ const hasDocumentationEntries = (value: ReadonlyArray<unknown>): boolean =>
 const isDocumentationArray = (value: unknown): value is ReadonlyArray<ObjectProperty> =>
   Array.isArray(value) && hasDocumentationEntries(value)
 
-const hasPropertiesField = (value: TypedNode): boolean =>
-  'properties' in value && isDocumentationArray(value.properties)
+const hasPropertiesField = (value: Node): boolean => 'properties' in value && isDocumentationArray(value.properties)
 
 export const isIdentifier = (value: unknown): value is IdentifierReference =>
   isNodeOfType(value, 'Identifier') && hasStringName(value)
@@ -127,9 +122,9 @@ const TAGGED_FACTORIES: readonly string[] = ['TaggedClass', 'TaggedError']
  */
 const CLASS_FACTORY = 'Class'
 
-const isIdentifierNamed = (node: TypedNode, name: string): boolean => isIdentifier(node) && node.name === name
+const isIdentifierNamed = (node: Node, name: string): boolean => isIdentifier(node) && node.name === name
 
-const isIdentifierIn = (node: TypedNode, names: readonly string[]): boolean =>
+const isIdentifierIn = (node: Node, names: readonly string[]): boolean =>
   isIdentifier(node) && names.includes(node.name)
 
 const isMemberNamed = (member: MemberExpression, object: string, property: string): boolean =>
@@ -155,21 +150,26 @@ const isTaggedFactoryCallee = (callee: Expression): boolean =>
   isCallExpression(callee) && isTaggedFactoryReference(callee.callee)
 
 const isArgumentAt = (
-  node: unknown,
+  node: Node | undefined,
   call: CallExpression,
   index: number,
   calleeMatches: (callee: Expression) => boolean,
 ): boolean => calleeMatches(call.callee) && call.arguments[index] === node
 
 const isArgumentOf = (
-  node: unknown,
-  parent: unknown,
+  node: Node | undefined,
+  parent: Node | undefined,
   index: number,
   calleeMatches: (callee: Expression) => boolean,
 ): boolean => isCallExpression(parent) && isArgumentAt(node, parent, index, calleeMatches)
 
 interface IgnoreRule {
-  readonly matches: (node: unknown, parent: unknown, grandparent: unknown, ancestor: unknown) => boolean
+  readonly matches: (
+    node: Node,
+    parent: Node | undefined,
+    grandparent: Node | undefined,
+    ancestor: Node | undefined,
+  ) => boolean
   readonly reason: string
 }
 
@@ -179,7 +179,7 @@ const isAnnotationsCallee = (callee: Expression): boolean =>
   isMemberExpression(callee) && isIdentifierNamed(callee.property, 'annotations')
 
 const argumentRule = (
-  is: (node: unknown) => node is TypedNode,
+  is: (node: Node) => boolean,
   argumentIndex: number,
   calleeMatches: (callee: Expression) => boolean,
   reason: string,
@@ -195,10 +195,8 @@ const argumentRule = (
  * change what the schema does. Emptying the whole object could, which is why
  * that rule is the stricter of the two.
  */
-const isDocumentationValue = (node: unknown, parent: ObjectProperty): boolean => parent.value === node
-
-const isDocumentationPropertyValue = (node: unknown, parent: unknown): boolean =>
-  isDocumentationProperty(parent) && isDocumentationValue(node, parent)
+const isDocumentationPropertyValue = (node: Node, parent: Node | undefined): boolean =>
+  isDocumentationProperty(parent) && parent.value === node
 
 const documentationValueRule: IgnoreRule = {
   matches: (node, parent, grandparent, ancestor) =>
@@ -218,8 +216,9 @@ const RULES: readonly IgnoreRule[] = [
 ]
 
 export const decideSchemaDeclarationIgnore = (
-  node: unknown,
-  parent: unknown,
-  grandparent?: unknown,
-  ancestor?: unknown,
-): string | undefined => RULES.find((rule) => rule.matches(node, parent, grandparent, ancestor))?.reason
+  node: Node,
+  ancestors: readonly Node[],
+): string | undefined => {
+  const [parent, grandparent, ancestor] = ancestors
+  return RULES.find((rule) => rule.matches(node, parent, grandparent, ancestor))?.reason
+}

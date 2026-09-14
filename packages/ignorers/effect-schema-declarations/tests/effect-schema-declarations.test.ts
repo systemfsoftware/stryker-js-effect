@@ -1,4 +1,4 @@
-import { type NodePath } from '@systemfsoftware/stryker-ignorer-interface'
+import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -15,6 +15,7 @@ import {
 
 import {
   annotationsCall,
+  arrowFunction,
   bareFactoryCall,
   brandCall,
   callOf,
@@ -77,13 +78,13 @@ const classInnerCall = classOuterCall.callee
 const acceptedLiteralMember = stringLiteral('permanent')
 const acceptedLiteralCall = callOf(memberOf('Schema', 'Literal'), [
   acceptedLiteralMember,
-  { type: 'Literal', value: 'transient' },
+  stringLiteral('transient'),
 ])
 
 const brandName = stringLiteral('MaxChildren')
 const brandNameCall = brandCall(brandName)
 
-const optionalDefault = { type: 'ArrowFunctionExpression' }
+const optionalDefault = arrowFunction()
 const optionalSchema = memberOf('S', 'String')
 const optionalWithCall = callOf(memberOf('S', 'optionalWith'), [optionalSchema, optionalDefault])
 const stringDefault = stringLiteral('x')
@@ -96,10 +97,7 @@ const matchTagCall = callOf(memberOf('Match', 'tag'), [matchTag])
 const orphanIdentifier = identifier('x')
 
 const identifierEntry = namedProperty('identifier', stringLiteral('HexBytes'))
-const descriptionEntry = namedProperty('description', {
-  type: 'Literal',
-  value: 'Uint8Array encoded as a lowercase hex string',
-})
+const descriptionEntry = namedProperty('description', stringLiteral('Uint8Array encoded as a lowercase hex string'))
 const titleEntry = namedProperty('title', stringLiteral('Hex Bytes'))
 const documentationOnly = objectOf([identifierEntry, descriptionEntry, titleEntry])
 const documentationOnlyCall = annotationsCall(documentationOnly)
@@ -115,17 +113,17 @@ const computedKeyEntry = propertyOf(identifier('identifier'), stringLiteral('x')
 const computedKeyObject = objectOf([computedKeyEntry])
 const computedKeyCall = annotationsCall(computedKeyObject)
 
-const mixedBehaviourEntry = namedProperty('arbitrary', { type: 'ArrowFunctionExpression' })
+const mixedBehaviourEntry = namedProperty('arbitrary', arrowFunction())
 const mixedDocumentationEntry = namedProperty('identifier', stringLiteral('HexStringInput'))
 const mixedAnnotations = objectOf([mixedBehaviourEntry, mixedDocumentationEntry])
 const mixedAnnotationsCall = annotationsCall(mixedAnnotations)
 
-const behaviourOnlyEntry = namedProperty('arbitrary', { type: 'ArrowFunctionExpression' })
+const behaviourOnlyEntry = namedProperty('arbitrary', arrowFunction())
 const behaviourOnlyObject = objectOf([behaviourOnlyEntry])
 const behaviourOnlyCall = annotationsCall(behaviourOnlyObject)
 
 const documentationBesideBehaviourEntry = namedProperty('description', stringLiteral('x'))
-const behaviourBesideDocumentationEntry = namedProperty('arbitrary', { type: 'ArrowFunctionExpression' })
+const behaviourBesideDocumentationEntry = namedProperty('arbitrary', arrowFunction())
 const documentationAndBehaviour = objectOf([documentationBesideBehaviourEntry, behaviourBesideDocumentationEntry])
 const documentationAndBehaviourCall = annotationsCall(documentationAndBehaviour)
 
@@ -389,20 +387,20 @@ const CASES = {
 }
 
 interface CasePath {
-  readonly node: unknown
-  readonly ancestors?: readonly unknown[] | undefined
+  readonly node: Node
+  readonly ancestors?: readonly Node[] | undefined
 }
 
-const pathOf = (spec: CasePath): NodePath => ({ node: spec.node, ancestors: spec.ancestors ?? [] })
+const pathOf = (spec: CasePath): [node: Node, ancestors: readonly Node[]] => [spec.node, spec.ancestors ?? []]
 
 describe('effect-schema-declarations', () => {
   it('Should_Register_The_Descriptor', () => {
     expect(descriptor.name).toBe('effect-schema-declarations')
   })
   it.each(CASES.ignored)('ignores: $name', (testCase) => {
-    expect(descriptor.shouldIgnore(pathOf(testCase.path))).toBe(testCase.reason)
+    expect(descriptor.shouldIgnore(...pathOf(testCase.path))).toBe(testCase.reason)
   })
   it.each(CASES.kept)('keeps: $name', (testCase) => {
-    expect(descriptor.shouldIgnore(pathOf(testCase.path))).toBeUndefined()
+    expect(descriptor.shouldIgnore(...pathOf(testCase.path))).toBeUndefined()
   })
 })
