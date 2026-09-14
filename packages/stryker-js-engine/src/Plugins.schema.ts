@@ -26,8 +26,18 @@ export const PluginModuleSchema = S.Struct({
 
 const isShouldIgnore = (value: unknown): value is (path: unknown) => string | undefined => typeof value === 'function'
 
+const isFunction = (value: unknown): value is (...args: never[]) => unknown => typeof value === 'function'
+
+const StandardSchemaPropsSchema = S.Struct({
+  version: S.Literal(1),
+  vendor: S.String,
+  validate: S.declare(isFunction),
+})
+const StandardSchemaShapeSchema = S.Struct({ '~standard': StandardSchemaPropsSchema })
+
 export const PlainIgnorerSchema = S.Struct({
   name: S.String,
+  schema: StandardSchemaShapeSchema,
   shouldIgnore: S.declare(isShouldIgnore),
 })
 
