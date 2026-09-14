@@ -1,41 +1,50 @@
-import { Schema as S } from 'effect'
+import {
+  array,
+  ArrowFunctionExpression,
+  Identifier,
+  is,
+  isArrowFunctionExpression,
+  isIdentifier,
+  isMemberExpression,
+  isObjectExpression,
+  isStringLiteral,
+  literal,
+  literals,
+  MemberExpression,
+  nonEmptyArray,
+  ObjectExpression,
+  type Schema,
+  StringLiteral,
+  struct,
+  suspend,
+  type TypeOf,
+  union,
+  unknown,
+  UnknownNode,
+} from '@systemfsoftware/stryker-ignorer-interface'
 
-export const Identifier = S.Struct({
-  type: S.Literal('Identifier'),
-  name: S.String,
-})
-export type Identifier = S.Schema.Type<typeof Identifier>
-
-// ESTree renders string literals as Literal{value:string}; the semantic name records what this matches.
-export const StringLiteral = S.Struct({
-  type: S.Literal('Literal'),
-  value: S.String,
-})
-export type StringLiteral = S.Schema.Type<typeof StringLiteral>
-
-export const ObjectExpression = S.Struct({
-  type: S.Literal('ObjectExpression'),
-})
-export type ObjectExpression = S.Schema.Type<typeof ObjectExpression>
-
-export const ArrowFunctionExpression = S.Struct({
-  type: S.Literal('ArrowFunctionExpression'),
-})
-export type ArrowFunctionExpression = S.Schema.Type<typeof ArrowFunctionExpression>
-
-export const UnknownNode = S.Struct({ type: S.String })
-export type UnknownNode = S.Schema.Type<typeof UnknownNode>
-
-export interface MemberExpression {
-  readonly type: 'MemberExpression'
-  readonly object: AstNode
-  readonly property: AstNode
+export {
+  ArrowFunctionExpression,
+  Identifier,
+  isArrowFunctionExpression,
+  isIdentifier,
+  isMemberExpression,
+  isObjectExpression,
+  isStringLiteral,
+  MemberExpression,
+  ObjectExpression,
+  StringLiteral,
+  UnknownNode,
 }
 
+/**
+ * Strict — unlike the interface's loose `CallExpression` — because the decision indexes
+ * `arguments` to prove a position is a declaration slot.
+ */
 export interface CallExpression {
   readonly type: 'CallExpression'
   readonly callee: AstNode
-  readonly arguments: readonly AstNode[]
+  readonly arguments: ReadonlyArray<AstNode>
 }
 
 export type AstNode =
@@ -47,9 +56,9 @@ export type AstNode =
   | CallExpression
   | UnknownNode
 
-export const AstNode: S.Schema<AstNode> = S.suspend(
-  (): S.Schema<AstNode> =>
-    S.Union([
+export const AstNode: Schema<AstNode> = suspend(
+  (): Schema<AstNode> =>
+    union([
       Identifier,
       StringLiteral,
       ObjectExpression,
@@ -58,46 +67,34 @@ export const AstNode: S.Schema<AstNode> = S.suspend(
       CallExpression,
       UnknownNode,
     ]),
-).annotate({
-  identifier: 'systemfsoftware.stryker-plugins.effect-schema-ignorer.AstNode',
-  recursionBudget: { maxDepth: 6, depthSize: 'small' },
-})
+  { maxDepth: 6 },
+)
 
-export const MemberExpression: S.Schema<MemberExpression> = S.Struct({
-  type: S.Literal('MemberExpression'),
-  object: AstNode,
-  property: AstNode,
-})
-
-export const CallExpression: S.Schema<CallExpression> = S.Struct({
-  type: S.Literal('CallExpression'),
+export const CallExpression: Schema<CallExpression> = struct({
+  type: literal('CallExpression'),
   callee: AstNode,
-  arguments: S.Array(AstNode),
+  arguments: array(AstNode),
 })
 
-export const DocumentationKey = S.Literals(['identifier', 'description', 'title', 'documentation', 'examples'])
+export const DocumentationKey = literals(['identifier', 'description', 'title', 'documentation', 'examples'])
 
-export const DocumentationProperty = S.Struct({
-  type: S.Literal('Property'),
-  computed: S.Literal(false),
-  key: S.Union([
-    S.Struct({ type: S.Literal('Identifier'), name: DocumentationKey }),
-    S.Struct({ type: S.Literal('Literal'), value: DocumentationKey }),
+export const DocumentationProperty = struct({
+  type: literal('Property'),
+  computed: literal(false),
+  key: union([
+    struct({ type: literal('Identifier'), name: DocumentationKey }),
+    struct({ type: literal('Literal'), value: DocumentationKey }),
   ]),
-  value: S.Unknown,
+  value: unknown(),
 })
 
-export const DocumentationObject = S.Struct({
-  type: S.Literal('ObjectExpression'),
-  properties: S.NonEmptyArray(DocumentationProperty),
+export const DocumentationObject = struct({
+  type: literal('ObjectExpression'),
+  properties: nonEmptyArray(DocumentationProperty),
 })
 
-/** Derived recognisers, declared beside the shapes they decide. */
-export const isIdentifier = S.is(Identifier)
-export const isStringLiteral = S.is(StringLiteral)
-export const isObjectExpression = S.is(ObjectExpression)
-export const isArrowFunctionExpression = S.is(ArrowFunctionExpression)
-export const isMemberExpression = S.is(MemberExpression)
-export const isCallExpression = S.is(CallExpression)
-export const isDocumentationProperty = S.is(DocumentationProperty)
-export const isDocumentationObject = S.is(DocumentationObject)
+export const isCallExpression = (value: unknown): value is CallExpression => is(CallExpression, value)
+export const isDocumentationProperty = (value: unknown): value is TypeOf<typeof DocumentationProperty> =>
+  is(DocumentationProperty, value)
+export const isDocumentationObject = (value: unknown): value is TypeOf<typeof DocumentationObject> =>
+  is(DocumentationObject, value)

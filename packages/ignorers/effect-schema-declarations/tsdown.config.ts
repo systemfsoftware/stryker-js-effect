@@ -9,7 +9,4 @@ export default defineConfig({
   tsconfig: './tsconfig.build.json',
   clean: true,
   outExtensions: () => ({ js: '.mjs', dts: '.d.ts' }),
-  deps: {
-    alwaysBundle: ['effect', '@systemfsoftware/stryker-ignorer'],
-  },
 })
