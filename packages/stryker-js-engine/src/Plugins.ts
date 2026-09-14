@@ -10,7 +10,7 @@ import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 
-import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
+import type { Ignorer as IgnorerDescriptor } from '@systemfsoftware/stryker-ignorer-interface'
 import { Module } from '@systemfsoftware/stryker-js-language'
 import { Ignorer } from '@systemfsoftware/stryker-js-language'
 import type {
@@ -179,13 +179,8 @@ interface PluginModule {
   strykerPlugins: readonly PluginContribution<PluginKind>[]
 }
 
-interface IgnorerEntry {
-  readonly name: string
-  shouldIgnore(node: Node, ancestors: readonly Node[]): string | undefined
-}
-
 interface IgnorerModule {
-  strykerIgnorers: readonly IgnorerEntry[]
+  strykerIgnorers: readonly IgnorerDescriptor[]
 }
 
 interface SchemaValidationContribution {
@@ -427,7 +422,7 @@ const recoverPluginImportFailure = (
     Match.orElse(() => failPluginLoad(descriptor, error)),
   )
 
-const ignorerContribution = (ignorer: IgnorerEntry): PluginContribution<'Ignore'> =>
+const ignorerContribution = (ignorer: IgnorerDescriptor): PluginContribution<'Ignore'> =>
   declarePlugin(
     'Ignore',
     ignorer.name,
@@ -464,14 +459,14 @@ const moduleSchemaContribution = (module: unknown): Record<string, unknown> | un
 
 const mergeContributions = (
   native: readonly PluginContribution<PluginKind>[] | undefined,
-  plain: readonly PluginContribution<'Ignore'>[] | undefined,
+  ignorers: readonly PluginContribution<'Ignore'>[] | undefined,
 ): readonly PluginContribution<PluginKind>[] | undefined =>
   Option.match(Option.fromUndefinedOr(native), {
-    onNone: () => plain,
+    onNone: () => ignorers,
     onSome: (plugins) =>
-      Option.match(Option.fromUndefinedOr(plain), {
+      Option.match(Option.fromUndefinedOr(ignorers), {
         onNone: () => plugins,
-        onSome: (wrapped) => [...plugins, ...wrapped],
+        onSome: (ignoreContributions) => [...plugins, ...ignoreContributions],
       }),
   })
 

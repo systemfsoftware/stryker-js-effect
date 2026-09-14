@@ -8,7 +8,7 @@ export const PluginModuleSchema = S.Struct({
   strykerPlugins: S.Array(S.Unknown),
 })
 
-const isShouldIgnore = (value: unknown): value is (node: never, ancestors: never) => string | undefined =>
+const isShouldIgnore = (value: unknown): value is (...args: never[]) => string | undefined =>
   typeof value === 'function'
 
 export const IgnorerEntrySchema = S.Struct({
