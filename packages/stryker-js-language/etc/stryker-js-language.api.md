@@ -424,8 +424,10 @@ export class Ignorer extends Ignorer_base {}
 
 // @public (undocumented)
 export interface IgnorerService {
+    // Warning: (ae-forgotten-export) The symbol "Node_2" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
-    readonly shouldIgnore: (path: NodePath) => Option.Option<string>;
+    readonly shouldIgnore: (node: Node_2, ancestors: readonly Node_2[]) => Option.Option<string>;
 }
 
 // @public (undocumented)
@@ -812,14 +814,6 @@ export const MutationTestResultSchema: S.Struct<{
         readonly dependencies: S.optional<S.$Record<S.String, S.String>>;
     }>>;
 }>;
-
-// @public (undocumented)
-export interface NodePath {
-    // (undocumented)
-    readonly ancestors: readonly unknown[];
-    // (undocumented)
-    readonly node: unknown;
-}
 
 // @public (undocumented)
 export function normalizeFileName(fileName: string): string;
