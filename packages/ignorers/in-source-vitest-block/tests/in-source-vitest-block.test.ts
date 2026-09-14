@@ -42,6 +42,11 @@ const CASES = {
       path: { node: identifier('x'), ancestors: [guardOf(importMetaMember('vitest'))] },
       reason: IN_SOURCE_TEST_IGNORED,
     },
+    {
+      name: 'A guard if statement consulted as the node itself matches',
+      path: { node: guardOf(importMetaMember('vitest')) },
+      reason: IN_SOURCE_TEST_IGNORED,
+    },
   ],
   kept: [
     {

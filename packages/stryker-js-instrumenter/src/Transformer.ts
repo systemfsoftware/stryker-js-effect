@@ -905,7 +905,7 @@ function isSignalQueryCall(callee: unknown): boolean {
     isMemberExpressionWithIdentifier(callee, ANGULAR_SIGNAL_QUERY_FUNCTIONS, 'required')
 }
 
-function isUnknownArray(value: unknown): value is readonly Node[] {
+function isCommentArray(value: unknown): value is readonly unknown[] {
   return Array.isArray(value)
 }
 
@@ -1070,7 +1070,7 @@ async function headerFor(root: Program): Promise<readonly Statement[]> {
 
 function leadingCommentsOf(root: Program): Option.Option<readonly unknown[]> {
   const firstStatement = root.body[0] as CommentBearing | undefined
-  return Option.filter(Option.fromNullishOr(firstStatement?.leadingComments), isUnknownArray)
+  return Option.filter(Option.fromNullishOr(firstStatement?.leadingComments), isCommentArray)
 }
 
 function commentedHeader(leadingComments: readonly unknown[], header: readonly Statement[]): Statement {

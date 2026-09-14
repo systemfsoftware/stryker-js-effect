@@ -4,11 +4,13 @@
 
 import { Schema as S } from 'effect'
 
+import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
+
 export const PluginModuleSchema = S.Struct({
   strykerPlugins: S.Array(S.Unknown),
 })
 
-const isShouldIgnore = (value: unknown): value is (...args: never[]) => string | undefined =>
+const isShouldIgnore = (value: unknown): value is (node: Node, ancestors: readonly Node[]) => string | undefined =>
   typeof value === 'function'
 
 export const IgnorerEntrySchema = S.Struct({

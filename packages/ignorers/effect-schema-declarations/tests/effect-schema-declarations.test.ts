@@ -255,6 +255,10 @@ const CASES = {
   ],
   kept: [
     {
+      name: 'a documentation property consulted as the node itself stays live',
+      path: { node: identifierEntry, ancestors: [documentationOnly, documentationOnlyCall] },
+    },
+    {
       name: 'a bare `TaggedClass` factory call keeps its tag',
       path: { node: bareTag, ancestors: [bareFactoryCallNode] },
     },
