@@ -7,7 +7,9 @@
     "directory": "packages/stryker-js-engine"
   },
   "homepage": "https://github.com/systemfsoftware/stryker-js-effect",
-  "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
+  "bugs": {
+    "url": "https://github.com/systemfsoftware/stryker-js-effect/issues"
+  },
   "description": "The host-neutral mutation engine — the run, its stages, and the ports a process entry binds to start it.",
   "type": "module",
   "files": [
@@ -57,6 +59,7 @@
     "exports": {
       ".": "./dist/index.mjs",
       "./builtin-reporters": "./dist/builtin-reporters.mjs",
+      "./plugin-loader": "./dist/plugin-loader.mjs",
       "./config/base": "./dist/config/base.mjs",
       "./worker": "./dist/worker.mjs",
       "./package.json": "./package.json"
@@ -66,6 +69,7 @@
     ".": "./dist/index.mjs",
     "./builtin-reporters": "./dist/builtin-reporters.mjs",
     "./config/base": "./dist/config/base.mjs",
+    "./plugin-loader": "./dist/plugin-loader.mjs",
     "./worker": "./dist/worker.mjs",
     "./package.json": "./package.json"
   },

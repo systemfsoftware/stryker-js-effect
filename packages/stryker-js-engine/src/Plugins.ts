@@ -3,22 +3,27 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
 import * as HashSet from 'effect/HashSet'
+import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
 
 import { Module } from '@systemfsoftware/stryker-js-language'
+import { Ignorer } from '@systemfsoftware/stryker-js-language'
 import type {
   AnyPluginContribution,
   ContributionOf,
   PluginContribution,
 } from '@systemfsoftware/stryker-js-plugin-interface'
+import { declarePlugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { PluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
 import { defaultOptions, importModule } from './Config.js'
 import { StrykerError } from './stryker-error.schema.js'
 
 import {
+  PlainIgnorerModuleSchema,
   PluginLoadFailedError,
   PluginModuleSchema,
   PluginNotFoundError,
@@ -171,6 +176,15 @@ const IGNORED_PACKAGES = [
 
 interface PluginModule {
   strykerPlugins: readonly PluginContribution<PluginKind>[]
+}
+
+interface PlainIgnorerEntry {
+  readonly name: string
+  shouldIgnore(path: unknown): string | undefined
+}
+
+interface PlainIgnorerModule {
+  strykerIgnorers: readonly PlainIgnorerEntry[]
 }
 
 interface SchemaValidationContribution {
@@ -412,10 +426,30 @@ const recoverPluginImportFailure = (
     Match.orElse(() => failPluginLoad(descriptor, error)),
   )
 
+const plainIgnorerContribution = (ignorer: PlainIgnorerEntry): PluginContribution<'Ignore'> =>
+  declarePlugin(
+    'Ignore',
+    ignorer.name,
+    Layer.succeed(Ignorer, {
+      shouldIgnore: (path) => Option.fromUndefinedOr(ignorer.shouldIgnore(path)),
+    }),
+  )
+
 const modulePluginContributions = (module: unknown): readonly PluginContribution<PluginKind>[] | undefined =>
   Match.value(module).pipe(
     Match.when(isPluginModule, (pluginModule: PluginModule) => pluginModule.strykerPlugins),
     Match.orElse((): undefined => undefined),
+  )
+
+const modulePlainIgnorers = (
+  module: unknown,
+): Result.Result<readonly PluginContribution<'Ignore'>[] | undefined, S.SchemaError> =>
+  Match.value(Predicate.hasProperty(module, 'strykerIgnorers')).pipe(
+    Match.when(true, () =>
+      S.decodeUnknownResult(PlainIgnorerModuleSchema)(module).pipe(
+        Result.map((plain: PlainIgnorerModule) => plain.strykerIgnorers.map(plainIgnorerContribution)),
+      )),
+    Match.orElse(() => Result.succeed(undefined)),
   )
 
 const moduleSchemaContribution = (module: unknown): Record<string, unknown> | undefined =>
@@ -427,10 +461,28 @@ const moduleSchemaContribution = (module: unknown): Record<string, unknown> | un
     Match.orElse((): undefined => undefined),
   )
 
-const pluginContributionsOf = (module: unknown): PluginContributions => ({
-  plugins: modulePluginContributions(module),
-  schemaContribution: moduleSchemaContribution(module),
-})
+const mergeContributions = (
+  native: readonly PluginContribution<PluginKind>[] | undefined,
+  plain: readonly PluginContribution<'Ignore'>[] | undefined,
+): readonly PluginContribution<PluginKind>[] | undefined =>
+  Option.match(Option.fromUndefinedOr(native), {
+    onNone: () => plain,
+    onSome: (plugins) =>
+      Option.match(Option.fromUndefinedOr(plain), {
+        onNone: () => plugins,
+        onSome: (wrapped) => [...plugins, ...wrapped],
+      }),
+  })
+
+const pluginContributionsOf = (
+  module: unknown,
+): Result.Result<PluginContributions, S.SchemaError> =>
+  modulePlainIgnorers(module).pipe(
+    Result.map((plain) => ({
+      plugins: mergeContributions(modulePluginContributions(module), plain),
+      schemaContribution: moduleSchemaContribution(module),
+    })),
+  )
 
 const hasContribution = (contributions: PluginContributions): boolean =>
   Match.value(contributions.plugins !== undefined).pipe(
@@ -440,17 +492,21 @@ const hasContribution = (contributions: PluginContributions): boolean =>
 
 const warnUndescribedPluginModule = (descriptor: string): Effect.Effect<undefined> =>
   Effect.logWarning(
-    `Module "${descriptor}" did not contribute a StrykerJS plugin. It didn't export a "strykerPlugins" or "strykerValidationSchema".`,
+    `Module "${descriptor}" did not contribute a StrykerJS plugin. It didn't export a "strykerPlugins", "strykerIgnorers", or "strykerValidationSchema".`,
   ).pipe(Effect.as(undefined))
 
 const describeLoadedPlugin = (
   descriptor: string,
   module: unknown,
-): Effect.Effect<PluginContributions | undefined> =>
-  Match.value(pluginContributionsOf(module)).pipe(
-    Match.when(hasContribution, (contributions: PluginContributions) => Effect.succeed(contributions)),
-    Match.orElse(() => warnUndescribedPluginModule(descriptor)),
-  )
+): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError> =>
+  Result.match(pluginContributionsOf(module), {
+    onFailure: (cause) => failPluginLoad(descriptor, cause),
+    onSuccess: (contributions) =>
+      Match.value(hasContribution(contributions)).pipe(
+        Match.when(true, () => Effect.succeed<PluginContributions | undefined>(contributions)),
+        Match.orElse(() => warnUndescribedPluginModule(descriptor)),
+      ),
+  })
 
 function loadPlugin(
   descriptor: string,
