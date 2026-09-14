@@ -10,7 +10,7 @@ name, the shape of the input it decides over, and a synchronous decision. This
 package carries the whole author-facing surface — the schema toolkit, the node
 vocabulary, the ancestor walk, and a case-table test harness. It has **no
 Effect dependency**, runtime or development: `dependencies` is empty, and the
-kitchen-sink `@systemfsoftware/all` preset is replaced by
+kitchen-sink family aggregate preset is replaced by
 `@systemfsoftware/oxlint-ignorer-config`, which bans Effect imports outright.
 
 | Export                       | What it is                                                                                                                                                                                                                                                                                                                         |
