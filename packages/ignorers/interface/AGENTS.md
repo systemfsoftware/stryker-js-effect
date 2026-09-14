@@ -1,9 +1,9 @@
 # AGENTS.md — `@systemfsoftware/stryker-ignorer-interface`
 
-The ignorer interface as types only: `PlainIgnorer`, the canonical AST node
-vocabulary aliased from `@oxc-project/types`, `AstNodeType`, `UnknownNode`, and
-`NodePath`. The package publishes no value, no function, and no schema — a guard,
-an ancestor walk, and a reason string belong to the ignorer that needs them.
+The ignorer interface as types only: `PlainIgnorer`, the AST vocabulary
+re-exported from `@oxc-project/types` and bundled into this package's own
+declarations, and `NodePath`. The package publishes no value, no function, and
+no schema — a guard and a reason string belong to the ignorer that needs them.
 Zero runtime dependencies and zero Effect is the package's identity — nothing
 that imports effect or a host package, at run time or in `devDependencies`, may
 land here. Root `AGENTS.md` governs.

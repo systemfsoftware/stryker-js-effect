@@ -13,17 +13,15 @@ dependency, runtime or development: `dependencies` is empty, no value is
 exported, and the kitchen-sink family aggregate preset is replaced by
 `@systemfsoftware/oxlint-ignorer-config`, which bans Effect imports outright.
 
-| Export         | What it is                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PlainIgnorer` | The descriptor: `{ name, shouldIgnore(path): string \| undefined }`                                                                                                                                                                                                                                                                                                                                                         |
-| vocabulary     | the canonical AST kinds, each an alias of its [`@oxc-project/types`](https://www.npmjs.com/package/@oxc-project/types) declaration — `Identifier`, `StringLiteral`, `ObjectExpression`, `Property`, `ArrowFunctionExpression`, `FunctionExpression`, `MemberExpression`, `CallExpression`, `MetaProperty`, `BinaryExpression`, `IfStatement`, `ImportSpecifier`, `ImportNamespaceSpecifier`, `ImportDeclaration`, `Program` |
-| `AstNodeType`  | the union of the fifteen kinds above plus `UnknownNode`                                                                                                                                                                                                                                                                                                                                                                     |
-| `UnknownNode`  | any node the vocabulary does not model: `{ readonly type: string }`                                                                                                                                                                                                                                                                                                                                                         |
-| `NodePath`     | the path shape the host hands `shouldIgnore`: the node, and the parent path or nothing                                                                                                                                                                                                                                                                                                                                      |
+| Export         | What it is                                                                                                                                                                                                                                                                                    |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PlainIgnorer` | The descriptor: `{ name, shouldIgnore(path): string \| undefined }`                                                                                                                                                                                                                           |
+| vocabulary     | the AST vocabulary, re-exported from [`@oxc-project/types`](https://www.npmjs.com/package/@oxc-project/types) and bundled into this package's own declarations, so a consumer installs nothing else — `Node`, `Expression`, `Statement`, `Program`, `Span`, and every concrete node interface |
+| `NodePath`     | the path shape the host hands `shouldIgnore`: the node and its ancestors, nearest first                                                                                                                                                                                                       |
 
-Everything the package publishes is a type. A guard, a walk over the path, and a
-reason string are the ignorer's own code: the host never interprets a schema, it
-calls `shouldIgnore(path)` and uses what comes back.
+Everything the package publishes is a type. A guard and a reason string are the
+ignorer's own code: the host never interprets a schema, it calls
+`shouldIgnore(path)` and uses what comes back.
 
 ## Install
 
@@ -39,12 +37,7 @@ import type { NodePath, PlainIgnorer } from '@systemfsoftware/stryker-ignorer-in
 const isGenerated = (node: unknown): boolean =>
   typeof node === 'object' && node !== null && 'name' in node && node.name === '__generated'
 
-const inGeneratedCode = (path: NodePath): boolean => {
-  for (let current = path.parentPath; current; current = current.parentPath) {
-    if (isGenerated(current.node)) return true
-  }
-  return false
-}
+const inGeneratedCode = (path: NodePath): boolean => path.ancestors.some(isGenerated)
 
 const myIgnorer: PlainIgnorer = {
   name: 'generated-code',

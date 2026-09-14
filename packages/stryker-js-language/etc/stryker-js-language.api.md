@@ -816,19 +816,9 @@ export const MutationTestResultSchema: S.Struct<{
 // @public (undocumented)
 export interface NodePath {
     // (undocumented)
-    isCallExpression(): boolean;
-    // (undocumented)
-    isClassAccessorProperty(): boolean;
-    // (undocumented)
-    isClassPrivateProperty(): boolean;
-    // (undocumented)
-    isClassProperty(): boolean;
-    // (undocumented)
-    isObjectExpression(): boolean;
+    readonly ancestors: readonly unknown[];
     // (undocumented)
     readonly node: unknown;
-    // (undocumented)
-    readonly parentPath?: NodePath | null;
 }
 
 // @public (undocumented)

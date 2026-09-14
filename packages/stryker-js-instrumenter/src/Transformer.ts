@@ -23,8 +23,8 @@ import {
   type Expression,
   expressionStatement,
   type FunctionExpression,
-  type Identifier,
   identifier,
+  type IdentifierReference,
   ifStatement,
   isExpressionKind,
   isStatementKind,
@@ -42,6 +42,7 @@ import {
   traverse,
   type TraversePath,
   variableDeclaration,
+  type VariableDeclarator,
   variableDeclarator,
 } from './Ast.js'
 import { applyMutant, createMutant, type Mutable, type Mutant } from './Mutator.js'
@@ -302,38 +303,11 @@ function mutatorWarning(directive: StrykerDirective, mutatorName: string, origin
 }
 
 function toIgnorerPath(path: TraversePath): IgnorerNodePath {
-  let parentResult: IgnorerNodePath | null = null
-  if (path.parentPath !== null) {
-    parentResult = toIgnorerPath(path.parentPath)
+  const ancestors: unknown[] = []
+  for (let current = path.parentPath; current !== null; current = current.parentPath) {
+    ancestors.push(current.node)
   }
-  const node: unknown = path.node
-  const result: IgnorerNodePath = {
-    node: path.node,
-    parentPath: parentResult,
-    isObjectExpression(): boolean {
-      return nodeType(node) === 'ObjectExpression'
-    },
-    isCallExpression(): boolean {
-      return nodeType(node) === 'CallExpression'
-    },
-    isClassProperty(): boolean {
-      return nodeType(node) === 'PropertyDefinition'
-    },
-    isClassPrivateProperty(): boolean {
-      return nodeType(node) === 'PropertyDefinition' &&
-        nodeType(propertyKeyOf(node)) === 'PrivateIdentifier'
-    },
-    isClassAccessorProperty(): boolean {
-      return nodeType(node) === 'AccessorProperty'
-    },
-  }
-  return result
-}
-
-function propertyKeyOf(node: unknown): unknown {
-  return Option.getOrUndefined(
-    Option.map(Option.filter(Option.some(node), Predicate.hasProperty('key')), (holder) => holder['key']),
-  )
+  return { node: path.node, ancestors }
 }
 
 export function isTypeNode(path: TraversePath): boolean {
@@ -473,10 +447,7 @@ function classOrFunctionExpressionNamedIfNeeded(path: TraversePath): Expression 
 
 function nameFromParent(path: TraversePath, node: AnonymousFunctionOrClass): Expression | undefined {
   return Match.value(path.parentPath?.node).pipe(
-    Match.when(
-      { type: 'VariableDeclarator', id: { type: 'Identifier' } },
-      (declarator) => adoptIdentifier(node, declarator.id),
-    ),
+    Match.when(isVariableDeclarator, (declarator) => adoptDeclaredName(node, declarator)),
     Match.when({ type: 'Property', key: { type: 'Identifier' } }, () => namedPropertyValue(path, node)),
     Match.orElse(() => undefined),
   )
@@ -490,7 +461,7 @@ function namedPropertyValue(path: TraversePath, node: AnonymousFunctionOrClass):
   )
 }
 
-function adoptIdentifier(node: AnonymousFunctionOrClass, identifier: Identifier): Expression {
+function adoptIdentifier(node: AnonymousFunctionOrClass, identifier: IdentifierReference): Expression {
   node.id = identifier
   return node
 }
@@ -521,7 +492,7 @@ function arrowNamedByDeclarator(
   })
 }
 
-function namedArrowExpression(node: ArrowFunctionExpression, identifier: Identifier): Expression {
+function namedArrowExpression(node: ArrowFunctionExpression, identifier: IdentifierReference): Expression {
   const declaration = variableDeclaration('const', [variableDeclarator(identifier, node)])
   return callExpression(
     arrowFunctionExpression([], blockStatement([declaration, returnStatement(identifier)])),
@@ -529,15 +500,34 @@ function namedArrowExpression(node: ArrowFunctionExpression, identifier: Identif
   )
 }
 
-function declaratorIdentifier(parentPath: TraversePath | null): Option.Option<Identifier> {
+function declaratorIdentifier(parentPath: TraversePath | null): Option.Option<IdentifierReference> {
   return Option.flatMap(Option.fromNullishOr(parentPath), (parent) =>
     Match.value(parent.node).pipe(
-      Match.when(
-        { type: 'VariableDeclarator', id: { type: 'Identifier' } },
-        (declarator) => Option.some(declarator.id),
-      ),
-      Match.orElse(() => Option.none<Identifier>()),
+      Match.when(isVariableDeclarator, (declarator) => declaredName(declarator)),
+      Match.orElse(() => Option.none<IdentifierReference>()),
     ))
+}
+
+function isVariableDeclarator(node: unknown): node is VariableDeclarator {
+  return nodeType(node) === 'VariableDeclarator'
+}
+
+function adoptDeclaredName(node: AnonymousFunctionOrClass, declarator: VariableDeclarator): Expression | undefined {
+  return Option.match(declaredName(declarator), {
+    onNone: () => undefined,
+    onSome: (identifier) => adoptIdentifier(node, identifier),
+  })
+}
+
+function declaredName(declarator: VariableDeclarator): Option.Option<IdentifierReference> {
+  return Match.value(declarator.id).pipe(
+    Match.when(isIdentifierReference, (identifier) => Option.some(identifier)),
+    Match.orElse(() => Option.none<IdentifierReference>()),
+  )
+}
+
+function isIdentifierReference(node: unknown): node is IdentifierReference {
+  return nodeType(node) === 'Identifier'
 }
 
 function nameIfAnonymous(path: TraversePath): Expression {
@@ -769,15 +759,21 @@ function reasonAt(path: IgnorerNodePath): Option.Option<string> {
 }
 
 function ancestorReason(path: IgnorerNodePath): Option.Option<string> {
-  return Option.flatMap(Option.fromNullishOr(path.parentPath), shouldIgnore)
+  return path.ancestors
+    .map((_ancestor, index) => reasonAt(ancestorPath(path.ancestors, index)))
+    .find(Option.isSome) ?? Option.none()
+}
+
+function ancestorPath(ancestors: readonly unknown[], index: number): IgnorerNodePath {
+  return { node: ancestors[index], ancestors: ancestors.slice(index + 1) }
 }
 
 export const angularIgnorer: IgnorerService = {
   shouldIgnore,
 }
 
-function isClassFieldLike(path: IgnorerNodePath): boolean {
-  return CLASS_FIELD_KINDS.includes(nodeType(path.node) ?? '')
+function isClassFieldLike(node: unknown): boolean {
+  return CLASS_FIELD_KINDS.includes(nodeType(node) ?? '')
 }
 
 const CLASS_FIELD_KINDS: readonly string[] = Object.freeze(['PropertyDefinition', 'AccessorProperty'])
@@ -785,8 +781,10 @@ const CLASS_FIELD_KINDS: readonly string[] = Object.freeze(['PropertyDefinition'
 interface SignalCallSite {
   readonly callee: unknown
   readonly args: readonly unknown[]
-  readonly objectExpression: IgnorerNodePath
+  readonly objectExpression: unknown
 }
+
+type OwnsCallSite = (owner: unknown) => boolean
 
 function isInputModelOrOutputConfigurationObject(path: IgnorerNodePath): boolean {
   return Option.match(signalCallSiteOf(path, isPropertyDefinitionField), {
@@ -802,30 +800,27 @@ function isSignalQueryOptionsObject(path: IgnorerNodePath): boolean {
   })
 }
 
-function isPropertyDefinitionField(path: IgnorerNodePath): boolean {
-  return nodeType(path.node) === 'PropertyDefinition'
+function isPropertyDefinitionField(node: unknown): boolean {
+  return nodeType(node) === 'PropertyDefinition'
 }
 
 /** The call that takes the object expression as an argument, when a field-like member owns it. */
 function signalCallSiteOf(
   path: IgnorerNodePath,
-  ownsCallSite: (owner: IgnorerNodePath) => boolean,
+  ownsCallSite: OwnsCallSite,
 ): Option.Option<SignalCallSite> {
   return Option.flatMap(
     ownedCallPath(path, ownsCallSite),
-    (callPath) => Option.map(callArgumentsOf(callPath), (call) => ({ ...call, objectExpression: path })),
+    (callNode) => Option.map(callArgumentsOf(callNode), (call) => ({ ...call, objectExpression: path.node })),
   )
 }
 
-function ownedCallPath(
-  path: IgnorerNodePath,
-  ownsCallSite: (owner: IgnorerNodePath) => boolean,
-): Option.Option<IgnorerNodePath> {
+function ownedCallPath(path: IgnorerNodePath, ownsCallSite: OwnsCallSite): Option.Option<unknown> {
   const argument = Option.filter(Option.some(path), (candidate) => isOwnedCallArgument(candidate, ownsCallSite))
-  return Option.flatMap(argument, (candidate) => Option.fromNullishOr(candidate.parentPath))
+  return Option.flatMap(argument, () => Option.fromUndefinedOr(path.ancestors[0]))
 }
 
-function isOwnedCallArgument(path: IgnorerNodePath, ownsCallSite: (owner: IgnorerNodePath) => boolean): boolean {
+function isOwnedCallArgument(path: IgnorerNodePath, ownsCallSite: OwnsCallSite): boolean {
   return isObjectArgumentOfCall(path) && ownsCallSiteOf(path, ownsCallSite)
 }
 
@@ -834,11 +829,11 @@ function isObjectArgumentOfCall(path: IgnorerNodePath): boolean {
 }
 
 function parentIsCallExpression(path: IgnorerNodePath): boolean {
-  return nodeType(path.parentPath?.node) === 'CallExpression'
+  return nodeType(path.ancestors[0]) === 'CallExpression'
 }
 
-function ownsCallSiteOf(path: IgnorerNodePath, ownsCallSite: (owner: IgnorerNodePath) => boolean): boolean {
-  return Option.exists(Option.fromNullishOr(path.parentPath?.parentPath), ownsCallSite)
+function ownsCallSiteOf(path: IgnorerNodePath, ownsCallSite: OwnsCallSite): boolean {
+  return Option.exists(Option.fromUndefinedOr(path.ancestors[1]), ownsCallSite)
 }
 
 interface CallArguments {
@@ -846,9 +841,9 @@ interface CallArguments {
   readonly args: readonly unknown[]
 }
 
-function callArgumentsOf(callPath: IgnorerNodePath): Option.Option<CallArguments> {
+function callArgumentsOf(callNode: unknown): Option.Option<CallArguments> {
   return Option.flatMap(
-    Option.filter(Option.some(callPath.node), hasCallShape),
+    Option.filter(Option.some(callNode), hasCallShape),
     (call) => Option.map(argumentArrayOf(call['arguments']), (args) => ({ callee: call['callee'], args })),
   )
 }
@@ -894,7 +889,7 @@ function isSignalQueryCall(callee: unknown): boolean {
 function isArgumentAt(site: SignalCallSite, index: Option.Option<number>): boolean {
   return Option.exists(
     index,
-    (position) => site.args.length > position && site.args[position] === site.objectExpression.node,
+    (position) => site.args.length > position && site.args[position] === site.objectExpression,
   )
 }
 
@@ -1216,7 +1211,7 @@ async function placeModuleHeader(svelte: AstByFormat['svelte']): Promise<void> {
 }
 
 function emptyProgram(): Program {
-  return { type: 'Program', sourceType: 'module', body: [] }
+  return { type: 'Program', sourceType: 'module', body: [], hashbang: null }
 }
 
 interface MutantsPlacement {

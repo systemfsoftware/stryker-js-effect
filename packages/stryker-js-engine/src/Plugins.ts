@@ -11,7 +11,7 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 
 import { Module } from '@systemfsoftware/stryker-js-language'
-import { Ignorer } from '@systemfsoftware/stryker-js-language'
+import { Ignorer, type NodePath } from '@systemfsoftware/stryker-js-language'
 import type {
   AnyPluginContribution,
   ContributionOf,
@@ -180,7 +180,7 @@ interface PluginModule {
 
 interface PlainIgnorerEntry {
   readonly name: string
-  shouldIgnore(path: unknown): string | undefined
+  shouldIgnore(path: NodePath): string | undefined
 }
 
 interface PlainIgnorerModule {

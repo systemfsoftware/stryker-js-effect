@@ -2,43 +2,42 @@
  * Mutator — every mutation operator and its registry.
  */
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
-import type {
-  AssignmentExpression,
-  BinaryExpression,
-  ClassBody,
-  DoWhileStatement,
-  LogicalExpression,
-  MethodDefinition,
-  ObjectExpression,
-  ObjectProperty,
-  PrivateInExpression,
-  PropertyDefinition,
-  WhileStatement,
-} from '@oxc-project/types'
 import { type Location, Mutant as ApiMutant, type Position } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
 import type {
   ArrayExpression,
   ArrowFunctionExpression,
+  AssignmentExpression,
+  BinaryExpression,
   BlockStatement,
   BooleanLiteral,
   CallExpression,
+  ClassBody,
+  DoWhileStatement,
   Expression,
   ForStatement,
-  Identifier,
+  IdentifierReference,
   IfStatement,
   Literal,
+  LogicalExpression,
   MemberExpression,
+  MethodDefinition,
   NewExpression,
   Node,
+  ObjectExpression,
+  ObjectProperty,
+  PrivateInExpression,
+  PropertyDefinition,
   SpreadElement,
+  StaticMemberExpression,
   StringLiteral,
   SwitchCase,
   TemplateElement,
   TemplateLiteral,
   UnaryExpression,
   UpdateExpression,
+  WhileStatement,
 } from './Ast.js'
 
 import {
@@ -469,7 +468,7 @@ function propertyOf(node: unknown, key: string): unknown {
   )
 }
 
-function isIdentifier(node: unknown): node is Identifier {
+function isIdentifier(node: unknown): node is IdentifierReference {
   return nodeType(node) === 'Identifier'
 }
 
@@ -527,7 +526,7 @@ function outerLeftOperand(node: BinaryExpression): unknown {
 }
 
 type ArrayConstructorCall = (CallExpression | NewExpression) & {
-  callee: Identifier & { name: 'Array' }
+  callee: IdentifierReference & { name: 'Array' }
 }
 
 export const arrayDeclarationMutator: Mutator = (node) =>
@@ -556,7 +555,7 @@ function isCallOrNewExpression(node: Node): node is CallExpression | NewExpressi
   return node.type === 'CallExpression' || node.type === 'NewExpression'
 }
 
-function isArrayIdentifier(node: Node): node is Identifier & { name: 'Array' } {
+function isArrayIdentifier(node: Node): node is IdentifierReference & { name: 'Array' } {
   return node.type === 'Identifier' && node.name === 'Array'
 }
 
@@ -589,7 +588,7 @@ function hasMutableArrowBody(body: BlockStatement | Expression): boolean {
   return body.type !== 'BlockStatement' && !isUndefinedExpression(body)
 }
 
-function isUndefinedExpression(node: BlockStatement | Expression): node is Identifier {
+function isUndefinedExpression(node: BlockStatement | Expression): node is IdentifierReference {
   return node.type === 'Identifier' && node.name === 'undefined'
 }
 
@@ -987,8 +986,8 @@ for (const [key, value] of Object.entries(baseReplacements)) {
   }
 }
 
-interface NamedMember extends MemberExpression {
-  readonly property: Identifier
+interface NamedMember extends StaticMemberExpression {
+  readonly property: IdentifierReference
   readonly object: Expression
 }
 
@@ -1061,7 +1060,6 @@ function renamedMethodCall(mutation: MethodMutation, newName: string): Expressio
   const mutatedCallee = memberExpression(
     cloneNode(mutation.callee.object),
     identifier(newName),
-    false,
     mutation.callee.optional === true,
   )
   return callExpression(mutatedCallee, spreadFreeArguments(mutation.call.arguments), mutation.call.optional === true)

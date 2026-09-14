@@ -8,7 +8,7 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import type { OxcError } from 'oxc-parser'
 import path from 'path'
-import { type BaseNode, buildLineTable, positionFromLineTable, type Program } from './Ast.js'
+import { buildLineTable, type Node, positionFromLineTable, type Program } from './Ast.js'
 import { loadOxc } from './Oxc.js'
 import {
   ParseFailed,
@@ -77,7 +77,7 @@ function isTypedRecord(value: unknown): value is Record<string, unknown> & { typ
   return isPlainRecord(value) && Predicate.isString(value['type'])
 }
 
-function isRangedBaseNode(value: unknown): value is BaseNode & Range {
+function isRangedBaseNode(value: unknown): value is Node & Range {
   return isTypedRecord(value) && hasNumericRange(value)
 }
 
@@ -462,7 +462,7 @@ interface Version {
 const MINIMUM_SVELTE_VERSION: Version = { major: 3, minor: 30 }
 const SVELTE_5: Version = { major: 5, minor: 0 }
 
-const ESTREE_WALKER_MISSING = 'estree-walker module without walk export'
+const WALKER_MODULE_MISSING = 'walker module without walk export'
 const COMPILER_WALK_MISSING = 'svelte/compiler module without walk export'
 
 const INSTANCE_RANGE_MISSING = 'Svelte instance script without a source range'
@@ -581,7 +581,7 @@ function rangedExpressionOf(payload: unknown): TemplateRange | undefined {
  */
 function loadWalker(version: string, fileName: string): Promise<WalkFn> {
   return Match.value(isAtLeast(version, SVELTE_5)).pipe(
-    Match.when(true, () => loadWalkerModule(import.meta.resolve('estree-walker'), fileName, ESTREE_WALKER_MISSING)),
+    Match.when(true, () => loadWalkerModule(import.meta.resolve('oxc-walker'), fileName, WALKER_MODULE_MISSING)),
     Match.orElse(() => loadWalkerModule('svelte/compiler', fileName, COMPILER_WALK_MISSING)),
   )
 }

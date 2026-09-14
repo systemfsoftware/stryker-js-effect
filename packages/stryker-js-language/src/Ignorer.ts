@@ -1,15 +1,8 @@
+import type { NodePath } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Context from 'effect/Context'
 import type * as Option from 'effect/Option'
 
-export interface NodePath {
-  readonly node: unknown
-  readonly parentPath?: NodePath | null
-  isObjectExpression(): boolean
-  isCallExpression(): boolean
-  isClassProperty(): boolean
-  isClassPrivateProperty(): boolean
-  isClassAccessorProperty(): boolean
-}
+export type { NodePath }
 
 export interface IgnorerService {
   readonly shouldIgnore: (path: NodePath) => Option.Option<string>

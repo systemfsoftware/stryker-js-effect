@@ -1,13 +1,12 @@
 import type { NodePath } from '@systemfsoftware/stryker-ignorer-interface'
 
-import { ancestorsOf } from './AncestorWalk.js'
 import { decideSchemaDeclarationIgnore } from './SchemaDeclarationIgnore.js'
 
 const decisionAt = (chain: readonly unknown[], position: number): string | undefined =>
   decideSchemaDeclarationIgnore(chain[position], chain[position + 1], chain[position + 2], chain[position + 3])
 
 const firstIgnoreReason = (path: NodePath): string | undefined => {
-  const chain = [path.node, ...ancestorsOf(path)]
+  const chain = [path.node, ...path.ancestors]
   return chain.reduce<string | undefined>((found, _, position) => found ?? decisionAt(chain, position), undefined)
 }
 

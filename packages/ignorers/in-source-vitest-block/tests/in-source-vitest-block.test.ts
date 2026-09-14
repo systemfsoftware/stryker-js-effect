@@ -97,13 +97,7 @@ interface CasePath {
   readonly ancestors?: readonly unknown[] | undefined
 }
 
-const pathOf = (spec: CasePath): NodePath => ({
-  node: spec.node,
-  parentPath: (spec.ancestors ?? []).reduceRight<NodePath | null>(
-    (parentPath, ancestor) => ({ node: ancestor, parentPath }),
-    null,
-  ),
-})
+const pathOf = (spec: CasePath): NodePath => ({ node: spec.node, ancestors: spec.ancestors ?? [] })
 
 describe('in-source-vitest-block', () => {
   it('Should_Register_The_Descriptor', () => {
@@ -114,5 +108,16 @@ describe('in-source-vitest-block', () => {
   })
   it.each(CASES.kept)('keeps: $name', (testCase) => {
     expect(ignorer.shouldIgnore(pathOf(testCase.path))).toBeUndefined()
+  })
+  it('ignores a literal whose ancestors carry the guard', () => {
+    expect(
+      ignorer.shouldIgnore({
+        node: { type: 'Literal', value: 'production' },
+        ancestors: [
+          binaryOf(importMetaMember('vitest'), identifier('undefined')),
+          guardOf(importMetaMember('vitest')),
+        ],
+      }),
+    ).toBe(IN_SOURCE_TEST_IGNORED)
   })
 })

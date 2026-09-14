@@ -61,15 +61,7 @@ const loadFixture = (name: string) =>
     Effect.provide(Layer.mergeAll(FileSystem.layerNoop({}), Path.layer, moduleLayer)),
   )
 
-const pathOf = (node: unknown): NodePath => ({
-  node,
-  parentPath: null,
-  isObjectExpression: () => false,
-  isCallExpression: () => false,
-  isClassProperty: () => false,
-  isClassPrivateProperty: () => false,
-  isClassAccessorProperty: () => false,
-})
+const pathOf = (node: unknown): NodePath => ({ node, ancestors: [] })
 
 Feature('Loading plain ignorer plugins')
   .body(({ scenario }) => {

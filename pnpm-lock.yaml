@@ -84,6 +84,9 @@ catalogs:
     oxc-parser:
       specifier: ^0.140.0
       version: 0.140.0
+    oxc-walker:
+      specifier: ^1.1.1
+      version: 1.1.1
     oxlint:
       specifier: ^1.77.0
       version: 1.82.0
@@ -99,6 +102,9 @@ catalogs:
     turbo:
       specifier: ^2.10.12
       version: 2.10.12
+    type-fest:
+      specifier: ^4.41.0
+      version: 4.41.0
     typescript:
       specifier: ^7
       version: 7.0.2
@@ -508,6 +514,9 @@ importers:
       oxc-parser:
         specifier: 'catalog:'
         version: 0.140.0
+      oxc-walker:
+        specifier: 'catalog:'
+        version: 1.1.1(@oxc-project/types@0.140.0)(oxc-parser@0.140.0)(rolldown@1.2.8)
     devDependencies:
       '@microsoft/api-extractor':
         specifier: 'catalog:'
@@ -530,9 +539,6 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
-      estree-walker:
-        specifier: 3.0.3
-        version: 3.0.3
       oxlint:
         specifier: 'catalog:'
         version: 1.82.0(oxlint-tsgolint@7.0.2001)
@@ -545,6 +551,9 @@ importers:
       tsdown:
         specifier: 'catalog:'
         version: 0.23.0(typescript@7.0.2)
+      type-fest:
+        specifier: 'catalog:'
+        version: 4.41.0
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -579,6 +588,9 @@ importers:
       '@systemfsoftware/effect-schema-vite':
         specifier: 'catalog:'
         version: 2.1.1(@systemfsoftware/effect-schema-law@2.1.1(@effect/vitest@4.0.0-rc.112(effect@4.0.0-rc.112)(vitest@4.1.11))(effect@4.0.0-rc.112)(vitest@4.1.11))(effect@4.0.0-rc.112)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.11)
+      '@systemfsoftware/stryker-ignorer-interface':
+        specifier: workspace:^
+        version: link:../ignorers/interface
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
@@ -2560,6 +2572,20 @@ packages:
     resolution: {integrity: sha512-h6QFWd6lBMfjESqgQ27GjzrSDb0qbznp7VDQqp2zvgsrWut4vcchyMIzOVXvGQ2GMZgKw9RWrFNWv9WqGL0p7Q==}
     engines: {node: ^20.19.0 || >=22.12.0}
 
+  oxc-walker@1.1.1:
+    resolution: {integrity: sha512-Hwd7dq28zu/Er99+bpWp16CGwFrhyalJh0W3JOB7XpPvgWo3MqMi2ksWGKuzzA9zt50mJ2pIUwR5lpAdZ9ACNQ==}
+    peerDependencies:
+      '@oxc-project/types': '>=0.98.0'
+      oxc-parser: '>=0.98.0'
+      rolldown: '>=1.0.0'
+    peerDependenciesMeta:
+      '@oxc-project/types':
+        optional: true
+      oxc-parser:
+        optional: true
+      rolldown:
+        optional: true
+
   oxlint-tsgolint@7.0.2001:
     resolution: {integrity: sha512-KjK/XLcXr1DSyonKhsuFqJRiuKqcyG9j3LJ8nkOsrLzGvodBPqzHOKauy10asLMDI0sUpvb+1sxlzff3udZvfg==}
     hasBin: true
@@ -2822,6 +2848,10 @@ packages:
   turbo@2.10.12:
     resolution: {integrity: sha512-AswgMPnpOoaVZHrrSBejETzEbuIA69OVGwfkHwfrY0A23VjWXBANzgq9+OymWOHAIArB7D1+1z498WY8fGg1Jw==}
     hasBin: true
+
+  type-fest@4.41.0:
+    resolution: {integrity: sha512-TeTSQ6H5YHvpqVwBRcnLDCBnDOHWYu7IvGbHT6N8AOymcr9PJGjc1GTtiWZTYg0NCgYwvnYWEkVChQAr9bjfwA==}
+    engines: {node: '>=16'}
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -4355,6 +4385,12 @@ snapshots:
       '@oxc-parser/binding-win32-ia32-msvc': 0.140.0
       '@oxc-parser/binding-win32-x64-msvc': 0.140.0
 
+  oxc-walker@1.1.1(@oxc-project/types@0.140.0)(oxc-parser@0.140.0)(rolldown@1.2.8):
+    optionalDependencies:
+      '@oxc-project/types': 0.140.0
+      oxc-parser: 0.140.0
+      rolldown: 1.2.8
+
   oxlint-tsgolint@7.0.2001:
     optionalDependencies:
       '@oxlint-tsgolint/darwin-arm64': 7.0.2001
@@ -4624,6 +4660,8 @@ snapshots:
       '@turbo/linux-arm64': 2.10.12
       '@turbo/windows-64': 2.10.12
       '@turbo/windows-arm64': 2.10.12
+
+  type-fest@4.41.0: {}
 
   typescript@5.9.3: {}
 

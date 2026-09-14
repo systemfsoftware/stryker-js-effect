@@ -393,13 +393,7 @@ interface CasePath {
   readonly ancestors?: readonly unknown[] | undefined
 }
 
-const pathOf = (spec: CasePath): NodePath => ({
-  node: spec.node,
-  parentPath: (spec.ancestors ?? []).reduceRight<NodePath | null>(
-    (parentPath, ancestor) => ({ node: ancestor, parentPath }),
-    null,
-  ),
-})
+const pathOf = (spec: CasePath): NodePath => ({ node: spec.node, ancestors: spec.ancestors ?? [] })
 
 describe('effect-schema-declarations', () => {
   it('Should_Register_The_Descriptor', () => {

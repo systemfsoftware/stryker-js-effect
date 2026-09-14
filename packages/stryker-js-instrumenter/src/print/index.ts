@@ -131,8 +131,7 @@ import type {
   WhileStatement,
   WithStatement,
   YieldExpression,
-} from '@oxc-project/types'
-import type { Program as AstProgram } from '../Ast.js'
+} from '../Ast.js'
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -158,9 +157,9 @@ export interface PrintOptions {
 
 export interface PrintProgramOptions extends PrintOptions {}
 
-export function printProgram(program: Program | AstProgram, opts: PrintProgramOptions = {}): string {
+export function printProgram(program: Program, opts: PrintProgramOptions = {}): string {
   const state = new PrintState(opts)
-  return state.printProgram(program as Program)
+  return state.printProgram(program)
 }
 
 // Convenience: print any single node (used for synthesized replacement snippets)

@@ -1,25 +1,9 @@
-import type { NodePath } from './AstNode.js'
+export type * from '@oxc-project/types'
 
-export type {
-  ArrowFunctionExpression,
-  AstNodeType,
-  BinaryExpression,
-  CallExpression,
-  FunctionExpression,
-  Identifier,
-  IfStatement,
-  ImportDeclaration,
-  ImportNamespaceSpecifier,
-  ImportSpecifier,
-  MemberExpression,
-  MetaProperty,
-  NodePath,
-  ObjectExpression,
-  Program,
-  Property,
-  StringLiteral,
-  UnknownNode,
-} from './AstNode.js'
+export interface NodePath {
+  readonly node: unknown
+  readonly ancestors: readonly unknown[]
+}
 
 export interface PlainIgnorer {
   readonly name: string
