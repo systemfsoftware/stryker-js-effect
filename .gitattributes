@@ -13,3 +13,7 @@
 *.dll binary
 *.so binary
 *.dylib binary
+
+# API Extractor writes its reports with CRLF. Keep the bytes it produces: a
+# checkout that normalises them to LF makes `api:check` see a spurious diff.
+**/etc/*.api.md -text
