@@ -1,3 +1,21 @@
+import type {
+  ArrowFunctionExpression as OxcArrowFunctionExpression,
+  BinaryExpression as OxcBinaryExpression,
+  CallExpression as OxcCallExpression,
+  Function as OxcFunction,
+  IdentifierReference as OxcIdentifier,
+  IfStatement as OxcIfStatement,
+  ImportDeclaration as OxcImportDeclaration,
+  ImportNamespaceSpecifier as OxcImportNamespaceSpecifier,
+  ImportSpecifier as OxcImportSpecifier,
+  MemberExpression as OxcMemberExpression,
+  MetaProperty as OxcMetaProperty,
+  ObjectExpression as OxcObjectExpression,
+  ObjectProperty as OxcProperty,
+  Program as OxcProgram,
+  StringLiteral as OxcStringLiteral,
+} from '@oxc-project/types'
+
 import {
   array,
   is,
@@ -12,82 +30,21 @@ import {
   unknown,
 } from './StandardSchema.js'
 
-export interface Identifier {
-  readonly type: 'Identifier'
-  readonly name: string
-}
-
-export interface StringLiteral {
-  readonly type: 'Literal'
-  readonly value: string
-}
-
-export interface ObjectExpression {
-  readonly type: 'ObjectExpression'
-}
-
-export interface Property {
-  readonly type: 'Property'
-}
-
-export interface ArrowFunctionExpression {
-  readonly type: 'ArrowFunctionExpression'
-}
-
-export interface FunctionExpression {
-  readonly type: 'FunctionExpression'
-}
-
-export interface MemberExpression {
-  readonly type: 'MemberExpression'
-  readonly object: AstNodeType
-  readonly property: AstNodeType
-}
-
-export interface CallExpression {
-  readonly type: 'CallExpression'
-  readonly callee: AstNodeType
-  readonly arguments: ReadonlyArray<unknown>
-}
-
-export interface MetaProperty {
-  readonly type: 'MetaProperty'
-  readonly meta: Identifier
-  readonly property: Identifier
-}
-
-export interface BinaryExpression {
-  readonly type: 'BinaryExpression'
-  readonly left: AstNodeType
-  readonly right: AstNodeType
-}
-
-export interface IfStatement {
-  readonly type: 'IfStatement'
-  readonly test: AstNodeType
-}
-
-export interface ImportSpecifier {
-  readonly type: 'ImportSpecifier'
-  readonly imported: Identifier
-  readonly local: Identifier
-}
-
-export interface ImportNamespaceSpecifier {
-  readonly type: 'ImportNamespaceSpecifier'
-  readonly local: Identifier
-}
-
-export interface ImportDeclaration {
-  readonly type: 'ImportDeclaration'
-  readonly source: StringLiteral
-  readonly specifiers: ReadonlyArray<ImportSpecifier | ImportNamespaceSpecifier>
-}
-
-export interface Program {
-  readonly type: 'Program'
-  readonly body: ReadonlyArray<unknown>
-}
+export type Identifier = OxcIdentifier
+export type StringLiteral = OxcStringLiteral
+export type Property = OxcProperty
+export type FunctionExpression = OxcFunction
+export type ObjectExpression = OxcObjectExpression
+export type ArrowFunctionExpression = OxcArrowFunctionExpression
+export type MemberExpression = OxcMemberExpression
+export type CallExpression = OxcCallExpression
+export type MetaProperty = OxcMetaProperty
+export type BinaryExpression = OxcBinaryExpression
+export type IfStatement = OxcIfStatement
+export type ImportSpecifier = OxcImportSpecifier
+export type ImportNamespaceSpecifier = OxcImportNamespaceSpecifier
+export type ImportDeclaration = OxcImportDeclaration
+export type Program = OxcProgram
 
 export interface UnknownNode {
   readonly type: string
@@ -134,79 +91,79 @@ export const AstNode: Schema<AstNodeType> = suspend(
   { maxDepth: 6 },
 )
 
-export const Identifier: Schema<Identifier> = struct({
+export const Identifier = struct({
   type: literal('Identifier'),
   name: string(),
 })
 
-export const StringLiteral: Schema<StringLiteral> = struct({
+export const StringLiteral = struct({
   type: literal('Literal'),
   value: string(),
 })
 
-export const ObjectExpression: Schema<ObjectExpression> = struct({
+export const ObjectExpression = struct({
   type: literal('ObjectExpression'),
 })
 
-export const Property: Schema<Property> = struct({
+export const Property = struct({
   type: literal('Property'),
 })
 
-export const ArrowFunctionExpression: Schema<ArrowFunctionExpression> = struct({
+export const ArrowFunctionExpression = struct({
   type: literal('ArrowFunctionExpression'),
 })
 
-export const FunctionExpression: Schema<FunctionExpression> = struct({
+export const FunctionExpression = struct({
   type: literal('FunctionExpression'),
 })
 
-export const MemberExpression: Schema<MemberExpression> = struct({
+export const MemberExpression = struct({
   type: literal('MemberExpression'),
   object: AstNode,
   property: AstNode,
 })
 
-export const CallExpression: Schema<CallExpression> = struct({
+export const CallExpression = struct({
   type: literal('CallExpression'),
   callee: AstNode,
   arguments: array(unknown()),
 })
 
-export const MetaProperty: Schema<MetaProperty> = struct({
+export const MetaProperty = struct({
   type: literal('MetaProperty'),
   meta: Identifier,
   property: Identifier,
 })
 
-export const BinaryExpression: Schema<BinaryExpression> = struct({
+export const BinaryExpression = struct({
   type: literal('BinaryExpression'),
   left: AstNode,
   right: AstNode,
 })
 
-export const IfStatement: Schema<IfStatement> = struct({
+export const IfStatement = struct({
   type: literal('IfStatement'),
   test: AstNode,
 })
 
-export const ImportSpecifier: Schema<ImportSpecifier> = struct({
+export const ImportSpecifier = struct({
   type: literal('ImportSpecifier'),
   imported: Identifier,
   local: Identifier,
 })
 
-export const ImportNamespaceSpecifier: Schema<ImportNamespaceSpecifier> = struct({
+export const ImportNamespaceSpecifier = struct({
   type: literal('ImportNamespaceSpecifier'),
   local: Identifier,
 })
 
-export const ImportDeclaration: Schema<ImportDeclaration> = struct({
+export const ImportDeclaration = struct({
   type: literal('ImportDeclaration'),
   source: StringLiteral,
   specifiers: array(union([ImportSpecifier, ImportNamespaceSpecifier])),
 })
 
-export const Program: Schema<Program> = struct({
+export const Program = struct({
   type: literal('Program'),
   body: array(unknown()),
 })

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   AstNode,
-  type AstNodeType,
   is,
   isArrowFunctionExpression,
   isBinaryExpression,
@@ -111,7 +110,7 @@ const VOCABULARY: readonly KindFixture[] = [
   { name: 'UnknownNode', fixture: { type: 'Anything' }, sibling: {}, holds: isUnknownNode },
 ]
 
-const MEMBER_NODE: AstNodeType = {
+const MEMBER_NODE: unknown = {
   type: 'MemberExpression',
   object: { type: 'Identifier', name: 'kept' },
   property: { type: 'Identifier', name: 'name' },

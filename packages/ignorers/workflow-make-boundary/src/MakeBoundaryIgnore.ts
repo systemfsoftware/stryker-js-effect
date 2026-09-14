@@ -16,7 +16,7 @@ import {
   isStringLiteral,
   MemberExpression,
   Program,
-} from './AstNode.schema.js'
+} from './AstNode.js'
 
 export const NOT_INSIDE_WORKFLOW_MAKE =
   'mutant is outside every Workflow.make and Workflow.total decision body; only decider bodies are the mutation population' as const
@@ -552,7 +552,8 @@ const isConstructorArgumentBoundary = (
   ancestor: unknown,
   child: unknown,
   localNames: ReadonlySet<string>,
-): boolean => isWorkflowConstructorCall(ancestor, localNames) && ancestor.arguments.includes(child)
+): boolean =>
+  isWorkflowConstructorCall(ancestor, localNames) && ancestor.arguments.some((argument) => argument === child)
 
 /** The node one step below `ancestors[index]`: the mutant itself for its immediate parent. */
 const chainChildOf = (node: unknown, ancestors: readonly unknown[], index: number): unknown => {

@@ -4,7 +4,7 @@ import {
   isBinaryExpression,
   isIfStatement,
   isImportMetaMember,
-} from './AstNode.schema.js'
+} from './AstNode.js'
 
 export const IN_SOURCE_TEST_IGNORED =
   'inside an `if (import.meta.vitest)` block — test code, not production behaviour' as const

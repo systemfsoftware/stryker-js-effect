@@ -227,6 +227,9 @@ importers:
 
   packages/ignorers/interface:
     devDependencies:
+      '@oxc-project/types':
+        specifier: 'catalog:'
+        version: 0.140.0
       '@standard-schema/spec':
         specifier: jsr:^1.1.0
         version: '@jsr/standard-schema__spec@1.1.0'

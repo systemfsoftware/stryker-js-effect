@@ -1,4 +1,4 @@
-import { Identifier, is, literal, type Schema, string, struct, union } from '@systemfsoftware/stryker-ignorer-interface'
+import { Identifier, is, literal, string, struct, union } from '@systemfsoftware/stryker-ignorer-interface'
 
 export { Identifier }
 
@@ -29,34 +29,34 @@ export interface IfStatement {
   readonly test: AstLike
 }
 
-export const AstLike: Schema<AstLike> = struct({ type: string() })
+export const AstLike = struct({ type: string() })
 
-export const MetaProperty: Schema<MetaProperty> = struct({
+export const MetaProperty = struct({
   type: literal('MetaProperty'),
   meta: Identifier,
   property: Identifier,
 })
 
-export const ImportMetaMember: Schema<ImportMetaMember> = struct({
+export const ImportMetaMember = struct({
   type: literal('MemberExpression'),
   object: MetaProperty,
   property: Identifier,
 })
 
-export const BinaryExpression: Schema<BinaryExpression> = struct({
+export const BinaryExpression = struct({
   type: literal('BinaryExpression'),
   left: AstLike,
   right: AstLike,
 })
 
-export const IfStatement: Schema<IfStatement> = struct({
+export const IfStatement = struct({
   type: literal('IfStatement'),
   test: AstLike,
 })
 
 export type AstNodeType = Identifier | MetaProperty | ImportMetaMember | BinaryExpression | IfStatement | AstLike
 
-export const AstNode: Schema<AstNodeType> = union([
+export const AstNode = union([
   Identifier,
   MetaProperty,
   ImportMetaMember,

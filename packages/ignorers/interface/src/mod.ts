@@ -1,7 +1,7 @@
-import type { NodePath } from './AstNode.schema.js'
+import type { NodePath } from './AstNode.js'
 
 export type { StandardSchemaV1, StandardTypedV1 } from '@standard-schema/spec'
-export * from './AstNode.schema.js'
+export * from './AstNode.js'
 export * from './StandardSchema.js'
 
 export interface PlainIgnorer {

@@ -9,7 +9,7 @@ import {
   isObjectExpression,
   isStringLiteral,
   type MemberExpression,
-} from './AstNode.schema.js'
+} from './AstNode.js'
 
 export const SYMBOL_DESCRIPTION_IGNORED = 'Symbol.for() brand description is identity-only data, not behaviour' as const
 export const TAGGED_TAG_IGNORED = 'TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour' as const
