@@ -1,15 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import {
-  ancestorsOf,
-  is,
-  isUnknownNode,
-  literal,
-  type NodePath,
-  type PlainIgnorer,
-  string,
-  struct,
-} from '../src/mod.js'
+import { ancestorsOf, is, isUnknownNode, literal, type NodePath, type PlainIgnorer, struct } from '../src/mod.js'
 import { IgnoreTester, type IgnoreTesterCases } from '../src/testing.js'
 
 const STUB_REASON = 'STUB_IGNORED'
@@ -24,7 +15,6 @@ const isIgnoredNode = (value: unknown): boolean => is(struct({ type: literal('Ig
 
 const stub: PlainIgnorer = {
   name: 'stub-ignorer',
-  schema: struct({ type: string() }),
   shouldIgnore: (path) => (isIgnoredNode(path.node) ? STUB_REASON : undefined),
 }
 
@@ -34,7 +24,6 @@ const walkReason = (path: NodePath): string => [...ancestorsOf(path)].map(typeOf
 
 const walkStub: PlainIgnorer = {
   name: 'walk-stub',
-  schema: struct({ type: string() }),
   shouldIgnore: (path) => (isIgnoredNode(path.node) ? walkReason(path) : undefined),
 }
 

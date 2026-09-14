@@ -6,7 +6,7 @@
 > The ignorer interface: declare the AST shape your rule reasons about as a Standard Schema, and ship a plain module with zero runtime dependencies.
 
 An ignorer is the smallest thing a StrykerJS-style mutation tool can load: a
-name, the shape of the input it decides over, and a synchronous decision. This
+name and a synchronous decision over a path the host hands it. This
 package carries the whole author-facing surface — the schema toolkit, the node
 vocabulary, the ancestor walk, and a case-table test harness. It has **no
 Effect dependency**, runtime or development: `dependencies` is empty, and the
@@ -15,15 +15,14 @@ kitchen-sink family aggregate preset is replaced by
 
 | Export                       | What it is                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PlainIgnorer`               | The descriptor: `{ name, schema, shouldIgnore(path): string \| undefined }`                                                                                                                                                                                                                                                        |
-| `PlainIgnorerSchema`         | The validator the host decodes a loaded module entry with                                                                                                                                                                                                                                                                          |
-| `StandardSchemaV1`           | The [Standard Schema](https://standardschema.dev) types, vendored so this package needs no dependency to declare them                                                                                                                                                                                                              |
+| `PlainIgnorer`               | The descriptor: `{ name, shouldIgnore(path): string \| undefined }`                                                                                                                                                                                                                                                                |
+| `StandardSchemaV1`           | The [Standard Schema](https://standardschema.dev) types, imported from `@standard-schema/spec` and inlined into this package's published types                                                                                                                                                                                     |
 | toolkit                      | `string`, `literal`, `literals`, `unknown`, `struct`, `union`, `array`, `nonEmptyArray`, `optional`, `nullable`, `declared`, `suspend`, `is`, `validate`                                                                                                                                                                           |
 | vocabulary                   | the canonical ESTree kinds — `Identifier`, `StringLiteral`, `ObjectExpression`, `Property`, `ArrowFunctionExpression`, `FunctionExpression`, `MemberExpression`, `CallExpression`, `MetaProperty`, `BinaryExpression`, `IfStatement`, `ImportSpecifier`, `ImportNamespaceSpecifier`, `ImportDeclaration`, `Program`, `UnknownNode` |
 | predicates                   | one `is*` per kind, plus `AstNode`/`AstNodeType` over all sixteen                                                                                                                                                                                                                                                                  |
 | `NodePath`, `NodePathSchema` | the path shape the host hands `shouldIgnore`, and its validator                                                                                                                                                                                                                                                                    |
 | `ancestorsOf`                | the nearest-first ancestor walk over a `NodePath`                                                                                                                                                                                                                                                                                  |
-| `IgnoreTester` (`./testing`) | the case-table harness: a descriptor check, a schema check per case, then the decision                                                                                                                                                                                                                                             |
+| `IgnoreTester` (`./testing`) | the case-table harness: a descriptor check, then the decision over every case                                                                                                                                                                                                                                                      |
 
 A toolkit schema is a real `StandardSchemaV1` value: `struct` is inexact, so a
 host node carrying members this rule does not model still validates; `suspend`
@@ -44,31 +43,23 @@ import {
   ancestorsOf,
   isIdentifier,
   isMemberExpression,
-  literal,
   type PlainIgnorer,
-  struct,
 } from '@systemfsoftware/stryker-ignorer-interface'
-
-const GeneratedNamespace = struct({
-  type: literal('MemberExpression'),
-  object: struct({ type: literal('Identifier'), name: literal('__generated') }),
-})
 
 const isGenerated = (node: unknown): boolean =>
   isMemberExpression(node) && isIdentifier(node.object) && node.object.name === '__generated'
 
 const myIgnorer: PlainIgnorer = {
   name: 'generated-code',
-  schema: GeneratedNamespace,
   shouldIgnore: (path) => [...ancestorsOf(path)].some(isGenerated) ? 'the enclosing member is generated' : undefined,
 }
 
 export const strykerIgnorers = [myIgnorer]
 ```
 
-`schema` is required: the host decodes every loaded entry against
-`PlainIgnorerSchema` once, and a module whose entry declares no usable schema
-fails to load by name instead of silently ignoring nothing.
+An entry is just `{ name, shouldIgnore }`: the host registers each one as an
+`Ignore` contribution and validates at load that `name` is a string and
+`shouldIgnore` is callable — an entry that fails fails the load by name.
 
 A module exporting `strykerIgnorers` loads as `Ignore` plugin contributions in
 any engine carrying the plain-ignorer loader. Configure the pair — they take

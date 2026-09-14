@@ -1,6 +1,5 @@
 import { ancestorsOf, type NodePath } from '@systemfsoftware/stryker-ignorer-interface'
 
-import { AstNode } from './AstNode.schema.js'
 import { decideSchemaDeclarationIgnore } from './SchemaDeclarationIgnore.js'
 
 const decisionAt = (chain: readonly unknown[], position: number): string | undefined =>
@@ -12,7 +11,7 @@ const firstIgnoreReason = (path: NodePath): string | undefined => {
 }
 
 export const strykerIgnorers = [
-  { name: 'effect-schema-declarations', schema: AstNode, shouldIgnore: firstIgnoreReason },
+  { name: 'effect-schema-declarations', shouldIgnore: firstIgnoreReason },
 ]
 
 export {

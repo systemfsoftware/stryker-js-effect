@@ -1,5 +1,4 @@
 import type { NodePath, PlainIgnorer } from './mod.js'
-import { validate } from './StandardSchema.js'
 
 export interface IgnorerPathSpec {
   readonly node: unknown
@@ -62,10 +61,6 @@ const buildPath = (spec: IgnorerPathSpec): NodePath => {
   return { node: spec.node, parentPath }
 }
 
-const assertNode = (expect: IgnoreTesterExpect, ignorer: PlainIgnorer, spec: IgnorerPathSpec): void => {
-  expect(validate(ignorer.schema, spec.node).issues).toBeUndefined()
-}
-
 const registerIgnored = (
   it: IgnoreTesterIt,
   expect: IgnoreTesterExpect,
@@ -73,7 +68,6 @@ const registerIgnored = (
   testCase: IgnoredCase,
 ): void => {
   it(testCase.name, () => {
-    assertNode(expect, ignorer, testCase.path)
     expect(ignorer.shouldIgnore(buildPath(testCase.path))).toBe(testCase.reason)
   })
 }
@@ -85,7 +79,6 @@ const registerKept = (
   testCase: KeptCase,
 ): void => {
   it(testCase.name, () => {
-    assertNode(expect, ignorer, testCase.path)
     expect(ignorer.shouldIgnore(buildPath(testCase.path))).toBeUndefined()
   })
 }
@@ -103,8 +96,6 @@ export const IgnoreTester: IgnoreTesterSurface = {
     describe(name, () => {
       it(DESCRIPTOR_NAME, () => {
         expect(ignorer.name).toBe(name)
-        expect(ignorer.schema['~standard'].version).toBe(1)
-        expect(typeof ignorer.schema['~standard'].validate).toBe('function')
       })
       cases.ignored.forEach((ignored) => registerIgnored(it, expect, ignorer, ignored))
       cases.kept.forEach((kept) => registerKept(it, expect, ignorer, kept))

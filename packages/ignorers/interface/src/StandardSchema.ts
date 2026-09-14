@@ -1,4 +1,4 @@
-import type { StandardSchemaV1 } from './StandardSchemaV1.js'
+import type { StandardSchemaV1 } from '@standard-schema/spec'
 
 export interface Schema<Output> extends StandardSchemaV1<unknown, Output> {}
 

@@ -157,20 +157,4 @@ Feature('Loading plain ignorer plugins')
         ),
       ),
     )
-
-    scenario(
-      'A plain entry whose declared schema is malformed fails the load with a named error',
-      Gherkin.Do.pipe(
-        Given('a module whose plain entry declares a schema with the wrong version and a non-callable validator')(
-          'outcome',
-          () => loadFixture('invalid-plain-schema.fixture.mjs').pipe(Effect.flip),
-        ),
-        Then('the load is rejected naming the module')((s) =>
-          Effect.sync(() => {
-            expect(s.outcome).toBeInstanceOf(PluginLoadFailedError)
-            expect(s.outcome.descriptor).toContain('invalid-plain-schema.fixture.mjs')
-          })
-        ),
-      ),
-    )
   })

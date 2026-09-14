@@ -44,6 +44,7 @@
     "attw": "attw --pack ."
   },
   "devDependencies": {
+    "@standard-schema/spec": "jsr:^1.1.0",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
