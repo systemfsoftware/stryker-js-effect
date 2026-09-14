@@ -49,9 +49,9 @@ const isKeepCall = (node: unknown): node is { arguments: unknown[] } => {
 }
 
 const invertedKeepIgnorer: IgnorerService = {
-  shouldIgnore: (path) => {
-    let child: unknown = path.node
-    for (const ancestor of path.ancestors) {
+  shouldIgnore: (node, ancestors) => {
+    let child: unknown = node
+    for (const ancestor of ancestors) {
       if (isKeepCall(ancestor) && ancestor.arguments.includes(child)) {
         return Option.none()
       }
@@ -74,7 +74,7 @@ const isFlagIf = (node: unknown): boolean => {
 }
 
 const regionFlagIgnorer: IgnorerService = {
-  shouldIgnore: (path) => path.ancestors.some(isFlagIf) ? Option.some(INSIDE_FLAG) : Option.none(),
+  shouldIgnore: (_node, ancestors) => ancestors.some(isFlagIf) ? Option.some(INSIDE_FLAG) : Option.none(),
 }
 const countByMutator = (mutants: readonly Mutant[]): Record<string, number> => {
   const counts: Record<string, number> = {}
