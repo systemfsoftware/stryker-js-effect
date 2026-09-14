@@ -37,7 +37,7 @@ Mutants it recognizes are reported as `Ignored`, each carrying the reason it was
 > A name in `ignorers` that no loaded plugin answers is silently skipped — the run proceeds and the mutants stay in your score. Copy the name from the table, not from memory.
 
 > [!NOTE]
-> Requires `@systemfsoftware/stryker-js-engine` 4.1.0 or later (the first version whose plugin loader speaks the plain ignorer protocol). The package has no peer dependencies and no Effect types on its published surface — the AST guards are bundled inside `dist`.
+> Requires `@systemfsoftware/stryker-js-engine` 4.1.0 or later (the first version whose plugin loader speaks the plain ignorer protocol). The package has one runtime dependency — `@systemfsoftware/stryker-ignorer-interface` — and no Effect dependency at all, runtime or development: the AST shapes it decides over are Standard Schema validators declared in that package and re-exported here, and the loader checks that declaration once, at load, never per mutant.
 
 ## Migrating from `@systemfsoftware/stryker-plugins`
 
