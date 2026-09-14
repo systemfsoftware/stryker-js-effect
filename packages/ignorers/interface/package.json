@@ -10,7 +10,7 @@
   },
   "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/ignorers/interface#readme",
   "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
-  "description": "The ignorer interface for StrykerJS-style mutation tooling — the PlainIgnorer descriptor, the canonical AST node vocabulary, and the NodePath shape. Types only, with no runtime exports and no Effect dependency.",
+  "description": "The ignorer interface for StrykerJS-style mutation tooling — the Ignorer descriptor, the canonical AST node vocabulary, and the walker types. Types only, with no runtime exports and no Effect dependency.",
   "keywords": [
     "stryker",
     "mutation-testing",

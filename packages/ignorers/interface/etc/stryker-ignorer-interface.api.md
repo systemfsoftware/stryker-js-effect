@@ -5,7 +5,7 @@
 ```ts
 
 // @public (undocumented)
-export interface AccessorProperty extends Span {
+export interface AccessorProperty$1 extends Span$1 {
     // (undocumented)
     accessibility?: TSAccessibility | null;
     // (undocumented)
@@ -13,7 +13,7 @@ export interface AccessorProperty extends Span {
     // (undocumented)
     declare?: false;
     // (undocumented)
-    decorators: Array<Decorator>;
+    decorators: Array<Decorator$1>;
     // (undocumented)
     definite?: boolean;
     // (undocumented)
@@ -23,7 +23,7 @@ export interface AccessorProperty extends Span {
     // (undocumented)
     override?: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     readonly?: false;
     // (undocumented)
@@ -31,19 +31,25 @@ export interface AccessorProperty extends Span {
     // (undocumented)
     type: AccessorPropertyType;
     // (undocumented)
-    typeAnnotation?: TSTypeAnnotation | null;
+    typeAnnotation?: TSTypeAnnotation$1 | null;
     // (undocumented)
-    value: Expression | null;
+    value: Expression$1 | null;
 }
+
+// @public (undocumented)
+export type AccessorProperty = Simplify<Built<AccessorProperty$1>>;
 
 // @public (undocumented)
 export type AccessorPropertyType = "AccessorProperty" | "TSAbstractAccessorProperty";
 
 // @public (undocumented)
-export type Argument = SpreadElement | Expression;
+export type Argument$1 = SpreadElement$1 | Expression$1;
 
 // @public (undocumented)
-export interface ArrayAssignmentTarget extends Span {
+export type Argument = Simplify<Built<Argument$1>>;
+
+// @public (undocumented)
+export interface ArrayAssignmentTarget extends Span$1 {
     // (undocumented)
     decorators?: [];
     // (undocumented)
@@ -51,7 +57,7 @@ export interface ArrayAssignmentTarget extends Span {
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ArrayPattern";
     // (undocumented)
@@ -59,40 +65,46 @@ export interface ArrayAssignmentTarget extends Span {
 }
 
 // @public (undocumented)
-export interface ArrayExpression extends Span {
+export interface ArrayExpression$1 extends Span$1 {
     // (undocumented)
     elements: Array<ArrayExpressionElement>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ArrayExpression";
 }
 
 // @public (undocumented)
-export type ArrayExpressionElement = SpreadElement | null | Expression;
+export type ArrayExpression = Simplify<Built<ArrayExpression$1>>;
 
 // @public (undocumented)
-export interface ArrayPattern extends Span {
+export type ArrayExpressionElement = SpreadElement$1 | null | Expression$1;
+
+// @public (undocumented)
+export interface ArrayPattern$1 extends Span$1 {
     // (undocumented)
     decorators?: [];
     // (undocumented)
-    elements: Array<BindingPattern | BindingRestElement | null>;
+    elements: Array<BindingPattern$1 | BindingRestElement$1 | null>;
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ArrayPattern";
     // (undocumented)
-    typeAnnotation?: TSTypeAnnotation | null;
+    typeAnnotation?: TSTypeAnnotation$1 | null;
 }
 
 // @public (undocumented)
-export interface ArrowFunctionExpression extends Span {
+export type ArrayPattern = Simplify<Built<ArrayPattern$1>>;
+
+// @public (undocumented)
+export interface ArrowFunctionExpression$1 extends Span$1 {
     // (undocumented)
     async: boolean;
     // (undocumented)
-    body: FunctionBody | Expression;
+    body: FunctionBody | Expression$1;
     // (undocumented)
     expression: boolean;
     // (undocumented)
@@ -100,46 +112,52 @@ export interface ArrowFunctionExpression extends Span {
     // (undocumented)
     id: null;
     // (undocumented)
-    params: ParamPattern[];
+    params: ParamPattern$1[];
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    returnType?: TSTypeAnnotation | null;
+    returnType?: TSTypeAnnotation$1 | null;
     // (undocumented)
     type: "ArrowFunctionExpression";
     // (undocumented)
-    typeParameters?: TSTypeParameterDeclaration | null;
+    typeParameters?: TSTypeParameterDeclaration$1 | null;
 }
 
 // @public (undocumented)
-export interface AssignmentExpression extends Span {
+export type ArrowFunctionExpression = Simplify<Built<ArrowFunctionExpression$1>>;
+
+// @public (undocumented)
+export interface AssignmentExpression$1 extends Span$1 {
     // (undocumented)
     left: AssignmentTarget;
     // (undocumented)
     operator: AssignmentOperator;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    right: Expression;
+    right: Expression$1;
     // (undocumented)
     type: "AssignmentExpression";
 }
 
 // @public (undocumented)
+export type AssignmentExpression = Simplify<Built<AssignmentExpression$1>>;
+
+// @public (undocumented)
 export type AssignmentOperator = "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | "<<=" | ">>=" | ">>>=" | "|=" | "^=" | "&=" | "||=" | "&&=" | "??=";
 
 // @public (undocumented)
-export interface AssignmentPattern extends Span {
+export interface AssignmentPattern$1 extends Span$1 {
     // (undocumented)
     decorators?: [];
     // (undocumented)
-    left: BindingPattern;
+    left: BindingPattern$1;
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    right: Expression;
+    right: Expression$1;
     // (undocumented)
     type: "AssignmentPattern";
     // (undocumented)
@@ -147,7 +165,10 @@ export interface AssignmentPattern extends Span {
 }
 
 // @public (undocumented)
-export type AssignmentTarget = SimpleAssignmentTarget | AssignmentTargetPattern;
+export type AssignmentPattern = Simplify<Built<AssignmentPattern$1>>;
+
+// @public (undocumented)
+export type AssignmentTarget = SimpleAssignmentTarget$1 | AssignmentTargetPattern;
 
 // @public (undocumented)
 export type AssignmentTargetMaybeDefault = AssignmentTargetWithDefault | AssignmentTarget;
@@ -159,11 +180,11 @@ export type AssignmentTargetPattern = ArrayAssignmentTarget | ObjectAssignmentTa
 export type AssignmentTargetProperty = AssignmentTargetPropertyIdentifier | AssignmentTargetPropertyProperty;
 
 // @public (undocumented)
-export interface AssignmentTargetPropertyIdentifier extends Span {
+export interface AssignmentTargetPropertyIdentifier extends Span$1 {
     // (undocumented)
     computed: false;
     // (undocumented)
-    key: IdentifierReference;
+    key: IdentifierReference$1;
     // (undocumented)
     kind: "init";
     // (undocumented)
@@ -171,17 +192,17 @@ export interface AssignmentTargetPropertyIdentifier extends Span {
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     shorthand: true;
     // (undocumented)
     type: "Property";
     // (undocumented)
-    value: IdentifierReference | AssignmentTargetWithDefault;
+    value: IdentifierReference$1 | AssignmentTargetWithDefault;
 }
 
 // @public (undocumented)
-export interface AssignmentTargetPropertyProperty extends Span {
+export interface AssignmentTargetPropertyProperty extends Span$1 {
     // (undocumented)
     computed: boolean;
     // (undocumented)
@@ -193,7 +214,7 @@ export interface AssignmentTargetPropertyProperty extends Span {
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     shorthand: false;
     // (undocumented)
@@ -203,7 +224,7 @@ export interface AssignmentTargetPropertyProperty extends Span {
 }
 
 // @public (undocumented)
-export interface AssignmentTargetRest extends Span {
+export interface AssignmentTargetRest extends Span$1 {
     // (undocumented)
     argument: AssignmentTarget;
     // (undocumented)
@@ -211,7 +232,7 @@ export interface AssignmentTargetRest extends Span {
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "RestElement";
     // (undocumented)
@@ -221,7 +242,7 @@ export interface AssignmentTargetRest extends Span {
 }
 
 // @public (undocumented)
-export interface AssignmentTargetWithDefault extends Span {
+export interface AssignmentTargetWithDefault extends Span$1 {
     // (undocumented)
     decorators?: [];
     // (undocumented)
@@ -229,9 +250,9 @@ export interface AssignmentTargetWithDefault extends Span {
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    right: Expression;
+    right: Expression$1;
     // (undocumented)
     type: "AssignmentPattern";
     // (undocumented)
@@ -239,21 +260,21 @@ export interface AssignmentTargetWithDefault extends Span {
 }
 
 // @public (undocumented)
-export interface AwaitExpression extends Span {
+export interface AwaitExpression extends Span$1 {
     // (undocumented)
-    argument: Expression;
+    argument: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "AwaitExpression";
 }
 
 // @public (undocumented)
-export interface BigIntLiteral extends Span {
+export interface BigIntLiteral$1 extends Span$1 {
     // (undocumented)
     bigint: string;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     raw: string | null;
     // (undocumented)
@@ -263,24 +284,30 @@ export interface BigIntLiteral extends Span {
 }
 
 // @public (undocumented)
-export interface BinaryExpression extends Span {
+export type BigIntLiteral = Simplify<Built<BigIntLiteral$1>>;
+
+// @public (undocumented)
+export interface BinaryExpression$1 extends Span$1 {
     // (undocumented)
-    left: Expression;
+    left: Expression$1;
     // (undocumented)
     operator: BinaryOperator;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    right: Expression;
+    right: Expression$1;
     // (undocumented)
     type: "BinaryExpression";
 }
 
 // @public (undocumented)
+export type BinaryExpression = Simplify<Built<BinaryExpression$1>>;
+
+// @public (undocumented)
 export type BinaryOperator = "==" | "!=" | "===" | "!==" | "<" | "<=" | ">" | ">=" | "+" | "-" | "*" | "/" | "%" | "**" | "<<" | ">>" | ">>>" | "|" | "^" | "&" | "in" | "instanceof";
 
 // @public (undocumented)
-export interface BindingIdentifier extends Span {
+export interface BindingIdentifier$1 extends Span$1 {
     // (undocumented)
     decorators?: [];
     // (undocumented)
@@ -288,18 +315,24 @@ export interface BindingIdentifier extends Span {
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "Identifier";
     // (undocumented)
-    typeAnnotation?: TSTypeAnnotation | null;
+    typeAnnotation?: TSTypeAnnotation$1 | null;
 }
 
 // @public (undocumented)
-export type BindingPattern = BindingIdentifier | ObjectPattern | ArrayPattern | AssignmentPattern;
+export type BindingIdentifier = Simplify<Built<BindingIdentifier$1>>;
 
 // @public (undocumented)
-export interface BindingProperty extends Span {
+export type BindingPattern$1 = BindingIdentifier$1 | ObjectPattern | ArrayPattern$1 | AssignmentPattern$1;
+
+// @public (undocumented)
+export type BindingPattern = Simplify<Built<BindingPattern$1>>;
+
+// @public (undocumented)
+export interface BindingProperty$1 extends Span$1 {
     // (undocumented)
     computed: boolean;
     // (undocumented)
@@ -311,47 +344,56 @@ export interface BindingProperty extends Span {
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     shorthand: boolean;
     // (undocumented)
     type: "Property";
     // (undocumented)
-    value: BindingPattern;
+    value: BindingPattern$1;
 }
 
 // @public (undocumented)
-export interface BindingRestElement extends Span {
+export type BindingProperty = Simplify<Built<BindingProperty$1>>;
+
+// @public (undocumented)
+export interface BindingRestElement$1 extends Span$1 {
     // (undocumented)
-    argument: BindingPattern;
+    argument: BindingPattern$1;
     // (undocumented)
     decorators?: [];
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "RestElement";
     // (undocumented)
-    typeAnnotation?: TSTypeAnnotation | null;
+    typeAnnotation?: TSTypeAnnotation$1 | null;
     // (undocumented)
     value?: null;
 }
 
 // @public (undocumented)
-export interface BlockStatement extends Span {
+export type BindingRestElement = Simplify<Built<BindingRestElement$1>>;
+
+// @public (undocumented)
+export interface BlockStatement$1 extends Span$1 {
     // (undocumented)
-    body: Array<Statement>;
+    body: Array<Statement$1>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "BlockStatement";
 }
 
 // @public (undocumented)
-export interface BooleanLiteral extends Span {
+export type BlockStatement = Simplify<Built<BlockStatement$1>>;
+
+// @public (undocumented)
+export interface BooleanLiteral$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     raw: string | null;
     // (undocumented)
@@ -361,234 +403,287 @@ export interface BooleanLiteral extends Span {
 }
 
 // @public (undocumented)
-export interface BreakStatement extends Span {
+export type BooleanLiteral = Simplify<Built<BooleanLiteral$1>>;
+
+// @public (undocumented)
+export interface BreakStatement$1 extends Span$1 {
     // (undocumented)
-    label: LabelIdentifier | null;
+    label: LabelIdentifier$1 | null;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "BreakStatement";
 }
 
 // @public (undocumented)
-export interface CallExpression extends Span {
+export type BreakStatement = Simplify<Built<BreakStatement$1>>;
+
+// @public (undocumented)
+export type Built<T> = T extends null | undefined ? T : T extends readonly unknown[] ? (number extends T['length'] ? Array<Built<T[number]>> : T) : T extends Span$1 ? { [K in keyof T as K extends keyof Span$1 ? never : K]: Child<T[K]>; } & Partial<Pick<T, keyof Span$1>> : T;
+
+// @public (undocumented)
+export interface CallExpression$1 extends Span$1 {
     // (undocumented)
-    arguments: Array<Argument>;
+    arguments: Array<Argument$1>;
     // (undocumented)
-    callee: Expression;
+    callee: Expression$1;
     // (undocumented)
     optional: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "CallExpression";
     // (undocumented)
-    typeArguments?: TSTypeParameterInstantiation | null;
+    typeArguments?: TSTypeParameterInstantiation$1 | null;
 }
 
 // @public (undocumented)
-export interface CatchClause extends Span {
+export type CallExpression = Simplify<Built<CallExpression$1>>;
+
+// @public (undocumented)
+export interface CatchClause$1 extends Span$1 {
     // (undocumented)
-    body: BlockStatement;
+    body: BlockStatement$1;
     // (undocumented)
-    param: BindingPattern | null;
+    param: BindingPattern$1 | null;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "CatchClause";
 }
 
 // @public (undocumented)
-export type ChainElement = CallExpression | TSNonNullExpression | MemberExpression;
+export type CatchClause = Simplify<Built<CatchClause$1>>;
 
 // @public (undocumented)
-export interface ChainExpression extends Span {
+export type ChainElement = CallExpression$1 | TSNonNullExpression$1 | MemberExpression$1;
+
+// @public (undocumented)
+export interface ChainExpression$1 extends Span$1 {
     // (undocumented)
     expression: ChainElement;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ChainExpression";
 }
 
 // @public (undocumented)
-export interface Class extends Span {
+export type ChainExpression = Simplify<Built<ChainExpression$1>>;
+
+// @public (undocumented)
+export type Child<T> = T extends null | undefined ? T : T extends readonly unknown[] ? (number extends T['length'] ? Array<Child<T[number]>> : T) : T extends Span$1 ? Built<T> | T : T;
+
+// @public (undocumented)
+export interface Class$1 extends Span$1 {
     // (undocumented)
     abstract?: boolean;
     // (undocumented)
-    body: ClassBody;
+    body: ClassBody$1;
     // (undocumented)
     declare?: boolean;
     // (undocumented)
-    decorators: Array<Decorator>;
+    decorators: Array<Decorator$1>;
     // (undocumented)
-    id: BindingIdentifier | null;
+    id: BindingIdentifier$1 | null;
     // (undocumented)
     implements?: Array<TSClassImplements>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    superClass: Expression | null;
+    superClass: Expression$1 | null;
     // (undocumented)
-    superTypeArguments?: TSTypeParameterInstantiation | null;
+    superTypeArguments?: TSTypeParameterInstantiation$1 | null;
     // (undocumented)
     type: ClassType;
     // (undocumented)
-    typeParameters?: TSTypeParameterDeclaration | null;
+    typeParameters?: TSTypeParameterDeclaration$1 | null;
 }
 
 // @public (undocumented)
-export interface ClassBody extends Span {
+export type Class = Simplify<Built<Class$1>>;
+
+// @public (undocumented)
+export interface ClassBody$1 extends Span$1 {
     // (undocumented)
     body: Array<ClassElement>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ClassBody";
 }
 
 // @public (undocumented)
-export type ClassElement = StaticBlock | MethodDefinition | PropertyDefinition_2 | AccessorProperty | TSIndexSignature;
+export type ClassBody = Simplify<Built<ClassBody$1>>;
+
+// @public (undocumented)
+export type ClassElement = StaticBlock$1 | MethodDefinition$1 | PropertyDefinition$1 | AccessorProperty$1 | TSIndexSignature$1;
+
+// @public (undocumented)
+export type ClassExpression = Omit<Simplify<Built<Class$1>>, 'type'> & {
+    type: 'ClassExpression';
+};
 
 // @public (undocumented)
 export type ClassType = "ClassDeclaration" | "ClassExpression";
 
 // @public (undocumented)
-export interface ComputedMemberExpression extends Span {
+export interface ComputedMemberExpression extends Span$1 {
     // (undocumented)
     computed: true;
     // (undocumented)
-    object: Expression;
+    object: Expression$1;
     // (undocumented)
     optional: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    property: Expression;
+    property: Expression$1;
     // (undocumented)
     type: "MemberExpression";
 }
 
 // @public (undocumented)
-export interface ConditionalExpression extends Span {
+export interface ConditionalExpression$1 extends Span$1 {
     // (undocumented)
-    alternate: Expression;
+    alternate: Expression$1;
     // (undocumented)
-    consequent: Expression;
+    consequent: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    test: Expression;
+    test: Expression$1;
     // (undocumented)
     type: "ConditionalExpression";
 }
 
 // @public (undocumented)
-export interface ContinueStatement extends Span {
+export type ConditionalExpression = Simplify<Built<ConditionalExpression$1>>;
+
+// @public (undocumented)
+export interface ContinueStatement$1 extends Span$1 {
     // (undocumented)
-    label: LabelIdentifier | null;
+    label: LabelIdentifier$1 | null;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ContinueStatement";
 }
 
 // @public (undocumented)
-export interface DebuggerStatement extends Span {
+export type ContinueStatement = Simplify<Built<ContinueStatement$1>>;
+
+// @public (undocumented)
+export interface DebuggerStatement extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "DebuggerStatement";
 }
 
 // @public (undocumented)
-export type Declaration = VariableDeclaration | Function_2 | Class | TSTypeAliasDeclaration | TSInterfaceDeclaration | TSEnumDeclaration | TSModuleDeclaration | TSGlobalDeclaration | TSImportEqualsDeclaration;
+export type Declaration = VariableDeclaration$1 | Function$1 | Class$1 | TSTypeAliasDeclaration$1 | TSInterfaceDeclaration$1 | TSEnumDeclaration$1 | TSModuleDeclaration$1 | TSGlobalDeclaration | TSImportEqualsDeclaration$1;
 
 // @public (undocumented)
-export interface Decorator extends Span {
+export interface Decorator$1 extends Span$1 {
     // (undocumented)
-    expression: Expression;
+    expression: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "Decorator";
 }
 
 // @public (undocumented)
-export interface Directive extends Span {
+export type Decorator = Simplify<Built<Decorator$1>>;
+
+// @public (undocumented)
+export interface Directive extends Span$1 {
     // (undocumented)
     directive: string;
     // (undocumented)
-    expression: StringLiteral;
+    expression: StringLiteral$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ExpressionStatement";
 }
 
 // @public (undocumented)
-export interface DoWhileStatement extends Span {
+export interface DoWhileStatement$1 extends Span$1 {
     // (undocumented)
-    body: Statement;
+    body: Statement$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    test: Expression;
+    test: Expression$1;
     // (undocumented)
     type: "DoWhileStatement";
 }
 
 // @public (undocumented)
-export interface EmptyStatement extends Span {
+export type DoWhileStatement = Simplify<Built<DoWhileStatement$1>>;
+
+// @public (undocumented)
+export interface EmptyStatement$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "EmptyStatement";
 }
 
 // @public (undocumented)
-export interface ExportAllDeclaration extends Span {
+export type EmptyStatement = Simplify<Built<EmptyStatement$1>>;
+
+// @public (undocumented)
+export interface ExportAllDeclaration$1 extends Span$1 {
     // (undocumented)
-    attributes: Array<ImportAttribute>;
+    attributes: Array<ImportAttribute$1>;
     // (undocumented)
     exported: ModuleExportName | null;
     // (undocumented)
     exportKind?: ImportOrExportKind;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    source: StringLiteral;
+    source: StringLiteral$1;
     // (undocumented)
     type: "ExportAllDeclaration";
 }
 
 // @public (undocumented)
-export interface ExportDefaultDeclaration extends Span {
+export type ExportAllDeclaration = Simplify<Built<ExportAllDeclaration$1>>;
+
+// @public (undocumented)
+export interface ExportDefaultDeclaration$1 extends Span$1 {
     // (undocumented)
     declaration: ExportDefaultDeclarationKind;
     // (undocumented)
     exportKind?: "value";
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ExportDefaultDeclaration";
 }
 
 // @public (undocumented)
-export type ExportDefaultDeclarationKind = Function_2 | Class | TSInterfaceDeclaration | Expression;
+export type ExportDefaultDeclaration = Simplify<Built<ExportDefaultDeclaration$1>>;
 
 // @public (undocumented)
-export interface ExportNamedDeclaration extends Span {
+export type ExportDefaultDeclarationKind = Function$1 | Class$1 | TSInterfaceDeclaration$1 | Expression$1;
+
+// @public (undocumented)
+export interface ExportNamedDeclaration$1 extends Span$1 {
     // (undocumented)
-    attributes: Array<ImportAttribute>;
+    attributes: Array<ImportAttribute$1>;
     // (undocumented)
     declaration: Declaration | null;
     // (undocumented)
     exportKind?: ImportOrExportKind;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    source: StringLiteral | null;
+    source: StringLiteral$1 | null;
     // (undocumented)
     specifiers: Array<ExportSpecifier>;
     // (undocumented)
@@ -596,7 +691,10 @@ export interface ExportNamedDeclaration extends Span {
 }
 
 // @public (undocumented)
-export interface ExportSpecifier extends Span {
+export type ExportNamedDeclaration = Simplify<Built<ExportNamedDeclaration$1>>;
+
+// @public (undocumented)
+export interface ExportSpecifier extends Span$1 {
     // (undocumented)
     exported: ModuleExportName;
     // (undocumented)
@@ -604,103 +702,118 @@ export interface ExportSpecifier extends Span {
     // (undocumented)
     local: ModuleExportName;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ExportSpecifier";
 }
 
 // @public (undocumented)
-export type Expression = BooleanLiteral | NullLiteral | NumericLiteral | BigIntLiteral | RegExpLiteral | StringLiteral | TemplateLiteral | IdentifierReference | MetaProperty | Super | ArrayExpression | ArrowFunctionExpression | AssignmentExpression | AwaitExpression | BinaryExpression | CallExpression | ChainExpression | Class | ConditionalExpression | Function_2 | ImportExpression | LogicalExpression | NewExpression | ObjectExpression | ParenthesizedExpression | SequenceExpression | TaggedTemplateExpression | ThisExpression | UnaryExpression | UpdateExpression | YieldExpression | PrivateInExpression | JSXElement | JSXFragment | TSAsExpression | TSSatisfiesExpression | TSTypeAssertion | TSNonNullExpression | TSInstantiationExpression | V8IntrinsicExpression | MemberExpression;
+export type Expression$1 = BooleanLiteral$1 | NullLiteral$1 | NumericLiteral$1 | BigIntLiteral$1 | RegExpLiteral$1 | StringLiteral$1 | TemplateLiteral$1 | IdentifierReference$1 | MetaProperty$1 | Super$1 | ArrayExpression$1 | ArrowFunctionExpression$1 | AssignmentExpression$1 | AwaitExpression | BinaryExpression$1 | CallExpression$1 | ChainExpression$1 | Class$1 | ConditionalExpression$1 | Function$1 | ImportExpression$1 | LogicalExpression$1 | NewExpression$1 | ObjectExpression$1 | ParenthesizedExpression | SequenceExpression$1 | TaggedTemplateExpression$1 | ThisExpression$1 | UnaryExpression$1 | UpdateExpression$1 | YieldExpression$1 | PrivateInExpression$1 | JSXElement$1 | JSXFragment$1 | TSAsExpression$1 | TSSatisfiesExpression$1 | TSTypeAssertion$1 | TSNonNullExpression$1 | TSInstantiationExpression$1 | V8IntrinsicExpression | MemberExpression$1;
 
 // @public (undocumented)
-export interface ExpressionStatement extends Span {
+export type Expression = Simplify<Built<Expression$1>> | Expression$1;
+
+// @public (undocumented)
+export interface ExpressionStatement$1 extends Span$1 {
     // (undocumented)
     directive?: string | null;
     // (undocumented)
-    expression: Expression;
+    expression: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ExpressionStatement";
 }
 
 // @public (undocumented)
-export interface ForInStatement extends Span {
+export type ExpressionStatement = Simplify<Built<ExpressionStatement$1>>;
+
+// @public (undocumented)
+export interface ForInStatement$1 extends Span$1 {
     // (undocumented)
-    body: Statement;
+    body: Statement$1;
     // (undocumented)
     left: ForStatementLeft;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    right: Expression;
+    right: Expression$1;
     // (undocumented)
     type: "ForInStatement";
 }
 
 // @public (undocumented)
-export type FormalParameter = {
-    decorators?: Array<Decorator>;
-} & BindingPattern;
+export type ForInStatement = Simplify<Built<ForInStatement$1>>;
 
 // @public (undocumented)
-export interface FormalParameterRest extends Span {
+export type FormalParameter = {
+    decorators?: Array<Decorator$1>;
+} & BindingPattern$1;
+
+// @public (undocumented)
+export interface FormalParameterRest extends Span$1 {
     // (undocumented)
-    argument: BindingPattern;
+    argument: BindingPattern$1;
     // (undocumented)
     decorators?: [];
     // (undocumented)
     optional?: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "RestElement";
     // (undocumented)
-    typeAnnotation?: TSTypeAnnotation | null;
+    typeAnnotation?: TSTypeAnnotation$1 | null;
     // (undocumented)
     value?: null;
 }
 
 // @public (undocumented)
-export interface ForOfStatement extends Span {
+export interface ForOfStatement$1 extends Span$1 {
     // (undocumented)
     await: boolean;
     // (undocumented)
-    body: Statement;
+    body: Statement$1;
     // (undocumented)
     left: ForStatementLeft;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    right: Expression;
+    right: Expression$1;
     // (undocumented)
     type: "ForOfStatement";
 }
 
 // @public (undocumented)
-export interface ForStatement extends Span {
+export type ForOfStatement = Simplify<Built<ForOfStatement$1>>;
+
+// @public (undocumented)
+export interface ForStatement$1 extends Span$1 {
     // (undocumented)
-    body: Statement;
+    body: Statement$1;
     // (undocumented)
     init: ForStatementInit | null;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    test: Expression | null;
+    test: Expression$1 | null;
     // (undocumented)
     type: "ForStatement";
     // (undocumented)
-    update: Expression | null;
+    update: Expression$1 | null;
 }
 
 // @public (undocumented)
-export type ForStatementInit = VariableDeclaration | Expression;
+export type ForStatement = Simplify<Built<ForStatement$1>>;
 
 // @public (undocumented)
-export type ForStatementLeft = VariableDeclaration | AssignmentTarget;
+export type ForStatementInit = VariableDeclaration$1 | Expression$1;
 
 // @public (undocumented)
-interface Function_2 extends Span {
+export type ForStatementLeft = VariableDeclaration$1 | AssignmentTarget;
+
+// @public (undocumented)
+export interface Function$1 extends Span$1 {
     // (undocumented)
     async: boolean;
     // (undocumented)
@@ -712,37 +825,45 @@ interface Function_2 extends Span {
     // (undocumented)
     generator: boolean;
     // (undocumented)
-    id: BindingIdentifier | null;
+    id: BindingIdentifier$1 | null;
     // (undocumented)
-    params: ParamPattern[];
+    params: ParamPattern$1[];
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    returnType?: TSTypeAnnotation | null;
+    returnType?: TSTypeAnnotation$1 | null;
     // (undocumented)
     type: FunctionType;
     // (undocumented)
-    typeParameters?: TSTypeParameterDeclaration | null;
+    typeParameters?: TSTypeParameterDeclaration$1 | null;
 }
+
+// @public (undocumented)
+type Function_2 = Simplify<Built<Function$1>>;
 export { Function_2 as Function }
 
 // @public (undocumented)
-export interface FunctionBody extends Span {
+export interface FunctionBody extends Span$1 {
     // (undocumented)
-    body: Array<Directive | Statement>;
+    body: Array<Directive | Statement$1>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "BlockStatement";
 }
 
 // @public (undocumented)
+export type FunctionExpression = Omit<Simplify<Built<Function$1>>, 'type'> & {
+    type: 'FunctionExpression';
+};
+
+// @public (undocumented)
 export type FunctionType = "FunctionDeclaration" | "FunctionExpression" | "TSDeclareFunction" | "TSEmptyBodyFunctionExpression";
 
 // @public (undocumented)
-export interface Hashbang extends Span {
+export interface Hashbang extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "Hashbang";
     // (undocumented)
@@ -750,7 +871,7 @@ export interface Hashbang extends Span {
 }
 
 // @public (undocumented)
-export interface IdentifierName extends Span {
+export interface IdentifierName$1 extends Span$1 {
     // (undocumented)
     decorators?: [];
     // (undocumented)
@@ -758,7 +879,7 @@ export interface IdentifierName extends Span {
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "Identifier";
     // (undocumented)
@@ -766,7 +887,10 @@ export interface IdentifierName extends Span {
 }
 
 // @public (undocumented)
-export interface IdentifierReference extends Span {
+export type IdentifierName = Simplify<Built<IdentifierName$1>>;
+
+// @public (undocumented)
+export interface IdentifierReference$1 extends Span$1 {
     // (undocumented)
     decorators?: [];
     // (undocumented)
@@ -774,7 +898,7 @@ export interface IdentifierReference extends Span {
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "Identifier";
     // (undocumented)
@@ -782,46 +906,63 @@ export interface IdentifierReference extends Span {
 }
 
 // @public (undocumented)
-export interface IfStatement extends Span {
+export type IdentifierReference = Simplify<Built<IdentifierReference$1>>;
+
+// @public (undocumented)
+export interface IfStatement$1 extends Span$1 {
     // (undocumented)
-    alternate: Statement | null;
+    alternate: Statement$1 | null;
     // (undocumented)
-    consequent: Statement;
+    consequent: Statement$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    test: Expression;
+    test: Expression$1;
     // (undocumented)
     type: "IfStatement";
 }
 
 // @public (undocumented)
-export interface ImportAttribute extends Span {
+export type IfStatement = Simplify<Built<IfStatement$1>>;
+
+// @public (undocumented)
+export interface Ignorer {
     // (undocumented)
-    key: ImportAttributeKey;
+    readonly name: string;
     // (undocumented)
-    parent?: Node_2;
-    // (undocumented)
-    type: "ImportAttribute";
-    // (undocumented)
-    value: StringLiteral;
+    shouldIgnore(node: Node_2, ancestors: readonly Node_2[]): string | undefined;
 }
 
 // @public (undocumented)
-export type ImportAttributeKey = IdentifierName | StringLiteral;
+export interface ImportAttribute$1 extends Span$1 {
+    // (undocumented)
+    key: ImportAttributeKey;
+    // (undocumented)
+    parent?: Node$1;
+    // (undocumented)
+    type: "ImportAttribute";
+    // (undocumented)
+    value: StringLiteral$1;
+}
 
 // @public (undocumented)
-export interface ImportDeclaration extends Span {
+export type ImportAttribute = Simplify<Built<ImportAttribute$1>>;
+
+// @public (undocumented)
+export type ImportAttributeKey = IdentifierName$1 | StringLiteral$1;
+
+// @public (undocumented)
+export interface ImportDeclaration$1 extends Span$1 {
     // (undocumented)
-    attributes: Array<ImportAttribute>;
+    attributes: Array<ImportAttribute$1>;
     // (undocumented)
     importKind?: ImportOrExportKind;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     phase: ImportPhase | null;
     // (undocumented)
-    source: StringLiteral;
+    source: StringLiteral$1;
     // (undocumented)
     specifiers: Array<ImportDeclarationSpecifier>;
     // (undocumented)
@@ -829,38 +970,44 @@ export interface ImportDeclaration extends Span {
 }
 
 // @public (undocumented)
+export type ImportDeclaration = Simplify<Built<ImportDeclaration$1>>;
+
+// @public (undocumented)
 export type ImportDeclarationSpecifier = ImportSpecifier | ImportDefaultSpecifier | ImportNamespaceSpecifier;
 
 // @public (undocumented)
-export interface ImportDefaultSpecifier extends Span {
+export interface ImportDefaultSpecifier extends Span$1 {
     // (undocumented)
-    local: BindingIdentifier;
+    local: BindingIdentifier$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ImportDefaultSpecifier";
 }
 
 // @public (undocumented)
-export interface ImportExpression extends Span {
+export interface ImportExpression$1 extends Span$1 {
     // (undocumented)
-    options: Expression | null;
+    options: Expression$1 | null;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     phase: ImportPhase | null;
     // (undocumented)
-    source: Expression;
+    source: Expression$1;
     // (undocumented)
     type: "ImportExpression";
 }
 
 // @public (undocumented)
-export interface ImportNamespaceSpecifier extends Span {
+export type ImportExpression = Simplify<Built<ImportExpression$1>>;
+
+// @public (undocumented)
+export interface ImportNamespaceSpecifier extends Span$1 {
     // (undocumented)
-    local: BindingIdentifier;
+    local: BindingIdentifier$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ImportNamespaceSpecifier";
 }
@@ -872,57 +1019,63 @@ export type ImportOrExportKind = "value" | "type";
 export type ImportPhase = "source" | "defer";
 
 // @public (undocumented)
-export interface ImportSpecifier extends Span {
+export interface ImportSpecifier extends Span$1 {
     // (undocumented)
     imported: ModuleExportName;
     // (undocumented)
     importKind?: ImportOrExportKind;
     // (undocumented)
-    local: BindingIdentifier;
+    local: BindingIdentifier$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ImportSpecifier";
 }
 
 // @public (undocumented)
-export interface JSDocNonNullableType extends Span {
+export interface JSDocNonNullableType$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     postfix: boolean;
     // (undocumented)
     type: "TSJSDocNonNullableType";
     // (undocumented)
-    typeAnnotation: TSType;
+    typeAnnotation: TSType$1;
 }
 
 // @public (undocumented)
-export interface JSDocNullableType extends Span {
+export type JSDocNonNullableType = Simplify<Built<JSDocNonNullableType$1>>;
+
+// @public (undocumented)
+export interface JSDocNullableType$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     postfix: boolean;
     // (undocumented)
     type: "TSJSDocNullableType";
     // (undocumented)
-    typeAnnotation: TSType;
+    typeAnnotation: TSType$1;
 }
 
 // @public (undocumented)
-export interface JSDocUnknownType extends Span {
+export type JSDocNullableType = Simplify<Built<JSDocNullableType$1>>;
+
+// @public (undocumented)
+export interface JSDocUnknownType extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSJSDocUnknownType";
 }
 
 // @public (undocumented)
-export interface JSXAttribute extends Span {
+export interface JSXAttribute$1 extends Span$1 {
     // (undocumented)
     name: JSXAttributeName;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "JSXAttribute";
     // (undocumented)
@@ -930,75 +1083,84 @@ export interface JSXAttribute extends Span {
 }
 
 // @public (undocumented)
-export type JSXAttributeItem = JSXAttribute | JSXSpreadAttribute;
+export type JSXAttribute = Simplify<Built<JSXAttribute$1>>;
 
 // @public (undocumented)
-export type JSXAttributeName = JSXIdentifier | JSXNamespacedName;
+export type JSXAttributeItem = JSXAttribute$1 | JSXSpreadAttribute$1;
 
 // @public (undocumented)
-export type JSXAttributeValue = StringLiteral | JSXExpressionContainer | JSXElement | JSXFragment;
+export type JSXAttributeName = JSXIdentifier$1 | JSXNamespacedName$1;
 
 // @public (undocumented)
-export type JSXChild = JSXText | JSXElement | JSXFragment | JSXExpressionContainer | JSXSpreadChild;
+export type JSXAttributeValue = StringLiteral$1 | JSXExpressionContainer$1 | JSXElement$1 | JSXFragment$1;
 
 // @public (undocumented)
-export interface JSXClosingElement extends Span {
+export type JSXChild = JSXText$1 | JSXElement$1 | JSXFragment$1 | JSXExpressionContainer$1 | JSXSpreadChild$1;
+
+// @public (undocumented)
+export interface JSXClosingElement extends Span$1 {
     // (undocumented)
     name: JSXElementName;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "JSXClosingElement";
 }
 
 // @public (undocumented)
-export interface JSXClosingFragment extends Span {
+export interface JSXClosingFragment extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "JSXClosingFragment";
 }
 
 // @public (undocumented)
-export interface JSXElement extends Span {
+export interface JSXElement$1 extends Span$1 {
     // (undocumented)
     children: Array<JSXChild>;
     // (undocumented)
     closingElement: JSXClosingElement | null;
     // (undocumented)
-    openingElement: JSXOpeningElement;
+    openingElement: JSXOpeningElement$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "JSXElement";
 }
 
 // @public (undocumented)
-export type JSXElementName = JSXIdentifier | JSXNamespacedName | JSXMemberExpression;
+export type JSXElement = Simplify<Built<JSXElement$1>>;
 
 // @public (undocumented)
-export interface JSXEmptyExpression extends Span {
+export type JSXElementName = JSXIdentifier$1 | JSXNamespacedName$1 | JSXMemberExpression$1;
+
+// @public (undocumented)
+export interface JSXEmptyExpression extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "JSXEmptyExpression";
 }
 
 // @public (undocumented)
-export type JSXExpression = JSXEmptyExpression | Expression;
+export type JSXExpression = JSXEmptyExpression | Expression$1;
 
 // @public (undocumented)
-export interface JSXExpressionContainer extends Span {
+export interface JSXExpressionContainer$1 extends Span$1 {
     // (undocumented)
     expression: JSXExpression;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "JSXExpressionContainer";
 }
 
 // @public (undocumented)
-export interface JSXFragment extends Span {
+export type JSXExpressionContainer = Simplify<Built<JSXExpressionContainer$1>>;
+
+// @public (undocumented)
+export interface JSXFragment$1 extends Span$1 {
     // (undocumented)
     children: Array<JSXChild>;
     // (undocumented)
@@ -1006,70 +1168,85 @@ export interface JSXFragment extends Span {
     // (undocumented)
     openingFragment: JSXOpeningFragment;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "JSXFragment";
 }
 
 // @public (undocumented)
-export interface JSXIdentifier extends Span {
+export type JSXFragment = Simplify<Built<JSXFragment$1>>;
+
+// @public (undocumented)
+export interface JSXIdentifier$1 extends Span$1 {
     // (undocumented)
     name: string;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "JSXIdentifier";
 }
 
 // @public (undocumented)
-export interface JSXMemberExpression extends Span {
+export type JSXIdentifier = Simplify<Built<JSXIdentifier$1>>;
+
+// @public (undocumented)
+export interface JSXMemberExpression$1 extends Span$1 {
     // (undocumented)
     object: JSXMemberExpressionObject;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    property: JSXIdentifier;
+    property: JSXIdentifier$1;
     // (undocumented)
     type: "JSXMemberExpression";
 }
 
 // @public (undocumented)
-export type JSXMemberExpressionObject = JSXIdentifier | JSXMemberExpression;
+export type JSXMemberExpression = Simplify<Built<JSXMemberExpression$1>>;
 
 // @public (undocumented)
-export interface JSXNamespacedName extends Span {
+export type JSXMemberExpressionObject = JSXIdentifier$1 | JSXMemberExpression$1;
+
+// @public (undocumented)
+export interface JSXNamespacedName$1 extends Span$1 {
     // (undocumented)
-    name: JSXIdentifier;
+    name: JSXIdentifier$1;
     // (undocumented)
-    namespace: JSXIdentifier;
+    namespace: JSXIdentifier$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "JSXNamespacedName";
 }
 
 // @public (undocumented)
-export interface JSXOpeningElement extends Span {
+export type JSXNamespacedName = Simplify<Built<JSXNamespacedName$1>>;
+
+// @public (undocumented)
+export interface JSXOpeningElement$1 extends Span$1 {
     // (undocumented)
     attributes: Array<JSXAttributeItem>;
     // (undocumented)
     name: JSXElementName;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     selfClosing: boolean;
     // (undocumented)
     type: "JSXOpeningElement";
     // (undocumented)
-    typeArguments?: TSTypeParameterInstantiation | null;
+    typeArguments?: TSTypeParameterInstantiation$1 | null;
 }
 
 // @public (undocumented)
-export interface JSXOpeningFragment extends Span {
+export type JSXOpeningElement = Simplify<Built<JSXOpeningElement$1>>;
+
+// @public (undocumented)
+export interface JSXOpeningFragment extends Span$1 {
     // (undocumented)
     attributes?: [];
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     selfClosing?: false;
     // (undocumented)
@@ -1077,29 +1254,35 @@ export interface JSXOpeningFragment extends Span {
 }
 
 // @public (undocumented)
-export interface JSXSpreadAttribute extends Span {
+export interface JSXSpreadAttribute$1 extends Span$1 {
     // (undocumented)
-    argument: Expression;
+    argument: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "JSXSpreadAttribute";
 }
 
 // @public (undocumented)
-export interface JSXSpreadChild extends Span {
+export type JSXSpreadAttribute = Simplify<Built<JSXSpreadAttribute$1>>;
+
+// @public (undocumented)
+export interface JSXSpreadChild$1 extends Span$1 {
     // (undocumented)
-    expression: Expression;
+    expression: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "JSXSpreadChild";
 }
 
 // @public (undocumented)
-export interface JSXText extends Span {
+export type JSXSpreadChild = Simplify<Built<JSXSpreadChild$1>>;
+
+// @public (undocumented)
+export interface JSXText$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     raw: string | null;
     // (undocumented)
@@ -1109,19 +1292,25 @@ export interface JSXText extends Span {
 }
 
 // @public (undocumented)
-export interface LabeledStatement extends Span {
+export type JSXText = Simplify<Built<JSXText$1>>;
+
+// @public (undocumented)
+export interface LabeledStatement$1 extends Span$1 {
     // (undocumented)
-    body: Statement;
+    body: Statement$1;
     // (undocumented)
-    label: LabelIdentifier;
+    label: LabelIdentifier$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "LabeledStatement";
 }
 
 // @public (undocumented)
-export interface LabelIdentifier extends Span {
+export type LabeledStatement = Simplify<Built<LabeledStatement$1>>;
+
+// @public (undocumented)
+export interface LabelIdentifier$1 extends Span$1 {
     // (undocumented)
     decorators?: [];
     // (undocumented)
@@ -1129,7 +1318,7 @@ export interface LabelIdentifier extends Span {
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "Identifier";
     // (undocumented)
@@ -1137,45 +1326,60 @@ export interface LabelIdentifier extends Span {
 }
 
 // @public (undocumented)
-export interface LogicalExpression extends Span {
+export type LabelIdentifier = Simplify<Built<LabelIdentifier$1>>;
+
+// @public (undocumented)
+export type Literal = StringLiteral | NumericLiteral | BooleanLiteral | BigIntLiteral | RegExpLiteral | NullLiteral;
+
+// @public (undocumented)
+export interface LogicalExpression$1 extends Span$1 {
     // (undocumented)
-    left: Expression;
+    left: Expression$1;
     // (undocumented)
     operator: LogicalOperator;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    right: Expression;
+    right: Expression$1;
     // (undocumented)
     type: "LogicalExpression";
 }
 
 // @public (undocumented)
+export type LogicalExpression = Simplify<Built<LogicalExpression$1>>;
+
+// @public (undocumented)
 export type LogicalOperator = "||" | "&&" | "??";
 
 // @public (undocumented)
-export type MemberExpression = ComputedMemberExpression | StaticMemberExpression | PrivateFieldExpression;
+export type MemberExpression$1 = ComputedMemberExpression | StaticMemberExpression$1 | PrivateFieldExpression;
 
 // @public (undocumented)
-export interface MetaProperty extends Span {
+export type MemberExpression = Simplify<Built<MemberExpression$1>>;
+
+// @public (undocumented)
+export interface MetaProperty$1 extends Span$1 {
     // (undocumented)
-    meta: IdentifierName;
+    meta: IdentifierName$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    property: IdentifierName;
+    property: IdentifierName$1;
     // (undocumented)
     type: "MetaProperty";
 }
 
 // @public (undocumented)
-export interface MethodDefinition extends Span {
+export type MetaProperty = Simplify<Built<MetaProperty$1>>;
+
+// @public (undocumented)
+export interface MethodDefinition$1 extends Span$1 {
     // (undocumented)
     accessibility?: TSAccessibility | null;
     // (undocumented)
     computed: boolean;
     // (undocumented)
-    decorators: Array<Decorator>;
+    decorators: Array<Decorator$1>;
     // (undocumented)
     key: PropertyKey_2;
     // (undocumented)
@@ -1185,14 +1389,17 @@ export interface MethodDefinition extends Span {
     // (undocumented)
     override?: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     static: boolean;
     // (undocumented)
     type: MethodDefinitionType;
     // (undocumented)
-    value: Function_2;
+    value: Function$1;
 }
+
+// @public (undocumented)
+export type MethodDefinition = Simplify<Built<MethodDefinition$1>>;
 
 // @public (undocumented)
 export type MethodDefinitionKind = "constructor" | "method" | "get" | "set";
@@ -1201,44 +1408,42 @@ export type MethodDefinitionKind = "constructor" | "method" | "get" | "set";
 export type MethodDefinitionType = "MethodDefinition" | "TSAbstractMethodDefinition";
 
 // @public (undocumented)
-export type ModuleDeclaration = ImportDeclaration | ExportAllDeclaration | ExportDefaultDeclaration | ExportNamedDeclaration | TSExportAssignment | TSNamespaceExportDeclaration;
+export type ModuleDeclaration = ImportDeclaration$1 | ExportAllDeclaration$1 | ExportDefaultDeclaration$1 | ExportNamedDeclaration$1 | TSExportAssignment$1 | TSNamespaceExportDeclaration$1;
 
 // @public (undocumented)
-export type ModuleExportName = IdentifierName | IdentifierReference | StringLiteral;
+export type ModuleExportName = IdentifierName$1 | IdentifierReference$1 | StringLiteral$1;
 
 // @public (undocumented)
 export type ModuleKind = "script" | "module" | "commonjs";
 
 // @public (undocumented)
-export interface NewExpression extends Span {
+export interface NewExpression$1 extends Span$1 {
     // (undocumented)
-    arguments: Array<Argument>;
+    arguments: Array<Argument$1>;
     // (undocumented)
-    callee: Expression;
+    callee: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "NewExpression";
     // (undocumented)
-    typeArguments?: TSTypeParameterInstantiation | null;
+    typeArguments?: TSTypeParameterInstantiation$1 | null;
 }
 
 // @public (undocumented)
-type Node_2 = Program | IdentifierName | IdentifierReference | BindingIdentifier | LabelIdentifier | ThisExpression | ArrayExpression | ObjectExpression | ObjectProperty | TemplateLiteral | TaggedTemplateExpression | TemplateElement | ComputedMemberExpression | StaticMemberExpression | PrivateFieldExpression | CallExpression | NewExpression | MetaProperty | SpreadElement | UpdateExpression | UnaryExpression | BinaryExpression | PrivateInExpression | LogicalExpression | ConditionalExpression | AssignmentExpression | ArrayAssignmentTarget | ObjectAssignmentTarget | AssignmentTargetRest | AssignmentTargetWithDefault | AssignmentTargetPropertyIdentifier | AssignmentTargetPropertyProperty | SequenceExpression | Super | AwaitExpression | ChainExpression | ParenthesizedExpression | Directive | Hashbang | BlockStatement | VariableDeclaration | VariableDeclarator | EmptyStatement | ExpressionStatement | IfStatement | DoWhileStatement | WhileStatement | ForStatement | ForInStatement | ForOfStatement | ContinueStatement | BreakStatement | ReturnStatement | WithStatement | SwitchStatement | SwitchCase | LabeledStatement | ThrowStatement | TryStatement | CatchClause | DebuggerStatement | AssignmentPattern | ObjectPattern | BindingProperty | ArrayPattern | BindingRestElement | Function_2 | FunctionBody | ArrowFunctionExpression | YieldExpression | Class | ClassBody | MethodDefinition | PropertyDefinition_2 | PrivateIdentifier | StaticBlock | AccessorProperty | ImportExpression | ImportDeclaration | ImportSpecifier | ImportDefaultSpecifier | ImportNamespaceSpecifier | ImportAttribute | ExportNamedDeclaration | ExportDefaultDeclaration | ExportAllDeclaration | ExportSpecifier | V8IntrinsicExpression | BooleanLiteral | NullLiteral | NumericLiteral | StringLiteral | BigIntLiteral | RegExpLiteral | JSXElement | JSXOpeningElement | JSXClosingElement | JSXFragment | JSXOpeningFragment | JSXClosingFragment | JSXNamespacedName | JSXMemberExpression | JSXExpressionContainer | JSXEmptyExpression | JSXAttribute | JSXSpreadAttribute | JSXIdentifier | JSXSpreadChild | JSXText | TSThisParameter | TSEnumDeclaration | TSEnumBody | TSEnumMember | TSTypeAnnotation | TSLiteralType | TSConditionalType | TSUnionType | TSIntersectionType | TSParenthesizedType | TSTypeOperator | TSArrayType | TSIndexedAccessType | TSTupleType | TSNamedTupleMember | TSOptionalType | TSRestType | TSAnyKeyword | TSStringKeyword | TSBooleanKeyword | TSNumberKeyword | TSNeverKeyword | TSIntrinsicKeyword | TSUnknownKeyword | TSNullKeyword | TSUndefinedKeyword | TSVoidKeyword | TSSymbolKeyword | TSThisType | TSObjectKeyword | TSBigIntKeyword | TSTypeReference | TSQualifiedName | TSTypeParameterInstantiation | TSTypeParameter | TSTypeParameterDeclaration | TSTypeAliasDeclaration | TSClassImplements | TSInterfaceDeclaration | TSInterfaceBody | TSPropertySignature | TSIndexSignature | TSCallSignatureDeclaration | TSMethodSignature | TSConstructSignatureDeclaration | TSIndexSignatureName | TSInterfaceHeritage | TSTypePredicate | TSModuleDeclaration | TSGlobalDeclaration | TSModuleBlock | TSTypeLiteral | TSInferType | TSTypeQuery | TSImportType | TSImportTypeQualifiedName | TSFunctionType | TSConstructorType | TSMappedType | TSTemplateLiteralType | TSAsExpression | TSSatisfiesExpression | TSTypeAssertion | TSImportEqualsDeclaration | TSExternalModuleReference | TSNonNullExpression | Decorator | TSExportAssignment | TSNamespaceExportDeclaration | TSInstantiationExpression | JSDocNullableType | JSDocNonNullableType | JSDocUnknownType | ParamPattern;
+export type NewExpression = Simplify<Built<NewExpression$1>>;
+
+// @public (undocumented)
+export type Node$1 = Program$1 | IdentifierName$1 | IdentifierReference$1 | BindingIdentifier$1 | LabelIdentifier$1 | ThisExpression$1 | ArrayExpression$1 | ObjectExpression$1 | ObjectProperty$1 | TemplateLiteral$1 | TaggedTemplateExpression$1 | TemplateElement$1 | ComputedMemberExpression | StaticMemberExpression$1 | PrivateFieldExpression | CallExpression$1 | NewExpression$1 | MetaProperty$1 | SpreadElement$1 | UpdateExpression$1 | UnaryExpression$1 | BinaryExpression$1 | PrivateInExpression$1 | LogicalExpression$1 | ConditionalExpression$1 | AssignmentExpression$1 | ArrayAssignmentTarget | ObjectAssignmentTarget | AssignmentTargetRest | AssignmentTargetWithDefault | AssignmentTargetPropertyIdentifier | AssignmentTargetPropertyProperty | SequenceExpression$1 | Super$1 | AwaitExpression | ChainExpression$1 | ParenthesizedExpression | Directive | Hashbang | BlockStatement$1 | VariableDeclaration$1 | VariableDeclarator$1 | EmptyStatement$1 | ExpressionStatement$1 | IfStatement$1 | DoWhileStatement$1 | WhileStatement$1 | ForStatement$1 | ForInStatement$1 | ForOfStatement$1 | ContinueStatement$1 | BreakStatement$1 | ReturnStatement$1 | WithStatement$1 | SwitchStatement$1 | SwitchCase$1 | LabeledStatement$1 | ThrowStatement$1 | TryStatement$1 | CatchClause$1 | DebuggerStatement | AssignmentPattern$1 | ObjectPattern | BindingProperty$1 | ArrayPattern$1 | BindingRestElement$1 | Function$1 | FunctionBody | ArrowFunctionExpression$1 | YieldExpression$1 | Class$1 | ClassBody$1 | MethodDefinition$1 | PropertyDefinition$1 | PrivateIdentifier$1 | StaticBlock$1 | AccessorProperty$1 | ImportExpression$1 | ImportDeclaration$1 | ImportSpecifier | ImportDefaultSpecifier | ImportNamespaceSpecifier | ImportAttribute$1 | ExportNamedDeclaration$1 | ExportDefaultDeclaration$1 | ExportAllDeclaration$1 | ExportSpecifier | V8IntrinsicExpression | BooleanLiteral$1 | NullLiteral$1 | NumericLiteral$1 | StringLiteral$1 | BigIntLiteral$1 | RegExpLiteral$1 | JSXElement$1 | JSXOpeningElement$1 | JSXClosingElement | JSXFragment$1 | JSXOpeningFragment | JSXClosingFragment | JSXNamespacedName$1 | JSXMemberExpression$1 | JSXExpressionContainer$1 | JSXEmptyExpression | JSXAttribute$1 | JSXSpreadAttribute$1 | JSXIdentifier$1 | JSXSpreadChild$1 | JSXText$1 | TSThisParameter | TSEnumDeclaration$1 | TSEnumBody | TSEnumMember | TSTypeAnnotation$1 | TSLiteralType$1 | TSConditionalType$1 | TSUnionType$1 | TSIntersectionType$1 | TSParenthesizedType$1 | TSTypeOperator$1 | TSArrayType$1 | TSIndexedAccessType$1 | TSTupleType$1 | TSNamedTupleMember$1 | TSOptionalType$1 | TSRestType$1 | TSAnyKeyword | TSStringKeyword | TSBooleanKeyword | TSNumberKeyword | TSNeverKeyword | TSIntrinsicKeyword | TSUnknownKeyword | TSNullKeyword | TSUndefinedKeyword | TSVoidKeyword | TSSymbolKeyword | TSThisType | TSObjectKeyword | TSBigIntKeyword | TSTypeReference$1 | TSQualifiedName$1 | TSTypeParameterInstantiation$1 | TSTypeParameter | TSTypeParameterDeclaration$1 | TSTypeAliasDeclaration$1 | TSClassImplements | TSInterfaceDeclaration$1 | TSInterfaceBody$1 | TSPropertySignature$1 | TSIndexSignature$1 | TSCallSignatureDeclaration$1 | TSMethodSignature$1 | TSConstructSignatureDeclaration$1 | TSIndexSignatureName | TSInterfaceHeritage | TSTypePredicate$1 | TSModuleDeclaration$1 | TSGlobalDeclaration | TSModuleBlock$1 | TSTypeLiteral | TSInferType$1 | TSTypeQuery$1 | TSImportType$1 | TSImportTypeQualifiedName | TSFunctionType$1 | TSConstructorType$1 | TSMappedType$1 | TSTemplateLiteralType$1 | TSAsExpression$1 | TSSatisfiesExpression$1 | TSTypeAssertion$1 | TSImportEqualsDeclaration$1 | TSExternalModuleReference | TSNonNullExpression$1 | Decorator$1 | TSExportAssignment$1 | TSNamespaceExportDeclaration$1 | TSInstantiationExpression$1 | JSDocNullableType$1 | JSDocNonNullableType$1 | JSDocUnknownType | ParamPattern$1;
+
+// @public (undocumented)
+type Node_2 = Simplify<Built<Node$1>> | Node$1;
 export { Node_2 as Node }
 
 // @public (undocumented)
-export interface NodePath {
+export interface NullLiteral$1 extends Span$1 {
     // (undocumented)
-    readonly ancestors: readonly unknown[];
-    // (undocumented)
-    readonly node: unknown;
-}
-
-// @public (undocumented)
-export interface NullLiteral extends Span {
-    // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     raw: "null" | null;
     // (undocumented)
@@ -1248,9 +1453,12 @@ export interface NullLiteral extends Span {
 }
 
 // @public (undocumented)
-export interface NumericLiteral extends Span {
+export type NullLiteral = Simplify<Built<NullLiteral$1>>;
+
+// @public (undocumented)
+export interface NumericLiteral$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     raw: string | null;
     // (undocumented)
@@ -1260,13 +1468,16 @@ export interface NumericLiteral extends Span {
 }
 
 // @public (undocumented)
-export interface ObjectAssignmentTarget extends Span {
+export type NumericLiteral = Simplify<Built<NumericLiteral$1>>;
+
+// @public (undocumented)
+export interface ObjectAssignmentTarget extends Span$1 {
     // (undocumented)
     decorators?: [];
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     properties: Array<AssignmentTargetProperty | AssignmentTargetRest>;
     // (undocumented)
@@ -1276,9 +1487,9 @@ export interface ObjectAssignmentTarget extends Span {
 }
 
 // @public (undocumented)
-export interface ObjectExpression extends Span {
+export interface ObjectExpression$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     properties: Array<ObjectPropertyKind>;
     // (undocumented)
@@ -1286,23 +1497,26 @@ export interface ObjectExpression extends Span {
 }
 
 // @public (undocumented)
-export interface ObjectPattern extends Span {
+export type ObjectExpression = Simplify<Built<ObjectExpression$1>>;
+
+// @public (undocumented)
+export interface ObjectPattern extends Span$1 {
     // (undocumented)
     decorators?: [];
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    properties: Array<BindingProperty | BindingRestElement>;
+    properties: Array<BindingProperty$1 | BindingRestElement$1>;
     // (undocumented)
     type: "ObjectPattern";
     // (undocumented)
-    typeAnnotation?: TSTypeAnnotation | null;
+    typeAnnotation?: TSTypeAnnotation$1 | null;
 }
 
 // @public (undocumented)
-export interface ObjectProperty extends Span {
+export interface ObjectProperty$1 extends Span$1 {
     // (undocumented)
     computed: boolean;
     // (undocumented)
@@ -1314,83 +1528,87 @@ export interface ObjectProperty extends Span {
     // (undocumented)
     optional?: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     shorthand: boolean;
     // (undocumented)
     type: "Property";
     // (undocumented)
-    value: Expression;
+    value: Expression$1;
 }
 
 // @public (undocumented)
-export type ObjectPropertyKind = ObjectProperty | SpreadElement;
+export type ObjectProperty = Simplify<Built<ObjectProperty$1>>;
 
 // @public (undocumented)
-export type ParamPattern = FormalParameter | TSParameterProperty | FormalParameterRest;
+export type ObjectPropertyKind = ObjectProperty$1 | SpreadElement$1;
 
 // @public (undocumented)
-export interface ParenthesizedExpression extends Span {
+export type ParamPattern$1 = FormalParameter | TSParameterProperty | FormalParameterRest;
+
+// @public (undocumented)
+export type ParamPattern = Simplify<Built<ParamPattern$1>>;
+
+// @public (undocumented)
+export interface ParenthesizedExpression extends Span$1 {
     // (undocumented)
-    expression: Expression;
+    expression: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ParenthesizedExpression";
 }
 
 // @public (undocumented)
-export interface PlainIgnorer {
-    // (undocumented)
-    readonly name: string;
-    // (undocumented)
-    shouldIgnore(path: NodePath): string | undefined;
-}
-
-// @public (undocumented)
-export interface PrivateFieldExpression extends Span {
+export interface PrivateFieldExpression extends Span$1 {
     // (undocumented)
     computed: false;
     // (undocumented)
-    object: Expression;
+    object: Expression$1;
     // (undocumented)
     optional: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    property: PrivateIdentifier;
+    property: PrivateIdentifier$1;
     // (undocumented)
     type: "MemberExpression";
 }
 
 // @public (undocumented)
-export interface PrivateIdentifier extends Span {
+export interface PrivateIdentifier$1 extends Span$1 {
     // (undocumented)
     name: string;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "PrivateIdentifier";
 }
 
 // @public (undocumented)
-export interface PrivateInExpression extends Span {
+export type PrivateIdentifier = Simplify<Built<PrivateIdentifier$1>>;
+
+// @public (undocumented)
+export interface PrivateInExpression$1 extends Span$1 {
     // (undocumented)
-    left: PrivateIdentifier;
+    left: PrivateIdentifier$1;
     // (undocumented)
     operator: "in";
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    right: Expression;
+    right: Expression$1;
     // (undocumented)
     type: "BinaryExpression";
 }
 
 // @public (undocumented)
-export interface Program extends Span {
+export type PrivateInExpression = Simplify<Built<PrivateInExpression$1>>;
+
+// @public (undocumented)
+export interface Program$1 extends Span$1 {
     // (undocumented)
-    body: Array<Directive | Statement>;
+    body: Array<Directive | Statement$1>;
     // (undocumented)
     hashbang: Hashbang | null;
     // (undocumented)
@@ -1402,7 +1620,10 @@ export interface Program extends Span {
 }
 
 // @public (undocumented)
-interface PropertyDefinition_2 extends Span {
+export type Program = Simplify<Built<Program$1>>;
+
+// @public (undocumented)
+export interface PropertyDefinition$1 extends Span$1 {
     // (undocumented)
     accessibility?: TSAccessibility | null;
     // (undocumented)
@@ -1410,7 +1631,7 @@ interface PropertyDefinition_2 extends Span {
     // (undocumented)
     declare?: boolean;
     // (undocumented)
-    decorators: Array<Decorator>;
+    decorators: Array<Decorator$1>;
     // (undocumented)
     definite?: boolean;
     // (undocumented)
@@ -1420,7 +1641,7 @@ interface PropertyDefinition_2 extends Span {
     // (undocumented)
     override?: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     readonly?: boolean;
     // (undocumented)
@@ -1428,26 +1649,29 @@ interface PropertyDefinition_2 extends Span {
     // (undocumented)
     type: PropertyDefinitionType;
     // (undocumented)
-    typeAnnotation?: TSTypeAnnotation | null;
+    typeAnnotation?: TSTypeAnnotation$1 | null;
     // (undocumented)
-    value: Expression | null;
+    value: Expression$1 | null;
 }
+
+// @public (undocumented)
+type PropertyDefinition_2 = Simplify<Built<PropertyDefinition$1>>;
 export { PropertyDefinition_2 as PropertyDefinition }
 
 // @public (undocumented)
 export type PropertyDefinitionType = "PropertyDefinition" | "TSAbstractPropertyDefinition";
 
 // @public (undocumented)
-type PropertyKey_2 = IdentifierName | PrivateIdentifier | Expression;
+type PropertyKey_2 = IdentifierName$1 | PrivateIdentifier$1 | Expression$1;
 export { PropertyKey_2 as PropertyKey }
 
 // @public (undocumented)
 export type PropertyKind = "init" | "get" | "set";
 
 // @public (undocumented)
-export interface RegExpLiteral extends Span {
+export interface RegExpLiteral$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     raw: string | null;
     // (undocumented)
@@ -1462,30 +1686,45 @@ export interface RegExpLiteral extends Span {
 }
 
 // @public (undocumented)
-export interface ReturnStatement extends Span {
+export type RegExpLiteral = Simplify<Built<RegExpLiteral$1>>;
+
+// @public (undocumented)
+export interface ReturnStatement$1 extends Span$1 {
     // (undocumented)
-    argument: Expression | null;
+    argument: Expression$1 | null;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ReturnStatement";
 }
 
 // @public (undocumented)
-export interface SequenceExpression extends Span {
+export type ReturnStatement = Simplify<Built<ReturnStatement$1>>;
+
+// @public (undocumented)
+export interface SequenceExpression$1 extends Span$1 {
     // (undocumented)
-    expressions: Array<Expression>;
+    expressions: Array<Expression$1>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "SequenceExpression";
 }
 
 // @public (undocumented)
-export type SimpleAssignmentTarget = IdentifierReference | TSAsExpression | TSSatisfiesExpression | TSNonNullExpression | TSTypeAssertion | MemberExpression;
+export type SequenceExpression = Simplify<Built<SequenceExpression$1>>;
 
 // @public (undocumented)
-export interface Span {
+export type SimpleAssignmentTarget$1 = IdentifierReference$1 | TSAsExpression$1 | TSSatisfiesExpression$1 | TSNonNullExpression$1 | TSTypeAssertion$1 | MemberExpression$1;
+
+// @public (undocumented)
+export type SimpleAssignmentTarget = Simplify<Built<SimpleAssignmentTarget$1>> | SimpleAssignmentTarget$1;
+
+// @public (undocumented)
+export type Simplify<T> = { [K in keyof T]: T[K]; } & {};
+
+// @public (undocumented)
+export interface Span$1 {
     // (undocumented)
     end: number;
     // (undocumented)
@@ -1495,48 +1734,63 @@ export interface Span {
 }
 
 // @public (undocumented)
-export interface SpreadElement extends Span {
+export type Span = Span$1;
+
+// @public (undocumented)
+export interface SpreadElement$1 extends Span$1 {
     // (undocumented)
-    argument: Expression;
+    argument: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "SpreadElement";
 }
 
 // @public (undocumented)
-export type Statement = BlockStatement | BreakStatement | ContinueStatement | DebuggerStatement | DoWhileStatement | EmptyStatement | ExpressionStatement | ForInStatement | ForOfStatement | ForStatement | IfStatement | LabeledStatement | ReturnStatement | SwitchStatement | ThrowStatement | TryStatement | WhileStatement | WithStatement | Declaration | ModuleDeclaration;
+export type SpreadElement = Simplify<Built<SpreadElement$1>>;
 
 // @public (undocumented)
-export interface StaticBlock extends Span {
+export type Statement$1 = BlockStatement$1 | BreakStatement$1 | ContinueStatement$1 | DebuggerStatement | DoWhileStatement$1 | EmptyStatement$1 | ExpressionStatement$1 | ForInStatement$1 | ForOfStatement$1 | ForStatement$1 | IfStatement$1 | LabeledStatement$1 | ReturnStatement$1 | SwitchStatement$1 | ThrowStatement$1 | TryStatement$1 | WhileStatement$1 | WithStatement$1 | Declaration | ModuleDeclaration;
+
+// @public (undocumented)
+export type Statement = Simplify<Built<Statement$1>> | Statement$1;
+
+// @public (undocumented)
+export interface StaticBlock$1 extends Span$1 {
     // (undocumented)
-    body: Array<Statement>;
+    body: Array<Statement$1>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "StaticBlock";
 }
 
 // @public (undocumented)
-export interface StaticMemberExpression extends Span {
+export type StaticBlock = Simplify<Built<StaticBlock$1>>;
+
+// @public (undocumented)
+export interface StaticMemberExpression$1 extends Span$1 {
     // (undocumented)
     computed: false;
     // (undocumented)
-    object: Expression;
+    object: Expression$1;
     // (undocumented)
     optional: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    property: IdentifierName;
+    property: IdentifierName$1;
     // (undocumented)
     type: "MemberExpression";
 }
 
 // @public (undocumented)
-export interface StringLiteral extends Span {
+export type StaticMemberExpression = Simplify<Built<StaticMemberExpression$1>>;
+
+// @public (undocumented)
+export interface StringLiteral$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     raw: string | null;
     // (undocumented)
@@ -1546,55 +1800,70 @@ export interface StringLiteral extends Span {
 }
 
 // @public (undocumented)
-export interface Super extends Span {
+export type StringLiteral = Simplify<Built<StringLiteral$1>>;
+
+// @public (undocumented)
+export interface Super$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "Super";
 }
 
 // @public (undocumented)
-export interface SwitchCase extends Span {
+export type Super = Simplify<Built<Super$1>>;
+
+// @public (undocumented)
+export interface SwitchCase$1 extends Span$1 {
     // (undocumented)
-    consequent: Array<Statement>;
+    consequent: Array<Statement$1>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    test: Expression | null;
+    test: Expression$1 | null;
     // (undocumented)
     type: "SwitchCase";
 }
 
 // @public (undocumented)
-export interface SwitchStatement extends Span {
+export type SwitchCase = Simplify<Built<SwitchCase$1>>;
+
+// @public (undocumented)
+export interface SwitchStatement$1 extends Span$1 {
     // (undocumented)
-    cases: Array<SwitchCase>;
+    cases: Array<SwitchCase$1>;
     // (undocumented)
-    discriminant: Expression;
+    discriminant: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "SwitchStatement";
 }
 
 // @public (undocumented)
-export interface TaggedTemplateExpression extends Span {
+export type SwitchStatement = Simplify<Built<SwitchStatement$1>>;
+
+// @public (undocumented)
+export interface TaggedTemplateExpression$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    quasi: TemplateLiteral;
+    quasi: TemplateLiteral$1;
     // (undocumented)
-    tag: Expression;
+    tag: Expression$1;
     // (undocumented)
     type: "TaggedTemplateExpression";
     // (undocumented)
-    typeArguments?: TSTypeParameterInstantiation | null;
+    typeArguments?: TSTypeParameterInstantiation$1 | null;
 }
 
 // @public (undocumented)
-export interface TemplateElement extends Span {
+export type TaggedTemplateExpression = Simplify<Built<TaggedTemplateExpression$1>>;
+
+// @public (undocumented)
+export interface TemplateElement$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     tail: boolean;
     // (undocumented)
@@ -1602,6 +1871,9 @@ export interface TemplateElement extends Span {
     // (undocumented)
     value: TemplateElementValue;
 }
+
+// @public (undocumented)
+export type TemplateElement = Simplify<Built<TemplateElement$1>>;
 
 // @public (undocumented)
 export interface TemplateElementValue {
@@ -1612,182 +1884,212 @@ export interface TemplateElementValue {
 }
 
 // @public (undocumented)
-export interface TemplateLiteral extends Span {
+export interface TemplateLiteral$1 extends Span$1 {
     // (undocumented)
-    expressions: Array<Expression>;
+    expressions: Array<Expression$1>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    quasis: Array<TemplateElement>;
+    quasis: Array<TemplateElement$1>;
     // (undocumented)
     type: "TemplateLiteral";
 }
 
 // @public (undocumented)
-export interface ThisExpression extends Span {
+export type TemplateLiteral = Simplify<Built<TemplateLiteral$1>>;
+
+// @public (undocumented)
+export interface ThisExpression$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ThisExpression";
 }
 
 // @public (undocumented)
-export interface ThrowStatement extends Span {
+export type ThisExpression = Simplify<Built<ThisExpression$1>>;
+
+// @public (undocumented)
+export interface ThrowStatement$1 extends Span$1 {
     // (undocumented)
-    argument: Expression;
+    argument: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "ThrowStatement";
 }
 
 // @public (undocumented)
-export interface TryStatement extends Span {
+export type ThrowStatement = Simplify<Built<ThrowStatement$1>>;
+
+// @public (undocumented)
+export interface TryStatement$1 extends Span$1 {
     // (undocumented)
-    block: BlockStatement;
+    block: BlockStatement$1;
     // (undocumented)
-    finalizer: BlockStatement | null;
+    finalizer: BlockStatement$1 | null;
     // (undocumented)
-    handler: CatchClause | null;
+    handler: CatchClause$1 | null;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TryStatement";
 }
 
 // @public (undocumented)
+export type TryStatement = Simplify<Built<TryStatement$1>>;
+
+// @public (undocumented)
 export type TSAccessibility = "private" | "protected" | "public";
 
 // @public (undocumented)
-export interface TSAnyKeyword extends Span {
+export interface TSAnyKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSAnyKeyword";
 }
 
 // @public (undocumented)
-export interface TSArrayType extends Span {
+export interface TSArrayType$1 extends Span$1 {
     // (undocumented)
-    elementType: TSType;
+    elementType: TSType$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSArrayType";
 }
 
 // @public (undocumented)
-export interface TSAsExpression extends Span {
+export type TSArrayType = Simplify<Built<TSArrayType$1>>;
+
+// @public (undocumented)
+export interface TSAsExpression$1 extends Span$1 {
     // (undocumented)
-    expression: Expression;
+    expression: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSAsExpression";
     // (undocumented)
-    typeAnnotation: TSType;
+    typeAnnotation: TSType$1;
 }
 
 // @public (undocumented)
-export interface TSBigIntKeyword extends Span {
+export type TSAsExpression = Simplify<Built<TSAsExpression$1>>;
+
+// @public (undocumented)
+export interface TSBigIntKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSBigIntKeyword";
 }
 
 // @public (undocumented)
-export interface TSBooleanKeyword extends Span {
+export interface TSBooleanKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSBooleanKeyword";
 }
 
 // @public (undocumented)
-export interface TSCallSignatureDeclaration extends Span {
+export interface TSCallSignatureDeclaration$1 extends Span$1 {
     // (undocumented)
-    params: ParamPattern[];
+    params: ParamPattern$1[];
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    returnType: TSTypeAnnotation | null;
+    returnType: TSTypeAnnotation$1 | null;
     // (undocumented)
     type: "TSCallSignatureDeclaration";
     // (undocumented)
-    typeParameters: TSTypeParameterDeclaration | null;
+    typeParameters: TSTypeParameterDeclaration$1 | null;
 }
 
 // @public (undocumented)
-export interface TSClassImplements extends Span {
+export type TSCallSignatureDeclaration = Simplify<Built<TSCallSignatureDeclaration$1>>;
+
+// @public (undocumented)
+export interface TSClassImplements extends Span$1 {
     // (undocumented)
-    expression: IdentifierReference | ThisExpression | MemberExpression;
+    expression: IdentifierReference$1 | ThisExpression$1 | MemberExpression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSClassImplements";
     // (undocumented)
-    typeArguments: TSTypeParameterInstantiation | null;
+    typeArguments: TSTypeParameterInstantiation$1 | null;
 }
 
 // @public (undocumented)
-export interface TSConditionalType extends Span {
+export interface TSConditionalType$1 extends Span$1 {
     // (undocumented)
-    checkType: TSType;
+    checkType: TSType$1;
     // (undocumented)
-    extendsType: TSType;
+    extendsType: TSType$1;
     // (undocumented)
-    falseType: TSType;
+    falseType: TSType$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    trueType: TSType;
+    trueType: TSType$1;
     // (undocumented)
     type: "TSConditionalType";
 }
 
 // @public (undocumented)
-export interface TSConstructorType extends Span {
+export type TSConditionalType = Simplify<Built<TSConditionalType$1>>;
+
+// @public (undocumented)
+export interface TSConstructorType$1 extends Span$1 {
     // (undocumented)
     abstract: boolean;
     // (undocumented)
-    params: ParamPattern[];
+    params: ParamPattern$1[];
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    returnType: TSTypeAnnotation;
+    returnType: TSTypeAnnotation$1;
     // (undocumented)
     type: "TSConstructorType";
     // (undocumented)
-    typeParameters: TSTypeParameterDeclaration | null;
+    typeParameters: TSTypeParameterDeclaration$1 | null;
 }
 
 // @public (undocumented)
-export interface TSConstructSignatureDeclaration extends Span {
+export type TSConstructorType = Simplify<Built<TSConstructorType$1>>;
+
+// @public (undocumented)
+export interface TSConstructSignatureDeclaration$1 extends Span$1 {
     // (undocumented)
-    params: ParamPattern[];
+    params: ParamPattern$1[];
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    returnType: TSTypeAnnotation | null;
+    returnType: TSTypeAnnotation$1 | null;
     // (undocumented)
     type: "TSConstructSignatureDeclaration";
     // (undocumented)
-    typeParameters: TSTypeParameterDeclaration | null;
+    typeParameters: TSTypeParameterDeclaration$1 | null;
 }
 
 // @public (undocumented)
-export interface TSEnumBody extends Span {
+export type TSConstructSignatureDeclaration = Simplify<Built<TSConstructSignatureDeclaration$1>>;
+
+// @public (undocumented)
+export interface TSEnumBody extends Span$1 {
     // (undocumented)
     members: Array<TSEnumMember>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSEnumBody";
 }
 
 // @public (undocumented)
-export interface TSEnumDeclaration extends Span {
+export interface TSEnumDeclaration$1 extends Span$1 {
     // (undocumented)
     body: TSEnumBody;
     // (undocumented)
@@ -1795,147 +2097,165 @@ export interface TSEnumDeclaration extends Span {
     // (undocumented)
     declare: boolean;
     // (undocumented)
-    id: BindingIdentifier;
+    id: BindingIdentifier$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSEnumDeclaration";
 }
 
 // @public (undocumented)
-export interface TSEnumMember extends Span {
+export type TSEnumDeclaration = Simplify<Built<TSEnumDeclaration$1>>;
+
+// @public (undocumented)
+export interface TSEnumMember extends Span$1 {
     // (undocumented)
     computed: boolean;
     // (undocumented)
     id: TSEnumMemberName;
     // (undocumented)
-    initializer: Expression | null;
+    initializer: Expression$1 | null;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSEnumMember";
 }
 
 // @public (undocumented)
-export type TSEnumMemberName = IdentifierName | StringLiteral | TemplateLiteral;
+export type TSEnumMemberName = IdentifierName$1 | StringLiteral$1 | TemplateLiteral$1;
 
 // @public (undocumented)
-export interface TSExportAssignment extends Span {
+export interface TSExportAssignment$1 extends Span$1 {
     // (undocumented)
-    expression: Expression;
+    expression: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSExportAssignment";
 }
 
 // @public (undocumented)
-export interface TSExternalModuleReference extends Span {
+export type TSExportAssignment = Simplify<Built<TSExportAssignment$1>>;
+
+// @public (undocumented)
+export interface TSExternalModuleReference extends Span$1 {
     // (undocumented)
-    expression: StringLiteral;
+    expression: StringLiteral$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSExternalModuleReference";
 }
 
 // @public (undocumented)
-export interface TSFunctionType extends Span {
+export interface TSFunctionType$1 extends Span$1 {
     // (undocumented)
-    params: ParamPattern[];
+    params: ParamPattern$1[];
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    returnType: TSTypeAnnotation;
+    returnType: TSTypeAnnotation$1;
     // (undocumented)
     type: "TSFunctionType";
     // (undocumented)
-    typeParameters: TSTypeParameterDeclaration | null;
+    typeParameters: TSTypeParameterDeclaration$1 | null;
 }
 
 // @public (undocumented)
-export interface TSGlobalDeclaration extends Span {
+export type TSFunctionType = Simplify<Built<TSFunctionType$1>>;
+
+// @public (undocumented)
+export interface TSGlobalDeclaration extends Span$1 {
     // (undocumented)
-    body: TSModuleBlock;
+    body: TSModuleBlock$1;
     // (undocumented)
     declare: boolean;
     // (undocumented)
     global: true;
     // (undocumented)
-    id: IdentifierName;
+    id: IdentifierName$1;
     // (undocumented)
     kind: "global";
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSModuleDeclaration";
 }
 
 // @public (undocumented)
-export interface TSImportEqualsDeclaration extends Span {
+export interface TSImportEqualsDeclaration$1 extends Span$1 {
     // (undocumented)
-    id: BindingIdentifier;
+    id: BindingIdentifier$1;
     // (undocumented)
     importKind: ImportOrExportKind;
     // (undocumented)
     moduleReference: TSModuleReference;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSImportEqualsDeclaration";
 }
 
 // @public (undocumented)
-export interface TSImportType extends Span {
+export type TSImportEqualsDeclaration = Simplify<Built<TSImportEqualsDeclaration$1>>;
+
+// @public (undocumented)
+export interface TSImportType$1 extends Span$1 {
     // (undocumented)
-    options: ObjectExpression | null;
+    options: ObjectExpression$1 | null;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     qualifier: TSImportTypeQualifier | null;
     // (undocumented)
-    source: StringLiteral;
+    source: StringLiteral$1;
     // (undocumented)
     type: "TSImportType";
     // (undocumented)
-    typeArguments: TSTypeParameterInstantiation | null;
+    typeArguments: TSTypeParameterInstantiation$1 | null;
 }
 
 // @public (undocumented)
-export interface TSImportTypeQualifiedName extends Span {
+export type TSImportType = Simplify<Built<TSImportType$1>>;
+
+// @public (undocumented)
+export interface TSImportTypeQualifiedName extends Span$1 {
     // (undocumented)
     left: TSImportTypeQualifier;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    right: IdentifierName;
+    right: IdentifierName$1;
     // (undocumented)
     type: "TSQualifiedName";
 }
 
 // @public (undocumented)
-export type TSImportTypeQualifier = IdentifierName | TSImportTypeQualifiedName;
+export type TSImportTypeQualifier = IdentifierName$1 | TSImportTypeQualifiedName;
 
 // @public (undocumented)
-export interface TSIndexedAccessType extends Span {
+export interface TSIndexedAccessType$1 extends Span$1 {
     // (undocumented)
-    indexType: TSType;
+    indexType: TSType$1;
     // (undocumented)
-    objectType: TSType;
+    objectType: TSType$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSIndexedAccessType";
 }
 
 // @public (undocumented)
-export interface TSIndexSignature extends Span {
+export type TSIndexedAccessType = Simplify<Built<TSIndexedAccessType$1>>;
+
+// @public (undocumented)
+export interface TSIndexSignature$1 extends Span$1 {
     // (undocumented)
     accessibility: null;
     // (undocumented)
     parameters: Array<TSIndexSignatureName>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     readonly: boolean;
     // (undocumented)
@@ -1943,11 +2263,14 @@ export interface TSIndexSignature extends Span {
     // (undocumented)
     type: "TSIndexSignature";
     // (undocumented)
-    typeAnnotation: TSTypeAnnotation;
+    typeAnnotation: TSTypeAnnotation$1;
 }
 
 // @public (undocumented)
-export interface TSIndexSignatureName extends Span {
+export type TSIndexSignature = Simplify<Built<TSIndexSignature$1>>;
+
+// @public (undocumented)
+export interface TSIndexSignatureName extends Span$1 {
     // (undocumented)
     decorators: [];
     // (undocumented)
@@ -1955,17 +2278,17 @@ export interface TSIndexSignatureName extends Span {
     // (undocumented)
     optional: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "Identifier";
     // (undocumented)
-    typeAnnotation: TSTypeAnnotation;
+    typeAnnotation: TSTypeAnnotation$1;
 }
 
 // @public (undocumented)
-export interface TSInferType extends Span {
+export interface TSInferType$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSInferType";
     // (undocumented)
@@ -1973,113 +2296,134 @@ export interface TSInferType extends Span {
 }
 
 // @public (undocumented)
-export interface TSInstantiationExpression extends Span {
+export type TSInferType = Simplify<Built<TSInferType$1>>;
+
+// @public (undocumented)
+export interface TSInstantiationExpression$1 extends Span$1 {
     // (undocumented)
-    expression: Expression;
+    expression: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSInstantiationExpression";
     // (undocumented)
-    typeArguments: TSTypeParameterInstantiation;
+    typeArguments: TSTypeParameterInstantiation$1;
 }
 
 // @public (undocumented)
-export interface TSInterfaceBody extends Span {
+export type TSInstantiationExpression = Simplify<Built<TSInstantiationExpression$1>>;
+
+// @public (undocumented)
+export interface TSInterfaceBody$1 extends Span$1 {
     // (undocumented)
     body: Array<TSSignature>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSInterfaceBody";
 }
 
 // @public (undocumented)
-export interface TSInterfaceDeclaration extends Span {
+export type TSInterfaceBody = Simplify<Built<TSInterfaceBody$1>>;
+
+// @public (undocumented)
+export interface TSInterfaceDeclaration$1 extends Span$1 {
     // (undocumented)
-    body: TSInterfaceBody;
+    body: TSInterfaceBody$1;
     // (undocumented)
     declare: boolean;
     // (undocumented)
     extends: Array<TSInterfaceHeritage>;
     // (undocumented)
-    id: BindingIdentifier;
+    id: BindingIdentifier$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSInterfaceDeclaration";
     // (undocumented)
-    typeParameters: TSTypeParameterDeclaration | null;
+    typeParameters: TSTypeParameterDeclaration$1 | null;
 }
 
 // @public (undocumented)
-export interface TSInterfaceHeritage extends Span {
+export type TSInterfaceDeclaration = Simplify<Built<TSInterfaceDeclaration$1>>;
+
+// @public (undocumented)
+export interface TSInterfaceHeritage extends Span$1 {
     // (undocumented)
-    expression: Expression;
+    expression: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSInterfaceHeritage";
     // (undocumented)
-    typeArguments: TSTypeParameterInstantiation | null;
+    typeArguments: TSTypeParameterInstantiation$1 | null;
 }
 
 // @public (undocumented)
-export interface TSIntersectionType extends Span {
+export interface TSIntersectionType$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSIntersectionType";
     // (undocumented)
-    types: Array<TSType>;
+    types: Array<TSType$1>;
 }
 
 // @public (undocumented)
-export interface TSIntrinsicKeyword extends Span {
+export type TSIntersectionType = Simplify<Built<TSIntersectionType$1>>;
+
+// @public (undocumented)
+export interface TSIntrinsicKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSIntrinsicKeyword";
 }
 
 // @public (undocumented)
-export type TSLiteral = BooleanLiteral | NumericLiteral | BigIntLiteral | StringLiteral | TemplateLiteral | UnaryExpression;
+export type TSLiteral = BooleanLiteral$1 | NumericLiteral$1 | BigIntLiteral$1 | StringLiteral$1 | TemplateLiteral$1 | UnaryExpression$1;
 
 // @public (undocumented)
-export interface TSLiteralType extends Span {
+export interface TSLiteralType$1 extends Span$1 {
     // (undocumented)
     literal: TSLiteral;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSLiteralType";
 }
 
 // @public (undocumented)
-export interface TSMappedType extends Span {
+export type TSLiteralType = Simplify<Built<TSLiteralType$1>>;
+
+// @public (undocumented)
+export interface TSMappedType$1 extends Span$1 {
     // (undocumented)
-    constraint: TSType;
+    constraint: TSType$1;
     // (undocumented)
-    key: BindingIdentifier;
+    key: BindingIdentifier$1;
     // (undocumented)
-    nameType: TSType | null;
+    nameType: TSType$1 | null;
     // (undocumented)
     optional: TSMappedTypeModifierOperator | false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     readonly: TSMappedTypeModifierOperator | null;
     // (undocumented)
     type: "TSMappedType";
     // (undocumented)
-    typeAnnotation: TSType | null;
+    typeAnnotation: TSType$1 | null;
 }
+
+// @public (undocumented)
+export type TSMappedType = Simplify<Built<TSMappedType$1>>;
 
 // @public (undocumented)
 export type TSMappedTypeModifierOperator = true | "+" | "-";
 
 // @public (undocumented)
-export interface TSMethodSignature extends Span {
+export interface TSMethodSignature$1 extends Span$1 {
     // (undocumented)
     accessibility: null;
     // (undocumented)
@@ -2091,146 +2435,167 @@ export interface TSMethodSignature extends Span {
     // (undocumented)
     optional: boolean;
     // (undocumented)
-    params: ParamPattern[];
+    params: ParamPattern$1[];
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     readonly: false;
     // (undocumented)
-    returnType: TSTypeAnnotation | null;
+    returnType: TSTypeAnnotation$1 | null;
     // (undocumented)
     static: false;
     // (undocumented)
     type: "TSMethodSignature";
     // (undocumented)
-    typeParameters: TSTypeParameterDeclaration | null;
+    typeParameters: TSTypeParameterDeclaration$1 | null;
 }
+
+// @public (undocumented)
+export type TSMethodSignature = Simplify<Built<TSMethodSignature$1>>;
 
 // @public (undocumented)
 export type TSMethodSignatureKind = "method" | "get" | "set";
 
 // @public (undocumented)
-export interface TSModuleBlock extends Span {
+export interface TSModuleBlock$1 extends Span$1 {
     // (undocumented)
-    body: Array<Directive | Statement>;
+    body: Array<Directive | Statement$1>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSModuleBlock";
 }
 
 // @public (undocumented)
-export interface TSModuleDeclaration extends Span {
+export type TSModuleBlock = Simplify<Built<TSModuleBlock$1>>;
+
+// @public (undocumented)
+export interface TSModuleDeclaration$1 extends Span$1 {
     // (undocumented)
-    body: TSModuleBlock | null;
+    body: TSModuleBlock$1 | null;
     // (undocumented)
     declare: boolean;
     // (undocumented)
     global: false;
     // (undocumented)
-    id: BindingIdentifier | StringLiteral | TSQualifiedName;
+    id: BindingIdentifier$1 | StringLiteral$1 | TSQualifiedName$1;
     // (undocumented)
     kind: TSModuleDeclarationKind;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSModuleDeclaration";
 }
 
 // @public (undocumented)
+export type TSModuleDeclaration = Simplify<Built<TSModuleDeclaration$1>>;
+
+// @public (undocumented)
 export type TSModuleDeclarationKind = "module" | "namespace";
 
 // @public (undocumented)
-export type TSModuleReference = TSExternalModuleReference | IdentifierReference | TSQualifiedName;
+export type TSModuleReference = TSExternalModuleReference | IdentifierReference$1 | TSQualifiedName$1;
 
 // @public (undocumented)
-export interface TSNamedTupleMember extends Span {
+export interface TSNamedTupleMember$1 extends Span$1 {
     // (undocumented)
     elementType: TSTupleElement;
     // (undocumented)
-    label: IdentifierName;
+    label: IdentifierName$1;
     // (undocumented)
     optional: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSNamedTupleMember";
 }
 
 // @public (undocumented)
-export interface TSNamespaceExportDeclaration extends Span {
+export type TSNamedTupleMember = Simplify<Built<TSNamedTupleMember$1>>;
+
+// @public (undocumented)
+export interface TSNamespaceExportDeclaration$1 extends Span$1 {
     // (undocumented)
-    id: IdentifierName;
+    id: IdentifierName$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSNamespaceExportDeclaration";
 }
 
 // @public (undocumented)
-export interface TSNeverKeyword extends Span {
+export type TSNamespaceExportDeclaration = Simplify<Built<TSNamespaceExportDeclaration$1>>;
+
+// @public (undocumented)
+export interface TSNeverKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSNeverKeyword";
 }
 
 // @public (undocumented)
-export interface TSNonNullExpression extends Span {
+export interface TSNonNullExpression$1 extends Span$1 {
     // (undocumented)
-    expression: Expression;
+    expression: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSNonNullExpression";
 }
 
 // @public (undocumented)
-export interface TSNullKeyword extends Span {
+export type TSNonNullExpression = Simplify<Built<TSNonNullExpression$1>>;
+
+// @public (undocumented)
+export interface TSNullKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSNullKeyword";
 }
 
 // @public (undocumented)
-export interface TSNumberKeyword extends Span {
+export interface TSNumberKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSNumberKeyword";
 }
 
 // @public (undocumented)
-export interface TSObjectKeyword extends Span {
+export interface TSObjectKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSObjectKeyword";
 }
 
 // @public (undocumented)
-export interface TSOptionalType extends Span {
+export interface TSOptionalType$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSOptionalType";
     // (undocumented)
-    typeAnnotation: TSType;
+    typeAnnotation: TSType$1;
 }
 
 // @public (undocumented)
-export interface TSParameterProperty extends Span {
+export type TSOptionalType = Simplify<Built<TSOptionalType$1>>;
+
+// @public (undocumented)
+export interface TSParameterProperty extends Span$1 {
     // (undocumented)
     accessibility: TSAccessibility | null;
     // (undocumented)
-    decorators: Array<Decorator>;
+    decorators: Array<Decorator$1>;
     // (undocumented)
     override: boolean;
     // (undocumented)
     parameter: FormalParameter;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     readonly: boolean;
     // (undocumented)
@@ -2240,17 +2605,20 @@ export interface TSParameterProperty extends Span {
 }
 
 // @public (undocumented)
-export interface TSParenthesizedType extends Span {
+export interface TSParenthesizedType$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSParenthesizedType";
     // (undocumented)
-    typeAnnotation: TSType;
+    typeAnnotation: TSType$1;
 }
 
 // @public (undocumented)
-export interface TSPropertySignature extends Span {
+export type TSParenthesizedType = Simplify<Built<TSParenthesizedType$1>>;
+
+// @public (undocumented)
+export interface TSPropertySignature$1 extends Span$1 {
     // (undocumented)
     accessibility: null;
     // (undocumented)
@@ -2260,7 +2628,7 @@ export interface TSPropertySignature extends Span {
     // (undocumented)
     optional: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     readonly: boolean;
     // (undocumented)
@@ -2268,76 +2636,91 @@ export interface TSPropertySignature extends Span {
     // (undocumented)
     type: "TSPropertySignature";
     // (undocumented)
-    typeAnnotation: TSTypeAnnotation | null;
+    typeAnnotation: TSTypeAnnotation$1 | null;
 }
 
 // @public (undocumented)
-export interface TSQualifiedName extends Span {
+export type TSPropertySignature = Simplify<Built<TSPropertySignature$1>>;
+
+// @public (undocumented)
+export interface TSQualifiedName$1 extends Span$1 {
     // (undocumented)
     left: TSTypeName;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    right: IdentifierName;
+    right: IdentifierName$1;
     // (undocumented)
     type: "TSQualifiedName";
 }
 
 // @public (undocumented)
-export interface TSRestType extends Span {
+export type TSQualifiedName = Simplify<Built<TSQualifiedName$1>>;
+
+// @public (undocumented)
+export interface TSRestType$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSRestType";
     // (undocumented)
-    typeAnnotation: TSType;
+    typeAnnotation: TSType$1;
 }
 
 // @public (undocumented)
-export interface TSSatisfiesExpression extends Span {
+export type TSRestType = Simplify<Built<TSRestType$1>>;
+
+// @public (undocumented)
+export interface TSSatisfiesExpression$1 extends Span$1 {
     // (undocumented)
-    expression: Expression;
+    expression: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSSatisfiesExpression";
     // (undocumented)
-    typeAnnotation: TSType;
+    typeAnnotation: TSType$1;
 }
 
 // @public (undocumented)
-export type TSSignature = TSIndexSignature | TSPropertySignature | TSCallSignatureDeclaration | TSConstructSignatureDeclaration | TSMethodSignature;
+export type TSSatisfiesExpression = Simplify<Built<TSSatisfiesExpression$1>>;
 
 // @public (undocumented)
-export interface TSStringKeyword extends Span {
+export type TSSignature = TSIndexSignature$1 | TSPropertySignature$1 | TSCallSignatureDeclaration$1 | TSConstructSignatureDeclaration$1 | TSMethodSignature$1;
+
+// @public (undocumented)
+export interface TSStringKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSStringKeyword";
 }
 
 // @public (undocumented)
-export interface TSSymbolKeyword extends Span {
+export interface TSSymbolKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSSymbolKeyword";
 }
 
 // @public (undocumented)
-export interface TSTemplateLiteralType extends Span {
+export interface TSTemplateLiteralType$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
-    quasis: Array<TemplateElement>;
+    quasis: Array<TemplateElement$1>;
     // (undocumented)
     type: "TSTemplateLiteralType";
     // (undocumented)
-    types: Array<TSType>;
+    types: Array<TSType$1>;
 }
 
 // @public (undocumented)
-export interface TSThisParameter extends Span {
+export type TSTemplateLiteralType = Simplify<Built<TSTemplateLiteralType$1>>;
+
+// @public (undocumented)
+export interface TSThisParameter extends Span$1 {
     // (undocumented)
     decorators: [];
     // (undocumented)
@@ -2345,229 +2728,270 @@ export interface TSThisParameter extends Span {
     // (undocumented)
     optional: false;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "Identifier";
     // (undocumented)
-    typeAnnotation: TSTypeAnnotation | null;
+    typeAnnotation: TSTypeAnnotation$1 | null;
 }
 
 // @public (undocumented)
-export interface TSThisType extends Span {
+export interface TSThisType extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSThisType";
 }
 
 // @public (undocumented)
-export type TSTupleElement = TSOptionalType | TSRestType | TSType;
+export type TSTupleElement = TSOptionalType$1 | TSRestType$1 | TSType$1;
 
 // @public (undocumented)
-export interface TSTupleType extends Span {
+export interface TSTupleType$1 extends Span$1 {
     // (undocumented)
     elementTypes: Array<TSTupleElement>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTupleType";
 }
 
 // @public (undocumented)
-export type TSType = TSAnyKeyword | TSBigIntKeyword | TSBooleanKeyword | TSIntrinsicKeyword | TSNeverKeyword | TSNullKeyword | TSNumberKeyword | TSObjectKeyword | TSStringKeyword | TSSymbolKeyword | TSUndefinedKeyword | TSUnknownKeyword | TSVoidKeyword | TSArrayType | TSConditionalType | TSConstructorType | TSFunctionType | TSImportType | TSIndexedAccessType | TSInferType | TSIntersectionType | TSLiteralType | TSMappedType | TSNamedTupleMember | TSTemplateLiteralType | TSThisType | TSTupleType | TSTypeLiteral | TSTypeOperator | TSTypePredicate | TSTypeQuery | TSTypeReference | TSUnionType | TSParenthesizedType | JSDocNullableType | JSDocNonNullableType | JSDocUnknownType;
+export type TSTupleType = Simplify<Built<TSTupleType$1>>;
 
 // @public (undocumented)
-export interface TSTypeAliasDeclaration extends Span {
+export type TSType$1 = TSAnyKeyword | TSBigIntKeyword | TSBooleanKeyword | TSIntrinsicKeyword | TSNeverKeyword | TSNullKeyword | TSNumberKeyword | TSObjectKeyword | TSStringKeyword | TSSymbolKeyword | TSUndefinedKeyword | TSUnknownKeyword | TSVoidKeyword | TSArrayType$1 | TSConditionalType$1 | TSConstructorType$1 | TSFunctionType$1 | TSImportType$1 | TSIndexedAccessType$1 | TSInferType$1 | TSIntersectionType$1 | TSLiteralType$1 | TSMappedType$1 | TSNamedTupleMember$1 | TSTemplateLiteralType$1 | TSThisType | TSTupleType$1 | TSTypeLiteral | TSTypeOperator$1 | TSTypePredicate$1 | TSTypeQuery$1 | TSTypeReference$1 | TSUnionType$1 | TSParenthesizedType$1 | JSDocNullableType$1 | JSDocNonNullableType$1 | JSDocUnknownType;
+
+// @public (undocumented)
+export type TSType = Simplify<Built<TSType$1>>;
+
+// @public (undocumented)
+export interface TSTypeAliasDeclaration$1 extends Span$1 {
     // (undocumented)
     declare: boolean;
     // (undocumented)
-    id: BindingIdentifier;
+    id: BindingIdentifier$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTypeAliasDeclaration";
     // (undocumented)
-    typeAnnotation: TSType;
+    typeAnnotation: TSType$1;
     // (undocumented)
-    typeParameters: TSTypeParameterDeclaration | null;
+    typeParameters: TSTypeParameterDeclaration$1 | null;
 }
 
 // @public (undocumented)
-export interface TSTypeAnnotation extends Span {
+export type TSTypeAliasDeclaration = Simplify<Built<TSTypeAliasDeclaration$1>>;
+
+// @public (undocumented)
+export interface TSTypeAnnotation$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTypeAnnotation";
     // (undocumented)
-    typeAnnotation: TSType;
+    typeAnnotation: TSType$1;
 }
 
 // @public (undocumented)
-export interface TSTypeAssertion extends Span {
+export type TSTypeAnnotation = Simplify<Built<TSTypeAnnotation$1>>;
+
+// @public (undocumented)
+export interface TSTypeAssertion$1 extends Span$1 {
     // (undocumented)
-    expression: Expression;
+    expression: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTypeAssertion";
     // (undocumented)
-    typeAnnotation: TSType;
+    typeAnnotation: TSType$1;
 }
 
 // @public (undocumented)
-export interface TSTypeLiteral extends Span {
+export type TSTypeAssertion = Simplify<Built<TSTypeAssertion$1>>;
+
+// @public (undocumented)
+export interface TSTypeLiteral extends Span$1 {
     // (undocumented)
     members: Array<TSSignature>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTypeLiteral";
 }
 
 // @public (undocumented)
-export type TSTypeName = IdentifierReference | TSQualifiedName | ThisExpression;
+export type TSTypeName = IdentifierReference$1 | TSQualifiedName$1 | ThisExpression$1;
 
 // @public (undocumented)
-export interface TSTypeOperator extends Span {
+export interface TSTypeOperator$1 extends Span$1 {
     // (undocumented)
     operator: TSTypeOperatorOperator;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTypeOperator";
     // (undocumented)
-    typeAnnotation: TSType;
+    typeAnnotation: TSType$1;
 }
+
+// @public (undocumented)
+export type TSTypeOperator = Simplify<Built<TSTypeOperator$1>>;
 
 // @public (undocumented)
 export type TSTypeOperatorOperator = "keyof" | "unique" | "readonly";
 
 // @public (undocumented)
-export interface TSTypeParameter extends Span {
+export interface TSTypeParameter extends Span$1 {
     // (undocumented)
     const: boolean;
     // (undocumented)
-    constraint: TSType | null;
+    constraint: TSType$1 | null;
     // (undocumented)
-    default: TSType | null;
+    default: TSType$1 | null;
     // (undocumented)
     in: boolean;
     // (undocumented)
-    name: BindingIdentifier;
+    name: BindingIdentifier$1;
     // (undocumented)
     out: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTypeParameter";
 }
 
 // @public (undocumented)
-export interface TSTypeParameterDeclaration extends Span {
+export interface TSTypeParameterDeclaration$1 extends Span$1 {
     // (undocumented)
     params: Array<TSTypeParameter>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTypeParameterDeclaration";
 }
 
 // @public (undocumented)
-export interface TSTypeParameterInstantiation extends Span {
+export type TSTypeParameterDeclaration = Simplify<Built<TSTypeParameterDeclaration$1>>;
+
+// @public (undocumented)
+export interface TSTypeParameterInstantiation$1 extends Span$1 {
     // (undocumented)
-    params: Array<TSType>;
+    params: Array<TSType$1>;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTypeParameterInstantiation";
 }
 
 // @public (undocumented)
-export interface TSTypePredicate extends Span {
+export type TSTypeParameterInstantiation = Simplify<Built<TSTypeParameterInstantiation$1>>;
+
+// @public (undocumented)
+export interface TSTypePredicate$1 extends Span$1 {
     // (undocumented)
     asserts: boolean;
     // (undocumented)
     parameterName: TSTypePredicateName;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTypePredicate";
     // (undocumented)
-    typeAnnotation: TSTypeAnnotation | null;
+    typeAnnotation: TSTypeAnnotation$1 | null;
 }
 
 // @public (undocumented)
-export type TSTypePredicateName = IdentifierName | TSThisType;
+export type TSTypePredicate = Simplify<Built<TSTypePredicate$1>>;
 
 // @public (undocumented)
-export interface TSTypeQuery extends Span {
+export type TSTypePredicateName = IdentifierName$1 | TSThisType;
+
+// @public (undocumented)
+export interface TSTypeQuery$1 extends Span$1 {
     // (undocumented)
     exprName: TSTypeQueryExprName;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTypeQuery";
     // (undocumented)
-    typeArguments: TSTypeParameterInstantiation | null;
+    typeArguments: TSTypeParameterInstantiation$1 | null;
 }
 
 // @public (undocumented)
-export type TSTypeQueryExprName = TSImportType | TSTypeName;
+export type TSTypeQuery = Simplify<Built<TSTypeQuery$1>>;
 
 // @public (undocumented)
-export interface TSTypeReference extends Span {
+export type TSTypeQueryExprName = TSImportType$1 | TSTypeName;
+
+// @public (undocumented)
+export interface TSTypeReference$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSTypeReference";
     // (undocumented)
-    typeArguments: TSTypeParameterInstantiation | null;
+    typeArguments: TSTypeParameterInstantiation$1 | null;
     // (undocumented)
     typeName: TSTypeName;
 }
 
 // @public (undocumented)
-export interface TSUndefinedKeyword extends Span {
+export type TSTypeReference = Simplify<Built<TSTypeReference$1>>;
+
+// @public (undocumented)
+export interface TSUndefinedKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSUndefinedKeyword";
 }
 
 // @public (undocumented)
-export interface TSUnionType extends Span {
+export interface TSUnionType$1 extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSUnionType";
     // (undocumented)
-    types: Array<TSType>;
+    types: Array<TSType$1>;
 }
 
 // @public (undocumented)
-export interface TSUnknownKeyword extends Span {
+export type TSUnionType = Simplify<Built<TSUnionType$1>>;
+
+// @public (undocumented)
+export interface TSUnknownKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSUnknownKeyword";
 }
 
 // @public (undocumented)
-export interface TSVoidKeyword extends Span {
+export interface TSVoidKeyword extends Span$1 {
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "TSVoidKeyword";
 }
 
 // @public (undocumented)
-export interface UnaryExpression extends Span {
+export namespace types_d_exports {
+    export { AccessorProperty$1 as AccessorProperty, AccessorPropertyType, Argument$1 as Argument, ArrayAssignmentTarget, ArrayExpression$1 as ArrayExpression, ArrayExpressionElement, ArrayPattern$1 as ArrayPattern, ArrowFunctionExpression$1 as ArrowFunctionExpression, AssignmentExpression$1 as AssignmentExpression, AssignmentOperator, AssignmentPattern$1 as AssignmentPattern, AssignmentTarget, AssignmentTargetMaybeDefault, AssignmentTargetPattern, AssignmentTargetProperty, AssignmentTargetPropertyIdentifier, AssignmentTargetPropertyProperty, AssignmentTargetRest, AssignmentTargetWithDefault, AwaitExpression, BigIntLiteral$1 as BigIntLiteral, BinaryExpression$1 as BinaryExpression, BinaryOperator, BindingIdentifier$1 as BindingIdentifier, BindingPattern$1 as BindingPattern, BindingProperty$1 as BindingProperty, BindingRestElement$1 as BindingRestElement, BlockStatement$1 as BlockStatement, BooleanLiteral$1 as BooleanLiteral, BreakStatement$1 as BreakStatement, CallExpression$1 as CallExpression, CatchClause$1 as CatchClause, ChainElement, ChainExpression$1 as ChainExpression, Class$1 as Class, ClassBody$1 as ClassBody, ClassElement, ClassType, ComputedMemberExpression, ConditionalExpression$1 as ConditionalExpression, ContinueStatement$1 as ContinueStatement, DebuggerStatement, Declaration, Decorator$1 as Decorator, Directive, DoWhileStatement$1 as DoWhileStatement, EmptyStatement$1 as EmptyStatement, ExportAllDeclaration$1 as ExportAllDeclaration, ExportDefaultDeclaration$1 as ExportDefaultDeclaration, ExportDefaultDeclarationKind, ExportNamedDeclaration$1 as ExportNamedDeclaration, ExportSpecifier, Expression$1 as Expression, ExpressionStatement$1 as ExpressionStatement, ForInStatement$1 as ForInStatement, ForOfStatement$1 as ForOfStatement, ForStatement$1 as ForStatement, ForStatementInit, ForStatementLeft, FormalParameter, FormalParameterRest, Function$1 as Function, FunctionBody, FunctionType, Hashbang, IdentifierName$1 as IdentifierName, IdentifierReference$1 as IdentifierReference, IfStatement$1 as IfStatement, ImportAttribute$1 as ImportAttribute, ImportAttributeKey, ImportDeclaration$1 as ImportDeclaration, ImportDeclarationSpecifier, ImportDefaultSpecifier, ImportExpression$1 as ImportExpression, ImportNamespaceSpecifier, ImportOrExportKind, ImportPhase, ImportSpecifier, JSDocNonNullableType$1 as JSDocNonNullableType, JSDocNullableType$1 as JSDocNullableType, JSDocUnknownType, JSXAttribute$1 as JSXAttribute, JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXChild, JSXClosingElement, JSXClosingFragment, JSXElement$1 as JSXElement, JSXElementName, JSXEmptyExpression, JSXExpression, JSXExpressionContainer$1 as JSXExpressionContainer, JSXFragment$1 as JSXFragment, JSXIdentifier$1 as JSXIdentifier, JSXMemberExpression$1 as JSXMemberExpression, JSXMemberExpressionObject, JSXNamespacedName$1 as JSXNamespacedName, JSXOpeningElement$1 as JSXOpeningElement, JSXOpeningFragment, JSXSpreadAttribute$1 as JSXSpreadAttribute, JSXSpreadChild$1 as JSXSpreadChild, JSXText$1 as JSXText, LabelIdentifier$1 as LabelIdentifier, LabeledStatement$1 as LabeledStatement, LogicalExpression$1 as LogicalExpression, LogicalOperator, MemberExpression$1 as MemberExpression, MetaProperty$1 as MetaProperty, MethodDefinition$1 as MethodDefinition, MethodDefinitionKind, MethodDefinitionType, ModuleDeclaration, ModuleExportName, ModuleKind, NewExpression$1 as NewExpression, Node$1 as Node, NullLiteral$1 as NullLiteral, NumericLiteral$1 as NumericLiteral, ObjectAssignmentTarget, ObjectExpression$1 as ObjectExpression, ObjectPattern, ObjectProperty$1 as ObjectProperty, ObjectPropertyKind, ParamPattern$1 as ParamPattern, ParenthesizedExpression, PrivateFieldExpression, PrivateIdentifier$1 as PrivateIdentifier, PrivateInExpression$1 as PrivateInExpression, Program$1 as Program, PropertyDefinition$1 as PropertyDefinition, PropertyDefinitionType, PropertyKey, PropertyKind, RegExpLiteral$1 as RegExpLiteral, ReturnStatement$1 as ReturnStatement, SequenceExpression$1 as SequenceExpression, SimpleAssignmentTarget$1 as SimpleAssignmentTarget, Span$1 as Span, SpreadElement$1 as SpreadElement, Statement$1 as Statement, StaticBlock$1 as StaticBlock, StaticMemberExpression$1 as StaticMemberExpression, StringLiteral$1 as StringLiteral, Super$1 as Super, SwitchCase$1 as SwitchCase, SwitchStatement$1 as SwitchStatement, TSAccessibility, TSAnyKeyword, TSArrayType$1 as TSArrayType, TSAsExpression$1 as TSAsExpression, TSBigIntKeyword, TSBooleanKeyword, TSCallSignatureDeclaration$1 as TSCallSignatureDeclaration, TSClassImplements, TSConditionalType$1 as TSConditionalType, TSConstructSignatureDeclaration$1 as TSConstructSignatureDeclaration, TSConstructorType$1 as TSConstructorType, TSEnumBody, TSEnumDeclaration$1 as TSEnumDeclaration, TSEnumMember, TSEnumMemberName, TSExportAssignment$1 as TSExportAssignment, TSExternalModuleReference, TSFunctionType$1 as TSFunctionType, TSGlobalDeclaration, TSImportEqualsDeclaration$1 as TSImportEqualsDeclaration, TSImportType$1 as TSImportType, TSImportTypeQualifiedName, TSImportTypeQualifier, TSIndexSignature$1 as TSIndexSignature, TSIndexSignatureName, TSIndexedAccessType$1 as TSIndexedAccessType, TSInferType$1 as TSInferType, TSInstantiationExpression$1 as TSInstantiationExpression, TSInterfaceBody$1 as TSInterfaceBody, TSInterfaceDeclaration$1 as TSInterfaceDeclaration, TSInterfaceHeritage, TSIntersectionType$1 as TSIntersectionType, TSIntrinsicKeyword, TSLiteral, TSLiteralType$1 as TSLiteralType, TSMappedType$1 as TSMappedType, TSMappedTypeModifierOperator, TSMethodSignature$1 as TSMethodSignature, TSMethodSignatureKind, TSModuleBlock$1 as TSModuleBlock, TSModuleDeclaration$1 as TSModuleDeclaration, TSModuleDeclarationKind, TSModuleReference, TSNamedTupleMember$1 as TSNamedTupleMember, TSNamespaceExportDeclaration$1 as TSNamespaceExportDeclaration, TSNeverKeyword, TSNonNullExpression$1 as TSNonNullExpression, TSNullKeyword, TSNumberKeyword, TSObjectKeyword, TSOptionalType$1 as TSOptionalType, TSParameterProperty, TSParenthesizedType$1 as TSParenthesizedType, TSPropertySignature$1 as TSPropertySignature, TSQualifiedName$1 as TSQualifiedName, TSRestType$1 as TSRestType, TSSatisfiesExpression$1 as TSSatisfiesExpression, TSSignature, TSStringKeyword, TSSymbolKeyword, TSTemplateLiteralType$1 as TSTemplateLiteralType, TSThisParameter, TSThisType, TSTupleElement, TSTupleType$1 as TSTupleType, TSType$1 as TSType, TSTypeAliasDeclaration$1 as TSTypeAliasDeclaration, TSTypeAnnotation$1 as TSTypeAnnotation, TSTypeAssertion$1 as TSTypeAssertion, TSTypeLiteral, TSTypeName, TSTypeOperator$1 as TSTypeOperator, TSTypeOperatorOperator, TSTypeParameter, TSTypeParameterDeclaration$1 as TSTypeParameterDeclaration, TSTypeParameterInstantiation$1 as TSTypeParameterInstantiation, TSTypePredicate$1 as TSTypePredicate, TSTypePredicateName, TSTypeQuery$1 as TSTypeQuery, TSTypeQueryExprName, TSTypeReference$1 as TSTypeReference, TSUndefinedKeyword, TSUnionType$1 as TSUnionType, TSUnknownKeyword, TSVoidKeyword, TaggedTemplateExpression$1 as TaggedTemplateExpression, TemplateElement$1 as TemplateElement, TemplateElementValue, TemplateLiteral$1 as TemplateLiteral, ThisExpression$1 as ThisExpression, ThrowStatement$1 as ThrowStatement, TryStatement$1 as TryStatement, UnaryExpression$1 as UnaryExpression, UnaryOperator, UpdateExpression$1 as UpdateExpression, UpdateOperator, V8IntrinsicExpression, VariableDeclaration$1 as VariableDeclaration, VariableDeclarationKind, VariableDeclarator$1 as VariableDeclarator, WhileStatement$1 as WhileStatement, WithStatement$1 as WithStatement, YieldExpression$1 as YieldExpression };
+}
+
+// @public (undocumented)
+export interface UnaryExpression$1 extends Span$1 {
     // (undocumented)
-    argument: Expression;
+    argument: Expression$1;
     // (undocumented)
     operator: UnaryOperator;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     prefix: true;
     // (undocumented)
@@ -2575,16 +2999,19 @@ export interface UnaryExpression extends Span {
 }
 
 // @public (undocumented)
+export type UnaryExpression = Simplify<Built<UnaryExpression$1>>;
+
+// @public (undocumented)
 export type UnaryOperator = "+" | "-" | "!" | "~" | "typeof" | "void" | "delete";
 
 // @public (undocumented)
-export interface UpdateExpression extends Span {
+export interface UpdateExpression$1 extends Span$1 {
     // (undocumented)
-    argument: SimpleAssignmentTarget;
+    argument: SimpleAssignmentTarget$1;
     // (undocumented)
     operator: UpdateOperator;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     prefix: boolean;
     // (undocumented)
@@ -2592,86 +3019,115 @@ export interface UpdateExpression extends Span {
 }
 
 // @public (undocumented)
+export type UpdateExpression = Simplify<Built<UpdateExpression$1>>;
+
+// @public (undocumented)
 export type UpdateOperator = "++" | "--";
 
 // @public (undocumented)
-export interface V8IntrinsicExpression extends Span {
+export interface V8IntrinsicExpression extends Span$1 {
     // (undocumented)
-    arguments: Array<Argument>;
+    arguments: Array<Argument$1>;
     // (undocumented)
-    name: IdentifierName;
+    name: IdentifierName$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "V8IntrinsicExpression";
 }
 
 // @public (undocumented)
-export interface VariableDeclaration extends Span {
+export interface VariableDeclaration$1 extends Span$1 {
     // (undocumented)
-    declarations: Array<VariableDeclarator>;
+    declarations: Array<VariableDeclarator$1>;
     // (undocumented)
     declare?: boolean;
     // (undocumented)
     kind: VariableDeclarationKind;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "VariableDeclaration";
 }
 
 // @public (undocumented)
+export type VariableDeclaration = Simplify<Built<VariableDeclaration$1>>;
+
+// @public (undocumented)
 export type VariableDeclarationKind = "var" | "let" | "const" | "using" | "await using";
 
 // @public (undocumented)
-export interface VariableDeclarator extends Span {
+export interface VariableDeclarator$1 extends Span$1 {
     // (undocumented)
     definite?: boolean;
     // (undocumented)
-    id: BindingPattern;
+    id: BindingPattern$1;
     // (undocumented)
-    init: Expression | null;
+    init: Expression$1 | null;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "VariableDeclarator";
 }
 
 // @public (undocumented)
-export interface WhileStatement extends Span {
+export type VariableDeclarator = Simplify<Built<VariableDeclarator$1>>;
+
+// @public (undocumented)
+export type Walker = (root: Node_2, visitors: WalkVisitors) => void;
+
+// @public (undocumented)
+export interface WalkVisitors {
     // (undocumented)
-    body: Statement;
+    enter?(node: Node_2, ancestors: readonly Node_2[]): void;
     // (undocumented)
-    parent?: Node_2;
+    leave?(node: Node_2, ancestors: readonly Node_2[]): void;
+}
+
+// @public (undocumented)
+export interface WhileStatement$1 extends Span$1 {
     // (undocumented)
-    test: Expression;
+    body: Statement$1;
+    // (undocumented)
+    parent?: Node$1;
+    // (undocumented)
+    test: Expression$1;
     // (undocumented)
     type: "WhileStatement";
 }
 
 // @public (undocumented)
-export interface WithStatement extends Span {
+export type WhileStatement = Simplify<Built<WhileStatement$1>>;
+
+// @public (undocumented)
+export interface WithStatement$1 extends Span$1 {
     // (undocumented)
-    body: Statement;
+    body: Statement$1;
     // (undocumented)
-    object: Expression;
+    object: Expression$1;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "WithStatement";
 }
 
 // @public (undocumented)
-export interface YieldExpression extends Span {
+export type WithStatement = Simplify<Built<WithStatement$1>>;
+
+// @public (undocumented)
+export interface YieldExpression$1 extends Span$1 {
     // (undocumented)
-    argument: Expression | null;
+    argument: Expression$1 | null;
     // (undocumented)
     delegate: boolean;
     // (undocumented)
-    parent?: Node_2;
+    parent?: Node$1;
     // (undocumented)
     type: "YieldExpression";
 }
+
+// @public (undocumented)
+export type YieldExpression = Simplify<Built<YieldExpression$1>>;
 
 // (No @packageDocumentation comment for this package)
 
