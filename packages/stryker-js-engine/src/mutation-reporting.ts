@@ -201,7 +201,6 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
     '@systemfsoftware/stryker-js-vitest-runner',
     '@systemfsoftware/stryker-js-typescript-checker',
     '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
-    '@systemfsoftware/stryker-ignorer-workflow-make-boundary',
     'vitest',
     'karma',
     'karma-chai',

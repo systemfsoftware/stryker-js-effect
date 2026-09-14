@@ -18,7 +18,6 @@ const basePreset: BasePreset = {
     '@systemfsoftware/stryker-js-vitest-runner',
     '@systemfsoftware/stryker-js-typescript-checker',
     '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
-    '@systemfsoftware/stryker-ignorer-workflow-make-boundary',
     '@systemfsoftware/stryker-test-contribution',
   ],
   reporters: ['progress', 'html', 'json', 'progress-stream'],

@@ -44,7 +44,7 @@ rejection path.
 | Unit | Change                                                                                          | Verification                                                                       |
 | ---- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | C1   | Interface: drop `PlainIgnorerSchema` and the `schema` field; import spec types from the package | interface typecheck/build/tests/lint; `dist/*.d.ts` free of `standard-schema/spec` |
-| C2   | Three ignorers: entries are `{ name, shouldIgnore }`                                            | each package's suite (48/14/21 cases)                                              |
+| C2   | Two ignorers: entries are `{ name, shouldIgnore }`                                              | each package's suite (48/14 cases)                                                 |
 | C3   | Engine: `PlainIgnorerSchema` = name + callable `shouldIgnore`; fixture set re-aimed             | engine suite; the invalid-entry fixture fails the load by name                     |
 | C4   | Docs/changesets                                                                                 | prose states the two-field contract                                                |
 
