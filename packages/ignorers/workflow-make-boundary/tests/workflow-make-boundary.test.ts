@@ -231,7 +231,7 @@ const CASES: IgnoreTesterCases = {
     { name: 'A mutant inside a total called through a namespace import stays live', path: namespaceTotal() },
     { name: 'A mutant inside a total called through an aliased import stays live', path: aliasedTotal() },
     {
-      name: 'A decider-shaped andThen argument contributes no mutation population',
+      name: 'A make-position mutant beside a decider-shaped andThen argument stays live',
       path: AND_THEN_ARGUMENT.make,
     },
   ],
