@@ -38,7 +38,6 @@
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
     "@systemfsoftware/stryker-js-vitest-runner": "workspace:^",
-    "@systemfsoftware/stryker-plugins": "workspace:^",
     "@systemfsoftware/stryker-test-contribution": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
