@@ -1,22 +1,23 @@
 {
-  "name": "@systemfsoftware/stryker-ignorer",
+  "name": "@systemfsoftware/stryker-ignorer-interface",
   "license": "Apache-2.0",
   "version": "0.0.0",
   "author": "Ryan Lee <drdgvhbh@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
-    "directory": "packages/ignorers/contract"
+    "directory": "packages/ignorers/interface"
   },
-  "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/ignorers/contract#readme",
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/ignorers/interface#readme",
   "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
-  "description": "The plain ignorer contract for StrykerJS-style mutation tooling — the descriptor type, the AST path shape, the ancestor walker, and the Standard Schema validator interface. Zero runtime dependencies.",
+  "description": "The ignorer interface for StrykerJS-style mutation tooling — a zero-dependency Standard Schema toolkit, the canonical ESTree node vocabulary, the AST path shape and ancestor walker, and the case-table test harness. Publishes no Effect dependency.",
   "keywords": [
     "stryker",
     "mutation-testing",
     "ignorer",
     "plugin",
     "standard-schema",
+    "estree",
     "test-quality"
   ],
   "type": "module",
@@ -27,6 +28,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.mjs"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.mjs"
     },
     "./package.json": "./package.json"
   },
@@ -39,14 +44,11 @@
     "attw": "attw --pack ."
   },
   "devDependencies": {
-    "@effect/vitest": "catalog:",
-    "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
-    "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
-    "effect": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
@@ -60,6 +62,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.mjs"
+      },
+      "./testing": {
+        "types": "./dist/testing.d.ts",
+        "default": "./dist/testing.mjs"
       },
       "./package.json": "./package.json"
     }
