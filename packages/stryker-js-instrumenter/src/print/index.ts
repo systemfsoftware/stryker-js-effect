@@ -131,8 +131,7 @@ import type {
   WhileStatement,
   WithStatement,
   YieldExpression,
-} from '@oxc-project/types'
-import type { Program as EstreeProgram } from 'estree'
+} from '../Ast.js'
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -158,14 +157,9 @@ export interface PrintOptions {
 
 export interface PrintProgramOptions extends PrintOptions {}
 
-// Primary entry — the Printer.ts replacement and the print property suite's
-// entry. Accepts the estree `Program` shape the instrumenter's ASTs carry
-// (oxc's serializer output satisfies it); the internal renderer keeps its
-// @oxc-project/types view of the same plain objects.
-export function printProgram(program: Program | EstreeProgram, opts: PrintProgramOptions = {}): string {
+export function printProgram(program: Program, opts: PrintProgramOptions = {}): string {
   const state = new PrintState(opts)
-  // One boundary: the renderer's oxc-typed view of the same plain node tree.
-  return state.printProgram(program as Program)
+  return state.printProgram(program)
 }
 
 // Convenience: print any single node (used for synthesized replacement snippets)

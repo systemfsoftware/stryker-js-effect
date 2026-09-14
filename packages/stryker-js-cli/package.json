@@ -36,10 +36,6 @@
     "@systemfsoftware/stryker-js-html-reporter": "workspace:^",
     "@systemfsoftware/stryker-js-language": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
-    "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
-    "@systemfsoftware/stryker-js-vitest-runner": "workspace:^",
-    "@systemfsoftware/stryker-plugins": "workspace:^",
-    "@systemfsoftware/stryker-test-contribution": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
@@ -50,7 +46,6 @@
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
-    "vite-tsconfig-paths": "catalog:",
     "vitest": "catalog:"
   },
   "engines": {

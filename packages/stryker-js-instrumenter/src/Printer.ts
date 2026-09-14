@@ -4,7 +4,7 @@
  * html/svelte slicing needs come from the parsed `range`.
  */
 import * as Predicate from 'effect/Predicate'
-import { spanOf } from './estree.js'
+import { spanOf } from './Ast.js'
 import { type Hashbang, printProgram } from './print/index.js'
 import {
   type Ast,
@@ -36,7 +36,6 @@ export function print(file: Ast): string {
   }
 }
 
-// oxc carries the hashbang on the Program; estree's type does not declare it.
 const HASHBANG_FIELDS: Readonly<Record<string, (field: unknown) => boolean>> = {
   type: (field) => field === 'Hashbang',
   value: (field) => typeof field === 'string',

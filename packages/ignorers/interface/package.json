@@ -1,0 +1,69 @@
+{
+  "name": "@systemfsoftware/stryker-ignorer-interface",
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "author": "Ryan Lee <drdgvhbh@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "packages/ignorers/interface"
+  },
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/ignorers/interface#readme",
+  "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
+  "description": "The ignorer interface for StrykerJS-style mutation tooling — the PlainIgnorer descriptor, the canonical AST node vocabulary, and the NodePath shape. Types only, with no runtime exports and no Effect dependency.",
+  "keywords": [
+    "stryker",
+    "mutation-testing",
+    "ignorer",
+    "plugin",
+    "ast",
+    "estree",
+    "test-quality"
+  ],
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsdown && pnpm api:check",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
+    "test": "vitest run",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "attw": "attw --pack .",
+    "api:check": "tsdown && api-extractor run",
+    "api:update": "api-extractor run --local"
+  },
+  "devDependencies": {
+    "@microsoft/api-extractor": "catalog:",
+    "@oxc-project/types": "catalog:",
+    "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/vitest-config": "workspace:^",
+    "@types/node": "catalog:",
+    "oxlint": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      },
+      "./package.json": "./package.json"
+    }
+  }
+}

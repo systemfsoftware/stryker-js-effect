@@ -1,4 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import type { IgnorerService } from '@systemfsoftware/stryker-js-language'
 import { Effect } from 'effect'
 import * as Option from 'effect/Option'
 import { expect } from 'vitest'
@@ -35,49 +36,45 @@ type Mutant = {
   replacement?: string
 }
 
-type IgnorerPath = { node: unknown; parentPath?: IgnorerPath | null }
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
-
 const isKeepCall = (node: unknown): node is { arguments: unknown[] } => {
-  if (!isRecord(node) || node['type'] !== 'CallExpression') {
+  if (typeof node !== 'object' || node === null || !('type' in node) || node.type !== 'CallExpression') {
     return false
   }
-  const callee = node['callee']
-  return isRecord(callee) && callee['type'] === 'Identifier' && callee['name'] === 'keep' &&
-    Array.isArray(node['arguments'])
+  if (!('callee' in node) || !('arguments' in node)) {
+    return false
+  }
+  const callee = node.callee
+  return typeof callee === 'object' && callee !== null && 'type' in callee && callee.type === 'Identifier' &&
+    'name' in callee && callee.name === 'keep' && Array.isArray(node.arguments)
 }
 
-const invertedKeepIgnorer = {
-  shouldIgnore: (path: IgnorerPath) => {
+const invertedKeepIgnorer: IgnorerService = {
+  shouldIgnore: (path) => {
     let child: unknown = path.node
-    for (let current = path.parentPath; current; current = current.parentPath) {
-      if (isKeepCall(current.node) && current.node.arguments.includes(child)) {
+    for (const ancestor of path.ancestors) {
+      if (isKeepCall(ancestor) && ancestor.arguments.includes(child)) {
         return Option.none()
       }
-      child = current.node
+      child = ancestor
     }
     return Option.some(OUTSIDE_KEEP)
   },
 }
 
 const isFlagIf = (node: unknown): boolean => {
-  if (!isRecord(node) || node['type'] !== 'IfStatement') {
+  if (typeof node !== 'object' || node === null || !('type' in node) || node.type !== 'IfStatement') {
     return false
   }
-  const test = node['test']
-  return isRecord(test) && test['type'] === 'Identifier' && test['name'] === 'flag'
+  if (!('test' in node)) {
+    return false
+  }
+  const test = node.test
+  return typeof test === 'object' && test !== null && 'type' in test && test.type === 'Identifier' &&
+    'name' in test && test.name === 'flag'
 }
 
-const regionFlagIgnorer = {
-  shouldIgnore: (path: IgnorerPath) => {
-    for (let current = path.parentPath; current; current = current.parentPath) {
-      if (isFlagIf(current.node)) {
-        return Option.some(INSIDE_FLAG)
-      }
-    }
-    return Option.none()
-  },
+const regionFlagIgnorer: IgnorerService = {
+  shouldIgnore: (path) => path.ancestors.some(isFlagIf) ? Option.some(INSIDE_FLAG) : Option.none(),
 }
 const countByMutator = (mutants: readonly Mutant[]): Record<string, number> => {
   const counts: Record<string, number> = {}

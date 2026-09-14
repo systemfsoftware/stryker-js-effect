@@ -17,8 +17,7 @@ const basePreset: BasePreset = {
   plugins: [
     '@systemfsoftware/stryker-js-vitest-runner',
     '@systemfsoftware/stryker-js-typescript-checker',
-    '@systemfsoftware/stryker-plugins/effect-schema-ignorer',
-    '@systemfsoftware/stryker-plugins/workflow-make-ignorer',
+    '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
     '@systemfsoftware/stryker-test-contribution',
   ],
   reporters: ['progress', 'html', 'json', 'progress-stream'],

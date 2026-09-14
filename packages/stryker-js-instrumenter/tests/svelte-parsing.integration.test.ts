@@ -22,7 +22,7 @@ Feature('Svelte component instrumentation')
     scenario(
       // Svelte is an OPTIONAL PEER, not a bundled dependency: the parser reads the
       // installed compiler's `VERSION` and branches on v4 versus v5, and resolves
-      // `estree-walker` relative to that same install. A build that inlines a copy
+      // `oxc-walker` relative to that same install. A build that inlines a copy
       // of the compiler pins whichever version happened to be present when the
       // package was built, and the version branch then reads the wrong answer.
       // This scenario fails if the compiler stops resolving from the consumer's

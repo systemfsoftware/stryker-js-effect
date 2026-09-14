@@ -34,7 +34,7 @@ Code coverage only tells you which lines ran during tests; it cannot tell you if
 | **Interrupted Runs**    | `Ctrl+C` / cancel yields 0 reports               | Emits partial report up to last completed mutant                                             |
 | **Incremental State**   | `stryker-incremental.json` frequently goes stale | Reliable state validation surviving aborted runs                                             |
 | **Agent / CI Mode**     | Generic CLI exit codes (`0` or `1`)              | Machine mode auto-detection (`AGENT`, `CLAUDECODE`, `CODEX_SANDBOX`) + classified exit codes |
-| **Effect-TS Ecosystem** | Equivalent mutant noise on Schema & Brand types  | Dedicated `@systemfsoftware/stryker-plugins` ignorers                                        |
+| **Effect-TS Ecosystem** | Equivalent mutant noise on Schema & Brand types  | Dedicated `@systemfsoftware/stryker-ignorer-*` ignorers                                      |
 | **Runtime Engine**      | Procedural JavaScript with mutable state         | Pure functional Effect 4 architecture with typed errors                                      |
 
 ---
@@ -131,18 +131,18 @@ pnpm exec stryker run
 
 This monorepo publishes a modular ecosystem of packages under the `@systemfsoftware` scope:
 
-| Package                                                                                    | Role                                                               |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| [`@systemfsoftware/stryker-js-cli`](packages/stryker-js-cli)                               | Terminal & CI runner binary with NDJSON streaming output           |
-| [`@systemfsoftware/stryker-js-language`](packages/stryker-js-language)                     | Pure domain core: mutant models, schemas, and exit classifications |
-| [`@systemfsoftware/stryker-js-plugin-interface`](packages/stryker-js-plugin-interface)     | Shared plugin contracts (`declarePlugin`, `composePlugins`)        |
-| [`@systemfsoftware/stryker-js-engine`](packages/stryker-js-engine)                         | Mutation run lifecycle engine and test orchestration               |
-| [`@systemfsoftware/stryker-js-instrumenter`](packages/stryker-js-instrumenter)             | AST mutation engine powered by OXC parser                          |
-| [`@systemfsoftware/stryker-js-vitest-runner`](packages/stryker-js-vitest-runner)           | Vitest runner integration for mutation sandboxes                   |
-| [`@systemfsoftware/stryker-js-typescript-checker`](packages/stryker-js-typescript-checker) | TypeScript type-checker plugin validating mutants pre-execution    |
-| [`@systemfsoftware/stryker-js-html-reporter`](packages/stryker-js-html-reporter)           | Interactive HTML mutation report generator                         |
-| [`@systemfsoftware/stryker-plugins`](packages/stryker-plugins)                             | Domain ignorers for Effect Schema brands & tagged unions           |
-| [`@systemfsoftware/stryker-test-contribution`](packages/stryker-test-contribution)         | Suite hygiene plugin enforcing unique mutant kills per test file   |
+| Package                                                                                    | Role                                                                                     |
+| ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| [`@systemfsoftware/stryker-js-cli`](packages/stryker-js-cli)                               | Terminal & CI runner binary with NDJSON streaming output                                 |
+| [`@systemfsoftware/stryker-js-language`](packages/stryker-js-language)                     | Pure domain core: mutant models, schemas, and exit classifications                       |
+| [`@systemfsoftware/stryker-js-plugin-interface`](packages/stryker-js-plugin-interface)     | Shared plugin contracts (`declarePlugin`, `composePlugins`)                              |
+| [`@systemfsoftware/stryker-js-engine`](packages/stryker-js-engine)                         | Mutation run lifecycle engine and test orchestration                                     |
+| [`@systemfsoftware/stryker-js-instrumenter`](packages/stryker-js-instrumenter)             | AST mutation engine powered by OXC parser                                                |
+| [`@systemfsoftware/stryker-js-vitest-runner`](packages/stryker-js-vitest-runner)           | Vitest runner integration for mutation sandboxes                                         |
+| [`@systemfsoftware/stryker-js-typescript-checker`](packages/stryker-js-typescript-checker) | TypeScript type-checker plugin validating mutants pre-execution                          |
+| [`@systemfsoftware/stryker-js-html-reporter`](packages/stryker-js-html-reporter)           | Interactive HTML mutation report generator                                               |
+| [`@systemfsoftware/stryker-ignorer-*`](packages/ignorers)                                  | Decoupled domain ignorers (Schema declarations, vitest blocks, Workflow.make boundaries) |
+| [`@systemfsoftware/stryker-test-contribution`](packages/stryker-test-contribution)         | Suite hygiene plugin enforcing unique mutant kills per test file                         |
 
 ---
 
@@ -158,7 +158,7 @@ This monorepo publishes a modular ecosystem of packages under the `@systemfsoftw
 <details>
 <summary><strong>Why do mutants survive on my Effect Schema definitions?</strong></summary>
 
-Schema definitions and branded type markers often produce equivalent mutants that cannot be observed or failed at runtime. Install `@systemfsoftware/stryker-plugins` and enable `effect-schema-ignorer` in your `stryker.config.json` to filter them out automatically.
+Schema definitions and branded type markers often produce equivalent mutants that cannot be observed or failed at runtime. Install `@systemfsoftware/stryker-ignorer-effect-schema-declarations` and enable `effect-schema-declarations` in your `stryker.config.json` to filter them out automatically.
 
 </details>
 
