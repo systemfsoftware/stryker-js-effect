@@ -1,14 +1,17 @@
-# AGENTS.md — `@systemfsoftware/stryker-js-plugin-interface`
+# @systemfsoftware/stryker-js-plugin-interface
 
-The mutation-testing plugin interface: declaring and composing plugin
-contributions.
+Shared plugin contracts and registration protocols for the Stryker mutation engine.
 
 ## Rules
 
-| ID       | Rule                                                                                                                         | Gate                                                                                   |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **SJP1** | Public specifiers are enumerated in `tsdown.config.ts`.                                                                      | `pnpm --filter @systemfsoftware/stryker-js-plugin-interface build` regenerates cleanly |
-| **SJP2** | A plugin is declared with `declarePlugin`: every kind contributes a `Layer`; the Reporter kind contributes a `make` factory. | `review`                                                                               |
+| ID       | Obligation                                                                                         | Gate                                                               |
+| -------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| **SJP1** | Public exports must be enumerated in `tsdown.config.ts`                                            | `pnpm --filter @systemfsoftware/stryker-js-plugin-interface build` |
+| **SJP2** | Plugins declared via `declarePlugin` contributing typed `Layer` (or `make` factory for `Reporter`) | `review`                                                           |
+
+### Calibration pairs
+
+- **SJP2** — `wrong:` plugin exports raw callback without typed `PluginKind` descriptor; `right:` plugin calls `declarePlugin` returning structured `Layer`.
 
 ## Verification
 

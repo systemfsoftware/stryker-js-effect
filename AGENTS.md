@@ -1,37 +1,29 @@
 # stryker-js-effect
 
-The home of the `@systemfsoftware/stryker-js-*` package family: the mutation
-engine (`stryker-js-language`), the plugin contract
-(`stryker-js-plugin-interface`), the CLI, instrumenter, reporters, checkers, and
-test-runner integration.
-
 ## Boundaries
 
-| Surface            | Examples                                            | Limit                                                  |
-| ------------------ | --------------------------------------------------- | ------------------------------------------------------ |
-| **Evaluator**      | `commitlint.config.ts`, `.github/workflows/`        | Read-only; never edit the instrument that grades work. |
-| **Doctrine**       | `CONSTITUTION.md`, `subtrees.toml`                  | Project law; edit only on deliberate direction.        |
-| **Vendored**       | `repos/**`                                          | Read-only; updated via git subtree, never hand-edited. |
-| **Human approval** | Releases, publishing, external credentials          | User-confirmed only.                                   |
-| **Supply chain**   | `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` | Human-approved; never widen unasked.                   |
-| **Editable**       | Workspace source, tests, documentation              | Edit freely.                                           |
+| Surface            | Target                                              | Gate              |
+| ------------------ | --------------------------------------------------- | ----------------- |
+| **Evaluator**      | `commitlint.config.ts`, `.github/workflows/`        | Read-only         |
+| **Doctrine**       | `CONSTITUTION.md`, `subtrees.toml`                  | Read-only         |
+| **Vendored**       | `repos/**`                                          | Read-only         |
+| **Human approval** | Releases, publishing, external credentials          | User confirmation |
+| **Supply chain**   | `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` | User confirmation |
+| **Editable**       | Workspace source, tests, documentation              | Edit freely       |
 
 ## Definition of Done
 
-| ID        | Rule                                                            | Gate                                                              |
-| --------- | --------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `START-1` | Formatting passes dprint with no diffs                          | `pnpm format:check`                                               |
-| `START-2` | Typechecking succeeds workspace-wide with no errors             | `pnpm typecheck`                                                  |
-| `START-3` | All test suites pass                                            | `pnpm test`                                                       |
-| `START-4` | The local gate passes before completion                         | `pnpm check:ci`                                                   |
-| `START-5` | A change under `apps/**` or `packages/**` ships a change intent | `./scripts/check-changeset.ts $(git merge-base HEAD origin/main)` |
-
-Workspace roots: `packages/` holds libraries — `packages/toolchain/*` is private
-build, lint, and test config; `packages/ignorers/*` is the published, zero-Effect
-ignorer family — and `apps/` holds publishable applications. Four globs in
-`pnpm-workspace.yaml` select them. Turbo declares `dist/**` as each package's
-build output; `pnpm gate:dist` runs that build.
+| ID        | Obligation                                                       | Gate                                                              |
+| --------- | ---------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `START-1` | Code formatting matches dprint with zero diffs                   | `pnpm format:check`                                               |
+| `START-2` | Workspace typecheck produces zero diagnostic errors              | `pnpm typecheck`                                                  |
+| `START-3` | All unit and integration test suites pass                        | `pnpm test`                                                       |
+| `START-4` | Workspace build and verification tasks pass                      | `pnpm check:ci`                                                   |
+| `START-5` | Changes under `apps/**` or `packages/**` include a change intent | `./scripts/check-changeset.ts $(git merge-base HEAD origin/main)` |
 
 ## End of Session
 
-Commit changes using conventional commits (`<type>(<scope>): <subject>`). Leave the working tree clean and `pnpm check:ci` green. A change under `apps/**` or `packages/**` also needs a change intent — `pnpm change --bump <none|patch|minor|major> --summary "<changelog entry>" <pkg>` — which CI checks in a separate workflow; `pnpm check:ci` does not.
+1. Run `pnpm check:ci` and confirm it passes.
+2. If files under `apps/**` or `packages/**` changed, run `pnpm change --bump <none|patch|minor|major> --summary "<entry>" <pkg>`.
+3. Create git commit with conventional commit format (`<type>(<scope>): <subject>`).
+4. Verify working tree is clean.

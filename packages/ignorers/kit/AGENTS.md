@@ -1,33 +1,29 @@
-# stryker-ignorer-kit
+# @systemfsoftware/stryker-ignorer-kit
 
-Authoring and testing kit for the Stryker ignorer family.
+Authoring DSL (`defineIgnorer`) and snippet test runner (`testIgnorer`) for Stryker AST ignorers.
 
-## Identity
+## Rules
 
-- Two entries: the root exports `defineIgnorer` and the visitor/context types; `./tester`
-  exports `testIgnorer` and the case types. The root entry's module graph MUST stay
-  parser-free — no `oxc-parser`/`oxc-walker` import reachable from `src/mod.ts` (review gate).
-- Zero Effect in any source file or dependency of this package.
-- The tester's ancestor-tracking walk mirrors the instrumenter adapter
-  (`packages/stryker-js-instrumenter/src/Ast.ts`, `walker`): enter consults with a snapshot of
-  the chain excluding the current node, nearest-first; leave pops. Drift between the two walks
-  is a review-gated invariant, pinned by the ancestors scenario.
-- No backwards-compatibility commitment while this package has no adopters beyond this
-  repository's own ignorer migrations: breaking changes are allowed at 0.x; the api reports
-  gate drift for this family, not consumer stability.
+| ID        | Obligation                                                                                 | Gate                                                      |
+| --------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| **IK1**   | Root entrypoint (`src/mod.ts`) must not import `oxc-parser` or `oxc-walker`                | `review`                                                  |
+| **IK2**   | Zero `effect` or `@effect/*` dependencies across source or package manifest                | `pnpm --filter @systemfsoftware/stryker-ignorer-kit lint` |
+| **IK3**   | Ancestor AST walk in test harness must match `packages/stryker-js-instrumenter/src/Ast.ts` | `review`                                                  |
+| **IK4**   | Zero backwards-compatibility guarantees during 0.x release series                          | `review`                                                  |
+| **COV-1** | Test coverage across `src/` must reach 100% lines, branches, functions, and statements     | `pnpm --filter @systemfsoftware/stryker-ignorer-kit test` |
 
-The reviewer's decision on each `review`-gated line, shown as `wrong:`/`right:`:
+### Calibration pairs
 
-- **parser-free entry** — `wrong:` an `oxc-parser` or `oxc-walker` import reachable from
-  `src/mod.ts`; `right:` the root entry's graph reaching neither, both parser packages staying
-  behind the `./tester` entry.
-- **walk parity** — `wrong:` the tester's walk consulting with the live chain including the
-  current node, or popping before `leave`; `right:` a snapshot of the chain excluding the
-  current node, nearest-first, popped on `leave` — the shape `packages/stryker-js-instrumenter/src/Ast.ts`
-  uses.
+- **IK1** — `wrong:` importing parser utilities in `src/mod.ts`; `right:` parser dependencies isolated to `./tester` subpath.
+- **IK3** — `wrong:` test harness walk mutating node stack during traversal; `right:` passing immutable nearest-first ancestor snapshot.
+- **IK4** — `wrong:` adding deprecated aliases to preserve obsolete 0.x API shapes; `right:` clean breaking changes with changeset notes.
 
-## Definition of Done
+## Verification
 
-| ID    | Rule                                                                                                              | Gate                                                      |
-| ----- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| COV-1 | Coverage runs on every test run and every file under `src` reaches 100% (lines, branches, functions, statements). | `pnpm --filter @systemfsoftware/stryker-ignorer-kit test` |
+```bash
+pnpm --filter @systemfsoftware/stryker-ignorer-kit build
+pnpm --filter @systemfsoftware/stryker-ignorer-kit typecheck
+pnpm --filter @systemfsoftware/stryker-ignorer-kit test
+pnpm --filter @systemfsoftware/stryker-ignorer-kit lint
+pnpm --filter @systemfsoftware/stryker-ignorer-kit attw
+```

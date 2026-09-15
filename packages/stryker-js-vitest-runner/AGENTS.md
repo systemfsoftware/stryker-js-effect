@@ -1,15 +1,18 @@
-# AGENTS.md — `@systemfsoftware/stryker-js-vitest-runner`
+# @systemfsoftware/stryker-js-vitest-runner
 
-Vitest test-runner plugin for Stryker.
+Vitest test-runner plugin for Stryker mutation testing sandboxes.
 
 ## Rules
 
-| ID      | Rule                                                                    | Gate                                                                |
-| ------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| **VR1** | The sandbox directory is the project root.                              | `review`                                                            |
-| **VR2** | This adapter currently has no test net.                                 | `review`                                                            |
-| **VR3** | `src/stryker-setup.ts` imports nothing local.                           | `grep -n "^import" src/stryker-setup.ts` shows no relative imports  |
-| **VR4** | Source carries no type-suppression comments and no non-null assertions. | `pnpm --filter @systemfsoftware/stryker-js-vitest-runner typecheck` |
+| ID      | Obligation                                                                  | Gate                                                                                                     |
+| ------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **VR1** | Sandbox directory must be configured as project root                        | `review`                                                                                                 |
+| **VR2** | `src/stryker-setup.ts` must contain zero relative or local imports          | `git grep -n "^import" packages/stryker-js-vitest-runner/src/stryker-setup.ts` returns no relative paths |
+| **VR3** | Zero type-suppression comments and zero non-null assertions in source files | `pnpm --filter @systemfsoftware/stryker-js-vitest-runner typecheck`                                      |
+
+### Calibration pairs
+
+- **VR1** — `wrong:` runner creates nested temporary sandbox subdirectory; `right:` runner executes tests directly in designated workspace root sandbox.
 
 ## Verification
 

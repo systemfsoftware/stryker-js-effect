@@ -1,15 +1,17 @@
-# AGENTS.md — `@systemfsoftware/stryker-js-language`
+# @systemfsoftware/stryker-js-language
 
-The mutation-testing language: enumerated concept modules, no platform.
+Domain core for mutation testing: schemas, mutant models, exit codes, and result classifications.
 
 ## Rules
 
-| ID      | Rule                                                    | Gate                                                                           |
-| ------- | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **SL1** | Public specifiers are enumerated in `tsdown.config.ts`. | `pnpm --filter @systemfsoftware/stryker-js-language build` regenerates cleanly |
-| **SL3** | The option set is one Effect Schema on `./Schema`.      | `review`                                                                       |
+| ID      | Obligation                                                         | Gate                                                       |
+| ------- | ------------------------------------------------------------------ | ---------------------------------------------------------- |
+| **SL1** | Public exports must be enumerated in `tsdown.config.ts`            | `pnpm --filter @systemfsoftware/stryker-js-language build` |
+| **SL3** | All public options declared as unified Effect Schema on `./Schema` | `review`                                                   |
 
-Plugin declaration (`declarePlugin`) lives in `@systemfsoftware/stryker-js-plugin-interface`.
+### Calibration pairs
+
+- **SL3** — `wrong:` options parsed via untyped object cast or raw interfaces; `right:` options decoded and encoded using `Schema.Struct` and `Schema.TaggedError`.
 
 ## Verification
 

@@ -1,13 +1,17 @@
 # @systemfsoftware/stryker-test-contribution
 
-Evaluator plugin (root Surface Classes: Evaluator). The pure decision is `src/test-contribution.ts`.
+Hygiene evaluator plugin: verifies test suites contribute distinct mutant kills without redundancy.
 
 ## Rules
 
-| ID      | Rule                                                                                                                                                               | Gate                                                            |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| **TC1** | A failing gate returns `ExitClass.VerdictFail` on the SUCCESS channel; a passing gate returns `null`; `EvaluatorFailed` is only for the evaluator itself breaking. | `pnpm --filter @systemfsoftware/stryker-test-contribution test` |
-| **TC2** | Listing the plugin module activates it; never import it from the engine or CLI packages.                                                                           | `review`                                                        |
+| ID      | Obligation                                                                                                             | Gate                                                            |
+| ------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **TC1** | Evaluation failure returns `ExitClass.VerdictFail` on success channel; `EvaluatorFailed` reserved for internal crashes | `pnpm --filter @systemfsoftware/stryker-test-contribution test` |
+| **TC2** | Plugin activated via configuration; must not be imported directly by engine or CLI                                     | `review`                                                        |
+
+### Calibration pairs
+
+- **TC2** — `wrong:` engine imports `stryker-test-contribution` in module graph; `right:` plugin loaded dynamically via Stryker plugin options array.
 
 ## Verification
 

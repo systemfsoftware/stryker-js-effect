@@ -1,14 +1,19 @@
-# AGENTS.md — `@systemfsoftware/stryker-js-engine`
+# @systemfsoftware/stryker-js-engine
 
-Host-neutral mutation engine: ports in, run out, no Node.
+Platform-agnostic mutation test execution engine: orchestrates mutants, test runners, checkers, and reporters.
 
 ## Rules
 
-| ID      | Rule                                                                                                                                                   | Gate                                                                         |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| **EN1** | Zero `@effect/platform-*` in the manifest and no `engines` field — the engine names no runtime; a process entry (the CLI) binds the layers.            | `pnpm --filter @systemfsoftware/stryker-js-engine attw` plus a manifest read |
-| **EN2** | `makeRunLayer` requires `FileSystem`, `Path`, `ChildProcessSpawner`, `Module`, and a socket port as arguments; it never provides a default Node layer. | `review`                                                                     |
-| **EN3** | Workers are addressed by `entryUrl`, never by an engine-owned file; worker entry files are the CLI's dist entries.                                     | `review`                                                                     |
+| ID      | Obligation                                                                                                               | Gate                                                    |
+| ------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| **EN1** | Zero `@effect/platform-*` in manifest `dependencies` and zero `engines` field in `package.json`                          | `pnpm --filter @systemfsoftware/stryker-js-engine attw` |
+| **EN2** | `makeRunLayer` must accept `FileSystem`, `Path`, `ChildProcessSpawner`, `Module`, and socket port as explicit parameters | `review`                                                |
+| **EN3** | Workers addressed strictly by `entryUrl` strings pointing to CLI dist entries                                            | `review`                                                |
+
+### Calibration pairs
+
+- **EN2** — `wrong:` `makeRunLayer` imports and instantiates NodePlatform directly; `right:` all platform capabilities are passed as parameterized dependencies.
+- **EN3** — `wrong:` engine imports worker scripts directly from its own source paths; `right:` worker paths are passed in via `entryUrl` parameters.
 
 ## Verification
 
