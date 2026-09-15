@@ -1,18 +1,54 @@
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
-import { defineIgnorer, type IgnorerContext } from '@systemfsoftware/stryker-ignorer-kit'
+import { defineIgnorer, type IgnorerContext, type IgnorerVisitors } from '@systemfsoftware/stryker-ignorer-kit'
 import { describe, expect, it } from 'vitest'
 
-function isTestNode(value: unknown): value is Node {
-  return typeof value === 'object' && value !== null && 'type' in value && typeof value.type === 'string'
+import { callExpression, identifier, ifStatement, stringLiteral } from './fixtures/nodes.js'
+
+interface DispatchRow {
+  readonly name: string
+  readonly node: Node
+  readonly visitors: IgnorerVisitors
+  readonly expected: string | undefined
 }
 
-function node(type: string, extra: Record<string, unknown> = {}): Node {
-  const candidate: unknown = { type, start: 0, end: 0, ...extra }
-  if (!isTestNode(candidate)) throw new Error(`bad test node: ${type}`)
-  return candidate
-}
-
-const stringX = (): Node => node('Literal', { value: 'x' })
+const dispatchRows: DispatchRow[] = [
+  {
+    name: 'a typed visitor claiming its node returns its reason',
+    node: stringLiteral('x'),
+    visitors: { Literal: () => 'R' },
+    expected: 'R',
+  },
+  {
+    name: 'a typed visitor declining falls through to onAnyNode',
+    node: stringLiteral('x'),
+    visitors: { Literal: () => undefined, onAnyNode: () => 'A' },
+    expected: 'A',
+  },
+  {
+    name: 'a typed visitor claiming prevents onAnyNode',
+    node: stringLiteral('x'),
+    visitors: { Literal: () => 'R', onAnyNode: () => 'A' },
+    expected: 'R',
+  },
+  {
+    name: 'a node kind with no typed visitor reaches an onAnyNode that claims it',
+    node: identifier('n'),
+    visitors: { onAnyNode: (one) => (one.type === 'Identifier' ? 'A' : undefined) },
+    expected: 'A',
+  },
+  {
+    name: 'a node kind with no typed visitor and a declining onAnyNode stays live',
+    node: identifier('n'),
+    visitors: { onAnyNode: (one) => (one.type === 'Literal' ? 'A' : undefined) },
+    expected: undefined,
+  },
+  {
+    name: 'a typed visitor declining with no onAnyNode stays live',
+    node: stringLiteral('x'),
+    visitors: { Literal: () => undefined },
+    expected: undefined,
+  },
+]
 
 interface Recorder {
   readonly ignorer: Ignorer
@@ -38,79 +74,36 @@ function contextRecorder(): Recorder {
 }
 
 describe('defineIgnorer', () => {
-  it('hands a typed visitor the node it was keyed for and returns its reason', () => {
-    const ignorer = defineIgnorer({
-      name: 't',
-      visitors: { Literal: (one) => (one.value === 'x' ? 'R' : undefined) },
-    })
-    expect(ignorer.shouldIgnore(stringX(), [])).toBe('R')
+  it.each(dispatchRows)('$name', (row) => {
+    const ignorer = defineIgnorer({ name: 't', visitors: row.visitors })
+    expect(ignorer.shouldIgnore(row.node, [])).toBe(row.expected)
   })
 
-  it('falls through to onAnyNode when the typed visitor declines', () => {
-    const ignorer = defineIgnorer({
-      name: 't',
-      visitors: {
-        Literal: () => undefined,
-        onAnyNode: () => 'A',
-      },
-    })
-    expect(ignorer.shouldIgnore(stringX(), [])).toBe('A')
-  })
-
-  it('hands a node kind with no typed visitor to onAnyNode', () => {
-    const ignorer = defineIgnorer({
-      name: 't',
-      visitors: { onAnyNode: (one) => (one.type === 'Identifier' ? 'A' : undefined) },
-    })
-    expect(ignorer.shouldIgnore(node('Identifier', { name: 'n' }), [])).toBe('A')
-    expect(ignorer.shouldIgnore(stringX(), [])).toBeUndefined()
-  })
-
-  it('a typed visitor claiming the node prevents onAnyNode', () => {
-    const ignorer = defineIgnorer({
-      name: 't',
-      visitors: {
-        Literal: () => 'R',
-        onAnyNode: () => 'A',
-      },
-    })
-    expect(ignorer.shouldIgnore(stringX(), [])).toBe('R')
-  })
-
-  it('context accessors narrow the chain and expose it raw', () => {
-    const call = node('CallExpression', { arguments: [], callee: node('Identifier', { name: 'f' }) })
-    const ifStatement = node('IfStatement', { test: call })
+  it('context accessors narrow the parent, search the chain, and expose it by reference', () => {
+    const call = callExpression(identifier('f'), [])
+    const guard = ifStatement(call, identifier('body'))
+    const chain: Node[] = [call, guard]
     const { ignorer, seen } = contextRecorder()
-    const chain = [call, ifStatement]
-    ignorer.shouldIgnore(stringX(), chain)
+    ignorer.shouldIgnore(stringLiteral('x'), chain)
     const ctx = seen()
     expect(ctx.parentIf('CallExpression')).toBe(call)
     expect(ctx.parentIf('IfStatement')).toBeUndefined()
-    expect(ctx.ancestorIf('IfStatement')).toBe(ifStatement)
+    expect(ctx.ancestorIf('IfStatement')).toBe(guard)
     expect(ctx.ancestorIf('Program')).toBeUndefined()
     expect(ctx.ancestors).toBe(chain)
   })
 
   it('ancestorIf returns the nearest matching chain member', () => {
-    const near = node('CallExpression', { arguments: [], callee: node('Identifier', { name: 'near' }) })
-    const far = node('CallExpression', { arguments: [], callee: node('Identifier', { name: 'far' }) })
+    const near = callExpression(identifier('near'), [])
+    const far = callExpression(identifier('far'), [])
     const { ignorer, seen } = contextRecorder()
-    ignorer.shouldIgnore(stringX(), [near, far])
+    ignorer.shouldIgnore(stringLiteral('x'), [near, far])
     expect(seen().ancestorIf('CallExpression')).toBe(near)
   })
 
   it('compiles to the wire shape', () => {
-    const ignorer = defineIgnorer({ name: 't', visitors: {} })
-    expect(typeof ignorer.name).toBe('string')
+    const ignorer = defineIgnorer({ name: 't', visitors: { Literal: () => 'R' } })
     expect(ignorer.name).toBe('t')
-    expect(typeof ignorer.shouldIgnore).toBe('function')
-  })
-
-  it('passes the ancestor chain through unmodified, nearest-first, excluding the node', () => {
-    const parent = node('CallExpression', { arguments: [], callee: node('Identifier', { name: 'f' }) })
-    const { ignorer, seen } = contextRecorder()
-    const chain = [parent]
-    ignorer.shouldIgnore(stringX(), chain)
-    expect(seen().ancestors).toBe(chain)
+    expect(ignorer.shouldIgnore(stringLiteral('x'), [])).toBe('R')
   })
 })
