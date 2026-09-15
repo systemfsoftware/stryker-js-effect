@@ -4,12 +4,13 @@ const CONDITION = '@systemfsoftware/source'
 
 const toTypesPath = (mjsPath: string): string => mjsPath.replace(/\.mjs$/, '.d.ts')
 
-const withTypesFirst = (entry: string | Record<string, string>): Record<string, string> => {
+type ExportEntry = string | { [key: string]: string | undefined; default: string }
+
+const withTypesFirst = (entry: ExportEntry): ExportEntry => {
   if (typeof entry === 'string') return { types: toTypesPath(entry), default: entry }
-  const ordered: Record<string, string> = {}
+  const ordered: { [key: string]: string | undefined; default: string } = { default: entry.default }
   if (entry[CONDITION] != null) ordered[CONDITION] = entry[CONDITION]
   ordered.types = entry.types ?? toTypesPath(entry.default)
-  ordered.default = entry.default
   return ordered
 }
 
@@ -25,7 +26,7 @@ export default defineConfig({
   outExtensions: () => ({ js: '.mjs', dts: '.d.ts' }),
   exports: {
     devExports: CONDITION,
-    customExports: (exports) => {
+    customExports: (exports: Record<string, ExportEntry>) => {
       for (const [key, value] of Object.entries(exports)) {
         if (key === './package.json') continue
         exports[key] = withTypesFirst(value)

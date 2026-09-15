@@ -1,5 +1,6 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { angularIgnorer } from '@systemfsoftware/stryker-js-instrumenter'
+import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
@@ -16,12 +17,6 @@ const INPUT_MODEL_OUTPUT_CONFIG_MSG =
   'Angular signal based input, model and output functions configuration object cannot be mutated as that causes issues with the Angular compiler.'
 const SIGNAL_QUERY_OPTIONS_MSG =
   'Angular signal query options object cannot be mutated as that causes issues with the Angular compiler.'
-
-interface Mutant {
-  readonly mutatorName: string
-  readonly status?: string
-  readonly statusReason?: string
-}
 
 const Feature = makeFeature({ it, layer })
 
@@ -43,7 +38,7 @@ Feature('Angular signal configuration objects')
             }),
         ),
         Then('the two signal configs are ignored and the plain object is not')((
-          { result }: { result: { mutants: readonly Mutant[] } },
+          { result }: { result: InstrumentResult },
         ) =>
           Effect.sync(() => {
             const reasons = result.mutants

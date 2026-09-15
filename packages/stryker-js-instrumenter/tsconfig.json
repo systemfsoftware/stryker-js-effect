@@ -1,6 +1,7 @@
 {
   "extends": "@systemfsoftware/tsconfig/tsc/no-dom/library",
   "compilerOptions": {
+    "customConditions": ["@systemfsoftware/source"],
     "outDir": "dist",
     "rootDir": ".",
     "types": [
@@ -13,11 +14,11 @@
     ]
   },
   "include": [
-    "src"
+    "src",
+    "tests"
   ],
   "exclude": [
     "node_modules",
-    "dist",
-    "tests/__fixtures__"
+    "dist"
   ]
 }

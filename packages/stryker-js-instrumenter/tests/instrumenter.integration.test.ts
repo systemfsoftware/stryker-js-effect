@@ -1,4 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
 import type { IgnorerService } from '@systemfsoftware/stryker-js-language'
 import { Effect } from 'effect'
 import * as Option from 'effect/Option'
@@ -31,28 +32,30 @@ const INSIDE_FLAG = 'inside if (flag)'
 type Mutant = {
   id: string
   mutatorName: string
-  status?: string
-  statusReason?: string
-  replacement?: string
+  status?: string | undefined
+  statusReason?: string | undefined
+  replacement?: string | undefined
 }
 
-const isKeepCall = (node: unknown): node is { arguments: unknown[] } => {
+const keepCallArguments = (node: unknown): readonly unknown[] => {
   if (typeof node !== 'object' || node === null || !('type' in node) || node.type !== 'CallExpression') {
-    return false
+    return []
   }
-  if (!('callee' in node) || !('arguments' in node)) {
-    return false
+  if (!('callee' in node) || !('arguments' in node) || !Array.isArray(node.arguments)) {
+    return []
   }
   const callee = node.callee
   return typeof callee === 'object' && callee !== null && 'type' in callee && callee.type === 'Identifier' &&
-    'name' in callee && callee.name === 'keep' && Array.isArray(node.arguments)
+      'name' in callee && callee.name === 'keep'
+    ? node.arguments
+    : []
 }
 
 const invertedKeepIgnorer: IgnorerService = {
   shouldIgnore: (node, ancestors) => {
     let child: unknown = node
     for (const ancestor of ancestors) {
-      if (isKeepCall(ancestor) && ancestor.arguments.includes(child)) {
+      if (keepCallArguments(ancestor).includes(child)) {
         return Option.none()
       }
       child = ancestor
@@ -105,7 +108,7 @@ Feature('Instrumenter characterization')
             }),
         ),
         Then('the total and per-mutator counts match the baseline')((
-          { result }: { result: { mutants: readonly Mutant[] } },
+          { result }: { result: InstrumentResult },
         ) =>
           Effect.sync(() => {
             const active = result.mutants.filter(isActive)
@@ -143,7 +146,7 @@ Feature('Instrumenter characterization')
             }),
         ),
         Then('every active mutant id is tested in the emitted content')((
-          { result }: { result: { mutants: readonly Mutant[]; files: readonly { content: string }[] } },
+          { result }: { result: InstrumentResult },
         ) =>
           Effect.sync(() => {
             const content = result.files[0]?.content ?? ''
@@ -183,8 +186,8 @@ Feature('Instrumenter characterization')
           'the excluded mutator yields Ignored mutants carrying the reason, and no other mutator moves',
         )((
           { baseline, excluded }: {
-            baseline: { mutants: readonly Mutant[] }
-            excluded: { mutants: readonly Mutant[] }
+            baseline: InstrumentResult
+            excluded: InstrumentResult
           },
         ) =>
           Effect.sync(() => {
@@ -244,8 +247,8 @@ Feature('Instrumenter characterization')
         ),
         Then('the keep-argument plus is live and the sibling plus is ignored only when selected')((
           { selected, unselected }: {
-            selected: { mutants: readonly Mutant[] }
-            unselected: { mutants: readonly Mutant[] }
+            selected: InstrumentResult
+            unselected: InstrumentResult
           },
         ) =>
           Effect.sync(() => {
@@ -313,7 +316,7 @@ export function price(n) {
             }),
         ),
         Then('the plus inside the flag block is ignored and the sibling plus is live')((
-          { result }: { result: { mutants: readonly Mutant[] } },
+          { result }: { result: InstrumentResult },
         ) =>
           Effect.sync(() => {
             const arith = (replacement: string) =>
@@ -343,7 +346,7 @@ export function price(n) {
             }),
         ),
         Then('every mutant is ignored with the ignorer reason')((
-          { result }: { result: { mutants: readonly Mutant[] } },
+          { result }: { result: InstrumentResult },
         ) =>
           Effect.sync(() => {
             expect(result.mutants.length).toBe(13)
@@ -369,7 +372,7 @@ export function price(n) {
             }),
         ),
         Then('the first ignorer reason wins even where both match')((
-          { result }: { result: { mutants: readonly Mutant[] } },
+          { result }: { result: InstrumentResult },
         ) =>
           Effect.sync(() => {
             expect(result.mutants.length).toBeGreaterThan(0)

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "customConditions": []
+  },
+  "exclude": [],
+  "include": [
+    "dist/index.d.mts"
+  ]
+}
