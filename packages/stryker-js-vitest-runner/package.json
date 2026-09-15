@@ -65,6 +65,7 @@
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "@vitest/browser-playwright": "catalog:",

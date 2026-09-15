@@ -30,10 +30,7 @@
       "@systemfsoftware/source": "./src/mod.ts",
       "types": "./dist/index.d.ts"
     },
-    "./package.json": {
-      "types": "./package.json",
-      "default": "./package.json"
-    }
+    "./package.json": "./package.json"
   },
   "scripts": {
     "build": "tsdown",
@@ -54,6 +51,7 @@
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "oxlint": "catalog:",
@@ -70,10 +68,7 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.mjs"
       },
-      "./package.json": {
-        "types": "./package.json",
-        "default": "./package.json"
-      }
+      "./package.json": "./package.json"
     }
   }
 }

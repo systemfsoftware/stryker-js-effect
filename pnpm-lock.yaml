@@ -172,6 +172,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../../toolchain/vitest-config
@@ -215,6 +218,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../../toolchain/vitest-config
@@ -254,6 +260,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../../toolchain/vitest-config
@@ -300,6 +309,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../../toolchain/vitest-config
@@ -454,6 +466,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../toolchain/vitest-config
@@ -518,6 +533,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../toolchain/vitest-config
@@ -591,6 +609,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../toolchain/vitest-config
@@ -649,6 +670,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../toolchain/vitest-config
@@ -701,6 +725,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../toolchain/vitest-config
@@ -774,6 +801,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../toolchain/vitest-config
@@ -826,6 +856,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../toolchain/vitest-config
@@ -890,6 +923,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.4
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../toolchain/tsdown-config
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../toolchain/vitest-config
@@ -929,6 +965,18 @@ importers:
       oxlint:
         specifier: 'catalog:'
         version: 1.82.0(oxlint-tsgolint@7.0.2001)
+
+  packages/toolchain/tsdown-config:
+    devDependencies:
+      '@systemfsoftware/tsconfig':
+        specifier: 'catalog:'
+        version: 1.3.4
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
 
   packages/toolchain/vitest-config:
     devDependencies:

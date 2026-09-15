@@ -5,10 +5,6 @@
   },
   "exclude": [],
   "include": [
-    "dist/index.d.mts",
-    "dist/config/base.d.mts",
-    "dist/builtin-reporters.d.mts",
-    "dist/plugin-loader.d.mts",
-    "dist/worker.d.mts"
+    "dist/index.d.mts"
   ]
 }

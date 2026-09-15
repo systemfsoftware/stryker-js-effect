@@ -37,7 +37,7 @@ type Mutant = {
   replacement?: string | undefined
 }
 
-const keepCallArguments = (node: unknown): readonly unknown[] => {
+const keepArgs = (node: unknown): readonly unknown[] => {
   if (typeof node !== 'object' || node === null || !('type' in node) || node.type !== 'CallExpression') {
     return []
   }
@@ -55,7 +55,7 @@ const invertedKeepIgnorer: IgnorerService = {
   shouldIgnore: (node, ancestors) => {
     let child: unknown = node
     for (const ancestor of ancestors) {
-      if (keepCallArguments(ancestor).includes(child)) {
+      if (keepArgs(ancestor).includes(child)) {
         return Option.none()
       }
       child = ancestor

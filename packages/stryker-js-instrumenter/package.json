@@ -49,6 +49,7 @@
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "oxlint": "catalog:",

@@ -57,6 +57,7 @@
     "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/effect-schema-vite": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "effect": "catalog:",

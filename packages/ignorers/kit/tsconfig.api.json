@@ -4,5 +4,5 @@
     "customConditions": []
   },
   "exclude": [],
-  "include": ["dist/index.d.ts", "dist/tester.d.ts"]
+  "include": ["dist/index.d.ts"]
 }

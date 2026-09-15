@@ -30,4 +30,14 @@ export const sharedConfig = {
       reporter: ['json', 'html', 'lcov'],
     },
   },
+  // Workspace-only: tsdown declares it via devExports and every
+  // consumer-facing surface strips it, so only in-repo runs see sources.
+  resolve: {
+    conditions: ['@systemfsoftware/source'],
+  },
+  ssr: {
+    resolve: {
+      conditions: ['@systemfsoftware/source'],
+    },
+  },
 }
