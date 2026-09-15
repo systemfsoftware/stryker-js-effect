@@ -1,4 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
@@ -18,10 +19,6 @@ const SOURCE = OBJECT_PROTOTYPE_MEMBERS
   .map((member, index) => `export const v${index} = String(globalThis).${member}()`)
   .join('\n')
 
-interface Mutant {
-  readonly mutatorName: string
-}
-
 const Feature = makeFeature({ it, layer })
 
 Feature('Mutating a method named after an Object.prototype member')
@@ -39,7 +36,7 @@ Feature('Mutating a method named after an Object.prototype member')
             }),
         ),
         Then('instrumentation succeeds and proposes no method replacement')((
-          { result }: { result: { mutants: readonly Mutant[] } },
+          { result }: { result: InstrumentResult },
         ) =>
           Effect.sync(() => {
             const methodMutants = result.mutants.filter((mutant) => mutant.mutatorName === 'MethodExpression')

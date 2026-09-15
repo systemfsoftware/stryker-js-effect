@@ -18,10 +18,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
-    "build": "tsdown && pnpm api:check",
+    "build": "tsdown",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint --format=${f:-default}",
     "attw": "attw --pack .",
-    "api:check": "tsdown && concurrently --kill-others-on-fail \"api-extractor run\" \"api-extractor run --config api-extractor.builtin-reporters.json\" \"api-extractor run --config api-extractor.base.json\" \"api-extractor run --config api-extractor.plugin-loader.json\" \"api-extractor run --config api-extractor.worker.json\"",
+    "api:check": "concurrently --kill-others-on-fail \"api-extractor run\" \"api-extractor run --config api-extractor.builtin-reporters.json\" \"api-extractor run --config api-extractor.base.json\" \"api-extractor run --config api-extractor.plugin-loader.json\" \"api-extractor run --config api-extractor.worker.json\"",
     "api:update": "concurrently --kill-others-on-fail \"api-extractor run --local\" \"api-extractor run --local --config api-extractor.builtin-reporters.json\" \"api-extractor run --local --config api-extractor.base.json\" \"api-extractor run --local --config api-extractor.plugin-loader.json\" \"api-extractor run --local --config api-extractor.worker.json\""
   },
   "dependencies": {
@@ -46,6 +46,7 @@
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/diff-match-patch": "1.0.36",
     "@types/node": "catalog:",
@@ -62,20 +63,55 @@
     "access": "public",
     "provenance": true,
     "exports": {
-      ".": "./dist/index.mjs",
-      "./builtin-reporters": "./dist/builtin-reporters.mjs",
-      "./plugin-loader": "./dist/plugin-loader.mjs",
-      "./config/base": "./dist/config/base.mjs",
-      "./worker": "./dist/worker.mjs",
+      ".": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "./builtin-reporters": {
+        "types": "./dist/builtin-reporters.d.mts",
+        "default": "./dist/builtin-reporters.mjs"
+      },
+      "./config/base": {
+        "types": "./dist/config/base.d.mts",
+        "default": "./dist/config/base.mjs"
+      },
+      "./plugin-loader": {
+        "types": "./dist/plugin-loader.d.mts",
+        "default": "./dist/plugin-loader.mjs"
+      },
+      "./worker": {
+        "types": "./dist/worker.d.mts",
+        "default": "./dist/worker.mjs"
+      },
       "./package.json": "./package.json"
     }
   },
   "exports": {
-    ".": "./dist/index.mjs",
-    "./builtin-reporters": "./dist/builtin-reporters.mjs",
-    "./config/base": "./dist/config/base.mjs",
-    "./plugin-loader": "./dist/plugin-loader.mjs",
-    "./worker": "./dist/worker.mjs",
+    ".": {
+      "types": "./dist/index.d.mts",
+      "@systemfsoftware/source": "./src/index.ts",
+      "default": "./dist/index.mjs"
+    },
+    "./builtin-reporters": {
+      "types": "./dist/builtin-reporters.d.mts",
+      "@systemfsoftware/source": "./src/builtin-reporters.ts",
+      "default": "./dist/builtin-reporters.mjs"
+    },
+    "./config/base": {
+      "types": "./dist/config/base.d.mts",
+      "@systemfsoftware/source": "./src/config/base.ts",
+      "default": "./dist/config/base.mjs"
+    },
+    "./plugin-loader": {
+      "types": "./dist/plugin-loader.d.mts",
+      "@systemfsoftware/source": "./src/plugin-loader.ts",
+      "default": "./dist/plugin-loader.mjs"
+    },
+    "./worker": {
+      "types": "./dist/worker.d.mts",
+      "@systemfsoftware/source": "./src/worker-wiring.ts",
+      "default": "./dist/worker.mjs"
+    },
     "./package.json": "./package.json"
   },
   "inlinedDependencies": {

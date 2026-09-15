@@ -1,3 +1,4 @@
+import { sourceExports } from '@systemfsoftware/tsdown-config'
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
@@ -10,8 +11,9 @@ export default defineConfig({
   },
   format: 'esm',
   dts: true,
-  exports: true,
-  noExternal: ['@std/jsonc'],
+  exports: sourceExports({ dtsExt: '.d.mts' }),
+
+  deps: { alwaysBundle: ['@std/jsonc'] },
   clean: true,
   define: { 'import.meta.vitest': 'undefined' },
 })

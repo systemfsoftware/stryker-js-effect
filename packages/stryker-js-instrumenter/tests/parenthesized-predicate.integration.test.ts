@@ -1,4 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
@@ -27,10 +28,6 @@ export const workflow = Workflow.make({} as never, (command) =>
 )
 `
 
-interface Mutant {
-  readonly mutatorName: string
-}
-
 const Feature = makeFeature({ it, layer })
 
 Feature('Parenthesized type predicates in make bodies')
@@ -48,7 +45,7 @@ Feature('Parenthesized type predicates in make bodies')
             }),
         ),
         Then('instrumentation succeeds with a non-empty mutant population')((
-          { result }: { result: { mutants: readonly Mutant[] } },
+          { result }: { result: InstrumentResult },
         ) =>
           Effect.sync(() => {
             expect(result.mutants.length).toBeGreaterThan(0)

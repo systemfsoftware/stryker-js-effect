@@ -1,6 +1,8 @@
 {
-  "extends": "@systemfsoftware/tsconfig/tsc/no-dom/library",
-  "include": [
-    "dist/tester.d.ts"
-  ]
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "customConditions": []
+  },
+  "exclude": [],
+  "include": ["dist/tester.d.ts"]
 }

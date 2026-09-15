@@ -15,12 +15,12 @@
   ],
   "scripts": {
     "clean": "rimraf dist",
-    "build": "tsdown && pnpm api:check",
+    "build": "tsdown",
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
     "attw": "attw --pack .",
     "test": "vitest run",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint --format=${f:-default}",
-    "api:check": "tsdown && api-extractor run",
+    "api:check": "api-extractor run",
     "api:update": "api-extractor run --local"
   },
   "dependencies": {
@@ -36,6 +36,7 @@
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "effect": "catalog:",
@@ -54,7 +55,10 @@
     "access": "public",
     "provenance": true,
     "exports": {
-      ".": "./dist/index.mjs",
+      ".": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
       "./package.json": "./package.json"
     }
   },
@@ -62,7 +66,11 @@
     "effect": "catalog:"
   },
   "exports": {
-    ".": "./dist/index.mjs",
+    ".": {
+      "types": "./dist/index.d.mts",
+      "@systemfsoftware/source": "./src/index.ts",
+      "default": "./dist/index.mjs"
+    },
     "./package.json": "./package.json"
   }
 }

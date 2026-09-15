@@ -27,18 +27,19 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "@systemfsoftware/source": "./src/mod.ts",
       "default": "./dist/index.mjs"
     },
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsdown && pnpm api:check",
+    "build": "tsdown",
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "attw": "attw --pack .",
-    "api:check": "tsdown && api-extractor run",
+    "api:check": "api-extractor run",
     "api:update": "api-extractor run --local"
   },
   "dependencies": {
@@ -50,6 +51,7 @@
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "oxlint": "catalog:",

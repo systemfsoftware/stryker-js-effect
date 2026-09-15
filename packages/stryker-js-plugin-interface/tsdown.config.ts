@@ -1,3 +1,4 @@
+import { sourceExports } from '@systemfsoftware/tsdown-config'
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
@@ -6,7 +7,8 @@ export default defineConfig({
   },
   format: 'esm',
   dts: true,
-  exports: true,
+  exports: sourceExports({ dtsExt: '.d.mts' }),
+
   clean: true,
   define: { 'import.meta.vitest': 'undefined' },
 })
