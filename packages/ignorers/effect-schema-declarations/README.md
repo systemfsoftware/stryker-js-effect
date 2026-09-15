@@ -37,7 +37,7 @@ Mutants it recognizes are reported as `Ignored`, each carrying the reason it was
 > A name in `ignorers` that no loaded plugin answers is silently skipped — the run proceeds and the mutants stay in your score. Copy the name from the table, not from memory.
 
 > [!NOTE]
-> Requires `@systemfsoftware/stryker-js-engine` 4.1.0 or later (the first version whose plugin loader speaks the plain ignorer protocol). The package has no peer dependencies, exactly one dependency — `@systemfsoftware/stryker-ignorer-interface`, which supplies AST node types only — and no Effect anywhere, not in `dependencies`, not in `devDependencies`, and not on its published surface. The guards are this package's own predicates over those node shapes.
+> Requires `@systemfsoftware/stryker-js-engine` 4.1.0 or later (the first version whose plugin loader speaks the plain ignorer protocol). The package has no peer dependencies, no Effect anywhere — not in `dependencies`, not in `devDependencies`, and not on its published surface — and two dependencies: `@systemfsoftware/stryker-ignorer-interface`, whose node types declare the AST shapes the visitors read, and `@systemfsoftware/stryker-ignorer-kit`, which compiles the visitor declaration to the wire contract and verifies it from source snippets.
 
 ## Migrating from `@systemfsoftware/stryker-plugins`
 

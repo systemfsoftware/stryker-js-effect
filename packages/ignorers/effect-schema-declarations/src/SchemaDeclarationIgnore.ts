@@ -1,14 +1,23 @@
 import type {
-  ArrowFunctionExpression,
   CallExpression,
   Expression,
-  IdentifierReference,
+  Ignorer,
   MemberExpression,
   Node,
   ObjectExpression,
   ObjectProperty,
-  StringLiteral,
 } from '@systemfsoftware/stryker-ignorer-interface'
+import { defineIgnorer, type IgnorerContext } from '@systemfsoftware/stryker-ignorer-kit'
+
+export const SYMBOL_DESCRIPTION_IGNORED = 'Symbol.for() brand description is identity-only data, not behaviour' as const
+export const TAGGED_TAG_IGNORED = 'TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour' as const
+export const TAGGED_FIELDS_IGNORED = 'TaggedClass/TaggedError field schema is a declaration, not behaviour' as const
+export const CLASS_ID_IGNORED = 'Schema.Class identifier is a declaration name, not behaviour' as const
+export const BRAND_NAME_IGNORED = 'Schema.brand name is identity-only data, not behaviour' as const
+export const OPTIONAL_DEFAULT_IGNORED = 'optionalWith default value is config, not behaviour' as const
+export const ANNOTATION_OBJECT_IGNORED =
+  'annotations object holding only documentation is a declaration, not behaviour' as const
+export const ANNOTATION_TEXT_IGNORED = 'annotation documentation value is declaration data, not behaviour' as const
 
 const DOCUMENTATION_KEYS: Record<string, true> = {
   identifier: true,
@@ -20,205 +29,154 @@ const DOCUMENTATION_KEYS: Record<string, true> = {
 
 export type DocumentationKey = 'identifier' | 'description' | 'title' | 'documentation' | 'examples'
 
-const isObject = (value: unknown): value is object => typeof value === 'object' && value !== null
+const TAGGED_FACTORIES: readonly string[] = ['TaggedClass', 'TaggedError']
+const CLASS_FACTORY = 'Class'
 
-const hasStringType = (value: object): value is Node => 'type' in value && typeof value.type === 'string'
+const isIdentifierNamed = (node: Node, name: string): boolean => node.type === 'Identifier' && node.name === name
 
-const isAstNode = (value: unknown): value is Node => isObject(value) && hasStringType(value)
+const isIdentifierAmong = (node: Node, names: readonly string[]): boolean =>
+  node.type === 'Identifier' && names.includes(node.name)
 
-const isNodeOfType = (value: unknown, type: Node['type']): value is Node => isAstNode(value) && value.type === type
+const isPlainMember = (node: Node): node is MemberExpression =>
+  node.type === 'MemberExpression' && node.computed === false
 
-const hasStringName = (value: Node): boolean => 'name' in value && typeof value.name === 'string'
+const isMemberObjectNamed = (node: Node, object: string): boolean =>
+  isPlainMember(node) && isIdentifierNamed(node.object, object)
 
-const hasStringValue = (value: Node): boolean => 'value' in value && typeof value.value === 'string'
+const isMemberPropertyNamed = (node: Node, property: string): boolean =>
+  isPlainMember(node) && isIdentifierNamed(node.property, property)
+
+const isSymbolForCallee = (callee: Expression): boolean =>
+  isMemberObjectNamed(callee, 'Symbol') && isMemberPropertyNamed(callee, 'for')
+
+const isFactoryReference = (reference: Expression, factories: readonly string[]): boolean =>
+  isPlainMember(reference) && isIdentifierAmong(reference.property, factories)
+
+const isTaggedFactoryCallee = (callee: Expression): boolean =>
+  callee.type === 'CallExpression' && isFactoryReference(callee.callee, TAGGED_FACTORIES)
+
+const isClassFactoryCallee = (callee: Expression): boolean => isMemberPropertyNamed(callee, CLASS_FACTORY)
+
+const isBrandCallee = (callee: Expression): boolean => isMemberPropertyNamed(callee, 'brand')
+
+const isAnnotationsCallee = (callee: Expression): boolean => isMemberPropertyNamed(callee, 'annotations')
+
+const isOptionalWithCallee = (callee: Expression): boolean =>
+  isMemberObjectNamed(callee, 'S') && isMemberPropertyNamed(callee, 'optionalWith')
+
+const holdsCallOf = (
+  call: CallExpression | undefined,
+  callee: (expression: Expression) => boolean,
+): call is CallExpression => call !== undefined && callee(call.callee)
+
+const holdsArgumentOf = (
+  node: Node,
+  call: CallExpression | undefined,
+  index: number,
+  callee: (expression: Expression) => boolean,
+): boolean => holdsCallOf(call, callee) && call.arguments[index] === node
 
 const isDocumentationKey = (value: unknown): value is DocumentationKey =>
   typeof value === 'string' && DOCUMENTATION_KEYS[value] === true
 
-const hasDocumentationName = (value: Node): boolean => 'name' in value && isDocumentationKey(value.name)
+const isLiteralKeyNamed = (key: Node): boolean => key.type === 'Literal' && isDocumentationKey(key.value)
 
-const hasDocumentationValue = (value: Node): boolean => 'value' in value && isDocumentationKey(value.value)
+const isDocumentationKeyNode = (key: Node): boolean =>
+  key.type === 'Identifier' ? isDocumentationKey(key.name) : isLiteralKeyNamed(key)
 
-const isIdentifierKeyNode = (value: unknown): boolean =>
-  isNodeOfType(value, 'Identifier') && hasDocumentationName(value)
+const isComputedFreeProperty = (property: Node): property is ObjectProperty =>
+  property.type === 'Property' && property.computed === false
 
-const isLiteralKeyNode = (value: unknown): boolean => isNodeOfType(value, 'Literal') && hasDocumentationValue(value)
+const isDocumentationEntry = (property: Node): boolean =>
+  isComputedFreeProperty(property) && isDocumentationKeyNode(property.key)
 
-const isDocumentationKeyNode = (value: unknown): boolean => isIdentifierKeyNode(value) || isLiteralKeyNode(value)
+const holdsDocumentationEntries = (properties: readonly Node[]): boolean =>
+  properties.length > 0 && properties.every(isDocumentationEntry)
 
-const hasObjectNode = (value: Node): boolean => 'object' in value && isAstNode(value.object)
+const isDocumentationOnlyObject = (node: Node): boolean =>
+  node.type === 'ObjectExpression' && holdsDocumentationEntries(node.properties)
 
-const hasPropertyNode = (value: Node): boolean => 'property' in value && isAstNode(value.property)
+const holdsDocumentationObjectArgument = (node: Node, call: CallExpression | undefined): boolean =>
+  isDocumentationOnlyObject(node) && holdsArgumentOf(node, call, 0, isAnnotationsCallee)
 
-const hasMemberEnds = (value: Node): boolean => hasObjectNode(value) && hasPropertyNode(value)
+const isCallNode = (node: Node | undefined): node is CallExpression =>
+  node !== undefined && node.type === 'CallExpression'
 
-const isAstNodeArray = (value: unknown): value is ReadonlyArray<Node> => Array.isArray(value) && value.every(isAstNode)
+const asCall = (node: Node | undefined): CallExpression | undefined => (isCallNode(node) ? node : undefined)
 
-const hasCalleeNode = (value: Node): boolean => 'callee' in value && isAstNode(value.callee)
+type PropertyNode = Extract<Node, { readonly type: 'Property' }>
+const isEntryNode = (property: PropertyNode | undefined): property is PropertyNode =>
+  property !== undefined && isDocumentationEntry(property)
 
-const hasArgumentNodes = (value: Node): boolean => 'arguments' in value && isAstNodeArray(value.arguments)
+const isDocumentationEntryValue = (property: PropertyNode | undefined, node: Node): boolean =>
+  isEntryNode(property) && property.value === node
 
-const hasCallEnds = (value: Node): boolean => hasCalleeNode(value) && hasArgumentNodes(value)
+const isObjectNode = (node: Node | undefined): node is ObjectExpression =>
+  node !== undefined && node.type === 'ObjectExpression'
 
-const hasDocumentationKeyNode = (value: Node): boolean => 'key' in value && isDocumentationKeyNode(value.key)
+const isObjectArgumentOfAnnotations = (object: Node | undefined, call: Node | undefined): boolean =>
+  isObjectNode(object) && holdsArgumentOf(object, asCall(call), 0, isAnnotationsCallee)
 
-const hasComputedFalse = (value: Node): boolean => 'computed' in value && value.computed === false
-
-const hasDocumentationPropertyFields = (value: Node): boolean =>
-  hasComputedFalse(value) && hasDocumentationKeyNode(value)
-
-const hasDocumentationEntries = (value: ReadonlyArray<unknown>): boolean =>
-  value.length > 0 && value.every(isDocumentationProperty)
-
-const isDocumentationArray = (value: unknown): value is ReadonlyArray<ObjectProperty> =>
-  Array.isArray(value) && hasDocumentationEntries(value)
-
-const hasPropertiesField = (value: Node): boolean => 'properties' in value && isDocumentationArray(value.properties)
-
-export const isIdentifier = (value: unknown): value is IdentifierReference =>
-  isNodeOfType(value, 'Identifier') && hasStringName(value)
-
-export const isStringLiteral = (value: unknown): value is StringLiteral =>
-  isNodeOfType(value, 'Literal') && hasStringValue(value)
-
-export const isObjectExpression = (value: unknown): value is ObjectExpression => isNodeOfType(value, 'ObjectExpression')
-
-export const isArrowFunctionExpression = (value: unknown): value is ArrowFunctionExpression =>
-  isNodeOfType(value, 'ArrowFunctionExpression')
-
-export const isMemberExpression = (value: unknown): value is MemberExpression =>
-  isNodeOfType(value, 'MemberExpression') && hasMemberEnds(value)
-
-export const isCallExpression = (value: unknown): value is CallExpression =>
-  isNodeOfType(value, 'CallExpression') && hasCallEnds(value)
-
-export const isDocumentationProperty = (value: unknown): value is ObjectProperty =>
-  isNodeOfType(value, 'Property') && hasDocumentationPropertyFields(value)
-
-export const isDocumentationObject = (value: unknown): value is ObjectExpression =>
-  isNodeOfType(value, 'ObjectExpression') && hasPropertiesField(value)
-
-export const SYMBOL_DESCRIPTION_IGNORED = 'Symbol.for() brand description is identity-only data, not behaviour' as const
-export const TAGGED_TAG_IGNORED = 'TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour' as const
-export const TAGGED_FIELDS_IGNORED = 'TaggedClass/TaggedError field schema is a declaration, not behaviour' as const
-export const CLASS_ID_IGNORED = 'Schema.Class identifier is a declaration name, not behaviour' as const
-export const CLASS_FIELDS_IGNORED = 'Schema.Class field schema is a declaration, not behaviour' as const
-export const BRAND_NAME_IGNORED = 'Schema.brand name is identity-only data, not behaviour' as const
-export const OPTIONAL_DEFAULT_IGNORED = 'optionalWith default value is config, not behaviour' as const
-export const ANNOTATION_OBJECT_IGNORED =
-  'annotations object holding only documentation is a declaration, not behaviour' as const
-export const ANNOTATION_TEXT_IGNORED = 'annotation documentation value is declaration data, not behaviour' as const
-
-const TAGGED_FACTORIES: readonly string[] = ['TaggedClass', 'TaggedError']
-
-/**
- * `Schema.Class` is curried the other way round from `Schema.TaggedClass`.
- *
- * `S.TaggedClass<A>()('tag', fields)` puts both the discriminant and the fields on the outer
- * call, so one callee predicate reaches both. `S.Class<A>('Id')(fields)` puts the identifier on
- * the *inner* call and the fields on the outer one, so the same declaration data needs two
- * predicates. Missing that shape is why a class-shaped schema kept fourteen mutants a
- * tag-shaped one never had.
- */
-const CLASS_FACTORY = 'Class'
-
-const isIdentifierNamed = (node: Node, name: string): boolean => isIdentifier(node) && node.name === name
-
-const isIdentifierIn = (node: Node, names: readonly string[]): boolean =>
-  isIdentifier(node) && names.includes(node.name)
-
-const isMemberNamed = (member: MemberExpression, object: string, property: string): boolean =>
-  isIdentifierNamed(member.object, object) && isIdentifierNamed(member.property, property)
-
-const isNamedMember = (node: Expression, object: string, property: string): boolean =>
-  isMemberExpression(node) && isMemberNamed(node, object, property)
-
-const isSymbolForCallee = (callee: Expression): boolean => isNamedMember(callee, 'Symbol', 'for')
-
-const isNamedFactoryReference = (reference: Expression, names: readonly string[]): boolean =>
-  isMemberExpression(reference) && isIdentifierIn(reference.property, names)
-
-const isTaggedFactoryReference = (reference: Expression): boolean =>
-  isNamedFactoryReference(reference, TAGGED_FACTORIES)
-
-const isClassFactoryReference = (reference: Expression): boolean => isNamedFactoryReference(reference, [CLASS_FACTORY])
-
-const isBrandCallee = (callee: Expression): boolean =>
-  isMemberExpression(callee) && isIdentifierNamed(callee.property, 'brand')
-
-const isTaggedFactoryCallee = (callee: Expression): boolean =>
-  isCallExpression(callee) && isTaggedFactoryReference(callee.callee)
-
-const isArgumentAt = (
-  node: Node | undefined,
-  call: CallExpression,
-  index: number,
-  calleeMatches: (callee: Expression) => boolean,
-): boolean => calleeMatches(call.callee) && call.arguments[index] === node
-
-const isArgumentOf = (
-  node: Node | undefined,
-  parent: Node | undefined,
-  index: number,
-  calleeMatches: (callee: Expression) => boolean,
-): boolean => isCallExpression(parent) && isArgumentAt(node, parent, index, calleeMatches)
-
-interface IgnoreRule {
-  readonly matches: (
-    node: Node,
-    parent: Node | undefined,
-    grandparent: Node | undefined,
-    ancestor: Node | undefined,
-  ) => boolean
+interface ArgumentRule {
+  readonly holds: (node: Node, call: CallExpression | undefined) => boolean
   readonly reason: string
 }
-
-const isOptionalWithCallee = (callee: Expression): boolean => isNamedMember(callee, 'S', 'optionalWith')
-
-const isAnnotationsCallee = (callee: Expression): boolean =>
-  isMemberExpression(callee) && isIdentifierNamed(callee.property, 'annotations')
-
 const argumentRule = (
-  is: (node: Node) => boolean,
-  argumentIndex: number,
-  calleeMatches: (callee: Expression) => boolean,
+  index: number,
+  callee: (expression: Expression) => boolean,
   reason: string,
-): IgnoreRule => ({
-  matches: (node, parent) => is(node) && isArgumentOf(node, parent, argumentIndex, calleeMatches),
-  reason,
-})
+): ArgumentRule => ({ holds: (node, call) => holdsArgumentOf(node, call, index, callee), reason })
 
-/**
- * A documentation-keyed entry of an `annotations` call. Unlike the object rule
- * this does not care what sits beside it: `title` is documentation whether or
- * not an `arbitrary` shares the object, because replacing the title cannot
- * change what the schema does. Emptying the whole object could, which is why
- * that rule is the stricter of the two.
- */
-const isDocumentationPropertyValue = (node: Node, parent: Node | undefined): boolean =>
-  isDocumentationProperty(parent) && parent.value === node
-
-const documentationValueRule: IgnoreRule = {
-  matches: (node, parent, grandparent, ancestor) =>
-    isDocumentationPropertyValue(node, parent) && isArgumentOf(grandparent, ancestor, 0, isAnnotationsCallee),
-  reason: ANNOTATION_TEXT_IGNORED,
-}
-
-const RULES: readonly IgnoreRule[] = [
-  argumentRule(isStringLiteral, 0, isSymbolForCallee, SYMBOL_DESCRIPTION_IGNORED),
-  argumentRule(isStringLiteral, 0, isTaggedFactoryCallee, TAGGED_TAG_IGNORED),
-  argumentRule(isObjectExpression, 1, isTaggedFactoryCallee, TAGGED_FIELDS_IGNORED),
-  argumentRule(isStringLiteral, 0, isClassFactoryReference, CLASS_ID_IGNORED),
-  argumentRule(isStringLiteral, 0, isBrandCallee, BRAND_NAME_IGNORED),
-  argumentRule(isArrowFunctionExpression, 1, isOptionalWithCallee, OPTIONAL_DEFAULT_IGNORED),
-  argumentRule(isDocumentationObject, 0, isAnnotationsCallee, ANNOTATION_OBJECT_IGNORED),
-  documentationValueRule,
+const LITERAL_ARGUMENT_RULES: readonly ArgumentRule[] = [
+  argumentRule(0, isSymbolForCallee, SYMBOL_DESCRIPTION_IGNORED),
+  argumentRule(0, isTaggedFactoryCallee, TAGGED_TAG_IGNORED),
+  argumentRule(0, isClassFactoryCallee, CLASS_ID_IGNORED),
+  argumentRule(0, isBrandCallee, BRAND_NAME_IGNORED),
 ]
 
-export const decideSchemaDeclarationIgnore = (
+const OBJECT_ARGUMENT_RULES: readonly ArgumentRule[] = [
+  argumentRule(1, isTaggedFactoryCallee, TAGGED_FIELDS_IGNORED),
+  {
+    holds: holdsDocumentationObjectArgument,
+    reason: ANNOTATION_OBJECT_IGNORED,
+  },
+]
+
+const ARROW_ARGUMENT_RULES: readonly ArgumentRule[] = [
+  argumentRule(1, isOptionalWithCallee, OPTIONAL_DEFAULT_IGNORED),
+]
+
+const firstArgumentReason = (
+  rules: readonly ArgumentRule[],
   node: Node,
-  ancestors: readonly Node[],
-): string | undefined => {
-  const [parent, grandparent, ancestor] = ancestors
-  return RULES.find((rule) => rule.matches(node, parent, grandparent, ancestor))?.reason
+  call: CallExpression | undefined,
+): string | undefined => rules.find((rule) => rule.holds(node, call))?.reason
+
+const isDocumentedAnnotationValue = (node: Node, ctx: IgnorerContext): boolean => {
+  const property = ctx.parentIf('Property')
+  return isDocumentationEntryValue(property, node) &&
+    isObjectArgumentOfAnnotations(ctx.ancestors[1], ctx.ancestors[2])
 }
+
+const documentationValueReason = (node: Node, ctx: IgnorerContext): string | undefined =>
+  isDocumentedAnnotationValue(node, ctx) ? ANNOTATION_TEXT_IGNORED : undefined
+
+export const strykerIgnorers: readonly Ignorer[] = [
+  defineIgnorer({
+    name: 'effect-schema-declarations',
+    visitors: {
+      Literal: (node, ctx) => {
+        const parent = ctx.parentIf('CallExpression')
+        return firstArgumentReason(LITERAL_ARGUMENT_RULES, node, parent) ?? documentationValueReason(node, ctx)
+      },
+      ObjectExpression: (node, ctx) => {
+        const parent = ctx.parentIf('CallExpression')
+        return firstArgumentReason(OBJECT_ARGUMENT_RULES, node, parent)
+      },
+      ArrowFunctionExpression: (node, ctx) => {
+        const parent = ctx.parentIf('CallExpression')
+        return firstArgumentReason(ARROW_ARGUMENT_RULES, node, parent)
+      },
+    },
+  }),
+]

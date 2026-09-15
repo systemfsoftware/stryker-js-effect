@@ -1,9 +1,3 @@
-import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import { IN_SOURCE_TEST_IGNORED, strykerIgnorers, VITEST_META_PROPERTY } from './InSourceTestIgnore.js'
 
-import { decideInSourceTestIgnore, IN_SOURCE_TEST_IGNORED, isInSourceTestGuard } from './InSourceTestIgnore.js'
-
-export const strykerIgnorers: readonly Ignorer[] = [
-  { name: 'in-source-vitest-block', shouldIgnore: decideInSourceTestIgnore },
-]
-
-export { decideInSourceTestIgnore, IN_SOURCE_TEST_IGNORED, isInSourceTestGuard }
+export { IN_SOURCE_TEST_IGNORED, strykerIgnorers, VITEST_META_PROPERTY }

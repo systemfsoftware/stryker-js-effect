@@ -1,23 +1,24 @@
 {
-  "name": "@systemfsoftware/stryker-ignorer-in-source-vitest-block",
+  "name": "@systemfsoftware/stryker-ignorer-kit",
   "license": "Apache-2.0",
   "version": "0.0.0",
   "author": "Ryan Lee <drdgvhbh@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
-    "directory": "packages/ignorers/in-source-vitest-block"
+    "directory": "packages/ignorers/kit"
   },
-  "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/ignorers/in-source-vitest-block#readme",
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/ignorers/kit#readme",
   "bugs": {
     "url": "https://github.com/systemfsoftware/stryker-js-effect/issues"
   },
-  "description": "Stryker ignorer that removes mutants inside `if (import.meta.vitest)` guards — test code unreachable in a mutation run.",
+  "description": "Authoring and testing kit for Stryker ignorers — typed visitors compiled to the Ignorer wire contract, and a RuleTester-shaped harness that verifies them from source snippets.",
   "keywords": [
     "stryker",
     "stryker-mutator",
     "mutation-testing",
-    "ignorer"
+    "ignorer",
+    "testing"
   ],
   "type": "module",
   "files": [
@@ -28,6 +29,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.mjs"
     },
+    "./tester": {
+      "types": "./dist/tester.d.ts",
+      "default": "./dist/tester.mjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -37,12 +42,13 @@
     "test": "vitest run",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "attw": "attw --pack .",
-    "api:check": "tsdown && api-extractor run",
-    "api:update": "api-extractor run --local"
+    "api:check": "tsdown && concurrently --kill-others-on-fail \"api-extractor run\" \"api-extractor run --config api-extractor.tester.json\"",
+    "api:update": "concurrently --kill-others-on-fail \"api-extractor run --local\" \"api-extractor run --local --config api-extractor.tester.json\""
   },
   "dependencies": {
     "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
-    "@systemfsoftware/stryker-ignorer-kit": "workspace:^"
+    "oxc-parser": "catalog:",
+    "oxc-walker": "catalog:"
   },
   "devDependencies": {
     "@microsoft/api-extractor": "catalog:",
@@ -51,6 +57,7 @@
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
+    "concurrently": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
@@ -64,6 +71,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.mjs"
+      },
+      "./tester": {
+        "types": "./dist/tester.d.ts",
+        "default": "./dist/tester.mjs"
       },
       "./package.json": "./package.json"
     }
