@@ -25,10 +25,14 @@
   ],
   "exports": {
     ".": {
+      "@systemfsoftware/source": "./src/mod.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.mjs"
     },
-    "./package.json": "./package.json"
+    "./package.json": {
+      "types": "./package.json",
+      "default": "./package.json"
+    }
   },
   "scripts": {
     "build": "tsdown && pnpm api:check",
@@ -65,7 +69,10 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.mjs"
       },
-      "./package.json": "./package.json"
+      "./package.json": {
+        "types": "./package.json",
+        "default": "./package.json"
+      }
     }
   }
 }
