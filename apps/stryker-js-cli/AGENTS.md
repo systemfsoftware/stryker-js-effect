@@ -10,12 +10,3 @@
 | **CLI-D2** | Parser is aliased to WASI build (`oxc-parser`); WASM binary in `dist/`                 | `node apps/stryker-js-cli/dist/main.mjs --version`                                                                                                 |
 | **CLI-D3** | HTML reporter bundle baked at build-time into `dist/reporters/html.mjs`                | `node -e "const s=fs.readFileSync('apps/stryker-js-cli/dist/reporters/html.mjs','utf8'); if(!s.includes('MutationTestElements')) process.exit(1)"` |
 | **CLI-L1** | `oxlint.config.ts` extends `@systemfsoftware/all` plus strict trio                     | `pnpm --filter @systemfsoftware/stryker-js-cli lint`                                                                                               |
-
-## Verification
-
-```bash
-pnpm --filter @systemfsoftware/stryker-js-cli build
-pnpm --filter @systemfsoftware/stryker-js-cli typecheck
-pnpm --filter @systemfsoftware/stryker-js-cli test
-pnpm --filter @systemfsoftware/stryker-js-cli lint
-```
