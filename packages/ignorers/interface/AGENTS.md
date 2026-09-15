@@ -12,14 +12,14 @@ land here. It carries no coverage gate — with no runtime code there is nothing
 
 ## Rules
 
-| ID      | Rule                                                                                                                                                                             | Gate                                                                 |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| **SI1** | No `effect` or `@effect/*` import in any source or built file — the preset's `no-restricted-imports` ban is the gate.                                                            | `pnpm --filter @systemfsoftware/stryker-ignorer-interface lint`      |
-| **SI2** | No `effect` or `@effect/*` key in any dependency block of `package.json`.                                                                                                        | `review` — the reviewer reads the dependency blocks                  |
-| **SI3** | Types only: no source or built file exports a value, a function, or a class — `dist/index.mjs` stays empty and every export is a type.                                           | `pnpm --filter @systemfsoftware/stryker-ignorer-interface build`     |
-| **SI4** | An ignorer's absence is never a reason: `shouldIgnore` returns a reason string or `undefined`, nothing else.                                                                     | `review` — the reviewer reads the declared signature                 |
-| **SI5** | The published surface is exactly what `etc/stryker-ignorer-interface.api.md` lists; the report is regenerated with `pnpm api:update`, never hand-edited.                         | `pnpm --filter @systemfsoftware/stryker-ignorer-interface build`     |
-| **SI6** | No runtime test suite ships: the package has no behaviour to pin. Type-level contracts are pinned in `tests/interface.test-d.ts` — never executed, enforced by the type-checker. | `pnpm --filter @systemfsoftware/stryker-ignorer-interface typecheck` |
+| ID      | Rule                                                                                                                                                                                           | Gate                                                             |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| **SI1** | No `effect` or `@effect/*` import in any source or built file — the preset's `no-restricted-imports` ban is the gate.                                                                          | `pnpm --filter @systemfsoftware/stryker-ignorer-interface lint`  |
+| **SI2** | No `effect` or `@effect/*` key in any dependency block of `package.json`.                                                                                                                      | `review` — the reviewer reads the dependency blocks              |
+| **SI3** | Types only: no source or built file exports a value, a function, or a class — `dist/index.mjs` stays empty and every export is a type.                                                         | `pnpm --filter @systemfsoftware/stryker-ignorer-interface build` |
+| **SI4** | An ignorer's absence is never a reason: `shouldIgnore` returns a reason string or `undefined`, nothing else.                                                                                   | `review` — the reviewer reads the declared signature             |
+| **SI5** | The published surface is exactly what `etc/stryker-ignorer-interface.api.md` lists; the report is regenerated with `pnpm api:update`, never hand-edited.                                       | `pnpm --filter @systemfsoftware/stryker-ignorer-interface build` |
+| **SI6** | No runtime test suite ships: the package has no behaviour to pin. Type-level contracts are pinned in `tests/interface.test-d.ts` and executed by Vitest's typecheck mode inside the test task. | `pnpm --filter @systemfsoftware/stryker-ignorer-interface test`  |
 
 The reviewer's decision on each `review`-gated row, shown as `wrong:`/`right:`:
 
