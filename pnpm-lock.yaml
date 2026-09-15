@@ -633,6 +633,9 @@ importers:
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
         version: 8.1.0(effect@4.0.0-rc.112)
+      '@systemfsoftware/stryker-framework-interface':
+        specifier: workspace:^
+        version: link:../frameworks/interface
       '@systemfsoftware/stryker-js-language':
         specifier: workspace:^
         version: link:../stryker-js-language
