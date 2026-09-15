@@ -26,13 +26,13 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
       "@systemfsoftware/source": "./src/mod.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.mjs"
     },
     "./tester": {
-      "types": "./dist/tester.d.ts",
       "@systemfsoftware/source": "./src/tester.ts",
+      "types": "./dist/tester.d.ts",
       "default": "./dist/tester.mjs"
     },
     "./package.json": "./package.json"

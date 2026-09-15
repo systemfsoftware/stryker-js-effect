@@ -1,4 +1,4 @@
-import { SOURCE_CONDITION, sourceExports, typesPathFor, withTypesFirst } from '@systemfsoftware/tsdown-config'
+import { SOURCE_CONDITION, sourceExports, typesPathFor, withSourceFirst } from '@systemfsoftware/tsdown-config'
 import { describe, expect, it } from 'vitest'
 
 describe('typesPathFor', () => {
@@ -12,32 +12,32 @@ describe('typesPathFor', () => {
   })
 })
 
-describe('withTypesFirst', () => {
+describe('withSourceFirst', () => {
   it('turns a string entry into types before default', () => {
-    expect(withTypesFirst('./dist/index.mjs', '.d.ts')).toEqual({
+    expect(withSourceFirst('./dist/index.mjs', '.d.ts')).toEqual({
       types: './dist/index.d.ts',
       default: './dist/index.mjs',
     })
   })
 
-  it('orders an object entry as types, source condition, default', () => {
+  it('orders an object entry as source condition, types, default', () => {
     const entry = {
       default: './dist/index.mjs',
       [SOURCE_CONDITION]: './src/index.ts',
     }
-    expect(Object.keys(withTypesFirst(entry, '.d.mts'))).toEqual(['types', SOURCE_CONDITION, 'default'])
+    expect(Object.keys(withSourceFirst(entry, '.d.mts'))).toEqual([SOURCE_CONDITION, 'types', 'default'])
   })
 
   it('keeps an explicit types path instead of deriving one', () => {
     const entry = { types: './dist/custom.d.mts', default: './dist/index.mjs' }
-    const ordered = withTypesFirst(entry, '.d.mts')
+    const ordered = withSourceFirst(entry, '.d.mts')
     if (typeof ordered === 'string') throw new Error('expected an object entry')
     expect(ordered['types']).toBe('./dist/custom.d.mts')
   })
 
   it('drops an absent source condition key instead of writing undefined', () => {
     const entry = { types: './dist/index.d.ts', default: './dist/index.mjs' }
-    expect(Object.keys(withTypesFirst(entry, '.d.ts'))).toEqual(['types', 'default'])
+    expect(Object.keys(withSourceFirst(entry, '.d.ts'))).toEqual(['types', 'default'])
   })
 })
 
