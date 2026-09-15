@@ -1,10 +1,7 @@
-/**
- * Printer — turns the instrumenter's ASTs back into source text. The owned
- * ESTree printer (`./print/index.js`) renders; the script-root offsets that
- * html/svelte slicing needs come from the parsed `range`.
- */
+import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import { spanOf } from './Ast.js'
+import type { FormatRegistry } from './format-registry.js'
 import { type Hashbang, printProgram } from './print/index.js'
 import {
   type Ast,
@@ -20,20 +17,14 @@ export type Printer<T extends Ast> = (file: T, context: PrinterContext) => strin
 export interface PrinterContext {
   print: Printer<Ast>
 }
-export function print(file: Ast): string {
-  const context: PrinterContext = { print }
-  switch (file.format) {
-    case 'js':
-      return jsPrint(file, context)
-    case 'ts':
-      return tsPrint(file, context)
-    case 'tsx':
-      return tsPrint(file, context)
-    case 'html':
-      return htmlPrint(file, context)
-    case 'svelte':
-      return sveltePrint(file, context)
-  }
+export function print(file: Ast, registry: FormatRegistry): string {
+  const context: PrinterContext = { print: (inner) => print(inner, registry) }
+  return Option.match(registry.entryForFormat(file.format), {
+    onNone: () => {
+      throw new Error(`No registered format renders the "${file.format}" AST`)
+    },
+    onSome: (entry) => entry.print(file, context),
+  })
 }
 
 const HASHBANG_FIELDS: Readonly<Record<string, (field: unknown) => boolean>> = {
@@ -52,11 +43,11 @@ const hashbangOf = (root: Ast['root']): Hashbang | null => {
   return hashbang
 }
 
-const jsPrint: Printer<JSAst> = (file) => {
+export const jsPrint: Printer<JSAst> = (file) => {
   return printProgram(file.root, { hashbang: hashbangOf(file.root) })
 }
 
-const tsPrint: Printer<TSAst | TsxAst> = (file) => {
+export const tsPrint: Printer<TSAst | TsxAst> = (file) => {
   return printProgram(file.root, { hashbang: hashbangOf(file.root) })
 }
 
@@ -76,7 +67,7 @@ function getScriptEnd(script: HtmlAst['root']['scripts'][number]): number {
   return span.end
 }
 
-const htmlPrint: Printer<HtmlAst> = (ast, context) => {
+export const htmlPrint: Printer<HtmlAst> = (ast, context) => {
   const sortedScripts = [...ast.root.scripts].sort(
     (a, b) => getScriptStart(a) - getScriptStart(b),
   )
@@ -98,7 +89,7 @@ interface SvelteOutput {
   readonly cursor: number
 }
 
-const sveltePrint: Printer<SvelteAst> = ({ root, rawContent }, context) => {
+export const sveltePrint: Printer<SvelteAst> = ({ root, rawContent }, context) => {
   const sortedScripts = [root.moduleScript, ...root.additionalScripts]
     .filter(Predicate.isNotNullish)
     .sort((a, b) => a.range.start - b.range.start)

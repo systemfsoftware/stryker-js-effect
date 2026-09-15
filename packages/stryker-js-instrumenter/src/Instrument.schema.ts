@@ -37,7 +37,6 @@ export const FileSchema = S.Struct({
 })
 
 const IgnorerSchema = S.Unknown
-const AstSchema = S.Unknown
 
 const InstrumenterOptionsSchema = S.Struct({
   excludedMutations: S.Array(S.String),
@@ -47,25 +46,20 @@ const InstrumenterOptionsSchema = S.Struct({
 
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
 
-export class InstrumentCommand extends S.TaggedClass<InstrumentCommand>()('InstrumentCommand', {
-  files: S.Array(FileSchema),
-  options: InstrumenterOptionsSchema,
+export class InstrumentFileSkip extends S.TaggedClass<InstrumentFileSkip>()('InstrumentFileSkip', {
+  file: S.String,
+  extension: S.String,
+  reason: S.String,
 }) {}
 
-export class InstrumentDecoded extends S.TaggedClass<InstrumentDecoded>()('InstrumentDecoded', {
-  files: S.Array(FileSchema),
-  options: InstrumenterOptionsSchema,
-  asts: S.Array(AstSchema),
-  mutants: S.Array(Mutant),
-}) {}
-
-export class InstrumentDecision extends S.TaggedClass<InstrumentDecision>()('InstrumentDecision', {
-  files: S.Array(FileSchema),
-  mutants: S.Array(Mutant),
-  asts: S.Array(AstSchema),
+export class InstrumentFilesCommand extends S.TaggedClass<InstrumentFilesCommand>()('InstrumentFilesCommand', {
+  fileCount: S.Finite,
+  claimedCount: S.Finite,
+  skipped: S.Array(InstrumentFileSkip),
 }) {}
 
 export class InstrumentResult extends S.TaggedClass<InstrumentResult>()('InstrumentResult', {
   files: S.Array(FileSchema),
   mutants: S.Array(Mutant),
+  skipped: S.Array(InstrumentFileSkip),
 }) {}

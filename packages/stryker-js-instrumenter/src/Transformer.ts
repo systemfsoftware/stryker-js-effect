@@ -52,12 +52,12 @@ import { allMutators } from './Mutator.js'
 import { parseWithOxc } from './Parser.js'
 import {
   type Ast,
-  type AstByFormat,
-  AstFormat,
+  type HtmlAst,
   locationIncluded,
   locationOverlaps,
-  type ScriptFormat,
+  type ScriptAst,
   type SourceLocationInFile,
+  type SvelteAst,
 } from './Syntax.js'
 import { PlacementFailed, TransformFailed } from './Transformer.schema.js'
 export { PlacementFailed, TransformFailed }
@@ -1147,19 +1147,19 @@ export async function transform(
   }
 }
 
-export type AstTransformer<T extends AstFormat> = (
-  ast: AstByFormat[T],
+export type AstTransformer<T extends Ast = Ast> = (
+  ast: T,
   mutantCollector: MutantCollector,
   context: TransformerContext,
 ) => Promise<readonly string[]>
 
 export interface TransformerContext {
-  transform: AstTransformer<AstFormat>
+  transform: AstTransformer
   options: TransformerOptions
   mutateDescription: MutateDescription
 }
 
-export const transformHtml: AstTransformer<'html'> = async (
+export const transformHtml: AstTransformer<HtmlAst> = async (
   { root },
   mutantCollector,
   context,
@@ -1174,7 +1174,7 @@ export const transformHtml: AstTransformer<'html'> = async (
 const moduleScriptStart = '<script context="module">\n'
 const moduleScript = `${moduleScriptStart}\n</script>\n`
 
-export const transformSvelte: AstTransformer<'svelte'> = async (
+export const transformSvelte: AstTransformer<SvelteAst> = async (
   svelte,
   mutantCollector,
   context,
@@ -1199,7 +1199,7 @@ export const transformSvelte: AstTransformer<'svelte'> = async (
 }
 
 async function placeModuleHeaderIfNeeded(
-  svelte: AstByFormat['svelte'],
+  svelte: SvelteAst,
   mutantCollector: MutantCollector,
 ): Promise<void> {
   if (hasPlacedMutants(mutantCollector, svelte.originFileName)) {
@@ -1207,7 +1207,7 @@ async function placeModuleHeaderIfNeeded(
   }
 }
 
-async function placeModuleHeader(svelte: AstByFormat['svelte']): Promise<void> {
+async function placeModuleHeader(svelte: SvelteAst): Promise<void> {
   const { root, originFileName } = svelte
   if (!root.moduleScript) {
     root.moduleScript = {
@@ -1248,7 +1248,7 @@ function isMutateRangeList(value: MutateDescription): value is readonly SourceLo
   return Array.isArray(value)
 }
 
-export const transformScript: AstTransformer<ScriptFormat> = async (
+export const transformScript: AstTransformer<ScriptAst> = async (
   { root, originFileName, rawContent, offset, comments },
   mutantCollector,
   { options, mutateDescription },

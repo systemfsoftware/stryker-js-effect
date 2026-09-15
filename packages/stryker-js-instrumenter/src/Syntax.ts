@@ -4,20 +4,10 @@
 import type { Position } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 import type { Program } from './Ast.js'
-import { AstFormat as SchemaAstFormat } from './Syntax.schema.js'
 
-export const AstFormat = SchemaAstFormat
-export type AstFormat = typeof SchemaAstFormat.Type
-export interface AstByFormat {
-  html: HtmlAst
-  js: JSAst
-  ts: TSAst
-  tsx: TsxAst
-  svelte: SvelteAst
-}
 export type Ast = HtmlAst | JSAst | SvelteAst | TSAst | TsxAst
 
-export type ScriptFormat = Extract<AstFormat, 'js' | 'ts' | 'tsx'>
+export type ScriptFormat = Extract<Ast['format'], 'js' | 'ts' | 'tsx'>
 
 /**
  * A parsed comment with its source span. oxc emits comments flat with offsets

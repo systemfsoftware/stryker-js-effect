@@ -6,22 +6,17 @@ import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import type { OxcError } from 'oxc-parser'
 import path from 'path'
 import { buildLineTable, type Node, positionFromLineTable, type Program } from './Ast.js'
+import type { FormatEntry, FormatRegistry, ScriptFormatEntry } from './format-registry.js'
 import { loadOxc } from './Oxc.js'
-import {
-  ParseFailed,
-  ParserNotFound,
-  SvelteParseFailed,
-  SvelteVersionNotSupported,
-  SvelteWalkerNotFound,
-} from './Parser.schema.js'
-import { type SpannedComment } from './Syntax.js'
+import { ParseFailed, ParserNotFound, SvelteVersionNotSupported, SvelteWalkerNotFound } from './Parser.schema.js'
+import { FormatAssigned, type FormatResolutionDecision } from './resolve-format.workflow.js'
 import {
   type Ast,
-  type AstByFormat,
-  type AstFormat,
   computeLineStarts,
   type HtmlAst,
   type HtmlRootNode,
@@ -30,22 +25,18 @@ import {
   type Range,
   type ScriptAst,
   type ScriptFormat,
+  type SpannedComment,
   type SvelteAst,
   type SvelteRootNode,
   type TemplateScript,
   type TSAst,
   type TsxAst,
 } from './Syntax.js'
-export { ParseFailed, ParserNotFound, SvelteParseFailed, SvelteVersionNotSupported, SvelteWalkerNotFound }
 
 export interface ParserOptions {}
 
 export interface ParserContext {
-  parse<T extends AstFormat>(
-    code: string,
-    fileName: string,
-    formatOverride?: T,
-  ): Promise<AstByFormat[T]>
+  parse: (code: string, fileName: string, scriptFormat: ScriptFormat) => Promise<ScriptAst>
 }
 
 export type Parser<T extends Ast = Ast> = (
@@ -172,79 +163,105 @@ function shiftScriptOffsets(ast: Ast, offset: number): void {
 // Top-level dispatcher
 // ---------------------------------------------------------------------------
 
-export function createParser(): {
-  <T extends AstFormat>(
-    code: string,
-    fileName: string,
-    formatOverride: T,
-  ): Promise<AstByFormat[T]>
-  (code: string, fileName: string, formatOverride?: AstFormat): Promise<Ast>
-} {
-  const jsParse = createJSParser()
-
-  async function parse<T extends AstFormat>(
-    code: string,
-    fileName: string,
-    formatOverride: T,
-  ): Promise<AstByFormat[T]>
-  async function parse(
-    code: string,
-    fileName: string,
-    formatOverride?: AstFormat,
-  ): Promise<Ast>
-  async function parse(
-    code: string,
-    fileName: string,
-    formatOverride?: AstFormat,
-  ): Promise<Ast> {
-    const format = getFormat(fileName, formatOverride)
-    if (!format) {
-      const ext = path.extname(fileName).toLowerCase()
-      throw new ParserNotFound({ fileName, extension: ext, cause: undefined })
-    }
-    return Match.value(format).pipe(
-      Match.when('js', () => jsParse(code, fileName)),
-      Match.when('tsx', () => parseTsx(code, fileName)),
-      Match.when('ts', () => parseTS(code, fileName)),
-      Match.when('html', () => parseHtml(code, fileName, { parse })),
-      Match.when('svelte', () => parseSvelte(code, fileName, { parse })),
-      Match.exhaustive,
-    )
-  }
-
-  return parse
+type ParseFn = {
+  (code: string, fileName: string, formatOverride: ScriptFormat): Promise<ScriptAst>
+  (code: string, fileName: string, formatOverride?: ScriptFormat): Promise<Ast>
 }
 
-const FORMAT_BY_EXTENSION: Readonly<Record<string, AstFormat>> = {
-  '.js': 'js',
-  '.jsx': 'js',
-  '.mjs': 'js',
-  '.cjs': 'js',
-  '.mts': 'ts',
-  '.cts': 'ts',
-  '.ts': 'ts',
-  '.tsx': 'tsx',
-  '.vue': 'html',
-  '.html': 'html',
-  '.htm': 'html',
-  '.svelte': 'svelte',
+const notFound = (fileName: string, extension: string): ParserNotFound =>
+  new ParserNotFound({ fileName, extension, cause: undefined })
+
+const entryOf = (registry: FormatRegistry, fileName: string, formatId: string): FormatEntry =>
+  Option.match(registry.entryForFormat(formatId), {
+    onNone: () => {
+      throw notFound(fileName, formatId)
+    },
+    onSome: (entry) => entry,
+  })
+
+const scriptEntryOf = (entry: FormatEntry): ScriptFormatEntry =>
+  'scriptFormat' in entry ? entry : rejectNonScriptEntry(entry)
+
+function rejectNonScriptEntry(entry: FormatEntry): never {
+  throw new Error(`Format "${entry.claim.formatId}" is not a script format`)
 }
 
-export function getFormat(
+const entryForDecision = (
+  registry: FormatRegistry,
   fileName: string,
-  override?: AstFormat,
-): AstFormat | undefined {
-  return override ?? FORMAT_BY_EXTENSION[path.extname(fileName).toLowerCase()]
+  decision: FormatResolutionDecision,
+): FormatEntry =>
+  Match.value(decision).pipe(
+    Match.when(S.is(FormatAssigned), (assigned) => entryOf(registry, fileName, assigned.formatId)),
+    Match.orElse(() => {
+      throw notFound(fileName, path.extname(fileName).toLowerCase())
+    }),
+  )
+
+const assignedEntry = (
+  registry: FormatRegistry,
+  resolution: Result.Result<FormatResolutionDecision, unknown>,
+  fileName: string,
+): FormatEntry =>
+  Match.value(resolution).pipe(
+    Match.when(Result.isSuccess, (resolved) => entryForDecision(registry, fileName, resolved.success)),
+    Match.orElse(() => {
+      throw notFound(fileName, path.extname(fileName).toLowerCase())
+    }),
+  )
+
+async function parseByRegistry(
+  registry: FormatRegistry,
+  context: ParserContext,
+  code: string,
+  fileName: string,
+  scriptFormat: ScriptFormat,
+): Promise<ScriptAst> {
+  const entry = scriptEntryOf(assignedEntry(registry, registry.resolve(fileName, scriptFormat), fileName))
+  const ast = await entry.parse(code, fileName, context)
+  return isScriptAst(ast) ? ast : rejectNonScriptAst(ast)
+}
+
+const SCRIPT_FORMATS: readonly ScriptFormat[] = ['js', 'ts', 'tsx']
+
+const isScriptAst = (ast: Ast): ast is ScriptAst => (SCRIPT_FORMATS as readonly string[]).includes(ast.format)
+
+function rejectNonScriptAst(ast: Ast): never {
+  throw new Error(`Expected a script AST, received the "${ast.format}" format`)
+}
+
+async function parseFile(
+  registry: FormatRegistry,
+  context: ParserContext,
+  code: string,
+  fileName: string,
+  formatOverride?: ScriptFormat,
+): Promise<Ast> {
+  return assignedEntry(registry, registry.resolve(fileName, formatOverride), fileName).parse(
+    code,
+    fileName,
+    context,
+  )
+}
+
+export function createParser(registry: FormatRegistry): ParseFn {
+  const context: ParserContext = {
+    parse: (code, fileName, scriptFormat) => parseByRegistry(registry, context, code, fileName, scriptFormat),
+  }
+  function parse(code: string, fileName: string, formatOverride: ScriptFormat): Promise<ScriptAst>
+  function parse(code: string, fileName: string, formatOverride?: ScriptFormat): Promise<Ast>
+  function parse(code: string, fileName: string, formatOverride?: ScriptFormat): Promise<Ast> {
+    return parseFile(registry, context, code, fileName, formatOverride)
+  }
+  return parse
 }
 
 // ---------------------------------------------------------------------------
 // JS parser
 // ---------------------------------------------------------------------------
-function createJSParser(): (text: string, fileName: string) => Promise<JSAst> {
-  return async function parse(text: string, fileName: string): Promise<JSAst> {
-    const { root, comments } = await parseWithOxc(text, fileName, 'js')
-    return { originFileName: fileName, rawContent: text, format: 'js', root, comments }
-  }
+export async function parseJS(text: string, fileName: string): Promise<JSAst> {
+  const { root, comments } = await parseWithOxc(text, fileName, 'js')
+  return { originFileName: fileName, rawContent: text, format: 'js', root, comments }
 }
 
 // ---------------------------------------------------------------------------
@@ -349,23 +366,17 @@ async function ngHtmlParser(
 
   return root
 
-  async function parseScript<T extends ScriptFormat>(
-    el: NGAst.Element,
-    scriptFormat: T,
-  ): Promise<AstByFormat[T]> {
+  async function parseScript(el: NGAst.Element, scriptFormat: ScriptFormat): Promise<ScriptAst> {
     const ast = await parserContext.parse(elementScriptText(el, text), fileName, scriptFormat)
-    if (ast != null) {
-      const offset = el.startSourceSpan.end
-      shiftScriptOffsets(ast, offset.offset)
-      return {
-        ...ast,
-        offset: {
-          column: offset.offset,
-          line: offset.line,
-        },
-      }
+    const offset = el.startSourceSpan.end
+    shiftScriptOffsets(ast, offset.offset)
+    return {
+      ...ast,
+      offset: {
+        column: offset.offset,
+        line: offset.line,
+      },
     }
-    return ast
   }
 }
 
