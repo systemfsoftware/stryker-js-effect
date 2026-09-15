@@ -1,6 +1,6 @@
 # AGENTS.md — `@systemfsoftware/stryker-ignorer-effect-schema-declarations`
 
-Stryker ignorer for Effect Schema declarations: removes proven-equivalent mutants on brands, `TaggedClass`/`TaggedError` tags and field schemas, `optionalWith` defaults, and documentation annotations. The AST guards are this package's own predicates over the node shapes, whose types come from `@systemfsoftware/stryker-ignorer-interface` — the package's one dependency, and it ships types only; no Effect is imported, bundled, or depended on. Root `AGENTS.md` governs.
+Stryker ignorer for Effect Schema declarations: removes proven-equivalent mutants on brands, `TaggedClass`/`TaggedError` tags and field schemas, `optionalWith` defaults, and documentation annotations. The ignorer is authored as typed visitors through `@systemfsoftware/stryker-ignorer-kit`, which compiles the visitor declaration to the wire contract; the package's dependencies are `@systemfsoftware/stryker-ignorer-interface` (node types, nothing that runs) and the kit. No Effect is imported, bundled, or depended on. Root `AGENTS.md` governs.
 
 ## Rules
 
@@ -20,8 +20,8 @@ SP3's reviewer decides one thing: whether the module reaches mutation through th
 
 SP6's reviewer decides one thing: whether every expected value is an oracle the decision under test did not produce.
 
-- `wrong:` `expect(shouldIgnore(path)).toMatchSnapshot()` — the snapshot re-records whatever the rule currently answers.
-- `right:` `expect(shouldIgnore(path)).toBe(SYMBOL_DESCRIPTION_IGNORED)` — the exported reason constant, written from the rule's intent.
+- `wrong:` hand-built AST fixtures consulted node-by-node — they mirror the parser's output by hand and drift from it.
+- `right:` source-snippet cases through `testIgnorer` — the real parser and walker decide, and each expectation names a source-text span and reason constant.
 
 ## Verification
 

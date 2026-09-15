@@ -1,4 +1,3 @@
-import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -12,399 +11,186 @@ import {
   TAGGED_FIELDS_IGNORED,
   TAGGED_TAG_IGNORED,
 } from '@systemfsoftware/stryker-ignorer-effect-schema-declarations'
-
-import {
-  annotationsCall,
-  arrowFunction,
-  bareFactoryCall,
-  brandCall,
-  callOf,
-  classCall,
-  identifier,
-  memberOf,
-  namedProperty,
-  objectExpression,
-  objectOf,
-  propertyOf,
-  stringLiteral,
-  symbolForCall,
-  taggedCall,
-} from './__fixtures__/EffectSchemaAst.fixtures.js'
-
-const brandDescription = stringLiteral('MyBrand')
-const brandDescriptionCall = symbolForCall(brandDescription)
-
-const keyForDescription = stringLiteral('desc')
-const keyForCall = callOf(memberOf('Symbol', 'keyFor'), [keyForDescription])
-
-const objectForDescription = stringLiteral('desc')
-const objectForCall = callOf(memberOf('Object', 'for'), [objectForDescription])
-
-const iteratorDescription = stringLiteral('desc')
-const iteratorCall = callOf(memberOf('Symbol', 'iterator'), [iteratorDescription])
-
-const unheldDescription = stringLiteral('MyBrand')
-const otherDescription = stringLiteral('Other')
-const unheldDescriptionCall = symbolForCall(otherDescription)
-
-const objectAtSymbolFor = objectExpression()
-const objectAtSymbolForCall = symbolForCall(objectAtSymbolFor)
-
-const taggedTag = stringLiteral('myTag')
-const taggedFields = objectExpression()
-const taggedClassCall = taggedCall('TaggedClass', taggedTag, taggedFields)
-
-const taggedErrorTag = stringLiteral('err')
-const taggedErrorFields = objectExpression()
-const taggedErrorCall = taggedCall('TaggedError', taggedErrorTag, taggedErrorFields)
-
-const structTag = stringLiteral('tag')
-const structFields = objectExpression()
-const structCall = taggedCall('Struct', structTag, structFields)
-
-const swappedFields = objectExpression()
-const swappedTag = stringLiteral('tag')
-const swappedCall = taggedCall('TaggedClass', swappedFields, swappedTag)
-
-const bareTag = stringLiteral('someTag')
-const bareFields = objectExpression()
-const bareFactoryCallNode = bareFactoryCall('TaggedClass', bareTag, bareFields)
-
-const classId = stringLiteral('ChildPolicyConfig')
-const classFields = objectExpression()
-const classOuterCall = classCall(classId, classFields)
-const classInnerCall = classOuterCall.callee
-
-const acceptedLiteralMember = stringLiteral('permanent')
-const acceptedLiteralCall = callOf(memberOf('Schema', 'Literal'), [
-  acceptedLiteralMember,
-  stringLiteral('transient'),
-])
-
-const brandName = stringLiteral('MaxChildren')
-const brandNameCall = brandCall(brandName)
-
-const optionalDefault = arrowFunction()
-const optionalSchema = memberOf('S', 'String')
-const optionalWithCall = callOf(memberOf('S', 'optionalWith'), [optionalSchema, optionalDefault])
-const stringDefault = stringLiteral('x')
-const optionalWithStringCall = callOf(memberOf('S', 'optionalWith'), [optionalSchema, stringDefault])
-const optionalCall = callOf(memberOf('S', 'optional'), [optionalSchema, optionalDefault])
-
-const matchTag = stringLiteral('a')
-const matchTagCall = callOf(memberOf('Match', 'tag'), [matchTag])
-
-const orphanIdentifier = identifier('x')
-
-const identifierEntry = namedProperty('identifier', stringLiteral('HexBytes'))
-const descriptionEntry = namedProperty('description', stringLiteral('Uint8Array encoded as a lowercase hex string'))
-const titleEntry = namedProperty('title', stringLiteral('Hex Bytes'))
-const documentationOnly = objectOf([identifierEntry, descriptionEntry, titleEntry])
-const documentationOnlyCall = annotationsCall(documentationOnly)
-
-const singleIdentifierEntry = namedProperty('identifier', stringLiteral('HexBytes'))
-const identifierOnly = objectOf([singleIdentifierEntry])
-const identifierOnlyCall = annotationsCall(identifierOnly)
-
-const quotedKeyObject = objectOf([propertyOf(stringLiteral('identifier'), stringLiteral('HexBytes'))])
-const quotedKeyCall = annotationsCall(quotedKeyObject)
-
-const computedKeyEntry = propertyOf(identifier('identifier'), stringLiteral('x'), true)
-const computedKeyObject = objectOf([computedKeyEntry])
-const computedKeyCall = annotationsCall(computedKeyObject)
-
-const mixedBehaviourEntry = namedProperty('arbitrary', arrowFunction())
-const mixedDocumentationEntry = namedProperty('identifier', stringLiteral('HexStringInput'))
-const mixedAnnotations = objectOf([mixedBehaviourEntry, mixedDocumentationEntry])
-const mixedAnnotationsCall = annotationsCall(mixedAnnotations)
-
-const behaviourOnlyEntry = namedProperty('arbitrary', arrowFunction())
-const behaviourOnlyObject = objectOf([behaviourOnlyEntry])
-const behaviourOnlyCall = annotationsCall(behaviourOnlyObject)
-
-const documentationBesideBehaviourEntry = namedProperty('description', stringLiteral('x'))
-const behaviourBesideDocumentationEntry = namedProperty('arbitrary', arrowFunction())
-const documentationAndBehaviour = objectOf([documentationBesideBehaviourEntry, behaviourBesideDocumentationEntry])
-const documentationAndBehaviourCall = annotationsCall(documentationAndBehaviour)
-
-const emptyAnnotations = objectOf([])
-const emptyAnnotationsCall = annotationsCall(emptyAnnotations)
-
-const displacedDocumentation = objectOf([namedProperty('title', stringLiteral('Hex Bytes'))])
-const displacedDocumentationCall = callOf(memberOf('S', 'annotations'), [
-  stringLiteral('other'),
-  displacedDocumentation,
-])
-
-const bareCalleeDocumentation = objectOf([namedProperty('title', stringLiteral('Hex Bytes'))])
-const bareCalleeCall = callOf(identifier('annotations'), [bareCalleeDocumentation])
-
-const filteredDocumentationEntry = namedProperty('identifier', stringLiteral('x'))
-const filteredDocumentation = objectOf([filteredDocumentationEntry])
-const filteredDocumentationCall = callOf(memberOf('S', 'filter'), [filteredDocumentation])
-
-const uncalledDocumentationEntry = namedProperty('identifier', stringLiteral('x'))
-const uncalledDocumentation = objectOf([uncalledDocumentationEntry])
-
-const secondArgumentDocumentationEntry = namedProperty('identifier', stringLiteral('x'))
-const secondArgumentDocumentation = objectOf([secondArgumentDocumentationEntry])
-const secondArgumentCall = callOf(memberOf('S', 'annotations'), [
-  stringLiteral('other'),
-  secondArgumentDocumentation,
-])
+import { testIgnorer } from '@systemfsoftware/stryker-ignorer-kit/tester'
 
 const descriptor = strykerIgnorers[0]
 if (descriptor === undefined) throw new Error('the package publishes one ignorer descriptor')
 
-const CASES = {
-  ignored: [
-    {
-      name: 'a `Symbol.for` description, which names a brand and carries no behaviour',
-      path: { node: brandDescription, ancestors: [brandDescriptionCall] },
-      reason: SYMBOL_DESCRIPTION_IGNORED,
-    },
-    {
-      name: 'a `TaggedClass` tag, which only labels the declaration',
-      path: { node: taggedTag, ancestors: [taggedClassCall] },
-      reason: TAGGED_TAG_IGNORED,
-    },
-    {
-      name: 'a `TaggedError` tag',
-      path: { node: taggedErrorTag, ancestors: [taggedErrorCall] },
-      reason: TAGGED_TAG_IGNORED,
-    },
-    {
-      name: 'a `TaggedClass` fields object, whose schema declares rather than decides',
-      path: { node: taggedFields, ancestors: [taggedClassCall] },
-      reason: TAGGED_FIELDS_IGNORED,
-    },
-    {
-      name: 'a `TaggedError` fields object',
-      path: { node: taggedErrorFields, ancestors: [taggedErrorCall] },
-      reason: TAGGED_FIELDS_IGNORED,
-    },
-    {
-      name: 'the arrow function `S.optionalWith` holds as a default',
-      path: { node: optionalDefault, ancestors: [optionalWithCall] },
-      reason: OPTIONAL_DEFAULT_IGNORED,
-    },
-    {
-      name: 'the identifier of a `Schema.Class`, which rides the inner call',
-      path: { node: classId, ancestors: [classInnerCall] },
-      reason: CLASS_ID_IGNORED,
-    },
-    {
-      name: 'a brand name, which is identity data like a description',
-      path: { node: brandName, ancestors: [brandNameCall] },
-      reason: BRAND_NAME_IGNORED,
-    },
-    {
-      name: 'an `annotations` object whose every entry documents',
-      path: { node: documentationOnly, ancestors: [documentationOnlyCall] },
-      reason: ANNOTATION_OBJECT_IGNORED,
-    },
-    {
-      name: 'the identifier value inside a documentation-only object',
-      path: { node: identifierEntry.value, ancestors: [identifierEntry, documentationOnly, documentationOnlyCall] },
-      reason: ANNOTATION_TEXT_IGNORED,
-    },
-    {
-      name: 'the description value inside a documentation-only object',
-      path: { node: descriptionEntry.value, ancestors: [descriptionEntry, documentationOnly, documentationOnlyCall] },
-      reason: ANNOTATION_TEXT_IGNORED,
-    },
-    {
-      name: 'the title value inside a documentation-only object',
-      path: { node: titleEntry.value, ancestors: [titleEntry, documentationOnly, documentationOnlyCall] },
-      reason: ANNOTATION_TEXT_IGNORED,
-    },
-    {
-      name: 'a documentation entry that shares its object with a generator',
-      path: {
-        node: mixedDocumentationEntry.value,
-        ancestors: [mixedDocumentationEntry, mixedAnnotations, mixedAnnotationsCall],
-      },
-      reason: ANNOTATION_TEXT_IGNORED,
-    },
-    {
-      name: 'an `annotations` object holding one identifier entry',
-      path: { node: identifierOnly, ancestors: [identifierOnlyCall] },
-      reason: ANNOTATION_OBJECT_IGNORED,
-    },
-    {
-      name: 'the value of that single identifier entry',
-      path: {
-        node: singleIdentifierEntry.value,
-        ancestors: [singleIdentifierEntry, identifierOnly, identifierOnlyCall],
-      },
-      reason: ANNOTATION_TEXT_IGNORED,
-    },
-    {
-      name: 'an `annotations` object keyed by string literals',
-      path: { node: quotedKeyObject, ancestors: [quotedKeyCall] },
-      reason: ANNOTATION_OBJECT_IGNORED,
-    },
-    {
-      name: 'a description entry beside an `arbitrary` generator',
-      path: {
-        node: documentationBesideBehaviourEntry.value,
-        ancestors: [documentationBesideBehaviourEntry, documentationAndBehaviour, documentationAndBehaviourCall],
-      },
-      reason: ANNOTATION_TEXT_IGNORED,
-    },
-  ],
-  kept: [
-    {
-      name: 'a documentation property consulted as the node itself stays live',
-      path: { node: identifierEntry, ancestors: [documentationOnly, documentationOnlyCall] },
-    },
-    {
-      name: 'a bare `TaggedClass` factory call keeps its tag',
-      path: { node: bareTag, ancestors: [bareFactoryCallNode] },
-    },
-    {
-      name: 'a bare `TaggedClass` factory call keeps its fields',
-      path: { node: bareFields, ancestors: [bareFactoryCallNode] },
-    },
-    {
-      name: 'a description in `Symbol.keyFor`, whose member is not `for`',
-      path: { node: keyForDescription, ancestors: [keyForCall] },
-    },
-    {
-      name: 'a description in `Object.for`, whose object is not `Symbol`',
-      path: { node: objectForDescription, ancestors: [objectForCall] },
-    },
-    {
-      name: 'a description in `Symbol.iterator`, whose member name differs',
-      path: { node: iteratorDescription, ancestors: [iteratorCall] },
-    },
-    {
-      name: 'a string literal default under `S.optionalWith`',
-      path: { node: stringDefault, ancestors: [optionalWithStringCall] },
-    },
-    {
-      name: 'an arrow function default under `S.optional`, whose callee differs',
-      path: { node: optionalDefault, ancestors: [optionalCall] },
-    },
-    {
-      name: 'an `annotations` object mixing a generator with documentation',
-      path: { node: mixedAnnotations, ancestors: [mixedAnnotationsCall] },
-    },
-    {
-      name: 'the generator value in a mixed `annotations` object',
-      path: {
-        node: mixedBehaviourEntry.value,
-        ancestors: [mixedBehaviourEntry, mixedAnnotations, mixedAnnotationsCall],
-      },
-    },
-    {
-      name: 'an `annotations` object holding only a generator',
-      path: { node: behaviourOnlyObject, ancestors: [behaviourOnlyCall] },
-    },
-    {
-      name: 'the generator value in a generator-only `annotations` object',
-      path: { node: behaviourOnlyEntry.value, ancestors: [behaviourOnlyEntry, behaviourOnlyObject, behaviourOnlyCall] },
-    },
-    {
-      name: 'an empty `annotations` object, which has no documentation entry',
-      path: { node: emptyAnnotations, ancestors: [emptyAnnotationsCall] },
-    },
-    {
-      name: 'an `annotations` object holding documentation beside a generator',
-      path: { node: documentationAndBehaviour, ancestors: [documentationAndBehaviourCall] },
-    },
-    {
-      name: 'a documentation object at the second argument of `S.annotations`',
-      path: { node: displacedDocumentation, ancestors: [displacedDocumentationCall] },
-    },
-    {
-      name: 'a documentation object under a bare `annotations` callee',
-      path: { node: bareCalleeDocumentation, ancestors: [bareCalleeCall] },
-    },
-    {
-      name: 'a `Schema.Class` fields object, which carries accepted value sets',
-      path: { node: classFields, ancestors: [classOuterCall] },
-    },
-    {
-      name: 'an accepted literal inside a `Schema.Literal` call',
-      path: { node: acceptedLiteralMember, ancestors: [acceptedLiteralCall] },
-    },
-    {
-      name: 'a `Schema.Struct` tag, which is not a tagged factory',
-      path: { node: structTag, ancestors: [structCall] },
-    },
-    {
-      name: 'a `Schema.Struct` fields object',
-      path: { node: structFields, ancestors: [structCall] },
-    },
-    {
-      name: 'an object expression at a `TaggedClass` tag slot',
-      path: { node: swappedFields, ancestors: [swappedCall] },
-    },
-    {
-      name: 'an object expression at a `Symbol.for` argument slot',
-      path: { node: objectAtSymbolFor, ancestors: [objectAtSymbolForCall] },
-    },
-    {
-      name: 'a string that is not the `Symbol.for` argument',
-      path: { node: unheldDescription, ancestors: [unheldDescriptionCall] },
-    },
-    {
-      name: 'a `Match.tag` argument, which is a runtime discriminator',
-      path: { node: matchTag, ancestors: [matchTagCall] },
-    },
-    {
-      name: 'an orphan identifier with no parent',
-      path: { node: orphanIdentifier },
-    },
-    {
-      name: 'a documentation object under `S.filter`',
-      path: { node: filteredDocumentation, ancestors: [filteredDocumentationCall] },
-    },
-    {
-      name: 'a documentation value under `S.filter`',
-      path: {
-        node: filteredDocumentationEntry.value,
-        ancestors: [filteredDocumentationEntry, filteredDocumentation, filteredDocumentationCall],
-      },
-    },
-    {
-      name: 'a documentation value whose enclosing call is absent',
-      path: { node: uncalledDocumentationEntry.value, ancestors: [uncalledDocumentationEntry, uncalledDocumentation] },
-    },
-    {
-      name: 'a documentation value at the second argument of `S.annotations`',
-      path: {
-        node: secondArgumentDocumentationEntry.value,
-        ancestors: [secondArgumentDocumentationEntry, secondArgumentDocumentation, secondArgumentCall],
-      },
-    },
-    {
-      name: 'an `annotations` object whose documentation key is computed',
-      path: { node: computedKeyObject, ancestors: [computedKeyCall] },
-    },
-    {
-      name: 'the value under a computed documentation key',
-      path: { node: computedKeyEntry.value, ancestors: [computedKeyEntry, computedKeyObject, computedKeyCall] },
-    },
-  ],
-}
-
-interface CasePath {
-  readonly node: Node
-  readonly ancestors?: readonly Node[] | undefined
-}
-
-const pathOf = (spec: CasePath): [node: Node, ancestors: readonly Node[]] => [spec.node, spec.ancestors ?? []]
+const documentationOnlyCall = 'S.annotations({ identifier: "HexBytes", description: "hex", title: "Hex Bytes" })'
+const documentationOnlyObject = '{ identifier: "HexBytes", description: "hex", title: "Hex Bytes" }'
+const singleIdentifierCall = 'S.annotations({ identifier: "HexBytes" })'
+const singleIdentifierObject = '{ identifier: "HexBytes" }'
+const quotedKeyCall = 'S.annotations({ "identifier": "HexBytes" })'
+const quotedKeyObject = '{ "identifier": "HexBytes" }'
+const mixedCall = 'S.annotations({ arbitrary: () => 1, identifier: "HexStringInput" })'
+const mixedObject = '{ arbitrary: () => 1, identifier: "HexStringInput" }'
+const descriptionBesideBehaviourCall = 'S.annotations({ description: "x", arbitrary: () => 1 })'
+const descriptionBesideBehaviourObject = '{ description: "x", arbitrary: () => 1 }'
+const behaviourOnlyCall = 'S.annotations({ arbitrary: () => 1 })'
+const classCall = 'Schema.Class("ChildPolicyConfig")({})'
+const taggedClassCall = 'S.TaggedClass()("myTag", {})'
+const taggedErrorCall = 'S.TaggedError()("err", {})'
+const bareTaggedCall = 'TaggedClass()("someTag", {})'
+const structCall = 'Schema.Struct()("tag", {})'
+const swappedCall = 'S.TaggedClass()({}, "tag")'
+const computedKeyCall = 'S.annotations({ ["identifier"]: "x" })'
+const filterCall = 'S.filter({ identifier: "x" })'
+const displacedCall = 'S.annotations("other", { title: "Hex Bytes" })'
+const secondArgumentCall = 'S.annotations("other", { identifier: "x" })'
 
 describe('effect-schema-declarations', () => {
   it('Should_Register_The_Descriptor', () => {
     expect(descriptor.name).toBe('effect-schema-declarations')
   })
-  it.each(CASES.ignored)('ignores: $name', (testCase) => {
-    expect(descriptor.shouldIgnore(...pathOf(testCase.path))).toBe(testCase.reason)
-  })
-  it.each(CASES.kept)('keeps: $name', (testCase) => {
-    expect(descriptor.shouldIgnore(...pathOf(testCase.path))).toBeUndefined()
-  })
+})
+
+await testIgnorer(descriptor, {
+  ignored: [
+    {
+      name: 'a `Symbol.for` description, which names a brand and carries no behaviour',
+      code: 'Symbol.for("MyBrand")',
+      ignores: [{ text: '"MyBrand"', reason: SYMBOL_DESCRIPTION_IGNORED }],
+    },
+    {
+      name: 'a `TaggedClass` tag, which only labels the declaration',
+      code: taggedClassCall,
+      ignores: [{ text: '"myTag"', reason: TAGGED_TAG_IGNORED }],
+    },
+    {
+      name: 'a `TaggedError` tag',
+      code: taggedErrorCall,
+      ignores: [{ text: '"err"', reason: TAGGED_TAG_IGNORED }],
+    },
+    {
+      name: 'a `TaggedClass` fields object, whose schema declares rather than decides',
+      code: taggedClassCall,
+      ignores: [{ text: '{}', reason: TAGGED_FIELDS_IGNORED }],
+    },
+    {
+      name: 'a `TaggedError` fields object',
+      code: taggedErrorCall,
+      ignores: [{ text: '{}', reason: TAGGED_FIELDS_IGNORED }],
+    },
+    {
+      name: 'the arrow function `S.optionalWith` holds as a default',
+      code: 'S.optionalWith(S.String, () => "x")',
+      ignores: [{ text: '() => "x"', reason: OPTIONAL_DEFAULT_IGNORED }],
+    },
+    {
+      name: 'the identifier of a `Schema.Class`, which rides the inner call',
+      code: classCall,
+      ignores: [{ text: '"ChildPolicyConfig"', reason: CLASS_ID_IGNORED }],
+    },
+    {
+      name: 'a brand name, which is identity data like a description',
+      code: 'Schema.brand("MaxChildren")',
+      ignores: [{ text: '"MaxChildren"', reason: BRAND_NAME_IGNORED }],
+    },
+    {
+      name: 'an `annotations` object whose every entry documents',
+      code: documentationOnlyCall,
+      ignores: [{ text: documentationOnlyObject, reason: ANNOTATION_OBJECT_IGNORED }],
+    },
+    {
+      name: 'the identifier value inside a documentation-only object',
+      code: documentationOnlyCall,
+      ignores: [{ text: '"HexBytes"', reason: ANNOTATION_TEXT_IGNORED }],
+    },
+    {
+      name: 'the description value inside a documentation-only object',
+      code: documentationOnlyCall,
+      ignores: [{ text: '"hex"', reason: ANNOTATION_TEXT_IGNORED }],
+    },
+    {
+      name: 'the title value inside a documentation-only object',
+      code: documentationOnlyCall,
+      ignores: [{ text: '"Hex Bytes"', reason: ANNOTATION_TEXT_IGNORED }],
+    },
+    {
+      name: 'a documentation entry that shares its object with a generator',
+      code: mixedCall,
+      ignores: [{ text: '"HexStringInput"', reason: ANNOTATION_TEXT_IGNORED }],
+    },
+    {
+      name: 'an `annotations` object holding one identifier entry',
+      code: singleIdentifierCall,
+      ignores: [{ text: singleIdentifierObject, reason: ANNOTATION_OBJECT_IGNORED }],
+    },
+    {
+      name: 'the value of that single identifier entry',
+      code: singleIdentifierCall,
+      ignores: [{ text: '"HexBytes"', reason: ANNOTATION_TEXT_IGNORED }],
+    },
+    {
+      name: 'an `annotations` object keyed by string literals',
+      code: quotedKeyCall,
+      ignores: [{ text: quotedKeyObject, reason: ANNOTATION_OBJECT_IGNORED }],
+    },
+    {
+      name: 'a description entry beside an `arbitrary` generator',
+      code: descriptionBesideBehaviourCall,
+      ignores: [{ text: '"x"', reason: ANNOTATION_TEXT_IGNORED }],
+    },
+  ],
+  kept: [
+    {
+      name: 'a documentation property consulted as the node itself stays live',
+      code: singleIdentifierCall,
+      keeps: ['identifier: "HexBytes"'],
+    },
+    { name: 'a bare `TaggedClass` factory call keeps its tag', code: bareTaggedCall },
+    { name: 'a bare `TaggedClass` factory call keeps its fields', code: bareTaggedCall },
+    { name: 'a description in `Symbol.keyFor`, whose member is not `for`', code: 'Symbol.keyFor("desc")' },
+    { name: 'a description in `Object.for`, whose object is not `Symbol`', code: 'Object.for("desc")' },
+    { name: 'a description in `Symbol.iterator`, whose member name differs', code: 'Symbol.iterator("desc")' },
+    { name: 'a string literal default under `S.optionalWith`, code', code: 'S.optionalWith(S.String, "x")' },
+    {
+      name: 'an arrow function default under `S.optional`, whose callee differs',
+      code: 'S.optional(S.String, () => "x")',
+    },
+    {
+      name: 'an `annotations` object mixing a generator with documentation',
+      code: mixedCall,
+      keeps: [mixedObject],
+    },
+    {
+      name: 'the generator value in a mixed `annotations` object',
+      code: mixedCall,
+      keeps: ['() => 1'],
+    },
+    { name: 'an `annotations` object holding only a generator', code: behaviourOnlyCall },
+    { name: 'the generator value in a generator-only `annotations` object', code: behaviourOnlyCall },
+    { name: 'an empty `annotations` object, which has no documentation entry', code: 'S.annotations({})' },
+    {
+      name: 'an `annotations` object holding documentation beside a generator',
+      code: descriptionBesideBehaviourCall,
+      keeps: [descriptionBesideBehaviourObject],
+    },
+    { name: 'a documentation object at the second argument of `S.annotations`', code: displacedCall },
+    { name: 'a documentation object under a bare `annotations` callee', code: 'annotations({ title: "Hex Bytes" })' },
+    {
+      name: 'a `Schema.Class` fields object, which carries accepted value sets',
+      code: classCall,
+      keeps: ['{}'],
+    },
+    { name: 'an accepted literal inside a `Schema.Literal` call', code: 'Schema.Literal("permanent", "transient")' },
+    { name: 'a `Schema.Struct` tag, which is not a tagged factory', code: structCall },
+    { name: 'a `Schema.Struct` fields object', code: structCall },
+    { name: 'an object expression at a `TaggedClass` tag slot', code: swappedCall },
+    { name: 'an object expression at a `Symbol.for` argument slot', code: 'Symbol.for({})' },
+    { name: 'a string that is not the `Symbol.for` argument', code: 'const d = "MyBrand"; Symbol.for(d)' },
+    { name: 'a `Match.tag` argument, which is a runtime discriminator', code: 'Match.tag("a")' },
+    // Retired: 'an orphan identifier with no parent' — a real walk always roots at the
+    // Program node, so a parentless consult is unreachable; no snippet can pin it.
+    { name: 'a documentation object under `S.filter`', code: filterCall },
+    { name: 'a documentation value under `S.filter`', code: filterCall },
+    { name: 'a documentation value whose enclosing call is absent', code: 'const o = { identifier: "x" }' },
+    { name: 'a documentation value at the second argument of `S.annotations`', code: secondArgumentCall },
+    { name: 'an `annotations` object whose documentation key is computed', code: computedKeyCall },
+    { name: 'the value under a computed documentation key', code: computedKeyCall },
+    {
+      name: 'a mixed file with ordinary objects, calls, and no Schema factories keeps everything live',
+      code: 'export function load(id: string): Record<string, unknown> {\n  return { id, other: call(id) }\n}',
+    },
+  ],
 })

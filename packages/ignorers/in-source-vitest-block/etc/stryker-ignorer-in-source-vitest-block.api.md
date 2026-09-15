@@ -5,19 +5,15 @@
 ```ts
 
 import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
-import { Node as Node_2 } from '@systemfsoftware/stryker-ignorer-interface';
-
-// @public (undocumented)
-export const decideInSourceTestIgnore: (node: Node_2, ancestors: readonly Node_2[]) => string | undefined;
 
 // @public (undocumented)
 export const IN_SOURCE_TEST_IGNORED: 'inside an `if (import.meta.vitest)` block — test code, not production behaviour';
 
 // @public (undocumented)
-export const isInSourceTestGuard: (node: unknown) => boolean;
+export const strykerIgnorers: readonly Ignorer[];
 
 // @public (undocumented)
-export const strykerIgnorers: readonly Ignorer[];
+export const VITEST_META_PROPERTY: 'vitest';
 
 // (No @packageDocumentation comment for this package)
 
