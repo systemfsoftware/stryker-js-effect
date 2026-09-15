@@ -1,36 +1,34 @@
 # stryker-ignorer-kit
 
-Authoring and testing kit for the Stryker ignorer family.
+Authoring and testing kit for the Stryker ignorer family. Root `AGENTS.md` governs;
+this file carries only what is true of this package.
 
 ## Identity
 
 - Two entries: the root exports `defineIgnorer` and the visitor/context types; `./tester`
   exports `testIgnorer` and the case types. The root entry's module graph MUST stay
-  parser-free — no `oxc-parser`/`oxc-walker` import reachable from `src/mod.ts` (review gate,
-  plan R3).
+  parser-free — no `oxc-parser`/`oxc-walker` import reachable from `src/mod.ts` (review gate).
 - Zero Effect in any source file or dependency of this package.
 - The tester's ancestor-tracking walk mirrors the instrumenter adapter
   (`packages/stryker-js-instrumenter/src/Ast.ts`, `walker`): enter consults with a snapshot of
   the chain excluding the current node, nearest-first; leave pops. Drift between the two walks
-  is a review-gated invariant, pinned by the U3 ancestors scenario.
+  is a review-gated invariant, pinned by the ancestors scenario.
 - No backwards-compatibility commitment while this package has no adopters beyond this
   repository's own ignorer migrations: breaking changes are allowed at 0.x; the api reports
   gate drift for this family, not consumer stability.
 
-## Boundaries
+The reviewer's decision on each `review`-gated line, shown as `wrong:`/`right:`:
 
-| Surface       | Examples                                          | Limit        |
-| ------------- | ------------------------------------------------- | ------------ |
-| **Evaluator** | root `commitlint.config.ts`, `.github/workflows/` | Read-only.   |
-| **Doctrine**  | root `CONSTITUTION.md`                            | Project law. |
-| **Editable**  | This package's source, tests, docs                | Edit freely. |
+- **parser-free entry** — `wrong:` an `oxc-parser` or `oxc-walker` import reachable from
+  `src/mod.ts`; `right:` the root entry's graph reaching neither, both parser packages staying
+  behind the `./tester` entry.
+- **walk parity** — `wrong:` the tester's walk consulting with the live chain including the
+  current node, or popping before `leave`; `right:` a snapshot of the chain excluding the
+  current node, nearest-first, popped on `leave` — the shape `packages/stryker-js-instrumenter/src/Ast.ts`
+  uses.
 
 ## Definition of Done
 
-| ID      | Rule                                                                                                              | Gate                                                      |
-| ------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| START-1 | Formatting passes dprint with no diffs                                                                            | `pnpm format:check`                                       |
-| START-2 | Typechecking succeeds workspace-wide with no errors                                                               | `pnpm typecheck`                                          |
-| START-3 | All test suites pass                                                                                              | `pnpm test`                                               |
-| START-4 | Full CI validation passes before completion                                                                       | `pnpm check:ci`                                           |
-| COV-1   | Coverage runs on every test run and every file under `src` reaches 100% (lines, branches, functions, statements). | `pnpm --filter @systemfsoftware/stryker-ignorer-kit test` |
+| ID    | Rule                                                                                                              | Gate                                                      |
+| ----- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| COV-1 | Coverage runs on every test run and every file under `src` reaches 100% (lines, branches, functions, statements). | `pnpm --filter @systemfsoftware/stryker-ignorer-kit test` |

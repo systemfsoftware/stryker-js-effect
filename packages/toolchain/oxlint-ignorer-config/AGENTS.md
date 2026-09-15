@@ -3,7 +3,7 @@
 The published lint preset for an ignorer package. It extends nothing: the rule
 set is assembled in `lib/base.js` from the linter's built-in plugins and
 categories, so an ignorer authored outside this repository is graded by the
-same bar as the ones inside it.
+same bar as the ones inside it. Root `AGENTS.md` governs.
 
 ## Rules
 

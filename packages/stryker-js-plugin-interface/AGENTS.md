@@ -7,7 +7,7 @@ contributions. Parent: root `AGENTS.md`.
 
 | ID       | Rule                                                                                                                         | Gate                                                                                   |
 | -------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **SJP1** | Public specifiers are enumerated in `tsdown.config.ts` (REPO-S4).                                                            | `pnpm --filter @systemfsoftware/stryker-js-plugin-interface build` regenerates cleanly |
+| **SJP1** | Public specifiers are enumerated in `tsdown.config.ts`.                                                                      | `pnpm --filter @systemfsoftware/stryker-js-plugin-interface build` regenerates cleanly |
 | **SJP2** | A plugin is declared with `declarePlugin`: every kind contributes a `Layer`; the Reporter kind contributes a `make` factory. | `review`                                                                               |
 
 ## Verification

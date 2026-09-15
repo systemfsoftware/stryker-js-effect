@@ -4,10 +4,10 @@ The mutation-testing language: enumerated concept modules, no platform. Parent: 
 
 ## Rules
 
-| ID      | Rule                                                              | Gate                                                                           |
-| ------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **SL1** | Public specifiers are enumerated in `tsdown.config.ts` (REPO-S4). | `pnpm --filter @systemfsoftware/stryker-js-language build` regenerates cleanly |
-| **SL3** | The option set is one Effect Schema on `./Schema`.                | `review`                                                                       |
+| ID      | Rule                                                    | Gate                                                                           |
+| ------- | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **SL1** | Public specifiers are enumerated in `tsdown.config.ts`. | `pnpm --filter @systemfsoftware/stryker-js-language build` regenerates cleanly |
+| **SL3** | The option set is one Effect Schema on `./Schema`.      | `review`                                                                       |
 
 Plugin declaration (`declarePlugin`) lives in `@systemfsoftware/stryker-js-plugin-interface`.
 

@@ -1,6 +1,6 @@
 # @systemfsoftware/stryker-test-contribution
 
-Evaluator plugin (root Surface Classes: Evaluator). The pure decision is `src/test-contribution.ts`.
+Evaluator plugin (root Surface Classes: Evaluator). The pure decision is `src/test-contribution.ts`. Root `AGENTS.md` governs.
 
 ## Rules
 
