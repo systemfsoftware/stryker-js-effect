@@ -33,8 +33,9 @@ consuming them, not by copying config:
 
 1. **tsdown** — the `tsdown-config` toolchain package exports `sourceExports`.
    Pass it as the `exports` option of `defineConfig`: `devExports` declares
-   the condition; the `customExports` callback reorders every entry to
-   condition, `types`, `default` and skips the `./package.json`
+   the condition; the `customExports` callback reorders every object entry
+   to condition, `types`, `default`, turns string entries into
+   `{types, default}`, and skips the `./package.json`
    self-reference. Pass `dtsExt: '.d.mts'` for packages whose tsdown
    emits `.d.mts`; omit it for `.d.ts`.
 2. **tsc** — `customConditions: ["@systemfsoftware/source"]` in each package

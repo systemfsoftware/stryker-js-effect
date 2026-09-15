@@ -1,4 +1,4 @@
-import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { defineIgnorer } from '@systemfsoftware/stryker-ignorer-kit'
 import { type ScriptLang } from '@systemfsoftware/stryker-ignorer-kit/tester'
 import { expectTypeOf, test } from 'vitest'
@@ -12,8 +12,12 @@ test('a typed visitor gets a context narrowed to the kind it is keyed for', () =
     name: 'type-probe',
     visitors: {
       IfStatement: (_node, ctx) => {
-        expectTypeOf(ctx.parentIf('IfStatement')).toExtend<{ readonly type: 'IfStatement' } | undefined>()
-        expectTypeOf(ctx.ancestorIf('IfStatement')).toExtend<{ readonly type: 'IfStatement' } | undefined>()
+        expectTypeOf(ctx.parentIf('IfStatement')).toEqualTypeOf<
+          Extract<Node, { readonly type: 'IfStatement' }> | undefined
+        >()
+        expectTypeOf(ctx.ancestorIf('IfStatement')).toEqualTypeOf<
+          Extract<Node, { readonly type: 'IfStatement' }> | undefined
+        >()
         return undefined
       },
     },

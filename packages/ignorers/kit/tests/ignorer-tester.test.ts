@@ -22,6 +22,8 @@ const nothingIgnored: Ignorer = {
   shouldIgnore: () => undefined,
 }
 
+// Top-level on purpose: runner globals only collect during module evaluation, so the
+// registered suite below becomes real tests of this file.
 await testIgnorer(stringsIgnored, {
   kept: [{ name: 'ordinary code', code: 'const a = 1' }],
   ignored: [
@@ -102,11 +104,12 @@ interface RejectsRow {
   readonly pattern: RegExp
 }
 
+const sabotageCases: IgnorerCases = { kept: [{ name: 'sabotage', code: 'foo("bar")' }] }
 const rejectsRows: RejectsRow[] = [
   {
     name: 'a kept case fails listing received spans with reasons when the subject ignores something',
     subject: stringsIgnored,
-    cases: { kept: [{ name: 'sabotage', code: 'foo("bar")' }] },
+    cases: sabotageCases,
     pattern: /expected nothing ignored, received 1 span\(s\)[\s\S]*\(Literal\) reason "STR"/,
   },
   {
@@ -177,8 +180,6 @@ const runnerRows: RunnerRow[] = [
   { name: 'runs cases directly when it exists but is not callable', it: 42 },
 ]
 
-const sabotageCases: IgnorerCases = { kept: [{ name: 'sabotage', code: 'foo("bar")' }] }
-
 describe('testIgnorer without runner globals', () => {
   it.each(resolvesRows)('$name', async (row) => {
     await withoutRunner(async () => {
@@ -233,18 +234,12 @@ describe('testIgnorer registration', () => {
       if (name === 'sibling stays green') greenFn = fn
       if (name === 'sabotage goes red') redFn = fn
     }
-    const saved = savedRunner()
-    setGlobal('describe', stubDescribe)
-    setGlobal('it', stubIt)
-    try {
+    await withGlobals({ describe: stubDescribe, it: stubIt }, async () => {
       await testIgnorer(stringsIgnored, {
         kept: [{ name: 'sibling stays green', code: 'const a = 1' }],
         ignored: [{ name: 'sabotage goes red', code: 'foo(1)', ignores: ['"nope"'] }],
       })
-    } finally {
-      setGlobal('describe', saved.describe)
-      setGlobal('it', saved.it)
-    }
+    })
     expect(suite).toBe('strings-ignored')
     expect(titles).toEqual(['sibling stays green', 'sabotage goes red'])
     if (greenFn === undefined || redFn === undefined) throw new Error('registration missing')
