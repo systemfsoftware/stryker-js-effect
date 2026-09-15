@@ -196,6 +196,9 @@ importers:
       '@systemfsoftware/stryker-ignorer-interface':
         specifier: workspace:^
         version: link:../interface
+      '@systemfsoftware/stryker-ignorer-kit':
+        specifier: workspace:^
+        version: link:../kit
     devDependencies:
       '@microsoft/api-extractor':
         specifier: 'catalog:'
