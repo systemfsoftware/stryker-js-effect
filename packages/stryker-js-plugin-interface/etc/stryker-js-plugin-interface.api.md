@@ -27,8 +27,6 @@ export interface ComposedPlugins {
     readonly layer: Option.Option<Layer.Layer<MergedPluginServices, never, PluginEnvironment>>;
     // (undocumented)
     readonly reporterFactories: readonly SelectedReporterFactory[];
-    // (undocumented)
-    readonly shadowings: readonly Shadowing[];
 }
 
 // @public (undocumented)
@@ -121,11 +119,6 @@ export interface SelectedReporterFactory {
     // (undocumented)
     readonly name: string;
 }
-
-// Warning: (ae-forgotten-export) The symbol "Shadowing_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class Shadowing extends Shadowing_base {}
 
 // (No @packageDocumentation comment for this package)
 

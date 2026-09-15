@@ -19,6 +19,7 @@ import { ExitClass } from '@systemfsoftware/stryker-js-language';
 import { FileDescription } from '@systemfsoftware/stryker-js-language';
 import { FileDescriptions } from '@systemfsoftware/stryker-js-language';
 import * as FileSystem from 'effect/FileSystem';
+import { FrameworkService } from '@systemfsoftware/stryker-js-language';
 import * as HashMap from 'effect/HashMap';
 import { IgnorerService } from '@systemfsoftware/stryker-js-language';
 import * as Layer from 'effect/Layer';

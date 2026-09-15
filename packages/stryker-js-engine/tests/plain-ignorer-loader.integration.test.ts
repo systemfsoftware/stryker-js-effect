@@ -1,66 +1,15 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { ThisExpression } from '@systemfsoftware/stryker-ignorer-interface'
-import { createDefaultOptions } from '@systemfsoftware/stryker-js-engine'
-import { create, createAll, loadPlugins, PluginLoadFailedError } from '@systemfsoftware/stryker-js-engine/plugin-loader'
-import { Ignorer, Module } from '@systemfsoftware/stryker-js-language'
-import type { ModuleRequire } from '@systemfsoftware/stryker-js-language'
-import { RunConfiguration, SandboxDirectory } from '@systemfsoftware/stryker-js-plugin-interface'
+import { create, createAll, PluginLoadFailedError } from '@systemfsoftware/stryker-js-engine/plugin-loader'
+import { Ignorer } from '@systemfsoftware/stryker-js-language'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
-import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
-import * as Path from 'effect/Path'
 import { expect } from 'vitest'
+import { loadFixture, pluginEnvironmentLayer } from './__fixtures__/loader-support.js'
 
 const Feature = makeFeature({ it, layer })
-
-interface NodeModuleShape {
-  createRequire(filename: string | URL): NodeRequire
-  isBuiltin(moduleName: string): boolean
-}
-
-const EMPTY_PATHS: readonly string[] = []
-
-const makeModuleRequire = (nodeModule: NodeModuleShape, filename: string | URL): ModuleRequire => {
-  const requireFrom: NodeRequire = nodeModule.createRequire(filename)
-  const requireFn: ModuleRequire = (request: string): unknown => requireFrom(request)
-  requireFn.resolve = (request, options) =>
-    Option.match(Option.fromUndefinedOr(options), {
-      onNone: () => requireFrom.resolve(request),
-      onSome: (present) =>
-        requireFrom.resolve(request, {
-          paths: [...Option.getOrElse(Option.fromNullishOr(present.paths), () => EMPTY_PATHS)],
-        }),
-    })
-  return requireFn
-}
-
-const moduleLayer = Layer.effect(
-  Module,
-  Effect.sync(() => {
-    const nodeModule: NodeModuleShape = process.getBuiltinModule('node:module')
-    return {
-      createRequire: (filename: string | URL) => makeModuleRequire(nodeModule, filename),
-      isBuiltin: (moduleName: string) => nodeModule.isBuiltin(moduleName),
-    }
-  }),
-)
-
-const pluginEnvironmentLayer = Layer.mergeAll(
-  FileSystem.layerNoop({}),
-  Path.layer,
-  moduleLayer,
-  Layer.succeed(RunConfiguration, Effect.runSync(createDefaultOptions())),
-  Layer.succeed(SandboxDirectory, '/tmp'),
-)
-
-const fixturePath = (name: string): string => `${process.cwd()}/tests/__fixtures__/${name}`
-
-const loadFixture = (name: string) =>
-  loadPlugins([fixturePath(name)], process.cwd()).pipe(
-    Effect.provide(Layer.mergeAll(FileSystem.layerNoop({}), Path.layer, moduleLayer)),
-  )
 
 const anyNode: ThisExpression = { type: 'ThisExpression' }
 
@@ -104,10 +53,11 @@ Feature('Loading plain ignorer plugins')
           () => loadFixture('both-protocols.fixture.mjs'),
         ),
         When('the loaded contributions are read back by kind')('names', (s) =>
-          Effect.sync(() => ({
-            reporters: createAll(s.loaded.pluginsByKind, 'Reporter').pipe(Effect.runSync).map((c) => c.name),
-            ignorers: createAll(s.loaded.pluginsByKind, 'Ignore').pipe(Effect.runSync).map((c) => c.name),
-          }))),
+          Effect.gen(function*() {
+            const reporters = yield* createAll(s.loaded.pluginsByKind, 'Reporter')
+            const ignorers = yield* createAll(s.loaded.pluginsByKind, 'Ignore')
+            return { reporters: reporters.map((c) => c.name), ignorers: ignorers.map((c) => c.name) }
+          })),
         Then('both kinds are present')((s) =>
           Effect.sync(() => {
             expect(s.names.reporters).toStrictEqual(['native-fixture-reporter'])
@@ -139,9 +89,11 @@ Feature('Loading plain ignorer plugins')
         Given('a module exporting two plain entries with the same name')(
           'names',
           () =>
-            loadFixture('plain-ignorer-shadowed.fixture.mjs').pipe(
-              Effect.map((loaded) => createAll(loaded.pluginsByKind, 'Ignore').pipe(Effect.runSync).map((c) => c.name)),
-            ),
+            Effect.gen(function*() {
+              const loaded = yield* loadFixture('plain-ignorer-shadowed.fixture.mjs')
+              const ignorers = yield* createAll(loaded.pluginsByKind, 'Ignore')
+              return ignorers.map((c) => c.name)
+            }),
         ),
         Then('both entries appear under the shared name')((s) =>
           Effect.sync(() => {

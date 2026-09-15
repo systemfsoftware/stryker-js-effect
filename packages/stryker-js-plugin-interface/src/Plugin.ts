@@ -14,7 +14,6 @@ import {
   PluginLayerContribution,
   type PluginLayerKind,
   PluginReporterContribution,
-  Shadowing,
 } from './Plugin.schema.js'
 
 export {
@@ -23,7 +22,6 @@ export {
   PluginLayerContribution,
   type PluginLayerKind,
   PluginReporterContribution,
-  Shadowing,
 } from './Plugin.schema.js'
 
 export class RunConfiguration extends Context.Service<RunConfiguration, StrykerOptions>()(
@@ -74,40 +72,16 @@ export interface SelectedReporterFactory {
 export interface ComposedPlugins {
   readonly layer: Option.Option<Layer.Layer<MergedPluginServices, never, PluginEnvironment>>
   readonly reporterFactories: readonly SelectedReporterFactory[]
-  readonly shadowings: readonly Shadowing[]
 }
 
-function foldContributions(
+const resolveContributions = (
   contributions: readonly AnyPluginContribution[],
-): {
-  readonly resolved: MutableHashMap.MutableHashMap<string, AnyPluginContribution>
-  readonly shadowings: readonly Shadowing[]
-} {
+): MutableHashMap.MutableHashMap<string, AnyPluginContribution> => {
   const resolved = MutableHashMap.empty<string, AnyPluginContribution>()
-  const shadowings: Array<Shadowing> = []
-  const lastSeen = MutableHashMap.empty<string, number>()
-
-  for (const [index, contribution] of contributions.entries()) {
-    const key = `${contribution.kind}:${contribution.name}`
-    const previous = MutableHashMap.get(lastSeen, key)
-    shadowings.push(
-      ...Option.match(previous, {
-        onNone: () => [],
-        onSome: (shadowedIndex) => [
-          new Shadowing({
-            kind: String(contribution.kind),
-            name: contribution.name,
-            shadowedIndex,
-            winnerIndex: index,
-          }),
-        ],
-      }),
-    )
-    MutableHashMap.set(resolved, key, contribution)
-    MutableHashMap.set(lastSeen, key, index)
-  }
-
-  return { resolved, shadowings }
+  contributions.forEach((contribution) => {
+    MutableHashMap.set(resolved, `${contribution.kind}:${contribution.name}`, contribution)
+  })
+  return resolved
 }
 
 const reporterFactoryOf = (contribution: AnyPluginContribution): readonly SelectedReporterFactory[] =>
@@ -130,12 +104,10 @@ const mergedLayer = (
   layers.reduce((accumulated, next) => Layer.merge(accumulated, next))
 
 export function composePlugins(contributions: readonly AnyPluginContribution[]): ComposedPlugins {
-  const { resolved, shadowings } = foldContributions(contributions)
-  const allResolved = Array.from(MutableHashMap.values(resolved))
+  const allResolved = Array.from(MutableHashMap.values(resolveContributions(contributions)))
   const layers = allResolved.flatMap(layerOf)
   return {
     layer: Option.map(Option.fromUndefinedOr(layers.at(0)), () => mergedLayer(layers)),
     reporterFactories: allResolved.flatMap(reporterFactoryOf),
-    shadowings,
   }
 }

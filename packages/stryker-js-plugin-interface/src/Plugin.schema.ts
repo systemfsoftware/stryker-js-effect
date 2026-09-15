@@ -36,10 +36,3 @@ export class PluginReporterContribution extends S.TaggedClass<PluginReporterCont
 
 export type PluginContribution<K extends PluginKind = PluginKind> = K extends 'Reporter' ? PluginReporterContribution
   : PluginLayerContribution<Extract<K, PluginLayerKind>>
-
-export class Shadowing extends S.TaggedClass<Shadowing>()('Shadowing', {
-  kind: S.String,
-  name: S.String,
-  shadowedIndex: S.Finite,
-  winnerIndex: S.Finite,
-}) {}

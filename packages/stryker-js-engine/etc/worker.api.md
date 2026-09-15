@@ -9,6 +9,7 @@ import { CheckerFailed } from '@systemfsoftware/stryker-js-language';
 import { ContributionOf } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
+import { FrameworkService } from '@systemfsoftware/stryker-js-language';
 import * as HashMap from 'effect/HashMap';
 import { Module } from '@systemfsoftware/stryker-js-language';
 import { Mutant } from '@systemfsoftware/stryker-js-language';
