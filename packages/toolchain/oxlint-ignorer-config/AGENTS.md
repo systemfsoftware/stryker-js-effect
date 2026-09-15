@@ -1,7 +1,5 @@
 # @systemfsoftware/oxlint-ignorer-config
 
-Base oxlint configuration preset for the Stryker ignorer package family.
-
 ## Rules
 
 | ID      | Obligation                                                                                         | Gate                                                             |
