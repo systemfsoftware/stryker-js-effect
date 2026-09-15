@@ -162,11 +162,11 @@ describe('testIgnorer without runner globals', () => {
     })
     if (captured === undefined) throw new Error('recorder never consulted')
     expect(captured.map((one) => one.type)).toEqual([
-      'Program',
-      'IfStatement',
-      'BlockStatement',
-      'ExpressionStatement',
       'CallExpression',
+      'ExpressionStatement',
+      'BlockStatement',
+      'IfStatement',
+      'Program',
     ])
   })
 })

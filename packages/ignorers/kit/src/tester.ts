@@ -147,10 +147,10 @@ function collect(subject: Ignorer, file: CaseFile, program: WalkRoot): readonly 
       const node = asNode(walked)
       if (node === undefined) return
       recordIfIgnored(subject, node, ancestors, received, file)
-      ancestors.push(node)
+      ancestors.unshift(node)
     },
     leave(walked) {
-      if (asNode(walked) !== undefined) ancestors.pop()
+      if (asNode(walked) !== undefined) ancestors.shift()
     },
   })
   return received

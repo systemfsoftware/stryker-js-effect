@@ -1,7 +1,7 @@
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 
 export interface IgnorerContext {
-  /** Root-first as the host hands it over; the parent is the last element. */
+  /** Nearest-first as the host hands it over; the parent is the first element. */
   readonly ancestors: readonly Node[]
   parentIf<K extends Node['type']>(kind: K): Extract<Node, { readonly type: K }> | undefined
   ancestorIf<K extends Node['type']>(kind: K): Extract<Node, { readonly type: K }> | undefined
@@ -31,13 +31,11 @@ function makeContext(ancestors: readonly Node[]): IgnorerContext {
   return {
     ancestors,
     parentIf: (kind) =>
-      ancestors.slice(-1).find((ancestor): ancestor is Extract<Node, { readonly type: typeof kind }> =>
+      ancestors.slice(0, 1).find((ancestor): ancestor is Extract<Node, { readonly type: typeof kind }> =>
         ancestor.type === kind
       ),
     ancestorIf: (kind) =>
-      ancestors.toReversed().find((ancestor): ancestor is Extract<Node, { readonly type: typeof kind }> =>
-        ancestor.type === kind
-      ),
+      ancestors.find((ancestor): ancestor is Extract<Node, { readonly type: typeof kind }> => ancestor.type === kind),
   }
 }
 

@@ -81,7 +81,7 @@ describe('defineIgnorer', () => {
     const call = node('CallExpression', { arguments: [], callee: node('Identifier', { name: 'f' }) })
     const ifStatement = node('IfStatement', { test: call })
     const { ignorer, seen } = contextRecorder()
-    const chain = [ifStatement, call]
+    const chain = [call, ifStatement]
     ignorer.shouldIgnore(stringX(), chain)
     const ctx = seen()
     expect(ctx.parentIf('CallExpression')).toBe(call)
@@ -95,7 +95,7 @@ describe('defineIgnorer', () => {
     const near = node('CallExpression', { arguments: [], callee: node('Identifier', { name: 'near' }) })
     const far = node('CallExpression', { arguments: [], callee: node('Identifier', { name: 'far' }) })
     const { ignorer, seen } = contextRecorder()
-    ignorer.shouldIgnore(stringX(), [far, near])
+    ignorer.shouldIgnore(stringX(), [near, far])
     expect(seen().ancestorIf('CallExpression')).toBe(near)
   })
 
@@ -106,7 +106,7 @@ describe('defineIgnorer', () => {
     expect(typeof ignorer.shouldIgnore).toBe('function')
   })
 
-  it('passes the ancestor chain through unmodified, root-first, excluding the node', () => {
+  it('passes the ancestor chain through unmodified, nearest-first, excluding the node', () => {
     const parent = node('CallExpression', { arguments: [], callee: node('Identifier', { name: 'f' }) })
     const { ignorer, seen } = contextRecorder()
     const chain = [parent]
