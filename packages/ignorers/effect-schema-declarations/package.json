@@ -36,13 +36,13 @@
     }
   },
   "scripts": {
-    "build": "tsdown && pnpm api:check",
+    "build": "tsdown",
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "attw": "attw --pack .",
-    "api:check": "tsdown && api-extractor run",
+    "api:check": "api-extractor run",
     "api:update": "api-extractor run --local"
   },
   "dependencies": {
