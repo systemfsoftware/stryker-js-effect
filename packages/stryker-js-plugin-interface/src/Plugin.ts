@@ -1,4 +1,4 @@
-import { Checker, type Evaluator, Ignorer, Module, TestRunner } from '@systemfsoftware/stryker-js-language'
+import { Checker, type Evaluator, Framework, Ignorer, Module, TestRunner } from '@systemfsoftware/stryker-js-language'
 import type { ReporterFactory, StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import * as Context from 'effect/Context'
 import * as FileSystem from 'effect/FileSystem'
@@ -39,6 +39,7 @@ export interface PluginInterfaces {
   TestRunner: TestRunner
   Ignore: Ignorer
   Evaluator: Evaluator
+  Framework: Framework
 }
 export type PluginEnvironment = RunConfiguration | SandboxDirectory | FileSystem.FileSystem | Module | Path.Path
 

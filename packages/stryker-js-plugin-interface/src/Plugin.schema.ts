@@ -6,10 +6,10 @@ import type * as Layer from 'effect/Layer'
 
 import type { PluginEnvironment, PluginInterfaces } from './Plugin.js'
 
-export const PluginKind = S.Literals(['Checker', 'TestRunner', 'Reporter', 'Ignore', 'Evaluator'])
+export const PluginKind = S.Literals(['Checker', 'TestRunner', 'Reporter', 'Ignore', 'Evaluator', 'Framework'])
 export type PluginKind = typeof PluginKind.Type
 
-export const PluginLayerKind = S.Literals(['Checker', 'TestRunner', 'Ignore', 'Evaluator'])
+export const PluginLayerKind = S.Literals(['Checker', 'TestRunner', 'Ignore', 'Evaluator', 'Framework'])
 export type PluginLayerKind = typeof PluginLayerKind.Type
 
 export class PluginLayerContribution<K extends PluginLayerKind = PluginLayerKind>

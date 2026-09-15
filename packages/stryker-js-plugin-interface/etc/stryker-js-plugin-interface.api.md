@@ -8,6 +8,7 @@ import { Checker } from '@systemfsoftware/stryker-js-language';
 import * as Context from 'effect/Context';
 import { Evaluator } from '@systemfsoftware/stryker-js-language';
 import * as FileSystem from 'effect/FileSystem';
+import { Framework } from '@systemfsoftware/stryker-js-language';
 import { Ignorer } from '@systemfsoftware/stryker-js-language';
 import * as Layer from 'effect/Layer';
 import { Module } from '@systemfsoftware/stryker-js-language';
@@ -60,13 +61,15 @@ export interface PluginInterfaces {
     // (undocumented)
     Evaluator: Evaluator;
     // (undocumented)
+    Framework: Framework;
+    // (undocumented)
     Ignore: Ignorer;
     // (undocumented)
     TestRunner: TestRunner;
 }
 
 // @public (undocumented)
-export const PluginKind: S.Literals<readonly ["Checker", "TestRunner", "Reporter", "Ignore", "Evaluator"]>;
+export const PluginKind: S.Literals<readonly ["Checker", "TestRunner", "Reporter", "Ignore", "Evaluator", "Framework"]>;
 
 // @public (undocumented)
 export type PluginKind = typeof PluginKind.Type;
@@ -84,7 +87,7 @@ export class PluginLayerContribution<K extends PluginLayerKind = PluginLayerKind
 }
 
 // @public (undocumented)
-export const PluginLayerKind: S.Literals<readonly ["Checker", "TestRunner", "Ignore", "Evaluator"]>;
+export const PluginLayerKind: S.Literals<readonly ["Checker", "TestRunner", "Ignore", "Evaluator", "Framework"]>;
 
 // @public (undocumented)
 export type PluginLayerKind = typeof PluginLayerKind.Type;

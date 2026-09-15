@@ -11,9 +11,11 @@ import * as Exit from 'effect/Exit';
 import * as HashMap from 'effect/HashMap';
 import { Node } from '@systemfsoftware/stryker-ignorer-interface';
 import * as Option from 'effect/Option';
+import { Program } from '@systemfsoftware/stryker-ignorer-interface';
 import * as Queue from 'effect/Queue';
 import * as S from 'effect/Schema';
 import { StandardSchemaV1 } from 'effect/StandardSchema';
+import { Statement } from '@systemfsoftware/stryker-ignorer-interface';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
@@ -242,6 +244,16 @@ export interface EarlyResultPlan {
 }
 
 // @public (undocumented)
+export interface EmbeddedDocument {
+    // (undocumented)
+    readonly formatId: string;
+    // (undocumented)
+    readonly rawContent: string;
+    // (undocumented)
+    readonly regions: readonly ScriptRegion[];
+}
+
+// @public (undocumented)
 export interface ErrnoException extends Error {
     // (undocumented)
     code?: string;
@@ -391,6 +403,40 @@ export const FileResultSchema: S.Struct<{
     }>>;
 }>;
 
+// Warning: (ae-forgotten-export) The symbol "Framework_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class Framework extends Framework_base {}
+
+// @public (undocumented)
+export interface FrameworkClaim {
+    // (undocumented)
+    readonly contractVersion: string;
+    // (undocumented)
+    readonly extensions: readonly string[];
+    // (undocumented)
+    readonly formatId: string;
+    // (undocumented)
+    readonly language: string;
+}
+
+// @public (undocumented)
+export interface FrameworkContext {
+    // (undocumented)
+    readonly instrumentationHeader: () => readonly Statement[];
+    // (undocumented)
+    readonly parseScript: (source: string, scriptFormat: ScriptFormat) => Program;
+    // (undocumented)
+    readonly printScript: (script: Program) => string;
+    // (undocumented)
+    readonly transformScript: (script: Program) => Program;
+}
+
+// Warning: (ae-forgotten-export) The symbol "FrameworkFailed_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class FrameworkFailed extends FrameworkFailed_base {}
+
 // @public (undocumented)
 export type FrameworkInformation = typeof FrameworkInformationSchema.Type;
 
@@ -404,6 +450,20 @@ export const FrameworkInformationSchema: S.Struct<{
     }>>;
     readonly dependencies: S.optional<S.$Record<S.String, S.String>>;
 }>;
+
+// @public (undocumented)
+export interface FrameworkService {
+    // (undocumented)
+    readonly claim: FrameworkClaim;
+    // (undocumented)
+    readonly disableTypeChecks: (content: string) => Effect.Effect<string, FrameworkFailed>;
+    // (undocumented)
+    readonly parse: (rawContent: string, context: FrameworkContext) => Effect.Effect<EmbeddedDocument, FrameworkFailed>;
+    // (undocumented)
+    readonly print: (document: EmbeddedDocument, context: FrameworkContext) => Effect.Effect<string, FrameworkFailed>;
+    // (undocumented)
+    readonly transform: (document: EmbeddedDocument, context: FrameworkContext) => Effect.Effect<EmbeddedDocument, FrameworkFailed>;
+}
 
 // Warning: (ae-forgotten-export) The symbol "Heartbeat_base" needs to be exported by the entry point index.d.mts
 //
@@ -1064,6 +1124,21 @@ export const RunTimingSchema: S.Struct<{
     readonly net: S.Finite;
     readonly overhead: S.Finite;
 }>;
+
+// @public (undocumented)
+export type ScriptFormat = 'js' | 'ts' | 'tsx';
+
+// @public (undocumented)
+export interface ScriptRegion {
+    // (undocumented)
+    readonly end: number;
+    // (undocumented)
+    readonly isExpression: boolean;
+    // (undocumented)
+    readonly scriptAst?: unknown;
+    // (undocumented)
+    readonly start: number;
+}
 
 // @public (undocumented)
 export const shouldKeepTempDir: (exit: Exit.Exit<void, unknown>, cleanTempDir: 'always' | boolean) => boolean;
