@@ -16,12 +16,6 @@ test-runner integration.
 | **Supply chain**   | `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` | Human-approved; never widen unasked.                   |
 | **Editable**       | Workspace source, tests, documentation              | Edit freely.                                           |
 
-pnpm withholds every version younger than `minimumReleaseAge` (1440 minutes by default,
-per pnpm's dependency-resolution settings). `minimumReleaseAgeExclude` in
-`pnpm-workspace.yaml` punches holes in that quarantine; today it exempts the whole
-`@systemfsoftware/*` scope. Adding an entry to it is a human-approved change: propose it,
-name the package and the reason, and wait for the operator.
-
 ## Definition of Done
 
 | ID        | Rule                                                            | Gate                                                              |
