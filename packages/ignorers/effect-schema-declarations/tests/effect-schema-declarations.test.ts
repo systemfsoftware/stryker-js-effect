@@ -138,6 +138,32 @@ await testIgnorer(descriptor, {
       code: singleIdentifierCall,
       keeps: ['identifier: "HexBytes"'],
     },
+    {
+      name: 'a string at the wrong argument slot of a `Symbol.for` call',
+      code: 'Symbol.for("first", "second")',
+      keeps: ['"second"'],
+    },
+    {
+      name: 'a string and an object at wrong argument slots of a tagged factory',
+      code: 'S.TaggedClass()("t", { a: 1 }, "extra", { b: 2 })',
+      keeps: ['"extra"', '{ b: 2 }'],
+    },
+    {
+      name: 'a string at the wrong argument slot of a `Schema.Class` call',
+      code: 'Schema.Class("id", "extra")({})',
+      keeps: ['"extra"'],
+    },
+    { name: 'a string at the wrong argument slot of a `Schema.brand` call', code: 'S.brand("a", "b")', keeps: ['"b"'] },
+    {
+      name: 'an arrow at the wrong argument slot of `S.optionalWith`',
+      code: 'S.optionalWith(S.String, () => "x", () => "y")',
+      keeps: ['() => "y"'],
+    },
+    {
+      name: 'a documentation object and its value at the wrong argument slot of `S.annotations`',
+      code: 'S.annotations({ identifier: "a" }, { identifier: "b" })',
+      keeps: ['{ identifier: "b" }', '"b"'],
+    },
     { name: 'a bare `TaggedClass` factory call keeps its tag', code: bareTaggedCall },
     { name: 'a bare `TaggedClass` factory call keeps its fields', code: bareTaggedCall },
     { name: 'a description in `Symbol.keyFor`, whose member is not `for`', code: 'Symbol.keyFor("desc")' },
