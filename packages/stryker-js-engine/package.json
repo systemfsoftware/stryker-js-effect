@@ -88,28 +88,28 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.mts",
       "@systemfsoftware/source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
     },
     "./builtin-reporters": {
-      "types": "./dist/builtin-reporters.d.mts",
       "@systemfsoftware/source": "./src/builtin-reporters.ts",
+      "types": "./dist/builtin-reporters.d.mts",
       "default": "./dist/builtin-reporters.mjs"
     },
     "./config/base": {
-      "types": "./dist/config/base.d.mts",
       "@systemfsoftware/source": "./src/config/base.ts",
+      "types": "./dist/config/base.d.mts",
       "default": "./dist/config/base.mjs"
     },
     "./plugin-loader": {
-      "types": "./dist/plugin-loader.d.mts",
       "@systemfsoftware/source": "./src/plugin-loader.ts",
+      "types": "./dist/plugin-loader.d.mts",
       "default": "./dist/plugin-loader.mjs"
     },
     "./worker": {
-      "types": "./dist/worker.d.mts",
       "@systemfsoftware/source": "./src/worker-wiring.ts",
+      "types": "./dist/worker.d.mts",
       "default": "./dist/worker.mjs"
     },
     "./package.json": "./package.json"

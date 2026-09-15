@@ -12,6 +12,7 @@ Stryker ignorer for in-source Vitest blocks: removes mutants inside an `if (impo
 | **SP4** | No `effect` or `@effect/*` import in any source or built file — the preset's `no-restricted-imports` ban is the gate.                         | `pnpm --filter @systemfsoftware/stryker-ignorer-in-source-vitest-block lint` |
 | **SP5** | No `effect` or `@effect/*` key in any dependency block; the interface and kit packages are the only runtime dependencies.                     | `review`                                                                     |
 | **SP6** | Every behavior is pinned by a snippet case table run through `testIgnorer` — no FastCheck generator and no snapshot call in a committed test. | `pnpm --filter @systemfsoftware/stryker-ignorer-in-source-vitest-block lint` |
+| **SP7** | Coverage of `src/**/*.ts` is measured on every test run and must reach 100% per file (lines, branches, functions, statements).                | `pnpm --filter @systemfsoftware/stryker-ignorer-in-source-vitest-block test` |
 
 The reviewer's decision on each `review`-gated row, shown as `wrong:`/`right:`:
 

@@ -27,9 +27,10 @@ Authoring and testing kit for the Stryker ignorer family.
 
 ## Definition of Done
 
-| ID      | Rule                                                | Gate                |
-| ------- | --------------------------------------------------- | ------------------- |
-| START-1 | Formatting passes dprint with no diffs              | `pnpm format:check` |
-| START-2 | Typechecking succeeds workspace-wide with no errors | `pnpm typecheck`    |
-| START-3 | All test suites pass                                | `pnpm test`         |
-| START-4 | Full CI validation passes before completion         | `pnpm check:ci`     |
+| ID      | Rule                                                                                                              | Gate                                                      |
+| ------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| START-1 | Formatting passes dprint with no diffs                                                                            | `pnpm format:check`                                       |
+| START-2 | Typechecking succeeds workspace-wide with no errors                                                               | `pnpm typecheck`                                          |
+| START-3 | All test suites pass                                                                                              | `pnpm test`                                               |
+| START-4 | Full CI validation passes before completion                                                                       | `pnpm check:ci`                                           |
+| COV-1   | Coverage runs on every test run and every file under `src` reaches 100% (lines, branches, functions, statements). | `pnpm --filter @systemfsoftware/stryker-ignorer-kit test` |

@@ -27,6 +27,7 @@ catalog:
   "@types/node": ^24
   "@vitest/browser-playwright": ^4
   "@vitest/coverage-v8": ^4
+  fast-check: ^4
   effect: ^4.0.0-rc.112
   husky: ^9.1.7
   lint-staged: ^17.1.0

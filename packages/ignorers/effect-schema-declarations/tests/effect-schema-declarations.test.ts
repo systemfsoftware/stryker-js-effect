@@ -16,17 +16,14 @@ import { testIgnorer } from '@systemfsoftware/stryker-ignorer-kit/tester'
 const descriptor = strykerIgnorers[0]
 if (descriptor === undefined) throw new Error('the package publishes one ignorer descriptor')
 
-const documentationOnlyCall = 'S.annotations({ identifier: "HexBytes", description: "hex", title: "Hex Bytes" })'
+const annotations = (object: string): string => `S.annotations(${object})`
+
 const documentationOnlyObject = '{ identifier: "HexBytes", description: "hex", title: "Hex Bytes" }'
-const singleIdentifierCall = 'S.annotations({ identifier: "HexBytes" })'
 const singleIdentifierObject = '{ identifier: "HexBytes" }'
-const quotedKeyCall = 'S.annotations({ "identifier": "HexBytes" })'
 const quotedKeyObject = '{ "identifier": "HexBytes" }'
-const mixedCall = 'S.annotations({ arbitrary: () => 1, identifier: "HexStringInput" })'
 const mixedObject = '{ arbitrary: () => 1, identifier: "HexStringInput" }'
-const descriptionBesideBehaviourCall = 'S.annotations({ description: "x", arbitrary: () => 1 })'
 const descriptionBesideBehaviourObject = '{ description: "x", arbitrary: () => 1 }'
-const behaviourOnlyCall = 'S.annotations({ arbitrary: () => 1 })'
+const behaviourOnlyObject = '{ arbitrary: () => 1 }'
 const classCall = 'Schema.Class("ChildPolicyConfig")({})'
 const taggedClassCall = 'S.TaggedClass()("myTag", {})'
 const taggedErrorCall = 'S.TaggedError()("err", {})'
@@ -88,54 +85,54 @@ await testIgnorer(descriptor, {
     },
     {
       name: 'an `annotations` object whose every entry documents',
-      code: documentationOnlyCall,
+      code: annotations(documentationOnlyObject),
       ignores: [{ text: documentationOnlyObject, reason: ANNOTATION_OBJECT_IGNORED }],
     },
     {
       name: 'the identifier value inside a documentation-only object',
-      code: documentationOnlyCall,
+      code: annotations(documentationOnlyObject),
       ignores: [{ text: '"HexBytes"', reason: ANNOTATION_TEXT_IGNORED }],
     },
     {
       name: 'the description value inside a documentation-only object',
-      code: documentationOnlyCall,
+      code: annotations(documentationOnlyObject),
       ignores: [{ text: '"hex"', reason: ANNOTATION_TEXT_IGNORED }],
     },
     {
       name: 'the title value inside a documentation-only object',
-      code: documentationOnlyCall,
+      code: annotations(documentationOnlyObject),
       ignores: [{ text: '"Hex Bytes"', reason: ANNOTATION_TEXT_IGNORED }],
     },
     {
       name: 'a documentation entry that shares its object with a generator',
-      code: mixedCall,
+      code: annotations(mixedObject),
       ignores: [{ text: '"HexStringInput"', reason: ANNOTATION_TEXT_IGNORED }],
     },
     {
       name: 'an `annotations` object holding one identifier entry',
-      code: singleIdentifierCall,
+      code: annotations(singleIdentifierObject),
       ignores: [{ text: singleIdentifierObject, reason: ANNOTATION_OBJECT_IGNORED }],
     },
     {
       name: 'the value of that single identifier entry',
-      code: singleIdentifierCall,
+      code: annotations(singleIdentifierObject),
       ignores: [{ text: '"HexBytes"', reason: ANNOTATION_TEXT_IGNORED }],
     },
     {
       name: 'an `annotations` object keyed by string literals',
-      code: quotedKeyCall,
+      code: annotations(quotedKeyObject),
       ignores: [{ text: quotedKeyObject, reason: ANNOTATION_OBJECT_IGNORED }],
     },
     {
       name: 'a description entry beside an `arbitrary` generator',
-      code: descriptionBesideBehaviourCall,
+      code: annotations(descriptionBesideBehaviourObject),
       ignores: [{ text: '"x"', reason: ANNOTATION_TEXT_IGNORED }],
     },
   ],
   kept: [
     {
       name: 'a documentation property consulted as the node itself stays live',
-      code: singleIdentifierCall,
+      code: annotations(singleIdentifierObject),
       keeps: ['identifier: "HexBytes"'],
     },
     {
@@ -164,8 +161,7 @@ await testIgnorer(descriptor, {
       code: 'S.annotations({ identifier: "a" }, { identifier: "b" })',
       keeps: ['{ identifier: "b" }', '"b"'],
     },
-    { name: 'a bare `TaggedClass` factory call keeps its tag', code: bareTaggedCall },
-    { name: 'a bare `TaggedClass` factory call keeps its fields', code: bareTaggedCall },
+    { name: 'a bare `TaggedClass` factory call keeps its tag and fields', code: bareTaggedCall },
     { name: 'a description in `Symbol.keyFor`, whose member is not `for`', code: 'Symbol.keyFor("desc")' },
     { name: 'a description in `Object.for`, whose object is not `Symbol`', code: 'Object.for("desc")' },
     { name: 'a description in `Symbol.iterator`, whose member name differs', code: 'Symbol.iterator("desc")' },
@@ -176,20 +172,20 @@ await testIgnorer(descriptor, {
     },
     {
       name: 'an `annotations` object mixing a generator with documentation',
-      code: mixedCall,
+      code: annotations(mixedObject),
       keeps: [mixedObject],
     },
     {
       name: 'the generator value in a mixed `annotations` object',
-      code: mixedCall,
+      code: annotations(mixedObject),
       keeps: ['() => 1'],
     },
-    { name: 'an `annotations` object holding only a generator', code: behaviourOnlyCall },
-    { name: 'the generator value in a generator-only `annotations` object', code: behaviourOnlyCall },
+    { name: 'an `annotations` object holding only a generator', code: annotations(behaviourOnlyObject) },
+    { name: 'the generator value in a generator-only `annotations` object', code: annotations(behaviourOnlyObject) },
     { name: 'an empty `annotations` object, which has no documentation entry', code: 'S.annotations({})' },
     {
       name: 'an `annotations` object holding documentation beside a generator',
-      code: descriptionBesideBehaviourCall,
+      code: annotations(descriptionBesideBehaviourObject),
       keeps: [descriptionBesideBehaviourObject],
     },
     { name: 'a documentation object at the second argument of `S.annotations`', code: displacedCall },
@@ -200,20 +196,18 @@ await testIgnorer(descriptor, {
       keeps: ['{}'],
     },
     { name: 'an accepted literal inside a `Schema.Literal` call', code: 'Schema.Literal("permanent", "transient")' },
-    { name: 'a `Schema.Struct` tag, which is not a tagged factory', code: structCall },
-    { name: 'a `Schema.Struct` fields object', code: structCall },
+    { name: 'a `Schema.Struct` call keeps its tag and fields; it is not a tagged factory', code: structCall },
     { name: 'an object expression at a `TaggedClass` tag slot', code: swappedCall },
     { name: 'an object expression at a `Symbol.for` argument slot', code: 'Symbol.for({})' },
     { name: 'a string that is not the `Symbol.for` argument', code: 'const d = "MyBrand"; Symbol.for(d)' },
     { name: 'a `Match.tag` argument, which is a runtime discriminator', code: 'Match.tag("a")' },
-    // Retired: 'an orphan identifier with no parent' — a real walk always roots at the
-    // Program node, so a parentless consult is unreachable; no snippet can pin it.
-    { name: 'a documentation object under `S.filter`', code: filterCall },
-    { name: 'a documentation value under `S.filter`', code: filterCall },
+    { name: 'documentation under `S.filter` stays live, object and value', code: filterCall },
     { name: 'a documentation value whose enclosing call is absent', code: 'const o = { identifier: "x" }' },
     { name: 'a documentation value at the second argument of `S.annotations`', code: secondArgumentCall },
-    { name: 'an `annotations` object whose documentation key is computed', code: computedKeyCall },
-    { name: 'the value under a computed documentation key', code: computedKeyCall },
+    {
+      name: 'an `annotations` object whose documentation key is computed stays live, object and value',
+      code: computedKeyCall,
+    },
     {
       name: 'a mixed file with ordinary objects, calls, and no Schema factories keeps everything live',
       code: 'export function load(id: string): Record<string, unknown> {\n  return { id, other: call(id) }\n}',

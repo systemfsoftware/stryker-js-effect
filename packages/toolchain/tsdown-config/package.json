@@ -19,12 +19,14 @@
     "lib"
   ],
   "scripts": {
+    "test": "vitest run",
     "typecheck": "tsc --noEmit --incremental"
   },
   "devDependencies": {
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
+    "fast-check": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

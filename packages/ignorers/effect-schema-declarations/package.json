@@ -26,8 +26,8 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
       "@systemfsoftware/source": "./src/mod.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.mjs"
     },
     "./package.json": "./package.json"
@@ -54,6 +54,7 @@
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",

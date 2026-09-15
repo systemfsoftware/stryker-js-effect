@@ -7,16 +7,19 @@ export const SOURCE_CONDITION = '@systemfsoftware/source'
 export const typesPathFor = (dtsExt, mjsPath) => mjsPath.replace(/\.mjs$/, dtsExt)
 
 /**
+ * Workspace entries order the source condition before `types`: the `types`
+ * key matches unconditionally, so a first-position `types` makes tsc resolve
+ * the built declaration instead of the source the condition names.
  * @param {string | Record<string, string | undefined>} entry
  * @param {string} dtsExt
  * @returns {string | Record<string, string | undefined>}
  */
-export const withTypesFirst = (entry, dtsExt) => {
+export const withSourceFirst = (entry, dtsExt) => {
   if (typeof entry === 'string') return { types: typesPathFor(dtsExt, entry), default: entry }
   /** @type {Record<string, string | undefined>} */
   const ordered = {}
-  ordered['types'] = entry['types'] ?? typesPathFor(dtsExt, entry['default'] ?? '')
   if (entry[SOURCE_CONDITION] != null) ordered[SOURCE_CONDITION] = entry[SOURCE_CONDITION]
+  ordered['types'] = entry['types'] ?? typesPathFor(dtsExt, entry['default'] ?? '')
   ordered['default'] = entry['default']
   return ordered
 }
@@ -31,7 +34,7 @@ export const sourceExports = ({ dtsExt = '.d.ts' } = {}) => ({
   customExports: (exports) => {
     for (const [key, value] of Object.entries(exports)) {
       if (key === './package.json') continue
-      exports[key] = withTypesFirst(value, dtsExt)
+      exports[key] = withSourceFirst(value, dtsExt)
     }
     return exports
   },

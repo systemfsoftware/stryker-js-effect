@@ -12,6 +12,7 @@ Stryker ignorer for Effect Schema declarations: removes proven-equivalent mutant
 | **SP4** | No `effect` or `@effect/*` import in any source or built file, and no `effect` or `@effect/*` key in any dependency block — the preset's `no-restricted-imports` ban is the import gate. | `pnpm --filter @systemfsoftware/stryker-ignorer-effect-schema-declarations lint` |
 | **SP5** | Every decision is pinned by a case table — a committed test carries no FastCheck generator.                                                                                              | `pnpm --filter @systemfsoftware/stryker-ignorer-effect-schema-declarations lint` |
 | **SP6** | A committed test asserts intended behavior, never a stored-output snapshot.                                                                                                              | `review`                                                                         |
+| **SP7** | Coverage of `src/**/*.ts` is measured on every test run and must reach 100% per file (lines, branches, functions, statements).                                                           | `pnpm --filter @systemfsoftware/stryker-ignorer-effect-schema-declarations test` |
 
 SP3's reviewer decides one thing: whether the module reaches mutation through the plain ignorer protocol alone.
 

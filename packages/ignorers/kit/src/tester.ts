@@ -29,7 +29,9 @@ export interface IgnorerCases {
   readonly kept?: readonly KeptCase[]
 }
 
-interface ReceivedSpan extends IgnoredSpan {
+interface ReceivedSpan {
+  readonly text: string
+  readonly reason: string
   readonly type: string
 }
 
@@ -73,22 +75,6 @@ const fileNames: Record<ScriptLang, string> = {
   jsx: 'case.jsx',
   ts: 'case.ts',
   tsx: 'case.tsx',
-}
-
-function isObjectValue(value: unknown): value is object {
-  return typeof value === 'object' && value !== null
-}
-
-function hasStringType(value: object): boolean {
-  return 'type' in value && typeof value.type === 'string'
-}
-
-function isNode(value: unknown): value is Node {
-  return isObjectValue(value) && hasStringType(value)
-}
-
-function asNode(value: unknown): Node | undefined {
-  return isNode(value) ? value : undefined
 }
 
 function toSpan(expect: string | IgnoredSpan): IgnoredSpan {
@@ -158,14 +144,12 @@ async function collect(subject: Ignorer, file: CaseFile): Promise<readonly Recei
   const result = parseAndWalk(file.code, fileNames[file.lang], {
     parseSync,
     parseOptions: { lang: file.lang, range: true },
-    enter(walked) {
-      const node = asNode(walked)
-      if (node === undefined) return
+    enter(node) {
       recordIfIgnored(subject, node, ancestors, received, file)
       ancestors.unshift(node)
     },
-    leave(walked) {
-      if (asNode(walked) !== undefined) ancestors.shift()
+    leave() {
+      ancestors.shift()
     },
   })
   return result.errors.length > 0 ? parseFailure(result.errors) : received
@@ -195,7 +179,7 @@ function keptOutcome(file: CaseFile, received: readonly ReceivedSpan[]): CaseOut
   return { file, passed: failures.length === 0, failures, received }
 }
 
-function reasonMatches(actual: string | undefined, pinned: string | undefined): boolean {
+function reasonMatches(actual: string, pinned: string | undefined): boolean {
   return pinned === undefined || actual === pinned
 }
 
@@ -231,8 +215,8 @@ function judge(file: CaseFile, received: readonly ReceivedSpan[]): CaseOutcome {
   return file.kind === 'kept' ? keptOutcome(file, received) : ignoredOutcome(file, received)
 }
 
-function reasonSuffix(reason: string | undefined): string {
-  return reason === undefined ? '' : ` reason ${JSON.stringify(reason)}`
+function reasonSuffix(reason: string): string {
+  return ` reason ${JSON.stringify(reason)}`
 }
 
 function spanLine(span: ReceivedSpan): string {

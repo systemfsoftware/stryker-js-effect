@@ -1,6 +1,7 @@
 ---
 title: The @systemfsoftware/source dev condition — dev tools resolve src, every publish-facing surface strips it
 date: 2026-09-15
+category: tooling-decisions
 problem_type: tooling_decision
 module: stryker-js-effect workspace
 component: tooling
@@ -32,10 +33,11 @@ consuming them, not by copying config:
 
 1. **tsdown** — the `tsdown-config` toolchain package exports `sourceExports`.
    Pass it as the `exports` option of `defineConfig`: `devExports` declares
-   the condition; the `customExports` callback reorders every entry to
-   `types`, condition, `default` and skips the `./package.json`
-   self-reference. Pass `dtsExt: '.d.mts'` for packages whose tsdown emits
-   `.d.mts`; omit it for `.d.ts`.
+   the condition; the `customExports` callback reorders every object entry
+   to condition, `types`, `default`, turns string entries into
+   `{types, default}`, and skips the `./package.json`
+   self-reference. Pass `dtsExt: '.d.mts'` for packages whose tsdown
+   emits `.d.mts`; omit it for `.d.ts`.
 2. **tsc** — `customConditions: ["@systemfsoftware/source"]` in each package
    tsconfig.
 3. **vitest** — the `vitest-config` toolchain package carries
@@ -55,17 +57,23 @@ consuming them, not by copying config:
   build, so committed manifests are build output. Add an entry to tsdown's
   `entry` map -> rebuild -> commit the regenerated manifest, or `types`
   dangles (the failure mode the stale-exports doc names).
-- **Condition order matches resolver semantics.** Node matches exports keys
-  in object order and `default` matches everything, so the emitted order is
-  `types`, condition, `default` last. TypeScript and Vite match by condition
-  list, so dev resolvers pick `src` regardless of order; the order protects
-  any object-order resolver that activates the condition.
+- **Condition order matches resolver semantics.** TypeScript's resolver
+  always includes `types` in its condition set, and exports keys match in
+  object order, so the condition must come first: a first-position
+  `types` makes tsc resolve the built declaration and leaves the dev
+  condition unreachable — the stale-dist false-pass this workspace hit.
+  Vite never matches `types`, so runtime resolution picks `src`
+  regardless of order; Node object-order matches and stops at `default`
+  last.
 - **Turbo invalidates on the shared helper.** The `build` and `typecheck`
   tasks list the `tsdown-config` shared source tree in `inputs`; without it a helper
   edit reaches consumers through a cache hit.
-- **The helper's contract is executable.** The `tsdown-config` test suite
-  asserts the branch behavior and key order, so the handwritten
-  `base.d.ts` cannot drift from `base.js` silently.
+- **The helper's contract is executable.** `checkJs` keeps the handwritten
+  `base.d.ts` honest against `base.js`, and the `tsdown-config` test suite
+  asserts the entry laws as fast-check properties — string entries normalize
+  to `{types, default}`, condition/types/default order, carried `types` is an
+  override the helper never re-derives, and mapping is idempotent — so the
+  manifest emission cannot drift silently.
 - **Runtime still uses dist.** Node never activates the dev condition, so
   published consumers and production resolution are unaffected; `attw` stays
   in the gate as the check that the published shape is intact.
@@ -74,6 +82,6 @@ consuming them, not by copying config:
 
 Single-package repos gain nothing. Tools that cannot read export conditions
 need a tsconfig-paths fallback. If a package must add `import`/`require`
-conditions later, `withTypesFirst` currently keeps only
-`types`/condition/`default` — extend the helper deliberately, and note that a
-dual-format entry has no single `default` to derive `types` from.
+later, `withSourceFirst` currently keeps only
+condition/`types`/`default` — extend the helper deliberately, and note
+that a dual-format entry has no single `default` to derive `types` from.
