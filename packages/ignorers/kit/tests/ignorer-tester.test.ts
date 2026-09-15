@@ -104,6 +104,22 @@ describe('testIgnorer without runner globals', () => {
     })
   })
 
+  it('a keeps expectation passes when the named span stays live beside ignored siblings', async () => {
+    await withoutRunner(async () => {
+      await expect(testIgnorer(stringsIgnored, {
+        ignored: [{ name: 'sibling ignored', code: 'foo("a", 1)', ignores: ['"a"'], keeps: ['1'] }],
+      })).resolves.toBeUndefined()
+    })
+  })
+
+  it('a keeps expectation fails when the named span is ignored', async () => {
+    await withoutRunner(async () => {
+      await expect(testIgnorer(stringsIgnored, {
+        kept: [{ name: 'kept span ignored', code: 'foo("bar")', keeps: ['"bar"'] }],
+      })).rejects.toThrow(/to stay live, but it was ignored/)
+    })
+  })
+
   it('a snippet that does not parse fails carrying the case name and code', async () => {
     await withoutRunner(async () => {
       await expect(testIgnorer(nothingIgnored, {

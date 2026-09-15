@@ -14,12 +14,14 @@ export interface IgnoredCase {
   readonly code: string
   readonly lang?: ScriptLang
   readonly ignores: readonly (string | IgnoredSpan)[]
+  readonly keeps?: readonly string[]
 }
 
 export interface KeptCase {
   readonly name: string
   readonly code: string
   readonly lang?: ScriptLang
+  readonly keeps?: readonly string[]
 }
 
 export interface IgnorerCases {
@@ -37,6 +39,7 @@ interface CaseFile {
   readonly code: string
   readonly lang: ScriptLang
   readonly expects: readonly IgnoredSpan[]
+  readonly keeps: readonly string[]
 }
 
 interface CaseOutcome {
@@ -98,12 +101,27 @@ function toSpan(expect: string | IgnoredSpan): IgnoredSpan {
   return typeof expect === 'string' ? { text: expect } : expect
 }
 
+function langOf(one: { readonly lang?: ScriptLang }): ScriptLang {
+  return one.lang ?? 'ts'
+}
+
+function keepsOf(one: { readonly keeps?: readonly string[] }): readonly string[] {
+  return one.keeps ?? []
+}
+
 function toKept(one: KeptCase): CaseFile {
-  return { kind: 'kept', name: one.name, code: one.code, lang: one.lang ?? 'ts', expects: [] }
+  return { kind: 'kept', name: one.name, code: one.code, lang: langOf(one), expects: [], keeps: keepsOf(one) }
 }
 
 function toIgnored(one: IgnoredCase): CaseFile {
-  return { kind: 'ignored', name: one.name, code: one.code, lang: one.lang ?? 'ts', expects: one.ignores.map(toSpan) }
+  return {
+    kind: 'ignored',
+    name: one.name,
+    code: one.code,
+    lang: langOf(one),
+    expects: one.ignores.map(toSpan),
+    keeps: keepsOf(one),
+  }
 }
 
 function keptFiles(kept: readonly KeptCase[] | undefined): readonly CaseFile[] {
@@ -172,10 +190,28 @@ async function receive(subject: Ignorer, file: CaseFile): Promise<readonly Recei
   return typeof program === 'string' ? program : collect(subject, file, program)
 }
 
+function allIgnoredFailures(received: readonly ReceivedSpan[]): string[] {
+  return received.length === 0 ? [] : [`expected nothing ignored, received ${received.length} span(s)`]
+}
+
+function keepFailure(received: readonly ReceivedSpan[], keep: string): string[] {
+  const hit = received.find((span) => span.text === keep)
+  return hit === undefined
+    ? []
+    : [`expected span ${JSON.stringify(keep)} to stay live, but it was ignored${reasonSuffix(hit.reason)}`]
+}
+
+function keepFailures(file: CaseFile, received: readonly ReceivedSpan[]): string[] {
+  return file.keeps.flatMap((keep) => keepFailure(received, keep))
+}
+
+function keptFailures(file: CaseFile, received: readonly ReceivedSpan[]): string[] {
+  return file.keeps.length === 0 ? allIgnoredFailures(received) : keepFailures(file, received)
+}
+
 function keptOutcome(file: CaseFile, received: readonly ReceivedSpan[]): CaseOutcome {
-  return received.length === 0
-    ? { file, passed: true, failures: [], received }
-    : { file, passed: false, failures: [`expected nothing ignored, received ${received.length} span(s)`], received }
+  const failures = keptFailures(file, received)
+  return { file, passed: failures.length === 0, failures, received }
 }
 
 function reasonMatches(actual: string | undefined, pinned: string | undefined): boolean {
@@ -203,7 +239,10 @@ function expectFailures(pool: ReceivedSpan[], expect: IgnoredSpan): string[] {
 
 function ignoredOutcome(file: CaseFile, received: readonly ReceivedSpan[]): CaseOutcome {
   const pool = [...received]
-  const failures = file.expects.flatMap((expect) => expectFailures(pool, expect))
+  const failures = [
+    ...file.expects.flatMap((expect) => expectFailures(pool, expect)),
+    ...keepFailures(file, received),
+  ]
   return { file, passed: failures.length === 0, failures, received }
 }
 

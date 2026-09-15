@@ -140,6 +140,9 @@ Case semantics:
 - A failing case throws an enumeration of its snippet, expectations, and received
   spans (text, node type, reason). Where no runner globals exist, `testIgnorer`
   runs every case and throws one aggregate error naming all failures.
+- `keeps` (either case kind) names spans that must **stay live** even when siblings in the
+  same snippet are ignored — for rows that pin one node's liveness inside a partly-ignored
+  expression. A kept case without `keeps` still asserts nothing at all is ignored.
 
 ### 4. Ship it
 

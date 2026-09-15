@@ -13,6 +13,8 @@ export interface IgnoredCase {
     // (undocumented)
     readonly ignores: readonly (string | IgnoredSpan)[];
     // (undocumented)
+    readonly keeps?: readonly string[];
+    // (undocumented)
     readonly lang?: ScriptLang;
     // (undocumented)
     readonly name: string;
@@ -38,6 +40,8 @@ export interface IgnorerCases {
 export interface KeptCase {
     // (undocumented)
     readonly code: string;
+    // (undocumented)
+    readonly keeps?: readonly string[];
     // (undocumented)
     readonly lang?: ScriptLang;
     // (undocumented)
