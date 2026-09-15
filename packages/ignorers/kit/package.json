@@ -48,6 +48,7 @@
     "api:update": "concurrently --kill-others-on-fail \"api-extractor run --local\" \"api-extractor run --local --config api-extractor.tester.json\""
   },
   "dependencies": {
+    "@oxc-project/types": "catalog:",
     "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "oxc-parser": "catalog:",
     "oxc-walker": "catalog:"
@@ -60,6 +61,7 @@
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
     "concurrently": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",

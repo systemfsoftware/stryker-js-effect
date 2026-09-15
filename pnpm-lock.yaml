@@ -181,6 +181,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
+      '@vitest/coverage-v8':
+        specifier: 'catalog:'
+        version: 4.1.11(@vitest/browser@4.1.11)(vitest@4.1.11)
       oxlint:
         specifier: 'catalog:'
         version: 1.82.0(oxlint-tsgolint@7.0.2001)
@@ -227,6 +230,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
+      '@vitest/coverage-v8':
+        specifier: 'catalog:'
+        version: 4.1.11(@vitest/browser@4.1.11)(vitest@4.1.11)
       oxlint:
         specifier: 'catalog:'
         version: 1.82.0(oxlint-tsgolint@7.0.2001)
@@ -287,6 +293,9 @@ importers:
 
   packages/ignorers/kit:
     dependencies:
+      '@oxc-project/types':
+        specifier: 'catalog:'
+        version: 0.140.0
       '@systemfsoftware/stryker-ignorer-interface':
         specifier: workspace:^
         version: link:../interface
@@ -295,7 +304,7 @@ importers:
         version: 0.140.0
       oxc-walker:
         specifier: 'catalog:'
-        version: 1.1.1(@oxc-project/types@0.149.0)(oxc-parser@0.140.0)(rolldown@1.2.8)
+        version: 1.1.1(@oxc-project/types@0.140.0)(oxc-parser@0.140.0)(rolldown@1.2.8)
     devDependencies:
       '@microsoft/api-extractor':
         specifier: 'catalog:'
@@ -318,6 +327,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
+      '@vitest/coverage-v8':
+        specifier: 'catalog:'
+        version: 4.1.11(@vitest/browser@4.1.11)(vitest@4.1.11)
       concurrently:
         specifier: 'catalog:'
         version: 10.0.5
@@ -4493,12 +4505,6 @@ snapshots:
   oxc-walker@1.1.1(@oxc-project/types@0.140.0)(oxc-parser@0.140.0)(rolldown@1.2.8):
     optionalDependencies:
       '@oxc-project/types': 0.140.0
-      oxc-parser: 0.140.0
-      rolldown: 1.2.8
-
-  oxc-walker@1.1.1(@oxc-project/types@0.149.0)(oxc-parser@0.140.0)(rolldown@1.2.8):
-    optionalDependencies:
-      '@oxc-project/types': 0.149.0
       oxc-parser: 0.140.0
       rolldown: 1.2.8
 

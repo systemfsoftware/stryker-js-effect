@@ -47,15 +47,29 @@ function savedRunner(): { describe: unknown; it: unknown } {
   return { describe: globalFn('describe'), it: globalFn('it') }
 }
 
-async function withoutRunner(run: () => Promise<void>): Promise<void> {
+async function withGlobals(
+  globals: { readonly describe: unknown; readonly it: unknown },
+  run: () => Promise<void>,
+): Promise<void> {
   const saved = savedRunner()
-  setGlobal('describe', undefined)
-  setGlobal('it', undefined)
+  setGlobal('describe', globals.describe)
+  setGlobal('it', globals.it)
   try {
     await run()
   } finally {
     setGlobal('describe', saved.describe)
     setGlobal('it', saved.it)
+  }
+}
+
+async function withoutRunner(run: () => Promise<void>): Promise<void> {
+  await withGlobals({ describe: undefined, it: undefined }, run)
+}
+
+function recordingDescribe(mark: () => void): DescribeFn {
+  return (name, fn) => {
+    mark()
+    fn()
   }
 }
 
@@ -219,5 +233,35 @@ describe('testIgnorer registration', () => {
     if (greenFn === undefined || redFn === undefined) throw new Error('registration missing')
     await expect(greenFn()).resolves.toBeUndefined()
     await expect(redFn()).rejects.toThrow(/was not ignored/)
+  })
+})
+
+describe('testIgnorer runner detection', () => {
+  it('runs cases directly when describe exists but it does not', async () => {
+    let registered = false
+    await withGlobals({
+      describe: recordingDescribe(() => {
+        registered = true
+      }),
+      it: undefined,
+    }, async () => {
+      await expect(testIgnorer(stringsIgnored, { kept: [{ name: 'sabotage', code: 'foo("bar")' }] }))
+        .rejects.toThrow(/expected nothing ignored, received 1 span\(s\)/)
+    })
+    expect(registered).toBe(false)
+  })
+
+  it('runs cases directly when it exists but is not callable', async () => {
+    let registered = false
+    await withGlobals({
+      describe: recordingDescribe(() => {
+        registered = true
+      }),
+      it: 42,
+    }, async () => {
+      await expect(testIgnorer(stringsIgnored, { kept: [{ name: 'sabotage', code: 'foo("bar")' }] }))
+        .rejects.toThrow(/expected nothing ignored, received 1 span\(s\)/)
+    })
+    expect(registered).toBe(false)
   })
 })
