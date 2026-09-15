@@ -27,15 +27,18 @@ export interface IgnorerDefinition {
 
 type AnyVisitor = (node: Node, ctx: IgnorerContext) => string | undefined
 
+function isNodeOfType<K extends Node['type']>(
+  node: Node | undefined,
+  kind: K,
+): node is Extract<Node, { readonly type: K }> {
+  return node !== undefined && node.type === kind
+}
+
 function makeContext(ancestors: readonly Node[]): IgnorerContext {
   return {
     ancestors,
-    parentIf: (kind) =>
-      ancestors.slice(0, 1).find((ancestor): ancestor is Extract<Node, { readonly type: typeof kind }> =>
-        ancestor.type === kind
-      ),
-    ancestorIf: (kind) =>
-      ancestors.find((ancestor): ancestor is Extract<Node, { readonly type: typeof kind }> => ancestor.type === kind),
+    parentIf: (kind) => (isNodeOfType(ancestors[0], kind) ? ancestors[0] : undefined),
+    ancestorIf: (kind) => ancestors.find((ancestor) => isNodeOfType(ancestor, kind)),
   }
 }
 

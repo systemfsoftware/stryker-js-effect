@@ -1,6 +1,6 @@
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import type * as OxcParser from 'oxc-parser'
-import { walk } from 'oxc-walker'
+import { parseAndWalk } from 'oxc-walker'
 
 export type ScriptLang = 'js' | 'jsx' | 'ts' | 'tsx'
 
@@ -54,8 +54,6 @@ interface Runner {
   it(name: string, fn: () => Promise<void>): void
 }
 
-type WalkRoot = Parameters<typeof walk>[0]
-
 type OxcModule = typeof OxcParser
 
 let oxc: OxcModule | undefined
@@ -91,10 +89,6 @@ function isNode(value: unknown): value is Node {
 
 function asNode(value: unknown): Node | undefined {
   return isNode(value) ? value : undefined
-}
-
-function isWalkRoot(value: unknown): value is WalkRoot {
-  return isNode(value)
 }
 
 function toSpan(expect: string | IgnoredSpan): IgnoredSpan {
@@ -157,10 +151,13 @@ function recordIfIgnored(
   }
 }
 
-function collect(subject: Ignorer, file: CaseFile, program: WalkRoot): readonly ReceivedSpan[] {
+async function collect(subject: Ignorer, file: CaseFile): Promise<readonly ReceivedSpan[] | string> {
+  const { parseSync } = await loadOxc()
   const received: ReceivedSpan[] = []
   const ancestors: Node[] = []
-  walk(program, {
+  const result = parseAndWalk(file.code, fileNames[file.lang], {
+    parseSync,
+    parseOptions: { lang: file.lang, range: true },
     enter(walked) {
       const node = asNode(walked)
       if (node === undefined) return
@@ -171,23 +168,7 @@ function collect(subject: Ignorer, file: CaseFile, program: WalkRoot): readonly 
       if (asNode(walked) !== undefined) ancestors.shift()
     },
   })
-  return received
-}
-
-function asWalkRoot(value: unknown): WalkRoot | string {
-  return isWalkRoot(value) ? value : 'parse produced no walkable program'
-}
-
-async function parseProgram(file: CaseFile): Promise<WalkRoot | string> {
-  const { parseSync } = await loadOxc()
-  const result = parseSync(fileNames[file.lang], file.code, { lang: file.lang, range: true })
-  if (result.errors.length > 0) return parseFailure(result.errors)
-  return asWalkRoot(result.program)
-}
-
-async function receive(subject: Ignorer, file: CaseFile): Promise<readonly ReceivedSpan[] | string> {
-  const program = await parseProgram(file)
-  return typeof program === 'string' ? program : collect(subject, file, program)
+  return result.errors.length > 0 ? parseFailure(result.errors) : received
 }
 
 function allIgnoredFailures(received: readonly ReceivedSpan[]): string[] {
@@ -279,7 +260,7 @@ function messageFor(outcome: CaseOutcome): string {
 }
 
 async function outcomeOf(subject: Ignorer, file: CaseFile): Promise<CaseOutcome> {
-  const result = await receive(subject, file)
+  const result = await collect(subject, file)
   return typeof result === 'string'
     ? { file, passed: false, failures: [result], received: [] }
     : judge(file, result)
