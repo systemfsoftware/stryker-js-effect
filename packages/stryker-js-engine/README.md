@@ -26,5 +26,5 @@ so the host pins one version across the whole run.
 A host other than Node starts the same engine by providing its own layers at
 the process that calls `makeRunLayer`; it does not fork these sources.
 
-[cli]: https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js-cli
+[cli]: https://github.com/systemfsoftware/stryker-js-effect/tree/main/apps/stryker-js-cli
 [run]: https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js-engine

@@ -29,4 +29,4 @@ Licensed under [Apache 2.0][license-url].
 [license-url]: https://github.com/systemfsoftware/stryker-js-effect/blob/main/LICENSE
 [repo]: https://github.com/systemfsoftware/stryker-js-effect
 [engine]: https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js-engine
-[cli]: https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js-cli
+[cli]: https://github.com/systemfsoftware/stryker-js-effect/tree/main/apps/stryker-js-cli

@@ -150,10 +150,11 @@ flowchart LR
 ### Output Structure
 
 ```text
+apps/
+  stryker-js-cli/                   # @systemfsoftware/stryker-js-cli (bin: stryker)
 packages/
   starter/                          # unchanged shape, devDeps switch to workspace:^ (R4)
   stryker-js/                       # @systemfsoftware/stryker-js
-  stryker-js-cli/                   # @systemfsoftware/stryker-js-cli (bin: stryker)
   stryker-js-engine/                # @systemfsoftware/stryker-js-engine
   stryker-js-html-reporter/         # @systemfsoftware/stryker-js-html-reporter
   stryker-js-instrumenter/          # @systemfsoftware/stryker-js-instrumenter
@@ -191,7 +192,7 @@ Monorepo-side expected shape after U5: `packages/stryker-js/` absent; `pnpm-work
 - **Goal:** the family lives in `packages/*` as first-class repo A members with standalone configs.
 - **Requirements:** R1, R3, R4, R9 (manifest URLs).
 - **Dependencies:** U1.
-- **Files:** `packages/stryker-js/**`, `packages/stryker-js-cli/**`, `packages/stryker-js-engine/**`, `packages/stryker-js-html-reporter/**`, `packages/stryker-js-instrumenter/**`, `packages/stryker-js-typescript-checker/**`, `packages/stryker-js-vitest-runner/**`, `packages/stryker-plugins/**`, `packages/stryker-test-contribution/**`, `packages/toolchain/**`, `packages/starter/package.json`, `pnpm-lock.yaml`, `dprint.json`, root `README.md`.
+- **Files:** `apps/stryker-js-cli/**`, `packages/stryker-js/**`, `packages/stryker-js-engine/**`, `packages/stryker-js-html-reporter/**`, `packages/stryker-js-instrumenter/**`, `packages/stryker-js-typescript-checker/**`, `packages/stryker-js-vitest-runner/**`, `packages/stryker-plugins/**`, `packages/stryker-test-contribution/**`, `packages/toolchain/**`, `packages/starter/package.json`, `pnpm-lock.yaml`, `dprint.json`, root `README.md`.
 - **Approach:**
   1. Copy each tree from the monorepo at HEAD (KTD1): the nine package trees plus `packages/toolchain/vitest-config` (private — KTD2; verbatim `lib/**`, manifest edit per KTD2). Keep `src/**`, `tests/**`, `testResources/**`, fixtures, `LICENSE`, `README.md`, per-package `AGENTS.md` unchanged.
   2. Manifests: keep versions per R1; keep `workspace:^` edges between family members; retarget `repository`/`homepage`/`bugs` to `systemfsoftware/stryker-js-effect`; rewrite external `@systemfsoftware/*` deps from `workspace:^` to `catalog:` (`effect-cell-types`, `effect-gherkin-spec`, `effect-schema-law`, `effect-schema-vite`, `all`, `tsconfig`); flatten `peerDependencies` `catalog:peers` → `catalog:` (KTD6); repoint `vitest-config` devDep to the vendored `workspace:^` copy and drop `oxlint-config` devDeps from all eight manifests that carry it (KTD2); drop the `testcontainers` devDependency with the contract lane (KTD5).

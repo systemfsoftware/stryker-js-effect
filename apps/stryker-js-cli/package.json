@@ -4,7 +4,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
-    "directory": "packages/stryker-js-cli"
+    "directory": "apps/stryker-js-cli"
   },
   "homepage": "https://github.com/systemfsoftware/stryker-js-effect",
   "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",

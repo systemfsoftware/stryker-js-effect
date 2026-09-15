@@ -24,7 +24,7 @@ the code under test.
 
 ## Problem
 
-`packages/stryker-js-cli` declares `bin.stryker = ./dist/main.mjs` and publishes
+`apps/stryker-js-cli` declares `bin.stryker = ./dist/main.mjs` and publishes
 `files: [dist]`. A workspace consumer of that package creates the bin shim at
 install; in CI the install reports `Failed to create bin … ENOENT`, the later
 task that invokes the binary ends in `stryker: not found`, and the CLI's build in
