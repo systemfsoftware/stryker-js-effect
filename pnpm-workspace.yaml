@@ -12,8 +12,8 @@ catalog:
   "@effect/vitest": 4.0.0-rc.112
   "@microsoft/api-extractor": ^7.59.1
   "@noble/hashes": 2.4.0
-  "@oxc-parser/binding-wasm32-wasi": ^0.140.0
-  "@oxc-project/types": ^0.140.0
+  "@oxc-parser/binding-wasm32-wasi": ^0.149.0
+  "@oxc-project/types": ^0.149.0
   "@std/jsonc": jsr:^1.0.2
   "@systemfsoftware/all": ^2.0.2
   "@systemfsoftware/arethetypeswrong-cli": ^4.1.0
@@ -29,8 +29,8 @@ catalog:
   "@vitest/coverage-v8": ^4
   effect: ^4.0.0-rc.112
   husky: ^9.1.7
-  lint-staged: ^17.1.0
-  oxc-parser: ^0.140.0
+  lint-staged: ^17.5.1
+  oxc-parser: ^0.149.0
   oxc-walker: ^1.1.1
   oxlint: ^1.77.0
   oxlint-tsgolint: 7.0.2001
@@ -44,7 +44,7 @@ catalog:
 catalogMode: prefer
 catalogs:
   stryker:
-    mutation-testing-elements: 3.7.3
+    mutation-testing-elements: 3.9.0
 minimumReleaseAgeExclude:
   - "@systemfsoftware/all@2.0.2"
   - "@systemfsoftware/effect-cell-types@8.0.0 || 8.1.0"
