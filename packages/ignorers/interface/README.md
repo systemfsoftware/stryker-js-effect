@@ -32,6 +32,11 @@ pnpm add -D @systemfsoftware/stryker-ignorer-interface
 
 ## Write an ignorer
 
+The authoring and testing kit — [`@systemfsoftware/stryker-ignorer-kit`](../kit/README.md) —
+is the from-scratch path: typed visitors via `defineIgnorer`, snippet cases via
+`testIgnorer`. The plain descriptor below is the wire contract the kit compiles
+to; reach for it directly only when the kit cannot express your rule.
+
 ```ts
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 
