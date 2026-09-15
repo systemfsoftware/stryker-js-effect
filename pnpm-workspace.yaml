@@ -24,7 +24,7 @@ catalog:
   "@systemfsoftware/oxlint-plugin": ^4.0.2
   "@systemfsoftware/oxlint-plugin-recommended": ^1.3.1
   "@systemfsoftware/tsconfig": ^1.3.4
-  "@types/node": ^24
+  "@types/node": ^26
   "@vitest/browser-playwright": ^4
   "@vitest/coverage-v8": ^4
   effect: ^4.0.0-rc.112
