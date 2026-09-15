@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>What problem is the ignorer family trying to solve?</title>
+<style>
+  :root {
+    --ink: #1a1d23; --dim: #5b6472; --line: #d9dee6; --bg: #ffffff; --soft: #f5f7fa;
+    --accent: #0f62fe; --warn: #b45309; --good: #047857; --code-bg: #f0f2f5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink;
+    font: 16px/1.6 ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { padding: 2.5rem 1.25rem 4rem; margin: 0 auto; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 1.25rem; margin-bottom: 2rem; }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 1rem; max-width: 34ch; }
+  dl.meta { display: grid; grid-template-columns: 8.5rem 1fr; gap: 0.25rem 0; margin: 0;
+    font-size: 0.85rem; color: var(--dim); }
+  dl.meta dt { font-weight: 600; }
+  dl.meta dd { margin: 0; }
+  section { margin: 0 0 2.75rem; }
+  h2 { font-size: 1.15rem; margin: 0 0 0.75rem; }
+  p { max-width: 70ch; margin: 0 0 0.9rem; }
+  p.lead { font-size: 1.05rem; }
+  ul { max-width: 70ch; margin: 0 0 0.9rem; padding-left: 1.25rem; }
+  li { margin-bottom: 0.4rem; }
+  code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--code-bg); padding: 0.08em 0.35em; border-radius: 4px; }
+  pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: 0.9rem 1rem; overflow-x: auto; margin: 0 0 0.9rem; }
+  pre code { background: none; padding: 0; font-size: 0.83rem; line-height: 1.55; }
+  .k { color: #7c3aed; } .s { color: #0f766e; } .c { color: #9aa3af; font-style: italic; }
+  .f { color: #1d4ed8; } .t { color: #b45309; }
+  figure { margin: 0 0 1.1rem; }
+  figcaption { font-size: 0.82rem; color: var(--dim); max-width: 70ch; margin-top: 0.4rem; }
+  table.contrast { border-collapse: collapse; width: 100%; max-width: 70ch; margin: 0 0 0.9rem;
+    font-size: 0.92rem; }
+  table.contrast th, table.contrast td { border: 1px solid var(--line); padding: 0.55rem 0.7rem;
+    text-align: left; vertical-align: top; }
+  table.contrast th { background: var(--soft); font-size: 0.85rem; }
+  table.contrast td.missing { color: var(--warn); }
+  table.contrast td.have { color: var(--good); }
+  .verdict { border-left: 3px solid var(--accent); padding: 0.4rem 0 0.4rem 1rem;
+    max-width: 70ch; color: var(--ink); }
+  svg text { font: 12px ui-sans-serif, system-ui, sans-serif; }
+  .stamp { font-size: 0.78rem; color: var(--dim); border-top: 1px solid var(--line);
+    padding-top: 1rem; max-width: 70ch; }
+  .num { display: inline-block; width: 1.5rem; height: 1.5rem; line-height: 1.5rem;
+    border-radius: 50%; background: var(--ink); color: #fff; text-align: center;
+    font-size: 0.8rem; font-weight: 600; margin-right: 0.4rem; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>What problem is the ignorer family trying to solve?</h1>
+  <dl class="meta">
+    <dt>Date</dt><dd>2026-09-15</dd>
+    <dt>Input shape</dt><dd>concept</dd>
+    <dt>Subject</dt><dd>The three nested problems behind <code>packages/ignorers/*</code> in stryker-js-effect — and which one your RuleTester complaint actually targets</dd>
+  </dl>
+</header>
+
+<section id="s0">
+  <p class="lead">“The problem” is three problems stacked on top of each other, and most of the frustration of the last three rounds comes from each discussion solving a <em>different</em> layer than the one being asked about.</p>
+  <ol style="max-width:70ch">
+    <li><strong>The domain problem</strong> — some mutants <em>cannot</em> be killed, so the mutation score lies.</li>
+    <li><strong>The contract problem</strong> — where the “ignore this” decision lives, who walks the AST, and what a third-party ignorer is allowed to be.</li>
+    <li><strong>The authoring problem</strong> — how a <em>human</em> writes and tests one. This is the layer you keep hitting, and it is the one that has never been built.</li>
+  </ol>
+</section>
+
+<section id="s1">
+  <h2><span class="num">1</span>Mutants that cannot die</h2>
+  <p>StrykerJS works by mutating your code and running your tests: every mutant a test suite fails to kill is a gap in the suite. That logic assumes every mutant <em>can</em> be observed. Two shapes of code in this repo break that assumption:</p>
+  <ul>
+    <li><strong>Proven-equivalent mutants in Effect Schema declarations.</strong> A schema's identity markers are nominal data, not behavior. Mutate the tag string and validation still works; mutate it the other way and no test can tell. Concretely: <code>Schema.Tag("id", "Error", number)</code>, brand names in <code>Schema.brand(...)</code>, the tag/fields pair in <code>Schema.TaggedClass(...)</code>, <code>S.optionalWith</code> defaults, and documentation annotations. Mutating these produces equivalent mutants — the score drops, and no amount of testing recovers it.</li>
+    <li><strong>Unreachable mutants in in-source test blocks.</strong> <code>if (import.meta.vitest) { ... }</code> is test code that never runs in production. Mutants inside it are noise: they say nothing about your production behavior, they just drag the percentage down.</li>
+  </ul>
+  <p>Both are classes of nodes where <em>the mutant should never be counted in the first place</em>. That is the whole reason the ignorer family exists: a named, reason-carrying exclusion so the report says “excluded, and here is why” instead of silently failing to reach 100%.</p>
+  <figure>
+<pre><code><span class="c">// Everything marked ✕ is a mutant no test can honestly kill:</span>
+<span class="k">const</span> Policy = Schema.<span class="f">TaggedClass</span>(<span class="s">"Policy"</span><span class="t"> ✕</span>, {
+  id: Schema.<span class="f">String</span>.<span class="f">pipe</span>(schema.<span class="f">brand</span>(<span class="s">"PolicyId"</span><span class="t"> ✕</span>)),
+  maxChildren: S.<span class="f">optionalWith</span>(S.Number, { default: <span class="k">true</span><span class="t"> ✕</span> }),
+}, <span class="s">"documentation string"</span><span class="t"> ✕</span>)
+
+<span class="k">if</span> (import.meta.vitest) {          <span class="c">// test-only block</span>
+  it(<span class="s">"roundtrips"</span>, () => { expect(<span class="f">roundtrip</span>(Policy)).<span class="f">toBe</span>(<span class="k">true</span><span class="t"> ✕ all of this</span>) })
+}</code></pre>
+    <figcaption>What the effect-schema-declarations and in-source-vitest-block ignorers exist to exclude — each ✕ with its own reason string that lands in the mutation report.</figcaption>
+  </figure>
+</section>
+
+<section id="s2">
+  <h2><span class="num">2</span>Where the decision lives — the contract that was solved</h2>
+  <p>A mutation engine walks the parsed AST, proposes mutants at candidate nodes, and at that moment needs to ask: “does any ignorer exclude this node?” Several sub-problems had real answers shipped (the walker-contract plan, PR #17):</p>
+  <ul>
+    <li><strong>Third-party loading.</strong> Ignorers load like ESLint plugins — the engine scans installed <code>@systemfsoftware/stryker-ignorer-*</code> modules for a <code>strykerIgnorers</code> export, validates it <em>structurally</em> (<code>name</code> is a string, <code>shouldIgnore</code> is callable), and registers each entry as an <code>Ignore</code> contribution. A bad module is rejected at load, by name.</li>
+    <li><strong>Who walks.</strong> The host (instrumenter) supplies the single oxc-walker and consults every ignorer at each node with <code>(node, ancestors)</code>, ancestors nearest-first. No ignorer package rolls its own traversal — that duplication is what the refactor deleted.</li>
+    <li><strong>What an ignorer is.</strong> A pure, zero-Effect, per-node decider. The entire published contract is:</li>
+  </ul>
+<pre><code><span class="c">// packages/ignorers/interface/src/mod.ts — the whole runtime story</span>
+<span class="k">export interface</span> <span class="f">Ignorer</span> {
+  <span class="k">readonly</span> name: <span class="k">string</span>
+  <span class="f">shouldIgnore</span>(node: Node, ancestors: <span class="k">readonly</span> Node[]): <span class="k">string</span> | <span class="k">undefined</span>
+}</code></pre>
+  <figure>
+    <svg viewBox="0 0 760 250" width="100%" role="img" aria-label="Mutation pipeline with ignorer consultation point">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#5b6472"/>
+        </marker>
+      </defs>
+      <rect x="10" y="40" width="120" height="46" rx="8" fill="#f5f7fa" stroke="#d9dee6"/>
+      <text x="70" y="58" text-anchor="middle" fill="#1a1d23">source file</text>
+      <text x="70" y="74" text-anchor="middle" fill="#5b6472">.ts / .tsx</text>
+      <rect x="160" y="40" width="140" height="46" rx="8" fill="#f5f7fa" stroke="#d9dee6"/>
+      <text x="230" y="58" text-anchor="middle" fill="#1a1d23">oxc parse</text>
+      <text x="230" y="74" text-anchor="middle" fill="#5b6472">parseSync</text>
+      <rect x="330" y="40" width="150" height="46" rx="8" fill="#f5f7fa" stroke="#d9dee6"/>
+      <text x="405" y="58" text-anchor="middle" fill="#1a1d23">walk (host-supplied)</text>
+      <text x="405" y="74" text-anchor="middle" fill="#5b6472">node + ancestors</text>
+      <rect x="510" y="40" width="110" height="46" rx="8" fill="#f5f7fa" stroke="#d9dee6"/>
+      <text x="565" y="58" text-anchor="middle" fill="#1a1d23">mutator</text>
+      <text x="565" y="74" text-anchor="middle" fill="#5b6472">proposes mutant</text>
+      <line x1="130" y1="63" x2="156" y2="63" stroke="#5b6472" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="300" y1="63" x2="326" y2="63" stroke="#5b6472" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="480" y1="63" x2="506" y2="63" stroke="#5b6472" stroke-width="1.5" marker-end="url(#arr)"/>
+      <rect x="330" y="150" width="290" height="56" rx="8" fill="#eef4ff" stroke="#0f62fe"/>
+      <text x="475" y="171" text-anchor="middle" fill="#1a1d23" font-weight="600">consult ignorers</text>
+      <text x="475" y="188" text-anchor="middle" fill="#334155">shouldIgnore(node, ancestors) → reason?</text>
+      <line x1="565" y1="86" x2="565" y2="146" stroke="#5b6472" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="326" y1="178" x2="160" y2="178" stroke="#5b6472" stroke-width="1.5" marker-end="url(#arr)"/>
+      <rect x="10" y="155" width="150" height="46" rx="8" fill="#f0fdf4" stroke="#047857"/>
+      <text x="85" y="173" text-anchor="middle" fill="#064e3b">kept → mutant placed</text>
+      <text x="85" y="189" text-anchor="middle" fill="#064e3b">tests must kill it</text>
+      <rect x="660" y="150" width="90" height="56" rx="8" fill="#fff7ed" stroke="#b45309"/>
+      <text x="705" y="168" text-anchor="middle" fill="#7c2d12">excluded</text>
+      <text x="705" y="184" text-anchor="middle" fill="#7c2d12">reason in</text>
+      <text x="705" y="198" text-anchor="middle" fill="#7c2d12">report</text>
+      <line x1="620" y1="178" x2="656" y2="178" stroke="#5b6472" stroke-width="1.5" marker-end="url(#arr)"/>
+      <text x="475" y="228" text-anchor="middle" fill="#5b6472">ignorer packages: plain zero-Effect modules exporting strykerIgnorers</text>
+    </svg>
+    <figcaption>The pipeline. The ignorer seam is one pure question asked per candidate node; the host owns parsing and walking.</figcaption>
+  </figure>
+  <p>The trade this contract made: everything an ignorer receives is typed as the full oxc node union (~372 node kinds) plus an ancestors array. That keeps the seam tiny, host-owned, and Effect-free — but it hands each ignorer the narrowing problem, which is where the pain you keep describing actually lives. The effect-schema package answers that union with 33 hand-written <code>unknown</code>-guards (<code>isAstNode</code>, <code>hasCalleeNode</code>, <code>hasMemberEnds</code>, …) before any domain logic runs.</p>
+</section>
+
+<section id="s3">
+  <h2><span class="num">3</span>The layer that was never built — authoring and testing</h2>
+  <p>oxlint and ESLint separate <em>three</em> layers, and that separation is exactly why their rules feel good to write and test. This repo built one of the three:</p>
+  <table class="contrast">
+    <tr><th></th><th>oxlint / ESLint rules</th><th>stryker ignorers today</th></tr>
+    <tr>
+      <td><strong>Wire contract</strong><br><span style="color:var(--dim)">what the host calls</span></td>
+      <td class="have">the compiled rule object the linter core dispatches</td>
+      <td class="have">✓ <code>Ignorer { name, shouldIgnore(node, ancestors) }</code> — engine-validated, host-walked</td>
+    </tr>
+    <tr>
+      <td><strong>Authoring API</strong><br><span style="color:var(--dim)">what a human writes</span></td>
+      <td class="have"><code>create(context)</code> returning visitors keyed by node type — the runtime dispatches, each visitor's node arrives pre-narrowed, so no guard pile</td>
+      <td class="missing">✗ none — you hand-roll predicate guards over the raw 372-member node union yourself</td>
+    </tr>
+    <tr>
+      <td><strong>RuleTester</strong><br><span style="color:var(--dim)">what a human tests</span></td>
+      <td class="have">code strings in, real parser + real traversal, valid/invalid asserted</td>
+      <td class="missing">✗ none — tests hand-build AST trees</td>
+    </tr>
+  </table>
+  <p>What ignorer testing looks like today, in every package in the family:</p>
+<pre><code><span class="c">// packages/ignorers/in-source-vitest-block/tests — hand-assembled AST, not code</span>
+{
+  name: <span class="s">'A vitest flag on the left side of a comparison matches'</span>,
+  path: { node: <span class="f">identifier</span>(<span class="s">'x'</span>),
+          ancestors: [<span class="f">guardOf</span>(<span class="f">binaryOf</span>(<span class="f">importMetaMember</span>(<span class="s">'vitest'</span>), <span class="f">identifier</span>(<span class="s">'undefined'</span>)))] },
+  reason: IN_SOURCE_TEST_IGNORED,
+}</code></pre>
+  <p>That fixture style has three real costs. It mirrors oxc node shapes <em>by hand</em> — every field the parser would set, you set, or the test lies. It bypasses the parse→walk seam entirely, so the pipeline that actually feeds ignorers is never exercised by their own tests. And it reads as structure, not as code — nobody can look at <code>guardOf(binaryOf(...))</code> and see <code>if (import.meta.vitest !== undefined)</code>. The RuleTester shape you keep asking for is the direct fix for all three: a case is a source snippet plus the expected ignored spans, run through the same <code>parseSync</code> the instrumenter uses and the same ancestor-tracking walk.</p>
+  <p class="verdict"><strong>The honest answer to “why can’t we.”</strong> Nothing architectural blocks it. The engine validates only <code>{ name, shouldIgnore }</code> — anything that <em>compiles to</em> that shape loads. A <code>defineIgnorer</code> that turns a typed visitor map into the same <code>Ignorer</code> object, and an <code>IgnorerTester</code> that parses snippets and asserts ignored spans, are purely additive: wire contract untouched, engine untouched, instrumenter untouched. The reason it doesn’t exist isn’t a constraint — it’s that each prior round scoped a different layer: the walker duplication got the contract refactor, the guard pile got a closed-shape retype, and the authoring/testing layer fell outside every solved scope each time. Your complaint has been aimed at layer 3 the whole time.</p>
+</section>
+
+<p class="stamp">Composed 2026-09-15 by ce-explain</p>
+
+</main>
+</body>
+</html>
