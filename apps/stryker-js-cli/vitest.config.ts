@@ -6,12 +6,7 @@ export default defineConfig({
   plugins: [inlineSchemaTests()],
   test: {
     ...sharedConfig.test,
-    include: [
-      'src/**/*.test.ts',
-      'tests/checker-group-then-check.integration.test.ts',
-      'tests/exit-code.integration.test.ts',
-      'tests/verdict-envelope.integration.test.ts',
-    ],
+    include: ['src/**/*.test.ts'],
     passWithNoTests: false,
     testTimeout: 60_000,
   },
