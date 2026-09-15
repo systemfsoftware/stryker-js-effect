@@ -1,6 +1,6 @@
 # AGENTS.md — `@systemfsoftware/stryker-js-typescript-checker`
 
-TypeScript checker plugin for the mutation engine — TS7 native: each mutant is type-checked against the project's own compiler configuration, and the resulting diagnostics are attributed to mutants. Root `AGENTS.md` governs.
+TypeScript checker plugin for the mutation engine — TS7 native: each mutant is type-checked against the project's own compiler configuration, and the resulting diagnostics are attributed to mutants.
 
 > The mutation-testing subtree group file did not travel with this package, and neither the contract lane nor the api-extractor surface (`etc/*.api.md`) is carried in this repository.
 

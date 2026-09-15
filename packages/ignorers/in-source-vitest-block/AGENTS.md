@@ -1,6 +1,6 @@
 # AGENTS.md — `@systemfsoftware/stryker-ignorer-in-source-vitest-block`
 
-Stryker ignorer for in-source Vitest blocks: removes mutants inside an `if (import.meta.vitest)` guard. The ignorer is authored as typed visitors through `@systemfsoftware/stryker-ignorer-kit`, and the package's only runtime dependencies are `@systemfsoftware/stryker-ignorer-interface` (node types, nothing that runs) and the kit (authoring compile and tester) — zero Effect is part of its identity. Root `AGENTS.md` governs.
+Stryker ignorer for in-source Vitest blocks: removes mutants inside an `if (import.meta.vitest)` guard. The ignorer is authored as typed visitors through `@systemfsoftware/stryker-ignorer-kit`, and the package's only runtime dependencies are `@systemfsoftware/stryker-ignorer-interface` (node types, nothing that runs) and the kit (authoring compile and tester) — zero Effect is part of its identity.
 
 ## Rules
 

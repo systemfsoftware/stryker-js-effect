@@ -1,7 +1,6 @@
 # stryker-ignorer-kit
 
-Authoring and testing kit for the Stryker ignorer family. Root `AGENTS.md` governs;
-this file carries only what is true of this package.
+Authoring and testing kit for the Stryker ignorer family.
 
 ## Identity
 

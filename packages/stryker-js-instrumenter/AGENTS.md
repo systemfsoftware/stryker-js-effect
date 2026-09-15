@@ -1,6 +1,6 @@
 # AGENTS.md — `@systemfsoftware/stryker-js-instrumenter`
 
-Places mutants and coverage hooks for every mutation run in this workspace: oxc parses, an owned ESTree printer renders. Parent: root `AGENTS.md`.
+Places mutants and coverage hooks for every mutation run in this workspace: oxc parses, an owned ESTree printer renders.
 
 ## Rules
 

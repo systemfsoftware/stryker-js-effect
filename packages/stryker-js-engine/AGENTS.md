@@ -1,6 +1,6 @@
 # AGENTS.md — `@systemfsoftware/stryker-js-engine`
 
-Host-neutral mutation engine: ports in, run out, no Node. Parent: root `AGENTS.md`.
+Host-neutral mutation engine: ports in, run out, no Node.
 
 ## Rules
 

@@ -1,6 +1,6 @@
 # AGENTS.md — `@systemfsoftware/stryker-js-html-reporter`
 
-HTML reporter plugin for the mutation engine: `strykerPlugins` declares the `Reporter` kind (`html`), and `makeHtmlReporter` is the factory a host wires — the CLI bundles this package as its `reporters/html` entry. Root `AGENTS.md` governs.
+HTML reporter plugin for the mutation engine: `strykerPlugins` declares the `Reporter` kind (`html`), and `makeHtmlReporter` is the factory a host wires — the CLI bundles this package as its `reporters/html` entry.
 
 > The mutation-testing subtree group file did not travel with this package, and neither the contract lane nor the api-extractor surface (`etc/*.api.md`) is carried in this repository.
 

@@ -1,6 +1,6 @@
 # AGENTS.md — `@systemfsoftware/stryker-js-vitest-runner`
 
-Vitest test-runner plugin for Stryker. Parent: root `AGENTS.md`.
+Vitest test-runner plugin for Stryker.
 
 ## Rules
 

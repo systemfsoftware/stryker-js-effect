@@ -1,6 +1,6 @@
 # AGENTS.md — `@systemfsoftware/stryker-js-cli`
 
-The `stryker` bin: NDJSON run-event framing, mode/colour detection, signal handling, drain-before-exit, classed exit code. Parent: root `AGENTS.md`.
+The `stryker` bin: NDJSON run-event framing, mode/colour detection, signal handling, drain-before-exit, classed exit code.
 
 ## Rules
 

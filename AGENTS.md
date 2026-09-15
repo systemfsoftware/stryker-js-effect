@@ -7,22 +7,20 @@ test-runner integration.
 
 ## Boundaries
 
-| Surface            | Examples                                     | Limit                                                  |
-| ------------------ | -------------------------------------------- | ------------------------------------------------------ |
-| **Evaluator**      | `commitlint.config.ts`, `.github/workflows/` | Read-only; never edit the instrument that grades work. |
-| **Doctrine**       | `CONSTITUTION.md`, `subtrees.toml`           | Project law; edit only on deliberate direction.        |
-| **Vendored**       | `repos/**`                                   | Read-only; updated via git subtree, never hand-edited. |
-| **Human approval** | Releases, publishing, external credentials   | User-confirmed only.                                   |
-| **Supply chain**   | `pnpm-workspace.yaml`, `pnpm-lock.yaml`      | Human-approved; never widen an exemption unasked.      |
-| **Editable**       | Workspace source, tests, documentation       | Edit freely.                                           |
+| Surface            | Examples                                            | Limit                                                  |
+| ------------------ | --------------------------------------------------- | ------------------------------------------------------ |
+| **Evaluator**      | `commitlint.config.ts`, `.github/workflows/`        | Read-only; never edit the instrument that grades work. |
+| **Doctrine**       | `CONSTITUTION.md`, `subtrees.toml`                  | Project law; edit only on deliberate direction.        |
+| **Vendored**       | `repos/**`                                          | Read-only; updated via git subtree, never hand-edited. |
+| **Human approval** | Releases, publishing, external credentials          | User-confirmed only.                                   |
+| **Supply chain**   | `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` | Human-approved; never widen unasked.                   |
+| **Editable**       | Workspace source, tests, documentation              | Edit freely.                                           |
 
-`pnpm-workspace.yaml` carries the dependency-resolution controls — `minimumReleaseAge`
-and its exclusion lists, `trustPolicyExclude`, `allowBuilds`, `overrides`,
-`blockExoticSubdeps` — and `pnpm-lock.yaml` is what they resolve to. pnpm withholds every
-version younger than `minimumReleaseAge` (1440 minutes by default, per pnpm's
-dependency-resolution settings), so each entry added to
-an exclusion or allow-list widens a live malware window. Propose the change, name the
-package and the reason, and wait for the operator before writing.
+pnpm withholds every version younger than `minimumReleaseAge` (1440 minutes by default,
+per pnpm's dependency-resolution settings). `minimumReleaseAgeExclude` in
+`pnpm-workspace.yaml` punches holes in that quarantine; today it exempts the whole
+`@systemfsoftware/*` scope. Adding an entry to it is a human-approved change: propose it,
+name the package and the reason, and wait for the operator.
 
 ## Definition of Done
 

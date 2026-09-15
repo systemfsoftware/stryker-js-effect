@@ -1,7 +1,7 @@
 # AGENTS.md — `@systemfsoftware/stryker-js-plugin-interface`
 
 The mutation-testing plugin interface: declaring and composing plugin
-contributions. Parent: root `AGENTS.md`.
+contributions.
 
 ## Rules
 

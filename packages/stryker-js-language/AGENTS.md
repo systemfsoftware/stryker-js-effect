@@ -1,6 +1,6 @@
 # AGENTS.md — `@systemfsoftware/stryker-js-language`
 
-The mutation-testing language: enumerated concept modules, no platform. Parent: root `AGENTS.md`.
+The mutation-testing language: enumerated concept modules, no platform.
 
 ## Rules
 

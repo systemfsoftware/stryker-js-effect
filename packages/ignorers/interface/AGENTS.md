@@ -8,7 +8,7 @@ The package publishes no value, no function, and
 no schema — a guard and a reason string belong to the ignorer that needs them.
 Zero runtime dependencies and zero Effect is the package's identity — nothing
 that imports effect or a host package, at run time or in `devDependencies`, may
-land here. It carries no coverage gate — with no runtime code there is nothing to measure. Root `AGENTS.md` governs.
+land here. It carries no coverage gate — with no runtime code there is nothing to measure.
 
 ## Rules
 
