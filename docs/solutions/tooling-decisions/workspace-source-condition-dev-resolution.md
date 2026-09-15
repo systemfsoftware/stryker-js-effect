@@ -68,9 +68,12 @@ consuming them, not by copying config:
 - **Turbo invalidates on the shared helper.** The `build` and `typecheck`
   tasks list the `tsdown-config` shared source tree in `inputs`; without it a helper
   edit reaches consumers through a cache hit.
-- **The helper's contract is executable.** The `tsdown-config` test suite
-  asserts the branch behavior and key order, so the handwritten
-  `base.d.ts` cannot drift from `base.js` silently.
+- **The helper's contract is executable.** `checkJs` keeps the handwritten
+  `base.d.ts` honest against `base.js`, and the `tsdown-config` test suite
+  asserts the entry laws as fast-check properties — string entries normalize
+  to `{types, default}`, condition/types/default order, carried `types` is an
+  override the helper never re-derives, and mapping is idempotent — so the
+  manifest emission cannot drift silently.
 - **Runtime still uses dist.** Node never activates the dev condition, so
   published consumers and production resolution are unaffected; `attw` stays
   in the gate as the check that the published shape is intact.

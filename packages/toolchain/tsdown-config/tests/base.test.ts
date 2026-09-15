@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest'
 
 type Entry = Record<string, string | undefined>
 
-const deriveTypes = (value: string, ext: string): string => value.replace(/\.mjs$/, ext)
+const deriveTypes = (
+  value: string,
+  ext: string,
+): string => (value.endsWith('.mjs') ? `${value.slice(0, -4)}${ext}` : value)
 
 const pathArb = fc.oneof(fc.stringMatching(/^[A-Za-z0-9/._-]*\.mjs$/), fc.string())
 const dtsExtArb = fc.constantFrom('.d.ts', '.d.mts')
