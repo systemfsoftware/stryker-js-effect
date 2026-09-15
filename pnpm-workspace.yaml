@@ -27,7 +27,7 @@ catalog:
   "@types/node": ^24
   "@vitest/browser-playwright": ^4
   "@vitest/coverage-v8": ^4
-  fast-check: ^4.10.1
+  fast-check: ^4
   effect: ^4.0.0-rc.112
   husky: ^9.1.7
   lint-staged: ^17.1.0
@@ -65,7 +65,6 @@ minimumReleaseAgeExclude:
   - "@systemfsoftware/effect-schema-law@2.1.1"
   - "@systemfsoftware/effect-schema-recursion-budget@0.0.1"
   - "@systemfsoftware/effect-schema-vite@2.1.1"
-  - fast-check@4.10.1
 packages:
   - apps/*
   - packages/*
