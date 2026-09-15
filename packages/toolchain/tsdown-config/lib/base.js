@@ -14,9 +14,10 @@ export const typesPathFor = (dtsExt, mjsPath) => mjsPath.replace(/\.mjs$/, dtsEx
 export const withTypesFirst = (entry, dtsExt) => {
   if (typeof entry === 'string') return { types: typesPathFor(dtsExt, entry), default: entry }
   /** @type {Record<string, string | undefined>} */
-  const ordered = { default: entry['default'] }
-  if (entry[SOURCE_CONDITION] != null) ordered[SOURCE_CONDITION] = entry[SOURCE_CONDITION]
+  const ordered = {}
   ordered['types'] = entry['types'] ?? typesPathFor(dtsExt, entry['default'] ?? '')
+  if (entry[SOURCE_CONDITION] != null) ordered[SOURCE_CONDITION] = entry[SOURCE_CONDITION]
+  ordered['default'] = entry['default']
   return ordered
 }
 

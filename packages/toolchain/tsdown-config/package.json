@@ -23,8 +23,10 @@
   },
   "devDependencies": {
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "repository": {
     "type": "git",

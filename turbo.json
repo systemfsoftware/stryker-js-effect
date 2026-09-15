@@ -14,7 +14,9 @@
         "tsdown.config.*",
         "api-extractor.json",
         "api-extractor.*.json",
-        "etc/*.api.md"
+        "etc/*.api.md",
+        "$TURBO_ROOT$/packages/toolchain/tsdown-config/lib/**",
+        "$TURBO_ROOT$/packages/toolchain/tsdown-config/package.json"
       ],
       "outputs": [
         "dist/**"
@@ -30,6 +32,7 @@
         "$TURBO_DEFAULT$",
         "tsconfig.json",
         "tsconfig.*.json",
+        "$TURBO_ROOT$/packages/toolchain/tsdown-config/lib/**",
         "!**/*.md"
       ],
       "outputs": [],
