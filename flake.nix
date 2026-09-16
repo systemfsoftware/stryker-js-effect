@@ -37,6 +37,7 @@
           };
         in {
           inherit dprint;
+          deno = pkgs.deno;
           comment-checker = sandboxed;
           comment-checker-unwrapped = unwrapped;
           default = dprint;

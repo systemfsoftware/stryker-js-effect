@@ -85,7 +85,7 @@ or empty fails the job). To inspect a CI run's traces locally:
 pnpm lgtm:up
 gh run download <run-id> -n e2e-telemetry-<run-id> -D /tmp/tele
 tar xzf /tmp/tele/e2e-telemetry.tar.gz -C /tmp/tele
-IN_DIR=/tmp/tele/e2e-telemetry node apps/stryker-js-cli-e2e/scripts/import-traces.mjs
+IN_DIR=/tmp/tele/e2e-telemetry ./apps/stryker-js-cli-e2e/scripts/import-traces.ts
 ```
 
 Then query service `stryker-js-ci` in Grafana.
