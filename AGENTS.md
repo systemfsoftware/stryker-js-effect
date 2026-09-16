@@ -1,33 +1,21 @@
 # stryker-js-effect
 
-The home of the `@systemfsoftware/stryker-js-*` package family: the mutation
-engine (`stryker-js-language`), the plugin contract
-(`stryker-js-plugin-interface`), the CLI, instrumenter, reporters, checkers, and
-test-runner integration.
-
 ## Boundaries
 
-| Surface            | Examples                                     | Limit                                                  |
-| ------------------ | -------------------------------------------- | ------------------------------------------------------ |
-| **Evaluator**      | `commitlint.config.ts`, `.github/workflows/` | Read-only; never edit the instrument that grades work. |
-| **Doctrine**       | `CONSTITUTION.md`, `subtrees.toml`           | Project law; edit only on deliberate direction.        |
-| **Vendored**       | `repos/**`                                   | Read-only; updated via git subtree, never hand-edited. |
-| **Human approval** | Releases, publishing, external credentials   | User-confirmed only.                                   |
-| **Editable**       | Workspace source, tests, documentation       | Edit freely.                                           |
+| Surface            | Target                                                                                          | Gate              |
+| ------------------ | ----------------------------------------------------------------------------------------------- | ----------------- |
+| **Evaluator**      | `commitlint.config.ts`, `.github/workflows/`                                                    | Read-only         |
+| **Doctrine**       | `CONSTITUTION.md`, `subtrees.toml`                                                              | Read-only         |
+| **Vendored**       | `repos/**`                                                                                      | Read-only         |
+| **Human approval** | Releases, publishing, external credentials, `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` | User confirmation |
+| **Editable**       | Workspace source, tests, documentation                                                          | Edit freely       |
 
 ## Definition of Done
 
-| ID        | Rule                                                | Gate                |
-| --------- | --------------------------------------------------- | ------------------- |
-| `START-1` | Formatting passes dprint with no diffs              | `pnpm format:check` |
-| `START-2` | Typechecking succeeds workspace-wide with no errors | `pnpm typecheck`    |
-| `START-3` | All test suites pass                                | `pnpm test`         |
-| `START-4` | Full CI validation passes before completion         | `pnpm check:ci`     |
-
-Workspace roots: `packages/` holds libraries, `apps/` holds publishable
-applications — both are workspace globs in `pnpm-workspace.yaml`. Turbo declares
-`dist/**` as each package's build output; `pnpm gate:dist` runs that build.
-
-## End of Session
-
-Commit changes using conventional commits (`<type>(<scope>): <subject>`). Ensure the working tree is clean and `pnpm check:ci` passes.
+| ID        | Obligation                                  | Gate                                                              |
+| --------- | ------------------------------------------- | ----------------------------------------------------------------- |
+| `START-1` | Code formatting matches dprint              | `pnpm format:check`                                               |
+| `START-2` | Workspace typecheck passes                  | `pnpm typecheck`                                                  |
+| `START-3` | All test suites pass                        | `pnpm test`                                                       |
+| `START-4` | Workspace build and verification tasks pass | `pnpm check:ci`                                                   |
+| `START-5` | Package changes include change intent       | `./scripts/check-changeset.ts $(git merge-base HEAD origin/main)` |
