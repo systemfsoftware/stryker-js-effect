@@ -86,6 +86,8 @@ export interface PooledTestRunner {
   readonly mutantRun: (options: MutantRunOptions) => Effect.Effect<MutantRunResult, PooledTestRunnerError>
 }
 
+const WORKER_BOOT_TIMEOUT_MS = 30_000
+
 const toRunnerFailure =
   (runnerName: string, phase: 'capabilities' | 'init' | 'dryRun' | 'mutantRun' | 'dispose') =>
   (error: RpcClientError | TestRunnerFailed): PooledTestRunnerError =>
@@ -129,17 +131,43 @@ export const makeChildProcessTestRunner = (
       optionsJson,
       tempDirPrefix: 'stryker-test-runner-',
     })
-    const workerContext = yield* Layer.build(worker.clientLayer).pipe(
-      Effect.retry(connectRetry),
-      Effect.raceFirst(worker.exited),
-      Effect.catch((error: ChildProcessCrashedError | SocketError): Effect.Effect<never, PooledTestRunnerError> => {
-        if (error instanceof ChildProcessCrashedError) {
-          return Effect.fail(error)
-        }
-        return Effect.fail(
-          new TestRunnerFailed({ runnerName, phase: 'init', cause: `Worker failed to start: ${error.message}` }),
+    const workerContext = yield* Effect.raceFirst(
+      Layer.build(worker.clientLayer).pipe(
+        Effect.retry(connectRetry),
+        Effect.raceFirst(worker.exited),
+      ),
+      Effect.sleep(Duration.millis(WORKER_BOOT_TIMEOUT_MS)).pipe(
+        Effect.andThen(
+          Effect.fail(
+            new TestRunnerFailed({
+              runnerName,
+              phase: 'init',
+              cause:
+                `Worker did not accept the RPC connection within ${WORKER_BOOT_TIMEOUT_MS}ms; its stderr above carries the reason`,
+            }),
+          ),
+        ),
+      ),
+    ).pipe(
+      Effect.catch((
+        error: ChildProcessCrashedError | SocketError | TestRunnerFailed,
+      ): Effect.Effect<never, PooledTestRunnerError> =>
+        Match.value(error).pipe(
+          Match.when(
+            (candidate): candidate is ChildProcessCrashedError => candidate instanceof ChildProcessCrashedError,
+            (crashed): Effect.Effect<never, PooledTestRunnerError> => Effect.fail(crashed),
+          ),
+          Match.when(
+            (candidate): candidate is TestRunnerFailed => candidate instanceof TestRunnerFailed,
+            (failed): Effect.Effect<never, PooledTestRunnerError> => Effect.fail(failed),
+          ),
+          Match.orElse((socket): Effect.Effect<never, PooledTestRunnerError> =>
+            Effect.fail(
+              new TestRunnerFailed({ runnerName, phase: 'init', cause: `Worker failed to start: ${socket.message}` }),
+            )
+          ),
         )
-      }),
+      ),
     )
     const client = yield* RpcClient.make(TestRunnerRpcs).pipe(Effect.provideContext(workerContext))
 
