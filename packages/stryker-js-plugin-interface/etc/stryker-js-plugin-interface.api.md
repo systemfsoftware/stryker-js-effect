@@ -4,10 +4,7 @@
 
 ```ts
 
-import { $Array } from 'effect/Schema';
-import { $Record } from 'effect/Schema';
 import * as api from '@opentelemetry/api';
-import { Boolean as Boolean_2 } from 'effect/Schema';
 import { CheckerFailed } from '@systemfsoftware/stryker-js-language';
 import { CheckResultSchema } from '@systemfsoftware/stryker-js-language';
 import * as Context from 'effect/Context';
@@ -15,19 +12,14 @@ import { DryRunCompleted } from '@systemfsoftware/stryker-js-language';
 import { DryRunResultSchema } from '@systemfsoftware/stryker-js-language';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
-import { Finite } from 'effect/Schema';
 import * as Layer from 'effect/Layer';
-import { Literal } from 'effect/Schema';
-import { Literals } from 'effect/Schema';
 import { Module } from '@systemfsoftware/stryker-js-language';
 import { Mutant } from '@systemfsoftware/stryker-js-language';
 import { MutantRunResultSchema } from '@systemfsoftware/stryker-js-language';
 import { MutantTested } from '@systemfsoftware/stryker-js-language';
 import { MutationTestingPlanReady } from '@systemfsoftware/stryker-js-language';
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language';
-import { Never } from 'effect/Schema';
 import * as Option from 'effect/Option';
-import { optionalKey } from 'effect/Schema';
 import * as Path from 'effect/Path';
 import { PlatformError } from 'effect/PlatformError';
 import { ReporterEventUnion } from '@systemfsoftware/stryker-js-language';
@@ -36,13 +28,10 @@ import * as Rpc from 'effect/unstable/rpc/Rpc';
 import * as RpcGroup from 'effect/unstable/rpc/RpcGroup';
 import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware';
 import * as S from 'effect/Schema';
-import { String as String_2 } from 'effect/Schema';
-import { Struct } from 'effect/Schema';
+import { Schema } from 'effect';
 import { StrykerOptions } from '@systemfsoftware/stryker-js-language';
 import { TestRunnerCapabilitiesSchema } from '@systemfsoftware/stryker-js-language';
 import { TestRunnerFailed } from '@systemfsoftware/stryker-js-language';
-import { Union } from 'effect/Schema';
-import { Void } from 'effect/Schema';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
@@ -84,18 +73,7 @@ export const CheckerRequest: S.Struct<{
 export type CheckerRequest = typeof CheckerRequest.Type;
 
 // @public (undocumented)
-export const CheckerRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"check", Struct<    {
-readonly checkerName: String_2;
-readonly mutants: $Array<Mutant>;
-}>, $Record<String_2, Union<readonly [Struct<    {
-readonly status: Literal<"passed">;
-}>, Struct<    {
-readonly status: Literal<"compileError">;
-readonly reason: String_2;
-}>]>>, typeof CheckerFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"group", Struct<    {
-readonly checkerName: String_2;
-readonly mutants: $Array<Mutant>;
-}>, $Array<$Array<String_2>>, typeof CheckerFailed, typeof TraceContextMiddleware, never>>;
+export const CheckerRpcs: RpcGroup.RpcGroup<TracedRpc<'check', typeof CheckerRequest, typeof CheckerCheckResult, typeof CheckerFailed> | TracedRpc<'group', typeof CheckerRequest, typeof CheckerGroupResult, typeof CheckerFailed>>;
 
 export { CheckResultSchema }
 
@@ -308,10 +286,7 @@ export const ReporterInitOptions: S.Struct<{
 export type ReporterInitOptions = typeof ReporterInitOptions.Type;
 
 // @public (undocumented)
-export const ReporterRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"flush", Void, Void, typeof ReporterFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"init", Struct<    {
-readonly traceparent: optionalKey<String_2>;
-readonly tracestate: optionalKey<String_2>;
-}>, Void, typeof ReporterFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"onEventBatch", $Array<Union<readonly [DryRunCompleted, MutationTestingPlanReady, MutantTested, MutationTestReportReady]>>, Void, typeof ReporterFailed, typeof TraceContextMiddleware, never>>;
+export const ReporterRpcs: RpcGroup.RpcGroup<TracedRpc<'init', typeof ReporterInitOptions, typeof ReporterAck, typeof ReporterFailed> | TracedRpc<'onEventBatch', typeof ReporterEventBatch, typeof ReporterAck, typeof ReporterFailed> | TracedRpc<'flush', Schema.Void, typeof ReporterDrained, typeof ReporterFailed>>;
 
 // @public (undocumented)
 export const startHostTelemetry: () => Promise<void>;
@@ -370,86 +345,7 @@ export const TestRunnerMutantRunRequest: S.Struct<{
 export type TestRunnerMutantRunRequest = typeof TestRunnerMutantRunRequest.Type;
 
 // @public (undocumented)
-export const TestRunnerRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"capabilities", Void, Struct<    {
-readonly reloadEnvironment: Boolean_2;
-}>, typeof TestRunnerFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"dryRun", Struct<    {
-readonly options: Struct<    {
-readonly timeout: Finite;
-readonly disableBail: Boolean_2;
-readonly coverageAnalysis: Literals<readonly ["off", "all", "perTest"]>;
-readonly files: optionalKey<$Array<String_2>>;
-readonly testFiles: optionalKey<$Array<String_2>>;
-}>;
-}>, Union<readonly [Struct<    {
-readonly status: Literal<"complete">;
-readonly tests: $Array<Union<readonly [Struct<    {
-readonly id: String_2;
-readonly name: String_2;
-readonly timeSpentMs: Finite;
-readonly fileName: optionalKey<String_2>;
-readonly startPosition: optionalKey<Struct<    {
-readonly line: Finite;
-readonly column: Finite;
-}>>;
-readonly status: Literal<"failed">;
-readonly failureMessage: String_2;
-}>, Struct<    {
-readonly id: String_2;
-readonly name: String_2;
-readonly timeSpentMs: Finite;
-readonly fileName: optionalKey<String_2>;
-readonly startPosition: optionalKey<Struct<    {
-readonly line: Finite;
-readonly column: Finite;
-}>>;
-readonly status: Literal<"skipped">;
-}>, Struct<    {
-readonly id: String_2;
-readonly name: String_2;
-readonly timeSpentMs: Finite;
-readonly fileName: optionalKey<String_2>;
-readonly startPosition: optionalKey<Struct<    {
-readonly line: Finite;
-readonly column: Finite;
-}>>;
-readonly status: Literal<"success">;
-}>]>>;
-readonly mutantCoverage: optionalKey<Struct<    {
-readonly perTest: $Record<String_2, $Record<String_2, Finite>>;
-readonly static: $Record<String_2, Finite>;
-}>>;
-}>, Struct<    {
-readonly status: Literal<"timeout">;
-readonly reason: optionalKey<String_2>;
-}>, Struct<    {
-readonly status: Literal<"error">;
-readonly errorMessage: String_2;
-}>]>, typeof TestRunnerFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"mutantRun", Struct<    {
-readonly options: Struct<    {
-readonly timeout: Finite;
-readonly disableBail: Boolean_2;
-readonly activeMutant: Mutant;
-readonly sandboxFileName: String_2;
-readonly mutantActivation: Literals<readonly ["runtime", "static"]>;
-readonly reloadEnvironment: Boolean_2;
-readonly testFilter: optionalKey<$Array<String_2>>;
-readonly hitLimit: optionalKey<Finite>;
-}>;
-}>, Union<readonly [Struct<    {
-readonly status: Literal<"killed">;
-readonly killedBy: $Array<String_2>;
-readonly failureMessage: String_2;
-readonly nrOfTests: Finite;
-}>, Struct<    {
-readonly status: Literal<"survived">;
-readonly nrOfTests: Finite;
-}>, Struct<    {
-readonly status: Literal<"timeout">;
-readonly reason: optionalKey<String_2>;
-}>, Struct<    {
-readonly status: Literal<"error">;
-readonly errorMessage: String_2;
-}>]>, typeof TestRunnerFailed, typeof TraceContextMiddleware, never>>;
+export const TestRunnerRpcs: RpcGroup.RpcGroup<TracedRpc<'capabilities', Schema.Void, typeof TestRunnerCapabilitiesSchema, typeof TestRunnerFailed> | TracedRpc<'dryRun', typeof TestRunnerDryRunRequest, typeof DryRunResultSchema, typeof TestRunnerFailed> | TracedRpc<'mutantRun', typeof TestRunnerMutantRunRequest, typeof MutantRunResultSchema, typeof TestRunnerFailed>>;
 
 // Warning: (ae-forgotten-export) The symbol "TraceContextMiddleware_base" needs to be exported by the entry point index.d.mts
 //
@@ -472,6 +368,9 @@ export interface TraceContextParts {
 
 // @public (undocumented)
 export const TraceContextReference: Context.Reference<Option.Option<TraceContextParts>>;
+
+// @public (undocumented)
+export type TracedRpc<Tag extends string, Payload extends Schema.Top = Schema.Void, Success extends Schema.Top = Schema.Void, Error extends Schema.Top = Schema.Never> = Rpc.Rpc<Tag, Payload, Success, Error, typeof TraceContextMiddleware, RpcMiddleware.ApplyServices<typeof TraceContextMiddleware['Identifier'], never>>;
 
 // @public (undocumented)
 export const Traceparent: S.String;

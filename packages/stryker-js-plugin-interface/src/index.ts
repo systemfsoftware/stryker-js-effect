@@ -44,6 +44,7 @@ export {
   layerTraceContextServer,
   PropagatedTrace,
   TraceContextMiddleware,
+  type TracedRpc,
   tracePartsOf,
   withLinkedSpan,
 } from './TraceContextRpc.js'

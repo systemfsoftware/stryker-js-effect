@@ -9,6 +9,7 @@ import {
 import * as Rpc from 'effect/unstable/rpc/Rpc'
 import * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
 
+import type { Schema } from 'effect'
 import {
   CheckerCheckResult,
   CheckerGroupResult,
@@ -20,9 +21,13 @@ import {
   TestRunnerDryRunRequest,
   TestRunnerMutantRunRequest,
 } from './Plugin.schema.js'
-import { TraceContextMiddleware } from './TraceContextRpc.js'
+import { TraceContextMiddleware, type TracedRpc } from './TraceContextRpc.js'
 
-export const TestRunnerRpcs = RpcGroup.make(
+export const TestRunnerRpcs: RpcGroup.RpcGroup<
+  | TracedRpc<'capabilities', Schema.Void, typeof TestRunnerCapabilitiesSchema, typeof TestRunnerFailed>
+  | TracedRpc<'dryRun', typeof TestRunnerDryRunRequest, typeof DryRunResultSchema, typeof TestRunnerFailed>
+  | TracedRpc<'mutantRun', typeof TestRunnerMutantRunRequest, typeof MutantRunResultSchema, typeof TestRunnerFailed>
+> = RpcGroup.make(
   Rpc.make('capabilities', {
     success: TestRunnerCapabilitiesSchema,
     error: TestRunnerFailed,
@@ -39,7 +44,10 @@ export const TestRunnerRpcs = RpcGroup.make(
   }),
 ).middleware(TraceContextMiddleware)
 
-export const CheckerRpcs = RpcGroup.make(
+export const CheckerRpcs: RpcGroup.RpcGroup<
+  | TracedRpc<'check', typeof CheckerRequest, typeof CheckerCheckResult, typeof CheckerFailed>
+  | TracedRpc<'group', typeof CheckerRequest, typeof CheckerGroupResult, typeof CheckerFailed>
+> = RpcGroup.make(
   Rpc.make('check', {
     payload: CheckerRequest,
     success: CheckerCheckResult,
@@ -52,7 +60,11 @@ export const CheckerRpcs = RpcGroup.make(
   }),
 ).middleware(TraceContextMiddleware)
 
-export const ReporterRpcs = RpcGroup.make(
+export const ReporterRpcs: RpcGroup.RpcGroup<
+  | TracedRpc<'init', typeof ReporterInitOptions, typeof ReporterAck, typeof ReporterFailed>
+  | TracedRpc<'onEventBatch', typeof ReporterEventBatch, typeof ReporterAck, typeof ReporterFailed>
+  | TracedRpc<'flush', Schema.Void, typeof ReporterDrained, typeof ReporterFailed>
+> = RpcGroup.make(
   Rpc.make('init', {
     payload: ReporterInitOptions,
     success: ReporterAck,

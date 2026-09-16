@@ -1,4 +1,5 @@
 import * as api from '@opentelemetry/api'
+import type { Schema } from 'effect'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -28,6 +29,20 @@ export class TraceContextMiddleware extends RpcMiddleware.Service<
   TraceContextMiddleware,
   { provides: typeof PropagatedTrace }
 >()('@systemfsoftware/stryker-js-plugin-interface/TraceContextMiddleware', { requiredForClient: true }) {}
+
+export type TracedRpc<
+  Tag extends string,
+  Payload extends Schema.Top = Schema.Void,
+  Success extends Schema.Top = Schema.Void,
+  Error extends Schema.Top = Schema.Never,
+> = Rpc.Rpc<
+  Tag,
+  Payload,
+  Success,
+  Error,
+  typeof TraceContextMiddleware,
+  RpcMiddleware.ApplyServices<typeof TraceContextMiddleware['Identifier'], never>
+>
 
 const serializedTraceState = (traceState: api.TraceState | undefined): Option.Option<string> =>
   Option.filter(
