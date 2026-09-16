@@ -1,3 +1,4 @@
+import type { FormatRegistry } from '@systemfsoftware/stryker-js-instrumenter'
 import { type CheckResult, type PassedCheckResult } from '@systemfsoftware/stryker-js-language'
 import type { ExitClass } from '@systemfsoftware/stryker-js-language'
 import { highestExitClass, verdictExitClass } from '@systemfsoftware/stryker-js-language'
@@ -23,6 +24,7 @@ import * as S from 'effect/Schema'
 
 import { checkStatusToMutantStatus, mapRunResult, toSchemaLocation } from './mutant-result-mapping.js'
 import type { TestCoverage } from './Mutants.js'
+import { ManifestSchema } from './mutation-reporting.schema.js'
 import type { ResolvedMode } from './output-mode.js'
 import type { Project } from './Project.js'
 import { FILE_CONCURRENCY, readOriginal } from './Project.js'
@@ -30,7 +32,10 @@ import {
   assembleFileResults,
   assembleTestFiles,
   determineLanguage,
+  fileFormatIdentities,
   reportFileName,
+  type StampedFileResult,
+  stampedFileResults,
   testIdRemap,
 } from './report-assembly.js'
 import type { ReporterStage } from './ReporterStream.js'
@@ -79,7 +84,63 @@ export interface MakeMutationReportingInput {
   readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginContribution[]>
   readonly sandboxDirectory: string
   readonly basePath: string
+  readonly formatRegistry: FormatRegistry
+  readonly formatOwnerVersions: Readonly<Record<string, string>>
 }
+
+export const MANIFEST_SPECIFIERS = [
+  '@systemfsoftware/stryker-js-vitest-runner',
+  '@systemfsoftware/stryker-js-typescript-checker',
+  '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
+  'vitest',
+  'mocha',
+  'jasmine',
+  'jasmine-core',
+  'jest',
+  'react-scripts',
+  'typescript',
+  'webpack',
+  'webpack-cli',
+  'ts-jest',
+] as const
+
+const readManifestVersion = (
+  fs: FileSystem.FileSystem,
+  pathService: Path.Path,
+  specifier: string,
+): Effect.Effect<Option.Option<string>> =>
+  Effect.gen(function*() {
+    const resolved = yield* Effect.try(() => new URL(import.meta.resolve(`${specifier}/package.json`)))
+    const manifestPath = yield* pathService.fromFileUrl(resolved)
+    const text = yield* fs.readFileString(manifestPath)
+    return Result.match(S.decodeUnknownResult(S.fromJsonString(ManifestSchema))(text), {
+      onFailure: () => Option.none<string>(),
+      onSuccess: (manifest) => Option.some(manifest.version ?? ''),
+    })
+  }).pipe(Effect.orElseSucceed(() => Option.none<string>()))
+
+export const readInstalledModuleVersions = (
+  fs: FileSystem.FileSystem,
+  pathService: Path.Path,
+  specifiers: readonly string[],
+): Effect.Effect<Readonly<Record<string, string>>> =>
+  Effect.forEach(
+    specifiers,
+    (specifier) =>
+      Effect.map(readManifestVersion(fs, pathService, specifier), (version) => [specifier, version] as const),
+    { concurrency: FILE_CONCURRENCY },
+  ).pipe(
+    Effect.map((pairs) =>
+      Object.fromEntries(
+        pairs.flatMap(([specifier, version]) =>
+          Option.match(version, {
+            onNone: (): ReadonlyArray<readonly [string, string]> => [],
+            onSome: (present): ReadonlyArray<readonly [string, string]> => [[specifier, present]],
+          })
+        ),
+      )
+    ),
+  )
 
 export const makeMutationReportingService = (input: MakeMutationReportingInput): MutationReportingService => {
   const reportMutantStatus = (
@@ -121,7 +182,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
         fileNames,
         (fileName) =>
           Effect.gen(function*() {
-            const language = determineLanguage(fileName)
+            const language = determineLanguage(input.formatRegistry, fileName)
             const file = MutableHashMap.get(input.project.files, fileName)
             if (Option.isNone(file)) {
               yield* Effect.logWarning(
@@ -197,45 +258,6 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
       }
     })
 
-  const MANIFEST_SPECIFIERS = [
-    '@systemfsoftware/stryker-js-vitest-runner',
-    '@systemfsoftware/stryker-js-typescript-checker',
-    '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
-    'vitest',
-    'karma',
-    'karma-chai',
-    'karma-chrome-launcher',
-    'karma-jasmine',
-    'karma-mocha',
-    'mocha',
-    'jasmine',
-    'jasmine-core',
-    'jest',
-    'react-scripts',
-    'typescript',
-    '@angular/cli',
-    'webpack',
-    'webpack-cli',
-    'ts-jest',
-  ] as const
-
-  const ManifestSchema = S.Struct({ version: S.optional(S.String) })
-
-  const readManifestVersion = (
-    fs: FileSystem.FileSystem,
-    pathService: Path.Path,
-    specifier: string,
-  ): Effect.Effect<Option.Option<string>> =>
-    Effect.gen(function*() {
-      const resolved = yield* Effect.try(() => new URL(import.meta.resolve(`${specifier}/package.json`)))
-      const manifestPath = yield* pathService.fromFileUrl(resolved)
-      const text = yield* fs.readFileString(manifestPath)
-      return Result.match(S.decodeUnknownResult(S.fromJsonString(ManifestSchema))(text), {
-        onFailure: () => Option.none<string>(),
-        onSuccess: (manifest) => Option.some(manifest.version ?? ''),
-      })
-    }).pipe(Effect.orElseSucceed(() => Option.none<string>()))
-
   const discoverDependencies = (): Effect.Effect<
     schema.Dependencies,
     never,
@@ -244,20 +266,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const pathService = yield* Path.Path
-      const pairs = yield* Effect.forEach(
-        MANIFEST_SPECIFIERS,
-        (specifier) =>
-          Effect.map(readManifestVersion(fs, pathService, specifier), (version) => [specifier, version] as const),
-        { concurrency: FILE_CONCURRENCY },
-      )
-      return Object.fromEntries(
-        pairs.flatMap(([specifier, version]) =>
-          Option.match(version, {
-            onNone: (): ReadonlyArray<readonly [string, string]> => [],
-            onSome: (present): ReadonlyArray<readonly [string, string]> => [[specifier, present]],
-          })
-        ),
-      )
+      return yield* readInstalledModuleVersions(fs, pathService, MANIFEST_SPECIFIERS)
     })
 
   const determineExitCode = (
@@ -326,6 +335,12 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
       )
     })
 
+  const stampedFiles = (files: schema.FileResultDictionary): Readonly<Record<string, StampedFileResult>> =>
+    stampedFileResults(
+      files,
+      fileFormatIdentities(input.formatRegistry, input.formatOwnerVersions, Object.keys(files)),
+    )
+
   const reportAll: MutationReportingService['reportAll'] = (results) =>
     Effect.gen(function*() {
       const pathService = yield* Path.Path
@@ -342,7 +357,10 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
         const fs = yield* FileSystem.FileSystem
         const dir = pathService.dirname(input.options.incrementalFile)
         yield* fs.makeDirectory(dir, { recursive: true })
-        yield* fs.writeFileString(input.options.incrementalFile, JSON.stringify(report, null, 2))
+        yield* fs.writeFileString(
+          input.options.incrementalFile,
+          JSON.stringify({ ...report, files: stampedFiles(report.files) }, null, 2),
+        )
       }
       return { results, verdict: finalVerdict } satisfies RunOutcome
     })
@@ -364,7 +382,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
       return {
         schemaVersion: '1.0',
         thresholds: input.options.thresholds,
-        files,
+        files: stampedFiles(files),
         testFiles,
       }
     })

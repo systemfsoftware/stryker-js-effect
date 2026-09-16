@@ -15,5 +15,4 @@ export {
   RunConfiguration,
   SandboxDirectory,
   type SelectedReporterFactory,
-  Shadowing,
 } from './Plugin.js'

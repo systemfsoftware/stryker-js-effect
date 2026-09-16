@@ -142,6 +142,7 @@ This monorepo publishes a modular ecosystem of packages under the `@systemfsoftw
 | [`@systemfsoftware/stryker-js-typescript-checker`](packages/stryker-js-typescript-checker) | TypeScript type-checker plugin validating mutants pre-execution                          |
 | [`@systemfsoftware/stryker-js-html-reporter`](packages/stryker-js-html-reporter)           | Interactive HTML mutation report generator                                               |
 | [`@systemfsoftware/stryker-ignorer-*`](packages/ignorers)                                  | Decoupled domain ignorers (Schema declarations, vitest blocks, Workflow.make boundaries) |
+| [`@systemfsoftware/stryker-framework-*`](packages/frameworks)                              | Framework plugin kind: HTML template (incl. Vue SFC) and Svelte component formats        |
 | [`@systemfsoftware/stryker-test-contribution`](packages/stryker-test-contribution)         | Suite hygiene plugin enforcing unique mutant kills per test file                         |
 
 ---

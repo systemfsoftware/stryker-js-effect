@@ -1,13 +1,13 @@
 // oxlint-disable typescript/no-unsafe-type-assertion typescript/no-unnecessary-type-assertion
 
 import { type IgnorerService } from '@systemfsoftware/stryker-js-language'
-import { INSTRUMENTER_CONSTANTS as ID } from '@systemfsoftware/stryker-js-language'
-import { type MutateDescription, type Position } from '@systemfsoftware/stryker-js-language'
+import { type MutateDescription } from '@systemfsoftware/stryker-js-language'
 import { propertyPath, type StrykerOptions, strykerReportBugUrl } from '@systemfsoftware/stryker-js-language'
-import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import path from 'node:path'
 
 import {
@@ -46,140 +46,68 @@ import {
   type VariableDeclarator,
   variableDeclarator,
 } from './Ast.js'
-import { applyMutant, createMutant, type Mutable, type Mutant } from './Mutator.js'
+import { decodeDirective, DecodeDirectiveCommand, DirectiveDecoded } from './directives/decode-directive.workflow.js'
+import { type Directive, type LocatedDirective } from './directives/directive.schema.js'
+import { foldRule, FoldRuleCommand, type MutantRule } from './directives/fold-rule.workflow.js'
+import type { FormatRegistry } from './format-registry.js'
+import { clonedHeader, COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, shouldPlaceHeader } from './instrument-header.js'
+import { MutantsUnapplied, type PlacerName } from './Instrument.schema.js'
+import { applyMutant, createMutant, type Mutant } from './Mutator.js'
 import { type MutatorContext, type MutatorOptions } from './Mutator.js'
 import { allMutators } from './Mutator.js'
-import { parseWithOxc } from './Parser.js'
+import {
+  type EditSite,
+  ExpressionSite,
+  type PlacedMutant,
+  type PlacementFacts,
+  type PlacementRefusal,
+  placeMutants,
+  PlaceMutantsCommand,
+  StatementSite,
+  SwitchCaseSite,
+} from './place-mutants.workflow.js'
+import {
+  type MutantCandidate,
+  type MutantPlan,
+  MutantsPlanned,
+  type PlanFailure,
+  planMutants,
+  PlanMutantsCommand,
+  type PlannedMutant,
+} from './plan-mutants.workflow.js'
+import { printNode } from './print/index.js'
 import {
   type Ast,
-  type AstByFormat,
-  AstFormat,
+  formatKeyOf,
   locationIncluded,
   locationOverlaps,
-  type ScriptFormat,
+  type ScriptAst,
   type SourceLocationInFile,
 } from './Syntax.js'
 import { PlacementFailed, TransformFailed } from './Transformer.schema.js'
 export { PlacementFailed, TransformFailed }
 
-const STRYKER_NAMESPACE_HELPER = 'stryNS_9fa48'
-const COVER_MUTANT_HELPER = 'stryCov_9fa48'
-const IS_MUTANT_ACTIVE_HELPER = 'stryMutAct_9fa48'
-
 export interface TransformerOptions extends MutatorOptions {
   ignorers: IgnorerService[]
 }
 
-export type MutantCollector = Mutant[]
-
-export function createMutantCollector(): MutantCollector {
-  return []
+export interface MutantCollector {
+  readonly nextIndex: number
+  readonly append: (mutants: readonly Mutant[]) => void
+  readonly map: <A>(transform: (mutant: Mutant) => A) => readonly A[]
 }
 
-export function collect(
-  collector: MutantCollector,
-  fileName: string,
-  original: Node,
-  mutable: Mutable,
-  offset?: Position,
-  lineTable?: readonly number[],
-): Mutant {
-  const mutant = createMutant(
-    collector.length.toString(),
-    fileName,
-    original,
-    mutable,
-    offset,
-    lineTable,
-  )
-  collector.push(mutant)
-  return mutant
-}
-
-export function hasPlacedMutants(
-  collector: readonly Mutant[],
-  fileName: string,
-): boolean {
-  return collector.some(
-    (mutant) => mutant.fileName === fileName && mutant.ignoreReason === undefined,
-  )
-}
-
-const WILDCARD = 'all'
-const DEFAULT_REASON = 'Ignored using a comment'
-const NO_CHILDREN: readonly unknown[] = Object.freeze([])
-
-const strykerCommentDirectiveRegex = /^\s?Stryker (disable|restore)(?: (next-line))? ([a-zA-Z, ]+)(?::(.+)?)?/
-
-export type Rule =
-  | { readonly kind: 'Root' }
-  | {
-    readonly kind: 'Ignore'
-    readonly mutatorNames: readonly string[]
-    readonly line: number | undefined
-    readonly ignoreReason: string
-    readonly previous: Rule
+export const createMutantCollector = (): MutantCollector => {
+  const mutants: Mutant[] = []
+  return {
+    get nextIndex(): number {
+      return mutants.length
+    },
+    append: (added) => {
+      mutants.push(...added)
+    },
+    map: (transform) => mutants.map(transform),
   }
-  | {
-    readonly kind: 'Restore'
-    readonly mutatorNames: readonly string[]
-    readonly line: number | undefined
-    readonly previous: Rule
-  }
-
-export const rootRule: Rule = { kind: 'Root' }
-
-type IgnoreRule = Extract<Rule, { kind: 'Ignore' }>
-type RestoreRule = Extract<Rule, { kind: 'Restore' }>
-
-export function findIgnoreReason(
-  rule: Rule,
-  mutatorName: string,
-  line: number,
-): string | undefined {
-  return Option.getOrUndefined(ignoreReasonIn(rule, mutatorName.toLowerCase(), line))
-}
-
-function ignoreReasonIn(
-  rule: Rule,
-  lowerMutatorName: string,
-  line: number,
-): Option.Option<string> {
-  return Match.value(rule).pipe(
-    Match.when({ kind: 'Ignore' }, (ignore) => directiveOutcome(ignore, lowerMutatorName, line)),
-    Match.when({ kind: 'Restore' }, (restore) => directiveOutcome(restore, lowerMutatorName, line)),
-    Match.when({ kind: 'Root' }, () => Option.none<string>()),
-    Match.exhaustive,
-  )
-}
-
-function directiveOutcome(
-  directive: IgnoreRule | RestoreRule,
-  lowerMutatorName: string,
-  line: number,
-): Option.Option<string> {
-  return Match.value(directiveApplies(directive, lowerMutatorName, line)).pipe(
-    Match.when(false, () => ignoreReasonIn(directive.previous, lowerMutatorName, line)),
-    Match.when(true, () =>
-      Match.value(directive).pipe(
-        Match.when({ kind: 'Ignore' }, (ignore) => Option.some(ignore.ignoreReason)),
-        Match.when({ kind: 'Restore' }, () => Option.none<string>()),
-        Match.exhaustive,
-      )),
-    Match.exhaustive,
-  )
-}
-
-/** A directive applies when its line — where it declares one — and one of its mutator names match. */
-function directiveApplies(
-  directive: IgnoreRule | RestoreRule,
-  lowerMutatorName: string,
-  line: number,
-): boolean {
-  return Option.match(Option.fromNullishOr(directive.line), {
-    onNone: () => true,
-    onSome: (directiveLine) => directiveLine === line,
-  }) && directive.mutatorNames.some((name) => name === lowerMutatorName || name === WILDCARD)
 }
 
 interface LocatedComment extends Comment {
@@ -189,119 +117,42 @@ interface LocatedComment extends Comment {
   }
 }
 
-interface StrykerDirective {
-  readonly type: string
-  readonly scope: string | undefined
-  readonly mutatorNames: readonly string[]
-  readonly reason: string
-  readonly loc: LocatedComment['loc']
-}
-
 interface NodeWithLeadingComments {
   readonly leadingComments?: readonly LocatedComment[]
 }
 
 const NO_COMMENTS: readonly LocatedComment[] = []
-const PARSE_FAILURE = 'Stryker directive without directive type or mutators'
-const MISSING_LOCATION = 'Comment without location'
-
-export function processStrykerDirectives(
-  rule: Rule,
-  node: Node,
-  allMutatorNames: readonly string[],
-  originFileName: string,
-): { rule: Rule; warnings: readonly string[] } {
-  const directives = attachedComments(node).map(parseStrykerDirective).flatMap(Option.toArray)
-  const warnings = directives.flatMap((directive) => mutatorWarnings(directive, allMutatorNames, originFileName))
-  return { rule: directives.reduce(applyStrykerDirective, rule), warnings }
-}
 
 function attachedComments(node: Node): readonly LocatedComment[] {
   const host = node as NodeWithLeadingComments
   return host.leadingComments ?? NO_COMMENTS
 }
 
-/** A comment that matched the directive grammar, decoded into the fields a rule needs. */
-function parseStrykerDirective(comment: LocatedComment): Option.Option<StrykerDirective> {
-  return Option.map(
-    Option.fromNullishOr(strykerCommentDirectiveRegex.exec(comment.value)),
-    (match) => strykerDirective(match, comment.loc),
+const decidedDirective = (commentText: string): Option.Option<Directive> =>
+  Match.value(decodeDirective(new DecodeDirectiveCommand({ commentText }))).pipe(
+    Match.when(Result.isSuccess, (decoded) =>
+      Match.value(decoded.success).pipe(
+        Match.when(S.is(DirectiveDecoded), (decision) => Option.some(decision.directive)),
+        Match.orElse(() => Option.none<Directive>()),
+      )),
+    Match.orElse(() => Option.none<Directive>()),
   )
-}
 
-function strykerDirective(match: RegExpExecArray, loc: LocatedComment['loc']): StrykerDirective {
-  return {
-    type: matchGroup(match, 1),
-    scope: match[2],
-    mutatorNames: matchGroup(match, 3).split(',').map((mutator) => mutator.trim()),
-    reason: (match[4] ?? DEFAULT_REASON).trim(),
-    loc,
-  }
-}
+const locatedDirective = (comment: LocatedComment): Option.Option<LocatedDirective> =>
+  Option.flatMap(
+    Option.fromNullishOr(comment.loc),
+    (loc) =>
+      Option.map(decidedDirective(comment.value), (directive): LocatedDirective => ({ directive, at: loc.start })),
+  )
 
-function matchGroup(match: RegExpExecArray, group: number): string {
-  return Option.getOrThrowWith(Option.fromNullishOr(match[group]), () => new Error(PARSE_FAILURE))
-}
+const directivesOf = (node: Node): readonly LocatedDirective[] =>
+  attachedComments(node).flatMap((comment) => Option.toArray(locatedDirective(comment)))
 
-function applyStrykerDirective(rule: Rule, directive: StrykerDirective): Rule {
-  return Match.value(directive.type).pipe(
-    Match.when('disable', () => ignoreRuleFor(rule, directive)),
-    Match.when('restore', () => restoreRuleFor(rule, directive)),
+const foldInto = (rule: MutantRule, directive: LocatedDirective): MutantRule =>
+  Match.value(foldRule(new FoldRuleCommand({ rule, directive }))).pipe(
+    Match.when(Result.isSuccess, (folded) => folded.success.rule),
     Match.orElse(() => rule),
   )
-}
-
-function ignoreRuleFor(rule: Rule, directive: StrykerDirective): Rule {
-  return {
-    kind: 'Ignore',
-    mutatorNames: directive.mutatorNames.map((mutatorName) => mutatorName.toLowerCase()),
-    line: directiveLine(directive),
-    ignoreReason: directive.reason,
-    previous: rule,
-  }
-}
-
-function restoreRuleFor(rule: Rule, directive: StrykerDirective): Rule {
-  return {
-    kind: 'Restore',
-    mutatorNames: directive.mutatorNames.map((mutatorName) => mutatorName.toLowerCase()),
-    line: directiveLine(directive),
-    previous: rule,
-  }
-}
-
-/** `next-line` directives carry the line they were written on; a block directive carries none. */
-function directiveLine(directive: StrykerDirective): number | undefined {
-  return Match.value(directive.scope).pipe(
-    Match.when('next-line', () => commentLocation(directive.loc).start.line),
-    Match.orElse(() => undefined),
-  )
-}
-
-function commentLocation(loc: LocatedComment['loc']): NonNullable<LocatedComment['loc']> {
-  return Option.getOrThrowWith(Option.fromNullishOr(loc), () => new Error(MISSING_LOCATION))
-}
-
-/** Warnings for the directive's mutator names that the configured mutators do not know. */
-function mutatorWarnings(
-  directive: StrykerDirective,
-  allMutatorNames: readonly string[],
-  originFileName: string,
-): readonly string[] {
-  return directive.mutatorNames
-    .filter((mutatorName) => mutatorName !== WILDCARD)
-    .filter((mutatorName) => !allMutatorNames.includes(mutatorName.toLowerCase()))
-    .map((mutatorName) => mutatorWarning(directive, mutatorName, originFileName))
-}
-
-function mutatorWarning(directive: StrykerDirective, mutatorName: string, originFileName: string): string {
-  const loc = commentLocation(directive.loc)
-  const label = Option.match(Option.filter(Option.fromNullishOr(directive.scope), (scope) => scope !== ''), {
-    onNone: () => directive.type,
-    onSome: (scope) => `${directive.type} ${scope}`,
-  })
-  return `Unused 'Stryker ${label}' directive. Mutator with name '${mutatorName}' not found. Directive found at: ${originFileName}:${loc.start.line}:${loc.start.column}.`
-}
 
 function ancestorsOf(path: TraversePath): Node[] {
   const ancestors: Node[] = []
@@ -386,43 +237,45 @@ export function mutationCoverageSequenceExpression(
 }
 
 export interface MutantPlacer {
-  name: string
-  canPlace(path: TraversePath): boolean
+  name: PlacerName
   place(path: TraversePath, appliedMutants: Map<Mutant, Node>): void
 }
 
-export function nodeOfKind(
-  mutant: Mutant,
-  node: Node,
-  isKind: (candidate: Node) => boolean,
-  kind: string,
-): Node {
-  if (!isKind(node)) {
-    throw new Error(`Cannot place mutant ${mutant.id}: expected ${kind}, got ${node.type}`)
-  }
-  return node
-}
+const refusalPlacer = (refusal: PlacementRefusal): string =>
+  Match.value(refusal).pipe(
+    Match.tag('MutantKindMismatch', (mismatch) => mismatch.placer),
+    Match.tag('MutantsUnapplied', (unapplied) => unapplied.placer),
+    Match.tag('NoPlacerClaimsNode', () => 'no placer'),
+    Match.tag('MutantNotApplied', () => 'no placer'),
+    Match.exhaustive,
+  )
 
-export function throwPlacementError(
-  error: Error,
-  nodePath: TraversePath,
-  placer: MutantPlacer,
-  mutants: Mutant[],
+const refusalDetail = (refusal: PlacementRefusal): string =>
+  Match.value(refusal).pipe(
+    Match.tag('MutantKindMismatch', (mismatch) => `Expected ${mismatch.expected} for mutant ${mismatch.mutantId}`),
+    Match.tag('MutantsUnapplied', (unapplied) => `Failed to apply ${unapplied.mutatorNames.join(', ')}`),
+    Match.tag('NoPlacerClaimsNode', () => 'No placer claims the node'),
+    Match.tag('MutantNotApplied', (unapplied) => `Could not apply the ${unapplied.mutatorName} mutant`),
+    Match.exhaustive,
+  )
+
+export const placementFailure = (
+  refusal: PlacementRefusal,
+  node: Node,
+  mutants: readonly Mutant[],
   fileName: string,
   lineTable: readonly number[],
-): never {
-  const message = `${placer.name} could not place mutants with type(s): "${
+): Error => {
+  const message = `${refusalPlacer(refusal)} could not place mutants with type(s): "${
     new Intl.ListFormat('en').format(mutants.map((mutant) => mutant.mutatorName))
   }"`
-  const errorMessage = `${
-    placementLocation(nodePath.node, fileName, lineTable)
-  } ${message}. Either remove this file from the list of files to be mutated, or exclude the mutator (using ${
-    propertyPath<StrykerOptions>()(
-      'mutator',
-      'excludedMutations',
-    )
-  }). Please report this issue at ${strykerReportBugUrl(message)}. Original error: ${error.stack}`
-  throw new Error(errorMessage)
+  return new Error(
+    `${
+      placementLocation(node, fileName, lineTable)
+    } ${message}. Either remove this file from the list of files to be mutated, or exclude the mutator (using ${
+      propertyPath<StrykerOptions>()('mutator', 'excludedMutations')
+    }). Please report this issue at ${strykerReportBugUrl(message)}. Original error: ${refusalDetail(refusal)}`,
+  )
 }
 
 function placementLocation(node: Node, fileName: string, lineTable: readonly number[]): string {
@@ -635,10 +488,7 @@ function isParenthesizedWrapper(value: unknown): value is ParenthesizedWrapper {
 }
 
 export const expressionMutantPlacer: MutantPlacer = {
-  name: 'expressionMutantPlacer',
-  canPlace(path) {
-    return path.isExpression() && isValidExpression(path)
-  },
+  name: 'expression',
   place(path, appliedMutants) {
     let expression = nameIfAnonymous(path)
     expression = mutationCoverageSequenceExpression(
@@ -648,12 +498,7 @@ export const expressionMutantPlacer: MutantPlacer = {
     for (const [mutant, appliedMutant] of appliedMutants) {
       expression = conditionalExpression(
         mutantTestExpression(mutant.id),
-        nodeOfKind(
-          mutant,
-          unwrapParenthesizedExpression(appliedMutant),
-          isExpressionKind,
-          'an expression',
-        ) as Expression,
+        unwrapParenthesizedExpression(appliedMutant) as Expression,
         expression,
       )
     }
@@ -662,10 +507,7 @@ export const expressionMutantPlacer: MutantPlacer = {
 }
 
 export const statementMutantPlacer: MutantPlacer = {
-  name: 'statementMutantPlacer',
-  canPlace(path) {
-    return path.isStatement()
-  },
+  name: 'statement',
   place(path, appliedMutants) {
     const body = [expressionStatement(mutationCoverageSequenceExpression(appliedMutants.keys())), ...statementsOf(path)]
     const statement = [...appliedMutants].reduce(guardedStatement, blockStatement(body))
@@ -684,7 +526,7 @@ function statementsOf(path: TraversePath): readonly Statement[] {
 function guardedStatement(statement: Statement, entry: readonly [Mutant, Node]): Statement {
   return ifStatement(
     mutantTestExpression(entry[0].id),
-    blockStatement([nodeOfKind(entry[0], entry[1], isStatementKind, 'a statement') as Statement]),
+    blockStatement([entry[1] as Statement]),
     statement,
   )
 }
@@ -697,10 +539,7 @@ function wrappedStatement(path: TraversePath, statement: Statement): Statement {
 }
 
 export const switchCaseMutantPlacer: MutantPlacer = {
-  name: 'switchCaseMutantPlacer',
-  canPlace(path) {
-    return nodeType(path.node) === 'SwitchCase'
-  },
+  name: 'switch-case',
   place(path, appliedMutants) {
     const currentCase = path.node as unknown as { test: Expression | null; consequent: Statement[] }
     let consequence: Statement = blockStatement([
@@ -710,12 +549,7 @@ export const switchCaseMutantPlacer: MutantPlacer = {
       ...currentCase.consequent,
     ])
     for (const [mutant, appliedMutant] of appliedMutants) {
-      const appliedCase = nodeOfKind(
-        mutant,
-        appliedMutant,
-        (candidate) => nodeType(candidate) === 'SwitchCase',
-        'a switch case',
-      ) as unknown as { consequent: Statement[] }
+      const appliedCase = appliedMutant as unknown as { consequent: Statement[] }
       consequence = ifStatement(
         mutantTestExpression(mutant.id),
         blockStatement(appliedCase.consequent),
@@ -726,330 +560,22 @@ export const switchCaseMutantPlacer: MutantPlacer = {
   },
 }
 
-export const allMutantPlacers: readonly MutantPlacer[] = Object.freeze([
-  expressionMutantPlacer,
-  statementMutantPlacer,
-  switchCaseMutantPlacer,
-])
+export const placerBuilders: Readonly<Record<PlacerName, MutantPlacer>> = Object.freeze({
+  expression: expressionMutantPlacer,
+  statement: statementMutantPlacer,
+  'switch-case': switchCaseMutantPlacer,
+})
 
-const ANGULAR_SIGNAL_IO_FUNCTIONS = Object.freeze(['input', 'model', 'output'])
-
-const ANGULAR_SIGNAL_QUERY_FUNCTIONS = Object.freeze([
-  'contentChild',
-  'contentChildren',
-  'viewChild',
-  'viewChildren',
-])
-
-const INPUT_MODEL_OUTPUT_CONFIG_MSG =
-  'Angular signal based input, model and output functions configuration object cannot be mutated as that causes issues with the Angular compiler.'
-
-const SIGNAL_QUERY_OPTIONS_MSG =
-  'Angular signal query options object cannot be mutated as that causes issues with the Angular compiler.'
-
-export function shouldIgnore(node: Node, ancestors: readonly Node[]): Option.Option<string> {
-  return Option.orElse(reasonAt(node, ancestors), () => ancestorReason(node, ancestors))
-}
-
-function reasonAt(node: Node, ancestors: readonly Node[], offset = 0): Option.Option<string> {
-  return Match.value(node).pipe(
-    Match.when(
-      (subject: Node) => isInputModelOrOutputConfigurationObject(subject, ancestors, offset),
-      () => Option.some(INPUT_MODEL_OUTPUT_CONFIG_MSG),
-    ),
-    Match.when(
-      (subject: Node) => isSignalQueryOptionsObject(subject, ancestors, offset),
-      () => Option.some(SIGNAL_QUERY_OPTIONS_MSG),
-    ),
-    Match.orElse(() => Option.none<string>()),
-  )
-}
-
-function ancestorReason(node: Node, ancestors: readonly Node[]): Option.Option<string> {
-  return Option.flatMap(
-    Arr.findFirst(
-      ancestors.entries(),
-      ([position, ancestor]) => Option.isSome(reasonAt(ancestor, ancestors, position + 1)),
-    ),
-    ([position, ancestor]) => reasonAt(ancestor, ancestors, position + 1),
-  )
-}
-
-export const angularIgnorer: IgnorerService = {
-  shouldIgnore,
-}
-
-function isClassFieldLike(node: unknown): boolean {
-  return CLASS_FIELD_KINDS.includes(nodeType(node) ?? '')
-}
-
-const CLASS_FIELD_KINDS: readonly string[] = Object.freeze(['PropertyDefinition', 'AccessorProperty'])
-
-interface SignalCallSite {
-  readonly callee: Node
-  readonly args: readonly Node[]
-  readonly objectExpression: Node
-}
-
-type OwnsCallSite = (owner: Node) => boolean
-
-function isInputModelOrOutputConfigurationObject(node: Node, ancestors: readonly Node[], offset: number): boolean {
-  return Option.match(signalCallSiteOf(node, ancestors, offset, isPropertyDefinitionField), {
-    onNone: () => false,
-    onSome: (site) => isArgumentAt(site, signalIoArgumentIndex(site.callee)),
-  })
-}
-
-function isSignalQueryOptionsObject(node: Node, ancestors: readonly Node[], offset: number): boolean {
-  return Option.match(signalCallSiteOf(node, ancestors, offset, isClassFieldLike), {
-    onNone: () => false,
-    onSome: (site) => isSignalQueryCall(site.callee) && isArgumentAt(site, Option.some(1)),
-  })
-}
-
-function isPropertyDefinitionField(node: unknown): boolean {
-  return nodeType(node) === 'PropertyDefinition'
-}
-
-function signalCallSiteOf(
-  node: Node,
-  ancestors: readonly Node[],
-  offset: number,
-  ownsCallSite: OwnsCallSite,
-): Option.Option<SignalCallSite> {
-  return Option.flatMap(
-    ownedCallPath(node, ancestors, offset, ownsCallSite),
-    (callNode) => Option.map(callArgumentsOf(callNode), (call) => ({ ...call, objectExpression: node })),
-  )
-}
-
-function ownedCallPath(
-  node: Node,
-  ancestors: readonly Node[],
-  offset: number,
-  ownsCallSite: OwnsCallSite,
-): Option.Option<Node> {
-  const argument = Option.filter(
-    Option.some(node),
-    (candidate) => isOwnedCallArgument(candidate, ancestors, offset, ownsCallSite),
-  )
-  return Option.flatMap(argument, () => Option.fromUndefinedOr(ancestors[offset]))
-}
-
-function isOwnedCallArgument(
-  node: Node,
-  ancestors: readonly Node[],
-  offset: number,
-  ownsCallSite: OwnsCallSite,
-): boolean {
-  return isObjectArgumentOfCall(node, ancestors, offset) && ownsCallSiteOf(ancestors, offset, ownsCallSite)
-}
-
-function isObjectArgumentOfCall(node: Node, ancestors: readonly Node[], offset: number): boolean {
-  return nodeType(node) === 'ObjectExpression' && nodeType(ancestors[offset]) === 'CallExpression'
-}
-
-function ownsCallSiteOf(ancestors: readonly Node[], offset: number, ownsCallSite: OwnsCallSite): boolean {
-  return Option.exists(Option.fromUndefinedOr(ancestors[offset + 1]), ownsCallSite)
-}
-
-interface CallArguments {
-  readonly callee: Node
-  readonly args: readonly Node[]
-}
-
-function callArgumentsOf(callNode: Node): Option.Option<CallArguments> {
-  return Option.flatMap(
-    Option.filter(Option.some(callNode), hasCallShape),
-    (call) => Option.map(nodeArgumentArrayOf(call['arguments']), (args) => ({ callee: call['callee'], args })),
-  )
-}
-
-function hasCallShape(
-  callNode: Node,
-): callNode is Node & { readonly callee: Node; readonly arguments: unknown } {
-  return Predicate.hasProperty(callNode, 'callee') && Predicate.hasProperty(callNode, 'arguments')
-}
-
-function nodeArgumentArrayOf(argument: unknown): Option.Option<readonly Node[]> {
-  return Option.filter(Option.some(argument), isNodeArray)
-}
-
-function isNodeArray(value: unknown): value is readonly Node[] {
-  return Array.isArray(value)
-}
-
-function signalIoArgumentIndex(callee: unknown): Option.Option<number> {
-  return Match.value(callee).pipe(
-    Match.when(isRequiredSignalIoCall, () => Option.some(0)),
-    Match.when(isOutputCall, () => Option.some(0)),
-    Match.when(isSignalIoCall, () => Option.some(1)),
-    Match.orElse(() => Option.none<number>()),
-  )
-}
-
-function isRequiredSignalIoCall(callee: unknown): boolean {
-  return isMemberExpressionWithIdentifier(callee, ANGULAR_SIGNAL_IO_FUNCTIONS, 'required')
-}
-
-function isOutputCall(callee: unknown): boolean {
-  return isIdentifierWithName(callee, 'output')
-}
-
-function isSignalIoCall(callee: unknown): boolean {
-  return isIdentifierIn(callee, ANGULAR_SIGNAL_IO_FUNCTIONS)
-}
-
-function isSignalQueryCall(callee: unknown): boolean {
-  return isIdentifierIn(callee, ANGULAR_SIGNAL_QUERY_FUNCTIONS) ||
-    isMemberExpressionWithIdentifier(callee, ANGULAR_SIGNAL_QUERY_FUNCTIONS, 'required')
-}
-
-function isCommentArray(value: unknown): value is readonly unknown[] {
-  return Array.isArray(value)
-}
-
-function isArgumentAt(site: SignalCallSite, index: Option.Option<number>): boolean {
-  return Option.exists(
-    index,
-    (position) => site.args.length > position && site.args[position] === site.objectExpression,
-  )
-}
-
-function isIdentifierWithName(node: unknown, name: string): boolean {
-  return Option.contains(identifierName(node), name)
-}
-
-function isIdentifierIn(node: unknown, names: readonly string[]): boolean {
-  return Option.exists(identifierName(node), (name) => names.includes(name))
-}
-
-function identifierName(node: unknown): Option.Option<string> {
-  return Option.map(identifierNode(node), (identifier) => identifier.name)
-}
-
-function identifierNode(node: unknown): Option.Option<{ readonly name: string }> {
-  return Option.filter(Option.some(node), isNamedIdentifier)
-}
-
-function isNamedIdentifier(node: unknown): node is { readonly name: string } {
-  return hasNodeType(node, 'Identifier') && isStringProperty(node, 'name')
-}
-
-function hasNodeType(node: unknown, type: string): boolean {
-  return Predicate.hasProperty(node, 'type') && node['type'] === type
-}
-
-function isStringProperty(node: unknown, property: string): boolean {
-  return Predicate.hasProperty(node, property) && typeof node[property] === 'string'
-}
-
-function isMemberExpressionWithIdentifier(
-  node: unknown,
-  objectNames: readonly string[],
-  propertyName: string,
-): boolean {
-  return Option.exists(
-    memberPartsOf(node),
-    (member) => isIdentifierIn(member.object, objectNames) && isIdentifierWithName(member.property, propertyName),
-  )
-}
-
-interface MemberParts {
-  readonly object: unknown
-  readonly property: unknown
-}
-
-function memberPartsOf(node: unknown): Option.Option<MemberParts> {
-  return Option.filter(Option.some(node), isMemberExpressionRecord)
-}
-
-function isMemberExpressionRecord(node: unknown): node is MemberParts {
-  return hasNodeType(node, 'MemberExpression') && isPropertyBearing(node)
-}
-
-function isPropertyBearing(node: unknown): node is { readonly object: unknown; readonly property: unknown } {
-  return Predicate.hasProperty(node, 'object') && Predicate.hasProperty(node, 'property')
-}
-
-export const strykerPlugins: readonly unknown[] = []
-
-export const frameworkPluginsFileUrl = import.meta.url
-
-const INSTRUMENTATION_HEADER_SOURCE = `// @ts-nocheck
-var ${STRYKER_NAMESPACE_HELPER} = function(){
-  var g = typeof globalThis === 'object' && globalThis && globalThis.Math === Math && globalThis || new Function("return this")();
-  var ns = g.${ID.NAMESPACE} || (g.${ID.NAMESPACE} = {});
-  if (ns.${ID.ACTIVE_MUTANT} === undefined && g.process && g.process.env && g.process.env.${ID.ACTIVE_MUTANT_ENV_VARIABLE}) {
-    ns.${ID.ACTIVE_MUTANT} = g.process.env.${ID.ACTIVE_MUTANT_ENV_VARIABLE};
-  }
-  function retrieveNS(){
-    return ns;
-  }
-  ${STRYKER_NAMESPACE_HELPER} = retrieveNS;
-  return retrieveNS();
-};
-${STRYKER_NAMESPACE_HELPER}();
-
-var ${COVER_MUTANT_HELPER} = function() {
-  var ns = ${STRYKER_NAMESPACE_HELPER}();
-  var cov = ns.${ID.MUTATION_COVERAGE_OBJECT} || (ns.${ID.MUTATION_COVERAGE_OBJECT} = { static: {}, perTest: {} });
-  function cover() {
-    var c = cov.static;
-    if (ns.${ID.CURRENT_TEST_ID}) {
-      c = cov.perTest[ns.${ID.CURRENT_TEST_ID}] = cov.perTest[ns.${ID.CURRENT_TEST_ID}] || {};
-    }
-    var a = arguments;
-    for(var i=0; i < a.length; i++){
-      c[a[i]] = (c[a[i]] || 0) + 1;
-    }
-  }
-  ${COVER_MUTANT_HELPER} = cover;
-  cover.apply(null, arguments);
-};
-var ${IS_MUTANT_ACTIVE_HELPER} = function(id) {
-  var ns = ${STRYKER_NAMESPACE_HELPER}();
-  function isActive(id) {
-    if (ns.${ID.ACTIVE_MUTANT} === id) {
-      if (ns.${ID.HIT_COUNT} !== void 0 && ++ns.${ID.HIT_COUNT} > ns.${ID.HIT_LIMIT}) {
-        throw new Error('Stryker: Hit count limit reached (' + ns.${ID.HIT_COUNT} + ')');
-      }
-      return true;
-    }
-    return false;
-  }
-  ${IS_MUTANT_ACTIVE_HELPER} = isActive;
-  return isActive(id);
-}`
-
-let instrumentationHeaderValue: readonly Statement[] | undefined
-
-const instrumentationHeader = async (): Promise<readonly Statement[]> => {
-  if (instrumentationHeaderValue === undefined) {
-    const parsed = await parseWithOxc(INSTRUMENTATION_HEADER_SOURCE, 'instrumenter-header.js', 'js')
-    instrumentationHeaderValue = parsed.root.body as unknown as readonly Statement[]
-    deepFreeze(instrumentationHeaderValue)
-  }
-  return instrumentationHeaderValue
-}
+export const instrumentationHeader = async (): Promise<readonly Statement[]> => clonedHeader()
 
 export async function placeHeaderIfNeeded(
-  mutantCollector: MutantCollector,
-  originFileName: string,
+  hasLiveMutants: boolean,
   options: MutatorOptions,
   root: Program,
 ): Promise<void> {
-  if (shouldPlaceHeader(mutantCollector, originFileName, options)) {
+  if (shouldPlaceHeader(hasLiveMutants, options.noHeader)) {
     await placeHeader(root)
   }
-}
-
-function shouldPlaceHeader(
-  mutantCollector: MutantCollector,
-  originFileName: string,
-  options: MutatorOptions,
-): boolean {
-  return hasPlacedMutants(mutantCollector, originFileName) && options.noHeader !== true
 }
 
 export async function placeHeader(root: Program): Promise<void> {
@@ -1061,11 +587,15 @@ interface CommentBearing {
 }
 
 async function headerFor(root: Program): Promise<readonly Statement[]> {
-  const header = await instrumentationHeader()
+  const header = await clonedHeader()
   return Option.match(leadingCommentsOf(root), {
     onNone: () => header,
     onSome: (leadingComments) => [commentedHeader(leadingComments, header), ...header.slice(1)],
   })
+}
+
+function isCommentArray(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value)
 }
 
 function leadingCommentsOf(root: Program): Option.Option<readonly unknown[]> {
@@ -1083,49 +613,6 @@ function commentedHeader(leadingComments: readonly unknown[], header: readonly S
   return cloned as unknown as Statement
 }
 
-function deepFreeze(value: unknown): unknown {
-  return Option.match(frozenContainer(value), {
-    onNone: () => value,
-    onSome: (frozen) => frozen,
-  })
-}
-
-function frozenContainer(value: unknown): Option.Option<unknown> {
-  return Option.map(Option.filter(Option.some(value), isObjectValue), (object) => {
-    freezableChildren(object).forEach((child) => {
-      deepFreeze(child)
-    })
-    return Object.freeze(object)
-  })
-}
-
-function freezableChildren(value: object): readonly unknown[] {
-  return [...mapEntries(value), ...setItems(value), ...Object.values(value as Record<string, unknown>)]
-}
-
-function mapEntries(value: object): readonly unknown[] {
-  return Option.getOrElse(
-    Option.map(Option.filter(Option.some(value), isMap), (map) => [...map.entries()].flat()),
-    () => NO_CHILDREN,
-  )
-}
-
-function setItems(value: object): readonly unknown[] {
-  return Option.getOrElse(Option.map(Option.filter(Option.some(value), isSet), (set) => [...set]), () => NO_CHILDREN)
-}
-
-function isObjectValue(value: unknown): value is object {
-  return value !== null && typeof value === 'object'
-}
-
-function isMap(value: object): value is Map<unknown, unknown> {
-  return value instanceof Map
-}
-
-function isSet(value: object): value is Set<unknown> {
-  return value instanceof Set
-}
-
 export async function transform(
   ast: Ast,
   mutantCollector: MutantCollector,
@@ -1135,111 +622,36 @@ export async function transform(
     ...transformerContext,
     transform,
   }
-  switch (ast.format) {
-    case 'html':
-      return transformHtml(ast, mutantCollector, context)
-    case 'js':
-    case 'ts':
-    case 'tsx':
-      return transformScript(ast, mutantCollector, context)
-    case 'svelte':
-      return transformSvelte(ast, mutantCollector, context)
+  const formatKey = formatKeyOf(ast)
+  const entry = Option.getOrUndefined(transformerContext.registry.entryForFormat(formatKey))
+  if (entry === undefined) {
+    throw new Error(`No registered format transforms the "${formatKey}" AST`)
   }
+  return entry.transform(ast, mutantCollector, context)
 }
 
-export type AstTransformer<T extends AstFormat> = (
-  ast: AstByFormat[T],
+export type AstTransformer<T extends Ast = Ast> = (
+  ast: T,
   mutantCollector: MutantCollector,
   context: TransformerContext,
 ) => Promise<readonly string[]>
 
 export interface TransformerContext {
-  transform: AstTransformer<AstFormat>
+  transform: AstTransformer
   options: TransformerOptions
   mutateDescription: MutateDescription
-}
-
-export const transformHtml: AstTransformer<'html'> = async (
-  { root },
-  mutantCollector,
-  context,
-) => {
-  const warnings: string[] = []
-  for (const script of root.scripts) {
-    warnings.push(...(await context.transform(script, mutantCollector, context)))
-  }
-  return warnings
-}
-
-const moduleScriptStart = '<script context="module">\n'
-const moduleScript = `${moduleScriptStart}\n</script>\n`
-
-export const transformSvelte: AstTransformer<'svelte'> = async (
-  svelte,
-  mutantCollector,
-  context,
-) => {
-  const warnings: string[] = []
-  const { root } = svelte
-  const scripts = [root.moduleScript, ...root.additionalScripts].filter(Predicate.isNotNullish)
-  for (const script of scripts) {
-    warnings.push(
-      ...(await context.transform(script.ast, mutantCollector, {
-        ...context,
-        options: {
-          ...context.options,
-          noHeader: true,
-        },
-      })),
-    )
-  }
-
-  await placeModuleHeaderIfNeeded(svelte, mutantCollector)
-  return warnings
-}
-
-async function placeModuleHeaderIfNeeded(
-  svelte: AstByFormat['svelte'],
-  mutantCollector: MutantCollector,
-): Promise<void> {
-  if (hasPlacedMutants(mutantCollector, svelte.originFileName)) {
-    await placeModuleHeader(svelte)
-  }
-}
-
-async function placeModuleHeader(svelte: AstByFormat['svelte']): Promise<void> {
-  const { root, originFileName } = svelte
-  if (!root.moduleScript) {
-    root.moduleScript = {
-      ast: {
-        format: 'js',
-        root: emptyProgram(),
-        comments: [],
-        rawContent: '',
-        originFileName,
-      },
-      range: {
-        start: moduleScriptStart.length,
-        end: moduleScriptStart.length,
-      },
-      isExpression: false,
-    }
-    svelte.rawContent = `${moduleScript}${svelte.rawContent}`
-    svelte.root.additionalScripts.forEach((script) => {
-      script.range.start += moduleScript.length
-      script.range.end += moduleScript.length
-    })
-  }
-  await placeHeader(root.moduleScript.ast.root)
-}
-
-function emptyProgram(): Program {
-  return { type: 'Program', sourceType: 'module', body: [], hashbang: null }
+  registry: FormatRegistry
 }
 
 interface MutantsPlacement {
   appliedMutants: Map<Mutant, Node>
-  placer: MutantPlacer
+  facts: PlacementFacts
+}
+
+interface MutableCandidate {
+  readonly node: Node
+  readonly replacement: Node
+  readonly data: MutantCandidate
 }
 
 type PlacementMap = Map<Node, MutantsPlacement>
@@ -1248,12 +660,10 @@ function isMutateRangeList(value: MutateDescription): value is readonly SourceLo
   return Array.isArray(value)
 }
 
-export const transformScript: AstTransformer<ScriptFormat> = async (
+export const transformScript: AstTransformer<ScriptAst> = async (
   { root, originFileName, rawContent, offset, comments },
   mutantCollector,
   { options, mutateDescription },
-  mutators?: typeof allMutators,
-  mutantPlacers?: readonly MutantPlacer[],
 ) => {
   const lineTable = buildLineTable(rawContent)
 
@@ -1261,19 +671,18 @@ export const transformScript: AstTransformer<ScriptFormat> = async (
 
   const placementMap: PlacementMap = new Map()
 
-  let directiveRule: Rule = rootRule
-  const mutatorEntries = Object.entries(Option.getOrElse(Option.fromNullishOr(mutators), () => allMutators))
-  const placers = Option.getOrElse(Option.fromNullishOr(mutantPlacers), () => allMutantPlacers)
+  let directiveRule: MutantRule = []
+  let hasLiveMutants = false
+  const mutatorEntries = Object.entries(allMutators)
   const allMutatorNames = mutatorEntries.map(([name]) => name.toLowerCase())
 
   const warnings: string[] = []
 
   traverse(root, {
     enter(path) {
-      const result = processStrykerDirectives(directiveRule, path.node, allMutatorNames, originFileName)
-      directiveRule = result.rule
-      warnings.push(...result.warnings)
-      visitNode(path)
+      const directives = directivesOf(path.node)
+      directiveRule = directives.reduce(foldInto, directiveRule)
+      visitNode(path, directives)
     },
     exit(path) {
       const placement = placementMap.get(path.node)
@@ -1283,56 +692,181 @@ export const transformScript: AstTransformer<ScriptFormat> = async (
     },
   })
 
-  await placeHeaderIfNeeded(mutantCollector, originFileName, options, root)
+  await placeHeaderIfNeeded(hasLiveMutants, options, root)
 
   return warnings
 
-  function visitNode(path: TraversePath): void {
+  function visitNode(path: TraversePath, directives: readonly LocatedDirective[]): void {
     if (shouldSkip(path)) {
       path.skip()
       return
     }
     addToPlacementMapIfPossible(path)
-    placeCollectedMutantsIfMutating(path)
+    placeCollectedMutants(path, directives)
+  }
+  function placementFacts(path: TraversePath): PlacementFacts {
+    return {
+      isExpression: path.isExpression(),
+      isStatement: path.isStatement(),
+      isSwitchCase: nodeType(path.node) === 'SwitchCase',
+      expressionIsValid: isValidExpression(path),
+    }
+  }
+  function placerNameOf(site: EditSite): PlacerName {
+    return Match.value(site).pipe(
+      Match.when(S.is(ExpressionSite), (): PlacerName => 'expression'),
+      Match.when(S.is(StatementSite), (): PlacerName => 'statement'),
+      Match.when(S.is(SwitchCaseSite), (): PlacerName => 'switch-case'),
+      Match.exhaustive,
+    )
   }
   function addToPlacementMapIfPossible(path: TraversePath): void {
-    const placer = placers.find((candidate) => candidate.canPlace(path))
-    if (placer !== undefined) {
-      placementMap.set(path.node, { appliedMutants: new Map(), placer })
-    }
+    const facts = placementFacts(path)
+    const claimed = placeMutants(new PlaceMutantsCommand({ fileName: originFileName, facts, mutants: [] }))
+    Match.value(claimed).pipe(
+      Match.when(Result.isSuccess, () => placementMap.set(path.node, { appliedMutants: new Map(), facts })),
+      Match.orElse(() => undefined),
+    )
   }
   function hasAppliedMutants(placement: MutantsPlacement | undefined): placement is MutantsPlacement {
     return placement !== undefined && placement.appliedMutants.size > 0
   }
-  function applyPlacement(path: TraversePath, placement: MutantsPlacement): void {
+  function replacementRecord(mutant: Mutant, applied: Node): PlacedMutant {
+    const replacement = unwrapParenthesizedExpression(applied)
+    return {
+      id: mutant.id,
+      mutatorName: mutant.mutatorName,
+      replacement: {
+        isExpression: isExpressionKind(replacement),
+        isStatement: isStatementKind(replacement),
+        isSwitchCase: nodeType(replacement) === 'SwitchCase',
+      },
+    }
+  }
+  function raisePlacementRefusal(
+    refusal: PlacementRefusal,
+    placement: MutantsPlacement,
+    path: TraversePath,
+  ): never {
+    throw placementFailure(refusal, path.node, [...placement.appliedMutants.keys()], originFileName, lineTable)
+  }
+  function placeSite(site: EditSite, placement: MutantsPlacement, path: TraversePath): void {
     try {
-      placement.placer.place(path, placement.appliedMutants)
+      placerBuilders[placerNameOf(site)].place(path, placement.appliedMutants)
       path.skip()
     } catch (error) {
-      throwPlacementError(
-        toError(error),
+      raisePlacementRefusal(
+        new MutantsUnapplied({
+          fileName: originFileName,
+          placer: placerNameOf(site),
+          mutatorNames: [...placement.appliedMutants.keys()].map((mutant) => mutant.mutatorName),
+          cause: error,
+        }),
+        placement,
         path,
-        placement.placer,
-        [...placement.appliedMutants.keys()],
-        originFileName,
-        lineTable,
       )
     }
   }
-  function placeCollectedMutantsIfMutating(path: TraversePath): void {
-    if (shouldMutate(path)) {
-      placeCollectedMutants(path)
-    }
+  function applyPlacement(path: TraversePath, placement: MutantsPlacement): void {
+    const decision = placeMutants(
+      new PlaceMutantsCommand({
+        fileName: originFileName,
+        facts: placement.facts,
+        mutants: [...placement.appliedMutants].map(([mutant, applied]) => replacementRecord(mutant, applied)),
+      }),
+    )
+    Match.value(decision).pipe(
+      Match.when(Result.isFailure, (refused) => raisePlacementRefusal(refused.failure, placement, path)),
+      Match.orElse((decided) => placeSite(decided.success, placement, path)),
+    )
   }
-  function placeCollectedMutants(path: TraversePath): void {
-    const mutantsToPlace = collectMutants(path)
-    if (mutantsToPlace.length === 0) {
-      return
-    }
+  function candidateSteps(path: TraversePath): readonly MutableCandidate[] {
+    return Match.value(shouldMutate(path)).pipe(
+      Match.when(true, () => mutablesFor(path)),
+      Match.when(false, (): readonly MutableCandidate[] => []),
+      Match.exhaustive,
+    )
+  }
+  function needsPlan(candidates: readonly MutableCandidate[], directives: readonly LocatedDirective[]): boolean {
+    return [candidates.length > 0, directives.length > 0].some(Boolean)
+  }
+  function planAndPlace(
+    path: TraversePath,
+    candidates: readonly MutableCandidate[],
+    directives: readonly LocatedDirective[],
+  ): void {
+    Match.value(planFor(path, candidates, directives)).pipe(
+      Match.when(Option.isSome, (toPlace) => placeOnPath(path, toPlace.value)),
+      Match.orElse(() => undefined),
+    )
+  }
+  function placeCollectedMutants(path: TraversePath, directives: readonly LocatedDirective[]): void {
+    const candidates = candidateSteps(path)
+    Match.value(needsPlan(candidates, directives)).pipe(
+      Match.when(true, () => planAndPlace(path, candidates, directives)),
+      Match.when(false, () => undefined),
+      Match.exhaustive,
+    )
+  }
+  function planFor(
+    path: TraversePath,
+    candidates: readonly MutableCandidate[],
+    directives: readonly LocatedDirective[],
+  ): Option.Option<readonly Mutant[]> {
+    const plan = planMutants(
+      new PlanMutantsCommand({
+        fileName: originFileName,
+        firstIndex: mutantCollector.nextIndex,
+        offset: offset ?? { line: 0, column: 0 },
+        line: getNodeLocation(path.node).start.line,
+        mutatorNames: allMutatorNames,
+        excludedMutations: options.excludedMutations,
+        rule: directiveRule,
+        directives: [...directives],
+        candidates: candidates.map((candidate) => candidate.data),
+      }),
+    )
+    return Match.value(plan).pipe(
+      Match.when(Result.isFailure, (failed) => raisePlanFailure(failed.failure)),
+      Match.orElse((succeeded) => collectPlanned(candidates, succeeded.success)),
+    )
+  }
+  function raisePlanFailure(failure: PlanFailure): never {
+    throw new Error(`Mutant without a source location: ${failure.mutatorName} in ${failure.fileName}`)
+  }
+  function collectPlanned(
+    candidates: readonly MutableCandidate[],
+    plan: MutantPlan,
+  ): Option.Option<readonly Mutant[]> {
+    mutantCollector.append(plannedWithNodes(candidates, plan.mutants))
+    warnings.push(...plan.warnings)
+    return Match.value(plan).pipe(
+      Match.when(S.is(MutantsPlanned), (planned) => {
+        hasLiveMutants = true
+        return Option.some(plannedWithNodes(candidates, planned.placeable))
+      }),
+      Match.orElse(() => Option.none<readonly Mutant[]>()),
+    )
+  }
+  function plannedWithNodes(
+    candidates: readonly MutableCandidate[],
+    planned: readonly PlannedMutant[],
+  ): readonly Mutant[] {
+    return candidates.flatMap((candidate, index) =>
+      Option.match(Option.fromNullishOr(planned[index]), {
+        onNone: () => [],
+        onSome: (mutant) => [createMutant(mutant, originFileName, candidate.node, candidate.replacement)],
+      })
+    )
+  }
+  function placeOnPath(path: TraversePath, mutantsToPlace: readonly Mutant[]): void {
     const placementPath = requiredPlacementPath(path, mutantsToPlace)
     const placement = requiredPlacement(placementPath.node)
     mutantsToPlace.forEach((mutant) => {
-      placement.appliedMutants.set(mutant, applyMutant(mutant, placementPath.node))
+      Match.value(applyMutant(mutant, placementPath.node)).pipe(
+        Match.when(Result.isFailure, (failed) => raisePlacementRefusal(failed.failure, placement, path)),
+        Match.orElse((applied) => placement.appliedMutants.set(mutant, applied.success)),
+      )
     })
   }
   function requiredPlacementPath(path: TraversePath, mutantsToPlace: readonly Mutant[]): TraversePath {
@@ -1389,68 +923,31 @@ export const transformScript: AstTransformer<ScriptFormat> = async (
       end: positionFromLineTable(span.end, lineTable),
     }
   }
-  function ignoreMessageFor(node: Node, ancestors: readonly Node[]): string | undefined {
-    return Option.getOrUndefined(ignorerReason(node, ancestors))
+  function mutablesFor(path: TraversePath): readonly MutableCandidate[] {
+    const ancestors = ancestorsOf(path)
+    const context = toMutatorContext(ancestors)
+    const location = Option.map(Option.fromNullishOr(spanOf(path.node)), (span) => ({
+      start: positionFromLineTable(span.start, lineTable),
+      end: positionFromLineTable(span.end, lineTable),
+    }))
+    return mutatorEntries.flatMap(([mutatorName, mutate]) =>
+      [...mutate(path.node, context)].map((replacement): MutableCandidate => ({
+        node: path.node,
+        replacement,
+        data: {
+          mutatorName,
+          replacementCode: printNode(replacement),
+          location: Option.getOrUndefined(location),
+          ignorerReason: Option.getOrUndefined(ignorersReason(path.node, ancestors)),
+        },
+      }))
+    )
   }
-  function ignorerReason(node: Node, ancestors: readonly Node[]): Option.Option<string> {
+  function ignorersReason(node: Node, ancestors: readonly Node[]): Option.Option<string> {
     return options.ignorers.reduce(
       (reason, ignorer) => Option.orElse(reason, () => ignorer.shouldIgnore(node, ancestors)),
       Option.none<string>(),
     )
-  }
-
-  function collectMutants(path: TraversePath): Mutant[] {
-    return mutablesFor(path).map((mutable) =>
-      collect(mutantCollector, originFileName, path.node, mutable, offset, lineTable)
-    )
-      .filter((mutant) => mutant.ignoreReason === undefined)
-  }
-
-  function mutablesFor(path: TraversePath): readonly Mutable[] {
-    const ancestors = ancestorsOf(path)
-    const context = toMutatorContext(ancestors)
-    const line = getNodeLocation(path.node).start.line
-    return mutatorEntries.flatMap(([mutatorName, mutate]) =>
-      [...mutate(path.node, context)].map((replacement) =>
-        mutableFor(path.node, ancestors, mutatorName, replacement, line)
-      )
-    )
-  }
-
-  function mutableFor(
-    node: Node,
-    ancestors: readonly Node[],
-    mutatorName: string,
-    replacement: Node,
-    line: number,
-  ): Mutable {
-    const mutableEntry: Mutable = { replacement, mutatorName }
-    const ignoreReason = ignoreReasonFor(node, ancestors, mutatorName, line)
-    if (ignoreReason !== undefined) {
-      mutableEntry.ignoreReason = ignoreReason
-    }
-    return mutableEntry
-  }
-
-  function ignoreReasonFor(
-    node: Node,
-    ancestors: readonly Node[],
-    mutatorName: string,
-    line: number,
-  ): string | undefined {
-    return directiveOrExclusion(mutatorName, line) ?? ignoreMessageFor(node, ancestors)
-  }
-
-  function directiveOrExclusion(mutatorName: string, line: number): string | undefined {
-    return findIgnoreReason(directiveRule, mutatorName, line) ?? findExcludedMutatorIgnoreReason(mutatorName)
-  }
-
-  function findExcludedMutatorIgnoreReason(mutatorName: string): string | undefined {
-    if (options.excludedMutations.includes(mutatorName)) {
-      return `Ignored because of excluded mutation "${mutatorName}"`
-    } else {
-      return undefined
-    }
   }
 }
 
@@ -1460,11 +957,4 @@ function toMutatorContext(ancestors: readonly Node[]): MutatorContext {
     grandParent: ancestors[1],
     ancestors: [...ancestors],
   }
-}
-
-function toError(value: unknown): Error {
-  if (value instanceof Error) {
-    return value
-  }
-  return new Error('Unexpected error', { cause: value })
 }

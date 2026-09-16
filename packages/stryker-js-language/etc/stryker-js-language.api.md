@@ -11,9 +11,11 @@ import * as Exit from 'effect/Exit';
 import * as HashMap from 'effect/HashMap';
 import { Node } from '@systemfsoftware/stryker-ignorer-interface';
 import * as Option from 'effect/Option';
+import { Program } from '@systemfsoftware/stryker-ignorer-interface';
 import * as Queue from 'effect/Queue';
 import * as S from 'effect/Schema';
 import { StandardSchemaV1 } from 'effect/StandardSchema';
+import { Statement } from '@systemfsoftware/stryker-ignorer-interface';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
@@ -242,6 +244,16 @@ export interface EarlyResultPlan {
 }
 
 // @public (undocumented)
+export interface EmbeddedDocument {
+    // (undocumented)
+    readonly formatId: string;
+    // (undocumented)
+    readonly rawContent: string;
+    // (undocumented)
+    readonly regions: readonly ScriptRegion[];
+}
+
+// @public (undocumented)
 export interface ErrnoException extends Error {
     // (undocumented)
     code?: string;
@@ -391,6 +403,56 @@ export const FileResultSchema: S.Struct<{
     }>>;
 }>;
 
+// Warning: (ae-forgotten-export) The symbol "FormatRegistryResolved_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class FormatRegistryResolved extends FormatRegistryResolved_base {}
+
+// @public (undocumented)
+export const FormatRegistryRow: S.Struct<{
+    readonly extension: S.String;
+    readonly formatId: S.String;
+    readonly ownerModule: S.String;
+}>;
+
+// @public (undocumented)
+export type FormatRegistryRow = typeof FormatRegistryRow.Type;
+
+// Warning: (ae-forgotten-export) The symbol "Framework_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class Framework extends Framework_base {}
+
+// @public (undocumented)
+export interface FrameworkClaim {
+    // (undocumented)
+    readonly contractVersion: string;
+    // (undocumented)
+    readonly extensions: readonly string[];
+    // (undocumented)
+    readonly formatId: string;
+    // (undocumented)
+    readonly language: string;
+    readonly ownerVersion: string;
+}
+
+// @public (undocumented)
+export interface FrameworkContext {
+    // (undocumented)
+    readonly instrumentationHeader: () => readonly Statement[];
+    // (undocumented)
+    readonly parseScript: (source: string, scriptFormat: ScriptFormat) => Program;
+    // (undocumented)
+    readonly printScript: (script: Program) => string;
+    // (undocumented)
+    readonly transformScript: (script: Program) => Program;
+}
+
+// Warning: (ae-forgotten-export) The symbol "FrameworkFailed_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class FrameworkFailed extends FrameworkFailed_base {}
+
 // @public (undocumented)
 export type FrameworkInformation = typeof FrameworkInformationSchema.Type;
 
@@ -404,6 +466,20 @@ export const FrameworkInformationSchema: S.Struct<{
     }>>;
     readonly dependencies: S.optional<S.$Record<S.String, S.String>>;
 }>;
+
+// @public (undocumented)
+export interface FrameworkService {
+    // (undocumented)
+    readonly claim: FrameworkClaim;
+    // (undocumented)
+    readonly disableTypeChecks: (content: string) => Effect.Effect<string, FrameworkFailed>;
+    // (undocumented)
+    readonly parse: (rawContent: string, context: FrameworkContext) => Effect.Effect<EmbeddedDocument, FrameworkFailed>;
+    // (undocumented)
+    readonly print: (document: EmbeddedDocument, context: FrameworkContext) => Effect.Effect<string, FrameworkFailed>;
+    // (undocumented)
+    readonly transform: (document: EmbeddedDocument, context: FrameworkContext) => Effect.Effect<EmbeddedDocument, FrameworkFailed>;
+}
 
 // Warning: (ae-forgotten-export) The symbol "Heartbeat_base" needs to be exported by the entry point index.d.mts
 //
@@ -877,6 +953,62 @@ export const planMutationRun: (command: PlanMutationRunCommand) => MutationRunPl
 export class PlanMutationRunCommand extends PlanMutationRunCommand_base {}
 
 // @public (undocumented)
+export const PluginContributionRow: S.Struct<{
+    readonly kind: S.String;
+    readonly name: S.String;
+}>;
+
+// @public (undocumented)
+export type PluginContributionRow = typeof PluginContributionRow.Type;
+
+// @public (undocumented)
+export const PluginDescriptorOutcome: S.Literals<readonly ["loaded", "absent", "failed", "undescribed"]>;
+
+// @public (undocumented)
+export type PluginDescriptorOutcome = typeof PluginDescriptorOutcome.Type;
+
+// @public (undocumented)
+export const PluginDescriptorRow: S.Struct<{
+    readonly moduleName: S.String;
+    readonly outcome: S.Literals<readonly ["loaded", "absent", "failed", "undescribed"]>;
+    readonly contributions: S.$Array<S.Struct<{
+        readonly kind: S.String;
+        readonly name: S.String;
+    }>>;
+}>;
+
+// @public (undocumented)
+export type PluginDescriptorRow = typeof PluginDescriptorRow.Type;
+
+// @public (undocumented)
+export const PluginFailureReason: S.Literals<readonly ["PeerMissing", "PeerVersionUnsupported", "InvalidContribution", "ImportFailed", "PluginNotFound"]>;
+
+// @public (undocumented)
+export type PluginFailureReason = typeof PluginFailureReason.Type;
+
+// @public (undocumented)
+export const PluginShadowingRow: S.Union<readonly [S.TaggedStruct<"name", {
+    readonly kind: S.String;
+    readonly name: S.String;
+    readonly winnerModule: S.String;
+    readonly loserModule: S.String;
+}>, S.TaggedStruct<"extension", {
+    readonly kind: S.String;
+    readonly formatId: S.String;
+    readonly extension: S.String;
+    readonly winnerModule: S.String;
+    readonly loserModule: S.String;
+}>]>;
+
+// @public (undocumented)
+export type PluginShadowingRow = typeof PluginShadowingRow.Type;
+
+// Warning: (ae-forgotten-export) The symbol "PluginsReported_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class PluginsReported extends PluginsReported_base {}
+
+// @public (undocumented)
 export type Position = typeof PositionSchema.Type;
 
 // @public (undocumented)
@@ -969,7 +1101,7 @@ export function resolveExitCode(pending: Iterable<ExitClass>, signal: number | n
 export class RunCommand extends RunCommand_base {}
 
 // @public (undocumented)
-const RunEvent: S.Union<readonly [typeof RunStarted, typeof PhaseEntered, typeof PlanKnown, typeof RunMutantTested, typeof Heartbeat, typeof VerdictReached, typeof RunFailed, typeof HelpRendered]>;
+const RunEvent: S.Union<readonly [typeof RunStarted, typeof PhaseEntered, typeof PlanKnown, typeof RunMutantTested, typeof Heartbeat, typeof PluginsReported, typeof FormatRegistryResolved, typeof SkippedReported, typeof VerdictReached, typeof RunFailed, typeof HelpRendered]>;
 
 // @public (undocumented)
 type RunEvent = typeof RunEvent.Type;
@@ -1066,13 +1198,46 @@ export const RunTimingSchema: S.Struct<{
 }>;
 
 // @public (undocumented)
+export type ScriptFormat = 'js' | 'ts' | 'tsx';
+
+// @public (undocumented)
+export interface ScriptRegion {
+    // (undocumented)
+    readonly end: number;
+    // (undocumented)
+    readonly isExpression: boolean;
+    // (undocumented)
+    readonly scriptAst?: unknown;
+    // (undocumented)
+    readonly start: number;
+}
+
+// @public (undocumented)
 export const shouldKeepTempDir: (exit: Exit.Exit<void, unknown>, cleanTempDir: 'always' | boolean) => boolean;
+
+// @public (undocumented)
+export const SkippedFileRow: S.Struct<{
+    readonly file: S.String;
+    readonly extension: S.String;
+    readonly reason: S.String;
+}>;
+
+// @public (undocumented)
+export type SkippedFileRow = typeof SkippedFileRow.Type;
+
+// Warning: (ae-forgotten-export) The symbol "SkippedReported_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class SkippedReported extends SkippedReported_base {}
 
 // @public (undocumented)
 export interface SkippedTestResult extends BaseTestResult {
     // (undocumented)
     readonly status: 'skipped';
 }
+
+// @public (undocumented)
+export const STREAM_SCHEMA_VERSION = "1.1";
 
 // @public
 export const strykerCoreSchema: Record<string, unknown>;
@@ -1347,6 +1512,9 @@ export interface TimeoutMutantRunResult {
 
 // @public (undocumented)
 export function toMutantRunResult(dryRunResult: DryRunResult, reportAllKillers: boolean): MutantRunResult;
+
+// @public (undocumented)
+export const toWireLine: (event: RunEvent) => string;
 
 // @public (undocumented)
 export function verdictExitClass(score: number | null, breakingThreshold: number | null): ExitClass | null;

@@ -2,23 +2,27 @@ import type * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Match from 'effect/Match'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
+  FormatRegistryResolved,
   Heartbeat,
   HelpRendered,
   MutationRunPlan,
   PhaseEntered,
   PlanKnown,
   PlanMutationRunCommand,
+  PluginsReported,
   RunCommand,
   RunEvent,
   RunFailed,
   RunMutantTested,
   RunOutput,
   RunStarted,
+  SkippedReported,
   VerdictReached,
 } from './Run.schema.js'
 
@@ -81,17 +85,49 @@ export const shouldKeepTempDir = (
 ): boolean => Exit.isFailure(exit) && cleanTempDir !== 'always'
 
 export {
+  FormatRegistryResolved,
   Heartbeat,
   HelpRendered,
   PhaseEntered,
   PlanKnown,
+  PluginsReported,
   RunEvent,
   RunFailed,
   RunMutantTested,
   RunStarted,
+  SkippedReported,
   VerdictReached,
 }
 export type { RunEvent as RunEventType }
 export type { Location, Position } from './Report.schema.js'
-export { ModeSignal, OutputMode, RunPhase } from './Run.schema.js'
-export type { RunTerminalEvent } from './Run.schema.js'
+export const STREAM_SCHEMA_VERSION = '1.1'
+export { ModeSignal, OutputMode, PluginDescriptorOutcome, PluginFailureReason, RunPhase } from './Run.schema.js'
+export type {
+  FormatRegistryRow,
+  PluginContributionRow,
+  PluginDescriptorRow,
+  PluginShadowingRow,
+  RunTerminalEvent,
+  SkippedFileRow,
+} from './Run.schema.js'
+
+const wireKindOf = (event: RunEvent): string =>
+  Match.value(event).pipe(
+    Match.tag('stream', () => 'stream'),
+    Match.tag('phase', () => 'phase'),
+    Match.tag('plan', () => 'plan'),
+    Match.tag('mutant', () => 'mutant'),
+    Match.tag('tick', () => 'tick'),
+    Match.tag('plugins', () => 'plugins'),
+    Match.tag('formats', () => 'formats'),
+    Match.tag('skipped', () => 'skipped'),
+    Match.tag('verdict', () => 'verdict'),
+    Match.tag('error', () => 'error'),
+    Match.tag('help', () => 'help'),
+    Match.exhaustive,
+  )
+
+export const toWireLine = (event: RunEvent): string => {
+  const fields = Object.fromEntries(Object.entries(event).filter(([key]) => key !== '_tag'))
+  return JSON.stringify({ kind: wireKindOf(event), ...fields })
+}

@@ -2,7 +2,7 @@
 "@systemfsoftware/stryker-js-instrumenter": minor
 ---
 
-`angularIgnorer`'s decision now receives `(node, ancestors)` — the node and its
-ancestors as typed positions from the ignorer contract — instead of a path
-object. The node vocabulary in this package's declarations is the one published
-by `@systemfsoftware/stryker-ignorer-interface`, which is now a dependency.
+an ignore rule's decision now receives the node and its ancestors as typed
+positions instead of a path object, and the node vocabulary this package's
+declarations name is the one published by the shared ignorer interface package —
+a dependency of this package now rather than a development-only one.

@@ -8,6 +8,8 @@ import { Checker } from '@systemfsoftware/stryker-js-language';
 import * as Context from 'effect/Context';
 import { Evaluator } from '@systemfsoftware/stryker-js-language';
 import * as FileSystem from 'effect/FileSystem';
+import { Framework } from '@systemfsoftware/stryker-js-language';
+import { FrameworkFailed } from '@systemfsoftware/stryker-js-language';
 import { Ignorer } from '@systemfsoftware/stryker-js-language';
 import * as Layer from 'effect/Layer';
 import { Module } from '@systemfsoftware/stryker-js-language';
@@ -22,12 +24,12 @@ export type AnyPluginContribution = { [K in PluginKind]: PluginContribution<K>; 
 
 // @public (undocumented)
 export interface ComposedPlugins {
+    // Warning: (ae-forgotten-export) The symbol "PluginLayerError" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
-    readonly layer: Option.Option<Layer.Layer<MergedPluginServices, never, PluginEnvironment>>;
+    readonly layer: Option.Option<Layer.Layer<MergedPluginServices, PluginLayerError<PluginLayerKind>, PluginEnvironment>>;
     // (undocumented)
     readonly reporterFactories: readonly SelectedReporterFactory[];
-    // (undocumented)
-    readonly shadowings: readonly Shadowing[];
 }
 
 // @public (undocumented)
@@ -42,7 +44,7 @@ export type ContributionOf<K extends PluginKind> = Extract<AnyPluginContribution
 export function declarePlugin(kind: 'Reporter', name: string, make: ReporterFactory): PluginContribution<'Reporter'>;
 
 // @public (undocumented)
-export function declarePlugin<K extends PluginLayerKind>(kind: K, name: string, layer: Layer.Layer<PluginInterfaces[K], never, PluginEnvironment>): PluginContribution<K>;
+export function declarePlugin<K extends PluginLayerKind>(kind: K, name: string, layer: Layer.Layer<PluginInterfaces[K], PluginLayerError<K>, PluginEnvironment>): PluginContribution<K>;
 
 // @public (undocumented)
 export type MergedPluginServices = Checker & Ignorer & TestRunner;
@@ -60,13 +62,15 @@ export interface PluginInterfaces {
     // (undocumented)
     Evaluator: Evaluator;
     // (undocumented)
+    Framework: Framework;
+    // (undocumented)
     Ignore: Ignorer;
     // (undocumented)
     TestRunner: TestRunner;
 }
 
 // @public (undocumented)
-export const PluginKind: S.Literals<readonly ["Checker", "TestRunner", "Reporter", "Ignore", "Evaluator"]>;
+export const PluginKind: S.Literals<readonly ["Checker", "TestRunner", "Reporter", "Ignore", "Evaluator", "Framework"]>;
 
 // @public (undocumented)
 export type PluginKind = typeof PluginKind.Type;
@@ -78,13 +82,13 @@ export class PluginLayerContribution<K extends PluginLayerKind = PluginLayerKind
     // (undocumented)
     readonly kind: K;
     // (undocumented)
-    readonly layer: Layer.Layer<PluginInterfaces[K], never, PluginEnvironment>;
+    readonly layer: Layer.Layer<PluginInterfaces[K], PluginLayerError<K>, PluginEnvironment>;
     // (undocumented)
     readonly name: string;
 }
 
 // @public (undocumented)
-export const PluginLayerKind: S.Literals<readonly ["Checker", "TestRunner", "Ignore", "Evaluator"]>;
+export const PluginLayerKind: S.Literals<readonly ["Checker", "TestRunner", "Ignore", "Evaluator", "Framework"]>;
 
 // @public (undocumented)
 export type PluginLayerKind = typeof PluginLayerKind.Type;
@@ -118,11 +122,6 @@ export interface SelectedReporterFactory {
     // (undocumented)
     readonly name: string;
 }
-
-// Warning: (ae-forgotten-export) The symbol "Shadowing_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class Shadowing extends Shadowing_base {}
 
 // (No @packageDocumentation comment for this package)
 

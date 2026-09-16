@@ -1,4 +1,6 @@
 import { Schema as S } from 'effect'
+import * as Cause from 'effect/Cause'
+import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
@@ -11,84 +13,171 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 
 import type { Ignorer as IgnorerDescriptor } from '@systemfsoftware/stryker-ignorer-interface'
-import { Module } from '@systemfsoftware/stryker-js-language'
-import { Ignorer } from '@systemfsoftware/stryker-js-language'
+import { Framework } from '@systemfsoftware/stryker-js-language'
+import type { FrameworkService, StrykerOptions } from '@systemfsoftware/stryker-js-language'
+import { Ignorer, Module } from '@systemfsoftware/stryker-js-language'
 import type {
   AnyPluginContribution,
   ContributionOf,
   PluginContribution,
 } from '@systemfsoftware/stryker-js-plugin-interface'
-import { declarePlugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { declarePlugin, RunConfiguration, SandboxDirectory } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { PluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
 import { defaultOptions, importModule } from './Config.js'
 import { StrykerError } from './stryker-error.schema.js'
 
 import {
+  ForeignFrameworkFailureSchema,
+  ForeignFrameworkRefusalSchema,
+  FrameworkServiceSchema,
   IgnorerModuleSchema,
+  PluginExtensionClaimShadowing,
   PluginLoadFailedError,
+  PluginLoadOutcome,
   PluginModuleSchema,
+  PluginNameShadowing,
   PluginNotFoundError,
   SchemaValidationContributionSchema,
 } from './Plugins.schema.js'
+import type {
+  FrameworkClaim,
+  PluginContributionIdentity,
+  PluginDescriptorOutcome,
+  PluginShadowing,
+} from './Plugins.schema.js'
+
+export interface PluginFrameworkEntry {
+  readonly moduleName: string
+  readonly contributionName: string
+  readonly claim: FrameworkClaim
+  readonly service: FrameworkService
+}
 
 export interface PluginLoaderEntryLike {
   readonly moduleName: string
+  readonly outcome: PluginDescriptorOutcome
   readonly plugins: readonly PluginContribution<PluginKind>[] | undefined
   readonly schemaContribution: Record<string, unknown> | undefined
+  readonly frameworks: readonly PluginFrameworkEntry[] | undefined
 }
 
 export interface PluginLoadPlan {
   readonly schemaContributions: readonly Record<string, unknown>[]
   readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginContribution<PluginKind>[]>
   readonly pluginModulePaths: readonly string[]
-  readonly shadowings: readonly {
-    readonly kind: PluginKind
-    readonly name: string
-    readonly shadowedIndex: number
-    readonly winnerIndex: number
-  }[]
+  readonly outcomes: readonly PluginLoadOutcome[]
+  readonly shadowings: readonly PluginShadowing[]
+  readonly frameworks: readonly PluginFrameworkEntry[]
 }
 
-export const buildPluginLoadPlan = (entries: readonly PluginLoaderEntryLike[]): PluginLoadPlan => {
-  const shadowingState = entries.reduce<{
-    readonly seen: HashMap.HashMap<string, number>
-    readonly shadowings: readonly {
-      readonly kind: PluginKind
-      readonly name: string
-      readonly shadowedIndex: number
-      readonly winnerIndex: number
-    }[]
-  }>(
-    (acc, entry, index) =>
-      Option.match(Option.fromUndefinedOr(entry.plugins), {
-        onNone: () => acc,
-        onSome: (plugins) =>
-          plugins.reduce(
-            (inner, plugin) => {
-              const key = `${plugin.kind}:${plugin.name}`
-              const previousOption = HashMap.get(inner.seen, key)
-              const nextShadowings = Option.match(previousOption, {
-                onNone: () => inner.shadowings,
-                onSome: (prev) => [
-                  ...inner.shadowings,
-                  {
-                    kind: plugin.kind,
-                    name: plugin.name,
-                    shadowedIndex: prev,
-                    winnerIndex: index,
-                  },
-                ],
-              })
-              return {
-                seen: HashMap.set(inner.seen, key, index),
-                shadowings: nextShadowings,
-              }
-            },
-            acc,
+interface PluginClaimFold {
+  readonly seen: HashMap.HashMap<string, string>
+  readonly nameShadowings: readonly PluginNameShadowing[]
+  readonly claimedExtensions: HashMap.HashMap<string, string>
+  readonly extensionShadowings: readonly PluginExtensionClaimShadowing[]
+}
+
+const emptyClaimFold = (): PluginClaimFold => ({
+  seen: HashMap.empty<string, string>(),
+  nameShadowings: [],
+  claimedExtensions: HashMap.empty<string, string>(),
+  extensionShadowings: [],
+})
+
+const claimOf = (entry: PluginLoaderEntryLike, plugin: PluginContribution<PluginKind>): Option.Option<FrameworkClaim> =>
+  Match.value(plugin.kind).pipe(
+    Match.when('Framework', () =>
+      Option.flatMap(
+        Option.fromUndefinedOr(entry.frameworks),
+        (frameworks) =>
+          Option.map(
+            Option.fromUndefinedOr(frameworks.find((framework) => framework.contributionName === plugin.name)),
+            (framework) => framework.claim,
           ),
-      }),
-    { seen: HashMap.empty<string, number>(), shadowings: [] },
+      )),
+    Match.orElse(() => Option.none()),
   )
+
+const foldExtensionClaims = (
+  fold: PluginClaimFold,
+  moduleName: string,
+  kind: PluginKind,
+  claim: FrameworkClaim,
+): PluginClaimFold =>
+  claim.extensions.reduce<PluginClaimFold>(
+    (inner, extension) =>
+      Option.match(HashMap.get(inner.claimedExtensions, extension), {
+        onNone: () => ({
+          ...inner,
+          claimedExtensions: HashMap.set(inner.claimedExtensions, extension, moduleName),
+        }),
+        onSome: (winnerModule) => ({
+          ...inner,
+          extensionShadowings: [
+            ...inner.extensionShadowings,
+            new PluginExtensionClaimShadowing({
+              kind,
+              formatId: claim.formatId,
+              extension,
+              winnerModule,
+              loserModule: moduleName,
+            }),
+          ],
+        }),
+      }),
+    fold,
+  )
+
+const foldEntry = (fold: PluginClaimFold, entry: PluginLoaderEntryLike): PluginClaimFold =>
+  Option.match(Option.fromUndefinedOr(entry.plugins), {
+    onNone: () => fold,
+    onSome: (plugins) =>
+      plugins.reduce<PluginClaimFold>(
+        (inner, plugin) => {
+          const key = `${plugin.kind}:${plugin.name}`
+          const firstModule = HashMap.get(inner.seen, key)
+          const named: PluginClaimFold = {
+            ...inner,
+            seen: Option.match(firstModule, {
+              onNone: () => HashMap.set(inner.seen, key, entry.moduleName),
+              onSome: () => inner.seen,
+            }),
+            nameShadowings: Option.match(firstModule, {
+              onNone: () => inner.nameShadowings,
+              onSome: (winnerModule) => [
+                ...inner.nameShadowings,
+                new PluginNameShadowing({
+                  kind: plugin.kind,
+                  name: plugin.name,
+                  winnerModule,
+                  loserModule: entry.moduleName,
+                }),
+              ],
+            }),
+          }
+          return Option.match(claimOf(entry, plugin), {
+            onNone: () => named,
+            onSome: (claim) => foldExtensionClaims(named, entry.moduleName, plugin.kind, claim),
+          })
+        },
+        fold,
+      ),
+  })
+
+const contributionIdentitiesOf = (entry: PluginLoaderEntryLike): readonly PluginContributionIdentity[] =>
+  Option.getOrElse(
+    Option.map(
+      Option.fromUndefinedOr(entry.plugins),
+      (plugins) => plugins.map((plugin) => ({ kind: plugin.kind, name: plugin.name })),
+    ),
+    (): readonly PluginContributionIdentity[] => [],
+  )
+
+const frameworksOf = (entry: PluginLoaderEntryLike): readonly PluginFrameworkEntry[] =>
+  Option.getOrElse(Option.fromUndefinedOr(entry.frameworks), (): readonly PluginFrameworkEntry[] => [])
+
+export const buildPluginLoadPlan = (entries: readonly PluginLoaderEntryLike[]): PluginLoadPlan => {
+  const fold = entries.reduce<PluginClaimFold>(foldEntry, emptyClaimFold())
 
   const pluginsByKind = entries.reduce<HashMap.HashMap<PluginKind, readonly PluginContribution<PluginKind>[]>>(
     (map, entry) =>
@@ -121,11 +210,21 @@ export const buildPluginLoadPlan = (entries: readonly PluginLoaderEntryLike[]): 
     })
   )
 
+  const outcomes = entries.map((entry) =>
+    new PluginLoadOutcome({
+      moduleName: entry.moduleName,
+      outcome: entry.outcome,
+      contributions: contributionIdentitiesOf(entry),
+    })
+  )
+
   return {
     schemaContributions,
     pluginsByKind,
     pluginModulePaths,
-    shadowings: shadowingState.shadowings,
+    outcomes,
+    shadowings: [...fold.nameShadowings, ...fold.extensionShadowings],
+    frameworks: entries.flatMap(frameworksOf),
   }
 }
 
@@ -159,6 +258,18 @@ const messageNamesDescriptor = (message: unknown, descriptor: string): boolean =
     Match.orElse(() => false),
   )
 
+const byDeterministicShadowingOrder = (left: string, right: string): number =>
+  Match.value(left < right).pipe(
+    Match.when(true, () => -1),
+    Match.orElse(() => Match.value(left > right).pipe(Match.when(true, () => 1), Match.orElse(() => 0))),
+  )
+
+const invalidContributionError = (descriptor: string, detail: string): PluginLoadFailedError =>
+  new PluginLoadFailedError({ descriptor, reason: { _tag: 'InvalidContribution', detail } })
+
+const importFailedError = (descriptor: string, cause: unknown): PluginLoadFailedError =>
+  new PluginLoadFailedError({ descriptor, reason: { _tag: 'ImportFailed', cause } })
+
 function isErrnoException(error: unknown): error is ErrnoException {
   return Match.value(isError(error)).pipe(
     Match.when(true, () => typeof errorCodeOf(error) === 'string'),
@@ -191,14 +302,24 @@ export interface LoadedPlugins {
   readonly schemaContributions: readonly Record<string, unknown>[]
   readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginContribution<PluginKind>[]>
   readonly pluginModulePaths: readonly string[]
+  readonly outcomes: readonly PluginLoadOutcome[]
+  readonly shadowings: readonly PluginShadowing[]
+  readonly frameworks: readonly PluginFrameworkEntry[]
 }
 
+const ABSENT_MODULE_ERROR_CODES: readonly string[] = ['ERR_MODULE_NOT_FOUND', 'MODULE_NOT_FOUND']
+
 export function isAbsentPluginError(error: unknown, descriptor: string): boolean {
-  return Match.value(errorCodeOf(error) === 'ERR_MODULE_NOT_FOUND').pipe(
+  return Match.value(ABSENT_MODULE_ERROR_CODES.includes(String(errorCodeOf(error)))).pipe(
     Match.when(true, () => messageNamesDescriptor(errorMessageOf(error), descriptor)),
     Match.orElse(() => false),
   )
 }
+
+const NO_ENTRY_POINT_ERROR_CODES: readonly string[] = ['ERR_PACKAGE_PATH_NOT_EXPORTED']
+
+const declaresNoEntryPoint = (error: unknown): boolean =>
+  NO_ENTRY_POINT_ERROR_CODES.includes(String(errorCodeOf(error)))
 
 function isEnoentError(error: unknown): boolean {
   return Match.value(isErrnoException(error)).pipe(
@@ -208,6 +329,18 @@ function isEnoentError(error: unknown): boolean {
 }
 
 type PluginExpressionClass = 'Glob' | 'FilePath' | 'Module'
+
+type PluginModuleOrigin = 'glob' | 'named'
+
+interface ResolvedPluginModule {
+  readonly moduleName: string
+  readonly origin: PluginModuleOrigin
+}
+
+const resolvedModules = (
+  moduleNames: readonly string[],
+  origin: PluginModuleOrigin,
+): readonly ResolvedPluginModule[] => moduleNames.map((moduleName) => ({ moduleName, origin }))
 
 const isPluginGlobExpression = (pluginExpression: string): boolean => pluginExpression.includes('*')
 
@@ -240,32 +373,46 @@ const resolvePluginFileUrl = (
   pathService: Path.Path,
 ): Effect.Effect<string[], PluginLoadFailedError> =>
   pathService.toFileUrl(pathService.resolve(pluginExpression)).pipe(
-    Effect.mapError((cause) => new PluginLoadFailedError({ descriptor: pluginExpression, cause })),
+    Effect.mapError(() =>
+      invalidContributionError(
+        pluginExpression,
+        'The plugin descriptor could not be resolved to a file URL.',
+      )
+    ),
     Effect.map((url) => [url.href]),
   )
 
 const resolvePluginExpression = (
   pluginExpression: string,
   pathService: Path.Path,
-): Effect.Effect<string[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<readonly ResolvedPluginModule[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> =>
   Match.value(classifyPluginExpression(pluginExpression, pathService)).pipe(
-    Match.when('Glob', () => globPluginModules(pluginExpression)),
-    Match.when('FilePath', () => resolvePluginFileUrl(pluginExpression, pathService)),
-    Match.when('Module', () => Effect.succeed([pluginExpression])),
+    Match.when(
+      'Glob',
+      () => Effect.map(globPluginModules(pluginExpression), (moduleNames) => resolvedModules(moduleNames, 'glob')),
+    ),
+    Match.when(
+      'FilePath',
+      () => Effect.map(resolvePluginFileUrl(pluginExpression, pathService), (urls) => resolvedModules(urls, 'named')),
+    ),
+    Match.when('Module', () => Effect.succeed(resolvedModules([pluginExpression], 'named'))),
     Match.exhaustive,
   )
 
 function resolvePluginModules(
   pluginDescriptors: readonly string[],
-): Effect.Effect<string[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<readonly ResolvedPluginModule[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function*() {
     const pathService = yield* Path.Path
-    const results: string[][] = yield* Effect.forEach(
+    const results: (readonly ResolvedPluginModule[])[] = yield* Effect.forEach(
       pluginDescriptors,
       (pluginExpression: string) => resolvePluginExpression(pluginExpression, pathService),
       { concurrency: 'unbounded' },
     )
-    return results.filter(Predicate.isNotNullish).flat()
+    return results
+      .filter(Predicate.isNotNullish)
+      .flat()
+      .sort((left, right) => byDeterministicShadowingOrder(left.moduleName, right.moduleName))
   })
 }
 
@@ -342,12 +489,12 @@ const readOrgEntries = (
     Effect.catchTag('PlatformError', (error) =>
       Match.value(error.reason).pipe(
         Match.tag('NotFound', () => Effect.succeed(emptyOrgEntries)),
-        Match.orElse(() => Effect.fail(new PluginLoadFailedError({ descriptor: orgDirectory, cause: error }))),
+        Match.orElse(() => Effect.fail(importFailedError(orgDirectory, error))),
       )),
     Effect.catch((error: unknown) =>
       Match.value(isEnoentError(error)).pipe(
         Match.when(true, () => Effect.succeed(emptyOrgEntries)),
-        Match.orElse(() => Effect.fail(new PluginLoadFailedError({ descriptor: orgDirectory, cause: error }))),
+        Match.orElse(() => Effect.fail(importFailedError(orgDirectory, error))),
       )
     ),
   )
@@ -408,18 +555,17 @@ const pluginFailureCause = (error: unknown): unknown =>
 const warnAbsentPlugin = (descriptor: string): Effect.Effect<void> =>
   Effect.logWarning(`Cannot find plugin "${descriptor}".\n  Did you forget to install it ?`).pipe(Effect.asVoid)
 
-const failPluginLoad = (descriptor: string, error: unknown): Effect.Effect<never, PluginLoadFailedError> =>
+const failPluginImport = (descriptor: string, error: unknown): Effect.Effect<never, PluginLoadFailedError> =>
   Effect.logWarning(`Error during loading "${descriptor}" plugin`).pipe(
-    Effect.andThen(() => Effect.fail(new PluginLoadFailedError({ descriptor, cause: error }))),
+    Effect.andThen(() => Effect.fail(importFailedError(descriptor, pluginFailureCause(error)))),
   )
 
-const recoverPluginImportFailure = (
+const failPluginContribution = (
   descriptor: string,
-  error: unknown,
-): Effect.Effect<void, PluginLoadFailedError> =>
-  Match.value(isAbsentPluginError(pluginFailureCause(error), descriptor)).pipe(
-    Match.when(true, () => warnAbsentPlugin(descriptor)),
-    Match.orElse(() => failPluginLoad(descriptor, error)),
+  cause: S.SchemaError,
+): Effect.Effect<never, PluginLoadFailedError> =>
+  Effect.logWarning(`Invalid contribution in "${descriptor}" plugin`).pipe(
+    Effect.andThen(() => Effect.fail(invalidContributionError(descriptor, cause.message))),
   )
 
 const ignorerContribution = (ignorer: IgnorerDescriptor): PluginContribution<'Ignore'> =>
@@ -491,12 +637,18 @@ const warnUndescribedPluginModule = (descriptor: string): Effect.Effect<undefine
     `Module "${descriptor}" did not contribute a StrykerJS plugin. It didn't export a "strykerPlugins", "strykerIgnorers", or "strykerValidationSchema".`,
   ).pipe(Effect.as(undefined))
 
+const warnNoEntryPointPluginPackage = (descriptor: string): Effect.Effect<undefined> =>
+  Effect.logWarning(
+    `Package "${descriptor}" declares no importable entry point; it did not contribute a StrykerJS plugin.`,
+  )
+    .pipe(Effect.as(undefined))
+
 const describeLoadedPlugin = (
   descriptor: string,
   module: unknown,
 ): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError> =>
   Result.match(pluginContributionsOf(module), {
-    onFailure: (cause) => failPluginLoad(descriptor, cause),
+    onFailure: (cause) => failPluginContribution(descriptor, cause),
     onSuccess: (contributions) =>
       Match.value(hasContribution(contributions)).pipe(
         Match.when(true, () => Effect.succeed<PluginContributions | undefined>(contributions)),
@@ -504,27 +656,282 @@ const describeLoadedPlugin = (
       ),
   })
 
+type FrameworkEnvironment = Layer.Layer<RunConfiguration | SandboxDirectory>
+
+const EMPTY_FRAMEWORK_CONTRIBUTIONS: readonly PluginContribution<'Framework'>[] = []
+
+const frameworkContributionsOf = (
+  plugins: readonly PluginContribution<PluginKind>[] | undefined,
+): readonly PluginContribution<'Framework'>[] =>
+  Option.match(Option.fromUndefinedOr(plugins), {
+    onNone: () => EMPTY_FRAMEWORK_CONTRIBUTIONS,
+    onSome: (present) =>
+      present.filter((plugin): plugin is PluginContribution<'Framework'> => plugin.kind === 'Framework'),
+  })
+
+const frameworkEnvironment = (options: StrykerOptions, basePath: string): FrameworkEnvironment =>
+  Layer.mergeAll(Layer.succeed(RunConfiguration, options), Layer.succeed(SandboxDirectory, basePath))
+
+const SUPPORTED_FRAMEWORK_CONTRACT_MAJOR = 1
+const SUPPORTED_FRAMEWORK_CONTRACT_RANGE = '1.x'
+
+const frameworkRefusalError = (
+  descriptor: string,
+  refusal: typeof ForeignFrameworkRefusalSchema.Type,
+): PluginLoadFailedError =>
+  Match.value(refusal).pipe(
+    Match.discriminator('reason')(
+      'PeerMissing',
+      (missing): PluginLoadFailedError =>
+        new PluginLoadFailedError({ descriptor, reason: { _tag: 'PeerMissing', peer: missing.peer } }),
+    ),
+    Match.discriminator('reason')(
+      'PeerVersionUnsupported',
+      (unsupported): PluginLoadFailedError =>
+        new PluginLoadFailedError({
+          descriptor,
+          reason: {
+            _tag: 'PeerVersionUnsupported',
+            peer: unsupported.peer,
+            version: unsupported.version,
+            supportedRange: unsupported.supportedRange,
+          },
+        }),
+    ),
+    Match.exhaustive,
+  )
+
+const frameworkFailureDetail = (
+  failure: typeof ForeignFrameworkFailureSchema.Type,
+  cause: Cause.Cause<unknown>,
+): string =>
+  Match.value(failure.cause).pipe(
+    Match.when(Predicate.isString, (detail) => detail),
+    Match.orElse(() => Cause.pretty(cause)),
+  )
+
+const unbuildableFrameworkError = (
+  descriptor: string,
+  contributionName: string,
+  cause: Cause.Cause<unknown>,
+): PluginLoadFailedError =>
+  invalidContributionError(
+    descriptor,
+    `Framework contribution "${contributionName}" failed to build: ${Cause.pretty(cause)}`,
+  )
+
+const frameworkBuildError = (
+  descriptor: string,
+  contributionName: string,
+  cause: Cause.Cause<unknown>,
+): PluginLoadFailedError =>
+  Option.match(Cause.findErrorOption(cause), {
+    onNone: () => unbuildableFrameworkError(descriptor, contributionName, cause),
+    onSome: (failure) =>
+      Option.match(S.decodeUnknownOption(ForeignFrameworkRefusalSchema)(failure), {
+        onSome: (refusal) => frameworkRefusalError(descriptor, refusal),
+        onNone: () =>
+          Option.match(S.decodeUnknownOption(ForeignFrameworkFailureSchema)(failure), {
+            onNone: () => unbuildableFrameworkError(descriptor, contributionName, cause),
+            onSome: (decoded) => invalidContributionError(descriptor, frameworkFailureDetail(decoded, cause)),
+          }),
+      }),
+  })
+
+const isSupportedFrameworkContractVersion = (version: string): boolean =>
+  Option.match(Option.fromNullishOr(version.split('.')[0]), {
+    onNone: () => false,
+    onSome: (major) =>
+      Match.value(/^\d+$/.test(major)).pipe(
+        Match.when(true, () => Number(major) === SUPPORTED_FRAMEWORK_CONTRACT_MAJOR),
+        Match.orElse(() => false),
+      ),
+  })
+
+const resolveModuleFrameworks = (
+  moduleName: string,
+  plugins: readonly PluginContribution<PluginKind>[] | undefined,
+  environment: FrameworkEnvironment,
+): Effect.Effect<
+  readonly PluginFrameworkEntry[],
+  PluginLoadFailedError,
+  FileSystem.FileSystem | Module | Path.Path
+> =>
+  Effect.scoped(
+    Effect.forEach(
+      frameworkContributionsOf(plugins),
+      (contribution) =>
+        Effect.gen(function*() {
+          const context = yield* Layer.build(contribution.layer).pipe(
+            Effect.provide(environment),
+            Effect.catchCause((cause) => Effect.fail(frameworkBuildError(moduleName, contribution.name, cause))),
+          )
+          const service = Context.get(context, Framework)
+          const decoded = S.decodeUnknownResult(FrameworkServiceSchema)(service)
+          return yield* Result.match(decoded, {
+            onFailure: (cause) =>
+              Effect.fail(
+                invalidContributionError(
+                  moduleName,
+                  `Framework contribution "${contribution.name}" is malformed: ${cause.message}`,
+                ),
+              ),
+            onSuccess: (valid) =>
+              Match.value(isSupportedFrameworkContractVersion(valid.claim.contractVersion)).pipe(
+                Match.when(true, () =>
+                  Effect.succeed<PluginFrameworkEntry>({
+                    moduleName,
+                    contributionName: contribution.name,
+                    claim: valid.claim,
+                    service,
+                  })),
+                Match.orElse(() =>
+                  Effect.fail(
+                    invalidContributionError(
+                      moduleName,
+                      `Framework contribution "${contribution.name}" declares contractVersion "${valid.claim.contractVersion}"; the engine supports ${SUPPORTED_FRAMEWORK_CONTRACT_RANGE}`,
+                    ),
+                  )
+                ),
+              ),
+          })
+        }),
+      { concurrency: 'unbounded' },
+    ),
+  )
+
+type PluginLoadStep =
+  | {
+    readonly outcome: 'loaded'
+    readonly contributions: PluginContributions
+    readonly frameworks: readonly PluginFrameworkEntry[]
+  }
+  | { readonly outcome: 'absent' }
+  | { readonly outcome: 'undescribed' }
+
 function loadPlugin(
   descriptor: string,
+  origin: PluginModuleOrigin,
   basePath: string,
-): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError, Module | Path.Path> {
+  environment: FrameworkEnvironment,
+): Effect.Effect<PluginLoadStep, PluginLoadFailedError, FileSystem.FileSystem | Module | Path.Path> {
   return Effect.gen(function*() {
     yield* Effect.logDebug(`Loading plugin ${descriptor}`)
-    const maybeModule = yield* importModule(descriptor, basePath).pipe(
-      Effect.catch((error) => recoverPluginImportFailure(descriptor, error)),
-    )
-    return yield* Option.match(Option.fromUndefinedOr(maybeModule), {
-      onNone: () => Effect.succeed(undefined),
-      onSome: (module) => describeLoadedPlugin(descriptor, module),
+    const imported = yield* importModule(descriptor, basePath).pipe(Effect.result)
+    if (Result.isFailure(imported)) {
+      return yield* absentOrImportFailureFor(descriptor, origin, imported.failure)
+    }
+    return yield* Option.match(Option.fromUndefinedOr(imported.success), {
+      onNone: () => Effect.succeed({ outcome: 'absent' as const }),
+      onSome: (module) => loadedStepFor(descriptor, module, environment),
     })
   })
 }
 
-interface PluginLoaderRawEntry {
+type ImportFailureDisposition = 'absent' | 'no-entry-point'
+
+const importFailureDisposition = (
+  descriptor: string,
+  origin: PluginModuleOrigin,
+  cause: unknown,
+): ImportFailureDisposition | undefined =>
+  Match.value(isAbsentPluginError(cause, descriptor)).pipe(
+    Match.when(true, (): ImportFailureDisposition => 'absent'),
+    Match.orElse(() =>
+      Match.value({ origin, declaresNoEntryPoint: declaresNoEntryPoint(cause) }).pipe(
+        Match.when({ origin: 'glob', declaresNoEntryPoint: true }, (): ImportFailureDisposition => 'no-entry-point'),
+        Match.orElse((): undefined => undefined),
+      )
+    ),
+  )
+
+const absentOrImportFailureFor = (
+  descriptor: string,
+  origin: PluginModuleOrigin,
+  error: StrykerError,
+): Effect.Effect<PluginLoadStep, PluginLoadFailedError, FileSystem.FileSystem | Module | Path.Path> =>
+  Effect.gen(function*() {
+    const disposition = importFailureDisposition(descriptor, origin, pluginFailureCause(error))
+    return yield* Match.value(disposition).pipe(
+      Match.when('absent', () => warnAbsentPlugin(descriptor).pipe(Effect.as({ outcome: 'absent' as const }))),
+      Match.when(
+        'no-entry-point',
+        () => warnNoEntryPointPluginPackage(descriptor).pipe(Effect.as({ outcome: 'undescribed' as const })),
+      ),
+      Match.orElse(() => failPluginImport(descriptor, error)),
+    )
+  })
+
+const loadedStepFor = (
+  descriptor: string,
+  module: unknown,
+  environment: FrameworkEnvironment,
+): Effect.Effect<PluginLoadStep, PluginLoadFailedError, FileSystem.FileSystem | Module | Path.Path> =>
+  Effect.gen(function*() {
+    const contributions = yield* describeLoadedPlugin(descriptor, module)
+    if (contributions === undefined) {
+      return { outcome: 'undescribed' as const }
+    }
+    const frameworks = yield* resolveModuleFrameworks(descriptor, contributions.plugins, environment)
+    return { outcome: 'loaded' as const, contributions, frameworks }
+  })
+
+interface PluginLoaderAttempt {
   readonly moduleName: string
-  readonly plugins: readonly PluginContribution<PluginKind>[] | undefined
-  readonly schemaContribution: Record<string, unknown> | undefined
+  readonly result: Result.Result<PluginLoadStep, PluginLoadFailedError>
 }
+
+const entryOfAttempt = (attempt: PluginLoaderAttempt): PluginLoaderEntryLike =>
+  Result.match(attempt.result, {
+    onFailure: () => ({
+      moduleName: attempt.moduleName,
+      outcome: 'failed' as const,
+      plugins: undefined,
+      schemaContribution: undefined,
+      frameworks: undefined,
+    }),
+    onSuccess: (step) =>
+      Match.value(step).pipe(
+        Match.when({ outcome: 'loaded' }, (loaded) => ({
+          moduleName: attempt.moduleName,
+          outcome: 'loaded' as const,
+          plugins: loaded.contributions.plugins,
+          schemaContribution: loaded.contributions.schemaContribution,
+          frameworks: loaded.frameworks,
+        })),
+        Match.orElse((other) => ({
+          moduleName: attempt.moduleName,
+          outcome: other.outcome,
+          plugins: undefined,
+          schemaContribution: undefined,
+          frameworks: undefined,
+        })),
+      ),
+  })
+
+const firstFailure = (attempts: readonly PluginLoaderAttempt[]): Option.Option<PluginLoadFailedError> =>
+  Option.flatMap(
+    Option.fromUndefinedOr(attempts.find((attempt) => Result.isFailure(attempt.result))),
+    (failed) =>
+      Result.match(failed.result, {
+        onFailure: (error) => Option.some(error),
+        onSuccess: () => Option.none(),
+      }),
+  )
+
+const logShadowing = (shadowing: PluginShadowing): Effect.Effect<void> =>
+  Match.value(shadowing).pipe(
+    Match.tag('PluginNameShadowing', (name) =>
+      Effect.logWarning(
+        `Plugin "${name.name}" of kind "${name.kind}" from "${name.loserModule}" is shadowed by "${name.winnerModule}".`,
+      )),
+    Match.tag('PluginExtensionClaimShadowing', (extension) =>
+      Effect.logWarning(
+        `Extension "${extension.extension}" claimed by format "${extension.formatId}" in "${extension.loserModule}" is shadowed by "${extension.winnerModule}".`,
+      )),
+    Match.exhaustive,
+  )
+
 export function loadPlugins(
   pluginDescriptors: readonly string[],
   basePath: string,
@@ -533,40 +940,37 @@ export function loadPlugins(
     yield* FileSystem.FileSystem
     yield* Path.Path
     yield* Module
+    const defaults = yield* defaultOptions
+    const environment = frameworkEnvironment(defaults, basePath)
     const pluginModules = yield* resolvePluginModules(pluginDescriptors)
-    const loaded = yield* Effect.forEach(
+    const attempts = yield* Effect.forEach(
       pluginModules,
-      (moduleName: string) =>
-        loadPlugin(moduleName, basePath).pipe(
-          Effect.map((plugin) => {
-            if (plugin === undefined) {
-              return undefined
-            }
-            return {
-              ...plugin,
-              moduleName,
-            }
-          }),
+      (
+        resolved: ResolvedPluginModule,
+      ): Effect.Effect<PluginLoaderAttempt, never, FileSystem.FileSystem | Module | Path.Path> =>
+        loadPlugin(resolved.moduleName, resolved.origin, basePath, environment).pipe(
+          Effect.result,
+          Effect.map((result) => ({ moduleName: resolved.moduleName, result })),
         ),
       { concurrency: 'unbounded' },
-    ).pipe(Effect.map((arr) => arr.filter(Predicate.isNotNullish)))
-    const entries: readonly PluginLoaderRawEntry[] = loaded.map((entry) => ({
-      moduleName: entry.moduleName,
-      plugins: entry.plugins,
-      schemaContribution: entry.schemaContribution,
-    }))
-    const plan = buildPluginLoadPlan(entries)
+    )
+    const plan = buildPluginLoadPlan(attempts.map(entryOfAttempt))
     for (const shadowing of plan.shadowings) {
-      yield* Effect.logWarning(
-        `Plugin "${shadowing.name}" of kind "${shadowing.kind}" at index ${shadowing.winnerIndex} shadows plugin at index ${shadowing.shadowedIndex}.`,
-      )
+      yield* logShadowing(shadowing)
     }
-    const result: LoadedPlugins = {
-      schemaContributions: plan.schemaContributions,
-      pluginsByKind: plan.pluginsByKind,
-      pluginModulePaths: plan.pluginModulePaths,
-    }
-    return result
+    const failure = firstFailure(attempts)
+    return yield* Option.match(failure, {
+      onNone: () =>
+        Effect.succeed<LoadedPlugins>({
+          schemaContributions: plan.schemaContributions,
+          pluginsByKind: plan.pluginsByKind,
+          pluginModulePaths: plan.pluginModulePaths,
+          outcomes: plan.outcomes,
+          shadowings: plan.shadowings,
+          frameworks: plan.frameworks,
+        }),
+      onSome: (error) => Effect.fail(error),
+    })
   })
 }
 
@@ -582,8 +986,8 @@ function parsePluginExpression(pluginExpression: string): { org: string; pkg: st
     Match.when(
       true,
       (): { org: string; pkg: string } => ({
-        org: parts.slice(0, 2).join('/').split('*')[0] ?? '',
-        pkg: parts.slice(2).join('/'),
+        org: parts[0] ?? '',
+        pkg: parts.slice(1).join('/'),
       }),
     ),
     Match.orElse((): { org: string; pkg: string } => ({

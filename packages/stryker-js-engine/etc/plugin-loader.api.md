@@ -8,11 +8,13 @@ import { AnyPluginContribution } from '@systemfsoftware/stryker-js-plugin-interf
 import { ContributionOf } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
+import { FrameworkService } from '@systemfsoftware/stryker-js-language';
 import * as HashMap from 'effect/HashMap';
 import { Module } from '@systemfsoftware/stryker-js-language';
 import * as Path from 'effect/Path';
 import { PluginContribution } from '@systemfsoftware/stryker-js-plugin-interface';
 import { PluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
+import * as S from 'effect/Schema';
 import { Schema } from 'effect';
 import { YieldableError } from 'effect/Cause';
 
@@ -22,23 +24,66 @@ export function create<K extends PluginKind>(pluginsByKind: HashMap.HashMap<Plug
 // @public (undocumented)
 export function createAll<K extends PluginKind>(pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginContribution[]>, kind: K): Effect.Effect<readonly ContributionOf<K>[]>;
 
+// Warning: (ae-forgotten-export) The symbol "FrameworkClaimSchema" needs to be exported by the entry point plugin-loader.d.mts
+//
+// @public (undocumented)
+export type FrameworkClaim = typeof FrameworkClaimSchema.Type;
+
 // @public (undocumented)
 export interface LoadedPlugins {
+    // (undocumented)
+    readonly frameworks: readonly PluginFrameworkEntry[];
+    // (undocumented)
+    readonly outcomes: readonly PluginLoadOutcome[];
     // (undocumented)
     readonly pluginModulePaths: readonly string[];
     // (undocumented)
     readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginContribution<PluginKind>[]>;
     // (undocumented)
     readonly schemaContributions: readonly Record<string, unknown>[];
+    // (undocumented)
+    readonly shadowings: readonly PluginShadowing[];
 }
 
 // @public (undocumented)
 export function loadPlugins(pluginDescriptors: readonly string[], basePath: string): Effect.Effect<LoadedPlugins, PluginLoadFailedError, FileSystem.FileSystem | Module | Path.Path>;
 
+// Warning: (ae-forgotten-export) The symbol "PluginContributionIdentitySchema" needs to be exported by the entry point plugin-loader.d.mts
+//
+// @public (undocumented)
+export type PluginContributionIdentity = typeof PluginContributionIdentitySchema.Type;
+
+// @public (undocumented)
+export const PluginDescriptorOutcome: Schema.Literals<readonly ["loaded", "absent", "failed", "undescribed"]>;
+
+// @public (undocumented)
+export type PluginDescriptorOutcome = typeof PluginDescriptorOutcome.Type;
+
+// Warning: (ae-forgotten-export) The symbol "PluginExtensionClaimShadowing_base" needs to be exported by the entry point plugin-loader.d.mts
+//
+// @public (undocumented)
+export class PluginExtensionClaimShadowing extends PluginExtensionClaimShadowing_base {}
+
+// @public (undocumented)
+export interface PluginFrameworkEntry {
+    // (undocumented)
+    readonly claim: FrameworkClaim;
+    // (undocumented)
+    readonly contributionName: string;
+    // (undocumented)
+    readonly moduleName: string;
+    // (undocumented)
+    readonly service: FrameworkService;
+}
+
 // @public (undocumented)
 export interface PluginLoaderEntryLike {
     // (undocumented)
+    readonly frameworks: readonly PluginFrameworkEntry[] | undefined;
+    // (undocumented)
     readonly moduleName: string;
+    // (undocumented)
+    readonly outcome: PluginDescriptorOutcome;
     // (undocumented)
     readonly plugins: readonly PluginContribution<PluginKind>[] | undefined;
     // (undocumented)
@@ -49,12 +94,41 @@ export interface PluginLoaderEntryLike {
 //
 // @public (undocumented)
 export class PluginLoadFailedError extends PluginLoadFailedError_base {
+    // Warning: (ae-forgotten-export) The symbol "ExitClass$1" needs to be exported by the entry point plugin-loader.d.mts
+    //
     // (undocumented)
-    readonly exitClass: 'InternalError';
+    get exitClass(): ExitClass$1;
+    // (undocumented)
+    get message(): string;
 }
 
 // @public (undocumented)
+export const PluginLoadFailureReason: Schema.Union<readonly [Schema.TaggedStruct<"PeerMissing", {
+    readonly peer: Schema.String;
+}>, Schema.TaggedStruct<"PeerVersionUnsupported", {
+    readonly peer: Schema.String;
+    readonly version: Schema.String;
+    readonly supportedRange: Schema.String;
+}>, Schema.TaggedStruct<"InvalidContribution", {
+    readonly detail: Schema.String;
+}>, Schema.TaggedStruct<"ImportFailed", {
+    readonly cause: Schema.Unknown;
+}>]>;
+
+// @public (undocumented)
+export type PluginLoadFailureReason = typeof PluginLoadFailureReason.Type;
+
+// Warning: (ae-forgotten-export) The symbol "PluginLoadOutcome_base" needs to be exported by the entry point plugin-loader.d.mts
+//
+// @public (undocumented)
+export class PluginLoadOutcome extends PluginLoadOutcome_base {}
+
+// @public (undocumented)
 export interface PluginLoadPlan {
+    // (undocumented)
+    readonly frameworks: readonly PluginFrameworkEntry[];
+    // (undocumented)
+    readonly outcomes: readonly PluginLoadOutcome[];
     // (undocumented)
     readonly pluginModulePaths: readonly string[];
     // (undocumented)
@@ -62,13 +136,13 @@ export interface PluginLoadPlan {
     // (undocumented)
     readonly schemaContributions: readonly Record<string, unknown>[];
     // (undocumented)
-    readonly shadowings: readonly {
-        readonly kind: PluginKind;
-        readonly name: string;
-        readonly shadowedIndex: number;
-        readonly winnerIndex: number;
-    }[];
+    readonly shadowings: readonly PluginShadowing[];
 }
+
+// Warning: (ae-forgotten-export) The symbol "PluginNameShadowing_base" needs to be exported by the entry point plugin-loader.d.mts
+//
+// @public (undocumented)
+export class PluginNameShadowing extends PluginNameShadowing_base {}
 
 // Warning: (ae-forgotten-export) The symbol "PluginNotFoundError_base" needs to be exported by the entry point plugin-loader.d.mts
 //
@@ -77,6 +151,9 @@ export class PluginNotFoundError extends PluginNotFoundError_base {
     // (undocumented)
     readonly exitClass: 'ConfigError';
 }
+
+// @public (undocumented)
+export type PluginShadowing = PluginNameShadowing | PluginExtensionClaimShadowing;
 
 // (No @packageDocumentation comment for this package)
 

@@ -17,7 +17,12 @@ import type { CompleteDryRunResult, TestResult } from '@systemfsoftware/stryker-
 
 import { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from './IncrementalDiff.schema.js'
-import type { PreviousFileRecord, PreviousMutantRecord, PreviousTestFileRecord } from './IncrementalDiff.schema.js'
+import type {
+  FileFormatIdentity,
+  PreviousFileRecord,
+  PreviousMutantRecord,
+  PreviousTestFileRecord,
+} from './IncrementalDiff.schema.js'
 
 export const HIT_LIMIT_FACTOR = 100
 
@@ -713,6 +718,7 @@ export interface IncrementalDiffInput {
   readonly previousFiles: Record<string, PreviousFileRecord>
   readonly previousTestFiles: Record<string, PreviousTestFileRecord>
   readonly currentRelativeFiles: Record<string, string>
+  readonly formatIdentities: Readonly<Record<string, FileFormatIdentity>>
   readonly testIdsByRelativeFile: Record<string, readonly string[]>
   readonly coveringTestFilesByMutantId: Record<string, readonly string[]>
   readonly force: boolean
@@ -781,6 +787,28 @@ const changedTestFiles = (
   )
 
 const NO_PREVIOUS_MUTANTS: readonly PreviousMutantRecord[] = []
+
+const identitySignature = (identity: FileFormatIdentity | undefined): string => JSON.stringify(identity ?? null)
+
+const recordedIdentity = (record: PreviousFileRecord): FileFormatIdentity | undefined =>
+  Option.match(Option.fromUndefinedOr(record.formatId), {
+    onNone: () => undefined,
+    onSome: (formatId) => ({
+      formatId,
+      ownerModule: Option.getOrElse(Option.fromUndefinedOr(record.ownerModule), () => ''),
+      ownerVersion: Option.getOrElse(Option.fromUndefinedOr(record.ownerVersion), () => ''),
+    }),
+  })
+
+const identityChangedFiles = (
+  previousFiles: Readonly<Record<string, PreviousFileRecord>>,
+  formatIdentities: Readonly<Record<string, FileFormatIdentity>>,
+): readonly string[] =>
+  Object.entries(previousFiles)
+    .filter(([name, previous]) =>
+      identitySignature(recordedIdentity(previous)) !== identitySignature(formatIdentities[name])
+    )
+    .map(([name]) => name)
 
 const findRemembered = (
   previousFiles: Readonly<Record<string, PreviousFileRecord>>,
@@ -954,7 +982,10 @@ const splitMutants = (
 }
 
 const incrementalDiffOfChanges = (input: IncrementalDiffInput): IncrementalDiffOutput => {
-  const changedFiles = changedSourceFiles(input.previousFiles, input.currentRelativeFiles)
+  const changedFiles = uniqueFiles([
+    ...changedSourceFiles(input.previousFiles, input.currentRelativeFiles),
+    ...identityChangedFiles(input.previousFiles, input.formatIdentities),
+  ])
   const changedTests = changedTestFiles(
     input.previousTestFiles,
     input.currentRelativeFiles,
@@ -1041,6 +1072,7 @@ export const incrementalDiff = (
     testCoverage: TestCoverage
     incrementalReport: unknown
     currentRelativeFiles: Record<string, string>
+    formatIdentities: Readonly<Record<string, FileFormatIdentity>>
     basePath: string
     force?: boolean
   }>,
@@ -1051,6 +1083,7 @@ export const incrementalDiff = (
     previousFiles: previousFilesOf(input.incrementalReport),
     previousTestFiles: previousTestFilesOf(input.incrementalReport),
     currentRelativeFiles: input.currentRelativeFiles,
+    formatIdentities: input.formatIdentities,
     testIdsByRelativeFile: testIdsByRelativeFile(input.testCoverage, input.basePath),
     coveringTestFilesByMutantId: coveringTestFilesByMutantId(input.testCoverage, input.basePath),
     force: input.force ?? false,
@@ -1071,4 +1104,118 @@ export const incrementalDiff = (
       total: output.testStatistics.total,
     },
   }
+}
+
+if (import.meta.vitest) {
+  const { it } = await import('@effect/vitest')
+  const { FastCheck: fc } = await import('effect/testing')
+
+  const BASE_PATH = '/project'
+  const FILE = 'src/subject.ts'
+  const SOURCE = 'const answer = 1 + 2\n'
+
+  const IdentityStampSchema = S.Struct({ formatId: S.String, ownerModule: S.String, ownerVersion: S.String })
+  const ReuseCaseSchema = S.Struct({ recorded: S.optional(IdentityStampSchema), current: IdentityStampSchema })
+
+  const currentMutant = new Mutant({
+    id: 'mutant-0',
+    fileName: `${BASE_PATH}/${FILE}`,
+    mutatorName: 'ArithmeticOperator',
+    replacement: '-',
+    location: { start: { line: 0, column: 14 }, end: { line: 0, column: 15 } },
+  })
+
+  const previousMutants: readonly PreviousMutantRecord[] = [
+    {
+      mutatorName: 'ArithmeticOperator',
+      replacement: '-',
+      location: { start: { line: 1, column: 15 }, end: { line: 1, column: 16 } },
+      status: 'Killed',
+      killedBy: ['0'],
+    },
+  ]
+
+  const previousRecordOf = (stamp: FileFormatIdentity | undefined): PreviousFileRecord =>
+    Option.match(Option.fromUndefinedOr(stamp), {
+      onNone: () => ({ source: SOURCE, mutants: previousMutants }),
+      onSome: (present) => ({ source: SOURCE, mutants: previousMutants, ...present }),
+    })
+
+  it.prop(
+    '∀s_IncrementalReuse_≡IdentityMatch',
+    [S.toArbitrary(ReuseCaseSchema)(fc)],
+    ([{ recorded, current }]) => {
+      const record = previousRecordOf(recorded)
+      const result = computeIncrementalDiff({
+        basePath: BASE_PATH,
+        currentMutants: [currentMutant],
+        previousFiles: { [FILE]: record },
+        previousTestFiles: {},
+        currentRelativeFiles: { [FILE]: SOURCE },
+        formatIdentities: { [FILE]: current },
+        testIdsByRelativeFile: {},
+        coveringTestFilesByMutantId: {},
+        force: false,
+      })
+      const fieldsMatch = Option.match(Option.fromUndefinedOr(recorded), {
+        onNone: () => false,
+        onSome: (stamp) =>
+          [
+            stamp.formatId === current.formatId,
+            stamp.ownerModule === current.ownerModule,
+            stamp.ownerVersion === current.ownerVersion,
+          ].every((holds) => holds),
+      })
+      const identityUnchanged = identitySignature(recordedIdentity(record)) === identitySignature(current)
+      const reused = result.remembered.length === ONE
+      return [reused === fieldsMatch, identityUnchanged === fieldsMatch].every((holds) => holds)
+    },
+  )
+
+  const OWNER_VERSIONS = ['0.1.0+5.55.1', '0.1.0+5.56.0', '0.2.0+5.55.1'] as const
+  const SVELTE_MODULE = '@systemfsoftware/stryker-js-svelte'
+  const OwnerVersionCaseSchema = S.Struct({
+    recorded: S.Literals(OWNER_VERSIONS),
+    current: S.Literals(OWNER_VERSIONS),
+  })
+
+  const emptyCoverage: TestCoverage = {
+    testsByMutantId: MutableHashMap.empty(),
+    testsById: MutableHashMap.empty(),
+    staticCoverage: undefined,
+    hitsByMutantId: MutableHashMap.empty(),
+  }
+
+  const rawReportOf = (ownerVersion: string) => ({
+    schemaVersion: '1.0',
+    thresholds: { high: 80, low: 60 },
+    files: {
+      [FILE]: {
+        source: SOURCE,
+        mutants: previousMutants,
+        formatId: 'svelte',
+        ownerModule: SVELTE_MODULE,
+        ownerVersion,
+      },
+    },
+  })
+
+  it.prop(
+    '∀s_OwnerVersion_≡ReuseDecision',
+    [S.toArbitrary(OwnerVersionCaseSchema)(fc)],
+    ([{ recorded, current }]) => {
+      const result = incrementalDiff({
+        currentMutants: [currentMutant],
+        testCoverage: emptyCoverage,
+        incrementalReport: rawReportOf(recorded),
+        currentRelativeFiles: { [FILE]: SOURCE },
+        formatIdentities: { [FILE]: { formatId: 'svelte', ownerModule: SVELTE_MODULE, ownerVersion: current } },
+        basePath: BASE_PATH,
+      })
+      const expectedReuse = recorded === current
+      const reuseHolds = (result.remembered.length === ONE) === expectedReuse
+      const runHolds = (result.mutants.length === ONE) === !expectedReuse
+      return reuseHolds && runHolds
+    },
+  )
 }

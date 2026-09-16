@@ -16,6 +16,9 @@ const PreviousMutantSchema = S.Struct({
 const PreviousFileSchema = S.Struct({
   source: S.optional(S.String),
   mutants: S.optional(S.Array(PreviousMutantSchema)),
+  formatId: S.optional(S.String),
+  ownerModule: S.optional(S.String),
+  ownerVersion: S.optional(S.String),
 })
 
 const PreviousTestFileSchema = S.Struct({
@@ -25,6 +28,15 @@ const PreviousTestFileSchema = S.Struct({
 export const PreviousFilesSchema = S.Record(S.String, PreviousFileSchema)
 export const PreviousTestFilesSchema = S.Record(S.String, PreviousTestFileSchema)
 
+/**
+ * The format that owns a file, as incremental state records it.
+ * `ownerVersion` is `${installed module version}+${resolved framework runtime version}`.
+ */
+export type FileFormatIdentity = {
+  readonly formatId: string
+  readonly ownerModule: string
+  readonly ownerVersion: string
+}
 export type PreviousFileRecord = S.Schema.Type<typeof PreviousFileSchema>
 export type PreviousTestFileRecord = S.Schema.Type<typeof PreviousTestFileSchema>
 export type PreviousMutantRecord = S.Schema.Type<typeof PreviousMutantSchema>

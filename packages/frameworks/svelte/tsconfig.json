@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@systemfsoftware/tsconfig/tsc/no-dom/library",
+  "compilerOptions": {
+    "customConditions": ["@systemfsoftware/source"],
+    "outDir": "dist",
+    "rootDir": ".",
+    "types": ["node"],
+    "plugins": [
+      {
+        "name": "@effect/language-service"
+      }
+    ]
+  },
+  "include": ["src", "tests"],
+  "exclude": ["node_modules", "dist"]
+}

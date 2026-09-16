@@ -44,6 +44,66 @@ export class Heartbeat extends S.TaggedClass<Heartbeat>()('tick', {
   total: S.NullOr(S.Finite),
 }) {}
 
+export const PluginDescriptorOutcome = S.Literals(['loaded', 'absent', 'failed', 'undescribed'])
+export type PluginDescriptorOutcome = typeof PluginDescriptorOutcome.Type
+
+export const PluginContributionRow = S.Struct({
+  kind: S.String,
+  name: S.String,
+})
+export type PluginContributionRow = typeof PluginContributionRow.Type
+
+export const PluginDescriptorRow = S.Struct({
+  moduleName: S.String,
+  outcome: PluginDescriptorOutcome,
+  contributions: S.Array(PluginContributionRow),
+})
+export type PluginDescriptorRow = typeof PluginDescriptorRow.Type
+
+export const PluginShadowingRow = S.Union([
+  S.TaggedStruct('name', {
+    kind: S.String,
+    name: S.String,
+    winnerModule: S.String,
+    loserModule: S.String,
+  }),
+  S.TaggedStruct('extension', {
+    kind: S.String,
+    formatId: S.String,
+    extension: S.String,
+    winnerModule: S.String,
+    loserModule: S.String,
+  }),
+])
+export type PluginShadowingRow = typeof PluginShadowingRow.Type
+
+export const FormatRegistryRow = S.Struct({
+  extension: S.String,
+  formatId: S.String,
+  ownerModule: S.String,
+})
+export type FormatRegistryRow = typeof FormatRegistryRow.Type
+
+export const SkippedFileRow = S.Struct({
+  file: S.String,
+  extension: S.String,
+  reason: S.String,
+})
+export type SkippedFileRow = typeof SkippedFileRow.Type
+
+export class PluginsReported extends S.TaggedClass<PluginsReported>()('plugins', {
+  descriptors: S.Array(PluginDescriptorRow),
+  shadowings: S.Array(PluginShadowingRow),
+}) {}
+
+export class FormatRegistryResolved extends S.TaggedClass<FormatRegistryResolved>()('formats', {
+  rows: S.Array(FormatRegistryRow),
+}) {}
+
+export class SkippedReported extends S.TaggedClass<SkippedReported>()('skipped', {
+  files: S.Array(SkippedFileRow),
+}) {}
+
 const VerdictThresholds = S.Struct({
   high: S.Finite,
   low: S.Finite,
@@ -85,11 +145,21 @@ export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   mutants: S.Array(VerdictMutant),
 }) {}
 
+export const PluginFailureReason = S.Literals([
+  'PeerMissing',
+  'PeerVersionUnsupported',
+  'InvalidContribution',
+  'ImportFailed',
+  'PluginNotFound',
+])
+export type PluginFailureReason = typeof PluginFailureReason.Type
+
 export class RunFailed extends S.TaggedClass<RunFailed>()('error', {
   schemaVersion: S.String,
   code: S.Finite,
   error: S.String,
   remediation: S.String,
+  reason: S.optional(PluginFailureReason),
 }) {}
 
 export class HelpRendered extends S.TaggedClass<HelpRendered>()('help', {
@@ -104,6 +174,9 @@ export const RunEvent = S.Union([
   PlanKnown,
   RunMutantTested,
   Heartbeat,
+  PluginsReported,
+  FormatRegistryResolved,
+  SkippedReported,
   VerdictReached,
   RunFailed,
   HelpRendered,

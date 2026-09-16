@@ -1,23 +1,18 @@
 /**
  * Syntax — the instrumenter's AST shapes, location helpers and syntax utilities.
  */
+import type { EmbeddedDocument, FormatId } from '@systemfsoftware/stryker-framework-interface'
 import type { Position } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 import type { Program } from './Ast.js'
-import { AstFormat as SchemaAstFormat } from './Syntax.schema.js'
 
-export const AstFormat = SchemaAstFormat
-export type AstFormat = typeof SchemaAstFormat.Type
-export interface AstByFormat {
-  html: HtmlAst
-  js: JSAst
-  ts: TSAst
-  tsx: TsxAst
-  svelte: SvelteAst
-}
-export type Ast = HtmlAst | JSAst | SvelteAst | TSAst | TsxAst
+export type Ast = JSAst | TSAst | TsxAst | EmbeddedAst
 
-export type ScriptFormat = Extract<AstFormat, 'js' | 'ts' | 'tsx'>
+export type AstRoot = Program
+
+export type ScriptFormat = Extract<Ast['format'], 'js' | 'ts' | 'tsx'>
+
+export const formatKeyOf = (ast: Ast): string => (ast.format === 'embedded' ? ast.formatId : ast.format)
 
 /**
  * A parsed comment with its source span. oxc emits comments flat with offsets
@@ -33,16 +28,8 @@ export type ScriptAst = JSAst | TSAst | TsxAst
 export interface BaseAst {
   originFileName: string
   rawContent: string
-  root: Ast['root']
+  root: AstRoot
   offset?: Position
-}
-
-/**
- * Represents an Html AST.
- */
-export interface HtmlAst extends BaseAst {
-  format: 'html'
-  root: HtmlRootNode
 }
 
 /**
@@ -72,41 +59,18 @@ export interface TsxAst extends BaseAst {
   comments: readonly SpannedComment[]
 }
 
-/**
- * Represents a Svelte AST
- */
-export interface SvelteAst extends BaseAst {
-  format: 'svelte'
-  root: SvelteRootNode
+export interface EmbeddedAst {
+  format: 'embedded'
+  formatId: FormatId
+  originFileName: string
+  rawContent: string
+  document: EmbeddedDocument
+  scripts: readonly EmbeddedScript[]
 }
 
-/**
- * Represents the root node of an HTML AST
- * We've taken a shortcut here, instead of representing the entire AST, we're only representing the script tags.
- * We might need to expand this in the future if we would ever want to support mutating the actual HTML (rather than only the JS/TS)
- */
-export interface HtmlRootNode {
-  scripts: ScriptAst[]
-}
-
-export interface SvelteRootNode {
-  moduleScript?: TemplateScript
-  additionalScripts: TemplateScript[]
-}
-
-/**
- * Represents a svelte script or binding expression
- * We've taken a shortcut here, instead of representing the entire AST, we're only representing the script tags and expression bindings.
- */
-export interface TemplateScript {
-  ast: ScriptAst
-  range: Range
-  isExpression: boolean
-}
-
-export interface Range {
-  start: number
-  end: number
+export interface EmbeddedScript {
+  readonly region: number
+  readonly ast: ScriptAst
 }
 
 /**

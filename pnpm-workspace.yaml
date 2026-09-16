@@ -53,3 +53,4 @@ packages:
   - packages/*
   - packages/toolchain/*
   - packages/ignorers/*
+  - packages/frameworks/*

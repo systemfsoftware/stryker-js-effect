@@ -4,18 +4,33 @@
 
 ```ts
 
+import * as Brand from 'effect/Brand';
 import * as Effect from 'effect/Effect';
+import { EmbeddedDocument } from '@systemfsoftware/stryker-framework-interface';
 import { FileDescription } from '@systemfsoftware/stryker-js-language';
+import { FormatId } from '@systemfsoftware/stryker-framework-interface';
+import { FrameworkService } from '@systemfsoftware/stryker-js-language';
 import { IgnorerService } from '@systemfsoftware/stryker-js-language';
+import { Location } from '@systemfsoftware/stryker-js-language';
 import { Mutant } from '@systemfsoftware/stryker-js-language';
+import { MutateDescription } from '@systemfsoftware/stryker-js-language';
+import * as Option from 'effect/Option';
+import { Position } from '@systemfsoftware/stryker-js-language';
+import { Result } from 'effect/Result';
 import * as S from 'effect/Schema';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
-export const angularIgnorer: IgnorerService;
+export const coreFormatRegistry: FormatRegistry;
 
 // @public (undocumented)
-export function disableTypeChecks(file: File_2): Promise<File_2>;
+export function disableTypeChecks(file: File_2, registry?: FormatRegistry): Promise<File_2>;
+
+// @public (undocumented)
+export interface EmbeddedFormatEntry extends FormatHooks {
+    // (undocumented)
+    readonly claim: FormatClaim<'embedded'>;
+}
 
 // @public (undocumented)
 interface File_2 extends FileDescription {
@@ -27,18 +42,95 @@ interface File_2 extends FileDescription {
 export { File_2 as File }
 
 // @public (undocumented)
-export const frameworkPluginsFileUrl: string;
+export interface FormatClaim<Kind extends FormatKind = FormatKind> {
+    // (undocumented)
+    readonly extensions: readonly string[];
+    // (undocumented)
+    readonly formatId: FormatId;
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly language: string;
+}
+
+// @public (undocumented)
+export type FormatEntry = ScriptFormatEntry | EmbeddedFormatEntry;
+
+// @public (undocumented)
+export interface FormatHooks {
+    // (undocumented)
+    readonly disableTypeChecks: (ast: Ast) => string;
+    // (undocumented)
+    readonly owner: string;
+    // Warning: (ae-forgotten-export) The symbol "ParserContext" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "Ast" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly parse: (text: string, fileName: string, context: ParserContext) => Promise<Ast>;
+    // Warning: (ae-forgotten-export) The symbol "PrinterContext" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly print: (ast: Ast, context: PrinterContext) => string;
+    // Warning: (ae-forgotten-export) The symbol "AstTransformer" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly transform: AstTransformer;
+}
+
+// @public (undocumented)
+export type FormatKind = 'script' | 'embedded';
+
+// Warning: (ae-forgotten-export) The symbol "FormatOverrideUnclaimed_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class FormatOverrideUnclaimed extends FormatOverrideUnclaimed_base {}
+
+// @public (undocumented)
+export interface FormatRegistry {
+    // (undocumented)
+    readonly entries: readonly FormatEntry[];
+    // (undocumented)
+    readonly entryForExtension: (extension: string) => Option.Option<FormatEntry>;
+    // (undocumented)
+    readonly entryForFormat: (formatId: string) => Option.Option<FormatEntry>;
+    // (undocumented)
+    readonly resolutionCommand: (fileName: string, formatIdOverride?: string) => FormatResolutionCommand;
+    // (undocumented)
+    readonly resolve: (fileName: string, formatIdOverride?: string) => Result<FormatResolutionDecision, FormatOverrideUnclaimed>;
+}
+
+// @public (undocumented)
+export const formatRegistry: (entries: readonly FormatEntry[]) => FormatRegistry;
+
+// Warning: (ae-forgotten-export) The symbol "FormatResolutionCommand_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class FormatResolutionCommand extends FormatResolutionCommand_base {}
+
+// Warning: (ae-forgotten-export) The symbol "FormatAssigned" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "FormatSkipped" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export type FormatResolutionDecision = FormatAssigned | FormatSkipped;
+
+// @public (undocumented)
+export const frameworkEntryOf: (moduleName: string, service: FrameworkService) => EmbeddedFormatEntry;
 
 // Warning: (ae-forgotten-export) The symbol "InstrumentResult$1" needs to be exported by the entry point index.d.mts
 // Warning: (ae-forgotten-export) The symbol "InstrumentError" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
-export const instrument: (files: readonly File_2[], options: InstrumenterOptions) => Effect.Effect<InstrumentResult$1, InstrumentError>;
+export const instrument: (files: readonly File_2[], options: InstrumenterOptions, registry?: FormatRegistry) => Effect.Effect<typeof InstrumentResult$1.Type, InstrumentError>;
 
 // Warning: (ae-forgotten-export) The symbol "InstrumenterOptionsSchema" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type;
+
+// Warning: (ae-forgotten-export) The symbol "InstrumentFileSkip_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class InstrumentFileSkip extends InstrumentFileSkip_base {}
 
 // @public (undocumented)
 export interface InstrumentResult {
@@ -46,13 +138,25 @@ export interface InstrumentResult {
     files: readonly File_2[];
     // (undocumented)
     mutants: readonly Mutant[];
+    // (undocumented)
+    skipped: readonly InstrumentFileSkip[];
 }
 
 // @public (undocumented)
 export interface ParserOptions {}
 
 // @public (undocumented)
-export const strykerPlugins: readonly unknown[];
+export const registerEntries: (registry: FormatRegistry, additions: readonly FormatEntry[]) => FormatRegistry;
+
+// @public (undocumented)
+export interface ScriptFormatEntry extends FormatHooks {
+    // (undocumented)
+    readonly claim: FormatClaim<'script'>;
+    // Warning: (ae-forgotten-export) The symbol "ScriptFormat" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly scriptFormat: ScriptFormat;
+}
 
 // (No @packageDocumentation comment for this package)
 

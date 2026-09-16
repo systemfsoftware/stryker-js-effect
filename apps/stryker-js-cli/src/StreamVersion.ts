@@ -1,1 +1,1 @@
-export const STREAM_SCHEMA_VERSION = '1.0'
+export { STREAM_SCHEMA_VERSION } from '@systemfsoftware/stryker-js-language'

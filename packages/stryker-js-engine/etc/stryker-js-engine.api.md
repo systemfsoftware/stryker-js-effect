@@ -19,6 +19,8 @@ import { ExitClass } from '@systemfsoftware/stryker-js-language';
 import { FileDescription } from '@systemfsoftware/stryker-js-language';
 import { FileDescriptions } from '@systemfsoftware/stryker-js-language';
 import * as FileSystem from 'effect/FileSystem';
+import { FormatRegistry } from '@systemfsoftware/stryker-js-instrumenter';
+import { FrameworkService } from '@systemfsoftware/stryker-js-language';
 import * as HashMap from 'effect/HashMap';
 import { IgnorerService } from '@systemfsoftware/stryker-js-language';
 import * as Layer from 'effect/Layer';
@@ -260,6 +262,9 @@ export const IncrementalReportSchema: S.StructWithRest<S.Struct<{
             readonly description: S.optional<S.String>;
             readonly duration: S.optional<S.Finite>;
         }>>;
+        readonly formatId: S.optional<S.String>;
+        readonly ownerModule: S.optional<S.String>;
+        readonly ownerVersion: S.optional<S.String>;
     }>>;
     readonly testFiles: S.optional<S.$Record<S.String, S.Struct<{
         readonly source: S.optional<S.String>;
@@ -352,6 +357,8 @@ export type OutputMode = 'human' | 'machine';
 
 // @public (undocumented)
 export interface PrepareDone {
+    // (undocumented)
+    readonly formatRegistry: FormatRegistry;
     // (undocumented)
     readonly ignorers: readonly IgnorerService[];
     // Warning: (ae-forgotten-export) The symbol "LoadedPlugins" needs to be exported by the entry point index.d.mts
