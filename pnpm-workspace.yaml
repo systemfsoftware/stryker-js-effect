@@ -1,8 +1,10 @@
 allowBuilds:
+  cpu-features: false
   msgpackr-extract: false
   onnxruntime-node: false
   protobufjs: false
   sharp: false
+  ssh2: false
 catalog:
   "@commitlint/cli": ^21
   "@commitlint/config-conventional": ^21
@@ -36,6 +38,7 @@ catalog:
   oxlint: ^1
   oxlint-tsgolint: ^7
   rimraf: ^6.1.3
+  testcontainers: ^12
   tsdown: ^0.23.0
   turbo: ^2
   type-fest: ^4

@@ -82,6 +82,19 @@
       ],
       "cache": true
     },
+    "test:e2e": {
+      "cache": false,
+      "dependsOn": [
+        "^build"
+      ],
+      "passThroughEnv": [
+        "TESTCONTAINERS_RYUK_DISABLED",
+        "TESTCONTAINERS_RYUK_PRIVILEGED",
+        "TESTCONTAINERS_HOST_OVERRIDE",
+        "DOCKER_HOST",
+        "CI"
+      ]
+    },
     "lint": {
       "inputs": [
         "$TURBO_DEFAULT$",
