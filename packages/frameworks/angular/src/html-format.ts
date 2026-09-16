@@ -160,14 +160,11 @@ const scriptTypeAttribute = (element: NGAst.Element): NGAst.Attribute | undefine
 const byStart = (left: { readonly start: number }, right: { readonly start: number }): number =>
   left.start - right.start
 
-const sliceOf = (document: string, region: { readonly start: number; readonly end: number }): string =>
-  document.substring(region.start, region.end)
-
 const regionOf = (rawContent: string, context: FrameworkContext, location: ScriptLocation): ScriptRegion => ({
   start: location.start,
   end: location.end,
   isExpression: false,
-  scriptAst: context.parseScript(sliceOf(rawContent, location), location.scriptFormat),
+  scriptAst: context.parseScript(rawContent.substring(location.start, location.end), location.scriptFormat),
 })
 
 const documentOf = (rawContent: string, context: FrameworkContext): EmbeddedDocument => ({
@@ -205,7 +202,7 @@ const noCheckDocument = (content: string): string => {
   for (const location of [...scriptLocations(content)].sort(byStart)) {
     spliced += content.substring(cursor, location.start)
     spliced += NEWLINE
-    spliced += prefixWithNoCheck(sliceOf(content, location))
+    spliced += prefixWithNoCheck(content.substring(location.start, location.end))
     spliced += NEWLINE
     cursor = location.end
   }

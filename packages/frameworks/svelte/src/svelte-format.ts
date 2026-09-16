@@ -598,7 +598,7 @@ const placeModuleHeader = (state: SvelteFormatState, context: FrameworkContext):
 const printedRegionCode = (region: SvelteRegion, context: FrameworkContext): string =>
   context.printScript(programOf(region.scriptAst))
 
-const printedExpression = (region: SvelteRegion, context: FrameworkContext): string =>
+const printedExpressionWithoutTerminator = (region: SvelteRegion, context: FrameworkContext): string =>
   printedRegionCode(region, context).slice(0, -1)
 
 const printedStatement = (region: SvelteRegion, context: FrameworkContext): string =>
@@ -606,7 +606,7 @@ const printedStatement = (region: SvelteRegion, context: FrameworkContext): stri
 
 const printedRegion = (region: SvelteRegion, context: FrameworkContext): string =>
   Match.value(region.isExpression).pipe(
-    Match.when(true, () => printedExpression(region, context)),
+    Match.when(true, () => printedExpressionWithoutTerminator(region, context)),
     Match.orElse(() => printedStatement(region, context)),
   )
 
