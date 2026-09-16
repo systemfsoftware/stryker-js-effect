@@ -9,3 +9,4 @@ coverage/
 result
 result-*
 temp/
+.changeset/changelogs/

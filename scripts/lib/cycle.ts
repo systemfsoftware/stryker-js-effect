@@ -8,6 +8,9 @@ export type CycleEntry = {
   changelog: string
 }
 
+export const changelogPath = (name: string, version: string): string =>
+  join('.changeset', 'changelogs', `${name.replace('/', '!')}@${version}.md`)
+
 type Pkg = {
   name?: string
   version?: string
@@ -40,7 +43,7 @@ export const loadWorkspaceCycle = async (): Promise<CycleEntry[]> =>
     name,
     version,
     tag: `${name}@v${version}`,
-    changelog: join('.changeset', 'changelogs', `${name.replace('/', '!')}@${version}.md`),
+    changelog: changelogPath(name, version),
   }))
 
 export const loadCaptured = async (path: string): Promise<CycleEntry[]> => {

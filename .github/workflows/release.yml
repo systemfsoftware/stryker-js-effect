@@ -98,6 +98,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Generate release notes
+        run: pnpm version -r
       - name: Capture release set
         run: ./scripts/tag-released-packages.ts --dry-run --json --output /tmp/captured.json
       - name: Assert release notes
