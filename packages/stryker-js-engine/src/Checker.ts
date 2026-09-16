@@ -20,7 +20,8 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 
-import { CheckerRpcs, encodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { CheckerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
+import { encodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-runtime'
 import {
   admitCheckerAnswer,
   CheckerAnsweredUnrequested,

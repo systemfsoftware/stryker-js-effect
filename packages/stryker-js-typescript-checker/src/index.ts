@@ -2,8 +2,12 @@ import rawSchemaJson from '../schema/typescript-checker-options.json' with { typ
 
 import * as S from 'effect/Schema'
 
-export const strykerPlugins: readonly { readonly kind: 'Checker'; readonly name: string }[] = [
-  { kind: 'Checker', name: 'typescript' },
+export const strykerPlugins: readonly {
+  readonly kind: 'Checker'
+  readonly name: string
+  readonly workerEntry: string
+}[] = [
+  { kind: 'Checker', name: 'typescript', workerEntry: new URL('./main.mjs', import.meta.url).href },
 ]
 
 const rawSchema: unknown = rawSchemaJson

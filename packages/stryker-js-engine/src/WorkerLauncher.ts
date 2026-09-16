@@ -1,4 +1,4 @@
-import { layerTraceContextClient } from '@systemfsoftware/stryker-js-plugin-interface'
+import { layerTraceContextClient } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'

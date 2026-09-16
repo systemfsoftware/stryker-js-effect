@@ -1,7 +1,8 @@
 import { sourceExports } from '@systemfsoftware/tsdown-config'
 import { defineConfig } from 'tsdown'
 
-const exports = sourceExports({ dtsExt: '.d.mts' })
+const internalArtifacts = ['main', 'stryker-setup']
+const exports = { ...sourceExports({ dtsExt: '.d.mts' }), exclude: internalArtifacts }
 
 const shared = {
   format: 'esm' as const,
@@ -21,7 +22,7 @@ export default defineConfig([
   },
   {
     ...shared,
-    entry: { worker: './src/main.ts' },
+    entry: { main: './src/main.ts' },
     deps: {
       neverBundle: [/^vitest$/, /^vitest\//],
       alwaysBundle: [
@@ -29,6 +30,7 @@ export default defineConfig([
         /^effect\//,
         /^@systemfsoftware\/stryker-js-language$/,
         /^@systemfsoftware\/stryker-js-plugin-interface$/,
+        /^@systemfsoftware\/stryker-js-plugin-runtime$/,
         /^@systemfsoftware\/effect-cell-types$/,
       ],
     },

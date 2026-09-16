@@ -5,14 +5,12 @@
 import { Schema as S } from 'effect'
 
 import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
-import { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
+import { WorkerEntryUrl, WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
 
-const PluginKindSchema = S.Union([WorkerPluginKind, S.Literals(['Evaluator'])])
-
-export const PluginDescriptorSchema = S.Struct({
-  kind: PluginKindSchema,
-  name: S.String,
-})
+export const PluginDescriptorSchema = S.Union([
+  S.Struct({ kind: WorkerPluginKind, name: S.String, workerEntry: WorkerEntryUrl }),
+  S.Struct({ kind: S.Literals(['Evaluator']), name: S.String }),
+])
 
 export const PluginModuleSchema = S.Struct({
   strykerPlugins: S.Array(PluginDescriptorSchema),

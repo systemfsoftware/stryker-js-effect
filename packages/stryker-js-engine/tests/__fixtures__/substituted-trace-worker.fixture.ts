@@ -1,5 +1,6 @@
 import { WorkerLauncher } from '@systemfsoftware/stryker-js-engine'
-import { layerTraceContextServer, ReporterRpcs, withLinkedSpan } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ReporterRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
+import { layerTraceContextServer, withLinkedSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'

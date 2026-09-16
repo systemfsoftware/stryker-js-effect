@@ -1,5 +1,6 @@
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
-import { TestRunnerRpcs, workerServerLayer } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
+import { workerServerLayer } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'

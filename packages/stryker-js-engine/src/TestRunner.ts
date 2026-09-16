@@ -16,7 +16,8 @@ import {
   TestRunnerFailed,
   toMutantRunResult,
 } from '@systemfsoftware/stryker-js-language'
-import { encodeWorkerOptions, TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
+import { encodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'

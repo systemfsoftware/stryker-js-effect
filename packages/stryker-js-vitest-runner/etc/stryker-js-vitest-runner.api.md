@@ -8,6 +8,7 @@
 export const strykerPlugins: readonly {
     readonly kind: 'TestRunner';
     readonly name: string;
+    readonly workerEntry: string;
 }[];
 
 // @public

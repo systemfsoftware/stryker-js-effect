@@ -31,6 +31,7 @@ const LANGUAGE_ENTRYPOINT = `${PROJECT}/node_modules/@systemfsoftware/stryker-js
 const vitestDescriptor = {
   kind: 'TestRunner',
   name: 'vitest',
+  workerEntry: 'file:///project/node_modules/@acme/stryker-runner/dist/main.mjs',
 }
 
 const runnerModule = { strykerPlugins: [vitestDescriptor] }
@@ -346,7 +347,12 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
       Then('the runner resolves from the last declaring module and the shadowing is reported')((s) =>
         Effect.sync(() => {
           expect(s.seen.sources).toStrictEqual([
-            { kind: 'TestRunner', name: 'vitest', modulePath: RUNNER_LATE_ENTRYPOINT },
+            {
+              kind: 'TestRunner',
+              name: 'vitest',
+              modulePath: RUNNER_LATE_ENTRYPOINT,
+              workerEntry: 'file:///project/node_modules/@acme/stryker-runner/dist/main.mjs',
+            },
           ])
           expect(s.seen.warnings.some((line) => line.includes('shadows plugin at index 0'))).toBe(true)
         })
@@ -373,7 +379,12 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
       Then('exactly one contribution survives, resolved from that module')((s) =>
         Effect.sync(() => {
           expect(s.seen.sources).toStrictEqual([
-            { kind: 'TestRunner', name: 'vitest', modulePath: RUNNER_ENTRYPOINT },
+            {
+              kind: 'TestRunner',
+              name: 'vitest',
+              modulePath: RUNNER_ENTRYPOINT,
+              workerEntry: 'file:///project/node_modules/@acme/stryker-runner/dist/main.mjs',
+            },
           ])
         })
       ),

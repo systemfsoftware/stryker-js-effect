@@ -6,13 +6,12 @@ import type { ReporterEvent, ReporterFactory, ReporterInit } from '@systemfsoftw
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import {
-  encodeWorkerOptions,
   formatTraceparent,
   type ReporterInitOptions,
   ReporterRpcs,
   TraceContextReference,
-  tracePartsOf,
 } from '@systemfsoftware/stryker-js-plugin-interface'
+import { encodeWorkerOptions, tracePartsOf } from '@systemfsoftware/stryker-js-plugin-runtime'
 import type * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
 import * as Duration from 'effect/Duration'

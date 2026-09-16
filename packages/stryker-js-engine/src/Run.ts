@@ -28,6 +28,7 @@ import type {
   TestResult,
   TestRunnerCapabilities,
 } from '@systemfsoftware/stryker-js-language'
+import type * as reportSchema from '@systemfsoftware/stryker-js-language'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
@@ -53,13 +54,6 @@ import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import type {
-  WorkerEntryMissing,
-  WorkerEntryOutsidePackage,
-  WorkerManifestMalformed,
-} from './plan-worker-entry.workflow.js'
-
-import type * as reportSchema from '@systemfsoftware/stryker-js-language'
 
 import { admitMutationTest, MutationTestError } from './admit-mutation-test.workflow.js'
 import type { MutationTestDecision } from './admit-mutation-test.workflow.js'
@@ -80,6 +74,7 @@ import { InstrumentCommand, planInstrumentation } from './plan-instrumentation.w
 import { resolvePluginWorkerEntry } from './plugin-worker-entry.js'
 import { loadPlugins } from './Plugins.js'
 import type { LoadedPlugins, PluginDescriptor } from './Plugins.js'
+import { PluginNotFoundError } from './Plugins.schema.js'
 import type { Project } from './Project.js'
 import { readProject } from './Project.js'
 import { FILE_CONCURRENCY, readOriginal, toInstrumenterFile } from './Project.js'
@@ -315,31 +310,11 @@ function isMutantStatus(s: string): s is ValidMutantStatus {
 const toReportedMutant = (mutant: Mutant): MutantTestCoverage =>
   Object.assign(mutant, { coveredBy: mutant.coveredBy, static: mutant.static })
 
-type WorkerEntryFailure = WorkerEntryMissing | WorkerEntryOutsidePackage | WorkerManifestMalformed
-
-const workerEntryFailureReason = (failure: WorkerEntryFailure): string =>
-  Match.value(failure).pipe(
-    Match.tag(
-      'WorkerEntryMissing',
-      (missing) => `the plugin "${missing.pluginName}" resolved to ${missing.specifier}`,
-    ),
-    Match.tag(
-      'WorkerEntryOutsidePackage',
-      (outside) =>
-        `the plugin "${outside.pluginName}" declares a worker entry "${outside.entrypoint}" outside its package root "${outside.packageRoot}"`,
-    ),
-    Match.tag(
-      'WorkerManifestMalformed',
-      (malformed) => `the plugin "${malformed.pluginName}" has a malformed package.json at "${malformed.file}"`,
-    ),
-    Match.exhaustive,
-  )
-
 const missingWorkerEntry =
-  (stage: StageError['stage'], kind: string, name: string) => (failure: WorkerEntryFailure): StageError =>
+  (stage: StageError['stage'], kind: string, name: string) => (failure: PluginNotFoundError): StageError =>
     new StageError({
       stage,
-      reason: `No plugin declares a worker entry for ${kind} "${name}"; ${workerEntryFailureReason(failure)}`,
+      reason: `the ${kind} plugin "${name}" is not among the loaded plugins`,
       cause: failure,
     })
 

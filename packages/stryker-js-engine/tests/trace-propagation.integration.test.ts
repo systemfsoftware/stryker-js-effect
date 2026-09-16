@@ -12,8 +12,8 @@ import {
   parseTraceparent,
   TraceContextReference,
   TRACEPARENT_HEADER,
-  tracePartsOf,
 } from '@systemfsoftware/stryker-js-plugin-interface'
+import { tracePartsOf } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'

@@ -31,20 +31,45 @@ import {
 
 export type PluginKind = WorkerPluginKind | 'Evaluator'
 
-export interface PluginDescriptor<K extends PluginKind = PluginKind> {
+export interface WorkerPluginDescriptor<K extends WorkerPluginKind = WorkerPluginKind> {
   readonly kind: K
+  readonly name: string
+  readonly workerEntry: string
+}
+
+export interface EvaluatorPluginDescriptor {
+  readonly kind: 'Evaluator'
   readonly name: string
 }
 
-export type AnyPluginDescriptor = { [K in PluginKind]: PluginDescriptor<K> }[PluginKind]
+export type AnyWorkerPluginDescriptor = {
+  [K in WorkerPluginKind]: WorkerPluginDescriptor<K>
+}[WorkerPluginKind]
+
+export type AnyPluginDescriptor = AnyWorkerPluginDescriptor | EvaluatorPluginDescriptor
 
 export type PluginDescriptorOf<K extends PluginKind> = Extract<AnyPluginDescriptor, { readonly kind: K }>
 
-export interface PluginSource {
-  readonly kind: PluginKind
+export type PluginDescriptor<K extends PluginKind = PluginKind> = PluginDescriptorOf<K>
+
+export interface WorkerPluginSource<K extends WorkerPluginKind = WorkerPluginKind> {
+  readonly kind: K
+  readonly name: string
+  readonly modulePath: string
+  readonly workerEntry: string
+}
+
+export interface EvaluatorPluginSource {
+  readonly kind: 'Evaluator'
   readonly name: string
   readonly modulePath: string
 }
+
+export type AnyWorkerPluginSource = {
+  [K in WorkerPluginKind]: WorkerPluginSource<K>
+}[WorkerPluginKind]
+
+export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource
 
 const NO_IGNORERS: readonly IgnorerDescriptor[] = []
 
@@ -119,11 +144,24 @@ export const buildPluginLoadPlan = (entries: readonly PluginLoaderEntryLike[]): 
     HashMap.empty<PluginKind, readonly PluginDescriptor[]>(),
   )
 
-  const pluginSources = winningDeclarations.map((declaration): PluginSource => ({
-    kind: declaration.plugin.kind,
-    name: declaration.plugin.name,
-    modulePath: declaration.moduleName,
-  }))
+  const pluginSources = winningDeclarations.map((declaration): PluginSource =>
+    Match.value(declaration.plugin).pipe(
+      Match.when(
+        (plugin): plugin is EvaluatorPluginDescriptor => plugin.kind === 'Evaluator',
+        (evaluator): PluginSource => ({
+          kind: 'Evaluator',
+          name: evaluator.name,
+          modulePath: declaration.moduleName,
+        }),
+      ),
+      Match.orElse((worker): PluginSource => ({
+        kind: worker.kind,
+        name: worker.name,
+        modulePath: declaration.moduleName,
+        workerEntry: worker.workerEntry,
+      })),
+    )
+  )
 
   const pluginModulePaths = entries.flatMap((entry) =>
     Option.match(Option.fromUndefinedOr(entry.plugins), {

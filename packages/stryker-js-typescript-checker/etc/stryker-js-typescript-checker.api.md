@@ -8,6 +8,7 @@
 export const strykerPlugins: readonly {
     readonly kind: 'Checker';
     readonly name: string;
+    readonly workerEntry: string;
 }[];
 
 // @public (undocumented)

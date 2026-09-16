@@ -2,7 +2,7 @@ import { NodeFileSystem, NodePath, NodeSocket } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import { ChildProcessCrashedError, classifyWorkerExit, WorkerLauncher } from '@systemfsoftware/stryker-js-engine'
 import type { EnginePorts, SpawnedSocketWorker } from '@systemfsoftware/stryker-js-engine'
-import { nodeModuleLayer } from '@systemfsoftware/stryker-js-plugin-interface'
+import { nodeModuleLayer } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -60,12 +60,16 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
           yield* fs.writeFileString(optionsFile, params.optionsJson)
           yield* restrictToOwnerOrWarn(fs, optionsFile)
 
-          const handle = yield* ChildProcess.make(process.execPath, [...params.execArgv, params.entrypoint], {
-            cwd: params.workingDirectory,
-            extendEnv: true,
-            env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath },
-            stderr: 'inherit',
-          }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
+          const handle = yield* ChildProcess.make(
+            process.execPath,
+            [...params.execArgv, process.getBuiltinModule('node:url').fileURLToPath(params.entrypoint)],
+            {
+              cwd: params.workingDirectory,
+              extendEnv: true,
+              env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath },
+              stderr: 'inherit',
+            },
+          ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
 
           const clientLayer = RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
             Layer.provide(NodeSocket.layerNet({ path: socketPath })),

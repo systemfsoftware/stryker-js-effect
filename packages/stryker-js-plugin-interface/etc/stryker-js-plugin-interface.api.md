@@ -4,37 +4,24 @@
 
 ```ts
 
-import * as api from '@opentelemetry/api';
 import { CheckerFailed } from '@systemfsoftware/stryker-js-language';
 import { CheckResultSchema } from '@systemfsoftware/stryker-js-language';
-import * as Config from 'effect/Config';
 import * as Context from 'effect/Context';
 import { DryRunCompleted } from '@systemfsoftware/stryker-js-language';
 import { DryRunResultSchema } from '@systemfsoftware/stryker-js-language';
-import * as Effect from 'effect/Effect';
-import * as FileSystem from 'effect/FileSystem';
-import * as Layer from 'effect/Layer';
-import { Module } from '@systemfsoftware/stryker-js-language';
 import { Mutant } from '@systemfsoftware/stryker-js-language';
 import { MutantRunResultSchema } from '@systemfsoftware/stryker-js-language';
 import { MutantTested } from '@systemfsoftware/stryker-js-language';
 import { MutationTestingPlanReady } from '@systemfsoftware/stryker-js-language';
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language';
 import * as Option from 'effect/Option';
-import * as Path from 'effect/Path';
-import { PlatformError } from 'effect/PlatformError';
 import { ReporterEventUnion } from '@systemfsoftware/stryker-js-language';
 import { ReporterFailed } from '@systemfsoftware/stryker-js-language';
 import * as Rpc from 'effect/unstable/rpc/Rpc';
 import * as RpcGroup from 'effect/unstable/rpc/RpcGroup';
 import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware';
-import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization';
-import * as RpcServer from 'effect/unstable/rpc/RpcServer';
 import * as S from 'effect/Schema';
 import { Schema } from 'effect';
-import { SocketServer } from 'effect/unstable/socket/SocketServer';
-import { SocketServerError } from 'effect/unstable/socket/SocketServer';
-import { StrykerOptions } from '@systemfsoftware/stryker-js-language';
 import { TestRunnerCapabilitiesSchema } from '@systemfsoftware/stryker-js-language';
 import { TestRunnerFailed } from '@systemfsoftware/stryker-js-language';
 import { YieldableError } from 'effect/Cause';
@@ -43,7 +30,7 @@ import { YieldableError } from 'effect/Cause';
 export type BoundaryError = typeof BoundaryErrorSchema.Type;
 
 // @public (undocumented)
-export const BoundaryErrorSchema: S.Union<readonly [typeof BoundaryPayloadRejected, typeof BoundaryUnrecognizedSignal, typeof WorkerEntryMissing, typeof TestRunnerFailed, typeof CheckerFailed, typeof ReporterFailed]>;
+export const BoundaryErrorSchema: S.Union<readonly [typeof BoundaryPayloadRejected, typeof BoundaryUnrecognizedSignal, typeof TestRunnerFailed, typeof CheckerFailed, typeof ReporterFailed]>;
 
 // Warning: (ae-forgotten-export) The symbol "BoundaryPayloadRejected_base" needs to be exported by the entry point index.d.mts
 //
@@ -82,102 +69,12 @@ export const CheckerRpcs: RpcGroup.RpcGroup<TracedRpc<'check', typeof CheckerReq
 
 export { CheckResultSchema }
 
-// @public (undocumented)
-export const decodeWorkerOptions: (raw: string) => Effect.Effect<{
-    readonly [x: string]: unknown;
-    readonly allowConsoleColors: boolean;
-    readonly buildCommand?: string | undefined;
-    readonly checkers: readonly string[];
-    readonly checkerNodeArgs: readonly string[];
-    readonly concurrency?: string | number | undefined;
-    readonly commandRunner: {
-        readonly [x: string]: unknown;
-        readonly command: string;
-    };
-    readonly coverageAnalysis: "all" | "off" | "perTest";
-    readonly clearTextReporter: {
-        readonly [x: string]: unknown;
-        readonly allowColor: boolean;
-        readonly allowEmojis: boolean;
-        readonly logTests: boolean;
-        readonly maxTestsToLog: number;
-        readonly reportTests: boolean;
-        readonly reportMutants: boolean;
-        readonly reportScoreTable: boolean;
-        readonly skipFull: boolean;
-    };
-    readonly dryRunOnly: boolean;
-    readonly ignorePatterns: readonly string[];
-    readonly ignoreStatic: boolean;
-    readonly incremental: boolean;
-    readonly incrementalFile: string;
-    readonly progressStreamFile: string;
-    readonly force: boolean;
-    readonly fileLogLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
-    readonly inPlace: boolean;
-    readonly logLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
-    readonly maxConcurrentTestRunners: number;
-    readonly maxTestRunnerReuse: number;
-    readonly mutate: readonly string[];
-    readonly mutator: {
-        readonly excludedMutations: readonly string[];
-    };
-    readonly packageManager?: "npm" | "pnpm" | "yarn" | undefined;
-    readonly plugins: readonly string[];
-    readonly appendPlugins: readonly string[];
-    readonly reporters: readonly string[];
-    readonly htmlReporter: {
-        readonly fileName: string;
-    };
-    readonly jsonReporter: {
-        readonly fileName: string;
-    };
-    readonly disableTypeChecks: string | boolean;
-    readonly symlinkNodeModules: boolean;
-    readonly tempDirName: string;
-    readonly cleanTempDir: "always" | boolean;
-    readonly testRunner: string;
-    readonly testRunnerNodeArgs: readonly string[];
-    readonly thresholds: {
-        readonly high: number;
-        readonly low: number;
-        readonly break: number | null;
-    };
-    readonly timeoutFactor: number;
-    readonly timeoutMS: number;
-    readonly dryRunTimeoutMinutes: number;
-    readonly tsconfigFile: string;
-    readonly warnings: boolean | {
-        readonly [x: string]: unknown;
-        readonly unknownOptions: boolean;
-        readonly preprocessorErrors: boolean;
-        readonly unserializableOptions: boolean;
-        readonly slow: boolean;
-    };
-    readonly disableBail: boolean;
-    readonly allowEmpty: boolean;
-    readonly ignorers: readonly string[];
-    readonly testFiles: readonly string[];
-}, S.SchemaError, never>;
-
 export { DryRunResultSchema }
-
-// @public (undocumented)
-export const encodeWorkerOptions: (options: StrykerOptions) => Effect.Effect<string>;
 
 // @public (undocumented)
 export const formatTraceparent: (parts: TraceContextParts) => Traceparent;
 
-// @public (undocumented)
-export const layerTraceContextClient: Layer.Layer<RpcMiddleware.ForClient<TraceContextMiddleware>, never, never>;
-
-// @public (undocumented)
-export const layerTraceContextServer: Layer.Layer<TraceContextMiddleware, never, never>;
-
 export { MutantRunResultSchema }
-
-// @public
-export const nodeModuleLayer: Layer.Layer<Module>;
 
 // @public (undocumented)
 export const parseTraceparent: (value: string) => Option.Option<TraceContextParts>;
@@ -186,84 +83,6 @@ export const parseTraceparent: (value: string) => Option.Option<TraceContextPart
 //
 // @public (undocumented)
 export class PropagatedTrace extends PropagatedTrace_base {}
-
-// @public (undocumented)
-export const readWorkerOptionsFromEnv: Effect.Effect<{
-    readonly [x: string]: unknown;
-    readonly allowConsoleColors: boolean;
-    readonly buildCommand?: string | undefined;
-    readonly checkers: readonly string[];
-    readonly checkerNodeArgs: readonly string[];
-    readonly concurrency?: string | number | undefined;
-    readonly commandRunner: {
-        readonly [x: string]: unknown;
-        readonly command: string;
-    };
-    readonly coverageAnalysis: "all" | "off" | "perTest";
-    readonly clearTextReporter: {
-        readonly [x: string]: unknown;
-        readonly allowColor: boolean;
-        readonly allowEmojis: boolean;
-        readonly logTests: boolean;
-        readonly maxTestsToLog: number;
-        readonly reportTests: boolean;
-        readonly reportMutants: boolean;
-        readonly reportScoreTable: boolean;
-        readonly skipFull: boolean;
-    };
-    readonly dryRunOnly: boolean;
-    readonly ignorePatterns: readonly string[];
-    readonly ignoreStatic: boolean;
-    readonly incremental: boolean;
-    readonly incrementalFile: string;
-    readonly progressStreamFile: string;
-    readonly force: boolean;
-    readonly fileLogLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
-    readonly inPlace: boolean;
-    readonly logLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
-    readonly maxConcurrentTestRunners: number;
-    readonly maxTestRunnerReuse: number;
-    readonly mutate: readonly string[];
-    readonly mutator: {
-        readonly excludedMutations: readonly string[];
-    };
-    readonly packageManager?: "npm" | "pnpm" | "yarn" | undefined;
-    readonly plugins: readonly string[];
-    readonly appendPlugins: readonly string[];
-    readonly reporters: readonly string[];
-    readonly htmlReporter: {
-        readonly fileName: string;
-    };
-    readonly jsonReporter: {
-        readonly fileName: string;
-    };
-    readonly disableTypeChecks: string | boolean;
-    readonly symlinkNodeModules: boolean;
-    readonly tempDirName: string;
-    readonly cleanTempDir: "always" | boolean;
-    readonly testRunner: string;
-    readonly testRunnerNodeArgs: readonly string[];
-    readonly thresholds: {
-        readonly high: number;
-        readonly low: number;
-        readonly break: number | null;
-    };
-    readonly timeoutFactor: number;
-    readonly timeoutMS: number;
-    readonly dryRunTimeoutMinutes: number;
-    readonly tsconfigFile: string;
-    readonly warnings: boolean | {
-        readonly [x: string]: unknown;
-        readonly unknownOptions: boolean;
-        readonly preprocessorErrors: boolean;
-        readonly unserializableOptions: boolean;
-        readonly slow: boolean;
-    };
-    readonly disableBail: boolean;
-    readonly allowEmpty: boolean;
-    readonly ignorers: readonly string[];
-    readonly testFiles: readonly string[];
-}, Config.ConfigError | PlatformError | S.SchemaError, FileSystem.FileSystem | Path.Path>;
 
 // @public (undocumented)
 export const ReporterAck: S.Void;
@@ -292,12 +111,6 @@ export type ReporterInitOptions = typeof ReporterInitOptions.Type;
 
 // @public (undocumented)
 export const ReporterRpcs: RpcGroup.RpcGroup<TracedRpc<'init', typeof ReporterInitOptions, typeof ReporterAck, typeof ReporterFailed> | TracedRpc<'onEventBatch', typeof ReporterEventBatch, typeof ReporterAck, typeof ReporterFailed> | TracedRpc<'flush', Schema.Void, typeof ReporterDrained, typeof ReporterFailed>>;
-
-// @public (undocumented)
-export const startHostTelemetry: () => Promise<void>;
-
-// @public (undocumented)
-export const startWorkerTelemetry: () => Promise<void>;
 
 export { TestRunnerCapabilitiesSchema }
 
@@ -372,24 +185,13 @@ export type Traceparent = typeof Traceparent.Type;
 export const TRACEPARENT_HEADER = "traceparent";
 
 // @public (undocumented)
-export const tracePartsOf: (context: api.SpanContext) => Option.Option<TraceContextParts>;
-
-// @public (undocumented)
 export const TRACESTATE_HEADER = "tracestate";
 
 // @public (undocumented)
-export const withLinkedSpan: <A, E, R>(spanName: string, attributes: api.Attributes, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
-
-// Warning: (ae-forgotten-export) The symbol "WorkerEntryMissing_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class WorkerEntryMissing extends WorkerEntryMissing_base {}
+export const WorkerEntryUrl: S.String;
 
 // @public (undocumented)
-export const WorkerPluginEntryField: S.Literals<readonly ["bin", "workerExport"]>;
-
-// @public (undocumented)
-export type WorkerPluginEntryField = typeof WorkerPluginEntryField.Type;
+export type WorkerEntryUrl = typeof WorkerEntryUrl.Type;
 
 // @public (undocumented)
 export const WorkerPluginKind: S.Literals<readonly ["TestRunner", "Checker", "Reporter"]>;
@@ -403,22 +205,8 @@ export type WorkerPluginSpawn = typeof WorkerPluginSpawnSchema.Type;
 // @public (undocumented)
 export const WorkerPluginSpawnSchema: S.Struct<{
     readonly kind: S.Literals<readonly ["TestRunner", "Checker", "Reporter"]>;
-    readonly field: S.Literals<readonly ["bin", "workerExport"]>;
     readonly entrypoint: S.String;
 }>;
-
-// @public (undocumented)
-export const workerServerLayer: <Rpcs extends Rpc.Any, HE>(params: WorkerServerParams<Rpcs, HE>) => Layer.Layer<never, HE | Config.ConfigError | SocketServerError, Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<FileSystem.FileSystem, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Module, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Path.Path, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<RpcServer.Protocol, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.Middleware<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ServicesServer<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ToHandler<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware>>;
-
-// @public (undocumented)
-export interface WorkerServerParams<Rpcs extends Rpc.Any, HE> {
-    // (undocumented)
-    readonly handlers: Layer.Layer<Rpc.ToHandler<Rpcs>, HE, FileSystem.FileSystem | Path.Path | Module>;
-    // (undocumented)
-    readonly rpcs: RpcGroup.RpcGroup<Rpcs>;
-    // (undocumented)
-    readonly schemaServices: Layer.Layer<Rpc.ServicesServer<Rpcs>, never, never>;
-}
 
 // (No @packageDocumentation comment for this package)
 

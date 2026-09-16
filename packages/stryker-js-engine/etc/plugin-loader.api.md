@@ -5,7 +5,6 @@
 ```ts
 
 import * as Effect from 'effect/Effect';
-import * as FileSystem from 'effect/FileSystem';
 import * as HashMap from 'effect/HashMap';
 import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
 import { Module } from '@systemfsoftware/stryker-js-language';
@@ -44,12 +43,7 @@ export interface LoadedPlugins {
 export function loadPlugins(pluginDescriptors: readonly string[], basePath: string): Effect.Effect<LoadedPlugins, PluginLoadFailedError | PluginSelectionError, Module | Path.Path>;
 
 // @public (undocumented)
-export interface PluginDescriptor<K extends PluginKind = PluginKind> {
-    // (undocumented)
-    readonly kind: K;
-    // (undocumented)
-    readonly name: string;
-}
+export type PluginDescriptor<K extends PluginKind = PluginKind> = PluginDescriptorOf<K>;
 
 // @public (undocumented)
 export type PluginDescriptorOf<K extends PluginKind> = Extract<AnyPluginDescriptor, {
@@ -104,37 +98,18 @@ export class PluginNotFoundError extends PluginNotFoundError_base {
     readonly exitClass: 'ConfigError';
 }
 
+// Warning: (ae-forgotten-export) The symbol "AnyWorkerPluginSource" needs to be exported by the entry point plugin-loader.d.mts
+// Warning: (ae-forgotten-export) The symbol "EvaluatorPluginSource" needs to be exported by the entry point plugin-loader.d.mts
+//
 // @public (undocumented)
-export interface PluginSource {
-    // (undocumented)
-    readonly kind: PluginKind;
-    // (undocumented)
-    readonly modulePath: string;
-    // (undocumented)
-    readonly name: string;
-}
+export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource;
 
 // @public (undocumented)
 export const resolvePluginWorkerEntry: (params: {
     readonly loaded: Pick<LoadedPlugins, 'pluginSources'>;
     readonly kind: WorkerPluginKind;
     readonly name: string;
-}) => Effect.Effect<WorkerPluginSpawn, WorkerEntryMissing | WorkerEntryOutsidePackage | WorkerManifestMalformed, FileSystem.FileSystem | Path.Path>;
-
-// Warning: (ae-forgotten-export) The symbol "WorkerEntryMissing_base" needs to be exported by the entry point plugin-loader.d.mts
-//
-// @public (undocumented)
-export class WorkerEntryMissing extends WorkerEntryMissing_base {}
-
-// Warning: (ae-forgotten-export) The symbol "WorkerEntryOutsidePackage_base" needs to be exported by the entry point plugin-loader.d.mts
-//
-// @public (undocumented)
-export class WorkerEntryOutsidePackage extends WorkerEntryOutsidePackage_base {}
-
-// Warning: (ae-forgotten-export) The symbol "WorkerManifestMalformed_base" needs to be exported by the entry point plugin-loader.d.mts
-//
-// @public (undocumented)
-export class WorkerManifestMalformed extends WorkerManifestMalformed_base {}
+}) => Effect.Effect<WorkerPluginSpawn, PluginNotFoundError>;
 
 // (No @packageDocumentation comment for this package)
 

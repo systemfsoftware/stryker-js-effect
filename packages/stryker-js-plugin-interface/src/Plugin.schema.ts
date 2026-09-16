@@ -55,30 +55,24 @@ export class BoundaryUnrecognizedSignal extends S.TaggedError<BoundaryUnrecogniz
   },
 ) {}
 
-export class WorkerEntryMissing extends S.TaggedError<WorkerEntryMissing>()(
-  'WorkerEntryMissing',
-  {
-    pluginName: S.String,
-    specifier: S.String,
-  },
-) {}
-
 export const BoundaryErrorSchema = S.Union([
   BoundaryPayloadRejected,
   BoundaryUnrecognizedSignal,
-  WorkerEntryMissing,
   TestRunnerFailed,
   CheckerFailed,
   ReporterFailed,
 ])
 export type BoundaryError = typeof BoundaryErrorSchema.Type
 
-export const WorkerPluginEntryField = S.Literals(['bin', 'workerExport'])
-export type WorkerPluginEntryField = typeof WorkerPluginEntryField.Type
+const FILE_URL_PREFIX = /^file:\/\//
+
+export const WorkerEntryUrl = S.String.check(
+  S.isPattern(FILE_URL_PREFIX, { expected: 'a file: URL of the worker program' }),
+)
+export type WorkerEntryUrl = typeof WorkerEntryUrl.Type
 
 export const WorkerPluginSpawnSchema = S.Struct({
   kind: WorkerPluginKind,
-  field: WorkerPluginEntryField,
-  entrypoint: S.String,
+  entrypoint: WorkerEntryUrl,
 })
 export type WorkerPluginSpawn = typeof WorkerPluginSpawnSchema.Type

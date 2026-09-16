@@ -1,6 +1,7 @@
 import type { Mutant, StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import { Checker, CheckerFailed } from '@systemfsoftware/stryker-js-language'
-import { CheckerRpcs, readWorkerOptionsFromEnv } from '@systemfsoftware/stryker-js-plugin-interface'
+import { CheckerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
+import { readWorkerOptionsFromEnv } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'

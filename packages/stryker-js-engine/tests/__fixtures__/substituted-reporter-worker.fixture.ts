@@ -1,10 +1,7 @@
 import type { WorkerLauncher, WorkerSpawnParams } from '@systemfsoftware/stryker-js-engine'
 import type { ReporterEvent } from '@systemfsoftware/stryker-js-language'
-import {
-  layerTraceContextServer,
-  type ReporterInitOptions,
-  ReporterRpcs,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import { type ReporterInitOptions, ReporterRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
+import { layerTraceContextServer } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'

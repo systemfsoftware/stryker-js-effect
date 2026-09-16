@@ -11,9 +11,6 @@
     ".": {
       "default": "./dist/index.mjs"
     },
-    "./worker": {
-      "default": "./dist/main.mjs"
-    },
     "./package.json": "./package.json"
   }
 }
