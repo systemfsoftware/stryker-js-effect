@@ -1,6 +1,6 @@
 ---
-"@systemfsoftware/stryker-js-language": minor
-"@systemfsoftware/stryker-js-plugin-interface": minor
+"@systemfsoftware/stryker-js-language": major
+"@systemfsoftware/stryker-js-plugin-interface": major
 ---
 
 A plugin can now claim a file format. The plugin kinds gain `Framework`, and an

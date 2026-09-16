@@ -1,5 +1,5 @@
 ---
-"@systemfsoftware/stryker-js-engine": minor
+"@systemfsoftware/stryker-js-engine": major
 ---
 
 a report now names each file's language after the format that owns it, so a

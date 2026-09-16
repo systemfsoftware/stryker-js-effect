@@ -1,5 +1,5 @@
 ---
-"@systemfsoftware/stryker-js-engine": minor
+"@systemfsoftware/stryker-js-engine": major
 ---
 
 a run now reports its plugin load on the machine stream — an event carrying each

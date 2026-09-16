@@ -12,6 +12,5 @@ passed to the signal `input`, `model`, and `output` functions, and to the signal
 query functions, are identity data to the Angular compiler, so mutating them
 breaks compilation and they are ignored instead.
 
-Installing the package is the only setup step — the default
-`@systemfsoftware/stryker-js-*` plugin glob discovers it, so no configuration
-entry is needed.
+Installing the package is the only setup step: the engine's default plugin
+discovery finds it, so no configuration entry is needed.

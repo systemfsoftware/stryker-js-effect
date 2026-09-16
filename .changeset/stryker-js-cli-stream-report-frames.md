@@ -1,5 +1,5 @@
 ---
-"@systemfsoftware/stryker-js-cli": minor
+"@systemfsoftware/stryker-js-cli": major
 ---
 
 the machine-mode stream frames the run stream's new plugin-load,
