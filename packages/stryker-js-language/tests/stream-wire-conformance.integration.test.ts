@@ -30,8 +30,11 @@ const REGISTRY_REPORT = FormatRegistryResolved.make({
   rows: [{ extension: '.svelte', formatId: 'svelte', ownerModule: '@systemfsoftware/stryker-js-svelte' }],
 })
 
+const SKIP_REASON =
+  'No installed format claims ".svelte". Install the framework plugin that claims this file type to instrument it.'
+
 const SKIP_REPORT = SkippedReported.make({
-  files: [{ file: 'src/app.svelte', extension: '.svelte', reason: 'No installed format claims ".svelte".' }],
+  files: [{ file: 'src/app.svelte', extension: '.svelte', reason: SKIP_REASON }],
 })
 
 const FAILURE_REPORT = RunFailed.make({
@@ -47,7 +50,7 @@ const PLUGIN_LINE =
 const REGISTRY_LINE =
   '{"kind":"formats","rows":[{"extension":".svelte","formatId":"svelte","ownerModule":"@systemfsoftware/stryker-js-svelte"}]}'
 const SKIP_LINE =
-  '{"kind":"skipped","files":[{"file":"src/app.svelte","extension":".svelte","reason":"No installed format claims \\".svelte\\"."}]}'
+  '{"kind":"skipped","files":[{"file":"src/app.svelte","extension":".svelte","reason":"No installed format claims \\".svelte\\". Install the framework plugin that claims this file type to instrument it."}]}'
 const FAILURE_LINE =
   '{"kind":"error","schemaVersion":"1.1","code":4,"error":"Failed to load plugin \\"@systemfsoftware/stryker-js-broken\\" (ImportFailed)","remediation":"fix the plugin so that it imports cleanly","reason":"ImportFailed"}'
 
