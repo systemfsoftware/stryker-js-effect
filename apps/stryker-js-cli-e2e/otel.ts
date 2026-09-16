@@ -8,7 +8,7 @@ const endpoint = (process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? 'http://127.0.0.
   '',
 )
 
-const diagnostics = process.env['OTEL_DEBUG'] === 'true' || process.env['CI'] === 'true'
+const diagnostics = process.env['OTEL_DEBUG'] === 'true'
 
 if (diagnostics) {
   diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.DEBUG)
