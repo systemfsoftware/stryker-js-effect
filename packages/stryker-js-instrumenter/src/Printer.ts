@@ -5,6 +5,8 @@ import type { FormatRegistry } from './format-registry.js'
 import { type Hashbang, printProgram } from './print/index.js'
 import {
   type Ast,
+  type AstRoot,
+  formatKeyOf,
   type HtmlAst,
   type JSAst,
   type SvelteAst,
@@ -19,9 +21,9 @@ export interface PrinterContext {
 }
 export function print(file: Ast, registry: FormatRegistry): string {
   const context: PrinterContext = { print: (inner) => print(inner, registry) }
-  return Option.match(registry.entryForFormat(file.format), {
+  return Option.match(registry.entryForFormat(formatKeyOf(file)), {
     onNone: () => {
-      throw new Error(`No registered format renders the "${file.format}" AST`)
+      throw new Error(`No registered format renders the "${formatKeyOf(file)}" AST`)
     },
     onSome: (entry) => entry.print(file, context),
   })
@@ -37,7 +39,7 @@ function isHashbang(value: unknown): value is Hashbang {
   return Predicate.isObject(value) && Object.entries(HASHBANG_FIELDS).every(([key, accepts]) => accepts(value[key]))
 }
 
-const hashbangOf = (root: Ast['root']): Hashbang | null => {
+const hashbangOf = (root: AstRoot): Hashbang | null => {
   const hashbang: unknown = Reflect.get(root, 'hashbang')
   if (!isHashbang(hashbang)) return null
   return hashbang

@@ -1,6 +1,17 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import type { File as InstrumenterFile, InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
+import {
+  coreFormatRegistry,
+  frameworkEntryOf,
+  instrument,
+  registerEntries,
+} from '@systemfsoftware/stryker-js-instrumenter'
+import type {
+  File as InstrumenterFile,
+  FormatEntry,
+  FormatRegistry,
+  InstrumentFileSkip,
+  InstrumentResult,
+} from '@systemfsoftware/stryker-js-instrumenter'
 import type { CheckResult, PassedCheckResult } from '@systemfsoftware/stryker-js-language'
 import type { ExitClass } from '@systemfsoftware/stryker-js-language'
 import type { IgnorerService } from '@systemfsoftware/stryker-js-language'
@@ -18,6 +29,12 @@ import {
   type ReporterFactory,
 } from '@systemfsoftware/stryker-js-language'
 import { PhaseEntered } from '@systemfsoftware/stryker-js-language'
+import { FormatRegistryResolved } from '@systemfsoftware/stryker-js-language'
+import { PluginsReported } from '@systemfsoftware/stryker-js-language'
+import { RunFailed } from '@systemfsoftware/stryker-js-language'
+import { SkippedReported } from '@systemfsoftware/stryker-js-language'
+import { STREAM_SCHEMA_VERSION } from '@systemfsoftware/stryker-js-language'
+import type { FormatRegistryRow, PluginShadowingRow } from '@systemfsoftware/stryker-js-language'
 import { RunMutantTested } from '@systemfsoftware/stryker-js-language'
 import { PlanKnown } from '@systemfsoftware/stryker-js-language'
 import type { RunEvent } from '@systemfsoftware/stryker-js-language'
@@ -67,6 +84,7 @@ import type { CheckerResourceService } from './Checker.js'
 import { checkGroupedPlans, createCheckerFactory } from './Checker.js'
 import { forkCoreSchema, readConfig, validateOptions, type ValidationSchemaDocument } from './Config.js'
 import { dryRun, DryRunCommand } from './dry-run.workflow.js'
+import { EXIT_CODE } from './exit-classification.js'
 import { REMEMBERED_REASON, toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 import { toSchemaLocation } from './mutant-result-mapping.js'
 import { decidePlans, incrementalDiff } from './Mutants.js'
@@ -78,7 +96,8 @@ import type { ResolvedMode } from './output-mode.js'
 import { InstrumentCommand, planInstrumentation } from './plan-instrumentation.workflow.js'
 import { createAll } from './Plugins.js'
 import { loadPlugins } from './Plugins.js'
-import type { LoadedPlugins } from './Plugins.js'
+import type { LoadedPlugins, PluginFrameworkEntry } from './Plugins.js'
+import type { PluginLoadFailedError, PluginShadowing } from './Plugins.schema.js'
 import type { Project } from './Project.js'
 import { readProject } from './Project.js'
 import { FILE_CONCURRENCY, readOriginal, toInstrumenterFile } from './Project.js'
@@ -125,6 +144,7 @@ export interface PrepareDone {
   readonly plugins: ComposedPlugins
   readonly loadedPlugins: LoadedPlugins
   readonly ignorers: readonly IgnorerService[]
+  readonly formatRegistry: FormatRegistry
   readonly options: StrykerOptions
   readonly temporaryDirectoryPath: string
   readonly reporterStage: ReporterStage
@@ -398,6 +418,99 @@ const reporterSelectionsOf = (
   return [...chosen.values()]
 }
 
+const formatRegistryFromFrameworks = (frameworks: readonly PluginFrameworkEntry[]): FormatRegistry => {
+  if (frameworks.length === 0) {
+    return coreFormatRegistry
+  }
+  const additions: readonly FormatEntry[] = frameworks.map((framework) =>
+    frameworkEntryOf(framework.moduleName, framework.service)
+  )
+  return registerEntries(coreFormatRegistry, additions)
+}
+
+const formatRegistryRows = (registry: FormatRegistry): readonly FormatRegistryRow[] => {
+  const claimed = new Set<string>()
+  return registry.entries.flatMap((entry) =>
+    entry.claim.extensions
+      .filter((extension) => !claimed.has(extension))
+      .map((extension) => {
+        claimed.add(extension)
+        return { extension, formatId: entry.claim.formatId, ownerModule: entry.owner }
+      })
+  )
+}
+
+const bundledIgnorerNames = (loaded: LoadedPlugins): readonly string[] =>
+  loaded.outcomes.flatMap((outcome) => {
+    if (!outcome.contributions.some((contribution) => contribution.kind === 'Framework')) {
+      return []
+    }
+    return outcome.contributions
+      .filter((contribution) => contribution.kind === 'Ignore')
+      .map((contribution) => contribution.name)
+  })
+
+const PLUGIN_FAILURE_REMEDIATION: Record<PluginLoadFailedError['reason']['_tag'], string> = {
+  PeerMissing: 'install the peer dependency the plugin needs',
+  PeerVersionUnsupported: 'install a supported version of the peer dependency',
+  InvalidContribution: 'fix the contribution the plugin declares',
+  ImportFailed: 'fix the plugin so that it imports cleanly',
+}
+
+const pluginLoadFailureEvents = (
+  error: PluginLoadFailedError,
+  elapsedMs: number,
+): readonly [PhaseEntered, RunFailed] => [
+  new PhaseEntered({ phase: 'prepare', elapsedMs }),
+  RunFailed.make({
+    schemaVersion: STREAM_SCHEMA_VERSION,
+    code: EXIT_CODE[error.exitClass],
+    error: error.message,
+    remediation: PLUGIN_FAILURE_REMEDIATION[error.reason._tag],
+    reason: error.reason._tag,
+  }),
+]
+
+const shadowingRowOf = (shadowing: PluginShadowing): PluginShadowingRow =>
+  Match.value(shadowing).pipe(
+    Match.tag('PluginNameShadowing', (name): PluginShadowingRow => ({
+      _tag: 'name',
+      kind: name.kind,
+      name: name.name,
+      winnerModule: name.winnerModule,
+      loserModule: name.loserModule,
+    })),
+    Match.tag('PluginExtensionClaimShadowing', (extension): PluginShadowingRow => ({
+      _tag: 'extension',
+      kind: extension.kind,
+      formatId: extension.formatId,
+      extension: extension.extension,
+      winnerModule: extension.winnerModule,
+      loserModule: extension.loserModule,
+    })),
+    Match.exhaustive,
+  )
+
+const reportPluginLoad = (
+  queue: Queue.Queue<RunEvent, Cause.Done>,
+  loaded: LoadedPlugins,
+  registry: FormatRegistry,
+): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    yield* Queue.offer(
+      queue,
+      new PluginsReported({
+        descriptors: loaded.outcomes.map((outcome) => ({
+          moduleName: outcome.moduleName,
+          outcome: outcome.outcome,
+          contributions: [...outcome.contributions],
+        })),
+        shadowings: loaded.shadowings.map(shadowingRowOf),
+      }),
+    )
+    yield* Queue.offer(queue, new FormatRegistryResolved({ rows: [...formatRegistryRows(registry)] }))
+  })
+
 export const runPrepare = (command: PrepareExecutorArgs) =>
   withPhaseSpan(
     'prepare',
@@ -435,8 +548,20 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         const appendPluginsList = stringListOf(optionsRecord['appendPlugins'])
         const descriptors: readonly string[] = [...pluginsList, ...appendPluginsList, ...env.reporterPluginModules]
         const loaded = yield* loadPlugins(descriptors, env.basePath).pipe(
+          Effect.tapError((error) =>
+            Effect.gen(function*() {
+              const failedAt = yield* Clock.currentTimeMillis
+              yield* Effect.forEach(
+                pluginLoadFailureEvents(error, failedAt - env.runStartedAt),
+                (event) => Queue.offer(queue, event),
+                { discard: true },
+              )
+            })
+          ),
           Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
         )
+        const formatRegistry = formatRegistryFromFrameworks(loaded.frameworks)
+        yield* reportPluginLoad(queue, loaded, formatRegistry)
         const mergedSchema = buildMergedSchema(coreSchema, loaded.schemaContributions)
         const record: Record<string, unknown> = { ...options }
         yield* validateOptions(record, mergedSchema).pipe(
@@ -455,7 +580,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         const mutateCount = MutableHashMap.size(project.filesToMutate)
         const summary = `Found ${mutateCount} of ${MutableHashMap.size(project.files)} file(s) to be mutated.`
         yield* announceSummary(env, summary)
-        const selectedIgnorers = HashSet.fromIterable(options.ignorers)
+        const selectedIgnorers = HashSet.fromIterable([...options.ignorers, ...bundledIgnorerNames(loaded)])
         const contributions = yield* createAll(loaded.pluginsByKind, 'Ignore').pipe(
           Effect.map((all) => all.filter((contribution) => HashSet.has(selectedIgnorers, contribution.name))),
           Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to create ignorers', cause })),
@@ -522,6 +647,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
           plugins,
           loadedPlugins: loaded,
           ignorers,
+          formatRegistry,
           options,
           temporaryDirectoryPath,
           reporterStage,
@@ -536,6 +662,21 @@ interface InstrumentRaw {
   readonly instrumentedProject: Project
   readonly sandbox: SandboxHandle
   readonly concurrency: { readonly testRunners: number; readonly checkers: number }
+}
+
+const offerSkipsIfAny = (
+  queue: Queue.Queue<RunEvent, Cause.Done>,
+  skipped: readonly InstrumentFileSkip[],
+): Effect.Effect<void> => {
+  if (skipped.length === 0) {
+    return Effect.void
+  }
+  return Queue.offer(
+    queue,
+    new SkippedReported({
+      files: skipped.map((skip) => ({ file: skip.file, extension: skip.extension, reason: skip.reason })),
+    }),
+  ).pipe(Effect.asVoid)
 }
 
 export const instrumentCell = Cell.layer({
@@ -556,7 +697,7 @@ export const instrumentCell = Cell.layer({
       const instrumentResult = yield* instrument(filesToMutate, {
         ignorers: [...command.ignorers],
         excludedMutations: [...command.options.mutator.excludedMutations],
-      }).pipe(Effect.mapError((cause) =>
+      }, command.formatRegistry).pipe(Effect.mapError((cause) =>
         new StageError({ stage: 'instrument', reason: 'Instrumenter failed', cause })
       ))
 
@@ -576,6 +717,7 @@ export const instrumentCell = Cell.layer({
         workingDirectory,
         backupDirectory,
         basePath,
+        registry: command.formatRegistry,
       }).pipe(Effect.mapError((cause) =>
         new StageError({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
       ))
@@ -617,6 +759,7 @@ export const instrumentCell = Cell.layer({
           const queue = yield* RunEvents
           yield* Queue.offer(queue, new PhaseEntered({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
 
+          yield* offerSkipsIfAny(queue, raw.instrumentResult.skipped)
           const out = output
           if (Result.isFailure(out)) {
             const err = out.failure

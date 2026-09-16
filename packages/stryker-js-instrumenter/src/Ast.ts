@@ -100,6 +100,16 @@ export function spanOf(node: Node): { start: number; end: number } | undefined {
   return { start: range[0], end: range[1] }
 }
 
+const isNonNullObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+const isProgramLike = (value: unknown): value is Program =>
+  isNonNullObject(value) && Array.isArray(Reflect.get(value, 'body'))
+
+export const programOf = (value: unknown): Program | undefined => (isProgramLike(value) ? value : undefined)
+
+export const programFromParseResult = (program: unknown): Program => program as Program
+
 export function nodeType(node: unknown): string | undefined {
   if (!isAstNode(node)) return undefined
   return node.type

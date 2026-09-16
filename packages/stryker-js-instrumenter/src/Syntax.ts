@@ -1,13 +1,18 @@
 /**
  * Syntax — the instrumenter's AST shapes, location helpers and syntax utilities.
  */
+import type { EmbeddedDocument, FormatId } from '@systemfsoftware/stryker-framework-interface'
 import type { Position } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 import type { Program } from './Ast.js'
 
-export type Ast = HtmlAst | JSAst | SvelteAst | TSAst | TsxAst
+export type Ast = HtmlAst | JSAst | SvelteAst | TSAst | TsxAst | EmbeddedAst
+
+export type AstRoot = HtmlRootNode | Program | SvelteRootNode
 
 export type ScriptFormat = Extract<Ast['format'], 'js' | 'ts' | 'tsx'>
+
+export const formatKeyOf = (ast: Ast): string => (ast.format === 'embedded' ? ast.formatId : ast.format)
 
 /**
  * A parsed comment with its source span. oxc emits comments flat with offsets
@@ -23,7 +28,7 @@ export type ScriptAst = JSAst | TSAst | TsxAst
 export interface BaseAst {
   originFileName: string
   rawContent: string
-  root: Ast['root']
+  root: AstRoot
   offset?: Position
 }
 
@@ -82,6 +87,20 @@ export interface HtmlRootNode {
 export interface SvelteRootNode {
   moduleScript?: TemplateScript
   additionalScripts: TemplateScript[]
+}
+
+export interface EmbeddedAst {
+  format: 'embedded'
+  formatId: FormatId
+  originFileName: string
+  rawContent: string
+  document: EmbeddedDocument
+  scripts: readonly EmbeddedScript[]
+}
+
+export interface EmbeddedScript {
+  readonly region: number
+  readonly ast: ScriptAst
 }
 
 /**

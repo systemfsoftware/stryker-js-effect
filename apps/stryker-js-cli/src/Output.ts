@@ -10,6 +10,7 @@ import {
   type RunEvent,
   RunFailed,
   RunStarted,
+  toWireLine,
   VerdictReached,
 } from '@systemfsoftware/stryker-js-language'
 import type * as Cause from 'effect/Cause'
@@ -64,24 +65,6 @@ const isTerminalEvent = (event: RunEvent): boolean =>
     Match.tag('help', () => true),
     Match.orElse(() => false),
   )
-
-const wireKind = (event: RunEvent): string =>
-  Match.value(event).pipe(
-    Match.tag('stream', () => 'stream'),
-    Match.tag('phase', () => 'phase'),
-    Match.tag('plan', () => 'plan'),
-    Match.tag('mutant', () => 'mutant'),
-    Match.tag('tick', () => 'tick'),
-    Match.tag('verdict', () => 'verdict'),
-    Match.tag('error', () => 'error'),
-    Match.tag('help', () => 'help'),
-    Match.exhaustive,
-  )
-
-const toWireLine = (event: RunEvent): string => {
-  const fields = Object.fromEntries(Object.entries(event).filter(([key]) => key !== '_tag'))
-  return JSON.stringify({ kind: wireKind(event), ...fields })
-}
 
 export type FramedDrain = (framed: Stream.Stream<string>) => Effect.Effect<void, never, never>
 

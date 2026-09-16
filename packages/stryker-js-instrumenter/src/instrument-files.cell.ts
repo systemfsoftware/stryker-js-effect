@@ -131,6 +131,7 @@ const fileOutcome = (registry: FormatRegistry, file: FileDescription): Effect.Ef
   )
 
 const transformInto = (
+  registry: FormatRegistry,
   collector: MutantCollector,
   file: FileDescription,
   ast: Ast,
@@ -141,6 +142,7 @@ const transformInto = (
       transform(ast, collector, {
         options: toTransformerOptions(options),
         mutateDescription: toOneBasedLineNumber(file),
+        registry,
       }),
     catch: (cause) => new InstrumentError({ message: `Failed to transform ${file.name}`, cause }),
   })
@@ -166,7 +168,7 @@ const readInstrumentFiles = (input: InstrumentFilesInput): Effect.Effect<Instrum
     const collector = createMutantCollector()
     yield* Effect.forEach(
       parsed,
-      ({ file, ast }) => transformInto(collector, file, ast, input.options),
+      ({ file, ast }) => transformInto(input.registry, collector, file, ast, input.options),
       { concurrency: 1 },
     )
     const mutants = yield* collectMutants(collector)

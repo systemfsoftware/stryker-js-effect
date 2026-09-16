@@ -5,10 +5,13 @@
 ```ts
 
 import * as Effect from 'effect/Effect';
+import { EmbeddedDocument } from '@systemfsoftware/stryker-framework-interface';
 import { FileDescription } from '@systemfsoftware/stryker-js-language';
 import { FormatId } from '@systemfsoftware/stryker-framework-interface';
+import { FrameworkService } from '@systemfsoftware/stryker-js-language';
 import { IgnorerService } from '@systemfsoftware/stryker-js-language';
 import { Mutant } from '@systemfsoftware/stryker-js-language';
+import { MutateDescription } from '@systemfsoftware/stryker-js-language';
 import * as Option from 'effect/Option';
 import { Position } from '@systemfsoftware/stryker-js-language';
 import { Result } from 'effect/Result';
@@ -58,6 +61,8 @@ export type FormatEntry = ScriptFormatEntry | EmbeddedFormatEntry;
 export interface FormatHooks {
     // (undocumented)
     readonly disableTypeChecks: (ast: Ast) => string;
+    // (undocumented)
+    readonly owner: string;
     // Warning: (ae-forgotten-export) The symbol "ParserContext" needs to be exported by the entry point index.d.mts
     // Warning: (ae-forgotten-export) The symbol "Ast" needs to be exported by the entry point index.d.mts
     //
@@ -67,6 +72,10 @@ export interface FormatHooks {
     //
     // (undocumented)
     readonly print: (ast: Ast, context: PrinterContext) => string;
+    // Warning: (ae-forgotten-export) The symbol "AstTransformer" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly transform: AstTransformer;
 }
 
 // @public (undocumented)
@@ -104,6 +113,9 @@ export class FormatResolutionCommand extends FormatResolutionCommand_base {}
 //
 // @public (undocumented)
 export type FormatResolutionDecision = FormatAssigned | FormatSkipped;
+
+// @public (undocumented)
+export const frameworkEntryOf: (moduleName: string, service: FrameworkService) => EmbeddedFormatEntry;
 
 // @public (undocumented)
 export const frameworkPluginsFileUrl: string;

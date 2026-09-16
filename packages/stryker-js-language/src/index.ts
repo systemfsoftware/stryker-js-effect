@@ -107,6 +107,8 @@ export {
   RunTimingSchema,
 } from './ReporterEvent.schema.js'
 export {
+  FormatRegistryResolved,
+  type FormatRegistryRow,
   Heartbeat,
   HelpRendered,
   ModeSignal,
@@ -115,6 +117,12 @@ export {
   PhaseEntered,
   PlanKnown,
   planMutationRun,
+  type PluginContributionRow,
+  type PluginDescriptorOutcome,
+  type PluginDescriptorRow,
+  type PluginFailureReason,
+  type PluginShadowingRow,
+  PluginsReported,
   type RunEvent,
   RunEvents,
   type RunEventType,
@@ -127,6 +135,10 @@ export {
   RunStarted,
   type RunTerminalEvent,
   shouldKeepTempDir,
+  type SkippedFileRow,
+  SkippedReported,
+  STREAM_SCHEMA_VERSION,
+  toWireLine,
   VerdictReached,
 } from './Run.js'
 export { MutationRunPlan, PlanMutationRunCommand, RunCommand, RunOutput } from './Run.schema.js'

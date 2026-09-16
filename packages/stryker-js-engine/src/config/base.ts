@@ -15,10 +15,9 @@ const basePreset: BasePreset = {
   testRunner: 'vitest',
   checkers: ['typescript'],
   plugins: [
-    '@systemfsoftware/stryker-js-vitest-runner',
-    '@systemfsoftware/stryker-js-typescript-checker',
-    '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
-    '@systemfsoftware/stryker-test-contribution',
+    '@systemfsoftware/stryker-js-*',
+    'stryker-ignorer-effect-schema-declarations',
+    'stryker-test-contribution',
   ],
   reporters: ['progress', 'html', 'json', 'progress-stream'],
   htmlReporter: { fileName: 'reports/mutation-report.html' },

@@ -153,12 +153,14 @@ function oxcErrorLabelStart(error: OxcError): number {
  * mutant positions are re-mapped through the AST's `offset` field.
  */
 function shiftScriptOffsets(ast: Ast, offset: number): void {
-  const root: unknown = ast.root
+  const root: unknown = rootOf(ast)
   if (isRange(root)) {
     root.start += offset
     root.end += offset
   }
 }
+
+const rootOf = (ast: Ast): unknown => (ast.format === 'embedded' ? undefined : ast.root)
 // ---------------------------------------------------------------------------
 // Top-level dispatcher
 // ---------------------------------------------------------------------------

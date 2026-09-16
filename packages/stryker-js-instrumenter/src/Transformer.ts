@@ -46,12 +46,14 @@ import {
   type VariableDeclarator,
   variableDeclarator,
 } from './Ast.js'
+import type { FormatRegistry } from './format-registry.js'
 import { applyMutant, createMutant, type Mutable, type Mutant } from './Mutator.js'
 import { type MutatorContext, type MutatorOptions } from './Mutator.js'
 import { allMutators } from './Mutator.js'
 import { parseWithOxc } from './Parser.js'
 import {
   type Ast,
+  formatKeyOf,
   type HtmlAst,
   locationIncluded,
   locationOverlaps,
@@ -1024,7 +1026,7 @@ var ${IS_MUTANT_ACTIVE_HELPER} = function(id) {
 
 let instrumentationHeaderValue: readonly Statement[] | undefined
 
-const instrumentationHeader = async (): Promise<readonly Statement[]> => {
+export const instrumentationHeader = async (): Promise<readonly Statement[]> => {
   if (instrumentationHeaderValue === undefined) {
     const parsed = await parseWithOxc(INSTRUMENTATION_HEADER_SOURCE, 'instrumenter-header.js', 'js')
     instrumentationHeaderValue = parsed.root.body as unknown as readonly Statement[]
@@ -1135,16 +1137,12 @@ export async function transform(
     ...transformerContext,
     transform,
   }
-  switch (ast.format) {
-    case 'html':
-      return transformHtml(ast, mutantCollector, context)
-    case 'js':
-    case 'ts':
-    case 'tsx':
-      return transformScript(ast, mutantCollector, context)
-    case 'svelte':
-      return transformSvelte(ast, mutantCollector, context)
+  const formatKey = formatKeyOf(ast)
+  const entry = Option.getOrUndefined(transformerContext.registry.entryForFormat(formatKey))
+  if (entry === undefined) {
+    throw new Error(`No registered format transforms the "${formatKey}" AST`)
   }
+  return entry.transform(ast, mutantCollector, context)
 }
 
 export type AstTransformer<T extends Ast = Ast> = (
@@ -1157,6 +1155,7 @@ export interface TransformerContext {
   transform: AstTransformer
   options: TransformerOptions
   mutateDescription: MutateDescription
+  registry: FormatRegistry
 }
 
 export const transformHtml: AstTransformer<HtmlAst> = async (

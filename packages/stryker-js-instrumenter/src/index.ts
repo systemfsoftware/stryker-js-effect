@@ -8,6 +8,7 @@ export type {
   FormatRegistry,
   ScriptFormatEntry,
 } from './format-registry.js'
+export { frameworkEntryOf } from './framework-entry.js'
 export { disableTypeChecks, instrument } from './Instrument.js'
 export type { File, InstrumenterOptions, InstrumentResult } from './Instrument.js'
 export type { InstrumentFileSkip } from './Instrument.schema.js'

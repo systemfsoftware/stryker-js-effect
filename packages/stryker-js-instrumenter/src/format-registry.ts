@@ -21,6 +21,8 @@ import {
   type TSAst,
   type TsxAst,
 } from './Syntax.js'
+import type { AstTransformer } from './Transformer.js'
+import { transformHtml, transformScript, transformSvelte } from './Transformer.js'
 import {
   disableTypeCheckingInHtml,
   disableTypeCheckingInScript,
@@ -37,7 +39,9 @@ export interface FormatClaim<Kind extends FormatKind = FormatKind> {
 }
 
 export interface FormatHooks {
+  readonly owner: string
   readonly parse: (text: string, fileName: string, context: ParserContext) => Promise<Ast>
+  readonly transform: AstTransformer
   readonly print: (ast: Ast, context: PrinterContext) => string
   readonly disableTypeChecks: (ast: Ast) => string
 }
@@ -65,7 +69,7 @@ export interface FormatRegistry {
 }
 
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-const formatIdOf = (id: string): FormatId => id as FormatId
+export const formatIdOf = (id: string): FormatId => id as FormatId
 
 const SCRIPT_FORMATS: ReadonlyArray<Ast['format']> = ['js', 'ts', 'tsx']
 
@@ -90,6 +94,8 @@ function rejectAst(ast: Ast, expected: string): never {
 }
 
 export const extensionOf = (fileName: string): string => path.extname(fileName).toLowerCase()
+
+const CORE_OWNER = '@systemfsoftware/stryker-js-instrumenter'
 
 export const formatRegistry = (entries: readonly FormatEntry[]): FormatRegistry => {
   const entryForFormat = (formatId: string): Option.Option<FormatEntry> =>
@@ -131,7 +137,9 @@ const SCRIPT_ENTRIES: readonly ScriptFormatEntry[] = [
       kind: 'script',
     },
     scriptFormat: 'js',
+    owner: CORE_OWNER,
     parse: parseJS,
+    transform: (ast, mutantCollector, context) => transformScript(requireScriptAst(ast), mutantCollector, context),
     print: (ast, context) => jsPrint(requireJsAst(ast), context),
     disableTypeChecks: (ast) => disableTypeCheckingInScript(requireScriptAst(ast)),
   },
@@ -143,14 +151,18 @@ const SCRIPT_ENTRIES: readonly ScriptFormatEntry[] = [
       kind: 'script',
     },
     scriptFormat: 'ts',
+    owner: CORE_OWNER,
     parse: parseTS,
+    transform: (ast, mutantCollector, context) => transformScript(requireScriptAst(ast), mutantCollector, context),
     print: (ast, context) => tsPrint(requireTsFamilyAst(ast), context),
     disableTypeChecks: (ast) => disableTypeCheckingInScript(requireScriptAst(ast)),
   },
   {
     claim: { formatId: formatIdOf('tsx'), extensions: ['.tsx'], language: 'typescript', kind: 'script' },
     scriptFormat: 'tsx',
+    owner: CORE_OWNER,
     parse: parseTsx,
+    transform: (ast, mutantCollector, context) => transformScript(requireScriptAst(ast), mutantCollector, context),
     print: (ast, context) => tsPrint(requireTsFamilyAst(ast), context),
     disableTypeChecks: (ast) => disableTypeCheckingInScript(requireScriptAst(ast)),
   },
@@ -164,13 +176,17 @@ const EMBEDDED_ENTRIES: readonly EmbeddedFormatEntry[] = [
       language: 'html',
       kind: 'embedded',
     },
+    owner: CORE_OWNER,
     parse: parseHtml,
+    transform: (ast, mutantCollector, context) => transformHtml(requireHtmlAst(ast), mutantCollector, context),
     print: (ast, context) => htmlPrint(requireHtmlAst(ast), context),
     disableTypeChecks: (ast) => disableTypeCheckingInHtml(requireHtmlAst(ast)),
   },
   {
     claim: { formatId: formatIdOf('svelte'), extensions: ['.svelte'], language: 'svelte', kind: 'embedded' },
+    owner: CORE_OWNER,
     parse: parseSvelte,
+    transform: (ast, mutantCollector, context) => transformSvelte(requireSvelteAst(ast), mutantCollector, context),
     print: (ast, context) => sveltePrint(requireSvelteAst(ast), context),
     disableTypeChecks: (ast) => disableTypeCheckingInSvelte(requireSvelteAst(ast)),
   },
