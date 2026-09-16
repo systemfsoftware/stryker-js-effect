@@ -1,3 +1,4 @@
+import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { NodeSDK } from '@opentelemetry/sdk-node'
 import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
@@ -6,6 +7,12 @@ const endpoint = (process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? 'http://127.0.0.
   /\/+$/u,
   '',
 )
+
+const diagnostics = process.env['OTEL_DEBUG'] === 'true' || process.env['CI'] === 'true'
+
+if (diagnostics) {
+  diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.DEBUG)
+}
 
 const sdk = new NodeSDK({
   serviceName: process.env['OTEL_SERVICE_NAME'] ?? 'stryker-js-cli-e2e',
