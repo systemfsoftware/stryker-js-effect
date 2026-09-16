@@ -58,6 +58,21 @@ const reasonFor = (unresolved: readonly UnresolvedSpecifier[]): string =>
 const uniqueSpecifiers = (specifiers: readonly string[]): readonly string[] =>
   specifiers.filter((specifier, index) => specifiers.indexOf(specifier) === index)
 
+const DotRelative = S.String.pipe(S.check(S.isStartsWith('.')))
+const Rooted = S.String.pipe(S.check(S.isStartsWith('/')))
+const WindowsRooted = S.String.pipe(S.check(S.isStartsWith('\\')))
+const FileUrl = S.String.pipe(S.check(S.isStartsWith('file:')))
+
+export const PathPrefixedSpecifier = S.Union([DotRelative, Rooted, WindowsRooted, FileUrl])
+
+const pathPrefixedSpecifiers = (specifiers: readonly string[]): readonly string[] =>
+  uniqueSpecifiers(specifiers).filter((specifier) => S.is(PathPrefixedSpecifier)(specifier))
+
+const PATH_PREFIXED_REASON =
+  'Path-prefixed plugin specifiers are not supported: plugins load as packages resolved from the project. Install the plugin as a dependency (a local plugin can be a "file:" dependency) and list its package name in "plugins" (or "appendPlugins"). Path-prefixed specifier(s): '
+
+const pathPrefixedReason = (prefixed: readonly string[]): string => `${PATH_PREFIXED_REASON}${prefixed.join(', ')}.`
+
 const outcomeFor = (
   specifier: string,
   resolutions: readonly (ResolvedSpecifier | UnresolvedSpecifier)[],
@@ -83,13 +98,26 @@ const decide = (
       ),
   })
 
+const resolveDeclared = (
+  command: PluginLoadCommand,
+): Result.Result<PluginLoadDecision, PluginSelectionError> => {
+  const reported = uniqueSpecifiers(command.specifiers).map((specifier) => outcomeFor(specifier, command.resolutions))
+  return decide(
+    reported.filter((resolution): resolution is ResolvedSpecifier => S.is(ResolvedSpecifier)(resolution)),
+    reported.filter((resolution): resolution is UnresolvedSpecifier => S.is(UnresolvedSpecifier)(resolution)),
+  )
+}
+
+const refusePathPrefixed = (
+  prefixed: readonly string[],
+): Result.Result<PluginLoadDecision, PluginSelectionError> =>
+  Result.fail(new PluginSelectionError({ stage: 'prepare', reason: pathPrefixedReason(prefixed), unresolved: [] }))
+
 export const planPluginLoad = Workflow.make(
   PluginLoadCommand,
-  (command: PluginLoadCommand): Result.Result<PluginLoadDecision, PluginSelectionError> => {
-    const reported = uniqueSpecifiers(command.specifiers).map((specifier) => outcomeFor(specifier, command.resolutions))
-    return decide(
-      reported.filter((resolution): resolution is ResolvedSpecifier => S.is(ResolvedSpecifier)(resolution)),
-      reported.filter((resolution): resolution is UnresolvedSpecifier => S.is(UnresolvedSpecifier)(resolution)),
-    )
-  },
+  (command: PluginLoadCommand): Result.Result<PluginLoadDecision, PluginSelectionError> =>
+    Array.match(pathPrefixedSpecifiers(command.specifiers), {
+      onEmpty: () => resolveDeclared(command),
+      onNonEmpty: refusePathPrefixed,
+    }),
 )

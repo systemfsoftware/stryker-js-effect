@@ -1,3 +1,5 @@
+export { WorkerEntryMissing, WorkerEntryOutsidePackage, WorkerManifestMalformed } from './plan-worker-entry.workflow.js'
+export { resolvePluginWorkerEntry } from './plugin-worker-entry.js'
 export { create, createAll, loadPlugins } from './Plugins.js'
 export type {
   LoadedPlugins,

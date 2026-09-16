@@ -13,6 +13,7 @@ import type { FileDescriptions } from '@systemfsoftware/stryker-js-language'
 import type { Mutant } from '@systemfsoftware/stryker-js-language'
 import type { RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-language'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
+
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -36,9 +37,6 @@ import type { ChildProcessCrashedError as ChildProcessCrashedErrorType } from '.
 import { makeWorkerClient, WorkerLauncher } from './WorkerLauncher.js'
 
 export type CheckerCrash = ChildProcessCrashedErrorType | OutOfMemoryError
-
-const isCheckerCrash = (error: unknown): error is CheckerCrash =>
-  error instanceof ChildProcessCrashedError || error instanceof OutOfMemoryError
 
 /**
  * A checker held by the pool.
@@ -165,18 +163,27 @@ const answeredPlanIds = (
 const partitionAnswers = (
   byId: ReadonlyMap<string, MutantRunPlan>,
   answers: Readonly<Record<string, CheckResult>>,
-): AnswerPartition =>
-  Object.entries(answers).reduce<AnswerPartition>(
-    (acc, [id, answer]) =>
-      Option.match(Option.fromUndefinedOr(byId.get(id)), {
-        onNone: () => ({ paired: acc.paired, unrequested: [...acc.unrequested, id] }),
-        onSome: (plan) => ({
-          paired: [...acc.paired, [plan, answer] as const],
-          unrequested: acc.unrequested,
-        }),
-      }),
-    { paired: [], unrequested: [] },
-  )
+): AnswerPartition => {
+  const entries = Object.entries(answers).map(([id, answer]) => ({
+    id,
+    answer,
+    plan: Option.fromUndefinedOr(byId.get(id)),
+  }))
+  return {
+    paired: entries.flatMap((entry) =>
+      Option.match(entry.plan, {
+        onNone: (): readonly (readonly [MutantRunPlan, CheckResult])[] => [],
+        onSome: (plan): readonly (readonly [MutantRunPlan, CheckResult])[] => [[plan, entry.answer] as const],
+      })
+    ),
+    unrequested: entries.flatMap((entry) =>
+      Option.match(entry.plan, {
+        onNone: (): readonly string[] => [entry.id],
+        onSome: (): readonly string[] => [],
+      })
+    ),
+  }
+}
 
 const admitAnsweredPlans = (
   checkerName: string,
@@ -194,47 +201,39 @@ const admitAnsweredPlans = (
     Match.orElse(() => Result.succeed(paired)),
   )
 
-const withGroupedId = (ids: ReadonlySet<string>, id: string): ReadonlySet<string> => new Set([...ids, id])
-
-const unionIds = (left: ReadonlySet<string>, right: ReadonlySet<string>): ReadonlySet<string> =>
-  new Set([...left, ...right])
-
 const partitionGroupIds = (
   byId: ReadonlyMap<string, MutantRunPlan>,
   idGroup: readonly string[],
-): IdGroupPartition =>
-  idGroup.reduce<IdGroupPartition>(
-    (acc, id) =>
-      Option.match(Option.fromUndefinedOr(byId.get(id)), {
-        onNone: () => ({
-          plans: acc.plans,
-          grouped: withGroupedId(acc.grouped, id),
-          unrequested: [...acc.unrequested, id],
-        }),
-        onSome: (plan) => ({
-          plans: [...acc.plans, plan],
-          grouped: withGroupedId(acc.grouped, id),
-          unrequested: acc.unrequested,
-        }),
-      }),
-    { plans: [], grouped: new Set<string>(), unrequested: [] },
-  )
+): IdGroupPartition => {
+  const entries = idGroup.map((id) => ({ id, plan: Option.fromUndefinedOr(byId.get(id)) }))
+  return {
+    plans: entries.flatMap((entry) =>
+      Option.match(entry.plan, {
+        onNone: (): readonly MutantRunPlan[] => [],
+        onSome: (plan): readonly MutantRunPlan[] => [plan],
+      })
+    ),
+    grouped: new Set(idGroup),
+    unrequested: entries.flatMap((entry) =>
+      Option.match(entry.plan, {
+        onNone: (): readonly string[] => [entry.id],
+        onSome: (): readonly string[] => [],
+      })
+    ),
+  }
+}
 
 const partitionGroups = (
   byId: ReadonlyMap<string, MutantRunPlan>,
   idGroups: readonly (readonly string[])[],
-): GroupPartition =>
-  idGroups.reduce<GroupPartition>(
-    (acc, idGroup) => {
-      const part = partitionGroupIds(byId, idGroup)
-      return {
-        groups: [...acc.groups, part.plans],
-        grouped: unionIds(acc.grouped, part.grouped),
-        unrequested: [...acc.unrequested, ...part.unrequested],
-      }
-    },
-    { groups: [], grouped: new Set<string>(), unrequested: [] },
-  )
+): GroupPartition => {
+  const parts = idGroups.map((idGroup) => partitionGroupIds(byId, idGroup))
+  return {
+    groups: parts.map((part) => part.plans),
+    grouped: new Set(parts.flatMap((part) => [...part.grouped])),
+    unrequested: parts.flatMap((part) => part.unrequested),
+  }
+}
 
 const admitGroupedPlans = (
   checkerName: string,
@@ -281,12 +280,17 @@ export const makeCheckerChildProcess = (params: {
       optionsJson,
       tempDirPrefix: 'stryker-checker-',
     }).pipe(
-      Effect.mapError((error) => {
-        if (isCheckerCrash(error)) return error
-        return crashed(
-          `Checker worker failed to start: its boot window closed before it accepted the RPC connection`,
+      Effect.mapError((error) =>
+        Match.value(error).pipe(
+          Match.tag('ChildProcessCrashedError', 'OutOfMemoryError', (crash) => crash),
+          Match.tag(
+            'WorkerBootTimeoutError',
+            () =>
+              crashed(`Checker worker failed to start: its boot window closed before it accepted the RPC connection`),
+          ),
+          Match.exhaustive,
         )
-      }),
+      ),
     )
 
     return {
@@ -309,7 +313,7 @@ export const createCheckerFactory = (
   workingDirectory: string,
 ): Effect.Effect<
   CheckerResourceService,
-  unknown,
+  CheckerCrash,
   Scope.Scope | WorkerLauncher
 > =>
   makeCheckerChildProcess({
@@ -327,90 +331,25 @@ export const createCheckerFactory = (
 
 type DecidedAnswer = CheckResultDecision['pairs'][number]
 
-interface AnswerPairing {
-  readonly paired: readonly (readonly [MutantRunPlan, CheckResult])[]
-  readonly missing: readonly string[]
-}
-
-interface GroupPairing {
-  readonly groups: readonly (readonly MutantRunPlan[])[]
-  readonly missing: readonly string[]
-}
-
-const pairDecidedAnswers = (
-  plans: readonly MutantRunPlan[],
-  answers: readonly DecidedAnswer[],
-): AnswerPairing => {
-  const byId = plansById(plans)
-  return answers.reduce<AnswerPairing>(
-    (acc, answer) =>
-      Option.match(Option.fromUndefinedOr(byId.get(answer.id)), {
-        onNone: () => ({ paired: acc.paired, missing: [...acc.missing, answer.id] }),
-        onSome: (plan) => ({
-          paired: [...acc.paired, [plan, answer.result] as const],
-          missing: acc.missing,
-        }),
-      }),
-    { paired: [], missing: [] },
-  )
-}
-
 const writeDecidedAnswers = (
   plans: readonly MutantRunPlan[],
   checkerName: string,
   answers: readonly DecidedAnswer[],
 ): Effect.Effect<readonly (readonly [MutantRunPlan, CheckResult])[], CheckerContractBroken> =>
-  Match.value(pairDecidedAnswers(plans, answers)).pipe(
-    Match.when(
-      (pairing: AnswerPairing) => pairing.missing.length > 0,
-      (pairing) =>
-        Effect.fail(
-          new CheckerSkippedRequested({
-            checkerName,
-            phase: 'check',
-            missingIds: pairing.missing.slice(0, 1),
-          }),
-        ),
+  Effect.fromResult(
+    pairCheckResults(
+      checkerName,
+      plans,
+      Object.fromEntries(answers.map((answer): readonly [string, CheckResult] => [answer.id, answer.result])),
     ),
-    Match.orElse((pairing) => Effect.succeed(pairing.paired)),
   )
-
-const pairDecidedGroups = (
-  plans: readonly MutantRunPlan[],
-  idGroups: readonly (readonly string[])[],
-): GroupPairing => {
-  const byId = plansById(plans)
-  return idGroups.reduce<GroupPairing>(
-    (acc, idGroup) => {
-      const part = partitionGroupIds(byId, idGroup)
-      return {
-        groups: [...acc.groups, part.plans],
-        missing: [...acc.missing, ...part.unrequested],
-      }
-    },
-    { groups: [], missing: [] },
-  )
-}
 
 const writeDecidedGroups = (
   plans: readonly MutantRunPlan[],
   checkerName: string,
   idGroups: readonly (readonly string[])[],
 ): Effect.Effect<readonly (readonly MutantRunPlan[])[], CheckerContractBroken> =>
-  Match.value(pairDecidedGroups(plans, idGroups)).pipe(
-    Match.when(
-      (pairing: GroupPairing) => pairing.missing.length > 0,
-      (pairing) =>
-        Effect.fail(
-          new CheckerSkippedRequested({
-            checkerName,
-            phase: 'group',
-            missingIds: pairing.missing.slice(0, 1),
-          }),
-        ),
-    ),
-    Match.orElse((pairing) => Effect.succeed(pairing.groups)),
-  )
+  Effect.fromResult(pairGroups(checkerName, plans, idGroups))
 
 const writeCheckerDecision = (
   plans: readonly MutantRunPlan[],

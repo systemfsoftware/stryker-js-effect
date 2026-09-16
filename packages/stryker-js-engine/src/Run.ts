@@ -28,7 +28,6 @@ import type {
   TestResult,
   TestRunnerCapabilities,
 } from '@systemfsoftware/stryker-js-language'
-import type { WorkerEntryMissing } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
@@ -44,6 +43,7 @@ import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import type { PlatformError } from 'effect/PlatformError'
 import * as Pool from 'effect/Pool'
 import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
@@ -53,12 +53,18 @@ import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
+import type {
+  WorkerEntryMissing,
+  WorkerEntryOutsidePackage,
+  WorkerManifestMalformed,
+} from './plan-worker-entry.workflow.js'
 
 import type * as reportSchema from '@systemfsoftware/stryker-js-language'
+
 import { admitMutationTest, MutationTestError } from './admit-mutation-test.workflow.js'
 import type { MutationTestDecision } from './admit-mutation-test.workflow.js'
 import { makeBuiltinReporterFactories } from './builtin-reporters.js'
-import type { CheckerResourceService } from './Checker.js'
+import type { CheckerCrash, CheckerResourceService } from './Checker.js'
 import { checkGroupedPlans, createCheckerFactory } from './Checker.js'
 import { forkCoreSchema, readConfig, validateOptions, type ValidationSchemaDocument } from './Config.js'
 import { dryRun, DryRunCommand } from './dry-run.workflow.js'
@@ -99,7 +105,7 @@ import { TemporaryDirectoryLive } from './Sandbox.js'
 import { selectReporters } from './select-reporters.js'
 import { buildTestRunner } from './TestRunner.js'
 import { makeChildProcessTestRunner } from './TestRunner.js'
-import type { PooledTestRunner } from './TestRunner.js'
+import type { PooledTestRunner, PooledTestRunnerError } from './TestRunner.js'
 import { makeConcurrency } from './Worker.js'
 import { IdGenerator } from './Worker.js'
 import { layer as idGeneratorLayer } from './Worker.js'
@@ -189,7 +195,7 @@ function buildDryRunFiles(prev: InstrumentDone): { files: string[]; testFiles: s
 const readCurrentRelativeFiles = (
   project: Project,
   basePath: string,
-): Effect.Effect<Record<string, string>, unknown, FileSystem.FileSystem> =>
+): Effect.Effect<Record<string, string>, PlatformError, FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const entries = yield* Effect.forEach(
       MutableHashMap.values(project.files),
@@ -288,6 +294,8 @@ const partitionPlans = (
   return { coveredPlans, earlyResults }
 }
 
+export const RUN_EVENTS_QUEUE_BOUND = 256
+
 const VALID_MUTANT_STATUSES = [
   'Killed',
   'Survived',
@@ -307,20 +315,39 @@ function isMutantStatus(s: string): s is ValidMutantStatus {
 const toReportedMutant = (mutant: Mutant): MutantTestCoverage =>
   Object.assign(mutant, { coveredBy: mutant.coveredBy, static: mutant.static })
 
+type WorkerEntryFailure = WorkerEntryMissing | WorkerEntryOutsidePackage | WorkerManifestMalformed
+
+const workerEntryFailureReason = (failure: WorkerEntryFailure): string =>
+  Match.value(failure).pipe(
+    Match.tag(
+      'WorkerEntryMissing',
+      (missing) => `the plugin "${missing.pluginName}" resolved to ${missing.specifier}`,
+    ),
+    Match.tag(
+      'WorkerEntryOutsidePackage',
+      (outside) =>
+        `the plugin "${outside.pluginName}" declares a worker entry "${outside.entrypoint}" outside its package root "${outside.packageRoot}"`,
+    ),
+    Match.tag(
+      'WorkerManifestMalformed',
+      (malformed) => `the plugin "${malformed.pluginName}" has a malformed package.json at "${malformed.file}"`,
+    ),
+    Match.exhaustive,
+  )
+
 const missingWorkerEntry =
-  (stage: StageError['stage'], kind: string, name: string) => (missing: WorkerEntryMissing): StageError =>
+  (stage: StageError['stage'], kind: string, name: string) => (failure: WorkerEntryFailure): StageError =>
     new StageError({
       stage,
-      reason:
-        `No plugin declares a worker entry for ${kind} "${name}"; the plugin "${missing.pluginName}" resolved to ${missing.specifier}`,
-      cause: missing,
+      reason: `No plugin declares a worker entry for ${kind} "${name}"; ${workerEntryFailureReason(failure)}`,
+      cause: failure,
     })
 
 const makeCheckerPool = (
   prev: DryRunDone,
   idGenerator: Parameters<typeof createCheckerFactory>[3],
 ): Effect.Effect<
-  Pool.Pool<CheckerResourceService, unknown> | undefined,
+  Pool.Pool<CheckerResourceService, CheckerCrash> | undefined,
   StageError,
   Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | WorkerLauncher | FileSystem.FileSystem | Path.Path
 > =>
@@ -562,7 +589,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
           env.basePath,
           options,
         )
-        const reporterInit = currentReporterInit(span)
+        const reporterInit = yield* currentReporterInit(span)
         const reporterStage = yield* attachReporterFactories(reporterInputs, options, reporterInit)
         const now = yield* Clock.currentTimeMillis
         yield* Queue.offer(queue, new PhaseEntered({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
@@ -958,7 +985,7 @@ const reportCheckOutcome = (
   )
 
 const checkPlansWithOneChecker = (
-  checkerPool: Pool.Pool<CheckerResourceService, unknown>,
+  checkerPool: Pool.Pool<CheckerResourceService, CheckerCrash>,
   checkerName: string,
   plans: readonly MutantRunPlan[],
   reporting: MutationReportingService,
@@ -987,7 +1014,7 @@ const checkPlansWithOneChecker = (
 
 const checkPlansWithEachChecker = (
   prev: DryRunDone,
-  checkerPool: Pool.Pool<CheckerResourceService, unknown>,
+  checkerPool: Pool.Pool<CheckerResourceService, CheckerCrash>,
   plans: readonly MutantRunPlan[],
   reporting: MutationReportingService,
 ) =>
@@ -1001,7 +1028,7 @@ const checkPlansWithEachChecker = (
 
 const checkPlansWithConfiguredCheckers = (
   prev: DryRunDone,
-  checkerPool: Pool.Pool<CheckerResourceService, unknown> | undefined,
+  checkerPool: Pool.Pool<CheckerResourceService, CheckerCrash> | undefined,
   plans: readonly MutantRunPlan[],
   reporting: MutationReportingService,
 ) =>
@@ -1098,7 +1125,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                   idGenerator: idGenerator,
                   retire: Effect.void,
                 }
-                const testRunnerPool: Pool.Pool<PooledTestRunner, unknown> = yield* Pool.make({
+                const testRunnerPool: Pool.Pool<PooledTestRunner, PooledTestRunnerError> = yield* Pool.make({
                   acquire: buildTestRunner(
                     testRunnerContext,
                     makeChildProcessTestRunner({
@@ -1343,12 +1370,42 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
           )
         }),
     ).pipe(
-      Effect.mapError((cause) => {
-        if (cause instanceof StageError) {
-          return cause
-        }
-        return new StageError({ stage: 'mutationTest', reason: 'Mutation testing failed', cause })
-      }),
+      Effect.mapError((cause) =>
+        Match.value(cause).pipe(
+          Match.tag('StageError', (stage) => stage),
+          Match.tag(
+            'CheckerAnsweredUnrequested',
+            (breach) =>
+              new StageError({
+                stage: 'mutationTest',
+                reason:
+                  `Checker "${breach.checkerName}" answered about mutants it was not asked about (${breach.phase} phase): ${
+                    breach.unrequestedIds.join(', ')
+                  }`,
+                cause: breach,
+              }),
+          ),
+          Match.tag(
+            'CheckerSkippedRequested',
+            (breach) =>
+              new StageError({
+                stage: 'mutationTest',
+                reason: `Checker "${breach.checkerName}" skipped requested mutants (${breach.phase} phase): ${
+                  breach.missingIds.join(', ')
+                }`,
+                cause: breach,
+              }),
+          ),
+          Match.tag(
+            'ChildProcessCrashedError',
+            'OutOfMemoryError',
+            'PlatformError',
+            'TestRunnerFailed',
+            () => new StageError({ stage: 'mutationTest', reason: 'Mutation testing failed', cause }),
+          ),
+          Match.exhaustive,
+        )
+      ),
     ),
 })
 export const makeRunLayer = (
@@ -1356,7 +1413,7 @@ export const makeRunLayer = (
   events?: Queue.Queue<RunEvent, Cause.Done>,
 ): Layer.Layer<RunEnvironment | RunEvents | IdGenerator | Scope.Scope, never, EnginePorts> => {
   const eventsLayer: Layer.Layer<RunEvents> = Match.value(events).pipe(
-    Match.when(undefined, () => Layer.effect(RunEvents, Queue.unbounded<RunEvent, Cause.Done>())),
+    Match.when(undefined, () => Layer.effect(RunEvents, Queue.bounded<RunEvent, Cause.Done>(RUN_EVENTS_QUEUE_BOUND))),
     Match.orElse((queue) => Layer.succeed(RunEvents, queue)),
   )
   return Layer.mergeAll(

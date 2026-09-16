@@ -19,6 +19,7 @@ const PROJECT = '/project'
 const PROJECT_MANIFEST = `${PROJECT}/package.json`
 const HOST_MANIFEST = '/host/dist/package.json'
 
+const LOCAL_PLUGIN = './local-plugin.js'
 const RUNNER = '@acme/stryker-runner'
 const UNSHIPPED = '@acme/stryker-unshipped'
 const RUNNER_LATE = '@acme/stryker-runner-late'
@@ -210,6 +211,8 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
           expect(s.seen.runners).toStrictEqual(['vitest'])
           expect(s.seen.notFound).toHaveLength(1)
           expect(s.seen.notFound[0]).toContain(UNSHIPPED)
+          expect(s.seen.notFound[0]).toContain('MODULE_NOT_FOUND')
+          expect(s.seen.notFound[0]).not.toContain(PROJECT)
           expect(s.seen.attempted).toStrictEqual([RUNNER, UNSHIPPED])
         })
       ),
@@ -279,6 +282,35 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
           expect(s.seen.failure['stage']).toBe('prepare')
           expect(String(s.seen.failure['reason'])).toContain('testRunner')
           expect(String(s.seen.failure['reason'])).toContain('checkers')
+          expect(s.seen.attempted).toStrictEqual([])
+          expect(s.seen.warnings).toStrictEqual([])
+        })
+      ),
+    ),
+  )
+
+  scenario(
+    'A plugin declared by path is refused before anything is resolved',
+    Gherkin.Do.pipe(
+      Given('a project whose config declares its plugin by path')(
+        'outcome',
+        () => loadOutcome([LOCAL_PLUGIN], { [PROJECT_MANIFEST]: tree({}) }, () => runnerModule),
+      ),
+      When('the project plugins are loaded')(
+        'seen',
+        (s) =>
+          Effect.sync(() => ({
+            failure: failureOrThrow(s.outcome),
+            attempted: attemptedSet(s.outcome),
+            warnings: s.outcome.state.warnings,
+          })),
+      ),
+      Then('the run stops at prepare, naming the rule and the declared path without looking it up')((s) =>
+        Effect.sync(() => {
+          expect(s.seen.failure['_tag']).toBe('PluginSelectionError')
+          expect(s.seen.failure['stage']).toBe('prepare')
+          expect(String(s.seen.failure['reason'])).toContain('Path-prefixed plugin specifiers are not supported')
+          expect(String(s.seen.failure['reason'])).toContain(LOCAL_PLUGIN)
           expect(s.seen.attempted).toStrictEqual([])
           expect(s.seen.warnings).toStrictEqual([])
         })

@@ -5,6 +5,7 @@
 ```ts
 
 import * as Effect from 'effect/Effect';
+import * as FileSystem from 'effect/FileSystem';
 import * as HashMap from 'effect/HashMap';
 import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
 import { Module } from '@systemfsoftware/stryker-js-language';
@@ -12,6 +13,7 @@ import * as Path from 'effect/Path';
 import * as S from 'effect/Schema';
 import { Schema } from 'effect';
 import { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
+import { WorkerPluginSpawn } from '@systemfsoftware/stryker-js-plugin-interface';
 import { YieldableError } from 'effect/Cause';
 
 // Warning: (ae-forgotten-export) The symbol "AnyPluginDescriptor" needs to be exported by the entry point plugin-loader.d.mts
@@ -111,6 +113,28 @@ export interface PluginSource {
     // (undocumented)
     readonly name: string;
 }
+
+// @public (undocumented)
+export const resolvePluginWorkerEntry: (params: {
+    readonly loaded: Pick<LoadedPlugins, 'pluginSources'>;
+    readonly kind: WorkerPluginKind;
+    readonly name: string;
+}) => Effect.Effect<WorkerPluginSpawn, WorkerEntryMissing | WorkerEntryOutsidePackage | WorkerManifestMalformed, FileSystem.FileSystem | Path.Path>;
+
+// Warning: (ae-forgotten-export) The symbol "WorkerEntryMissing_base" needs to be exported by the entry point plugin-loader.d.mts
+//
+// @public (undocumented)
+export class WorkerEntryMissing extends WorkerEntryMissing_base {}
+
+// Warning: (ae-forgotten-export) The symbol "WorkerEntryOutsidePackage_base" needs to be exported by the entry point plugin-loader.d.mts
+//
+// @public (undocumented)
+export class WorkerEntryOutsidePackage extends WorkerEntryOutsidePackage_base {}
+
+// Warning: (ae-forgotten-export) The symbol "WorkerManifestMalformed_base" needs to be exported by the entry point plugin-loader.d.mts
+//
+// @public (undocumented)
+export class WorkerManifestMalformed extends WorkerManifestMalformed_base {}
 
 // (No @packageDocumentation comment for this package)
 

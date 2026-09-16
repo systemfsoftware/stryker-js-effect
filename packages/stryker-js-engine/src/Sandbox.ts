@@ -3,6 +3,7 @@ import { disableTypeChecks } from '@systemfsoftware/stryker-js-instrumenter'
 import { errorToString, normalizeFileName } from '@systemfsoftware/stryker-js-language'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import { Schema as S } from 'effect'
+import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -430,10 +431,10 @@ const binDirectoriesFrom = (from: string, pathService: Path.Path): string[] =>
     pathService.join(directory, 'node_modules', '.bin')
   )
 
-const inheritedPath = (): string =>
-  Match.value(process.env['PATH']).pipe(
-    Match.when(Predicate.isString, (value) => value),
-    Match.orElse(() => ''),
+const inheritedPath = (): Effect.Effect<string> =>
+  Config.string('PATH').pipe(
+    Effect.option,
+    Effect.map((value) => Option.getOrUndefined(value) ?? ''),
   )
 
 const failOnBuildFailure = (
@@ -460,13 +461,11 @@ const runBuildCommandIn = (
   Effect.gen(function*() {
     const pathService = yield* Path.Path
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const separator = (() => {
-      if (process.platform === 'win32') {
-        return ';'
-      }
-      return ':'
-    })()
-    const inherited = inheritedPath()
+    const separator = Match.value(pathService.sep).pipe(
+      Match.when('\\', (): string => ';'),
+      Match.orElse((): string => ':'),
+    )
+    const inherited = yield* inheritedPath()
     const binDirs = binDirectoriesFrom(workingDirectory, pathService)
     const newPath = [...binDirs, inherited].join(separator)
 

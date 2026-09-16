@@ -5,6 +5,7 @@ import type { FileResult, MutantResult, MutationTestResult } from '@systemfsoftw
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
 import type { ReporterEvent } from '@systemfsoftware/stryker-js-language'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
+import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -385,13 +386,18 @@ const writeReportOutputs = (
   )
 
 const appendStepSummary = (summary: string): Effect.Effect<void, MergeReportsFailed, FileSystem.FileSystem> =>
-  Effect.forEach(
-    Option.toArray(
-      Option.filter(Option.fromNullishOr(process.env[STEP_SUMMARY_VARIABLE]), (file) => file.length > 0),
-    ),
-    (file) => writeFile(file, summary, true),
-    { discard: true },
-  )
+  Effect.gen(function*() {
+    const summaryFile = yield* Config.string(STEP_SUMMARY_VARIABLE).pipe(Effect.option)
+    yield* Option.match(summaryFile, {
+      onNone: () => Effect.void,
+      onSome: (file) =>
+        Match.value(file.length > 0).pipe(
+          Match.when(true, () => writeFile(file, summary, true)),
+          Match.when(false, () => Effect.void),
+          Match.exhaustive,
+        ),
+    })
+  })
 
 export const runMergeReports = (
   request: MergeReportsRequest,

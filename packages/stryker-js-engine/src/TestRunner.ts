@@ -559,12 +559,12 @@ export const buildTestRunner = (
   context: TestRunnerBuildContext,
   childProcessRunner: Effect.Effect<
     PooledTestRunner,
-    unknown,
+    PooledTestRunnerError,
     Scope.Scope | WorkerLauncher
   >,
 ): Effect.Effect<
   PooledTestRunner,
-  unknown,
+  PooledTestRunnerError,
   ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | WorkerLauncher
 > =>
   Effect.gen(function*() {

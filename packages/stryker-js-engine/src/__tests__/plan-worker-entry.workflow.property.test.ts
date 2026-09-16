@@ -7,6 +7,7 @@ import {
   planWorkerEntry,
   WorkerEntryCommand,
   WorkerEntryFromBin,
+  WorkerEntryFromWorkerExport,
   WorkerEntryMissing,
 } from '../plan-worker-entry.workflow.js'
 
@@ -41,15 +42,15 @@ describe('planWorkerEntry', () => {
     return Result.isSuccess(result)
   })
 
-  it.prop('∀c_Entry_→BinWins', [commandArbitrary], ([command]) => {
+  it.prop('∀c_Entry_→WorkerExportWins', [commandArbitrary], ([command]) => {
     const result = planWorkerEntry(command)
     return Result.match(result, {
       onFailure: () => declaresNothing(command),
       onSuccess: (decision) => {
-        if (S.is(WorkerEntryFromBin)(decision)) {
-          return decision.relativeEntrypoint === command.bin
+        if (S.is(WorkerEntryFromWorkerExport)(decision)) {
+          return decision.relativeEntrypoint === command.workerExport
         }
-        return decision.relativeEntrypoint === command.workerExport && command.bin === undefined
+        return decision.relativeEntrypoint === command.bin && command.workerExport === undefined
       },
     })
   })

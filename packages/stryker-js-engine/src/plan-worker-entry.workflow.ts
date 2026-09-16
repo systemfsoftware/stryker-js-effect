@@ -9,6 +9,21 @@ export class WorkerEntryMissing extends S.TaggedError<WorkerEntryMissing>()('Wor
   specifier: S.String,
 }) {}
 
+export class WorkerEntryOutsidePackage extends S.TaggedError<WorkerEntryOutsidePackage>()(
+  'WorkerEntryOutsidePackage',
+  {
+    pluginName: S.String,
+    entrypoint: S.String,
+    packageRoot: S.String,
+  },
+) {}
+
+export class WorkerManifestMalformed extends S.TaggedError<WorkerManifestMalformed>()('WorkerManifestMalformed', {
+  pluginName: S.String,
+  file: S.String,
+  cause: S.Unknown,
+}) {}
+
 const WorkerEntryDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-engine/WorkerEntryDecision')
 type WorkerEntryDecisionTypeId = typeof WorkerEntryDecisionTypeId
 
@@ -43,11 +58,11 @@ const missing = (command: WorkerEntryCommand): Result.Result<WorkerEntryDecision
 export const planWorkerEntry = Workflow.make(
   WorkerEntryCommand,
   (command: WorkerEntryCommand): Result.Result<WorkerEntryDecision, WorkerEntryMissing> =>
-    Option.match(Option.fromUndefinedOr(command.bin), {
-      onSome: (relativeEntrypoint) => Result.succeed(new WorkerEntryFromBin({ relativeEntrypoint })),
+    Option.match(Option.fromUndefinedOr(command.workerExport), {
+      onSome: (relativeEntrypoint) => Result.succeed(new WorkerEntryFromWorkerExport({ relativeEntrypoint })),
       onNone: () =>
-        Option.match(Option.fromUndefinedOr(command.workerExport), {
-          onSome: (relativeEntrypoint) => Result.succeed(new WorkerEntryFromWorkerExport({ relativeEntrypoint })),
+        Option.match(Option.fromUndefinedOr(command.bin), {
+          onSome: (relativeEntrypoint) => Result.succeed(new WorkerEntryFromBin({ relativeEntrypoint })),
           onNone: () => missing(command),
         }),
     }),

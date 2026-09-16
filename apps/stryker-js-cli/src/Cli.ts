@@ -17,6 +17,7 @@ import { type RunEvent, RunEvents } from '@systemfsoftware/stryker-js-language'
 import { RENDERED_OPTION_DEFAULTS } from '@systemfsoftware/stryker-js-language'
 import type { LogLevel, PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import * as Cause from 'effect/Cause'
+import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -498,15 +499,18 @@ function makeStrykerCommand(requestRef: Ref.Ref<Option.Option<CliRequest>>) {
     'merge-reports',
     mergeReportsOptions,
     (config): Effect.Effect<void, CliError.CliError, never> =>
-      Ref.set(
-        requestRef,
-        Option.some({
-          _tag: 'merge-reports',
-          parts: config.parts,
-          out: config.out,
-          packages: Option.getOrUndefined(config.packages) ?? process.env['PACKAGES'],
-        }),
-      ),
+      Effect.gen(function*() {
+        const fromEnvironment = yield* Config.string('PACKAGES').pipe(Effect.option)
+        yield* Ref.set(
+          requestRef,
+          Option.some({
+            _tag: 'merge-reports',
+            parts: config.parts,
+            out: config.out,
+            packages: Option.getOrUndefined(config.packages) ?? Option.getOrUndefined(fromEnvironment),
+          }),
+        )
+      }),
   ).pipe(Command.withDescription('Merge per-package mutation reports into one report'))
 
   const root: Command.Command<
@@ -607,14 +611,14 @@ const defaultRunMutationTest =
       Effect.provideService(RunEvents, queue),
     )
 
-function hostOptionsOf(mode: ResolvedMode, stream: RunEventStream): RunEnvironmentShape {
+function hostOptionsOf(mode: ResolvedMode, stream: RunEventStream, noColor: string | undefined): RunEnvironmentShape {
   return {
     runId: stream.runId,
     resolvedMode: mode,
     runStartedAt: stream.startedAt,
     basePath: process.cwd(),
     builtinReporters: { html: makeHtmlReporter },
-    allowConsoleColors: isColorEnabled(mode, process.env['NO_COLOR']),
+    allowConsoleColors: isColorEnabled(mode, noColor),
   }
 }
 
@@ -647,7 +651,8 @@ export const runStrykerCli = (
 ): Effect.Effect<number, never, never> =>
   Effect.gen(function*() {
     const stream = yield* createRunEventStream(input.mode)
-    const hostOptions = hostOptionsOf(input.mode, stream)
+    const noColor = yield* Config.string('NO_COLOR').pipe(Effect.option)
+    const hostOptions = hostOptionsOf(input.mode, stream, Option.getOrUndefined(noColor))
     const runMutationTestImpl = input.runMutationTest ?? defaultRunMutationTest(hostOptions, stream.queue)
     const basePath = hostOptions.basePath
     const pathService = yield* Path.Path.pipe(Effect.provide(NodePath.layer))

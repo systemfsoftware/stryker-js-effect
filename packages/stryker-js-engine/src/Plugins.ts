@@ -14,6 +14,7 @@ import type { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interf
 import { importModule } from './Config.js'
 import type { PluginLoadDecision, PluginSelectionError } from './plan-plugin-load.workflow.js'
 import {
+  PathPrefixedSpecifier,
   planPluginLoad,
   PluginLoadCommand,
   ResolvedSpecifier,
@@ -147,11 +148,11 @@ export const buildPluginLoadPlan = (entries: readonly PluginLoaderEntryLike[]): 
   }
 }
 
-const hasErrorMessage = (error: unknown): error is Record<'message', unknown> => Predicate.hasProperty(error, 'message')
+const hasErrorCode = (error: unknown): error is Record<'code', unknown> => Predicate.hasProperty(error, 'code')
 
-const errorMessageOf = (error: unknown): unknown =>
+const errorCodeOf = (error: unknown): unknown =>
   Match.value(error).pipe(
-    Match.when(hasErrorMessage, (carrier: Record<'message', unknown>) => carrier.message),
+    Match.when(hasErrorCode, (carrier: Record<'code', unknown>) => carrier.code),
     Match.orElse(() => undefined),
   )
 
@@ -170,9 +171,9 @@ export interface LoadedPlugins {
 const PROJECT_MANIFEST = 'package.json'
 
 const resolutionFailureReason = (cause: unknown): string =>
-  Option.match(Option.fromUndefinedOr(errorMessageOf(cause)), {
+  Option.match(Option.fromUndefinedOr(errorCodeOf(cause)), {
     onNone: () => 'the project does not resolve this specifier',
-    onSome: (message) => String(message),
+    onSome: (code) => String(code),
   })
 
 const resolveSpecifier = (
@@ -314,7 +315,10 @@ export function loadPlugins(
   return Effect.gen(function*() {
     yield* Module
     yield* Path.Path
-    const resolutions = yield* resolveSpecifiers(pluginDescriptors, basePath)
+    const resolutions = yield* resolveSpecifiers(
+      pluginDescriptors.filter((specifier) => !S.is(PathPrefixedSpecifier)(specifier)),
+      basePath,
+    )
     const plan = yield* Effect.fromResult(
       planPluginLoad(new PluginLoadCommand({ specifiers: pluginDescriptors, resolutions })),
     )
@@ -362,13 +366,15 @@ function hasValidationSchemaContribution(module: unknown): module is SchemaValid
   return S.is(SchemaValidationContributionSchema)(module)
 }
 
-export const findByKindAndName = <T extends { readonly kind: PluginKind; readonly name: string }>(
+export const findByKindAndName = <T extends { readonly kind: PluginKind; readonly name: string }, K extends T['kind']>(
   items: readonly T[],
-  kind: PluginKind,
+  kind: K,
   name: string,
-): Option.Option<T> =>
+): Option.Option<T & { readonly kind: K }> =>
   Option.fromUndefinedOr(
-    items.find((item) => item.kind === kind && item.name.toLowerCase() === name.toLowerCase()),
+    items.find(
+      (item): item is T & { readonly kind: K } => item.kind === kind && item.name.toLowerCase() === name.toLowerCase(),
+    ),
   )
 
 const findContribution = <K extends PluginKind>(

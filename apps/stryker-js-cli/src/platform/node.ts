@@ -14,6 +14,23 @@ import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawne
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 
+const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string): Effect.Effect<void> =>
+  fs.chmod(file, 0o600).pipe(
+    Effect.catchTag(
+      'PlatformError',
+      (cause) =>
+        Effect.logWarning(
+          `Could not restrict "${file}" to its owner; the worker directory's own mode still protects it.`,
+        ).pipe(Effect.annotateLogs('cause', cause)),
+    ),
+  )
+
+const restrictSocketToOwnerOrWarn = (fs: FileSystem.FileSystem, socketPath: string): Effect.Effect<void> =>
+  Match.value(process.platform).pipe(
+    Match.when('win32', () => Effect.void),
+    Match.orElse(() => restrictToOwnerOrWarn(fs, socketPath)),
+  )
+
 /**
  * The Node worker launcher: spawn a worker child with this runtime's
  * executable, host the RPC server's address as a `net` `path` endpoint (a
@@ -39,7 +56,9 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
             Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${globalThis.crypto.randomUUID()}`),
             Match.orElse(() => path.join(workerDir, 'worker.sock')),
           )
-          yield* fs.writeFileString(path.join(workerDir, 'options.json'), params.optionsJson)
+          const optionsFile = path.join(workerDir, 'options.json')
+          yield* fs.writeFileString(optionsFile, params.optionsJson)
+          yield* restrictToOwnerOrWarn(fs, optionsFile)
 
           const handle = yield* ChildProcess.make(process.execPath, [...params.execArgv, params.entrypoint], {
             cwd: params.workingDirectory,
@@ -51,6 +70,7 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
           const clientLayer = RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
             Layer.provide(NodeSocket.layerNet({ path: socketPath })),
             Layer.provide(RpcSerialization.layerNdjson),
+            Layer.tap(() => restrictSocketToOwnerOrWarn(fs, socketPath)),
           )
 
           const exited = handle.exitCode.pipe(
