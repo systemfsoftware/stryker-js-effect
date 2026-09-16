@@ -1,6 +1,5 @@
 import * as Predicate from 'effect/Predicate'
-import { spanOf } from './Ast.js'
-import type { HtmlAst, ScriptAst, SpannedComment, SvelteAst } from './Syntax.js'
+import type { ScriptAst, SpannedComment } from './Syntax.js'
 
 export const tsDirectiveLikeRegEx = /@(ts-[a-z-]+)/
 
@@ -9,39 +8,6 @@ const STARTING_COMMENT = /^\s*\/\*[\s\S]*?\*\//
 
 export function disableTypeCheckingInScript(ast: ScriptAst): string {
   return prefixWithNoCheck(removeTSDirectives(ast.rawContent, ast.comments))
-}
-
-export function disableTypeCheckingInHtml(ast: HtmlAst): string {
-  const sortedScripts = [...ast.root.scripts].sort((a, b) => getScriptStart(a) - getScriptStart(b))
-  let currentIndex = 0
-  let html = ''
-  for (const script of sortedScripts) {
-    html += ast.rawContent.substring(currentIndex, getScriptStart(script))
-    html += '\n'
-    html += prefixWithNoCheck(removeTSDirectives(script.rawContent, script.comments))
-    html += '\n'
-    currentIndex = getScriptEnd(script)
-  }
-  html += ast.rawContent.substring(currentIndex)
-  return html
-}
-
-export function disableTypeCheckingInSvelte(ast: SvelteAst): string {
-  const sortedScripts = [ast.root.moduleScript, ...ast.root.additionalScripts].filter(Predicate.isNotNullish).sort((
-    a,
-    b,
-  ) => a.range.start - b.range.start)
-  let currentIndex = 0
-  let html = ''
-  for (const script of sortedScripts) {
-    html += ast.rawContent.substring(currentIndex, script.range.start)
-    html += '\n'
-    html += prefixWithNoCheck(removeTSDirectives(script.ast.rawContent, script.ast.comments))
-    html += '\n'
-    currentIndex = script.range.end
-  }
-  html += ast.rawContent.substring(currentIndex)
-  return html
 }
 
 export function prefixWithNoCheck(code: string): string {
@@ -63,22 +29,6 @@ function afterLeadingComment(code: string): string {
 
 function leadingCommentOf(code: string): string | undefined {
   return STARTING_COMMENT.exec(code)?.[0]
-}
-
-function getScriptStart(script: HtmlAst['root']['scripts'][number]): number {
-  const span = spanOf(script.root)
-  if (span === undefined) {
-    throw new Error('Script AST root without start')
-  }
-  return span.start
-}
-
-function getScriptEnd(script: HtmlAst['root']['scripts'][number]): number {
-  const span = spanOf(script.root)
-  if (span === undefined) {
-    throw new Error('Script AST root without end')
-  }
-  return span.end
 }
 
 interface DirectiveRange {

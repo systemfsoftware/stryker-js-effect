@@ -3,31 +3,18 @@ import * as Option from 'effect/Option'
 import type { Result } from 'effect/Result'
 import path from 'path'
 
-import { parseHtml, parseJS, type ParserContext, parseSvelte, parseTS, parseTsx } from './Parser.js'
-import { htmlPrint, jsPrint, type PrinterContext, sveltePrint, tsPrint } from './Printer.js'
+import { parseJS, type ParserContext, parseTS, parseTsx } from './Parser.js'
+import { jsPrint, type PrinterContext, tsPrint } from './Printer.js'
 import {
   type FormatOverrideUnclaimed,
   FormatResolutionCommand,
   type FormatResolutionDecision,
   resolveFormat,
 } from './resolve-format.workflow.js'
-import {
-  type Ast,
-  type HtmlAst,
-  type JSAst,
-  type ScriptAst,
-  type ScriptFormat,
-  type SvelteAst,
-  type TSAst,
-  type TsxAst,
-} from './Syntax.js'
+import { type Ast, type JSAst, type ScriptAst, type ScriptFormat, type TSAst, type TsxAst } from './Syntax.js'
 import type { AstTransformer } from './Transformer.js'
-import { transformHtml, transformScript, transformSvelte } from './Transformer.js'
-import {
-  disableTypeCheckingInHtml,
-  disableTypeCheckingInScript,
-  disableTypeCheckingInSvelte,
-} from './type-check-disablers.js'
+import { transformScript } from './Transformer.js'
+import { disableTypeCheckingInScript } from './type-check-disablers.js'
 
 export type FormatKind = 'script' | 'embedded'
 
@@ -84,10 +71,6 @@ const TS_FAMILY_FORMATS: readonly Ast['format'][] = ['ts', 'tsx']
 const isTsFamilyAst = (ast: Ast): ast is TSAst | TsxAst => (TS_FAMILY_FORMATS as readonly string[]).includes(ast.format)
 
 const requireTsFamilyAst = (ast: Ast): TSAst | TsxAst => (isTsFamilyAst(ast) ? ast : rejectAst(ast, 'a ts script'))
-
-const requireHtmlAst = (ast: Ast): HtmlAst => (ast.format === 'html' ? ast : rejectAst(ast, 'an html'))
-
-const requireSvelteAst = (ast: Ast): SvelteAst => (ast.format === 'svelte' ? ast : rejectAst(ast, 'a svelte'))
 
 function rejectAst(ast: Ast, expected: string): never {
   throw new Error(`Expected ${expected} AST, received the "${ast.format}" format`)
@@ -168,28 +151,4 @@ const SCRIPT_ENTRIES: readonly ScriptFormatEntry[] = [
   },
 ]
 
-const EMBEDDED_ENTRIES: readonly EmbeddedFormatEntry[] = [
-  {
-    claim: {
-      formatId: formatIdOf('html'),
-      extensions: ['.html', '.htm', '.vue'],
-      language: 'html',
-      kind: 'embedded',
-    },
-    owner: CORE_OWNER,
-    parse: parseHtml,
-    transform: (ast, mutantCollector, context) => transformHtml(requireHtmlAst(ast), mutantCollector, context),
-    print: (ast, context) => htmlPrint(requireHtmlAst(ast), context),
-    disableTypeChecks: (ast) => disableTypeCheckingInHtml(requireHtmlAst(ast)),
-  },
-  {
-    claim: { formatId: formatIdOf('svelte'), extensions: ['.svelte'], language: 'svelte', kind: 'embedded' },
-    owner: CORE_OWNER,
-    parse: parseSvelte,
-    transform: (ast, mutantCollector, context) => transformSvelte(requireSvelteAst(ast), mutantCollector, context),
-    print: (ast, context) => sveltePrint(requireSvelteAst(ast), context),
-    disableTypeChecks: (ast) => disableTypeCheckingInSvelte(requireSvelteAst(ast)),
-  },
-]
-
-export const coreFormatRegistry: FormatRegistry = formatRegistry([...SCRIPT_ENTRIES, ...EMBEDDED_ENTRIES])
+export const coreFormatRegistry: FormatRegistry = formatRegistry(SCRIPT_ENTRIES)

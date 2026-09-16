@@ -19,9 +19,6 @@ import * as S from 'effect/Schema';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
-export const angularIgnorer: IgnorerService;
-
-// @public (undocumented)
 export const coreFormatRegistry: FormatRegistry;
 
 // @public (undocumented)
@@ -117,9 +114,6 @@ export type FormatResolutionDecision = FormatAssigned | FormatSkipped;
 // @public (undocumented)
 export const frameworkEntryOf: (moduleName: string, service: FrameworkService) => EmbeddedFormatEntry;
 
-// @public (undocumented)
-export const frameworkPluginsFileUrl: string;
-
 // Warning: (ae-forgotten-export) The symbol "InstrumentResult$1" needs to be exported by the entry point index.d.mts
 // Warning: (ae-forgotten-export) The symbol "InstrumentError" needs to be exported by the entry point index.d.mts
 //
@@ -161,9 +155,6 @@ export interface ScriptFormatEntry extends FormatHooks {
     // (undocumented)
     readonly scriptFormat: ScriptFormat;
 }
-
-// @public (undocumented)
-export const strykerPlugins: readonly unknown[];
 
 // (No @packageDocumentation comment for this package)
 

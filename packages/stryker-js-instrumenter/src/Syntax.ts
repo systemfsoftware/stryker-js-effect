@@ -6,9 +6,9 @@ import type { Position } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 import type { Program } from './Ast.js'
 
-export type Ast = HtmlAst | JSAst | SvelteAst | TSAst | TsxAst | EmbeddedAst
+export type Ast = JSAst | TSAst | TsxAst | EmbeddedAst
 
-export type AstRoot = HtmlRootNode | Program | SvelteRootNode
+export type AstRoot = Program
 
 export type ScriptFormat = Extract<Ast['format'], 'js' | 'ts' | 'tsx'>
 
@@ -30,14 +30,6 @@ export interface BaseAst {
   rawContent: string
   root: AstRoot
   offset?: Position
-}
-
-/**
- * Represents an Html AST.
- */
-export interface HtmlAst extends BaseAst {
-  format: 'html'
-  root: HtmlRootNode
 }
 
 /**
@@ -67,28 +59,6 @@ export interface TsxAst extends BaseAst {
   comments: readonly SpannedComment[]
 }
 
-/**
- * Represents a Svelte AST
- */
-export interface SvelteAst extends BaseAst {
-  format: 'svelte'
-  root: SvelteRootNode
-}
-
-/**
- * Represents the root node of an HTML AST
- * We've taken a shortcut here, instead of representing the entire AST, we're only representing the script tags.
- * We might need to expand this in the future if we would ever want to support mutating the actual HTML (rather than only the JS/TS)
- */
-export interface HtmlRootNode {
-  scripts: ScriptAst[]
-}
-
-export interface SvelteRootNode {
-  moduleScript?: TemplateScript
-  additionalScripts: TemplateScript[]
-}
-
 export interface EmbeddedAst {
   format: 'embedded'
   formatId: FormatId
@@ -101,21 +71,6 @@ export interface EmbeddedAst {
 export interface EmbeddedScript {
   readonly region: number
   readonly ast: ScriptAst
-}
-
-/**
- * Represents a svelte script or binding expression
- * We've taken a shortcut here, instead of representing the entire AST, we're only representing the script tags and expression bindings.
- */
-export interface TemplateScript {
-  ast: ScriptAst
-  range: Range
-  isExpression: boolean
-}
-
-export interface Range {
-  start: number
-  end: number
 }
 
 /**

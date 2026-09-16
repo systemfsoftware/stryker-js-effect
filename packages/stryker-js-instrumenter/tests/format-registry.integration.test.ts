@@ -1,36 +1,16 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  coreFormatRegistry,
-  disableTypeChecks,
-  formatRegistry,
-  instrument,
-  type InstrumentResult,
-} from '@systemfsoftware/stryker-js-instrumenter'
+import { disableTypeChecks, instrument, type InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import * as Exit from 'effect/Exit'
 import { expect } from 'vitest'
 
 const OPTIONS = { ignorers: [], excludedMutations: [] }
 
-const COMPONENT = `<script>
-  export let n = 1
-  const big = n > 10
-</script>
-<p>{big}</p>
+const SCRIPT = `export const answer = 42
 `
 
-const BROKEN_COMPONENT = `<script>
-  export let n =
-</script>
+const BROKEN_SCRIPT = `export const answer =
 `
-
-const PAGE = `<script>const answer = 42</script>
-<p>static</p>
-`
-
-const installedWithoutSvelte = formatRegistry(
-  coreFormatRegistry.entries.filter((entry) => entry.claim.formatId !== 'svelte'),
-)
 
 const Feature = makeFeature({ it, layer })
 
@@ -39,18 +19,14 @@ Feature('Instrumenting files by the format that claims them')
     scenario(
       'A file no installed format claims is skipped and the run still completes',
       Gherkin.Do.pipe(
-        Given('a component and an installation whose formats do not include it')(
-          'project',
-          () => Effect.succeed({ source: COMPONENT, registry: installedWithoutSvelte }),
+        Given('a file whose extension no installed format claims')(
+          'source',
+          () => Effect.succeed(SCRIPT),
         ),
         When('the project is instrumented')(
           'result',
-          ({ project }: { project: { source: string; registry: typeof coreFormatRegistry } }) =>
-            instrument(
-              [{ name: '/tmp/component.svelte', content: project.source, mutate: true }],
-              OPTIONS,
-              project.registry,
-            ),
+          ({ source }: { source: string }) =>
+            instrument([{ name: '/tmp/notes.txt', content: source, mutate: true }], OPTIONS),
         ),
         Then('the file is reported skipped with no output files and no mutants')((
           { result }: { result: InstrumentResult },
@@ -59,8 +35,8 @@ Feature('Instrumenting files by the format that claims them')
             expect(result.files).toStrictEqual([])
             expect(result.mutants).toStrictEqual([])
             expect(result.skipped).toHaveLength(1)
-            expect(result.skipped[0]?.file).toBe('/tmp/component.svelte')
-            expect(result.skipped[0]?.extension).toBe('.svelte')
+            expect(result.skipped[0]?.file).toBe('/tmp/notes.txt')
+            expect(result.skipped[0]?.extension).toBe('.txt')
             expect(result.skipped[0]?.reason.length).toBeGreaterThan(0)
           })
         ),
@@ -70,16 +46,11 @@ Feature('Instrumenting files by the format that claims them')
     scenario(
       'A file whose format owns it but which cannot be parsed fails the run instead of being skipped',
       Gherkin.Do.pipe(
-        Given('a component with a broken script block')(
-          'source',
-          () => Effect.succeed(BROKEN_COMPONENT),
-        ),
+        Given('a script file with a syntax error')('source', () => Effect.succeed(BROKEN_SCRIPT)),
         When('the project is instrumented')(
           'exit',
           ({ source }: { source: string }) =>
-            Effect.exit(
-              instrument([{ name: '/tmp/broken.svelte', content: source, mutate: true }], OPTIONS),
-            ),
+            Effect.exit(instrument([{ name: '/tmp/broken.ts', content: source, mutate: true }], OPTIONS)),
         ),
         Then('the run fails rather than completing with a skip record')((
           { exit }: { exit: Exit.Exit<InstrumentResult, unknown> },
@@ -92,23 +63,19 @@ Feature('Instrumenting files by the format that claims them')
     )
 
     scenario(
-      'Disabling type checking inside a web page touches the script and leaves the markup alone',
+      'Disabling type checking on a script file exempts the file and leaves its content alone',
       Gherkin.Do.pipe(
-        Given('a page holding a script block and static markup')(
-          'source',
-          () => Effect.succeed(PAGE),
-        ),
-        When('type checking is disabled for the page')(
+        Given('a script file declaring an exported constant')('source', () => Effect.succeed(SCRIPT)),
+        When('type checking is disabled for it')(
           'disabled',
           ({ source }: { source: string }) =>
-            Effect.promise(() => disableTypeChecks({ name: '/tmp/page.html', content: source, mutate: true })),
+            Effect.promise(() => disableTypeChecks({ name: '/tmp/page.ts', content: source, mutate: true })),
         ),
-        Then('the script is marked to skip type checking and the markup is unchanged')((
-          { disabled }: { disabled: { content: string } },
+        Then('the file comes back exempted from type checking with its content unchanged')((
+          { disabled, source }: { disabled: { content: string }; source: string },
         ) =>
           Effect.sync(() => {
-            expect(disabled.content).toContain('// @ts-nocheck')
-            expect(disabled.content).toContain('<p>static</p>')
+            expect(disabled.content).toBe(`// @ts-nocheck\n${source}`)
           })
         ),
       ),

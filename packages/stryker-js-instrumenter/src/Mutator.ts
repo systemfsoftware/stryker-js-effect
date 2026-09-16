@@ -189,7 +189,8 @@ function replaceFirstMatch(path: TraversePath, original: Node, replacement: Node
 
 /**
  * Converts a node span to the API location: offsets become positions via the
- * file's line table, then the embedding-document offset (html/svelte) applies.
+ * file's line table, then the offset of the script region inside its embedding
+ * document applies.
  */
 function toApiLocation(
   startOffset: number,
