@@ -10,3 +10,4 @@ e2e-telemetry/
 result
 result-*
 temp/
+.changeset/changelogs/
