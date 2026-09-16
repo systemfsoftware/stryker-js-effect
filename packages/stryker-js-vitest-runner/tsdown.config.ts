@@ -21,7 +21,7 @@ export default defineConfig([
   },
   {
     ...shared,
-    entry: { worker: './src/worker.ts' },
+    entry: { worker: './src/main.ts' },
     deps: {
       neverBundle: [/^vitest$/, /^vitest\//],
       alwaysBundle: [

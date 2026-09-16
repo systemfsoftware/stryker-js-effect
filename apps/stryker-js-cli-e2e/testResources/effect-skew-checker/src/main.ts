@@ -1,6 +1,8 @@
-import { CheckerRpcs, startRpcWorker, withLinkedSpan } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
+import { CheckerRpcs, withLinkedSpan, workerServerLayer } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Logger from 'effect/Logger'
 import effectManifest from 'effect/package.json' with { type: 'json' }
 
 export const EFFECT_VERSION: string = effectManifest.version
@@ -28,9 +30,12 @@ const checkerHandlers = CheckerRpcs.toLayer(
   }),
 )
 
-await startRpcWorker({
-  rpcs: CheckerRpcs,
-  handlers: checkerHandlers,
-  schemaServices: Layer.empty,
-  label: 'effect-skew checker worker',
-})
+NodeRuntime.runMain(
+  Layer.launch(
+    workerServerLayer({
+      rpcs: CheckerRpcs,
+      handlers: checkerHandlers,
+      schemaServices: Layer.empty,
+    }),
+  ).pipe(Effect.provideService(Logger.LogToStderr, true)),
+)

@@ -7,6 +7,7 @@
 import * as api from '@opentelemetry/api';
 import { CheckerFailed } from '@systemfsoftware/stryker-js-language';
 import { CheckResultSchema } from '@systemfsoftware/stryker-js-language';
+import * as Config from 'effect/Config';
 import * as Context from 'effect/Context';
 import { DryRunCompleted } from '@systemfsoftware/stryker-js-language';
 import { DryRunResultSchema } from '@systemfsoftware/stryker-js-language';
@@ -27,8 +28,12 @@ import { ReporterFailed } from '@systemfsoftware/stryker-js-language';
 import * as Rpc from 'effect/unstable/rpc/Rpc';
 import * as RpcGroup from 'effect/unstable/rpc/RpcGroup';
 import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware';
+import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization';
+import * as RpcServer from 'effect/unstable/rpc/RpcServer';
 import * as S from 'effect/Schema';
 import { Schema } from 'effect';
+import { SocketServer } from 'effect/unstable/socket/SocketServer';
+import { SocketServerError } from 'effect/unstable/socket/SocketServer';
 import { StrykerOptions } from '@systemfsoftware/stryker-js-language';
 import { TestRunnerCapabilitiesSchema } from '@systemfsoftware/stryker-js-language';
 import { TestRunnerFailed } from '@systemfsoftware/stryker-js-language';
@@ -258,7 +263,7 @@ export const readWorkerOptionsFromEnv: Effect.Effect<{
     readonly allowEmpty: boolean;
     readonly ignorers: readonly string[];
     readonly testFiles: readonly string[];
-}, PlatformError | S.SchemaError, FileSystem.FileSystem | Path.Path>;
+}, Config.ConfigError | PlatformError | S.SchemaError, FileSystem.FileSystem | Path.Path>;
 
 // @public (undocumented)
 export const ReporterAck: S.Void;
@@ -290,21 +295,6 @@ export const ReporterRpcs: RpcGroup.RpcGroup<TracedRpc<'init', typeof ReporterIn
 
 // @public (undocumented)
 export const startHostTelemetry: () => Promise<void>;
-
-// @public (undocumented)
-export const startRpcWorker: <Rpcs extends Rpc.Any, HE>(params: StartRpcWorkerParams<Rpcs, HE>) => Promise<void>;
-
-// @public (undocumented)
-export interface StartRpcWorkerParams<Rpcs extends Rpc.Any, HE> {
-    // (undocumented)
-    readonly handlers: Layer.Layer<Rpc.ToHandler<Rpcs>, HE, FileSystem.FileSystem | Path.Path | Module>;
-    // (undocumented)
-    readonly label: string;
-    // (undocumented)
-    readonly rpcs: RpcGroup.RpcGroup<Rpcs>;
-    // (undocumented)
-    readonly schemaServices: Layer.Layer<Rpc.ServicesServer<Rpcs>, never, never>;
-}
 
 // @public (undocumented)
 export const startWorkerTelemetry: () => Promise<void>;
@@ -416,6 +406,19 @@ export const WorkerPluginSpawnSchema: S.Struct<{
     readonly field: S.Literals<readonly ["bin", "workerExport"]>;
     readonly entrypoint: S.String;
 }>;
+
+// @public (undocumented)
+export const workerServerLayer: <Rpcs extends Rpc.Any, HE>(params: WorkerServerParams<Rpcs, HE>) => Layer.Layer<never, HE | Config.ConfigError | SocketServerError, Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<FileSystem.FileSystem, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Module, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Path.Path, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<RpcServer.Protocol, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.Middleware<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ServicesServer<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ToHandler<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware>>;
+
+// @public (undocumented)
+export interface WorkerServerParams<Rpcs extends Rpc.Any, HE> {
+    // (undocumented)
+    readonly handlers: Layer.Layer<Rpc.ToHandler<Rpcs>, HE, FileSystem.FileSystem | Path.Path | Module>;
+    // (undocumented)
+    readonly rpcs: RpcGroup.RpcGroup<Rpcs>;
+    // (undocumented)
+    readonly schemaServices: Layer.Layer<Rpc.ServicesServer<Rpcs>, never, never>;
+}
 
 // (No @packageDocumentation comment for this package)
 

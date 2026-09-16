@@ -48,6 +48,6 @@ export {
   tracePartsOf,
   withLinkedSpan,
 } from './TraceContextRpc.js'
-export { startRpcWorker, type StartRpcWorkerParams } from './worker-entry.js'
 export { decodeWorkerOptions, encodeWorkerOptions, readWorkerOptionsFromEnv } from './WorkerOptions.js'
+export { workerServerLayer, type WorkerServerParams } from './WorkerServer.js'
 export { startHostTelemetry, startWorkerTelemetry } from './WorkerTelemetry.js'

@@ -12,7 +12,7 @@
       "default": "./dist/index.mjs"
     },
     "./worker": {
-      "default": "./dist/worker.mjs"
+      "default": "./dist/main.mjs"
     },
     "./package.json": "./package.json"
   }

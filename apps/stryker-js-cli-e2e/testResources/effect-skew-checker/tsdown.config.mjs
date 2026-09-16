@@ -26,7 +26,7 @@ const skewResolver = {
 export default {
   entry: {
     index: new URL('./src/index.ts', import.meta.url).pathname,
-    worker: new URL('./src/worker.ts', import.meta.url).pathname,
+    main: new URL('./src/main.ts', import.meta.url).pathname,
   },
   outDir,
   format: 'esm',

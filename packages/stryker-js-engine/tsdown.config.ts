@@ -7,7 +7,6 @@ export default defineConfig({
     'config/base': './src/config/base.ts',
     'builtin-reporters': './src/builtin-reporters.ts',
     'plugin-loader': './src/plugin-loader.ts',
-    worker: './src/worker-wiring.ts',
   },
   format: 'esm',
   dts: true,

@@ -25,7 +25,7 @@
       "default": "./dist/stryker-setup.mjs"
     },
     "./worker": {
-      "@systemfsoftware/source": "./src/worker.ts",
+      "@systemfsoftware/source": "./src/main.ts",
       "types": "./dist/worker.d.mts",
       "default": "./dist/worker.mjs"
     },

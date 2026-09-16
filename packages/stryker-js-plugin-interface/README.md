@@ -24,7 +24,7 @@ boundary payload schemas (`TestRunnerDryRunRequest`, `CheckerRequest`,
 the spawn contract (`WorkerPluginKind`, `WorkerPluginSpawn`,
 `WorkerPluginSpawnSchema`), the worker-options wire codec
 (`encodeWorkerOptions`, `decodeWorkerOptions`, `readWorkerOptionsFromEnv`), the
-worker bootstrap (`startRpcWorker`, `nodeModuleLayer`), and the W3C
+worker server layer (`workerServerLayer`, `nodeModuleLayer`), and the W3C
 trace-context helpers (`layerTraceContextClient`, `layerTraceContextServer`,
 `tracePartsOf`):
 
@@ -40,6 +40,44 @@ import {
 The host bootstraps its own OTel SDK with `startHostTelemetry`; a worker
 bootstraps its own with `startWorkerTelemetry`. Both are no-ops unless
 `OTEL_ENABLED` is `true`.
+
+## The entry a plugin ships
+
+A worker plugin ships one process entrypoint, `src/main.ts`. That file launches
+`workerServerLayer(...)` through its platform's `runMain` — the single place the
+worker program is interpreted, the same shape the `stryker` CLI's own `main.ts`
+takes — and the package declares the built artifact at the `./worker` subpath of
+its exports map, which is where the host resolves a worker entry from.
+
+```ts
+NodeRuntime.runMain(
+  Layer.launch(
+    workerServerLayer({ rpcs: TestRunnerRpcs, handlers: testRunnerHandlers, schemaServices: Layer.empty }),
+  ).pipe(Effect.provideService(Logger.LogToStderr, true)),
+)
+```
+
+## Trust boundary
+
+The host executes a plugin's _library_ module in its own process to read the
+plugin's descriptor, its ignorers, and its validation-schema contribution: that
+module is trusted code, the same as any other dependency the project installs.
+Only the plugin's _runtime work_ crosses into its own process — the RPC groups in
+this package are what the host drives there, and a worker that crashes, runs out
+of memory, or never boots is reported as a typed boundary error instead of
+taking the run down.
+
+A spawned worker inherits the host's environment and reads the run's options from
+`options.json` in the worker directory the host creates, so a plugin sees the
+same options and environment a local `stryker` run has. Test-runner and checker
+workers are started in the run's sandbox directory; a reporter worker is started
+in the project root it reports on.
+
+The worker channel is a unix socket the host restricts to its owner on POSIX. On
+Windows it is a named pipe: the pipe's name embeds a random UUID, and its default
+security descriptor (creator owner, LocalSystem, administrators, read for
+Everyone) is not tightened, because `node:net` exposes no API for it. That
+residual is recorded, not closed.
 
 ## License
 
