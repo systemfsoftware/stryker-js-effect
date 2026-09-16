@@ -18,9 +18,17 @@ export class InstrumentError
   }
 }
 
-const PositionSchema = S.Struct({
+export const PositionSchema = S.Struct({
   line: S.Finite,
   column: S.Finite,
+})
+
+export const SourceLineSchema = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
+export const SourceColumnSchema = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
+
+export const NodePositionSchema = S.Struct({
+  line: S.Int,
+  column: S.Int,
 })
 
 const RangeSchema = S.Struct({
@@ -62,4 +70,19 @@ export class InstrumentResult extends S.TaggedClass<InstrumentResult>()('Instrum
   files: S.Array(FileSchema),
   mutants: S.Array(Mutant),
   skipped: S.Array(InstrumentFileSkip),
+}) {}
+
+export const PlacerNameSchema = S.Literals(['expression', 'statement', 'switch-case'])
+export type PlacerName = typeof PlacerNameSchema.Type
+
+export class MutantsUnapplied extends S.TaggedError<MutantsUnapplied>()('MutantsUnapplied', {
+  fileName: S.String,
+  placer: PlacerNameSchema,
+  mutatorNames: S.Array(S.String),
+  cause: S.Defect(),
+}) {}
+
+export class MutantNotApplied extends S.TaggedError<MutantNotApplied>()('MutantNotApplied', {
+  fileName: S.String,
+  mutatorName: S.String,
 }) {}
