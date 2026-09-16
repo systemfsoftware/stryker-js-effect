@@ -10,7 +10,6 @@ import {
   type ResolvedMode,
   type RunEnvironmentShape,
   runMutationTest,
-  strykerVersion,
 } from '@systemfsoftware/stryker-js-engine'
 import { Mutant } from '@systemfsoftware/stryker-js-language'
 import { type RunEvent, RunEvents } from '@systemfsoftware/stryker-js-language'
@@ -36,6 +35,7 @@ import * as CliError from 'effect/unstable/cli/CliError'
 import * as Command from 'effect/unstable/cli/Command'
 import * as Flag from 'effect/unstable/cli/Flag'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
+import cliPkgJson from '../package.json' with { type: 'json' }
 import { SurvivorsRejection } from './admit-survivors-run.workflow.js'
 import type { CliRequest } from './Cli.schema.js'
 import {
@@ -547,7 +547,7 @@ const cliLayer = Layer.mergeAll(
       GlobalFlag.Help,
       GlobalFlag.action({
         flag: Flag.boolean('version').pipe(Flag.withAlias('v'), Flag.withDescription('Show version information')),
-        run: () => Console.log(strykerVersion),
+        run: () => Console.log(cliPkgJson.version),
       }),
       GlobalFlag.Wizard,
       GlobalFlag.Completions,
@@ -579,7 +579,7 @@ export function strykerCliEffect(
       }
       return Layer.empty
     })()
-    const cliEffect = Command.runWith(command, { version: strykerVersion })(argv).pipe(
+    const cliEffect = Command.runWith(command, { version: cliPkgJson.version })(argv).pipe(
       Effect.provide(Layer.mergeAll(consoleLayer, cliLayer)),
     )
     const result = yield* Effect.result(

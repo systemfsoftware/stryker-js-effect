@@ -1,9 +1,9 @@
 # AGENTS.md — `@systemfsoftware/stryker-js-cli-e2e`
 
-Private E2E lane for the shipped `stryker` artifact: it packs the five workspace
-packages fresh, installs the CLI tarball into one digest-pinned `node:24-alpine`
-container, and asserts the published contract. Publishes no artifact. Parent:
-`apps/AGENTS.md`.
+Private E2E lane for the shipped `stryker` artifact: it packs the CLI and the
+vitest-runner plugin fresh, installs the CLI tarball into one digest-pinned
+`node:24-alpine` container, and asserts the published contract. Publishes no
+artifact. Parent: `apps/AGENTS.md`.
 
 ## Run
 
@@ -18,7 +18,7 @@ DOCKER_HOST=unix://$(podman info --format '{{.Host.RemoteSocket.Path}}') TESTCON
 | **E2E-1** | This app MUST NOT declare a `test` script: the lane runs only as its own `test:e2e` turbo task (`cache: false`), which is what keeps container-dependent tests out of `pnpm test`, `pnpm check:ci`, and the macOS CI matrix.   | `review` — `package.json` declares `test:e2e`, never `test`                     |
 | **E2E-2** | Fixture oracles in `testResources/*/oracle.md` are hand-authored: a run may confirm the numbers, never originate them. A mismatch is triaged as a fixture-authoring error or a product bug, never auto-copied into the oracle. | `review` — every expected count traces to an `oracle.md` derivation (CONST-T10) |
 | **E2E-3** | The lane imports no workspace package: assertions decode the machine stream's plain JSON events against the authored expectations, keeping the oracle independent of the system under test.                                    | `review` — no workspace-package import under `tests/` or `testResources/`       |
-| **E2E-4** | Fixtures name their runner plugin (`"plugins": ["@systemfsoftware/stryker-js-vitest-runner"]`); they never rely on the default plugin glob, which under a global CLI install sees only the CLI's own install root.             | `review` — every `testResources/*/stryker.config.json` declares `plugins`       |
+| **E2E-4** | Fixtures load the runner through the default plugin glob (`testRunner: 'vitest'`); they do not name `plugins`. The glob walks the fixture's `node_modules`.                                                                    | `review` — no `testResources/*/stryker.config.json` declares `plugins`          |
 
 ## Lint scope
 
@@ -32,11 +32,8 @@ under `tests/`.
 
 ## Machine stream
 
-The CLI writes its machine-mode events to `reports/mutation-stream.jsonl` under
-the run's working directory, not to stdout
-(`packages/stryker-js-language/src/Schema.schema.ts`, default;
-`apps/stryker-js-cli/src/StreamFile.ts`). Journeys read that file with
-`runShell` and fail loudly when it is absent.
+The CLI writes machine-mode events to stdout and to `reports/mutation-stream.jsonl`
+under the run's working directory. Journeys parse stdout.
 
 ## Container environment
 

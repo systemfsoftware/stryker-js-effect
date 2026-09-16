@@ -52,6 +52,7 @@
             self.packages.${pkgs.stdenv.hostPlatform.system}.comment-checker
             pkgs.nodejs_24
             pkgs.deno
+            pkgs.process-compose
           ];
         };
       });

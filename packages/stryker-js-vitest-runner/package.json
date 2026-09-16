@@ -49,9 +49,7 @@
     "coverageAnalysis": "perTest"
   },
   "dependencies": {
-    "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/stryker-js-language": "workspace:^",
-    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^"
+    "@systemfsoftware/effect-cell-types": "catalog:"
   },
   "peerDependencies": {
     "effect": "catalog:",
@@ -64,6 +62,8 @@
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/stryker-js-language": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",

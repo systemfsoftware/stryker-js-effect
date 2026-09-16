@@ -19,12 +19,7 @@ const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 
 const CLI_PACKAGE = '@systemfsoftware/stryker-js-cli'
 
-const PLUGIN_PACKAGES = [
-  '@systemfsoftware/stryker-js-vitest-runner',
-  '@systemfsoftware/stryker-js-language',
-  '@systemfsoftware/stryker-js-plugin-interface',
-  '@systemfsoftware/stryker-ignorer-interface',
-] as const
+const PLUGIN_PACKAGES = ['@systemfsoftware/stryker-js-vitest-runner'] as const
 
 const PACKED_PACKAGES = [CLI_PACKAGE, ...PLUGIN_PACKAGES] as const
 
@@ -84,6 +79,10 @@ const packedTarballOf = (fileNames: readonly string[], packageName: string, dire
 const packWorkspacePackages = async (directory: string): Promise<Readonly<Record<string, PackedPackage>>> => {
   for (const packageName of PACKED_PACKAGES) {
     await requireStep(
+      `build ${packageName}`,
+      () => execFileAsync('pnpm', ['--filter', packageName, 'build'], { cwd: REPO_ROOT }),
+    )
+    await requireStep(
       `pack ${packageName}`,
       () =>
         execFileAsync('pnpm', ['--filter', packageName, 'pack', '--pack-destination', directory], { cwd: REPO_ROOT }),
@@ -119,6 +118,12 @@ const installCliGlobally = async (running: StartedTestContainer, cli: PackedPack
     const result = await running.exec(['npm', 'install', '-g', cli.tarballPath])
     if (result.exitCode !== 0) {
       throw new Error(`npm exited ${result.exitCode}: ${result.stderr.trim()}`)
+    }
+  })
+  await requireStep('the installed stryker bin is on PATH', async () => {
+    const result = await running.exec(['sh', '-c', 'command -v stryker'])
+    if (result.exitCode !== 0) {
+      throw new Error(`command -v stryker exited ${result.exitCode}: ${result.stderr.trim()}`)
     }
   })
 }

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { type ExecResult, installFixture, requireStep, runCli, runShell, teardownBed } from './__fixtures__/bed.js'
+import { type ExecResult, installFixture, runCli, teardownBed } from './__fixtures__/bed.js'
 
 const CALC_FIXTURE_ORACLE = {
   killed: 7,
@@ -22,8 +22,6 @@ const CALC_FIXTURE_ORACLE = {
 
 const CALC_FIXTURE_URL = new URL('../testResources/calc-fixture', import.meta.url)
 
-const MACHINE_STREAM_FILE = 'reports/mutation-stream.jsonl'
-
 const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
 
 const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutant', 'tick']
@@ -41,7 +39,7 @@ const stdoutLines = (stdout: string): ReadonlyArray<string> =>
 const parseEventLine = (line: string): unknown => {
   const value: unknown = JSON.parse(line)
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`expected a JSON object in ${MACHINE_STREAM_FILE}, received: ${line}`)
+    throw new Error(`expected a JSON object on stdout, received: ${line}`)
   }
   return value
 }
@@ -72,7 +70,7 @@ const eventKind = (event: unknown): string => {
 const lastEvent = (events: ReadonlyArray<unknown>): unknown => {
   const event = events.at(-1)
   if (event === undefined) {
-    throw new Error(`${MACHINE_STREAM_FILE} carries no events`)
+    throw new Error('stdout carries no events')
   }
   return event
 }
@@ -110,20 +108,12 @@ const kindsOutsideOf = (
 
 describe('running one mutation run through the packed runner', () => {
   let run: ExecResult = EMPTY_EXEC
-  let stream: ExecResult = EMPTY_EXEC
   let events: ReadonlyArray<unknown> = []
 
   beforeAll(async () => {
     const fixturePath = await installFixture(CALC_FIXTURE_URL, 'calc-fixture')
     run = await runCli(['run'], { cwd: fixturePath })
-    stream = await requireStep(`read ${MACHINE_STREAM_FILE}`, async () => {
-      const result = await runShell(`cat ${MACHINE_STREAM_FILE}`, { cwd: fixturePath })
-      if (result.exitCode !== 0) {
-        throw new Error(`the run wrote no ${MACHINE_STREAM_FILE}: ${result.stderr.trim()}`)
-      }
-      return result
-    })
-    events = stdoutLines(stream.stdout).map(parseEventLine)
+    events = stdoutLines(run.stdout).map(parseEventLine)
   })
 
   afterAll(teardownBed)
@@ -191,7 +181,7 @@ describe('running one mutation run through the packed runner', () => {
     const kinds = events.map(eventKind)
     const preceding = kinds.slice(0, -1)
 
-    expect(stream.stdout).not.toMatch(ANSI_ESCAPE)
+    expect(run.stdout).not.toMatch(ANSI_ESCAPE)
     expect(preceding.length).toBeGreaterThan(0)
     expect(kindsOutsideOf(preceding, NON_TERMINAL_RUN_KINDS)).toEqual([])
   })

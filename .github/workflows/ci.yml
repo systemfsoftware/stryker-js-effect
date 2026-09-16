@@ -44,3 +44,59 @@ jobs:
       # Root package.json `check:ci` is the one definition. Never re-enumerate its steps here.
       - name: Gate
         run: pnpm check:ci
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      RUNTIME: docker
+      OTEL_ENABLED: "true"
+      OTEL_SERVICE_NAME: stryker-js-ci
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install process-compose (pinned)
+        run: |
+          curl -sSfL -o /tmp/pc.tar.gz https://github.com/F1bonacc1/process-compose/releases/download/v1.122.0/process-compose_linux_amd64.tar.gz
+          echo '9b6dbc38324c0b0481f1cd1dd828ffdc78117129ec797678f4bf8c4023311281  /tmp/pc.tar.gz' | sha256sum -c -
+          sudo tar xzf /tmp/pc.tar.gz -C /usr/local/bin process-compose
+      - name: Start LGTM (blocks until probe-ready)
+        run: |
+          echo "TRACE_WINDOW_START=$(date +%s)" >> "$GITHUB_ENV"
+          pnpm lgtm:up
+      # `timeout` converts a hang into a STEP failure. A job-level timeout
+      # cancels the job, and cancelled jobs skip `if: always()` steps — which
+      # would suppress the telemetry artifact on exactly the hang scenario it
+      # exists for.
+      - name: E2E lane
+        run: timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e
+      - name: Export telemetry
+        if: always()
+        run: node apps/stryker-js-cli-e2e/scripts/export-traces.mjs
+      - name: Container logs on failure
+        if: failure()
+        continue-on-error: true
+        run: |
+          mkdir -p e2e-telemetry/containers
+          for c in $(docker ps -aq); do
+            name=$(docker inspect --format '{{.Name}}' "$c" | sed 's|^/||')
+            docker logs "$c" > "e2e-telemetry/containers/${name}.log" 2>&1 || true
+          done
+      - name: Package telemetry
+        if: always()
+        run: tar czf e2e-telemetry.tar.gz e2e-telemetry
+      - name: Upload telemetry artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-telemetry-${{ github.run_id }}
+          path: e2e-telemetry.tar.gz
+          retention-days: 7
+          if-no-files-found: error
