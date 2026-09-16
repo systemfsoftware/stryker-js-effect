@@ -45,6 +45,9 @@ const FileResultLikeSchema = S.Struct({
   language: S.String,
   source: S.String,
   mutants: S.Array(MutantResultLikeSchema),
+  formatId: S.optional(S.String),
+  ownerModule: S.optional(S.String),
+  ownerVersion: S.optional(S.String),
 })
 
 const TestDefinitionLikeSchema = S.Struct({

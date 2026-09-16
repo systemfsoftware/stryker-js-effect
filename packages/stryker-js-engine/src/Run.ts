@@ -102,7 +102,7 @@ import type { Project } from './Project.js'
 import { readProject } from './Project.js'
 import { FILE_CONCURRENCY, readOriginal, toInstrumenterFile } from './Project.js'
 import { withInstrumentedFiles } from './Project.js'
-import { reportFileName } from './report-assembly.js'
+import { fileFormatIdentities, formatOwnerVersions, reportFileName } from './report-assembly.js'
 import { ansi } from './Reporter.ansi.js'
 import {
   attachReporterFactories,
@@ -1189,6 +1189,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                   ),
                   size: prev.concurrency.testRunners,
                 })
+                const formatOwnerVersionsByModule = formatOwnerVersions(prev.loadedPlugins.frameworks)
                 const reporting = makeMutationReportingService({
                   reporterStage: prev.reporterStage,
                   options: prev.options,
@@ -1199,6 +1200,8 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                   pluginsByKind: prev.loadedPlugins.pluginsByKind,
                   sandboxDirectory: prev.sandbox.workingDirectory,
                   basePath: env.basePath,
+                  formatRegistry: prev.formatRegistry,
+                  formatOwnerVersions: formatOwnerVersionsByModule,
                 })
                 const sandboxFileByName: Record<string, string> = Object.fromEntries(
                   [...MutableHashMap.keys(prev.project.filesToMutate)].map((name) => [
@@ -1212,6 +1215,11 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                   testCoverage: prev.testCoverage,
                   incrementalReport: prev.project.incrementalReport,
                   currentRelativeFiles,
+                  formatIdentities: fileFormatIdentities(
+                    prev.formatRegistry,
+                    formatOwnerVersionsByModule,
+                    Object.keys(currentRelativeFiles),
+                  ),
                   basePath: env.basePath,
                   force: prev.options.force,
                 })

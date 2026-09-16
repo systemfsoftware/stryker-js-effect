@@ -1,3 +1,4 @@
+import type { FormatRegistry } from '@systemfsoftware/stryker-js-instrumenter'
 import { type CheckResult, type PassedCheckResult } from '@systemfsoftware/stryker-js-language'
 import type { ExitClass } from '@systemfsoftware/stryker-js-language'
 import { highestExitClass, verdictExitClass } from '@systemfsoftware/stryker-js-language'
@@ -30,7 +31,10 @@ import {
   assembleFileResults,
   assembleTestFiles,
   determineLanguage,
+  fileFormatIdentities,
   reportFileName,
+  type StampedFileResult,
+  stampedFileResults,
   testIdRemap,
 } from './report-assembly.js'
 import type { ReporterStage } from './ReporterStream.js'
@@ -79,7 +83,25 @@ export interface MakeMutationReportingInput {
   readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginContribution[]>
   readonly sandboxDirectory: string
   readonly basePath: string
+  readonly formatRegistry: FormatRegistry
+  readonly formatOwnerVersions: Readonly<Record<string, string>>
 }
+
+const MANIFEST_SPECIFIERS = [
+  '@systemfsoftware/stryker-js-vitest-runner',
+  '@systemfsoftware/stryker-js-typescript-checker',
+  '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
+  'vitest',
+  'mocha',
+  'jasmine',
+  'jasmine-core',
+  'jest',
+  'react-scripts',
+  'typescript',
+  'webpack',
+  'webpack-cli',
+  'ts-jest',
+] as const
 
 export const makeMutationReportingService = (input: MakeMutationReportingInput): MutationReportingService => {
   const reportMutantStatus = (
@@ -121,7 +143,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
         fileNames,
         (fileName) =>
           Effect.gen(function*() {
-            const language = determineLanguage(fileName)
+            const language = determineLanguage(input.formatRegistry, fileName)
             const file = MutableHashMap.get(input.project.files, fileName)
             if (Option.isNone(file)) {
               yield* Effect.logWarning(
@@ -196,28 +218,6 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
         framework: { ...STRYKER_FRAMEWORK, dependencies },
       }
     })
-
-  const MANIFEST_SPECIFIERS = [
-    '@systemfsoftware/stryker-js-vitest-runner',
-    '@systemfsoftware/stryker-js-typescript-checker',
-    '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
-    'vitest',
-    'karma',
-    'karma-chai',
-    'karma-chrome-launcher',
-    'karma-jasmine',
-    'karma-mocha',
-    'mocha',
-    'jasmine',
-    'jasmine-core',
-    'jest',
-    'react-scripts',
-    'typescript',
-    '@angular/cli',
-    'webpack',
-    'webpack-cli',
-    'ts-jest',
-  ] as const
 
   const ManifestSchema = S.Struct({ version: S.optional(S.String) })
 
@@ -326,6 +326,12 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
       )
     })
 
+  const stampedFiles = (files: schema.FileResultDictionary): Readonly<Record<string, StampedFileResult>> =>
+    stampedFileResults(
+      files,
+      fileFormatIdentities(input.formatRegistry, input.formatOwnerVersions, Object.keys(files)),
+    )
+
   const reportAll: MutationReportingService['reportAll'] = (results) =>
     Effect.gen(function*() {
       const pathService = yield* Path.Path
@@ -342,7 +348,10 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
         const fs = yield* FileSystem.FileSystem
         const dir = pathService.dirname(input.options.incrementalFile)
         yield* fs.makeDirectory(dir, { recursive: true })
-        yield* fs.writeFileString(input.options.incrementalFile, JSON.stringify(report, null, 2))
+        yield* fs.writeFileString(
+          input.options.incrementalFile,
+          JSON.stringify({ ...report, files: stampedFiles(report.files) }, null, 2),
+        )
       }
       return { results, verdict: finalVerdict } satisfies RunOutcome
     })
@@ -364,7 +373,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
       return {
         schemaVersion: '1.0',
         thresholds: input.options.thresholds,
-        files,
+        files: stampedFiles(files),
         testFiles,
       }
     })

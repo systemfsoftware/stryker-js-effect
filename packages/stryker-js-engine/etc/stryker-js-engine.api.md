@@ -262,6 +262,9 @@ export const IncrementalReportSchema: S.StructWithRest<S.Struct<{
             readonly description: S.optional<S.String>;
             readonly duration: S.optional<S.Finite>;
         }>>;
+        readonly formatId: S.optional<S.String>;
+        readonly ownerModule: S.optional<S.String>;
+        readonly ownerVersion: S.optional<S.String>;
     }>>;
     readonly testFiles: S.optional<S.$Record<S.String, S.Struct<{
         readonly source: S.optional<S.String>;
