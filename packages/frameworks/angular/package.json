@@ -1,0 +1,83 @@
+{
+  "name": "@systemfsoftware/stryker-js-angular",
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "author": "Ryan Lee <drdgvhbh@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "packages/frameworks/angular"
+  },
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/frameworks/angular#readme",
+  "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
+  "description": "Stryker framework plugin for Angular templates: instruments the script regions of .html, .htm, and .vue files — never template expressions — and bundles the Angular signal ignorer for input, model, output, and query configuration objects.",
+  "keywords": [
+    "stryker",
+    "stryker-mutator",
+    "mutation-testing",
+    "angular",
+    "vue",
+    "html",
+    "framework",
+    "plugin",
+    "format"
+  ],
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "@systemfsoftware/source": "./src/mod.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
+    "test": "vitest run",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "attw": "attw --pack .",
+    "api:check": "api-extractor run",
+    "api:update": "api-extractor run --local"
+  },
+  "dependencies": {
+    "@systemfsoftware/stryker-framework-interface": "workspace:^",
+    "@systemfsoftware/stryker-js-language": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
+    "angular-html-parser": "~10.4.0",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@microsoft/api-extractor": "catalog:",
+    "@oxc-project/types": "catalog:",
+    "@systemfsoftware/all": "catalog:",
+    "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
+    "@systemfsoftware/vitest-config": "workspace:^",
+    "@types/node": "catalog:",
+    "oxc-parser": "catalog:",
+    "oxc-walker": "catalog:",
+    "oxlint": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      },
+      "./package.json": "./package.json"
+    }
+  }
+}
