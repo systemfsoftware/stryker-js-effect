@@ -8,15 +8,8 @@ export {
   TestRunnerCapabilitiesSchema,
   TestRunnerFailed,
 } from '@systemfsoftware/stryker-js-language'
-export {
-  CheckerRpcs,
-  ReporterRpcs,
-  TestRunnerRpcs,
-  type WorkerPluginEntry,
-  type WorkerRpcGroupMap,
-  WorkerRpcGroups,
-  type WorkerRpcsOf,
-} from './Plugin.js'
+export { nodeModuleLayer } from './node-module.js'
+export { CheckerRpcs, ReporterRpcs, TestRunnerRpcs } from './Plugin.js'
 export {
   type BoundaryError,
   BoundaryErrorSchema,
@@ -45,7 +38,7 @@ export {
   TRACEPARENT_HEADER,
   TRACESTATE_HEADER,
 } from './TraceContext.js'
-export { TraceContext, Traceparent } from './TraceContext.schema.js'
+export type { Traceparent } from './TraceContext.schema.js'
 export {
   layerTraceContextClient,
   layerTraceContextServer,
@@ -54,5 +47,6 @@ export {
   tracePartsOf,
   withLinkedSpan,
 } from './TraceContextRpc.js'
-export { decodeWorkerOptions, encodeWorkerOptions } from './WorkerOptions.js'
-export { startHostTelemetry, startWorkerTelemetry, workerTelemetryEnabled } from './WorkerTelemetry.js'
+export { startRpcWorker, type StartRpcWorkerParams } from './worker-entry.js'
+export { decodeWorkerOptions, encodeWorkerOptions, readWorkerOptionsFromEnv } from './WorkerOptions.js'
+export { startHostTelemetry, startWorkerTelemetry } from './WorkerTelemetry.js'

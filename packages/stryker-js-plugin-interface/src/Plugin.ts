@@ -19,7 +19,6 @@ import {
   ReporterInitOptions,
   TestRunnerDryRunRequest,
   TestRunnerMutantRunRequest,
-  type WorkerPluginKind,
 } from './Plugin.schema.js'
 import { TraceContextMiddleware } from './TraceContextRpc.js'
 
@@ -69,22 +68,3 @@ export const ReporterRpcs = RpcGroup.make(
     error: ReporterFailed,
   }),
 ).middleware(TraceContextMiddleware)
-
-export interface WorkerRpcGroupMap {
-  readonly TestRunner: typeof TestRunnerRpcs
-  readonly Checker: typeof CheckerRpcs
-  readonly Reporter: typeof ReporterRpcs
-}
-
-export const WorkerRpcGroups: WorkerRpcGroupMap = {
-  TestRunner: TestRunnerRpcs,
-  Checker: CheckerRpcs,
-  Reporter: ReporterRpcs,
-}
-
-export type WorkerRpcsOf<K extends WorkerPluginKind> = WorkerRpcGroupMap[K]
-
-export interface WorkerPluginEntry<K extends WorkerPluginKind = WorkerPluginKind> {
-  readonly kind: K
-  readonly group: WorkerRpcsOf<K>
-}

@@ -7,6 +7,7 @@ import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import {
   encodeWorkerOptions,
+  formatTraceparent,
   type ReporterInitOptions,
   ReporterRpcs,
   TraceContextReference,
@@ -17,6 +18,7 @@ import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as HashSet from 'effect/HashSet'
+import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
@@ -349,22 +351,6 @@ export const closeReporterStage = (
 
 const ENGINE_TRACER_NAME = 'stryker-js-engine'
 
-const formatTraceparent = (context: api.SpanContext): string =>
-  `00-${context.traceId}-${context.spanId}-${(context.traceFlags & 0xff).toString(16).padStart(2, '0')}`
-
-const isValidSpanContext = (context: api.SpanContext | undefined): context is api.SpanContext =>
-  context !== undefined && api.trace.isSpanContextValid(context)
-
-const serializedTraceState = (context: api.SpanContext): string | undefined => {
-  if (context.traceState === undefined) return undefined
-  return context.traceState.serialize()
-}
-
-const nonEmptyTraceState = (serialized: string | undefined): string | undefined => {
-  if (serialized === '') return undefined
-  return serialized
-}
-
 const traceparentInit = (traceparent: string | undefined): ReporterInitOptions => {
   if (traceparent === undefined) return {}
   return { traceparent }
@@ -381,11 +367,14 @@ const hasTraceFields = (init: ReporterInit): boolean => {
 }
 
 const initFromSpanContext = (context: api.SpanContext | undefined): ReporterInit | undefined => {
-  if (!isValidSpanContext(context)) return undefined
-  return {
-    traceparent: formatTraceparent(context),
-    ...tracestateInit(nonEmptyTraceState(serializedTraceState(context))),
-  }
+  if (context === undefined) return undefined
+  return Option.match(tracePartsOf(context), {
+    onNone: () => undefined,
+    onSome: (parts) => ({
+      traceparent: formatTraceparent(parts),
+      ...tracestateInit(parts.traceState),
+    }),
+  })
 }
 
 const initFromEnvironment = (): ReporterInit | undefined => {

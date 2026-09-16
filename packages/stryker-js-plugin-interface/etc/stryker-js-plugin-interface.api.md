@@ -14,10 +14,12 @@ import * as Context from 'effect/Context';
 import { DryRunCompleted } from '@systemfsoftware/stryker-js-language';
 import { DryRunResultSchema } from '@systemfsoftware/stryker-js-language';
 import * as Effect from 'effect/Effect';
+import * as FileSystem from 'effect/FileSystem';
 import { Finite } from 'effect/Schema';
 import * as Layer from 'effect/Layer';
 import { Literal } from 'effect/Schema';
 import { Literals } from 'effect/Schema';
+import { Module } from '@systemfsoftware/stryker-js-language';
 import { Mutant } from '@systemfsoftware/stryker-js-language';
 import { MutantRunResultSchema } from '@systemfsoftware/stryker-js-language';
 import { MutantTested } from '@systemfsoftware/stryker-js-language';
@@ -26,6 +28,8 @@ import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language';
 import { Never } from 'effect/Schema';
 import * as Option from 'effect/Option';
 import { optionalKey } from 'effect/Schema';
+import * as Path from 'effect/Path';
+import { PlatformError } from 'effect/PlatformError';
 import { ReporterEventUnion } from '@systemfsoftware/stryker-js-language';
 import { ReporterFailed } from '@systemfsoftware/stryker-js-language';
 import * as Rpc from 'effect/unstable/rpc/Rpc';
@@ -80,18 +84,18 @@ export const CheckerRequest: S.Struct<{
 export type CheckerRequest = typeof CheckerRequest.Type;
 
 // @public (undocumented)
-export const CheckerRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"group", Struct<    {
-    readonly checkerName: String_2;
-    readonly mutants: $Array<Mutant>;
-}>, $Array<$Array<String_2>>, typeof CheckerFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"check", Struct<    {
-    readonly checkerName: String_2;
-    readonly mutants: $Array<Mutant>;
+export const CheckerRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"check", Struct<    {
+readonly checkerName: String_2;
+readonly mutants: $Array<Mutant>;
 }>, $Record<String_2, Union<readonly [Struct<    {
-    readonly status: Literal<"passed">;
+readonly status: Literal<"passed">;
 }>, Struct<    {
-    readonly status: Literal<"compileError">;
-    readonly reason: String_2;
-}>]>>, typeof CheckerFailed, typeof TraceContextMiddleware, never>>;
+readonly status: Literal<"compileError">;
+readonly reason: String_2;
+}>]>>, typeof CheckerFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"group", Struct<    {
+readonly checkerName: String_2;
+readonly mutants: $Array<Mutant>;
+}>, $Array<$Array<String_2>>, typeof CheckerFailed, typeof TraceContextMiddleware, never>>;
 
 export { CheckResultSchema }
 
@@ -189,6 +193,9 @@ export const layerTraceContextServer: Layer.Layer<TraceContextMiddleware, never,
 
 export { MutantRunResultSchema }
 
+// @public
+export const nodeModuleLayer: Layer.Layer<Module>;
+
 // @public (undocumented)
 export const parseTraceparent: (value: string) => Option.Option<TraceContextParts>;
 
@@ -196,6 +203,84 @@ export const parseTraceparent: (value: string) => Option.Option<TraceContextPart
 //
 // @public (undocumented)
 export class PropagatedTrace extends PropagatedTrace_base {}
+
+// @public (undocumented)
+export const readWorkerOptionsFromEnv: Effect.Effect<{
+    readonly [x: string]: unknown;
+    readonly allowConsoleColors: boolean;
+    readonly buildCommand?: string | undefined;
+    readonly checkers: readonly string[];
+    readonly checkerNodeArgs: readonly string[];
+    readonly concurrency?: string | number | undefined;
+    readonly commandRunner: {
+        readonly [x: string]: unknown;
+        readonly command: string;
+    };
+    readonly coverageAnalysis: "all" | "off" | "perTest";
+    readonly clearTextReporter: {
+        readonly [x: string]: unknown;
+        readonly allowColor: boolean;
+        readonly allowEmojis: boolean;
+        readonly logTests: boolean;
+        readonly maxTestsToLog: number;
+        readonly reportTests: boolean;
+        readonly reportMutants: boolean;
+        readonly reportScoreTable: boolean;
+        readonly skipFull: boolean;
+    };
+    readonly dryRunOnly: boolean;
+    readonly ignorePatterns: readonly string[];
+    readonly ignoreStatic: boolean;
+    readonly incremental: boolean;
+    readonly incrementalFile: string;
+    readonly progressStreamFile: string;
+    readonly force: boolean;
+    readonly fileLogLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
+    readonly inPlace: boolean;
+    readonly logLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
+    readonly maxConcurrentTestRunners: number;
+    readonly maxTestRunnerReuse: number;
+    readonly mutate: readonly string[];
+    readonly mutator: {
+        readonly excludedMutations: readonly string[];
+    };
+    readonly packageManager?: "npm" | "pnpm" | "yarn" | undefined;
+    readonly plugins: readonly string[];
+    readonly appendPlugins: readonly string[];
+    readonly reporters: readonly string[];
+    readonly htmlReporter: {
+        readonly fileName: string;
+    };
+    readonly jsonReporter: {
+        readonly fileName: string;
+    };
+    readonly disableTypeChecks: string | boolean;
+    readonly symlinkNodeModules: boolean;
+    readonly tempDirName: string;
+    readonly cleanTempDir: "always" | boolean;
+    readonly testRunner: string;
+    readonly testRunnerNodeArgs: readonly string[];
+    readonly thresholds: {
+        readonly high: number;
+        readonly low: number;
+        readonly break: number | null;
+    };
+    readonly timeoutFactor: number;
+    readonly timeoutMS: number;
+    readonly dryRunTimeoutMinutes: number;
+    readonly tsconfigFile: string;
+    readonly warnings: boolean | {
+        readonly [x: string]: unknown;
+        readonly unknownOptions: boolean;
+        readonly preprocessorErrors: boolean;
+        readonly unserializableOptions: boolean;
+        readonly slow: boolean;
+    };
+    readonly disableBail: boolean;
+    readonly allowEmpty: boolean;
+    readonly ignorers: readonly string[];
+    readonly testFiles: readonly string[];
+}, PlatformError | S.SchemaError, FileSystem.FileSystem | Path.Path>;
 
 // @public (undocumented)
 export const ReporterAck: S.Void;
@@ -224,12 +309,27 @@ export type ReporterInitOptions = typeof ReporterInitOptions.Type;
 
 // @public (undocumented)
 export const ReporterRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"flush", Void, Void, typeof ReporterFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"init", Struct<    {
-    readonly traceparent: optionalKey<String_2>;
-    readonly tracestate: optionalKey<String_2>;
+readonly traceparent: optionalKey<String_2>;
+readonly tracestate: optionalKey<String_2>;
 }>, Void, typeof ReporterFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"onEventBatch", $Array<Union<readonly [DryRunCompleted, MutationTestingPlanReady, MutantTested, MutationTestReportReady]>>, Void, typeof ReporterFailed, typeof TraceContextMiddleware, never>>;
 
 // @public (undocumented)
 export const startHostTelemetry: () => Promise<void>;
+
+// @public (undocumented)
+export const startRpcWorker: <Rpcs extends Rpc.Any, HE>(params: StartRpcWorkerParams<Rpcs, HE>) => Promise<void>;
+
+// @public (undocumented)
+export interface StartRpcWorkerParams<Rpcs extends Rpc.Any, HE> {
+    // (undocumented)
+    readonly handlers: Layer.Layer<Rpc.ToHandler<Rpcs>, HE, FileSystem.FileSystem | Path.Path | Module>;
+    // (undocumented)
+    readonly label: string;
+    // (undocumented)
+    readonly rpcs: RpcGroup.RpcGroup<Rpcs>;
+    // (undocumented)
+    readonly schemaServices: Layer.Layer<Rpc.ServicesServer<Rpcs>, never, never>;
+}
 
 // @public (undocumented)
 export const startWorkerTelemetry: () => Promise<void>;
@@ -271,94 +371,85 @@ export type TestRunnerMutantRunRequest = typeof TestRunnerMutantRunRequest.Type;
 
 // @public (undocumented)
 export const TestRunnerRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"capabilities", Void, Struct<    {
-    readonly reloadEnvironment: Boolean_2;
+readonly reloadEnvironment: Boolean_2;
 }>, typeof TestRunnerFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"dryRun", Struct<    {
-    readonly options: Struct<    {
-        readonly timeout: Finite;
-        readonly disableBail: Boolean_2;
-        readonly coverageAnalysis: Literals<readonly ["off", "all", "perTest"]>;
-        readonly files: optionalKey<$Array<String_2>>;
-        readonly testFiles: optionalKey<$Array<String_2>>;
-    }>;
-}>, Union<readonly [Struct<    {
-    readonly status: Literal<"complete">;
-    readonly tests: $Array<Union<readonly [Struct<    {
-        readonly id: String_2;
-        readonly name: String_2;
-        readonly timeSpentMs: Finite;
-        readonly fileName: optionalKey<String_2>;
-        readonly startPosition: optionalKey<Struct<    {
-            readonly line: Finite;
-            readonly column: Finite;
-        }>>;
-        readonly status: Literal<"failed">;
-        readonly failureMessage: String_2;
-    }>, Struct<    {
-        readonly id: String_2;
-        readonly name: String_2;
-        readonly timeSpentMs: Finite;
-        readonly fileName: optionalKey<String_2>;
-        readonly startPosition: optionalKey<Struct<    {
-            readonly line: Finite;
-            readonly column: Finite;
-        }>>;
-        readonly status: Literal<"skipped">;
-    }>, Struct<    {
-        readonly id: String_2;
-        readonly name: String_2;
-        readonly timeSpentMs: Finite;
-        readonly fileName: optionalKey<String_2>;
-        readonly startPosition: optionalKey<Struct<    {
-            readonly line: Finite;
-            readonly column: Finite;
-        }>>;
-        readonly status: Literal<"success">;
-    }>]>>;
-    readonly mutantCoverage: optionalKey<Struct<    {
-        readonly perTest: $Record<String_2, $Record<String_2, Finite>>;
-        readonly static: $Record<String_2, Finite>;
-    }>>;
-}>, Struct<    {
-    readonly status: Literal<"timeout">;
-    readonly reason: optionalKey<String_2>;
-}>, Struct<    {
-    readonly status: Literal<"error">;
-    readonly errorMessage: String_2;
-}>]>, typeof TestRunnerFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"mutantRun", Struct<    {
-    readonly options: Struct<    {
-        readonly timeout: Finite;
-        readonly disableBail: Boolean_2;
-        readonly activeMutant: Mutant;
-        readonly sandboxFileName: String_2;
-        readonly mutantActivation: Literals<readonly ["runtime", "static"]>;
-        readonly reloadEnvironment: Boolean_2;
-        readonly testFilter: optionalKey<$Array<String_2>>;
-        readonly hitLimit: optionalKey<Finite>;
-    }>;
-}>, Union<readonly [Struct<    {
-    readonly status: Literal<"killed">;
-    readonly killedBy: $Array<String_2>;
-    readonly failureMessage: String_2;
-    readonly nrOfTests: Finite;
-}>, Struct<    {
-    readonly status: Literal<"survived">;
-    readonly nrOfTests: Finite;
-}>, Struct<    {
-    readonly status: Literal<"timeout">;
-    readonly reason: optionalKey<String_2>;
-}>, Struct<    {
-    readonly status: Literal<"error">;
-    readonly errorMessage: String_2;
-}>]>, typeof TestRunnerFailed, typeof TraceContextMiddleware, never>>;
-
-// @public (undocumented)
-export const TraceContext: S.Struct<{
-    readonly traceparent: S.String;
-    readonly tracestate: S.optionalKey<S.String>;
+readonly options: Struct<    {
+readonly timeout: Finite;
+readonly disableBail: Boolean_2;
+readonly coverageAnalysis: Literals<readonly ["off", "all", "perTest"]>;
+readonly files: optionalKey<$Array<String_2>>;
+readonly testFiles: optionalKey<$Array<String_2>>;
 }>;
-
-// @public (undocumented)
-export type TraceContext = typeof TraceContext.Type;
+}>, Union<readonly [Struct<    {
+readonly status: Literal<"complete">;
+readonly tests: $Array<Union<readonly [Struct<    {
+readonly id: String_2;
+readonly name: String_2;
+readonly timeSpentMs: Finite;
+readonly fileName: optionalKey<String_2>;
+readonly startPosition: optionalKey<Struct<    {
+readonly line: Finite;
+readonly column: Finite;
+}>>;
+readonly status: Literal<"failed">;
+readonly failureMessage: String_2;
+}>, Struct<    {
+readonly id: String_2;
+readonly name: String_2;
+readonly timeSpentMs: Finite;
+readonly fileName: optionalKey<String_2>;
+readonly startPosition: optionalKey<Struct<    {
+readonly line: Finite;
+readonly column: Finite;
+}>>;
+readonly status: Literal<"skipped">;
+}>, Struct<    {
+readonly id: String_2;
+readonly name: String_2;
+readonly timeSpentMs: Finite;
+readonly fileName: optionalKey<String_2>;
+readonly startPosition: optionalKey<Struct<    {
+readonly line: Finite;
+readonly column: Finite;
+}>>;
+readonly status: Literal<"success">;
+}>]>>;
+readonly mutantCoverage: optionalKey<Struct<    {
+readonly perTest: $Record<String_2, $Record<String_2, Finite>>;
+readonly static: $Record<String_2, Finite>;
+}>>;
+}>, Struct<    {
+readonly status: Literal<"timeout">;
+readonly reason: optionalKey<String_2>;
+}>, Struct<    {
+readonly status: Literal<"error">;
+readonly errorMessage: String_2;
+}>]>, typeof TestRunnerFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"mutantRun", Struct<    {
+readonly options: Struct<    {
+readonly timeout: Finite;
+readonly disableBail: Boolean_2;
+readonly activeMutant: Mutant;
+readonly sandboxFileName: String_2;
+readonly mutantActivation: Literals<readonly ["runtime", "static"]>;
+readonly reloadEnvironment: Boolean_2;
+readonly testFilter: optionalKey<$Array<String_2>>;
+readonly hitLimit: optionalKey<Finite>;
+}>;
+}>, Union<readonly [Struct<    {
+readonly status: Literal<"killed">;
+readonly killedBy: $Array<String_2>;
+readonly failureMessage: String_2;
+readonly nrOfTests: Finite;
+}>, Struct<    {
+readonly status: Literal<"survived">;
+readonly nrOfTests: Finite;
+}>, Struct<    {
+readonly status: Literal<"timeout">;
+readonly reason: optionalKey<String_2>;
+}>, Struct<    {
+readonly status: Literal<"error">;
+readonly errorMessage: String_2;
+}>]>, typeof TestRunnerFailed, typeof TraceContextMiddleware, never>>;
 
 // Warning: (ae-forgotten-export) The symbol "TraceContextMiddleware_base" needs to be exported by the entry point index.d.mts
 //
@@ -406,14 +497,6 @@ export const withLinkedSpan: <A, E, R>(spanName: string, attributes: api.Attribu
 export class WorkerEntryMissing extends WorkerEntryMissing_base {}
 
 // @public (undocumented)
-export interface WorkerPluginEntry<K extends WorkerPluginKind = WorkerPluginKind> {
-    // (undocumented)
-    readonly group: WorkerRpcsOf<K>;
-    // (undocumented)
-    readonly kind: K;
-}
-
-// @public (undocumented)
 export const WorkerPluginEntryField: S.Literals<readonly ["bin", "workerExport"]>;
 
 // @public (undocumented)
@@ -434,25 +517,6 @@ export const WorkerPluginSpawnSchema: S.Struct<{
     readonly field: S.Literals<readonly ["bin", "workerExport"]>;
     readonly entrypoint: S.String;
 }>;
-
-// @public (undocumented)
-export interface WorkerRpcGroupMap {
-    // (undocumented)
-    readonly Checker: typeof CheckerRpcs;
-    // (undocumented)
-    readonly Reporter: typeof ReporterRpcs;
-    // (undocumented)
-    readonly TestRunner: typeof TestRunnerRpcs;
-}
-
-// @public (undocumented)
-export const WorkerRpcGroups: WorkerRpcGroupMap;
-
-// @public (undocumented)
-export type WorkerRpcsOf<K extends WorkerPluginKind> = WorkerRpcGroupMap[K];
-
-// @public (undocumented)
-export const workerTelemetryEnabled: () => boolean;
 
 // (No @packageDocumentation comment for this package)
 

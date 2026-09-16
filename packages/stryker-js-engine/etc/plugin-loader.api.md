@@ -82,6 +82,8 @@ export interface PluginLoadPlan {
     // (undocumented)
     readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>;
     // (undocumented)
+    readonly pluginSources: readonly PluginSource[];
+    // (undocumented)
     readonly schemaContributions: readonly Record<string, unknown>[];
     // (undocumented)
     readonly shadowings: readonly {

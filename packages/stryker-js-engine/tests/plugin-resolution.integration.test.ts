@@ -21,7 +21,9 @@ const HOST_MANIFEST = '/host/dist/package.json'
 
 const RUNNER = '@acme/stryker-runner'
 const UNSHIPPED = '@acme/stryker-unshipped'
+const RUNNER_LATE = '@acme/stryker-runner-late'
 const RUNNER_ENTRYPOINT = `${PROJECT}/node_modules/@acme/stryker-runner/dist/index.mjs`
+const RUNNER_LATE_ENTRYPOINT = `${PROJECT}/node_modules/@acme/stryker-runner-late/dist/index.mjs`
 const HOST_RUNNER_ENTRYPOINT = '/host/dist/node_modules/@acme/stryker-runner/dist/index.mjs'
 const LANGUAGE_ENTRYPOINT = `${PROJECT}/node_modules/@systemfsoftware/stryker-js-language/dist/index.mjs`
 
@@ -279,6 +281,68 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
           expect(String(s.seen.failure['reason'])).toContain('checkers')
           expect(s.seen.attempted).toStrictEqual([])
           expect(s.seen.warnings).toStrictEqual([])
+        })
+      ),
+    ),
+  )
+
+  scenario(
+    'Two declared plugins contributing the same runner resolve to the one declared last',
+    Gherkin.Do.pipe(
+      Given('a project declaring two packages that both contribute a vitest runner')(
+        'outcome',
+        () =>
+          loadOutcome(
+            [RUNNER, RUNNER_LATE],
+            {
+              [PROJECT_MANIFEST]: tree({
+                [RUNNER]: RUNNER_ENTRYPOINT,
+                [RUNNER_LATE]: RUNNER_LATE_ENTRYPOINT,
+              }),
+            },
+            () => runnerModule,
+          ),
+      ),
+      When('the shadowing is resolved')(
+        'seen',
+        (s) =>
+          Effect.sync(() => ({
+            sources: loadedOrThrow(s.outcome).pluginSources,
+            warnings: s.outcome.state.warnings,
+          })),
+      ),
+      Then('the runner resolves from the last declaring module and the shadowing is reported')((s) =>
+        Effect.sync(() => {
+          expect(s.seen.sources).toStrictEqual([
+            { kind: 'TestRunner', name: 'vitest', modulePath: RUNNER_LATE_ENTRYPOINT },
+          ])
+          expect(s.seen.warnings.some((line) => line.includes('shadows plugin at index 0'))).toBe(true)
+        })
+      ),
+    ),
+  )
+
+  scenario(
+    'A package contributing the same runner twice keeps a single winner',
+    Gherkin.Do.pipe(
+      Given('a project declaring one package whose plugin list repeats the same runner')(
+        'outcome',
+        () =>
+          loadOutcome(
+            [RUNNER],
+            { [PROJECT_MANIFEST]: tree({ [RUNNER]: RUNNER_ENTRYPOINT }) },
+            () => ({ strykerPlugins: [vitestDescriptor, vitestDescriptor] }),
+          ),
+      ),
+      When('the duplicated runner is resolved')(
+        'seen',
+        (s) => Effect.sync(() => ({ sources: loadedOrThrow(s.outcome).pluginSources })),
+      ),
+      Then('exactly one contribution survives, resolved from that module')((s) =>
+        Effect.sync(() => {
+          expect(s.seen.sources).toStrictEqual([
+            { kind: 'TestRunner', name: 'vitest', modulePath: RUNNER_ENTRYPOINT },
+          ])
         })
       ),
     ),

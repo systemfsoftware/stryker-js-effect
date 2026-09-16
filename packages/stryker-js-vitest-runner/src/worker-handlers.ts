@@ -9,13 +9,11 @@ import {
   TestRunner,
   TestRunnerFailed,
 } from '@systemfsoftware/stryker-js-language'
-import { decodeWorkerOptions, TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
+import { readWorkerOptionsFromEnv, TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
-import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
 
 import { makeVitestRunnerLayer } from './Runner.js'
@@ -75,19 +73,11 @@ const normalizeMutantRun = (result: MutantRunResult): MutantRunResult => {
   return result
 }
 
-const readWorkerOptions = Effect.gen(function*() {
-  const workerDir = process.env['STRYKER_WORKER_DIR'] ?? (yield* Effect.die(new Error('STRYKER_WORKER_DIR is not set')))
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const raw = yield* fs.readFileString(path.join(workerDir, 'options.json'))
-  return yield* decodeWorkerOptions(raw)
-})
-
 type TestRunnerPhase = 'capabilities' | 'init' | 'dryRun' | 'mutantRun'
 
 export const testRunnerHandlers = TestRunnerRpcs.toLayer(
   Effect.gen(function*() {
-    const options = yield* readWorkerOptions
+    const options = yield* readWorkerOptionsFromEnv
     const runnerName = options.testRunner
     const failed = (phase: TestRunnerPhase) => (cause: Cause.Cause<unknown>): Effect.Effect<never, TestRunnerFailed> =>
       Effect.fail(new TestRunnerFailed({ cause: Cause.pretty(cause), phase, runnerName }))

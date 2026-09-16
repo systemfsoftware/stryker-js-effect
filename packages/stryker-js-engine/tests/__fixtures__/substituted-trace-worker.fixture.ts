@@ -1,5 +1,4 @@
 import { WorkerLauncher } from '@systemfsoftware/stryker-js-engine'
-import type { SpawnedSocketWorker, WorkerSpawnParams } from '@systemfsoftware/stryker-js-engine'
 import { layerTraceContextServer, ReporterRpcs, withLinkedSpan } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -12,7 +11,7 @@ import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 import * as Socket from 'effect/unstable/socket/Socket'
 import * as SocketServer from 'effect/unstable/socket/SocketServer'
 
-import { memorySocketPair, singleConnection } from './substituted-worker.fixture.js'
+import { servingLauncher, singleConnection } from './substituted-worker.fixture.js'
 
 export const TRACE_WORKER_ENTRYPOINT = '/project/node_modules/@acme/stryker-reporter/dist/worker.mjs'
 
@@ -46,21 +45,16 @@ const traceServer = (socket: Socket.Socket, record: TraceWorkerRecord): Layer.La
 export const traceServingLauncher = (
   record: TraceWorkerRecord,
 ): Effect.Effect<Layer.Layer<WorkerLauncher>, never, Scope.Scope> =>
-  Effect.gen(function*() {
-    const [clientSocket, serverSocket] = yield* memorySocketPair
-
-    const spawn = (_params: WorkerSpawnParams): Effect.Effect<SpawnedSocketWorker, never, Scope.Scope> =>
-      Effect.gen(function*() {
-        yield* Effect.forkScoped(Layer.launch(traceServer(serverSocket, record)))
-        return {
-          pid: TRACE_WORKER_PID,
-          clientLayer: RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
-            Layer.provide(Layer.succeed(Socket.Socket, clientSocket)),
-            Layer.provide(RpcSerialization.layerNdjson),
-          ),
-          exited: Effect.never,
-        }
-      })
-
-    return Layer.succeed(WorkerLauncher, { spawn })
-  })
+  Effect.map(
+    servingLauncher({
+      pid: TRACE_WORKER_PID,
+      server: (socket) => traceServer(socket, record),
+      clientLayer: (socket) =>
+        RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
+          Layer.provide(Layer.succeed(Socket.Socket, socket)),
+          Layer.provide(RpcSerialization.layerNdjson),
+        ),
+      exited: Effect.never,
+    }),
+    (launcher) => launcher.layer,
+  )

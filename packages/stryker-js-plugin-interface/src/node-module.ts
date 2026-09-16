@@ -25,10 +25,10 @@ const makeModuleRequire = (nodeModule: NodeModule, filename: string | URL): Modu
 }
 
 /**
- * The Node implementation of the {@link Module} port for a worker process:
- * every call routes through the runtime's own `node:module` via
- * `process.getBuiltinModule`, so the plugin's worker entry imports no host
- * builtin and resolves the wrapped tool from the project it runs in.
+ * The Node implementation of the `Module` port: every call routes through
+ * the runtime's own `node:module` via `process.getBuiltinModule`, so a process
+ * that binds it imports no host builtin and resolves the wrapped tool from the
+ * project it runs in.
  */
 export const nodeModuleLayer: Layer.Layer<Module> = Layer.effect(
   Module,

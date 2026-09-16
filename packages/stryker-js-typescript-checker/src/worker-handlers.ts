@@ -1,6 +1,6 @@
 import type { Mutant, StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import { Checker, CheckerFailed } from '@systemfsoftware/stryker-js-language'
-import { CheckerRpcs, decodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { CheckerRpcs, readWorkerOptionsFromEnv } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -13,14 +13,6 @@ import { makeCheckerService } from './Checker.js'
 import { makeHybridFileSystem, makeTypescriptCompiler } from './Compiler.js'
 
 const mutantIdsOf = (mutants: readonly Mutant[]): ReadonlyArray<string> => mutants.map((mutant) => mutant.id)
-
-const readWorkerOptions = Effect.gen(function*() {
-  const workerDir = process.env['STRYKER_WORKER_DIR'] ?? (yield* Effect.die(new Error('STRYKER_WORKER_DIR is not set')))
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const raw = yield* fs.readFileString(path.join(workerDir, 'options.json'))
-  return yield* decodeWorkerOptions(raw)
-})
 
 const buildChecker = (
   options: StrykerOptions,
@@ -37,7 +29,7 @@ const buildChecker = (
 
 export const checkerHandlers = CheckerRpcs.toLayer(
   Effect.gen(function*() {
-    const options = yield* readWorkerOptions
+    const options = yield* readWorkerOptionsFromEnv
     const checkers = yield* Effect.cached(
       Effect.forEach(
         options.checkers,

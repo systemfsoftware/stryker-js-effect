@@ -57,6 +57,7 @@ export interface PluginLoadPlan {
   readonly schemaContributions: readonly Record<string, unknown>[]
   readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>
   readonly pluginModulePaths: readonly string[]
+  readonly pluginSources: readonly PluginSource[]
   readonly shadowings: readonly {
     readonly kind: PluginKind
     readonly name: string
@@ -66,8 +67,13 @@ export interface PluginLoadPlan {
 }
 
 export const buildPluginLoadPlan = (entries: readonly PluginLoaderEntryLike[]): PluginLoadPlan => {
-  const shadowingState = entries.reduce<{
-    readonly seen: HashMap.HashMap<string, number>
+  const declarations: readonly { plugin: PluginDescriptor; moduleName: string; entryIndex: number }[] = entries.flatMap(
+    (entry, index) =>
+      (entry.plugins ?? []).map((plugin) => ({ plugin, moduleName: entry.moduleName, entryIndex: index })),
+  )
+
+  const shadowingState = declarations.reduce<{
+    readonly seen: HashMap.HashMap<string, { readonly position: number; readonly entryIndex: number }>
     readonly shadowings: readonly {
       readonly kind: PluginKind
       readonly name: string
@@ -75,53 +81,48 @@ export const buildPluginLoadPlan = (entries: readonly PluginLoaderEntryLike[]): 
       readonly winnerIndex: number
     }[]
   }>(
-    (acc, entry, index) =>
-      Option.match(Option.fromUndefinedOr(entry.plugins), {
-        onNone: () => acc,
-        onSome: (plugins) =>
-          plugins.reduce(
-            (inner, plugin) => {
-              const key = `${plugin.kind}:${plugin.name}`
-              const previousOption = HashMap.get(inner.seen, key)
-              const nextShadowings = Option.match(previousOption, {
-                onNone: () => inner.shadowings,
-                onSome: (prev) => [
-                  ...inner.shadowings,
-                  {
-                    kind: plugin.kind,
-                    name: plugin.name,
-                    shadowedIndex: prev,
-                    winnerIndex: index,
-                  },
-                ],
-              })
-              return {
-                seen: HashMap.set(inner.seen, key, index),
-                shadowings: nextShadowings,
-              }
+    (acc, declaration, position) => {
+      const key = `${declaration.plugin.kind}:${declaration.plugin.name}`
+      return {
+        seen: HashMap.set(acc.seen, key, { position, entryIndex: declaration.entryIndex }),
+        shadowings: Option.match(HashMap.get(acc.seen, key), {
+          onNone: () => acc.shadowings,
+          onSome: (previous) => [
+            ...acc.shadowings,
+            {
+              kind: declaration.plugin.kind,
+              name: declaration.plugin.name,
+              shadowedIndex: previous.entryIndex,
+              winnerIndex: declaration.entryIndex,
             },
-            acc,
-          ),
-      }),
-    { seen: HashMap.empty<string, number>(), shadowings: [] },
+          ],
+        }),
+      }
+    },
+    { seen: HashMap.empty<string, { readonly position: number; readonly entryIndex: number }>(), shadowings: [] },
   )
 
-  const pluginsByKind = entries.reduce<HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>>(
-    (map, entry) =>
-      Option.match(Option.fromUndefinedOr(entry.plugins), {
-        onNone: () => map,
-        onSome: (plugins) =>
-          plugins.reduce(
-            (inner, plugin) =>
-              Option.match(HashMap.get(inner, plugin.kind), {
-                onNone: () => HashMap.set(inner, plugin.kind, [plugin]),
-                onSome: (existing) => HashMap.set(inner, plugin.kind, [...existing, plugin]),
-              }),
-            map,
-          ),
+  const winningDeclarations = declarations.filter((declaration, position) =>
+    Option.match(HashMap.get(shadowingState.seen, `${declaration.plugin.kind}:${declaration.plugin.name}`), {
+      onNone: () => false,
+      onSome: (winner) => winner.position === position,
+    })
+  )
+
+  const pluginsByKind = winningDeclarations.reduce<HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>>(
+    (map, declaration) =>
+      Option.match(HashMap.get(map, declaration.plugin.kind), {
+        onNone: () => HashMap.set(map, declaration.plugin.kind, [declaration.plugin]),
+        onSome: (existing) => HashMap.set(map, declaration.plugin.kind, [...existing, declaration.plugin]),
       }),
     HashMap.empty<PluginKind, readonly PluginDescriptor[]>(),
   )
+
+  const pluginSources = winningDeclarations.map((declaration): PluginSource => ({
+    kind: declaration.plugin.kind,
+    name: declaration.plugin.name,
+    modulePath: declaration.moduleName,
+  }))
 
   const pluginModulePaths = entries.flatMap((entry) =>
     Option.match(Option.fromUndefinedOr(entry.plugins), {
@@ -141,6 +142,7 @@ export const buildPluginLoadPlan = (entries: readonly PluginLoaderEntryLike[]): 
     schemaContributions,
     pluginsByKind,
     pluginModulePaths,
+    pluginSources,
     shadowings: shadowingState.shadowings,
   }
 }
@@ -334,13 +336,6 @@ export function loadPlugins(
       { concurrency: 'unbounded' },
     ).pipe(Effect.map((arr) => arr.filter(Predicate.isNotNullish)))
     const ignorers: readonly IgnorerDescriptor[] = loaded.flatMap((entry) => entry.ignorers ?? NO_IGNORERS)
-    const pluginSources: readonly PluginSource[] = loaded.flatMap((entry) =>
-      (entry.plugins ?? []).map((plugin): PluginSource => ({
-        kind: plugin.kind,
-        name: plugin.name,
-        modulePath: entry.moduleName,
-      }))
-    )
     const entries: readonly PluginLoaderRawEntry[] = loaded.map((entry) => ({
       moduleName: entry.moduleName,
       plugins: entry.plugins,
@@ -356,7 +351,7 @@ export function loadPlugins(
       schemaContributions: plan_.schemaContributions,
       pluginsByKind: plan_.pluginsByKind,
       pluginModulePaths: plan_.pluginModulePaths,
-      pluginSources,
+      pluginSources: plan_.pluginSources,
       ignorers,
     }
     return result
@@ -367,17 +362,24 @@ function hasValidationSchemaContribution(module: unknown): module is SchemaValid
   return S.is(SchemaValidationContributionSchema)(module)
 }
 
+export const findByKindAndName = <T extends { readonly kind: PluginKind; readonly name: string }>(
+  items: readonly T[],
+  kind: PluginKind,
+  name: string,
+): Option.Option<T> =>
+  Option.fromUndefinedOr(
+    items.find((item) => item.kind === kind && item.name.toLowerCase() === name.toLowerCase()),
+  )
+
 const findContribution = <K extends PluginKind>(
   descriptors: readonly AnyPluginDescriptor[],
   kind: K,
   name: string,
 ): Effect.Effect<PluginDescriptorOf<K>, PluginNotFoundError> =>
   Option.match(
-    Option.fromUndefinedOr(
-      descriptors.find(
-        (descriptor): descriptor is PluginDescriptorOf<K> =>
-          descriptor.kind === kind && descriptor.name.toLowerCase() === name.toLowerCase(),
-      ),
+    Option.filter(
+      findByKindAndName(descriptors, kind, name),
+      (descriptor): descriptor is PluginDescriptorOf<K> => descriptor.kind === kind,
     ),
     {
       onNone: () =>

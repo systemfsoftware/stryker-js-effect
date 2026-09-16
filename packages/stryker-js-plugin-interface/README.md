@@ -17,14 +17,16 @@ pnpm add @systemfsoftware/stryker-js-plugin-interface
 ## Entry point
 
 One specifier carries the whole boundary. The package entry publishes the
-per-kind RPC groups (`TestRunnerRpcs`, `CheckerRpcs`, `ReporterRpcs`, and the
-`WorkerRpcGroups` map), the boundary payload schemas (`TestRunnerDryRunRequest`,
-`CheckerRequest`, `ReporterEventBatch`, `ReporterInitOptions`, …), the typed
-error taxonomy (`BoundaryPayloadRejected`, `BoundaryUnrecognizedSignal`,
-`WorkerEntryMissing`), the spawn contract (`WorkerPluginKind`,
-`WorkerPluginSpawn`, `WorkerPluginSpawnSchema`), the worker-options wire codec
-(`encodeWorkerOptions`, `decodeWorkerOptions`), and the W3C trace-context
-helpers (`layerTraceContextClient`, `layerTraceContextServer`, `tracePartsOf`):
+per-kind RPC groups (`TestRunnerRpcs`, `CheckerRpcs`, `ReporterRpcs`), the
+boundary payload schemas (`TestRunnerDryRunRequest`, `CheckerRequest`,
+`ReporterEventBatch`, `ReporterInitOptions`, …), the typed error taxonomy
+(`BoundaryPayloadRejected`, `BoundaryUnrecognizedSignal`, `WorkerEntryMissing`),
+the spawn contract (`WorkerPluginKind`, `WorkerPluginSpawn`,
+`WorkerPluginSpawnSchema`), the worker-options wire codec
+(`encodeWorkerOptions`, `decodeWorkerOptions`, `readWorkerOptionsFromEnv`), the
+worker bootstrap (`startRpcWorker`, `nodeModuleLayer`), and the W3C
+trace-context helpers (`layerTraceContextClient`, `layerTraceContextServer`,
+`tracePartsOf`):
 
 ```ts
 import {

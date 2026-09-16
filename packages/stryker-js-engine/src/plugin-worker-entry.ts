@@ -9,7 +9,7 @@ import * as S from 'effect/Schema'
 
 import { planWorkerEntry, WorkerEntryCommand, WorkerEntryMissing } from './plan-worker-entry.workflow.js'
 import { ManifestDocument, ManifestDocumentJson } from './plugin-worker-entry.schema.js'
-import type { LoadedPlugins, PluginSource } from './Plugins.js'
+import { findByKindAndName, type LoadedPlugins, type PluginSource } from './Plugins.js'
 
 const PACKAGE_MANIFEST = 'package.json'
 
@@ -39,15 +39,6 @@ const workerExportRelativeEntrypoint = (document: Record<string, unknown>): Opti
       Option.orElse(asString(worker), () =>
         Option.flatMap(asDocument(worker), (branches) => asString(branches['default'])))
     ),
-  )
-
-export const selectPluginSource = (
-  sources: readonly PluginSource[],
-  kind: WorkerPluginKind,
-  name: string,
-): Option.Option<PluginSource> =>
-  Option.fromUndefinedOr(
-    sources.find((source) => source.kind === kind && source.name.toLowerCase() === name.toLowerCase()),
   )
 
 const manifestDocumentAt = (
@@ -99,7 +90,7 @@ const requiredSource = (params: {
   readonly kind: WorkerPluginKind
   readonly name: string
 }): Effect.Effect<PluginSource, WorkerEntryMissing> =>
-  Option.match(selectPluginSource(params.loaded.pluginSources, params.kind, params.name), {
+  Option.match(findByKindAndName(params.loaded.pluginSources, params.kind, params.name), {
     onNone: () => Effect.fail(missingEntry(params.name, `${params.kind}:${params.name}`)),
     onSome: (source) => Effect.succeed(source),
   })

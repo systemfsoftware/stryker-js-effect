@@ -28,6 +28,7 @@ import type {
   TestResult,
   TestRunnerCapabilities,
 } from '@systemfsoftware/stryker-js-language'
+import type { WorkerEntryMissing } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
@@ -306,6 +307,15 @@ function isMutantStatus(s: string): s is ValidMutantStatus {
 const toReportedMutant = (mutant: Mutant): MutantTestCoverage =>
   Object.assign(mutant, { coveredBy: mutant.coveredBy, static: mutant.static })
 
+const missingWorkerEntry =
+  (stage: StageError['stage'], kind: string, name: string) => (missing: WorkerEntryMissing): StageError =>
+    new StageError({
+      stage,
+      reason:
+        `No plugin declares a worker entry for ${kind} "${name}"; the plugin "${missing.pluginName}" resolved to ${missing.specifier}`,
+      cause: missing,
+    })
+
 const makeCheckerPool = (
   prev: DryRunDone,
   idGenerator: Parameters<typeof createCheckerFactory>[3],
@@ -323,20 +333,7 @@ const makeCheckerPool = (
       loaded: prev.loadedPlugins,
       kind: 'Checker',
       name: checkerName,
-    }).pipe(
-      Effect.catchTag(
-        'WorkerEntryMissing',
-        (missing) =>
-          Effect.fail(
-            new StageError({
-              stage: 'mutationTest',
-              reason:
-                `No plugin declares a worker entry for checker "${checkerName}"; the plugin "${missing.pluginName}" resolved to ${missing.specifier}`,
-              cause: missing,
-            }),
-          ),
-      ),
-    )
+    }).pipe(Effect.mapError(missingWorkerEntry('mutationTest', 'checker', checkerName)))
     return yield* Pool.make({
       acquire: createCheckerFactory(
         prev.options,
@@ -369,12 +366,6 @@ interface ReporterChoice {
   readonly name: string
   readonly builtinFactory: Option.Option<ReporterFactory>
 }
-
-const stringListOf = (value: unknown): readonly string[] =>
-  Match.value(value).pipe(
-    Match.when(Array.isArray, (entries) => entries.filter(Predicate.isString)),
-    Match.orElse((): readonly string[] => []),
-  )
 
 const announceSummary = (env: RunEnvironmentShape, summary: string): Effect.Effect<void> =>
   Match.value(env.resolvedMode.mode).pipe(
@@ -427,14 +418,7 @@ const spawnPluginReporterFactory = (
 > =>
   Effect.gen(function*() {
     const entry = yield* resolvePluginWorkerEntry({ loaded, kind: 'Reporter', name }).pipe(
-      Effect.mapError((missing) =>
-        new StageError({
-          stage: 'prepare',
-          reason:
-            `No plugin declares a worker entry for reporter "${name}"; the plugin "${missing.pluginName}" resolved to ${missing.specifier}`,
-          cause: missing,
-        })
-      ),
+      Effect.mapError(missingWorkerEntry('prepare', 'reporter', name)),
     )
     const client = yield* spawnReporterWorker({
       entrypoint: entry.entrypoint,
@@ -507,10 +491,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
             allowColor: env.allowConsoleColors,
           },
         }
-        const optionsRecord: Record<string, unknown> = { ...options }
-        const pluginsList = stringListOf(optionsRecord['plugins'])
-        const appendPluginsList = stringListOf(optionsRecord['appendPlugins'])
-        const descriptors: readonly string[] = [...pluginsList, ...appendPluginsList]
+        const descriptors: readonly string[] = [...options.plugins, ...options.appendPlugins]
         const loaded = yield* loadPlugins(descriptors, env.basePath).pipe(
           Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
         )
@@ -859,7 +840,7 @@ export const dryRunCell = Cell.layer({
             loaded: command.loadedPlugins,
             kind: 'TestRunner',
             name: command.options.testRunner,
-          })
+          }).pipe(Effect.mapError(missingWorkerEntry('dryRun', 'test runner', command.options.testRunner)))
           const childRunnerEffect = makeChildProcessTestRunner({
             options: command.options,
             fileDescriptions: command.project.fileDescriptions,
@@ -1109,20 +1090,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                   loaded: prev.loadedPlugins,
                   kind: 'TestRunner',
                   name: prev.options.testRunner,
-                }).pipe(
-                  Effect.catchTag(
-                    'WorkerEntryMissing',
-                    (missing) =>
-                      Effect.fail(
-                        new StageError({
-                          stage: 'mutationTest',
-                          reason:
-                            `No plugin declares a worker entry for test runner "${prev.options.testRunner}"; the plugin "${missing.pluginName}" resolved to ${missing.specifier}`,
-                          cause: missing,
-                        }),
-                      ),
-                  ),
-                )
+                }).pipe(Effect.mapError(missingWorkerEntry('mutationTest', 'test runner', prev.options.testRunner)))
                 const testRunnerContext = {
                   options: prev.options,
                   fileDescriptions: prev.project.fileDescriptions,

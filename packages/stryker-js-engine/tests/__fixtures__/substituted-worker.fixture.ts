@@ -120,25 +120,41 @@ export interface SubstitutedLauncher {
   readonly layer: Layer.Layer<WorkerLauncher>
 }
 
-export const substitutedLauncher = (
-  behaviour: ChildBehaviour,
+export interface ServingLauncherParams {
+  readonly pid: number
+  readonly server: ((serverSocket: Socket.Socket) => Layer.Layer<never>) | undefined
+  readonly clientLayer: (clientSocket: Socket.Socket) => Layer.Layer<RpcClient.Protocol, Socket.SocketError>
+  readonly exited: Effect.Effect<never, WorkerExit>
+}
+
+export const servingLauncher = (
+  params: ServingLauncherParams,
 ): Effect.Effect<SubstitutedLauncher, never, Scope.Scope> =>
   Effect.gen(function*() {
     const spawns = yield* Ref.make<readonly WorkerSpawnParams[]>([])
     const [clientSocket, serverSocket] = yield* memorySocketPair
 
-    const spawn = (params: WorkerSpawnParams): Effect.Effect<SpawnedSocketWorker, never, Scope.Scope> =>
+    const spawn = (workerParams: WorkerSpawnParams): Effect.Effect<SpawnedSocketWorker, never, Scope.Scope> =>
       Effect.gen(function*() {
-        yield* Ref.update(spawns, (recorded) => [...recorded, params])
-        if (behaviour === 'acceptsConnection') {
-          yield* Effect.forkScoped(Layer.launch(workerServer(serverSocket)))
+        yield* Ref.update(spawns, (recorded) => [...recorded, workerParams])
+        if (params.server !== undefined) {
+          yield* Effect.forkScoped(Layer.launch(params.server(serverSocket)))
         }
-        return {
-          pid: WORKER_PID,
-          clientLayer: clientProtocol(behaviour, clientSocket),
-          exited: exitOf(behaviour),
-        }
+        return { pid: params.pid, clientLayer: params.clientLayer(clientSocket), exited: params.exited }
       })
 
     return { spawns, layer: Layer.succeed(WorkerLauncher, { spawn }) }
+  })
+
+export const substitutedLauncher = (
+  behaviour: ChildBehaviour,
+): Effect.Effect<SubstitutedLauncher, never, Scope.Scope> =>
+  servingLauncher({
+    pid: WORKER_PID,
+    server: Match.value(behaviour).pipe(
+      Match.when('acceptsConnection', () => workerServer),
+      Match.orElse((): undefined => undefined),
+    ),
+    clientLayer: (socket) => clientProtocol(behaviour, socket),
+    exited: exitOf(behaviour),
   })
