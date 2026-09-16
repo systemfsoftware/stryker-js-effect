@@ -193,8 +193,11 @@ export interface LoadedPlugins {
   readonly pluginModulePaths: readonly string[]
 }
 
+const ABSENT_PLUGIN_ERROR_CODES = ['ERR_MODULE_NOT_FOUND', 'MODULE_NOT_FOUND'] as const
+
 export function isAbsentPluginError(error: unknown, descriptor: string): boolean {
-  return Match.value(errorCodeOf(error) === 'ERR_MODULE_NOT_FOUND').pipe(
+  const code = errorCodeOf(error)
+  return Match.value(isText(code) && ABSENT_PLUGIN_ERROR_CODES.some((absent) => absent === code)).pipe(
     Match.when(true, () => messageNamesDescriptor(errorMessageOf(error), descriptor)),
     Match.orElse(() => false),
   )
@@ -593,8 +596,8 @@ function parsePluginExpression(pluginExpression: string): { org: string; pkg: st
     Match.when(
       true,
       (): { org: string; pkg: string } => ({
-        org: parts.slice(0, 2).join('/').split('*')[0] ?? '',
-        pkg: parts.slice(2).join('/'),
+        org: parts[0] ?? '',
+        pkg: parts.slice(1).join('/'),
       }),
     ),
     Match.orElse((): { org: string; pkg: string } => ({
