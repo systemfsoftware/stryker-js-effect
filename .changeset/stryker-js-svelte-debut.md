@@ -12,3 +12,8 @@ installed, or the installed one is older than that, the run stops before
 instrumentation and names the peer it needs.
 
 Installing the package is the only setup step.
+
+The format's claim carries the version of the Svelte compiler the plugin
+resolved and owns, rather than a fixed constant. Upgrading that compiler
+therefore invalidates the mutant results an earlier incremental run remembered
+for `.svelte` files, instead of reusing results the new compiler never produced.

@@ -1171,4 +1171,51 @@ if (import.meta.vitest) {
       return [reused === fieldsMatch, identityUnchanged === fieldsMatch].every((holds) => holds)
     },
   )
+
+  const OWNER_VERSIONS = ['0.1.0+5.55.1', '0.1.0+5.56.0', '0.2.0+5.55.1'] as const
+  const SVELTE_MODULE = '@systemfsoftware/stryker-js-svelte'
+  const OwnerVersionCaseSchema = S.Struct({
+    recorded: S.Literals(OWNER_VERSIONS),
+    current: S.Literals(OWNER_VERSIONS),
+  })
+
+  const emptyCoverage: TestCoverage = {
+    testsByMutantId: MutableHashMap.empty(),
+    testsById: MutableHashMap.empty(),
+    staticCoverage: undefined,
+    hitsByMutantId: MutableHashMap.empty(),
+  }
+
+  const rawReportOf = (ownerVersion: string) => ({
+    schemaVersion: '1.0',
+    thresholds: { high: 80, low: 60 },
+    files: {
+      [FILE]: {
+        source: SOURCE,
+        mutants: previousMutants,
+        formatId: 'svelte',
+        ownerModule: SVELTE_MODULE,
+        ownerVersion,
+      },
+    },
+  })
+
+  it.prop(
+    '∀s_OwnerVersion_≡ReuseDecision',
+    [S.toArbitrary(OwnerVersionCaseSchema)(fc)],
+    ([{ recorded, current }]) => {
+      const result = incrementalDiff({
+        currentMutants: [currentMutant],
+        testCoverage: emptyCoverage,
+        incrementalReport: rawReportOf(recorded),
+        currentRelativeFiles: { [FILE]: SOURCE },
+        formatIdentities: { [FILE]: { formatId: 'svelte', ownerModule: SVELTE_MODULE, ownerVersion: current } },
+        basePath: BASE_PATH,
+      })
+      const expectedReuse = recorded === current
+      const reuseHolds = (result.remembered.length === ONE) === expectedReuse
+      const runHolds = (result.mutants.length === ONE) === !expectedReuse
+      return reuseHolds && runHolds
+    },
+  )
 }

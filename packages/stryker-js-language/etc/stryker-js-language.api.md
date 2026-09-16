@@ -433,6 +433,7 @@ export interface FrameworkClaim {
     readonly formatId: string;
     // (undocumented)
     readonly language: string;
+    readonly ownerVersion: string;
 }
 
 // @public (undocumented)

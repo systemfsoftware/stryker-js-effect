@@ -11,6 +11,7 @@ import {
   loadDescriptors,
   reasonTagOf,
   REFUSAL_ROWS,
+  refusalFieldsOf,
 } from './__fixtures__/loader-support.js'
 
 const Feature = makeFeature({ it, layer })
@@ -85,6 +86,11 @@ Feature('Loading framework plugins')
             Effect.sync(() => {
               expect(s.failure).toBeInstanceOf(PluginLoadFailedError)
               expect(reasonTagOf(s.failure.reason)).toBe(row.reason)
+              expect(refusalFieldsOf(s.failure.reason)).toStrictEqual({
+                peer: row.peer,
+                version: row.version,
+                supportedRange: row.supportedRange,
+              })
               expect(s.failure.descriptor).toContain(row.fixture)
               expect(s.failure.exitClass).toBe(row.exitClass)
               expect(

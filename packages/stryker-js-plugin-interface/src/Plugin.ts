@@ -1,4 +1,12 @@
-import { Checker, type Evaluator, Framework, Ignorer, Module, TestRunner } from '@systemfsoftware/stryker-js-language'
+import {
+  Checker,
+  type Evaluator,
+  Framework,
+  type FrameworkFailed,
+  Ignorer,
+  Module,
+  TestRunner,
+} from '@systemfsoftware/stryker-js-language'
 import type { ReporterFactory, StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import * as Context from 'effect/Context'
 import * as FileSystem from 'effect/FileSystem'
@@ -39,6 +47,9 @@ export interface PluginInterfaces {
   Evaluator: Evaluator
   Framework: Framework
 }
+
+export type PluginLayerError<K extends PluginLayerKind> = K extends 'Framework' ? FrameworkFailed : never
+
 export type PluginEnvironment = RunConfiguration | SandboxDirectory | FileSystem.FileSystem | Module | Path.Path
 
 export type AnyPluginContribution = { [K in PluginKind]: PluginContribution<K> }[PluginKind]
@@ -53,9 +64,13 @@ export function declarePlugin(
 export function declarePlugin<K extends PluginLayerKind>(
   kind: K,
   name: string,
-  layer: Layer.Layer<PluginInterfaces[K], never, PluginEnvironment>,
+  layer: Layer.Layer<PluginInterfaces[K], PluginLayerError<K>, PluginEnvironment>,
 ): PluginContribution<K>
-export function declarePlugin(kind: PluginKind, name: string, payload: unknown): AnyPluginContribution {
+export function declarePlugin(
+  kind: PluginKind,
+  name: string,
+  payload: unknown,
+): AnyPluginContribution | PluginLayerContribution<PluginLayerKind> {
   if (kind === 'Reporter') {
     return new PluginReporterContribution({ kind, name, make: payload })
   }
@@ -70,7 +85,7 @@ export interface SelectedReporterFactory {
 }
 
 export interface ComposedPlugins {
-  readonly layer: Option.Option<Layer.Layer<MergedPluginServices, never, PluginEnvironment>>
+  readonly layer: Option.Option<Layer.Layer<MergedPluginServices, PluginLayerError<PluginLayerKind>, PluginEnvironment>>
   readonly reporterFactories: readonly SelectedReporterFactory[]
 }
 
@@ -92,15 +107,15 @@ const reporterFactoryOf = (contribution: AnyPluginContribution): readonly Select
     Match.orElse((): readonly SelectedReporterFactory[] => []),
   )
 
-const layerOf = (contribution: AnyPluginContribution): readonly Layer.Layer<never, never, PluginEnvironment>[] =>
+type ComposedPluginLayer = Layer.Layer<never, PluginLayerError<PluginLayerKind>, PluginEnvironment>
+
+const layerOf = (contribution: AnyPluginContribution): readonly ComposedPluginLayer[] =>
   Match.value(contribution).pipe(
-    Match.discriminator('kind')('Reporter', (): readonly Layer.Layer<never, never, PluginEnvironment>[] => []),
+    Match.discriminator('kind')('Reporter', (): readonly ComposedPluginLayer[] => []),
     Match.orElse((nonReporter) => [nonReporter.layer]),
   )
 
-const mergedLayer = (
-  layers: ReadonlyArray<Layer.Layer<never, never, PluginEnvironment>>,
-): Layer.Layer<MergedPluginServices, never, PluginEnvironment> =>
+const mergedLayer = (layers: ReadonlyArray<ComposedPluginLayer>): ComposedPluginLayer =>
   layers.reduce((accumulated, next) => Layer.merge(accumulated, next))
 
 export function composePlugins(contributions: readonly AnyPluginContribution[]): ComposedPlugins {

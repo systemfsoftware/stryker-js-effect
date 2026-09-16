@@ -29,6 +29,7 @@ export const FrameworkClaimSchema = S.Struct({
   formatId: S.String,
   extensions: S.Array(S.String),
   language: S.String,
+  ownerVersion: S.String,
   contractVersion: S.String,
 })
 export type FrameworkClaim = typeof FrameworkClaimSchema.Type
@@ -121,3 +122,24 @@ export const GeneratedEntrySchema = S.Struct({
   contributionName: S.Literals(['alpha', 'beta', 'gamma']),
   extensions: S.Array(S.Literals(['.html', '.vue', '.svelte'])),
 })
+
+export const ForeignFrameworkFailureSchema = S.Struct({
+  _tag: S.Literal('FrameworkFailed'),
+  reason: S.String,
+  cause: S.Unknown,
+})
+
+export const ForeignFrameworkRefusalSchema = S.Union([
+  S.Struct({
+    _tag: S.Literal('FrameworkFailed'),
+    reason: S.Literal('PeerMissing'),
+    peer: S.String,
+  }),
+  S.Struct({
+    _tag: S.Literal('FrameworkFailed'),
+    reason: S.Literal('PeerVersionUnsupported'),
+    peer: S.String,
+    version: S.String,
+    supportedRange: S.String,
+  }),
+])

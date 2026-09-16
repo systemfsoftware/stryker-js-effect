@@ -1,5 +1,5 @@
 import type { Program, ScriptRegion } from '@systemfsoftware/stryker-framework-interface'
-import { FrameworkFailed } from '@systemfsoftware/stryker-js-language'
+import { FrameworkFailed, Module } from '@systemfsoftware/stryker-js-language'
 import type {
   EmbeddedDocument,
   FrameworkClaim,
@@ -11,6 +11,8 @@ import { type Ast as NGAst, parse, type ParseTreeResult, visitAll } from 'angula
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 /**
  * The Angular format: HTML templates, and single-file components that keep
@@ -29,6 +31,7 @@ const FORMAT_ID = 'html'
 const LANGUAGE = 'html'
 const CONTRACT_VERSION = '1'
 const EXTENSIONS: readonly string[] = ['.html', '.htm', '.vue']
+const PARSER_MANIFEST_SPECIFIER = 'angular-html-parser/package.json'
 
 const SCRIPT_TAG = 'script'
 const SRC_ATTRIBUTE = 'src'
@@ -55,12 +58,13 @@ const SCRIPT_TYPE_FORMATS: Readonly<Record<string, ScriptFormat>> = {
   module: 'js',
 }
 
-const claim: FrameworkClaim = {
+const claimOf = (ownerVersion: string): FrameworkClaim => ({
   formatId: FORMAT_ID,
   extensions: [...EXTENSIONS],
   language: LANGUAGE,
+  ownerVersion,
   contractVersion: CONTRACT_VERSION,
-}
+})
 
 interface ScriptLocation {
   readonly start: number
@@ -244,13 +248,29 @@ const renderedDocument = (
 ): Effect.Effect<string, FrameworkFailed> =>
   Effect.try({ try: () => printedDocument(document, context), catch: toFrameworkFailed })
 
-export const angularFormatService: FrameworkService = {
-  claim,
+const parserContributionFailure = (detail: string): FrameworkFailed =>
+  new FrameworkFailed({ reason: 'InvalidContribution', cause: detail })
+
+export const resolveParserVersion: Effect.Effect<string, FrameworkFailed, Module> = Effect.gen(function*() {
+  const moduleService = yield* Module
+  const requireFromPlugin = moduleService.createRequire(import.meta.url)
+  const manifest = yield* Effect.try({
+    try: () => requireFromPlugin(PARSER_MANIFEST_SPECIFIER),
+    catch: () => parserContributionFailure(`the "${PARSER_MANIFEST_SPECIFIER}" hard dependency is not resolvable`),
+  })
+  return yield* Result.match(S.decodeUnknownResult(S.Struct({ version: S.String }))(manifest), {
+    onFailure: () => Effect.fail(parserContributionFailure(`"${PARSER_MANIFEST_SPECIFIER}" declares no version`)),
+    onSuccess: (parsed) => Effect.succeed(parsed.version),
+  })
+})
+
+export const angularFormatService = (ownerVersion: string): FrameworkService => ({
+  claim: claimOf(ownerVersion),
   parse: parsedDocument,
   transform: unchangedDocument,
   print: renderedDocument,
   disableTypeChecks: disableTypeChecksInDocument,
-}
+})
 
 const STARTING_COMMENT = /^\s*\/\*[\s\S]*?\*\//
 

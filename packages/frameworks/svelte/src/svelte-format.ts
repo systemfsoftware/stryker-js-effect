@@ -38,12 +38,13 @@ const TEMPLATE_EXPRESSION_TYPES: Readonly<Record<string, true>> = {
   EventHandler: true,
 }
 
-const claim: FrameworkClaim = {
+const claimOf = (ownerVersion: string): FrameworkClaim => ({
   formatId: FORMAT_ID,
   extensions: [...EXTENSIONS],
   language: LANGUAGE,
+  ownerVersion,
   contractVersion: CONTRACT_VERSION,
-}
+})
 
 const STATE = Symbol('svelte-format-state')
 
@@ -699,7 +700,7 @@ const disableTypeChecksInDocument = (
   })
 
 export const svelteFormatService = (compiler: SvelteCompiler): FrameworkService => ({
-  claim,
+  claim: claimOf(compiler.version),
   parse: (rawContent, context) => parsedDocument(compiler, rawContent, context),
   transform: (document, context) => transformedDocument(document, context),
   print: (document, context) => renderedDocument(document, context),

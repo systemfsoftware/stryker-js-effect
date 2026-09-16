@@ -12,12 +12,12 @@ Installing this package is the only setup step. The default
 contribution claims the format, and the bundled ignore rule is selected because
 the module that declares it also claims a format.
 
-| Export                 | What it is                                                                                                                                                                         |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `strykerPlugins`       | The `Framework` contribution named `angular`: it claims `html` for `.html`, `.htm`, and `.vue`, and reports those files under the `html` language                                  |
-| `strykerIgnorers`      | The bundled `angular-signal-io` rule: the configuration objects of `input`, `model`, and `output`, and of the signal query functions, are identity data the Angular compiler needs |
-| `angularFormatService` | The format service itself — `parse`, `transform`, `print`, `disableTypeChecks` — for consumers that compose the plugin layer themselves                                            |
-| `angularSignalIgnorer` | The ignore rule as the plain `{ name, shouldIgnore }` entry the loader decodes                                                                                                     |
+| Export                 | What it is                                                                                                                                                                                   |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `strykerPlugins`       | The `Framework` contribution named `angular`: it claims `html` for `.html`, `.htm`, and `.vue`, and reports those files under the `html` language                                            |
+| `strykerIgnorers`      | The bundled `angular-signal-io` rule: the configuration objects of `input`, `model`, and `output`, and of the signal query functions, are identity data the Angular compiler needs           |
+| `angularFormatService` | The format service, built from the parser version the plugin resolved — `claim`, `parse`, `transform`, `print`, `disableTypeChecks` — for consumers that compose the plugin layer themselves |
+| `angularSignalIgnorer` | The ignore rule as the plain `{ name, shouldIgnore }` entry the loader decodes                                                                                                               |
 
 ## What gets mutated
 

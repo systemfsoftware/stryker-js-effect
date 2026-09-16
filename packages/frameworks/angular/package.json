@@ -52,6 +52,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/platform-node-shared": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@oxc-project/types": "catalog:",
     "@systemfsoftware/all": "catalog:",

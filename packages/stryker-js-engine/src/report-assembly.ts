@@ -23,6 +23,9 @@ export const determineLanguage = (registry: FormatRegistry, fileName: string): s
     onSome: (entry) => entry.claim.language,
   })
 
+const moduleVersionOf = (versions: Readonly<Record<string, string>>, moduleName: string): string =>
+  Option.getOrElse(Option.fromUndefinedOr(versions[moduleName]), () => '')
+
 const fileFormatIdentity = (
   registry: FormatRegistry,
   ownerVersions: Readonly<Record<string, string>>,
@@ -33,7 +36,7 @@ const fileFormatIdentity = (
     onSome: (entry) => ({
       formatId: entry.claim.formatId,
       ownerModule: entry.owner,
-      ownerVersion: Option.getOrElse(Option.fromUndefinedOr(ownerVersions[entry.owner]), () => ''),
+      ownerVersion: moduleVersionOf(ownerVersions, entry.owner),
     }),
   })
 
@@ -52,9 +55,15 @@ export const fileFormatIdentities = (
   )
 
 export const formatOwnerVersions = (
-  frameworks: readonly PluginFrameworkEntry[],
+  frameworks: readonly Pick<PluginFrameworkEntry, 'moduleName' | 'claim'>[],
+  installedVersions: Readonly<Record<string, string>>,
 ): Readonly<Record<string, string>> =>
-  Object.fromEntries(frameworks.map((framework) => [framework.moduleName, framework.claim.contractVersion]))
+  Object.fromEntries(
+    frameworks.map((framework) => [
+      framework.moduleName,
+      `${moduleVersionOf(installedVersions, framework.moduleName)}+${framework.claim.ownerVersion}`,
+    ]),
+  )
 
 export type StampedFileResult = schema.FileResult & Partial<FileFormatIdentity>
 
@@ -211,12 +220,40 @@ export const assembleTestFiles = (input: TestFilesInput): schema.TestFileDefinit
 if (import.meta.vitest) {
   const { it } = await import('@effect/vitest')
   const { FastCheck: fc } = await import('effect/testing')
-  const { coreFormatRegistry } = await import('@systemfsoftware/stryker-js-instrumenter')
+  const { coreFormatRegistry, frameworkEntryOf, registerEntries } = await import(
+    '@systemfsoftware/stryker-js-instrumenter'
+  )
+  const Effect = await import('effect/Effect')
   const S = await import('effect/Schema')
 
   const claimedExtensions: readonly string[] = coreFormatRegistry.entries.flatMap((entry) => entry.claim.extensions)
   const ExtensionSchema = S.Union([S.Literals(claimedExtensions), S.String])
   const StampRequestSchema = S.Struct({ extension: ExtensionSchema, ownerVersion: S.optional(S.String) })
+  const VersionSchema = S.String.check(S.isPattern(/^\d+\.\d+\.\d+$/))
+  const OwnerStampRequestSchema = S.Struct({
+    moduleId: S.String,
+    installed: VersionSchema,
+    owner: VersionSchema,
+  })
+
+  it.prop(
+    '∀r_OwnerStamp_=Installed+Owner',
+    [S.toArbitrary(OwnerStampRequestSchema)(fc)],
+    ([request]) => {
+      const claim = {
+        formatId: 'fixture',
+        extensions: ['.fixture'],
+        language: 'fixture',
+        ownerVersion: request.owner,
+        contractVersion: '1',
+      }
+      const stamped = formatOwnerVersions(
+        [{ moduleName: request.moduleId, claim }],
+        { [request.moduleId]: request.installed },
+      )
+      return stamped[request.moduleId] === `${request.installed}+${request.owner}`
+    },
+  )
 
   it.prop(
     '∀r_FileStamp_=RegistryClaim',
@@ -244,6 +281,67 @@ if (import.meta.vitest) {
                 identity.ownerVersion === Option.getOrElse(Option.fromUndefinedOr(request.ownerVersion), () => ''),
               ].every((holds) => holds),
           }),
+      })
+    },
+  )
+
+  const SVELTE_EXTENSION = '.svelte'
+  const SVELTE_MODULE = '@systemfsoftware/stryker-js-svelte'
+  const SVELTE_OWNER_VERSION = '5.55.1'
+
+  const frameworkRegistry = registerEntries(coreFormatRegistry, [
+    frameworkEntryOf(SVELTE_MODULE, {
+      claim: {
+        formatId: 'svelte',
+        extensions: [SVELTE_EXTENSION],
+        language: 'svelte',
+        ownerVersion: SVELTE_OWNER_VERSION,
+        contractVersion: '1',
+      },
+      parse: (rawContent) => Effect.succeed({ formatId: 'svelte', rawContent, regions: [] }),
+      transform: (document) => Effect.succeed(document),
+      print: (document) => Effect.succeed(document.rawContent),
+      disableTypeChecks: (content) => Effect.succeed(content),
+    }),
+  ])
+
+  const frameworkOwnerVersions: Readonly<Record<string, string>> = { [SVELTE_MODULE]: SVELTE_OWNER_VERSION }
+  const UnclaimedExtensionSchema = S.String.check(S.isPattern(/^\.[a-z]+$/))
+  const FrameworkExtensionSchema = S.Union([
+    S.Literals([...claimedExtensions, SVELTE_EXTENSION]),
+    UnclaimedExtensionSchema,
+  ])
+
+  it.prop(
+    '∀e_DetermineLanguage_=ClaimLanguage',
+    [S.toArbitrary(FrameworkExtensionSchema)(fc)],
+    ([extension]) => {
+      const expected = Option.match(frameworkRegistry.entryForExtension(extension), {
+        onNone: () => 'javascript',
+        onSome: (entry) => entry.claim.language,
+      })
+      return determineLanguage(frameworkRegistry, `src/subject${extension}`) === expected
+    },
+  )
+
+  it.prop(
+    '∀f_FileFormats_=RegistryClaims',
+    [S.toArbitrary(FrameworkExtensionSchema)(fc)],
+    ([extension]) => {
+      const file = `src/subject${extension}`
+      const stamped = Option.fromUndefinedOr(
+        fileFormatIdentities(frameworkRegistry, frameworkOwnerVersions, [file])[file],
+      )
+      return Option.match(frameworkRegistry.entryForExtension(extension), {
+        onNone: () => Option.isNone(stamped),
+        onSome: (entry) =>
+          Option.exists(stamped, (identity) =>
+            [
+              identity.formatId === entry.claim.formatId,
+              identity.ownerModule === entry.owner,
+              identity.ownerVersion ===
+                Option.getOrElse(Option.fromUndefinedOr(frameworkOwnerVersions[entry.owner]), () => ''),
+            ].every((holds) => holds)),
       })
     },
   )

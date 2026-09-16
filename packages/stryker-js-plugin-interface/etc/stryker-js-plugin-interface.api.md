@@ -9,6 +9,7 @@ import * as Context from 'effect/Context';
 import { Evaluator } from '@systemfsoftware/stryker-js-language';
 import * as FileSystem from 'effect/FileSystem';
 import { Framework } from '@systemfsoftware/stryker-js-language';
+import { FrameworkFailed } from '@systemfsoftware/stryker-js-language';
 import { Ignorer } from '@systemfsoftware/stryker-js-language';
 import * as Layer from 'effect/Layer';
 import { Module } from '@systemfsoftware/stryker-js-language';
@@ -23,8 +24,10 @@ export type AnyPluginContribution = { [K in PluginKind]: PluginContribution<K>; 
 
 // @public (undocumented)
 export interface ComposedPlugins {
+    // Warning: (ae-forgotten-export) The symbol "PluginLayerError" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
-    readonly layer: Option.Option<Layer.Layer<MergedPluginServices, never, PluginEnvironment>>;
+    readonly layer: Option.Option<Layer.Layer<MergedPluginServices, PluginLayerError<PluginLayerKind>, PluginEnvironment>>;
     // (undocumented)
     readonly reporterFactories: readonly SelectedReporterFactory[];
 }
@@ -41,7 +44,7 @@ export type ContributionOf<K extends PluginKind> = Extract<AnyPluginContribution
 export function declarePlugin(kind: 'Reporter', name: string, make: ReporterFactory): PluginContribution<'Reporter'>;
 
 // @public (undocumented)
-export function declarePlugin<K extends PluginLayerKind>(kind: K, name: string, layer: Layer.Layer<PluginInterfaces[K], never, PluginEnvironment>): PluginContribution<K>;
+export function declarePlugin<K extends PluginLayerKind>(kind: K, name: string, layer: Layer.Layer<PluginInterfaces[K], PluginLayerError<K>, PluginEnvironment>): PluginContribution<K>;
 
 // @public (undocumented)
 export type MergedPluginServices = Checker & Ignorer & TestRunner;
@@ -79,7 +82,7 @@ export class PluginLayerContribution<K extends PluginLayerKind = PluginLayerKind
     // (undocumented)
     readonly kind: K;
     // (undocumented)
-    readonly layer: Layer.Layer<PluginInterfaces[K], never, PluginEnvironment>;
+    readonly layer: Layer.Layer<PluginInterfaces[K], PluginLayerError<K>, PluginEnvironment>;
     // (undocumented)
     readonly name: string;
 }

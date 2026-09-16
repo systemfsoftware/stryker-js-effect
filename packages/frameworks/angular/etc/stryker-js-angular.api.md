@@ -9,7 +9,7 @@ import { Ignorer } from '@systemfsoftware/stryker-framework-interface';
 import { PluginLayerContribution } from '@systemfsoftware/stryker-js-plugin-interface';
 
 // @public (undocumented)
-export const angularFormatService: FrameworkService;
+export const angularFormatService: (ownerVersion: string) => FrameworkService;
 
 // @public (undocumented)
 export const angularSignalIgnorer: Ignorer;

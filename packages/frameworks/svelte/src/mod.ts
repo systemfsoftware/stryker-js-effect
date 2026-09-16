@@ -11,7 +11,7 @@ const frameworkLayer = Layer.effect(
   Effect.gen(function*() {
     const load = yield* peerLoader
     return svelteFormatService(yield* resolveSvelteCompiler(load))
-  }).pipe(Effect.orDie),
+  }),
 )
 
 export const strykerPlugins = [declarePlugin('Framework', 'svelte', frameworkLayer)]

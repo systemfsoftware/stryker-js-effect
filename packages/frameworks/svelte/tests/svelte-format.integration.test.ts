@@ -3,6 +3,7 @@ import type { Program, ScriptFormat, ScriptRegion, Statement } from '@systemfsof
 import type { EmbeddedDocument, FrameworkContext } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as Predicate from 'effect/Predicate'
+import { VERSION as SVELTE_COMPILER_VERSION } from 'svelte/compiler'
 import { expect } from 'vitest'
 
 import { installedEnvironmentLayer, svelteService } from './__fixtures__/svelte-plugin.js'
@@ -253,11 +254,12 @@ Feature('Instrumenting the script regions of a Svelte component').body(({ scenar
         preparedSvelteService,
       ),
       When('the format the plugin claims is read')('claimed', (s) => Effect.succeed(s.service.claim)),
-      Then('the claim names the svelte format, language, and extension')(({ claimed }) => {
+      Then('the claim names the svelte format, its extension, and the compiler version it resolved')(({ claimed }) => {
         expect(claimed).toStrictEqual({
           formatId: 'svelte',
           extensions: ['.svelte'],
           language: 'svelte',
+          ownerVersion: SVELTE_COMPILER_VERSION,
           contractVersion: '1',
         })
       }),

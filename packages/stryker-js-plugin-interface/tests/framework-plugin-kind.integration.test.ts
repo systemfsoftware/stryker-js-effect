@@ -14,7 +14,13 @@ import * as Option from 'effect/Option'
 const Feature = makeFeature({ it, layer })
 
 const frameworkService: FrameworkService = {
-  claim: { formatId: 'html', extensions: ['.html', '.htm', '.vue'], language: 'html', contractVersion: '1' },
+  claim: {
+    formatId: 'html',
+    extensions: ['.html', '.htm', '.vue'],
+    language: 'html',
+    ownerVersion: '1',
+    contractVersion: '1',
+  },
   parse: (rawContent, _context) => Effect.succeed({ formatId: 'html', rawContent, regions: [] }),
   transform: (document) => Effect.succeed(document),
   print: (document) => Effect.succeed(document.rawContent),

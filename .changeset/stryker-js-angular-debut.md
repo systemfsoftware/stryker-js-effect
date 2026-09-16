@@ -14,3 +14,9 @@ breaks compilation and they are ignored instead.
 
 Installing the package is the only setup step: the engine's default plugin
 discovery finds it, so no configuration entry is needed.
+
+The format's claim carries the version of the HTML parser the plugin resolved
+and owns, rather than a fixed constant. Upgrading that parser therefore
+invalidates the mutant results an earlier incremental run remembered for the
+files this plugin owns, instead of reusing results the new parser never
+produced.

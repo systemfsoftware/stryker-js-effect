@@ -24,6 +24,7 @@ import * as S from 'effect/Schema'
 
 import { checkStatusToMutantStatus, mapRunResult, toSchemaLocation } from './mutant-result-mapping.js'
 import type { TestCoverage } from './Mutants.js'
+import { ManifestSchema } from './mutation-reporting.schema.js'
 import type { ResolvedMode } from './output-mode.js'
 import type { Project } from './Project.js'
 import { FILE_CONCURRENCY, readOriginal } from './Project.js'
@@ -87,7 +88,7 @@ export interface MakeMutationReportingInput {
   readonly formatOwnerVersions: Readonly<Record<string, string>>
 }
 
-const MANIFEST_SPECIFIERS = [
+export const MANIFEST_SPECIFIERS = [
   '@systemfsoftware/stryker-js-vitest-runner',
   '@systemfsoftware/stryker-js-typescript-checker',
   '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
@@ -102,6 +103,44 @@ const MANIFEST_SPECIFIERS = [
   'webpack-cli',
   'ts-jest',
 ] as const
+
+const readManifestVersion = (
+  fs: FileSystem.FileSystem,
+  pathService: Path.Path,
+  specifier: string,
+): Effect.Effect<Option.Option<string>> =>
+  Effect.gen(function*() {
+    const resolved = yield* Effect.try(() => new URL(import.meta.resolve(`${specifier}/package.json`)))
+    const manifestPath = yield* pathService.fromFileUrl(resolved)
+    const text = yield* fs.readFileString(manifestPath)
+    return Result.match(S.decodeUnknownResult(S.fromJsonString(ManifestSchema))(text), {
+      onFailure: () => Option.none<string>(),
+      onSuccess: (manifest) => Option.some(manifest.version ?? ''),
+    })
+  }).pipe(Effect.orElseSucceed(() => Option.none<string>()))
+
+export const readInstalledModuleVersions = (
+  fs: FileSystem.FileSystem,
+  pathService: Path.Path,
+  specifiers: readonly string[],
+): Effect.Effect<Readonly<Record<string, string>>> =>
+  Effect.forEach(
+    specifiers,
+    (specifier) =>
+      Effect.map(readManifestVersion(fs, pathService, specifier), (version) => [specifier, version] as const),
+    { concurrency: FILE_CONCURRENCY },
+  ).pipe(
+    Effect.map((pairs) =>
+      Object.fromEntries(
+        pairs.flatMap(([specifier, version]) =>
+          Option.match(version, {
+            onNone: (): ReadonlyArray<readonly [string, string]> => [],
+            onSome: (present): ReadonlyArray<readonly [string, string]> => [[specifier, present]],
+          })
+        ),
+      )
+    ),
+  )
 
 export const makeMutationReportingService = (input: MakeMutationReportingInput): MutationReportingService => {
   const reportMutantStatus = (
@@ -219,23 +258,6 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
       }
     })
 
-  const ManifestSchema = S.Struct({ version: S.optional(S.String) })
-
-  const readManifestVersion = (
-    fs: FileSystem.FileSystem,
-    pathService: Path.Path,
-    specifier: string,
-  ): Effect.Effect<Option.Option<string>> =>
-    Effect.gen(function*() {
-      const resolved = yield* Effect.try(() => new URL(import.meta.resolve(`${specifier}/package.json`)))
-      const manifestPath = yield* pathService.fromFileUrl(resolved)
-      const text = yield* fs.readFileString(manifestPath)
-      return Result.match(S.decodeUnknownResult(S.fromJsonString(ManifestSchema))(text), {
-        onFailure: () => Option.none<string>(),
-        onSuccess: (manifest) => Option.some(manifest.version ?? ''),
-      })
-    }).pipe(Effect.orElseSucceed(() => Option.none<string>()))
-
   const discoverDependencies = (): Effect.Effect<
     schema.Dependencies,
     never,
@@ -244,20 +266,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const pathService = yield* Path.Path
-      const pairs = yield* Effect.forEach(
-        MANIFEST_SPECIFIERS,
-        (specifier) =>
-          Effect.map(readManifestVersion(fs, pathService, specifier), (version) => [specifier, version] as const),
-        { concurrency: FILE_CONCURRENCY },
-      )
-      return Object.fromEntries(
-        pairs.flatMap(([specifier, version]) =>
-          Option.match(version, {
-            onNone: (): ReadonlyArray<readonly [string, string]> => [],
-            onSome: (present): ReadonlyArray<readonly [string, string]> => [[specifier, present]],
-          })
-        ),
-      )
+      return yield* readInstalledModuleVersions(fs, pathService, MANIFEST_SPECIFIERS)
     })
 
   const determineExitCode = (

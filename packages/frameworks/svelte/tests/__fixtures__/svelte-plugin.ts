@@ -13,7 +13,6 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { fileURLToPath } from 'node:url'
 
@@ -116,13 +115,10 @@ export const svelteService = (environment: Layer.Layer<PluginEnvironment>) =>
     Effect.map((context) => Context.get(context, Framework)),
   )
 
-const failureOf = (cause: Cause.Cause<never>): FrameworkFailed | undefined =>
-  Result.match(Cause.findDefect(cause), {
-    onFailure: () => undefined,
-    onSuccess: (defect) => Option.getOrUndefined(Option.filter(Option.some(defect), S.is(FrameworkFailed))),
-  })
+const failureOf = (cause: Cause.Cause<FrameworkFailed>): FrameworkFailed | undefined =>
+  Option.getOrUndefined(Cause.findErrorOption(cause))
 
-const outcomeOf = (exit: Exit.Exit<FrameworkService, never>): SvelteServiceOutcome =>
+const outcomeOf = (exit: Exit.Exit<FrameworkService, FrameworkFailed>): SvelteServiceOutcome =>
   Match.value(exit).pipe(
     Match.when(Exit.isSuccess, (success) => ({ service: success.value, failure: undefined })),
     Match.orElse((failure) => ({ service: undefined, failure: failureOf(failure.cause) })),
@@ -165,4 +161,19 @@ export const belowRangePeers = (): Readonly<Record<string, string>> => ({
 
 export const missingPeers = (): Readonly<Record<string, string>> => ({
   'svelte/compiler': peerPath('peer-svelte-absent.mjs'),
+})
+
+export const interopPeers = (): Readonly<Record<string, string>> => ({
+  'svelte/compiler': peerPath('peer-svelte-compiler-interop.mjs'),
+  'oxc-walker': peerPath('peer-oxc-walker-interop.mjs'),
+})
+
+export const shapelessPeers = (): Readonly<Record<string, string>> => ({
+  'svelte/compiler': peerPath('peer-svelte-shapeless.mjs'),
+  'oxc-walker': peerPath('peer-oxc-walker.mjs'),
+})
+
+export const interopShapelessPeers = (): Readonly<Record<string, string>> => ({
+  'svelte/compiler': peerPath('peer-svelte-interop-shapeless.mjs'),
+  'oxc-walker': peerPath('peer-oxc-walker.mjs'),
 })

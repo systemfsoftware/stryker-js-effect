@@ -12,6 +12,8 @@ export interface FrameworkClaim {
   readonly formatId: string
   readonly extensions: readonly string[]
   readonly language: string
+  /** The framework runtime this plugin resolved and owns, stamped into incremental state; `contractVersion` is the plugin contract, not the runtime. */
+  readonly ownerVersion: string
   readonly contractVersion: string
 }
 

@@ -1,9 +1,12 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { FrameworkContext, Program, ScriptFormat } from '@systemfsoftware/stryker-framework-interface'
-import { angularFormatService, strykerIgnorers, strykerPlugins } from '@systemfsoftware/stryker-js-angular'
+import { strykerIgnorers, strykerPlugins } from '@systemfsoftware/stryker-js-angular'
+import type { FrameworkService } from '@systemfsoftware/stryker-js-language'
 import type { EmbeddedDocument, FrameworkClaim } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import { expect } from 'vitest'
+
+import { angularService, installedEnvironmentLayer, installedParserVersion } from './__fixtures__/angular-plugin.js'
 
 const VUE_COMPONENT = `<template>
   <p>{{ count }}</p>
@@ -54,12 +57,19 @@ const b = 3 + 4
 
 const UNCLOSED_SCRIPT_HTML = '<script>const a = 1 + 2'
 
-const ANGULAR_FORMAT_CLAIM: FrameworkClaim = {
+const expectedClaim = (ownerVersion: string): FrameworkClaim => ({
   formatId: 'html',
   extensions: ['.html', '.htm', '.vue'],
   language: 'html',
+  ownerVersion,
   contractVersion: '1',
-}
+})
+
+const preparedService = () =>
+  Effect.gen(function*() {
+    const environment = yield* installedEnvironmentLayer
+    return yield* angularService(environment)
+  })
 
 interface ParsedScript {
   readonly source: string
@@ -81,6 +91,7 @@ interface Publication {
   readonly plugins: typeof strykerPlugins
   readonly claim: FrameworkClaim
   readonly rules: readonly string[]
+  readonly installedOwnerVersion: string
 }
 
 interface DeclaredContribution {
@@ -88,6 +99,7 @@ interface DeclaredContribution {
   readonly name: string
   readonly claim: FrameworkClaim
   readonly rules: readonly string[]
+  readonly installedOwnerVersion: string
 }
 
 const recordingToolkit = (): { readonly toolkit: FrameworkContext; readonly recorded: ParsedScript[] } => {
@@ -113,16 +125,17 @@ Feature('Instrumenting the scripts embedded in HTML templates').body(({ scenario
   scenario(
     'A Vue single-file component gives up only its script region',
     Gherkin.Do.pipe(
+      Given('the Angular plugin prepared with the parser resolved from the install')('service', preparedService),
       Given('a Vue component holding a template expression beside a TypeScript script')(
         'content',
         () => Effect.succeed(VUE_COMPONENT),
       ),
       When('the plugin parses the component')(
         'claim',
-        ({ content }: { content: string }) =>
+        ({ content, service }: { content: string; service: FrameworkService }) =>
           Effect.gen(function*() {
             const recorder = recordingToolkit()
-            const document = yield* angularFormatService.parse(content, recorder.toolkit)
+            const document = yield* service.parse(content, recorder.toolkit)
             return { document, recorded: recorder.recorded }
           }),
       ),
@@ -144,17 +157,18 @@ Feature('Instrumenting the scripts embedded in HTML templates').body(({ scenario
   scenario(
     'Every script in an HTML document prints back between its own tags',
     Gherkin.Do.pipe(
+      Given('the Angular plugin prepared with the parser resolved from the install')('service', preparedService),
       Given('an HTML document holding two scripts around ordinary markup')(
         'content',
         () => Effect.succeed(TWO_SCRIPT_HTML),
       ),
       When('the plugin parses the document and prints it back')(
         'print',
-        ({ content }: { content: string }) =>
+        ({ content, service }: { content: string; service: FrameworkService }) =>
           Effect.gen(function*() {
             const recorder = recordingToolkit()
-            const document = yield* angularFormatService.parse(content, recorder.toolkit)
-            const printed = yield* angularFormatService.print(document, recorder.toolkit)
+            const document = yield* service.parse(content, recorder.toolkit)
+            const printed = yield* service.print(document, recorder.toolkit)
             return { document, printed }
           }),
       ),
@@ -171,13 +185,14 @@ Feature('Instrumenting the scripts embedded in HTML templates').body(({ scenario
   scenario(
     'Every script region is marked as type-check free',
     Gherkin.Do.pipe(
+      Given('the Angular plugin prepared with the parser resolved from the install')('service', preparedService),
       Given('an HTML document holding two scripts around ordinary markup')(
         'content',
         () => Effect.succeed(TWO_SCRIPT_HTML),
       ),
       When('the plugin disables type checking for the document')(
         'disabled',
-        ({ content }: { content: string }) => angularFormatService.disableTypeChecks(content),
+        ({ content, service }: { content: string; service: FrameworkService }) => service.disableTypeChecks(content),
       ),
       Then('each script starts type-check free, over markup that did not move')((
         { disabled }: { disabled: string },
@@ -190,14 +205,15 @@ Feature('Instrumenting the scripts embedded in HTML templates').body(({ scenario
   scenario(
     'A script tag that never closes is refused',
     Gherkin.Do.pipe(
+      Given('the Angular plugin prepared with the parser resolved from the install')('service', preparedService),
       Given('an HTML document whose script tag is never closed')(
         'content',
         () => Effect.succeed(UNCLOSED_SCRIPT_HTML),
       ),
       When('the plugin parses the document')(
         'outcome',
-        ({ content }: { content: string }) =>
-          angularFormatService.parse(content, recordingToolkit().toolkit).pipe(
+        ({ content, service }: { content: string; service: FrameworkService }) =>
+          service.parse(content, recordingToolkit().toolkit).pipe(
             Effect.match({
               onFailure: (failure) => ({ refused: true, reason: failure.reason }),
               onSuccess: () => ({ refused: false, reason: '' }),
@@ -216,13 +232,17 @@ Feature('Instrumenting the scripts embedded in HTML templates').body(({ scenario
   scenario(
     'The plugin declares the HTML format beside its signal rule',
     Gherkin.Do.pipe(
+      Given('the Angular plugin prepared with the parser resolved from the install')('service', preparedService),
       Given('the plugin and the ignore rule the package publishes')(
         'published',
-        () =>
-          Effect.succeed({
-            plugins: strykerPlugins,
-            claim: angularFormatService.claim,
-            rules: strykerIgnorers.map((ignorer) => ignorer.name),
+        ({ service }: { service: FrameworkService }) =>
+          Effect.gen(function*() {
+            return {
+              plugins: strykerPlugins,
+              claim: service.claim,
+              rules: strykerIgnorers.map((ignorer) => ignorer.name),
+              installedOwnerVersion: yield* installedParserVersion,
+            }
           }),
       ),
       When('the contributions are read')(
@@ -237,6 +257,7 @@ Feature('Instrumenting the scripts embedded in HTML templates').body(({ scenario
             name: plugin.name,
             claim: published.claim,
             rules: published.rules,
+            installedOwnerVersion: published.installedOwnerVersion,
           })
         },
       ),
@@ -245,7 +266,7 @@ Feature('Instrumenting the scripts embedded in HTML templates').body(({ scenario
       ) => {
         expect(contributions.kind).toBe('Framework')
         expect(contributions.name).toBe('angular')
-        expect(contributions.claim).toStrictEqual(ANGULAR_FORMAT_CLAIM)
+        expect(contributions.claim).toStrictEqual(expectedClaim(contributions.installedOwnerVersion))
         expect(contributions.rules).toStrictEqual(['angular-signal-io'])
       }),
     ),

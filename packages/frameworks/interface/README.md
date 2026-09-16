@@ -17,15 +17,15 @@ declaration re-exports the AST vocabulary from
 so the emitted declaration keeps one physical copy of the recursive `Node`), and
 the lint preset bans Effect imports outright.
 
-| Export             | What it is                                                                                                                                                                                                                        |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FormatId`         | The claimed format's identity — a branded string, so it cannot be transposed with the extension list or the language label beside it                                                                                              |
-| `ScriptFormat`     | The closed script vocabulary an embedded region may carry — `js`, `ts`, or `tsx` — the format `parseScript` parses a slice as                                                                                                     |
-| `FrameworkClaim`   | The claim record: `{ formatId, extensions, language, contractVersion }` — the extensions this plugin owns and the report language its files carry                                                                                 |
-| `EmbeddedDocument` | A parsed framework file: `{ formatId, rawContent, regions }` — the untouched document plus the script regions the core instruments                                                                                                |
-| `ScriptRegion`     | One located script inside that document: `{ start, end, isExpression, scriptAst? }`, offsets into the document, never the slice                                                                                                   |
-| `FrameworkContext` | The toolkit the core hands a hook: `parseScript` (the slice plus the script format it parses as), `transformScript`, `printScript`, `instrumentationHeader` — the core constructs it at hook invocation, the plugin only uses it  |
-| vocabulary         | the AST vocabulary, re-exported from [`@systemfsoftware/stryker-ignorer-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-ignorer-interface) — `Node`, `Program`, `Statement`, and every concrete node interface |
+| Export             | What it is                                                                                                                                                                                                                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `FormatId`         | The claimed format's identity — a branded string, so it cannot be transposed with the extension list or the language label beside it                                                                                                                                                                                                 |
+| `ScriptFormat`     | The closed script vocabulary an embedded region may carry — `js`, `ts`, or `tsx` — the format `parseScript` parses a slice as                                                                                                                                                                                                        |
+| `FrameworkClaim`   | The claim record: `{ formatId, extensions, language, ownerVersion, contractVersion }` — the extensions this plugin owns, the report language its files carry, and the two versions: `ownerVersion`, the framework runtime the plugin resolved and owns, and `contractVersion`, the interface version this plugin was written against |
+| `EmbeddedDocument` | A parsed framework file: `{ formatId, rawContent, regions }` — the untouched document plus the script regions the core instruments                                                                                                                                                                                                   |
+| `ScriptRegion`     | One located script inside that document: `{ start, end, isExpression, scriptAst? }`, offsets into the document, never the slice                                                                                                                                                                                                      |
+| `FrameworkContext` | The toolkit the core hands a hook: `parseScript` (the slice plus the script format it parses as), `transformScript`, `printScript`, `instrumentationHeader` — the core constructs it at hook invocation, the plugin only uses it                                                                                                     |
+| vocabulary         | the AST vocabulary, re-exported from [`@systemfsoftware/stryker-ignorer-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-ignorer-interface) — `Node`, `Program`, `Statement`, and every concrete node interface                                                                                                    |
 
 Everything the package publishes is a type.
 
@@ -52,6 +52,7 @@ const claim: FrameworkClaim = {
   formatId: 'html' as FormatId,
   extensions: ['.html', '.htm', '.vue'],
   language: 'html',
+  ownerVersion: '10.4.0',
   contractVersion: '1',
 }
 
@@ -69,6 +70,12 @@ language label downstream.
 The claim's `contractVersion` names the interface version the plugin was written
 against; the engine refuses a contribution whose version it does not support, so
 a plugin never drifts silently against a changed contract.
+
+Its `ownerVersion` names the framework runtime the plugin resolved and owns —
+the compiler or parser a mutant's printed form has to survive. The engine stamps
+it into incremental state, so upgrading that runtime, or the plugin package
+itself, invalidates the mutants the earlier run remembered instead of reusing
+results the new runtime never produced.
 
 ## Boundaries
 

@@ -34,7 +34,7 @@ const frameScript = (
 const fakeService = (): FrameworkService => {
   let parsedProgram: Program | undefined
   return {
-    claim: { formatId: 'dummy', extensions: ['.dummy'], language: 'dummy', contractVersion: '1' },
+    claim: { formatId: 'dummy', extensions: ['.dummy'], language: 'dummy', ownerVersion: '1', contractVersion: '1' },
     parse: (rawContent, context) =>
       Effect.sync(() => {
         const start = rawContent.indexOf(SCRIPT_OPEN) + SCRIPT_OPEN.length

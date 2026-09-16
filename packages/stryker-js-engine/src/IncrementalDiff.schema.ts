@@ -28,6 +28,10 @@ const PreviousTestFileSchema = S.Struct({
 export const PreviousFilesSchema = S.Record(S.String, PreviousFileSchema)
 export const PreviousTestFilesSchema = S.Record(S.String, PreviousTestFileSchema)
 
+/**
+ * The format that owns a file, as incremental state records it.
+ * `ownerVersion` is `${installed module version}+${resolved framework runtime version}`.
+ */
 export type FileFormatIdentity = {
   readonly formatId: string
   readonly ownerModule: string

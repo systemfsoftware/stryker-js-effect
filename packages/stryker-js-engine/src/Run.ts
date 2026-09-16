@@ -90,7 +90,11 @@ import { toSchemaLocation } from './mutant-result-mapping.js'
 import { decidePlans, incrementalDiff } from './Mutants.js'
 import type { TestCoverage } from './Mutants.js'
 import { testCoverageFrom } from './Mutants.js'
-import { makeMutationReportingService, type MutationReportingService } from './mutation-reporting.js'
+import {
+  makeMutationReportingService,
+  type MutationReportingService,
+  readInstalledModuleVersions,
+} from './mutation-reporting.js'
 import { MutationTestCommand } from './MutationTest.schema.js'
 import type { ResolvedMode } from './output-mode.js'
 import { InstrumentCommand, planInstrumentation } from './plan-instrumentation.workflow.js'
@@ -1189,7 +1193,15 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                   ),
                   size: prev.concurrency.testRunners,
                 })
-                const formatOwnerVersionsByModule = formatOwnerVersions(prev.loadedPlugins.frameworks)
+                const installedVersions = yield* readInstalledModuleVersions(
+                  yield* FileSystem.FileSystem,
+                  yield* Path.Path,
+                  prev.loadedPlugins.frameworks.map((framework) => framework.moduleName),
+                )
+                const formatOwnerVersionsByModule = formatOwnerVersions(
+                  prev.loadedPlugins.frameworks,
+                  installedVersions,
+                )
                 const reporting = makeMutationReportingService({
                   reporterStage: prev.reporterStage,
                   options: prev.options,

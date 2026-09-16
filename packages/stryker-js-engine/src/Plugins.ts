@@ -27,6 +27,8 @@ import { defaultOptions, importModule } from './Config.js'
 import { StrykerError } from './stryker-error.schema.js'
 
 import {
+  ForeignFrameworkFailureSchema,
+  ForeignFrameworkRefusalSchema,
   FrameworkServiceSchema,
   IgnorerModuleSchema,
   PluginExtensionClaimShadowing,
@@ -314,6 +316,11 @@ export function isAbsentPluginError(error: unknown, descriptor: string): boolean
   )
 }
 
+const NO_ENTRY_POINT_ERROR_CODES: readonly string[] = ['ERR_PACKAGE_PATH_NOT_EXPORTED']
+
+const declaresNoEntryPoint = (error: unknown): boolean =>
+  NO_ENTRY_POINT_ERROR_CODES.includes(String(errorCodeOf(error)))
+
 function isEnoentError(error: unknown): boolean {
   return Match.value(isErrnoException(error)).pipe(
     Match.when(true, () => errorCodeOf(error) === 'ENOENT'),
@@ -322,6 +329,18 @@ function isEnoentError(error: unknown): boolean {
 }
 
 type PluginExpressionClass = 'Glob' | 'FilePath' | 'Module'
+
+type PluginModuleOrigin = 'glob' | 'named'
+
+interface ResolvedPluginModule {
+  readonly moduleName: string
+  readonly origin: PluginModuleOrigin
+}
+
+const resolvedModules = (
+  moduleNames: readonly string[],
+  origin: PluginModuleOrigin,
+): readonly ResolvedPluginModule[] => moduleNames.map((moduleName) => ({ moduleName, origin }))
 
 const isPluginGlobExpression = (pluginExpression: string): boolean => pluginExpression.includes('*')
 
@@ -366,25 +385,34 @@ const resolvePluginFileUrl = (
 const resolvePluginExpression = (
   pluginExpression: string,
   pathService: Path.Path,
-): Effect.Effect<string[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<readonly ResolvedPluginModule[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> =>
   Match.value(classifyPluginExpression(pluginExpression, pathService)).pipe(
-    Match.when('Glob', () => globPluginModules(pluginExpression)),
-    Match.when('FilePath', () => resolvePluginFileUrl(pluginExpression, pathService)),
-    Match.when('Module', () => Effect.succeed([pluginExpression])),
+    Match.when(
+      'Glob',
+      () => Effect.map(globPluginModules(pluginExpression), (moduleNames) => resolvedModules(moduleNames, 'glob')),
+    ),
+    Match.when(
+      'FilePath',
+      () => Effect.map(resolvePluginFileUrl(pluginExpression, pathService), (urls) => resolvedModules(urls, 'named')),
+    ),
+    Match.when('Module', () => Effect.succeed(resolvedModules([pluginExpression], 'named'))),
     Match.exhaustive,
   )
 
 function resolvePluginModules(
   pluginDescriptors: readonly string[],
-): Effect.Effect<string[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<readonly ResolvedPluginModule[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function*() {
     const pathService = yield* Path.Path
-    const results: string[][] = yield* Effect.forEach(
+    const results: (readonly ResolvedPluginModule[])[] = yield* Effect.forEach(
       pluginDescriptors,
       (pluginExpression: string) => resolvePluginExpression(pluginExpression, pathService),
       { concurrency: 'unbounded' },
     )
-    return results.filter(Predicate.isNotNullish).flat().sort(byDeterministicShadowingOrder)
+    return results
+      .filter(Predicate.isNotNullish)
+      .flat()
+      .sort((left, right) => byDeterministicShadowingOrder(left.moduleName, right.moduleName))
   })
 }
 
@@ -609,6 +637,12 @@ const warnUndescribedPluginModule = (descriptor: string): Effect.Effect<undefine
     `Module "${descriptor}" did not contribute a StrykerJS plugin. It didn't export a "strykerPlugins", "strykerIgnorers", or "strykerValidationSchema".`,
   ).pipe(Effect.as(undefined))
 
+const warnNoEntryPointPluginPackage = (descriptor: string): Effect.Effect<undefined> =>
+  Effect.logWarning(
+    `Package "${descriptor}" declares no importable entry point; it did not contribute a StrykerJS plugin.`,
+  )
+    .pipe(Effect.as(undefined))
+
 const describeLoadedPlugin = (
   descriptor: string,
   module: unknown,
@@ -641,6 +675,69 @@ const frameworkEnvironment = (options: StrykerOptions, basePath: string): Framew
 const SUPPORTED_FRAMEWORK_CONTRACT_MAJOR = 1
 const SUPPORTED_FRAMEWORK_CONTRACT_RANGE = '1.x'
 
+const frameworkRefusalError = (
+  descriptor: string,
+  refusal: typeof ForeignFrameworkRefusalSchema.Type,
+): PluginLoadFailedError =>
+  Match.value(refusal).pipe(
+    Match.discriminator('reason')(
+      'PeerMissing',
+      (missing): PluginLoadFailedError =>
+        new PluginLoadFailedError({ descriptor, reason: { _tag: 'PeerMissing', peer: missing.peer } }),
+    ),
+    Match.discriminator('reason')(
+      'PeerVersionUnsupported',
+      (unsupported): PluginLoadFailedError =>
+        new PluginLoadFailedError({
+          descriptor,
+          reason: {
+            _tag: 'PeerVersionUnsupported',
+            peer: unsupported.peer,
+            version: unsupported.version,
+            supportedRange: unsupported.supportedRange,
+          },
+        }),
+    ),
+    Match.exhaustive,
+  )
+
+const frameworkFailureDetail = (
+  failure: typeof ForeignFrameworkFailureSchema.Type,
+  cause: Cause.Cause<unknown>,
+): string =>
+  Match.value(failure.cause).pipe(
+    Match.when(Predicate.isString, (detail) => detail),
+    Match.orElse(() => Cause.pretty(cause)),
+  )
+
+const unbuildableFrameworkError = (
+  descriptor: string,
+  contributionName: string,
+  cause: Cause.Cause<unknown>,
+): PluginLoadFailedError =>
+  invalidContributionError(
+    descriptor,
+    `Framework contribution "${contributionName}" failed to build: ${Cause.pretty(cause)}`,
+  )
+
+const frameworkBuildError = (
+  descriptor: string,
+  contributionName: string,
+  cause: Cause.Cause<unknown>,
+): PluginLoadFailedError =>
+  Option.match(Cause.findErrorOption(cause), {
+    onNone: () => unbuildableFrameworkError(descriptor, contributionName, cause),
+    onSome: (failure) =>
+      Option.match(S.decodeUnknownOption(ForeignFrameworkRefusalSchema)(failure), {
+        onSome: (refusal) => frameworkRefusalError(descriptor, refusal),
+        onNone: () =>
+          Option.match(S.decodeUnknownOption(ForeignFrameworkFailureSchema)(failure), {
+            onNone: () => unbuildableFrameworkError(descriptor, contributionName, cause),
+            onSome: (decoded) => invalidContributionError(descriptor, frameworkFailureDetail(decoded, cause)),
+          }),
+      }),
+  })
+
 const isSupportedFrameworkContractVersion = (version: string): boolean =>
   Option.match(Option.fromNullishOr(version.split('.')[0]), {
     onNone: () => false,
@@ -667,14 +764,7 @@ const resolveModuleFrameworks = (
         Effect.gen(function*() {
           const context = yield* Layer.build(contribution.layer).pipe(
             Effect.provide(environment),
-            Effect.catchCause((cause) =>
-              Effect.fail(
-                invalidContributionError(
-                  moduleName,
-                  `Framework contribution "${contribution.name}" failed to build: ${Cause.pretty(cause)}`,
-                ),
-              )
-            ),
+            Effect.catchCause((cause) => Effect.fail(frameworkBuildError(moduleName, contribution.name, cause))),
           )
           const service = Context.get(context, Framework)
           const decoded = S.decodeUnknownResult(FrameworkServiceSchema)(service)
@@ -721,6 +811,7 @@ type PluginLoadStep =
 
 function loadPlugin(
   descriptor: string,
+  origin: PluginModuleOrigin,
   basePath: string,
   environment: FrameworkEnvironment,
 ): Effect.Effect<PluginLoadStep, PluginLoadFailedError, FileSystem.FileSystem | Module | Path.Path> {
@@ -728,7 +819,7 @@ function loadPlugin(
     yield* Effect.logDebug(`Loading plugin ${descriptor}`)
     const imported = yield* importModule(descriptor, basePath).pipe(Effect.result)
     if (Result.isFailure(imported)) {
-      return yield* absentOrImportFailureFor(descriptor, imported.failure)
+      return yield* absentOrImportFailureFor(descriptor, origin, imported.failure)
     }
     return yield* Option.match(Option.fromUndefinedOr(imported.success), {
       onNone: () => Effect.succeed({ outcome: 'absent' as const }),
@@ -737,16 +828,38 @@ function loadPlugin(
   })
 }
 
+type ImportFailureDisposition = 'absent' | 'no-entry-point'
+
+const importFailureDisposition = (
+  descriptor: string,
+  origin: PluginModuleOrigin,
+  cause: unknown,
+): ImportFailureDisposition | undefined =>
+  Match.value(isAbsentPluginError(cause, descriptor)).pipe(
+    Match.when(true, (): ImportFailureDisposition => 'absent'),
+    Match.orElse(() =>
+      Match.value({ origin, declaresNoEntryPoint: declaresNoEntryPoint(cause) }).pipe(
+        Match.when({ origin: 'glob', declaresNoEntryPoint: true }, (): ImportFailureDisposition => 'no-entry-point'),
+        Match.orElse((): undefined => undefined),
+      )
+    ),
+  )
+
 const absentOrImportFailureFor = (
   descriptor: string,
+  origin: PluginModuleOrigin,
   error: StrykerError,
 ): Effect.Effect<PluginLoadStep, PluginLoadFailedError, FileSystem.FileSystem | Module | Path.Path> =>
   Effect.gen(function*() {
-    if (isAbsentPluginError(pluginFailureCause(error), descriptor)) {
-      yield* warnAbsentPlugin(descriptor)
-      return { outcome: 'absent' as const }
-    }
-    return yield* failPluginImport(descriptor, error)
+    const disposition = importFailureDisposition(descriptor, origin, pluginFailureCause(error))
+    return yield* Match.value(disposition).pipe(
+      Match.when('absent', () => warnAbsentPlugin(descriptor).pipe(Effect.as({ outcome: 'absent' as const }))),
+      Match.when(
+        'no-entry-point',
+        () => warnNoEntryPointPluginPackage(descriptor).pipe(Effect.as({ outcome: 'undescribed' as const })),
+      ),
+      Match.orElse(() => failPluginImport(descriptor, error)),
+    )
   })
 
 const loadedStepFor = (
@@ -832,10 +945,12 @@ export function loadPlugins(
     const pluginModules = yield* resolvePluginModules(pluginDescriptors)
     const attempts = yield* Effect.forEach(
       pluginModules,
-      (moduleName: string): Effect.Effect<PluginLoaderAttempt, never, FileSystem.FileSystem | Module | Path.Path> =>
-        loadPlugin(moduleName, basePath, environment).pipe(
+      (
+        resolved: ResolvedPluginModule,
+      ): Effect.Effect<PluginLoaderAttempt, never, FileSystem.FileSystem | Module | Path.Path> =>
+        loadPlugin(resolved.moduleName, resolved.origin, basePath, environment).pipe(
           Effect.result,
-          Effect.map((result) => ({ moduleName, result })),
+          Effect.map((result) => ({ moduleName: resolved.moduleName, result })),
         ),
       { concurrency: 'unbounded' },
     )
@@ -871,8 +986,8 @@ function parsePluginExpression(pluginExpression: string): { org: string; pkg: st
     Match.when(
       true,
       (): { org: string; pkg: string } => ({
-        org: parts.slice(0, 2).join('/').split('*')[0] ?? '',
-        pkg: parts.slice(2).join('/'),
+        org: parts[0] ?? '',
+        pkg: parts.slice(1).join('/'),
       }),
     ),
     Match.orElse((): { org: string; pkg: string } => ({

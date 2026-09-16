@@ -4,7 +4,7 @@ import * as S from 'effect/Schema'
 
 import type * as Layer from 'effect/Layer'
 
-import type { PluginEnvironment, PluginInterfaces } from './Plugin.js'
+import type { PluginEnvironment, PluginInterfaces, PluginLayerError } from './Plugin.js'
 
 export const PluginKind = S.Literals(['Checker', 'TestRunner', 'Reporter', 'Ignore', 'Evaluator', 'Framework'])
 export type PluginKind = typeof PluginKind.Type
@@ -21,7 +21,7 @@ export class PluginLayerContribution<K extends PluginLayerKind = PluginLayerKind
 {
   declare readonly kind: K
   declare readonly name: string
-  declare readonly layer: Layer.Layer<PluginInterfaces[K], never, PluginEnvironment>
+  declare readonly layer: Layer.Layer<PluginInterfaces[K], PluginLayerError<K>, PluginEnvironment>
 }
 
 export class PluginReporterContribution extends S.TaggedClass<PluginReporterContribution>()('PluginContribution', {

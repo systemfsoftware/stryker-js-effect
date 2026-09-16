@@ -50,6 +50,7 @@ const entryOf = (entry: GeneratedEntry): PluginLoaderEntryLike => {
     formatId: entry.contributionName,
     extensions: entry.extensions,
     language: entry.contributionName,
+    ownerVersion: '1',
     contractVersion: '1',
   }
   const service = frameworkServiceOf(claim)

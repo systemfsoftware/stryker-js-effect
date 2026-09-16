@@ -9,6 +9,7 @@ import * as Result from 'effect/Result'
 
 const MINIMUM_SVELTE_VERSION: Version = { major: 3, minor: 30 }
 const SVELTE_5: Version = { major: 5, minor: 0 }
+const SVELTE_PEER = 'svelte'
 const SVELTE_PEER_RANGE = `>=${MINIMUM_SVELTE_VERSION.major}.${MINIMUM_SVELTE_VERSION.minor}`
 
 const COMPILER_SPECIFIER = 'svelte/compiler'
@@ -72,6 +73,20 @@ const isRecordWithWalk = (value: unknown): value is { readonly walk: SvelteWalkF
 const hasFields = (value: { readonly [key: PropertyKey]: unknown }, fields: typeof COMPILER_FIELDS): boolean =>
   Object.entries(fields).every(([field, accepts]) => accepts(value[field]))
 
+const INTEROP_MEMBERS: readonly string[] = ['default', 'module.exports']
+
+const interopCandidates = (module: unknown): readonly unknown[] =>
+  Match.value(module).pipe(
+    Match.when(Predicate.isObject, (record) => [
+      record,
+      ...INTEROP_MEMBERS.map((member) => Reflect.get(record, member)),
+    ]),
+    Match.orElse(() => [module]),
+  )
+
+const unwrapInterop = <T>(module: unknown, accepts: (value: unknown) => value is T): T | undefined =>
+  interopCandidates(module).find(accepts)
+
 const parseVersion = (version: string): Version | undefined => {
   const match = VERSION_PATTERN.exec(version)
   if (match === null) {
@@ -102,24 +117,35 @@ const isAtLeast = (version: string, minimum: Version): boolean =>
     Match.orElse(() => false),
   )
 
-const refusal = (reason: string, detail: string): FrameworkFailed => new FrameworkFailed({ reason, cause: detail })
+type PeerRefusalFields = Partial<Pick<FrameworkFailed, 'peer' | 'version' | 'supportedRange'>>
 
-const peerMissing = (peer: string): FrameworkFailed => refusal('PeerMissing', `the "${peer}" peer is not installed`)
+const refusal = (
+  reason: string,
+  detail: string,
+  fields: PeerRefusalFields = {},
+): FrameworkFailed => new FrameworkFailed({ reason, cause: detail, ...fields })
+
+const peerMissing = (peer: string): FrameworkFailed =>
+  refusal('PeerMissing', `the "${peer}" peer is not installed`, { peer })
 
 const peerVersionUnsupported = (version: string): FrameworkFailed =>
-  refusal('PeerVersionUnsupported', `svelte ${version} is not supported (expected ${SVELTE_PEER_RANGE})`)
+  refusal('PeerVersionUnsupported', `${SVELTE_PEER} ${version} is not supported (expected ${SVELTE_PEER_RANGE})`, {
+    peer: SVELTE_PEER,
+    version,
+    supportedRange: SVELTE_PEER_RANGE,
+  })
 
 const invalidContribution = (detail: string): FrameworkFailed => refusal('InvalidContribution', detail)
 
 const loadedCompilerModule = (load: PeerLoader): Effect.Effect<unknown, FrameworkFailed> =>
   Effect.tryPromise({
     try: () => load(COMPILER_SPECIFIER),
-    catch: () => peerMissing('svelte'),
+    catch: () => peerMissing(SVELTE_PEER),
   })
 
 const decodedCompilerModule = (module: unknown): Effect.Effect<CompilerModule, FrameworkFailed> =>
-  Match.value(module).pipe(
-    Match.when(isCompilerModule, (compiler) => Effect.succeed(compiler)),
+  Match.value(unwrapInterop(module, isCompilerModule)).pipe(
+    Match.when(Predicate.isNotNullish, (compiler) => Effect.succeed(compiler)),
     Match.orElse(() =>
       Effect.fail(invalidContribution(`"${COMPILER_SPECIFIER}" must export VERSION, parse, and preprocess`))
     ),
@@ -138,8 +164,8 @@ const loadedWalker = (load: PeerLoader, specifier: string): Effect.Effect<Svelte
       catch: () => peerMissing(specifier),
     }),
     (module) =>
-      Match.value(module).pipe(
-        Match.when(isRecordWithWalk, (withWalk) => Effect.succeed(withWalk.walk)),
+      Match.value(unwrapInterop(module, isRecordWithWalk)).pipe(
+        Match.when(Predicate.isNotNullish, (withWalk) => Effect.succeed(withWalk.walk)),
         Match.orElse(() => Effect.fail(invalidContribution(`"${specifier}" must export walk`))),
       ),
   )

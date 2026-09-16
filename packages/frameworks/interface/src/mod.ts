@@ -12,6 +12,12 @@ export interface FrameworkClaim {
   readonly formatId: FormatId
   readonly extensions: readonly string[]
   readonly language: string
+  /**
+   * The framework runtime this plugin resolves and owns — its compiler or parser
+   * version. Upgrading that runtime invalidates the mutants incremental state
+   * remembered for this plugin's files; `contractVersion` does not move with it.
+   */
+  readonly ownerVersion: string
   readonly contractVersion: string
 }
 

@@ -7,12 +7,15 @@ import { expect } from 'vitest'
 const SVELTE_PLUGIN = '@systemfsoftware/stryker-js-svelte'
 
 const MUTATED_FILE = 'src/App.svelte'
+const SOURCE = '<script>let answer = 1 + 2</script>'
+
+const RECORDED_STAMP = '0.1.0+5.55.1'
 
 type DecodedReport = S.Schema.Type<typeof IncrementalReportSchema>
 
 const mutatedFile = {
   language: 'svelte',
-  source: '<script>let answer = 1 + 2</script>',
+  source: SOURCE,
   mutants: [
     {
       id: '0',
@@ -25,7 +28,7 @@ const mutatedFile = {
   ],
 }
 
-const reportWithOwner = () => ({
+const reportWithOwner = (ownerVersion: string) => ({
   schemaVersion: '1.0',
   thresholds: { high: 80, low: 60 },
   files: {
@@ -33,7 +36,7 @@ const reportWithOwner = () => ({
       ...mutatedFile,
       formatId: 'svelte',
       ownerModule: SVELTE_PLUGIN,
-      ownerVersion: '1',
+      ownerVersion,
     },
   },
 })
@@ -54,15 +57,15 @@ Feature("Reading an earlier run's incremental report").body(({ scenario }) => {
     Gherkin.Do.pipe(
       Given('an incremental report recording the plugin that owns a mutated file')(
         'report',
-        () => Effect.succeed(reportWithOwner()),
+        () => Effect.succeed(reportWithOwner(RECORDED_STAMP)),
       ),
       When('the engine reads that report')('decoded', (s: { report: unknown }) => read(s.report)),
-      Then('the file carries the format that owns it and the version that owner declares')((s: {
+      Then('the file carries the format that owns it and the stamp that owner recorded')((s: {
         decoded: DecodedReport
       }) => {
         expect(s.decoded.files[MUTATED_FILE]?.formatId).toBe('svelte')
         expect(s.decoded.files[MUTATED_FILE]?.ownerModule).toBe(SVELTE_PLUGIN)
-        expect(s.decoded.files[MUTATED_FILE]?.ownerVersion).toBe('1')
+        expect(s.decoded.files[MUTATED_FILE]?.ownerVersion).toBe(RECORDED_STAMP)
       }),
     ),
   )
