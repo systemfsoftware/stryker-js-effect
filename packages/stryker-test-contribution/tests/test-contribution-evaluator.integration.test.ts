@@ -5,7 +5,7 @@
  *
  * Warrant: composition — real gate decision through the Evaluator port's
  * Layer, not a mock; property tests cover the pure decision, this covers the
- * shell wiring (options via RunConfiguration, success value vs error channel).
+ * shell wiring (options through the layer factory, success value vs error channel).
  * Refusal: not a tautology — removing the system under test (the evaluator's
  * evaluate) would make the Then assertions fail (no VerdictFail where expected,
  * or no EvaluatorFailed where breaking expected).
@@ -23,7 +23,6 @@ import * as Schema from 'effect/Schema'
 import { expect } from 'vitest'
 
 import { Evaluator, type EvaluatorFailed, type ExitClass } from '@systemfsoftware/stryker-js-language'
-import { RunConfiguration } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   makeTestContributionEvaluatorService,
   testContributionEvaluatorLayer,
@@ -71,9 +70,7 @@ const evaluatorServiceWith = (options: PartialStrykerOptions) => {
 const evaluatorViaLayerWith = (options: PartialStrykerOptions) => {
   const decoded = Schema.decodeUnknownSync(StrykerOptionsSchema)(options)
   return Effect.gen(function*() {
-    const context = yield* Layer.build(
-      testContributionEvaluatorLayer.pipe(Layer.provide(Layer.succeed(RunConfiguration, decoded))),
-    )
+    const context = yield* Layer.build(testContributionEvaluatorLayer(decoded))
     return Context.get(context, Evaluator)
   })
 }
@@ -182,7 +179,10 @@ Feature('test-contribution evaluator plugin')
     scenario(
       'The layer-provided evaluator fails on a toothless file',
       Gherkin.Do.pipe(
-        Given('a RunConfiguration with disableBail true')('options', () => Effect.succeed({ disableBail: true })),
+        Given('test-contribution options with disableBail true')(
+          'options',
+          () => Effect.succeed({ disableBail: true }),
+        ),
         When('the evaluator layer is built with that configuration')('exit', (s) =>
           Effect.gen(function*() {
             const evaluator = yield* evaluatorViaLayerWith(s.options)

@@ -5,6 +5,13 @@ import type * as reportApi from '@systemfsoftware/stryker-js-language'
 import type { ReporterEvent, ReporterFactory, ReporterInit } from '@systemfsoftware/stryker-js-language'
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
+import {
+  encodeWorkerOptions,
+  type ReporterInitOptions,
+  ReporterRpcs,
+  TraceContextReference,
+  tracePartsOf,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -16,8 +23,12 @@ import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
+import type * as RpcClient from 'effect/unstable/rpc/RpcClient'
+import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
+import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
 
 import { ConfigError } from './Config.schema.js'
+import { makeWorkerClient, type WorkerBootError, type WorkerLauncher } from './WorkerLauncher.js'
 
 export const REPORTER_STREAM_QUEUE_BOUND = 256
 
@@ -184,6 +195,63 @@ export const attachReporterFactories = (
       return attachment
     })).pipe(Effect.map(makeReporterStage))
 
+export const REPORTER_EVENT_BATCH_BOUND = 128
+
+export type ReporterWorkerClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof ReporterRpcs>, RpcClientError>
+
+const runOnWorker = <A, E>(call: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(call)
+
+const reporterInitPayload = (init: ReporterInit): ReporterInitOptions => ({
+  ...traceparentInit(init.traceparent),
+  ...tracestateInit(init.tracestate),
+})
+
+const flushFilledBatch = async (client: ReporterWorkerClient, batch: ReporterEvent[]): Promise<void> => {
+  if (batch.length < REPORTER_EVENT_BATCH_BOUND) return
+  await runOnWorker(client.onEventBatch(batch))
+  batch.length = 0
+}
+
+const flushRemainingBatch = async (client: ReporterWorkerClient, batch: ReporterEvent[]): Promise<void> => {
+  if (batch.length === 0) return
+  await runOnWorker(client.onEventBatch(batch))
+}
+
+export const reporterWorkerFactory =
+  (client: ReporterWorkerClient): ReporterFactory => (_options, init) => async (events) => {
+    await runOnWorker(client.init(reporterInitPayload(init)))
+    const batch: ReporterEvent[] = []
+    for await (const event of events) {
+      batch.push(event)
+      await flushFilledBatch(client, batch)
+    }
+    await flushRemainingBatch(client, batch)
+    await runOnWorker(client.flush())
+  }
+
+export interface SpawnReporterWorkerParams {
+  readonly entrypoint: string
+  readonly projectBasePath: string
+  readonly execArgv: readonly string[]
+  readonly options: StrykerOptions
+  readonly tempDirPrefix: string
+}
+
+export const spawnReporterWorker = (
+  params: SpawnReporterWorkerParams,
+): Effect.Effect<ReporterWorkerClient, WorkerBootError, Scope.Scope | WorkerLauncher> =>
+  Effect.gen(function*() {
+    const optionsJson = yield* encodeWorkerOptions(params.options)
+    return yield* makeWorkerClient({
+      rpcs: ReporterRpcs,
+      entrypoint: params.entrypoint,
+      workingDirectory: params.projectBasePath,
+      execArgv: [...params.execArgv],
+      optionsJson,
+      tempDirPrefix: params.tempDirPrefix,
+    })
+  })
+
 const warnEventDropped = (attachment: ReporterAttachment): Effect.Effect<void> =>
   Effect.gen(function*() {
     if ((yield* Ref.get(attachment.state)) === 'detached') {
@@ -297,12 +365,12 @@ const nonEmptyTraceState = (serialized: string | undefined): string | undefined 
   return serialized
 }
 
-const traceparentInit = (traceparent: string | undefined): ReporterInit => {
+const traceparentInit = (traceparent: string | undefined): ReporterInitOptions => {
   if (traceparent === undefined) return {}
   return { traceparent }
 }
 
-const tracestateInit = (tracestate: string | undefined): ReporterInit => {
+const tracestateInit = (tracestate: string | undefined): ReporterInitOptions => {
   if (tracestate === undefined) return {}
   return { tracestate }
 }
@@ -353,5 +421,9 @@ export const withPhaseSpan = <A, E, R>(
     Effect.sync(() =>
       api.trace.getTracer(ENGINE_TRACER_NAME).startSpan(spanName, { attributes }, api.context.active())
     ),
-    (span) => effect(span).pipe(Effect.ensuring(Effect.sync(() => span.end()))),
+    (span) =>
+      effect(span).pipe(
+        Effect.provideService(TraceContextReference, tracePartsOf(span.spanContext())),
+        Effect.ensuring(Effect.sync(() => span.end())),
+      ),
   )

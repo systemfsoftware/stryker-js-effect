@@ -51,18 +51,18 @@ const myIgnorer: Ignorer = {
 export const strykerIgnorers = [myIgnorer]
 ```
 
-An entry is just `{ name, shouldIgnore }`: the host registers each one as an
-`Ignore` contribution and validates at load that `name` is a string and
+An entry is just `{ name, shouldIgnore }`: the host carries each one as that
+plain descriptor and validates at load that `name` is a string and
 `shouldIgnore` is callable — an entry that fails fails the load by name.
 
-A module exporting `strykerIgnorers` loads as `Ignore` plugin contributions in
-any engine carrying the plain-ignorer loader. Configure the pair — they take
-different strings:
+A module exporting `strykerIgnorers` loads in any engine carrying the plain-ignorer
+loader, and the host builds the ignorer it runs from the descriptor. Configure the
+pair — they take different strings:
 
 | Config key | Value                                           |
 | ---------- | ----------------------------------------------- |
 | `plugins`  | the module specifier (this package or your own) |
-| `ignorers` | the contribution name (`generated-code` above)  |
+| `ignorers` | the ignorer name (`generated-code` above)       |
 
 A mismatched pair fails silent-green: the run completes with nothing ignored
 and only a `Cannot find plugin` warning.

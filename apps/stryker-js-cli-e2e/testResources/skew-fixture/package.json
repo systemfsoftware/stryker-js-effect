@@ -1,0 +1,10 @@
+{
+  "name": "skew-fixture",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@systemfsoftware/effect-cell-types": "^8",
+    "effect": "4.0.0-rc.112",
+    "vitest": "^4"
+  }
+}

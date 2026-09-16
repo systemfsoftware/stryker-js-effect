@@ -7,10 +7,11 @@ mutation run through the packed runner and worker, and a lost machine-mode
 envelope when the dry run fails. Everything below that seam is pinned by the
 CLI's property suites and the engine's integration tests.
 
-| Journey      | Test                             | Behavior it owns                                                                                                                         |
-| ------------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Mutation run | `tests/mutation-run.e2e.test.ts` | One real run through the packed runner plugin and the sandbox worker ends in a machine-mode `verdict` matching the hand-authored oracle. |
-| Failing run  | `tests/failing-run.e2e.test.ts`  | A failing dry run crosses the boundary as the typed machine-mode `error` document with its classed exit code.                            |
+| Journey      | Test                             | Behavior it owns                                                                                                                                    |
+| ------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mutation run | `tests/mutation-run.e2e.test.ts` | One real run through the packed runner plugin and the sandbox worker ends in a machine-mode `verdict` matching the hand-authored oracle.            |
+| Failing run  | `tests/failing-run.e2e.test.ts`  | A failing dry run crosses the boundary as the typed machine-mode `error` document with its classed exit code.                                       |
+| Effect skew  | `tests/effect-skew.e2e.test.ts`  | A run whose checker worker is bundled against a different Effect release finishes on the oracle's verdict and links its spans into the run's trace. |
 
 Every run packs two workspace packages (`stryker-js-cli` and
 `stryker-js-vitest-runner`) fresh with `pnpm pack` into a temp directory, starts
@@ -22,8 +23,9 @@ against a hand-authored oracle. No tarball, container state, or run output is
 committed.
 
 Machine-mode events go to stdout and also to `reports/mutation-stream.jsonl`
-under the run's working directory. The lane observes stdout. The default plugin
-glob `@systemfsoftware/stryker-js-*` resolves from the fixture's `node_modules`.
+under the run's working directory. The lane observes stdout. Each fixture names the plugins its run loads in its
+own `stryker.config.json` — that array is the only source of what loads — and
+they resolve from the fixture's `node_modules`.
 `--version` prints the CLI package version from the packed tarball's manifest.
 
 A failing dry run is `RuntimeError`: exit code 3, terminal `error` event with a
@@ -39,12 +41,12 @@ non-empty `remediation`.
 
 ## Layout
 
-| Path                        | Why there                                                                                                              |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `tests/*.e2e.test.ts`       | The lane's journeys — plain vitest, no test-layer shape rules apply: they drive a packed artifact through a container. |
-| `tests/__fixtures__/bed.ts` | The host-side bed: packs the CLI and runner, starts one container, installs the tarballs, asserts stdout.              |
-| `testResources/`            | The fixture projects the container runs — the repo's home for SUT-consumed resources.                                  |
-| `testResources/*/oracle.md` | Hand-derived expectations; a run may confirm them, never originate them.                                               |
+| Path                        | Why there                                                                                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/*.e2e.test.ts`       | The lane's journeys — plain vitest, no test-layer shape rules apply: they drive a packed artifact through a container.                                  |
+| `tests/__fixtures__/bed.ts` | The host-side bed: packs the CLI and runner, starts one container, installs the tarballs, asserts stdout.                                               |
+| `testResources/`            | The fixture projects the container runs — the repo's home for SUT-consumed resources. `effect-skew-checker/` is a plugin the bed builds and packs here. |
+| `testResources/*/oracle.md` | Hand-derived expectations; a run may confirm them, never originate them.                                                                                |
 
 ## Run modes
 
@@ -62,7 +64,12 @@ pnpm test:e2e
 
 ## Observability
 
-With OTel on, the lane's Vitest process exports traces to Grafana LGTM
+With OTel on, the container's CLI, its worker processes and the lane's Vitest process all export
+traces to Grafana LGTM, and `tests/effect-skew.e2e.test.ts` reads the run's trace back from Tempo to
+assert that the skewed worker linked into it. The container runs on the host network, so the
+loopback-bound collector is reachable from inside it.
+
+The lane's Vitest process exports traces to Grafana LGTM
 (`experimental.openTelemetry` in `vitest.config.ts`, SDK in `otel.ts`). The
 stack is a root process-compose unit over podman — not compose:
 

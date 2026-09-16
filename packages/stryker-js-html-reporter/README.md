@@ -7,17 +7,18 @@ HTML reporter plugin for the @systemfsoftware mutation engine.
 
 ## Usage
 
-You normally never import this package directly — the CLI wires it in. The
-reporter exists so a programmatic consumer can assemble its own host:
+You normally never import this package directly — the CLI binds it as a built-in
+in-process reporter. The reporter exists so a programmatic consumer can assemble
+its own host:
 
 ```ts
-import { makeHtmlReporter, strykerPlugins } from '@systemfsoftware/stryker-js-html-reporter'
+import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 ```
 
 ## Related
 
 - [`@systemfsoftware/stryker-js-engine`][engine] — the engine that emits the events this reporter presents
-- [`@systemfsoftware/stryker-js-cli`][cli] — the terminal-facing half, which binds this package's `strykerPlugins`
+- [`@systemfsoftware/stryker-js-cli`][cli] — the terminal-facing half, which binds this package's `makeHtmlReporter` as a built-in reporter
 
 ## License
 

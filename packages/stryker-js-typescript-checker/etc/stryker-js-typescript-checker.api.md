@@ -4,10 +4,11 @@
 
 ```ts
 
-import { PluginLayerContribution } from '@systemfsoftware/stryker-js-plugin-interface';
-
 // @public (undocumented)
-export const strykerPlugins: PluginLayerContribution<"Checker">[];
+export const strykerPlugins: readonly {
+    readonly kind: 'Checker';
+    readonly name: string;
+}[];
 
 // @public (undocumented)
 export const strykerValidationSchema: Record<string, unknown>;

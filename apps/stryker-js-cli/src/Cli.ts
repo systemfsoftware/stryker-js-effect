@@ -11,6 +11,7 @@ import {
   type RunEnvironmentShape,
   runMutationTest,
 } from '@systemfsoftware/stryker-js-engine'
+import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { Mutant } from '@systemfsoftware/stryker-js-language'
 import { type RunEvent, RunEvents } from '@systemfsoftware/stryker-js-language'
 import { RENDERED_OPTION_DEFAULTS } from '@systemfsoftware/stryker-js-language'
@@ -612,7 +613,7 @@ function hostOptionsOf(mode: ResolvedMode, stream: RunEventStream): RunEnvironme
     resolvedMode: mode,
     runStartedAt: stream.startedAt,
     basePath: process.cwd(),
-    reporterPluginModules: [new URL('./reporters/html.mjs', import.meta.url).href],
+    builtinReporters: { html: makeHtmlReporter },
     allowConsoleColors: isColorEnabled(mode, process.env['NO_COLOR']),
   }
 }

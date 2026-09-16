@@ -8,7 +8,6 @@ import type * as schema from '@systemfsoftware/stryker-js-language'
 import { RunEvents, VerdictReached } from '@systemfsoftware/stryker-js-language'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import type { MutantRunResult } from '@systemfsoftware/stryker-js-language'
-import type { AnyPluginContribution, PluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -76,7 +75,6 @@ export interface MakeMutationReportingInput {
   readonly testCoverage: TestCoverage
   readonly runId: string
   readonly resolvedMode: ResolvedMode
-  readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginContribution[]>
   readonly sandboxDirectory: string
   readonly basePath: string
 }

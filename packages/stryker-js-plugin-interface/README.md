@@ -1,9 +1,11 @@
 # @systemfsoftware/stryker-js-plugin-interface
 
-The plugin interface of the mutation-testing language — how a checker,
-test-runner, reporter, ignorer, or evaluator declares itself to a mutation run
-(`declarePlugin`) and how the run composes those contributions
-(`composePlugins`). The concept modules those plugins implement live in
+The mutation-testing plugin boundary. A worker plugin — a test runner, checker,
+or reporter — ships a spawn entrypoint whose target hosts an `RpcServer` for its
+kind's `@effect/rpc` group; the host resolves that entrypoint from the project's
+config, spawns it, and drives it over NDJSON. Every payload crossing the
+boundary is a schema this package owns, and every failure is a typed variant.
+The concept modules a plugin implements live in
 `@systemfsoftware/stryker-js-language`.
 
 ## Install
@@ -14,15 +16,28 @@ pnpm add @systemfsoftware/stryker-js-plugin-interface
 
 ## Entry point
 
-One specifier carries the whole interface. The package entry enumerates every
-published symbol exactly once — plugin kinds and contributions
-(`PluginKind`, `PluginContribution`, `declarePlugin`), composition
-(`composePlugins`, `ComposedPlugins`), and the environment a plugin's layer
-may require (`RunConfiguration`, `SandboxDirectory`, `PluginEnvironment`):
+One specifier carries the whole boundary. The package entry publishes the
+per-kind RPC groups (`TestRunnerRpcs`, `CheckerRpcs`, `ReporterRpcs`, and the
+`WorkerRpcGroups` map), the boundary payload schemas (`TestRunnerDryRunRequest`,
+`CheckerRequest`, `ReporterEventBatch`, `ReporterInitOptions`, …), the typed
+error taxonomy (`BoundaryPayloadRejected`, `BoundaryUnrecognizedSignal`,
+`WorkerEntryMissing`), the spawn contract (`WorkerPluginKind`,
+`WorkerPluginSpawn`, `WorkerPluginSpawnSchema`), the worker-options wire codec
+(`encodeWorkerOptions`, `decodeWorkerOptions`), and the W3C trace-context
+helpers (`layerTraceContextClient`, `layerTraceContextServer`, `tracePartsOf`):
 
 ```ts
-import { composePlugins, declarePlugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  layerTraceContextServer,
+  ReporterRpcs,
+  startWorkerTelemetry,
+  TestRunnerRpcs,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 ```
+
+The host bootstraps its own OTel SDK with `startHostTelemetry`; a worker
+bootstraps its own with `startWorkerTelemetry`. Both are no-ops unless
+`OTEL_ENABLED` is `true`.
 
 ## License
 

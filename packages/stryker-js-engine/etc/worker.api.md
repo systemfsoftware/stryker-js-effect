@@ -4,130 +4,40 @@
 
 ```ts
 
-import { AnyPluginContribution } from '@systemfsoftware/stryker-js-plugin-interface';
-import { CheckerFailed } from '@systemfsoftware/stryker-js-language';
-import { ContributionOf } from '@systemfsoftware/stryker-js-plugin-interface';
+import { CheckerRpcs } from '@systemfsoftware/stryker-js-plugin-interface';
+import { decodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Effect from 'effect/Effect';
-import * as FileSystem from 'effect/FileSystem';
+import { encodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as HashMap from 'effect/HashMap';
+import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
 import { Module } from '@systemfsoftware/stryker-js-language';
-import { Mutant } from '@systemfsoftware/stryker-js-language';
 import * as Path from 'effect/Path';
-import { PluginContribution } from '@systemfsoftware/stryker-js-plugin-interface';
-import { PluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
-import * as Rpc from 'effect/unstable/rpc/Rpc';
-import * as RpcGroup from 'effect/unstable/rpc/RpcGroup';
 import * as S from 'effect/Schema';
 import { Schema } from 'effect';
-import { StrykerOptions } from '@systemfsoftware/stryker-js-language';
-import { TestRunnerFailed } from '@systemfsoftware/stryker-js-language';
+import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface';
+import { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
 import { YieldableError } from 'effect/Cause';
 
-// @public (undocumented)
-export const CheckerRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"check", Schema.Struct<{
-    checkerName: Schema.String;
-    mutants: Schema.$Array<typeof Mutant>;
-}>, Schema.$Record<Schema.String, Schema.Union<readonly [Schema.Struct<{
-    readonly status: Schema.Literal<"passed">;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"compileError">;
-    readonly reason: Schema.String;
-}>]>>, typeof CheckerFailed, never, never> | Rpc.Rpc<"group", Schema.Struct<{
-    checkerName: Schema.String;
-    mutants: Schema.$Array<typeof Mutant>;
-}>, Schema.$Array<Schema.$Array<Schema.String>>, typeof CheckerFailed, never, never>>;
+export { CheckerRpcs }
 
+// Warning: (ae-forgotten-export) The symbol "PluginKind" needs to be exported by the entry point worker.d.mts
+// Warning: (ae-forgotten-export) The symbol "AnyPluginDescriptor" needs to be exported by the entry point worker.d.mts
+// Warning: (ae-forgotten-export) The symbol "PluginDescriptorOf" needs to be exported by the entry point worker.d.mts
 // Warning: (ae-forgotten-export) The symbol "PluginNotFoundError" needs to be exported by the entry point worker.d.mts
 //
 // @public (undocumented)
-export function create<K extends PluginKind>(pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginContribution[]>, kind: K, name: string): Effect.Effect<ContributionOf<K>, PluginNotFoundError>;
+export function create<K extends PluginKind>(pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginDescriptor[]>, kind: K, name: string): Effect.Effect<PluginDescriptorOf<K>, PluginNotFoundError>;
 
-// @public (undocumented)
-export const decodeWorkerOptions: (raw: string) => Effect.Effect<{
-    readonly [x: string]: unknown;
-    readonly allowConsoleColors: boolean;
-    readonly buildCommand?: string | undefined;
-    readonly checkers: readonly string[];
-    readonly checkerNodeArgs: readonly string[];
-    readonly concurrency?: string | number | undefined;
-    readonly commandRunner: {
-        readonly [x: string]: unknown;
-        readonly command: string;
-    };
-    readonly coverageAnalysis: "all" | "off" | "perTest";
-    readonly clearTextReporter: {
-        readonly [x: string]: unknown;
-        readonly allowColor: boolean;
-        readonly allowEmojis: boolean;
-        readonly logTests: boolean;
-        readonly maxTestsToLog: number;
-        readonly reportTests: boolean;
-        readonly reportMutants: boolean;
-        readonly reportScoreTable: boolean;
-        readonly skipFull: boolean;
-    };
-    readonly dryRunOnly: boolean;
-    readonly ignorePatterns: readonly string[];
-    readonly ignoreStatic: boolean;
-    readonly incremental: boolean;
-    readonly incrementalFile: string;
-    readonly progressStreamFile: string;
-    readonly force: boolean;
-    readonly fileLogLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
-    readonly inPlace: boolean;
-    readonly logLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
-    readonly maxConcurrentTestRunners: number;
-    readonly maxTestRunnerReuse: number;
-    readonly mutate: readonly string[];
-    readonly mutator: {
-        readonly excludedMutations: readonly string[];
-    };
-    readonly packageManager?: "npm" | "pnpm" | "yarn" | undefined;
-    readonly plugins: readonly string[];
-    readonly appendPlugins: readonly string[];
-    readonly reporters: readonly string[];
-    readonly htmlReporter: {
-        readonly fileName: string;
-    };
-    readonly jsonReporter: {
-        readonly fileName: string;
-    };
-    readonly disableTypeChecks: string | boolean;
-    readonly symlinkNodeModules: boolean;
-    readonly tempDirName: string;
-    readonly cleanTempDir: "always" | boolean;
-    readonly testRunner: string;
-    readonly testRunnerNodeArgs: readonly string[];
-    readonly thresholds: {
-        readonly high: number;
-        readonly low: number;
-        readonly break: number | null;
-    };
-    readonly timeoutFactor: number;
-    readonly timeoutMS: number;
-    readonly dryRunTimeoutMinutes: number;
-    readonly tsconfigFile: string;
-    readonly warnings: boolean | {
-        readonly [x: string]: unknown;
-        readonly unknownOptions: boolean;
-        readonly preprocessorErrors: boolean;
-        readonly unserializableOptions: boolean;
-        readonly slow: boolean;
-    };
-    readonly disableBail: boolean;
-    readonly allowEmpty: boolean;
-    readonly ignorers: readonly string[];
-    readonly testFiles: readonly string[];
-}, Schema.SchemaError, never>;
+export { decodeWorkerOptions }
 
-// @public (undocumented)
-export const encodeWorkerOptions: (options: StrykerOptions) => Effect.Effect<string>;
+export { encodeWorkerOptions }
 
 // Warning: (ae-forgotten-export) The symbol "LoadedPlugins" needs to be exported by the entry point worker.d.mts
 // Warning: (ae-forgotten-export) The symbol "PluginLoadFailedError" needs to be exported by the entry point worker.d.mts
+// Warning: (ae-forgotten-export) The symbol "PluginSelectionError" needs to be exported by the entry point worker.d.mts
 //
 // @public (undocumented)
-export function loadPlugins(pluginDescriptors: readonly string[], basePath: string): Effect.Effect<LoadedPlugins, PluginLoadFailedError, FileSystem.FileSystem | Module | Path.Path>;
+export function loadPlugins(pluginDescriptors: readonly string[], basePath: string): Effect.Effect<LoadedPlugins, PluginLoadFailedError | PluginSelectionError, Module | Path.Path>;
 
 // @public
 export const MutantCoverageSchema: S.Struct<{
@@ -135,87 +45,7 @@ export const MutantCoverageSchema: S.Struct<{
     readonly perTest: S.$Record<S.String, S.$Record<S.String, S.Finite>>;
 }>;
 
-// @public (undocumented)
-export const TestRunnerRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"capabilities", Schema.Void, Schema.Struct<{
-    readonly reloadEnvironment: Schema.Boolean;
-}>, typeof TestRunnerFailed, never, never> | Rpc.Rpc<"dryRun", Schema.Struct<{
-    options: Schema.Struct<{
-        readonly timeout: Schema.Finite;
-        readonly disableBail: Schema.Boolean;
-        readonly coverageAnalysis: Schema.Literals<readonly ["off", "all", "perTest"]>;
-        readonly files: Schema.optionalKey<Schema.$Array<Schema.String>>;
-        readonly testFiles: Schema.optionalKey<Schema.$Array<Schema.String>>;
-    }>;
-}>, Schema.Union<readonly [Schema.Struct<{
-    readonly status: Schema.Literal<"complete">;
-    readonly tests: Schema.$Array<Schema.Union<readonly [Schema.Struct<{
-        readonly id: Schema.String;
-        readonly name: Schema.String;
-        readonly timeSpentMs: Schema.Finite;
-        readonly fileName: Schema.optionalKey<Schema.String>;
-        readonly startPosition: Schema.optionalKey<Schema.Struct<{
-            readonly line: Schema.Finite;
-            readonly column: Schema.Finite;
-        }>>;
-        readonly status: Schema.Literal<"failed">;
-        readonly failureMessage: Schema.String;
-    }>, Schema.Struct<{
-        readonly id: Schema.String;
-        readonly name: Schema.String;
-        readonly timeSpentMs: Schema.Finite;
-        readonly fileName: Schema.optionalKey<Schema.String>;
-        readonly startPosition: Schema.optionalKey<Schema.Struct<{
-            readonly line: Schema.Finite;
-            readonly column: Schema.Finite;
-        }>>;
-        readonly status: Schema.Literal<"skipped">;
-    }>, Schema.Struct<{
-        readonly id: Schema.String;
-        readonly name: Schema.String;
-        readonly timeSpentMs: Schema.Finite;
-        readonly fileName: Schema.optionalKey<Schema.String>;
-        readonly startPosition: Schema.optionalKey<Schema.Struct<{
-            readonly line: Schema.Finite;
-            readonly column: Schema.Finite;
-        }>>;
-        readonly status: Schema.Literal<"success">;
-    }>]>>;
-    readonly mutantCoverage: Schema.optionalKey<Schema.Struct<{
-        readonly perTest: Schema.$Record<Schema.String, Schema.$Record<Schema.String, Schema.Finite>>;
-        readonly static: Schema.$Record<Schema.String, Schema.Finite>;
-    }>>;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"timeout">;
-    readonly reason: Schema.optionalKey<Schema.String>;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"error">;
-    readonly errorMessage: Schema.String;
-}>]>, typeof TestRunnerFailed, never, never> | Rpc.Rpc<"mutantRun", Schema.Struct<{
-    options: Schema.Struct<{
-        readonly timeout: Schema.Finite;
-        readonly disableBail: Schema.Boolean;
-        readonly activeMutant: typeof Mutant;
-        readonly sandboxFileName: Schema.String;
-        readonly mutantActivation: Schema.Literals<readonly ["runtime", "static"]>;
-        readonly reloadEnvironment: Schema.Boolean;
-        readonly testFilter: Schema.optionalKey<Schema.$Array<Schema.String>>;
-        readonly hitLimit: Schema.optionalKey<Schema.Finite>;
-    }>;
-}>, Schema.Union<readonly [Schema.Struct<{
-    readonly status: Schema.Literal<"killed">;
-    readonly killedBy: Schema.$Array<Schema.String>;
-    readonly failureMessage: Schema.String;
-    readonly nrOfTests: Schema.Finite;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"survived">;
-    readonly nrOfTests: Schema.Finite;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"timeout">;
-    readonly reason: Schema.optionalKey<Schema.String>;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"error">;
-    readonly errorMessage: Schema.String;
-}>]>, typeof TestRunnerFailed, never, never>>;
+export { TestRunnerRpcs }
 
 // (No @packageDocumentation comment for this package)
 

@@ -24,6 +24,11 @@
       "types": "./dist/stryker-setup.d.mts",
       "default": "./dist/stryker-setup.mjs"
     },
+    "./worker": {
+      "@systemfsoftware/source": "./src/worker.ts",
+      "types": "./dist/worker.d.mts",
+      "default": "./dist/worker.mjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -49,6 +54,9 @@
     "coverageAnalysis": "perTest"
   },
   "dependencies": {
+    "@opentelemetry/exporter-trace-otlp-http": "^0.208.0",
+    "@opentelemetry/sdk-node": "^0.208.0",
+    "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@systemfsoftware/effect-cell-types": "catalog:"
   },
   "peerDependencies": {
@@ -88,7 +96,23 @@
         "types": "./dist/stryker-setup.d.mts",
         "default": "./dist/stryker-setup.mjs"
       },
+      "./worker": {
+        "types": "./dist/worker.d.mts",
+        "default": "./dist/worker.mjs"
+      },
       "./package.json": "./package.json"
     }
+  },
+  "inlinedDependencies": {
+    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node-shared": "4.0.0-rc.112",
+    "@opentelemetry/api": "1.9.1",
+    "@systemfsoftware/effect-cell-types": "8.1.0",
+    "detect-libc": "2.1.2",
+    "effect": "4.0.0-rc.112",
+    "msgpackr": "2.1.0",
+    "msgpackr-extract": "3.0.4",
+    "node-gyp-build-optional-packages": "5.2.2",
+    "ws": "8.21.3"
   }
 }

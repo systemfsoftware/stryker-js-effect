@@ -4,125 +4,455 @@
 
 ```ts
 
-import { Checker } from '@systemfsoftware/stryker-js-language';
+import { $Array } from 'effect/Schema';
+import { $Record } from 'effect/Schema';
+import * as api from '@opentelemetry/api';
+import { Boolean as Boolean_2 } from 'effect/Schema';
+import { CheckerFailed } from '@systemfsoftware/stryker-js-language';
+import { CheckResultSchema } from '@systemfsoftware/stryker-js-language';
 import * as Context from 'effect/Context';
-import { Evaluator } from '@systemfsoftware/stryker-js-language';
-import * as FileSystem from 'effect/FileSystem';
-import { Ignorer } from '@systemfsoftware/stryker-js-language';
+import { DryRunCompleted } from '@systemfsoftware/stryker-js-language';
+import { DryRunResultSchema } from '@systemfsoftware/stryker-js-language';
+import * as Effect from 'effect/Effect';
+import { Finite } from 'effect/Schema';
 import * as Layer from 'effect/Layer';
-import { Module } from '@systemfsoftware/stryker-js-language';
+import { Literal } from 'effect/Schema';
+import { Literals } from 'effect/Schema';
+import { Mutant } from '@systemfsoftware/stryker-js-language';
+import { MutantRunResultSchema } from '@systemfsoftware/stryker-js-language';
+import { MutantTested } from '@systemfsoftware/stryker-js-language';
+import { MutationTestingPlanReady } from '@systemfsoftware/stryker-js-language';
+import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language';
+import { Never } from 'effect/Schema';
 import * as Option from 'effect/Option';
-import * as Path from 'effect/Path';
-import { ReporterFactory } from '@systemfsoftware/stryker-js-language';
+import { optionalKey } from 'effect/Schema';
+import { ReporterEventUnion } from '@systemfsoftware/stryker-js-language';
+import { ReporterFailed } from '@systemfsoftware/stryker-js-language';
+import * as Rpc from 'effect/unstable/rpc/Rpc';
+import * as RpcGroup from 'effect/unstable/rpc/RpcGroup';
+import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware';
 import * as S from 'effect/Schema';
-import { TestRunner } from '@systemfsoftware/stryker-js-language';
+import { String as String_2 } from 'effect/Schema';
+import { Struct } from 'effect/Schema';
+import { StrykerOptions } from '@systemfsoftware/stryker-js-language';
+import { TestRunnerCapabilitiesSchema } from '@systemfsoftware/stryker-js-language';
+import { TestRunnerFailed } from '@systemfsoftware/stryker-js-language';
+import { Union } from 'effect/Schema';
+import { Void } from 'effect/Schema';
+import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
-export type AnyPluginContribution = { [K in PluginKind]: PluginContribution<K>; }[PluginKind];
+export type BoundaryError = typeof BoundaryErrorSchema.Type;
 
 // @public (undocumented)
-export interface ComposedPlugins {
-    // (undocumented)
-    readonly layer: Option.Option<Layer.Layer<MergedPluginServices, never, PluginEnvironment>>;
-    // (undocumented)
-    readonly reporterFactories: readonly SelectedReporterFactory[];
-    // (undocumented)
-    readonly shadowings: readonly Shadowing[];
-}
+export const BoundaryErrorSchema: S.Union<readonly [typeof BoundaryPayloadRejected, typeof BoundaryUnrecognizedSignal, typeof WorkerEntryMissing, typeof TestRunnerFailed, typeof CheckerFailed, typeof ReporterFailed]>;
+
+// Warning: (ae-forgotten-export) The symbol "BoundaryPayloadRejected_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class BoundaryPayloadRejected extends BoundaryPayloadRejected_base {}
+
+// Warning: (ae-forgotten-export) The symbol "BoundaryUnrecognizedSignal_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class BoundaryUnrecognizedSignal extends BoundaryUnrecognizedSignal_base {}
 
 // @public (undocumented)
-export function composePlugins(contributions: readonly AnyPluginContribution[]): ComposedPlugins;
+export const CheckerCheckResult: S.$Record<S.String, S.Union<readonly [S.Struct<{
+    readonly status: S.Literal<"passed">;
+}>, S.Struct<{
+    readonly status: S.Literal<"compileError">;
+    readonly reason: S.String;
+}>]>>;
+
+export { CheckerFailed }
 
 // @public (undocumented)
-export type ContributionOf<K extends PluginKind> = Extract<AnyPluginContribution, {
-    readonly kind: K;
+export const CheckerGroupResult: S.$Array<S.$Array<S.String>>;
+
+// @public (undocumented)
+export const CheckerRequest: S.Struct<{
+    readonly checkerName: S.String;
+    readonly mutants: S.$Array<typeof Mutant>;
 }>;
 
 // @public (undocumented)
-export function declarePlugin(kind: 'Reporter', name: string, make: ReporterFactory): PluginContribution<'Reporter'>;
+export type CheckerRequest = typeof CheckerRequest.Type;
 
 // @public (undocumented)
-export function declarePlugin<K extends PluginLayerKind>(kind: K, name: string, layer: Layer.Layer<PluginInterfaces[K], never, PluginEnvironment>): PluginContribution<K>;
+export const CheckerRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"group", Struct<    {
+    readonly checkerName: String_2;
+    readonly mutants: $Array<Mutant>;
+}>, $Array<$Array<String_2>>, typeof CheckerFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"check", Struct<    {
+    readonly checkerName: String_2;
+    readonly mutants: $Array<Mutant>;
+}>, $Record<String_2, Union<readonly [Struct<    {
+    readonly status: Literal<"passed">;
+}>, Struct<    {
+    readonly status: Literal<"compileError">;
+    readonly reason: String_2;
+}>]>>, typeof CheckerFailed, typeof TraceContextMiddleware, never>>;
+
+export { CheckResultSchema }
 
 // @public (undocumented)
-export type MergedPluginServices = Checker & Ignorer & TestRunner;
+export const decodeWorkerOptions: (raw: string) => Effect.Effect<{
+    readonly [x: string]: unknown;
+    readonly allowConsoleColors: boolean;
+    readonly buildCommand?: string | undefined;
+    readonly checkers: readonly string[];
+    readonly checkerNodeArgs: readonly string[];
+    readonly concurrency?: string | number | undefined;
+    readonly commandRunner: {
+        readonly [x: string]: unknown;
+        readonly command: string;
+    };
+    readonly coverageAnalysis: "all" | "off" | "perTest";
+    readonly clearTextReporter: {
+        readonly [x: string]: unknown;
+        readonly allowColor: boolean;
+        readonly allowEmojis: boolean;
+        readonly logTests: boolean;
+        readonly maxTestsToLog: number;
+        readonly reportTests: boolean;
+        readonly reportMutants: boolean;
+        readonly reportScoreTable: boolean;
+        readonly skipFull: boolean;
+    };
+    readonly dryRunOnly: boolean;
+    readonly ignorePatterns: readonly string[];
+    readonly ignoreStatic: boolean;
+    readonly incremental: boolean;
+    readonly incrementalFile: string;
+    readonly progressStreamFile: string;
+    readonly force: boolean;
+    readonly fileLogLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
+    readonly inPlace: boolean;
+    readonly logLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
+    readonly maxConcurrentTestRunners: number;
+    readonly maxTestRunnerReuse: number;
+    readonly mutate: readonly string[];
+    readonly mutator: {
+        readonly excludedMutations: readonly string[];
+    };
+    readonly packageManager?: "npm" | "pnpm" | "yarn" | undefined;
+    readonly plugins: readonly string[];
+    readonly appendPlugins: readonly string[];
+    readonly reporters: readonly string[];
+    readonly htmlReporter: {
+        readonly fileName: string;
+    };
+    readonly jsonReporter: {
+        readonly fileName: string;
+    };
+    readonly disableTypeChecks: string | boolean;
+    readonly symlinkNodeModules: boolean;
+    readonly tempDirName: string;
+    readonly cleanTempDir: "always" | boolean;
+    readonly testRunner: string;
+    readonly testRunnerNodeArgs: readonly string[];
+    readonly thresholds: {
+        readonly high: number;
+        readonly low: number;
+        readonly break: number | null;
+    };
+    readonly timeoutFactor: number;
+    readonly timeoutMS: number;
+    readonly dryRunTimeoutMinutes: number;
+    readonly tsconfigFile: string;
+    readonly warnings: boolean | {
+        readonly [x: string]: unknown;
+        readonly unknownOptions: boolean;
+        readonly preprocessorErrors: boolean;
+        readonly unserializableOptions: boolean;
+        readonly slow: boolean;
+    };
+    readonly disableBail: boolean;
+    readonly allowEmpty: boolean;
+    readonly ignorers: readonly string[];
+    readonly testFiles: readonly string[];
+}, S.SchemaError, never>;
+
+export { DryRunResultSchema }
 
 // @public (undocumented)
-export type PluginContribution<K extends PluginKind = PluginKind> = K extends 'Reporter' ? PluginReporterContribution : PluginLayerContribution<Extract<K, PluginLayerKind>>;
+export const encodeWorkerOptions: (options: StrykerOptions) => Effect.Effect<string>;
 
 // @public (undocumented)
-export type PluginEnvironment = RunConfiguration | SandboxDirectory | FileSystem.FileSystem | Module | Path.Path;
+export const formatTraceparent: (parts: TraceContextParts) => Traceparent;
 
 // @public (undocumented)
-export interface PluginInterfaces {
+export const layerTraceContextClient: Layer.Layer<RpcMiddleware.ForClient<TraceContextMiddleware>, never, never>;
+
+// @public (undocumented)
+export const layerTraceContextServer: Layer.Layer<TraceContextMiddleware, never, never>;
+
+export { MutantRunResultSchema }
+
+// @public (undocumented)
+export const parseTraceparent: (value: string) => Option.Option<TraceContextParts>;
+
+// Warning: (ae-forgotten-export) The symbol "PropagatedTrace_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class PropagatedTrace extends PropagatedTrace_base {}
+
+// @public (undocumented)
+export const ReporterAck: S.Void;
+
+// @public (undocumented)
+export const ReporterDrained: S.Void;
+
+// @public (undocumented)
+export const ReporterEventBatch: S.$Array<S.Union<readonly [DryRunCompleted, MutationTestingPlanReady, MutantTested, MutationTestReportReady]>>;
+
+// @public (undocumented)
+export type ReporterEventBatch = typeof ReporterEventBatch.Type;
+
+export { ReporterEventUnion }
+
+export { ReporterFailed }
+
+// @public (undocumented)
+export const ReporterInitOptions: S.Struct<{
+    readonly traceparent: S.optionalKey<S.String>;
+    readonly tracestate: S.optionalKey<S.String>;
+}>;
+
+// @public (undocumented)
+export type ReporterInitOptions = typeof ReporterInitOptions.Type;
+
+// @public (undocumented)
+export const ReporterRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"flush", Void, Void, typeof ReporterFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"init", Struct<    {
+    readonly traceparent: optionalKey<String_2>;
+    readonly tracestate: optionalKey<String_2>;
+}>, Void, typeof ReporterFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"onEventBatch", $Array<Union<readonly [DryRunCompleted, MutationTestingPlanReady, MutantTested, MutationTestReportReady]>>, Void, typeof ReporterFailed, typeof TraceContextMiddleware, never>>;
+
+// @public (undocumented)
+export const startHostTelemetry: () => Promise<void>;
+
+// @public (undocumented)
+export const startWorkerTelemetry: () => Promise<void>;
+
+export { TestRunnerCapabilitiesSchema }
+
+// @public (undocumented)
+export const TestRunnerDryRunRequest: S.Struct<{
+    readonly options: S.Struct<{
+        readonly timeout: S.Finite;
+        readonly disableBail: S.Boolean;
+        readonly coverageAnalysis: S.Literals<readonly ["off", "all", "perTest"]>;
+        readonly files: S.optionalKey<S.$Array<S.String>>;
+        readonly testFiles: S.optionalKey<S.$Array<S.String>>;
+    }>;
+}>;
+
+// @public (undocumented)
+export type TestRunnerDryRunRequest = typeof TestRunnerDryRunRequest.Type;
+
+export { TestRunnerFailed }
+
+// @public (undocumented)
+export const TestRunnerMutantRunRequest: S.Struct<{
+    readonly options: S.Struct<{
+        readonly timeout: S.Finite;
+        readonly disableBail: S.Boolean;
+        readonly activeMutant: typeof Mutant;
+        readonly sandboxFileName: S.String;
+        readonly mutantActivation: S.Literals<readonly ["runtime", "static"]>;
+        readonly reloadEnvironment: S.Boolean;
+        readonly testFilter: S.optionalKey<S.$Array<S.String>>;
+        readonly hitLimit: S.optionalKey<S.Finite>;
+    }>;
+}>;
+
+// @public (undocumented)
+export type TestRunnerMutantRunRequest = typeof TestRunnerMutantRunRequest.Type;
+
+// @public (undocumented)
+export const TestRunnerRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"capabilities", Void, Struct<    {
+    readonly reloadEnvironment: Boolean_2;
+}>, typeof TestRunnerFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"dryRun", Struct<    {
+    readonly options: Struct<    {
+        readonly timeout: Finite;
+        readonly disableBail: Boolean_2;
+        readonly coverageAnalysis: Literals<readonly ["off", "all", "perTest"]>;
+        readonly files: optionalKey<$Array<String_2>>;
+        readonly testFiles: optionalKey<$Array<String_2>>;
+    }>;
+}>, Union<readonly [Struct<    {
+    readonly status: Literal<"complete">;
+    readonly tests: $Array<Union<readonly [Struct<    {
+        readonly id: String_2;
+        readonly name: String_2;
+        readonly timeSpentMs: Finite;
+        readonly fileName: optionalKey<String_2>;
+        readonly startPosition: optionalKey<Struct<    {
+            readonly line: Finite;
+            readonly column: Finite;
+        }>>;
+        readonly status: Literal<"failed">;
+        readonly failureMessage: String_2;
+    }>, Struct<    {
+        readonly id: String_2;
+        readonly name: String_2;
+        readonly timeSpentMs: Finite;
+        readonly fileName: optionalKey<String_2>;
+        readonly startPosition: optionalKey<Struct<    {
+            readonly line: Finite;
+            readonly column: Finite;
+        }>>;
+        readonly status: Literal<"skipped">;
+    }>, Struct<    {
+        readonly id: String_2;
+        readonly name: String_2;
+        readonly timeSpentMs: Finite;
+        readonly fileName: optionalKey<String_2>;
+        readonly startPosition: optionalKey<Struct<    {
+            readonly line: Finite;
+            readonly column: Finite;
+        }>>;
+        readonly status: Literal<"success">;
+    }>]>>;
+    readonly mutantCoverage: optionalKey<Struct<    {
+        readonly perTest: $Record<String_2, $Record<String_2, Finite>>;
+        readonly static: $Record<String_2, Finite>;
+    }>>;
+}>, Struct<    {
+    readonly status: Literal<"timeout">;
+    readonly reason: optionalKey<String_2>;
+}>, Struct<    {
+    readonly status: Literal<"error">;
+    readonly errorMessage: String_2;
+}>]>, typeof TestRunnerFailed, typeof TraceContextMiddleware, never> | Rpc.Rpc<"mutantRun", Struct<    {
+    readonly options: Struct<    {
+        readonly timeout: Finite;
+        readonly disableBail: Boolean_2;
+        readonly activeMutant: Mutant;
+        readonly sandboxFileName: String_2;
+        readonly mutantActivation: Literals<readonly ["runtime", "static"]>;
+        readonly reloadEnvironment: Boolean_2;
+        readonly testFilter: optionalKey<$Array<String_2>>;
+        readonly hitLimit: optionalKey<Finite>;
+    }>;
+}>, Union<readonly [Struct<    {
+    readonly status: Literal<"killed">;
+    readonly killedBy: $Array<String_2>;
+    readonly failureMessage: String_2;
+    readonly nrOfTests: Finite;
+}>, Struct<    {
+    readonly status: Literal<"survived">;
+    readonly nrOfTests: Finite;
+}>, Struct<    {
+    readonly status: Literal<"timeout">;
+    readonly reason: optionalKey<String_2>;
+}>, Struct<    {
+    readonly status: Literal<"error">;
+    readonly errorMessage: String_2;
+}>]>, typeof TestRunnerFailed, typeof TraceContextMiddleware, never>>;
+
+// @public (undocumented)
+export const TraceContext: S.Struct<{
+    readonly traceparent: S.String;
+    readonly tracestate: S.optionalKey<S.String>;
+}>;
+
+// @public (undocumented)
+export type TraceContext = typeof TraceContext.Type;
+
+// Warning: (ae-forgotten-export) The symbol "TraceContextMiddleware_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class TraceContextMiddleware extends TraceContextMiddleware_base {}
+
+// @public (undocumented)
+export interface TraceContextParts {
     // (undocumented)
-    Checker: Checker;
+    readonly spanId: string;
     // (undocumented)
-    Evaluator: Evaluator;
+    readonly traceFlags: number;
     // (undocumented)
-    Ignore: Ignorer;
+    readonly traceId: string;
     // (undocumented)
-    TestRunner: TestRunner;
+    readonly traceState?: string | undefined;
+    // (undocumented)
+    readonly version: string;
 }
 
 // @public (undocumented)
-export const PluginKind: S.Literals<readonly ["Checker", "TestRunner", "Reporter", "Ignore", "Evaluator"]>;
+export const TraceContextReference: Context.Reference<Option.Option<TraceContextParts>>;
 
 // @public (undocumented)
-export type PluginKind = typeof PluginKind.Type;
+export const Traceparent: S.String;
 
-// Warning: (ae-forgotten-export) The symbol "PluginLayerContribution_base" needs to be exported by the entry point index.d.mts
+// @public (undocumented)
+export type Traceparent = typeof Traceparent.Type;
+
+// @public (undocumented)
+export const TRACEPARENT_HEADER = "traceparent";
+
+// @public (undocumented)
+export const tracePartsOf: (context: api.SpanContext) => Option.Option<TraceContextParts>;
+
+// @public (undocumented)
+export const TRACESTATE_HEADER = "tracestate";
+
+// @public (undocumented)
+export const withLinkedSpan: <A, E, R>(spanName: string, attributes: api.Attributes, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+
+// Warning: (ae-forgotten-export) The symbol "WorkerEntryMissing_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
-export class PluginLayerContribution<K extends PluginLayerKind = PluginLayerKind> extends PluginLayerContribution_base {
+export class WorkerEntryMissing extends WorkerEntryMissing_base {}
+
+// @public (undocumented)
+export interface WorkerPluginEntry<K extends WorkerPluginKind = WorkerPluginKind> {
+    // (undocumented)
+    readonly group: WorkerRpcsOf<K>;
     // (undocumented)
     readonly kind: K;
-    // (undocumented)
-    readonly layer: Layer.Layer<PluginInterfaces[K], never, PluginEnvironment>;
-    // (undocumented)
-    readonly name: string;
 }
 
 // @public (undocumented)
-export const PluginLayerKind: S.Literals<readonly ["Checker", "TestRunner", "Ignore", "Evaluator"]>;
+export const WorkerPluginEntryField: S.Literals<readonly ["bin", "workerExport"]>;
 
 // @public (undocumented)
-export type PluginLayerKind = typeof PluginLayerKind.Type;
+export type WorkerPluginEntryField = typeof WorkerPluginEntryField.Type;
 
-// Warning: (ae-forgotten-export) The symbol "PluginReporterContribution_base" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
-export class PluginReporterContribution extends PluginReporterContribution_base {
+export const WorkerPluginKind: S.Literals<readonly ["TestRunner", "Checker", "Reporter"]>;
+
+// @public (undocumented)
+export type WorkerPluginKind = typeof WorkerPluginKind.Type;
+
+// @public (undocumented)
+export type WorkerPluginSpawn = typeof WorkerPluginSpawnSchema.Type;
+
+// @public (undocumented)
+export const WorkerPluginSpawnSchema: S.Struct<{
+    readonly kind: S.Literals<readonly ["TestRunner", "Checker", "Reporter"]>;
+    readonly field: S.Literals<readonly ["bin", "workerExport"]>;
+    readonly entrypoint: S.String;
+}>;
+
+// @public (undocumented)
+export interface WorkerRpcGroupMap {
     // (undocumented)
-    readonly kind: 'Reporter';
+    readonly Checker: typeof CheckerRpcs;
     // (undocumented)
-    readonly make: ReporterFactory;
+    readonly Reporter: typeof ReporterRpcs;
     // (undocumented)
-    readonly name: string;
+    readonly TestRunner: typeof TestRunnerRpcs;
 }
 
-// Warning: (ae-forgotten-export) The symbol "RunConfiguration_base" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
-export class RunConfiguration extends RunConfiguration_base {}
-
-// Warning: (ae-forgotten-export) The symbol "SandboxDirectory_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class SandboxDirectory extends SandboxDirectory_base {}
+export const WorkerRpcGroups: WorkerRpcGroupMap;
 
 // @public (undocumented)
-export interface SelectedReporterFactory {
-    // (undocumented)
-    readonly make: ReporterFactory;
-    // (undocumented)
-    readonly name: string;
-}
+export type WorkerRpcsOf<K extends WorkerPluginKind> = WorkerRpcGroupMap[K];
 
-// Warning: (ae-forgotten-export) The symbol "Shadowing_base" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
-export class Shadowing extends Shadowing_base {}
+export const workerTelemetryEnabled: () => boolean;
 
 // (No @packageDocumentation comment for this package)
 

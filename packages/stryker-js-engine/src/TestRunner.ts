@@ -1,14 +1,7 @@
 /**
  * The test runner capability — spawning, timeout, retry, reuse and environment
  * decisions for the engine's test execution.
- *
- * One module per capability: types, ports, combinators and the impure edge
- * live together. The schemas stay in `TestRunner.schema.ts`. The spawned
- * worker entry point stays separate at `child-process-test-runner-worker.ts`
- * (emitted as its own chunk).
  */
-
-import * as Layer from 'effect/Layer'
 
 import { type FileDescriptions, INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-language'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
@@ -23,6 +16,7 @@ import {
   TestRunnerFailed,
   toMutantRunResult,
 } from '@systemfsoftware/stryker-js-language'
+import { encodeWorkerOptions, TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'
@@ -35,17 +29,13 @@ import type * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
-import type { SocketError } from 'effect/unstable/socket/Socket'
-import { encodeWorkerOptions } from './worker-options.js'
 
 import { CommandRunnerUnsupportedOption } from './TestRunner.schema.js'
 import type { IdGeneratorShape } from './Worker.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from './Worker.schema.js'
-import type { WorkerFrameTooLargeError } from './Worker.schema.js'
-import { connectRetry, WorkerEntries, WorkerLauncher } from './WorkerLauncher.js'
-import { TestRunnerRpcs } from './WorkerProtocol.js'
+import type { WorkerBootError } from './WorkerLauncher.js'
+import { makeWorkerClient, WorkerLauncher } from './WorkerLauncher.js'
 
 type RunPolicy<A, E> = (self: Effect.Effect<A, E, never>) => Effect.Effect<A, E, never>
 // ---------------------------------------------------------------------------
@@ -57,7 +47,7 @@ export interface ChildProcessTestRunnerParams {
   readonly options: StrykerOptions
   readonly fileDescriptions: FileDescriptions
   readonly sandboxWorkingDirectory: string
-  readonly pluginModulePaths: readonly string[]
+  readonly workerEntrypoint: string
   readonly idGenerator: IdGeneratorShape
 }
 
@@ -66,7 +56,6 @@ export type PooledTestRunnerError =
   | TestRunnerFailed
   | ChildProcessCrashedError
   | OutOfMemoryError
-  | WorkerFrameTooLargeError
 
 /**
  * A test runner in a child process, whose calls can fail the way a child process
@@ -86,7 +75,22 @@ export interface PooledTestRunner {
   readonly mutantRun: (options: MutantRunOptions) => Effect.Effect<MutantRunResult, PooledTestRunnerError>
 }
 
-const WORKER_BOOT_TIMEOUT_MS = 30_000
+const toRunnerBootFailure = (runnerName: string) => (error: WorkerBootError): PooledTestRunnerError =>
+  Match.value(error).pipe(
+    Match.tag(
+      'WorkerBootTimeoutError',
+      (timeout): PooledTestRunnerError =>
+        new TestRunnerFailed({
+          runnerName,
+          phase: 'init',
+          cause:
+            `Worker ${timeout.pid} did not accept the RPC connection before its boot window closed; its stderr above carries the reason`,
+        }),
+    ),
+    Match.tag('ChildProcessCrashedError', (crashed): PooledTestRunnerError => crashed),
+    Match.tag('OutOfMemoryError', (outOfMemory): PooledTestRunnerError => outOfMemory),
+    Match.exhaustive,
+  )
 
 const toRunnerFailure =
   (runnerName: string, phase: 'capabilities' | 'init' | 'dryRun' | 'mutantRun' | 'dispose') =>
@@ -114,62 +118,18 @@ const toRunnerFailure =
  */
 export const makeChildProcessTestRunner = (
   params: ChildProcessTestRunnerParams,
-): Effect.Effect<
-  PooledTestRunner,
-  PooledTestRunnerError,
-  Scope.Scope | WorkerLauncher | WorkerEntries
-> =>
+): Effect.Effect<PooledTestRunner, PooledTestRunnerError, Scope.Scope | WorkerLauncher> =>
   Effect.gen(function*() {
     const runnerName = params.options.testRunner
     const optionsJson = yield* encodeWorkerOptions(params.options)
-    const launcher = yield* WorkerLauncher
-    const entries = yield* WorkerEntries
-    const worker = yield* launcher.spawn({
-      entryUrl: entries.testRunnerWorkerUrl,
+    const client = yield* makeWorkerClient({
+      rpcs: TestRunnerRpcs,
+      entrypoint: params.workerEntrypoint,
       workingDirectory: params.sandboxWorkingDirectory,
       execArgv: [...params.options.testRunnerNodeArgs],
       optionsJson,
       tempDirPrefix: 'stryker-test-runner-',
-    })
-    const workerContext = yield* Effect.raceFirst(
-      Layer.build(worker.clientLayer).pipe(
-        Effect.retry(connectRetry),
-        Effect.raceFirst(worker.exited),
-      ),
-      Effect.sleep(Duration.millis(WORKER_BOOT_TIMEOUT_MS)).pipe(
-        Effect.andThen(
-          Effect.fail(
-            new TestRunnerFailed({
-              runnerName,
-              phase: 'init',
-              cause:
-                `Worker did not accept the RPC connection within ${WORKER_BOOT_TIMEOUT_MS}ms; its stderr above carries the reason`,
-            }),
-          ),
-        ),
-      ),
-    ).pipe(
-      Effect.catch((
-        error: ChildProcessCrashedError | SocketError | TestRunnerFailed,
-      ): Effect.Effect<never, PooledTestRunnerError> =>
-        Match.value(error).pipe(
-          Match.when(
-            (candidate): candidate is ChildProcessCrashedError => candidate instanceof ChildProcessCrashedError,
-            (crashed): Effect.Effect<never, PooledTestRunnerError> => Effect.fail(crashed),
-          ),
-          Match.when(
-            (candidate): candidate is TestRunnerFailed => candidate instanceof TestRunnerFailed,
-            (failed): Effect.Effect<never, PooledTestRunnerError> => Effect.fail(failed),
-          ),
-          Match.orElse((socket): Effect.Effect<never, PooledTestRunnerError> =>
-            Effect.fail(
-              new TestRunnerFailed({ runnerName, phase: 'init', cause: `Worker failed to start: ${socket.message}` }),
-            )
-          ),
-        )
-      ),
-    )
-    const client = yield* RpcClient.make(TestRunnerRpcs).pipe(Effect.provideContext(workerContext))
+    }).pipe(Effect.mapError(toRunnerBootFailure(runnerName)))
 
     return {
       capabilities: client.capabilities().pipe(Effect.mapError(toRunnerFailure(runnerName, 'capabilities'))),
@@ -545,7 +505,6 @@ export interface TestRunnerBuildContext {
   readonly options: StrykerOptions
   readonly fileDescriptions: FileDescriptions
   readonly sandboxWorkingDirectory: string
-  readonly pluginModulePaths: readonly string[]
   readonly idGenerator: IdGeneratorShape
   /**
    * Retire this runner's worker. Supplied by whoever owns the worker's
@@ -601,12 +560,12 @@ export const buildTestRunner = (
   childProcessRunner: Effect.Effect<
     PooledTestRunner,
     unknown,
-    Scope.Scope | WorkerLauncher | WorkerEntries
+    Scope.Scope | WorkerLauncher
   >,
 ): Effect.Effect<
   PooledTestRunner,
   unknown,
-  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | WorkerLauncher | WorkerEntries
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | WorkerLauncher
 > =>
   Effect.gen(function*() {
     if (isCommandRunner(context.options.testRunner)) {

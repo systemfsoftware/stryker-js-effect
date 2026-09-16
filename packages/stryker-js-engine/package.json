@@ -41,6 +41,7 @@
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
+    "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@std/jsonc": "catalog:",
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",

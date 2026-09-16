@@ -135,7 +135,7 @@ This monorepo publishes a modular ecosystem of packages under the `@systemfsoftw
 | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
 | [`@systemfsoftware/stryker-js-cli`](apps/stryker-js-cli)                                   | Terminal & CI runner binary with NDJSON streaming output                                 |
 | [`@systemfsoftware/stryker-js-language`](packages/stryker-js-language)                     | Pure domain core: mutant models, schemas, and exit classifications                       |
-| [`@systemfsoftware/stryker-js-plugin-interface`](packages/stryker-js-plugin-interface)     | Shared plugin contracts (`declarePlugin`, `composePlugins`)                              |
+| [`@systemfsoftware/stryker-js-plugin-interface`](packages/stryker-js-plugin-interface)     | Plugin boundary: RPC groups, payload schemas, typed failures, spawn contract             |
 | [`@systemfsoftware/stryker-js-engine`](packages/stryker-js-engine)                         | Mutation run lifecycle engine and test orchestration                                     |
 | [`@systemfsoftware/stryker-js-instrumenter`](packages/stryker-js-instrumenter)             | AST mutation engine powered by OXC parser                                                |
 | [`@systemfsoftware/stryker-js-vitest-runner`](packages/stryker-js-vitest-runner)           | Vitest runner integration for mutation sandboxes                                         |

@@ -7,7 +7,11 @@
  * files (the CLI). It is public because those composition roots import it
  * from outside the engine package; everything not on it stays internal.
  */
+export {
+  CheckerRpcs,
+  decodeWorkerOptions,
+  encodeWorkerOptions,
+  TestRunnerRpcs,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 export { create, loadPlugins } from './Plugins.js'
 export { MutantCoverageSchema } from './TestRunner.schema.js'
-export { decodeWorkerOptions, encodeWorkerOptions } from './worker-options.js'
-export { CheckerRpcs, TestRunnerRpcs } from './WorkerProtocol.js'

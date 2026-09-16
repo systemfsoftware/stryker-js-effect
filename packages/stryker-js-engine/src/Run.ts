@@ -4,7 +4,6 @@ import type { File as InstrumenterFile, InstrumentResult } from '@systemfsoftwar
 import type { CheckResult, PassedCheckResult } from '@systemfsoftware/stryker-js-language'
 import type { ExitClass } from '@systemfsoftware/stryker-js-language'
 import type { IgnorerService } from '@systemfsoftware/stryker-js-language'
-import { Ignorer } from '@systemfsoftware/stryker-js-language'
 import { Module } from '@systemfsoftware/stryker-js-language'
 import { Mutant } from '@systemfsoftware/stryker-js-language'
 import type { RunMutantResult } from '@systemfsoftware/stryker-js-language'
@@ -29,11 +28,6 @@ import type {
   TestResult,
   TestRunnerCapabilities,
 } from '@systemfsoftware/stryker-js-language'
-import type { ComposedPlugins } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { AnyPluginContribution } from '@systemfsoftware/stryker-js-plugin-interface'
-import { RunConfiguration } from '@systemfsoftware/stryker-js-plugin-interface'
-import { SandboxDirectory } from '@systemfsoftware/stryker-js-plugin-interface'
-import { composePlugins } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
@@ -76,9 +70,9 @@ import { makeMutationReportingService, type MutationReportingService } from './m
 import { MutationTestCommand } from './MutationTest.schema.js'
 import type { ResolvedMode } from './output-mode.js'
 import { InstrumentCommand, planInstrumentation } from './plan-instrumentation.workflow.js'
-import { createAll } from './Plugins.js'
+import { resolvePluginWorkerEntry } from './plugin-worker-entry.js'
 import { loadPlugins } from './Plugins.js'
-import type { LoadedPlugins } from './Plugins.js'
+import type { LoadedPlugins, PluginDescriptor } from './Plugins.js'
 import type { Project } from './Project.js'
 import { readProject } from './Project.js'
 import { FILE_CONCURRENCY, readOriginal, toInstrumenterFile } from './Project.js'
@@ -87,9 +81,12 @@ import { reportFileName } from './report-assembly.js'
 import { ansi } from './Reporter.ansi.js'
 import {
   attachReporterFactories,
+  type AttachReporterInput,
   currentReporterInit,
   offerReporterEvent,
   type ReporterStage,
+  reporterWorkerFactory,
+  spawnReporterWorker,
   validateReporterNames,
   withPhaseSpan,
 } from './ReporterStream.js'
@@ -105,14 +102,14 @@ import type { PooledTestRunner } from './TestRunner.js'
 import { makeConcurrency } from './Worker.js'
 import { IdGenerator } from './Worker.js'
 import { layer as idGeneratorLayer } from './Worker.js'
-import { WorkerEntries, WorkerLauncher } from './WorkerLauncher.js'
+import { WorkerLauncher } from './WorkerLauncher.js'
 
 export interface RunEnvironmentShape {
   readonly runId: string
   readonly resolvedMode: ResolvedMode
   readonly runStartedAt: number
   readonly basePath: string
-  readonly reporterPluginModules: readonly string[]
+  readonly builtinReporters: Readonly<Record<string, ReporterFactory>>
   readonly allowConsoleColors: boolean
 }
 
@@ -122,7 +119,6 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
 
 export interface PrepareDone {
   readonly project: Project
-  readonly plugins: ComposedPlugins
   readonly loadedPlugins: LoadedPlugins
   readonly ignorers: readonly IgnorerService[]
   readonly options: StrykerOptions
@@ -315,18 +311,37 @@ const makeCheckerPool = (
   idGenerator: Parameters<typeof createCheckerFactory>[3],
 ): Effect.Effect<
   Pool.Pool<CheckerResourceService, unknown> | undefined,
-  never,
-  Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | WorkerLauncher | WorkerEntries
+  StageError,
+  Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | WorkerLauncher | FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function*() {
-    if (prev.options.checkers.length === 0) {
+    const checkerName = Option.getOrUndefined(Option.fromUndefinedOr(prev.options.checkers[0]))
+    if (checkerName === undefined) {
       return undefined
     }
+    const checkerEntry = yield* resolvePluginWorkerEntry({
+      loaded: prev.loadedPlugins,
+      kind: 'Checker',
+      name: checkerName,
+    }).pipe(
+      Effect.catchTag(
+        'WorkerEntryMissing',
+        (missing) =>
+          Effect.fail(
+            new StageError({
+              stage: 'mutationTest',
+              reason:
+                `No plugin declares a worker entry for checker "${checkerName}"; the plugin "${missing.pluginName}" resolved to ${missing.specifier}`,
+              cause: missing,
+            }),
+          ),
+      ),
+    )
     return yield* Pool.make({
       acquire: createCheckerFactory(
         prev.options,
         prev.project.fileDescriptions,
-        prev.loadedPlugins.pluginModulePaths,
+        checkerEntry.entrypoint,
         idGenerator,
         prev.sandbox.workingDirectory,
       ),
@@ -343,18 +358,16 @@ export type StageServices =
   | RunEnvironment
   | RunEvents
   | Scope.Scope
-  | WorkerEntries
   | WorkerLauncher
 export type EnginePorts =
   | ChildProcessSpawner.ChildProcessSpawner
   | FileSystem.FileSystem
   | Module
   | Path.Path
-  | WorkerEntries
   | WorkerLauncher
-interface ReporterEntry {
+interface ReporterChoice {
   readonly name: string
-  readonly factory: ReporterFactory
+  readonly builtinFactory: Option.Option<ReporterFactory>
 }
 
 const stringListOf = (value: unknown): readonly string[] =>
@@ -376,27 +389,91 @@ const announceHumanSummary = (allowConsoleColors: boolean, summary: string): Eff
   )
 
 const selectReporter = (
-  chosen: Map<string, ReporterEntry>,
+  chosen: Map<string, ReporterChoice>,
   name: string,
-  factoriesByName: HashMap.HashMap<string, ReporterEntry>,
-): void =>
-  Option.match(HashMap.get(factoriesByName, name.toLowerCase()), {
+  choicesByName: HashMap.HashMap<string, ReporterChoice>,
+): void => {
+  const key = name.toLowerCase()
+  Option.match(HashMap.get(choicesByName, key), {
     onNone: () => undefined,
-    onSome: (entry) => {
-      if (!chosen.has(entry.name)) {
-        chosen.set(entry.name, entry)
+    onSome: (choice) => {
+      if (!chosen.has(key)) {
+        chosen.set(key, choice)
       }
     },
   })
+}
 
-const reporterSelectionsOf = (
+const reporterChoicesOf = (
   names: readonly string[],
-  factoriesByName: HashMap.HashMap<string, ReporterEntry>,
-): readonly ReporterEntry[] => {
-  const chosen = new Map<string, ReporterEntry>()
-  names.forEach((name) => selectReporter(chosen, name, factoriesByName))
+  choicesByName: HashMap.HashMap<string, ReporterChoice>,
+): readonly ReporterChoice[] => {
+  const chosen = new Map<string, ReporterChoice>()
+  names.forEach((name) => selectReporter(chosen, name, choicesByName))
   return [...chosen.values()]
 }
+
+const NO_PLUGIN_DESCRIPTORS: readonly PluginDescriptor[] = []
+
+const spawnPluginReporterFactory = (
+  name: string,
+  loaded: LoadedPlugins,
+  projectBasePath: string,
+  options: StrykerOptions,
+): Effect.Effect<
+  ReporterFactory,
+  StageError,
+  Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
+> =>
+  Effect.gen(function*() {
+    const entry = yield* resolvePluginWorkerEntry({ loaded, kind: 'Reporter', name }).pipe(
+      Effect.mapError((missing) =>
+        new StageError({
+          stage: 'prepare',
+          reason:
+            `No plugin declares a worker entry for reporter "${name}"; the plugin "${missing.pluginName}" resolved to ${missing.specifier}`,
+          cause: missing,
+        })
+      ),
+    )
+    const client = yield* spawnReporterWorker({
+      entrypoint: entry.entrypoint,
+      projectBasePath,
+      execArgv: [],
+      options,
+      tempDirPrefix: 'stryker-reporter-',
+    }).pipe(
+      Effect.mapError((cause) =>
+        new StageError({ stage: 'prepare', reason: `Failed to start the reporter worker "${name}"`, cause })
+      ),
+    )
+    return reporterWorkerFactory(client)
+  })
+
+const reporterInputsOf = (
+  names: readonly string[],
+  choicesByName: HashMap.HashMap<string, ReporterChoice>,
+  loaded: LoadedPlugins,
+  projectBasePath: string,
+  options: StrykerOptions,
+): Effect.Effect<
+  readonly AttachReporterInput[],
+  StageError,
+  Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
+> =>
+  Effect.forEach(
+    reporterChoicesOf(names, choicesByName),
+    (choice) =>
+      Option.match(choice.builtinFactory, {
+        onSome: (builtin) => Effect.succeed<AttachReporterInput>({ name: choice.name, factory: builtin }),
+        onNone: () =>
+          Effect.map(
+            spawnPluginReporterFactory(choice.name, loaded, projectBasePath, options),
+            (factory): AttachReporterInput => ({ name: choice.name, factory }),
+          ),
+      }),
+    { concurrency: 1 },
+  )
 
 export const runPrepare = (command: PrepareExecutorArgs) =>
   withPhaseSpan(
@@ -433,7 +510,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         const optionsRecord: Record<string, unknown> = { ...options }
         const pluginsList = stringListOf(optionsRecord['plugins'])
         const appendPluginsList = stringListOf(optionsRecord['appendPlugins'])
-        const descriptors: readonly string[] = [...pluginsList, ...appendPluginsList, ...env.reporterPluginModules]
+        const descriptors: readonly string[] = [...pluginsList, ...appendPluginsList]
         const loaded = yield* loadPlugins(descriptors, env.basePath).pipe(
           Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
         )
@@ -456,23 +533,11 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         const summary = `Found ${mutateCount} of ${MutableHashMap.size(project.files)} file(s) to be mutated.`
         yield* announceSummary(env, summary)
         const selectedIgnorers = HashSet.fromIterable(options.ignorers)
-        const contributions = yield* createAll(loaded.pluginsByKind, 'Ignore').pipe(
-          Effect.map((all) => all.filter((contribution) => HashSet.has(selectedIgnorers, contribution.name))),
-          Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to create ignorers', cause })),
-        )
-        const ignorers: readonly IgnorerService[] = yield* Effect.forEach(
-          contributions,
-          (contribution) =>
-            Effect.gen(function*() {
-              const ctx = yield* Layer.build(contribution.layer)
-              return Context.get(ctx, Ignorer)
-            }).pipe(
-              Effect.provideService(RunConfiguration, options),
-              Effect.provideService(SandboxDirectory, env.basePath),
-            ),
-        ).pipe(
-          Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to build ignorers', cause })),
-        )
+        const ignorers: readonly IgnorerService[] = loaded.ignorers
+          .filter((ignorer) => HashSet.has(selectedIgnorers, ignorer.name))
+          .map((ignorer): IgnorerService => ({
+            shouldIgnore: (node, ancestors) => Option.fromUndefinedOr(ignorer.shouldIgnore(node, ancestors)),
+          }))
         const temporaryDirectoryPath = yield* Effect.gen(function*() {
           const live = TemporaryDirectoryLive(options)
           const service = yield* Effect.service(TemporaryDirectory).pipe(Effect.provide(live))
@@ -482,28 +547,40 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
             new StageError({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
           ),
         )
-        const builtinReporterFactories = makeBuiltinReporterFactories({
-          fileSystem: yield* FileSystem.FileSystem,
-          path: yield* Path.Path,
-        })
-        const allContributions: readonly AnyPluginContribution[] = Array.from(
-          HashMap.values(loaded.pluginsByKind),
-        ).flat()
-        const plugins = composePlugins(allContributions)
-        const reporterEntries: readonly (readonly [string, ReporterEntry])[] = [
-          ...Object.entries(builtinReporterFactories).map(([name, factory]) =>
-            [name.toLowerCase(), { name, factory }] as const
+        const builtinReporterFactories = {
+          ...makeBuiltinReporterFactories({
+            fileSystem: yield* FileSystem.FileSystem,
+            path: yield* Path.Path,
+          }),
+          ...env.builtinReporters,
+        }
+        const pluginReporterDescriptors = Option.getOrElse(
+          HashMap.get(loaded.pluginsByKind, 'Reporter'),
+          () => NO_PLUGIN_DESCRIPTORS,
+        )
+        const reporterChoicesByName = HashMap.fromIterable<string, ReporterChoice>([
+          ...Object.entries(builtinReporterFactories).map(
+            ([name, factory]) => [name.toLowerCase(), { name, builtinFactory: Option.some(factory) }] as const,
           ),
-          ...plugins.reporterFactories.map((candidate) =>
-            [candidate.name.toLowerCase(), { name: candidate.name, factory: candidate.make }] as const
+          ...pluginReporterDescriptors.map(
+            (descriptor) =>
+              [
+                descriptor.name.toLowerCase(),
+                { name: descriptor.name, builtinFactory: Option.none<ReporterFactory>() },
+              ] as const,
           ),
-        ]
-        const reporterFactoriesByName = HashMap.fromIterable(reporterEntries)
-        const availableReporterNames = [...HashMap.values(reporterFactoriesByName)].map((entry) => entry.name)
+        ])
+        const availableReporterNames = [...HashMap.values(reporterChoicesByName)].map((choice) => choice.name)
         yield* validateReporterNames(configured.reporters, availableReporterNames).pipe(
           Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: cause.message, cause })),
         )
-        const reporterInputs = reporterSelectionsOf(options.reporters, reporterFactoriesByName)
+        const reporterInputs = yield* reporterInputsOf(
+          options.reporters,
+          reporterChoicesByName,
+          loaded,
+          env.basePath,
+          options,
+        )
         const reporterInit = currentReporterInit(span)
         const reporterStage = yield* attachReporterFactories(reporterInputs, options, reporterInit)
         const now = yield* Clock.currentTimeMillis
@@ -519,7 +596,6 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         }
         return {
           project,
-          plugins,
           loadedPlugins: loaded,
           ignorers,
           options,
@@ -779,11 +855,16 @@ export const dryRunCell = Cell.layer({
       yield* Effect.logInfo('Starting dry run')
       const { rawResult, capabilities, gross } = yield* Effect.scoped(
         Effect.gen(function*() {
+          const runnerEntry = yield* resolvePluginWorkerEntry({
+            loaded: command.loadedPlugins,
+            kind: 'TestRunner',
+            name: command.options.testRunner,
+          })
           const childRunnerEffect = makeChildProcessTestRunner({
             options: command.options,
             fileDescriptions: command.project.fileDescriptions,
             sandboxWorkingDirectory: command.sandbox.workingDirectory,
-            pluginModulePaths: [...command.loadedPlugins.pluginModulePaths],
+            workerEntrypoint: runnerEntry.entrypoint,
             idGenerator,
           })
           const runner = yield* buildTestRunner(
@@ -791,7 +872,6 @@ export const dryRunCell = Cell.layer({
               options: command.options,
               fileDescriptions: command.project.fileDescriptions,
               sandboxWorkingDirectory: command.sandbox.workingDirectory,
-              pluginModulePaths: [...command.loadedPlugins.pluginModulePaths],
               idGenerator,
               retire: Effect.void,
             },
@@ -1025,11 +1105,28 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                 yield* emitPhase
                 const idGenerator = yield* IdGenerator
                 const checkerPool = yield* makeCheckerPool(prev, idGenerator)
+                const runnerEntry = yield* resolvePluginWorkerEntry({
+                  loaded: prev.loadedPlugins,
+                  kind: 'TestRunner',
+                  name: prev.options.testRunner,
+                }).pipe(
+                  Effect.catchTag(
+                    'WorkerEntryMissing',
+                    (missing) =>
+                      Effect.fail(
+                        new StageError({
+                          stage: 'mutationTest',
+                          reason:
+                            `No plugin declares a worker entry for test runner "${prev.options.testRunner}"; the plugin "${missing.pluginName}" resolved to ${missing.specifier}`,
+                          cause: missing,
+                        }),
+                      ),
+                  ),
+                )
                 const testRunnerContext = {
                   options: prev.options,
                   fileDescriptions: prev.project.fileDescriptions,
                   sandboxWorkingDirectory: prev.sandbox.workingDirectory,
-                  pluginModulePaths: [...prev.loadedPlugins.pluginModulePaths],
                   idGenerator: idGenerator,
                   retire: Effect.void,
                 }
@@ -1040,7 +1137,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                       options: prev.options,
                       fileDescriptions: prev.project.fileDescriptions,
                       sandboxWorkingDirectory: prev.sandbox.workingDirectory,
-                      pluginModulePaths: [...prev.loadedPlugins.pluginModulePaths],
+                      workerEntrypoint: runnerEntry.entrypoint,
                       idGenerator: idGenerator,
                     }),
                   ),
@@ -1053,7 +1150,6 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                   testCoverage: prev.testCoverage,
                   runId: env.runId,
                   resolvedMode: env.resolvedMode,
-                  pluginsByKind: prev.loadedPlugins.pluginsByKind,
                   sandboxDirectory: prev.sandbox.workingDirectory,
                   basePath: env.basePath,
                 })

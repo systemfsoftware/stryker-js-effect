@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath, NodeSocket } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
-import { ChildProcessCrashedError, WorkerEntries, WorkerLauncher } from '@systemfsoftware/stryker-js-engine'
+import { ChildProcessCrashedError, classifyWorkerExit, WorkerLauncher } from '@systemfsoftware/stryker-js-engine'
 import type { EnginePorts, SpawnedSocketWorker } from '@systemfsoftware/stryker-js-engine'
 import { Module, type ModuleRequire } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
@@ -53,16 +53,6 @@ export const nodeModuleLayer: Layer.Layer<Module> = Layer.effect(
 )
 
 /**
- * The worker entries this package's own build emits. The engine spawns by
- * address; this process package knows its dist layout and hands the
- * addresses in.
- */
-export const workerEntriesLayer: Layer.Layer<WorkerEntries> = Layer.succeed(WorkerEntries, {
-  checkerWorkerUrl: new URL('./workers/checker-worker.mjs', import.meta.url),
-  testRunnerWorkerUrl: new URL('./workers/child-process-test-runner-worker.mjs', import.meta.url),
-})
-
-/**
  * The Node worker launcher: spawn a worker child with this runtime's
  * executable, host the RPC server's address as a `net` `path` endpoint (a
  * socket file in the worker directory on POSIX, a same-user named pipe on
@@ -89,8 +79,7 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
           )
           yield* fs.writeFileString(path.join(workerDir, 'options.json'), params.optionsJson)
 
-          const entryPath = yield* path.fromFileUrl(params.entryUrl)
-          const handle = yield* ChildProcess.make(process.execPath, [...params.execArgv, entryPath], {
+          const handle = yield* ChildProcess.make(process.execPath, [...params.execArgv, params.entrypoint], {
             cwd: params.workingDirectory,
             extendEnv: true,
             env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath },
@@ -104,15 +93,7 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
 
           const exited = handle.exitCode.pipe(
             Effect.orDie,
-            Effect.flatMap((exitCode) =>
-              Effect.fail(
-                new ChildProcessCrashedError({
-                  pid: Number(handle.pid),
-                  exit: { _tag: 'Code', code: exitCode },
-                  cause: 'worker exited before it accepted the RPC connection',
-                }),
-              )
-            ),
+            Effect.flatMap((exitCode) => Effect.fail(classifyWorkerExit(Number(handle.pid), exitCode))),
           )
 
           return { pid: Number(handle.pid), clientLayer, exited }
@@ -143,14 +124,8 @@ const nodeSpawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(nodeFs
 
 const nodeBase = Layer.merge(nodeFsPathLayer, nodeSpawnerLayer)
 
-/**
- * Every port the engine requires, provided from this runtime: the file
- * system, the path service, the module loader, the child-process spawner,
- * the worker launcher, and this build's worker entry addresses.
- */
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = Layer.mergeAll(
   nodeModuleLayer,
-  workerEntriesLayer,
   nodeWorkerLauncherLayer.pipe(Layer.provide(nodeBase)),
   nodeBase,
 )

@@ -1,14 +1,12 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { ThisExpression } from '@systemfsoftware/stryker-ignorer-interface'
-import { createDefaultOptions } from '@systemfsoftware/stryker-js-engine'
-import { create, createAll, loadPlugins, PluginLoadFailedError } from '@systemfsoftware/stryker-js-engine/plugin-loader'
-import { Ignorer, Module } from '@systemfsoftware/stryker-js-language'
+import { createAll, loadPlugins, PluginLoadFailedError } from '@systemfsoftware/stryker-js-engine/plugin-loader'
+import { Module } from '@systemfsoftware/stryker-js-language'
 import type { ModuleRequire } from '@systemfsoftware/stryker-js-language'
-import { RunConfiguration, SandboxDirectory } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
-import * as FileSystem from 'effect/FileSystem'
+import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import { expect } from 'vitest'
@@ -47,107 +45,117 @@ const moduleLayer = Layer.effect(
   }),
 )
 
-const pluginEnvironmentLayer = Layer.mergeAll(
-  FileSystem.layerNoop({}),
-  Path.layer,
-  moduleLayer,
-  Layer.succeed(RunConfiguration, Effect.runSync(createDefaultOptions())),
-  Layer.succeed(SandboxDirectory, '/tmp'),
-)
+const loaderLayer = Layer.mergeAll(Path.layer, moduleLayer)
 
 const fixturePath = (name: string): string => `${process.cwd()}/tests/__fixtures__/${name}`
 
-const loadFixture = (name: string) =>
-  loadPlugins([fixturePath(name)], process.cwd()).pipe(
-    Effect.provide(Layer.mergeAll(FileSystem.layerNoop({}), Path.layer, moduleLayer)),
+const loadFixture = (name: string) => loadPlugins([fixturePath(name)], process.cwd()).pipe(Effect.provide(loaderLayer))
+
+const refusedLoad = (name: string) =>
+  loadFixture(name).pipe(
+    Effect.flip,
+    Effect.flatMap((error) =>
+      Match.value(error).pipe(
+        Match.tag('PluginLoadFailedError', (failure) => Effect.succeed(failure)),
+        Match.orElse(() => Effect.die(new Error(`${name} was expected to be refused with a load failure`))),
+      )
+    ),
   )
 
 const anyNode: ThisExpression = { type: 'ThisExpression' }
 
-Feature('Loading plain ignorer plugins')
+Feature('Loading the ignorers a project declares')
   .body(({ scenario }) => {
     scenario(
-      'A module exporting only plain ignorers loads every entry as an ignore contribution',
+      'A module declaring only ignorers loads each one under its own name',
       Gherkin.Do.pipe(
-        Given('a module exporting one plain ignorer and nothing else')(
+        Given('a project whose module declares one ignorer that rejects a node and one that never does')(
           'loaded',
           () => loadFixture('plain-ignorer-only.fixture.mjs'),
         ),
-        When('each entry is selected by kind and name and its layer is built')(
-          'services',
-          (s) =>
-            Effect.gen(function*() {
-              const rule = yield* create(s.loaded.pluginsByKind, 'Ignore', 'plain-fixture-rule')
-              const never = yield* create(s.loaded.pluginsByKind, 'Ignore', 'plain-fixture-never')
-              const ruleContext = yield* Layer.build(rule.layer).pipe(Effect.provide(pluginEnvironmentLayer))
-              const neverContext = yield* Layer.build(never.layer).pipe(Effect.provide(pluginEnvironmentLayer))
-              return {
-                rule: Context.get(ruleContext, Ignorer),
-                never: Context.get(neverContext, Ignorer),
-              }
-            }),
-        ),
-        Then('every entry registers under its name and its decisions flow through')((s) =>
-          Effect.sync(() => {
-            expect(Option.getOrThrow(s.services.rule.shouldIgnore(anyNode, []))).toBe('fixture reason')
-            expect(Option.isNone(s.services.never.shouldIgnore(anyNode, []))).toBe(true)
-          })
-        ),
+        When('the declared ignorers are read and asked about a node')('seen', (s) =>
+          Effect.sync(() => ({
+            names: s.loaded.ignorers.map((ignorer) => ignorer.name),
+            reasons: s.loaded.ignorers.map((ignorer) => ignorer.shouldIgnore(anyNode, [])),
+          }))),
+        Then('each one answers under its own name with the reason it gave')((s) => {
+          expect(s.seen.names).toStrictEqual(['plain-fixture-rule', 'plain-fixture-never'])
+          expect(s.seen.reasons).toStrictEqual(['fixture reason', undefined])
+        }),
       ),
     )
 
     scenario(
-      'A module exporting both protocols keeps both kinds',
+      'An ignorer stays the plain decision its module declared, not a plugin of any kind',
       Gherkin.Do.pipe(
-        Given('a module exporting a native reporter and a plain ignorer')(
+        Given('a project whose module declares only ignorers')(
+          'loaded',
+          () => loadFixture('plain-ignorer-only.fixture.mjs'),
+        ),
+        When('what the module contributed is read')('seen', (s) =>
+          Effect.sync(() => ({
+            kinds: Array.from(HashMap.keys(s.loaded.pluginsByKind)),
+            modulePaths: s.loaded.pluginModulePaths,
+            names: s.loaded.ignorers.map((ignorer) => ignorer.name),
+          }))),
+        Then('the ignorers stand alone and the module is not handed to a worker')((s) => {
+          expect(s.seen.kinds).toStrictEqual([])
+          expect(s.seen.modulePaths).toStrictEqual([])
+          expect(s.seen.names).toStrictEqual(['plain-fixture-rule', 'plain-fixture-never'])
+        }),
+      ),
+    )
+
+    scenario(
+      'A module declaring both a plugin and an ignorer keeps the two apart',
+      Gherkin.Do.pipe(
+        Given('a project whose module declares one reporter and one ignorer')(
           'loaded',
           () => loadFixture('both-protocols.fixture.mjs'),
         ),
-        When('the loaded contributions are read back by kind')('names', (s) =>
+        When('what the module contributed is read')('seen', (s) =>
           Effect.sync(() => ({
-            reporters: createAll(s.loaded.pluginsByKind, 'Reporter').pipe(Effect.runSync).map((c) => c.name),
-            ignorers: createAll(s.loaded.pluginsByKind, 'Ignore').pipe(Effect.runSync).map((c) => c.name),
+            reporters: createAll(s.loaded.pluginsByKind, 'Reporter').pipe(Effect.runSync).map((plugin) => plugin.name),
+            ignorers: s.loaded.ignorers.map((ignorer) => ignorer.name),
+            modulePaths: s.loaded.pluginModulePaths,
           }))),
-        Then('both kinds are present')((s) =>
-          Effect.sync(() => {
-            expect(s.names.reporters).toStrictEqual(['native-fixture-reporter'])
-            expect(s.names.ignorers).toStrictEqual(['plain-fixture-rule'])
-          })
-        ),
+        Then('the reporter is still offered and the ignorer stays a plain decision')((s) => {
+          expect(s.seen.reporters).toStrictEqual(['native-fixture-reporter'])
+          expect(s.seen.ignorers).toStrictEqual(['plain-fixture-rule'])
+          expect(s.seen.modulePaths).toStrictEqual([fixturePath('both-protocols.fixture.mjs')])
+        }),
       ),
     )
 
     scenario(
-      'A malformed plain entry fails the load with a named error',
+      'An ignorer missing its name or its decision is refused, and the refusal names the module',
       Gherkin.Do.pipe(
-        Given('a module whose plain entry has no name and no callable decision')(
-          'outcome',
-          () => loadFixture('invalid-plain-entry.fixture.mjs').pipe(Effect.flip),
+        Given('a project whose module declares an ignorer with no name and no decision')(
+          'module',
+          () => Effect.succeed('invalid-plain-entry.fixture.mjs'),
         ),
-        Then('the load is rejected naming the module')((s) =>
-          Effect.sync(() => {
-            expect(s.outcome).toBeInstanceOf(PluginLoadFailedError)
-            expect(s.outcome.descriptor).toContain('invalid-plain-entry.fixture.mjs')
-          })
-        ),
+        When('the project loads that module')('failure', (s) => refusedLoad(s.module)),
+        Then('the load is refused, naming the module')((s) => {
+          expect(s.failure).toBeInstanceOf(PluginLoadFailedError)
+          expect(s.failure.descriptor).toContain('invalid-plain-entry.fixture.mjs')
+        }),
       ),
     )
 
     scenario(
-      'Two plain entries sharing a name both load under that name',
+      'Two ignorers sharing a name both load under that name',
       Gherkin.Do.pipe(
-        Given('a module exporting two plain entries with the same name')(
-          'names',
-          () =>
-            loadFixture('plain-ignorer-shadowed.fixture.mjs').pipe(
-              Effect.map((loaded) => createAll(loaded.pluginsByKind, 'Ignore').pipe(Effect.runSync).map((c) => c.name)),
-            ),
+        Given('a project whose module declares two ignorers sharing a name')(
+          'module',
+          () => Effect.succeed('plain-ignorer-shadowed.fixture.mjs'),
         ),
-        Then('both entries appear under the shared name')((s) =>
-          Effect.sync(() => {
-            expect(s.names).toStrictEqual(['duplicated-rule', 'duplicated-rule'])
-          })
-        ),
+        When('the project loads that module')('names', (s) =>
+          loadFixture(s.module).pipe(
+            Effect.map((loaded) => loaded.ignorers.map((ignorer) => ignorer.name)),
+          )),
+        Then('both are loaded under the shared name')((s) => {
+          expect(s.names).toStrictEqual(['duplicated-rule', 'duplicated-rule'])
+        }),
       ),
     )
   })

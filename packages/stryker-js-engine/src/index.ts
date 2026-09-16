@@ -16,10 +16,25 @@ export { IncrementalReportSchema } from './IncrementalReport.schema.js'
 
 export { StageError } from './Run.schema.js'
 export { StrykerError } from './stryker-error.schema.js'
-export { ChildProcessCrashedError, OutOfMemoryError } from './Worker.schema.js'
+export { classifyWorkerExit } from './Worker.js'
+export { ChildProcessCrashedError, OutOfMemoryError, WorkerBootTimeoutError } from './Worker.schema.js'
 
 export { strykerVersion } from './stryker-package.js'
 
+export {
+  REPORTER_EVENT_BATCH_BOUND,
+  type ReporterWorkerClient,
+  reporterWorkerFactory,
+  spawnReporterWorker,
+  type SpawnReporterWorkerParams,
+} from './ReporterStream.js'
 export type { EnginePorts } from './Run.js'
-export { connectRetry, WorkerEntries, WorkerLauncher } from './WorkerLauncher.js'
-export type { SpawnedSocketWorker, WorkerEntriesShape, WorkerLauncherShape } from './WorkerLauncher.js'
+export { connectRetry, makeWorkerClient, WorkerLauncher } from './WorkerLauncher.js'
+export type {
+  SpawnedSocketWorker,
+  WorkerBootError,
+  WorkerClientParams,
+  WorkerExit,
+  WorkerLauncherShape,
+  WorkerSpawnParams,
+} from './WorkerLauncher.js'
