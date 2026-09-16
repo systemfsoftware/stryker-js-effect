@@ -1,6 +1,7 @@
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Logger from 'effect/Logger'
 
 export const workerSocketPath = (label: string): string => {
   const socketPath = process.env['STRYKER_SOCKET']
@@ -14,6 +15,7 @@ export const workerSocketPath = (label: string): string => {
 export const launchWorker = (main: Layer.Layer<never, unknown, never>, label: string): void => {
   Effect.runFork(
     Layer.launch(main).pipe(
+      Effect.provideService(Logger.LogToStderr, true),
       Effect.tapCause((cause) =>
         Effect.sync(() => {
           process.stderr.write(`${label}: ${Cause.pretty(cause)}\n`)

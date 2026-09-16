@@ -12,7 +12,8 @@ export const DEFAULT_PROGRESS_STREAM_FILE = 'reports/mutation-stream.jsonl'
 
 const encodeUtf8 = (line: string): Uint8Array => new TextEncoder().encode(line)
 
-const drainStreamFile = (
+const drainStdoutAndFile = (
+  stdio: Stdio.Stdio,
   fileName: string,
   framed: Stream.Stream<string>,
 ): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
@@ -23,8 +24,10 @@ const drainStreamFile = (
     yield* Effect.scoped(
       Effect.gen(function*() {
         const handle = yield* fs.open(fileName, { flag: 'w' })
-        yield* Stream.runForEach(framed, (line) =>
-          handle.writeAll(encodeUtf8(line)).pipe(Effect.flatMap(() => handle.sync)))
+        const withFile = framed.pipe(
+          Stream.tap((line) => handle.writeAll(encodeUtf8(line)).pipe(Effect.flatMap(() => handle.sync))),
+        )
+        yield* Stream.run(withFile, stdio.stdout({ endOnDone: true })).pipe(Effect.ignore)
       }),
     ).pipe(Effect.orDie)
   })
@@ -39,7 +42,7 @@ export const RunEventStreamFileLive = Layer.effect(
     const drainFramed = (framed: Stream.Stream<string>) =>
       Effect.gen(function*() {
         const fileName = yield* Ref.get(fileNameRef)
-        yield* drainStreamFile(fileName, framed).pipe(
+        yield* drainStdoutAndFile(stdio, fileName, framed).pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
           Effect.provideService(Path.Path, path),
         )

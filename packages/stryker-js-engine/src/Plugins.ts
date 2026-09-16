@@ -193,8 +193,11 @@ export interface LoadedPlugins {
   readonly pluginModulePaths: readonly string[]
 }
 
+const ABSENT_PLUGIN_ERROR_CODES = ['ERR_MODULE_NOT_FOUND', 'MODULE_NOT_FOUND'] as const
+
 export function isAbsentPluginError(error: unknown, descriptor: string): boolean {
-  return Match.value(errorCodeOf(error) === 'ERR_MODULE_NOT_FOUND').pipe(
+  const code = errorCodeOf(error)
+  return Match.value(isText(code) && ABSENT_PLUGIN_ERROR_CODES.some((absent) => absent === code)).pipe(
     Match.when(true, () => messageNamesDescriptor(errorMessageOf(error), descriptor)),
     Match.orElse(() => false),
   )
@@ -247,9 +250,10 @@ const resolvePluginFileUrl = (
 const resolvePluginExpression = (
   pluginExpression: string,
   pathService: Path.Path,
+  basePath: string,
 ): Effect.Effect<string[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> =>
   Match.value(classifyPluginExpression(pluginExpression, pathService)).pipe(
-    Match.when('Glob', () => globPluginModules(pluginExpression)),
+    Match.when('Glob', () => globPluginModules(pluginExpression, basePath)),
     Match.when('FilePath', () => resolvePluginFileUrl(pluginExpression, pathService)),
     Match.when('Module', () => Effect.succeed([pluginExpression])),
     Match.exhaustive,
@@ -257,12 +261,13 @@ const resolvePluginExpression = (
 
 function resolvePluginModules(
   pluginDescriptors: readonly string[],
+  basePath: string,
 ): Effect.Effect<string[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function*() {
     const pathService = yield* Path.Path
     const results: string[][] = yield* Effect.forEach(
       pluginDescriptors,
-      (pluginExpression: string) => resolvePluginExpression(pluginExpression, pathService),
+      (pluginExpression: string) => resolvePluginExpression(pluginExpression, pathService, basePath),
       { concurrency: 'unbounded' },
     )
     return results.filter(Predicate.isNotNullish).flat()
@@ -311,10 +316,11 @@ const warnUnmatchedExpression = (
 
 function globPluginModules(
   pluginExpression: string,
+  basePath: string,
 ): Effect.Effect<string[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function*() {
     const { org, pkg } = parsePluginExpression(pluginExpression)
-    const pluginNames = yield* readOrgDirectory(org)
+    const pluginNames = yield* readOrgDirectory(org, basePath)
     const plugins = selectPluginNames(org, pkg, pluginNames)
     const defaults = yield* defaultOptions
     yield* warnUnmatchedExpression(pluginExpression, plugins, defaults)
@@ -383,12 +389,20 @@ const readOrgPackagesUpward = (
 
 function readOrgDirectory(
   org: string,
+  basePath: string,
 ): Effect.Effect<string[], PluginLoadFailedError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const pathService = yield* Path.Path
-    const base = yield* pathService.fromFileUrl(new URL('.', import.meta.url)).pipe(Effect.orDie)
-    return yield* readOrgPackagesUpward(fs, pathService, org, pathService.dirname(base), HashSet.empty())
+    const moduleBase = yield* pathService.fromFileUrl(new URL('.', import.meta.url)).pipe(Effect.orDie)
+    const fromProject = yield* readOrgPackagesUpward(fs, pathService, org, basePath, HashSet.empty())
+    return yield* readOrgPackagesUpward(
+      fs,
+      pathService,
+      org,
+      pathService.dirname(moduleBase),
+      HashSet.fromIterable(fromProject),
+    )
   })
 }
 
@@ -533,7 +547,7 @@ export function loadPlugins(
     yield* FileSystem.FileSystem
     yield* Path.Path
     yield* Module
-    const pluginModules = yield* resolvePluginModules(pluginDescriptors)
+    const pluginModules = yield* resolvePluginModules(pluginDescriptors, basePath)
     const loaded = yield* Effect.forEach(
       pluginModules,
       (moduleName: string) =>
@@ -582,8 +596,8 @@ function parsePluginExpression(pluginExpression: string): { org: string; pkg: st
     Match.when(
       true,
       (): { org: string; pkg: string } => ({
-        org: parts.slice(0, 2).join('/').split('*')[0] ?? '',
-        pkg: parts.slice(2).join('/'),
+        org: parts[0] ?? '',
+        pkg: parts.slice(1).join('/'),
       }),
     ),
     Match.orElse((): { org: string; pkg: string } => ({

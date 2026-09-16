@@ -26,9 +26,12 @@
     "gate:dist": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} build ${TURBO_BASE:+--filter=...[$TURBO_BASE]}",
     "gate:tasks": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} --continue lint typecheck test ${TURBO_BASE:+--filter=...[$TURBO_BASE]}",
     "lint": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} lint",
+    "lgtm:down": "process-compose down",
+    "lgtm:up": "process-compose up --tui=false --detached --keep-project && timeout 180 process-compose project is-ready --wait",
     "precommit": "pnpm exec lint-staged --no-revert --config .lintstagedrc.js",
     "prepare": "husky",
     "test": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} test",
+    "test:e2e": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} test:e2e",
     "typecheck": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} --continue typecheck typecheck:node",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit"
   },

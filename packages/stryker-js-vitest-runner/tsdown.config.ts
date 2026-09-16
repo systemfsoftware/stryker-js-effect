@@ -23,4 +23,10 @@ export default defineConfig({
   // its dynamic `import('vitest')`. Without this the blocks ship, including those
   // bundled from a workspace dependency's sources.
   define: { 'import.meta.vitest': 'undefined' },
+  deps: {
+    alwaysBundle: [
+      /^@systemfsoftware\/stryker-js-language$/,
+      /^@systemfsoftware\/stryker-js-plugin-interface$/,
+    ],
+  },
 })
