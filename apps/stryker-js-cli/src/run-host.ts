@@ -2,7 +2,6 @@ import {
   makeRunLayer,
   type ResolvedMode,
   type RunEnvironmentShape,
-  runMutationTest,
   type WiredRunLayer,
 } from '@systemfsoftware/stryker-js-engine'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
@@ -21,7 +20,6 @@ import { isColorEnabled } from './Output.js'
 import type { RunEventStream } from './Output.js'
 import { nodePlatformLayer } from './platform/node.js'
 import { DEFAULT_PROGRESS_STREAM_FILE } from './StreamFile.js'
-import type { StrykerRun } from './StrykerRun.js'
 
 export interface HostBinding {
   readonly options: RunEnvironmentShape
@@ -30,9 +28,6 @@ export interface HostBinding {
 
 export const hostRunLayer = (binding: HostBinding): WiredRunLayer =>
   makeRunLayer(binding.options, binding.events).pipe(Layer.provideMerge(nodePlatformLayer))
-
-export const runWithHost = (layer: WiredRunLayer): StrykerRun => (...args: Parameters<StrykerRun>) =>
-  runMutationTest(...args).pipe(Effect.scoped, Effect.provide(layer))
 
 export const hostOptionsOf = (
   mode: ResolvedMode,

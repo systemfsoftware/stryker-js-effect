@@ -13,9 +13,9 @@ import * as Scope from 'effect/Scope'
 import { StageError } from './Run.schema.js'
 import { dryRunCell } from './run/dry-run.cell.js'
 import { instrumentCell } from './run/instrument.cell.js'
-import { mutationTestCell } from './run/mutation-test.cell.js'
+import { mutationTestCell as mutationTestStageCell } from './run/mutation-test.cell.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
-import { runPrepare } from './run/prepare.js'
+import { type PrepareDone, runPrepare } from './run/prepare.js'
 import { RunEnvironment } from './run/RunEnvironment.js'
 import type { RunEnvironmentShape } from './run/RunEnvironment.js'
 import type { EnginePorts, RunStageServices, StageServices } from './run/StageServices.js'
@@ -46,9 +46,9 @@ export const makeRunLayer = (
   )
 }
 
-const mutationPipeline = Cell.andThen(
+export const mutationTestCell: Cell.Cell<PrepareDone, MutationTestDone, StageError, StageServices> = Cell.andThen(
   instrumentCell,
-  Cell.andThen(dryRunCell, mutationTestCell),
+  Cell.andThen(dryRunCell, mutationTestStageCell),
 )
 
 export const runMutationTest = (
@@ -57,7 +57,7 @@ export const runMutationTest = (
 ): Effect.Effect<MutationTestDone, StageError, StageServices> =>
   Effect.gen(function*() {
     const prepared = yield* runPrepare({ cliOptions, targetMutatePatterns })
-    return yield* mutationPipeline.run(prepared)
+    return yield* mutationTestCell.run(prepared)
   })
 
 export const shouldKeepTempDir = (
