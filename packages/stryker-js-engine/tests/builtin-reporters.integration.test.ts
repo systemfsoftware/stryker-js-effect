@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { calculateMetrics } from '@systemfsoftware/stryker-js-engine'
 import { makeBuiltinReporterFactories } from '@systemfsoftware/stryker-js-engine/builtin-reporters'
-import { calculateMetrics } from '@systemfsoftware/stryker-js-language'
 import type { MetricsResult } from '@systemfsoftware/stryker-js-language'
 import type { MutantResult, MutationTestResult } from '@systemfsoftware/stryker-js-language'
 import {

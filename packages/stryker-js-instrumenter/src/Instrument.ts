@@ -2,13 +2,10 @@ import { type FileDescription, Mutant as ApiMutant } from '@systemfsoftware/stry
 import * as Effect from 'effect/Effect'
 import * as Predicate from 'effect/Predicate'
 
-import type { IgnorerService } from '@systemfsoftware/stryker-js-language'
-import type { MutateDescription } from '@systemfsoftware/stryker-js-language'
+import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import type { MutateDescription } from './Instrument.schema.js'
 import {
   FileSchema,
-  InstrumentCommand,
-  InstrumentDecision,
-  InstrumentDecoded,
   type InstrumenterOptions,
   InstrumentError,
   InstrumentResult as InstrumentResultSchema,
@@ -197,14 +194,14 @@ function toOneBasedLineNumber(range: MutateDescription): MutateDescription {
   }))
 }
 
-function isIgnorerService(value: unknown): value is IgnorerService {
+function isIgnorer(value: unknown): value is Ignorer {
   return Predicate.isObject(value) && typeof value['shouldIgnore'] === 'function'
 }
 
 function toTransformerOptions(options: InstrumenterOptions): TransformerOptions {
   const base: TransformerOptions = {
     excludedMutations: [...options.excludedMutations],
-    ignorers: options.ignorers.filter(isIgnorerService),
+    ignorers: options.ignorers.filter(isIgnorer),
   }
   if (options.noHeader !== undefined) {
     return { ...base, noHeader: options.noHeader }
@@ -225,21 +222,24 @@ interface ParsedFile {
   readonly ast: Ast
 }
 
-interface Collected {
-  readonly files: readonly FileSchemaType[]
-  readonly options: InstrumenterOptions
-  readonly asts: readonly Ast[]
-  readonly mutants: readonly ApiMutant[]
+function printedFile(file: FileSchemaType, ast: unknown): readonly FileSchemaType[] {
+  if (!isAst(ast)) return []
+  return [{ name: file.name, mutate: file.mutate, content: print(ast) }]
 }
 
-const readCollected = (
-  command: InstrumentCommand,
+export const instrument = (
+  files: readonly File[],
+  options: InstrumenterOptions,
   basePath?: string,
-): Effect.Effect<Collected, InstrumentError> =>
+): Effect.Effect<InstrumentResultSchema, InstrumentError> =>
   Effect.gen(function*() {
-    const { files, options } = command
+    const schemaFiles: readonly FileSchemaType[] = files.map((file) => ({
+      name: file.name,
+      content: file.content,
+      mutate: file.mutate,
+    }))
     const parse = createParser()
-    const parsed = yield* Effect.forEach(files, (file) =>
+    const parsed = yield* Effect.forEach(schemaFiles, (file) =>
       Effect.map(
         parse(file.content, file.name).pipe(
           Effect.mapError((cause) => InstrumentError.make({ message: `Failed to parse ${file.name}`, cause })),
@@ -259,52 +259,9 @@ const readCollected = (
       try: () => collector.map(toApiMutant),
       catch: (cause) => InstrumentError.make({ message: 'Failed to instrument', cause }),
     })
-    return { files, options, asts: parsed.map(({ ast }) => ast), mutants }
-  })
-
-const printDecision = (
-  decision: InstrumentDecision,
-): Effect.Effect<InstrumentResultSchema, InstrumentError> =>
-  Effect.try({
-    try: () =>
-      InstrumentResultSchema.make({
-        files: decision.files.flatMap((file, index) => printedFile(file, decision.asts[index])),
-        mutants: decision.mutants,
-      }),
-    catch: (cause) => InstrumentError.make({ message: 'Failed to print', cause }),
-  })
-
-function printedFile(file: FileSchemaType, ast: unknown): readonly FileSchemaType[] {
-  if (!isAst(ast)) return []
-  return [{ name: file.name, mutate: file.mutate, content: print(ast) }]
-}
-
-export const decideInstrument = (decoded: InstrumentDecoded): InstrumentDecision =>
-  InstrumentDecision.make({
-    files: decoded.files,
-    mutants: decoded.mutants,
-    asts: decoded.asts,
-  })
-
-export const instrument = (
-  files: readonly File[],
-  options: InstrumenterOptions,
-  basePath?: string,
-): Effect.Effect<InstrumentResultSchema, InstrumentError> =>
-  Effect.gen(function*() {
-    const schemaFiles: FileSchemaType[] = files.map((file) => ({
-      name: file.name,
-      content: file.content,
-      mutate: file.mutate,
-    }))
-    const collected = yield* readCollected(InstrumentCommand.make({ files: schemaFiles, options }), basePath)
-    const decision = decideInstrument(
-      InstrumentDecoded.make({
-        files: collected.files,
-        options: collected.options,
-        asts: collected.asts,
-        mutants: collected.mutants,
-      }),
-    )
-    return yield* printDecision(decision)
+    const printed = yield* Effect.try({
+      try: () => parsed.flatMap(({ file, ast }) => printedFile(file, ast)),
+      catch: (cause) => InstrumentError.make({ message: 'Failed to print', cause }),
+    })
+    return InstrumentResultSchema.make({ files: printed, mutants })
   })

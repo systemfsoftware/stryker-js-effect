@@ -5,6 +5,7 @@
 ```ts
 
 import * as Cause from 'effect/Cause';
+import { Cell } from '@systemfsoftware/effect-cell-types';
 import { CheckResult } from '@systemfsoftware/stryker-js-language';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import { CompleteDryRunResult } from '@systemfsoftware/stryker-js-language';
@@ -15,17 +16,20 @@ import { Duration } from 'effect/Duration';
 import * as Duration_2 from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
-import { ExitClass } from '@systemfsoftware/stryker-js-language';
+import { ExitClass as ExitClass_2 } from '@systemfsoftware/stryker-js-language';
 import { FileDescription } from '@systemfsoftware/stryker-js-language';
 import { FileDescriptions } from '@systemfsoftware/stryker-js-language';
+import { FileResult } from '@systemfsoftware/stryker-js-language';
 import * as FileSystem from 'effect/FileSystem';
 import * as HashMap from 'effect/HashMap';
 import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
-import { IgnorerService } from '@systemfsoftware/stryker-js-language';
 import * as Layer from 'effect/Layer';
+import { Metrics } from '@systemfsoftware/stryker-js-language';
+import { MetricsResult } from '@systemfsoftware/stryker-js-language';
 import * as MutableHashMap from 'effect/MutableHashMap';
 import * as MutableHashSet from 'effect/MutableHashSet';
 import { Mutant } from '@systemfsoftware/stryker-js-language';
+import { MutantResult } from '@systemfsoftware/stryker-js-language';
 import { MutantStatus } from '@systemfsoftware/stryker-js-language';
 import { MutateDescription } from '@systemfsoftware/stryker-js-language';
 import { MutationTestResult } from '@systemfsoftware/stryker-js-language';
@@ -59,6 +63,9 @@ export const ACTIONABLE_STATUSES: readonly ['Survived', 'NoCoverage', 'Timeout',
 
 // @public (undocumented)
 export function buildVerdictEnvelope(report: schema.MutationTestResult, mode: OutputMode, signal: ModeSignal, runId: string, basePath: string, pathService: Path.Path): VerdictEnvelope;
+
+// @public (undocumented)
+export const calculateMetrics: (files: Readonly<Record<string, FileResult>>) => MetricsResult;
 
 // @public
 export interface CheckerResourceService {
@@ -137,6 +144,9 @@ export class ConfigFileUnsupportedError extends ConfigFileUnsupportedError_base 
 export const connectRetry: Schedule.Schedule<Duration, unknown, never, never>;
 
 // @public (undocumented)
+export const countMutants: (mutants: readonly MutantResult[]) => Metrics;
+
+// @public (undocumented)
 export const createDefaultOptions: Effect.Effect<StrykerOptions>;
 
 // @public (undocumented)
@@ -168,6 +178,15 @@ export interface DryRunDone extends InstrumentDone {
 
 // @public (undocumented)
 export type EnginePorts = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path | Stdio.Stdio | WorkerLauncher;
+
+// @public (undocumented)
+export const EXIT_CODE: Record<ExitClass, number>;
+
+// @public (undocumented)
+export const ExitClass: S.Literals<readonly ["VerdictFail", "ConfigError", "RuntimeError", "InternalError"]>;
+
+// @public (undocumented)
+export type ExitClass = typeof ExitClass.Type;
 
 // @public (undocumented)
 export const extendsPropertySchema: S.optionalKey<S.String>;
@@ -224,6 +243,9 @@ export const forkOptionsSchema: S.StructWithRest<S.Struct<{
 
 // @public (undocumented)
 export function generateRunId(now: DateTime.Utc): string;
+
+// @public (undocumented)
+export function highestExitClass(pending: Iterable<ExitClass>): ExitClass | null;
 
 // Warning: (ae-forgotten-export) The symbol "ImmutablePrimitive" needs to be exported by the entry point index.d.mts
 //
@@ -320,10 +342,8 @@ export function isModuleSpecifier(value: string): boolean;
 // @public (undocumented)
 export function isWarningEnabled(warningType: KnownKeys<WarningOptions>, warningOptions: WarningOptions | boolean): boolean;
 
-// Warning: (ae-forgotten-export) The symbol "IdGenerator" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
-export const makeRunLayer: (env: RunEnvironmentShape, events?: Queue.Queue<RunEvent, Cause.Done>) => Layer.Layer<RunEnvironment | RunEvents | IdGenerator | Scope.Scope, never, EnginePorts>;
+export const makeRunLayer: (env: RunEnvironmentShape, events?: Queue.Queue<RunEvent, Cause.Done>) => Layer.Layer<RunStageServices, never, EnginePorts>;
 
 // @public (undocumented)
 export const makeWorkerClient: <Rpcs extends Rpc.Any>(params: WorkerClientParams<Rpcs>) => Effect.Effect<RpcClient.RpcClient<Rpcs, RpcClientError>, WorkerBootError, Scope.Scope | WorkerLauncher>;
@@ -350,6 +370,19 @@ export class MergeResult extends MergeResult_base {}
 // @public (undocumented)
 export type ModeSignal = 'flag' | 'env' | 'tty' | 'agent' | 'tool';
 
+// Warning: (ae-forgotten-export) The symbol "StageServices" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export const mutationTestCell: Cell.Cell<PrepareExecutorArgs, MutationTestDone, StageError, StageServices>;
+
+// @public (undocumented)
+export interface MutationTestDone {
+    // (undocumented)
+    readonly results: readonly RunMutantResult[];
+    // (undocumented)
+    readonly verdict: ExitClass_2 | null;
+}
+
 // @public (undocumented)
 export const optionsPath: (...path: string[]) => string;
 
@@ -367,7 +400,7 @@ export type OutputMode = 'human' | 'machine';
 // @public (undocumented)
 export interface PrepareDone {
     // (undocumented)
-    readonly ignorers: readonly IgnorerService[];
+    readonly ignorers: readonly Ignorer[];
     // Warning: (ae-forgotten-export) The symbol "LoadedPlugins" needs to be exported by the entry point index.d.mts
     //
     // (undocumented)
@@ -384,6 +417,14 @@ export interface PrepareDone {
     readonly reporterStage: ReporterStage;
     // (undocumented)
     readonly temporaryDirectoryPath: string;
+}
+
+// @public (undocumented)
+export interface PrepareExecutorArgs {
+    // (undocumented)
+    cliOptions: PartialStrykerOptions;
+    // (undocumented)
+    targetMutatePatterns: string[] | undefined;
 }
 
 // @public (undocumented)
@@ -420,7 +461,13 @@ export interface ResolvedMode {
 }
 
 // @public (undocumented)
+export function resolveExitCode(pending: Iterable<ExitClass>, signal: number | null): number;
+
+// @public (undocumented)
 export function resolveExtends(configFile: string, document: PartialStrykerOptions): Effect.Effect<PartialStrykerOptions, ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, Path.Path>;
+
+// @public (undocumented)
+export const RUN_EVENTS_QUEUE_BOUND = 256;
 
 // Warning: (ae-forgotten-export) The symbol "RunEnvironment_base" needs to be exported by the entry point index.d.mts
 //
@@ -443,18 +490,10 @@ export interface RunEnvironmentShape {
     readonly runStartedAt: number;
 }
 
-// Warning: (ae-forgotten-export) The symbol "StageServices" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "IdGenerator" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
-export const runMutationTest: (cliOptions: PartialStrykerOptions, targetMutatePatterns?: string[]) => Effect.Effect<RunOutcome, StageError, StageServices>;
-
-// @public (undocumented)
-export interface RunOutcome {
-    // (undocumented)
-    readonly results: readonly RunMutantResult[];
-    // (undocumented)
-    readonly verdict: ExitClass | null;
-}
+export type RunStageServices = RunEnvironment | RunEvents | IdGenerator | Scope.Scope;
 
 // @public (undocumented)
 export const shouldKeepTempDir: (exit: Exit.Exit<unknown, unknown>, cleanTempDir: 'always' | boolean) => boolean;
@@ -495,7 +534,7 @@ export class StageError extends StageError_base {
     // (undocumented)
     readonly [TypeId]: "~stryker/mutation-run/StageError";
     // (undocumented)
-    get exitClass(): ExitClass;
+    get exitClass(): ExitClass_2;
     // (undocumented)
     get message(): string;
 }
@@ -580,6 +619,9 @@ export interface VerdictEnvelope {
 }
 
 // @public (undocumented)
+export function verdictExitClass(score: number | null, breakingThreshold: number | null): ExitClass | null;
+
+// @public (undocumented)
 export interface VerdictMutant {
     // (undocumented)
     readonly file: string;
@@ -607,6 +649,9 @@ export interface VerdictThresholds {
 
 // @public (undocumented)
 export type WarningOptions = Exclude<StrykerOptions['warnings'], boolean>;
+
+// @public (undocumented)
+export type WiredRunLayer = Layer.Layer<RunStageServices | EnginePorts, never, never>;
 
 // @public (undocumented)
 export type WorkerBootError = WorkerExit | WorkerBootTimeoutError;

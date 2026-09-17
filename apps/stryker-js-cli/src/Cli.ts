@@ -8,26 +8,20 @@ import {
   ConfigFileNotFoundError,
   ConfigFileUnreadableError,
   ConfigFileUnsupportedError,
-  makeRunLayer,
   type ResolvedMode,
-  type RunEnvironmentShape,
-  runMutationTest,
 } from '@systemfsoftware/stryker-js-engine'
-import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { Mutant } from '@systemfsoftware/stryker-js-language'
-import { type RunEvent, RunEvents } from '@systemfsoftware/stryker-js-language'
 import { RENDERED_OPTION_DEFAULTS } from '@systemfsoftware/stryker-js-language'
-import type { LogLevel, PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-language'
-import * as Cause from 'effect/Cause'
+import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-language'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import type { SchemaError } from 'effect/Schema'
@@ -41,6 +35,17 @@ import cliPkgJson from '../package.json' with { type: 'json' }
 import { SurvivorsRejection } from './admit-survivors-run.workflow.js'
 import { RunExit } from './classify-run-outcome.workflow.js'
 import type { RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
+import {
+  absentWhenFalse,
+  isUnknownArgument,
+  optional,
+  parseCleanDirOption,
+  parseConcurrency,
+  setIfPresent,
+  setLogLevel,
+  splitOnComma,
+  splitOnSpace,
+} from './cli-options.js'
 import type { CliRequest } from './Cli.schema.js'
 import {
   buildErrorEnvelope,
@@ -59,13 +64,19 @@ import {
   runOutcomeCode,
   unrecognizedArgumentOf,
 } from './Envelope.js'
+import { mergeReportsCell } from './merge-reports.cell.js'
 import { MergeReportsFailed } from './merge-reports.schema.js'
-import { runMergeReports } from './MergeReports.js'
-import { emitMachineModeOutput, isColorEnabled } from './Output.js'
-import type { OutputModeProbe, RunEventStream, RunEventStreamPort } from './Output.js'
+import { emitMachineModeOutput } from './Output.js'
+import type { OutputModeProbe, RunEventStreamPort } from './Output.js'
 import { emitNullScoreVerdict } from './Output.js'
-import { nodePlatformLayer } from './platform/node.js'
-import { DEFAULT_PROGRESS_STREAM_FILE } from './StreamFile.js'
+import {
+  applyProgressStreamFile,
+  hostOptionsOf,
+  onHost,
+  prepareCommandOf,
+  progressStreamFileName,
+  runOnHost,
+} from './run-host.js'
 import { STREAM_SCHEMA_VERSION } from './StreamVersion.js'
 import type { StrykerRun } from './StrykerRun.js'
 import { runSurvivorsAdmission, survivorMutateSpans } from './Survivors.js'
@@ -103,52 +114,6 @@ export interface RunStrykerCliInput {
   readonly mode: ResolvedMode
   readonly runMutationTest: StrykerRun | undefined
   readonly argv: readonly string[]
-  readonly basePath: string
-}
-
-/// <reference types="vitest/import-meta" />
-
-function createSplitter(separator: string) {
-  return (value: string) => value.split(separator).filter(Boolean)
-}
-
-const splitOnComma = createSplitter(',')
-const splitOnSpace = createSplitter(' ')
-
-const CLEAN_TEMP_DIR_DISABLED = ['false', '0'] as const
-
-function parseCleanDirOption(value: string): 'always' | boolean {
-  const normalized = value.toLocaleLowerCase()
-  return Match.value(normalized).pipe(
-    Match.when('always', () => 'always' as const),
-    Match.orElse(() => !CLEAN_TEMP_DIR_DISABLED.some((disabled) => disabled === normalized)),
-  )
-}
-
-function parseConcurrency(value: string): number | string {
-  if (/^\d+$/.test(value)) {
-    return parseInt(value, 10)
-  }
-  return value
-}
-
-const optional = <A>(option: Flag.Flag<A>) => Flag.optional(option)
-
-const absentWhenFalse = (value: Option.Option<boolean>): boolean | undefined =>
-  Option.getOrUndefined(Option.filter(value, (present) => present))
-
-const isUnknownArgument = (argument: string | undefined): argument is string =>
-  Option.exists(Option.fromUndefinedOr(argument), (text) => text.startsWith('-'))
-
-function setLogLevel(
-  target: PartialStrykerOptions,
-  key: 'logLevel' | 'fileLogLevel',
-  value: Option.Option<LogLevel> | LogLevel | undefined,
-): void {
-  const unwrapped = unwrap(value)
-  if (unwrapped !== undefined) {
-    target[key] = unwrapped
-  }
 }
 
 const runOptions = {
@@ -397,24 +362,6 @@ const mergeReportsOptions = {
     ),
 } satisfies Record<string, Flag.Flag<unknown>>
 
-function unwrap<A>(value: Option.Option<A> | A | undefined): A | undefined {
-  if (Option.isOption(value)) {
-    return Option.getOrUndefined(value)
-  }
-  return value
-}
-
-function setIfPresent<K extends keyof StrykerOptions>(
-  target: PartialStrykerOptions,
-  key: K,
-  value: Option.Option<StrykerOptions[K]> | StrykerOptions[K] | undefined,
-): void {
-  const unwrapped = unwrap(value)
-  if (unwrapped !== undefined) {
-    target[key] = unwrapped
-  }
-}
-
 function makeStrykerCommand(requestRef: Ref.Ref<Option.Option<CliRequest>>) {
   const runCommand = Command.make(
     'run',
@@ -541,8 +488,7 @@ export function strykerCliEffect(
   runMutationTest: StrykerRun | undefined,
   detectMode: DetectModeCapability,
   createRunEventStream: CreateRunEventStreamCapability,
-  basePath: string,
-): Effect.Effect<void, RunExit | CliError.CliError> {
+) {
   return Effect.gen(function*() {
     const mode = yield* detectMode
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
@@ -557,73 +503,25 @@ export function strykerCliEffect(
       Effect.provide(Layer.mergeAll(consoleLayer, cliLayer)),
     )
     yield* runStrykerCli(
-      { program: cliEffect, requestRef, mode, runMutationTest, argv, basePath },
+      { program: cliEffect, requestRef, mode, runMutationTest, argv },
       createRunEventStream,
     )
   })
 }
 
-const hostRunLayer = (hostOptions: RunEnvironmentShape, queue?: Queue.Queue<RunEvent, Cause.Done>) =>
-  makeRunLayer(hostOptions, queue).pipe(Layer.provideMerge(nodePlatformLayer))
-
-const defaultRunMutationTest =
-  (hostOptions: RunEnvironmentShape, queue: Queue.Queue<RunEvent, Cause.Done>): StrykerRun =>
-  (...args: Parameters<StrykerRun>) =>
-    Effect.scoped(runMutationTest(...args)).pipe(
-      Effect.provide(hostRunLayer(hostOptions, queue)),
-      Effect.provideService(RunEvents, queue),
-    )
-
-function hostOptionsOf(
-  mode: ResolvedMode,
-  stream: RunEventStream,
-  noColor: string | undefined,
-  basePath: string,
-): RunEnvironmentShape {
-  return {
-    runId: stream.runId,
-    resolvedMode: mode,
-    runStartedAt: stream.startedAt,
-    basePath,
-    builtinReporters: { html: makeHtmlReporter },
-    allowConsoleColors: isColorEnabled(mode, noColor),
-  }
-}
-
-const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.length > 0
-
-const progressStreamFileName = (request: Option.Option<CliRequest>): string =>
-  Option.match(request, {
-    onNone: () => DEFAULT_PROGRESS_STREAM_FILE,
-    onSome: (cliRequest) =>
-      Match.value(cliRequest).pipe(
-        Match.tag('merge-reports', () => DEFAULT_PROGRESS_STREAM_FILE),
-        Match.tag('run', (runRequest) =>
-          Option.getOrElse(
-            Option.filter(Option.fromNullishOr(runRequest.options['progressStreamFile']), isNonEmptyString),
-            () => DEFAULT_PROGRESS_STREAM_FILE,
-          )),
-        Match.exhaustive,
-      ),
-  })
-
-const applyProgressStreamFile = (stream: RunEventStream, fileName: string): Effect.Effect<void, never, never> =>
-  Option.match(Option.fromUndefinedOr(stream.setProgressStreamFile), {
-    onNone: () => Effect.void,
-    onSome: (setFileName) => setFileName(fileName),
-  })
-
 export const runStrykerCli = (
   input: RunStrykerCliInput,
   createRunEventStream: CreateRunEventStreamCapability,
-): Effect.Effect<void, RunExit, never> =>
+) =>
   Effect.gen(function*() {
     const stream = yield* createRunEventStream(input.mode)
     const noColor = yield* Config.string('NO_COLOR').pipe(Effect.option)
-    const hostOptions = hostOptionsOf(input.mode, stream, Option.getOrUndefined(noColor), input.basePath)
-    const runMutationTestImpl = input.runMutationTest ?? defaultRunMutationTest(hostOptions, stream.queue)
+    const hostOptions = yield* hostOptionsOf(input.mode, stream, Option.getOrUndefined(noColor))
+    const hostBinding = { env: hostOptions, events: stream.queue }
+    const runMutationTestImpl: StrykerRun = input.runMutationTest ??
+      ((options, targetMutatePatterns) => runOnHost(hostBinding, prepareCommandOf(options, targetMutatePatterns)))
     const basePath = hostOptions.basePath
-    const pathService = yield* Path.Path.pipe(Effect.provide(NodePath.layer))
+    const pathService = yield* Path.Path
 
     const dispatch = (
       request: CliRequest,
@@ -636,21 +534,21 @@ export const runStrykerCli = (
       | ConfigFileInvalidError
       | ConfigFileUnsupportedError
       | MergeReportsFailed,
-      never
+      FileSystem.FileSystem | Path.Path
     > =>
       Match.value(request).pipe(
         Match.tag(
           'merge-reports',
-          (mergeRequest) =>
-            runMergeReports(mergeRequest).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))),
+          (mergeRequest) => mergeReportsCell.run(mergeRequest),
         ),
         Match.tag('run', (runRequest) =>
           (() => {
             if (runRequest.survivors) {
               return Effect.gen(function*() {
-                const { admission, resolvedOptions, priorReportPath } = yield* runSurvivorsAdmission(
-                  runRequest.options,
-                ).pipe(Effect.provide(hostRunLayer(hostOptions)))
+                const { admission, resolvedOptions, priorReportPath } = yield* onHost(
+                  hostBinding,
+                  runSurvivorsAdmission(runRequest.options),
+                )
                 return yield* Match.value(admission).pipe(
                   Match.tag('NoSurvivors', () =>
                     emitNullScoreVerdict(

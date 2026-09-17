@@ -1,4 +1,5 @@
-import { ExitClass, highestExitClass } from '@systemfsoftware/stryker-js-language'
+import { highestExitClass } from '@systemfsoftware/stryker-js-engine'
+import { ExitClass } from '@systemfsoftware/stryker-js-language'
 import { causeText } from '@systemfsoftware/stryker-js-language'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
@@ -140,11 +141,7 @@ export function collectExitClasses(exit: Exit.Exit<unknown, unknown>): Array<Exi
   return out
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
-}
-
-const nonEmptyText = Option.liftPredicate(isNonEmptyString)
+const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
 
 function reasonOf(value: object): string | undefined {
   const declared: unknown = Reflect.get(value, 'reason')

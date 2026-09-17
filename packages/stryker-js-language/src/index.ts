@@ -9,17 +9,8 @@ export {
   type PassedCheckResult,
 } from './Checker.js'
 export { Evaluator, EvaluatorFailed, type EvaluatorService } from './Evaluator.js'
-export { classifyExit, EXIT_CODE, ExitClass, highestExitClass, resolveExitCode, verdictExitClass } from './ExitClass.js'
-export { ClassifyExitCommand, ClassifyExitDecision } from './ExitClass.schema.js'
-export { Ignorer, type IgnorerService } from './Ignorer.js'
-export {
-  calculateMetrics,
-  countMutants,
-  type Metrics,
-  type MetricsResult,
-  MetricsResultSchema,
-  MetricsSchema,
-} from './Metrics.js'
+export { EXIT_CODE, ExitClass } from './ExitClass.js'
+export { type Metrics, type MetricsResult, MetricsResultSchema, MetricsSchema } from './Metrics.schema.js'
 export {
   causeText,
   type Coverage,
@@ -99,11 +90,9 @@ export {
   Heartbeat,
   HelpRendered,
   ModeSignal,
-  type MutationRunIo,
   OutputMode,
   PhaseEntered,
   PlanKnown,
-  planMutationRun,
   type RunEvent,
   RunEvents,
   type RunEventType,
@@ -111,11 +100,9 @@ export {
   RunIdentity,
   type RunIdentityShape,
   RunMutantTested,
-  runMutationTest,
   RunPhase,
   RunStarted,
   type RunTerminalEvent,
-  shouldKeepTempDir,
   VerdictReached,
 } from './Run.js'
 export { MutationRunPlan, PlanMutationRunCommand, RunCommand, RunOutput } from './Run.schema.js'

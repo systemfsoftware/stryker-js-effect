@@ -6,13 +6,9 @@
 
 import * as Effect from 'effect/Effect';
 import { FileDescription } from '@systemfsoftware/stryker-js-language';
-import { IgnorerService } from '@systemfsoftware/stryker-js-language';
 import { Mutant } from '@systemfsoftware/stryker-js-language';
 import * as S from 'effect/Schema';
 import { YieldableError } from 'effect/Cause';
-
-// @public (undocumented)
-export const angularIgnorer: IgnorerService;
 
 // @public (undocumented)
 export const disableTypeChecks: (file: File_2) => Effect.Effect<File_2, InstrumentError>;
@@ -25,9 +21,6 @@ interface File_2 extends FileDescription {
     name: string;
 }
 export { File_2 as File }
-
-// @public (undocumented)
-export const frameworkPluginsFileUrl: string;
 
 // Warning: (ae-forgotten-export) The symbol "InstrumentResult$1" needs to be exported by the entry point index.d.mts
 //
@@ -57,9 +50,6 @@ export interface InstrumentResult {
 
 // @public (undocumented)
 export interface ParserOptions {}
-
-// @public (undocumented)
-export const strykerPlugins: readonly unknown[];
 
 // (No @packageDocumentation comment for this package)
 

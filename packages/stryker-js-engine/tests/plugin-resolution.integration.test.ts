@@ -11,7 +11,11 @@ import { expect } from 'vitest'
 const Feature = makeFeature({ it, layer })
 
 const UNSHIPPED = '@acme/stryker-unshipped'
-const DECLARES_EMPTY_PLUGIN_LIST = '@systemfsoftware/stryker-js-instrumenter'
+const DECLARES_PLUGIN_LIST = `data:text/javascript,${
+  encodeURIComponent(
+    `export const strykerPlugins = [{ kind: 'TestRunner', name: 'vitest', workerEntry: 'file:///project/node_modules/@acme/stryker-runner/dist/main.mjs' }]`,
+  )
+}`
 const RESOLVES_WITHOUT_PLUGINS = 'effect'
 const LOCAL_PLUGIN = './local-plugin.js'
 
@@ -156,7 +160,7 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
     Gherkin.Do.pipe(
       Given('a project declaring a package that declares its plugin list')(
         'outcome',
-        () => loadOutcome([DECLARES_EMPTY_PLUGIN_LIST]),
+        () => loadOutcome([DECLARES_PLUGIN_LIST]),
       ),
       When('the declared package is resolved')(
         'seen',
@@ -170,8 +174,8 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
       Then('the module is loaded by the URL the resolver returned, with no warning')((s) =>
         Effect.sync(() => {
           expect(s.seen.modulePaths).toHaveLength(1)
-          expect(s.seen.modulePaths[0]).toContain('stryker-js-instrumenter')
-          expect(s.seen.sources).toStrictEqual([])
+          expect(s.seen.modulePaths[0]).toContain('data:text/javascript')
+          expect(s.seen.sources).toHaveLength(1)
           expect(s.seen.warnings).toStrictEqual([])
         })
       ),

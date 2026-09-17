@@ -16,3 +16,5 @@ export const StreamMutantLineSchema = S.Struct({
   mutator: S.String,
   replacement: S.NullOr(S.String),
 })
+
+export type StreamMutantLine = S.Schema.Type<typeof StreamMutantLineSchema>

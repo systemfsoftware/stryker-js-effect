@@ -21,8 +21,6 @@ const SUPPORTED_NODE_MAJOR = 20
 
 process.title = 'stryker'
 
-const basePath = process.cwd()
-
 /** The numbers a `process.version` names; a component that does not parse stays `NaN`. */
 const versionNumbers = (version: string): readonly number[] =>
   version
@@ -57,17 +55,20 @@ const program = Effect.gen(function*() {
   const runEvents = yield* RunEventStreamPort
   const stdio = yield* Stdio.Stdio
   const args = [...(yield* stdio.args)]
-  yield* strykerCliEffect(args, undefined, outputMode.detectMode, runEvents.createRunEventStream, basePath)
+  yield* strykerCliEffect(args, undefined, outputMode.detectMode, runEvents.createRunEventStream)
 })
   .pipe(
     Effect.provideService(Logger.LogToStderr, true),
     Effect.provide(
-      Layer.mergeAll(
-        Layer.merge(OutputModeProbeLive, RunEventStreamFileLive).pipe(
-          Layer.provide(Layer.mergeAll(NodeStdio.layer, NodeFileSystem.layer, NodePath.layer)),
+      Layer.provideMerge(
+        Layer.mergeAll(
+          Layer.merge(OutputModeProbeLive, RunEventStreamFileLive).pipe(
+            Layer.provide(Layer.mergeAll(NodeStdio.layer, NodeFileSystem.layer, NodePath.layer)),
+          ),
+          telemetryLayer,
+          NodeStdio.layer,
         ),
-        telemetryLayer,
-        NodeStdio.layer,
+        Layer.mergeAll(NodeFileSystem.layer, NodePath.layer),
       ),
     ),
   )

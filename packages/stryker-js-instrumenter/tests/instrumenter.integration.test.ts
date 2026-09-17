@@ -1,8 +1,7 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
-import type { IgnorerService } from '@systemfsoftware/stryker-js-language'
 import { Effect } from 'effect'
-import * as Option from 'effect/Option'
 import { expect } from 'vitest'
 
 import { instrument } from './__fixtures__/instrument.js'
@@ -51,16 +50,17 @@ const keepArgs = (node: unknown): readonly unknown[] => {
     : []
 }
 
-const invertedKeepIgnorer: IgnorerService = {
+const invertedKeepIgnorer: Ignorer = {
+  name: 'inverted-keep',
   shouldIgnore: (node, ancestors) => {
     let child: unknown = node
     for (const ancestor of ancestors) {
       if (keepArgs(ancestor).includes(child)) {
-        return Option.none()
+        return undefined
       }
       child = ancestor
     }
-    return Option.some(OUTSIDE_KEEP)
+    return OUTSIDE_KEEP
   },
 }
 
@@ -76,8 +76,9 @@ const isFlagIf = (node: unknown): boolean => {
     'name' in test && test.name === 'flag'
 }
 
-const regionFlagIgnorer: IgnorerService = {
-  shouldIgnore: (_node, ancestors) => ancestors.some(isFlagIf) ? Option.some(INSIDE_FLAG) : Option.none(),
+const regionFlagIgnorer: Ignorer = {
+  name: 'region-flag',
+  shouldIgnore: (_node, ancestors) => ancestors.some(isFlagIf) ? INSIDE_FLAG : undefined,
 }
 const countByMutator = (mutants: readonly Mutant[]): Record<string, number> => {
   const counts: Record<string, number> = {}

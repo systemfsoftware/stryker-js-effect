@@ -25,6 +25,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 import * as CliError from 'effect/unstable/cli/CliError'
@@ -385,7 +386,7 @@ export function isProgressEnabled(resolved: ResolvedMode): boolean {
 }
 
 export function isColorEnabled(resolved: ResolvedMode, noColor: string | undefined): boolean {
-  const requested = Option.exists(Option.fromUndefinedOr(noColor), (value) => value.length > 0)
+  const requested = Option.exists(Option.fromUndefinedOr(noColor), S.is(S.NonEmptyString))
   return resolved.mode === 'human' && !requested
 }
 
