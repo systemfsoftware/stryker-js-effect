@@ -62,11 +62,11 @@ const refusesPathPrefixed = (
 
 const withResolvedPathSpecifier = (command: PluginLoadCommand): PluginLoadCommand => {
   const declared = `${PREFIXES[command.specifiers.length % PREFIXES.length]}declared-${command.specifiers.length}`
-  return new PluginLoadCommand({
+  return PluginLoadCommand.make({
     specifiers: [...command.specifiers, declared],
     resolutions: [
       ...command.resolutions,
-      new ResolvedSpecifier({ specifier: declared, entrypoint: `/resolved/${declared}` }),
+      ResolvedSpecifier.make({ specifier: declared, entrypoint: `/resolved/${declared}` }),
     ],
   })
 }

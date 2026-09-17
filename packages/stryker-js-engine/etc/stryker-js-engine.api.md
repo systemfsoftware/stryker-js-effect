@@ -135,7 +135,7 @@ export class ConfigFileUnsupportedError extends ConfigFileUnsupportedError_base 
 export const connectRetry: Schedule.Schedule<Duration, unknown, never, never>;
 
 // @public (undocumented)
-export function createDefaultOptions(): Effect.Effect<StrykerOptions>;
+export const createDefaultOptions: Effect.Effect<StrykerOptions>;
 
 // @public (undocumented)
 export function createFileMatcher(pattern: boolean | string, pathService: Path.Path, allowHiddenFiles?: boolean): (fileName: string) => boolean;

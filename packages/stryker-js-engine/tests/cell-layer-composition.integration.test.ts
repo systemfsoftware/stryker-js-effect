@@ -31,7 +31,7 @@ const describeOrders = (): OrderPair => {
           onSuccess: (admitted) => admitted.id,
           onFailure: (refused) => refused.id,
         })
-        return new OrderRequest({ id: `after-${answered}` })
+        return OrderRequest.make({ id: `after-${answered}` })
       }),
   })
   const second = Cell.layer({
@@ -54,7 +54,7 @@ const describeOrders = (): OrderPair => {
 
 const runBoth = (orders: OrderPair) =>
   Effect.gen(function*() {
-    const firstResponse = yield* orders.first.run(new OrderRequest({ id: 'initial-request' }))
+    const firstResponse = yield* orders.first.run(OrderRequest.make({ id: 'initial-request' }))
     yield* orders.second.run(firstResponse)
     return { firstResponse, recorded: orders.recorded, trace: orders.trace }
   })
@@ -83,7 +83,7 @@ const describeSingleOrder = (): SingleOrder => {
               Match.tag('OrderRejected', (rejected) => `after-rejected:${rejected.why}:${rejected.id}`),
               Match.exhaustive,
             )
-            return new OrderRequest({ id: answered })
+            return OrderRequest.make({ id: answered })
           }),
         onFailure: (refused) => Effect.fail(refused),
       }),
@@ -131,10 +131,10 @@ Feature('Chaining two orders through the caller')
         ),
         When("the order runs with id 'ab'")(
           'outcome',
-          (s) => s.order.cell.run(new OrderRequest({ id: 'ab' })),
+          (s) => s.order.cell.run(OrderRequest.make({ id: 'ab' })),
         ),
         Then('the response carries the rejection in the ledger')((s) => {
-          expect(s.outcome).toStrictEqual(new OrderRequest({ id: 'after-rejected:too short:ab' }))
+          expect(s.outcome).toStrictEqual(OrderRequest.make({ id: 'after-rejected:too short:ab' }))
         }),
         Then('the order ran its steps in the order it declares')((s) => {
           expect(s.order.trace).toStrictEqual([
@@ -153,10 +153,10 @@ Feature('Chaining two orders through the caller')
         ),
         When('the order runs with an empty id')(
           'exit',
-          (s) => Effect.exit(s.order.cell.run(new OrderRequest({ id: '' }))),
+          (s) => Effect.exit(s.order.cell.run(OrderRequest.make({ id: '' }))),
         ),
         Then('the run fails with the refusal reason')((s) => {
-          expect(s.exit).toStrictEqual(Exit.fail(new OrderRefused({ id: '', why: 'empty' })))
+          expect(s.exit).toStrictEqual(Exit.fail(OrderRefused.make({ id: '', why: 'empty' })))
         }),
         Then('the refusal never reached the write')((s) => {
           expect(s.order.trace).toStrictEqual(['single order read its request'])

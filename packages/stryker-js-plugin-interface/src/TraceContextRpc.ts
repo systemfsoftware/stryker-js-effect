@@ -7,7 +7,7 @@ import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware'
 import type { TraceContextParts } from './TraceContext.js'
 
 export class PropagatedTrace extends Context.Service<PropagatedTrace, Option.Option<TraceContextParts>>()(
-  '@systemfsoftware/stryker-js-plugin-interface/PropagatedTrace',
+  '@systemfsoftware/stryker-js-plugin-interface/TraceContextRpc/PropagatedTrace',
 ) {}
 
 export class TraceContextMiddleware extends RpcMiddleware.Service<

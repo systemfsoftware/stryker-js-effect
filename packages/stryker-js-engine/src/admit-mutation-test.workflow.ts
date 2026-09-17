@@ -34,13 +34,13 @@ export const admitMutationTest = Workflow.make(
   (command: MutationTestCommand): Result.Result<MutationTestDecision, MutationTestError> =>
     Match.value(command).pipe(
       Match.when(isInvalidTestCount, () =>
-        Result.fail(new MutationTestError({ stage: 'mutationTest', reason: 'Invalid test count' }))),
+        Result.fail(MutationTestError.make({ stage: 'mutationTest', reason: 'Invalid test count' }))),
       Match.when({ dryRunOnly: true }, () =>
-        Result.succeed(new MutationTestDryRunOnly({}))),
+        Result.succeed(MutationTestDryRunOnly.make({}))),
       Match.when(
         { isZero: true, allowEmpty: true },
-        () => Result.succeed(new MutationTestNoTests({})),
+        () => Result.succeed(MutationTestNoTests.make({})),
       ),
-      Match.orElse(() => Result.succeed(new MutationTestProceed({}))),
+      Match.orElse(() => Result.succeed(MutationTestProceed.make({}))),
     ),
 )

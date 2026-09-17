@@ -13,6 +13,7 @@ import {
 import { encodeWorkerOptions, partsOfEffectSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
 import type * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
+import * as Data from 'effect/Data'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -113,7 +114,7 @@ export const validateReporterNames = (
   if (unknown.length === 0) {
     return Effect.void
   }
-  return Effect.fail(new ConfigError({ message: unknownReporterMessage(unknown, available) }))
+  return Effect.fail(ConfigError.make({ message: unknownReporterMessage(unknown, available) }))
 }
 
 export const acquireReporterIterator = <A>(
@@ -153,12 +154,15 @@ const declaresTerminalReport = (result: IteratorResult<ReporterEvent>): boolean 
   return false
 }
 
-const closeIterator = async (
+const closeIterator = (
   iterator: AsyncIterator<ReporterEvent>,
   value: unknown,
 ): Promise<IteratorResult<ReporterEvent>> => {
-  if (iterator.return === undefined) return closedIteratorResult
-  return iterator.return(value)
+  const finish: AsyncIterator<ReporterEvent>['return'] | undefined = iterator.return?.bind(iterator)
+  return Match.value(finish).pipe(
+    Match.when(undefined, () => Promise.resolve(closedIteratorResult)),
+    Match.orElse((close) => close(value)),
+  )
 }
 
 export const attachReporterFactories = (
@@ -183,17 +187,21 @@ export const attachReporterFactories = (
             return result
           }
           return {
-            next: async () => observe(await iterator.next()),
-            return: async (value) => closeIterator(iterator, value),
+            next: () => iterator.next().then(observe),
+            return: (value) => closeIterator(iterator, value),
           }
         },
       }
-      let consumer: Promise<void>
-      try {
-        consumer = input.factory(options, init)(singleUse)
-      } catch (reason) {
-        consumer = Promise.reject(reason)
-      }
+      const consumer: Promise<void> = yield* Effect.match(
+        Effect.try({
+          try: () => input.factory(options, init)(singleUse),
+          catch: (reason) => new Data.Error(`Reporter "${input.name}" factory threw: ${String(reason)}`),
+        }),
+        {
+          onFailure: (crash): Promise<void> => Promise.reject(crash),
+          onSuccess: (started) => started,
+        },
+      )
       const emitter = yield* Effect.forkScoped(pumpEmitter(ports))
       const attachment: ReporterAttachment = { name: input.name, inbox, queue, latch, emitter, consumer }
       yield* Effect.forkScoped(
@@ -213,27 +221,29 @@ const reporterInitPayload = (init: ReporterInit): ReporterInitOptions => ({
   ...tracestateInit(init.tracestate),
 })
 
-const flushFilledBatch = async (client: ReporterWorkerClient, batch: ReporterEvent[]): Promise<void> => {
-  if (batch.length < REPORTER_EVENT_BATCH_BOUND) return
-  await runOnWorker(client.onEventBatch(batch))
-  batch.length = 0
+const flushFilledBatch = (client: ReporterWorkerClient, batch: ReporterEvent[]): Promise<void> => {
+  if (batch.length < REPORTER_EVENT_BATCH_BOUND) return Promise.resolve()
+  return runOnWorker(client.onEventBatch(batch)).then(() => {
+    batch.length = 0
+  })
 }
 
-const flushRemainingBatch = async (client: ReporterWorkerClient, batch: ReporterEvent[]): Promise<void> => {
-  if (batch.length === 0) return
-  await runOnWorker(client.onEventBatch(batch))
+const flushRemainingBatch = (client: ReporterWorkerClient, batch: ReporterEvent[]): Promise<void> => {
+  if (batch.length === 0) return Promise.resolve()
+  return runOnWorker(client.onEventBatch(batch))
 }
 
 export const reporterWorkerFactory =
-  (client: ReporterWorkerClient): ReporterFactory => (_options, init) => async (events) => {
-    await runOnWorker(client.init(reporterInitPayload(init)))
+  (client: ReporterWorkerClient): ReporterFactory => (_options, init) => (events) => {
     const batch: ReporterEvent[] = []
-    for await (const event of events) {
-      batch.push(event)
-      await flushFilledBatch(client, batch)
-    }
-    await flushRemainingBatch(client, batch)
-    await runOnWorker(client.flush())
+    const iterator = events[Symbol.asyncIterator]()
+    const consume = (): Promise<void> =>
+      iterator.next().then((result) => {
+        if (result.done === true) return flushRemainingBatch(client, batch)
+        batch.push(result.value)
+        return flushFilledBatch(client, batch).then(consume)
+      })
+    return runOnWorker(client.init(reporterInitPayload(init))).then(consume).then(() => runOnWorker(client.flush()))
   }
 
 export interface SpawnReporterWorkerParams {
@@ -311,7 +321,7 @@ export const offerTerminalReport = (
   stage: ReporterStage,
   report: reportApi.MutationTestResult,
   metrics: MetricsResult,
-): Effect.Effect<void, never> => offerReporterEvent(stage, new MutationTestReportReady({ report, metrics }))
+): Effect.Effect<void, never> => offerReporterEvent(stage, MutationTestReportReady.make({ report, metrics }))
 
 export const terminalDrainClass = (summary: ReporterDrainSummary): ExitClass | null => {
   if (summary.terminalFailed.length > 0) {

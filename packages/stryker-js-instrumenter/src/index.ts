@@ -1,5 +1,6 @@
 export { disableTypeChecks } from './Instrument.js'
 export type { File, InstrumenterOptions, InstrumentResult } from './Instrument.js'
 export { instrument } from './Instrument.js'
+export type { InstrumentError } from './Instrument.schema.js'
 export type { ParserOptions } from './Parser.js'
 export { angularIgnorer, frameworkPluginsFileUrl, strykerPlugins } from './Transformer.js'

@@ -8,7 +8,7 @@ export class UnexpectedExitHandler extends Context.Service<
   UnexpectedExitHandler,
   { readonly registerHandler: (handler: ExitHandler) => Effect.Effect<void> }
 >()(
-  '@systemfsoftware/stryker-js-engine/UnexpectedExitHandler',
+  '@systemfsoftware/stryker-js-engine/unexpected-exit-handler/UnexpectedExitHandler',
 ) {}
 
 export const makeUnexpectedExitHandlerLayer = (

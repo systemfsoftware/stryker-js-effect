@@ -20,6 +20,7 @@ import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
+import * as S from 'effect/Schema'
 import { walk, type WalkerCallbackContext, type WalkerThisContextEnter } from 'oxc-walker'
 
 export type * from '@systemfsoftware/stryker-ignorer-interface'
@@ -462,7 +463,7 @@ export function traverse(root: Program | Node, visitors: TraverseVisitors): void
 }
 
 const rethrowUnlessStopped = (error: unknown): void => {
-  if (!(error instanceof TraversalStopped)) throw error
+  if (!S.is(TraversalStopped)(error)) throw error
 }
 
 const readPath = (
@@ -508,7 +509,7 @@ function createPath(
       controls.skip()
     },
     stop() {
-      throw new TraversalStopped()
+      throw TraversalStopped.make({})
     },
     find(predicate) {
       return nearest(path, predicate)

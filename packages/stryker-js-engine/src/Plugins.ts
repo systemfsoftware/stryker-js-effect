@@ -211,8 +211,8 @@ const resolutionFailureReason = (cause: unknown): string =>
 
 const resolveSpecifier = (specifier: string): Effect.Effect<ResolvedSpecifier | UnresolvedSpecifier> =>
   Effect.try({
-    try: (): ResolvedSpecifier => new ResolvedSpecifier({ specifier, entrypoint: import.meta.resolve(specifier) }),
-    catch: (cause) => new UnresolvedSpecifier({ specifier, reason: resolutionFailureReason(cause) }),
+    try: (): ResolvedSpecifier => ResolvedSpecifier.make({ specifier, entrypoint: import.meta.resolve(specifier) }),
+    catch: (cause) => UnresolvedSpecifier.make({ specifier, reason: resolutionFailureReason(cause) }),
   }).pipe(Effect.catch((missed) => Effect.succeed<ResolvedSpecifier | UnresolvedSpecifier>(missed)))
 
 const resolveSpecifiers = (
@@ -240,7 +240,7 @@ interface PluginContributions {
 
 const failPluginLoad = (descriptor: string, error: unknown): Effect.Effect<never, PluginLoadFailedError> =>
   Effect.logWarning(`Error during loading "${descriptor}" plugin`).pipe(
-    Effect.andThen(() => Effect.fail(new PluginLoadFailedError({ descriptor, cause: error }))),
+    Effect.andThen(() => Effect.fail(PluginLoadFailedError.make({ descriptor, cause: error }))),
   )
 
 const modulePluginContributions = (
@@ -320,10 +320,11 @@ function loadPlugin(
     const maybeModule = yield* importModule(entrypoint).pipe(
       Effect.catch((error) => failPluginLoad(descriptor, error)),
     )
-    return yield* Option.match(Option.fromUndefinedOr(maybeModule), {
-      onNone: () => Effect.succeed(undefined),
-      onSome: (module) => describeLoadedPlugin(descriptor, module),
-    })
+    const module = Option.getOrUndefined(Option.fromUndefinedOr(maybeModule))
+    if (module === undefined) {
+      return undefined
+    }
+    return yield* describeLoadedPlugin(descriptor, module)
   })
 }
 
@@ -340,7 +341,7 @@ export function loadPlugins(
       pluginDescriptors.filter((specifier) => !S.is(PathPrefixedSpecifier)(specifier)),
     )
     const plan = yield* Effect.fromResult(
-      planPluginLoad(new PluginLoadCommand({ specifiers: pluginDescriptors, resolutions })),
+      planPluginLoad(PluginLoadCommand.make({ specifiers: pluginDescriptors, resolutions })),
     )
     yield* reportUnresolvedSpecifiers(plan)
     const loaded = yield* Effect.forEach(
@@ -402,20 +403,15 @@ const findContribution = <K extends PluginKind>(
   kind: K,
   name: string,
 ): Effect.Effect<PluginDescriptorOf<K>, PluginNotFoundError> =>
-  Option.match(
+  Effect.fromOption(
     Option.filter(
       findByKindAndName(descriptors, kind, name),
       (descriptor): descriptor is PluginDescriptorOf<K> => descriptor.kind === kind,
     ),
-    {
-      onNone: () =>
-        Effect.fail(
-          new PluginNotFoundError({
-            descriptor: `${kind}:${name} (available: ${descriptors.map((d) => d.name).join(', ')})`,
-          }),
-        ),
-      onSome: (found) => Effect.succeed(found),
-    },
+    () =>
+      PluginNotFoundError.make({
+        descriptor: `${kind}:${name} (available: ${descriptors.map((d) => d.name).join(', ')})`,
+      }),
   )
 
 function findPlugin<K extends PluginKind>(
@@ -426,7 +422,7 @@ function findPlugin<K extends PluginKind>(
   return Option.match(HashMap.get(pluginsByKind, kind), {
     onNone: () =>
       Effect.fail(
-        new PluginNotFoundError({ descriptor: `${kind}:${name} (no ${kind} plugins were loaded)` }),
+        PluginNotFoundError.make({ descriptor: `${kind}:${name} (no ${kind} plugins were loaded)` }),
       ),
     onSome: (descriptors) => findContribution(descriptors, kind, name),
   })

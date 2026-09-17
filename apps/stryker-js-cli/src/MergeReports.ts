@@ -41,6 +41,14 @@ type ReportPartValue = S.Schema.Type<typeof ReportPart>
 type StreamMutantLine = S.Schema.Type<typeof StreamMutantLineSchema>
 type PartMeta = S.Schema.Type<typeof PartMetaSchema>
 
+const toStream = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> => ({
+  [Symbol.asyncIterator]: () => {
+    const iterator = events[Symbol.iterator]()
+    return {
+      next: (...args: [] | [unknown]) => Promise.resolve(iterator.next(...args)),
+    }
+  },
+})
 interface ReadParts {
   readonly parts: readonly ReportPartValue[]
   readonly skipped: readonly string[]
@@ -60,7 +68,7 @@ const whenHolds = <A>(condition: boolean, value: A, fallback: A): A =>
 const failMerge = (reason: string): Effect.Effect<never, MergeReportsFailed> =>
   Effect.gen(function*() {
     yield* Console.error(`stryker merge-reports: ${reason}`)
-    return yield* Effect.fail(MergeReportsFailed.make({ reason }))
+    return yield* MergeReportsFailed.make({ reason })
   })
 
 const readOptional = (file: string): Effect.Effect<string | undefined, never, FileSystem.FileSystem> =>
@@ -87,7 +95,7 @@ const decodeStreamLines = (text: string): readonly StreamMutantLine[] =>
     .split('\n')
     .map((raw) => raw.trim())
     .filter((line) => line.length > 0)
-    .flatMap((line) => Option.toArray(S.decodeUnknownOption(S.fromJsonString(StreamMutantLineSchema))(line)))
+    .flatMap((line) => Option.toArray(S.decodeOption(S.fromJsonString(StreamMutantLineSchema))(line)))
 
 const groupStreamMutant = (
   groups: Record<string, MutantResult[]>,
@@ -165,7 +173,7 @@ const partBase = (meta: PartMeta): ReportPartValue => ({
 })
 
 const partFromReportText = (dir: string, base: ReportPartValue, text: string): PartRead => {
-  const report = S.decodeUnknownOption(S.fromJsonString(MutationTestResultSchema))(text)
+  const report = S.decodeOption(S.fromJsonString(MutationTestResultSchema))(text)
   return Option.match(report, {
     onNone: (): PartRead => ({ dir, part: Option.some(base), unreadable: true }),
     onSome: (value): PartRead => ({ dir, part: Option.some({ ...base, report: value }), unreadable: false }),
@@ -210,7 +218,7 @@ const readPart = (dir: string): Effect.Effect<PartRead, never, FileSystem.FileSy
     const path = yield* Path.Path
     const metaText = yield* readOptional(path.join(dir, PART_MARKER_FILE))
     const meta = Option.fromNullishOr(metaText).pipe(
-      Option.flatMap((text) => S.decodeUnknownOption(S.fromJsonString(PartMetaSchema))(text)),
+      Option.flatMap((text) => S.decodeOption(S.fromJsonString(PartMetaSchema))(text)),
     )
     return yield* Option.match(meta, {
       onNone: () => Effect.succeed<PartRead>({ dir, part: Option.none(), unreadable: false }),
@@ -229,15 +237,19 @@ const readParts = (partsDir: string): Effect.Effect<ReadParts, never, FileSystem
     }
   })
 
-const decodePackageList = (raw: string): Effect.Effect<readonly string[] | undefined, MergeReportsFailed> =>
-  Option.match(S.decodeUnknownOption(S.fromJsonString(S.Array(S.String)))(raw), {
-    onNone: () => failMerge(`--packages is not a JSON array: ${raw}`),
-    onSome: (packages) => Effect.succeed(packages),
-  })
+const decodePackageList = (raw: string): Effect.Effect<Option.Option<readonly string[]>, MergeReportsFailed> => {
+  const decoded = S.decodeOption(S.fromJsonString(S.Array(S.String)))(raw)
+  if (Option.isNone(decoded)) {
+    return failMerge(`--packages is not a JSON array: ${raw}`)
+  }
+  return Effect.succeedSome(decoded.value)
+}
 
-const parsePackages = (raw: string | undefined): Effect.Effect<readonly string[] | undefined, MergeReportsFailed> =>
-  Option.match(Option.filter(Option.fromNullishOr(raw), (text) => text.length > 0), {
-    onNone: () => Effect.succeed(undefined),
+const parsePackages = (
+  raw: string | undefined,
+): Effect.Effect<Option.Option<readonly string[]>, MergeReportsFailed> =>
+  Option.match(Option.filter(Option.fromNullishOr(raw), (candidate) => candidate.length > 0), {
+    onNone: () => Effect.succeedNone,
     onSome: decodePackageList,
   })
 
@@ -307,19 +319,15 @@ const writeFile = (
     yield* fs.writeFileString(file, content)
   }).pipe(Effect.catchCause(() => failMerge(`cannot write ${file}`)))
 
-async function* toStream(events: readonly ReporterEvent[]): AsyncGenerator<ReporterEvent> {
-  yield* events
-}
-
 const writeHtmlReport = (fileName: string, report: MutationTestResult): Effect.Effect<void, MergeReportsFailed> =>
   Effect.gen(function*() {
-    const decoded = S.decodeUnknownOption(StrykerOptionsSchema)({ htmlReporter: { fileName } })
+    const decoded = S.decodeOption(StrykerOptionsSchema)({ htmlReporter: { fileName } })
     if (Option.isNone(decoded)) {
       return yield* failMerge(`cannot configure the html report at ${fileName}`)
     }
     const metrics = calculateMetrics(report.files)
     yield* Effect.promise(() =>
-      makeHtmlReporter(decoded.value, {})(toStream([new MutationTestReportReady({ report, metrics })]))
+      makeHtmlReporter(decoded.value, {})(toStream([MutationTestReportReady.make({ report, metrics })]))
     )
   })
 
@@ -359,11 +367,13 @@ const ensurePartsDir = (fs: FileSystem.FileSystem, partsDir: string): Effect.Eff
 
 const decideReports = (
   parts: readonly ReportPartValue[],
-  expectedPackages: readonly string[] | undefined,
+  expectedPackages: Option.Option<readonly string[]>,
   partsDir: string,
 ): Effect.Effect<MergedReports | NoMergedReports, MergeReportsFailed> =>
   Effect.gen(function*() {
-    const decision = mergeReportParts(MergeReportPartsCommand.make({ parts, expectedPackages }))
+    const decision = mergeReportParts(
+      MergeReportPartsCommand.make({ parts, expectedPackages: Option.getOrUndefined(expectedPackages) }),
+    )
     if (Result.isSuccess(decision)) {
       return decision.success
     }
@@ -379,7 +389,8 @@ const writeReportOutputs = (
     Option.toArray(Option.fromUndefinedOr(report)),
     (present) =>
       Effect.gen(function*() {
-        yield* writeFile(path.join(out, MERGED_REPORT_FILE), JSON.stringify(present), false)
+        const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(present).pipe(Effect.orDie)
+        yield* writeFile(path.join(out, MERGED_REPORT_FILE), json, false)
         yield* writeHtmlReport(path.join(out, MERGED_HTML_FILE), present)
       }),
     { discard: true },

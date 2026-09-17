@@ -482,7 +482,7 @@ export const decodeIncrementalReport = (raw: unknown): Result.Result<unknown, In
   Result.match(S.decodeUnknownResult(IncrementalReportSchema)(raw), {
     onFailure: () =>
       Result.fail(
-        new IncrementalReportError({
+        IncrementalReportError.make({
           message:
             'The incremental report is not a mutation testing report; delete it or re-run without --incremental.',
         }),
@@ -789,9 +789,9 @@ function resolveInputFileNames(
 
 function parseIncrementalReport(
   contents: string | undefined,
-): Effect.Effect<MutationTestResult | undefined, unknown, never> {
+): Effect.Effect<Option.Option<MutationTestResult>, unknown, never> {
   return Option.match(Option.fromUndefinedOr(contents), {
-    onNone: () => Effect.succeed(undefined),
+    onNone: () => Effect.succeedNone,
     onSome: (text) =>
       Effect.gen(function*() {
         const parsed = yield* Effect.try(() => parseJson(text))
@@ -800,7 +800,7 @@ function parseIncrementalReport(
         if (!isMutationTestResult(rawReport)) {
           throw new Error('Invalid incremental report shape')
         }
-        return rawReport
+        return Option.fromUndefinedOr(rawReport)
       }),
   })
 }
@@ -808,9 +808,9 @@ function parseIncrementalReport(
 function readIncrementalReport(
   incremental: boolean,
   incrementalFile: string,
-): Effect.Effect<MutationTestResult | undefined, unknown, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<Option.Option<MutationTestResult>, unknown, FileSystem.FileSystem | Path.Path> {
   return Match.value(incremental).pipe(
-    Match.when(false, () => Effect.succeed(undefined)),
+    Match.when(false, () => Effect.succeedNone),
     Match.orElse(() =>
       Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
@@ -917,6 +917,6 @@ export function readProject(
       }))
 
     const incrementalReport = yield* readIncrementalReport(incremental, incrementalFile)
-    return makeProject(decision.fileDescriptions, incrementalReport, [...decision.testFiles])
+    return makeProject(decision.fileDescriptions, Option.getOrUndefined(incrementalReport), [...decision.testFiles])
   })
 }

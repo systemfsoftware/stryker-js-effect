@@ -1,12 +1,15 @@
 import { NodeFileSystem, NodePath, NodeSocket } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
+import * as NodeCrypto from '@effect/platform-node-shared/NodeCrypto'
 import { ChildProcessCrashedError, classifyWorkerExit, WorkerLauncher } from '@systemfsoftware/stryker-js-engine'
 import type { EnginePorts, SpawnedSocketWorker } from '@systemfsoftware/stryker-js-engine'
+import * as Crypto from 'effect/Crypto'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
+import * as Schema from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
@@ -39,10 +42,11 @@ const restrictSocketToOwnerOrWarn = (fs: FileSystem.FileSystem, socketPath: stri
 export const nodeWorkerLauncherLayer: Layer.Layer<
   WorkerLauncher,
   never,
-  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+  Crypto.Crypto | FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > = Layer.effect(
   WorkerLauncher,
   Effect.gen(function*() {
+    const crypto = yield* Crypto.Crypto
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -51,8 +55,9 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
       spawn: (params): Effect.Effect<SpawnedSocketWorker, ChildProcessCrashedError, Scope.Scope> =>
         Effect.gen(function*() {
           const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
+          const workerId = yield* crypto.randomUUIDv4
           const socketPath = Match.value(process.platform).pipe(
-            Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${globalThis.crypto.randomUUID()}`),
+            Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${workerId}`),
             Match.orElse(() => path.join(workerDir, 'worker.sock')),
           )
           const optionsFile = path.join(workerDir, 'options.json')
@@ -83,18 +88,14 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
 
           return { pid: Number(handle.pid), clientLayer, exited }
         }).pipe(
-          Effect.catch((error) => {
-            if (error instanceof ChildProcessCrashedError) {
-              return Effect.fail(error)
-            }
-            return Effect.fail(
-              new ChildProcessCrashedError({
+          Effect.catchIf(Schema.is(ChildProcessCrashedError), (error) => Effect.fail(error), () =>
+            Effect.fail(
+              ChildProcessCrashedError.make({
                 pid: 0,
                 exit: { _tag: 'Code', code: 1 },
                 cause: 'worker spawn failed',
               }),
-            )
-          }),
+            )),
         ),
     }
   }),
@@ -110,6 +111,6 @@ const nodeSpawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(nodeFs
 const nodeBase = Layer.merge(nodeFsPathLayer, nodeSpawnerLayer)
 
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = Layer.mergeAll(
-  nodeWorkerLauncherLayer.pipe(Layer.provide(nodeBase)),
+  nodeWorkerLauncherLayer.pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
   nodeBase,
 )

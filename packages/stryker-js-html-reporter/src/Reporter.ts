@@ -6,7 +6,9 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
+import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
+import * as Stream from 'effect/Stream'
 
 import { HtmlDocument, HtmlReportCommand } from './Reporter.schema.js'
 
@@ -75,38 +77,51 @@ const writeHtmlFile = (fileName: string, html: string) =>
     yield* fs.writeFileString(fileName, html)
   })
 
-const bundleLoader = (): () => Promise<string> => {
-  let cached: string | undefined
-  return async () => {
-    cached ??= await Effect.runPromise(Effect.provide(readBundleContent, nodeFsPathLayer))
-    return cached
-  }
-}
+const loadBundle = (
+  cached: Ref.Ref<string | undefined>,
+): Effect.Effect<string, unknown, FileSystem.FileSystem | Path.Path> =>
+  Effect.filterOrElse(
+    Ref.get(cached),
+    (hit): hit is string => hit !== undefined,
+    () => Effect.tap(readBundleContent, (fresh) => Ref.set(cached, fresh)),
+  )
 
-const writeReportHtml = async (
+const writeReportHtml = (
   fileName: string,
   event: MutationTestReportReady,
-  loadBundle: () => Promise<string>,
-): Promise<void> => {
-  const html = buildHtmlDocument(
-    HtmlReportCommand.make({ report: event.report, scriptContent: await loadBundle() }),
-  ).html
-  await Effect.runPromise(Effect.provide(writeHtmlFile(fileName, html), nodeFsPathLayer))
-}
+  cached: Ref.Ref<string | undefined>,
+): Effect.Effect<void, unknown, FileSystem.FileSystem | Path.Path> =>
+  Effect.flatMap(loadBundle(cached), (bundle) =>
+    writeHtmlFile(
+      fileName,
+      buildHtmlDocument(
+        HtmlReportCommand.make({ report: event.report, scriptContent: bundle }),
+      ).html,
+    ))
 
-const writeReportHtmlIfReady = async (
+const writeReportHtmlIfReady = (
   fileName: string,
   event: unknown,
-  loadBundle: () => Promise<string>,
-): Promise<void> => {
-  if (!S.is(MutationTestReportReady)(event)) return
-  await writeReportHtml(fileName, event, loadBundle)
+  cached: Ref.Ref<string | undefined>,
+): Effect.Effect<void, unknown, FileSystem.FileSystem | Path.Path> => {
+  if (S.is(MutationTestReportReady)(event)) {
+    return writeReportHtml(fileName, event, cached)
+  }
+  return Effect.void
 }
 
-export const makeHtmlReporter: ReporterFactory = (options, _init) => async (events) => {
-  const fileName = options.htmlReporter.fileName
-  const loadBundle = bundleLoader()
-  for await (const event of events) {
-    await writeReportHtmlIfReady(fileName, event, loadBundle)
-  }
-}
+const streamErrorOf = (error: unknown): unknown => error
+
+const drainEvents = (
+  fileName: string,
+  events: AsyncIterable<unknown>,
+): Effect.Effect<void, unknown, FileSystem.FileSystem | Path.Path> =>
+  Effect.flatMap(
+    Ref.make<string | undefined>(undefined),
+    (cached) =>
+      Stream.runForEach(Stream.fromAsyncIterable(events, streamErrorOf), (event) =>
+        writeReportHtmlIfReady(fileName, event, cached)),
+  )
+
+export const makeHtmlReporter: ReporterFactory = (options, _init) => (events) =>
+  Effect.runPromise(Effect.provide(drainEvents(options.htmlReporter.fileName, events), nodeFsPathLayer))

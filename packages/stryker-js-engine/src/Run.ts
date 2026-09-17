@@ -49,6 +49,7 @@ import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
@@ -113,9 +114,8 @@ export interface RunEnvironmentShape {
   readonly builtinReporters: Readonly<Record<string, ReporterFactory>>
   readonly allowConsoleColors: boolean
 }
-
 export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironmentShape>()(
-  '@systemfsoftware/stryker-js-engine/RunEnvironment',
+  '@systemfsoftware/stryker-js-engine/Run/RunEnvironment',
 ) {}
 
 export interface PrepareDone {
@@ -311,7 +311,7 @@ const toReportedMutant = (mutant: Mutant): MutantTestCoverage =>
 
 const missingWorkerEntry =
   (stage: StageError['stage'], kind: string, name: string) => (failure: PluginNotFoundError): StageError =>
-    new StageError({
+    StageError.make({
       stage,
       reason: `the ${kind} plugin "${name}" is not among the loaded plugins`,
       cause: failure,
@@ -427,7 +427,7 @@ const spawnPluginReporterFactory = (
       tempDirPrefix: 'stryker-reporter-',
     }).pipe(
       Effect.mapError((cause) =>
-        new StageError({ stage: 'prepare', reason: `Failed to start the reporter worker "${name}"`, cause })
+        StageError.make({ stage: 'prepare', reason: `Failed to start the reporter worker "${name}"`, cause })
       ),
     )
     return reporterWorkerFactory(client)
@@ -469,11 +469,11 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         const queue = yield* RunEvents
         const coreSchema: ValidationSchemaDocument = forkCoreSchema
         const configured = yield* readConfig(command.cliOptions).pipe(
-          Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to read config', cause })),
+          Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read config', cause })),
           Effect.tapCause(() =>
             Effect.gen(function*() {
               const now = yield* Clock.currentTimeMillis
-              yield* Queue.offer(queue, new PhaseEntered({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
+              yield* Queue.offer(queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
             }).pipe(Effect.ignore)
           ),
         )
@@ -489,14 +489,14 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         }
         const descriptors: readonly string[] = [...options.plugins, ...options.appendPlugins]
         const loaded = yield* loadPlugins(descriptors).pipe(
-          Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
+          Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
         )
         const mergedSchema = buildMergedSchema(coreSchema, loaded.schemaContributions)
         const record: Record<string, unknown> = { ...options }
         yield* validateOptions(record, mergedSchema).pipe(
           Effect.mapError(
             (cause) =>
-              new StageError({
+              StageError.make({
                 stage: 'prepare',
                 reason: 'Failed to revalidate options with plugin schema',
                 cause,
@@ -504,7 +504,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
           ),
         )
         const project = yield* readProject(options, command.targetMutatePatterns, env.basePath).pipe(
-          Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to read project', cause })),
+          Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read project', cause })),
         )
         const mutateCount = MutableHashMap.size(project.filesToMutate)
         const summary = `Found ${mutateCount} of ${MutableHashMap.size(project.files)} file(s) to be mutated.`
@@ -521,7 +521,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
           return service.path
         }).pipe(
           Effect.mapError((cause) =>
-            new StageError({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
+            StageError.make({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
           ),
         )
         const builtinReporterFactories = {
@@ -549,7 +549,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         ])
         const availableReporterNames = [...HashMap.values(reporterChoicesByName)].map((choice) => choice.name)
         yield* validateReporterNames(configured.reporters, availableReporterNames).pipe(
-          Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: cause.message, cause })),
+          Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: cause.message, cause })),
         )
         const reporterInputs = yield* reporterInputsOf(
           options.reporters,
@@ -561,15 +561,13 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         const reporterInit = yield* currentReporterInit(span)
         const reporterStage = yield* attachReporterFactories(reporterInputs, options, reporterInit)
         const now = yield* Clock.currentTimeMillis
-        yield* Queue.offer(queue, new PhaseEntered({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
+        yield* Queue.offer(queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
         if (MutableHashMap.size(project.files) === 0) {
-          return yield* Effect.fail(
-            new StageError({
-              stage: 'prepare',
-              reason: 'No input files found.',
-              cause: new PrepareError({ stage: 'prepare', reason: 'No input files found.' }),
-            }),
-          )
+          return yield* StageError.make({
+            stage: 'prepare',
+            reason: 'No input files found.',
+            cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
+          })
         }
         return {
           project,
@@ -602,7 +600,7 @@ export const instrumentCell = Cell.layer({
         concurrency: FILE_CONCURRENCY,
       }).pipe(
         Effect.mapError((cause) =>
-          new StageError({ stage: 'instrument', reason: 'Failed to read files to mutate', cause })
+          StageError.make({ stage: 'instrument', reason: 'Failed to read files to mutate', cause })
         ),
       )
 
@@ -610,7 +608,7 @@ export const instrumentCell = Cell.layer({
         ignorers: [...command.ignorers],
         excludedMutations: [...command.options.mutator.excludedMutations],
       }).pipe(Effect.mapError((cause) =>
-        new StageError({ stage: 'instrument', reason: 'Instrumenter failed', cause })
+        StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })
       ))
 
       const instrumentedProject = withInstrumentedFiles(command.project, instrumentResult.files)
@@ -630,12 +628,12 @@ export const instrumentCell = Cell.layer({
         backupDirectory,
         basePath,
       }).pipe(Effect.mapError((cause) =>
-        new StageError({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
+        StageError.make({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
       ))
 
       const concurrency = yield* makeConcurrency(command.options).pipe(
         Effect.mapError((cause) =>
-          new StageError({ stage: 'instrument', reason: 'Failed to compute concurrency', cause })
+          StageError.make({ stage: 'instrument', reason: 'Failed to compute concurrency', cause })
         ),
       )
 
@@ -651,7 +649,7 @@ export const instrumentCell = Cell.layer({
     }),
   decode: (raw: InstrumentRaw): Result.Result<InstrumentCommand, StageError> =>
     Result.succeed(
-      new InstrumentCommand({
+      InstrumentCommand.make({
         fileCount: raw.filesToMutate.length,
         inPlace: raw.prev.options.inPlace,
         pluginCount: raw.prev.loadedPlugins.pluginModulePaths.length,
@@ -668,12 +666,12 @@ export const instrumentCell = Cell.layer({
           const env = yield* RunEnvironment
           const now = yield* Clock.currentTimeMillis
           const queue = yield* RunEvents
-          yield* Queue.offer(queue, new PhaseEntered({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
+          yield* Queue.offer(queue, PhaseEntered.make({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
 
           const out = output
           if (Result.isFailure(out)) {
             const err = out.failure
-            return yield* Effect.fail(new StageError({ stage: err.stage, reason: err.reason, cause: err }))
+            return yield* StageError.make({ stage: err.stage, reason: err.reason, cause: err })
           }
           return {
             ...raw.prev,
@@ -708,7 +706,7 @@ const decodeCompleteDryRun = (
   allowEmpty: boolean,
 ): Result.Result<DryRunCommand, StageError> =>
   Result.succeed(
-    new DryRunCommand({
+    DryRunCommand.make({
       status: 'Complete',
       testCount: result.tests.length,
       failedTestCount: result.tests.filter((test) => test.status === 'failed').length,
@@ -721,7 +719,7 @@ const decodeFailedDryRun = (
   allowEmpty: boolean,
 ): Result.Result<DryRunCommand, StageError> =>
   Result.succeed(
-    new DryRunCommand({
+    DryRunCommand.make({
       status: 'Error',
       testCount: 0,
       failedTestCount: 0,
@@ -735,7 +733,7 @@ const decodeTimedOutDryRun = (
   allowEmpty: boolean,
 ): Result.Result<DryRunCommand, StageError> =>
   Result.succeed(
-    new DryRunCommand({
+    DryRunCommand.make({
       status: 'Timeout',
       testCount: 0,
       failedTestCount: 0,
@@ -792,9 +790,7 @@ const completeDryRunPassed = (raw: DryRunRaw): Effect.Effect<DryRunDone, StageEr
     const rawResult = raw.rawResult
 
     if (rawResult.status !== 'complete') {
-      return yield* Effect.fail(
-        new StageError({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' }),
-      )
+      return yield* StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' })
     }
     const tests = withOriginalFileNames(rawResult.tests, prevDone)
     const dryRunResult: CompleteDryRunResult = { ...rawResult, tests, status: 'complete' }
@@ -802,7 +798,7 @@ const completeDryRunPassed = (raw: DryRunRaw): Effect.Effect<DryRunDone, StageEr
 
     yield* offerReporterEvent(
       prevDone.reporterStage,
-      new DryRunCompleted({
+      DryRunCompleted.make({
         timing: { net: totalTestTime(tests), overhead: overheadMillis },
         capabilities: { reloadEnvironment: raw.capabilities.reloadEnvironment },
         testCount: tests.length,
@@ -868,24 +864,24 @@ export const dryRunCell = Cell.layer({
                 ...extra,
               })
               .pipe(
-                Effect.mapError((cause) => new StageError({ stage: 'dryRun', reason: 'Dry run failed', cause })),
+                Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Dry run failed', cause })),
               ),
           )
           const gross: Duration.Duration = timed[0]
           const rawResult = timed[1]
           const capabilities = yield* runner.capabilities.pipe(
             Effect.mapError((cause) =>
-              new StageError({ stage: 'dryRun', reason: 'Failed to get test runner capabilities', cause })
+              StageError.make({ stage: 'dryRun', reason: 'Failed to get test runner capabilities', cause })
             ),
           )
           return { rawResult, capabilities, gross }
         }),
       ).pipe(
         Effect.mapError((cause) => {
-          if (cause instanceof StageError) {
+          if (S.is(StageError)(cause)) {
             return cause
           }
-          return new StageError({ stage: 'dryRun', reason: 'Dry run failed to start test runner', cause })
+          return StageError.make({ stage: 'dryRun', reason: 'Dry run failed to start test runner', cause })
         }),
       )
 
@@ -915,17 +911,17 @@ export const dryRunCell = Cell.layer({
           const env = yield* RunEnvironment
           const now = yield* Clock.currentTimeMillis
           const queue = yield* RunEvents
-          yield* Queue.offer(queue, new PhaseEntered({ phase: 'dry-run', elapsedMs: now - env.runStartedAt }))
+          yield* Queue.offer(queue, PhaseEntered.make({ phase: 'dry-run', elapsedMs: now - env.runStartedAt }))
 
           const out = outcome
           if (Result.isFailure(out)) {
             const err = out.failure
-            return yield* Effect.fail(new StageError({ stage: err.stage, reason: err.reason, cause: err }))
+            return yield* StageError.make({ stage: err.stage, reason: err.reason, cause: err })
           }
           return yield* Match.value(out.success).pipe(
             Match.tag('DryRunFailed', (decision) =>
               Effect.fail(
-                new StageError({
+                StageError.make({
                   stage: 'dryRun',
                   reason: 'There were failed tests in the initial test run.',
                   cause: decision,
@@ -1016,7 +1012,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
     }),
   decode: (raw: MutationTestRaw): Result.Result<MutationTestCommand, StageError> =>
     Result.succeed(
-      new MutationTestCommand({
+      MutationTestCommand.make({
         dryRunOnly: raw.prev.options.dryRunOnly,
         allowEmpty: raw.prev.options.allowEmpty,
         testCount: raw.prev.dryRunResult.tests.length,
@@ -1035,7 +1031,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
       () =>
         Effect.gen(function*() {
           const decision = yield* Result.match(outcome, {
-            onFailure: (err) => Effect.fail(new StageError({ stage: err.stage, reason: err.reason, cause: err })),
+            onFailure: (err) => Effect.fail(StageError.make({ stage: err.stage, reason: err.reason, cause: err })),
             onSuccess: (d) => Effect.succeed(d),
           })
           return yield* Match.value(decision).pipe(
@@ -1046,7 +1042,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                 const nowEmit = yield* Clock.currentTimeMillis
                 yield* Queue.offer(
                   queue,
-                  new PhaseEntered({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
+                  PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
                 )
                 yield* Effect.logInfo('The dry-run has been completed successfully. No mutations have been executed.')
                 const emptyOutcome: RunOutcome = { results: [], verdict: null }
@@ -1062,7 +1058,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                 const nowEmit = yield* Clock.currentTimeMillis
                 yield* Queue.offer(
                   queue,
-                  new PhaseEntered({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
+                  PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
                 )
                 const emptyOutcome: RunOutcome = { results: [], verdict: null }
                 return emptyOutcome
@@ -1076,7 +1072,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                   const queue = yield* RunEvents
                   yield* Queue.offer(
                     queue,
-                    new PhaseEntered({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
+                    PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
                   )
                 })
                 yield* emitPhase
@@ -1160,7 +1156,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                 const allPlansForReporter: readonly MutantRunPlan[] = [...sortedPlans]
                 yield* offerReporterEvent(
                   prev.reporterStage,
-                  new MutationTestingPlanReady({
+                  MutationTestingPlanReady.make({
                     total: allPlansForReporter.length + noCoverageResults.length + rememberedResults.length,
                     plans: allPlansForReporter.map((plan) => ({
                       mutantId: plan.mutant.id,
@@ -1174,7 +1170,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                   const queue2 = yield* RunEvents
                   yield* Queue.offer(
                     queue2,
-                    new PlanKnown({ total: allPlansForReporter.length + noCoverageResults.length }),
+                    PlanKnown.make({ total: allPlansForReporter.length + noCoverageResults.length }),
                   )
                 }
                 const passedPlans = yield* checkPlansWithConfiguredCheckers(prev, checkerPool, sortedPlans, reporting)
@@ -1205,7 +1201,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                   completed: number,
                   prepared: PreparedStreamableMutant,
                 ): MutantTested =>
-                  new MutantTested({
+                  MutantTested.make({
                     id: result.id,
                     status: prepared.status,
                     file: prepared.file,
@@ -1226,7 +1222,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                     const completed = yield* Ref.updateAndGet(completedRef, (n) => n + 1)
                     yield* Queue.offer(
                       progressQueue,
-                      new RunMutantTested({
+                      RunMutantTested.make({
                         id: result.id,
                         status: prepared.status,
                         file: prepared.file,
@@ -1244,13 +1240,11 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
                   completed: number,
                   prepared: PreparedStreamableMutant,
                 ): Effect.Effect<void> =>
-                  Effect.gen(function*() {
-                    yield* offerReporterEvent(prev.reporterStage, toStreamEvent(result, completed, prepared)).pipe(
-                      Effect.catchCause((cause) =>
-                        Effect.logWarning('Reporter stream failed handling mutantTested', cause)
-                      ),
-                    )
-                  })
+                  offerReporterEvent(prev.reporterStage, toStreamEvent(result, completed, prepared)).pipe(
+                    Effect.catchCause((cause) =>
+                      Effect.logWarning('Reporter stream failed handling mutantTested', cause)
+                    ),
+                  )
 
                 const offerStreamTested = (
                   result: RunMutantResult,
@@ -1345,7 +1339,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
           Match.tag(
             'CheckerAnsweredUnrequested',
             (breach) =>
-              new StageError({
+              StageError.make({
                 stage: 'mutationTest',
                 reason:
                   `Checker "${breach.checkerName}" answered about mutants it was not asked about (${breach.phase} phase): ${
@@ -1357,7 +1351,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
           Match.tag(
             'CheckerSkippedRequested',
             (breach) =>
-              new StageError({
+              StageError.make({
                 stage: 'mutationTest',
                 reason: `Checker "${breach.checkerName}" skipped requested mutants (${breach.phase} phase): ${
                   breach.missingIds.join(', ')
@@ -1370,7 +1364,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, RunOutcome, StageError, Sta
             'OutOfMemoryError',
             'PlatformError',
             'TestRunnerFailed',
-            () => new StageError({ stage: 'mutationTest', reason: 'Mutation testing failed', cause }),
+            () => StageError.make({ stage: 'mutationTest', reason: 'Mutation testing failed', cause }),
           ),
           Match.exhaustive,
         )

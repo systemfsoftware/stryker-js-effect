@@ -62,47 +62,44 @@ type FilePreprocessor = (
 const combinePreprocessors = (preprocessors: readonly FilePreprocessor[]): FilePreprocessor => (project) =>
   Effect.forEach(preprocessors, (pre) => pre(project), { discard: true })
 
-const makeDisableTypeChecksPreprocessor =
-  (options: StrykerOptions, impl: typeof disableTypeChecks): FilePreprocessor => (project) => {
-    return Effect.gen(function*() {
-      const pathService = yield* Path.Path
-      const matches = createFileMatcher(options.disableTypeChecks, pathService)
-      const updates = yield* Effect.forEach([...project.files], ([name, file]) => {
-        if (!matches(pathService.resolve(name))) {
-          return Effect.succeed<ProjectFile | undefined>(undefined)
-        }
-        return Effect.gen(function*() {
-          const instrumenterFile = yield* toInstrumenterFile(file)
-          const content = yield* Effect.tryPromise({
-            try: () => impl(instrumenterFile).then((r) => r.content),
-            catch: (cause) => new StrykerError({ message: 'disableTypeChecks failed', cause }),
-          }).pipe(
-            Effect.catch((_error) =>
-              Effect.gen(function*() {
-                if (isWarningEnabled('preprocessorErrors', options.warnings)) {
-                  yield* Effect.logWarning(
-                    `Unable to disable type checking for file "${name}". Shouldn't type checking be disabled for this file? Consider configuring a more restrictive "${
-                      optionsPath('disableTypeChecks')
-                    }" settings (or turn it completely off with \`false\`)`,
-                  )
-                }
-                return undefined
-              })
-            ),
-          )
-          if (content !== undefined) {
-            return withContent(file, content)
-          }
-          return undefined
-        })
-      }, { concurrency: FILE_CONCURRENCY })
-      updates.forEach((updated) => {
-        if (updated !== undefined) {
-          mergeUpdatedFile(project, updated)
-        }
-      })
-    })
-  }
+const makeDisableTypeChecksPreprocessor = (
+  options: StrykerOptions,
+  impl: typeof disableTypeChecks,
+): FilePreprocessor =>
+(project) =>
+  Effect.gen(function*() {
+    const pathService = yield* Path.Path
+    const matches = createFileMatcher(options.disableTypeChecks, pathService)
+    const updates = yield* Effect.forEach([...project.files], ([name, file]) =>
+      Match.value(matches(pathService.resolve(name))).pipe(
+        Match.when(true, () =>
+          Effect.gen(function*() {
+            const instrumenterFile = yield* toInstrumenterFile(file)
+            const content = yield* Effect.map(impl(instrumenterFile), (instrumented) =>
+              instrumented.content).pipe(
+                Effect.mapError((cause) => StrykerError.make({ message: 'disableTypeChecks failed', cause })),
+                Effect.catch((_error) =>
+                  Effect.gen(function*() {
+                    if (isWarningEnabled('preprocessorErrors', options.warnings)) {
+                      yield* Effect.logWarning(
+                        `Unable to disable type checking for file "${name}". Shouldn't type checking be disabled for this file? Consider configuring a more restrictive "${
+                          optionsPath('disableTypeChecks')
+                        }" settings (or turn it completely off with \`false\`)`,
+                      )
+                    }
+                    return undefined
+                  })
+                ),
+              )
+            if (content !== undefined) {
+              return withContent(file, content)
+            }
+            return undefined
+          })),
+        Match.orElse(() => Effect.succeedNone),
+      ), { concurrency: FILE_CONCURRENCY })
+    updates.forEach(mergeUpdatedInto(project))
+  })
 
 const mergeUpdatedFile = (project: Project, updated: ProjectFile): void => {
   const key = updated.name
@@ -112,8 +109,26 @@ const mergeUpdatedFile = (project: Project, updated: ProjectFile): void => {
   }
 }
 
+const updateOf = (
+  updated: ProjectFile | Option.Option<ProjectFile> | undefined,
+): ProjectFile | undefined =>
+  Match.value(updated).pipe(
+    Match.when(undefined, () => undefined),
+    Match.when(Option.isOption, (option) => Option.getOrUndefined(option)),
+    Match.orElse((file) => file),
+  )
+
+const mergeUpdatedInto =
+  (project: Project) => (updated: ProjectFile | Option.Option<ProjectFile> | undefined): void => {
+    const file = updateOf(updated)
+    if (file === undefined) {
+      return
+    }
+    mergeUpdatedFile(project, file)
+  }
+
 const tsConfigParseError = (file: string, reason: string): TsConfigParseError =>
-  new TsConfigParseError({ file, reason, exitClass: 'ConfigError' })
+  TsConfigParseError.make({ file, reason, exitClass: 'ConfigError' })
 
 const parseJsonText = (jsonText: string): Result.Result<unknown, string> => {
   try {
@@ -221,11 +236,14 @@ const makeTSConfigPreprocessor = (options: StrykerOptions, basePath: string): Fi
               { discard: true },
             ).pipe(
               Effect.flatMap(() =>
-                Effect.sync(() => {
+                Effect.gen(function*() {
                   rewriteFileArrayProperty(config, tsconfigFileName, 'include', pathService)
                   rewriteFileArrayProperty(config, tsconfigFileName, 'exclude', pathService)
                   rewriteFileArrayProperty(config, tsconfigFileName, 'files', pathService)
-                  Object.assign(tsconfigFile, { content: JSON.stringify(config, null, 2) })
+                  const content = yield* S.encodeEffect(S.fromJsonString(TsConfigSchema, { space: 2 }))(
+                    config,
+                  ).pipe(Effect.orDie)
+                  Object.assign(tsconfigFile, { content })
                 })
               ),
             )
@@ -349,7 +367,7 @@ export interface TemporaryDirectoryShape {
 }
 
 export class TemporaryDirectory extends Context.Service<TemporaryDirectory, TemporaryDirectoryShape>()(
-  '@systemfsoftware/stryker-js-engine/TemporaryDirectory',
+  '@systemfsoftware/stryker-js-engine/Sandbox/TemporaryDirectory',
 ) {}
 
 const removesTempDir = (exit: Exit.Exit<unknown, unknown>, cleanTempDir: 'always' | boolean): boolean =>
@@ -446,7 +464,7 @@ const failOnBuildFailure = (
       (exitCode) => exitCode !== 0,
       (exitCode) =>
         Effect.fail(
-          new StrykerError({
+          StrykerError.make({
             message: `Build command "${command}" failed with exit code ${String(exitCode)}.\n${result.stderr}`,
           }),
         ),
@@ -486,7 +504,7 @@ const runBuildCommandIn = (
         return { exitCode: Number(exitCode), stderr: stderrChunks }
       }),
     ).pipe(
-      Effect.mapError((cause) => new StrykerError({ message: `Failed to spawn build command "${command}"`, cause })),
+      Effect.mapError((cause) => StrykerError.make({ message: `Failed to spawn build command "${command}"`, cause })),
     )
 
     yield* failOnBuildFailure(command, result)
@@ -650,7 +668,7 @@ const sandboxFileNameOf = (fileMap: Map<string, string>, fileName: string): stri
   Match.value(fileMap.get(fileName)).pipe(
     Match.when(Predicate.isString, (sandboxFileName) => sandboxFileName),
     Match.orElse((): string => {
-      throw new StrykerError({ message: `Cannot find sandbox file for ${fileName}` })
+      throw StrykerError.make({ message: `Cannot find sandbox file for ${fileName}` })
     }),
   )
 
@@ -836,7 +854,7 @@ export const makeSandbox = (
       Effect.succeed(hasBackupToRestore(options, backupDirectory)),
     )
     yield* createPreprocessor(options, basePath)(project).pipe(
-      Effect.mapError((cause) => new StrykerError({ message: 'Sandbox preprocessor failed', cause })),
+      Effect.mapError((cause) => StrykerError.make({ message: 'Sandbox preprocessor failed', cause })),
     )
     const entries: Array<readonly [string, string]> = yield* Effect.forEach(
       [...project.files],

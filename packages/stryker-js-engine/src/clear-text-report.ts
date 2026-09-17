@@ -328,12 +328,16 @@ const rememberTerminalReport = (seen: WatchedReports, event: ReporterEvent): voi
   )
 }
 
-const lastTerminalReport = async (events: AsyncIterable<ReporterEvent>): Promise<TerminalReport | undefined> => {
+const lastTerminalReport = (events: AsyncIterable<ReporterEvent>): Promise<TerminalReport | undefined> => {
   const seen: WatchedReports = {}
-  for await (const event of events) {
-    rememberTerminalReport(seen, event)
-  }
-  return seen.terminal
+  const iterator = events[Symbol.asyncIterator]()
+  const consume = (): Promise<TerminalReport | undefined> =>
+    iterator.next().then((result) => {
+      if (result.done === true) return seen.terminal
+      rememberTerminalReport(seen, result.value)
+      return consume()
+    })
+  return consume()
 }
 
 const decodeClearTextReport = (terminal: TerminalReport): ClearTextReportCommand => {
@@ -343,7 +347,7 @@ const decodeClearTextReport = (terminal: TerminalReport): ClearTextReportCommand
     metrics: terminal.metrics,
   })
   if (Result.isFailure(decoded)) {
-    throw new ReporterFailed({
+    throw ReporterFailed.make({
       reporterName: 'clear-text',
       event: 'mutationTestReportReady',
       cause: errorToString(decoded.failure),
@@ -369,11 +373,13 @@ const writeRenderedReport = (rendered: ReportLines, options: ProvidedStrykerOpti
   }
 }
 
-export const makeClearTextReporter: ReporterFactory = (options) => async (events) => {
-  const terminal = await lastTerminalReport(events)
-  if (terminal === undefined) {
-    return
-  }
-  const command = decodeClearTextReport(terminal)
-  writeRenderedReport(renderClearText(command.report, command.metrics, options), options)
+export const makeClearTextReporter: ReporterFactory = (options) => (events) => {
+  const terminalP = lastTerminalReport(events)
+  return terminalP.then((terminal) => {
+    if (terminal === undefined) {
+      return
+    }
+    const command = decodeClearTextReport(terminal)
+    writeRenderedReport(renderClearText(command.report, command.metrics, options), options)
+  })
 }

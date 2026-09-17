@@ -25,7 +25,9 @@ const Feature = makeFeature({ it, layer })
 const MARKER_FILE = 'src/marker.ts'
 const MARKER_TEST_FILE = 'src/marker.test.ts'
 
-class Terminal extends Context.Service<Terminal, { readonly chunks: string[] }>()('Terminal') {}
+class Terminal extends Context.Service<Terminal, { readonly chunks: string[] }>()(
+  '@systemfsoftware/stryker-js-engine/tests/builtin-reporters.integration.test/Terminal',
+) {}
 
 const terminalSpyLayer = Layer.effect(
   Terminal,
@@ -99,17 +101,17 @@ const runEvents = (
   report: MutationTestResult,
   metrics: MetricsResult,
 ): readonly ReporterEvent[] => [
-  new DryRunCompleted({
+  DryRunCompleted.make({
     timing: { net: 1, overhead: 0 },
     capabilities: { reloadEnvironment: false },
     testCount: 1,
     tests: [],
   }),
-  new MutationTestingPlanReady({
+  MutationTestingPlanReady.make({
     total: 1,
     plans: [{ mutantId: '0', plan: 'Run', netTime: 1, reloadEnvironment: false }],
   }),
-  new MutantTested({
+  MutantTested.make({
     id: '0',
     status: 'Killed',
     file: MARKER_FILE,
@@ -119,12 +121,17 @@ const runEvents = (
     completed: 1,
     total: 1,
   }),
-  new MutationTestReportReady({ report, metrics }),
+  MutationTestReportReady.make({ report, metrics }),
 ]
 
-async function* toStream(events: readonly ReporterEvent[]): AsyncGenerator<ReporterEvent> {
-  yield* events
-}
+const toStream = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> => ({
+  [Symbol.asyncIterator]: () => {
+    const iterator = events[Symbol.iterator]()
+    return {
+      next: (...args: [] | [unknown]) => Promise.resolve(iterator.next(...args)),
+    }
+  },
+})
 
 const completedRun = (status: 'Killed' | 'Survived') => {
   const report = markerReport(status)

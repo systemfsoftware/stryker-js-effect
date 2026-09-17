@@ -8,6 +8,7 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as S from 'effect/Schema'
 
 export interface JsonReporterDeps {
   readonly fileSystem: FileSystem.FileSystem
@@ -19,8 +20,8 @@ const writeReport = (
   options: StrykerOptions,
   report: schema.MutationTestResult,
 ): Promise<void> => {
-  const json = JSON.stringify(report, null, 0)
   const write = Effect.gen(function*() {
+    const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 0 }))(report).pipe(Effect.orDie)
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const fileName = path.resolve(path.normalize(options.jsonReporter.fileName))
@@ -28,7 +29,7 @@ const writeReport = (
       process.stderr.write(`Using relative path ${path.normalize(options.jsonReporter.fileName)}\n`)
     }
     const failAsJsonReporter = (cause: unknown): ReporterFailed =>
-      new ReporterFailed({
+      ReporterFailed.make({
         reporterName: 'json',
         event: 'mutationTestReportReady',
         cause: errorToString(cause),
@@ -44,22 +45,29 @@ const writeReport = (
     write.pipe(
       Effect.provideService(FileSystem.FileSystem, services.fileSystem),
       Effect.provideService(Path.Path, services.path),
+      Effect.orDie,
     ),
   )
 }
 
-export const makeJsonReporter = (services: JsonReporterDeps): ReporterFactory => (options) => async (events) => {
+export const makeJsonReporter = (services: JsonReporterDeps): ReporterFactory => (options) => (events) => {
   const seen: { report?: schema.MutationTestResult } = {}
-  for await (const event of events) {
-    Match.value(event).pipe(
-      Match.tag('mutationTestReportReady', (ready) => {
-        seen.report = ready.report
-      }),
-      Match.orElse(() => undefined),
-    )
-  }
-  return Option.match(Option.fromUndefinedOr(seen.report), {
-    onNone: () => undefined,
-    onSome: (report) => writeReport(services, options, report),
-  })
+  const iterator = events[Symbol.asyncIterator]()
+  const consume = (): Promise<void> =>
+    iterator.next().then((result) => {
+      if (result.done === true) {
+        return Option.match(Option.fromUndefinedOr(seen.report), {
+          onNone: () => undefined,
+          onSome: (report) => writeReport(services, options, report),
+        })
+      }
+      Match.value(result.value).pipe(
+        Match.tag('mutationTestReportReady', (ready) => {
+          seen.report = ready.report
+        }),
+        Match.orElse(() => undefined),
+      )
+      return consume()
+    })
+  return consume()
 }

@@ -2,6 +2,9 @@ import { randomBytes } from '@noble/hashes/utils.js'
 import { calculateMetrics } from '@systemfsoftware/stryker-js-language'
 import type { MutantStatus } from '@systemfsoftware/stryker-js-language'
 import type * as schema from '@systemfsoftware/stryker-js-language'
+import * as Clock from 'effect/Clock'
+import * as DateTime from 'effect/DateTime'
+import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -86,7 +89,7 @@ const pushByte = (accumulator: Base32Accumulator, byte: number): Base32Accumulat
 
 export function generateRunId(): string {
   const bytes = new Uint8Array(16)
-  const now = new Date().getTime()
+  const now = DateTime.toEpochMillis(DateTime.makeUnsafe(Effect.runSync(Clock.currentTimeMillis)))
   bytes[0] = (now / 0x10000000000) % 0x100
   bytes[1] = (now / 0x100000000) % 0x100
   bytes[2] = (now / 0x1000000) % 0x100
@@ -126,7 +129,7 @@ function embeddedConfig(
 function breakThreshold(thresholds: schema.Thresholds): number | null {
   const ThresholdsBreakSchema = S.StructWithRest(
     S.Struct({
-      break: S.optional(S.Union([S.Number, S.Null])),
+      break: S.optional(S.Union([S.Finite, S.Null])),
     }),
     [S.Record(S.String, S.Unknown)],
   )

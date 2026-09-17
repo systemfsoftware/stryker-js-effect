@@ -1,7 +1,8 @@
 import type { MutantStatus } from '@systemfsoftware/stryker-js-language'
-import type { ReporterFactory } from '@systemfsoftware/stryker-js-language'
+import type { ReporterEvent, ReporterFactory } from '@systemfsoftware/stryker-js-language'
 import type { RunTiming } from '@systemfsoftware/stryker-js-language'
 import type { TestRunnerCapabilities } from '@systemfsoftware/stryker-js-language'
+import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 
@@ -171,83 +172,120 @@ const PROGRESS_BAR_FORMAT =
 
 const PROGRESS_BAR_OPTIONS = { complete: '=', incomplete: ' ', width: 50 }
 
-export const makeProgressBarReporter: ReporterFactory = () => async (events) => {
-  const progress: { tally: ProgressTally; bar: ProgressBarState | undefined } = {
-    tally: emptyTally(0),
-    bar: undefined,
-  }
-  const render = (now: number): void =>
-    Option.match(Option.fromUndefinedOr(progress.bar), {
-      onNone: () => undefined,
-      onSome: (bar) => {
-        const line = renderProgressBar(bar, progressData(progress.tally, now))
-        const newline = Match.value(isComplete(bar)).pipe(
-          Match.when(true, () => '\n'),
-          Match.when(false, () => ''),
-          Match.exhaustive,
-        )
-        process.stdout.write(`\r${line}${newline}`)
-      },
-    })
-  try {
-    for await (const event of events) {
-      Match.value(event).pipe(
-        Match.tag('dryRunCompleted', (dryRun) => {
-          progress.tally = {
-            ...progress.tally,
-            timing: dryRun.timing,
-            capabilities: { reloadEnvironment: dryRun.capabilities.reloadEnvironment },
+export const makeProgressBarReporter: ReporterFactory = () => (events) =>
+  Effect.runPromise(
+    Effect.gen(function*() {
+      const progress: { tally: ProgressTally; bar: ProgressBarState | undefined } = {
+        tally: emptyTally(0),
+        bar: undefined,
+      }
+      const render = (now: number): void =>
+        Option.match(Option.fromUndefinedOr(progress.bar), {
+          onNone: () => undefined,
+          onSome: (bar) => {
+            const line = renderProgressBar(bar, progressData(progress.tally, now))
+            const newline = Match.value(isComplete(bar)).pipe(
+              Match.when(true, () => '\n'),
+              Match.when(false, () => ''),
+              Match.exhaustive,
+            )
+            process.stdout.write(`\r${line}${newline}`)
+          },
+        })
+      const iterator = events[Symbol.asyncIterator]()
+      yield* drainProgressEvents(iterator, progress, render)
+      yield* Effect.sync(() => finishProgressBar(progress))
+    }),
+  )
+
+const drainProgressEvents = (
+  iterator: AsyncIterator<ReporterEvent>,
+  progress: { tally: ProgressTally; bar: ProgressBarState | undefined },
+  render: (now: number) => void,
+): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const next: IteratorResult<ReporterEvent> = yield* Effect.promise(() => iterator.next())
+    return yield* Match.value(next.done === true).pipe(
+      Match.when(true, () => Effect.void),
+      Match.orElse(() =>
+        Effect.gen(function*() {
+          if (next.done !== true) {
+            applyProgressEvent(progress, render, next.value)
           }
-        }),
-        Match.tag('mutationTestingPlanReady', (planReady) => {
-          const ticksByMutantId = Object.fromEntries(
-            planReady.plans.flatMap((plan) => {
-              if (plan.plan !== 'Run') {
-                return []
-              }
-              return [[plan.mutantId, ticksFor(plan, progress.tally)] as const]
-            }),
-          )
-          const total = Object.values(ticksByMutantId).reduce((sum, ticks) => sum + ticks, 0)
-          progress.tally = {
-            ...progress.tally,
-            startedAt: performance.now(),
-            ticksByMutantId,
-            mutants: Object.keys(ticksByMutantId).length,
-            total,
+          yield* drainProgressEvents(iterator, progress, render)
+        })
+      ),
+    )
+  })
+
+const applyProgressEvent = (
+  progress: { tally: ProgressTally; bar: ProgressBarState | undefined },
+  render: (now: number) => void,
+  event: ReporterEvent,
+): void => {
+  Match.value(event).pipe(
+    Match.tag('dryRunCompleted', (dryRun) => {
+      progress.tally = {
+        ...progress.tally,
+        timing: dryRun.timing,
+        capabilities: { reloadEnvironment: dryRun.capabilities.reloadEnvironment },
+      }
+    }),
+    Match.tag('mutationTestingPlanReady', (planReady) => {
+      const ticksByMutantId = Object.fromEntries(
+        planReady.plans.flatMap((plan) => {
+          if (plan.plan !== 'Run') {
+            return []
           }
-          progress.bar = makeProgressBarState(PROGRESS_BAR_FORMAT, { ...PROGRESS_BAR_OPTIONS, total })
+          return [[plan.mutantId, ticksFor(plan, progress.tally)] as const]
         }),
-        Match.tag('mutantTested', (tested) => {
-          Option.match(Option.fromUndefinedOr(progress.tally.ticksByMutantId[tested.id]), {
-            onNone: () => undefined,
-            onSome: (ticks) => {
-              progress.tally = tallyAfterTest(progress.tally, tested, ticks)
-              progress.bar = Option.getOrUndefined(
-                Option.map(Option.fromUndefinedOr(progress.bar), (bar) => tickProgressBar(bar, ticks)),
-              )
-              render(performance.now())
-            },
-          })
-        }),
-        Match.orElse(() => undefined),
       )
-    }
-  } finally {
-    Option.match(Option.fromUndefinedOr(progress.bar), {
-      onNone: () => undefined,
-      onSome: (bar) =>
-        Match.value(isComplete(bar)).pipe(
-          Match.when(true, () => undefined),
-          Match.when(false, () => process.stdout.write('\n')),
-          Match.exhaustive,
-        ),
-    })
-  }
+      const total = Object.values(ticksByMutantId).reduce((sum, ticks) => sum + ticks, 0)
+      progress.tally = {
+        ...progress.tally,
+        startedAt: performance.now(),
+        ticksByMutantId,
+        mutants: Object.keys(ticksByMutantId).length,
+        total,
+      }
+      progress.bar = makeProgressBarState(PROGRESS_BAR_FORMAT, { ...PROGRESS_BAR_OPTIONS, total })
+    }),
+    Match.tag('mutantTested', (tested) => {
+      Option.match(Option.fromUndefinedOr(progress.tally.ticksByMutantId[tested.id]), {
+        onNone: () => undefined,
+        onSome: (ticks) => {
+          progress.tally = tallyAfterTest(progress.tally, tested, ticks)
+          progress.bar = Option.getOrUndefined(
+            Option.map(Option.fromUndefinedOr(progress.bar), (bar) => tickProgressBar(bar, ticks)),
+          )
+          render(performance.now())
+        },
+      })
+    }),
+    Match.orElse(() => undefined),
+  )
 }
 
-export const makeProgressStreamReporter: ReporterFactory = () => async (events) => {
-  for await (const drained of events) {
-    void drained
-  }
+const finishProgressBar = (progress: { tally: ProgressTally; bar: ProgressBarState | undefined }): void => {
+  Option.match(Option.fromUndefinedOr(progress.bar), {
+    onNone: () => undefined,
+    onSome: (bar) =>
+      Match.value(isComplete(bar)).pipe(
+        Match.when(true, () => undefined),
+        Match.when(false, () => process.stdout.write('\n')),
+        Match.exhaustive,
+      ),
+  })
 }
+
+export const makeProgressStreamReporter: ReporterFactory = () => (events) =>
+  Effect.runPromise(drainDiscardedEvents(events[Symbol.asyncIterator]()))
+
+const drainDiscardedEvents = (iterator: AsyncIterator<ReporterEvent>): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const next = yield* Effect.promise(() => iterator.next())
+    return yield* Match.value(next.done === true).pipe(
+      Match.when(true, () => Effect.void),
+      Match.orElse(() => drainDiscardedEvents(iterator)),
+    )
+  })

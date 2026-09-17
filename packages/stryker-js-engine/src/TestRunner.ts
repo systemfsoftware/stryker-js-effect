@@ -26,6 +26,7 @@ import * as Exit from 'effect/Exit'
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
 import * as Ref from 'effect/Ref'
+import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
@@ -81,7 +82,7 @@ const toRunnerBootFailure = (runnerName: string) => (error: WorkerBootError): Po
     Match.tag(
       'WorkerBootTimeoutError',
       (timeout): PooledTestRunnerError =>
-        new TestRunnerFailed({
+        TestRunnerFailed.make({
           runnerName,
           phase: 'init',
           cause:
@@ -98,7 +99,7 @@ const toRunnerFailure =
   (error: RpcClientError | TestRunnerFailed): PooledTestRunnerError =>
     Match.value(error).pipe(
       Match.tag('TestRunnerFailed', (e): PooledTestRunnerError => e),
-      Match.orElse((e) => new TestRunnerFailed({ runnerName, phase, cause: e.message })),
+      Match.orElse((e) => TestRunnerFailed.make({ runnerName, phase, cause: e.message })),
     )
 
 /**
@@ -198,14 +199,19 @@ export const withRetry: TestRunnerCombinator = (inner) => {
     onExhausted: (message: string) => A,
   ): Effect.Effect<A> =>
     run.pipe(
-      Effect.tapError((error) => {
-        if (error instanceof OutOfMemoryError) {
-          return Effect.logInfo(
-            `Test runner process [${error.pid}] ran out of memory. That usually means the tests leak memory. Stryker restarts the process and carries on, but the run is slower for it.`,
-          )
-        }
-        return Effect.void
-      }),
+      Effect.tapError((error) =>
+        Match.value(S.is(OutOfMemoryError)(error)).pipe(
+          Match.when(true, () =>
+            Match.value(error).pipe(
+              Match.when(S.is(OutOfMemoryError), (outOfMemory) =>
+                Effect.logInfo(
+                  `Test runner process [${outOfMemory.pid}] ran out of memory. That usually means the tests leak memory. Stryker restarts the process and carries on, but the run is slower for it.`,
+                )),
+              Match.orElse(() => Effect.void),
+            )),
+          Match.orElse(() => Effect.void),
+        )
+      ),
       Effect.retry({ times: maxRetries }),
       Effect.catchCause((cause) =>
         Effect.succeed(
@@ -396,7 +402,7 @@ export const commandRunnerRejects = (
   options: StrykerOptions,
 ): CommandRunnerUnsupportedOption | undefined => {
   if (testFilesProvided(options)) {
-    return new CommandRunnerUnsupportedOption({ option: 'testFiles' })
+    return CommandRunnerUnsupportedOption.make({ option: 'testFiles' })
   }
   return undefined
 }

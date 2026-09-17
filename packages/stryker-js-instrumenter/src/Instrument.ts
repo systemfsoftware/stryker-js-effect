@@ -38,19 +38,23 @@ const commentDirectiveRegEx = /^(\s*)@(ts-[a-z-]+).*$/
 const tsDirectiveLikeRegEx = /@(ts-[a-z-]+)/
 const STARTING_COMMENT = /^\s*\/\*[\s\S]*?\*\//
 
-export async function disableTypeChecks(file: File): Promise<File> {
+export const disableTypeChecks = (file: File): Effect.Effect<File, InstrumentError> => {
   const format = getFormat(file.name)
-  if (format === undefined) return file
+  if (format === undefined) return Effect.succeed(file)
   return disableTypeChecksFor(file, format)
 }
 
-async function disableTypeChecksFor(file: File, format: AstFormat): Promise<File> {
+const disableTypeChecksFor = (file: File, format: AstFormat): Effect.Effect<File, InstrumentError> => {
   if (isJSFileWithoutTSDirectives(file, format)) {
-    return { ...file, content: prefixWithNoCheck(file.content) }
+    return Effect.succeed({ ...file, content: prefixWithNoCheck(file.content) })
   }
   const parse = createParser()
-  const ast = await parse(file.content, file.name)
-  return withDisabledTypeChecking(file, ast)
+  return Effect.map(
+    parse(file.content, file.name).pipe(
+      Effect.mapError((cause) => InstrumentError.make({ message: `Failed to parse ${file.name}`, cause })),
+    ),
+    (ast) => withDisabledTypeChecking(file, ast),
+  )
 }
 
 function withDisabledTypeChecking(file: File, ast: Ast): File {
@@ -234,25 +238,22 @@ const readCollected = (command: InstrumentCommand): Effect.Effect<Collected, Ins
     const parse = createParser()
     const parsed = yield* Effect.forEach(files, (file) =>
       Effect.map(
-        Effect.tryPromise({
-          try: () => parse(file.content, file.name),
-          catch: (cause) => new InstrumentError({ message: `Failed to parse ${file.name}`, cause }),
-        }),
+        parse(file.content, file.name).pipe(
+          Effect.mapError((cause) => InstrumentError.make({ message: `Failed to parse ${file.name}`, cause })),
+        ),
         (ast): ParsedFile => ({ file, ast }),
       ))
     const collector = createMutantCollector()
     yield* Effect.forEach(parsed, ({ file, ast }) =>
-      Effect.tryPromise({
-        try: () =>
-          transform(ast, collector, {
-            options: toTransformerOptions(options),
-            mutateDescription: toOneBasedLineNumber(file.mutate),
-          }),
-        catch: (cause) => new InstrumentError({ message: `Failed to transform ${file.name}`, cause }),
-      }))
+      transform(ast, collector, {
+        options: toTransformerOptions(options),
+        mutateDescription: toOneBasedLineNumber(file.mutate),
+      }).pipe(
+        Effect.mapError((cause) => InstrumentError.make({ message: `Failed to transform ${file.name}`, cause })),
+      ))
     const mutants: readonly ApiMutant[] = yield* Effect.try({
       try: () => collector.map(toApiMutant),
-      catch: (cause) => new InstrumentError({ message: 'Failed to instrument', cause }),
+      catch: (cause) => InstrumentError.make({ message: 'Failed to instrument', cause }),
     })
     return { files, options, asts: parsed.map(({ ast }) => ast), mutants }
   })
@@ -266,7 +267,7 @@ const printDecision = (
         files: decision.files.flatMap((file, index) => printedFile(file, decision.asts[index])),
         mutants: decision.mutants,
       }),
-    catch: (cause) => new InstrumentError({ message: 'Failed to print', cause }),
+    catch: (cause) => InstrumentError.make({ message: 'Failed to print', cause }),
   })
 
 function printedFile(file: FileSchemaType, ast: unknown): readonly FileSchemaType[] {
