@@ -20,9 +20,6 @@ export interface BuiltinReporterServices {
 }
 
 // @public (undocumented)
-export type JsonReporterDeps = BuiltinReporterServices;
-
-// @public (undocumented)
 export const makeBuiltinReporterFactories: (services: BuiltinReporterServices) => Record<string, ReporterFactory>;
 
 // (No @packageDocumentation comment for this package)
