@@ -193,8 +193,9 @@ export const makeProgressBarReporter: ReporterFactory = () => (events) =>
           },
         })
       const iterator = events[Symbol.asyncIterator]()
-      yield* drainProgressEvents(iterator, progress, render)
-      yield* Effect.sync(() => finishProgressBar(progress))
+      yield* drainProgressEvents(iterator, progress, render).pipe(
+        Effect.ensuring(Effect.sync(() => finishProgressBar(progress))),
+      )
     }),
   )
 

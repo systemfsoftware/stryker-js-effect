@@ -200,14 +200,10 @@ export const withRetry: TestRunnerCombinator = (inner) => {
   ): Effect.Effect<A> =>
     run.pipe(
       Effect.tapError((error) =>
-        Match.value(S.is(OutOfMemoryError)(error)).pipe(
-          Match.when(true, () =>
-            Match.value(error).pipe(
-              Match.when(S.is(OutOfMemoryError), (outOfMemory) =>
-                Effect.logInfo(
-                  `Test runner process [${outOfMemory.pid}] ran out of memory. That usually means the tests leak memory. Stryker restarts the process and carries on, but the run is slower for it.`,
-                )),
-              Match.orElse(() => Effect.void),
+        Match.value(error).pipe(
+          Match.when(S.is(OutOfMemoryError), (outOfMemory) =>
+            Effect.logInfo(
+              `Test runner process [${outOfMemory.pid}] ran out of memory. That usually means the tests leak memory. Stryker restarts the process and carries on, but the run is slower for it.`,
             )),
           Match.orElse(() => Effect.void),
         )

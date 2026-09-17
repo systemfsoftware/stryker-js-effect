@@ -154,30 +154,24 @@ export interface ScriptFile {
   readonly modifiedTime: DateTime.Utc
 }
 
-export function makeScriptFile(
-  content: string,
-  fileName: string,
-  modifiedTime = DateTime.makeUnsafe(Effect.runSync(Clock.currentTimeMillis)),
-): ScriptFile {
+const nowUtc = (): DateTime.Utc => DateTime.makeUnsafe(Effect.runSync(Clock.currentTimeMillis))
+
+export function makeScriptFile(content: string, fileName: string, modifiedTime = nowUtc()): ScriptFile {
   return { content, fileName, originalContent: content, modifiedTime }
 }
 export function withContent(file: ScriptFile, content: string): ScriptFile {
-  return { ...file, content, modifiedTime: DateTime.makeUnsafe(Effect.runSync(Clock.currentTimeMillis)) }
+  return { ...file, content, modifiedTime: nowUtc() }
 }
 
 export function mutateScriptFile(file: ScriptFile, mutant: Pick<Mutant, 'location' | 'replacement'>): ScriptFile {
   const start = getOffset(file, mutant.location.start)
   const end = getOffset(file, mutant.location.end)
   const content = `${file.originalContent.slice(0, start)}${mutant.replacement}${file.originalContent.slice(end)}`
-  return { ...file, content, modifiedTime: DateTime.makeUnsafe(Effect.runSync(Clock.currentTimeMillis)) }
+  return { ...file, content, modifiedTime: nowUtc() }
 }
 
 export function resetScriptFile(file: ScriptFile): ScriptFile {
-  return {
-    ...file,
-    content: file.originalContent,
-    modifiedTime: DateTime.makeUnsafe(Effect.runSync(Clock.currentTimeMillis)),
-  }
+  return { ...file, content: file.originalContent, modifiedTime: nowUtc() }
 }
 
 function getOffset(file: ScriptFile, pos: Position): number {
