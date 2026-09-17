@@ -3,6 +3,7 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import * as NodeStdio from '@effect/platform-node/NodeStdio'
+import { startHostTelemetry } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
@@ -58,6 +59,7 @@ if (!isSupportedNodeVersion(process.version)) {
 }
 
 const program = Effect.gen(function*() {
+  yield* Effect.promise(() => startHostTelemetry())
   const outputMode = yield* OutputModeProbe
   const runEvents = yield* RunEventStreamPort
   return yield* strykerCliEffect(
