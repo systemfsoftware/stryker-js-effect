@@ -6,13 +6,16 @@ import {
   type WiredRunLayer,
 } from '@systemfsoftware/stryker-js-engine'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import { type RunEvent, RunEvents } from '@systemfsoftware/stryker-js-language'
+import { type RunEvent } from '@systemfsoftware/stryker-js-language'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import type { PlatformError } from 'effect/PlatformError'
 import type * as Queue from 'effect/Queue'
+import * as S from 'effect/Schema'
 import type { CliRequest } from './Cli.schema.js'
 import { isColorEnabled } from './Output.js'
 import type { RunEventStream } from './Output.js'
@@ -20,35 +23,33 @@ import { nodePlatformLayer } from './platform/node.js'
 import { DEFAULT_PROGRESS_STREAM_FILE } from './StreamFile.js'
 import type { StrykerRun } from './StrykerRun.js'
 
-export const hostRunLayer = (
-  hostOptions: RunEnvironmentShape,
-  queue?: Queue.Queue<RunEvent, Cause.Done>,
-): WiredRunLayer => makeRunLayer(hostOptions, queue).pipe(Layer.provideMerge(nodePlatformLayer))
+export interface HostBinding {
+  readonly options: RunEnvironmentShape
+  readonly events: Queue.Queue<RunEvent, Cause.Done>
+}
 
-export const runMutationTestWith =
-  (runLayer: WiredRunLayer, queue: Queue.Queue<RunEvent, Cause.Done>): StrykerRun =>
-  (...args: Parameters<StrykerRun>) =>
-    Effect.scoped(runMutationTest(...args)).pipe(
-      Effect.provide(runLayer),
-      Effect.provideService(RunEvents, queue),
-    )
+export const hostRunLayer = (binding: HostBinding): WiredRunLayer =>
+  makeRunLayer(binding.options, binding.events).pipe(Layer.provideMerge(nodePlatformLayer))
 
-export function hostOptionsOf(
+export const runWithHost = (layer: WiredRunLayer): StrykerRun => (...args: Parameters<StrykerRun>) =>
+  runMutationTest(...args).pipe(Effect.scoped, Effect.provide(layer))
+
+export const hostOptionsOf = (
   mode: ResolvedMode,
   stream: RunEventStream,
   noColor: string | undefined,
-): RunEnvironmentShape {
-  return {
-    runId: stream.runId,
-    resolvedMode: mode,
-    runStartedAt: stream.startedAt,
-    basePath: process.cwd(),
-    builtinReporters: { html: makeHtmlReporter },
-    allowConsoleColors: isColorEnabled(mode, noColor),
-  }
-}
-
-export const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.length > 0
+): Effect.Effect<RunEnvironmentShape, PlatformError, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    return {
+      runId: stream.runId,
+      resolvedMode: mode,
+      runStartedAt: stream.startedAt,
+      basePath: yield* fs.realPath('.'),
+      builtinReporters: { html: makeHtmlReporter },
+      allowConsoleColors: isColorEnabled(mode, noColor),
+    }
+  })
 
 export const progressStreamFileName = (request: Option.Option<CliRequest>): string =>
   Option.match(request, {
@@ -58,7 +59,7 @@ export const progressStreamFileName = (request: Option.Option<CliRequest>): stri
         Match.tag('merge-reports', () => DEFAULT_PROGRESS_STREAM_FILE),
         Match.tag('run', (runRequest) =>
           Option.getOrElse(
-            Option.filter(Option.fromNullishOr(runRequest.options['progressStreamFile']), isNonEmptyString),
+            S.decodeUnknownOption(S.NonEmptyString)(runRequest.options['progressStreamFile']),
             () => DEFAULT_PROGRESS_STREAM_FILE,
           )),
         Match.exhaustive,

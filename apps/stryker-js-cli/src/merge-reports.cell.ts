@@ -199,7 +199,7 @@ const decodedPart = (bytes: {
   )
 
 const expectedPackages = (raw: string | undefined) =>
-  Option.match(Option.filter(Option.fromNullishOr(raw), (text) => text.length > 0), {
+  Option.match(Option.filter(Option.fromNullishOr(raw), S.is(S.NonEmptyString)), {
     onNone: () => Result.succeed(undefined),
     onSome: (text) =>
       Option.match(S.decodeOption(S.fromJsonString(S.Array(S.String)))(text), {

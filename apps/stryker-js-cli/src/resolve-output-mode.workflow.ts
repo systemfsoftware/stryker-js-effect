@@ -48,7 +48,7 @@ export type ResolveModeDecision = HumanOutput | MachineOutput
 const CONFLICT_EXPECTED = 'the "--format text" and "--json" flags are mutually exclusive — use one or the other'
 
 const configured = (value: string | undefined): Option.Option<string> =>
-  Option.filter(Option.fromNullishOr(value), (text) => text.length > 0)
+  Option.filter(Option.fromNullishOr(value), S.is(S.NonEmptyString))
 
 const modeFromEnv = (envMode: string, stdoutIsTTY: boolean): ResolveModeDecision =>
   Match.value(envMode).pipe(

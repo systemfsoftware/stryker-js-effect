@@ -63,7 +63,7 @@ import {
   hostOptionsOf,
   hostRunLayer,
   progressStreamFileName,
-  runMutationTestWith,
+  runWithHost,
 } from './run-host.js'
 import { STREAM_SCHEMA_VERSION } from './StreamVersion.js'
 import type { StrykerRun } from './StrykerRun.js'
@@ -547,9 +547,9 @@ export const runStrykerCli = (
   Effect.gen(function*() {
     const stream = yield* createRunEventStream(input.mode)
     const noColor = yield* Config.string('NO_COLOR').pipe(Effect.option)
-    const hostOptions = hostOptionsOf(input.mode, stream, Option.getOrUndefined(noColor))
-    const runLayer = hostRunLayer(hostOptions, stream.queue)
-    const runMutationTestImpl = input.runMutationTest ?? runMutationTestWith(runLayer, stream.queue)
+    const hostOptions = yield* hostOptionsOf(input.mode, stream, Option.getOrUndefined(noColor))
+    const runLayer = hostRunLayer({ options: hostOptions, events: stream.queue })
+    const runMutationTestImpl = input.runMutationTest ?? runWithHost(runLayer)
     const basePath = hostOptions.basePath
     const pathService = yield* Path.Path
 
