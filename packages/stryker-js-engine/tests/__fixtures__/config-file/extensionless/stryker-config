@@ -1,0 +1,3 @@
+export default {
+  thresholds: { high: 13, low: 13, break: 13 },
+}

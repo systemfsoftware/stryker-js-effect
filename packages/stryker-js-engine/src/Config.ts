@@ -15,6 +15,7 @@ import {
   ConfigFileInvalidError,
   ConfigFileNotFoundError,
   ConfigFileUnreadableError,
+  ConfigFileUnsupportedError,
   forkOptionsSchema,
   ImportedModuleSchema,
 } from './Config.schema.js'
@@ -100,20 +101,37 @@ const combine = (
     suffixes.flatMap((suffix) => extensions.map((extension) => `${prefix}stryker${suffix}.${extension}`))
   )
 
-export const SUPPORTED_CONFIG_FILE_NAMES = Object.freeze(
-  combine(
-    ['', '.'],
-    ['.conf', '.config'],
-    ['json', 'js', 'mjs', 'cjs'],
-  ),
-)
+const CONFIG_FILE_NAME_PREFIXES: readonly string[] = ['', '.']
+const CONFIG_FILE_NAME_SUFFIXES: readonly string[] = ['.conf', '.config']
+const SUPPORTED_CONFIG_FILE_EXTENSIONS: readonly string[] = ['ts', 'mts', 'js', 'mjs']
+const LEGACY_CONFIG_FILE_EXTENSIONS: readonly string[] = ['json', 'cjs']
 
-export const DEFAULT_CONFIG_FILE_NAMES = Object.freeze(
-  {
-    JSON: 'stryker.config.json',
-    JAVASCRIPT: 'stryker.config.mjs',
-  } as const,
-)
+const configFileNames = (extensions: readonly string[]): readonly string[] =>
+  combine(
+    [...CONFIG_FILE_NAME_PREFIXES],
+    [...CONFIG_FILE_NAME_SUFFIXES],
+    [...extensions],
+  )
+
+export const SUPPORTED_CONFIG_FILE_NAMES = Object.freeze(configFileNames(SUPPORTED_CONFIG_FILE_EXTENSIONS))
+
+const LEGACY_CONFIG_FILE_NAMES = Object.freeze(configFileNames(LEGACY_CONFIG_FILE_EXTENSIONS))
+
+const SUPPORTED_CONFIG_FILE_EXTENSION_GUIDE = `one of these extensions: ${
+  SUPPORTED_CONFIG_FILE_EXTENSIONS.map((extension) => `.${extension}`).join(', ')
+}`
+
+const legacyConfigHint = (file: string): string =>
+  `Stryker no longer reads JSON or CommonJS config files. Convert "${file}" to a config module with an "export default { ... }" object — Stryker reads config modules with ${SUPPORTED_CONFIG_FILE_EXTENSION_GUIDE} — and delete the legacy file.`
+
+const unsupportedConfigHint = (file: string): string =>
+  `"${file}" is not a supported config file. Stryker reads config modules with ${SUPPORTED_CONFIG_FILE_EXTENSION_GUIDE}, for example "stryker.config.ts" with an "export default { ... }" object.`
+
+const extendsChildHint = (file: string): string =>
+  `The extended config "${file}" is a JSON or CommonJS config file, which Stryker no longer reads. Convert it to a config module — Stryker reads config modules with ${SUPPORTED_CONFIG_FILE_EXTENSION_GUIDE} — and point "extends" at the converted file.`
+
+const shadowedLegacyWarning = (legacyFile: string, supportedFile: string): string =>
+  `Ignoring the legacy config file "${legacyFile}": "${supportedFile}" is the config Stryker reads. Stryker no longer reads JSON or CommonJS config files; delete the legacy file.`
 
 export type Primitive = boolean | number | string | null | undefined
 
@@ -634,50 +652,54 @@ const decodeConfigDocument = (
     Effect.mapError((cause) => new ConfigFileInvalidError({ file: configFile, cause })),
   )
 
-const requireJsonObject = (
+const requireDefaultExport = (
   configFile: string,
-  parsed: unknown,
-): Effect.Effect<Record<string, unknown>, ConfigFileInvalidError> => {
-  if (isMergeableRecord(parsed)) return Effect.succeed(parsed)
-  return Effect.fail(
-    new ConfigFileInvalidError({ file: configFile, cause: 'Config must be a JSON object' }),
-  )
-}
-
-const requireObjectExport = (
-  configFile: string,
-  exported: unknown,
+  defaultExport: unknown,
 ): Effect.Effect<object, ConfigFileInvalidError> => {
-  if (isNonNullObject(exported)) return Effect.succeed(exported)
+  if (defaultExport === undefined) {
+    return Effect.fail(
+      new ConfigFileInvalidError({ file: configFile, cause: 'Config file must have a default export!' }),
+    )
+  }
+  if (isNonNullObject(defaultExport)) return Effect.succeed(defaultExport)
   return Effect.fail(
-    new ConfigFileInvalidError({
-      file: configFile,
-      cause: 'Default export of config file must be an object!',
-    }),
+    new ConfigFileInvalidError({ file: configFile, cause: 'Default export of config file must be an object!' }),
   )
 }
 
-const readJsonConfigFile = (
-  configFile: string,
-): Effect.Effect<
-  PartialStrykerOptions,
-  ConfigFileUnreadableError | ConfigFileInvalidError,
-  FileSystem.FileSystem
-> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const fileContent = yield* fs.readFileString(configFile).pipe(
-      Effect.mapError((cause) => new ConfigFileUnreadableError({ file: configFile, cause })),
-    )
-    const parsed = yield* Effect.try({
-      try: (): unknown => JSON.parse(fileContent),
-      catch: (cause) => new ConfigFileInvalidError({ file: configFile, cause }),
-    })
-    const document = yield* requireJsonObject(configFile, parsed)
-    return yield* decodeConfigDocument(configFile, document)
-  })
+const ERASABLE_SYNTAX_HELP =
+  'Config modules may use only erasable TypeScript syntax: no enums, no namespaces with runtime code, no parameter properties, and no decorators.'
 
-const readModuleConfigFile = (
+const errorCodeOf = (cause: unknown): string | undefined => {
+  const code: unknown = Match.value(cause).pipe(
+    Match.when(Match.instanceOf(Error), (error) => Reflect.get(error, 'code')),
+    Match.orElse(() => undefined),
+  )
+  if (typeof code === 'string') return code
+  return undefined
+}
+
+const configImportCause = (configFile: string, failure: StrykerError): unknown =>
+  Match.value(errorCodeOf(failure.cause)).pipe(
+    Match.when(
+      'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX',
+      () =>
+        new Error(
+          `The config file "${configFile}" uses TypeScript syntax Node cannot execute. ${ERASABLE_SYNTAX_HELP}`,
+          {
+            cause: failure.cause,
+          },
+        ),
+    ),
+    Match.when('ERR_UNKNOWN_FILE_EXTENSION', () =>
+      new Error(
+        `The config file "${configFile}" has an extension Node cannot load. Stryker reads config modules with ${SUPPORTED_CONFIG_FILE_EXTENSION_GUIDE}.`,
+        { cause: failure.cause },
+      )),
+    Match.orElse(() => failure),
+  )
+
+const readConfigModule = (
   configFile: string,
 ): Effect.Effect<
   PartialStrykerOptions,
@@ -689,38 +711,42 @@ const readModuleConfigFile = (
     const url = yield* pathService.toFileUrl(pathService.resolve(configFile)).pipe(
       Effect.mapError((cause) => new ConfigFileUnreadableError({ file: configFile, cause })),
     )
-    const importResult = yield* Effect.tryPromise({
-      try: (): Promise<unknown> => import(url.href),
-      catch: (cause) => new ConfigFileUnreadableError({ file: configFile, cause }),
-    }).pipe(Effect.result)
-    const importedModule = yield* Result.match(importResult, {
-      onFailure: (failure) => Effect.fail(failure),
-      onSuccess: (success) => Effect.succeed(success),
-    })
+    const importedModule = yield* importModule(url.href).pipe(
+      Effect.mapError(
+        (failure) => new ConfigFileUnreadableError({ file: configFile, cause: configImportCause(configFile, failure) }),
+      ),
+    )
     const exported = yield* S.decodeUnknownEffect(ImportedModuleSchema)(importedModule).pipe(
       Effect.mapError((cause) => new ConfigFileInvalidError({ file: configFile, cause })),
       Effect.map((decoded) => decoded.default),
     )
-    const document = yield* requireObjectExport(configFile, exported)
+    const document = yield* requireDefaultExport(configFile, exported)
     return yield* decodeConfigDocument(configFile, document)
   })
 
-export function readConfigFile(
+const configFileExtension = (configFile: string, pathService: Path.Path): string =>
+  pathService.extname(configFile).toLowerCase().slice(1)
+
+const isLegacyConfigFile = (configFile: string, pathService: Path.Path): boolean =>
+  LEGACY_CONFIG_FILE_EXTENSIONS.includes(configFileExtension(configFile, pathService))
+
+const readExtendsChild = (
   configFile: string,
 ): Effect.Effect<
   PartialStrykerOptions,
-  ConfigFileUnreadableError | ConfigFileInvalidError,
-  FileSystem.FileSystem | Path.Path
-> {
-  return Effect.gen(function*() {
+  ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
+  Path.Path
+> =>
+  Effect.gen(function*() {
     const pathService = yield* Path.Path
-    const extension = pathService.extname(configFile).toLowerCase()
-    return yield* Match.value(extension).pipe(
-      Match.when('.json', () => readJsonConfigFile(configFile)),
-      Match.orElse(() => readModuleConfigFile(configFile)),
+    return yield* Match.value(isLegacyConfigFile(configFile, pathService)).pipe(
+      Match.when(true, () =>
+        Effect.fail(new ConfigFileUnsupportedError({ file: configFile, hint: extendsChildHint(configFile) }))),
+      Match.orElse(() =>
+        readConfigModule(configFile)
+      ),
     )
   })
-}
 
 const packageSubpath = (specifier: string): string => {
   const segments = specifier.split('/')
@@ -764,7 +790,7 @@ export function resolveExtends(
   document: PartialStrykerOptions,
 ): Effect.Effect<
   PartialStrykerOptions,
-  ConfigFileUnreadableError | ConfigFileInvalidError,
+  ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   FileSystem.FileSystem | Module | Path.Path
 > {
   return Effect.gen(function*() {
@@ -776,17 +802,17 @@ export function resolveExtends(
       currentDocument: PartialStrykerOptions,
     ): Effect.Effect<
       PartialStrykerOptions,
-      ConfigFileUnreadableError | ConfigFileInvalidError,
+      ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
       FileSystem.FileSystem | Module | Path.Path
     > =>
       Match.value(decideExtendsStep(state, currentDocument, file, pathService)).pipe(
         Match.tag('done', (d) => Effect.succeed(d.options)),
         Match.tag('read', (d) =>
-          readConfigFile(d.path).pipe(Effect.flatMap((nextDocument) => loop(d.state, d.path, nextDocument)))),
+          readExtendsChild(d.path).pipe(Effect.flatMap((nextDocument) => loop(d.state, d.path, nextDocument)))),
         Match.tag('resolve', (d) =>
           resolveExtendsSpecifier(d.specifier, d.directory).pipe(
             Effect.flatMap((resolvedPath) =>
-              readConfigFile(resolvedPath).pipe(Effect.flatMap((nextDocument) =>
+              readExtendsChild(resolvedPath).pipe(Effect.flatMap((nextDocument) =>
                 loop(d.state, resolvedPath, nextDocument)
               ))
             ),
@@ -1339,16 +1365,10 @@ Example of how a config file should look:
   * @type {import('@systemfsoftware/stryker-js-language').StrykerOptions}
   */
 export default {
-  // You're options here!
+  // Your options here!
 }
 
-Or using commonjs:
-/**
-  * @type {import('@systemfsoftware/stryker-js-language').StrykerOptions}
-  */
-module.exports = {
-  // You're options here!
-}
+A config file is a TypeScript or ESM JavaScript module: stryker.conf.ts, stryker.config.ts, or the same names with a .mts, .js, or .mjs extension.
 
 See https://stryker-mutator.io/docs/stryker-js/config-file for more information.`.trim()
 
@@ -1400,109 +1420,104 @@ const firstExistingConfigFile = (
     ),
   )
 
-function findConfigFile(
-  configFileName: unknown,
-): Effect.Effect<string | undefined, ConfigFileNotFoundError | ConfigFileUnreadableError, FileSystem.FileSystem> {
-  return Match.value(configFileName).pipe(
-    Match.when(Match.string, (fileName) => requireExistingConfigFile(fileName)),
-    Match.orElse(() => firstExistingConfigFile([...SUPPORTED_CONFIG_FILE_NAMES])),
-  )
-}
-
-function readJsonConfig(
-  configFile: string,
-): Effect.Effect<Record<string, unknown>, ConfigFileUnreadableError | ConfigFileInvalidError, FileSystem.FileSystem> {
-  return Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const fileContent = yield* fs.readFileString(configFile).pipe(
-      Effect.mapError((cause) => new ConfigFileUnreadableError({ file: configFile, cause })),
-    )
-    const parsed = yield* Effect.try({
-      try: (): unknown => JSON.parse(fileContent),
-      catch: (cause) => new ConfigFileInvalidError({ file: configFile, cause }),
-    })
-    return yield* S.decodeUnknownEffect(ConfigDocumentSchema)(parsed).pipe(
-      Effect.mapError((cause) => new ConfigFileInvalidError({ file: configFile, cause })),
-    )
-  })
-}
-
-function importJSConfigModule(
-  configFile: string,
-  _basePath: string,
-): Effect.Effect<unknown, ConfigFileUnreadableError, Module | Path.Path> {
-  return Effect.gen(function*() {
-    const pathService = yield* Path.Path
-    const url = yield* pathService.toFileUrl(pathService.resolve(configFile)).pipe(
-      Effect.mapError((cause) => new ConfigFileUnreadableError({ file: configFile, cause })),
-    )
-    return yield* importModule(url.href).pipe(
-      Effect.mapError((cause) => new ConfigFileUnreadableError({ file: configFile, cause })),
-    )
-  })
-}
-
-const requireDefaultExport = (
-  configFile: string,
-  defaultExport: unknown,
-): Effect.Effect<object, ConfigFileInvalidError> => {
-  if (defaultExport === undefined) {
-    return Effect.fail(
-      new ConfigFileInvalidError({
-        file: configFile,
-        cause: 'Config file must have a default export!',
-      }),
-    )
-  }
-  return requireObjectExport(configFile, defaultExport)
-}
-
-const requireImportedModule = (
-  configFile: string,
-  importedModule: unknown,
-): Effect.Effect<object, ConfigFileInvalidError> =>
-  Result.match(S.decodeUnknownResult(ImportedModuleSchema)(importedModule), {
-    onFailure: (cause) => Effect.fail(new ConfigFileInvalidError({ file: configFile, cause })),
-    onSuccess: (decoded) => requireDefaultExport(configFile, decoded.default),
-  })
-
-function importJSConfig(
-  configFile: string,
-  basePath: string,
-): Effect.Effect<Record<string, unknown>, ConfigFileUnreadableError | ConfigFileInvalidError, Module | Path.Path> {
-  return Effect.gen(function*() {
-    const importedModule = yield* importJSConfigModule(configFile, basePath)
-    const defaultExport = yield* requireImportedModule(configFile, importedModule)
-    const decoded = yield* S.decodeUnknownEffect(ConfigDocumentSchema)(defaultExport).pipe(
-      Effect.mapError((cause) => new ConfigFileInvalidError({ file: configFile, cause })),
-    )
-    return { ...decoded }
-  })
-}
-
-const readConfigChild = (
-  configFile: string,
-  basePath: string,
+const configFileFor = (
+  configFileName: string,
 ): Effect.Effect<
-  Record<string, unknown>,
-  ConfigFileUnreadableError | ConfigFileInvalidError,
-  FileSystem.FileSystem | Module | Path.Path
+  string,
+  ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileUnsupportedError,
+  FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function*() {
     const pathService = yield* Path.Path
-    const extension = pathService.extname(configFile).toLowerCase()
-    return yield* Match.value(extension).pipe(
-      Match.when('.json', () => readJsonConfig(configFile)),
-      Match.orElse(() => importJSConfig(configFile, basePath)),
+    const supported = SUPPORTED_CONFIG_FILE_EXTENSIONS.includes(configFileExtension(configFileName, pathService))
+    const legacy = isLegacyConfigFile(configFileName, pathService)
+    return yield* Match.value(supported).pipe(
+      Match.when(true, () => requireExistingConfigFile(configFileName)),
+      Match.orElse(() =>
+        Effect.fail(
+          new ConfigFileUnsupportedError({
+            file: configFileName,
+            hint: Match.value(legacy).pipe(
+              Match.when(true, () => legacyConfigHint(configFileName)),
+              Match.orElse(() => unsupportedConfigHint(configFileName)),
+            ),
+          }),
+        )
+      ),
     )
   })
+
+const firstLegacyConfigFile = (): Effect.Effect<
+  string | undefined,
+  ConfigFileUnreadableError,
+  FileSystem.FileSystem
+> => firstExistingConfigFile([...LEGACY_CONFIG_FILE_NAMES])
+
+const legacyConfigError = (file: string): ConfigFileUnsupportedError =>
+  new ConfigFileUnsupportedError({ file, hint: legacyConfigHint(file) })
+
+const legacyConfigWarning = (file: string, supportedFile: string): Effect.Effect<void> =>
+  Effect.logWarning(shadowedLegacyWarning(file, supportedFile))
+
+const refuseLegacyOnlyProject = (): Effect.Effect<
+  undefined,
+  ConfigFileUnreadableError | ConfigFileUnsupportedError,
+  FileSystem.FileSystem
+> =>
+  firstLegacyConfigFile().pipe(
+    Effect.flatMap((legacyFile) =>
+      Match.value(legacyFile).pipe(
+        Match.when(undefined, () => Effect.succeed(undefined)),
+        Match.orElse((file) => Effect.fail(legacyConfigError(file))),
+      )
+    ),
+  )
+
+const warnShadowedLegacyConfig = (
+  supportedFile: string,
+): Effect.Effect<string, ConfigFileUnreadableError, FileSystem.FileSystem> =>
+  firstLegacyConfigFile().pipe(
+    Effect.flatMap((legacyFile) =>
+      Match.value(legacyFile).pipe(
+        Match.when(undefined, () => Effect.succeed(supportedFile)),
+        Match.orElse((file) => Effect.as(legacyConfigWarning(file, supportedFile), supportedFile)),
+      )
+    ),
+  )
+
+const discoverConfigFile = (): Effect.Effect<
+  string | undefined,
+  ConfigFileUnreadableError | ConfigFileUnsupportedError,
+  FileSystem.FileSystem
+> =>
+  firstExistingConfigFile([...SUPPORTED_CONFIG_FILE_NAMES]).pipe(
+    Effect.flatMap((found) =>
+      Match.value(found).pipe(
+        Match.when(undefined, () => refuseLegacyOnlyProject()),
+        Match.orElse((supportedFile) => warnShadowedLegacyConfig(supportedFile)),
+      )
+    ),
+  )
+
+function findConfigFile(
+  configFileName: unknown,
+): Effect.Effect<
+  string | undefined,
+  ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileUnsupportedError,
+  FileSystem.FileSystem | Path.Path
+> {
+  return Match.value(configFileName).pipe(
+    Match.when(Match.string, (fileName) => configFileFor(fileName)),
+    Match.orElse(() => discoverConfigFile()),
+  )
+}
 
 const resolveChildExtends = (
   configFile: string,
   child: Record<string, unknown>,
 ): Effect.Effect<
   unknown,
-  ConfigFileUnreadableError | ConfigFileInvalidError,
+  ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   FileSystem.FileSystem | Module | Path.Path
 > =>
   Match.value('extends' in child).pipe(
@@ -1512,10 +1527,9 @@ const resolveChildExtends = (
 
 function loadOptionsFromConfigFile(
   cliOptions: Record<string, unknown>,
-  basePath: string,
 ): Effect.Effect<
   unknown,
-  ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError,
+  ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   FileSystem.FileSystem | Module | Path.Path
 > {
   return findConfigFile(cliOptions['configFile']).pipe(
@@ -1523,9 +1537,7 @@ function loadOptionsFromConfigFile(
       Match.value(configFile).pipe(
         Match.when(undefined, () => Effect.succeed({})),
         Match.orElse((found) =>
-          readConfigChild(found, basePath).pipe(
-            Effect.flatMap((child) => resolveChildExtends(found, child)),
-          )
+          readConfigModule(found).pipe(Effect.flatMap((child) => resolveChildExtends(found, child)))
         ),
       )
     ),
@@ -1533,15 +1545,15 @@ function loadOptionsFromConfigFile(
 }
 export function readConfig(
   cliOptions: PartialStrykerOptions,
-  basePath: string,
+  _basePath: string,
 ): Effect.Effect<
   StrykerOptions,
-  ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError,
+  ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   FileSystem.FileSystem | Module | Path.Path
 > {
   return Effect.gen(function*() {
     const cliRecord = yield* S.decodeUnknownEffect(ConfigDocumentSchema)(cliOptions).pipe(Effect.orDie)
-    const fileRecord = yield* loadOptionsFromConfigFile(cliRecord, basePath)
+    const fileRecord = yield* loadOptionsFromConfigFile(cliRecord)
     const fileOptions = yield* Result.match(S.decodeUnknownResult(ConfigDocumentSchema)(fileRecord), {
       onFailure: (cause) => Effect.fail(new ConfigFileInvalidError({ file: 'config', cause })),
       onSuccess: (options) => Effect.succeed(options),

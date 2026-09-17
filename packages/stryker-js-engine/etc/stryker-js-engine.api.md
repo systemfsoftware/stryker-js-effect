@@ -122,6 +122,16 @@ export class ConfigFileUnreadableError extends ConfigFileUnreadableError_base {
     readonly exitClass: 'ConfigError';
 }
 
+// Warning: (ae-forgotten-export) The symbol "ConfigFileUnsupportedError_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class ConfigFileUnsupportedError extends ConfigFileUnsupportedError_base {
+    // (undocumented)
+    readonly exitClass: 'ConfigError';
+    // (undocumented)
+    get message(): string;
+}
+
 // @public (undocumented)
 export const connectRetry: Schedule.Schedule<Duration, unknown, never, never>;
 
@@ -136,12 +146,6 @@ export const decideExtendsStep: (state: ExtendsStepState, document: PartialStryk
 
 // @public (undocumented)
 export function deepFreeze<T>(target: T): Immutable<T>;
-
-// @public (undocumented)
-export const DEFAULT_CONFIG_FILE_NAMES: Readonly<{
-    readonly JSON: 'stryker.config.json';
-    readonly JAVASCRIPT: 'stryker.config.mjs';
-}>;
 
 // @public (undocumented)
 export const defaultOptions: Effect.Effect<Immutable<StrykerOptions>, never, never>;
@@ -386,15 +390,12 @@ export interface PrepareDone {
 export type Primitive = boolean | number | string | null | undefined;
 
 // @public (undocumented)
-export function readConfig(cliOptions: PartialStrykerOptions, basePath: string): Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError, FileSystem.FileSystem | Module | Path.Path>;
+export function readConfig(cliOptions: PartialStrykerOptions, _basePath: string): Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Module | Path.Path>;
 
 // Warning: (ae-forgotten-export) The symbol "ReadConfigCommand_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
 export class ReadConfigCommand extends ReadConfigCommand_base {}
-
-// @public (undocumented)
-export function readConfigFile(configFile: string): Effect.Effect<PartialStrykerOptions, ConfigFileUnreadableError | ConfigFileInvalidError, FileSystem.FileSystem | Path.Path>;
 
 // @public (undocumented)
 export const REMOVED_OPTIONS: Record<string, string>;
@@ -419,7 +420,7 @@ export interface ResolvedMode {
 }
 
 // @public (undocumented)
-export function resolveExtends(configFile: string, document: PartialStrykerOptions): Effect.Effect<PartialStrykerOptions, ConfigFileUnreadableError | ConfigFileInvalidError, FileSystem.FileSystem | Module | Path.Path>;
+export function resolveExtends(configFile: string, document: PartialStrykerOptions): Effect.Effect<PartialStrykerOptions, ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Module | Path.Path>;
 
 // Warning: (ae-forgotten-export) The symbol "RunEnvironment_base" needs to be exported by the entry point index.d.mts
 //

@@ -6,6 +6,7 @@ import {
   ConfigFileInvalidError,
   ConfigFileNotFoundError,
   ConfigFileUnreadableError,
+  ConfigFileUnsupportedError,
   makeRunLayer,
   type ResolvedMode,
   type RunEnvironmentShape,
@@ -676,6 +677,7 @@ export const runStrykerCli = (
       | ConfigFileNotFoundError
       | ConfigFileUnreadableError
       | ConfigFileInvalidError
+      | ConfigFileUnsupportedError
       | MergeReportsFailed,
       never
     > =>

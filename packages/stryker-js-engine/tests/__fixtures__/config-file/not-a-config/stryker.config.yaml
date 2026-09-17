@@ -1,0 +1,4 @@
+thresholds:
+  high: 14
+  low: 14
+  break: 14

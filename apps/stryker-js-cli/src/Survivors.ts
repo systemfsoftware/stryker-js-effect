@@ -5,6 +5,7 @@ import {
   type ConfigFileInvalidError,
   type ConfigFileNotFoundError,
   ConfigFileUnreadableError,
+  type ConfigFileUnsupportedError,
   readConfig,
   strykerVersion,
   toRelativeNormalizedFileName,
@@ -207,7 +208,12 @@ export function runSurvivorsAdmission(
     readonly resolvedOptions: StrykerOptions
     readonly priorReportPath: string
   },
-  S.SchemaError | SurvivorsRejection | ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError,
+  | S.SchemaError
+  | SurvivorsRejection
+  | ConfigFileNotFoundError
+  | ConfigFileUnreadableError
+  | ConfigFileInvalidError
+  | ConfigFileUnsupportedError,
   FileSystem.FileSystem | Path.Path | Module
 > {
   return survivorsAdmissionCell(basePath).run(cliOptions)
@@ -218,7 +224,7 @@ function resolveSurvivorsRunOptions(
   basePath: string,
 ): Effect.Effect<
   StrykerOptions,
-  ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError,
+  ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   FileSystem.FileSystem | Module | Path.Path
 > {
   return readConfig(cliOptions, basePath)
