@@ -1,12 +1,12 @@
 export { type CheckerResourceService, checkGroupedPlans } from './Checker.js'
-export { makeRunLayer, RUN_EVENTS_QUEUE_BOUND, runMutationTest, shouldKeepTempDir } from './Run.js'
+export { makeRunLayer, mutationTestCell, RUN_EVENTS_QUEUE_BOUND, shouldKeepTempDir } from './Run.js'
 export type { DryRunDone } from './run/dry-run.cell.js'
 export type { InstrumentDone } from './run/instrument.cell.js'
 export type { MutationTestDone } from './run/mutation-test.cell.js'
-export type { PrepareDone } from './run/prepare.js'
+export type { PrepareDone, PrepareExecutorArgs } from './run/prepare.cell.js'
 export { RunEnvironment } from './run/RunEnvironment.js'
 export type { RunEnvironmentShape } from './run/RunEnvironment.js'
-export type { EnginePorts, WiredRunLayer } from './run/StageServices.js'
+export type { EnginePorts, RunStageServices, WiredRunLayer } from './run/StageServices.js'
 
 export { calculateMetrics, countMutants } from './calculate-metrics.js'
 

@@ -18,7 +18,7 @@ import { StageError } from '../Run.schema.js'
 import { makeSandbox } from '../Sandbox.js'
 import type { SandboxHandle } from '../Sandbox.js'
 import { makeConcurrency } from '../Worker.js'
-import type { PrepareDone } from './prepare.js'
+import type { PrepareDone } from './prepare.cell.js'
 import { RunEnvironment } from './RunEnvironment.js'
 
 export interface InstrumentDone extends PrepareDone {

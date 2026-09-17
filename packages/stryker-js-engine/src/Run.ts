@@ -1,7 +1,6 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import type { RunEvent } from '@systemfsoftware/stryker-js-language'
 import { RunEvents } from '@systemfsoftware/stryker-js-language'
-import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-language'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -15,7 +14,7 @@ import { dryRunCell } from './run/dry-run.cell.js'
 import { instrumentCell } from './run/instrument.cell.js'
 import { mutationTestCell as mutationTestStageCell } from './run/mutation-test.cell.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
-import { type PrepareDone, runPrepare } from './run/prepare.js'
+import { prepareCell, type PrepareExecutorArgs } from './run/prepare.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.js'
 import type { RunEnvironmentShape } from './run/RunEnvironment.js'
 import type { EnginePorts, RunStageServices, StageServices } from './run/StageServices.js'
@@ -46,19 +45,11 @@ export const makeRunLayer = (
   )
 }
 
-export const mutationTestCell: Cell.Cell<PrepareDone, MutationTestDone, StageError, StageServices> = Cell.andThen(
-  instrumentCell,
-  Cell.andThen(dryRunCell, mutationTestStageCell),
-)
-
-export const runMutationTest = (
-  cliOptions: PartialStrykerOptions,
-  targetMutatePatterns?: string[],
-): Effect.Effect<MutationTestDone, StageError, StageServices> =>
-  Effect.gen(function*() {
-    const prepared = yield* runPrepare({ cliOptions, targetMutatePatterns })
-    return yield* mutationTestCell.run(prepared)
-  })
+export const mutationTestCell: Cell.Cell<PrepareExecutorArgs, MutationTestDone, StageError, StageServices> = Cell
+  .andThen(
+    Cell.andThen(Cell.andThen(prepareCell, instrumentCell), dryRunCell),
+    mutationTestStageCell,
+  )
 
 export const shouldKeepTempDir = (
   exit: Exit.Exit<unknown, unknown>,

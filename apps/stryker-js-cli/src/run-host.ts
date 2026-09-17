@@ -1,11 +1,19 @@
+import { Cell } from '@systemfsoftware/effect-cell-types'
 import {
+  type EnginePorts,
   makeRunLayer,
+  mutationTestCell,
+  type MutationTestDone,
+  type PrepareExecutorArgs,
   type ResolvedMode,
+  RunEnvironment,
   type RunEnvironmentShape,
-  type WiredRunLayer,
+  type RunStageServices,
+  type StageError,
 } from '@systemfsoftware/stryker-js-engine'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import { type RunEvent } from '@systemfsoftware/stryker-js-language'
+import { type RunEvent, RunEvents } from '@systemfsoftware/stryker-js-language'
+import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-language'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -21,13 +29,45 @@ import type { RunEventStream } from './Output.js'
 import { nodePlatformLayer } from './platform/node.js'
 import { DEFAULT_PROGRESS_STREAM_FILE } from './StreamFile.js'
 
-export interface HostBinding {
-  readonly options: RunEnvironmentShape
+export interface HostServices {
+  readonly env: RunEnvironmentShape
   readonly events: Queue.Queue<RunEvent, Cause.Done>
 }
 
-export const hostRunLayer = (binding: HostBinding): WiredRunLayer =>
-  makeRunLayer(binding.options, binding.events).pipe(Layer.provideMerge(nodePlatformLayer))
+export const hostRunLayer: Layer.Layer<RunStageServices | EnginePorts, never, RunEnvironment | RunEvents> = Layer
+  .unwrap(
+    Effect.map(
+      Effect.all([RunEnvironment, RunEvents], { concurrency: 1 }),
+      ([env, events]) => makeRunLayer(env, events),
+    ),
+  ).pipe(Layer.provideMerge(nodePlatformLayer))
+
+export const hostMutationTest: Cell.Cell<
+  PrepareExecutorArgs,
+  MutationTestDone,
+  StageError,
+  RunEnvironment | RunEvents
+> = Cell.provide(mutationTestCell, hostRunLayer)
+
+export const onHost = <A, E>(
+  host: HostServices,
+  effect: Effect.Effect<A, E, RunStageServices | EnginePorts | RunEnvironment | RunEvents>,
+): Effect.Effect<A, E, never> =>
+  effect.pipe(
+    Effect.provide(hostRunLayer),
+    Effect.provideService(RunEnvironment, host.env),
+    Effect.provideService(RunEvents, host.events),
+  )
+
+export const runOnHost = (
+  host: HostServices,
+  command: PrepareExecutorArgs,
+): Effect.Effect<MutationTestDone, StageError, never> => onHost(host, Effect.scoped(hostMutationTest.run(command)))
+
+export const prepareCommandOf = (
+  options: PartialStrykerOptions,
+  targetMutatePatterns: string[] | undefined,
+): PrepareExecutorArgs => ({ cliOptions: options, targetMutatePatterns })
 
 export const hostOptionsOf = (
   mode: ResolvedMode,

@@ -3,7 +3,6 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as NodeStdio from '@effect/platform-node/NodeStdio'
 import type { ResolvedMode } from '@systemfsoftware/stryker-js-engine'
-import { runMutationTest } from '@systemfsoftware/stryker-js-engine'
 import { Mutant } from '@systemfsoftware/stryker-js-language'
 import { RENDERED_OPTION_DEFAULTS } from '@systemfsoftware/stryker-js-language'
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-language'
@@ -59,7 +58,14 @@ import { mergeReportsCell } from './merge-reports.cell.js'
 import { emitMachineModeOutput } from './Output.js'
 import type { OutputModeProbe, RunEventStreamPort } from './Output.js'
 import { emitNullScoreVerdict } from './Output.js'
-import { applyProgressStreamFile, hostOptionsOf, hostRunLayer, progressStreamFileName } from './run-host.js'
+import {
+  applyProgressStreamFile,
+  hostOptionsOf,
+  onHost,
+  prepareCommandOf,
+  progressStreamFileName,
+  runOnHost,
+} from './run-host.js'
 import { STREAM_SCHEMA_VERSION } from './StreamVersion.js'
 import type { StrykerRun } from './StrykerRun.js'
 import { runSurvivorsAdmission, survivorMutateSpans } from './Survivors.js'
@@ -543,12 +549,9 @@ export const runStrykerCli = (
     const stream = yield* createRunEventStream(input.mode)
     const noColor = yield* Config.string('NO_COLOR').pipe(Effect.option)
     const hostOptions = yield* hostOptionsOf(input.mode, stream, Option.getOrUndefined(noColor))
-    const runLayer = hostRunLayer({ options: hostOptions, events: stream.queue })
+    const hostBinding = { env: hostOptions, events: stream.queue }
     const runMutationTestImpl: StrykerRun = input.runMutationTest ??
-      ((options, targetMutatePatterns) =>
-        Effect.scoped(
-          runMutationTest(options, targetMutatePatterns).pipe(Effect.provide(runLayer)),
-        ))
+      ((options, targetMutatePatterns) => runOnHost(hostBinding, prepareCommandOf(options, targetMutatePatterns)))
     const basePath = hostOptions.basePath
     const pathService = yield* Path.Path
 
@@ -572,9 +575,10 @@ export const runStrykerCli = (
           (() => {
             if (runRequest.survivors) {
               return Effect.gen(function*() {
-                const { admission, resolvedOptions, priorReportPath } = yield* runSurvivorsAdmission(
-                  runRequest.options,
-                ).pipe(Effect.provide(runLayer))
+                const { admission, resolvedOptions, priorReportPath } = yield* onHost(
+                  hostBinding,
+                  runSurvivorsAdmission(runRequest.options),
+                )
                 return yield* Match.value(admission).pipe(
                   Match.tag('NoSurvivors', () =>
                     emitNullScoreVerdict(

@@ -5,6 +5,7 @@
 ```ts
 
 import * as Cause from 'effect/Cause';
+import { Cell } from '@systemfsoftware/effect-cell-types';
 import { CheckResult } from '@systemfsoftware/stryker-js-language';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import { CompleteDryRunResult } from '@systemfsoftware/stryker-js-language';
@@ -340,8 +341,6 @@ export function isModuleSpecifier(value: string): boolean;
 // @public (undocumented)
 export function isWarningEnabled(warningType: KnownKeys<WarningOptions>, warningOptions: WarningOptions | boolean): boolean;
 
-// Warning: (ae-forgotten-export) The symbol "RunStageServices" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
 export const makeRunLayer: (env: RunEnvironmentShape, events?: Queue.Queue<RunEvent, Cause.Done>) => Layer.Layer<RunStageServices, never, EnginePorts>;
 
@@ -369,6 +368,11 @@ export class MergeResult extends MergeResult_base {}
 
 // @public (undocumented)
 export type ModeSignal = 'flag' | 'env' | 'tty' | 'agent' | 'tool';
+
+// Warning: (ae-forgotten-export) The symbol "StageServices" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export const mutationTestCell: Cell.Cell<PrepareExecutorArgs, MutationTestDone, StageError, StageServices>;
 
 // @public (undocumented)
 export interface MutationTestDone {
@@ -412,6 +416,14 @@ export interface PrepareDone {
     readonly reporterStage: ReporterStage;
     // (undocumented)
     readonly temporaryDirectoryPath: string;
+}
+
+// @public (undocumented)
+export interface PrepareExecutorArgs {
+    // (undocumented)
+    cliOptions: PartialStrykerOptions;
+    // (undocumented)
+    targetMutatePatterns: string[] | undefined;
 }
 
 // @public (undocumented)
@@ -477,10 +489,10 @@ export interface RunEnvironmentShape {
     readonly runStartedAt: number;
 }
 
-// Warning: (ae-forgotten-export) The symbol "StageServices" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "IdGenerator" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
-export const runMutationTest: (cliOptions: PartialStrykerOptions, targetMutatePatterns?: string[]) => Effect.Effect<MutationTestDone, StageError, StageServices>;
+export type RunStageServices = RunEnvironment | RunEvents | IdGenerator | Scope.Scope;
 
 // @public (undocumented)
 export const shouldKeepTempDir: (exit: Exit.Exit<unknown, unknown>, cleanTempDir: 'always' | boolean) => boolean;

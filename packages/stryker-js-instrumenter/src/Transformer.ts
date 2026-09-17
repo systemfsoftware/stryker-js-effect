@@ -2,7 +2,6 @@
 
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import { INSTRUMENTER_CONSTANTS as ID } from '@systemfsoftware/stryker-js-language'
-import { propertyPath, type StrykerOptions, strykerReportBugUrl } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -414,12 +413,7 @@ export function throwPlacementError(
   }"`
   const errorMessage = `${
     placementLocation(nodePath.node, fileName, lineTable)
-  } ${message}. Either remove this file from the list of files to be mutated, or exclude the mutator (using ${
-    propertyPath<StrykerOptions>()(
-      'mutator',
-      'excludedMutations',
-    )
-  }). Please report this issue at ${strykerReportBugUrl(message)}. Original error: ${error.stack}`
+  } ${message}. Either remove this file from the list of files to be mutated, or exclude the mutator (using \`mutator.excludedMutations\`). Original error: ${error.stack}`
   throw new Error(errorMessage)
 }
 
