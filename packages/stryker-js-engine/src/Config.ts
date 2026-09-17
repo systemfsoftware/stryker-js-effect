@@ -655,24 +655,26 @@ const decodeConfigDocument = (
 const requireDefaultExport = (
   configFile: string,
   defaultExport: unknown,
-): Effect.Effect<object, ConfigFileInvalidError> => {
-  if (defaultExport === undefined) {
-    return Effect.fail(
-      new ConfigFileInvalidError({ file: configFile, cause: 'Config file must have a default export!' }),
-    )
-  }
-  if (isNonNullObject(defaultExport)) return Effect.succeed(defaultExport)
-  return Effect.fail(
-    new ConfigFileInvalidError({ file: configFile, cause: 'Default export of config file must be an object!' }),
+): Effect.Effect<object, ConfigFileInvalidError> =>
+  Match.value(defaultExport).pipe(
+    Match.when(undefined, () =>
+      Effect.fail(
+        new ConfigFileInvalidError({ file: configFile, cause: 'Config file must have a default export!' }),
+      )),
+    Match.when(isNonNullObject, (value) => Effect.succeed(value)),
+    Match.orElse(() =>
+      Effect.fail(
+        new ConfigFileInvalidError({ file: configFile, cause: 'Default export of config file must be an object!' }),
+      )
+    ),
   )
-}
 
 const ERASABLE_SYNTAX_HELP =
   'Config modules may use only erasable TypeScript syntax: no enums, no namespaces with runtime code, no parameter properties, and no decorators.'
 
 const errorCodeOf = (cause: unknown): string | undefined => {
   const code: unknown = Match.value(cause).pipe(
-    Match.when(Match.instanceOf(Error), (error) => Reflect.get(error, 'code')),
+    Match.when(Match.instanceOf(Error), (error): unknown => Reflect.get(error, 'code')),
     Match.orElse(() => undefined),
   )
   if (typeof code === 'string') return code
@@ -750,8 +752,14 @@ const readExtendsChild = (
 
 const packageSubpath = (specifier: string): string => {
   const segments = specifier.split('/')
-  const rest = specifier.startsWith('@') ? segments.slice(2) : segments.slice(1)
-  return rest.length === 0 ? '.' : `./${rest.join('/')}`
+  const rest = Match.value(specifier.startsWith('@')).pipe(
+    Match.when(true, () => segments.slice(2)),
+    Match.orElse(() => segments.slice(1)),
+  )
+  return Match.value(rest.length === 0).pipe(
+    Match.when(true, () => '.'),
+    Match.orElse(() => `./${rest.join('/')}`),
+  )
 }
 
 function resolveExtendsSpecifier(
@@ -762,12 +770,16 @@ function resolveExtendsSpecifier(
     const path = yield* Path.Path
     const module = yield* Module
     const fileSystem = yield* FileSystem.FileSystem
-    const manifestPath = module.findPackageJSON(specifier, path.join(configDir, 'package.json'))
-    if (manifestPath === undefined) {
-      return yield* Effect.fail(
-        new ConfigFileUnreadableError({ file: specifier, cause: `Cannot find package "${specifier}"` }),
-      )
-    }
+    const manifestPath = yield* Match.value(
+      module.findPackageJSON(specifier, path.join(configDir, 'package.json')),
+    ).pipe(
+      Match.when(
+        undefined,
+        (): Effect.Effect<string, ConfigFileUnreadableError> =>
+          Effect.fail(new ConfigFileUnreadableError({ file: specifier, cause: `Cannot find package "${specifier}"` })),
+      ),
+      Match.orElse((found): Effect.Effect<string, ConfigFileUnreadableError> => Effect.succeed(found)),
+    )
     const manifestText = yield* fileSystem.readFileString(manifestPath).pipe(
       Effect.mapError((cause) => new ConfigFileUnreadableError({ file: specifier, cause })),
     )

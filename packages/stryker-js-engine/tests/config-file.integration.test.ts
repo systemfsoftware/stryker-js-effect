@@ -8,6 +8,7 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
+import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
 import { systemError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
@@ -68,7 +69,12 @@ const fileSystemLayer = FileSystem.layerNoop({
   readFileString: (path: string) => Effect.sync(() => nodeFs.readFileSync(path, 'utf8')),
   access: (path: string) =>
     Effect.sync(() => nodeFs.existsSync(path)).pipe(
-      Effect.flatMap((present) => present ? Effect.void : Effect.fail(missingFileError(path))),
+      Effect.flatMap((present) =>
+        Match.value(present).pipe(
+          Match.when(true, () => Effect.void),
+          Match.orElse(() => Effect.fail(missingFileError(path))),
+        )
+      ),
     ),
 })
 
@@ -120,26 +126,29 @@ const optionsOrThrow = (outcome: ReadOutcome): StrykerOptions => {
   return outcome.result.success
 }
 
+const isFailureRecord = (failure: unknown): failure is Record<string, unknown> =>
+  typeof failure === 'object' && failure !== null
+
 const failureOrThrow = (outcome: ReadOutcome): Record<string, unknown> => {
   if (Result.isSuccess(outcome.result)) {
     throw new Error('the config read was expected to fail')
   }
   const failure = outcome.result.failure
-  if (typeof failure !== 'object' || failure === null) {
+  if (!isFailureRecord(failure)) {
     throw new Error(`the config read failed with a non-object: ${String(failure)}`)
   }
-  return failure as Record<string, unknown>
+  return failure
 }
 
 const fileOf = (failure: Record<string, unknown>): string => String(failure['file'])
 
 const hintOf = (failure: Record<string, unknown>): string => String(failure['hint'])
 
-const causeTextOf = (failure: Record<string, unknown>): string => {
-  const cause = failure['cause']
-  if (cause instanceof Error) return cause.message
-  return String(cause)
-}
+const causeTextOf = (failure: Record<string, unknown>): string =>
+  Match.value(failure['cause']).pipe(
+    Match.when(Match.instanceOf(Error), (error) => error.message),
+    Match.orElse((value) => String(value)),
+  )
 
 Feature('Configuring a Stryker run from a module config file')
   .withScenarioLayer(configReadLayer)

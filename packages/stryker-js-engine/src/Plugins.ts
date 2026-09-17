@@ -10,7 +10,7 @@ import * as Result from 'effect/Result'
 
 import type { Ignorer as IgnorerDescriptor } from '@systemfsoftware/stryker-ignorer-interface'
 import { Module, resolvePackageEntry, ResolvePackageEntryCommand } from '@systemfsoftware/stryker-js-language'
-import type { EntryFile, EntryRefusal } from '@systemfsoftware/stryker-js-language'
+import type { EntryFile } from '@systemfsoftware/stryker-js-language'
 import type { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
 import { importModule } from './Config.js'
 import type { PluginLoadDecision, PluginSelectionError } from './plan-plugin-load.workflow.js'
@@ -235,6 +235,36 @@ const readManifest = (
     Effect.orElseSucceed((): unknown => undefined),
   )
 
+const unresolvedSpecifier = (specifier: string, reason: string): UnresolvedSpecifier =>
+  new UnresolvedSpecifier({ specifier, reason })
+
+const UNREADABLE_MANIFEST_REASON = 'the package manifest could not be read'
+
+const resolveManifestEntry = (
+  specifier: string,
+  manifestPath: string,
+  manifest: unknown,
+  pathService: Path.Path,
+): Effect.Effect<ResolvedSpecifier | UnresolvedSpecifier, never> =>
+  Effect.gen(function*() {
+    const selected: Result.Result<EntryFile, string> = Match.value(manifest).pipe(
+      Match.when(undefined, (): Result.Result<EntryFile, string> => Result.fail(UNREADABLE_MANIFEST_REASON)),
+      Match.orElse((document: unknown): Result.Result<EntryFile, string> =>
+        Result.mapError(
+          resolvePackageEntry(new ResolvePackageEntryCommand({ manifest: document, subpath: '.' })),
+          (refusal) => refusal.reason,
+        )
+      ),
+    )
+    if (Result.isFailure(selected)) {
+      return unresolvedSpecifier(specifier, selected.failure)
+    }
+    const entrypoint = yield* pathService.toFileUrl(
+      pathService.join(pathService.dirname(manifestPath), selected.success.path),
+    ).pipe(Effect.orDie)
+    return new ResolvedSpecifier({ specifier, entrypoint: entrypoint.href })
+  })
+
 const resolveSpecifier = (
   specifier: string,
   base: string,
@@ -249,22 +279,10 @@ const resolveSpecifier = (
     const pathService = yield* Path.Path
     const manifestPath = module.findPackageJSON(specifier, base)
     if (manifestPath === undefined) {
-      return new UnresolvedSpecifier({ specifier, reason: resolutionFailureReason(missingPackage(specifier)) })
+      return unresolvedSpecifier(specifier, resolutionFailureReason(missingPackage(specifier)))
     }
     const manifest = yield* readManifest(fileSystem, manifestPath)
-    if (manifest === undefined) {
-      return new UnresolvedSpecifier({ specifier, reason: 'the package manifest could not be read' })
-    }
-    const selected: Result.Result<EntryFile, EntryRefusal> = resolvePackageEntry(
-      new ResolvePackageEntryCommand({ manifest, subpath: '.' }),
-    )
-    if (Result.isFailure(selected)) {
-      return new UnresolvedSpecifier({ specifier, reason: selected.failure.reason })
-    }
-    const entrypoint = yield* pathService.toFileUrl(
-      pathService.join(pathService.dirname(manifestPath), selected.success.path),
-    ).pipe(Effect.orDie)
-    return new ResolvedSpecifier({ specifier, entrypoint: entrypoint.href })
+    return yield* resolveManifestEntry(specifier, manifestPath, manifest, pathService)
   })
 
 const resolveSpecifiers = (

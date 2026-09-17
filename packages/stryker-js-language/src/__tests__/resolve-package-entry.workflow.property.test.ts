@@ -1,4 +1,5 @@
 import { describe, it } from '@effect/vitest'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { FastCheck as fc } from 'effect/testing'
@@ -124,17 +125,26 @@ describe('resolvePackageEntry', () => {
   it.prop('∀subpath_Exports_≡ExactOrPattern', [subpathToken, patternStyle], ([token, style]) => {
     const subpath = `./${token}`
     const exact = `./exact/${token}.js`
-    const exports = style === 'pattern' ? { './*': './dist/*.js' } : { './*': './dist/*.js', [subpath]: exact }
-    return resolvesTo({ exports }, subpath, style === 'pattern' ? `./dist/${token}.js` : exact)
+    const isPattern = style === 'pattern'
+    const exports = Match.value(isPattern).pipe(
+      Match.when(true, () => ({ './*': './dist/*.js' })),
+      Match.orElse(() => ({ './*': './dist/*.js', [subpath]: exact })),
+    )
+    return Match.value(isPattern).pipe(
+      Match.when(true, () => resolvesTo({ exports }, subpath, `./dist/${token}.js`)),
+      Match.orElse(() => resolvesTo({ exports }, subpath, exact)),
+    )
   })
 
   it.prop(
     '∀subpath_EmptyManifest_≡ManifestOnly',
     [S.toArbitrary(S.String)(fc)],
     ([subpath]) =>
-      subpath === './package.json'
-        ? resolvesTo({}, subpath, './package.json')
-        : refuses({}, subpath, subpath === '.' ? 'no-main-no-exports' : 'unmatched-subpath'),
+      Match.value(subpath).pipe(
+        Match.when('./package.json', () => resolvesTo({}, subpath, './package.json')),
+        Match.when('.', () => refuses({}, subpath, 'no-main-no-exports')),
+        Match.orElse(() => refuses({}, subpath, 'unmatched-subpath')),
+      ),
   )
 
   it.prop(
@@ -167,9 +177,10 @@ describe('resolvePackageEntry', () => {
 
   it.prop('∀depth_Conditions_≡Budget', [fc.integer({ min: 1, max: 40 })], ([depth]) => {
     const result = resolve({ exports: { '.': nestedConditions(depth) } }, '.')
-    return depth <= MAX_CONDITION_DEPTH
-      ? Result.isSuccess(result) && result.success.path === './index.js'
-      : Result.isFailure(result) && result.failure.reason === 'unsupported-exports-shape'
+    return Match.value(depth <= MAX_CONDITION_DEPTH).pipe(
+      Match.when(true, () => Result.isSuccess(result) && result.success.path === './index.js'),
+      Match.orElse(() => Result.isFailure(result) && result.failure.reason === 'unsupported-exports-shape'),
+    )
   })
 
   it.prop(

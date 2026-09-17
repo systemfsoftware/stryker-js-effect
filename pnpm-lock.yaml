@@ -852,6 +852,9 @@ importers:
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.1.0
+      '@systemfsoftware/effect-gherkin-spec':
+        specifier: 'catalog:'
+        version: 4.0.2(@effect/vitest@4.0.0-rc.112(effect@4.0.0-rc.112)(vitest@4.1.11))(effect@4.0.0-rc.112)(vitest@4.1.11)
       '@systemfsoftware/effect-schema-vite':
         specifier: 'catalog:'
         version: 2.1.1(@systemfsoftware/effect-schema-law@2.1.1(@effect/vitest@4.0.0-rc.112(effect@4.0.0-rc.112)(vitest@4.1.11))(effect@4.0.0-rc.112)(vitest@4.1.11))(effect@4.0.0-rc.112)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.11)
