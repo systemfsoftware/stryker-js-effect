@@ -243,10 +243,17 @@ const failPluginLoad = (descriptor: string, error: unknown): Effect.Effect<never
     Effect.andThen(() => Effect.fail(new PluginLoadFailedError({ descriptor, cause: error }))),
   )
 
-const modulePluginContributions = (module: unknown): readonly PluginDescriptor[] | undefined =>
-  S.decodeUnknownOption(PluginModuleSchema)(module).pipe(
-    Option.map((pluginModule) => pluginModule.strykerPlugins),
-    Option.getOrUndefined,
+const modulePluginContributions = (
+  module: unknown,
+): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
+  Match.value(Predicate.hasProperty(module, 'strykerPlugins')).pipe(
+    Match.when(true, () =>
+      S.decodeUnknownResult(PluginModuleSchema)(module).pipe(
+        Result.map((pluginModule) => pluginModule.strykerPlugins),
+      )),
+    Match.orElse((): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
+      Result.succeed(undefined)
+    ),
   )
 
 const moduleIgnorers = (
@@ -274,13 +281,12 @@ const moduleSchemaContribution = (module: unknown): Record<string, unknown> | un
 const pluginContributionsOf = (
   module: unknown,
 ): Result.Result<PluginContributions, S.SchemaError> =>
-  moduleIgnorers(module).pipe(
-    Result.map((ignorers) => ({
-      plugins: modulePluginContributions(module),
+  Result.flatMap(moduleIgnorers(module), (ignorers) =>
+    Result.map(modulePluginContributions(module), (plugins) => ({
+      plugins,
       ignorers,
       schemaContribution: moduleSchemaContribution(module),
-    })),
-  )
+    })))
 
 const hasContribution = (contributions: PluginContributions): boolean =>
   [contributions.plugins, contributions.ignorers, contributions.schemaContribution].some(

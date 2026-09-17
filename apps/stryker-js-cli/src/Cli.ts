@@ -71,6 +71,8 @@ import type { StrykerRun } from './StrykerRun.js'
 import { runSurvivorsAdmission, survivorMutateSpans } from './Survivors.js'
 
 export { type StrykerRun }
+
+const EXPORTABLE_SPAN_ERROR_LIMIT = 1024
 export {
   buildErrorEnvelope,
   collectExitClasses,
@@ -767,7 +769,13 @@ export const runStrykerCli = (
     const errorTextOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>): string =>
       Result.match(result, {
         onSuccess: () => '',
-        onFailure: (failure) => errorText(failure, readCapturedConsole()),
+        onFailure: (failure) => {
+          const text = errorText(failure, readCapturedConsole())
+          return Match.value(text.length > EXPORTABLE_SPAN_ERROR_LIMIT).pipe(
+            Match.when(true, () => `${text.slice(0, EXPORTABLE_SPAN_ERROR_LIMIT)}…[truncated]`),
+            Match.orElse(() => text),
+          )
+        },
       })
 
     return yield* Effect.uninterruptibleMask((restore) =>

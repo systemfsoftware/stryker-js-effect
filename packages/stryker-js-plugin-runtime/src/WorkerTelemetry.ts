@@ -2,7 +2,6 @@ import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 
 const WORKER_SERVICE_NAME = 'stryker-js-plugin-worker'
-const HOST_SERVICE_NAME = 'stryker-js-cli'
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:4318'
 const TRACES_SUFFIX = '/v1/traces'
 
@@ -41,5 +40,3 @@ const startTelemetry = async (defaultServiceName: string): Promise<void> => {
 }
 
 export const startWorkerTelemetry = (): Promise<void> => startTelemetry(WORKER_SERVICE_NAME)
-
-export const startHostTelemetry = (): Promise<void> => startTelemetry(HOST_SERVICE_NAME)

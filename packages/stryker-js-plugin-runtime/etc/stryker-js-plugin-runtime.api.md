@@ -190,9 +190,6 @@ export const readWorkerOptionsFromEnv: Effect.Effect<{
 }, Config.ConfigError | PlatformError | S.SchemaError, FileSystem.FileSystem | Path.Path>;
 
 // @public (undocumented)
-export const startHostTelemetry: () => Promise<void>;
-
-// @public (undocumented)
 export const startWorkerTelemetry: () => Promise<void>;
 
 // @public (undocumented)

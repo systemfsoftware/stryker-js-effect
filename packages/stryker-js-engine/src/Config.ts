@@ -679,6 +679,17 @@ const errorCodeOf = (cause: unknown): string | undefined => {
   return undefined
 }
 
+const errorMessageOf = (cause: unknown): string | undefined => {
+  const message: unknown = Match.value(cause).pipe(
+    Match.when(Match.instanceOf(Error), (error): unknown => Reflect.get(error, 'message')),
+    Match.orElse(() => undefined),
+  )
+  if (typeof message === 'string') return message
+  return undefined
+}
+
+const importFailureDetail = (failure: StrykerError): string => errorMessageOf(failure.cause) ?? failure.message
+
 const configImportCause = (configFile: string, failure: StrykerError): unknown =>
   Match.value(errorCodeOf(failure.cause)).pipe(
     Match.when(
@@ -694,6 +705,20 @@ const configImportCause = (configFile: string, failure: StrykerError): unknown =
     Match.when('ERR_UNKNOWN_FILE_EXTENSION', () =>
       new Error(
         `The config file "${configFile}" has an extension Node cannot load. Stryker reads config modules with ${SUPPORTED_CONFIG_FILE_EXTENSION_GUIDE}.`,
+        { cause: failure.cause },
+      )),
+    Match.when('ERR_MODULE_NOT_FOUND', () =>
+      new Error(
+        `The config file "${configFile}" imports a module Node cannot find. The specifier is most likely not installed — install it as a dependency of the project, or remove the import. Node reported: ${
+          importFailureDetail(failure)
+        }`,
+        { cause: failure.cause },
+      )),
+    Match.when('ERR_PACKAGE_PATH_NOT_EXPORTED', () =>
+      new Error(
+        `The config file "${configFile}" imports a path a package does not export. The package is installed but its "exports" map leaves this specifier out — import a path the package publishes. Node reported: ${
+          importFailureDetail(failure)
+        }`,
         { cause: failure.cause },
       )),
     Match.orElse(() => failure),
@@ -763,6 +788,25 @@ const readExtendsChild = (
     )
   })
 
+const canonicalConfigFile = (
+  file: string,
+  pathService: Path.Path,
+): Effect.Effect<string, ConfigFileUnreadableError> =>
+  Match.value(file.startsWith('file:')).pipe(
+    Match.when(true, () =>
+      Effect.try({
+        try: (): URL => new URL(file),
+        catch: (cause) => new ConfigFileUnreadableError({ file, cause }),
+      }).pipe(
+        Effect.flatMap((url) =>
+          pathService.fromFileUrl(url).pipe(
+            Effect.mapError((cause) => new ConfigFileUnreadableError({ file, cause })),
+          )
+        ),
+      )),
+    Match.orElse(() => Effect.succeed(pathService.resolve(file))),
+  )
+
 function resolveExtendsSpecifier(
   specifier: string,
 ): Effect.Effect<string, ConfigFileUnreadableError> {
@@ -782,7 +826,6 @@ export function resolveExtends(
 > {
   return Effect.gen(function*() {
     const pathService = yield* Path.Path
-    const absolute = pathService.resolve(configFile)
     const loop = (
       state: ExtendsStepState,
       file: string,
@@ -792,28 +835,31 @@ export function resolveExtends(
       ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
       Path.Path
     > =>
-      Match.value(decideExtendsStep(state, currentDocument, file, pathService)).pipe(
-        Match.tag('done', (d) => Effect.succeed(d.options)),
-        Match.tag('read', (d) =>
-          readExtendsChild(d.path).pipe(Effect.flatMap((nextDocument) => loop(d.state, d.path, nextDocument)))),
-        Match.tag('resolve', (d) =>
-          resolveExtendsSpecifier(d.specifier).pipe(
-            Effect.flatMap((resolvedUrl) =>
-              readExtendsChild(resolvedUrl).pipe(Effect.flatMap((nextDocument) =>
-                loop(d.state, resolvedUrl, nextDocument)
-              ))
-            ),
-          )),
-        Match.tag('refused', (d) => {
-          let message = `Invalid config file "${d.file}". "extends" must be a string`
-          if (d.reason === 'cycle') {
-            message = `Config inheritance cycle detected at "${d.file}"`
-          }
-          return Effect.fail(new ConfigFileInvalidError({ file: d.file, cause: message }))
-        }),
-        Match.exhaustive,
-      )
-    return yield* loop(initialExtendsStepState, absolute, document)
+      Effect.gen(function*() {
+        const canonicalFile = yield* canonicalConfigFile(file, pathService)
+        return yield* Match.value(decideExtendsStep(state, currentDocument, canonicalFile, pathService)).pipe(
+          Match.tag('done', (d) => Effect.succeed(d.options)),
+          Match.tag('read', (d) =>
+            readExtendsChild(d.path).pipe(Effect.flatMap((nextDocument) => loop(d.state, d.path, nextDocument)))),
+          Match.tag('resolve', (d) =>
+            resolveExtendsSpecifier(d.specifier).pipe(
+              Effect.flatMap((resolvedUrl) =>
+                readExtendsChild(resolvedUrl).pipe(Effect.flatMap((nextDocument) =>
+                  loop(d.state, resolvedUrl, nextDocument)
+                ))
+              ),
+            )),
+          Match.tag('refused', (d) => {
+            let message = `Invalid config file "${d.file}". "extends" must be a string`
+            if (d.reason === 'cycle') {
+              message = `Config inheritance cycle detected at "${d.file}"`
+            }
+            return Effect.fail(new ConfigFileInvalidError({ file: d.file, cause: message }))
+          }),
+          Match.exhaustive,
+        )
+      })
+    return yield* loop(initialExtendsStepState, configFile, document)
   })
 }
 

@@ -22,6 +22,13 @@ const IN_SOURCE_VITEST_BLOCK_IGNORER_NAME = 'in-source-vitest-block'
 
 const PLUGIN_RUNNER_FIXTURE_URL = new URL('./__fixtures__/plugin-runner/index.mjs', import.meta.url).href
 
+const MALFORMED_PLUGIN_NAME = 'unshipped-runner'
+const MALFORMED_PLUGINS_MODULE = `data:text/javascript,${
+  encodeURIComponent(
+    `export const strykerPlugins = [{ kind: 'TestRunner', name: '${MALFORMED_PLUGIN_NAME}' }]`,
+  )
+}`
+
 const RUNNER_PLUGIN = {
   kind: 'TestRunner',
   name: 'vitest',
@@ -66,6 +73,19 @@ const failureOrThrow = (outcome: LoadOutcome): Record<string, unknown> => {
 }
 
 const reasonOf = (failure: Record<string, unknown>): string => String(failure['reason'])
+
+const failureCauseTextOf = (outcome: LoadOutcome): string => {
+  if (Result.isSuccess(outcome.result)) {
+    throw new Error('the plugin load was expected to fail')
+  }
+  const failure: unknown = outcome.result.failure
+  if (typeof failure !== 'object' || failure === null) {
+    throw new Error(`the plugin load failed with a non-object: ${String(failure)}`)
+  }
+  const thrown: unknown = Reflect.get(failure, 'cause')
+  if (thrown instanceof Error) return thrown.message
+  throw new Error('the plugin load failed with a cause that is not an error')
+}
 
 const lineContaining = (outcome: LoadOutcome, fragment: string): string | undefined =>
   outcome.warnings.find((line) => line.includes(fragment))
@@ -181,6 +201,36 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
           expect(s.seen.contributed).toStrictEqual([])
           expect(s.seen.modulePaths).toStrictEqual([])
         })
+      ),
+    ),
+  )
+
+  scenario(
+    'A plugin module that resolves but is malformed stops the run instead of being ignored',
+    Gherkin.Do.pipe(
+      Given('a project declaring a package whose plugin list is malformed')(
+        'outcome',
+        () => loadOutcome([MALFORMED_PLUGINS_MODULE]),
+      ),
+      When('the declared package is resolved and loaded')(
+        'seen',
+        (s) =>
+          Effect.sync(() => ({
+            failure: failureOrThrow(s.outcome),
+            cause: failureCauseTextOf(s.outcome),
+            warnings: s.outcome.warnings,
+          })),
+      ),
+      Then('the run stops, naming the malformed plugin list, instead of reading the package as contributing nothing')(
+        (s) =>
+          Effect.sync(() => {
+            expect(s.seen.failure['_tag']).toBe('PluginLoadFailedError')
+            expect(String(s.seen.failure['descriptor'])).toBe(MALFORMED_PLUGINS_MODULE)
+            expect(s.seen.cause).toContain('strykerPlugins')
+            expect(s.seen.cause).toContain('workerEntry')
+            expect(s.seen.warnings.filter((line) => line.includes('did not contribute a StrykerJS plugin')))
+              .toStrictEqual([])
+          }),
       ),
     ),
   )

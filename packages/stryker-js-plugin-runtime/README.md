@@ -10,10 +10,7 @@ This package owns:
 
 - the worker RPC server layer a plugin process launches — `workerServerLayer` and
   its `WorkerServerParams`;
-- the Node module port the worker resolves the project's tooling through —
-  `nodeModuleLayer`;
-- the worker's own OTel bootstrap — `startWorkerTelemetry`, and the host's
-  `startHostTelemetry`;
+- the worker's own OTel bootstrap — `startWorkerTelemetry`;
 - the worker-options wire codec — `encodeWorkerOptions`, `decodeWorkerOptions`,
   `readWorkerOptionsFromEnv`;
 - the trace-context middleware implementations that carry W3C
