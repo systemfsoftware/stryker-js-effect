@@ -5,32 +5,22 @@
 ```ts
 
 import * as Effect from 'effect/Effect';
-import { FileDescription } from '@systemfsoftware/stryker-js-language';
-import { IgnorerService } from '@systemfsoftware/stryker-js-language';
 import { Mutant } from '@systemfsoftware/stryker-js-language';
 import * as S from 'effect/Schema';
 import { YieldableError } from 'effect/Cause';
 
+// Warning: (ae-forgotten-export) The symbol "InstrumentError" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
-export const angularIgnorer: IgnorerService;
+export const disableTypeChecks: (file: File_2) => Effect.Effect<File_2, InstrumentError>;
 
+// Warning: (ae-forgotten-export) The symbol "FileSchema" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
-export function disableTypeChecks(file: File_2): Promise<File_2>;
-
-// @public (undocumented)
-interface File_2 extends FileDescription {
-    // (undocumented)
-    content: string;
-    // (undocumented)
-    name: string;
-}
+type File_2 = typeof FileSchema.Type;
 export { File_2 as File }
 
-// @public (undocumented)
-export const frameworkPluginsFileUrl: string;
-
 // Warning: (ae-forgotten-export) The symbol "InstrumentResult$1" needs to be exported by the entry point index.d.mts
-// Warning: (ae-forgotten-export) The symbol "InstrumentError" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
 export const instrument: (files: readonly File_2[], options: InstrumenterOptions) => Effect.Effect<InstrumentResult$1, InstrumentError>;
@@ -50,9 +40,6 @@ export interface InstrumentResult {
 
 // @public (undocumented)
 export interface ParserOptions {}
-
-// @public (undocumented)
-export const strykerPlugins: readonly unknown[];
 
 // (No @packageDocumentation comment for this package)
 
