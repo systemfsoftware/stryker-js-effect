@@ -52,13 +52,9 @@ const hashbangOf = (root: Ast['root']): Hashbang | null => {
   return hashbang
 }
 
-const jsPrint: Printer<JSAst> = (file) => {
-  return printProgram(file.root, { hashbang: hashbangOf(file.root) })
-}
+const jsPrint: Printer<JSAst> = (file) => printProgram(file.root, { hashbang: hashbangOf(file.root) })
 
-const tsPrint: Printer<TSAst | TsxAst> = (file) => {
-  return printProgram(file.root, { hashbang: hashbangOf(file.root) })
-}
+const tsPrint: Printer<TSAst | TsxAst> = (file) => printProgram(file.root, { hashbang: hashbangOf(file.root) })
 
 function getScriptStart(script: HtmlAst['root']['scripts'][number]): number {
   const span = spanOf(script.root)

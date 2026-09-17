@@ -154,7 +154,7 @@ export const classifyRunOutcome = Workflow.make(
     Match.value(classify(command)).pipe(
       Match.tag('RunInterrupted', (error) => Result.fail(error)),
       Match.when(
-        (outcome): outcome is RunOutcomeDecision => !(outcome instanceof RunInterrupted),
+        (outcome): outcome is RunOutcomeDecision => !S.is(RunInterrupted)(outcome),
         (decision) => Result.succeed(decision),
       ),
       Match.exhaustive,

@@ -2,6 +2,7 @@ import { Cell } from '@systemfsoftware/effect-cell-types'
 import { calculateMetrics } from '@systemfsoftware/stryker-js-engine'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
+import type { ReporterEvent } from '@systemfsoftware/stryker-js-language'
 import { MutationTestResultSchema } from '@systemfsoftware/stryker-js-language'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
 import * as Config from 'effect/Config'
@@ -13,6 +14,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import * as Stream from 'effect/Stream'
 import type { MergeReportsRequest } from './Cli.schema.js'
 import {
   DuplicatePackageLabel,
@@ -42,8 +44,11 @@ const STEP_SUMMARY = 'GITHUB_STEP_SUMMARY'
 
 const refuse = (reason: string) => MergeReportsFailed.make({ reason })
 
-const failReason = (reason: string) =>
-  Console.error(`stryker merge-reports: ${reason}`).pipe(Effect.andThen(Effect.fail(refuse(reason))))
+const failReason = (reason: string): Effect.Effect<never, MergeReportsFailed> =>
+  Effect.gen(function*() {
+    yield* Console.error(`stryker merge-reports: ${reason}`)
+    return yield* MergeReportsFailed.make({ reason })
+  })
 
 const readText = (file: string) =>
   FileSystem.FileSystem.pipe(
@@ -141,7 +146,7 @@ const mutantFromStream = (line: StreamMutantLine) => {
 }
 
 const streamLines = (text: string) => {
-  const decodeLine = S.decodeUnknownOption(S.fromJsonString(StreamMutantLineSchema))
+  const decodeLine = S.decodeOption(S.fromJsonString(StreamMutantLineSchema))
   return text.split('\n').flatMap((raw) => Option.toArray(decodeLine(raw.trim())))
 }
 
@@ -172,14 +177,14 @@ const decodedPart = (bytes: {
   readonly streamText: string | undefined
 }) =>
   Option.match(
-    Option.flatMap(Option.fromNullishOr(bytes.metaText), S.decodeUnknownOption(S.fromJsonString(PartMetaSchema))),
+    Option.flatMap(Option.fromNullishOr(bytes.metaText), S.decodeOption(S.fromJsonString(PartMetaSchema))),
     {
       onNone: () => ({ part: Option.none(), unreadable: false }),
       onSome: (meta) => {
         const base = { label: meta.package, outcome: meta.outcome, incomplete: false }
         return Option.match(Option.fromNullishOr(bytes.reportText), {
           onSome: (text) =>
-            Option.match(S.decodeUnknownOption(S.fromJsonString(MutationTestResultSchema))(text), {
+            Option.match(S.decodeOption(S.fromJsonString(MutationTestResultSchema))(text), {
               onNone: () => ({ part: Option.some(base), unreadable: true }),
               onSome: (report) => ({ part: Option.some({ ...base, report }), unreadable: false }),
             }),
@@ -197,7 +202,7 @@ const expectedPackages = (raw: string | undefined) =>
   Option.match(Option.filter(Option.fromNullishOr(raw), (text) => text.length > 0), {
     onNone: () => Result.succeed(undefined),
     onSome: (text) =>
-      Option.match(S.decodeUnknownOption(S.fromJsonString(S.Array(S.String)))(text), {
+      Option.match(S.decodeOption(S.fromJsonString(S.Array(S.String)))(text), {
         onNone: () => Result.fail(refuse(`--packages is not a JSON array: ${text}`)),
         onSome: (packages) => Result.succeed(packages),
       }),
@@ -355,20 +360,19 @@ const putFile = (file: string, content: string, append: boolean) =>
     Effect.catchCause(() => failReason(`cannot write ${file}`)),
   )
 
-const htmlEvents = (report: typeof MutationTestResultSchema.Type) => ({
-  async *[Symbol.asyncIterator]() {
-    yield new MutationTestReportReady({ report, metrics: calculateMetrics(report.files) })
-  },
-})
+const toStream = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> =>
+  Stream.toAsyncIterable(Stream.fromIterable([...events]))
 
 const writeHtml = (fileName: string, report: typeof MutationTestResultSchema.Type) =>
-  Option.match(S.decodeUnknownOption(StrykerOptionsSchema)({ htmlReporter: { fileName } }), {
+  Option.match(S.decodeOption(StrykerOptionsSchema)({ htmlReporter: { fileName } }), {
     onNone: () => failReason(`cannot configure the html report at ${fileName}`),
     onSome: (options) =>
-      Effect.tryPromise({
-        try: () => makeHtmlReporter(options, {})(htmlEvents(report)),
-        catch: () => refuse(`cannot configure the html report at ${fileName}`),
-      }).pipe(Effect.catch((error) => failReason(error.reason))),
+      Effect.gen(function*() {
+        const metrics = calculateMetrics(report.files)
+        yield* makeHtmlReporter(options, {})(
+          toStream([MutationTestReportReady.make({ report, metrics })]),
+        ).pipe(Effect.catchCause(() => failReason(`cannot write the html report at ${fileName}`)))
+      }),
   })
 
 type EncodedMerge = {

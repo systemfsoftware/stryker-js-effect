@@ -35,7 +35,7 @@ export const isUnknownArgument = (argument: string | undefined): argument is str
 
 export function unwrap<A>(value: Option.Option<A> | A | undefined): A | undefined {
   if (Option.isOption(value)) {
-    return Option.match(value, { onNone: () => undefined, onSome: (v) => v })
+    return Option.getOrUndefined(value)
   }
   return value
 }

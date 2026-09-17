@@ -13,5 +13,5 @@ export interface RunEnvironmentShape {
 }
 
 export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironmentShape>()(
-  '@systemfsoftware/stryker-js-engine/RunEnvironment',
+  '@systemfsoftware/stryker-js-engine/run/RunEnvironment',
 ) {}

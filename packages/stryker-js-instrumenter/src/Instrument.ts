@@ -1,14 +1,14 @@
-import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-language'
+import { type FileDescription, Mutant as ApiMutant } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as Predicate from 'effect/Predicate'
 
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import type { MutateDescription } from './Instrument.schema.js'
 import {
   FileSchema,
   type InstrumenterOptions,
   InstrumentError,
   InstrumentResult as InstrumentResultSchema,
-  type MutateDescription,
 } from './Instrument.schema.js'
 import { createParser, getFormat } from './Parser.js'
 import { print } from './Printer.js'
@@ -16,8 +16,10 @@ import { type Ast, AstFormat, type HtmlAst, type ScriptAst, type SvelteAst } fro
 import { createMutantCollector, transform } from './Transformer.js'
 import type { TransformerOptions } from './Transformer.js'
 
-export type File = typeof FileSchema.Type
-
+export interface File extends FileDescription {
+  name: string
+  content: string
+}
 export interface InstrumentResult {
   files: readonly File[]
   mutants: readonly ApiMutant[]
@@ -44,10 +46,12 @@ const disableTypeChecksFor = (file: File, format: AstFormat): Effect.Effect<File
     return Effect.succeed({ ...file, content: prefixWithNoCheck(file.content) })
   }
   const parse = createParser()
-  return Effect.tryPromise({
-    try: () => parse(file.content, file.name),
-    catch: (cause) => new InstrumentError({ message: `Failed to parse ${file.name}`, cause }),
-  }).pipe(Effect.map((ast) => withDisabledTypeChecking(file, ast)))
+  return Effect.map(
+    parse(file.content, file.name).pipe(
+      Effect.mapError((cause) => InstrumentError.make({ message: `Failed to parse ${file.name}`, cause })),
+    ),
+    (ast) => withDisabledTypeChecking(file, ast),
+  )
 }
 
 function withDisabledTypeChecking(file: File, ast: Ast): File {
@@ -205,6 +209,12 @@ function toTransformerOptions(options: InstrumenterOptions): TransformerOptions 
   return base
 }
 
+const AST_SHAPE = ['format', 'root'] as const
+
+function isAst(value: unknown): value is Ast {
+  return Predicate.isObject(value) && AST_SHAPE.every((key) => key in value)
+}
+
 type FileSchemaType = typeof FileSchema.Type
 
 interface ParsedFile {
@@ -212,7 +222,8 @@ interface ParsedFile {
   readonly ast: Ast
 }
 
-function printedFile(file: FileSchemaType, ast: Ast): readonly FileSchemaType[] {
+function printedFile(file: FileSchemaType, ast: unknown): readonly FileSchemaType[] {
+  if (!isAst(ast)) return []
   return [{ name: file.name, mutate: file.mutate, content: print(ast) }]
 }
 
@@ -229,29 +240,26 @@ export const instrument = (
     const parse = createParser()
     const parsed = yield* Effect.forEach(schemaFiles, (file) =>
       Effect.map(
-        Effect.tryPromise({
-          try: () => parse(file.content, file.name),
-          catch: (cause) => new InstrumentError({ message: `Failed to parse ${file.name}`, cause }),
-        }),
+        parse(file.content, file.name).pipe(
+          Effect.mapError((cause) => InstrumentError.make({ message: `Failed to parse ${file.name}`, cause })),
+        ),
         (ast): ParsedFile => ({ file, ast }),
       ))
     const collector = createMutantCollector()
     yield* Effect.forEach(parsed, ({ file, ast }) =>
-      Effect.tryPromise({
-        try: () =>
-          transform(ast, collector, {
-            options: toTransformerOptions(options),
-            mutateDescription: toOneBasedLineNumber(file.mutate),
-          }),
-        catch: (cause) => new InstrumentError({ message: `Failed to transform ${file.name}`, cause }),
-      }))
+      transform(ast, collector, {
+        options: toTransformerOptions(options),
+        mutateDescription: toOneBasedLineNumber(file.mutate),
+      }).pipe(
+        Effect.mapError((cause) => InstrumentError.make({ message: `Failed to transform ${file.name}`, cause })),
+      ))
     const mutants: readonly ApiMutant[] = yield* Effect.try({
       try: () => collector.map(toApiMutant),
-      catch: (cause) => new InstrumentError({ message: 'Failed to instrument', cause }),
+      catch: (cause) => InstrumentError.make({ message: 'Failed to instrument', cause }),
     })
     const printed = yield* Effect.try({
       try: () => parsed.flatMap(({ file, ast }) => printedFile(file, ast)),
-      catch: (cause) => new InstrumentError({ message: 'Failed to print', cause }),
+      catch: (cause) => InstrumentError.make({ message: 'Failed to print', cause }),
     })
     return InstrumentResultSchema.make({ files: printed, mutants })
   })

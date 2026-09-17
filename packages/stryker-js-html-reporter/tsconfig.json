@@ -1,5 +1,5 @@
 {
-  "extends": "@systemfsoftware/tsconfig/tsc/no-dom/library",
+  "extends": ["@systemfsoftware/tsconfig/tsc/no-dom/library", "@systemfsoftware/tsconfig/effect"],
   "compilerOptions": {
     "customConditions": ["@systemfsoftware/source"],
     "outDir": "dist",
@@ -8,11 +8,6 @@
     "types": [
       "node",
       "vitest/globals"
-    ],
-    "plugins": [
-      {
-        "name": "@effect/language-service"
-      }
     ]
   },
   "include": [

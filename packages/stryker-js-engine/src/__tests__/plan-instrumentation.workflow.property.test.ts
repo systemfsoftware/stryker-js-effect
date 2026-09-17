@@ -18,8 +18,8 @@ describe('planInstrumentation', () => {
     '∀d_Brand_∈Decision',
     [
       fc.constantFrom(
-        new InPlaceInstrument({ workingDirectoryHint: 'inPlace', backupDirectoryHint: 'backup', fileCount: 1 }),
-        new EphemeralInstrument({ workingDirectoryHint: 'temp', fileCount: 1 }),
+        InPlaceInstrument.make({ workingDirectoryHint: 'inPlace', backupDirectoryHint: 'backup', fileCount: 1 }),
+        EphemeralInstrument.make({ workingDirectoryHint: 'temp', fileCount: 1 }),
       ),
     ],
     ([decision]) => Object.getOwnPropertySymbols(decision).includes(InstrumentDecisionTypeId),

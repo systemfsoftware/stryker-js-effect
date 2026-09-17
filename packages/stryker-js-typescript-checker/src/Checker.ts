@@ -52,7 +52,7 @@ function getPrioritize(options: unknown): boolean {
 type RunAnswers = CheckFinished['results']
 
 const refuse = (mutantIds: ReadonlyArray<string>, cause: unknown): CheckerFailed =>
-  new CheckerFailed({ checkerName: 'typescript', mutantIds: [...mutantIds], cause: errorToString(cause) })
+  CheckerFailed.make({ checkerName: 'typescript', mutantIds: [...mutantIds], cause: errorToString(cause) })
 
 const severityOf = (category: DiagnosticCategory): string =>
   Match.value(category).pipe(
@@ -83,7 +83,7 @@ const checkCell = Cell.layer({
         compiler.nodes,
         compiler.check([...command.mutants]),
         (nodes, diagnostics): CheckMutantsInput =>
-          new CheckMutantsInput({
+          CheckMutantsInput.make({
             mutants: [...command.mutants],
             diagnostics: [...diagnostics],
             nodes: Object.fromEntries(nodes),
@@ -124,7 +124,7 @@ export const makeCheckerService = ({ options, compiler }: CheckerDeps): Checker[
     Effect.map(Effect.forEach(errors, formatDiagnostic), (parts) => parts.join('\n'))
 
   const soloRound = (mutant: Mutant): Effect.Effect<RunAnswers, CheckerFailed> =>
-    verify.run(new CheckMutantsCommand({ mutants: [mutant] })).pipe(
+    verify.run(CheckMutantsCommand.make({ mutants: [mutant] })).pipe(
       Effect.map((decision) => decision.results),
     )
 
@@ -132,7 +132,7 @@ export const makeCheckerService = ({ options, compiler }: CheckerDeps): Checker[
     Match.value(decision).pipe(
       Match.tag('CheckFinished', () => Effect.succeed<ReadonlyArray<RunAnswers>>([])),
       Match.tag('RetestRequired', (retest) =>
-        verify.run(new CheckMutantsCommand({ mutants: [] })).pipe(
+        verify.run(CheckMutantsCommand.make({ mutants: [] })).pipe(
           Effect.flatMap(() => Effect.forEach(retest.needsRetest, soloRound)),
         )),
       Match.exhaustive,
@@ -153,7 +153,7 @@ export const makeCheckerService = ({ options, compiler }: CheckerDeps): Checker[
     ),
 
     check: (mutants) =>
-      verify.run(new CheckMutantsCommand({ mutants: [...mutants] })).pipe(
+      verify.run(CheckMutantsCommand.make({ mutants: [...mutants] })).pipe(
         Effect.flatMap((first) => Effect.map(soloRounds(first), (rounds) => mergeAnswers([first.results, ...rounds]))),
       ),
 

@@ -275,7 +275,7 @@ const checkPlansWithConfiguredCheckers = (
     onSome: (pool) => checkPlansWithEachChecker(prev, pool, plans, reporting),
   })
 
-export const mutationTestCell = Cell.layer({
+export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageError, StageServices> = Cell.layer({
   read: (command: DryRunDone): Effect.Effect<MutationTestRaw, never, Scope.Scope> =>
     Effect.gen(function*() {
       yield* Scope.Scope
@@ -285,7 +285,7 @@ export const mutationTestCell = Cell.layer({
     }),
   decode: (raw: MutationTestRaw): Result.Result<MutationTestCommand, StageError> =>
     Result.succeed(
-      new MutationTestCommand({
+      MutationTestCommand.make({
         dryRunOnly: raw.prev.options.dryRunOnly,
         allowEmpty: raw.prev.options.allowEmpty,
         testCount: raw.prev.dryRunResult.tests.length,
@@ -304,7 +304,7 @@ export const mutationTestCell = Cell.layer({
       () =>
         Effect.gen(function*() {
           const decision = yield* Result.match(outcome, {
-            onFailure: (err) => Effect.fail(new StageError({ stage: err.stage, reason: err.reason, cause: err })),
+            onFailure: (err) => Effect.fail(StageError.make({ stage: err.stage, reason: err.reason, cause: err })),
             onSuccess: (d) => Effect.succeed(d),
           })
           return yield* Match.value(decision).pipe(
@@ -315,7 +315,7 @@ export const mutationTestCell = Cell.layer({
                 const nowEmit = yield* Clock.currentTimeMillis
                 yield* Queue.offer(
                   queue,
-                  new PhaseEntered({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
+                  PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
                 )
                 yield* Effect.logInfo('The dry-run has been completed successfully. No mutations have been executed.')
                 const emptyOutcome: MutationTestDone = { results: [], verdict: null }
@@ -331,7 +331,7 @@ export const mutationTestCell = Cell.layer({
                 const nowEmit = yield* Clock.currentTimeMillis
                 yield* Queue.offer(
                   queue,
-                  new PhaseEntered({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
+                  PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
                 )
                 const emptyOutcome: MutationTestDone = { results: [], verdict: null }
                 return emptyOutcome
@@ -345,7 +345,7 @@ export const mutationTestCell = Cell.layer({
                   const queue = yield* RunEvents
                   yield* Queue.offer(
                     queue,
-                    new PhaseEntered({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
+                    PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
                   )
                 })
                 yield* emitPhase
@@ -429,7 +429,7 @@ export const mutationTestCell = Cell.layer({
                 const allPlansForReporter: readonly MutantRunPlan[] = [...sortedPlans]
                 yield* offerReporterEvent(
                   prev.reporterStage,
-                  new MutationTestingPlanReady({
+                  MutationTestingPlanReady.make({
                     total: allPlansForReporter.length + noCoverageResults.length + rememberedResults.length,
                     plans: allPlansForReporter.map((plan) => ({
                       mutantId: plan.mutant.id,
@@ -443,7 +443,7 @@ export const mutationTestCell = Cell.layer({
                   const queue2 = yield* RunEvents
                   yield* Queue.offer(
                     queue2,
-                    new PlanKnown({ total: allPlansForReporter.length + noCoverageResults.length }),
+                    PlanKnown.make({ total: allPlansForReporter.length + noCoverageResults.length }),
                   )
                 }
                 const passedPlans = yield* checkPlansWithConfiguredCheckers(prev, checkerPool, sortedPlans, reporting)
@@ -474,7 +474,7 @@ export const mutationTestCell = Cell.layer({
                   completed: number,
                   prepared: PreparedStreamableMutant,
                 ): MutantTested =>
-                  new MutantTested({
+                  MutantTested.make({
                     id: result.id,
                     status: prepared.status,
                     file: prepared.file,
@@ -495,7 +495,7 @@ export const mutationTestCell = Cell.layer({
                     const completed = yield* Ref.updateAndGet(completedRef, (n) => n + 1)
                     yield* Queue.offer(
                       progressQueue,
-                      new RunMutantTested({
+                      RunMutantTested.make({
                         id: result.id,
                         status: prepared.status,
                         file: prepared.file,
@@ -513,13 +513,11 @@ export const mutationTestCell = Cell.layer({
                   completed: number,
                   prepared: PreparedStreamableMutant,
                 ): Effect.Effect<void> =>
-                  Effect.gen(function*() {
-                    yield* offerReporterEvent(prev.reporterStage, toStreamEvent(result, completed, prepared)).pipe(
-                      Effect.catchCause((cause) =>
-                        Effect.logWarning('Reporter stream failed handling mutantTested', cause)
-                      ),
-                    )
-                  })
+                  offerReporterEvent(prev.reporterStage, toStreamEvent(result, completed, prepared)).pipe(
+                    Effect.catchCause((cause) =>
+                      Effect.logWarning('Reporter stream failed handling mutantTested', cause)
+                    ),
+                  )
 
                 const offerStreamTested = (
                   result: RunMutantResult,
@@ -614,7 +612,7 @@ export const mutationTestCell = Cell.layer({
           Match.tag(
             'CheckerAnsweredUnrequested',
             (breach) =>
-              new StageError({
+              StageError.make({
                 stage: 'mutationTest',
                 reason:
                   `Checker "${breach.checkerName}" answered about mutants it was not asked about (${breach.phase} phase): ${
@@ -626,7 +624,7 @@ export const mutationTestCell = Cell.layer({
           Match.tag(
             'CheckerSkippedRequested',
             (breach) =>
-              new StageError({
+              StageError.make({
                 stage: 'mutationTest',
                 reason: `Checker "${breach.checkerName}" skipped requested mutants (${breach.phase} phase): ${
                   breach.missingIds.join(', ')
@@ -639,7 +637,7 @@ export const mutationTestCell = Cell.layer({
             'OutOfMemoryError',
             'PlatformError',
             'TestRunnerFailed',
-            () => new StageError({ stage: 'mutationTest', reason: 'Mutation testing failed', cause }),
+            () => StageError.make({ stage: 'mutationTest', reason: 'Mutation testing failed', cause }),
           ),
           Match.exhaustive,
         )

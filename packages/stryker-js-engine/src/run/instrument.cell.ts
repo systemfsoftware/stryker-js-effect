@@ -50,7 +50,7 @@ export const instrumentCell = Cell.layer({
         concurrency: FILE_CONCURRENCY,
       }).pipe(
         Effect.mapError((cause) =>
-          new StageError({ stage: 'instrument', reason: 'Failed to read files to mutate', cause })
+          StageError.make({ stage: 'instrument', reason: 'Failed to read files to mutate', cause })
         ),
       )
 
@@ -58,7 +58,7 @@ export const instrumentCell = Cell.layer({
         ignorers: [...command.ignorers],
         excludedMutations: [...command.options.mutator.excludedMutations],
       }).pipe(Effect.mapError((cause) =>
-        new StageError({ stage: 'instrument', reason: 'Instrumenter failed', cause })
+        StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })
       ))
 
       const instrumentedProject = withInstrumentedFiles(command.project, instrumentResult.files)
@@ -78,12 +78,12 @@ export const instrumentCell = Cell.layer({
         backupDirectory,
         basePath,
       }).pipe(Effect.mapError((cause) =>
-        new StageError({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
+        StageError.make({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
       ))
 
       const concurrency = yield* makeConcurrency(command.options).pipe(
         Effect.mapError((cause) =>
-          new StageError({ stage: 'instrument', reason: 'Failed to compute concurrency', cause })
+          StageError.make({ stage: 'instrument', reason: 'Failed to compute concurrency', cause })
         ),
       )
 
@@ -99,7 +99,7 @@ export const instrumentCell = Cell.layer({
     }),
   decode: (raw: InstrumentRaw): Result.Result<InstrumentCommand, StageError> =>
     Result.succeed(
-      new InstrumentCommand({
+      InstrumentCommand.make({
         fileCount: raw.filesToMutate.length,
         inPlace: raw.prev.options.inPlace,
         pluginCount: raw.prev.loadedPlugins.pluginModulePaths.length,
@@ -116,12 +116,12 @@ export const instrumentCell = Cell.layer({
           const env = yield* RunEnvironment
           const now = yield* Clock.currentTimeMillis
           const queue = yield* RunEvents
-          yield* Queue.offer(queue, new PhaseEntered({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
+          yield* Queue.offer(queue, PhaseEntered.make({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
 
           const out = output
           if (Result.isFailure(out)) {
             const err = out.failure
-            return yield* Effect.fail(new StageError({ stage: err.stage, reason: err.reason, cause: err }))
+            return yield* StageError.make({ stage: err.stage, reason: err.reason, cause: err })
           }
           return {
             ...raw.prev,

@@ -65,10 +65,10 @@ export function parseTsConfig(fileName: string, jsonText: string): Result.Result
     const value = parse(jsonText.replace(/^\uFEFF/, ''))
     return Result.mapError(
       S.decodeUnknownResult(TsConfigSchema)(value),
-      (error) => new TsConfigParseError({ file: fileName, reason: error.message }),
+      (error) => TsConfigParseError.make({ file: fileName, reason: error.message }),
     )
   } catch (error) {
-    return Result.fail(new TsConfigParseError({ file: fileName, reason: reasonOfThrown(error) }))
+    return Result.fail(TsConfigParseError.make({ file: fileName, reason: reasonOfThrown(error) }))
   }
 }
 

@@ -94,7 +94,7 @@ export const pairCheckResults = (
       (partition: AnswerPartition) => partition.unrequested.length > 0,
       (partition) =>
         Result.fail(
-          new CheckerAnsweredUnrequested({
+          CheckerAnsweredUnrequested.make({
             checkerName,
             phase: 'check',
             unrequestedIds: [...partition.unrequested],
@@ -123,7 +123,7 @@ export const pairGroups = (
       (partition: GroupPartition) => partition.unrequested.length > 0,
       (partition) =>
         Result.fail(
-          new CheckerAnsweredUnrequested({
+          CheckerAnsweredUnrequested.make({
             checkerName,
             phase: 'group',
             unrequestedIds: [...partition.unrequested],
@@ -196,7 +196,7 @@ const admitAnsweredPlans = (
       (missing: readonly string[]) => missing.length > 0,
       (missing) =>
         Result.fail(
-          new CheckerSkippedRequested({ checkerName, phase: 'check', missingIds: [...missing] }),
+          CheckerSkippedRequested.make({ checkerName, phase: 'check', missingIds: [...missing] }),
         ),
     ),
     Match.orElse(() => Result.succeed(paired)),
@@ -246,7 +246,7 @@ const admitGroupedPlans = (
       (missing: readonly string[]) => missing.length > 0,
       (missing) =>
         Result.fail(
-          new CheckerSkippedRequested({ checkerName, phase: 'group', missingIds: [...missing] }),
+          CheckerSkippedRequested.make({ checkerName, phase: 'group', missingIds: [...missing] }),
         ),
     ),
     Match.orElse(() => Result.succeed(partition.groups)),
@@ -270,7 +270,7 @@ export const makeCheckerChildProcess = (params: {
 > =>
   Effect.gen(function*() {
     const crashed = (cause: string): ChildProcessCrashedError =>
-      new ChildProcessCrashedError({ pid: 0, exit: { _tag: 'Code', code: 1 }, cause })
+      ChildProcessCrashedError.make({ pid: 0, exit: { _tag: 'Code', code: 1 }, cause })
 
     const optionsJson = yield* encodeWorkerOptions(params.options)
     const client = yield* makeWorkerClient({
@@ -361,7 +361,7 @@ const writeCheckerDecision = (
     Match.tag('CheckResultDecision', (d: CheckResultDecision) => writeDecidedAnswers(plans, checkerName, d.pairs)),
     Match.tag(
       'CheckGroupDecision',
-      () => Effect.fail(new CheckerSkippedRequested({ checkerName, phase: 'check', missingIds: [] })),
+      () => Effect.fail(CheckerSkippedRequested.make({ checkerName, phase: 'check', missingIds: [] })),
     ),
     Match.exhaustive,
   )
@@ -384,7 +384,7 @@ const writeGroupDecision = (
   Match.value(decision).pipe(
     Match.tag('CheckGroupDecision', (d: CheckGroupDecision) => writeDecidedGroups(plans, checkerName, d.groups)),
     Match.tag('CheckResultDecision', () =>
-      Effect.fail(new CheckerSkippedRequested({ checkerName, phase: 'group', missingIds: [] }))),
+      Effect.fail(CheckerSkippedRequested.make({ checkerName, phase: 'group', missingIds: [] }))),
     Match.exhaustive,
   )
 
@@ -441,7 +441,7 @@ export const checkPlans = (
       },
     ): Result.Result<CheckerCommand, CheckerContractBroken> =>
       Result.succeed(
-        new CheckerCommand({
+        CheckerCommand.make({
           checkerName: raw.checkerName,
           requestedIds: [...raw.requestedIds],
           phase: 'check',
@@ -492,7 +492,7 @@ export const groupPlans = (
       },
     ): Result.Result<CheckerCommand, CheckerContractBroken> =>
       Result.succeed(
-        new CheckerCommand({
+        CheckerCommand.make({
           checkerName: raw.checkerName,
           requestedIds: [...raw.requestedIds],
           phase: 'group',

@@ -3,6 +3,7 @@ import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -452,7 +453,7 @@ export function importModule(
 ): Effect.Effect<unknown, StrykerError> {
   return Effect.tryPromise({
     try: (): Promise<unknown> => import(moduleName),
-    catch: (cause) => new StrykerError({ message: `Failed to import module "${moduleName}"`, cause }),
+    catch: (cause) => StrykerError.make({ message: `Failed to import module "${moduleName}"`, cause }),
   })
 }
 
@@ -647,7 +648,7 @@ const decodeConfigDocument = (
   document: unknown,
 ): Effect.Effect<PartialStrykerOptions, ConfigFileInvalidError> =>
   S.decodeUnknownEffect(ConfigDocumentSchema)(document).pipe(
-    Effect.mapError((cause) => new ConfigFileInvalidError({ file: configFile, cause })),
+    Effect.mapError((cause) => ConfigFileInvalidError.make({ file: configFile, cause })),
   )
 
 const requireDefaultExport = (
@@ -657,12 +658,12 @@ const requireDefaultExport = (
   Match.value(defaultExport).pipe(
     Match.when(undefined, () =>
       Effect.fail(
-        new ConfigFileInvalidError({ file: configFile, cause: 'Config file must have a default export!' }),
+        ConfigFileInvalidError.make({ file: configFile, cause: 'Config file must have a default export!' }),
       )),
     Match.when(isNonNullObject, (value) => Effect.succeed(value)),
     Match.orElse(() =>
       Effect.fail(
-        new ConfigFileInvalidError({ file: configFile, cause: 'Default export of config file must be an object!' }),
+        ConfigFileInvalidError.make({ file: configFile, cause: 'Default export of config file must be an object!' }),
       )
     ),
   )
@@ -732,11 +733,11 @@ const configModuleUrl = (
     Match.when(true, () =>
       Effect.try({
         try: (): URL => new URL(configFile),
-        catch: (cause) => new ConfigFileUnreadableError({ file: configFile, cause }),
+        catch: (cause) => ConfigFileUnreadableError.make({ file: configFile, cause }),
       })),
     Match.orElse(() =>
       pathService.toFileUrl(pathService.resolve(configFile)).pipe(
-        Effect.mapError((cause) => new ConfigFileUnreadableError({ file: configFile, cause })),
+        Effect.mapError((cause) => ConfigFileUnreadableError.make({ file: configFile, cause })),
       )
     ),
   )
@@ -753,11 +754,12 @@ const readConfigModule = (
     const url = yield* configModuleUrl(configFile, pathService)
     const importedModule = yield* importModule(url.href).pipe(
       Effect.mapError(
-        (failure) => new ConfigFileUnreadableError({ file: configFile, cause: configImportCause(configFile, failure) }),
+        (failure) =>
+          ConfigFileUnreadableError.make({ file: configFile, cause: configImportCause(configFile, failure) }),
       ),
     )
     const exported = yield* S.decodeUnknownEffect(ImportedModuleSchema)(importedModule).pipe(
-      Effect.mapError((cause) => new ConfigFileInvalidError({ file: configFile, cause })),
+      Effect.mapError((cause) => ConfigFileInvalidError.make({ file: configFile, cause })),
       Effect.map((decoded) => decoded.default),
     )
     const document = yield* requireDefaultExport(configFile, exported)
@@ -781,7 +783,7 @@ const readExtendsChild = (
     const pathService = yield* Path.Path
     return yield* Match.value(isLegacyConfigFile(configFile, pathService)).pipe(
       Match.when(true, () =>
-        Effect.fail(new ConfigFileUnsupportedError({ file: configFile, hint: extendsChildHint(configFile) }))),
+        Effect.fail(ConfigFileUnsupportedError.make({ file: configFile, hint: extendsChildHint(configFile) }))),
       Match.orElse(() =>
         readConfigModule(configFile)
       ),
@@ -796,11 +798,11 @@ const canonicalConfigFile = (
     Match.when(true, () =>
       Effect.try({
         try: (): URL => new URL(file),
-        catch: (cause) => new ConfigFileUnreadableError({ file, cause }),
+        catch: (cause) => ConfigFileUnreadableError.make({ file, cause }),
       }).pipe(
         Effect.flatMap((url) =>
           pathService.fromFileUrl(url).pipe(
-            Effect.mapError((cause) => new ConfigFileUnreadableError({ file, cause })),
+            Effect.mapError((cause) => ConfigFileUnreadableError.make({ file, cause })),
           )
         ),
       )),
@@ -812,7 +814,7 @@ function resolveExtendsSpecifier(
 ): Effect.Effect<string, ConfigFileUnreadableError> {
   return Effect.try({
     try: (): string => import.meta.resolve(specifier),
-    catch: (cause) => new ConfigFileUnreadableError({ file: specifier, cause }),
+    catch: (cause) => ConfigFileUnreadableError.make({ file: specifier, cause }),
   })
 }
 
@@ -854,7 +856,7 @@ export function resolveExtends(
             if (d.reason === 'cycle') {
               message = `Config inheritance cycle detected at "${d.file}"`
             }
-            return Effect.fail(new ConfigFileInvalidError({ file: d.file, cause: message }))
+            return Effect.fail(ConfigFileInvalidError.make({ file: d.file, cause: message }))
           }),
           Match.exhaustive,
         )
@@ -1003,10 +1005,11 @@ function rewriteFiles(rawOptions: Record<string, unknown>): Effect.Effect<void> 
   ]
   delete rawOptions['files']
   return Effect.gen(function*() {
+    const patternsJson = yield* S.encodeEffect(S.fromJsonString(S.Array(S.String)))([...newIgnorePatterns]).pipe(
+      Effect.orDie,
+    )
     yield* Effect.logWarning(
-      `DEPRECATED. Use of "files" is deprecated, please use "${ignorePatternsName}" instead (or remove "files" altogether will probably work as well). For now, rewriting them as ${
-        JSON.stringify(newIgnorePatterns)
-      }. See https://stryker-mutator.io/docs/stryker-js/configuration/#ignorepatterns-string`,
+      `DEPRECATED. Use of "files" is deprecated, please use "${ignorePatternsName}" instead (or remove "files" altogether will probably work as well). For now, rewriting them as ${patternsJson}. See https://stryker-mutator.io/docs/stryker-js/configuration/#ignorepatterns-string`,
     )
     let existingIgnorePatterns: unknown[] = []
     const candidate = rawOptions[ignorePatternsName]
@@ -1263,12 +1266,12 @@ const logConfigErrors = (errors: readonly string[]): Effect.Effect<void> =>
 
 const failWithConfigErrors = (errors: readonly string[]): Effect.Effect<never, ConfigError> =>
   logConfigErrors(errors).pipe(
-    Effect.flatMap(() => Effect.fail(new ConfigError({ message: configErrorMessage(errors) }))),
+    Effect.flatMap(() => Effect.fail(ConfigError.make({ message: configErrorMessage(errors) }))),
   )
 
 function throwErrorIfNeeded(errors: readonly string[]): Effect.Effect<void, ConfigError> {
   if (errors.length === 0) return Effect.void
-  return Effect.fail(new ConfigError({ message: configErrorMessage(errors) }))
+  return Effect.fail(ConfigError.make({ message: configErrorMessage(errors) }))
 }
 
 const OPTIONS_ADDED_BY_STRYKER: readonly string[] = ['set', 'configFile', '$schema']
@@ -1298,12 +1301,13 @@ const warnAboutUnknownOptions = (
     for (const excessPropertyName of excessNames) {
       yield* Effect.logWarning(`Unknown stryker config option "${excessPropertyName}".`)
     }
+    const pluginsJson = yield* S.encodeEffect(S.fromJsonString(S.Array(S.String)))([...options.plugins]).pipe(
+      Effect.orDie,
+    )
     yield* Effect.logWarning(`Possible causes:
      * Is it a typo on your end?
      * Did you only write this property as a comment? If so, please postfix it with "_comment".
-     * You might be missing a plugin that is supposed to use it. Stryker loaded plugins from: ${
-      JSON.stringify(options.plugins)
-    }
+     * You might be missing a plugin that is supposed to use it. Stryker loaded plugins from: ${pluginsJson}
      * The plugin that is using it did not contribute explicit validation. 
       (disable "${optionsPath('warnings', 'unknownOptions')}" to ignore this warning)`)
   })
@@ -1383,12 +1387,12 @@ export function validateOptions(
   })
 }
 
-export function createDefaultOptions(): Effect.Effect<StrykerOptions> {
-  return S.decodeEffect(StrykerOptionsSchema)({}).pipe(Effect.orDie)
-}
+export const createDefaultOptions: Effect.Effect<StrykerOptions> = S.decodeEffect(StrykerOptionsSchema)({}).pipe(
+  Effect.orDie,
+)
 
 export const defaultOptions: Effect.Effect<Immutable<StrykerOptions>, never, never> = Effect.map(
-  createDefaultOptions(),
+  createDefaultOptions,
   (opts) => deepFreeze(opts),
 )
 
@@ -1413,9 +1417,9 @@ function exists(fileName: string): Effect.Effect<boolean, ConfigFileUnreadableEr
       Effect.catchTag('PlatformError', (error) =>
         Match.value(error.reason).pipe(
           Match.tag('NotFound', () => Effect.succeed(false)),
-          Match.orElse(() => Effect.fail(new ConfigFileUnreadableError({ file: fileName, cause: error }))),
+          Match.orElse(() => Effect.fail(ConfigFileUnreadableError.make({ file: fileName, cause: error }))),
         )),
-      Effect.mapError((error) => new ConfigFileUnreadableError({ file: fileName, cause: error })),
+      Effect.mapError((error) => ConfigFileUnreadableError.make({ file: fileName, cause: error })),
     )
   })
 }
@@ -1431,27 +1435,25 @@ const requireExistingConfigFile = (
     Effect.flatMap((doesExist) =>
       Match.value(doesExist).pipe(
         Match.when(true, () => Effect.succeed(configFileName)),
-        Match.orElse(() => Effect.fail(new ConfigFileNotFoundError({ file: configFileName }))),
+        Match.orElse(() => Effect.fail(ConfigFileNotFoundError.make({ file: configFileName }))),
       )
     ),
   )
-
 const firstExistingConfigFile = (
   fileNames: string[],
-): Effect.Effect<string | undefined, ConfigFileUnreadableError, FileSystem.FileSystem> =>
-  Match.value(fileNames.shift()).pipe(
-    Match.when(undefined, () => Effect.succeed(undefined)),
-    Match.orElse((fileName) =>
-      exists(fileName).pipe(
-        Effect.flatMap((doesExist) =>
-          Match.value(doesExist).pipe(
-            Match.when(true, () => Effect.succeed(fileName)),
-            Match.orElse(() => firstExistingConfigFile(fileNames)),
-          )
-        ),
-      )
-    ),
-  )
+): Effect.Effect<Option.Option<string>, ConfigFileUnreadableError, FileSystem.FileSystem> =>
+  Option.match(Option.fromUndefinedOr(fileNames[0]), {
+    onNone: () => Effect.succeedNone,
+    onSome: (head) =>
+      exists(head).pipe(
+        Effect.flatMap((doesExist) => {
+          if (doesExist) {
+            return Effect.succeedSome(head)
+          }
+          return firstExistingConfigFile(fileNames.slice(1))
+        }),
+      ),
+  })
 
 const configFileFor = (
   configFileName: string,
@@ -1468,7 +1470,7 @@ const configFileFor = (
       Match.when(true, () => requireExistingConfigFile(configFileName)),
       Match.orElse(() =>
         Effect.fail(
-          new ConfigFileUnsupportedError({
+          ConfigFileUnsupportedError.make({
             file: configFileName,
             hint: Match.value(legacy).pipe(
               Match.when(true, () => legacyConfigHint(configFileName)),
@@ -1479,42 +1481,40 @@ const configFileFor = (
       ),
     )
   })
-
 const firstLegacyConfigFile = (): Effect.Effect<
-  string | undefined,
+  Option.Option<string>,
   ConfigFileUnreadableError,
   FileSystem.FileSystem
 > => firstExistingConfigFile([...LEGACY_CONFIG_FILE_NAMES])
 
 const legacyConfigError = (file: string): ConfigFileUnsupportedError =>
-  new ConfigFileUnsupportedError({ file, hint: legacyConfigHint(file) })
+  ConfigFileUnsupportedError.make({ file, hint: legacyConfigHint(file) })
 
 const legacyConfigWarning = (file: string, supportedFile: string): Effect.Effect<void> =>
   Effect.logWarning(shadowedLegacyWarning(file, supportedFile))
 
 const refuseLegacyOnlyProject = (): Effect.Effect<
-  undefined,
+  Option.Option<string>,
   ConfigFileUnreadableError | ConfigFileUnsupportedError,
   FileSystem.FileSystem
 > =>
   firstLegacyConfigFile().pipe(
     Effect.flatMap((legacyFile) =>
-      Match.value(legacyFile).pipe(
-        Match.when(undefined, () => Effect.succeed(undefined)),
-        Match.orElse((file) => Effect.fail(legacyConfigError(file))),
-      )
+      Option.match(legacyFile, {
+        onNone: () => Effect.succeedNone,
+        onSome: (file) => Effect.fail(legacyConfigError(file)),
+      })
     ),
   )
-
 const warnShadowedLegacyConfig = (
   supportedFile: string,
 ): Effect.Effect<string, ConfigFileUnreadableError, FileSystem.FileSystem> =>
   firstLegacyConfigFile().pipe(
     Effect.flatMap((legacyFile) =>
-      Match.value(legacyFile).pipe(
-        Match.when(undefined, () => Effect.succeed(supportedFile)),
-        Match.orElse((file) => Effect.as(legacyConfigWarning(file, supportedFile), supportedFile)),
-      )
+      Option.match(legacyFile, {
+        onNone: () => Effect.succeed(supportedFile),
+        onSome: (file) => Effect.as(legacyConfigWarning(file, supportedFile), supportedFile),
+      })
     ),
   )
 
@@ -1525,10 +1525,10 @@ const discoverConfigFile = (): Effect.Effect<
 > =>
   firstExistingConfigFile([...SUPPORTED_CONFIG_FILE_NAMES]).pipe(
     Effect.flatMap((found) =>
-      Match.value(found).pipe(
-        Match.when(undefined, () => refuseLegacyOnlyProject()),
-        Match.orElse((supportedFile) => warnShadowedLegacyConfig(supportedFile)),
-      )
+      Option.match(found, {
+        onNone: () => refuseLegacyOnlyProject().pipe(Effect.map((legacy) => Option.getOrUndefined(legacy))),
+        onSome: (supportedFile) => warnShadowedLegacyConfig(supportedFile),
+      })
     ),
   )
 
@@ -1587,13 +1587,13 @@ export function readConfig(
     const cliRecord = yield* S.decodeUnknownEffect(ConfigDocumentSchema)(cliOptions).pipe(Effect.orDie)
     const fileRecord = yield* loadOptionsFromConfigFile(cliRecord)
     const fileOptions = yield* Result.match(S.decodeUnknownResult(ConfigDocumentSchema)(fileRecord), {
-      onFailure: (cause) => Effect.fail(new ConfigFileInvalidError({ file: 'config', cause })),
+      onFailure: (cause) => Effect.fail(ConfigFileInvalidError.make({ file: 'config', cause })),
       onSuccess: (options) => Effect.succeed(options),
     })
     const merged = mergeRecords(fileOptions, cliRecord)
     const decoded = S.decodeUnknownResult(StrykerOptionsSchema)(merged)
     if (Result.isFailure(decoded)) {
-      throw new ConfigError({ message: configErrorMessage(describeErrors(decoded.failure)) })
+      throw ConfigError.make({ message: configErrorMessage(describeErrors(decoded.failure)) })
     }
     return decoded.success
   })

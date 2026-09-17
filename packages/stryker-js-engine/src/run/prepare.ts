@@ -150,7 +150,7 @@ const spawnPluginReporterFactory = (
       tempDirPrefix: 'stryker-reporter-',
     }).pipe(
       Effect.mapError((cause) =>
-        new StageError({ stage: 'prepare', reason: `Failed to start the reporter worker "${name}"`, cause })
+        StageError.make({ stage: 'prepare', reason: `Failed to start the reporter worker "${name}"`, cause })
       ),
     )
     return reporterWorkerFactory(client)
@@ -192,11 +192,11 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         const queue = yield* RunEvents
         const coreSchema: ValidationSchemaDocument = forkCoreSchema
         const configured = yield* readConfig(command.cliOptions).pipe(
-          Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to read config', cause })),
+          Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read config', cause })),
           Effect.tapCause(() =>
             Effect.gen(function*() {
               const now = yield* Clock.currentTimeMillis
-              yield* Queue.offer(queue, new PhaseEntered({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
+              yield* Queue.offer(queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
             }).pipe(Effect.ignore)
           ),
         )
@@ -212,14 +212,14 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         }
         const descriptors: readonly string[] = [...options.plugins, ...options.appendPlugins]
         const loaded = yield* loadPlugins(descriptors).pipe(
-          Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
+          Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
         )
         const mergedSchema = buildMergedSchema(coreSchema, loaded.schemaContributions)
         const record: Record<string, unknown> = { ...options }
         yield* validateOptions(record, mergedSchema).pipe(
           Effect.mapError(
             (cause) =>
-              new StageError({
+              StageError.make({
                 stage: 'prepare',
                 reason: 'Failed to revalidate options with plugin schema',
                 cause,
@@ -227,7 +227,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
           ),
         )
         const project = yield* readProject(options, command.targetMutatePatterns, env.basePath).pipe(
-          Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to read project', cause })),
+          Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read project', cause })),
         )
         const mutateCount = MutableHashMap.size(project.filesToMutate)
         const summary = `Found ${mutateCount} of ${MutableHashMap.size(project.files)} file(s) to be mutated.`
@@ -242,10 +242,10 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
           return service.path
         }).pipe(
           Effect.mapError((cause) =>
-            new StageError({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
+            StageError.make({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
           ),
         )
-        const builtinReporterFactories = {
+        const builtinReporterFactories: Record<string, ReporterFactory> = {
           ...makeBuiltinReporterFactories({
             fileSystem: yield* FileSystem.FileSystem,
             path: yield* Path.Path,
@@ -270,7 +270,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         ])
         const availableReporterNames = [...HashMap.values(reporterChoicesByName)].map((choice) => choice.name)
         yield* validateReporterNames(configured.reporters, availableReporterNames).pipe(
-          Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: cause.message, cause })),
+          Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: cause.message, cause })),
         )
         const reporterInputs = yield* reporterInputsOf(
           options.reporters,
@@ -282,15 +282,13 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         const reporterInit = yield* currentReporterInit(span)
         const reporterStage = yield* attachReporterFactories(reporterInputs, options, reporterInit)
         const now = yield* Clock.currentTimeMillis
-        yield* Queue.offer(queue, new PhaseEntered({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
+        yield* Queue.offer(queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
         if (MutableHashMap.size(project.files) === 0) {
-          return yield* Effect.fail(
-            new StageError({
-              stage: 'prepare',
-              reason: 'No input files found.',
-              cause: new PrepareError({ stage: 'prepare', reason: 'No input files found.' }),
-            }),
-          )
+          return yield* StageError.make({
+            stage: 'prepare',
+            reason: 'No input files found.',
+            cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
+          })
         }
         return {
           project,

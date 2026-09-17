@@ -863,7 +863,7 @@ export const ReporterEventSchema: StandardSchemaV1<unknown, ReporterEvent>;
 export const ReporterEventUnion: S.Union<readonly [typeof DryRunCompleted, typeof MutationTestingPlanReady, typeof MutantTested, typeof MutationTestReportReady]>;
 
 // @public (undocumented)
-export type ReporterFactory = (options: StrykerOptions, init: ReporterInit) => (events: AsyncIterable<ReporterEvent>) => Promise<void>;
+export type ReporterFactory = (options: StrykerOptions, init: ReporterInit) => (events: AsyncIterable<ReporterEvent>) => Effect.Effect<void, ReporterFailed>;
 
 // Warning: (ae-forgotten-export) The symbol "ReporterFailed_base" needs to be exported by the entry point index.d.mts
 //

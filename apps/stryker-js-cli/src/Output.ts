@@ -16,6 +16,7 @@ import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
+import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
@@ -161,8 +162,8 @@ export const makeRunEventStream = (
   drainFramed: FramedDrain = drainOf.bind(null, stdio),
 ): Effect.Effect<RunEventStream, never, never> =>
   Effect.gen(function*() {
-    const runId = generateRunId()
     const startedAt = yield* Clock.currentTimeMillis
+    const runId = generateRunId(DateTime.makeUnsafe(startedAt))
     const queue = yield* Queue.bounded<RunEvent, Cause.Done>(RUN_EVENTS_QUEUE_BOUND)
 
     const state: RunEventStreamState = {

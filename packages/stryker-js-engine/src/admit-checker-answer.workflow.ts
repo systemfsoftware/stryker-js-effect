@@ -71,7 +71,7 @@ const answeredUnrequested = (
   Option.liftPredicate(Arr.isReadonlyArrayNonEmpty)(submitted.filter((id) => !(id in requested))).pipe(
     Option.map(
       (unrequestedIds) =>
-        new CheckerAnsweredUnrequested({
+        CheckerAnsweredUnrequested.make({
           checkerName: command.checkerName,
           phase: command.phase,
           unrequestedIds,
@@ -87,7 +87,7 @@ const skippedRequested = (
   Option.liftPredicate(Arr.isReadonlyArrayNonEmpty)(command.requestedIds.filter((id) => !(id in acknowledged))).pipe(
     Option.map(
       (missingIds) =>
-        new CheckerSkippedRequested({
+        CheckerSkippedRequested.make({
           checkerName: command.checkerName,
           phase: command.phase,
           missingIds,
@@ -129,7 +129,7 @@ const evaluateGroup = (command: CheckerCommand): Result.Result<CheckerDecision, 
     command,
     idRecord(command.requestedIds),
     idGroups.flat(),
-    new CheckGroupDecision({ groups: idGroups.map((group) => [...group]) }),
+    CheckGroupDecision.make({ groups: idGroups.map((group) => [...group]) }),
   )
 }
 
@@ -137,7 +137,7 @@ const evaluateCheckResult = (command: CheckerCommand): Result.Result<CheckerDeci
   const requested = idRecord(command.requestedIds)
   const entries = Object.entries(answersOf(command))
   const pairs = entries.filter(([id]) => requested[id] === true).map(([id, result]) => ({ id, result }))
-  return admit(command, requested, entries.map(([id]) => id), new CheckResultDecision({ pairs }))
+  return admit(command, requested, entries.map(([id]) => id), CheckResultDecision.make({ pairs }))
 }
 
 export const admitCheckerAnswer = Workflow.make(

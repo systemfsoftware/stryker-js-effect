@@ -33,7 +33,7 @@ const fileArb = fc.integer({ min: 0, max: 100000 }).map((n) => `src/mod-${n}.ts`
 const mutantIdArb = fc.integer({ min: 0, max: 1000 }).map((n) => n.toString())
 
 const mutantInFile = (id: string, fileName: string): Mutant =>
-  new Mutant({
+  Mutant.make({
     id,
     fileName,
     mutatorName: 'foo-mutator',
@@ -53,7 +53,7 @@ const emptyDiagnosticsInputArb: fc.Arbitrary<CheckMutantsInput> = fc
   .tuple(fileArb, fc.array(mutantIdArb, { minLength: 1, maxLength: 2 }))
   .map(
     ([file, ids]) =>
-      new CheckMutantsInput({
+      CheckMutantsInput.make({
         mutants: ids.map((id) => mutantInFile(id, file)),
         diagnostics: [],
         nodes: { [file]: nodeFor(file) },
@@ -64,7 +64,7 @@ const ambiguousGroupInputArb: fc.Arbitrary<CheckMutantsInput> = fc
   .tuple(fileArb, fc.string({ maxLength: 32 }))
   .map(
     ([file, text]) =>
-      new CheckMutantsInput({
+      CheckMutantsInput.make({
         mutants: [mutantInFile('0', file), mutantInFile('1', file)],
         diagnostics: [{ fileName: file, text }],
         nodes: { [file]: nodeFor(file) },

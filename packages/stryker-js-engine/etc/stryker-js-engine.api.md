@@ -10,6 +10,7 @@ import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawne
 import { CompleteDryRunResult } from '@systemfsoftware/stryker-js-language';
 import * as Context from 'effect/Context';
 import { CoverageData } from '@systemfsoftware/stryker-js-language';
+import * as DateTime from 'effect/DateTime';
 import { Duration } from 'effect/Duration';
 import * as Duration_2 from 'effect/Duration';
 import * as Effect from 'effect/Effect';
@@ -144,7 +145,7 @@ export const connectRetry: Schedule.Schedule<Duration, unknown, never, never>;
 export const countMutants: (mutants: readonly MutantResult[]) => Metrics;
 
 // @public (undocumented)
-export function createDefaultOptions(): Effect.Effect<StrykerOptions>;
+export const createDefaultOptions: Effect.Effect<StrykerOptions>;
 
 // @public (undocumented)
 export function createFileMatcher(pattern: boolean | string, pathService: Path.Path, allowHiddenFiles?: boolean): (fileName: string) => boolean;
@@ -239,7 +240,7 @@ export const forkOptionsSchema: S.StructWithRest<S.Struct<{
 }>, readonly [S.$Record<S.String, S.Unknown>]>;
 
 // @public (undocumented)
-export function generateRunId(): string;
+export function generateRunId(now: DateTime.Utc): string;
 
 // @public (undocumented)
 export function highestExitClass(pending: Iterable<ExitClass>): ExitClass | null;

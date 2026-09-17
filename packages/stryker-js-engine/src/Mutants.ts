@@ -591,7 +591,7 @@ const materializeMutant = (
   const statusReason = firstDefined(decided.statusReason, original.statusReason)
   const isStatic = firstDefined(decided.static, original.static)
   const coveredBy = firstDefined(decided.coveredBy, original.coveredBy)
-  return new Mutant({
+  return Mutant.make({
     id: original.id,
     fileName: original.fileName,
     mutatorName: original.mutatorName,

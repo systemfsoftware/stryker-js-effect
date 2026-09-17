@@ -16,6 +16,7 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
 import { dryRun, DryRunCommand } from '../dry-run.workflow.js'
@@ -44,7 +45,6 @@ function buildDryRunFiles(prev: InstrumentDone): { files: string[]; testFiles: s
   }
   return { files, testFiles }
 }
-
 export interface DryRunRaw {
   readonly prev: InstrumentDone
   readonly rawResult: DryRunResult
@@ -64,7 +64,7 @@ const decodeCompleteDryRun = (
   allowEmpty: boolean,
 ): Result.Result<DryRunCommand, StageError> =>
   Result.succeed(
-    new DryRunCommand({
+    DryRunCommand.make({
       status: 'Complete',
       testCount: result.tests.length,
       failedTestCount: result.tests.filter((test) => test.status === 'failed').length,
@@ -77,7 +77,7 @@ const decodeFailedDryRun = (
   allowEmpty: boolean,
 ): Result.Result<DryRunCommand, StageError> =>
   Result.succeed(
-    new DryRunCommand({
+    DryRunCommand.make({
       status: 'Error',
       testCount: 0,
       failedTestCount: 0,
@@ -91,7 +91,7 @@ const decodeTimedOutDryRun = (
   allowEmpty: boolean,
 ): Result.Result<DryRunCommand, StageError> =>
   Result.succeed(
-    new DryRunCommand({
+    DryRunCommand.make({
       status: 'Timeout',
       testCount: 0,
       failedTestCount: 0,
@@ -148,9 +148,7 @@ const completeDryRunPassed = (raw: DryRunRaw): Effect.Effect<DryRunDone, StageEr
     const rawResult = raw.rawResult
 
     if (rawResult.status !== 'complete') {
-      return yield* Effect.fail(
-        new StageError({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' }),
-      )
+      return yield* StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' })
     }
     const tests = withOriginalFileNames(rawResult.tests, prevDone)
     const dryRunResult: CompleteDryRunResult = { ...rawResult, tests, status: 'complete' }
@@ -158,7 +156,7 @@ const completeDryRunPassed = (raw: DryRunRaw): Effect.Effect<DryRunDone, StageEr
 
     yield* offerReporterEvent(
       prevDone.reporterStage,
-      new DryRunCompleted({
+      DryRunCompleted.make({
         timing: { net: totalTestTime(tests), overhead: overheadMillis },
         capabilities: { reloadEnvironment: raw.capabilities.reloadEnvironment },
         testCount: tests.length,
@@ -224,24 +222,24 @@ export const dryRunCell = Cell.layer({
                 ...extra,
               })
               .pipe(
-                Effect.mapError((cause) => new StageError({ stage: 'dryRun', reason: 'Dry run failed', cause })),
+                Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Dry run failed', cause })),
               ),
           )
           const gross: Duration.Duration = timed[0]
           const rawResult = timed[1]
           const capabilities = yield* runner.capabilities.pipe(
             Effect.mapError((cause) =>
-              new StageError({ stage: 'dryRun', reason: 'Failed to get test runner capabilities', cause })
+              StageError.make({ stage: 'dryRun', reason: 'Failed to get test runner capabilities', cause })
             ),
           )
           return { rawResult, capabilities, gross }
         }),
       ).pipe(
         Effect.mapError((cause) => {
-          if (cause instanceof StageError) {
+          if (S.is(StageError)(cause)) {
             return cause
           }
-          return new StageError({ stage: 'dryRun', reason: 'Dry run failed to start test runner', cause })
+          return StageError.make({ stage: 'dryRun', reason: 'Dry run failed to start test runner', cause })
         }),
       )
 
@@ -271,17 +269,17 @@ export const dryRunCell = Cell.layer({
           const env = yield* RunEnvironment
           const now = yield* Clock.currentTimeMillis
           const queue = yield* RunEvents
-          yield* Queue.offer(queue, new PhaseEntered({ phase: 'dry-run', elapsedMs: now - env.runStartedAt }))
+          yield* Queue.offer(queue, PhaseEntered.make({ phase: 'dry-run', elapsedMs: now - env.runStartedAt }))
 
           const out = outcome
           if (Result.isFailure(out)) {
             const err = out.failure
-            return yield* Effect.fail(new StageError({ stage: err.stage, reason: err.reason, cause: err }))
+            return yield* StageError.make({ stage: err.stage, reason: err.reason, cause: err })
           }
           return yield* Match.value(out.success).pipe(
             Match.tag('DryRunFailed', (decision) =>
               Effect.fail(
-                new StageError({
+                StageError.make({
                   stage: 'dryRun',
                   reason: 'There were failed tests in the initial test run.',
                   cause: decision,

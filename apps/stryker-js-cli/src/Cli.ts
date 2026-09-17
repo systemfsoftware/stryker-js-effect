@@ -463,10 +463,7 @@ function makeStrykerCommand(requestRef: Ref.Ref<Option.Option<CliRequest>>) {
     CliError.CliError,
     never
   > = Command
-    .make('stryker', {}, (_config) =>
-      Effect.gen(function*() {
-        return yield* Effect.failSync(() => CliError.ShowHelp.make({ commandPath: ['stryker'], errors: [] }))
-      }))
+    .make('stryker', {}, (_config) => Effect.fail(CliError.ShowHelp.make({ commandPath: ['stryker'], errors: [] })))
 
   const strykerCommand = root.pipe(Command.withSubcommands([runCommand, mergeReportsCommand]))
   return strykerCommand
@@ -627,7 +624,7 @@ export const runStrykerCli = (
           yield* applyProgressStreamFile(stream, progressStreamFileName(request))
           yield* stream.open
           if (Result.isFailure(parsed)) {
-            return yield* Effect.fail(parsed.failure)
+            return yield* parsed.failure
           }
           return yield* Option.match(request, {
             onNone: () => Effect.void,

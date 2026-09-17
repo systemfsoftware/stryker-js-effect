@@ -1,6 +1,5 @@
 import type { WorkerPluginKind, WorkerPluginSpawn } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
-import * as Option from 'effect/Option'
 
 import { findByKindAndName, type LoadedPlugins, type WorkerPluginSource } from './Plugins.js'
 import { PluginNotFoundError } from './Plugins.schema.js'
@@ -8,7 +7,7 @@ import { StageError } from './Run.schema.js'
 
 export const missingWorkerEntry =
   (stage: StageError['stage'], kind: string, name: string) => (failure: PluginNotFoundError): StageError =>
-    new StageError({
+    StageError.make({
       stage,
       reason: `the ${kind} plugin "${name}" is not among the loaded plugins`,
       cause: failure,
@@ -19,10 +18,10 @@ const requiredSource = (params: {
   readonly kind: WorkerPluginKind
   readonly name: string
 }): Effect.Effect<WorkerPluginSource, PluginNotFoundError> =>
-  Option.match(findByKindAndName(params.loaded.pluginSources, params.kind, params.name), {
-    onNone: () => Effect.fail(new PluginNotFoundError({ descriptor: `${params.kind}:${params.name}` })),
-    onSome: (source) => Effect.succeed(source),
-  })
+  Effect.fromOption(
+    findByKindAndName(params.loaded.pluginSources, params.kind, params.name),
+    () => PluginNotFoundError.make({ descriptor: `${params.kind}:${params.name}` }),
+  )
 
 export const resolvePluginWorkerEntry = (params: {
   readonly loaded: Pick<LoadedPlugins, 'pluginSources'>

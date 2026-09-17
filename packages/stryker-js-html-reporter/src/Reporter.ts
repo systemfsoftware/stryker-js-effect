@@ -1,12 +1,16 @@
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
-import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
+import { errorToString, MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
 import type { ReporterFactory } from '@systemfsoftware/stryker-js-language'
+import { ReporterFailed } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
+import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
+import * as Stream from 'effect/Stream'
 
 import { HtmlDocument, HtmlReportCommand } from './Reporter.schema.js'
 
@@ -57,56 +61,89 @@ declare const __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__: string | undefined
 
 const nodeFsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
-const readBundleContent = Effect.gen(function*() {
-  if (typeof __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__ === 'string') {
-    return __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__
-  }
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const bundlePath = yield* path.fromFileUrl(new URL(import.meta.resolve(BUNDLE_SPECIFIER)))
-  return yield* fs.readFileString(bundlePath)
-})
+const inlinedBundle = (): string | undefined =>
+  Match.value(typeof __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__).pipe(
+    Match.when('undefined', () => undefined),
+    Match.orElse(() => __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__),
+  )
+
+const readBundleContent: Effect.Effect<string, unknown, FileSystem.FileSystem | Path.Path> = Effect.suspend(() =>
+  Match.value(inlinedBundle()).pipe(
+    Match.when(Match.string, (bundle) => Effect.succeed(bundle)),
+    Match.orElse(() =>
+      Effect.flatMap(
+        FileSystem.FileSystem,
+        (fs) =>
+          Effect.flatMap(
+            Path.Path,
+            (path) =>
+              Effect.flatMap(
+                path.fromFileUrl(new URL(import.meta.resolve(BUNDLE_SPECIFIER))),
+                (bundlePath) => fs.readFileString(bundlePath),
+              ),
+          ),
+      )
+    ),
+  )
+)
 
 const writeHtmlFile = (fileName: string, html: string) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    yield* fs.makeDirectory(path.dirname(fileName), { recursive: true })
-    yield* fs.writeFileString(fileName, html)
-  })
+  Effect.flatMap(FileSystem.FileSystem, (fs) =>
+    Effect.flatMap(Path.Path, (path) =>
+      Effect.andThen(
+        fs.makeDirectory(path.dirname(fileName), { recursive: true }),
+        fs.writeFileString(fileName, html),
+      )))
 
-const bundleLoader = (): () => Promise<string> => {
-  let cached: string | undefined
-  return async () => {
-    cached ??= await Effect.runPromise(Effect.provide(readBundleContent, nodeFsPathLayer))
-    return cached
-  }
-}
+const loadBundle = (
+  cached: Ref.Ref<string | undefined>,
+): Effect.Effect<string, unknown, FileSystem.FileSystem | Path.Path> =>
+  Effect.filterOrElse(
+    Ref.get(cached),
+    (hit): hit is string => hit !== undefined,
+    () => Effect.tap(readBundleContent, (fresh) => Ref.set(cached, fresh)),
+  )
 
-const writeReportHtml = async (
+const writeReportHtml = (
   fileName: string,
   event: MutationTestReportReady,
-  loadBundle: () => Promise<string>,
-): Promise<void> => {
-  const html = buildHtmlDocument(
-    HtmlReportCommand.make({ report: event.report, scriptContent: await loadBundle() }),
-  ).html
-  await Effect.runPromise(Effect.provide(writeHtmlFile(fileName, html), nodeFsPathLayer))
-}
+  cached: Ref.Ref<string | undefined>,
+): Effect.Effect<void, unknown, FileSystem.FileSystem | Path.Path> =>
+  Effect.flatMap(loadBundle(cached), (bundle) =>
+    writeHtmlFile(
+      fileName,
+      buildHtmlDocument(
+        HtmlReportCommand.make({ report: event.report, scriptContent: bundle }),
+      ).html,
+    ))
 
-const writeReportHtmlIfReady = async (
+const failAsHtmlReporter = (cause: unknown): ReporterFailed =>
+  ReporterFailed.make({ reporterName: 'html', event: 'mutationTestReportReady', cause: errorToString(cause) })
+
+const writeReportHtmlIfReady = (
   fileName: string,
   event: unknown,
-  loadBundle: () => Promise<string>,
-): Promise<void> => {
-  if (!S.is(MutationTestReportReady)(event)) return
-  await writeReportHtml(fileName, event, loadBundle)
+  cached: Ref.Ref<string | undefined>,
+): Effect.Effect<void, ReporterFailed, FileSystem.FileSystem | Path.Path> => {
+  if (S.is(MutationTestReportReady)(event)) {
+    return writeReportHtml(fileName, event, cached).pipe(Effect.mapError(failAsHtmlReporter))
+  }
+  return Effect.void
 }
 
-export const makeHtmlReporter: ReporterFactory = (options, _init) => async (events) => {
-  const fileName = options.htmlReporter.fileName
-  const loadBundle = bundleLoader()
-  for await (const event of events) {
-    await writeReportHtmlIfReady(fileName, event, loadBundle)
-  }
-}
+const streamErrorOf = (cause: unknown): ReporterFailed =>
+  ReporterFailed.make({ reporterName: 'html', event: 'mutationTestReportReady', cause: errorToString(cause) })
+
+const drainEvents = (
+  fileName: string,
+  events: AsyncIterable<unknown>,
+): Effect.Effect<void, ReporterFailed, FileSystem.FileSystem | Path.Path> =>
+  Effect.flatMap(
+    Ref.make<string | undefined>(undefined),
+    (cached) =>
+      Stream.runForEach(Stream.fromAsyncIterable(events, streamErrorOf), (event) =>
+        writeReportHtmlIfReady(fileName, event, cached)),
+  )
+
+export const makeHtmlReporter: ReporterFactory = (options, _init) => (events) =>
+  Effect.provide(drainEvents(options.htmlReporter.fileName, events), nodeFsPathLayer)

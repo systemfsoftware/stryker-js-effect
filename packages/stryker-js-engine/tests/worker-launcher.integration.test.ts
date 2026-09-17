@@ -11,6 +11,7 @@ import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import { expect } from 'vitest'
 
 import {
@@ -72,7 +73,7 @@ const bootAnswer = (boot: BootOutcome): string =>
 
 const timeoutOf = (boot: BootOutcome): WorkerBootTimeoutError => {
   const failure = bootFailure(boot)
-  if (failure instanceof WorkerBootTimeoutError) {
+  if (S.is(WorkerBootTimeoutError)(failure)) {
     return failure
   }
   throw new Error('the boot was expected to fail as a boot timeout', { cause: failure })
@@ -80,7 +81,7 @@ const timeoutOf = (boot: BootOutcome): WorkerBootTimeoutError => {
 
 const crashOf = (boot: BootOutcome): ChildProcessCrashedError => {
   const failure = bootFailure(boot)
-  if (failure instanceof ChildProcessCrashedError) {
+  if (S.is(ChildProcessCrashedError)(failure)) {
     return failure
   }
   throw new Error('the boot was expected to fail as a crash', { cause: failure })
@@ -88,7 +89,7 @@ const crashOf = (boot: BootOutcome): ChildProcessCrashedError => {
 
 const memoryOf = (boot: BootOutcome): OutOfMemoryError => {
   const failure = bootFailure(boot)
-  if (failure instanceof OutOfMemoryError) {
+  if (S.is(OutOfMemoryError)(failure)) {
     return failure
   }
   throw new Error('the boot was expected to fail as an out-of-memory death', { cause: failure })

@@ -5,19 +5,21 @@
 ```ts
 
 import * as Effect from 'effect/Effect';
+import { FileDescription } from '@systemfsoftware/stryker-js-language';
 import { Mutant } from '@systemfsoftware/stryker-js-language';
 import * as S from 'effect/Schema';
 import { YieldableError } from 'effect/Cause';
 
-// Warning: (ae-forgotten-export) The symbol "InstrumentError" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
 export const disableTypeChecks: (file: File_2) => Effect.Effect<File_2, InstrumentError>;
 
-// Warning: (ae-forgotten-export) The symbol "FileSchema" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
-type File_2 = typeof FileSchema.Type;
+interface File_2 extends FileDescription {
+    // (undocumented)
+    content: string;
+    // (undocumented)
+    name: string;
+}
 export { File_2 as File }
 
 // Warning: (ae-forgotten-export) The symbol "InstrumentResult$1" needs to be exported by the entry point index.d.mts
@@ -29,6 +31,14 @@ export const instrument: (files: readonly File_2[], options: InstrumenterOptions
 //
 // @public (undocumented)
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type;
+
+// Warning: (ae-forgotten-export) The symbol "InstrumentError_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class InstrumentError extends InstrumentError_base {
+    // (undocumented)
+    get message(): string;
+}
 
 // @public (undocumented)
 export interface InstrumentResult {

@@ -27,7 +27,7 @@ interface ReadRecorderShape {
 }
 
 class ReadRecorder extends Context.Service<ReadRecorder, ReadRecorderShape>()(
-  'stryker-js-engine/tests/ReadRecorder',
+  '@systemfsoftware/stryker-js-engine/tests/config-file.integration.test/ReadRecorder',
 ) {}
 
 const makeRecorder = (): ReadRecorderShape => ({ warnings: [] })
@@ -64,8 +64,11 @@ const warningLogger = (recorder: ReadRecorderShape): Logger.Logger<unknown, void
 
 const loggerLayer = Logger.layer([Effect.map(ReadRecorder, warningLogger)])
 
-const configReadLayer = Layer.mergeAll(recorderLayer, fileSystemLayer, Path.layer, loggerLayer).pipe(
-  Layer.provideMerge(recorderLayer),
+const configReadLayer = Layer.mergeAll(
+  fileSystemLayer,
+  Path.layer,
+  recorderLayer,
+  loggerLayer.pipe(Layer.provide(recorderLayer)),
 )
 
 interface ReadOutcome {
