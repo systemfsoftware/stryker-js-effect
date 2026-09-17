@@ -190,7 +190,7 @@ export const makeProgressBarReporter = (services: BuiltinReporterServices): Repo
     bar: undefined,
   }
   let pending: Promise<void> = Promise.resolve()
-  const write = (text: string): void => {
+  const enqueue = (text: string): void => {
     pending = pending.then(() => writeAsync(services.stdio, 'stdout', [text])).catch(() => undefined)
   }
   const render = (now: number): void =>
@@ -203,7 +203,7 @@ export const makeProgressBarReporter = (services: BuiltinReporterServices): Repo
           Match.when(false, () => ''),
           Match.exhaustive,
         )
-        write(`\r${line}${newline}`)
+        enqueue(`\r${line}${newline}`)
       },
     })
   return Stream.runForEach(
@@ -213,7 +213,7 @@ export const makeProgressBarReporter = (services: BuiltinReporterServices): Repo
     Effect.ensuring(
       Effect.ignore(
         Effect.promise(() => {
-          finishProgressBar(progress, write)
+          finishProgressBar(progress, enqueue)
           return pending
         }),
       ),
@@ -274,14 +274,14 @@ const applyProgressEvent = (
 
 const finishProgressBar = (
   progress: { tally: ProgressTally; bar: ProgressBarState | undefined },
-  write: (text: string) => void,
+  enqueue: (text: string) => void,
 ): void => {
   Option.match(Option.fromUndefinedOr(progress.bar), {
     onNone: () => undefined,
     onSome: (bar) =>
       Match.value(isComplete(bar)).pipe(
         Match.when(true, () => undefined),
-        Match.when(false, () => write('\n')),
+        Match.when(false, () => enqueue('\n')),
         Match.exhaustive,
       ),
   })

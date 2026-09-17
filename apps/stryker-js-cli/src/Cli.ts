@@ -737,7 +737,7 @@ export const runStrykerCli = (
             onSuccess: (decision) =>
               Match.value(decision).pipe(
                 Match.tag('RunOk', () => Effect.void),
-                Match.orElse((failed) => Effect.fail(RunExit.make({ code: runOutcomeCode(Result.succeed(failed)) }))),
+                Match.orElse(() => Effect.fail(RunExit.make({ code }))),
               ),
             onFailure: () => Effect.interrupt,
           })

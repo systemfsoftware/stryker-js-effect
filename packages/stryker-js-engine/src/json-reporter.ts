@@ -19,8 +19,6 @@ export interface BuiltinReporterServices {
   readonly stdio: Stdio.Stdio
 }
 
-export type JsonReporterDeps = BuiltinReporterServices
-
 const failAsJsonReporter = (cause: unknown): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'json',
@@ -37,7 +35,7 @@ const writeReport = (
     const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 0 }))(report).pipe(Effect.orDie)
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const fileName = path.resolve(path.normalize(options.jsonReporter.fileName))
+    const fileName = path.resolve(options.jsonReporter.fileName)
     if (options.logLevel === 'debug') {
       yield* Effect.ignore(
         write(services.stdio, 'stderr', [`Using relative path ${path.normalize(options.jsonReporter.fileName)}\n`]),
@@ -69,8 +67,7 @@ const rememberReport = (seen: SeenReport, event: ReporterEvent): void => {
 
 const streamErrorOf = (cause: unknown): ReporterFailed =>
   ReporterFailed.make({ reporterName: 'json', event: 'mutationTestReportReady', cause: errorToString(cause) })
-
-export const makeJsonReporter = (services: JsonReporterDeps): ReporterFactory => (options) => (events) => {
+export const makeJsonReporter = (services: BuiltinReporterServices): ReporterFactory => (options) => (events) => {
   const seen: SeenReport = {}
   return Stream.runForEach(
     Stream.fromAsyncIterable(events, streamErrorOf),

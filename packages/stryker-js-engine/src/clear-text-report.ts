@@ -354,6 +354,34 @@ const streamErrorOf = (cause: unknown): ReporterFailed =>
     cause: errorToString(cause),
   })
 
+const failAsClearText = (cause: unknown): ReporterFailed =>
+  ReporterFailed.make({
+    reporterName: 'clear-text',
+    event: 'mutationTestReportReady',
+    cause: errorToString(cause),
+  })
+
+const writeRendered = (
+  services: BuiltinReporterServices,
+  rendered: { stdout: string[]; debug: string[] },
+  options: StrykerOptions,
+): Effect.Effect<void, ReporterFailed> => {
+  const stdoutEffect = write(services.stdio, 'stdout', rendered.stdout.map((line) => `${line}\n`)).pipe(
+    Effect.mapError(failAsClearText),
+    Effect.asVoid,
+  )
+  return Match.value(options.logLevel === 'debug').pipe(
+    Match.when(true, () =>
+      Effect.andThen(
+        stdoutEffect,
+        write(services.stdio, 'stderr', rendered.debug.map((line) => `${line}\n`)).pipe(
+          Effect.mapError(failAsClearText),
+        ),
+      )),
+    Match.orElse(() => stdoutEffect),
+  )
+}
+
 export const makeClearTextReporter = (services: BuiltinReporterServices): ReporterFactory => (options) => (events) => {
   const seen: WatchedReports = {}
   return Stream.runForEach(
@@ -366,29 +394,9 @@ export const makeClearTextReporter = (services: BuiltinReporterServices): Report
         onNone: () => Effect.void,
         onSome: (ready) =>
           decodeClearTextReport(ready).pipe(
-            Effect.flatMap((command) => {
-              const rendered = renderClearText(command.report, command.metrics, options)
-              const failAsClearText = (cause: unknown): ReporterFailed =>
-                ReporterFailed.make({
-                  reporterName: 'clear-text',
-                  event: 'mutationTestReportReady',
-                  cause: errorToString(cause),
-                })
-              const stdoutEffect = write(
-                services.stdio,
-                'stdout',
-                rendered.stdout.map((line) => `${line}\n`),
-              ).pipe(Effect.mapError(failAsClearText), Effect.asVoid)
-              if (options.logLevel === 'debug') {
-                return Effect.andThen(
-                  stdoutEffect,
-                  write(services.stdio, 'stderr', rendered.debug.map((line) => `${line}\n`)).pipe(
-                    Effect.mapError(failAsClearText),
-                  ),
-                )
-              }
-              return stdoutEffect
-            }),
+            Effect.flatMap((command) =>
+              writeRendered(services, renderClearText(command.report, command.metrics, options), options)
+            ),
           ),
       })
     ),

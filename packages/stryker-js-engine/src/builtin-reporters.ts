@@ -1,10 +1,10 @@
 import type { ReporterFactory } from '@systemfsoftware/stryker-js-language'
 
 import { makeClearTextReporter } from './clear-text-report.js'
-import { type BuiltinReporterServices, type JsonReporterDeps, makeJsonReporter } from './json-reporter.js'
+import { type BuiltinReporterServices, makeJsonReporter } from './json-reporter.js'
 import { makeProgressBarReporter, makeProgressStreamReporter } from './progress-reporter.js'
 
-export type { BuiltinReporterServices, JsonReporterDeps }
+export type { BuiltinReporterServices }
 
 export const makeBuiltinReporterFactories = (
   services: BuiltinReporterServices,

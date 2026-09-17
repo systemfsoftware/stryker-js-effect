@@ -15,6 +15,7 @@ export default defineConfig({
       files: ['src/main.ts', 'src/platform/node.ts'],
       rules: { 'no-restricted-globals': 'off' },
     },
+    // Build config: runs in Node before any platform layer exists; reads the fs to inline the wasm bundle.
     {
       files: ['tsdown.config.ts'],
       rules: { 'no-restricted-globals': 'off', 'no-restricted-imports': 'off' },

@@ -409,10 +409,10 @@ export function throwPlacementError(
   mutants: Mutant[],
   fileName: string,
   lineTable: readonly number[],
-  basePath: string | undefined,
+  basePath?: string,
 ): never {
   const message = `${placer.name} could not place mutants with type(s): "${
-    new Intl.ListFormat('en').format(mutants.map((mutant) => mutant.mutatorName))
+    placementListFormat.format(mutants.map((mutant) => mutant.mutatorName))
   }"`
   const errorMessage = `${
     placementLocation(nodePath.node, fileName, lineTable, basePath)
@@ -439,10 +439,14 @@ function placementLocation(node: Node, fileName: string, lineTable: readonly num
 
 type AnonymousFunctionOrClass = FunctionExpression | ClassExpression
 
+const placementListFormat = new Intl.ListFormat('en')
+
 const withTrailingSlash = (basePath: string): string => basePath.endsWith('/') ? basePath : `${basePath}/`
 
-const relativeTo = (basePath: string, fileName: string): string =>
-  fileName.startsWith(withTrailingSlash(basePath)) ? fileName.slice(withTrailingSlash(basePath).length) : fileName
+const relativeTo = (basePath: string, fileName: string): string => {
+  const prefix = withTrailingSlash(basePath)
+  return fileName.startsWith(prefix) ? fileName.slice(prefix.length) : fileName
+}
 
 function classOrFunctionExpressionNamedIfNeeded(path: TraversePath): Expression | undefined {
   return Match.value(path.node).pipe(

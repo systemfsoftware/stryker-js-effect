@@ -1,5 +1,4 @@
 import * as Effect from 'effect/Effect'
-import * as Match from 'effect/Match'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Sink from 'effect/Sink'
 import * as Stdio from 'effect/Stdio'
@@ -9,11 +8,12 @@ export type OutputChannel = 'stdout' | 'stderr'
 
 type OutputSink = Sink.Sink<void, string | Uint8Array, never, PlatformError>
 
-const sinkFor = (stdio: Stdio.Stdio, channel: OutputChannel): OutputSink =>
-  Match.value(channel).pipe(
-    Match.when('stdout', () => stdio.stdout({ endOnDone: false })),
-    Match.orElse(() => stdio.stderr({ endOnDone: false })),
-  )
+const sinksOf = (stdio: Stdio.Stdio): Record<OutputChannel, OutputSink> => ({
+  stdout: stdio.stdout({ endOnDone: false }),
+  stderr: stdio.stderr({ endOnDone: false }),
+})
+
+const sinkFor = (stdio: Stdio.Stdio, channel: OutputChannel): OutputSink => sinksOf(stdio)[channel]
 
 export const write = (
   stdio: Stdio.Stdio,
