@@ -232,7 +232,7 @@ export const ImportedModuleSchema: S.Struct<{
 }>;
 
 // @public (undocumented)
-export function importModule(moduleName: string, basePath: string): Effect.Effect<unknown, StrykerError, Module | Path.Path>;
+export function importModule(moduleName: string): Effect.Effect<unknown, StrykerError>;
 
 // @public (undocumented)
 export const IncrementalReportSchema: S.StructWithRest<S.Struct<{
