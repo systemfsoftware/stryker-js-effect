@@ -7,7 +7,7 @@ import {
   WorkerBootTimeoutError,
 } from '@systemfsoftware/stryker-js-engine'
 import type { WorkerSpawnParams } from '@systemfsoftware/stryker-js-engine'
-import { Module, type ModuleRequire } from '@systemfsoftware/stryker-js-language'
+import { Module } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
@@ -59,10 +59,9 @@ const bootPingWorker = (
   }).pipe(Effect.scoped)
 
 const unreachableModule: Layer.Layer<Module> = Layer.succeed(Module, {
-  createRequire: () => {
-    throw new Error('the host must never require a plugin module')
+  findPackageJSON: () => {
+    throw new Error('the host must never resolve a plugin module')
   },
-  isBuiltin: () => false,
 })
 
 interface ImportWatch {
@@ -71,14 +70,10 @@ interface ImportWatch {
 
 const watchedModule = (watch: ImportWatch): Layer.Layer<Module> =>
   Layer.succeed(Module, {
-    createRequire: (): ModuleRequire => {
-      const refuse = (specifier: string): never => {
-        watch.specifiers.push(specifier)
-        throw new Error('the host must never require a plugin module')
-      }
-      return Object.assign(refuse, { resolve: refuse })
+    findPackageJSON: (specifier: string): string | undefined => {
+      watch.specifiers.push(specifier)
+      throw new Error('the host must never resolve a plugin module')
     },
-    isBuiltin: () => false,
   })
 
 const bootFailure = (boot: BootOutcome): unknown =>

@@ -1,0 +1,7 @@
+{
+  "name": "both-protocols",
+  "version": "0.0.0",
+  "exports": {
+    ".": "./both-protocols.fixture.mjs"
+  }
+}

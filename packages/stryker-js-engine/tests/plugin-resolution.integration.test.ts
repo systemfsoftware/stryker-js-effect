@@ -2,7 +2,6 @@ import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoft
 import { create, loadPlugins } from '@systemfsoftware/stryker-js-engine/plugin-loader'
 import type { LoadedPlugins } from '@systemfsoftware/stryker-js-engine/plugin-loader'
 import { Module } from '@systemfsoftware/stryker-js-language'
-import type { ModuleRequire } from '@systemfsoftware/stryker-js-language'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -17,50 +16,33 @@ const Feature = makeFeature({ it, layer })
 
 const PROJECT = '/project'
 const PROJECT_MANIFEST = `${PROJECT}/package.json`
-const HOST_MANIFEST = '/host/dist/package.json'
+const FIXTURES_DIR = `${process.cwd()}/tests/__fixtures__`
 
 const LOCAL_PLUGIN = './local-plugin.js'
 const RUNNER = '@acme/stryker-runner'
 const UNSHIPPED = '@acme/stryker-unshipped'
 const RUNNER_LATE = '@acme/stryker-runner-late'
-const RUNNER_ENTRYPOINT = `${PROJECT}/node_modules/@acme/stryker-runner/dist/index.mjs`
-const RUNNER_LATE_ENTRYPOINT = `${PROJECT}/node_modules/@acme/stryker-runner-late/dist/index.mjs`
-const HOST_RUNNER_ENTRYPOINT = '/host/dist/node_modules/@acme/stryker-runner/dist/index.mjs'
-const LANGUAGE_ENTRYPOINT = `${PROJECT}/node_modules/@systemfsoftware/stryker-js-language/dist/index.mjs`
+const DUPLICATE_RUNNER = '@acme/stryker-runner-duplicate'
 
-const vitestDescriptor = {
-  kind: 'TestRunner',
-  name: 'vitest',
-  workerEntry: 'file:///project/node_modules/@acme/stryker-runner/dist/main.mjs',
-}
+const fixtureManifest = (directory: string): string => `${FIXTURES_DIR}/${directory}/package.json`
+const fixtureEntrypoint = (directory: string): string => `file://${FIXTURES_DIR}/${directory}/index.mjs`
 
-const runnerModule = { strykerPlugins: [vitestDescriptor] }
+const RUNNER_MANIFEST = fixtureManifest('plugin-runner')
+const RUNNER_LATE_MANIFEST = fixtureManifest('plugin-runner-late')
+const DUPLICATE_RUNNER_MANIFEST = fixtureManifest('plugin-runner-duplicate')
 
-type InstallTree = Record<string, string>
-type InstallTrees = Record<string, InstallTree>
+const RUNNER_ENTRYPOINT = fixtureEntrypoint('plugin-runner')
+const RUNNER_LATE_ENTRYPOINT = fixtureEntrypoint('plugin-runner-late')
+const DUPLICATE_RUNNER_ENTRYPOINT = fixtureEntrypoint('plugin-runner-duplicate')
 
-const tree = (entries: Record<string, string>): InstallTree => entries
+const VITEST_WORKER_ENTRY = 'file:///project/node_modules/@acme/stryker-runner/dist/main.mjs'
 
-const missingModule = (specifier: string, parent: string): Error =>
-  Object.assign(new Error(`Cannot find module '${specifier}' from '${parent}'`), { code: 'MODULE_NOT_FOUND' })
-
-const resolveFrom = (trees: InstallTrees, parent: string, specifier: string): string => {
-  if (!Object.hasOwn(trees, parent)) {
-    throw missingModule(specifier, parent)
-  }
-  const installTree = trees[parent]
-  if (installTree === undefined || !Object.hasOwn(installTree, specifier)) {
-    throw missingModule(specifier, parent)
-  }
-  const entrypoint = installTree[specifier]
-  if (entrypoint === undefined) {
-    throw missingModule(specifier, parent)
-  }
-  return entrypoint
+interface Installations {
+  readonly [specifier: string]: string | undefined
 }
 
 interface ResolverState {
-  readonly parents: string[]
+  readonly bases: string[]
   readonly attempted: string[]
   readonly warnings: string[]
 }
@@ -70,54 +52,46 @@ interface LoadOutcome {
   readonly state: ResolverState
 }
 
-const freshState = (): ResolverState => ({ parents: [], attempted: [], warnings: [] })
+const freshState = (): ResolverState => ({ bases: [], attempted: [], warnings: [] })
 
 const moduleLayer = (
   state: ResolverState,
-  trees: InstallTrees,
-  load: (specifier: string) => unknown,
+  installations: Installations,
 ): Layer.Layer<Module> =>
   Layer.succeed(Module, {
-    createRequire: (filename: string | URL): ModuleRequire => {
-      const parent = String(filename)
-      state.parents.push(parent)
-      return Object.assign(
-        (specifier: string): unknown => {
-          state.attempted.push(specifier)
-          return load(specifier)
-        },
-        {
-          resolve: (specifier: string): string => {
-            state.attempted.push(specifier)
-            return resolveFrom(trees, parent, specifier)
-          },
-        },
-      )
+    findPackageJSON: (specifier: string, base: string): string | undefined => {
+      state.bases.push(base)
+      state.attempted.push(specifier)
+      return installations[specifier]
     },
-    isBuiltin: (moduleName: string) => moduleName.startsWith('node:'),
   })
+
+interface NodeFs {
+  readFileSync(path: string, encoding: 'utf8'): string
+}
+
+const nodeFs: NodeFs = process.getBuiltinModule('node:fs')
+
+const fileSystemLayer = FileSystem.layerNoop({
+  readFileString: (path: string) => Effect.sync(() => nodeFs.readFileSync(path, 'utf8')),
+})
 
 const warningLogger = (state: ResolverState): Logger.Logger<unknown, void> =>
   Logger.make((options) => {
     state.warnings.push(Array.ensure(options.message).map(String).join(' '))
   })
 
-const untouchedFileSystem = FileSystem.layerNoop({
-  readDirectory: () => Effect.die(new Error('the loader must not walk the filesystem to discover plugins')),
-})
-
 const loadOutcome = (
   specifiers: readonly string[],
-  trees: InstallTrees,
-  load: (specifier: string) => unknown,
+  installations: Installations,
 ): Effect.Effect<LoadOutcome> => {
   const state = freshState()
   return loadPlugins(specifiers, PROJECT).pipe(
     Effect.provide(
       Layer.mergeAll(
-        moduleLayer(state, trees, load),
+        moduleLayer(state, installations),
         Path.layer,
-        untouchedFileSystem,
+        fileSystemLayer,
         Logger.layer([warningLogger(state)]),
       ),
     ),
@@ -152,7 +126,7 @@ const availableRunners = (loaded: LoadedPlugins): readonly string[] =>
 
 const attemptedSet = (outcome: LoadOutcome): readonly string[] => [...new Set(outcome.state.attempted)]
 
-const parentSet = (outcome: LoadOutcome): readonly string[] => [...new Set(outcome.state.parents)]
+const baseSet = (outcome: LoadOutcome): readonly string[] => [...new Set(outcome.state.bases)]
 
 const notFoundLines = (outcome: LoadOutcome): readonly string[] =>
   outcome.state.warnings.filter((line) => line.includes('Cannot find plugin'))
@@ -163,7 +137,7 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
     Gherkin.Do.pipe(
       Given('a project whose config declares the runner it has installed')(
         'outcome',
-        () => loadOutcome([RUNNER], { [PROJECT_MANIFEST]: tree({ [RUNNER]: RUNNER_ENTRYPOINT }) }, () => runnerModule),
+        () => loadOutcome([RUNNER], { [RUNNER]: RUNNER_MANIFEST }),
       ),
       When('the declared package is resolved')(
         'seen',
@@ -171,7 +145,7 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
           Effect.sync(() => ({
             runners: availableRunners(loadedOrThrow(s.outcome)),
             found: loadedOrThrow(s.outcome).pluginModulePaths,
-            parents: parentSet(s.outcome),
+            bases: baseSet(s.outcome),
           })),
       ),
       Then('exactly that plugin loads, resolved through the project manifest')((s) =>
@@ -179,7 +153,7 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
           expect(s.seen).toStrictEqual({
             runners: ['vitest'],
             found: [RUNNER_ENTRYPOINT],
-            parents: [PROJECT_MANIFEST],
+            bases: [PROJECT_MANIFEST],
           })
         })
       ),
@@ -191,12 +165,7 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
     Gherkin.Do.pipe(
       Given('a project declaring the runner it has installed and a package it does not have')(
         'outcome',
-        () =>
-          loadOutcome(
-            [RUNNER, UNSHIPPED],
-            { [PROJECT_MANIFEST]: tree({ [RUNNER]: RUNNER_ENTRYPOINT }) },
-            () => runnerModule,
-          ),
+        () => loadOutcome([RUNNER, UNSHIPPED], { [RUNNER]: RUNNER_MANIFEST }),
       ),
       When('the declared packages are resolved')(
         'seen',
@@ -221,31 +190,23 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
   )
 
   scenario(
-    'The plugin resolves from the project, not from the copy beside the engine',
+    'The plugin resolves from the project base, not from the copy beside the engine',
     Gherkin.Do.pipe(
-      Given('a package installed in the project and beside the engine')(
+      Given('a package installed in the project')(
         'outcome',
-        () =>
-          loadOutcome(
-            [RUNNER],
-            {
-              [PROJECT_MANIFEST]: tree({ [RUNNER]: RUNNER_ENTRYPOINT }),
-              [HOST_MANIFEST]: tree({ [RUNNER]: HOST_RUNNER_ENTRYPOINT }),
-            },
-            () => runnerModule,
-          ),
+        () => loadOutcome([RUNNER], { [RUNNER]: RUNNER_MANIFEST }),
       ),
       When('the declared package is resolved')(
         'seen',
         (s) =>
           Effect.sync(() => ({
             found: loadedOrThrow(s.outcome).pluginModulePaths,
-            parents: parentSet(s.outcome),
+            bases: baseSet(s.outcome),
           })),
       ),
-      Then('the project copy loads and the copy beside the engine is never consulted')((s) =>
+      Then('the project base is the only base consulted')((s) =>
         Effect.sync(() => {
-          expect(s.seen).toStrictEqual({ found: [RUNNER_ENTRYPOINT], parents: [PROJECT_MANIFEST] })
+          expect(s.seen).toStrictEqual({ found: [RUNNER_ENTRYPOINT], bases: [PROJECT_MANIFEST] })
         })
       ),
     ),
@@ -260,12 +221,9 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
           loadOutcome(
             [],
             {
-              [PROJECT_MANIFEST]: tree({
-                '@systemfsoftware/stryker-js-vitest-runner': RUNNER_ENTRYPOINT,
-                '@systemfsoftware/stryker-js-language': LANGUAGE_ENTRYPOINT,
-              }),
+              '@systemfsoftware/stryker-js-vitest-runner': RUNNER_MANIFEST,
+              '@systemfsoftware/stryker-js-language': RUNNER_MANIFEST,
             },
-            () => runnerModule,
           ),
       ),
       When('the project plugins are loaded')(
@@ -295,7 +253,7 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
     Gherkin.Do.pipe(
       Given('a project whose config declares its plugin by path')(
         'outcome',
-        () => loadOutcome([LOCAL_PLUGIN], { [PROJECT_MANIFEST]: tree({}) }, () => runnerModule),
+        () => loadOutcome([LOCAL_PLUGIN], {}),
       ),
       When('the project plugins are loaded')(
         'seen',
@@ -324,17 +282,7 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
     Gherkin.Do.pipe(
       Given('a project declaring two packages that both contribute a vitest runner')(
         'outcome',
-        () =>
-          loadOutcome(
-            [RUNNER, RUNNER_LATE],
-            {
-              [PROJECT_MANIFEST]: tree({
-                [RUNNER]: RUNNER_ENTRYPOINT,
-                [RUNNER_LATE]: RUNNER_LATE_ENTRYPOINT,
-              }),
-            },
-            () => runnerModule,
-          ),
+        () => loadOutcome([RUNNER, RUNNER_LATE], { [RUNNER]: RUNNER_MANIFEST, [RUNNER_LATE]: RUNNER_LATE_MANIFEST }),
       ),
       When('the shadowing is resolved')(
         'seen',
@@ -351,7 +299,7 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
               kind: 'TestRunner',
               name: 'vitest',
               modulePath: RUNNER_LATE_ENTRYPOINT,
-              workerEntry: 'file:///project/node_modules/@acme/stryker-runner/dist/main.mjs',
+              workerEntry: VITEST_WORKER_ENTRY,
             },
           ])
           expect(s.seen.warnings.some((line) => line.includes('shadows plugin at index 0'))).toBe(true)
@@ -365,12 +313,7 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
     Gherkin.Do.pipe(
       Given('a project declaring one package whose plugin list repeats the same runner')(
         'outcome',
-        () =>
-          loadOutcome(
-            [RUNNER],
-            { [PROJECT_MANIFEST]: tree({ [RUNNER]: RUNNER_ENTRYPOINT }) },
-            () => ({ strykerPlugins: [vitestDescriptor, vitestDescriptor] }),
-          ),
+        () => loadOutcome([DUPLICATE_RUNNER], { [DUPLICATE_RUNNER]: DUPLICATE_RUNNER_MANIFEST }),
       ),
       When('the duplicated runner is resolved')(
         'seen',
@@ -382,8 +325,8 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
             {
               kind: 'TestRunner',
               name: 'vitest',
-              modulePath: RUNNER_ENTRYPOINT,
-              workerEntry: 'file:///project/node_modules/@acme/stryker-runner/dist/main.mjs',
+              modulePath: DUPLICATE_RUNNER_ENTRYPOINT,
+              workerEntry: VITEST_WORKER_ENTRY,
             },
           ])
         })

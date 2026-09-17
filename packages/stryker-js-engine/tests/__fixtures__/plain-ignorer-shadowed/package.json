@@ -1,0 +1,7 @@
+{
+  "name": "plain-ignorer-shadowed",
+  "version": "0.0.0",
+  "exports": {
+    ".": "./plain-ignorer-shadowed.fixture.mjs"
+  }
+}

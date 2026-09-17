@@ -112,7 +112,7 @@ export const layerTraceContextClient: Layer.Layer<RpcMiddleware.ForClient<TraceC
 // @public (undocumented)
 export const layerTraceContextServer: Layer.Layer<TraceContextMiddleware, never, never>;
 
-// @public
+// @public (undocumented)
 export const nodeModuleLayer: Layer.Layer<Module>;
 
 // @public (undocumented)

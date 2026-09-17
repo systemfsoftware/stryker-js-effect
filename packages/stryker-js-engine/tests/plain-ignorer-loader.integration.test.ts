@@ -2,59 +2,42 @@ import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoft
 import type { ThisExpression } from '@systemfsoftware/stryker-ignorer-interface'
 import { createAll, loadPlugins, PluginLoadFailedError } from '@systemfsoftware/stryker-js-engine/plugin-loader'
 import { Module } from '@systemfsoftware/stryker-js-language'
-import type { ModuleRequire } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import { expect } from 'vitest'
 
 const Feature = makeFeature({ it, layer })
 
-interface NodeModuleShape {
-  createRequire(filename: string | URL): NodeRequire
-  isBuiltin(moduleName: string): boolean
-}
+const FIXTURES_DIR = `${process.cwd()}/tests/__fixtures__`
 
-const EMPTY_PATHS: readonly string[] = []
+const fixtureEntrypoint = (name: string): string => `file://${FIXTURES_DIR}/${name}/${name}.fixture.mjs`
 
 const INSTALLED_FIXTURES: Readonly<Record<string, string>> = {
-  'plain-ignorer-only': 'plain-ignorer-only.fixture.mjs',
-  'plain-ignorer-shadowed': 'plain-ignorer-shadowed.fixture.mjs',
-  'both-protocols': 'both-protocols.fixture.mjs',
-  'invalid-plain-entry': 'invalid-plain-entry.fixture.mjs',
+  'plain-ignorer-only': `${FIXTURES_DIR}/plain-ignorer-only/package.json`,
+  'plain-ignorer-shadowed': `${FIXTURES_DIR}/plain-ignorer-shadowed/package.json`,
+  'both-protocols': `${FIXTURES_DIR}/both-protocols/package.json`,
+  'invalid-plain-entry': `${FIXTURES_DIR}/invalid-plain-entry/package.json`,
 }
 
-const fixturePath = (name: string): string => `${process.cwd()}/tests/__fixtures__/${INSTALLED_FIXTURES[name] ?? name}`
+const moduleLayer = Layer.succeed(Module, {
+  findPackageJSON: (specifier: string): string | undefined => INSTALLED_FIXTURES[specifier],
+})
 
-const makeModuleRequire = (nodeModule: NodeModuleShape, filename: string | URL): ModuleRequire => {
-  const requireFrom: NodeRequire = nodeModule.createRequire(filename)
-  const requireFn: ModuleRequire = (request: string): unknown => requireFrom(fixturePath(request))
-  requireFn.resolve = (request, options) =>
-    Option.match(Option.fromUndefinedOr(options), {
-      onNone: () => requireFrom.resolve(fixturePath(request)),
-      onSome: (present) =>
-        requireFrom.resolve(fixturePath(request), {
-          paths: [...Option.getOrElse(Option.fromNullishOr(present.paths), () => EMPTY_PATHS)],
-        }),
-    })
-  return requireFn
+interface NodeFs {
+  readFileSync(path: string, encoding: 'utf8'): string
 }
 
-const moduleLayer = Layer.effect(
-  Module,
-  Effect.sync(() => {
-    const nodeModule: NodeModuleShape = process.getBuiltinModule('node:module')
-    return {
-      createRequire: (filename: string | URL) => makeModuleRequire(nodeModule, filename),
-      isBuiltin: (moduleName: string) => nodeModule.isBuiltin(moduleName),
-    }
-  }),
-)
+const nodeFs: NodeFs = process.getBuiltinModule('node:fs')
 
-const loaderLayer = Layer.mergeAll(Path.layer, moduleLayer)
+const fileSystemLayer = FileSystem.layerNoop({
+  readFileString: (path: string) => Effect.sync(() => nodeFs.readFileSync(path, 'utf8')),
+})
+
+const loaderLayer = Layer.mergeAll(Path.layer, fileSystemLayer, moduleLayer)
 
 const loadFixture = (name: string) => loadPlugins([name], process.cwd()).pipe(Effect.provide(loaderLayer))
 
@@ -129,7 +112,7 @@ Feature('Loading the ignorers a project declares')
         Then('the reporter is still offered and the ignorer stays a plain decision')((s) => {
           expect(s.seen.reporters).toStrictEqual(['native-fixture-reporter'])
           expect(s.seen.ignorers).toStrictEqual(['plain-fixture-rule'])
-          expect(s.seen.modulePaths).toStrictEqual([fixturePath('both-protocols')])
+          expect(s.seen.modulePaths).toStrictEqual([fixtureEntrypoint('both-protocols')])
         }),
       ),
     )

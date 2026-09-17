@@ -1,0 +1,7 @@
+{
+  "name": "invalid-plain-entry",
+  "version": "0.0.0",
+  "exports": {
+    ".": "./invalid-plain-entry.fixture.mjs"
+  }
+}

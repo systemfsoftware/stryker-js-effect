@@ -1,4 +1,4 @@
-import { Module } from '@systemfsoftware/stryker-js-language'
+import { Module, resolvePackageEntry, ResolvePackageEntryCommand } from '@systemfsoftware/stryker-js-language'
 import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
@@ -430,29 +430,12 @@ export function describeErrors(error: S.SchemaError): string[] {
   return errorMessageOrFallback(completedErrorMessages(state), error.message)
 }
 
-const PATH_SPECIFIER_PREFIXES: readonly string[] = ['.', '/', 'file://']
-
-const isPathSpecifier = (specifier: string): boolean =>
-  PATH_SPECIFIER_PREFIXES.some((prefix) => specifier.startsWith(prefix))
-
 export function importModule(
   moduleName: string,
-  basePath: string,
-): Effect.Effect<unknown, StrykerError, Module | Path.Path> {
-  return Effect.gen(function*() {
-    const path = yield* Path.Path
-    if (isPathSpecifier(moduleName)) {
-      return yield* Effect.tryPromise({
-        try: (): Promise<unknown> => import(moduleName),
-        catch: (cause) => new StrykerError({ message: `Failed to import module "${moduleName}"`, cause }),
-      })
-    }
-    const module = yield* Module
-    const requireFrom = module.createRequire(path.join(basePath, 'package.json'))
-    return yield* Effect.try({
-      try: () => requireFrom(moduleName),
-      catch: (cause) => new StrykerError({ message: `Failed to import module "${moduleName}"`, cause }),
-    })
+): Effect.Effect<unknown, StrykerError> {
+  return Effect.tryPromise({
+    try: (): Promise<unknown> => import(moduleName),
+    catch: (cause) => new StrykerError({ message: `Failed to import module "${moduleName}"`, cause }),
   })
 }
 
@@ -739,18 +722,40 @@ export function readConfigFile(
   })
 }
 
+const packageSubpath = (specifier: string): string => {
+  const segments = specifier.split('/')
+  const rest = specifier.startsWith('@') ? segments.slice(2) : segments.slice(1)
+  return rest.length === 0 ? '.' : `./${rest.join('/')}`
+}
+
 function resolveExtendsSpecifier(
   specifier: string,
   configDir: string,
-): Effect.Effect<string, ConfigFileUnreadableError, Module | Path.Path> {
+): Effect.Effect<string, ConfigFileUnreadableError, FileSystem.FileSystem | Module | Path.Path> {
   return Effect.gen(function*() {
     const path = yield* Path.Path
     const module = yield* Module
-    const requireFrom = module.createRequire(path.join(configDir, 'package.json'))
-    return yield* Effect.try({
-      try: () => requireFrom.resolve(specifier),
+    const fileSystem = yield* FileSystem.FileSystem
+    const manifestPath = module.findPackageJSON(specifier, path.join(configDir, 'package.json'))
+    if (manifestPath === undefined) {
+      return yield* Effect.fail(
+        new ConfigFileUnreadableError({ file: specifier, cause: `Cannot find package "${specifier}"` }),
+      )
+    }
+    const manifestText = yield* fileSystem.readFileString(manifestPath).pipe(
+      Effect.mapError((cause) => new ConfigFileUnreadableError({ file: specifier, cause })),
+    )
+    const manifest = yield* Effect.try({
+      try: (): unknown => JSON.parse(manifestText),
       catch: (cause) => new ConfigFileUnreadableError({ file: specifier, cause }),
     })
+    const selected = resolvePackageEntry(
+      new ResolvePackageEntryCommand({ manifest, subpath: packageSubpath(specifier) }),
+    )
+    if (Result.isFailure(selected)) {
+      return yield* Effect.fail(new ConfigFileUnreadableError({ file: specifier, cause: selected.failure.reason }))
+    }
+    return path.join(path.dirname(manifestPath), selected.success.path)
   })
 }
 
@@ -1424,14 +1429,14 @@ function readJsonConfig(
 
 function importJSConfigModule(
   configFile: string,
-  basePath: string,
+  _basePath: string,
 ): Effect.Effect<unknown, ConfigFileUnreadableError, Module | Path.Path> {
   return Effect.gen(function*() {
     const pathService = yield* Path.Path
     const url = yield* pathService.toFileUrl(pathService.resolve(configFile)).pipe(
       Effect.mapError((cause) => new ConfigFileUnreadableError({ file: configFile, cause })),
     )
-    return yield* importModule(url.href, basePath).pipe(
+    return yield* importModule(url.href).pipe(
       Effect.mapError((cause) => new ConfigFileUnreadableError({ file: configFile, cause })),
     )
   })
