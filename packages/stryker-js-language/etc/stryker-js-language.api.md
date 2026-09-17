@@ -7,10 +7,7 @@
 import * as Cause from 'effect/Cause';
 import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
-import * as Exit from 'effect/Exit';
 import * as HashMap from 'effect/HashMap';
-import { Node } from '@systemfsoftware/stryker-ignorer-interface';
-import * as Option from 'effect/Option';
 import * as Queue from 'effect/Queue';
 import * as S from 'effect/Schema';
 import { StandardSchemaV1 } from 'effect/StandardSchema';
@@ -38,9 +35,6 @@ export const BrandingInformationSchema: S.Struct<{
     readonly homepageUrl: S.String;
     readonly imageUrl: S.optional<S.String>;
 }>;
-
-// @public (undocumented)
-export const calculateMetrics: (files: Readonly<Record<string, FileResult>>) => MetricsResult;
 
 // @public (undocumented)
 export const causeText: (cause: unknown, depth: number) => string | undefined;
@@ -83,19 +77,6 @@ export const CheckStatus: S.Literals<readonly ["passed", "compileError"]>;
 export type CheckStatus = typeof CheckStatus.Type;
 
 // @public (undocumented)
-export const classifyExit: (command: ClassifyExitCommand) => ClassifyExitDecision;
-
-// Warning: (ae-forgotten-export) The symbol "ClassifyExitCommand_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class ClassifyExitCommand extends ClassifyExitCommand_base {}
-
-// Warning: (ae-forgotten-export) The symbol "ClassifyExitDecision_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class ClassifyExitDecision extends ClassifyExitDecision_base {}
-
-// @public (undocumented)
 export type CommandRunnerOptions = S.Schema.Type<typeof CommandRunnerOptionsSchema>;
 
 // @public (undocumented)
@@ -112,9 +93,6 @@ export interface CompleteDryRunResult {
     // (undocumented)
     readonly tests: readonly TestResult[];
 }
-
-// @public (undocumented)
-export const countMutants: (mutants: readonly MutantResult[]) => Metrics;
 
 // @public (undocumented)
 export interface Coverage {
@@ -416,20 +394,6 @@ export class Heartbeat extends Heartbeat_base {}
 export class HelpRendered extends HelpRendered_base {}
 
 // @public (undocumented)
-export function highestExitClass(pending: Iterable<ExitClass>): ExitClass | null;
-
-// Warning: (ae-forgotten-export) The symbol "Ignorer_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class Ignorer extends Ignorer_base {}
-
-// @public (undocumented)
-export interface IgnorerService {
-    // (undocumented)
-    readonly shouldIgnore: (node: Node, ancestors: readonly Node[]) => Option.Option<string>;
-}
-
-// @public (undocumented)
 export const INSTRUMENTER_CONSTANTS: Readonly<{
     NAMESPACE: '__stryker__';
     MUTATION_COVERAGE_OBJECT: 'mutantCoverage';
@@ -699,14 +663,6 @@ export interface MutationRange {
     readonly start: Position;
 }
 
-// @public (undocumented)
-export interface MutationRunIo {
-    // (undocumented)
-    readonly read: (command: RunCommand) => Effect.Effect<unknown, S.SchemaError, RunIdentity>;
-    // (undocumented)
-    readonly write: (output: RunOutput) => Effect.Effect<void, S.SchemaError, RunIdentity>;
-}
-
 // Warning: (ae-forgotten-export) The symbol "MutationRunPlan_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
@@ -853,9 +809,6 @@ export class PhaseEntered extends PhaseEntered_base {}
 // @public (undocumented)
 export class PlanKnown extends PlanKnown_base {}
 
-// @public (undocumented)
-export const planMutationRun: (command: PlanMutationRunCommand) => MutationRunPlan;
-
 // Warning: (ae-forgotten-export) The symbol "PlanMutationRunCommand_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
@@ -945,9 +898,6 @@ export const ReportTypeType: S.Literals<readonly ["full", "mutationScore"]>;
 // @public (undocumented)
 export type ReportTypeType = typeof ReportTypeType.Type;
 
-// @public (undocumented)
-export function resolveExitCode(pending: Iterable<ExitClass>, signal: number | null): number;
-
 // Warning: (ae-forgotten-export) The symbol "RunCommand_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
@@ -1000,9 +950,6 @@ export type RunMutantResult = Mutant & {
 export class RunMutantTested extends RunMutantTested_base {}
 
 // @public (undocumented)
-export const runMutationTest: (io: MutationRunIo, command: RunCommand) => Effect.Effect<void, S.SchemaError, RunIdentity>;
-
-// @public (undocumented)
 export interface RunOptions {
     // (undocumented)
     readonly disableBail: boolean;
@@ -1049,9 +996,6 @@ export const RunTimingSchema: S.Struct<{
     readonly net: S.Finite;
     readonly overhead: S.Finite;
 }>;
-
-// @public (undocumented)
-export const shouldKeepTempDir: (exit: Exit.Exit<void, unknown>, cleanTempDir: 'always' | boolean) => boolean;
 
 // @public (undocumented)
 export interface SkippedTestResult extends BaseTestResult {
@@ -1332,9 +1276,6 @@ export interface TimeoutMutantRunResult {
 
 // @public (undocumented)
 export function toMutantRunResult(dryRunResult: DryRunResult, reportAllKillers: boolean): MutantRunResult;
-
-// @public (undocumented)
-export function verdictExitClass(score: number | null, breakingThreshold: number | null): ExitClass | null;
 
 // Warning: (ae-forgotten-export) The symbol "VerdictReached_base" needs to be exported by the entry point index.d.mts
 //

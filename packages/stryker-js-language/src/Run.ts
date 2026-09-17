@@ -1,42 +1,8 @@
 import type * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
-import * as Effect from 'effect/Effect'
-import * as Exit from 'effect/Exit'
-import * as Queue from 'effect/Queue'
-import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
+import type * as Queue from 'effect/Queue'
 
-import {
-  Heartbeat,
-  HelpRendered,
-  MutationRunPlan,
-  PhaseEntered,
-  PlanKnown,
-  PlanMutationRunCommand,
-  RunCommand,
-  RunEvent,
-  RunFailed,
-  RunMutantTested,
-  RunOutput,
-  RunStarted,
-  VerdictReached,
-} from './Run.schema.js'
-
-const firstNonEmpty = (
-  preferred: ReadonlyArray<string>,
-  fallback: ReadonlyArray<string>,
-): ReadonlyArray<string> => {
-  if (preferred.length > 0) {
-    return [...preferred]
-  }
-  return [...fallback]
-}
-
-export const planMutationRun = (command: PlanMutationRunCommand): MutationRunPlan =>
-  MutationRunPlan.make({
-    mutatePatterns: firstNonEmpty(command.targetMutatePatterns, command.configMutatePatterns),
-    mutatorNames: firstNonEmpty(command.availableMutators, command.configMutatorNames),
-  })
+import type { RunEvent } from './Run.schema.js'
 
 export class RunEvents extends Context.Service<RunEvents, Queue.Queue<RunEvent, Cause.Done>>()(
   '~@systemfsoftware/stryker-js-language/RunEvents',
@@ -51,47 +17,20 @@ export class RunIdentity extends Context.Service<RunIdentity, RunIdentityShape>(
   '~@systemfsoftware/stryker-js-language/RunIdentity',
 ) {}
 
-export interface MutationRunIo {
-  readonly read: (command: RunCommand) => Effect.Effect<unknown, S.SchemaError, RunIdentity>
-  readonly write: (output: RunOutput) => Effect.Effect<void, S.SchemaError, RunIdentity>
-}
-
-export const runMutationTest = (
-  io: MutationRunIo,
-  command: RunCommand,
-): Effect.Effect<void, S.SchemaError, RunIdentity> =>
-  Effect.gen(function*() {
-    const raw = yield* io.read(command)
-    const planCommand = yield* Result.match(S.decodeUnknownResult(PlanMutationRunCommand)(raw), {
-      onFailure: (error) => Effect.fail(error),
-      onSuccess: (decoded) => Effect.succeed(decoded),
-    })
-    const plan = planMutationRun(planCommand)
-    return yield* io.write(
-      new RunOutput({
-        verdictJson: JSON.stringify({ mutate: plan.mutatePatterns, mutatorNames: plan.mutatorNames }),
-        exitCode: 0,
-      }),
-    )
-  })
-
-export const shouldKeepTempDir = (
-  exit: Exit.Exit<void, unknown>,
-  cleanTempDir: 'always' | boolean,
-): boolean => Exit.isFailure(exit) && cleanTempDir !== 'always'
-
 export {
   Heartbeat,
   HelpRendered,
+  ModeSignal,
+  OutputMode,
   PhaseEntered,
   PlanKnown,
-  RunEvent,
+  type RunEvent,
   RunFailed,
   RunMutantTested,
+  RunPhase,
   RunStarted,
+  type RunTerminalEvent,
   VerdictReached,
-}
-export type { RunEvent as RunEventType }
-export type { Location, Position } from './Report.schema.js'
-export { ModeSignal, OutputMode, RunPhase } from './Run.schema.js'
-export type { RunTerminalEvent } from './Run.schema.js'
+} from './Run.schema.js'
+
+export type { RunEvent as RunEventType } from './Run.schema.js'

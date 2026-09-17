@@ -5,8 +5,9 @@ import {
   spawnReporterWorker,
 } from '@systemfsoftware/stryker-js-engine'
 import type { WorkerSpawnParams } from '@systemfsoftware/stryker-js-engine'
+import { calculateMetrics } from '@systemfsoftware/stryker-js-engine'
 import type { MutationTestResult, ReporterEvent } from '@systemfsoftware/stryker-js-language'
-import { calculateMetrics, MutationTestReportReady, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
+import { MutationTestReportReady, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
 import { DryRunCompleted, MutantTested, MutationTestingPlanReady } from '@systemfsoftware/stryker-js-language'
 import type { ReporterInitOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { decodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-runtime'

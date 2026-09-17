@@ -1,19 +1,13 @@
+import type { FileResult, Metrics, MetricsResult, MutantResult } from '@systemfsoftware/stryker-js-language'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-
-import type { Metrics, MetricsResult } from './Metrics.schema.js'
-
-export { MetricsResultSchema, MetricsSchema } from './Metrics.schema.js'
-export type { Metrics, MetricsResult } from './Metrics.schema.js'
-import type { FileResult, MutantResult } from './Report.schema.js'
 
 const countStatus = (mutants: readonly MutantResult[], status: MutantResult['status']): number =>
   mutants.filter((mutant) => mutant.status === status).length
 
 const percentage = (numerator: number, denominator: number): number => (numerator / denominator) * 100
 
-/** A percentage whose denominator is zero is not 0%; `emptyDenominator` says what it is instead. */
 const percentOr = (emptyDenominator: number, numerator: number, denominator: number): number =>
   Match.value(denominator).pipe(
     Match.when(0, () => emptyDenominator),

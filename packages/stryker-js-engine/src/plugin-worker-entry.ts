@@ -4,6 +4,15 @@ import * as Option from 'effect/Option'
 
 import { findByKindAndName, type LoadedPlugins, type WorkerPluginSource } from './Plugins.js'
 import { PluginNotFoundError } from './Plugins.schema.js'
+import { StageError } from './Run.schema.js'
+
+export const missingWorkerEntry =
+  (stage: StageError['stage'], kind: string, name: string) => (failure: PluginNotFoundError): StageError =>
+    new StageError({
+      stage,
+      reason: `the ${kind} plugin "${name}" is not among the loaded plugins`,
+      cause: failure,
+    })
 
 const requiredSource = (params: {
   readonly loaded: Pick<LoadedPlugins, 'pluginSources'>

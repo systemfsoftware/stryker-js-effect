@@ -1,7 +1,5 @@
 import { type CheckResult, type PassedCheckResult } from '@systemfsoftware/stryker-js-language'
 import type { ExitClass } from '@systemfsoftware/stryker-js-language'
-import { highestExitClass, verdictExitClass } from '@systemfsoftware/stryker-js-language'
-import { calculateMetrics } from '@systemfsoftware/stryker-js-language'
 import type { MetricsResult } from '@systemfsoftware/stryker-js-language'
 import type { MutantTestCoverage, RunMutantResult } from '@systemfsoftware/stryker-js-language'
 import type * as schema from '@systemfsoftware/stryker-js-language'
@@ -20,6 +18,8 @@ import type { PlatformError } from 'effect/PlatformError'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import { calculateMetrics } from './calculate-metrics.js'
+import { highestExitClass, verdictExitClass } from './exit-classification.js'
 
 import { checkStatusToMutantStatus, mapRunResult, toSchemaLocation } from './mutant-result-mapping.js'
 import type { TestCoverage } from './Mutants.js'
@@ -35,7 +35,7 @@ import {
 } from './report-assembly.js'
 import type { ReporterStage } from './ReporterStream.js'
 import { closeReporterStage, offerTerminalReport, terminalDrainClass } from './ReporterStream.js'
-import type { RunOutcome } from './Run.js'
+import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { strykerVersion } from './stryker-package.js'
 import { buildVerdictEnvelope } from './verdict-envelope.js'
 
@@ -59,7 +59,7 @@ export interface MutationReportingService {
   ) => Effect.Effect<RunMutantResult>
   readonly reportAll: (
     results: readonly RunMutantResult[],
-  ) => Effect.Effect<RunOutcome, PlatformError, FileSystem.FileSystem | Path.Path | RunEvents>
+  ) => Effect.Effect<MutationTestDone, PlatformError, FileSystem.FileSystem | Path.Path | RunEvents>
   readonly checkpoint: (
     results: readonly RunMutantResult[],
   ) => Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path>
@@ -343,7 +343,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
         yield* fs.makeDirectory(dir, { recursive: true })
         yield* fs.writeFileString(input.options.incrementalFile, JSON.stringify(report, null, 2))
       }
-      return { results, verdict: finalVerdict } satisfies RunOutcome
+      return { results, verdict: finalVerdict } satisfies MutationTestDone
     })
   const writeAtomic = (file: string, content: string) =>
     Effect.gen(function*() {

@@ -73,10 +73,8 @@ const makeDisableTypeChecksPreprocessor =
         }
         return Effect.gen(function*() {
           const instrumenterFile = yield* toInstrumenterFile(file)
-          const content = yield* Effect.tryPromise({
-            try: () => impl(instrumenterFile).then((r) => r.content),
-            catch: (cause) => new StrykerError({ message: 'disableTypeChecks failed', cause }),
-          }).pipe(
+          const content: string | undefined = yield* impl(instrumenterFile).pipe(
+            Effect.map((result) => result.content),
             Effect.catch((_error) =>
               Effect.gen(function*() {
                 if (isWarningEnabled('preprocessorErrors', options.warnings)) {
