@@ -13,21 +13,21 @@ A brand description, a `_tag`, a `title` — mutate any of them and the source c
 pnpm add -D @systemfsoftware/stryker-ignorer-effect-schema-declarations
 ```
 
-In `stryker.config.json`, the plugin module and the ignorer name travel as a pair:
+In `stryker.config.ts`, the plugin module and the ignorer name travel as a pair:
 
 | Config key | Value                                                         |
 | ---------- | ------------------------------------------------------------- |
 | `plugins`  | `@systemfsoftware/stryker-ignorer-effect-schema-declarations` |
 | `ignorers` | `effect-schema-declarations`                                  |
 
-```jsonc
-{
-  "plugins": [
-    "@systemfsoftware/stryker-js-vitest-runner",
-    "@systemfsoftware/stryker-js-typescript-checker",
-    "@systemfsoftware/stryker-ignorer-effect-schema-declarations"
+```ts
+export default {
+  plugins: [
+    '@systemfsoftware/stryker-js-vitest-runner',
+    '@systemfsoftware/stryker-js-typescript-checker',
+    '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
   ],
-  "ignorers": ["effect-schema-declarations"]
+  ignorers: ['effect-schema-declarations'],
 }
 ```
 

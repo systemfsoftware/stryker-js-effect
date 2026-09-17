@@ -18,17 +18,17 @@ npm install --save-dev @systemfsoftware/stryker-js-cli
 npx stryker run
 ```
 
-With a `stryker.config.json`:
+With a `stryker.config.ts`:
 
-```json
-{
-  "testRunner": "command",
-  "mutate": ["src/**/*.js"],
-  "thresholds": { "high": 100, "low": 80, "break": 0 }
+```ts
+export default {
+  testRunner: 'command',
+  mutate: ['src/**/*.js'],
+  thresholds: { high: 100, low: 80, break: 0 },
 }
 ```
 
-Requires Node.js 20 or later.
+Requires Node.js 22.18.0 or later (`>=22.18.0`).
 
 ## Usage
 

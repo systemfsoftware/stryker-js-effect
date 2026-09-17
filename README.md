@@ -95,27 +95,27 @@ pnpm add -D @systemfsoftware/stryker-js-cli \
   @systemfsoftware/stryker-js-typescript-checker
 ```
 
-### 2. Configure `stryker.config.json`
+### 2. Configure `stryker.config.ts`
 
-Create `stryker.config.json` in your project root:
+Create `stryker.config.ts` in your project root:
 
-```json
-{
-  "testRunner": "vitest",
-  "plugins": [
-    "@systemfsoftware/stryker-js-vitest-runner",
-    "@systemfsoftware/stryker-js-typescript-checker"
+```ts
+export default {
+  testRunner: 'vitest',
+  plugins: [
+    '@systemfsoftware/stryker-js-vitest-runner',
+    '@systemfsoftware/stryker-js-typescript-checker',
   ],
-  "mutate": [
-    "src/**/*.ts",
-    "!src/**/*.d.ts",
-    "!src/**/__tests__/**"
+  mutate: [
+    'src/**/*.ts',
+    '!src/**/*.d.ts',
+    '!src/**/__tests__/**',
   ],
-  "thresholds": {
-    "high": 100,
-    "low": 80,
-    "break": 100
-  }
+  thresholds: {
+    high: 100,
+    low: 80,
+    break: 100,
+  },
 }
 ```
 
@@ -159,14 +159,14 @@ This monorepo publishes a modular ecosystem of packages under the `@systemfsoftw
 <details>
 <summary><strong>Why do mutants survive on my Effect Schema definitions?</strong></summary>
 
-Schema definitions and branded type markers often produce equivalent mutants that cannot be observed or failed at runtime. Install `@systemfsoftware/stryker-ignorer-effect-schema-declarations` and enable `effect-schema-declarations` in your `stryker.config.json` to filter them out automatically.
+Schema definitions and branded type markers often produce equivalent mutants that cannot be observed or failed at runtime. Install `@systemfsoftware/stryker-ignorer-effect-schema-declarations` and enable `effect-schema-declarations` in your `stryker.config.ts` to filter them out automatically.
 
 </details>
 
 <details>
 <summary><strong>What versions of Node.js and TypeScript are supported?</strong></summary>
 
-All packages require Node.js 20 or later (`>=20.0.0`, with CLI packages targeting Node.js `>=20.19.0`). TypeScript 5.x through 7.x are supported out of the box.
+Node.js 22.18.0 or later is required (`>=22.18.0`). Configuration files are TypeScript or ECMAScript modules (`stryker.config.ts`, `.mts`, `.js`, `.mjs`, and their `stryker.conf.*` twins). TypeScript 5.x through 7.x are supported out of the box.
 
 </details>
 

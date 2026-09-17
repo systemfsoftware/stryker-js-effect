@@ -24,7 +24,7 @@ committed.
 
 Machine-mode events go to stdout and also to `reports/mutation-stream.jsonl`
 under the run's working directory. The lane observes stdout. Each fixture names the plugins its run loads in its
-own `stryker.config.json` — that array is the only source of what loads — and
+own `stryker.config.ts` — that array is the only source of what loads — and
 they resolve from the fixture's `node_modules`.
 `--version` prints the CLI package version from the packed tarball's manifest.
 
