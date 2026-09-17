@@ -107,13 +107,22 @@ const searchTraceIds = async (startSeconds: number, endSeconds: number): Promise
   })
 }
 
-const readTrace = async (traceId: string): Promise<readonly TraceSpan[]> => {
-  const response = await fetch(`${tempoUrl()}/api/traces/${traceId}`)
-  if (!response.ok) {
-    throw new Error(`Tempo trace ${traceId} returned ${response.status}`)
+const RETRY_ATTEMPTS = 5
+const BACKOFF_BASE_MS = 500
+const READ_CONCURRENCY = 4
+
+const readTraceWithRetry = async (traceId: string): Promise<readonly TraceSpan[]> => {
+  for (let attempt = 1;; attempt += 1) {
+    const response = await fetch(`${tempoUrl()}/api/traces/${traceId}`)
+    if (response.ok) {
+      const document: unknown = await response.json()
+      return spansOfTrace(document)
+    }
+    if (attempt >= RETRY_ATTEMPTS || (response.status !== 429 && response.status < 500)) {
+      throw new Error(`Tempo trace ${traceId} returned ${response.status} after ${attempt} attempt(s)`)
+    }
+    await waitFor(BACKOFF_BASE_MS * attempt)
   }
-  const document: unknown = await response.json()
-  return spansOfTrace(document)
 }
 
 export const readWindowSpans = async (params: {
@@ -121,8 +130,19 @@ export const readWindowSpans = async (params: {
   readonly serviceName: string
 }): Promise<readonly TraceSpan[]> => {
   const traceIds = await searchTraceIds(params.startSeconds, Math.floor(Date.now() / 1000) + 1)
-  const traces = await Promise.all(traceIds.map(readTrace))
-  return traces.flat().filter((span) => span.serviceName === params.serviceName)
+  const queue = [...traceIds]
+  const results: TraceSpan[][] = []
+  const workers = Array.from(
+    { length: Math.min(READ_CONCURRENCY, queue.length) },
+    async () => {
+      for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+        const spans = await readTraceWithRetry(next)
+        results.push([...spans])
+      }
+    },
+  )
+  await Promise.all(workers)
+  return results.flat().filter((span) => span.serviceName === params.serviceName)
 }
 
 export const pollWindowSpans = async (params: {
