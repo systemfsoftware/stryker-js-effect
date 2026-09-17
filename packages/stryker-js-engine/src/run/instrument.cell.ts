@@ -57,7 +57,7 @@ export const instrumentCell = Cell.layer({
       const instrumentResult = yield* instrument(filesToMutate, {
         ignorers: [...command.ignorers],
         excludedMutations: [...command.options.mutator.excludedMutations],
-      }).pipe(Effect.mapError((cause) =>
+      }, env.basePath).pipe(Effect.mapError((cause) =>
         StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })
       ))
 

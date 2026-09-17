@@ -1,4 +1,4 @@
-import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-language'
+import type { LogLevel, PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Flag from 'effect/unstable/cli/Flag'
@@ -44,6 +44,17 @@ export function setIfPresent<K extends keyof StrykerOptions>(
   target: PartialStrykerOptions,
   key: K,
   value: Option.Option<StrykerOptions[K]> | StrykerOptions[K] | undefined,
+): void {
+  const unwrapped = unwrap(value)
+  if (unwrapped !== undefined) {
+    target[key] = unwrapped
+  }
+}
+
+export function setLogLevel(
+  target: PartialStrykerOptions,
+  key: 'logLevel' | 'fileLogLevel',
+  value: Option.Option<LogLevel> | LogLevel | undefined,
 ): void {
   const unwrapped = unwrap(value)
   if (unwrapped !== undefined) {

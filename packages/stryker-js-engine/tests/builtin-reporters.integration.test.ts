@@ -3,7 +3,6 @@ import { calculateMetrics } from '@systemfsoftware/stryker-js-engine'
 import { makeBuiltinReporterFactories } from '@systemfsoftware/stryker-js-engine/builtin-reporters'
 import type { MetricsResult } from '@systemfsoftware/stryker-js-language'
 import type { MutantResult, MutationTestResult } from '@systemfsoftware/stryker-js-language'
-import type { ReporterFactory } from '@systemfsoftware/stryker-js-language'
 import {
   DryRunCompleted,
   MutantTested,
@@ -12,12 +11,13 @@ import {
 } from '@systemfsoftware/stryker-js-language'
 import type { ReporterEvent } from '@systemfsoftware/stryker-js-language'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
-import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
+import * as Sink from 'effect/Sink'
+import * as Stdio from 'effect/Stdio'
 import { expect } from 'vitest'
 
 const Feature = makeFeature({ it, layer })
@@ -25,49 +25,31 @@ const Feature = makeFeature({ it, layer })
 const MARKER_FILE = 'src/marker.ts'
 const MARKER_TEST_FILE = 'src/marker.test.ts'
 
-class Terminal extends Context.Service<Terminal, { readonly chunks: string[] }>()(
-  '@systemfsoftware/stryker-js-engine/tests/builtin-reporters.integration.test/Terminal',
-) {}
+const captureSink = (chunks: string[]) =>
+  Sink.forEach((chunk: string | Uint8Array) => Effect.sync(() => chunks.push(String(chunk))))
 
-const terminalSpyLayer = Layer.effect(
-  Terminal,
-  Effect.acquireRelease(
-    Effect.sync(() => {
-      const chunks: string[] = []
-      Object.assign(process.stdout, {
-        write: (chunk: unknown): boolean => {
-          chunks.push(String(chunk))
-          return true
-        },
-      })
-      return {
-        chunks,
-        restore: (): void => {
-          Reflect.deleteProperty(process.stdout, 'write')
-        },
-      }
-    }),
-    (handle) => Effect.sync(() => handle.restore()),
-  ),
-)
+const options = (overrides: Record<string, unknown> = {}) => S.decodeUnknownSync(StrykerOptionsSchema)(overrides)
 
-const reporterLayer = Layer.mergeAll(FileSystem.layerNoop({}), Path.layer, terminalSpyLayer)
-
-const reporterNamed = (
+const writeThrough = (
   name: string,
-): Effect.Effect<ReporterFactory, never, FileSystem.FileSystem | Path.Path> =>
+  events: readonly ReporterEvent[],
+): Effect.Effect<string, unknown, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
+    const chunks: string[] = []
+    const stdio = yield* Stdio.Stdio.pipe(
+      Effect.provide(Stdio.layerTest({ stdout: () => captureSink(chunks), stderr: () => captureSink(chunks) })),
+    )
     const fileSystem = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const factories = makeBuiltinReporterFactories({ fileSystem, path })
-    const factory = factories[name]
+    const factory = makeBuiltinReporterFactories({ fileSystem, path, stdio })[name]
     if (factory === undefined) {
       throw new Error(`no builtin reporter answers to "${name}"`)
     }
-    return factory
+    yield* factory(options(), {})(toStream(events))
+    return chunks.join('')
   })
 
-const options = (overrides: Record<string, unknown> = {}) => S.decodeUnknownSync(StrykerOptionsSchema)(overrides)
+const reporterLayer = Layer.mergeAll(FileSystem.layerNoop({}), Path.layer)
 
 const markerMutants = (status: 'Killed' | 'Survived'): readonly MutantResult[] => {
   const mutant: MutantResult = {
@@ -152,13 +134,10 @@ Feature('Reporting a finished mutation run')
       'A finished run names the file whose mutant survived',
       Gherkin.Do.pipe(
         Given('a completed run whose single mutant survived')('run', () => Effect.succeed(completedRun('Survived'))),
-        When('the terminal report is written for the run')('terminal', (s) =>
-          Effect.gen(function*() {
-            const terminal = yield* Terminal
-            const factory = yield* reporterNamed('clear-text')
-            yield* factory(options(), {})(toStream(runEvents(s.run.report, s.run.metrics)))
-            return terminal.chunks.join('')
-          })),
+        When('the terminal report is written for the run')(
+          'terminal',
+          (s) => writeThrough('clear-text', runEvents(s.run.report, s.run.metrics)),
+        ),
         Then('the score table names the mutated file')((s) => {
           expect(s.terminal).toContain('All files')
           expect(s.terminal).toContain(MARKER_FILE)
@@ -173,13 +152,10 @@ Feature('Reporting a finished mutation run')
       'A finished run whose mutants all died reports a perfect score',
       Gherkin.Do.pipe(
         Given('a completed run whose single mutant was killed')('run', () => Effect.succeed(completedRun('Killed'))),
-        When('the terminal report is written for the run')('terminal', (s) =>
-          Effect.gen(function*() {
-            const terminal = yield* Terminal
-            const factory = yield* reporterNamed('clear-text')
-            yield* factory(options(), {})(toStream(runEvents(s.run.report, s.run.metrics)))
-            return terminal.chunks.join('')
-          })),
+        When('the terminal report is written for the run')(
+          'terminal',
+          (s) => writeThrough('clear-text', runEvents(s.run.report, s.run.metrics)),
+        ),
         Then('the score table reports a mutation score of 100.00')((s) => {
           expect(s.terminal).toContain('100.00')
         }),
@@ -193,13 +169,7 @@ Feature('Reporting a finished mutation run')
           'events',
           () => Effect.succeed(allFourEvents('Killed').slice(0, 3)),
         ),
-        When('the terminal report is written for the run')('terminal', (s) =>
-          Effect.gen(function*() {
-            const terminal = yield* Terminal
-            const factory = yield* reporterNamed('clear-text')
-            yield* factory(options(), {})(toStream(s.events))
-            return terminal.chunks.join('')
-          })),
+        When('the terminal report is written for the run')('terminal', (s) => writeThrough('clear-text', s.events)),
         Then('nothing is written to the terminal')((s) => {
           expect(s.terminal).toBe('')
         }),
@@ -213,13 +183,7 @@ Feature('Reporting a finished mutation run')
           'events',
           () => Effect.succeed(allFourEvents('Killed').slice(0, 3)),
         ),
-        When('the progress report is written for the run')('terminal', (s) =>
-          Effect.gen(function*() {
-            const terminal = yield* Terminal
-            const factory = yield* reporterNamed('progress')
-            yield* factory(options(), {})(toStream(s.events))
-            return terminal.chunks.join('')
-          })),
+        When('the progress report is written for the run')('terminal', (s) => writeThrough('progress', s.events)),
         Then('the bar counts the mutants it tested')((s) => {
           expect(s.terminal).toContain('Mutants tested')
         }),
@@ -233,13 +197,10 @@ Feature('Reporting a finished mutation run')
       'The machine progress reporter leaves the terminal untouched',
       Gherkin.Do.pipe(
         Given('a run whose planned mutants finished')('events', () => Effect.succeed(allFourEvents('Killed'))),
-        When('the machine progress report is written for the run')('terminal', (s) =>
-          Effect.gen(function*() {
-            const terminal = yield* Terminal
-            const factory = yield* reporterNamed('progress-stream')
-            yield* factory(options(), {})(toStream(s.events))
-            return terminal.chunks.join('')
-          })),
+        When('the machine progress report is written for the run')(
+          'terminal',
+          (s) => writeThrough('progress-stream', s.events),
+        ),
         Then('nothing is written to the terminal')((s) => {
           expect(s.terminal).toBe('')
         }),

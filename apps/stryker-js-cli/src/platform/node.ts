@@ -1,4 +1,4 @@
-import { NodeFileSystem, NodePath, NodeSocket } from '@effect/platform-node'
+import { NodeFileSystem, NodePath, NodeSocket, NodeStdio } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeCrypto from '@effect/platform-node-shared/NodeCrypto'
 import { ChildProcessCrashedError, classifyWorkerExit, WorkerLauncher } from '@systemfsoftware/stryker-js-engine'
@@ -64,13 +64,14 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
           yield* fs.writeFileString(optionsFile, params.optionsJson)
           yield* restrictToOwnerOrWarn(fs, optionsFile)
 
+          const entrypointPath = yield* path.fromFileUrl(new URL(params.entrypoint))
           const handle = yield* ChildProcess.make(
             process.execPath,
-            [...params.execArgv, process.getBuiltinModule('node:url').fileURLToPath(params.entrypoint)],
+            [...params.execArgv, entrypointPath],
             {
               cwd: params.workingDirectory,
               extendEnv: true,
-              env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath },
+              env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath, ...params.env },
               stderr: 'inherit',
             },
           ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
@@ -108,7 +109,7 @@ export const nodeFsPathLayer: Layer.Layer<FileSystem.FileSystem | Path.Path> = L
 
 const nodeSpawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(nodeFsPathLayer))
 
-const nodeBase = Layer.merge(nodeFsPathLayer, nodeSpawnerLayer)
+const nodeBase = Layer.mergeAll(nodeFsPathLayer, nodeSpawnerLayer, NodeStdio.layer)
 
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = Layer.mergeAll(
   nodeWorkerLauncherLayer.pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),

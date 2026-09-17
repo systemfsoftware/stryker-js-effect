@@ -11,6 +11,8 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
+import type { BuiltinReporterServices } from './json-reporter.js'
+import { write } from './reporter-output.js'
 
 import { drawMutationScoreTable } from './mutation-score-table.js'
 import { ansi } from './Reporter.ansi.js'
@@ -352,24 +354,35 @@ const streamErrorOf = (cause: unknown): ReporterFailed =>
     cause: errorToString(cause),
   })
 
-interface LineSink {
-  write(chunk: string): unknown
+const failAsClearText = (cause: unknown): ReporterFailed =>
+  ReporterFailed.make({
+    reporterName: 'clear-text',
+    event: 'mutationTestReportReady',
+    cause: errorToString(cause),
+  })
+
+const writeRendered = (
+  services: BuiltinReporterServices,
+  rendered: { stdout: string[]; debug: string[] },
+  options: StrykerOptions,
+): Effect.Effect<void, ReporterFailed> => {
+  const stdoutEffect = write(services.stdio, 'stdout', rendered.stdout.map((line) => `${line}\n`)).pipe(
+    Effect.mapError(failAsClearText),
+    Effect.asVoid,
+  )
+  return Match.value(options.logLevel === 'debug').pipe(
+    Match.when(true, () =>
+      Effect.andThen(
+        stdoutEffect,
+        write(services.stdio, 'stderr', rendered.debug.map((line) => `${line}\n`)).pipe(
+          Effect.mapError(failAsClearText),
+        ),
+      )),
+    Match.orElse(() => stdoutEffect),
+  )
 }
 
-const writeLines = (sink: LineSink, lines: readonly string[]): void => {
-  for (const line of lines) {
-    sink.write(`${line}\n`)
-  }
-}
-
-const writeRenderedReport = (rendered: ReportLines, options: ProvidedStrykerOptions): void => {
-  writeLines(process.stdout, rendered.stdout)
-  if (options.logLevel === 'debug') {
-    writeLines(process.stderr, rendered.debug)
-  }
-}
-
-export const makeClearTextReporter: ReporterFactory = (options) => (events) => {
+export const makeClearTextReporter = (services: BuiltinReporterServices): ReporterFactory => (options) => (events) => {
   const seen: WatchedReports = {}
   return Stream.runForEach(
     Stream.fromAsyncIterable(events, streamErrorOf),
@@ -381,8 +394,8 @@ export const makeClearTextReporter: ReporterFactory = (options) => (events) => {
         onNone: () => Effect.void,
         onSome: (ready) =>
           decodeClearTextReport(ready).pipe(
-            Effect.map((command) =>
-              writeRenderedReport(renderClearText(command.report, command.metrics, options), options)
+            Effect.flatMap((command) =>
+              writeRendered(services, renderClearText(command.report, command.metrics, options), options)
             ),
           ),
       })

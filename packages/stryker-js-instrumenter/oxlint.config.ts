@@ -11,7 +11,7 @@ export default defineConfig({
     '@systemfsoftware/oxlint-plugin/ban-classes': 'error',
     'no-ternary': 'off',
     'typescript/consistent-type-assertions': 'off',
-    'no-restricted-imports': 'off',
+    'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
 
   overrides: [

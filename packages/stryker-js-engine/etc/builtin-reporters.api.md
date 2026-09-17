@@ -7,17 +7,20 @@
 import * as FileSystem from 'effect/FileSystem';
 import * as Path from 'effect/Path';
 import { ReporterFactory } from '@systemfsoftware/stryker-js-language';
+import * as Stdio from 'effect/Stdio';
 
 // @public (undocumented)
-export interface JsonReporterDeps {
+export interface BuiltinReporterServices {
     // (undocumented)
     readonly fileSystem: FileSystem.FileSystem;
     // (undocumented)
     readonly path: Path.Path;
+    // (undocumented)
+    readonly stdio: Stdio.Stdio;
 }
 
 // @public (undocumented)
-export const makeBuiltinReporterFactories: (services: JsonReporterDeps) => Record<string, ReporterFactory>;
+export const makeBuiltinReporterFactories: (services: BuiltinReporterServices) => Record<string, ReporterFactory>;
 
 // (No @packageDocumentation comment for this package)
 

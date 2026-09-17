@@ -8,6 +8,8 @@ import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Stream from 'effect/Stream'
+import type { BuiltinReporterServices } from './json-reporter.js'
+import { writeAsync } from './reporter-output.js'
 
 export type ProgressBarState = {
   readonly format: string
@@ -182,10 +184,14 @@ const progressStreamErrorOf = (cause: unknown): ReporterFailed =>
     cause: errorToString(cause),
   })
 
-export const makeProgressBarReporter: ReporterFactory = () => (events) => {
+export const makeProgressBarReporter = (services: BuiltinReporterServices): ReporterFactory => () => (events) => {
   const progress: { tally: ProgressTally; bar: ProgressBarState | undefined } = {
     tally: emptyTally(0),
     bar: undefined,
+  }
+  let pending: Promise<void> = Promise.resolve()
+  const enqueue = (text: string): void => {
+    pending = pending.then(() => writeAsync(services.stdio, 'stdout', [text])).catch(() => undefined)
   }
   const render = (now: number): void =>
     Option.match(Option.fromUndefinedOr(progress.bar), {
@@ -197,14 +203,21 @@ export const makeProgressBarReporter: ReporterFactory = () => (events) => {
           Match.when(false, () => ''),
           Match.exhaustive,
         )
-        process.stdout.write(`\r${line}${newline}`)
+        enqueue(`\r${line}${newline}`)
       },
     })
   return Stream.runForEach(
     Stream.fromAsyncIterable(events, progressStreamErrorOf),
     (event) => Effect.sync(() => applyProgressEvent(progress, render, event)),
   ).pipe(
-    Effect.ensuring(Effect.sync(() => finishProgressBar(progress))),
+    Effect.ensuring(
+      Effect.ignore(
+        Effect.promise(() => {
+          finishProgressBar(progress, enqueue)
+          return pending
+        }),
+      ),
+    ),
   )
 }
 
@@ -259,13 +272,16 @@ const applyProgressEvent = (
   )
 }
 
-const finishProgressBar = (progress: { tally: ProgressTally; bar: ProgressBarState | undefined }): void => {
+const finishProgressBar = (
+  progress: { tally: ProgressTally; bar: ProgressBarState | undefined },
+  enqueue: (text: string) => void,
+): void => {
   Option.match(Option.fromUndefinedOr(progress.bar), {
     onNone: () => undefined,
     onSome: (bar) =>
       Match.value(isComplete(bar)).pipe(
         Match.when(true, () => undefined),
-        Match.when(false, () => process.stdout.write('\n')),
+        Match.when(false, () => enqueue('\n')),
         Match.exhaustive,
       ),
   })

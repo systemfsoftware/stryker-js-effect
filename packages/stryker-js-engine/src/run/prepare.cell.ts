@@ -18,6 +18,7 @@ import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
+import * as Stdio from 'effect/Stdio'
 
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-language'
 import { makeBuiltinReporterFactories } from '../builtin-reporters.js'
@@ -205,6 +206,7 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
   | WorkerLauncher
   | FileSystem.FileSystem
   | Path.Path
+  | Stdio.Stdio
 > =>
   Effect.gen(function*() {
     yield* Scope.Scope
@@ -257,6 +259,7 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
       ...makeBuiltinReporterFactories({
         fileSystem: yield* FileSystem.FileSystem,
         path: yield* Path.Path,
+        stdio: yield* Stdio.Stdio,
       }),
       ...env.builtinReporters,
     }
@@ -367,7 +370,7 @@ export const prepareCell: Cell.Cell<
   PrepareExecutorArgs,
   PrepareDone,
   StageError,
-  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path
+  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Stdio.Stdio
 > = Cell.layer({
   read: readPrepare,
   decode: decodePrepare,

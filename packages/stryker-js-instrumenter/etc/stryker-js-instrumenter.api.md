@@ -25,7 +25,7 @@ export { File_2 as File }
 // Warning: (ae-forgotten-export) The symbol "InstrumentResult$1" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
-export const instrument: (files: readonly File_2[], options: InstrumenterOptions) => Effect.Effect<InstrumentResult$1, InstrumentError>;
+export const instrument: (files: readonly File_2[], options: InstrumenterOptions, basePath?: string) => Effect.Effect<InstrumentResult$1, InstrumentError>;
 
 // Warning: (ae-forgotten-export) The symbol "InstrumenterOptionsSchema" needs to be exported by the entry point index.d.mts
 //

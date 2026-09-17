@@ -230,6 +230,7 @@ function printedFile(file: FileSchemaType, ast: unknown): readonly FileSchemaTyp
 export const instrument = (
   files: readonly File[],
   options: InstrumenterOptions,
+  basePath?: string,
 ): Effect.Effect<InstrumentResultSchema, InstrumentError> =>
   Effect.gen(function*() {
     const schemaFiles: readonly FileSchemaType[] = files.map((file) => ({
@@ -250,6 +251,7 @@ export const instrument = (
       transform(ast, collector, {
         options: toTransformerOptions(options),
         mutateDescription: toOneBasedLineNumber(file.mutate),
+        basePath,
       }).pipe(
         Effect.mapError((cause) => InstrumentError.make({ message: `Failed to transform ${file.name}`, cause })),
       ))

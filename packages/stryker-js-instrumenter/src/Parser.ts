@@ -8,7 +8,6 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import type { OxcError } from 'oxc-parser'
-import path from 'path'
 import { buildLineTable, type Node, positionFromLineTable, type Program } from './Ast.js'
 import { loadOxc } from './Oxc.js'
 import {
@@ -224,7 +223,7 @@ export function createParser(): {
   > {
     const format = getFormat(fileName, formatOverride)
     if (!format) {
-      const ext = path.extname(fileName).toLowerCase()
+      const ext = extensionOf(fileName)
       return Effect.fail(ParserNotFound.make({ fileName, extension: ext, cause: undefined }))
     }
     return Match.value(format).pipe(
@@ -259,9 +258,16 @@ export function getFormat(
   fileName: string,
   override?: AstFormat,
 ): AstFormat | undefined {
-  return override ?? FORMAT_BY_EXTENSION[path.extname(fileName).toLowerCase()]
+  return override ?? FORMAT_BY_EXTENSION[extensionOf(fileName)]
 }
 
+const dotBeforeSlash = (dot: number, slash: number): boolean => dot >= 0 && dot > slash
+
+const extensionOf = (fileName: string): string => {
+  const dot = fileName.lastIndexOf('.')
+  const slash = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'))
+  return dotBeforeSlash(dot, slash) ? fileName.slice(dot).toLowerCase() : ''
+}
 // ---------------------------------------------------------------------------
 // JS parser
 // ---------------------------------------------------------------------------
