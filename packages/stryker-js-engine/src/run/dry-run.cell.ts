@@ -243,10 +243,9 @@ export const dryRunCell = Cell.layer({
         }),
       )
 
-      const normalizedRawResult = rawResult
       const raw: DryRunRaw = {
         prev: command,
-        rawResult: normalizedRawResult,
+        rawResult,
         capabilities,
         gross,
       }

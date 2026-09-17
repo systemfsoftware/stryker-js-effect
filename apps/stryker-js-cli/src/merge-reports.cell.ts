@@ -348,6 +348,9 @@ const encodeMerge = (
       Match.exhaustive,
     ))
 
+const encodeReport = (report: unknown): Effect.Effect<string> =>
+  S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(report).pipe(Effect.orDie)
+
 const putFile = (file: string, content: string, append: boolean) =>
   FileSystem.FileSystem.pipe(
     Effect.flatMap((fs) =>
@@ -399,8 +402,12 @@ const writeEncoded = (
         yield* Option.match(Option.fromNullishOr(body.report), {
           onNone: () => Effect.void,
           onSome: (report) =>
-            putFile(path.join(raw.out, OUT_REPORT), JSON.stringify(report), false).pipe(
-              Effect.andThen(writeHtml(path.join(raw.out, OUT_HTML), report)),
+            encodeReport(report).pipe(
+              Effect.flatMap((json) =>
+                putFile(path.join(raw.out, OUT_REPORT), json, false).pipe(
+                  Effect.andThen(writeHtml(path.join(raw.out, OUT_HTML), report)),
+                )
+              ),
             ),
         })
         yield* putFile(path.join(raw.out, OUT_SUMMARY), body.summary, false)
