@@ -8,12 +8,12 @@ export type OutputChannel = 'stdout' | 'stderr'
 
 type OutputSink = Sink.Sink<void, string | Uint8Array, never, PlatformError>
 
-const sinksOf = (stdio: Stdio.Stdio): Record<OutputChannel, OutputSink> => ({
-  stdout: stdio.stdout({ endOnDone: false }),
-  stderr: stdio.stderr({ endOnDone: false }),
+const sinksOf = (stdio: Stdio.Stdio): Record<OutputChannel, () => OutputSink> => ({
+  stdout: () => stdio.stdout({ endOnDone: false }),
+  stderr: () => stdio.stderr({ endOnDone: false }),
 })
 
-const sinkFor = (stdio: Stdio.Stdio, channel: OutputChannel): OutputSink => sinksOf(stdio)[channel]
+const sinkFor = (stdio: Stdio.Stdio, channel: OutputChannel): OutputSink => sinksOf(stdio)[channel]()
 
 export const write = (
   stdio: Stdio.Stdio,
