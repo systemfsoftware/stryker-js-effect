@@ -438,14 +438,19 @@ function placementLocation(node: Node, fileName: string, lineTable: readonly num
 }
 
 type AnonymousFunctionOrClass = FunctionExpression | ClassExpression
-
 const placementListFormat = new Intl.ListFormat('en')
 
-const withTrailingSlash = (basePath: string): string => basePath.endsWith('/') ? basePath : `${basePath}/`
+const normalizeSeparators = (value: string): string => value.replace(/\\/g, '/')
+
+const withTrailingSlash = (basePath: string): string => {
+  const normalized = normalizeSeparators(basePath)
+  return normalized.endsWith('/') ? normalized : `${normalized}/`
+}
 
 const relativeTo = (basePath: string, fileName: string): string => {
   const prefix = withTrailingSlash(basePath)
-  return fileName.startsWith(prefix) ? fileName.slice(prefix.length) : fileName
+  const normalizedFile = normalizeSeparators(fileName)
+  return normalizedFile.startsWith(prefix) ? normalizedFile.slice(prefix.length) : fileName
 }
 
 function classOrFunctionExpressionNamedIfNeeded(path: TraversePath): Expression | undefined {

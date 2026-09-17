@@ -739,7 +739,7 @@ export const runStrykerCli = (
                 Match.tag('RunOk', () => Effect.void),
                 Match.orElse(() => Effect.fail(RunExit.make({ code }))),
               ),
-            onFailure: () => Effect.interrupt,
+            onFailure: (interrupted) => Effect.fail(RunExit.make({ code: interrupted.code })),
           })
         }),
       )
