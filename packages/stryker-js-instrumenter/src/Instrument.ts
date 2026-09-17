@@ -232,7 +232,10 @@ interface Collected {
   readonly mutants: readonly ApiMutant[]
 }
 
-const readCollected = (command: InstrumentCommand): Effect.Effect<Collected, InstrumentError> =>
+const readCollected = (
+  command: InstrumentCommand,
+  basePath?: string,
+): Effect.Effect<Collected, InstrumentError> =>
   Effect.gen(function*() {
     const { files, options } = command
     const parse = createParser()
@@ -248,6 +251,7 @@ const readCollected = (command: InstrumentCommand): Effect.Effect<Collected, Ins
       transform(ast, collector, {
         options: toTransformerOptions(options),
         mutateDescription: toOneBasedLineNumber(file.mutate),
+        basePath,
       }).pipe(
         Effect.mapError((cause) => InstrumentError.make({ message: `Failed to transform ${file.name}`, cause })),
       ))
@@ -285,6 +289,7 @@ export const decideInstrument = (decoded: InstrumentDecoded): InstrumentDecision
 export const instrument = (
   files: readonly File[],
   options: InstrumenterOptions,
+  basePath?: string,
 ): Effect.Effect<InstrumentResultSchema, InstrumentError> =>
   Effect.gen(function*() {
     const schemaFiles: FileSchemaType[] = files.map((file) => ({
@@ -292,7 +297,7 @@ export const instrument = (
       content: file.content,
       mutate: file.mutate,
     }))
-    const collected = yield* readCollected(InstrumentCommand.make({ files: schemaFiles, options }))
+    const collected = yield* readCollected(InstrumentCommand.make({ files: schemaFiles, options }), basePath)
     const decision = decideInstrument(
       InstrumentDecoded.make({
         files: collected.files,

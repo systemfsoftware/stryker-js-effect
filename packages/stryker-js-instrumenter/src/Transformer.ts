@@ -9,7 +9,6 @@ import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import path from 'node:path'
 import {
   type ArrowFunctionExpression,
   arrowFunctionExpression,
@@ -410,12 +409,13 @@ export function throwPlacementError(
   mutants: Mutant[],
   fileName: string,
   lineTable: readonly number[],
+  basePath?: string,
 ): never {
   const message = `${placer.name} could not place mutants with type(s): "${
-    new Intl.ListFormat('en').format(mutants.map((mutant) => mutant.mutatorName))
+    placementListFormat.format(mutants.map((mutant) => mutant.mutatorName))
   }"`
   const errorMessage = `${
-    placementLocation(nodePath.node, fileName, lineTable)
+    placementLocation(nodePath.node, fileName, lineTable, basePath)
   } ${message}. Either remove this file from the list of files to be mutated, or exclude the mutator (using ${
     propertyPath<StrykerOptions>()(
       'mutator',
@@ -425,8 +425,8 @@ export function throwPlacementError(
   throw new Error(errorMessage)
 }
 
-function placementLocation(node: Node, fileName: string, lineTable: readonly number[]): string {
-  const relativeFile = path.relative(process.cwd(), fileName)
+function placementLocation(node: Node, fileName: string, lineTable: readonly number[], basePath?: string): string {
+  const relativeFile = basePath === undefined ? fileName : relativeTo(basePath, fileName)
   const position = Option.map(
     Option.fromNullishOr(spanOf(node)),
     (span) => positionFromLineTable(span.start, lineTable),
@@ -438,6 +438,20 @@ function placementLocation(node: Node, fileName: string, lineTable: readonly num
 }
 
 type AnonymousFunctionOrClass = FunctionExpression | ClassExpression
+const placementListFormat = new Intl.ListFormat('en')
+
+const normalizeSeparators = (value: string): string => value.replace(/\\/g, '/')
+
+const withTrailingSlash = (basePath: string): string => {
+  const normalized = normalizeSeparators(basePath)
+  return normalized.endsWith('/') ? normalized : `${normalized}/`
+}
+
+const relativeTo = (basePath: string, fileName: string): string => {
+  const prefix = withTrailingSlash(basePath)
+  const normalizedFile = normalizeSeparators(fileName)
+  return normalizedFile.startsWith(prefix) ? normalizedFile.slice(prefix.length) : fileName
+}
 
 function classOrFunctionExpressionNamedIfNeeded(path: TraversePath): Expression | undefined {
   return Match.value(path.node).pipe(
@@ -1158,6 +1172,7 @@ export interface TransformerContext {
   transform: AstTransformer<AstFormat>
   options: TransformerOptions
   mutateDescription: MutateDescription
+  readonly basePath?: string | undefined
 }
 
 export const transformHtml: AstTransformer<'html'> = (
@@ -1251,7 +1266,7 @@ function isMutateRangeList(value: MutateDescription): value is readonly SourceLo
 export const transformScript: AstTransformer<ScriptFormat> = (
   { root, originFileName, rawContent, offset, comments },
   mutantCollector,
-  { options, mutateDescription },
+  { options, mutateDescription, basePath },
   mutators?: typeof allMutators,
   mutantPlacers?: readonly MutantPlacer[],
 ) => {
@@ -1315,6 +1330,7 @@ export const transformScript: AstTransformer<ScriptFormat> = (
           [...placement.appliedMutants.keys()],
           originFileName,
           lineTable,
+          basePath,
         )
       }
     }

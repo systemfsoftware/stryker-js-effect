@@ -48,6 +48,7 @@ import { Schema } from 'effect';
 import * as schema from '@systemfsoftware/stryker-js-language';
 import * as Scope from 'effect/Scope';
 import * as Socket from 'effect/unstable/socket/Socket';
+import * as Stdio from 'effect/Stdio';
 import { StrykerOptions } from '@systemfsoftware/stryker-js-language';
 import { TestResult } from '@systemfsoftware/stryker-js-language';
 import { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
@@ -166,7 +167,7 @@ export interface DryRunDone extends InstrumentDone {
 }
 
 // @public (undocumented)
-export type EnginePorts = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path | WorkerLauncher;
+export type EnginePorts = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path | Stdio.Stdio | WorkerLauncher;
 
 // @public (undocumented)
 export const extendsPropertySchema: S.optionalKey<S.String>;
@@ -642,6 +643,8 @@ export interface WorkerLauncherShape {
 export interface WorkerSpawnParams {
     // (undocumented)
     readonly entrypoint: string;
+    // (undocumented)
+    readonly env?: Readonly<Record<string, string>> | undefined;
     // (undocumented)
     readonly execArgv: readonly string[];
     // (undocumented)

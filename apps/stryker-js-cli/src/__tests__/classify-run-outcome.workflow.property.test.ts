@@ -42,19 +42,14 @@ const isRunFailed = (
 describe('classifyRunOutcome', () => {
   it.prop('∀c_Command_≡TaggedOutcome', [S.toArbitrary(RunOutcomeCommand)(fc)], ([command]) => {
     const result = classifyRunOutcome(command)
-    if (command.signal !== undefined) {
-      const code = 128 + command.signal
-      return Result.isFailure(result) && S.is(RunInterrupted)(result.failure) && result.failure.code === code
-    }
     if (command.succeeded) {
-      if (command.successExitClass !== undefined) {
-        const code = classCode(command.successExitClass)
-        return isRunFailed(result, code, command.diagnostic)
+      if (command.successExitClass === undefined) {
+        return Result.isSuccess(result) && S.is(RunOk)(result.success) && result.success.help === false
       }
-      return Result.isSuccess(result) && S.is(RunOk)(result.success) && result.success.help === false
+      return isRunFailed(result, classCode(command.successExitClass), command.diagnostic)
     }
     if (command.interrupted) {
-      return Result.isFailure(result) && S.is(RunInterrupted)(result.failure) && result.failure.code === 1
+      return Result.isFailure(result) && S.is(RunInterrupted)(result.failure) && result.failure.code === 130
     }
     if (command.helpErrorCount !== undefined) {
       if (command.helpErrorCount > 0) {

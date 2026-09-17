@@ -69,16 +69,16 @@ human path.
 
 ## Exit codes
 
-The highest pending class wins; a terminating signal outranks all of them.
+The highest pending class wins; an interrupt outranks all of them.
 
-| Code      | Meaning                                      |
-| --------- | -------------------------------------------- |
-| `0`       | Score cleared the `break` threshold          |
-| `1`       | Verdict failed                               |
-| `2`       | Config error                                 |
-| `3`       | Runtime error                                |
-| `4`       | Internal error                               |
-| `128 + n` | Terminated by signal `n` — `SIGINT` is `130` |
+| Code  | Meaning                             |
+| ----- | ----------------------------------- |
+| `0`   | Score cleared the `break` threshold |
+| `1`   | Verdict failed                      |
+| `2`   | Config error                        |
+| `3`   | Runtime error                       |
+| `4`   | Internal error                      |
+| `130` | Interrupted (SIGINT/SIGTERM)        |
 
 ## Related
 

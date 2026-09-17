@@ -10,6 +10,7 @@ import {
 import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
 import { readWorkerOptionsFromEnv } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Cause from 'effect/Cause'
+import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 
 import { makeVitestRunnerLayer } from './Runner.js'
@@ -34,12 +35,13 @@ export const testRunnerHandlers = TestRunnerRpcs.toLayer(
   Effect.gen(function*() {
     const options = yield* readWorkerOptionsFromEnv
     const runnerName = options.testRunner
+    const sandboxDirectory = yield* Config.string('STRYKER_SANDBOX_DIR')
     const failed = (phase: TestRunnerPhase) => (cause: Cause.Cause<unknown>): Effect.Effect<never, TestRunnerFailed> =>
       Effect.fail(new TestRunnerFailed({ cause: Cause.pretty(cause), phase, runnerName }))
 
     const underlying = yield* Effect.cached(
       TestRunner.pipe(
-        Effect.provide(makeVitestRunnerLayer({ options, sandboxDirectory: process.cwd() })),
+        Effect.provide(makeVitestRunnerLayer({ options, sandboxDirectory })),
         Effect.flatMap((service) => service.init.pipe(Effect.as(service))),
         Effect.catchCause(failed('init')),
       ),

@@ -131,6 +131,11 @@ export const makeChildProcessTestRunner = (
       execArgv: [...params.options.testRunnerNodeArgs],
       optionsJson,
       tempDirPrefix: 'stryker-test-runner-',
+      env: {
+        NODE_ENV: 'test',
+        VITEST: '1',
+        STRYKER_SANDBOX_DIR: params.sandboxWorkingDirectory,
+      },
     }).pipe(Effect.mapError(toRunnerBootFailure(runnerName)))
 
     return {

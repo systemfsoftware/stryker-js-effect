@@ -1,6 +1,7 @@
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
+import * as NodeTerminal from '@effect/platform-node-shared/NodeTerminal'
 import * as NodeStdio from '@effect/platform-node/NodeStdio'
 import {
   ConfigFileInvalidError,
@@ -22,7 +23,6 @@ import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
-import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -31,7 +31,6 @@ import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import type { SchemaError } from 'effect/Schema'
-import * as Terminal from 'effect/Terminal'
 import * as Argument from 'effect/unstable/cli/Argument'
 import * as CliConfig from 'effect/unstable/cli/CliConfig'
 import * as CliError from 'effect/unstable/cli/CliError'
@@ -40,6 +39,7 @@ import * as Flag from 'effect/unstable/cli/Flag'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 import cliPkgJson from '../package.json' with { type: 'json' }
 import { SurvivorsRejection } from './admit-survivors-run.workflow.js'
+import { RunExit } from './classify-run-outcome.workflow.js'
 import type { RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
 import type { CliRequest } from './Cli.schema.js'
 import {
@@ -90,7 +90,7 @@ export {
 export { STREAM_SCHEMA_VERSION }
 
 export function resolveCliExitCode(exit: Exit.Exit<unknown, unknown>): number {
-  return runOutcomeCode(classifyRunOutcome(exit, null, []))
+  return runOutcomeCode(classifyRunOutcome(exit, []))
 }
 
 export type DetectModeCapability = OutputModeProbe['detectMode']
@@ -103,24 +103,7 @@ export interface RunStrykerCliInput {
   readonly mode: ResolvedMode
   readonly runMutationTest: StrykerRun | undefined
   readonly argv: readonly string[]
-  readonly lastSignal: SignalObserver
-}
-
-export type SignalObserver = () => number | null
-
-const SIGNAL_NUMBERS: Readonly<Partial<Record<NodeJS.Signals, number>>> = Object.freeze({
-  SIGINT: 2,
-  SIGTERM: 15,
-})
-
-export function observeTerminatingSignal(): SignalObserver {
-  let observed: number | null = null
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(signal, () => {
-      observed = SIGNAL_NUMBERS[signal] ?? null
-    })
-  }
-  return () => observed
+  readonly basePath: string
 }
 
 /// <reference types="vitest/import-meta" />
@@ -530,23 +513,7 @@ function makeStrykerCommand(requestRef: Ref.Ref<Option.Option<CliRequest>>) {
   const strykerCommand = root.pipe(Command.withSubcommands([runCommand, mergeReportsCommand]))
   return strykerCommand
 }
-const terminalLayer = Layer.succeed(
-  Terminal.Terminal,
-  Terminal.make({
-    columns: Effect.sync(() => process.stdout.columns),
-    rows: Effect.sync(() => process.stdout.rows),
-    readInput: Effect.die(
-      new Error('stryker has no interactive prompts: Terminal.readInput is not supported'),
-    ),
-    readLine: Effect.die(
-      new Error('stryker has no interactive prompts: Terminal.readLine is not supported'),
-    ),
-    display: (text: string) =>
-      Effect.sync(() => {
-        process.stdout.write(text)
-      }),
-  }),
-)
+const terminalLayer = NodeTerminal.layer
 
 const cliLayer = Layer.mergeAll(
   CliConfig.layer({
@@ -574,8 +541,8 @@ export function strykerCliEffect(
   runMutationTest: StrykerRun | undefined,
   detectMode: DetectModeCapability,
   createRunEventStream: CreateRunEventStreamCapability,
-  lastSignal: SignalObserver,
-): Effect.Effect<number, never, never> {
+  basePath: string,
+): Effect.Effect<void, RunExit | CliError.CliError> {
   return Effect.gen(function*() {
     const mode = yield* detectMode
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
@@ -589,17 +556,11 @@ export function strykerCliEffect(
     const cliEffect = Command.runWith(command, { version: cliPkgJson.version })(argv).pipe(
       Effect.provide(Layer.mergeAll(consoleLayer, cliLayer)),
     )
-    const result = yield* Effect.result(
-      runStrykerCli(
-        { program: cliEffect, requestRef, mode, runMutationTest, argv, lastSignal },
-        createRunEventStream,
-      ),
+    yield* runStrykerCli(
+      { program: cliEffect, requestRef, mode, runMutationTest, argv, basePath },
+      createRunEventStream,
     )
-    if (Result.isFailure(result)) {
-      return result.failure
-    }
-    return result.success
-  }).pipe(Effect.orElseSucceed(() => 2))
+  })
 }
 
 const hostRunLayer = (hostOptions: RunEnvironmentShape, queue?: Queue.Queue<RunEvent, Cause.Done>) =>
@@ -613,12 +574,17 @@ const defaultRunMutationTest =
       Effect.provideService(RunEvents, queue),
     )
 
-function hostOptionsOf(mode: ResolvedMode, stream: RunEventStream, noColor: string | undefined): RunEnvironmentShape {
+function hostOptionsOf(
+  mode: ResolvedMode,
+  stream: RunEventStream,
+  noColor: string | undefined,
+  basePath: string,
+): RunEnvironmentShape {
   return {
     runId: stream.runId,
     resolvedMode: mode,
     runStartedAt: stream.startedAt,
-    basePath: process.cwd(),
+    basePath,
     builtinReporters: { html: makeHtmlReporter },
     allowConsoleColors: isColorEnabled(mode, noColor),
   }
@@ -650,24 +616,14 @@ const applyProgressStreamFile = (stream: RunEventStream, fileName: string): Effe
 export const runStrykerCli = (
   input: RunStrykerCliInput,
   createRunEventStream: CreateRunEventStreamCapability,
-): Effect.Effect<number, never, never> =>
+): Effect.Effect<void, RunExit, never> =>
   Effect.gen(function*() {
     const stream = yield* createRunEventStream(input.mode)
     const noColor = yield* Config.string('NO_COLOR').pipe(Effect.option)
-    const hostOptions = hostOptionsOf(input.mode, stream, Option.getOrUndefined(noColor))
+    const hostOptions = hostOptionsOf(input.mode, stream, Option.getOrUndefined(noColor), input.basePath)
     const runMutationTestImpl = input.runMutationTest ?? defaultRunMutationTest(hostOptions, stream.queue)
     const basePath = hostOptions.basePath
     const pathService = yield* Path.Path.pipe(Effect.provide(NodePath.layer))
-
-    let currentFiber: Fiber.Fiber<unknown, unknown> | null = null
-
-    const onSignal = (): void => {
-      process.removeListener('SIGINT', onSignal)
-      process.removeListener('SIGTERM', onSignal)
-      if (currentFiber !== null) {
-        currentFiber.interruptUnsafe(currentFiber.id)
-      }
-    }
 
     const dispatch = (
       request: CliRequest,
@@ -730,32 +686,19 @@ export const runStrykerCli = (
         Match.exhaustive,
       )
 
-    const program = Effect.acquireUseRelease(
-      Effect.sync(() => {
-        currentFiber = Fiber.getCurrent() ?? null
-        process.on('SIGINT', onSignal)
-        process.on('SIGTERM', onSignal)
-      }),
-      () =>
-        Effect.gen(function*() {
-          const parsed = yield* Effect.result(input.program)
-          const request = yield* Ref.get(input.requestRef)
-          yield* applyProgressStreamFile(stream, progressStreamFileName(request))
-          yield* stream.open
-          if (Result.isFailure(parsed)) {
-            return yield* parsed.failure
-          }
-          return yield* Option.match(request, {
-            onNone: () => Effect.void,
-            onSome: (cliRequest) => dispatch(cliRequest),
-          })
-        }),
-      () =>
-        Effect.sync(() => {
-          process.removeListener('SIGINT', onSignal)
-          process.removeListener('SIGTERM', onSignal)
-        }),
-    )
+    const use = Effect.gen(function*() {
+      const parsed = yield* Effect.result(input.program)
+      const request = yield* Ref.get(input.requestRef)
+      yield* applyProgressStreamFile(stream, progressStreamFileName(request))
+      yield* stream.open
+      if (Result.isFailure(parsed)) {
+        return yield* parsed.failure
+      }
+      return yield* Option.match(request, {
+        onNone: () => Effect.void,
+        onSome: (cliRequest) => dispatch(cliRequest),
+      })
+    })
 
     const outcomeOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>): string =>
       Result.match(result, {
@@ -778,8 +721,8 @@ export const runStrykerCli = (
     return yield* Effect.uninterruptibleMask((restore) =>
       Effect.withSpan('stryker.cli.run')(
         Effect.gen(function*() {
-          const exit = yield* Effect.exit(restore(program))
-          const outcome = classifyRunOutcome(exit, input.lastSignal(), input.argv)
+          const exit = yield* Effect.exit(restore(use))
+          const outcome = classifyRunOutcome(exit, input.argv)
           const code = runOutcomeCode(outcome)
           yield* Effect.annotateCurrentSpan({
             'stryker.run.outcome': outcomeOf(outcome),
@@ -790,7 +733,14 @@ export const runStrykerCli = (
             yield* emitMachineModeOutput(stream, input.mode, outcome, basePath, pathService)
           }
           yield* stream.closeAndDrain
-          return code
+          yield* Result.match(outcome, {
+            onSuccess: (decision) =>
+              Match.value(decision).pipe(
+                Match.tag('RunOk', () => Effect.void),
+                Match.orElse(() => Effect.fail(RunExit.make({ code }))),
+              ),
+            onFailure: (interrupted) => Effect.fail(RunExit.make({ code: interrupted.code })),
+          })
         }),
       )
     )
