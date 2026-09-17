@@ -1,4 +1,3 @@
-import { Module, resolvePackageEntry, ResolvePackageEntryCommand } from '@systemfsoftware/stryker-js-language'
 import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
@@ -486,7 +485,7 @@ type RefusedTag = typeof RefusedTag
 export type ExtendsStepDecision =
   | DoneTag & { readonly options: PartialStrykerOptions }
   | ReadTag & { readonly path: string; readonly state: ExtendsStepState }
-  | ResolveTag & { readonly specifier: string; readonly directory: string; readonly state: ExtendsStepState }
+  | ResolveTag & { readonly specifier: string; readonly state: ExtendsStepState }
   | RefusedTag & { readonly reason: ExtendsRefusalReason; readonly file: string }
 
 const asUnknownArray = (value: unknown): readonly unknown[] => {
@@ -630,7 +629,6 @@ export const decideExtendsStep = (
         Match.when(true, (): ExtendsStepDecision => ({
           ...ResolveTag,
           specifier: extendValue,
-          directory: pathService.dirname(file),
           state: nextState,
         })),
         Match.when(false, (): ExtendsStepDecision => ({
@@ -701,6 +699,23 @@ const configImportCause = (configFile: string, failure: StrykerError): unknown =
     Match.orElse(() => failure),
   )
 
+const configModuleUrl = (
+  configFile: string,
+  pathService: Path.Path,
+): Effect.Effect<URL, ConfigFileUnreadableError> =>
+  Match.value(configFile.startsWith('file:')).pipe(
+    Match.when(true, () =>
+      Effect.try({
+        try: (): URL => new URL(configFile),
+        catch: (cause) => new ConfigFileUnreadableError({ file: configFile, cause }),
+      })),
+    Match.orElse(() =>
+      pathService.toFileUrl(pathService.resolve(configFile)).pipe(
+        Effect.mapError((cause) => new ConfigFileUnreadableError({ file: configFile, cause })),
+      )
+    ),
+  )
+
 const readConfigModule = (
   configFile: string,
 ): Effect.Effect<
@@ -710,9 +725,7 @@ const readConfigModule = (
 > =>
   Effect.gen(function*() {
     const pathService = yield* Path.Path
-    const url = yield* pathService.toFileUrl(pathService.resolve(configFile)).pipe(
-      Effect.mapError((cause) => new ConfigFileUnreadableError({ file: configFile, cause })),
-    )
+    const url = yield* configModuleUrl(configFile, pathService)
     const importedModule = yield* importModule(url.href).pipe(
       Effect.mapError(
         (failure) => new ConfigFileUnreadableError({ file: configFile, cause: configImportCause(configFile, failure) }),
@@ -750,50 +763,12 @@ const readExtendsChild = (
     )
   })
 
-const packageSubpath = (specifier: string): string => {
-  const segments = specifier.split('/')
-  const rest = Match.value(specifier.startsWith('@')).pipe(
-    Match.when(true, () => segments.slice(2)),
-    Match.orElse(() => segments.slice(1)),
-  )
-  return Match.value(rest.length === 0).pipe(
-    Match.when(true, () => '.'),
-    Match.orElse(() => `./${rest.join('/')}`),
-  )
-}
-
 function resolveExtendsSpecifier(
   specifier: string,
-  configDir: string,
-): Effect.Effect<string, ConfigFileUnreadableError, FileSystem.FileSystem | Module | Path.Path> {
-  return Effect.gen(function*() {
-    const path = yield* Path.Path
-    const module = yield* Module
-    const fileSystem = yield* FileSystem.FileSystem
-    const manifestPath = yield* Match.value(
-      module.findPackageJSON(specifier, path.join(configDir, 'package.json')),
-    ).pipe(
-      Match.when(
-        undefined,
-        (): Effect.Effect<string, ConfigFileUnreadableError> =>
-          Effect.fail(new ConfigFileUnreadableError({ file: specifier, cause: `Cannot find package "${specifier}"` })),
-      ),
-      Match.orElse((found): Effect.Effect<string, ConfigFileUnreadableError> => Effect.succeed(found)),
-    )
-    const manifestText = yield* fileSystem.readFileString(manifestPath).pipe(
-      Effect.mapError((cause) => new ConfigFileUnreadableError({ file: specifier, cause })),
-    )
-    const manifest = yield* Effect.try({
-      try: (): unknown => JSON.parse(manifestText),
-      catch: (cause) => new ConfigFileUnreadableError({ file: specifier, cause }),
-    })
-    const selected = resolvePackageEntry(
-      new ResolvePackageEntryCommand({ manifest, subpath: packageSubpath(specifier) }),
-    )
-    if (Result.isFailure(selected)) {
-      return yield* Effect.fail(new ConfigFileUnreadableError({ file: specifier, cause: selected.failure.reason }))
-    }
-    return path.join(path.dirname(manifestPath), selected.success.path)
+): Effect.Effect<string, ConfigFileUnreadableError> {
+  return Effect.try({
+    try: (): string => import.meta.resolve(specifier),
+    catch: (cause) => new ConfigFileUnreadableError({ file: specifier, cause }),
   })
 }
 
@@ -803,7 +778,7 @@ export function resolveExtends(
 ): Effect.Effect<
   PartialStrykerOptions,
   ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
-  FileSystem.FileSystem | Module | Path.Path
+  Path.Path
 > {
   return Effect.gen(function*() {
     const pathService = yield* Path.Path
@@ -815,17 +790,17 @@ export function resolveExtends(
     ): Effect.Effect<
       PartialStrykerOptions,
       ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
-      FileSystem.FileSystem | Module | Path.Path
+      Path.Path
     > =>
       Match.value(decideExtendsStep(state, currentDocument, file, pathService)).pipe(
         Match.tag('done', (d) => Effect.succeed(d.options)),
         Match.tag('read', (d) =>
           readExtendsChild(d.path).pipe(Effect.flatMap((nextDocument) => loop(d.state, d.path, nextDocument)))),
         Match.tag('resolve', (d) =>
-          resolveExtendsSpecifier(d.specifier, d.directory).pipe(
-            Effect.flatMap((resolvedPath) =>
-              readExtendsChild(resolvedPath).pipe(Effect.flatMap((nextDocument) =>
-                loop(d.state, resolvedPath, nextDocument)
+          resolveExtendsSpecifier(d.specifier).pipe(
+            Effect.flatMap((resolvedUrl) =>
+              readExtendsChild(resolvedUrl).pipe(Effect.flatMap((nextDocument) =>
+                loop(d.state, resolvedUrl, nextDocument)
               ))
             ),
           )),
@@ -1530,7 +1505,7 @@ const resolveChildExtends = (
 ): Effect.Effect<
   unknown,
   ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
-  FileSystem.FileSystem | Module | Path.Path
+  Path.Path
 > =>
   Match.value('extends' in child).pipe(
     Match.when(true, () => resolveExtends(configFile, child)),
@@ -1542,7 +1517,7 @@ function loadOptionsFromConfigFile(
 ): Effect.Effect<
   unknown,
   ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
-  FileSystem.FileSystem | Module | Path.Path
+  FileSystem.FileSystem | Path.Path
 > {
   return findConfigFile(cliOptions['configFile']).pipe(
     Effect.flatMap((configFile) =>
@@ -1561,7 +1536,7 @@ export function readConfig(
 ): Effect.Effect<
   StrykerOptions,
   ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
-  FileSystem.FileSystem | Module | Path.Path
+  FileSystem.FileSystem | Path.Path
 > {
   return Effect.gen(function*() {
     const cliRecord = yield* S.decodeUnknownEffect(ConfigDocumentSchema)(cliOptions).pipe(Effect.orDie)

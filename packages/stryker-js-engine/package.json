@@ -47,6 +47,8 @@
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "workspace:^",
+    "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",

@@ -20,7 +20,6 @@ export {
   MetricsResultSchema,
   MetricsSchema,
 } from './Metrics.js'
-export { Module } from './Module.js'
 export {
   causeText,
   type Coverage,
@@ -96,15 +95,6 @@ export {
   type RunTiming,
   RunTimingSchema,
 } from './ReporterEvent.schema.js'
-export {
-  type EntryFile,
-  EntryFileFromExports,
-  EntryFileFromMain,
-  EntryRefusal,
-  type EntryRefusalReason,
-  resolvePackageEntry,
-  ResolvePackageEntryCommand,
-} from './resolve-package-entry.workflow.js'
 export {
   Heartbeat,
   HelpRendered,

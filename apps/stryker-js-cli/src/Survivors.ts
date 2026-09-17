@@ -11,7 +11,6 @@ import {
   toRelativeNormalizedFileName,
 } from '@systemfsoftware/stryker-js-engine'
 import type { ExitClass } from '@systemfsoftware/stryker-js-language'
-import { Module } from '@systemfsoftware/stryker-js-language'
 import { Mutant } from '@systemfsoftware/stryker-js-language'
 import * as schema from '@systemfsoftware/stryker-js-language'
 import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-language'
@@ -214,7 +213,7 @@ export function runSurvivorsAdmission(
   | ConfigFileUnreadableError
   | ConfigFileInvalidError
   | ConfigFileUnsupportedError,
-  FileSystem.FileSystem | Path.Path | Module
+  FileSystem.FileSystem | Path.Path
 > {
   return survivorsAdmissionCell(basePath).run(cliOptions)
 }
@@ -225,7 +224,7 @@ function resolveSurvivorsRunOptions(
 ): Effect.Effect<
   StrykerOptions,
   ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
-  FileSystem.FileSystem | Module | Path.Path
+  FileSystem.FileSystem | Path.Path
 > {
   return readConfig(cliOptions, basePath)
 }

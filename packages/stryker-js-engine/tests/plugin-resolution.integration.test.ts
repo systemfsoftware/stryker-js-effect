@@ -1,102 +1,49 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { create, loadPlugins } from '@systemfsoftware/stryker-js-engine/plugin-loader'
+import { importModule } from '@systemfsoftware/stryker-js-engine'
+import { loadPlugins } from '@systemfsoftware/stryker-js-engine/plugin-loader'
 import type { LoadedPlugins } from '@systemfsoftware/stryker-js-engine/plugin-loader'
-import { Module } from '@systemfsoftware/stryker-js-language'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
-import * as FileSystem from 'effect/FileSystem'
-import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
-import * as Option from 'effect/Option'
-import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import { expect } from 'vitest'
 
 const Feature = makeFeature({ it, layer })
 
-const PROJECT = '/project'
-const PROJECT_MANIFEST = `${PROJECT}/package.json`
-const FIXTURES_DIR = `${process.cwd()}/tests/__fixtures__`
-
-const LOCAL_PLUGIN = './local-plugin.js'
-const RUNNER = '@acme/stryker-runner'
 const UNSHIPPED = '@acme/stryker-unshipped'
-const RUNNER_LATE = '@acme/stryker-runner-late'
-const DUPLICATE_RUNNER = '@acme/stryker-runner-duplicate'
+const DECLARES_EMPTY_PLUGIN_LIST = '@systemfsoftware/stryker-js-instrumenter'
+const RESOLVES_WITHOUT_PLUGINS = 'effect'
+const LOCAL_PLUGIN = './local-plugin.js'
 
-const fixtureManifest = (directory: string): string => `${FIXTURES_DIR}/${directory}/package.json`
-const fixtureEntrypoint = (directory: string): string => `file://${FIXTURES_DIR}/${directory}/index.mjs`
+const EFFECT_SCHEMA_DECLARATIONS_IGNORER = '@systemfsoftware/stryker-ignorer-effect-schema-declarations'
+const IN_SOURCE_VITEST_BLOCK_IGNORER = '@systemfsoftware/stryker-ignorer-in-source-vitest-block'
+const EFFECT_SCHEMA_DECLARATIONS_IGNORER_NAME = 'effect-schema-declarations'
+const IN_SOURCE_VITEST_BLOCK_IGNORER_NAME = 'in-source-vitest-block'
 
-const RUNNER_MANIFEST = fixtureManifest('plugin-runner')
-const RUNNER_LATE_MANIFEST = fixtureManifest('plugin-runner-late')
-const DUPLICATE_RUNNER_MANIFEST = fixtureManifest('plugin-runner-duplicate')
+const PLUGIN_RUNNER_FIXTURE_URL = new URL('./__fixtures__/plugin-runner/index.mjs', import.meta.url).href
 
-const RUNNER_ENTRYPOINT = fixtureEntrypoint('plugin-runner')
-const RUNNER_LATE_ENTRYPOINT = fixtureEntrypoint('plugin-runner-late')
-const DUPLICATE_RUNNER_ENTRYPOINT = fixtureEntrypoint('plugin-runner-duplicate')
-
-const VITEST_WORKER_ENTRY = 'file:///project/node_modules/@acme/stryker-runner/dist/main.mjs'
-
-interface Installations {
-  readonly [specifier: string]: string | undefined
-}
-
-interface ResolverState {
-  readonly bases: string[]
-  readonly attempted: string[]
-  readonly warnings: string[]
+const RUNNER_PLUGIN = {
+  kind: 'TestRunner',
+  name: 'vitest',
+  workerEntry: 'file:///project/node_modules/@acme/stryker-runner/dist/main.mjs',
 }
 
 interface LoadOutcome {
   readonly result: Result.Result<LoadedPlugins, unknown>
-  readonly state: ResolverState
+  readonly warnings: readonly string[]
 }
 
-const freshState = (): ResolverState => ({ bases: [], attempted: [], warnings: [] })
-
-const moduleLayer = (
-  state: ResolverState,
-  installations: Installations,
-): Layer.Layer<Module> =>
-  Layer.succeed(Module, {
-    findPackageJSON: (specifier: string, base: string): string | undefined => {
-      state.bases.push(base)
-      state.attempted.push(specifier)
-      return installations[specifier]
-    },
-  })
-
-interface NodeFs {
-  readFileSync(path: string, encoding: 'utf8'): string
-}
-
-const nodeFs: NodeFs = process.getBuiltinModule('node:fs')
-
-const fileSystemLayer = FileSystem.layerNoop({
-  readFileString: (path: string) => Effect.sync(() => nodeFs.readFileSync(path, 'utf8')),
-})
-
-const warningLogger = (state: ResolverState): Logger.Logger<unknown, void> =>
+const capturingWarnings = (warnings: string[]): Logger.Logger<unknown, void> =>
   Logger.make((options) => {
-    state.warnings.push(Array.ensure(options.message).map(String).join(' '))
+    warnings.push(Array.ensure(options.message).map(String).join(' '))
   })
 
-const loadOutcome = (
-  specifiers: readonly string[],
-  installations: Installations,
-): Effect.Effect<LoadOutcome> => {
-  const state = freshState()
-  return loadPlugins(specifiers, PROJECT).pipe(
-    Effect.provide(
-      Layer.mergeAll(
-        moduleLayer(state, installations),
-        Path.layer,
-        fileSystemLayer,
-        Logger.layer([warningLogger(state)]),
-      ),
-    ),
+const loadOutcome = (specifiers: readonly string[]): Effect.Effect<LoadOutcome> => {
+  const warnings: string[] = []
+  return loadPlugins(specifiers).pipe(
+    Effect.provide(Logger.layer([capturingWarnings(warnings)])),
     Effect.result,
-    Effect.map((result) => ({ result, state })),
+    Effect.map((result) => ({ result, warnings })),
   )
 }
 
@@ -118,131 +65,148 @@ const failureOrThrow = (outcome: LoadOutcome): Record<string, unknown> => {
   return { ...failure }
 }
 
-const availableRunners = (loaded: LoadedPlugins): readonly string[] =>
-  Option.match(Effect.runSync(Effect.option(create(loaded.pluginsByKind, 'TestRunner', 'vitest'))), {
-    onNone: (): readonly string[] => [],
-    onSome: (contribution): readonly string[] => [contribution.name],
-  })
+const reasonOf = (failure: Record<string, unknown>): string => String(failure['reason'])
 
-const attemptedSet = (outcome: LoadOutcome): readonly string[] => [...new Set(outcome.state.attempted)]
+const lineContaining = (outcome: LoadOutcome, fragment: string): string | undefined =>
+  outcome.warnings.find((line) => line.includes(fragment))
 
-const baseSet = (outcome: LoadOutcome): readonly string[] => [...new Set(outcome.state.bases)]
+const ignorerNamesOf = (loaded: LoadedPlugins): readonly string[] => loaded.ignorers.map((ignorer) => ignorer.name)
 
-const notFoundLines = (outcome: LoadOutcome): readonly string[] =>
-  outcome.state.warnings.filter((line) => line.includes('Cannot find plugin'))
+const shouldIgnoreKindsOf = (loaded: LoadedPlugins): readonly string[] =>
+  loaded.ignorers.map((ignorer) => typeof ignorer.shouldIgnore)
+
+const strykerPluginsOf = (module: unknown): unknown => {
+  if (typeof module === 'object' && module !== null && 'strykerPlugins' in module) {
+    return module.strykerPlugins
+  }
+  return undefined
+}
 
 Feature('Loading the plugins a project declares').body(({ scenario }) => {
   scenario(
-    'A project declaring one plugin loads exactly that plugin',
+    'A project whose config declares no plugins stops with an actionable message',
     Gherkin.Do.pipe(
-      Given('a project whose config declares the runner it has installed')(
+      Given('a project whose config declares no plugins')(
         'outcome',
-        () => loadOutcome([RUNNER], { [RUNNER]: RUNNER_MANIFEST }),
-      ),
-      When('the declared package is resolved')(
-        'seen',
-        (s) =>
-          Effect.sync(() => ({
-            runners: availableRunners(loadedOrThrow(s.outcome)),
-            found: loadedOrThrow(s.outcome).pluginModulePaths,
-            bases: baseSet(s.outcome),
-          })),
-      ),
-      Then('exactly that plugin loads, resolved through the project manifest')((s) =>
-        Effect.sync(() => {
-          expect(s.seen).toStrictEqual({
-            runners: ['vitest'],
-            found: [RUNNER_ENTRYPOINT],
-            bases: [PROJECT_MANIFEST],
-          })
-        })
-      ),
-    ),
-  )
-
-  scenario(
-    'A declared plugin the project does not have is reported on its own',
-    Gherkin.Do.pipe(
-      Given('a project declaring the runner it has installed and a package it does not have')(
-        'outcome',
-        () => loadOutcome([RUNNER, UNSHIPPED], { [RUNNER]: RUNNER_MANIFEST }),
-      ),
-      When('the declared packages are resolved')(
-        'seen',
-        (s) =>
-          Effect.sync(() => ({
-            runners: availableRunners(loadedOrThrow(s.outcome)),
-            notFound: notFoundLines(s.outcome),
-            attempted: attemptedSet(s.outcome),
-          })),
-      ),
-      Then('the runner loads, one line names the missing package, and nothing undeclared is tried')((s) =>
-        Effect.sync(() => {
-          expect(s.seen.runners).toStrictEqual(['vitest'])
-          expect(s.seen.notFound).toHaveLength(1)
-          expect(s.seen.notFound[0]).toContain(UNSHIPPED)
-          expect(s.seen.notFound[0]).toContain('MODULE_NOT_FOUND')
-          expect(s.seen.notFound[0]).not.toContain(PROJECT)
-          expect(s.seen.attempted).toStrictEqual([RUNNER, UNSHIPPED])
-        })
-      ),
-    ),
-  )
-
-  scenario(
-    'The plugin resolves from the project base, not from the copy beside the engine',
-    Gherkin.Do.pipe(
-      Given('a package installed in the project')(
-        'outcome',
-        () => loadOutcome([RUNNER], { [RUNNER]: RUNNER_MANIFEST }),
-      ),
-      When('the declared package is resolved')(
-        'seen',
-        (s) =>
-          Effect.sync(() => ({
-            found: loadedOrThrow(s.outcome).pluginModulePaths,
-            bases: baseSet(s.outcome),
-          })),
-      ),
-      Then('the project base is the only base consulted')((s) =>
-        Effect.sync(() => {
-          expect(s.seen).toStrictEqual({ found: [RUNNER_ENTRYPOINT], bases: [PROJECT_MANIFEST] })
-        })
-      ),
-    ),
-  )
-
-  scenario(
-    'A project declaring no plugins stops with an actionable message',
-    Gherkin.Do.pipe(
-      Given('a project whose install tree holds plugins but whose config declares none')(
-        'outcome',
-        () =>
-          loadOutcome(
-            [],
-            {
-              '@systemfsoftware/stryker-js-vitest-runner': RUNNER_MANIFEST,
-              '@systemfsoftware/stryker-js-language': RUNNER_MANIFEST,
-            },
-          ),
+        () => loadOutcome([]),
       ),
       When('the project plugins are loaded')(
         'seen',
         (s) =>
           Effect.sync(() => ({
             failure: failureOrThrow(s.outcome),
-            attempted: attemptedSet(s.outcome),
-            warnings: s.outcome.state.warnings,
+            warnings: s.outcome.warnings,
           })),
       ),
       Then('the run stops at prepare at the configured runner and checkers, having discovered nothing')((s) =>
         Effect.sync(() => {
           expect(s.seen.failure['_tag']).toBe('PluginSelectionError')
           expect(s.seen.failure['stage']).toBe('prepare')
-          expect(String(s.seen.failure['reason'])).toContain('testRunner')
-          expect(String(s.seen.failure['reason'])).toContain('checkers')
-          expect(s.seen.attempted).toStrictEqual([])
+          expect(reasonOf(s.seen.failure)).toContain('testRunner')
+          expect(reasonOf(s.seen.failure)).toContain('checkers')
           expect(s.seen.warnings).toStrictEqual([])
+        })
+      ),
+    ),
+  )
+
+  scenario(
+    'A package the project cannot resolve stops the run at prepare, naming it',
+    Gherkin.Do.pipe(
+      Given('a project declaring a package it does not have')(
+        'outcome',
+        () => loadOutcome([UNSHIPPED]),
+      ),
+      When('the declared package is resolved')(
+        'seen',
+        (s) => Effect.sync(() => ({ failure: failureOrThrow(s.outcome) })),
+      ),
+      Then('the run stops at prepare, naming the package that did not resolve')((s) =>
+        Effect.sync(() => {
+          expect(s.seen.failure['_tag']).toBe('PluginSelectionError')
+          expect(s.seen.failure['stage']).toBe('prepare')
+          expect(reasonOf(s.seen.failure)).toContain(UNSHIPPED)
+        })
+      ),
+    ),
+  )
+
+  scenario(
+    'A package that resolves and declares a plugin list loads, resolved by URL',
+    Gherkin.Do.pipe(
+      Given('a project declaring a package that declares its plugin list')(
+        'outcome',
+        () => loadOutcome([DECLARES_EMPTY_PLUGIN_LIST]),
+      ),
+      When('the declared package is resolved')(
+        'seen',
+        (s) =>
+          Effect.sync(() => ({
+            modulePaths: loadedOrThrow(s.outcome).pluginModulePaths,
+            sources: loadedOrThrow(s.outcome).pluginSources,
+            warnings: s.outcome.warnings,
+          })),
+      ),
+      Then('the module is loaded by the URL the resolver returned, with no warning')((s) =>
+        Effect.sync(() => {
+          expect(s.seen.modulePaths).toHaveLength(1)
+          expect(s.seen.modulePaths[0]).toContain('stryker-js-instrumenter')
+          expect(s.seen.sources).toStrictEqual([])
+          expect(s.seen.warnings).toStrictEqual([])
+        })
+      ),
+    ),
+  )
+
+  scenario(
+    'A resolvable package that contributes no plugin is reported, not silently ignored',
+    Gherkin.Do.pipe(
+      Given('a project declaring a package that exports no StrykerJS plugin')(
+        'outcome',
+        () => loadOutcome([RESOLVES_WITHOUT_PLUGINS]),
+      ),
+      When('the declared package is resolved and loaded')(
+        'seen',
+        (s) =>
+          Effect.sync(() => ({
+            modulePaths: loadedOrThrow(s.outcome).pluginModulePaths,
+            contributed: loadedOrThrow(s.outcome).pluginSources,
+            reported: lineContaining(s.outcome, 'did not contribute a StrykerJS plugin'),
+          })),
+      ),
+      Then('the package is reported as contributing nothing and is not handed to a worker')((s) =>
+        Effect.sync(() => {
+          expect(s.seen.reported).toBeDefined()
+          expect(s.seen.reported).toContain(RESOLVES_WITHOUT_PLUGINS)
+          expect(s.seen.contributed).toStrictEqual([])
+          expect(s.seen.modulePaths).toStrictEqual([])
+        })
+      ),
+    ),
+  )
+
+  scenario(
+    'An unresolvable package beside a resolvable one warns with the resolver reason',
+    Gherkin.Do.pipe(
+      Given('a project declaring a package it does not have and one that resolves')(
+        'outcome',
+        () => loadOutcome([UNSHIPPED, RESOLVES_WITHOUT_PLUGINS]),
+      ),
+      When('the declared packages are resolved')(
+        'seen',
+        (s) =>
+          Effect.sync(() => ({
+            modulePaths: loadedOrThrow(s.outcome).pluginModulePaths,
+            missed: lineContaining(s.outcome, `Cannot find plugin "${UNSHIPPED}"`),
+            reported: lineContaining(s.outcome, 'did not contribute a StrykerJS plugin'),
+          })),
+      ),
+      Then('the resolvable package still loads and the miss names its resolution failure')((s) =>
+        Effect.sync(() => {
+          expect(s.seen.missed).toBeDefined()
+          expect(s.seen.missed).toContain('ERR_MODULE_NOT_FOUND')
+          expect(s.seen.reported).toBeDefined()
+          expect(s.seen.modulePaths).toStrictEqual([])
         })
       ),
     ),
@@ -253,24 +217,22 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
     Gherkin.Do.pipe(
       Given('a project whose config declares its plugin by path')(
         'outcome',
-        () => loadOutcome([LOCAL_PLUGIN], {}),
+        () => loadOutcome([LOCAL_PLUGIN]),
       ),
       When('the project plugins are loaded')(
         'seen',
         (s) =>
           Effect.sync(() => ({
             failure: failureOrThrow(s.outcome),
-            attempted: attemptedSet(s.outcome),
-            warnings: s.outcome.state.warnings,
+            warnings: s.outcome.warnings,
           })),
       ),
       Then('the run stops at prepare, naming the rule and the declared path without looking it up')((s) =>
         Effect.sync(() => {
           expect(s.seen.failure['_tag']).toBe('PluginSelectionError')
           expect(s.seen.failure['stage']).toBe('prepare')
-          expect(String(s.seen.failure['reason'])).toContain('Path-prefixed plugin specifiers are not supported')
-          expect(String(s.seen.failure['reason'])).toContain(LOCAL_PLUGIN)
-          expect(s.seen.attempted).toStrictEqual([])
+          expect(reasonOf(s.seen.failure)).toContain('Path-prefixed plugin specifiers are not supported')
+          expect(reasonOf(s.seen.failure)).toContain(LOCAL_PLUGIN)
           expect(s.seen.warnings).toStrictEqual([])
         })
       ),
@@ -278,57 +240,102 @@ Feature('Loading the plugins a project declares').body(({ scenario }) => {
   )
 
   scenario(
-    'Two declared plugins contributing the same runner resolve to the one declared last',
+    'A plugin module loaded by its URL contributes the plugins it exports',
     Gherkin.Do.pipe(
-      Given('a project declaring two packages that both contribute a vitest runner')(
-        'outcome',
-        () => loadOutcome([RUNNER, RUNNER_LATE], { [RUNNER]: RUNNER_MANIFEST, [RUNNER_LATE]: RUNNER_LATE_MANIFEST }),
+      Given('a plugin module published at a file URL')(
+        'module',
+        () => importModule(PLUGIN_RUNNER_FIXTURE_URL),
       ),
-      When('the shadowing is resolved')(
+      When('the module is imported by that URL')(
         'seen',
-        (s) =>
-          Effect.sync(() => ({
-            sources: loadedOrThrow(s.outcome).pluginSources,
-            warnings: s.outcome.state.warnings,
-          })),
+        (s) => Effect.sync(() => ({ plugins: strykerPluginsOf(s.module) })),
       ),
-      Then('the runner resolves from the last declaring module and the shadowing is reported')((s) =>
+      Then('the plugins the module exports are available to the loader')((s) =>
         Effect.sync(() => {
-          expect(s.seen.sources).toStrictEqual([
-            {
-              kind: 'TestRunner',
-              name: 'vitest',
-              modulePath: RUNNER_LATE_ENTRYPOINT,
-              workerEntry: VITEST_WORKER_ENTRY,
-            },
-          ])
-          expect(s.seen.warnings.some((line) => line.includes('shadows plugin at index 0'))).toBe(true)
+          expect(s.seen.plugins).toStrictEqual([RUNNER_PLUGIN])
         })
       ),
     ),
   )
 
   scenario(
-    'A package contributing the same runner twice keeps a single winner',
+    'An ignorer package the project declares loads and its ignorer joins the run',
     Gherkin.Do.pipe(
-      Given('a project declaring one package whose plugin list repeats the same runner')(
+      Given('a project declaring an ignorer package')(
         'outcome',
-        () => loadOutcome([DUPLICATE_RUNNER], { [DUPLICATE_RUNNER]: DUPLICATE_RUNNER_MANIFEST }),
+        () => loadOutcome([EFFECT_SCHEMA_DECLARATIONS_IGNORER]),
       ),
-      When('the duplicated runner is resolved')(
+      When('the declared package is resolved and loaded')(
         'seen',
-        (s) => Effect.sync(() => ({ sources: loadedOrThrow(s.outcome).pluginSources })),
+        (s) =>
+          Effect.sync(() => ({
+            names: ignorerNamesOf(loadedOrThrow(s.outcome)),
+            callables: shouldIgnoreKindsOf(loadedOrThrow(s.outcome)),
+            modulePaths: loadedOrThrow(s.outcome).pluginModulePaths,
+            sources: loadedOrThrow(s.outcome).pluginSources,
+            warnings: s.outcome.warnings,
+          })),
       ),
-      Then('exactly one contribution survives, resolved from that module')((s) =>
+      Then('its ignorer joins the run and the package contributes no plugin')((s) =>
         Effect.sync(() => {
-          expect(s.seen.sources).toStrictEqual([
-            {
-              kind: 'TestRunner',
-              name: 'vitest',
-              modulePath: DUPLICATE_RUNNER_ENTRYPOINT,
-              workerEntry: VITEST_WORKER_ENTRY,
-            },
+          expect(s.seen.names).toStrictEqual([EFFECT_SCHEMA_DECLARATIONS_IGNORER_NAME])
+          expect(s.seen.callables).toStrictEqual(['function'])
+          expect(s.seen.modulePaths).toStrictEqual([])
+          expect(s.seen.sources).toStrictEqual([])
+          expect(s.seen.warnings).toStrictEqual([])
+        })
+      ),
+    ),
+  )
+
+  scenario(
+    'Two ignorer packages load side by side, neither replacing the other',
+    Gherkin.Do.pipe(
+      Given('a project declaring both ignorer packages')(
+        'outcome',
+        () => loadOutcome([EFFECT_SCHEMA_DECLARATIONS_IGNORER, IN_SOURCE_VITEST_BLOCK_IGNORER]),
+      ),
+      When('the declared packages are resolved and loaded')(
+        'seen',
+        (s) =>
+          Effect.sync(() => ({
+            names: ignorerNamesOf(loadedOrThrow(s.outcome)),
+            replacementLines: s.outcome.warnings.filter((line) => line.includes('shadows')),
+            warnings: s.outcome.warnings,
+          })),
+      ),
+      Then('both ignorers join the run and no replacement is reported')((s) =>
+        Effect.sync(() => {
+          expect(s.seen.names).toStrictEqual([
+            EFFECT_SCHEMA_DECLARATIONS_IGNORER_NAME,
+            IN_SOURCE_VITEST_BLOCK_IGNORER_NAME,
           ])
+          expect(s.seen.replacementLines).toStrictEqual([])
+          expect(s.seen.warnings).toStrictEqual([])
+        })
+      ),
+    ),
+  )
+
+  scenario(
+    'An ignorer package declared twice is loaded once and its ignorer joins the run once',
+    Gherkin.Do.pipe(
+      Given('a project declaring the same ignorer package twice')(
+        'outcome',
+        () => loadOutcome([EFFECT_SCHEMA_DECLARATIONS_IGNORER, EFFECT_SCHEMA_DECLARATIONS_IGNORER]),
+      ),
+      When('the declared packages are resolved and loaded')(
+        'seen',
+        (s) =>
+          Effect.sync(() => ({
+            names: ignorerNamesOf(loadedOrThrow(s.outcome)),
+            warnings: s.outcome.warnings,
+          })),
+      ),
+      Then('a single ignorer is contributed and nothing is reported')((s) =>
+        Effect.sync(() => {
+          expect(s.seen.names).toStrictEqual([EFFECT_SCHEMA_DECLARATIONS_IGNORER_NAME])
+          expect(s.seen.warnings).toStrictEqual([])
         })
       ),
     ),

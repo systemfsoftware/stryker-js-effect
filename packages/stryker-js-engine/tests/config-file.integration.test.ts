@@ -1,7 +1,6 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { readConfig } from '@systemfsoftware/stryker-js-engine'
 import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-language'
-import { Module } from '@systemfsoftware/stryker-js-language'
 import * as Array from 'effect/Array'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -22,17 +21,8 @@ const fixtureProject = (project: string): string => `${CONFIG_FIXTURES}/${projec
 const fixtureFile = (project: string, name: string): string => `${fixtureProject(project)}/${name}`
 
 const MISSING_PACKAGE = '@acme/not-installed'
-const UNSHAPED_PACKAGE = '@acme/unshaped-config'
-const SHARED_CONFIG_PACKAGE = '@acme/shared-stryker-config'
-
-const INSTALLED_CONFIG_PACKAGES: Readonly<Record<string, string>> = {
-  [UNSHAPED_PACKAGE]: fixtureFile('unshaped-extends', 'unshaped-config/package.json'),
-  [SHARED_CONFIG_PACKAGE]: fixtureFile('bare-extends', 'shared-config/package.json'),
-}
 
 interface ReadRecorderShape {
-  readonly attempted: string[]
-  readonly bases: string[]
   readonly warnings: string[]
 }
 
@@ -40,20 +30,9 @@ class ReadRecorder extends Context.Service<ReadRecorder, ReadRecorderShape>()(
   'stryker-js-engine/tests/ReadRecorder',
 ) {}
 
-const makeRecorder = (): ReadRecorderShape => ({ attempted: [], bases: [], warnings: [] })
+const makeRecorder = (): ReadRecorderShape => ({ warnings: [] })
 
 const recorderLayer = Layer.effect(ReadRecorder, Effect.sync(makeRecorder))
-
-const moduleLayer = Layer.effect(
-  Module,
-  Effect.map(ReadRecorder, (recorder) => ({
-    findPackageJSON: (specifier: string, base: string): string | undefined => {
-      recorder.attempted.push(specifier)
-      recorder.bases.push(base)
-      return INSTALLED_CONFIG_PACKAGES[specifier]
-    },
-  })),
-)
 
 interface NodeFs {
   readFileSync(path: string, encoding: 'utf8'): string
@@ -85,7 +64,7 @@ const warningLogger = (recorder: ReadRecorderShape): Logger.Logger<unknown, void
 
 const loggerLayer = Logger.layer([Effect.map(ReadRecorder, warningLogger)])
 
-const configReadLayer = Layer.mergeAll(recorderLayer, moduleLayer, fileSystemLayer, Path.layer, loggerLayer).pipe(
+const configReadLayer = Layer.mergeAll(recorderLayer, fileSystemLayer, Path.layer, loggerLayer).pipe(
   Layer.provideMerge(recorderLayer),
 )
 
@@ -94,7 +73,7 @@ interface ReadOutcome {
   readonly recorder: ReadRecorderShape
 }
 
-type ReadEffect<A> = Effect.Effect<A, never, ReadRecorder | Module | FileSystem.FileSystem | Path.Path>
+type ReadEffect<A> = Effect.Effect<A, never, ReadRecorder | FileSystem.FileSystem | Path.Path>
 
 const outcomeOf = (cliOptions: PartialStrykerOptions): ReadEffect<ReadOutcome> =>
   Effect.gen(function*() {
@@ -175,15 +154,10 @@ Feature('Configuring a Stryker run from a module config file')
           ),
           When('the run reads its configuration')(
             'seen',
-            (s) =>
-              Effect.sync(() => ({
-                high: optionsOrThrow(s.read).thresholds.high,
-                attempted: s.read.recorder.attempted,
-              })),
+            (s) => Effect.sync(() => ({ high: optionsOrThrow(s.read).thresholds.high })),
           ),
-          Then('the run is configured by that module, with nothing resolved as a package')((s) => {
+          Then('the run takes its settings from that module')((s) => {
             expect(s.seen.high).toBe(row.high)
-            expect(s.seen.attempted).toStrictEqual([])
           }),
         ),
     )
@@ -332,30 +306,6 @@ Feature('Configuring a Stryker run from a module config file')
     )
 
     scenario(
-      'A config file inherits settings from an installed config package',
-      Gherkin.Do.pipe(
-        Given('a config module inheriting from a config package installed in the project')(
-          'read',
-          () => readExplicit(fixtureFile('bare-extends', 'stryker.config.ts')),
-        ),
-        When('the run resolves the package and reads its entry')(
-          'seen',
-          (s) =>
-            Effect.sync(() => ({
-              high: optionsOrThrow(s.read).thresholds.high,
-              attempted: s.read.recorder.attempted,
-              bases: s.read.recorder.bases,
-            })),
-        ),
-        Then('the package settings configure the run, resolved from the project the config lives in')((s) => {
-          expect(s.seen.high).toBe(81)
-          expect(s.seen.attempted).toStrictEqual([SHARED_CONFIG_PACKAGE])
-          expect(s.seen.bases).toStrictEqual([fixtureFile('bare-extends', 'package.json')])
-        }),
-      ),
-    )
-
-    scenario(
       'A config file that inherits from a package that is not installed refuses, naming the package',
       Gherkin.Do.pipe(
         Given('a config module inheriting from a package that is not installed')(
@@ -370,25 +320,6 @@ Feature('Configuring a Stryker run from a module config file')
           expect(s.seen.failure['_tag']).toBe('ConfigFileUnreadableError')
           expect(fileOf(s.seen.failure)).toBe(MISSING_PACKAGE)
           expect(causeTextOf(s.seen.failure)).toContain(MISSING_PACKAGE)
-        }),
-      ),
-    )
-
-    scenario(
-      'A config file that inherits from a package with no usable entry refuses',
-      Gherkin.Do.pipe(
-        Given('a config module inheriting from a package whose manifest names no entry')(
-          'read',
-          () => readExplicit(fixtureFile('unshaped-extends', 'stryker.config.ts')),
-        ),
-        When('the run reads the package manifest')(
-          'seen',
-          (s) => Effect.sync(() => ({ failure: failureOrThrow(s.read) })),
-        ),
-        Then('the run stops and reports the manifest as unusable')((s) => {
-          expect(s.seen.failure['_tag']).toBe('ConfigFileUnreadableError')
-          expect(fileOf(s.seen.failure)).toBe(UNSHAPED_PACKAGE)
-          expect(causeTextOf(s.seen.failure)).toContain('no-main-no-exports')
         }),
       ),
     )

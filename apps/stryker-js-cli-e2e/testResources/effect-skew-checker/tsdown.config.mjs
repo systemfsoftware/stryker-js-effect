@@ -1,5 +1,6 @@
 import { readFileSync, realpathSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const effectPackageDir = process.env['SKEW_EFFECT_DIR']
 const runnerManifest = process.env['SKEW_RUNNER_MANIFEST']
@@ -8,8 +9,6 @@ const outDir = process.env['SKEW_OUT_DIR']
 if (effectPackageDir === undefined || runnerManifest === undefined || outDir === undefined) {
   throw new Error('SKEW_EFFECT_DIR, SKEW_RUNNER_MANIFEST and SKEW_OUT_DIR must all be set')
 }
-
-const runnerDirectory = dirname(runnerManifest)
 
 const entryOf = (packageDirectory, subpath) => {
   const manifest = JSON.parse(readFileSync(join(packageDirectory, 'package.json'), 'utf8'))
@@ -31,10 +30,8 @@ const packagingHostEntryOf = (source) => {
   const segments = source.split('/')
   const packageSegmentCount = source.startsWith('@') ? 2 : 1
   const subpath = segments.slice(packageSegmentCount).join('/')
-  return entryOf(
-    join(runnerDirectory, 'node_modules', segments.slice(0, packageSegmentCount).join('/')),
-    subpath === '' ? undefined : subpath,
-  )
+  const resolved = import.meta.resolve(source)
+  return entryOf(dirname(fileURLToPath(resolved)), subpath === '' ? undefined : subpath)
 }
 
 const isEffect = (source) => source === 'effect' || source.startsWith('effect/')

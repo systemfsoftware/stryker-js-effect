@@ -22,7 +22,6 @@ import * as HashMap from 'effect/HashMap';
 import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
 import { IgnorerService } from '@systemfsoftware/stryker-js-language';
 import * as Layer from 'effect/Layer';
-import { Module } from '@systemfsoftware/stryker-js-language';
 import * as MutableHashMap from 'effect/MutableHashMap';
 import * as MutableHashSet from 'effect/MutableHashSet';
 import { Mutant } from '@systemfsoftware/stryker-js-language';
@@ -166,7 +165,7 @@ export interface DryRunDone extends InstrumentDone {
 }
 
 // @public (undocumented)
-export type EnginePorts = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Module | Path.Path | WorkerLauncher;
+export type EnginePorts = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path | WorkerLauncher;
 
 // @public (undocumented)
 export const extendsPropertySchema: S.optionalKey<S.String>;
@@ -187,7 +186,6 @@ export type ExtendsStepDecision = (DoneTag & {
     readonly state: ExtendsStepState;
 }) | (ResolveTag & {
     readonly specifier: string;
-    readonly directory: string;
     readonly state: ExtendsStepState;
 }) | (RefusedTag & {
     readonly reason: ExtendsRefusalReason;
@@ -390,7 +388,7 @@ export interface PrepareDone {
 export type Primitive = boolean | number | string | null | undefined;
 
 // @public (undocumented)
-export function readConfig(cliOptions: PartialStrykerOptions, _basePath: string): Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Module | Path.Path>;
+export function readConfig(cliOptions: PartialStrykerOptions, _basePath: string): Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Path.Path>;
 
 // Warning: (ae-forgotten-export) The symbol "ReadConfigCommand_base" needs to be exported by the entry point index.d.mts
 //
@@ -420,7 +418,7 @@ export interface ResolvedMode {
 }
 
 // @public (undocumented)
-export function resolveExtends(configFile: string, document: PartialStrykerOptions): Effect.Effect<PartialStrykerOptions, ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Module | Path.Path>;
+export function resolveExtends(configFile: string, document: PartialStrykerOptions): Effect.Effect<PartialStrykerOptions, ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, Path.Path>;
 
 // Warning: (ae-forgotten-export) The symbol "RunEnvironment_base" needs to be exported by the entry point index.d.mts
 //

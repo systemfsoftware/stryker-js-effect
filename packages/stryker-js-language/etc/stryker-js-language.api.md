@@ -12,10 +12,8 @@ import * as HashMap from 'effect/HashMap';
 import { Node } from '@systemfsoftware/stryker-ignorer-interface';
 import * as Option from 'effect/Option';
 import * as Queue from 'effect/Queue';
-import * as Result from 'effect/Result';
 import * as S from 'effect/Schema';
 import { StandardSchemaV1 } from 'effect/StandardSchema';
-import { Workflow } from '@systemfsoftware/effect-cell-types';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
@@ -242,38 +240,6 @@ export interface EarlyResultPlan {
     // (undocumented)
     readonly plan: 'EarlyResult';
 }
-
-// @public (undocumented)
-export type EntryFile = EntryFileFromExports | EntryFileFromMain;
-
-// Warning: (ae-forgotten-export) The symbol "EntryFileFromExports_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class EntryFileFromExports extends EntryFileFromExports_base {
-    // Warning: (ae-forgotten-export) The symbol "PackageEntryTypeId" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    readonly [PackageEntryTypeId]: symbol;
-}
-
-// Warning: (ae-forgotten-export) The symbol "EntryFileFromMain_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class EntryFileFromMain extends EntryFileFromMain_base {
-    // (undocumented)
-    readonly [PackageEntryTypeId]: symbol;
-}
-
-// Warning: (ae-forgotten-export) The symbol "EntryRefusal_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class EntryRefusal extends EntryRefusal_base {}
-
-// @public (undocumented)
-export const EntryRefusalReason: S.Literals<readonly ["no-main-no-exports", "main-without-extension", "unsupported-exports-shape", "unmatched-subpath"]>;
-
-// @public (undocumented)
-export type EntryRefusalReason = typeof EntryRefusalReason.Type;
 
 // @public (undocumented)
 export interface ErrnoException extends Error {
@@ -594,11 +560,6 @@ export const ModeSignal: S.Literals<readonly ["flag", "env", "tty", "agent", "to
 
 // @public (undocumented)
 export type ModeSignal = typeof ModeSignal.Type;
-
-// Warning: (ae-forgotten-export) The symbol "Module_base" needs to be exported by the entry point index.d.mts
-//
-// @public
-export class Module extends Module_base {}
 
 // Warning: (ae-forgotten-export) The symbol "Mutant_base" needs to be exported by the entry point index.d.mts
 //
@@ -986,14 +947,6 @@ export type ReportTypeType = typeof ReportTypeType.Type;
 
 // @public (undocumented)
 export function resolveExitCode(pending: Iterable<ExitClass>, signal: number | null): number;
-
-// @public (undocumented)
-export const resolvePackageEntry: ((command: ResolvePackageEntryCommand) => Result.Result<EntryFile, EntryRefusal>) & Workflow.WorkflowBrand;
-
-// Warning: (ae-forgotten-export) The symbol "ResolvePackageEntryCommand_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class ResolvePackageEntryCommand extends ResolvePackageEntryCommand_base {}
 
 // Warning: (ae-forgotten-export) The symbol "RunCommand_base" needs to be exported by the entry point index.d.mts
 //

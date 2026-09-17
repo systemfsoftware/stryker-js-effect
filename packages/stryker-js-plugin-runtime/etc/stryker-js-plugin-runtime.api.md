@@ -9,7 +9,6 @@ import * as Config from 'effect/Config';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Layer from 'effect/Layer';
-import { Module } from '@systemfsoftware/stryker-js-language';
 import * as Option from 'effect/Option';
 import * as Path from 'effect/Path';
 import { PlatformError } from 'effect/PlatformError';
@@ -113,9 +112,6 @@ export const layerTraceContextClient: Layer.Layer<RpcMiddleware.ForClient<TraceC
 export const layerTraceContextServer: Layer.Layer<TraceContextMiddleware, never, never>;
 
 // @public (undocumented)
-export const nodeModuleLayer: Layer.Layer<Module>;
-
-// @public (undocumented)
 export const readWorkerOptionsFromEnv: Effect.Effect<{
     readonly [x: string]: unknown;
     readonly allowConsoleColors: boolean;
@@ -206,12 +202,12 @@ export const tracePartsOf: (context: api.SpanContext) => Option.Option<TraceCont
 export const withLinkedSpan: <A, E, R>(spanName: string, attributes: api.Attributes, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 
 // @public (undocumented)
-export const workerServerLayer: <Rpcs extends Rpc.Any, HE>(params: WorkerServerParams<Rpcs, HE>) => Layer.Layer<never, HE | Config.ConfigError | SocketServerError, Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<FileSystem.FileSystem, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Module, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Path.Path, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<RpcServer.Protocol, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.Middleware<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ServicesServer<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ToHandler<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Module | Path.Path>, TraceContextMiddleware>>;
+export const workerServerLayer: <Rpcs extends Rpc.Any, HE>(params: WorkerServerParams<Rpcs, HE>) => Layer.Layer<never, HE | Config.ConfigError | SocketServerError, Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<FileSystem.FileSystem, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Path.Path, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<RpcServer.Protocol, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.Middleware<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ServicesServer<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ToHandler<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware>>;
 
 // @public (undocumented)
 export interface WorkerServerParams<Rpcs extends Rpc.Any, HE> {
     // (undocumented)
-    readonly handlers: Layer.Layer<Rpc.ToHandler<Rpcs>, HE, FileSystem.FileSystem | Path.Path | Module>;
+    readonly handlers: Layer.Layer<Rpc.ToHandler<Rpcs>, HE, FileSystem.FileSystem | Path.Path>;
     // (undocumented)
     readonly rpcs: RpcGroup.RpcGroup<Rpcs>;
     // (undocumented)

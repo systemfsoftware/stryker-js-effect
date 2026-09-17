@@ -5,11 +5,8 @@
 ```ts
 
 import * as Effect from 'effect/Effect';
-import * as FileSystem from 'effect/FileSystem';
 import * as HashMap from 'effect/HashMap';
 import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
-import { Module } from '@systemfsoftware/stryker-js-language';
-import * as Path from 'effect/Path';
 import * as S from 'effect/Schema';
 import { Schema } from 'effect';
 import { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
@@ -41,7 +38,7 @@ export interface LoadedPlugins {
 // Warning: (ae-forgotten-export) The symbol "PluginSelectionError" needs to be exported by the entry point plugin-loader.d.mts
 //
 // @public (undocumented)
-export function loadPlugins(pluginDescriptors: readonly string[], basePath: string): Effect.Effect<LoadedPlugins, PluginLoadFailedError | PluginSelectionError, FileSystem.FileSystem | Module | Path.Path>;
+export function loadPlugins(pluginDescriptors: readonly string[]): Effect.Effect<LoadedPlugins, PluginLoadFailedError | PluginSelectionError>;
 
 // @public (undocumented)
 export type PluginDescriptor<K extends PluginKind = PluginKind> = PluginDescriptorOf<K>;

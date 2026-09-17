@@ -8,7 +8,7 @@
   },
   "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js-plugin-runtime#readme",
   "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
-  "description": "The mutation-testing plugin runtime — the worker's RPC server layer, its Node module port, its OTel bootstrap, the worker-options wire codec, and the trace-context middleware implementations a plugin process runs.",
+  "description": "The mutation-testing plugin runtime — the worker's RPC server layer, its OTel bootstrap, the worker-options wire codec, and the trace-context middleware implementations a plugin process runs.",
   "type": "module",
   "files": [
     "dist"
@@ -41,7 +41,6 @@
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
-    "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/effect-schema-vite": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",

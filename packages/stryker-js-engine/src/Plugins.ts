@@ -1,16 +1,12 @@
 import { Schema as S } from 'effect'
 import * as Effect from 'effect/Effect'
-import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 
 import type { Ignorer as IgnorerDescriptor } from '@systemfsoftware/stryker-ignorer-interface'
-import { Module, resolvePackageEntry, ResolvePackageEntryCommand } from '@systemfsoftware/stryker-js-language'
-import type { EntryFile } from '@systemfsoftware/stryker-js-language'
 import type { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
 import { importModule } from './Config.js'
 import type { PluginLoadDecision, PluginSelectionError } from './plan-plugin-load.workflow.js'
@@ -207,99 +203,24 @@ export interface LoadedPlugins {
   readonly ignorers: readonly IgnorerDescriptor[]
 }
 
-const PROJECT_MANIFEST = 'package.json'
-
 const resolutionFailureReason = (cause: unknown): string =>
   Option.match(Option.fromUndefinedOr(errorCodeOf(cause)), {
     onNone: () => 'the project does not resolve this specifier',
     onSome: (code) => String(code),
   })
 
-const missingPackage = (specifier: string): Error =>
-  Object.assign(new Error(`Cannot find package "${specifier}"`), { code: 'ERR_MODULE_NOT_FOUND' })
-
-const parseManifest = (text: string): unknown => {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return undefined
-  }
-}
-
-const readManifest = (
-  fileSystem: FileSystem.FileSystem,
-  manifestPath: string,
-): Effect.Effect<unknown> =>
-  fileSystem.readFileString(manifestPath).pipe(
-    Effect.map((text): unknown => parseManifest(text)),
-    Effect.orElseSucceed((): unknown => undefined),
-  )
-
 const unresolvedSpecifier = (specifier: string, reason: string): UnresolvedSpecifier =>
   new UnresolvedSpecifier({ specifier, reason })
 
-const UNREADABLE_MANIFEST_REASON = 'the package manifest could not be read'
-
-const resolveManifestEntry = (
-  specifier: string,
-  manifestPath: string,
-  manifest: unknown,
-  pathService: Path.Path,
-): Effect.Effect<ResolvedSpecifier | UnresolvedSpecifier, never> =>
-  Effect.gen(function*() {
-    const selected: Result.Result<EntryFile, string> = Match.value(manifest).pipe(
-      Match.when(undefined, (): Result.Result<EntryFile, string> => Result.fail(UNREADABLE_MANIFEST_REASON)),
-      Match.orElse((document: unknown): Result.Result<EntryFile, string> =>
-        Result.mapError(
-          resolvePackageEntry(new ResolvePackageEntryCommand({ manifest: document, subpath: '.' })),
-          (refusal) => refusal.reason,
-        )
-      ),
-    )
-    if (Result.isFailure(selected)) {
-      return unresolvedSpecifier(specifier, selected.failure)
-    }
-    const entrypoint = yield* pathService.toFileUrl(
-      pathService.join(pathService.dirname(manifestPath), selected.success.path),
-    ).pipe(Effect.orDie)
-    return new ResolvedSpecifier({ specifier, entrypoint: entrypoint.href })
-  })
-
-const resolveSpecifier = (
-  specifier: string,
-  base: string,
-): Effect.Effect<
-  ResolvedSpecifier | UnresolvedSpecifier,
-  never,
-  FileSystem.FileSystem | Module | Path.Path
-> =>
-  Effect.gen(function*() {
-    const module = yield* Module
-    const fileSystem = yield* FileSystem.FileSystem
-    const pathService = yield* Path.Path
-    const manifestPath = module.findPackageJSON(specifier, base)
-    if (manifestPath === undefined) {
-      return unresolvedSpecifier(specifier, resolutionFailureReason(missingPackage(specifier)))
-    }
-    const manifest = yield* readManifest(fileSystem, manifestPath)
-    return yield* resolveManifestEntry(specifier, manifestPath, manifest, pathService)
-  })
+const resolveSpecifier = (specifier: string): Effect.Effect<ResolvedSpecifier | UnresolvedSpecifier> =>
+  Effect.try({
+    try: (): ResolvedSpecifier => new ResolvedSpecifier({ specifier, entrypoint: import.meta.resolve(specifier) }),
+    catch: (cause) => unresolvedSpecifier(specifier, resolutionFailureReason(cause)),
+  }).pipe(Effect.catch((missed) => Effect.succeed<ResolvedSpecifier | UnresolvedSpecifier>(missed)))
 
 const resolveSpecifiers = (
   specifiers: readonly string[],
-  basePath: string,
-): Effect.Effect<
-  readonly (ResolvedSpecifier | UnresolvedSpecifier)[],
-  never,
-  FileSystem.FileSystem | Module | Path.Path
-> =>
-  Effect.gen(function*() {
-    const pathService = yield* Path.Path
-    return yield* Effect.forEach(
-      specifiers,
-      (specifier: string) => resolveSpecifier(specifier, pathService.join(basePath, PROJECT_MANIFEST)),
-    )
-  })
+): Effect.Effect<readonly (ResolvedSpecifier | UnresolvedSpecifier)[]> => Effect.forEach(specifiers, resolveSpecifier)
 
 const warnUnresolvedSpecifier = (missed: UnresolvedSpecifier): Effect.Effect<void> =>
   Effect.logWarning(
@@ -410,18 +331,10 @@ interface PluginLoaderRawEntry {
 }
 export function loadPlugins(
   pluginDescriptors: readonly string[],
-  basePath: string,
-): Effect.Effect<
-  LoadedPlugins,
-  PluginLoadFailedError | PluginSelectionError,
-  FileSystem.FileSystem | Module | Path.Path
-> {
+): Effect.Effect<LoadedPlugins, PluginLoadFailedError | PluginSelectionError> {
   return Effect.gen(function*() {
-    yield* Module
-    yield* Path.Path
     const resolutions = yield* resolveSpecifiers(
       pluginDescriptors.filter((specifier) => !S.is(PathPrefixedSpecifier)(specifier)),
-      basePath,
     )
     const plan = yield* Effect.fromResult(
       planPluginLoad(new PluginLoadCommand({ specifiers: pluginDescriptors, resolutions })),

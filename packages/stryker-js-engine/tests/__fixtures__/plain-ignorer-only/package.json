@@ -1,7 +1,0 @@
-{
-  "name": "plain-ignorer-only",
-  "version": "0.0.0",
-  "exports": {
-    ".": "./plain-ignorer-only.fixture.mjs"
-  }
-}

@@ -7,9 +7,7 @@ import {
   WorkerBootTimeoutError,
 } from '@systemfsoftware/stryker-js-engine'
 import type { WorkerSpawnParams } from '@systemfsoftware/stryker-js-engine'
-import { Module } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
-import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
@@ -45,36 +43,16 @@ interface BootOutcome {
 
 const bootPingWorker = (
   behaviour: ChildBehaviour,
-  module: Layer.Layer<Module>,
 ): Effect.Effect<BootOutcome> =>
   Effect.gen(function*() {
     const launcher = yield* substitutedLauncher(behaviour)
     const answer = yield* makeWorkerClient({ rpcs: PingRpcs, ...spawnParams() }).pipe(
       Effect.flatMap((client) => client.ping({ message: 'boot' })),
       Effect.provide(launcher.layer),
-      Effect.provide(module),
       Effect.result,
     )
     return { answer, spawns: yield* Ref.get(launcher.spawns) }
   }).pipe(Effect.scoped)
-
-const unreachableModule: Layer.Layer<Module> = Layer.succeed(Module, {
-  findPackageJSON: () => {
-    throw new Error('the host must never resolve a plugin module')
-  },
-})
-
-interface ImportWatch {
-  readonly specifiers: string[]
-}
-
-const watchedModule = (watch: ImportWatch): Layer.Layer<Module> =>
-  Layer.succeed(Module, {
-    findPackageJSON: (specifier: string): string | undefined => {
-      watch.specifiers.push(specifier)
-      throw new Error('the host must never resolve a plugin module')
-    },
-  })
 
 const bootFailure = (boot: BootOutcome): unknown =>
   Result.match(boot.answer, {
@@ -130,7 +108,7 @@ Feature('Running each plugin worker as its own process')
       Gherkin.Do.pipe(
         Given('a plugin whose own worker entry is ready to serve')(
           'boot',
-          () => bootPingWorker('acceptsConnection', unreachableModule),
+          () => bootPingWorker('acceptsConnection'),
         ),
         When('the host starts that plugin')(
           'seen',
@@ -150,7 +128,7 @@ Feature('Running each plugin worker as its own process')
       Gherkin.Do.pipe(
         Given('a plugin whose own worker entry never accepts a connection')(
           'boot',
-          () => bootPingWorker('neverBinds', unreachableModule),
+          () => bootPingWorker('neverBinds'),
         ),
         When('the host starts that plugin')(
           'timeout',
@@ -174,7 +152,7 @@ Feature('Running each plugin worker as its own process')
         Gherkin.Do.pipe(
           Given(`a plugin whose own worker entry ${row.ending} while it boots`)(
             'boot',
-            () => bootPingWorker(row.behaviour, unreachableModule),
+            () => bootPingWorker(row.behaviour),
           ),
           When('the host starts that plugin')(
             'failure',
@@ -213,26 +191,6 @@ Feature('Running each plugin worker as its own process')
               'a crash',
               'a crash',
             ])
-          })
-        ),
-      ),
-    )
-
-    scenario(
-      'A plugin worker is started by path alone, without the host importing the plugin',
-      Gherkin.Do.pipe(
-        Given('a plugin whose own worker entry is ready to serve, and a project whose plugins cannot be imported')(
-          'watch',
-          () => Effect.sync((): ImportWatch => ({ specifiers: [] })),
-        ),
-        When('the host starts that plugin with that project')(
-          'boot',
-          (s) => bootPingWorker('acceptsConnection', watchedModule(s.watch)),
-        ),
-        Then('the worker answers, and no plugin module was ever imported')((s) =>
-          Effect.sync(() => {
-            expect(bootAnswer(s.boot)).toBe('pong:boot')
-            expect(s.watch.specifiers).toStrictEqual([])
           })
         ),
       ),
