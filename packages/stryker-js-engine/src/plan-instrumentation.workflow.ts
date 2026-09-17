@@ -39,10 +39,10 @@ export const planInstrumentation = Workflow.make(
   (command: InstrumentCommand): Result.Result<InstrumentDecision, InstrumentError> =>
     Match.value(command).pipe(
       Match.when({ fileCount: 0 }, () =>
-        Result.fail(new InstrumentError({ stage: 'instrument', reason: 'No files to instrument.' }))),
+        Result.fail(InstrumentError.make({ stage: 'instrument', reason: 'No files to instrument.' }))),
       Match.when({ inPlace: true }, () =>
         Result.succeed(
-          new InPlaceInstrument({
+          InPlaceInstrument.make({
             workingDirectoryHint: 'inPlace',
             backupDirectoryHint: 'backup',
             fileCount: command.fileCount,
@@ -50,7 +50,7 @@ export const planInstrumentation = Workflow.make(
         )),
       Match.orElse(() =>
         Result.succeed(
-          new EphemeralInstrument({
+          EphemeralInstrument.make({
             workingDirectoryHint: 'temp',
             fileCount: command.fileCount,
           }),

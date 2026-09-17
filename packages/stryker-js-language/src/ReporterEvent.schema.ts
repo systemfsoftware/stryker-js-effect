@@ -1,3 +1,4 @@
+import type * as Effect from 'effect/Effect'
 import * as S from 'effect/Schema'
 import type { StandardSchemaV1 } from 'effect/StandardSchema'
 
@@ -85,7 +86,7 @@ export interface ReporterInit {
 export type ReporterFactory = (
   options: StrykerOptions,
   init: ReporterInit,
-) => (events: AsyncIterable<ReporterEvent>) => Promise<void>
+) => (events: AsyncIterable<ReporterEvent>) => Effect.Effect<void, ReporterFailed>
 
 export class ReporterFailed extends S.TaggedError<ReporterFailed>()('ReporterFailed', {
   cause: S.String,

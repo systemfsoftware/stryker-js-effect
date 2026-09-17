@@ -15,7 +15,7 @@ import { YieldableError } from 'effect/Cause';
 export const angularIgnorer: IgnorerService;
 
 // @public (undocumented)
-export function disableTypeChecks(file: File_2): Promise<File_2>;
+export const disableTypeChecks: (file: File_2) => Effect.Effect<File_2, InstrumentError>;
 
 // @public (undocumented)
 interface File_2 extends FileDescription {
@@ -30,7 +30,6 @@ export { File_2 as File }
 export const frameworkPluginsFileUrl: string;
 
 // Warning: (ae-forgotten-export) The symbol "InstrumentResult$1" needs to be exported by the entry point index.d.mts
-// Warning: (ae-forgotten-export) The symbol "InstrumentError" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
 export const instrument: (files: readonly File_2[], options: InstrumenterOptions) => Effect.Effect<InstrumentResult$1, InstrumentError>;
@@ -39,6 +38,14 @@ export const instrument: (files: readonly File_2[], options: InstrumenterOptions
 //
 // @public (undocumented)
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type;
+
+// Warning: (ae-forgotten-export) The symbol "InstrumentError_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class InstrumentError extends InstrumentError_base {
+    // (undocumented)
+    get message(): string;
+}
 
 // @public (undocumented)
 export interface InstrumentResult {

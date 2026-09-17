@@ -1,9 +1,13 @@
 import type { MutantStatus } from '@systemfsoftware/stryker-js-language'
-import type { ReporterFactory } from '@systemfsoftware/stryker-js-language'
+import { errorToString } from '@systemfsoftware/stryker-js-language'
+import type { ReporterEvent, ReporterFactory } from '@systemfsoftware/stryker-js-language'
+import { ReporterFailed } from '@systemfsoftware/stryker-js-language'
 import type { RunTiming } from '@systemfsoftware/stryker-js-language'
 import type { TestRunnerCapabilities } from '@systemfsoftware/stryker-js-language'
+import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Stream from 'effect/Stream'
 
 export type ProgressBarState = {
   readonly format: string
@@ -171,7 +175,14 @@ const PROGRESS_BAR_FORMAT =
 
 const PROGRESS_BAR_OPTIONS = { complete: '=', incomplete: ' ', width: 50 }
 
-export const makeProgressBarReporter: ReporterFactory = () => async (events) => {
+const progressStreamErrorOf = (cause: unknown): ReporterFailed =>
+  ReporterFailed.make({
+    reporterName: 'progress',
+    event: 'mutationTestReportReady',
+    cause: errorToString(cause),
+  })
+
+export const makeProgressBarReporter: ReporterFactory = () => (events) => {
   const progress: { tally: ProgressTally; bar: ProgressBarState | undefined } = {
     tally: emptyTally(0),
     bar: undefined,
@@ -189,65 +200,73 @@ export const makeProgressBarReporter: ReporterFactory = () => async (events) => 
         process.stdout.write(`\r${line}${newline}`)
       },
     })
-  try {
-    for await (const event of events) {
-      Match.value(event).pipe(
-        Match.tag('dryRunCompleted', (dryRun) => {
-          progress.tally = {
-            ...progress.tally,
-            timing: dryRun.timing,
-            capabilities: { reloadEnvironment: dryRun.capabilities.reloadEnvironment },
-          }
-        }),
-        Match.tag('mutationTestingPlanReady', (planReady) => {
-          const ticksByMutantId = Object.fromEntries(
-            planReady.plans.flatMap((plan) => {
-              if (plan.plan !== 'Run') {
-                return []
-              }
-              return [[plan.mutantId, ticksFor(plan, progress.tally)] as const]
-            }),
-          )
-          const total = Object.values(ticksByMutantId).reduce((sum, ticks) => sum + ticks, 0)
-          progress.tally = {
-            ...progress.tally,
-            startedAt: performance.now(),
-            ticksByMutantId,
-            mutants: Object.keys(ticksByMutantId).length,
-            total,
-          }
-          progress.bar = makeProgressBarState(PROGRESS_BAR_FORMAT, { ...PROGRESS_BAR_OPTIONS, total })
-        }),
-        Match.tag('mutantTested', (tested) => {
-          Option.match(Option.fromUndefinedOr(progress.tally.ticksByMutantId[tested.id]), {
-            onNone: () => undefined,
-            onSome: (ticks) => {
-              progress.tally = tallyAfterTest(progress.tally, tested, ticks)
-              progress.bar = Option.getOrUndefined(
-                Option.map(Option.fromUndefinedOr(progress.bar), (bar) => tickProgressBar(bar, ticks)),
-              )
-              render(performance.now())
-            },
-          })
-        }),
-        Match.orElse(() => undefined),
-      )
-    }
-  } finally {
-    Option.match(Option.fromUndefinedOr(progress.bar), {
-      onNone: () => undefined,
-      onSome: (bar) =>
-        Match.value(isComplete(bar)).pipe(
-          Match.when(true, () => undefined),
-          Match.when(false, () => process.stdout.write('\n')),
-          Match.exhaustive,
-        ),
-    })
-  }
+  return Stream.runForEach(
+    Stream.fromAsyncIterable(events, progressStreamErrorOf),
+    (event) => Effect.sync(() => applyProgressEvent(progress, render, event)),
+  ).pipe(
+    Effect.ensuring(Effect.sync(() => finishProgressBar(progress))),
+  )
 }
 
-export const makeProgressStreamReporter: ReporterFactory = () => async (events) => {
-  for await (const drained of events) {
-    void drained
-  }
+export const makeProgressStreamReporter: ReporterFactory = () => (events) =>
+  Stream.runDrain(Stream.fromAsyncIterable(events, progressStreamErrorOf))
+
+const applyProgressEvent = (
+  progress: { tally: ProgressTally; bar: ProgressBarState | undefined },
+  render: (now: number) => void,
+  event: ReporterEvent,
+): void => {
+  Match.value(event).pipe(
+    Match.tag('dryRunCompleted', (dryRun) => {
+      progress.tally = {
+        ...progress.tally,
+        timing: dryRun.timing,
+        capabilities: { reloadEnvironment: dryRun.capabilities.reloadEnvironment },
+      }
+    }),
+    Match.tag('mutationTestingPlanReady', (planReady) => {
+      const ticksByMutantId = Object.fromEntries(
+        planReady.plans.flatMap((plan) => {
+          if (plan.plan !== 'Run') {
+            return []
+          }
+          return [[plan.mutantId, ticksFor(plan, progress.tally)] as const]
+        }),
+      )
+      const total = Object.values(ticksByMutantId).reduce((sum, ticks) => sum + ticks, 0)
+      progress.tally = {
+        ...progress.tally,
+        startedAt: performance.now(),
+        ticksByMutantId,
+        mutants: Object.keys(ticksByMutantId).length,
+        total,
+      }
+      progress.bar = makeProgressBarState(PROGRESS_BAR_FORMAT, { ...PROGRESS_BAR_OPTIONS, total })
+    }),
+    Match.tag('mutantTested', (tested) => {
+      Option.match(Option.fromUndefinedOr(progress.tally.ticksByMutantId[tested.id]), {
+        onNone: () => undefined,
+        onSome: (ticks) => {
+          progress.tally = tallyAfterTest(progress.tally, tested, ticks)
+          progress.bar = Option.getOrUndefined(
+            Option.map(Option.fromUndefinedOr(progress.bar), (bar) => tickProgressBar(bar, ticks)),
+          )
+          render(performance.now())
+        },
+      })
+    }),
+    Match.orElse(() => undefined),
+  )
+}
+
+const finishProgressBar = (progress: { tally: ProgressTally; bar: ProgressBarState | undefined }): void => {
+  Option.match(Option.fromUndefinedOr(progress.bar), {
+    onNone: () => undefined,
+    onSome: (bar) =>
+      Match.value(isComplete(bar)).pipe(
+        Match.when(true, () => undefined),
+        Match.when(false, () => process.stdout.write('\n')),
+        Match.exhaustive,
+      ),
+  })
 }

@@ -34,11 +34,11 @@ export const admitOrder = Workflow.make(
   OrderRequest,
   (request: OrderRequest): Result.Result<OrderDecision, OrderRefused> =>
     Match.value(request.id.length === 0).pipe(
-      Match.when(true, () => Result.fail(new OrderRefused({ id: request.id, why: 'empty' }))),
+      Match.when(true, () => Result.fail(OrderRefused.make({ id: request.id, why: 'empty' }))),
       Match.when(false, () =>
         Match.value(request.id.length >= 3).pipe(
-          Match.when(true, () => Result.succeed(new OrderAdmitted({ id: request.id }))),
-          Match.when(false, () => Result.succeed(new OrderRejected({ id: request.id, why: 'too short' }))),
+          Match.when(true, () => Result.succeed(OrderAdmitted.make({ id: request.id }))),
+          Match.when(false, () => Result.succeed(OrderRejected.make({ id: request.id, why: 'too short' }))),
           Match.exhaustive,
         )),
       Match.exhaustive,

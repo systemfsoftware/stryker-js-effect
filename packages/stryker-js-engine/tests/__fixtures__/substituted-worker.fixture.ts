@@ -82,8 +82,8 @@ const workerServer = (socket: Socket.Socket): Layer.Layer<never> =>
   )
 
 const unboundAddress = (): Socket.SocketError =>
-  new Socket.SocketError({
-    reason: new Socket.SocketOpenError({ kind: 'Unknown', cause: 'the substituted worker never bound its address' }),
+  Socket.SocketError.make({
+    reason: Socket.SocketOpenError.make({ kind: 'Unknown', cause: 'the substituted worker never bound its address' }),
   })
 
 const clientProtocol = (
@@ -102,7 +102,7 @@ const clientProtocol = (
 const exitOf = (behaviour: ChildBehaviour): Effect.Effect<never, WorkerExit> => {
   if (behaviour === 'crashes') {
     return Effect.fail(
-      new ChildProcessCrashedError({
+      ChildProcessCrashedError.make({
         pid: WORKER_PID,
         exit: { _tag: 'Code', code: 9 },
         cause: 'the substituted worker died during boot',
@@ -110,7 +110,7 @@ const exitOf = (behaviour: ChildBehaviour): Effect.Effect<never, WorkerExit> => 
     )
   }
   if (behaviour === 'runsOutOfMemory') {
-    return Effect.fail(new OutOfMemoryError({ pid: WORKER_PID, exitCode: 137 }))
+    return Effect.fail(OutOfMemoryError.make({ pid: WORKER_PID, exitCode: 137 }))
   }
   return Effect.never
 }

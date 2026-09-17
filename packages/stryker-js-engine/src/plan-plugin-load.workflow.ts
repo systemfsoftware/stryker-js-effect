@@ -78,7 +78,7 @@ const outcomeFor = (
   resolutions: readonly (ResolvedSpecifier | UnresolvedSpecifier)[],
 ): ResolvedSpecifier | UnresolvedSpecifier =>
   Option.match(Option.fromUndefinedOr(resolutions.find((resolution) => resolution.specifier === specifier)), {
-    onNone: () => new UnresolvedSpecifier({ specifier, reason: 'no resolution was reported for this specifier' }),
+    onNone: () => UnresolvedSpecifier.make({ specifier, reason: 'no resolution was reported for this specifier' }),
     onSome: (resolution) => resolution,
   })
 
@@ -88,12 +88,12 @@ const decide = (
 ): Result.Result<PluginLoadDecision, PluginSelectionError> =>
   Array.match(toLoad, {
     onEmpty: () =>
-      Result.fail(new PluginSelectionError({ stage: 'prepare', reason: reasonFor(unresolved), unresolved })),
+      Result.fail(PluginSelectionError.make({ stage: 'prepare', reason: reasonFor(unresolved), unresolved })),
     onNonEmpty: (loadable) =>
       Result.succeed(
         Array.match(unresolved, {
-          onEmpty: () => new PluginsResolved({ toLoad: loadable }),
-          onNonEmpty: (missed) => new PluginsPartiallyResolved({ toLoad: loadable, unresolved: missed }),
+          onEmpty: () => PluginsResolved.make({ toLoad: loadable }),
+          onNonEmpty: (missed) => PluginsPartiallyResolved.make({ toLoad: loadable, unresolved: missed }),
         }),
       ),
   })
@@ -111,7 +111,7 @@ const resolveDeclared = (
 const refusePathPrefixed = (
   prefixed: readonly string[],
 ): Result.Result<PluginLoadDecision, PluginSelectionError> =>
-  Result.fail(new PluginSelectionError({ stage: 'prepare', reason: pathPrefixedReason(prefixed), unresolved: [] }))
+  Result.fail(PluginSelectionError.make({ stage: 'prepare', reason: pathPrefixedReason(prefixed), unresolved: [] }))
 
 export const planPluginLoad = Workflow.make(
   PluginLoadCommand,

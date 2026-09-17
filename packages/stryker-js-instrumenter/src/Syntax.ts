@@ -7,7 +7,7 @@ import type { Program } from './Ast.js'
 import { AstFormat as SchemaAstFormat } from './Syntax.schema.js'
 
 export const AstFormat = SchemaAstFormat
-export type AstFormat = typeof SchemaAstFormat.Type
+export type AstFormat = SchemaAstFormat
 export interface AstByFormat {
   html: HtmlAst
   js: JSAst

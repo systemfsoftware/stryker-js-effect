@@ -45,21 +45,21 @@ const decideComplete = (command: DryRunCommand): Result.Result<DryRunDecision, D
   Match.value(command).pipe(
     Match.when({ testCount: 0, allowEmpty: false }, () =>
       Result.fail(
-        new DryRunError({
+        DryRunError.make({
           stage: 'dryRunNoTests',
           reason: 'No tests were executed. Stryker will exit prematurely. Please check your configuration.',
         }),
       )),
     Match.when(hasFailedTests, () =>
       Result.succeed(
-        new DryRunFailed({
+        DryRunFailed.make({
           testCount: command.testCount,
           failedTestCount: command.failedTestCount,
         }),
       )),
     Match.orElse(() =>
       Result.succeed(
-        new DryRunPassed({
+        DryRunPassed.make({
           testCount: command.testCount,
         }),
       )
@@ -72,14 +72,14 @@ export const dryRun = Workflow.make(
     Match.value(command.status).pipe(
       Match.when('Error', () =>
         Result.fail(
-          new DryRunError({
+          DryRunError.make({
             stage: 'dryRun',
             reason: reasonOrDefault(command.errorMessage, 'Dry run error'),
           }),
         )),
       Match.when('Timeout', () =>
         Result.fail(
-          new DryRunError({
+          DryRunError.make({
             stage: 'dryRun',
             reason: reasonOrDefault(command.reason, 'Initial test run timed out'),
           }),

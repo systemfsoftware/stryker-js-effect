@@ -58,7 +58,7 @@ const markerReport = (): MutationTestResult => ({
 const metricsFixture = (report: MutationTestResult) => calculateMetrics(report.files)
 
 const killedMutant = (index: number, total: number): MutantTested =>
-  new MutantTested({
+  MutantTested.make({
     id: String(index),
     status: 'Killed',
     file: MARKER_FILE,
@@ -72,43 +72,52 @@ const killedMutant = (index: number, total: number): MutantTested =>
 const completedRun = (): readonly ReporterEvent[] => {
   const report = markerReport()
   return [
-    new DryRunCompleted({
+    DryRunCompleted.make({
       timing: { net: 1, overhead: 0 },
       capabilities: { reloadEnvironment: false },
       testCount: 1,
       tests: [],
     }),
-    new MutationTestingPlanReady({
+    MutationTestingPlanReady.make({
       total: 1,
       plans: [{ mutantId: '0', plan: 'Run', netTime: 1, reloadEnvironment: false }],
     }),
     killedMutant(1, 1),
-    new MutationTestReportReady({ report, metrics: metricsFixture(report) }),
+    MutationTestReportReady.make({ report, metrics: metricsFixture(report) }),
   ]
 }
 
 const largeRun = (gauge: ReporterWorkerGauge, total: number): AsyncIterable<ReporterEvent> => ({
-  [Symbol.asyncIterator]: async function*() {
-    for (let index = 0; index < total; index += 1) {
-      Effect.runSync(
-        Effect.gen(function*() {
-          const yielded = yield* Ref.updateAndGet(gauge.yielded, (produced) => produced + 1)
-          const delivered = yield* Ref.get(gauge.delivered)
-          yield* Ref.update(gauge.maxLag, (largest) => Math.max(largest, yielded - delivered))
-        }),
-      )
-      yield killedMutant(index + 1, total)
+  [Symbol.asyncIterator]: () => {
+    let index = 0
+    return {
+      next: (..._args: [] | [unknown]): Promise<IteratorResult<ReporterEvent>> => {
+        if (index >= total) return Promise.resolve({ done: true, value: undefined })
+        Effect.runSync(
+          Effect.gen(function*() {
+            const yielded = yield* Ref.updateAndGet(gauge.yielded, (produced) => produced + 1)
+            const delivered = yield* Ref.get(gauge.delivered)
+            yield* Ref.update(gauge.maxLag, (largest) => Math.max(largest, yielded - delivered))
+          }),
+        )
+        const value = killedMutant(index + 1, total)
+        index += 1
+        return Promise.resolve({ done: false, value })
+      },
     }
   },
 })
 
-async function* asStream(events: AsyncIterable<ReporterEvent>): AsyncGenerator<ReporterEvent> {
-  yield* events
+function asStream(events: AsyncIterable<ReporterEvent>): AsyncIterable<ReporterEvent> {
+  return events
 }
 
 const ofEvents = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> => ({
-  [Symbol.asyncIterator]: async function*() {
-    yield* events
+  [Symbol.asyncIterator]: () => {
+    const iterator = events[Symbol.iterator]()
+    return {
+      next: (...args: [] | [unknown]) => Promise.resolve(iterator.next(...args)),
+    }
   },
 })
 
@@ -168,8 +177,8 @@ const driveReporterWorker = (
         tempDirPrefix: 'stryker-reporter-',
       }).pipe(Effect.provide(launcher.layer))
 
-      yield* Effect.promise(() =>
-        reporterWorkerFactory(client)(options, { traceparent: TRACEPARENT })(asStream(produce(trace.gauge, trace)))
+      yield* reporterWorkerFactory(client)(options, { traceparent: TRACEPARENT })(
+        asStream(produce(trace.gauge, trace)),
       )
 
       const batches = yield* Ref.get(trace.batches)

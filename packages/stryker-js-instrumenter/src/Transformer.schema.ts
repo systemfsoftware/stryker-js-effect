@@ -1,7 +1,7 @@
 import * as S from 'effect/Schema'
 
 export class PlacementFailed
-  extends S.TaggedError<PlacementFailed>('@systemfsoftware/stryker-js-instrumenter/PlacementFailed')(
+  extends S.TaggedError<PlacementFailed>('@systemfsoftware/stryker-js-instrumenter/Transformer.schema/PlacementFailed')(
     'PlacementFailed',
     {
       fileName: S.String,
@@ -17,7 +17,7 @@ export class PlacementFailed
 }
 
 export class TransformFailed
-  extends S.TaggedError<TransformFailed>('@systemfsoftware/stryker-js-instrumenter/TransformFailed')(
+  extends S.TaggedError<TransformFailed>('@systemfsoftware/stryker-js-instrumenter/Transformer.schema/TransformFailed')(
     'TransformFailed',
     {
       fileName: S.String,

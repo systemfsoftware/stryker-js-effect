@@ -19,7 +19,8 @@
     "clean": "rimraf dist",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit"
+    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
   },
   "devDependencies": {
     "@effect/opentelemetry": "4.0.0-rc.112",
@@ -50,7 +51,8 @@
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@effect/tsgo": "catalog:"
   },
   "engines": {
     "node": ">=22.18.0"

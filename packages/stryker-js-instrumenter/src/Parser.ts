@@ -3,6 +3,7 @@
  */
 import type { Ast as NGAst, ParseTreeResult } from 'angular-html-parser'
 import * as Arr from 'effect/Array'
+import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -45,15 +46,20 @@ export interface ParserContext {
     code: string,
     fileName: string,
     formatOverride?: T,
-  ): Promise<AstByFormat[T]>
+  ): Effect.Effect<
+    AstByFormat[T],
+    ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+  >
 }
 
 export type Parser<T extends Ast = Ast> = (
   text: string,
   fileName: string,
   context: ParserContext,
-) => Promise<T>
-// ---------------------------------------------------------------------------
+) => Effect.Effect<
+  T,
+  ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+>
 // Unknown-value narrowing
 // ---------------------------------------------------------------------------
 
@@ -113,23 +119,23 @@ function appendIfDefined<T>(values: T[], value: T | undefined): void {
 // Oxc parse — one engine for js, ts and tsx.
 // ---------------------------------------------------------------------------
 
-export async function parseWithOxc(
+export const parseWithOxc = (
   text: string,
   fileName: string,
   lang: 'js' | 'jsx' | 'ts' | 'tsx',
-): Promise<{ root: Program; comments: readonly SpannedComment[] }> {
-  const { parseSync } = await loadOxc()
-  const result = parseSync(fileName, text, { lang, range: true })
-  const failure = oxcParseFailure(result.errors, text, fileName)
-  if (failure !== undefined) {
-    throw failure
-  }
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  const program = result.program as unknown as Program
-  // oxlint-disable-next-line typescript/no-unnecessary-type-assertion typescript/no-unsafe-type-assertion
-  return { root: program, comments: result.comments as readonly SpannedComment[] }
-}
-
+): Effect.Effect<{ root: Program; comments: readonly SpannedComment[] }, ParseFailed> =>
+  Effect.gen(function*() {
+    const { parseSync } = yield* loadOxc
+    const result = parseSync(fileName, text, { lang, range: true })
+    const failure = oxcParseFailure(result.errors, text, fileName)
+    if (failure !== undefined) {
+      return yield* failure
+    }
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+    const program = result.program as unknown as Program
+    // oxlint-disable-next-line typescript/no-unnecessary-type-assertion typescript/no-unsafe-type-assertion
+    return { root: program, comments: result.comments as readonly SpannedComment[] }
+  })
 function oxcParseFailure(
   errors: readonly OxcError[],
   text: string,
@@ -139,7 +145,7 @@ function oxcParseFailure(
   if (first === undefined) {
     return undefined
   }
-  return new ParseFailed({
+  return ParseFailed.make({
     fileName,
     message: first.message,
     location: positionFromLineTable(oxcErrorLabelStart(first), buildLineTable(text)),
@@ -177,30 +183,49 @@ export function createParser(): {
     code: string,
     fileName: string,
     formatOverride: T,
-  ): Promise<AstByFormat[T]>
-  (code: string, fileName: string, formatOverride?: AstFormat): Promise<Ast>
+  ): Effect.Effect<
+    AstByFormat[T],
+    ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+  >
+  (
+    code: string,
+    fileName: string,
+    formatOverride?: AstFormat,
+  ): Effect.Effect<
+    Ast,
+    ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+  >
 } {
   const jsParse = createJSParser()
 
-  async function parse<T extends AstFormat>(
+  function parse<T extends AstFormat>(
     code: string,
     fileName: string,
     formatOverride: T,
-  ): Promise<AstByFormat[T]>
-  async function parse(
+  ): Effect.Effect<
+    AstByFormat[T],
+    ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+  >
+  function parse(
     code: string,
     fileName: string,
     formatOverride?: AstFormat,
-  ): Promise<Ast>
-  async function parse(
+  ): Effect.Effect<
+    Ast,
+    ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+  >
+  function parse(
     code: string,
     fileName: string,
     formatOverride?: AstFormat,
-  ): Promise<Ast> {
+  ): Effect.Effect<
+    Ast,
+    ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+  > {
     const format = getFormat(fileName, formatOverride)
     if (!format) {
       const ext = path.extname(fileName).toLowerCase()
-      throw new ParserNotFound({ fileName, extension: ext, cause: undefined })
+      return Effect.fail(ParserNotFound.make({ fileName, extension: ext, cause: undefined }))
     }
     return Match.value(format).pipe(
       Match.when('js', () => jsParse(code, fileName)),
@@ -240,29 +265,40 @@ export function getFormat(
 // ---------------------------------------------------------------------------
 // JS parser
 // ---------------------------------------------------------------------------
-function createJSParser(): (text: string, fileName: string) => Promise<JSAst> {
-  return async function parse(text: string, fileName: string): Promise<JSAst> {
-    const { root, comments } = await parseWithOxc(text, fileName, 'js')
-    return { originFileName: fileName, rawContent: text, format: 'js', root, comments }
-  }
+function createJSParser(): (text: string, fileName: string) => Effect.Effect<JSAst, ParseFailed> {
+  return (text: string, fileName: string): Effect.Effect<JSAst, ParseFailed> =>
+    Effect.map(parseWithOxc(text, fileName, 'js'), ({ root, comments }) => ({
+      originFileName: fileName,
+      rawContent: text,
+      format: 'js',
+      root,
+      comments,
+    }))
 }
 
-// ---------------------------------------------------------------------------
-// TS / TSX parsers
-// ---------------------------------------------------------------------------
-
-export async function parseTS(text: string, fileName: string): Promise<TSAst> {
-  const { root, comments } = await parseWithOxc(text, fileName, 'ts')
-  return { originFileName: fileName, rawContent: text, format: 'ts', root, comments }
-}
-
-export async function parseTsx(
+export const parseTS = (
   text: string,
   fileName: string,
-): Promise<TsxAst> {
-  const { root, comments } = await parseWithOxc(text, fileName, 'tsx')
-  return { root, comments, format: 'tsx', originFileName: fileName, rawContent: text }
-}
+): Effect.Effect<TSAst, ParseFailed> =>
+  Effect.map(parseWithOxc(text, fileName, 'ts'), ({ root, comments }) => ({
+    originFileName: fileName,
+    rawContent: text,
+    format: 'ts',
+    root,
+    comments,
+  }))
+
+export const parseTsx = (
+  text: string,
+  fileName: string,
+): Effect.Effect<TsxAst, ParseFailed> =>
+  Effect.map(parseWithOxc(text, fileName, 'tsx'), ({ root, comments }) => ({
+    root,
+    comments,
+    format: 'tsx',
+    originFileName: fileName,
+    rawContent: text,
+  }))
 // ---------------------------------------------------------------------------
 // HTML parser
 // ---------------------------------------------------------------------------
@@ -283,91 +319,102 @@ const SCRIPT_TYPE_FORMATS: Readonly<Record<string, ScriptFormat>> = {
 The parser implementation in this file is heavily based on prettier's html parser
 https://github.com/prettier/prettier/blob/5a7162d0636a82c5862b9101b845af40918d22d1/src/language-html/parser-html.js
 */
-export async function parseHtml(
+export const parseHtml = (
   text: string,
   originFileName: string,
   context: ParserContext,
-): Promise<HtmlAst> {
-  const root = await ngHtmlParser(text, originFileName, context)
+): Effect.Effect<
+  HtmlAst,
+  ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+> =>
+  Effect.map(
+    ngHtmlParser(text, originFileName, context),
+    (root): HtmlAst => ({
+      originFileName,
+      rawContent: text,
+      format: 'html',
+      root,
+    }),
+  )
 
-  return {
-    originFileName,
-    rawContent: text,
-    format: 'html',
-    root,
-  }
-}
-
-async function ngHtmlParser(
+const ngHtmlParser = (
   text: string,
   fileName: string,
   parserContext: ParserContext,
-): Promise<HtmlRootNode> {
-  const ngParser = await import('angular-html-parser')
+): Effect.Effect<
+  HtmlRootNode,
+  ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+> =>
+  Effect.gen(function*() {
+    const ngParser = yield* Effect.promise(() => import('angular-html-parser'))
 
-  const { rootNodes, errors } = ngParser.parse(text, {
-    canSelfClose: true,
-    allowHtmComponentClosingTags: true,
-    isTagNameCaseSensitive: true,
-  })
+    const { rootNodes, errors } = ngParser.parse(text, {
+      canSelfClose: true,
+      allowHtmComponentClosingTags: true,
+      isTagNameCaseSensitive: true,
+    })
 
-  if (errors.length !== 0) {
-    throw htmlErrorFailure(errors, fileName)
-  }
-  const scriptsAsPromised: Array<Promise<ScriptAst>> = []
-  // `visitAll` takes the `Visitor` INTERFACE, not a class — `RecursiveVisitor`
-  // merely `implements Visitor` — and `visitAll` is itself exported, so the
-  // descent `RecursiveVisitor.visitElement` would have provided is one call. A
-  // plain object closing over `scriptsAsPromised` therefore does the whole job
-  // without inheriting a vendor base class.
-  const scriptCollector: NGAst.Visitor = {
-    visitElement: (el: NGAst.Element, context: unknown): void => {
-      const scriptFormat = getScriptType(el)
-      if (scriptFormat) {
-        scriptsAsPromised.push(parseScript(el, scriptFormat))
-      }
-      ngParser.visitAll(scriptCollector, el.children, context)
-    },
-    visitAttribute: () => undefined,
-    visitText: () => undefined,
-    visitComment: () => undefined,
-    visitDocType: () => undefined,
-    visitExpansion: () => undefined,
-    visitExpansionCase: () => undefined,
-    visitBlock: () => undefined,
-    visitBlockParameter: () => undefined,
-    visitLetDeclaration: () => undefined,
-    visitCdata: () => undefined,
-    visitComponent: () => undefined,
-    visitDirective: () => undefined,
-  }
-  ngParser.visitAll(scriptCollector, rootNodes)
-  const scripts = await Promise.all(scriptsAsPromised)
-  const root: HtmlRootNode = {
-    scripts,
-  }
-
-  return root
-
-  async function parseScript<T extends ScriptFormat>(
-    el: NGAst.Element,
-    scriptFormat: T,
-  ): Promise<AstByFormat[T]> {
-    const ast = await parserContext.parse(elementScriptText(el, text), fileName, scriptFormat)
-    if (ast != null) {
-      const offset = el.startSourceSpan.end
-      shiftScriptOffsets(ast, offset.offset)
-      return {
-        ...ast,
-        offset: {
-          column: offset.offset,
-          line: offset.line,
-        },
-      }
+    if (errors.length !== 0) {
+      return yield* htmlErrorFailure(errors, fileName)
     }
-    return ast
-  }
-}
+    const scriptEffects: Array<
+      Effect.Effect<
+        ScriptAst,
+        ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+      >
+    > = []
+    const scriptCollector: NGAst.Visitor = {
+      visitElement: (el: NGAst.Element, context: unknown): void => {
+        const scriptFormat = getScriptType(el)
+        if (scriptFormat) {
+          scriptEffects.push(parseScript(el, scriptFormat))
+        }
+        ngParser.visitAll(scriptCollector, el.children, context)
+      },
+      visitAttribute: () => undefined,
+      visitText: () => undefined,
+      visitComment: () => undefined,
+      visitDocType: () => undefined,
+      visitExpansion: () => undefined,
+      visitExpansionCase: () => undefined,
+      visitBlock: () => undefined,
+      visitBlockParameter: () => undefined,
+      visitLetDeclaration: () => undefined,
+      visitCdata: () => undefined,
+      visitComponent: () => undefined,
+      visitDirective: () => undefined,
+    }
+    ngParser.visitAll(scriptCollector, rootNodes)
+    const scripts = yield* Effect.all(scriptEffects)
+    const root: HtmlRootNode = {
+      scripts,
+    }
+
+    return root
+
+    function parseScript<T extends ScriptFormat>(
+      el: NGAst.Element,
+      scriptFormat: T,
+    ): Effect.Effect<
+      AstByFormat[T],
+      ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+    > {
+      return Effect.map(
+        parserContext.parse(elementScriptText(el, text), fileName, scriptFormat),
+        (ast) => {
+          const offset = el.startSourceSpan.end
+          shiftScriptOffsets(ast, offset.offset)
+          return {
+            ...ast,
+            offset: {
+              column: offset.offset,
+              line: offset.line,
+            },
+          }
+        },
+      )
+    }
+  })
 
 function htmlErrorFailure(
   errors: readonly ParseTreeResult['errors'][number][],
@@ -375,21 +422,20 @@ function htmlErrorFailure(
 ): ParseFailed {
   const first = errors.at(0)
   if (first === undefined) {
-    return new ParseFailed({
+    return ParseFailed.make({
       fileName,
       message: 'HTML parser reported errors but first error is missing',
       location: { line: 0, column: 0 },
       cause: errors,
     })
   }
-  return new ParseFailed({
+  return ParseFailed.make({
     fileName,
     message: first.msg,
     location: toSourceLocation(first.span.start),
     cause: first,
   })
 }
-
 function elementScriptText(element: NGAst.Element, document: string): string {
   const endSourceSpan = element.endSourceSpan
   if (endSourceSpan == null) {
@@ -579,117 +625,151 @@ function rangedExpressionOf(payload: unknown): TemplateRange | undefined {
  * Due to the way Svelte 5 is structured, we can no longer use the typings from Svelte 4, even though
  * we use the legacy AST. The full Svelte 5 migration should update these typings to use the new AST.
  */
-function loadWalker(version: string, fileName: string): Promise<WalkFn> {
-  return Match.value(isAtLeast(version, SVELTE_5)).pipe(
+const loadWalker = (
+  version: string,
+  fileName: string,
+): Effect.Effect<WalkFn, SvelteWalkerNotFound> =>
+  Match.value(isAtLeast(version, SVELTE_5)).pipe(
     Match.when(true, () => loadWalkerModule(import.meta.resolve('oxc-walker'), fileName, WALKER_MODULE_MISSING)),
     Match.orElse(() => loadWalkerModule('svelte/compiler', fileName, COMPILER_WALK_MISSING)),
   )
-}
 
 /**
  * The specifier is chosen at run time and both modules are optional peers of
  * this package, so neither can be a static import.
  */
-async function loadWalkerModule(specifier: string, fileName: string, cause: string): Promise<WalkFn> {
-  const module: unknown = await import(specifier)
-  const walk = Match.value(module).pipe(
-    Match.when(isRecordWithWalk, (record) => record.walk),
-    Match.orElse(() => undefined),
-  )
-  if (walk === undefined) {
-    throw new SvelteWalkerNotFound({ fileName, cause })
-  }
-  return walk
-}
+const loadWalkerModule = (
+  specifier: string,
+  fileName: string,
+  cause: string,
+): Effect.Effect<WalkFn, SvelteWalkerNotFound> =>
+  Effect.gen(function*() {
+    const module: unknown = yield* Effect.promise(() => import(specifier))
+    const walk = Match.value(module).pipe(
+      Match.when(isRecordWithWalk, (record) => record.walk),
+      Match.orElse(() => undefined),
+    )
+    if (walk === undefined) {
+      return yield* SvelteWalkerNotFound.make({ fileName, cause })
+    }
+    return walk
+  })
 
-export async function parseSvelte(
+export const parseSvelte = (
   text: string,
   fileName: string,
   context: ParserContext,
-): Promise<SvelteAst> {
-  const {
-    parse: svelteParse,
-    preprocess,
-    VERSION,
-  } = await import('svelte/compiler')
+): Effect.Effect<
+  SvelteAst,
+  ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+> =>
+  Effect.gen(function*() {
+    const {
+      parse: svelteParse,
+      preprocess,
+      VERSION,
+    } = yield* Effect.promise(() => import('svelte/compiler'))
 
-  if (!isAtLeast(VERSION, MINIMUM_SVELTE_VERSION)) {
-    throw new SvelteVersionNotSupported({
-      version: VERSION,
-      fileName,
-      cause: `Expected >=3.30`,
-    })
-  }
-  const walk = await loadWalker(VERSION, fileName)
-
-  const lineStarts = computeLineStarts(text)
-  const { replacedCode, scriptMap } = await replaceScripts(text)
-  const svelteAst: unknown = svelteParse(replacedCode, { filename: fileName })
-
-  const moduleScriptRange = getModuleScriptRange(svelteAst)
-  const templateRanges = getTemplateScriptRanges(svelteAst, walk)
-  const { remappedModuleScriptRange, remappedScriptRanges } = remapScriptLocations(
-    replacedCode,
-    scriptMap,
-    moduleScriptRange,
-    templateRanges,
-  )
-
-  const [moduleScript, ...additionalScripts] = await Promise.all([
-    parseTemplateScriptIfDefined(remappedModuleScriptRange),
-    ...remappedScriptRanges.map(parseTemplateScript),
-  ])
-
-  return {
-    originFileName: fileName,
-    rawContent: text,
-    format: 'svelte',
-    root: svelteRoot(moduleScript, additionalScripts),
-  }
-
-  /**
-   * Replaces script tags with placeholders.
-   * This is needed, because svelte's `parse` doesn't support `lang="ts"`.
-   */
-  async function replaceScripts(code: string) {
-    const map = new Map<string, ScriptTag>()
-    let scriptIndex = 0
-    const result = await preprocess(code, {
-      script(script) {
-        const scriptName = `script${scriptIndex++}`
-        map.set(scriptName, script)
-        return { code: scriptName }
-      },
-    })
-    return { replacedCode: result.code, scriptMap: map }
-  }
-
-  async function parseTemplateScriptIfDefined(
-    range?: TemplateScriptRange,
-  ): Promise<TemplateScript | undefined> {
-    if (range) {
-      return parseTemplateScript(range)
+    if (!isAtLeast(VERSION, MINIMUM_SVELTE_VERSION)) {
+      return yield* SvelteVersionNotSupported.make({
+        version: VERSION,
+        fileName,
+        cause: `Expected >=3.30`,
+      })
     }
-    return undefined
-  }
-  async function parseTemplateScript({
-    start,
-    end,
-    isExpression,
-    format,
-  }: TemplateScriptRange): Promise<TemplateScript> {
-    const scriptText = text.slice(start, end)
-    const parsed = await context.parse(scriptText, fileName, format)
+    const walk = yield* loadWalker(VERSION, fileName)
+
+    const lineStarts = computeLineStarts(text)
+    const { replacedCode, scriptMap } = yield* replaceScripts(text, preprocess)
+    const svelteAst: unknown = svelteParse(replacedCode, { filename: fileName })
+
+    const moduleScriptRange = getModuleScriptRange(svelteAst)
+    const templateRanges = getTemplateScriptRanges(svelteAst, walk)
+    const { remappedModuleScriptRange, remappedScriptRanges } = remapScriptLocations(
+      replacedCode,
+      scriptMap,
+      moduleScriptRange,
+      templateRanges,
+    )
+
+    const moduleScript = yield* parseTemplateScriptIfDefined(
+      remappedModuleScriptRange,
+      context,
+      text,
+      fileName,
+      lineStarts,
+    )
+    const additionalScripts = yield* Effect.forEach(
+      remappedScriptRanges,
+      (range) => parseTemplateScript(range, context, text, fileName, lineStarts),
+    )
+
     return {
+      originFileName: fileName,
+      rawContent: text,
+      format: 'svelte',
+      root: svelteRoot(moduleScript, additionalScripts),
+    }
+  })
+
+const replaceScripts = (
+  code: string,
+  preprocess: (code: string, handlers: { script(script: ScriptTag): { code: string } }) => Promise<{ code: string }>,
+): Effect.Effect<{ replacedCode: string; scriptMap: Map<string, ScriptTag> }> => {
+  const map = new Map<string, ScriptTag>()
+  let scriptIndex = 0
+  return Effect.gen(function*() {
+    const result = yield* Effect.promise(() =>
+      preprocess(code, {
+        script(script: ScriptTag) {
+          const scriptName = `script${scriptIndex++}`
+          map.set(scriptName, script)
+          return { code: scriptName }
+        },
+      })
+    )
+    return { replacedCode: result.code, scriptMap: map }
+  })
+}
+
+const parseTemplateScriptIfDefined = (
+  range: TemplateScriptRange | undefined,
+  context: ParserContext,
+  text: string,
+  fileName: string,
+  lineStarts: readonly number[],
+): Effect.Effect<
+  TemplateScript | undefined,
+  ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+> =>
+  Effect.gen(function*() {
+    if (range === undefined) {
+      return undefined
+    }
+    return yield* parseTemplateScript(range, context, text, fileName, lineStarts)
+  })
+
+const parseTemplateScript = (
+  { start, end, isExpression, format }: TemplateScriptRange,
+  context: ParserContext,
+  text: string,
+  fileName: string,
+  lineStarts: readonly number[],
+): Effect.Effect<
+  TemplateScript,
+  ParseFailed | ParserNotFound | SvelteParseFailed | SvelteVersionNotSupported | SvelteWalkerNotFound
+> =>
+  Effect.map(
+    context.parse(text.slice(start, end), fileName, format),
+    (parsed): TemplateScript => ({
       ast: {
         ...parsed,
         offset: positionFromOffset(lineStarts, start),
       },
       range: { start, end },
       isExpression,
-    }
-  }
-}
+    }),
+  )
 
 function svelteRoot(
   moduleScript: TemplateScript | undefined,

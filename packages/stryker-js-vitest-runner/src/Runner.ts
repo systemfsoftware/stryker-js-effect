@@ -1113,16 +1113,9 @@ export const makeVitestRunnerLayer = (
           return { rawTests, hasExternalError, externalErrorText }
         })
       const harnessImpl: VitestHarness['Service'] = {
-        setMode: (mode) =>
-          Effect.gen(function*() {
-            const ctx = yield* requireCtx
-            ctx.provide('mode', mode)
-          }),
+        setMode: (mode) => Effect.flatMap(requireCtx, (ctx) => Effect.sync(() => ctx.provide('mode', mode))),
         provide: (key, value) =>
-          Effect.gen(function*() {
-            const ctx = yield* requireCtx
-            applyHarnessValue(ctx, key, value)
-          }),
+          Effect.flatMap(requireCtx, (ctx) => Effect.sync(() => applyHarnessValue(ctx, key, value))),
       }
 
       const mutantRunCell = Cell.layer({
@@ -1311,6 +1304,8 @@ export const makeVitestRunnerLayer = (
             return new TestRunnerFailed({ runnerName: 'vitest', phase: 'mutantRun', cause: errorToString(cause) })
           })())),
         )
+      const removeSetupFile = (file: string) =>
+        fsService.remove(file, { recursive: true, force: true }).pipe(Effect.orElseSucceed(() => undefined))
       const disposeContext = (
         ctx: Vitest,
         localSetupFile: string | undefined,
@@ -1319,13 +1314,7 @@ export const makeVitestRunnerLayer = (
           Option.match(Option.fromNullishOr(localSetupFile), {
             onNone: (): void => undefined,
             onSome: (file): void => {
-              ctx.onClose(() =>
-                Effect.runPromise(
-                  fsService.remove(file, { recursive: true, force: true }).pipe(
-                    Effect.orElseSucceed(() => undefined),
-                  ),
-                )
-              )
+              ctx.onClose(() => Effect.runPromise(removeSetupFile(file)))
             },
           })
           yield* Effect.tryPromise({

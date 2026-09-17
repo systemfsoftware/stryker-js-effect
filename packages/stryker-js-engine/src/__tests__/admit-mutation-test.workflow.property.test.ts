@@ -19,9 +19,9 @@ describe('admitMutationTest', () => {
     '∀d_Brand_∈Decision',
     [
       fc.constantFrom(
-        new MutationTestProceed({}),
-        new MutationTestDryRunOnly({}),
-        new MutationTestNoTests({}),
+        MutationTestProceed.make({}),
+        MutationTestDryRunOnly.make({}),
+        MutationTestNoTests.make({}),
       ),
     ],
     ([decision]) => Object.getOwnPropertySymbols(decision).includes(MutationTestDecisionTypeId),

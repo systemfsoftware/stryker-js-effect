@@ -66,7 +66,7 @@ export interface MutationReportingService {
 }
 
 export class MutationReporting extends Context.Service<MutationReporting, MutationReportingService>()(
-  'MutationReporting',
+  '@systemfsoftware/stryker-js-engine/mutation-reporting/MutationReporting',
 ) {}
 
 export interface MakeMutationReportingInput {
@@ -311,7 +311,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
       const queue = yield* RunEvents
       yield* Queue.offer(
         queue,
-        new VerdictReached({
+        VerdictReached.make({
           schemaVersion: envelope.schemaVersion,
           runId: envelope.runId,
           mode: envelope.mode,
@@ -341,7 +341,8 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
         const fs = yield* FileSystem.FileSystem
         const dir = pathService.dirname(input.options.incrementalFile)
         yield* fs.makeDirectory(dir, { recursive: true })
-        yield* fs.writeFileString(input.options.incrementalFile, JSON.stringify(report, null, 2))
+        const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(report).pipe(Effect.orDie)
+        yield* fs.writeFileString(input.options.incrementalFile, json)
       }
       return { results, verdict: finalVerdict } satisfies RunOutcome
     })
@@ -374,7 +375,8 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
         return
       }
       const report = yield* slimIncrementalReport(results)
-      yield* writeAtomic(input.options.incrementalFile, JSON.stringify(report))
+      const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(report).pipe(Effect.orDie)
+      yield* writeAtomic(input.options.incrementalFile, json)
     })
 
   return {

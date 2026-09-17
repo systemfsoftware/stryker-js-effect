@@ -64,10 +64,10 @@ const nodeOf = (
   nodes: Readonly<Record<string, NodeDecoded>>,
 ): Result.Result<NodeDecoded, CheckMutantsError> =>
   Option.match(Option.filter(Option.fromUndefinedOr(diagnostic.fileName), (fileName) => fileName !== ''), {
-    onNone: () => Result.fail(new DiagnosticWithoutFileError({ text: diagnostic.text })),
+    onNone: () => Result.fail(DiagnosticWithoutFileError.make({ text: diagnostic.text })),
     onSome: (fileName) =>
       Option.match(nodeAt(fileName, nodes), {
-        onNone: () => Result.fail(new DiagnosticInUnrelatedFileError({ text: diagnostic.text, fileName })),
+        onNone: () => Result.fail(DiagnosticInUnrelatedFileError.make({ text: diagnostic.text, fileName })),
         onSome: (node) => Result.succeed(node),
       }),
   })

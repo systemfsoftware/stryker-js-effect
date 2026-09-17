@@ -14,7 +14,7 @@ export interface IdGeneratorShape {
 }
 
 export class IdGenerator extends Context.Service<IdGenerator, IdGeneratorShape>()(
-  '@systemfsoftware/stryker-js-engine/IdGenerator',
+  '@systemfsoftware/stryker-js-engine/Worker/IdGenerator',
 ) {}
 
 export const makeIdGenerator: Effect.Effect<IdGeneratorShape> = Effect.gen(function*() {
@@ -159,9 +159,9 @@ export const classifyWorkerExit = (
   exitCode: number,
 ): ChildProcessCrashedError | OutOfMemoryError =>
   Match.value(exitCode).pipe(
-    Match.when(isOutOfMemoryExit, () => new OutOfMemoryError({ pid, exitCode })),
+    Match.when(isOutOfMemoryExit, () => OutOfMemoryError.make({ pid, exitCode })),
     Match.orElse(() =>
-      new ChildProcessCrashedError({
+      ChildProcessCrashedError.make({
         pid,
         exit: { _tag: 'Code', code: exitCode },
         cause: 'worker exited before it accepted the RPC connection',

@@ -25,7 +25,9 @@ const Feature = makeFeature({ it, layer })
 const MARKER_FILE = 'src/marker.ts'
 const MARKER_TEST_FILE = 'src/marker.test.ts'
 
-class Terminal extends Context.Service<Terminal, { readonly chunks: string[] }>()('Terminal') {}
+class Terminal extends Context.Service<Terminal, { readonly chunks: string[] }>()(
+  '@systemfsoftware/stryker-js-engine/tests/builtin-reporters.integration.test/Terminal',
+) {}
 
 const terminalSpyLayer = Layer.effect(
   Terminal,
@@ -51,7 +53,9 @@ const terminalSpyLayer = Layer.effect(
 
 const reporterLayer = Layer.mergeAll(FileSystem.layerNoop({}), Path.layer, terminalSpyLayer)
 
-const reporterNamed = (name: string): Effect.Effect<ReporterFactory, never, FileSystem.FileSystem | Path.Path> =>
+const reporterNamed = (
+  name: string,
+): Effect.Effect<ReporterFactory, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fileSystem = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -99,17 +103,17 @@ const runEvents = (
   report: MutationTestResult,
   metrics: MetricsResult,
 ): readonly ReporterEvent[] => [
-  new DryRunCompleted({
+  DryRunCompleted.make({
     timing: { net: 1, overhead: 0 },
     capabilities: { reloadEnvironment: false },
     testCount: 1,
     tests: [],
   }),
-  new MutationTestingPlanReady({
+  MutationTestingPlanReady.make({
     total: 1,
     plans: [{ mutantId: '0', plan: 'Run', netTime: 1, reloadEnvironment: false }],
   }),
-  new MutantTested({
+  MutantTested.make({
     id: '0',
     status: 'Killed',
     file: MARKER_FILE,
@@ -119,12 +123,17 @@ const runEvents = (
     completed: 1,
     total: 1,
   }),
-  new MutationTestReportReady({ report, metrics }),
+  MutationTestReportReady.make({ report, metrics }),
 ]
 
-async function* toStream(events: readonly ReporterEvent[]): AsyncGenerator<ReporterEvent> {
-  yield* events
-}
+const toStream = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> => ({
+  [Symbol.asyncIterator]: () => {
+    const iterator = events[Symbol.iterator]()
+    return {
+      next: (...args: [] | [unknown]) => Promise.resolve(iterator.next(...args)),
+    }
+  },
+})
 
 const completedRun = (status: 'Killed' | 'Survived') => {
   const report = markerReport(status)
@@ -147,7 +156,7 @@ Feature('Reporting a finished mutation run')
           Effect.gen(function*() {
             const terminal = yield* Terminal
             const factory = yield* reporterNamed('clear-text')
-            yield* Effect.promise(() => factory(options(), {})(toStream(runEvents(s.run.report, s.run.metrics))))
+            yield* factory(options(), {})(toStream(runEvents(s.run.report, s.run.metrics)))
             return terminal.chunks.join('')
           })),
         Then('the score table names the mutated file')((s) => {
@@ -168,7 +177,7 @@ Feature('Reporting a finished mutation run')
           Effect.gen(function*() {
             const terminal = yield* Terminal
             const factory = yield* reporterNamed('clear-text')
-            yield* Effect.promise(() => factory(options(), {})(toStream(runEvents(s.run.report, s.run.metrics))))
+            yield* factory(options(), {})(toStream(runEvents(s.run.report, s.run.metrics)))
             return terminal.chunks.join('')
           })),
         Then('the score table reports a mutation score of 100.00')((s) => {
@@ -188,7 +197,7 @@ Feature('Reporting a finished mutation run')
           Effect.gen(function*() {
             const terminal = yield* Terminal
             const factory = yield* reporterNamed('clear-text')
-            yield* Effect.promise(() => factory(options(), {})(toStream(s.events)))
+            yield* factory(options(), {})(toStream(s.events))
             return terminal.chunks.join('')
           })),
         Then('nothing is written to the terminal')((s) => {
@@ -208,7 +217,7 @@ Feature('Reporting a finished mutation run')
           Effect.gen(function*() {
             const terminal = yield* Terminal
             const factory = yield* reporterNamed('progress')
-            yield* Effect.promise(() => factory(options(), {})(toStream(s.events)))
+            yield* factory(options(), {})(toStream(s.events))
             return terminal.chunks.join('')
           })),
         Then('the bar counts the mutants it tested')((s) => {
@@ -228,7 +237,7 @@ Feature('Reporting a finished mutation run')
           Effect.gen(function*() {
             const terminal = yield* Terminal
             const factory = yield* reporterNamed('progress-stream')
-            yield* Effect.promise(() => factory(options(), {})(toStream(s.events)))
+            yield* factory(options(), {})(toStream(s.events))
             return terminal.chunks.join('')
           })),
         Then('nothing is written to the terminal')((s) => {

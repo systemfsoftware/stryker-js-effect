@@ -158,6 +158,20 @@
       "dependsOn": [
         "build"
       ]
+    },
+    "lint:tsgo": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "tsconfig.json",
+        "tsconfig.*.json",
+        "$TURBO_ROOT$/node_modules/@systemfsoftware/tsconfig/effect.json",
+        "!**/*.md"
+      ],
+      "outputs": [],
+      "env": [
+        "TSGO_FORMAT"
+      ],
+      "cache": true
     }
   }
 }

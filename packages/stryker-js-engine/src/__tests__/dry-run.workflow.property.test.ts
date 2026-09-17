@@ -12,8 +12,8 @@ describe('dryRun', () => {
     '∀d_Brand_∈Decision',
     [
       fc.constantFrom(
-        new DryRunPassed({ testCount: 1 }),
-        new DryRunFailed({ testCount: 2, failedTestCount: 1 }),
+        DryRunPassed.make({ testCount: 1 }),
+        DryRunFailed.make({ testCount: 2, failedTestCount: 1 }),
       ),
     ],
     ([decision]) => Object.getOwnPropertySymbols(decision).includes(DryRunDecisionTypeId),

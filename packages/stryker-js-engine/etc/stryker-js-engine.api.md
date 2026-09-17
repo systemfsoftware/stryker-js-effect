@@ -10,6 +10,7 @@ import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawne
 import { CompleteDryRunResult } from '@systemfsoftware/stryker-js-language';
 import * as Context from 'effect/Context';
 import { CoverageData } from '@systemfsoftware/stryker-js-language';
+import * as DateTime from 'effect/DateTime';
 import { Duration } from 'effect/Duration';
 import * as Duration_2 from 'effect/Duration';
 import * as Effect from 'effect/Effect';
@@ -135,7 +136,7 @@ export class ConfigFileUnsupportedError extends ConfigFileUnsupportedError_base 
 export const connectRetry: Schedule.Schedule<Duration, unknown, never, never>;
 
 // @public (undocumented)
-export function createDefaultOptions(): Effect.Effect<StrykerOptions>;
+export const createDefaultOptions: Effect.Effect<StrykerOptions>;
 
 // @public (undocumented)
 export function createFileMatcher(pattern: boolean | string, pathService: Path.Path, allowHiddenFiles?: boolean): (fileName: string) => boolean;
@@ -221,7 +222,7 @@ export const forkOptionsSchema: S.StructWithRest<S.Struct<{
 }>, readonly [S.$Record<S.String, S.Unknown>]>;
 
 // @public (undocumented)
-export function generateRunId(): string;
+export function generateRunId(now: DateTime.Utc): string;
 
 // Warning: (ae-forgotten-export) The symbol "ImmutablePrimitive" needs to be exported by the entry point index.d.mts
 //

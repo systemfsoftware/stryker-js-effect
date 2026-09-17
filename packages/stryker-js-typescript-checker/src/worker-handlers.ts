@@ -51,7 +51,7 @@ export const checkerHandlers = CheckerRpcs.toLayer(
           Option.match(HashMap.get(built, checkerName), {
             onNone: () =>
               Effect.fail(
-                new CheckerFailed({
+                CheckerFailed.make({
                   cause: `Checker ${checkerName} does not exist`,
                   checkerName,
                   mutantIds: mutantIdsOf(mutants),
@@ -61,7 +61,7 @@ export const checkerHandlers = CheckerRpcs.toLayer(
               Result.match(outcome, {
                 onFailure: (cause) =>
                   Effect.fail(
-                    new CheckerFailed({
+                    CheckerFailed.make({
                       cause: Cause.pretty(cause),
                       checkerName,
                       mutantIds: mutantIdsOf(mutants),
