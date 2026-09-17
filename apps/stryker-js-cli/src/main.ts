@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
-import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import * as NodeStdio from '@effect/platform-node/NodeStdio'
 import * as Effect from 'effect/Effect'
@@ -14,6 +12,7 @@ import { observeTerminatingSignal } from './Cli.js'
 import { strykerCliEffect } from './Cli.js'
 import { OutputModeProbe, OutputModeProbeLive } from './Output.js'
 import { RunEventStreamPort } from './Output.js'
+import { nodeFsPathLayer } from './platform/node.js'
 import { telemetryLayer } from './platform/telemetry.js'
 import { RunEventStreamFileLive } from './StreamFile.js'
 
@@ -70,11 +69,14 @@ const program = Effect.gen(function*() {
 }).pipe(
   Effect.provideService(Logger.LogToStderr, true),
   Effect.provide(
-    Layer.merge(
-      Layer.merge(OutputModeProbeLive, RunEventStreamFileLive).pipe(
-        Layer.provide(Layer.mergeAll(NodeStdio.layer, NodeFileSystem.layer, NodePath.layer)),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        Layer.mergeAll(OutputModeProbeLive, RunEventStreamFileLive).pipe(
+          Layer.provide(Layer.mergeAll(NodeStdio.layer, nodeFsPathLayer)),
+        ),
+        telemetryLayer,
       ),
-      telemetryLayer,
+      nodeFsPathLayer,
     ),
   ),
 )

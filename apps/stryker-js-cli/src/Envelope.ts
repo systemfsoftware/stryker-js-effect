@@ -1,4 +1,5 @@
-import { ExitClass, highestExitClass } from '@systemfsoftware/stryker-js-language'
+import { highestExitClass } from '@systemfsoftware/stryker-js-engine'
+import { ExitClass } from '@systemfsoftware/stryker-js-language'
 import { causeText } from '@systemfsoftware/stryker-js-language'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
