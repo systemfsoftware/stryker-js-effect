@@ -3,11 +3,11 @@ import { ExitClass } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
+import * as Runtime from 'effect/Runtime'
 import * as S from 'effect/Schema'
 
 export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOutcomeCommand', {
   succeeded: S.Boolean,
-  signal: S.optional(S.Finite),
   interrupted: S.Boolean,
   helpErrorCount: S.optional(S.Finite),
   cliError: S.Boolean,
@@ -20,6 +20,11 @@ export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOu
   configDetail: S.optional(S.String),
   diagnostic: S.optional(S.String),
 }) {}
+export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: S.Finite }) {
+  override get [Runtime.errorExitCode](): number {
+    return this.code
+  }
+}
 
 const CONFIG_CODE = 2
 
@@ -84,22 +89,17 @@ export type RunOutcomeError = RunInterrupted
 
 export type FailedRunOutcome = Exclude<RunOutcomeDecision, RunOk> | RunOutcomeError
 
-type SignaledCommand = RunOutcomeCommand & { readonly signal: number }
 type SucceededCommand = RunOutcomeCommand & { readonly succeeded: true }
 type HelpCommand = RunOutcomeCommand & { readonly helpErrorCount: number }
 type SurvivorsCommand = RunOutcomeCommand & { readonly survivorsReason: 'no-report' | 'mismatch' }
 type ClassedCommand = RunOutcomeCommand & { readonly highestExitClass: ExitClass }
 
-const isSignaled = (command: RunOutcomeCommand): command is SignaledCommand => command.signal !== undefined
 const isSucceeded = (command: RunOutcomeCommand): command is SucceededCommand => command.succeeded
 const isHelpRun = (command: RunOutcomeCommand): command is HelpCommand => command.helpErrorCount !== undefined
 const isSurvivorsRun = (command: RunOutcomeCommand): command is SurvivorsCommand =>
   command.survivorsReason !== undefined
 const isHighestClassed = (command: RunOutcomeCommand): command is ClassedCommand =>
   command.highestExitClass !== undefined
-
-const signaledOutcome = (command: SignaledCommand): RunOutcomeError =>
-  RunInterrupted.make({ code: 128 + command.signal })
 
 const succeededOutcome = (command: SucceededCommand): RunOutcomeDecision =>
   Option.match(Option.fromUndefinedOr(command.successExitClass), {
@@ -136,9 +136,8 @@ const genericFailureOutcome = (command: RunOutcomeCommand): RunOutcomeDecision =
 
 function classify(command: RunOutcomeCommand): RunOutcomeDecision | RunOutcomeError {
   return Match.value(command).pipe(
-    Match.when(isSignaled, signaledOutcome),
     Match.when(isSucceeded, succeededOutcome),
-    Match.when((interrupted): boolean => interrupted.interrupted, () => RunInterrupted.make({ code: 1 })),
+    Match.when((interrupted): boolean => interrupted.interrupted, () => RunInterrupted.make({ code: 130 })),
     Match.when(isHelpRun, helpOutcome),
     Match.when((cliError): boolean => cliError.cliError, parseFailedOutcome),
     Match.when(isSurvivorsRun, survivorsRejectedOutcome),

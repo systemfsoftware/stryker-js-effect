@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'tsdown'
 
 import wasiManifest from '@oxc-parser/binding-wasm32-wasi/package.json' with { type: 'json' }
@@ -10,8 +11,6 @@ if (parserManifest.version !== wasiManifest.version) {
 }
 
 const resolvePath = (specifier: string): string => new URL(import.meta.resolve(specifier)).pathname
-
-const { readFileSync } = process.getBuiltinModule('node:fs')
 
 const parserEntry = resolvePath('oxc-parser/src-js/wasm.js')
 const wasiModule = resolvePath('@oxc-parser/binding-wasm32-wasi/parser.wasm32-wasi.wasm')

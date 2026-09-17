@@ -9,12 +9,17 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
+import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
+import { write } from './reporter-output.js'
 
-export interface JsonReporterDeps {
+export interface BuiltinReporterServices {
   readonly fileSystem: FileSystem.FileSystem
   readonly path: Path.Path
+  readonly stdio: Stdio.Stdio
 }
+
+export type JsonReporterDeps = BuiltinReporterServices
 
 const failAsJsonReporter = (cause: unknown): ReporterFailed =>
   ReporterFailed.make({
@@ -24,7 +29,7 @@ const failAsJsonReporter = (cause: unknown): ReporterFailed =>
   })
 
 const writeReport = (
-  services: JsonReporterDeps,
+  services: BuiltinReporterServices,
   options: StrykerOptions,
   report: schema.MutationTestResult,
 ): Effect.Effect<void, ReporterFailed, never> =>
@@ -34,14 +39,16 @@ const writeReport = (
     const path = yield* Path.Path
     const fileName = path.resolve(path.normalize(options.jsonReporter.fileName))
     if (options.logLevel === 'debug') {
-      process.stderr.write(`Using relative path ${path.normalize(options.jsonReporter.fileName)}\n`)
+      yield* Effect.ignore(
+        write(services.stdio, 'stderr', [`Using relative path ${path.normalize(options.jsonReporter.fileName)}\n`]),
+      )
     }
     yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(
       Effect.mapError(failAsJsonReporter),
     )
     yield* fs.writeFileString(fileName, json).pipe(Effect.mapError(failAsJsonReporter))
     const url = yield* path.toFileUrl(fileName).pipe(Effect.mapError(failAsJsonReporter))
-    process.stdout.write(`Your report can be found at: ${url.href}\n`)
+    yield* Effect.ignore(write(services.stdio, 'stdout', [`Your report can be found at: ${url.href}\n`]))
   }).pipe(
     Effect.provideService(FileSystem.FileSystem, services.fileSystem),
     Effect.provideService(Path.Path, services.path),

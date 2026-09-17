@@ -344,13 +344,6 @@ function omitUnknownFailure(diagnostic: string): string | undefined {
   return diagnostic
 }
 
-function signalFromCode(code: number): number | null {
-  if (code > 128) {
-    return code - 128
-  }
-  return null
-}
-
 function capturedOrUnknown(captured: string): string {
   return Option.getOrElse(nonEmptyText(captured), () => UNKNOWN_FAILURE)
 }
@@ -367,16 +360,11 @@ function carriesSchemaError(value: unknown): boolean {
   return value !== undefined && S.isSchemaError(value)
 }
 
-export function gatherRunOutcome(
-  exit: Exit.Exit<unknown, unknown>,
-  signal: number | null,
-  argv: readonly string[],
-): RunOutcomeCommand {
+export function gatherRunOutcome(exit: Exit.Exit<unknown, unknown>, argv: readonly string[]): RunOutcomeCommand {
   const value = failureValue(exit)
   const survivors = survivorsRejectionOf(value)
   return RunOutcomeCommand.make({
     succeeded: Exit.isSuccess(exit),
-    signal: present(signal),
     interrupted: hasOnlyInterrupts(exit),
     helpErrorCount: helpErrorCountOf(value),
     cliError: carriesCliError(value),
@@ -418,12 +406,7 @@ export function errorText(error: FailedRunOutcome, captured: string): string {
 
 function remediationText(error: FailedRunOutcome): string {
   return Match.value(error).pipe(
-    Match.tag('RunInterrupted', (failed) => {
-      if (failed.code > 128) {
-        return SIGNAL_REMEDIATION
-      }
-      return DEFAULT_REMEDIATION
-    }),
+    Match.tag('RunInterrupted', () => SIGNAL_REMEDIATION),
     Match.tag('RunParseFailed', () => PARSE_REMEDIATION),
     Match.tag('RunSurvivorsRejected', (failed) => {
       if (failed.diagnostic !== undefined) {
@@ -453,10 +436,9 @@ export function shapeEnvelope(error: FailedRunOutcome, captured: string): ErrorE
 
 export function classifyRunOutcome(
   exit: Exit.Exit<unknown, unknown>,
-  signal: number | null,
   argv: readonly string[],
 ): Result.Result<RunOutcomeDecision, RunOutcomeError> {
-  return classifyRunOutcomeWorkflow(gatherRunOutcome(exit, signal, argv))
+  return classifyRunOutcomeWorkflow(gatherRunOutcome(exit, argv))
 }
 
 export function buildErrorEnvelope(
@@ -465,7 +447,7 @@ export function buildErrorEnvelope(
   captured: string,
   argv: readonly string[],
 ): ErrorEnvelope {
-  const result = classifyRunOutcome(exit, signalFromCode(code), argv)
+  const result = classifyRunOutcome(exit, argv)
   return Result.match(result, {
     onFailure: (failure) => shapeEnvelope(failure, captured),
     onSuccess: (decision) =>

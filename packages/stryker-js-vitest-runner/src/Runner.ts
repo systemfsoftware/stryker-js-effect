@@ -911,12 +911,8 @@ export const makeVitestRunnerLayer = (
       const capabilities: TestRunner['Service']['capabilities'] = Effect.succeed({ reloadEnvironment: true })
       const init: TestRunner['Service']['init'] = Effect.gen(function*() {
         const options = yield* optionsEffect
-        yield* Effect.sync(() => {
-          process.env.NODE_ENV = 'test'
-          process.env.VITEST = '1'
-        })
         const projectRoot = input.sandboxDirectory
-        const localSetupFile = pathService.resolve(projectRoot, `stryker-setup-${process.pid}.js`)
+        const localSetupFile = pathService.resolve(projectRoot, `stryker-setup-${globalThis.crypto.randomUUID()}.js`)
         yield* Ref.update(stateRef, (s) => ({ ...s, localSetupFile }))
         const defaultSetupPath = yield* pathService.fromFileUrl(STRYKER_SETUP_URL).pipe(
           Effect.mapError((cause) =>

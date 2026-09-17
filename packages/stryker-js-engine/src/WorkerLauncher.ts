@@ -28,6 +28,7 @@ export interface WorkerSpawnParams {
   readonly execArgv: readonly string[]
   readonly optionsJson: string
   readonly tempDirPrefix: string
+  readonly env?: Readonly<Record<string, string>> | undefined
 }
 
 export interface WorkerLauncherShape {
@@ -61,6 +62,7 @@ export const makeWorkerClient = <Rpcs extends Rpc.Any>(
       execArgv: params.execArgv,
       optionsJson: params.optionsJson,
       tempDirPrefix: params.tempDirPrefix,
+      env: params.env,
     })
 
     const protocol = yield* Layer.build(worker.clientLayer).pipe(

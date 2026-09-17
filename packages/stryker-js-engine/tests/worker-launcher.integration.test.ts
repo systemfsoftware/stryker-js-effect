@@ -35,6 +35,7 @@ const spawnParams = (): WorkerSpawnParams => ({
   execArgv: EXEC_ARGV,
   optionsJson: OPTIONS_JSON,
   tempDirPrefix: TEMP_DIR_PREFIX,
+  env: undefined,
 })
 
 interface BootOutcome {

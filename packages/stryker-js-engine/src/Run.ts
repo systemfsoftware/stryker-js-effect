@@ -52,6 +52,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
+import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
@@ -355,11 +356,13 @@ export type StageServices =
   | RunEnvironment
   | RunEvents
   | Scope.Scope
+  | Stdio.Stdio
   | WorkerLauncher
 export type EnginePorts =
   | ChildProcessSpawner.ChildProcessSpawner
   | FileSystem.FileSystem
   | Path.Path
+  | Stdio.Stdio
   | WorkerLauncher
 interface ReporterChoice {
   readonly name: string
@@ -528,6 +531,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
           ...makeBuiltinReporterFactories({
             fileSystem: yield* FileSystem.FileSystem,
             path: yield* Path.Path,
+            stdio: yield* Stdio.Stdio,
           }),
           ...env.builtinReporters,
         }
@@ -603,11 +607,10 @@ export const instrumentCell = Cell.layer({
           StageError.make({ stage: 'instrument', reason: 'Failed to read files to mutate', cause })
         ),
       )
-
       const instrumentResult = yield* instrument(filesToMutate, {
         ignorers: [...command.ignorers],
         excludedMutations: [...command.options.mutator.excludedMutations],
-      }).pipe(Effect.mapError((cause) =>
+      }, env.basePath).pipe(Effect.mapError((cause) =>
         StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })
       ))
 

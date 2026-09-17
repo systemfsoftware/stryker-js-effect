@@ -10,6 +10,7 @@ export default defineConfig({
     'typescript/no-non-null-assertion': 'error',
     'no-ternary': 'off',
     'typescript/consistent-type-assertions': 'off',
+    'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
 
   overrides: [
@@ -27,6 +28,11 @@ export default defineConfig({
         'typescript/no-unsafe-return': 'off',
         'typescript/no-unsafe-type-assertion': 'off',
       },
+    },
+    // Plain vitest setup: no Effect runtime exists here.
+    {
+      files: ['vitest-setup.ts'],
+      rules: { 'no-restricted-globals': 'off' },
     },
   ],
 })
