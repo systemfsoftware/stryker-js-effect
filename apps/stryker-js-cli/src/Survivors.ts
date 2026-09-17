@@ -5,12 +5,12 @@ import {
   type ConfigFileInvalidError,
   type ConfigFileNotFoundError,
   ConfigFileUnreadableError,
+  type ConfigFileUnsupportedError,
   readConfig,
   strykerVersion,
   toRelativeNormalizedFileName,
 } from '@systemfsoftware/stryker-js-engine'
 import type { ExitClass } from '@systemfsoftware/stryker-js-language'
-import { Module } from '@systemfsoftware/stryker-js-language'
 import { Mutant } from '@systemfsoftware/stryker-js-language'
 import * as schema from '@systemfsoftware/stryker-js-language'
 import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-language'
@@ -134,94 +134,96 @@ export function survivorMutateSpans(survivors: readonly Mutant[], basePath: stri
 export const SURVIVORS_REJECT_EXIT_CLASS: ExitClass = 'ConfigError'
 const hashContent: HashContent = (content) => bytesToHex(sha256(utf8ToBytes(content)))
 
-export const survivorsAdmissionCell = (basePath: string) =>
-  Cell.layer({
-    read: (cliOptions: PartialStrykerOptions) =>
-      Effect.gen(function*() {
-        const pathService = yield* Path.Path
-        const resolvedOptions = yield* resolveSurvivorsRunOptions(cliOptions, basePath)
-        const priorReportPath = priorReportPathOf(resolvedOptions)
-        const resolveAbsolutePath: ResolveAbsolutePath = (file) => pathService.resolve(file)
-        const read = yield* readPriorReport(priorReportPath)
-        const sourceContentHashes = yield* currentSourceHashesFor(priorReportFileKeys(read.raw))
-        return {
-          resolvedOptions,
-          priorReportRaw: read.raw,
-          priorReportFound: read.found,
-          priorReportPath,
-          sourceContentHashes,
-          resolveAbsolutePath,
-        }
-      }),
-    decode: ({ resolvedOptions, priorReportRaw, priorReportFound, sourceContentHashes, resolveAbsolutePath }) => {
-      if (!priorReportFound) {
-        return Result.succeed(
-          AdmitSurvivorsRunCommand.make({
-            priorReport: undefined,
-            currentConfig: resolvedOptions,
-            frameworkVersion: strykerVersion,
-            sourceContentHashes,
-            priorSourceHashes: {},
-            priorSurvivors: [],
-          }),
-        )
+export const survivorsAdmissionCell = Cell.layer({
+  read: (cliOptions: PartialStrykerOptions) =>
+    Effect.gen(function*() {
+      const pathService = yield* Path.Path
+      const resolvedOptions = yield* resolveSurvivorsRunOptions(cliOptions)
+      const priorReportPath = priorReportPathOf(resolvedOptions)
+      const resolveAbsolutePath: ResolveAbsolutePath = (file) => pathService.resolve(file)
+      const read = yield* readPriorReport(priorReportPath)
+      const sourceContentHashes = yield* currentSourceHashesFor(priorReportFileKeys(read.raw))
+      return {
+        resolvedOptions,
+        priorReportRaw: read.raw,
+        priorReportFound: read.found,
+        priorReportPath,
+        sourceContentHashes,
+        resolveAbsolutePath,
       }
-      return Result.map(decodePriorReport(priorReportRaw), (document) =>
+    }),
+  decode: ({ resolvedOptions, priorReportRaw, priorReportFound, sourceContentHashes, resolveAbsolutePath }) => {
+    if (!priorReportFound) {
+      return Result.succeed(
         AdmitSurvivorsRunCommand.make({
-          priorReport: PriorReportFacts.make({
-            config: Option.getOrElse(Option.fromNullishOr(document.config), () => EMPTY_CONFIG),
-            frameworkVersion: Option.getOrUndefined(
-              Option.flatMap(
-                Option.fromNullishOr(document.framework),
-                (framework) => Option.fromNullishOr(framework.version),
-              ),
-            ),
-          }),
+          priorReport: undefined,
           currentConfig: resolvedOptions,
           frameworkVersion: strykerVersion,
           sourceContentHashes,
-          priorSourceHashes: priorSourceHashes(document, hashContent),
-          priorSurvivors: extractSurvivors(document, resolveAbsolutePath),
-        }))
-    },
-    decide: admitSurvivorsRun,
-    encode: (outcome: Result.Result<SurvivorsAdmission, SurvivorsRejection>) => outcome,
-    write: (outcome, raw) =>
-      Result.match(outcome, {
-        onSuccess: (admission) =>
-          Effect.succeed({
-            admission,
-            resolvedOptions: raw.resolvedOptions,
-            priorReportPath: raw.priorReportPath,
-          }),
-        onFailure: Effect.fail,
-      }),
-  })
+          priorSourceHashes: {},
+          priorSurvivors: [],
+        }),
+      )
+    }
+    return Result.map(decodePriorReport(priorReportRaw), (document) =>
+      AdmitSurvivorsRunCommand.make({
+        priorReport: PriorReportFacts.make({
+          config: Option.getOrElse(Option.fromNullishOr(document.config), () => EMPTY_CONFIG),
+          frameworkVersion: Option.getOrUndefined(
+            Option.flatMap(
+              Option.fromNullishOr(document.framework),
+              (framework) => Option.fromNullishOr(framework.version),
+            ),
+          ),
+        }),
+        currentConfig: resolvedOptions,
+        frameworkVersion: strykerVersion,
+        sourceContentHashes,
+        priorSourceHashes: priorSourceHashes(document, hashContent),
+        priorSurvivors: extractSurvivors(document, resolveAbsolutePath),
+      }))
+  },
+  decide: admitSurvivorsRun,
+  encode: (outcome: Result.Result<SurvivorsAdmission, SurvivorsRejection>) => outcome,
+  write: (outcome, raw) =>
+    Result.match(outcome, {
+      onSuccess: (admission) =>
+        Effect.succeed({
+          admission,
+          resolvedOptions: raw.resolvedOptions,
+          priorReportPath: raw.priorReportPath,
+        }),
+      onFailure: Effect.fail,
+    }),
+})
 
 export function runSurvivorsAdmission(
   cliOptions: PartialStrykerOptions,
-  basePath: string,
 ): Effect.Effect<
   {
     readonly admission: SurvivorsAdmission
     readonly resolvedOptions: StrykerOptions
     readonly priorReportPath: string
   },
-  S.SchemaError | SurvivorsRejection | ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError,
-  FileSystem.FileSystem | Path.Path | Module
+  | S.SchemaError
+  | SurvivorsRejection
+  | ConfigFileNotFoundError
+  | ConfigFileUnreadableError
+  | ConfigFileInvalidError
+  | ConfigFileUnsupportedError,
+  FileSystem.FileSystem | Path.Path
 > {
-  return survivorsAdmissionCell(basePath).run(cliOptions)
+  return survivorsAdmissionCell.run(cliOptions)
 }
 
 function resolveSurvivorsRunOptions(
   cliOptions: PartialStrykerOptions,
-  basePath: string,
 ): Effect.Effect<
   StrykerOptions,
-  ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError,
-  FileSystem.FileSystem | Module | Path.Path
+  ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
+  FileSystem.FileSystem | Path.Path
 > {
-  return readConfig(cliOptions, basePath)
+  return readConfig(cliOptions)
 }
 
 function priorReportPathOf(resolved: StrykerOptions): string {

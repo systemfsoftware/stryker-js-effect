@@ -13,21 +13,21 @@ Your `if (import.meta.vitest)` blocks are stripped before production, so nothing
 pnpm add -D @systemfsoftware/stryker-ignorer-in-source-vitest-block
 ```
 
-In `stryker.config.json`, the plugin module and the ignorer name travel as a pair:
+In `stryker.config.ts`, the plugin module and the ignorer name travel as a pair:
 
 | Config key | Value                                                     |
 | ---------- | --------------------------------------------------------- |
 | `plugins`  | `@systemfsoftware/stryker-ignorer-in-source-vitest-block` |
 | `ignorers` | `in-source-vitest-block`                                  |
 
-```jsonc
-{
-  "plugins": [
-    "@systemfsoftware/stryker-js-vitest-runner",
-    "@systemfsoftware/stryker-js-typescript-checker",
-    "@systemfsoftware/stryker-ignorer-in-source-vitest-block"
+```ts
+export default {
+  plugins: [
+    '@systemfsoftware/stryker-js-vitest-runner',
+    '@systemfsoftware/stryker-js-typescript-checker',
+    '@systemfsoftware/stryker-ignorer-in-source-vitest-block',
   ],
-  "ignorers": ["in-source-vitest-block"]
+  ignorers: ['in-source-vitest-block'],
 }
 ```
 

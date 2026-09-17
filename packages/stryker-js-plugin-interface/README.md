@@ -49,23 +49,20 @@ import { ReporterRpcs, TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin
 
 The runtime package publishes the worker server layer a plugin's `main.ts`
 launches (`workerServerLayer`, `WorkerServerParams`), the Node module port
-(`nodeModuleLayer`), the OTel bootstrap (`startHostTelemetry`,
-`startWorkerTelemetry`), the worker-options wire codec (`encodeWorkerOptions`,
-`decodeWorkerOptions`, `readWorkerOptionsFromEnv`), and the trace-context
-implementations (`layerTraceContextClient`, `layerTraceContextServer`,
-`withLinkedSpan`, `tracePartsOf`):
+(`nodeModuleLayer`), the worker's OTel exporter layer
+(`workerTelemetryLayer`, merged inside `workerServerLayer`), the worker-options
+wire codec (`encodeWorkerOptions`, `decodeWorkerOptions`,
+`readWorkerOptionsFromEnv`), and the trace-context implementations
+(`layerTraceContextClient`, `layerTraceContextServer`, `withLinkedSpan`,
+`tracePartsOf`, `partsOfEffectSpan`):
 
 ```ts
-import {
-  layerTraceContextServer,
-  startWorkerTelemetry,
-  workerServerLayer,
-} from '@systemfsoftware/stryker-js-plugin-runtime'
+import { layerTraceContextServer, workerServerLayer } from '@systemfsoftware/stryker-js-plugin-runtime'
 ```
 
-The host bootstraps its own OTel SDK with `startHostTelemetry`; a worker
-bootstraps its own with `startWorkerTelemetry`. Both are no-ops unless
-`OTEL_ENABLED` is `true`.
+Telemetry is a layer everywhere: the worker's exporter is merged inside
+`workerServerLayer`, and a host provides its own `NodeSdk.layer`-based layer at
+its composition root. Both are no-ops unless `OTEL_ENABLED` is `true`.
 
 ## The entry a plugin ships
 

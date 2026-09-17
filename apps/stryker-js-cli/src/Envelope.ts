@@ -398,7 +398,7 @@ function capturedThenRecorded(captured: string, recorded: string | undefined): s
   )
 }
 
-function errorText(error: FailedRunOutcome, captured: string): string {
+export function errorText(error: FailedRunOutcome, captured: string): string {
   return Match.value(error).pipe(
     Match.tag('RunParseFailed', (failed) =>
       Option.getOrElse(

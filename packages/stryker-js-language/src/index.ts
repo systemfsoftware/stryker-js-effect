@@ -20,7 +20,6 @@ export {
   MetricsResultSchema,
   MetricsSchema,
 } from './Metrics.js'
-export { Module, type ModuleRequire } from './Module.js'
 export {
   causeText,
   type Coverage,

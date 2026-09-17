@@ -561,21 +561,6 @@ export const ModeSignal: S.Literals<readonly ["flag", "env", "tty", "agent", "to
 // @public (undocumented)
 export type ModeSignal = typeof ModeSignal.Type;
 
-// Warning: (ae-forgotten-export) The symbol "Module_base" needs to be exported by the entry point index.d.mts
-//
-// @public
-export class Module extends Module_base {}
-
-// @public
-export interface ModuleRequire {
-    // (undocumented)
-    (request: string): unknown;
-    // (undocumented)
-    resolve(request: string, options?: {
-        readonly paths?: readonly string[];
-    }): string;
-}
-
 // Warning: (ae-forgotten-export) The symbol "Mutant_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)

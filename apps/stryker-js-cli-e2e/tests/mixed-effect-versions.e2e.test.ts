@@ -82,7 +82,7 @@ const isHostPhaseSpan = (span: TraceSpan): boolean => HOST_PHASE_SPAN_NAMES.incl
 
 const effectVersionOf = (span: TraceSpan): string | undefined => span.attributes.get('effect.version')
 
-describe('running a mutation run through a checker worker built on another effect release', () => {
+describe('running a mutation run whose checker worker was built on a different effect release', () => {
   let run: ExecResult = EMPTY_EXEC
   let events: readonly unknown[] = []
   let spans: readonly TraceSpan[] = []

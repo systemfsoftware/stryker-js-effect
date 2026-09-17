@@ -17,6 +17,20 @@ export class ConfigFileNotFoundError extends S.TaggedError<ConfigFileNotFoundErr
   readonly exitClass = 'ConfigError' as const
 }
 
+export class ConfigFileUnsupportedError extends S.TaggedError<ConfigFileUnsupportedError>()(
+  'ConfigFileUnsupportedError',
+  {
+    file: S.String,
+    hint: S.String,
+  },
+) {
+  readonly exitClass = 'ConfigError' as const
+
+  override get message(): string {
+    return this.hint
+  }
+}
+
 export class ConfigFileUnreadableError extends S.TaggedError<ConfigFileUnreadableError>()(
   'ConfigFileUnreadableError',
   {

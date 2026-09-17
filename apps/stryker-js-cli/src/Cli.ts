@@ -6,6 +6,7 @@ import {
   ConfigFileInvalidError,
   ConfigFileNotFoundError,
   ConfigFileUnreadableError,
+  ConfigFileUnsupportedError,
   makeRunLayer,
   type ResolvedMode,
   type RunEnvironmentShape,
@@ -39,6 +40,7 @@ import * as Flag from 'effect/unstable/cli/Flag'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 import cliPkgJson from '../package.json' with { type: 'json' }
 import { SurvivorsRejection } from './admit-survivors-run.workflow.js'
+import type { RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
 import type { CliRequest } from './Cli.schema.js'
 import {
   buildErrorEnvelope,
@@ -46,6 +48,7 @@ import {
   collectExitClasses,
   describeFailure,
   type ErrorEnvelope,
+  errorText,
   exitClassOf,
   failureValue,
   isExitClass,
@@ -68,6 +71,8 @@ import type { StrykerRun } from './StrykerRun.js'
 import { runSurvivorsAdmission, survivorMutateSpans } from './Survivors.js'
 
 export { type StrykerRun }
+
+const EXPORTABLE_SPAN_ERROR_LIMIT = 1024
 export {
   buildErrorEnvelope,
   collectExitClasses,
@@ -676,6 +681,7 @@ export const runStrykerCli = (
       | ConfigFileNotFoundError
       | ConfigFileUnreadableError
       | ConfigFileInvalidError
+      | ConfigFileUnsupportedError
       | MergeReportsFailed,
       never
     > =>
@@ -691,7 +697,6 @@ export const runStrykerCli = (
               return Effect.gen(function*() {
                 const { admission, resolvedOptions, priorReportPath } = yield* runSurvivorsAdmission(
                   runRequest.options,
-                  basePath,
                 ).pipe(Effect.provide(hostRunLayer(hostOptions)))
                 return yield* Match.value(admission).pipe(
                   Match.tag('NoSurvivors', () =>
@@ -755,16 +760,41 @@ export const runStrykerCli = (
         }),
     )
 
-    return yield* Effect.uninterruptibleMask((restore) =>
-      Effect.gen(function*() {
-        const exit = yield* Effect.exit(restore(program))
-        const outcome = classifyRunOutcome(exit, input.lastSignal(), input.argv)
-        const code = runOutcomeCode(outcome)
-        if (input.mode.mode === 'machine') {
-          yield* emitMachineModeOutput(stream, input.mode, outcome, basePath, pathService)
-        }
-        yield* stream.closeAndDrain
-        return code
+    const outcomeOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>): string =>
+      Result.match(result, {
+        onSuccess: (decision) => decision._tag,
+        onFailure: (error) => error._tag,
       })
+
+    const errorTextOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>): string =>
+      Result.match(result, {
+        onSuccess: () => '',
+        onFailure: (failure) => {
+          const text = errorText(failure, readCapturedConsole())
+          return Match.value(text.length > EXPORTABLE_SPAN_ERROR_LIMIT).pipe(
+            Match.when(true, () => `${text.slice(0, EXPORTABLE_SPAN_ERROR_LIMIT)}…[truncated]`),
+            Match.orElse(() => text),
+          )
+        },
+      })
+
+    return yield* Effect.uninterruptibleMask((restore) =>
+      Effect.withSpan('stryker.cli.run')(
+        Effect.gen(function*() {
+          const exit = yield* Effect.exit(restore(program))
+          const outcome = classifyRunOutcome(exit, input.lastSignal(), input.argv)
+          const code = runOutcomeCode(outcome)
+          yield* Effect.annotateCurrentSpan({
+            'stryker.run.outcome': outcomeOf(outcome),
+            'stryker.run.exit_code': code,
+            'stryker.run.error': errorTextOf(outcome),
+          })
+          if (input.mode.mode === 'machine') {
+            yield* emitMachineModeOutput(stream, input.mode, outcome, basePath, pathService)
+          }
+          yield* stream.closeAndDrain
+          return code
+        }),
+      )
     )
   })

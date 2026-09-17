@@ -22,9 +22,13 @@
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit"
   },
   "devDependencies": {
+    "@effect/opentelemetry": "4.0.0-rc.112",
     "@effect/platform-node": "catalog:",
     "@effect/platform-node-shared": "catalog:",
     "@noble/hashes": "catalog:",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.208.0",
+    "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@oxc-parser/binding-wasm32-wasi": "catalog:",
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
@@ -49,7 +53,7 @@
     "vitest": "catalog:"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.18.0"
   },
   "license": "Apache-2.0",
   "publishConfig": {

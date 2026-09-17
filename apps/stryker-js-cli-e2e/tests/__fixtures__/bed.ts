@@ -133,21 +133,6 @@ const copyTarballs = async (
       files.map((file) => ({ source: join(directory, file.fileName), target: file.tarballPath })),
     ))
 
-const installCliGlobally = async (running: StartedTestContainer, cli: PackedPackage): Promise<void> => {
-  await requireStep(`npm install -g ${cli.fileName}`, async () => {
-    const result = await running.exec(['npm', 'install', '-g', cli.tarballPath])
-    if (result.exitCode !== 0) {
-      throw new Error(`npm exited ${result.exitCode}: ${result.stderr.trim()}`)
-    }
-  })
-  await requireStep('the installed stryker bin is on PATH', async () => {
-    const result = await running.exec(['sh', '-c', 'command -v stryker'])
-    if (result.exitCode !== 0) {
-      throw new Error(`command -v stryker exited ${result.exitCode}: ${result.stderr.trim()}`)
-    }
-  })
-}
-
 const startBed = async (): Promise<void> => {
   const directory = await requireStep(
     'create the pack scratch directory',
@@ -167,7 +152,6 @@ const startBed = async (): Promise<void> => {
   container = running
   await writeContainerWorkDirectories(running)
   await copyTarballs(running, directory, Object.values(packed))
-  await installCliGlobally(running, packedPackage(CLI_PACKAGE))
 }
 
 export const ensureBed = async (): Promise<void> => {
@@ -224,7 +208,7 @@ const rawExec = async (command: readonly string[], cwd: string | undefined): Pro
 }
 
 export function runCli(args: readonly string[], opts?: { readonly cwd?: string | undefined }): Promise<ExecResult> {
-  return rawExec(['stryker', ...args], opts?.cwd)
+  return rawExec(['npx', '--no-install', 'stryker', ...args], opts?.cwd)
 }
 
 export function runShell(command: string, opts?: { readonly cwd?: string | undefined }): Promise<ExecResult> {
@@ -255,10 +239,11 @@ export async function installFixture(
   const installSteps = [
     { step: `npm install the ${name} registry dependencies`, args: ['npm', 'install'] },
     {
-      step: `npm install the plugin tarballs in ${name}`,
+      step: `npm install the CLI and plugin tarballs in ${name}`,
       args: [
         'npm',
         'install',
+        cliPackage().tarballPath,
         ...PLUGIN_PACKAGES.map((packageName) => packedPackage(packageName).tarballPath),
         ...extraTarballs.map((packed) => packed.tarballPath),
       ],

@@ -13,12 +13,12 @@ import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
+import * as Tracer from 'effect/Tracer'
 import * as Headers from 'effect/unstable/http/Headers'
 import type * as Rpc from 'effect/unstable/rpc/Rpc'
 import type { Request } from 'effect/unstable/rpc/RpcMessage'
 import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware'
 
-const TRACER_NAME = 'stryker-js-plugin-worker'
 const CURRENT_VERSION = '00'
 
 const serializedTraceState = (traceState: api.TraceState | undefined): Option.Option<string> =>
@@ -50,20 +50,6 @@ const partsOfSpan = (span: api.Span | undefined): Option.Option<TraceContextPart
     Option.map(Option.fromUndefinedOr(span), (present) => present.spanContext()),
     tracePartsOf,
   )
-
-const createdTraceState = (raw: string | undefined): { readonly traceState?: api.TraceState } =>
-  Option.match(Option.fromUndefinedOr(raw), {
-    onNone: () => ({}),
-    onSome: (value) => ({ traceState: api.createTraceState(value) }),
-  })
-
-const spanContextOf = (parts: TraceContextParts): api.SpanContext => ({
-  traceId: parts.traceId,
-  spanId: parts.spanId,
-  traceFlags: parts.traceFlags,
-  isRemote: true,
-  ...createdTraceState(parts.traceState),
-})
 
 const remotePartsFromHeaders = (headers: Headers.Headers): Option.Option<TraceContextParts> =>
   Option.map(
@@ -103,47 +89,60 @@ const clientMiddleware: RpcMiddleware.RpcMiddlewareClient<never, never, never> =
 
 export const layerTraceContextClient = RpcMiddleware.layerClient(TraceContextMiddleware, clientMiddleware)
 
+const SAMPLED_FLAG = 0x01
+
+const traceStateOption = (traceState: string | undefined): { readonly traceState?: string } =>
+  Option.match(Option.fromUndefinedOr(traceState), {
+    onNone: () => ({}),
+    onSome: (state) => ({ traceState: state }),
+  })
+
+const sampledFlagOf = (sampled: boolean): number => {
+  if (sampled) return SAMPLED_FLAG
+  return 0
+}
+
+const externalSpanOf = (parts: TraceContextParts): Tracer.ExternalSpan =>
+  Tracer.externalSpan({
+    traceId: parts.traceId,
+    spanId: parts.spanId,
+    sampled: (parts.traceFlags & SAMPLED_FLAG) === SAMPLED_FLAG,
+    ...traceStateOption(parts.traceState),
+  })
+
+export const partsOfEffectSpan = (span: {
+  readonly traceId: string
+  readonly spanId: string
+  readonly sampled: boolean
+}): TraceContextParts => ({
+  version: CURRENT_VERSION,
+  traceId: span.traceId,
+  spanId: span.spanId,
+  traceFlags: sampledFlagOf(span.sampled),
+})
+
 const serverMiddleware: RpcMiddleware.RpcMiddleware<typeof PropagatedTrace, never, never> = (effect, options) => {
   const remote = remotePartsFromHeaders(options.headers)
-  const parent = Option.match(remote, {
-    onNone: () => api.context.active(),
-    onSome: (present) => api.trace.setSpanContext(api.context.active(), spanContextOf(present)),
+  const attributes = { 'rpc.method': options.rpc._tag }
+  const spanned = Option.match(Option.map(remote, externalSpanOf), {
+    onNone: () => Effect.useSpan(`rpc.${options.rpc._tag}`, { attributes }, () => effect),
+    onSome: (parent) => Effect.useSpan(`rpc.${options.rpc._tag}`, { attributes, parent }, () => effect),
   })
-  const span = api.trace.getTracer(TRACER_NAME).startSpan(
-    `rpc.${options.rpc._tag}`,
-    { attributes: { 'rpc.method': options.rpc._tag } },
-    parent,
-  )
-  return effect.pipe(
-    Effect.provideService(PropagatedTrace, remote),
-    Effect.ensuring(Effect.sync(() => span.end())),
-  )
+  return spanned.pipe(Effect.provideService(PropagatedTrace, remote))
 }
 
 export const layerTraceContextServer = Layer.succeed(TraceContextMiddleware, serverMiddleware)
 
 export const withLinkedSpan = <A, E, R>(
   spanName: string,
-  attributes: api.Attributes,
+  attributes: Record<string, string | number | boolean>,
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
-  Effect.context<never>().pipe(
-    Effect.map((context) => Option.flatten(Context.getOption(context, PropagatedTrace))),
-    Effect.flatMap((remote) =>
-      Effect.acquireUseRelease(
-        Effect.sync(() => {
-          const options: api.SpanOptions = Option.match(remote, {
-            onNone: (): api.SpanOptions => ({ attributes }),
-            onSome: (present): api.SpanOptions => ({
-              attributes,
-              root: true,
-              links: [{ context: spanContextOf(present) }],
-            }),
-          })
-          return api.trace.getTracer(TRACER_NAME).startSpan(spanName, options, api.context.active())
-        }),
-        () => effect,
-        (span) => Effect.sync(() => span.end()),
-      )
-    ),
-  )
+  Effect.flatMap(Effect.context<never>(), (context) => {
+    const remote = Option.flatten(Context.getOption(context, PropagatedTrace))
+    return Option.match(Option.map(remote, externalSpanOf), {
+      onNone: () => Effect.useSpan(spanName, { attributes }, () => effect),
+      onSome: (linked) =>
+        Effect.useSpan(spanName, { attributes, root: true, links: [{ span: linked, attributes: {} }] }, () => effect),
+    })
+  })

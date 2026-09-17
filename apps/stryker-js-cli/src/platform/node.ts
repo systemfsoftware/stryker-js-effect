@@ -2,7 +2,6 @@ import { NodeFileSystem, NodePath, NodeSocket } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import { ChildProcessCrashedError, classifyWorkerExit, WorkerLauncher } from '@systemfsoftware/stryker-js-engine'
 import type { EnginePorts, SpawnedSocketWorker } from '@systemfsoftware/stryker-js-engine'
-import { nodeModuleLayer } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -111,7 +110,6 @@ const nodeSpawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(nodeFs
 const nodeBase = Layer.merge(nodeFsPathLayer, nodeSpawnerLayer)
 
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = Layer.mergeAll(
-  nodeModuleLayer,
   nodeWorkerLauncherLayer.pipe(Layer.provide(nodeBase)),
   nodeBase,
 )

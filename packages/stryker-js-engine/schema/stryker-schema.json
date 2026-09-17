@@ -8,6 +8,10 @@
       "description": "Path to another stryker config file whose options merge underneath this one. Resolved relative to this file.",
       "type": "string"
     },
+    "configFile": {
+      "description": "Path to the stryker config file. Defaults to discovering `stryker.config.{ts,mts,js,mjs}` or `stryker.conf.{ts,mts,js,mjs}`.",
+      "type": "string"
+    },
     "vitest": {
       "description": "Configuration for @systemfsoftware/stryker-js-vitest-runner",
       "title": "VitestRunnerOptions",

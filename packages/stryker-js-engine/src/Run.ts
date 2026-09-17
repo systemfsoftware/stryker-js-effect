@@ -4,7 +4,6 @@ import type { File as InstrumenterFile, InstrumentResult } from '@systemfsoftwar
 import type { CheckResult, PassedCheckResult } from '@systemfsoftware/stryker-js-language'
 import type { ExitClass } from '@systemfsoftware/stryker-js-language'
 import type { IgnorerService } from '@systemfsoftware/stryker-js-language'
-import { Module } from '@systemfsoftware/stryker-js-language'
 import { Mutant } from '@systemfsoftware/stryker-js-language'
 import type { RunMutantResult } from '@systemfsoftware/stryker-js-language'
 import type { MutantTestCoverage } from '@systemfsoftware/stryker-js-language'
@@ -352,7 +351,6 @@ export type StageServices =
   | ChildProcessSpawner.ChildProcessSpawner
   | FileSystem.FileSystem
   | IdGenerator
-  | Module
   | Path.Path
   | RunEnvironment
   | RunEvents
@@ -361,7 +359,6 @@ export type StageServices =
 export type EnginePorts =
   | ChildProcessSpawner.ChildProcessSpawner
   | FileSystem.FileSystem
-  | Module
   | Path.Path
   | WorkerLauncher
 interface ReporterChoice {
@@ -471,10 +468,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         const env = yield* RunEnvironment
         const queue = yield* RunEvents
         const coreSchema: ValidationSchemaDocument = forkCoreSchema
-        const configured = yield* readConfig(
-          command.cliOptions,
-          env.basePath,
-        ).pipe(
+        const configured = yield* readConfig(command.cliOptions).pipe(
           Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to read config', cause })),
           Effect.tapCause(() =>
             Effect.gen(function*() {
@@ -494,7 +488,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
           },
         }
         const descriptors: readonly string[] = [...options.plugins, ...options.appendPlugins]
-        const loaded = yield* loadPlugins(descriptors, env.basePath).pipe(
+        const loaded = yield* loadPlugins(descriptors).pipe(
           Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
         )
         const mergedSchema = buildMergedSchema(coreSchema, loaded.schemaContributions)

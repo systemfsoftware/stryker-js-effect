@@ -40,6 +40,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/opentelemetry": "4.0.0-rc.112",
     "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@opentelemetry/sdk-trace-base": "^2.2.0",
@@ -47,6 +48,8 @@
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "workspace:^",
+    "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
@@ -61,6 +64,9 @@
     "vitest": "catalog:"
   },
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": true,

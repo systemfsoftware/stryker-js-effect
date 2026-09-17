@@ -35,23 +35,55 @@ const searchUrl = `${tempoUrl}/api/search?tags=service.name%3D${
 }&start=${windowStart}&end=${windowEnd}&limit=1000`
 
 const searchTraces = async (): Promise<ReadonlyArray<{ traceID: string }>> => {
-  const response = await fetch(searchUrl)
-  if (!response.ok) {
-    throw new Error(
-      `Tempo search returned ${response.status} for a ${
-        windowEnd - windowStart
-      }s window; the window must be at most ${SEARCH_WINDOW_SECONDS}s and supply both start and end`,
-    )
+  for (let attempt = 1;; attempt += 1) {
+    const response = await fetch(searchUrl)
+    if (response.ok) {
+      const document = (await response.json()) as TracesResponse
+      return document.traces ?? []
+    }
+    if (attempt >= MAX_WRITE_ATTEMPTS || !isRetriableStatus(response.status)) {
+      throw new Error(
+        `Tempo search returned ${response.status} for a ${
+          windowEnd - windowStart
+        }s window; the window must be at most ${SEARCH_WINDOW_SECONDS}s and supply both start and end`,
+      )
+    }
+    await waitFor(RATE_LIMIT_BACKOFF_MS * attempt)
   }
-  const document = (await response.json()) as TracesResponse
-  return document.traces ?? []
 }
 
-const writeTrace = async (traceId: string): Promise<void> => {
-  const response = await fetch(`${tempoUrl}/api/traces/${traceId}`)
-  if (!response.ok) throw new Error(`Tempo trace ${traceId} returned ${response.status}`)
-  const document = await response.json()
-  await Deno.writeTextFile(join(outDir, 'traces', `${traceId}.json`), `${JSON.stringify(document, null, 2)}\n`)
+const WRITE_CONCURRENCY = 4
+const RATE_LIMIT_BACKOFF_MS = 2_000
+const MAX_WRITE_ATTEMPTS = 5
+
+const isRetriableStatus = (status: number): boolean => status === 429 || status >= 500
+
+const writeTraceWithRetry = async (traceId: string): Promise<void> => {
+  for (let attempt = 1;; attempt += 1) {
+    const response = await fetch(`${tempoUrl}/api/traces/${traceId}`)
+    if (response.ok) {
+      const document = await response.json()
+      await Deno.writeTextFile(join(outDir, 'traces', `${traceId}.json`), `${JSON.stringify(document, null, 2)}\n`)
+      return
+    }
+    if (attempt >= MAX_WRITE_ATTEMPTS || !isRetriableStatus(response.status)) {
+      throw new Error(`Tempo trace ${traceId} returned ${response.status} after ${attempt} attempt(s)`)
+    }
+    await waitFor(RATE_LIMIT_BACKOFF_MS * attempt)
+  }
+}
+
+const writeAllTraces = async (traceIds: readonly string[]): Promise<void> => {
+  const queue = [...traceIds]
+  const workers = Array.from(
+    { length: Math.min(WRITE_CONCURRENCY, queue.length) },
+    async () => {
+      for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+        await writeTraceWithRetry(next)
+      }
+    },
+  )
+  await Promise.all(workers)
 }
 
 const writeManifest = async (traceCount: number): Promise<void> => {
@@ -91,7 +123,7 @@ const traces = await searchUntilVisible().catch(async (cause: unknown) => {
   return Deno.exit(0)
 })
 
-await Promise.all(traces.map((trace) => writeTrace(trace.traceID)))
+await writeAllTraces(traces.map((trace) => trace.traceID))
 await writeManifest(traces.length)
 
 if (gated && traces.length === 0) {

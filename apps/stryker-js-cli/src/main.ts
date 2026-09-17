@@ -3,7 +3,6 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import * as NodeStdio from '@effect/platform-node/NodeStdio'
-import { startHostTelemetry } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
@@ -15,6 +14,7 @@ import { observeTerminatingSignal } from './Cli.js'
 import { strykerCliEffect } from './Cli.js'
 import { OutputModeProbe, OutputModeProbeLive } from './Output.js'
 import { RunEventStreamPort } from './Output.js'
+import { telemetryLayer } from './platform/telemetry.js'
 import { RunEventStreamFileLive } from './StreamFile.js'
 
 const EXIT_CODE_RUN_NEVER_REACHED_ITS_FINALIZER = 1
@@ -58,7 +58,6 @@ if (!isSupportedNodeVersion(process.version)) {
 }
 
 const program = Effect.gen(function*() {
-  yield* Effect.promise(() => startHostTelemetry())
   const outputMode = yield* OutputModeProbe
   const runEvents = yield* RunEventStreamPort
   return yield* strykerCliEffect(
@@ -71,8 +70,11 @@ const program = Effect.gen(function*() {
 }).pipe(
   Effect.provideService(Logger.LogToStderr, true),
   Effect.provide(
-    Layer.merge(OutputModeProbeLive, RunEventStreamFileLive).pipe(
-      Layer.provide(Layer.mergeAll(NodeStdio.layer, NodeFileSystem.layer, NodePath.layer)),
+    Layer.merge(
+      Layer.merge(OutputModeProbeLive, RunEventStreamFileLive).pipe(
+        Layer.provide(Layer.mergeAll(NodeStdio.layer, NodeFileSystem.layer, NodePath.layer)),
+      ),
+      telemetryLayer,
     ),
   ),
 )

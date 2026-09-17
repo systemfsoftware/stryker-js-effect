@@ -1,92 +1,56 @@
 # `@systemfsoftware/stryker-js-cli-e2e`
 
-Private end-to-end lane for the shipped `stryker` artifact. Installing the
-packed tarball is the bed, not a journey: a broken install fails setup. The
-lane exists for two behaviors observable only at the process boundary — a
-mutation run through the packed runner and worker, and a lost machine-mode
-envelope when the dry run fails. Everything below that seam is pinned by the
-CLI's property suites and the engine's integration tests.
+Container-isolated end-to-end tests for the packaged `@systemfsoftware/stryker-js-cli` binary and plugins.
 
-| Journey      | Test                             | Behavior it owns                                                                                                                                    |
-| ------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mutation run | `tests/mutation-run.e2e.test.ts` | One real run through the packed runner plugin and the sandbox worker ends in a machine-mode `verdict` matching the hand-authored oracle.            |
-| Failing run  | `tests/failing-run.e2e.test.ts`  | A failing dry run crosses the boundary as the typed machine-mode `error` document with its classed exit code.                                       |
-| Effect skew  | `tests/effect-skew.e2e.test.ts`  | A run whose checker worker is bundled against a different Effect release finishes on the oracle's verdict and links its spans into the run's trace. |
+## What it tests
 
-Every run packs two workspace packages (`stryker-js-cli` and
-`stryker-js-vitest-runner`) fresh with `pnpm pack` into a temp directory, starts
-**one** digest-pinned `node:24-alpine` container through testcontainers, installs
-the CLI tarball with `npm install -g` (the CLI bundle is self-contained),
-installs the fixture's registry deps plus the runner tarball, and asserts exit
-codes, the machine-mode event stream on stdout, and typed error documents — each
-against a hand-authored oracle. No tarball, container state, or run output is
-committed.
+The suite packages workspace components into tarballs (`pnpm pack`), starts a clean container, installs the tarballs into isolated fixture projects, and runs `stryker run` to verify behavior across the process boundary:
 
-Machine-mode events go to stdout and also to `reports/mutation-stream.jsonl`
-under the run's working directory. The lane observes stdout. Each fixture names the plugins its run loads in its
-own `stryker.config.json` — that array is the only source of what loads — and
-they resolve from the fixture's `node_modules`.
-`--version` prints the CLI package version from the packed tarball's manifest.
+- Full mutation runs against realistic test suites
+- Exit codes and typed machine-mode JSON error envelopes on failure
+- Worker RPC compatibility across different Effect dependency versions
 
-A failing dry run is `RuntimeError`: exit code 3, terminal `error` event with a
-non-empty `remediation`.
+## Running locally
 
-| Code | Class           | Meaning                                             |
-| ---- | --------------- | --------------------------------------------------- |
-| 0    | —               | The run completed; thresholds either passed or none |
-| 1    | `VerdictFail`   | A configured threshold broke                        |
-| 2    | `ConfigError`   | The config file or its options were rejected        |
-| 3    | `RuntimeError`  | A run stage failed (dry run, checkers, workers)     |
-| 4    | `InternalError` | An unforeseen internal failure                      |
+Local runs require Docker or Podman with an active socket.
 
-## Layout
-
-| Path                        | Why there                                                                                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/*.e2e.test.ts`       | The lane's journeys — plain vitest, no test-layer shape rules apply: they drive a packed artifact through a container.                                  |
-| `tests/__fixtures__/bed.ts` | The host-side bed: packs the CLI and runner, starts one container, installs the tarballs, asserts stdout.                                               |
-| `testResources/`            | The fixture projects the container runs — the repo's home for SUT-consumed resources. `effect-skew-checker/` is a plugin the bed builds and packs here. |
-| `testResources/*/oracle.md` | Hand-derived expectations; a run may confirm them, never originate them.                                                                                |
-
-## Run modes
-
-Local podman (rootful socket + privileged Ryuk):
-
-```bash
-DOCKER_HOST=unix://$(podman info --format '{{.Host.RemoteSocket.Path}}') TESTCONTAINERS_RYUK_PRIVILEGED=true pnpm test:e2e
-```
-
-CI Docker (ubuntu-latest ships Docker; `pnpm test:e2e` needs no env overrides):
+With Docker:
 
 ```bash
 pnpm test:e2e
 ```
 
-## Observability
+With Podman:
 
-With OTel on, the container's CLI, its worker processes and the lane's Vitest process all export
-traces to Grafana LGTM, and `tests/effect-skew.e2e.test.ts` reads the run's trace back from Tempo to
-assert that the skewed worker linked into it. The container runs on the host network, so the
-loopback-bound collector is reachable from inside it.
+```bash
+DOCKER_HOST=unix://$(podman info --format '{{.Host.RemoteSocket.Path}}') \
+TESTCONTAINERS_RYUK_PRIVILEGED=true \
+pnpm test:e2e
+```
 
-The lane's Vitest process exports traces to Grafana LGTM
-(`experimental.openTelemetry` in `vitest.config.ts`, SDK in `otel.ts`). The
-stack is a root process-compose unit over podman — not compose:
+Run a specific test:
+
+```bash
+cd apps/stryker-js-cli-e2e && pnpm exec vitest run <path-to-test>
+```
+
+## Tracing and telemetry
+
+When `OTEL_ENABLED=true`, test runs export OpenTelemetry traces to an OTLP collector on `http://127.0.0.1:4318`.
+
+To run with local Grafana LGTM:
 
 ```bash
 pnpm lgtm:up
-OTEL_ENABLED=true DOCKER_HOST=unix://$(podman info --format '{{.Host.RemoteSocket.Path}}') \
-  TESTCONTAINERS_RYUK_PRIVILEGED=true pnpm test:e2e
+OTEL_ENABLED=true pnpm test:e2e
 pnpm lgtm:down
 ```
 
-Grafana is `http://127.0.0.1:3000` (admin/admin); explore Tempo for service
-`stryker-js-cli-e2e`.
+View traces in Grafana (`http://127.0.0.1:3000`) under the `stryker-js-cli-e2e` service.
 
-### CI telemetry artifact
+### Inspecting CI traces
 
-The `e2e` job in `ci.yml` uploads `e2e-telemetry-<run>` on every run (missing
-or empty fails the job). To inspect a CI run's traces locally:
+CI workflows upload an `e2e-telemetry-<run-id>` artifact on every run. To import and inspect traces locally:
 
 ```bash
 pnpm lgtm:up
@@ -94,11 +58,3 @@ gh run download <run-id> -n e2e-telemetry-<run-id> -D /tmp/tele
 tar xzf /tmp/tele/e2e-telemetry.tar.gz -C /tmp/tele
 IN_DIR=/tmp/tele/e2e-telemetry ./apps/stryker-js-cli-e2e/scripts/import-traces.ts
 ```
-
-Then query service `stryker-js-ci` in Grafana.
-
-## CI
-
-The lane stays out of `pnpm test` and `pnpm check:ci` by design (the app declares
-no `test` script), so it needs its own job; it lives in `.github/workflows/ci.yml`
-as the `e2e` job and uploads the `e2e-telemetry-<run-id>` artifact.
