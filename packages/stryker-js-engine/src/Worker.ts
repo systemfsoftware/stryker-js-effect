@@ -7,6 +7,8 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Ref from 'effect/Ref'
 
+import { ChildProcessCrashedError, OutOfMemoryError } from './Worker.schema.js'
+
 export interface IdGeneratorShape {
   readonly next: Effect.Effect<number>
 }
@@ -144,3 +146,25 @@ export const makeConcurrency = (
     yield* announceProcesses(result)
     return result
   })
+
+const SIGABRT = 128 + 6
+const SIGKILL = 128 + 9
+
+const OUT_OF_MEMORY_EXIT_CODES: readonly number[] = [SIGABRT, SIGKILL]
+
+const isOutOfMemoryExit = (exitCode: number): boolean => OUT_OF_MEMORY_EXIT_CODES.includes(exitCode)
+
+export const classifyWorkerExit = (
+  pid: number,
+  exitCode: number,
+): ChildProcessCrashedError | OutOfMemoryError =>
+  Match.value(exitCode).pipe(
+    Match.when(isOutOfMemoryExit, () => new OutOfMemoryError({ pid, exitCode })),
+    Match.orElse(() =>
+      new ChildProcessCrashedError({
+        pid,
+        exit: { _tag: 'Code', code: exitCode },
+        cause: 'worker exited before it accepted the RPC connection',
+      })
+    ),
+  )

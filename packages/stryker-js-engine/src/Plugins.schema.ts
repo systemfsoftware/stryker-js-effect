@@ -5,9 +5,15 @@
 import { Schema as S } from 'effect'
 
 import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
+import { WorkerEntryUrl, WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
+
+export const PluginDescriptorSchema = S.Union([
+  S.Struct({ kind: WorkerPluginKind, name: S.String, workerEntry: WorkerEntryUrl }),
+  S.Struct({ kind: S.Literals(['Evaluator']), name: S.String }),
+])
 
 export const PluginModuleSchema = S.Struct({
-  strykerPlugins: S.Array(S.Unknown),
+  strykerPlugins: S.Array(PluginDescriptorSchema),
 })
 
 const isShouldIgnore = (value: unknown): value is (node: Node, ancestors: readonly Node[]) => string | undefined =>

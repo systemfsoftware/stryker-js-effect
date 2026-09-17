@@ -34,9 +34,13 @@
   },
   "license": "Apache-2.0",
   "dependencies": {
+    "@opentelemetry/exporter-trace-otlp-http": "^0.208.0",
+    "@opentelemetry/sdk-node": "^0.208.0",
+    "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/stryker-js-language": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-runtime": "workspace:^",
     "effect": "catalog:",
     "typescript": "catalog:"
   },
@@ -60,7 +64,17 @@
     "vitest": "catalog:"
   },
   "inlinedDependencies": {
-    "@jsr/std__jsonc": "1.0.2"
+    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node-shared": "4.0.0-rc.112",
+    "@jsr/std__jsonc": "1.0.2",
+    "@opentelemetry/api": "1.9.1",
+    "@systemfsoftware/effect-cell-types": "8.1.0",
+    "detect-libc": "2.1.2",
+    "effect": "4.0.0-rc.112",
+    "msgpackr": "2.1.0",
+    "msgpackr-extract": "3.0.4",
+    "node-gyp-build-optional-packages": "5.2.2",
+    "ws": "8.21.3"
   },
   "publishConfig": {
     "provenance": true,

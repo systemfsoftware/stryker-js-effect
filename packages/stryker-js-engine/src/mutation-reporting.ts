@@ -8,7 +8,6 @@ import type * as schema from '@systemfsoftware/stryker-js-language'
 import { RunEvents, VerdictReached } from '@systemfsoftware/stryker-js-language'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import type { MutantRunResult } from '@systemfsoftware/stryker-js-language'
-import type { AnyPluginContribution, PluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -17,6 +16,7 @@ import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import type { PlatformError } from 'effect/PlatformError'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -59,10 +59,10 @@ export interface MutationReportingService {
   ) => Effect.Effect<RunMutantResult>
   readonly reportAll: (
     results: readonly RunMutantResult[],
-  ) => Effect.Effect<RunOutcome, unknown, FileSystem.FileSystem | Path.Path | RunEvents>
+  ) => Effect.Effect<RunOutcome, PlatformError, FileSystem.FileSystem | Path.Path | RunEvents>
   readonly checkpoint: (
     results: readonly RunMutantResult[],
-  ) => Effect.Effect<void, unknown, FileSystem.FileSystem | Path.Path>
+  ) => Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path>
 }
 
 export class MutationReporting extends Context.Service<MutationReporting, MutationReportingService>()(
@@ -76,7 +76,6 @@ export interface MakeMutationReportingInput {
   readonly testCoverage: TestCoverage
   readonly runId: string
   readonly resolvedMode: ResolvedMode
-  readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginContribution[]>
   readonly sandboxDirectory: string
   readonly basePath: string
 }
@@ -182,7 +181,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
 
   const mutationTestReport = (
     results: readonly RunMutantResult[],
-  ): Effect.Effect<schema.MutationTestResult, unknown, FileSystem.FileSystem | Path.Path> =>
+  ): Effect.Effect<schema.MutationTestResult, PlatformError, FileSystem.FileSystem | Path.Path> =>
     Effect.gen(function*() {
       const { files, testFiles } = yield* assembleReport(results)
       const dependencies = yield* discoverDependencies()

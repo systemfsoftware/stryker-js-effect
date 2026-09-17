@@ -1,8 +1,8 @@
 /**
  * Worker — wire types and failure identities for the child-process pool.
  *
- * Holds the JSON IPC alphabet, the four ways the host side can fail before
- * the worker is usable, and the two crash discriminants the engine branches on.
+ * Holds the JSON IPC alphabet, the ways a spawned worker can fail before the
+ * host can use it, and the crash discriminants the engine branches on.
  */
 
 import { Schema as S } from 'effect'
@@ -55,26 +55,18 @@ export class ChildProcessCrashedError extends S.TaggedError<ChildProcessCrashedE
   readonly exitClass = 'InternalError' as const
 }
 
-/**
- * An IPC frame exceeded the maximum allowed size before a delimiter was seen.
- *
- * Distinct from a crash or OOM: the peer violated the framing contract and the
- * socket is closed to prevent unbounded string accumulation. Callers observe
- * this rather than a generic {@link ChildProcessCrashedError} so the cause is
- * distinguishable from an ordinary worker death.
- */
-export class WorkerFrameTooLargeError extends S.TaggedError<WorkerFrameTooLargeError>()(
-  'WorkerFrameTooLargeError',
-  {
-    byteLength: S.Int,
-    limit: S.Int,
-  },
-) {
-  readonly exitClass = 'InternalError' as const
-}
 export class OutOfMemoryError extends S.TaggedError<OutOfMemoryError>()('OutOfMemoryError', {
   pid: ProcessId,
   exitCode: S.Int,
 }) {
   readonly exitClass = 'RuntimeError' as const
+}
+
+export class WorkerBootTimeoutError extends S.TaggedError<WorkerBootTimeoutError>()(
+  'WorkerBootTimeoutError',
+  {
+    pid: ProcessId,
+  },
+) {
+  readonly exitClass = 'InternalError' as const
 }

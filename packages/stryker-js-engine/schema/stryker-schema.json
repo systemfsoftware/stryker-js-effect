@@ -442,14 +442,12 @@
       "description": "The package manager Stryker can use to install missing dependencies."
     },
     "plugins": {
-      "description": "With 'plugins', you can add additional Node modules for Stryker to load (or require). By default, all node_modules starting with @systemfsoftware/stryker-js-* will be loaded, so you would normally not need to specify this option. These modules should be installed right next to stryker.",
+      "description": "The Node modules to load as plugins. This array is the sole source of what loads: each specifier is resolved from the project, there is no default and no glob discovery, and a specifier the project cannot resolve is reported against itself while the rest proceed.",
       "type": "array",
       "items": {
         "type": "string"
       },
-      "default": [
-        "@systemfsoftware/stryker-js-*"
-      ]
+      "default": []
     },
     "appendPlugins": {
       "description": "A list of additional plugins you want Stryker to load (`require`) without overwriting the (default) `plugins`.",

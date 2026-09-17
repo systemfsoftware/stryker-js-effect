@@ -21,9 +21,6 @@ export default defineConfig({
   clean: true,
   entry: {
     main: './src/main.ts',
-    'workers/checker-worker': './src/workers/Checker.worker.ts',
-    'workers/child-process-test-runner-worker': './src/workers/child-process-test-runner-worker.ts',
-    'reporters/html': '@systemfsoftware/stryker-js-html-reporter',
   },
   format: 'esm',
   dts: false,
@@ -41,9 +38,6 @@ export default defineConfig({
     packageJson: true,
     exclude: [
       'main',
-      'workers/checker-worker',
-      'workers/child-process-test-runner-worker',
-      'reporters/html',
     ],
     inlinedDependencies: false,
     bin: { stryker: './src/main.ts' },

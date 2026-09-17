@@ -1,32 +1,38 @@
 import { sourceExports } from '@systemfsoftware/tsdown-config'
 import { defineConfig } from 'tsdown'
 
-export default defineConfig({
-  entry: {
-    index: './src/index.ts',
-    // A second entry, not a convenience: `Runner.ts` resolves this file as a
-    // sibling of its own emitted module and copies it into the sandbox as vitest's setup
-    // file. It must exist as a standalone artifact with no relative imports.
-    'stryker-setup': './src/stryker-setup.ts',
-  },
-  format: 'esm',
-  dts: true,
-  exports: sourceExports({ dtsExt: '.d.mts' }),
+const internalArtifacts = ['main', 'stryker-setup']
+const exports = { ...sourceExports({ dtsExt: '.d.mts' }), exclude: internalArtifacts }
 
-  // Stale chunks are published: `dist/` is what ships, and a chunk left from an
-  // earlier build stays in the tarball. This package shipped a megabyte of
-  // bundled test-runner internals that way, long after the code that pulled
-  // them in was gone.
-  clean: true,
-  // In-source `if (import.meta.vitest)` blocks are test code. Defining the flag
-  // away makes every such branch statically dead, so rolldown drops it along with
-  // its dynamic `import('vitest')`. Without this the blocks ship, including those
-  // bundled from a workspace dependency's sources.
+const shared = {
+  format: 'esm' as const,
+  dts: true,
+  exports,
   define: { 'import.meta.vitest': 'undefined' },
-  deps: {
-    alwaysBundle: [
-      /^@systemfsoftware\/stryker-js-language$/,
-      /^@systemfsoftware\/stryker-js-plugin-interface$/,
-    ],
+}
+
+export default defineConfig([
+  {
+    ...shared,
+    entry: {
+      index: './src/index.ts',
+      'stryker-setup': './src/stryker-setup.ts',
+    },
+    clean: true,
   },
-})
+  {
+    ...shared,
+    entry: { main: './src/main.ts' },
+    deps: {
+      neverBundle: [/^vitest$/, /^vitest\//],
+      alwaysBundle: [
+        /^effect$/,
+        /^effect\//,
+        /^@systemfsoftware\/stryker-js-language$/,
+        /^@systemfsoftware\/stryker-js-plugin-interface$/,
+        /^@systemfsoftware\/stryker-js-plugin-runtime$/,
+        /^@systemfsoftware\/effect-cell-types$/,
+      ],
+    },
+  },
+])

@@ -21,8 +21,8 @@
     "build": "tsdown",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint --format=${f:-default}",
     "attw": "attw --pack .",
-    "api:check": "concurrently --kill-others-on-fail \"api-extractor run\" \"api-extractor run --config api-extractor.builtin-reporters.json\" \"api-extractor run --config api-extractor.base.json\" \"api-extractor run --config api-extractor.plugin-loader.json\" \"api-extractor run --config api-extractor.worker.json\"",
-    "api:update": "concurrently --kill-others-on-fail \"api-extractor run --local\" \"api-extractor run --local --config api-extractor.builtin-reporters.json\" \"api-extractor run --local --config api-extractor.base.json\" \"api-extractor run --local --config api-extractor.plugin-loader.json\" \"api-extractor run --local --config api-extractor.worker.json\""
+    "api:check": "concurrently --kill-others-on-fail \"api-extractor run\" \"api-extractor run --config api-extractor.builtin-reporters.json\" \"api-extractor run --config api-extractor.base.json\" \"api-extractor run --config api-extractor.plugin-loader.json\"",
+    "api:update": "concurrently --kill-others-on-fail \"api-extractor run --local\" \"api-extractor run --local --config api-extractor.builtin-reporters.json\" \"api-extractor run --local --config api-extractor.base.json\" \"api-extractor run --local --config api-extractor.plugin-loader.json\""
   },
   "dependencies": {
     "@noble/hashes": "catalog:",
@@ -32,6 +32,7 @@
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-language": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-runtime": "workspace:^",
     "diff-match-patch": "1.0.5",
     "minimatch": "~10.2.4"
   },
@@ -41,6 +42,7 @@
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
+    "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@std/jsonc": "catalog:",
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
@@ -79,10 +81,6 @@
         "types": "./dist/plugin-loader.d.mts",
         "default": "./dist/plugin-loader.mjs"
       },
-      "./worker": {
-        "types": "./dist/worker.d.mts",
-        "default": "./dist/worker.mjs"
-      },
       "./package.json": "./package.json"
     }
   },
@@ -107,11 +105,7 @@
       "types": "./dist/plugin-loader.d.mts",
       "default": "./dist/plugin-loader.mjs"
     },
-    "./worker": {
-      "@systemfsoftware/source": "./src/worker-wiring.ts",
-      "types": "./dist/worker.d.mts",
-      "default": "./dist/worker.mjs"
-    },
+
     "./package.json": "./package.json"
   },
   "inlinedDependencies": {

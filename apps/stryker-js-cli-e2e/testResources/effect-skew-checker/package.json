@@ -1,0 +1,16 @@
+{
+  "name": "@systemfsoftware/stryker-js-effect-skew-checker",
+  "version": "4.0.0",
+  "private": true,
+  "type": "module",
+  "description": "E2E fixture plugin: a checker whose worker entry is bundled against a different Effect release than the CLI's",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  }
+}

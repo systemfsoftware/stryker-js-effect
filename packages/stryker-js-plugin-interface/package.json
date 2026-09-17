@@ -8,7 +8,7 @@
   },
   "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js-plugin-interface#readme",
   "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
-  "description": "The mutation-testing plugin interface — declare and compose checker, test-runner, reporter, ignorer, and evaluator contributions.",
+  "description": "The mutation-testing plugin boundary — the @effect/rpc groups, boundary payload schemas, typed failures, and worker plugin spawn contract.",
   "type": "module",
   "files": [
     "dist"

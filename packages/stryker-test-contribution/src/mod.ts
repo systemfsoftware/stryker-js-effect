@@ -1,9 +1,5 @@
-import { declarePlugin } from '@systemfsoftware/stryker-js-plugin-interface'
-
-import { testContributionEvaluatorLayer } from './test-contribution-evaluator.js'
-
-export const strykerPlugins = [
-  declarePlugin('Evaluator', 'test-contribution', testContributionEvaluatorLayer),
+export const strykerPlugins: readonly { readonly kind: 'Evaluator'; readonly name: string }[] = [
+  { kind: 'Evaluator', name: 'test-contribution' },
 ]
 
 export { makeTestContributionEvaluatorService, testContributionEvaluatorLayer } from './test-contribution-evaluator.js'

@@ -1,13 +1,12 @@
 import { NodeFileSystem, NodePath, NodeSocket } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
-import { ChildProcessCrashedError, WorkerEntries, WorkerLauncher } from '@systemfsoftware/stryker-js-engine'
+import { ChildProcessCrashedError, classifyWorkerExit, WorkerLauncher } from '@systemfsoftware/stryker-js-engine'
 import type { EnginePorts, SpawnedSocketWorker } from '@systemfsoftware/stryker-js-engine'
-import { Module, type ModuleRequire } from '@systemfsoftware/stryker-js-language'
+import { nodeModuleLayer } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type * as Scope from 'effect/Scope'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
@@ -15,52 +14,22 @@ import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawne
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 
-interface NodeModule {
-  createRequire(filename: string | URL): NodeRequire
-  isBuiltin(moduleName: string): boolean
-}
+const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string): Effect.Effect<void> =>
+  fs.chmod(file, 0o600).pipe(
+    Effect.catchTag(
+      'PlatformError',
+      (cause) =>
+        Effect.logWarning(
+          `Could not restrict "${file}" to its owner; the worker directory's own mode still protects it.`,
+        ).pipe(Effect.annotateLogs('cause', cause)),
+    ),
+  )
 
-const EMPTY_PATHS: readonly string[] = []
-
-const makeModuleRequire = (nodeModule: NodeModule, filename: string | URL): ModuleRequire => {
-  const requireFrom: NodeRequire = nodeModule.createRequire(filename)
-  const requireFn: ModuleRequire = (request: string): unknown => requireFrom(request)
-  requireFn.resolve = (request, options) =>
-    Option.match(Option.fromUndefinedOr(options), {
-      onNone: () => requireFrom.resolve(request),
-      onSome: (present) =>
-        requireFrom.resolve(request, {
-          paths: [...Option.getOrElse(Option.fromNullishOr(present.paths), () => EMPTY_PATHS)],
-        }),
-    })
-  return requireFn
-}
-
-/**
- * The Node implementation of the {@link Module} port: every call routes
- * through the runtime's own `node:module` via `process.getBuiltinModule`, so
- * this package imports no host builtins and the import ban holds here too.
- */
-export const nodeModuleLayer: Layer.Layer<Module> = Layer.effect(
-  Module,
-  Effect.sync(() => {
-    const nodeModule: NodeModule = process.getBuiltinModule('node:module')
-    return {
-      createRequire: (filename) => makeModuleRequire(nodeModule, filename),
-      isBuiltin: (moduleName) => nodeModule.isBuiltin(moduleName),
-    }
-  }),
-)
-
-/**
- * The worker entries this package's own build emits. The engine spawns by
- * address; this process package knows its dist layout and hands the
- * addresses in.
- */
-export const workerEntriesLayer: Layer.Layer<WorkerEntries> = Layer.succeed(WorkerEntries, {
-  checkerWorkerUrl: new URL('./workers/checker-worker.mjs', import.meta.url),
-  testRunnerWorkerUrl: new URL('./workers/child-process-test-runner-worker.mjs', import.meta.url),
-})
+const restrictSocketToOwnerOrWarn = (fs: FileSystem.FileSystem, socketPath: string): Effect.Effect<void> =>
+  Match.value(process.platform).pipe(
+    Match.when('win32', () => Effect.void),
+    Match.orElse(() => restrictToOwnerOrWarn(fs, socketPath)),
+  )
 
 /**
  * The Node worker launcher: spawn a worker child with this runtime's
@@ -87,32 +56,30 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
             Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${globalThis.crypto.randomUUID()}`),
             Match.orElse(() => path.join(workerDir, 'worker.sock')),
           )
-          yield* fs.writeFileString(path.join(workerDir, 'options.json'), params.optionsJson)
+          const optionsFile = path.join(workerDir, 'options.json')
+          yield* fs.writeFileString(optionsFile, params.optionsJson)
+          yield* restrictToOwnerOrWarn(fs, optionsFile)
 
-          const entryPath = yield* path.fromFileUrl(params.entryUrl)
-          const handle = yield* ChildProcess.make(process.execPath, [...params.execArgv, entryPath], {
-            cwd: params.workingDirectory,
-            extendEnv: true,
-            env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath },
-            stderr: 'inherit',
-          }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
+          const handle = yield* ChildProcess.make(
+            process.execPath,
+            [...params.execArgv, process.getBuiltinModule('node:url').fileURLToPath(params.entrypoint)],
+            {
+              cwd: params.workingDirectory,
+              extendEnv: true,
+              env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath },
+              stderr: 'inherit',
+            },
+          ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
 
           const clientLayer = RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
             Layer.provide(NodeSocket.layerNet({ path: socketPath })),
             Layer.provide(RpcSerialization.layerNdjson),
+            Layer.tap(() => restrictSocketToOwnerOrWarn(fs, socketPath)),
           )
 
           const exited = handle.exitCode.pipe(
             Effect.orDie,
-            Effect.flatMap((exitCode) =>
-              Effect.fail(
-                new ChildProcessCrashedError({
-                  pid: Number(handle.pid),
-                  exit: { _tag: 'Code', code: exitCode },
-                  cause: 'worker exited before it accepted the RPC connection',
-                }),
-              )
-            ),
+            Effect.flatMap((exitCode) => Effect.fail(classifyWorkerExit(Number(handle.pid), exitCode))),
           )
 
           return { pid: Number(handle.pid), clientLayer, exited }
@@ -143,14 +110,8 @@ const nodeSpawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(nodeFs
 
 const nodeBase = Layer.merge(nodeFsPathLayer, nodeSpawnerLayer)
 
-/**
- * Every port the engine requires, provided from this runtime: the file
- * system, the path service, the module loader, the child-process spawner,
- * the worker launcher, and this build's worker entry addresses.
- */
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = Layer.mergeAll(
   nodeModuleLayer,
-  workerEntriesLayer,
   nodeWorkerLauncherLayer.pipe(Layer.provide(nodeBase)),
   nodeBase,
 )

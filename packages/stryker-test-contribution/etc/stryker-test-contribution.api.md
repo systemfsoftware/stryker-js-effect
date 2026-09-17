@@ -9,8 +9,6 @@ import { Evaluator } from '@systemfsoftware/stryker-js-language';
 import { EvaluatorFailed } from '@systemfsoftware/stryker-js-language';
 import { ExitClass } from '@systemfsoftware/stryker-js-language';
 import * as Layer from 'effect/Layer';
-import { PluginLayerContribution } from '@systemfsoftware/stryker-js-plugin-interface';
-import { RunConfiguration } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as schema from '@systemfsoftware/stryker-js-language';
 
 // @public (undocumented)
@@ -33,10 +31,15 @@ export const makeTestContributionEvaluatorService: (options: {
 export type ReportView = Pick<schema.MutationTestResult, 'files' | 'testFiles'>;
 
 // @public (undocumented)
-export const strykerPlugins: PluginLayerContribution<"Evaluator">[];
+export const strykerPlugins: readonly {
+    readonly kind: 'Evaluator';
+    readonly name: string;
+}[];
 
 // @public (undocumented)
-export const testContributionEvaluatorLayer: Layer.Layer<Evaluator, never, RunConfiguration>;
+export const testContributionEvaluatorLayer: (options: {
+    readonly disableBail: boolean;
+}) => Layer.Layer<Evaluator>;
 
 // @public (undocumented)
 export interface TestContributionInput {

@@ -8,7 +8,6 @@ import * as Cause from 'effect/Cause';
 import { CheckResult } from '@systemfsoftware/stryker-js-language';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import { CompleteDryRunResult } from '@systemfsoftware/stryker-js-language';
-import { ComposedPlugins } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Context from 'effect/Context';
 import { CoverageData } from '@systemfsoftware/stryker-js-language';
 import { Duration } from 'effect/Duration';
@@ -20,6 +19,7 @@ import { FileDescription } from '@systemfsoftware/stryker-js-language';
 import { FileDescriptions } from '@systemfsoftware/stryker-js-language';
 import * as FileSystem from 'effect/FileSystem';
 import * as HashMap from 'effect/HashMap';
+import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
 import { IgnorerService } from '@systemfsoftware/stryker-js-language';
 import * as Layer from 'effect/Layer';
 import { Module } from '@systemfsoftware/stryker-js-language';
@@ -31,10 +31,13 @@ import { MutateDescription } from '@systemfsoftware/stryker-js-language';
 import { MutationTestResult } from '@systemfsoftware/stryker-js-language';
 import { PartialStrykerOptions } from '@systemfsoftware/stryker-js-language';
 import * as Path from 'effect/Path';
-import { PluginContribution } from '@systemfsoftware/stryker-js-plugin-interface';
-import { PluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Queue from 'effect/Queue';
+import { ReporterFactory } from '@systemfsoftware/stryker-js-language';
+import { ReporterRpcs } from '@systemfsoftware/stryker-js-plugin-interface';
+import * as Rpc from 'effect/unstable/rpc/Rpc';
 import * as RpcClient from 'effect/unstable/rpc/RpcClient';
+import { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
+import * as RpcGroup from 'effect/unstable/rpc/RpcGroup';
 import { RunEvent } from '@systemfsoftware/stryker-js-language';
 import { RunEvents } from '@systemfsoftware/stryker-js-language';
 import { RunMutantResult } from '@systemfsoftware/stryker-js-language';
@@ -47,6 +50,7 @@ import * as Scope from 'effect/Scope';
 import * as Socket from 'effect/unstable/socket/Socket';
 import { StrykerOptions } from '@systemfsoftware/stryker-js-language';
 import { TestResult } from '@systemfsoftware/stryker-js-language';
+import { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
@@ -76,6 +80,9 @@ export class ChildProcessCrashedError extends ChildProcessCrashedError_base {
     // (undocumented)
     readonly exitClass: 'InternalError';
 }
+
+// @public (undocumented)
+export const classifyWorkerExit: (pid: number, exitCode: number) => ChildProcessCrashedError | OutOfMemoryError;
 
 // @public (undocumented)
 export const CONFIG_SYNTAX_HELP: string;
@@ -115,7 +122,7 @@ export class ConfigFileUnreadableError extends ConfigFileUnreadableError_base {
     readonly exitClass: 'ConfigError';
 }
 
-// @public
+// @public (undocumented)
 export const connectRetry: Schedule.Schedule<Duration, unknown, never, never>;
 
 // @public (undocumented)
@@ -155,7 +162,7 @@ export interface DryRunDone extends InstrumentDone {
 }
 
 // @public (undocumented)
-export type EnginePorts = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Module | Path.Path | WorkerEntries | WorkerLauncher;
+export type EnginePorts = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Module | Path.Path | WorkerLauncher;
 
 // @public (undocumented)
 export const extendsPropertySchema: S.optionalKey<S.String>;
@@ -315,6 +322,9 @@ export function isWarningEnabled(warningType: KnownKeys<WarningOptions>, warning
 export const makeRunLayer: (env: RunEnvironmentShape, events?: Queue.Queue<RunEvent, Cause.Done>) => Layer.Layer<RunEnvironment | RunEvents | IdGenerator | Scope.Scope, never, EnginePorts>;
 
 // @public (undocumented)
+export const makeWorkerClient: <Rpcs extends Rpc.Any>(params: WorkerClientParams<Rpcs>) => Effect.Effect<RpcClient.RpcClient<Rpcs, RpcClientError>, WorkerBootError, Scope.Scope | WorkerLauncher>;
+
+// @public (undocumented)
 export function matchesFile(pattern: boolean | string, fileName: string, pathService: Path.Path, allowHiddenFiles?: boolean): boolean;
 
 // Warning: (ae-forgotten-export) The symbol "MergeCommand_base" needs to be exported by the entry point index.d.mts
@@ -360,8 +370,6 @@ export interface PrepareDone {
     readonly loadedPlugins: LoadedPlugins;
     // (undocumented)
     readonly options: StrykerOptions;
-    // (undocumented)
-    readonly plugins: ComposedPlugins;
     // Warning: (ae-forgotten-export) The symbol "Project" needs to be exported by the entry point index.d.mts
     //
     // (undocumented)
@@ -392,6 +400,15 @@ export function readConfigFile(configFile: string): Effect.Effect<PartialStryker
 export const REMOVED_OPTIONS: Record<string, string>;
 
 // @public (undocumented)
+export const REPORTER_EVENT_BATCH_BOUND = 128;
+
+// @public (undocumented)
+export type ReporterWorkerClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof ReporterRpcs>, RpcClientError>;
+
+// @public (undocumented)
+export const reporterWorkerFactory: (client: ReporterWorkerClient) => ReporterFactory;
+
+// @public (undocumented)
 export interface ResolvedMode {
     // (undocumented)
     readonly mode: OutputMode;
@@ -416,7 +433,7 @@ export interface RunEnvironmentShape {
     // (undocumented)
     readonly basePath: string;
     // (undocumented)
-    readonly reporterPluginModules: readonly string[];
+    readonly builtinReporters: Readonly<Record<string, ReporterFactory>>;
     // (undocumented)
     readonly resolvedMode: ResolvedMode;
     // (undocumented)
@@ -441,13 +458,31 @@ export interface RunOutcome {
 // @public (undocumented)
 export const shouldKeepTempDir: (exit: Exit.Exit<unknown, unknown>, cleanTempDir: 'always' | boolean) => boolean;
 
-// @public
+// @public (undocumented)
 export interface SpawnedSocketWorker {
     // (undocumented)
     readonly clientLayer: Layer.Layer<RpcClient.Protocol, Socket.SocketError>;
-    readonly exited: Effect.Effect<never, ChildProcessCrashedError>;
+    // (undocumented)
+    readonly exited: Effect.Effect<never, WorkerExit>;
     // (undocumented)
     readonly pid: number;
+}
+
+// @public (undocumented)
+export const spawnReporterWorker: (params: SpawnReporterWorkerParams) => Effect.Effect<ReporterWorkerClient, WorkerBootError, Scope.Scope | WorkerLauncher>;
+
+// @public (undocumented)
+export interface SpawnReporterWorkerParams {
+    // (undocumented)
+    readonly entrypoint: string;
+    // (undocumented)
+    readonly execArgv: readonly string[];
+    // (undocumented)
+    readonly options: StrykerOptions;
+    // (undocumented)
+    readonly projectBasePath: string;
+    // (undocumented)
+    readonly tempDirPrefix: string;
 }
 
 // Warning: (ae-forgotten-export) The symbol "StageError_base" needs to be exported by the entry point index.d.mts
@@ -572,34 +607,49 @@ export interface VerdictThresholds {
 // @public (undocumented)
 export type WarningOptions = Exclude<StrykerOptions['warnings'], boolean>;
 
-// Warning: (ae-forgotten-export) The symbol "WorkerEntries_base" needs to be exported by the entry point index.d.mts
+// @public (undocumented)
+export type WorkerBootError = WorkerExit | WorkerBootTimeoutError;
+
+// Warning: (ae-forgotten-export) The symbol "WorkerBootTimeoutError_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
-export class WorkerEntries extends WorkerEntries_base {}
-
-// @public
-export interface WorkerEntriesShape {
+export class WorkerBootTimeoutError extends WorkerBootTimeoutError_base {
     // (undocumented)
-    readonly checkerWorkerUrl: URL;
-    // (undocumented)
-    readonly testRunnerWorkerUrl: URL;
+    readonly exitClass: 'InternalError';
 }
+
+// @public (undocumented)
+export interface WorkerClientParams<Rpcs extends Rpc.Any> extends WorkerSpawnParams {
+    // (undocumented)
+    readonly rpcs: RpcGroup.RpcGroup<Rpcs>;
+}
+
+// @public (undocumented)
+export type WorkerExit = ChildProcessCrashedError | OutOfMemoryError;
 
 // Warning: (ae-forgotten-export) The symbol "WorkerLauncher_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
 export class WorkerLauncher extends WorkerLauncher_base {}
 
-// @public
+// @public (undocumented)
 export interface WorkerLauncherShape {
     // (undocumented)
-    readonly spawn: (params: {
-        readonly entryUrl: URL;
-        readonly workingDirectory: string;
-        readonly execArgv: readonly string[];
-        readonly optionsJson: string;
-        readonly tempDirPrefix: string;
-    }) => Effect.Effect<SpawnedSocketWorker, ChildProcessCrashedError, Scope.Scope>;
+    readonly spawn: (params: WorkerSpawnParams) => Effect.Effect<SpawnedSocketWorker, ChildProcessCrashedError, Scope.Scope>;
+}
+
+// @public (undocumented)
+export interface WorkerSpawnParams {
+    // (undocumented)
+    readonly entrypoint: string;
+    // (undocumented)
+    readonly execArgv: readonly string[];
+    // (undocumented)
+    readonly optionsJson: string;
+    // (undocumented)
+    readonly tempDirPrefix: string;
+    // (undocumented)
+    readonly workingDirectory: string;
 }
 
 // (No @packageDocumentation comment for this package)

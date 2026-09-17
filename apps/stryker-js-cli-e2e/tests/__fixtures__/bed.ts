@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,6 +25,25 @@ const PACKED_PACKAGES = [CLI_PACKAGE, ...PLUGIN_PACKAGES] as const
 
 const PACKED_TARBALL_VERSION = /-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\.tgz$/
 
+const VITEST_RUNNER_PACKAGE = PLUGIN_PACKAGES[0]
+
+const HOST_NETWORK_MODE = 'host'
+
+const SKEW_CHECKER_PACKAGE = '@systemfsoftware/stryker-js-effect-skew-checker'
+
+const SKEW_EFFECT_VERSION = '4.0.0-rc.111'
+
+const SKEW_CHECKER_DIRECTORY = fileURLToPath(new URL('../../testResources/effect-skew-checker', import.meta.url))
+
+const CONTAINER_TELEMETRY_ENVIRONMENT = {
+  OTEL_ENABLED: process.env['OTEL_ENABLED'] ?? 'false',
+  OTEL_SERVICE_NAME: process.env['OTEL_SERVICE_NAME'] ?? 'stryker-js-cli-e2e',
+  OTEL_EXPORTER_OTLP_ENDPOINT: process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? 'http://127.0.0.1:4318',
+}
+
+const workspacePackageDirectory = (packageName: string): string =>
+  join(REPO_ROOT, 'packages', packageName.slice('@systemfsoftware/'.length))
+
 const STARTUP_TIMEOUT_MS = 120_000
 
 export type ExecResult = {
@@ -44,6 +63,7 @@ let container: StartedTestContainer | undefined
 let scratch: string | undefined
 let packedPackages: Readonly<Record<string, PackedPackage>> | undefined
 let ready: Promise<void> | undefined
+let skewCheckerReady: Promise<PackedPackage> | undefined
 
 const messageOf = (cause: unknown): string => {
   if (cause instanceof Error) {
@@ -140,6 +160,7 @@ const startBed = async (): Promise<void> => {
   const running = await requireStep('start the node:24-alpine container', () =>
     new GenericContainer(NODE_IMAGE)
       .withCommand(['sleep', 'infinity'])
+      .withNetworkMode(HOST_NETWORK_MODE)
       .withWorkingDir(CONTAINER_WORKROOT)
       .withStartupTimeout(STARTUP_TIMEOUT_MS)
       .start())
@@ -161,6 +182,7 @@ export const teardownBed = async (): Promise<void> => {
   scratch = undefined
   packedPackages = undefined
   ready = undefined
+  skewCheckerReady = undefined
   if (running !== undefined) {
     await requireStep('stop the node:24-alpine container', () => running.stop())
   }
@@ -194,7 +216,10 @@ const rawExec = async (command: readonly string[], cwd: string | undefined): Pro
   if (running === undefined) {
     throw new Error('the bed has no container: await ensureBed() first')
   }
-  const result = await running.exec([...command], workingDirOption(cwd))
+  const result = await running.exec([...command], {
+    ...workingDirOption(cwd),
+    env: CONTAINER_TELEMETRY_ENVIRONMENT,
+  })
   return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
 }
 
@@ -211,7 +236,11 @@ export async function readHostJson(url: URL): Promise<unknown> {
   return document
 }
 
-export async function installFixture(fixtureUrl: URL, name: string): Promise<string> {
+export async function installFixture(
+  fixtureUrl: URL,
+  name: string,
+  extraTarballs: readonly PackedPackage[] = [],
+): Promise<string> {
   const hostFixtureDir = fileURLToPath(fixtureUrl)
   await ensureBed()
   const running = container
@@ -227,7 +256,12 @@ export async function installFixture(fixtureUrl: URL, name: string): Promise<str
     { step: `npm install the ${name} registry dependencies`, args: ['npm', 'install'] },
     {
       step: `npm install the plugin tarballs in ${name}`,
-      args: ['npm', 'install', ...PLUGIN_PACKAGES.map((packageName) => packedPackage(packageName).tarballPath)],
+      args: [
+        'npm',
+        'install',
+        ...PLUGIN_PACKAGES.map((packageName) => packedPackage(packageName).tarballPath),
+        ...extraTarballs.map((packed) => packed.tarballPath),
+      ],
     },
   ]
   for (const { step, args } of installSteps) {
@@ -239,4 +273,80 @@ export async function installFixture(fixtureUrl: URL, name: string): Promise<str
     })
   }
   return fixturePath
+}
+
+const buildSkewCheckerBundle = async (directory: string): Promise<string> => {
+  const skewedEffectDirectory = join(directory, 'skew-effect')
+  await requireStep(`fetch effect@${SKEW_EFFECT_VERSION} for the skew bundle`, () =>
+    execFileAsync(
+      'npm',
+      [
+        'install',
+        '--prefix',
+        skewedEffectDirectory,
+        '--no-save',
+        '--no-package-lock',
+        '--silent',
+        `effect@${SKEW_EFFECT_VERSION}`,
+      ],
+      { cwd: directory },
+    ))
+  const bundledDirectory = join(directory, 'skew-checker-dist')
+  await requireStep('bundle the effect-skew checker worker', () =>
+    execFileAsync(
+      'pnpm',
+      [
+        '--filter',
+        VITEST_RUNNER_PACKAGE,
+        'exec',
+        'tsdown',
+        '--config',
+        join(SKEW_CHECKER_DIRECTORY, 'tsdown.config.mjs'),
+      ],
+      {
+        cwd: REPO_ROOT,
+        env: {
+          ...process.env,
+          SKEW_EFFECT_DIR: join(skewedEffectDirectory, 'node_modules', 'effect'),
+          SKEW_RUNNER_MANIFEST: join(workspacePackageDirectory(VITEST_RUNNER_PACKAGE), 'package.json'),
+          SKEW_OUT_DIR: bundledDirectory,
+        },
+      },
+    ))
+  return bundledDirectory
+}
+
+const stageSkewCheckerPackage = async (directory: string, bundledDirectory: string): Promise<string> => {
+  const packageDirectory = join(directory, 'skew-checker-package')
+  const distDirectory = join(packageDirectory, 'dist')
+  await requireStep('stage the effect-skew checker package', async () => {
+    await mkdir(distDirectory, { recursive: true })
+    await copyFile(join(SKEW_CHECKER_DIRECTORY, 'package.json'), join(packageDirectory, 'package.json'))
+    for (const fileName of await readdir(bundledDirectory)) {
+      await copyFile(join(bundledDirectory, fileName), join(distDirectory, fileName))
+    }
+  })
+  return packageDirectory
+}
+
+export const ensureSkewChecker = async (): Promise<PackedPackage> => {
+  skewCheckerReady ??= (async () => {
+    await ensureBed()
+    const directory = scratch
+    const running = container
+    if (directory === undefined || running === undefined) {
+      throw new Error('the bed has no scratch directory: await ensureBed() first')
+    }
+    const bundledDirectory = await buildSkewCheckerBundle(directory)
+    const packageDirectory = await stageSkewCheckerPackage(directory, bundledDirectory)
+    await requireStep(
+      'pack the effect-skew checker',
+      () => execFileAsync('npm', ['pack', packageDirectory, '--pack-destination', directory], { cwd: directory }),
+    )
+    const fileNames = await requireStep('read the packed effect-skew checker', () => readdir(directory))
+    const packed = packedTarballOf(fileNames, SKEW_CHECKER_PACKAGE, directory)
+    await copyTarballs(running, directory, [packed])
+    return packed
+  })()
+  return skewCheckerReady
 }

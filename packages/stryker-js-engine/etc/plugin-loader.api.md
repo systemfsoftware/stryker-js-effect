@@ -4,43 +4,61 @@
 
 ```ts
 
-import { AnyPluginContribution } from '@systemfsoftware/stryker-js-plugin-interface';
-import { ContributionOf } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Effect from 'effect/Effect';
-import * as FileSystem from 'effect/FileSystem';
 import * as HashMap from 'effect/HashMap';
+import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
 import { Module } from '@systemfsoftware/stryker-js-language';
 import * as Path from 'effect/Path';
-import { PluginContribution } from '@systemfsoftware/stryker-js-plugin-interface';
-import { PluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
+import * as S from 'effect/Schema';
 import { Schema } from 'effect';
+import { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
+import { WorkerPluginSpawn } from '@systemfsoftware/stryker-js-plugin-interface';
 import { YieldableError } from 'effect/Cause';
 
+// Warning: (ae-forgotten-export) The symbol "AnyPluginDescriptor" needs to be exported by the entry point plugin-loader.d.mts
+//
 // @public (undocumented)
-export function create<K extends PluginKind>(pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginContribution[]>, kind: K, name: string): Effect.Effect<ContributionOf<K>, PluginNotFoundError>;
+export function create<K extends PluginKind>(pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginDescriptor[]>, kind: K, name: string): Effect.Effect<PluginDescriptorOf<K>, PluginNotFoundError>;
 
 // @public (undocumented)
-export function createAll<K extends PluginKind>(pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginContribution[]>, kind: K): Effect.Effect<readonly ContributionOf<K>[]>;
+export function createAll<K extends PluginKind>(pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginDescriptor[]>, kind: K): Effect.Effect<readonly PluginDescriptorOf<K>[]>;
 
 // @public (undocumented)
 export interface LoadedPlugins {
     // (undocumented)
+    readonly ignorers: readonly Ignorer[];
+    // (undocumented)
     readonly pluginModulePaths: readonly string[];
     // (undocumented)
-    readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginContribution<PluginKind>[]>;
+    readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>;
+    // (undocumented)
+    readonly pluginSources: readonly PluginSource[];
     // (undocumented)
     readonly schemaContributions: readonly Record<string, unknown>[];
 }
 
+// Warning: (ae-forgotten-export) The symbol "PluginSelectionError" needs to be exported by the entry point plugin-loader.d.mts
+//
 // @public (undocumented)
-export function loadPlugins(pluginDescriptors: readonly string[], basePath: string): Effect.Effect<LoadedPlugins, PluginLoadFailedError, FileSystem.FileSystem | Module | Path.Path>;
+export function loadPlugins(pluginDescriptors: readonly string[], basePath: string): Effect.Effect<LoadedPlugins, PluginLoadFailedError | PluginSelectionError, Module | Path.Path>;
+
+// @public (undocumented)
+export type PluginDescriptor<K extends PluginKind = PluginKind> = PluginDescriptorOf<K>;
+
+// @public (undocumented)
+export type PluginDescriptorOf<K extends PluginKind> = Extract<AnyPluginDescriptor, {
+    readonly kind: K;
+}>;
+
+// @public (undocumented)
+export type PluginKind = WorkerPluginKind | 'Evaluator';
 
 // @public (undocumented)
 export interface PluginLoaderEntryLike {
     // (undocumented)
     readonly moduleName: string;
     // (undocumented)
-    readonly plugins: readonly PluginContribution<PluginKind>[] | undefined;
+    readonly plugins: readonly PluginDescriptor[] | undefined;
     // (undocumented)
     readonly schemaContribution: Record<string, unknown> | undefined;
 }
@@ -58,7 +76,9 @@ export interface PluginLoadPlan {
     // (undocumented)
     readonly pluginModulePaths: readonly string[];
     // (undocumented)
-    readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginContribution<PluginKind>[]>;
+    readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>;
+    // (undocumented)
+    readonly pluginSources: readonly PluginSource[];
     // (undocumented)
     readonly schemaContributions: readonly Record<string, unknown>[];
     // (undocumented)
@@ -77,6 +97,19 @@ export class PluginNotFoundError extends PluginNotFoundError_base {
     // (undocumented)
     readonly exitClass: 'ConfigError';
 }
+
+// Warning: (ae-forgotten-export) The symbol "AnyWorkerPluginSource" needs to be exported by the entry point plugin-loader.d.mts
+// Warning: (ae-forgotten-export) The symbol "EvaluatorPluginSource" needs to be exported by the entry point plugin-loader.d.mts
+//
+// @public (undocumented)
+export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource;
+
+// @public (undocumented)
+export const resolvePluginWorkerEntry: (params: {
+    readonly loaded: Pick<LoadedPlugins, 'pluginSources'>;
+    readonly kind: WorkerPluginKind;
+    readonly name: string;
+}) => Effect.Effect<WorkerPluginSpawn, PluginNotFoundError>;
 
 // (No @packageDocumentation comment for this package)
 

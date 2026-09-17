@@ -1,30 +1,13 @@
-import { declarePlugin, RunConfiguration, SandboxDirectory } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Effect from 'effect/Effect'
-import * as Layer from 'effect/Layer'
 import * as S from 'effect/Schema'
 
-import { makeVitestRunnerLayer } from './Runner.js'
 import { VitestRunnerOptionsSchema } from './Runner.schema.js'
 
-/**
- * The `vitest` test runner, as the plugin the engine loads.
- *
- * The declared layer asks for the run's resolved options and the sandbox it runs
- * in, so the requirement is visible in the type and an engine that does not
- * provide it fails to compile.
- */
-export const strykerPlugins = [
-  declarePlugin(
-    'TestRunner',
-    'vitest',
-    Layer.unwrap(
-      Effect.gen(function*() {
-        const options = yield* RunConfiguration
-        const sandboxDirectory = yield* SandboxDirectory
-        return makeVitestRunnerLayer({ options, sandboxDirectory })
-      }),
-    ),
-  ),
+export const strykerPlugins: readonly {
+  readonly kind: 'TestRunner'
+  readonly name: string
+  readonly workerEntry: string
+}[] = [
+  { kind: 'TestRunner', name: 'vitest', workerEntry: new URL('./main.mjs', import.meta.url).href },
 ]
 
 /**

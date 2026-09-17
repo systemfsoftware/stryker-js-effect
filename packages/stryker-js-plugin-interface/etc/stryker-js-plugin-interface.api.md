@@ -4,125 +4,209 @@
 
 ```ts
 
-import { Checker } from '@systemfsoftware/stryker-js-language';
+import { CheckerFailed } from '@systemfsoftware/stryker-js-language';
+import { CheckResultSchema } from '@systemfsoftware/stryker-js-language';
 import * as Context from 'effect/Context';
-import { Evaluator } from '@systemfsoftware/stryker-js-language';
-import * as FileSystem from 'effect/FileSystem';
-import { Ignorer } from '@systemfsoftware/stryker-js-language';
-import * as Layer from 'effect/Layer';
-import { Module } from '@systemfsoftware/stryker-js-language';
+import { DryRunCompleted } from '@systemfsoftware/stryker-js-language';
+import { DryRunResultSchema } from '@systemfsoftware/stryker-js-language';
+import { Mutant } from '@systemfsoftware/stryker-js-language';
+import { MutantRunResultSchema } from '@systemfsoftware/stryker-js-language';
+import { MutantTested } from '@systemfsoftware/stryker-js-language';
+import { MutationTestingPlanReady } from '@systemfsoftware/stryker-js-language';
+import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language';
 import * as Option from 'effect/Option';
-import * as Path from 'effect/Path';
-import { ReporterFactory } from '@systemfsoftware/stryker-js-language';
+import { ReporterEventUnion } from '@systemfsoftware/stryker-js-language';
+import { ReporterFailed } from '@systemfsoftware/stryker-js-language';
+import * as Rpc from 'effect/unstable/rpc/Rpc';
+import * as RpcGroup from 'effect/unstable/rpc/RpcGroup';
+import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware';
 import * as S from 'effect/Schema';
-import { TestRunner } from '@systemfsoftware/stryker-js-language';
+import { Schema } from 'effect';
+import { TestRunnerCapabilitiesSchema } from '@systemfsoftware/stryker-js-language';
+import { TestRunnerFailed } from '@systemfsoftware/stryker-js-language';
+import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
-export type AnyPluginContribution = { [K in PluginKind]: PluginContribution<K>; }[PluginKind];
+export type BoundaryError = typeof BoundaryErrorSchema.Type;
 
 // @public (undocumented)
-export interface ComposedPlugins {
-    // (undocumented)
-    readonly layer: Option.Option<Layer.Layer<MergedPluginServices, never, PluginEnvironment>>;
-    // (undocumented)
-    readonly reporterFactories: readonly SelectedReporterFactory[];
-    // (undocumented)
-    readonly shadowings: readonly Shadowing[];
-}
+export const BoundaryErrorSchema: S.Union<readonly [typeof BoundaryPayloadRejected, typeof BoundaryUnrecognizedSignal, typeof TestRunnerFailed, typeof CheckerFailed, typeof ReporterFailed]>;
+
+// Warning: (ae-forgotten-export) The symbol "BoundaryPayloadRejected_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class BoundaryPayloadRejected extends BoundaryPayloadRejected_base {}
+
+// Warning: (ae-forgotten-export) The symbol "BoundaryUnrecognizedSignal_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class BoundaryUnrecognizedSignal extends BoundaryUnrecognizedSignal_base {}
 
 // @public (undocumented)
-export function composePlugins(contributions: readonly AnyPluginContribution[]): ComposedPlugins;
+export const CheckerCheckResult: S.$Record<S.String, S.Union<readonly [S.Struct<{
+    readonly status: S.Literal<"passed">;
+}>, S.Struct<{
+    readonly status: S.Literal<"compileError">;
+    readonly reason: S.String;
+}>]>>;
+
+export { CheckerFailed }
 
 // @public (undocumented)
-export type ContributionOf<K extends PluginKind> = Extract<AnyPluginContribution, {
-    readonly kind: K;
+export const CheckerGroupResult: S.$Array<S.$Array<S.String>>;
+
+// @public (undocumented)
+export const CheckerRequest: S.Struct<{
+    readonly checkerName: S.String;
+    readonly mutants: S.$Array<typeof Mutant>;
 }>;
 
 // @public (undocumented)
-export function declarePlugin(kind: 'Reporter', name: string, make: ReporterFactory): PluginContribution<'Reporter'>;
+export type CheckerRequest = typeof CheckerRequest.Type;
 
 // @public (undocumented)
-export function declarePlugin<K extends PluginLayerKind>(kind: K, name: string, layer: Layer.Layer<PluginInterfaces[K], never, PluginEnvironment>): PluginContribution<K>;
+export const CheckerRpcs: RpcGroup.RpcGroup<TracedRpc<'check', typeof CheckerRequest, typeof CheckerCheckResult, typeof CheckerFailed> | TracedRpc<'group', typeof CheckerRequest, typeof CheckerGroupResult, typeof CheckerFailed>>;
+
+export { CheckResultSchema }
+
+export { DryRunResultSchema }
 
 // @public (undocumented)
-export type MergedPluginServices = Checker & Ignorer & TestRunner;
+export const formatTraceparent: (parts: TraceContextParts) => Traceparent;
+
+export { MutantRunResultSchema }
 
 // @public (undocumented)
-export type PluginContribution<K extends PluginKind = PluginKind> = K extends 'Reporter' ? PluginReporterContribution : PluginLayerContribution<Extract<K, PluginLayerKind>>;
+export const parseTraceparent: (value: string) => Option.Option<TraceContextParts>;
+
+// Warning: (ae-forgotten-export) The symbol "PropagatedTrace_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class PropagatedTrace extends PropagatedTrace_base {}
 
 // @public (undocumented)
-export type PluginEnvironment = RunConfiguration | SandboxDirectory | FileSystem.FileSystem | Module | Path.Path;
+export const ReporterAck: S.Void;
 
 // @public (undocumented)
-export interface PluginInterfaces {
+export const ReporterDrained: S.Void;
+
+// @public (undocumented)
+export const ReporterEventBatch: S.$Array<S.Union<readonly [DryRunCompleted, MutationTestingPlanReady, MutantTested, MutationTestReportReady]>>;
+
+// @public (undocumented)
+export type ReporterEventBatch = typeof ReporterEventBatch.Type;
+
+export { ReporterEventUnion }
+
+export { ReporterFailed }
+
+// @public (undocumented)
+export const ReporterInitOptions: S.Struct<{
+    readonly traceparent: S.optionalKey<S.String>;
+    readonly tracestate: S.optionalKey<S.String>;
+}>;
+
+// @public (undocumented)
+export type ReporterInitOptions = typeof ReporterInitOptions.Type;
+
+// @public (undocumented)
+export const ReporterRpcs: RpcGroup.RpcGroup<TracedRpc<'init', typeof ReporterInitOptions, typeof ReporterAck, typeof ReporterFailed> | TracedRpc<'onEventBatch', typeof ReporterEventBatch, typeof ReporterAck, typeof ReporterFailed> | TracedRpc<'flush', Schema.Void, typeof ReporterDrained, typeof ReporterFailed>>;
+
+export { TestRunnerCapabilitiesSchema }
+
+// @public (undocumented)
+export const TestRunnerDryRunRequest: S.Struct<{
+    readonly options: S.Struct<{
+        readonly timeout: S.Finite;
+        readonly disableBail: S.Boolean;
+        readonly coverageAnalysis: S.Literals<readonly ["off", "all", "perTest"]>;
+        readonly files: S.optionalKey<S.$Array<S.String>>;
+        readonly testFiles: S.optionalKey<S.$Array<S.String>>;
+    }>;
+}>;
+
+// @public (undocumented)
+export type TestRunnerDryRunRequest = typeof TestRunnerDryRunRequest.Type;
+
+export { TestRunnerFailed }
+
+// @public (undocumented)
+export const TestRunnerMutantRunRequest: S.Struct<{
+    readonly options: S.Struct<{
+        readonly timeout: S.Finite;
+        readonly disableBail: S.Boolean;
+        readonly activeMutant: typeof Mutant;
+        readonly sandboxFileName: S.String;
+        readonly mutantActivation: S.Literals<readonly ["runtime", "static"]>;
+        readonly reloadEnvironment: S.Boolean;
+        readonly testFilter: S.optionalKey<S.$Array<S.String>>;
+        readonly hitLimit: S.optionalKey<S.Finite>;
+    }>;
+}>;
+
+// @public (undocumented)
+export type TestRunnerMutantRunRequest = typeof TestRunnerMutantRunRequest.Type;
+
+// @public (undocumented)
+export const TestRunnerRpcs: RpcGroup.RpcGroup<TracedRpc<'capabilities', Schema.Void, typeof TestRunnerCapabilitiesSchema, typeof TestRunnerFailed> | TracedRpc<'dryRun', typeof TestRunnerDryRunRequest, typeof DryRunResultSchema, typeof TestRunnerFailed> | TracedRpc<'mutantRun', typeof TestRunnerMutantRunRequest, typeof MutantRunResultSchema, typeof TestRunnerFailed>>;
+
+// Warning: (ae-forgotten-export) The symbol "TraceContextMiddleware_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class TraceContextMiddleware extends TraceContextMiddleware_base {}
+
+// @public (undocumented)
+export interface TraceContextParts {
     // (undocumented)
-    Checker: Checker;
+    readonly spanId: string;
     // (undocumented)
-    Evaluator: Evaluator;
+    readonly traceFlags: number;
     // (undocumented)
-    Ignore: Ignorer;
+    readonly traceId: string;
     // (undocumented)
-    TestRunner: TestRunner;
+    readonly traceState?: string | undefined;
+    // (undocumented)
+    readonly version: string;
 }
 
 // @public (undocumented)
-export const PluginKind: S.Literals<readonly ["Checker", "TestRunner", "Reporter", "Ignore", "Evaluator"]>;
+export const TraceContextReference: Context.Reference<Option.Option<TraceContextParts>>;
 
 // @public (undocumented)
-export type PluginKind = typeof PluginKind.Type;
-
-// Warning: (ae-forgotten-export) The symbol "PluginLayerContribution_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class PluginLayerContribution<K extends PluginLayerKind = PluginLayerKind> extends PluginLayerContribution_base {
-    // (undocumented)
-    readonly kind: K;
-    // (undocumented)
-    readonly layer: Layer.Layer<PluginInterfaces[K], never, PluginEnvironment>;
-    // (undocumented)
-    readonly name: string;
-}
+export type TracedRpc<Tag extends string, Payload extends Schema.Top = Schema.Void, Success extends Schema.Top = Schema.Void, Error extends Schema.Top = Schema.Never> = Rpc.Rpc<Tag, Payload, Success, Error, typeof TraceContextMiddleware, RpcMiddleware.ApplyServices<typeof TraceContextMiddleware['Identifier'], never>>;
 
 // @public (undocumented)
-export const PluginLayerKind: S.Literals<readonly ["Checker", "TestRunner", "Ignore", "Evaluator"]>;
+export const Traceparent: S.String;
 
 // @public (undocumented)
-export type PluginLayerKind = typeof PluginLayerKind.Type;
-
-// Warning: (ae-forgotten-export) The symbol "PluginReporterContribution_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class PluginReporterContribution extends PluginReporterContribution_base {
-    // (undocumented)
-    readonly kind: 'Reporter';
-    // (undocumented)
-    readonly make: ReporterFactory;
-    // (undocumented)
-    readonly name: string;
-}
-
-// Warning: (ae-forgotten-export) The symbol "RunConfiguration_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class RunConfiguration extends RunConfiguration_base {}
-
-// Warning: (ae-forgotten-export) The symbol "SandboxDirectory_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class SandboxDirectory extends SandboxDirectory_base {}
+export type Traceparent = typeof Traceparent.Type;
 
 // @public (undocumented)
-export interface SelectedReporterFactory {
-    // (undocumented)
-    readonly make: ReporterFactory;
-    // (undocumented)
-    readonly name: string;
-}
+export const TRACEPARENT_HEADER = "traceparent";
 
-// Warning: (ae-forgotten-export) The symbol "Shadowing_base" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
-export class Shadowing extends Shadowing_base {}
+export const TRACESTATE_HEADER = "tracestate";
+
+// @public (undocumented)
+export const WorkerEntryUrl: S.String;
+
+// @public (undocumented)
+export type WorkerEntryUrl = typeof WorkerEntryUrl.Type;
+
+// @public (undocumented)
+export const WorkerPluginKind: S.Literals<readonly ["TestRunner", "Checker", "Reporter"]>;
+
+// @public (undocumented)
+export type WorkerPluginKind = typeof WorkerPluginKind.Type;
+
+// @public (undocumented)
+export type WorkerPluginSpawn = typeof WorkerPluginSpawnSchema.Type;
+
+// @public (undocumented)
+export const WorkerPluginSpawnSchema: S.Struct<{
+    readonly kind: S.Literals<readonly ["TestRunner", "Checker", "Reporter"]>;
+    readonly entrypoint: S.String;
+}>;
 
 // (No @packageDocumentation comment for this package)
 

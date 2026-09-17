@@ -14,6 +14,7 @@ import {
 } from '@systemfsoftware/stryker-js-language'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
+import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
@@ -144,6 +145,8 @@ export interface RunEventStream {
   readonly setProgressStreamFile?: (fileName: string) => Effect.Effect<void, never, never>
 }
 
+const RUN_EVENTS_QUEUE_BOUND = 256
+
 interface RunEventStreamState {
   mode: ResolvedMode['mode']
   signal: ResolvedMode['signal']
@@ -160,7 +163,7 @@ export const makeRunEventStream = (
   Effect.gen(function*() {
     const runId = generateRunId()
     const startedAt = yield* Clock.currentTimeMillis
-    const queue = yield* Queue.unbounded<RunEvent, Cause.Done>()
+    const queue = yield* Queue.bounded<RunEvent, Cause.Done>(RUN_EVENTS_QUEUE_BOUND)
 
     const state: RunEventStreamState = {
       mode: resolved.mode,
@@ -397,24 +400,33 @@ const OutputModeProbe = OutputModeProbeTag
 
 export { OutputModeProbe }
 
-const envToolVars = (): Record<string, string> =>
-  definedToolVars(
-    Object.fromEntries(
-      TOOL_VARIABLES.map((variable): [string, string | undefined] => [variable, process.env[variable]]),
-    ),
-  )
+const envToolVars = (): Effect.Effect<Record<string, string>> =>
+  Effect.forEach(
+    TOOL_VARIABLES,
+    (variable) =>
+      Config.string(variable).pipe(
+        Effect.option,
+        Effect.map((value) => [variable, Option.getOrUndefined(value)] as const),
+      ),
+  ).pipe(Effect.map((entries) => definedToolVars(Object.fromEntries(entries))))
 
-const probeInput = (command: FormatFlags): ProbeInput => ({
-  stdoutIsTTY: process.stdout.isTTY === true,
-  text: command.text,
-  json: command.json,
-  envMode: process.env['STRYKER_MODE'],
-  agent: process.env['AGENT'],
-  toolVars: envToolVars(),
-})
+const probeInput = (command: FormatFlags): Effect.Effect<ProbeInput, never, Stdio.Stdio> =>
+  Effect.gen(function*() {
+    const stdio = yield* Stdio.Stdio
+    const envMode = yield* Config.string('STRYKER_MODE').pipe(Effect.option)
+    const agent = yield* Config.string('AGENT').pipe(Effect.option)
+    return {
+      stdoutIsTTY: yield* stdio.stdoutIsTerminal,
+      text: command.text,
+      json: command.json,
+      envMode: Option.getOrUndefined(envMode),
+      agent: Option.getOrUndefined(agent),
+      toolVars: yield* envToolVars(),
+    }
+  })
 
 export const outputModeProbeCell = Cell.layer({
-  read: (command: FormatFlags) => Effect.succeed(probeInput(command)),
+  read: (command: FormatFlags) => probeInput(command),
   decode: (raw: ProbeInput) => Result.succeed(commandFor(raw)),
   decide: resolveOutputMode,
   encode: (outcome: Result.Result<ResolveModeDecision, ModeConflictError>) =>
@@ -426,7 +438,9 @@ export const outputModeProbeCell = Cell.layer({
     }),
 })
 
-export const detectModeWithProbe = (flags: FormatFlags = {}): Effect.Effect<ResolvedMode, CliError.CliError> =>
+export const detectModeWithProbe = (
+  flags: FormatFlags = {},
+): Effect.Effect<ResolvedMode, CliError.CliError, Stdio.Stdio> =>
   outputModeProbeCell.run(flags).pipe(
     Effect.mapError(
       (error) =>
@@ -439,11 +453,12 @@ export const detectModeWithProbe = (flags: FormatFlags = {}): Effect.Effect<Reso
     ),
   )
 
-export const OutputModeProbeLive: Layer.Layer<OutputModeProbeTag> = Layer.succeed(
+export const OutputModeProbeLive: Layer.Layer<OutputModeProbeTag, never, Stdio.Stdio> = Layer.effect(
   OutputModeProbe,
-  OutputModeProbe.of({
-    detectMode: detectModeWithProbe({}),
-  }),
+  Effect.map(Stdio.Stdio, (stdio) =>
+    OutputModeProbe.of({
+      detectMode: Effect.provideService(detectModeWithProbe({}), Stdio.Stdio, stdio),
+    })),
 )
 
 export function emitNullScoreVerdict(
