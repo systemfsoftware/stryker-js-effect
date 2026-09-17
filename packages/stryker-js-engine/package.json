@@ -21,8 +21,8 @@
     "build": "tsdown",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint --format=${f:-default}",
     "attw": "attw --pack .",
-    "api:check": "concurrently --kill-others-on-fail \"api-extractor run\" \"api-extractor run --config api-extractor.builtin-reporters.json\" \"api-extractor run --config api-extractor.base.json\" \"api-extractor run --config api-extractor.plugin-loader.json\"",
-    "api:update": "concurrently --kill-others-on-fail \"api-extractor run --local\" \"api-extractor run --local --config api-extractor.builtin-reporters.json\" \"api-extractor run --local --config api-extractor.base.json\" \"api-extractor run --local --config api-extractor.plugin-loader.json\""
+    "api:check": "concurrently --kill-others-on-fail \"api-extractor run\" \"api-extractor run --config api-extractor.builtin-reporters.json\" \"api-extractor run --config api-extractor.plugin-loader.json\"",
+    "api:update": "concurrently --kill-others-on-fail \"api-extractor run --local\" \"api-extractor run --local --config api-extractor.builtin-reporters.json\" \"api-extractor run --local --config api-extractor.plugin-loader.json\""
   },
   "dependencies": {
     "@noble/hashes": "catalog:",
@@ -79,10 +79,6 @@
         "types": "./dist/builtin-reporters.d.mts",
         "default": "./dist/builtin-reporters.mjs"
       },
-      "./config/base": {
-        "types": "./dist/config/base.d.mts",
-        "default": "./dist/config/base.mjs"
-      },
       "./plugin-loader": {
         "types": "./dist/plugin-loader.d.mts",
         "default": "./dist/plugin-loader.mjs"
@@ -101,17 +97,11 @@
       "types": "./dist/builtin-reporters.d.mts",
       "default": "./dist/builtin-reporters.mjs"
     },
-    "./config/base": {
-      "@systemfsoftware/source": "./src/config/base.ts",
-      "types": "./dist/config/base.d.mts",
-      "default": "./dist/config/base.mjs"
-    },
     "./plugin-loader": {
       "@systemfsoftware/source": "./src/plugin-loader.ts",
       "types": "./dist/plugin-loader.d.mts",
       "default": "./dist/plugin-loader.mjs"
     },
-
     "./package.json": "./package.json"
   },
   "inlinedDependencies": {

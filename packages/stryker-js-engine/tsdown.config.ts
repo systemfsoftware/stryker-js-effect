@@ -4,7 +4,6 @@ import { defineConfig } from 'tsdown'
 export default defineConfig({
   entry: {
     index: './src/index.ts',
-    'config/base': './src/config/base.ts',
     'builtin-reporters': './src/builtin-reporters.ts',
     'plugin-loader': './src/plugin-loader.ts',
   },

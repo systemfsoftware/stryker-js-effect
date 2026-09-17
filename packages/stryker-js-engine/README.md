@@ -20,7 +20,6 @@ so the host pins one version across the whole run.
 - `@systemfsoftware/stryker-js-engine` — the run, its stages, and the failure
   identities it raises
 - `./builtin-reporters` — the clear-text, progress, and JSON reporters
-- `./config/base` — the base option preset
 - `./worker` — the worker-side wiring a worker entry file calls into
 
 A host other than Node starts the same engine by providing its own layers at
