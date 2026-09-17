@@ -1,6 +1,4 @@
-import { readFileSync, realpathSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 
 const effectPackageDir = process.env['SKEW_EFFECT_DIR']
 const runnerManifest = process.env['SKEW_RUNNER_MANIFEST']
@@ -10,29 +8,8 @@ if (effectPackageDir === undefined || runnerManifest === undefined || outDir ===
   throw new Error('SKEW_EFFECT_DIR, SKEW_RUNNER_MANIFEST and SKEW_OUT_DIR must all be set')
 }
 
-const entryOf = (packageDirectory, subpath) => {
-  const manifest = JSON.parse(readFileSync(join(packageDirectory, 'package.json'), 'utf8'))
-  const exportsMap = manifest.exports ?? {}
-  const candidate = subpath === undefined
-    ? exportsMap['.']
-    : exportsMap[`./${subpath}`] ?? exportsMap['./*']?.replace('*', subpath)
-  const relative = typeof candidate === 'string' ? candidate : candidate?.default
-  if (typeof relative !== 'string') {
-    throw new Error(`no module entry for "${subpath ?? '.'}" in ${packageDirectory}`)
-  }
-  return join(realpathSync(packageDirectory), relative)
-}
-
-const skewedEffectEntryOf = (source) =>
-  entryOf(effectPackageDir, source === 'effect' ? undefined : source.slice('effect/'.length))
-
-const packagingHostEntryOf = (source) => {
-  const segments = source.split('/')
-  const packageSegmentCount = source.startsWith('@') ? 2 : 1
-  const subpath = segments.slice(packageSegmentCount).join('/')
-  const resolved = import.meta.resolve(source)
-  return entryOf(dirname(fileURLToPath(resolved)), subpath === '' ? undefined : subpath)
-}
+const requireFromSkewedEffect = createRequire(`${effectPackageDir}/package.json`)
+const requireFromPackagingHost = createRequire(runnerManifest)
 
 const isEffect = (source) => source === 'effect' || source.startsWith('effect/')
 const isFromPackagingHost = (source) => source.startsWith('@effect/') || source.startsWith('@systemfsoftware/')
@@ -40,8 +17,8 @@ const isFromPackagingHost = (source) => source.startsWith('@effect/') || source.
 const skewResolver = {
   name: 'effect-release-skew',
   resolveId(source) {
-    if (isEffect(source)) return skewedEffectEntryOf(source)
-    if (isFromPackagingHost(source)) return packagingHostEntryOf(source)
+    if (isEffect(source)) return requireFromSkewedEffect.resolve(source)
+    if (isFromPackagingHost(source)) return requireFromPackagingHost.resolve(source)
     return null
   },
 }

@@ -40,6 +40,7 @@ import * as Flag from 'effect/unstable/cli/Flag'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 import cliPkgJson from '../package.json' with { type: 'json' }
 import { SurvivorsRejection } from './admit-survivors-run.workflow.js'
+import type { RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
 import type { CliRequest } from './Cli.schema.js'
 import {
   buildErrorEnvelope,
@@ -47,6 +48,7 @@ import {
   collectExitClasses,
   describeFailure,
   type ErrorEnvelope,
+  errorText,
   exitClassOf,
   failureValue,
   isExitClass,
@@ -757,16 +759,35 @@ export const runStrykerCli = (
         }),
     )
 
-    return yield* Effect.uninterruptibleMask((restore) =>
-      Effect.gen(function*() {
-        const exit = yield* Effect.exit(restore(program))
-        const outcome = classifyRunOutcome(exit, input.lastSignal(), input.argv)
-        const code = runOutcomeCode(outcome)
-        if (input.mode.mode === 'machine') {
-          yield* emitMachineModeOutput(stream, input.mode, outcome, basePath, pathService)
-        }
-        yield* stream.closeAndDrain
-        return code
+    const outcomeOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>): string =>
+      Result.match(result, {
+        onSuccess: (decision) => decision._tag,
+        onFailure: (error) => error._tag,
       })
+
+    const errorTextOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>): string =>
+      Result.match(result, {
+        onSuccess: () => '',
+        onFailure: (failure) => errorText(failure, readCapturedConsole()),
+      })
+
+    return yield* Effect.uninterruptibleMask((restore) =>
+      Effect.withSpan('stryker.cli.run')(
+        Effect.gen(function*() {
+          const exit = yield* Effect.exit(restore(program))
+          const outcome = classifyRunOutcome(exit, input.lastSignal(), input.argv)
+          const code = runOutcomeCode(outcome)
+          yield* Effect.annotateCurrentSpan({
+            'stryker.run.outcome': outcomeOf(outcome),
+            'stryker.run.exit_code': code,
+            'stryker.run.error': errorTextOf(outcome),
+          })
+          if (input.mode.mode === 'machine') {
+            yield* emitMachineModeOutput(stream, input.mode, outcome, basePath, pathService)
+          }
+          yield* stream.closeAndDrain
+          return code
+        }),
+      )
     )
   })

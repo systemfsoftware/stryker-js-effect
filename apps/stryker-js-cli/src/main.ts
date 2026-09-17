@@ -15,6 +15,7 @@ import { observeTerminatingSignal } from './Cli.js'
 import { strykerCliEffect } from './Cli.js'
 import { OutputModeProbe, OutputModeProbeLive } from './Output.js'
 import { RunEventStreamPort } from './Output.js'
+import { telemetryLayer } from './platform/telemetry.js'
 import { RunEventStreamFileLive } from './StreamFile.js'
 
 const EXIT_CODE_RUN_NEVER_REACHED_ITS_FINALIZER = 1
@@ -71,8 +72,11 @@ const program = Effect.gen(function*() {
 }).pipe(
   Effect.provideService(Logger.LogToStderr, true),
   Effect.provide(
-    Layer.merge(OutputModeProbeLive, RunEventStreamFileLive).pipe(
-      Layer.provide(Layer.mergeAll(NodeStdio.layer, NodeFileSystem.layer, NodePath.layer)),
+    Layer.merge(
+      Layer.merge(OutputModeProbeLive, RunEventStreamFileLive).pipe(
+        Layer.provide(Layer.mergeAll(NodeStdio.layer, NodeFileSystem.layer, NodePath.layer)),
+      ),
+      telemetryLayer,
     ),
   ),
 )
