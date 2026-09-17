@@ -1532,7 +1532,6 @@ function loadOptionsFromConfigFile(
 }
 export function readConfig(
   cliOptions: PartialStrykerOptions,
-  _basePath: string,
 ): Effect.Effect<
   StrykerOptions,
   ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,

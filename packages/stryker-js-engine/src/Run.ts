@@ -468,10 +468,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
         const env = yield* RunEnvironment
         const queue = yield* RunEvents
         const coreSchema: ValidationSchemaDocument = forkCoreSchema
-        const configured = yield* readConfig(
-          command.cliOptions,
-          env.basePath,
-        ).pipe(
+        const configured = yield* readConfig(command.cliOptions).pipe(
           Effect.mapError((cause) => new StageError({ stage: 'prepare', reason: 'Failed to read config', cause })),
           Effect.tapCause(() =>
             Effect.gen(function*() {

@@ -209,13 +209,10 @@ const resolutionFailureReason = (cause: unknown): string =>
     onSome: (code) => String(code),
   })
 
-const unresolvedSpecifier = (specifier: string, reason: string): UnresolvedSpecifier =>
-  new UnresolvedSpecifier({ specifier, reason })
-
 const resolveSpecifier = (specifier: string): Effect.Effect<ResolvedSpecifier | UnresolvedSpecifier> =>
   Effect.try({
     try: (): ResolvedSpecifier => new ResolvedSpecifier({ specifier, entrypoint: import.meta.resolve(specifier) }),
-    catch: (cause) => unresolvedSpecifier(specifier, resolutionFailureReason(cause)),
+    catch: (cause) => new UnresolvedSpecifier({ specifier, reason: resolutionFailureReason(cause) }),
   }).pipe(Effect.catch((missed) => Effect.succeed<ResolvedSpecifier | UnresolvedSpecifier>(missed)))
 
 const resolveSpecifiers = (

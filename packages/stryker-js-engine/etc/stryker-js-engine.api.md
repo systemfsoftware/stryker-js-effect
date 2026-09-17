@@ -388,7 +388,7 @@ export interface PrepareDone {
 export type Primitive = boolean | number | string | null | undefined;
 
 // @public (undocumented)
-export function readConfig(cliOptions: PartialStrykerOptions, _basePath: string): Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Path.Path>;
+export function readConfig(cliOptions: PartialStrykerOptions): Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Path.Path>;
 
 // Warning: (ae-forgotten-export) The symbol "ReadConfigCommand_base" needs to be exported by the entry point index.d.mts
 //

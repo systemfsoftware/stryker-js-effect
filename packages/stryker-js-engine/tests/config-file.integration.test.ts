@@ -78,7 +78,7 @@ type ReadEffect<A> = Effect.Effect<A, never, ReadRecorder | FileSystem.FileSyste
 const outcomeOf = (cliOptions: PartialStrykerOptions): ReadEffect<ReadOutcome> =>
   Effect.gen(function*() {
     const recorder = yield* ReadRecorder
-    const result = yield* Effect.result(readConfig(cliOptions, process.cwd()))
+    const result = yield* Effect.result(readConfig(cliOptions))
     return { result, recorder }
   })
 

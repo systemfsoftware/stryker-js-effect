@@ -695,7 +695,6 @@ export const runStrykerCli = (
               return Effect.gen(function*() {
                 const { admission, resolvedOptions, priorReportPath } = yield* runSurvivorsAdmission(
                   runRequest.options,
-                  basePath,
                 ).pipe(Effect.provide(hostRunLayer(hostOptions)))
                 return yield* Match.value(admission).pipe(
                   Match.tag('NoSurvivors', () =>
