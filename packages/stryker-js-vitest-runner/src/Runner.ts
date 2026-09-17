@@ -4,7 +4,7 @@ import { createVitest as createVitestOriginal } from 'vitest/node'
 import type { Vitest } from 'vitest/node'
 
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { Module } from '@systemfsoftware/stryker-js-language'
+import { Module, resolvePackageEntry, ResolvePackageEntryCommand } from '@systemfsoftware/stryker-js-language'
 import {
   type CoverageData,
   errorToString,
@@ -626,6 +626,28 @@ const isRunnerTestSuite = (value: unknown): value is RunnerTestSuite =>
 type StrykerNamespace = '__stryker__' | '__stryker2__'
 const STRYKER_SETUP_URL = new URL('./stryker-setup.mjs', import.meta.url)
 
+const VITEST_NODE_SPECIFIER = 'vitest/node'
+const VITEST_PACKAGE_SPECIFIER = 'vitest/package.json'
+const VITEST_NODE_SUBPATH = './node'
+const PROJECT_MANIFEST = 'package.json'
+
+const vitestUnresolved = (specifier: string, base: string, detail: string): TestRunnerFailed =>
+  new TestRunnerFailed({
+    runnerName: 'vitest',
+    phase: 'init',
+    cause: `Cannot resolve "${specifier}" from "${base}": ${detail}`,
+  })
+
+const findManifestPath = (
+  moduleService: Module['Service'],
+  specifier: string,
+  base: string,
+): Effect.Effect<string, TestRunnerFailed> =>
+  Option.match(Option.fromNullishOr(moduleService.findPackageJSON(specifier, base)), {
+    onNone: () => Effect.fail(vitestUnresolved(specifier, base, 'not installed in the tested project')),
+    onSome: (manifestPath) => Effect.succeed(manifestPath),
+  })
+
 export const resolveVitest: VitestResolver = (_dir) =>
   Effect.gen(function*() {
     const fallback = Effect.gen(function*() {
@@ -639,13 +661,32 @@ export const resolveVitest: VitestResolver = (_dir) =>
       return { createVitest: createVitestOriginal, version: decoded.version } satisfies ResolvedVitest
     }).pipe(Effect.orDie)
     const primary = Effect.gen(function*() {
-      const module = yield* Module
+      const moduleService = yield* Module
       const pathService = yield* Path.Path
       const fs = yield* FileSystem.FileSystem
-      const requireFromProject = module.createRequire(pathService.join(_dir, 'package.json'))
-      const imported: unknown = requireFromProject('vitest/node')
+      const projectManifest = pathService.join(_dir, PROJECT_MANIFEST)
+      const resolutionFailure = (detail: string): TestRunnerFailed =>
+        vitestUnresolved(VITEST_NODE_SPECIFIER, projectManifest, detail)
+      const vitestManifestPath = yield* findManifestPath(moduleService, VITEST_NODE_SPECIFIER, projectManifest)
+      const vitestManifestText = yield* fs.readFileString(vitestManifestPath)
+      const vitestManifest: unknown = JSON.parse(vitestManifestText)
+      const vitestPackageDir = pathService.dirname(vitestManifestPath)
+      const entryFilePath = yield* Result.match(
+        resolvePackageEntry(new ResolvePackageEntryCommand({ manifest: vitestManifest, subpath: VITEST_NODE_SUBPATH })),
+        {
+          onFailure: (refusal) => Effect.fail(resolutionFailure(errorToString(refusal))),
+          onSuccess: (entry) => Effect.succeed(pathService.join(vitestPackageDir, entry.path)),
+        },
+      )
+      const entryUrl = yield* pathService.toFileUrl(entryFilePath).pipe(
+        Effect.mapError((cause) => resolutionFailure(errorToString(cause))),
+      )
+      const imported: unknown = yield* Effect.tryPromise({
+        try: (): Promise<unknown> => import(entryUrl.href),
+        catch: (cause) => resolutionFailure(errorToString(cause)),
+      })
       const decodedNode = yield* S.decodeUnknownEffect(VitestNodeModuleSchema)(imported)
-      const packageJsonPath = requireFromProject.resolve('vitest/package.json')
+      const packageJsonPath = yield* findManifestPath(moduleService, VITEST_PACKAGE_SPECIFIER, projectManifest)
       const content = yield* fs.readFileString(packageJsonPath)
       const parsed: unknown = JSON.parse(content)
       const decodedPackage = yield* S.decodeUnknownEffect(VitestPackageSchema)(parsed)
