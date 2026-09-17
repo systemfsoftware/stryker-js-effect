@@ -10,7 +10,7 @@ import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 
 import { layerTraceContextServer } from './TraceContextRpc.js'
-import { startWorkerTelemetry } from './WorkerTelemetry.js'
+import { workerTelemetryLayer } from './WorkerTelemetry.js'
 
 export interface WorkerServerParams<Rpcs extends Rpc.Any, HE> {
   readonly rpcs: RpcGroup.RpcGroup<Rpcs>
@@ -22,7 +22,6 @@ export const workerServerLayer = <Rpcs extends Rpc.Any, HE>(params: WorkerServer
   Layer.unwrap(
     Effect.gen(function*() {
       const socketPath = yield* Config.string('STRYKER_SOCKET')
-      yield* Effect.promise(() => startWorkerTelemetry())
       return RpcServer.layer(params.rpcs).pipe(
         Layer.provide(params.handlers),
         Layer.provide(params.schemaServices),
@@ -31,6 +30,7 @@ export const workerServerLayer = <Rpcs extends Rpc.Any, HE>(params: WorkerServer
         Layer.provide(NodeSocketServer.layer({ path: socketPath })),
         Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)),
         Layer.provide(layerTraceContextServer),
+        Layer.provideMerge(workerTelemetryLayer),
       )
     }),
   )

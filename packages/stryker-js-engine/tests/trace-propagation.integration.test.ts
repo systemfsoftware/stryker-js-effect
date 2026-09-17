@@ -1,10 +1,5 @@
-import * as api from '@opentelemetry/api'
-import {
-  BasicTracerProvider,
-  InMemorySpanExporter,
-  type ReadableSpan,
-  SimpleSpanProcessor,
-} from '@opentelemetry/sdk-trace-base'
+import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
+import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { spawnReporterWorker } from '@systemfsoftware/stryker-js-engine'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
@@ -13,7 +8,7 @@ import {
   TraceContextReference,
   TRACEPARENT_HEADER,
 } from '@systemfsoftware/stryker-js-plugin-interface'
-import { tracePartsOf } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { partsOfEffectSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
@@ -29,9 +24,14 @@ import {
 
 const Feature = makeFeature({ it, layer })
 
-const exporter = new InMemorySpanExporter()
-const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] })
-api.trace.setGlobalTracerProvider(provider)
+const telemetryFor = () => {
+  const exporter = new InMemorySpanExporter()
+  const telemetry = NodeSdk.layer(() => ({
+    resource: { serviceName: 'trace-test' },
+    spanProcessor: new SimpleSpanProcessor(exporter),
+  }))
+  return { exporter, telemetry }
+}
 
 interface TraceWorkerPlan {
   readonly entrypoint: string
@@ -79,30 +79,32 @@ const readHeaders = (
     }),
   )
 
-const runTracedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> =>
-  Effect.scoped(
+const runTracedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> => {
+  const { exporter, telemetry } = telemetryFor()
+  return Effect.scoped(
     Effect.gen(function*() {
-      yield* Effect.sync(() => exporter.reset())
       const { record, client } = yield* makeClient(plan)
-      const host = api.trace.getTracer('host').startSpan('host.run')
-      const hostContext = host.spanContext()
-      yield* client.init({}).pipe(
-        Effect.provideService(TraceContextReference, tracePartsOf(hostContext)),
-      )
-      yield* Effect.sync(() => host.end())
+      const host = yield* Effect.useSpan('host.run', {}, (host) =>
+        Effect.as(
+          client.init({}).pipe(
+            Effect.provideService(TraceContextReference, Option.some(partsOfEffectSpan(host))),
+          ),
+          host,
+        ))
       return {
-        hostTraceId: hostContext.traceId,
-        hostSpanId: hostContext.spanId,
+        hostTraceId: host.traceId,
+        hostSpanId: host.spanId,
         headers: yield* readHeaders(record),
         spans: exporter.getFinishedSpans(),
       }
     }),
-  ).pipe(Effect.orDie)
+  ).pipe(Effect.provide(telemetry), Effect.orDie)
+}
 
-const runCarriedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> =>
-  Effect.scoped(
+const runCarriedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> => {
+  const { exporter, telemetry } = telemetryFor()
+  return Effect.scoped(
     Effect.gen(function*() {
-      yield* Effect.sync(() => exporter.reset())
       const { record, client } = yield* makeClient(plan)
       const parts = Option.getOrThrow(parseTraceparent(FUTURE_TRACEPARENT))
       yield* client.init({}, { headers: { [TRACEPARENT_HEADER]: FUTURE_TRACEPARENT } })
@@ -113,7 +115,8 @@ const runCarriedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> =>
         spans: exporter.getFinishedSpans(),
       }
     }),
-  ).pipe(Effect.orDie)
+  ).pipe(Effect.provide(telemetry), Effect.orDie)
+}
 
 Feature('Linking a worker into the host run trace').body(({ scenario }) => {
   scenario(

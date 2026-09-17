@@ -10,12 +10,14 @@ This package owns:
 
 - the worker RPC server layer a plugin process launches — `workerServerLayer` and
   its `WorkerServerParams`;
-- the worker's own OTel bootstrap — `startWorkerTelemetry`;
+- the worker's OTel exporter as a layer — `workerTelemetryLayer`, merged inside
+  `workerServerLayer` and a no-op unless `OTEL_ENABLED=true`;
 - the worker-options wire codec — `encodeWorkerOptions`, `decodeWorkerOptions`,
   `readWorkerOptionsFromEnv`;
 - the trace-context middleware implementations that carry W3C
   `traceparent`/`tracestate` across the process split — `layerTraceContextClient`,
-  `layerTraceContextServer`, `withLinkedSpan`, `tracePartsOf`.
+  `layerTraceContextServer`, `withLinkedSpan`, `tracePartsOf`,
+  `partsOfEffectSpan`.
 
 The symbols these implement — the RPC groups, the payload schemas, the typed
 errors, the spawn contract, and the trace-context contract

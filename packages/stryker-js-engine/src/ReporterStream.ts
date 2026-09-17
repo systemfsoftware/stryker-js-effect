@@ -1,4 +1,3 @@
-import * as api from '@opentelemetry/api'
 import type { ExitClass } from '@systemfsoftware/stryker-js-language'
 import type { MetricsResult } from '@systemfsoftware/stryker-js-language'
 import type * as reportApi from '@systemfsoftware/stryker-js-language'
@@ -11,7 +10,7 @@ import {
   ReporterRpcs,
   TraceContextReference,
 } from '@systemfsoftware/stryker-js-plugin-interface'
-import { encodeWorkerOptions, tracePartsOf } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { encodeWorkerOptions, partsOfEffectSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
 import type * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
 import * as Duration from 'effect/Duration'
@@ -383,8 +382,6 @@ export const closeReporterStage = (
     return { terminalFailed: outcomes.flatMap((outcome) => failedReporterNames(outcome)) }
   })
 
-const ENGINE_TRACER_NAME = 'stryker-js-engine'
-
 const traceparentInit = (traceparent: string | undefined): ReporterInitOptions => {
   if (traceparent === undefined) return {}
   return { traceparent }
@@ -400,46 +397,44 @@ const hasTraceFields = (init: ReporterInit): boolean => {
   return init.tracestate !== undefined
 }
 
-const initFromSpanContext = (context: api.SpanContext | undefined): ReporterInit | undefined => {
-  if (context === undefined) return undefined
-  return Option.match(tracePartsOf(context), {
-    onNone: () => undefined,
-    onSome: (parts) => ({
-      traceparent: formatTraceparent(parts),
-      ...tracestateInit(parts.traceState),
-    }),
-  })
+const initFromPhaseSpan = (span: PhaseSpan | undefined): ReporterInit | undefined => {
+  if (span === undefined) return undefined
+  const parts = partsOfEffectSpan(span)
+  return {
+    traceparent: formatTraceparent(parts),
+    ...tracestateInit(parts.traceState),
+  }
 }
 
-const initFromEnvironment = (): Effect.Effect<ReporterInit | undefined> =>
+export interface PhaseSpan {
+  readonly traceId: string
+  readonly spanId: string
+  readonly sampled: boolean
+}
+
+const environmentTraceInit = (): Effect.Effect<ReporterInit> =>
   Effect.gen(function*() {
     const traceparent = yield* Config.string('TRACEPARENT').pipe(Effect.option)
     const tracestate = yield* Config.string('TRACESTATE').pipe(Effect.option)
-    const init = {
+    return {
       ...traceparentInit(Option.getOrUndefined(traceparent)),
       ...tracestateInit(Option.getOrUndefined(tracestate)),
     }
+  })
+
+const initFromEnvironment = (): Effect.Effect<ReporterInit | undefined> =>
+  Effect.map(environmentTraceInit(), (init) => {
     if (!hasTraceFields(init)) return undefined
     return init
   })
 
-const providedSpanContext = (span: api.Span | undefined): api.SpanContext | undefined => {
-  if (span === undefined) return undefined
-  return span.spanContext()
-}
-
-const activeSpanContext = (): api.SpanContext | undefined => {
-  const active = api.trace.getSpan(api.context.active())
-  if (active === undefined) return undefined
-  return active.spanContext()
-}
-
-export const currentReporterInit = (span?: api.Span): Effect.Effect<ReporterInit> =>
+export const currentReporterInit = (span?: PhaseSpan): Effect.Effect<ReporterInit> =>
   Effect.gen(function*() {
     const fromEnvironment = yield* initFromEnvironment()
+    const current = Option.getOrUndefined(yield* Effect.currentSpan.pipe(Effect.option))
     return [
-      initFromSpanContext(providedSpanContext(span)),
-      initFromSpanContext(activeSpanContext()),
+      initFromPhaseSpan(span),
+      initFromPhaseSpan(current),
       fromEnvironment,
     ].find(Predicate.isNotUndefined) ?? {}
   })
@@ -447,15 +442,9 @@ export const currentReporterInit = (span?: api.Span): Effect.Effect<ReporterInit
 export const withPhaseSpan = <A, E, R>(
   spanName: string,
   attributes: Record<string, string | number>,
-  effect: (span: api.Span) => Effect.Effect<A, E, R>,
+  effect: (span: PhaseSpan) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
-  Effect.flatMap(
-    Effect.sync(() =>
-      api.trace.getTracer(ENGINE_TRACER_NAME).startSpan(spanName, { attributes }, api.context.active())
-    ),
-    (span) =>
-      effect(span).pipe(
-        Effect.provideService(TraceContextReference, tracePartsOf(span.spanContext())),
-        Effect.ensuring(Effect.sync(() => span.end())),
-      ),
-  )
+  Effect.useSpan(spanName, { attributes }, (span) =>
+    effect(span).pipe(
+      Effect.provideService(TraceContextReference, Option.some(partsOfEffectSpan(span))),
+    ))

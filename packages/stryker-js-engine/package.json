@@ -40,6 +40,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/opentelemetry": "4.0.0-rc.112",
     "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@opentelemetry/sdk-trace-base": "^2.2.0",
