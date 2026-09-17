@@ -1,10 +1,9 @@
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { calculateMetrics } from '@systemfsoftware/stryker-js-language'
-import { MutationTestResultSchema } from '@systemfsoftware/stryker-js-language'
+import { MutationTestResultSchema, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
 import type { FileResult, MutantResult, MutationTestResult } from '@systemfsoftware/stryker-js-language'
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
 import type { ReporterEvent } from '@systemfsoftware/stryker-js-language'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
@@ -14,6 +13,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import * as Stream from 'effect/Stream'
 import type { MergeReportsRequest } from './Cli.schema.js'
 import {
   DuplicatePackageLabel,
@@ -41,14 +41,8 @@ type ReportPartValue = S.Schema.Type<typeof ReportPart>
 type StreamMutantLine = S.Schema.Type<typeof StreamMutantLineSchema>
 type PartMeta = S.Schema.Type<typeof PartMetaSchema>
 
-const toStream = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> => ({
-  [Symbol.asyncIterator]: () => {
-    const iterator = events[Symbol.iterator]()
-    return {
-      next: (...args: [] | [unknown]) => Promise.resolve(iterator.next(...args)),
-    }
-  },
-})
+const toStream = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> =>
+  Stream.toAsyncIterable(Stream.fromIterable([...events]))
 interface ReadParts {
   readonly parts: readonly ReportPartValue[]
   readonly skipped: readonly string[]
@@ -326,8 +320,8 @@ const writeHtmlReport = (fileName: string, report: MutationTestResult): Effect.E
       return yield* failMerge(`cannot configure the html report at ${fileName}`)
     }
     const metrics = calculateMetrics(report.files)
-    yield* Effect.promise(() =>
-      makeHtmlReporter(decoded.value, {})(toStream([MutationTestReportReady.make({ report, metrics })]))
+    yield* makeHtmlReporter(decoded.value, {})(toStream([MutationTestReportReady.make({ report, metrics })])).pipe(
+      Effect.catchCause(() => failMerge(`cannot write the html report at ${fileName}`)),
     )
   })
 

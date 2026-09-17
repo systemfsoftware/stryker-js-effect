@@ -183,7 +183,7 @@ Feature('Writing the html mutation report').body(({ scenario }) => {
         Effect.gen(function*() {
           try {
             const consume = makeHtmlReporter(optionsWith(s.output.fileName), {})
-            yield* Effect.promise(() => consume(toStream(runEvents(reportFixture(), metricsFixture()))))
+            yield* consume(toStream(runEvents(reportFixture(), metricsFixture())))
             return yield* Effect.promise(() => readText(s.output.fileName))
           } finally {
             yield* Effect.promise(() => removeDir(s.output.dir))
@@ -215,12 +215,8 @@ Feature('Writing the html mutation report').body(({ scenario }) => {
           try {
             const fileA = yield* Effect.promise(() => joinPath(dirA, 'index.html'))
             const fileB = yield* Effect.promise(() => joinPath(dirB, 'index.html'))
-            yield* Effect.promise(() =>
-              makeHtmlReporter(optionsWith(fileA), {})(toStream(runEvents(s.run.report, s.run.metrics)))
-            )
-            yield* Effect.promise(() =>
-              makeHtmlReporter(optionsWith(fileB), {})(toStream(runEvents(s.run.report, s.run.metrics)))
-            )
+            yield* makeHtmlReporter(optionsWith(fileA), {})(toStream(runEvents(s.run.report, s.run.metrics)))
+            yield* makeHtmlReporter(optionsWith(fileB), {})(toStream(runEvents(s.run.report, s.run.metrics)))
             const existed = yield* Effect.promise(() => fileExists(fileA))
             return {
               a: yield* Effect.promise(() => readText(fileA)),

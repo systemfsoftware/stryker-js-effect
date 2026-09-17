@@ -1,10 +1,13 @@
 import type { MutantStatus } from '@systemfsoftware/stryker-js-language'
+import { errorToString } from '@systemfsoftware/stryker-js-language'
 import type { ReporterEvent, ReporterFactory } from '@systemfsoftware/stryker-js-language'
+import { ReporterFailed } from '@systemfsoftware/stryker-js-language'
 import type { RunTiming } from '@systemfsoftware/stryker-js-language'
 import type { TestRunnerCapabilities } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Stream from 'effect/Stream'
 
 export type ProgressBarState = {
   readonly format: string
@@ -172,52 +175,41 @@ const PROGRESS_BAR_FORMAT =
 
 const PROGRESS_BAR_OPTIONS = { complete: '=', incomplete: ' ', width: 50 }
 
-export const makeProgressBarReporter: ReporterFactory = () => (events) =>
-  Effect.runPromise(
-    Effect.gen(function*() {
-      const progress: { tally: ProgressTally; bar: ProgressBarState | undefined } = {
-        tally: emptyTally(0),
-        bar: undefined,
-      }
-      const render = (now: number): void =>
-        Option.match(Option.fromUndefinedOr(progress.bar), {
-          onNone: () => undefined,
-          onSome: (bar) => {
-            const line = renderProgressBar(bar, progressData(progress.tally, now))
-            const newline = Match.value(isComplete(bar)).pipe(
-              Match.when(true, () => '\n'),
-              Match.when(false, () => ''),
-              Match.exhaustive,
-            )
-            process.stdout.write(`\r${line}${newline}`)
-          },
-        })
-      const iterator = events[Symbol.asyncIterator]()
-      yield* drainProgressEvents(iterator, progress, render).pipe(
-        Effect.ensuring(Effect.sync(() => finishProgressBar(progress))),
-      )
-    }),
-  )
-
-const drainProgressEvents = (
-  iterator: AsyncIterator<ReporterEvent>,
-  progress: { tally: ProgressTally; bar: ProgressBarState | undefined },
-  render: (now: number) => void,
-): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    const next: IteratorResult<ReporterEvent> = yield* Effect.promise(() => iterator.next())
-    return yield* Match.value(next.done === true).pipe(
-      Match.when(true, () => Effect.void),
-      Match.orElse(() =>
-        Effect.gen(function*() {
-          if (next.done !== true) {
-            applyProgressEvent(progress, render, next.value)
-          }
-          yield* drainProgressEvents(iterator, progress, render)
-        })
-      ),
-    )
+const progressStreamErrorOf = (cause: unknown): ReporterFailed =>
+  ReporterFailed.make({
+    reporterName: 'progress',
+    event: 'mutationTestReportReady',
+    cause: errorToString(cause),
   })
+
+export const makeProgressBarReporter: ReporterFactory = () => (events) => {
+  const progress: { tally: ProgressTally; bar: ProgressBarState | undefined } = {
+    tally: emptyTally(0),
+    bar: undefined,
+  }
+  const render = (now: number): void =>
+    Option.match(Option.fromUndefinedOr(progress.bar), {
+      onNone: () => undefined,
+      onSome: (bar) => {
+        const line = renderProgressBar(bar, progressData(progress.tally, now))
+        const newline = Match.value(isComplete(bar)).pipe(
+          Match.when(true, () => '\n'),
+          Match.when(false, () => ''),
+          Match.exhaustive,
+        )
+        process.stdout.write(`\r${line}${newline}`)
+      },
+    })
+  return Stream.runForEach(
+    Stream.fromAsyncIterable(events, progressStreamErrorOf),
+    (event) => Effect.sync(() => applyProgressEvent(progress, render, event)),
+  ).pipe(
+    Effect.ensuring(Effect.sync(() => finishProgressBar(progress))),
+  )
+}
+
+export const makeProgressStreamReporter: ReporterFactory = () => (events) =>
+  Stream.runDrain(Stream.fromAsyncIterable(events, progressStreamErrorOf))
 
 const applyProgressEvent = (
   progress: { tally: ProgressTally; bar: ProgressBarState | undefined },
@@ -278,15 +270,3 @@ const finishProgressBar = (progress: { tally: ProgressTally; bar: ProgressBarSta
       ),
   })
 }
-
-export const makeProgressStreamReporter: ReporterFactory = () => (events) =>
-  Effect.runPromise(drainDiscardedEvents(events[Symbol.asyncIterator]()))
-
-const drainDiscardedEvents = (iterator: AsyncIterator<ReporterEvent>): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    const next = yield* Effect.promise(() => iterator.next())
-    return yield* Match.value(next.done === true).pipe(
-      Match.when(true, () => Effect.void),
-      Match.orElse(() => drainDiscardedEvents(iterator)),
-    )
-  })

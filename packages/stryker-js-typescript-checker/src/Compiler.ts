@@ -154,24 +154,26 @@ export interface ScriptFile {
   readonly modifiedTime: DateTime.Utc
 }
 
-const nowUtc = (): DateTime.Utc => DateTime.makeUnsafe(Effect.runSync(Clock.currentTimeMillis))
-
-export function makeScriptFile(content: string, fileName: string, modifiedTime = nowUtc()): ScriptFile {
-  return { content, fileName, originalContent: content, modifiedTime }
+export function makeScriptFile(content: string, fileName: string, now: DateTime.Utc): ScriptFile {
+  return { content, fileName, originalContent: content, modifiedTime: now }
 }
-export function withContent(file: ScriptFile, content: string): ScriptFile {
-  return { ...file, content, modifiedTime: nowUtc() }
+export function withContent(file: ScriptFile, content: string, now: DateTime.Utc): ScriptFile {
+  return { ...file, content, modifiedTime: now }
 }
 
-export function mutateScriptFile(file: ScriptFile, mutant: Pick<Mutant, 'location' | 'replacement'>): ScriptFile {
+export function mutateScriptFile(
+  file: ScriptFile,
+  mutant: Pick<Mutant, 'location' | 'replacement'>,
+  now: DateTime.Utc,
+): ScriptFile {
   const start = getOffset(file, mutant.location.start)
   const end = getOffset(file, mutant.location.end)
   const content = `${file.originalContent.slice(0, start)}${mutant.replacement}${file.originalContent.slice(end)}`
-  return { ...file, content, modifiedTime: nowUtc() }
+  return { ...file, content, modifiedTime: now }
 }
 
-export function resetScriptFile(file: ScriptFile): ScriptFile {
-  return { ...file, content: file.originalContent, modifiedTime: nowUtc() }
+export function resetScriptFile(file: ScriptFile, now: DateTime.Utc): ScriptFile {
+  return { ...file, content: file.originalContent, modifiedTime: now }
 }
 
 function getOffset(file: ScriptFile, pos: Position): number {
@@ -278,11 +280,12 @@ export const makeHybridFileSystem = (fsService: FileSystem.FileSystem): Effect.E
 
     const readFileFromDisk = (fileName: string): Effect.Effect<ScriptFile | undefined, never> =>
       Effect.gen(function*() {
+        const now = DateTime.makeUnsafe(yield* Clock.currentTimeMillis)
         const content: string | undefined = yield* fsService
           .readFileString(fileName)
           .pipe(Effect.orElseSucceed(() => undefined))
         const file = Option.getOrUndefined(
-          Option.map(Option.fromUndefinedOr(content), (text) => makeScriptFile(text, fileName)),
+          Option.map(Option.fromUndefinedOr(content), (text) => makeScriptFile(text, fileName, now)),
         )
         yield* Ref.update(filesRef, (m) => setInPlace(m, fileName, file))
         return file
@@ -299,19 +302,25 @@ export const makeHybridFileSystem = (fsService: FileSystem.FileSystem): Effect.E
         return yield* readFileFromDisk(normalized)
       })
 
-    const fileForWrite = (existing: ScriptFile | undefined, data: string, fileName: string): ScriptFile => {
+    const fileForWrite = (
+      existing: ScriptFile | undefined,
+      data: string,
+      fileName: string,
+      now: DateTime.Utc,
+    ): ScriptFile => {
       if (existing === undefined) {
-        return makeScriptFile(data, fileName)
+        return makeScriptFile(data, fileName, now)
       }
-      return withContent(existing, data)
+      return withContent(existing, data, now)
     }
 
     const writeFile = (fileName: string, data: string): Effect.Effect<void> =>
       Effect.gen(function*() {
+        const now = DateTime.makeUnsafe(yield* Clock.currentTimeMillis)
         const normalized = normalizeFileName(fileName)
         const files = yield* Ref.get(filesRef)
         const existing = Option.getOrUndefined(MutableHashMap.get(files, normalized))
-        yield* Ref.update(filesRef, (m) => setInPlace(m, normalized, fileForWrite(existing, data, normalized)))
+        yield* Ref.update(filesRef, (m) => setInPlace(m, normalized, fileForWrite(existing, data, normalized, now)))
       })
 
     const mutateFile = (
@@ -319,24 +328,26 @@ export const makeHybridFileSystem = (fsService: FileSystem.FileSystem): Effect.E
       mutant: Pick<Mutant, 'location' | 'replacement'>,
     ): Effect.Effect<void, HybridFileNotFoundError> =>
       Effect.gen(function*() {
+        const now = DateTime.makeUnsafe(yield* Clock.currentTimeMillis)
         const file = yield* getFile(fileName)
         if (file === undefined) {
           return yield* HybridFileNotFoundError.make({ fileName })
         }
-        const next = mutateScriptFile(file, mutant)
+        const next = mutateScriptFile(file, mutant, now)
         const normalized = normalizeFileName(fileName)
         yield* Ref.update(filesRef, (m) => setInPlace(m, normalized, next))
       })
 
     const resetFile = (fileName: string): Effect.Effect<void> =>
       Effect.gen(function*() {
+        const now = DateTime.makeUnsafe(yield* Clock.currentTimeMillis)
         const normalized = normalizeFileName(fileName)
         const files = yield* Ref.get(filesRef)
         const file = Option.getOrUndefined(MutableHashMap.get(files, normalized))
         if (file === undefined) {
           return
         }
-        yield* Ref.update(filesRef, (m) => setInPlace(m, normalized, resetScriptFile(file)))
+        yield* Ref.update(filesRef, (m) => setInPlace(m, normalized, resetScriptFile(file, now)))
       })
 
     const existsInMemory = (fileName: string): Effect.Effect<boolean> =>

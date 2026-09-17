@@ -177,8 +177,8 @@ const driveReporterWorker = (
         tempDirPrefix: 'stryker-reporter-',
       }).pipe(Effect.provide(launcher.layer))
 
-      yield* Effect.promise(() =>
-        reporterWorkerFactory(client)(options, { traceparent: TRACEPARENT })(asStream(produce(trace.gauge, trace)))
+      yield* reporterWorkerFactory(client)(options, { traceparent: TRACEPARENT })(
+        asStream(produce(trace.gauge, trace)),
       )
 
       const batches = yield* Ref.get(trace.batches)

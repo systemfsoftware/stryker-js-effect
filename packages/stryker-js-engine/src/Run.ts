@@ -524,7 +524,7 @@ export const runPrepare = (command: PrepareExecutorArgs) =>
             StageError.make({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
           ),
         )
-        const builtinReporterFactories = {
+        const builtinReporterFactories: Record<string, ReporterFactory> = {
           ...makeBuiltinReporterFactories({
             fileSystem: yield* FileSystem.FileSystem,
             path: yield* Path.Path,

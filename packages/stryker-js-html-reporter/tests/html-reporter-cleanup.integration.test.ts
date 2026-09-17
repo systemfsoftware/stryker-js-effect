@@ -154,10 +154,10 @@ Feature('Keeping the report when a run is interrupted').body(({ scenario }) => {
           Effect.gen(function*() {
             try {
               const first = makeHtmlReporter(optionsWith(s.output.fileName), {})
-              yield* Effect.promise(() => first(toStream([dryRunEvent()])))
+              yield* first(toStream([dryRunEvent()]))
               const earlyWritten = yield* Effect.promise(() => fileExists(s.output.fileName))
               const followUp = makeHtmlReporter(optionsWith(s.output.fileName), {})
-              yield* Effect.promise(() => followUp(toStream([dryRunEvent(), terminalEvent()])))
+              yield* followUp(toStream([dryRunEvent(), terminalEvent()]))
               return { earlyWritten, html: yield* Effect.promise(() => readText(s.output.fileName)) }
             } finally {
               yield* Effect.promise(() => removeDir(s.output.dir))
@@ -204,20 +204,12 @@ Feature('Keeping the report when a run is interrupted').body(({ scenario }) => {
             }
             try {
               const consume = makeHtmlReporter(optionsWith(s.output.fileName), {})
-              const failure = yield* Effect.promise(() =>
-                consume(breakingStream()).then(
-                  () => 'resolved',
-                  (error: unknown) => {
-                    if (error instanceof Error) {
-                      return error.message
-                    }
-                    throw error
-                  },
-                )
+              const failure = yield* Effect.flip(consume(breakingStream())).pipe(
+                Effect.map((failed: { readonly cause: string }) => failed.cause),
               )
               const html = yield* Effect.promise(() => readText(s.output.fileName))
               const followUp = makeHtmlReporter(optionsWith(s.output.fileName), {})
-              yield* Effect.promise(() => followUp(toStream([terminalEvent()])))
+              yield* followUp(toStream([terminalEvent()]))
               return { failure, html, rerun: yield* Effect.promise(() => readText(s.output.fileName)) }
             } finally {
               yield* Effect.promise(() => removeDir(s.output.dir))

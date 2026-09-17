@@ -5,10 +5,12 @@ import type * as schema from '@systemfsoftware/stryker-js-language'
 import type { ReporterEvent, ReporterFactory } from '@systemfsoftware/stryker-js-language'
 import { ReporterFailed } from '@systemfsoftware/stryker-js-language'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
+import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import * as Stream from 'effect/Stream'
 
 import { drawMutationScoreTable } from './mutation-score-table.js'
 import { ansi } from './Reporter.ansi.js'
@@ -328,33 +330,27 @@ const rememberTerminalReport = (seen: WatchedReports, event: ReporterEvent): voi
   )
 }
 
-const lastTerminalReport = (events: AsyncIterable<ReporterEvent>): Promise<TerminalReport | undefined> => {
-  const seen: WatchedReports = {}
-  const iterator = events[Symbol.asyncIterator]()
-  const consume = (): Promise<TerminalReport | undefined> =>
-    iterator.next().then((result) => {
-      if (result.done === true) return seen.terminal
-      rememberTerminalReport(seen, result.value)
-      return consume()
-    })
-  return consume()
-}
-
-const decodeClearTextReport = (terminal: TerminalReport): ClearTextReportCommand => {
-  const decoded = S.decodeUnknownResult(ClearTextReportCommand)({
+const decodeClearTextReport = (terminal: TerminalReport): Effect.Effect<ClearTextReportCommand, ReporterFailed> =>
+  S.decodeUnknownEffect(ClearTextReportCommand)({
     _tag: 'ClearTextReportCommand',
     report: terminal.report,
     metrics: terminal.metrics,
+  }).pipe(
+    Effect.mapError((cause) =>
+      ReporterFailed.make({
+        reporterName: 'clear-text',
+        event: 'mutationTestReportReady',
+        cause: errorToString(cause),
+      })
+    ),
+  )
+
+const streamErrorOf = (cause: unknown): ReporterFailed =>
+  ReporterFailed.make({
+    reporterName: 'clear-text',
+    event: 'mutationTestReportReady',
+    cause: errorToString(cause),
   })
-  if (Result.isFailure(decoded)) {
-    throw ReporterFailed.make({
-      reporterName: 'clear-text',
-      event: 'mutationTestReportReady',
-      cause: errorToString(decoded.failure),
-    })
-  }
-  return decoded.success
-}
 
 interface LineSink {
   write(chunk: string): unknown
@@ -374,12 +370,22 @@ const writeRenderedReport = (rendered: ReportLines, options: ProvidedStrykerOpti
 }
 
 export const makeClearTextReporter: ReporterFactory = (options) => (events) => {
-  const terminalP = lastTerminalReport(events)
-  return terminalP.then((terminal) => {
-    if (terminal === undefined) {
-      return
-    }
-    const command = decodeClearTextReport(terminal)
-    writeRenderedReport(renderClearText(command.report, command.metrics, options), options)
-  })
+  const seen: WatchedReports = {}
+  return Stream.runForEach(
+    Stream.fromAsyncIterable(events, streamErrorOf),
+    (event) => Effect.sync(() => rememberTerminalReport(seen, event)),
+  ).pipe(
+    Effect.andThen(Effect.sync(() => seen.terminal)),
+    Effect.flatMap((terminal) =>
+      Option.match(Option.fromUndefinedOr(terminal), {
+        onNone: () => Effect.void,
+        onSome: (ready) =>
+          decodeClearTextReport(ready).pipe(
+            Effect.map((command) =>
+              writeRenderedReport(renderClearText(command.report, command.metrics, options), options)
+            ),
+          ),
+      })
+    ),
+  )
 }

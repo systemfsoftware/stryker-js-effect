@@ -2,7 +2,7 @@ import type { ExitClass } from '@systemfsoftware/stryker-js-language'
 import type { MetricsResult } from '@systemfsoftware/stryker-js-language'
 import type * as reportApi from '@systemfsoftware/stryker-js-language'
 import type { ReporterEvent, ReporterFactory, ReporterInit } from '@systemfsoftware/stryker-js-language'
-import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
+import { errorToString, MutationTestReportReady, ReporterFailed } from '@systemfsoftware/stryker-js-language'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
 import {
   formatTraceparent,
@@ -47,7 +47,7 @@ interface ReporterAttachment {
   readonly queue: Queue.Queue<ReporterEvent, Cause.Done>
   readonly latch: ReporterStreamLatch
   readonly emitter: Fiber.Fiber<void>
-  readonly consumer: Promise<void>
+  readonly consumer: Fiber.Fiber<void, unknown>
 }
 
 const ReporterStageTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-engine/ReporterStage')
@@ -192,21 +192,22 @@ export const attachReporterFactories = (
           }
         },
       }
-      const consumer: Promise<void> = yield* Effect.match(
+      const consumer = Effect.flatten(
         Effect.try({
           try: () => input.factory(options, init)(singleUse),
           catch: (reason) => new Data.Error(`Reporter "${input.name}" factory threw: ${String(reason)}`),
         }),
-        {
-          onFailure: (crash): Promise<void> => Promise.reject(crash),
-          onSuccess: (started) => started,
-        },
-      )
+      ).pipe(Effect.ensuring(markDetachedEffect(ports)))
+      const consumerFiber = yield* Effect.forkScoped(consumer)
       const emitter = yield* Effect.forkScoped(pumpEmitter(ports))
-      const attachment: ReporterAttachment = { name: input.name, inbox, queue, latch, emitter, consumer }
-      yield* Effect.forkScoped(
-        Effect.tryPromise(() => consumer).pipe(Effect.ignore, Effect.andThen(markDetachedEffect(ports))),
-      )
+      const attachment: ReporterAttachment = {
+        name: input.name,
+        inbox,
+        queue,
+        latch,
+        emitter,
+        consumer: consumerFiber,
+      }
       return attachment
     })).pipe(Effect.map(makeReporterStage))
 
@@ -214,37 +215,31 @@ export const REPORTER_EVENT_BATCH_BOUND = 128
 
 export type ReporterWorkerClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof ReporterRpcs>, RpcClientError>
 
-const runOnWorker = <A, E>(call: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(call)
+const workerStreamErrorOf = (cause: unknown): ReporterFailed =>
+  ReporterFailed.make({ reporterName: 'worker', event: 'mutationTestReportReady', cause: errorToString(cause) })
 
 const reporterInitPayload = (init: ReporterInit): ReporterInitOptions => ({
   ...traceparentInit(init.traceparent),
   ...tracestateInit(init.tracestate),
 })
 
-const flushFilledBatch = (client: ReporterWorkerClient, batch: ReporterEvent[]): Promise<void> => {
-  if (batch.length < REPORTER_EVENT_BATCH_BOUND) return Promise.resolve()
-  return runOnWorker(client.onEventBatch(batch)).then(() => {
-    batch.length = 0
-  })
-}
-
-const flushRemainingBatch = (client: ReporterWorkerClient, batch: ReporterEvent[]): Promise<void> => {
-  if (batch.length === 0) return Promise.resolve()
-  return runOnWorker(client.onEventBatch(batch))
-}
-
-export const reporterWorkerFactory =
-  (client: ReporterWorkerClient): ReporterFactory => (_options, init) => (events) => {
-    const batch: ReporterEvent[] = []
-    const iterator = events[Symbol.asyncIterator]()
-    const consume = (): Promise<void> =>
-      iterator.next().then((result) => {
-        if (result.done === true) return flushRemainingBatch(client, batch)
-        batch.push(result.value)
-        return flushFilledBatch(client, batch).then(consume)
+export const reporterWorkerFactory = (client: ReporterWorkerClient): ReporterFactory => (_options, init) => (events) =>
+  client.init(reporterInitPayload(init)).pipe(
+    Effect.andThen(
+      Stream.runForEach(
+        Stream.grouped(Stream.fromAsyncIterable(events, workerStreamErrorOf), REPORTER_EVENT_BATCH_BOUND),
+        (batch) => client.onEventBatch([...batch]),
+      ),
+    ),
+    Effect.andThen(client.flush()),
+    Effect.mapError((cause) =>
+      ReporterFailed.make({
+        reporterName: 'worker',
+        event: 'mutationTestReportReady',
+        cause: errorToString(cause),
       })
-    return runOnWorker(client.init(reporterInitPayload(init))).then(consume).then(() => runOnWorker(client.flush()))
-  }
+    ),
+  )
 
 export interface SpawnReporterWorkerParams {
   readonly entrypoint: string
@@ -337,7 +332,7 @@ type ReporterDrainOutcome =
 
 const settleFailedAttachment = (
   attachment: ReporterAttachment,
-  cause: Cause.Cause<never>,
+  cause: Cause.Cause<unknown>,
 ): Effect.Effect<ReporterDrainOutcome, never, never> =>
   Effect.gen(function*() {
     if (attachment.latch.state === 'terminal') {
@@ -356,7 +351,7 @@ const settleFailedAttachment = (
 
 const settleAttachment = (attachment: ReporterAttachment): Effect.Effect<ReporterDrainOutcome, never, never> =>
   Effect.gen(function*() {
-    const settled = yield* Effect.exit(Effect.promise(() => attachment.consumer)).pipe(
+    const settled = yield* Effect.exit(Fiber.join(attachment.consumer)).pipe(
       Effect.timeoutOption(REPORTER_STALL_TIMEOUT),
     )
     return yield* Option.match(settled, {

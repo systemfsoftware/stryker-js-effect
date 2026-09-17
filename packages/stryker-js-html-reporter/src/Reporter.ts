@@ -1,10 +1,12 @@
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
-import { MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
+import { errorToString, MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
 import type { ReporterFactory } from '@systemfsoftware/stryker-js-language'
+import { ReporterFailed } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
@@ -59,23 +61,39 @@ declare const __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__: string | undefined
 
 const nodeFsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
-const readBundleContent = Effect.gen(function*() {
-  if (typeof __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__ === 'string') {
-    return __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__
-  }
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const bundlePath = yield* path.fromFileUrl(new URL(import.meta.resolve(BUNDLE_SPECIFIER)))
-  return yield* fs.readFileString(bundlePath)
-})
+const inlinedBundle = (): string | undefined =>
+  Match.value(typeof __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__).pipe(
+    Match.when('undefined', () => undefined),
+    Match.orElse(() => __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__),
+  )
+
+const readBundleContent: Effect.Effect<string, unknown, FileSystem.FileSystem | Path.Path> = Effect.suspend(() =>
+  Match.value(inlinedBundle()).pipe(
+    Match.when(Match.string, (bundle) => Effect.succeed(bundle)),
+    Match.orElse(() =>
+      Effect.flatMap(
+        FileSystem.FileSystem,
+        (fs) =>
+          Effect.flatMap(
+            Path.Path,
+            (path) =>
+              Effect.flatMap(
+                path.fromFileUrl(new URL(import.meta.resolve(BUNDLE_SPECIFIER))),
+                (bundlePath) => fs.readFileString(bundlePath),
+              ),
+          ),
+      )
+    ),
+  )
+)
 
 const writeHtmlFile = (fileName: string, html: string) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    yield* fs.makeDirectory(path.dirname(fileName), { recursive: true })
-    yield* fs.writeFileString(fileName, html)
-  })
+  Effect.flatMap(FileSystem.FileSystem, (fs) =>
+    Effect.flatMap(Path.Path, (path) =>
+      Effect.andThen(
+        fs.makeDirectory(path.dirname(fileName), { recursive: true }),
+        fs.writeFileString(fileName, html),
+      )))
 
 const loadBundle = (
   cached: Ref.Ref<string | undefined>,
@@ -99,23 +117,27 @@ const writeReportHtml = (
       ).html,
     ))
 
+const failAsHtmlReporter = (cause: unknown): ReporterFailed =>
+  ReporterFailed.make({ reporterName: 'html', event: 'mutationTestReportReady', cause: errorToString(cause) })
+
 const writeReportHtmlIfReady = (
   fileName: string,
   event: unknown,
   cached: Ref.Ref<string | undefined>,
-): Effect.Effect<void, unknown, FileSystem.FileSystem | Path.Path> => {
+): Effect.Effect<void, ReporterFailed, FileSystem.FileSystem | Path.Path> => {
   if (S.is(MutationTestReportReady)(event)) {
-    return writeReportHtml(fileName, event, cached)
+    return writeReportHtml(fileName, event, cached).pipe(Effect.mapError(failAsHtmlReporter))
   }
   return Effect.void
 }
 
-const streamErrorOf = (error: unknown): unknown => error
+const streamErrorOf = (cause: unknown): ReporterFailed =>
+  ReporterFailed.make({ reporterName: 'html', event: 'mutationTestReportReady', cause: errorToString(cause) })
 
 const drainEvents = (
   fileName: string,
   events: AsyncIterable<unknown>,
-): Effect.Effect<void, unknown, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<void, ReporterFailed, FileSystem.FileSystem | Path.Path> =>
   Effect.flatMap(
     Ref.make<string | undefined>(undefined),
     (cached) =>
@@ -124,4 +146,4 @@ const drainEvents = (
   )
 
 export const makeHtmlReporter: ReporterFactory = (options, _init) => (events) =>
-  Effect.runPromise(Effect.provide(drainEvents(options.htmlReporter.fileName, events), nodeFsPathLayer))
+  Effect.provide(drainEvents(options.htmlReporter.fileName, events), nodeFsPathLayer)
