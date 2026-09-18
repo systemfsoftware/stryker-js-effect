@@ -1,0 +1,126 @@
+name: Mutation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - packages/stryker-js
+          - packages/stryker-js-vitest-runner
+          - packages/stryker-js-typescript-checker
+    name: Mutation (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: ${{ matrix.package }}/reports/stryker-incremental.json
+          key: ${{ runner.os }}-stryker-${{ matrix.package }}-main
+          restore-keys: |
+            ${{ runner.os }}-stryker-${{ matrix.package }}-
+
+      - name: Mutation
+        id: mutation
+        continue-on-error: true
+        timeout-minutes: 30
+        run: pnpm turbo mutation --filter=./${{ matrix.package }} --log-order=stream --output-logs=errors-only
+
+      - name: Record part metadata
+        if: always()
+        run: |
+          mkdir -p '${{ matrix.package }}/reports'
+          printf '{"package":"%s","outcome":"%s"}\n' \
+            '${{ matrix.package }}' '${{ steps.mutation.outcome }}' \
+            > '${{ matrix.package }}/reports/mutation-part.json'
+
+      - name: Require a mutation part
+        if: ${{ !cancelled() }}
+        run: |
+          test -f '${{ matrix.package }}/reports/mutation-part.json'
+          test -f '${{ matrix.package }}/reports/mutation-report.json' \
+            || test -f '${{ matrix.package }}/reports/mutation-stream.jsonl'
+
+      - uses: actions/cache/save@v6
+        if: ${{ always() && hashFiles(format('{0}/reports/stryker-incremental.json', matrix.package)) != '' }}
+        with:
+          path: ${{ matrix.package }}/reports/stryker-incremental.json
+          key: ${{ runner.os }}-stryker-${{ matrix.package }}-${{ github.run_id }}
+
+      - name: Sanitize artifact name
+        id: sanitize
+        if: always()
+        run: echo "name=$(echo '${{ matrix.package }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: mutation-part-${{ steps.sanitize.outputs.name }}
+          path: |
+            ${{ matrix.package }}/reports/mutation-part.json
+            ${{ matrix.package }}/reports/mutation-report.json
+            ${{ matrix.package }}/reports/mutation-stream.jsonl
+          if-no-files-found: ignore
+          retention-days: 1
+
+  report:
+    name: Mutation report
+    needs: [mutation]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          path: mutation-parts
+          pattern: mutation-part-*
+
+      - name: Merge
+        env:
+          PACKAGES: '["packages/stryker-js","packages/stryker-js-vitest-runner","packages/stryker-js-typescript-checker"]'
+        run: |
+          pnpm --filter @systemfsoftware/stryker-js exec stryker merge-reports \
+            --parts "$GITHUB_WORKSPACE/mutation-parts" \
+            --out "$GITHUB_WORKSPACE/mutation-merged" \
+            --packages "$PACKAGES"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report-${{ github.run_number }}
+          path: mutation-merged/*
+          retention-days: 14
