@@ -10,7 +10,7 @@ catalog:
   "@commitlint/config-conventional": ^21
   "@commitlint/types": ^21
   "@effect/tsgo": ^0.45.0
-  "@effect/platform-node": 4.0.0-rc.112
+  "@effect/platform-node": 4.0.0-rc.115
   "@effect/platform-node-shared": 4.0.0-rc.112
   "@effect/vitest": 4.0.0-rc.112
   "@microsoft/api-extractor": ^7
