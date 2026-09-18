@@ -185,4 +185,8 @@ describe('running one mutation run through the packed runner', () => {
     expect(preceding.length).toBeGreaterThan(0)
     expect(kindsOutsideOf(preceding, NON_TERMINAL_RUN_KINDS)).toEqual([])
   })
+
+  it('does not warn that it failed to chmod a worker socket the child has not bound yet', () => {
+    expect(`${run.stdout}\n${run.stderr}`).not.toMatch(/Could not restrict "[^"]*worker\.sock"/)
+  })
 })
