@@ -209,18 +209,18 @@ export default defineConfig(({ isCi, isDryRun }) => ({
 
 ## 📖 Key Configuration Options Reference
 
-| Option                 | Type                            | Default                              | Description                                                                                          |
-| ---------------------- | ------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `mutate`               | `string[]`                      | `['src/**/*.js', 'src/**/*.ts']`     | Files to mutate. Prefix with `!` to exclude test files, fixtures, and declaration files.             |
-| `testRunner`           | `'vitest' \| 'command' \| 'vm'` | `'vitest'`                           | Execution strategy for running tests against mutants.                                                |
-| `plugins`              | `string[]`                      | `[]`                                 | Explicit `file:` URLs to plugins, resolved with `import.meta.resolve('@systemfsoftware/...')`.       |
-| `checkers`             | `string[]`                      | `[]`                                 | Type checker plugins (e.g. `['typescript']`) that discard uncompilable mutants before running tests. |
-| `ignorers`             | `string[]`                      | `[]`                                 | Registered AST ignorer rules that skip equivalent or unobservable mutants.                           |
-| `concurrency`          | `number`                        | `CPU cores - 1`                      | Maximum parallel worker processes for checkers and test runners.                                     |
-| `reporters`            | `string[]`                      | `['progress', 'clear-text', 'html']` | Output reporters. `html` writes an interactive report to `reports/mutation/`.                        |
-| `thresholds`           | `{ high, low, break }`          | `{ high: 80, low: 60, break: 0 }`    | Score thresholds. If final score is below `break`, the CLI exits with non-zero exit code `1`.        |
-| `incremental`          | `boolean`                       | `false`                              | Cache results across runs in `reports/stryker-incremental.json` to skip re-testing unchanged code.   |
-| `survivorsPriorReport` | `string`                        | `undefined`                          | Path to prior report when running `--survivors` targeted re-testing.                                 |
+| Option                 | Type                            | Default                                                                                                      | Description                                                                                          |
+| ---------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `mutate`               | `string[]`                      | `['{src,lib}/**/!(*.+(s\|S)pec\|*.+(t\|T)est).+(cjs\|mjs\|js\|ts\|mts\|cts\|jsx\|tsx)', '!**/__tests__/**']` | Files to mutate. Prefix with `!` to exclude test files, fixtures, and declaration files.             |
+| `testRunner`           | `'command' \| 'vitest' \| 'vm'` | `'command'`                                                                                                  | Execution strategy for running tests against mutants.                                                |
+| `plugins`              | `string[]`                      | `[]`                                                                                                         | Explicit `file:` URLs to plugins, resolved with `import.meta.resolve('@systemfsoftware/...')`.       |
+| `checkers`             | `string[]`                      | `[]`                                                                                                         | Type checker plugins (e.g. `['typescript']`) that discard uncompilable mutants before running tests. |
+| `ignorers`             | `string[]`                      | `[]`                                                                                                         | Registered AST ignorer rules that skip equivalent or unobservable mutants.                           |
+| `concurrency`          | `number`                        | `CPU cores - 1`                                                                                              | Maximum parallel worker processes for checkers and test runners.                                     |
+| `reporters`            | `string[]`                      | `['progress', 'clear-text', 'html']`                                                                         | Output reporters. `html` writes an interactive report to `reports/mutation/`.                        |
+| `thresholds`           | `{ high, low, break }`          | `{ high: 80, low: 60, break: null }`                                                                         | Score thresholds. If final score is below `break`, the CLI exits with non-zero exit code `1`.        |
+| `incremental`          | `boolean`                       | `false`                                                                                                      | Cache results across runs in `reports/stryker-incremental.json` to skip re-testing unchanged code.   |
+| `survivorsPriorReport` | `string`                        | `'reports/mutation-report.json'`                                                                             | Path to prior report when running `--survivors` targeted re-testing.                                 |
 
 ---
 
@@ -255,6 +255,7 @@ Stryker provides deterministic exit codes so CI pipelines and autonomous agents 
 
 Detailed authoring guides are packaged in the agent skill:
 
+- [Mutation Testing Decision Guide](skills/stryker-mutation-testing/references/decision-guide.md) — Choose between in-memory V8 VM, Vitest worker sandboxes, and shell Command runner.
 - [Authoring Custom Ignorers](skills/stryker-mutation-testing/references/authoring-ignorers.md) — Write custom AST visitors with `@systemfsoftware/stryker-ignorer-kit` to filter false surviving mutants.
 - [Authoring Custom Test Runners](skills/stryker-mutation-testing/references/authoring-runners.md) — Build custom test runner worker plugins via `@systemfsoftware/stryker-js-plugin-interface` and Effect RPC.
 

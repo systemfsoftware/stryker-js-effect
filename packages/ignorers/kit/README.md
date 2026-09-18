@@ -147,7 +147,7 @@ Case semantics:
 ### 4. Ship it
 
 `pnpm --filter <your-package> test` green, `api:update` for the report, a
-changeset entry, and the AGENTS/README wording true to what ships. The family
+changeset entry, and the README wording true to what ships. The family
 rules bind: zero Effect, no type assertions, complexity ≤ 2 per function —
 narrow with small type-predicate functions, as above.
 

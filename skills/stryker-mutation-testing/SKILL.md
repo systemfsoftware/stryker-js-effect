@@ -199,13 +199,11 @@ pnpm exec stryker run --survivors
 
 Before loading any reference, verify its content hash matches the table below. A mismatched hash means the reference has changed and must be re-read.
 
-| File                               | Hash     | Purpose |
-| ---------------------------------- | -------- | ------- |
-| `references/authoring-ignorers.md` | `c4237f` |         |
-| `references/authoring-runners.md`  | `ce7f3c` |         |
-| `references/decision-guide.md`     | `c52521` |         |
-
----
+| File                               | Hash     | Purpose  |
+| ---------------------------------- | -------- | -------- |
+| `references/authoring-ignorers.md` | `3781ed` | `c4237f` |
+| `references/authoring-runners.md`  | `8d23a1` | `ce7f3c` |
+| `references/decision-guide.md`     | `570282` | `c52521` |
 
 ## Critical Rules at Document End (lost-in-middle mitigation)
 

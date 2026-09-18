@@ -79,10 +79,8 @@ import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
 export default defineConfig({
   testRunner: 'vm',
-  vmRunner: {
-    testFiles: ['test/**/*.test.js'],
-  },
-  mutate: ['src/**/*.js'],
+  testFiles: ['test/**/*.test.ts'],
+  mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
 })
 ```
 

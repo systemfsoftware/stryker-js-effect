@@ -1,5 +1,5 @@
 ---
-content_hash: c4237f
+content_hash: 3781ed
 ---
 
 # Custom Ignorer Authoring Guide

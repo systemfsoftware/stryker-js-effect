@@ -1,7 +1,7 @@
 ---
 title: Mutation Testing Decision Guide
 description: How to choose test runners, checkers, and ignorers in Stryker JS Effect.
-content_hash: c52521
+content_hash: 570282
 ---
 
 # Mutation Testing Decision Guide
@@ -34,14 +34,14 @@ export default defineConfig(({ isCi }) => ({
 
 Use `testRunner: 'command'` when the project does not use Vitest (e.g. Jest, Mocha, custom test scripts). It executes the shell command in a child process and reads exit codes.
 
-## 2. Choosing Checkers
+## 3. Choosing Checkers
 
 | Project Type                                  | Recommended Checker                              | Benefit                                                      |
 | --------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
 | TypeScript projects (`tsconfig.json` present) | `@systemfsoftware/stryker-js-typescript-checker` | Discards syntactically broken mutants before executing tests |
 | Pure JavaScript                               | None                                             | No type compilation step needed                              |
 
-## 3. Choosing Ignorers
+## 4. Choosing Ignorers
 
 | Stack                                                                   | Ignorer Package                                               | Ignorer Name                 |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------- |

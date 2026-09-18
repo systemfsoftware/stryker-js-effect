@@ -67,10 +67,6 @@ pair — they take different strings:
 A mismatched pair fails silent-green: the run completes with nothing ignored
 and only a `Cannot find plugin` warning.
 
-## Contributing
-
-Development setup and workflow: [AGENTS.md](AGENTS.md).
-
 ## License
 
 [Apache 2.0](LICENSE)
