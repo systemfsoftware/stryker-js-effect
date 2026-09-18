@@ -102,42 +102,27 @@ const compileTests = (
     return { fileName, script }
   })
 
-const isHostGlobalOmitted = (name: string): boolean => name === 'global' || name === 'globalThis'
-
-const globalValueOf = (descriptor: PropertyDescriptor | undefined): unknown => descriptor?.value
-
-const hostGlobals = (): Record<string, unknown> => {
-  const globals: Record<string, unknown> = {}
-  for (const name of Object.getOwnPropertyNames(globalThis)) {
-    Match.value(name).pipe(
-      Match.when(isHostGlobalOmitted, (): void => undefined),
-      Match.orElse((): void => {
-        globals[name] = globalValueOf(Object.getOwnPropertyDescriptor(globalThis, name))
-      }),
-    )
-  }
-  return globals
-}
-
 const sandboxFor = (
   platform: VmPlatform,
   fileName: string,
   activeMutantId: string | undefined,
 ): Record<string, unknown> => {
-  const sandbox = hostGlobals()
-  const namespace: Record<string, unknown> = {}
-  Match.value(activeMutantId).pipe(
-    Match.when(Match.string, (active) => {
-      namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = active
-    }),
-    Match.orElse(() => undefined),
+  const namespace: Record<string, unknown> = Match.value(activeMutantId).pipe(
+    Match.when(Match.string, (active) => ({ [INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT]: active })),
+    Match.orElse(() => ({})),
   )
-  sandbox[INSTRUMENTER_CONSTANTS.NAMESPACE] = namespace
-  sandbox['require'] = platform.module.createRequire(fileName)
-  const module: Record<string, unknown> = { exports: undefined }
-  sandbox['module'] = module
-  sandbox['exports'] = module['exports']
-  sandbox['__filename'] = fileName
+  const moduleExports: Record<string, unknown> = {}
+  const moduleObj = { exports: moduleExports }
+  const sandbox: Record<string, unknown> = {
+    ...globalThis,
+    [INSTRUMENTER_CONSTANTS.NAMESPACE]: namespace,
+    require: platform.module.createRequire(fileName),
+    module: moduleObj,
+    exports: moduleExports,
+    __filename: fileName,
+  }
+  sandbox['global'] = sandbox
+  sandbox['globalThis'] = sandbox
   return sandbox
 }
 

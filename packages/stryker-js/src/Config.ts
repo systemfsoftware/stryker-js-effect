@@ -224,17 +224,13 @@ const describeUnserializableRecord = (
     Object.entries(value).map(([key, child]) => describeUnserializableChild(child, key)),
   )
 
-const isPlainObjectValue = (value: object): boolean => {
-  const prototype: unknown = Object.getPrototypeOf(value)
-  return prototype === Object.prototype || prototype === null
-}
+const isPlainObjectValue = (value: object): boolean => !Array.isArray(value) && value.constructor === Object
 
-const classNameOf = (value: object): string => {
-  const name: string = value.constructor.name
-  if (name.length > 0) return name
-  return '<anonymous class>'
-}
-
+const classNameOf = (value: object): string =>
+  Match.value(value.constructor).pipe(
+    Match.when(Match.defined, (ctor) => ctor.name),
+    Match.orElse(() => 'Object'),
+  )
 const describeUnserializableInstance = (
   value: object,
 ): UnserializableDescription[] | undefined => [
