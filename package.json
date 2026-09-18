@@ -32,6 +32,7 @@
     "lgtm:up": "process-compose up --tui=false --detached --keep-project && timeout 180 process-compose project is-ready --wait",
     "precommit": "pnpm exec lint-staged --no-revert --config .lintstagedrc.js",
     "prepare": "concurrently \"husky\" \"effect-tsgo patch --oxlint --no-typescript --skip-missing\"",
+    "publish:unpublished": "./scripts/publish-and-setup-npm-trust.ts",
     "test": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} test",
     "test:e2e": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} test:e2e",
     "typecheck": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} --continue typecheck typecheck:node",

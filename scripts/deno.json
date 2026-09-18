@@ -4,6 +4,7 @@
     "noImplicitOverride": true
   },
   "imports": {
+    "@std/async/pool": "jsr:@std/async@1/pool",
     "@std/cli/parse-args": "jsr:@std/cli@1/parse-args",
     "@std/collections/without-all": "jsr:@std/collections@1/without-all",
     "@std/encoding/base64": "jsr:@std/encoding@1/base64",
