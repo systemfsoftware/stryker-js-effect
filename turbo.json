@@ -146,7 +146,7 @@
         "stryker.config.ts",
         "$TURBO_ROOT$/packages/toolchain/stryker-config/**",
         "vitest.config.ts",
-        "reports/stryker-incremental.json",
+        "!reports/**",
         "!**/*.md"
       ],
       "outputs": [
