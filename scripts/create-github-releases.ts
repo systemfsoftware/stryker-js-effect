@@ -21,10 +21,9 @@ const pending: { entry: CycleEntry; body: string }[] = []
 for (const entry of cycle) {
   const { name, version, changelog } = entry
   let raw = await ensureChangelog(name, version)
-  if (raw === null || raw.trim().length === 0) {
-    const state = raw === null ? 'Missing' : 'Empty'
+  if (raw.trim().length === 0) {
     console.error(
-      `::error::${state} changelog for ${name}@${version}: expected ${changelog} — body must be the pnpm-generated changelog.`,
+      `::error::Missing or empty changelog for ${name}@${version}: expected ${changelog} — body must be the pnpm-generated changelog.`,
     )
     Deno.exit(1)
   }
