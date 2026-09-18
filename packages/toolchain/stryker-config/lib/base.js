@@ -10,7 +10,7 @@ const isAgent = process.env['AGENT'] !== undefined
 const isCI = !isAgent && typeof process.env['CI'] === 'string' && process.env['CI'].length > 0
 
 const envConcurrency = process.env['STRYKER_CONCURRENCY'] ??
-  (isAgent ? '25%' : isCI ? '50%' : undefined)
+  (isAgent ? '50%' : isCI ? '100%' : undefined)
 
 /**
  * @param {import('@systemfsoftware/stryker-js/config').StrykerConfig} [overrides]
