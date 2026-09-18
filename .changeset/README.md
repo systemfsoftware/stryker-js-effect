@@ -24,7 +24,8 @@ workflow filename) as a trusted publisher on npmjs.com before its first version
 ships — OIDC cannot debut a package npm has never seen. The `@systemfsoftware/stryker-js*`
 family is already published; only a new package name needs this step.
 
-If the GitHub repository changes (e.g. transfer, rename, or fork):
+If the GitHub repository changes (e.g. transfer, rename, or fork) or new packages are introduced:
 
-1. Run `./scripts/fix-oidc.ts --fix` to update all package manifests' `repository` URLs to the new repository slug.
-2. Run `./scripts/fix-oidc.ts --generate-script` to print or execute `npm trust github` commands to register the new repository slug with npm.
+1. Run `pnpm publish:unpublished --dry-run` to preview the bootstrap and trust setup.
+2. Run `pnpm publish:unpublished --fix` from a maintainer machine with npm auth to update `package.json` repository URLs to the new repository slug, debut any unpublished packages, and configure `npm trust github` for all workspace packages.
+3. Run `./scripts/check-npm-publish.ts` to inspect the published/attested state of all packages across the registry.
