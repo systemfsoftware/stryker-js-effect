@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-plugin-runtime",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -39,6 +39,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
@@ -52,8 +53,7 @@
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:",
-    "@effect/tsgo": "catalog:"
+    "vitest": "catalog:"
   },
   "publishConfig": {
     "access": "public",

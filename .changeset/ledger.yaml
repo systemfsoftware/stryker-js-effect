@@ -1,1 +1,110 @@
-{}
+"@systemfsoftware/oxlint-ignorer-config@0.1.0":
+  dir: packages/toolchain/oxlint-ignorer-config
+  intents:
+    - force-all-packages-patch
+    - ignorer-process-global
+    - oxlint-ignorer-config-debut
+"@systemfsoftware/stryker-ignorer-angular@0.1.0":
+  dir: packages/ignorers/angular
+  intents:
+    - force-all-packages-patch
+    - stryker-ignorer-angular-debut
+"@systemfsoftware/stryker-ignorer-effect-schema-declarations@0.1.0":
+  dir: packages/ignorers/effect-schema-declarations
+  intents:
+    - effect-schema-kit-reauthor
+    - force-all-packages-patch
+    - stryker-ignorer-effect-schema-declarations-debut
+"@systemfsoftware/stryker-ignorer-in-source-vitest-block@0.1.0":
+  dir: packages/ignorers/in-source-vitest-block
+  intents:
+    - force-all-packages-patch
+    - stryker-ignorer-in-source-vitest-block-debut
+    - vitest-block-kit-reauthor
+"@systemfsoftware/stryker-ignorer-interface@0.1.0":
+  dir: packages/ignorers/interface
+  intents:
+    - force-all-packages-patch
+    - stryker-ignorer-interface-debut
+"@systemfsoftware/stryker-ignorer-kit@0.1.0":
+  dir: packages/ignorers/kit
+  intents:
+    - force-all-packages-patch
+    - stryker-ignorer-kit-debut
+"@systemfsoftware/stryker-js-cli@9.0.0":
+  dir: apps/stryker-js-cli
+  intents:
+    - cli-exit-teardown
+    - famous-rockets-judge
+    - force-35319686633-patch
+    - stryker-cli-otel-run-telemetry
+    - stryker-config-module-format
+"@systemfsoftware/stryker-js-engine@5.0.0":
+  dir: packages/stryker-js-engine
+  intents:
+    - engine-reporter-stdio
+    - esm-only-module-loading
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - remove-engine-base-preset
+    - run-pipeline-cell
+    - stryker-config-module-format
+    - stryker-js-engine-home-migration
+    - stryker-js-engine-mutation-test-done
+    - stryker-js-engine-plain-ignorer-loader
+"@systemfsoftware/stryker-js-html-reporter@4.0.0":
+  dir: packages/stryker-js-html-reporter
+  intents:
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - stryker-js-html-reporter-home-migration
+"@systemfsoftware/stryker-js-instrumenter@7.0.0":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - force-all-packages-patch
+    - instrumenter-base-path
+    - stryker-js-instrumenter-effect-surface
+    - stryker-js-instrumenter-home-migration
+    - stryker-js-instrumenter-walker-contract
+"@systemfsoftware/stryker-js-language@5.0.0":
+  dir: packages/stryker-js-language
+  intents:
+    - esm-only-module-loading
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - stryker-js-home-migration
+    - stryker-js-language-declarations-only
+    - stryker-js-language-typed-positions
+    - stryker-js-plugin-interface-extraction
+"@systemfsoftware/stryker-js-plugin-interface@5.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - stryker-js-plugin-interface-extraction
+"@systemfsoftware/stryker-js-plugin-runtime@5.0.0":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - esm-only-module-loading
+    - force-all-packages-patch
+    - stryker-js-plugin-interface-extraction
+"@systemfsoftware/stryker-js-typescript-checker@6.0.0":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - stryker-js-typescript-checker-home-migration
+"@systemfsoftware/stryker-js-vitest-runner@5.0.0":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - esm-only-module-loading
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - stryker-js-vitest-runner-home-migration
+    - vitest-runner-spawn-env
+"@systemfsoftware/stryker-test-contribution@3.0.0":
+  dir: packages/stryker-test-contribution
+  intents:
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - stryker-test-contribution-home-migration

@@ -1,7 +1,7 @@
 {
   "name": "@systemfsoftware/stryker-ignorer-interface",
   "license": "Apache-2.0",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "author": "Ryan Lee <drdgvhbh@gmail.com>",
   "repository": {
     "type": "git",
@@ -44,6 +44,7 @@
     "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@oxc-project/types": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
@@ -56,8 +57,7 @@
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:",
-    "@effect/tsgo": "catalog:"
+    "vitest": "catalog:"
   },
   "publishConfig": {
     "access": "public",

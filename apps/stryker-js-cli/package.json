@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-cli",
-  "version": "8.0.1",
+  "version": "9.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -26,6 +26,7 @@
     "@effect/opentelemetry": "4.0.0-rc.112",
     "@effect/platform-node": "catalog:",
     "@effect/platform-node-shared": "catalog:",
+    "@effect/tsgo": "catalog:",
     "@noble/hashes": "catalog:",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.208.0",
@@ -51,8 +52,7 @@
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
-    "vitest": "catalog:",
-    "@effect/tsgo": "catalog:"
+    "vitest": "catalog:"
   },
   "engines": {
     "node": ">=22.18.0"

@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-instrumenter",
-  "version": "6.0.1",
+  "version": "7.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -44,6 +44,7 @@
     "oxc-walker": "catalog:"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
@@ -58,8 +59,7 @@
     "svelte": "5.55.1",
     "tsdown": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:",
-    "@effect/tsgo": "catalog:"
+    "vitest": "catalog:"
   },
   "engines": {
     "node": ">=20.0.0"
