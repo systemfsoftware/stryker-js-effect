@@ -1,7 +1,13 @@
 import * as S from 'effect/Schema'
 
-import { Mutant } from './Mutant.schema.js'
+import {
+  MutantActivationSchema,
+  MutantRunOptionsSchema,
+  RunOptionsFields,
+} from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import { PositionSchema } from './Report.schema.js'
+
+export { MutantActivationSchema, MutantRunOptionsSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 
 export const DryRunStatus = S.Literals(['complete', 'error', 'timeout'])
 export type DryRunStatus = typeof DryRunStatus.Type
@@ -55,28 +61,11 @@ export const MutantRunResultSchema = S.Union([
 
 export const CoverageAnalysisSchema = S.Literals(['off', 'all', 'perTest'])
 
-const RunOptionsFields = {
-  timeout: S.Finite,
-  disableBail: S.Boolean,
-}
-
 export const DryRunOptionsSchema = S.Struct({
   ...RunOptionsFields,
   coverageAnalysis: CoverageAnalysisSchema,
   files: S.optionalKey(S.Array(S.String)),
   testFiles: S.optionalKey(S.Array(S.String)),
-})
-
-export const MutantActivationSchema = S.Literals(['runtime', 'static'])
-
-export const MutantRunOptionsSchema = S.Struct({
-  ...RunOptionsFields,
-  activeMutant: Mutant,
-  sandboxFileName: S.String,
-  mutantActivation: MutantActivationSchema,
-  reloadEnvironment: S.Boolean,
-  testFilter: S.optionalKey(S.Array(S.String)),
-  hitLimit: S.optionalKey(S.Finite),
 })
 
 export const TestRunnerCapabilitiesSchema = S.Struct({

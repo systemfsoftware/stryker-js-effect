@@ -30,6 +30,7 @@
   "dependencies": {
     "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
+    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "effect": "catalog:"
   },
   "devDependencies": {

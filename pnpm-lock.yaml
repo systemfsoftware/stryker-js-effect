@@ -735,9 +735,6 @@ importers:
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
         version: 8.1.0(effect@4.0.0-rc.112)
-      '@systemfsoftware/stryker-js-language':
-        specifier: workspace:^
-        version: link:../stryker-js-language
       angular-html-parser:
         specifier: ~10.4.0
         version: 10.4.0
@@ -808,6 +805,9 @@ importers:
       '@systemfsoftware/stryker-ignorer-interface':
         specifier: workspace:^
         version: link:../ignorers/interface
+      '@systemfsoftware/stryker-js-instrumenter':
+        specifier: workspace:^
+        version: link:../stryker-js-instrumenter
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.112

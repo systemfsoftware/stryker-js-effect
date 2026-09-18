@@ -1,6 +1,3 @@
-export { disableTypeChecks, instrument } from './Instrument.js'
-export type { File, InstrumenterOptions, InstrumentResult } from './Instrument.js'
-export type { InstrumentError } from './Instrument.schema.js'
 export { LocationSchema, OpenEndLocationSchema, PositionSchema } from './Location.js'
 export type { Location, OpenEndLocation, Position } from './Location.js'
 export {
@@ -21,7 +18,6 @@ export type {
   FileDescription,
   FileDescriptions,
   InstrumenterContext,
-  MutantActivation,
   MutantCoverage,
   MutantEarlyResultPlan,
   MutantRunOptions,
@@ -42,5 +38,4 @@ export {
   MutantStatusSchema,
   RunOptionsFields,
 } from './Mutant.schema.js'
-export type { MutantStatus } from './Mutant.schema.js'
-export type { ParserOptions } from './Parser.js'
+export type { MutantActivation, MutantStatus } from './Mutant.schema.js'

@@ -3,9 +3,22 @@ import type * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 
-import type { Mutant } from './Mutant.js'
+import type {
+  Mutant,
+  MutantActivation,
+  MutantCoverage,
+  MutantRunOptions,
+  RunOptions,
+} from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import type { Position } from './Report.schema.js'
 import type { TestRunnerFailed } from './TestRunner.schema.js'
+
+export type {
+  MutantActivation,
+  MutantCoverage,
+  MutantRunOptions,
+  RunOptions,
+} from '@systemfsoftware/stryker-js-instrumenter/mutants'
 
 export {
   CoverageAnalysisSchema,
@@ -45,11 +58,6 @@ export interface SuccessTestResult extends BaseTestResult {
 }
 
 export type TestResult = FailedTestResult | SkippedTestResult | SuccessTestResult
-
-export interface MutantCoverage {
-  readonly perTest: Record<string, Record<string, number>>
-  readonly static: Record<string, number>
-}
 
 export interface CompleteDryRunResult {
   readonly tests: readonly TestResult[]
@@ -99,26 +107,10 @@ export type MutantRunResult =
 
 export type CoverageAnalysis = 'off' | 'all' | 'perTest'
 
-export interface RunOptions {
-  readonly timeout: number
-  readonly disableBail: boolean
-}
-
 export interface DryRunOptions extends RunOptions {
   readonly coverageAnalysis: CoverageAnalysis
   readonly files?: readonly string[]
   readonly testFiles?: readonly string[]
-}
-
-export type MutantActivation = 'runtime' | 'static'
-
-export interface MutantRunOptions extends RunOptions {
-  readonly testFilter?: readonly string[]
-  readonly hitLimit?: number
-  readonly activeMutant: Mutant
-  readonly sandboxFileName: string
-  readonly mutantActivation: MutantActivation
-  readonly reloadEnvironment: boolean
 }
 
 export interface TestRunnerCapabilities {

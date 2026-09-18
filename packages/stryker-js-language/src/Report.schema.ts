@@ -1,34 +1,15 @@
 import * as S from 'effect/Schema'
 
-export const PositionSchema = S.Struct({
-  line: S.Finite,
-  column: S.Finite,
-})
-export type Position = typeof PositionSchema.Type
+export { LocationSchema, OpenEndLocationSchema, PositionSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+export { MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+export type { Location, OpenEndLocation, Position } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+export type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 
-export const LocationSchema = S.Struct({
-  start: PositionSchema,
-  end: PositionSchema,
-})
-export type Location = typeof LocationSchema.Type
-
-export const OpenEndLocationSchema = S.Struct({
-  start: PositionSchema,
-  end: S.optional(PositionSchema),
-})
-export type OpenEndLocation = typeof OpenEndLocationSchema.Type
-
-export const MutantStatusSchema = S.Literals([
-  'Killed',
-  'Survived',
-  'NoCoverage',
-  'CompileError',
-  'RuntimeError',
-  'Timeout',
-  'Ignored',
-  'Pending',
-])
-export type MutantStatus = typeof MutantStatusSchema.Type
+import {
+  LocationSchema,
+  MutantStatusSchema,
+  OpenEndLocationSchema,
+} from '@systemfsoftware/stryker-js-instrumenter/mutants'
 
 export const MutantResultSchema = S.Struct({
   id: S.String,
