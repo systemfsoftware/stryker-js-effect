@@ -1,11 +1,13 @@
 # @systemfsoftware/stryker-ignorer-effect-schema-declarations
 
-![version](https://img.shields.io/npm/v/@systemfsoftware/stryker-ignorer-effect-schema-declarations)
-![license](https://img.shields.io/npm/l/@systemfsoftware/stryker-ignorer-effect-schema-declarations)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../../../LICENSE)
+[![npm version](https://img.shields.io/npm/v/@systemfsoftware/stryker-ignorer-effect-schema-declarations.svg)](https://www.npmjs.com/package/@systemfsoftware/stryker-ignorer-effect-schema-declarations)
 
-> Stop Effect `Schema` declarations from dragging your Stryker score below 100%.
+> Stop Effect `Schema` declarations from dragging your Stryker mutation score below 100%.
 
-A brand description, a `_tag`, a `title` — mutate any of them and the source changes but the behaviour does not, so no test can ever kill the mutant. Those unkillable mutants sit in your report forever, indistinguishable from real coverage gaps. This [Stryker](https://stryker-mutator.io) ignorer removes them, so the score that remains is behaviour.
+A brand description, a `_tag`, a schema `title` — mutate any of them and the source changes but runtime behavior does not, so no test assertion can ever kill the mutant. Those unkillable mutants sit in your report forever, indistinguishable from real coverage gaps.
+
+This Stryker ignorer filters them out at the AST level, so the score that remains reflects actual executable behavior.
 
 ## Install
 
@@ -13,60 +15,39 @@ A brand description, a `_tag`, a `title` — mutate any of them and the source c
 pnpm add -D @systemfsoftware/stryker-ignorer-effect-schema-declarations
 ```
 
-In `stryker.config.ts`, the plugin module and the ignorer name travel as a pair:
+## Setup in `stryker.config.ts`
 
-| Config key | Value                                                         |
-| ---------- | ------------------------------------------------------------- |
-| `plugins`  | `@systemfsoftware/stryker-ignorer-effect-schema-declarations` |
-| `ignorers` | `effect-schema-declarations`                                  |
+In `stryker.config.ts`, the plugin URL and the ignorer name travel as a pair:
 
 ```ts
-export default {
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
+
+export default defineConfig({
+  testRunner: 'vitest',
   plugins: [
-    '@systemfsoftware/stryker-js-vitest-runner',
-    '@systemfsoftware/stryker-js-typescript-checker',
-    '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
+    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
+    import.meta.resolve('@systemfsoftware/stryker-ignorer-effect-schema-declarations'),
   ],
   ignorers: ['effect-schema-declarations'],
-}
+})
 ```
 
-Mutants it recognizes are reported as `Ignored`, each carrying the reason it was safe to skip.
+Mutants recognized by the ignorer are reported with status `Ignored`, carrying the exact reason why skipping is safe.
 
 > [!WARNING]
-> A name in `ignorers` that no loaded plugin answers is silently skipped — the run proceeds and the mutants stay in your score. Copy the name from the table, not from memory.
+> A name in `ignorers` that no loaded plugin provides is skipped without error. Ensure the string `'effect-schema-declarations'` exactly matches the ignorer identifier.
 
-> [!NOTE]
-> Requires `@systemfsoftware/stryker-js` 4.1.0 or later (the first version whose plugin loader speaks the plain ignorer protocol). The package has no peer dependencies, no Effect anywhere — not in `dependencies`, not in `devDependencies`, and not on its published surface — and two dependencies: `@systemfsoftware/stryker-ignorer-interface`, whose node types declare the AST shapes the visitors read, and `@systemfsoftware/stryker-ignorer-kit`, which compiles the visitor declaration to the wire contract and verifies it from source snippets.
+## What It Ignores
 
-## Migrating from `@systemfsoftware/stryker-plugins`
-
-| Before                                            | After                                                                        |
-| ------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `"plugins": ["@systemfsoftware/stryker-plugins"]` | `"plugins": ["@systemfsoftware/stryker-ignorer-effect-schema-declarations"]` |
-| `"ignorers": ["effect-schema-declarations"]`      | unchanged                                                                    |
-
-## What it ignores
-
-| Declaration                                               | Example                                                           |
-| --------------------------------------------------------- | ----------------------------------------------------------------- |
-| Brand descriptions                                        | `Symbol.for('UserId')`                                            |
-| `TaggedClass` / `TaggedError` tags                        | `S.TaggedClass<A>()('Placed', {…})`                               |
-| The field schemas of those declarations                   | the `{…}` above                                                   |
-| `optionalWith` defaults                                   | `S.optionalWith(S.Number, { default: () => 0 })`                  |
-| Documentation annotations                                 | `identifier`, `description`, `title`, `documentation`, `examples` |
-| An `annotations({…})` object that is _only_ documentation | `S.annotations({ title: 'Amount' })`                              |
-
-## Where the line is
-
-Every ignore is proven redundant, never merely assumed — anything a test could observe keeps its mutants.
-
-`arbitrary`, `pretty`, `equivalence`, `message`, `jsonSchema` and `parseIssueTitle` are **not** documentation: each changes what the schema does, so a survivor there is a test gap to close. That is why the two `annotations` rules differ — a `title` is ignored wherever it appears, but the enclosing object is ignored only when every entry documents, since emptying an object holding an `arbitrary` would silently change what your property tests generate.
-
-## Contributing
-
-Development setup and workflow: [AGENTS.md](AGENTS.md).
+| Declaration                               | Example                                                           |
+| ----------------------------------------- | ----------------------------------------------------------------- |
+| Brand descriptions                        | `Symbol.for('UserId')`                                            |
+| `TaggedClass` / `TaggedError` tag strings | `S.TaggedClass<A>()('Placed', { ... })`                           |
+| Schema property declarations              | Property definition schema trees in tagged classes                |
+| `optionalWith` default values             | `S.optionalWith(S.Number, { default: () => 0 })`                  |
+| Documentation annotations                 | `identifier`, `description`, `title`, `documentation`, `examples` |
+| Pure documentation `annotations({ ... })` | `S.annotations({ title: 'Amount' })`                              |
 
 ## License
 
-[Apache 2.0](LICENSE)
+[Apache-2.0](../../../LICENSE)

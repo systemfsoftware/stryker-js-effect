@@ -1,7 +1,9 @@
 # `@systemfsoftware/stryker-js`
 
-The Stryker mutation testing tool: the `stryker` executable, the run engine it
-drives, and the configuration surface a project writes its options against.
+The modern mutation testing framework for JavaScript and TypeScript.
+A ground-up, breaking-change fork of `@stryker-mutator/core` built with Effect 4:
+provides the `stryker` executable, in-memory V8 and isolated Vitest runners,
+and the typed `./config` authoring surface.
 
 ## Install
 
@@ -9,72 +11,177 @@ drives, and the configuration surface a project writes its options against.
 pnpm add -D @systemfsoftware/stryker-js
 ```
 
-## Configure
+## Quick Start: Vitest Runner
 
-```ts
-// stryker.config.ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+For TypeScript codebases using Vitest:
 
-export default defineConfig(({ isCi }) => ({
-  testRunner: 'vitest',
-  plugins: ['@systemfsoftware/stryker-js-vitest-runner'],
-  mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
-}))
+```bash
+pnpm add -D @systemfsoftware/stryker-js \
+  @systemfsoftware/stryker-js-vitest-runner \
+  @systemfsoftware/stryker-js-typescript-checker
 ```
 
-`defineConfig` is an identity function: it preserves literal types and accepts
-an object, a promise, or a function receiving `ConfigEnv` (`command`,
-`isDryRun`, `mode`, `isCi`). `mergeConfig` composes a preset with overrides —
-records merge key by key, and a scalar or array (the default plugin globs among
-them) replaces the default outright.
+Create `stryker.config.ts` in your project root:
 
-## Run
+```ts
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
+
+export default defineConfig({
+  testRunner: 'vitest',
+  checkers: ['typescript'],
+  plugins: [
+    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
+    import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+  ],
+  mutate: [
+    'src/**/*.ts',
+    '!src/**/*.test.ts',
+    '!src/**/*.d.ts',
+  ],
+  thresholds: {
+    high: 90,
+    low: 70,
+    break: 80,
+  },
+})
+```
+
+Run mutation testing:
 
 ```bash
 pnpm exec stryker run
 ```
 
-The **`command`** runner ships in the box: it shells out to a configured command
-and reads its exit code.
+## Zero-Plugin Built-in Runners
 
-Projects whose suites depend on a real module graph, DOM emulation, or per-test
-coverage use the satellite `@systemfsoftware/stryker-js-vitest-runner` instead.
+### 1. Shell Command Runner (`testRunner: 'command'`)
 
-## Program from Effect
+Execute any test suite without extra plugins:
+
+```ts
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
+
+export default defineConfig({
+  testRunner: 'command',
+  commandRunner: {
+    command: 'npm test',
+  },
+  mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
+})
+```
+
+### 2. In-Memory V8 VM Runner (`testRunner: 'vm'`)
+
+Run pure unit tests directly inside Node's native V8 VM with zero process spawning overhead:
+
+```ts
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
+
+export default defineConfig({
+  testRunner: 'vm',
+  vmRunner: {
+    testFiles: ['test/**/*.test.js'],
+  },
+  mutate: ['src/**/*.js'],
+})
+```
+
+## Configuration API (`@systemfsoftware/stryker-js/config`)
+
+The `./config` subpath exports lightweight, inert TypeScript configuration helpers:
+
+```ts
+import { defineConfig, mergeConfig } from '@systemfsoftware/stryker-js/config'
+```
+
+### `defineConfig(options | configFactory)`
+
+Identity function providing strict autocompletion and type checking without runtime dependencies. Can take a configuration object or a factory receiving `ConfigEnv`:
+
+```ts
+export default defineConfig(({ isCi, command }) => ({
+  testRunner: 'vitest',
+  plugins: [import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')],
+  mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
+  concurrency: isCi ? 2 : 4,
+}))
+```
+
+### `mergeConfig(base, overrides)`
+
+Deeply merges configuration presets. Keys in records merge recursively; scalar values and arrays in `overrides` completely replace base values:
+
+```ts
+import { mergeConfig } from '@systemfsoftware/stryker-js/config'
+import baseConfig from './stryker.base.config.ts'
+
+export default mergeConfig(baseConfig, {
+  concurrency: 8,
+  mutate: ['packages/core/src/**/*.ts'],
+})
+```
+
+## CLI Usage and Flags
+
+```bash
+# Run mutation testing
+pnpm exec stryker run [options]
+
+# Mutate specific files only
+pnpm exec stryker run --mutate "src/auth/*.ts"
+
+# Re-test only surviving mutants from prior run
+pnpm exec stryker run --survivors
+
+# Enable incremental caching
+pnpm exec stryker run --incremental
+
+# Run with specific concurrency
+pnpm exec stryker run --concurrency 4
+
+# Merge partial mutation reports from parallel CI shards
+pnpm exec stryker merge-reports --output reports/mutation/mutation.json "reports/shards/*.json"
+```
+
+## Programmatic API
+
+### Effect 4 Native Interface
 
 ```ts
 import { NodeRuntime } from '@effect/platform-node'
 import { strykerCell } from '@systemfsoftware/stryker-js'
 
-NodeRuntime.runMain(strykerCell({ mutate: ['src/**/*.ts'] }))
+NodeRuntime.runMain(strykerCell({
+  mutate: ['src/**/*.ts'],
+  testRunner: 'command',
+}))
 ```
 
-`strykerCell` is a lazy `Effect`, not a started promise. Callers that speak
-promises import the wrapper instead:
+### Vanilla Promise Interface (`./promises`)
+
+For non-Effect environments:
 
 ```ts
 import { run } from '@systemfsoftware/stryker-js/promises'
 
-const report = await run({ testRunner: 'command' })
+const verdict = await run({
+  testRunner: 'command',
+  commandRunner: { command: 'pnpm test' },
+})
+
+console.log(`Mutation score: ${verdict.score}%`)
 ```
 
-## Subpaths
+## Published Subpaths
 
-| Subpath               | What it is                                                        |
-| --------------------- | ----------------------------------------------------------------- |
-| `.`                   | Programmatic surface: Effect cells, layers and the run vocabulary |
-| `./config`            | `defineConfig`, `mergeConfig`, `ConfigEnv`, `StrykerConfig`       |
-| `./promises`          | `run` — the same run, interpreted for promise callers             |
-| `./builtin-reporters` | The built-in reporter factories                                   |
-| `./plugin-loader`     | Plugin discovery and worker-entry resolution                      |
-
-## Related
-
-- [`@systemfsoftware/stryker-js-instrumenter`](../stryker-js-instrumenter) — AST mutation and the mutant vocabulary
-- [`@systemfsoftware/stryker-js-plugin-interface`](../stryker-js-plugin-interface) — the plugin boundary: RPC groups, payload schemas, typed failures
-- [`@systemfsoftware/stryker-js-vitest-runner`](../stryker-js-vitest-runner) — the Vitest-backed test runner
-- [`@systemfsoftware/stryker-js-html-reporter`](../stryker-js-html-reporter) — the HTML report
+| Subpath               | Description                                                                  |
+| --------------------- | ---------------------------------------------------------------------------- |
+| `.`                   | Main entry point: `strykerCell`, runtime layers, and error schemas           |
+| `./config`            | `defineConfig`, `mergeConfig`, and `StrykerConfig` typing                    |
+| `./promises`          | `run()` wrapper returning standard JavaScript promises                       |
+| `./builtin-reporters` | Built-in reporter implementations (`clear-text`, `progress`, `json`, `html`) |
+| `./plugin-loader`     | Worker entry resolution and plugin discovery                                 |
 
 ## License
 
-Apache-2.0
+[Apache-2.0](../../LICENSE)
