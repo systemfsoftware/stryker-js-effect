@@ -1,7 +1,8 @@
-#!/usr/bin/env -S deno run --config=scripts/deno.json --allow-read --allow-write --allow-run=git,pnpm --allow-net=jsr.io,registry.npmjs.org --allow-import
+#!/usr/bin/env -S deno run --config=scripts/deno.json --allow-read --allow-write --allow-run=git,pnpm --allow-env=GITHUB_REPOSITORY --allow-net=jsr.io,registry.npmjs.org --allow-import
 
 import { parseArgs } from '@std/cli/parse-args'
 import { loadCaptured, loadWorkspaceCycle, unpublishedOf } from './lib/cycle.ts'
+import { expectedSlug } from './lib/oidc.ts'
 import { run } from './lib/run.ts'
 
 const flags = parseArgs(Deno.args, {
@@ -24,8 +25,18 @@ if (flags.publish) {
     stderr: 'inherit',
   }).output()
   if (!published.success) {
+    const slug = await expectedSlug().catch(() => 'systemfsoftware/stryker-js-effect')
     console.error(
-      `::error::pnpm publish -r --provenance --access public --no-git-checks failed (exit ${published.code})`,
+      `::error::pnpm publish failed (exit ${published.code}).`,
+    )
+    console.error(
+      `\nIf OIDC authentication failed due to repository changes or unconfigured trusted publishers:`,
+    )
+    console.error(
+      `1. Run \`./scripts/fix-oidc.ts --fix\` to align all package.json repository fields to ${slug}.`,
+    )
+    console.error(
+      `2. Run \`./scripts/fix-oidc.ts --generate-script\` to get the \`npm trust\` commands to register packages on npm for ${slug}.`,
     )
     Deno.exit(published.code || 1)
   }
