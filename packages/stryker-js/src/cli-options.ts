@@ -1,12 +1,26 @@
 import type { LogLevel, PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { PluginFileUrl } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as S from 'effect/Schema'
 import * as Flag from 'effect/unstable/cli/Flag'
 
 const createSplitter = (separator: string) => (value: string) => value.split(separator).filter(Boolean)
 
 export const splitOnComma = createSplitter(',')
 export const splitOnSpace = createSplitter(' ')
+
+const decodePluginFileUrl = S.decodeOption(PluginFileUrl)
+
+export const asPluginFileUrls = (specifiers: readonly string[]): Option.Option<readonly string[]> =>
+  Option.all(specifiers.map((specifier) => decodePluginFileUrl(specifier)))
+
+export const rejectNonFileUrlPlugin = (flagName: string) => (specifiers: readonly string[]): string => {
+  const rejected = specifiers.filter((specifier) => Option.isNone(decodePluginFileUrl(specifier)))
+  return `--${flagName} takes plugin entrypoints as file URLs. Resolve each one with import.meta.resolve in your config. Not a file URL: ${
+    rejected.join(', ')
+  }`
+}
 
 const CLEAN_TEMP_DIR_DISABLED = ['false', '0'] as const
 

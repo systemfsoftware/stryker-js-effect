@@ -36,14 +36,15 @@ export {
 } from './Plugin.schema.js'
 export * from './Report.schema.js'
 export * from './ReporterEvent.schema.js'
-export * from './Schema.js'
+export * from './stryker-options.js'
 export {
   type CommandRunnerOptions,
   CommandRunnerOptionsSchema,
   type DeepOptional,
   type MutationScoreThresholds,
   MutationScoreThresholdsSchema,
-} from './Schema.schema.js'
+  PluginFileUrl,
+} from './stryker-options.schema.js'
 export * from './TestRunner.js'
 export {
   formatTraceparent,

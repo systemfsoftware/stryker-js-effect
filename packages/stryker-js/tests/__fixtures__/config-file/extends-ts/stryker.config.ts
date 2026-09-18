@@ -1,5 +1,5 @@
 export default {
   extends: './base.ts',
-  plugins: ['@acme/explicit'],
+  plugins: ['file:///acme/explicit/index.mjs'],
   thresholds: { high: 71 },
 }

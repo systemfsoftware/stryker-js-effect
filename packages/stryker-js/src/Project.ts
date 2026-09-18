@@ -20,7 +20,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Minimatch } from 'minimatch'
 
-import { defaultOptions } from './Config.js'
+import { defaultOptions } from './config-defaults.js'
 import { IncrementalReportError, IncrementalReportSchema } from './IncrementalReport.schema.js'
 import { ALWAYS_IGNORE, IGNORE_PATTERN_CHARACTER, MUTATION_RANGE_REGEX } from './Project.ignore.js'
 

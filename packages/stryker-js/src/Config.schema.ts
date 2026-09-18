@@ -87,24 +87,9 @@ export const extendsPropertySchema = S.optionalKey(
     }),
   ),
 )
-
-const REMOVED_OPTIONS: Record<string, string> = {
-  'dots': 'the "dots" reporter was removed; use "clear-text" instead',
-  'event-recorder':
-    'the "event-recorder" reporter was removed; use the "json" reporter or the machine-mode progress stream for structured output',
-  'progress-append-only': 'the "progress-append-only" reporter was removed; use "progress-stream" instead',
-  'dashboard':
-    'the "dashboard" reporter and its options were removed; write the "json" or "html" report and publish it yourself',
-  'eventReporter': 'the event-recorder reporter was removed; remove this option',
-}
-
 export const forkOptionsSchema = S.StructWithRest(
   S.Struct({
-    ...Object.fromEntries(
-      Object.entries(StrykerOptionsSchema.schema.fields).filter(
-        ([name]) => !Object.hasOwn(REMOVED_OPTIONS, name),
-      ),
-    ),
+    ...StrykerOptionsSchema.schema.fields,
     survivorsPriorReport,
     extends: extendsPropertySchema,
   }),

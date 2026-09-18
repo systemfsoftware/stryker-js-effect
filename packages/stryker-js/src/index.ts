@@ -52,39 +52,15 @@ export type { CompiledTests, VmModule, VmModuleBuiltin, VmPlatform, VmScript, Vm
 export {
   CONFIG_SYNTAX_HELP,
   createDefaultOptions,
-  createFileMatcher,
-  decideExtendsStep,
   deepFreeze,
   defaultOptions,
-  describeErrors,
   findUnserializables,
-  forkCoreSchema,
-  importModule,
-  initialExtendsStepState,
   isModuleSpecifier,
   isWarningEnabled,
-  matchesFile,
-  mergeConfigs,
-  mergeRecords,
   optionsPath,
-  readConfig,
-  REMOVED_OPTIONS,
-  resolveExtends,
   SUPPORTED_CONFIG_FILE_NAMES,
-  validateOptions,
-} from './Config.js'
-export type {
-  ConfigInvocation,
-  ExtendsRefusalReason,
-  ExtendsStepDecision,
-  ExtendsStepDocument,
-  ExtendsStepState,
-  Immutable,
-  Primitive,
-  UnserializableDescription,
-  ValidationSchemaDocument,
-  WarningOptions,
-} from './Config.js'
+} from './config-defaults.js'
+export type { Immutable, Primitive, UnserializableDescription, WarningOptions } from './config-defaults.js'
 export {
   ConfigDocumentSchema,
   ConfigError,
@@ -100,6 +76,28 @@ export {
   ReadConfigCommand,
   survivorsPriorReport,
 } from './Config.schema.js'
+export { createFileMatcher, matchesFile } from './file-matching.js'
+export {
+  decideExtendsStep,
+  describeErrors,
+  forkCoreSchema,
+  importModule,
+  initialExtendsStepState,
+  loadConfigCell,
+  mergeConfigs,
+  mergeRecords,
+  readConfig,
+  resolveExtends,
+  validateOptions,
+} from './run/load-config.cell.js'
+export type {
+  ConfigInvocation,
+  ExtendsRefusalReason,
+  ExtendsStepDecision,
+  ExtendsStepDocument,
+  ExtendsStepState,
+  ValidationSchemaDocument,
+} from './run/load-config.cell.js'
 
 export type { ModeSignal, OutputMode, ResolvedMode } from './output-mode.js'
 

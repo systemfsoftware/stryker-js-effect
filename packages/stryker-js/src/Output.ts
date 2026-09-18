@@ -25,7 +25,7 @@ import {
   type RunOutcomeDecision,
   type RunOutcomeError,
 } from './classify-run-outcome.workflow.js'
-import { defaultOptions } from './Config.js'
+import { defaultOptions } from './config-defaults.js'
 import { readCapturedConsole, shapeEnvelope } from './Envelope.js'
 import type { ResolvedMode } from './output-mode.js'
 import {

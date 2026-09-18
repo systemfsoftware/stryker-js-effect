@@ -1,15 +1,21 @@
 import * as S from 'effect/Schema'
 
-import { StrykerOptionsSchema } from './Schema.schema.js'
+import { StrykerOptionsSchema } from './stryker-options.schema.js'
 
-export type { PartialStrykerOptions, StrykerOptions } from './Schema.schema.js'
-export { CoverageAnalysisMode, LogLevel, PackageManager, ReportType, StrykerOptionsSchema } from './Schema.schema.js'
+export type { PartialStrykerOptions, StrykerOptions } from './stryker-options.schema.js'
+export {
+  CoverageAnalysisMode,
+  LogLevel,
+  PackageManager,
+  ReportType,
+  StrykerOptionsSchema,
+} from './stryker-options.schema.js'
 export type {
   CoverageAnalysisMode as CoverageAnalysisModeType,
   LogLevel as LogLevelType,
   PackageManager as PackageManagerType,
   ReportType as ReportTypeType,
-} from './Schema.schema.js'
+} from './stryker-options.schema.js'
 
 // ---------------------------------------------------------------------------
 // RENDERED_OPTION_DEFAULTS — inlined from core/rendered-option-defaults.ts

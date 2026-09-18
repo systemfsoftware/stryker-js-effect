@@ -258,6 +258,76 @@ export const forkCoreSchema: Record<string, unknown>;
 
 // @public (undocumented)
 export const forkOptionsSchema: S.StructWithRest<S.Struct<{
+    readonly allowConsoleColors: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly buildCommand: S.optional<S.String>;
+    readonly checkers: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly checkerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly concurrency: S.optional<S.Union<readonly [S.Finite, S.String]>>;
+    readonly commandRunner: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
+        readonly command: S.withDecodingDefaultKey<S.String, never>;
+    }>, readonly [S.$Record<S.String, S.Unknown>]>, never>;
+    readonly coverageAnalysis: S.withDecodingDefaultKey<S.Literals<readonly ["off", "all", "perTest"]>, never>;
+    readonly clearTextReporter: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
+        readonly allowColor: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly allowEmojis: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly logTests: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly maxTestsToLog: S.withDecodingDefaultKey<S.Finite, never>;
+        readonly reportTests: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly reportMutants: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly reportScoreTable: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly skipFull: S.withDecodingDefaultKey<S.Boolean, never>;
+    }>, readonly [S.$Record<S.String, S.Unknown>]>, never>;
+    readonly dryRunOnly: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly ignorePatterns: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly ignoreStatic: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly incremental: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly incrementalFile: S.withDecodingDefaultKey<S.String, never>;
+    readonly progressStreamFile: S.withDecodingDefaultKey<S.String, never>;
+    readonly force: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly fileLogLevel: S.withDecodingDefaultKey<S.Literals<readonly ["off", "fatal", "error", "warn", "info", "debug", "trace"]>, never>;
+    readonly inPlace: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly logLevel: S.withDecodingDefaultKey<S.Literals<readonly ["off", "fatal", "error", "warn", "info", "debug", "trace"]>, never>;
+    readonly maxConcurrentTestRunners: S.withDecodingDefaultKey<S.Finite, never>;
+    readonly maxTestRunnerReuse: S.withDecodingDefaultKey<S.Finite, never>;
+    readonly mutate: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly mutator: S.withDecodingDefaultKey<S.Struct<{
+        readonly excludedMutations: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    }>, never>;
+    readonly packageManager: S.optional<S.Literals<readonly ["npm", "yarn", "pnpm"]>>;
+    readonly plugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly appendPlugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly reporters: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly htmlReporter: S.withDecodingDefaultKey<S.Struct<{
+        readonly fileName: S.withDecodingDefaultKey<S.String, never>;
+    }>, never>;
+    readonly jsonReporter: S.withDecodingDefaultKey<S.Struct<{
+        readonly fileName: S.withDecodingDefaultKey<S.String, never>;
+    }>, never>;
+    readonly disableTypeChecks: S.withDecodingDefaultKey<S.Union<readonly [S.Boolean, S.String]>, never>;
+    readonly symlinkNodeModules: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly tempDirName: S.withDecodingDefaultKey<S.String, never>;
+    readonly cleanTempDir: S.withDecodingDefaultKey<S.Literals<readonly ["always", false, true]>, never>;
+    readonly testRunner: S.withDecodingDefaultKey<S.String, never>;
+    readonly testRunnerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly thresholds: S.withDecodingDefaultKey<S.Struct<{
+        readonly high: S.withDecodingDefaultKey<S.Finite, never>;
+        readonly low: S.withDecodingDefaultKey<S.Finite, never>;
+        readonly break: S.withDecodingDefaultKey<S.NullOr<S.Finite>, never>;
+    }>, never>;
+    readonly timeoutFactor: S.withDecodingDefaultKey<S.Finite, never>;
+    readonly timeoutMS: S.withDecodingDefaultKey<S.Finite, never>;
+    readonly dryRunTimeoutMinutes: S.withDecodingDefaultKey<S.Finite, never>;
+    readonly tsconfigFile: S.withDecodingDefaultKey<S.String, never>;
+    readonly warnings: S.withDecodingDefaultKey<S.Union<readonly [S.Boolean, S.StructWithRest<S.Struct<{
+        readonly unknownOptions: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly preprocessorErrors: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly unserializableOptions: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly slow: S.withDecodingDefaultKey<S.Boolean, never>;
+    }>, readonly [S.$Record<S.String, S.Unknown>]>]>, never>;
+    readonly disableBail: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly allowEmpty: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly ignorers: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly testFiles: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly survivorsPriorReport: S.optionalKey<S.String>;
     readonly extends: S.optionalKey<S.String>;
 }>, readonly [S.$Record<S.String, S.Unknown>]>;
@@ -380,6 +450,9 @@ export const isVmRunner: (name: string) => name is 'vm';
 export function isWarningEnabled(warningType: KnownKeys<WarningOptions>, warningOptions: WarningOptions | boolean): boolean;
 
 // @public (undocumented)
+export const loadConfigCell: typeof readConfig;
+
+// @public (undocumented)
 export const makeRunLayer: (env: RunEnvironmentShape, events?: Queue.Queue<RunEvent, Cause.Done>) => Layer.Layer<RunStageServices, never, EnginePorts>;
 
 // @public (undocumented)
@@ -499,9 +572,6 @@ export function readConfig(cliOptions: PartialStrykerOptions, invocation: Config
 //
 // @public (undocumented)
 export class ReadConfigCommand extends ReadConfigCommand_base {}
-
-// @public (undocumented)
-export const REMOVED_OPTIONS: Record<string, string>;
 
 // @public (undocumented)
 export const REPORTER_EVENT_BATCH_BOUND = 128;
@@ -700,7 +770,7 @@ export interface UnserializableDescription {
 }
 
 // @public (undocumented)
-export function validateOptions(options: Record<string, unknown>, schema: ValidationSchemaDocument): Effect.Effect<StrykerOptions, ConfigError, Path.Path>;
+export function validateOptions(options: Record<string, unknown>, schema: ValidationSchemaDocument): Effect.Effect<StrykerOptions, ConfigError>;
 
 // @public (undocumented)
 export type ValidationSchemaDocument = {

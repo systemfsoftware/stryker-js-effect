@@ -30,10 +30,12 @@ import { RunExit } from './classify-run-outcome.workflow.js'
 import type { RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
 import {
   absentWhenFalse,
+  asPluginFileUrls,
   isUnknownArgument,
   optional,
   parseCleanDirOption,
   parseConcurrency,
+  rejectNonFileUrlPlugin,
   setIfPresent,
   setLogLevel,
   splitOnComma,
@@ -234,17 +236,19 @@ const runOptions = {
   plugins: Flag.string('plugins')
     .pipe(
       Flag.withDescription(
-        'A list of plugins you want stryker to load (`require`).',
+        'A comma separated list of plugin entrypoints, each a file URL resolved with `import.meta.resolve` in your config.',
       ),
       Flag.map(splitOnComma),
+      Flag.filterMap(asPluginFileUrls, rejectNonFileUrlPlugin('plugins')),
       optional,
     ),
   appendPlugins: Flag.string('appendPlugins')
     .pipe(
       Flag.withDescription(
-        'A list of additional plugins you want Stryker to load (`require`) without overwriting the (default) `plugins`.',
+        'A comma separated list of additional plugin entrypoints, each a file URL resolved with `import.meta.resolve` in your config, loaded without overwriting the (default) `plugins`.',
       ),
       Flag.map(splitOnComma),
+      Flag.filterMap(asPluginFileUrls, rejectNonFileUrlPlugin('appendPlugins')),
       optional,
     ),
   timeoutMS: Flag.integer('timeoutMS')

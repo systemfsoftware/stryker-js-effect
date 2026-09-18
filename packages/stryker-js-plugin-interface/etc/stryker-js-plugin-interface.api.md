@@ -666,6 +666,9 @@ export interface PassedCheckResult {
     readonly status: 'passed';
 }
 
+// @public (undocumented)
+export const PluginFileUrl: S.String;
+
 export { Position }
 
 export { PositionSchema }

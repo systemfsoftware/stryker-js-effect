@@ -1,22 +1,17 @@
 import { Schema as S } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as HashMap from 'effect/HashMap'
+import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 
 import type { Ignorer as IgnorerDescriptor } from '@systemfsoftware/stryker-ignorer-interface'
 import type { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
-import { importModule } from './Config.js'
-import type { PluginLoadDecision, PluginSelectionError } from './plan-plugin-load.workflow.js'
-import {
-  PathPrefixedSpecifier,
-  planPluginLoad,
-  PluginLoadCommand,
-  ResolvedSpecifier,
-  UnresolvedSpecifier,
-} from './plan-plugin-load.workflow.js'
+import * as Array from 'effect/Array'
+import { importModule } from './run/load-config.cell.js'
 
 import {
   IgnorerModuleSchema,
@@ -183,14 +178,6 @@ export const buildPluginLoadPlan = (entries: readonly PluginLoaderEntryLike[]): 
   }
 }
 
-const hasErrorCode = (error: unknown): error is Record<'code', unknown> => Predicate.hasProperty(error, 'code')
-
-const errorCodeOf = (error: unknown): unknown =>
-  Match.value(error).pipe(
-    Match.when(hasErrorCode, (carrier: Record<'code', unknown>) => carrier.code),
-    Match.orElse(() => undefined),
-  )
-
 interface SchemaValidationContribution {
   strykerValidationSchema: Record<string, unknown>
 }
@@ -202,35 +189,6 @@ export interface LoadedPlugins {
   readonly pluginSources: readonly PluginSource[]
   readonly ignorers: readonly IgnorerDescriptor[]
 }
-
-const resolutionFailureReason = (cause: unknown): string =>
-  Option.match(Option.fromUndefinedOr(errorCodeOf(cause)), {
-    onNone: () => 'the project does not resolve this specifier',
-    onSome: (code) => String(code),
-  })
-
-const resolveSpecifier = (specifier: string): Effect.Effect<ResolvedSpecifier | UnresolvedSpecifier> =>
-  Effect.try({
-    try: (): ResolvedSpecifier => ResolvedSpecifier.make({ specifier, entrypoint: import.meta.resolve(specifier) }),
-    catch: (cause) => UnresolvedSpecifier.make({ specifier, reason: resolutionFailureReason(cause) }),
-  }).pipe(Effect.catch((missed) => Effect.succeed<ResolvedSpecifier | UnresolvedSpecifier>(missed)))
-
-const resolveSpecifiers = (
-  specifiers: readonly string[],
-): Effect.Effect<readonly (ResolvedSpecifier | UnresolvedSpecifier)[]> => Effect.forEach(specifiers, resolveSpecifier)
-
-const warnUnresolvedSpecifier = (missed: UnresolvedSpecifier): Effect.Effect<void> =>
-  Effect.logWarning(
-    `Cannot find plugin "${missed.specifier}".\n  Did you forget to install it ?\n  The resolver said: ${missed.reason}`,
-  ).pipe(Effect.asVoid)
-
-const reportUnresolvedSpecifiers = (plan: PluginLoadDecision): Effect.Effect<void> =>
-  Match.value(plan).pipe(
-    Match.tag('PluginsResolved', () => Effect.void),
-    Match.tag('PluginsPartiallyResolved', (partial) =>
-      Effect.forEach(partial.unresolved, (missed) => warnUnresolvedSpecifier(missed))),
-    Match.exhaustive,
-  )
 
 interface PluginContributions {
   readonly plugins: readonly PluginDescriptor[] | undefined
@@ -335,18 +293,21 @@ interface PluginLoaderRawEntry {
 }
 export function loadPlugins(
   pluginDescriptors: readonly string[],
-): Effect.Effect<LoadedPlugins, PluginLoadFailedError | PluginSelectionError> {
+): Effect.Effect<LoadedPlugins, PluginLoadFailedError, Path.Path> {
   return Effect.gen(function*() {
-    const resolutions = yield* resolveSpecifiers(
-      pluginDescriptors.filter((specifier) => !S.is(PathPrefixedSpecifier)(specifier)),
+    const path = yield* Path.Path
+    const entrypoints = yield* Effect.forEach(
+      Array.fromIterable(HashSet.fromIterable(pluginDescriptors)),
+      (specifier) =>
+        path.fromFileUrl(new URL(specifier)).pipe(
+          Effect.map((entrypoint) => ({ specifier, entrypoint })),
+          Effect.mapError((cause) => PluginLoadFailedError.make({ descriptor: specifier, cause })),
+        ),
+      { concurrency: 'unbounded' },
     )
-    const plan = yield* Effect.fromResult(
-      planPluginLoad(PluginLoadCommand.make({ specifiers: pluginDescriptors, resolutions })),
-    )
-    yield* reportUnresolvedSpecifiers(plan)
     const loaded = yield* Effect.forEach(
-      plan.toLoad,
-      (resolved: ResolvedSpecifier) =>
+      entrypoints,
+      (resolved) =>
         loadPlugin(resolved.specifier, resolved.entrypoint).pipe(
           Effect.map((plugin) => {
             if (plugin === undefined) {

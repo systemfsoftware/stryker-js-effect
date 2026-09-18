@@ -124,6 +124,8 @@ const WarningOptions = openStruct({
 const ConcurrencyCount = S.Finite.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
 const ConcurrencyPercent = S.String.pipe(S.check(S.isPattern(/^(100|[1-9]?[0-9])%$/)))
 
+export const PluginFileUrl = S.String.pipe(S.check(S.isStartsWith('file://')))
+
 // ---------------------------------------------------------------------------
 // The option set
 // ---------------------------------------------------------------------------
@@ -165,8 +167,8 @@ export const StrykerOptionsSchema = S.StructWithRest(
     ]),
     mutator: defaulted(MutatorDescriptor, { excludedMutations: [] }),
     packageManager: S.optional(PackageManager),
-    plugins: defaulted(S.Array(S.String), []),
-    appendPlugins: defaulted(S.Array(S.String), []),
+    plugins: defaulted(S.Array(PluginFileUrl), []),
+    appendPlugins: defaulted(S.Array(PluginFileUrl), []),
     reporters: defaulted(S.Array(S.String), ['clear-text', 'progress', 'html']),
     htmlReporter: defaulted(HtmlReporterOptions, { fileName: 'reports/mutation/mutation.html' }),
     jsonReporter: defaulted(JsonReporterOptions, { fileName: 'reports/mutation/mutation.json' }),

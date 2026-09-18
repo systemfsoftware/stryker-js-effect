@@ -325,7 +325,7 @@ Feature('Configuring a Stryker run from a module config file')
           (s) => Effect.sync(() => ({ plugins: optionsOrThrow(s.read).plugins })),
         ),
         Then('the run uses the inherited plugins followed by the ones the file names itself')((s) => {
-          expect(s.seen.plugins).toStrictEqual(['@acme/inherited', '@acme/explicit'])
+          expect(s.seen.plugins).toStrictEqual(['file:///acme/inherited/index.mjs', 'file:///acme/explicit/index.mjs'])
         }),
       ),
     )

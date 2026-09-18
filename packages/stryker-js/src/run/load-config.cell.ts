@@ -19,13 +19,12 @@ import {
   ConfigFileUnsupportedError,
   forkOptionsSchema,
   ImportedModuleSchema,
-} from './Config.schema.js'
-import type { ConfigEnv } from './config/StrykerConfig.js'
-import type { OutputMode } from './output-mode.js'
-import { IGNORE_PATTERN_CHARACTER, MUTATION_RANGE_REGEX } from './Project.ignore.js'
-import { StrykerError } from './stryker-error.schema.js'
-import { isCommandRunner } from './TestRunner.js'
-import { getAvailableParallelism } from './Worker.js'
+} from '../Config.schema.js'
+import type { ConfigEnv } from '../config/stryker-config.js'
+import type { OutputMode } from '../output-mode.js'
+import { MUTATION_RANGE_REGEX } from '../Project.ignore.js'
+import { StrykerError } from '../stryker-error.schema.js'
+import { isCommandRunner } from '../TestRunner.js'
 
 const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 
@@ -81,17 +80,6 @@ export function mergeRecords(
   const out: Record<string, unknown> = { ...base }
   return Object.entries(overrides).reduce(applyOverrideEntry, out)
 }
-
-export const REMOVED_OPTIONS: Record<string, string> = {
-  'dots': 'the "dots" reporter was removed; use "clear-text" instead',
-  'event-recorder':
-    'the "event-recorder" reporter was removed; use the "json" reporter or the machine-mode progress stream for structured output',
-  'progress-append-only': 'the "progress-append-only" reporter was removed; use "progress-stream" instead',
-  'dashboard':
-    'the "dashboard" reporter and its options were removed; write the "json" or "html" report and publish it yourself',
-  'eventReporter': 'the event-recorder reporter was removed; remove this option',
-}
-
 const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
 export const optionsPath = (...path: string[]): string => path.join('.')
 
@@ -914,253 +902,6 @@ function recordOf(value: object): Record<string, unknown> {
   return { ...value }
 }
 
-const isRemovedOption = (key: string): boolean => Object.hasOwn(REMOVED_OPTIONS, key)
-
-const removedOptionError = (key: string): string =>
-  `Config option "${key}" is no longer supported. ${REMOVED_OPTIONS[key]}`
-
-const isRemovedReporterName = (name: unknown): name is string =>
-  typeof name === 'string' && Object.hasOwn(REMOVED_OPTIONS, name)
-
-const removedReporterNameError = (name: string): string =>
-  `Config option "reporters" contains removed reporter name "${name}". ${REMOVED_OPTIONS[name]}`
-
-const removedReporterErrors = (reporters: unknown): readonly string[] =>
-  Match.value(reporters).pipe(
-    Match.when(isArrayValue, (names) => names.filter(isRemovedReporterName).map(removedReporterNameError)),
-    Match.orElse((): readonly string[] => []),
-  )
-
-const removedOptionErrors = (rawOptions: Record<string, unknown>): readonly string[] => [
-  ...Object.keys(rawOptions).filter(isRemovedOption).map(removedOptionError),
-  ...removedReporterErrors(rawOptions['reporters']),
-]
-
-function validateRemovedSurface(
-  rawOptions: Record<string, unknown>,
-): Effect.Effect<void, ConfigError> {
-  const errors = removedOptionErrors(rawOptions)
-  return logConfigErrors(errors).pipe(Effect.flatMap(() => throwErrorIfNeeded(errors)))
-}
-
-function removeStringMutator(rawOptions: Record<string, unknown>): Effect.Effect<void> {
-  const mutator = rawOptions['mutator']
-  if (typeof mutator !== 'string') return Effect.void
-  return Effect.gen(function*() {
-    yield* Effect.logWarning(
-      'DEPRECATED. Use of "mutator" as string is no longer needed. You can remove it from your configuration. Stryker now supports mutating of JavaScript and friend files out of the box.',
-    )
-    delete rawOptions['mutator']
-  })
-}
-
-const recordHoldingMember = (
-  record: Record<string, unknown>,
-  member: string,
-): Record<string, unknown> | undefined =>
-  Match.value(record[member]).pipe(
-    Match.when(undefined, () => undefined),
-    Match.orElse(() => record),
-  )
-
-const mutatorRecordWithName = (
-  rawOptions: Record<string, unknown>,
-): Record<string, unknown> | undefined =>
-  Match.value(rawOptions['mutator']).pipe(
-    Match.when(isNonNullObject, (mutator) => recordHoldingMember(recordOf(mutator), 'name')),
-    Match.orElse(() => undefined),
-  )
-
-function removeMutatorName(rawOptions: Record<string, unknown>): Effect.Effect<void> {
-  const mutatorRecord = mutatorRecordWithName(rawOptions)
-  if (mutatorRecord === undefined) return Effect.void
-  return Effect.gen(function*() {
-    yield* Effect.logWarning(
-      'DEPRECATED. Use of "mutator.name" is no longer needed. You can remove "mutator.name" from your configuration. Stryker now supports mutating of JavaScript and friend files out of the box.',
-    )
-    delete mutatorRecord['name']
-    rawOptions['mutator'] = mutatorRecord
-  })
-}
-
-function removeTestFramework(rawOptions: Record<string, unknown>): Effect.Effect<void> {
-  if (!Object.keys(rawOptions).includes('testFramework')) return Effect.void
-  return Effect.gen(function*() {
-    yield* Effect.logWarning(
-      'DEPRECATED. Use of "testFramework" is no longer needed. You can remove it from your configuration. Your test runner plugin now handles its own test framework integration.',
-    )
-    delete rawOptions['testFramework']
-  })
-}
-
-const DEFAULT_TRANSPILER_EXAMPLE = 'npm run build'
-
-const TRANSPILER_EXAMPLE_BY_NAME: Record<string, string> = {
-  'babel': 'babel src --out-dir lib',
-  'typescript': 'tsc -b',
-  'webpack': 'webpack --config webpack.config.js',
-}
-
-const transpilerExample = (transpilers: readonly unknown[]): string =>
-  Match.value(Object.entries(TRANSPILER_EXAMPLE_BY_NAME).find(([name]) => transpilers.includes(name))).pipe(
-    Match.when(undefined, () => DEFAULT_TRANSPILER_EXAMPLE),
-    Match.orElse(([, entryExample]) => entryExample),
-  )
-
-function removeTranspilers(rawOptions: Record<string, unknown>): Effect.Effect<void> {
-  const transpilers = rawOptions['transpilers']
-  if (Array.isArray(transpilers) === false) return Effect.void
-  const example = transpilerExample(transpilers)
-  return Effect.gen(function*() {
-    yield* Effect.logWarning(
-      `DEPRECATED. Support for "transpilers" is removed. You can now configure your own "${
-        optionsPath('buildCommand')
-      }". For example, ${example}.`,
-    )
-    delete rawOptions['transpilers']
-  })
-}
-
-function rewriteFiles(rawOptions: Record<string, unknown>): Effect.Effect<void> {
-  const files = rawOptions['files']
-  if (!Array.isArray(files)) return Effect.void
-  const ignorePatternsName = optionsPath('ignorePatterns')
-  const filePatterns = files.filter((uncertain): uncertain is string => typeof uncertain === 'string')
-  const newIgnorePatterns: string[] = [
-    '**',
-    ...filePatterns.map((filePattern) => {
-      if (filePattern.startsWith(IGNORE_PATTERN_CHARACTER)) {
-        return filePattern.slice(1)
-      }
-      return `${IGNORE_PATTERN_CHARACTER}${filePattern}`
-    }),
-  ]
-  delete rawOptions['files']
-  return Effect.gen(function*() {
-    const patternsJson = yield* S.encodeEffect(S.fromJsonString(S.Array(S.String)))([...newIgnorePatterns]).pipe(
-      Effect.orDie,
-    )
-    yield* Effect.logWarning(
-      `DEPRECATED. Use of "files" is deprecated, please use "${ignorePatternsName}" instead (or remove "files" altogether will probably work as well). For now, rewriting them as ${patternsJson}. See https://stryker-mutator.io/docs/stryker-js/configuration/#ignorepatterns-string`,
-    )
-    let existingIgnorePatterns: unknown[] = []
-    const candidate = rawOptions[ignorePatternsName]
-    if (Array.isArray(candidate)) {
-      existingIgnorePatterns = candidate
-    }
-    rawOptions[ignorePatternsName] = [...newIgnorePatterns, ...existingIgnorePatterns]
-  })
-}
-
-const jestRecordWithEnableBail = (
-  rawOptions: Record<string, unknown>,
-): Record<string, unknown> | undefined =>
-  Match.value(rawOptions['jest']).pipe(
-    Match.when(isNonNullObject, (jestOptions) => recordHoldingMember(recordOf(jestOptions), 'enableBail')),
-    Match.orElse(() => undefined),
-  )
-
-const isFalsy = (value: unknown): boolean => Boolean(value) === false
-
-function removeJestEnableBail(rawOptions: Record<string, unknown>): Effect.Effect<void> {
-  const jestRecord = jestRecordWithEnableBail(rawOptions)
-  if (jestRecord === undefined) return Effect.void
-  return Effect.gen(function*() {
-    yield* Effect.logWarning(
-      'DEPRECATED. Use of "jest.enableBail" is deprecated, please use "disableBail" instead. See https://stryker-mutator.io/docs/stryker-js/configuration#disablebail-boolean',
-    )
-    const enableBail = jestRecord['enableBail']
-    rawOptions['disableBail'] = isFalsy(enableBail)
-    delete jestRecord['enableBail']
-    rawOptions['jest'] = jestRecord
-  })
-}
-
-const ABSENT_BASE_DIR_VALUES: readonly unknown[] = [undefined, null, '']
-
-const isAbsentBaseDir = (value: unknown): boolean => ABSENT_BASE_DIR_VALUES.includes(value)
-
-const baseDirTextOf = (baseDir: unknown): string =>
-  Match.value(baseDir).pipe(
-    Match.when(Match.string, (text) => text),
-    Match.orElse(() => JSON.stringify(baseDir)),
-  )
-
-const reporterWithBaseDir = (
-  rawOptions: Record<string, unknown>,
-): Record<string, unknown> | undefined =>
-  Match.value(rawOptions['htmlReporter']).pipe(
-    Match.when(isNonNullObject, (htmlReporter) => {
-      const reporter = recordOf(htmlReporter)
-      if (isAbsentBaseDir(reporter['baseDir'])) return undefined
-      return reporter
-    }),
-    Match.orElse(() => undefined),
-  )
-
-function removeHtmlReporterBaseDir(
-  rawOptions: Record<string, unknown>,
-  pathService: Path.Path,
-): Effect.Effect<void> {
-  const reporter = reporterWithBaseDir(rawOptions)
-  if (reporter === undefined) return Effect.void
-  return Effect.gen(function*() {
-    const baseDirText = baseDirTextOf(reporter['baseDir'])
-    yield* Effect.logWarning(
-      `DEPRECATED. Use of "htmlReporter.baseDir" is deprecated, please use "${
-        optionsPath('htmlReporter', 'fileName')
-      }" instead. See https://stryker-mutator.io/docs/stryker-js/configuration/#reporters-string`,
-    )
-    const fileName = reporter['fileName']
-    if (fileName === undefined) {
-      reporter['fileName'] = pathService.join(baseDirText, 'index.html')
-    }
-    delete reporter['baseDir']
-    rawOptions['htmlReporter'] = reporter
-  })
-}
-
-const isMigratableMaxConcurrent = (value: unknown): value is number =>
-  typeof value === 'number' && value !== Number.MAX_SAFE_INTEGER
-
-const shouldApplyMigratedConcurrency = (
-  concurrency: unknown,
-  maxConcurrent: number,
-  availableParallelism: number,
-): boolean => (concurrency === undefined) && maxConcurrent < availableParallelism - 1
-
-function migrateMaxConcurrentTestRunners(
-  rawOptions: Record<string, unknown>,
-): Effect.Effect<void> {
-  const maxConcurrent = rawOptions['maxConcurrentTestRunners']
-  if (isMigratableMaxConcurrent(maxConcurrent) === false) return Effect.void
-  return Effect.gen(function*() {
-    yield* Effect.logWarning(
-      'DEPRECATED. Use of "maxConcurrentTestRunners" is deprecated. Please use "concurrency" instead.',
-    )
-    const availableParallelism = yield* Effect.sync(getAvailableParallelism)
-    if (shouldApplyMigratedConcurrency(rawOptions['concurrency'], maxConcurrent, availableParallelism)) {
-      rawOptions['concurrency'] = maxConcurrent
-    }
-  })
-}
-
-function removeDeprecatedOptions(
-  rawOptions: Record<string, unknown>,
-  pathService: Path.Path,
-): Effect.Effect<void> {
-  return Effect.gen(function*() {
-    yield* removeStringMutator(rawOptions)
-    yield* removeMutatorName(rawOptions)
-    yield* removeTestFramework(rawOptions)
-    yield* removeTranspilers(rawOptions)
-    yield* rewriteFiles(rawOptions)
-    yield* removeJestEnableBail(rawOptions)
-    yield* removeHtmlReporterBaseDir(rawOptions, pathService)
-    yield* migrateMaxConcurrentTestRunners(rawOptions)
-  })
-}
-
 const thresholdErrors = (options: StrykerOptions): readonly string[] =>
   Match.value(options.thresholds.high < options.thresholds.low).pipe(
     Match.when(true, (): readonly string[] => [
@@ -1407,11 +1148,8 @@ function markOptions(
 export function validateOptions(
   options: Record<string, unknown>,
   schema: ValidationSchemaDocument,
-): Effect.Effect<StrykerOptions, ConfigError, Path.Path> {
+): Effect.Effect<StrykerOptions, ConfigError> {
   return Effect.gen(function*() {
-    const pathService = yield* Path.Path
-    yield* removeDeprecatedOptions(options, pathService)
-    yield* validateRemovedSurface(options)
     const typed = yield* schemaValidate(options)
     yield* customValidation(typed)
     yield* markOptions(typed, schema)
@@ -1658,3 +1396,5 @@ export function readConfig(
     return decoded.success
   })
 }
+
+export const loadConfigCell = readConfig

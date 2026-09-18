@@ -1,9 +1,9 @@
-export { defineConfig } from './defineConfig.js'
-export { mergeConfig } from './mergeConfig.js'
+export { defineConfig } from './define-config.js'
+export { mergeConfig } from './merge-config.js'
 export type {
   ConfigEnv,
   PartialStrykerOptions,
   StrykerConfig,
   StrykerConfigValue,
   StrykerOptions,
-} from './StrykerConfig.js'
+} from './stryker-config.js'

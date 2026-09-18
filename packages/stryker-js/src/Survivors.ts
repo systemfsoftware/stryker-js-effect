@@ -12,7 +12,6 @@ import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { PriorReportDocument as PriorReportDocumentSchema } from './admit-survivors-run.workflow.js'
-import { readConfig } from './Config.js'
 import {
   type ConfigFileInvalidError,
   type ConfigFileNotFoundError,
@@ -21,6 +20,7 @@ import {
 } from './Config.schema.js'
 import { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 import type { OutputMode } from './output-mode.js'
+import { readConfig } from './run/load-config.cell.js'
 import { strykerVersion } from './stryker-package.js'
 export type PriorReportDocument = S.Schema.Type<typeof PriorReportDocumentSchema>
 export type PriorReportMutant = PriorReportDocument['files'][string]['mutants'][number]

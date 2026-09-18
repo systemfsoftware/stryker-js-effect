@@ -21,7 +21,8 @@ import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
-import { createFileMatcher, isWarningEnabled, optionsPath } from './Config.js'
+import { isWarningEnabled, optionsPath } from './config-defaults.js'
+import { createFileMatcher } from './file-matching.js'
 import {
   backupTo,
   FILE_CONCURRENCY,
