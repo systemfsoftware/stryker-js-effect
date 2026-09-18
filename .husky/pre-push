@@ -7,7 +7,7 @@ if [ "$branch" != "main" ]; then
   exit 0
 fi
 
-main_sha=$(git ls-remote --heads "$remote" main 2>/dev/null | cut -f1)
+main_sha=$(git ls-remote --heads "$remote" refs/heads/main 2>/dev/null | cut -f1)
 if [ -z "$main_sha" ]; then
   exit 0
 fi
