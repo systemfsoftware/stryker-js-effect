@@ -808,6 +808,9 @@ importers:
       '@systemfsoftware/stryker-js-instrumenter':
         specifier: workspace:^
         version: link:../stryker-js-instrumenter
+      '@systemfsoftware/stryker-js-plugin-interface':
+        specifier: workspace:^
+        version: link:../stryker-js-plugin-interface
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.112
@@ -863,9 +866,9 @@ importers:
 
   packages/stryker-js-plugin-interface:
     dependencies:
-      '@systemfsoftware/stryker-js-language':
+      '@systemfsoftware/stryker-js-instrumenter':
         specifier: workspace:^
-        version: link:../stryker-js-language
+        version: link:../stryker-js-instrumenter
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.112

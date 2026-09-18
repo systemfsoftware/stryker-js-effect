@@ -1,5 +1,1 @@
-import * as S from 'effect/Schema'
-
-export class EvaluatorFailed extends S.TaggedError<EvaluatorFailed>()('EvaluatorFailed', {
-  cause: S.Unknown,
-}) {}
+export * from '@systemfsoftware/stryker-js-plugin-interface'

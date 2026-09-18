@@ -5,383 +5,173 @@
 ```ts
 
 import * as Cause from 'effect/Cause';
+import { causeText } from '@systemfsoftware/stryker-js-instrumenter/mutants';
 import * as Context from 'effect/Context';
-import * as Effect from 'effect/Effect';
-import * as HashMap from 'effect/HashMap';
+import { Coverage } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { CoverageData } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { CoveragePerTestId } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { EarlyResultPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { ErrnoException } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { ERROR_CODES } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { errorToString } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { FileDescription } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { FileDescriptions } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import * as import__systemfsoftware_stryker_js_plugin_interface from '@systemfsoftware/stryker-js-plugin-interface';
+import { INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { InstrumenterContext } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { isErrnoException } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { isMutant } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { MutantTestCoverage } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { MutateDescription } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { MutationRange } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { normalizeFileName } from '@systemfsoftware/stryker-js-instrumenter/mutants';
 import * as Queue from 'effect/Queue';
+import { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import { RunPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants';
 import * as S from 'effect/Schema';
-import { StandardSchemaV1 } from 'effect/StandardSchema';
-import { YieldableError } from 'effect/Cause';
+import { TestPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants';
 
 // @public (undocumented)
-export interface BaseTestResult {
-    // (undocumented)
-    readonly fileName?: string;
-    // (undocumented)
-    readonly id: string;
-    // (undocumented)
-    readonly name: string;
-    // (undocumented)
-    readonly startPosition?: Position;
-    // (undocumented)
-    readonly timeSpentMs: number;
-}
+export type BaseTestResult = import__systemfsoftware_stryker_js_plugin_interface.BaseTestResult;
 
 // @public (undocumented)
-export type BrandingInformation = typeof BrandingInformationSchema.Type;
+export type BrandingInformation = import__systemfsoftware_stryker_js_plugin_interface.BrandingInformation;
 
 // @public (undocumented)
-export const BrandingInformationSchema: S.Struct<{
-    readonly homepageUrl: S.String;
-    readonly imageUrl: S.optional<S.String>;
-}>;
+export type BrandingInformationSchema = import__systemfsoftware_stryker_js_plugin_interface.BrandingInformationSchema;
+
+export { causeText }
 
 // @public (undocumented)
-export const causeText: (cause: unknown, depth: number) => string | undefined;
-
-// Warning: (ae-forgotten-export) The symbol "Checker_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class Checker extends Checker_base {}
-
-// Warning: (ae-forgotten-export) The symbol "CheckerFailed_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class CheckerFailed extends CheckerFailed_base {}
+export type Checker = import__systemfsoftware_stryker_js_plugin_interface.Checker;
 
 // @public (undocumented)
-export interface CheckerService {
-    // (undocumented)
-    readonly check: (mutants: readonly Mutant[]) => Effect.Effect<HashMap.HashMap<string, CheckResult>, CheckerFailed>;
-    // (undocumented)
-    readonly group: (mutants: readonly Mutant[]) => Effect.Effect<readonly (readonly string[])[], CheckerFailed>;
-    // (undocumented)
-    readonly init: Effect.Effect<void, CheckerFailed>;
-}
+export type CheckerFailed = import__systemfsoftware_stryker_js_plugin_interface.CheckerFailed;
 
 // @public (undocumented)
-export type CheckResult = FailedCheckResult | PassedCheckResult;
+export type CheckerService = import__systemfsoftware_stryker_js_plugin_interface.CheckerService;
 
 // @public (undocumented)
-export const CheckResultSchema: S.Union<readonly [S.Struct<{
-    readonly status: S.Literal<"passed">;
-}>, S.Struct<{
-    readonly status: S.Literal<"compileError">;
-    readonly reason: S.String;
-}>]>;
+export type CheckResult = import__systemfsoftware_stryker_js_plugin_interface.CheckResult;
 
 // @public (undocumented)
-export const CheckStatus: S.Literals<readonly ["passed", "compileError"]>;
+export type CheckResultSchema = import__systemfsoftware_stryker_js_plugin_interface.CheckResultSchema;
 
 // @public (undocumented)
-export type CheckStatus = typeof CheckStatus.Type;
+export type CheckStatus = import__systemfsoftware_stryker_js_plugin_interface.CheckStatus;
 
 // @public (undocumented)
-export type CommandRunnerOptions = S.Schema.Type<typeof CommandRunnerOptionsSchema>;
+export type CommandRunnerOptions = import__systemfsoftware_stryker_js_plugin_interface.CommandRunnerOptions;
 
 // @public (undocumented)
-export const CommandRunnerOptionsSchema: S.StructWithRest<S.Struct<{
-    readonly command: S.withDecodingDefaultKey<S.String, never>;
-}>, readonly [S.$Record<S.String, S.Unknown>]>;
+export type CommandRunnerOptionsSchema = import__systemfsoftware_stryker_js_plugin_interface.CommandRunnerOptionsSchema;
 
 // @public (undocumented)
-export interface CompleteDryRunResult {
-    // (undocumented)
-    readonly mutantCoverage?: MutantCoverage;
-    // (undocumented)
-    readonly status: 'complete';
-    // (undocumented)
-    readonly tests: readonly TestResult[];
-}
+export type CompleteDryRunResult = import__systemfsoftware_stryker_js_plugin_interface.CompleteDryRunResult;
+
+export { Coverage }
 
 // @public (undocumented)
-export interface Coverage {
-    // (undocumented)
-    readonly perTest: CoveragePerTestId;
-    // (undocumented)
-    readonly static: CoverageData;
-}
+export type CoverageAnalysis = import__systemfsoftware_stryker_js_plugin_interface.CoverageAnalysis;
 
 // @public (undocumented)
-export type CoverageAnalysis = 'off' | 'all' | 'perTest';
+export type CoverageAnalysisMode = import__systemfsoftware_stryker_js_plugin_interface.CoverageAnalysisMode;
 
 // @public (undocumented)
-const CoverageAnalysisMode: S.Literals<readonly ["off", "all", "perTest"]>;
+export type CoverageAnalysisModeType = import__systemfsoftware_stryker_js_plugin_interface.CoverageAnalysisModeType;
 
 // @public (undocumented)
-type CoverageAnalysisMode = typeof CoverageAnalysisMode.Type;
-export { CoverageAnalysisMode }
-export { CoverageAnalysisMode as CoverageAnalysisModeType }
+export type CoverageAnalysisSchema = import__systemfsoftware_stryker_js_plugin_interface.CoverageAnalysisSchema;
+
+export { CoverageData }
+
+export { CoveragePerTestId }
 
 // @public (undocumented)
-export const CoverageAnalysisSchema: S.Literals<readonly ["off", "all", "perTest"]>;
+export type DeepOptional = import__systemfsoftware_stryker_js_plugin_interface.DeepOptional;
 
 // @public (undocumented)
-export type CoverageData = Record<string, number>;
+export type Dependencies = import__systemfsoftware_stryker_js_plugin_interface.Dependencies;
 
 // @public (undocumented)
-export type CoveragePerTestId = Record<string, CoverageData>;
-
-// @public
-export type DeepOptional<T> = { -readonly [P in keyof T]?: T[P] extends Record<string, unknown> ? DeepOptional<T[P]> | undefined : T[P]; };
+export type DependenciesSchema = import__systemfsoftware_stryker_js_plugin_interface.DependenciesSchema;
 
 // @public (undocumented)
-export type Dependencies = typeof DependenciesSchema.Type;
+export type DryRunCompleted = import__systemfsoftware_stryker_js_plugin_interface.DryRunCompleted;
 
 // @public (undocumented)
-export const DependenciesSchema: S.$Record<S.String, S.String>;
-
-// Warning: (ae-forgotten-export) The symbol "DryRunCompleted_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class DryRunCompleted extends DryRunCompleted_base {}
+export type DryRunOptions = import__systemfsoftware_stryker_js_plugin_interface.DryRunOptions;
 
 // @public (undocumented)
-export interface DryRunOptions extends RunOptions {
-    // (undocumented)
-    readonly coverageAnalysis: CoverageAnalysis;
-    // (undocumented)
-    readonly files?: readonly string[];
-    // (undocumented)
-    readonly testFiles?: readonly string[];
-}
+export type DryRunOptionsSchema = import__systemfsoftware_stryker_js_plugin_interface.DryRunOptionsSchema;
 
 // @public (undocumented)
-export const DryRunOptionsSchema: S.Struct<{
-    readonly timeout: S.Finite;
-    readonly disableBail: S.Boolean;
-    readonly coverageAnalysis: S.Literals<readonly ["off", "all", "perTest"]>;
-    readonly files: S.optionalKey<S.$Array<S.String>>;
-    readonly testFiles: S.optionalKey<S.$Array<S.String>>;
-}>;
+export type DryRunResult = import__systemfsoftware_stryker_js_plugin_interface.DryRunResult;
 
 // @public (undocumented)
-export type DryRunResult = CompleteDryRunResult | ErrorDryRunResult | TimeoutDryRunResult;
+export type DryRunResultSchema = import__systemfsoftware_stryker_js_plugin_interface.DryRunResultSchema;
 
 // @public (undocumented)
-export const DryRunResultSchema: S.Union<readonly [S.Struct<{
-    readonly status: S.Literal<"complete">;
-    readonly tests: S.$Array<S.Union<readonly [S.Struct<{
-        readonly id: S.String;
-        readonly name: S.String;
-        readonly timeSpentMs: S.Finite;
-        readonly fileName: S.optionalKey<S.String>;
-        readonly startPosition: S.optionalKey<S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
-        }>>;
-        readonly status: S.Literal<"failed">;
-        readonly failureMessage: S.String;
-    }>, S.Struct<{
-        readonly id: S.String;
-        readonly name: S.String;
-        readonly timeSpentMs: S.Finite;
-        readonly fileName: S.optionalKey<S.String>;
-        readonly startPosition: S.optionalKey<S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
-        }>>;
-        readonly status: S.Literal<"skipped">;
-    }>, S.Struct<{
-        readonly id: S.String;
-        readonly name: S.String;
-        readonly timeSpentMs: S.Finite;
-        readonly fileName: S.optionalKey<S.String>;
-        readonly startPosition: S.optionalKey<S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
-        }>>;
-        readonly status: S.Literal<"success">;
-    }>]>>;
-    readonly mutantCoverage: S.optionalKey<S.Struct<{
-        readonly perTest: S.$Record<S.String, S.$Record<S.String, S.Finite>>;
-        readonly static: S.$Record<S.String, S.Finite>;
-    }>>;
-}>, S.Struct<{
-    readonly status: S.Literal<"timeout">;
-    readonly reason: S.optionalKey<S.String>;
-}>, S.Struct<{
-    readonly status: S.Literal<"error">;
-    readonly errorMessage: S.String;
-}>]>;
+export type DryRunStatus = import__systemfsoftware_stryker_js_plugin_interface.DryRunStatus;
+
+export { EarlyResultPlan }
+
+export { ErrnoException }
+
+export { ERROR_CODES }
 
 // @public (undocumented)
-export const DryRunStatus: S.Literals<readonly ["complete", "error", "timeout"]>;
+export type ErrorDryRunResult = import__systemfsoftware_stryker_js_plugin_interface.ErrorDryRunResult;
 
 // @public (undocumented)
-export type DryRunStatus = typeof DryRunStatus.Type;
+export type ErrorMutantRunResult = import__systemfsoftware_stryker_js_plugin_interface.ErrorMutantRunResult;
+
+export { errorToString }
 
 // @public (undocumented)
-export interface EarlyResultPlan {
-    // (undocumented)
-    readonly mutant: Mutant;
-    // (undocumented)
-    readonly plan: 'EarlyResult';
-}
+export type Evaluator = import__systemfsoftware_stryker_js_plugin_interface.Evaluator;
 
 // @public (undocumented)
-export interface ErrnoException extends Error {
-    // (undocumented)
-    code?: string;
-    // (undocumented)
-    errno?: number;
-    // (undocumented)
-    path?: string;
-    // (undocumented)
-    syscall?: string;
-}
+export type EvaluatorFailed = import__systemfsoftware_stryker_js_plugin_interface.EvaluatorFailed;
 
 // @public (undocumented)
-export const ERROR_CODES: Readonly<{
-    NoSuchFileOrDirectory: 'ENOENT';
-}>;
+export type EvaluatorService = import__systemfsoftware_stryker_js_plugin_interface.EvaluatorService;
 
 // @public (undocumented)
-export interface ErrorDryRunResult {
-    // (undocumented)
-    readonly errorMessage: string;
-    // (undocumented)
-    readonly status: 'error';
-}
+export type EXIT_CODE = import__systemfsoftware_stryker_js_plugin_interface.EXIT_CODE;
 
 // @public (undocumented)
-export interface ErrorMutantRunResult {
-    // (undocumented)
-    readonly errorMessage: string;
-    // (undocumented)
-    readonly status: 'error';
-}
+export type ExitClass = import__systemfsoftware_stryker_js_plugin_interface.ExitClass;
 
 // @public (undocumented)
-export function errorToString(error: unknown): string;
-
-// Warning: (ae-forgotten-export) The symbol "Evaluator_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class Evaluator extends Evaluator_base {}
-
-// Warning: (ae-forgotten-export) The symbol "EvaluatorFailed_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class EvaluatorFailed extends EvaluatorFailed_base {}
+export type FailedCheckResult = import__systemfsoftware_stryker_js_plugin_interface.FailedCheckResult;
 
 // @public (undocumented)
-export interface EvaluatorService {
-    // (undocumented)
-    readonly evaluate: (report: MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed>;
-}
+export type FailedTestResult = import__systemfsoftware_stryker_js_plugin_interface.FailedTestResult;
+
+export { FileDescription }
+
+export { FileDescriptions }
 
 // @public (undocumented)
-export const EXIT_CODE: Record<ExitClass, number>;
+export type FileResult = import__systemfsoftware_stryker_js_plugin_interface.FileResult;
 
 // @public (undocumented)
-export const ExitClass: S.Literals<readonly ["VerdictFail", "ConfigError", "RuntimeError", "InternalError"]>;
+export type FileResultDictionary = import__systemfsoftware_stryker_js_plugin_interface.FileResultDictionary;
 
 // @public (undocumented)
-export type ExitClass = typeof ExitClass.Type;
+export type FileResultDictionarySchema = import__systemfsoftware_stryker_js_plugin_interface.FileResultDictionarySchema;
 
 // @public (undocumented)
-export interface FailedCheckResult {
-    // (undocumented)
-    readonly reason: string;
-    // (undocumented)
-    readonly status: 'compileError';
-}
+export type FileResultSchema = import__systemfsoftware_stryker_js_plugin_interface.FileResultSchema;
 
 // @public (undocumented)
-export interface FailedTestResult extends BaseTestResult {
-    // (undocumented)
-    readonly failureMessage: string;
-    // (undocumented)
-    readonly status: 'failed';
-}
+export type FrameworkInformation = import__systemfsoftware_stryker_js_plugin_interface.FrameworkInformation;
 
 // @public (undocumented)
-export interface FileDescription {
-    // (undocumented)
-    readonly mutate: MutateDescription;
-}
-
-// @public (undocumented)
-export type FileDescriptions = Record<string, FileDescription>;
-
-// @public (undocumented)
-export type FileResult = typeof FileResultSchema.Type;
-
-// @public (undocumented)
-export type FileResultDictionary = typeof FileResultDictionarySchema.Type;
-
-// @public (undocumented)
-export const FileResultDictionarySchema: S.$Record<S.String, S.Struct<{
-    readonly language: S.String;
-    readonly source: S.String;
-    readonly mutants: S.$Array<S.Struct<{
-        readonly id: S.String;
-        readonly mutatorName: S.String;
-        readonly status: S.Literals<readonly ["Killed", "Survived", "NoCoverage", "CompileError", "RuntimeError", "Timeout", "Ignored", "Pending"]>;
-        readonly location: S.Struct<{
-            readonly start: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
-            }>;
-            readonly end: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
-            }>;
-        }>;
-        readonly replacement: S.optional<S.String>;
-        readonly description: S.optional<S.String>;
-        readonly statusReason: S.optional<S.String>;
-        readonly static: S.optional<S.Boolean>;
-        readonly coveredBy: S.optional<S.$Array<S.String>>;
-        readonly killedBy: S.optional<S.$Array<S.String>>;
-        readonly testsCompleted: S.optional<S.Finite>;
-        readonly duration: S.optional<S.Finite>;
-    }>>;
-}>>;
-
-// @public (undocumented)
-export const FileResultSchema: S.Struct<{
-    readonly language: S.String;
-    readonly source: S.String;
-    readonly mutants: S.$Array<S.Struct<{
-        readonly id: S.String;
-        readonly mutatorName: S.String;
-        readonly status: S.Literals<readonly ["Killed", "Survived", "NoCoverage", "CompileError", "RuntimeError", "Timeout", "Ignored", "Pending"]>;
-        readonly location: S.Struct<{
-            readonly start: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
-            }>;
-            readonly end: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
-            }>;
-        }>;
-        readonly replacement: S.optional<S.String>;
-        readonly description: S.optional<S.String>;
-        readonly statusReason: S.optional<S.String>;
-        readonly static: S.optional<S.Boolean>;
-        readonly coveredBy: S.optional<S.$Array<S.String>>;
-        readonly killedBy: S.optional<S.$Array<S.String>>;
-        readonly testsCompleted: S.optional<S.Finite>;
-        readonly duration: S.optional<S.Finite>;
-    }>>;
-}>;
-
-// @public (undocumented)
-export type FrameworkInformation = typeof FrameworkInformationSchema.Type;
-
-// @public (undocumented)
-export const FrameworkInformationSchema: S.Struct<{
-    readonly name: S.String;
-    readonly version: S.optional<S.String>;
-    readonly branding: S.optional<S.Struct<{
-        readonly homepageUrl: S.String;
-        readonly imageUrl: S.optional<S.String>;
-    }>>;
-    readonly dependencies: S.optional<S.$Record<S.String, S.String>>;
-}>;
+export type FrameworkInformationSchema = import__systemfsoftware_stryker_js_plugin_interface.FrameworkInformationSchema;
 
 // Warning: (ae-forgotten-export) The symbol "Heartbeat_base" needs to be exported by the entry point index.d.mts
 //
@@ -393,131 +183,43 @@ export class Heartbeat extends Heartbeat_base {}
 // @public (undocumented)
 export class HelpRendered extends HelpRendered_base {}
 
-// @public (undocumented)
-export const INSTRUMENTER_CONSTANTS: Readonly<{
-    NAMESPACE: '__stryker__';
-    MUTATION_COVERAGE_OBJECT: 'mutantCoverage';
-    ACTIVE_MUTANT: 'activeMutant';
-    CURRENT_TEST_ID: 'currentTestId';
-    HIT_COUNT: 'hitCount';
-    HIT_LIMIT: 'hitLimit';
-    ACTIVE_MUTANT_ENV_VARIABLE: '__STRYKER_ACTIVE_MUTANT__';
-}>;
+export { INSTRUMENTER_CONSTANTS }
+
+export { InstrumenterContext }
+
+export { isErrnoException }
+
+export { isMutant }
 
 // @public (undocumented)
-export interface InstrumenterContext {
-    // (undocumented)
-    activeMutant?: string;
-    // (undocumented)
-    currentTestId?: string;
-    // (undocumented)
-    hitCount?: number;
-    // (undocumented)
-    hitLimit?: number;
-    // (undocumented)
-    mutantCoverage?: MutantCoverage;
-}
+export type KilledMutantRunResult = import__systemfsoftware_stryker_js_plugin_interface.KilledMutantRunResult;
 
 // @public (undocumented)
-export function isErrnoException(error: unknown): error is ErrnoException;
+export type KnownKeys = import__systemfsoftware_stryker_js_plugin_interface.KnownKeys;
 
 // @public (undocumented)
-export const isMutant: (value: unknown) => value is Mutant;
+export type Location = import__systemfsoftware_stryker_js_plugin_interface.Location;
 
 // @public (undocumented)
-export interface KilledMutantRunResult {
-    // (undocumented)
-    readonly failureMessage: string;
-    // (undocumented)
-    readonly killedBy: readonly string[];
-    // (undocumented)
-    readonly nrOfTests: number;
-    // (undocumented)
-    readonly status: 'killed';
-}
-
-// @public
-export type KnownKeys<T> = keyof { [P in keyof T as string extends P ? never : number extends P ? never : P]: T[P]; };
+export type LocationSchema = import__systemfsoftware_stryker_js_plugin_interface.LocationSchema;
 
 // @public (undocumented)
-export type Location = typeof LocationSchema.Type;
+export type LogLevel = import__systemfsoftware_stryker_js_plugin_interface.LogLevel;
 
 // @public (undocumented)
-export const LocationSchema: S.Struct<{
-    readonly start: S.Struct<{
-        readonly line: S.Finite;
-        readonly column: S.Finite;
-    }>;
-    readonly end: S.Struct<{
-        readonly line: S.Finite;
-        readonly column: S.Finite;
-    }>;
-}>;
+export type LogLevelType = import__systemfsoftware_stryker_js_plugin_interface.LogLevelType;
 
 // @public (undocumented)
-const LogLevel: S.Literals<readonly ["off", "fatal", "error", "warn", "info", "debug", "trace"]>;
-
-// @public
-type LogLevel = typeof LogLevel.Type;
-export { LogLevel }
-export { LogLevel as LogLevelType }
+export type Metrics = import__systemfsoftware_stryker_js_plugin_interface.Metrics;
 
 // @public (undocumented)
-export type Metrics = typeof MetricsSchema.Type;
+export type MetricsResult = import__systemfsoftware_stryker_js_plugin_interface.MetricsResult;
 
 // @public (undocumented)
-export interface MetricsResult {
-    // (undocumented)
-    readonly childResults: readonly MetricsResult[];
-    // (undocumented)
-    readonly metrics: Metrics;
-    // (undocumented)
-    readonly name: string;
-}
+export type MetricsResultSchema = import__systemfsoftware_stryker_js_plugin_interface.MetricsResultSchema;
 
 // @public (undocumented)
-export const MetricsResultSchema: S.Struct<{
-    readonly name: S.String;
-    readonly metrics: S.Struct<{
-        readonly pending: S.Finite;
-        readonly killed: S.Finite;
-        readonly timeout: S.Finite;
-        readonly survived: S.Finite;
-        readonly noCoverage: S.Finite;
-        readonly runtimeErrors: S.Finite;
-        readonly compileErrors: S.Finite;
-        readonly ignored: S.Finite;
-        readonly totalDetected: S.Finite;
-        readonly totalUndetected: S.Finite;
-        readonly totalInvalid: S.Finite;
-        readonly totalValid: S.Finite;
-        readonly totalMutants: S.Finite;
-        readonly totalCovered: S.Finite;
-        readonly mutationScore: S.Finite;
-        readonly mutationScoreBasedOnCoveredCode: S.Finite;
-    }>;
-    readonly childResults: S.$Array<S.suspend<S.Codec<MetricsResult, MetricsResult, never, never>>>;
-}>;
-
-// @public (undocumented)
-export const MetricsSchema: S.Struct<{
-    readonly pending: S.Finite;
-    readonly killed: S.Finite;
-    readonly timeout: S.Finite;
-    readonly survived: S.Finite;
-    readonly noCoverage: S.Finite;
-    readonly runtimeErrors: S.Finite;
-    readonly compileErrors: S.Finite;
-    readonly ignored: S.Finite;
-    readonly totalDetected: S.Finite;
-    readonly totalUndetected: S.Finite;
-    readonly totalInvalid: S.Finite;
-    readonly totalValid: S.Finite;
-    readonly totalMutants: S.Finite;
-    readonly totalCovered: S.Finite;
-    readonly mutationScore: S.Finite;
-    readonly mutationScoreBasedOnCoveredCode: S.Finite;
-}>;
+export type MetricsSchema = import__systemfsoftware_stryker_js_plugin_interface.MetricsSchema;
 
 // @public (undocumented)
 export const ModeSignal: S.Literals<readonly ["flag", "env", "tty", "agent", "tool"]>;
@@ -525,143 +227,57 @@ export const ModeSignal: S.Literals<readonly ["flag", "env", "tty", "agent", "to
 // @public (undocumented)
 export type ModeSignal = typeof ModeSignal.Type;
 
-// Warning: (ae-forgotten-export) The symbol "Mutant_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class Mutant extends Mutant_base {}
+export { Mutant }
 
 // @public (undocumented)
-export type MutantActivation = 'runtime' | 'static';
+export type MutantActivation = import__systemfsoftware_stryker_js_plugin_interface.MutantActivation;
 
 // @public (undocumented)
-export const MutantActivationSchema: S.Literals<readonly ["runtime", "static"]>;
+export type MutantActivationSchema = import__systemfsoftware_stryker_js_plugin_interface.MutantActivationSchema;
 
 // @public (undocumented)
-export interface MutantCoverage {
-    // (undocumented)
-    readonly perTest: Record<string, Record<string, number>>;
-    // (undocumented)
-    readonly static: Record<string, number>;
-}
+export type MutantCoverage = import__systemfsoftware_stryker_js_plugin_interface.MutantCoverage;
 
 // @public (undocumented)
-export const MutantCoverageSchema: S.Struct<{
-    readonly perTest: S.$Record<S.String, S.$Record<S.String, S.Finite>>;
-    readonly static: S.$Record<S.String, S.Finite>;
-}>;
+export type MutantCoverageSchema = import__systemfsoftware_stryker_js_plugin_interface.MutantCoverageSchema;
 
 // @public (undocumented)
-export type MutantResult = typeof MutantResultSchema.Type;
+export type MutantResult = import__systemfsoftware_stryker_js_plugin_interface.MutantResult;
 
 // @public (undocumented)
-export const MutantResultSchema: S.Struct<{
-    readonly id: S.String;
-    readonly mutatorName: S.String;
-    readonly status: S.Literals<readonly ["Killed", "Survived", "NoCoverage", "CompileError", "RuntimeError", "Timeout", "Ignored", "Pending"]>;
-    readonly location: S.Struct<{
-        readonly start: S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
-        }>;
-        readonly end: S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
-        }>;
-    }>;
-    readonly replacement: S.optional<S.String>;
-    readonly description: S.optional<S.String>;
-    readonly statusReason: S.optional<S.String>;
-    readonly static: S.optional<S.Boolean>;
-    readonly coveredBy: S.optional<S.$Array<S.String>>;
-    readonly killedBy: S.optional<S.$Array<S.String>>;
-    readonly testsCompleted: S.optional<S.Finite>;
-    readonly duration: S.optional<S.Finite>;
-}>;
+export type MutantResultSchema = import__systemfsoftware_stryker_js_plugin_interface.MutantResultSchema;
 
 // @public (undocumented)
-export interface MutantRunOptions extends RunOptions {
-    // (undocumented)
-    readonly activeMutant: Mutant;
-    // (undocumented)
-    readonly hitLimit?: number;
-    // (undocumented)
-    readonly mutantActivation: MutantActivation;
-    // (undocumented)
-    readonly reloadEnvironment: boolean;
-    // (undocumented)
-    readonly sandboxFileName: string;
-    // (undocumented)
-    readonly testFilter?: readonly string[];
-}
+export type MutantRunOptions = import__systemfsoftware_stryker_js_plugin_interface.MutantRunOptions;
 
 // @public (undocumented)
-export const MutantRunOptionsSchema: S.Struct<{
-    readonly timeout: S.Finite;
-    readonly disableBail: S.Boolean;
-    readonly activeMutant: typeof Mutant;
-    readonly sandboxFileName: S.String;
-    readonly mutantActivation: S.Literals<readonly ["runtime", "static"]>;
-    readonly reloadEnvironment: S.Boolean;
-    readonly testFilter: S.optionalKey<S.$Array<S.String>>;
-    readonly hitLimit: S.optionalKey<S.Finite>;
-}>;
+export type MutantRunOptionsSchema = import__systemfsoftware_stryker_js_plugin_interface.MutantRunOptionsSchema;
+
+export { MutantRunPlan }
 
 // @public (undocumented)
-export type MutantRunPlan = RunPlan;
+export type MutantRunResult = import__systemfsoftware_stryker_js_plugin_interface.MutantRunResult;
 
 // @public (undocumented)
-export type MutantRunResult = ErrorMutantRunResult | KilledMutantRunResult | SurvivedMutantRunResult | TimeoutMutantRunResult;
+export type MutantRunResultSchema = import__systemfsoftware_stryker_js_plugin_interface.MutantRunResultSchema;
 
 // @public (undocumented)
-export const MutantRunResultSchema: S.Union<readonly [S.Struct<{
-    readonly status: S.Literal<"killed">;
-    readonly killedBy: S.$Array<S.String>;
-    readonly failureMessage: S.String;
-    readonly nrOfTests: S.Finite;
-}>, S.Struct<{
-    readonly status: S.Literal<"survived">;
-    readonly nrOfTests: S.Finite;
-}>, S.Struct<{
-    readonly status: S.Literal<"timeout">;
-    readonly reason: S.optionalKey<S.String>;
-}>, S.Struct<{
-    readonly status: S.Literal<"error">;
-    readonly errorMessage: S.String;
-}>]>;
+export type MutantRunStatus = import__systemfsoftware_stryker_js_plugin_interface.MutantRunStatus;
 
 // @public (undocumented)
-export const MutantRunStatus: S.Literals<readonly ["killed", "survived", "timeout", "error"]>;
+export type MutantStatus = import__systemfsoftware_stryker_js_plugin_interface.MutantStatus;
 
 // @public (undocumented)
-export type MutantRunStatus = typeof MutantRunStatus.Type;
+export type MutantStatusSchema = import__systemfsoftware_stryker_js_plugin_interface.MutantStatusSchema;
+
+export { MutantTestCoverage }
 
 // @public (undocumented)
-export type MutantStatus = typeof MutantStatusSchema.Type;
+export type MutantTested = import__systemfsoftware_stryker_js_plugin_interface.MutantTested;
 
-// @public (undocumented)
-export const MutantStatusSchema: S.Literals<readonly ["Killed", "Survived", "NoCoverage", "CompileError", "RuntimeError", "Timeout", "Ignored", "Pending"]>;
+export { MutateDescription }
 
-// @public (undocumented)
-export type MutantTestCoverage = Mutant & {
-    readonly coveredBy: ReadonlyArray<string> | undefined;
-    readonly static: boolean | undefined;
-};
-
-// Warning: (ae-forgotten-export) The symbol "MutantTested_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class MutantTested extends MutantTested_base {}
-
-// @public (undocumented)
-export type MutateDescription = ReadonlyArray<MutationRange> | boolean;
-
-// @public (undocumented)
-export interface MutationRange {
-    // (undocumented)
-    readonly end: Position;
-    // (undocumented)
-    readonly start: Position;
-}
+export { MutationRange }
 
 // Warning: (ae-forgotten-export) The symbol "MutationRunPlan_base" needs to be exported by the entry point index.d.mts
 //
@@ -669,112 +285,33 @@ export interface MutationRange {
 export class MutationRunPlan extends MutationRunPlan_base {}
 
 // @public (undocumented)
-export type MutationScoreThresholds = typeof MutationScoreThresholdsSchema.Type;
+export type MutationScoreThresholds = import__systemfsoftware_stryker_js_plugin_interface.MutationScoreThresholds;
 
 // @public (undocumented)
-export const MutationScoreThresholdsSchema: S.Struct<{
-    readonly high: S.withDecodingDefaultKey<S.Finite, never>;
-    readonly low: S.withDecodingDefaultKey<S.Finite, never>;
-    readonly break: S.withDecodingDefaultKey<S.NullOr<S.Finite>, never>;
-}>;
-
-// Warning: (ae-forgotten-export) The symbol "MutationTestingPlanReady_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class MutationTestingPlanReady extends MutationTestingPlanReady_base {}
-
-// Warning: (ae-forgotten-export) The symbol "MutationTestReportReady_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class MutationTestReportReady extends MutationTestReportReady_base {}
+export type MutationScoreThresholdsSchema = import__systemfsoftware_stryker_js_plugin_interface.MutationScoreThresholdsSchema;
 
 // @public (undocumented)
-export type MutationTestResult = typeof MutationTestResultSchema.Type;
+export type MutationTestingPlanReady = import__systemfsoftware_stryker_js_plugin_interface.MutationTestingPlanReady;
 
 // @public (undocumented)
-export const MutationTestResultSchema: S.Struct<{
-    readonly schemaVersion: S.String;
-    readonly files: S.$Record<S.String, S.Struct<{
-        readonly language: S.String;
-        readonly source: S.String;
-        readonly mutants: S.$Array<S.Struct<{
-            readonly id: S.String;
-            readonly mutatorName: S.String;
-            readonly status: S.Literals<readonly ["Killed", "Survived", "NoCoverage", "CompileError", "RuntimeError", "Timeout", "Ignored", "Pending"]>;
-            readonly location: S.Struct<{
-                readonly start: S.Struct<{
-                    readonly line: S.Finite;
-                    readonly column: S.Finite;
-                }>;
-                readonly end: S.Struct<{
-                    readonly line: S.Finite;
-                    readonly column: S.Finite;
-                }>;
-            }>;
-            readonly replacement: S.optional<S.String>;
-            readonly description: S.optional<S.String>;
-            readonly statusReason: S.optional<S.String>;
-            readonly static: S.optional<S.Boolean>;
-            readonly coveredBy: S.optional<S.$Array<S.String>>;
-            readonly killedBy: S.optional<S.$Array<S.String>>;
-            readonly testsCompleted: S.optional<S.Finite>;
-            readonly duration: S.optional<S.Finite>;
-        }>>;
-    }>>;
-    readonly thresholds: S.Struct<{
-        readonly high: S.Finite;
-        readonly low: S.Finite;
-    }>;
-    readonly config: S.optional<S.$Record<S.String, S.Unknown>>;
-    readonly testFiles: S.optional<S.$Record<S.String, S.Struct<{
-        readonly source: S.optional<S.String>;
-        readonly tests: S.$Array<S.Struct<{
-            readonly id: S.String;
-            readonly name: S.String;
-            readonly location: S.optional<S.Struct<{
-                readonly start: S.Struct<{
-                    readonly line: S.Finite;
-                    readonly column: S.Finite;
-                }>;
-                readonly end: S.optional<S.Struct<{
-                    readonly line: S.Finite;
-                    readonly column: S.Finite;
-                }>>;
-            }>>;
-        }>>;
-    }>>>;
-    readonly projectRoot: S.optional<S.String>;
-    readonly framework: S.optional<S.Struct<{
-        readonly name: S.String;
-        readonly version: S.optional<S.String>;
-        readonly branding: S.optional<S.Struct<{
-            readonly homepageUrl: S.String;
-            readonly imageUrl: S.optional<S.String>;
-        }>>;
-        readonly dependencies: S.optional<S.$Record<S.String, S.String>>;
-    }>>;
-}>;
+export type MutationTestReportReady = import__systemfsoftware_stryker_js_plugin_interface.MutationTestReportReady;
 
 // @public (undocumented)
-export function normalizeFileName(fileName: string): string;
+export type MutationTestResult = import__systemfsoftware_stryker_js_plugin_interface.MutationTestResult;
 
 // @public (undocumented)
-export type OnlyObject<T> = Exclude<T, Primitive>;
+export type MutationTestResultSchema = import__systemfsoftware_stryker_js_plugin_interface.MutationTestResultSchema;
+
+export { normalizeFileName }
 
 // @public (undocumented)
-export type OpenEndLocation = typeof OpenEndLocationSchema.Type;
+export type OnlyObject = import__systemfsoftware_stryker_js_plugin_interface.OnlyObject;
 
 // @public (undocumented)
-export const OpenEndLocationSchema: S.Struct<{
-    readonly start: S.Struct<{
-        readonly line: S.Finite;
-        readonly column: S.Finite;
-    }>;
-    readonly end: S.optional<S.Struct<{
-        readonly line: S.Finite;
-        readonly column: S.Finite;
-    }>>;
-}>;
+export type OpenEndLocation = import__systemfsoftware_stryker_js_plugin_interface.OpenEndLocation;
+
+// @public (undocumented)
+export type OpenEndLocationSchema = import__systemfsoftware_stryker_js_plugin_interface.OpenEndLocationSchema;
 
 // @public (undocumented)
 export const OutputMode: S.Literals<readonly ["human", "machine"]>;
@@ -783,21 +320,16 @@ export const OutputMode: S.Literals<readonly ["human", "machine"]>;
 export type OutputMode = typeof OutputMode.Type;
 
 // @public (undocumented)
-const PackageManager: S.Literals<readonly ["npm", "yarn", "pnpm"]>;
+export type PackageManager = import__systemfsoftware_stryker_js_plugin_interface.PackageManager;
 
 // @public (undocumented)
-type PackageManager = typeof PackageManager.Type;
-export { PackageManager }
-export { PackageManager as PackageManagerType }
-
-// @public
-export type PartialStrykerOptions = DeepOptional<StrykerOptions>;
+export type PackageManagerType = import__systemfsoftware_stryker_js_plugin_interface.PackageManagerType;
 
 // @public (undocumented)
-export interface PassedCheckResult {
-    // (undocumented)
-    readonly status: 'passed';
-}
+export type PartialStrykerOptions = import__systemfsoftware_stryker_js_plugin_interface.PartialStrykerOptions;
+
+// @public (undocumented)
+export type PassedCheckResult = import__systemfsoftware_stryker_js_plugin_interface.PassedCheckResult;
 
 // Warning: (ae-forgotten-export) The symbol "PhaseEntered_base" needs to be exported by the entry point index.d.mts
 //
@@ -815,88 +347,55 @@ export class PlanKnown extends PlanKnown_base {}
 export class PlanMutationRunCommand extends PlanMutationRunCommand_base {}
 
 // @public (undocumented)
-export type Position = typeof PositionSchema.Type;
+export type Position = import__systemfsoftware_stryker_js_plugin_interface.Position;
 
 // @public (undocumented)
-export const PositionSchema: S.Struct<{
-    readonly line: S.Finite;
-    readonly column: S.Finite;
-}>;
+export type PositionSchema = import__systemfsoftware_stryker_js_plugin_interface.PositionSchema;
 
 // @public (undocumented)
-export type Primitive = boolean | number | string | null | undefined;
-
-// @public
-export function propertyPath<T>(): PropertyPathOverloads<T>;
+export type Primitive = import__systemfsoftware_stryker_js_plugin_interface.Primitive;
 
 // @public (undocumented)
-export interface PropertyPathOverloads<T> {
-    // (undocumented)
-    (key: KnownKeys<T>): string;
-    // (undocumented)
-    <TProp1 extends KnownKeys<T>>(key: TProp1, key2: KnownKeys<OnlyObject<T[TProp1]>>): string;
-    // (undocumented)
-    <TProp1 extends KnownKeys<T>, TProp2 extends KnownKeys<OnlyObject<T[TProp1]>>>(key: TProp1, key2: TProp2, key3: KnownKeys<OnlyObject<OnlyObject<T[TProp1]>[TProp2]>>): string;
-}
-
-// @public
-export const RENDERED_OPTION_DEFAULTS: {
-    readonly coverageAnalysis: 'perTest';
-    readonly fileLogLevel: 'off';
-    readonly logLevel: 'info';
-    readonly tempDirName: '.stryker-tmp';
-};
+export type propertyPath = import__systemfsoftware_stryker_js_plugin_interface.propertyPath;
 
 // @public (undocumented)
-export type ReporterEvent = DryRunCompleted | MutationTestingPlanReady | MutantTested | MutationTestReportReady;
+export type PropertyPathOverloads = import__systemfsoftware_stryker_js_plugin_interface.PropertyPathOverloads;
 
 // @public (undocumented)
-export const ReporterEventKind: S.Literals<readonly ["dryRunCompleted", "mutationTestingPlanReady", "mutantTested", "mutationTestReportReady"]>;
+export type RENDERED_OPTION_DEFAULTS = import__systemfsoftware_stryker_js_plugin_interface.RENDERED_OPTION_DEFAULTS;
 
 // @public (undocumented)
-export type ReporterEventKind = typeof ReporterEventKind.Type;
+export type ReporterEvent = import__systemfsoftware_stryker_js_plugin_interface.ReporterEvent;
 
 // @public (undocumented)
-export const ReporterEventSchema: StandardSchemaV1<unknown, ReporterEvent>;
+export type ReporterEventKind = import__systemfsoftware_stryker_js_plugin_interface.ReporterEventKind;
 
 // @public (undocumented)
-export const ReporterEventUnion: S.Union<readonly [typeof DryRunCompleted, typeof MutationTestingPlanReady, typeof MutantTested, typeof MutationTestReportReady]>;
+export type ReporterEventSchema = import__systemfsoftware_stryker_js_plugin_interface.ReporterEventSchema;
 
 // @public (undocumented)
-export type ReporterFactory = (options: StrykerOptions, init: ReporterInit) => (events: AsyncIterable<ReporterEvent>) => Effect.Effect<void, ReporterFailed>;
-
-// Warning: (ae-forgotten-export) The symbol "ReporterFailed_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class ReporterFailed extends ReporterFailed_base {}
+export type ReporterEventUnion = import__systemfsoftware_stryker_js_plugin_interface.ReporterEventUnion;
 
 // @public (undocumented)
-export interface ReporterInit {
-    // (undocumented)
-    readonly traceparent?: string | undefined;
-    // (undocumented)
-    readonly tracestate?: string | undefined;
-}
+export type ReporterFactory = import__systemfsoftware_stryker_js_plugin_interface.ReporterFactory;
 
 // @public (undocumented)
-export type ReporterPlanDescriptor = typeof ReporterPlanDescriptorSchema.Type;
+export type ReporterFailed = import__systemfsoftware_stryker_js_plugin_interface.ReporterFailed;
 
 // @public (undocumented)
-export const ReporterPlanDescriptorSchema: S.Struct<{
-    readonly mutantId: S.String;
-    readonly plan: S.Literals<readonly ["EarlyResult", "Run"]>;
-    readonly netTime: S.Finite;
-    readonly reloadEnvironment: S.Boolean;
-}>;
+export type ReporterInit = import__systemfsoftware_stryker_js_plugin_interface.ReporterInit;
 
 // @public (undocumented)
-export const ReporterPlanKind: S.Literals<readonly ["EarlyResult", "Run"]>;
+export type ReporterPlanDescriptor = import__systemfsoftware_stryker_js_plugin_interface.ReporterPlanDescriptor;
 
 // @public (undocumented)
-export const ReportTypeType: S.Literals<readonly ["full", "mutationScore"]>;
+export type ReporterPlanDescriptorSchema = import__systemfsoftware_stryker_js_plugin_interface.ReporterPlanDescriptorSchema;
 
 // @public (undocumented)
-export type ReportTypeType = typeof ReportTypeType.Type;
+export type ReporterPlanKind = import__systemfsoftware_stryker_js_plugin_interface.ReporterPlanKind;
+
+// @public (undocumented)
+export type ReportTypeType = import__systemfsoftware_stryker_js_plugin_interface.ReportTypeType;
 
 // Warning: (ae-forgotten-export) The symbol "RunCommand_base" needs to be exported by the entry point index.d.mts
 //
@@ -934,15 +433,7 @@ export interface RunIdentityShape {
     readonly runId: string;
 }
 
-// @public (undocumented)
-export type RunMutantResult = Mutant & {
-    readonly status: MutantStatus;
-    readonly statusReason?: string | undefined;
-    readonly testsCompleted?: number | undefined;
-    readonly killedBy?: readonly string[] | undefined;
-    readonly coveredBy?: readonly string[] | undefined;
-    readonly static?: boolean | undefined;
-};
+export { RunMutantResult }
 
 // Warning: (ae-forgotten-export) The symbol "RunMutantTested_base" needs to be exported by the entry point index.d.mts
 //
@@ -950,12 +441,7 @@ export type RunMutantResult = Mutant & {
 export class RunMutantTested extends RunMutantTested_base {}
 
 // @public (undocumented)
-export interface RunOptions {
-    // (undocumented)
-    readonly disableBail: boolean;
-    // (undocumented)
-    readonly timeout: number;
-}
+export type RunOptions = import__systemfsoftware_stryker_js_plugin_interface.RunOptions;
 
 // Warning: (ae-forgotten-export) The symbol "RunOutput_base" needs to be exported by the entry point index.d.mts
 //
@@ -968,17 +454,7 @@ export const RunPhase: S.Literals<readonly ["prepare", "instrument", "dry-run", 
 // @public (undocumented)
 export type RunPhase = typeof RunPhase.Type;
 
-// @public (undocumented)
-export interface RunPlan {
-    // (undocumented)
-    readonly mutant: Mutant;
-    // (undocumented)
-    readonly netTime: number;
-    // (undocumented)
-    readonly plan: 'Run';
-    // (undocumented)
-    readonly runOptions: MutantRunOptions;
-}
+export { RunPlan }
 
 // Warning: (ae-forgotten-export) The symbol "RunStarted_base" needs to be exported by the entry point index.d.mts
 //
@@ -989,293 +465,93 @@ export class RunStarted extends RunStarted_base {}
 export type RunTerminalEvent = VerdictReached | RunFailed | HelpRendered;
 
 // @public (undocumented)
-export type RunTiming = typeof RunTimingSchema.Type;
+export type RunTiming = import__systemfsoftware_stryker_js_plugin_interface.RunTiming;
 
 // @public (undocumented)
-export const RunTimingSchema: S.Struct<{
-    readonly net: S.Finite;
-    readonly overhead: S.Finite;
-}>;
+export type RunTimingSchema = import__systemfsoftware_stryker_js_plugin_interface.RunTimingSchema;
 
 // @public (undocumented)
-export interface SkippedTestResult extends BaseTestResult {
-    // (undocumented)
-    readonly status: 'skipped';
-}
-
-// @public
-export const strykerCoreSchema: Record<string, unknown>;
-
-// @public
-export type StrykerOptions = S.Schema.Type<typeof StrykerOptionsSchema>;
+export type SkippedTestResult = import__systemfsoftware_stryker_js_plugin_interface.SkippedTestResult;
 
 // @public (undocumented)
-export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
-    readonly allowConsoleColors: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly buildCommand: S.optional<S.String>;
-    readonly checkers: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly checkerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly concurrency: S.optional<S.Union<readonly [S.Finite, S.String]>>;
-    readonly commandRunner: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
-        readonly command: S.withDecodingDefaultKey<S.String, never>;
-    }>, readonly [S.$Record<S.String, S.Unknown>]>, never>;
-    readonly coverageAnalysis: S.withDecodingDefaultKey<S.Literals<readonly ["off", "all", "perTest"]>, never>;
-    readonly clearTextReporter: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
-        readonly allowColor: S.withDecodingDefaultKey<S.Boolean, never>;
-        readonly allowEmojis: S.withDecodingDefaultKey<S.Boolean, never>;
-        readonly logTests: S.withDecodingDefaultKey<S.Boolean, never>;
-        readonly maxTestsToLog: S.withDecodingDefaultKey<S.Finite, never>;
-        readonly reportTests: S.withDecodingDefaultKey<S.Boolean, never>;
-        readonly reportMutants: S.withDecodingDefaultKey<S.Boolean, never>;
-        readonly reportScoreTable: S.withDecodingDefaultKey<S.Boolean, never>;
-        readonly skipFull: S.withDecodingDefaultKey<S.Boolean, never>;
-    }>, readonly [S.$Record<S.String, S.Unknown>]>, never>;
-    readonly dryRunOnly: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly ignorePatterns: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly ignoreStatic: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly incremental: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly incrementalFile: S.withDecodingDefaultKey<S.String, never>;
-    readonly progressStreamFile: S.withDecodingDefaultKey<S.String, never>;
-    readonly force: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly fileLogLevel: S.withDecodingDefaultKey<S.Literals<readonly ["off", "fatal", "error", "warn", "info", "debug", "trace"]>, never>;
-    readonly inPlace: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly logLevel: S.withDecodingDefaultKey<S.Literals<readonly ["off", "fatal", "error", "warn", "info", "debug", "trace"]>, never>;
-    readonly maxConcurrentTestRunners: S.withDecodingDefaultKey<S.Finite, never>;
-    readonly maxTestRunnerReuse: S.withDecodingDefaultKey<S.Finite, never>;
-    readonly mutate: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly mutator: S.withDecodingDefaultKey<S.Struct<{
-        readonly excludedMutations: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    }>, never>;
-    readonly packageManager: S.optional<S.Literals<readonly ["npm", "yarn", "pnpm"]>>;
-    readonly plugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly appendPlugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly reporters: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly htmlReporter: S.withDecodingDefaultKey<S.Struct<{
-        readonly fileName: S.withDecodingDefaultKey<S.String, never>;
-    }>, never>;
-    readonly jsonReporter: S.withDecodingDefaultKey<S.Struct<{
-        readonly fileName: S.withDecodingDefaultKey<S.String, never>;
-    }>, never>;
-    readonly disableTypeChecks: S.withDecodingDefaultKey<S.Union<readonly [S.Boolean, S.String]>, never>;
-    readonly symlinkNodeModules: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly tempDirName: S.withDecodingDefaultKey<S.String, never>;
-    readonly cleanTempDir: S.withDecodingDefaultKey<S.Literals<readonly ["always", false, true]>, never>;
-    readonly testRunner: S.withDecodingDefaultKey<S.String, never>;
-    readonly testRunnerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly thresholds: S.withDecodingDefaultKey<S.Struct<{
-        readonly high: S.withDecodingDefaultKey<S.Finite, never>;
-        readonly low: S.withDecodingDefaultKey<S.Finite, never>;
-        readonly break: S.withDecodingDefaultKey<S.NullOr<S.Finite>, never>;
-    }>, never>;
-    readonly timeoutFactor: S.withDecodingDefaultKey<S.Finite, never>;
-    readonly timeoutMS: S.withDecodingDefaultKey<S.Finite, never>;
-    readonly dryRunTimeoutMinutes: S.withDecodingDefaultKey<S.Finite, never>;
-    readonly tsconfigFile: S.withDecodingDefaultKey<S.String, never>;
-    readonly warnings: S.withDecodingDefaultKey<S.Union<readonly [S.Boolean, S.StructWithRest<S.Struct<{
-        readonly unknownOptions: S.withDecodingDefaultKey<S.Boolean, never>;
-        readonly preprocessorErrors: S.withDecodingDefaultKey<S.Boolean, never>;
-        readonly unserializableOptions: S.withDecodingDefaultKey<S.Boolean, never>;
-        readonly slow: S.withDecodingDefaultKey<S.Boolean, never>;
-    }>, readonly [S.$Record<S.String, S.Unknown>]>]>, never>;
-    readonly disableBail: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly allowEmpty: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly ignorers: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly testFiles: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-}>, readonly [S.$Record<S.String, S.Unknown>]>;
-
-// @public
-export function strykerReportBugUrl(titleSuggestion: string): string;
+export type strykerCoreSchema = import__systemfsoftware_stryker_js_plugin_interface.strykerCoreSchema;
 
 // @public (undocumented)
-export interface SuccessTestResult extends BaseTestResult {
-    // (undocumented)
-    readonly status: 'success';
-}
+export type StrykerOptions = import__systemfsoftware_stryker_js_plugin_interface.StrykerOptions;
 
 // @public (undocumented)
-export interface SurvivedMutantRunResult {
-    // (undocumented)
-    readonly nrOfTests: number;
-    // (undocumented)
-    readonly status: 'survived';
-}
+export type StrykerOptionsSchema = import__systemfsoftware_stryker_js_plugin_interface.StrykerOptionsSchema;
 
 // @public (undocumented)
-export type TestDefinition = typeof TestDefinitionSchema.Type;
+export type strykerReportBugUrl = import__systemfsoftware_stryker_js_plugin_interface.strykerReportBugUrl;
 
 // @public (undocumented)
-export const TestDefinitionSchema: S.Struct<{
-    readonly id: S.String;
-    readonly name: S.String;
-    readonly location: S.optional<S.Struct<{
-        readonly start: S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
-        }>;
-        readonly end: S.optional<S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
-        }>>;
-    }>>;
-}>;
+export type SuccessTestResult = import__systemfsoftware_stryker_js_plugin_interface.SuccessTestResult;
 
 // @public (undocumented)
-export type TestFile = typeof TestFileSchema.Type;
+export type SurvivedMutantRunResult = import__systemfsoftware_stryker_js_plugin_interface.SurvivedMutantRunResult;
 
 // @public (undocumented)
-export type TestFileDefinitionDictionary = typeof TestFileDefinitionDictionarySchema.Type;
+export type TestDefinition = import__systemfsoftware_stryker_js_plugin_interface.TestDefinition;
 
 // @public (undocumented)
-export const TestFileDefinitionDictionarySchema: S.$Record<S.String, S.Struct<{
-    readonly source: S.optional<S.String>;
-    readonly tests: S.$Array<S.Struct<{
-        readonly id: S.String;
-        readonly name: S.String;
-        readonly location: S.optional<S.Struct<{
-            readonly start: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
-            }>;
-            readonly end: S.optional<S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
-            }>>;
-        }>>;
-    }>>;
-}>>;
+export type TestDefinitionSchema = import__systemfsoftware_stryker_js_plugin_interface.TestDefinitionSchema;
 
 // @public (undocumented)
-export const TestFileSchema: S.Struct<{
-    readonly source: S.optional<S.String>;
-    readonly tests: S.$Array<S.Struct<{
-        readonly id: S.String;
-        readonly name: S.String;
-        readonly location: S.optional<S.Struct<{
-            readonly start: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
-            }>;
-            readonly end: S.optional<S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
-            }>>;
-        }>>;
-    }>>;
-}>;
+export type TestFile = import__systemfsoftware_stryker_js_plugin_interface.TestFile;
 
 // @public (undocumented)
-export function testFilesProvided(options: {
-    readonly testFiles?: readonly string[];
-}): boolean;
+export type TestFileDefinitionDictionary = import__systemfsoftware_stryker_js_plugin_interface.TestFileDefinitionDictionary;
 
 // @public (undocumented)
-export type TestPlan = EarlyResultPlan | RunPlan;
+export type TestFileDefinitionDictionarySchema = import__systemfsoftware_stryker_js_plugin_interface.TestFileDefinitionDictionarySchema;
 
 // @public (undocumented)
-export type TestResult = FailedTestResult | SkippedTestResult | SuccessTestResult;
+export type TestFileSchema = import__systemfsoftware_stryker_js_plugin_interface.TestFileSchema;
 
 // @public (undocumented)
-export const TestResultSchema: S.Union<readonly [S.Struct<{
-    readonly id: S.String;
-    readonly name: S.String;
-    readonly timeSpentMs: S.Finite;
-    readonly fileName: S.optionalKey<S.String>;
-    readonly startPosition: S.optionalKey<S.Struct<{
-        readonly line: S.Finite;
-        readonly column: S.Finite;
-    }>>;
-    readonly status: S.Literal<"failed">;
-    readonly failureMessage: S.String;
-}>, S.Struct<{
-    readonly id: S.String;
-    readonly name: S.String;
-    readonly timeSpentMs: S.Finite;
-    readonly fileName: S.optionalKey<S.String>;
-    readonly startPosition: S.optionalKey<S.Struct<{
-        readonly line: S.Finite;
-        readonly column: S.Finite;
-    }>>;
-    readonly status: S.Literal<"skipped">;
-}>, S.Struct<{
-    readonly id: S.String;
-    readonly name: S.String;
-    readonly timeSpentMs: S.Finite;
-    readonly fileName: S.optionalKey<S.String>;
-    readonly startPosition: S.optionalKey<S.Struct<{
-        readonly line: S.Finite;
-        readonly column: S.Finite;
-    }>>;
-    readonly status: S.Literal<"success">;
-}>]>;
+export type testFilesProvided = import__systemfsoftware_stryker_js_plugin_interface.testFilesProvided;
 
-// Warning: (ae-forgotten-export) The symbol "TestRunner_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class TestRunner extends TestRunner_base {}
+export { TestPlan }
 
 // @public (undocumented)
-export interface TestRunnerCapabilities {
-    // (undocumented)
-    readonly reloadEnvironment: boolean;
-}
+export type TestResult = import__systemfsoftware_stryker_js_plugin_interface.TestResult;
 
 // @public (undocumented)
-export const TestRunnerCapabilitiesSchema: S.Struct<{
-    readonly reloadEnvironment: S.Boolean;
-}>;
-
-// Warning: (ae-forgotten-export) The symbol "TestRunnerFailed_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class TestRunnerFailed extends TestRunnerFailed_base {}
+export type TestResultSchema = import__systemfsoftware_stryker_js_plugin_interface.TestResultSchema;
 
 // @public (undocumented)
-export interface TestRunnerService {
-    // (undocumented)
-    readonly capabilities: Effect.Effect<TestRunnerCapabilities, TestRunnerFailed>;
-    // (undocumented)
-    readonly dispose: Effect.Effect<void, TestRunnerFailed>;
-    // (undocumented)
-    readonly dryRun: (options: DryRunOptions) => Effect.Effect<DryRunResult, TestRunnerFailed>;
-    // (undocumented)
-    readonly init: Effect.Effect<void, TestRunnerFailed>;
-    // (undocumented)
-    readonly mutantRun: (options: MutantRunOptions) => Effect.Effect<MutantRunResult, TestRunnerFailed>;
-}
+export type TestRunner = import__systemfsoftware_stryker_js_plugin_interface.TestRunner;
 
 // @public (undocumented)
-export const TestStatus: S.Literals<readonly ["success", "failed", "skipped"]>;
+export type TestRunnerCapabilities = import__systemfsoftware_stryker_js_plugin_interface.TestRunnerCapabilities;
 
 // @public (undocumented)
-export type TestStatus = typeof TestStatus.Type;
+export type TestRunnerCapabilitiesSchema = import__systemfsoftware_stryker_js_plugin_interface.TestRunnerCapabilitiesSchema;
 
 // @public (undocumented)
-export type Thresholds = typeof ThresholdsSchema.Type;
+export type TestRunnerFailed = import__systemfsoftware_stryker_js_plugin_interface.TestRunnerFailed;
 
 // @public (undocumented)
-export const ThresholdsSchema: S.Struct<{
-    readonly high: S.Finite;
-    readonly low: S.Finite;
-}>;
+export type TestRunnerService = import__systemfsoftware_stryker_js_plugin_interface.TestRunnerService;
 
 // @public (undocumented)
-export interface TimeoutDryRunResult {
-    // (undocumented)
-    readonly reason?: string;
-    // (undocumented)
-    readonly status: 'timeout';
-}
+export type TestStatus = import__systemfsoftware_stryker_js_plugin_interface.TestStatus;
 
 // @public (undocumented)
-export interface TimeoutMutantRunResult {
-    // (undocumented)
-    readonly reason?: string;
-    // (undocumented)
-    readonly status: 'timeout';
-}
+export type Thresholds = import__systemfsoftware_stryker_js_plugin_interface.Thresholds;
 
 // @public (undocumented)
-export function toMutantRunResult(dryRunResult: DryRunResult, reportAllKillers: boolean): MutantRunResult;
+export type ThresholdsSchema = import__systemfsoftware_stryker_js_plugin_interface.ThresholdsSchema;
+
+// @public (undocumented)
+export type TimeoutDryRunResult = import__systemfsoftware_stryker_js_plugin_interface.TimeoutDryRunResult;
+
+// @public (undocumented)
+export type TimeoutMutantRunResult = import__systemfsoftware_stryker_js_plugin_interface.TimeoutMutantRunResult;
+
+// @public (undocumented)
+export type toMutantRunResult = import__systemfsoftware_stryker_js_plugin_interface.toMutantRunResult;
 
 // Warning: (ae-forgotten-export) The symbol "VerdictReached_base" needs to be exported by the entry point index.d.mts
 //

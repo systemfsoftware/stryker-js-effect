@@ -1,13 +1,14 @@
-import {
-  CheckerFailed,
-  DryRunResultSchema,
-  MutantRunResultSchema,
-  ReporterFailed,
-  TestRunnerCapabilitiesSchema,
-  TestRunnerFailed,
-} from '@systemfsoftware/stryker-js-language'
 import * as Rpc from 'effect/unstable/rpc/Rpc'
 import * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
+
+import { CheckerFailed } from './Checker.schema.js'
+import { ReporterFailed } from './ReporterEvent.schema.js'
+import {
+  DryRunResultSchema,
+  MutantRunResultSchema,
+  TestRunnerCapabilitiesSchema,
+  TestRunnerFailed,
+} from './TestRunner.schema.js'
 
 import type { Schema } from 'effect'
 import {
