@@ -38,7 +38,7 @@ import type {
   UpdateExpression,
   WhileStatement,
 } from './Ast.js'
-import type { Location, Position } from './Location.js'
+import type { Location, Position } from './Location.schema.js'
 import { Mutant as ApiMutant } from './Mutant.schema.js'
 
 import {

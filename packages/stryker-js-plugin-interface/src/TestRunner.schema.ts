@@ -1,13 +1,6 @@
 import * as S from 'effect/Schema'
 
-import {
-  MutantActivationSchema,
-  MutantRunOptionsSchema,
-  RunOptionsFields,
-} from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import { PositionSchema } from './Report.schema.js'
-
-export { MutantActivationSchema, MutantRunOptionsSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { PositionSchema, RunOptionsFields } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 
 export const DryRunStatus = S.Literals(['complete', 'error', 'timeout'])
 export type DryRunStatus = typeof DryRunStatus.Type

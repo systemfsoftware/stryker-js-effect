@@ -1,6 +1,6 @@
 import * as S from 'effect/Schema'
 
-import { LocationSchema } from './Location.js'
+import { LocationSchema } from './Location.schema.js'
 
 export const MutantStatusSchema = S.Literals([
   'Killed',

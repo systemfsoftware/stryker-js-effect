@@ -4,14 +4,14 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 
 import type {
-  Mutant,
-  MutantActivation,
   MutantCoverage,
   MutantRunOptions,
+  Position,
   RunOptions,
 } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type { Position } from './Report.schema.js'
 import type { TestRunnerFailed } from './TestRunner.schema.js'
+
+export { MutantActivationSchema, MutantRunOptionsSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 
 export type {
   MutantActivation,
@@ -25,9 +25,7 @@ export {
   DryRunOptionsSchema,
   DryRunResultSchema,
   DryRunStatus,
-  MutantActivationSchema,
   MutantCoverageSchema,
-  MutantRunOptionsSchema,
   MutantRunResultSchema,
   MutantRunStatus,
   TestResultSchema,
@@ -166,7 +164,7 @@ export interface TestRunnerService {
 }
 
 export class TestRunner
-  extends Context.Service<TestRunner, TestRunnerService>()('~@systemfsoftware/stryker-js-plugin-interface/TestRunner')
+  extends Context.Service<TestRunner, TestRunnerService>()('@systemfsoftware/stryker-js-plugin-interface/TestRunner')
 {}
 
 export function testFilesProvided(options: { readonly testFiles?: readonly string[] }): boolean {

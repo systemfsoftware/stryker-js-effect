@@ -1,13 +1,14 @@
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
+import * as S from 'effect/Schema'
 
-import type { Position } from './Location.js'
+import type { Position } from './Location.schema.js'
 import { Mutant } from './Mutant.schema.js'
 import type { MutantActivation, MutantStatus } from './Mutant.schema.js'
 
-export { LocationSchema, PositionSchema } from './Location.js'
-export type { Location, Position } from './Location.js'
+export { LocationSchema, PositionSchema } from './Location.schema.js'
+export type { Location, Position } from './Location.schema.js'
 export { Mutant } from './Mutant.schema.js'
 export type { MutantActivation, MutantStatus } from './Mutant.schema.js'
 
@@ -53,7 +54,7 @@ export interface RunPlan {
 
 export type TestPlan = EarlyResultPlan | RunPlan
 
-export const isMutant = (value: unknown): value is Mutant => value instanceof Mutant
+export const isMutant = (value: unknown): value is Mutant => S.is(Mutant)(value)
 
 export type MutantTestCoverage = Mutant & {
   readonly coveredBy: ReadonlyArray<string> | undefined

@@ -6,9 +6,9 @@ export type ExitClass = typeof ExitClass.Type
 
 export class ClassifyExitCommand extends S.TaggedClass<ClassifyExitCommand>()('ClassifyExitCommand', {
   pending: S.Array(ExitClass),
-  signal: S.NullOr(S.Number),
-  score: S.NullOr(S.Number),
-  breakingThreshold: S.NullOr(S.Number),
+  signal: S.NullOr(S.Finite),
+  score: S.NullOr(S.Finite),
+  breakingThreshold: S.NullOr(S.Finite),
 }) {}
 
 export class ClassifyExitDecision extends S.TaggedClass<ClassifyExitDecision>()('ClassifyExitDecision', {

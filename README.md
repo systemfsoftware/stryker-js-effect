@@ -9,7 +9,7 @@
 > ⚡ Real-time mutant streaming, cancel-safe partial reports, reliable incremental cache, and day-one TypeScript 7 support.
 
 ```bash
-pnpm add -D @systemfsoftware/stryker-js-cli
+pnpm add -D @systemfsoftware/stryker-js
 pnpm exec stryker run
 ```
 
@@ -90,7 +90,7 @@ Granular exit codes allow automated systems to handle distinct failure classes w
 ### 1. Install CLI and Plugins
 
 ```bash
-pnpm add -D @systemfsoftware/stryker-js-cli \
+pnpm add -D @systemfsoftware/stryker-js \
   @systemfsoftware/stryker-js-vitest-runner \
   @systemfsoftware/stryker-js-typescript-checker
 ```
@@ -133,12 +133,10 @@ This monorepo publishes a modular ecosystem of packages under the `@systemfsoftw
 
 | Package                                                                                    | Role                                                                                     |
 | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| [`@systemfsoftware/stryker-js-cli`](apps/stryker-js-cli)                                   | Terminal & CI runner binary with NDJSON streaming output                                 |
-| [`@systemfsoftware/stryker-js-language`](packages/stryker-js-language)                     | Pure domain core: mutant models, schemas, and exit classifications                       |
+| [`@systemfsoftware/stryker-js`](packages/stryker-js)                                       | The tool: the `stryker` binary, the run engine, and the `./config` authoring surface     |
+| [`@systemfsoftware/stryker-js-instrumenter`](packages/stryker-js-instrumenter)             | AST mutation engine powered by OXC parser, and the mutant vocabulary                     |
 | [`@systemfsoftware/stryker-js-plugin-interface`](packages/stryker-js-plugin-interface)     | Plugin boundary: RPC groups, payload schemas, typed failures, spawn contract             |
 | [`@systemfsoftware/stryker-js-plugin-runtime`](packages/stryker-js-plugin-runtime)         | Plugin worker runtime: RPC server layer, options codec, telemetry, trace middleware      |
-| [`@systemfsoftware/stryker-js-engine`](packages/stryker-js-engine)                         | Mutation run lifecycle engine and test orchestration                                     |
-| [`@systemfsoftware/stryker-js-instrumenter`](packages/stryker-js-instrumenter)             | AST mutation engine powered by OXC parser                                                |
 | [`@systemfsoftware/stryker-js-vitest-runner`](packages/stryker-js-vitest-runner)           | Vitest runner integration for mutation sandboxes                                         |
 | [`@systemfsoftware/stryker-js-typescript-checker`](packages/stryker-js-typescript-checker) | TypeScript type-checker plugin validating mutants pre-execution                          |
 | [`@systemfsoftware/stryker-js-html-reporter`](packages/stryker-js-html-reporter)           | Interactive HTML mutation report generator                                               |

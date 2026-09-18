@@ -53,7 +53,7 @@ catalogs:
 minimumReleaseAgeExclude:
   - "@systemfsoftware/*"
 packages:
-  - apps/*
+  - test/*
   - packages/*
   - packages/toolchain/*
   - packages/ignorers/*

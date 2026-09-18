@@ -2,8 +2,10 @@ import type * as Effect from 'effect/Effect'
 import * as S from 'effect/Schema'
 import type { StandardSchemaV1 } from 'effect/StandardSchema'
 
+import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import { MetricsResultSchema } from './Metrics.schema.js'
-import { LocationSchema, MutantStatusSchema, MutationTestResultSchema } from './Report.schema.js'
+
+import { MutationTestResultSchema } from './Report.schema.js'
 import type { StrykerOptions } from './Schema.js'
 import { TestResultSchema, TestRunnerCapabilitiesSchema } from './TestRunner.schema.js'
 

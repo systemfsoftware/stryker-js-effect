@@ -1,5 +1,5 @@
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
+import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'

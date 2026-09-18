@@ -1,3 +1,15 @@
+export {
+  LocationSchema,
+  MutantStatusSchema,
+  OpenEndLocationSchema,
+  PositionSchema,
+} from '@systemfsoftware/stryker-js-instrumenter/mutants'
+export type {
+  Location,
+  MutantStatus,
+  OpenEndLocation,
+  Position,
+} from '@systemfsoftware/stryker-js-instrumenter/mutants'
 export * from './Checker.js'
 export * from './Evaluator.js'
 export * from './ExitClass.js'

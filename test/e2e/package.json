@@ -1,0 +1,35 @@
+{
+  "name": "@systemfsoftware/stryker-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "description": "End-to-end lane for the shipped stryker artifact: the packed workspace tarball installed with npm in a pinned container",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "test/e2e"
+  },
+  "type": "module",
+  "scripts": {
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "test:e2e": "vitest run",
+    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit"
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.208.0",
+    "@opentelemetry/sdk-node": "^0.208.0",
+    "@opentelemetry/sdk-trace-base": "^2.2.0",
+    "@systemfsoftware/stryker-js": "workspace:^",
+    "@systemfsoftware/stryker-js-vitest-runner": "workspace:^",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@types/node": "catalog:",
+    "oxlint": "catalog:",
+    "testcontainers": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -1,8 +1,8 @@
 export { disableTypeChecks, instrument } from './Instrument.js'
 export type { File, InstrumenterOptions, InstrumentResult } from './Instrument.js'
 export type { InstrumentError } from './Instrument.schema.js'
-export { LocationSchema, OpenEndLocationSchema, PositionSchema } from './Location.js'
-export type { Location, OpenEndLocation, Position } from './Location.js'
+export { LocationSchema, OpenEndLocationSchema, PositionSchema } from './Location.schema.js'
+export type { Location, OpenEndLocation, Position } from './Location.schema.js'
 export {
   causeText,
   ERROR_CODES,

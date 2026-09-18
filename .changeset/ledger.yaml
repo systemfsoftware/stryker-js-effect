@@ -66,16 +66,6 @@
     - stryker-js-instrumenter-effect-surface
     - stryker-js-instrumenter-home-migration
     - stryker-js-instrumenter-walker-contract
-"@systemfsoftware/stryker-js-language@5.0.0":
-  dir: packages/stryker-js-language
-  intents:
-    - esm-only-module-loading
-    - famous-rockets-judge
-    - force-all-packages-patch
-    - stryker-js-home-migration
-    - stryker-js-language-declarations-only
-    - stryker-js-language-typed-positions
-    - stryker-js-plugin-interface-extraction
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:

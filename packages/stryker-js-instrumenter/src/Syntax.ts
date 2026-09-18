@@ -3,7 +3,7 @@
  */
 import * as Match from 'effect/Match'
 import type { Program } from './Ast.js'
-import type { Position } from './Location.js'
+import type { Position } from './Location.schema.js'
 import { AstFormat as SchemaAstFormat } from './Syntax.schema.js'
 
 export const AstFormat = SchemaAstFormat

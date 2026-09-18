@@ -1,9 +1,10 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { Mutant, MutantRunOptionsSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import * as S from 'effect/Schema'
 
 import { CheckerFailed, CheckResultSchema } from './Checker.schema.js'
 import { ReporterEventUnion, ReporterFailed } from './ReporterEvent.schema.js'
-import { DryRunOptionsSchema, MutantRunOptionsSchema, TestRunnerFailed } from './TestRunner.schema.js'
+
+import { DryRunOptionsSchema, TestRunnerFailed } from './TestRunner.schema.js'
 
 export const WorkerPluginKind = S.Literals(['TestRunner', 'Checker', 'Reporter'])
 export type WorkerPluginKind = typeof WorkerPluginKind.Type

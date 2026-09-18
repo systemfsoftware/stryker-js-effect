@@ -1,5 +1,5 @@
 ---
-"@systemfsoftware/stryker-js-language": minor
+
 ---
 
 `IgnorerService.shouldIgnore` now receives `(node, ancestors)` — the node and its

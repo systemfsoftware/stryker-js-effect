@@ -1,10 +1,5 @@
 import * as S from 'effect/Schema'
 
-export { LocationSchema, OpenEndLocationSchema, PositionSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-export { MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-export type { Location, OpenEndLocation, Position } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-export type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-
 import {
   LocationSchema,
   MutantStatusSchema,

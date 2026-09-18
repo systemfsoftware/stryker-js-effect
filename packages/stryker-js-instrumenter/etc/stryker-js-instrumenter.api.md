@@ -5,13 +5,56 @@
 ```ts
 
 import * as Effect from 'effect/Effect';
-import { FileDescription } from '@systemfsoftware/stryker-js-language';
-import { Mutant } from '@systemfsoftware/stryker-js-language';
 import * as S from 'effect/Schema';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
+export const causeText: (cause: unknown, depth: number) => string | undefined;
+
+// @public (undocumented)
+export interface Coverage {
+    // (undocumented)
+    readonly perTest: CoveragePerTestId;
+    // (undocumented)
+    readonly static: CoverageData;
+}
+
+// @public (undocumented)
+export type CoverageData = Record<string, number>;
+
+// @public (undocumented)
+export type CoveragePerTestId = Record<string, CoverageData>;
+
+// @public (undocumented)
 export const disableTypeChecks: (file: File_2) => Effect.Effect<File_2, InstrumentError>;
+
+// @public (undocumented)
+export interface EarlyResultPlan {
+    // (undocumented)
+    readonly mutant: Mutant;
+    // (undocumented)
+    readonly plan: 'EarlyResult';
+}
+
+// @public (undocumented)
+export interface ErrnoException extends Error {
+    // (undocumented)
+    code?: string;
+    // (undocumented)
+    errno?: number;
+    // (undocumented)
+    path?: string;
+    // (undocumented)
+    syscall?: string;
+}
+
+// @public (undocumented)
+export const ERROR_CODES: Readonly<{
+    NoSuchFileOrDirectory: 'ENOENT';
+}>;
+
+// @public (undocumented)
+export function errorToString(error: unknown): string;
 
 // @public (undocumented)
 interface File_2 extends FileDescription {
@@ -22,10 +65,44 @@ interface File_2 extends FileDescription {
 }
 export { File_2 as File }
 
+// @public (undocumented)
+export interface FileDescription {
+    // (undocumented)
+    readonly mutate: MutateDescription;
+}
+
+// @public (undocumented)
+export type FileDescriptions = Record<string, FileDescription>;
+
 // Warning: (ae-forgotten-export) The symbol "InstrumentResult$1" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
 export const instrument: (files: readonly File_2[], options: InstrumenterOptions, basePath?: string) => Effect.Effect<InstrumentResult$1, InstrumentError>;
+
+// @public (undocumented)
+export const INSTRUMENTER_CONSTANTS: Readonly<{
+    NAMESPACE: '__stryker__';
+    MUTATION_COVERAGE_OBJECT: 'mutantCoverage';
+    ACTIVE_MUTANT: 'activeMutant';
+    CURRENT_TEST_ID: 'currentTestId';
+    HIT_COUNT: 'hitCount';
+    HIT_LIMIT: 'hitLimit';
+    ACTIVE_MUTANT_ENV_VARIABLE: '__STRYKER_ACTIVE_MUTANT__';
+}>;
+
+// @public (undocumented)
+export interface InstrumenterContext {
+    // (undocumented)
+    activeMutant?: string;
+    // (undocumented)
+    currentTestId?: string;
+    // (undocumented)
+    hitCount?: number;
+    // (undocumented)
+    hitLimit?: number;
+    // (undocumented)
+    mutantCoverage?: MutantCoverage;
+}
 
 // Warning: (ae-forgotten-export) The symbol "InstrumenterOptionsSchema" needs to be exported by the entry point index.d.mts
 //
@@ -49,7 +126,173 @@ export interface InstrumentResult {
 }
 
 // @public (undocumented)
+export function isErrnoException(error: unknown): error is ErrnoException;
+
+// @public (undocumented)
+export const isMutant: (value: unknown) => value is Mutant;
+
+// @public (undocumented)
+export type Location = typeof LocationSchema.Type;
+
+// @public (undocumented)
+export const LocationSchema: S.Struct<{
+    readonly start: S.Struct<{
+        readonly line: S.Finite;
+        readonly column: S.Finite;
+    }>;
+    readonly end: S.Struct<{
+        readonly line: S.Finite;
+        readonly column: S.Finite;
+    }>;
+}>;
+
+// Warning: (ae-forgotten-export) The symbol "Mutant_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class Mutant extends Mutant_base {}
+
+// @public (undocumented)
+export type MutantActivation = typeof MutantActivationSchema.Type;
+
+// @public (undocumented)
+export const MutantActivationSchema: S.Literals<readonly ["runtime", "static"]>;
+
+// @public (undocumented)
+export interface MutantCoverage {
+    // (undocumented)
+    readonly perTest: Record<string, Record<string, number>>;
+    // (undocumented)
+    readonly static: Record<string, number>;
+}
+
+// @public (undocumented)
+export type MutantEarlyResultPlan = EarlyResultPlan;
+
+// @public (undocumented)
+export interface MutantRunOptions extends RunOptions {
+    // (undocumented)
+    readonly activeMutant: Mutant;
+    // (undocumented)
+    readonly hitLimit?: number;
+    // (undocumented)
+    readonly mutantActivation: MutantActivation;
+    // (undocumented)
+    readonly reloadEnvironment: boolean;
+    // (undocumented)
+    readonly sandboxFileName: string;
+    // (undocumented)
+    readonly testFilter?: readonly string[];
+}
+
+// @public (undocumented)
+export const MutantRunOptionsSchema: S.Struct<{
+    readonly timeout: S.Finite;
+    readonly disableBail: S.Boolean;
+    readonly activeMutant: typeof Mutant;
+    readonly sandboxFileName: S.String;
+    readonly mutantActivation: S.Literals<readonly ["runtime", "static"]>;
+    readonly reloadEnvironment: S.Boolean;
+    readonly testFilter: S.optionalKey<S.$Array<S.String>>;
+    readonly hitLimit: S.optionalKey<S.Finite>;
+}>;
+
+// @public (undocumented)
+export type MutantRunPlan = RunPlan;
+
+// @public (undocumented)
+export type MutantStatus = typeof MutantStatusSchema.Type;
+
+// @public (undocumented)
+export const MutantStatusSchema: S.Literals<readonly ["Killed", "Survived", "NoCoverage", "CompileError", "RuntimeError", "Timeout", "Ignored", "Pending"]>;
+
+// @public (undocumented)
+export type MutantTestCoverage = Mutant & {
+    readonly coveredBy: ReadonlyArray<string> | undefined;
+    readonly static: boolean | undefined;
+};
+
+// @public (undocumented)
+export type MutantTestPlan = TestPlan;
+
+// @public (undocumented)
+export type MutateDescription = ReadonlyArray<MutationRange> | boolean;
+
+// @public (undocumented)
+export interface MutationRange {
+    // (undocumented)
+    readonly end: Position;
+    // (undocumented)
+    readonly start: Position;
+}
+
+// @public (undocumented)
+export function normalizeFileName(fileName: string): string;
+
+// @public (undocumented)
+export type OpenEndLocation = typeof OpenEndLocationSchema.Type;
+
+// @public (undocumented)
+export const OpenEndLocationSchema: S.Struct<{
+    readonly start: S.Struct<{
+        readonly line: S.Finite;
+        readonly column: S.Finite;
+    }>;
+    readonly end: S.optional<S.Struct<{
+        readonly line: S.Finite;
+        readonly column: S.Finite;
+    }>>;
+}>;
+
+// @public (undocumented)
 export interface ParserOptions {}
+
+// @public (undocumented)
+export type Position = typeof PositionSchema.Type;
+
+// @public (undocumented)
+export const PositionSchema: S.Struct<{
+    readonly line: S.Finite;
+    readonly column: S.Finite;
+}>;
+
+// @public (undocumented)
+export type RunMutantResult = Mutant & {
+    readonly status: MutantStatus;
+    readonly statusReason?: string | undefined;
+    readonly testsCompleted?: number | undefined;
+    readonly killedBy?: readonly string[] | undefined;
+    readonly coveredBy?: readonly string[] | undefined;
+    readonly static?: boolean | undefined;
+};
+
+// @public (undocumented)
+export interface RunOptions {
+    // (undocumented)
+    readonly disableBail: boolean;
+    // (undocumented)
+    readonly timeout: number;
+}
+
+// @public (undocumented)
+export const RunOptionsFields: {
+    timeout: S.Finite;
+    disableBail: S.Boolean;
+};
+
+// @public (undocumented)
+export interface RunPlan {
+    // (undocumented)
+    readonly mutant: Mutant;
+    // (undocumented)
+    readonly netTime: number;
+    // (undocumented)
+    readonly plan: 'Run';
+    // (undocumented)
+    readonly runOptions: MutantRunOptions;
+}
+
+// @public (undocumented)
+export type TestPlan = EarlyResultPlan | RunPlan;
 
 // (No @packageDocumentation comment for this package)
 

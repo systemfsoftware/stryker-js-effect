@@ -43,7 +43,6 @@
     "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
   },
   "dependencies": {
-    "@systemfsoftware/stryker-js-language": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^"
   },
   "peerDependencies": {

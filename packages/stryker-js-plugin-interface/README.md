@@ -5,8 +5,8 @@ checker, or reporter — ships a spawn entrypoint whose target hosts an `RpcServ
 for its kind's `@effect/rpc` group; the host resolves that entrypoint from the
 project's config, spawns it, and drives it over NDJSON. Every payload crossing
 the boundary is a schema this package owns, and every failure is a typed variant.
-The concept modules a plugin implements live in
-`@systemfsoftware/stryker-js-language`.
+The concept modules a plugin implements — the test-runner and checker services and
+the schemas they carry — ship from this package too.
 
 The boundary ships as two packages:
 

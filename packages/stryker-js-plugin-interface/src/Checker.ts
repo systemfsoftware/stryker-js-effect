@@ -29,5 +29,5 @@ export interface CheckerService {
 }
 
 export class Checker
-  extends Context.Service<Checker, CheckerService>()('~@systemfsoftware/stryker-js-plugin-interface/Checker')
+  extends Context.Service<Checker, CheckerService>()('@systemfsoftware/stryker-js-plugin-interface/Checker')
 {}

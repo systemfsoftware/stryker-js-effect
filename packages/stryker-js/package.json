@@ -1,0 +1,143 @@
+{
+  "name": "@systemfsoftware/stryker-js",
+  "version": "5.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "packages/stryker-js"
+  },
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect",
+  "bugs": {
+    "url": "https://github.com/systemfsoftware/stryker-js-effect/issues"
+  },
+  "description": "The Stryker mutation testing tool — the stryker executable, the run engine, and the configuration surface.",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "stryker": "./dist/main.mjs"
+  },
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "rimraf dist && tsdown --config tsdown.bin.config.ts && tsdown --config tsdown.config.ts",
+    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
+    "test": "vitest run",
+    "attw": "attw --pack .",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "api:check": "concurrently --kill-others-on-fail \"api-extractor run\" \"api-extractor run --config api-extractor.builtin-reporters.json\" \"api-extractor run --config api-extractor.plugin-loader.json\"",
+    "api:update": "concurrently --kill-others-on-fail \"api-extractor run --local\" \"api-extractor run --local --config api-extractor.builtin-reporters.json\" \"api-extractor run --local --config api-extractor.plugin-loader.json\"",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "dependencies": {
+    "@effect/opentelemetry": "4.0.0-rc.112",
+    "@effect/platform-node": "catalog:",
+    "@effect/platform-node-shared": "catalog:",
+    "@noble/hashes": "catalog:",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.208.0",
+    "@opentelemetry/sdk-trace-base": "^2.2.0",
+    "@systemfsoftware/effect-cell-types": "catalog:",
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
+    "@systemfsoftware/stryker-js-html-reporter": "workspace:^",
+    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-runtime": "workspace:^",
+    "diff-match-patch": "1.0.5",
+    "minimatch": "~10.2.4"
+  },
+  "peerDependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/tsgo": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@microsoft/api-extractor": "catalog:",
+    "@oxc-parser/binding-wasm32-wasi": "catalog:",
+    "@std/jsonc": "catalog:",
+    "@systemfsoftware/all": "catalog:",
+    "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/effect-schema-law": "catalog:",
+    "@systemfsoftware/effect-schema-vite": "catalog:",
+    "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "workspace:^",
+    "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "workspace:^",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
+    "@systemfsoftware/vitest-config": "workspace:^",
+    "@types/diff-match-patch": "1.0.36",
+    "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "concurrently": "catalog:",
+    "mutation-testing-elements": "catalog:stryker",
+    "oxc-parser": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "./builtin-reporters": {
+        "types": "./dist/builtin-reporters.d.mts",
+        "default": "./dist/builtin-reporters.mjs"
+      },
+      "./config": {
+        "types": "./dist/config.d.mts",
+        "default": "./dist/config.mjs"
+      },
+      "./plugin-loader": {
+        "types": "./dist/plugin-loader.d.mts",
+        "default": "./dist/plugin-loader.mjs"
+      },
+      "./promises": {
+        "types": "./dist/promises.d.mts",
+        "default": "./dist/promises.mjs"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "exports": {
+    ".": {
+      "@systemfsoftware/source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./builtin-reporters": {
+      "@systemfsoftware/source": "./src/builtin-reporters.ts",
+      "types": "./dist/builtin-reporters.d.mts",
+      "default": "./dist/builtin-reporters.mjs"
+    },
+    "./config": {
+      "@systemfsoftware/source": "./src/config/index.ts",
+      "types": "./dist/config.d.mts",
+      "default": "./dist/config.mjs"
+    },
+    "./plugin-loader": {
+      "@systemfsoftware/source": "./src/plugin-loader.ts",
+      "types": "./dist/plugin-loader.d.mts",
+      "default": "./dist/plugin-loader.mjs"
+    },
+    "./promises": {
+      "@systemfsoftware/source": "./src/promises/index.ts",
+      "types": "./dist/promises.d.mts",
+      "default": "./dist/promises.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "inlinedDependencies": {
+    "@jsr/std__jsonc": "1.0.2"
+  }
+}

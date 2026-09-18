@@ -39,7 +39,7 @@ _Gate:_ review — ensure every CLI behavior and engine state change is represen
 - **Streaming responsiveness**: Wall-clock duration from CLI invocation to the first `stream` NDJSON event emitted on `stdout`.
 - **Incremental cache hit rate**: Percentage of eligible unchanged files successfully skipped across repeated mutation runs.
 - **Partial report retention**: Verification that 100% of cancelled/interrupted runs successfully flush partial mutant reports to disk.
-- **Package adoption**: Weekly install volume of `@systemfsoftware/stryker-js-cli` and runner plugins across CI workflows.
+- **Package adoption**: Weekly install volume of `@systemfsoftware/stryker-js` and runner plugins across CI workflows.
 
 ## Tracks
 
@@ -63,7 +63,7 @@ _Why it serves the approach:_ Enables teams working on modern Effect-TS codebase
 
 ## Milestones
 
-- **2026-10-01** — Stable Release of `@systemfsoftware/stryker-js-cli` 8.1 with verified partial report recovery and TypeScript 7 out-of-the-box support.
+- **2026-10-01** — Stable Release of `@systemfsoftware/stryker-js` with verified partial report recovery and TypeScript 7 out-of-the-box support.
 - **2026-11-15** — Resilient incremental cache engine landing across all workspace runner plugins.
 
 ## Brand

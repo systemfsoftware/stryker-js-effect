@@ -1,12 +1,11 @@
+import { errorToString, type MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import {
   type DryRunOptions,
   type DryRunResult,
-  errorToString,
-  type MutantRunOptions,
   type MutantRunResult,
   TestRunner,
   TestRunnerFailed,
-} from '@systemfsoftware/stryker-js-language'
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
 import { readWorkerOptionsFromEnv } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Cause from 'effect/Cause'
