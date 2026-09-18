@@ -3,6 +3,7 @@ import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
 import type * as Rpc from 'effect/unstable/rpc/Rpc'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
@@ -22,12 +23,25 @@ export const workerServerLayer = <Rpcs extends Rpc.Any, HE>(params: WorkerServer
   Layer.unwrap(
     Effect.gen(function*() {
       const socketPath = yield* Config.string('STRYKER_SOCKET')
+      const restrictSocket = NodeSocketServer.layer({ path: socketPath }).pipe(
+        Layer.tap(() =>
+          Match.value(socketPath.startsWith('\\\\.\\pipe\\')).pipe(
+            Match.when(true, () => Effect.void),
+            Match.orElse(() =>
+              Effect.gen(function*() {
+                const fs = yield* FileSystem.FileSystem
+                yield* fs.chmod(socketPath, 0o600)
+              })
+            ),
+          )
+        ),
+      )
       return RpcServer.layer(params.rpcs).pipe(
         Layer.provide(params.handlers),
         Layer.provide(params.schemaServices),
         Layer.provide(RpcServer.layerProtocolSocketServer),
         Layer.provide(RpcSerialization.layerNdjson),
-        Layer.provide(NodeSocketServer.layer({ path: socketPath })),
+        Layer.provide(restrictSocket),
         Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)),
         Layer.provide(layerTraceContextServer),
         Layer.provideMerge(workerTelemetryLayer),

@@ -27,6 +27,7 @@
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
     "attw": "attw --pack .",
     "test": "vitest run",
+    "mutation": "stryker run",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "api:check": "api-extractor run",
     "api:update": "api-extractor run --local"
@@ -58,6 +59,8 @@
     "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/all": "catalog:",
+    "@systemfsoftware/stryker-config": "workspace:^",
+    "@systemfsoftware/stryker-js": "catalog:stryker",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",

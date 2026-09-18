@@ -30,12 +30,6 @@ const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string): Effect.
     ),
   )
 
-const restrictSocketToOwnerOrWarn = (fs: FileSystem.FileSystem, socketPath: string): Effect.Effect<void> =>
-  Match.value(process.platform).pipe(
-    Match.when('win32', () => Effect.void),
-    Match.orElse(() => restrictToOwnerOrWarn(fs, socketPath)),
-  )
-
 /**
  * The Node worker launcher: spawn a worker child with this runtime's
  * executable, host the RPC server's address as a `net` `path` endpoint (a
@@ -82,7 +76,6 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
           const clientLayer = RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
             Layer.provide(NodeSocket.layerNet({ path: socketPath })),
             Layer.provide(RpcSerialization.layerNdjson),
-            Layer.tap(() => restrictSocketToOwnerOrWarn(fs, socketPath)),
           )
 
           const exited = handle.exitCode.pipe(
