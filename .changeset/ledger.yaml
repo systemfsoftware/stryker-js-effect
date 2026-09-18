@@ -31,6 +31,14 @@
   intents:
     - force-all-packages-patch
     - stryker-ignorer-kit-debut
+"@systemfsoftware/stryker-js@5.0.0":
+  dir: packages/stryker-js
+  intents:
+    - plucky-plugins-resolve
+    - public-worms-watch
+    - stryker-js-home-migration
+    - stryker-js-language-declarations-only
+    - stryker-js-language-typed-positions
 "@systemfsoftware/stryker-js-cli@9.0.0":
   dir: apps/stryker-js-cli
   intents:
