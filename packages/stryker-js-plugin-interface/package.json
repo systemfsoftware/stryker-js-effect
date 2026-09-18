@@ -29,7 +29,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@systemfsoftware/stryker-js-language": "workspace:^",
+    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "effect": "catalog:"
   },
   "devDependencies": {

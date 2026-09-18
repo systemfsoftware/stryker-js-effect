@@ -1,7 +1,6 @@
 ---
 "@systemfsoftware/stryker-js-plugin-interface": major
 "@systemfsoftware/stryker-js-engine": major
-"@systemfsoftware/stryker-js-language": major
 "@systemfsoftware/stryker-js-vitest-runner": major
 "@systemfsoftware/stryker-js-typescript-checker": major
 "@systemfsoftware/stryker-js-html-reporter": major

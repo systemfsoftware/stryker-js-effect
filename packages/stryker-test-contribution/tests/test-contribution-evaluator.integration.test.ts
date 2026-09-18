@@ -11,8 +11,8 @@
  * or no EvaluatorFailed where breaking expected).
  */
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import * as schema from '@systemfsoftware/stryker-js-language'
-import { type PartialStrykerOptions, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
+import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
+import { type PartialStrykerOptions, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -22,7 +22,7 @@ import * as Option from 'effect/Option'
 import * as Schema from 'effect/Schema'
 import { expect } from 'vitest'
 
-import { Evaluator, type EvaluatorFailed, type ExitClass } from '@systemfsoftware/stryker-js-language'
+import { Evaluator, type EvaluatorFailed, type ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   makeTestContributionEvaluatorService,
   testContributionEvaluatorLayer,

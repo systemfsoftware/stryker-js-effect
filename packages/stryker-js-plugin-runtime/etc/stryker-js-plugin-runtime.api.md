@@ -20,7 +20,7 @@ import * as RpcServer from 'effect/unstable/rpc/RpcServer';
 import * as S from 'effect/Schema';
 import { SocketServer } from 'effect/unstable/socket/SocketServer';
 import { SocketServerError } from 'effect/unstable/socket/SocketServer';
-import { StrykerOptions } from '@systemfsoftware/stryker-js-language';
+import { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface';
 import { TraceContextMiddleware } from '@systemfsoftware/stryker-js-plugin-interface';
 import { TraceContextParts } from '@systemfsoftware/stryker-js-plugin-interface';
 

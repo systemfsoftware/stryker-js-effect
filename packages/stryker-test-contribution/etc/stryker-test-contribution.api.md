@@ -5,11 +5,11 @@
 ```ts
 
 import * as Effect from 'effect/Effect';
-import { Evaluator } from '@systemfsoftware/stryker-js-language';
-import { EvaluatorFailed } from '@systemfsoftware/stryker-js-language';
-import { ExitClass } from '@systemfsoftware/stryker-js-language';
+import { Evaluator } from '@systemfsoftware/stryker-js-plugin-interface';
+import { EvaluatorFailed } from '@systemfsoftware/stryker-js-plugin-interface';
+import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Layer from 'effect/Layer';
-import * as schema from '@systemfsoftware/stryker-js-language';
+import * as schema from '@systemfsoftware/stryker-js-plugin-interface';
 
 // @public (undocumented)
 export const contributionByTestFile: (report: ReportView) => ReadonlyMap<string, TestFileContribution>;

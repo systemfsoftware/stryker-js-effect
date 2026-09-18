@@ -83,7 +83,7 @@ jobs:
         run: timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e
       - name: Export telemetry
         if: always()
-        run: ./apps/stryker-js-cli-e2e/scripts/export-traces.ts
+        run: ./test/e2e/scripts/export-traces.ts
       - name: Container logs on failure
         if: failure()
         continue-on-error: true

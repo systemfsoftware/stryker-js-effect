@@ -1,6 +1,7 @@
-import { type FileDescription, Mutant as ApiMutant } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as Predicate from 'effect/Predicate'
+import type { FileDescription } from './Mutant.js'
+import { Mutant as ApiMutant } from './Mutant.schema.js'
 
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import type { MutateDescription } from './Instrument.schema.js'

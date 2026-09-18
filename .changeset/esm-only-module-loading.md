@@ -1,5 +1,4 @@
 ---
-"@systemfsoftware/stryker-js-language": major
 "@systemfsoftware/stryker-js-plugin-runtime": major
 "@systemfsoftware/stryker-js-vitest-runner": major
 "@systemfsoftware/stryker-js-engine": major

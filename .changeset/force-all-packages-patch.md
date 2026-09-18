@@ -2,7 +2,6 @@
 "@systemfsoftware/stryker-js-engine": patch
 "@systemfsoftware/stryker-js-html-reporter": patch
 "@systemfsoftware/stryker-js-instrumenter": patch
-"@systemfsoftware/stryker-js-language": patch
 "@systemfsoftware/stryker-js-plugin-interface": patch
 "@systemfsoftware/stryker-js-plugin-runtime": patch
 "@systemfsoftware/stryker-js-typescript-checker": patch

@@ -17,8 +17,7 @@ import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 
 ## Related
 
-- [`@systemfsoftware/stryker-js-engine`][engine] — the engine that emits the events this reporter presents
-- [`@systemfsoftware/stryker-js-cli`][cli] — the terminal-facing half, which binds this package's `makeHtmlReporter` as a built-in reporter
+- [`@systemfsoftware/stryker-js`][engine] — the run engine that emits the events this reporter presents, and the binary that binds `makeHtmlReporter` as a built-in reporter
 
 ## License
 
@@ -29,5 +28,4 @@ Licensed under [Apache 2.0][license-url].
 [license-badge]: https://img.shields.io/badge/license-Apache_2.0-blue?style=flat-square
 [license-url]: https://github.com/systemfsoftware/stryker-js-effect/blob/main/LICENSE
 [repo]: https://github.com/systemfsoftware/stryker-js-effect
-[engine]: https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js-engine
-[cli]: https://github.com/systemfsoftware/stryker-js-effect/tree/main/apps/stryker-js-cli
+[engine]: https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js

@@ -1,5 +1,5 @@
-import { Mutant } from '@systemfsoftware/stryker-js-language'
 import * as S from 'effect/Schema'
+import { Mutant } from './Mutant.schema.js'
 
 export class InstrumentError
   extends S.TaggedError<InstrumentError>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/InstrumentError')(

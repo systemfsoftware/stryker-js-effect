@@ -1,7 +1,6 @@
 // oxlint-disable typescript/no-unsafe-type-assertion typescript/no-unnecessary-type-assertion
 
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
-import { INSTRUMENTER_CONSTANTS as ID } from '@systemfsoftware/stryker-js-language'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -43,6 +42,7 @@ import {
   variableDeclarator,
 } from './Ast.js'
 import { type MutateDescription, type Position } from './Instrument.schema.js'
+import { INSTRUMENTER_CONSTANTS as ID } from './Mutant.js'
 import { applyMutant, createMutant, type Mutable, type Mutant } from './Mutator.js'
 import { type MutatorContext, type MutatorOptions } from './Mutator.js'
 import { allMutators } from './Mutator.js'

@@ -8,21 +8,21 @@ import {
   type CoverageData,
   errorToString,
   INSTRUMENTER_CONSTANTS,
+  type MutantCoverage as DryRunMutantCoverage,
+  type MutantRunOptions,
   normalizeFileName,
-} from '@systemfsoftware/stryker-js-language'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
+} from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import {
   type BaseTestResult,
   DryRunResult,
-  type MutantCoverage as DryRunMutantCoverage,
-  type MutantRunOptions,
   MutantRunResult,
   testFilesProvided,
   type TestResult,
   TestRunner,
   TestRunnerFailed,
   TestStatus,
-} from '@systemfsoftware/stryker-js-language'
+} from '@systemfsoftware/stryker-js-plugin-interface'
+import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'

@@ -1,9 +1,9 @@
 /**
  * Syntax — the instrumenter's AST shapes, location helpers and syntax utilities.
  */
-import type { Position } from '@systemfsoftware/stryker-js-language'
 import * as Match from 'effect/Match'
 import type { Program } from './Ast.js'
+import type { Position } from './Location.schema.js'
 import { AstFormat as SchemaAstFormat } from './Syntax.schema.js'
 
 export const AstFormat = SchemaAstFormat

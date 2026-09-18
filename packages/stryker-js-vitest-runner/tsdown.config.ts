@@ -28,7 +28,6 @@ export default defineConfig([
       alwaysBundle: [
         /^effect$/,
         /^effect\//,
-        /^@systemfsoftware\/stryker-js-language$/,
         /^@systemfsoftware\/stryker-js-plugin-interface$/,
         /^@systemfsoftware\/stryker-js-plugin-runtime$/,
         /^@systemfsoftware\/effect-cell-types$/,
