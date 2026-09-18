@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-engine",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -42,6 +42,7 @@
   },
   "devDependencies": {
     "@effect/opentelemetry": "4.0.0-rc.112",
+    "@effect/tsgo": "catalog:",
     "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@opentelemetry/sdk-trace-base": "^2.2.0",
@@ -62,8 +63,7 @@
     "oxlint-tsgolint": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:",
-    "@effect/tsgo": "catalog:"
+    "vitest": "catalog:"
   },
   "license": "Apache-2.0",
   "engines": {

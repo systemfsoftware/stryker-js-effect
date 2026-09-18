@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/oxlint-ignorer-config",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The lint preset for an ignorer package: one path per decision, no casts on foreign data, and no StrykerJS runtime behind an ignorer",
   "keywords": [
     "oxlint",
@@ -54,10 +54,10 @@
     }
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
     "@types/node": "catalog:",
-    "oxlint": "catalog:",
-    "@effect/tsgo": "catalog:"
+    "oxlint": "catalog:"
   }
 }

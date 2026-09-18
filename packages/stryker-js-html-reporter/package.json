@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-html-reporter",
-  "version": "3.0.3",
+  "version": "4.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -32,6 +32,7 @@
     "mutation-testing-elements": "catalog:stryker"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
@@ -46,8 +47,7 @@
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:",
-    "@effect/tsgo": "catalog:"
+    "vitest": "catalog:"
   },
   "engines": {
     "node": ">=20.0.0"

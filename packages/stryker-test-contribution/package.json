@@ -1,7 +1,7 @@
 {
   "name": "@systemfsoftware/stryker-test-contribution",
   "license": "Apache-2.0",
-  "version": "2.0.3",
+  "version": "3.0.0",
   "author": "Ryan Lee <drdgvhbh@gmail.com>",
   "repository": {
     "type": "git",
@@ -50,6 +50,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/all": "catalog:",
@@ -66,8 +67,7 @@
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:",
-    "@effect/tsgo": "catalog:"
+    "vitest": "catalog:"
   },
   "publishConfig": {
     "access": "public",

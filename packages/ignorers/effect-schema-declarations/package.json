@@ -1,7 +1,7 @@
 {
   "name": "@systemfsoftware/stryker-ignorer-effect-schema-declarations",
   "license": "Apache-2.0",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "author": "Ryan Lee <drdgvhbh@gmail.com>",
   "repository": {
     "type": "git",
@@ -48,6 +48,7 @@
     "@systemfsoftware/stryker-ignorer-kit": "workspace:^"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
@@ -60,8 +61,7 @@
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:",
-    "@effect/tsgo": "catalog:"
+    "vitest": "catalog:"
   },
   "publishConfig": {
     "access": "public",
