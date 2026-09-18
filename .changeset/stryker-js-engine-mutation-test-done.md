@@ -1,5 +1,5 @@
 ---
-'@systemfsoftware/stryker-js-engine': major
+
 ---
 
 A mutation run's outcome is now `MutationTestDone`, replacing `RunOutcome`; the run's stage markers — `PrepareDone`, `InstrumentDone`, `DryRunDone`, `MutationTestDone` — are published individually, and `runMutationTest` returns `Effect<MutationTestDone, StageError, StageServices>`.

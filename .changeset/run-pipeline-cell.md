@@ -1,5 +1,5 @@
 ---
-"@systemfsoftware/stryker-js-engine": major
+
 ---
 
 Removed `runMutationTest`. Start a run with `mutationTestCell` and pass the CLI options plus target mutate patterns as its command.
