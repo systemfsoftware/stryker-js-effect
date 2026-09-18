@@ -85,7 +85,6 @@ export {
   initialExtendsStepState,
   loadConfigCell,
   mergeConfigs,
-  mergeRecords,
   readConfig,
   resolveExtends,
   validateOptions,

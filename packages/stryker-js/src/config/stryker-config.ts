@@ -12,7 +12,6 @@ export interface ConfigEnv {
 
 export type StrykerConfig = PartialStrykerOptions
 
-export type StrykerConfigValue =
-  | StrykerConfig
-  | Promise<StrykerConfig>
-  | ((env: ConfigEnv) => StrykerConfig | Promise<StrykerConfig>)
+export type StrykerConfigFn = (env: ConfigEnv) => StrykerConfig | Promise<StrykerConfig>
+
+export type StrykerConfigExport = StrykerConfig | Promise<StrykerConfig> | StrykerConfigFn

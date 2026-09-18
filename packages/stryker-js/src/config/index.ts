@@ -4,6 +4,7 @@ export type {
   ConfigEnv,
   PartialStrykerOptions,
   StrykerConfig,
-  StrykerConfigValue,
+  StrykerConfigExport,
+  StrykerConfigFn,
   StrykerOptions,
 } from './stryker-config.js'

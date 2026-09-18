@@ -20,6 +20,7 @@ import {
   forkOptionsSchema,
   ImportedModuleSchema,
 } from '../Config.schema.js'
+import { mergeConfig } from '../config/merge-config.js'
 import type { ConfigEnv } from '../config/stryker-config.js'
 import type { OutputMode } from '../output-mode.js'
 import { MUTATION_RANGE_REGEX } from '../Project.ignore.js'
@@ -28,58 +29,6 @@ import { isCommandRunner } from '../TestRunner.js'
 
 const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 
-const isMergeableRecord = (value: unknown): value is Record<string, unknown> =>
-  isNonNullObject(value) && Array.isArray(value) === false
-
-const setConfigEntry = (
-  out: Record<string, unknown>,
-  key: string,
-  value: unknown,
-): Record<string, unknown> => {
-  out[key] = value
-  return out
-}
-
-const mergeOverrideValue = (
-  baseValue: Record<string, unknown>,
-  overrideValue: unknown,
-): unknown =>
-  Match.value(overrideValue).pipe(
-    Match.when(isMergeableRecord, (record) => mergeRecords(baseValue, record)),
-    Match.orElse(() => overrideValue),
-  )
-
-const applyOverrideValue = (
-  out: Record<string, unknown>,
-  key: string,
-  overrideValue: unknown,
-): Record<string, unknown> =>
-  Match.value(out[key]).pipe(
-    Match.when(
-      isMergeableRecord,
-      (baseValue) => setConfigEntry(out, key, mergeOverrideValue(baseValue, overrideValue)),
-    ),
-    Match.orElse(() => setConfigEntry(out, key, overrideValue)),
-  )
-
-const shouldSkipOverride = (key: string, value: unknown): boolean => key === '__proto__' || value === undefined
-
-const applyOverrideEntry = (
-  out: Record<string, unknown>,
-  entry: [string, unknown],
-): Record<string, unknown> =>
-  Match.value(shouldSkipOverride(entry[0], entry[1])).pipe(
-    Match.when(true, () => out),
-    Match.orElse(() => applyOverrideValue(out, entry[0], entry[1])),
-  )
-
-export function mergeRecords(
-  base: object,
-  overrides: object,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...base }
-  return Object.entries(overrides).reduce(applyOverrideEntry, out)
-}
 const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
 export const optionsPath = (...path: string[]): string => path.join('.')
 
@@ -493,73 +442,55 @@ const mergePluginDescriptors = (
   return merged.filter(isFirstDescriptorOccurrence(merged))
 }
 
-const removeConfigEntry = (out: Record<string, unknown>, key: string): Record<string, unknown> => {
-  delete out[key]
-  return out
-}
-
-const applyMergedEntry = (
-  out: Record<string, unknown>,
-  key: string,
-  parentValue: Record<string, unknown>,
-  childValue: unknown,
-): Record<string, unknown> =>
-  Match.value(childValue).pipe(
-    Match.when(isMergeableRecord, (mergeableChild) => setConfigEntry(out, key, { ...parentValue, ...mergeableChild })),
-    Match.orElse(() => setConfigEntry(out, key, childValue)),
-  )
-
-const applyValueEntry = (
-  out: Record<string, unknown>,
-  key: string,
-  parentValue: unknown,
-  childValue: unknown,
-): Record<string, unknown> =>
+const inheritNested = (parentValue: unknown, childValue: unknown): unknown =>
   Match.value(parentValue).pipe(
-    Match.when(isMergeableRecord, (mergeableParent) => applyMergedEntry(out, key, mergeableParent, childValue)),
-    Match.orElse(() => setConfigEntry(out, key, childValue)),
+    Match.when(
+      (value: unknown): value is Record<string, unknown> => isNonNullObject(value) && Array.isArray(value) === false,
+      (parentNested) =>
+        Match.value(childValue).pipe(
+          Match.when(
+            (value: unknown): value is Record<string, unknown> =>
+              isNonNullObject(value) && Array.isArray(value) === false,
+            (childNested) => ({ ...parentNested, ...childNested }),
+          ),
+          Match.orElse(() => childValue),
+        ),
+    ),
+    Match.orElse(() => childValue),
   )
 
-const applyPluginsEntry = (
-  out: Record<string, unknown>,
-  key: string,
-  parentValue: unknown,
-  childValue: unknown,
-): Record<string, unknown> =>
-  setConfigEntry(
-    out,
-    key,
-    mergePluginDescriptors(asUnknownArray(parentValue), asUnknownArray(childValue)),
-  )
-
-const applyConfigEntry = (
+const inheritEntry = (
   out: Record<string, unknown>,
   key: string,
   parentValue: unknown,
   childValue: unknown,
 ): Record<string, unknown> =>
   Match.value(childValue).pipe(
-    Match.when(null, () => removeConfigEntry(out, key)),
+    Match.when(null, () => {
+      const next = { ...out }
+      delete next[key]
+      return next
+    }),
     Match.orElse(() =>
       Match.value(key).pipe(
-        Match.when('plugins', () => applyPluginsEntry(out, key, parentValue, childValue)),
-        Match.orElse(() => applyValueEntry(out, key, parentValue, childValue)),
+        Match.when(
+          'plugins',
+          () => ({
+            ...out,
+            [key]: mergePluginDescriptors(asUnknownArray(parentValue), asUnknownArray(childValue)),
+          }),
+        ),
+        Match.orElse(() => ({ ...out, [key]: inheritNested(parentValue, childValue) })),
       )
     ),
   )
-
-const applyChildConfigEntry = (
-  parent: PartialStrykerOptions,
-  out: Record<string, unknown>,
-  entry: [string, unknown],
-): Record<string, unknown> => applyConfigEntry(out, entry[0], parent[entry[0]], entry[1])
 
 export function mergeConfigs(
   parent: PartialStrykerOptions,
   child: PartialStrykerOptions,
 ): PartialStrykerOptions {
   return Object.entries(child).reduce(
-    (out, entry) => applyChildConfigEntry(parent, out, entry),
+    (out, entry) => inheritEntry(out, entry[0], parent[entry[0]], entry[1]),
     { ...parent },
   )
 }
@@ -1388,7 +1319,7 @@ export function readConfig(
       onFailure: (cause) => Effect.fail(ConfigFileInvalidError.make({ file: 'config', cause })),
       onSuccess: (options) => Effect.succeed(options),
     })
-    const merged = mergeRecords(fileOptions, cliRecord)
+    const merged = mergeConfig(fileOptions, cliRecord)
     const decoded = S.decodeUnknownResult(StrykerOptionsSchema)(merged)
     if (Result.isFailure(decoded)) {
       throw ConfigError.make({ message: configErrorMessage(describeErrors(decoded.failure)) })

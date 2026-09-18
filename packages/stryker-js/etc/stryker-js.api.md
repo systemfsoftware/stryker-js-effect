@@ -469,9 +469,6 @@ export class MergeCommand extends MergeCommand_base {}
 // @public (undocumented)
 export function mergeConfigs(parent: PartialStrykerOptions, child: PartialStrykerOptions): PartialStrykerOptions;
 
-// @public (undocumented)
-export function mergeRecords(base: object, overrides: object): Record<string, unknown>;
-
 // Warning: (ae-forgotten-export) The symbol "MergeResult_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
