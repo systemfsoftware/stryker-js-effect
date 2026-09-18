@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "stryker-mutation-testing",
+  "version": "1.0.0",
+  "description": "Agent plugin and skill for setting up, configuring, and running Stryker mutation testing in TypeScript and JavaScript repositories.",
+  "author": {
+    "name": "System F Software",
+    "url": "https://github.com/systemfsoftware/stryker-js-effect"
+  },
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect#readme",
+  "repository": "https://github.com/systemfsoftware/stryker-js-effect",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mutation-testing",
+    "stryker",
+    "vitest",
+    "typescript",
+    "testing",
+    "quality-gate",
+    "coverage",
+    "agent-skill"
+  ]
+}

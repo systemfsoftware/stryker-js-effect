@@ -1,0 +1,28 @@
+{
+  "skill_name": "stryker-mutation-testing",
+  "skills_loaded": {
+    "context-engineering": "none-installed",
+    "evaluation": "none-installed",
+    "agent-readable-documentation": "agent-docs"
+  },
+  "intent": {
+    "objective": "Enable any AI coding agent to configure, optimize, and run Stryker JS Effect mutation testing in any JS/TS codebase with zero confusion around V8 vs Vitest runners, ESM file:// URL plugin resolution, and ignorer pairing.",
+    "write_scope": "skills/stryker-mutation-testing",
+    "verify_command": "pnpm exec stryker run --dryRunOnly"
+  },
+  "iterations": [
+    {
+      "iteration": 1,
+      "date": "2026-09-18",
+      "eval_suite_size": 8,
+      "assertion_count": 28,
+      "discriminator_evals": [
+        "vitest-plugin-url",
+        "local-v8-ci-vitest-dual-engine",
+        "effect-schema-ignorer-pairing"
+      ],
+      "is_current_best": true,
+      "status": "baseline-derived"
+    }
+  ]
+}

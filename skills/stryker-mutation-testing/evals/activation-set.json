@@ -1,0 +1,44 @@
+{
+  "queries": [
+    {
+      "query": "How do I setup Stryker mutation testing with Vitest in our repo?",
+      "should_trigger": true
+    },
+    {
+      "query": "Configure stryker.config.ts to ignore Effect Schema declarations",
+      "should_trigger": true
+    },
+    {
+      "query": "Stryker run is super slow locally, how do I speed up mutation tests with in-memory vm?",
+      "should_trigger": true
+    },
+    {
+      "query": "Why are mutants surviving on my _tag and brand types in Stryker?",
+      "should_trigger": true
+    },
+    {
+      "query": "Add vitest runner plugin to stryker configuration file",
+      "should_trigger": true
+    },
+    {
+      "query": "How to configure v8 coverage in vitest.config.ts?",
+      "should_trigger": false
+    },
+    {
+      "query": "Write a unit test for my authentication service using Vitest",
+      "should_trigger": false
+    },
+    {
+      "query": "Fix typescript compilation errors in my tsconfig.json",
+      "should_trigger": false
+    },
+    {
+      "query": "How do I setup Jest in a Next.js project?",
+      "should_trigger": false
+    },
+    {
+      "query": "Setup ESLint with Oxlint in our monorepo",
+      "should_trigger": false
+    }
+  ]
+}

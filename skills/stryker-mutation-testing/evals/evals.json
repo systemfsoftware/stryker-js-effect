@@ -1,0 +1,160 @@
+{
+  "skill_name": "stryker-mutation-testing",
+  "description": "Evaluation suite for stryker-mutation-testing skill covering core rules, dual-engine setup, ignorer pairing, negative triggers, and reference routing.",
+  "evals": [
+    {
+      "id": "eval-0",
+      "eval_name": "vitest-plugin-url",
+      "prompt": "How do I configure the Vitest test runner plugin in my stryker.config.ts? Show me the exact plugins array entry.",
+      "expected_output": "Uses import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner') in plugins array, explains that bare module specifiers fail with PluginLoadFailedError.",
+      "assertions": [
+        {
+          "text": "import.meta.resolve"
+        },
+        {
+          "text": "@systemfsoftware/stryker-js-vitest-runner"
+        },
+        {
+          "text": "file:"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": "eval-1",
+      "eval_name": "local-v8-ci-vitest-dual-engine",
+      "prompt": "Running mutation testing locally takes 6 minutes on my laptop because Vitest spins up workers. How can I speed up local mutation runs while keeping full Vitest checks in GitHub Actions CI?",
+      "expected_output": "Recommends dual-engine setup using isCi from defineConfig: testRunner: isCi ? 'vitest' : 'vm', with testFiles specified for the vm runner and incremental: !isCi.",
+      "assertions": [
+        {
+          "text": "isCi"
+        },
+        {
+          "text": "testRunner"
+        },
+        {
+          "text": "vm"
+        },
+        {
+          "text": "testFiles"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": "eval-2",
+      "eval_name": "zero-plugin-command-runner",
+      "prompt": "We have an older project running tests with a custom shell script 'npm run test:unit'. We don't want to install extra plugins. How do we configure stryker.config.ts?",
+      "expected_output": "Configures testRunner: 'command' and commandRunner: { command: 'npm run test:unit' }, without adding runner plugins to plugins array.",
+      "assertions": [
+        {
+          "text": "command"
+        },
+        {
+          "text": "commandRunner"
+        },
+        {
+          "text": "npm run test:unit"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": "eval-3",
+      "eval_name": "mutate-exclusions",
+      "prompt": "Here is my mutate configuration: mutate: ['src/**/*.ts']. Stryker is mutating our test helpers and in-source test blocks, and reporting surviving mutants that don't matter. What should mutate be?",
+      "expected_output": "Adds negative exclusion patterns for test files, __tests__ directories, and type definition files.",
+      "assertions": [
+        {
+          "text": "!src/**/*.test.ts"
+        },
+        {
+          "text": "!src/**/__tests__/**"
+        },
+        {
+          "text": "!src/**/*.d.ts"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": "eval-4",
+      "eval_name": "effect-schema-ignorer-pairing",
+      "prompt": "We use Effect Schema and keep seeing surviving mutants on brand tags and schema titles. How do we ignore them in Stryker?",
+      "expected_output": "Installs @systemfsoftware/stryker-ignorer-effect-schema-declarations, resolves it with import.meta.resolve in plugins, and adds 'effect-schema-declarations' to ignorers.",
+      "assertions": [
+        {
+          "text": "@systemfsoftware/stryker-ignorer-effect-schema-declarations"
+        },
+        {
+          "text": "import.meta.resolve"
+        },
+        {
+          "text": "effect-schema-declarations"
+        },
+        {
+          "text": "ignorers"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": "eval-5",
+      "eval_name": "decision-guide-routing",
+      "prompt": "When should we choose the in-memory vm runner versus the vitest runner versus the command runner?",
+      "expected_output": "Quotes the decision guide: vm for pure logic/Node V8 tests with no process spawning; vitest for DOM/timers/vi.mock/sandboxing; command for non-Vitest test runners.",
+      "assertions": [
+        {
+          "text": "vm"
+        },
+        {
+          "text": "vitest"
+        },
+        {
+          "text": "command"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": "eval-6",
+      "eval_name": "negative-trigger-boundary",
+      "prompt": "How do I configure v8 coverage reporting in vitest.config.ts?",
+      "expected_output": "Configures vitest.config.ts with coverage: { provider: 'v8' }; does not configure or install Stryker mutation testing.",
+      "assertions": [
+        {
+          "text": "coverage"
+        },
+        {
+          "text": "vitest.config"
+        },
+        {
+          "text": "@systemfsoftware/stryker-js",
+          "must_not": true
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": "eval-7",
+      "eval_name": "messy-realistic-intro",
+      "prompt": "yo tests are passing green in our repo but manager wants proof we actually test things and not just write useless assertions... something about mutants? we use pnpm vitest on node 22 typescript",
+      "expected_output": "Recommends @systemfsoftware/stryker-js with Vitest runner and TypeScript checker, explains killed vs survived mutants, shows quick start commands.",
+      "assertions": [
+        {
+          "text": "@systemfsoftware/stryker-js"
+        },
+        {
+          "text": "@systemfsoftware/stryker-js-vitest-runner"
+        },
+        {
+          "text": "defineConfig"
+        },
+        {
+          "text": "stryker run"
+        }
+      ],
+      "files": []
+    }
+  ]
+}
