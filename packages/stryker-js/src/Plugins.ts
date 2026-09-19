@@ -9,7 +9,11 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 
 import type { Ignorer as IgnorerDescriptor } from '@systemfsoftware/stryker-ignorer-interface'
-import type { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  isCustomTestRunner,
+  type StrykerOptions,
+  type WorkerPluginKind,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import { importModule } from './run/load-config.cell.js'
 
@@ -315,7 +319,7 @@ export function loadPlugins(
             }
             return {
               ...plugin,
-              moduleName: resolved.entrypoint,
+              moduleName: resolved.specifier,
             }
           }),
         ),
@@ -343,6 +347,39 @@ export function loadPlugins(
     return result
   })
 }
+
+export const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[] =>
+  Array.fromIterable(
+    HashSet.fromIterable([
+      ...options.plugins,
+      ...options.appendPlugins,
+      ...options.ignorers,
+      ...(isCustomTestRunner(options.testRunner) ? [options.testRunner.plugin] : []),
+      ...options.checkers.map((checker) => checker.plugin),
+    ]),
+  )
+
+export const workerPluginNameForUrl = (
+  sources: readonly { readonly kind: PluginKind; readonly name: string; readonly modulePath: string }[],
+  kind: WorkerPluginKind,
+  pluginUrl: string,
+): Option.Option<string> =>
+  Option.map(
+    Option.fromUndefinedOr(sources.find((source) => source.kind === kind && source.modulePath === pluginUrl)),
+    (source) => source.name,
+  )
+
+export const resolveConfiguredWorkerName = (
+  sources: readonly { readonly kind: PluginKind; readonly name: string; readonly modulePath: string }[],
+  kind: WorkerPluginKind,
+  configured: string | { readonly plugin: string },
+): Effect.Effect<string, PluginNotFoundError> =>
+  typeof configured === 'string'
+    ? Effect.succeed(configured)
+    : Effect.fromOption(
+      workerPluginNameForUrl(sources, kind, configured.plugin),
+      () => PluginNotFoundError.make({ descriptor: `${kind}:${configured.plugin}` }),
+    )
 
 function hasValidationSchemaContribution(module: unknown): module is SchemaValidationContribution {
   return S.is(SchemaValidationContributionSchema)(module)

@@ -37,8 +37,8 @@ import { decidePlans, incrementalDiff } from '../Mutants.js'
 import { makeMutationReportingService } from '../mutation-reporting.js'
 import type { MutationReportingService } from '../mutation-reporting.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
-import { resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
-import { missingWorkerEntry } from '../plugin-worker-entry.js'
+import { missingWorkerEntry, resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
+import { resolveConfiguredWorkerName } from '../Plugins.js'
 import { FILE_CONCURRENCY, readOriginal } from '../Project.js'
 import type { Project } from '../Project.js'
 import { reportFileName } from '../report-assembly.js'
@@ -178,35 +178,43 @@ function isMutantStatus(s: string): s is ValidMutantStatus {
 const toReportedMutant = (mutant: Mutant): MutantTestCoverage =>
   Object.assign(mutant, { coveredBy: mutant.coveredBy, static: mutant.static })
 
-const makeCheckerPool = (
+interface CheckerPool {
+  readonly checkerName: string
+  readonly pool: Pool.Pool<CheckerResourceService, CheckerCrash>
+}
+
+const makeCheckerPools = (
   prev: DryRunDone,
   idGenerator: Parameters<typeof createCheckerFactory>[3],
 ): Effect.Effect<
-  Pool.Pool<CheckerResourceService, CheckerCrash> | undefined,
+  readonly CheckerPool[],
   StageError,
   Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | WorkerLauncher | FileSystem.FileSystem | Path.Path
 > =>
-  Effect.gen(function*() {
-    const checkerName = Option.getOrUndefined(Option.fromUndefinedOr(prev.options.checkers[0]))
-    if (checkerName === undefined) {
-      return undefined
-    }
-    const checkerEntry = yield* resolvePluginWorkerEntry({
-      loaded: prev.loadedPlugins,
-      kind: 'Checker',
-      name: checkerName,
-    }).pipe(Effect.mapError(missingWorkerEntry('mutationTest', 'checker', checkerName)))
-    return yield* Pool.make({
-      acquire: createCheckerFactory(
-        prev.options,
-        prev.project.fileDescriptions,
-        checkerEntry.entrypoint,
-        idGenerator,
-        prev.sandbox.workingDirectory,
-      ),
-      size: prev.concurrency.checkers,
-    })
-  })
+  Effect.forEach(prev.options.checkers, (checker) =>
+    Effect.gen(function*() {
+      const checkerName = yield* resolveConfiguredWorkerName(
+        prev.loadedPlugins.pluginSources,
+        'Checker',
+        checker,
+      ).pipe(Effect.mapError(missingWorkerEntry('mutationTest', 'checker', checker.plugin)))
+      const checkerEntry = yield* resolvePluginWorkerEntry({
+        loaded: prev.loadedPlugins,
+        kind: 'Checker',
+        name: checkerName,
+      }).pipe(Effect.mapError(missingWorkerEntry('mutationTest', 'checker', checkerName)))
+      const pool = yield* Pool.make({
+        acquire: createCheckerFactory(
+          { ...prev.options, checkers: [checker] },
+          prev.project.fileDescriptions,
+          checkerEntry.entrypoint,
+          idGenerator,
+          prev.sandbox.workingDirectory,
+        ),
+        size: prev.concurrency.checkers,
+      })
+      return { checkerName, pool }
+    }))
 
 interface MutationTestRaw {
   readonly prev: DryRunDone
@@ -251,30 +259,16 @@ const checkPlansWithOneChecker = (
     return checked.filter(([, result]) => result.status === 'passed').map(([plan]) => plan)
   })
 
-const checkPlansWithEachChecker = (
-  prev: DryRunDone,
-  checkerPool: Pool.Pool<CheckerResourceService, CheckerCrash>,
-  plans: readonly MutantRunPlan[],
-  reporting: MutationReportingService,
-) =>
-  Effect.gen(function*() {
-    let passed: readonly MutantRunPlan[] = plans
-    for (const checkerName of prev.options.checkers) {
-      passed = yield* checkPlansWithOneChecker(checkerPool, checkerName, passed, reporting)
-    }
-    return passed
-  })
-
 const checkPlansWithConfiguredCheckers = (
-  prev: DryRunDone,
-  checkerPool: Pool.Pool<CheckerResourceService, CheckerCrash> | undefined,
+  checkerPools: readonly CheckerPool[],
   plans: readonly MutantRunPlan[],
   reporting: MutationReportingService,
 ) =>
-  Option.match(Option.fromNullishOr(checkerPool), {
-    onNone: () => Effect.succeed(plans),
-    onSome: (pool) => checkPlansWithEachChecker(prev, pool, plans, reporting),
-  })
+  Effect.reduce(
+    checkerPools,
+    () => plans,
+    (passed, { checkerName, pool }) => checkPlansWithOneChecker(pool, checkerName, passed, reporting),
+  )
 
 export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageError, StageServices> = Cell.layer({
   read: (command: DryRunDone): Effect.Effect<MutationTestRaw, never, Scope.Scope> =>
@@ -351,7 +345,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                 })
                 yield* emitPhase
                 const idGenerator = yield* IdGenerator
-                const checkerPool = yield* makeCheckerPool(prev, idGenerator)
+                const checkerPools = yield* makeCheckerPools(prev, idGenerator)
                 const testRunnerContext = {
                   options: prev.options,
                   fileDescriptions: prev.project.fileDescriptions,
@@ -364,26 +358,39 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                   .make({
                     acquire: buildTestRunner(
                       testRunnerContext,
-                      Effect.suspend(() =>
-                        resolvePluginWorkerEntry({
-                          loaded: prev.loadedPlugins,
-                          kind: 'TestRunner',
-                          name: prev.options.testRunner,
-                        }).pipe(
-                          Effect.mapError(
-                            missingWorkerEntry('mutationTest', 'test runner', prev.options.testRunner),
-                          ),
-                          Effect.flatMap((runnerEntry) =>
-                            makeChildProcessTestRunner({
-                              options: prev.options,
-                              fileDescriptions: prev.project.fileDescriptions,
-                              sandboxWorkingDirectory: prev.sandbox.workingDirectory,
-                              workerEntrypoint: runnerEntry.entrypoint,
-                              idGenerator: idGenerator,
-                            })
+                      Effect.suspend(() => {
+                        const runnerConfigured = prev.options.testRunner
+                        const runnerLabel = typeof runnerConfigured === 'string'
+                          ? runnerConfigured
+                          : runnerConfigured.plugin
+                        return resolveConfiguredWorkerName(
+                          prev.loadedPlugins.pluginSources,
+                          'TestRunner',
+                          runnerConfigured,
+                        ).pipe(
+                          Effect.mapError(missingWorkerEntry('mutationTest', 'test runner', runnerLabel)),
+                          Effect.flatMap((runnerName) =>
+                            resolvePluginWorkerEntry({
+                              loaded: prev.loadedPlugins,
+                              kind: 'TestRunner',
+                              name: runnerName,
+                            }).pipe(
+                              Effect.mapError(
+                                missingWorkerEntry('mutationTest', 'test runner', runnerName),
+                              ),
+                              Effect.flatMap((runnerEntry) =>
+                                makeChildProcessTestRunner({
+                                  options: prev.options,
+                                  fileDescriptions: prev.project.fileDescriptions,
+                                  sandboxWorkingDirectory: prev.sandbox.workingDirectory,
+                                  workerEntrypoint: runnerEntry.entrypoint,
+                                  idGenerator: idGenerator,
+                                })
+                              ),
+                            )
                           ),
                         )
-                      ),
+                      }),
                     ),
                     size: prev.concurrency.testRunners,
                   })
@@ -457,7 +464,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                     PlanKnown.make({ total: allPlansForReporter.length + noCoverageResults.length }),
                   )
                 }
-                const passedPlans = yield* checkPlansWithConfiguredCheckers(prev, checkerPool, sortedPlans, reporting)
+                const passedPlans = yield* checkPlansWithConfiguredCheckers(checkerPools, sortedPlans, reporting)
                 const testRunnerStream = Stream.fromIterable(passedPlans)
                 const plannedTotal = allPlansForReporter.length + noCoverageResults.length + rememberedResults.length
                 const pathService = yield* Path.Path

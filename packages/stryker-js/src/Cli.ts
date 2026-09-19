@@ -189,14 +189,6 @@ const runOptions = {
       'Execute the initial test run only, without doing actual mutation testing. Doing a dry run only can be used to test that StrykerJS can run your test setup, for example, in CI pipelines.',
     ),
   ),
-  checkers: Flag.string('checkers')
-    .pipe(
-      Flag.withDescription(
-        'A comma separated list of checkers to use, for example --checkers typescript',
-      ),
-      Flag.map(splitOnComma),
-      optional,
-    ),
   checkerNodeArgs: Flag.string('checkerNodeArgs')
     .pipe(
       Flag.withDescription(
@@ -408,7 +400,6 @@ function makeStrykerCommand(requestRef: Ref.Ref<Option.Option<CliRequest>>) {
     setIfPresent(options, 'testFiles', config.testFiles)
     setIfPresent(options, 'buildCommand', config.buildCommand)
     setIfPresent(options, 'dryRunOnly', config.dryRunOnly)
-    setIfPresent(options, 'checkers', config.checkers)
     setIfPresent(options, 'checkerNodeArgs', config.checkerNodeArgs)
     setIfPresent(options, 'coverageAnalysis', config.coverageAnalysis)
     setIfPresent(options, 'testRunner', config.testRunner)

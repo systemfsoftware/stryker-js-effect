@@ -17,25 +17,22 @@ pnpm add -D @systemfsoftware/stryker-ignorer-effect-schema-declarations
 
 ## Setup in `stryker.config.ts`
 
-In `stryker.config.ts`, the plugin URL and the ignorer name travel as a pair:
+Add the plugin URL to `ignorers`. Every ignorer the module exports is then active.
 
 ```ts
 import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
 export default defineConfig({
-  testRunner: 'vitest',
-  plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
+  testRunner: {
+    plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
+  },
+  ignorers: [
     import.meta.resolve('@systemfsoftware/stryker-ignorer-effect-schema-declarations'),
   ],
-  ignorers: ['effect-schema-declarations'],
 })
 ```
 
 Mutants recognized by the ignorer are reported with status `Ignored`, carrying the exact reason why skipping is safe.
-
-> [!WARNING]
-> A name in `ignorers` that no loaded plugin provides is skipped without error. Ensure the string `'effect-schema-declarations'` exactly matches the ignorer identifier.
 
 ## What It Ignores
 

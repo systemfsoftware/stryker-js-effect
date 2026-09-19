@@ -6,6 +6,7 @@ import {
   type DryRunResult,
   type MutantRunResult,
   type TestRunnerCapabilities,
+  type TestRunnerConfig,
   TestRunnerFailed,
   toMutantRunResult,
 } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -50,7 +51,8 @@ export const vmRunnerName = 'vm'
 export const ALL_TESTS_ID = 'all'
 export const ALL_TESTS_NAME = 'All tests'
 
-export const isVmRunner = (name: string): name is 'vm' => name.toLowerCase() === vmRunnerName
+export const isVmRunner = (name: TestRunnerConfig): name is 'vm' =>
+  typeof name === 'string' && name.toLowerCase() === vmRunnerName
 
 export const vmRunnerCapabilities = { reloadEnvironment: true } as const satisfies TestRunnerCapabilities
 

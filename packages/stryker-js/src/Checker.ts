@@ -323,7 +323,7 @@ export const createCheckerFactory = (
     fileDescriptions,
     workerEntrypoint,
     workingDirectory,
-    execArgv: [...options.checkerNodeArgs],
+    execArgv: [...(options.checkers[0]?.nodeArgs ?? options.checkerNodeArgs)],
     idGenerator,
   })
 
