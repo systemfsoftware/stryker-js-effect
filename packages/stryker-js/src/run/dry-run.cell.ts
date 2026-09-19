@@ -1,5 +1,5 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { DryRunCompleted } from '@systemfsoftware/stryker-js-plugin-interface'
+import { DryRunCompleted, isCustomTestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import type {
   CompleteDryRunResult,
   DryRunResult,
@@ -23,8 +23,7 @@ import { RunEvents } from '../RunEvents.js'
 import { dryRun, DryRunCommand } from '../dry-run.workflow.js'
 import { testCoverageFrom } from '../Mutants.js'
 import type { TestCoverage } from '../Mutants.js'
-import { missingWorkerEntry, resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
-import { resolveConfiguredWorkerName } from '../Plugins.js'
+import { missingWorkerEntry, resolveConfiguredWorkerSpawn } from '../plugin-worker-entry.js'
 import { offerReporterEvent, withPhaseSpan } from '../ReporterStream.js'
 import { StageError } from '../Run.schema.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.js'
@@ -189,33 +188,25 @@ export const dryRunCell = Cell.layer({
         Effect.gen(function*() {
           const childRunnerEffect = Effect.suspend(() => {
             const runnerConfigured = command.options.testRunner
-            const runnerLabel = typeof runnerConfigured === 'string' ? runnerConfigured : runnerConfigured.plugin
-            return resolveConfiguredWorkerName(
-              command.loadedPlugins.pluginSources,
-              'TestRunner',
-              runnerConfigured,
-            ).pipe(
+            const runnerLabel = isCustomTestRunner(runnerConfigured) ? runnerConfigured.plugin : runnerConfigured
+            return resolveConfiguredWorkerSpawn({
+              loaded: command.loadedPlugins,
+              kind: 'TestRunner',
+              configured: runnerConfigured,
+            }).pipe(
               Effect.mapError(missingWorkerEntry('dryRun', 'test runner', runnerLabel)),
-              Effect.flatMap((runnerName) =>
-                resolvePluginWorkerEntry({
-                  loaded: command.loadedPlugins,
-                  kind: 'TestRunner',
-                  name: runnerName,
-                }).pipe(
-                  Effect.mapError(missingWorkerEntry('dryRun', 'test runner', runnerName)),
-                  Effect.flatMap((runnerEntry) =>
-                    makeChildProcessTestRunner({
-                      options: command.options,
-                      fileDescriptions: command.project.fileDescriptions,
-                      sandboxWorkingDirectory: command.sandbox.workingDirectory,
-                      workerEntrypoint: runnerEntry.entrypoint,
-                      idGenerator,
-                    })
-                  ),
-                )
+              Effect.flatMap(({ spawn }) =>
+                makeChildProcessTestRunner({
+                  options: command.options,
+                  fileDescriptions: command.project.fileDescriptions,
+                  sandboxWorkingDirectory: command.sandbox.workingDirectory,
+                  workerEntrypoint: spawn.entrypoint,
+                  idGenerator,
+                })
               ),
             )
           })
+
           const runner = yield* buildTestRunner(
             {
               options: command.options,

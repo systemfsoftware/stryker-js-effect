@@ -127,18 +127,15 @@ export const makeChildProcessTestRunner = (
   params: ChildProcessTestRunnerParams,
 ): Effect.Effect<PooledTestRunner, PooledTestRunnerError, Scope.Scope | WorkerLauncher> =>
   Effect.gen(function*() {
-    const runnerName = isCustomTestRunner(params.options.testRunner)
-      ? params.options.testRunner.plugin
-      : params.options.testRunner
+    const customRunner = isCustomTestRunner(params.options.testRunner)
+    const runnerName = customRunner ? params.options.testRunner.plugin : params.options.testRunner
     const optionsJson = yield* encodeWorkerOptions(params.options)
     const client = yield* makeWorkerClient({
       rpcs: TestRunnerRpcs,
       entrypoint: params.workerEntrypoint,
       workingDirectory: params.sandboxWorkingDirectory,
       execArgv: [
-        ...(isCustomTestRunner(params.options.testRunner)
-          ? params.options.testRunner.nodeArgs ?? []
-          : params.options.testRunnerNodeArgs),
+        ...(customRunner ? params.options.testRunner.nodeArgs ?? [] : params.options.testRunnerNodeArgs),
       ],
       optionsJson,
       tempDirPrefix: 'stryker-test-runner-',

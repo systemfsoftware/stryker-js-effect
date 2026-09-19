@@ -5,7 +5,11 @@ import type { RunPlan as MutantRunPlan, TestPlan } from '@systemfsoftware/stryke
 import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import type { CheckResult, PassedCheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
-import { MutantTested, MutationTestingPlanReady } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  isCustomTestRunner,
+  MutantTested,
+  MutationTestingPlanReady,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -37,8 +41,7 @@ import { decidePlans, incrementalDiff } from '../Mutants.js'
 import { makeMutationReportingService } from '../mutation-reporting.js'
 import type { MutationReportingService } from '../mutation-reporting.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
-import { missingWorkerEntry, resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
-import { resolveConfiguredWorkerName } from '../Plugins.js'
+import { missingWorkerEntry, resolveConfiguredWorkerSpawn } from '../plugin-worker-entry.js'
 import { FILE_CONCURRENCY, readOriginal } from '../Project.js'
 import type { Project } from '../Project.js'
 import { reportFileName } from '../report-assembly.js'
@@ -193,27 +196,22 @@ const makeCheckerPools = (
 > =>
   Effect.forEach(prev.options.checkers, (checker) =>
     Effect.gen(function*() {
-      const checkerName = yield* resolveConfiguredWorkerName(
-        prev.loadedPlugins.pluginSources,
-        'Checker',
-        checker,
-      ).pipe(Effect.mapError(missingWorkerEntry('mutationTest', 'checker', checker.plugin)))
-      const checkerEntry = yield* resolvePluginWorkerEntry({
+      const resolved = yield* resolveConfiguredWorkerSpawn({
         loaded: prev.loadedPlugins,
         kind: 'Checker',
-        name: checkerName,
-      }).pipe(Effect.mapError(missingWorkerEntry('mutationTest', 'checker', checkerName)))
+        configured: checker,
+      }).pipe(Effect.mapError(missingWorkerEntry('mutationTest', 'checker', checker.plugin)))
       const pool = yield* Pool.make({
         acquire: createCheckerFactory(
           { ...prev.options, checkers: [checker] },
           prev.project.fileDescriptions,
-          checkerEntry.entrypoint,
+          resolved.spawn.entrypoint,
           idGenerator,
           prev.sandbox.workingDirectory,
         ),
         size: prev.concurrency.checkers,
       })
-      return { checkerName, pool }
+      return { checkerName: resolved.name, pool }
     }))
 
 interface MutationTestRaw {
@@ -360,34 +358,23 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                       testRunnerContext,
                       Effect.suspend(() => {
                         const runnerConfigured = prev.options.testRunner
-                        const runnerLabel = typeof runnerConfigured === 'string'
-                          ? runnerConfigured
-                          : runnerConfigured.plugin
-                        return resolveConfiguredWorkerName(
-                          prev.loadedPlugins.pluginSources,
-                          'TestRunner',
-                          runnerConfigured,
-                        ).pipe(
+                        const runnerLabel = isCustomTestRunner(runnerConfigured)
+                          ? runnerConfigured.plugin
+                          : runnerConfigured
+                        return resolveConfiguredWorkerSpawn({
+                          loaded: prev.loadedPlugins,
+                          kind: 'TestRunner',
+                          configured: runnerConfigured,
+                        }).pipe(
                           Effect.mapError(missingWorkerEntry('mutationTest', 'test runner', runnerLabel)),
-                          Effect.flatMap((runnerName) =>
-                            resolvePluginWorkerEntry({
-                              loaded: prev.loadedPlugins,
-                              kind: 'TestRunner',
-                              name: runnerName,
-                            }).pipe(
-                              Effect.mapError(
-                                missingWorkerEntry('mutationTest', 'test runner', runnerName),
-                              ),
-                              Effect.flatMap((runnerEntry) =>
-                                makeChildProcessTestRunner({
-                                  options: prev.options,
-                                  fileDescriptions: prev.project.fileDescriptions,
-                                  sandboxWorkingDirectory: prev.sandbox.workingDirectory,
-                                  workerEntrypoint: runnerEntry.entrypoint,
-                                  idGenerator: idGenerator,
-                                })
-                              ),
-                            )
+                          Effect.flatMap(({ spawn }) =>
+                            makeChildProcessTestRunner({
+                              options: prev.options,
+                              fileDescriptions: prev.project.fileDescriptions,
+                              sandboxWorkingDirectory: prev.sandbox.workingDirectory,
+                              workerEntrypoint: spawn.entrypoint,
+                              idGenerator: idGenerator,
+                            })
                           ),
                         )
                       }),

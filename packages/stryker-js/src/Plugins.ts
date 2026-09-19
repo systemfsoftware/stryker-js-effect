@@ -348,38 +348,13 @@ export function loadPlugins(
   })
 }
 
-export const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[] =>
-  Array.fromIterable(
-    HashSet.fromIterable([
-      ...options.plugins,
-      ...options.appendPlugins,
-      ...options.ignorers,
-      ...(isCustomTestRunner(options.testRunner) ? [options.testRunner.plugin] : []),
-      ...options.checkers.map((checker) => checker.plugin),
-    ]),
-  )
-
-export const workerPluginNameForUrl = (
-  sources: readonly { readonly kind: PluginKind; readonly name: string; readonly modulePath: string }[],
-  kind: WorkerPluginKind,
-  pluginUrl: string,
-): Option.Option<string> =>
-  Option.map(
-    Option.fromUndefinedOr(sources.find((source) => source.kind === kind && source.modulePath === pluginUrl)),
-    (source) => source.name,
-  )
-
-export const resolveConfiguredWorkerName = (
-  sources: readonly { readonly kind: PluginKind; readonly name: string; readonly modulePath: string }[],
-  kind: WorkerPluginKind,
-  configured: string | { readonly plugin: string },
-): Effect.Effect<string, PluginNotFoundError> =>
-  typeof configured === 'string'
-    ? Effect.succeed(configured)
-    : Effect.fromOption(
-      workerPluginNameForUrl(sources, kind, configured.plugin),
-      () => PluginNotFoundError.make({ descriptor: `${kind}:${configured.plugin}` }),
-    )
+export const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[] => [
+  ...options.plugins,
+  ...options.appendPlugins,
+  ...options.ignorers,
+  ...(isCustomTestRunner(options.testRunner) ? [options.testRunner.plugin] : []),
+  ...options.checkers.map((checker) => checker.plugin),
+]
 
 function hasValidationSchemaContribution(module: unknown): module is SchemaValidationContribution {
   return S.is(SchemaValidationContributionSchema)(module)
