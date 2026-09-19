@@ -29,7 +29,13 @@ export const decodeWorkerOptions: (raw: string) => Effect.Effect<{
     readonly [x: string]: unknown;
     readonly allowConsoleColors: boolean;
     readonly buildCommand?: string | undefined;
-    readonly checkers: readonly string[];
+    readonly checkers: readonly {
+        readonly plugin: string;
+        readonly nodeArgs?: readonly string[] | undefined;
+        readonly options?: {
+            readonly [x: string]: unknown;
+        } | undefined;
+    }[];
     readonly checkerNodeArgs: readonly string[];
     readonly concurrency?: string | number | undefined;
     readonly commandRunner: {
@@ -78,7 +84,13 @@ export const decodeWorkerOptions: (raw: string) => Effect.Effect<{
     readonly symlinkNodeModules: boolean;
     readonly tempDirName: string;
     readonly cleanTempDir: "always" | boolean;
-    readonly testRunner: string;
+    readonly testRunner: string | {
+        readonly plugin: string;
+        readonly nodeArgs?: readonly string[] | undefined;
+        readonly options?: {
+            readonly [x: string]: unknown;
+        } | undefined;
+    };
     readonly testRunnerNodeArgs: readonly string[];
     readonly thresholds: {
         readonly high: number;
@@ -123,7 +135,13 @@ export const readWorkerOptionsFromEnv: Effect.Effect<{
     readonly [x: string]: unknown;
     readonly allowConsoleColors: boolean;
     readonly buildCommand?: string | undefined;
-    readonly checkers: readonly string[];
+    readonly checkers: readonly {
+        readonly plugin: string;
+        readonly nodeArgs?: readonly string[] | undefined;
+        readonly options?: {
+            readonly [x: string]: unknown;
+        } | undefined;
+    }[];
     readonly checkerNodeArgs: readonly string[];
     readonly concurrency?: string | number | undefined;
     readonly commandRunner: {
@@ -172,7 +190,13 @@ export const readWorkerOptionsFromEnv: Effect.Effect<{
     readonly symlinkNodeModules: boolean;
     readonly tempDirName: string;
     readonly cleanTempDir: "always" | boolean;
-    readonly testRunner: string;
+    readonly testRunner: string | {
+        readonly plugin: string;
+        readonly nodeArgs?: readonly string[] | undefined;
+        readonly options?: {
+            readonly [x: string]: unknown;
+        } | undefined;
+    };
     readonly testRunnerNodeArgs: readonly string[];
     readonly thresholds: {
         readonly high: number;

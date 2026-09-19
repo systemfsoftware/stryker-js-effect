@@ -11,9 +11,6 @@ export const strykerPlugins: readonly {
     readonly workerEntry: string;
 }[];
 
-// @public (undocumented)
-export const strykerValidationSchema: Record<string, unknown>;
-
 // (No @packageDocumentation comment for this package)
 
 ```

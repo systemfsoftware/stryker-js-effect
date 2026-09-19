@@ -60,6 +60,7 @@ import * as Stdio from 'effect/Stdio';
 import { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface';
 import { TestResult } from '@systemfsoftware/stryker-js-plugin-interface';
 import { TestRunnerCapabilities } from '@systemfsoftware/stryker-js-plugin-interface';
+import { TestRunnerConfig } from '@systemfsoftware/stryker-js-plugin-interface';
 import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface';
 import { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
 import { YieldableError } from 'effect/Cause';
@@ -260,7 +261,11 @@ export const forkCoreSchema: Record<string, unknown>;
 export const forkOptionsSchema: S.StructWithRest<S.Struct<{
     readonly allowConsoleColors: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly buildCommand: S.optional<S.String>;
-    readonly checkers: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly checkers: S.withDecodingDefaultKey<S.$Array<S.Struct<{
+        readonly plugin: S.String;
+        readonly nodeArgs: S.optional<S.$Array<S.String>>;
+        readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+    }>>, never>;
     readonly checkerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly concurrency: S.optional<S.Union<readonly [S.Finite, S.String]>>;
     readonly commandRunner: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
@@ -307,7 +312,11 @@ export const forkOptionsSchema: S.StructWithRest<S.Struct<{
     readonly symlinkNodeModules: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly tempDirName: S.withDecodingDefaultKey<S.String, never>;
     readonly cleanTempDir: S.withDecodingDefaultKey<S.Literals<readonly ["always", false, true]>, never>;
-    readonly testRunner: S.withDecodingDefaultKey<S.String, never>;
+    readonly testRunner: S.withDecodingDefaultKey<S.Union<readonly [S.String, S.Struct<{
+        readonly plugin: S.String;
+        readonly nodeArgs: S.optional<S.$Array<S.String>>;
+        readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+    }>]>, never>;
     readonly testRunnerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly thresholds: S.withDecodingDefaultKey<S.Struct<{
         readonly high: S.withDecodingDefaultKey<S.Finite, never>;
@@ -436,13 +445,13 @@ export interface InstrumentDone extends PrepareDone {
 export function isActionableStatus(status: MutantStatus): boolean;
 
 // @public
-export const isCommandRunner: (name: string) => name is 'command';
+export const isCommandRunner: (name: TestRunnerConfig) => name is 'command';
 
 // @public (undocumented)
 export function isModuleSpecifier(value: string): boolean;
 
 // @public (undocumented)
-export const isVmRunner: (name: string) => name is 'vm';
+export const isVmRunner: (name: TestRunnerConfig) => name is 'vm';
 
 // Warning: (ae-forgotten-export) The symbol "KnownKeys" needs to be exported by the entry point index.d.mts
 //
