@@ -44,10 +44,13 @@ const keepArgs = (node: unknown): readonly unknown[] => {
     return []
   }
   const callee = node.callee
-  return typeof callee === 'object' && callee !== null && 'type' in callee && callee.type === 'Identifier' &&
-      'name' in callee && callee.name === 'keep'
-    ? node.arguments
-    : []
+  const isKeepCall = typeof callee === 'object' && callee !== null && 'type' in callee &&
+    callee.type === 'Identifier' &&
+    'name' in callee && callee.name === 'keep'
+  if (!isKeepCall) {
+    return []
+  }
+  return node.arguments
 }
 
 const invertedKeepIgnorer: Ignorer = {
@@ -78,7 +81,12 @@ const isFlagIf = (node: unknown): boolean => {
 
 const regionFlagIgnorer: Ignorer = {
   name: 'region-flag',
-  shouldIgnore: (_node, ancestors) => ancestors.some(isFlagIf) ? INSIDE_FLAG : undefined,
+  shouldIgnore: (_node, ancestors) => {
+    if (ancestors.some(isFlagIf)) {
+      return INSIDE_FLAG
+    }
+    return undefined
+  },
 }
 const countByMutator = (mutants: readonly Mutant[]): Record<string, number> => {
   const counts: Record<string, number> = {}

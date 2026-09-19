@@ -1,4 +1,3 @@
-// oxlint-disable typescript/no-unsafe-type-assertion typescript/no-unnecessary-type-assertion
 import type * as Oxc from '@oxc-project/types'
 import type {
   BindingPattern,
@@ -106,12 +105,12 @@ export function nodeType(node: unknown): string | undefined {
   return node.type
 }
 
-export function isExpressionKind(node: Node | undefined | null): boolean {
+export function isExpressionKind(node: Node | undefined | null): node is Expression {
   const type = nodeType(node)
   return type !== undefined && EXPRESSION_KINDS.has(type)
 }
 
-export function isStatementKind(node: Node | undefined | null): boolean {
+export function isStatementKind(node: Node | undefined | null): node is Statement {
   const type = nodeType(node)
   return type !== undefined && STATEMENT_KINDS.has(type)
 }
@@ -184,7 +183,7 @@ export function arrowFunctionExpression(
   body: Expression | Statement,
   loc?: Loc,
 ): Expression {
-  const fnBody = body as BlockStatement | Expression
+  const fnBody = arrowFunctionBody(body)
   return mark<Expression>(
     {
       type: 'ArrowFunctionExpression',
@@ -197,6 +196,19 @@ export function arrowFunctionExpression(
     },
     loc,
   )
+}
+
+function arrowFunctionBody(body: Expression | Statement): BlockStatement | Expression {
+  if (isArrowBody(body)) return body
+  throw new Error(`Invalid arrow function body: ${body.type}`)
+}
+
+function isArrowBody(body: Expression | Statement): body is BlockStatement | Expression {
+  return isBlockStatementNode(body) || isExpressionKind(body)
+}
+
+function isBlockStatementNode(node: Expression | Statement): node is BlockStatement {
+  return nodeType(node) === 'BlockStatement'
 }
 
 export function blockStatement(body: ReadonlyArray<Statement>, loc?: Loc): Statement {
@@ -378,9 +390,16 @@ interface NodeEntry {
 
 const isNodeList = (value: unknown): value is Array<unknown> => Array.isArray(value)
 
+const isWalkableNode = (node: Node): node is Oxc.Node => isAstNode(node)
+
+const walkableNode = (node: Node): Oxc.Node => {
+  if (isWalkableNode(node)) return node
+  throw new Error('Expected an AST node to walk')
+}
+
 const walker: Walker = (root, visitors) => {
   const ancestors: Oxc.Node[] = []
-  walk(root as Oxc.Node, {
+  walk(walkableNode(root), {
     enter(node) {
       visitors.enter?.(node, [...ancestors])
       ancestors.push(node)
@@ -449,7 +468,7 @@ function isCommentKey(key: unknown): boolean {
 export function traverse(root: Program | Node, visitors: TraverseVisitors): void {
   const stack: TraversePath[] = []
   try {
-    walk(root as Oxc.Node, {
+    walk(walkableNode(root), {
       enter(node, _parent, context) {
         readPath(stack, node, this, context, visitors)
       },
@@ -495,13 +514,20 @@ const relay = (visitor: TraverseVisitor, path: TraversePath | undefined): void =
   if (path !== undefined) visitor(path)
 }
 
+const keyOf = (context: WalkerCallbackContext): string | undefined => {
+  if (typeof context.key === 'string') {
+    return context.key
+  }
+  return undefined
+}
+
 function createPath(
   node: Oxc.Node,
   parentPath: TraversePath | null,
   controls: WalkerThisContextEnter,
   context: WalkerCallbackContext,
 ): TraversePath {
-  const key = typeof context.key === 'string' ? context.key : undefined
+  const key = keyOf(context)
   const path: TraversePath = {
     node,
     parentPath,

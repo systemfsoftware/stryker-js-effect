@@ -1,4 +1,4 @@
-import type { InstrumenterContext, MutantCoverage } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import type { InstrumenterContext, MutantCoverage } from '@systemfsoftware/stryker-js-instrumenter'
 import { afterAll, afterEach, beforeAll, beforeEach, inject, RunnerTestCase, RunnerTestSuite } from 'vitest'
 
 // This file is copied to the sandbox dir, don't import anything local!
@@ -37,9 +37,7 @@ if (mode === 'mutant') {
   }
 
   if (isGreaterThanVitest4Point1) {
-    // Vitest's hooks API requires this empty destructure to allow access to suite.meta
-    // eslint-disable-next-line no-empty-pattern
-    afterAll(({}, suite: SuiteWithTaskMeta) => {
+    afterAll((_context, suite: SuiteWithTaskMeta) => {
       suite.meta.hitCount = ns.hitCount
     })
   } else {
@@ -59,9 +57,7 @@ if (mode === 'mutant') {
   })
 
   if (isGreaterThanVitest4Point1) {
-    // Vitest's hooks API requires this empty destructure to allow access to suite.meta
-    // eslint-disable-next-line no-empty-pattern
-    afterAll(({}, suite: SuiteWithTaskMeta) => {
+    afterAll((_context, suite: SuiteWithTaskMeta) => {
       suite.meta.mutantCoverage = ns.mutantCoverage
     })
   } else {
@@ -71,7 +67,6 @@ if (mode === 'mutant') {
   }
 }
 
-// Stryker disable all: this file is copied to the sandbox dir
 function collectTestName({
   name,
   suite,
