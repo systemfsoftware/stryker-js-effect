@@ -37,6 +37,7 @@ export {
 export * from './Report.schema.js'
 export * from './ReporterEvent.schema.js'
 export * from './stryker-options.js'
+export { isCustomTestRunner } from './stryker-options.js'
 export {
   type CheckerCustomConfig,
   CheckerCustomConfigSchema,

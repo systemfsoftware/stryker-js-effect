@@ -181,38 +181,43 @@ function isMutantStatus(s: string): s is ValidMutantStatus {
 const toReportedMutant = (mutant: Mutant): MutantTestCoverage =>
   Object.assign(mutant, { coveredBy: mutant.coveredBy, static: mutant.static })
 
-interface CheckerPool {
+type CheckerSlot = {
   readonly checkerName: string
-  readonly pool: Pool.Pool<CheckerResourceService, CheckerCrash>
-}
+  readonly checker: CheckerResourceService
+}[]
 
-const makeCheckerPools = (
+const makeCheckerPool = (
   prev: DryRunDone,
   idGenerator: Parameters<typeof createCheckerFactory>[3],
 ): Effect.Effect<
-  readonly CheckerPool[],
-  StageError,
+  Pool.Pool<CheckerSlot, StageError | CheckerCrash> | undefined,
+  never,
   Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | WorkerLauncher | FileSystem.FileSystem | Path.Path
 > =>
-  Effect.forEach(prev.options.checkers, (checker) =>
-    Effect.gen(function*() {
-      const resolved = yield* resolveConfiguredWorkerSpawn({
-        loaded: prev.loadedPlugins,
-        kind: 'Checker',
-        configured: checker,
-      }).pipe(Effect.mapError(missingWorkerEntry('mutationTest', 'checker', checker.plugin)))
-      const pool = yield* Pool.make({
-        acquire: createCheckerFactory(
-          { ...prev.options, checkers: [checker] },
-          prev.project.fileDescriptions,
-          resolved.spawn.entrypoint,
-          idGenerator,
-          prev.sandbox.workingDirectory,
-        ),
+  Match.value(prev.options.checkers.length === 0).pipe(
+    Match.when(true, () => Effect.succeed(undefined)),
+    Match.orElse(() =>
+      Pool.make({
+        acquire: Effect.forEach(prev.options.checkers, (checker) =>
+          Effect.gen(function*() {
+            const resolved = yield* resolveConfiguredWorkerSpawn({
+              loaded: prev.loadedPlugins,
+              kind: 'Checker',
+              configured: checker,
+            }).pipe(Effect.mapError(missingWorkerEntry('mutationTest', 'checker', checker.plugin)))
+            const service = yield* createCheckerFactory(
+              { ...prev.options, checkers: [checker] },
+              prev.project.fileDescriptions,
+              resolved.spawn.entrypoint,
+              idGenerator,
+              prev.sandbox.workingDirectory,
+            )
+            return { checkerName: resolved.name, checker: service }
+          })),
         size: prev.concurrency.checkers,
       })
-      return { checkerName: resolved.name, pool }
-    }))
+    ),
+  )
 
 interface MutationTestRaw {
   readonly prev: DryRunDone
@@ -229,44 +234,42 @@ const reportCheckOutcome = (
     Match.orElse((failed) => reporting.reportCheckFailure(toReportedMutant(plan.mutant), failed).pipe(Effect.asVoid)),
   )
 
-const checkPlansWithOneChecker = (
-  checkerPool: Pool.Pool<CheckerResourceService, CheckerCrash>,
-  checkerName: string,
-  plans: readonly MutantRunPlan[],
-  reporting: MutationReportingService,
-) =>
-  Effect.gen(function*() {
-    const checked = yield* Effect.scoped(
-      Effect.flatMap(
-        Pool.get(checkerPool),
-        (checker) =>
-          checkGroupedPlans(checker, checkerName, plans).pipe(
-            Effect.catchTags({
-              OutOfMemoryError: (error) =>
-                Effect.flatMap(Pool.invalidate(checkerPool, checker), () => Effect.fail(error)),
-              ChildProcessCrashedError: (error) =>
-                Effect.flatMap(Pool.invalidate(checkerPool, checker), () => Effect.fail(error)),
-            }),
-          ),
-      ),
-    )
-    yield* Effect.forEach(checked, (pair) => reportCheckOutcome(pair, reporting), {
-      concurrency: 1,
-      discard: true,
-    })
-    return checked.filter(([, result]) => result.status === 'passed').map(([plan]) => plan)
-  })
-
 const checkPlansWithConfiguredCheckers = (
-  checkerPools: readonly CheckerPool[],
+  checkerPool: Pool.Pool<CheckerSlot, StageError | CheckerCrash> | undefined,
   plans: readonly MutantRunPlan[],
   reporting: MutationReportingService,
 ) =>
-  Effect.reduce(
-    checkerPools,
-    () => plans,
-    (passed, { checkerName, pool }) => checkPlansWithOneChecker(pool, checkerName, passed, reporting),
-  )
+  Option.match(Option.fromNullishOr(checkerPool), {
+    onNone: () => Effect.succeed(plans),
+    onSome: (pool) =>
+      Effect.scoped(
+        Effect.gen(function*() {
+          const slot = yield* Pool.get(pool)
+          return yield* Effect.reduce(
+            slot,
+            () => plans,
+            (passed, { checkerName, checker }) =>
+              checkGroupedPlans(checker, checkerName, passed).pipe(
+                Effect.catchTags({
+                  OutOfMemoryError: (error) => Effect.flatMap(Pool.invalidate(pool, slot), () => Effect.fail(error)),
+                  ChildProcessCrashedError: (error) =>
+                    Effect.flatMap(Pool.invalidate(pool, slot), () => Effect.fail(error)),
+                }),
+                Effect.flatMap((checked) =>
+                  Effect.forEach(checked, (pair) => reportCheckOutcome(pair, reporting), {
+                    concurrency: 1,
+                    discard: true,
+                  }).pipe(
+                    Effect.as(
+                      checked.filter(([, result]) => result.status === 'passed').map(([plan]) => plan),
+                    ),
+                  )
+                ),
+              ),
+          )
+        }),
+      ),
+  })
 
 export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageError, StageServices> = Cell.layer({
   read: (command: DryRunDone): Effect.Effect<MutationTestRaw, never, Scope.Scope> =>
@@ -343,7 +346,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                 })
                 yield* emitPhase
                 const idGenerator = yield* IdGenerator
-                const checkerPools = yield* makeCheckerPools(prev, idGenerator)
+                const checkerPool = yield* makeCheckerPool(prev, idGenerator)
                 const testRunnerContext = {
                   options: prev.options,
                   fileDescriptions: prev.project.fileDescriptions,
@@ -451,7 +454,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                     PlanKnown.make({ total: allPlansForReporter.length + noCoverageResults.length }),
                   )
                 }
-                const passedPlans = yield* checkPlansWithConfiguredCheckers(checkerPools, sortedPlans, reporting)
+                const passedPlans = yield* checkPlansWithConfiguredCheckers(checkerPool, sortedPlans, reporting)
                 const testRunnerStream = Stream.fromIterable(passedPlans)
                 const plannedTotal = allPlansForReporter.length + noCoverageResults.length + rememberedResults.length
                 const pathService = yield* Path.Path
