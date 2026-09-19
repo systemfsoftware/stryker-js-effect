@@ -13,10 +13,45 @@ pnpm change --bump <none|patch|minor|major> --summary "<changelog entry>" [<pkg>
   behavior-visible change is the same silent non-release the gate exists to
   catch.
 - Intents are consumed by `pnpm version -r` when the Release PR
-  lands: consumption is recorded in `ledger.yaml` and the intent files
-  are retained, so a present intent alone never implies a pending release.
+  lands: consumption is recorded in `ledger.yaml`. A present intent
+  file alone never implies a pending release — count only stems absent
+  from the ledger (`countPendingIntents`).
 - This README is NOT a changeset: the gate requires a file whose frontmatter
   parses as `"<pkg>": <none|patch|minor|major>`.
+
+## Two-stage intent deletion
+
+pnpm unlinks consumed intents only after the npm registry confirms the
+versions those intents produced. The cycle is:
+
+1. **Version PR.** `pnpm version -r` consumes pending intents, writes
+   `.changeset/changelogs/<pkg>@<ver>.md`, and records stems in
+   `ledger.yaml`. The new versions are not on npm yet, so
+   `confirmPublished()` fails and the intent `.md` files stay on disk.
+2. **Publish.** The version PR merges; CI publishes and pushes git tags.
+3. **Next version PR.** The next `pnpm version -r` scans
+   `.changeset/changelogs/`, `verifyPublished()` / `confirmPublished()`
+   against npm, deletes confirmed changelog files, and unlinks the
+   intent `.md` files whose releases are all confirmed.
+
+If `.changeset/changelogs/` is deleted out of band before that
+confirmation, the matching intent files become permanent orphans: pnpm
+has nothing left to verify, so it never unlinks them. Remove those
+stems by hand only after the ledger already records them and npm
+already serves the versions.
+
+## Interruption safety
+
+The Release workflow concurrency group is `release-${{ github.ref }}`
+with `cancel-in-progress: false`. Pushes to `main` queue; they never
+cancel an in-flight release run.
+
+- An interrupted **version** job is safe: it only commits on the
+  isolated `changeset-release/main` branch and opens or updates a PR;
+  `main` is untouched.
+- An interrupted **publish** job is safe: `unpublishedOf()` treats a
+  registry 404 as still owed, so a killed publish remains in `owed` on
+  the next run.
 
 Publishing uses npm OIDC trusted publishing from `.github/workflows/release.yml`.
 For a package npm has never seen, register it (and this repository plus that
