@@ -5,7 +5,8 @@
 
 import { type FileDescriptions, INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { StrykerOptions, TestRunnerConfig } from '@systemfsoftware/stryker-js-plugin-interface'
+import { isCustomTestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   type CompleteDryRunResult,
   type DryRunOptions,
@@ -126,13 +127,16 @@ export const makeChildProcessTestRunner = (
   params: ChildProcessTestRunnerParams,
 ): Effect.Effect<PooledTestRunner, PooledTestRunnerError, Scope.Scope | WorkerLauncher> =>
   Effect.gen(function*() {
-    const runnerName = params.options.testRunner
+    const customRunner = isCustomTestRunner(params.options.testRunner)
+    const runnerName = customRunner ? params.options.testRunner.plugin : params.options.testRunner
     const optionsJson = yield* encodeWorkerOptions(params.options)
     const client = yield* makeWorkerClient({
       rpcs: TestRunnerRpcs,
       entrypoint: params.workerEntrypoint,
       workingDirectory: params.sandboxWorkingDirectory,
-      execArgv: [...params.options.testRunnerNodeArgs],
+      execArgv: [
+        ...(customRunner ? params.options.testRunner.nodeArgs ?? [] : params.options.testRunnerNodeArgs),
+      ],
       optionsJson,
       tempDirPrefix: 'stryker-test-runner-',
       env: {
@@ -376,7 +380,8 @@ export const withEnvironmentReload = (
 /** "command" — the name this runner answers to in the options. */
 export const commandRunnerName = 'command'
 /** Whether a configured runner name selects this runner. */
-export const isCommandRunner = (name: string): name is 'command' => name.toLowerCase() === commandRunnerName
+export const isCommandRunner = (name: TestRunnerConfig): name is 'command' =>
+  typeof name === 'string' && name.toLowerCase() === commandRunnerName
 
 /**
  * A test runner that shells out to one command — `npm test` by default — and

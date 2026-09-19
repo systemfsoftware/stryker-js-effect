@@ -56,16 +56,8 @@ plain descriptor and validates at load that `name` is a string and
 `shouldIgnore` is callable — an entry that fails fails the load by name.
 
 A module exporting `strykerIgnorers` loads in any engine carrying the plain-ignorer
-loader, and the host builds the ignorer it runs from the descriptor. Configure the
-pair — they take different strings:
-
-| Config key | Value                                           |
-| ---------- | ----------------------------------------------- |
-| `plugins`  | the module specifier (this package or your own) |
-| `ignorers` | the ignorer name (`generated-code` above)       |
-
-A mismatched pair fails silent-green: the run completes with nothing ignored
-and only a `Cannot find plugin` warning.
+loader, and the host runs every ignorer the module contributes. List the module
+in `ignorers` with `import.meta.resolve`.
 
 ## License
 

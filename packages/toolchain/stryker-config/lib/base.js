@@ -6,20 +6,15 @@ const envConcurrency = process.env['STRYKER_CONCURRENCY'] ??
 
 export const sharedConfig = {
   packageManager: 'pnpm',
-  testRunner: 'vitest',
-  checkers: ['typescript'],
   reporters: isAgent || isCI ? ['json', 'html'] : ['progress', 'html', 'json'],
   htmlReporter: { fileName: 'reports/mutation-report.html' },
   jsonReporter: { fileName: 'reports/mutation-report.json' },
-  vitest: { configFile: 'vitest.config.ts', dir: '.', related: true },
-  typescriptChecker: { prioritizePerformanceOverAccuracy: true },
   coverageAnalysis: 'perTest',
   incremental: true,
   incrementalFile: 'reports/stryker-incremental.json',
   ignorePatterns: ['reports', 'coverage'],
   disableBail: true,
   cleanTempDir: 'always',
-  ignorers: ['effect-schema-declarations', 'in-source-vitest-block'],
   thresholds: { high: 100, low: 80, break: 100 },
   mutate: [
     'src/**/*.workflow.ts',

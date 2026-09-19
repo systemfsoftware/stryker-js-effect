@@ -1,5 +1,5 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { DryRunCompleted } from '@systemfsoftware/stryker-js-plugin-interface'
+import { DryRunCompleted, isCustomTestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import type {
   CompleteDryRunResult,
   DryRunResult,
@@ -23,8 +23,7 @@ import { RunEvents } from '../RunEvents.js'
 import { dryRun, DryRunCommand } from '../dry-run.workflow.js'
 import { testCoverageFrom } from '../Mutants.js'
 import type { TestCoverage } from '../Mutants.js'
-import { resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
-import { missingWorkerEntry } from '../plugin-worker-entry.js'
+import { missingWorkerEntry, resolveConfiguredWorkerSpawn } from '../plugin-worker-entry.js'
 import { offerReporterEvent, withPhaseSpan } from '../ReporterStream.js'
 import { StageError } from '../Run.schema.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.js'
@@ -187,24 +186,27 @@ export const dryRunCell = Cell.layer({
       yield* Effect.logInfo('Starting dry run')
       const { rawResult, capabilities, gross } = yield* Effect.scoped(
         Effect.gen(function*() {
-          const childRunnerEffect = Effect.suspend(() =>
-            resolvePluginWorkerEntry({
+          const childRunnerEffect = Effect.suspend(() => {
+            const runnerConfigured = command.options.testRunner
+            const runnerLabel = isCustomTestRunner(runnerConfigured) ? runnerConfigured.plugin : runnerConfigured
+            return resolveConfiguredWorkerSpawn({
               loaded: command.loadedPlugins,
               kind: 'TestRunner',
-              name: command.options.testRunner,
+              configured: runnerConfigured,
             }).pipe(
-              Effect.mapError(missingWorkerEntry('dryRun', 'test runner', command.options.testRunner)),
-              Effect.flatMap((runnerEntry) =>
+              Effect.mapError(missingWorkerEntry('dryRun', 'test runner', runnerLabel)),
+              Effect.flatMap(({ spawn }) =>
                 makeChildProcessTestRunner({
                   options: command.options,
                   fileDescriptions: command.project.fileDescriptions,
                   sandboxWorkingDirectory: command.sandbox.workingDirectory,
-                  workerEntrypoint: runnerEntry.entrypoint,
+                  workerEntrypoint: spawn.entrypoint,
                   idGenerator,
                 })
               ),
             )
-          )
+          })
+
           const runner = yield* buildTestRunner(
             {
               options: command.options,

@@ -63,12 +63,12 @@ pnpm add -D @systemfsoftware/stryker-ignorer-in-source-vitest-block
 
 ```ts
 export default defineConfig({
-  testRunner: 'vitest',
-  plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
+  testRunner: {
+    plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
+  },
+  ignorers: [
     import.meta.resolve('@systemfsoftware/stryker-ignorer-in-source-vitest-block'),
   ],
-  ignorers: ['in-source-vitest-block'],
 })
 ```
 

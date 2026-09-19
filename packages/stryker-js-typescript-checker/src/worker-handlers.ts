@@ -6,8 +6,7 @@ import { readWorkerOptionsFromEnv } from '@systemfsoftware/stryker-js-plugin-run
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import * as HashMap from 'effect/HashMap'
-import * as Option from 'effect/Option'
+import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 
@@ -32,33 +31,18 @@ const buildChecker = (
 export const checkerHandlers = CheckerRpcs.toLayer(
   Effect.gen(function*() {
     const options = yield* readWorkerOptionsFromEnv
-    const checkers = yield* Effect.cached(
-      Effect.forEach(
-        options.checkers,
-        (name: string) =>
-          Effect.result(
-            buildChecker(options).pipe(Effect.catchCause((cause) => Effect.fail(cause))),
-          ).pipe(Effect.map((outcome) => [name, outcome] as const)),
-        { concurrency: 'unbounded', discard: false },
-      ).pipe(Effect.map(HashMap.fromIterable)),
+    const built = yield* Effect.cached(
+      Effect.result(buildChecker(options).pipe(Effect.catchCause((cause) => Effect.fail(cause)))),
     )
 
     const resolve = (
       checkerName: string,
       mutants: readonly Mutant[],
     ): Effect.Effect<Checker['Service'], CheckerFailed, FileSystem.FileSystem | Path.Path> =>
-      checkers.pipe(
-        Effect.flatMap((built) =>
-          Option.match(HashMap.get(built, checkerName), {
-            onNone: () =>
-              Effect.fail(
-                CheckerFailed.make({
-                  cause: `Checker ${checkerName} does not exist`,
-                  checkerName,
-                  mutantIds: mutantIdsOf(mutants),
-                }),
-              ),
-            onSome: (outcome) =>
+      Match.value(checkerName).pipe(
+        Match.when('typescript', () =>
+          built.pipe(
+            Effect.flatMap((outcome) =>
               Result.match(outcome, {
                 onFailure: (cause) =>
                   Effect.fail(
@@ -69,8 +53,17 @@ export const checkerHandlers = CheckerRpcs.toLayer(
                     }),
                   ),
                 onSuccess: (checker) => Effect.succeed(checker),
-              }),
-          })
+              })
+            ),
+          )),
+        Match.orElse(() =>
+          Effect.fail(
+            CheckerFailed.make({
+              cause: `Checker ${checkerName} does not exist`,
+              checkerName,
+              mutantIds: mutantIdsOf(mutants),
+            }),
+          )
         ),
       )
 

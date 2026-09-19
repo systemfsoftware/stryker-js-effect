@@ -1,11 +1,10 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { errorToString } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
-import { CheckerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, CheckerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { CheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Result, Schema as S } from 'effect'
+import { Result } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
@@ -20,33 +19,19 @@ import {
   DiagnosticInUnrelatedFileError,
   DiagnosticWithoutFileError,
 } from './check-mutants.workflow.js'
-import { CheckMutantsCommand, TypescriptCheckerOptionsSchema } from './Checker.schema.js'
+import { CheckMutantsCommand } from './Checker.schema.js'
 import { CheckMutantsInput } from './CheckMutants.schema.js'
 import { TypeScriptCompiler } from './Compiler.js'
 import { groupMutants } from './mutant-groups.js'
 
-export interface TypescriptCheckerPluginOptions {
-  typescriptChecker?: {
-    prioritizePerformanceOverAccuracy?: boolean
-  }
+function getPrioritize(options: StrykerOptions): boolean {
+  const first = options.checkers[0]
+  return first?.options?.['prioritizePerformanceOverAccuracy'] === true
 }
-
-export interface TypescriptCheckerOptionsWithStrykerOptions extends TypescriptCheckerPluginOptions, StrykerOptions {}
 
 interface CheckerDeps {
-  readonly options: unknown
+  readonly options: StrykerOptions
   readonly compiler: TypeScriptCompiler['Service']
-}
-
-function getPrioritize(options: unknown): boolean {
-  const decoded = S.decodeUnknownOption(TypescriptCheckerOptionsSchema)(options)
-  return Option.getOrElse(
-    Option.flatMap(
-      decoded,
-      (value) => Option.fromUndefinedOr(value.typescriptChecker?.prioritizePerformanceOverAccuracy),
-    ),
-    () => false,
-  )
 }
 
 type RunAnswers = CheckFinished['results']

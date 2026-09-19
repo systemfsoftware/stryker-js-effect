@@ -15,6 +15,7 @@ import {
 import {
   type BaseTestResult,
   DryRunResult,
+  isCustomTestRunner,
   MutantRunResult,
   testFilesProvided,
   type TestResult,
@@ -50,7 +51,7 @@ import {
   type VitestDryRunOutcome,
   VitestNodeModuleSchema,
   VitestPackageSchema,
-  VitestSectionSchema,
+  VitestRunnerOptionsSchema,
 } from './Runner.schema.js'
 
 export class VitestHarness extends Context.Service<VitestHarness, {
@@ -837,10 +838,13 @@ const applyHarnessValue = (ctx: Vitest, key: 'hitLimit' | 'mutantActivation' | '
 const applyRunFilterToConfig = (
   vitest: Vitest,
   options: { related: string[] | undefined; testNamePattern: RegExp | undefined },
-): void => {
-  Reflect.set(vitest.config, 'related', options.related)
-  for (const project of vitest.projects) Reflect.set(project.config, 'testNamePattern', options.testNamePattern)
-}
+): Effect.Effect<void> =>
+  Effect.sync(() => {
+    vitest.config.related = options.related
+    for (const project of vitest.projects) {
+      project.config.testNamePattern = options.testNamePattern
+    }
+  })
 
 const disableScreenshotFailures = (value: unknown): void =>
   Option.match(Option.filter(Option.fromNullishOr(value), Predicate.isObject), {
@@ -894,23 +898,17 @@ export const makeVitestRunnerLayer = (
         }
         return state.ctx
       })
-      const decodedOptionsEffect = (raw: unknown) =>
-        S.decodeUnknownEffect(VitestSectionSchema)(raw).pipe(
-          Effect.map((decoded) => ((() => {
-            if (decoded === undefined) return { related: true }
-            return decoded
-          })())),
-          Effect.mapError((cause) =>
-            new TestRunnerFailed({ runnerName: 'vitest', phase: 'init', cause: errorToString(cause) })
-          ),
-        )
-      const rawVitest = Reflect.get(input.options, 'vitest')
-      const optionsEffect = decodedOptionsEffect(rawVitest).pipe(
-        Effect.map((vitestOptions) => ({ ...input.options, vitest: vitestOptions })),
+      const vitestOptionsEffect = S.decodeUnknownEffect(VitestRunnerOptionsSchema)(
+        isCustomTestRunner(input.options.testRunner) ? input.options.testRunner.options ?? {} : {},
+      ).pipe(
+        Effect.mapError((cause) =>
+          new TestRunnerFailed({ runnerName: 'vitest', phase: 'init', cause: errorToString(cause) })
+        ),
       )
+
       const capabilities: TestRunner['Service']['capabilities'] = Effect.succeed({ reloadEnvironment: true })
       const init: TestRunner['Service']['init'] = Effect.gen(function*() {
-        const options = yield* optionsEffect
+        const vitestOptions = yield* vitestOptionsEffect
         const projectRoot = input.sandboxDirectory
         const localSetupFile = pathService.resolve(projectRoot, `stryker-setup-${globalThis.crypto.randomUUID()}.js`)
         yield* Ref.update(stateRef, (s) => ({ ...s, localSetupFile }))
@@ -938,7 +936,7 @@ export const makeVitestRunnerLayer = (
           () => INSTRUMENTER_CONSTANTS.NAMESPACE,
         )
         const scanDir = (() => {
-          if (typeof options.vitest.dir === 'string') return pathService.resolve(projectRoot, options.vitest.dir)
+          if (typeof vitestOptions.dir === 'string') return pathService.resolve(projectRoot, vitestOptions.dir)
           return undefined
         })()
         const aliases = yield* readSandboxSelfAliases(projectRoot).pipe(
@@ -949,7 +947,7 @@ export const makeVitestRunnerLayer = (
         const ctx = yield* Effect.tryPromise({
           try: () =>
             createVitest('test', {
-              config: options.vitest.configFile,
+              config: vitestOptions.configFile,
               coverage: { enabled: false },
               maxWorkers: 1,
               maxConcurrency: 1,
@@ -960,7 +958,7 @@ export const makeVitestRunnerLayer = (
                 return { dir: scanDir }
               })()),
               bail: (() => {
-                if (options.disableBail) return 0
+                if (input.options.disableBail) return 0
                 return 1
               })(),
               onConsoleLog: () => false,
@@ -1076,16 +1074,15 @@ export const makeVitestRunnerLayer = (
       > =>
         Effect.gen(function*() {
           const ctx = yield* requireCtx
-          const options = yield* optionsEffect
+          const vitestOptions = yield* vitestOptionsEffect
           yield* resetContext.pipe(
             Effect.mapError((cause) =>
               new TestRunnerFailed({ runnerName: 'vitest', phase: 'dryRun', cause: errorToString(cause) })
             ),
           )
-          const vitestInRun = Reflect.get(options, 'vitest')
-          const related = relatedFilesOf(Reflect.get(vitestInRun satisfies object, 'related'), filter.relatedFiles)
+          const related = relatedFilesOf(vitestOptions.related, filter.relatedFiles)
           const plan = runFilterPlan(filter, input.sandboxDirectory, pathService)
-          applyRunFilterToConfig(ctx, { related, testNamePattern: plan.testNamePattern })
+          yield* applyRunFilterToConfig(ctx, { related, testNamePattern: plan.testNamePattern })
           yield* Effect.tryPromise({
             try: () =>
               ctx.start(plan.testFiles),
@@ -1108,6 +1105,7 @@ export const makeVitestRunnerLayer = (
           )
           return { rawTests, hasExternalError, externalErrorText }
         })
+
       const harnessImpl: VitestHarness['Service'] = {
         setMode: (mode) => Effect.flatMap(requireCtx, (ctx) => Effect.sync(() => ctx.provide('mode', mode))),
         provide: (key, value) =>

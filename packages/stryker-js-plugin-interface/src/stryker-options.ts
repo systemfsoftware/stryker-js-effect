@@ -1,8 +1,13 @@
 import * as S from 'effect/Schema'
 
-import { StrykerOptionsSchema } from './stryker-options.schema.js'
+import {
+  type CheckerCustomConfig,
+  type CheckerEntryConfig,
+  StrykerOptionsSchema,
+  type TestRunnerConfig,
+  type TestRunnerCustomConfig,
+} from './stryker-options.schema.js'
 
-export type { PartialStrykerOptions, StrykerOptions } from './stryker-options.schema.js'
 export {
   CoverageAnalysisMode,
   LogLevel,
@@ -11,11 +16,20 @@ export {
   StrykerOptionsSchema,
 } from './stryker-options.schema.js'
 export type {
+  CheckerCustomConfig,
+  CheckerEntryConfig,
   CoverageAnalysisMode as CoverageAnalysisModeType,
   LogLevel as LogLevelType,
   PackageManager as PackageManagerType,
+  PartialStrykerOptions,
   ReportType as ReportTypeType,
+  StrykerOptions,
+  TestRunnerConfig,
+  TestRunnerCustomConfig,
 } from './stryker-options.schema.js'
+
+export const isCustomTestRunner = (value: TestRunnerConfig): value is TestRunnerCustomConfig =>
+  typeof value !== 'string'
 
 // ---------------------------------------------------------------------------
 // RENDERED_OPTION_DEFAULTS — inlined from core/rendered-option-defaults.ts

@@ -7,7 +7,6 @@ import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
-import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
@@ -25,7 +24,7 @@ import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-i
 import { makeBuiltinReporterFactories } from '../builtin-reporters.js'
 import { resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
 import { missingWorkerEntry } from '../plugin-worker-entry.js'
-import { loadPlugins } from '../Plugins.js'
+import { loadPlugins, pluginUrlsFromOptions } from '../Plugins.js'
 import type { LoadedPlugins, PluginDescriptor } from '../Plugins.js'
 import { readProject } from '../Project.js'
 import type { Project } from '../Project.js'
@@ -233,7 +232,7 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
         allowColor: env.allowConsoleColors,
       },
     }
-    const descriptors: readonly string[] = [...options.plugins, ...options.appendPlugins]
+    const descriptors: readonly string[] = pluginUrlsFromOptions(options)
     const loaded = yield* loadPlugins(descriptors).pipe(
       Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
     )
@@ -252,10 +251,8 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
     const project = yield* readProject(options, command.targetMutatePatterns, env.basePath).pipe(
       Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read project', cause })),
     )
-    const selectedIgnorers = HashSet.fromIterable(options.ignorers)
-    const ignorers: readonly Ignorer[] = loaded.ignorers.filter((ignorer) =>
-      HashSet.has(selectedIgnorers, ignorer.name)
-    )
+    const ignorers: readonly Ignorer[] = loaded.ignorers
+
     const builtinReporterFactories: Record<string, ReporterFactory> = {
       ...makeBuiltinReporterFactories({
         fileSystem: yield* FileSystem.FileSystem,

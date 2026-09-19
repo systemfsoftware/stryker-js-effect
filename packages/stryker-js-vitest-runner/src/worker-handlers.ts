@@ -33,7 +33,7 @@ type TestRunnerPhase = 'capabilities' | 'init' | 'dryRun' | 'mutantRun'
 export const testRunnerHandlers = TestRunnerRpcs.toLayer(
   Effect.gen(function*() {
     const options = yield* readWorkerOptionsFromEnv
-    const runnerName = options.testRunner
+    const runnerName = typeof options.testRunner === 'string' ? options.testRunner : 'vitest'
     const sandboxDirectory = yield* Config.string('STRYKER_SANDBOX_DIR')
     const failed = (phase: TestRunnerPhase) => (cause: Cause.Cause<unknown>): Effect.Effect<never, TestRunnerFailed> =>
       Effect.fail(new TestRunnerFailed({ cause: Cause.pretty(cause), phase, runnerName }))

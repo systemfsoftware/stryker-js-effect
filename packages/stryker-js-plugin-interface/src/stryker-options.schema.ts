@@ -126,6 +126,26 @@ const ConcurrencyPercent = S.String.pipe(S.check(S.isPattern(/^(100|[1-9]?[0-9])
 
 export const PluginFileUrl = S.String.pipe(S.check(S.isStartsWith('file://')))
 
+export const TestRunnerCustomConfigSchema = S.Struct({
+  plugin: PluginFileUrl,
+  nodeArgs: S.optional(S.Array(S.String)),
+  options: S.optional(S.Record(S.String, S.Unknown)),
+})
+export type TestRunnerCustomConfig = typeof TestRunnerCustomConfigSchema.Type
+
+export const TestRunnerConfigSchema = S.Union([S.String, TestRunnerCustomConfigSchema])
+export type TestRunnerConfig = typeof TestRunnerConfigSchema.Type
+
+export const CheckerCustomConfigSchema = S.Struct({
+  plugin: PluginFileUrl,
+  nodeArgs: S.optional(S.Array(S.String)),
+  options: S.optional(S.Record(S.String, S.Unknown)),
+})
+export type CheckerCustomConfig = typeof CheckerCustomConfigSchema.Type
+
+export const CheckerEntryConfigSchema = CheckerCustomConfigSchema
+export type CheckerEntryConfig = typeof CheckerEntryConfigSchema.Type
+
 // ---------------------------------------------------------------------------
 // The option set
 // ---------------------------------------------------------------------------
@@ -134,7 +154,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
   S.Struct({
     allowConsoleColors: defaulted(S.Boolean, true),
     buildCommand: S.optional(S.String),
-    checkers: defaulted(S.Array(S.String), []),
+    checkers: defaulted(S.Array(CheckerEntryConfigSchema), []),
     checkerNodeArgs: defaulted(S.Array(S.String), []),
     concurrency: S.optional(S.Union([ConcurrencyCount, ConcurrencyPercent])),
     commandRunner: defaulted(CommandRunnerOptionsSchema, { command: 'npm test' }),
@@ -176,7 +196,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
     symlinkNodeModules: defaulted(S.Boolean, true),
     tempDirName: defaulted(S.String, RENDERED_OPTION_DEFAULTS.tempDirName),
     cleanTempDir: defaulted(S.Literals(['always', false, true]), true),
-    testRunner: defaulted(S.String, 'command'),
+    testRunner: defaulted(TestRunnerConfigSchema, 'command'),
     testRunnerNodeArgs: defaulted(S.Array(S.String), []),
     thresholds: defaulted(MutationScoreThresholdsSchema, { high: 80, low: 60, break: null }),
     timeoutFactor: defaulted(S.Finite, 1.5),
@@ -186,7 +206,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
     warnings: defaulted(S.Union([S.Boolean, WarningOptions]), true),
     disableBail: defaulted(S.Boolean, false),
     allowEmpty: defaulted(S.Boolean, false),
-    ignorers: defaulted(S.Array(S.String), []),
+    ignorers: defaulted(S.Array(PluginFileUrl), []),
     testFiles: defaulted(S.Array(S.String), []),
   }),
   [S.Record(S.String, S.Unknown)],

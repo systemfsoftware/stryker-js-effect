@@ -9,7 +9,11 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 
 import type { Ignorer as IgnorerDescriptor } from '@systemfsoftware/stryker-ignorer-interface'
-import type { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  isCustomTestRunner,
+  type StrykerOptions,
+  type WorkerPluginKind,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import { importModule } from './run/load-config.cell.js'
 
@@ -315,7 +319,7 @@ export function loadPlugins(
             }
             return {
               ...plugin,
-              moduleName: resolved.entrypoint,
+              moduleName: resolved.specifier,
             }
           }),
         ),
@@ -343,6 +347,14 @@ export function loadPlugins(
     return result
   })
 }
+
+export const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[] => [
+  ...options.plugins,
+  ...options.appendPlugins,
+  ...options.ignorers,
+  ...(isCustomTestRunner(options.testRunner) ? [options.testRunner.plugin] : []),
+  ...options.checkers.map((checker) => checker.plugin),
+]
 
 function hasValidationSchemaContribution(module: unknown): module is SchemaValidationContribution {
   return S.is(SchemaValidationContributionSchema)(module)
