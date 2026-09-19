@@ -1,12 +1,6 @@
 import * as S from 'effect/Schema'
 
-import {
-  type CheckerCustomConfig,
-  type CheckerEntryConfig,
-  StrykerOptionsSchema,
-  type TestRunnerConfig,
-  type TestRunnerCustomConfig,
-} from './stryker-options.schema.js'
+import { StrykerOptionsSchema, type TestRunnerConfig, type TestRunnerCustomConfig } from './stryker-options.schema.js'
 
 export {
   CoverageAnalysisMode,

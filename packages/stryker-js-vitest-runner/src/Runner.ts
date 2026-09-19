@@ -899,7 +899,14 @@ export const makeVitestRunnerLayer = (
         return state.ctx
       })
       const vitestOptionsEffect = S.decodeUnknownEffect(VitestRunnerOptionsSchema)(
-        isCustomTestRunner(input.options.testRunner) ? input.options.testRunner.options ?? {} : {},
+        Match.value(input.options.testRunner).pipe(
+          Match.when(isCustomTestRunner, (runner) =>
+            Match.value(runner.options).pipe(
+              Match.when(Match.undefined, () => ({})),
+              Match.orElse((opts) => opts),
+            )),
+          Match.orElse(() => ({})),
+        ),
       ).pipe(
         Effect.mapError((cause) =>
           new TestRunnerFailed({ runnerName: 'vitest', phase: 'init', cause: errorToString(cause) })

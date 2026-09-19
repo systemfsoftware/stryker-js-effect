@@ -188,7 +188,10 @@ export const dryRunCell = Cell.layer({
         Effect.gen(function*() {
           const childRunnerEffect = Effect.suspend(() => {
             const runnerConfigured = command.options.testRunner
-            const runnerLabel = isCustomTestRunner(runnerConfigured) ? runnerConfigured.plugin : runnerConfigured
+            const runnerLabel = Match.value(runnerConfigured).pipe(
+              Match.when(isCustomTestRunner, (runner) => runner.plugin),
+              Match.orElse((name) => name),
+            )
             return resolveConfiguredWorkerSpawn({
               loaded: command.loadedPlugins,
               kind: 'TestRunner',
