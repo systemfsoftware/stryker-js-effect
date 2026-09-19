@@ -42,7 +42,7 @@ catalog:
   testcontainers: ^12
   tsdown: ^0.23.0
   turbo: ^2
-  type-fest: ^4
+  type-fest: ^5
   typescript: ^7
   vitest: ^4
   concurrently: ^10
