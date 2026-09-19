@@ -8,7 +8,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Minimatch, minimatch } from 'minimatch'
+import { isGlob } from '../glob-match.js'
 
 import {
   ConfigDocumentSchema,
@@ -29,7 +29,6 @@ import { isCommandRunner } from '../TestRunner.js'
 
 const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 
-const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
 export const optionsPath = (...path: string[]): string => path.join('.')
 
 const combine = (
@@ -239,44 +238,6 @@ export function isWarningEnabled(
   } else {
     return warningOptions[warningType] === true
   }
-}
-
-const DEFAULT_GLOB = '**/*.{js,ts,jsx,tsx,html,vue,mjs,mts,cts,cjs}'
-
-const normalizePattern = (
-  pattern: boolean | string,
-  pathService: Path.Path,
-): boolean | string =>
-  Match.value(pattern).pipe(
-    Match.when(Match.string, (value) => normalizeFileName(pathService.resolve(value))),
-    Match.when(true, () => DEFAULT_GLOB),
-    Match.orElse(() => false),
-  )
-
-export function createFileMatcher(
-  pattern: boolean | string,
-  pathService: Path.Path,
-  allowHiddenFiles = true,
-): (fileName: string) => boolean {
-  return Match.value(normalizePattern(pattern, pathService)).pipe(
-    Match.when(
-      Match.string,
-      (normalized) => (fileName: string) =>
-        minimatch(normalizeFileName(pathService.resolve(fileName)), normalized, {
-          dot: allowHiddenFiles,
-        }),
-    ),
-    Match.orElse((normalized) => () => normalized),
-  )
-}
-
-export function matchesFile(
-  pattern: boolean | string,
-  fileName: string,
-  pathService: Path.Path,
-  allowHiddenFiles = true,
-): boolean {
-  return createFileMatcher(pattern, pathService, allowHiddenFiles)(fileName)
 }
 
 const PATH_LINE = /^at\s+(\[.*\])$/
@@ -895,7 +856,7 @@ const requireUnmagicalMutationRange = (
   index: number,
   match: RegExpExecArray,
 ): readonly string[] =>
-  Match.value(new Minimatch(mutateString).hasMagic()).pipe(
+  Match.value(isGlob(mutateString)).pipe(
     Match.when(true, (): readonly string[] => [
       `Config option "mutate[${index}]" is invalid. Cannot combine a glob expression with a mutation range in "${mutateString}".`,
     ]),

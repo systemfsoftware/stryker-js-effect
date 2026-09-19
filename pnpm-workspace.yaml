@@ -18,6 +18,7 @@ catalog:
   "@oxc-parser/binding-wasm32-wasi": ^0.140.0
   "@oxc-project/types": ^0.140.0
   "@std/jsonc": jsr:^1
+  "@std/path": jsr:^1
   "@systemfsoftware/all": ^2
   "@systemfsoftware/arethetypeswrong-cli": ^4
   "@systemfsoftware/effect-cell-types": ^8

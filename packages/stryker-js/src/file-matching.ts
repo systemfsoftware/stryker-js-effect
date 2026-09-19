@@ -1,6 +1,7 @@
 import * as Match from 'effect/Match'
 import type * as Path from 'effect/Path'
-import { minimatch } from 'minimatch'
+
+import { matchesGlob } from './glob-match.js'
 
 const DEFAULT_GLOB = '**/*.{js,ts,jsx,tsx,html,vue,mjs,mts,cts,cjs}'
 
@@ -24,10 +25,14 @@ export function createFileMatcher(
   return Match.value(normalizePattern(pattern, pathService)).pipe(
     Match.when(
       Match.string,
-      (normalized) => (fileName: string) =>
-        minimatch(normalizeFileName(pathService.resolve(fileName)), normalized, {
-          dot: allowHiddenFiles,
-        }),
+      (normalized) => (fileName: string) => {
+        const path = normalizeFileName(pathService.resolve(fileName))
+        const hidden = path.split('/').some((segment) => segment.startsWith('.'))
+        return Match.value(allowHiddenFiles || !hidden).pipe(
+          Match.when(true, () => matchesGlob(path, normalized)),
+          Match.orElse(() => false),
+        )
+      },
     ),
     Match.orElse((normalized) => () => normalized),
   )

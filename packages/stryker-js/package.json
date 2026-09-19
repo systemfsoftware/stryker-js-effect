@@ -42,8 +42,7 @@
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.208.0",
     "@opentelemetry/sdk-trace-base": "^2.2.0",
-    "@systemfsoftware/effect-cell-types": "catalog:",
-    "minimatch": "~10.2.4"
+    "@systemfsoftware/effect-cell-types": "catalog:"
   },
   "peerDependencies": {
     "effect": "catalog:"
@@ -54,6 +53,7 @@
     "@microsoft/api-extractor": "catalog:",
     "@oxc-parser/binding-wasm32-wasi": "catalog:",
     "@std/jsonc": "catalog:",
+    "@std/path": "catalog:",
     "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
@@ -149,6 +149,7 @@
     "@jridgewell/sourcemap-codec": "1.6.0",
     "@jridgewell/trace-mapping": "0.3.31",
     "@jsr/std__jsonc": "1.0.2",
+    "@jsr/std__path": "1.1.6",
     "@sveltejs/acorn-typescript": "1.0.13",
     "acorn": "8.18.0",
     "angular-html-parser": "10.4.0",
