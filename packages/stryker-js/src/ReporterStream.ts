@@ -1,4 +1,4 @@
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
 import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'

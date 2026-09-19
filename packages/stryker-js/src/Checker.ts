@@ -8,7 +8,7 @@
  */
 
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import type { FileDescriptions, RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import type { FileDescriptions, RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   CheckerMutantWire,
   CheckerRpcs,

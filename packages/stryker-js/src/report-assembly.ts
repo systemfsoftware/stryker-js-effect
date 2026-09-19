@@ -1,4 +1,4 @@
-import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import type { TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as HashMap from 'effect/HashMap'

@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js",
-  "version": "6.1.0",
+  "version": "7.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -26,8 +26,8 @@
     "mutation": "stryker run",
     "attw": "attw --pack .",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
-    "api:check": "concurrently --kill-others-on-fail \"api-extractor run\" \"api-extractor run --config api-extractor.builtin-reporters.json\" \"api-extractor run --config api-extractor.plugin-loader.json\"",
-    "api:update": "concurrently --kill-others-on-fail \"api-extractor run --local\" \"api-extractor run --local --config api-extractor.builtin-reporters.json\" \"api-extractor run --local --config api-extractor.plugin-loader.json\"",
+    "api:check": "api-extractor run",
+    "api:update": "api-extractor run --local",
     "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
   },
   "license": "Apache-2.0",
@@ -95,17 +95,9 @@
         "types": "./dist/index.d.mts",
         "default": "./dist/index.mjs"
       },
-      "./builtin-reporters": {
-        "types": "./dist/builtin-reporters.d.mts",
-        "default": "./dist/builtin-reporters.mjs"
-      },
       "./config": {
         "types": "./dist/config.d.mts",
         "default": "./dist/config.mjs"
-      },
-      "./plugin-loader": {
-        "types": "./dist/plugin-loader.d.mts",
-        "default": "./dist/plugin-loader.mjs"
       },
       "./promises": {
         "types": "./dist/promises.d.mts",
@@ -120,20 +112,10 @@
       "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
     },
-    "./builtin-reporters": {
-      "@systemfsoftware/source": "./src/builtin-reporters.ts",
-      "types": "./dist/builtin-reporters.d.mts",
-      "default": "./dist/builtin-reporters.mjs"
-    },
     "./config": {
       "@systemfsoftware/source": "./src/config/index.ts",
       "types": "./dist/config.d.mts",
       "default": "./dist/config.mjs"
-    },
-    "./plugin-loader": {
-      "@systemfsoftware/source": "./src/plugin-loader.ts",
-      "types": "./dist/plugin-loader.d.mts",
-      "default": "./dist/plugin-loader.mjs"
     },
     "./promises": {
       "@systemfsoftware/source": "./src/promises/index.ts",

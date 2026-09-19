@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-vitest-runner",
-  "version": "6.0.0",
+  "version": "7.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -52,7 +52,7 @@
   },
   "peerDependencies": {
     "effect": "catalog:",
-    "vitest": ">=2.0.0"
+    "vitest": ">=4.1.0"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
@@ -98,6 +98,7 @@
     "@effect/opentelemetry": "4.0.0-rc.112",
     "@effect/platform-node": "4.0.0-rc.112",
     "@effect/platform-node-shared": "4.0.0-rc.112",
+    "@eslint-community/regexpp": "4.12.2",
     "@opentelemetry/api": "1.9.1",
     "@opentelemetry/api-logs": "0.208.0",
     "@opentelemetry/context-async-hooks": "2.2.0",
@@ -119,6 +120,7 @@
     "msgpackr": "2.1.0",
     "msgpackr-extract": "3.0.4",
     "node-gyp-build-optional-packages": "5.2.2",
+    "oxc-parser": "0.140.0",
     "ws": "8.21.3"
   }
 }

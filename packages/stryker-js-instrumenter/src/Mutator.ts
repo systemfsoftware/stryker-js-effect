@@ -1175,10 +1175,11 @@ export const stringLiteralMutator: Mutator = (node, context) =>
   )
 
 function templateMutants(template: TemplateLiteral): readonly Node[] {
-  return Match.value(template.quasis[0]).pipe(
-    Match.when(undefined, () => NO_MUTANTS),
-    Match.orElse((first) => [emptyOrPlaceholderTemplate(template, first)]),
-  )
+  const first = template.quasis[0]
+  if (first === undefined) {
+    return NO_MUTANTS
+  }
+  return [emptyOrPlaceholderTemplate(template, first)]
 }
 
 function emptyOrPlaceholderTemplate(template: TemplateLiteral, first: TemplateElement): Node {

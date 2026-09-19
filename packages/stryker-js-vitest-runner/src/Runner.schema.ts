@@ -61,8 +61,6 @@ export const VitestNodeModuleSchema = S.declare(
   { description: 'The project-local vitest/node module' },
 )
 
-export const VitestPackageSchema = S.Struct({ version: S.String })
-
 export class VitestDryRunCommand extends S.TaggedClass<VitestDryRunCommand>()('VitestDryRunCommand', {
   rawTests: S.Array(S.Unknown),
   projectRoot: S.String,

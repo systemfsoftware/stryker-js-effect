@@ -1,4 +1,4 @@
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ReporterEvent, ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface'
 import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'

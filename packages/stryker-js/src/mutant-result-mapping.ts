@@ -4,8 +4,8 @@ import type {
   MutantTestCoverage,
   Position,
   RunMutantResult,
-} from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type * as schema from '@systemfsoftware/stryker-js-instrumenter/mutants'
+} from '@systemfsoftware/stryker-js-instrumenter'
+import type * as schema from '@systemfsoftware/stryker-js-instrumenter'
 import type { CheckResult, CheckStatus, PassedCheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { MutantRunResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'

@@ -8,7 +8,7 @@ import {
   makeWorkerClient,
   WorkerLauncher,
 } from '@systemfsoftware/stryker-js'
-import { Mutant, type MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { Mutant, type MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import type { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
 import { layerTraceContextServer } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'

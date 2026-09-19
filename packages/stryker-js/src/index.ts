@@ -35,7 +35,7 @@ export type {
   Position,
   RunMutantResult,
   RunPlan,
-} from '@systemfsoftware/stryker-js-instrumenter/mutants'
+} from '@systemfsoftware/stryker-js-instrumenter'
 export type {
   BaseTestResult,
   CheckResult,

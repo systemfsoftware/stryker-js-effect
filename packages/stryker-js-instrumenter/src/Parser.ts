@@ -130,10 +130,7 @@ export const parseWithOxc = (
     if (failure !== undefined) {
       return yield* failure
     }
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-    const program = result.program as unknown as Program
-    // oxlint-disable-next-line typescript/no-unnecessary-type-assertion typescript/no-unsafe-type-assertion
-    return { root: program, comments: result.comments as readonly SpannedComment[] }
+    return { root: result.program, comments: result.comments }
   })
 function oxcParseFailure(
   errors: readonly OxcError[],
@@ -266,7 +263,10 @@ const dotBeforeSlash = (dot: number, slash: number): boolean => dot >= 0 && dot 
 const extensionOf = (fileName: string): string => {
   const dot = fileName.lastIndexOf('.')
   const slash = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'))
-  return dotBeforeSlash(dot, slash) ? fileName.slice(dot).toLowerCase() : ''
+  if (!dotBeforeSlash(dot, slash)) {
+    return ''
+  }
+  return fileName.slice(dot).toLowerCase()
 }
 // ---------------------------------------------------------------------------
 // JS parser

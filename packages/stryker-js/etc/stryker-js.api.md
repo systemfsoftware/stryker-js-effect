@@ -10,8 +10,8 @@ import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawne
 import * as Context from 'effect/Context';
 import * as DateTime from 'effect/DateTime';
 import { Duration } from 'effect/Duration';
-import * as Duration_2 from 'effect/Duration';
 import * as Effect from 'effect/Effect';
+import * as EffectDuration from 'effect/Duration';
 import * as Exit from 'effect/Exit';
 import * as FileSystem from 'effect/FileSystem';
 import * as HashMap from 'effect/HashMap';
@@ -310,7 +310,7 @@ export interface DryRunDone extends InstrumentDone {
     // (undocumented)
     readonly testCoverage: TestCoverage;
     // (undocumented)
-    readonly timeOverhead: Duration_2.Duration;
+    readonly timeOverhead: EffectDuration.Duration;
 }
 
 // @public (undocumented)

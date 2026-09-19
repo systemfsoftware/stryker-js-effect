@@ -8,7 +8,7 @@ import {
   type TestRunnerBuildContext,
   WorkerLauncher,
 } from '@systemfsoftware/stryker-js'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { DryRunResult, MutantRunResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Duration from 'effect/Duration'

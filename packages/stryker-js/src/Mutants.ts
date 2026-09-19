@@ -6,7 +6,7 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type {
   Coverage,
   CoverageData,
@@ -15,7 +15,7 @@ import type {
   RunMutantResult,
   RunPlan,
   TestPlan as MutantTestPlan,
-} from '@systemfsoftware/stryker-js-instrumenter/mutants'
+} from '@systemfsoftware/stryker-js-instrumenter'
 import type { CompleteDryRunResult, TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'

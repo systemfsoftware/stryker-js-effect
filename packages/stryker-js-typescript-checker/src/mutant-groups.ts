@@ -1,4 +1,4 @@
-import { normalizeFileName } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { normalizeFileName } from '@systemfsoftware/stryker-js-instrumenter'
 import { type CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'

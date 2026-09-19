@@ -1,6 +1,6 @@
 import { parse } from '@std/jsonc'
 import { disableTypeChecks } from '@systemfsoftware/stryker-js-instrumenter'
-import { errorToString, normalizeFileName } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { errorToString, normalizeFileName } from '@systemfsoftware/stryker-js-instrumenter'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Schema as S } from 'effect'
 import * as Config from 'effect/Config'

@@ -1,4 +1,4 @@
-import { errorToString, type MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { errorToString, type MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type DryRunOptions,
   type DryRunResult,

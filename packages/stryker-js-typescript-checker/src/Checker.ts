@@ -1,5 +1,5 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, CheckerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { CheckerMutantWire, CheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'

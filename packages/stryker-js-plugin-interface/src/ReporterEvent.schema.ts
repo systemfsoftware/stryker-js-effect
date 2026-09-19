@@ -2,7 +2,7 @@ import type * as Effect from 'effect/Effect'
 import * as S from 'effect/Schema'
 import type { StandardSchemaV1 } from 'effect/StandardSchema'
 
-import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
 import { MetricsResultSchema } from './Metrics.schema.js'
 
 import { MutationTestResultSchema } from './Report.schema.js'
