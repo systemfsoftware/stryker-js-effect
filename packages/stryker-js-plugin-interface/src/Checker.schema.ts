@@ -1,4 +1,14 @@
+import { LocationSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import * as S from 'effect/Schema'
+
+export const CheckerMutantWire = S.Struct({
+  id: S.NonEmptyString,
+  fileName: S.NonEmptyString,
+  mutatorName: S.NonEmptyString,
+  replacement: S.String,
+  location: LocationSchema,
+})
+export type CheckerMutantWire = typeof CheckerMutantWire.Type
 
 export const CheckStatus = S.Literals(['passed', 'compileError'])
 export type CheckStatus = typeof CheckStatus.Type

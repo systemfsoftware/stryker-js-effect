@@ -1,11 +1,12 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import type { MutantTestCoverage } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type { RunPlan as MutantRunPlan, TestPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import type { RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import type { CheckResult, PassedCheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
+  CheckerMutantFromMutant,
   isCustomTestRunner,
   MutantTested,
   MutationTestingPlanReady,
@@ -23,6 +24,7 @@ import * as Pool from 'effect/Pool'
 import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
@@ -37,7 +39,7 @@ import type { CheckerCrash, CheckerResourceService } from '../Checker.js'
 import { checkGroupedPlans, createCheckerFactory } from '../Checker.js'
 import { REMEMBERED_REASON, toRelativeNormalizedFileName } from '../IncrementalDiff.paths.js'
 import { toSchemaLocation } from '../mutant-result-mapping.js'
-import { decidePlans, incrementalDiff } from '../Mutants.js'
+import { decidePlans, incrementalDiff, partitionRunPlans, sortRunPlans } from '../Mutants.js'
 import { makeMutationReportingService } from '../mutation-reporting.js'
 import type { MutationReportingService } from '../mutation-reporting.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
@@ -127,39 +129,6 @@ const rememberedResultsOf = (
       onSome: (mutant) => [rememberedResultOf(mutant, entry)],
     })
   )
-}
-
-type EarlyPlan = Exclude<TestPlan, MutantRunPlan>
-
-const isRunPlan = (plan: TestPlan): plan is MutantRunPlan => plan.plan === 'Run'
-
-const earlyResultOf = (plan: EarlyPlan): RunMutantResult =>
-  Object.assign({}, plan.mutant, {
-    location: toSchemaLocation(plan.mutant.location),
-    status: plan.mutant.status ?? 'Ignored',
-  })
-
-const collectPlan = (
-  plan: TestPlan,
-  coveredPlans: MutantRunPlan[],
-  earlyResults: RunMutantResult[],
-): void =>
-  Match.value(plan).pipe(
-    Match.when(isRunPlan, (runPlan) => {
-      coveredPlans.push(runPlan)
-    }),
-    Match.orElse((earlyPlan) => {
-      earlyResults.push(earlyResultOf(earlyPlan))
-    }),
-  )
-
-const partitionPlans = (
-  plans: readonly TestPlan[],
-): { coveredPlans: MutantRunPlan[]; earlyResults: RunMutantResult[] } => {
-  const coveredPlans: MutantRunPlan[] = []
-  const earlyResults: RunMutantResult[] = []
-  plans.forEach((plan) => collectPlan(plan, coveredPlans, earlyResults))
-  return { coveredPlans, earlyResults }
 }
 
 const VALID_MUTANT_STATUSES = [
@@ -271,6 +240,11 @@ const checkPlansWithConfiguredCheckers = (
       ),
   })
 
+const isPlannable = (mutant: Mutant): boolean =>
+  Result.isSuccess(S.decodeUnknownResult(CheckerMutantFromMutant)(mutant))
+
+const plannableMutantsOf = (mutants: readonly Mutant[]): readonly Mutant[] => mutants.filter(isPlannable)
+
 export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageError, StageServices> = Cell.layer({
   read: (command: DryRunDone): Effect.Effect<MutationTestRaw, never, Scope.Scope> =>
     Effect.gen(function*() {
@@ -293,10 +267,15 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
   write: (
     outcome: Result.Result<MutationTestDecision, MutationTestError>,
     raw: MutationTestRaw,
-  ): Effect.Effect<MutationTestDone, StageError, StageServices> =>
-    withPhaseSpan(
+  ): Effect.Effect<MutationTestDone, StageError, StageServices> => {
+    const plannableMutants = plannableMutantsOf(raw.prev.mutants)
+    return withPhaseSpan(
       'mutationTest',
-      { mutantCount: raw.prev.mutants.length, testCount: raw.prev.dryRunResult.tests.length },
+      {
+        mutantCount: raw.prev.mutants.length,
+        skippedMutantCount: raw.prev.mutants.length - plannableMutants.length,
+        testCount: raw.prev.dryRunResult.tests.length,
+      },
       () =>
         Effect.gen(function*() {
           const decision = yield* Result.match(outcome, {
@@ -403,21 +382,21 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                 )
                 const currentRelativeFiles = yield* readCurrentRelativeFiles(prev.project, env.basePath)
                 const incremental = incrementalDiff({
-                  currentMutants: prev.mutants,
+                  currentMutants: plannableMutants,
                   testCoverage: prev.testCoverage,
                   incrementalReport: prev.project.incrementalReport,
                   currentRelativeFiles,
                   basePath: env.basePath,
                   force: prev.options.force,
                 })
-                const rememberedResults = rememberedResultsOf(prev.mutants, incremental.remembered)
+                const rememberedResults = rememberedResultsOf(plannableMutants, incremental.remembered)
                 yield* Effect.when(
                   Effect.logInfo(
                     `Incremental mode: reusing ${rememberedResults.length} mutant result(s), running ${incremental.mutants.length} mutant(s).`,
                   ),
                   Effect.succeed(rememberedResults.length > 0),
                 )
-                const { coveredPlans, earlyResults: noCoverageResults } = partitionPlans(
+                const { runPlans, earlyResults: noCoverageResults } = partitionRunPlans(
                   yield* decidePlans(
                     incremental.mutants,
                     prev.testCoverage,
@@ -432,9 +411,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                     sandboxFileByName,
                   ),
                 )
-                const sortedPlans = [...coveredPlans].sort(
-                  (a, b) => Number(a.runOptions.reloadEnvironment) - Number(b.runOptions.reloadEnvironment),
-                )
+                const sortedPlans = sortRunPlans(runPlans)
                 const allPlansForReporter: readonly MutantRunPlan[] = [...sortedPlans]
                 yield* offerReporterEvent(
                   prev.reporterStage,
@@ -651,5 +628,6 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
           Match.exhaustive,
         )
       ),
-    ),
+    )
+  },
 })

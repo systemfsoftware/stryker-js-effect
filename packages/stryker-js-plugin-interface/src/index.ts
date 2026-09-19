@@ -11,6 +11,7 @@ export type {
   Position,
 } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 export * from './Checker.js'
+export { CheckerMutantWire } from './Checker.schema.js'
 export * from './Evaluator.js'
 export * from './ExitClass.js'
 export * from './Metrics.schema.js'

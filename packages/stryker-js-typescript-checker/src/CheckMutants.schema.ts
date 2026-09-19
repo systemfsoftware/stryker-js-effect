@@ -1,4 +1,4 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 /** A file name the node map can be keyed by: non-empty, and naming an extension. */
@@ -26,12 +26,12 @@ const TSFileNodeSchema: S.Codec<NodeDecodedShape, unknown> = S.suspend(() =>
 export class CheckMutantsInput extends S.TaggedClass<CheckMutantsInput>()(
   'CheckMutantsInput',
   {
-    mutants: S.Array(Mutant),
+    mutants: S.Array(CheckerMutantWire),
     diagnostics: S.Array(DiagnosticSchema),
     nodes: S.Record(SourceFileSchema, TSFileNodeSchema),
   },
 ) {}
 
-export type MutantDecoded = S.Schema.Type<typeof Mutant>
+export type MutantDecoded = CheckerMutantWire
 export type DiagnosticDecoded = S.Schema.Type<typeof DiagnosticSchema>
 export type NodeDecoded = NodeDecodedShape

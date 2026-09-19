@@ -8,21 +8,25 @@
  */
 
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import type {
-  FileDescriptions,
-  Mutant,
-  RunPlan as MutantRunPlan,
-} from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type { CheckResult, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { FileDescriptions, RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import {
+  CheckerMutantWire,
+  CheckerRpcs,
+  type CheckResult,
+  type StrykerOptions,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 
+import { encodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-runtime'
+import * as Clock from 'effect/Clock'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Match from 'effect/Match'
+import * as Metric from 'effect/Metric'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
-
-import { CheckerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
-import { encodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-runtime'
 import {
   admitCheckerAnswer,
   CheckerAnsweredUnrequested,
@@ -33,6 +37,7 @@ import {
   type CheckGroupDecision,
   type CheckResultDecision,
 } from './admit-checker-answer.workflow.js'
+import { checkerCrashes, checkerDuration, checkerMutantsChecked, checkerMutantsSkipped } from './metrics.js'
 import type { IdGeneratorShape } from './Worker.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from './Worker.schema.js'
 import type { ChildProcessCrashedError as ChildProcessCrashedErrorType } from './Worker.schema.js'
@@ -52,19 +57,11 @@ export type { CheckerContractBroken }
 export interface CheckerResourceService {
   readonly check: (
     checkerName: string,
-    mutants: readonly Mutant[],
+    mutants: readonly CheckerMutantWire[],
   ) => Effect.Effect<Record<string, CheckResult>, CheckerCrash>
-
-  /**
-   * Partition mutants into groups that can be checked together.
-   *
-   * A checker with no grouping opinion returns one group per mutant — the
-   * identity partition — rather than leaving the member off, which is what
-   * every call site used to synthesise for itself.
-   */
   readonly group: (
     checkerName: string,
-    mutants: readonly Mutant[],
+    mutants: readonly CheckerMutantWire[],
   ) => Effect.Effect<readonly (readonly string[])[], CheckerCrash>
 }
 
@@ -297,12 +294,38 @@ export const makeCheckerChildProcess = (params: {
     )
 
     return {
-      check: (checkerName: string, mutants: readonly Mutant[]) =>
-        client.check({ checkerName, mutants: [...mutants] }).pipe(
-          Effect.mapError((error) => crashed(error.message)),
-        ),
-      group: (checkerName: string, mutants: readonly Mutant[]) =>
+      check: (checkerName: string, mutants: readonly CheckerMutantWire[]) =>
+        Effect.gen(function*() {
+          const start = yield* Clock.currentTimeMillis
+          return yield* client.check({ checkerName, mutants: [...mutants] }).pipe(
+            Effect.withSpan('stryker.checker.check', {
+              attributes: {
+                'stryker.checker.name': checkerName,
+                'stryker.mutants.count': mutants.length,
+              },
+            }),
+            Effect.onExit((exit) =>
+              Effect.gen(function*() {
+                const end = yield* Clock.currentTimeMillis
+                yield* Metric.update(checkerDuration, Duration.millis(end - start))
+                if (Exit.isSuccess(exit)) {
+                  yield* Metric.update(checkerMutantsChecked, mutants.length)
+                } else {
+                  yield* Metric.update(checkerCrashes, 1)
+                }
+              })
+            ),
+            Effect.mapError((error) => crashed(error.message)),
+          )
+        }),
+      group: (checkerName: string, mutants: readonly CheckerMutantWire[]) =>
         client.group({ checkerName, mutants: [...mutants] }).pipe(
+          Effect.withSpan('stryker.checker.group', {
+            attributes: {
+              'stryker.checker.name': checkerName,
+              'stryker.mutants.count': mutants.length,
+            },
+          }),
           Effect.mapError((error) => crashed(error.message)),
         ),
     }
@@ -406,6 +429,49 @@ const writeGroupOutcome = (
   })
 
 // ---------------------------------------------------------------------------
+interface PartitionedPlansForWire {
+  readonly wireMutants: readonly CheckerMutantWire[]
+  readonly skipped: readonly { readonly id: string; readonly fileName: string }[]
+  readonly skippedAnswers: Readonly<Record<string, CheckResult>>
+  readonly skippedGroups: readonly (readonly string[])[]
+}
+
+const partitionPlansForWire = (plans: readonly MutantRunPlan[]): PartitionedPlansForWire =>
+  plans.reduce<PartitionedPlansForWire>(
+    (acc, plan) => {
+      const decodeResult = S.decodeUnknownResult(CheckerMutantWire)(plan.mutant)
+      return Result.match(decodeResult, {
+        onSuccess: (wireMutant) => ({
+          ...acc,
+          wireMutants: [...acc.wireMutants, wireMutant],
+        }),
+        onFailure: () => ({
+          ...acc,
+          skipped: [...acc.skipped, { id: plan.mutant.id, fileName: plan.mutant.fileName }],
+          skippedAnswers: {
+            ...acc.skippedAnswers,
+            [plan.mutant.id]: { status: 'compileError', reason: 'Invalid wire mutant description' },
+          },
+          skippedGroups: [...acc.skippedGroups, [plan.mutant.id]],
+        }),
+      })
+    },
+    { wireMutants: [], skipped: [], skippedAnswers: {}, skippedGroups: [] },
+  )
+
+const logSkippedMutants = (
+  checkerName: string,
+  skipped: readonly { readonly id: string; readonly fileName: string }[],
+): Effect.Effect<void> =>
+  Effect.forEach(
+    skipped,
+    (item) =>
+      Effect.logWarning(
+        `Checker "${checkerName}" skipped mutant ${item.id} in ${item.fileName}: location or metadata cannot be described to checker`,
+      ),
+    { discard: true },
+  )
+
 /**
  * Ask a checker about run plans and get run plans back.
  *
@@ -430,16 +496,22 @@ export const checkPlans = (
         readonly plans: readonly MutantRunPlan[]
       },
     ) =>
-      // raw: { checkerName, requestedIds, answers } from checker
-      command.checker
-        .check(command.checkerName, command.plans.map((plan) => plan.mutant))
-        .pipe(
-          Effect.map((answers) => ({
-            checkerName: command.checkerName,
-            requestedIds: command.plans.map((plan) => plan.mutant.id),
-            answers,
-          })),
-        ),
+      Effect.gen(function*() {
+        const partitioned = partitionPlansForWire(command.plans)
+        yield* logSkippedMutants(command.checkerName, partitioned.skipped)
+        if (partitioned.skipped.length > 0) {
+          yield* Metric.update(checkerMutantsSkipped, partitioned.skipped.length)
+        }
+        yield* Effect.annotateCurrentSpan({
+          'stryker.checker.skipped_mutants_count': partitioned.skipped.length,
+        })
+        const answers = yield* command.checker.check(command.checkerName, partitioned.wireMutants)
+        return {
+          checkerName: command.checkerName,
+          requestedIds: command.plans.map((plan) => plan.mutant.id),
+          answers: { ...partitioned.skippedAnswers, ...answers },
+        }
+      }),
     decode: (
       raw: {
         readonly checkerName: string
@@ -481,16 +553,19 @@ export const groupPlans = (
         readonly plans: readonly MutantRunPlan[]
       },
     ) =>
-      // raw: { checkerName, requestedIds, idGroups } from checker
-      command.checker
-        .group(command.checkerName, command.plans.map((plan) => plan.mutant))
-        .pipe(
-          Effect.map((idGroups) => ({
-            checkerName: command.checkerName,
-            requestedIds: command.plans.map((plan) => plan.mutant.id),
-            idGroups,
-          })),
-        ),
+      Effect.gen(function*() {
+        const partitioned = partitionPlansForWire(command.plans)
+        yield* logSkippedMutants(command.checkerName, partitioned.skipped)
+        yield* Effect.annotateCurrentSpan({
+          'stryker.checker.skipped_mutants_count': partitioned.skipped.length,
+        })
+        const idGroups = yield* command.checker.group(command.checkerName, partitioned.wireMutants)
+        return {
+          checkerName: command.checkerName,
+          requestedIds: command.plans.map((plan) => plan.mutant.id),
+          idGroups: [...partitioned.skippedGroups, ...idGroups],
+        }
+      }),
     decode: (
       raw: {
         readonly checkerName: string

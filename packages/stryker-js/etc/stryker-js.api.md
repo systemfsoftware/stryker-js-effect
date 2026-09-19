@@ -9,13 +9,14 @@ import { Cell } from '@systemfsoftware/effect-cell-types';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import * as Context from 'effect/Context';
 import * as DateTime from 'effect/DateTime';
-import * as Duration from 'effect/Duration';
-import { Duration as Duration_2 } from 'effect/Duration';
+import { Duration } from 'effect/Duration';
+import * as Duration_2 from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
 import * as FileSystem from 'effect/FileSystem';
 import * as HashMap from 'effect/HashMap';
 import * as Layer from 'effect/Layer';
+import * as Metric from 'effect/Metric';
 import * as MutableHashMap from 'effect/MutableHashMap';
 import * as MutableHashSet from 'effect/MutableHashSet';
 import * as Option from 'effect/Option';
@@ -81,12 +82,54 @@ export type CheckerContractBroken = CheckerAnsweredUnrequested | CheckerSkippedR
 // @public (undocumented)
 export type CheckerCrash = ChildProcessCrashedError | OutOfMemoryError;
 
+// @public (undocumented)
+export const checkerCrashes: Metric.Counter<number>;
+
+// @public (undocumented)
+export const checkerDuration: Metric.Histogram<Duration>;
+
+// @public (undocumented)
+export const checkerMutantsChecked: Metric.Counter<number>;
+
+// @public (undocumented)
+export const checkerMutantsSkipped: Metric.Counter<number>;
+
+// @public (undocumented)
+export const CheckerMutantWire: S.Struct<{
+    readonly id: S.NonEmptyString;
+    readonly fileName: S.NonEmptyString;
+    readonly mutatorName: S.NonEmptyString;
+    readonly replacement: S.String;
+    readonly location: S.Struct<{
+        readonly start: S.Struct<{
+            readonly line: S.Finite;
+            readonly column: S.Finite;
+        }>;
+        readonly end: S.Struct<{
+            readonly line: S.Finite;
+            readonly column: S.Finite;
+        }>;
+    }>;
+}>;
+
+// @public (undocumented)
+export type CheckerMutantWire = typeof CheckerMutantWire.Type;
+
 // @public
 export interface CheckerResourceService {
     // (undocumented)
-    readonly check: (checkerName: string, mutants: readonly Mutant[]) => Effect.Effect<Record<string, CheckResult>, CheckerCrash>;
-    readonly group: (checkerName: string, mutants: readonly Mutant[]) => Effect.Effect<readonly (readonly string[])[], CheckerCrash>;
+    readonly check: (checkerName: string, mutants: readonly CheckerMutantWire[]) => Effect.Effect<Record<string, CheckResult>, CheckerCrash>;
+    // (undocumented)
+    readonly group: (checkerName: string, mutants: readonly CheckerMutantWire[]) => Effect.Effect<readonly (readonly string[])[], CheckerCrash>;
 }
+
+// Warning: (ae-forgotten-export) The symbol "CheckerRequest" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "CheckerCheckResult" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "CheckerFailed" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "CheckerGroupResult" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export const CheckerRpcs: RpcGroup.RpcGroup<TracedRpc<'check', typeof CheckerRequest, typeof CheckerCheckResult, typeof CheckerFailed> | TracedRpc<'group', typeof CheckerRequest, typeof CheckerGroupResult, typeof CheckerFailed>>;
 
 // Warning: (ae-forgotten-export) The symbol "CheckerSkippedRequested_base" needs to be exported by the entry point index.d.mts
 //
@@ -133,18 +176,6 @@ export const CONFIG_SYNTAX_HELP: string;
 
 // @public (undocumented)
 export const ConfigDocumentSchema: S.$Record<S.String, S.Unknown>;
-
-// @public (undocumented)
-export interface ConfigEnv {
-    // (undocumented)
-    readonly command: 'run' | 'merge-reports';
-    // (undocumented)
-    readonly isCi: boolean;
-    // (undocumented)
-    readonly isDryRun: boolean;
-    // (undocumented)
-    readonly mode: OutputMode;
-}
 
 // Warning: (ae-forgotten-export) The symbol "ConfigError_base" needs to be exported by the entry point index.d.mts
 //
@@ -197,7 +228,7 @@ export interface ConfigInvocation {
 }
 
 // @public (undocumented)
-export const connectRetry: Schedule.Schedule<Duration_2, unknown, never, never>;
+export const connectRetry: Schedule.Schedule<Duration, unknown, never, never>;
 
 // @public (undocumented)
 export const countMutants: (mutants: readonly MutantResult[]) => Metrics;
@@ -241,7 +272,7 @@ export interface DryRunDone extends InstrumentDone {
     // (undocumented)
     readonly testCoverage: TestCoverage;
     // (undocumented)
-    readonly timeOverhead: Duration.Duration;
+    readonly timeOverhead: Duration_2.Duration;
 }
 
 // @public (undocumented)
@@ -1118,9 +1149,6 @@ export interface ResolvedMode {
 
 // @public (undocumented)
 export function resolveExitCode(pending: Iterable<ExitClass>, signal: number | null): number;
-
-// @public (undocumented)
-export function resolveExtends(configFile: string, document: PartialStrykerOptions, configEnv: ConfigEnv): Effect.Effect<PartialStrykerOptions, ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, Path.Path>;
 
 // @public (undocumented)
 export const RUN_EVENTS_QUEUE_BOUND = 256;

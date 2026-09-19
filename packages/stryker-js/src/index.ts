@@ -12,6 +12,8 @@ import { hostOptionsOf, prepareCommandOf, runOnHost } from './run-host.js'
 import { makeRunLayer, mutationTestCell, RUN_EVENTS_QUEUE_BOUND, shouldKeepTempDir } from './Run.js'
 import { StageError } from './Run.schema.js'
 
+export { checkerCrashes, checkerDuration, checkerMutantsChecked, checkerMutantsSkipped } from './metrics.js'
+
 export type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 export type {
   CoverageData,
@@ -68,6 +70,8 @@ export type {
   TracedRpc,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 export {
+  CheckerMutantWire,
+  CheckerRpcs,
   DryRunCompleted,
   FileResultSchema,
   LocationSchema,
@@ -93,7 +97,6 @@ export {
 export { CheckerAnsweredUnrequested, CheckerSkippedRequested } from './admit-checker-answer.workflow.js'
 export type { CheckerContractBroken, CheckerCrash, CheckerResourceService } from './Checker.js'
 export { checkGroupedPlans } from './Checker.js'
-export type { ConfigEnv } from './config/stryker-config.js'
 export type { TestCoverage } from './Mutants.js'
 export type {
   AnyPluginDescriptor,
@@ -205,7 +208,6 @@ export {
   loadConfigCell,
   mergeConfigs,
   readConfig,
-  resolveExtends,
   validateOptions,
 } from './run/load-config.cell.js'
 export type { ConfigInvocation, ValidationSchemaDocument } from './run/load-config.cell.js'
