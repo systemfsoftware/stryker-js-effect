@@ -26,7 +26,7 @@
     "format": "./bin/dprint fmt",
     "format:check": "./bin/dprint check",
     "gate:dist": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} build ${TURBO_BASE:+--filter=...[$TURBO_BASE]}",
-    "gate:tasks": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} --continue lint lint:tsgo typecheck test ${TURBO_BASE:+--filter=...[$TURBO_BASE]}",
+    "gate:tasks": "pnpm test:scripts && turbo --concurrency=${TURBO_CONCURRENCY:-50%} --continue lint lint:tsgo typecheck test ${TURBO_BASE:+--filter=...[$TURBO_BASE]}",
     "lint": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} lint",
     "lgtm:down": "process-compose down",
     "lgtm:up": "process-compose up --tui=false --detached --keep-project && timeout 180 process-compose project is-ready --wait",
@@ -35,6 +35,7 @@
     "publish:unpublished": "./scripts/publish-and-setup-npm-trust.ts",
     "test": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} test",
     "test:e2e": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} test:e2e",
+    "test:scripts": "deno test --config=scripts/deno.json scripts/lib/",
     "typecheck": "turbo --concurrency=${TURBO_CONCURRENCY:-50%} --continue typecheck typecheck:node",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit"
   },

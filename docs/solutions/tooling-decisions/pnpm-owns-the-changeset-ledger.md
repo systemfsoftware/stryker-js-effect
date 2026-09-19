@@ -19,7 +19,9 @@ applies_when:
 
 The release planner derives a phase from two numbers: the size of the release set — workspace versions the registry does not yet serve — and how many change intents are pending. Pending intents select version; only a repo with nothing pending and unpublished versions selects publish. `plan-release` (invoked as `./scripts/plan-release.ts`) prints it; the Release workflow routes on it. Publish while intents remain ships later commits under the previous changelog.
 
-The trap is the second number. `pnpm version -r` **retains** the intent files after it consumes them, so counting `.changeset/*.md` answers "how many intent files exist", never "how many are pending". Read that way, every release leaves the pipeline in the version phase forever, and each push to the default branch opens a `version-packages` pull request that deletes files the previous run already consumed.
+The trap is the second number. `pnpm version -r` consumes an intent into the ledger on the version PR, but it unlinks the intent file only on a later `pnpm version -r`, after `confirmPublished()` sees those versions on npm. Counting `.changeset/*.md` therefore answers "how many intent files exist", never "how many are pending". Read that way, every release leaves the pipeline in the version phase forever, and each push to the default branch opens a `version-packages` pull request that deletes files the previous run already consumed.
+
+If `.changeset/changelogs/` is removed before that confirmation, pnpm never unlinks the matching intents. Those files are orphans, not pending work.
 
 ## Guidance
 
@@ -44,7 +46,11 @@ The ledger makes consumption a fact recorded beside the intent, so an intent fil
 
 **Two independent guards, not one.** The pending count and the version-bump guard answer different questions — "is an intent unrecorded?" and "did a version actually change?" A change may not weaken either on the assumption that the other covers it; the phantom PR returns if both are argued from the same signal.
 
-**Pending intents win over unpublished versions.** A failed publish leaves unpublished versions; a later merge can add intents. `decidePhase` then opens a version PR instead of publishing. Publishing while intents remain ships later commits under the previous changelog. Unpublished version numbers are abandoned when `pnpm version -r` bumps past them; they were never on the registry.
+**Pending intents win over unpublished versions.** A failed publish leaves unpublished versions; a later merge can add intents. `decidePhase(owed, pending)` is `pending > 0 ? 'version' : owed > 0 ? 'publish' : 'none'`. Publishing while intents remain ships later commits under the previous changelog. Unpublished version numbers are abandoned when `pnpm version -r` bumps past them; they were never on the registry.
+
+**Unlink is registry confirmation, not consumption.** Consumption writes the ledger and a changelog file; unlink waits for `confirmPublished()` / `verifyPublished()` on a subsequent version run. Deleting those changelog files out of band strands the intents as permanent orphans.
+
+**Release runs do not cancel each other.** The Release workflow concurrency group for the default-branch ref sets `cancel-in-progress: false`. A killed version job only mutates `changeset-release/main`. A killed publish job leaves registry 404s in `unpublishedOf()`, so `owed` remains until npm serves the versions.
 
 ## When to Apply
 
@@ -82,8 +88,9 @@ A ledger the parse must distinguish: one consumed intent, one still pending.
 ## Prevention
 
 - Keep a parser test for every ledger shape the reader tolerates, including the bare/null entry that means "empty".
-- Keep the phase derivation testable without a registry: feed a stubbed release set and a stubbed pending count, and assert the phase.
+- Keep the phase derivation testable without a registry: feed a stubbed release set and a stubbed pending count, and assert the phase. Bind those tests through workspace `test:scripts` on `gate:tasks` so `check:ci` cannot skip them.
 - Keep the version-bump guard in the release-PR entry point. It is what makes a miscount survivable.
+- Do not invert `decidePhase` to prefer `owed > 0` over `pending > 0`. That publishes HEAD under the previous changelog and skips the version PR for the new intents.
 
 ## Related
 
