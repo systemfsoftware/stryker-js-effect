@@ -100,6 +100,17 @@ gate(invocation I) == artifact(I)      -- checkable
 gate(invocation I) == artifact(J)      -- measures I vs J, not the contract
 ```
 
+## Known limitation: the two flows do not agree with each other
+
+Aligning the artifacts makes one flow green, not both. On this repo the same
+commit produces one alias order under the full gate and the other under an
+isolated build, so a committed report can only match one of them - the pull
+request's CI is the flow whose variant is committed, and a local warm `check:ci`
+reports the churn. Two changes upstream would remove the choice entirely: make
+the emitted declaration chunk names stable (the alias order follows them), and
+export the type the report warns about. Until then the flip is a property of the
+build, not of the change being reviewed.
+
 ## Prevention
 
 - When a report-only gate fails with a signature warning, diff the generated
