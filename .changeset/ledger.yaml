@@ -66,6 +66,10 @@
     - stryker-js-instrumenter-effect-surface
     - stryker-js-instrumenter-home-migration
     - stryker-js-instrumenter-walker-contract
+"@systemfsoftware/stryker-js-instrumenter@7.1.0":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - export-forgotten-public-types
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -122,6 +126,12 @@
   intents:
     - drop-naked-ignorers
     - worker-socket-owner-mode
+"@systemfsoftware/stryker-js@6.1.0":
+  dir: packages/stryker-js
+  intents:
+    - bundle-cli-workspace-deps
+    - drop-minimatch-use-std-path
+    - export-forgotten-public-types
 "@systemfsoftware/stryker-test-contribution@3.0.0":
   dir: packages/stryker-test-contribution
   intents:
