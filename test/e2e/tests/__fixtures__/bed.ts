@@ -22,8 +22,6 @@ const CLI_PACKAGE = '@systemfsoftware/stryker-js'
 const PLUGIN_PACKAGES = ['@systemfsoftware/stryker-js-vitest-runner'] as const
 
 const PACKED_PACKAGES = [
-  '@systemfsoftware/stryker-js-instrumenter',
-  '@systemfsoftware/stryker-ignorer-interface',
   '@systemfsoftware/stryker-js-plugin-interface',
   '@systemfsoftware/stryker-js-plugin-runtime',
   '@systemfsoftware/stryker-js-html-reporter',
