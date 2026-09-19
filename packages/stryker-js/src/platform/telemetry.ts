@@ -3,6 +3,7 @@ import { AggregationTemporalityPreference, OTLPMetricExporter } from '@opentelem
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics'
 import { BatchSpanProcessor, SimpleSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-base'
+import * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -12,8 +13,8 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Scope from 'effect/Scope'
 
-const SHUTDOWN_TIMEOUT = Duration.seconds(3)
 const EXPORT_TIMEOUT_MILLIS = 5000
+const SHUTDOWN_TIMEOUT = Duration.millis(EXPORT_TIMEOUT_MILLIS + 1_000)
 
 const withBestEffortShutdown = <A, E>(
   self: Layer.Layer<A, E>,
@@ -30,6 +31,7 @@ const withBestEffortShutdown = <A, E>(
         Scope.close(scope, Exit.void).pipe(
           Effect.interruptible,
           Effect.timeoutOption(shutdownTimeout),
+          Effect.tapCause((cause) => Effect.logWarning(`Telemetry shutdown did not complete: ${Cause.pretty(cause)}`)),
           Effect.ignoreCause,
         ),
     ).pipe(Effect.map(({ context }) => context)),
@@ -44,16 +46,12 @@ const TRACES_PATH = '/v1/traces'
 const METRICS_PATH = '/v1/metrics'
 const DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS = 60_000
 
+const SIGNAL_PATH = /\/(?:v1|v1\/(?:traces|metrics))$/u
+
 const urlFor = (endpoint: string | undefined, path: string): string | undefined =>
   Option.match(Option.fromUndefinedOr(endpoint), {
     onNone: () => undefined,
-    onSome: (base) => {
-      const trimmed = base.replace(/\/+$/u, '')
-      return Match.value(trimmed.endsWith(path)).pipe(
-        Match.when(true, () => trimmed),
-        Match.orElse(() => `${trimmed}${path}`),
-      )
-    },
+    onSome: (base) => `${base.replace(/\/+$/u, '').replace(SIGNAL_PATH, '')}${path}`,
   })
 
 const resourceUrlFor = (

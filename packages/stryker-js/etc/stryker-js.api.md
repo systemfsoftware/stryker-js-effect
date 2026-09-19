@@ -77,6 +77,14 @@ export const calculateMetrics: (files: Readonly<Record<string, FileResult>>) => 
 export class CheckerAnsweredUnrequested extends CheckerAnsweredUnrequested_base {}
 
 // @public (undocumented)
+export const CheckerCheckResult: S.$Record<S.String, S.Union<readonly [S.Struct<{
+    readonly status: S.Literal<"passed">;
+}>, S.Struct<{
+    readonly status: S.Literal<"compileError">;
+    readonly reason: S.String;
+}>]>>;
+
+// @public (undocumented)
 export type CheckerContractBroken = CheckerAnsweredUnrequested | CheckerSkippedRequested;
 
 // @public (undocumented)
@@ -87,6 +95,14 @@ export const checkerCrashes: Metric.Counter<number>;
 
 // @public (undocumented)
 export const checkerDuration: Metric.Histogram<Duration>;
+
+// Warning: (ae-forgotten-export) The symbol "CheckerFailed_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class CheckerFailed extends CheckerFailed_base {}
+
+// @public (undocumented)
+export const CheckerGroupResult: S.$Array<S.$Array<S.String>>;
 
 // @public (undocumented)
 export const checkerMutantsChecked: Metric.Counter<number>;
@@ -115,6 +131,30 @@ export const CheckerMutantWire: S.Struct<{
 // @public (undocumented)
 export type CheckerMutantWire = typeof CheckerMutantWire.Type;
 
+// @public (undocumented)
+export const CheckerRequest: S.Struct<{
+    readonly checkerName: S.String;
+    readonly mutants: S.$Array<S.Struct<{
+        readonly id: S.NonEmptyString;
+        readonly fileName: S.NonEmptyString;
+        readonly mutatorName: S.NonEmptyString;
+        readonly replacement: S.String;
+        readonly location: S.Struct<{
+            readonly start: S.Struct<{
+                readonly line: S.Finite;
+                readonly column: S.Finite;
+            }>;
+            readonly end: S.Struct<{
+                readonly line: S.Finite;
+                readonly column: S.Finite;
+            }>;
+        }>;
+    }>>;
+}>;
+
+// @public (undocumented)
+export type CheckerRequest = typeof CheckerRequest.Type;
+
 // @public
 export interface CheckerResourceService {
     // (undocumented)
@@ -123,11 +163,6 @@ export interface CheckerResourceService {
     readonly group: (checkerName: string, mutants: readonly CheckerMutantWire[]) => Effect.Effect<readonly (readonly string[])[], CheckerCrash>;
 }
 
-// Warning: (ae-forgotten-export) The symbol "CheckerRequest" needs to be exported by the entry point index.d.mts
-// Warning: (ae-forgotten-export) The symbol "CheckerCheckResult" needs to be exported by the entry point index.d.mts
-// Warning: (ae-forgotten-export) The symbol "CheckerFailed" needs to be exported by the entry point index.d.mts
-// Warning: (ae-forgotten-export) The symbol "CheckerGroupResult" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
 export const CheckerRpcs: RpcGroup.RpcGroup<TracedRpc<'check', typeof CheckerRequest, typeof CheckerCheckResult, typeof CheckerFailed> | TracedRpc<'group', typeof CheckerRequest, typeof CheckerGroupResult, typeof CheckerFailed>>;
 

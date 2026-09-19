@@ -70,7 +70,11 @@ export type {
   TracedRpc,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 export {
+  CheckerCheckResult,
+  CheckerFailed,
+  CheckerGroupResult,
   CheckerMutantWire,
+  CheckerRequest,
   CheckerRpcs,
   DryRunCompleted,
   FileResultSchema,

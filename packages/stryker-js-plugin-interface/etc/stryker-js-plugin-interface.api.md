@@ -112,9 +112,6 @@ export class CheckerFailed extends CheckerFailed_base {}
 export const CheckerGroupResult: S.$Array<S.$Array<S.String>>;
 
 // @public (undocumented)
-export const CheckerMutantFromMutant: S.Codec<CheckerMutantWire, Mutant>;
-
-// @public (undocumented)
 export const CheckerMutantWire: S.Struct<{
     readonly id: S.NonEmptyString;
     readonly fileName: S.NonEmptyString;

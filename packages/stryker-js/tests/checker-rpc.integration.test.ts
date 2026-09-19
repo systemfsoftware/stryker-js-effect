@@ -3,6 +3,7 @@ import { CheckerRpcs, makeWorkerClient, WorkerLauncher } from '@systemfsoftware/
 import type { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
 import { layerTraceContextServer } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
@@ -50,44 +51,43 @@ const makeCheckerServer = (
     Layer.provide(layerTraceContextServer),
   )
 
+const makeHarness = () =>
+  Effect.gen(function*() {
+    const [clientSocket, serverSocket] = yield* memorySocketPair
+    const receivedRef = yield* Ref.make<readonly CheckerMutantWire[]>([])
+
+    yield* Effect.forkScoped(Layer.launch(makeCheckerServer(serverSocket, receivedRef)))
+
+    const launcherLayer = Layer.succeed(WorkerLauncher, {
+      spawn: () =>
+        Effect.succeed({
+          pid: 4242,
+          clientLayer: RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
+            Layer.provide(Layer.succeed(Socket.Socket, clientSocket)),
+            Layer.provide(RpcSerialization.layerNdjson),
+          ),
+          exited: Effect.never,
+        }),
+    })
+
+    const client = yield* makeWorkerClient({
+      entrypoint: '/project/checker.mjs',
+      execArgv: [],
+      optionsJson: '{}',
+      rpcs: CheckerRpcs,
+      tempDirPrefix: 'checker-',
+      workingDirectory: '/project',
+    }).pipe(Effect.provide(launcherLayer))
+
+    return { client, receivedRef } satisfies CheckerHarness
+  })
+
 Feature('Verifying mutants through an external checker worker')
   .body(({ scenario }) => {
     scenario(
       'Mutant descriptions travel across the process boundary intact',
       Gherkin.Do.pipe(
-        Given('a worker process ready to verify code mutations')(
-          'harness',
-          () =>
-            Effect.gen(function*() {
-              const [clientSocket, serverSocket] = yield* memorySocketPair
-              const receivedRef = yield* Ref.make<readonly CheckerMutantWire[]>([])
-
-              yield* Effect.forkScoped(Layer.launch(makeCheckerServer(serverSocket, receivedRef)))
-
-              const launcherLayer = Layer.succeed(WorkerLauncher, {
-                spawn: () =>
-                  Effect.succeed({
-                    pid: 4242,
-                    clientLayer: RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
-                      Layer.provide(Layer.succeed(Socket.Socket, clientSocket)),
-                      Layer.provide(RpcSerialization.layerNdjson),
-                    ),
-                    exited: Effect.never,
-                  }),
-              })
-
-              const client = yield* makeWorkerClient({
-                entrypoint: '/project/checker.mjs',
-                execArgv: [],
-                optionsJson: '{}',
-                rpcs: CheckerRpcs,
-                tempDirPrefix: 'checker-',
-                workingDirectory: '/project',
-              }).pipe(Effect.provide(launcherLayer))
-
-              return { client, receivedRef } satisfies CheckerHarness
-            }),
-        ),
+        Given('a worker process ready to verify code mutations')('harness', makeHarness),
         When('the runner submits a mutation with line coordinates for verification')(
           'response',
           (s) => {
@@ -122,6 +122,40 @@ Feature('Verifying mutants through an external checker worker')
               start: { line: 10, column: 5 },
               end: { line: 10, column: 6 },
             })
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A mutant with no identifier is refused before the worker is asked',
+      Gherkin.Do.pipe(
+        Given('a worker process ready to verify code mutations')('harness', makeHarness),
+        When('the runner submits a mutant whose identifier is empty')(
+          'outcome',
+          (s) =>
+            s.harness.client
+              .check({
+                checkerName: 'test-checker',
+                mutants: [
+                  {
+                    id: '',
+                    fileName: 'src/core.ts',
+                    mutatorName: 'ArithmeticOperator',
+                    replacement: '-',
+                    location: {
+                      start: { line: 10, column: 5 },
+                      end: { line: 10, column: 6 },
+                    },
+                  },
+                ],
+              })
+              .pipe(Effect.exit),
+        ),
+        Then('the request is refused and the worker is never asked')((s) =>
+          Effect.gen(function*() {
+            expect(Exit.isFailure(s.outcome)).toBe(true)
+            expect(yield* Ref.get(s.harness.receivedRef)).toHaveLength(0)
           })
         ),
       ),

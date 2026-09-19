@@ -6,7 +6,6 @@ import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter/m
 import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import type { CheckResult, PassedCheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
-  CheckerMutantFromMutant,
   isCustomTestRunner,
   MutantTested,
   MutationTestingPlanReady,
@@ -16,6 +15,7 @@ import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
+import * as Metric from 'effect/Metric'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -35,9 +35,11 @@ import { RunEvents, RunMutantTested } from '../RunEvents.js'
 import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import type { MutationTestDecision } from '../admit-mutation-test.workflow.js'
+import { CheckerMutantFromMutant } from '../checker-mutant-wire.js'
 import type { CheckerCrash, CheckerResourceService } from '../Checker.js'
 import { checkGroupedPlans, createCheckerFactory } from '../Checker.js'
 import { REMEMBERED_REASON, toRelativeNormalizedFileName } from '../IncrementalDiff.paths.js'
+import { checkerMutantsSkipped } from '../metrics.js'
 import { toSchemaLocation } from '../mutant-result-mapping.js'
 import { decidePlans, incrementalDiff, partitionRunPlans, sortRunPlans } from '../Mutants.js'
 import { makeMutationReportingService } from '../mutation-reporting.js'
@@ -243,7 +245,42 @@ const checkPlansWithConfiguredCheckers = (
 const isPlannable = (mutant: Mutant): boolean =>
   Result.isSuccess(S.decodeUnknownResult(CheckerMutantFromMutant)(mutant))
 
-const plannableMutantsOf = (mutants: readonly Mutant[]): readonly Mutant[] => mutants.filter(isPlannable)
+const DROPPED_IDS_IN_WARNING = 5
+
+const partitionPlannable = (
+  mutants: readonly Mutant[],
+): { readonly plannable: readonly Mutant[]; readonly dropped: readonly Mutant[] } => {
+  const plannable: Mutant[] = []
+  const dropped: Mutant[] = []
+  mutants.forEach((mutant) => {
+    if (isPlannable(mutant)) plannable.push(mutant)
+    else dropped.push(mutant)
+  })
+  return { plannable, dropped }
+}
+
+const droppedIdsOf = (dropped: readonly Mutant[]): string =>
+  `${dropped.slice(0, DROPPED_IDS_IN_WARNING).map((mutant) => mutant.id).join(', ')}${
+    Option.match(Option.liftPredicate(dropped.length, (count) => count > DROPPED_IDS_IN_WARNING), {
+      onNone: () => '',
+      onSome: (count) => `, +${count - DROPPED_IDS_IN_WARNING} more`,
+    })
+  }`
+
+const reportDroppedMutants = (dropped: readonly Mutant[]): Effect.Effect<void> =>
+  Match.value(dropped.length).pipe(
+    Match.when(0, () => Effect.void),
+    Match.orElse(() =>
+      Effect.gen(function*() {
+        yield* Metric.update(checkerMutantsSkipped, dropped.length)
+        yield* Effect.logWarning(
+          `${dropped.length} mutant(s) cannot be described to a checker and were left out of the run (${
+            droppedIdsOf(dropped)
+          })`,
+        )
+      })
+    ),
+  )
 
 export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageError, StageServices> = Cell.layer({
   read: (command: DryRunDone): Effect.Effect<MutationTestRaw, never, Scope.Scope> =>
@@ -268,16 +305,17 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
     outcome: Result.Result<MutationTestDecision, MutationTestError>,
     raw: MutationTestRaw,
   ): Effect.Effect<MutationTestDone, StageError, StageServices> => {
-    const plannableMutants = plannableMutantsOf(raw.prev.mutants)
+    const { dropped, plannable: plannableMutants } = partitionPlannable(raw.prev.mutants)
     return withPhaseSpan(
       'mutationTest',
       {
         mutantCount: raw.prev.mutants.length,
-        skippedMutantCount: raw.prev.mutants.length - plannableMutants.length,
+        skippedMutantCount: dropped.length,
         testCount: raw.prev.dryRunResult.tests.length,
       },
       () =>
         Effect.gen(function*() {
+          yield* reportDroppedMutants(dropped)
           const decision = yield* Result.match(outcome, {
             onFailure: (err) => Effect.fail(StageError.make({ stage: err.stage, reason: err.reason, cause: err })),
             onSuccess: (d) => Effect.succeed(d),
