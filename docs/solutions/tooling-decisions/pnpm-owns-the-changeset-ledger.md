@@ -10,14 +10,14 @@ applies_when:
   - "Changing how the release phase is derived from .changeset state"
   - "Changing the pending-intent count or the ledger parser"
   - "Debugging a version-packages pull request that opened with nothing to release"
-tags: [change-intent, ledger, release, pnpm, versioning, phantom-pr]
+  - "Debugging a missing version-packages pull request after a successful publish"
 ---
 
 # pnpm owns the change-intent ledger, so an intent file is not a pending release
 
 ## Context
 
-The release planner derives a phase from two numbers: the size of the release set — workspace versions the registry does not yet serve — and how many change intents are pending. The phase decides which job runs: publish, version, or nothing. `plan-release` (invoked as `./scripts/plan-release.ts`) prints it; the Release workflow routes on it.
+The release planner derives a phase from two numbers: the size of the release set — workspace versions the registry does not yet serve — and how many change intents are pending. The phase decides which job runs first: publish, version, or nothing. `plan-release` (invoked as `./scripts/plan-release.ts`) prints it; the Release workflow routes on it. Publish-first is required: `pnpm version -r` on already-unpublished versions would skip those versions forever.
 
 The trap is the second number. `pnpm version -r` **retains** the intent files after it consumes them, so counting `.changeset/*.md` answers "how many intent files exist", never "how many are pending". Read that way, every release leaves the pipeline in the version phase forever, and each push to the default branch opens a `version-packages` pull request that deletes files the previous run already consumed.
 
@@ -44,11 +44,14 @@ The ledger makes consumption a fact recorded beside the intent, so an intent fil
 
 **Two independent guards, not one.** The pending count and the version-bump guard answer different questions — "is an intent unrecorded?" and "did a version actually change?" A change may not weaken either on the assumption that the other covers it; the phantom PR returns if both are argued from the same signal.
 
+**Owed and pending can both be nonzero.** A failed publish leaves unpublished versions; a later merge can add intents. Exclusive `decidePhase` then publishes and stops. Tags do not retrigger a push to the default branch. The evaluator owns GitHub Actions workflows, so `openVersionPrIfPending` runs from `create-github-releases` after a successful publish — the last publish step that already has a GitHub token — rather than sequencing a second workflow job.
+
 ## When to Apply
 
 - Changing the phase expression in the release planner, or the pending count feeding it.
 - Adding a ledger shape to the parser. A shape that fails to parse must degrade to "nothing consumed", never to "consumed".
 - Explaining why `.changeset/` still holds intent files after a release landed.
+- Explaining why a successful publish left no version-packages pull request even though intents were pending.
 
 ## Examples
 
