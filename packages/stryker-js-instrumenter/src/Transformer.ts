@@ -214,13 +214,13 @@ function attachedComments(node: Node): readonly LocatedComment[] {
   return leadingCommentsOn(node) ?? NO_COMMENTS
 }
 
-function leadingCommentsOn(node: Node): readonly LocatedComment[] | undefined {
-  if (isCommentBearing(node)) return node.leadingComments
+function leadingCommentsOn(value: unknown): readonly LocatedComment[] | undefined {
+  if (isCommentBearing(value)) return value.leadingComments
   return undefined
 }
 
-function isCommentBearing(node: Node): node is Node & NodeWithLeadingComments {
-  return Predicate.hasProperty(node, 'leadingComments')
+function isCommentBearing(value: unknown): value is NodeWithLeadingComments {
+  return Predicate.hasProperty(value, 'leadingComments')
 }
 
 /** A comment that matched the directive grammar, decoded into the fields a rule needs. */
@@ -865,10 +865,6 @@ function shouldPlaceHeader(
   return hasPlacedMutants(mutantCollector, originFileName) && options.noHeader !== true
 }
 
-interface CommentBearing {
-  leadingComments?: unknown
-}
-
 const headerFor = (root: Program): Effect.Effect<readonly Statement[], ParseFailed> =>
   Effect.map(instrumentationHeader, (header) =>
     Option.match(leadingCommentsOf(root), {
@@ -877,16 +873,7 @@ const headerFor = (root: Program): Effect.Effect<readonly Statement[], ParseFail
     }))
 
 function leadingCommentsOf(root: Program): Option.Option<readonly unknown[]> {
-  return Option.filter(Option.fromNullishOr(commentHostLeadingComments(root.body[0])), isCommentArray)
-}
-
-function commentHostLeadingComments(value: unknown): unknown {
-  if (isCommentHost(value)) return value.leadingComments
-  return undefined
-}
-
-function isCommentHost(value: unknown): value is CommentBearing {
-  return Predicate.hasProperty(value, 'leadingComments')
+  return Option.filter(Option.some<unknown>(leadingCommentsOn(root.body[0])), isCommentArray)
 }
 
 function commentedHeader(leadingComments: readonly unknown[], header: readonly Statement[]): Statement {

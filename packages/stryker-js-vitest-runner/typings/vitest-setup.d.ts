@@ -13,7 +13,6 @@ declare module 'vitest' {
     mutantActivation: MutantActivation
     activeMutant: string | undefined
     mode: 'mutant' | 'dry-run'
-    isGreaterThanVitest4Point1: boolean
   }
   interface TaskMeta {
     hitCount: number | undefined

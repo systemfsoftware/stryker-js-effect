@@ -10,25 +10,11 @@ import {
   toothlessTestFiles,
 } from '@systemfsoftware/stryker-test-contribution'
 
+import { optionalRunnerFields } from './__fixtures__/optional-runner-fields.js'
+
 const Feature = makeFeature({ it, layer })
 
 const LOCATION = { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } }
-
-interface OptionalRunnerFields {
-  killedBy?: string[]
-  coveredBy?: string[]
-}
-
-const optionalRunnerFields = (killedBy?: string[], coveredBy?: string[]): OptionalRunnerFields => {
-  const fields: OptionalRunnerFields = {}
-  if (killedBy !== undefined) {
-    fields.killedBy = killedBy
-  }
-  if (coveredBy !== undefined) {
-    fields.coveredBy = coveredBy
-  }
-  return fields
-}
 
 const mutantOf = (
   id: string,

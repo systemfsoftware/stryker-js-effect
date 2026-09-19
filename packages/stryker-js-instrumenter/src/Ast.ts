@@ -390,10 +390,8 @@ interface NodeEntry {
 
 const isNodeList = (value: unknown): value is Array<unknown> => Array.isArray(value)
 
-const isWalkableNode = (node: Node): node is Oxc.Node => isAstNode(node)
-
 const walkableNode = (node: Node): Oxc.Node => {
-  if (isWalkableNode(node)) return node
+  if (isAstNode(node)) return node
   throw new Error('Expected an AST node to walk')
 }
 
@@ -427,7 +425,7 @@ function appendEntry(node: Node, out: NodeEntry[]): void {
   out.push({ node, start: span.start, end: span.end })
 }
 
-export function isAstNode(value: unknown): value is Node & Record<string, unknown> {
+export function isAstNode(value: unknown): value is Oxc.Node & Record<string, unknown> {
   return Predicate.isObject(value) && typeof value['type'] === 'string'
 }
 

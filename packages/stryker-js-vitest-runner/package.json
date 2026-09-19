@@ -52,7 +52,7 @@
   },
   "peerDependencies": {
     "effect": "catalog:",
-    "vitest": ">=2.0.0"
+    "vitest": ">=4.1.0"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",

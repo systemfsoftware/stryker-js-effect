@@ -2018,7 +2018,7 @@ function doPrintTSType(state: PrintState, node: TSType): void {
       state.out += ']'
       break
     case 'TSNamedTupleMember':
-      state.out += `/* type:${node.type} */`
+      printNamedTupleMember(state, node)
       break
     case 'TSLiteralType':
       printTSLiteralType(state, node.literal)

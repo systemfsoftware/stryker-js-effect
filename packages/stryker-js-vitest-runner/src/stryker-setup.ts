@@ -21,7 +21,6 @@ interface SuiteWithTaskMeta {
 }
 
 ns.hitLimit = inject('hitLimit')
-const isGreaterThanVitest4Point1 = inject('isGreaterThanVitest4Point1')
 
 if (mode === 'mutant') {
   beforeAll(() => {
@@ -36,15 +35,9 @@ if (mode === 'mutant') {
     })
   }
 
-  if (isGreaterThanVitest4Point1) {
-    afterAll((_context, suite: SuiteWithTaskMeta) => {
-      suite.meta.hitCount = ns.hitCount
-    })
-  } else {
-    afterAll(({ meta }: { meta: { hitCount?: number } }) => {
-      meta.hitCount = ns.hitCount
-    })
-  }
+  afterAll((_context, suite: SuiteWithTaskMeta) => {
+    suite.meta.hitCount = ns.hitCount
+  })
 } else {
   ns.activeMutant = undefined
 
@@ -56,15 +49,9 @@ if (mode === 'mutant') {
     ns.currentTestId = undefined
   })
 
-  if (isGreaterThanVitest4Point1) {
-    afterAll((_context, suite: SuiteWithTaskMeta) => {
-      suite.meta.mutantCoverage = ns.mutantCoverage
-    })
-  } else {
-    afterAll(({ meta }: { meta: { mutantCoverage?: MutantCoverage } }) => {
-      meta.mutantCoverage = ns.mutantCoverage
-    })
-  }
+  afterAll((_context, suite: SuiteWithTaskMeta) => {
+    suite.meta.mutantCoverage = ns.mutantCoverage
+  })
 }
 
 function collectTestName({
