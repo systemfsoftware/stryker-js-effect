@@ -195,7 +195,7 @@ const makeCheckerPool = (
   Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | WorkerLauncher | FileSystem.FileSystem | Path.Path
 > =>
   Match.value(prev.options.checkers.length === 0).pipe(
-    Match.when(true, () => Effect.void),
+    Match.when(true, () => Effect.as(Effect.void, undefined)),
     Match.orElse(() =>
       Pool.make({
         acquire: Effect.forEach(prev.options.checkers, (checker) =>
