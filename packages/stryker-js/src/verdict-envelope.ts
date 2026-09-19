@@ -1,6 +1,6 @@
 import { randomBytes } from '@noble/hashes/utils.js'
-import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type * as mutants from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
+import type * as mutants from '@systemfsoftware/stryker-js-instrumenter'
 import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import * as DateTime from 'effect/DateTime'
 import * as Match from 'effect/Match'

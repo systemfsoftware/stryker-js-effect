@@ -1,5 +1,5 @@
-import { INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter'
+import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type CompleteDryRunResult,
   type DryRunOptions,

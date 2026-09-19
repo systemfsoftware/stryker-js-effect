@@ -1,10 +1,6 @@
 import * as S from 'effect/Schema'
 
-import {
-  LocationSchema,
-  MutantStatusSchema,
-  OpenEndLocationSchema,
-} from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { LocationSchema, MutantStatusSchema, OpenEndLocationSchema } from '@systemfsoftware/stryker-js-instrumenter'
 
 export const MutantResultSchema = S.Struct({
   id: S.String,

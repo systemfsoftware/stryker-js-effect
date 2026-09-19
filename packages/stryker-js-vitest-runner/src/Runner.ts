@@ -11,7 +11,7 @@ import {
   type MutantCoverage as DryRunMutantCoverage,
   type MutantRunOptions,
   normalizeFileName,
-} from '@systemfsoftware/stryker-js-instrumenter/mutants'
+} from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type BaseTestResult,
   DryRunResult,

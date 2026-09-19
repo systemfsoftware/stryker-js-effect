@@ -1,9 +1,5 @@
 import type { File as InstrumentFile } from '@systemfsoftware/stryker-js-instrumenter'
-import type {
-  FileDescription,
-  FileDescriptions,
-  MutateDescription,
-} from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import type { FileDescription, FileDescriptions, MutateDescription } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutationTestResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'

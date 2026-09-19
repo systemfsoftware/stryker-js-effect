@@ -172,13 +172,11 @@ console.log(`Mutation score: ${verdict.score}%`)
 
 ## Published Subpaths
 
-| Subpath               | Description                                                                  |
-| --------------------- | ---------------------------------------------------------------------------- |
-| `.`                   | Main entry point: `strykerCell`, runtime layers, and error schemas           |
-| `./config`            | `defineConfig`, `mergeConfig`, and `StrykerConfig` typing                    |
-| `./promises`          | `run()` wrapper returning standard JavaScript promises                       |
-| `./builtin-reporters` | Built-in reporter implementations (`clear-text`, `progress`, `json`, `html`) |
-| `./plugin-loader`     | Worker entry resolution and plugin discovery                                 |
+| Subpath      | Description                                                        |
+| ------------ | ------------------------------------------------------------------ |
+| `.`          | Main entry point: `strykerCell`, runtime layers, and error schemas |
+| `./config`   | `defineConfig`, `mergeConfig`, and `StrykerConfig` typing          |
+| `./promises` | `run()` wrapper returning standard JavaScript promises             |
 
 ## License
 

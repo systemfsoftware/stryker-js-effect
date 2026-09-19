@@ -6,8 +6,6 @@ export default defineConfig({
     index: './src/index.ts',
     config: './src/config/index.ts',
     promises: './src/promises/index.ts',
-    'builtin-reporters': './src/builtin-reporters.ts',
-    'plugin-loader': './src/plugin-loader.ts',
   },
   format: 'esm',
   dts: true,

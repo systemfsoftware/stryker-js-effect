@@ -8,11 +8,7 @@
  */
 
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import type {
-  FileDescriptions,
-  Mutant,
-  RunPlan as MutantRunPlan,
-} from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import type { FileDescriptions, Mutant, RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import type { CheckResult, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import * as Effect from 'effect/Effect'

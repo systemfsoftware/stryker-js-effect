@@ -1,4 +1,4 @@
-import type { MutantTestCoverage, RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import type { MutantTestCoverage, RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
 import { type CheckResult, type PassedCheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface'

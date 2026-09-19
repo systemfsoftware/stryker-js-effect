@@ -1,6 +1,6 @@
 import * as S from 'effect/Schema'
 
-import { PositionSchema, RunOptionsFields } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { PositionSchema, RunOptionsFields } from '@systemfsoftware/stryker-js-instrumenter'
 
 export const DryRunStatus = S.Literals(['complete', 'error', 'timeout'])
 export type DryRunStatus = typeof DryRunStatus.Type

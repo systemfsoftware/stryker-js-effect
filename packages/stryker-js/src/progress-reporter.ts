@@ -1,5 +1,5 @@
-import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
+import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
 import type { ReporterEvent, ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface'
 import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { RunTiming } from '@systemfsoftware/stryker-js-plugin-interface'

@@ -1,6 +1,6 @@
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface'
 import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'

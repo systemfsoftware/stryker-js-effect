@@ -1,5 +1,5 @@
 import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
-import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutationTestResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'

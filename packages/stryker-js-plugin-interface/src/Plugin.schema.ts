@@ -1,4 +1,4 @@
-import { Mutant, MutantRunOptionsSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { Mutant, MutantRunOptionsSchema } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
 import { CheckerFailed, CheckResultSchema } from './Checker.schema.js'

@@ -2,7 +2,7 @@ import * as Context from 'effect/Context'
 import type * as Effect from 'effect/Effect'
 import type * as HashMap from 'effect/HashMap'
 
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { CheckerFailed } from './Checker.schema.js'
 
 export { CheckerFailed, CheckResultSchema, CheckStatus } from './Checker.schema.js'
