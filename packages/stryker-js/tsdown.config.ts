@@ -13,7 +13,16 @@ export default defineConfig({
   dts: true,
   exports: sourceExports({ dtsExt: '.d.mts' }),
 
-  deps: { alwaysBundle: ['@std/jsonc'] },
+  deps: {
+    alwaysBundle: [
+      '@std/jsonc',
+      '@systemfsoftware/stryker-ignorer-interface',
+      '@systemfsoftware/stryker-js-html-reporter',
+      '@systemfsoftware/stryker-js-instrumenter',
+      '@systemfsoftware/stryker-js-plugin-interface',
+      '@systemfsoftware/stryker-js-plugin-runtime',
+    ],
+  },
   clean: false,
   define: { 'import.meta.vitest': 'undefined' },
 })

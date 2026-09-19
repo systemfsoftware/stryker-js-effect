@@ -74,10 +74,8 @@ export interface FileDescription {
 // @public (undocumented)
 export type FileDescriptions = Record<string, FileDescription>;
 
-// Warning: (ae-forgotten-export) The symbol "InstrumentResult$1" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
-export const instrument: (files: readonly File_2[], options: InstrumenterOptions, basePath?: string) => Effect.Effect<InstrumentResult$1, InstrumentError>;
+export const instrument: (files: readonly File_2[], options: InstrumenterOptions, basePath?: string) => Effect.Effect<InstrumentResult, InstrumentError>;
 
 // @public (undocumented)
 export const INSTRUMENTER_CONSTANTS: Readonly<{
@@ -104,10 +102,15 @@ export interface InstrumenterContext {
     mutantCoverage?: MutantCoverage;
 }
 
-// Warning: (ae-forgotten-export) The symbol "InstrumenterOptionsSchema" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type;
+
+// @public (undocumented)
+export const InstrumenterOptionsSchema: S.Struct<{
+    readonly excludedMutations: S.$Array<S.String>;
+    readonly ignorers: S.$Array<S.Unknown>;
+    readonly noHeader: S.optional<S.Boolean>;
+}>;
 
 // Warning: (ae-forgotten-export) The symbol "InstrumentError_base" needs to be exported by the entry point index.d.mts
 //

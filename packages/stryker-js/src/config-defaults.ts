@@ -6,7 +6,7 @@ import * as S from 'effect/Schema'
 
 export type Primitive = boolean | number | string | null | undefined
 
-type ImmutablePrimitive = Primitive | ((...args: never[]) => unknown)
+export type ImmutablePrimitive = Primitive | ((...args: never[]) => unknown)
 
 export type Immutable<T> = T extends ImmutablePrimitive ? T
   : T extends Array<infer U> ? ReadonlyArray<Immutable<U>>
@@ -194,7 +194,7 @@ export function findUnserializables(
   )
 }
 
-type KnownKeys<T> = keyof {
+export type KnownKeys<T> = keyof {
   [P in keyof T as string extends P ? never : number extends P ? never : P]: T[P]
 }
 

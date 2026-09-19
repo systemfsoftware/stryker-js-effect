@@ -39,6 +39,7 @@ import type { ChildProcessCrashedError as ChildProcessCrashedErrorType } from '.
 import { makeWorkerClient, WorkerLauncher } from './WorkerLauncher.js'
 
 export type CheckerCrash = ChildProcessCrashedErrorType | OutOfMemoryError
+export type { CheckerContractBroken }
 
 /**
  * A checker held by the pool.
@@ -323,7 +324,12 @@ export const createCheckerFactory = (
     fileDescriptions,
     workerEntrypoint,
     workingDirectory,
-    execArgv: [...(options.checkers[0]?.nodeArgs ?? options.checkerNodeArgs)],
+    execArgv: [
+      ...Match.value(options.checkers[0]?.nodeArgs).pipe(
+        Match.when(Match.undefined, () => options.checkerNodeArgs),
+        Match.orElse((args) => args),
+      ),
+    ],
     idGenerator,
   })
 

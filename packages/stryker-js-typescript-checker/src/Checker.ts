@@ -25,8 +25,20 @@ import { TypeScriptCompiler } from './Compiler.js'
 import { groupMutants } from './mutant-groups.js'
 
 function getPrioritize(options: StrykerOptions): boolean {
-  const first = options.checkers[0]
-  return first?.options?.['prioritizePerformanceOverAccuracy'] === true
+  return Match.value(options.checkers[0]).pipe(
+    Match.when(Match.undefined, () => false),
+    Match.orElse((first) =>
+      Match.value(first.options).pipe(
+        Match.when(Match.undefined, () => false),
+        Match.orElse((opts) =>
+          Match.value(opts['prioritizePerformanceOverAccuracy']).pipe(
+            Match.when(true, () => true),
+            Match.orElse(() => false),
+          )
+        ),
+      )
+    ),
+  )
 }
 
 interface CheckerDeps {

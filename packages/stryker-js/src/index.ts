@@ -12,19 +12,119 @@ import { hostOptionsOf, prepareCommandOf, runOnHost } from './run-host.js'
 import { makeRunLayer, mutationTestCell, RUN_EVENTS_QUEUE_BOUND, shouldKeepTempDir } from './Run.js'
 import { StageError } from './Run.schema.js'
 
-export type { CheckerResourceService } from './Checker.js'
+export type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+export type {
+  CoverageData,
+  FileDescription,
+  FileDescriptions,
+  Location,
+  Mutant,
+  MutantActivation,
+  MutantRunOptions,
+  MutantStatus,
+  MutateDescription,
+  MutationRange,
+  Position,
+  RunMutantResult,
+  RunPlan,
+} from '@systemfsoftware/stryker-js-instrumenter/mutants'
+export type {
+  BaseTestResult,
+  CheckResult,
+  CompleteDryRunResult,
+  CoverageAnalysis,
+  DeepOptional,
+  DryRunOptions,
+  DryRunResult,
+  ErrorDryRunResult,
+  ErrorMutantRunResult,
+  FailedCheckResult,
+  FailedTestResult,
+  FileResult,
+  KilledMutantRunResult,
+  Metrics,
+  MetricsResult,
+  MutantCoverage,
+  MutantResult,
+  MutantRunResult,
+  MutationTestResult,
+  PartialStrykerOptions,
+  PassedCheckResult,
+  ReporterEvent,
+  ReporterFactory,
+  ReporterFailed,
+  ReporterInit,
+  RunOptions,
+  SkippedTestResult,
+  StrykerOptions,
+  SuccessTestResult,
+  SurvivedMutantRunResult,
+  TestResult,
+  TestRunnerCapabilities,
+  TestRunnerConfig,
+  TestRunnerFailed,
+  TimeoutDryRunResult,
+  TimeoutMutantRunResult,
+  TracedRpc,
+} from '@systemfsoftware/stryker-js-plugin-interface'
+export {
+  DryRunCompleted,
+  FileResultSchema,
+  LocationSchema,
+  MetricsSchema,
+  MutantActivationSchema,
+  MutantResultSchema,
+  MutantStatusSchema,
+  MutantTested,
+  MutationTestingPlanReady,
+  MutationTestReportReady,
+  MutationTestResultSchema,
+  PositionSchema,
+  ReporterAck,
+  ReporterDrained,
+  ReporterEventBatch,
+  ReporterInitOptions,
+  ReporterRpcs,
+  StrykerOptionsSchema,
+  TestRunnerConfigSchema,
+  TraceContextMiddleware,
+  WorkerPluginKind,
+} from '@systemfsoftware/stryker-js-plugin-interface'
+export { CheckerAnsweredUnrequested, CheckerSkippedRequested } from './admit-checker-answer.workflow.js'
+export type { CheckerContractBroken, CheckerCrash, CheckerResourceService } from './Checker.js'
+export { checkGroupedPlans } from './Checker.js'
+export type { ConfigEnv } from './config/stryker-config.js'
+export type { TestCoverage } from './Mutants.js'
+export type {
+  AnyPluginDescriptor,
+  AnyWorkerPluginDescriptor,
+  AnyWorkerPluginSource,
+  EvaluatorPluginDescriptor,
+  EvaluatorPluginSource,
+  LoadedPlugins,
+  PluginDescriptor,
+  PluginDescriptorOf,
+  PluginKind,
+  PluginSource,
+  WorkerPluginDescriptor,
+  WorkerPluginSource,
+} from './Plugins.js'
+export type { Project, ProjectFile } from './Project.js'
+export type { ReporterStage } from './ReporterStream.js'
+export { StageError } from './Run.schema.js'
 export type { DryRunDone } from './run/dry-run.cell.js'
 export type { InstrumentDone } from './run/instrument.cell.js'
 export type { MutationTestDone } from './run/mutation-test.cell.js'
 export type { PrepareDone, PrepareExecutorArgs } from './run/prepare.cell.js'
 export type { RunEnvironmentShape } from './run/RunEnvironment.js'
-export type { EnginePorts, RunStageServices, WiredRunLayer } from './run/StageServices.js'
+export { RunEnvironment } from './run/RunEnvironment.js'
+export type { EnginePorts, RunStageServices, StageServices, WiredRunLayer } from './run/StageServices.js'
+export type { SandboxHandle } from './Sandbox.js'
 export type { StrykerRun } from './StrykerRun.js'
 export type { PooledTestRunner, PooledTestRunnerError, TestRunnerBuildContext } from './TestRunner.js'
-
-export { checkGroupedPlans } from './Checker.js'
-export { StageError } from './Run.schema.js'
-export { RunEnvironment } from './run/RunEnvironment.js'
+export type { VmRequire } from './VmRunner.js'
+export type { IdGeneratorShape } from './Worker.js'
+export { IdGenerator } from './Worker.js'
 export { makeRunLayer, mutationTestCell, RUN_EVENTS_QUEUE_BOUND, shouldKeepTempDir }
 
 export {
@@ -60,7 +160,14 @@ export {
   optionsPath,
   SUPPORTED_CONFIG_FILE_NAMES,
 } from './config-defaults.js'
-export type { Immutable, Primitive, UnserializableDescription, WarningOptions } from './config-defaults.js'
+export type {
+  Immutable,
+  ImmutablePrimitive,
+  KnownKeys,
+  Primitive,
+  UnserializableDescription,
+  WarningOptions,
+} from './config-defaults.js'
 export {
   ConfigDocumentSchema,
   ConfigError,
@@ -69,12 +176,24 @@ export {
   ConfigFileUnreadableError,
   ConfigFileUnsupportedError,
   extendsPropertySchema,
+  ExtendsStepDocumentSchema,
+  ExtendsStepDone,
+  ExtendsStepRead,
+  ExtendsStepRefused,
+  ExtendsStepResolve,
+  ExtendsStepStateSchema,
   forkOptionsSchema,
   ImportedModuleSchema,
   MergeCommand,
   MergeResult,
   ReadConfigCommand,
   survivorsPriorReport,
+} from './Config.schema.js'
+export type {
+  ExtendsRefusalReason,
+  ExtendsStepDecision,
+  ExtendsStepDocument,
+  ExtendsStepState,
 } from './Config.schema.js'
 export { createFileMatcher, matchesFile } from './file-matching.js'
 export {
@@ -89,14 +208,7 @@ export {
   resolveExtends,
   validateOptions,
 } from './run/load-config.cell.js'
-export type {
-  ConfigInvocation,
-  ExtendsRefusalReason,
-  ExtendsStepDecision,
-  ExtendsStepDocument,
-  ExtendsStepState,
-  ValidationSchemaDocument,
-} from './run/load-config.cell.js'
+export type { ConfigInvocation, ValidationSchemaDocument } from './run/load-config.cell.js'
 
 export type { ModeSignal, OutputMode, ResolvedMode } from './output-mode.js'
 

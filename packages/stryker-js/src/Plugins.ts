@@ -352,7 +352,10 @@ export const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[
   ...options.plugins,
   ...options.appendPlugins,
   ...options.ignorers,
-  ...(isCustomTestRunner(options.testRunner) ? [options.testRunner.plugin] : []),
+  ...Match.value(options.testRunner).pipe(
+    Match.when(isCustomTestRunner, (runner) => [runner.plugin]),
+    Match.orElse(() => []),
+  ),
   ...options.checkers.map((checker) => checker.plugin),
 ]
 

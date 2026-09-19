@@ -83,6 +83,26 @@ export const CheckerCheckResult: S.$Record<S.String, S.Union<readonly [S.Struct<
     readonly reason: S.String;
 }>]>>;
 
+// @public (undocumented)
+export type CheckerCustomConfig = typeof CheckerCustomConfigSchema.Type;
+
+// @public (undocumented)
+export const CheckerCustomConfigSchema: S.Struct<{
+    readonly plugin: S.String;
+    readonly nodeArgs: S.optional<S.$Array<S.String>>;
+    readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+}>;
+
+// @public (undocumented)
+export type CheckerEntryConfig = typeof CheckerEntryConfigSchema.Type;
+
+// @public (undocumented)
+export const CheckerEntryConfigSchema: S.Struct<{
+    readonly plugin: S.String;
+    readonly nodeArgs: S.optional<S.$Array<S.String>>;
+    readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+}>;
+
 // Warning: (ae-forgotten-export) The symbol "CheckerFailed_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
@@ -388,6 +408,9 @@ export const FrameworkInformationSchema: S.Struct<{
     }>>;
     readonly dependencies: S.optional<S.$Record<S.String, S.String>>;
 }>;
+
+// @public (undocumented)
+export const isCustomTestRunner: (value: TestRunnerConfig) => value is TestRunnerCustomConfig;
 
 // @public (undocumented)
 export interface KilledMutantRunResult {
@@ -806,7 +829,11 @@ export type StrykerOptions = S.Schema.Type<typeof StrykerOptionsSchema>;
 export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly allowConsoleColors: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly buildCommand: S.optional<S.String>;
-    readonly checkers: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly checkers: S.withDecodingDefaultKey<S.$Array<S.Struct<{
+        readonly plugin: S.String;
+        readonly nodeArgs: S.optional<S.$Array<S.String>>;
+        readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+    }>>, never>;
     readonly checkerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly concurrency: S.optional<S.Union<readonly [S.Finite, S.String]>>;
     readonly commandRunner: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
@@ -853,7 +880,11 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly symlinkNodeModules: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly tempDirName: S.withDecodingDefaultKey<S.String, never>;
     readonly cleanTempDir: S.withDecodingDefaultKey<S.Literals<readonly ["always", false, true]>, never>;
-    readonly testRunner: S.withDecodingDefaultKey<S.String, never>;
+    readonly testRunner: S.withDecodingDefaultKey<S.Union<readonly [S.String, S.Struct<{
+        readonly plugin: S.String;
+        readonly nodeArgs: S.optional<S.$Array<S.String>>;
+        readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+    }>]>, never>;
     readonly testRunnerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly thresholds: S.withDecodingDefaultKey<S.Struct<{
         readonly high: S.withDecodingDefaultKey<S.Finite, never>;
@@ -1012,6 +1043,26 @@ export interface TestRunnerCapabilities {
 // @public (undocumented)
 export const TestRunnerCapabilitiesSchema: S.Struct<{
     readonly reloadEnvironment: S.Boolean;
+}>;
+
+// @public (undocumented)
+export type TestRunnerConfig = typeof TestRunnerConfigSchema.Type;
+
+// @public (undocumented)
+export const TestRunnerConfigSchema: S.Union<readonly [S.String, S.Struct<{
+    readonly plugin: S.String;
+    readonly nodeArgs: S.optional<S.$Array<S.String>>;
+    readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+}>]>;
+
+// @public (undocumented)
+export type TestRunnerCustomConfig = typeof TestRunnerCustomConfigSchema.Type;
+
+// @public (undocumented)
+export const TestRunnerCustomConfigSchema: S.Struct<{
+    readonly plugin: S.String;
+    readonly nodeArgs: S.optional<S.$Array<S.String>>;
+    readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
 }>;
 
 // @public (undocumented)

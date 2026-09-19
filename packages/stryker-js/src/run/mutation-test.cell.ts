@@ -195,7 +195,7 @@ const makeCheckerPool = (
   Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | WorkerLauncher | FileSystem.FileSystem | Path.Path
 > =>
   Match.value(prev.options.checkers.length === 0).pipe(
-    Match.when(true, () => Effect.succeed(undefined)),
+    Match.when(true, () => Effect.as(Effect.void, undefined)),
     Match.orElse(() =>
       Pool.make({
         acquire: Effect.forEach(prev.options.checkers, (checker) =>
@@ -361,9 +361,10 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                       testRunnerContext,
                       Effect.suspend(() => {
                         const runnerConfigured = prev.options.testRunner
-                        const runnerLabel = isCustomTestRunner(runnerConfigured)
-                          ? runnerConfigured.plugin
-                          : runnerConfigured
+                        const runnerLabel = Match.value(runnerConfigured).pipe(
+                          Match.when(isCustomTestRunner, (runner) => runner.plugin),
+                          Match.orElse((name) => name),
+                        )
                         return resolveConfiguredWorkerSpawn({
                           loaded: prev.loadedPlugins,
                           kind: 'TestRunner',

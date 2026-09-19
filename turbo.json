@@ -12,9 +12,6 @@
         "tsconfig.*.json",
         "package.json",
         "tsdown.config.*",
-        "api-extractor.json",
-        "api-extractor.*.json",
-        "etc/*.api.md",
         "$TURBO_ROOT$/packages/toolchain/tsdown-config/lib/**",
         "$TURBO_ROOT$/packages/toolchain/tsdown-config/package.json"
       ],
@@ -22,8 +19,7 @@
         "dist/**"
       ],
       "dependsOn": [
-        "^build",
-        "^api:check"
+        "^build"
       ]
     },
     "typecheck": {

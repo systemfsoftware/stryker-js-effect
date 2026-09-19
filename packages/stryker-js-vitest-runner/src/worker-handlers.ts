@@ -11,7 +11,7 @@ import { readWorkerOptionsFromEnv } from '@systemfsoftware/stryker-js-plugin-run
 import * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
-
+import * as Match from 'effect/Match'
 import { makeVitestRunnerLayer } from './Runner.js'
 
 const normalizeDryRun = (result: DryRunResult): DryRunResult => {
@@ -33,7 +33,10 @@ type TestRunnerPhase = 'capabilities' | 'init' | 'dryRun' | 'mutantRun'
 export const testRunnerHandlers = TestRunnerRpcs.toLayer(
   Effect.gen(function*() {
     const options = yield* readWorkerOptionsFromEnv
-    const runnerName = typeof options.testRunner === 'string' ? options.testRunner : 'vitest'
+    const runnerName = Match.value(options.testRunner).pipe(
+      Match.when(Match.string, (name) => name),
+      Match.orElse(() => 'vitest'),
+    )
     const sandboxDirectory = yield* Config.string('STRYKER_SANDBOX_DIR')
     const failed = (phase: TestRunnerPhase) => (cause: Cause.Cause<unknown>): Effect.Effect<never, TestRunnerFailed> =>
       Effect.fail(new TestRunnerFailed({ cause: Cause.pretty(cause), phase, runnerName }))

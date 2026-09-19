@@ -243,8 +243,7 @@ export async function installFixture(
       args: [
         'npm',
         'install',
-        cliPackage().tarballPath,
-        ...PLUGIN_PACKAGES.map((packageName) => packedPackage(packageName).tarballPath),
+        ...PACKED_PACKAGES.map((packageName) => packedPackage(packageName).tarballPath),
         ...extraTarballs.map((packed) => packed.tarballPath),
       ],
     },

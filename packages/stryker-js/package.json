@@ -42,14 +42,7 @@
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.208.0",
     "@opentelemetry/sdk-trace-base": "^2.2.0",
-    "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
-    "@systemfsoftware/stryker-js-html-reporter": "workspace:^",
-    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
-    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
-    "@systemfsoftware/stryker-js-plugin-runtime": "workspace:^",
-    "diff-match-patch": "1.0.5",
-    "minimatch": "~10.2.4"
+    "@systemfsoftware/effect-cell-types": "catalog:"
   },
   "peerDependencies": {
     "effect": "catalog:"
@@ -68,14 +61,18 @@
     "@systemfsoftware/stryker-config": "workspace:^",
     "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "catalog:stryker",
     "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "catalog:stryker",
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "@systemfsoftware/stryker-js": "catalog:stryker",
+    "@systemfsoftware/stryker-js-html-reporter": "workspace:^",
+    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-runtime": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "catalog:stryker",
     "@systemfsoftware/stryker-js-vitest-runner": "catalog:stryker",
     "@systemfsoftware/stryker-test-contribution": "catalog:stryker",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
-    "@types/diff-match-patch": "1.0.36",
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "concurrently": "catalog:",
@@ -144,6 +141,25 @@
     "./package.json": "./package.json"
   },
   "inlinedDependencies": {
-    "@jsr/std__jsonc": "1.0.2"
+    "@eslint-community/regexpp": "4.12.2",
+    "@jridgewell/gen-mapping": "0.3.13",
+    "@jridgewell/remapping": "2.3.5",
+    "@jridgewell/resolve-uri": "3.1.2",
+    "@jridgewell/sourcemap-codec": "1.6.0",
+    "@jridgewell/trace-mapping": "0.3.31",
+    "@jsr/std__jsonc": "1.0.2",
+    "@sveltejs/acorn-typescript": "1.0.13",
+    "acorn": "8.18.0",
+    "angular-html-parser": "10.4.0",
+    "aria-query": "5.3.1",
+    "axobject-query": "4.1.0",
+    "esrap": "2.3.7",
+    "is-reference": "3.0.3",
+    "locate-character": "3.0.0",
+    "magic-string": "0.30.21",
+    "oxc-parser": "0.140.0",
+    "oxc-walker": "1.1.1",
+    "svelte": "5.55.1",
+    "zimmerframe": "1.1.5"
   }
 }

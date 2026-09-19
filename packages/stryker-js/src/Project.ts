@@ -18,7 +18,7 @@ import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Minimatch } from 'minimatch'
+import { compileIgnoreRule, type IgnoreRule } from './glob-match.js'
 
 import { defaultOptions } from './config-defaults.js'
 import { IncrementalReportError, IncrementalReportSchema } from './IncrementalReport.schema.js'
@@ -709,23 +709,21 @@ function resolveInputFileNames(
     const fs = yield* FileSystem.FileSystem
     const pathService = yield* Path.Path
 
-    const ignoreMatchers = ignoreRules.map(
-      (pattern) => new Minimatch(pattern, { dot: true, flipNegate: true, nocase: true }),
-    )
+    const ignoreMatchers = ignoreRules.map(compileIgnoreRule)
 
-    const matchesDirectoryPartially = (entryPath: string, rule: Minimatch): boolean =>
-      rule.match(`/${entryPath}`, true) || rule.match(entryPath, true)
+    const matchesDirectoryPartially = (entryPath: string, rule: IgnoreRule): boolean =>
+      rule.matchesPrefix(`/${entryPath}`) || rule.matchesPrefix(entryPath)
 
-    const matchesFile = (entryName: string, entryPath: string, rule: Minimatch): boolean =>
-      [entryName, entryPath, `/${entryPath}`].some((candidate) => rule.match(candidate))
+    const matchesFile = (entryName: string, entryPath: string, rule: IgnoreRule): boolean =>
+      [entryName, entryPath, `/${entryPath}`].some((candidate) => rule.matches(candidate))
 
-    const matchesDirectoryTail = (entryPath: string, rule: Minimatch): boolean =>
-      [rule.match(`/${entryPath}/`), rule.match(`${entryPath}/`)].some((matched) => matched)
+    const matchesDirectoryTail = (entryPath: string, rule: IgnoreRule): boolean =>
+      [rule.matches(`/${entryPath}/`), rule.matches(`${entryPath}/`)].some((matched) => matched)
 
-    const matchesNegatedDirectory = (entryPath: string, rule: Minimatch): boolean =>
+    const matchesNegatedDirectory = (entryPath: string, rule: IgnoreRule): boolean =>
       rule.negate && matchesDirectoryPartially(entryPath, rule)
 
-    const matchesDirectory = (entryName: string, entryPath: string, rule: Minimatch): boolean =>
+    const matchesDirectory = (entryName: string, entryPath: string, rule: IgnoreRule): boolean =>
       [
         matchesFile(entryName, entryPath, rule),
         matchesDirectoryTail(entryPath, rule),

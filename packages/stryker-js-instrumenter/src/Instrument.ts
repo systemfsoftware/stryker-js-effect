@@ -232,7 +232,7 @@ export const instrument = (
   files: readonly File[],
   options: InstrumenterOptions,
   basePath?: string,
-): Effect.Effect<InstrumentResultSchema, InstrumentError> =>
+): Effect.Effect<InstrumentResult, InstrumentError> =>
   Effect.gen(function*() {
     const schemaFiles: readonly FileSchemaType[] = files.map((file) => ({
       name: file.name,
