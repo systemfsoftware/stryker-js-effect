@@ -5,5 +5,3 @@ export const strykerPlugins: readonly {
 }[] = [
   { kind: 'Checker', name: 'typescript', workerEntry: new URL('./main.mjs', import.meta.url).href },
 ]
-
-export const strykerValidationSchema: Record<string, unknown> = {}
