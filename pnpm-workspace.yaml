@@ -27,7 +27,7 @@ catalog:
   "@systemfsoftware/oxlint-plugin": ^4
   "@systemfsoftware/oxlint-plugin-recommended": ^1
   "@systemfsoftware/tsconfig": ^1
-  "@types/node": ^24
+  "@types/node": ^26
   "@vitest/browser-playwright": ^4
   "@vitest/coverage-v8": ^4
   fast-check: ^4
