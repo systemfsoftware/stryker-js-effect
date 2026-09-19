@@ -1,9 +1,8 @@
-#!/usr/bin/env -S deno run --config=scripts/deno.json --allow-read --allow-write --allow-run --allow-net=api.github.com,registry.npmjs.org,jsr.io --allow-env=GH_TOKEN,GITHUB_TOKEN,GITHUB_REPOSITORY,BRANCH,BASE --allow-import
+#!/usr/bin/env -S deno run --config=scripts/deno.json --allow-read --allow-write --allow-run=git --allow-net=api.github.com,registry.npmjs.org --allow-env=GH_TOKEN,GITHUB_TOKEN,GITHUB_REPOSITORY --allow-import
 
 import { parseArgs } from '@std/cli/parse-args'
 import { Octokit, RequestError } from 'octokit'
 import { type CycleEntry, ensureChangelog, loadCaptured, loadWorkspaceCycle } from './lib/cycle.ts'
-import { openVersionPrIfPending } from './lib/open-version-pr-if-pending.ts'
 import { run } from './lib/run.ts'
 
 const flags = parseArgs(Deno.args, {
@@ -11,13 +10,10 @@ const flags = parseArgs(Deno.args, {
   string: ['captured'],
 })
 
-const afterPublish = !flags.assert && !flags['dry-run']
-
 const cycle: CycleEntry[] = flags.captured ? await loadCaptured(flags.captured) : await loadWorkspaceCycle()
 
 if (cycle.length === 0) {
   console.log('no this-cycle releases — empty captured set')
-  if (afterPublish) await openVersionPrIfPending()
   Deno.exit(0)
 }
 
@@ -116,4 +112,3 @@ if (loopError) {
   Deno.exit(1)
 }
 console.log(`created ${created.length} release(s), skipped ${cycle.length - created.length}`)
-if (afterPublish) await openVersionPrIfPending()

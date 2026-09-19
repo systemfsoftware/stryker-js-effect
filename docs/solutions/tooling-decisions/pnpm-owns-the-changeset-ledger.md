@@ -17,7 +17,7 @@ applies_when:
 
 ## Context
 
-The release planner derives a phase from two numbers: the size of the release set — workspace versions the registry does not yet serve — and how many change intents are pending. The phase decides which job runs first: publish, version, or nothing. `plan-release` (invoked as `./scripts/plan-release.ts`) prints it; the Release workflow routes on it. Publish-first is required: `pnpm version -r` on already-unpublished versions would skip those versions forever.
+The release planner derives a phase from two numbers: the size of the release set — workspace versions the registry does not yet serve — and how many change intents are pending. Pending intents select version; only a repo with nothing pending and unpublished versions selects publish. `plan-release` (invoked as `./scripts/plan-release.ts`) prints it; the Release workflow routes on it. Publish while intents remain ships later commits under the previous changelog.
 
 The trap is the second number. `pnpm version -r` **retains** the intent files after it consumes them, so counting `.changeset/*.md` answers "how many intent files exist", never "how many are pending". Read that way, every release leaves the pipeline in the version phase forever, and each push to the default branch opens a `version-packages` pull request that deletes files the previous run already consumed.
 
@@ -44,7 +44,7 @@ The ledger makes consumption a fact recorded beside the intent, so an intent fil
 
 **Two independent guards, not one.** The pending count and the version-bump guard answer different questions — "is an intent unrecorded?" and "did a version actually change?" A change may not weaken either on the assumption that the other covers it; the phantom PR returns if both are argued from the same signal.
 
-**Owed and pending can both be nonzero.** A failed publish leaves unpublished versions; a later merge can add intents. Exclusive `decidePhase` then publishes and stops. Tags do not retrigger a push to the default branch. The evaluator owns GitHub Actions workflows, so `openVersionPrIfPending` runs from `create-github-releases` after a successful publish — the last publish step that already has a GitHub token — rather than sequencing a second workflow job.
+**Pending intents win over unpublished versions.** A failed publish leaves unpublished versions; a later merge can add intents. `decidePhase` then opens a version PR instead of publishing. Publishing while intents remain ships later commits under the previous changelog. Unpublished version numbers are abandoned when `pnpm version -r` bumps past them; they were never on the registry.
 
 ## When to Apply
 
