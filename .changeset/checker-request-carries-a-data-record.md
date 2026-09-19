@@ -8,8 +8,4 @@ The checker request carries a plain data record, not the instrumenter's `Mutant`
 
 With `OTEL_ENABLED=true` the CLI now exports its OpenTelemetry metrics to `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_METRIC_EXPORT_INTERVAL` sets the export interval in milliseconds. Checker timings, mutant counts, and worker crashes now reach a metrics backend.
 
-`ConfigEnv` and `resolveExtends` are no longer exported from the package root. Import both from the config entry point:
-
-```ts
-import { type ConfigEnv, resolveExtends } from '@systemfsoftware/stryker-js/config'
-```
+`ConfigEnv` and `resolveExtends` are no longer exported. Import `ConfigEnv` from the config entry point of the package, and read merged options with `loadConfigCell` or `readConfig` from the package root - either performs the `extends` walk, validation and merge in order.
