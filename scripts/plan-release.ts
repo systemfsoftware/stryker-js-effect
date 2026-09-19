@@ -3,6 +3,7 @@
 import { parseArgs } from '@std/cli/parse-args'
 import { loadWorkspaceCycle } from './lib/cycle.ts'
 import { countPendingIntents } from './lib/pending-intents.ts'
+import { decidePhase } from './lib/release-phase.ts'
 
 const flags = parseArgs(Deno.args, {
   string: ['output', 'deferred'],
@@ -23,7 +24,7 @@ const pending = await countPendingIntents('.changeset')
 
 const allOwed = await loadWorkspaceCycle()
 const owed = allOwed.filter((entry) => !deferred.includes(entry.name)).length
-const phase = owed > 0 ? 'publish' : pending > 0 ? 'version' : 'none'
+const phase = decidePhase(owed, pending)
 
 for (const name of deferred) {
   console.log(
