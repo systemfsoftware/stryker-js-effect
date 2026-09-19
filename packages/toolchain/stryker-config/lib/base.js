@@ -4,7 +4,7 @@ const isCI = !isAgent && typeof process.env['CI'] === 'string' && process.env['C
 const envConcurrency = process.env['STRYKER_CONCURRENCY'] ??
   (isAgent ? '50%' : isCI ? '100%' : undefined)
 
-export const createSharedConfig = (overrides = {}) => ({
+export const sharedConfig = {
   packageManager: 'pnpm',
   testRunner: 'vitest',
   checkers: ['typescript'],
@@ -29,7 +29,4 @@ export const createSharedConfig = (overrides = {}) => ({
     '!src/**/__tests__/**',
   ],
   ...(envConcurrency !== undefined ? { concurrency: envConcurrency } : {}),
-  ...overrides,
-})
-
-export const sharedConfig = createSharedConfig()
+}

@@ -20,10 +20,4 @@ export interface SharedConfig {
   concurrency?: string
 }
 
-export function createSharedConfig<T extends object = object>(
-  overrides?: T,
-): SharedConfig & T
-
-declare const sharedConfig: SharedConfig
-
-export { sharedConfig }
+export const sharedConfig: SharedConfig
