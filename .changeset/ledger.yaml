@@ -31,14 +31,6 @@
   intents:
     - force-all-packages-patch
     - stryker-ignorer-kit-debut
-"@systemfsoftware/stryker-js@5.0.0":
-  dir: packages/stryker-js
-  intents:
-    - plucky-plugins-resolve
-    - public-worms-watch
-    - stryker-js-home-migration
-    - stryker-js-language-declarations-only
-    - stryker-js-language-typed-positions
 "@systemfsoftware/stryker-js-cli@9.0.0":
   dir: apps/stryker-js-cli
   intents:
@@ -80,18 +72,31 @@
     - famous-rockets-judge
     - force-all-packages-patch
     - stryker-js-plugin-interface-extraction
+"@systemfsoftware/stryker-js-plugin-interface@6.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - drop-naked-ignorers
+    - plucky-plugins-resolve
 "@systemfsoftware/stryker-js-plugin-runtime@5.0.0":
   dir: packages/stryker-js-plugin-runtime
   intents:
     - esm-only-module-loading
     - force-all-packages-patch
     - stryker-js-plugin-interface-extraction
+"@systemfsoftware/stryker-js-plugin-runtime@5.0.1":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - worker-socket-owner-mode
 "@systemfsoftware/stryker-js-typescript-checker@6.0.0":
   dir: packages/stryker-js-typescript-checker
   intents:
     - famous-rockets-judge
     - force-all-packages-patch
     - stryker-js-typescript-checker-home-migration
+"@systemfsoftware/stryker-js-typescript-checker@7.0.0":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - drop-naked-ignorers
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -100,6 +105,23 @@
     - force-all-packages-patch
     - stryker-js-vitest-runner-home-migration
     - vitest-runner-spawn-env
+"@systemfsoftware/stryker-js-vitest-runner@6.0.0":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - drop-naked-ignorers
+"@systemfsoftware/stryker-js@5.0.0":
+  dir: packages/stryker-js
+  intents:
+    - plucky-plugins-resolve
+    - public-worms-watch
+    - stryker-js-home-migration
+    - stryker-js-language-declarations-only
+    - stryker-js-language-typed-positions
+"@systemfsoftware/stryker-js@6.0.0":
+  dir: packages/stryker-js
+  intents:
+    - drop-naked-ignorers
+    - worker-socket-owner-mode
 "@systemfsoftware/stryker-test-contribution@3.0.0":
   dir: packages/stryker-test-contribution
   intents:
