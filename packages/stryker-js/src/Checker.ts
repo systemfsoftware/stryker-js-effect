@@ -10,6 +10,7 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import type { FileDescriptions, RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import {
+  CheckerMutantFromMutant,
   CheckerMutantWire,
   CheckerRpcs,
   type CheckResult,
@@ -431,37 +432,39 @@ const writeGroupOutcome = (
 // ---------------------------------------------------------------------------
 interface PartitionedPlansForWire {
   readonly wireMutants: readonly CheckerMutantWire[]
-  readonly skipped: readonly { readonly id: string; readonly fileName: string }[]
+  readonly skipped: readonly SkippedMutant[]
   readonly skippedAnswers: Readonly<Record<string, CheckResult>>
   readonly skippedGroups: readonly (readonly string[])[]
 }
 
-const partitionPlansForWire = (plans: readonly MutantRunPlan[]): PartitionedPlansForWire =>
-  plans.reduce<PartitionedPlansForWire>(
-    (acc, plan) => {
-      const decodeResult = S.decodeUnknownResult(CheckerMutantWire)(plan.mutant)
-      return Result.match(decodeResult, {
-        onSuccess: (wireMutant) => ({
-          ...acc,
-          wireMutants: [...acc.wireMutants, wireMutant],
-        }),
-        onFailure: () => ({
-          ...acc,
-          skipped: [...acc.skipped, { id: plan.mutant.id, fileName: plan.mutant.fileName }],
-          skippedAnswers: {
-            ...acc.skippedAnswers,
-            [plan.mutant.id]: { status: 'compileError', reason: 'Invalid wire mutant description' },
-          },
-          skippedGroups: [...acc.skippedGroups, [plan.mutant.id]],
-        }),
-      })
-    },
-    { wireMutants: [], skipped: [], skippedAnswers: {}, skippedGroups: [] },
-  )
+interface SkippedMutant {
+  readonly id: string
+  readonly fileName: string
+}
+
+const partitionPlansForWire = (plans: readonly MutantRunPlan[]): PartitionedPlansForWire => {
+  const wireMutants: CheckerMutantWire[] = []
+  const skipped: SkippedMutant[] = []
+  const skippedAnswers: Record<string, CheckResult> = {}
+  const skippedGroups: string[][] = []
+  plans.forEach((plan) => {
+    Result.match(S.decodeUnknownResult(CheckerMutantFromMutant)(plan.mutant), {
+      onSuccess: (wireMutant) => {
+        wireMutants.push(wireMutant)
+      },
+      onFailure: () => {
+        skipped.push({ id: plan.mutant.id, fileName: plan.mutant.fileName })
+        skippedAnswers[plan.mutant.id] = { status: 'compileError', reason: 'Invalid wire mutant description' }
+        skippedGroups.push([plan.mutant.id])
+      },
+    })
+  })
+  return { wireMutants, skipped, skippedAnswers, skippedGroups }
+}
 
 const logSkippedMutants = (
   checkerName: string,
-  skipped: readonly { readonly id: string; readonly fileName: string }[],
+  skipped: readonly SkippedMutant[],
 ): Effect.Effect<void> =>
   Effect.forEach(
     skipped,
@@ -555,7 +558,6 @@ export const groupPlans = (
     ) =>
       Effect.gen(function*() {
         const partitioned = partitionPlansForWire(command.plans)
-        yield* logSkippedMutants(command.checkerName, partitioned.skipped)
         yield* Effect.annotateCurrentSpan({
           'stryker.checker.skipped_mutants_count': partitioned.skipped.length,
         })
