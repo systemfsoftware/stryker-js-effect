@@ -15,8 +15,8 @@ catalog:
   "@effect/vitest": 4.0.0-rc.112
   "@microsoft/api-extractor": ^7
   "@noble/hashes": ^2
-  "@oxc-parser/binding-wasm32-wasi": ^0.140.0
-  "@oxc-project/types": ^0.140.0
+  "@oxc-parser/binding-wasm32-wasi": ^0.150.0
+  "@oxc-project/types": ^0.150.0
   "@std/jsonc": jsr:^1
   "@systemfsoftware/all": ^2
   "@systemfsoftware/arethetypeswrong-cli": ^4
@@ -34,7 +34,7 @@ catalog:
   effect: 4.0.0-rc.112
   husky: ^9
   lint-staged: ^17
-  oxc-parser: ^0.140.0
+  oxc-parser: ^0.150.0
   oxc-walker: ^1
   oxlint: ^1
   oxlint-tsgolint: ^7
@@ -55,7 +55,7 @@ catalogs:
     "@systemfsoftware/stryker-js-typescript-checker": latest
     "@systemfsoftware/stryker-js-vitest-runner": latest
     "@systemfsoftware/stryker-test-contribution": latest
-    mutation-testing-elements: 3.7.3
+    mutation-testing-elements: 3.9.0
 minimumReleaseAgeExclude:
   - "@systemfsoftware/*"
 packages:
