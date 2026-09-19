@@ -7,7 +7,7 @@ import type {
   TestRunnerCapabilities,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
-import * as Duration from 'effect/Duration'
+import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
@@ -34,7 +34,7 @@ import { RunEnvironment } from './RunEnvironment.js'
 export interface DryRunDone extends InstrumentDone {
   readonly dryRunResult: CompleteDryRunResult
   readonly testCoverage: TestCoverage
-  readonly timeOverhead: Duration.Duration
+  readonly timeOverhead: EffectDuration.Duration
 }
 
 function buildDryRunFiles(prev: InstrumentDone): { files: string[]; testFiles: string[] | undefined } {
@@ -49,7 +49,7 @@ export interface DryRunRaw {
   readonly prev: InstrumentDone
   readonly rawResult: DryRunResult
   readonly capabilities: TestRunnerCapabilities
-  readonly gross: Duration.Duration
+  readonly gross: EffectDuration.Duration
 }
 
 type FailedDryRun = Extract<DryRunResult, { readonly status: 'error' }>
@@ -121,14 +121,14 @@ const withOriginalFileNames = (tests: readonly TestResult[], prev: InstrumentDon
 const announceDryRunOutcome = (
   tests: readonly TestResult[],
   prev: InstrumentDone,
-  gross: Duration.Duration,
+  gross: EffectDuration.Duration,
   overheadMillis: number,
 ): Effect.Effect<void> =>
   Match.value(tests.length).pipe(
     Match.when(0, () => Effect.logInfo('No tests were found')),
     Match.orElse(() =>
       Effect.logInfo(
-        `Initial test run succeeded. Ran ${tests.length} tests in ${Duration.format(gross)} (net ${
+        `Initial test run succeeded. Ran ${tests.length} tests in ${EffectDuration.format(gross)} (net ${
           totalTestTime(tests)
         } ms, overhead ${overheadMillis} ms).`,
       ).pipe(
@@ -152,7 +152,7 @@ const completeDryRunPassed = (raw: DryRunRaw): Effect.Effect<DryRunDone, StageEr
     }
     const tests = withOriginalFileNames(rawResult.tests, prevDone)
     const dryRunResult: CompleteDryRunResult = { ...rawResult, tests, status: 'complete' }
-    const overheadMillis = overheadMillisOf(Duration.toMillis(raw.gross), tests)
+    const overheadMillis = overheadMillisOf(EffectDuration.toMillis(raw.gross), tests)
 
     yield* offerReporterEvent(
       prevDone.reporterStage,
@@ -170,7 +170,7 @@ const completeDryRunPassed = (raw: DryRunRaw): Effect.Effect<DryRunDone, StageEr
       ...prevDone,
       dryRunResult,
       testCoverage: testCoverageFrom(dryRunResult),
-      timeOverhead: Duration.millis(overheadMillis),
+      timeOverhead: EffectDuration.millis(overheadMillis),
     }
   })
 
@@ -238,7 +238,7 @@ export const dryRunCell = Cell.layer({
                 Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Dry run failed', cause })),
               ),
           )
-          const gross: Duration.Duration = timed[0]
+          const gross: EffectDuration.Duration = timed[0]
           const rawResult = timed[1]
           const capabilities = yield* runner.capabilities.pipe(
             Effect.mapError((cause) =>

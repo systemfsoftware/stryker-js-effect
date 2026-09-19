@@ -2,7 +2,7 @@ import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { BatchSpanProcessor, SimpleSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-base'
 import * as Config from 'effect/Config'
-import * as Duration from 'effect/Duration'
+import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
@@ -10,12 +10,12 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Scope from 'effect/Scope'
 
-const SHUTDOWN_TIMEOUT = Duration.seconds(3)
+const SHUTDOWN_TIMEOUT = EffectDuration.seconds(3)
 const EXPORT_TIMEOUT_MILLIS = 5000
 
 const withBestEffortShutdown = <A, E>(
   self: Layer.Layer<A, E>,
-  shutdownTimeout: Duration.Duration,
+  shutdownTimeout: EffectDuration.Duration,
 ): Layer.Layer<A, E> =>
   Layer.effectContext(
     Effect.acquireRelease(
