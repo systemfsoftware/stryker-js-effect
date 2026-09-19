@@ -18,14 +18,11 @@ import {
 
 import { encodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Cause from 'effect/Cause'
-import * as Clock from 'effect/Clock'
-import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Metric from 'effect/Metric'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import {
   admitCheckerAnswer,
@@ -37,8 +34,14 @@ import {
   type CheckGroupDecision,
   type CheckResultDecision,
 } from './admit-checker-answer.workflow.js'
-import { CheckerMutantFromMutant } from './checker-mutant-wire.js'
-import { checkerCrashes, checkerDuration, checkerMutantsChecked, checkerMutantsSkipped } from './metrics.js'
+import { type UndescribableMutant, wireRecordOf } from './checker-mutant-wire.js'
+import {
+  checkerDuration,
+  checkerMutantsChecked,
+  checkerMutantsSkipped,
+  checkerProcessCrashes,
+  checkerRpcFailures,
+} from './metrics.js'
 import type { IdGeneratorShape } from './Worker.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from './Worker.schema.js'
 import type { ChildProcessCrashedError as ChildProcessCrashedErrorType } from './Worker.schema.js'
@@ -292,6 +295,7 @@ export const makeCheckerChildProcess = (params: {
           Match.exhaustive,
         )
       ),
+      Effect.tapError(() => Metric.update(checkerProcessCrashes, 1)),
     )
 
     const recordCheckerCall = <A>(
@@ -300,33 +304,29 @@ export const makeCheckerChildProcess = (params: {
       mutants: readonly CheckerMutantWire[],
       call: Effect.Effect<A, { readonly message: string }>,
     ): Effect.Effect<A, ChildProcessCrashedError> =>
-      Effect.gen(function*() {
-        const start = yield* Clock.currentTimeMillis
-        return yield* call.pipe(
-          Effect.withSpan(spanName, {
-            attributes: {
-              'stryker.checker.name': checkerName,
-              'stryker.mutants.count': mutants.length,
-            },
-          }),
-          Effect.onExit((exit) =>
-            Effect.gen(function*() {
-              const end = yield* Clock.currentTimeMillis
-              yield* Metric.update(checkerDuration, Duration.millis(end - start))
-              yield* Match.value(exit).pipe(
-                Match.tag('Success', () => Metric.update(checkerMutantsChecked, mutants.length)),
-                Match.tag('Failure', (failure) =>
-                  Match.value(Cause.hasInterruptsOnly(failure.cause)).pipe(
-                    Match.when(true, () => Effect.void),
-                    Match.orElse(() => Metric.update(checkerCrashes, 1)),
-                  )),
-                Match.exhaustive,
-              )
-            })
-          ),
-          Effect.mapError((error) => crashed(error.message)),
-        )
-      })
+      call.pipe(
+        Effect.withSpan(spanName, {
+          attributes: {
+            'stryker.checker.name': checkerName,
+            'stryker.mutants.count': mutants.length,
+          },
+        }),
+        Effect.timed,
+        Effect.onExit((exit) =>
+          Match.value(exit).pipe(
+            Match.tag('Success', () => Metric.update(checkerMutantsChecked, mutants.length)),
+            Match.tag('Failure', (failure) =>
+              Match.value(Cause.hasInterruptsOnly(failure.cause)).pipe(
+                Match.when(true, () => Effect.void),
+                Match.orElse(() => Metric.update(checkerRpcFailures, 1)),
+              )),
+            Match.exhaustive,
+          )
+        ),
+        Effect.tap(([duration]) => Metric.update(checkerDuration, duration)),
+        Effect.map(([, result]) => result),
+        Effect.mapError((error) => crashed(error.message)),
+      )
 
     return {
       check: (checkerName: string, mutants: readonly CheckerMutantWire[]) =>
@@ -444,60 +444,114 @@ const writeGroupOutcome = (
   })
 
 // ---------------------------------------------------------------------------
-interface PartitionedPlansForWire {
-  readonly wireMutants: readonly CheckerMutantWire[]
-  readonly skipped: readonly SkippedMutant[]
-  readonly skippedAnswers: Readonly<Record<string, CheckResult>>
-  readonly skippedGroups: readonly (readonly string[])[]
+interface PartitionedMutants {
+  readonly wire: readonly CheckerMutantWire[]
+  readonly undescribable: readonly UndescribableMutant[]
 }
 
-interface SkippedMutant {
-  readonly id: string
-  readonly fileName: string
-  readonly reason: string
-}
-
-const SKIPPED_REASON = 'Mutant cannot be described to a checker'
-
-const partitionPlansForWire = (plans: readonly MutantRunPlan[]): PartitionedPlansForWire => {
-  const wireMutants: CheckerMutantWire[] = []
-  const skipped: SkippedMutant[] = []
-  const skippedAnswers: Record<string, CheckResult> = {}
-  const skippedGroups: string[][] = []
-  plans.forEach((plan) => {
-    Result.match(S.decodeUnknownResult(CheckerMutantFromMutant)(plan.mutant), {
+const partitionMutantsForWire = (plans: readonly MutantRunPlan[]): PartitionedMutants => {
+  const wire: CheckerMutantWire[] = []
+  const undescribable: UndescribableMutant[] = []
+  plans.forEach((plan) =>
+    Result.match(wireRecordOf(plan.mutant), {
       onSuccess: (wireMutant) => {
-        wireMutants.push(wireMutant)
+        wire.push(wireMutant)
       },
-      onFailure: () => {
-        skipped.push({ id: plan.mutant.id, fileName: plan.mutant.fileName, reason: SKIPPED_REASON })
-        skippedAnswers[plan.mutant.id] = { status: 'compileError', reason: SKIPPED_REASON }
-        skippedGroups.push([plan.mutant.id])
+      onFailure: (refused) => {
+        undescribable.push(refused)
       },
     })
+  )
+  return { wire, undescribable }
+}
+
+const compileErrorAnswersOf = (
+  undescribable: readonly UndescribableMutant[],
+): Readonly<Record<string, CheckResult>> =>
+  Object.fromEntries(
+    undescribable.map((mutant): readonly [string, CheckResult] => [
+      mutant.id,
+      { status: 'compileError', reason: mutant.reason },
+    ]),
+  )
+
+const singletonGroupsOf = (undescribable: readonly UndescribableMutant[]): readonly (readonly string[])[] =>
+  undescribable.map((mutant) => [mutant.id])
+
+const undescribableIdsOf = (undescribable: readonly UndescribableMutant[]): ReadonlySet<string> =>
+  new Set(undescribable.map((mutant) => mutant.id))
+
+interface WireLookup {
+  readonly wireById: ReadonlyMap<string, CheckerMutantWire>
+  readonly undescribableById: ReadonlyMap<string, UndescribableMutant>
+}
+
+const lookupOf = (partitioned: PartitionedMutants): WireLookup => ({
+  wireById: new Map(partitioned.wire.map((mutant): readonly [string, CheckerMutantWire] => [mutant.id, mutant])),
+  undescribableById: new Map(
+    partitioned.undescribable.map((mutant): readonly [string, UndescribableMutant] => [mutant.id, mutant]),
+  ),
+})
+
+const selectedFromLookup = (
+  plans: readonly MutantRunPlan[],
+  lookup: WireLookup,
+): PartitionedMutants => {
+  const wire: CheckerMutantWire[] = []
+  const undescribable: UndescribableMutant[] = []
+  plans.forEach((plan) => {
+    Option.match(Option.fromUndefinedOr(lookup.wireById.get(plan.mutant.id)), {
+      onSome: (wired) => {
+        wire.push(wired)
+      },
+      onNone: () =>
+        Option.match(Option.fromUndefinedOr(lookup.undescribableById.get(plan.mutant.id)), {
+          onSome: (refused) => {
+            undescribable.push(refused)
+          },
+          onNone: () => {
+            Result.match(wireRecordOf(plan.mutant), {
+              onSuccess: (wired) => {
+                wire.push(wired)
+              },
+              onFailure: (refused) => {
+                undescribable.push(refused)
+              },
+            })
+          },
+        }),
+    })
   })
-  return { wireMutants, skipped, skippedAnswers, skippedGroups }
+  return { wire, undescribable }
 }
 
 const SKIPPED_IDS_IN_WARNING = 5
 
-const skippedIdsOf = (skipped: readonly SkippedMutant[]): string =>
-  `${skipped.slice(0, SKIPPED_IDS_IN_WARNING).map((item) => item.id).join(', ')}${
-    Option.match(Option.liftPredicate(skipped.length, (count) => count > SKIPPED_IDS_IN_WARNING), {
-      onNone: () => '',
-      onSome: (count) => `, +${count - SKIPPED_IDS_IN_WARNING} more`,
-    })
+const skippedIdsOf = (undescribable: readonly UndescribableMutant[]): string =>
+  `${undescribable.slice(0, SKIPPED_IDS_IN_WARNING).map((item) => item.id).join(', ')}${
+    Option.match(
+      Option.liftPredicate(undescribable.length, (count) => count > SKIPPED_IDS_IN_WARNING),
+      {
+        onNone: () => '',
+        onSome: (count) => `, +${count - SKIPPED_IDS_IN_WARNING} more`,
+      },
+    )
   }`
+
+const refusalReasonsOf = (undescribable: readonly UndescribableMutant[]): string =>
+  [...new Set(undescribable.map((mutant) => mutant.reason))].join('; ')
 
 const logSkippedMutants = (
   checkerName: string,
-  skipped: readonly SkippedMutant[],
+  undescribable: readonly UndescribableMutant[],
 ): Effect.Effect<void> =>
-  Match.value(skipped.length).pipe(
+  Match.value(undescribable.length).pipe(
     Match.when(0, () => Effect.void),
     Match.orElse(() =>
       Effect.logWarning(
-        `Checker "${checkerName}" skipped ${skipped.length} mutant(s): ${SKIPPED_REASON} (${skippedIdsOf(skipped)})`,
+        `Checker "${checkerName}" skipped ${undescribable.length} mutant(s) it cannot be told about: ${
+          refusalReasonsOf(undescribable)
+        } (${skippedIdsOf(undescribable)})`,
       )
     ),
   )
@@ -514,6 +568,7 @@ export const checkPlans = (
   checker: CheckerResourceService,
   checkerName: string,
   plans: readonly MutantRunPlan[],
+  lookup?: WireLookup,
 ): Effect.Effect<
   readonly (readonly [MutantRunPlan, CheckResult])[],
   CheckerCrash | CheckerContractBroken
@@ -524,22 +579,26 @@ export const checkPlans = (
         readonly checker: CheckerResourceService
         readonly checkerName: string
         readonly plans: readonly MutantRunPlan[]
+        readonly lookup?: WireLookup | undefined
       },
     ) =>
       Effect.gen(function*() {
-        const partitioned = partitionPlansForWire(command.plans)
-        yield* logSkippedMutants(command.checkerName, partitioned.skipped)
-        if (partitioned.skipped.length > 0) {
-          yield* Metric.update(checkerMutantsSkipped, partitioned.skipped.length)
+        const partitioned = Option.match(Option.fromUndefinedOr(command.lookup), {
+          onSome: (known) => selectedFromLookup(command.plans, known),
+          onNone: () => partitionMutantsForWire(command.plans),
+        })
+        yield* logSkippedMutants(command.checkerName, partitioned.undescribable)
+        if (partitioned.undescribable.length > 0) {
+          yield* Metric.update(checkerMutantsSkipped, partitioned.undescribable.length)
         }
         yield* Effect.annotateCurrentSpan({
-          'stryker.checker.skipped_mutants_count': partitioned.skipped.length,
+          'stryker.checker.skipped_mutants_count': partitioned.undescribable.length,
         })
-        const answers = yield* command.checker.check(command.checkerName, partitioned.wireMutants)
+        const answers = yield* command.checker.check(command.checkerName, partitioned.wire)
         return {
           checkerName: command.checkerName,
           requestedIds: command.plans.map((plan) => plan.mutant.id),
-          answers: { ...partitioned.skippedAnswers, ...answers },
+          answers: { ...compileErrorAnswersOf(partitioned.undescribable), ...answers },
         }
       }),
     decode: (
@@ -561,7 +620,7 @@ export const checkPlans = (
     encode: (outcome) => outcome,
     write: (outcome, raw) => writeCheckerOutcome(plans, raw.checkerName, outcome),
   })
-  return description.run({ checker, checkerName, plans })
+  return description.run({ checker, checkerName, plans, lookup })
 }
 
 /**
@@ -571,6 +630,7 @@ export const groupPlans = (
   checker: CheckerResourceService,
   checkerName: string,
   plans: readonly MutantRunPlan[],
+  lookup?: WireLookup,
 ): Effect.Effect<
   readonly (readonly MutantRunPlan[])[],
   CheckerCrash | CheckerContractBroken
@@ -581,18 +641,26 @@ export const groupPlans = (
         readonly checker: CheckerResourceService
         readonly checkerName: string
         readonly plans: readonly MutantRunPlan[]
+        readonly lookup?: WireLookup | undefined
       },
     ) =>
       Effect.gen(function*() {
-        const partitioned = partitionPlansForWire(command.plans)
-        yield* Effect.annotateCurrentSpan({
-          'stryker.checker.skipped_mutants_count': partitioned.skipped.length,
+        const partitioned = Option.match(Option.fromUndefinedOr(command.lookup), {
+          onSome: (known) => selectedFromLookup(command.plans, known),
+          onNone: () => partitionMutantsForWire(command.plans),
         })
-        const idGroups = yield* command.checker.group(command.checkerName, partitioned.wireMutants)
+        yield* Effect.annotateCurrentSpan({
+          'stryker.checker.skipped_mutants_count': partitioned.undescribable.length,
+        })
+        const undescribableIds = undescribableIdsOf(partitioned.undescribable)
+        const checkerGroups = yield* command.checker.group(command.checkerName, partitioned.wire)
+        const withoutSkipped = checkerGroups
+          .map((group) => group.filter((id) => !undescribableIds.has(id)))
+          .filter((group) => group.length > 0)
         return {
           checkerName: command.checkerName,
           requestedIds: command.plans.map((plan) => plan.mutant.id),
-          idGroups: [...partitioned.skippedGroups, ...idGroups],
+          idGroups: [...singletonGroupsOf(partitioned.undescribable), ...withoutSkipped],
         }
       }),
     decode: (
@@ -614,7 +682,7 @@ export const groupPlans = (
     encode: (outcome) => outcome,
     write: (outcome, raw) => writeGroupOutcome(plans, raw.checkerName, outcome),
   })
-  return description.run({ checker, checkerName, plans })
+  return description.run({ checker, checkerName, plans, lookup })
 }
 
 export const checkGroupedPlans = (
@@ -626,10 +694,11 @@ export const checkGroupedPlans = (
   CheckerCrash | CheckerContractBroken
 > =>
   Effect.gen(function*() {
-    const groups = yield* groupPlans(checker, checkerName, plans)
+    const lookup = lookupOf(partitionMutantsForWire(plans))
+    const groups = yield* groupPlans(checker, checkerName, plans, lookup)
     const checked = yield* Effect.forEach(
       groups,
-      (group: readonly MutantRunPlan[]) => checkPlans(checker, checkerName, group),
+      (group: readonly MutantRunPlan[]) => checkPlans(checker, checkerName, group, lookup),
       { concurrency: 1 },
     )
     return checked.flat()

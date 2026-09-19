@@ -24,7 +24,6 @@ import * as Pool from 'effect/Pool'
 import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
@@ -35,7 +34,7 @@ import { RunEvents, RunMutantTested } from '../RunEvents.js'
 import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import type { MutationTestDecision } from '../admit-mutation-test.workflow.js'
-import { CheckerMutantFromMutant } from '../checker-mutant-wire.js'
+import { wireRecordOf } from '../checker-mutant-wire.js'
 import type { CheckerCrash, CheckerResourceService } from '../Checker.js'
 import { checkGroupedPlans, createCheckerFactory } from '../Checker.js'
 import { REMEMBERED_REASON, toRelativeNormalizedFileName } from '../IncrementalDiff.paths.js'
@@ -157,6 +156,14 @@ type CheckerSlot = {
   readonly checker: CheckerResourceService
 }[]
 
+const CHECKER_ACQUIRE_RETRIES = 2
+
+const isCheckerCrash = (error: StageError | CheckerCrash): boolean =>
+  Match.value(error).pipe(
+    Match.tag('ChildProcessCrashedError', 'OutOfMemoryError', () => true),
+    Match.orElse(() => false),
+  )
+
 const makeCheckerPool = (
   prev: DryRunDone,
   idGenerator: Parameters<typeof createCheckerFactory>[3],
@@ -182,7 +189,7 @@ const makeCheckerPool = (
               resolved.spawn.entrypoint,
               idGenerator,
               prev.sandbox.workingDirectory,
-            )
+            ).pipe(Effect.retry({ times: CHECKER_ACQUIRE_RETRIES, while: isCheckerCrash }))
             return { checkerName: resolved.name, checker: service }
           })),
         size: prev.concurrency.checkers,
@@ -242,8 +249,7 @@ const checkPlansWithConfiguredCheckers = (
       ),
   })
 
-const isPlannable = (mutant: Mutant): boolean =>
-  Result.isSuccess(S.decodeUnknownResult(CheckerMutantFromMutant)(mutant))
+const isPlannable = (mutant: Mutant): boolean => Result.isSuccess(wireRecordOf(mutant))
 
 const DROPPED_IDS_IN_WARNING = 5
 

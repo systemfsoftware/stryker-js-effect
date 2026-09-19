@@ -1,5 +1,6 @@
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants'
 import { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
@@ -25,3 +26,15 @@ export const CheckerMutantFromMutant: S.Codec<CheckerMutantWire, Mutant> = Mutan
     }),
   ),
 )
+
+export interface UndescribableMutant {
+  readonly id: string
+  readonly fileName: string
+  readonly reason: string
+}
+
+export const wireRecordOf = (mutant: Mutant): Result.Result<CheckerMutantWire, UndescribableMutant> =>
+  Result.mapError(
+    S.decodeUnknownResult(CheckerMutantFromMutant)(mutant),
+    (error) => ({ id: mutant.id, fileName: mutant.fileName, reason: error.message }),
+  )

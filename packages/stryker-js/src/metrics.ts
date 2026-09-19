@@ -12,6 +12,12 @@ export const checkerMutantsSkipped = Metric.counter('stryker.checker.mutants.ski
   description: 'Total number of mutants dropped because they cannot be described to a checker',
 })
 
-export const checkerCrashes = Metric.counter('stryker.checker.crashes', {
-  description: 'Total number of checker worker calls that failed without being cancelled',
+export const checkerRpcFailures = Metric.counter('stryker.checker.rpc_failures', {
+  description: 'Checker worker RPC calls that did not complete, excluding interruptions',
+  incremental: true,
+})
+
+export const checkerProcessCrashes = Metric.counter('stryker.checker.process_crashes', {
+  description: 'Checker worker processes that never became usable',
+  incremental: true,
 })

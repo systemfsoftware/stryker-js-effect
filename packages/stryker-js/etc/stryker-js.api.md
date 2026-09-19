@@ -11,7 +11,7 @@ import * as Context from 'effect/Context';
 import * as DateTime from 'effect/DateTime';
 import { Duration } from 'effect/Duration';
 import * as Duration_2 from 'effect/Duration';
-import * as Effect from 'effect/Effect';
+import * as Effect$1 from 'effect/Effect';
 import * as Exit from 'effect/Exit';
 import * as FileSystem from 'effect/FileSystem';
 import * as HashMap from 'effect/HashMap';
@@ -63,7 +63,7 @@ export interface BaseTestResult {
 }
 
 // @public (undocumented)
-export const buildTestRunner: <ChildRunnerError>(context: TestRunnerBuildContext, childProcessRunner: Effect.Effect<PooledTestRunner, ChildRunnerError, Scope.Scope | WorkerLauncher>) => Effect.Effect<PooledTestRunner, PooledTestRunnerError | ChildRunnerError, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | WorkerLauncher>;
+export const buildTestRunner: <ChildRunnerError>(context: TestRunnerBuildContext, childProcessRunner: Effect$1.Effect<PooledTestRunner, ChildRunnerError, Scope.Scope | WorkerLauncher>) => Effect$1.Effect<PooledTestRunner, PooledTestRunnerError | ChildRunnerError, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | WorkerLauncher>;
 
 // @public (undocumented)
 export function buildVerdictEnvelope(report: MutationTestResult, mode: OutputMode, signal: ModeSignal, runId: string, basePath: string, pathService: Path.Path): VerdictEnvelope;
@@ -89,9 +89,6 @@ export type CheckerContractBroken = CheckerAnsweredUnrequested | CheckerSkippedR
 
 // @public (undocumented)
 export type CheckerCrash = ChildProcessCrashedError | OutOfMemoryError;
-
-// @public (undocumented)
-export const checkerCrashes: Metric.Counter<number>;
 
 // @public (undocumented)
 export const checkerDuration: Metric.Histogram<Duration>;
@@ -132,6 +129,9 @@ export const CheckerMutantWire: S.Struct<{
 export type CheckerMutantWire = typeof CheckerMutantWire.Type;
 
 // @public (undocumented)
+export const checkerProcessCrashes: Metric.Counter<number>;
+
+// @public (undocumented)
 export const CheckerRequest: S.Struct<{
     readonly checkerName: S.String;
     readonly mutants: S.$Array<S.Struct<{
@@ -158,10 +158,13 @@ export type CheckerRequest = typeof CheckerRequest.Type;
 // @public
 export interface CheckerResourceService {
     // (undocumented)
-    readonly check: (checkerName: string, mutants: readonly CheckerMutantWire[]) => Effect.Effect<Record<string, CheckResult>, CheckerCrash>;
+    readonly check: (checkerName: string, mutants: readonly CheckerMutantWire[]) => Effect$1.Effect<Record<string, CheckResult>, CheckerCrash>;
     // (undocumented)
-    readonly group: (checkerName: string, mutants: readonly CheckerMutantWire[]) => Effect.Effect<readonly (readonly string[])[], CheckerCrash>;
+    readonly group: (checkerName: string, mutants: readonly CheckerMutantWire[]) => Effect$1.Effect<readonly (readonly string[])[], CheckerCrash>;
 }
+
+// @public (undocumented)
+export const checkerRpcFailures: Metric.Counter<number>;
 
 // @public (undocumented)
 export const CheckerRpcs: RpcGroup.RpcGroup<TracedRpc<'check', typeof CheckerRequest, typeof CheckerCheckResult, typeof CheckerFailed> | TracedRpc<'group', typeof CheckerRequest, typeof CheckerGroupResult, typeof CheckerFailed>>;
@@ -172,7 +175,7 @@ export const CheckerRpcs: RpcGroup.RpcGroup<TracedRpc<'check', typeof CheckerReq
 export class CheckerSkippedRequested extends CheckerSkippedRequested_base {}
 
 // @public (undocumented)
-export const checkGroupedPlans: (checker: CheckerResourceService, checkerName: string, plans: readonly RunPlan[]) => Effect.Effect<readonly (readonly [RunPlan, CheckResult])[], CheckerCrash | CheckerContractBroken>;
+export const checkGroupedPlans: (checker: CheckerResourceService, checkerName: string, plans: readonly RunPlan[]) => Effect$1.Effect<readonly (readonly [RunPlan, CheckResult])[], CheckerCrash | CheckerContractBroken>;
 
 // @public (undocumented)
 export type CheckResult = FailedCheckResult | PassedCheckResult;
@@ -275,7 +278,7 @@ export type CoverageAnalysis = 'off' | 'all' | 'perTest';
 export type CoverageData = Record<string, number>;
 
 // @public (undocumented)
-export const createDefaultOptions: Effect.Effect<StrykerOptions>;
+export const createDefaultOptions: Effect$1.Effect<StrykerOptions>;
 
 // @public (undocumented)
 export function createFileMatcher(pattern: boolean | string, pathService: Path.Path, allowHiddenFiles?: boolean): (fileName: string) => boolean;
@@ -290,7 +293,7 @@ export function deepFreeze<T>(target: T): Immutable<T>;
 export type DeepOptional<T> = { -readonly [P in keyof T]?: T[P] extends Record<string, unknown> ? DeepOptional<T[P]> | undefined : T[P]; };
 
 // @public (undocumented)
-export const defaultOptions: Effect.Effect<Immutable<StrykerOptions>, never, never>;
+export const defaultOptions: Effect$1.Effect<Immutable<StrykerOptions>, never, never>;
 
 // @public (undocumented)
 export function describeErrors(error: S.SchemaError): string[];
@@ -590,17 +593,17 @@ export class IdGenerator extends IdGenerator_base {}
 // @public (undocumented)
 export interface IdGeneratorShape {
     // (undocumented)
-    readonly next: Effect.Effect<number>;
+    readonly next: Effect$1.Effect<number>;
 }
 
 // @public (undocumented)
 export interface Ignorer {
     // (undocumented)
     readonly name: string;
-    // Warning: (ae-forgotten-export) The symbol "Node_2" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "Node" needs to be exported by the entry point index.d.mts
     //
     // (undocumented)
-    shouldIgnore(node: Node_2, ancestors: readonly Node_2[]): string | undefined;
+    shouldIgnore(node: Node, ancestors: readonly Node[]): string | undefined;
 }
 
 // @public (undocumented)
@@ -615,7 +618,7 @@ export const ImportedModuleSchema: S.Struct<{
 }>;
 
 // @public (undocumented)
-export function importModule(moduleName: string): Effect.Effect<unknown, StrykerError>;
+export function importModule(moduleName: string): Effect$1.Effect<unknown, StrykerError>;
 
 // @public (undocumented)
 export const IncrementalReportSchema: S.StructWithRest<S.Struct<{
@@ -752,7 +755,7 @@ export const LocationSchema: S.Struct<{
 export const makeRunLayer: (env: RunEnvironmentShape, events?: Queue.Queue<RunEvent, Cause.Done>) => Layer.Layer<RunStageServices, never, EnginePorts>;
 
 // @public (undocumented)
-export const makeWorkerClient: <Rpcs extends Rpc.Any>(params: WorkerClientParams<Rpcs>) => Effect.Effect<RpcClient.RpcClient<Rpcs, RpcClientError>, WorkerBootError, Scope.Scope | WorkerLauncher>;
+export const makeWorkerClient: <Rpcs extends Rpc.Any>(params: WorkerClientParams<Rpcs>) => Effect$1.Effect<RpcClient.RpcClient<Rpcs, RpcClientError>, WorkerBootError, Scope.Scope | WorkerLauncher>;
 
 // @public (undocumented)
 export function matchesFile(pattern: boolean | string, fileName: string, pathService: Path.Path, allowHiddenFiles?: boolean): boolean;
@@ -1032,13 +1035,13 @@ export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource;
 // @public
 export interface PooledTestRunner {
     // (undocumented)
-    readonly capabilities: Effect.Effect<TestRunnerCapabilities, PooledTestRunnerError>;
+    readonly capabilities: Effect$1.Effect<TestRunnerCapabilities, PooledTestRunnerError>;
     // (undocumented)
-    readonly dryRun: (options: DryRunOptions) => Effect.Effect<DryRunResult, PooledTestRunnerError>;
+    readonly dryRun: (options: DryRunOptions) => Effect$1.Effect<DryRunResult, PooledTestRunnerError>;
     // (undocumented)
-    readonly init: Effect.Effect<void, PooledTestRunnerError>;
+    readonly init: Effect$1.Effect<void, PooledTestRunnerError>;
     // (undocumented)
-    readonly mutantRun: (options: MutantRunOptions) => Effect.Effect<MutantRunResult, PooledTestRunnerError>;
+    readonly mutantRun: (options: MutantRunOptions) => Effect$1.Effect<MutantRunResult, PooledTestRunnerError>;
 }
 
 // @public
@@ -1107,7 +1110,7 @@ export interface ProjectFile extends FileDescription {
 }
 
 // @public (undocumented)
-export function readConfig(cliOptions: PartialStrykerOptions, invocation: ConfigInvocation): Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Path.Path>;
+export function readConfig(cliOptions: PartialStrykerOptions, invocation: ConfigInvocation): Effect$1.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Path.Path>;
 
 // Warning: (ae-forgotten-export) The symbol "ReadConfigCommand_base" needs to be exported by the entry point index.d.mts
 //
@@ -1133,7 +1136,7 @@ export const ReporterEventBatch: S.$Array<S.Union<readonly [typeof DryRunComplet
 export type ReporterEventBatch = typeof ReporterEventBatch.Type;
 
 // @public (undocumented)
-export type ReporterFactory = (options: StrykerOptions, init: ReporterInit) => (events: AsyncIterable<ReporterEvent>) => Effect.Effect<void, ReporterFailed>;
+export type ReporterFactory = (options: StrykerOptions, init: ReporterInit) => (events: AsyncIterable<ReporterEvent>) => Effect$1.Effect<void, ReporterFailed>;
 
 // Warning: (ae-forgotten-export) The symbol "ReporterFailed_base" needs to be exported by the entry point index.d.mts
 //
@@ -1314,13 +1317,13 @@ export interface SpawnedSocketWorker {
     // (undocumented)
     readonly clientLayer: Layer.Layer<RpcClient.Protocol, Socket.SocketError>;
     // (undocumented)
-    readonly exited: Effect.Effect<never, WorkerExit>;
+    readonly exited: Effect$1.Effect<never, WorkerExit>;
     // (undocumented)
     readonly pid: number;
 }
 
 // @public (undocumented)
-export const spawnReporterWorker: (params: SpawnReporterWorkerParams) => Effect.Effect<ReporterWorkerClient, WorkerBootError, Scope.Scope | WorkerLauncher>;
+export const spawnReporterWorker: (params: SpawnReporterWorkerParams) => Effect$1.Effect<ReporterWorkerClient, WorkerBootError, Scope.Scope | WorkerLauncher>;
 
 // @public (undocumented)
 export interface SpawnReporterWorkerParams {
@@ -1354,7 +1357,7 @@ export class StageError extends StageError_base {
 export type StageServices = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | IdGenerator | Path.Path | RunEnvironment | RunEvents | Scope.Scope | Stdio.Stdio | WorkerLauncher;
 
 // @public (undocumented)
-export const strykerCell: (options: PartialStrykerOptions, targetMutatePatterns?: readonly string[]) => Effect.Effect<MutationTestDone, StageError | PlatformError, FileSystem.FileSystem | Path.Path | Stdio.Stdio>;
+export const strykerCell: (options: PartialStrykerOptions, targetMutatePatterns?: readonly string[]) => Effect$1.Effect<MutationTestDone, StageError | PlatformError, FileSystem.FileSystem | Path.Path | Stdio.Stdio>;
 
 // Warning: (ae-forgotten-export) The symbol "StrykerError_base" needs to be exported by the entry point index.d.mts
 //
@@ -1447,7 +1450,7 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
 }>, readonly [S.$Record<S.String, S.Unknown>]>;
 
 // @public (undocumented)
-export type StrykerRun = (options: PartialStrykerOptions, targetMutatePatterns?: string[]) => Effect.Effect<MutationTestDone, StageError, never>;
+export type StrykerRun = (options: PartialStrykerOptions, targetMutatePatterns?: string[]) => Effect$1.Effect<MutationTestDone, StageError, never>;
 
 // @public (undocumented)
 export const strykerVersion: string;
@@ -1495,7 +1498,7 @@ export interface TestRunnerBuildContext {
     readonly idGenerator: IdGeneratorShape;
     // (undocumented)
     readonly options: StrykerOptions;
-    readonly retire: Effect.Effect<void>;
+    readonly retire: Effect$1.Effect<void>;
     // (undocumented)
     readonly sandboxWorkingDirectory: string;
     // (undocumented)
@@ -1559,7 +1562,7 @@ export interface UnserializableDescription {
 }
 
 // @public (undocumented)
-export function validateOptions(options: Record<string, unknown>, schema: ValidationSchemaDocument): Effect.Effect<StrykerOptions, ConfigError>;
+export function validateOptions(options: Record<string, unknown>, schema: ValidationSchemaDocument): Effect$1.Effect<StrykerOptions, ConfigError>;
 
 // @public (undocumented)
 export type ValidationSchemaDocument = {
@@ -1697,7 +1700,7 @@ export interface VmScript {
 }
 
 // @public (undocumented)
-export const vmTestRunner: (config: VmTestRunnerConfig) => Effect.Effect<PooledTestRunner, TestRunnerFailed, FileSystem.FileSystem | VmRunner>;
+export const vmTestRunner: (config: VmTestRunnerConfig) => Effect$1.Effect<PooledTestRunner, TestRunnerFailed, FileSystem.FileSystem | VmRunner>;
 
 // @public (undocumented)
 export interface VmTestRunnerConfig {
@@ -1739,7 +1742,7 @@ export class WorkerLauncher extends WorkerLauncher_base {}
 // @public (undocumented)
 export interface WorkerLauncherShape {
     // (undocumented)
-    readonly spawn: (params: WorkerSpawnParams) => Effect.Effect<SpawnedSocketWorker, ChildProcessCrashedError, Scope.Scope>;
+    readonly spawn: (params: WorkerSpawnParams) => Effect$1.Effect<SpawnedSocketWorker, ChildProcessCrashedError, Scope.Scope>;
 }
 
 // @public (undocumented)

@@ -12,7 +12,13 @@ import { hostOptionsOf, prepareCommandOf, runOnHost } from './run-host.js'
 import { makeRunLayer, mutationTestCell, RUN_EVENTS_QUEUE_BOUND, shouldKeepTempDir } from './Run.js'
 import { StageError } from './Run.schema.js'
 
-export { checkerCrashes, checkerDuration, checkerMutantsChecked, checkerMutantsSkipped } from './metrics.js'
+export {
+  checkerDuration,
+  checkerMutantsChecked,
+  checkerMutantsSkipped,
+  checkerProcessCrashes,
+  checkerRpcFailures,
+} from './metrics.js'
 
 export type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 export type {
