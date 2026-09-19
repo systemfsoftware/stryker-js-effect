@@ -70,6 +70,41 @@ export class MergeCommand extends S.TaggedClass<MergeCommand>()('MergeCommand', 
 export class MergeResult extends S.TaggedClass<MergeResult>()('MergeResult', {
   merged: S.Record(S.String, S.Unknown),
 }) {}
+
+export const ExtendsStepDocumentSchema = S.Struct({
+  path: S.String,
+  options: ConfigDocumentSchema,
+})
+export type ExtendsStepDocument = typeof ExtendsStepDocumentSchema.Type
+
+export const ExtendsStepStateSchema = S.Struct({
+  visited: S.Array(S.String),
+  documents: S.Array(ExtendsStepDocumentSchema),
+})
+export type ExtendsStepState = typeof ExtendsStepStateSchema.Type
+
+export type ExtendsRefusalReason = 'cycle' | 'non-string-extends'
+
+export class ExtendsStepDone extends S.TaggedClass<ExtendsStepDone>()('done', {
+  options: ConfigDocumentSchema,
+}) {}
+
+export class ExtendsStepRead extends S.TaggedClass<ExtendsStepRead>()('read', {
+  path: S.String,
+  state: ExtendsStepStateSchema,
+}) {}
+
+export class ExtendsStepResolve extends S.TaggedClass<ExtendsStepResolve>()('resolve', {
+  specifier: S.String,
+  state: ExtendsStepStateSchema,
+}) {}
+
+export class ExtendsStepRefused extends S.TaggedClass<ExtendsStepRefused>()('refused', {
+  reason: S.Literals(['cycle', 'non-string-extends']),
+  file: S.String,
+}) {}
+
+export type ExtendsStepDecision = ExtendsStepDone | ExtendsStepRead | ExtendsStepResolve | ExtendsStepRefused
 export const survivorsPriorReport = S.optionalKey(
   S.String.pipe(
     S.annotate({

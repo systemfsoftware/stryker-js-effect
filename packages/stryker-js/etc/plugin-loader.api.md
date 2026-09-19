@@ -11,8 +11,15 @@ import * as S from 'effect/Schema';
 import { Schema } from 'effect';
 import { YieldableError } from 'effect/Cause';
 
-// Warning: (ae-forgotten-export) The symbol "AnyPluginDescriptor" needs to be exported by the entry point plugin-loader.d.mts
-//
+// @public (undocumented)
+export type AnyPluginDescriptor = AnyWorkerPluginDescriptor | EvaluatorPluginDescriptor;
+
+// @public (undocumented)
+export type AnyWorkerPluginDescriptor = { [K in WorkerPluginKind]: WorkerPluginDescriptor<K>; }[WorkerPluginKind];
+
+// @public (undocumented)
+export type AnyWorkerPluginSource = { [K in WorkerPluginKind]: WorkerPluginSource<K>; }[WorkerPluginKind];
+
 // @public (undocumented)
 export function create<K extends PluginKind>(pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginDescriptor[]>, kind: K, name: string): Effect.Effect<PluginDescriptorOf<K>, PluginNotFoundError>;
 
@@ -20,9 +27,35 @@ export function create<K extends PluginKind>(pluginsByKind: HashMap.HashMap<Plug
 export function createAll<K extends PluginKind>(pluginsByKind: HashMap.HashMap<PluginKind, readonly AnyPluginDescriptor[]>, kind: K): Effect.Effect<readonly PluginDescriptorOf<K>[]>;
 
 // @public (undocumented)
-export interface LoadedPlugins {
-    // Warning: (ae-forgotten-export) The symbol "Ignorer" needs to be exported by the entry point plugin-loader.d.mts
+export interface EvaluatorPluginDescriptor {
+    // (undocumented)
+    readonly kind: 'Evaluator';
+    // (undocumented)
+    readonly name: string;
+}
+
+// @public (undocumented)
+export interface EvaluatorPluginSource {
+    // (undocumented)
+    readonly kind: 'Evaluator';
+    // (undocumented)
+    readonly modulePath: string;
+    // (undocumented)
+    readonly name: string;
+}
+
+// @public (undocumented)
+export interface Ignorer {
+    // (undocumented)
+    readonly name: string;
+    // Warning: (ae-forgotten-export) The symbol "Node_2" needs to be exported by the entry point plugin-loader.d.mts
     //
+    // (undocumented)
+    shouldIgnore(node: Node_2, ancestors: readonly Node_2[]): string | undefined;
+}
+
+// @public (undocumented)
+export interface LoadedPlugins {
     // (undocumented)
     readonly ignorers: readonly Ignorer[];
     // (undocumented)
@@ -46,8 +79,6 @@ export type PluginDescriptorOf<K extends PluginKind> = Extract<AnyPluginDescript
     readonly kind: K;
 }>;
 
-// Warning: (ae-forgotten-export) The symbol "WorkerPluginKind" needs to be exported by the entry point plugin-loader.d.mts
-//
 // @public (undocumented)
 export type PluginKind = WorkerPluginKind | 'Evaluator';
 
@@ -96,20 +127,52 @@ export class PluginNotFoundError extends PluginNotFoundError_base {
     readonly exitClass: 'ConfigError';
 }
 
-// Warning: (ae-forgotten-export) The symbol "AnyWorkerPluginSource" needs to be exported by the entry point plugin-loader.d.mts
-// Warning: (ae-forgotten-export) The symbol "EvaluatorPluginSource" needs to be exported by the entry point plugin-loader.d.mts
-//
 // @public (undocumented)
 export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource;
 
-// Warning: (ae-forgotten-export) The symbol "WorkerPluginSpawn" needs to be exported by the entry point plugin-loader.d.mts
-//
 // @public (undocumented)
 export const resolvePluginWorkerEntry: (params: {
     readonly loaded: Pick<LoadedPlugins, 'pluginSources'>;
     readonly kind: WorkerPluginKind;
     readonly name: string;
 }) => Effect.Effect<WorkerPluginSpawn, PluginNotFoundError>;
+
+// @public (undocumented)
+export interface WorkerPluginDescriptor<K extends WorkerPluginKind = WorkerPluginKind> {
+    // (undocumented)
+    readonly kind: K;
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly workerEntry: string;
+}
+
+// @public (undocumented)
+export const WorkerPluginKind: S.Literals<readonly ["TestRunner", "Checker", "Reporter"]>;
+
+// @public (undocumented)
+export type WorkerPluginKind = typeof WorkerPluginKind.Type;
+
+// @public (undocumented)
+export interface WorkerPluginSource<K extends WorkerPluginKind = WorkerPluginKind> {
+    // (undocumented)
+    readonly kind: K;
+    // (undocumented)
+    readonly modulePath: string;
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly workerEntry: string;
+}
+
+// @public (undocumented)
+export type WorkerPluginSpawn = typeof WorkerPluginSpawnSchema.Type;
+
+// @public (undocumented)
+export const WorkerPluginSpawnSchema: S.Struct<{
+    readonly kind: S.Literals<readonly ["TestRunner", "Checker", "Reporter"]>;
+    readonly entrypoint: S.String;
+}>;
 
 // (No @packageDocumentation comment for this package)
 

@@ -41,7 +41,7 @@ export const FileSchema = S.Struct({
 
 const IgnorerSchema = S.Unknown
 
-const InstrumenterOptionsSchema = S.Struct({
+export const InstrumenterOptionsSchema = S.Struct({
   excludedMutations: S.Array(S.String),
   ignorers: S.Array(IgnorerSchema),
   noHeader: S.optional(S.Boolean),

@@ -17,9 +17,14 @@ import {
   ConfigFileNotFoundError,
   ConfigFileUnreadableError,
   ConfigFileUnsupportedError,
+  ExtendsStepDone,
+  ExtendsStepRead,
+  ExtendsStepRefused,
+  ExtendsStepResolve,
   forkOptionsSchema,
   ImportedModuleSchema,
 } from '../Config.schema.js'
+import type { ExtendsStepDecision, ExtendsStepDocument, ExtendsStepState } from '../Config.schema.js'
 import { mergeConfig } from '../config/merge-config.js'
 import type { ConfigEnv } from '../config/stryker-config.js'
 import type { OutputMode } from '../output-mode.js'
@@ -74,7 +79,7 @@ const shadowedLegacyWarning = (legacyFile: string, supportedFile: string): strin
 
 export type Primitive = boolean | number | string | null | undefined
 
-type ImmutablePrimitive = Primitive | ((...args: never[]) => unknown)
+export type ImmutablePrimitive = Primitive | ((...args: never[]) => unknown)
 
 export type Immutable<T> = T extends ImmutablePrimitive ? T
   : T extends Array<infer U> ? ReadonlyArray<Immutable<U>>
@@ -223,7 +228,7 @@ export function findUnserializables(
   )
 }
 
-type KnownKeys<T> = keyof {
+export type KnownKeys<T> = keyof {
   [P in keyof T as string extends P ? never : number extends P ? never : P]: T[P]
 }
 
@@ -354,37 +359,12 @@ export function importModule(
   })
 }
 
-export interface ExtendsStepState {
-  readonly visited: readonly string[]
-  readonly documents: readonly ExtendsStepDocument[]
-}
-
-export interface ExtendsStepDocument {
-  readonly path: string
-  readonly options: PartialStrykerOptions
-}
+export type { ExtendsStepDecision, ExtendsStepDocument, ExtendsStepState } from '../Config.schema.js'
 
 export const initialExtendsStepState: ExtendsStepState = {
   visited: [],
   documents: [],
 }
-
-export type ExtendsRefusalReason = 'cycle' | 'non-string-extends'
-
-const DoneTag = { _tag: 'done' } as const
-type DoneTag = typeof DoneTag
-const ReadTag = { _tag: 'read' } as const
-type ReadTag = typeof ReadTag
-const ResolveTag = { _tag: 'resolve' } as const
-type ResolveTag = typeof ResolveTag
-const RefusedTag = { _tag: 'refused' } as const
-type RefusedTag = typeof RefusedTag
-
-export type ExtendsStepDecision =
-  | DoneTag & { readonly options: PartialStrykerOptions }
-  | ReadTag & { readonly path: string; readonly state: ExtendsStepState }
-  | ResolveTag & { readonly specifier: string; readonly state: ExtendsStepState }
-  | RefusedTag & { readonly reason: ExtendsRefusalReason; readonly file: string }
 
 const asUnknownArray = (value: unknown): readonly unknown[] => {
   if (Array.isArray(value)) return value
@@ -480,36 +460,33 @@ export const decideExtendsStep = (
   pathService: Path.Path,
 ): ExtendsStepDecision => {
   if (state.visited.includes(file)) {
-    return { ...RefusedTag, reason: 'cycle', file }
+    return ExtendsStepRefused.make({ reason: 'cycle', file })
   }
   const nextState: ExtendsStepState = {
     visited: [...state.visited, file],
     documents: [...state.documents, { path: file, options: document }],
   }
   return Match.value(document['extends']).pipe(
-    Match.when(undefined, (): ExtendsStepDecision => ({
-      ...DoneTag,
-      options: mergeChainDocuments(nextState.documents),
-    })),
-    Match.when(null, (): ExtendsStepDecision => ({
-      ...DoneTag,
-      options: mergeChainDocuments(nextState.documents),
-    })),
+    Match.when(
+      undefined,
+      (): ExtendsStepDecision => ExtendsStepDone.make({ options: mergeChainDocuments(nextState.documents) }),
+    ),
+    Match.when(
+      null,
+      (): ExtendsStepDecision => ExtendsStepDone.make({ options: mergeChainDocuments(nextState.documents) }),
+    ),
     Match.when(Match.string, (extendValue) =>
       Match.value(isModuleSpecifier(extendValue)).pipe(
-        Match.when(true, (): ExtendsStepDecision => ({
-          ...ResolveTag,
-          specifier: extendValue,
-          state: nextState,
-        })),
-        Match.when(false, (): ExtendsStepDecision => ({
-          ...ReadTag,
-          path: pathService.resolve(pathService.dirname(file), extendValue),
-          state: nextState,
-        })),
+        Match.when(true, (): ExtendsStepDecision =>
+          ExtendsStepResolve.make({ specifier: extendValue, state: nextState })),
+        Match.when(false, (): ExtendsStepDecision =>
+          ExtendsStepRead.make({
+            path: pathService.resolve(pathService.dirname(file), extendValue),
+            state: nextState,
+          })),
         Match.exhaustive,
       )),
-    Match.orElse((): ExtendsStepDecision => ({ ...RefusedTag, reason: 'non-string-extends', file })),
+    Match.orElse((): ExtendsStepDecision => ExtendsStepRefused.make({ reason: 'non-string-extends', file })),
   )
 }
 
