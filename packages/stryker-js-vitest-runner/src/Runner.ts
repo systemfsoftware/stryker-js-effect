@@ -11,7 +11,7 @@ import {
   type MutantCoverage as DryRunMutantCoverage,
   type MutantRunOptions,
   normalizeFileName,
-} from '@systemfsoftware/stryker-js-instrumenter/mutants'
+} from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type BaseTestResult,
   DryRunResult,
@@ -50,7 +50,6 @@ import {
   VitestDryRunCommand,
   type VitestDryRunOutcome,
   VitestNodeModuleSchema,
-  VitestPackageSchema,
   VitestRunnerOptionsSchema,
 } from './Runner.schema.js'
 
@@ -614,7 +613,6 @@ export const sandboxSelfPlugin = (
 
 export interface ResolvedVitest {
   createVitest: typeof createVitestOriginal
-  version: string
 }
 export type VitestResolver = (
   _dir: string,
@@ -627,7 +625,6 @@ type StrykerNamespace = '__stryker__' | '__stryker2__'
 const STRYKER_SETUP_URL = new URL('./stryker-setup.mjs', import.meta.url)
 
 const VITEST_NODE_SPECIFIER = 'vitest/node'
-const VITEST_PACKAGE_SPECIFIER = 'vitest/package.json'
 
 const vitestUnresolved = (specifier: string, base: string, detail: string): TestRunnerFailed =>
   new TestRunnerFailed({
@@ -638,19 +635,8 @@ const vitestUnresolved = (specifier: string, base: string, detail: string): Test
 
 export const resolveVitest: VitestResolver = (_dir) =>
   Effect.gen(function*() {
-    const fallback = Effect.gen(function*() {
-      const pathService = yield* Path.Path
-      const fs = yield* FileSystem.FileSystem
-      const urlString: string = import.meta.resolve(VITEST_PACKAGE_SPECIFIER)
-      const packageJsonPath = yield* pathService.fromFileUrl(new URL(urlString))
-      const content = yield* fs.readFileString(packageJsonPath)
-      const parsed: unknown = JSON.parse(content)
-      const decoded = yield* S.decodeUnknownEffect(VitestPackageSchema)(parsed)
-      return { createVitest: createVitestOriginal, version: decoded.version } satisfies ResolvedVitest
-    }).pipe(Effect.orDie)
+    const fallback = Effect.succeed({ createVitest: createVitestOriginal } satisfies ResolvedVitest)
     const primary = Effect.gen(function*() {
-      const pathService = yield* Path.Path
-      const fs = yield* FileSystem.FileSystem
       const resolutionFailure = (specifier: string, detail: string): TestRunnerFailed =>
         vitestUnresolved(specifier, import.meta.url, detail)
       const resolveSpecifier = (specifier: string): Effect.Effect<string, TestRunnerFailed> =>
@@ -664,45 +650,10 @@ export const resolveVitest: VitestResolver = (_dir) =>
         catch: (cause) => resolutionFailure(VITEST_NODE_SPECIFIER, errorToString(cause)),
       })
       const decodedNode = yield* S.decodeUnknownEffect(VitestNodeModuleSchema)(imported)
-      const vitestPackageUrl = yield* resolveSpecifier(VITEST_PACKAGE_SPECIFIER)
-      const packageJsonPath = yield* pathService.fromFileUrl(new URL(vitestPackageUrl)).pipe(
-        Effect.mapError((cause) => resolutionFailure(VITEST_PACKAGE_SPECIFIER, errorToString(cause))),
-      )
-      const content = yield* fs.readFileString(packageJsonPath).pipe(
-        Effect.mapError((cause) => resolutionFailure(VITEST_PACKAGE_SPECIFIER, errorToString(cause))),
-      )
-      const parsed: unknown = JSON.parse(content)
-      const decodedPackage = yield* S.decodeUnknownEffect(VitestPackageSchema)(parsed)
-      return {
-        createVitest: decodedNode.createVitest,
-        version: decodedPackage.version,
-      } satisfies ResolvedVitest
+      return { createVitest: decodedNode.createVitest } satisfies ResolvedVitest
     })
     return yield* primary.pipe(Effect.catchCause(() => fallback), Effect.catchDefect(() => fallback))
   }).pipe(Effect.orDie)
-
-const versionPart = (parts: readonly string[], index: number): number =>
-  Option.getOrElse(
-    Option.map(Option.fromNullishOr(parts[index]), (part) => Number(part)),
-    (): number => 0,
-  )
-
-const minimumMinorForMajor = (major: number): Option.Option<number> =>
-  Match.value(major).pipe(
-    Match.when((value) => value > 4, () => Option.some(0)),
-    Match.when(4, () => Option.some(1)),
-    Match.orElse((): Option.Option<number> => Option.none()),
-  )
-
-export const shouldUseSuiteMetaSecondArg = (version: string): boolean => {
-  const parts = version.split('.')
-  const major = versionPart(parts, 0)
-  const minor = versionPart(parts, 1)
-  return Match.value(Number.isNaN(major) || Number.isNaN(minor)).pipe(
-    Match.when(true, (): boolean => false),
-    Match.orElse((): boolean => Option.exists(minimumMinorForMajor(major), (minimumMinor) => minor >= minimumMinor)),
-  )
-}
 
 interface RunFilter {
   testIds?: string[]
@@ -931,7 +882,7 @@ export const makeVitestRunnerLayer = (
           ),
         )
         const resolver = Option.getOrElse(Option.fromNullishOr(input.resolveVitestFor), () => resolveVitest)
-        const { createVitest, version } = yield* resolver(projectRoot).pipe(
+        const { createVitest } = yield* resolver(projectRoot).pipe(
           Effect.provideService(FileSystem.FileSystem, fsService),
           Effect.provideService(Path.Path, pathService),
           Effect.catchDefect((cause) =>
@@ -978,7 +929,6 @@ export const makeVitestRunnerLayer = (
           catch: (cause) => new TestRunnerFailed({ runnerName: 'vitest', phase: 'init', cause: errorToString(cause) }),
         })
         ctx.provide('globalNamespace', namespace)
-        ctx.provide('isGreaterThanVitest4Point1', shouldUseSuiteMetaSecondArg(version))
         applySetupFilesToProjects(ctx, localSetupFile)
         yield* Ref.update(stateRef, (s) => ({ ...s, ctx }))
       }).pipe(Effect.mapError((cause) => ((() => {

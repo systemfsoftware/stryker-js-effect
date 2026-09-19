@@ -1,7 +1,7 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import type { File as InstrumenterFile, InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as MutableHashMap from 'effect/MutableHashMap'

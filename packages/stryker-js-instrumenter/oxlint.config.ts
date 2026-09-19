@@ -9,8 +9,6 @@ export default defineConfig({
     'typescript/strict-boolean-expressions': 'error',
     'typescript/no-non-null-assertion': 'error',
     '@systemfsoftware/oxlint-plugin/ban-classes': 'error',
-    'no-ternary': 'off',
-    'typescript/consistent-type-assertions': 'off',
     'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
 

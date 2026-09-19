@@ -9,9 +9,9 @@ import { Cell } from '@systemfsoftware/effect-cell-types';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import * as Context from 'effect/Context';
 import * as DateTime from 'effect/DateTime';
-import * as Duration from 'effect/Duration';
-import { Duration as Duration_2 } from 'effect/Duration';
+import { Duration } from 'effect/Duration';
 import * as Effect from 'effect/Effect';
+import * as EffectDuration from 'effect/Duration';
 import * as Exit from 'effect/Exit';
 import * as FileSystem from 'effect/FileSystem';
 import * as HashMap from 'effect/HashMap';
@@ -197,7 +197,7 @@ export interface ConfigInvocation {
 }
 
 // @public (undocumented)
-export const connectRetry: Schedule.Schedule<Duration_2, unknown, never, never>;
+export const connectRetry: Schedule.Schedule<Duration, unknown, never, never>;
 
 // @public (undocumented)
 export const countMutants: (mutants: readonly MutantResult[]) => Metrics;
@@ -241,7 +241,7 @@ export interface DryRunDone extends InstrumentDone {
     // (undocumented)
     readonly testCoverage: TestCoverage;
     // (undocumented)
-    readonly timeOverhead: Duration.Duration;
+    readonly timeOverhead: EffectDuration.Duration;
 }
 
 // @public (undocumented)

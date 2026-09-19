@@ -3,8 +3,8 @@
  * decisions for the engine's test execution.
  */
 
-import { type FileDescriptions, INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { type FileDescriptions, INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter'
+import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
 import type { StrykerOptions, TestRunnerConfig } from '@systemfsoftware/stryker-js-plugin-interface'
 import { isCustomTestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import {

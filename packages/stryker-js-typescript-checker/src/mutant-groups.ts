@@ -1,4 +1,4 @@
-import { type Mutant, normalizeFileName } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { type Mutant, normalizeFileName } from '@systemfsoftware/stryker-js-instrumenter'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import { createGroups, type TSFileNode } from './Compiler.js'

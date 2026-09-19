@@ -1,5 +1,3 @@
-// oxlint-disable typescript/no-unsafe-type-assertion typescript/no-unnecessary-type-assertion
-
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -213,8 +211,16 @@ export function processStrykerDirectives(
 }
 
 function attachedComments(node: Node): readonly LocatedComment[] {
-  const host = node as NodeWithLeadingComments
-  return host.leadingComments ?? NO_COMMENTS
+  return leadingCommentsOn(node) ?? NO_COMMENTS
+}
+
+function leadingCommentsOn(value: unknown): readonly LocatedComment[] | undefined {
+  if (isCommentBearing(value)) return value.leadingComments
+  return undefined
+}
+
+function isCommentBearing(value: unknown): value is NodeWithLeadingComments {
+  return Predicate.hasProperty(value, 'leadingComments')
 }
 
 /** A comment that matched the directive grammar, decoded into the fields a rule needs. */
@@ -387,16 +393,43 @@ export interface MutantPlacer {
   place(path: TraversePath, appliedMutants: Map<Mutant, Node>): void
 }
 
-export function nodeOfKind(
+export function nodeOfKind<T extends Node>(
   mutant: Mutant,
   node: Node,
-  isKind: (candidate: Node) => boolean,
+  isKind: (candidate: Node) => candidate is T,
   kind: string,
-): Node {
-  if (!isKind(node)) {
-    throw new Error(`Cannot place mutant ${mutant.id}: expected ${kind}, got ${node.type}`)
-  }
-  return node
+): T {
+  return narrowNode(node, isKind, `Cannot place mutant ${mutant.id}: expected ${kind}, got ${node.type}`)
+}
+
+function narrowNode<T extends Node>(
+  node: Node,
+  isKind: (candidate: Node) => candidate is T,
+  message: string,
+): T {
+  if (isKind(node)) return node
+  throw new Error(message)
+}
+
+function expressionOf(node: Node): Expression {
+  return narrowNode(node, isExpressionKind, `Expected an expression, got ${node.type}`)
+}
+
+function statementOf(node: Node): Statement {
+  return narrowNode(node, isStatementKind, `Expected a statement, got ${node.type}`)
+}
+
+interface SwitchCaseShape {
+  readonly test: Expression | null
+  readonly consequent: Statement[]
+}
+
+function isSwitchCase(node: Node): node is Node & SwitchCaseShape {
+  return nodeType(node) === 'SwitchCase'
+}
+
+function switchCaseOf(node: Node): Node & SwitchCaseShape {
+  return narrowNode(node, isSwitchCase, `Expected a switch case, got ${node.type}`)
 }
 
 export function throwPlacementError(
@@ -417,8 +450,15 @@ export function throwPlacementError(
   throw new Error(errorMessage)
 }
 
+const fileNameWithin = (basePath: string | undefined, fileName: string): string => {
+  if (basePath === undefined) {
+    return fileName
+  }
+  return relativeTo(basePath, fileName)
+}
+
 function placementLocation(node: Node, fileName: string, lineTable: readonly number[], basePath?: string): string {
-  const relativeFile = basePath === undefined ? fileName : relativeTo(basePath, fileName)
+  const relativeFile = fileNameWithin(basePath, fileName)
   const position = Option.map(
     Option.fromNullishOr(spanOf(node)),
     (span) => positionFromLineTable(span.start, lineTable),
@@ -436,13 +476,19 @@ const normalizeSeparators = (value: string): string => value.replace(/\\/g, '/')
 
 const withTrailingSlash = (basePath: string): string => {
   const normalized = normalizeSeparators(basePath)
-  return normalized.endsWith('/') ? normalized : `${normalized}/`
+  if (normalized.endsWith('/')) {
+    return normalized
+  }
+  return `${normalized}/`
 }
 
 const relativeTo = (basePath: string, fileName: string): string => {
   const prefix = withTrailingSlash(basePath)
   const normalizedFile = normalizeSeparators(fileName)
-  return normalizedFile.startsWith(prefix) ? normalizedFile.slice(prefix.length) : fileName
+  if (!normalizedFile.startsWith(prefix)) {
+    return fileName
+  }
+  return normalizedFile.slice(prefix.length)
 }
 
 function classOrFunctionExpressionNamedIfNeeded(path: TraversePath): Expression | undefined {
@@ -542,7 +588,7 @@ function nameIfAnonymous(path: TraversePath): Expression {
 }
 
 function arrowNameOrNode(path: TraversePath): Expression {
-  return arrowFunctionExpressionNamedIfNeeded(path) ?? (path.node as Expression)
+  return arrowFunctionExpressionNamedIfNeeded(path) ?? expressionOf(path.node)
 }
 
 function isChainLink(node: Node | undefined): boolean {
@@ -659,7 +705,7 @@ export const expressionMutantPlacer: MutantPlacer = {
           unwrapParenthesizedExpression(appliedMutant),
           isExpressionKind,
           'an expression',
-        ) as Expression,
+        ),
         expression,
       )
     }
@@ -684,13 +730,13 @@ function statementsOf(path: TraversePath): readonly Statement[] {
   if (node.type === 'BlockStatement') {
     return node.body
   }
-  return [node as Statement]
+  return [statementOf(node)]
 }
 
 function guardedStatement(statement: Statement, entry: readonly [Mutant, Node]): Statement {
   return ifStatement(
     mutantTestExpression(entry[0].id),
-    blockStatement([nodeOfKind(entry[0], entry[1], isStatementKind, 'a statement') as Statement]),
+    blockStatement([nodeOfKind(entry[0], entry[1], isStatementKind, 'a statement')]),
     statement,
   )
 }
@@ -708,7 +754,7 @@ export const switchCaseMutantPlacer: MutantPlacer = {
     return nodeType(path.node) === 'SwitchCase'
   },
   place(path, appliedMutants) {
-    const currentCase = path.node as unknown as { test: Expression | null; consequent: Statement[] }
+    const currentCase = switchCaseOf(path.node)
     let consequence: Statement = blockStatement([
       expressionStatement(
         mutationCoverageSequenceExpression(appliedMutants.keys()),
@@ -716,12 +762,7 @@ export const switchCaseMutantPlacer: MutantPlacer = {
       ...currentCase.consequent,
     ])
     for (const [mutant, appliedMutant] of appliedMutants) {
-      const appliedCase = nodeOfKind(
-        mutant,
-        appliedMutant,
-        (candidate) => nodeType(candidate) === 'SwitchCase',
-        'a switch case',
-      ) as unknown as { consequent: Statement[] }
+      const appliedCase = nodeOfKind(mutant, appliedMutant, isSwitchCase, 'a switch case')
       consequence = ifStatement(
         mutantTestExpression(mutant.id),
         blockStatement(appliedCase.consequent),
@@ -793,7 +834,7 @@ let instrumentationHeaderValue: readonly Statement[] | undefined
 const instrumentationHeader: Effect.Effect<readonly Statement[], ParseFailed> = Effect.gen(function*() {
   if (instrumentationHeaderValue === undefined) {
     const parsed = yield* parseWithOxc(INSTRUMENTATION_HEADER_SOURCE, 'instrumenter-header.js', 'js')
-    instrumentationHeaderValue = parsed.root.body as unknown as readonly Statement[]
+    instrumentationHeaderValue = parsed.root.body
     deepFreeze(instrumentationHeaderValue)
   }
   return instrumentationHeaderValue
@@ -824,10 +865,6 @@ function shouldPlaceHeader(
   return hasPlacedMutants(mutantCollector, originFileName) && options.noHeader !== true
 }
 
-interface CommentBearing {
-  leadingComments?: unknown
-}
-
 const headerFor = (root: Program): Effect.Effect<readonly Statement[], ParseFailed> =>
   Effect.map(instrumentationHeader, (header) =>
     Option.match(leadingCommentsOf(root), {
@@ -836,8 +873,7 @@ const headerFor = (root: Program): Effect.Effect<readonly Statement[], ParseFail
     }))
 
 function leadingCommentsOf(root: Program): Option.Option<readonly unknown[]> {
-  const firstStatement = root.body[0] as CommentBearing | undefined
-  return Option.filter(Option.fromNullishOr(firstStatement?.leadingComments), isCommentArray)
+  return Option.filter(Option.some<unknown>(leadingCommentsOn(root.body[0])), isCommentArray)
 }
 
 function commentedHeader(leadingComments: readonly unknown[], header: readonly Statement[]): Statement {
@@ -845,9 +881,9 @@ function commentedHeader(leadingComments: readonly unknown[], header: readonly S
     Option.fromNullishOr(header[0]),
     () => new Error('Instrumentation header is empty'),
   )
-  const cloned = cloneNode(firstHeader) as unknown as CommentBearing
-  cloned.leadingComments = leadingComments
-  return cloned as unknown as Statement
+  const cloned = cloneNode(firstHeader)
+  Object.assign(cloned, { leadingComments })
+  return cloned
 }
 
 function deepFreeze(value: unknown): unknown {
@@ -866,8 +902,8 @@ function frozenContainer(value: unknown): Option.Option<unknown> {
   })
 }
 
-function freezableChildren(value: object): readonly unknown[] {
-  return [...mapEntries(value), ...setItems(value), ...Object.values(value as Record<string, unknown>)]
+function freezableChildren(value: Record<string, unknown>): readonly unknown[] {
+  return [...mapEntries(value), ...setItems(value), ...Object.values(value)]
 }
 
 function mapEntries(value: object): readonly unknown[] {
@@ -881,7 +917,7 @@ function setItems(value: object): readonly unknown[] {
   return Option.getOrElse(Option.map(Option.filter(Option.some(value), isSet), (set) => [...set]), () => NO_CHILDREN)
 }
 
-function isObjectValue(value: unknown): value is object {
+function isObjectValue(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object'
 }
 

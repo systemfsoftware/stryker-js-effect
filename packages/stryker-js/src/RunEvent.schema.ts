@@ -1,6 +1,6 @@
 import * as S from 'effect/Schema'
 
-import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
 
 export const RunPhase = S.Literals(['prepare', 'instrument', 'dry-run', 'mutation-test'])
 export type RunPhase = typeof RunPhase.Type

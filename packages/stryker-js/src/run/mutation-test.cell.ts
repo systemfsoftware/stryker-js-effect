@@ -1,9 +1,9 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type { MutantTestCoverage } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type { RunPlan as MutantRunPlan, TestPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter/mutants'
-import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { MutantTestCoverage } from '@systemfsoftware/stryker-js-instrumenter'
+import type { RunPlan as MutantRunPlan, TestPlan } from '@systemfsoftware/stryker-js-instrumenter'
+import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
+import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter'
 import type { CheckResult, PassedCheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   isCustomTestRunner,

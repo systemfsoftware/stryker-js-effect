@@ -1,4 +1,4 @@
-import { causeText } from '@systemfsoftware/stryker-js-instrumenter/mutants'
+import { causeText } from '@systemfsoftware/stryker-js-instrumenter'
 import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
