@@ -6,11 +6,9 @@
 
 import * as Effect from 'effect/Effect';
 import * as HashMap from 'effect/HashMap';
-import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
 import * as Path from 'effect/Path';
+import * as S from 'effect/Schema';
 import { Schema } from 'effect';
-import { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
-import { WorkerPluginSpawn } from '@systemfsoftware/stryker-js-plugin-interface';
 import { YieldableError } from 'effect/Cause';
 
 // Warning: (ae-forgotten-export) The symbol "AnyPluginDescriptor" needs to be exported by the entry point plugin-loader.d.mts
@@ -23,6 +21,8 @@ export function createAll<K extends PluginKind>(pluginsByKind: HashMap.HashMap<P
 
 // @public (undocumented)
 export interface LoadedPlugins {
+    // Warning: (ae-forgotten-export) The symbol "Ignorer" needs to be exported by the entry point plugin-loader.d.mts
+    //
     // (undocumented)
     readonly ignorers: readonly Ignorer[];
     // (undocumented)
@@ -46,6 +46,8 @@ export type PluginDescriptorOf<K extends PluginKind> = Extract<AnyPluginDescript
     readonly kind: K;
 }>;
 
+// Warning: (ae-forgotten-export) The symbol "WorkerPluginKind" needs to be exported by the entry point plugin-loader.d.mts
+//
 // @public (undocumented)
 export type PluginKind = WorkerPluginKind | 'Evaluator';
 
@@ -100,6 +102,8 @@ export class PluginNotFoundError extends PluginNotFoundError_base {
 // @public (undocumented)
 export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource;
 
+// Warning: (ae-forgotten-export) The symbol "WorkerPluginSpawn" needs to be exported by the entry point plugin-loader.d.mts
+//
 // @public (undocumented)
 export const resolvePluginWorkerEntry: (params: {
     readonly loaded: Pick<LoadedPlugins, 'pluginSources'>;

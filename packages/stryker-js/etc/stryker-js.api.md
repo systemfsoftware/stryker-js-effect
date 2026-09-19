@@ -6,63 +6,33 @@
 
 import * as Cause from 'effect/Cause';
 import { Cell } from '@systemfsoftware/effect-cell-types';
-import { CheckResult } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
-import { CompleteDryRunResult } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Context from 'effect/Context';
-import { CoverageData } from '@systemfsoftware/stryker-js-instrumenter/mutants';
 import * as DateTime from 'effect/DateTime';
-import { DryRunOptions } from '@systemfsoftware/stryker-js-plugin-interface';
-import { DryRunResult } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Duration from 'effect/Duration';
 import { Duration as Duration_2 } from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
-import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface';
-import { FileDescription } from '@systemfsoftware/stryker-js-instrumenter/mutants';
-import { FileDescriptions } from '@systemfsoftware/stryker-js-instrumenter/mutants';
-import { FileResult } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as FileSystem from 'effect/FileSystem';
 import * as HashMap from 'effect/HashMap';
-import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
 import * as Layer from 'effect/Layer';
-import { Metrics } from '@systemfsoftware/stryker-js-plugin-interface';
-import { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as MutableHashMap from 'effect/MutableHashMap';
 import * as MutableHashSet from 'effect/MutableHashSet';
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter/mutants';
-import { MutantResult } from '@systemfsoftware/stryker-js-plugin-interface';
-import { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter/mutants';
-import { MutantRunResult } from '@systemfsoftware/stryker-js-plugin-interface';
-import * as mutants from '@systemfsoftware/stryker-js-instrumenter/mutants';
-import { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter/mutants';
-import { MutateDescription } from '@systemfsoftware/stryker-js-instrumenter/mutants';
-import { MutationTestResult } from '@systemfsoftware/stryker-js-plugin-interface';
-import { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface';
+import * as Option from 'effect/Option';
 import * as Path from 'effect/Path';
 import { PlatformError } from 'effect/PlatformError';
 import * as Queue from 'effect/Queue';
-import { ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface';
-import { ReporterRpcs } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Rpc from 'effect/unstable/rpc/Rpc';
 import * as RpcClient from 'effect/unstable/rpc/RpcClient';
 import { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 import * as RpcGroup from 'effect/unstable/rpc/RpcGroup';
-import { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter/mutants';
-import { RunPlan } from '@systemfsoftware/stryker-js-instrumenter/mutants';
+import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware';
 import * as S from 'effect/Schema';
 import * as Schedule from 'effect/Schedule';
 import { Schema } from 'effect';
-import * as schema from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Scope from 'effect/Scope';
 import * as Socket from 'effect/unstable/socket/Socket';
 import * as Stdio from 'effect/Stdio';
-import { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface';
-import { TestResult } from '@systemfsoftware/stryker-js-plugin-interface';
-import { TestRunnerCapabilities } from '@systemfsoftware/stryker-js-plugin-interface';
-import { TestRunnerConfig } from '@systemfsoftware/stryker-js-plugin-interface';
-import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface';
-import { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
@@ -71,14 +41,21 @@ export const ACTIONABLE_STATUSES: readonly ['Survived', 'NoCoverage', 'Timeout',
 // @public (undocumented)
 export const buildTestRunner: <ChildRunnerError>(context: TestRunnerBuildContext, childProcessRunner: Effect.Effect<PooledTestRunner, ChildRunnerError, Scope.Scope | WorkerLauncher>) => Effect.Effect<PooledTestRunner, PooledTestRunnerError | ChildRunnerError, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | WorkerLauncher>;
 
+// Warning: (ae-forgotten-export) The symbol "MutationTestResult" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
-export function buildVerdictEnvelope(report: schema.MutationTestResult, mode: OutputMode, signal: ModeSignal, runId: string, basePath: string, pathService: Path.Path): VerdictEnvelope;
+export function buildVerdictEnvelope(report: MutationTestResult, mode: OutputMode, signal: ModeSignal, runId: string, basePath: string, pathService: Path.Path): VerdictEnvelope;
 
+// Warning: (ae-forgotten-export) The symbol "FileResult" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "MetricsResult" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
 export const calculateMetrics: (files: Readonly<Record<string, FileResult>>) => MetricsResult;
 
 // @public
 export interface CheckerResourceService {
+    // Warning: (ae-forgotten-export) The symbol "Mutant" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "CheckResult" needs to be exported by the entry point index.d.mts
     // Warning: (ae-forgotten-export) The symbol "CheckerCrash" needs to be exported by the entry point index.d.mts
     //
     // (undocumented)
@@ -86,6 +63,7 @@ export interface CheckerResourceService {
     readonly group: (checkerName: string, mutants: readonly Mutant[]) => Effect.Effect<readonly (readonly string[])[], CheckerCrash>;
 }
 
+// Warning: (ae-forgotten-export) The symbol "RunPlan" needs to be exported by the entry point index.d.mts
 // Warning: (ae-forgotten-export) The symbol "CheckerContractBroken" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
@@ -169,15 +147,22 @@ export interface ConfigInvocation {
 // @public (undocumented)
 export const connectRetry: Schedule.Schedule<Duration_2, unknown, never, never>;
 
+// Warning: (ae-forgotten-export) The symbol "MutantResult" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "Metrics" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
 export const countMutants: (mutants: readonly MutantResult[]) => Metrics;
 
+// Warning: (ae-forgotten-export) The symbol "StrykerOptions" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
 export const createDefaultOptions: Effect.Effect<StrykerOptions>;
 
 // @public (undocumented)
 export function createFileMatcher(pattern: boolean | string, pathService: Path.Path, allowHiddenFiles?: boolean): (fileName: string) => boolean;
 
+// Warning: (ae-forgotten-export) The symbol "PartialStrykerOptions" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
 export const decideExtendsStep: (state: ExtendsStepState, document: PartialStrykerOptions, file: string, pathService: Path.Path) => ExtendsStepDecision;
 
@@ -192,6 +177,8 @@ export function describeErrors(error: S.SchemaError): string[];
 
 // @public (undocumented)
 export interface DryRunDone extends InstrumentDone {
+    // Warning: (ae-forgotten-export) The symbol "CompleteDryRunResult" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
     readonly dryRunResult: CompleteDryRunResult;
     // Warning: (ae-forgotten-export) The symbol "TestCoverage" needs to be exported by the entry point index.d.mts
@@ -208,7 +195,11 @@ export type EnginePorts = ChildProcessSpawner.ChildProcessSpawner | FileSystem.F
 // @public (undocumented)
 export const EXIT_CODE: Record<ExitClass, number>;
 
-export { ExitClass }
+// @public (undocumented)
+export const ExitClass: S.Literals<readonly ["VerdictFail", "ConfigError", "RuntimeError", "InternalError"]>;
+
+// @public (undocumented)
+export type ExitClass = typeof ExitClass.Type;
 
 // @public (undocumented)
 export const extendsPropertySchema: S.optionalKey<S.String>;
@@ -441,9 +432,13 @@ export interface InstrumentDone extends PrepareDone {
     readonly sandbox: SandboxHandle;
 }
 
+// Warning: (ae-forgotten-export) The symbol "MutantStatus" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
 export function isActionableStatus(status: MutantStatus): boolean;
 
+// Warning: (ae-forgotten-export) The symbol "TestRunnerConfig" needs to be exported by the entry point index.d.mts
+//
 // @public
 export const isCommandRunner: (name: TestRunnerConfig) => name is 'command';
 
@@ -493,6 +488,8 @@ export const mutationTestCell: Cell.Cell<PrepareExecutorArgs, MutationTestDone, 
 
 // @public (undocumented)
 export interface MutationTestDone {
+    // Warning: (ae-forgotten-export) The symbol "RunMutantResult" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
     readonly results: readonly RunMutantResult[];
     // (undocumented)
@@ -525,21 +522,33 @@ export class PlanKnown extends PlanKnown_base {}
 
 // @public
 export interface PooledTestRunner {
+    // Warning: (ae-forgotten-export) The symbol "TestRunnerCapabilities" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
     readonly capabilities: Effect.Effect<TestRunnerCapabilities, PooledTestRunnerError>;
+    // Warning: (ae-forgotten-export) The symbol "DryRunOptions" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "DryRunResult" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
     readonly dryRun: (options: DryRunOptions) => Effect.Effect<DryRunResult, PooledTestRunnerError>;
     // (undocumented)
     readonly init: Effect.Effect<void, PooledTestRunnerError>;
+    // Warning: (ae-forgotten-export) The symbol "MutantRunOptions" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "MutantRunResult" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
     readonly mutantRun: (options: MutantRunOptions) => Effect.Effect<MutantRunResult, PooledTestRunnerError>;
 }
 
+// Warning: (ae-forgotten-export) The symbol "TestRunnerFailed" needs to be exported by the entry point index.d.mts
+//
 // @public
 export type PooledTestRunnerError = TestRunnerFailed | ChildProcessCrashedError | OutOfMemoryError;
 
 // @public (undocumented)
 export interface PrepareDone {
+    // Warning: (ae-forgotten-export) The symbol "Ignorer" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
     readonly ignorers: readonly Ignorer[];
     // Warning: (ae-forgotten-export) The symbol "LoadedPlugins" needs to be exported by the entry point index.d.mts
@@ -582,9 +591,13 @@ export class ReadConfigCommand extends ReadConfigCommand_base {}
 // @public (undocumented)
 export const REPORTER_EVENT_BATCH_BOUND = 128;
 
+// Warning: (ae-forgotten-export) The symbol "ReporterRpcs" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
 export type ReporterWorkerClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof ReporterRpcs>, RpcClientError>;
 
+// Warning: (ae-forgotten-export) The symbol "ReporterFactory" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
 export const reporterWorkerFactory: (client: ReporterWorkerClient) => ReporterFactory;
 
@@ -749,6 +762,8 @@ export const survivorsPriorReport: S.optionalKey<S.String>;
 
 // @public
 export interface TestRunnerBuildContext {
+    // Warning: (ae-forgotten-export) The symbol "FileDescriptions" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
     readonly fileDescriptions: FileDescriptions;
     // Warning: (ae-forgotten-export) The symbol "IdGeneratorShape" needs to be exported by the entry point index.d.mts
@@ -838,8 +853,10 @@ export interface VerdictMutant {
     readonly file: string;
     // (undocumented)
     readonly id: string;
+    // Warning: (ae-forgotten-export) The symbol "Location" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
-    readonly location: mutants.Location;
+    readonly location: Location;
     // (undocumented)
     readonly mutator: string;
     // (undocumented)

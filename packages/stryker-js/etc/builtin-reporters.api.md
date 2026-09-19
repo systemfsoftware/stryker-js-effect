@@ -4,10 +4,12 @@
 
 ```ts
 
+import * as Effect$1 from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Path from 'effect/Path';
-import { ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface';
+import * as S from 'effect/Schema';
 import * as Stdio from 'effect/Stdio';
+import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
 export interface BuiltinReporterServices {
@@ -19,6 +21,8 @@ export interface BuiltinReporterServices {
     readonly stdio: Stdio.Stdio;
 }
 
+// Warning: (ae-forgotten-export) The symbol "ReporterFactory" needs to be exported by the entry point builtin-reporters.d.mts
+//
 // @public (undocumented)
 export const makeBuiltinReporterFactories: (services: BuiltinReporterServices) => Record<string, ReporterFactory>;
 
