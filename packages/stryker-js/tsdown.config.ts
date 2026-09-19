@@ -16,7 +16,6 @@ export default defineConfig({
   deps: {
     alwaysBundle: [
       '@std/jsonc',
-      /^@std\/path/,
       '@systemfsoftware/stryker-ignorer-interface',
       '@systemfsoftware/stryker-js-html-reporter',
       '@systemfsoftware/stryker-js-instrumenter',
