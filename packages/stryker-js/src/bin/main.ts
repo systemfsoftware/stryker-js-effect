@@ -3,12 +3,12 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import * as NodeStdio from '@effect/platform-node/NodeStdio'
+import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import * as Option from 'effect/Option'
 import * as Stdio from 'effect/Stdio'
-import cliPkgJson from '../../package.json' with { type: 'json' }
 
 import { strykerCliEffect } from '../Cli.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.js'
