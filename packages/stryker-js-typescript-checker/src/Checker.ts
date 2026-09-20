@@ -1,8 +1,7 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, CheckerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { CheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { CheckerMutantWire, CheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Result } from 'effect'
 import * as Effect from 'effect/Effect'
@@ -120,7 +119,7 @@ export const makeCheckerService = ({ options, compiler }: CheckerDeps): Checker[
   const createErrorText = (errors: readonly Diagnostic[]): Effect.Effect<string> =>
     Effect.map(Effect.forEach(errors, formatDiagnostic), (parts) => parts.join('\n'))
 
-  const soloRound = (mutant: Mutant): Effect.Effect<RunAnswers, CheckerFailed> =>
+  const soloRound = (mutant: CheckerMutantWire): Effect.Effect<RunAnswers, CheckerFailed> =>
     verify.run(CheckMutantsCommand.make({ mutants: [mutant] })).pipe(
       Effect.map((decision) => decision.results),
     )

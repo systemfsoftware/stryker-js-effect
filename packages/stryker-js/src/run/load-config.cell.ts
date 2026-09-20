@@ -708,7 +708,7 @@ function resolveExtendsSpecifier(
   })
 }
 
-export function resolveExtends(
+function resolveExtends(
   configFile: string,
   document: PartialStrykerOptions,
   configEnv: ConfigEnv,

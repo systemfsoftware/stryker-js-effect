@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as HashMap from 'effect/HashMap'
 import * as Option from 'effect/Option'
@@ -47,7 +47,7 @@ export class CheckFinished extends S.TaggedClass<CheckFinished>()('CheckFinished
 
 export class RetestRequired extends S.TaggedClass<RetestRequired>()('RetestRequired', {
   results: S.Record(S.String, MutantCheckStatusSchema),
-  needsRetest: S.Array(Mutant),
+  needsRetest: S.Array(CheckerMutantWire),
 }) {
   readonly [CheckMutantsTypeId] = CheckMutantsTypeId
 }

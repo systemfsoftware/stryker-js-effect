@@ -1,7 +1,7 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantTestCoverage } from '@systemfsoftware/stryker-js-instrumenter'
-import type { RunPlan as MutantRunPlan, TestPlan } from '@systemfsoftware/stryker-js-instrumenter'
+import type { RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter'
 import type { CheckResult, PassedCheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -15,6 +15,7 @@ import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
+import * as Metric from 'effect/Metric'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -33,11 +34,13 @@ import { RunEvents, RunMutantTested } from '../RunEvents.js'
 import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import type { MutationTestDecision } from '../admit-mutation-test.workflow.js'
+import { wireRecordOf } from '../checker-mutant-wire.js'
 import type { CheckerCrash, CheckerResourceService } from '../Checker.js'
 import { checkGroupedPlans, createCheckerFactory } from '../Checker.js'
 import { REMEMBERED_REASON, toRelativeNormalizedFileName } from '../IncrementalDiff.paths.js'
+import { checkerMutantsSkipped } from '../metrics.js'
 import { toSchemaLocation } from '../mutant-result-mapping.js'
-import { decidePlans, incrementalDiff } from '../Mutants.js'
+import { decidePlans, incrementalDiff, partitionRunPlans, sortRunPlans } from '../Mutants.js'
 import { makeMutationReportingService } from '../mutation-reporting.js'
 import type { MutationReportingService } from '../mutation-reporting.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
@@ -129,39 +132,6 @@ const rememberedResultsOf = (
   )
 }
 
-type EarlyPlan = Exclude<TestPlan, MutantRunPlan>
-
-const isRunPlan = (plan: TestPlan): plan is MutantRunPlan => plan.plan === 'Run'
-
-const earlyResultOf = (plan: EarlyPlan): RunMutantResult =>
-  Object.assign({}, plan.mutant, {
-    location: toSchemaLocation(plan.mutant.location),
-    status: plan.mutant.status ?? 'Ignored',
-  })
-
-const collectPlan = (
-  plan: TestPlan,
-  coveredPlans: MutantRunPlan[],
-  earlyResults: RunMutantResult[],
-): void =>
-  Match.value(plan).pipe(
-    Match.when(isRunPlan, (runPlan) => {
-      coveredPlans.push(runPlan)
-    }),
-    Match.orElse((earlyPlan) => {
-      earlyResults.push(earlyResultOf(earlyPlan))
-    }),
-  )
-
-const partitionPlans = (
-  plans: readonly TestPlan[],
-): { coveredPlans: MutantRunPlan[]; earlyResults: RunMutantResult[] } => {
-  const coveredPlans: MutantRunPlan[] = []
-  const earlyResults: RunMutantResult[] = []
-  plans.forEach((plan) => collectPlan(plan, coveredPlans, earlyResults))
-  return { coveredPlans, earlyResults }
-}
-
 const VALID_MUTANT_STATUSES = [
   'Killed',
   'Survived',
@@ -185,6 +155,14 @@ type CheckerSlot = {
   readonly checkerName: string
   readonly checker: CheckerResourceService
 }[]
+
+const CHECKER_ACQUIRE_RETRIES = 2
+
+const isCheckerCrash = (error: StageError | CheckerCrash): boolean =>
+  Match.value(error).pipe(
+    Match.tag('ChildProcessCrashedError', 'OutOfMemoryError', () => true),
+    Match.orElse(() => false),
+  )
 
 const makeCheckerPool = (
   prev: DryRunDone,
@@ -211,7 +189,7 @@ const makeCheckerPool = (
               resolved.spawn.entrypoint,
               idGenerator,
               prev.sandbox.workingDirectory,
-            )
+            ).pipe(Effect.retry({ times: CHECKER_ACQUIRE_RETRIES, while: isCheckerCrash }))
             return { checkerName: resolved.name, checker: service }
           })),
         size: prev.concurrency.checkers,
@@ -271,6 +249,45 @@ const checkPlansWithConfiguredCheckers = (
       ),
   })
 
+const isPlannable = (mutant: Mutant): boolean => Result.isSuccess(wireRecordOf(mutant))
+
+const DROPPED_IDS_IN_WARNING = 5
+
+const partitionPlannable = (
+  mutants: readonly Mutant[],
+): { readonly plannable: readonly Mutant[]; readonly dropped: readonly Mutant[] } => {
+  const plannable: Mutant[] = []
+  const dropped: Mutant[] = []
+  mutants.forEach((mutant) => {
+    if (isPlannable(mutant)) plannable.push(mutant)
+    else dropped.push(mutant)
+  })
+  return { plannable, dropped }
+}
+
+const droppedIdsOf = (dropped: readonly Mutant[]): string =>
+  `${dropped.slice(0, DROPPED_IDS_IN_WARNING).map((mutant) => mutant.id).join(', ')}${
+    Option.match(Option.liftPredicate(dropped.length, (count) => count > DROPPED_IDS_IN_WARNING), {
+      onNone: () => '',
+      onSome: (count) => `, +${count - DROPPED_IDS_IN_WARNING} more`,
+    })
+  }`
+
+const reportDroppedMutants = (dropped: readonly Mutant[]): Effect.Effect<void> =>
+  Match.value(dropped.length).pipe(
+    Match.when(0, () => Effect.void),
+    Match.orElse(() =>
+      Effect.gen(function*() {
+        yield* Metric.update(checkerMutantsSkipped, dropped.length)
+        yield* Effect.logWarning(
+          `${dropped.length} mutant(s) cannot be described to a checker and were left out of the run (${
+            droppedIdsOf(dropped)
+          })`,
+        )
+      })
+    ),
+  )
+
 export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageError, StageServices> = Cell.layer({
   read: (command: DryRunDone): Effect.Effect<MutationTestRaw, never, Scope.Scope> =>
     Effect.gen(function*() {
@@ -293,12 +310,18 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
   write: (
     outcome: Result.Result<MutationTestDecision, MutationTestError>,
     raw: MutationTestRaw,
-  ): Effect.Effect<MutationTestDone, StageError, StageServices> =>
-    withPhaseSpan(
+  ): Effect.Effect<MutationTestDone, StageError, StageServices> => {
+    const { dropped, plannable: plannableMutants } = partitionPlannable(raw.prev.mutants)
+    return withPhaseSpan(
       'mutationTest',
-      { mutantCount: raw.prev.mutants.length, testCount: raw.prev.dryRunResult.tests.length },
+      {
+        mutantCount: raw.prev.mutants.length,
+        skippedMutantCount: dropped.length,
+        testCount: raw.prev.dryRunResult.tests.length,
+      },
       () =>
         Effect.gen(function*() {
+          yield* reportDroppedMutants(dropped)
           const decision = yield* Result.match(outcome, {
             onFailure: (err) => Effect.fail(StageError.make({ stage: err.stage, reason: err.reason, cause: err })),
             onSuccess: (d) => Effect.succeed(d),
@@ -403,21 +426,21 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                 )
                 const currentRelativeFiles = yield* readCurrentRelativeFiles(prev.project, env.basePath)
                 const incremental = incrementalDiff({
-                  currentMutants: prev.mutants,
+                  currentMutants: plannableMutants,
                   testCoverage: prev.testCoverage,
                   incrementalReport: prev.project.incrementalReport,
                   currentRelativeFiles,
                   basePath: env.basePath,
                   force: prev.options.force,
                 })
-                const rememberedResults = rememberedResultsOf(prev.mutants, incremental.remembered)
+                const rememberedResults = rememberedResultsOf(plannableMutants, incremental.remembered)
                 yield* Effect.when(
                   Effect.logInfo(
                     `Incremental mode: reusing ${rememberedResults.length} mutant result(s), running ${incremental.mutants.length} mutant(s).`,
                   ),
                   Effect.succeed(rememberedResults.length > 0),
                 )
-                const { coveredPlans, earlyResults: noCoverageResults } = partitionPlans(
+                const { runPlans, earlyResults: noCoverageResults } = partitionRunPlans(
                   yield* decidePlans(
                     incremental.mutants,
                     prev.testCoverage,
@@ -432,9 +455,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                     sandboxFileByName,
                   ),
                 )
-                const sortedPlans = [...coveredPlans].sort(
-                  (a, b) => Number(a.runOptions.reloadEnvironment) - Number(b.runOptions.reloadEnvironment),
-                )
+                const sortedPlans = sortRunPlans(runPlans)
                 const allPlansForReporter: readonly MutantRunPlan[] = [...sortedPlans]
                 yield* offerReporterEvent(
                   prev.reporterStage,
@@ -651,5 +672,6 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
           Match.exhaustive,
         )
       ),
-    ),
+    )
+  },
 })

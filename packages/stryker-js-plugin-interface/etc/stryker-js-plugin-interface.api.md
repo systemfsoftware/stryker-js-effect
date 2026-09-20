@@ -112,9 +112,45 @@ export class CheckerFailed extends CheckerFailed_base {}
 export const CheckerGroupResult: S.$Array<S.$Array<S.String>>;
 
 // @public (undocumented)
+export const CheckerMutantWire: S.Struct<{
+    readonly id: S.NonEmptyString;
+    readonly fileName: S.NonEmptyString;
+    readonly mutatorName: S.NonEmptyString;
+    readonly replacement: S.String;
+    readonly location: S.Struct<{
+        readonly start: S.Struct<{
+            readonly line: S.Finite;
+            readonly column: S.Finite;
+        }>;
+        readonly end: S.Struct<{
+            readonly line: S.Finite;
+            readonly column: S.Finite;
+        }>;
+    }>;
+}>;
+
+// @public (undocumented)
+export type CheckerMutantWire = typeof CheckerMutantWire.Type;
+
+// @public (undocumented)
 export const CheckerRequest: S.Struct<{
     readonly checkerName: S.String;
-    readonly mutants: S.$Array<typeof Mutant>;
+    readonly mutants: S.$Array<S.Struct<{
+        readonly id: S.NonEmptyString;
+        readonly fileName: S.NonEmptyString;
+        readonly mutatorName: S.NonEmptyString;
+        readonly replacement: S.String;
+        readonly location: S.Struct<{
+            readonly start: S.Struct<{
+                readonly line: S.Finite;
+                readonly column: S.Finite;
+            }>;
+            readonly end: S.Struct<{
+                readonly line: S.Finite;
+                readonly column: S.Finite;
+            }>;
+        }>;
+    }>>;
 }>;
 
 // @public (undocumented)
@@ -126,9 +162,9 @@ export const CheckerRpcs: RpcGroup.RpcGroup<TracedRpc<'check', typeof CheckerReq
 // @public (undocumented)
 export interface CheckerService {
     // (undocumented)
-    readonly check: (mutants: readonly Mutant[]) => Effect$1.Effect<HashMap.HashMap<string, CheckResult>, CheckerFailed>;
+    readonly check: (mutants: readonly CheckerMutantWire[]) => Effect$1.Effect<HashMap.HashMap<string, CheckResult>, CheckerFailed>;
     // (undocumented)
-    readonly group: (mutants: readonly Mutant[]) => Effect$1.Effect<readonly (readonly string[])[], CheckerFailed>;
+    readonly group: (mutants: readonly CheckerMutantWire[]) => Effect$1.Effect<readonly (readonly string[])[], CheckerFailed>;
     // (undocumented)
     readonly init: Effect$1.Effect<void, CheckerFailed>;
 }
@@ -1089,7 +1125,7 @@ export const TestRunnerMutantRunRequest: S.Struct<{
     readonly options: S.Struct<{
         readonly timeout: S.Finite;
         readonly disableBail: S.Boolean;
-        readonly activeMutant: typeof Mutant;
+        readonly activeMutant: Mutant;
         readonly sandboxFileName: S.String;
         readonly mutantActivation: S.Literals<readonly ["runtime", "static"]>;
         readonly reloadEnvironment: S.Boolean;

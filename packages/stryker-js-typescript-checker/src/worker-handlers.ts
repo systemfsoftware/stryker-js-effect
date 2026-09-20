@@ -1,6 +1,5 @@
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { CheckerMutantWire, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker, CheckerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
 import { readWorkerOptionsFromEnv } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Cause from 'effect/Cause'
@@ -13,7 +12,7 @@ import * as Result from 'effect/Result'
 import { makeCheckerService } from './Checker.js'
 import { makeHybridFileSystem, makeTypescriptCompiler } from './Compiler.js'
 
-const mutantIdsOf = (mutants: readonly Mutant[]): ReadonlyArray<string> => mutants.map((mutant) => mutant.id)
+const mutantIdsOf = (mutants: readonly CheckerMutantWire[]): ReadonlyArray<string> => mutants.map((mutant) => mutant.id)
 
 const buildChecker = (
   options: StrykerOptions,
@@ -37,7 +36,7 @@ export const checkerHandlers = CheckerRpcs.toLayer(
 
     const resolve = (
       checkerName: string,
-      mutants: readonly Mutant[],
+      mutants: readonly CheckerMutantWire[],
     ): Effect.Effect<Checker['Service'], CheckerFailed, FileSystem.FileSystem | Path.Path> =>
       Match.value(checkerName).pipe(
         Match.when('typescript', () =>
@@ -68,13 +67,23 @@ export const checkerHandlers = CheckerRpcs.toLayer(
       )
 
     return {
-      check: ({ checkerName, mutants }: { readonly checkerName: string; readonly mutants: readonly Mutant[] }) =>
+      check: (
+        { checkerName, mutants }: {
+          readonly checkerName: string
+          readonly mutants: readonly CheckerMutantWire[]
+        },
+      ) =>
         resolve(checkerName, mutants).pipe(
           Effect.flatMap((checker) => checker.check([...mutants])),
           Effect.map((resultMap) => Object.fromEntries(resultMap)),
         ),
 
-      group: ({ checkerName, mutants }: { readonly checkerName: string; readonly mutants: readonly Mutant[] }) =>
+      group: (
+        { checkerName, mutants }: {
+          readonly checkerName: string
+          readonly mutants: readonly CheckerMutantWire[]
+        },
+      ) =>
         resolve(checkerName, mutants).pipe(
           Effect.flatMap((checker) => checker.group([...mutants])),
         ),

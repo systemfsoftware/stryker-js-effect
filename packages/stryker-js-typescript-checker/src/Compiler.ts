@@ -6,8 +6,8 @@
  * only the Effect-typed service surface.
  */
 
-import type { Mutant, Position } from '@systemfsoftware/stryker-js-instrumenter'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Position } from '@systemfsoftware/stryker-js-instrumenter'
+import type { CheckerMutantWire, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Predicate, Result } from 'effect'
 import * as Clock from 'effect/Clock'
@@ -163,7 +163,7 @@ export function withContent(file: ScriptFile, content: string, now: DateTime.Utc
 
 export function mutateScriptFile(
   file: ScriptFile,
-  mutant: Pick<Mutant, 'location' | 'replacement'>,
+  mutant: Pick<CheckerMutantWire, 'location' | 'replacement'>,
   now: DateTime.Utc,
 ): ScriptFile {
   const start = getOffset(file, mutant.location.start)
@@ -194,7 +194,7 @@ export interface HybridFileSystem {
   readonly writeFile: (fileName: string, data: string) => Effect.Effect<void>
   readonly mutateFile: (
     fileName: string,
-    mutant: Pick<Mutant, 'location' | 'replacement'>,
+    mutant: Pick<CheckerMutantWire, 'location' | 'replacement'>,
   ) => Effect.Effect<void, HybridFileNotFoundError>
   readonly resetFile: (fileName: string) => Effect.Effect<void>
   readonly existsInMemory: (fileName: string) => Effect.Effect<boolean>
@@ -325,7 +325,7 @@ export const makeHybridFileSystem = (fsService: FileSystem.FileSystem): Effect.E
 
     const mutateFile = (
       fileName: string,
-      mutant: Pick<Mutant, 'location' | 'replacement'>,
+      mutant: Pick<CheckerMutantWire, 'location' | 'replacement'>,
     ): Effect.Effect<void, HybridFileNotFoundError> =>
       Effect.gen(function*() {
         const now = DateTime.makeUnsafe(yield* Clock.currentTimeMillis)
@@ -420,13 +420,17 @@ function collectChildReference(
  */
 export function getMutantsWithReferenceToChildrenOrSelf(
   node: TSFileNode,
-  mutants: Mutant[],
+  mutants: CheckerMutantWire[],
   nodesChecked: string[] = [],
-): Mutant[] {
+): CheckerMutantWire[] {
   return collectRelatedMutants(node, mutants, nodesChecked)
 }
 
-function collectRelatedMutants(node: TSFileNode, mutants: Mutant[], nodesChecked: string[]): Mutant[] {
+function collectRelatedMutants(
+  node: TSFileNode,
+  mutants: CheckerMutantWire[],
+  nodesChecked: string[],
+): CheckerMutantWire[] {
   if (nodesChecked.includes(node.fileName)) {
     return []
   }
@@ -478,8 +482,8 @@ function mutantCanJoinGroup(currentNode: TSFileNode, group: MutantGroup): boolea
 }
 
 function addMutantToGroup(
-  currentMutant: Mutant,
-  mutantsToGroup: MutableHashSet.MutableHashSet<Mutant>,
+  currentMutant: CheckerMutantWire,
+  mutantsToGroup: MutableHashSet.MutableHashSet<CheckerMutantWire>,
   group: MutantGroup,
   nodes: MutableHashMap.MutableHashMap<string, TSFileNode>,
 ): void {
@@ -494,7 +498,7 @@ function addMutantToGroup(
 }
 
 function takeGroup(
-  mutantsToGroup: MutableHashSet.MutableHashSet<Mutant>,
+  mutantsToGroup: MutableHashSet.MutableHashSet<CheckerMutantWire>,
   nodes: MutableHashMap.MutableHashMap<string, TSFileNode>,
 ): string[] {
   const group: MutantGroup = {
@@ -508,7 +512,10 @@ function takeGroup(
   return group.mutantIds
 }
 
-export function createGroups(mutants: Mutant[], nodes: MutableHashMap.MutableHashMap<string, TSFileNode>): string[][] {
+export function createGroups(
+  mutants: CheckerMutantWire[],
+  nodes: MutableHashMap.MutableHashMap<string, TSFileNode>,
+): string[][] {
   const groups: string[][] = []
   const mutantsToGroup = MutableHashSet.fromIterable(mutants)
   while (MutableHashSet.size(mutantsToGroup) > 0) {
@@ -528,7 +535,7 @@ interface CompilerState {
   snapshot: Snapshot | undefined
   sourceFiles: SourceFiles
   nodes: MutableHashMap.MutableHashMap<string, TSFileNode>
-  lastMutants: Mutant[]
+  lastMutants: CheckerMutantWire[]
   lastMutatedFileNames: string[]
   allTSConfigFiles: MutableHashSet.MutableHashSet<string>
   tsconfigFile: string
@@ -536,7 +543,7 @@ interface CompilerState {
 
 export class TypeScriptCompiler extends Context.Service<TypeScriptCompiler, {
   readonly init: Effect.Effect<readonly Diagnostic[], unknown>
-  readonly check: (mutants: readonly Mutant[]) => Effect.Effect<readonly Diagnostic[], unknown>
+  readonly check: (mutants: readonly CheckerMutantWire[]) => Effect.Effect<readonly Diagnostic[], unknown>
   readonly nodes: Effect.Effect<MutableHashMap.MutableHashMap<string, TSFileNode>, unknown>
   readonly close: Effect.Effect<void, unknown>
   readonly getLineAndCharacterOfPosition: (
@@ -1006,14 +1013,14 @@ export function makeTypescriptCompiler(
     },
   )
 
-  const resetMutatedFiles = (mutants: readonly Mutant[]): Effect.Effect<void, unknown> =>
+  const resetMutatedFiles = (mutants: readonly CheckerMutantWire[]): Effect.Effect<void, unknown> =>
     Effect.gen(function*() {
       for (const mutant of mutants) {
         yield* fs.resetFile(mutant.fileName)
       }
     })
 
-  const applyMutant = (mutant: Mutant): Effect.Effect<void, unknown> =>
+  const applyMutant = (mutant: CheckerMutantWire): Effect.Effect<void, unknown> =>
     Effect.gen(function*() {
       const file = yield* fs.getFile(mutant.fileName)
       if (file === undefined) {
@@ -1022,7 +1029,7 @@ export function makeTypescriptCompiler(
       yield* fs.mutateFile(mutant.fileName, mutant)
     })
 
-  const applyMutants = (mutants: readonly Mutant[]): Effect.Effect<void, unknown> =>
+  const applyMutants = (mutants: readonly CheckerMutantWire[]): Effect.Effect<void, unknown> =>
     Effect.gen(function*() {
       for (const mutant of mutants) {
         yield* applyMutant(mutant)
@@ -1048,7 +1055,7 @@ export function makeTypescriptCompiler(
       yield* Ref.update(stateRef, (prev) => ({ ...prev, snapshot: next }))
     })
 
-  const check: (mutants: readonly Mutant[]) => Effect.Effect<readonly Diagnostic[], unknown> = (mutants) =>
+  const check: (mutants: readonly CheckerMutantWire[]) => Effect.Effect<readonly Diagnostic[], unknown> = (mutants) =>
     Effect.gen(function*() {
       const state = yield* Ref.get(stateRef)
       yield* resetMutatedFiles(state.lastMutants)
@@ -1065,7 +1072,7 @@ export function makeTypescriptCompiler(
         stateRef,
         (prev) => ({
           ...prev,
-          lastMutants: [...mutants] satisfies readonly Mutant[],
+          lastMutants: [...mutants] satisfies readonly CheckerMutantWire[],
           lastMutatedFileNames: mutatedFileNames,
         }),
       )

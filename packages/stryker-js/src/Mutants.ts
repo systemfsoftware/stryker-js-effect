@@ -10,7 +10,10 @@ import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type {
   Coverage,
   CoverageData,
+  MutantEarlyResultPlan,
   MutantStatus,
+  RunMutantResult,
+  RunPlan,
   TestPlan as MutantTestPlan,
 } from '@systemfsoftware/stryker-js-instrumenter'
 import type { CompleteDryRunResult, TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -18,6 +21,7 @@ import type { CompleteDryRunResult, TestResult } from '@systemfsoftware/stryker-
 import { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from './IncrementalDiff.schema.js'
 import type { PreviousFileRecord, PreviousMutantRecord, PreviousTestFileRecord } from './IncrementalDiff.schema.js'
+import { toSchemaLocation } from './mutant-result-mapping.js'
 
 export const HIT_LIMIT_FACTOR = 100
 
@@ -680,6 +684,31 @@ export const decidePlans = (
   )
   return makeMutantTestPlanner(command)
 }
+
+export interface PartitionedRunPlans {
+  readonly runPlans: readonly RunPlan[]
+  readonly earlyResults: readonly RunMutantResult[]
+}
+
+export const isRunPlan = (plan: MutantTestPlan): plan is RunPlan => plan.plan === 'Run'
+
+const isEarlyPlan = (plan: MutantTestPlan): plan is MutantEarlyResultPlan => !isRunPlan(plan)
+
+const earlyResultOf = (plan: MutantEarlyResultPlan): RunMutantResult =>
+  Object.assign({}, plan.mutant, {
+    location: toSchemaLocation(plan.mutant.location),
+    status: plan.mutant.status ?? 'Ignored',
+  })
+
+export const partitionRunPlans = (plans: readonly MutantTestPlan[]): PartitionedRunPlans => ({
+  runPlans: plans.filter(isRunPlan),
+  earlyResults: plans.filter(isEarlyPlan).map(earlyResultOf),
+})
+
+export const byReloadEnvironment = (left: RunPlan, right: RunPlan): number =>
+  Number(left.runOptions.reloadEnvironment) - Number(right.runOptions.reloadEnvironment)
+
+export const sortRunPlans = (plans: readonly RunPlan[]): readonly RunPlan[] => [...plans].sort(byReloadEnvironment)
 
 export interface IncrementalDiffResult {
   readonly mutants: readonly Mutant[]

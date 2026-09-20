@@ -1,11 +1,7 @@
 #!/usr/bin/env sh
 set -e
-remote=origin
 
-branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-if [ "$branch" != "main" ]; then
-  exit 0
-fi
+remote="${1:-origin}"
 
 main_sha=$(git ls-remote --heads "$remote" refs/heads/main 2>/dev/null | cut -f1)
 if [ -z "$main_sha" ]; then
@@ -19,8 +15,28 @@ if ! git cat-file -e "$main_sha^{commit}" 2>/dev/null; then
   }
 fi
 
-if ! git merge-base --is-ancestor "$main_sha" HEAD; then
-  echo "pre-push: main is behind $remote/main ($main_sha)." >&2
-  echo "Rebase or merge $remote/main before pushing main." >&2
+behind=""
+if [ -t 0 ]; then
+  if ! git merge-base --is-ancestor "$main_sha" HEAD 2>/dev/null; then
+    behind=" HEAD"
+  fi
+else
+  while read -r local_ref local_sha remote_ref remote_sha; do
+    case "$remote_ref" in
+      refs/heads/*) ;;
+      *) continue ;;
+    esac
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+      continue
+    fi
+    if ! git merge-base --is-ancestor "$main_sha" "$local_sha" 2>/dev/null; then
+      behind="$behind $remote_ref"
+    fi
+  done
+fi
+
+if [ -n "$behind" ]; then
+  echo "pre-push: these refs do not contain $remote/main ($main_sha):$behind" >&2
+  echo "Merge or rebase $remote/main before pushing." >&2
   exit 1
 fi
