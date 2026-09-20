@@ -622,6 +622,7 @@ export function importModule(moduleName: string): Effect.Effect<unknown, Stryker
 
 // @public (undocumented)
 export const IncrementalReportSchema: S.StructWithRest<S.Struct<{
+    readonly incrementalVersion: S.String;
     readonly schemaVersion: S.String;
     readonly thresholds: S.Struct<{
         readonly high: S.Finite;

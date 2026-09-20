@@ -12,14 +12,11 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
-import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 import { compileIgnoreRule, type IgnoreRule } from './glob-match.js'
 
 import { defaultOptions } from './config-defaults.js'
-import { IncrementalReportError, IncrementalReportSchema } from './IncrementalReport.schema.js'
+import { incrementalReportCell } from './incremental-report.cell.js'
 import { ALWAYS_IGNORE, IGNORE_PATTERN_CHARACTER, MUTATION_RANGE_REGEX } from './Project.ignore.js'
-
 const DEFAULT_GLOB = '**/*.{js,ts,jsx,tsx,html,vue,mjs,mts,cts,cjs}'
 
 const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
@@ -414,84 +411,6 @@ export const selectFiles = (input: FileSelectionInput): SelectedFiles => ({
   testFiles: resolveTestFilesPure(input.inputFileNames, input.testFilePatterns, input.basePath),
 })
 
-type DecodedReport = typeof IncrementalReportSchema.Type
-
-interface ReportPosition {
-  readonly line: number
-  readonly column: number
-}
-
-const toPosition = (position: ReportPosition): ReportPosition => ({
-  line: position.line,
-  column: position.column,
-})
-
-const toLocation = (
-  location: { readonly start: ReportPosition; readonly end: ReportPosition },
-): { readonly start: ReportPosition; readonly end: ReportPosition } => ({
-  start: toPosition(location.start),
-  end: toPosition(location.end),
-})
-
-const toOpenEndLocation = (
-  location: { readonly start: ReportPosition; readonly end?: ReportPosition | undefined },
-): { readonly start: ReportPosition; readonly end?: ReportPosition } =>
-  Option.match(Option.fromUndefinedOr(location.end), {
-    onNone: () => ({ start: toPosition(location.start) }),
-    onSome: (end) => ({ start: toPosition(location.start), end: toPosition(end) }),
-  })
-
-const withMappedMutantLocations = (report: DecodedReport): DecodedReport['files'] =>
-  Object.fromEntries(
-    Object.entries(report.files).map(([fileName, file]) => [
-      fileName,
-      {
-        ...file,
-        mutants: file.mutants.map((mutant) => ({ ...mutant, location: toLocation(mutant.location) })),
-      },
-    ]),
-  )
-
-const withMappedTestLocations = (testFiles: NonNullable<DecodedReport['testFiles']>): DecodedReport['testFiles'] =>
-  Object.fromEntries(
-    Object.entries(testFiles).map(([fileName, file]) => [
-      fileName,
-      {
-        ...file,
-        tests: file.tests.map((test) =>
-          Option.match(Option.fromUndefinedOr(test.location), {
-            onNone: () => ({ ...test }),
-            onSome: (location) => ({ ...test, location: toOpenEndLocation(location) }),
-          })
-        ),
-      },
-    ]),
-  )
-
-const reshape = (decoded: DecodedReport): DecodedReport =>
-  Option.match(Option.fromUndefinedOr(decoded.testFiles), {
-    onNone: (): DecodedReport => ({ ...decoded, files: withMappedMutantLocations(decoded) }),
-    onSome: (testFiles): DecodedReport => ({
-      ...decoded,
-      files: withMappedMutantLocations(decoded),
-      testFiles: withMappedTestLocations(testFiles),
-    }),
-  })
-
-export const decodeIncrementalReport = (raw: unknown): Result.Result<unknown, IncrementalReportError> =>
-  Result.match(S.decodeUnknownResult(IncrementalReportSchema)(raw), {
-    onFailure: () =>
-      Result.fail(
-        IncrementalReportError.make({
-          message:
-            'The incremental report is not a mutation testing report; delete it or re-run without --incremental.',
-        }),
-      ),
-    onSuccess: (decoded) => Result.succeed(reshape(decoded)),
-  })
-
-const parseJson = (text: string): unknown => JSON.parse(text)
-
 export const FILE_CONCURRENCY = 24
 const stringArrayEquivalence = Equivalence.Array(Equivalence.String)
 export interface ProjectFile extends FileDescription {
@@ -785,54 +704,11 @@ function resolveInputFileNames(
   })
 }
 
-function parseIncrementalReport(
-  contents: string | undefined,
-): Effect.Effect<Option.Option<MutationTestResult>, unknown, never> {
-  return Option.match(Option.fromUndefinedOr(contents), {
-    onNone: () => Effect.succeedNone,
-    onSome: (text) =>
-      Effect.gen(function*() {
-        const parsed = yield* Effect.try(() => parseJson(text))
-        const rawReport: unknown = yield* Effect.fromResult(decodeIncrementalReport(parsed))
-        const isMutationTestResult = (_value: unknown): _value is MutationTestResult | undefined => true
-        if (!isMutationTestResult(rawReport)) {
-          throw new Error('Invalid incremental report shape')
-        }
-        return Option.fromUndefinedOr(rawReport)
-      }),
-  })
-}
-
-function readIncrementalReport(
-  incremental: boolean,
-  incrementalFile: string,
-): Effect.Effect<Option.Option<MutationTestResult>, unknown, FileSystem.FileSystem | Path.Path> {
-  return Match.value(incremental).pipe(
-    Match.when(false, () => Effect.succeedNone),
-    Match.orElse(() =>
-      Effect.gen(function*() {
-        const fs = yield* FileSystem.FileSystem
-        const contents: string | undefined = yield* fs.readFileString(incrementalFile).pipe(
-          Effect.catchTag('PlatformError', (error) =>
-            Match.value(error.reason).pipe(
-              Match.tag('NotFound', () =>
-                Effect.logInfo(
-                  `No incremental result file found at ${incrementalFile}, a full mutation testing run will be performed.`,
-                ).pipe(Effect.as<string | undefined>(undefined))),
-              Match.orElse(() => Effect.fail(error)),
-            )),
-        )
-        return yield* parseIncrementalReport(contents)
-      })
-    ),
-  )
-}
-
 export function readProject(
   options: StrykerOptions,
   targetMutatePatterns: readonly string[] | undefined,
   basePath: string,
-): Effect.Effect<Project, unknown, FileSystem.FileSystem | Path.Path> {
+) {
   const {
     mutate,
     tempDirName,
@@ -914,7 +790,7 @@ export function readProject(
         }
       }))
 
-    const incrementalReport = yield* readIncrementalReport(incremental, incrementalFile)
+    const incrementalReport = yield* incrementalReportCell.run({ incremental, incrementalFile })
     return makeProject(decision.fileDescriptions, Option.getOrUndefined(incrementalReport), [...decision.testFiles])
   })
 }
