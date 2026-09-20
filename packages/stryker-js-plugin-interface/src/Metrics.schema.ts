@@ -44,12 +44,16 @@ export class Metrics extends S.Class<Metrics>('Metrics')({
   }
 
   get mutationScore(): number {
-    if (this.totalValid === 0) return 0
+    if (this.totalValid === 0) {
+      return Number.NaN
+    }
     return Math.min(100, Math.max(0, (this.totalDetected / this.totalValid) * 100))
   }
 
   get mutationScoreBasedOnCoveredCode(): number {
-    if (this.totalCovered === 0) return 0
+    if (this.totalCovered === 0) {
+      return Number.NaN
+    }
     return Math.min(100, Math.max(0, (this.totalDetected / this.totalCovered) * 100))
   }
 
