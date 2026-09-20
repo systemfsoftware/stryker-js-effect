@@ -121,6 +121,11 @@ export const makeCheckerService = ({ options, compiler }: CheckerDeps): Checker[
 
   const soloRound = (mutant: CheckerMutantWire): Effect.Effect<RunAnswers, CheckerFailed> =>
     verify.run(CheckMutantsCommand.make({ mutants: [mutant] })).pipe(
+      Effect.withSpan('typescript-checker.soloRound', {
+        attributes: {
+          'stryker.mutant.id': mutant.id,
+        },
+      }),
       Effect.map((decision) => decision.results),
     )
 
@@ -151,6 +156,11 @@ export const makeCheckerService = ({ options, compiler }: CheckerDeps): Checker[
     check: (mutants) =>
       verify.run(CheckMutantsCommand.make({ mutants: [...mutants] })).pipe(
         Effect.flatMap((first) => Effect.map(soloRounds(first), (rounds) => mergeAnswers([first.results, ...rounds]))),
+        Effect.withSpan('typescript-checker.check', {
+          attributes: {
+            'stryker.mutants.count': mutants.length,
+          },
+        }),
       ),
 
     group: (mutants) =>

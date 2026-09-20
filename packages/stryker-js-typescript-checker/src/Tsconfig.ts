@@ -76,9 +76,9 @@ export function parseTsConfig(fileName: string, jsonText: string): Result.Result
 export const determineBuildModeEnabled = (
   tsconfigFileName: string,
   fsService: FileSystem.FileSystem,
-): Effect.Effect<boolean, unknown> =>
+): Effect.Effect<boolean, never> =>
   Effect.gen(function*() {
-    const tsconfigFile = yield* fsService.readFileString(tsconfigFileName)
+    const tsconfigFile = yield* fsService.readFileString(tsconfigFileName).pipe(Effect.orElseSucceed(() => ''))
     const parsed = parseTsConfig(tsconfigFileName, tsconfigFile)
     return Result.match(parsed, {
       onFailure: () => false,

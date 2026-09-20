@@ -1,13 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-
+import { beforeAll, type ExpectStatic } from 'vitest'
 import {
   ensureSkewChecker,
   type ExecResult,
-  installFixture,
-  runCli,
+  type PackedPackage,
   SKEW_EFFECT_VERSION,
-  teardownBed,
-} from './__fixtures__/bed.js'
+} from './__fixtures__/container-environment.js'
+import { test } from './__fixtures__/container-harness.js'
 import { pollWindowSpans, type TraceSpan } from './__fixtures__/tempo.js'
 
 const SKEW_FIXTURE_URL = new URL('../testResources/skew-fixture', import.meta.url)
@@ -31,8 +29,6 @@ const HOST_PHASE_SPAN_NAMES: readonly string[] = [
 const SERVICE_NAME = process.env['OTEL_SERVICE_NAME'] ?? 'stryker-e2e'
 
 const telemetryEnabled = process.env['OTEL_ENABLED'] === 'true'
-
-const EMPTY_EXEC: ExecResult = { exitCode: 0, stdout: '', stderr: '' }
 
 const stdoutLines = (stdout: string): readonly string[] =>
   stdout
@@ -64,9 +60,9 @@ const numberFieldOf = (event: unknown, field: string): number => {
 }
 
 const eventKind = (event: unknown): string => {
-  const kind = fieldOf(event, 'kind')
+  const kind = fieldOf(event, '_tag')
   if (typeof kind !== 'string') {
-    throw new Error(`an event carries no string kind: ${JSON.stringify(event)}`)
+    throw new Error(`an event carries no string tag: ${JSON.stringify(event)}`)
   }
   return kind
 }
@@ -86,46 +82,53 @@ const isWitnessSpan = (span: TraceSpan): boolean => span.name === WITNESS_SPAN_N
 const isHostPhaseSpan = (span: TraceSpan): boolean => HOST_PHASE_SPAN_NAMES.includes(span.name)
 
 const effectVersionOf = (span: TraceSpan): string | undefined => span.attributes.get('effect.version')
+let skewChecker: PackedPackage
 
-describe('running a mutation run whose checker worker was built on a different effect release', () => {
-  let run: ExecResult = EMPTY_EXEC
-  let events: readonly unknown[] = []
-  let spans: readonly TraceSpan[] = []
+beforeAll(async () => {
+  skewChecker = await ensureSkewChecker()
+})
 
-  beforeAll(async () => {
-    const skewChecker = await ensureSkewChecker()
-    const fixturePath = await installFixture(SKEW_FIXTURE_URL, SKEW_FIXTURE_NAME, [skewChecker])
-    const startedSeconds = Math.floor(Date.now() / 1000) - 5
-    run = await runCli(['run'], { cwd: fixturePath })
-    events = stdoutLines(run.stdout).map(parseEventLine)
-    spans = telemetryEnabled
-      ? await pollWindowSpans({
-        startSeconds: startedSeconds,
-        serviceName: SERVICE_NAME,
-        isSettled: (seen) => seen.some(isCheckerSpan) && seen.some(isWitnessSpan),
-      })
-      : []
-  })
+test('running a mutation run whose checker worker was built on a different effect release', async ({ annotate, expect, prepareFixture }) => {
+  await annotate('Step 1: Install fixture using skewed checker', 'lifecycle')
+  const fixture = await prepareFixture(SKEW_FIXTURE_URL, SKEW_FIXTURE_NAME, [skewChecker])
 
-  afterAll(teardownBed)
+  await annotate('Step 2: Execute CLI with OTel telemetry window', 'execution')
+  const startedSeconds = Math.floor(Date.now() / 1000) - 5
+  const run = await fixture.run(['run'])
+  const events = stdoutLines(run.stdout).map(parseEventLine)
+  const spans = telemetryEnabled
+    ? await pollWindowSpans({
+      startSeconds: startedSeconds,
+      serviceName: SERVICE_NAME,
+      isSettled: (seen) => seen.some(isCheckerSpan) && seen.some(isWitnessSpan),
+    })
+    : []
 
-  it('runs to completion on a verdict the oracle derives while the skewed checker answers', () => {
-    const verdict = lastEvent(events)
+  await annotate('Step 3: Verify verdict counts, mutant totals, and cross-release trace links', 'assertions')
+  const stepVerifySkewedVerdictAndCounts = (
+    expect: ExpectStatic,
+    run: ExecResult,
+    verdict: unknown,
+  ): void => {
     const counts = fieldOf(verdict, 'counts')
-
     expect(run.exitCode).toBe(0)
     expect(eventKind(verdict)).toBe('verdict')
     expect(numberFieldOf(counts, 'killed')).toBe(SKEW_ORACLE.killed)
     expect(numberFieldOf(counts, 'survived')).toBe(SKEW_ORACLE.survived)
-  })
+  }
 
-  it('reports the whole oracle through its mutant events', () => {
+  const stepVerifyReportedMutantTotal = (
+    expect: ExpectStatic,
+    events: readonly unknown[],
+  ): void => {
     const reported = events.filter((event) => eventKind(event) === 'mutant')
-
     expect(reported).toHaveLength(SKEW_ORACLE.total)
-  })
+  }
 
-  it.skipIf(!telemetryEnabled)('links the skewed worker into the host run trace', () => {
+  const stepVerifyTraceLinkage = (
+    expect: ExpectStatic,
+    spans: readonly TraceSpan[],
+  ): void => {
     const checkerSpans = spans.filter(isCheckerSpan)
     const witnesses = spans.filter(isWitnessSpan)
     const hostTraceIds = new Set(spans.filter(isHostPhaseSpan).map((span) => span.traceId))
@@ -137,5 +140,12 @@ describe('running a mutation run whose checker worker was built on a different e
     expect(witnesses.length).toBeGreaterThan(0)
     expect(witnesses.map(effectVersionOf)).toEqual(witnesses.map(() => SKEW_EFFECT_VERSION))
     expect(witnesses.every((span) => checkerTraceIds.has(span.linkedTraceIds.at(0) ?? ''))).toBe(true)
-  })
+  }
+
+  const verdict = lastEvent(events)
+  stepVerifySkewedVerdictAndCounts(expect, run, verdict)
+  stepVerifyReportedMutantTotal(expect, events)
+  if (telemetryEnabled) {
+    stepVerifyTraceLinkage(expect, spans)
+  }
 })

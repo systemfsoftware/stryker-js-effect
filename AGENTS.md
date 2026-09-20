@@ -14,6 +14,7 @@
 | ID        | Rule                                                                                                                                                                          | Gate                                                                                                    |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `CONST-1` | `CONSTITUTION.md` is supreme law and governs where instructions or patterns conflict. Reviewers must flag constitutional violations as P0 blockers with no appeals permitted. | review — reviewer confirms diff complies with CONSTITUTION.md; flags any violation as P0 blocking merge |
+| `OBS-1`   | Troubleshooting end-to-end test failures MUST inspect emitted Grafana LGTM traces rather than adding ad-hoc log statements or running speculative retries.                    | review — diagnosis references exported trace and span identifiers from the collector                    |
 
 ## Definition of Done
 

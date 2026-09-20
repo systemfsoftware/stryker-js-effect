@@ -1,54 +1,18 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-
-import { type ExecResult, installFixture, runCli, teardownBed } from './__fixtures__/bed.js'
+import { type RunEvent, RunEventWireLine, type RunFailed, S } from '@systemfsoftware/stryker-js'
+import type { ExpectStatic } from 'vitest'
+import type { ExecResult } from './__fixtures__/container-environment.js'
+import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 
 const FAILING_DRY_RUN_RUNTIME_ERROR_CODE = 3
-
 const FAILING_FIXTURE_URL = new URL('../testResources/failing-fixture', import.meta.url)
 
-const RUN_EVENT_KINDS: ReadonlyArray<string> = [
-  'stream',
-  'phase',
-  'plan',
-  'mutant',
-  'tick',
-  'verdict',
-  'error',
-  'help',
-]
-
-const EMPTY_EXEC: ExecResult = { exitCode: 0, stdout: '', stderr: '' }
-
-const stdoutLines = (stdout: string): ReadonlyArray<string> =>
+const parseEventStream = (stdout: string): ReadonlyArray<RunEvent> =>
   stdout
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-
-const parseEventLine = (line: string): unknown => {
-  const value: unknown = JSON.parse(line)
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`expected a JSON object on stdout, received: ${line}`)
-  }
-  return value
-}
-
-const fieldOf = (event: unknown, field: string): unknown => {
-  if (typeof event !== 'object' || event === null) {
-    throw new Error(`no ${field} on a non-object event: ${JSON.stringify(event)}`)
-  }
-  return Reflect.get(event, field)
-}
-
-const eventKind = (event: unknown): string => {
-  const kind = fieldOf(event, 'kind')
-  if (typeof kind !== 'string') {
-    throw new Error(`an event carries no string kind: ${JSON.stringify(event)}`)
-  }
-  return kind
-}
-
-const lastEvent = (events: ReadonlyArray<unknown>): unknown => {
+    .filter((line) => line.startsWith('{') && line.endsWith('}'))
+    .map((line) => S.decodeUnknownSync(RunEventWireLine)(line))
+const lastEvent = (events: ReadonlyArray<RunEvent>): RunEvent => {
   const event = events.at(-1)
   if (event === undefined) {
     throw new Error('stdout carries no events')
@@ -56,41 +20,53 @@ const lastEvent = (events: ReadonlyArray<unknown>): unknown => {
   return event
 }
 
-const kindsOutsideOf = (
-  kinds: ReadonlyArray<string>,
-  allowed: ReadonlyArray<string>,
-): ReadonlyArray<string> => kinds.filter((kind) => !allowed.includes(kind))
+const stepVerifyFailingDryRunExit = (expect: ExpectStatic, run: ExecResult): void => {
+  expect.soft(run.exitCode).toBe(FAILING_DRY_RUN_RUNTIME_ERROR_CODE)
+}
 
-describe('failing a run at the process boundary', () => {
-  let run: ExecResult = EMPTY_EXEC
-  let events: ReadonlyArray<unknown> = []
+const stepVerifyTypedErrorDocument = (
+  expect: ExpectStatic,
+  events: ReadonlyArray<RunEvent>,
+): void => {
+  const terminal = lastEvent(events)
+  const tags = events.map((event) => event._tag)
 
-  beforeAll(async () => {
-    const fixturePath = await installFixture(FAILING_FIXTURE_URL, 'failing-fixture')
-    run = await runCli(['run'], { cwd: fixturePath })
-    events = stdoutLines(run.stdout).map(parseEventLine)
+  expect.soft(terminal._tag).toBe('error')
+  if (terminal._tag === 'error') {
+    const errorDoc: RunFailed = terminal
+    expect.soft(errorDoc.schemaVersion).toBe('1.0')
+    expect.soft(errorDoc.code).toBe(FAILING_DRY_RUN_RUNTIME_ERROR_CODE)
+    expect.soft(typeof errorDoc.error).toBe('string')
+    expect.soft(errorDoc.remediation).toMatch(/\S/)
+  }
+  expect.soft(tags).not.toContain('verdict')
+}
+
+const stepVerifyStreamCleanliness = (
+  expect: ExpectStatic,
+  events: ReadonlyArray<RunEvent>,
+): void => {
+  expect.soft(events.length).toBeGreaterThan(0)
+  expect.soft(events.every((e) => typeof e._tag === 'string')).toBe(true)
+}
+
+test('failing a run at the process boundary', async ({ bdd, expect, prepareFixture }) => {
+  let fixture: PreparedFixture
+  let run: ExecResult
+  let events: ReadonlyArray<RunEvent>
+
+  await bdd.given('a fixture configured to fail during dry run', async () => {
+    fixture = await prepareFixture(FAILING_FIXTURE_URL, 'failing-fixture')
   })
 
-  afterAll(teardownBed)
-
-  it('exits with the classed code for a failing dry run', () => {
-    expect(run.exitCode).toBe(FAILING_DRY_RUN_RUNTIME_ERROR_CODE)
+  await bdd.when('the CLI is executed in machine mode', async () => {
+    run = await fixture.run(['run'])
+    events = parseEventStream(run.stdout)
   })
 
-  it('ends on the typed error document, and never on a verdict', () => {
-    const terminal = lastEvent(events)
-    const kinds = events.map(eventKind)
-
-    expect(eventKind(terminal)).toBe('error')
-    expect(typeof fieldOf(terminal, 'schemaVersion')).toBe('string')
-    expect(typeof fieldOf(terminal, 'code')).toBe('number')
-    expect(typeof fieldOf(terminal, 'error')).toBe('string')
-    expect(fieldOf(terminal, 'remediation')).toMatch(/\S/)
-    expect(kinds).not.toContain('verdict')
-  })
-
-  it('leaves no unstructured text on the machine stream', () => {
-    expect(events.length).toBeGreaterThan(0)
-    expect(kindsOutsideOf(events.map(eventKind), RUN_EVENT_KINDS)).toEqual([])
+  await bdd.thenAssert('the process exits with runtime error code and emits a structured error document', () => {
+    stepVerifyFailingDryRunExit(expect, run)
+    stepVerifyTypedErrorDocument(expect, events)
+    stepVerifyStreamCleanliness(expect, events)
   })
 })

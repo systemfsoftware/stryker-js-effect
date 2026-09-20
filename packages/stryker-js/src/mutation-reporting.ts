@@ -84,6 +84,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
   const reportMutantStatus = (
     mutant: MutantTestCoverage,
     status: RunMutantResult['status'],
+    statusReason?: string,
   ): Effect.Effect<RunMutantResult> => {
     const location = toSchemaLocation(mutant.location)
     return Effect.succeed({
@@ -98,12 +99,12 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
       static: mutant.static,
       testsCompleted: mutant.testsCompleted,
       description: mutant.description,
-      statusReason: mutant.statusReason,
+      statusReason: statusReason ?? mutant.statusReason,
     })
   }
 
   const reportCheckFailure: MutationReportingService['reportCheckFailure'] = (mutant, result) =>
-    reportMutantStatus(mutant, checkStatusToMutantStatus(result.status))
+    reportMutantStatus(mutant, checkStatusToMutantStatus(result.status), result.reason)
 
   const reportMutantRunResult: MutationReportingService['reportMutantRunResult'] = (mutant, result) => {
     const mapped = mapRunResult(mutant, result)

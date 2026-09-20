@@ -20,7 +20,7 @@
   },
   "scripts": {
     "clean": "rimraf dist",
-    "build": "rimraf dist && tsdown --config tsdown.bin.config.ts && tsdown --config tsdown.config.ts",
+    "build": "pnpm run typecheck && rimraf dist && tsdown --config tsdown.bin.config.ts && tsdown --config tsdown.config.ts",
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
     "mutation": "stryker run",
@@ -99,6 +99,10 @@
         "types": "./dist/config.d.mts",
         "default": "./dist/config.mjs"
       },
+      "./events": {
+        "types": "./dist/events.d.mts",
+        "default": "./dist/events.mjs"
+      },
       "./promises": {
         "types": "./dist/promises.d.mts",
         "default": "./dist/promises.mjs"
@@ -116,6 +120,11 @@
       "@systemfsoftware/source": "./src/config/index.ts",
       "types": "./dist/config.d.mts",
       "default": "./dist/config.mjs"
+    },
+    "./events": {
+      "@systemfsoftware/source": "./src/events/index.ts",
+      "types": "./dist/events.d.mts",
+      "default": "./dist/events.mjs"
     },
     "./promises": {
       "@systemfsoftware/source": "./src/promises/index.ts",

@@ -1,6 +1,7 @@
 import * as S from 'effect/Schema'
 
 import { LocationSchema, MutantStatusSchema, OpenEndLocationSchema } from '@systemfsoftware/stryker-js-instrumenter'
+import { NonNegativeFinite, NonNegativeInt, Percentage } from './Metrics.schema.js'
 
 export const MutantResultSchema = S.Struct({
   id: S.String,
@@ -13,8 +14,8 @@ export const MutantResultSchema = S.Struct({
   static: S.optional(S.Boolean),
   coveredBy: S.optional(S.Array(S.String)),
   killedBy: S.optional(S.Array(S.String)),
-  testsCompleted: S.optional(S.Finite),
-  duration: S.optional(S.Finite),
+  testsCompleted: S.optional(NonNegativeInt),
+  duration: S.optional(NonNegativeFinite),
 })
 export type MutantResult = typeof MutantResultSchema.Type
 
@@ -45,9 +46,26 @@ export const TestFileDefinitionDictionarySchema = S.Record(S.String, TestFileSch
 export type TestFileDefinitionDictionary = typeof TestFileDefinitionDictionarySchema.Type
 
 export const ThresholdsSchema = S.Struct({
-  high: S.Finite,
-  low: S.Finite,
-})
+  high: Percentage,
+  low: Percentage,
+}).pipe(
+  S.check(
+    S.makeFilter((t) => t.low <= t.high, {
+      expected: 'thresholds where low <= high',
+      arbitrary: {
+        candidate: {
+          make: (fc) =>
+            fc
+              .tuple(
+                fc.float({ min: 0, max: 100, noNaN: true }),
+                fc.float({ min: 0, max: 100, noNaN: true }),
+              )
+              .map(([a, b]) => ({ high: Math.max(a, b), low: Math.min(a, b) })),
+        },
+      },
+    }),
+  ),
+)
 export type Thresholds = typeof ThresholdsSchema.Type
 
 export const BrandingInformationSchema = S.Struct({

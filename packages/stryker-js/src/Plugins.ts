@@ -202,6 +202,7 @@ interface PluginContributions {
 
 const failPluginLoad = (descriptor: string, error: unknown): Effect.Effect<never, PluginLoadFailedError> =>
   Effect.logWarning(`Error during loading "${descriptor}" plugin`).pipe(
+    Effect.annotateLogs('cause', error),
     Effect.andThen(() => Effect.fail(PluginLoadFailedError.make({ descriptor, cause: error }))),
   )
 

@@ -21,6 +21,7 @@
     "@opentelemetry/sdk-node": "^0.208.0",
     "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@systemfsoftware/stryker-js": "workspace:^",
+    "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
     "@systemfsoftware/stryker-js-vitest-runner": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@types/node": "catalog:",

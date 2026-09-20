@@ -227,6 +227,9 @@ export type Dependencies = typeof DependenciesSchema.Type;
 // @public (undocumented)
 export const DependenciesSchema: S.$Record<S.String, S.String>;
 
+// @public (undocumented)
+export const DetectedStatus: S.Union<readonly [S.Literal<"Killed">, S.Literal<"Timeout">]>;
+
 // Warning: (ae-forgotten-export) The symbol "DryRunCompleted_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
@@ -394,7 +397,7 @@ export const FileResultDictionarySchema: S.$Record<S.String, S.Struct<{
         readonly static: S.optional<S.Boolean>;
         readonly coveredBy: S.optional<S.$Array<S.String>>;
         readonly killedBy: S.optional<S.$Array<S.String>>;
-        readonly testsCompleted: S.optional<S.Finite>;
+        readonly testsCompleted: S.optional<S.Int>;
         readonly duration: S.optional<S.Finite>;
     }>>;
 }>>;
@@ -423,7 +426,7 @@ export const FileResultSchema: S.Struct<{
         readonly static: S.optional<S.Boolean>;
         readonly coveredBy: S.optional<S.$Array<S.String>>;
         readonly killedBy: S.optional<S.$Array<S.String>>;
-        readonly testsCompleted: S.optional<S.Finite>;
+        readonly testsCompleted: S.optional<S.Int>;
         readonly duration: S.optional<S.Finite>;
     }>>;
 }>;
@@ -444,6 +447,9 @@ export const FrameworkInformationSchema: S.Struct<{
     }>>;
     readonly dependencies: S.optional<S.$Record<S.String, S.String>>;
 }>;
+
+// @public (undocumented)
+export const InvalidStatus: S.Union<readonly [S.Literal<"CompileError">, S.Literal<"RuntimeError">]>;
 
 // @public (undocumented)
 export const isCustomTestRunner: (value: TestRunnerConfig) => value is TestRunnerCustomConfig;
@@ -475,8 +481,31 @@ type LogLevel = typeof LogLevel.Type;
 export { LogLevel }
 export { LogLevel as LogLevelType }
 
+// Warning: (ae-forgotten-export) The symbol "Metrics_base" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
-export type Metrics = typeof MetricsSchema.Type;
+export class Metrics extends Metrics_base {
+    // (undocumented)
+    static fromMutants(mutants: readonly {
+        readonly status: string;
+    }[]): Metrics;
+    // (undocumented)
+    get mutationScore(): number;
+    // (undocumented)
+    get mutationScoreBasedOnCoveredCode(): number;
+    // (undocumented)
+    get totalCovered(): number;
+    // (undocumented)
+    get totalDetected(): number;
+    // (undocumented)
+    get totalInvalid(): number;
+    // (undocumented)
+    get totalMutants(): number;
+    // (undocumented)
+    get totalUndetected(): number;
+    // (undocumented)
+    get totalValid(): number;
+}
 
 // @public (undocumented)
 export interface MetricsResult {
@@ -489,48 +518,20 @@ export interface MetricsResult {
 }
 
 // @public (undocumented)
-export const MetricsResultSchema: S.Struct<{
-    readonly name: S.String;
-    readonly metrics: S.Struct<{
-        readonly pending: S.Finite;
-        readonly killed: S.Finite;
-        readonly timeout: S.Finite;
-        readonly survived: S.Finite;
-        readonly noCoverage: S.Finite;
-        readonly runtimeErrors: S.Finite;
-        readonly compileErrors: S.Finite;
-        readonly ignored: S.Finite;
-        readonly totalDetected: S.Finite;
-        readonly totalUndetected: S.Finite;
-        readonly totalInvalid: S.Finite;
-        readonly totalValid: S.Finite;
-        readonly totalMutants: S.Finite;
-        readonly totalCovered: S.Finite;
-        readonly mutationScore: S.Finite;
-        readonly mutationScoreBasedOnCoveredCode: S.Finite;
-    }>;
-    readonly childResults: S.$Array<S.suspend<S.Codec<MetricsResult, MetricsResult, never, never>>>;
-}>;
+export interface MetricsResultEncoded {
+    // (undocumented)
+    readonly childResults: readonly MetricsResultEncoded[];
+    // (undocumented)
+    readonly metrics: typeof Metrics.Encoded;
+    // (undocumented)
+    readonly name: string;
+}
 
 // @public (undocumented)
-export const MetricsSchema: S.Struct<{
-    readonly pending: S.Finite;
-    readonly killed: S.Finite;
-    readonly timeout: S.Finite;
-    readonly survived: S.Finite;
-    readonly noCoverage: S.Finite;
-    readonly runtimeErrors: S.Finite;
-    readonly compileErrors: S.Finite;
-    readonly ignored: S.Finite;
-    readonly totalDetected: S.Finite;
-    readonly totalUndetected: S.Finite;
-    readonly totalInvalid: S.Finite;
-    readonly totalValid: S.Finite;
-    readonly totalMutants: S.Finite;
-    readonly totalCovered: S.Finite;
-    readonly mutationScore: S.Finite;
-    readonly mutationScoreBasedOnCoveredCode: S.Finite;
-}>;
+export const MetricsResultSchema: S.Codec<MetricsResult, MetricsResultEncoded>;
+
+// @public (undocumented)
+export const MetricsSchema: typeof Metrics;
 
 export { MutantActivation }
 
@@ -568,7 +569,7 @@ export const MutantResultSchema: S.Struct<{
     readonly static: S.optional<S.Boolean>;
     readonly coveredBy: S.optional<S.$Array<S.String>>;
     readonly killedBy: S.optional<S.$Array<S.String>>;
-    readonly testsCompleted: S.optional<S.Finite>;
+    readonly testsCompleted: S.optional<S.Int>;
     readonly duration: S.optional<S.Finite>;
 }>;
 
@@ -660,7 +661,7 @@ export const MutationTestResultSchema: S.Struct<{
             readonly static: S.optional<S.Boolean>;
             readonly coveredBy: S.optional<S.$Array<S.String>>;
             readonly killedBy: S.optional<S.$Array<S.String>>;
-            readonly testsCompleted: S.optional<S.Finite>;
+            readonly testsCompleted: S.optional<S.Int>;
             readonly duration: S.optional<S.Finite>;
         }>>;
     }>>;
@@ -699,6 +700,12 @@ export const MutationTestResultSchema: S.Struct<{
 }>;
 
 // @public (undocumented)
+export const NonNegativeFinite: S.Finite;
+
+// @public (undocumented)
+export const NonNegativeInt: S.Int;
+
+// @public (undocumented)
 export type OnlyObject<T> = Exclude<T, Primitive>;
 
 export { OpenEndLocation }
@@ -724,6 +731,9 @@ export interface PassedCheckResult {
     // (undocumented)
     readonly status: 'passed';
 }
+
+// @public (undocumented)
+export const Percentage: S.Finite;
 
 // @public (undocumented)
 export const PluginFileUrl: S.String;
@@ -1224,6 +1234,12 @@ export const TRACEPARENT_HEADER = "traceparent";
 
 // @public (undocumented)
 export const TRACESTATE_HEADER = "tracestate";
+
+// @public (undocumented)
+export const UndetectedStatus: S.Union<readonly [S.Literal<"Survived">, S.Literal<"NoCoverage">]>;
+
+// @public (undocumented)
+export const UntestedStatus: S.Union<readonly [S.Literal<"Ignored">, S.Literal<"Pending">]>;
 
 // @public (undocumented)
 export const WorkerEntryUrl: S.String;

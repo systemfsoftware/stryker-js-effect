@@ -13,13 +13,19 @@ export const CONTAINER_WORKROOT = '/work'
 
 const TARBALL_DIR = '/tmp/e2e'
 
+const NPM_CACHE_HOST_DIR = join(tmpdir(), 'stryker-e2e-npm-cache')
 const NODE_IMAGE = 'node:24-alpine@sha256:333f6b3eca25980d5682c26207665b93c9417786b21760b2764d5821d9704c8a'
 
 const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 
-const CLI_PACKAGE = '@systemfsoftware/stryker-js'
+export const CLI_PACKAGE = '@systemfsoftware/stryker-js'
 
-const PLUGIN_PACKAGES = ['@systemfsoftware/stryker-js-vitest-runner'] as const
+export const TYPESCRIPT_CHECKER_PACKAGE = '@systemfsoftware/stryker-js-typescript-checker'
+
+const PLUGIN_PACKAGES = [
+  '@systemfsoftware/stryker-js-vitest-runner',
+  TYPESCRIPT_CHECKER_PACKAGE,
+] as const
 
 const PACKED_PACKAGES = [CLI_PACKAGE, ...PLUGIN_PACKAGES] as const
 
@@ -64,7 +70,7 @@ let scratch: string | undefined
 let packedPackages: Readonly<Record<string, PackedPackage>> | undefined
 let ready: Promise<void> | undefined
 let skewCheckerReady: Promise<PackedPackage> | undefined
-
+const installedFixtures = new Map<string, Promise<string>>()
 const messageOf = (cause: unknown): string => {
   if (cause instanceof Error) {
     return cause.message
@@ -133,12 +139,16 @@ const copyTarballs = async (
       files.map((file) => ({ source: join(directory, file.fileName), target: file.tarballPath })),
     ))
 
-const startBed = async (): Promise<void> => {
+const startContainerEnvironment = async (): Promise<void> => {
   const directory = await requireStep(
     'create the pack scratch directory',
     () => mkdtemp(join(tmpdir(), 'stryker-e2e-')),
   )
   scratch = directory
+  await requireStep(
+    'create the shared npm cache directory',
+    () => mkdir(NPM_CACHE_HOST_DIR, { recursive: true }),
+  )
   const packed = await packWorkspacePackages(directory)
   packedPackages = packed
 
@@ -147,6 +157,7 @@ const startBed = async (): Promise<void> => {
       .withCommand(['sleep', 'infinity'])
       .withNetworkMode(HOST_NETWORK_MODE)
       .withWorkingDir(CONTAINER_WORKROOT)
+      .withBindMounts([{ source: NPM_CACHE_HOST_DIR, target: '/root/.npm', mode: 'rw' }])
       .withStartupTimeout(STARTUP_TIMEOUT_MS)
       .start())
   container = running
@@ -154,12 +165,12 @@ const startBed = async (): Promise<void> => {
   await copyTarballs(running, directory, Object.values(packed))
 }
 
-export const ensureBed = async (): Promise<void> => {
-  ready ??= startBed()
+export const ensureContainerEnvironment = async (): Promise<void> => {
+  ready ??= startContainerEnvironment()
   await ready
 }
 
-export const teardownBed = async (): Promise<void> => {
+export const teardownContainerEnvironment = async (): Promise<void> => {
   const running = container
   const directory = scratch
   container = undefined
@@ -167,6 +178,7 @@ export const teardownBed = async (): Promise<void> => {
   packedPackages = undefined
   ready = undefined
   skewCheckerReady = undefined
+  installedFixtures.clear()
   if (running !== undefined) {
     await requireStep('stop the node:24-alpine container', () => running.stop())
   }
@@ -178,7 +190,7 @@ export const teardownBed = async (): Promise<void> => {
 export function packedPackage(packageName: string): PackedPackage {
   const entry = packedPackages?.[packageName]
   if (entry === undefined) {
-    throw new Error(`the bed has not packed ${packageName}: await ensureBed() first`)
+    throw new Error(`container environment has not packed ${packageName}: await ensureContainerEnvironment() first`)
   }
   return entry
 }
@@ -195,10 +207,10 @@ const workingDirOption = (cwd: string | undefined): { readonly workingDir: strin
 }
 
 const rawExec = async (command: readonly string[], cwd: string | undefined): Promise<ExecResult> => {
-  await ensureBed()
+  await ensureContainerEnvironment()
   const running = container
   if (running === undefined) {
-    throw new Error('the bed has no container: await ensureBed() first')
+    throw new Error('container environment has no running container: await ensureContainerEnvironment() first')
   }
   const result = await running.exec([...command], {
     ...workingDirOption(cwd),
@@ -214,49 +226,66 @@ export function runCli(args: readonly string[], opts?: { readonly cwd?: string |
 export function runShell(command: string, opts?: { readonly cwd?: string | undefined }): Promise<ExecResult> {
   return rawExec(['sh', '-c', command], opts?.cwd)
 }
+export async function readContainerFile(path: string): Promise<string> {
+  await ensureContainerEnvironment()
+  const res = await runShell(`cat "${path}"`)
+  if (res.exitCode !== 0) {
+    throw new Error(`failed to read container file ${path}: ${res.stderr}`)
+  }
+  return res.stdout
+}
 
 export async function readHostJson(url: URL): Promise<unknown> {
   const document: unknown = JSON.parse(await readFile(fileURLToPath(url), 'utf8'))
   return document
 }
 
-export async function installFixture(
+export function installFixture(
   fixtureUrl: URL,
   name: string,
   extraTarballs: readonly PackedPackage[] = [],
+  packedNames: readonly string[] = PACKED_PACKAGES,
 ): Promise<string> {
-  const hostFixtureDir = fileURLToPath(fixtureUrl)
-  await ensureBed()
-  const running = container
-  if (running === undefined) {
-    throw new Error('the bed has no container: await ensureBed() first')
+  const cached = installedFixtures.get(name)
+  if (cached !== undefined) {
+    return cached
   }
-  const fixturePath = `${CONTAINER_WORKROOT}/${name}`
-  await requireStep(
-    `copy the ${name} fixture into the container`,
-    () => running.copyDirectoriesToContainer([{ source: hostFixtureDir, target: fixturePath }]),
-  )
-  const installSteps = [
-    { step: `npm install the ${name} registry dependencies`, args: ['npm', 'install'] },
-    {
-      step: `npm install the CLI and plugin tarballs in ${name}`,
-      args: [
-        'npm',
-        'install',
-        ...PACKED_PACKAGES.map((packageName) => packedPackage(packageName).tarballPath),
-        ...extraTarballs.map((packed) => packed.tarballPath),
-      ],
-    },
-  ]
-  for (const { step, args } of installSteps) {
-    await requireStep(step, async () => {
-      const result = await running.exec(args, { workingDir: fixturePath })
-      if (result.exitCode !== 0) {
-        throw new Error(`npm exited ${result.exitCode}: ${result.stderr.trim()}`)
-      }
-    })
-  }
-  return fixturePath
+  const task = (async () => {
+    const hostFixtureDir = fileURLToPath(fixtureUrl)
+    await ensureContainerEnvironment()
+    const running = container
+    if (running === undefined) {
+      throw new Error('container environment has no running container: await ensureContainerEnvironment() first')
+    }
+    const fixturePath = `${CONTAINER_WORKROOT}/${name}`
+    await requireStep(
+      `copy the ${name} fixture into the container`,
+      () => running.copyDirectoriesToContainer([{ source: hostFixtureDir, target: fixturePath }]),
+    )
+    const installSteps = [
+      { step: `npm install the ${name} registry dependencies`, args: ['npm', 'install'] },
+      {
+        step: `npm install the CLI and plugin tarballs in ${name}`,
+        args: [
+          'npm',
+          'install',
+          ...packedNames.map((packageName) => packedPackage(packageName).tarballPath),
+          ...extraTarballs.map((packed) => packed.tarballPath),
+        ],
+      },
+    ]
+    for (const { step, args } of installSteps) {
+      await requireStep(step, async () => {
+        const result = await running.exec(args, { workingDir: fixturePath })
+        if (result.exitCode !== 0) {
+          throw new Error(`npm exited ${result.exitCode}: ${result.stderr.trim()}`)
+        }
+      })
+    }
+    return fixturePath
+  })()
+  installedFixtures.set(name, task)
+  return task
 }
 
 const buildSkewCheckerBundle = async (directory: string): Promise<string> => {
@@ -315,11 +344,11 @@ const stageSkewCheckerPackage = async (directory: string, bundledDirectory: stri
 
 export const ensureSkewChecker = async (): Promise<PackedPackage> => {
   skewCheckerReady ??= (async () => {
-    await ensureBed()
+    await ensureContainerEnvironment()
     const directory = scratch
     const running = container
     if (directory === undefined || running === undefined) {
-      throw new Error('the bed has no scratch directory: await ensureBed() first')
+      throw new Error('container environment has no scratch directory: await ensureContainerEnvironment() first')
     }
     const bundledDirectory = await buildSkewCheckerBundle(directory)
     const packageDirectory = await stageSkewCheckerPackage(directory, bundledDirectory)

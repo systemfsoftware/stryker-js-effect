@@ -49,7 +49,6 @@ import {
   PackageManifest,
   VitestDryRunCommand,
   type VitestDryRunOutcome,
-  VitestNodeModuleSchema,
   VitestRunnerOptionsSchema,
 } from './Runner.schema.js'
 
@@ -633,27 +632,44 @@ const vitestUnresolved = (specifier: string, base: string, detail: string): Test
     cause: `Cannot resolve "${specifier}" from "${base}": ${detail}`,
   })
 
-export const resolveVitest: VitestResolver = (_dir) =>
-  Effect.gen(function*() {
-    const fallback = Effect.succeed({ createVitest: createVitestOriginal } satisfies ResolvedVitest)
-    const primary = Effect.gen(function*() {
-      const resolutionFailure = (specifier: string, detail: string): TestRunnerFailed =>
-        vitestUnresolved(specifier, import.meta.url, detail)
-      const resolveSpecifier = (specifier: string): Effect.Effect<string, TestRunnerFailed> =>
-        Effect.try({
-          try: (): string => import.meta.resolve(specifier),
-          catch: (cause) => resolutionFailure(specifier, errorToString(cause)),
-        })
-      const vitestNodeUrl = yield* resolveSpecifier(VITEST_NODE_SPECIFIER)
-      const imported: unknown = yield* Effect.tryPromise({
-        try: (): Promise<unknown> => import(vitestNodeUrl),
-        catch: (cause) => resolutionFailure(VITEST_NODE_SPECIFIER, errorToString(cause)),
+const hasCreateVitest = (
+  value: object,
+): value is { readonly createVitest: ResolvedVitest['createVitest'] } =>
+  Predicate.hasProperty(value, 'createVitest') && Predicate.isFunction(value['createVitest'])
+
+const isVitestNodeModule = (
+  value: unknown,
+): value is { readonly createVitest: ResolvedVitest['createVitest'] } => {
+  if (!Predicate.isObject(value)) {
+    return false
+  }
+  return hasCreateVitest(value)
+}
+
+export const resolveVitest: VitestResolver = (_dir) => {
+  const fallback = Effect.succeed({ createVitest: createVitestOriginal } satisfies ResolvedVitest)
+  const primary = Effect.gen(function*() {
+    const resolutionFailure = (specifier: string, detail: string): TestRunnerFailed =>
+      vitestUnresolved(specifier, import.meta.url, detail)
+    const resolveSpecifier = (specifier: string): Effect.Effect<string, TestRunnerFailed> =>
+      Effect.try({
+        try: (): string => import.meta.resolve(specifier),
+        catch: (cause) => resolutionFailure(specifier, errorToString(cause)),
       })
-      const decodedNode = yield* S.decodeUnknownEffect(VitestNodeModuleSchema)(imported)
-      return { createVitest: decodedNode.createVitest } satisfies ResolvedVitest
+    const vitestNodeUrl = yield* resolveSpecifier(VITEST_NODE_SPECIFIER)
+    const imported: unknown = yield* Effect.tryPromise({
+      try: (): Promise<unknown> => import(vitestNodeUrl),
+      catch: (cause) => resolutionFailure(VITEST_NODE_SPECIFIER, errorToString(cause)),
     })
-    return yield* primary.pipe(Effect.catchCause(() => fallback), Effect.catchDefect(() => fallback))
-  }).pipe(Effect.orDie)
+    if (!isVitestNodeModule(imported)) {
+      return yield* Effect.fail(
+        resolutionFailure(VITEST_NODE_SPECIFIER, 'Missing createVitest export on vitest/node module'),
+      )
+    }
+    return { createVitest: imported.createVitest } satisfies ResolvedVitest
+  })
+  return primary.pipe(Effect.catchCause(() => fallback), Effect.catchDefect(() => fallback), Effect.orDie)
+}
 
 interface RunFilter {
   testIds?: string[]

@@ -10,6 +10,7 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import type { FileDescriptions, RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import {
+  CheckerFailed,
   CheckerMutantWire,
   CheckerRpcs,
   type CheckResult,
@@ -62,11 +63,11 @@ export interface CheckerResourceService {
   readonly check: (
     checkerName: string,
     mutants: readonly CheckerMutantWire[],
-  ) => Effect.Effect<Record<string, CheckResult>, CheckerCrash>
+  ) => Effect.Effect<Record<string, CheckResult>, CheckerCrash | CheckerFailed>
   readonly group: (
     checkerName: string,
     mutants: readonly CheckerMutantWire[],
-  ) => Effect.Effect<readonly (readonly string[])[], CheckerCrash>
+  ) => Effect.Effect<readonly (readonly string[])[], CheckerCrash | CheckerFailed>
 }
 
 // ---------------------------------------------------------------------------
@@ -302,8 +303,8 @@ export const makeCheckerChildProcess = (params: {
       spanName: string,
       checkerName: string,
       mutants: readonly CheckerMutantWire[],
-      call: Effect.Effect<A, { readonly message: string }>,
-    ): Effect.Effect<A, ChildProcessCrashedError> =>
+      call: Effect.Effect<A, CheckerFailed | { readonly message: string }>,
+    ): Effect.Effect<A, CheckerCrash | CheckerFailed> =>
       call.pipe(
         Effect.withSpan(spanName, {
           attributes: {
@@ -325,7 +326,12 @@ export const makeCheckerChildProcess = (params: {
         ),
         Effect.tap(([duration]) => Metric.update(checkerDuration, duration)),
         Effect.map(([, result]) => result),
-        Effect.mapError((error) => crashed(error.message)),
+        Effect.mapError((error) =>
+          Match.value(error).pipe(
+            Match.tag('CheckerFailed', (failed) => failed),
+            Match.orElse((e) => crashed(e.message)),
+          )
+        ),
       )
 
     return {
@@ -571,7 +577,7 @@ export const checkPlans = (
   lookup?: WireLookup,
 ): Effect.Effect<
   readonly (readonly [MutantRunPlan, CheckResult])[],
-  CheckerCrash | CheckerContractBroken
+  CheckerCrash | CheckerFailed | CheckerContractBroken
 > => {
   const description = Cell.layer({
     read: (
@@ -633,7 +639,7 @@ export const groupPlans = (
   lookup?: WireLookup,
 ): Effect.Effect<
   readonly (readonly MutantRunPlan[])[],
-  CheckerCrash | CheckerContractBroken
+  CheckerCrash | CheckerFailed | CheckerContractBroken
 > => {
   const description = Cell.layer({
     read: (
@@ -691,7 +697,7 @@ export const checkGroupedPlans = (
   plans: readonly MutantRunPlan[],
 ): Effect.Effect<
   readonly (readonly [MutantRunPlan, CheckResult])[],
-  CheckerCrash | CheckerContractBroken
+  CheckerCrash | CheckerFailed | CheckerContractBroken
 > =>
   Effect.gen(function*() {
     const lookup = lookupOf(partitionMutantsForWire(plans))

@@ -65,12 +65,12 @@ import {
   runOutcomeCode,
   unrecognizedArgumentOf,
 } from './Envelope.js'
+import { emitMachineModeOutput, emitNullScoreVerdict } from './machine-output.js'
 import { mergeReportsCell } from './merge-reports.cell.js'
 import { MergeReportsFailed } from './merge-reports.schema.js'
+import type { OutputModeProbe } from './output-mode-probe.js'
 import type { ResolvedMode } from './output-mode.js'
-import { emitMachineModeOutput } from './Output.js'
-import type { OutputModeProbe, RunEventStreamPort } from './Output.js'
-import { emitNullScoreVerdict } from './Output.js'
+import type { RunEventStreamPort } from './run-event-stream.js'
 import {
   applyProgressStreamFile,
   hostOptionsOf,
@@ -582,7 +582,7 @@ export const runStrykerCli = (
     const use = Effect.gen(function*() {
       const parsed = yield* Effect.result(input.program)
       const request = yield* Ref.get(input.requestRef)
-      yield* applyProgressStreamFile(stream, progressStreamFileName(request))
+      yield* applyProgressStreamFile(progressStreamFileName(request))
       yield* stream.open
       if (Result.isFailure(parsed)) {
         return yield* parsed.failure

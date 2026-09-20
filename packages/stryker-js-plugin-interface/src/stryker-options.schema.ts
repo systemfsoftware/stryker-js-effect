@@ -1,5 +1,6 @@
 import { Effect } from 'effect'
 import * as S from 'effect/Schema'
+import { Percentage } from './Metrics.schema.js'
 
 const RENDERED_OPTION_DEFAULTS = {
   coverageAnalysis: 'perTest',
@@ -73,13 +74,6 @@ export type CoverageAnalysisMode = typeof CoverageAnalysisMode.Type
 export type ReportType = typeof ReportType.Type
 export type PackageManager = typeof PackageManager.Type
 
-/** 0–100 percentage used by the mutation-score thresholds. */
-const Percentage = S.Finite.pipe(S.check(S.isBetween({ minimum: 0, maximum: 100 })))
-
-// ---------------------------------------------------------------------------
-// Nested option objects
-// ---------------------------------------------------------------------------
-
 export const CommandRunnerOptionsSchema = openStruct({
   command: defaulted(S.String, 'npm test'),
 })
@@ -108,7 +102,29 @@ export const MutationScoreThresholdsSchema = S.Struct({
   high: defaulted(Percentage, 80),
   low: defaulted(Percentage, 60),
   break: defaulted(S.NullOr(Percentage), null),
-})
+}).pipe(
+  S.check(
+    S.makeFilter((t) => t.low <= t.high, {
+      expected: 'thresholds where low <= high',
+      arbitrary: {
+        candidate: {
+          make: (fc) =>
+            fc
+              .tuple(
+                fc.float({ min: 0, max: 100, noNaN: true }),
+                fc.float({ min: 0, max: 100, noNaN: true }),
+                fc.option(fc.float({ min: 0, max: 100, noNaN: true }), { nil: null }),
+              )
+              .map(([a, b, brk]) => ({
+                high: Math.max(a, b),
+                low: Math.min(a, b),
+                break: brk,
+              })),
+        },
+      },
+    }),
+  ),
+)
 export type MutationScoreThresholds = typeof MutationScoreThresholdsSchema.Type
 
 const MutatorDescriptor = S.Struct({
