@@ -6,6 +6,7 @@ import {
   type ExecResult,
   installFixture,
   type PackedPackage,
+  readContainerFile,
   runCli,
   teardownContainerEnvironment,
 } from './container-environment.js'
@@ -18,6 +19,7 @@ export interface ContainerHarness {
 export interface PreparedFixture {
   readonly path: string
   readonly run: (args: readonly string[]) => Promise<ExecResult>
+  readonly readFile: (relativePath: string) => Promise<string>
 }
 
 export const test = baseTest
@@ -44,6 +46,7 @@ export const test = baseTest
       containerHarness.install(fixtureUrl, name, extraTarballs).then((path) => ({
         path,
         run: (args: readonly string[]) => containerHarness.run(args, { cwd: path }),
+        readFile: (relativePath: string) => readContainerFile(`${path}/${relativePath}`),
       }))
   })
 

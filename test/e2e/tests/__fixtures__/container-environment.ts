@@ -220,6 +220,14 @@ export function runCli(args: readonly string[], opts?: { readonly cwd?: string |
 export function runShell(command: string, opts?: { readonly cwd?: string | undefined }): Promise<ExecResult> {
   return rawExec(['sh', '-c', command], opts?.cwd)
 }
+export async function readContainerFile(path: string): Promise<string> {
+  await ensureContainerEnvironment()
+  const res = await runShell(`cat "${path}"`)
+  if (res.exitCode !== 0) {
+    throw new Error(`failed to read container file ${path}: ${res.stderr}`)
+  }
+  return res.stdout
+}
 
 export async function readHostJson(url: URL): Promise<unknown> {
   const document: unknown = JSON.parse(await readFile(fileURLToPath(url), 'utf8'))

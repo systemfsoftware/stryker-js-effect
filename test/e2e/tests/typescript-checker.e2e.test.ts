@@ -138,7 +138,6 @@ const stepMutantStreamAndActionables = (
   )
   expect(actionable).toHaveLength(1)
   expect(actionable[0]).toMatch(/:Survived$/)
-
   const runIds = events
     .map((e) => fieldOf(e, 'runId'))
     .filter((id): id is string => typeof id === 'string')
@@ -157,10 +156,45 @@ test.concurrent.for(TYPESCRIPT_CHECKER_ARMS)(
     const events = rawEvents.map(parseEventLine)
     const kinds = events.map(eventKind)
     const verdict = lastEvent(events)
-
     await annotate('Step 3: Verify protocol, verdict counts, and mutant reporting', 'assertions')
     stepProcessAndStreamIntegrity(expect, run, rawEvents, kinds)
     stepVerdictCountsAndScore(expect, verdict)
     stepMutantStreamAndActionables(expect, events, verdict)
   },
 )
+
+test('failing checker emits structured StageError carrying the diagnostic cause, not an empty crash', async ({ annotate, expect, prepareFixture }) => {
+  await annotate('Step 1: Install fixture with broken tsconfig path', 'lifecycle')
+  const fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-broken-fixture')
+
+  await annotate('Step 2: Run Stryker CLI expecting checker failure', 'execution')
+  const run = await fixture.run(['run', 'stryker.broken-checker.config.ts'])
+  const rawEvents = stdoutLines(run.stdout)
+  const events = rawEvents.map(parseEventLine)
+  const kinds = events.map(eventKind)
+  const terminal = lastEvent(events)
+
+  await annotate('Step 3: Verify typed error document and cause attribution', 'assertions')
+  expect(run.exitCode).not.toBe(0)
+  expect(kinds.at(-1)).toBe('error')
+  expect(kinds).not.toContain('verdict')
+
+  expect(fieldOf(terminal, 'kind')).toBe('error')
+  const errorMessage = String(fieldOf(terminal, 'error'))
+  expect(errorMessage).toMatch(/non-existent-tsconfig\.json|Cannot read|failed/i)
+  expect(errorMessage).not.toBe('')
+})
+
+test('persists mutation-stream.jsonl on disk matching stdout events', async ({ annotate, expect, prepareFixture }) => {
+  await annotate('Step 1: Install fixture and execute run', 'execution')
+  const fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-disk-fixture')
+  const run = await fixture.run(['run', 'stryker.vm.config.ts'])
+  const stdoutEvents = stdoutLines(run.stdout).map(parseEventLine)
+
+  await annotate('Step 2: Read reports/mutation-stream.jsonl from container disk', 'assertions')
+  const streamFileContent = await fixture.readFile('reports/mutation-stream.jsonl')
+  const diskEvents = stdoutLines(streamFileContent).map(parseEventLine)
+
+  expect(diskEvents.length).toBe(stdoutEvents.length)
+  expect(diskEvents.map(eventKind)).toEqual(stdoutEvents.map(eventKind))
+})
