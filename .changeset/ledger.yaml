@@ -26,6 +26,10 @@
   intents:
     - force-all-packages-patch
     - stryker-ignorer-interface-debut
+"@systemfsoftware/stryker-ignorer-interface@0.1.1":
+  dir: packages/ignorers/interface
+  intents:
+    - effect-rc116-and-toolchain-bump
 "@systemfsoftware/stryker-ignorer-kit@0.1.0":
   dir: packages/ignorers/kit
   intents:
@@ -58,6 +62,10 @@
     - famous-rockets-judge
     - force-all-packages-patch
     - stryker-js-html-reporter-home-migration
+"@systemfsoftware/stryker-js-html-reporter@4.0.4":
+  dir: packages/stryker-js-html-reporter
+  intents:
+    - effect-rc116-and-toolchain-bump
 "@systemfsoftware/stryker-js-instrumenter@7.0.0":
   dir: packages/stryker-js-instrumenter
   intents:
@@ -93,6 +101,10 @@
   dir: packages/stryker-js-plugin-interface
   intents:
     - checker-failures-and-metrics
+"@systemfsoftware/stryker-js-plugin-interface@7.1.1":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - effect-rc116-and-toolchain-bump
 "@systemfsoftware/stryker-js-plugin-runtime@5.0.0":
   dir: packages/stryker-js-plugin-runtime
   intents:
@@ -103,6 +115,10 @@
   dir: packages/stryker-js-plugin-runtime
   intents:
     - worker-socket-owner-mode
+"@systemfsoftware/stryker-js-plugin-runtime@5.0.3":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - effect-rc116-and-toolchain-bump
 "@systemfsoftware/stryker-js-typescript-checker@6.0.0":
   dir: packages/stryker-js-typescript-checker
   intents:
@@ -121,6 +137,10 @@
   dir: packages/stryker-js-typescript-checker
   intents:
     - checker-failures-and-metrics
+"@systemfsoftware/stryker-js-typescript-checker@7.0.4":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - effect-rc116-and-toolchain-bump
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -137,11 +157,19 @@
   dir: packages/stryker-js-vitest-runner
   intents:
     - narrow-vitest-runner-peer-vitest
+"@systemfsoftware/stryker-js-vitest-runner@7.0.1":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - effect-rc116-and-toolchain-bump
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
     - checker-failures-and-metrics
     - run-event-stream-rebuild
+"@systemfsoftware/stryker-js@10.0.1":
+  dir: packages/stryker-js
+  intents:
+    - effect-rc116-and-toolchain-bump
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
@@ -179,3 +207,7 @@
     - famous-rockets-judge
     - force-all-packages-patch
     - stryker-test-contribution-home-migration
+"@systemfsoftware/stryker-test-contribution@3.0.3":
+  dir: packages/stryker-test-contribution
+  intents:
+    - effect-rc116-and-toolchain-bump
