@@ -31,7 +31,7 @@ catalog:
   "@vitest/browser-playwright": ^4
   "@vitest/coverage-v8": ^4
   fast-check: ^4
-  effect: 4.0.0-rc.112
+  effect: 4.0.0-rc.115
   husky: ^9
   lint-staged: ^17
   oxc-parser: ^0.140.0
