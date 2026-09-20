@@ -43,22 +43,22 @@ catalogs:
       specifier: jsr:^1
       version: 1.0.2
     '@systemfsoftware/all':
-      specifier: ^2.1.1
+      specifier: 2.1.1
       version: 2.1.1
     '@systemfsoftware/arethetypeswrong-cli':
       specifier: ^4.2.0
       version: 4.2.0
     '@systemfsoftware/effect-cell-types':
-      specifier: ^8.3.1
+      specifier: 8.3.1
       version: 8.3.1
     '@systemfsoftware/effect-gherkin-spec':
-      specifier: ^4.1.0
+      specifier: 4.1.0
       version: 4.1.0
     '@systemfsoftware/effect-schema-law':
-      specifier: ^2.2.0
+      specifier: 2.2.0
       version: 2.2.0
     '@systemfsoftware/effect-schema-vite':
-      specifier: ^2.2.0
+      specifier: 2.2.0
       version: 2.2.0
     '@systemfsoftware/tsconfig':
       specifier: ^1.3.5
@@ -892,6 +892,9 @@ importers:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.45.0
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -1170,12 +1173,21 @@ importers:
 
   packages/toolchain/vitest-config:
     devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 1.3.5
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
+      effect:
+        specifier: 4.0.0-rc.116
+        version: 4.0.0-rc.116
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.9.0
       vitest:
         specifier: 'catalog:'
         version: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.0))
