@@ -17,6 +17,8 @@ export {
   type RunEventStream,
 } from './run-event-stream.js'
 export { RunEventWireLine } from './run-event-wire.schema.js'
+import * as EffectSchema from 'effect/Schema'
+export { EffectSchema as S }
 import { hostOptionsOf, prepareCommandOf, runOnHost } from './run-host.js'
 import { makeRunLayer, mutationTestCell, RUN_EVENTS_QUEUE_BOUND, shouldKeepTempDir } from './Run.js'
 import { StageError } from './Run.schema.js'

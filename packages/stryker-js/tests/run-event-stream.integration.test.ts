@@ -75,21 +75,28 @@ const decodedEventAt = (lines: ReadonlyArray<string>, index: number): Option.Opt
 
 const tagOf = (event: RunEvent): string => event._tag
 
-const expectTags = (lines: ReadonlyArray<string>, tags: ReadonlyArray<string>): void => {
+const parseLinesAsEvents = (lines: ReadonlyArray<string>): ReadonlyArray<RunEvent> => {
   const decoded = Option.all(lines.map((line) => S.decodeOption(RunEventWireLine)(line)))
   if (Option.isSome(decoded)) {
-    expect(decoded.value.map(tagOf)).toEqual(tags)
-    return
+    return decoded.value
   }
-  expect.unreachable('every framed line decodes as a wire event')
+  throw new Error(`Failed to decode JSONL event stream:\n${lines.join('\n')}`)
+}
+
+const expectTags = (lines: ReadonlyArray<string>, expectedTags: ReadonlyArray<string>): void => {
+  const events = parseLinesAsEvents(lines)
+  expect(events.map(tagOf)).toEqual(expectedTags)
 }
 
 Feature('Streaming a run to machine readers').body(({ scenario }) => {
   scenario(
-    'A machine run reports every event as one newline-ended line, in order',
+    'A machine run reports its opening header and sequential lifecycle events ended by newlines',
     Gherkin.Do.pipe(
-      Given('a run streaming in machine mode')('fixture', () => streamingFixture('machine')),
-      When('the run opens, reports its plan, a phase, a beat, and its help text, then closes')(
+      Given('a run configured to emit machine-readable events to stdout')(
+        'fixture',
+        () => streamingFixture('machine'),
+      ),
+      When('the stream opens, receives lifecycle progress events, and closes gracefully')(
         'lines',
         (s) =>
           Effect.gen(function*() {
@@ -99,11 +106,13 @@ Feature('Streaming a run to machine readers').body(({ scenario }) => {
             return yield* rawLinesOf(s.fixture)
           }),
       ),
-      Then('the reader receives the opening line, each report, and the help line, each ended by a newline')((s) => {
+      Then('the consumer receives all framed lines in chronological sequence')((s) => {
         expectTags(s.lines, ['stream', 'plan', 'phase', 'tick', 'help'])
-        expect(s.lines.map((line) => line.endsWith('\n'))).toEqual(s.lines.map(() => true))
       }),
-      Then('the opening line names the run as machine mode')((s) => {
+      Then('every framed line terminates with a newline character')((s) => {
+        expect(s.lines.every((line) => line.endsWith('\n'))).toBe(true)
+      }),
+      Then('the opening event identifies the session with machine mode metadata')((s) => {
         const opening = Option.filter(decodedEventAt(s.lines, 0), S.is(RunStarted))
         expect(Option.isSome(opening)).toBe(true)
         if (Option.isSome(opening)) {
@@ -111,6 +120,7 @@ Feature('Streaming a run to machine readers').body(({ scenario }) => {
           expect(opening.value.signal).toBe('tty')
           expect(opening.value.schemaVersion).toBe('1.0')
           expect(typeof opening.value.runId).toBe('string')
+          expect(opening.value.runId.length).toBeGreaterThan(0)
         }
       }),
     ),
@@ -140,10 +150,10 @@ Feature('Streaming a run to machine readers').body(({ scenario }) => {
   )
 
   scenario(
-    'A failure ends the stream; later events are withheld',
+    'A terminal failure closes the stream and suppresses subsequent events',
     Gherkin.Do.pipe(
       Given('a run streaming in machine mode')('fixture', () => streamingFixture('machine')),
-      When('the run fails and further events are reported before closing')(
+      When('a fatal error occurs followed by trailing heartbeat ticks before drain')(
         'result',
         (s) =>
           Effect.gen(function*() {
@@ -155,8 +165,10 @@ Feature('Streaming a run to machine readers').body(({ scenario }) => {
             return { lines, open }
           }),
       ),
-      Then('the reader receives the opening line and the failure document, and nothing after it')((s) => {
+      Then('the consumer receives only the opening header and the error document')((s) => {
         expectTags(s.result.lines, ['stream', 'error'])
+      }),
+      Then('the error document carries the failure code, error message, and remediation guidance')((s) => {
         const failure = Option.filter(decodedEventAt(s.result.lines, 1), S.is(RunFailed))
         expect(Option.isSome(failure)).toBe(true)
         if (Option.isSome(failure)) {
@@ -165,6 +177,8 @@ Feature('Streaming a run to machine readers').body(({ scenario }) => {
           expect(failure.value.remediation).toBe('y')
           expect(failure.value.schemaVersion).toBe('1.0')
         }
+      }),
+      Then('the stream is permanently closed')((s) => {
         expect(s.result.open).toBe(false)
       }),
     ),
@@ -201,7 +215,7 @@ Feature('Streaming a run to machine readers').body(({ scenario }) => {
             return { lines, messages: s.fixture.messages }
           }).pipe(Effect.provide(s.fixture.logging)),
       ),
-      Then('the operator is told the stream died and the run still finished')((s) => {
+      Then('the stream failure is logged without aborting or crashing the run')((s) => {
         expect(s.result.messages.join('\n')).toContain('stryker.output.drain_failed')
         expect(s.result.lines).toEqual([])
       }),

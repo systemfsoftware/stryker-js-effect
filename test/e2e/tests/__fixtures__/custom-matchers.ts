@@ -1,4 +1,4 @@
-import { expect } from 'vitest'
+import { expect, type MatcherState } from 'vitest'
 
 interface CustomMatchers<R = unknown> {
   toMatchVerdict(expected: {
@@ -44,17 +44,61 @@ declare module 'vitest' {
 }
 
 expect.extend({
-  toMatchVerdict(received: unknown, expected) {
-    const isObject = typeof received === 'object' && received !== null
-    if (!isObject) {
+  toMatchVerdict(
+    this: MatcherState,
+    received: unknown,
+    expected: {
+      readonly counts: {
+        readonly compileErrors: number
+        readonly killed: number
+        readonly survived: number
+        readonly pending?: number
+        readonly runtimeErrors?: number
+        readonly timeout?: number
+      }
+      readonly score: number
+    },
+  ) {
+    const options = {
+      isNot: this.isNot,
+      promise: this.promise ?? '',
+    }
+
+    if (typeof received !== 'object' || received === null) {
       return {
         pass: false,
-        message: () => `expected verdict object, received ${typeof received}`,
+        message: () =>
+          this.utils.matcherHint('toMatchVerdict', undefined, undefined, options) +
+          '\n\n' +
+          `Expected value to be an object, but received ${this.utils.printReceived(received)}`,
+        actual: received,
+        expected,
       }
     }
 
     const counts = Reflect.get(received, 'counts')
     const score = Reflect.get(received, 'score')
+
+    const actualVerdictSummary = {
+      counts: typeof counts === 'object' && counts !== null
+        ? {
+          compileErrors: Reflect.get(counts, 'compileErrors'),
+          killed: Reflect.get(counts, 'killed'),
+          survived: Reflect.get(counts, 'survived'),
+          ...(expected.counts.pending !== undefined ? { pending: Reflect.get(counts, 'pending') } : {}),
+          ...(expected.counts.runtimeErrors !== undefined
+            ? { runtimeErrors: Reflect.get(counts, 'runtimeErrors') }
+            : {}),
+          ...(expected.counts.timeout !== undefined ? { timeout: Reflect.get(counts, 'timeout') } : {}),
+        }
+        : counts,
+      score: typeof score === 'number' ? Math.round(score * 100) / 100 : score,
+    }
+
+    const expectedVerdictSummary = {
+      counts: expected.counts,
+      score: Math.round(expected.score * 100) / 100,
+    }
 
     const countsPass = typeof counts === 'object' &&
       counts !== null &&
@@ -67,27 +111,49 @@ expect.extend({
       (expected.counts.timeout === undefined || Reflect.get(counts, 'timeout') === expected.counts.timeout)
 
     const scorePass = typeof score === 'number' && Math.abs(score - expected.score) < 0.1
-
     const pass = Boolean(countsPass && scorePass)
+
+    const message = (): string => {
+      const hint = this.utils.matcherHint('toMatchVerdict', undefined, undefined, options)
+      const diff = this.utils.diff(expectedVerdictSummary, actualVerdictSummary)
+      return hint + '\n\n' +
+        (diff ??
+          `Expected: ${this.utils.printExpected(expectedVerdictSummary)}\nReceived: ${
+            this.utils.printReceived(actualVerdictSummary)
+          }`)
+    }
+
     return {
       pass,
-      message: () =>
-        pass
-          ? `expected verdict not to match counts ${JSON.stringify(expected.counts)} and score ${expected.score}`
-          : `verdict mismatch:\nreceived: counts=${JSON.stringify(counts)}, score=${score}\nexpected: counts=${
-            JSON.stringify(expected.counts)
-          }, score=${expected.score}`,
-      actual: received,
-      expected,
+      message,
+      actual: actualVerdictSummary,
+      expected: expectedVerdictSummary,
     }
   },
 
-  toMatchMutationReport(received: unknown, expected) {
-    const isObject = typeof received === 'object' && received !== null
-    if (!isObject) {
+  toMatchMutationReport(
+    this: MatcherState,
+    received: unknown,
+    expected: {
+      readonly schemaVersion: string
+      readonly file: string
+      readonly mutants: ReadonlyArray<{ readonly status: string }>
+    },
+  ) {
+    const options = {
+      isNot: this.isNot,
+      promise: this.promise ?? '',
+    }
+
+    if (typeof received !== 'object' || received === null) {
       return {
         pass: false,
-        message: () => `expected report object, received ${typeof received}`,
+        message: () =>
+          this.utils.matcherHint('toMatchMutationReport', undefined, undefined, options) +
+          '\n\n' +
+          `Expected value to be an object, but received ${this.utils.printReceived(received)}`,
+        actual: received,
+        expected,
       }
     }
 
@@ -97,34 +163,46 @@ expect.extend({
       | undefined
     const fileEntry = files?.[expected.file]
 
-    const versionPass = schemaVersion === expected.schemaVersion
-    const filePass = fileEntry !== undefined
+    const actualFileMutants = fileEntry?.mutants
+      ? Object.values(fileEntry.mutants).map((m: { status: string }) => ({ status: m.status })).sort(
+        (a, b) => a.status.localeCompare(b.status),
+      )
+      : undefined
 
-    if (!versionPass || !filePass || !fileEntry.mutants) {
-      return {
-        pass: false,
-        message: () => `report structure mismatch: schemaVersion=${schemaVersion}, filePresent=${filePass}`,
-        actual: received,
-        expected,
-      }
+    const actualReportSummary = {
+      schemaVersion,
+      file: expected.file,
+      mutants: actualFileMutants,
     }
 
-    const mutants = Object.values(fileEntry.mutants as Record<string, { status: string }>)
-    const expectedStatuses = expected.mutants.map((m: { status: string }) => m.status).sort()
-    const receivedStatuses = mutants.map((m: { status: string }) => m.status).sort()
+    const expectedReportSummary = {
+      schemaVersion: expected.schemaVersion,
+      file: expected.file,
+      mutants: [...expected.mutants].sort((a, b) => a.status.localeCompare(b.status)),
+    }
 
-    const mutantsPass = JSON.stringify(receivedStatuses) === JSON.stringify(expectedStatuses)
+    const pass = Boolean(
+      schemaVersion === expected.schemaVersion &&
+        fileEntry !== undefined &&
+        actualFileMutants !== undefined &&
+        JSON.stringify(actualFileMutants) === JSON.stringify(expectedReportSummary.mutants),
+    )
+
+    const message = (): string => {
+      const hint = this.utils.matcherHint('toMatchMutationReport', undefined, undefined, options)
+      const diff = this.utils.diff(expectedReportSummary, actualReportSummary)
+      return hint + '\n\n' +
+        (diff ??
+          `Expected: ${this.utils.printExpected(expectedReportSummary)}\nReceived: ${
+            this.utils.printReceived(actualReportSummary)
+          }`)
+    }
 
     return {
-      pass: mutantsPass,
-      message: () =>
-        mutantsPass
-          ? `expected report not to match mutant statuses: ${JSON.stringify(expectedStatuses)}`
-          : `mutant statuses mismatch:\nreceived: ${JSON.stringify(receivedStatuses)}\nexpected: ${
-            JSON.stringify(expectedStatuses)
-          }`,
-      actual: receivedStatuses,
-      expected: expectedStatuses,
+      pass,
+      message,
+      actual: actualReportSummary,
+      expected: expectedReportSummary,
     }
   },
 })

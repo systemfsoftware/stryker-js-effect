@@ -1,10 +1,16 @@
+import {
+  MutationTestResultSchema,
+  type RunEvent,
+  RunEventWireLine,
+  S,
+  type VerdictReached,
+} from '@systemfsoftware/stryker-js'
 import type { ExpectStatic } from 'vitest'
 import type { ExecResult } from './__fixtures__/container-environment.js'
 import './__fixtures__/custom-matchers.js'
-import { test } from './__fixtures__/container-harness.js'
+import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 
 const FIXTURE_URL = new URL('../testResources/typescript-checker-fixture', import.meta.url)
-
 const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
 const RUN_EVENT_KINDS: ReadonlyArray<string> = [
   'stream',
@@ -30,36 +36,13 @@ const TYPESCRIPT_CHECKER_ARMS = [
   },
 ] as const
 
-const stdoutLines = (stdout: string): ReadonlyArray<string> =>
+const parseEventStream = (stdout: string): ReadonlyArray<RunEvent> =>
   stdout
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.startsWith('{') && line.endsWith('}'))
-
-const parseEventLine = (line: string): unknown => {
-  const value: unknown = JSON.parse(line)
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`expected a JSON object on stdout, received: ${line}`)
-  }
-  return value
-}
-
-const fieldOf = (event: unknown, field: string): unknown => {
-  if (typeof event !== 'object' || event === null) {
-    throw new Error(`no ${field} on a non-object event: ${JSON.stringify(event)}`)
-  }
-  return Reflect.get(event, field)
-}
-
-const eventKind = (event: unknown): string => {
-  const kind = fieldOf(event, '_tag')
-  if (typeof kind !== 'string') {
-    throw new Error(`an event carries no string tag: ${JSON.stringify(event)}`)
-  }
-  return kind
-}
-
-const lastEvent = (events: ReadonlyArray<unknown>): unknown => {
+    .map((line) => S.decodeUnknownSync(RunEventWireLine)(line))
+const lastEvent = (events: ReadonlyArray<RunEvent>): RunEvent => {
   const event = events.at(-1)
   if (event === undefined) {
     throw new Error('stdout carries no events')
@@ -77,14 +60,15 @@ const kindsOutsideOf = (
   kinds: ReadonlyArray<string>,
   allowed: ReadonlyArray<string>,
 ): ReadonlyArray<string> => kinds.filter((kind) => !allowed.includes(kind))
+
 const stepProcessAndStreamIntegrity = (
   expect: ExpectStatic,
   run: ExecResult,
-  rawEvents: ReadonlyArray<string>,
-  kinds: ReadonlyArray<string>,
+  events: ReadonlyArray<RunEvent>,
 ): void => {
+  const kinds = events.map((e) => e._tag)
   expect.soft(run.exitCode).toBe(0)
-  expect.soft(rawEvents.length).toBeGreaterThan(0)
+  expect.soft(events.length).toBeGreaterThan(0)
   expect.soft(run.stdout).not.toMatch(/Could not restrict "[^"]*worker\.sock"/)
   expect.soft(kinds).toEqual(
     expect.arrayContaining(['stream', 'phase', 'plan', 'mutant', 'verdict']),
@@ -95,7 +79,7 @@ const stepProcessAndStreamIntegrity = (
   expect.soft(kindsOutsideOf(kinds, RUN_EVENT_KINDS)).toEqual([])
 }
 
-const stepVerdictCountsAndScore = (expect: ExpectStatic, verdict: unknown): void => {
+const stepVerdictCountsAndScore = (expect: ExpectStatic, verdict: VerdictReached): void => {
   expect(verdict).toMatchVerdict({
     counts: {
       compileErrors: 4,
@@ -111,12 +95,12 @@ const stepVerdictCountsAndScore = (expect: ExpectStatic, verdict: unknown): void
 
 const stepMutantStreamAndActionables = (
   expect: ExpectStatic,
-  events: ReadonlyArray<unknown>,
-  verdict: unknown,
+  events: ReadonlyArray<RunEvent>,
+  verdict: VerdictReached,
 ): void => {
   const reportedMutants = events
-    .filter((e) => eventKind(e) === 'mutant')
-    .map((e) => `${String(fieldOf(e, 'mutator'))}:${String(fieldOf(e, 'status'))}`)
+    .filter((e): e is Extract<RunEvent, { _tag: 'mutant' }> => e._tag === 'mutant')
+    .map((e) => `${e.mutator}:${e.status}`)
 
   expect.soft(reportedMutants).toEqual(
     expect.arrayContaining([
@@ -130,20 +114,19 @@ const stepMutantStreamAndActionables = (
   expect.soft(reportedMutants.filter((s) => s.endsWith(':Killed'))).toHaveLength(2)
   expect.soft(reportedMutants.filter((s) => s.endsWith(':Survived'))).toHaveLength(1)
 
-  const actionable = (fieldOf(verdict, 'mutants') as readonly unknown[]).map(
-    (m) => `${String(fieldOf(m, 'mutator'))}:${String(fieldOf(m, 'status'))}`,
+  const actionable = verdict.mutants.map(
+    (m) => `${m.mutator}:${m.status}`,
   )
   expect.soft(actionable).toEqual([expect.stringMatching(/:Survived$/)])
 
   const runIds = events
-    .map((e) => fieldOf(e, 'runId'))
-    .filter((id): id is string => typeof id === 'string')
+    .map((e) => ('runId' in e && typeof e.runId === 'string' ? e.runId : undefined))
+    .filter((id): id is string => id !== undefined)
   expect.soft(new Set(runIds).size).toBe(1)
-  expect.soft(fieldOf(verdict, 'runId')).toBe(runIds[0])
+  expect.soft(verdict.runId).toBe(runIds[0])
 }
-
 const stepStructuredDiskReport = (expect: ExpectStatic, reportText: string): void => {
-  const report = JSON.parse(reportText)
+  const report = S.decodeUnknownSync(S.fromJsonString(MutationTestResultSchema))(reportText)
   expect(report).toMatchMutationReport({
     schemaVersion: '1.0',
     file: 'src/order.ts',
@@ -160,85 +143,128 @@ const stepStructuredDiskReport = (expect: ExpectStatic, reportText: string): voi
 }
 test.concurrent.for(TYPESCRIPT_CHECKER_ARMS)(
   '$name exits on a verdict with compile errors and killed mutants',
-  async (arm, { annotate, expect, prepareFixture }) => {
-    await annotate(`Step 1: Install ${arm.name} fixture in container`, 'lifecycle')
-    const fixture = await prepareFixture(FIXTURE_URL, arm.fixture)
+  async (arm, { bdd, expect, prepareFixture }) => {
+    let fixture: PreparedFixture
+    let run: ExecResult
+    let events: ReadonlyArray<RunEvent>
+    let verdict: VerdictReached
 
-    await annotate(`Step 2: Run Stryker CLI with ${arm.config}`, 'execution')
-    const run = await fixture.run(['run', arm.config])
-    const rawEvents = stdoutLines(run.stdout)
-    const events = rawEvents.map(parseEventLine)
-    const kinds = events.map(eventKind)
-    const verdict = lastEvent(events)
-    await annotate('Step 3: Verify protocol, verdict counts, and mutant reporting', 'assertions')
-    stepProcessAndStreamIntegrity(expect, run, rawEvents, kinds)
-    stepVerdictCountsAndScore(expect, verdict)
-    stepMutantStreamAndActionables(expect, events, verdict)
+    await bdd.given(`a ${arm.name} fixture installed in the container`, async () => {
+      fixture = await prepareFixture(FIXTURE_URL, arm.fixture)
+    })
+
+    await bdd.when(`Stryker CLI runs with ${arm.config}`, async () => {
+      run = await fixture.run(['run', arm.config])
+      events = parseEventStream(run.stdout)
+      const terminal = lastEvent(events)
+      if (terminal._tag !== 'verdict') {
+        throw new Error(`Expected verdict event, received: ${terminal._tag}`)
+      }
+      verdict = terminal
+    })
+
+    await bdd.thenAssert('the process protocol and verdict counts match the oracle', () => {
+      stepProcessAndStreamIntegrity(expect, run, events)
+      stepVerdictCountsAndScore(expect, verdict)
+      stepMutantStreamAndActionables(expect, events, verdict)
+    })
   },
 )
 
-test('failing checker emits structured StageError carrying the diagnostic cause, not an empty crash', async ({ annotate, expect, prepareFixture }) => {
-  await annotate('Step 1: Install fixture with broken tsconfig path', 'lifecycle')
-  const fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-broken-fixture')
+test('failing checker emits structured StageError carrying the diagnostic cause, not an empty crash', async ({ bdd, expect, prepareFixture }) => {
+  let fixture: PreparedFixture
+  let run: ExecResult
+  let events: ReadonlyArray<RunEvent>
 
-  await annotate('Step 2: Run Stryker CLI expecting checker failure', 'execution')
-  const run = await fixture.run(['run', 'stryker.broken-checker.config.ts'])
-  const rawEvents = stdoutLines(run.stdout)
-  const events = rawEvents.map(parseEventLine)
-  const kinds = events.map(eventKind)
-  const terminal = lastEvent(events)
+  await bdd.given('a fixture configured with a non-existent tsconfig path', async () => {
+    fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-broken-fixture')
+  })
 
-  await annotate('Step 3: Verify typed error document and cause attribution', 'assertions')
-  expect.soft(run.exitCode).not.toBe(0)
-  expect.soft(kinds.at(-1)).toBe('error')
-  expect.soft(kinds).not.toContain('verdict')
+  await bdd.when('Stryker CLI runs expecting checker failure', async () => {
+    run = await fixture.run(['run', 'stryker.broken-checker.config.ts'])
+    events = parseEventStream(run.stdout)
+  })
 
-  expect.soft(terminal).toEqual(
-    expect.objectContaining({
-      kind: 'error',
-      error: expect.stringMatching(/non-existent-tsconfig\.json|Cannot read|failed/i),
-    }),
-  )
+  await bdd.thenAssert('the run fails with structured error payload without crash', () => {
+    const kinds = events.map((e) => e._tag)
+    const terminal = lastEvent(events)
+
+    expect.soft(run.exitCode).not.toBe(0)
+    expect.soft(kinds.at(-1)).toBe('error')
+    expect.soft(kinds).not.toContain('verdict')
+    expect.soft(terminal._tag).toBe('error')
+    if (terminal._tag === 'error') {
+      expect.soft(terminal.error).toMatch(/non-existent-tsconfig\.json|Cannot read|failed/i)
+    }
+  })
 })
 
-test('persists structured json report artifact on container disk and matches contract', async ({ annotate, expect, prepareFixture }) => {
-  await annotate('Step 1: Install fixture and execute run with json reporter configured', 'execution')
-  const fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-disk-fixture')
-  const run = await fixture.run(['run', 'stryker.vm.config.ts'])
-  expect(run.exitCode).toBe(0)
+test('persists structured json report artifact on container disk and matches contract', async ({ bdd, expect, prepareFixture }) => {
+  let fixture: PreparedFixture
+  let run: ExecResult
+  let reportJsonText: string
 
-  await annotate('Step 2: Read and parse reports/mutation/mutation.json from container disk', 'assertions')
-  const reportJsonText = await fixture.readFile('reports/mutation/mutation.json')
-  stepStructuredDiskReport(expect, reportJsonText)
+  await bdd.given('a fixture configured with json reporter', async () => {
+    fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-disk-fixture')
+  })
+
+  await bdd.when('the CLI completes the mutation run', async () => {
+    run = await fixture.run(['run', 'stryker.vm.config.ts'])
+    expect(run.exitCode).toBe(0)
+    reportJsonText = await fixture.readFile('reports/mutation/mutation.json')
+  })
+
+  await bdd.thenAssert('the persisted reports/mutation/mutation.json conforms to the schema', () => {
+    stepStructuredDiskReport(expect, reportJsonText)
+  })
 })
 
-test('persists mutation-stream.jsonl on disk matching stdout events', async ({ annotate, expect, prepareFixture }) => {
-  await annotate('Step 1: Install fixture and execute run', 'execution')
-  const fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-stream-fixture')
-  const run = await fixture.run(['run', 'stryker.vm.config.ts'])
-  const stdoutEvents = stdoutLines(run.stdout).map(parseEventLine)
+test('persists mutation-stream.jsonl on disk matching stdout events', async ({ bdd, expect, prepareFixture }) => {
+  let fixture: PreparedFixture
+  let run: ExecResult
+  let stdoutEvents: ReadonlyArray<RunEvent>
+  let diskEvents: ReadonlyArray<RunEvent>
 
-  await annotate('Step 2: Read reports/mutation-stream.jsonl from container disk', 'assertions')
-  const streamFileContent = await fixture.readFile('reports/mutation-stream.jsonl')
-  const diskEvents = stdoutLines(streamFileContent).map(parseEventLine)
+  await bdd.given('a fixture configured for progress stream tracking', async () => {
+    fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-stream-fixture')
+  })
 
-  expect(diskEvents.length).toBe(stdoutEvents.length)
-  expect(diskEvents.map(eventKind)).toEqual(stdoutEvents.map(eventKind))
+  await bdd.when('the CLI finishes executing the test run', async () => {
+    run = await fixture.run(['run', 'stryker.vm.config.ts'])
+    stdoutEvents = parseEventStream(run.stdout)
+    const streamFileContent = await fixture.readFile('reports/mutation-stream.jsonl')
+    diskEvents = parseEventStream(streamFileContent)
+  })
+
+  await bdd.thenAssert('the persisted stream on disk is byte-complete and tags match stdout', () => {
+    expect(diskEvents.length).toBe(stdoutEvents.length)
+    expect(diskEvents.map((e) => e._tag)).toEqual(stdoutEvents.map((e) => e._tag))
+  })
 })
 
-test('exercises TypeScript composite project references in build mode', async ({ annotate, expect, prepareFixture }) => {
-  await annotate('Step 1: Install fixture with tsconfig project references solution', 'lifecycle')
-  const fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-references-fixture')
+test('exercises TypeScript composite project references in build mode', async ({ bdd, expect, prepareFixture }) => {
+  let fixture: PreparedFixture
+  let run: ExecResult
+  let events: ReadonlyArray<RunEvent>
+  let verdict: VerdictReached
 
-  await annotate('Step 2: Run Stryker CLI with build-mode project references config', 'execution')
-  const run = await fixture.run(['run', 'stryker.references.config.ts'])
-  const rawEvents = stdoutLines(run.stdout)
-  const events = rawEvents.map(parseEventLine)
-  const kinds = events.map(eventKind)
-  const verdict = lastEvent(events)
+  await bdd.given('a fixture with composite project references', async () => {
+    fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-references-fixture')
+  })
 
-  await annotate('Step 3: Verify build mode intercepted compile errors across project references', 'assertions')
-  stepProcessAndStreamIntegrity(expect, run, rawEvents, kinds)
-  stepVerdictCountsAndScore(expect, verdict)
-  stepMutantStreamAndActionables(expect, events, verdict)
+  await bdd.when('Stryker CLI runs with build-mode project references config', async () => {
+    run = await fixture.run(['run', 'stryker.references.config.ts'])
+    events = parseEventStream(run.stdout)
+    const terminal = lastEvent(events)
+    if (terminal._tag !== 'verdict') {
+      throw new Error(`Expected verdict event, received: ${terminal._tag}`)
+    }
+    verdict = terminal
+  })
+
+  await bdd.thenAssert('build mode catches compile errors across project references', () => {
+    stepProcessAndStreamIntegrity(expect, run, events)
+    stepVerdictCountsAndScore(expect, verdict)
+    stepMutantStreamAndActionables(expect, events, verdict)
+  })
 })
