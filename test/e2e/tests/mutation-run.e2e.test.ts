@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, type ExpectStatic, it } from 'vitest'
-
-import { type ExecResult, installFixture, runCli, teardownBed } from './__fixtures__/bed.js'
+import type { ExpectStatic } from 'vitest'
+import type { ExecResult } from './__fixtures__/container-environment.js'
+import { test } from './__fixtures__/container-harness.js'
 
 const CALC_FIXTURE_ORACLE = {
   killed: 7,
@@ -27,8 +27,6 @@ const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
 const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutant', 'tick']
 
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)
-
-const EMPTY_EXEC: ExecResult = { exitCode: 0, stdout: '', stderr: '' }
 
 const stdoutLines = (stdout: string): ReadonlyArray<string> =>
   stdout
@@ -179,23 +177,18 @@ const stepVerifyRunIdConsistency = (
   expect(fieldOf(verdict, 'runId')).toBe(runIds.at(0))
 }
 
-describe('running one mutation run through the packed runner', () => {
-  let run: ExecResult = EMPTY_EXEC
-  let events: ReadonlyArray<unknown> = []
+test('running one mutation run through the packed runner', async ({ annotate, expect, prepareFixture }) => {
+  await annotate('Step 1: Install fixture in container', 'lifecycle')
+  const fixture = await prepareFixture(CALC_FIXTURE_URL, 'calc-fixture')
 
-  beforeAll(async () => {
-    const fixturePath = await installFixture(CALC_FIXTURE_URL, 'calc-fixture')
-    run = await runCli(['run'], { cwd: fixturePath })
-    events = stdoutLines(run.stdout).map(parseEventLine)
-  })
+  await annotate('Step 2: Execute CLI and extract events', 'execution')
+  const run = await fixture.run(['run'])
+  const events = stdoutLines(run.stdout).map(parseEventLine)
+  const verdict = lastEvent(events)
 
-  afterAll(teardownBed)
-
-  it('executes and verifies the mutation run lifecycle steps', ({ expect }) => {
-    const verdict = lastEvent(events)
-    stepVerifyStreamAndExit(expect, run, events)
-    stepVerifyOracleCounts(expect, verdict)
-    stepVerifyReportedAndActionableMutants(expect, events, verdict)
-    stepVerifyRunIdConsistency(expect, events, verdict)
-  })
+  await annotate('Step 3: Verify stream protocol, oracle tallies, and runId consistency', 'assertions')
+  stepVerifyStreamAndExit(expect, run, events)
+  stepVerifyOracleCounts(expect, verdict)
+  stepVerifyReportedAndActionableMutants(expect, events, verdict)
+  stepVerifyRunIdConsistency(expect, events, verdict)
 })

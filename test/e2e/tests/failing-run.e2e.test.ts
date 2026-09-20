@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, type ExpectStatic, it } from 'vitest'
-
-import { type ExecResult, installFixture, runCli, teardownBed } from './__fixtures__/bed.js'
+import type { ExpectStatic } from 'vitest'
+import type { ExecResult } from './__fixtures__/container-environment.js'
+import { test } from './__fixtures__/container-harness.js'
 
 const FAILING_DRY_RUN_RUNTIME_ERROR_CODE = 3
 
@@ -16,8 +16,6 @@ const RUN_EVENT_KINDS: ReadonlyArray<string> = [
   'error',
   'help',
 ]
-
-const EMPTY_EXEC: ExecResult = { exitCode: 0, stdout: '', stderr: '' }
 
 const stdoutLines = (stdout: string): ReadonlyArray<string> =>
   stdout
@@ -87,21 +85,16 @@ const stepVerifyStreamCleanliness = (
   expect(kindsOutsideOf(events.map(eventKind), RUN_EVENT_KINDS)).toEqual([])
 }
 
-describe('failing a run at the process boundary', () => {
-  let run: ExecResult = EMPTY_EXEC
-  let events: ReadonlyArray<unknown> = []
+test('failing a run at the process boundary', async ({ annotate, expect, prepareFixture }) => {
+  await annotate('Step 1: Install fixture in container', 'lifecycle')
+  const fixture = await prepareFixture(FAILING_FIXTURE_URL, 'failing-fixture')
 
-  beforeAll(async () => {
-    const fixturePath = await installFixture(FAILING_FIXTURE_URL, 'failing-fixture')
-    run = await runCli(['run'], { cwd: fixturePath })
-    events = stdoutLines(run.stdout).map(parseEventLine)
-  })
+  await annotate('Step 2: Execute CLI and parse machine stream', 'execution')
+  const run = await fixture.run(['run'])
+  const events = stdoutLines(run.stdout).map(parseEventLine)
 
-  afterAll(teardownBed)
-
-  it('executes and verifies the failure boundary steps', ({ expect }) => {
-    stepVerifyFailingDryRunExit(expect, run)
-    stepVerifyTypedErrorDocument(expect, events)
-    stepVerifyStreamCleanliness(expect, events)
-  })
+  await annotate('Step 3: Verify failure exit code, error document, and stream cleanliness', 'assertions')
+  stepVerifyFailingDryRunExit(expect, run)
+  stepVerifyTypedErrorDocument(expect, events)
+  stepVerifyStreamCleanliness(expect, events)
 })

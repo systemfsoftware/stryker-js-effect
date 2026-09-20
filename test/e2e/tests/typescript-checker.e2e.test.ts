@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, type ExpectStatic, it } from 'vitest'
-
-import { type ExecResult, installFixture, runCli, teardownBed } from './__fixtures__/bed.js'
+import type { ExpectStatic } from 'vitest'
+import type { ExecResult } from './__fixtures__/container-environment.js'
+import { test } from './__fixtures__/container-harness.js'
 
 const FIXTURE_URL = new URL('../testResources/typescript-checker-fixture', import.meta.url)
 
@@ -145,35 +145,22 @@ const stepMutantStreamAndActionables = (
   expect(new Set(runIds).size).toBe(1)
   expect(fieldOf(verdict, 'runId')).toBe(runIds[0])
 }
+test.concurrent.for(TYPESCRIPT_CHECKER_ARMS)(
+  '$name exits on a verdict with compile errors and killed mutants',
+  async (arm, { annotate, expect, prepareFixture }) => {
+    await annotate(`Step 1: Install ${arm.name} fixture in container`, 'lifecycle')
+    const fixture = await prepareFixture(FIXTURE_URL, arm.fixture)
 
-describe('typescript-checker through packed runners', () => {
-  const fixtures: Record<string, string> = {}
+    await annotate(`Step 2: Run Stryker CLI with ${arm.config}`, 'execution')
+    const run = await fixture.run(['run', arm.config])
+    const rawEvents = stdoutLines(run.stdout)
+    const events = rawEvents.map(parseEventLine)
+    const kinds = events.map(eventKind)
+    const verdict = lastEvent(events)
 
-  beforeAll(async () => {
-    for (const arm of TYPESCRIPT_CHECKER_ARMS) {
-      fixtures[arm.name] = await installFixture(FIXTURE_URL, arm.fixture)
-    }
-  })
-
-  afterAll(teardownBed)
-
-  it.concurrent.for(TYPESCRIPT_CHECKER_ARMS)(
-    '$name exits on a verdict with compile errors and killed mutants',
-    async (arm, { expect }) => {
-      const cwd = fixtures[arm.name]
-      if (cwd === undefined) {
-        throw new Error(`no installed fixture for ${arm.name}`)
-      }
-
-      const run = await runCli(['run', arm.config], { cwd })
-      const rawEvents = stdoutLines(run.stdout)
-      const events = rawEvents.map(parseEventLine)
-      const kinds = events.map(eventKind)
-      const verdict = lastEvent(events)
-
-      stepProcessAndStreamIntegrity(expect, run, rawEvents, kinds)
-      stepVerdictCountsAndScore(expect, verdict)
-      stepMutantStreamAndActionables(expect, events, verdict)
-    },
-  )
-})
+    await annotate('Step 3: Verify protocol, verdict counts, and mutant reporting', 'assertions')
+    stepProcessAndStreamIntegrity(expect, run, rawEvents, kinds)
+    stepVerdictCountsAndScore(expect, verdict)
+    stepMutantStreamAndActionables(expect, events, verdict)
+  },
+)

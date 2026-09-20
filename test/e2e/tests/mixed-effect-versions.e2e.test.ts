@@ -1,13 +1,6 @@
-import { afterAll, beforeAll, describe, type ExpectStatic, it } from 'vitest'
-
-import {
-  ensureSkewChecker,
-  type ExecResult,
-  installFixture,
-  runCli,
-  SKEW_EFFECT_VERSION,
-  teardownBed,
-} from './__fixtures__/bed.js'
+import type { ExpectStatic } from 'vitest'
+import { ensureSkewChecker, type ExecResult, SKEW_EFFECT_VERSION } from './__fixtures__/container-environment.js'
+import { test } from './__fixtures__/container-harness.js'
 import { pollWindowSpans, type TraceSpan } from './__fixtures__/tempo.js'
 
 const SKEW_FIXTURE_URL = new URL('../testResources/skew-fixture', import.meta.url)
@@ -31,8 +24,6 @@ const HOST_PHASE_SPAN_NAMES: readonly string[] = [
 const SERVICE_NAME = process.env['OTEL_SERVICE_NAME'] ?? 'stryker-e2e'
 
 const telemetryEnabled = process.env['OTEL_ENABLED'] === 'true'
-
-const EMPTY_EXEC: ExecResult = { exitCode: 0, stdout: '', stderr: '' }
 
 const stdoutLines = (stdout: string): readonly string[] =>
   stdout
@@ -87,28 +78,24 @@ const isHostPhaseSpan = (span: TraceSpan): boolean => HOST_PHASE_SPAN_NAMES.incl
 
 const effectVersionOf = (span: TraceSpan): string | undefined => span.attributes.get('effect.version')
 
-describe('running a mutation run whose checker worker was built on a different effect release', () => {
-  let run: ExecResult = EMPTY_EXEC
-  let events: readonly unknown[] = []
-  let spans: readonly TraceSpan[] = []
+test('running a mutation run whose checker worker was built on a different effect release', async ({ annotate, expect, prepareFixture }) => {
+  await annotate('Step 1: Ensure skew checker and install fixture', 'lifecycle')
+  const skewChecker = await ensureSkewChecker()
+  const fixture = await prepareFixture(SKEW_FIXTURE_URL, SKEW_FIXTURE_NAME, [skewChecker])
 
-  beforeAll(async () => {
-    const skewChecker = await ensureSkewChecker()
-    const fixturePath = await installFixture(SKEW_FIXTURE_URL, SKEW_FIXTURE_NAME, [skewChecker])
-    const startedSeconds = Math.floor(Date.now() / 1000) - 5
-    run = await runCli(['run'], { cwd: fixturePath })
-    events = stdoutLines(run.stdout).map(parseEventLine)
-    spans = telemetryEnabled
-      ? await pollWindowSpans({
-        startSeconds: startedSeconds,
-        serviceName: SERVICE_NAME,
-        isSettled: (seen) => seen.some(isCheckerSpan) && seen.some(isWitnessSpan),
-      })
-      : []
-  })
+  await annotate('Step 2: Execute CLI with OTel telemetry window', 'execution')
+  const startedSeconds = Math.floor(Date.now() / 1000) - 5
+  const run = await fixture.run(['run'])
+  const events = stdoutLines(run.stdout).map(parseEventLine)
+  const spans = telemetryEnabled
+    ? await pollWindowSpans({
+      startSeconds: startedSeconds,
+      serviceName: SERVICE_NAME,
+      isSettled: (seen) => seen.some(isCheckerSpan) && seen.some(isWitnessSpan),
+    })
+    : []
 
-  afterAll(teardownBed)
-
+  await annotate('Step 3: Verify verdict counts, mutant totals, and cross-release trace links', 'assertions')
   const stepVerifySkewedVerdictAndCounts = (
     expect: ExpectStatic,
     run: ExecResult,
@@ -146,12 +133,10 @@ describe('running a mutation run whose checker worker was built on a different e
     expect(witnesses.every((span) => checkerTraceIds.has(span.linkedTraceIds.at(0) ?? ''))).toBe(true)
   }
 
-  it('executes and verifies the skewed checker run lifecycle steps', ({ expect }) => {
-    const verdict = lastEvent(events)
-    stepVerifySkewedVerdictAndCounts(expect, run, verdict)
-    stepVerifyReportedMutantTotal(expect, events)
-    if (telemetryEnabled) {
-      stepVerifyTraceLinkage(expect, spans)
-    }
-  })
+  const verdict = lastEvent(events)
+  stepVerifySkewedVerdictAndCounts(expect, run, verdict)
+  stepVerifyReportedMutantTotal(expect, events)
+  if (telemetryEnabled) {
+    stepVerifyTraceLinkage(expect, spans)
+  }
 })

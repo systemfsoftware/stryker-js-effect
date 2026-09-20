@@ -138,7 +138,7 @@ const copyTarballs = async (
       files.map((file) => ({ source: join(directory, file.fileName), target: file.tarballPath })),
     ))
 
-const startBed = async (): Promise<void> => {
+const startContainerEnvironment = async (): Promise<void> => {
   const directory = await requireStep(
     'create the pack scratch directory',
     () => mkdtemp(join(tmpdir(), 'stryker-e2e-')),
@@ -159,12 +159,12 @@ const startBed = async (): Promise<void> => {
   await copyTarballs(running, directory, Object.values(packed))
 }
 
-export const ensureBed = async (): Promise<void> => {
-  ready ??= startBed()
+export const ensureContainerEnvironment = async (): Promise<void> => {
+  ready ??= startContainerEnvironment()
   await ready
 }
 
-export const teardownBed = async (): Promise<void> => {
+export const teardownContainerEnvironment = async (): Promise<void> => {
   const running = container
   const directory = scratch
   container = undefined
@@ -184,7 +184,7 @@ export const teardownBed = async (): Promise<void> => {
 export function packedPackage(packageName: string): PackedPackage {
   const entry = packedPackages?.[packageName]
   if (entry === undefined) {
-    throw new Error(`the bed has not packed ${packageName}: await ensureBed() first`)
+    throw new Error(`container environment has not packed ${packageName}: await ensureContainerEnvironment() first`)
   }
   return entry
 }
@@ -201,10 +201,10 @@ const workingDirOption = (cwd: string | undefined): { readonly workingDir: strin
 }
 
 const rawExec = async (command: readonly string[], cwd: string | undefined): Promise<ExecResult> => {
-  await ensureBed()
+  await ensureContainerEnvironment()
   const running = container
   if (running === undefined) {
-    throw new Error('the bed has no container: await ensureBed() first')
+    throw new Error('container environment has no running container: await ensureContainerEnvironment() first')
   }
   const result = await running.exec([...command], {
     ...workingDirOption(cwd),
@@ -238,10 +238,10 @@ export function installFixture(
   }
   const task = (async () => {
     const hostFixtureDir = fileURLToPath(fixtureUrl)
-    await ensureBed()
+    await ensureContainerEnvironment()
     const running = container
     if (running === undefined) {
-      throw new Error('the bed has no container: await ensureBed() first')
+      throw new Error('container environment has no running container: await ensureContainerEnvironment() first')
     }
     const fixturePath = `${CONTAINER_WORKROOT}/${name}`
     await requireStep(
@@ -330,11 +330,11 @@ const stageSkewCheckerPackage = async (directory: string, bundledDirectory: stri
 
 export const ensureSkewChecker = async (): Promise<PackedPackage> => {
   skewCheckerReady ??= (async () => {
-    await ensureBed()
+    await ensureContainerEnvironment()
     const directory = scratch
     const running = container
     if (directory === undefined || running === undefined) {
-      throw new Error('the bed has no scratch directory: await ensureBed() first')
+      throw new Error('container environment has no scratch directory: await ensureContainerEnvironment() first')
     }
     const bundledDirectory = await buildSkewCheckerBundle(directory)
     const packageDirectory = await stageSkewCheckerPackage(directory, bundledDirectory)
