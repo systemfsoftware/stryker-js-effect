@@ -85,6 +85,10 @@
   intents:
     - drop-naked-ignorers
     - plucky-plugins-resolve
+"@systemfsoftware/stryker-js-plugin-interface@7.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - checker-request-carries-a-data-record
 "@systemfsoftware/stryker-js-plugin-runtime@5.0.0":
   dir: packages/stryker-js-plugin-runtime
   intents:
@@ -105,6 +109,10 @@
   dir: packages/stryker-js-typescript-checker
   intents:
     - drop-naked-ignorers
+"@systemfsoftware/stryker-js-typescript-checker@7.0.2":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - checker-request-carries-a-data-record
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -144,6 +152,10 @@
   dir: packages/stryker-js
   intents:
     - remove-bankrupt-subpath-exports
+"@systemfsoftware/stryker-js@8.0.0":
+  dir: packages/stryker-js
+  intents:
+    - checker-request-carries-a-data-record
 "@systemfsoftware/stryker-test-contribution@3.0.0":
   dir: packages/stryker-test-contribution
   intents:
