@@ -156,6 +156,10 @@
   dir: packages/stryker-js
   intents:
     - checker-request-carries-a-data-record
+"@systemfsoftware/stryker-js@9.0.0":
+  dir: packages/stryker-js
+  intents:
+    - incremental-file-version
 "@systemfsoftware/stryker-test-contribution@3.0.0":
   dir: packages/stryker-test-contribution
   intents:
