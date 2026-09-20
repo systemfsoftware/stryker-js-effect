@@ -62,8 +62,10 @@ const ThresholdsLikeSchema = S.Struct({
   high: S.Finite,
   low: S.Finite,
 })
+
 export const IncrementalReportSchema = S.StructWithRest(
   S.Struct({
+    incrementalVersion: S.String,
     schemaVersion: S.String,
     thresholds: ThresholdsLikeSchema,
     files: S.Record(S.String, FileResultLikeSchema),
@@ -71,7 +73,3 @@ export const IncrementalReportSchema = S.StructWithRest(
   }),
   [S.Record(S.String, S.Unknown)],
 )
-
-export class IncrementalReportError extends S.TaggedError<IncrementalReportError>()('IncrementalReportError', {
-  message: S.String,
-}) {}

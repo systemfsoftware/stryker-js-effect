@@ -341,7 +341,10 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
         const fs = yield* FileSystem.FileSystem
         const dir = pathService.dirname(input.options.incrementalFile)
         yield* fs.makeDirectory(dir, { recursive: true })
-        const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(report).pipe(Effect.orDie)
+        const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
+          incrementalVersion: strykerVersion,
+          ...report,
+        }).pipe(Effect.orDie)
         yield* fs.writeFileString(input.options.incrementalFile, json)
       }
       return { results, verdict: finalVerdict } satisfies MutationTestDone
@@ -362,6 +365,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
     Effect.gen(function*() {
       const { files, testFiles } = yield* assembleReport(results)
       return {
+        incrementalVersion: strykerVersion,
         schemaVersion: '1.0',
         thresholds: input.options.thresholds,
         files,
