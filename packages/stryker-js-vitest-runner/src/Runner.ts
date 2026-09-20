@@ -632,6 +632,20 @@ const vitestUnresolved = (specifier: string, base: string, detail: string): Test
     cause: `Cannot resolve "${specifier}" from "${base}": ${detail}`,
   })
 
+const hasCreateVitest = (
+  value: object,
+): value is { readonly createVitest: ResolvedVitest['createVitest'] } =>
+  'createVitest' in value && typeof value['createVitest'] === 'function'
+
+const isVitestNodeModule = (
+  value: unknown,
+): value is { readonly createVitest: ResolvedVitest['createVitest'] } => {
+  if (!Predicate.isObject(value)) {
+    return false
+  }
+  return hasCreateVitest(value)
+}
+
 export const resolveVitest: VitestResolver = (_dir) => {
   const fallback = Effect.succeed({ createVitest: createVitestOriginal } satisfies ResolvedVitest)
   const primary = Effect.gen(function*() {
@@ -647,8 +661,6 @@ export const resolveVitest: VitestResolver = (_dir) => {
       try: (): Promise<unknown> => import(vitestNodeUrl),
       catch: (cause) => resolutionFailure(VITEST_NODE_SPECIFIER, errorToString(cause)),
     })
-    const isVitestNodeModule = (value: unknown): value is { readonly createVitest: ResolvedVitest['createVitest'] } =>
-      Predicate.isObject(value) && 'createVitest' in value && typeof value['createVitest'] === 'function'
     if (!isVitestNodeModule(imported)) {
       return yield* Effect.fail(
         resolutionFailure(VITEST_NODE_SPECIFIER, 'Missing createVitest export on vitest/node module'),
