@@ -4,12 +4,16 @@
 
 | Surface            | Target                                                                                          | Gate                                                               |
 | ------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **Evaluator**      | `commitlint.config.ts`, `.github/workflows/`                                                    | Read-only                                                          |
-| **Doctrine**       | `CONSTITUTION.md`, `subtrees.toml`                                                              | Read-only                                                          |
-| **Vendored**       | `repos/**`                                                                                      | Read-only                                                          |
+| **Read-only**      | `commitlint.config.ts`, `.github/workflows/`, `CONSTITUTION.md`, `subtrees.toml`, `repos/**`    | Read-only                                                          |
 | **Dogfood**        | `catalogs.stryker` in `pnpm-workspace.yaml` and `catalog:stryker` on those workspace packages   | Do not retarget to `workspace:^`. Mutation runs the published CLI. |
 | **Human approval** | Releases, publishing, external credentials, `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` | User confirmation                                                  |
 | **Editable**       | Workspace source, tests, documentation                                                          | Edit freely                                                        |
+
+## Doctrine
+
+| ID        | Rule                                                                                                                                                                          | Gate                                                                                                    |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `CONST-1` | `CONSTITUTION.md` is supreme law and governs where instructions or patterns conflict. Reviewers must flag constitutional violations as P0 blockers with no appeals permitted. | review — reviewer confirms diff complies with CONSTITUTION.md; flags any violation as P0 blocking merge |
 
 ## Definition of Done
 
