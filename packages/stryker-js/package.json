@@ -40,9 +40,9 @@
     "@effect/platform-node-shared": "catalog:",
     "@noble/hashes": "catalog:",
     "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/exporter-metrics-otlp-http": "^0.208.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.208.0",
-    "@opentelemetry/sdk-metrics": "^2.2.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.222.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/sdk-metrics": "^2.11.0",
     "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@systemfsoftware/effect-cell-types": "catalog:"
   },
