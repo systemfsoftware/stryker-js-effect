@@ -4,7 +4,7 @@ Container-isolated end-to-end tests for the packaged `@systemfsoftware/stryker-j
 
 ## What it tests
 
-The suite packages workspace components into tarballs (`pnpm pack`), starts a clean container, installs the tarballs into isolated fixture projects, and runs `stryker run` to verify behavior across the process boundary:
+The suite resolves the workspace closure of the CLI and its plugins, packs each member with `pnpm pack`, starts a clean container, installs the whole closure into isolated fixture projects, and runs `stryker run` to verify behavior across the process boundary. The lane also runs the harness's own unit suite (for example the closure resolution above) before the container journeys:
 
 - Full mutation runs against realistic test suites
 - Exit codes and typed machine-mode JSON error envelopes on failure
