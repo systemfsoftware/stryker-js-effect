@@ -15,7 +15,7 @@ import { expect } from 'vitest'
 
 const Feature = makeFeature({ it, layer })
 
-const CONFIG_FIXTURES = `${process.cwd()}/tests/__fixtures__/config-file`
+const CONFIG_FIXTURES = `${globalThis.process.cwd()}/tests/__fixtures__/config-file`
 
 const fixtureProject = (project: string): string => `${CONFIG_FIXTURES}/${project}`
 const fixtureFile = (project: string, name: string): string => `${fixtureProject(project)}/${name}`
@@ -39,7 +39,7 @@ interface NodeFs {
   existsSync(path: string): boolean
 }
 
-const nodeFs: NodeFs = process.getBuiltinModule('node:fs')
+const nodeFs: NodeFs = globalThis.process.getBuiltinModule('node:fs')
 
 const missingFileError = (path: string) =>
   systemError({ _tag: 'NotFound', module: 'FileSystem', method: 'access', pathOrDescriptor: path })
@@ -95,14 +95,14 @@ const readExplicit = (configFile: string): ReadEffect<ReadOutcome> => outcomeOf(
 const readDiscovered = (project: string): ReadEffect<ReadOutcome> =>
   Effect.acquireUseRelease(
     Effect.sync(() => {
-      const previous = process.cwd()
-      process.chdir(fixtureProject(project))
+      const previous = globalThis.process.cwd()
+      globalThis.process.chdir(fixtureProject(project))
       return previous
     }),
     () => outcomeOf({}, DEFAULT_INVOCATION),
     (previous) =>
       Effect.sync(() => {
-        process.chdir(previous)
+        globalThis.process.chdir(previous)
       }),
   )
 

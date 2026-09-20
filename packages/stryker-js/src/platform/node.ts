@@ -52,7 +52,7 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
         Effect.gen(function*() {
           const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
           const workerId = yield* crypto.randomUUIDv4
-          const socketPath = Match.value(process.platform).pipe(
+          const socketPath = Match.value(globalThis.process.platform).pipe(
             Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${workerId}`),
             Match.orElse(() => path.join(workerDir, 'worker.sock')),
           )
@@ -62,7 +62,7 @@ export const nodeWorkerLauncherLayer: Layer.Layer<
 
           const entrypointPath = yield* path.fromFileUrl(new URL(params.entrypoint))
           const handle = yield* ChildProcess.make(
-            process.execPath,
+            globalThis.process.execPath,
             [...params.execArgv, entrypointPath],
             {
               cwd: params.workingDirectory,
@@ -115,7 +115,7 @@ export const nodePlatformLayer: Layer.Layer<EnginePorts> = Layer.mergeAll(
  * The in-memory runner's platform: the V8 sandbox module and the module
  * builtin that strips TypeScript and resolves a sandbox's `require`.
  *
- * Reached through `process.getBuiltinModule` rather than an `import` because a
+ * Reached through `globalThis.process.getBuiltinModule` rather than an `import` because a
  * Node builtin import is forbidden in product code; the call is wrapped in
  * `Effect.promise` so a platform without `node:vm` fails as a defect — the
  * runner has no fallback to fall back to.
@@ -124,8 +124,8 @@ export const nodeVmPlatformLayer: Layer.Layer<VmRunner> = Layer.effect(
   VmRunner,
   Effect.sync(
     (): VmPlatform => ({
-      module: process.getBuiltinModule('node:module'),
-      vm: process.getBuiltinModule('node:vm'),
+      module: globalThis.process.getBuiltinModule('node:module'),
+      vm: globalThis.process.getBuiltinModule('node:vm'),
     }),
   ),
 )

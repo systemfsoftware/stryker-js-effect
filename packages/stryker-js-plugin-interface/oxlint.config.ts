@@ -1,13 +1,6 @@
 import all from '@systemfsoftware/all'
 import { defineConfig } from 'oxlint'
 
-const crossFieldThresholdsPredicate = {
-  files: ['src/Report.schema.ts', 'src/stryker-options.schema.ts'],
-  rules: {
-    '@systemfsoftware/oxlint-plugin-effect-dmmf/schema-filter-constructive-generation': 'off' as const,
-  },
-}
-
 export default defineConfig({
   extends: [all],
 
@@ -17,5 +10,4 @@ export default defineConfig({
     'typescript/no-non-null-assertion': 'error',
     'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
-  overrides: [crossFieldThresholdsPredicate],
 })

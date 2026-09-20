@@ -19,9 +19,9 @@ import { RunEventDrainFileLive, RunEventStreamFileLive } from '../StreamFile.js'
 /** The major version `engines.node` floors the CLI at. */
 const SUPPORTED_NODE_MAJOR = 20
 
-process.title = 'stryker'
+globalThis.process.title = 'stryker'
 
-/** The numbers a `process.version` names; a component that does not parse stays `NaN`. */
+/** The numbers a `globalThis.process.version` names; a component that does not parse stays `NaN`. */
 const versionNumbers = (version: string): readonly number[] =>
   version
     .replace(/^v/, '')
@@ -44,9 +44,9 @@ function isSupportedNodeVersion(version: string): boolean {
   return !NODE_VERSION_REJECTIONS.some((rejects) => rejects(numbers))
 }
 
-if (!isSupportedNodeVersion(process.version)) {
+if (!isSupportedNodeVersion(globalThis.process.version)) {
   throw new Error(
-    `Node.js version ${process.version} detected. StrykerJS requires version to match ${cliPkgJson.engines.node}. Please update your Node.js version or visit https://nodejs.org/ for additional instructions`,
+    `Node.js version ${globalThis.process.version} detected. StrykerJS requires version to match ${cliPkgJson.engines.node}. Please update your Node.js version or visit https://nodejs.org/ for additional instructions`,
   )
 }
 
