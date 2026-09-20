@@ -35,7 +35,7 @@
     "publish:unpublished": "./scripts/publish-and-setup-npm-trust.ts",
     "test": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} test",
     "test:e2e": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} test:e2e",
-    "test:scripts": "./bin/deno test --config=scripts/deno.json scripts/lib/",
+    "test:scripts": "./bin/deno test --config=scripts/deno.json --allow-read=. scripts/lib/",
     "typecheck": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} --continue typecheck typecheck:node",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit"
   },

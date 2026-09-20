@@ -18,13 +18,13 @@ catalog:
   "@oxc-parser/binding-wasm32-wasi": ^0.140.0
   "@oxc-project/types": ^0.140.0
   "@std/jsonc": jsr:^1
-  "@systemfsoftware/all": ^2
+  "@systemfsoftware/all": 2.0.2
   "@systemfsoftware/arethetypeswrong-cli": ^4
-  "@systemfsoftware/effect-cell-types": ^8
-  "@systemfsoftware/effect-gherkin-spec": ^4
-  "@systemfsoftware/effect-schema-law": ^2
-  "@systemfsoftware/effect-schema-vite": ^2
-  "@systemfsoftware/oxlint-plugin": ^4
+  "@systemfsoftware/effect-cell-types": 8.1.0
+  "@systemfsoftware/effect-gherkin-spec": 4.0.2
+  "@systemfsoftware/effect-schema-law": 2.1.1
+  "@systemfsoftware/effect-schema-vite": 2.1.1
+  "@systemfsoftware/oxlint-plugin": 4.0.2
   "@systemfsoftware/oxlint-plugin-recommended": ^1
   "@systemfsoftware/tsconfig": ^1
   "@types/node": ^24
