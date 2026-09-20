@@ -23,15 +23,11 @@ export default defineConfig([
   {
     ...shared,
     entry: { main: './src/main.ts' },
+    platform: 'node',
     deps: {
       neverBundle: [/^vitest$/, /^vitest\//],
-      alwaysBundle: [
-        /^effect$/,
-        /^effect\//,
-        /^@systemfsoftware\/stryker-js-plugin-interface$/,
-        /^@systemfsoftware\/stryker-js-plugin-runtime$/,
-        /^@systemfsoftware\/effect-cell-types$/,
-      ],
+      alwaysBundle: [/./],
+      onlyBundle: false,
     },
   },
 ])

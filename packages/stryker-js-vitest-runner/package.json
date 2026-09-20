@@ -106,17 +106,33 @@
       "2.11.0",
       "2.2.0"
     ],
+    "@opentelemetry/exporter-trace-otlp-http": "0.208.0",
+    "@opentelemetry/otlp-exporter-base": "0.208.0",
+    "@opentelemetry/otlp-transformer": "0.208.0",
     "@opentelemetry/resources": [
       "2.11.0",
       "2.2.0"
     ],
     "@opentelemetry/sdk-logs": "0.208.0",
     "@opentelemetry/sdk-metrics": "2.2.0",
+    "@opentelemetry/sdk-trace": "2.11.0",
+    "@opentelemetry/sdk-trace-base": [
+      "2.11.0",
+      "2.2.0"
+    ],
     "@opentelemetry/sdk-trace-node": "2.2.0",
     "@opentelemetry/semantic-conventions": "1.43.0",
+    "@protobufjs/aspromise": "1.1.2",
+    "@protobufjs/base64": "1.1.2",
+    "@protobufjs/eventemitter": "1.1.1",
+    "@protobufjs/float": "1.0.2",
+    "@protobufjs/pool": "1.1.0",
+    "@protobufjs/utf8": "1.1.2",
     "@systemfsoftware/effect-cell-types": "8.3.1",
     "effect": "4.0.0-rc.116",
+    "long": "5.3.2",
     "oxc-parser": "0.150.0",
+    "protobufjs": "7.6.6",
     "ws": "8.21.3"
   }
 }
