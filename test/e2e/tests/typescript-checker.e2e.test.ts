@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, it } from 'vitest'
 
-import { type ExecResult, installFixture, runCli, teardownBed } from './__fixtures__/bed.js'
+import { installFixture, runCli, teardownBed } from './__fixtures__/bed.js'
 
 const FIXTURE_URL = new URL('../testResources/typescript-checker-fixture', import.meta.url)
 
@@ -16,7 +16,18 @@ const RUN_EVENT_KINDS: ReadonlyArray<string> = [
   'help',
 ]
 
-const EMPTY_EXEC: ExecResult = { exitCode: 0, stdout: '', stderr: '' }
+const TYPESCRIPT_CHECKER_ARMS = [
+  {
+    name: 'in-memory vm runner',
+    config: 'stryker.vm.config.ts',
+    fixture: 'typescript-checker-vm-fixture',
+  },
+  {
+    name: 'vitest runner',
+    config: 'stryker.vitest.config.ts',
+    fixture: 'typescript-checker-vitest-fixture',
+  },
+] as const
 
 const stdoutLines = (stdout: string): ReadonlyArray<string> =>
   stdout
@@ -42,7 +53,7 @@ const fieldOf = (event: unknown, field: string): unknown => {
 const numberFieldOf = (event: unknown, field: string): number => {
   const value = fieldOf(event, field)
   if (typeof value !== 'number') {
-    throw new Error(`no numeric ${field} on: ${JSON.stringify(event)}`)
+    throw new Error(`expected number ${field}, received: ${JSON.stringify(value)}`)
   }
   return value
 }
@@ -74,82 +85,42 @@ const kindsOutsideOf = (
   allowed: ReadonlyArray<string>,
 ): ReadonlyArray<string> => kinds.filter((kind) => !allowed.includes(kind))
 
-describe('Arm 1: typescript-checker with in-memory vm runner', () => {
-  let run: ExecResult = EMPTY_EXEC
-  let events: ReadonlyArray<unknown> = []
+describe('typescript-checker through packed runners', () => {
+  const fixtures: Record<string, string> = {}
 
   beforeAll(async () => {
-    const fixturePath = await installFixture(FIXTURE_URL, 'typescript-checker-vm-fixture')
-    run = await runCli(['run', 'stryker.vm.config.ts'], { cwd: fixturePath })
-    events = stdoutLines(run.stdout).map(parseEventLine)
+    for (const arm of TYPESCRIPT_CHECKER_ARMS) {
+      fixtures[arm.name] = await installFixture(FIXTURE_URL, arm.fixture)
+    }
   })
 
   afterAll(teardownBed)
 
-  it('exits cleanly with exactly one terminal verdict event', () => {
-    const kinds = events.map(eventKind)
+  it.concurrent.for(TYPESCRIPT_CHECKER_ARMS)(
+    '$name exits on a verdict with compile errors and killed mutants',
+    async (arm, { expect }) => {
+      const cwd = fixtures[arm.name]
+      if (cwd === undefined) {
+        throw new Error(`no installed fixture for ${arm.name}`)
+      }
 
-    expect(run.exitCode).toBe(0)
-    expect(terminalIndexesIn(kinds)).toEqual([kinds.length - 1])
-    expect(kinds.at(-1)).toBe('verdict')
-    expect(kinds).not.toContain('error')
-  })
+      const run = await runCli(['run', arm.config], { cwd })
+      const events = stdoutLines(run.stdout).map(parseEventLine)
+      const kinds = events.map(eventKind)
+      const verdict = lastEvent(events)
+      const counts = fieldOf(verdict, 'counts')
+      const score = fieldOf(verdict, 'score')
 
-  it('verifies type checking intercepted compile errors and test runner killed valid mutants', () => {
-    const verdict = lastEvent(events)
-    const counts = fieldOf(verdict, 'counts')
-    const compileErrors = numberFieldOf(counts, 'compileErrors')
-    const killed = numberFieldOf(counts, 'killed')
-    const survived = numberFieldOf(counts, 'survived')
-    const score = fieldOf(verdict, 'score')
-    expect(compileErrors).toBeGreaterThanOrEqual(1)
-    expect(killed).toBeGreaterThanOrEqual(1)
-    expect(survived).toBeGreaterThanOrEqual(1)
-    expect(Number.isFinite(score)).toBe(true)
-  })
-
-  it('leaves no unstructured text on the machine stream', () => {
-    expect(events.length).toBeGreaterThan(0)
-    expect(kindsOutsideOf(events.map(eventKind), RUN_EVENT_KINDS)).toEqual([])
-  })
-})
-
-describe('Arm 2: typescript-checker with vitest runner', () => {
-  let run: ExecResult = EMPTY_EXEC
-  let events: ReadonlyArray<unknown> = []
-
-  beforeAll(async () => {
-    const fixturePath = await installFixture(FIXTURE_URL, 'typescript-checker-vitest-fixture')
-    run = await runCli(['run', 'stryker.vitest.config.ts'], { cwd: fixturePath })
-    events = stdoutLines(run.stdout).map(parseEventLine)
-  })
-
-  afterAll(teardownBed)
-
-  it('exits cleanly with exactly one terminal verdict event', () => {
-    const kinds = events.map(eventKind)
-
-    expect(run.exitCode).toBe(0)
-    expect(terminalIndexesIn(kinds)).toEqual([kinds.length - 1])
-    expect(kinds.at(-1)).toBe('verdict')
-    expect(kinds).not.toContain('error')
-  })
-
-  it('verifies type checking intercepted compile errors and test runner killed valid mutants', () => {
-    const verdict = lastEvent(events)
-    const counts = fieldOf(verdict, 'counts')
-    const score = numberFieldOf(verdict, 'score')
-    const compileErrors = numberFieldOf(counts, 'compileErrors')
-    const killed = numberFieldOf(counts, 'killed')
-    const survived = numberFieldOf(counts, 'survived')
-    expect(compileErrors).toBeGreaterThanOrEqual(1)
-    expect(killed).toBeGreaterThanOrEqual(1)
-    expect(survived).toBeGreaterThanOrEqual(1)
-    expect(Number.isFinite(score)).toBe(true)
-  })
-
-  it('leaves no unstructured text on the machine stream', () => {
-    expect(events.length).toBeGreaterThan(0)
-    expect(kindsOutsideOf(events.map(eventKind), RUN_EVENT_KINDS)).toEqual([])
-  })
+      expect(run.exitCode).toBe(0)
+      expect(terminalIndexesIn(kinds)).toEqual([kinds.length - 1])
+      expect(kinds.at(-1)).toBe('verdict')
+      expect(kinds).not.toContain('error')
+      expect(numberFieldOf(counts, 'compileErrors')).toBeGreaterThanOrEqual(1)
+      expect(numberFieldOf(counts, 'killed')).toBeGreaterThanOrEqual(1)
+      expect(numberFieldOf(counts, 'survived')).toBeGreaterThanOrEqual(1)
+      expect(Number.isFinite(score)).toBe(true)
+      expect(events.length).toBeGreaterThan(0)
+      expect(kindsOutsideOf(kinds, RUN_EVENT_KINDS)).toEqual([])
+    },
+  )
 })
