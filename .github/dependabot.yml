@@ -25,6 +25,9 @@ updates:
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
     groups:
+      stryker:
+        patterns:
+          - "@systemfsoftware/stryker-*"
       oxlint-minor-patch:
         patterns:
           - "oxlint"
@@ -84,6 +87,7 @@ updates:
           - "@commitlint/*"
           - "typescript"
           - "@types/node"
+          - "@systemfsoftware/stryker-*"
         update-types: ["minor", "patch"]
       major-updates:
         patterns: ["*"]
@@ -93,6 +97,7 @@ updates:
           - "@commitlint/*"
           - "typescript"
           - "@types/node"
+          - "@systemfsoftware/stryker-*"
         update-types: ["major"]
 
   - package-ecosystem: "nix"
