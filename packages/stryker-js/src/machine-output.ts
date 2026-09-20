@@ -14,7 +14,7 @@ import {
 } from './classify-run-outcome.workflow.js'
 import { defaultOptions } from './config-defaults.js'
 import { readCapturedConsole, shapeEnvelope } from './Envelope.js'
-import type { ResolvedMode } from './output-mode-probe.js'
+import type { ResolvedMode } from './output-mode.js'
 import type { RunEventStream } from './run-event-stream.js'
 import { HelpRendered, RunFailed, VerdictReached } from './RunEvent.schema.js'
 import { STREAM_SCHEMA_VERSION } from './StreamVersion.js'

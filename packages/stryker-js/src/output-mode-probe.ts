@@ -6,10 +6,10 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
 import * as CliError from 'effect/unstable/cli/CliError'
 
+import type { ResolvedMode } from './output-mode.js'
 import {
   type ModeConflictError,
   ResolveModeCommand,
@@ -17,26 +17,11 @@ import {
   resolveOutputMode,
 } from './resolve-output-mode.workflow.js'
 
-export interface ResolvedMode {
-  readonly mode: 'machine' | 'human'
-  readonly signal: 'flag' | 'env' | 'tty' | 'agent' | 'tool'
-  readonly stdoutIsTTY: boolean
-}
+const TOOL_VARIABLES = ['CLAUDECODE', 'CODEX_SANDBOX'] as const
 
-export const TOOL_VARIABLES = ['CLAUDECODE', 'CODEX_SANDBOX'] as const
-
-export type ToolVariable = (typeof TOOL_VARIABLES)[number]
-
-export interface FormatFlags {
+interface FormatFlags {
   readonly text?: boolean
   readonly json?: boolean
-}
-
-export interface ModeInput extends FormatFlags {
-  readonly envMode?: string
-  readonly stdoutIsTTY: boolean
-  readonly agent?: string
-  readonly toolVars?: Readonly<Partial<Record<ToolVariable, string | undefined>>>
 }
 
 const decisionToResolvedMode = (decision: ResolveModeDecision): ResolvedMode =>
@@ -88,51 +73,6 @@ const commandFor = (input: ProbeInput): ResolveModeCommand =>
     toolVars: definedToolVars(input.toolVars),
   })
 
-export function resolveMode(
-  input: ModeInput,
-): Result.Result<ResolvedMode, CliError.CliError> {
-  return Result.match(resolveOutputMode(commandFor(input)), {
-    onFailure: (conflict) =>
-      Result.fail(
-        CliError.InvalidValue.make({
-          option: conflict.option,
-          value: conflict.value,
-          expected: conflict.expected,
-          kind: 'flag',
-        }),
-      ),
-    onSuccess: (decision) => Result.succeed(decisionToResolvedMode(decision)),
-  })
-}
-
-export function isProgressEnabled(resolved: ResolvedMode): boolean {
-  return resolved.mode === 'human' && resolved.stdoutIsTTY
-}
-
-export function isColorEnabled(
-  resolved: ResolvedMode,
-  noColor: string | undefined,
-): boolean {
-  const requested = Option.exists(
-    Option.fromUndefinedOr(noColor),
-    S.is(S.NonEmptyString),
-  )
-  return resolved.mode === 'human' && !requested
-}
-
-export interface OutputModeProbe {
-  readonly detectMode: Effect.Effect<ResolvedMode, CliError.CliError>
-}
-
-class OutputModeProbeTag extends Context.Service<
-  OutputModeProbeTag,
-  OutputModeProbe
->()('@systemfsoftware/stryker-js/output-mode-probe/OutputModeProbeTag') {}
-
-const OutputModeProbe = OutputModeProbeTag
-
-export { OutputModeProbe }
-
 const envToolVars = (): Effect.Effect<Record<string, string>> =>
   Effect.forEach(TOOL_VARIABLES, (variable) =>
     Config.string(variable).pipe(
@@ -157,7 +97,7 @@ const probeInput = (
     }
   })
 
-export const outputModeProbeCell = Cell.layer({
+const outputModeProbeCell = Cell.layer({
   read: (command: FormatFlags) => probeInput(command),
   decode: (raw: ProbeInput) => Result.succeed(commandFor(raw)),
   decide: resolveOutputMode,
@@ -170,7 +110,7 @@ export const outputModeProbeCell = Cell.layer({
     }),
 })
 
-export const detectModeWithProbe = (
+const detectModeWithProbe = (
   flags: FormatFlags = {},
 ): Effect.Effect<ResolvedMode, CliError.CliError, Stdio.Stdio> =>
   outputModeProbeCell.run(flags).pipe(
@@ -183,6 +123,19 @@ export const detectModeWithProbe = (
       })
     ),
   )
+
+export interface OutputModeProbe {
+  readonly detectMode: Effect.Effect<ResolvedMode, CliError.CliError>
+}
+
+class OutputModeProbeTag extends Context.Service<
+  OutputModeProbeTag,
+  OutputModeProbe
+>()('@systemfsoftware/stryker-js/output-mode-probe/OutputModeProbeTag') {}
+
+const OutputModeProbe = OutputModeProbeTag
+
+export { OutputModeProbe }
 
 export const OutputModeProbeLive: Layer.Layer<
   OutputModeProbeTag,

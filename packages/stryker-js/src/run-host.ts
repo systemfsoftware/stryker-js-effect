@@ -11,7 +11,7 @@ import type { PlatformError } from 'effect/PlatformError'
 import type * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 import type { CliRequest } from './Cli.schema.js'
-import { isColorEnabled } from './output-mode-probe.js'
+
 import { type ResolvedMode } from './output-mode.js'
 import { nodePlatformLayer } from './platform/node.js'
 import { RunEventDrain, type RunEventStream } from './run-event-stream.js'
@@ -28,6 +28,13 @@ export interface HostServices {
   readonly env: RunEnvironmentShape
   readonly events: Queue.Queue<RunEvent, Cause.Done>
 }
+
+const isColorEnabled = (mode: ResolvedMode, noColor: string | undefined): boolean =>
+  Match.value(mode.mode === 'human').pipe(
+    Match.when(true, () => Option.isNone(Option.filter(Option.fromUndefinedOr(noColor), S.is(S.NonEmptyString)))),
+    Match.when(false, () => false),
+    Match.exhaustive,
+  )
 
 export const hostRunLayer: Layer.Layer<RunStageServices | EnginePorts, never, RunEnvironment | RunEvents> = Layer
   .unwrap(
