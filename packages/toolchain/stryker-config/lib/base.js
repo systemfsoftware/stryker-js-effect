@@ -1,14 +1,12 @@
 const isAgent = process.env['AGENT'] !== undefined
 const isCI = !isAgent && typeof process.env['CI'] === 'string' && process.env['CI'].length > 0
 
-const envConcurrency = process.env['STRYKER_CONCURRENCY'] ??
-  (isAgent ? '50%' : isCI ? '100%' : undefined)
-
 export const sharedConfig = {
   packageManager: 'pnpm',
   reporters: isAgent || isCI ? ['json', 'html'] : ['progress', 'html', 'json'],
   htmlReporter: { fileName: 'reports/mutation-report.html' },
   jsonReporter: { fileName: 'reports/mutation-report.json' },
+  concurrency: process.env['STRYKER_CONCURRENCY'] ?? (isAgent ? '50%' : '100%'),
   coverageAnalysis: 'perTest',
   incremental: true,
   incrementalFile: 'reports/stryker-incremental.json',
@@ -23,5 +21,4 @@ export const sharedConfig = {
     '!src/**/*.d.ts',
     '!src/**/__tests__/**',
   ],
-  ...(envConcurrency !== undefined ? { concurrency: envConcurrency } : {}),
 }

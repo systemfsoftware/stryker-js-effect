@@ -12,7 +12,7 @@ export interface SharedConfig {
   cleanTempDir: 'always'
   thresholds: { high: number; low: number; break: number }
   mutate: string[]
-  concurrency?: string
+  concurrency: string
 }
 
 export const sharedConfig: SharedConfig
