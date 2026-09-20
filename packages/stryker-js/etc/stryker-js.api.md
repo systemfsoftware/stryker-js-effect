@@ -1344,6 +1344,8 @@ export class RunStarted extends RunStarted_base {}
 // @public (undocumented)
 export type RunTerminalEvent = VerdictReached | RunFailed | HelpRendered;
 
+export { S }
+
 // @public (undocumented)
 export interface SandboxHandle {
     // (undocumented)
