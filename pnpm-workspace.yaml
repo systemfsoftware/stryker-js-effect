@@ -28,8 +28,8 @@ catalog:
   "@systemfsoftware/oxlint-plugin-recommended": ^1
   "@systemfsoftware/tsconfig": ^1
   "@types/node": ^24
-  "@vitest/browser-playwright": ^4
-  "@vitest/coverage-v8": ^4
+  "@vitest/browser-playwright": ^5
+  "@vitest/coverage-v8": ^5
   fast-check: ^4
   effect: 4.0.0-rc.112
   husky: ^9
@@ -44,7 +44,7 @@ catalog:
   turbo: ^2
   type-fest: ^4
   typescript: ^7
-  vitest: ^4
+  vitest: ^5
   concurrently: ^10
 catalogMode: prefer
 catalogs:
