@@ -1,13 +1,13 @@
+import { describe, it } from '@effect/vitest'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
-import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
 import * as mutants from '@systemfsoftware/stryker-js-instrumenter'
 import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Equivalence from 'effect/Equivalence'
 import * as Exit from 'effect/Exit'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { FastCheck as fc } from 'effect/testing'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   admitSurvivorsRun,
@@ -25,78 +25,85 @@ const stringArrayEquivalence = Equivalence.Array(Equivalence.String)
 const sha256Hex: HashContent = (content) => bytesToHex(sha256(utf8ToBytes(content)))
 const absPath = (file: string): string => `/work/${file}`
 
-const reportPositionArb = fc.record({
-  line: fc.integer({ min: 1, max: 200 }),
-  column: fc.integer({ min: 1, max: 200 }),
+const intIn = (minimum: number, maximum: number) => Arbitrary.schema(S.Int.check(S.isBetween({ minimum, maximum })))
+
+const oneOf = <A>(...arbs: ReadonlyArray<Arbitrary.Arbitrary<A>>): Arbitrary.Arbitrary<A> =>
+  intIn(0, arbs.length - 1).pipe(
+    Arbitrary.flatMap((index) => {
+      const chosen = arbs[index]
+      if (chosen === undefined) {
+        throw new Error(`oneOf was asked for an arbitrary at index ${index}, which is unbound`)
+      }
+      return chosen
+    }),
+  )
+
+const reportPositionArb = Arbitrary.all({
+  line: intIn(1, 200),
+  column: intIn(1, 200),
 })
 
-const reportLocationArb = fc.record({ start: reportPositionArb, end: reportPositionArb })
+const reportLocationArb = Arbitrary.all({ start: reportPositionArb, end: reportPositionArb })
 
-const nonSurvivedStatusArb = fc.constantFrom<mutants.MutantStatus>(
-  'Killed',
-  'NoCoverage',
-  'Timeout',
-  'RuntimeError',
-  'CompileError',
-  'Ignored',
-  'Pending',
+const nonSurvivedStatusArb: Arbitrary.Arbitrary<mutants.MutantStatus> = Arbitrary.schema(
+  S.Literals(['Killed', 'NoCoverage', 'Timeout', 'RuntimeError', 'CompileError', 'Ignored', 'Pending']),
 )
 
 const mutantResultArb = (
-  status: fc.Arbitrary<mutants.MutantStatus>,
-): fc.Arbitrary<schema.MutantResult> =>
-  fc.record(
-    {
-      id: fc.string({ minLength: 1, maxLength: 8 }),
-      mutatorName: fc.string({ minLength: 1, maxLength: 8 }),
-      location: reportLocationArb,
-      status,
-      replacement: fc.string({ maxLength: 8 }),
-    },
-    { requiredKeys: ['id', 'mutatorName', 'location', 'status'] },
+  status: Arbitrary.Arbitrary<mutants.MutantStatus>,
+): Arbitrary.Arbitrary<schema.MutantResult> =>
+  Arbitrary.all({
+    id: Arbitrary.schema(S.String.check(S.isMinLength(1), S.isMaxLength(8))),
+    mutatorName: Arbitrary.schema(S.String.check(S.isMinLength(1), S.isMaxLength(8))),
+    location: reportLocationArb,
+    status,
+    replacement: Arbitrary.schema(S.String.check(S.isMaxLength(8))),
+  })
+
+const shortKeyArb = Arbitrary.schema(S.String.check(S.isMaxLength(6)))
+
+const recordOf = <A>(value: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<Record<string, A>> =>
+  Arbitrary.array(Arbitrary.all([shortKeyArb, value]), { maxLength: 3 }).pipe(
+    Arbitrary.map((entries) => Object.fromEntries(entries)),
   )
 
 /** Keys are short enough that `survivorsPriorReport` can never be generated. */
-const cleanConfigArb: fc.Arbitrary<Record<string, unknown>> = fc.dictionary(
-  fc.string({ maxLength: 6 }),
-  fc.oneof(fc.string({ maxLength: 6 }), fc.integer(), fc.boolean()),
-  { maxKeys: 3 },
+const cleanConfigArb: Arbitrary.Arbitrary<Record<string, unknown>> = recordOf(
+  oneOf<unknown>(shortKeyArb, Arbitrary.schema(S.Int), Arbitrary.schema(S.Boolean)),
 )
 
-const sourceArb = fc.string({ maxLength: 16 })
+const sourceArb = Arbitrary.schema(S.String.check(S.isMaxLength(16), S.isPattern(/^[\x20-\x7E]*$/)))
 
-const survivingFilesArb: fc.Arbitrary<Record<string, schema.FileResult>> = fc
-  .tuple(
-    fc.string({ minLength: 1, maxLength: 6 }),
-    fc.array(mutantResultArb(nonSurvivedStatusArb), { maxLength: 3 }),
-    mutantResultArb(fc.constant<mutants.MutantStatus>('Survived')),
-    sourceArb,
-  )
-  .map(([file, others, survivor, source]) => ({
+const survivingFilesArb: Arbitrary.Arbitrary<Record<string, schema.FileResult>> = Arbitrary.all([
+  Arbitrary.schema(S.String.check(S.isMinLength(1), S.isMaxLength(6))),
+  Arbitrary.array(mutantResultArb(nonSurvivedStatusArb), { maxLength: 3 }),
+  mutantResultArb(Arbitrary.Constant<mutants.MutantStatus>('Survived')),
+  sourceArb,
+]).pipe(
+  Arbitrary.map(([file, others, survivor, source]) => ({
     [file]: { language: 'javascript', source, mutants: [...others, survivor] },
-  }))
+  })),
+)
 
-const nonSurvivingFilesArb: fc.Arbitrary<Record<string, schema.FileResult>> = fc.dictionary(
-  fc.string({ maxLength: 6 }),
-  fc.record({
-    language: fc.constant('javascript'),
+const nonSurvivingFilesArb: Arbitrary.Arbitrary<Record<string, schema.FileResult>> = recordOf(
+  Arbitrary.all({
+    language: Arbitrary.Constant('javascript'),
     source: sourceArb,
-    mutants: fc.array(mutantResultArb(nonSurvivedStatusArb), { maxLength: 3 }),
+    mutants: Arbitrary.array(mutantResultArb(nonSurvivedStatusArb), { maxLength: 3 }),
   }),
-  { maxKeys: 3 },
 )
 
 const reportArb = (
-  files: fc.Arbitrary<Record<string, schema.FileResult>>,
-  config: fc.Arbitrary<Record<string, unknown>> = cleanConfigArb,
-): fc.Arbitrary<schema.MutationTestResult> =>
-  fc.record({
+  files: Arbitrary.Arbitrary<Record<string, schema.FileResult>>,
+  config: Arbitrary.Arbitrary<Record<string, unknown>> = cleanConfigArb,
+): Arbitrary.Arbitrary<schema.MutationTestResult> =>
+  Arbitrary.all({
     config,
-    schemaVersion: fc.constant('1'),
-    thresholds: fc.record({ high: fc.integer(), low: fc.integer() }),
-    framework: fc.record({
-      name: fc.constant('stryker'),
-      version: fc.string({ minLength: 1, maxLength: 6 }),
+    schemaVersion: Arbitrary.Constant('1'),
+    thresholds: Arbitrary.all({ high: Arbitrary.schema(S.Int), low: Arbitrary.schema(S.Int) }),
+    framework: Arbitrary.all({
+      name: Arbitrary.Constant('stryker'),
+      version: Arbitrary.schema(S.String.check(S.isMinLength(1), S.isMaxLength(6))),
     }),
     files,
   })
@@ -104,16 +111,18 @@ const reportArb = (
 const reportWithSurvivorsArb = reportArb(survivingFilesArb)
 const reportWithoutSurvivorsArb = reportArb(nonSurvivingFilesArb)
 
-const frameworklessReportArb: fc.Arbitrary<schema.MutationTestResult> = fc.record({
+const frameworklessReportArb: Arbitrary.Arbitrary<schema.MutationTestResult> = Arbitrary.all({
   config: cleanConfigArb,
-  schemaVersion: fc.constant('1'),
-  thresholds: fc.record({ high: fc.integer(), low: fc.integer() }),
+  schemaVersion: Arbitrary.Constant('1'),
+  thresholds: Arbitrary.all({ high: Arbitrary.schema(S.Int), low: Arbitrary.schema(S.Int) }),
   files: survivingFilesArb,
 })
 
 const survivorsProducedReportArb = reportArb(
   survivingFilesArb,
-  cleanConfigArb.map((config) => ({ ...config, survivorsPriorReport: 'reports/prior.json' })),
+  cleanConfigArb.pipe(
+    Arbitrary.map((config) => ({ ...config, survivorsPriorReport: 'reports/prior.json' })),
+  ),
 )
 
 /**
@@ -270,7 +279,7 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀r_EveryRejection_≡EndsWithRunFirstRemediation',
-    [fc.oneof(reportWithSurvivorsArb, survivorsProducedReportArb)],
+    [oneOf<schema.MutationTestResult>(reportWithSurvivorsArb, survivorsProducedReportArb)],
     ([report]) => {
       const rejections = [
         rejectionOf(admitSurvivorsRun(commandWithoutPriorReport(report))),
@@ -311,7 +320,7 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀m_MalformedSurvivor_≡RefusedByAdmissionDecode',
-    [fc.record({ id: fc.string(), fileName: fc.string() })],
+    [Arbitrary.all({ id: Arbitrary.schema(S.String), fileName: Arbitrary.schema(S.String) })],
     ([partial]) =>
       Exit.isFailure(
         S.decodeUnknownExit(SurvivorsAdmission)({ _tag: 'Admitted', survivors: [partial] }),
@@ -321,16 +330,16 @@ describe('admitSurvivorsRun', () => {
   it.prop(
     '∀l_MalformedLocation_≡RefusedByAdmissionDecode',
     [
-      fc.oneof(
-        fc.constant({}),
-        fc.record({ start: fc.constant({}), end: reportPositionArb }),
-        fc.record({ start: reportPositionArb, end: fc.constant({}) }),
+      oneOf<unknown>(
+        Arbitrary.Constant({}),
+        Arbitrary.all({ start: Arbitrary.Constant({}), end: reportPositionArb }),
+        Arbitrary.all({ start: reportPositionArb, end: Arbitrary.Constant({}) }),
       ),
-      fc.record({
-        id: fc.string({ minLength: 1 }),
-        fileName: fc.string({ minLength: 1 }),
-        mutatorName: fc.string({ minLength: 1 }),
-        replacement: fc.string({ minLength: 1 }),
+      Arbitrary.all({
+        id: Arbitrary.schema(S.String.check(S.isMinLength(1))),
+        fileName: Arbitrary.schema(S.String.check(S.isMinLength(1))),
+        mutatorName: Arbitrary.schema(S.String.check(S.isMinLength(1))),
+        replacement: Arbitrary.schema(S.String.check(S.isMinLength(1))),
       }),
     ],
     ([location, fields]) =>
@@ -373,43 +382,47 @@ describe('admitSurvivorsRun', () => {
 describe('sourceContentHash', () => {
   it.prop(
     '∀c_Empty_≡FipsVector',
-    [fc.constant('')],
+    [Arbitrary.Constant('')],
     ([content]) =>
       sourceContentHash(content, sha256Hex) === 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
   )
 
   it.prop(
     '∀c_Abc_≡FipsVector',
-    [fc.constant('abc')],
+    [Arbitrary.Constant('abc')],
     ([content]) =>
       sourceContentHash(content, sha256Hex) === 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
   )
 
   it.prop(
     '∀c_NonAscii_≡Utf8Vector',
-    [fc.constant('✓')],
+    [Arbitrary.Constant('✓')],
     ([content]) =>
       sourceContentHash(content, sha256Hex) === '1dabba21cdad44541f6b15796f8d22978fc7ea10c46aeceeeeb66c23b3ac7604',
   )
 
   it.prop(
     '∀c_Content_≡Deterministic',
-    [fc.string({ maxLength: 16 })],
+    [sourceArb],
     ([content]) => sourceContentHash(content, sha256Hex) === sourceContentHash(content, sha256Hex),
   )
 
   it.prop(
     '∀a,b_Content_≠Distinct',
-    [fc.string({ maxLength: 16 }), fc.string({ maxLength: 16 })],
-    ([a, b]) => {
-      fc.pre(a !== b)
-      return sourceContentHash(a, sha256Hex) !== sourceContentHash(b, sha256Hex)
-    },
+    [
+      Arbitrary.all([sourceArb, sourceArb]).pipe(
+        Arbitrary.map(([a, b]) => {
+          if (a === b) return [a, `${b}x`] as const
+          return [a, b] as const
+        }),
+      ),
+    ],
+    ([[a, b]]) => sourceContentHash(a, sha256Hex) !== sourceContentHash(b, sha256Hex),
   )
 })
 
 describe('Survivors not-found', () => {
-  it.prop('∀c_NotFound_≡Rejection', [fc.constant(null)], () =>
+  it.prop('∀c_NotFound_≡Rejection', [Arbitrary.Constant(null)], () =>
     Result.match(
       admitSurvivorsRun(
         AdmitSurvivorsRunCommand.make({

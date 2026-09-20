@@ -39,7 +39,7 @@ const HOST_NETWORK_MODE = 'host'
 
 const SKEW_CHECKER_PACKAGE = '@systemfsoftware/stryker-js-effect-skew-checker'
 
-export const SKEW_EFFECT_VERSION = '4.0.0-rc.111'
+export const SKEW_EFFECT_VERSION = '4.0.0-rc.115'
 
 const SKEW_CHECKER_DIRECTORY = fileURLToPath(new URL('../../testResources/effect-skew-checker', import.meta.url))
 

@@ -58,7 +58,7 @@ export interface MakeSandboxInput {
  */
 type FilePreprocessor = (
   project: Project,
-) => Effect.Effect<void, unknown, FileSystem.FileSystem | Path.Path>
+) => Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path>
 
 const combinePreprocessors = (preprocessors: readonly FilePreprocessor[]): FilePreprocessor => (project) =>
   Effect.forEach(preprocessors, (pre) => pre(project), { discard: true })
@@ -79,7 +79,7 @@ const makeDisableTypeChecksPreprocessor = (
             const content = yield* Effect.map(impl(instrumenterFile), (instrumented) =>
               instrumented.content).pipe(
                 Effect.mapError((cause) => StrykerError.make({ message: 'disableTypeChecks failed', cause })),
-                Effect.catch((_error) =>
+                Effect.tapError(() =>
                   Effect.gen(function*() {
                     if (isWarningEnabled('preprocessorErrors', options.warnings)) {
                       yield* Effect.logWarning(
@@ -88,9 +88,9 @@ const makeDisableTypeChecksPreprocessor = (
                         }" settings (or turn it completely off with \`false\`)`,
                       )
                     }
-                    return undefined
                   })
                 ),
+                Effect.orElseSucceed(() => undefined),
               )
             if (content !== undefined) {
               return withContent(file, content)
@@ -451,7 +451,7 @@ const binDirectoriesFrom = (from: string, pathService: Path.Path): string[] =>
   )
 
 const inheritedPath = (): Effect.Effect<string> =>
-  Config.string('PATH').pipe(
+  Config.String('PATH').pipe(
     Effect.option,
     Effect.map((value) => Option.getOrUndefined(value) ?? ''),
   )
@@ -795,11 +795,12 @@ const linkNodeModules = (
     const resolvedFrom = pathService.join(workingDirectory, nodeModules)
     yield* Effect.logDebug(`Create symlink from ${resolvedTo} to ${resolvedFrom}`)
     yield* symlinkJunction(resolvedTo, resolvedFrom).pipe(
-      Effect.catch((_error) =>
+      Effect.tapError(() =>
         Effect.logWarning(
           `Unexpected error while trying to symlink "${nodeModules}" in sandbox directory.`,
         )
       ),
+      Effect.catchTag('PlatformError', () => Effect.void),
     )
   })
 

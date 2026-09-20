@@ -22,7 +22,7 @@ export interface WorkerServerParams<Rpcs extends Rpc.Any, HE> {
 export const workerServerLayer = <Rpcs extends Rpc.Any, HE>(params: WorkerServerParams<Rpcs, HE>) =>
   Layer.unwrap(
     Effect.gen(function*() {
-      const socketPath = yield* Config.string('STRYKER_SOCKET')
+      const socketPath = yield* Config.String('STRYKER_SOCKET')
       const restrictSocket = NodeSocketServer.layer({ path: socketPath }).pipe(
         Layer.tap(() =>
           Match.value(socketPath.startsWith('\\\\.\\pipe\\')).pipe(

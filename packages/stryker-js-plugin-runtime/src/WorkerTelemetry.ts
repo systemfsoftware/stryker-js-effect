@@ -23,10 +23,10 @@ const otlpLayer = (serviceName: string, endpoint: string): Layer.Layer<never> =>
 
 export const workerTelemetryLayer: Layer.Layer<never, Config.ConfigError> = Layer.unwrap(
   Effect.gen(function*() {
-    const enabled = yield* Config.boolean('OTEL_ENABLED').pipe(Config.withDefault(false))
+    const enabled = yield* Config.Boolean('OTEL_ENABLED').pipe(Config.withDefault(false))
     if (!enabled) return Layer.empty
-    const serviceName = yield* Config.string('OTEL_SERVICE_NAME').pipe(Config.withDefault(WORKER_SERVICE_NAME))
-    const endpoint = yield* Config.string('OTEL_EXPORTER_OTLP_ENDPOINT').pipe(Config.withDefault(DEFAULT_ENDPOINT))
+    const serviceName = yield* Config.String('OTEL_SERVICE_NAME').pipe(Config.withDefault(WORKER_SERVICE_NAME))
+    const endpoint = yield* Config.String('OTEL_EXPORTER_OTLP_ENDPOINT').pipe(Config.withDefault(DEFAULT_ENDPOINT))
     return otlpLayer(serviceName, endpoint)
   }),
 )

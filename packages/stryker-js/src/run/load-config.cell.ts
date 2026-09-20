@@ -1203,7 +1203,7 @@ export interface ConfigInvocation {
   readonly mode: OutputMode
 }
 
-const isCiEnvironment: Effect.Effect<boolean> = Config.string('CI').pipe(
+const isCiEnvironment: Effect.Effect<boolean> = Config.String('CI').pipe(
   Effect.map((value) =>
     Match.value(value.trim().toLowerCase()).pipe(
       Match.when('', () => false),
@@ -1251,7 +1251,7 @@ export function readConfig(
       isDryRun: cliOptions['dryRunOnly'] === true,
       isCi: yield* isCiEnvironment,
     }
-    const cliRecord = yield* S.decodeUnknownEffect(ConfigDocumentSchema)(cliOptions).pipe(Effect.orDie)
+    const cliRecord = yield* S.decodeEffect(ConfigDocumentSchema)(cliOptions).pipe(Effect.orDie)
     const fileRecord = yield* loadOptionsFromConfigFile(cliRecord, configEnv)
     const fileOptions = yield* Result.match(S.decodeUnknownResult(ConfigDocumentSchema)(fileRecord), {
       onFailure: (cause) => Effect.fail(ConfigFileInvalidError.make({ file: 'config', cause })),

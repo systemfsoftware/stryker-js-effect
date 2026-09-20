@@ -11,22 +11,4 @@ export default defineConfig({
     '@systemfsoftware/oxlint-plugin/ban-classes': 'error',
     'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
-
-  overrides: [
-    {
-      files: ['**/*.test.ts', '**/*.spec.ts'],
-      rules: { 'typescript/no-unsafe-type-assertion': 'off' },
-    },
-    {
-      files: ['**/fixtures/**', '**/__fixtures__/**', '**/testResources/**'],
-      rules: {
-        'typescript/no-unsafe-argument': 'off',
-        'typescript/no-unsafe-assignment': 'off',
-        'typescript/no-unsafe-call': 'off',
-        'typescript/no-unsafe-member-access': 'off',
-        'typescript/no-unsafe-return': 'off',
-        'typescript/no-unsafe-type-assertion': 'off',
-      },
-    },
-  ],
 })

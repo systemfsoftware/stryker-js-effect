@@ -1,8 +1,8 @@
 import { describe, it } from '@effect/vitest'
 import * as Exit from 'effect/Exit'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type { StandardSchemaV1 } from 'effect/StandardSchema'
-import { FastCheck as fc } from 'effect/testing'
 
 import {
   DryRunCompleted,
@@ -21,9 +21,10 @@ const validateSync = (input: unknown): Validation => {
   return out
 }
 
-// Test-file fixture encoding — S.encodeSync throws, which is the permitted
-// shape for specs: throwing here is fixture construction, not a boundary decode.
-const reencoded = (value: ReporterEvent): string => JSON.stringify(S.encodeSync(ReporterEventUnion)(value))
+const encodeFixture = <S extends S.ConstraintEncoder<unknown>>(schema: S, value: S['Type']): S['Encoded'] =>
+  Result.getOrThrow(S.encodeResult(schema)(value))
+
+const reencoded = (value: ReporterEvent): string => JSON.stringify(encodeFixture(ReporterEventUnion, value))
 
 const withTag = (input: unknown, tag: unknown): unknown => {
   if (typeof input !== 'object' || input === null) return input
@@ -88,37 +89,37 @@ const rejectsUnknownTag = (result: Validation): boolean => {
 describe('ReporterEvent', () => {
   it.prop(
     '∀e_Event_≡Decode',
-    [S.toArbitrary(ReporterEventUnion)(fc)],
-    ([event]) => agreesWithDecode(corruptByDraw(S.encodeSync(ReporterEventUnion)(event))),
+    [ReporterEventUnion],
+    ([event]) => agreesWithDecode(corruptByDraw(encodeFixture(ReporterEventUnion, event))),
   )
 
   it.prop(
     '∀e_Validate_≡Shape',
-    [S.toArbitrary(ReporterEventUnion)(fc)],
-    ([event]) => hasResultShape(validateSync(corruptByDraw(S.encodeSync(ReporterEventUnion)(event)))),
+    [ReporterEventUnion],
+    ([event]) => hasResultShape(validateSync(corruptByDraw(encodeFixture(ReporterEventUnion, event)))),
   )
 
   it.prop(
     '∀d_DryRun_≠Coverage',
-    [S.toArbitrary(DryRunCompleted)(fc)],
-    ([event]) => stripsMutantCoverage(S.encodeSync(DryRunCompleted)(event)),
+    [DryRunCompleted],
+    ([event]) => stripsMutantCoverage(encodeFixture(DryRunCompleted, event)),
   )
 
   it.prop(
     '∀e_UnknownTag_≡Reject',
-    [S.toArbitrary(ReporterEventUnion)(fc)],
-    ([event]) => rejectsUnknownTag(validateSync(withTag(S.encodeSync(ReporterEventUnion)(event), 'not-a-kind'))),
+    [ReporterEventUnion],
+    ([event]) => rejectsUnknownTag(validateSync(withTag(encodeFixture(ReporterEventUnion, event), 'not-a-kind'))),
   )
 
   it.prop(
     '∀m_Tested_≡MachineAlphabet',
-    [S.toArbitrary(MutantTested)(fc)],
+    [MutantTested],
     ([event]) => {
-      const encoded = S.encodeSync(MutantTested)(event)
+      const encoded = encodeFixture(MutantTested, event)
       const members = Object.keys(encoded).filter((key) => key !== '_tag').sort()
       const pinned = ['completed', 'file', 'id', 'location', 'mutator', 'replacement', 'status', 'total']
       if (members.join(',') !== pinned.join(',')) return false
-      return Exit.isSuccess(S.decodeUnknownExit(RunMutantTested)({ ...encoded, _tag: 'mutant' }))
+      return Exit.isSuccess(S.decodeExit(RunMutantTested)({ ...encoded, _tag: 'mutant' }))
     },
   )
 })

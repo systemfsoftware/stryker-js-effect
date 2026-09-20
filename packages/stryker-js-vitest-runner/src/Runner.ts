@@ -3,7 +3,7 @@ import type { RunMode, RunnerTestCase, RunnerTestSuite, TaskState as VitestTaskS
 import { createVitest as createVitestOriginal } from 'vitest/node'
 import type { Vitest } from 'vitest/node'
 
-import { Cell } from '@systemfsoftware/effect-cell-types'
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import {
   type CoverageData,
   errorToString,
@@ -25,6 +25,7 @@ import {
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
+import * as Crypto from 'effect/Crypto'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -662,9 +663,7 @@ export const resolveVitest: VitestResolver = (_dir) => {
       catch: (cause) => resolutionFailure(VITEST_NODE_SPECIFIER, errorToString(cause)),
     })
     if (!isVitestNodeModule(imported)) {
-      return yield* Effect.fail(
-        resolutionFailure(VITEST_NODE_SPECIFIER, 'Missing createVitest export on vitest/node module'),
-      )
+      return yield* resolutionFailure(VITEST_NODE_SPECIFIER, 'Missing createVitest export on vitest/node module')
     }
     return { createVitest: imported.createVitest } satisfies ResolvedVitest
   })
@@ -846,11 +845,12 @@ export interface VitestRunnerLayerInput {
 
 export const makeVitestRunnerLayer = (
   input: VitestRunnerLayerInput,
-): Layer.Layer<TestRunner, never, FileSystem.FileSystem | Path.Path> =>
+): Layer.Layer<TestRunner, never, Crypto.Crypto | FileSystem.FileSystem | Path.Path> =>
   Layer.effect(
     TestRunner,
     Effect.gen(function*() {
       const stateRef = yield* Ref.make<RunnerState>({ ctx: undefined, localSetupFile: undefined })
+      const cryptoService = yield* Crypto.Crypto
       const fsService = yield* FileSystem.FileSystem
       const pathService = yield* Path.Path
       const getState = Ref.get(stateRef)
@@ -865,7 +865,7 @@ export const makeVitestRunnerLayer = (
         }
         return state.ctx
       })
-      const vitestOptionsEffect = S.decodeUnknownEffect(VitestRunnerOptionsSchema)(
+      const vitestOptionsEffect = S.decodeEffect(VitestRunnerOptionsSchema)(
         Match.value(input.options.testRunner).pipe(
           Match.when(isCustomTestRunner, (runner) =>
             Match.value(runner.options).pipe(
@@ -884,7 +884,12 @@ export const makeVitestRunnerLayer = (
       const init: TestRunner['Service']['init'] = Effect.gen(function*() {
         const vitestOptions = yield* vitestOptionsEffect
         const projectRoot = input.sandboxDirectory
-        const localSetupFile = pathService.resolve(projectRoot, `stryker-setup-${globalThis.crypto.randomUUID()}.js`)
+        const setupFileSuffix = yield* cryptoService.randomUUIDv4.pipe(
+          Effect.mapError((cause) =>
+            new TestRunnerFailed({ runnerName: 'vitest', phase: 'init', cause: errorToString(cause) })
+          ),
+        )
+        const localSetupFile = pathService.resolve(projectRoot, `stryker-setup-${setupFileSuffix}.js`)
         yield* Ref.update(stateRef, (s) => ({ ...s, localSetupFile }))
         const defaultSetupPath = yield* pathService.fromFileUrl(STRYKER_SETUP_URL).pipe(
           Effect.mapError((cause) =>
@@ -948,7 +953,7 @@ export const makeVitestRunnerLayer = (
         applySetupFilesToProjects(ctx, localSetupFile)
         yield* Ref.update(stateRef, (s) => ({ ...s, ctx }))
       }).pipe(Effect.mapError((cause) => ((() => {
-        if (cause instanceof TestRunnerFailed) return cause
+        if (S.is(TestRunnerFailed)(cause)) return cause
         return new TestRunnerFailed({ runnerName: 'vitest', phase: 'init', cause: errorToString(cause) })
       })())))
       const resetContext = Effect.gen(function*() {
@@ -997,10 +1002,11 @@ export const makeVitestRunnerLayer = (
             Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
             Effect.orElseSucceed(() => ({ mutantCoverage: undefined })),
           )
-          return yield* Option.match(Option.fromNullishOr(decoded.mutantCoverage), {
-            onNone: () => Effect.succeed(undefined),
-            onSome: (mutantCoverage) => validateCoverage(mutantCoverage),
-          })
+          const mutantCoverage = Option.fromNullishOr(decoded.mutantCoverage)
+          if (Option.isNone(mutantCoverage)) {
+            return undefined
+          }
+          return yield* validateCoverage(mutantCoverage.value)
         })
 
       const mergeTestCoverage = (
@@ -1085,78 +1091,79 @@ export const makeVitestRunnerLayer = (
           Effect.flatMap(requireCtx, (ctx) => Effect.sync(() => applyHarnessValue(ctx, key, value))),
       }
 
-      const mutantRunCell = Cell.layer({
-        read: (command: MutantRunOptions) =>
-          Effect.gen(function*() {
-            const harness = yield* VitestHarness
-            yield* harness.setMode('mutant')
-            yield* harness.provide('hitLimit', command.hitLimit)
-            yield* harness.provide('mutantActivation', command.mutantActivation)
-            yield* harness.provide('activeMutant', command.activeMutant.id)
-            const { rawTests, hasExternalError, externalErrorText } = yield* collectRaw({
-              testIds: (() => {
-                if (command.testFilter !== undefined) return [...command.testFilter]
-                return undefined
-              })(),
-              relatedFiles: [command.sandboxFileName],
-            })
-            const hitCount = yield* readHitCount.pipe(
-              Effect.mapError((cause) =>
-                new TestRunnerFailed({ runnerName: 'vitest', phase: 'mutantRun', cause: errorToString(cause) })
-              ),
-              Effect.option,
-              Effect.map(Option.getOrUndefined),
-            )
-            const reportAllKillers = (() => {
-              if (typeof input.options.disableBail === 'boolean') return input.options.disableBail
-              return false
-            })()
-            if (hitCount === undefined) {
-              return {
-                rawTests,
-                projectRoot: input.sandboxDirectory,
-                hasExternalError,
-                externalErrorText,
-                hitLimit: command.hitLimit,
-                reportAllKillers,
-              }
-            }
+      const mutantRunCell = Sandwich.read((command: MutantRunOptions) =>
+        Effect.gen(function*() {
+          const harness = yield* VitestHarness
+          yield* harness.setMode('mutant')
+          yield* harness.provide('hitLimit', command.hitLimit)
+          yield* harness.provide('mutantActivation', command.mutantActivation)
+          yield* harness.provide('activeMutant', command.activeMutant.id)
+          const { rawTests, hasExternalError, externalErrorText } = yield* collectRaw({
+            testIds: (() => {
+              if (command.testFilter !== undefined) return [...command.testFilter]
+              return undefined
+            })(),
+            relatedFiles: [command.sandboxFileName],
+          })
+          const hitCount = yield* readHitCount.pipe(
+            Effect.mapError((cause) =>
+              new TestRunnerFailed({ runnerName: 'vitest', phase: 'mutantRun', cause: errorToString(cause) })
+            ),
+            Effect.option,
+            Effect.map(Option.getOrUndefined),
+          )
+          const reportAllKillers = (() => {
+            if (typeof input.options.disableBail === 'boolean') return input.options.disableBail
+            return false
+          })()
+          if (hitCount === undefined) {
             return {
               rawTests,
               projectRoot: input.sandboxDirectory,
               hasExternalError,
               externalErrorText,
-              hitCount,
               hitLimit: command.hitLimit,
               reportAllKillers,
             }
+          }
+          return {
+            rawTests,
+            projectRoot: input.sandboxDirectory,
+            hasExternalError,
+            externalErrorText,
+            hitCount,
+            hitLimit: command.hitLimit,
+            reportAllKillers,
+          }
+        })
+      ).decode(Sandwich.pure((
+        raw: {
+          readonly rawTests: readonly unknown[]
+          readonly projectRoot: string
+          readonly hasExternalError: boolean
+          readonly externalErrorText: string
+          readonly hitCount?: number | undefined
+          readonly hitLimit: number | undefined
+          readonly reportAllKillers: boolean
+        },
+      ) =>
+        Result.succeed(
+          new VitestMutantRunCommand({
+            rawTests: raw.rawTests,
+            projectRoot: raw.projectRoot,
+            hasExternalError: raw.hasExternalError,
+            externalErrorText: raw.externalErrorText,
+            hitCount: raw.hitCount,
+            hitLimit: raw.hitLimit,
+            reportAllKillers: raw.reportAllKillers,
           }),
-        decode: (
-          raw: {
-            readonly rawTests: readonly unknown[]
-            readonly projectRoot: string
-            readonly hasExternalError: boolean
-            readonly externalErrorText: string
-            readonly hitCount?: number | undefined
-            readonly hitLimit: number | undefined
-            readonly reportAllKillers: boolean
-          },
-        ) =>
-          Result.succeed(
-            new VitestMutantRunCommand({
-              rawTests: raw.rawTests,
-              projectRoot: raw.projectRoot,
-              hasExternalError: raw.hasExternalError,
-              externalErrorText: raw.externalErrorText,
-              hitCount: raw.hitCount,
-              hitLimit: raw.hitLimit,
-              reportAllKillers: raw.reportAllKillers,
-            }),
-          ),
-        decide: interpretVitestRun,
-        encode: (outcome: Result.Result<VitestMutantRunOutput, VitestMutantRunError>) =>
-          Result.match(outcome, {
-            onFailure: (e) => ({ status: 'error' as const, errorMessage: e.message }) satisfies MutantRunResult,
+        )
+      ))
+        .decide(interpretVitestRun)
+        .encode(Sandwich.pure((outcome: Result.Result<VitestMutantRunOutput, VitestMutantRunError>) =>
+          Result.succeed(Result.match(outcome, {
+            onFailure: (e) =>
+              ({ status: 'error' as const, errorMessage: e.message }) satisfies MutantRunResult,
             onSuccess: (out) => {
               const nrOfTests = (): number => countIdRecords(parseJson(out.testsJson))
               return Match.value(out).pipe(
@@ -1195,9 +1202,11 @@ export const makeVitestRunnerLayer = (
                 Match.exhaustive,
               )
             },
-          }),
-        write: (output: MutantRunResult, _raw: unknown) => Effect.succeed(output),
-      })
+          }))
+        ))
+        .write((output: MutantRunResult, _raw: unknown) =>
+          Effect.succeed(output)
+        )
       const dryRunFilter = (options: Parameters<TestRunner['Service']['dryRun']>[0]): RunFilter => {
         const relatedFiles = Option.getOrUndefined(
           Option.map(Option.fromNullishOr(options.files), (files) => [...files]),
@@ -1259,7 +1268,7 @@ export const makeVitestRunnerLayer = (
         }).pipe(
           Effect.provideService(VitestHarness, harnessImpl),
           Effect.mapError((cause) => ((() => {
-            if (cause instanceof TestRunnerFailed) return cause
+            if (S.is(TestRunnerFailed)(cause)) return cause
             return new TestRunnerFailed({ runnerName: 'vitest', phase: 'dryRun', cause: errorToString(cause) })
           })())),
         )
@@ -1267,12 +1276,13 @@ export const makeVitestRunnerLayer = (
         mutantRunCell.run(options).pipe(
           Effect.provideService(VitestHarness, harnessImpl),
           Effect.mapError((cause) => ((() => {
-            if (cause instanceof TestRunnerFailed) return cause
+            if (S.is(TestRunnerFailed)(cause)) return cause
             return new TestRunnerFailed({ runnerName: 'vitest', phase: 'mutantRun', cause: errorToString(cause) })
           })())),
         )
       const removeSetupFile = (file: string) =>
         fsService.remove(file, { recursive: true, force: true }).pipe(Effect.orElseSucceed(() => undefined))
+      const cleanupServices = Context.make(FileSystem.FileSystem, fsService)
       const disposeContext = (
         ctx: Vitest,
         localSetupFile: string | undefined,
@@ -1281,7 +1291,7 @@ export const makeVitestRunnerLayer = (
           Option.match(Option.fromNullishOr(localSetupFile), {
             onNone: (): void => undefined,
             onSome: (file): void => {
-              ctx.onClose(() => Effect.runPromise(removeSetupFile(file)))
+              ctx.onClose(() => Effect.runPromiseWith(cleanupServices)(removeSetupFile(file)))
             },
           })
           yield* Effect.tryPromise({

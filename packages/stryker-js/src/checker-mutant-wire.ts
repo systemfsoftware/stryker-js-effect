@@ -35,6 +35,6 @@ export interface UndescribableMutant {
 
 export const wireRecordOf = (mutant: Mutant): Result.Result<CheckerMutantWire, UndescribableMutant> =>
   Result.mapError(
-    S.decodeUnknownResult(CheckerMutantFromMutant)(mutant),
+    S.decodeResult(CheckerMutantFromMutant)(mutant),
     (error) => ({ id: mutant.id, fileName: mutant.fileName, reason: error.message }),
   )

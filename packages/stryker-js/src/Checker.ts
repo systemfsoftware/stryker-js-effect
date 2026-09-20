@@ -7,7 +7,7 @@
  * the two and verifies the join.
  */
 
-import { Cell } from '@systemfsoftware/effect-cell-types'
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { FileDescriptions, RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   CheckerFailed,
@@ -579,53 +579,51 @@ export const checkPlans = (
   readonly (readonly [MutantRunPlan, CheckResult])[],
   CheckerCrash | CheckerFailed | CheckerContractBroken
 > => {
-  const description = Cell.layer({
-    read: (
-      command: {
-        readonly checker: CheckerResourceService
-        readonly checkerName: string
-        readonly plans: readonly MutantRunPlan[]
-        readonly lookup?: WireLookup | undefined
-      },
-    ) =>
-      Effect.gen(function*() {
-        const partitioned = Option.match(Option.fromUndefinedOr(command.lookup), {
-          onSome: (known) => selectedFromLookup(command.plans, known),
-          onNone: () => partitionMutantsForWire(command.plans),
-        })
-        yield* logSkippedMutants(command.checkerName, partitioned.undescribable)
-        if (partitioned.undescribable.length > 0) {
-          yield* Metric.update(checkerMutantsSkipped, partitioned.undescribable.length)
-        }
-        yield* Effect.annotateCurrentSpan({
-          'stryker.checker.skipped_mutants_count': partitioned.undescribable.length,
-        })
-        const answers = yield* command.checker.check(command.checkerName, partitioned.wire)
-        return {
-          checkerName: command.checkerName,
-          requestedIds: command.plans.map((plan) => plan.mutant.id),
-          answers: { ...compileErrorAnswersOf(partitioned.undescribable), ...answers },
-        }
+  const description = Sandwich.read((
+    command: {
+      readonly checker: CheckerResourceService
+      readonly checkerName: string
+      readonly plans: readonly MutantRunPlan[]
+      readonly lookup?: WireLookup | undefined
+    },
+  ) =>
+    Effect.gen(function*() {
+      const partitioned = Option.match(Option.fromUndefinedOr(command.lookup), {
+        onSome: (known) => selectedFromLookup(command.plans, known),
+        onNone: () => partitionMutantsForWire(command.plans),
+      })
+      yield* logSkippedMutants(command.checkerName, partitioned.undescribable)
+      if (partitioned.undescribable.length > 0) {
+        yield* Metric.update(checkerMutantsSkipped, partitioned.undescribable.length)
+      }
+      yield* Effect.annotateCurrentSpan({
+        'stryker.checker.skipped_mutants_count': partitioned.undescribable.length,
+      })
+      const answers = yield* command.checker.check(command.checkerName, partitioned.wire)
+      return {
+        checkerName: command.checkerName,
+        requestedIds: command.plans.map((plan) => plan.mutant.id),
+        answers: { ...compileErrorAnswersOf(partitioned.undescribable), ...answers },
+      }
+    })
+  ).decode(Sandwich.pure((
+    raw: {
+      readonly checkerName: string
+      readonly requestedIds: readonly string[]
+      readonly answers: Readonly<Record<string, CheckResult>>
+    },
+  ): Result.Result<CheckerCommand, CheckerContractBroken> =>
+    Result.succeed(
+      CheckerCommand.make({
+        checkerName: raw.checkerName,
+        requestedIds: [...raw.requestedIds],
+        phase: 'check',
+        answers: { ...raw.answers },
       }),
-    decode: (
-      raw: {
-        readonly checkerName: string
-        readonly requestedIds: readonly string[]
-        readonly answers: Readonly<Record<string, CheckResult>>
-      },
-    ): Result.Result<CheckerCommand, CheckerContractBroken> =>
-      Result.succeed(
-        CheckerCommand.make({
-          checkerName: raw.checkerName,
-          requestedIds: [...raw.requestedIds],
-          phase: 'check',
-          answers: { ...raw.answers },
-        }),
-      ),
-    decide: admitCheckerAnswer,
-    encode: (outcome) => outcome,
-    write: (outcome, raw) => writeCheckerOutcome(plans, raw.checkerName, outcome),
-  })
+    )
+  )).decide(admitCheckerAnswer).encode(Sandwich.pure((outcome) => Result.succeed(outcome))).write((outcome, raw) =>
+    writeCheckerOutcome(plans, raw.checkerName, outcome)
+  )
   return description.run({ checker, checkerName, plans, lookup })
 }
 
@@ -641,53 +639,51 @@ export const groupPlans = (
   readonly (readonly MutantRunPlan[])[],
   CheckerCrash | CheckerFailed | CheckerContractBroken
 > => {
-  const description = Cell.layer({
-    read: (
-      command: {
-        readonly checker: CheckerResourceService
-        readonly checkerName: string
-        readonly plans: readonly MutantRunPlan[]
-        readonly lookup?: WireLookup | undefined
-      },
-    ) =>
-      Effect.gen(function*() {
-        const partitioned = Option.match(Option.fromUndefinedOr(command.lookup), {
-          onSome: (known) => selectedFromLookup(command.plans, known),
-          onNone: () => partitionMutantsForWire(command.plans),
-        })
-        yield* Effect.annotateCurrentSpan({
-          'stryker.checker.skipped_mutants_count': partitioned.undescribable.length,
-        })
-        const undescribableIds = undescribableIdsOf(partitioned.undescribable)
-        const checkerGroups = yield* command.checker.group(command.checkerName, partitioned.wire)
-        const withoutSkipped = checkerGroups
-          .map((group) => group.filter((id) => !undescribableIds.has(id)))
-          .filter((group) => group.length > 0)
-        return {
-          checkerName: command.checkerName,
-          requestedIds: command.plans.map((plan) => plan.mutant.id),
-          idGroups: [...singletonGroupsOf(partitioned.undescribable), ...withoutSkipped],
-        }
+  const description = Sandwich.read((
+    command: {
+      readonly checker: CheckerResourceService
+      readonly checkerName: string
+      readonly plans: readonly MutantRunPlan[]
+      readonly lookup?: WireLookup | undefined
+    },
+  ) =>
+    Effect.gen(function*() {
+      const partitioned = Option.match(Option.fromUndefinedOr(command.lookup), {
+        onSome: (known) => selectedFromLookup(command.plans, known),
+        onNone: () => partitionMutantsForWire(command.plans),
+      })
+      yield* Effect.annotateCurrentSpan({
+        'stryker.checker.skipped_mutants_count': partitioned.undescribable.length,
+      })
+      const undescribableIds = undescribableIdsOf(partitioned.undescribable)
+      const checkerGroups = yield* command.checker.group(command.checkerName, partitioned.wire)
+      const withoutSkipped = checkerGroups
+        .map((group) => group.filter((id) => !undescribableIds.has(id)))
+        .filter((group) => group.length > 0)
+      return {
+        checkerName: command.checkerName,
+        requestedIds: command.plans.map((plan) => plan.mutant.id),
+        idGroups: [...singletonGroupsOf(partitioned.undescribable), ...withoutSkipped],
+      }
+    })
+  ).decode(Sandwich.pure((
+    raw: {
+      readonly checkerName: string
+      readonly requestedIds: readonly string[]
+      readonly idGroups: readonly (readonly string[])[]
+    },
+  ): Result.Result<CheckerCommand, CheckerContractBroken> =>
+    Result.succeed(
+      CheckerCommand.make({
+        checkerName: raw.checkerName,
+        requestedIds: [...raw.requestedIds],
+        phase: 'group',
+        idGroups: raw.idGroups.map((group) => [...group]),
       }),
-    decode: (
-      raw: {
-        readonly checkerName: string
-        readonly requestedIds: readonly string[]
-        readonly idGroups: readonly (readonly string[])[]
-      },
-    ): Result.Result<CheckerCommand, CheckerContractBroken> =>
-      Result.succeed(
-        CheckerCommand.make({
-          checkerName: raw.checkerName,
-          requestedIds: [...raw.requestedIds],
-          phase: 'group',
-          idGroups: raw.idGroups.map((group) => [...group]),
-        }),
-      ),
-    decide: admitCheckerAnswer,
-    encode: (outcome) => outcome,
-    write: (outcome, raw) => writeGroupOutcome(plans, raw.checkerName, outcome),
-  })
+    )
+  )).decide(admitCheckerAnswer).encode(Sandwich.pure((outcome) => Result.succeed(outcome))).write((outcome, raw) =>
+    writeGroupOutcome(plans, raw.checkerName, outcome)
+  )
   return description.run({ checker, checkerName, plans, lookup })
 }
 

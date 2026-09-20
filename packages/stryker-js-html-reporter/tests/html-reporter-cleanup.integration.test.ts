@@ -64,7 +64,7 @@ const removeDir = (dir: string): Promise<void> =>
     }),
   )
 
-const optionsWith = (fileName: string) => S.decodeSync(StrykerOptionsSchema)({ htmlReporter: { fileName } })
+const optionsWith = (fileName: string) => S.decodeEffect(StrykerOptionsSchema)({ htmlReporter: { fileName } })
 
 const reportFixture = (): reportApi.MutationTestResult => ({
   schemaVersion: '1.0',
@@ -153,10 +153,11 @@ Feature('Keeping the report when a run is interrupted').body(({ scenario }) => {
         (s) =>
           Effect.gen(function*() {
             try {
-              const first = makeHtmlReporter(optionsWith(s.output.fileName), {})
+              const options = yield* optionsWith(s.output.fileName)
+              const first = makeHtmlReporter(options, {})
               yield* first(toStream([dryRunEvent()]))
               const earlyWritten = yield* Effect.promise(() => fileExists(s.output.fileName))
-              const followUp = makeHtmlReporter(optionsWith(s.output.fileName), {})
+              const followUp = makeHtmlReporter(options, {})
               yield* followUp(toStream([dryRunEvent(), terminalEvent()]))
               return { earlyWritten, html: yield* Effect.promise(() => readText(s.output.fileName)) }
             } finally {
@@ -203,12 +204,13 @@ Feature('Keeping the report when a run is interrupted').body(({ scenario }) => {
               }
             }
             try {
-              const consume = makeHtmlReporter(optionsWith(s.output.fileName), {})
+              const options = yield* optionsWith(s.output.fileName)
+              const consume = makeHtmlReporter(options, {})
               const failure = yield* Effect.flip(consume(breakingStream())).pipe(
                 Effect.map((failed: { readonly cause: string }) => failed.cause),
               )
               const html = yield* Effect.promise(() => readText(s.output.fileName))
-              const followUp = makeHtmlReporter(optionsWith(s.output.fileName), {})
+              const followUp = makeHtmlReporter(options, {})
               yield* followUp(toStream([terminalEvent()]))
               return { failure, html, rerun: yield* Effect.promise(() => readText(s.output.fileName)) }
             } finally {

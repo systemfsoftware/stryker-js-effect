@@ -105,7 +105,8 @@ const drainOf = (
 ): Effect.Effect<void, never, never> =>
   Stream.run(framed, stdio.stdout({ endOnDone: true })).pipe(
     Effect.withSpan('stryker.output.drain'),
-    Effect.catchCause((cause) => Effect.logError('stryker.output.drain_failed', cause)),
+    Effect.tapCause((cause) => Effect.logError('stryker.output.drain_failed', cause)),
+    Effect.ignoreCause,
   )
 
 export const RunEventDrainLive: Layer.Layer<RunEventDrain, never, Stdio.Stdio> = Layer.effect(

@@ -10,10 +10,4 @@ export default defineConfig({
     'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
   ignorePatterns: [...(all.ignorePatterns ?? []), '**/testResources/**'],
-  overrides: [
-    {
-      files: ['**/*.d.ts'],
-      rules: { 'no-var': 'off' },
-    },
-  ],
 })
