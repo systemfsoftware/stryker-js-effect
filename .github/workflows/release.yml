@@ -45,7 +45,7 @@ jobs:
   # re-enumerated here. Versioning and publishing both wait on this job, so a
   # red suite blocks the release PR *and* the npm publish that follows it.
   gate:
-    if: needs.plan.outputs.phase != 'none'
+    if: needs.plan.outputs.phase != 'none' && github.actor != 'github-actions[bot]' && github.event.head_commit.author.username != 'github-actions[bot]'
     needs: [plan]
     name: gate · check:ci
     runs-on: ubuntu-latest
@@ -81,7 +81,7 @@ jobs:
         run: pnpm check:ci
 
   version:
-    if: needs.plan.outputs.phase == 'version'
+    if: needs.plan.outputs.phase == 'version' && !cancelled() && (needs.gate.result == 'success' || needs.gate.result == 'skipped')
     needs: [plan, gate]
     name: version · open release PR
     runs-on: ubuntu-latest
@@ -117,7 +117,7 @@ jobs:
         run: ./scripts/open-release-pr.sh
 
   publish:
-    if: needs.plan.outputs.phase == 'publish'
+    if: needs.plan.outputs.phase == 'publish' && !cancelled() && (needs.gate.result == 'success' || needs.gate.result == 'skipped')
     permissions:
       contents: write
       id-token: write
