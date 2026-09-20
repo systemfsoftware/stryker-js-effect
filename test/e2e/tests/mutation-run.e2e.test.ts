@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, type ExpectStatic, it } from 'vitest'
 
 import { type ExecResult, installFixture, runCli, teardownBed } from './__fixtures__/bed.js'
 
@@ -105,6 +105,79 @@ const kindsOutsideOf = (
   kinds: ReadonlyArray<string>,
   allowed: ReadonlyArray<string>,
 ): ReadonlyArray<string> => kinds.filter((kind) => !allowed.includes(kind))
+const stepVerifyStreamAndExit = (
+  expect: ExpectStatic,
+  run: ExecResult,
+  events: ReadonlyArray<unknown>,
+): void => {
+  const kinds = events.map(eventKind)
+  const preceding = kinds.slice(0, -1)
+
+  expect(run.exitCode).toBe(0)
+  expect(terminalIndexesIn(kinds)).toEqual([kinds.length - 1])
+  expect(kinds.at(-1)).toBe('verdict')
+  expect(run.stdout).not.toMatch(ANSI_ESCAPE)
+  expect(preceding.length).toBeGreaterThan(0)
+  expect(kindsOutsideOf(preceding, NON_TERMINAL_RUN_KINDS)).toEqual([])
+  expect(`${run.stdout}\n${run.stderr}`).not.toMatch(/Could not restrict "[^"]*worker\.sock"/)
+}
+
+const stepVerifyOracleCounts = (expect: ExpectStatic, verdict: unknown): void => {
+  const counts = fieldOf(verdict, 'counts')
+  expect(fieldOf(fieldOf(verdict, 'thresholds'), 'break')).toBeNull()
+  expect({
+    compileErrors: numberFieldOf(counts, 'compileErrors'),
+    ignored: numberFieldOf(counts, 'ignored'),
+    killed: numberFieldOf(counts, 'killed'),
+    noCoverage: numberFieldOf(counts, 'noCoverage'),
+    pending: numberFieldOf(counts, 'pending'),
+    runtimeErrors: numberFieldOf(counts, 'runtimeErrors'),
+    survived: numberFieldOf(counts, 'survived'),
+    timeout: numberFieldOf(counts, 'timeout'),
+  }).toEqual({
+    compileErrors: 0,
+    ignored: 0,
+    killed: CALC_FIXTURE_ORACLE.killed,
+    noCoverage: 0,
+    pending: 0,
+    runtimeErrors: 0,
+    survived: CALC_FIXTURE_ORACLE.survived,
+    timeout: 0,
+  })
+}
+
+const stepVerifyReportedAndActionableMutants = (
+  expect: ExpectStatic,
+  events: ReadonlyArray<unknown>,
+  verdict: unknown,
+): void => {
+  const reported = events
+    .filter((event) => eventKind(event) === 'mutant')
+    .map(statusKey)
+  const actionable = mutantsOf(verdict).map(statusKey)
+
+  expect(reported).toHaveLength(CALC_FIXTURE_ORACLE.total)
+  expect(tallyOf(Object.keys(CALC_FIXTURE_ORACLE.mutantStatusTally), reported)).toEqual(
+    CALC_FIXTURE_ORACLE.mutantStatusTally,
+  )
+  expect(tallyOf(Object.keys(CALC_FIXTURE_ORACLE.actionableStatusTally), actionable)).toEqual(
+    CALC_FIXTURE_ORACLE.actionableStatusTally,
+  )
+}
+
+const stepVerifyRunIdConsistency = (
+  expect: ExpectStatic,
+  events: ReadonlyArray<unknown>,
+  verdict: unknown,
+): void => {
+  const runIds = events
+    .map((event) => fieldOf(event, 'runId'))
+    .filter((runId): runId is string => typeof runId === 'string')
+
+  expect(runIds.length).toBeGreaterThanOrEqual(2)
+  expect(new Set(runIds).size).toBe(1)
+  expect(fieldOf(verdict, 'runId')).toBe(runIds.at(0))
+}
 
 describe('running one mutation run through the packed runner', () => {
   let run: ExecResult = EMPTY_EXEC
@@ -118,75 +191,11 @@ describe('running one mutation run through the packed runner', () => {
 
   afterAll(teardownBed)
 
-  it('exits 0 and closes the stream on exactly one terminal event, the verdict', () => {
-    const kinds = events.map(eventKind)
-
-    expect(run.exitCode).toBe(0)
-    expect(terminalIndexesIn(kinds)).toEqual([kinds.length - 1])
-    expect(kinds.at(-1)).toBe('verdict')
-  })
-
-  it('counts the mutants the oracle derives, against the default thresholds', () => {
+  it('executes and verifies the mutation run lifecycle steps', ({ expect }) => {
     const verdict = lastEvent(events)
-    const counts = fieldOf(verdict, 'counts')
-
-    expect(fieldOf(fieldOf(verdict, 'thresholds'), 'break')).toBeNull()
-    expect({
-      compileErrors: numberFieldOf(counts, 'compileErrors'),
-      ignored: numberFieldOf(counts, 'ignored'),
-      killed: numberFieldOf(counts, 'killed'),
-      noCoverage: numberFieldOf(counts, 'noCoverage'),
-      pending: numberFieldOf(counts, 'pending'),
-      runtimeErrors: numberFieldOf(counts, 'runtimeErrors'),
-      survived: numberFieldOf(counts, 'survived'),
-      timeout: numberFieldOf(counts, 'timeout'),
-    }).toEqual({
-      compileErrors: 0,
-      ignored: 0,
-      killed: CALC_FIXTURE_ORACLE.killed,
-      noCoverage: 0,
-      pending: 0,
-      runtimeErrors: 0,
-      survived: CALC_FIXTURE_ORACLE.survived,
-      timeout: 0,
-    })
-  })
-
-  it('reports the whole oracle through its mutant events, and only the actionable part in the verdict', () => {
-    const reported = events
-      .filter((event) => eventKind(event) === 'mutant')
-      .map(statusKey)
-    const actionable = mutantsOf(lastEvent(events)).map(statusKey)
-
-    expect(reported).toHaveLength(CALC_FIXTURE_ORACLE.total)
-    expect(tallyOf(Object.keys(CALC_FIXTURE_ORACLE.mutantStatusTally), reported)).toEqual(
-      CALC_FIXTURE_ORACLE.mutantStatusTally,
-    )
-    expect(tallyOf(Object.keys(CALC_FIXTURE_ORACLE.actionableStatusTally), actionable)).toEqual(
-      CALC_FIXTURE_ORACLE.actionableStatusTally,
-    )
-  })
-
-  it('carries one runId across the events that have one', () => {
-    const runIds = events
-      .map((event) => fieldOf(event, 'runId'))
-      .filter((runId): runId is string => typeof runId === 'string')
-
-    expect(runIds.length).toBeGreaterThanOrEqual(2)
-    expect(new Set(runIds).size).toBe(1)
-    expect(fieldOf(lastEvent(events), 'runId')).toBe(runIds.at(0))
-  })
-
-  it('writes the stream as plain JSON, with a live non-terminal prefix', () => {
-    const kinds = events.map(eventKind)
-    const preceding = kinds.slice(0, -1)
-
-    expect(run.stdout).not.toMatch(ANSI_ESCAPE)
-    expect(preceding.length).toBeGreaterThan(0)
-    expect(kindsOutsideOf(preceding, NON_TERMINAL_RUN_KINDS)).toEqual([])
-  })
-
-  it('does not warn that it failed to chmod a worker socket the child has not bound yet', () => {
-    expect(`${run.stdout}\n${run.stderr}`).not.toMatch(/Could not restrict "[^"]*worker\.sock"/)
+    stepVerifyStreamAndExit(expect, run, events)
+    stepVerifyOracleCounts(expect, verdict)
+    stepVerifyReportedAndActionableMutants(expect, events, verdict)
+    stepVerifyRunIdConsistency(expect, events, verdict)
   })
 })

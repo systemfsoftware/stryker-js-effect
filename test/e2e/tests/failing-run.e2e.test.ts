@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, type ExpectStatic, it } from 'vitest'
 
 import { type ExecResult, installFixture, runCli, teardownBed } from './__fixtures__/bed.js'
 
@@ -60,6 +60,32 @@ const kindsOutsideOf = (
   kinds: ReadonlyArray<string>,
   allowed: ReadonlyArray<string>,
 ): ReadonlyArray<string> => kinds.filter((kind) => !allowed.includes(kind))
+const stepVerifyFailingDryRunExit = (expect: ExpectStatic, run: ExecResult): void => {
+  expect(run.exitCode).toBe(FAILING_DRY_RUN_RUNTIME_ERROR_CODE)
+}
+
+const stepVerifyTypedErrorDocument = (
+  expect: ExpectStatic,
+  events: ReadonlyArray<unknown>,
+): void => {
+  const terminal = lastEvent(events)
+  const kinds = events.map(eventKind)
+
+  expect(eventKind(terminal)).toBe('error')
+  expect(typeof fieldOf(terminal, 'schemaVersion')).toBe('string')
+  expect(typeof fieldOf(terminal, 'code')).toBe('number')
+  expect(typeof fieldOf(terminal, 'error')).toBe('string')
+  expect(fieldOf(terminal, 'remediation')).toMatch(/\S/)
+  expect(kinds).not.toContain('verdict')
+}
+
+const stepVerifyStreamCleanliness = (
+  expect: ExpectStatic,
+  events: ReadonlyArray<unknown>,
+): void => {
+  expect(events.length).toBeGreaterThan(0)
+  expect(kindsOutsideOf(events.map(eventKind), RUN_EVENT_KINDS)).toEqual([])
+}
 
 describe('failing a run at the process boundary', () => {
   let run: ExecResult = EMPTY_EXEC
@@ -73,24 +99,9 @@ describe('failing a run at the process boundary', () => {
 
   afterAll(teardownBed)
 
-  it('exits with the classed code for a failing dry run', () => {
-    expect(run.exitCode).toBe(FAILING_DRY_RUN_RUNTIME_ERROR_CODE)
-  })
-
-  it('ends on the typed error document, and never on a verdict', () => {
-    const terminal = lastEvent(events)
-    const kinds = events.map(eventKind)
-
-    expect(eventKind(terminal)).toBe('error')
-    expect(typeof fieldOf(terminal, 'schemaVersion')).toBe('string')
-    expect(typeof fieldOf(terminal, 'code')).toBe('number')
-    expect(typeof fieldOf(terminal, 'error')).toBe('string')
-    expect(fieldOf(terminal, 'remediation')).toMatch(/\S/)
-    expect(kinds).not.toContain('verdict')
-  })
-
-  it('leaves no unstructured text on the machine stream', () => {
-    expect(events.length).toBeGreaterThan(0)
-    expect(kindsOutsideOf(events.map(eventKind), RUN_EVENT_KINDS)).toEqual([])
+  it('executes and verifies the failure boundary steps', ({ expect }) => {
+    stepVerifyFailingDryRunExit(expect, run)
+    stepVerifyTypedErrorDocument(expect, events)
+    stepVerifyStreamCleanliness(expect, events)
   })
 })

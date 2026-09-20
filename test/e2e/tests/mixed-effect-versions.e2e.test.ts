@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, type ExpectStatic, it } from 'vitest'
 
 import {
   ensureSkewChecker,
@@ -109,23 +109,30 @@ describe('running a mutation run whose checker worker was built on a different e
 
   afterAll(teardownBed)
 
-  it('runs to completion on a verdict the oracle derives while the skewed checker answers', () => {
-    const verdict = lastEvent(events)
+  const stepVerifySkewedVerdictAndCounts = (
+    expect: ExpectStatic,
+    run: ExecResult,
+    verdict: unknown,
+  ): void => {
     const counts = fieldOf(verdict, 'counts')
-
     expect(run.exitCode).toBe(0)
     expect(eventKind(verdict)).toBe('verdict')
     expect(numberFieldOf(counts, 'killed')).toBe(SKEW_ORACLE.killed)
     expect(numberFieldOf(counts, 'survived')).toBe(SKEW_ORACLE.survived)
-  })
+  }
 
-  it('reports the whole oracle through its mutant events', () => {
+  const stepVerifyReportedMutantTotal = (
+    expect: ExpectStatic,
+    events: readonly unknown[],
+  ): void => {
     const reported = events.filter((event) => eventKind(event) === 'mutant')
-
     expect(reported).toHaveLength(SKEW_ORACLE.total)
-  })
+  }
 
-  it.skipIf(!telemetryEnabled)('links the skewed worker into the host run trace', () => {
+  const stepVerifyTraceLinkage = (
+    expect: ExpectStatic,
+    spans: readonly TraceSpan[],
+  ): void => {
     const checkerSpans = spans.filter(isCheckerSpan)
     const witnesses = spans.filter(isWitnessSpan)
     const hostTraceIds = new Set(spans.filter(isHostPhaseSpan).map((span) => span.traceId))
@@ -137,5 +144,14 @@ describe('running a mutation run whose checker worker was built on a different e
     expect(witnesses.length).toBeGreaterThan(0)
     expect(witnesses.map(effectVersionOf)).toEqual(witnesses.map(() => SKEW_EFFECT_VERSION))
     expect(witnesses.every((span) => checkerTraceIds.has(span.linkedTraceIds.at(0) ?? ''))).toBe(true)
+  }
+
+  it('executes and verifies the skewed checker run lifecycle steps', ({ expect }) => {
+    const verdict = lastEvent(events)
+    stepVerifySkewedVerdictAndCounts(expect, run, verdict)
+    stepVerifyReportedMutantTotal(expect, events)
+    if (telemetryEnabled) {
+      stepVerifyTraceLinkage(expect, spans)
+    }
   })
 })

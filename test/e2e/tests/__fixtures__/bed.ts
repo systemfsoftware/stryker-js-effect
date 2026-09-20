@@ -69,7 +69,7 @@ let scratch: string | undefined
 let packedPackages: Readonly<Record<string, PackedPackage>> | undefined
 let ready: Promise<void> | undefined
 let skewCheckerReady: Promise<PackedPackage> | undefined
-
+const installedFixtures = new Map<string, Promise<string>>()
 const messageOf = (cause: unknown): string => {
   if (cause instanceof Error) {
     return cause.message
@@ -172,6 +172,7 @@ export const teardownBed = async (): Promise<void> => {
   packedPackages = undefined
   ready = undefined
   skewCheckerReady = undefined
+  installedFixtures.clear()
   if (running !== undefined) {
     await requireStep('stop the node:24-alpine container', () => running.stop())
   }
@@ -225,44 +226,52 @@ export async function readHostJson(url: URL): Promise<unknown> {
   return document
 }
 
-export async function installFixture(
+export function installFixture(
   fixtureUrl: URL,
   name: string,
   extraTarballs: readonly PackedPackage[] = [],
   packedNames: readonly string[] = PACKED_PACKAGES,
 ): Promise<string> {
-  const hostFixtureDir = fileURLToPath(fixtureUrl)
-  await ensureBed()
-  const running = container
-  if (running === undefined) {
-    throw new Error('the bed has no container: await ensureBed() first')
+  const cached = installedFixtures.get(name)
+  if (cached !== undefined) {
+    return cached
   }
-  const fixturePath = `${CONTAINER_WORKROOT}/${name}`
-  await requireStep(
-    `copy the ${name} fixture into the container`,
-    () => running.copyDirectoriesToContainer([{ source: hostFixtureDir, target: fixturePath }]),
-  )
-  const installSteps = [
-    { step: `npm install the ${name} registry dependencies`, args: ['npm', 'install'] },
-    {
-      step: `npm install the CLI and plugin tarballs in ${name}`,
-      args: [
-        'npm',
-        'install',
-        ...packedNames.map((packageName) => packedPackage(packageName).tarballPath),
-        ...extraTarballs.map((packed) => packed.tarballPath),
-      ],
-    },
-  ]
-  for (const { step, args } of installSteps) {
-    await requireStep(step, async () => {
-      const result = await running.exec(args, { workingDir: fixturePath })
-      if (result.exitCode !== 0) {
-        throw new Error(`npm exited ${result.exitCode}: ${result.stderr.trim()}`)
-      }
-    })
-  }
-  return fixturePath
+  const task = (async () => {
+    const hostFixtureDir = fileURLToPath(fixtureUrl)
+    await ensureBed()
+    const running = container
+    if (running === undefined) {
+      throw new Error('the bed has no container: await ensureBed() first')
+    }
+    const fixturePath = `${CONTAINER_WORKROOT}/${name}`
+    await requireStep(
+      `copy the ${name} fixture into the container`,
+      () => running.copyDirectoriesToContainer([{ source: hostFixtureDir, target: fixturePath }]),
+    )
+    const installSteps = [
+      { step: `npm install the ${name} registry dependencies`, args: ['npm', 'install'] },
+      {
+        step: `npm install the CLI and plugin tarballs in ${name}`,
+        args: [
+          'npm',
+          'install',
+          ...packedNames.map((packageName) => packedPackage(packageName).tarballPath),
+          ...extraTarballs.map((packed) => packed.tarballPath),
+        ],
+      },
+    ]
+    for (const { step, args } of installSteps) {
+      await requireStep(step, async () => {
+        const result = await running.exec(args, { workingDir: fixturePath })
+        if (result.exitCode !== 0) {
+          throw new Error(`npm exited ${result.exitCode}: ${result.stderr.trim()}`)
+        }
+      })
+    }
+    return fixturePath
+  })()
+  installedFixtures.set(name, task)
+  return task
 }
 
 const buildSkewCheckerBundle = async (directory: string): Promise<string> => {

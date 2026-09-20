@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, it } from 'vitest'
+import { afterAll, beforeAll, describe, type ExpectStatic, it } from 'vitest'
 
-import { installFixture, runCli, teardownBed } from './__fixtures__/bed.js'
+import { type ExecResult, installFixture, runCli, teardownBed } from './__fixtures__/bed.js'
 
 const FIXTURE_URL = new URL('../testResources/typescript-checker-fixture', import.meta.url)
 
@@ -84,6 +84,67 @@ const kindsOutsideOf = (
   kinds: ReadonlyArray<string>,
   allowed: ReadonlyArray<string>,
 ): ReadonlyArray<string> => kinds.filter((kind) => !allowed.includes(kind))
+const stepProcessAndStreamIntegrity = (
+  expect: ExpectStatic,
+  run: ExecResult,
+  rawEvents: ReadonlyArray<string>,
+  kinds: ReadonlyArray<string>,
+): void => {
+  expect(run.exitCode).toBe(0)
+  expect(rawEvents.length).toBeGreaterThan(0)
+  expect(run.stdout).not.toMatch(/Could not restrict "[^"]*worker\.sock"/)
+  expect(kinds.at(-1)).toBe('verdict')
+  expect(kinds).not.toContain('error')
+  expect(terminalIndexesIn(kinds)).toEqual([kinds.length - 1])
+  expect(kindsOutsideOf(kinds, RUN_EVENT_KINDS)).toEqual([])
+}
+
+const stepVerdictCountsAndScore = (expect: ExpectStatic, verdict: unknown): void => {
+  const counts = fieldOf(verdict, 'counts')
+  const compileErrors = numberFieldOf(counts, 'compileErrors')
+  const killed = numberFieldOf(counts, 'killed')
+  const survived = numberFieldOf(counts, 'survived')
+  const pending = numberFieldOf(counts, 'pending')
+  const runtimeErrors = numberFieldOf(counts, 'runtimeErrors')
+  const timeout = numberFieldOf(counts, 'timeout')
+
+  expect(pending).toBe(0)
+  expect(runtimeErrors).toBe(0)
+  expect(timeout).toBe(0)
+  expect({ compileErrors, killed, survived }).toEqual({ compileErrors: 4, killed: 2, survived: 1 })
+
+  const score = numberFieldOf(verdict, 'score')
+  expect(score).toBeCloseTo(66.67, 2)
+}
+
+const stepMutantStreamAndActionables = (
+  expect: ExpectStatic,
+  events: ReadonlyArray<unknown>,
+  verdict: unknown,
+): void => {
+  const reportedMutants = events
+    .filter((e) => eventKind(e) === 'mutant')
+    .map((e) => `${String(fieldOf(e, 'mutator'))}:${String(fieldOf(e, 'status'))}`)
+  expect(reportedMutants).toHaveLength(7)
+
+  const compileErrorsReported = reportedMutants.filter((s) => s.endsWith(':CompileError'))
+  expect(compileErrorsReported).toHaveLength(4)
+  expect(compileErrorsReported).toContain('StringLiteral:CompileError')
+  expect(reportedMutants.filter((s) => s.endsWith(':Killed'))).toHaveLength(2)
+  expect(reportedMutants.filter((s) => s.endsWith(':Survived'))).toHaveLength(1)
+
+  const actionable = (fieldOf(verdict, 'mutants') as readonly unknown[]).map(
+    (m) => `${String(fieldOf(m, 'mutator'))}:${String(fieldOf(m, 'status'))}`,
+  )
+  expect(actionable).toHaveLength(1)
+  expect(actionable[0]).toMatch(/:Survived$/)
+
+  const runIds = events
+    .map((e) => fieldOf(e, 'runId'))
+    .filter((id): id is string => typeof id === 'string')
+  expect(new Set(runIds).size).toBe(1)
+  expect(fieldOf(verdict, 'runId')).toBe(runIds[0])
+}
 
 describe('typescript-checker through packed runners', () => {
   const fixtures: Record<string, string> = {}
@@ -106,56 +167,13 @@ describe('typescript-checker through packed runners', () => {
 
       const run = await runCli(['run', arm.config], { cwd })
       const rawEvents = stdoutLines(run.stdout)
-      expect(run.exitCode).toBe(0)
-      expect(rawEvents.length).toBeGreaterThan(0)
-      expect(run.stdout).not.toMatch(/Could not restrict "[^"]*worker\.sock"/)
-
       const events = rawEvents.map(parseEventLine)
       const kinds = events.map(eventKind)
-      expect(kinds.at(-1)).toBe('verdict')
-      expect(kinds).not.toContain('error')
-      expect(terminalIndexesIn(kinds)).toEqual([kinds.length - 1])
-      expect(kindsOutsideOf(kinds, RUN_EVENT_KINDS)).toEqual([])
-
       const verdict = lastEvent(events)
-      const counts = fieldOf(verdict, 'counts')
-      const compileErrors = numberFieldOf(counts, 'compileErrors')
-      const killed = numberFieldOf(counts, 'killed')
-      const survived = numberFieldOf(counts, 'survived')
-      const pending = numberFieldOf(counts, 'pending')
-      const runtimeErrors = numberFieldOf(counts, 'runtimeErrors')
-      const timeout = numberFieldOf(counts, 'timeout')
 
-      expect(pending).toBe(0)
-      expect(runtimeErrors).toBe(0)
-      expect(timeout).toBe(0)
-      expect({ compileErrors, killed, survived }).toEqual({ compileErrors: 4, killed: 2, survived: 1 })
-
-      const reportedMutants = events
-        .filter((e) => eventKind(e) === 'mutant')
-        .map((e) => `${String(fieldOf(e, 'mutator'))}:${String(fieldOf(e, 'status'))}`)
-      expect(reportedMutants).toHaveLength(7)
-
-      const compileErrorsReported = reportedMutants.filter((s) => s.endsWith(':CompileError'))
-      expect(compileErrorsReported).toHaveLength(4)
-      expect(compileErrorsReported).toContain('StringLiteral:CompileError')
-      expect(reportedMutants.filter((s) => s.endsWith(':Killed'))).toHaveLength(2)
-      expect(reportedMutants.filter((s) => s.endsWith(':Survived'))).toHaveLength(1)
-
-      const actionable = (fieldOf(verdict, 'mutants') as readonly unknown[]).map(
-        (m) => `${String(fieldOf(m, 'mutator'))}:${String(fieldOf(m, 'status'))}`,
-      )
-      expect(actionable).toHaveLength(1)
-      expect(actionable[0]).toMatch(/:Survived$/)
-
-      const score = numberFieldOf(verdict, 'score')
-      expect(score).toBeCloseTo(66.67, 2)
-
-      const runIds = events
-        .map((e) => fieldOf(e, 'runId'))
-        .filter((id): id is string => typeof id === 'string')
-      expect(new Set(runIds).size).toBe(1)
-      expect(fieldOf(verdict, 'runId')).toBe(runIds[0])
+      stepProcessAndStreamIntegrity(expect, run, rawEvents, kinds)
+      stepVerdictCountsAndScore(expect, verdict)
+      stepMutantStreamAndActionables(expect, events, verdict)
     },
   )
 })
