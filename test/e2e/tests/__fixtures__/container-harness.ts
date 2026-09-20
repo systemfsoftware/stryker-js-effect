@@ -42,7 +42,7 @@ export interface ExtendedTestContext {
 export const test = baseTest
   .extend<Pick<ExtendedTestContext, 'containerHarness'>>({
     containerHarness: [
-      async (_context, use) => {
+      async ({ onTestFinished: _onTestFinished }, use) => {
         await ensureContainerEnvironment()
         await use(
           {
