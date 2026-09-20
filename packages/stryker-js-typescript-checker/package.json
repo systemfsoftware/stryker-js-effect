@@ -50,6 +50,7 @@
     "@effect/platform-node": "catalog:",
     "@effect/platform-node-shared": "catalog:",
     "@effect/tsgo": "catalog:",
+    "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@std/jsonc": "catalog:",
     "@systemfsoftware/all": "catalog:",

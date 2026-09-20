@@ -1,6 +1,6 @@
+import { describe, it } from '@effect/vitest'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
-import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
 import * as mutants from '@systemfsoftware/stryker-js-instrumenter'
 import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Equivalence from 'effect/Equivalence'

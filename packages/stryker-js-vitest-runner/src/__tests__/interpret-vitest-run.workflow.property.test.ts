@@ -1,4 +1,4 @@
-import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
+import { describe, it } from '@effect/vitest'
 import { Match } from 'effect'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
