@@ -52,22 +52,6 @@ const VerdictThresholds = S.Struct({
   S.check(
     S.makeFilter((t) => t.low <= t.high, {
       expected: 'thresholds where low <= high',
-      arbitrary: {
-        candidate: {
-          make: (fc) =>
-            fc
-              .tuple(
-                fc.float({ min: 0, max: 100, noNaN: true }),
-                fc.float({ min: 0, max: 100, noNaN: true }),
-                fc.option(fc.float({ min: 0, max: 100, noNaN: true }), { nil: null }),
-              )
-              .map(([a, b, brk]) => ({
-                high: Math.max(a, b),
-                low: Math.min(a, b),
-                break: brk,
-              })),
-        },
-      },
     }),
   ),
 )

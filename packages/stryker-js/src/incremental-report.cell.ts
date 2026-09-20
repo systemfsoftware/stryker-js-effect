@@ -1,4 +1,4 @@
-import { Cell } from '@systemfsoftware/effect-cell-types'
+import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { MutationTestResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -35,12 +35,18 @@ const readIncrementalReportRaw = (input: IncrementalReportCellInput) => {
   return Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const contents = yield* fs.readFileString(input.incrementalFile).pipe(
-      Effect.catchTag('PlatformError', (error) =>
+      Effect.tapError((error) =>
         Match.value(error.reason).pipe(
           Match.tag('NotFound', () =>
             Effect.logInfo(
               `No incremental result file found at ${input.incrementalFile}, a full mutation testing run will be performed.`,
-            ).pipe(Effect.as<string | undefined>(undefined))),
+            )),
+          Match.orElse(() => Effect.void),
+        )
+      ),
+      Effect.catchTag('PlatformError', (error) =>
+        Match.value(error.reason).pipe(
+          Match.tag('NotFound', () => Effect.undefined),
           Match.orElse(() => Effect.fail(error)),
         )),
     )
@@ -96,10 +102,8 @@ const writeIncrementalReportOutcome = (
       ),
   })
 
-export const incrementalReportCell = Cell.layer({
-  read: readIncrementalReportRaw,
-  decode: decodeIncrementalReportRaw,
-  decide: admitIncrementalReport,
-  encode: (outcome: Result.Result<IncrementalReportDecision, never>) => outcome,
-  write: writeIncrementalReportOutcome,
-})
+export const incrementalReportCell = Sandwich.read(readIncrementalReportRaw)
+  .decode(Sandwich.pure(decodeIncrementalReportRaw))
+  .decide(admitIncrementalReport)
+  .encode(Sandwich.pure((outcome: Result.Result<IncrementalReportDecision, never>) => Result.succeed(outcome)))
+  .write(writeIncrementalReportOutcome) satisfies Cell.Cell<IncrementalReportCellInput, unknown, unknown, unknown>

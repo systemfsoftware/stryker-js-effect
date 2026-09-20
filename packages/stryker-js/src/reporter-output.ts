@@ -26,7 +26,7 @@ export const write = (
  * that cannot compose Effects — its writes fire inside a synchronous for-await).
  * Write errors are ignored like a broken pipe on a stream handle.
  *
- * Note: effect 4.0.0-rc.112 exports the runner as `Effect.runPromise`; there is no
+ * Note: effect 4.0.0-rc.116 exports the runner as `Effect.runPromise`; there is no
  * `Runtime.runPromise` in this version (verified against the installed source) —
  * do not invent that import.
  */

@@ -9,6 +9,7 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
+import type { BadArgument, PlatformError } from 'effect/PlatformError'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
@@ -68,25 +69,26 @@ const inlinedBundle = (): string | undefined =>
     Match.orElse(() => __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__),
   )
 
-const readBundleContent: Effect.Effect<string, unknown, FileSystem.FileSystem | Path.Path> = Effect.suspend(() =>
-  Match.value(inlinedBundle()).pipe(
-    Match.when(Match.string, (bundle) => Effect.succeed(bundle)),
-    Match.orElse(() =>
-      Effect.flatMap(
-        FileSystem.FileSystem,
-        (fs) =>
-          Effect.flatMap(
-            Path.Path,
-            (path) =>
-              Effect.flatMap(
-                path.fromFileUrl(new URL(import.meta.resolve(BUNDLE_SPECIFIER))),
-                (bundlePath) => fs.readFileString(bundlePath),
-              ),
-          ),
-      )
-    ),
+const readBundleContent: Effect.Effect<string, BadArgument | PlatformError, FileSystem.FileSystem | Path.Path> = Effect
+  .suspend(() =>
+    Match.value(inlinedBundle()).pipe(
+      Match.when(Match.string, (bundle) => Effect.succeed(bundle)),
+      Match.orElse(() =>
+        Effect.flatMap(
+          FileSystem.FileSystem,
+          (fs) =>
+            Effect.flatMap(
+              Path.Path,
+              (path) =>
+                Effect.flatMap(
+                  path.fromFileUrl(new URL(import.meta.resolve(BUNDLE_SPECIFIER))),
+                  (bundlePath) => fs.readFileString(bundlePath),
+                ),
+            ),
+        )
+      ),
+    )
   )
-)
 
 const writeHtmlFile = (fileName: string, html: string) =>
   Effect.flatMap(FileSystem.FileSystem, (fs) =>
@@ -98,7 +100,7 @@ const writeHtmlFile = (fileName: string, html: string) =>
 
 const loadBundle = (
   cached: Ref.Ref<string | undefined>,
-): Effect.Effect<string, unknown, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<string, BadArgument | PlatformError, FileSystem.FileSystem | Path.Path> =>
   Effect.filterOrElse(
     Ref.get(cached),
     (hit): hit is string => hit !== undefined,
@@ -109,7 +111,7 @@ const writeReportHtml = (
   fileName: string,
   event: MutationTestReportReady,
   cached: Ref.Ref<string | undefined>,
-): Effect.Effect<void, unknown, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<void, BadArgument | PlatformError, FileSystem.FileSystem | Path.Path> =>
   Effect.flatMap(loadBundle(cached), (bundle) =>
     writeHtmlFile(
       fileName,

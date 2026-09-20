@@ -1,4 +1,4 @@
-import { Cell } from '@systemfsoftware/effect-cell-types'
+import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import { type ReporterFactory, type StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
@@ -369,10 +369,8 @@ export const prepareCell: Cell.Cell<
   PrepareDone,
   StageError,
   Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Stdio.Stdio
-> = Cell.layer({
-  read: readPrepare,
-  decode: decodePrepare,
-  decide: planPrepare,
-  encode: encodePrepareDecision,
-  write: writePrepare,
-})
+> = Sandwich.read(readPrepare)
+  .decode(Sandwich.pure(decodePrepare))
+  .decide(planPrepare)
+  .encode(Sandwich.pure((outcome) => Result.succeed(encodePrepareDecision(outcome))))
+  .write(writePrepare)

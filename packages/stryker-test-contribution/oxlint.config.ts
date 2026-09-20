@@ -27,10 +27,5 @@ export default defineConfig({
         'typescript/no-unsafe-type-assertion': 'off',
       },
     },
-    // Plain vitest setup: no Effect runtime exists here.
-    {
-      files: ['vitest-setup.ts'],
-      rules: { 'no-restricted-globals': 'off' },
-    },
   ],
 })

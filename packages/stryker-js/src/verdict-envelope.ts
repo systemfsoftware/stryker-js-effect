@@ -123,7 +123,7 @@ function breakThreshold(thresholds: schema.Thresholds): number | null {
     }),
     [S.Record(S.String, S.Unknown)],
   )
-  const decoded = S.decodeUnknownOption(ThresholdsBreakSchema)(thresholds)
+  const decoded = S.decodeOption(ThresholdsBreakSchema)(thresholds)
   return Option.getOrNull(Option.flatMap(decoded, (value) => Option.fromNullishOr(value.break)))
 }
 

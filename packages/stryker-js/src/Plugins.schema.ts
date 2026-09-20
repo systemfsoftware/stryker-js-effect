@@ -2,7 +2,7 @@
  * Plugins capability — declarations for plugin module shapes and load failures.
  */
 
-import { Schema as S } from 'effect'
+import { Schema as S, SchemaGetter } from 'effect'
 
 import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { WorkerEntryUrl, WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -22,9 +22,14 @@ const isShouldIgnore = (value: unknown): value is ShouldIgnore => typeof value =
 
 const ignoreNothing: ShouldIgnore = () => undefined
 
+const shouldIgnoreArbitrary = S.link<ShouldIgnore>()(S.Null, {
+  decode: SchemaGetter.transform(() => ignoreNothing),
+  encode: SchemaGetter.transform(() => null),
+})
+
 export const IgnorerEntrySchema = S.Struct({
   name: S.String,
-  shouldIgnore: S.declare<ShouldIgnore>(isShouldIgnore, { toArbitrary: () => (fc) => fc.constant(ignoreNothing) }),
+  shouldIgnore: S.declare<ShouldIgnore>(isShouldIgnore, { toCodecArbitrary: () => shouldIgnoreArbitrary }),
 })
 
 export const IgnorerModuleSchema = S.Struct({

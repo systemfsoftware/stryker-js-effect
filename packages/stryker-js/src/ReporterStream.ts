@@ -48,7 +48,7 @@ interface ReporterAttachment {
   readonly queue: Queue.Queue<ReporterEvent, Cause.Done>
   readonly latch: ReporterStreamLatch
   readonly emitter: Fiber.Fiber<void>
-  readonly consumer: Fiber.Fiber<void, unknown>
+  readonly consumer: Fiber.Fiber<void, ReporterFailed | Cause.YieldableError>
 }
 
 const ReporterStageTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ReporterStage')
@@ -420,8 +420,8 @@ export interface PhaseSpan {
 
 const environmentTraceInit = (): Effect.Effect<ReporterInit> =>
   Effect.gen(function*() {
-    const traceparent = yield* Config.string('TRACEPARENT').pipe(Effect.option)
-    const tracestate = yield* Config.string('TRACESTATE').pipe(Effect.option)
+    const traceparent = yield* Config.String('TRACEPARENT').pipe(Effect.option)
+    const tracestate = yield* Config.String('TRACESTATE').pipe(Effect.option)
     return {
       ...traceparentInit(Option.getOrUndefined(traceparent)),
       ...tracestateInit(Option.getOrUndefined(tracestate)),

@@ -1,7 +1,7 @@
 import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { FastCheck as fc } from 'effect/testing'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   admitIncrementalReport,
@@ -26,11 +26,24 @@ const sampleReport: DecodedReport = {
   files: {},
 }
 
+const constantFrom = <const A extends readonly [unknown, ...unknown[]]>(
+  ...values: A
+): Arbitrary.Arbitrary<A[number]> =>
+  Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: values.length - 1 }))).pipe(
+    Arbitrary.flatMap((index) => {
+      const chosen = values[index]
+      if (chosen === undefined) {
+        throw new Error(`constantFrom was asked for a value at index ${index}, which is unbound`)
+      }
+      return Arbitrary.Constant(chosen)
+    }),
+  )
+
 describe('admitIncrementalReport', () => {
   it.prop(
     '∀d_Brand_∈Decision',
     [
-      fc.constantFrom(
+      constantFrom(
         AdmitIncrementalReportCommand.make({ report: sampleReport, expectedVersion: EXPECTED_VERSION }),
         AdmitIncrementalReportCommand.make({ report: undefined, expectedVersion: EXPECTED_VERSION }),
       ),
@@ -44,7 +57,7 @@ describe('admitIncrementalReport', () => {
     },
   )
 
-  it.prop('∀r_Report_≡Decision', [S.toArbitrary(IncrementalReportSchema)(fc)], ([report]) => {
+  it.prop('∀r_Report_≡Decision', [IncrementalReportSchema], ([report]) => {
     const result = admitIncrementalReport(
       AdmitIncrementalReportCommand.make({ report, expectedVersion: EXPECTED_VERSION }),
     )
@@ -62,7 +75,7 @@ describe('admitIncrementalReport', () => {
     )
   })
 
-  it.prop('∀r_Missing_≡Discard', [fc.constant(undefined)], ([report]) => {
+  it.prop('∀r_Missing_≡Discard', [Arbitrary.Constant(undefined)], ([report]) => {
     const result = admitIncrementalReport(
       AdmitIncrementalReportCommand.make({ report, expectedVersion: EXPECTED_VERSION }),
     )

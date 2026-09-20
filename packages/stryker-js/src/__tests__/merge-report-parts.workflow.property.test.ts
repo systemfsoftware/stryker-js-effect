@@ -3,7 +3,7 @@ import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutationTestResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { FastCheck as fc } from 'effect/testing'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   DuplicatePackageLabel,
@@ -20,15 +20,8 @@ const LOCATION = {
   end: { line: 1, column: 10 },
 }
 
-const STATUS_ARB = fc.constantFrom<MutantStatus>(
-  'Killed',
-  'Survived',
-  'NoCoverage',
-  'CompileError',
-  'RuntimeError',
-  'Timeout',
-  'Ignored',
-  'Pending',
+const STATUS_ARB: Arbitrary.Arbitrary<MutantStatus> = Arbitrary.schema(
+  S.Literals(['Killed', 'Survived', 'NoCoverage', 'CompileError', 'RuntimeError', 'Timeout', 'Ignored', 'Pending']),
 )
 
 interface ModuleSpec {
@@ -41,27 +34,34 @@ interface ModuleSpec {
   }[]
 }
 
-const MODULE_ARB: fc.Arbitrary<ModuleSpec> = fc
-  .record({
-    label: fc.stringMatching(/^[a-z][a-z0-9]{0,5}$/),
-    testIds: fc.uniqueArray(fc.stringMatching(/^t[0-9]{1,3}$/), { minLength: 1, maxLength: 3 }),
-  })
-  .chain(({ label, testIds }) =>
-    fc.array(
-      fc.record({ status: STATUS_ARB, reach: fc.nat({ max: testIds.length }) }),
+const MODULE_ARB: Arbitrary.Arbitrary<ModuleSpec> = Arbitrary.all({
+  label: Arbitrary.schema(S.String.check(S.isPattern(/^[a-z][a-z0-9]{0,5}$/))),
+  testIds: Arbitrary.schema(
+    S.UniqueArray(S.String.check(S.isPattern(/^t[0-9]{1,3}$/))).check(S.isMinLength(1), S.isMaxLength(3)),
+  ),
+}).pipe(
+  Arbitrary.flatMap(({ label, testIds }) =>
+    Arbitrary.array(
+      Arbitrary.all({
+        status: STATUS_ARB,
+        reach: Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: testIds.length }))),
+      }),
       { minLength: 1, maxLength: 3 },
-    ).map((specs) => ({
-      label,
-      testIds,
-      mutants: specs.map((spec, index) => ({
-        id: `m${index}`,
-        status: spec.status,
-        killingIds: testIds.slice(0, spec.reach),
+    ).pipe(
+      Arbitrary.map((specs) => ({
+        label,
+        testIds,
+        mutants: specs.map((spec, index) => ({
+          id: `m${index}`,
+          status: spec.status,
+          killingIds: testIds.slice(0, spec.reach),
+        })),
       })),
-    }))
-  )
+    )
+  ),
+)
 
-const MODULES_ARB = fc.array(MODULE_ARB, { minLength: 1, maxLength: 3 })
+const MODULES_ARB = Arbitrary.array(MODULE_ARB, { minLength: 1, maxLength: 3 })
 
 const reportOf = (spec: ModuleSpec): MutationTestResult => ({
   schemaVersion: '1.0',
@@ -99,6 +99,8 @@ const commandOf = (specs: readonly ModuleSpec[]): MergeReportPartsCommand =>
 const hasDistinctLabels = (specs: readonly ModuleSpec[]): boolean =>
   new Set(specs.map((spec) => spec.label)).size === specs.length
 
+const DISTINCT_MODULES_ARB = MODULES_ARB.pipe(Arbitrary.filter(hasDistinctLabels))
+
 const mergedOf = (
   result: Result.Result<MergedReports | NoMergedReports, DuplicatePackageLabel | MissingPackages>,
 ): MergedReports | undefined => {
@@ -112,8 +114,7 @@ const mergedOf = (
 }
 
 describe('mergeReportParts', () => {
-  it.prop('∀cs_Modules_≡MutantCountIsConserved', [MODULES_ARB], ([specs]) => {
-    fc.pre(hasDistinctLabels(specs))
+  it.prop('∀cs_Modules_≡MutantCountIsConserved', [DISTINCT_MODULES_ARB], ([specs]) => {
     const merged = mergedOf(mergeReportParts(commandOf(specs)))
     if (merged === undefined) {
       return false
@@ -123,8 +124,7 @@ describe('mergeReportParts', () => {
     return actual === expected
   })
 
-  it.prop('∀cs_Modules_≡EveryReferenceResolvesInsideTheMergedReport', [MODULES_ARB], ([specs]) => {
-    fc.pre(hasDistinctLabels(specs))
+  it.prop('∀cs_Modules_≡EveryReferenceResolvesInsideTheMergedReport', [DISTINCT_MODULES_ARB], ([specs]) => {
     const merged = mergedOf(mergeReportParts(commandOf(specs)))
     if (merged === undefined) {
       return false
@@ -139,8 +139,7 @@ describe('mergeReportParts', () => {
     )
   })
 
-  it.prop('∀cs_Modules_≡MergedKeysCarryTheModuleThatOwnsThem', [MODULES_ARB], ([specs]) => {
-    fc.pre(hasDistinctLabels(specs))
+  it.prop('∀cs_Modules_≡MergedKeysCarryTheModuleThatOwnsThem', [DISTINCT_MODULES_ARB], ([specs]) => {
     const merged = mergedOf(mergeReportParts(commandOf(specs)))
     if (merged === undefined) {
       return false
@@ -162,8 +161,7 @@ describe('mergeReportParts', () => {
       result.failure.label === spec.label
   })
 
-  it.prop('∀cs_Modules_≡AbsentModuleBecomesAnEmptyReportRow', [MODULES_ARB], ([specs]) => {
-    fc.pre(hasDistinctLabels(specs))
+  it.prop('∀cs_Modules_≡AbsentModuleBecomesAnEmptyReportRow', [DISTINCT_MODULES_ARB], ([specs]) => {
     const absent = 'not-a-generated-module'
     const result = mergeReportParts(
       MergeReportPartsCommand.make({ parts: specs.map(partOf), expectedPackages: [absent] }),

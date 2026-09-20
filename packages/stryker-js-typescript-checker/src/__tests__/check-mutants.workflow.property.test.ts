@@ -1,9 +1,9 @@
 import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
 import type { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Match, Schema } from 'effect'
+import { Match } from 'effect'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { FastCheck as fc } from 'effect/testing'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   CheckFinished,
@@ -28,9 +28,13 @@ const isSubset = (inner: ReadonlySet<string>, outer: ReadonlySet<string>): boole
 const isDisjoint = (left: ReadonlySet<string>, right: ReadonlySet<string>): boolean =>
   [...left].every((value) => !right.has(value))
 
-const fileArb = fc.integer({ min: 0, max: 100000 }).map((n) => `src/mod-${n}.ts`)
+const fileArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 100000 }))).pipe(
+  Arbitrary.map((n) => `src/mod-${n}.ts`),
+)
 
-const mutantIdArb = fc.integer({ min: 0, max: 1000 }).map((n) => n.toString())
+const mutantIdArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 1000 }))).pipe(
+  Arbitrary.map((n) => n.toString()),
+)
 
 const mutantInFile = (id: string, fileName: string): CheckerMutantWire => ({
   id,
@@ -48,32 +52,38 @@ const nodeFor = (
   children: [],
 })
 
-const emptyDiagnosticsInputArb: fc.Arbitrary<CheckMutantsInput> = fc
-  .tuple(fileArb, fc.array(mutantIdArb, { minLength: 1, maxLength: 2 }))
-  .map(
+const emptyDiagnosticsInputArb: Arbitrary.Arbitrary<CheckMutantsInput> = Arbitrary.all([
+  fileArb,
+  Arbitrary.array(mutantIdArb, { minLength: 1, maxLength: 2 }),
+]).pipe(
+  Arbitrary.map(
     ([file, ids]) =>
       CheckMutantsInput.make({
         mutants: ids.map((id) => mutantInFile(id, file)),
         diagnostics: [],
         nodes: { [file]: nodeFor(file) },
       }),
-  )
+  ),
+)
 
-const ambiguousGroupInputArb: fc.Arbitrary<CheckMutantsInput> = fc
-  .tuple(fileArb, fc.string({ maxLength: 32 }))
-  .map(
+const ambiguousGroupInputArb: Arbitrary.Arbitrary<CheckMutantsInput> = Arbitrary.all([
+  fileArb,
+  Arbitrary.schema(S.String.check(S.isMaxLength(32))),
+]).pipe(
+  Arbitrary.map(
     ([file, text]) =>
       CheckMutantsInput.make({
         mutants: [mutantInFile('0', file), mutantInFile('1', file)],
         diagnostics: [{ fileName: file, text }],
         nodes: { [file]: nodeFor(file) },
       }),
-  )
+  ),
+)
 
 describe('checkMutants', () => {
   it.prop(
     '∀i_Decision_≡PartitionedAndBranded',
-    [Schema.toArbitrary(CheckMutantsInput)(fc)],
+    [CheckMutantsInput],
     ([input]) => {
       const result = checkMutants(input)
       if (Result.isFailure(result)) {

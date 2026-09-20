@@ -230,7 +230,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
       const resolved = yield* Effect.try(() => new URL(import.meta.resolve(`${specifier}/package.json`)))
       const manifestPath = yield* pathService.fromFileUrl(resolved)
       const text = yield* fs.readFileString(manifestPath)
-      return Result.match(S.decodeUnknownResult(S.fromJsonString(ManifestSchema))(text), {
+      return Result.match(S.decodeResult(S.fromJsonString(ManifestSchema))(text), {
         onFailure: () => Option.none<string>(),
         onSuccess: (manifest) => Option.some(manifest.version ?? ''),
       })

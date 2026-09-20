@@ -21,13 +21,12 @@ import { type SpawnedSocketWorker, WorkerLauncher } from '../WorkerLauncher.js'
 
 const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string): Effect.Effect<void> =>
   fs.chmod(file, 0o600).pipe(
-    Effect.catchTag(
-      'PlatformError',
-      (cause) =>
-        Effect.logWarning(
-          `Could not restrict "${file}" to its owner; the worker directory's own mode still protects it.`,
-        ).pipe(Effect.annotateLogs('cause', cause)),
+    Effect.tapError((cause) =>
+      Effect.logWarning(
+        `Could not restrict "${file}" to its owner; the worker directory's own mode still protects it.`,
+      ).pipe(Effect.annotateLogs('cause', cause))
     ),
+    Effect.catchTag('PlatformError', () => Effect.void),
   )
 
 /**

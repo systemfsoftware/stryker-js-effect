@@ -1,7 +1,7 @@
 import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { FastCheck as fc } from 'effect/testing'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   EventFramed,
@@ -24,52 +24,22 @@ const FrameRunEventTypeId = Symbol.for(
   '@systemfsoftware/stryker-js/FrameRunEventDecision',
 )
 
-const arbitraryTerminalEvent = fc.constantFrom(
-  RunFailed.make({
-    schemaVersion: '1.0',
-    code: 3,
-    error: 'fail',
-    remediation: 'retry',
-  }),
-  HelpRendered.make({
-    schemaVersion: '1.0',
-    code: 0,
-    help: 'help text',
-  }),
+const arbitraryTerminalEvent = Arbitrary.schema(S.Union([RunFailed, HelpRendered]))
+
+const arbitraryNonTerminalEvent = Arbitrary.schema(S.Union([RunStarted, PhaseEntered, PlanKnown, Heartbeat]))
+
+const arbitraryEvent = Arbitrary.schema(
+  S.Union([RunFailed, HelpRendered, RunStarted, PhaseEntered, PlanKnown, Heartbeat]),
 )
 
-const arbitraryNonTerminalEvent = fc.constantFrom(
-  RunStarted.make({
-    schemaVersion: '1.0',
-    runId: 'r',
-    mode: 'machine',
-    signal: 'tty',
-  }),
-  PhaseEntered.make({
-    phase: 'dry-run',
-    elapsedMs: 120,
-  }),
-  PlanKnown.make({ total: 10 }),
-  Heartbeat.make({
-    elapsedMs: 500,
-    completed: 2,
-    total: 10,
-  }),
-)
+const arbitraryState = Arbitrary.schema(FramingState)
 
-const arbitraryState = fc.record({
-  mode: fc.constantFrom<'machine' | 'human'>('machine', 'human'),
-  signal: fc.constantFrom<'flag' | 'env' | 'tty' | 'agent' | 'tool'>('flag', 'env', 'tty', 'agent', 'tool'),
-  headerWritten: fc.boolean(),
-  terminalSeen: fc.boolean(),
-  completed: fc.nat(),
-  total: fc.option(fc.nat(), { nil: null }),
-})
+const arbitraryNat = Arbitrary.schema(S.Int.check(S.isGreaterThanOrEqualTo(0)))
 
 describe('frameRunEvent', () => {
   it.prop(
     '∀c_Command_∈Decision',
-    [arbitraryState, fc.oneof(arbitraryTerminalEvent, arbitraryNonTerminalEvent)],
+    [arbitraryState, arbitraryEvent],
     ([state, event]) => {
       const result = frameRunEvent(FrameRunEventCommand.make({ state, event }))
       if (!Result.isSuccess(result)) {
@@ -81,7 +51,7 @@ describe('frameRunEvent', () => {
 
   it.prop(
     '∀e_Terminal_≡Suppressed',
-    [arbitraryState, arbitraryTerminalEvent, fc.oneof(arbitraryTerminalEvent, arbitraryNonTerminalEvent)],
+    [arbitraryState, arbitraryTerminalEvent, arbitraryEvent],
     ([state, terminalEvent, nextEvent]) => {
       const firstResult = frameRunEvent(
         FrameRunEventCommand.make({
@@ -129,7 +99,7 @@ describe('frameRunEvent', () => {
 
   it.prop(
     '∀e_Human_≡Suppressed',
-    [arbitraryState, fc.oneof(arbitraryTerminalEvent, arbitraryNonTerminalEvent)],
+    [arbitraryState, arbitraryEvent],
     ([state, event]) => {
       const humanState: FramingState = {
         ...state,
@@ -144,7 +114,7 @@ describe('frameRunEvent', () => {
 
   it.prop(
     '∀m_Mutant_≡Progress',
-    [arbitraryState, fc.nat(), fc.nat()],
+    [arbitraryState, arbitraryNat, arbitraryNat],
     ([state, completed, total]) => {
       const mutantEvent = RunMutantTested.make({
         id: '1',
