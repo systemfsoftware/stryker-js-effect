@@ -1,13 +1,14 @@
 import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
 export default defineConfig({
-  testRunner: 'vm',
-  testFiles: ['src/order.vm.test.ts'],
+  testRunner: {
+    plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
+  },
   checkers: [
     {
       plugin: import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
     },
   ],
-  reporters: ['json'],
+  tsconfigFile: 'tsconfig.references.json',
   mutate: ['src/order.ts'],
 })
