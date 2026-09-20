@@ -13,6 +13,7 @@ export const CONTAINER_WORKROOT = '/work'
 
 const TARBALL_DIR = '/tmp/e2e'
 
+const NPM_CACHE_HOST_DIR = join(tmpdir(), 'stryker-e2e-npm-cache')
 const NODE_IMAGE = 'node:24-alpine@sha256:333f6b3eca25980d5682c26207665b93c9417786b21760b2764d5821d9704c8a'
 
 const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
@@ -144,6 +145,10 @@ const startContainerEnvironment = async (): Promise<void> => {
     () => mkdtemp(join(tmpdir(), 'stryker-e2e-')),
   )
   scratch = directory
+  await requireStep(
+    'create the shared npm cache directory',
+    () => mkdir(NPM_CACHE_HOST_DIR, { recursive: true }),
+  )
   const packed = await packWorkspacePackages(directory)
   packedPackages = packed
 
@@ -152,6 +157,7 @@ const startContainerEnvironment = async (): Promise<void> => {
       .withCommand(['sleep', 'infinity'])
       .withNetworkMode(HOST_NETWORK_MODE)
       .withWorkingDir(CONTAINER_WORKROOT)
+      .withBindMounts([{ source: NPM_CACHE_HOST_DIR, target: '/root/.npm', mode: 'rw' }])
       .withStartupTimeout(STARTUP_TIMEOUT_MS)
       .start())
   container = running

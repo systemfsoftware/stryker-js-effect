@@ -41,62 +41,54 @@ export interface ExtendedTestContext {
 
 export const test = baseTest
   .extend<Pick<ExtendedTestContext, 'containerHarness'>>({
+    // eslint-disable-next-line no-empty-pattern
     containerHarness: [
-      // eslint-disable-next-line no-empty-pattern
       async ({}, use) => {
         await ensureContainerEnvironment()
-        const harness: ContainerHarness = {
-          workroot: CONTAINER_WORKROOT,
-          install: (fixtureUrl: URL, name: string, extraTarballs?: readonly PackedPackage[]) =>
-            installFixture(fixtureUrl, name, extraTarballs),
-          run: (args: readonly string[], opts?: { readonly cwd?: string }) => runCli(args, opts),
-        }
-        await use(harness)
+        await use(
+          {
+            workroot: CONTAINER_WORKROOT,
+            install: (fixtureUrl: URL, name: string, extraTarballs?: readonly PackedPackage[]) =>
+              installFixture(fixtureUrl, name, extraTarballs),
+            run: (args: readonly string[], opts?: { readonly cwd?: string }) => runCli(args, opts),
+          } satisfies ContainerHarness,
+        )
         await teardownContainerEnvironment()
       },
       { scope: 'file' },
     ],
   })
   .extend<Pick<ExtendedTestContext, 'prepareFixture' | 'bdd'>>({
-    prepareFixture: async ({ containerHarness, onTestFailed }, use) => {
-      let lastInstalledPath: string | undefined
-      onTestFailed(() => {
-        if (lastInstalledPath) {
-          console.error(`Test failed with container fixture directory at: ${lastInstalledPath}`)
-        }
-      })
-      await use(
-        async (fixtureUrl: URL, name: string, extraTarballs?: readonly PackedPackage[]): Promise<PreparedFixture> => {
-          const path = await containerHarness.install(fixtureUrl, name, extraTarballs)
-          lastInstalledPath = path
-          return {
-            path,
-            run: (args: readonly string[]) => containerHarness.run(args, { cwd: path }),
-            readFile: (relativePath: string) => readContainerFile(`${path}/${relativePath}`),
-          }
-        },
+    prepareFixture: async ({ containerHarness }, use) => {
+      await use((fixtureUrl: URL, name: string, extraTarballs?: readonly PackedPackage[]): Promise<PreparedFixture> =>
+        containerHarness.install(fixtureUrl, name, extraTarballs).then((path) => ({
+          path,
+          run: (args: readonly string[]) => containerHarness.run(args, { cwd: path }),
+          readFile: (relativePath: string) => readContainerFile(`${path}/${relativePath}`),
+        }))
       )
     },
     bdd: async ({ annotate }, use) => {
-      const bdd: BddStepContext = {
-        given: async (desc, fn) => {
-          await annotate(`Given ${desc}`, 'lifecycle')
-          if (fn) await fn()
-        },
-        when: async (desc, fn) => {
-          await annotate(`When ${desc}`, 'execution')
-          if (fn) await fn()
-        },
-        thenAssert: async (desc, fn) => {
-          await annotate(`Then ${desc}`, 'assertions')
-          if (fn) await fn()
-        },
-        and: async (desc, fn) => {
-          await annotate(`And ${desc}`, 'assertions')
-          if (fn) await fn()
-        },
-      }
-      await use(bdd)
+      await use(
+        {
+          given: async (desc, fn) => {
+            await annotate(`Given ${desc}`, 'lifecycle')
+            if (fn) await fn()
+          },
+          when: async (desc, fn) => {
+            await annotate(`When ${desc}`, 'execution')
+            if (fn) await fn()
+          },
+          thenAssert: async (desc, fn) => {
+            await annotate(`Then ${desc}`, 'assertions')
+            if (fn) await fn()
+          },
+          and: async (desc, fn) => {
+            await annotate(`And ${desc}`, 'assertions')
+            if (fn) await fn()
+          },
+        } satisfies BddStepContext,
+      )
     },
   })
 
