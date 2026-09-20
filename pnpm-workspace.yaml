@@ -55,7 +55,7 @@ catalogs:
     "@systemfsoftware/stryker-js-typescript-checker": latest
     "@systemfsoftware/stryker-js-vitest-runner": latest
     "@systemfsoftware/stryker-test-contribution": latest
-    mutation-testing-elements: 3.7.3
+    mutation-testing-elements: 3.9.0
 minimumReleaseAgeExclude:
   - "@systemfsoftware/*"
 overrides:
