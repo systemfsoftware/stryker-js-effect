@@ -7,6 +7,8 @@ import { promisify } from 'node:util'
 
 import { GenericContainer, type StartedTestContainer } from 'testcontainers'
 
+import { readPackableWorkspaceManifests, resolveWorkspaceClosure } from './closure-resolver.js'
+
 const execFileAsync = promisify(execFile)
 
 export const CONTAINER_WORKROOT = '/work'
@@ -27,7 +29,7 @@ const PLUGIN_PACKAGES = [
   TYPESCRIPT_CHECKER_PACKAGE,
 ] as const
 
-const PACKED_PACKAGES = [CLI_PACKAGE, ...PLUGIN_PACKAGES] as const
+export const ENTRY_PACKAGES = [CLI_PACKAGE, ...PLUGIN_PACKAGES]
 
 const PACKED_TARBALL_VERSION = /-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\.tgz$/
 
@@ -102,12 +104,15 @@ const packedTarballOf = (fileNames: readonly string[], packageName: string, dire
   return { name: packageName, version, fileName, tarballPath: `${TARBALL_DIR}/${fileName}` }
 }
 
-const packWorkspacePackages = async (directory: string): Promise<Readonly<Record<string, PackedPackage>>> => {
-  for (const packageName of PACKED_PACKAGES) {
-    await requireStep(
-      `build ${packageName}`,
-      () => execFileAsync('pnpm', ['--filter', packageName, 'build'], { cwd: REPO_ROOT }),
-    )
+const packWorkspaceClosure = async (directory: string): Promise<Readonly<Record<string, PackedPackage>>> => {
+  const closure = resolveWorkspaceClosure(await readPackableWorkspaceManifests(REPO_ROOT), ENTRY_PACKAGES)
+  await requireStep('build the packed workspace closure', () =>
+    execFileAsync(
+      'pnpm',
+      ['exec', 'turbo', 'run', 'build', ...closure.map((packageName) => `--filter=${packageName}`)],
+      { cwd: REPO_ROOT },
+    ))
+  for (const packageName of closure) {
     await requireStep(
       `pack ${packageName}`,
       () =>
@@ -116,7 +121,7 @@ const packWorkspacePackages = async (directory: string): Promise<Readonly<Record
   }
   const fileNames = await requireStep('read the packed tarballs', () => readdir(directory))
   return Object.fromEntries(
-    PACKED_PACKAGES.map((packageName) => [packageName, packedTarballOf(fileNames, packageName, directory)]),
+    closure.map((packageName) => [packageName, packedTarballOf(fileNames, packageName, directory)]),
   )
 }
 
@@ -149,7 +154,7 @@ const startContainerEnvironment = async (): Promise<void> => {
     'create the shared npm cache directory',
     () => mkdir(NPM_CACHE_HOST_DIR, { recursive: true }),
   )
-  const packed = await packWorkspacePackages(directory)
+  const packed = await packWorkspaceClosure(directory)
   packedPackages = packed
 
   const running = await requireStep('start the node:24-alpine container', () =>
@@ -187,16 +192,14 @@ export const teardownContainerEnvironment = async (): Promise<void> => {
   }
 }
 
-export function packedPackage(packageName: string): PackedPackage {
-  const entry = packedPackages?.[packageName]
-  if (entry === undefined) {
-    throw new Error(`container environment has not packed ${packageName}: await ensureContainerEnvironment() first`)
+const packedTarballs = (): ReadonlyArray<PackedPackage> => {
+  const packed = packedPackages
+  if (packed === undefined) {
+    throw new Error(
+      'container environment has not packed the workspace closure: await ensureContainerEnvironment() first',
+    )
   }
-  return entry
-}
-
-export function cliPackage(): PackedPackage {
-  return packedPackage(CLI_PACKAGE)
+  return Object.values(packed)
 }
 
 const workingDirOption = (cwd: string | undefined): { readonly workingDir: string } | undefined => {
@@ -244,7 +247,6 @@ export function installFixture(
   fixtureUrl: URL,
   name: string,
   extraTarballs: readonly PackedPackage[] = [],
-  packedNames: readonly string[] = PACKED_PACKAGES,
 ): Promise<string> {
   const cached = installedFixtures.get(name)
   if (cached !== undefined) {
@@ -265,11 +267,11 @@ export function installFixture(
     const installSteps = [
       { step: `npm install the ${name} registry dependencies`, args: ['npm', 'install'] },
       {
-        step: `npm install the CLI and plugin tarballs in ${name}`,
+        step: `npm install the workspace closure tarballs in ${name}`,
         args: [
           'npm',
           'install',
-          ...packedNames.map((packageName) => packedPackage(packageName).tarballPath),
+          ...packedTarballs().map((packed) => packed.tarballPath),
           ...extraTarballs.map((packed) => packed.tarballPath),
         ],
       },

@@ -9,7 +9,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['tests/**/*.e2e.test.ts'],
+    include: ['tests/**/*.test.ts'],
     passWithNoTests: false,
     testTimeout: TEST_TIMEOUT_MS,
     hookTimeout: SETUP_TIMEOUT_MS,
