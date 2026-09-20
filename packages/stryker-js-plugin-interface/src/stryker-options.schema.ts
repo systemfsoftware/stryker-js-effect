@@ -108,7 +108,29 @@ export const MutationScoreThresholdsSchema = S.Struct({
   high: defaulted(Percentage, 80),
   low: defaulted(Percentage, 60),
   break: defaulted(S.NullOr(Percentage), null),
-})
+}).pipe(
+  S.check(
+    S.makeFilter((t) => t.low <= t.high, {
+      expected: 'thresholds where low <= high',
+      arbitrary: {
+        candidate: {
+          make: (fc) =>
+            fc
+              .tuple(
+                fc.float({ min: 0, max: 100, noNaN: true }),
+                fc.float({ min: 0, max: 100, noNaN: true }),
+                fc.option(fc.float({ min: 0, max: 100, noNaN: true }), { nil: null }),
+              )
+              .map(([a, b, brk]) => ({
+                high: Math.max(a, b),
+                low: Math.min(a, b),
+                break: brk,
+              })),
+        },
+      },
+    }),
+  ),
+)
 export type MutationScoreThresholds = typeof MutationScoreThresholdsSchema.Type
 
 const MutatorDescriptor = S.Struct({

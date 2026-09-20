@@ -1,6 +1,6 @@
-import * as S from 'effect/Schema'
-
 import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
+import { Metrics, NonNegativeFinite, NonNegativeInt, Percentage } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as S from 'effect/Schema'
 
 export const RunPhase = S.Literals(['prepare', 'instrument', 'dry-run', 'mutation-test'])
 export type RunPhase = typeof RunPhase.Type
@@ -20,11 +20,11 @@ export class RunStarted extends S.TaggedClass<RunStarted>()('stream', {
 
 export class PhaseEntered extends S.TaggedClass<PhaseEntered>()('phase', {
   phase: RunPhase,
-  elapsedMs: S.Finite,
+  elapsedMs: NonNegativeFinite,
 }) {}
 
 export class PlanKnown extends S.TaggedClass<PlanKnown>()('plan', {
-  total: S.Finite,
+  total: NonNegativeInt,
 }) {}
 
 export class RunMutantTested extends S.TaggedClass<RunMutantTested>()('mutant', {
@@ -34,21 +34,43 @@ export class RunMutantTested extends S.TaggedClass<RunMutantTested>()('mutant', 
   location: LocationSchema,
   mutator: S.String,
   replacement: S.NullOr(S.String),
-  completed: S.Finite,
-  total: S.Finite,
+  completed: NonNegativeInt,
+  total: NonNegativeInt,
 }) {}
 
 export class Heartbeat extends S.TaggedClass<Heartbeat>()('tick', {
-  elapsedMs: S.Finite,
-  completed: S.Finite,
-  total: S.NullOr(S.Finite),
+  elapsedMs: NonNegativeFinite,
+  completed: NonNegativeInt,
+  total: S.NullOr(NonNegativeInt),
 }) {}
 
 const VerdictThresholds = S.Struct({
-  high: S.Finite,
-  low: S.Finite,
-  break: S.NullOr(S.Finite),
-})
+  high: Percentage,
+  low: Percentage,
+  break: S.NullOr(Percentage),
+}).pipe(
+  S.check(
+    S.makeFilter((t) => t.low <= t.high, {
+      expected: 'thresholds where low <= high',
+      arbitrary: {
+        candidate: {
+          make: (fc) =>
+            fc
+              .tuple(
+                fc.float({ min: 0, max: 100, noNaN: true }),
+                fc.float({ min: 0, max: 100, noNaN: true }),
+                fc.option(fc.float({ min: 0, max: 100, noNaN: true }), { nil: null }),
+              )
+              .map(([a, b, brk]) => ({
+                high: Math.max(a, b),
+                low: Math.min(a, b),
+                break: brk,
+              })),
+        },
+      },
+    }),
+  ),
+)
 export type VerdictThresholds = typeof VerdictThresholds.Type
 
 const VerdictMutant = S.Struct({
@@ -61,27 +83,17 @@ const VerdictMutant = S.Struct({
 })
 export type VerdictMutant = typeof VerdictMutant.Type
 
-const VerdictCounts = S.Struct({
-  killed: S.Finite,
-  timeout: S.Finite,
-  survived: S.Finite,
-  noCoverage: S.Finite,
-  runtimeErrors: S.Finite,
-  compileErrors: S.Finite,
-  ignored: S.Finite,
-  pending: S.Finite,
-})
-export type VerdictCounts = typeof VerdictCounts.Type
+export type VerdictCounts = Metrics
 
 export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   schemaVersion: S.String,
   runId: S.String,
   mode: OutputMode,
   signal: ModeSignal,
-  score: S.NullOr(S.Finite),
+  score: S.NullOr(Percentage),
   thresholds: VerdictThresholds,
   reportFile: S.NullOr(S.String),
-  counts: VerdictCounts,
+  counts: Metrics,
   mutants: S.Array(VerdictMutant),
 }) {}
 

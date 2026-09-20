@@ -3,7 +3,7 @@ import * as S from 'effect/Schema'
 import type { StandardSchemaV1 } from 'effect/StandardSchema'
 
 import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
-import { MetricsResultSchema } from './Metrics.schema.js'
+import { MetricsResultSchema, NonNegativeFinite, NonNegativeInt } from './Metrics.schema.js'
 
 import { MutationTestResultSchema } from './Report.schema.js'
 import type { StrykerOptions } from './stryker-options.js'
@@ -18,8 +18,8 @@ export const ReporterEventKind = S.Literals([
 export type ReporterEventKind = typeof ReporterEventKind.Type
 
 export const RunTimingSchema = S.Struct({
-  net: S.Finite,
-  overhead: S.Finite,
+  net: NonNegativeFinite,
+  overhead: NonNegativeFinite,
 })
 export type RunTiming = typeof RunTimingSchema.Type
 
@@ -28,7 +28,7 @@ export const ReporterPlanKind = S.Literals(['EarlyResult', 'Run'])
 export const ReporterPlanDescriptorSchema = S.Struct({
   mutantId: S.String,
   plan: ReporterPlanKind,
-  netTime: S.Finite,
+  netTime: NonNegativeFinite,
   reloadEnvironment: S.Boolean,
 })
 export type ReporterPlanDescriptor = typeof ReporterPlanDescriptorSchema.Type
@@ -36,14 +36,14 @@ export type ReporterPlanDescriptor = typeof ReporterPlanDescriptorSchema.Type
 export class DryRunCompleted extends S.TaggedClass<DryRunCompleted>()('dryRunCompleted', {
   timing: RunTimingSchema,
   capabilities: TestRunnerCapabilitiesSchema,
-  testCount: S.Finite,
+  testCount: NonNegativeInt,
   tests: S.Array(TestResultSchema),
 }) {}
 
 export class MutationTestingPlanReady extends S.TaggedClass<MutationTestingPlanReady>()(
   'mutationTestingPlanReady',
   {
-    total: S.Finite,
+    total: NonNegativeInt,
     plans: S.Array(ReporterPlanDescriptorSchema),
   },
 ) {}
@@ -55,8 +55,8 @@ export class MutantTested extends S.TaggedClass<MutantTested>()('mutantTested', 
   location: LocationSchema,
   mutator: S.String,
   replacement: S.NullOr(S.String),
-  completed: S.Finite,
-  total: S.Finite,
+  completed: NonNegativeInt,
+  total: NonNegativeInt,
 }) {}
 
 export class MutationTestReportReady extends S.TaggedClass<MutationTestReportReady>()(

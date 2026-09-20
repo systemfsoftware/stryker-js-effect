@@ -109,10 +109,8 @@ const sandboxFor = (
   fileName: string,
   activeMutantId: string | undefined,
 ): Record<string, unknown> => {
-  const namespace: Record<string, unknown> = Match.value(activeMutantId).pipe(
-    Match.when(Match.string, (active) => ({ [INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT]: active })),
-    Match.orElse(() => ({})),
-  )
+  const namespace = hostStrykerNamespace()
+  namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
   const moduleExports: Record<string, unknown> = {}
   const moduleObj = { exports: moduleExports }
   const sandbox: Record<string, unknown> = {
@@ -146,6 +144,47 @@ const resultFromRun = (failureMessage: string | undefined, timeSpentMs: number):
     })),
   )
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  if (typeof value !== 'object') {
+    return false
+  }
+  return value !== null
+}
+
+const descriptorValue = (descriptor: PropertyDescriptor | undefined): unknown => {
+  if (descriptor === undefined) {
+    return undefined
+  }
+  const value: unknown = descriptor.value
+  return value
+}
+
+const hostStrykerNamespace = (): Record<string, unknown> => {
+  const current = descriptorValue(Object.getOwnPropertyDescriptor(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE))
+  if (isPlainObject(current)) {
+    return current
+  }
+  const created: Record<string, unknown> = {}
+  Object.defineProperty(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE, {
+    configurable: true,
+    enumerable: true,
+    value: created,
+    writable: true,
+  })
+  return created
+}
+
+const withActiveMutant = <T>(activeMutantId: string | undefined, run: () => T): T => {
+  const ns = hostStrykerNamespace()
+  const previous = ns[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT]
+  ns[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
+  try {
+    return run()
+  } finally {
+    ns[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = previous
+  }
+}
+
 const runInFreshContext = (
   platform: VmPlatform,
   compiled: CompiledTests,
@@ -153,14 +192,15 @@ const runInFreshContext = (
 ): Effect.Effect<string | undefined> =>
   Effect.sync(() => {
     const context = platform.vm.createContext(sandboxFor(platform, compiled.fileName, activeMutantId))
-    try {
-      compiled.script.runInContext(context)
-      return undefined
-    } catch (cause) {
-      return errorText(cause)
-    }
+    return withActiveMutant(activeMutantId, () => {
+      try {
+        compiled.script.runInContext(context)
+        return undefined
+      } catch (cause) {
+        return errorText(cause)
+      }
+    })
   })
-
 const runOnce = (
   platform: VmPlatform,
   compiled: CompiledTests,

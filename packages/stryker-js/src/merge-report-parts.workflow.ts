@@ -22,7 +22,6 @@ const SURVIVOR_STATUSES: Record<string, true> = { Survived: true, NoCoverage: tr
 
 const SCORE_INCOMPLETE = 'incomplete'
 const SCORE_ABSENT = 'no report'
-const SCORE_UNDEFINED = 'n/a'
 const SCORE_PERFECT = '100.00'
 const VERDICT_OK = '✅'
 const VERDICT_FAIL = '❌'
@@ -213,7 +212,7 @@ const commonProjectRoot = (roots: readonly string[]): string | undefined =>
 
 const mutationScoreOf = (totalDetected: number, totalValid: number): number =>
   Match.value(totalValid === 0).pipe(
-    Match.when(true, () => Number.NaN),
+    Match.when(true, () => 0),
     Match.when(false, () => (totalDetected / totalValid) * 100),
     Match.exhaustive,
   )
@@ -253,17 +252,12 @@ const renderedScore = (mutationScore: number): string =>
     Match.orElse(() => mutationScore.toFixed(2)),
   )
 
-const scoredRow = (label: string, score: Score, outcome: string | undefined): VerdictRow =>
-  Match.value(Number.isNaN(score.mutationScore)).pipe(
-    Match.when(true, () => ({ label, score: SCORE_UNDEFINED, cells: score.cells, verdict: VERDICT_WARN })),
-    Match.when(false, () => ({
-      label,
-      score: renderedScore(score.mutationScore),
-      cells: score.cells,
-      verdict: passingVerdict(score, outcome),
-    })),
-    Match.exhaustive,
-  )
+const scoredRow = (label: string, score: Score, outcome: string | undefined): VerdictRow => ({
+  label,
+  score: renderedScore(score.mutationScore),
+  cells: score.cells,
+  verdict: passingVerdict(score, outcome),
+})
 
 const completeRow = (label: string, score: Score | undefined, outcome: string | undefined): VerdictRow =>
   Option.match(Option.fromUndefinedOr(score), {

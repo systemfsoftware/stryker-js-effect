@@ -17,9 +17,14 @@ const NODE_IMAGE = 'node:24-alpine@sha256:333f6b3eca25980d5682c26207665b93c94177
 
 const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 
-const CLI_PACKAGE = '@systemfsoftware/stryker-js'
+export const CLI_PACKAGE = '@systemfsoftware/stryker-js'
 
-const PLUGIN_PACKAGES = ['@systemfsoftware/stryker-js-vitest-runner'] as const
+export const TYPESCRIPT_CHECKER_PACKAGE = '@systemfsoftware/stryker-js-typescript-checker'
+
+const PLUGIN_PACKAGES = [
+  '@systemfsoftware/stryker-js-vitest-runner',
+  TYPESCRIPT_CHECKER_PACKAGE,
+] as const
 
 const PACKED_PACKAGES = [CLI_PACKAGE, ...PLUGIN_PACKAGES] as const
 
@@ -224,6 +229,7 @@ export async function installFixture(
   fixtureUrl: URL,
   name: string,
   extraTarballs: readonly PackedPackage[] = [],
+  packedNames: readonly string[] = PACKED_PACKAGES,
 ): Promise<string> {
   const hostFixtureDir = fileURLToPath(fixtureUrl)
   await ensureBed()
@@ -243,7 +249,7 @@ export async function installFixture(
       args: [
         'npm',
         'install',
-        ...PACKED_PACKAGES.map((packageName) => packedPackage(packageName).tarballPath),
+        ...packedNames.map((packageName) => packedPackage(packageName).tarballPath),
         ...extraTarballs.map((packed) => packed.tarballPath),
       ],
     },

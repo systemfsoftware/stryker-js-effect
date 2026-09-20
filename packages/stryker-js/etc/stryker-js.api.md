@@ -158,9 +158,9 @@ export type CheckerRequest = typeof CheckerRequest.Type;
 // @public
 export interface CheckerResourceService {
     // (undocumented)
-    readonly check: (checkerName: string, mutants: readonly CheckerMutantWire[]) => Effect.Effect<Record<string, CheckResult>, CheckerCrash>;
+    readonly check: (checkerName: string, mutants: readonly CheckerMutantWire[]) => Effect.Effect<Record<string, CheckResult>, CheckerCrash | CheckerFailed>;
     // (undocumented)
-    readonly group: (checkerName: string, mutants: readonly CheckerMutantWire[]) => Effect.Effect<readonly (readonly string[])[], CheckerCrash>;
+    readonly group: (checkerName: string, mutants: readonly CheckerMutantWire[]) => Effect.Effect<readonly (readonly string[])[], CheckerCrash | CheckerFailed>;
 }
 
 // @public (undocumented)
@@ -175,7 +175,7 @@ export const CheckerRpcs: RpcGroup.RpcGroup<TracedRpc<'check', typeof CheckerReq
 export class CheckerSkippedRequested extends CheckerSkippedRequested_base {}
 
 // @public (undocumented)
-export const checkGroupedPlans: (checker: CheckerResourceService, checkerName: string, plans: readonly RunPlan[]) => Effect.Effect<readonly (readonly [RunPlan, CheckResult])[], CheckerCrash | CheckerContractBroken>;
+export const checkGroupedPlans: (checker: CheckerResourceService, checkerName: string, plans: readonly RunPlan[]) => Effect.Effect<readonly (readonly [RunPlan, CheckResult])[], CheckerCrash | CheckerFailed | CheckerContractBroken>;
 
 // @public (undocumented)
 export type CheckResult = FailedCheckResult | PassedCheckResult;
@@ -474,7 +474,7 @@ export const FileResultSchema: S.Struct<{
         readonly static: S.optional<S.Boolean>;
         readonly coveredBy: S.optional<S.$Array<S.String>>;
         readonly killedBy: S.optional<S.$Array<S.String>>;
-        readonly testsCompleted: S.optional<S.Finite>;
+        readonly testsCompleted: S.optional<S.Int>;
         readonly duration: S.optional<S.Finite>;
     }>>;
 }>;
@@ -774,8 +774,31 @@ export function mergeConfigs(parent: PartialStrykerOptions, child: PartialStryke
 // @public (undocumented)
 export class MergeResult extends MergeResult_base {}
 
+// Warning: (ae-forgotten-export) The symbol "Metrics_base" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
-export type Metrics = typeof MetricsSchema.Type;
+export class Metrics extends Metrics_base {
+    // (undocumented)
+    static fromMutants(mutants: readonly {
+        readonly status: string;
+    }[]): Metrics;
+    // (undocumented)
+    get mutationScore(): number;
+    // (undocumented)
+    get mutationScoreBasedOnCoveredCode(): number;
+    // (undocumented)
+    get totalCovered(): number;
+    // (undocumented)
+    get totalDetected(): number;
+    // (undocumented)
+    get totalInvalid(): number;
+    // (undocumented)
+    get totalMutants(): number;
+    // (undocumented)
+    get totalUndetected(): number;
+    // (undocumented)
+    get totalValid(): number;
+}
 
 // @public (undocumented)
 export interface MetricsResult {
@@ -788,24 +811,7 @@ export interface MetricsResult {
 }
 
 // @public (undocumented)
-export const MetricsSchema: S.Struct<{
-    readonly pending: S.Finite;
-    readonly killed: S.Finite;
-    readonly timeout: S.Finite;
-    readonly survived: S.Finite;
-    readonly noCoverage: S.Finite;
-    readonly runtimeErrors: S.Finite;
-    readonly compileErrors: S.Finite;
-    readonly ignored: S.Finite;
-    readonly totalDetected: S.Finite;
-    readonly totalUndetected: S.Finite;
-    readonly totalInvalid: S.Finite;
-    readonly totalValid: S.Finite;
-    readonly totalMutants: S.Finite;
-    readonly totalCovered: S.Finite;
-    readonly mutationScore: S.Finite;
-    readonly mutationScoreBasedOnCoveredCode: S.Finite;
-}>;
+export const MetricsSchema: typeof Metrics;
 
 // @public (undocumented)
 export type ModeSignal = 'flag' | 'env' | 'tty' | 'agent' | 'tool';
@@ -853,7 +859,7 @@ export const MutantResultSchema: S.Struct<{
     readonly static: S.optional<S.Boolean>;
     readonly coveredBy: S.optional<S.$Array<S.String>>;
     readonly killedBy: S.optional<S.$Array<S.String>>;
-    readonly testsCompleted: S.optional<S.Finite>;
+    readonly testsCompleted: S.optional<S.Int>;
     readonly duration: S.optional<S.Finite>;
 }>;
 
@@ -948,7 +954,7 @@ export const MutationTestResultSchema: S.Struct<{
             readonly static: S.optional<S.Boolean>;
             readonly coveredBy: S.optional<S.$Array<S.String>>;
             readonly killedBy: S.optional<S.$Array<S.String>>;
-            readonly testsCompleted: S.optional<S.Finite>;
+            readonly testsCompleted: S.optional<S.Int>;
             readonly duration: S.optional<S.Finite>;
         }>>;
     }>>;
@@ -1575,29 +1581,12 @@ export type ValidationSchemaDocument = {
 export const VERDICT_ENVELOPE_SCHEMA_VERSION = "1.1";
 
 // @public (undocumented)
-export interface VerdictCounts {
-    // (undocumented)
-    readonly compileErrors: number;
-    // (undocumented)
-    readonly ignored: number;
-    // (undocumented)
-    readonly killed: number;
-    // (undocumented)
-    readonly noCoverage: number;
-    // (undocumented)
-    readonly pending: number;
-    // (undocumented)
-    readonly runtimeErrors: number;
-    // (undocumented)
-    readonly survived: number;
-    // (undocumented)
-    readonly timeout: number;
-}
+export type VerdictCounts = Metrics;
 
 // @public (undocumented)
 export interface VerdictEnvelope {
     // (undocumented)
-    readonly counts: VerdictCounts;
+    readonly counts: Metrics;
     // (undocumented)
     readonly mode: OutputMode;
     // (undocumented)

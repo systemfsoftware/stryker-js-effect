@@ -36,16 +36,7 @@ export interface VerdictThresholds {
   readonly break: number | null
 }
 
-export interface VerdictCounts {
-  readonly killed: number
-  readonly timeout: number
-  readonly survived: number
-  readonly noCoverage: number
-  readonly runtimeErrors: number
-  readonly compileErrors: number
-  readonly ignored: number
-  readonly pending: number
-}
+export type VerdictCounts = schema.Metrics
 
 export interface VerdictEnvelope {
   readonly schemaVersion: string
@@ -54,7 +45,7 @@ export interface VerdictEnvelope {
   readonly signal: ModeSignal
   readonly score: number | null
   readonly thresholds: VerdictThresholds
-  readonly counts: VerdictCounts
+  readonly counts: schema.Metrics
   readonly reportFile: string | null
   readonly mutants: readonly VerdictMutant[]
 }
@@ -173,16 +164,7 @@ export function buildVerdictEnvelope(
       low: report.thresholds.low,
       break: breakThreshold(report.thresholds),
     },
-    counts: {
-      killed: metrics.killed,
-      timeout: metrics.timeout,
-      survived: metrics.survived,
-      noCoverage: metrics.noCoverage,
-      runtimeErrors: metrics.runtimeErrors,
-      compileErrors: metrics.compileErrors,
-      ignored: metrics.ignored,
-      pending: metrics.pending,
-    },
+    counts: metrics,
     reportFile: Option.getOrNull(
       Option.map(
         Option.filter(Option.fromUndefinedOr(jsonReporterFileName), () => metrics.totalMutants > 0),

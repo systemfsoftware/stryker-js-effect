@@ -1,58 +1,10 @@
-import type { FileResult, Metrics, MetricsResult, MutantResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { FileResult, MetricsResult, MutantResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Metrics } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 
-const countStatus = (mutants: readonly MutantResult[], status: MutantResult['status']): number =>
-  mutants.filter((mutant) => mutant.status === status).length
-
-const percentage = (numerator: number, denominator: number): number => (numerator / denominator) * 100
-
-const percentOr = (emptyDenominator: number, numerator: number, denominator: number): number =>
-  Match.value(denominator).pipe(
-    Match.when(0, () => emptyDenominator),
-    Match.orElse(() => percentage(numerator, denominator)),
-  )
-
-const coveredFraction = (totalDetected: number, totalCovered: number, totalValid: number): number =>
-  Match.value(totalValid).pipe(
-    Match.when(0, () => Number.NaN),
-    Match.orElse(() => percentOr(0, totalDetected, totalCovered)),
-  )
-
-export const countMutants = (mutants: readonly MutantResult[]): Metrics => {
-  const pending = countStatus(mutants, 'Pending')
-  const killed = countStatus(mutants, 'Killed')
-  const timeout = countStatus(mutants, 'Timeout')
-  const survived = countStatus(mutants, 'Survived')
-  const noCoverage = countStatus(mutants, 'NoCoverage')
-  const runtimeErrors = countStatus(mutants, 'RuntimeError')
-  const compileErrors = countStatus(mutants, 'CompileError')
-  const ignored = countStatus(mutants, 'Ignored')
-  const totalDetected = timeout + killed
-  const totalUndetected = survived + noCoverage
-  const totalCovered = totalDetected + survived
-  const totalValid = totalUndetected + totalDetected
-  const totalInvalid = runtimeErrors + compileErrors
-  return {
-    pending,
-    killed,
-    timeout,
-    survived,
-    noCoverage,
-    runtimeErrors,
-    compileErrors,
-    ignored,
-    totalDetected,
-    totalUndetected,
-    totalCovered,
-    totalValid,
-    totalInvalid,
-    totalMutants: totalValid + totalInvalid + ignored + pending,
-    mutationScore: percentOr(Number.NaN, totalDetected, totalValid),
-    mutationScoreBasedOnCoveredCode: coveredFraction(totalDetected, totalCovered, totalValid),
-  }
-}
+export const countMutants = (mutants: readonly MutantResult[]): Metrics => Metrics.fromMutants(mutants)
 
 const segmentOf = (fileName: string): string => {
   const separator = fileName.indexOf('/')
@@ -67,10 +19,11 @@ const groupBySegment = (
 ): Readonly<Record<string, Readonly<Record<string, FileResult>>>> =>
   Object.entries(files).reduce<Record<string, Record<string, FileResult>>>((groups, [fileName, file]) => {
     const segment = segmentOf(fileName)
-    const group = groups[segment] ?? {}
-    group[fileName] = file
-    groups[segment] = group
-    return groups
+    const current = groups[segment] ?? {}
+    return {
+      ...groups,
+      [segment]: { ...current, [fileName]: file },
+    }
   }, {})
 
 const metricsOf = (files: Readonly<Record<string, FileResult>>): Metrics =>

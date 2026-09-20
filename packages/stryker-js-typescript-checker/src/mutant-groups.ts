@@ -40,5 +40,5 @@ export const groupMutants = (
   if (prioritizePerformanceOverAccuracy) {
     return knownFileGroups(mutants, nodes)
   }
-  return [mutants.map((mutant) => mutant.id)]
+  return mutants.map((mutant) => [mutant.id])
 }
