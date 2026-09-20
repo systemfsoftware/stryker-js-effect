@@ -35,7 +35,7 @@
     "node": ">=22.18.0"
   },
   "dependencies": {
-    "@effect/opentelemetry": "4.0.0-rc.112",
+    "@effect/opentelemetry": "4.0.0-rc.115",
     "@effect/platform-node": "catalog:",
     "@effect/platform-node-shared": "catalog:",
     "@noble/hashes": "catalog:",
