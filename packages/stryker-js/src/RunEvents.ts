@@ -24,7 +24,7 @@ export {
   OutputMode,
   PhaseEntered,
   PlanKnown,
-  type RunEvent,
+  RunEvent,
   RunFailed,
   RunMutantTested,
   RunPhase,

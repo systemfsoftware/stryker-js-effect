@@ -55,9 +55,9 @@ const numberFieldOf = (event: unknown, field: string): number => {
 }
 
 const eventKind = (event: unknown): string => {
-  const kind = fieldOf(event, 'kind')
+  const kind = fieldOf(event, '_tag')
   if (typeof kind !== 'string') {
-    throw new Error(`an event carries no string kind: ${JSON.stringify(event)}`)
+    throw new Error(`an event carries no string tag: ${JSON.stringify(event)}`)
   }
   return kind
 }

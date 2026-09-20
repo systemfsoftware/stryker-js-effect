@@ -11,10 +11,10 @@ import * as Stdio from 'effect/Stdio'
 import cliPkgJson from '../../package.json' with { type: 'json' }
 
 import { strykerCliEffect } from '../Cli.js'
-import { OutputModeProbe, OutputModeProbeLive } from '../Output.js'
-import { RunEventStreamPort } from '../Output.js'
+import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.js'
 import { telemetryLayer } from '../platform/telemetry.js'
-import { RunEventStreamFileLive } from '../StreamFile.js'
+import { RunEventStreamPort } from '../run-event-stream.js'
+import { RunEventDrainFileLive, RunEventStreamFileLive } from '../StreamFile.js'
 
 /** The major version `engines.node` floors the CLI at. */
 const SUPPORTED_NODE_MAJOR = 20
@@ -62,7 +62,7 @@ const program = Effect.gen(function*() {
     Effect.provide(
       Layer.provideMerge(
         Layer.mergeAll(
-          Layer.merge(OutputModeProbeLive, RunEventStreamFileLive).pipe(
+          Layer.mergeAll(OutputModeProbeLive, RunEventStreamFileLive, RunEventDrainFileLive).pipe(
             Layer.provide(Layer.mergeAll(NodeStdio.layer, NodeFileSystem.layer, NodePath.layer)),
           ),
           telemetryLayer,

@@ -84,7 +84,6 @@ const VerdictMutant = S.Struct({
 export type VerdictMutant = typeof VerdictMutant.Type
 
 export type VerdictCounts = Metrics
-
 export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   schemaVersion: S.String,
   runId: S.String,
@@ -109,7 +108,6 @@ export class HelpRendered extends S.TaggedClass<HelpRendered>()('help', {
   code: S.Literals([0]),
   help: S.String,
 }) {}
-
 export const RunEvent = S.Union([
   RunStarted,
   PhaseEntered,

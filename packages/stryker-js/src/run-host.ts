@@ -11,10 +11,10 @@ import type { PlatformError } from 'effect/PlatformError'
 import type * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 import type { CliRequest } from './Cli.schema.js'
+import { isColorEnabled } from './output-mode-probe.js'
 import { type ResolvedMode } from './output-mode.js'
-import { isColorEnabled } from './Output.js'
-import type { RunEventStream } from './Output.js'
 import { nodePlatformLayer } from './platform/node.js'
+import { RunEventDrain, type RunEventStream } from './run-event-stream.js'
 import { makeRunLayer, mutationTestCell } from './Run.js'
 import { type StageError } from './Run.schema.js'
 import { type MutationTestDone } from './run/mutation-test.cell.js'
@@ -96,8 +96,10 @@ export const progressStreamFileName = (request: Option.Option<CliRequest>): stri
       ),
   })
 
-export const applyProgressStreamFile = (stream: RunEventStream, fileName: string): Effect.Effect<void, never, never> =>
-  Option.match(Option.fromUndefinedOr(stream.setProgressStreamFile), {
-    onNone: () => Effect.void,
-    onSome: (setFileName) => setFileName(fileName),
+export const applyProgressStreamFile = (
+  fileName: string,
+): Effect.Effect<void, never, RunEventDrain> =>
+  Effect.gen(function*() {
+    const drain = yield* RunEventDrain
+    yield* drain.setProgressStreamFile(fileName)
   })

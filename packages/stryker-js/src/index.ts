@@ -7,7 +7,16 @@ import * as Stdio from 'effect/Stdio'
 import type { ResolvedMode } from './output-mode.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 
-import { makeRunEventStream } from './Output.js'
+import { makeRunEventStream, RunEventDrainLive } from './run-event-stream.js'
+
+export {
+  makeRunEventStream,
+  type ResolvedModeInput,
+  RunEventDrain,
+  RunEventDrainLive,
+  type RunEventStream,
+} from './run-event-stream.js'
+export { RunEventWireLine } from './run-event-wire.schema.js'
 import { hostOptionsOf, prepareCommandOf, runOnHost } from './run-host.js'
 import { makeRunLayer, mutationTestCell, RUN_EVENTS_QUEUE_BOUND, shouldKeepTempDir } from './Run.js'
 import { StageError } from './Run.schema.js'
@@ -271,8 +280,9 @@ export const strykerCell = (
   FileSystem.FileSystem | Path.Path | Stdio.Stdio
 > =>
   Effect.gen(function*() {
-    const stdio = yield* Stdio.Stdio
-    const stream = yield* makeRunEventStream(stdio, HEADLESS_MODE)
+    const stream = yield* makeRunEventStream(HEADLESS_MODE).pipe(
+      Effect.provide(RunEventDrainLive),
+    )
     const env = yield* hostOptionsOf(HEADLESS_MODE, stream, undefined)
     let patterns: string[] | undefined
     if (targetMutatePatterns !== undefined) {
