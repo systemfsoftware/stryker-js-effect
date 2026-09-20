@@ -41,9 +41,8 @@ export interface ExtendedTestContext {
 
 export const test = baseTest
   .extend<Pick<ExtendedTestContext, 'containerHarness'>>({
-    // eslint-disable-next-line no-empty-pattern
     containerHarness: [
-      async ({}, use) => {
+      async (_context, use) => {
         await ensureContainerEnvironment()
         await use(
           {
