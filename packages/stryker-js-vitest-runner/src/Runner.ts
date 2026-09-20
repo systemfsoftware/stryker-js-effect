@@ -635,7 +635,7 @@ const vitestUnresolved = (specifier: string, base: string, detail: string): Test
 const hasCreateVitest = (
   value: object,
 ): value is { readonly createVitest: ResolvedVitest['createVitest'] } =>
-  'createVitest' in value && typeof value['createVitest'] === 'function'
+  Predicate.hasProperty(value, 'createVitest') && Predicate.isFunction(value['createVitest'])
 
 const isVitestNodeModule = (
   value: unknown,

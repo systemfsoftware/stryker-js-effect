@@ -1,5 +1,6 @@
 import { Effect } from 'effect'
 import * as S from 'effect/Schema'
+import { Percentage } from './Metrics.schema.js'
 
 const RENDERED_OPTION_DEFAULTS = {
   coverageAnalysis: 'perTest',
@@ -72,13 +73,6 @@ export type LogLevel = typeof LogLevel.Type
 export type CoverageAnalysisMode = typeof CoverageAnalysisMode.Type
 export type ReportType = typeof ReportType.Type
 export type PackageManager = typeof PackageManager.Type
-
-/** 0–100 percentage used by the mutation-score thresholds. */
-const Percentage = S.Finite.pipe(S.check(S.isBetween({ minimum: 0, maximum: 100 })))
-
-// ---------------------------------------------------------------------------
-// Nested option objects
-// ---------------------------------------------------------------------------
 
 export const CommandRunnerOptionsSchema = openStruct({
   command: defaulted(S.String, 'npm test'),

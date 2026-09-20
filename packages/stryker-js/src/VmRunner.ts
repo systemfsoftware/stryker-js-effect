@@ -16,8 +16,8 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as Ref from 'effect/Ref'
-
 import type { PooledTestRunner } from './TestRunner.js'
 
 export interface VmScript {
@@ -145,18 +145,17 @@ const resultFromRun = (failureMessage: string | undefined, timeSpentMs: number):
   )
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
-  if (typeof value !== 'object') {
+  if (!Predicate.isObject(value)) {
     return false
   }
-  return value !== null
+  return true
 }
 
 const descriptorValue = (descriptor: PropertyDescriptor | undefined): unknown => {
   if (descriptor === undefined) {
     return undefined
   }
-  const value: unknown = descriptor.value
-  return value
+  return descriptor.value
 }
 
 const hostStrykerNamespace = (): Record<string, unknown> => {

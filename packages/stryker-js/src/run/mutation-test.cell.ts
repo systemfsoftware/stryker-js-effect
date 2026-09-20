@@ -228,9 +228,9 @@ const checkerBreachToStageError = (error: CheckerContractBroken | CheckerFailed)
       })),
     Match.exhaustive,
   )
-const invalidateSlot = <E>(
-  pool: Pool.Pool<CheckerSlot, StageError | CheckerCrash>,
-  slot: CheckerSlot,
+const invalidateSlot = <A, E, I>(
+  pool: Pool.Pool<A, I>,
+  slot: A,
   error: E,
 ): Effect.Effect<never, E, Scope.Scope> => Effect.flatMap(Pool.invalidate(pool, slot), () => Effect.fail(error))
 
@@ -699,10 +699,8 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                                 })
                               ),
                               Effect.catchTags({
-                                OutOfMemoryError: (error) =>
-                                  Effect.flatMap(Pool.invalidate(pool, runner), () => Effect.fail(error)),
-                                ChildProcessCrashedError: (error) =>
-                                  Effect.flatMap(Pool.invalidate(pool, runner), () => Effect.fail(error)),
+                                OutOfMemoryError: (error) => invalidateSlot(pool, runner, error),
+                                ChildProcessCrashedError: (error) => invalidateSlot(pool, runner, error),
                               }),
                             )
                             const reported = yield* reporting.reportMutantRunResult(

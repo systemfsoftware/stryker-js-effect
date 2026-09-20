@@ -19,11 +19,9 @@ const groupBySegment = (
 ): Readonly<Record<string, Readonly<Record<string, FileResult>>>> =>
   Object.entries(files).reduce<Record<string, Record<string, FileResult>>>((groups, [fileName, file]) => {
     const segment = segmentOf(fileName)
-    const current = groups[segment] ?? {}
-    return {
-      ...groups,
-      [segment]: { ...current, [fileName]: file },
-    }
+    const current = groups[segment] ?? (groups[segment] = {})
+    current[fileName] = file
+    return groups
   }, {})
 
 const metricsOf = (files: Readonly<Record<string, FileResult>>): Metrics =>
