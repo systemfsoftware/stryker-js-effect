@@ -946,7 +946,7 @@ export function makeTypescriptCompiler(
     state: CompilerState,
     fileName: string,
     imports: MutableHashSet.MutableHashSet<string>,
-  ): Effect.Effect<TSFileNode, unknown> =>
+  ): Effect.Effect<TSFileNode, CompilerFailed> =>
     Effect.gen(function*() {
       const node = MutableHashMap.get(state.nodes, fileName)
       if (Option.isNone(node)) {
@@ -961,7 +961,7 @@ export function makeTypescriptCompiler(
   const collectChildNodes = (
     state: CompilerState,
     withChildren: MutableHashMap.MutableHashMap<string, TSFileNode>,
-  ): Effect.Effect<void, unknown> =>
+  ): Effect.Effect<void, CompilerFailed> =>
     Effect.gen(function*() {
       for (const [fileName, file] of state.sourceFiles) {
         const node = yield* childNodeOf(state, fileName, file.imports)
@@ -1000,7 +1000,7 @@ export function makeTypescriptCompiler(
     replaceMapContents(state.nodes, withParents)
   }
 
-  const buildFileNodes = (state: CompilerState): Effect.Effect<void, unknown> =>
+  const buildFileNodes = (state: CompilerState): Effect.Effect<void, CompilerFailed> =>
     Effect.gen(function*() {
       createEmptyNodes(state)
       const withChildren = MutableHashMap.empty<string, TSFileNode>()
@@ -1010,7 +1010,7 @@ export function makeTypescriptCompiler(
       yield* Ref.update(stateRef, (prev) => ({ ...prev, nodes: MutableHashMap.fromIterable(state.nodes) }))
     })
 
-  const getNodesEffect: Effect.Effect<MutableHashMap.MutableHashMap<string, TSFileNode>, unknown> = Effect.gen(
+  const getNodesEffect: Effect.Effect<MutableHashMap.MutableHashMap<string, TSFileNode>, CompilerFailed> = Effect.gen(
     function*() {
       const state = yield* Ref.get(stateRef)
       if (MutableHashMap.size(state.nodes) > 0) {

@@ -216,7 +216,7 @@ export const maxRetries = 2
  */
 export const withRetry: TestRunnerCombinator = (inner) => {
   const attempt = <A>(
-    run: Effect.Effect<A, unknown>,
+    run: Effect.Effect<A, PooledTestRunnerError>,
     onExhausted: (message: string) => A,
   ): Effect.Effect<A> =>
     run.pipe(

@@ -1,7 +1,7 @@
 {
   "name": "@systemfsoftware/stryker-ignorer-interface",
   "license": "Apache-2.0",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Ryan Lee <drdgvhbh@gmail.com>",
   "repository": {
     "type": "git",
@@ -71,6 +71,6 @@
     }
   },
   "inlinedDependencies": {
-    "@oxc-project/types": "0.140.0"
+    "@oxc-project/types": "0.150.0"
   }
 }

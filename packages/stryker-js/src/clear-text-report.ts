@@ -334,7 +334,7 @@ const rememberTerminalReport = (seen: WatchedReports, event: ReporterEvent): voi
 }
 
 const decodeClearTextReport = (terminal: TerminalReport): Effect.Effect<ClearTextReportCommand, ReporterFailed> =>
-  S.decodeUnknownEffect(ClearTextReportCommand)({
+  S.decodeEffect(ClearTextReportCommand)({
     _tag: 'ClearTextReportCommand',
     report: terminal.report,
     metrics: terminal.metrics,

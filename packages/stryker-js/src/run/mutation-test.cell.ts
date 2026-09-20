@@ -1,4 +1,4 @@
-import { Cell } from '@systemfsoftware/effect-cell-types'
+import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantTestCoverage } from '@systemfsoftware/stryker-js-instrumenter'
 import type { RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
@@ -366,387 +366,384 @@ const reportDroppedMutants = (dropped: readonly Mutant[]): Effect.Effect<void> =
     ),
   )
 
-export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageError, StageServices> = Cell.layer({
-  read: (command: DryRunDone): Effect.Effect<MutationTestRaw, never, Scope.Scope> =>
-    Effect.gen(function*() {
-      yield* Scope.Scope
-      const prev = command
-      const raw: MutationTestRaw = { prev }
-      return raw
+export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageError, StageServices> = Sandwich.read((
+  command: DryRunDone,
+): Effect.Effect<MutationTestRaw, never, Scope.Scope> =>
+  Effect.gen(function*() {
+    yield* Scope.Scope
+    const prev = command
+    const raw: MutationTestRaw = { prev }
+    return raw
+  })
+).decode(Sandwich.pure((raw: MutationTestRaw): Result.Result<MutationTestCommand, StageError> =>
+  Result.succeed(
+    MutationTestCommand.make({
+      dryRunOnly: raw.prev.options.dryRunOnly,
+      allowEmpty: raw.prev.options.allowEmpty,
+      testCount: raw.prev.dryRunResult.tests.length,
+      isZero: raw.prev.dryRunResult.tests.length === 0,
     }),
-  decode: (raw: MutationTestRaw): Result.Result<MutationTestCommand, StageError> =>
-    Result.succeed(
-      MutationTestCommand.make({
-        dryRunOnly: raw.prev.options.dryRunOnly,
-        allowEmpty: raw.prev.options.allowEmpty,
-        testCount: raw.prev.dryRunResult.tests.length,
-        isZero: raw.prev.dryRunResult.tests.length === 0,
-      }),
-    ),
-  decide: admitMutationTest,
-  encode: (outcome) => outcome,
-  write: (
-    outcome: Result.Result<MutationTestDecision, MutationTestError>,
-    raw: MutationTestRaw,
-  ): Effect.Effect<MutationTestDone, StageError, StageServices> => {
-    const { dropped, plannable: plannableMutants } = partitionPlannable(raw.prev.mutants)
-    return withPhaseSpan(
-      'mutationTest',
-      {
-        mutantCount: raw.prev.mutants.length,
-        skippedMutantCount: dropped.length,
-        testCount: raw.prev.dryRunResult.tests.length,
-      },
-      () =>
-        Effect.gen(function*() {
-          yield* reportDroppedMutants(dropped)
-          const decision = yield* Result.match(outcome, {
-            onFailure: (err) => Effect.fail(StageError.make({ stage: err.stage, reason: err.reason, cause: err })),
-            onSuccess: (d) => Effect.succeed(d),
-          })
-          return yield* Match.value(decision).pipe(
-            Match.tag('MutationTestDryRunOnly', () =>
-              Effect.gen(function*() {
-                const env = yield* RunEnvironment
-                const queue = yield* RunEvents
+  )
+)).decide(admitMutationTest).encode(Sandwich.pure((outcome) => Result.succeed(outcome))).write((
+  outcome: Result.Result<MutationTestDecision, MutationTestError>,
+  raw: MutationTestRaw,
+): Effect.Effect<MutationTestDone, StageError, StageServices> => {
+  const { dropped, plannable: plannableMutants } = partitionPlannable(raw.prev.mutants)
+  return withPhaseSpan(
+    'mutationTest',
+    {
+      mutantCount: raw.prev.mutants.length,
+      skippedMutantCount: dropped.length,
+      testCount: raw.prev.dryRunResult.tests.length,
+    },
+    () =>
+      Effect.gen(function*() {
+        yield* reportDroppedMutants(dropped)
+        const decision = yield* Result.match(outcome, {
+          onFailure: (err) => Effect.fail(StageError.make({ stage: err.stage, reason: err.reason, cause: err })),
+          onSuccess: (d) => Effect.succeed(d),
+        })
+        return yield* Match.value(decision).pipe(
+          Match.tag('MutationTestDryRunOnly', () =>
+            Effect.gen(function*() {
+              const env = yield* RunEnvironment
+              const queue = yield* RunEvents
+              const nowEmit = yield* Clock.currentTimeMillis
+              yield* Queue.offer(
+                queue,
+                PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
+              )
+              yield* Effect.logInfo('The dry-run has been completed successfully. No mutations have been executed.')
+              const emptyOutcome: MutationTestDone = { results: [], verdict: null }
+              return emptyOutcome
+            })),
+          Match.tag('MutationTestNoTests', () =>
+            Effect.gen(function*() {
+              const env = yield* RunEnvironment
+              const queue = yield* RunEvents
+              const now = yield* Clock.currentTimeMillis
+              const elapsed = Duration.millis(now - env.runStartedAt)
+              yield* Effect.logInfo(`Done in ${Duration.format(elapsed)}.`)
+              const nowEmit = yield* Clock.currentTimeMillis
+              yield* Queue.offer(
+                queue,
+                PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
+              )
+              const emptyOutcome: MutationTestDone = { results: [], verdict: null }
+              return emptyOutcome
+            })),
+          Match.tag('MutationTestProceed', () =>
+            Effect.gen(function*() {
+              const prev = raw.prev
+              const env = yield* RunEnvironment
+              const emitPhase = Effect.gen(function*() {
                 const nowEmit = yield* Clock.currentTimeMillis
+                const queue = yield* RunEvents
                 yield* Queue.offer(
                   queue,
                   PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
                 )
-                yield* Effect.logInfo('The dry-run has been completed successfully. No mutations have been executed.')
-                const emptyOutcome: MutationTestDone = { results: [], verdict: null }
-                return emptyOutcome
-              })),
-            Match.tag('MutationTestNoTests', () =>
-              Effect.gen(function*() {
-                const env = yield* RunEnvironment
-                const queue = yield* RunEvents
-                const now = yield* Clock.currentTimeMillis
-                const elapsed = Duration.millis(now - env.runStartedAt)
-                yield* Effect.logInfo(`Done in ${Duration.format(elapsed)}.`)
-                const nowEmit = yield* Clock.currentTimeMillis
-                yield* Queue.offer(
-                  queue,
-                  PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
-                )
-                const emptyOutcome: MutationTestDone = { results: [], verdict: null }
-                return emptyOutcome
-              })),
-            Match.tag('MutationTestProceed', () =>
-              Effect.gen(function*() {
-                const prev = raw.prev
-                const env = yield* RunEnvironment
-                const emitPhase = Effect.gen(function*() {
-                  const nowEmit = yield* Clock.currentTimeMillis
-                  const queue = yield* RunEvents
-                  yield* Queue.offer(
-                    queue,
-                    PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
-                  )
-                })
-                yield* emitPhase
-                const idGenerator = yield* IdGenerator
-                const checkerPool = yield* makeCheckerPool(prev, idGenerator, env.basePath)
-                const testRunnerContext = {
-                  options: prev.options,
-                  fileDescriptions: prev.project.fileDescriptions,
-                  sandboxWorkingDirectory: prev.sandbox.workingDirectory,
-                  idGenerator: idGenerator,
-                  retire: Effect.void,
-                  testFiles: prev.project.testFiles.map((file) => prev.sandbox.sandboxFileFor(file)),
-                }
-                const testRunnerPool: Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError> = yield* Pool
-                  .make({
-                    acquire: buildTestRunner(
-                      testRunnerContext,
-                      Effect.suspend(() => {
-                        const runnerConfigured = prev.options.testRunner
-                        const runnerLabel = Match.value(runnerConfigured).pipe(
-                          Match.when(isCustomTestRunner, (runner) => runner.plugin),
-                          Match.orElse((name) => name),
-                        )
-                        return resolveConfiguredWorkerSpawn({
-                          loaded: prev.loadedPlugins,
-                          kind: 'TestRunner',
-                          configured: runnerConfigured,
-                        }).pipe(
-                          Effect.mapError(missingWorkerEntry('mutationTest', 'test runner', runnerLabel)),
-                          Effect.flatMap(({ spawn }) =>
-                            makeChildProcessTestRunner({
-                              options: prev.options,
-                              fileDescriptions: prev.project.fileDescriptions,
-                              sandboxWorkingDirectory: prev.sandbox.workingDirectory,
-                              workerEntrypoint: spawn.entrypoint,
-                              idGenerator: idGenerator,
-                            })
-                          ),
-                        )
-                      }),
-                    ),
-                    size: prev.concurrency.testRunners,
-                  })
-                const reporting = makeMutationReportingService({
-                  reporterStage: prev.reporterStage,
-                  options: prev.options,
-                  project: prev.project,
-                  testCoverage: prev.testCoverage,
-                  runId: env.runId,
-                  resolvedMode: env.resolvedMode,
-                  sandboxDirectory: prev.sandbox.workingDirectory,
-                  basePath: env.basePath,
-                })
-                const sandboxFileByName: Record<string, string> = Object.fromEntries(
-                  [...MutableHashMap.keys(prev.project.filesToMutate)].map((name) => [
-                    name,
-                    prev.sandbox.sandboxFileFor(name),
-                  ]),
-                )
-                const currentRelativeFiles = yield* readCurrentRelativeFiles(prev.project, env.basePath)
-                const incremental = incrementalDiff({
-                  currentMutants: plannableMutants,
-                  testCoverage: prev.testCoverage,
-                  incrementalReport: prev.project.incrementalReport,
-                  currentRelativeFiles,
-                  basePath: env.basePath,
-                  force: prev.options.force,
-                })
-                const rememberedResults = rememberedResultsOf(plannableMutants, incremental.remembered)
-                yield* Effect.when(
-                  Effect.logInfo(
-                    `Incremental mode: reusing ${rememberedResults.length} mutant result(s), running ${incremental.mutants.length} mutant(s).`,
-                  ),
-                  Effect.succeed(rememberedResults.length > 0),
-                )
-                const { runPlans, earlyResults: noCoverageResults } = partitionRunPlans(
-                  yield* decidePlans(
-                    incremental.mutants,
-                    prev.testCoverage,
-                    {
-                      disableBail: prev.options.disableBail,
-                      timeoutMS: prev.options.timeoutMS,
-                      timeoutFactor: prev.options.timeoutFactor,
-                      ignoreStatic: prev.options.ignoreStatic,
-                    },
-                    Duration.toMillis(prev.timeOverhead),
-                    undefined,
-                    sandboxFileByName,
-                  ),
-                )
-                const sortedPlans = sortRunPlans(runPlans)
-                const allPlansForReporter: readonly MutantRunPlan[] = [...sortedPlans]
-                yield* offerReporterEvent(
-                  prev.reporterStage,
-                  MutationTestingPlanReady.make({
-                    total: allPlansForReporter.length + noCoverageResults.length + rememberedResults.length,
-                    plans: allPlansForReporter.map((plan) => ({
-                      mutantId: plan.mutant.id,
-                      plan: plan.plan,
-                      netTime: plan.netTime,
-                      reloadEnvironment: plan.runOptions.reloadEnvironment,
-                    })),
-                  }),
-                ).pipe(Effect.ignoreCause)
-                {
-                  const queue2 = yield* RunEvents
-                  yield* Queue.offer(
-                    queue2,
-                    PlanKnown.make({ total: allPlansForReporter.length + noCoverageResults.length }),
-                  )
-                }
-                const { passedPlans, checkerResults } = yield* checkPlansWithConfiguredCheckers(
-                  checkerPool,
-                  sortedPlans,
-                  reporting,
-                )
-                const testRunnerStream = Stream.fromIterable(passedPlans)
-                const plannedTotal = allPlansForReporter.length + noCoverageResults.length + rememberedResults.length
-                const pathService = yield* Path.Path
-                const progressQueue = yield* RunEvents
-                const completedRef = yield* Ref.make(0)
-                interface PreparedStreamableMutant {
-                  readonly status: ValidMutantStatus
-                  readonly file: string
-                  readonly location: reportSchema.Location
-                }
-                const preparedStreamableOf = (
-                  result: RunMutantResult,
-                ): PreparedStreamableMutant | undefined => {
-                  if (!isMutantStatus(result.status)) {
-                    return undefined
-                  }
-                  return {
-                    status: result.status,
-                    file: reportFileName(pathService.relative(env.basePath, result.fileName)),
-                    location: toSchemaLocation(result.location),
-                  }
-                }
-                const toStreamEvent = (
-                  result: RunMutantResult,
-                  completed: number,
-                  prepared: PreparedStreamableMutant,
-                ): MutantTested =>
-                  MutantTested.make({
-                    id: result.id,
-                    status: prepared.status,
-                    file: prepared.file,
-                    location: prepared.location,
-                    mutator: result.mutatorName,
-                    replacement: result.replacement,
-                    completed,
-                    total: plannedTotal,
-                  })
-                const offerFinished = (
-                  result: RunMutantResult,
-                  prepared: PreparedStreamableMutant | undefined,
-                ): Effect.Effect<number | undefined> =>
-                  Effect.gen(function*() {
-                    if (prepared === undefined) {
-                      return undefined
-                    }
-                    const completed = yield* Ref.updateAndGet(completedRef, (n) => n + 1)
-                    yield* Queue.offer(
-                      progressQueue,
-                      RunMutantTested.make({
-                        id: result.id,
-                        status: prepared.status,
-                        file: prepared.file,
-                        location: prepared.location,
-                        mutator: result.mutatorName,
-                        replacement: result.replacement,
-                        completed,
-                        total: plannedTotal,
-                      }),
-                    )
-                    return completed
-                  })
-                const reportStreamTested = (
-                  result: RunMutantResult,
-                  completed: number,
-                  prepared: PreparedStreamableMutant,
-                ): Effect.Effect<void> =>
-                  offerReporterEvent(prev.reporterStage, toStreamEvent(result, completed, prepared)).pipe(
-                    Effect.catchCause((cause) =>
-                      Effect.logWarning('Reporter stream failed handling mutantTested', cause)
-                    ),
-                  )
-
-                const offerStreamTested = (
-                  result: RunMutantResult,
-                  completed: number | undefined,
-                  prepared: PreparedStreamableMutant | undefined,
-                ): Effect.Effect<void> =>
-                  Option.match(
-                    Option.all([Option.fromNullishOr(completed), Option.fromNullishOr(prepared)] as const),
-                    {
-                      onNone: () => Effect.void,
-                      onSome: ([done, streamable]) => reportStreamTested(result, done, streamable),
-                    },
-                  )
-                const announceSettledMutant = (result: RunMutantResult): Effect.Effect<void> =>
-                  Effect.gen(function*() {
-                    const prepared = preparedStreamableOf(result)
-                    const completed = yield* offerFinished(result, prepared)
-                    yield* offerStreamTested(result, completed, prepared)
-                  })
-                yield* Effect.forEach(
-                  [...rememberedResults, ...noCoverageResults, ...checkerResults],
-                  announceSettledMutant,
-                  { concurrency: 1, discard: true },
-                )
-                const completedMutants = yield* Ref.make<RunMutantResult[]>([
-                  ...rememberedResults,
-                  ...noCoverageResults,
-                  ...checkerResults,
-                ])
-                const checkpointGate = yield* Semaphore.make(1)
-                yield* reporting.checkpoint(yield* Ref.get(completedMutants)).pipe(
-                  Effect.catchCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
-                )
-                const persist = (result: RunMutantResult) =>
-                  checkpointGate.withPermits(1)(
-                    Effect.gen(function*() {
-                      const next = yield* Ref.updateAndGet(completedMutants, (prev) => [...prev, result])
-                      yield* reporting.checkpoint(next).pipe(
-                        Effect.catchCause((cause) =>
-                          Effect.logWarning('Failed to persist the mutation checkpoint', cause)
+              })
+              yield* emitPhase
+              const idGenerator = yield* IdGenerator
+              const checkerPool = yield* makeCheckerPool(prev, idGenerator, env.basePath)
+              const testRunnerContext = {
+                options: prev.options,
+                fileDescriptions: prev.project.fileDescriptions,
+                sandboxWorkingDirectory: prev.sandbox.workingDirectory,
+                idGenerator: idGenerator,
+                retire: Effect.void,
+                testFiles: prev.project.testFiles.map((file) => prev.sandbox.sandboxFileFor(file)),
+              }
+              const testRunnerPool: Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError> = yield* Pool
+                .make({
+                  acquire: buildTestRunner(
+                    testRunnerContext,
+                    Effect.suspend(() => {
+                      const runnerConfigured = prev.options.testRunner
+                      const runnerLabel = Match.value(runnerConfigured).pipe(
+                        Match.when(isCustomTestRunner, (runner) => runner.plugin),
+                        Match.orElse((name) => name),
+                      )
+                      return resolveConfiguredWorkerSpawn({
+                        loaded: prev.loadedPlugins,
+                        kind: 'TestRunner',
+                        configured: runnerConfigured,
+                      }).pipe(
+                        Effect.mapError(missingWorkerEntry('mutationTest', 'test runner', runnerLabel)),
+                        Effect.flatMap(({ spawn }) =>
+                          makeChildProcessTestRunner({
+                            options: prev.options,
+                            fileDescriptions: prev.project.fileDescriptions,
+                            sandboxWorkingDirectory: prev.sandbox.workingDirectory,
+                            workerEntrypoint: spawn.entrypoint,
+                            idGenerator: idGenerator,
+                          })
                         ),
                       )
                     }),
-                  )
-                const runResults: RunMutantResult[] = yield* withPhaseSpan(
-                  'mutationTest.batch',
-                  { total: plannedTotal, testRunners: prev.concurrency.testRunners },
-                  () =>
-                    Stream.mapEffect(
-                      testRunnerStream,
-                      (plan) =>
-                        Effect.scoped(
-                          Effect.gen(function*() {
-                            const pool = testRunnerPool
-                            const runner = yield* Pool.get(pool)
-                            const result = yield* runner.mutantRun(plan.runOptions).pipe(
-                              Effect.withSpan('stryker.testRunner.mutantRun', {
-                                attributes: {
-                                  'stryker.mutant.id': plan.mutant.id,
-                                  'stryker.mutant.mutator': plan.mutant.mutatorName,
-                                  'stryker.mutant.file': plan.mutant.fileName,
-                                },
-                              }),
-                              Effect.tap((runResult) =>
-                                Effect.annotateCurrentSpan({
-                                  'stryker.mutant.status': runResult.status,
-                                })
-                              ),
-                              Effect.catchTags({
-                                OutOfMemoryError: (error) => invalidateSlot(pool, runner, error),
-                                ChildProcessCrashedError: (error) => invalidateSlot(pool, runner, error),
-                              }),
-                            )
-                            const reported = yield* reporting.reportMutantRunResult(
-                              toReportedMutant(plan.mutant),
-                              result,
-                            )
-                            const prepared = preparedStreamableOf(reported)
-                            const finished = yield* offerFinished(reported, prepared)
-                            yield* offerStreamTested(reported, finished, prepared)
-                            yield* persist(reported)
-                            return reported
-                          }),
-                        ),
-                      { concurrency: Math.max(1, prev.concurrency.testRunners) },
-                    ).pipe(Stream.runCollect, Effect.map((chunk) => [...chunk])),
+                  ),
+                  size: prev.concurrency.testRunners,
+                })
+              const reporting = makeMutationReportingService({
+                reporterStage: prev.reporterStage,
+                options: prev.options,
+                project: prev.project,
+                testCoverage: prev.testCoverage,
+                runId: env.runId,
+                resolvedMode: env.resolvedMode,
+                sandboxDirectory: prev.sandbox.workingDirectory,
+                basePath: env.basePath,
+              })
+              const sandboxFileByName: Record<string, string> = Object.fromEntries(
+                [...MutableHashMap.keys(prev.project.filesToMutate)].map((name) => [
+                  name,
+                  prev.sandbox.sandboxFileFor(name),
+                ]),
+              )
+              const currentRelativeFiles = yield* readCurrentRelativeFiles(prev.project, env.basePath)
+              const incremental = incrementalDiff({
+                currentMutants: plannableMutants,
+                testCoverage: prev.testCoverage,
+                incrementalReport: prev.project.incrementalReport,
+                currentRelativeFiles,
+                basePath: env.basePath,
+                force: prev.options.force,
+              })
+              const rememberedResults = rememberedResultsOf(plannableMutants, incremental.remembered)
+              yield* Effect.when(
+                Effect.logInfo(
+                  `Incremental mode: reusing ${rememberedResults.length} mutant result(s), running ${incremental.mutants.length} mutant(s).`,
+                ),
+                Effect.succeed(rememberedResults.length > 0),
+              )
+              const { runPlans, earlyResults: noCoverageResults } = partitionRunPlans(
+                yield* decidePlans(
+                  incremental.mutants,
+                  prev.testCoverage,
+                  {
+                    disableBail: prev.options.disableBail,
+                    timeoutMS: prev.options.timeoutMS,
+                    timeoutFactor: prev.options.timeoutFactor,
+                    ignoreStatic: prev.options.ignoreStatic,
+                  },
+                  Duration.toMillis(prev.timeOverhead),
+                  undefined,
+                  sandboxFileByName,
+                ),
+              )
+              const sortedPlans = sortRunPlans(runPlans)
+              const allPlansForReporter: readonly MutantRunPlan[] = [...sortedPlans]
+              yield* offerReporterEvent(
+                prev.reporterStage,
+                MutationTestingPlanReady.make({
+                  total: allPlansForReporter.length + noCoverageResults.length + rememberedResults.length,
+                  plans: allPlansForReporter.map((plan) => ({
+                    mutantId: plan.mutant.id,
+                    plan: plan.plan,
+                    netTime: plan.netTime,
+                    reloadEnvironment: plan.runOptions.reloadEnvironment,
+                  })),
+                }),
+              ).pipe(Effect.ignoreCause)
+              {
+                const queue2 = yield* RunEvents
+                yield* Queue.offer(
+                  queue2,
+                  PlanKnown.make({ total: allPlansForReporter.length + noCoverageResults.length }),
                 )
-                const allResults: RunMutantResult[] = [
-                  ...rememberedResults,
-                  ...noCoverageResults,
-                  ...checkerResults,
-                  ...runResults,
-                ]
-                const outcomeResult = yield* reporting.reportAll(allResults)
-                const doneNow = yield* Clock.currentTimeMillis
-                const elapsed = Duration.millis(doneNow - env.runStartedAt)
-                yield* Effect.logInfo(`Done in ${Duration.format(elapsed)}.`)
-                const finalOutcome: MutationTestDone = outcomeResult
-                return finalOutcome
-              })),
-            Match.exhaustive,
-          )
-        }),
-    ).pipe(
-      Effect.mapError((cause) =>
-        Match.value(cause).pipe(
-          Match.tag('StageError', (stage) => stage),
-          Match.tag(
-            'ChildProcessCrashedError',
-            'OutOfMemoryError',
-            'PlatformError',
-            'TestRunnerFailed',
-            () => StageError.make({ stage: 'mutationTest', reason: 'Mutation testing failed', cause }),
-          ),
+              }
+              const { passedPlans, checkerResults } = yield* checkPlansWithConfiguredCheckers(
+                checkerPool,
+                sortedPlans,
+                reporting,
+              )
+              const testRunnerStream = Stream.fromIterable(passedPlans)
+              const plannedTotal = allPlansForReporter.length + noCoverageResults.length + rememberedResults.length
+              const pathService = yield* Path.Path
+              const progressQueue = yield* RunEvents
+              const completedRef = yield* Ref.make(0)
+              interface PreparedStreamableMutant {
+                readonly status: ValidMutantStatus
+                readonly file: string
+                readonly location: reportSchema.Location
+              }
+              const preparedStreamableOf = (
+                result: RunMutantResult,
+              ): PreparedStreamableMutant | undefined => {
+                if (!isMutantStatus(result.status)) {
+                  return undefined
+                }
+                return {
+                  status: result.status,
+                  file: reportFileName(pathService.relative(env.basePath, result.fileName)),
+                  location: toSchemaLocation(result.location),
+                }
+              }
+              const toStreamEvent = (
+                result: RunMutantResult,
+                completed: number,
+                prepared: PreparedStreamableMutant,
+              ): MutantTested =>
+                MutantTested.make({
+                  id: result.id,
+                  status: prepared.status,
+                  file: prepared.file,
+                  location: prepared.location,
+                  mutator: result.mutatorName,
+                  replacement: result.replacement,
+                  completed,
+                  total: plannedTotal,
+                })
+              const offerFinished = (
+                result: RunMutantResult,
+                prepared: PreparedStreamableMutant | undefined,
+              ): Effect.Effect<number | undefined> =>
+                Effect.gen(function*() {
+                  if (prepared === undefined) {
+                    return undefined
+                  }
+                  const completed = yield* Ref.updateAndGet(completedRef, (n) => n + 1)
+                  yield* Queue.offer(
+                    progressQueue,
+                    RunMutantTested.make({
+                      id: result.id,
+                      status: prepared.status,
+                      file: prepared.file,
+                      location: prepared.location,
+                      mutator: result.mutatorName,
+                      replacement: result.replacement,
+                      completed,
+                      total: plannedTotal,
+                    }),
+                  )
+                  return completed
+                })
+              const reportStreamTested = (
+                result: RunMutantResult,
+                completed: number,
+                prepared: PreparedStreamableMutant,
+              ): Effect.Effect<void> =>
+                offerReporterEvent(prev.reporterStage, toStreamEvent(result, completed, prepared)).pipe(
+                  Effect.tapCause((cause) => Effect.logWarning('Reporter stream failed handling mutantTested', cause)),
+                  Effect.ignoreCause,
+                )
+
+              const offerStreamTested = (
+                result: RunMutantResult,
+                completed: number | undefined,
+                prepared: PreparedStreamableMutant | undefined,
+              ): Effect.Effect<void> =>
+                Option.match(
+                  Option.all([Option.fromNullishOr(completed), Option.fromNullishOr(prepared)] as const),
+                  {
+                    onNone: () => Effect.void,
+                    onSome: ([done, streamable]) => reportStreamTested(result, done, streamable),
+                  },
+                )
+              const announceSettledMutant = (result: RunMutantResult): Effect.Effect<void> =>
+                Effect.gen(function*() {
+                  const prepared = preparedStreamableOf(result)
+                  const completed = yield* offerFinished(result, prepared)
+                  yield* offerStreamTested(result, completed, prepared)
+                })
+              yield* Effect.forEach(
+                [...rememberedResults, ...noCoverageResults, ...checkerResults],
+                announceSettledMutant,
+                { concurrency: 1, discard: true },
+              )
+              const completedMutants = yield* Ref.make<RunMutantResult[]>([
+                ...rememberedResults,
+                ...noCoverageResults,
+                ...checkerResults,
+              ])
+              const checkpointGate = yield* Semaphore.make(1)
+              yield* reporting.checkpoint(yield* Ref.get(completedMutants)).pipe(
+                Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
+                Effect.ignoreCause,
+              )
+              const persist = (result: RunMutantResult) =>
+                checkpointGate.withPermits(1)(
+                  Effect.gen(function*() {
+                    const next = yield* Ref.updateAndGet(completedMutants, (prev) => [...prev, result])
+                    yield* reporting.checkpoint(next).pipe(
+                      Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
+                      Effect.ignoreCause,
+                    )
+                  }),
+                )
+              const runResults: RunMutantResult[] = yield* withPhaseSpan(
+                'mutationTest.batch',
+                { total: plannedTotal, testRunners: prev.concurrency.testRunners },
+                () =>
+                  Stream.mapEffect(
+                    testRunnerStream,
+                    (plan) =>
+                      Effect.scoped(
+                        Effect.gen(function*() {
+                          const pool = testRunnerPool
+                          const runner = yield* Pool.get(pool)
+                          const result = yield* runner.mutantRun(plan.runOptions).pipe(
+                            Effect.withSpan('stryker.testRunner.mutantRun', {
+                              attributes: {
+                                'stryker.mutant.id': plan.mutant.id,
+                                'stryker.mutant.mutator': plan.mutant.mutatorName,
+                                'stryker.mutant.file': plan.mutant.fileName,
+                              },
+                            }),
+                            Effect.tap((runResult) =>
+                              Effect.annotateCurrentSpan({
+                                'stryker.mutant.status': runResult.status,
+                              })
+                            ),
+                            Effect.catchTags({
+                              OutOfMemoryError: (error) => invalidateSlot(pool, runner, error),
+                              ChildProcessCrashedError: (error) => invalidateSlot(pool, runner, error),
+                            }),
+                          )
+                          const reported = yield* reporting.reportMutantRunResult(
+                            toReportedMutant(plan.mutant),
+                            result,
+                          )
+                          const prepared = preparedStreamableOf(reported)
+                          const finished = yield* offerFinished(reported, prepared)
+                          yield* offerStreamTested(reported, finished, prepared)
+                          yield* persist(reported)
+                          return reported
+                        }),
+                      ),
+                    { concurrency: Math.max(1, prev.concurrency.testRunners) },
+                  ).pipe(Stream.runCollect, Effect.map((chunk) => [...chunk])),
+              )
+              const allResults: RunMutantResult[] = [
+                ...rememberedResults,
+                ...noCoverageResults,
+                ...checkerResults,
+                ...runResults,
+              ]
+              const outcomeResult = yield* reporting.reportAll(allResults)
+              const doneNow = yield* Clock.currentTimeMillis
+              const elapsed = Duration.millis(doneNow - env.runStartedAt)
+              yield* Effect.logInfo(`Done in ${Duration.format(elapsed)}.`)
+              const finalOutcome: MutationTestDone = outcomeResult
+              return finalOutcome
+            })),
           Match.exhaustive,
         )
-      ),
-    )
-  },
+      }),
+  ).pipe(
+    Effect.mapError((cause) =>
+      Match.value(cause).pipe(
+        Match.tag('StageError', (stage) => stage),
+        Match.tag(
+          'ChildProcessCrashedError',
+          'OutOfMemoryError',
+          'PlatformError',
+          'TestRunnerFailed',
+          () => StageError.make({ stage: 'mutationTest', reason: 'Mutation testing failed', cause }),
+        ),
+        Match.exhaustive,
+      )
+    ),
+  )
 })

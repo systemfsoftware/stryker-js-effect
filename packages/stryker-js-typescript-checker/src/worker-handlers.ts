@@ -16,7 +16,7 @@ const mutantIdsOf = (mutants: readonly CheckerMutantWire[]): ReadonlyArray<strin
 
 const buildChecker = (
   options: StrykerOptions,
-): Effect.Effect<Checker['Service'], unknown, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<Checker['Service'], CheckerFailed, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fsService = yield* FileSystem.FileSystem
     const pathService = yield* Path.Path

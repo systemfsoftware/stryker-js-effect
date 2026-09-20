@@ -1,4 +1,4 @@
-import { Cell } from '@systemfsoftware/effect-cell-types'
+import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import type { File as InstrumenterFile, InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
@@ -39,100 +39,97 @@ interface InstrumentRaw {
   readonly concurrency: { readonly testRunners: number; readonly checkers: number }
 }
 
-export const instrumentCell = Cell.layer({
-  read: (command: PrepareDone) =>
-    Effect.gen(function*() {
-      yield* Scope.Scope
-      const env = yield* RunEnvironment
+export const instrumentCell = Sandwich.read((command: PrepareDone) =>
+  Effect.gen(function*() {
+    yield* Scope.Scope
+    const env = yield* RunEnvironment
 
-      const filesToMutate = yield* Effect.forEach([...MutableHashMap.values(command.project.filesToMutate)], (file) =>
-        toInstrumenterFile(file), {
-        concurrency: FILE_CONCURRENCY,
-      }).pipe(
-        Effect.mapError((cause) =>
-          StageError.make({ stage: 'instrument', reason: 'Failed to read files to mutate', cause })
-        ),
-      )
+    const filesToMutate = yield* Effect.forEach([...MutableHashMap.values(command.project.filesToMutate)], (file) =>
+      toInstrumenterFile(file), {
+      concurrency: FILE_CONCURRENCY,
+    }).pipe(
+      Effect.mapError((cause) =>
+        StageError.make({ stage: 'instrument', reason: 'Failed to read files to mutate', cause })
+      ),
+    )
 
-      const instrumentResult = yield* instrument(filesToMutate, {
-        ignorers: [...command.ignorers],
-        excludedMutations: [...command.options.mutator.excludedMutations],
-      }, env.basePath).pipe(Effect.mapError((cause) =>
-        StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })
-      ))
+    const instrumentResult = yield* instrument(filesToMutate, {
+      ignorers: [...command.ignorers],
+      excludedMutations: [...command.options.mutator.excludedMutations],
+    }, env.basePath).pipe(Effect.mapError((cause) =>
+      StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })
+    ))
 
-      const instrumentedProject = withInstrumentedFiles(command.project, instrumentResult.files)
+    const instrumentedProject = withInstrumentedFiles(command.project, instrumentResult.files)
 
-      const basePath = env.basePath
-      let workingDirectory = command.temporaryDirectoryPath
-      let backupDirectory = ''
-      if (command.options.inPlace) {
-        workingDirectory = basePath
-        backupDirectory = command.temporaryDirectoryPath
-      }
+    const basePath = env.basePath
+    let workingDirectory = command.temporaryDirectoryPath
+    let backupDirectory = ''
+    if (command.options.inPlace) {
+      workingDirectory = basePath
+      backupDirectory = command.temporaryDirectoryPath
+    }
 
-      const sandbox = yield* makeSandbox({
-        options: command.options,
-        project: instrumentedProject,
-        workingDirectory,
-        backupDirectory,
-        basePath,
-      }).pipe(Effect.mapError((cause) =>
-        StageError.make({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
-      ))
+    const sandbox = yield* makeSandbox({
+      options: command.options,
+      project: instrumentedProject,
+      workingDirectory,
+      backupDirectory,
+      basePath,
+    }).pipe(Effect.mapError((cause) =>
+      StageError.make({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
+    ))
 
-      const concurrency = yield* makeConcurrency(command.options).pipe(
-        Effect.mapError((cause) =>
-          StageError.make({ stage: 'instrument', reason: 'Failed to compute concurrency', cause })
-        ),
-      )
+    const concurrency = yield* makeConcurrency(command.options).pipe(
+      Effect.mapError((cause) =>
+        StageError.make({ stage: 'instrument', reason: 'Failed to compute concurrency', cause })
+      ),
+    )
 
-      const raw: InstrumentRaw = {
-        prev: command,
-        filesToMutate,
-        instrumentResult,
-        instrumentedProject,
-        sandbox,
-        concurrency,
-      }
-      return raw
+    const raw: InstrumentRaw = {
+      prev: command,
+      filesToMutate,
+      instrumentResult,
+      instrumentedProject,
+      sandbox,
+      concurrency,
+    }
+    return raw
+  })
+).decode(Sandwich.pure((raw: InstrumentRaw): Result.Result<InstrumentCommand, StageError> =>
+  Result.succeed(
+    InstrumentCommand.make({
+      fileCount: raw.filesToMutate.length,
+      inPlace: raw.prev.options.inPlace,
+      pluginCount: raw.prev.loadedPlugins.pluginModulePaths.length,
     }),
-  decode: (raw: InstrumentRaw): Result.Result<InstrumentCommand, StageError> =>
-    Result.succeed(
-      InstrumentCommand.make({
-        fileCount: raw.filesToMutate.length,
-        inPlace: raw.prev.options.inPlace,
-        pluginCount: raw.prev.loadedPlugins.pluginModulePaths.length,
-      }),
-    ),
-  decide: planInstrumentation,
-  encode: (outcome) => outcome,
-  write: (output, raw) =>
-    withPhaseSpan(
-      'instrument',
-      { fileCount: raw.filesToMutate.length },
-      () =>
-        Effect.gen(function*() {
-          const env = yield* RunEnvironment
-          const now = yield* Clock.currentTimeMillis
-          const queue = yield* RunEvents
-          yield* Queue.offer(queue, PhaseEntered.make({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
+  )
+)).decide(planInstrumentation).encode(Sandwich.pure((outcome) => Result.succeed(outcome))).write((output, raw) =>
+  withPhaseSpan(
+    'instrument',
+    { fileCount: raw.filesToMutate.length },
+    () =>
+      Effect.gen(function*() {
+        const env = yield* RunEnvironment
+        const now = yield* Clock.currentTimeMillis
+        const queue = yield* RunEvents
+        yield* Queue.offer(queue, PhaseEntered.make({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
 
-          const out = output
-          if (Result.isFailure(out)) {
-            const err = out.failure
-            return yield* StageError.make({ stage: err.stage, reason: err.reason, cause: err })
-          }
-          return {
-            ...raw.prev,
-            project: raw.instrumentedProject,
-            mutants: raw.instrumentResult.mutants,
-            sandbox: raw.sandbox,
-            concurrency: {
-              testRunners: raw.concurrency.testRunners,
-              checkers: raw.concurrency.checkers,
-            },
-          }
-        }),
-    ),
-})
+        const out = output
+        if (Result.isFailure(out)) {
+          const err = out.failure
+          return yield* StageError.make({ stage: err.stage, reason: err.reason, cause: err })
+        }
+        return {
+          ...raw.prev,
+          project: raw.instrumentedProject,
+          mutants: raw.instrumentResult.mutants,
+          sandbox: raw.sandbox,
+          concurrency: {
+            testRunners: raw.concurrency.testRunners,
+            checkers: raw.concurrency.checkers,
+          },
+        }
+      }),
+  )
+) satisfies Cell.Cell<PrepareDone, unknown, unknown, unknown>

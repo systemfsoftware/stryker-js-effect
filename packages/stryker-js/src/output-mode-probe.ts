@@ -1,4 +1,4 @@
-import { Cell } from '@systemfsoftware/effect-cell-types'
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -75,7 +75,7 @@ const commandFor = (input: ProbeInput): ResolveModeCommand =>
 
 const envToolVars = (): Effect.Effect<Record<string, string>> =>
   Effect.forEach(TOOL_VARIABLES, (variable) =>
-    Config.string(variable).pipe(
+    Config.String(variable).pipe(
       Effect.option,
       Effect.map((value) => [variable, Option.getOrUndefined(value)] as const),
     )).pipe(Effect.map((entries) => definedToolVars(Object.fromEntries(entries))))
@@ -85,8 +85,8 @@ const probeInput = (
 ): Effect.Effect<ProbeInput, never, Stdio.Stdio> =>
   Effect.gen(function*() {
     const stdio = yield* Stdio.Stdio
-    const envMode = yield* Config.string('STRYKER_MODE').pipe(Effect.option)
-    const agent = yield* Config.string('AGENT').pipe(Effect.option)
+    const envMode = yield* Config.String('STRYKER_MODE').pipe(Effect.option)
+    const agent = yield* Config.String('AGENT').pipe(Effect.option)
     return {
       stdoutIsTTY: yield* stdio.stdoutIsTerminal,
       text: command.text,
@@ -97,18 +97,22 @@ const probeInput = (
     }
   })
 
-const outputModeProbeCell = Cell.layer({
-  read: (command: FormatFlags) => probeInput(command),
-  decode: (raw: ProbeInput) => Result.succeed(commandFor(raw)),
-  decide: resolveOutputMode,
-  encode: (outcome: Result.Result<ResolveModeDecision, ModeConflictError>) =>
-    Result.map(outcome, decisionToResolvedMode),
-  write: (outcome) =>
+const outputModeProbeCell = Sandwich.read((command: FormatFlags) => probeInput(command))
+  .decode(Sandwich.pure((raw: ProbeInput) => Result.succeed(commandFor(raw))))
+  .decide(resolveOutputMode)
+  .encode(
+    Sandwich.pure((
+      outcome: Result.Result<ResolveModeDecision, ModeConflictError>,
+    ): Result.Result<Result.Result<ResolvedMode, ModeConflictError>, never> =>
+      Result.succeed(Result.map(outcome, decisionToResolvedMode))
+    ),
+  )
+  .write((outcome) =>
     Result.match(outcome, {
       onFailure: (error) => Effect.fail(error),
       onSuccess: (mode) => Effect.succeed(mode),
-    }),
-})
+    })
+  )
 
 const detectModeWithProbe = (
   flags: FormatFlags = {},

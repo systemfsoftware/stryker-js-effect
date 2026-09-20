@@ -616,11 +616,19 @@ export class MutantTested extends MutantTested_base {}
 export type MutationScoreThresholds = typeof MutationScoreThresholdsSchema.Type;
 
 // @public (undocumented)
-export const MutationScoreThresholdsSchema: S.Struct<{
+export const MutationScoreThresholdsSchema: S.decodeTo<S.declare<{
+    readonly high: number;
+    readonly low: number;
+    readonly break: number | null;
+}, {
+    readonly high: number;
+    readonly low: number;
+    readonly break: number | null;
+}>, S.Struct<{
     readonly high: S.withDecodingDefaultKey<S.Finite, never>;
     readonly low: S.withDecodingDefaultKey<S.Finite, never>;
     readonly break: S.withDecodingDefaultKey<S.NullOr<S.Finite>, never>;
-}>;
+}>, never, never>;
 
 // Warning: (ae-forgotten-export) The symbol "MutationTestingPlanReady_base" needs to be exported by the entry point index.d.mts
 //
@@ -665,10 +673,16 @@ export const MutationTestResultSchema: S.Struct<{
             readonly duration: S.optional<S.Finite>;
         }>>;
     }>>;
-    readonly thresholds: S.Struct<{
+    readonly thresholds: S.decodeTo<S.declare<{
+        readonly high: number;
+        readonly low: number;
+    }, {
+        readonly high: number;
+        readonly low: number;
+    }>, S.Struct<{
         readonly high: S.Finite;
         readonly low: S.Finite;
-    }>;
+    }>, never, never>;
     readonly config: S.optional<S.$Record<S.String, S.Unknown>>;
     readonly testFiles: S.optional<S.$Record<S.String, S.Struct<{
         readonly source: S.optional<S.String>;
@@ -932,11 +946,19 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
         readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
     }>]>, never>;
     readonly testRunnerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly thresholds: S.withDecodingDefaultKey<S.Struct<{
+    readonly thresholds: S.withDecodingDefaultKey<S.decodeTo<S.declare<{
+        readonly high: number;
+        readonly low: number;
+        readonly break: number | null;
+    }, {
+        readonly high: number;
+        readonly low: number;
+        readonly break: number | null;
+    }>, S.Struct<{
         readonly high: S.withDecodingDefaultKey<S.Finite, never>;
         readonly low: S.withDecodingDefaultKey<S.Finite, never>;
         readonly break: S.withDecodingDefaultKey<S.NullOr<S.Finite>, never>;
-    }>, never>;
+    }>, never, never>, never>;
     readonly timeoutFactor: S.withDecodingDefaultKey<S.Finite, never>;
     readonly timeoutMS: S.withDecodingDefaultKey<S.Finite, never>;
     readonly dryRunTimeoutMinutes: S.withDecodingDefaultKey<S.Finite, never>;
@@ -1174,10 +1196,16 @@ export type TestStatus = typeof TestStatus.Type;
 export type Thresholds = typeof ThresholdsSchema.Type;
 
 // @public (undocumented)
-export const ThresholdsSchema: S.Struct<{
+export const ThresholdsSchema: S.decodeTo<S.declare<{
+    readonly high: number;
+    readonly low: number;
+}, {
+    readonly high: number;
+    readonly low: number;
+}>, S.Struct<{
     readonly high: S.Finite;
     readonly low: S.Finite;
-}>;
+}>, never, never>;
 
 // @public (undocumented)
 export interface TimeoutDryRunResult {

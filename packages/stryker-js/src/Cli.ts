@@ -6,6 +6,7 @@ import * as NodeStdio from '@effect/platform-node/NodeStdio'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { RENDERED_OPTION_DEFAULTS } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
@@ -24,7 +25,6 @@ import * as CliError from 'effect/unstable/cli/CliError'
 import * as Command from 'effect/unstable/cli/Command'
 import * as Flag from 'effect/unstable/cli/Flag'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
-import cliPkgJson from '../package.json' with { type: 'json' }
 import { SurvivorsRejection } from './admit-survivors-run.workflow.js'
 import { RunExit } from './classify-run-outcome.workflow.js'
 import type { RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
@@ -119,7 +119,7 @@ export interface RunStrykerCliInput {
 }
 
 const runOptions = {
-  ignorePatterns: Flag.string('ignorePatterns')
+  ignorePatterns: Flag.String('ignorePatterns')
     .pipe(
       Flag.withDescription(
         'A comma separated list of patterns used for specifying which files need to be ignored. This should only be used in cases where you experience a slow Stryker startup, because too many (or too large) files are copied to the sandbox that are not needed to run the tests. For example, image or movie directories. Note: This option will have NO effect when using the `--inPlace` option. The directories `node_modules`, `.git` and some others are always ignored. Example: `--ignorePatterns dist`. These patterns are ALWAYS ignored: [`node_modules`, `.git`, `/reports`, `*.tsbuildinfo`, `/stryker.log`, `.stryker-tmp`]. Because Stryker always ignores these, you should rarely have to adjust the `ignorePatterns` setting at all. This is useful to speed up Stryker by reducing the size of the sandbox directory which has a positive effect on performance.',
@@ -127,37 +127,37 @@ const runOptions = {
       Flag.map(splitOnComma),
       optional,
     ),
-  ignoreStatic: Flag.map(optional(Flag.boolean('ignoreStatic')), absentWhenFalse).pipe(
+  ignoreStatic: Flag.map(optional(Flag.Boolean('ignoreStatic')), absentWhenFalse).pipe(
     Flag.withDescription(
       'Ignore static mutants. Static mutants are mutants which are only executed during the loading of a file.',
     ),
   ),
-  incremental: Flag.map(optional(Flag.boolean('incremental')), absentWhenFalse).pipe(
+  incremental: Flag.map(optional(Flag.Boolean('incremental')), absentWhenFalse).pipe(
     Flag.withDescription(
       "Enable 'incremental mode'. Stryker will store results in a file and use that file to speed up the next --incremental run",
     ),
   ),
-  allowEmpty: Flag.map(optional(Flag.boolean('allowEmpty')), absentWhenFalse).pipe(
+  allowEmpty: Flag.map(optional(Flag.Boolean('allowEmpty')), absentWhenFalse).pipe(
     Flag.withDescription(
       'Allows stryker to exit without any errors in cases where no tests are found',
     ),
   ),
-  incrementalFile: Flag.string('incrementalFile')
+  incrementalFile: Flag.String('incrementalFile')
     .pipe(
       Flag.withDescription('Specify the file to use for incremental mode.'),
       optional,
     ),
-  progressStreamFile: Flag.string('progressStreamFile')
+  progressStreamFile: Flag.String('progressStreamFile')
     .pipe(
       Flag.withDescription('Specify the file for the machine-mode progress stream.'),
       optional,
     ),
-  force: Flag.map(optional(Flag.boolean('force')), absentWhenFalse).pipe(
+  force: Flag.map(optional(Flag.Boolean('force')), absentWhenFalse).pipe(
     Flag.withDescription(
       'Run all mutants, even if --incremental is provided and an incremental file exists. Can be used to force a rebuild of the incremental file.',
     ),
   ),
-  mutate: Flag.string('mutate')
+  mutate: Flag.String('mutate')
     .pipe(
       Flag.withAlias('m'),
       Flag.withDescription(
@@ -166,7 +166,7 @@ const runOptions = {
       Flag.map(splitOnComma),
       optional,
     ),
-  testFiles: Flag.string('testFiles')
+  testFiles: Flag.String('testFiles')
     .pipe(
       Flag.withAlias('t'),
       Flag.withDescription(
@@ -175,7 +175,7 @@ const runOptions = {
       Flag.map(splitOnComma),
       optional,
     ),
-  buildCommand: Flag.string('buildCommand')
+  buildCommand: Flag.String('buildCommand')
     .pipe(
       Flag.withAlias('b'),
       Flag.withDescription(
@@ -184,12 +184,12 @@ const runOptions = {
       ),
       optional,
     ),
-  dryRunOnly: Flag.map(optional(Flag.boolean('dryRunOnly')), absentWhenFalse).pipe(
+  dryRunOnly: Flag.map(optional(Flag.Boolean('dryRunOnly')), absentWhenFalse).pipe(
     Flag.withDescription(
       'Execute the initial test run only, without doing actual mutation testing. Doing a dry run only can be used to test that StrykerJS can run your test setup, for example, in CI pipelines.',
     ),
   ),
-  checkerNodeArgs: Flag.string('checkerNodeArgs')
+  checkerNodeArgs: Flag.String('checkerNodeArgs')
     .pipe(
       Flag.withDescription(
         'A list of node args to be passed to checker child processes. Split on spaces (commander characterization): `--checkerNodeArgs "--inspect-brk --trace-warnings"`.',
@@ -197,19 +197,19 @@ const runOptions = {
       Flag.map(splitOnSpace),
       optional,
     ),
-  coverageAnalysis: Flag.choice('coverageAnalysis', ['perTest', 'all', 'off'])
+  coverageAnalysis: Flag.Literals('coverageAnalysis', ['perTest', 'all', 'off'])
     .pipe(
       Flag.withDescription(
         `The coverage analysis strategy you want to use. Default value: "${RENDERED_OPTION_DEFAULTS.coverageAnalysis}"`,
       ),
       optional,
     ),
-  testRunner: Flag.string('testRunner')
+  testRunner: Flag.String('testRunner')
     .pipe(
       Flag.withDescription('The name of the test runner you want to use'),
       optional,
     ),
-  testRunnerNodeArgs: Flag.string('testRunnerNodeArgs')
+  testRunnerNodeArgs: Flag.String('testRunnerNodeArgs')
     .pipe(
       Flag.withDescription(
         'A list of node args to be passed to test runner child processes. Split on spaces (commander characterization): `--testRunnerNodeArgs "--inspect-brk --trace-warnings"`.',
@@ -217,7 +217,7 @@ const runOptions = {
       Flag.map(splitOnSpace),
       optional,
     ),
-  reporters: Flag.string('reporters')
+  reporters: Flag.String('reporters')
     .pipe(
       Flag.withDescription(
         'A comma separated list of the names of the reporter(s) you want to use',
@@ -225,7 +225,7 @@ const runOptions = {
       Flag.map(splitOnComma),
       optional,
     ),
-  plugins: Flag.string('plugins')
+  plugins: Flag.String('plugins')
     .pipe(
       Flag.withDescription(
         'A comma separated list of plugin entrypoints, each a file URL resolved with `import.meta.resolve` in your config.',
@@ -234,7 +234,7 @@ const runOptions = {
       Flag.filterMap(asPluginFileUrls, rejectNonFileUrlPlugin('plugins')),
       optional,
     ),
-  appendPlugins: Flag.string('appendPlugins')
+  appendPlugins: Flag.String('appendPlugins')
     .pipe(
       Flag.withDescription(
         'A comma separated list of additional plugin entrypoints, each a file URL resolved with `import.meta.resolve` in your config, loaded without overwriting the (default) `plugins`.',
@@ -243,35 +243,35 @@ const runOptions = {
       Flag.filterMap(asPluginFileUrls, rejectNonFileUrlPlugin('appendPlugins')),
       optional,
     ),
-  timeoutMS: Flag.integer('timeoutMS')
+  timeoutMS: Flag.Int('timeoutMS')
     .pipe(
       Flag.withDescription(
         'Tweak the absolute timeout used to wait for a test runner to complete',
       ),
       optional,
     ),
-  timeoutFactor: Flag.float('timeoutFactor')
+  timeoutFactor: Flag.Finite('timeoutFactor')
     .pipe(
       Flag.withDescription(
         'Tweak the standard deviation relative to the normal test run of a mutated test',
       ),
       optional,
     ),
-  dryRunTimeoutMinutes: Flag.float('dryRunTimeoutMinutes')
+  dryRunTimeoutMinutes: Flag.Finite('dryRunTimeoutMinutes')
     .pipe(
       Flag.withDescription(
         'Configure an absolute timeout for the initial test run. (It can take a while.)',
       ),
       optional,
     ),
-  maxConcurrentTestRunners: Flag.integer('maxConcurrentTestRunners')
+  maxConcurrentTestRunners: Flag.Int('maxConcurrentTestRunners')
     .pipe(
       Flag.withDescription(
         'Set the number of max concurrent test runner to spawn (default: cpuCount)',
       ),
       optional,
     ),
-  concurrency: Flag.string('concurrency')
+  concurrency: Flag.String('concurrency')
     .pipe(
       Flag.withAlias('c'),
       Flag.withDescription(
@@ -280,45 +280,45 @@ const runOptions = {
       Flag.map(parseConcurrency),
       optional,
     ),
-  disableBail: Flag.map(optional(Flag.boolean('disableBail')), absentWhenFalse).pipe(
+  disableBail: Flag.map(optional(Flag.Boolean('disableBail')), absentWhenFalse).pipe(
     Flag.withDescription(
       'Force the test runner to keep running tests, even when a mutant is already killed.',
     ),
   ),
-  maxTestRunnerReuse: Flag.integer('maxTestRunnerReuse')
+  maxTestRunnerReuse: Flag.Int('maxTestRunnerReuse')
     .pipe(
       Flag.withDescription(
         'Restart each test runner worker process after `n` runs. Not recommended unless you are experiencing memory leaks that you are unable to resolve. Configuring `0` here means infinite reuse.',
       ),
       optional,
     ),
-  logLevel: Flag.choice('logLevel', ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'off'] as const)
+  logLevel: Flag.Literals('logLevel', ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'off'] as const)
     .pipe(
       Flag.withDescription(
         `Set the log level for the console. Possible values: fatal, error, warn, info, debug, trace and off. Default is "${RENDERED_OPTION_DEFAULTS.logLevel}"`,
       ),
       optional,
     ),
-  fileLogLevel: Flag.choice('fileLogLevel', ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'off'] as const)
+  fileLogLevel: Flag.Literals('fileLogLevel', ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'off'] as const)
     .pipe(
       Flag.withDescription(
         `Set the log level for the "stryker.log" file. Possible values: fatal, error, warn, info, debug, trace and off. Default is "${RENDERED_OPTION_DEFAULTS.fileLogLevel}"`,
       ),
       optional,
     ),
-  inPlace: Flag.map(optional(Flag.boolean('inPlace')), absentWhenFalse).pipe(
+  inPlace: Flag.map(optional(Flag.Boolean('inPlace')), absentWhenFalse).pipe(
     Flag.withDescription(
       'Determines whether or not Stryker should mutate your files in place. Note: mutating your files in place is generally not needed for mutation testing, unless you have a dependency in your project that is really dependent on the file locations (like "app-root-path" for example).\nWhen `true`, Stryker will override your files, but it will keep a copy of the originals in the temp directory (using `tempDirName`) and it will place the originals back after it is done. Also with `true` the `ignorePatterns` has no effect any more.\nWhen `false` (default) Stryker will work in the copy of your code inside the temp directory.',
     ),
   ),
-  tempDirName: Flag.string('tempDirName')
+  tempDirName: Flag.String('tempDirName')
     .pipe(
       Flag.withDescription(
         'Set the name of the directory that is used by Stryker as a working directory. This directory will be cleaned after a successful run',
       ),
       optional,
     ),
-  cleanTempDir: Flag.string('cleanTempDir')
+  cleanTempDir: Flag.String('cleanTempDir')
     .pipe(
       Flag.withDescription(
         `Choose whether or not to clean the temp dir (which is "${RENDERED_OPTION_DEFAULTS.tempDirName}" inside the current working directory by default) after a run.\n- false: Never delete the temp dir;\n- true: Delete the tmp dir after a successful run;\n- always: Always delete the temp dir, regardless of whether the run was successful.`,
@@ -326,7 +326,7 @@ const runOptions = {
       Flag.map(parseCleanDirOption),
       optional,
     ),
-  survivors: Flag.map(optional(Flag.boolean('survivors')), absentWhenFalse).pipe(
+  survivors: Flag.map(optional(Flag.Boolean('survivors')), absentWhenFalse).pipe(
     Flag.withDescription(
       "Re-run only the mutants that survived a previous run. Admits against the previous run's mutation report (the `survivorsPriorReport` config option, default `reports/mutation-report.json`) and re-tests exactly the survivor set. Exits 2 with a remediation naming a full run when the report is missing, drifted, or the configuration changed; exits 0 with a null score when the report has no survivors.",
     ),
@@ -334,7 +334,7 @@ const runOptions = {
 } satisfies Record<string, Flag.Flag<unknown>>
 
 const runArgs = {
-  configFile: Argument.optional(Argument.string('configFile')),
+  configFile: Argument.optional(Argument.String('configFile')),
 }
 
 const runConfig = {
@@ -343,13 +343,13 @@ const runConfig = {
 }
 
 const mergeReportsOptions = {
-  parts: Flag.string('parts').pipe(
+  parts: Flag.String('parts').pipe(
     Flag.withDescription('The directory holding the downloaded mutation report parts (any download layout).'),
   ),
-  out: Flag.string('out').pipe(
+  out: Flag.String('out').pipe(
     Flag.withDescription('The directory to write the merged report, its html view, and the summary into.'),
   ),
-  packages: Flag.string('packages')
+  packages: Flag.String('packages')
     .pipe(
       Flag.withDescription(
         'A JSON array of the package names the run expected, falling back to the PACKAGES environment variable.',
@@ -430,7 +430,7 @@ function makeStrykerCommand(requestRef: Ref.Ref<Option.Option<CliRequest>>) {
     mergeReportsOptions,
     (config): Effect.Effect<void, CliError.CliError, never> =>
       Effect.gen(function*() {
-        const fromEnvironment = yield* Config.string('PACKAGES').pipe(Effect.option)
+        const fromEnvironment = yield* Config.String('PACKAGES').pipe(Effect.option)
         yield* Ref.set(
           requestRef,
           Option.some({
@@ -461,8 +461,8 @@ const cliLayer = Layer.mergeAll(
   CliConfig.layer({
     builtIns: [
       GlobalFlag.Help,
-      GlobalFlag.action({
-        flag: Flag.boolean('version').pipe(Flag.withAlias('v'), Flag.withDescription('Show version information')),
+      GlobalFlag.Action({
+        flag: Flag.Boolean('version').pipe(Flag.withAlias('v'), Flag.withDescription('Show version information')),
         run: () => Console.log(cliPkgJson.version),
       }),
       GlobalFlag.Wizard,
@@ -510,7 +510,7 @@ export const runStrykerCli = (
 ) =>
   Effect.gen(function*() {
     const stream = yield* createRunEventStream(input.mode)
-    const noColor = yield* Config.string('NO_COLOR').pipe(Effect.option)
+    const noColor = yield* Config.String('NO_COLOR').pipe(Effect.option)
     const hostOptions = yield* hostOptionsOf(input.mode, stream, Option.getOrUndefined(noColor))
     const hostBinding = { env: hostOptions, events: stream.queue }
     const runMutationTestImpl: StrykerRun = input.runMutationTest ??

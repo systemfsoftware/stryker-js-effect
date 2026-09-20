@@ -8,6 +8,7 @@ import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as Schema from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
+import * as NetAddress from 'effect/unstable/net/NetAddress'
 import * as Rpc from 'effect/unstable/rpc/Rpc'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
@@ -41,23 +42,17 @@ const memorySocket = (
   outbox: Queue.Queue<Uint8Array>,
 ): Socket.Socket =>
   Socket.make({
-    runRaw: (handler) =>
-      Queue.take(inbox).pipe(
-        Effect.flatMap((chunk) => {
-          const running = handler(chunk)
-          if (running === undefined) {
-            return Effect.void
-          }
-          return running
-        }),
-        Effect.forever,
-      ),
-    writer: Effect.succeed((chunk) =>
-      Match.value(chunk).pipe(
-        Match.when(Socket.isCloseEvent, () => Effect.void),
-        Match.orElse((frame) => Queue.offer(outbox, asBytes(frame))),
-      )
-    ),
+    reader: Effect.succeed({
+      pull: Queue.take(inbox).pipe(Effect.map((chunk) => [chunk] as const)),
+      upgrade: () => Effect.void,
+    }),
+    writer: Effect.succeed({
+      write: (chunk) =>
+        Socket.isCloseEvent(chunk)
+          ? Effect.void
+          : Queue.offer(outbox, asBytes(chunk)).pipe(Effect.asVoid),
+      writeAll: (chunks) => Effect.forEach(chunks, (chunk) => Queue.offer(outbox, asBytes(chunk))).pipe(Effect.asVoid),
+    }),
   })
 
 export const memorySocketPair: Effect.Effect<readonly [Socket.Socket, Socket.Socket]> = Effect.gen(function*() {
@@ -67,7 +62,7 @@ export const memorySocketPair: Effect.Effect<readonly [Socket.Socket, Socket.Soc
 })
 
 export const singleConnection = (socket: Socket.Socket): SocketServer.SocketServer['Service'] => ({
-  address: { _tag: 'UnixAddress', path: 'substituted-worker' },
+  address: NetAddress.unixPathAddress('substituted-worker'),
   run: <R, E, A>(handler: (socket: Socket.Socket) => Effect.Effect<A, E, R>) =>
     handler(socket).pipe(Effect.orDie, Effect.andThen(Effect.never)),
 })

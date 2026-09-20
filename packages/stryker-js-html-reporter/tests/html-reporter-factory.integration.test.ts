@@ -77,7 +77,7 @@ const removeDir = (dir: string): Promise<void> =>
     }),
   )
 
-const optionsWith = (fileName: string) => S.decodeSync(StrykerOptionsSchema)({ htmlReporter: { fileName } })
+const optionsWith = (fileName: string) => S.decodeEffect(StrykerOptionsSchema)({ htmlReporter: { fileName } })
 
 const reportFixture = (): reportApi.MutationTestResult => ({
   schemaVersion: '1.0',
@@ -182,7 +182,8 @@ Feature('Writing the html mutation report').body(({ scenario }) => {
       When('the reporter consumes a completed run')('html', (s) =>
         Effect.gen(function*() {
           try {
-            const consume = makeHtmlReporter(optionsWith(s.output.fileName), {})
+            const options = yield* optionsWith(s.output.fileName)
+            const consume = makeHtmlReporter(options, {})
             yield* consume(toStream(runEvents(reportFixture(), metricsFixture())))
             return yield* Effect.promise(() => readText(s.output.fileName))
           } finally {
@@ -215,8 +216,10 @@ Feature('Writing the html mutation report').body(({ scenario }) => {
           try {
             const fileA = yield* Effect.promise(() => joinPath(dirA, 'index.html'))
             const fileB = yield* Effect.promise(() => joinPath(dirB, 'index.html'))
-            yield* makeHtmlReporter(optionsWith(fileA), {})(toStream(runEvents(s.run.report, s.run.metrics)))
-            yield* makeHtmlReporter(optionsWith(fileB), {})(toStream(runEvents(s.run.report, s.run.metrics)))
+            const optionsA = yield* optionsWith(fileA)
+            const optionsB = yield* optionsWith(fileB)
+            yield* makeHtmlReporter(optionsA, {})(toStream(runEvents(s.run.report, s.run.metrics)))
+            yield* makeHtmlReporter(optionsB, {})(toStream(runEvents(s.run.report, s.run.metrics)))
             const existed = yield* Effect.promise(() => fileExists(fileA))
             return {
               a: yield* Effect.promise(() => readText(fileA)),

@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js",
-  "version": "10.0.0",
+  "version": "10.0.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -35,7 +35,7 @@
     "node": ">=22.18.0"
   },
   "dependencies": {
-    "@effect/opentelemetry": "4.0.0-rc.112",
+    "@effect/opentelemetry": "4.0.0-rc.116",
     "@effect/platform-node": "catalog:",
     "@effect/platform-node-shared": "catalog:",
     "@noble/hashes": "catalog:",
@@ -150,7 +150,7 @@
     "is-reference": "3.0.3",
     "locate-character": "3.0.0",
     "magic-string": "0.30.21",
-    "oxc-parser": "0.140.0",
+    "oxc-parser": "0.150.0",
     "oxc-walker": "1.1.1",
     "svelte": "5.55.1",
     "zimmerframe": "1.1.5"

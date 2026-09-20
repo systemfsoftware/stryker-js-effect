@@ -1,4 +1,4 @@
-import { Cell } from '@systemfsoftware/effect-cell-types'
+import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { DryRunCompleted, isCustomTestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import type {
   CompleteDryRunResult,
@@ -174,132 +174,129 @@ const completeDryRunPassed = (raw: DryRunRaw): Effect.Effect<DryRunDone, StageEr
     }
   })
 
-export const dryRunCell = Cell.layer({
-  read: (command: InstrumentDone) =>
-    Effect.gen(function*() {
-      yield* Scope.Scope
-      const idGenerator = yield* IdGenerator
+export const dryRunCell = Sandwich.read((command: InstrumentDone) =>
+  Effect.gen(function*() {
+    yield* Scope.Scope
+    const idGenerator = yield* IdGenerator
 
-      const { files, testFiles } = buildDryRunFiles(command)
-      const dryRunTimeout = command.options.dryRunTimeoutMinutes * 60 * 1000
+    const { files, testFiles } = buildDryRunFiles(command)
+    const dryRunTimeout = command.options.dryRunTimeoutMinutes * 60 * 1000
 
-      yield* Effect.logInfo('Starting dry run')
-      const { rawResult, capabilities, gross } = yield* Effect.scoped(
-        Effect.gen(function*() {
-          const childRunnerEffect = Effect.suspend(() => {
-            const runnerConfigured = command.options.testRunner
-            const runnerLabel = Match.value(runnerConfigured).pipe(
-              Match.when(isCustomTestRunner, (runner) => runner.plugin),
-              Match.orElse((name) => name),
-            )
-            return resolveConfiguredWorkerSpawn({
-              loaded: command.loadedPlugins,
-              kind: 'TestRunner',
-              configured: runnerConfigured,
-            }).pipe(
-              Effect.mapError(missingWorkerEntry('dryRun', 'test runner', runnerLabel)),
-              Effect.flatMap(({ spawn }) =>
-                makeChildProcessTestRunner({
-                  options: command.options,
-                  fileDescriptions: command.project.fileDescriptions,
-                  sandboxWorkingDirectory: command.sandbox.workingDirectory,
-                  workerEntrypoint: spawn.entrypoint,
-                  idGenerator,
-                })
-              ),
-            )
-          })
-
-          const runner = yield* buildTestRunner(
-            {
-              options: command.options,
-              fileDescriptions: command.project.fileDescriptions,
-              sandboxWorkingDirectory: command.sandbox.workingDirectory,
-              idGenerator,
-              retire: Effect.void,
-              testFiles: testFiles ?? [],
-            },
-            childRunnerEffect,
+    yield* Effect.logInfo('Starting dry run')
+    const { rawResult, capabilities, gross } = yield* Effect.scoped(
+      Effect.gen(function*() {
+        const childRunnerEffect = Effect.suspend(() => {
+          const runnerConfigured = command.options.testRunner
+          const runnerLabel = Match.value(runnerConfigured).pipe(
+            Match.when(isCustomTestRunner, (runner) => runner.plugin),
+            Match.orElse((name) => name),
           )
-          const extra: { testFiles?: readonly string[] } = Option.match(Option.fromUndefinedOr(testFiles), {
-            onNone: () => ({}),
-            onSome: (files) => ({ testFiles: files }),
-          })
-          const timed = yield* Effect.timed(
-            runner
-              .dryRun({
-                timeout: dryRunTimeout,
-                coverageAnalysis: command.options.coverageAnalysis,
-                disableBail: command.options.disableBail,
-                files,
-                ...extra,
+          return resolveConfiguredWorkerSpawn({
+            loaded: command.loadedPlugins,
+            kind: 'TestRunner',
+            configured: runnerConfigured,
+          }).pipe(
+            Effect.mapError(missingWorkerEntry('dryRun', 'test runner', runnerLabel)),
+            Effect.flatMap(({ spawn }) =>
+              makeChildProcessTestRunner({
+                options: command.options,
+                fileDescriptions: command.project.fileDescriptions,
+                sandboxWorkingDirectory: command.sandbox.workingDirectory,
+                workerEntrypoint: spawn.entrypoint,
+                idGenerator,
               })
-              .pipe(
-                Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Dry run failed', cause })),
-              ),
-          )
-          const gross: EffectDuration.Duration = timed[0]
-          const rawResult = timed[1]
-          const capabilities = yield* runner.capabilities.pipe(
-            Effect.mapError((cause) =>
-              StageError.make({ stage: 'dryRun', reason: 'Failed to get test runner capabilities', cause })
             ),
           )
-          return { rawResult, capabilities, gross }
-        }),
-      ).pipe(
-        Effect.mapError((cause) => {
-          if (S.is(StageError)(cause)) {
-            return cause
-          }
-          return StageError.make({ stage: 'dryRun', reason: 'Dry run failed to start test runner', cause })
-        }),
-      )
+        })
 
-      const raw: DryRunRaw = {
-        prev: command,
-        rawResult,
-        capabilities,
-        gross,
-      }
-      return raw
-    }),
-  decode: (raw: DryRunRaw): Result.Result<DryRunCommand, StageError> =>
-    Match.value(raw.rawResult).pipe(
-      Match.when(isCompleteDryRun, (complete) => decodeCompleteDryRun(complete, raw.prev.options.allowEmpty)),
-      Match.when(isFailedDryRun, (failed) => decodeFailedDryRun(failed, raw.prev.options.allowEmpty)),
-      Match.orElse((timedOut) => decodeTimedOutDryRun(timedOut, raw.prev.options.allowEmpty)),
-    ),
-  decide: dryRun,
-  encode: (outcome) => outcome,
-  write: (outcome, raw) =>
-    withPhaseSpan(
-      'dryRun',
-      {},
-      () =>
-        Effect.gen(function*() {
-          const env = yield* RunEnvironment
-          const now = yield* Clock.currentTimeMillis
-          const queue = yield* RunEvents
-          yield* Queue.offer(queue, PhaseEntered.make({ phase: 'dry-run', elapsedMs: now - env.runStartedAt }))
+        const runner = yield* buildTestRunner(
+          {
+            options: command.options,
+            fileDescriptions: command.project.fileDescriptions,
+            sandboxWorkingDirectory: command.sandbox.workingDirectory,
+            idGenerator,
+            retire: Effect.void,
+            testFiles: testFiles ?? [],
+          },
+          childRunnerEffect,
+        )
+        const extra: { testFiles?: readonly string[] } = Option.match(Option.fromUndefinedOr(testFiles), {
+          onNone: () => ({}),
+          onSome: (files) => ({ testFiles: files }),
+        })
+        const timed = yield* Effect.timed(
+          runner
+            .dryRun({
+              timeout: dryRunTimeout,
+              coverageAnalysis: command.options.coverageAnalysis,
+              disableBail: command.options.disableBail,
+              files,
+              ...extra,
+            })
+            .pipe(
+              Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Dry run failed', cause })),
+            ),
+        )
+        const gross: EffectDuration.Duration = timed[0]
+        const rawResult = timed[1]
+        const capabilities = yield* runner.capabilities.pipe(
+          Effect.mapError((cause) =>
+            StageError.make({ stage: 'dryRun', reason: 'Failed to get test runner capabilities', cause })
+          ),
+        )
+        return { rawResult, capabilities, gross }
+      }),
+    ).pipe(
+      Effect.mapError((cause) => {
+        if (S.is(StageError)(cause)) {
+          return cause
+        }
+        return StageError.make({ stage: 'dryRun', reason: 'Dry run failed to start test runner', cause })
+      }),
+    )
 
-          const out = outcome
-          if (Result.isFailure(out)) {
-            const err = out.failure
-            return yield* StageError.make({ stage: err.stage, reason: err.reason, cause: err })
-          }
-          return yield* Match.value(out.success).pipe(
-            Match.tag('DryRunFailed', (decision) =>
-              Effect.fail(
-                StageError.make({
-                  stage: 'dryRun',
-                  reason: 'There were failed tests in the initial test run.',
-                  cause: decision,
-                }),
-              )),
-            Match.tag('DryRunPassed', () => completeDryRunPassed(raw)),
-            Match.exhaustive,
-          )
-        }),
-    ),
-})
+    const raw: DryRunRaw = {
+      prev: command,
+      rawResult,
+      capabilities,
+      gross,
+    }
+    return raw
+  })
+).decode(Sandwich.pure((raw: DryRunRaw): Result.Result<DryRunCommand, StageError> =>
+  Match.value(raw.rawResult).pipe(
+    Match.when(isCompleteDryRun, (complete) => decodeCompleteDryRun(complete, raw.prev.options.allowEmpty)),
+    Match.when(isFailedDryRun, (failed) => decodeFailedDryRun(failed, raw.prev.options.allowEmpty)),
+    Match.orElse((timedOut) => decodeTimedOutDryRun(timedOut, raw.prev.options.allowEmpty)),
+  )
+)).decide(dryRun).encode(Sandwich.pure((outcome) => Result.succeed(outcome))).write((outcome, raw) =>
+  withPhaseSpan(
+    'dryRun',
+    {},
+    () =>
+      Effect.gen(function*() {
+        const env = yield* RunEnvironment
+        const now = yield* Clock.currentTimeMillis
+        const queue = yield* RunEvents
+        yield* Queue.offer(queue, PhaseEntered.make({ phase: 'dry-run', elapsedMs: now - env.runStartedAt }))
+
+        const out = outcome
+        if (Result.isFailure(out)) {
+          const err = out.failure
+          return yield* StageError.make({ stage: err.stage, reason: err.reason, cause: err })
+        }
+        return yield* Match.value(out.success).pipe(
+          Match.tag('DryRunFailed', (decision) =>
+            Effect.fail(
+              StageError.make({
+                stage: 'dryRun',
+                reason: 'There were failed tests in the initial test run.',
+                cause: decision,
+              }),
+            )),
+          Match.tag('DryRunPassed', () => completeDryRunPassed(raw)),
+          Match.exhaustive,
+        )
+      }),
+  )
+) satisfies Cell.Cell<InstrumentDone, unknown, unknown, unknown>

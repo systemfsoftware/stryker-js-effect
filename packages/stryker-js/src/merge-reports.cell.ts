@@ -1,4 +1,4 @@
-import { Cell } from '@systemfsoftware/effect-cell-types'
+import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -411,7 +411,7 @@ const writeEncoded = (
             ),
         })
         yield* putFile(path.join(raw.out, OUT_SUMMARY), body.summary, false)
-        const step = yield* Config.string(STEP_SUMMARY).pipe(Effect.option)
+        const step = yield* Config.String(STEP_SUMMARY).pipe(Effect.option)
         yield* Option.match(step, {
           onNone: () => Effect.void,
           onSome: (file) =>
@@ -432,8 +432,8 @@ const writeEncoded = (
       }),
   })
 
-export const mergeReportsCell = Cell.layer({
-  read: readMerge,
-  decide: mergeReportParts,
-  write: (outcome: MergeOutcome, raw: MergeCommand) => writeEncoded(encodeMerge(outcome, raw), raw),
-})
+export const mergeReportsCell = Sandwich.read(readMerge)
+  .decide(mergeReportParts)
+  .write((outcome: MergeOutcome, raw: MergeCommand) =>
+    writeEncoded(encodeMerge(outcome, raw), raw)
+  ) satisfies Cell.Cell<MergeReportsRequest, unknown, unknown, unknown>

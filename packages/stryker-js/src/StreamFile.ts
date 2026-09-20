@@ -55,7 +55,8 @@ export const RunEventDrainFileLive: Layer.Layer<
           const fileName = yield* Ref.get(fileNameRef)
           yield* drainStdoutAndFile(fs, path, stdio, fileName, framed)
         }).pipe(
-          Effect.catchCause((cause) => Effect.logError('stryker.output.drain_file_failed', cause)),
+          Effect.tapCause((cause) => Effect.logError('stryker.output.drain_file_failed', cause)),
+          Effect.ignoreCause,
         ),
       setProgressStreamFile: (fileName: string) => Ref.set(fileNameRef, fileName),
     })

@@ -3,12 +3,12 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import * as NodeStdio from '@effect/platform-node/NodeStdio'
+import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import * as Option from 'effect/Option'
 import * as Stdio from 'effect/Stdio'
-import cliPkgJson from '../../package.json' with { type: 'json' }
 
 import { strykerCliEffect } from '../Cli.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.js'
@@ -19,9 +19,9 @@ import { RunEventDrainFileLive, RunEventStreamFileLive } from '../StreamFile.js'
 /** The major version `engines.node` floors the CLI at. */
 const SUPPORTED_NODE_MAJOR = 20
 
-process.title = 'stryker'
+globalThis.process.title = 'stryker'
 
-/** The numbers a `process.version` names; a component that does not parse stays `NaN`. */
+/** The numbers a `globalThis.process.version` names; a component that does not parse stays `NaN`. */
 const versionNumbers = (version: string): readonly number[] =>
   version
     .replace(/^v/, '')
@@ -44,9 +44,9 @@ function isSupportedNodeVersion(version: string): boolean {
   return !NODE_VERSION_REJECTIONS.some((rejects) => rejects(numbers))
 }
 
-if (!isSupportedNodeVersion(process.version)) {
+if (!isSupportedNodeVersion(globalThis.process.version)) {
   throw new Error(
-    `Node.js version ${process.version} detected. StrykerJS requires version to match ${cliPkgJson.engines.node}. Please update your Node.js version or visit https://nodejs.org/ for additional instructions`,
+    `Node.js version ${globalThis.process.version} detected. StrykerJS requires version to match ${cliPkgJson.engines.node}. Please update your Node.js version or visit https://nodejs.org/ for additional instructions`,
   )
 }
 

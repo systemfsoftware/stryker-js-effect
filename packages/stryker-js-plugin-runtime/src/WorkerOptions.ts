@@ -15,10 +15,10 @@ const workerOptionsWire = (): WorkerOptionsWire => wire ??= S.fromJsonString(S.t
 export const encodeWorkerOptions = (options: StrykerOptions): Effect.Effect<string> =>
   S.encodeEffect(workerOptionsWire())(options).pipe(Effect.orDie)
 
-export const decodeWorkerOptions = (raw: string) => S.decodeUnknownEffect(workerOptionsWire())(raw)
+export const decodeWorkerOptions = (raw: string) => S.decodeEffect(workerOptionsWire())(raw)
 
 export const readWorkerOptionsFromEnv = Effect.gen(function*() {
-  const workerDir = yield* Config.string('STRYKER_WORKER_DIR')
+  const workerDir = yield* Config.String('STRYKER_WORKER_DIR')
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const raw = yield* fs.readFileString(path.join(workerDir, 'options.json'))

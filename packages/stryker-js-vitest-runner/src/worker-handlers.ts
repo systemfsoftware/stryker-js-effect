@@ -1,3 +1,4 @@
+import { layer as NodeCryptoLayer } from '@effect/platform-node/NodeCrypto'
 import { errorToString, type MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type DryRunOptions,
@@ -11,6 +12,7 @@ import { readWorkerOptionsFromEnv } from '@systemfsoftware/stryker-js-plugin-run
 import * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import { makeVitestRunnerLayer } from './Runner.js'
 
@@ -37,13 +39,15 @@ export const testRunnerHandlers = TestRunnerRpcs.toLayer(
       Match.when(Match.string, (name) => name),
       Match.orElse(() => 'vitest'),
     )
-    const sandboxDirectory = yield* Config.string('STRYKER_SANDBOX_DIR')
+    const sandboxDirectory = yield* Config.String('STRYKER_SANDBOX_DIR')
     const failed = (phase: TestRunnerPhase) => (cause: Cause.Cause<unknown>): Effect.Effect<never, TestRunnerFailed> =>
       Effect.fail(new TestRunnerFailed({ cause: Cause.pretty(cause), phase, runnerName }))
 
     const underlying = yield* Effect.cached(
       TestRunner.pipe(
-        Effect.provide(makeVitestRunnerLayer({ options, sandboxDirectory })),
+        Effect.provide(
+          makeVitestRunnerLayer({ options, sandboxDirectory }).pipe(Layer.provide(NodeCryptoLayer)),
+        ),
         Effect.flatMap((service) => service.init.pipe(Effect.as(service))),
         Effect.catchCause(failed('init')),
       ),

@@ -95,10 +95,10 @@ export const otlpTelemetryLayer = (options: {
 
 export const telemetryLayer: Layer.Layer<never> = Layer.unwrap(
   Effect.all([
-    Config.boolean('OTEL_ENABLED').pipe(Config.withDefault(false)),
-    Config.string('OTEL_SERVICE_NAME').pipe(Config.withDefault('stryker-js')),
-    Config.string('OTEL_EXPORTER_OTLP_ENDPOINT').pipe(Config.withDefault('http://127.0.0.1:4318')),
-    Config.number('OTEL_METRIC_EXPORT_INTERVAL').pipe(Config.withDefault(DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS)),
+    Config.Boolean('OTEL_ENABLED').pipe(Config.withDefault(false)),
+    Config.String('OTEL_SERVICE_NAME').pipe(Config.withDefault('stryker-js')),
+    Config.String('OTEL_EXPORTER_OTLP_ENDPOINT').pipe(Config.withDefault('http://127.0.0.1:4318')),
+    Config.Number('OTEL_METRIC_EXPORT_INTERVAL').pipe(Config.withDefault(DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS)),
   ]).pipe(
     Effect.orElseSucceed(
       () => [false, 'stryker-js', 'http://127.0.0.1:4318', DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS] as const,

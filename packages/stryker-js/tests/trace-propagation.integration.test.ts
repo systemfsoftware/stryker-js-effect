@@ -56,7 +56,7 @@ const makeClient = (plan: TraceWorkerPlan) =>
   Effect.gen(function*() {
     const record = yield* makeTraceWorkerRecord
     const launcher = yield* traceServingLauncher(record)
-    const options = yield* S.decodeUnknownEffect(StrykerOptionsSchema)({})
+    const options = yield* S.decodeEffect(StrykerOptionsSchema)({})
     const client = yield* spawnReporterWorker({
       entrypoint: plan.entrypoint,
       projectBasePath: plan.projectBasePath,
@@ -71,12 +71,10 @@ const readHeaders = (
   record: { readonly headers: Ref.Ref<Headers.Headers | undefined> },
 ): Effect.Effect<Headers.Headers> =>
   Ref.get(record.headers).pipe(
-    Effect.flatMap((headers) => {
-      if (headers === undefined) {
-        return Effect.die(new Error('the worker never received the boundary call'))
-      }
-      return Effect.succeed(headers)
-    }),
+    Effect.filterOrElse(
+      (headers): headers is Headers.Headers => headers !== undefined,
+      () => Effect.die(new Error('the worker never received the boundary call')),
+    ),
   )
 
 const runTracedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> => {

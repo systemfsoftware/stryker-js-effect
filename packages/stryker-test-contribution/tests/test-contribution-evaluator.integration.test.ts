@@ -62,19 +62,15 @@ const reportWithToothlessKernelFile = (
   },
 })
 
-// test fixture constructing StrykerOptions via decodeUnknownSync — allowed per no-sync-schema-codecs (test file)
-const evaluatorServiceWith = (options: PartialStrykerOptions) => {
-  const decoded = Schema.decodeUnknownSync(StrykerOptionsSchema)(options)
-  return makeTestContributionEvaluatorService(decoded)
-}
+const evaluatorServiceWith = (options: PartialStrykerOptions) =>
+  Effect.map(Schema.decodeUnknownEffect(StrykerOptionsSchema)(options), makeTestContributionEvaluatorService)
 
-const evaluatorViaLayerWith = (options: PartialStrykerOptions) => {
-  const decoded = Schema.decodeUnknownSync(StrykerOptionsSchema)(options)
-  return Effect.gen(function*() {
+const evaluatorViaLayerWith = (options: PartialStrykerOptions) =>
+  Effect.gen(function*() {
+    const decoded = yield* Schema.decodeUnknownEffect(StrykerOptionsSchema)(options)
     const context = yield* Layer.build(testContributionEvaluatorLayer(decoded))
     return Context.get(context, Evaluator)
   })
-}
 interface EvaluatorServiceShape {
   readonly evaluate: (report: schema.MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed>
 }
@@ -124,7 +120,7 @@ Feature('test-contribution evaluator plugin')
       Gherkin.Do.pipe(
         Given('an evaluator service with disableBail true')(
           'evaluator',
-          () => Effect.sync(() => evaluatorServiceWith({ disableBail: true })),
+          () => evaluatorServiceWith({ disableBail: true }),
         ),
         When('a report with one toothless kernel property file is evaluated')(
           'exit',
@@ -141,7 +137,7 @@ Feature('test-contribution evaluator plugin')
       Gherkin.Do.pipe(
         Given('an evaluator service with bail active (disableBail unset)')(
           'evaluator',
-          () => Effect.sync(() => evaluatorServiceWith({})),
+          () => evaluatorServiceWith({}),
         ),
         When('a report with one toothless kernel property file is evaluated')(
           'exit',
@@ -158,7 +154,7 @@ Feature('test-contribution evaluator plugin')
       Gherkin.Do.pipe(
         Given('an evaluator service with disableBail true')(
           'evaluator',
-          () => Effect.sync(() => evaluatorServiceWith({ disableBail: true })),
+          () => evaluatorServiceWith({ disableBail: true }),
         ),
         When('a report where every kernel file kills a distinct mutant is evaluated')(
           'exit',
@@ -200,7 +196,7 @@ Feature('test-contribution evaluator plugin')
       Gherkin.Do.pipe(
         Given('an evaluator service with disableBail true')(
           'evaluator',
-          () => Effect.sync(() => evaluatorServiceWith({ disableBail: true })),
+          () => evaluatorServiceWith({ disableBail: true }),
         ),
         When('a report missing required fields is evaluated')('exit', (s) => {
           const brokenReport = reportWithToothlessKernelFile()

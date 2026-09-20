@@ -167,7 +167,7 @@ const driveReporterWorker = (
 ): Effect.Effect<ObservedRun> =>
   Effect.scoped(
     Effect.gen(function*() {
-      const options = yield* S.decodeUnknownEffect(StrykerOptionsSchema)({})
+      const options = yield* S.decodeEffect(StrykerOptionsSchema)({})
       const trace = yield* makeReporterWorkerTrace
       const launcher = yield* reporterServingLauncher(trace)
       const client = yield* spawnReporterWorker({
