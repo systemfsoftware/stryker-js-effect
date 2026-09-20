@@ -1,11 +1,10 @@
-import { Schema as S } from 'effect'
-import * as Effect from 'effect/Effect'
+import { Result, Schema as S } from 'effect'
 
 import pkgJson from '../package.json' with { type: 'json' }
 
 import { PackageJsonSchema } from './stryker-package.schema.js'
 
 const rawPackageJson: unknown = pkgJson
-const pkg = Effect.runSync(S.decodeUnknownEffect(PackageJsonSchema)(rawPackageJson))
+const pkg = S.decodeUnknownResult(PackageJsonSchema)(rawPackageJson)
 
-export const strykerVersion = pkg.version
+export const strykerVersion = Result.getOrThrow(pkg).version
