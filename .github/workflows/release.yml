@@ -40,9 +40,49 @@ jobs:
         name: Decide release phase from repository state
         run: ./scripts/plan-release.ts --output "$GITHUB_OUTPUT"
 
+  # The gate that makes a release conditional on the suite that guards it.
+  # Same `pnpm check:ci` the CI workflow runs — one definition, never
+  # re-enumerated here. Versioning and publishing both wait on this job, so a
+  # red suite blocks the release PR *and* the npm publish that follows it.
+  gate:
+    if: needs.plan.outputs.phase != 'none'
+    needs: [plan]
+    name: gate · check:ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    env:
+      CI: "true"
+      HUSKY: "0"
+      OXLINT_FORMAT: github
+      TSGO_FORMAT: github-actions
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: dprint from the flake
+        run: echo "$(nix build --no-link --print-out-paths .#dprint)/bin" >> "$GITHUB_PATH"
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Turbo cache
+        uses: actions/cache@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-dist-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-dist-
+            turbo-${{ runner.os }}-
+      # Root package.json `check:ci` is the one definition. Never re-enumerate its steps here.
+      - name: Gate
+        run: pnpm check:ci
+
   version:
     if: needs.plan.outputs.phase == 'version'
-    needs: [plan]
+    needs: [plan, gate]
     name: version · open release PR
     runs-on: ubuntu-latest
     permissions:
@@ -82,7 +122,7 @@ jobs:
       contents: write
       id-token: write
     name: publish · oidc · tag
-    needs: [plan]
+    needs: [plan, gate]
     runs-on: ubuntu-latest
     env:
       HUSKY: "0"

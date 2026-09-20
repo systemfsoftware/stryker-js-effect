@@ -46,6 +46,11 @@ The Release workflow concurrency group is `release-${{ github.ref }}`
 with `cancel-in-progress: false`. Pushes to `main` queue; they never
 cancel an in-flight release run.
 
+Every non-idle release run first passes a **gate** job that runs the same
+`pnpm check:ci` as CI. `version` and `publish` both depend on it, so a red
+suite blocks the release PR and the npm publish alike — a release can never
+outrun the tests that guard it.
+
 - An interrupted **version** job is safe: it only commits on the
   isolated `changeset-release/main` branch and opens or updates a PR;
   `main` is untouched.

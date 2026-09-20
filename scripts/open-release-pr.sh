@@ -39,8 +39,10 @@ trap 'rm -f "$body"' EXIT
 cat > "$body" <<'BODY'
 Consumes pending `.changeset/` intents via `pnpm version -r`.
 
-Merging runs the gate, then builds, publishes (OIDC + provenance),
-and tags the changed packages.
+Merging runs `pnpm check:ci` in the Release workflow's gate job; the
+build, publish (OIDC + provenance), and tags only start once that gate
+is green. The same gate runs before this PR is opened, so a red suite
+fails the release here rather than after version numbers are written.
 
 Review every consumed `none` intent before merging — a `none` on a
 behavior-visible change is a silent non-release.
