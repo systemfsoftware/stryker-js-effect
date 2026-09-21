@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   mutation:
-    if: !(github.ref_name == 'main' && (github.actor == 'github-actions[bot]' || github.event.head_commit.author.username == 'github-actions[bot]'))
+    if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
     strategy:
       fail-fast: false
       matrix:
