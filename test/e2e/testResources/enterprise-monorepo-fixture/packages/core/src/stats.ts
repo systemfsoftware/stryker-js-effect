@@ -13,14 +13,20 @@ export const retryPlan = ({ attempts = 3, backoffMs = 25 }: RetryOptions = {}): 
   backoffMs,
 })
 
-export const countVowels = (input: string): number => {
-  let count = 0
-  for (const ch of input) {
-    if (ch === 'a' || ch === 'e' || ch === 'i' || ch === 'o' || ch === 'u') {
-      count += 1
+export const countRiskSignals = (signals: readonly string[]): number => {
+  let score = 0
+  for (const signal of signals) {
+    if (
+      signal === 'tor' ||
+      signal === 'vpn' ||
+      signal === 'proxy' ||
+      signal === 'suspicious' ||
+      signal === 'flagged'
+    ) {
+      score += 1
     }
   }
-  return count
+  return score
 }
 
 export class EventFilter {

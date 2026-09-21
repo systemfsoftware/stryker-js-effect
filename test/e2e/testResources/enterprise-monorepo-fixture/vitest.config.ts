@@ -9,6 +9,7 @@ export default defineConfig({
     alias: [
       { find: /^@enterprise\/core$/, replacement: `${srcDir('core')}index.ts` },
       { find: /^@enterprise\/services$/, replacement: `${srcDir('services')}index.ts` },
+      { find: /^@enterprise\/analytics$/, replacement: `${srcDir('analytics')}index.ts` },
       { find: /^@enterprise\/api$/, replacement: `${srcDir('api')}index.ts` },
       { find: /^@enterprise\/core\/(.+)$/, replacement: `${srcDir('core')}$1` },
       { find: /^@enterprise\/services\/(.+)$/, replacement: `${srcDir('services')}$1` },

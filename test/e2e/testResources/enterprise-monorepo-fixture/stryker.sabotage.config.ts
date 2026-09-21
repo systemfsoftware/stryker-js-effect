@@ -10,6 +10,7 @@ export default defineConfig({
     },
   ],
   reporters: ['json'],
+  thresholds: { break: 100 },
   tsconfigFile: 'tsconfig.json',
   mutate: ['packages/*/src/**/*.ts', '!packages/*/src/**/*.test.ts'],
 })

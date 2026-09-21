@@ -19,15 +19,6 @@
     "paths": {
       "@enterprise/core": [
         "../core/src/index.ts"
-      ],
-      "@enterprise/services": [
-        "../services/src/index.ts"
-      ],
-      "@enterprise/analytics": [
-        "../analytics/src/index.ts"
-      ],
-      "@core/*": [
-        "../core/src/*.ts"
       ]
     }
   },
@@ -37,12 +28,6 @@
   "references": [
     {
       "path": "../core"
-    },
-    {
-      "path": "../services"
-    },
-    {
-      "path": "../analytics"
     }
   ]
 }

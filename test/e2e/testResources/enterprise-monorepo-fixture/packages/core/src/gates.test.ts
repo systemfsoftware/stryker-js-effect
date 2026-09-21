@@ -2,56 +2,91 @@ import { describe, expect, test } from 'vitest'
 
 import { gateFor, isLaunchable, regionLabel, shouldSample } from './gates.js'
 
-describe('isLaunchable', () => {
-  test('requires an enabled config with a positive canary', () => {
-    expect(isLaunchable({ enabled: true, canaryPercent: 5 })).toBe(true)
+describe.concurrent('Feature: Canary Gate & Feature Rollout Decisioning', () => {
+  describe.concurrent('Rule: Only enabled features with positive canary traffic may launch', () => {
+    test.each([
+      { config: { enabled: true, canaryPercent: 5 }, expected: true, description: 'enabled with 5% canary traffic' },
+      { config: { enabled: false, canaryPercent: 5 }, expected: false, description: 'disabled config' },
+      {
+        config: { enabled: true, canaryPercent: 0 },
+        expected: false,
+        description: 'enabled config with zero canary allocation',
+      },
+    ])(
+      'Given $description, When evaluated for launch eligibility, Then isLaunchable returns $expected',
+      ({ config, expected }) => {
+        expect(isLaunchable(config)).toBe(expected)
+      },
+    )
   })
 
-  test('rejects a disabled config', () => {
-    expect(isLaunchable({ enabled: false, canaryPercent: 5 })).toBe(false)
+  describe.concurrent('Rule: Rollout tier determination maps strictly to allocation percentage', () => {
+    test.each([
+      { config: { enabled: false, canaryPercent: 100 }, expected: 'disabled', description: 'disabled config' },
+      { config: { enabled: true, canaryPercent: 100 }, expected: 'full', description: '100% allocation' },
+      { config: { enabled: true, canaryPercent: 25 }, expected: 'canary', description: '25% partial allocation' },
+    ])('Given $description, When gate status is requested, Then it resolves to $expected', ({ config, expected }) => {
+      expect(gateFor(config)).toBe(expected)
+    })
   })
 
-  test('rejects a zero canary', () => {
-    expect(isLaunchable({ enabled: true, canaryPercent: 0 })).toBe(false)
-  })
-})
-
-describe('gateFor', () => {
-  test('disabled configs never launch', () => {
-    expect(gateFor({ enabled: false, canaryPercent: 100 })).toBe('disabled')
-  })
-
-  test('full rollout at one hundred percent', () => {
-    expect(gateFor({ enabled: true, canaryPercent: 100 })).toBe('full')
-  })
-
-  test('partial rollout stays on canary', () => {
-    expect(gateFor({ enabled: true, canaryPercent: 25 })).toBe('canary')
-  })
-})
-
-describe('regionLabel', () => {
-  test('uses the configured region', () => {
-    expect(regionLabel({ enabled: true, canaryPercent: 1, region: 'eu-west' })).toBe('eu-west')
+  describe.concurrent('Rule: Regional routing resolves explicit target or defaults to global', () => {
+    test.each([
+      {
+        config: { enabled: true, canaryPercent: 1, region: 'eu-west' },
+        expected: 'eu-west',
+        description: 'explicit eu-west region',
+      },
+      {
+        config: { enabled: true, canaryPercent: 1 },
+        expected: 'global',
+        description: 'omitted region defaulting to global',
+      },
+    ])(
+      'Given a config with $description, When region label is resolved, Then it returns $expected',
+      ({ config, expected }) => {
+        expect(regionLabel(config)).toBe(expected)
+      },
+    )
   })
 
-  test('falls back to the global label', () => {
-    expect(regionLabel({ enabled: true, canaryPercent: 1 })).toBe('global')
-  })
-})
-
-describe('shouldSample', () => {
-  test('samples even seeds below the canary percent', () => {
-    expect(shouldSample({ enabled: true, canaryPercent: 50 }, 48)).toBe(true)
-  })
-
-  test('rejects seeds at or above the canary percent', () => {
-    expect(shouldSample({ enabled: true, canaryPercent: 50 }, 50)).toBe(false)
-    expect(shouldSample({ enabled: true, canaryPercent: 50 }, 51)).toBe(false)
-  })
-
-  test('rejects disabled configs regardless of seed', () => {
-    expect(shouldSample({ enabled: false, canaryPercent: 100 }, 3)).toBe(false)
-    expect(shouldSample({ enabled: false, canaryPercent: 100 }, 4)).toBe(false)
+  describe.concurrent('Rule: Traffic sampling permits seeds below the canary threshold', () => {
+    test.each([
+      {
+        config: { enabled: true, canaryPercent: 50 },
+        seed: 48,
+        expected: true,
+        description: 'seed 48 below 50% threshold',
+      },
+      {
+        config: { enabled: true, canaryPercent: 50 },
+        seed: 50,
+        expected: false,
+        description: 'seed 50 equal to threshold',
+      },
+      {
+        config: { enabled: true, canaryPercent: 50 },
+        seed: 51,
+        expected: false,
+        description: 'seed 51 exceeding threshold',
+      },
+      {
+        config: { enabled: false, canaryPercent: 100 },
+        seed: 3,
+        expected: false,
+        description: 'seed 3 under disabled config',
+      },
+      {
+        config: { enabled: false, canaryPercent: 100 },
+        seed: 4,
+        expected: false,
+        description: 'seed 4 under disabled config',
+      },
+    ])(
+      'Given $description, When evaluating traffic sampling, Then shouldSample returns $expected',
+      ({ config, seed, expected }) => {
+        expect(shouldSample(config, seed)).toBe(expected)
+      },
+    )
   })
 })

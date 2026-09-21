@@ -1,0 +1,10 @@
+{
+  "name": "@enterprise/analytics",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@enterprise/core": "workspace:*"
+  }
+}

@@ -1,5 +1,6 @@
 import { roundCents } from '@core/pricing'
-import type { FeatureConfig, Severity } from '@enterprise/core'
+import { type AggregatedMetric, aggregateMetrics } from '@enterprise/analytics'
+import type { FeatureConfig, InfoMetricEvent, Severity } from '@enterprise/core'
 import { gateStatus } from '@enterprise/services'
 import { type Handler, route } from './dispatch.js'
 
@@ -23,3 +24,7 @@ export const handle = (request: IncidentRequest): Handler | string => {
 export const cap = (amount: number, ceiling: number): number => (amount > ceiling ? ceiling : roundCents(amount))
 
 export const statusFor = (config: FeatureConfig | undefined): string => gateStatus(config)
+
+export const summarizeHealthMetrics = (
+  metrics: ReadonlyArray<InfoMetricEvent>,
+): ReadonlyMap<string, AggregatedMetric> => aggregateMetrics(metrics)
