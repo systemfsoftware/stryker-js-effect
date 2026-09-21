@@ -18,6 +18,7 @@ import * as Predicate from 'effect/Predicate'
 
 import type { PooledTestRunner } from './TestRunner.js'
 import { drainRegistry } from './vm-harness/drain.js'
+import { makeEffectMethods } from './vm-harness/effect-adapter.js'
 import type { VmRunnerGlobalState } from './vm-harness/global-state.js'
 import { writeGlobalState } from './vm-harness/global-state.js'
 import { guardedExpect, guardedVi } from './vm-harness/guards.js'
@@ -160,7 +161,14 @@ const runOnce = (
       api,
       expect: guardedExpect(real.expect as object),
       vi: guardedVi(real.vi as object),
-      effectVitest: undefined,
+      effectVitest: {
+        it: makeEffectMethods({
+          api: api.it,
+          describe: api.describe,
+          hooks: api.hooks,
+          tests: registry.tests,
+        }),
+      },
     }
 
     const prefix = prefixOf(firstFile, platform.pathToFileURL)

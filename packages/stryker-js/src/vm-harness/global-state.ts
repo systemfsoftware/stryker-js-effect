@@ -4,7 +4,6 @@ export const STATE_KEY = Symbol.for('@systemfsoftware/stryker-js/vm-runner')
 
 export interface EffectVitestSurface {
   readonly it: unknown
-  readonly layer: unknown
 }
 
 export interface VmRunnerGlobalState {

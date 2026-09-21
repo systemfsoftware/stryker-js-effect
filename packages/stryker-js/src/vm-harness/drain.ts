@@ -102,7 +102,7 @@ export const drainRegistry = async (registry: TestRegistry, timeoutMs: number | 
       const finalizers: Array<(context: HarnessTestContext) => unknown> = []
       const context: HarnessTestContext = {
         signal: controller.signal,
-        task: { type: 'test', name: planned.fullName },
+        task: planned.test,
         onTestFinished: (finalizer) => {
           finalizers.push(finalizer)
         },

@@ -16,6 +16,7 @@ export interface HarnessTestContext {
 export type HarnessTestFunction = (context: HarnessTestContext) => unknown
 
 export interface RegisteredTest {
+  readonly type: 'test'
   readonly seq: number
   readonly name: string
   readonly file: string
@@ -84,7 +85,7 @@ export const createRegistry = (): TestRegistry => {
       return suite
     },
     registerTest: (name, suiteIds, mode, inverted, fn) => {
-      const test: RegisteredTest = { seq: ++seq, name, file: files.current, suiteIds, mode, inverted, fn }
+      const test: RegisteredTest = { type: 'test', seq: ++seq, name, file: files.current, suiteIds, mode, inverted, fn }
       tests.push(test)
       return test
     },
