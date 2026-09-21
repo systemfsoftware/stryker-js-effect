@@ -609,10 +609,10 @@ export interface IdGeneratorShape {
 export interface Ignorer {
     // (undocumented)
     readonly name: string;
-    // Warning: (ae-forgotten-export) The symbol "Node" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "Node_2" needs to be exported by the entry point index.d.mts
     //
     // (undocumented)
-    shouldIgnore(node: Node, ancestors: readonly Node[]): string | undefined;
+    shouldIgnore(node: Node_2, ancestors: readonly Node_2[]): string | undefined;
 }
 
 // @public (undocumented)
