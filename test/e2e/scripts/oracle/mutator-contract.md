@@ -24,8 +24,8 @@ Each family defines exact AST matching criteria, explicit exclusions, emitted re
 - **Visitor arms:** `Transformer.ts:1161` (`nodeType(path.node) === 'Decorator'`) inside `shouldSkip(path)`.
 - **Placement:** During AST traversal in `Transformer.ts:1092-1095`, any node of type `Decorator` causes `path.skip()`:
   - The `@decorator(...)` node itself is never mutated.
-  - Traversal does not descend into decorator arguments or expressions (e.g. `@decorator(1 + 2, "str")` produces zero arithmetic or string mutants).
-  - Decorators on classes, methods, accessors, or properties produce zero mutants.
+  - Traversal does not descend into decorator arguments or expressions (e.g. `@decorator(1 + 2, "str")` produces zero arithmetic or string mutants from the decorator expression itself).
+  - The skip applies to the Decorator subtree ONLY. The decorated class, method, accessor, or property body is still entered and mutates normally: `@dec method() { return 1 + 2 }` still places an `ArithmeticOperator` mutant. (Verified against `oxc`-walker `path.skip()` semantics: skipping a child Decorator does not skip the parent MethodDefinition/Class.)
 
 ### 3. Prefix-`!` Collapse Owned by BooleanLiteral
 
@@ -49,12 +49,12 @@ Each family defines exact AST matching criteria, explicit exclusions, emitted re
 - **Visitor arms:** `methodExpressionMutator` in `Mutator.ts:956-1075` (`isCallExpression`, `namedMethodCallee`, `isNamedMember`, `isNotSuperMember`).
 - **Placement:** Matches `CallExpression` where `callee` is a `MemberExpression` whose property is an identifier matching the replacement table, and whose object is not `super`.
 - **Replacement rules:**
-  - **Direct object invocation (removal):** For methods mapped to `null` (`filter`, `slice`, `sort`, `trim`, `charAt`, `substr`, `substring`), the call is replaced by invoking the callee object directly: `callExpression(cloneNode(callee.object), [], callee.optional === true)`. Example: `arr.filter(predicate)` -> `arr()`.
+  - **Direct object invocation (removal):** For methods mapped to `null` (`charAt`, `filter`, `reverse`, `slice`, `sort`, `substr`, `substring`, `trim`), the call is replaced by invoking the callee object directly: `callExpression(cloneNode(callee.object), [], callee.optional === true)`. Example: `arr.filter(predicate)` -> `arr()`.
   - **Inverted method invocation:** For methods mapped to an opposite name (`every` <-> `some`, `toLowerCase` <-> `toUpperCase`, `endsWith` <-> `startsWith`, `min` <-> `max`, etc.), the call is replaced by invoking the opposite method with spread-free arguments preserved: `callExpression(memberExpression(object, identifier(newName), optional), spreadFreeArgs, callOptional)`. Example: `arr.every(fn)` -> `arr.some(fn)`.
 - **Exclusions:**
   - Calls where the callee object is `super` (e.g. `super.filter(...)`).
   - Calls where the method name is not in the replacement map.
-  - Computed method calls (e.g. `arr[methodName]()`).
+  - Method calls whose callee property is not an `Identifier` (e.g. `arr['filter']()` — string-literal keys are excluded). Note: computed calls with an Identifier name ARE mutated when the name is in the map (`obj[filter]()` places a mutant; the visitor tests only Identifier-ness, not `computed === false`).
 
 ### 6. Regex Mutation
 
@@ -62,12 +62,12 @@ Each family defines exact AST matching criteria, explicit exclusions, emitted re
 - **Placement:**
   - Regex literal: `node.type === 'Literal'` with regex payload (e.g. `/^abc\d+$/g`).
   - Regex constructor with string literal argument: `new RegExp('^abc\\d+$', 'g')`.
-- **Mutations emitted in order:**
+- **Mutations emitted in order:** anchors first (beginning-of-line, then end-of-line), then every remaining mutation sorted by pattern position (`start`), ties broken by priority — quantifier removal (priority 0) before lookaround/character-class negation (priority 1) before predefined-class negation (priority 2) (per `mutateRegexPattern`, `Mutator.ts:261-272`):
   1. Anchor removal: `^` (bol) and `$` (eol) stripped (unless resulting pattern is empty).
-  2. Character class negation: `[abc]` <-> `[^abc]`.
-  3. Predefined character class negation: `\d` <-> `\D`, `\w` <-> `\W`, `\s` <-> `\S`, `\p{...}` <-> `\P{...}`.
-  4. Quantifier removal: `a+`, `a*`, `a{2,3}` stripped to `a`.
-  5. Lookaround negation: `(?=a)` <-> `(?!a)`, `(?<=a)` <-> `(?<!a)`.
+  2. Quantifier removal: EVERY regexpp `Quantifier` is stripped — `a+`, `a*`, `a{2,3}`, `a?`, lazy `+?`/`*?`/`??` all reduce to their base (`collectQuantifier`, `Mutator.ts:418-420`).
+  3. Lookaround negation: `(?=a)` <-> `(?!a)`, `(?<=a)` <-> `(?<!a)`; character class negation `[abc]` <-> `[^abc]` (same priority tier, ordered by `start`).
+  4. Predefined character class negation: `\d` <-> `\D`, `\w` <-> `\W`, `\s` <-> `\S`, `\p{...}` <-> `\P{...}` (lowest priority tier).
+  - Constructor form mutates the FIRST-ARGUMENT `StringLiteral` node, not the `NewExpression` itself.
 - **Exclusions:** Alternations (`|`) and groupings (`(...)`) are deliberately untouched. Empty or unparseable patterns yield zero mutants.
 
 ---
@@ -135,7 +135,7 @@ Each family defines exact AST matching criteria, explicit exclusions, emitted re
 - **AST matched:** `BlockStatement` where `node.body.length > 0` and is not an invalid constructor body.
 - **AST excluded:**
   - Empty blocks (`{}`).
-  - Derived constructor bodies that call `super(...)` when the class contains initialized property definitions or TS parameter properties (`isInvalidConstructorBody`).
+  - Derived constructor bodies when the class contains initialized property definitions or TS parameter properties AND the body contains ANY `Super` reference — `super(...)` calls but also `super.foo` / `super.method()` (`containsSuperCall` walks for any Super node, `Mutator.ts:672-755`).
 - **Emitted replacements:** `{}` (empty block).
 
 ### BooleanLiteral {#booleanliteral}
@@ -221,12 +221,12 @@ Each family defines exact AST matching criteria, explicit exclusions, emitted re
   - `Literal` carrying regex pattern/flags.
   - `NewExpression` of `RegExp` where the first argument is a string literal (`isObviousRegexString`).
 - **AST excluded:** Non-literal regex constructors, empty patterns, syntax errors in patterns.
-- **Emitted replacements:** Mutated regex patterns via `mutateRegexPattern`:
+- **Emitted replacements:** Mutated regex patterns via `mutateRegexPattern` (`Mutator.ts:261-272`), emitted anchors-first then by pattern position with quantifier priority before class/lookaround negation:
   - Anchor removal (`^`, `$`).
-  - Character class negation (`[...]` <-> `[^...]`).
-  - Predefined class negation (`\d` <-> `\D`, `\w` <-> `\W`, `\s` <-> `\S`, `\p` <-> `\P`).
-  - Quantifier removal (`+`, `*`, `{n,m}` stripped).
-  - Lookaround negation (`(?=)` <-> `(?!)`, `(?<=)` <-> `(?<!)`).
+  - Quantifier removal — EVERY regexpp `Quantifier`: `+`, `*`, `?`, `{n,m}`, and lazy forms all stripped (`collectQuantifier`, `Mutator.ts:418-420`).
+  - Lookaround negation (`(?=)` becomes `(?!` + `)`, `(?<=)` becomes `(?<!)`) and character class negation (`[...]` <-> `[^...]`) — same priority tier.
+  - Predefined class negation (`\d` <-> `\D`, `\w` <-> `\W`, `\s` <-> `\S`, `\p` <-> `\P`) — lowest priority tier.
+  - Constructor form mutates the first-argument `StringLiteral`, not the `NewExpression`.
 
 ### StringLiteral {#stringliteral}
 
@@ -256,7 +256,7 @@ Each family defines exact AST matching criteria, explicit exclusions, emitted re
 - **Emitted replacements:**
   - `+` -> `-`
   - `-` -> `+`
-  - `~` -> `""` (strips operator).
+  - `~` -> `x` (the operand is cloned; the map sentinel `''` never reaches the emitted replacement — `unaryOperatorReplacement`'s or-else arm emits `cloneNode(unary.argument)`).
 
 ### UpdateOperator {#updateoperator}
 
