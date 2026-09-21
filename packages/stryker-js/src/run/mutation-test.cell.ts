@@ -53,6 +53,7 @@ import { StageError } from '../Run.schema.js'
 import { buildTestRunner, invalidatesRunnerPool, makeChildProcessTestRunner } from '../TestRunner.js'
 import type { PooledTestRunner, PooledTestRunnerError } from '../TestRunner.js'
 import { IdGenerator } from '../Worker.js'
+import { ChildProcessCrashedError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.js'
 import type { DryRunDone } from './dry-run.cell.js'
 import { RunEnvironment } from './RunEnvironment.js'
@@ -367,12 +368,20 @@ const reportDroppedMutants = (dropped: readonly Mutant[]): Effect.Effect<void> =
     ),
   )
 
-const reasonOf = (result: { readonly reason?: string }): string | undefined => {
-  if (!('reason' in result)) {
-    return undefined
-  }
-  return result.reason
-}
+const hasStringReason = (r: object): r is { readonly reason: string } => 'reason' in r && typeof r.reason === 'string'
+
+const reasonOf = (result: unknown): string | undefined =>
+  Match.value(result).pipe(
+    Match.when(
+      (r: unknown): r is object => typeof r === 'object' && r !== null,
+      (r) =>
+        Match.value(r).pipe(
+          Match.when(hasStringReason, (obj) => obj.reason),
+          Match.orElse(() => undefined),
+        ),
+    ),
+    Match.orElse(() => undefined),
+  )
 
 const stopWallClock = (
   result: { readonly status: string; readonly reason?: string },
@@ -725,7 +734,11 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                             return yield* invalidateSlot(
                               pool,
                               runner,
-                              new ChildProcessCrashedError('wall-clock timeout'),
+                              ChildProcessCrashedError.make({
+                                pid: 0,
+                                exit: { _tag: 'Signal', signal: 'SIGKILL' },
+                                cause: 'wall-clock timeout',
+                              }),
                             )
                           }
                           yield* stopWallClock(result)
