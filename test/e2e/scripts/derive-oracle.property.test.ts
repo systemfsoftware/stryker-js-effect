@@ -5,7 +5,8 @@ import * as fs from 'node:fs'
 import { Project } from 'ts-morph'
 import { describe, expect, it } from 'vitest'
 import { allMutators } from '../../../packages/stryker-js-instrumenter/src/Mutator.js'
-import { analyzeFileWithTsMorph, determineCompileErrorsWithDiagnostics } from './derive-oracle.js'
+import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
+import { determineCompileErrorsWithDiagnostics } from './oracle/diagnostics.js'
 import { DECLARED_GAPS, MUTATOR_REGISTRY } from './oracle/mutator-registry.js'
 
 const RESERVED_WORDS = new Set([
@@ -289,9 +290,7 @@ describe('SOTA Metamorphic & Differential Oracle Properties (fast-check)', () =>
   })
 
   it('Count-Equality Property 6: covered mutator registry rows equal analyzer placement counts and replacements', () => {
-    const coveredEntries = Object.entries(MUTATOR_REGISTRY).filter(([, entry]) => entry.covered)
-    const arbCoveredFamily = fc.constantFrom(...coveredEntries.map(([name]) => name))
-
+    const arbCoveredFamily = fc.constantFrom(...Object.keys(MUTATOR_REGISTRY))
     return fc.assert(
       fc.property(arbCoveredFamily, (familyName) => {
         const entry = MUTATOR_REGISTRY[familyName]

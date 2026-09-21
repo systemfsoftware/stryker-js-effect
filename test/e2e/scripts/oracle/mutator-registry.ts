@@ -8,11 +8,7 @@ export interface MutatorRegistryEntry {
 
 export type MutatorRegistry = Readonly<Record<string, MutatorRegistryEntry>>
 
-export const DECLARED_GAPS: Readonly<Record<string, true>> = Object.freeze({
-  MethodExpression: true,
-  Regex: true,
-  UnaryOperator: true,
-})
+export const DECLARED_GAPS: Readonly<Record<string, true>> = Object.freeze({})
 
 export const MUTATOR_REGISTRY: MutatorRegistry = Object.freeze({
   ArithmeticOperator: {
@@ -83,7 +79,7 @@ export const MUTATOR_REGISTRY: MutatorRegistry = Object.freeze({
     snippet: 'const x = "HELLO".toLowerCase();',
     placementCount: 1,
     replacements: ['"HELLO".toUpperCase()'],
-    covered: false,
+    covered: true,
   },
   ObjectLiteral: {
     contractSection: 'objectliteral',
@@ -104,7 +100,7 @@ export const MUTATOR_REGISTRY: MutatorRegistry = Object.freeze({
     snippet: 'const x = /a+/;',
     placementCount: 1,
     replacements: ['/a/'],
-    covered: false,
+    covered: true,
   },
   StringLiteral: {
     contractSection: 'stringliteral',
@@ -118,7 +114,7 @@ export const MUTATOR_REGISTRY: MutatorRegistry = Object.freeze({
     snippet: 'const x = -a;',
     placementCount: 1,
     replacements: ['+a'],
-    covered: false,
+    covered: true,
   },
   UpdateOperator: {
     contractSection: 'updateoperator',
