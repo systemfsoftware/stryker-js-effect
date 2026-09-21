@@ -26,6 +26,8 @@ export {
 
 export { nativeImport } from './native-import.js'
 
+export { executeDrainRegistry } from './drain-executor.js'
+
 export {
   type EachBinder,
   type EachFn,

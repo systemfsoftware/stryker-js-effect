@@ -44,7 +44,8 @@
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
     "@opentelemetry/sdk-metrics": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
-    "@systemfsoftware/effect-cell-types": "catalog:"
+    "@systemfsoftware/effect-cell-types": "catalog:",
+    "@systemfsoftware/stryker-vm-harness": "workspace:^"
   },
   "peerDependencies": {
     "effect": "catalog:"

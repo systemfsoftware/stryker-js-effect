@@ -502,6 +502,9 @@ importers:
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
         version: 8.3.1(effect@4.0.0-rc.116)
+      '@systemfsoftware/stryker-vm-harness':
+        specifier: workspace:^
+        version: link:../stryker-vm-harness
       effect:
         specifier: 4.0.0-rc.116
         version: 4.0.0-rc.116

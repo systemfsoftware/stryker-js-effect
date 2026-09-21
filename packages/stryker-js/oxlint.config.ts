@@ -11,7 +11,7 @@ export default defineConfig({
   },
   overrides: [
     {
-      files: ['src/vm-harness/**/*', 'src/VmRunner.ts'],
+      files: ['src/VmRunner.ts'],
       rules: {
         complexity: 'off',
         'no-ternary': 'off',

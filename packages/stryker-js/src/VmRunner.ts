@@ -17,20 +17,22 @@ import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
 import * as Semaphore from 'effect/Semaphore'
 
-import type { PooledTestRunner } from './TestRunner.js'
-import { drainRegistry } from './vm-harness/drain.js'
-import { makeEffectMethods } from './vm-harness/effect-adapter.js'
-import type { VmRunnerGlobalState } from './vm-harness/global-state.js'
-import { writeGlobalState } from './vm-harness/global-state.js'
-import { guardedExpect, guardedVi } from './vm-harness/guards.js'
 import {
   activateSandbox,
+  createHarnessApi,
+  createRegistry,
   deactivateSandbox,
-  type HarnessModuleBuiltin,
+  drainRegistry,
+  guardedExpect,
+  guardedVi,
   installInterception,
+  makeEffectMethods,
+  nativeImport,
   uninstallInterception,
-} from './vm-harness/interception.js'
-import { createHarnessApi, createRegistry } from './vm-harness/registry.js'
+  writeGlobalState,
+} from '@systemfsoftware/stryker-vm-harness'
+import type { HarnessModuleBuiltin, VmRunnerGlobalState } from '@systemfsoftware/stryker-vm-harness'
+import type { PooledTestRunner } from './TestRunner.js'
 
 export interface VmFileUrl {
   readonly href: string
@@ -91,8 +93,6 @@ const runFailureFor = (file: string, cause: unknown): RunFailure => {
 }
 
 let saltCounter = 0
-
-const nativeImport = (url: string): Promise<unknown> => import(/* @vite-ignore */ url)
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => Predicate.isObject(value)
 
