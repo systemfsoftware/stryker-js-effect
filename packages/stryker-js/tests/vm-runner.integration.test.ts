@@ -95,6 +95,30 @@ const MODULE_STATE_SUITE = [
   '})',
 ].join('\n')
 
+const HANGING_SUITE = [
+  'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
+  "slot.api.it('hangs forever', () => new Promise(() => {}))",
+].join('\n')
+
+const LATE_REJECTION_SUITE = [
+  'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
+  "slot.api.it('emits a late rejection', () => {",
+  "  Promise.reject(new Error('the late rejection arrived'))",
+  '})',
+].join('\n')
+
+const KILL_ATTRIBUTION_SUITE = [
+  'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
+  'const stryker = globalThis["__stryker__"]',
+  'const active = stryker === undefined ? undefined : stryker.activeMutant',
+  "slot.api.describe('guards', () => {",
+  "  slot.api.it('does not mind the change', () => {})",
+  "  slot.api.it('catches the change', () => {",
+  "    if (active === 'mutant-1') { throw new Error('the mutated program ran') }",
+  '  })',
+  '})',
+].join('\n')
+
 const writeSuite = (
   prefix: string,
   source: string,
@@ -310,6 +334,88 @@ Feature('Verifying mutants without spawning a child process')
           Effect.sync(() => {
             expect(s.outcome.dryRun.status).toBe('complete')
             expect(s.outcome.mutantRun.status).toBe('survived')
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A test that never finishes stops the run in time',
+      Gherkin.Do.pipe(
+        Given('a suite whose only test waits forever')(
+          'suite',
+          () => writeSuite('hanging', HANGING_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the in-memory runner checks the suite with a short time budget')(
+          'outcome',
+          (s) =>
+            Effect.flatMap(
+              runnerFor(s.suite),
+              (runner) => runner.dryRun({ timeout: 200, coverageAnalysis: 'off', disableBail: false }),
+            ).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
+        ),
+        Then('the run is reported as timed out rather than hanging forever')((s) =>
+          Effect.sync(() => {
+            expect(s.outcome.status).toBe('timeout')
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A promise that fails after its test finished is still reported',
+      Gherkin.Do.pipe(
+        Given('a suite whose test leaves behind a failing promise')(
+          'suite',
+          () => writeSuite('late-rejection', LATE_REJECTION_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the in-memory runner checks the suite before any mutant runs')(
+          'outcome',
+          (s) =>
+            Effect.flatMap(
+              runnerFor(s.suite),
+              (runner) => runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }),
+            ).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
+        ),
+        Then('the run reports the late failure even though its test passed')((s) =>
+          Effect.sync(() => {
+            const outcome = s.outcome
+            expect(outcome.status).toBe('complete')
+            if (outcome.status !== 'complete') {
+              throw new Error('the dry run did not complete')
+            }
+            expect(outcome.tests.find((test) => test.name === 'emits a late rejection')).toMatchObject({
+              status: 'success',
+            })
+            expect(outcome.tests.some((test) =>
+              test.status === 'failed' && test.failureMessage?.includes('the late rejection arrived')
+            )).toBe(true)
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Only the tests that catch a change are reported as its killers',
+      Gherkin.Do.pipe(
+        Given('a suite where one test guards the change and another ignores it')(
+          'suite',
+          () => writeSuite('kill-attribution', KILL_ATTRIBUTION_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the in-memory runner verifies the change in it')(
+          'outcome',
+          (s) => runSuite(s.suite),
+        ),
+        Then('the run is killed by exactly the guarding test')((s) =>
+          Effect.sync(() => {
+            expect(s.outcome.dryRun.status).toBe('complete')
+            const killed = s.outcome.mutantRun
+            expect(killed.status).toBe('killed')
+            if (killed.status !== 'killed') {
+              throw new Error('the change was not killed')
+            }
+            expect(killed.killedBy).toHaveLength(1)
+            expect(killed.killedBy[0]?.endsWith('#guards > catches the change')).toBe(true)
           })
         ),
       ),

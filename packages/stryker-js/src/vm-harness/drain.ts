@@ -75,15 +75,7 @@ export const drainRegistry = async (registry: TestRegistry, timeoutMs: number | 
   }
   process.on('unhandledRejection', rejectionListener)
 
-  let timedOut = false
-  const timer = timeoutMs === undefined
-    ? undefined
-    : setTimeout(() => {
-      timedOut = true
-    }, timeoutMs)
-  timer?.unref?.()
-
-  try {
+  const runAll = async (): Promise<DrainedTest[]> => {
     for (const planned of plan) {
       if (planned.skipped) {
         tests.push({
@@ -94,9 +86,6 @@ export const drainRegistry = async (registry: TestRegistry, timeoutMs: number | 
           timeSpentMs: 0,
         })
         continue
-      }
-      if (timedOut) {
-        return { kind: 'timeout' }
       }
       const controller = new AbortController()
       const finalizers: Array<(context: HarnessTestContext) => unknown> = []
@@ -158,16 +147,31 @@ export const drainRegistry = async (registry: TestRegistry, timeoutMs: number | 
         timeSpentMs,
       })
     }
-    if (timedOut) {
-      return { kind: 'timeout' }
-    }
-  } finally {
-    clearTimeout(timer)
-    process.off('unhandledRejection', rejectionListener)
+    return tests
   }
 
+  const { promise: timeoutOutcome, resolve: resolveTimeoutOutcome } = Promise.withResolvers<DrainedTest[] | undefined>()
+  if (timeoutMs !== undefined) {
+    const timer = setTimeout(() => resolveTimeoutOutcome(undefined), timeoutMs)
+    timer.unref?.()
+  }
+
+  const drained = await Promise.race([
+    runAll(),
+    timeoutOutcome,
+  ])
+  if (drained === undefined) {
+    process.off('unhandledRejection', rejectionListener)
+    return { kind: 'timeout' }
+  }
+  const drainedTurn = Promise.withResolvers<void>()
+  setImmediate(() => {
+    drainedTurn.resolve()
+  })
+  await drainedTurn.promise
+  process.off('unhandledRejection', rejectionListener)
   if (lateRejections.length > 0) {
-    tests.push({
+    drained.push({
       fullName: 'unhandled rejection',
       file: '',
       status: 'failed',
@@ -175,5 +179,5 @@ export const drainRegistry = async (registry: TestRegistry, timeoutMs: number | 
       timeSpentMs: 0,
     })
   }
-  return { kind: 'complete', tests }
+  return { kind: 'complete', tests: drained }
 }
