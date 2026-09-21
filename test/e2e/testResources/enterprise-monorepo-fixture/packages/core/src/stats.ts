@@ -27,7 +27,6 @@ export class EventFilter {
   emitted = 0
   skipped = 0
   dropped = 0
-  private lastKey: string | undefined
 
   shouldEmit(key: string, registry: Readonly<Record<string, boolean>>): boolean {
     const flagged = registry[key]
@@ -41,8 +40,6 @@ export class EventFilter {
       return false
     }
     this.emitted += 1
-    const previous = this.lastKey ?? ''
-    this.lastKey = key
-    return previous !== key
+    return true
   }
 }

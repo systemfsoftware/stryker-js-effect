@@ -20,9 +20,7 @@ export const probe = async (check: () => Promise<boolean>, options: ProbeOptions
     if (await check()) {
       return { healthy: true, attemptsUsed: attempt }
     }
-    if (attempt < attempts) {
-      await sleep(delayMs)
-    }
+    await sleep(delayMs)
   }
   return { healthy: false, attemptsUsed: attempts }
 }

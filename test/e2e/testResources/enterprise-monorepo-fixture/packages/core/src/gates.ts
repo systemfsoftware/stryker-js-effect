@@ -19,7 +19,7 @@ export const gateFor = (config: FeatureConfig): string => {
 export const regionLabel = (config: FeatureConfig): string => config.region ?? 'global'
 
 export const shouldSample = (config: FeatureConfig, seed: number): boolean => {
-  if (!config.enabled || seed % 2 === 1) {
+  if (!config.enabled) {
     return false
   }
   return seed < config.canaryPercent

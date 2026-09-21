@@ -28,10 +28,14 @@ describe('probe', () => {
     expect(result).toEqual({ healthy: false, attemptsUsed: 2 })
   })
 
-  test('sleeps between attempts but never after the last one', async () => {
+  test('sleeps after every checked attempt', async () => {
     const spy = vi.spyOn(clock, 'sleep').mockResolvedValue(undefined)
     await probe(async () => false, { attempts: 3, delayMs: 2 })
-    expect(spy.mock.calls).toEqual([[2], [2]])
+    expect(spy.mock.calls).toEqual([
+      [2],
+      [2],
+      [2],
+    ])
   })
 
   test('propagates client rejection instead of swallowing it', async () => {

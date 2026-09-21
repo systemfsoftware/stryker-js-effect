@@ -9,7 +9,7 @@ describe('under the clock module mock', () => {
   test('the mocked boundary drives retries without real timers', async () => {
     const result = await probe(async () => false, { attempts: 3, delayMs: 999 })
     expect(result).toEqual({ healthy: false, attemptsUsed: 3 })
-    expect(vi.mocked(sleep)).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(sleep)).toHaveBeenCalledTimes(3)
     expect(vi.mocked(sleep)).toHaveBeenCalledWith(999)
   })
 

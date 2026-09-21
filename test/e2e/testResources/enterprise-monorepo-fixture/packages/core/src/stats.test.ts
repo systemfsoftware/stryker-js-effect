@@ -18,7 +18,7 @@ describe('retryPlan', () => {
 
 describe('countVowels', () => {
   test('counts each vowel occurrence', () => {
-    expect(countVowels('enterprise monorepo')).toBe(8)
+    expect(countVowels('evaluate documentation')).toBe(11)
   })
 
   test('returns zero without vowels', () => {
@@ -33,25 +33,13 @@ describe('countVowels', () => {
 describe('EventFilter', () => {
   const registry = { audit: true, debug: false }
 
-  test('emits registered keys and reports first sightings', () => {
+  test('emits registered keys', () => {
     const filter = new EventFilter()
     expect(filter.shouldEmit('audit', registry)).toBe(true)
-    expect(filter.emitted).toBe(1)
+    expect(filter.shouldEmit('audit', registry)).toBe(true)
+    expect(filter.emitted).toBe(2)
     expect(filter.skipped).toBe(0)
     expect(filter.dropped).toBe(0)
-  })
-
-  test('does not repeat consecutive keys', () => {
-    const filter = new EventFilter()
-    expect(filter.shouldEmit('audit', registry)).toBe(true)
-    expect(filter.shouldEmit('audit', registry)).toBe(false)
-    expect(filter.emitted).toBe(2)
-  })
-
-  test('emits again once the key differs', () => {
-    const filter = new EventFilter()
-    expect(filter.shouldEmit('audit', registry)).toBe(true)
-    expect(filter.shouldEmit('trace', { ...registry, trace: true })).toBe(true)
   })
 
   test('drops explicitly disabled keys', () => {
@@ -67,5 +55,6 @@ describe('EventFilter', () => {
     expect(filter.shouldEmit('verbose', registry)).toBe(false)
     expect(filter.skipped).toBe(1)
     expect(filter.dropped).toBe(0)
+    expect(filter.emitted).toBe(0)
   })
 })

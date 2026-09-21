@@ -50,11 +50,8 @@ describe('shouldSample', () => {
     expect(shouldSample({ enabled: true, canaryPercent: 50 }, 51)).toBe(false)
   })
 
-  test('rejects odd seeds regardless of canary', () => {
-    expect(shouldSample({ enabled: true, canaryPercent: 100 }, 3)).toBe(false)
-  })
-
-  test('never samples a disabled config', () => {
+  test('rejects disabled configs regardless of seed', () => {
+    expect(shouldSample({ enabled: false, canaryPercent: 100 }, 3)).toBe(false)
     expect(shouldSample({ enabled: false, canaryPercent: 100 }, 4)).toBe(false)
   })
 })
