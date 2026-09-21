@@ -122,7 +122,7 @@ describe('interpretVitestRun', () => {
         carriesFamilyBrand(result.success) &&
         result.success.testsJson === '[]' &&
         result.success.reason === hitLimitReachedReason(hitCount, hitLimit) &&
-        result.success.reason?.startsWith(HIT_LIMIT_REASON_PREFIX) === true
+        result.success.reason.startsWith(HIT_LIMIT_REASON_PREFIX) === true
       )
     },
   )

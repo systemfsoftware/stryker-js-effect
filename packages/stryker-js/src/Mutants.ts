@@ -1,11 +1,3 @@
-import * as Effect from 'effect/Effect'
-import * as Match from 'effect/Match'
-import * as MutableHashMap from 'effect/MutableHashMap'
-import * as MutableHashSet from 'effect/MutableHashSet'
-import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
-import * as S from 'effect/Schema'
-
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type {
   Coverage,
@@ -17,6 +9,13 @@ import type {
   TestPlan as MutantTestPlan,
 } from '@systemfsoftware/stryker-js-instrumenter'
 import type { CompleteDryRunResult, TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Effect from 'effect/Effect'
+import * as Match from 'effect/Match'
+import * as MutableHashMap from 'effect/MutableHashMap'
+import * as MutableHashSet from 'effect/MutableHashSet'
+import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
+import * as S from 'effect/Schema'
 
 import { StageError } from './Run.schema.js'
 
