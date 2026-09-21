@@ -335,7 +335,6 @@ function isDeclared(node: Node): boolean {
 }
 
 const tsTypeAnnotationNodeTypes: ReadonlyArray<string> = Object.freeze([
-  'TSAsExpression',
   'TSInterfaceDeclaration',
   'TSTypeAnnotation',
   'TSTypeAliasDeclaration',

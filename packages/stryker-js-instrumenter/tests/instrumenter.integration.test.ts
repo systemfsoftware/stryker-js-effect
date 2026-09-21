@@ -1,4 +1,4 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
@@ -130,6 +130,118 @@ Feature('Instrumenter characterization')
               ConditionalExpression: 4,
               EqualityOperator: 3,
               StringLiteral: 1,
+            })
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A guarded feature check keeps every mutant placeable',
+      Gherkin.Do.pipe(
+        Given('the guarded module source')('source', () =>
+          Effect.succeed(`export function gate(feature) {
+  if (!feature.enabled) {
+    return 'off'
+  }
+  return 'on'
+}`)),
+        When('the module is instrumented')(
+          'result',
+          ({ source }: { source: string }) =>
+            instrument([{ name: '/tmp/guard.ts', content: source, mutate: true }], {
+              ignorers: [],
+              excludedMutations: [],
+            }),
+        ),
+        Then('the guard yields its mutants across all four families')((
+          { result }: { result: InstrumentResult },
+        ) =>
+          Effect.sync(() => {
+            const active = result.mutants.filter(isActive)
+            expect(countByMutator(active)).toEqual({
+              BlockStatement: 2,
+              BooleanLiteral: 1,
+              ConditionalExpression: 2,
+              StringLiteral: 2,
+            })
+          })
+        ),
+        And('each placed mutant is switched on in the emitted code')((
+          { result }: { result: InstrumentResult },
+        ) =>
+          Effect.sync(() => {
+            const content = result.files[0]?.content ?? ''
+            const hash = content.match(/stryMutAct_([0-9a-f]+)/)?.[1]
+            expect(hash).toBeDefined()
+            for (const id of result.mutants.filter(isActive).map((mutant) => mutant.id)) {
+              expect(content).toContain(`stryMutAct_${hash}("${id}")`)
+            }
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'An optional-chained guard keeps its chain mutants placeable',
+      Gherkin.Do.pipe(
+        Given('the optional-chained module source')('source', () =>
+          Effect.succeed(`export function gate(feature) {
+  if (!feature?.enabled) {
+    return 'off'
+  }
+  return 'on'
+}`)),
+        When('the module is instrumented')(
+          'result',
+          ({ source }: { source: string }) =>
+            instrument([{ name: '/tmp/guard-optional.ts', content: source, mutate: true }], {
+              ignorers: [],
+              excludedMutations: [],
+            }),
+        ),
+        Then('the guard yields its mutants across all five families')((
+          { result }: { result: InstrumentResult },
+        ) =>
+          Effect.sync(() => {
+            const active = result.mutants.filter(isActive)
+            expect(countByMutator(active)).toEqual({
+              BlockStatement: 2,
+              BooleanLiteral: 1,
+              ConditionalExpression: 2,
+              OptionalChaining: 1,
+              StringLiteral: 2,
+            })
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A const-typed literal table still yields its mutants',
+      Gherkin.Do.pipe(
+        Given('the const-typed table source')('source', () =>
+          Effect.succeed(`export const severities = {
+  info: 'info',
+  warning: 'warning',
+  critical: 'critical',
+} as const`)),
+        When('the module is instrumented')(
+          'result',
+          ({ source }: { source: string }) =>
+            instrument([{ name: '/tmp/const-table.ts', content: source, mutate: true }], {
+              ignorers: [],
+              excludedMutations: [],
+            }),
+        ),
+        Then('the table yields mutants on itself and on every literal')((
+          { result }: { result: InstrumentResult },
+        ) =>
+          Effect.sync(() => {
+            const active = result.mutants.filter(isActive)
+            expect(countByMutator(active)).toEqual({
+              ObjectLiteral: 1,
+              StringLiteral: 3,
             })
           })
         ),
