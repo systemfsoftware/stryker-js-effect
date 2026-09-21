@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js",
-  "version": "10.0.1",
+  "version": "10.1.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -55,11 +55,11 @@
     "@microsoft/api-extractor": "catalog:",
     "@oxc-parser/binding-wasm32-wasi": "catalog:",
     "@std/jsonc": "catalog:",
-    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/effect-schema-vite": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/stryker-config": "workspace:^",
     "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "catalog:stryker",
     "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "catalog:stryker",

@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-instrumenter",
-  "version": "8.0.0",
+  "version": "8.0.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -45,9 +45,9 @@
   "devDependencies": {
     "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
-    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
