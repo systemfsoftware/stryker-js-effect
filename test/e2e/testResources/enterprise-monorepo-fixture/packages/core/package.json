@@ -4,6 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./contracts": {
+      "types": "./dist/contracts.d.ts",
+      "default": "./dist/contracts.js"
+    },
+    "./gates": {
+      "types": "./dist/gates.d.ts",
+      "default": "./dist/gates.js"
+    },
     "./*": {
       "types": "./dist/*.d.ts",
       "default": "./dist/*"

@@ -1,0 +1,92 @@
+import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@systemfsoftware/stryker-js'
+import type { ExecResult } from './__fixtures__/container-environment.js'
+import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
+
+const EDGE_ORACLE = {
+  counts: {
+    compileErrors: 5,
+    ignored: 4,
+    killed: 2,
+    noCoverage: 0,
+    pending: 0,
+    runtimeErrors: 0,
+    survived: 0,
+    timeout: 0,
+  },
+  killed: 2,
+  compileErrors: 5,
+  ignored: 4,
+  survived: 0,
+  total: 11,
+  mutatorStatusTally: {
+    'ArithmeticOperator:Killed': 1,
+    'ArrowFunction:CompileError': 1,
+    'BlockStatement:CompileError': 2,
+    'BlockStatement:Killed': 1,
+    'ConditionalExpression:Ignored': 2,
+    'EqualityOperator:Ignored': 2,
+    'ObjectLiteral:CompileError': 1,
+    'StringLiteral:CompileError': 1,
+  },
+} as const
+
+const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
+
+const parseEventStream = (stdout: string): ReadonlyArray<RunEvent> =>
+  stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('{') && line.endsWith('}'))
+    .map((line) => S.decodeUnknownSync(RunEventWireLine)(line))
+
+const lastEvent = (events: ReadonlyArray<RunEvent>): RunEvent | undefined => events.at(-1)
+
+const tallyOf = (
+  keys: ReadonlyArray<string>,
+  statuses: ReadonlyArray<string>,
+): Readonly<Record<string, number>> =>
+  keys.reduce<Record<string, number>>(
+    (tally, key) => ({ ...tally, [key]: statuses.filter((status) => status === key).length }),
+    {},
+  )
+
+test(
+  'enterprise journey: mutator exclusion filters and ignored mutants',
+  { timeout: 900_000 },
+  async ({ bdd, expect, prepareFixture }) => {
+    let fixture: PreparedFixture
+    let run: ExecResult
+    let events: ReadonlyArray<RunEvent>
+    let verdict: VerdictReached | undefined
+
+    await bdd.given('an enterprise fixture in an isolated edge cases container directory', async () => {
+      fixture = await prepareFixture(ENTERPRISE_FIXTURE_URL, 'enterprise-edge-fixture')
+    })
+
+    await bdd.when('the CLI executes with excluded mutator configuration', async () => {
+      run = await fixture.run(['run', 'stryker.edge.config.ts'])
+      events = parseEventStream(run.stdout)
+      const terminal = lastEvent(events)
+      if (terminal !== undefined && terminal._tag === 'verdict') {
+        verdict = terminal
+      }
+    })
+
+    await bdd.thenAssert('the verdict matches the authored mathematical oracle exactly', () => {
+      expect.soft(run.exitCode).toBe(0)
+      expect.soft(verdict).toBeDefined()
+      if (verdict === undefined) return
+
+      expect.soft(verdict.thresholds.break).toBeNull()
+      expect.soft(verdict.counts).toEqual(EDGE_ORACLE.counts)
+
+      const reported = events
+        .filter((event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
+        .map((m) => `${m.mutator}:${m.status}`)
+
+      expect.soft(reported).toHaveLength(EDGE_ORACLE.total)
+      const reportedTally = tallyOf(Object.keys(EDGE_ORACLE.mutatorStatusTally), reported)
+      expect.soft(reportedTally).toEqual(EDGE_ORACLE.mutatorStatusTally)
+    })
+  },
+)

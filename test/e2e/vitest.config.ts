@@ -10,6 +10,7 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['tests/**/*.test.ts'],
+    fileParallelism: false,
     passWithNoTests: false,
     testTimeout: TEST_TIMEOUT_MS,
     hookTimeout: SETUP_TIMEOUT_MS,

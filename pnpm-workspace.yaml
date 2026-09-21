@@ -56,6 +56,7 @@ catalog:
   typescript: ^7
   vitest: ^5
   concurrently: ^10
+  ts-morph: 28.0.0
 catalogMode: prefer
 catalogs:
   stryker:

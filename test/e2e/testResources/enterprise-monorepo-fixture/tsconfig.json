@@ -4,6 +4,9 @@
       "@enterprise/core": [
         "./packages/core/src/index.ts"
       ],
+      "@enterprise/core/*": [
+        "./packages/core/src/*.ts"
+      ],
       "@enterprise/services": [
         "./packages/services/src/index.ts"
       ],

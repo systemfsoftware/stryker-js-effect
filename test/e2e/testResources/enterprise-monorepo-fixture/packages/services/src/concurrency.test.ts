@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'vitest'
 
-import { processConcurrentPool, streamAsyncGenerator, type Task } from './concurrency.js'
+import { vi } from 'vitest'
+import {
+  executeBatchUntilTarget,
+  getTimestampedId,
+  processConcurrentPool,
+  streamAsyncGenerator,
+  type Task,
+} from './concurrency.js'
 
 describe.concurrent('Feature: Concurrency Control and Async Backpressure', () => {
   describe.concurrent('Rule: Pool processes tasks concurrently up to concurrency limit', () => {
@@ -69,6 +76,19 @@ describe.concurrent('Feature: Concurrency Control and Async Backpressure', () =>
         collected.push(val)
       }
       expect(collected).toEqual([])
+    })
+  })
+  describe.concurrent('Rule: Bounded iterations and mock hygiene', () => {
+    test('Given target iterations, When executed, Then terminates with count', () => {
+      expect(executeBatchUntilTarget(5)).toBe(5)
+      expect(executeBatchUntilTarget(0)).toBe(0)
+    }, 300)
+
+    test('getTimestampedId uses Date.now and cleans up mocks safely', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000)
+      expect(getTimestampedId('order')).toBe('order:1700000000000')
+      spy.mockRestore()
+      expect(getTimestampedId('order')).not.toBe('order:1700000000000')
     })
   })
 })

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { gateFor, isLaunchable, regionLabel, shouldSample } from './gates.js'
+import { gateFor, Gatekeeper, isLaunchable, regionLabel, shouldSample } from './gates.js'
 
 describe.concurrent('Feature: Canary Gate & Feature Rollout Decisioning', () => {
   describe.concurrent('Rule: Only enabled features with positive canary traffic may launch', () => {
@@ -88,5 +88,15 @@ describe.concurrent('Feature: Canary Gate & Feature Rollout Decisioning', () => 
         expect(shouldSample(config, seed)).toBe(expected)
       },
     )
+  })
+
+  describe.concurrent('Rule: Gatekeeper authenticates with private field salt within max attempt bounds', () => {
+    test('authenticates valid token within attempt limits', () => {
+      const gate = new Gatekeeper('s3cr3t')
+      expect(gate.authenticate('s3cr3t:authorized', 1)).toBe(true)
+      expect(gate.authenticate('s3cr3t:authorized', 3)).toBe(true)
+      expect(gate.authenticate('wrong:token', 1)).toBe(false)
+      expect(gate.authenticate('s3cr3t:authorized', 4)).toBe(false)
+    })
   })
 })

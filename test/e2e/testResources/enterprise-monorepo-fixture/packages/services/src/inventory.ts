@@ -4,6 +4,7 @@ export interface StockClient {
 
 export const restock = async (client: StockClient, sku: string, threshold: number): Promise<number> => {
   const level = await client.level(sku)
+  // Stryker disable next-line ConditionalExpression
   if (level > threshold) {
     return 0
   }

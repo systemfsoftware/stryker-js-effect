@@ -1,4 +1,11 @@
 import type { DomainEvent, EntityId, ExtractBySeverity, InfoMetricEvent, SecurityAlertEvent } from '@enterprise/core'
+export type {
+  DomainEvent,
+  EntityId,
+  ExtractBySeverity,
+  InfoMetricEvent,
+  SecurityAlertEvent,
+} from '@enterprise/core/contracts'
 
 export interface AggregatedMetric {
   readonly name: string

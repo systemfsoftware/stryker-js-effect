@@ -75,3 +75,15 @@ export async function* streamAsyncGenerator<T>(
     yield item
   }
 }
+export const executeBatchUntilTarget = (count: number): number => {
+  let iterations = 0
+  while (iterations < count) {
+    iterations += 1
+  }
+  return iterations
+}
+
+export const getTimestampedId = (prefix: string): string => {
+  const now = Date.now()
+  return `${prefix}:${now}`
+}

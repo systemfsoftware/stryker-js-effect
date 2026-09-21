@@ -8,5 +8,6 @@ export default defineConfig({
     'typescript/no-unnecessary-condition': 'error',
     'typescript/strict-boolean-expressions': 'error',
     'vitest/no-conditional-expect': 'error',
+    'vitest/expect-expect': ['error', { assertFunctionNames: ['expect', 'fc.assert'] }],
   },
 })

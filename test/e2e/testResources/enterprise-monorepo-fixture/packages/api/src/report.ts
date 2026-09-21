@@ -1,6 +1,7 @@
 import { roundCents } from '@core/pricing'
 import { type AggregatedMetric, aggregateMetrics } from '@enterprise/analytics'
-import type { FeatureConfig, InfoMetricEvent, Severity } from '@enterprise/core'
+import type { InfoMetricEvent, Severity } from '@enterprise/core/contracts'
+import type { FeatureConfig } from '@enterprise/core/gates'
 import { gateStatus } from '@enterprise/services'
 import { type Handler, route } from './dispatch.js'
 
