@@ -387,13 +387,6 @@ export const isMissingHitCount = (
   return hitCount === undefined
 }
 
-export const isUncovered = (covered: boolean, coverageKnown: boolean): boolean => {
-  if (!coverageKnown) {
-    return false
-  }
-  return !covered
-}
-
 const getHitLimit = (hitCount: number | undefined): number | undefined => {
   if (hitCount === undefined) {
     return undefined
@@ -553,11 +546,8 @@ const decidePlanForMutant = (
   const isStatic = hasStaticCoverageForPlan(command.staticCoverage, mutant.id)
   return Option.match(Option.fromUndefinedOr(mutant.status), {
     onSome: (status) => toEarlyResultPlan(mutant, isStatic, status, mutant.statusReason, getCoveredBy(mutant)),
-    onNone: () => {
-      if (isUncovered(mutantIsCovered(command, mutant.id), coverageKnown(command))) {
-        return toEarlyResultPlan(mutant, isStatic, 'NoCoverage', 'No coverage', undefined)
-      }
-      return Match.value(hasCoverageForPlan(command.staticCoverage)).pipe(
+    onNone: () =>
+      Match.value(hasCoverageForPlan(command.staticCoverage)).pipe(
         Match.when(true, () => planForStaticallyCovered(mutant, command, isStatic)),
         Match.orElse(() =>
           toRunPlan(
@@ -569,8 +559,7 @@ const decidePlanForMutant = (
             undefined,
           )
         ),
-      )
-    },
+      ),
   })
 }
 
@@ -591,22 +580,10 @@ export const missingHitCountIds = (command: PlanMutantTestsInput): readonly stri
     return missingIdOf(command, mutant)
   })
 
-const dropMissing = (command: PlanMutantTestsInput, mutant: Mutant): boolean => {
-  if (isClosedMutant(mutant)) {
-    return false
-  }
-  return boundFor(command, mutant)
-}
-
 export const planMutantTests = (
   command: PlanMutantTestsInput,
 ): PlannedTestPlans => {
-  const plans = command.mutants.flatMap((mutant) => {
-    if (dropMissing(command, mutant)) {
-      return []
-    }
-    return [decidePlanForMutant(mutant, command)]
-  })
+  const plans = command.mutants.map((mutant) => decidePlanForMutant(mutant, command))
   const totalNetTime = plans.reduce((acc, plan) => {
     if (plan.plan === 'Run') {
       return acc + plan.netTime
