@@ -15,7 +15,6 @@ import {
   ARTIFACT_CONTRACT,
   type BaselineCountKey,
   type BaselineCounts,
-  type BaselineDiff,
   type BlessedBaseline,
   compareBaselines,
   decodeBaseline,

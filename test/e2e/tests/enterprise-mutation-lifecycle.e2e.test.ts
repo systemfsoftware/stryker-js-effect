@@ -133,7 +133,6 @@ const stepVerifyMutatorTallies = (
   const reported = events
     .filter((event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
     .map((m) => `${m.mutator}:${m.status}`)
-  const actionable = verdict.mutants.map((m) => `${m.mutator}:${m.status}`)
 
   expect.soft(reported).toHaveLength(LIFECYCLE_TOTAL)
   const reportedTally = normalizeTally(tallyReported(reported))
