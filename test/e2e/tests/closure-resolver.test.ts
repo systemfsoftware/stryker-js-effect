@@ -24,6 +24,7 @@ describe('resolveWorkspaceClosure', () => {
       '@systemfsoftware/stryker-js-plugin-runtime',
       '@systemfsoftware/stryker-js-typescript-checker',
       '@systemfsoftware/stryker-js-vitest-runner',
+      '@systemfsoftware/stryker-vm-harness',
     ])
   })
 
