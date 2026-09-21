@@ -1,0 +1,13 @@
+{
+  "name": "enterprise-monorepo-fixture",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5",
+    "vitest": "^4"
+  }
+}

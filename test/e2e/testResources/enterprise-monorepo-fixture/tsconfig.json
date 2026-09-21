@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@enterprise/core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@enterprise/services": [
+        "./packages/services/src/index.ts"
+      ],
+      "@core/*": [
+        "./packages/core/src/*"
+      ]
+    }
+  },
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/services"
+    },
+    {
+      "path": "./packages/api"
+    }
+  ]
+}
