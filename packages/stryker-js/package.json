@@ -55,7 +55,7 @@
     "@microsoft/api-extractor": "catalog:",
     "@oxc-parser/binding-wasm32-wasi": "catalog:",
     "@std/jsonc": "catalog:",
-    "@systemfsoftware/all": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",

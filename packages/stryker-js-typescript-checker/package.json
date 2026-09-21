@@ -53,7 +53,7 @@
     "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@std/jsonc": "catalog:",
-    "@systemfsoftware/all": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",
@@ -94,7 +94,7 @@
     "@opentelemetry/sdk-trace-base": "2.11.0",
     "@opentelemetry/sdk-trace-node": "2.11.0",
     "@opentelemetry/semantic-conventions": "1.43.0",
-    "@systemfsoftware/effect-cell-types": "8.3.1",
+    "@systemfsoftware/effect-cell-types": "8.3.2",
     "effect": "4.0.0-rc.116",
     "oxc-parser": "0.150.0",
     "ws": "8.21.3"
