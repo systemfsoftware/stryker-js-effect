@@ -50,7 +50,7 @@ import type { Project } from '../Project.js'
 import { reportFileName } from '../report-assembly.js'
 import { offerReporterEvent, withPhaseSpan } from '../ReporterStream.js'
 import { StageError } from '../Run.schema.js'
-import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.js'
+import { buildTestRunner, invalidatesRunnerPool, makeChildProcessTestRunner } from '../TestRunner.js'
 import type { PooledTestRunner, PooledTestRunnerError } from '../TestRunner.js'
 import { IdGenerator } from '../Worker.js'
 import { WorkerLauncher } from '../WorkerLauncher.js'
@@ -721,6 +721,13 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                               ChildProcessCrashedError: (error) => invalidateSlot(pool, runner, error),
                             }),
                           )
+                          if (invalidatesRunnerPool(result.status, reasonOf(result))) {
+                            return yield* invalidateSlot(
+                              pool,
+                              runner,
+                              new ChildProcessCrashedError('wall-clock timeout'),
+                            )
+                          }
                           yield* stopWallClock(result)
                           const reported = yield* reporting.reportMutantRunResult(
                             toReportedMutant(plan.mutant),

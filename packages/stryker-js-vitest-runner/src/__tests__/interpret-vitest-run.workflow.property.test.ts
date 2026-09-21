@@ -150,6 +150,53 @@ describe('interpretVitestRun', () => {
   )
 
   it.prop(
+    '→h_HitCountAtBound_≠Timeout',
+    [
+      VitestMutantRunCommand,
+      Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 100000 }))),
+    ],
+    ([input, hitLimit]) => {
+      const result = interpretVitestRun(commandWith(input, {
+        hitCount: hitLimit,
+        hitLimit,
+        activeMutantId: input.activeMutantId,
+        namedTrapId: input.activeMutantId,
+      }))
+      if (!Result.isSuccess(result)) {
+        return false
+      }
+      return !S.is(MutantTimeout)(result.success)
+    },
+  )
+
+  it.prop(
+    '→f_FailedTestPlusHitBound_=Killed',
+    [
+      VitestMutantRunCommand,
+      Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 1000 }))),
+      Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 1, maximum: 100 }))),
+    ],
+    ([input, hitLimit, extra]) => {
+      const failedTest = {
+        id: 'a.ts#fails',
+        status: 'failed',
+        failureMessage: 'boom',
+      }
+      const result = interpretVitestRun(commandWith(input, {
+        rawTests: [{ ...failedTest }],
+        hitCount: hitLimit + extra,
+        hitLimit,
+        activeMutantId: `${input.activeMutantId}-finite`,
+        namedTrapId: input.activeMutantId,
+      }))
+      if (!Result.isSuccess(result)) {
+        return false
+      }
+      return S.is(MutantKilled)(result.success) && !S.is(MutantTimeout)(result.success)
+    },
+  )
+
+  it.prop(
     '→e_ExternalErrorAlone_=DryError',
     [VitestMutantRunCommand],
     ([input]) => {

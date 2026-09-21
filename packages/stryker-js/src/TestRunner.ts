@@ -203,6 +203,9 @@ export const withTimeout: TestRunnerCombinator = (inner) => ({
   },
 })
 
+export const invalidatesRunnerPool = (status: string, reason: string | undefined): boolean =>
+  status === 'timeout' && reason === WALL_CLOCK_TIMEOUT_REASON
+
 /** How many times a crashed runner is restarted before the run gives up on it. */
 export const maxRetries = 2
 

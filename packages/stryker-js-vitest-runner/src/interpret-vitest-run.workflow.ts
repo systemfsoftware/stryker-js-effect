@@ -6,8 +6,8 @@ import * as S from 'effect/Schema'
 
 import type { TestStatus } from '@systemfsoftware/stryker-js-plugin-interface'
 
-const hitLimitReachedReason = (count: number, limit: number): string => `Hit limit reached (${count}/${limit})`
-
+const HIT_LIMIT_REASON_PREFIX = 'Hit limit reached'
+const hitLimitReachedReason = (count: number, limit: number): string => `${HIT_LIMIT_REASON_PREFIX} (${count}/${limit})`
 const isNamedTrap = (activeMutantId: string, namedTrapId: string | undefined): boolean =>
   Option.match(Option.fromNullishOr(namedTrapId), {
     onNone: () => false,
