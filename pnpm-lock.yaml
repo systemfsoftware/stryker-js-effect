@@ -66,27 +66,27 @@ catalogs:
     '@std/jsonc':
       specifier: jsr:^1
       version: 1.0.2
-    '@systemfsoftware/all':
-      specifier: ^2.1.1
-      version: 2.1.1
     '@systemfsoftware/arethetypeswrong-cli':
       specifier: ^4.2.0
       version: 4.2.0
     '@systemfsoftware/effect-cell-types':
-      specifier: ^8.3.1
-      version: 8.3.1
+      specifier: ^8.3.2
+      version: 8.3.2
     '@systemfsoftware/effect-gherkin-spec':
-      specifier: ^4.2.0
-      version: 4.2.0
+      specifier: ^4.2.1
+      version: 4.2.1
     '@systemfsoftware/effect-schema-law':
-      specifier: ^2.2.0
-      version: 2.2.0
+      specifier: ^2.2.1
+      version: 2.2.1
     '@systemfsoftware/effect-schema-vite':
-      specifier: ^2.2.0
-      version: 2.2.0
+      specifier: ^2.2.1
+      version: 2.2.1
+    '@systemfsoftware/oxlint-config-recommended':
+      specifier: ^1.0.0
+      version: 1.0.0
     '@systemfsoftware/tsconfig':
-      specifier: ^1.3.5
-      version: 1.3.5
+      specifier: ^1.3.6
+      version: 1.3.6
     '@types/node':
       specifier: ^24
       version: 24.13.3
@@ -188,7 +188,7 @@ importers:
         version: 0.45.0
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
@@ -234,7 +234,7 @@ importers:
         version: link:../kit
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../../toolchain/tsdown-config
@@ -286,7 +286,7 @@ importers:
         version: link:../../toolchain/oxlint-ignorer-config
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../../toolchain/tsdown-config
@@ -338,7 +338,7 @@ importers:
         version: link:../../toolchain/oxlint-ignorer-config
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../../toolchain/tsdown-config
@@ -386,7 +386,7 @@ importers:
         version: link:../../toolchain/oxlint-ignorer-config
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../../toolchain/tsdown-config
@@ -438,7 +438,7 @@ importers:
         version: link:../../toolchain/oxlint-ignorer-config
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../../toolchain/tsdown-config
@@ -501,7 +501,7 @@ importers:
         version: 2.11.0(@opentelemetry/api@1.9.1)
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 8.3.1(effect@4.0.0-rc.116)
+        version: 8.3.2(effect@4.0.0-rc.116)
       effect:
         specifier: 4.0.0-rc.116
         version: 4.0.0-rc.116
@@ -521,21 +521,21 @@ importers:
       '@std/jsonc':
         specifier: 'catalog:'
         version: '@jsr/std__jsonc@1.0.2'
-      '@systemfsoftware/all':
-        specifier: 'catalog:'
-        version: 2.1.1(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
       '@systemfsoftware/effect-gherkin-spec':
         specifier: 'catalog:'
-        version: 4.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+        version: 4.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@systemfsoftware/effect-schema-law':
         specifier: 'catalog:'
-        version: 2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+        version: 2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@systemfsoftware/effect-schema-vite':
         specifier: 'catalog:'
-        version: 2.2.0(@systemfsoftware/effect-schema-law@2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)
+        version: 2.2.1(@systemfsoftware/effect-schema-law@2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)
+      '@systemfsoftware/oxlint-config-recommended':
+        specifier: 'catalog:'
+        version: 1.0.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/stryker-config':
         specifier: workspace:^
         version: link:../toolchain/stryker-config
@@ -574,7 +574,7 @@ importers:
         version: 3.0.3(effect@4.0.0-rc.116)(rolldown@1.2.8)(svelte@5.57.0)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../toolchain/tsdown-config
@@ -622,7 +622,7 @@ importers:
         version: 4.0.0-rc.116(effect@4.0.0-rc.116)
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 8.3.1(effect@4.0.0-rc.116)
+        version: 8.3.2(effect@4.0.0-rc.116)
       '@systemfsoftware/stryker-js-instrumenter':
         specifier: workspace:^
         version: link:../stryker-js-instrumenter
@@ -639,18 +639,18 @@ importers:
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
-      '@systemfsoftware/all':
-        specifier: 'catalog:'
-        version: 2.1.1(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
       '@systemfsoftware/effect-gherkin-spec':
         specifier: 'catalog:'
-        version: 4.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+        version: 4.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+      '@systemfsoftware/oxlint-config-recommended':
+        specifier: 'catalog:'
+        version: 1.0.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../toolchain/tsdown-config
@@ -692,7 +692,7 @@ importers:
         version: 0.150.0
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 8.3.1(effect@4.0.0-rc.116)
+        version: 8.3.2(effect@4.0.0-rc.116)
       angular-html-parser:
         specifier: 'catalog:'
         version: 10.12.0
@@ -712,21 +712,21 @@ importers:
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
-      '@systemfsoftware/all':
-        specifier: 'catalog:'
-        version: 2.1.1(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
       '@systemfsoftware/effect-gherkin-spec':
         specifier: 'catalog:'
-        version: 4.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+        version: 4.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+      '@systemfsoftware/oxlint-config-recommended':
+        specifier: 'catalog:'
+        version: 1.0.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/stryker-ignorer-interface':
         specifier: workspace:^
         version: link:../ignorers/interface
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../toolchain/tsdown-config
@@ -770,21 +770,21 @@ importers:
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
-      '@systemfsoftware/all':
-        specifier: 'catalog:'
-        version: 2.1.1(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
       '@systemfsoftware/effect-schema-law':
         specifier: 'catalog:'
-        version: 2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+        version: 2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@systemfsoftware/effect-schema-vite':
         specifier: 'catalog:'
-        version: 2.2.0(@systemfsoftware/effect-schema-law@2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)
+        version: 2.2.1(@systemfsoftware/effect-schema-law@2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)
+      '@systemfsoftware/oxlint-config-recommended':
+        specifier: 'catalog:'
+        version: 1.0.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../toolchain/tsdown-config
@@ -843,18 +843,18 @@ importers:
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
-      '@systemfsoftware/all':
-        specifier: 'catalog:'
-        version: 2.1.1(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
       '@systemfsoftware/effect-schema-vite':
         specifier: 'catalog:'
-        version: 2.2.0(@systemfsoftware/effect-schema-law@2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)
+        version: 2.2.1(@systemfsoftware/effect-schema-law@2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)
+      '@systemfsoftware/oxlint-config-recommended':
+        specifier: 'catalog:'
+        version: 1.0.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../toolchain/tsdown-config
@@ -896,7 +896,7 @@ importers:
         version: 2.11.0(@opentelemetry/api@1.9.1)
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 8.3.1(effect@4.0.0-rc.116)
+        version: 8.3.2(effect@4.0.0-rc.116)
       '@systemfsoftware/stryker-js-instrumenter':
         specifier: workspace:^
         version: link:../stryker-js-instrumenter
@@ -931,21 +931,21 @@ importers:
       '@std/jsonc':
         specifier: 'catalog:'
         version: '@jsr/std__jsonc@1.0.2'
-      '@systemfsoftware/all':
-        specifier: 'catalog:'
-        version: 2.1.1(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
       '@systemfsoftware/effect-gherkin-spec':
         specifier: 'catalog:'
-        version: 4.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+        version: 4.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@systemfsoftware/effect-schema-law':
         specifier: 'catalog:'
-        version: 2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+        version: 2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@systemfsoftware/effect-schema-vite':
         specifier: 'catalog:'
-        version: 2.2.0(@systemfsoftware/effect-schema-law@2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)
+        version: 2.2.1(@systemfsoftware/effect-schema-law@2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)
+      '@systemfsoftware/oxlint-config-recommended':
+        specifier: 'catalog:'
+        version: 1.0.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/stryker-config':
         specifier: workspace:^
         version: link:../toolchain/stryker-config
@@ -969,7 +969,7 @@ importers:
         version: 3.0.3(effect@4.0.0-rc.116)(rolldown@1.2.8)(svelte@5.57.0)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../toolchain/tsdown-config
@@ -1005,7 +1005,7 @@ importers:
         version: 2.11.0(@opentelemetry/api@1.9.1)
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 8.3.1(effect@4.0.0-rc.116)
+        version: 8.3.2(effect@4.0.0-rc.116)
     devDependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
@@ -1016,15 +1016,15 @@ importers:
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
-      '@systemfsoftware/all':
-        specifier: 'catalog:'
-        version: 2.1.1(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
       '@systemfsoftware/effect-gherkin-spec':
         specifier: 'catalog:'
-        version: 4.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+        version: 4.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+      '@systemfsoftware/oxlint-config-recommended':
+        specifier: 'catalog:'
+        version: 1.0.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/stryker-config':
         specifier: workspace:^
         version: link:../toolchain/stryker-config
@@ -1057,7 +1057,7 @@ importers:
         version: 3.0.3(effect@4.0.0-rc.116)(rolldown@1.2.8)(svelte@5.57.0)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../toolchain/tsdown-config
@@ -1107,24 +1107,24 @@ importers:
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
-      '@systemfsoftware/all':
-        specifier: 'catalog:'
-        version: 2.1.1(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
       '@systemfsoftware/effect-gherkin-spec':
         specifier: 'catalog:'
-        version: 4.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+        version: 4.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@systemfsoftware/effect-schema-law':
         specifier: 'catalog:'
-        version: 2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+        version: 2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@systemfsoftware/effect-schema-vite':
         specifier: 'catalog:'
-        version: 2.2.0(@systemfsoftware/effect-schema-law@2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)
+        version: 2.2.1(@systemfsoftware/effect-schema-law@2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)
+      '@systemfsoftware/oxlint-config-recommended':
+        specifier: 'catalog:'
+        version: 1.0.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/tsdown-config':
         specifier: workspace:^
         version: link:../toolchain/tsdown-config
@@ -1163,7 +1163,7 @@ importers:
         version: 7.59.1(@types/node@24.13.3)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
@@ -1175,7 +1175,7 @@ importers:
     devDependencies:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
@@ -1184,7 +1184,7 @@ importers:
     devDependencies:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@systemfsoftware/vitest-config':
         specifier: workspace:^
         version: link:../vitest-config
@@ -1208,7 +1208,7 @@ importers:
         version: 4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
@@ -1247,7 +1247,7 @@ importers:
         version: link:../../packages/stryker-js-vitest-runner
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
-        version: 1.3.5
+        version: 1.3.6
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
@@ -2543,102 +2543,95 @@ packages:
     peerDependencies:
       acorn: ^8.9.0
 
-  '@systemfsoftware/all@2.1.1':
-    resolution: {integrity: sha512-c72qIt2viK85NGxSZlNFjBxOohidExDYzXBS0DObP5iIotHmWhYdLau3qlOowlhNqt+6HCKBy+kRoSD3Avhi8A==}
+  '@systemfsoftware/arethetypeswrong-cli@4.2.0':
+    resolution: {integrity: sha512-mdHrpcy9N2RD6zBOlJnLD03fH2DcA7S1wabKDWv5TOsnyJCZR+m/Khd1yUFI9siI6az+oqHTVfJVgRTS4Sw0XA==}
+    engines: {node: '>=24'}
+    hasBin: true
+
+  '@systemfsoftware/effect-cell-types@8.3.2':
+    resolution: {integrity: sha512-C0svoe4OzaYsJbLqNOBZ3P356ynfQp1d76eRRHP8w6N0tMYwzy3SQjrrmhaHm6dQ33M6R50ksutsOOM+pLAgkg==}
+    peerDependencies:
+      effect: 4.0.0-rc.116
+
+  '@systemfsoftware/effect-gherkin-spec@4.2.1':
+    resolution: {integrity: sha512-HbYzSFI3aLRC9Lnw5JYQzTCZdw7QXQaUS72wVFO8Y4CRVxTr9ECGVzPu8AH1EPgDjuKcULd+8mUglaKhs7c5og==}
+    peerDependencies:
+      '@effect/vitest': 4.0.0-rc.116
+      effect: 4.0.0-rc.116
+      vitest: ^5
+
+  '@systemfsoftware/effect-schema-discovery@1.0.5':
+    resolution: {integrity: sha512-KKiArYpYc+kdeiIhRKXBLjnZ7jOYjbYtaLDPPDwseUUH2bR0mIX5RRhHtUx8CjqW6KxzQmVr+etdizr5yT+FUw==}
+
+  '@systemfsoftware/effect-schema-law@2.2.1':
+    resolution: {integrity: sha512-k0qAhoX+dzObvMOv9PrHeylaun4Y36qCi2mRJszc4QvoKw41TzPq3Qlr+D1lUwTZLPfp1hSNrJ92Y3JpJ40moA==}
+    peerDependencies:
+      '@effect/vitest': 4.0.0-rc.116
+      effect: 4.0.0-rc.116
+      vitest: ^5
+
+  '@systemfsoftware/effect-schema-recursion-budget@0.1.1':
+    resolution: {integrity: sha512-3aQo9VCloo1cqnjHLNT0+NvFlzaS/zQCMqGNM3SYq5nlY55jAwv7qYP9iRqVPbf72FCxinl84Cv14MbXv+wsDQ==}
+    peerDependencies:
+      effect: 4.0.0-rc.116
+
+  '@systemfsoftware/effect-schema-vite@2.2.1':
+    resolution: {integrity: sha512-nqs+1k5rkwUWklg7op6U+Pcici55eNHwxvoJ0SLESUo14S+39ag/koPXWxMNwRd1B3K7UGUBY/pyxr8Q/Rm2Jw==}
+    peerDependencies:
+      '@systemfsoftware/effect-schema-law': 2.2.1
+      effect: 4.0.0-rc.116
+      vite: '>5.0.0'
+      vitest: ^5
+
+  '@systemfsoftware/oxlint-config-cell-architecture@1.0.0':
+    resolution: {integrity: sha512-PFh4zmhX+fJWTTpy0F8D0hkGKD9u+qWYFb9/p6aD5apWTXRIYMwCQUBX3cfM3DiYEAvpENje0nI9R8df9hffmw==}
+    peerDependencies:
+      effect: 4.0.0-rc.116
+      oxlint: ~1.82.0
+      typescript: '>=5.0.0'
+
+  '@systemfsoftware/oxlint-config-dmmf@1.0.0':
+    resolution: {integrity: sha512-SDIUdzXbo7JyQWQJJM6uU9OawApjJ3SOTYBouVOXS25Ol0Jm/up322kuUtWQHhQcWvczzZ9nO1TPwG+QjdNXkQ==}
     peerDependencies:
       effect: 4.0.0-rc.116
       oxlint: ~1.82.0
       oxlint-tsgolint: 7.0.2001
       typescript: '>=5.0.0'
 
-  '@systemfsoftware/arethetypeswrong-cli@4.2.0':
-    resolution: {integrity: sha512-mdHrpcy9N2RD6zBOlJnLD03fH2DcA7S1wabKDWv5TOsnyJCZR+m/Khd1yUFI9siI6az+oqHTVfJVgRTS4Sw0XA==}
-    engines: {node: '>=24'}
-    hasBin: true
-
-  '@systemfsoftware/effect-cell-types@8.3.1':
-    resolution: {integrity: sha512-/CrQOqfWYEAxGf6927iPuxZZ9ylRc3FxdPf61XP1KQs1FVVIApyB8l8h2rcelHHb3ewI8ULziBO1b8gPc0IIEQ==}
+  '@systemfsoftware/oxlint-config-recommended@1.0.0':
+    resolution: {integrity: sha512-xgBphXN1f9cW+orH7HaLnv4EprZ4iAS45Nj4gvPhoaqw/zMRlR2TfhNYp6oQTCqkcSkYb9W+ebgw9R2REQGTCw==}
     peerDependencies:
       effect: 4.0.0-rc.116
-
-  '@systemfsoftware/effect-gherkin-spec@4.2.0':
-    resolution: {integrity: sha512-IR1DT8c9jEWAyY55D89vFVfjDDSRmQ/8IWxO571tPfTE8fuopP5frBGCBjcUIPwsVLKP4GPbjnWn0jAP103baQ==}
-    peerDependencies:
-      '@effect/vitest': 4.0.0-rc.116
-      effect: 4.0.0-rc.116
-      vitest: ^5
-
-  '@systemfsoftware/effect-schema-discovery@1.0.4':
-    resolution: {integrity: sha512-j5rnDxCJZ/8jj/GxIUkqAaBbHgEdCoRHIExT2uDqQHQ/ZUoIpDighoQHLc5Q154shovLBS267iCFFGD/Rt1ThQ==}
-
-  '@systemfsoftware/effect-schema-law@2.2.0':
-    resolution: {integrity: sha512-jr/kQKQsVfNGOpBDLcRCMBKGQp9j69xL/AvpaoSeNk+IZ/VpQyQMBiwnc2vtQJ+ilYTlcuVUjri3HAB1tLRBGw==}
-    peerDependencies:
-      '@effect/vitest': 4.0.0-rc.116
-      effect: 4.0.0-rc.116
-      vitest: ^5
-
-  '@systemfsoftware/effect-schema-recursion-budget@0.1.0':
-    resolution: {integrity: sha512-F2TpfJleKEhFpPdQpATWrtVrguPWH+kiv4LT2x9DmwpV/z+GwfvT1GqvnD5PnoRnOuePeEHHfk+zrzPyDo1itA==}
-    peerDependencies:
-      effect: 4.0.0-rc.116
-
-  '@systemfsoftware/effect-schema-vite@2.2.0':
-    resolution: {integrity: sha512-xP+oM0W2cRb+6DGyJoUs1/YF3IZ0JFaQdC87AAWhp6dtEe/2F7iYRR3wzEHVy9Tddchyq6Ym6Q6aAmsvaLqr0Q==}
-    peerDependencies:
-      '@systemfsoftware/effect-schema-law': 2.2.0
-      effect: 4.0.0-rc.116
-      vite: '>5.0.0'
-      vitest: ^5
-
-  '@systemfsoftware/oxlint-plugin-effect-dmmf@6.0.2':
-    resolution: {integrity: sha512-ZKAg5ZHxeksycvPf7nhz6nEWla8yKNqD/lt6XDj4FuRvrutzPqaKxK+orG0qlL7C6urikDRLPIQtEwbW7TqgtA==}
-    peerDependencies:
       oxlint: ~1.82.0
+      oxlint-tsgolint: 7.0.2001
+      typescript: '>=5.0.0'
 
-  '@systemfsoftware/oxlint-plugin-effect-entrypoint@1.1.1':
-    resolution: {integrity: sha512-eLVdPTOYxTOJ1SLkWmNHZfeRAE5mlnoAvnHtU74Oq5kIEiTYNIi1jGhv2WZ1EcgzHakspJPriLZvQUPwgP03BA==}
+  '@systemfsoftware/oxlint-plugin-cell-architecture@1.1.0':
+    resolution: {integrity: sha512-SY4zBYQCj43SO7LlRsoXzZuWLP/RfFGnmO2fS2RImpLtpYHB5L1HdfnedgaMOurZQt3QPekI2STUFKWnxLxpNg==}
     peerDependencies:
       effect: 4.0.0-rc.116
       typescript: '>=5.0.0'
 
-  '@systemfsoftware/oxlint-plugin-effect-schema@5.4.0':
-    resolution: {integrity: sha512-Lm20TLxjIaiHPxUNGqnimy1SkpuiJ0hSRsZfKtz4elShBy6ALslkmcaX4ksVyOjSdjPK5U6nsH4qyf9CFwCB0Q==}
+  '@systemfsoftware/oxlint-plugin-dmmf-workflow@5.2.0':
+    resolution: {integrity: sha512-zfr+WN05JOpwPiEAmhTej+KdUsAu+fEhCHO9RrFv/Q8UILiaa4Nh81VgKD5YClXkx0ppfcKA8F74jM6MEpmZ/Q==}
     peerDependencies:
       effect: 4.0.0-rc.116
       typescript: '>=5.0.0'
 
-  '@systemfsoftware/oxlint-plugin-effect-workflow@5.1.2':
-    resolution: {integrity: sha512-6li1efD5GkY8W8FN4zvn84gm0ezAYisyYdfAkkzsvrFrxlfMaKCHRWEUTSDBfxt4nWGaxOzAVl1efyCvArfWIg==}
+  '@systemfsoftware/oxlint-plugin-effect-platform@1.2.0':
+    resolution: {integrity: sha512-a3G37qSFm3bNqSazyv/XzvM6UsV21b/NuMeChof0U8ZjTBBlzKQE/sO1GarQefFYLUWBsvA8shrOCJjc2+iF1A==}
     peerDependencies:
       effect: 4.0.0-rc.116
       typescript: '>=5.0.0'
 
-  '@systemfsoftware/oxlint-plugin-property-testing@2.0.1':
-    resolution: {integrity: sha512-my1dctyNDlP5bpoEm5Nug+XmoMu4E+0Nttd96BNEM8YqBK6nQLzgtMjd8C6XuVQDdOFJmgkFbCu+fGfGbus15Q==}
+  '@systemfsoftware/oxlint-plugin-effect-schema@5.5.1':
+    resolution: {integrity: sha512-1l6Ns4HtsUSQyRdOKPJeS3VZYyHFAYrEem0AmqxzXp0RN6p0nCmOpZS+dRNa0bu8slFjJvvvNmybNbeD10ycxA==}
     peerDependencies:
       effect: 4.0.0-rc.116
       typescript: '>=5.0.0'
 
-  '@systemfsoftware/oxlint-plugin-recommended@1.3.2':
-    resolution: {integrity: sha512-u6ksd/zK6cMjXNKY615vv0GZMw5/VurbRCI05nA7xipPsQpxJu97YiJGshxOuCg6L+NcyEiyk9+C50X+YGFIoQ==}
-    peerDependencies:
-      oxlint: ~1.82.0
-
-  '@systemfsoftware/oxlint-plugin-test-hygiene@1.1.10':
-    resolution: {integrity: sha512-TaE3SAIeP8XqSAy0zqugPe8oe5EdiFE8N8PeBMFdXil65zEGIDldblaz4d0ZMNMlVfrl1p1Hf04qRGOf+RsQzA==}
-    peerDependencies:
-      effect: 4.0.0-rc.116
-      typescript: '>=5.0.0'
-
-  '@systemfsoftware/oxlint-plugin-test-placement@3.5.1':
-    resolution: {integrity: sha512-u5NrCFqEIF29bRpdbdIpVkYbp1sB4+FsgwohhZ6kcFdeDBjrgIVj4cZWgzzP5ikv58v8TvRQ3Y4jP/2uvphkTQ==}
-    peerDependencies:
-      effect: 4.0.0-rc.116
-      typescript: '>=5.0.0'
-
-  '@systemfsoftware/oxlint-plugin@4.0.3':
-    resolution: {integrity: sha512-WUDKfNrkamSExCxCuGDjx/T1BOpA3+VigoDyYHqLIaNdBrHtHpsie2mE2CwXjceWt4JD7trLUKcfQKv1XrAckw==}
+  '@systemfsoftware/oxlint-plugin-test-discipline@3.6.0':
+    resolution: {integrity: sha512-sS6nBdEwo5GQvQjidYTs/Dz/TwmKrEO8hVxO78gxy0RyrNe2fKLxet1KOfNU4+xf83oqMEBCem+D274R2VfLlA==}
     peerDependencies:
       effect: 4.0.0-rc.116
       typescript: '>=5.0.0'
@@ -2694,8 +2687,8 @@ packages:
     peerDependencies:
       effect: 4.0.0-rc.116
 
-  '@systemfsoftware/tsconfig@1.3.5':
-    resolution: {integrity: sha512-ka2W1t2/iMMM2JlbG51r9dVF3yXo1ug1dE/Ghd+4ZSJx6gz8jPGt9jS5bHyorXrQp1NtjCIVw1QwekR32H7PoA==}
+  '@systemfsoftware/tsconfig@1.3.6':
+    resolution: {integrity: sha512-wnXpp9hf+srxXdc0IEeWPM6y8tseZnsMjuveh+PCMgjYo3lSiEKkGxYmXcpWmDuw4W8bVFxydnsRcu8G/z2QKA==}
 
   '@turbo/darwin-64@2.10.12':
     resolution: {integrity: sha512-9nKgKoF6ZOUsM+or0OtNf+TTJSfGvDNP7ZFv/ZGWVwOSCkumyctQiTeHwB4UNljHTnC41AqylgbunLDHoccNrA==}
@@ -5637,123 +5630,115 @@ snapshots:
     dependencies:
       acorn: 8.18.0
 
-  '@systemfsoftware/all@2.1.1(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)':
-    dependencies:
-      '@effect/tsgo': 0.45.0
-      '@systemfsoftware/oxlint-plugin': 4.0.3(effect@4.0.0-rc.116)(typescript@7.0.2)
-      '@systemfsoftware/oxlint-plugin-effect-dmmf': 6.0.2(effect@4.0.0-rc.116)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
-      '@systemfsoftware/oxlint-plugin-effect-entrypoint': 1.1.1(effect@4.0.0-rc.116)(typescript@7.0.2)
-      '@systemfsoftware/oxlint-plugin-effect-schema': 5.4.0(effect@4.0.0-rc.116)(typescript@7.0.2)
-      '@systemfsoftware/oxlint-plugin-effect-workflow': 5.1.2(effect@4.0.0-rc.116)(typescript@7.0.2)
-      '@systemfsoftware/oxlint-plugin-property-testing': 2.0.1(effect@4.0.0-rc.116)(typescript@7.0.2)
-      '@systemfsoftware/oxlint-plugin-recommended': 1.3.2(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))
-      '@systemfsoftware/oxlint-plugin-test-hygiene': 1.1.10(effect@4.0.0-rc.116)(typescript@7.0.2)
-      '@systemfsoftware/oxlint-plugin-test-placement': 3.5.1(effect@4.0.0-rc.116)(typescript@7.0.2)
-      effect: 4.0.0-rc.116
-      oxlint: 1.82.0(oxlint-tsgolint@7.0.2001)
-      oxlint-tsgolint: 7.0.2001
-      typescript: 7.0.2
-
   '@systemfsoftware/arethetypeswrong-cli@4.2.0': {}
 
-  '@systemfsoftware/effect-cell-types@8.3.1(effect@4.0.0-rc.116)':
+  '@systemfsoftware/effect-cell-types@8.3.2(effect@4.0.0-rc.116)':
     dependencies:
       effect: 4.0.0-rc.116
 
-  '@systemfsoftware/effect-gherkin-spec@4.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)':
+  '@systemfsoftware/effect-gherkin-spec@4.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)':
     dependencies:
       '@effect/vitest': 4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1)
       effect: 4.0.0-rc.116
       vitest: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))
 
-  '@systemfsoftware/effect-schema-discovery@1.0.4':
+  '@systemfsoftware/effect-schema-discovery@1.0.5':
     dependencies:
       '@oxc-project/types': 0.150.0
       oxc-parser: 0.150.0
 
-  '@systemfsoftware/effect-schema-law@2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)':
+  '@systemfsoftware/effect-schema-law@2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)':
     dependencies:
       '@effect/vitest': 4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1)
       effect: 4.0.0-rc.116
       vitest: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))
 
-  '@systemfsoftware/effect-schema-recursion-budget@0.1.0(effect@4.0.0-rc.116)':
+  '@systemfsoftware/effect-schema-recursion-budget@0.1.1(effect@4.0.0-rc.116)':
     dependencies:
       '@oxc-project/types': 0.150.0
       effect: 4.0.0-rc.116
       oxc-parser: 0.150.0
 
-  '@systemfsoftware/effect-schema-vite@2.2.0(@systemfsoftware/effect-schema-law@2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)':
+  '@systemfsoftware/effect-schema-vite@2.2.1(@systemfsoftware/effect-schema-law@2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1)':
     dependencies:
       '@oxc-project/types': 0.150.0
-      '@systemfsoftware/effect-schema-discovery': 1.0.4
-      '@systemfsoftware/effect-schema-law': 2.2.0(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
-      '@systemfsoftware/effect-schema-recursion-budget': 0.1.0(effect@4.0.0-rc.116)
+      '@systemfsoftware/effect-schema-discovery': 1.0.5
+      '@systemfsoftware/effect-schema-law': 2.2.1(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
+      '@systemfsoftware/effect-schema-recursion-budget': 0.1.1(effect@4.0.0-rc.116)
       effect: 4.0.0-rc.116
       oxc-parser: 0.150.0
       vite: 8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1)
       vitest: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))
 
-  '@systemfsoftware/oxlint-plugin-effect-dmmf@6.0.2(effect@4.0.0-rc.116)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)':
+  '@systemfsoftware/oxlint-config-cell-architecture@1.0.0(effect@4.0.0-rc.116)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)':
     dependencies:
-      '@oxlint/plugins': 1.82.0
-      '@systemfsoftware/oxlint-plugin-effect-schema': 5.4.0(effect@4.0.0-rc.116)(typescript@7.0.2)
-      '@systemfsoftware/oxlint-plugin-effect-workflow': 5.1.2(effect@4.0.0-rc.116)(typescript@7.0.2)
-      '@systemfsoftware/oxlint-plugin-property-testing': 2.0.1(effect@4.0.0-rc.116)(typescript@7.0.2)
-      '@systemfsoftware/oxlint-plugin-test-hygiene': 1.1.10(effect@4.0.0-rc.116)(typescript@7.0.2)
-      '@systemfsoftware/oxlint-plugin-test-placement': 3.5.1(effect@4.0.0-rc.116)(typescript@7.0.2)
+      '@systemfsoftware/oxlint-plugin-cell-architecture': 1.1.0(effect@4.0.0-rc.116)(typescript@7.0.2)
+      effect: 4.0.0-rc.116
       oxlint: 1.82.0(oxlint-tsgolint@7.0.2001)
+      typescript: 7.0.2
+
+  '@systemfsoftware/oxlint-config-dmmf@1.0.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)':
+    dependencies:
+      '@systemfsoftware/oxlint-plugin-dmmf-workflow': 5.2.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(typescript@7.0.2)
+      '@systemfsoftware/oxlint-plugin-effect-schema': 5.5.1(effect@4.0.0-rc.116)(typescript@7.0.2)
+      effect: 4.0.0-rc.116
+      oxlint: 1.82.0(oxlint-tsgolint@7.0.2001)
+      oxlint-tsgolint: 7.0.2001
+      typescript: 7.0.2
     transitivePeerDependencies:
-      - effect
-      - typescript
+      - vite-plus
 
-  '@systemfsoftware/oxlint-plugin-effect-entrypoint@1.1.1(effect@4.0.0-rc.116)(typescript@7.0.2)':
+  '@systemfsoftware/oxlint-config-recommended@1.0.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)':
     dependencies:
-      '@oxc-project/types': 0.150.0
-      '@oxlint/plugins': 1.82.0
+      '@effect/tsgo': 0.45.0
+      '@systemfsoftware/oxlint-config-cell-architecture': 1.0.0(effect@4.0.0-rc.116)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
+      '@systemfsoftware/oxlint-config-dmmf': 1.0.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
+      '@systemfsoftware/oxlint-plugin-effect-platform': 1.2.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(typescript@7.0.2)
+      '@systemfsoftware/oxlint-plugin-test-discipline': 3.6.0(effect@4.0.0-rc.116)(typescript@7.0.2)
       effect: 4.0.0-rc.116
-      typescript: 7.0.2
-
-  '@systemfsoftware/oxlint-plugin-effect-schema@5.4.0(effect@4.0.0-rc.116)(typescript@7.0.2)':
-    dependencies:
-      '@oxc-project/types': 0.150.0
-      '@oxlint/plugins': 1.82.0
-      effect: 4.0.0-rc.116
-      typescript: 7.0.2
-
-  '@systemfsoftware/oxlint-plugin-effect-workflow@5.1.2(effect@4.0.0-rc.116)(typescript@7.0.2)':
-    dependencies:
-      '@oxc-project/types': 0.150.0
-      '@oxlint/plugins': 1.82.0
-      effect: 4.0.0-rc.116
-      typescript: 7.0.2
-
-  '@systemfsoftware/oxlint-plugin-property-testing@2.0.1(effect@4.0.0-rc.116)(typescript@7.0.2)':
-    dependencies:
-      '@oxc-project/types': 0.150.0
-      '@oxlint/plugins': 1.82.0
-      effect: 4.0.0-rc.116
-      typescript: 7.0.2
-
-  '@systemfsoftware/oxlint-plugin-recommended@1.3.2(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))':
-    dependencies:
       oxlint: 1.82.0(oxlint-tsgolint@7.0.2001)
+      oxlint-tsgolint: 7.0.2001
+      typescript: 7.0.2
+    transitivePeerDependencies:
+      - vite-plus
 
-  '@systemfsoftware/oxlint-plugin-test-hygiene@1.1.10(effect@4.0.0-rc.116)(typescript@7.0.2)':
+  '@systemfsoftware/oxlint-plugin-cell-architecture@1.1.0(effect@4.0.0-rc.116)(typescript@7.0.2)':
     dependencies:
       '@oxc-project/types': 0.150.0
       '@oxlint/plugins': 1.82.0
       effect: 4.0.0-rc.116
       typescript: 7.0.2
 
-  '@systemfsoftware/oxlint-plugin-test-placement@3.5.1(effect@4.0.0-rc.116)(typescript@7.0.2)':
+  '@systemfsoftware/oxlint-plugin-dmmf-workflow@5.2.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(typescript@7.0.2)':
+    dependencies:
+      '@oxc-project/types': 0.150.0
+      '@oxlint/plugins': 1.82.0
+      effect: 4.0.0-rc.116
+      oxlint: 1.82.0(oxlint-tsgolint@7.0.2001)
+      typescript: 7.0.2
+    transitivePeerDependencies:
+      - oxlint-tsgolint
+      - vite-plus
+
+  '@systemfsoftware/oxlint-plugin-effect-platform@1.2.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(typescript@7.0.2)':
+    dependencies:
+      '@oxc-project/types': 0.150.0
+      '@oxlint/plugins': 1.82.0
+      effect: 4.0.0-rc.116
+      oxlint: 1.82.0(oxlint-tsgolint@7.0.2001)
+      typescript: 7.0.2
+    transitivePeerDependencies:
+      - oxlint-tsgolint
+      - vite-plus
+
+  '@systemfsoftware/oxlint-plugin-effect-schema@5.5.1(effect@4.0.0-rc.116)(typescript@7.0.2)':
     dependencies:
       '@oxc-project/types': 0.150.0
       '@oxlint/plugins': 1.82.0
       effect: 4.0.0-rc.116
       typescript: 7.0.2
 
-  '@systemfsoftware/oxlint-plugin@4.0.3(effect@4.0.0-rc.116)(typescript@7.0.2)':
+  '@systemfsoftware/oxlint-plugin-test-discipline@3.6.0(effect@4.0.0-rc.116)(typescript@7.0.2)':
     dependencies:
       '@oxc-project/types': 0.150.0
       '@oxlint/plugins': 1.82.0
@@ -5789,7 +5774,7 @@ snapshots:
     dependencies:
       '@eslint-community/regexpp': 4.12.2
       '@oxc-project/types': 0.140.0
-      '@systemfsoftware/effect-cell-types': 8.3.1(effect@4.0.0-rc.116)
+      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.116)
       angular-html-parser: 10.4.0
       effect: 4.0.0-rc.116
       oxc-parser: 0.140.0
@@ -5835,7 +5820,7 @@ snapshots:
       '@opentelemetry/exporter-trace-otlp-http': 0.208.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-node': 0.208.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
-      '@systemfsoftware/effect-cell-types': 8.3.1(effect@4.0.0-rc.116)
+      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.116)
       '@systemfsoftware/stryker-js-instrumenter': 8.0.0(rolldown@1.2.8)(svelte@5.57.0)
       '@systemfsoftware/stryker-js-plugin-interface': 7.1.1(rolldown@1.2.8)(svelte@5.57.0)
       '@systemfsoftware/stryker-js-plugin-runtime': 5.0.3(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(rolldown@1.2.8)(svelte@5.57.0)
@@ -5862,7 +5847,7 @@ snapshots:
       '@opentelemetry/exporter-trace-otlp-http': 0.208.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-node': 0.208.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
-      '@systemfsoftware/effect-cell-types': 8.3.1(effect@4.0.0-rc.116)
+      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.116)
       '@systemfsoftware/stryker-js-instrumenter': 8.0.0(rolldown@1.2.8)(svelte@5.57.0)
       '@systemfsoftware/stryker-js-plugin-interface': 7.1.1(rolldown@1.2.8)(svelte@5.57.0)
       '@systemfsoftware/stryker-js-plugin-runtime': 5.0.3(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(rolldown@1.2.8)(svelte@5.57.0)
@@ -5889,7 +5874,7 @@ snapshots:
       '@opentelemetry/exporter-trace-otlp-http': 0.208.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-node': 0.208.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
-      '@systemfsoftware/effect-cell-types': 8.3.1(effect@4.0.0-rc.116)
+      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.116)
       effect: 4.0.0-rc.116
       vitest: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(vite@8.2.2(@types/node@24.13.3)(jiti@2.6.1)(yaml@2.9.1))
     transitivePeerDependencies:
@@ -5907,7 +5892,7 @@ snapshots:
       '@opentelemetry/exporter-trace-otlp-http': 0.208.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-metrics': 2.11.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
-      '@systemfsoftware/effect-cell-types': 8.3.1(effect@4.0.0-rc.116)
+      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.116)
       effect: 4.0.0-rc.116
     transitivePeerDependencies:
       - '@opentelemetry/api-logs'
@@ -5928,7 +5913,7 @@ snapshots:
       - rolldown
       - svelte
 
-  '@systemfsoftware/tsconfig@1.3.5': {}
+  '@systemfsoftware/tsconfig@1.3.6': {}
 
   '@turbo/darwin-64@2.10.12':
     optional: true
