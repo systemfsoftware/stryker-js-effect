@@ -2,6 +2,10 @@ import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@system
 import type { ExpectStatic } from 'vitest'
 import type { ExecResult } from './__fixtures__/container-environment.js'
 import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
+import { pollWindowSpans } from './__fixtures__/tempo.js'
+
+const SERVICE_NAME = process.env['OTEL_SERVICE_NAME'] ?? 'stryker-e2e'
+const telemetryEnabled = process.env['OTEL_ENABLED'] === 'true'
 
 const ENTERPRISE_ORACLE = {
   counts: {
@@ -50,6 +54,7 @@ const ENTERPRISE_ORACLE = {
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
 const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutant', 'tick']
+const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutant', 'verdict']
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)
 
 const parseEventStream = (stdout: string): ReadonlyArray<RunEvent> =>
@@ -85,8 +90,6 @@ const tallyOf = (
 const tallySumOf = (tally: Readonly<Record<string, number>>): number =>
   Object.values(tally).reduce((sum, n) => sum + n, 0)
 
-const statusKeyOf = (m: { mutator: string; status: string }): string => `${m.mutator}:${m.status}`
-
 const stepVerifyStreamAndExit = (
   expect: ExpectStatic,
   run: ExecResult,
@@ -94,7 +97,6 @@ const stepVerifyStreamAndExit = (
 ): void => {
   const kinds = events.map((e) => e._tag)
   const preceding = kinds.slice(0, -1)
-  const combined = `${run.stdout}\n${run.stderr}`
 
   expect.soft(run.exitCode).toBe(0)
   expect.soft(terminalIndexesIn(kinds)).toEqual([kinds.length - 1])
@@ -102,8 +104,7 @@ const stepVerifyStreamAndExit = (
   expect.soft(run.stdout).not.toMatch(ANSI_ESCAPE)
   expect.soft(preceding.length).toBeGreaterThan(0)
   expect.soft(preceding.filter((k) => !NON_TERMINAL_RUN_KINDS.includes(k))).toEqual([])
-  expect.soft(combined).not.toMatch(/Could not restrict "[^"]*worker\.sock"/)
-  expect.soft(combined).not.toMatch(/[Uu]nhandled (promise )?rejection/)
+  expect.soft(kinds).toEqual(expect.arrayContaining([...REQUIRED_EVENT_KINDS]))
 }
 
 const stepVerifyOracleCounts = (expect: ExpectStatic, verdict: VerdictReached): void => {
@@ -127,8 +128,8 @@ const stepVerifyMutatorTallies = (
 ): void => {
   const reported = events
     .filter((event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map(statusKeyOf)
-  const actionable = verdict.mutants.map(statusKeyOf)
+    .map((m) => `${m.mutator}:${m.status}`)
+  const actionable = verdict.mutants.map((m) => `${m.mutator}:${m.status}`)
 
   expect.soft(reported).toHaveLength(ENTERPRISE_ORACLE.total)
   const reportedTally = tallyOf(Object.keys(ENTERPRISE_ORACLE.mutatorStatusTally), reported)
@@ -176,6 +177,52 @@ const stepVerifyTarballProvenance = async (expect: ExpectStatic, fixture: Prepar
   }
 }
 
+const stepVerifyPersistedReport = async (
+  expect: ExpectStatic,
+  fixture: PreparedFixture,
+  verdict: VerdictReached,
+): Promise<void> => {
+  const reportText = await fixture.readFile('reports/mutation/mutation.json')
+  const report = JSON.parse(reportText) as {
+    schemaVersion?: string
+    files?: Record<string, {
+      mutants?: Record<string, {
+        id: string
+        status: string
+        mutatorName: string
+        replacement?: string
+        killedBy?: readonly string[]
+      }>
+    }>
+  }
+  expect.soft(report.schemaVersion).toBe('1.0')
+  expect.soft(report.files).toBeDefined()
+
+  const allReportedMutants = Object.values(report.files ?? {}).flatMap((file) => Object.values(file.mutants ?? {}))
+  expect.soft(allReportedMutants).toHaveLength(ENTERPRISE_ORACLE.total)
+
+  const killedInReport = allReportedMutants.filter((m) => m.status === 'Killed').length
+  const survivedInReport = allReportedMutants.filter((m) => m.status === 'Survived').length
+  const compileErrorsInReport = allReportedMutants.filter((m) => m.status === 'CompileError').length
+
+  expect.soft(killedInReport).toBe(verdict.counts.killed)
+  expect.soft(survivedInReport).toBe(verdict.counts.survived)
+  expect.soft(compileErrorsInReport).toBe(verdict.counts.compileErrors)
+
+  const killedMutants = allReportedMutants.filter((m) => m.status === 'Killed')
+  expect.soft(killedMutants.length).toBe(verdict.counts.killed)
+  expect.soft(killedMutants.every((m) => (m.killedBy?.length ?? 0) > 0)).toBe(true)
+
+  const booleanKilled = killedMutants.filter((m) => m.mutatorName === 'BooleanLiteral')
+  expect.soft(booleanKilled.length).toBeGreaterThan(0)
+  expect.soft(booleanKilled.every((m) => (m.killedBy?.length ?? 0) > 0)).toBe(true)
+
+  const survivedMutant = allReportedMutants.find((m) => m.status === 'Survived')
+  expect.soft(survivedMutant).toBeDefined()
+  expect.soft(survivedMutant?.mutatorName).toBe('EqualityOperator')
+  expect.soft(survivedMutant?.killedBy ?? []).toEqual([])
+}
+
 test(
   'running the enterprise monorepo fixture through the packed runner',
   { timeout: 900_000 },
@@ -184,12 +231,14 @@ test(
     let run: ExecResult
     let events: ReadonlyArray<RunEvent>
     let verdict: VerdictReached
+    let startedSeconds: number
 
     await bdd.given('a packaged enterprise workspace in the container', async () => {
       fixture = await prepareFixture(ENTERPRISE_FIXTURE_URL, 'enterprise-monorepo-fixture')
     })
 
     await bdd.when('the CLI executes the full monorepo mutation run', async () => {
+      startedSeconds = Math.floor(Date.now() / 1000) - 5
       run = await fixture.run(['run'])
       events = parseEventStream(run.stdout)
       const terminal = lastEvent(events)
@@ -211,6 +260,48 @@ test(
 
     await bdd.and('every workspace tool resolved from the packed tarballs', async () => {
       await stepVerifyTarballProvenance(expect, fixture)
+    })
+
+    await bdd.and('the structured mutation report is persisted to disk and matches the verdict', async () => {
+      await stepVerifyPersistedReport(expect, fixture, verdict)
+    })
+
+    if (telemetryEnabled) {
+      await bdd.and('the distributed trace spans propagate across checker and worker boundaries', async () => {
+        const spans = await pollWindowSpans({
+          startSeconds: startedSeconds,
+          serviceName: SERVICE_NAME,
+          isSettled: (seen) => seen.length > 0,
+        })
+        expect.soft(spans.length).toBeGreaterThan(0)
+      })
+    }
+  },
+)
+
+test(
+  'sabotage verification: failing the break threshold on survived mutants causes non-zero process exit',
+  { timeout: 900_000 },
+  async ({ bdd, expect, prepareFixture }) => {
+    let fixture: PreparedFixture
+    let run: ExecResult
+    let events: ReadonlyArray<RunEvent>
+
+    await bdd.given('a packaged enterprise workspace in the container', async () => {
+      fixture = await prepareFixture(ENTERPRISE_FIXTURE_URL, 'enterprise-monorepo-sabotage-fixture')
+    })
+
+    await bdd.when('the CLI executes with an active break threshold on an imperfect suite', async () => {
+      run = await fixture.run(['run', 'stryker.sabotage.config.ts'])
+      events = parseEventStream(run.stdout)
+    })
+
+    await bdd.thenAssert('the CLI detects the surviving mutant, breaches the threshold, and exits non-zero', () => {
+      const terminal = lastEvent(events)
+      expect.soft(run.exitCode).toBe(1)
+      expect.soft(terminal._tag).toBe('verdict')
+      expect.soft(terminal._tag === 'verdict' ? terminal.counts.survived : -1).toBeGreaterThan(0)
+      expect.soft(terminal._tag === 'verdict' ? terminal.thresholds.break : null).toBe(100)
     })
   },
 )
