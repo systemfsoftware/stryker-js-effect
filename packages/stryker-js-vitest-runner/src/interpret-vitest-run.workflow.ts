@@ -5,7 +5,14 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import type { TestStatus } from '@systemfsoftware/stryker-js-plugin-interface'
-import { hitLimitReachedReason, isNamedTrap } from '@systemfsoftware/stryker-js-plugin-interface'
+
+const hitLimitReachedReason = (count: number, limit: number): string => `Hit limit reached (${count}/${limit})`
+
+const isNamedTrap = (activeMutantId: string, namedTrapId: string | undefined): boolean =>
+  Option.match(Option.fromNullishOr(namedTrapId), {
+    onNone: () => false,
+    onSome: (id) => id === activeMutantId,
+  })
 
 export class VitestMutantRunCommand extends S.TaggedClass<VitestMutantRunCommand>()('VitestMutantRunCommand', {
   rawTests: S.Array(S.Unknown),

@@ -368,34 +368,38 @@ const calculateTotalTimeForIds = (testIds: readonly string[], testTimeById: Reco
     return acc
   }, 0)
 
-export type HitBoundDecision =
-  | { readonly _tag: 'Bound'; readonly hitLimit: number }
-  | { readonly _tag: 'Uncovered' }
-  | { readonly _tag: 'MissingHitCount' }
-  | { readonly _tag: 'CoverageOff' }
+export const hitLimitForCount = (hitCount: number): number => hitCount * HIT_LIMIT_FACTOR
 
-export const decideHitBound = (
+const coveredWhenKnown = (covered: boolean, coverageKnown: boolean): boolean => {
+  if (!coverageKnown) {
+    return false
+  }
+  return covered
+}
+
+export const isMissingHitCount = (
   hitCount: number | undefined,
   covered: boolean,
   coverageKnown: boolean,
-): HitBoundDecision => {
+): boolean => {
+  if (!coveredWhenKnown(covered, coverageKnown)) {
+    return false
+  }
+  return hitCount === undefined
+}
+
+export const isUncovered = (covered: boolean, coverageKnown: boolean): boolean => {
   if (!coverageKnown) {
-    return { _tag: 'CoverageOff' }
+    return false
   }
-  if (!covered) {
-    return { _tag: 'Uncovered' }
-  }
-  if (hitCount === undefined) {
-    return { _tag: 'MissingHitCount' }
-  }
-  return { _tag: 'Bound', hitLimit: hitCount * HIT_LIMIT_FACTOR }
+  return !covered
 }
 
 const getHitLimit = (hitCount: number | undefined): number | undefined => {
   if (hitCount === undefined) {
     return undefined
   }
-  return hitCount * HIT_LIMIT_FACTOR
+  return hitLimitForCount(hitCount)
 }
 
 const getMutantActivation = (testFilter: readonly string[] | undefined): 'runtime' | 'static' => {
@@ -520,13 +524,28 @@ const planForStaticallyCovered = (
   )
 }
 
+const hasCoveringTests = (tests: readonly string[] | undefined): boolean => {
+  if (tests === undefined) {
+    return false
+  }
+  return tests.length > 0
+}
+
 const mutantIsCovered = (command: PlanMutantTestsInput, mutantId: string): boolean => {
-  const tests = command.testsByMutantId[mutantId]
-  if (tests !== undefined && tests.length > 0) {
+  if (hasCoveringTests(command.testsByMutantId[mutantId])) {
     return true
   }
   return hasStaticCoverageForPlan(command.staticCoverage, mutantId)
 }
+
+const coverageKnown = (command: PlanMutantTestsInput): boolean => command.staticCoverage !== undefined
+
+const boundFor = (command: PlanMutantTestsInput, mutant: Mutant): boolean =>
+  isMissingHitCount(
+    command.hitsByMutantId[mutant.id],
+    mutantIsCovered(command, mutant.id),
+    coverageKnown(command),
+  )
 
 const decidePlanForMutant = (
   mutant: Mutant,
@@ -536,12 +555,7 @@ const decidePlanForMutant = (
   return Option.match(Option.fromUndefinedOr(mutant.status), {
     onSome: (status) => toEarlyResultPlan(mutant, isStatic, status, mutant.statusReason, getCoveredBy(mutant)),
     onNone: () => {
-      const bound = decideHitBound(
-        command.hitsByMutantId[mutant.id],
-        mutantIsCovered(command, mutant.id),
-        command.staticCoverage !== undefined,
-      )
-      if (bound._tag === 'Uncovered') {
+      if (isUncovered(mutantIsCovered(command, mutant.id), coverageKnown(command))) {
         return toEarlyResultPlan(mutant, isStatic, 'NoCoverage', 'No coverage', undefined)
       }
       return Match.value(hasCoverageForPlan(command.staticCoverage)).pipe(
@@ -561,35 +575,36 @@ const decidePlanForMutant = (
   })
 }
 
+const isClosedMutant = (mutant: Mutant): boolean => mutant.status !== undefined
+
+const missingIdOf = (command: PlanMutantTestsInput, mutant: Mutant): readonly string[] => {
+  if (!boundFor(command, mutant)) {
+    return []
+  }
+  return [mutant.id]
+}
+
 export const missingHitCountIds = (command: PlanMutantTestsInput): readonly string[] =>
   command.mutants.flatMap((mutant) => {
-    if (mutant.status !== undefined) {
+    if (isClosedMutant(mutant)) {
       return []
     }
-    const bound = decideHitBound(
-      command.hitsByMutantId[mutant.id],
-      mutantIsCovered(command, mutant.id),
-      command.staticCoverage !== undefined,
-    )
-    if (bound._tag === 'MissingHitCount') {
-      return [mutant.id]
-    }
-    return []
+    return missingIdOf(command, mutant)
   })
+
+const dropMissing = (command: PlanMutantTestsInput, mutant: Mutant): boolean => {
+  if (isClosedMutant(mutant)) {
+    return false
+  }
+  return boundFor(command, mutant)
+}
 
 export const planMutantTests = (
   command: PlanMutantTestsInput,
 ): PlannedTestPlans => {
   const plans = command.mutants.flatMap((mutant) => {
-    if (mutant.status === undefined) {
-      const bound = decideHitBound(
-        command.hitsByMutantId[mutant.id],
-        mutantIsCovered(command, mutant.id),
-        command.staticCoverage !== undefined,
-      )
-      if (bound._tag === 'MissingHitCount') {
-        return []
-      }
+    if (dropMissing(command, mutant)) {
+      return []
     }
     return [decidePlanForMutant(mutant, command)]
   })
@@ -717,28 +732,46 @@ const materializePlan = (plan: TestPlan, original: Mutant): MutantTestPlan => {
   }
 }
 
+const missingHitFailure = (
+  missing: readonly string[],
+): Effect.Effect<never, StageError> | undefined => {
+  if (missing.length === 0) {
+    return undefined
+  }
+  return Effect.fail(StageError.make({
+    stage: 'mutationTest',
+    reason: `covered mutant missing dry-run hit count: ${missing.join(', ')}`,
+  }))
+}
+
+const mutantsById = (mutants: readonly Mutant[]): Map<string, Mutant> => {
+  const byId = new Map<string, Mutant>()
+  for (const mutant of mutants) {
+    byId.set(mutant.id, mutant)
+  }
+  return byId
+}
+
+const materializeKnown = (
+  plan: TestPlan,
+  byId: Map<string, Mutant>,
+): Effect.Effect<MutantTestPlan, never> => {
+  const original = byId.get(plan.mutantId)
+  if (original === undefined) {
+    return Effect.die(new Error(`planner returned an unknown mutant id: ${plan.mutantId}`))
+  }
+  return Effect.succeed(materializePlan(plan, original))
+}
+
 export const makeMutantTestPlanner = (
   command: PlanMutantTestsInput,
 ): Effect.Effect<readonly MutantTestPlan[], StageError, never> => {
-  const missing = missingHitCountIds(command)
-  if (missing.length > 0) {
-    return Effect.fail(StageError.make({
-      stage: 'mutationTest',
-      reason: `covered mutant missing dry-run hit count: ${missing.join(', ')}`,
-    }))
+  const failed = missingHitFailure(missingHitCountIds(command))
+  if (failed !== undefined) {
+    return failed
   }
   const { plans } = planMutantTests(command)
-  const byId = new Map<string, Mutant>()
-  for (const mutant of command.mutants) {
-    byId.set(mutant.id, mutant)
-  }
-  return Effect.forEach(plans, (plan) => {
-    const original = byId.get(plan.mutantId)
-    if (original === undefined) {
-      return Effect.die(new Error(`planner returned an unknown mutant id: ${plan.mutantId}`))
-    }
-    return Effect.succeed(materializePlan(plan, original))
-  })
+  return Effect.forEach(plans, (plan) => materializeKnown(plan, mutantsById(command.mutants)))
 }
 
 export const plan = makeMutantTestPlanner

@@ -834,24 +834,58 @@ const applySetupFilesToProjects = (vitest: Vitest, localSetupFile: string): void
     disableScreenshotFailures(Reflect.get(project.config, 'browser'))
   }
 }
+const trapIdMatches = (mutantId: string, trapId: string | undefined): boolean => {
+  if (trapId === undefined) {
+    return false
+  }
+  return trapId === mutantId
+}
+
+const trapFilePresent = (trapFile: string | undefined): trapFile is string => {
+  if (trapFile === undefined) {
+    return false
+  }
+  return trapFile.length > 0
+}
+
+const fileEndsWithTrap = (fileName: string, needle: string): boolean => {
+  if (fileName === needle) {
+    return true
+  }
+  return fileName.endsWith(`/${needle}`)
+}
+
+const trapFileMatches = (fileName: string, trapFile: string | undefined): boolean => {
+  if (!trapFilePresent(trapFile)) {
+    return false
+  }
+  const normalizedFile = fileName.replaceAll('\\', '/')
+  const needle = trapFile.replaceAll('\\', '/')
+  return fileEndsWithTrap(normalizedFile, needle)
+}
+
+const idFromTrapId = (mutantId: string, trapId: string | undefined): string | undefined => {
+  if (!trapIdMatches(mutantId, trapId)) {
+    return undefined
+  }
+  return mutantId
+}
+
+const idFromTrapFile = (
+  mutant: { readonly id: string; readonly fileName: string },
+  trapFile: string | undefined,
+): string | undefined => {
+  if (!trapFileMatches(mutant.fileName, trapFile)) {
+    return undefined
+  }
+  return mutant.id
+}
+
 const namedTrapIdOf = (
   mutant: { readonly id: string; readonly fileName: string },
   options: { readonly timeoutTrapFile?: string | undefined; readonly timeoutTrapMutantId?: string | undefined },
-): string | undefined => {
-  if (options.timeoutTrapMutantId !== undefined && options.timeoutTrapMutantId === mutant.id) {
-    return mutant.id
-  }
-  const trapFile = options.timeoutTrapFile
-  if (trapFile === undefined || trapFile.length === 0) {
-    return undefined
-  }
-  const fileName = mutant.fileName.replaceAll('\\', '/')
-  const needle = trapFile.replaceAll('\\', '/')
-  if (fileName === needle || fileName.endsWith(`/${needle}`)) {
-    return mutant.id
-  }
-  return undefined
-}
+): string | undefined =>
+  idFromTrapId(mutant.id, options.timeoutTrapMutantId) ?? idFromTrapFile(mutant, options.timeoutTrapFile)
 
 export interface VitestRunnerLayerInput {
   readonly options: StrykerOptions

@@ -81,10 +81,10 @@ test(
         const reportedMutants = events.filter(
           (event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant',
         )
-        const trapTimeouts = reportedMutants.filter((mutant) =>
-          mutant.status === 'Timeout' && mutant.file.includes('nontermination.ts')
-        )
+        const timeouts = reportedMutants.filter((mutant) => mutant.status === 'Timeout')
+        const trapTimeouts = timeouts.filter((mutant) => mutant.file.includes('nontermination.ts'))
         expect.soft(trapTimeouts.length).toBeGreaterThan(0)
+        expect.soft(timeouts.length).toBe(trapTimeouts.length)
       },
     )
   },

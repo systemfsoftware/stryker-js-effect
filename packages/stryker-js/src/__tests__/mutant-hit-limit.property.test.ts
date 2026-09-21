@@ -5,7 +5,14 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
-import { decideHitBound, HIT_LIMIT_FACTOR, makeMutantTestPlanner, planMutantTests } from '../Mutants.js'
+import {
+  HIT_LIMIT_FACTOR,
+  hitLimitForCount,
+  isMissingHitCount,
+  isUncovered,
+  makeMutantTestPlanner,
+  planMutantTests,
+} from '../Mutants.js'
 import type { PlanMutantTestsInput } from '../Mutants.js'
 
 const location = { start: { line: 1, column: 0 }, end: { line: 1, column: 1 } }
@@ -48,8 +55,7 @@ describe('decideHitBound', () => {
     '∀n_DefinedCount_=CountTimesFactor',
     [Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 10000 })))],
     ([count]) => {
-      const bound = decideHitBound(count, true, true)
-      return bound._tag === 'Bound' && bound.hitLimit === count * HIT_LIMIT_FACTOR
+      return hitLimitForCount(count) === count * HIT_LIMIT_FACTOR
     },
   )
 
@@ -58,12 +64,12 @@ describe('decideHitBound', () => {
     [Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 1, maximum: 20 })))],
     ([_seed]) => {
       const command = commandFor({}, { covered: ['t1'] }, { covered: 1 }, [mutant])
-      const decision = decideHitBound(undefined, true, true)
+      const missing = isMissingHitCount(undefined, true, true)
       const exit = Effect.runSync(Effect.result(makeMutantTestPlanner(command)))
       const refused = Result.isFailure(exit)
       const planned = planMutantTests(command)
       const unboundedRun = planned.plans.some((plan) => plan.plan === 'Run' && plan.runOptions.hitLimit === undefined)
-      return decision._tag === 'MissingHitCount' && refused && !unboundedRun
+      return missing && refused && !unboundedRun
     },
   )
 
@@ -72,10 +78,10 @@ describe('decideHitBound', () => {
     [Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 1, maximum: 20 })))],
     ([_seed]) => {
       const command = commandFor({}, {}, { covered: 1 }, [uncovered])
-      const decision = decideHitBound(undefined, false, true)
+      const uncoveredDecision = isUncovered(false, true)
       const planned = planMutantTests(command)
       const ran = planned.plans.some((plan) => plan.plan === 'Run')
-      return decision._tag === 'Uncovered' && !ran
+      return uncoveredDecision && !ran
     },
   )
 })

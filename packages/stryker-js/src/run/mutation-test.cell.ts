@@ -367,6 +367,25 @@ const reportDroppedMutants = (dropped: readonly Mutant[]): Effect.Effect<void> =
     ),
   )
 
+const reasonOf = (result: { readonly reason?: string }): string | undefined => {
+  if (!('reason' in result)) {
+    return undefined
+  }
+  return result.reason
+}
+
+const stopWallClock = (
+  result: { readonly status: string; readonly reason?: string },
+): Effect.Effect<void, StageError> => {
+  if (!wallClockTimeoutStopsRun(result.status, reasonOf(result))) {
+    return Effect.void
+  }
+  return Effect.fail(StageError.make({
+    stage: 'mutationTest',
+    reason: WALL_CLOCK_TIMEOUT_REASON,
+  }))
+}
+
 export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageError, StageServices> = Sandwich.read((
   command: DryRunDone,
 ): Effect.Effect<MutationTestRaw, never, Scope.Scope> =>
@@ -702,13 +721,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                               ChildProcessCrashedError: (error) => invalidateSlot(pool, runner, error),
                             }),
                           )
-                          const timeoutReason = 'reason' in result ? result.reason : undefined
-                          if (wallClockTimeoutStopsRun(result.status, timeoutReason)) {
-                            return yield* Effect.fail(StageError.make({
-                              stage: 'mutationTest',
-                              reason: WALL_CLOCK_TIMEOUT_REASON,
-                            }))
-                          }
+                          yield* stopWallClock(result)
                           const reported = yield* reporting.reportMutantRunResult(
                             toReportedMutant(plan.mutant),
                             result,
