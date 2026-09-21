@@ -137,6 +137,106 @@ Feature('Instrumenter characterization')
     )
 
     scenario(
+      'A guarded feature check keeps every mutant placeable',
+      Gherkin.Do.pipe(
+        Given('the guarded module source')('source', () =>
+          Effect.succeed(`export function gate(feature) {
+  if (!feature.enabled) {
+    return 'off'
+  }
+  return 'on'
+}`)),
+        When('the module is instrumented')(
+          'result',
+          ({ source }: { source: string }) =>
+            instrument([{ name: '/tmp/guard.ts', content: source, mutate: true }], {
+              ignorers: [],
+              excludedMutations: [],
+            }),
+        ),
+        Then('the guard yields its mutants across all four families')((
+          { result }: { result: InstrumentResult },
+        ) =>
+          Effect.sync(() => {
+            const active = result.mutants.filter(isActive)
+            expect(countByMutator(active)).toEqual({
+              BlockStatement: 2,
+              BooleanLiteral: 1,
+              ConditionalExpression: 2,
+              StringLiteral: 2,
+            })
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'An optional-chained guard keeps its chain mutants placeable',
+      Gherkin.Do.pipe(
+        Given('the optional-chained module source')('source', () =>
+          Effect.succeed(`export function gate(feature) {
+  if (!feature?.enabled) {
+    return 'off'
+  }
+  return 'on'
+}`)),
+        When('the module is instrumented')(
+          'result',
+          ({ source }: { source: string }) =>
+            instrument([{ name: '/tmp/guard-optional.ts', content: source, mutate: true }], {
+              ignorers: [],
+              excludedMutations: [],
+            }),
+        ),
+        Then('the guard yields its mutants across all five families')((
+          { result }: { result: InstrumentResult },
+        ) =>
+          Effect.sync(() => {
+            const active = result.mutants.filter(isActive)
+            expect(countByMutator(active)).toEqual({
+              BlockStatement: 2,
+              BooleanLiteral: 1,
+              ConditionalExpression: 2,
+              OptionalChaining: 1,
+              StringLiteral: 2,
+            })
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A const-typed literal table still yields its mutants',
+      Gherkin.Do.pipe(
+        Given('the const-typed table source')('source', () =>
+          Effect.succeed(`export const severities = {
+  info: 'info',
+  warning: 'warning',
+  critical: 'critical',
+} as const`)),
+        When('the module is instrumented')(
+          'result',
+          ({ source }: { source: string }) =>
+            instrument([{ name: '/tmp/const-table.ts', content: source, mutate: true }], {
+              ignorers: [],
+              excludedMutations: [],
+            }),
+        ),
+        Then('the table yields mutants on itself and on every literal')((
+          { result }: { result: InstrumentResult },
+        ) =>
+          Effect.sync(() => {
+            const active = result.mutants.filter(isActive)
+            expect(countByMutator(active)).toEqual({
+              ObjectLiteral: 1,
+              StringLiteral: 3,
+            })
+          })
+        ),
+      ),
+    )
+
+    scenario(
       'Instrumented output carries a switch for every active mutant',
       Gherkin.Do.pipe(
         // A mutant that is counted but never wrapped prints pristine code:

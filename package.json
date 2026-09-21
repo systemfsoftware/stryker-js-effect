@@ -22,6 +22,7 @@
     "attw": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} attw",
     "build": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} build api:check",
     "check:ci": "s=0; pnpm format:check || s=1; pnpm gate:tasks || s=1; pnpm gate:dist || s=1; exit $s",
+    "check:oracle-drift": "pnpm --filter @systemfsoftware/stryker-e2e check:oracle-drift",
     "clean": "turbo clean",
     "format": "./bin/dprint fmt",
     "format:check": "./bin/dprint check",

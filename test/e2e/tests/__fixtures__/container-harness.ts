@@ -1,20 +1,17 @@
 import { test as baseTest } from 'vitest'
 
 import {
-  CONTAINER_WORKROOT,
   ensureContainerEnvironment,
   type ExecResult,
   installFixture,
-  type PackedPackage,
-  readContainerFile,
+  readWorkspaceFile,
   runCli,
   teardownContainerEnvironment,
 } from './container-environment.js'
 
 export interface ContainerHarness {
-  readonly workroot: string
-  readonly install: (fixtureUrl: URL, name: string, extraTarballs?: readonly PackedPackage[]) => Promise<string>
-  readonly run: (args: readonly string[], opts?: { readonly cwd?: string }) => Promise<ExecResult>
+  readonly install: (fixtureUrl: URL, name: string) => Promise<string>
+  readonly run: (args: readonly string[], opts: { readonly cwd: string }) => Promise<ExecResult>
 }
 export interface PreparedFixture {
   readonly path: string
@@ -31,11 +28,7 @@ export interface BddStepContext {
 
 export interface ExtendedTestContext {
   readonly containerHarness: ContainerHarness
-  readonly prepareFixture: (
-    fixtureUrl: URL,
-    name: string,
-    extraTarballs?: readonly PackedPackage[],
-  ) => Promise<PreparedFixture>
+  readonly prepareFixture: (fixtureUrl: URL, name: string) => Promise<PreparedFixture>
   readonly bdd: BddStepContext
 }
 
@@ -46,10 +39,8 @@ export const test = baseTest
         await ensureContainerEnvironment()
         await use(
           {
-            workroot: CONTAINER_WORKROOT,
-            install: (fixtureUrl: URL, name: string, extraTarballs?: readonly PackedPackage[]) =>
-              installFixture(fixtureUrl, name, extraTarballs),
-            run: (args: readonly string[], opts?: { readonly cwd?: string }) => runCli(args, opts),
+            install: (fixtureUrl: URL, name: string) => installFixture(fixtureUrl, name),
+            run: (args: readonly string[], opts: { readonly cwd: string }) => runCli(args, opts),
           } satisfies ContainerHarness,
         )
         await teardownContainerEnvironment()
@@ -59,11 +50,11 @@ export const test = baseTest
   })
   .extend<Pick<ExtendedTestContext, 'prepareFixture' | 'bdd'>>({
     prepareFixture: async ({ containerHarness }, use) => {
-      await use((fixtureUrl: URL, name: string, extraTarballs?: readonly PackedPackage[]): Promise<PreparedFixture> =>
-        containerHarness.install(fixtureUrl, name, extraTarballs).then((path) => ({
+      await use((fixtureUrl: URL, name: string): Promise<PreparedFixture> =>
+        containerHarness.install(fixtureUrl, name).then((path) => ({
           path,
           run: (args: readonly string[]) => containerHarness.run(args, { cwd: path }),
-          readFile: (relativePath: string) => readContainerFile(`${path}/${relativePath}`),
+          readFile: (relativePath: string) => readWorkspaceFile(`${path}/${relativePath}`),
         }))
       )
     },

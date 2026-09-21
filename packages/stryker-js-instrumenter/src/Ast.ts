@@ -44,6 +44,7 @@ const EXPRESSION_KINDS: ReadonlySet<string> = new Set([
   'JSXFragment',
   'Literal',
   'LogicalExpression',
+  'MemberExpression',
   'MetaProperty',
   'NewExpression',
   'ObjectExpression',

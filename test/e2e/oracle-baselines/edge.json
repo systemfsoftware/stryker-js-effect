@@ -1,0 +1,25 @@
+{
+  "artifactContract": "stryker-oracle-baseline/v1",
+  "slice": "edge",
+  "strykerConfig": "stryker.edge.config.ts",
+  "counts": {
+    "compileErrors": 5,
+    "ignored": 4,
+    "killed": 2,
+    "noCoverage": 0,
+    "pending": 0,
+    "runtimeErrors": 0,
+    "survived": 0,
+    "timeout": 0
+  },
+  "mutatorStatusTally": {
+    "ArithmeticOperator:Killed": 1,
+    "ArrowFunction:CompileError": 1,
+    "BlockStatement:CompileError": 2,
+    "BlockStatement:Killed": 1,
+    "ConditionalExpression:Ignored": 2,
+    "EqualityOperator:Ignored": 2,
+    "ObjectLiteral:CompileError": 1,
+    "StringLiteral:CompileError": 1
+  }
+}

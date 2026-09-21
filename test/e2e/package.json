@@ -13,6 +13,11 @@
   "scripts": {
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "test:e2e": "vitest run",
+    "test:oracle": "vitest run --config vitest.oracle.config.ts",
+    "check:oracle-drift": "tsx scripts/reconcile-oracle.ts --check",
+    "derive-oracle": "node --import tsx scripts/derive-oracle.ts",
+    "bless-oracle": "tsx scripts/blessed-baseline.ts",
+    "reconcile-oracle": "tsx scripts/reconcile-oracle.ts",
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit"
   },
   "devDependencies": {
@@ -21,12 +26,16 @@
     "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@systemfsoftware/stryker-js": "workspace:^",
+    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
     "@systemfsoftware/stryker-js-vitest-runner": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@types/node": "catalog:",
+    "effect": "catalog:",
+    "fast-check": "catalog:",
     "oxlint": "catalog:",
-    "testcontainers": "catalog:",
+    "ts-morph": "catalog:",
+    "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
