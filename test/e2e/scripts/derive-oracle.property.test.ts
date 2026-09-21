@@ -1,9 +1,12 @@
 import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Effect from 'effect/Effect'
 import * as fc from 'fast-check'
+import * as fs from 'node:fs'
 import { Project } from 'ts-morph'
 import { describe, expect, it } from 'vitest'
+import { allMutators } from '../../../packages/stryker-js-instrumenter/src/Mutator.js'
 import { analyzeFileWithTsMorph, determineCompileErrorsWithDiagnostics } from './derive-oracle.js'
+import { DECLARED_GAPS, MUTATOR_REGISTRY } from './oracle/mutator-registry.js'
 
 const RESERVED_WORDS = new Set([
   'do',
@@ -236,5 +239,85 @@ describe('SOTA Metamorphic & Differential Oracle Properties (fast-check)', () =>
       (m) => m.mutatorName === 'ArithmeticOperator' && m.replacement === '-',
     )
     expect(arithMutant?.compileError).toBeUndefined()
+  })
+
+  function checkFamilyExhaustiveness(
+    family: string,
+    coveredFamilies: Readonly<Record<string, boolean>>,
+    declaredGaps: Readonly<Record<string, true>>,
+  ): boolean {
+    if (coveredFamilies[family] !== true && declaredGaps[family] !== true) {
+      throw new Error(`Uncovered and undeclared mutator family in registry: ${family}`)
+    }
+    return true
+  }
+
+  it('Registry Exhaustiveness Invariant 5: allMutators registry families are either covered or declared gaps', () => {
+    const coveredMap: Record<string, boolean> = {}
+    for (const [name, entry] of Object.entries(MUTATOR_REGISTRY)) {
+      if (entry.covered) {
+        coveredMap[name] = true
+      }
+    }
+
+    return fc.assert(
+      fc.property(fc.constantFrom(...Object.keys(allMutators)), (family) => {
+        return checkFamilyExhaustiveness(family, coveredMap, DECLARED_GAPS)
+      }),
+    )
+  })
+
+  it('Registry Exhaustiveness: injecting a synthetic 17th family into a stubbed registry fails with the family named', () => {
+    const stubbedRegistry: Record<string, unknown> = {
+      ...allMutators,
+      SyntheticMutator: () => [],
+    }
+    const coveredMap: Record<string, boolean> = {}
+    for (const [name, entry] of Object.entries(MUTATOR_REGISTRY)) {
+      if (entry.covered) {
+        coveredMap[name] = true
+      }
+    }
+
+    expect(() => {
+      fc.assert(
+        fc.property(fc.constantFrom(...Object.keys(stubbedRegistry)), (family) => {
+          return checkFamilyExhaustiveness(family, coveredMap, DECLARED_GAPS)
+        }),
+      )
+    }).toThrow(/SyntheticMutator/)
+  })
+
+  it('Count-Equality Property 6: covered mutator registry rows equal analyzer placement counts and replacements', () => {
+    const coveredEntries = Object.entries(MUTATOR_REGISTRY).filter(([, entry]) => entry.covered)
+    const arbCoveredFamily = fc.constantFrom(...coveredEntries.map(([name]) => name))
+
+    return fc.assert(
+      fc.property(arbCoveredFamily, (familyName) => {
+        const entry = MUTATOR_REGISTRY[familyName]
+        if (!entry) return false
+        const inventory = analyzeFileWithTsMorph(entry.snippet, [])
+        const familyMutants = inventory.mutants.filter((m) => m.mutatorName === familyName)
+
+        const countMatches = familyMutants.length === entry.placementCount
+        const replacementsMatch = familyMutants.length === entry.replacements.length &&
+          familyMutants.every((m, idx) => m.replacement === entry.replacements[idx])
+
+        return countMatches && replacementsMatch
+      }),
+    )
+  })
+  it('Contract Sync 7: every registry table row cites a section heading in mutator-contract.md', () => {
+    const contractPath = new URL('./oracle/mutator-contract.md', import.meta.url)
+    const contractContent = fs.readFileSync(contractPath, 'utf-8')
+
+    for (const [familyName, entry] of Object.entries(MUTATOR_REGISTRY)) {
+      const rawAnchor = entry.contractSection.replace(/^#/, '')
+      const headingRegex = new RegExp(`^#{2,3}\\s+.*\\b(${familyName}|${rawAnchor})\\b`, 'm')
+      expect(
+        headingRegex.test(contractContent),
+        `Heading for family ${familyName} with anchor ${entry.contractSection} not found in mutator-contract.md`,
+      ).toBe(true)
+    }
   })
 })
