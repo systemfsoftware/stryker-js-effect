@@ -3,6 +3,11 @@ import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
 export default defineConfig({
   ...sharedConfig,
+  mutate: [
+    'src/core/**/*.ts',
+    '!src/core/**/*.test.ts',
+    '!src/core/index.ts',
+  ],
   testRunner: {
     plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
     options: { configFile: 'vitest.config.ts', dir: '.', related: true },
