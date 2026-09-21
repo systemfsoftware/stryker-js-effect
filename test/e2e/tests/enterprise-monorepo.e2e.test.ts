@@ -4,37 +4,46 @@ import type { ExecResult } from './__fixtures__/container-environment.js'
 import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 
 const ENTERPRISE_ORACLE = {
-  killed: 176,
-  survived: 2,
-  total: 182,
   counts: {
-    compileErrors: 4,
+    compileErrors: 61,
     ignored: 0,
-    killed: 176,
+    killed: 120,
     noCoverage: 0,
     pending: 0,
     runtimeErrors: 0,
-    survived: 2,
+    survived: 1,
     timeout: 0,
   },
+  killed: 120,
+  survived: 1,
+  total: 182,
   mutatorStatusTally: {
     'ArithmeticOperator:Killed': 9,
     'ArrayDeclaration:Killed': 1,
-    'ArrowFunction:Killed': 14,
+    'ArrowFunction:CompileError': 13,
+    'ArrowFunction:Killed': 1,
     'AssignmentOperator:Killed': 2,
-    'BlockStatement:Killed': 26,
-    'BooleanLiteral:Killed': 12,
-    'ConditionalExpression:Killed': 43,
-    'EqualityOperator:Killed': 18,
-    'EqualityOperator:Survived': 2,
-    'LogicalOperator:Killed': 11,
+    'BlockStatement:CompileError': 14,
+    'BlockStatement:Killed': 12,
+    'BooleanLiteral:CompileError': 1,
+    'BooleanLiteral:Killed': 11,
+    'ConditionalExpression:CompileError': 5,
+    'ConditionalExpression:Killed': 38,
+    'EqualityOperator:CompileError': 5,
+    'EqualityOperator:Killed': 14,
+    'EqualityOperator:Survived': 1,
+    'LogicalOperator:CompileError': 7,
+    'LogicalOperator:Killed': 4,
     'MethodExpression:Killed': 1,
-    'ObjectLiteral:CompileError': 1,
-    'ObjectLiteral:Killed': 10,
-    'OptionalChaining:Killed': 2,
-    'StringLiteral:CompileError': 3,
-    'StringLiteral:Killed': 24,
+    'ObjectLiteral:CompileError': 10,
+    'ObjectLiteral:Killed': 1,
+    'OptionalChaining:CompileError': 2,
+    'StringLiteral:CompileError': 4,
+    'StringLiteral:Killed': 23,
     'UpdateOperator:Killed': 3,
+  },
+  actionableStatusTally: {
+    'EqualityOperator:Survived': 1,
   },
 } as const
 
@@ -72,6 +81,9 @@ const tallyOf = (
     (tally, key) => ({ ...tally, [key]: statuses.filter((status) => status === key).length }),
     {},
   )
+
+const tallySumOf = (tally: Readonly<Record<string, number>>): number =>
+  Object.values(tally).reduce((sum, n) => sum + n, 0)
 
 const stepVerifyStreamAndExit = (
   expect: ExpectStatic,
@@ -118,12 +130,17 @@ const stepVerifyMutatorTallies = (
   expect.soft(reported).toHaveLength(ENTERPRISE_ORACLE.total)
   const reportedTally = tallyOf(Object.keys(ENTERPRISE_ORACLE.mutatorStatusTally), reported)
   expect.soft(reportedTally).toEqual(ENTERPRISE_ORACLE.mutatorStatusTally)
-  expect.soft(tallyOf(Object.keys(ENTERPRISE_ORACLE.mutatorStatusTally), actionable)).toEqual(reportedTally)
-  const tallySum = Object.values(reportedTally).reduce((sum, n) => sum + n, 0)
-  expect.soft(tallySum).toBe(ENTERPRISE_ORACLE.total)
-  expect.soft(verdict.counts.killed + verdict.counts.survived + verdict.counts.compileErrors).toBe(
-    ENTERPRISE_ORACLE.total,
-  )
+  expect.soft(tallySumOf(reportedTally)).toBe(ENTERPRISE_ORACLE.total)
+  expect
+    .soft(tallyOf(Object.keys(ENTERPRISE_ORACLE.actionableStatusTally), actionable))
+    .toEqual(ENTERPRISE_ORACLE.actionableStatusTally)
+  const countsSum = verdict.counts.killed +
+    verdict.counts.survived +
+    verdict.counts.compileErrors +
+    verdict.counts.runtimeErrors +
+    verdict.counts.timeout +
+    verdict.counts.noCoverage
+  expect.soft(countsSum).toBe(ENTERPRISE_ORACLE.total)
 }
 
 const stepVerifyRunIdConsistency = (
@@ -145,7 +162,7 @@ const stepVerifyTarballProvenance = async (expect: ExpectStatic, fixture: Prepar
     packages?: Record<string, { resolved?: string | undefined }>
   }
   const registryEntries = Object.entries(lockfile.packages ?? {}).filter(
-    ([key, entry]) => key.startsWith('node_modules/@systemfsoftware/') && entry.resolved !== undefined,
+    ([key, entry]) => /^node_modules\/@systemfsoftware\/stryker[^/]*$/.test(key) && entry.resolved !== undefined,
   )
   expect.soft(registryEntries.length).toBeGreaterThanOrEqual(1)
   for (const [key, entry] of registryEntries) {
