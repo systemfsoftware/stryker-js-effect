@@ -7,7 +7,7 @@
     "moduleResolution": "NodeNext",
     "target": "ES2022",
     "lib": [
-      "ES2022"
+      "ES2024"
     ],
     "strict": true,
     "skipLibCheck": true,
@@ -24,7 +24,7 @@
         "../services/src/index.ts"
       ],
       "@core/*": [
-        "../core/src/*"
+        "../core/src/*.ts"
       ]
     }
   },
