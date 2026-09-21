@@ -16,6 +16,7 @@ export interface OracleSliceConfig {
   readonly strykerConfig: string
   readonly mutateFiles: readonly string[]
   readonly excludedMutations: readonly string[]
+  readonly journeyUsesTally: boolean
   readonly packageGlobs: readonly string[]
 }
 
@@ -31,6 +32,7 @@ export const ORACLE_SLICES: Readonly<Record<OracleSliceConfig['id'], OracleSlice
     strykerConfig: 'stryker.config.ts',
     mutateFiles: ['packages/*/src/**/*.ts', '!packages/*/src/**/*.test.ts'],
     excludedMutations: [],
+    journeyUsesTally: true,
     packageGlobs: ['packages/core', 'packages/services', 'packages/api', 'packages/analytics'],
   },
   edge: {
@@ -40,6 +42,7 @@ export const ORACLE_SLICES: Readonly<Record<OracleSliceConfig['id'], OracleSlice
     strykerConfig: 'stryker.edge.config.ts',
     mutateFiles: ['packages/services/src/inventory.ts'],
     excludedMutations: ['ConditionalExpression', 'EqualityOperator'],
+    journeyUsesTally: true,
     packageGlobs: ['packages/services'],
   },
   checker: {
@@ -49,6 +52,7 @@ export const ORACLE_SLICES: Readonly<Record<OracleSliceConfig['id'], OracleSlice
     strykerConfig: 'stryker.checker.config.ts',
     mutateFiles: ['packages/core/src/contracts.ts', 'packages/api/src/report.ts'],
     excludedMutations: [],
+    journeyUsesTally: true,
     packageGlobs: ['packages/core', 'packages/api'],
   },
   resilience: {
@@ -58,6 +62,7 @@ export const ORACLE_SLICES: Readonly<Record<OracleSliceConfig['id'], OracleSlice
     strykerConfig: 'stryker.resilience.config.ts',
     mutateFiles: ['packages/services/src/concurrency.ts'],
     excludedMutations: [],
+    journeyUsesTally: false,
     packageGlobs: ['packages/services'],
   },
 })

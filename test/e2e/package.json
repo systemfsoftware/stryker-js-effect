@@ -14,6 +14,7 @@
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "test:e2e": "vitest run",
     "test:oracle": "vitest run --config vitest.oracle.config.ts",
+    "check:oracle-drift": "tsx scripts/reconcile-oracle.ts --check",
     "derive-oracle": "node --import tsx scripts/derive-oracle.ts",
     "bless-oracle": "tsx scripts/blessed-baseline.ts",
     "reconcile-oracle": "tsx scripts/reconcile-oracle.ts",

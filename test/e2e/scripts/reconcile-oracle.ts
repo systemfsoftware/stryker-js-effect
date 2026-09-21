@@ -4,6 +4,12 @@ import { fileURLToPath } from 'node:url'
 import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
 import { type BaselineCountKey, type BlessedBaseline, decodeBaseline, type OracleSliceId } from './oracle/baseline.js'
 import { createPackageProjects, evaluateWithProjects } from './oracle/diagnostics.js'
+import {
+  extractLiteralBlock,
+  type JourneyLiterals,
+  renderLiteralBlock,
+  spliceLiteralBlock,
+} from './oracle/literal-block.js'
 import { listRegisteredSlices, ORACLE_SLICES, type OracleSliceConfig } from './oracle/slice-config.js'
 import { type CompileErrorFlags, deriveStaticOracleSlice, type StaticOracleSlice } from './oracle/status-derivation.js'
 import type { IndependentInventory, IndependentMutant } from './oracle/types.js'
@@ -191,27 +197,66 @@ export function loadBaseline(slice: OracleSliceId): BlessedBaseline | undefined 
 
 export interface CliOptions {
   readonly check: boolean
+  readonly reconcile: boolean
   readonly sliceIds: readonly OracleSliceId[]
 }
 
 export function parseCliArgs(argv: readonly string[]): CliOptions {
   let check = false
+  let reconcile = false
   const sliceIds: OracleSliceId[] = []
   for (const arg of argv) {
     if (arg === '--check') {
       check = true
+    } else if (arg === '--reconcile') {
+      reconcile = true
     } else if (arg.startsWith('--')) {
       throw new Error(`Unknown flag: ${arg}`)
     } else {
       sliceIds.push(arg as OracleSliceId)
     }
   }
-  return { check, sliceIds }
+  return { check, reconcile, sliceIds }
 }
 
 export interface CliRunResult {
   readonly exitCode: 0 | 1
   readonly reports: readonly SliceReconciliationReport[]
+  readonly reconciledJourneys: readonly string[]
+}
+
+const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+
+function journeyPath(slice: OracleSliceConfig): string {
+  return path.join(REPO_ROOT, slice.journey)
+}
+
+export function literalsFor(slice: OracleSliceConfig, baseline: BlessedBaseline): JourneyLiterals {
+  return {
+    prefix: slice.id.toUpperCase(),
+    counts: baseline.counts,
+    mutatorStatusTally: slice.journeyUsesTally ? baseline.mutatorStatusTally : {},
+  }
+}
+
+export function reconcileJourneys(slices: readonly OracleSliceConfig[]): readonly string[] {
+  const written: string[] = []
+  for (const slice of slices) {
+    const baseline = loadBaseline(slice.id)
+    if (baseline === undefined) {
+      throw new Error(
+        `No blessed baseline for slice "${slice.id}"; run pnpm --filter @systemfsoftware/stryker-e2e bless-oracle --verify ${slice.id} first`,
+      )
+    }
+    const journey = journeyPath(slice)
+    const text = fs.readFileSync(journey, 'utf8')
+    const next = spliceLiteralBlock(text, renderLiteralBlock(literalsFor(slice, baseline)))
+    if (next !== text) {
+      fs.writeFileSync(journey, next)
+      written.push(slice.journey)
+    }
+  }
+  return written
 }
 
 export function runCli(argv: readonly string[]): CliRunResult {
@@ -222,17 +267,38 @@ export function runCli(argv: readonly string[]): CliRunResult {
     }
   }
   const slices = opts.sliceIds.length === 0 ? listRegisteredSlices() : opts.sliceIds.map((id) => ORACLE_SLICES[id])
+  if (opts.reconcile) {
+    const reconciledJourneys = reconcileJourneys(slices)
+    for (const journey of reconciledJourneys) {
+      process.stdout.write(`reconciled literals: ${journey}\n`)
+    }
+    return { exitCode: 0, reports: [], reconciledJourneys }
+  }
   const reports: SliceReconciliationReport[] = []
+  const literalDrift: string[] = []
   for (const slice of slices) {
     const baseline = loadBaseline(slice.id)
     const staticSlice = recomputeStaticSlice(slice)
     const report = reconcileSlice(slice.id, baseline, staticSlice)
     reports.push(report)
     printReport(report)
+    if (baseline !== undefined) {
+      const expected = renderLiteralBlock(literalsFor(slice, baseline))
+      const journey = fs.readFileSync(journeyPath(slice), 'utf8')
+      if (extractLiteralBlock(journey) !== expected) {
+        literalDrift.push(slice.journey)
+        process.stdout.write(`  literals: DRIFT vs ${slice.journey}\n`)
+      } else {
+        process.stdout.write(`  literals: ok\n`)
+      }
+    }
   }
-  const drift = reports.some((r) => r.findings.length > 0)
+  const drift = reports.some((r) => r.findings.length > 0) || literalDrift.length > 0
+  if (literalDrift.length > 0) {
+    process.stdout.write('\nliteral drift remedy: pnpm derive-oracle --reconcile\n')
+  }
   const exitCode: 0 | 1 = opts.check && drift ? 1 : 0
-  return { exitCode, reports }
+  return { exitCode, reports, reconciledJourneys: [] }
 }
 
 function printReport(report: SliceReconciliationReport): void {
