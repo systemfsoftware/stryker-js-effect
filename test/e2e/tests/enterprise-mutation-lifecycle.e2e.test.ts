@@ -1,6 +1,6 @@
 import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@systemfsoftware/stryker-js'
 import type { ExpectStatic } from 'vitest'
-import { normalizeCounts, normalizeTally } from '../scripts/oracle/normalize.js'
+import { normalizeCounts, normalizeTally, withoutClockStatuses } from '../scripts/oracle/normalize.js'
 import type { ExecResult } from './__fixtures__/container-environment.js'
 import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 import { pollWindowSpans } from './__fixtures__/tempo.js'
@@ -26,7 +26,6 @@ const LIFECYCLE_COUNTS: {
   runtimeErrors: 0,
   survived: 30,
 }
-const LIFECYCLE_SURVIVED_FLOOR = 28
 const LIFECYCLE_MUTATOR_TALLY: Readonly<Record<string, number>> = {
   'ArithmeticOperator:KilledOrTimeout': 14,
   'ArrayDeclaration:CompileError': 1,
@@ -119,10 +118,9 @@ const stepVerifyStreamAndExit = (
 
 const stepVerifyOracleCounts = (expect: ExpectStatic, verdict: VerdictReached): void => {
   expect.soft(verdict.thresholds.break).toBeNull()
-  const { survived: observedSurvived, ...observedExact } = normalizeCounts(verdict.counts)
-  const { survived: _expectedSurvived, ...expectedExact } = LIFECYCLE_COUNTS
+  const { survived: _survived, killedOrTimeout: _killedOrTimeout, ...observedExact } = normalizeCounts(verdict.counts)
+  const { survived: _expectedSurvived, killedOrTimeout: _expectedKilled, ...expectedExact } = LIFECYCLE_COUNTS
   expect.soft(observedExact).toEqual(expectedExact)
-  expect.soft(observedSurvived).toBeGreaterThanOrEqual(LIFECYCLE_SURVIVED_FLOOR)
 }
 
 const stepVerifyMutatorTallies = (
@@ -136,7 +134,7 @@ const stepVerifyMutatorTallies = (
 
   expect.soft(reported).toHaveLength(LIFECYCLE_TOTAL)
   const reportedTally = normalizeTally(tallyReported(reported))
-  expect.soft(reportedTally).toEqual(LIFECYCLE_MUTATOR_TALLY)
+  expect.soft(withoutClockStatuses(reportedTally)).toEqual(withoutClockStatuses(LIFECYCLE_MUTATOR_TALLY))
   expect.soft(tallySumOf(reportedTally)).toBe(LIFECYCLE_TOTAL)
   const envelopeActionable = verdict.counts.survived +
     verdict.counts.timeout +

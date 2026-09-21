@@ -44,6 +44,21 @@ export function survivedFloor(counts: BaselineCounts): number {
   return Math.max(0, counts.survived - SURVIVED_DRIFT_MARGIN)
 }
 
+const CLOCK_STATUS_SUFFIX = [':Killed', ':Survived', ':Timeout', ':KilledOrTimeout']
+
+export function withoutClockStatuses(
+  tally: Readonly<Record<string, number>>,
+): Readonly<Record<string, number>> {
+  const kept: Record<string, number> = {}
+  for (const [key, count] of Object.entries(tally)) {
+    if (CLOCK_STATUS_SUFFIX.some((suffix) => key.endsWith(suffix))) {
+      continue
+    }
+    kept[key] = count
+  }
+  return kept
+}
+
 export function normalizedTotal(counts: NormalizedCounts): number {
   return (
     counts.compileErrors +

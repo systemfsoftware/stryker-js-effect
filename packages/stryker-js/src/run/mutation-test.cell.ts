@@ -31,6 +31,7 @@ import { PhaseEntered, PlanKnown } from '../RunEvents.js'
 import { RunEvents, RunMutantTested } from '../RunEvents.js'
 
 import type { CheckerFailed, CheckResult, ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { WALL_CLOCK_TIMEOUT_REASON, wallClockTimeoutStopsRun } from '@systemfsoftware/stryker-js-plugin-interface'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import type { MutationTestDecision } from '../admit-mutation-test.workflow.js'
 import { wireRecordOf } from '../checker-mutant-wire.js'
@@ -49,9 +50,10 @@ import type { Project } from '../Project.js'
 import { reportFileName } from '../report-assembly.js'
 import { offerReporterEvent, withPhaseSpan } from '../ReporterStream.js'
 import { StageError } from '../Run.schema.js'
-import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.js'
+import { buildTestRunner, invalidatesRunnerPool, makeChildProcessTestRunner } from '../TestRunner.js'
 import type { PooledTestRunner, PooledTestRunnerError } from '../TestRunner.js'
 import { IdGenerator } from '../Worker.js'
+import { ChildProcessCrashedError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.js'
 import type { DryRunDone } from './dry-run.cell.js'
 import { RunEnvironment } from './RunEnvironment.js'
@@ -365,6 +367,33 @@ const reportDroppedMutants = (dropped: readonly Mutant[]): Effect.Effect<void> =
       })
     ),
   )
+
+const hasStringReason = (r: object): r is { readonly reason: string } => 'reason' in r && typeof r.reason === 'string'
+
+const reasonOf = (result: unknown): string | undefined =>
+  Match.value(result).pipe(
+    Match.when(
+      (r: unknown): r is object => typeof r === 'object' && r !== null,
+      (r) =>
+        Match.value(r).pipe(
+          Match.when(hasStringReason, (obj) => obj.reason),
+          Match.orElse(() => undefined),
+        ),
+    ),
+    Match.orElse(() => undefined),
+  )
+
+const stopWallClock = (
+  result: { readonly status: string; readonly reason?: string },
+): Effect.Effect<void, StageError> => {
+  if (!wallClockTimeoutStopsRun(result.status, reasonOf(result))) {
+    return Effect.void
+  }
+  return Effect.fail(StageError.make({
+    stage: 'mutationTest',
+    reason: WALL_CLOCK_TIMEOUT_REASON,
+  }))
+}
 
 export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageError, StageServices> = Sandwich.read((
   command: DryRunDone,
@@ -701,6 +730,18 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                               ChildProcessCrashedError: (error) => invalidateSlot(pool, runner, error),
                             }),
                           )
+                          if (invalidatesRunnerPool(result.status, reasonOf(result))) {
+                            return yield* invalidateSlot(
+                              pool,
+                              runner,
+                              ChildProcessCrashedError.make({
+                                pid: 0,
+                                exit: { _tag: 'Signal', signal: 'SIGKILL' },
+                                cause: 'wall-clock timeout',
+                              }),
+                            )
+                          }
+                          yield* stopWallClock(result)
                           const reported = yield* reporting.reportMutantRunResult(
                             toReportedMutant(plan.mutant),
                             result,

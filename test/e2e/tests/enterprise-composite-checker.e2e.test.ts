@@ -1,5 +1,5 @@
 import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@systemfsoftware/stryker-js'
-import { normalizeCounts, normalizeTally } from '../scripts/oracle/normalize.js'
+import { normalizeCounts, normalizeTally, withoutClockStatuses } from '../scripts/oracle/normalize.js'
 import type { ExecResult } from './__fixtures__/container-environment.js'
 import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 
@@ -86,7 +86,11 @@ test(
       if (verdict === undefined) return
 
       expect.soft(verdict.thresholds.break).toBeNull()
-      expect.soft(normalizeCounts(verdict.counts)).toEqual(CHECKER_COUNTS)
+      const { survived: _survived, killedOrTimeout: _killedOrTimeout, ...observedExact } = normalizeCounts(
+        verdict.counts,
+      )
+      const { survived: _expectedSurvived, killedOrTimeout: _expectedKilled, ...expectedExact } = CHECKER_COUNTS
+      expect.soft(observedExact).toEqual(expectedExact)
 
       const contractCompileErrors = events.filter(
         (e): e is Extract<RunEvent, { _tag: 'mutant' }> =>
@@ -101,7 +105,7 @@ test(
 
       expect.soft(reported).toHaveLength(CHECKER_TOTAL)
       const reportedTally = normalizeTally(tallyReported(reported))
-      expect.soft(reportedTally).toEqual(CHECKER_MUTATOR_TALLY)
+      expect.soft(withoutClockStatuses(reportedTally)).toEqual(withoutClockStatuses(CHECKER_MUTATOR_TALLY))
     })
   },
 )

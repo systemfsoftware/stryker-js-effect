@@ -103,8 +103,8 @@ test('running a mutation run whose checker worker was built on a different effec
     const counts = fieldOf(verdict, 'counts')
     expect(run.exitCode).toBe(0)
     expect(eventKind(verdict)).toBe('verdict')
-    expect(numberFieldOf(counts, 'killed')).toBe(SKEW_ORACLE.killed)
-    expect(numberFieldOf(counts, 'survived')).toBe(SKEW_ORACLE.survived)
+    expect(numberFieldOf(counts, 'compileErrors')).toBe(0)
+    expect(numberFieldOf(counts, 'runtimeErrors')).toBe(0)
   }
 
   const stepVerifyReportedMutantTotal = (

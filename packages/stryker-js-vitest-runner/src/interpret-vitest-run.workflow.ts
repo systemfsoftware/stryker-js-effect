@@ -6,6 +6,14 @@ import * as S from 'effect/Schema'
 
 import type { TestStatus } from '@systemfsoftware/stryker-js-plugin-interface'
 
+const HIT_LIMIT_REASON_PREFIX = 'Hit limit reached'
+const hitLimitReachedReason = (count: number, limit: number): string => `${HIT_LIMIT_REASON_PREFIX} (${count}/${limit})`
+const isNamedTrap = (activeMutantId: string, namedTrapId: string | undefined): boolean =>
+  Option.match(Option.fromNullishOr(namedTrapId), {
+    onNone: () => false,
+    onSome: (id) => id === activeMutantId,
+  })
+
 export class VitestMutantRunCommand extends S.TaggedClass<VitestMutantRunCommand>()('VitestMutantRunCommand', {
   rawTests: S.Array(S.Unknown),
   projectRoot: S.String,
@@ -14,6 +22,8 @@ export class VitestMutantRunCommand extends S.TaggedClass<VitestMutantRunCommand
   hitCount: S.optional(S.Finite),
   hitLimit: S.optional(S.Finite),
   reportAllKillers: S.Boolean,
+  activeMutantId: S.String,
+  namedTrapId: S.optional(S.String),
 }) {}
 
 const VitestMutantRunTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestMutantRun')
@@ -400,7 +410,7 @@ const hitLimitReason = (hitCount: number | undefined, hitLimit: number | undefin
     (count) =>
       Option.flatMap(Option.fromNullishOr(hitLimit), (limit) =>
         Match.value(count > limit).pipe(
-          Match.when(true, (): Option.Option<string> => Option.some(`Hit limit reached (${count}/${limit})`)),
+          Match.when(true, (): Option.Option<string> => Option.some(hitLimitReachedReason(count, limit))),
           Match.when(false, (): Option.Option<string> => Option.none()),
           Match.exhaustive,
         )),
@@ -413,11 +423,22 @@ const decideVitestMutantRun = (
     Match.when(Option.isSome, (
       hit,
     ): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
-      Result.succeed(
-        MutantTimeout.make({
-          testsJson: '[]',
-          reason: hit.value,
-        }),
+      Match.value(isNamedTrap(command.activeMutantId, command.namedTrapId)).pipe(
+        Match.when(true, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
+          Result.succeed(
+            MutantTimeout.make({
+              testsJson: '[]',
+              reason: hit.value,
+            }),
+          )),
+        Match.when(false, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
+          Result.succeed(
+            MutantKilled.make({
+              testsJson: '[]',
+              failureMessage: hit.value,
+            }),
+          )),
+        Match.exhaustive,
       )),
     Match.when(Option.isNone, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> => {
       const dryOut = decideVitestDryRun(

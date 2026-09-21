@@ -834,6 +834,58 @@ const applySetupFilesToProjects = (vitest: Vitest, localSetupFile: string): void
     disableScreenshotFailures(Reflect.get(project.config, 'browser'))
   }
 }
+const trapIdMatches = (mutantId: string, trapId: string | undefined): boolean => {
+  if (trapId === undefined) {
+    return false
+  }
+  return trapId === mutantId
+}
+
+const trapFilePresent = (trapFile: string | undefined): trapFile is string => {
+  if (trapFile === undefined) {
+    return false
+  }
+  return trapFile.length > 0
+}
+
+const fileEndsWithTrap = (fileName: string, needle: string): boolean => {
+  if (fileName === needle) {
+    return true
+  }
+  return fileName.endsWith(`/${needle}`)
+}
+
+const trapFileMatches = (fileName: string, trapFile: string | undefined): boolean => {
+  if (!trapFilePresent(trapFile)) {
+    return false
+  }
+  const normalizedFile = fileName.replaceAll('\\', '/')
+  const needle = trapFile.replaceAll('\\', '/')
+  return fileEndsWithTrap(normalizedFile, needle)
+}
+
+const idFromTrapId = (mutantId: string, trapId: string | undefined): string | undefined => {
+  if (!trapIdMatches(mutantId, trapId)) {
+    return undefined
+  }
+  return mutantId
+}
+
+const idFromTrapFile = (
+  mutant: { readonly id: string; readonly fileName: string },
+  trapFile: string | undefined,
+): string | undefined => {
+  if (!trapFileMatches(mutant.fileName, trapFile)) {
+    return undefined
+  }
+  return mutant.id
+}
+
+const namedTrapIdOf = (
+  mutant: { readonly id: string; readonly fileName: string },
+  options: { readonly timeoutTrapFile?: string | undefined; readonly timeoutTrapMutantId?: string | undefined },
+): string | undefined =>
+  idFromTrapId(mutant.id, options.timeoutTrapMutantId) ?? idFromTrapFile(mutant, options.timeoutTrapFile)
 
 export interface VitestRunnerLayerInput {
   readonly options: StrykerOptions
@@ -1116,16 +1168,8 @@ export const makeVitestRunnerLayer = (
             if (typeof input.options.disableBail === 'boolean') return input.options.disableBail
             return false
           })()
-          if (hitCount === undefined) {
-            return {
-              rawTests,
-              projectRoot: input.sandboxDirectory,
-              hasExternalError,
-              externalErrorText,
-              hitLimit: command.hitLimit,
-              reportAllKillers,
-            }
-          }
+          const vitestOptions = yield* vitestOptionsEffect
+          const namedTrapId = namedTrapIdOf(command.activeMutant, vitestOptions)
           return {
             rawTests,
             projectRoot: input.sandboxDirectory,
@@ -1134,6 +1178,8 @@ export const makeVitestRunnerLayer = (
             hitCount,
             hitLimit: command.hitLimit,
             reportAllKillers,
+            activeMutantId: command.activeMutant.id,
+            namedTrapId,
           }
         })
       ).decode(Sandwich.pure((
@@ -1145,6 +1191,8 @@ export const makeVitestRunnerLayer = (
           readonly hitCount?: number | undefined
           readonly hitLimit: number | undefined
           readonly reportAllKillers: boolean
+          readonly activeMutantId: string
+          readonly namedTrapId: string | undefined
         },
       ) =>
         Result.succeed(
@@ -1156,6 +1204,8 @@ export const makeVitestRunnerLayer = (
             hitCount: raw.hitCount,
             hitLimit: raw.hitLimit,
             reportAllKillers: raw.reportAllKillers,
+            activeMutantId: raw.activeMutantId,
+            namedTrapId: raw.namedTrapId,
           }),
         )
       ))

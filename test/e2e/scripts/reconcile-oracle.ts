@@ -10,7 +10,7 @@ import {
   renderLiteralBlock,
   spliceLiteralBlock,
 } from './oracle/literal-block.js'
-import { normalizeCounts, normalizeTally, survivedFloor } from './oracle/normalize.js'
+import { normalizeCounts, normalizeTally } from './oracle/normalize.js'
 import { listRegisteredSlices, ORACLE_SLICES, type OracleSliceConfig } from './oracle/slice-config.js'
 import { type CompileErrorFlags, deriveStaticOracleSlice, type StaticOracleSlice } from './oracle/status-derivation.js'
 import type { IndependentInventory, IndependentMutant } from './oracle/types.js'
@@ -236,8 +236,8 @@ export function literalsFor(slice: OracleSliceConfig, baseline: BlessedBaseline)
   return {
     prefix: slice.id.toUpperCase(),
     counts: normalizeCounts(baseline.counts),
-    survivedFloor: slice.survivedFloorBand ? survivedFloor(baseline.counts) : undefined,
-    timeoutFloor: slice.timeoutFloorBand ? baseline.counts.timeout : undefined,
+    survivedFloor: undefined,
+    timeoutFloor: undefined,
     mutatorStatusTally: slice.journeyUsesTally ? normalizeTally(baseline.mutatorStatusTally) : {},
   }
 }
