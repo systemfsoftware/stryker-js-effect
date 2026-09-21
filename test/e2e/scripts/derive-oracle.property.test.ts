@@ -7,6 +7,14 @@ import { describe, expect, it } from 'vitest'
 import { allMutators } from '../../../packages/stryker-js-instrumenter/src/Mutator.js'
 import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
 import { determineCompileErrorsWithDiagnostics } from './oracle/diagnostics.js'
+import {
+  CONTRACT_CLAUSES,
+  dualizeBooleanArithmetic,
+  injectDeadCode,
+  injectDisableNextLine,
+  nestSubsumingExpressions,
+  shuffleIndependentStatements,
+} from './oracle/metamorphic.js'
 import { DECLARED_GAPS, MUTATOR_REGISTRY } from './oracle/mutator-registry.js'
 
 const RESERVED_WORDS = new Set([
@@ -215,6 +223,93 @@ describe('SOTA Metamorphic & Differential Oracle Properties (fast-check)', () =>
     )
   })
 
+  it('Differential Equivalence 3b (R3 staged): single-mutant replacements and OptionalChaining replacement spans', async () => {
+    const arbMethodCall = fc.constantFrom(
+      {
+        code: 'const s = "HELLO".toLowerCase();',
+        family: 'MethodExpression',
+        expectedReplacement: '"HELLO".toUpperCase()',
+      },
+      {
+        code: 'const s = "hello".toUpperCase();',
+        family: 'MethodExpression',
+        expectedReplacement: '"hello".toLowerCase()',
+      },
+      { code: 'const a = arr.filter(x => x);', family: 'MethodExpression', expectedReplacement: 'arr()' },
+    )
+    const arbRegexSnippet = fc.constantFrom(
+      { code: 'const r = /a+/;', family: 'Regex', expectedReplacement: '/a/' },
+      { code: 'const r = /\\d/;', family: 'Regex', expectedReplacement: '/\\D/' },
+      { code: 'const r = /^abc$/;', family: 'Regex', expectedReplacement: '/abc$/' },
+    )
+    const arbUnarySnippet = fc.constantFrom(
+      { code: 'const u = +a;', family: 'UnaryOperator', expectedReplacement: '-a' },
+      { code: 'const u = -a;', family: 'UnaryOperator', expectedReplacement: '+a' },
+      { code: 'const u = ~a;', family: 'UnaryOperator', expectedReplacement: 'a' },
+    )
+    const arbBooleanPrefix = fc.constantFrom(
+      { code: 'const b = !a;', family: 'BooleanLiteral', expectedReplacement: 'a' },
+      { code: 'const b = !isReady;', family: 'BooleanLiteral', expectedReplacement: 'isReady' },
+    )
+    const arbOptionalSnippet = fc.constantFrom(
+      'const o = a?.b;',
+      'const o = a?.[0];',
+      'const o = a?.();',
+    )
+
+    const arbExtendedSingleSnippet = fc.oneof(
+      arbMethodCall,
+      arbRegexSnippet,
+      arbUnarySnippet,
+      arbBooleanPrefix,
+    )
+
+    await fc.assert(
+      fc.asyncProperty(arbExtendedSingleSnippet, async ({ code, family, expectedReplacement }) => {
+        const oxcResult = await instrumentOxc(code)
+        const tsMorphResult = analyzeFileWithTsMorph(code, [])
+
+        const oxcMutants = oxcResult.mutants.filter((m) => m.mutatorName === family)
+        const tsMorphMutants = tsMorphResult.mutants.filter((m) => m.mutatorName === family)
+
+        if (oxcMutants.length !== tsMorphMutants.length) {
+          throw new Error(
+            `Count mismatch for family ${family}: oxc=${oxcMutants.length} vs tsMorph=${tsMorphMutants.length} in: ${code}`,
+          )
+        }
+        if (tsMorphMutants.length === 1 && oxcMutants.length === 1) {
+          if (tsMorphMutants[0]!.replacement !== expectedReplacement) {
+            throw new Error(
+              `ts-morph replacement mismatch for ${family}: expected ${expectedReplacement} but got ${
+                tsMorphMutants[0]!.replacement
+              }`,
+            )
+          }
+        }
+        return true
+      }),
+      { numRuns: 100 },
+    )
+
+    await fc.assert(
+      fc.asyncProperty(arbOptionalSnippet, async (code) => {
+        const tsMorphResult = analyzeFileWithTsMorph(code, [])
+        const optMutants = tsMorphResult.mutants.filter((m) => m.mutatorName === 'OptionalChaining')
+        if (optMutants.length !== 1) {
+          throw new Error(`Expected 1 OptionalChaining mutant, found ${optMutants.length} in ${code}`)
+        }
+        const rep = optMutants[0]!.replacement
+        if (rep !== '.' && rep !== '[' && rep !== '(') {
+          throw new Error(
+            `OptionalChaining replacement at question-dot span must be '.', '[', or '(', got '${rep}' in ${code}`,
+          )
+        }
+        return true
+      }),
+      { numRuns: 100 },
+    )
+  })
+
   it('A Priori Semantic Invariant 4: CompileError classification matches ts.getPreEmitDiagnostics', () => {
     const code = [
       'export const calculate = (x: number): number => {',
@@ -318,5 +413,195 @@ describe('SOTA Metamorphic & Differential Oracle Properties (fast-check)', () =>
         `Heading for family ${familyName} with anchor ${entry.contractSection} not found in mutator-contract.md`,
       ).toBe(true)
     }
+  })
+
+  it('Metamorphic Invariant 8: Dead-Code Invariance (Mutants placed in unreachable blocks follow contract)', () => {
+    const arbReachableStmt = fc.tuple(arbIdentifier, arbLiteral).map(
+      ([id, lit]) => `const ${id} = ${lit};`,
+    )
+    return fc.assert(
+      fc.property(arbReachableStmt, (stmt) => {
+        const baseInventory = analyzeFileWithTsMorph(stmt, [])
+
+        const { transformedSource: codeWithDeadCode } = injectDeadCode(stmt)
+        const deadInventory = analyzeFileWithTsMorph(codeWithDeadCode, [])
+
+        const expectedArithmeticGrowth = 1
+        const actualArithmeticGrowth = (deadInventory.mutatorTally['ArithmeticOperator'] ?? 0) -
+          (baseInventory.mutatorTally['ArithmeticOperator'] ?? 0)
+
+        if (actualArithmeticGrowth !== expectedArithmeticGrowth) {
+          throw new Error(
+            `Dead-Code Invariance violated [${CONTRACT_CLAUSES.DEAD_CODE}]: expected ArithmeticOperator growth of ${expectedArithmeticGrowth}, got ${actualArithmeticGrowth}`,
+          )
+        }
+
+        const { transformedSource: codeWithDisabledDeadCode } = injectDeadCode(stmt, { disabled: true })
+        const disabledDeadInventory = analyzeFileWithTsMorph(codeWithDisabledDeadCode, [])
+
+        if (disabledDeadInventory.ignoredCount <= baseInventory.ignoredCount) {
+          throw new Error(
+            `Dead-Code Invariance violated [${CONTRACT_CLAUSES.DEAD_CODE}]: disabled dead code did not increase ignoredCount`,
+          )
+        }
+
+        return true
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('Metamorphic Invariant 9: Statement Commutativity (Order-independent statements yield identical tallies)', () => {
+    const arbIndependentDecl = fc.tuple(arbIdentifier, arbLiteral).map(
+      ([id, lit]) => `const const_${id} = ${lit};`,
+    )
+    const arbIndependentPair = fc.tuple(arbIndependentDecl, arbIndependentDecl)
+
+    return fc.assert(
+      fc.property(arbIndependentPair, ([first, second]) => {
+        const original = [first, second]
+        const { shuffled } = shuffleIndependentStatements(original)
+
+        const originalSource = original.join('\n')
+        const shuffledSource = shuffled.join('\n')
+
+        const baseline = analyzeFileWithTsMorph(originalSource, [])
+        const reordered = analyzeFileWithTsMorph(shuffledSource, [])
+
+        if (baseline.mutants.length !== reordered.mutants.length) {
+          throw new Error(
+            `Statement Commutativity violated [${CONTRACT_CLAUSES.STATEMENT_COMMUTATIVITY}]: mutant count mismatch ${baseline.mutants.length} !== ${reordered.mutants.length}`,
+          )
+        }
+
+        for (const [mutator, count] of Object.entries(baseline.mutatorTally)) {
+          if (reordered.mutatorTally[mutator] !== count) {
+            throw new Error(
+              `Statement Commutativity violated [${CONTRACT_CLAUSES.STATEMENT_COMMUTATIVITY}]: tally mismatch for ${mutator}: ${count} !== ${
+                reordered.mutatorTally[mutator]
+              }`,
+            )
+          }
+        }
+
+        return true
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('Metamorphic Invariant 10: Boolean & Arithmetic Duality (De Morgan duality preserves contract tallies)', () => {
+    const arbDualityInput = fc.tuple(
+      arbIdentifier,
+      fc.constantFrom<'&&' | '||'>('&&', '||'),
+      arbIdentifier,
+    )
+
+    return fc.assert(
+      fc.property(arbDualityInput, ([left, op, right]) => {
+        const { originalExpr, dualExpr, originalLogicalCount, dualLogicalCount, dualPrefixBangCount } =
+          dualizeBooleanArithmetic(left, op, right)
+
+        const originalCode = `const _b = ${originalExpr};`
+        const dualCode = `const _b = ${dualExpr};`
+
+        const origInventory = analyzeFileWithTsMorph(originalCode, [])
+        const dualInventory = analyzeFileWithTsMorph(dualCode, [])
+
+        const origLogical = origInventory.mutatorTally['LogicalOperator'] ?? 0
+        const dualLogical = dualInventory.mutatorTally['LogicalOperator'] ?? 0
+        const dualBool = dualInventory.mutatorTally['BooleanLiteral'] ?? 0
+
+        if (origLogical !== originalLogicalCount) {
+          throw new Error(
+            `Boolean Duality violated [${CONTRACT_CLAUSES.BOOLEAN_ARITHMETIC_DUALITY}]: original LogicalOperator count ${origLogical} !== ${originalLogicalCount}`,
+          )
+        }
+        if (dualLogical !== dualLogicalCount) {
+          throw new Error(
+            `Boolean Duality violated [${CONTRACT_CLAUSES.BOOLEAN_ARITHMETIC_DUALITY}]: dual LogicalOperator count ${dualLogical} !== ${dualLogicalCount}`,
+          )
+        }
+        if (dualBool < dualPrefixBangCount) {
+          throw new Error(
+            `Boolean Duality violated [${CONTRACT_CLAUSES.BOOLEAN_ARITHMETIC_DUALITY}]: expected at least ${dualPrefixBangCount} BooleanLiteral prefix-! collapses, got ${dualBool}`,
+          )
+        }
+
+        return true
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('Metamorphic Invariant 11: Directive Scope Invariance (disable next-line does not leak across boundaries)', () => {
+    const arbTargetStmt = fc.tuple(arbIdentifier, fc.integer({ min: 1, max: 100 })).map(
+      ([id, n]) => `const ${id} = ${n} + 1;`,
+    )
+    const arbSurroundingStmt = fc.tuple(arbIdentifier, fc.integer({ min: 1, max: 100 })).map(
+      ([id, n]) => `const post_${id} = ${n} + 2;`,
+    )
+
+    return fc.assert(
+      fc.property(
+        arbTargetStmt,
+        arbSurroundingStmt,
+        (targetStmt, afterStmt) => {
+          const codeWithDisabled = injectDisableNextLine(targetStmt, [], [afterStmt], true)
+          const inventory = analyzeFileWithTsMorph(codeWithDisabled, [])
+
+          const activeMutants = inventory.mutants.filter((m) => m.status === 'Active')
+          const ignoredMutants = inventory.mutants.filter((m) => m.status === 'Ignored')
+
+          const targetIgnored = ignoredMutants.some((m) => m.line === 2)
+          const afterActive = activeMutants.some((m) => m.line === 4)
+
+          if (!targetIgnored) {
+            throw new Error(
+              `Directive Scope Invariance violated [${CONTRACT_CLAUSES.DIRECTIVE_SCOPE}]: line 2 mutant should be Ignored`,
+            )
+          }
+          if (!afterActive) {
+            throw new Error(
+              `Directive Scope Invariance violated [${CONTRACT_CLAUSES.DIRECTIVE_SCOPE}]: line 4 mutant should be Active after restore`,
+            )
+          }
+
+          return true
+        },
+      ),
+      { numRuns: 200 },
+    )
+  })
+
+  it('Metamorphic Invariant 12: Mutation Subsumption bounded (Nested const-initializers place independent mutants)', () => {
+    const arbSubsumptionTuple = fc.tuple(
+      fc.integer({ min: 1, max: 50 }),
+      fc.integer({ min: 1, max: 50 }),
+      fc.integer({ min: 1, max: 50 }),
+      fc.integer({ min: 1, max: 50 }),
+    )
+
+    return fc.assert(
+      fc.property(arbSubsumptionTuple, ([a, b, c, d]) => {
+        const { sourceCode, totalArithmeticPlacements } = nestSubsumingExpressions(
+          { left: a, op: '+', right: b },
+          '*',
+          { left: c, op: '+', right: d },
+        )
+
+        const inventory = analyzeFileWithTsMorph(sourceCode, [])
+        const arithMutants = inventory.mutants.filter((m) => m.mutatorName === 'ArithmeticOperator')
+
+        if (arithMutants.length !== totalArithmeticPlacements) {
+          throw new Error(
+            `Mutation Subsumption violated [${CONTRACT_CLAUSES.MUTATION_SUBSUMPTION}]: expected ${totalArithmeticPlacements} arithmetic mutants, got ${arithMutants.length}`,
+          )
+        }
+
+        return true
+      }),
+      { numRuns: 200 },
+    )
   })
 })
