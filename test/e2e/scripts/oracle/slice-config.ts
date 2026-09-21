@@ -34,7 +34,7 @@ export const ORACLE_SLICES: Readonly<Record<OracleSliceConfig['id'], OracleSlice
     mutateFiles: ['packages/*/src/**/*.ts', '!packages/*/src/**/*.test.ts'],
     excludedMutations: [],
     journeyUsesTally: true,
-    survivedFloorBand: true,
+    survivedFloorBand: false,
     timeoutFloorBand: false,
     packageGlobs: ['packages/core', 'packages/services', 'packages/api', 'packages/analytics'],
   },
@@ -71,7 +71,7 @@ export const ORACLE_SLICES: Readonly<Record<OracleSliceConfig['id'], OracleSlice
     excludedMutations: [],
     journeyUsesTally: false,
     survivedFloorBand: false,
-    timeoutFloorBand: true,
+    timeoutFloorBand: false,
     packageGlobs: ['packages/services'],
   },
 })

@@ -31,6 +31,7 @@ import { PhaseEntered, PlanKnown } from '../RunEvents.js'
 import { RunEvents, RunMutantTested } from '../RunEvents.js'
 
 import type { CheckerFailed, CheckResult, ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { WALL_CLOCK_TIMEOUT_REASON, wallClockTimeoutStopsRun } from '@systemfsoftware/stryker-js-plugin-interface'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import type { MutationTestDecision } from '../admit-mutation-test.workflow.js'
 import { wireRecordOf } from '../checker-mutant-wire.js'
@@ -701,6 +702,13 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                               ChildProcessCrashedError: (error) => invalidateSlot(pool, runner, error),
                             }),
                           )
+                          const timeoutReason = 'reason' in result ? result.reason : undefined
+                          if (wallClockTimeoutStopsRun(result.status, timeoutReason)) {
+                            return yield* Effect.fail(StageError.make({
+                              stage: 'mutationTest',
+                              reason: WALL_CLOCK_TIMEOUT_REASON,
+                            }))
+                          }
                           const reported = yield* reporting.reportMutantRunResult(
                             toReportedMutant(plan.mutant),
                             result,

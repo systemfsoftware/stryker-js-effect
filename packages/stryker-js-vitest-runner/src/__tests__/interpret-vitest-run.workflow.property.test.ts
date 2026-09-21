@@ -4,6 +4,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
+import { HIT_LIMIT_REASON_PREFIX, hitLimitReachedReason } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   interpretVitestRun,
   MutantDryError,
@@ -36,6 +37,8 @@ const commandWith = (
     readonly hitCount: number | undefined
     readonly hitLimit: number | undefined
     readonly reportAllKillers?: boolean
+    readonly activeMutantId?: string
+    readonly namedTrapId?: string
   },
 ): VitestMutantRunCommand =>
   VitestMutantRunCommand.make({
@@ -46,6 +49,8 @@ const commandWith = (
     hitCount: override.hitCount,
     hitLimit: override.hitLimit,
     reportAllKillers: override.reportAllKillers ?? input.reportAllKillers,
+    activeMutantId: override.activeMutantId ?? input.activeMutantId,
+    namedTrapId: override.namedTrapId ?? input.namedTrapId,
   })
 
 const testsIn = (
@@ -93,7 +98,7 @@ describe('interpretVitestRun', () => {
   )
 
   it.prop(
-    '→h_HitLimitExceeded_=Timeout',
+    '→h_HitLimitOnNamedTrap_=Timeout',
     [
       VitestMutantRunCommand,
       Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 100000 }))),
@@ -101,7 +106,12 @@ describe('interpretVitestRun', () => {
     ],
     ([input, hitLimit, extra]) => {
       const hitCount = hitLimit + extra
-      const result = interpretVitestRun(commandWith(input, { hitCount, hitLimit }))
+      const result = interpretVitestRun(commandWith(input, {
+        hitCount,
+        hitLimit,
+        activeMutantId: input.activeMutantId,
+        namedTrapId: input.activeMutantId,
+      }))
       if (!Result.isSuccess(result)) {
         return false
       }
@@ -111,8 +121,31 @@ describe('interpretVitestRun', () => {
       return (
         carriesFamilyBrand(result.success) &&
         result.success.testsJson === '[]' &&
-        result.success.reason === `Hit limit reached (${hitCount}/${hitLimit})`
+        result.success.reason === hitLimitReachedReason(hitCount, hitLimit) &&
+        result.success.reason?.startsWith(HIT_LIMIT_REASON_PREFIX) === true
       )
+    },
+  )
+
+  it.prop(
+    '→h_HitLimitOnOtherMutant_=Killed',
+    [
+      VitestMutantRunCommand,
+      Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 100000 }))),
+      Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 1, maximum: 100 }))),
+    ],
+    ([input, hitLimit, extra]) => {
+      const hitCount = hitLimit + extra
+      const result = interpretVitestRun(commandWith(input, {
+        hitCount,
+        hitLimit,
+        activeMutantId: `${input.activeMutantId}-finite`,
+        namedTrapId: input.activeMutantId,
+      }))
+      if (!Result.isSuccess(result)) {
+        return false
+      }
+      return S.is(MutantKilled)(result.success) && !S.is(MutantTimeout)(result.success)
     },
   )
 

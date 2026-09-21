@@ -18,6 +18,8 @@ import type {
 } from '@systemfsoftware/stryker-js-instrumenter'
 import type { CompleteDryRunResult, TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
 
+import { StageError } from './Run.schema.js'
+
 import { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from './IncrementalDiff.schema.js'
 import type { PreviousFileRecord, PreviousMutantRecord, PreviousTestFileRecord } from './IncrementalDiff.schema.js'
@@ -366,6 +368,29 @@ const calculateTotalTimeForIds = (testIds: readonly string[], testTimeById: Reco
     return acc
   }, 0)
 
+export type HitBoundDecision =
+  | { readonly _tag: 'Bound'; readonly hitLimit: number }
+  | { readonly _tag: 'Uncovered' }
+  | { readonly _tag: 'MissingHitCount' }
+  | { readonly _tag: 'CoverageOff' }
+
+export const decideHitBound = (
+  hitCount: number | undefined,
+  covered: boolean,
+  coverageKnown: boolean,
+): HitBoundDecision => {
+  if (!coverageKnown) {
+    return { _tag: 'CoverageOff' }
+  }
+  if (!covered) {
+    return { _tag: 'Uncovered' }
+  }
+  if (hitCount === undefined) {
+    return { _tag: 'MissingHitCount' }
+  }
+  return { _tag: 'Bound', hitLimit: hitCount * HIT_LIMIT_FACTOR }
+}
+
 const getHitLimit = (hitCount: number | undefined): number | undefined => {
   if (hitCount === undefined) {
     return undefined
@@ -495,6 +520,14 @@ const planForStaticallyCovered = (
   )
 }
 
+const mutantIsCovered = (command: PlanMutantTestsInput, mutantId: string): boolean => {
+  const tests = command.testsByMutantId[mutantId]
+  if (tests !== undefined && tests.length > 0) {
+    return true
+  }
+  return hasStaticCoverageForPlan(command.staticCoverage, mutantId)
+}
+
 const decidePlanForMutant = (
   mutant: Mutant,
   command: PlanMutantTestsInput,
@@ -502,8 +535,16 @@ const decidePlanForMutant = (
   const isStatic = hasStaticCoverageForPlan(command.staticCoverage, mutant.id)
   return Option.match(Option.fromUndefinedOr(mutant.status), {
     onSome: (status) => toEarlyResultPlan(mutant, isStatic, status, mutant.statusReason, getCoveredBy(mutant)),
-    onNone: () =>
-      Match.value(hasCoverageForPlan(command.staticCoverage)).pipe(
+    onNone: () => {
+      const bound = decideHitBound(
+        command.hitsByMutantId[mutant.id],
+        mutantIsCovered(command, mutant.id),
+        command.staticCoverage !== undefined,
+      )
+      if (bound._tag === 'Uncovered') {
+        return toEarlyResultPlan(mutant, isStatic, 'NoCoverage', 'No coverage', undefined)
+      }
+      return Match.value(hasCoverageForPlan(command.staticCoverage)).pipe(
         Match.when(true, () => planForStaticallyCovered(mutant, command, isStatic)),
         Match.orElse(() =>
           toRunPlan(
@@ -515,14 +556,43 @@ const decidePlanForMutant = (
             undefined,
           )
         ),
-      ),
+      )
+    },
   })
 }
+
+export const missingHitCountIds = (command: PlanMutantTestsInput): readonly string[] =>
+  command.mutants.flatMap((mutant) => {
+    if (mutant.status !== undefined) {
+      return []
+    }
+    const bound = decideHitBound(
+      command.hitsByMutantId[mutant.id],
+      mutantIsCovered(command, mutant.id),
+      command.staticCoverage !== undefined,
+    )
+    if (bound._tag === 'MissingHitCount') {
+      return [mutant.id]
+    }
+    return []
+  })
 
 export const planMutantTests = (
   command: PlanMutantTestsInput,
 ): PlannedTestPlans => {
-  const plans = command.mutants.map((mutant) => decidePlanForMutant(mutant, command))
+  const plans = command.mutants.flatMap((mutant) => {
+    if (mutant.status === undefined) {
+      const bound = decideHitBound(
+        command.hitsByMutantId[mutant.id],
+        mutantIsCovered(command, mutant.id),
+        command.staticCoverage !== undefined,
+      )
+      if (bound._tag === 'MissingHitCount') {
+        return []
+      }
+    }
+    return [decidePlanForMutant(mutant, command)]
+  })
   const totalNetTime = plans.reduce((acc, plan) => {
     if (plan.plan === 'Run') {
       return acc + plan.netTime
@@ -649,7 +719,14 @@ const materializePlan = (plan: TestPlan, original: Mutant): MutantTestPlan => {
 
 export const makeMutantTestPlanner = (
   command: PlanMutantTestsInput,
-): Effect.Effect<readonly MutantTestPlan[], never, never> => {
+): Effect.Effect<readonly MutantTestPlan[], StageError, never> => {
+  const missing = missingHitCountIds(command)
+  if (missing.length > 0) {
+    return Effect.fail(StageError.make({
+      stage: 'mutationTest',
+      reason: `covered mutant missing dry-run hit count: ${missing.join(', ')}`,
+    }))
+  }
   const { plans } = planMutantTests(command)
   const byId = new Map<string, Mutant>()
   for (const mutant of command.mutants) {
@@ -673,7 +750,7 @@ export const decidePlans = (
   timeOverheadMS: number,
   globalTestFilter: string[] | undefined,
   sandboxFileByName: Record<string, string>,
-): Effect.Effect<readonly MutantTestPlan[], never, never> => {
+): Effect.Effect<readonly MutantTestPlan[], StageError, never> => {
   const command = coverageToCommand(
     mutants,
     testCoverage,

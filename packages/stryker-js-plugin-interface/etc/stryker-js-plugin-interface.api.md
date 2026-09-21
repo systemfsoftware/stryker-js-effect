@@ -449,10 +449,22 @@ export const FrameworkInformationSchema: S.Struct<{
 }>;
 
 // @public (undocumented)
+export const HIT_LIMIT_REASON_PREFIX = "Hit limit reached";
+
+// @public (undocumented)
+export const hitLimitReachedReason: (count: number, limit: number) => string;
+
+// @public (undocumented)
 export const InvalidStatus: S.Union<readonly [S.Literal<"CompileError">, S.Literal<"RuntimeError">]>;
 
 // @public (undocumented)
 export const isCustomTestRunner: (value: TestRunnerConfig) => value is TestRunnerCustomConfig;
+
+// @public (undocumented)
+export const isHitLimitReason: (reason: string | undefined) => boolean;
+
+// @public (undocumented)
+export const isNamedTrap: (activeMutantId: string, namedTrapId: string | undefined) => boolean;
 
 // @public (undocumented)
 export interface KilledMutantRunResult {
@@ -1268,6 +1280,12 @@ export const UndetectedStatus: S.Union<readonly [S.Literal<"Survived">, S.Litera
 
 // @public (undocumented)
 export const UntestedStatus: S.Union<readonly [S.Literal<"Ignored">, S.Literal<"Pending">]>;
+
+// @public (undocumented)
+export const WALL_CLOCK_TIMEOUT_REASON = "wall-clock-timeout";
+
+// @public (undocumented)
+export const wallClockTimeoutStopsRun: (status: string, reason: string | undefined) => boolean;
 
 // @public (undocumented)
 export const WorkerEntryUrl: S.String;

@@ -834,6 +834,24 @@ const applySetupFilesToProjects = (vitest: Vitest, localSetupFile: string): void
     disableScreenshotFailures(Reflect.get(project.config, 'browser'))
   }
 }
+const namedTrapIdOf = (
+  mutant: { readonly id: string; readonly fileName: string },
+  options: { readonly timeoutTrapFile?: string | undefined; readonly timeoutTrapMutantId?: string | undefined },
+): string | undefined => {
+  if (options.timeoutTrapMutantId !== undefined && options.timeoutTrapMutantId === mutant.id) {
+    return mutant.id
+  }
+  const trapFile = options.timeoutTrapFile
+  if (trapFile === undefined || trapFile.length === 0) {
+    return undefined
+  }
+  const fileName = mutant.fileName.replaceAll('\\', '/')
+  const needle = trapFile.replaceAll('\\', '/')
+  if (fileName === needle || fileName.endsWith(`/${needle}`)) {
+    return mutant.id
+  }
+  return undefined
+}
 
 export interface VitestRunnerLayerInput {
   readonly options: StrykerOptions
@@ -1116,16 +1134,8 @@ export const makeVitestRunnerLayer = (
             if (typeof input.options.disableBail === 'boolean') return input.options.disableBail
             return false
           })()
-          if (hitCount === undefined) {
-            return {
-              rawTests,
-              projectRoot: input.sandboxDirectory,
-              hasExternalError,
-              externalErrorText,
-              hitLimit: command.hitLimit,
-              reportAllKillers,
-            }
-          }
+          const vitestOptions = yield* vitestOptionsEffect
+          const namedTrapId = namedTrapIdOf(command.activeMutant, vitestOptions)
           return {
             rawTests,
             projectRoot: input.sandboxDirectory,
@@ -1134,6 +1144,8 @@ export const makeVitestRunnerLayer = (
             hitCount,
             hitLimit: command.hitLimit,
             reportAllKillers,
+            activeMutantId: command.activeMutant.id,
+            namedTrapId,
           }
         })
       ).decode(Sandwich.pure((
@@ -1145,6 +1157,8 @@ export const makeVitestRunnerLayer = (
           readonly hitCount?: number | undefined
           readonly hitLimit: number | undefined
           readonly reportAllKillers: boolean
+          readonly activeMutantId: string
+          readonly namedTrapId: string | undefined
         },
       ) =>
         Result.succeed(
@@ -1156,6 +1170,8 @@ export const makeVitestRunnerLayer = (
             hitCount: raw.hitCount,
             hitLimit: raw.hitLimit,
             reportAllKillers: raw.reportAllKillers,
+            activeMutantId: raw.activeMutantId,
+            namedTrapId: raw.namedTrapId,
           }),
         )
       ))

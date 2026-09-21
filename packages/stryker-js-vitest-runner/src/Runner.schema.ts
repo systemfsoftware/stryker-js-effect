@@ -6,6 +6,8 @@ export const VitestRunnerOptionsSchema = S.Struct({
   dir: S.optional(S.String),
   related: S.Boolean.pipe(S.withDecodingDefaultKey(Effect.succeed(true))),
   configFile: S.optional(S.String),
+  timeoutTrapFile: S.optional(S.String),
+  timeoutTrapMutantId: S.optional(S.String),
 })
 
 export type VitestRunnerOptions = S.Schema.Type<typeof VitestRunnerOptionsSchema>
