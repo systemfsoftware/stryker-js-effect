@@ -14,6 +14,7 @@ import * as Effect from 'effect/Effect';
 import * as EffectDuration from 'effect/Duration';
 import * as Exit from 'effect/Exit';
 import * as FileSystem from 'effect/FileSystem';
+import { HarnessModuleBuiltin } from '@systemfsoftware/stryker-vm-harness';
 import * as HashMap from 'effect/HashMap';
 import * as Layer from 'effect/Layer';
 import * as Metric from 'effect/Metric';
@@ -23,7 +24,6 @@ import * as Option from 'effect/Option';
 import * as Path from 'effect/Path';
 import { PlatformError } from 'effect/PlatformError';
 import * as Queue from 'effect/Queue';
-import { RegisterHooksOptions } from 'node:module';
 import * as Rpc from 'effect/unstable/rpc/Rpc';
 import * as RpcClient from 'effect/unstable/rpc/RpcClient';
 import { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
@@ -602,10 +602,10 @@ export interface IdGeneratorShape {
 export interface Ignorer {
     // (undocumented)
     readonly name: string;
-    // Warning: (ae-forgotten-export) The symbol "Node_2" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "Node" needs to be exported by the entry point index.d.mts
     //
     // (undocumented)
-    shouldIgnore(node: Node_2, ancestors: readonly Node_2[]): string | undefined;
+    shouldIgnore(node: Node, ancestors: readonly Node[]): string | undefined;
 }
 
 // @public (undocumented)
@@ -1702,8 +1702,6 @@ export interface VerdictThresholds {
 
 // @public (undocumented)
 export interface VmPlatform {
-    // Warning: (ae-forgotten-export) The symbol "HarnessModuleBuiltin" needs to be exported by the entry point index.d.mts
-    //
     // (undocumented)
     readonly moduleBuiltin: HarnessModuleBuiltin;
     // Warning: (ae-forgotten-export) The symbol "VmFileUrl" needs to be exported by the entry point index.d.mts
