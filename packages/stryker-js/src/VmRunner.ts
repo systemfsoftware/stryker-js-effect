@@ -15,6 +15,7 @@ import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
+import * as Semaphore from 'effect/Semaphore'
 
 import type { PooledTestRunner } from './TestRunner.js'
 import { drainRegistry } from './vm-harness/drain.js'
@@ -53,6 +54,7 @@ export const vmRunnerCapabilities = { reloadEnvironment: true } as const satisfi
 
 export interface VmTestRunnerConfig {
   readonly testFiles: readonly string[]
+  readonly sandboxWorkingDirectory?: string
 }
 
 const errorText = (error: unknown): string =>
@@ -90,8 +92,7 @@ const runFailureFor = (file: string, cause: unknown): RunFailure => {
 
 let saltCounter = 0
 
-const nativeImport = (url: string): Promise<unknown> =>
-  new Function('specifier', 'return import(specifier)')(url) as Promise<unknown>
+const nativeImport = (url: string): Promise<unknown> => import(/* @vite-ignore */ url)
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => Predicate.isObject(value)
 
@@ -143,11 +144,14 @@ const prefixOf = (file: string, pathToFileURL: (path: string) => VmFileUrl): str
   return href.slice(0, lastSlash + 1)
 }
 
+const serialRunGate = Semaphore.makeUnsafe(1)
+
 const runOnce = (
   platform: VmPlatform,
   testFiles: readonly string[],
   timeoutMs: number | undefined,
   activeMutantId: string | undefined,
+  sandboxWorkingDirectory: string | undefined,
 ): Effect.Effect<DryRunResult, TestRunnerFailed> =>
   Effect.gen(function*() {
     const firstFile = testFiles[0]
@@ -159,8 +163,8 @@ const runOnce = (
     const real = yield* Effect.promise(() => import('vitest'))
     const state: VmRunnerGlobalState = {
       api,
-      expect: guardedExpect(real.expect as object),
-      vi: guardedVi(real.vi as object),
+      expect: guardedExpect(real.expect),
+      vi: guardedVi(real.vi),
       effectVitest: {
         it: makeEffectMethods({
           api: api.it,
@@ -171,7 +175,9 @@ const runOnce = (
       },
     }
 
-    const prefix = prefixOf(firstFile, platform.pathToFileURL)
+    const prefix = sandboxWorkingDirectory !== undefined
+      ? `${platform.pathToFileURL(sandboxWorkingDirectory).href.replace(/\/?$/, '/')}`
+      : prefixOf(firstFile, platform.pathToFileURL)
     const namespace = hostStrykerNamespace()
     const previousActive = namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT]
     namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
@@ -188,7 +194,7 @@ const runOnce = (
         registry.frames.current = []
         const url = `${platform.pathToFileURL(file).href}?salt=${salt}`
         const outcome = yield* Effect.promise(() =>
-          import(url).then(
+          nativeImport(url).then(
             () => undefined,
             (cause: unknown) => ({ cause }),
           )
@@ -196,9 +202,11 @@ const runOnce = (
         if (outcome !== undefined) {
           const failure = runFailureFor(file, outcome.cause)
           if (failure.fatal) {
-            return yield* Effect.fail(
-              new TestRunnerFailed({ runnerName: vmRunnerName, phase: 'init', cause: failure.message }),
-            )
+            return yield* TestRunnerFailed.make({
+              runnerName: vmRunnerName,
+              phase: 'init',
+              cause: failure.message,
+            })
           }
           runFailure ??= failure
         }
@@ -247,7 +255,9 @@ export const vmTestRunner = (
     const platform = yield* VmRunner
 
     const run = (testFiles: readonly string[], timeoutMs: number | undefined, activeMutantId: string | undefined) =>
-      runOnce(platform, testFiles, timeoutMs, activeMutantId)
+      serialRunGate.withPermits(1)(
+        runOnce(platform, testFiles, timeoutMs, activeMutantId, config.sandboxWorkingDirectory),
+      )
 
     const testFilesOf = (override: readonly string[] | undefined): readonly string[] =>
       Match.value(config.testFiles).pipe(
@@ -260,7 +270,7 @@ export const vmTestRunner = (
       init: Effect.void,
       dryRun: (options: DryRunOptions) => run(testFilesOf(options.testFiles), options.timeout, undefined),
       mutantRun: (options: MutantRunOptions) =>
-        run(config.testFiles, options.timeout, options.activeMutant.id).pipe(
+        run(config.testFiles, options.timeout, String(options.activeMutant.id)).pipe(
           Effect.map((result) => toMutantRunResult(result, true)),
           Effect.catchTag(
             'TestRunnerFailed',

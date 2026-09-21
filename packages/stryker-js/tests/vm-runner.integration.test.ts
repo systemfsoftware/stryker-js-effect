@@ -59,6 +59,22 @@ const NOTICING_SUITE = [
 ].join('\n')
 
 const IGNORING_SUITE = 'globalThis.__strykerRun = "completed"'
+const FINALIZER_SUITE = [
+  'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
+  'const { test, hooks } = slot.api',
+  '',
+  "test('registers a finalizer', () => {",
+  '  hooks.onTestFinished(() => {',
+  '    globalThis.__FINALIZER_RAN = true',
+  '  })',
+  '})',
+  '',
+  "test('observes the finalizer ran', () => {",
+  '  if (globalThis.__FINALIZER_RAN !== true) {',
+  "    throw new Error('the onTestFinished finalizer did not run')",
+  '  }',
+  '})',
+].join('\n')
 
 const MALFORMED_SUITE = 'const broken: = 1'
 
@@ -248,6 +264,30 @@ Feature('Verifying mutants without spawning a child process')
     )
 
     scenario(
+      'Cleanup registered during a test runs before the next test starts',
+      Gherkin.Do.pipe(
+        Given('a written suite whose second test depends on the first test cleanup having run')(
+          'suite',
+          () => writeSuite('finalizer', FINALIZER_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the in-memory runner runs the suite')(
+          'attempt',
+          (s) => suiteFailure(s.suite),
+        ),
+        Then('the run reports both tests as passing')((s) =>
+          Effect.sync(() => {
+            expect(Exit.isSuccess(s.attempt)).toBe(true)
+            if (Exit.isSuccess(s.attempt) && s.attempt.value.status === 'complete') {
+              const tests = s.attempt.value.tests
+              expect(tests.map((test) => test.name)).toEqual(['registers a finalizer', 'observes the finalizer ran'])
+              expect(tests.every((test) => test.status === 'success')).toBe(true)
+            }
+          })
+        ),
+      ),
+    )
+
+    scenario(
       'A suite that cannot be compiled stops the run with a failure naming the file',
       Gherkin.Do.pipe(
         Given('a written suite whose TypeScript is malformed')(
@@ -388,7 +428,8 @@ Feature('Verifying mutants without spawning a child process')
               status: 'success',
             })
             expect(outcome.tests.some((test) =>
-              test.status === 'failed' && test.failureMessage?.includes('the late rejection arrived')
+              test.status === 'failed' && typeof test.failureMessage === 'string' &&
+              test.failureMessage.includes('the late rejection arrived')
             )).toBe(true)
           })
         ),

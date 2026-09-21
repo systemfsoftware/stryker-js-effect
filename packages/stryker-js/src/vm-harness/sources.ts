@@ -21,10 +21,10 @@ export const beforeAll = hooks.beforeAll
 export const afterAll = hooks.afterAll
 export const beforeEach = hooks.beforeEach
 export const afterEach = hooks.afterEach
-export const onTestFinished = hooks.onTestFinished
+export const onTestFinished = (finalizer) => hooks.onTestFinished(finalizer)
 export const expect = state.expect
 export const vi = state.vi
-export * from 'vitest'
+export const assert = state.expect
 `
 
 const effectVitestHarnessSource = `
@@ -34,7 +34,6 @@ export const layer = state.effectVitest.layer
 export const describe = state.api.describe
 export const expect = state.expect
 export const vi = state.vi
-export * from 'vitest'
 `
 
 const gherkinHarnessSource = `

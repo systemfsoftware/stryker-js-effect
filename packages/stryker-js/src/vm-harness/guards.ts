@@ -10,22 +10,22 @@ const unsupportedMocking = (name: string): never => {
   )
 }
 
-export const guardedExpect = (real: object): unknown =>
+export const guardedExpect = (real: object): object =>
   new Proxy(real, {
     get(target, property, receiver) {
       if (property === 'toMatchSnapshot' || property === 'toMatchInlineSnapshot') {
         return unsupportedSnapshot
       }
-      return Reflect.get(target, property, receiver)
+      return Reflect.get(target, property, receiver) as unknown
     },
   })
 
-export const guardedVi = (real: object): unknown =>
+export const guardedVi = (real: object): object =>
   new Proxy(real, {
     get(target, property, receiver) {
       if (property === 'mock' || property === 'hoisted') {
         return () => unsupportedMocking(String(property))
       }
-      return Reflect.get(target, property, receiver)
+      return Reflect.get(target, property, receiver) as unknown
     },
   })

@@ -602,10 +602,10 @@ export interface IdGeneratorShape {
 export interface Ignorer {
     // (undocumented)
     readonly name: string;
-    // Warning: (ae-forgotten-export) The symbol "Node_2" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "Node" needs to be exported by the entry point index.d.mts
     //
     // (undocumented)
-    shouldIgnore(node: Node_2, ancestors: readonly Node_2[]): string | undefined;
+    shouldIgnore(node: Node, ancestors: readonly Node[]): string | undefined;
 }
 
 // @public (undocumented)
@@ -1730,6 +1730,8 @@ export const vmTestRunner: (config: VmTestRunnerConfig) => Effect.Effect<PooledT
 
 // @public (undocumented)
 export interface VmTestRunnerConfig {
+    // (undocumented)
+    readonly sandboxWorkingDirectory?: string;
     // (undocumented)
     readonly testFiles: readonly string[];
 }

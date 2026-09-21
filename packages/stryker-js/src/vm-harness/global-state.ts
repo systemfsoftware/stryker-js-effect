@@ -8,8 +8,8 @@ export interface EffectVitestSurface {
 
 export interface VmRunnerGlobalState {
   readonly api: HarnessApi
-  readonly expect: unknown
-  readonly vi: unknown
+  readonly expect: object | undefined
+  readonly vi: object | undefined
   readonly effectVitest: EffectVitestSurface | undefined
 }
 

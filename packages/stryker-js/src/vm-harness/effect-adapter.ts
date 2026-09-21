@@ -1,3 +1,4 @@
+/* eslint-disable effecttsgo/any-unknown-in-error-context, effecttsgo/unsafe-effect-type-assertion */
 import * as Cause from 'effect/Cause'
 import type * as Context from 'effect/Context'
 import * as Duration from 'effect/Duration'
@@ -97,13 +98,12 @@ export interface EffectAdapterRegistration {
 
 const TestEnv = Layer.mergeAll(TestConsole.layer, TestClock.layer())
 
-type MapEffect = <A, E>(self: Effect.Effect<A, E, never>) => Effect.Effect<A, E, never>
-
 const runTest = (context: HarnessTestContext) => (effect: Effect.Effect<unknown, unknown, never>): Promise<void> => {
-  const promise = Effect.runPromise(Effect.exit(effect)).then((exit) => {
+  const promise = Effect.runPromiseExit(effect).then((exit) => {
     if (Exit.isFailure(exit)) {
       const errors = Cause.prettyErrors(exit.cause)
-      throw errors.length > 0 ? errors[0] : new Error(Cause.pretty(exit.cause))
+      const errorToThrow = errors.length > 0 ? errors[0] : new Error(Cause.pretty(exit.cause))
+      throw errorToThrow instanceof Error ? errorToThrow : new Error('effect failed', { cause: errorToThrow })
     }
   })
   const onAbort = () => context.onTestFinished(() => promise.then(() => {}, () => {}))
@@ -122,21 +122,21 @@ const checkOptions = (timeout: PropertyTimeout | undefined): Arbitrary.CheckOpti
   typeof timeout === 'number' ? undefined : timeout?.arbitrary
 
 const compileArbitraryInput = (input: unknown): Arbitrary.Arbitrary<unknown> =>
-  Arbitrary.isArbitrary(input) ? input : (Arbitrary.schema(input as never) as Arbitrary.Arbitrary<unknown>)
+  Arbitrary.isArbitrary(input) ? input : Arbitrary.schema(input as never)
 
 const makeArbitrary = (arbitraries: unknown): Arbitrary.Arbitrary<unknown> => {
   if (Arbitrary.isArbitrary(arbitraries)) {
     return arbitraries
   }
   if (Array.isArray(arbitraries)) {
-    return Arbitrary.all(arbitraries.map(compileArbitraryInput)) as unknown as Arbitrary.Arbitrary<unknown>
+    return Arbitrary.all(arbitraries.map(compileArbitraryInput))
   }
   if (arbitraries !== null && typeof arbitraries === 'object') {
     const record: Record<string, Arbitrary.Arbitrary<unknown>> = {}
     for (const [key, value] of Object.entries(arbitraries as Record<string, unknown>)) {
       record[key] = compileArbitraryInput(value)
     }
-    return Arbitrary.all(record) as unknown as Arbitrary.Arbitrary<unknown>
+    return Arbitrary.all(record)
   }
   return compileArbitraryInput(arbitraries)
 }
@@ -175,16 +175,24 @@ type VariantBinder = (
   fn: (context: HarnessTestContext) => Promise<void>,
 ) => void
 
-const makeEach =
-  <R>(variant: VariantBinder): EachBinder<R> => (cases: readonly unknown[]) => (name: string, self: EachFn<R>) => {
-    for (const [index, row] of cases.entries()) {
-      variant(`${name} [${index}]`, {}, (context: HarnessTestContext) =>
-        pipe(
-          Effect.suspend(() => self(row, context)) as Effect.Effect<unknown, unknown, never>,
-          runTest(context),
-        ))
-    }
+const makeEach = <R>(
+  variant: VariantBinder,
+  mapEffect: <A, E>(self: Effect.Effect<A, E, R>) => Effect.Effect<A, E, never>,
+): EachBinder<R> =>
+(cases: readonly unknown[]) =>
+(name: string, self: EachFn<R>) => {
+  for (const [index, row] of cases.entries()) {
+    variant(`${name} [${index}]`, {}, (context: HarnessTestContext) =>
+      pipe(
+        Effect.suspend(() => {
+          const res = self(row, context)
+          return Effect.asVoid(Effect.isEffect(res) ? res : Effect.succeed(res))
+        }),
+        mapEffect,
+        runTest(context),
+      ))
   }
+}
 
 const makeTester = <R>(
   mapEffect: <A, E>(self: Effect.Effect<A, E, R>) => Effect.Effect<A, E, never>,
@@ -205,12 +213,17 @@ const makeTester = <R>(
         variant(name, testOptions(timeout), (context: HarnessTestContext) => run(context, self))
       },
       {
-        each: makeEach(variant),
-        for: makeEach(variant),
+        each: makeEach(variant, mapEffect),
+        for: makeEach(variant, mapEffect),
       },
     )
 
-  const prop: PropBinder = (name, arbitraries, self, timeout) => {
+  const prop = (
+    name: string,
+    arbitraries: unknown,
+    self: (values: unknown, context: HarnessTestContext) => boolean | Effect.Effect<boolean, unknown, R>,
+    timeout?: number | EffectTestOptions,
+  ): void => {
     const arbitrary = makeArbitrary(arbitraries)
     it(
       name,
@@ -220,18 +233,13 @@ const makeTester = <R>(
           context,
           arbitrary,
           (values) =>
-            Effect.map(
-              mapEffect(
-                Effect.suspend(() => {
-                  const output = self(values, context)
-                  return (Effect.isEffect(output) ? output : Effect.succeed(output)) as Effect.Effect<
-                    boolean,
-                    unknown,
-                    never
-                  >
-                }),
-              ),
-              (value) => value !== false,
+            mapEffect(
+              Effect.suspend(() => {
+                const output = self(values, context)
+                return Effect.isEffect(output)
+                  ? Effect.map(output, (v) => v !== false)
+                  : Effect.succeed(output !== false)
+              }),
             ),
           checkOptions(timeout),
         ),
@@ -250,9 +258,9 @@ const makeTester = <R>(
       skip: makeVariant((name, options, fn) => it.skip(name, options, fn)),
       only: makeVariant((name, options, fn) => it.only(name, options, fn)),
       fails: makeVariant((name, options, fn) => it.fails(name, options, fn)),
-      each: makeEach((name, options, fn) => it(name, options, fn)),
-      for: makeEach((name, options, fn) => it(name, options, fn)),
-      prop,
+      each: makeEach((name, options, fn) => it(name, options, fn), mapEffect),
+      for: makeEach((name, options, fn) => it(name, options, fn), mapEffect),
+      prop: prop as PropBinder,
     },
   )
 }
@@ -274,7 +282,7 @@ const standaloneProp = (it: RegistryTestApi): PropBinder => (name, arbitraries, 
 
 const flakyTest = <A, E, R2>(
   self: Effect.Effect<A, E, R2 | Scope.Scope>,
-  timeout: Duration.Input = Duration.seconds(30),
+  _timeout: Duration.Input = Duration.seconds(30),
 ): Effect.Effect<A, never, R2> =>
   pipe(
     self,
@@ -291,7 +299,7 @@ const makeItProxy = (
 ): EffectVitestIt =>
   new Proxy(it as unknown as EffectVitestIt, {
     apply(target, thisArg, argArray) {
-      return Reflect.apply(target, thisArg, argArray)
+      return Reflect.apply(target, thisArg, argArray) as unknown
     },
     get(target, property, receiver) {
       if (Object.hasOwn(overrides, property)) {
@@ -300,7 +308,7 @@ const makeItProxy = (
       if (property === 'describe') {
         return describe
       }
-      return Reflect.get(target, property, receiver)
+      return Reflect.get(target, property, receiver) as unknown
     },
   })
 
@@ -317,7 +325,7 @@ export const layerBinderFor = (context: LayerRegistrationContext): LayerBinder =
     const excludeTestServices = options?.excludeTestServices ?? false
     const withTestEnv = excludeTestServices ? layer_ : Layer.provideMerge(layer_, TestEnv)
     const memoMap = options?.memoMap ?? Layer.makeMemoMapUnsafe()
-    const scope = Effect.runSync(Scope.make())
+    const scope = Scope.makeUnsafe('sequential')
     const built: Context.Context<never> = Effect.runSync(
       pipe(Layer.buildWithMemoMap(withTestEnv, memoMap, scope), Effect.orDie),
     )

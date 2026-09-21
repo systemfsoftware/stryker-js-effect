@@ -10,7 +10,7 @@ export interface RegistryTaskInfo {
 export interface HarnessTestContext {
   readonly signal: AbortSignal
   readonly task: RegistryTaskInfo
-  readonly onTestFinished: (finalizer: () => unknown) => void
+  readonly onTestFinished: (finalizer: (context: HarnessTestContext) => unknown) => void
 }
 
 export type HarnessTestFunction = (context: HarnessTestContext) => unknown
@@ -51,7 +51,7 @@ export interface TestRegistry {
   readonly suiteHooks: Map<number, HookSets>
   readonly frames: { current: readonly number[] }
   readonly files: { current: string }
-  readonly perTestFinalizers: Array<(context: HarnessTestContext) => unknown>
+  currentTest: HarnessTestContext | undefined
   registerSuite(name: string, parentIds: readonly number[], mode: TestMode): RegisteredSuite
   registerTest(
     name: string,
@@ -77,7 +77,7 @@ export const createRegistry = (): TestRegistry => {
     suiteHooks,
     frames: { current: [] },
     files,
-    perTestFinalizers: [],
+    currentTest: undefined,
     registerSuite: (name, parentIds, mode) => {
       const suite: RegisteredSuite = { id: ++suiteSeq, name, parentIds, mode }
       suites.set(suite.id, suite)
@@ -121,8 +121,7 @@ export interface RegistryTestApi {
 }
 
 export interface EachApi {
-  (cases: readonly unknown[]): (name: string, fn: EachFn) => void
-  (cases: readonly unknown[], name: string, fn: EachFn): void
+  (cases: readonly unknown[], name?: string, fn?: EachFn): void | ((name: string, fn: EachFn) => void)
 }
 
 export type EachFn = (args: unknown, context: HarnessTestContext) => unknown
@@ -143,8 +142,7 @@ export interface RegistrySuiteApi {
 }
 
 export interface SuiteEachApi {
-  (cases: readonly unknown[]): (name: string, body: EachSuiteBody) => void
-  (cases: readonly unknown[], name: string, body: EachSuiteBody): void
+  (cases: readonly unknown[], name?: string, body?: EachSuiteBody): void | ((name: string, body: EachSuiteBody) => void)
 }
 
 export type SuiteBody = (api: RegistryTestApi) => void
@@ -159,8 +157,7 @@ export interface HarnessApi {
 }
 
 const rowsOf = (cases: readonly unknown[]): ReadonlyArray<unknown> =>
-  cases.map((row) => (Array.isArray(row) ? row[0] : row))
-
+  cases.map((row) => (Array.isArray(row) ? (row[0] as unknown) : row))
 const resolveFn = (fnOrOptions: unknown, maybeFn: unknown): HarnessTestFunction | undefined =>
   typeof fnOrOptions === 'function'
     ? (fnOrOptions as HarnessTestFunction)
@@ -173,15 +170,14 @@ const registerVariants = (registry: TestRegistry, mode: TestMode, inverted: bool
       registry.registerTest(formatEachName(name, row), at(), mode, inverted, (context) => fn(row, context))
     }
   }
-  const each =
-    ((cases: readonly unknown[], name?: string, fn?: EachFn) =>
-      name === undefined || fn === undefined ? bindEach(cases) : bindEach(cases)(name, fn)) as EachApi
+  const each: EachApi = (cases: readonly unknown[], name?: string, fn?: EachFn) =>
+    name === undefined || fn === undefined ? bindEach(cases) : bindEach(cases)(name, fn)
   return Object.assign(
     (name: string, fnOrOptions?: unknown, maybeFn?: unknown) => {
       registry.registerTest(name, at(), mode, inverted, resolveFn(fnOrOptions, maybeFn))
     },
     { each, for: each },
-  ) as unknown as VariantApi
+  )
 }
 
 const createIt = (registry: TestRegistry): RegistryTestApi => {
@@ -198,7 +194,7 @@ const createIt = (registry: TestRegistry): RegistryTestApi => {
       each,
       for: each,
     },
-  ) as unknown as RegistryTestApi
+  )
 }
 
 const createDescribe = (registry: TestRegistry, it: RegistryTestApi): RegistrySuiteApi => {
@@ -218,13 +214,12 @@ const createDescribe = (registry: TestRegistry, it: RegistryTestApi): RegistrySu
         open(formatEachName(name, row), mode, (api) => body(row, api))
       }
     }
-    const each =
-      ((cases: readonly unknown[], name?: string, body?: EachSuiteBody) =>
-        name === undefined || body === undefined ? bindEach(cases) : bindEach(cases)(name, body)) as SuiteEachApi
+    const each: SuiteEachApi = (cases: readonly unknown[], name?: string, body?: EachSuiteBody) =>
+      name === undefined || body === undefined ? bindEach(cases) : bindEach(cases)(name, body)
     return Object.assign((name: string, body: SuiteBody) => open(name, mode, body), {
       each,
       for: each,
-    }) as unknown as SuiteVariants
+    })
   }
   const each = variant('run').each
   return Object.assign((name: string, body: SuiteBody) => open(name, 'run', body), {
@@ -233,7 +228,7 @@ const createDescribe = (registry: TestRegistry, it: RegistryTestApi): RegistrySu
     todo: (name: string) => open(name, 'todo', () => {}),
     each,
     for: each,
-  }) as unknown as RegistrySuiteApi
+  })
 }
 
 const hookAt = (registry: TestRegistry, kind: HookKind, hook: (context: HarnessTestContext) => unknown): void => {
@@ -257,7 +252,11 @@ export const createHarnessApi = (registry: TestRegistry): HarnessApi => {
       beforeEach: (hook) => hookAt(registry, 'beforeEach', hook),
       afterEach: (hook) => hookAt(registry, 'afterEach', hook),
       onTestFinished: (finalizer) => {
-        registry.perTestFinalizers.push(finalizer)
+        const current = registry.currentTest
+        if (current === undefined) {
+          throw new Error('onTestFinished must be called while a test is running')
+        }
+        current.onTestFinished(finalizer)
       },
     },
   }

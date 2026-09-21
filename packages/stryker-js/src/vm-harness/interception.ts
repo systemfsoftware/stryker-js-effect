@@ -1,4 +1,4 @@
-import type { LoadHookSync, RegisterHooksOptions, ResolveHookSync } from 'node:module'
+import type { LoadHookSync, RegisterHooksOptions, ResolveFnOutput, ResolveHookSync } from 'node:module'
 
 import type { VmRunnerGlobalState } from './global-state.js'
 import {
@@ -47,23 +47,49 @@ const resolveWithin: ResolveHookSync = (specifier, context, nextResolve) => {
 
   const harnessUrl = harnessUrlForSpecifier(specifier)
   if (harnessUrl !== undefined && sandbox !== undefined && isSandboxFile(parent, sandbox.prefix)) {
-    return { url: harnessUrl, shortCircuit: true }
+    const salt = saltOf(parent)
+    const scoped = salt === null ? harnessUrl : `${harnessUrl}?salt=${salt}`
+    return { url: scoped, shortCircuit: true }
   }
 
-  const resolved = nextResolve(specifier, context)
+  let resolved: ResolveFnOutput
+  try {
+    resolved = nextResolve(specifier, context)
+  } catch (cause) {
+    if (
+      sandbox !== undefined &&
+      isSandboxFile(parent, sandbox.prefix) &&
+      specifier.endsWith('.js')
+    ) {
+      const tsSpecifier = `${specifier.slice(0, -3)}.ts`
+      resolved = nextResolve(tsSpecifier, context)
+    } else {
+      throw cause
+    }
+  }
   const salt = saltOf(parent)
   if (
     salt !== null &&
     sandbox !== undefined &&
     resolved.url.startsWith(sandbox.prefix) &&
-    !resolved.url.includes('?salt=')
+    !resolved.url.includes('?salt=') &&
+    !resolved.url.includes('&salt=')
   ) {
-    return { url: `${resolved.url}?salt=${salt}`, shortCircuit: true }
+    const sep = resolved.url.includes('?') ? '&' : '?'
+    return { url: `${resolved.url}${sep}salt=${salt}`, shortCircuit: true }
   }
   return resolved
 }
 
 const loadWithin: LoadHookSync = (url, context, nextLoad) => {
+  const queryAt = url.indexOf('?')
+  if (queryAt !== -1 && url.startsWith('vmrunner-harness:')) {
+    const base = url.slice(0, queryAt)
+    const source = harnessSourceFor(base)
+    if (source !== undefined) {
+      return { format: 'module', source, shortCircuit: true }
+    }
+  }
   if (url.startsWith('vmrunner-harness:')) {
     const source = harnessSourceFor(url)
     if (source !== undefined) {
