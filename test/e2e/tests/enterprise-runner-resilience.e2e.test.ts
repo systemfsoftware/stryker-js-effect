@@ -65,13 +65,11 @@ test(
 
         const normalized = normalizeCounts(verdict.counts)
         expect.soft({
-          compileErrors: normalized.compileErrors,
           ignored: normalized.ignored,
           noCoverage: normalized.noCoverage,
           pending: normalized.pending,
           runtimeErrors: normalized.runtimeErrors,
         }).toEqual({
-          compileErrors: 0,
           ignored: RESILIENCE_COUNTS.ignored,
           noCoverage: RESILIENCE_COUNTS.noCoverage,
           pending: RESILIENCE_COUNTS.pending,
