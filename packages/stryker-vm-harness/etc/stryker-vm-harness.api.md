@@ -15,7 +15,7 @@ import * as Scope from 'effect/Scope';
 import { Workflow } from '@systemfsoftware/effect-cell-types';
 
 // @public (undocumented)
-export const activateSandbox: (state: VmRunnerGlobalState, prefix: string) => void;
+export const activateSandbox: (prefix: string) => void;
 
 // Warning: (ae-forgotten-export) The symbol "TestRegistry" needs to be exported by the entry point index.d.mts
 // Warning: (ae-forgotten-export) The symbol "HarnessApi" needs to be exported by the entry point index.d.mts
