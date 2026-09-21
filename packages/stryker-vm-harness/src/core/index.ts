@@ -4,7 +4,6 @@ export {
   createIt,
   createRegistry,
   createVariantApi,
-  formatEachName,
   fullNameOf,
   type HarnessApi,
   type HarnessTestContext,
@@ -47,8 +46,9 @@ export {
   GHERKIN_HARNESS_URL,
   harnessSourceFor,
   harnessUrlForSpecifier,
-  STATE_KEY,
   VITEST_HARNESS_URL,
 } from './sources.js'
+
+export { formatEachName } from './each-name.js'
 
 export { guardedExpect, guardedVi } from './guards.js'

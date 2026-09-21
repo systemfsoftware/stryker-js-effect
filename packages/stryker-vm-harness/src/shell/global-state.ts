@@ -3,8 +3,6 @@ import * as Effect from 'effect/Effect'
 import type { HarnessApi } from '../core/registry.js'
 import { STATE_KEY } from '../core/sources.js'
 
-export { STATE_KEY }
-
 export interface EffectVitestSurface {
   readonly it: unknown
 }

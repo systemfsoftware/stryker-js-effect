@@ -2,7 +2,6 @@ export {
   type EffectVitestSurface,
   readGlobalState,
   readGlobalStateCell,
-  STATE_KEY,
   type VmRunnerGlobalState,
   writeGlobalState,
   writeGlobalStateCell,

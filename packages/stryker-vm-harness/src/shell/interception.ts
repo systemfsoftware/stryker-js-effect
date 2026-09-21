@@ -10,7 +10,6 @@ import {
   harnessUrlForSpecifier,
   VITEST_HARNESS_URL,
 } from '../core/sources.js'
-import type { VmRunnerGlobalState } from './global-state.js'
 
 export type RegisterHooksFn = (hooks: RegisterHooksOptions) => unknown
 
@@ -25,13 +24,11 @@ interface ActiveSandbox {
 interface InterceptionState {
   readonly activeSandboxes: ActiveSandbox[]
   installed: boolean
-  installCount: number
 }
 
 const interceptionState: InterceptionState = {
   activeSandboxes: [],
   installed: false,
-  installCount: 0,
 }
 
 const activeSandbox = (): ActiveSandbox | undefined =>
@@ -119,13 +116,11 @@ const loadWithin: LoadHookSync = (url, context, nextLoad) => {
 const sandboxGate = Semaphore.makeUnsafe(1)
 
 export interface ActivateSandboxCommand {
-  readonly state?: VmRunnerGlobalState | undefined
   readonly prefix: string
 }
 
 export const installInterceptionCell: Cell.Cell<HarnessModuleBuiltin, void> = Cell.fromEffect(Effect.void).pipe(
   Cell.mapInput((nodeModule: HarnessModuleBuiltin) => {
-    interceptionState.installCount += 1
     if (!interceptionState.installed) {
       nodeModule.registerHooks({ resolve: resolveWithin, load: loadWithin })
       interceptionState.installed = true
@@ -134,11 +129,7 @@ export const installInterceptionCell: Cell.Cell<HarnessModuleBuiltin, void> = Ce
   }),
 )
 
-export const uninstallInterceptionCell: Cell.Cell<void, void> = Cell.fromEffect(
-  Effect.sync(() => {
-    interceptionState.installCount = Math.max(0, interceptionState.installCount - 1)
-  }),
-)
+export const uninstallInterceptionCell: Cell.Cell<void, void> = Cell.fromEffect(Effect.void)
 
 export const activateSandboxCell: Cell.Cell<ActivateSandboxCommand, void> = Cell.mapInput(
   Cell.fromEffect(Effect.void),
@@ -168,8 +159,8 @@ export const uninstallInterception = (): void => {
   Effect.runSync(uninstallInterceptionCell.run(undefined))
 }
 
-export const activateSandbox = (state: VmRunnerGlobalState, prefix: string): void => {
-  Effect.runSync(activateSandboxCell.run({ state, prefix }))
+export const activateSandbox = (prefix: string): void => {
+  Effect.runSync(activateSandboxCell.run({ prefix }))
 }
 
 export const deactivateSandbox = (): void => {
@@ -178,7 +169,6 @@ export const deactivateSandbox = (): void => {
 
 export const resetInterceptionForTests = (): void => {
   interceptionState.activeSandboxes.length = 0
-  interceptionState.installCount = 0
 }
 
 export const HARNESS_URLS = [VITEST_HARNESS_URL, EFFECT_VITEST_HARNESS_URL, GHERKIN_HARNESS_URL] as const

@@ -27,7 +27,7 @@ export interface EffectTestOptions {
   readonly arbitrary?: Arbitrary.CheckOptions
 }
 
-type PropertyTimeout = number | (EffectTestOptions & { readonly arbitrary?: Arbitrary.CheckOptions })
+type PropertyTimeout = number | EffectTestOptions
 
 export type EffectTestFunction<R> = (context: HarnessTestContext) => Effect.Effect<unknown, unknown, R>
 
@@ -121,20 +121,6 @@ const runTest = (context: HarnessTestContext) => (effect: Effect.Effect<unknown,
   )
   return promise
 }
-
-export const runTestCell: Cell.Cell<{
-  readonly context: HarnessTestContext
-  readonly effect: Effect.Effect<unknown, unknown, never>
-}, Promise<void>> = Cell.fromEffect(
-  Effect.succeed((
-    cmd: { readonly context: HarnessTestContext; readonly effect: Effect.Effect<unknown, unknown, never> },
-  ) => runTest(cmd.context)(cmd.effect)),
-).pipe(
-  Cell.mapInput((
-    cmd: { readonly context: HarnessTestContext; readonly effect: Effect.Effect<unknown, unknown, never> },
-  ) => cmd),
-  Cell.map((runner) => runner as unknown as Promise<void>),
-)
 
 const testOptions = (timeout?: number | EffectTestOptions): EffectTestOptions =>
   typeof timeout === 'number' ? { timeout } : (timeout ?? {})
@@ -345,7 +331,7 @@ interface BuildLayerCommand {
 }
 export const buildLayerCell: Cell.Cell<BuildLayerCommand, Context.Context<never>> = Cell.suspend(
   () =>
-    Cell.mapInput(Cell.id<BuildLayerCommand>(), (cmd: BuildLayerCommand) => cmd).pipe(
+    Cell.id<BuildLayerCommand>().pipe(
       Cell.map((cmd) =>
         Effect.runSync(
           pipe(Layer.buildWithMemoMap(cmd.layer, cmd.memoMap, cmd.scope), Effect.orDie),

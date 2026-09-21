@@ -47,7 +47,7 @@ describe('shell integration', () => {
     }
     installInterception(dummyBuiltin)
     expect(hooksRegistered).toBe(true)
-    activateSandbox(state, prefix)
+    activateSandbox(prefix)
     writeGlobalState(state)
 
     expect(readGlobalState()).toBe(state)
@@ -102,7 +102,7 @@ describe('shell integration', () => {
       registerHooks: (opts: unknown) => unknown
     }
     installInterception(builtinModule)
-    activateSandbox(state, 'file:///tmp/sandbox/')
+    activateSandbox('file:///tmp/sandbox/')
     writeGlobalState(state)
 
     expect(readGlobalState()).toBe(state)

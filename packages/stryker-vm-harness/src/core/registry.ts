@@ -346,5 +346,3 @@ export const hooksFor = (
   ...registry.rootHooks[kind],
   ...chain.flatMap((id) => registry.suiteHooks.get(id)?.[kind] ?? []),
 ]
-
-export { formatEachName }

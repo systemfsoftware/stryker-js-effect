@@ -183,7 +183,7 @@ const runOnce = (
     namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
 
     installInterception(platform.moduleBuiltin)
-    activateSandbox(state, prefix)
+    activateSandbox(prefix)
     writeGlobalState(state)
 
     let runFailure: RunFailure | undefined
