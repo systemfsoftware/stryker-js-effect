@@ -62,6 +62,39 @@ const IGNORING_SUITE = 'globalThis.__strykerRun = "completed"'
 
 const MALFORMED_SUITE = 'const broken: = 1'
 
+const RAW_API_SUITE = [
+  'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
+  'const { describe, it } = slot.api',
+  'const hookRan = []',
+  'slot.api.hooks.beforeEach(() => { hookRan.push(1) })',
+  '',
+  "describe('math', () => {",
+  "  it('adds numbers', () => {",
+  "    if (1 + 1 !== 2) { throw new Error('expected a sum of two') }",
+  '  })',
+  '',
+  "  it('rejects a wrong async sum', async () => {",
+  '    const value = await Promise.resolve(2)',
+  "    if (value !== 3) { throw new Error('expected the async sum to be three') }",
+  '  })',
+  '})',
+  '',
+  "describe('lifecycle', () => {",
+  '  it("saw the hook run once per test so far", () => {',
+  "    if (hookRan.length !== 3) { throw new Error('expected three hook runs by the last test') }",
+  '  })',
+  '})',
+].join('\n')
+
+const MODULE_STATE_SUITE = [
+  'let timesRun = 0',
+  'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
+  "slot.api.it('starts with no runs on the clock', () => {",
+  '  timesRun += 1',
+  "  if (timesRun !== 1) { throw new Error('expected a fresh run') }",
+  '})',
+].join('\n')
+
 const writeSuite = (
   prefix: string,
   source: string,
@@ -218,6 +251,65 @@ Feature('Verifying mutants without spawning a child process')
               expect(described).toContain('init')
               expect(described).toContain('malformed.test.ts')
             }
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Each test in a suite is reported on its own',
+      Gherkin.Do.pipe(
+        Given('a suite with passing, failing, and nested tests, and a hook around each test')(
+          'suite',
+          () => writeSuite('per-test', RAW_API_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the in-memory runner checks the suite before any mutant runs')(
+          'outcome',
+          (s) =>
+            Effect.flatMap(
+              runnerFor(s.suite),
+              (runner) => runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }),
+            ).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
+        ),
+        Then('every test is reported separately with its own outcome and hook history')((s) =>
+          Effect.sync(() => {
+            const outcome = s.outcome
+            expect(outcome.status).toBe('complete')
+            if (outcome.status !== 'complete') {
+              throw new Error('the dry run did not complete')
+            }
+            const byName = new Map(outcome.tests.map((test) => [test.name, test]))
+            expect(byName.get('math > adds numbers')).toMatchObject({ status: 'success' })
+            expect(byName.get('math > rejects a wrong async sum')).toMatchObject({
+              status: 'failed',
+              failureMessage: 'expected the async sum to be three',
+            })
+            expect(byName.get('lifecycle > saw the hook run once per test so far')).toMatchObject({ status: 'success' })
+            const ids = outcome.tests.map((test) => test.id)
+            expect(new Set(ids).size).toBe(ids.length)
+            for (const id of ids) {
+              expect(id).toContain('#')
+            }
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Module state starts fresh on every verification run',
+      Gherkin.Do.pipe(
+        Given('a suite whose tests count how many times they have run')(
+          'suite',
+          () => writeSuite('module-state', MODULE_STATE_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the in-memory runner checks the suite twice in a row')(
+          'outcome',
+          (s) => runSuite(s.suite),
+        ),
+        Then('the second run starts from clean module state and the change survives')((s) =>
+          Effect.sync(() => {
+            expect(s.outcome.dryRun.status).toBe('complete')
+            expect(s.outcome.mutantRun.status).toBe('survived')
           })
         ),
       ),
