@@ -85,6 +85,8 @@ const tallyOf = (
 const tallySumOf = (tally: Readonly<Record<string, number>>): number =>
   Object.values(tally).reduce((sum, n) => sum + n, 0)
 
+const statusKeyOf = (m: { mutator: string; status: string }): string => `${m.mutator}:${m.status}`
+
 const stepVerifyStreamAndExit = (
   expect: ExpectStatic,
   run: ExecResult,
@@ -92,6 +94,7 @@ const stepVerifyStreamAndExit = (
 ): void => {
   const kinds = events.map((e) => e._tag)
   const preceding = kinds.slice(0, -1)
+  const combined = `${run.stdout}\n${run.stderr}`
 
   expect.soft(run.exitCode).toBe(0)
   expect.soft(terminalIndexesIn(kinds)).toEqual([kinds.length - 1])
@@ -99,8 +102,8 @@ const stepVerifyStreamAndExit = (
   expect.soft(run.stdout).not.toMatch(ANSI_ESCAPE)
   expect.soft(preceding.length).toBeGreaterThan(0)
   expect.soft(preceding.filter((k) => !NON_TERMINAL_RUN_KINDS.includes(k))).toEqual([])
-  expect.soft(`${run.stdout}\n${run.stderr}`).not.toMatch(/Could not restrict "[^"]*worker\.sock"/)
-  expect.soft(`${run.stdout}\n${run.stderr}`).not.toMatch(/[Uu]nhandled (promise )?rejection/)
+  expect.soft(combined).not.toMatch(/Could not restrict "[^"]*worker\.sock"/)
+  expect.soft(combined).not.toMatch(/[Uu]nhandled (promise )?rejection/)
 }
 
 const stepVerifyOracleCounts = (expect: ExpectStatic, verdict: VerdictReached): void => {
@@ -124,8 +127,8 @@ const stepVerifyMutatorTallies = (
 ): void => {
   const reported = events
     .filter((event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map((m) => `${m.mutator}:${m.status}`)
-  const actionable = verdict.mutants.map((m) => `${m.mutator}:${m.status}`)
+    .map(statusKeyOf)
+  const actionable = verdict.mutants.map(statusKeyOf)
 
   expect.soft(reported).toHaveLength(ENTERPRISE_ORACLE.total)
   const reportedTally = tallyOf(Object.keys(ENTERPRISE_ORACLE.mutatorStatusTally), reported)
