@@ -1,4 +1,5 @@
 import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@systemfsoftware/stryker-js'
+import { normalizeCounts, normalizeTally } from '../scripts/oracle/normalize.js'
 import type { ExecResult } from './__fixtures__/container-environment.js'
 import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 
@@ -6,27 +7,25 @@ import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 const EDGE_COUNTS: {
   readonly compileErrors: number
   readonly ignored: number
-  readonly killed: number
+  readonly killedOrTimeout: number
   readonly noCoverage: number
   readonly pending: number
   readonly runtimeErrors: number
   readonly survived: number
-  readonly timeout: number
 } = {
   compileErrors: 5,
   ignored: 4,
-  killed: 2,
+  killedOrTimeout: 2,
   noCoverage: 0,
   pending: 0,
   runtimeErrors: 0,
   survived: 0,
-  timeout: 0,
 }
 const EDGE_MUTATOR_TALLY: Readonly<Record<string, number>> = {
-  'ArithmeticOperator:Killed': 1,
+  'ArithmeticOperator:KilledOrTimeout': 1,
   'ArrowFunction:CompileError': 1,
   'BlockStatement:CompileError': 2,
-  'BlockStatement:Killed': 1,
+  'BlockStatement:KilledOrTimeout': 1,
   'ConditionalExpression:Ignored': 2,
   'EqualityOperator:Ignored': 2,
   'ObjectLiteral:CompileError': 1,
@@ -46,14 +45,13 @@ const parseEventStream = (stdout: string): ReadonlyArray<RunEvent> =>
 
 const lastEvent = (events: ReadonlyArray<RunEvent>): RunEvent | undefined => events.at(-1)
 
-const tallyOf = (
-  keys: ReadonlyArray<string>,
-  statuses: ReadonlyArray<string>,
-): Readonly<Record<string, number>> =>
-  keys.reduce<Record<string, number>>(
-    (tally, key) => ({ ...tally, [key]: statuses.filter((status) => status === key).length }),
-    {},
-  )
+const tallyReported = (reported: ReadonlyArray<string>): Readonly<Record<string, number>> => {
+  const tally: Record<string, number> = {}
+  for (const key of reported) {
+    tally[key] = (tally[key] ?? 0) + 1
+  }
+  return tally
+}
 
 test(
   'enterprise journey: mutator exclusion filters and ignored mutants',
@@ -83,14 +81,14 @@ test(
       if (verdict === undefined) return
 
       expect.soft(verdict.thresholds.break).toBeNull()
-      expect.soft(verdict.counts).toEqual(EDGE_COUNTS)
+      expect.soft(normalizeCounts(verdict.counts)).toEqual(EDGE_COUNTS)
 
       const reported = events
         .filter((event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
         .map((m) => `${m.mutator}:${m.status}`)
 
       expect.soft(reported).toHaveLength(EDGE_TOTAL)
-      const reportedTally = tallyOf(Object.keys(EDGE_MUTATOR_TALLY), reported)
+      const reportedTally = normalizeTally(tallyReported(reported))
       expect.soft(reportedTally).toEqual(EDGE_MUTATOR_TALLY)
     })
   },

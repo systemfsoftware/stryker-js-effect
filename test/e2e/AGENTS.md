@@ -1,14 +1,14 @@
 # AGENTS.md — `@systemfsoftware/stryker-e2e`
 
-Private E2E lane for the shipped `stryker` artifact: it packs the CLI and the
-vitest-runner plugin fresh, installs the CLI tarball into one digest-pinned
-`node:24-alpine` container, and asserts the published contract. Publishes no
+Private E2E lane for the shipped `stryker` artifact: it packs the workspace closure, bakes every fixture's
+`npm install` into one immutable digest-pinned `node:24-alpine` image, and runs each engine invocation as a
+one-shot `run --rm` container against a fresh host-side workspace bind-mounted at `/work`. Publishes no
 artifact. Parent: `test/AGENTS.md`.
 
 ## Run
 
 ```bash
-DOCKER_HOST=unix://$(podman info --format '{{.Host.RemoteSocket.Path}}') TESTCONTAINERS_RYUK_PRIVILEGED=true pnpm test:e2e
+pnpm test:e2e
 ```
 
 ## Rules
@@ -39,20 +39,20 @@ under the run's working directory. Journeys parse stdout.
 
 ## Container environment
 
-Read by testcontainers; the `test:e2e` turbo task passes them through.
+Read by `container-environment.ts`; the `test:e2e` turbo task passes them through.
 
-| Variable                         | Value                                                             | Why                                                                                           |
-| -------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `DOCKER_HOST`                    | `unix://$(podman info --format '{{.Host.RemoteSocket.Path}}')`    | Point testcontainers at the podman socket; leave unset under Docker.                          |
-| `TESTCONTAINERS_RYUK_PRIVILEGED` | `true`                                                            | Rootful podman — Ryuk needs privilege to mount the root-owned socket.                         |
-| `TESTCONTAINERS_RYUK_DISABLED`   | `true`                                                            | Rootless podman — Ryuk cannot run; the suite still stops its container in `afterAll`.         |
-| `TESTCONTAINERS_HOST_OVERRIDE`   | host or IP                                                        | The hostname a container uses to reach the Docker host (remote daemon or CI-in-container).    |
-| `OTEL_ENABLED`                   | `true` starts the CLI's, its workers' and the test process's SDKs | The Effect-skew journey grades the run's trace; the CI `e2e` job sets it                      |
-| `OTEL_SERVICE_NAME`              | default `stryker-e2e`                                             | One service name across the CLI, its workers and the test process — what the journey searches |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`    | default `http://127.0.0.1:4318`                                   | The collector the container exports to                                                        |
+| Variable                      | Value                                                             | Why                                                                                           |
+| ----------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `RUNTIME`                     | `podman` or `docker`                                              | Container binary override; without it the lane probes `podman` then `docker` on `PATH`        |
+| `OTEL_ENABLED`                | `true` starts the CLI's, its workers' and the test process's SDKs | The Effect-skew journey grades the run's trace; the CI `e2e` job sets it                      |
+| `OTEL_SERVICE_NAME`           | default `stryker-e2e`                                             | One service name across the CLI, its workers and the test process — what the journey searches |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | default `http://127.0.0.1:4318`                                   | The collector the container exports to                                                        |
 
-`container-environment.ts` passes those three into every container exec, so a spawned worker inherits them. The
-container runs on the **host network**, which is what lets its loopback-bound collector be reached.
+`container-environment.ts` passes the OTEL variables into every one-shot run, so a spawned worker inherits them.
+The lane probes host networking once per image: where the runtime supports `--network host` (docker, rootful
+podman) the container reaches the loopback collector directly; otherwise the endpoint's loopback host is
+rewritten to `host.containers.internal`. Buildah's overlay scaffolding cannot live on an overlay filesystem, so
+image builds run with `TMPDIR` on `/dev/shm` when it exists (nix dev shells bind TMPDIR onto an overlay).
 
 ## Fixture plugins
 

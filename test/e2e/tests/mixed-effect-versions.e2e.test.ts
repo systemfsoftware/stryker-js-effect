@@ -1,10 +1,5 @@
-import { beforeAll, type ExpectStatic } from 'vitest'
-import {
-  ensureSkewChecker,
-  type ExecResult,
-  type PackedPackage,
-  SKEW_EFFECT_VERSION,
-} from './__fixtures__/container-environment.js'
+import { type ExpectStatic } from 'vitest'
+import { type ExecResult, SKEW_EFFECT_VERSION } from './__fixtures__/container-environment.js'
 import { test } from './__fixtures__/container-harness.js'
 import { pollWindowSpans, type TraceSpan } from './__fixtures__/tempo.js'
 
@@ -82,15 +77,10 @@ const isWitnessSpan = (span: TraceSpan): boolean => span.name === WITNESS_SPAN_N
 const isHostPhaseSpan = (span: TraceSpan): boolean => HOST_PHASE_SPAN_NAMES.includes(span.name)
 
 const effectVersionOf = (span: TraceSpan): string | undefined => span.attributes.get('effect.version')
-let skewChecker: PackedPackage
-
-beforeAll(async () => {
-  skewChecker = await ensureSkewChecker()
-})
 
 test('running a mutation run whose checker worker was built on a different effect release', async ({ annotate, expect, prepareFixture }) => {
   await annotate('Step 1: Install fixture using skewed checker', 'lifecycle')
-  const fixture = await prepareFixture(SKEW_FIXTURE_URL, SKEW_FIXTURE_NAME, [skewChecker])
+  const fixture = await prepareFixture(SKEW_FIXTURE_URL, SKEW_FIXTURE_NAME)
 
   await annotate('Step 2: Execute CLI with OTel telemetry window', 'execution')
   const startedSeconds = Math.floor(Date.now() / 1000) - 5

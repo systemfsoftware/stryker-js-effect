@@ -34,7 +34,6 @@
     "effect": "catalog:",
     "fast-check": "catalog:",
     "oxlint": "catalog:",
-    "testcontainers": "catalog:",
     "ts-morph": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",

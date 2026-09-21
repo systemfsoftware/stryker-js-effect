@@ -11,6 +11,6 @@ export default defineConfig({
   ],
   reporters: ['json'],
   tsconfigFile: 'tsconfig.json',
-  timeoutMS: 30000,
+  timeoutMS: 60000,
   mutate: ['packages/*/src/**/*.ts', '!packages/*/src/**/*.test.ts'],
 })

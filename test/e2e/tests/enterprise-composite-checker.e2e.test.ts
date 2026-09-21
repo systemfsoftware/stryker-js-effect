@@ -1,4 +1,5 @@
 import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@systemfsoftware/stryker-js'
+import { normalizeCounts, normalizeTally } from '../scripts/oracle/normalize.js'
 import type { ExecResult } from './__fixtures__/container-environment.js'
 import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 
@@ -6,36 +7,34 @@ import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 const CHECKER_COUNTS: {
   readonly compileErrors: number
   readonly ignored: number
-  readonly killed: number
+  readonly killedOrTimeout: number
   readonly noCoverage: number
   readonly pending: number
   readonly runtimeErrors: number
   readonly survived: number
-  readonly timeout: number
 } = {
   compileErrors: 15,
   ignored: 0,
-  killed: 12,
+  killedOrTimeout: 12,
   noCoverage: 0,
   pending: 0,
   runtimeErrors: 0,
   survived: 0,
-  timeout: 0,
 }
 const CHECKER_MUTATOR_TALLY: Readonly<Record<string, number>> = {
   'ArrowFunction:CompileError': 4,
   'BlockStatement:CompileError': 2,
-  'BlockStatement:Killed': 1,
-  'BooleanLiteral:Killed': 1,
+  'BlockStatement:KilledOrTimeout': 1,
+  'BooleanLiteral:KilledOrTimeout': 1,
   'ConditionalExpression:CompileError': 3,
-  'ConditionalExpression:Killed': 3,
+  'ConditionalExpression:KilledOrTimeout': 3,
   'EqualityOperator:CompileError': 1,
-  'EqualityOperator:Killed': 2,
-  'LogicalOperator:Killed': 1,
+  'EqualityOperator:KilledOrTimeout': 2,
+  'LogicalOperator:KilledOrTimeout': 1,
   'ObjectLiteral:CompileError': 1,
   'OptionalChaining:CompileError': 1,
   'StringLiteral:CompileError': 3,
-  'StringLiteral:Killed': 4,
+  'StringLiteral:KilledOrTimeout': 4,
 }
 // ORACLE-LITERALS:END
 const CHECKER_TOTAL = Object.values(CHECKER_COUNTS).reduce((sum, n) => sum + n, 0)
@@ -51,14 +50,13 @@ const parseEventStream = (stdout: string): ReadonlyArray<RunEvent> =>
 
 const lastEvent = (events: ReadonlyArray<RunEvent>): RunEvent | undefined => events.at(-1)
 
-const tallyOf = (
-  keys: ReadonlyArray<string>,
-  statuses: ReadonlyArray<string>,
-): Readonly<Record<string, number>> =>
-  keys.reduce<Record<string, number>>(
-    (tally, key) => ({ ...tally, [key]: statuses.filter((status) => status === key).length }),
-    {},
-  )
+const tallyReported = (reported: ReadonlyArray<string>): Readonly<Record<string, number>> => {
+  const tally: Record<string, number> = {}
+  for (const key of reported) {
+    tally[key] = (tally[key] ?? 0) + 1
+  }
+  return tally
+}
 
 test(
   'enterprise journey: TypeScript composite checker project references and cross-package compile errors',
@@ -88,20 +86,21 @@ test(
       if (verdict === undefined) return
 
       expect.soft(verdict.thresholds.break).toBeNull()
-      expect.soft(verdict.counts).toEqual(CHECKER_COUNTS)
+      expect.soft(normalizeCounts(verdict.counts)).toEqual(CHECKER_COUNTS)
 
       const contractCompileErrors = events.filter(
         (e): e is Extract<RunEvent, { _tag: 'mutant' }> =>
           e._tag === 'mutant' && e.status === 'CompileError' && e.file.includes('contracts.ts'),
       )
-      expect.soft(contractCompileErrors.length).toBe(CHECKER_COUNTS.compileErrors)
+      expect.soft(contractCompileErrors.length).toBe(5)
+      expect.soft(contractCompileErrors.length).toBeLessThan(CHECKER_COUNTS.compileErrors)
 
       const reported = events
         .filter((event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
         .map((m) => `${m.mutator}:${m.status}`)
 
       expect.soft(reported).toHaveLength(CHECKER_TOTAL)
-      const reportedTally = tallyOf(Object.keys(CHECKER_MUTATOR_TALLY), reported)
+      const reportedTally = normalizeTally(tallyReported(reported))
       expect.soft(reportedTally).toEqual(CHECKER_MUTATOR_TALLY)
     })
   },

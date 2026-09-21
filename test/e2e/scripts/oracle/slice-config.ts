@@ -17,7 +17,8 @@ export interface OracleSliceConfig {
   readonly mutateFiles: readonly string[]
   readonly excludedMutations: readonly string[]
   readonly journeyUsesTally: boolean
-  readonly packageGlobs: readonly string[]
+  readonly survivedFloorBand: boolean
+  readonly timeoutFloorBand: boolean
 }
 
 export const ENTERPRISE_FIXTURE_DIR = fileURLToPath(
@@ -33,6 +34,8 @@ export const ORACLE_SLICES: Readonly<Record<OracleSliceConfig['id'], OracleSlice
     mutateFiles: ['packages/*/src/**/*.ts', '!packages/*/src/**/*.test.ts'],
     excludedMutations: [],
     journeyUsesTally: true,
+    survivedFloorBand: true,
+    timeoutFloorBand: false,
     packageGlobs: ['packages/core', 'packages/services', 'packages/api', 'packages/analytics'],
   },
   edge: {
@@ -43,6 +46,8 @@ export const ORACLE_SLICES: Readonly<Record<OracleSliceConfig['id'], OracleSlice
     mutateFiles: ['packages/services/src/inventory.ts'],
     excludedMutations: ['ConditionalExpression', 'EqualityOperator'],
     journeyUsesTally: true,
+    survivedFloorBand: false,
+    timeoutFloorBand: false,
     packageGlobs: ['packages/services'],
   },
   checker: {
@@ -53,6 +58,8 @@ export const ORACLE_SLICES: Readonly<Record<OracleSliceConfig['id'], OracleSlice
     mutateFiles: ['packages/core/src/contracts.ts', 'packages/api/src/report.ts'],
     excludedMutations: [],
     journeyUsesTally: true,
+    survivedFloorBand: false,
+    timeoutFloorBand: false,
     packageGlobs: ['packages/core', 'packages/api'],
   },
   resilience: {
@@ -63,6 +70,8 @@ export const ORACLE_SLICES: Readonly<Record<OracleSliceConfig['id'], OracleSlice
     mutateFiles: ['packages/services/src/concurrency.ts'],
     excludedMutations: [],
     journeyUsesTally: false,
+    survivedFloorBand: false,
+    timeoutFloorBand: true,
     packageGlobs: ['packages/services'],
   },
 })

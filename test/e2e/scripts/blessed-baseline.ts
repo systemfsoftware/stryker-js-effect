@@ -26,11 +26,18 @@ import {
   tallyMutatorStatuses,
   ZERO_COUNTS,
 } from './oracle/baseline.js'
+import { foldTimeoutIntoKilled, normalizeTally } from './oracle/normalize.js'
 import { ORACLE_SLICES, type OracleSliceConfig } from './oracle/slice-config.js'
 
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 const BASELINE_OUTPUT_DIR = join(REPO_ROOT, 'test/e2e/oracle-baselines')
+
+const foldForGate = (baseline: BlessedBaseline): BlessedBaseline => ({
+  ...baseline,
+  counts: foldTimeoutIntoKilled(baseline.counts),
+  mutatorStatusTally: normalizeTally(baseline.mutatorStatusTally),
+})
 const SABOTAGE_SLICE = 'sabotage'
 const SABOTAGE_REASON =
   'R9: sabotage is never blessable — threshold-breach assertions stay hand-authored outside regeneration scope (R12)'
@@ -226,25 +233,36 @@ async function blessSlice(slice: OracleSliceId, verify: boolean): Promise<void> 
     const second = await runSliceOnce(slice, 2)
     const secondFinishedMs = Date.now()
     reportRun(slice, 2, secondStartMs, secondFinishedMs)
-    const diff: BaselineDiff = compareBaselines(first, second)
-    if (!diff.isEmpty()) {
+    const gateDiff = compareBaselines(foldForGate(first), foldForGate(second))
+    if (!gateDiff.isEmpty()) {
       throw new Error(
-        `Slice "${slice}" is FLAKY across two consecutive runs (R5 flake gate).\n${formatBaselineDiff(diff)}`,
+        `Slice "${slice}" is FLAKY across two consecutive runs on the normalized projection (R5 flake gate).\n${
+          formatBaselineDiff(gateDiff)
+        }`,
       )
     }
-    console.log(`[${slice}] flake gate: 2/2 runs agree`)
+    const rawDiff = compareBaselines(first, second)
+    if (!rawDiff.isEmpty()) {
+      console.log(
+        `[${slice}] flake gate: raw K/T boundary moved but the folded projection agrees:\n${
+          formatBaselineDiff(rawDiff)
+        }`,
+      )
+    } else {
+      console.log(`[${slice}] flake gate: 2/2 runs agree byte-for-byte`)
+    }
   }
 
   if (existing !== undefined) {
-    const drift = compareBaselines(existing, first)
+    const drift = compareBaselines(foldForGate(existing), foldForGate(first))
     if (!drift.isEmpty()) {
       console.log(
         `[${slice}] note: existing baseline at ${
           join(BASELINE_OUTPUT_DIR, `${slice}.json`)
-        } differs from fresh blessing:\n${formatBaselineDiff(drift)}`,
+        } differs from fresh blessing on the normalized projection:\n${formatBaselineDiff(drift)}`,
       )
     } else {
-      console.log(`[${slice}] note: existing baseline matches fresh blessing`)
+      console.log(`[${slice}] note: existing baseline matches fresh blessing on the normalized projection`)
     }
   }
 

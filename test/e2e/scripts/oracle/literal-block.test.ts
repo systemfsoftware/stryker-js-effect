@@ -6,16 +6,15 @@ const literals = {
   counts: {
     compileErrors: 5,
     ignored: 4,
-    killed: 2,
+    killedOrTimeout: 2,
     noCoverage: 0,
     pending: 0,
     runtimeErrors: 0,
     survived: 0,
-    timeout: 0,
   },
   mutatorStatusTally: {
     'EqualityOperator:Ignored': 2,
-    'ArithmeticOperator:Killed': 1,
+    'ArithmeticOperator:KilledOrTimeout': 1,
     'ConditionalExpression:Ignored': 2,
   },
 }
@@ -45,9 +44,9 @@ describe('renderLiteralBlock', () => {
 describe('spliceLiteralBlock', () => {
   it('replaces the region between markers and preserves surrounding bytes', () => {
     const before = `import { test } from './harness.js'\n\n${renderLiteralBlock(literals)}\n\nconst EDGE_TOTAL = 11\n`
-    const nextLiterals = { ...literals, counts: { ...literals.counts, killed: 3 } }
+    const nextLiterals = { ...literals, counts: { ...literals.counts, killedOrTimeout: 3 } }
     const after = spliceLiteralBlock(before, renderLiteralBlock(nextLiterals))
-    expect(after).toContain('killed: 3,')
+    expect(after).toContain('killedOrTimeout: 3,')
     expect(after.startsWith(`import { test } from './harness.js'\n\n${BLOCK_BEGIN}`)).toBe(true)
     expect(after.endsWith(`\n\nconst EDGE_TOTAL = 11\n`)).toBe(true)
     expect(extractLiteralBlock(after)).toBe(renderLiteralBlock(nextLiterals))
