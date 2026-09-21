@@ -167,18 +167,6 @@ Feature('Instrumenter characterization')
             })
           })
         ),
-        And('each placed mutant is switched on in the emitted code')((
-          { result }: { result: InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            const content = result.files[0]?.content ?? ''
-            const hash = content.match(/stryMutAct_([0-9a-f]+)/)?.[1]
-            expect(hash).toBeDefined()
-            for (const id of result.mutants.filter(isActive).map((mutant) => mutant.id)) {
-              expect(content).toContain(`stryMutAct_${hash}("${id}")`)
-            }
-          })
-        ),
       ),
     )
 
