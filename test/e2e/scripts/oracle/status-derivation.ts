@@ -13,6 +13,7 @@ export interface CompileErrorFlags {
 
 export interface StaticOracleSlice {
   readonly familyTally: Readonly<Record<string, number>>
+  readonly placementTally: Readonly<Record<string, number>>
   readonly ignoredCount: number
   readonly compileErrorCount: number
   readonly compileErrorCodes: Readonly<Record<number, number>>
@@ -70,6 +71,9 @@ export function deriveStaticOracleSlice(
 
   return {
     familyTally,
+    placementTally: Object.fromEntries(
+      Object.entries(inventory.mutatorTally).filter(([, count]) => count > 0),
+    ),
     ignoredCount: inventory.ignoredCount,
     compileErrorCount,
     compileErrorCodes,

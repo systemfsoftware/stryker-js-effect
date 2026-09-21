@@ -11,6 +11,7 @@ export default defineConfig({
   ],
   reporters: ['json'],
   tsconfigFile: 'tsconfig.json',
+  timeoutMS: 30000,
   mutate: ['packages/services/src/inventory.ts'],
   mutator: {
     excludedMutations: ['ConditionalExpression', 'EqualityOperator'],

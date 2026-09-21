@@ -1,24 +1,32 @@
+import { readFileSync } from 'node:fs'
+
 import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@systemfsoftware/stryker-js'
+import { type BlessedBaseline, decodeBaseline } from '../scripts/oracle/baseline.js'
 import type { ExecResult } from './__fixtures__/container-environment.js'
 import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 
-const RESILIENCE_ORACLE = {
-  counts: {
-    compileErrors: 14,
-    ignored: 0,
-    killed: 12,
-    noCoverage: 0,
-    pending: 0,
-    runtimeErrors: 0,
-    survived: 10,
-    timeout: 18,
-  },
-  killed: 12,
-  survived: 10,
-  timeout: 18,
-  compileErrors: 14,
-  total: 54,
-} as const
+function loadResilienceBaseline(): BlessedBaseline {
+  const url = new URL('../oracle-baselines/resilience.json', import.meta.url)
+  try {
+    return decodeBaseline(readFileSync(url, 'utf8'))
+  } catch (cause) {
+    throw new Error(
+      `Failed to load blessed baseline for slice "resilience" at ${url.pathname}: ${(cause as Error).message}`,
+      { cause },
+    )
+  }
+}
+
+const RESILIENCE_BASELINE: BlessedBaseline = loadResilienceBaseline()
+const RESILIENCE_COUNTS = RESILIENCE_BASELINE.counts
+const RESILIENCE_TOTAL = RESILIENCE_COUNTS.compileErrors +
+  RESILIENCE_COUNTS.ignored +
+  RESILIENCE_COUNTS.killed +
+  RESILIENCE_COUNTS.noCoverage +
+  RESILIENCE_COUNTS.pending +
+  RESILIENCE_COUNTS.runtimeErrors +
+  RESILIENCE_COUNTS.survived +
+  RESILIENCE_COUNTS.timeout
 
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 
@@ -59,18 +67,18 @@ test(
       if (verdict === undefined) return
 
       expect.soft(verdict.thresholds.break).toBeNull()
-      expect.soft(verdict.counts).toEqual(RESILIENCE_ORACLE.counts)
+      expect.soft(verdict.counts).toEqual(RESILIENCE_COUNTS)
 
       const reportedMutants = events.filter(
         (event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant',
       )
-      expect.soft(reportedMutants).toHaveLength(RESILIENCE_ORACLE.total)
+      expect.soft(reportedMutants).toHaveLength(RESILIENCE_TOTAL)
 
       const timeouts = reportedMutants.filter((m) => m.status === 'Timeout')
-      expect.soft(timeouts).toHaveLength(RESILIENCE_ORACLE.timeout)
+      expect.soft(timeouts).toHaveLength(RESILIENCE_COUNTS.timeout)
 
       const survivors = reportedMutants.filter((m) => m.status === 'Survived')
-      expect.soft(survivors).toHaveLength(RESILIENCE_ORACLE.survived)
+      expect.soft(survivors).toHaveLength(RESILIENCE_COUNTS.survived)
     })
   },
 )

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -259,6 +259,12 @@ export function installFixture(
     if (running === undefined) {
       throw new Error('container environment has no running container: await ensureContainerEnvironment() first')
     }
+    await requireStep(`verify the ${name} fixture exists on the host`, async () => {
+      const st = await stat(hostFixtureDir).catch(() => undefined)
+      if (st === undefined || !st.isDirectory()) {
+        throw new Error(`fixture directory does not exist on the host: ${hostFixtureDir}`)
+      }
+    })
     const fixturePath = `${CONTAINER_WORKROOT}/${name}`
     await requireStep(
       `copy the ${name} fixture into the container`,

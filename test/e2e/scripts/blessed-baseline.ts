@@ -4,9 +4,13 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { type RunEvent, RunEventWireLine, S } from '@systemfsoftware/stryker-js'
-import * as Effect from 'effect/Effect'
 
-import { type ExecResult, installFixture, runCli } from '../tests/__fixtures__/container-environment.js'
+import {
+  type ExecResult,
+  installFixture,
+  runCli,
+  teardownContainerEnvironment,
+} from '../tests/__fixtures__/container-environment.js'
 import {
   ARTIFACT_CONTRACT,
   type BaselineCountKey,
@@ -24,8 +28,8 @@ import {
 } from './oracle/baseline.js'
 import { ORACLE_SLICES, type OracleSliceConfig } from './oracle/slice-config.js'
 
-const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
-const ENTERPRISE_FIXTURE_URL = new URL('../../testResources/enterprise-monorepo-fixture', import.meta.url)
+const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 const BASELINE_OUTPUT_DIR = join(REPO_ROOT, 'test/e2e/oracle-baselines')
 const SABOTAGE_SLICE = 'sabotage'
 const SABOTAGE_REASON =
@@ -55,7 +59,7 @@ function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
     if (arg.startsWith('--')) {
       throw new Error(`Unknown flag: ${arg}`)
     }
-    slices.push(arg as OracleSliceId)
+    slices.push(ensureKnownSlice(arg))
   }
   if (slices.length === 0) {
     throw new Error(`No slices provided. Valid slices: ${listValidSliceIds()}`)
@@ -90,7 +94,7 @@ type MutantEvent = Extract<RunEvent, { _tag: 'mutant' }>
 type VerdictEvent = Extract<RunEvent, { _tag: 'verdict' }>
 
 function decodeWireLine(line: string, _slice: OracleSliceId): RunEvent {
-  return Effect.runSync(S.decode(RunEventWireLine)(line).pipe(Effect.orDie))
+  return S.decodeUnknownSync(RunEventWireLine)(line)
 }
 
 interface ParsedRun {
@@ -171,7 +175,7 @@ async function runSliceOnce(slice: OracleSliceId, attempt: number): Promise<Bles
   const config = ORACLE_SLICES[slice]
   const fixtureName = `oracle-${slice}`
   const installedPath = await installFixture(ENTERPRISE_FIXTURE_URL, fixtureName)
-  const args: string[] = ['mutate', '--config', config.strykerConfig]
+  const args: string[] = ['run', config.strykerConfig]
   const run: ExecResult = await runCli(args, { cwd: installedPath })
   if (run.exitCode !== 0) {
     throw new Error(
@@ -224,11 +228,9 @@ async function blessSlice(slice: OracleSliceId, verify: boolean): Promise<void> 
     reportRun(slice, 2, secondStartMs, secondFinishedMs)
     const diff: BaselineDiff = compareBaselines(first, second)
     if (!diff.isEmpty()) {
-      console.error(
+      throw new Error(
         `Slice "${slice}" is FLAKY across two consecutive runs (R5 flake gate).\n${formatBaselineDiff(diff)}`,
       )
-      process.exit(1)
-      return
     }
     console.log(`[${slice}] flake gate: 2/2 runs agree`)
   }
@@ -258,9 +260,13 @@ async function main(): Promise<void> {
   if (args.verify && args.slices.length > 1) {
     throw new Error('--verify runs two consecutive runs per slice; pass exactly one slice with --verify')
   }
-  for (const requested of args.slices) {
-    const known = ensureKnownSlice(requested)
-    await blessSlice(known, args.verify)
+  try {
+    for (const requested of args.slices) {
+      const known = ensureKnownSlice(requested)
+      await blessSlice(known, args.verify)
+    }
+  } finally {
+    await teardownContainerEnvironment()
   }
 }
 

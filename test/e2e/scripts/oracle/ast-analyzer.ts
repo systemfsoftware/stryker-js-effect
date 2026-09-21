@@ -72,6 +72,19 @@ const METHOD_NULL_MAP: Readonly<Record<string, true>> = Object.freeze({
   trim: true,
 })
 
+const BOOLEAN_OPERATOR_SYNTAX_KINDS: Readonly<Record<number, string>> = Object.freeze({
+  [SyntaxKind.ExclamationEqualsToken]: '!=',
+  [SyntaxKind.ExclamationEqualsEqualsToken]: '!==',
+  [SyntaxKind.AmpersandAmpersandToken]: '&&',
+  [SyntaxKind.LessThanToken]: '<',
+  [SyntaxKind.LessThanEqualsToken]: '<=',
+  [SyntaxKind.EqualsEqualsToken]: '==',
+  [SyntaxKind.EqualsEqualsEqualsToken]: '===',
+  [SyntaxKind.GreaterThanToken]: '>',
+  [SyntaxKind.GreaterThanEqualsToken]: '>=',
+  [SyntaxKind.BarBarToken]: '||',
+})
+
 const METHOD_INVERTED_MAP: Readonly<Record<string, string>> = Object.freeze({
   endsWith: 'startsWith',
   startsWith: 'endsWith',
@@ -324,6 +337,15 @@ function regexTargetsForNode(node: Node): readonly RegexTarget[] {
   return []
 }
 
+function isTestOfConditionOrLoop(node: Node): boolean {
+  const parent = node.getParent()
+  if (parent === undefined) return false
+  if (Node.isIfStatement(parent)) return parent.getExpression() === node
+  if (Node.isWhileStatement(parent) || Node.isDoStatement(parent)) return parent.getExpression() === node
+  if (Node.isForStatement(parent)) return parent.getCondition() === node
+  return false
+}
+
 function collectMemberName(
   node: Node,
 ): { readonly objectText: string; readonly name: string; readonly optional: boolean } | undefined {
@@ -532,6 +554,70 @@ export function analyzeFileWithTsMorph(
             end: tokenEnd,
           })
           break
+        case SyntaxKind.PercentEqualsToken:
+          rawMutants.push({
+            line,
+            mutatorName: 'AssignmentOperator',
+            replacement: '*=',
+            start: tokenStart,
+            end: tokenEnd,
+          })
+          break
+        case SyntaxKind.LessThanLessThanEqualsToken:
+          rawMutants.push({
+            line,
+            mutatorName: 'AssignmentOperator',
+            replacement: '>>=',
+            start: tokenStart,
+            end: tokenEnd,
+          })
+          break
+        case SyntaxKind.GreaterThanGreaterThanEqualsToken:
+          rawMutants.push({
+            line,
+            mutatorName: 'AssignmentOperator',
+            replacement: '<<=',
+            start: tokenStart,
+            end: tokenEnd,
+          })
+          break
+        case SyntaxKind.AmpersandEqualsToken:
+          rawMutants.push({
+            line,
+            mutatorName: 'AssignmentOperator',
+            replacement: '|=',
+            start: tokenStart,
+            end: tokenEnd,
+          })
+          break
+        case SyntaxKind.BarEqualsToken:
+          rawMutants.push({
+            line,
+            mutatorName: 'AssignmentOperator',
+            replacement: '&=',
+            start: tokenStart,
+            end: tokenEnd,
+          })
+          break
+      }
+
+      const booleanOpToken = BOOLEAN_OPERATOR_SYNTAX_KINDS[opToken]
+      if (booleanOpToken !== undefined && !isTestOfConditionOrLoop(node)) {
+        const parent = node.getParent()
+        if (Node.isBinaryExpression(parent)) {
+          const parentToken = parent.getOperatorToken().getKind()
+          if (parentToken === SyntaxKind.AmpersandAmpersandToken) {
+            pushBinary('ConditionalExpression', 'true')
+          } else if (parentToken === SyntaxKind.BarBarToken) {
+            pushBinary('ConditionalExpression', 'false')
+          } else {
+            pushBinary('ConditionalExpression', 'true')
+            pushBinary('ConditionalExpression', 'false')
+          }
+        } else {
+          pushBinary('ConditionalExpression', 'true')
+          pushBinary('ConditionalExpression', 'false')
+        }
       }
     }
     const kind = node.getKind()
@@ -551,6 +637,44 @@ export function analyzeFileWithTsMorph(
         start: node.getStart(),
         end: node.getEnd(),
       })
+    }
+
+    if (Node.isIfStatement(node)) {
+      const test = node.getExpression()
+      rawMutants.push({
+        line: test.getStartLineNumber(),
+        mutatorName: 'ConditionalExpression',
+        replacement: 'true',
+        start: test.getStart(),
+        end: test.getEnd(),
+      })
+      rawMutants.push({
+        line: test.getStartLineNumber(),
+        mutatorName: 'ConditionalExpression',
+        replacement: 'false',
+        start: test.getStart(),
+        end: test.getEnd(),
+      })
+    } else if (Node.isWhileStatement(node) || Node.isDoStatement(node)) {
+      const test = node.getExpression()
+      rawMutants.push({
+        line: test.getStartLineNumber(),
+        mutatorName: 'ConditionalExpression',
+        replacement: 'false',
+        start: test.getStart(),
+        end: test.getEnd(),
+      })
+    } else if (Node.isForStatement(node)) {
+      const test = node.getCondition()
+      if (test !== undefined) {
+        rawMutants.push({
+          line: test.getStartLineNumber(),
+          mutatorName: 'ConditionalExpression',
+          replacement: 'false',
+          start: test.getStart(),
+          end: test.getEnd(),
+        })
+      }
     }
 
     if (Node.isStringLiteral(node)) {

@@ -35,6 +35,7 @@
     "oxlint": "catalog:",
     "testcontainers": "catalog:",
     "ts-morph": "catalog:",
+    "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

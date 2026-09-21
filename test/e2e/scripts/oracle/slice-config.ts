@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 /**
  * Slice registry: the four registered enterprise slices and their fixture-
  * relative configuration, read verbatim from the authored stryker.*.config.ts
@@ -17,7 +19,9 @@ export interface OracleSliceConfig {
   readonly packageGlobs: readonly string[]
 }
 
-export const ENTERPRISE_FIXTURE_DIR = 'test/e2e/testResources/enterprise-monorepo-fixture'
+export const ENTERPRISE_FIXTURE_DIR = fileURLToPath(
+  new URL('../../testResources/enterprise-monorepo-fixture', import.meta.url),
+)
 
 export const ORACLE_SLICES: Readonly<Record<OracleSliceConfig['id'], OracleSliceConfig>> = Object.freeze({
   lifecycle: {

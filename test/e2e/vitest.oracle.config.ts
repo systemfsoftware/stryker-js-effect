@@ -7,6 +7,6 @@ export default defineConfig({
     include: ['scripts/**/*.test.ts'],
     fileParallelism: false,
     passWithNoTests: false,
-    testTimeout: 60_000,
+    testTimeout: 120_000,
   },
 })

@@ -1,34 +1,33 @@
+import { readFileSync } from 'node:fs'
+
 import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@systemfsoftware/stryker-js'
+import { type BlessedBaseline, decodeBaseline } from '../scripts/oracle/baseline.js'
 import type { ExecResult } from './__fixtures__/container-environment.js'
 import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 
-const EDGE_ORACLE = {
-  counts: {
-    compileErrors: 5,
-    ignored: 4,
-    killed: 2,
-    noCoverage: 0,
-    pending: 0,
-    runtimeErrors: 0,
-    survived: 0,
-    timeout: 0,
-  },
-  killed: 2,
-  compileErrors: 5,
-  ignored: 4,
-  survived: 0,
-  total: 11,
-  mutatorStatusTally: {
-    'ArithmeticOperator:Killed': 1,
-    'ArrowFunction:CompileError': 1,
-    'BlockStatement:CompileError': 2,
-    'BlockStatement:Killed': 1,
-    'ConditionalExpression:Ignored': 2,
-    'EqualityOperator:Ignored': 2,
-    'ObjectLiteral:CompileError': 1,
-    'StringLiteral:CompileError': 1,
-  },
-} as const
+function loadEdgeBaseline(): BlessedBaseline {
+  const url = new URL('../oracle-baselines/edge.json', import.meta.url)
+  try {
+    return decodeBaseline(readFileSync(url, 'utf8'))
+  } catch (cause) {
+    throw new Error(
+      `Failed to load blessed baseline for slice "edge" at ${url.pathname}: ${(cause as Error).message}`,
+      { cause },
+    )
+  }
+}
+
+const EDGE_BASELINE: BlessedBaseline = loadEdgeBaseline()
+const EDGE_COUNTS = EDGE_BASELINE.counts
+const EDGE_TOTAL = EDGE_COUNTS.compileErrors +
+  EDGE_COUNTS.ignored +
+  EDGE_COUNTS.killed +
+  EDGE_COUNTS.noCoverage +
+  EDGE_COUNTS.pending +
+  EDGE_COUNTS.runtimeErrors +
+  EDGE_COUNTS.survived +
+  EDGE_COUNTS.timeout
+const EDGE_MUTATOR_TALLY = EDGE_BASELINE.mutatorStatusTally
 
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 
@@ -78,15 +77,15 @@ test(
       if (verdict === undefined) return
 
       expect.soft(verdict.thresholds.break).toBeNull()
-      expect.soft(verdict.counts).toEqual(EDGE_ORACLE.counts)
+      expect.soft(verdict.counts).toEqual(EDGE_COUNTS)
 
       const reported = events
         .filter((event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
         .map((m) => `${m.mutator}:${m.status}`)
 
-      expect.soft(reported).toHaveLength(EDGE_ORACLE.total)
-      const reportedTally = tallyOf(Object.keys(EDGE_ORACLE.mutatorStatusTally), reported)
-      expect.soft(reportedTally).toEqual(EDGE_ORACLE.mutatorStatusTally)
+      expect.soft(reported).toHaveLength(EDGE_TOTAL)
+      const reportedTally = tallyOf(Object.keys(EDGE_MUTATOR_TALLY), reported)
+      expect.soft(reportedTally).toEqual(EDGE_MUTATOR_TALLY)
     })
   },
 )

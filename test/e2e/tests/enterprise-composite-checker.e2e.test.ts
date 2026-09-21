@@ -1,37 +1,33 @@
+import { readFileSync } from 'node:fs'
+
 import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@systemfsoftware/stryker-js'
+import { type BlessedBaseline, decodeBaseline } from '../scripts/oracle/baseline.js'
 import type { ExecResult } from './__fixtures__/container-environment.js'
 import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 
-const CHECKER_ORACLE = {
-  counts: {
-    compileErrors: 15,
-    ignored: 0,
-    killed: 12,
-    noCoverage: 0,
-    pending: 0,
-    runtimeErrors: 0,
-    survived: 0,
-    timeout: 0,
-  },
-  killed: 12,
-  compileErrors: 15,
-  survived: 0,
-  total: 27,
-  mutatorStatusTally: {
-    'ArrowFunction:CompileError': 4,
-    'ArrowFunction:Killed': 0,
-    'BlockStatement:CompileError': 2,
-    'BlockStatement:Killed': 1,
-    'BooleanLiteral:Killed': 1,
-    'ConditionalExpression:Killed': 3,
-    'EqualityOperator:Killed': 2,
-    'LogicalOperator:CompileError': 0,
-    'ObjectLiteral:CompileError': 1,
-    'OptionalChaining:Killed': 0,
-    'StringLiteral:CompileError': 3,
-    'StringLiteral:Killed': 4,
-  },
-} as const
+function loadCheckerBaseline(): BlessedBaseline {
+  const url = new URL('../oracle-baselines/checker.json', import.meta.url)
+  try {
+    return decodeBaseline(readFileSync(url, 'utf8'))
+  } catch (cause) {
+    throw new Error(
+      `Failed to load blessed baseline for slice "checker" at ${url.pathname}: ${(cause as Error).message}`,
+      { cause },
+    )
+  }
+}
+
+const CHECKER_BASELINE: BlessedBaseline = loadCheckerBaseline()
+const CHECKER_COUNTS = CHECKER_BASELINE.counts
+const CHECKER_TOTAL = CHECKER_COUNTS.compileErrors +
+  CHECKER_COUNTS.ignored +
+  CHECKER_COUNTS.killed +
+  CHECKER_COUNTS.noCoverage +
+  CHECKER_COUNTS.pending +
+  CHECKER_COUNTS.runtimeErrors +
+  CHECKER_COUNTS.survived +
+  CHECKER_COUNTS.timeout
+const CHECKER_MUTATOR_TALLY = CHECKER_BASELINE.mutatorStatusTally
 
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 
@@ -81,21 +77,21 @@ test(
       if (verdict === undefined) return
 
       expect.soft(verdict.thresholds.break).toBeNull()
-      expect.soft(verdict.counts).toEqual(CHECKER_ORACLE.counts)
+      expect.soft(verdict.counts).toEqual(CHECKER_COUNTS)
 
       const contractCompileErrors = events.filter(
         (e): e is Extract<RunEvent, { _tag: 'mutant' }> =>
           e._tag === 'mutant' && e.status === 'CompileError' && e.file.includes('contracts.ts'),
       )
-      expect.soft(contractCompileErrors.length).toBe(5)
+      expect.soft(contractCompileErrors.length).toBe(CHECKER_COUNTS.compileErrors)
 
       const reported = events
         .filter((event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
         .map((m) => `${m.mutator}:${m.status}`)
 
-      expect.soft(reported).toHaveLength(CHECKER_ORACLE.total)
-      const reportedTally = tallyOf(Object.keys(CHECKER_ORACLE.mutatorStatusTally), reported)
-      expect.soft(reportedTally).toEqual(CHECKER_ORACLE.mutatorStatusTally)
+      expect.soft(reported).toHaveLength(CHECKER_TOTAL)
+      const reportedTally = tallyOf(Object.keys(CHECKER_MUTATOR_TALLY), reported)
+      expect.soft(reportedTally).toEqual(CHECKER_MUTATOR_TALLY)
     })
   },
 )

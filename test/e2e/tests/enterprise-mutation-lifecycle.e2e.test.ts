@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs'
+
 import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@systemfsoftware/stryker-js'
 import type { ExpectStatic } from 'vitest'
+import { type BlessedBaseline, decodeBaseline } from '../scripts/oracle/baseline.js'
 import type { ExecResult } from './__fixtures__/container-environment.js'
 import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 import { pollWindowSpans } from './__fixtures__/tempo.js'
@@ -7,49 +10,46 @@ import { pollWindowSpans } from './__fixtures__/tempo.js'
 const SERVICE_NAME = process.env['OTEL_SERVICE_NAME'] ?? 'stryker-e2e'
 const telemetryEnabled = process.env['OTEL_ENABLED'] === 'true'
 
-const LIFECYCLE_ORACLE = {
-  counts: {
-    compileErrors: 61,
-    ignored: 0,
-    killed: 159,
-    noCoverage: 0,
-    pending: 0,
-    runtimeErrors: 0,
-    survived: 1,
-    timeout: 0,
-  },
-  killed: 159,
-  survived: 1,
-  total: 221,
-  mutatorStatusTally: {
-    'ArithmeticOperator:Killed': 9,
-    'ArrayDeclaration:Killed': 2,
-    'ArrowFunction:CompileError': 13,
-    'ArrowFunction:Killed': 1,
-    'AssignmentOperator:Killed': 3,
-    'BlockStatement:CompileError': 14,
-    'BlockStatement:Killed': 26,
-    'BooleanLiteral:CompileError': 1,
-    'BooleanLiteral:Killed': 12,
-    'ConditionalExpression:CompileError': 5,
-    'ConditionalExpression:Killed': 46,
-    'EqualityOperator:CompileError': 5,
-    'EqualityOperator:Killed': 20,
-    'EqualityOperator:Survived': 1,
-    'LogicalOperator:CompileError': 7,
-    'LogicalOperator:Killed': 5,
-    'MethodExpression:Killed': 1,
-    'ObjectLiteral:CompileError': 10,
-    'ObjectLiteral:Killed': 1,
-    'OptionalChaining:CompileError': 2,
-    'StringLiteral:CompileError': 4,
-    'StringLiteral:Killed': 30,
-    'UpdateOperator:Killed': 3,
-  },
-  actionableStatusTally: {
-    'EqualityOperator:Survived': 1,
-  },
-} as const
+function loadLifecycleBaseline(): BlessedBaseline {
+  const url = new URL('../oracle-baselines/lifecycle.json', import.meta.url)
+  try {
+    return decodeBaseline(readFileSync(url, 'utf8'))
+  } catch (cause) {
+    throw new Error(
+      `Failed to load blessed baseline for slice "lifecycle" at ${url.pathname}: ${(cause as Error).message}`,
+      { cause },
+    )
+  }
+}
+
+const LIFECYCLE_BASELINE: BlessedBaseline = loadLifecycleBaseline()
+const LIFECYCLE_COUNTS = LIFECYCLE_BASELINE.counts
+const LIFECYCLE_TOTAL = LIFECYCLE_COUNTS.compileErrors +
+  LIFECYCLE_COUNTS.ignored +
+  LIFECYCLE_COUNTS.killed +
+  LIFECYCLE_COUNTS.noCoverage +
+  LIFECYCLE_COUNTS.pending +
+  LIFECYCLE_COUNTS.runtimeErrors +
+  LIFECYCLE_COUNTS.survived +
+  LIFECYCLE_COUNTS.timeout
+const LIFECYCLE_MUTATOR_TALLY = LIFECYCLE_BASELINE.mutatorStatusTally
+const ACTIONABLE_STATUS_SUFFIXES: ReadonlyArray<string> = [
+  'Killed',
+  'Survived',
+  'NoCoverage',
+  'RuntimeError',
+  'Timeout',
+]
+const LIFECYCLE_ACTIONABLE_TALLY: Readonly<Record<string, number>> = (() => {
+  const out: Record<string, number> = {}
+  for (const key of Object.keys(LIFECYCLE_MUTATOR_TALLY)) {
+    const suffix = key.split(':')[1] ?? ''
+    if (!ACTIONABLE_STATUS_SUFFIXES.includes(suffix)) continue
+    const count = LIFECYCLE_MUTATOR_TALLY[key] ?? 0
+    if (count > 0) out[key] = count
+  }
+  return out
+})()
 
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
@@ -118,7 +118,7 @@ const stepVerifyOracleCounts = (expect: ExpectStatic, verdict: VerdictReached): 
     runtimeErrors: verdict.counts.runtimeErrors,
     survived: verdict.counts.survived,
     timeout: verdict.counts.timeout,
-  }).toEqual(LIFECYCLE_ORACLE.counts)
+  }).toEqual(LIFECYCLE_COUNTS)
 }
 
 const stepVerifyMutatorTallies = (
@@ -131,20 +131,20 @@ const stepVerifyMutatorTallies = (
     .map((m) => `${m.mutator}:${m.status}`)
   const actionable = verdict.mutants.map((m) => `${m.mutator}:${m.status}`)
 
-  expect.soft(reported).toHaveLength(LIFECYCLE_ORACLE.total)
-  const reportedTally = tallyOf(Object.keys(LIFECYCLE_ORACLE.mutatorStatusTally), reported)
-  expect.soft(reportedTally).toEqual(LIFECYCLE_ORACLE.mutatorStatusTally)
-  expect.soft(tallySumOf(reportedTally)).toBe(LIFECYCLE_ORACLE.total)
+  expect.soft(reported).toHaveLength(LIFECYCLE_TOTAL)
+  const reportedTally = tallyOf(Object.keys(LIFECYCLE_MUTATOR_TALLY), reported)
+  expect.soft(reportedTally).toEqual(LIFECYCLE_MUTATOR_TALLY)
+  expect.soft(tallySumOf(reportedTally)).toBe(LIFECYCLE_TOTAL)
   expect
-    .soft(tallyOf(Object.keys(LIFECYCLE_ORACLE.actionableStatusTally), actionable))
-    .toEqual(LIFECYCLE_ORACLE.actionableStatusTally)
+    .soft(tallyOf(Object.keys(LIFECYCLE_ACTIONABLE_TALLY), actionable))
+    .toEqual(LIFECYCLE_ACTIONABLE_TALLY)
   const countsSum = verdict.counts.killed +
     verdict.counts.survived +
     verdict.counts.compileErrors +
     verdict.counts.runtimeErrors +
     verdict.counts.timeout +
     verdict.counts.noCoverage
-  expect.soft(countsSum).toBe(LIFECYCLE_ORACLE.total)
+  expect.soft(countsSum).toBe(LIFECYCLE_TOTAL)
 }
 
 const stepVerifyRunIdConsistency = (
@@ -183,7 +183,7 @@ const stepVerifyPersistedReport = async (
   expect.soft(report.files).toBeDefined()
 
   const allReportedMutants = Object.values(report.files ?? {}).flatMap((file) => Object.values(file.mutants ?? {}))
-  expect.soft(allReportedMutants).toHaveLength(LIFECYCLE_ORACLE.total)
+  expect.soft(allReportedMutants).toHaveLength(LIFECYCLE_TOTAL)
 
   const killedInReport = allReportedMutants.filter((m) => m.status === 'Killed').length
   const survivedInReport = allReportedMutants.filter((m) => m.status === 'Survived').length
