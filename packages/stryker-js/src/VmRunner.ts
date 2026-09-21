@@ -144,6 +144,18 @@ const prefixOf = (file: string, pathToFileURL: (path: string) => VmFileUrl): str
   return href.slice(0, lastSlash + 1)
 }
 
+const commonPrefixOf = (files: readonly string[], pathToFileURL: (path: string) => VmFileUrl): string => {
+  const dirs = files.map((file) => prefixOf(file, pathToFileURL))
+  let prefix = dirs[0] ?? ''
+  for (const dir of dirs.slice(1)) {
+    while (prefix !== '' && !dir.startsWith(prefix)) {
+      const cut = prefix.lastIndexOf('/', prefix.length - 2)
+      prefix = cut > 0 ? prefix.slice(0, cut + 1) : ''
+    }
+  }
+  return prefix
+}
+
 const serialRunGate = Semaphore.makeUnsafe(1)
 
 const runOnce = (
@@ -160,34 +172,44 @@ const runOnce = (
     }
     const registry = createRegistry()
     const api = createHarnessApi(registry)
-    const real = yield* Effect.promise(() => import('vitest'))
-    const state: VmRunnerGlobalState = {
-      api,
-      expect: guardedExpect(real.expect),
-      vi: guardedVi(real.vi),
-      effectVitest: {
-        it: makeEffectMethods({
-          api: api.it,
-          describe: api.describe,
-          hooks: api.hooks,
-          tests: registry.tests,
-        }),
-      },
-    }
-
-    const prefix = sandboxWorkingDirectory !== undefined
-      ? `${platform.pathToFileURL(sandboxWorkingDirectory).href.replace(/\/?$/, '/')}`
-      : prefixOf(firstFile, platform.pathToFileURL)
     const namespace = hostStrykerNamespace()
     const previousActive = namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT]
     namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
-
-    installInterception(platform.moduleBuiltin)
-    activateSandbox(prefix)
-    writeGlobalState(state)
-
-    let runFailure: RunFailure | undefined
+    let armed = false
     try {
+      const real = yield* Effect.tryPromise({
+        try: () => import('vitest'),
+        catch: (cause: unknown) =>
+          TestRunnerFailed.make({
+            runnerName: vmRunnerName,
+            phase: 'init',
+            cause: cause instanceof Error ? cause.message : 'the vitest module failed to load',
+          }),
+      })
+      const state: VmRunnerGlobalState = {
+        api,
+        expect: guardedExpect(real.expect),
+        vi: guardedVi(real.vi),
+        effectVitest: {
+          it: makeEffectMethods({
+            api: api.it,
+            describe: api.describe,
+            hooks: api.hooks,
+            tests: registry.tests,
+          }),
+        },
+      }
+
+      const prefix = sandboxWorkingDirectory !== undefined
+        ? `${platform.pathToFileURL(sandboxWorkingDirectory).href.replace(/\/?$/, '/')}`
+        : commonPrefixOf(testFiles, platform.pathToFileURL)
+
+      installInterception(platform.moduleBuiltin)
+      activateSandbox(prefix)
+      writeGlobalState(state)
+      armed = true
+
+      let runFailure: RunFailure | undefined
       const salt = saltCounter++
       for (const file of testFiles) {
         registry.files.current = file
@@ -241,9 +263,11 @@ const runOnce = (
       }
       return { status: 'complete', tests }
     } finally {
-      writeGlobalState(undefined)
-      deactivateSandbox()
-      uninstallInterception()
+      if (armed) {
+        writeGlobalState(undefined)
+        deactivateSandbox()
+        uninstallInterception()
+      }
       namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = previousActive
     }
   })

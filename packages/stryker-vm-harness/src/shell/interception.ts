@@ -11,7 +11,9 @@ import {
   VITEST_HARNESS_URL,
 } from '../core/sources.js'
 
-export type RegisterHooksFn = (hooks: RegisterHooksOptions) => unknown
+export type RegisterHooksFn = (
+  hooks: RegisterHooksOptions,
+) => { readonly deregister: () => void } | undefined
 
 export interface HarnessModuleBuiltin {
   readonly registerHooks: RegisterHooksFn
@@ -24,11 +26,13 @@ interface ActiveSandbox {
 interface InterceptionState {
   readonly activeSandboxes: ActiveSandbox[]
   installed: boolean
+  hooks: { readonly deregister: () => void } | undefined
 }
 
 const interceptionState: InterceptionState = {
   activeSandboxes: [],
   installed: false,
+  hooks: undefined,
 }
 
 const activeSandbox = (): ActiveSandbox | undefined =>
@@ -122,14 +126,20 @@ export interface ActivateSandboxCommand {
 export const installInterceptionCell: Cell.Cell<HarnessModuleBuiltin, void> = Cell.fromEffect(Effect.void).pipe(
   Cell.mapInput((nodeModule: HarnessModuleBuiltin) => {
     if (!interceptionState.installed) {
-      nodeModule.registerHooks({ resolve: resolveWithin, load: loadWithin })
+      interceptionState.hooks = nodeModule.registerHooks({ resolve: resolveWithin, load: loadWithin })
       interceptionState.installed = true
     }
     return undefined
   }),
 )
 
-export const uninstallInterceptionCell: Cell.Cell<void, void> = Cell.fromEffect(Effect.void)
+export const uninstallInterceptionCell: Cell.Cell<void, void> = Cell.fromEffect(
+  Effect.sync(() => {
+    interceptionState.hooks?.deregister()
+    interceptionState.hooks = undefined
+    interceptionState.installed = false
+  }),
+)
 
 export const activateSandboxCell: Cell.Cell<ActivateSandboxCommand, void> = Cell.mapInput(
   Cell.fromEffect(Effect.void),
@@ -168,6 +178,9 @@ export const deactivateSandbox = (): void => {
 }
 
 export const resetInterceptionForTests = (): void => {
+  interceptionState.hooks?.deregister()
+  interceptionState.hooks = undefined
+  interceptionState.installed = false
   interceptionState.activeSandboxes.length = 0
 }
 

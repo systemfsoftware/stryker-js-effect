@@ -5,12 +5,13 @@ import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
 
 const VM_VITEST_ORACLE = {
   killed: 7,
-  survived: 2,
+  survived: 4,
+  noCoverage: 0,
   mutantStatusTally: {
     'ArithmeticOperator:Killed': 1,
-    'ArithmeticOperator:Survived': 1,
+    'ArithmeticOperator:Survived': 2,
     'BlockStatement:Killed': 2,
-    'BlockStatement:Survived': 1,
+    'BlockStatement:Survived': 2,
     'ConditionalExpression:Killed': 2,
     'EqualityOperator:Killed': 2,
   },
@@ -58,7 +59,7 @@ const stepVerifyCounts = (expect: ExpectStatic, verdict: VerdictReached): void =
     compileErrors: 0,
     ignored: 0,
     killed: VM_VITEST_ORACLE.killed,
-    noCoverage: 0,
+    noCoverage: VM_VITEST_ORACLE.noCoverage,
     pending: 0,
     runtimeErrors: 0,
     survived: VM_VITEST_ORACLE.survived,
@@ -70,7 +71,7 @@ const stepVerifyMutantTally = (expect: ExpectStatic, events: ReadonlyArray<RunEv
   const reported = events
     .filter((event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
     .map((m) => `${m.mutator}:${m.status}`)
-  expect.soft(reported).toHaveLength(9)
+  expect.soft(reported).toHaveLength(11)
   expect.soft(tallyOf(Object.keys(VM_VITEST_ORACLE.mutantStatusTally), reported)).toEqual(
     VM_VITEST_ORACLE.mutantStatusTally,
   )
@@ -103,5 +104,48 @@ test('running a vitest-syntax suite through the in-memory runner', async ({ bdd,
   await bdd.and('the tallies match the vitest-runner oracle', () => {
     stepVerifyCounts(expect, verdict)
     stepVerifyMutantTally(expect, events)
+  })
+
+  await bdd.and('the report attributes every kill to a concrete test', async () => {
+    if (verdict.reportFile === null || verdict.reportFile === '') {
+      throw new Error('verdict carries no report file reference')
+    }
+    const report = JSON.parse(await fixture.readFile(verdict.reportFile)) as {
+      files: Record<
+        string,
+        {
+          mutants: ReadonlyArray<
+            {
+              mutatorName: string
+              status: string
+              killedBy?: ReadonlyArray<string>
+              location?: { start?: { line?: number } }
+            }
+          >
+        }
+      >
+    }
+    const mutants = Object.values(report.files).flatMap((file) => file.mutants)
+    const killed = mutants.filter((mutant) => mutant.status === 'Killed')
+    expect.soft(killed).toHaveLength(VM_VITEST_ORACLE.killed)
+    for (const mutant of killed) {
+      expect.soft(mutant.killedBy?.length ?? 0).toBeGreaterThan(0)
+    }
+    const survivors = mutants.filter((mutant) => mutant.status === 'Survived')
+    for (const mutant of survivors) {
+      expect.soft(mutant.killedBy?.length ?? 0).toBe(0)
+    }
+    const neverMutant = mutants.find((mutant) =>
+      mutant.mutatorName === 'ArithmeticOperator' && mutant.status === 'Survived' &&
+      mutant.location?.start?.line === 14
+    )
+    expect.soft(neverMutant).toBeDefined()
+    const addMutant = mutants.find((mutant) =>
+      mutant.mutatorName === 'ArithmeticOperator' && mutant.status === 'Killed'
+    )
+    if (addMutant === undefined) {
+      throw new Error('report carries no killed ArithmeticOperator mutant')
+    }
+    expect.soft(addMutant.killedBy).toHaveLength(1)
   })
 })

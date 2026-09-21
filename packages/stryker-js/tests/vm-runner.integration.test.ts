@@ -47,7 +47,25 @@ const dummyIdGenerator = {
 interface SuiteFixture {
   readonly directory: string
   readonly file: string
+  readonly files?: readonly string[]
 }
+
+const writeSuites = (
+  prefix: string,
+  sources: readonly string[],
+): Effect.Effect<SuiteFixture, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const directory = yield* fs.makeTempDirectory()
+    const files: string[] = []
+    for (const [index, source] of sources.entries()) {
+      const file = path.join(directory, `${prefix}-${index}.test.ts`)
+      yield* fs.writeFileString(file, source)
+      files.push(file)
+    }
+    return { directory, file: files[0] ?? directory, files }
+  }).pipe(Effect.orDie)
 
 const NOTICING_SUITE = [
   'const host: Record<string, unknown> = globalThis as unknown as Record<string, unknown>',
@@ -77,6 +95,8 @@ const FINALIZER_SUITE = [
 ].join('\n')
 
 const MALFORMED_SUITE = 'const broken: = 1'
+
+const RUNTIME_THROW_SUITE = 'throw new Error("boom at import time")'
 
 const RAW_API_SUITE = [
   'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
@@ -155,7 +175,10 @@ const removeSuite = (directory: string): Effect.Effect<void> =>
     Effect.orDie,
   )
 
-const buildContextFor = (fixture: SuiteFixture): Effect.Effect<TestRunnerBuildContext> =>
+const buildContextFor = (
+  fixture: SuiteFixture,
+  testFilesOverride?: readonly string[],
+): Effect.Effect<TestRunnerBuildContext> =>
   Effect.gen(function*() {
     const defaults = yield* createDefaultOptions
     return {
@@ -164,7 +187,7 @@ const buildContextFor = (fixture: SuiteFixture): Effect.Effect<TestRunnerBuildCo
       sandboxWorkingDirectory: fixture.directory,
       idGenerator: dummyIdGenerator,
       retire: Effect.void,
-      testFiles: [fixture.file],
+      testFiles: testFilesOverride ?? fixture.files ?? [fixture.file],
     }
   })
 
@@ -213,11 +236,23 @@ const runSuite = (fixture: SuiteFixture): Effect.Effect<RunOutcome, never, never
 
 const suiteFailure = (
   fixture: SuiteFixture,
+  testFiles?: readonly string[],
 ): Effect.Effect<Exit.Exit<DryRunResult, PooledTestRunnerError>, never, never> =>
   Effect.gen(function*() {
-    const runner = yield* runnerFor(fixture)
+    const context = yield* buildContextFor(fixture, testFiles)
+    const runner = yield* buildTestRunner(
+      context,
+      Effect.die(
+        new Error('the child-process runner was built for an in-memory run'),
+      ),
+    )
     return yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }).pipe(Effect.exit)
-  }).pipe(Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
+  }).pipe(
+    Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer)),
+    Effect.scoped,
+    Effect.orDie,
+    Effect.ensuring(removeSuite(fixture.directory)),
+  )
 
 Feature('Verifying mutants without spawning a child process')
   .liveClock()
@@ -457,6 +492,95 @@ Feature('Verifying mutants without spawning a child process')
             }
             expect(killed.killedBy).toHaveLength(1)
             expect(killed.killedBy[0]?.endsWith('#guards > catches the change')).toBe(true)
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A project with nothing to run still reports a completed initial run',
+      Gherkin.Do.pipe(
+        Given('a written project whose test file list is empty')(
+          'suite',
+          () => writeSuite('empty-list', IGNORING_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the runner performs the initial run without any test files')(
+          'attempt',
+          (s) => suiteFailure(s.suite, []),
+        ),
+        Then('the run completes and reports no tests')((s) =>
+          Effect.sync(() => {
+            expect(Exit.isSuccess(s.attempt)).toBe(true)
+            if (Exit.isSuccess(s.attempt)) {
+              expect(s.attempt.value.status).toBe('complete')
+              if (s.attempt.value.status === 'complete') {
+                expect(s.attempt.value.tests).toEqual([
+                  { id: 'all', name: 'All tests', status: 'success', timeSpentMs: 0 },
+                ])
+              }
+            }
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A later file that cannot be compiled stops the run naming that file',
+      Gherkin.Do.pipe(
+        Given('a written project whose first file runs cleanly and whose second file is malformed')(
+          'suite',
+          () => writeSuites('mixed', [IGNORING_SUITE, MALFORMED_SUITE]).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the runner performs the initial run')(
+          'attempt',
+          (s) => suiteFailure(s.suite),
+        ),
+        Then('the run stops with an initialization failure naming the second file')((s) =>
+          Effect.sync(() => {
+            expect(Exit.isFailure(s.attempt)).toBe(true)
+            if (Exit.isFailure(s.attempt)) {
+              const failure = Cause.findErrorOption(s.attempt.cause)
+              const described = Match.value(failure).pipe(
+                Match.when(Option.isNone, () => 'no failure was reported'),
+                Match.orElse((reported) =>
+                  Match.value(reported.value).pipe(
+                    Match.tag('TestRunnerFailed', (typed) => `${typed.phase}: ${typed.cause}`),
+                    Match.orElse(() => 'a different failure was reported'),
+                  )
+                ),
+              )
+              expect(described).toContain('init')
+              expect(described).toContain('mixed-1.test.ts')
+            }
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A file that fails while loading is reported as a failed test beside the tests that ran',
+      Gherkin.Do.pipe(
+        Given('a written project whose first file passes and whose second file throws as it loads')(
+          'suite',
+          () => writeSuites('load-error', [RAW_API_SUITE, RUNTIME_THROW_SUITE]).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the runner performs the initial run')(
+          'attempt',
+          (s) => suiteFailure(s.suite),
+        ),
+        Then('the run completes and reports the load failure as its own failed test')((s) =>
+          Effect.sync(() => {
+            expect(Exit.isSuccess(s.attempt)).toBe(true)
+            if (Exit.isSuccess(s.attempt) && s.attempt.value.status === 'complete') {
+              const tests = s.attempt.value.tests
+              const loadFailure = tests.find((test) => test.name.endsWith('.test.ts (load error)'))
+              expect(loadFailure).toBeDefined()
+              expect(loadFailure?.status).toBe('failed')
+              if (loadFailure?.status === 'failed') {
+                expect(loadFailure.failureMessage).toContain('boom at import time')
+              }
+              expect(tests.some((test) => test.name === 'math > adds numbers')).toBe(true)
+            }
           })
         ),
       ),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createHarnessApi, createRegistry, fullNameOf, hooksFor, planRun } from './registry.js'
+import type { RegistryTestApi } from './registry.js'
 
 describe('registry harness API and deduplication', () => {
   it('initializes registry with empty file and increments sequence ids', () => {
@@ -208,17 +209,39 @@ describe('registry variant overloads and plan semantics', () => {
     expect(contexts[1]).toBeDefined()
   })
 
+  it('spreads multi-element tuple rows into name tokens and fn args', () => {
+    const registry = createRegistry()
+    const api = createHarnessApi(registry)
+    const calls: Array<readonly unknown[]> = []
+    api.it.each(
+      [['a', 1], ['b', 2]],
+      'n %s %i',
+      (...args: readonly unknown[]) => {
+        calls.push(args)
+        return undefined
+      },
+    )
+    const plan = planRun(registry)
+    expect(plan.map((p) => p.fullName)).toEqual(['n a 1', 'n b 2'])
+    plan[0]?.test.fn?.(dummyContext())
+    plan[1]?.test.fn?.(dummyContext())
+    expect(calls[0]?.slice(0, -1)).toEqual(['a', 1])
+    expect(calls[1]?.slice(0, -1)).toEqual(['b', 2])
+    expect(calls[0]?.at(-1)).toBeDefined()
+    expect(calls[1]?.at(-1)).toBeDefined()
+  })
+
   it('registers uncurried describe variant each suites', () => {
     const registry = createRegistry()
     const api = createHarnessApi(registry)
-    api.describe.only.each([[1]], 'only suite %i', (args, inner) => {
-      inner('inner', () => {})
+    api.describe.only.each([[1]], 'only suite %i', (...args: readonly unknown[]) => {
+      ;(args.at(-1) as RegistryTestApi)('inner', () => {})
     })
-    api.describe.skip.each([[2]], 'skip suite %i', (args, inner) => {
-      inner('inner', () => {})
+    api.describe.skip.each([[2]], 'skip suite %i', (...args: readonly unknown[]) => {
+      ;(args.at(-1) as RegistryTestApi)('inner', () => {})
     })
-    api.describe.each([[3]], 'run suite %i', (args, inner) => {
-      inner('inner', () => {})
+    api.describe.each([[3]], 'run suite %i', (...args: readonly unknown[]) => {
+      ;(args.at(-1) as RegistryTestApi)('inner', () => {})
     })
     const plan = planRun(registry)
     expect(plan.map((p) => [p.fullName, p.skipped])).toEqual([

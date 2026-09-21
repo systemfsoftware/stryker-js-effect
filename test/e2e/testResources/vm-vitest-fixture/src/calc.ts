@@ -9,3 +9,7 @@ export function isPositive(n: number): boolean {
 export function double(n: number): number {
   return n * 2
 }
+
+export function never(n: number): number {
+  return n + 1
+}

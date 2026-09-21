@@ -12,6 +12,7 @@ import {
   type TestOutcome,
 } from '../core/drain.js'
 import { type HarnessTestContext, hooksFor, planRun, type TestRegistry } from '../core/registry.js'
+import { closeOpenLayerScopes } from './effect-adapter.js'
 const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : new Error('drain failure', { cause }).message
 
@@ -148,6 +149,10 @@ export const executeDrainRegistry = (
 
           const collectedOutcomes = yield* runWithTimeout
           if (collectedOutcomes === undefined) {
+            yield* Effect.callback<void>((resume) => {
+              setImmediate(() => resume(Effect.void))
+            })
+            yield* Effect.promise(() => closeOpenLayerScopes())
             return DrainTimedOut.make({})
           }
           yield* Effect.callback<void>((resume) => {

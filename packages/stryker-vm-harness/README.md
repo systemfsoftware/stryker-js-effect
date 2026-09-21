@@ -7,7 +7,7 @@ In-memory VM test-runner harness for Stryker mutation testing. Pure `Cell` / `Sa
 
 ## Prerequisites
 
-- Node.js `>=22.18.0`
+- Node.js `>=24.13.1`
 - Vitest `>=4.1.0`
 - `@systemfsoftware/stryker-js` `>=5.0.0`
 

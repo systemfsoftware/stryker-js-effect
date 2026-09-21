@@ -1,6 +1,6 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as nodeModule from 'node:module'
+import * as S from 'effect/Schema'
 import * as path from 'node:path'
 import * as url from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -43,6 +43,7 @@ describe('shell integration', () => {
     const dummyBuiltin = {
       registerHooks: (_opts: unknown) => {
         hooksRegistered = true
+        return undefined
       },
     }
     installInterception(dummyBuiltin)
@@ -98,8 +99,13 @@ describe('shell integration', () => {
     const registry = createRegistry()
     const api = createHarnessApi(registry)
     const state = { api, expect, vi: undefined, effectVitest: undefined }
-    const builtinModule = (globalThis.process?.getBuiltinModule?.('node:module') ?? nodeModule) as unknown as {
-      registerHooks: (opts: unknown) => unknown
+    let deregistered = false
+    const builtinModule = {
+      registerHooks: (_opts: unknown) => ({
+        deregister: () => {
+          deregistered = true
+        },
+      }),
     }
     installInterception(builtinModule)
     activateSandbox('file:///tmp/sandbox/')
@@ -112,6 +118,7 @@ describe('shell integration', () => {
     uninstallInterception()
 
     expect(readGlobalState()).toBeUndefined()
+    expect(deregistered).toBe(true)
   })
 
   it('serializes concurrent activateSandbox calls through the shell cell semaphore', async () => {
@@ -201,5 +208,14 @@ describe('shell integration', () => {
     expect(layeredRegisteredTest).toBeDefined()
     await layeredRegisteredTest?.fn?.(dummyContext)
     expect(layerTestRan).toBe(true)
+
+    itApi.prop('every sampled number is non-negative', S.Finite, (n: unknown) => (n as number) >= 0)
+    const propTest = registry.tests.find((t) => t.name === 'every sampled number is non-negative')
+    expect(propTest).toBeDefined()
+    await expect(propTest?.fn?.(dummyContext)).rejects.toThrow('Property falsified')
+
+    itApi.prop('every sampled number equals itself', S.Finite, (n: unknown) => (n as number) === (n as number))
+    const passingPropTest = registry.tests.find((t) => t.name === 'every sampled number equals itself')
+    await expect(passingPropTest?.fn?.(dummyContext)).resolves.toBeUndefined()
   })
 })

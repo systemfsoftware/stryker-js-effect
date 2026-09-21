@@ -140,7 +140,7 @@ export interface EachApi {
   (cases: readonly unknown[], name?: string, fn?: EachFn): void | ((name: string, fn: EachFn) => void)
 }
 
-export type EachFn = (args: unknown, context: HarnessTestContext) => unknown
+export type EachFn = (...args: readonly unknown[]) => unknown
 
 export interface SuiteVariants {
   (name: string, body: SuiteBody): void
@@ -162,7 +162,7 @@ export interface SuiteEachApi {
 }
 
 export type SuiteBody = (api: RegistryTestApi) => void
-export type EachSuiteBody = (args: unknown, api: RegistryTestApi) => void
+export type EachSuiteBody = (...args: readonly unknown[]) => void
 
 export interface HarnessApi {
   readonly describe: RegistrySuiteApi
@@ -171,9 +171,6 @@ export interface HarnessApi {
   readonly test: RegistryTestApi
   readonly hooks: HookApi
 }
-
-const rowsOf = (cases: readonly unknown[]): ReadonlyArray<unknown> =>
-  cases.map((row) => (Array.isArray(row) ? (row[0] as unknown) : row))
 
 const resolveFn = (fnOrOptions: unknown, maybeFn: unknown): HarnessTestFunction | undefined =>
   Match.value(typeof fnOrOptions === 'function').pipe(
@@ -185,8 +182,9 @@ const resolveFn = (fnOrOptions: unknown, maybeFn: unknown): HarnessTestFunction 
 export const createVariantApi = (registry: TestRegistry, mode: TestMode, inverted: boolean): VariantApi => {
   const at = (): readonly number[] => registry.frames.current
   const bindEach = (cases: readonly unknown[]) => (name: string, fn: EachFn) => {
-    for (const row of rowsOf(cases)) {
-      registry.registerTest(formatEachName(name, row), at(), mode, inverted, (context) => fn(row, context))
+    for (const row of cases) {
+      const args: readonly unknown[] = Array.isArray(row) ? row : [row]
+      registry.registerTest(formatEachName(name, row), at(), mode, inverted, (context) => fn(...args, context))
     }
   }
   const each: EachApi = (cases: readonly unknown[], name?: string, fn?: EachFn) =>
@@ -231,8 +229,9 @@ export const createDescribe = (registry: TestRegistry, it: RegistryTestApi): Reg
   }
   const variant = (mode: TestMode): SuiteVariants => {
     const bindEach = (cases: readonly unknown[]) => (name: string, body: EachSuiteBody) => {
-      for (const row of rowsOf(cases)) {
-        open(formatEachName(name, row), mode, (api) => body(row, api))
+      for (const row of cases) {
+        const args: readonly unknown[] = Array.isArray(row) ? row : [row]
+        open(formatEachName(name, row), mode, (api) => body(...args, api))
       }
     }
     const each: SuiteEachApi = (cases: readonly unknown[], name?: string, body?: EachSuiteBody) =>

@@ -41,7 +41,7 @@ export interface EachBinder<R> {
   (cases: readonly unknown[]): (name: string, self: EachFn<R>) => void
 }
 
-export type EachFn<R> = (args: unknown, context: HarnessTestContext) => Effect.Effect<unknown, unknown, R>
+export type EachFn<R> = (...args: readonly unknown[]) => Effect.Effect<unknown, unknown, R>
 
 export interface EffectTester<R> extends EffectTesterVariants<R> {
   readonly skip: EffectTesterVariants<R>
@@ -189,10 +189,11 @@ const makeEach = <R>(
 (cases: readonly unknown[]) =>
 (name: string, self: EachFn<R>) => {
   for (const [index, row] of cases.entries()) {
+    const args: readonly unknown[] = Array.isArray(row) ? row : [row]
     variant(`${name} [${index}]`, {}, (context: HarnessTestContext) =>
       pipe(
         Effect.suspend(() => {
-          const res = self(row, context)
+          const res = self(...args, context)
           return Effect.asVoid(Effect.isEffect(res) ? res : Effect.succeed(res))
         }),
         mapEffect,
@@ -339,6 +340,15 @@ export const buildLayerCell: Cell.Cell<BuildLayerCommand, Context.Context<never>
       ),
     ),
 )
+
+const openLayerScopes = new Set<() => Promise<void>>()
+
+export const closeOpenLayerScopes = (): Promise<void> => {
+  const closers = [...openLayerScopes]
+  openLayerScopes.clear()
+  return Promise.all(closers.map((close) => close().catch(() => undefined))).then(() => undefined)
+}
+
 export const layerBinderFor = (context: LayerRegistrationContext): LayerBinder => {
   const binder = (layer_: Layer.Layer<never, never>, options?: Parameters<LayerBinder>[1]) =>
   (
@@ -357,8 +367,10 @@ export const layerBinderFor = (context: LayerRegistrationContext): LayerBinder =
         return Promise.resolve()
       }
       closed = true
+      openLayerScopes.delete(closeScope)
       return runToPromise(Scope.close(scope, Exit.void))
     }
+    openLayerScopes.add(closeScope)
 
     const makeIt = (base: RegistryTestApi): EffectVitestIt =>
       makeItProxy(
