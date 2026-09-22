@@ -5,7 +5,7 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import type { TestStatus } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type TestResult, TestResultSchema, type TestStatus } from '@systemfsoftware/stryker-js-plugin-interface'
 
 const HIT_LIMIT_REASON_PREFIX = 'Hit limit reached'
 const hitLimitReachedReason = (count: number, limit: number): string => `${HIT_LIMIT_REASON_PREFIX} (${count}/${limit})`
@@ -31,7 +31,7 @@ const VitestMutantRunTypeId: unique symbol = Symbol.for('@systemfsoftware/stryke
 type VitestMutantRunTypeId = typeof VitestMutantRunTypeId
 
 export class MutantKilled extends S.TaggedClass<MutantKilled>()('Killed', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
   killerIds: S.optional(S.Array(S.String)),
   failureMessage: S.optional(S.String),
 }) {
@@ -39,20 +39,20 @@ export class MutantKilled extends S.TaggedClass<MutantKilled>()('Killed', {
 }
 
 export class MutantSurvived extends S.TaggedClass<MutantSurvived>()('Survived', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
 }
 
 export class MutantTimeout extends S.TaggedClass<MutantTimeout>()('Timeout', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
   reason: S.optional(S.String),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
 }
 
 export class MutantDryError extends S.TaggedClass<MutantDryError>()('Error', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
   errorMessage: S.optional(S.String),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
@@ -75,7 +75,7 @@ export class VitestDryRunCommand extends S.TaggedClass<VitestDryRunCommand>()('V
 
 export class VitestDryRunOutput extends S.TaggedClass<VitestDryRunOutput>()('VitestDryRunOutput', {
   status: S.Literals(['Complete', 'Error']),
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
   errorMessage: S.optional(S.String),
 }) {}
 
@@ -308,72 +308,33 @@ const extractFailureMessage = <A = unknown>(test: A): string =>
       }),
   })
 
-const convertTestRaw = <A = unknown>(
-  test: A,
-  projectRoot: string,
-): {
-  readonly id: string
-  readonly name: string
-  readonly timeSpentMs: number
-  readonly fileName: string | undefined
-  readonly status: TestStatus
-  readonly failureMessage?: string
-} => {
+const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestResult => {
   const status = extractStatus(test)
+  const fileNameField = Match.value(extractFileName(test)).pipe(
+    Match.when(undefined, () => ({})),
+    Match.orElse((fileName) => ({ fileName })),
+  )
   const base = {
     id: extractRawId(test, projectRoot),
     name: extractName(test),
     timeSpentMs: extractDuration(test),
-    fileName: extractFileName(test),
     status,
+    ...fileNameField,
   }
   return Match.value(status).pipe(
-    Match.when('failed', (): {
-      readonly id: string
-      readonly name: string
-      readonly timeSpentMs: number
-      readonly fileName: string | undefined
-      readonly status: TestStatus
-      readonly failureMessage?: string
-    } => ({ ...base, status, failureMessage: extractFailureMessage(test) })),
-    Match.when('skipped', (): {
-      readonly id: string
-      readonly name: string
-      readonly timeSpentMs: number
-      readonly fileName: string | undefined
-      readonly status: TestStatus
-      readonly failureMessage?: string
-    } =>
+    Match.when(
+      'failed',
+      (): TestResult => ({ ...base, status: 'failed', failureMessage: extractFailureMessage(test) }),
+    ),
+    Match.when('skipped', (): TestResult =>
       Match.value(findSuiteErrorRaw(Option.getOrUndefined(getSuite(test)))).pipe(
-        Match.when(Match.defined, (suiteError): {
-          readonly id: string
-          readonly name: string
-          readonly timeSpentMs: number
-          readonly fileName: string | undefined
-          readonly status: TestStatus
-          readonly failureMessage?: string
-        } => ({
-          ...base,
-          status: 'failed',
-          failureMessage: suiteError,
-        })),
-        Match.orElse((): {
-          readonly id: string
-          readonly name: string
-          readonly timeSpentMs: number
-          readonly fileName: string | undefined
-          readonly status: TestStatus
-          readonly failureMessage?: string
-        } => ({ ...base, status })),
+        Match.when(
+          Match.defined,
+          (suiteError): TestResult => ({ ...base, status: 'failed', failureMessage: suiteError }),
+        ),
+        Match.orElse((): TestResult => ({ ...base, status: 'skipped' })),
       )),
-    Match.orElse((): {
-      readonly id: string
-      readonly name: string
-      readonly timeSpentMs: number
-      readonly fileName: string | undefined
-      readonly status: TestStatus
-      readonly failureMessage?: string
-    } => ({ ...base, status })),
+    Match.orElse((): TestResult => ({ ...base, status: 'success' })),
   )
 }
 
@@ -399,7 +360,7 @@ const decideVitestDryRun = (command: VitestDryRunCommand): Result.Result<VitestD
         Result.succeed(
           VitestDryRunOutput.make({
             status: 'Error',
-            testsJson: JSON.stringify(tests),
+            tests,
             errorMessage: `An error occurred outside of a test run: ${command.externalErrorText}`,
           }),
         ),
@@ -408,7 +369,7 @@ const decideVitestDryRun = (command: VitestDryRunCommand): Result.Result<VitestD
       Result.succeed(
         VitestDryRunOutput.make({
           status: 'Complete',
-          testsJson: JSON.stringify(tests),
+          tests,
           errorMessage: undefined,
         }),
       )
@@ -438,14 +399,14 @@ const decideVitestMutantRun = (
         Match.when(true, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
           Result.succeed(
             MutantTimeout.make({
-              testsJson: '[]',
+              tests: [],
               reason: hit.value,
             }),
           )),
         Match.when(false, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
           Result.succeed(
             MutantKilled.make({
-              testsJson: '[]',
+              tests: [],
               failureMessage: hit.value,
             }),
           )),
@@ -470,33 +431,18 @@ const decideVitestMutantRun = (
           const dry = Result.getOrElse(
             dryOut,
             (): VitestDryRunOutput =>
-              VitestDryRunOutput.make({ status: 'Complete', testsJson: '[]', errorMessage: undefined }),
+              VitestDryRunOutput.make({ status: 'Complete', tests: [], errorMessage: undefined }),
           )
           return Match.value(dry.status === 'Error').pipe(
             Match.when(true, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
               Result.succeed(
                 MutantDryError.make({
-                  testsJson: '[]',
+                  tests: [],
                   errorMessage: dry.errorMessage,
                 }),
               )),
             Match.when(false, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> => {
-              const dryTestsSchema = S.fromJsonString(
-                S.Array(
-                  S.Struct({
-                    id: S.String,
-                    status: S.Literals(['success', 'failed', 'skipped', 'ignored'] as const),
-                    failureMessage: S.optional(S.String),
-                  }),
-                ),
-              )
-              type ReportedStatus = TestStatus | 'ignored'
-              const tests: readonly {
-                readonly id: string
-                readonly status: ReportedStatus
-                readonly failureMessage?: string
-              }[] = Option.getOrElse(S.decodeOption(dryTestsSchema)(dry.testsJson), () => [])
-              const killed = tests.filter((t) => t.status === 'failed')
+              const killed = dry.tests.filter((t) => t.status === 'failed')
               return Match.value(killed.length > 0).pipe(
                 Match.when(
                   true,
@@ -510,7 +456,7 @@ const decideVitestMutantRun = (
                         })
                         return Result.succeed(
                           MutantKilled.make({
-                            testsJson: dry.testsJson,
+                            tests: dry.tests,
                             killerIds: killed.map((t) => t.id),
                             failureMessage,
                           }),
@@ -528,7 +474,7 @@ const decideVitestMutantRun = (
                             (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
                               Result.succeed(
                                 MutantKilled.make({
-                                  testsJson: dry.testsJson,
+                                  tests: dry.tests,
                                   killerIds: Option.match(first, {
                                     onNone: (): readonly string[] | undefined => undefined,
                                     onSome: (k): readonly string[] => [k.id],
@@ -542,7 +488,7 @@ const decideVitestMutantRun = (
                             (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
                               Result.succeed(
                                 MutantKilled.make({
-                                  testsJson: dry.testsJson,
+                                  tests: dry.tests,
                                   killerIds: Option.getOrUndefined(
                                     Option.match(first, {
                                       onNone: (): Option.Option<readonly string[]> => Option.none(),
@@ -562,7 +508,7 @@ const decideVitestMutantRun = (
                 Match.when(false, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
                   Result.succeed(
                     MutantSurvived.make({
-                      testsJson: dry.testsJson,
+                      tests: dry.tests,
                     }),
                   )),
                 Match.exhaustive,

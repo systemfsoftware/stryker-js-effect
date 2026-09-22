@@ -1,7 +1,8 @@
 import { Effect } from 'effect'
 import * as S from 'effect/Schema'
 
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type StrykerOptions, TestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+
 export const VitestRunnerOptionsSchema = S.Struct({
   dir: S.optional(S.String),
   related: S.Boolean.pipe(S.withDecodingDefaultKey(Effect.succeed(true))),
@@ -57,11 +58,11 @@ export class VitestDryRunCommand extends S.TaggedClass<VitestDryRunCommand>()('V
 }) {}
 
 export class DryRunComplete extends S.TaggedClass<DryRunComplete>()('Complete', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
 }) {}
 
 export class DryRunExternalError extends S.TaggedClass<DryRunExternalError>()('Error', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
   errorMessage: S.String,
 }) {}
 

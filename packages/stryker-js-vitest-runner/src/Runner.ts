@@ -429,92 +429,52 @@ const extractFailureMessage = <A = unknown>(test: A): string =>
       }),
   })
 
-const convertTestRaw = <A = unknown>(
-  test: A,
-  projectRoot: string,
-): {
-  readonly id: string
-  readonly name: string
-  readonly timeSpentMs: number
-  readonly fileName: string | undefined
-  readonly status: TestStatus
-  readonly failureMessage?: string
-} => {
+const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestResult => {
   const status = extractStatus(test)
+  const fileNameField = Match.value(extractFileName(test)).pipe(
+    Match.when(undefined, () => ({})),
+    Match.orElse((fileName) => ({ fileName })),
+  )
   const base = {
     id: extractRawId(test, projectRoot),
     name: extractName(test),
     timeSpentMs: extractDuration(test),
-    fileName: extractFileName(test),
     status,
+    ...fileNameField,
   }
   return Match.value(status).pipe(
-    Match.when('failed', (): {
-      readonly id: string
-      readonly name: string
-      readonly timeSpentMs: number
-      readonly fileName: string | undefined
-      readonly status: TestStatus
-      readonly failureMessage?: string
-    } => ({ ...base, status, failureMessage: extractFailureMessage(test) })),
-    Match.when('skipped', (): {
-      readonly id: string
-      readonly name: string
-      readonly timeSpentMs: number
-      readonly fileName: string | undefined
-      readonly status: TestStatus
-      readonly failureMessage?: string
-    } =>
+    Match.when(
+      'failed',
+      (): TestResult => ({ ...base, status: 'failed', failureMessage: extractFailureMessage(test) }),
+    ),
+    Match.when('skipped', (): TestResult =>
       Match.value(findSuiteErrorRaw(Option.getOrUndefined(getSuite(test)))).pipe(
-        Match.when(Match.defined, (suiteError): {
-          readonly id: string
-          readonly name: string
-          readonly timeSpentMs: number
-          readonly fileName: string | undefined
-          readonly status: TestStatus
-          readonly failureMessage?: string
-        } => ({
-          ...base,
-          status: 'failed',
-          failureMessage: suiteError,
-        })),
-        Match.orElse((): {
-          readonly id: string
-          readonly name: string
-          readonly timeSpentMs: number
-          readonly fileName: string | undefined
-          readonly status: TestStatus
-          readonly failureMessage?: string
-        } => ({ ...base, status })),
+        Match.when(
+          Match.defined,
+          (suiteError): TestResult => ({ ...base, status: 'failed', failureMessage: suiteError }),
+        ),
+        Match.orElse((): TestResult => ({ ...base, status: 'skipped' })),
       )),
-    Match.orElse((): {
-      readonly id: string
-      readonly name: string
-      readonly timeSpentMs: number
-      readonly fileName: string | undefined
-      readonly status: TestStatus
-      readonly failureMessage?: string
-    } => ({ ...base, status })),
+    Match.orElse((): TestResult => ({ ...base, status: 'success' })),
   )
 }
 
 export const decideVitestDryRun = (command: VitestDryRunCommand): VitestDryRunOutcome => {
   const tests = command.rawTests.map((t) => convertTestRaw(t, command.projectRoot))
-  const testsJson = JSON.stringify(tests)
   const hasFailure = tests.some((t) => t.status === 'failed')
   return Match.value(hasFailure).pipe(
-    Match.when(true, (): VitestDryRunOutcome => DryRunComplete.make({ testsJson })),
+    Match.when(true, (): VitestDryRunOutcome => DryRunComplete.make({ tests })),
     Match.orElse((): VitestDryRunOutcome =>
       Match.value(command.hasExternalError).pipe(
         Match.when(
           true,
           (): VitestDryRunOutcome =>
             DryRunExternalError.make({
-              testsJson,
+              tests,
               errorMessage: `An error occurred outside of a test run: ${command.externalErrorText}`,
             }),
         ),
-        Match.orElse((): VitestDryRunOutcome => DryRunComplete.make({ testsJson })),
+        Match.orElse((): VitestDryRunOutcome => DryRunComplete.make({ tests })),
       )
     ),
   )
@@ -1147,8 +1107,21 @@ export const makeVitestRunnerLayer = (
             catch: (cause) =>
               new TestRunnerFailed({ runnerName: 'vitest', phase: 'dryRun', cause: errorToString(cause) }),
           }).pipe(
-            Effect.catchIf((error: TestRunnerFailed) => isMissingTestFilesCause(error.cause), () => Effect.void),
+            Effect.catchIf(
+              (error: TestRunnerFailed) => isMissingTestFilesCause(error.cause),
+              () => Effect.annotateCurrentSpan({ 'stryker.vitest.start_missing_files': true }).pipe(Effect.asVoid),
+            ),
+            Effect.catchIf(
+              (error: TestRunnerFailed) => !isMissingTestFilesCause(error.cause),
+              (error) =>
+                Effect.annotateCurrentSpan({ 'stryker.vitest.start_errored': true }).pipe(
+                  Effect.flatMap(() => Effect.fail(error)),
+                ),
+            ),
           )
+          yield* Effect.annotateCurrentSpan({
+            'stryker.vitest.start_filter_count': plan.testFiles === undefined ? -1 : plan.testFiles.length,
+          })
           const allFiles = experimentalStateGetFiles(ctx)
           const rawTests = allFiles.flatMap((
             file,
@@ -1161,6 +1134,11 @@ export const makeVitestRunnerLayer = (
             Match.when(true, () => experimentalStateGetExternalErrorText(ctx)),
             Match.orElse((): string => ''),
           )
+          yield* Effect.annotateCurrentSpan({
+            'stryker.vitest.file_count': allFiles.length,
+            'stryker.vitest.raw_test_count': rawTests.length,
+            'stryker.vitest.has_external_error': hasExternalError,
+          })
           return { rawTests, hasExternalError, externalErrorText }
         })
 
@@ -1242,7 +1220,7 @@ export const makeVitestRunnerLayer = (
             onFailure: (e) =>
               ({ status: 'error' as const, errorMessage: e.message }) satisfies MutantRunResult,
             onSuccess: (out) => {
-              const nrOfTests = (): number => countIdRecords(parseJson(out.testsJson))
+              const nrOfTests = (): number => out.tests.length
               return Match.value(out).pipe(
                 Match.tag(
                   'Error',
@@ -1300,17 +1278,17 @@ export const makeVitestRunnerLayer = (
         )
       }
 
-      const completeDryRun = (testsJson: string): Effect.Effect<DryRunResult, TestRunnerFailed> =>
+      const completeDryRun = (tests: readonly TestResult[]): Effect.Effect<DryRunResult, TestRunnerFailed> =>
         Effect.gen(function*() {
-          const tests: readonly TestResult[] = Match.value(parseJson(testsJson)).pipe(
-            Match.when(Array.isArray, (entries) => entries.filter(isTestResultLike)),
-            Match.orElse((): readonly TestResult[] => []),
-          )
           const mutantCoverage = yield* readMutantCoverage.pipe(
             Effect.mapError((cause) =>
               new TestRunnerFailed({ runnerName: 'vitest', phase: 'dryRun', cause: errorToString(cause) })
             ),
           )
+          yield* Effect.annotateCurrentSpan({
+            'stryker.vitest.test_count': tests.length,
+            'stryker.vitest.has_mutant_coverage': mutantCoverage !== undefined,
+          })
           return Match.value(mutantCoverage).pipe(
             Match.when(Match.defined, (coverage) => ({ status: 'complete' as const, tests, mutantCoverage: coverage })),
             Match.orElse((): DryRunResult => ({ status: 'complete' as const, tests })),
@@ -1339,7 +1317,7 @@ export const makeVitestRunnerLayer = (
                   { status: 'error' as const, errorMessage: error.errorMessage } satisfies DryRunResult,
                 ),
             ),
-            Match.tag('Complete', (complete) => completeDryRun(complete.testsJson)),
+            Match.tag('Complete', (complete) => completeDryRun(complete.tests)),
             Match.exhaustive,
           )
         }).pipe(
@@ -1388,17 +1366,6 @@ export const makeVitestRunnerLayer = (
       return TestRunner.of({ capabilities, init, dryRun, mutantRun, dispose })
     }),
   )
-
-function isTestResultLike(value: unknown): value is TestResult {
-  return Predicate.isObject(value) && typeof Reflect.get(value, 'id') === 'string'
-}
-
-function countIdRecords<A = unknown>(raw: A): number {
-  if (Array.isArray(raw)) {
-    return raw.filter(isTestResultLike).length
-  }
-  return 0
-}
 
 const mergeHitCount = (to: CoverageData, mutantId: string, hitCount: number): void =>
   Option.match(Option.fromNullishOr(to[mutantId]), {

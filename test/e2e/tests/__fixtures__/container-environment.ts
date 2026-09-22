@@ -9,8 +9,6 @@ const execFileAsync = promisify(execFile)
 
 export const CONTAINER_WORKROOT = '/work'
 
-const NODE_IMAGE = 'node:24-alpine@sha256:333f6b3eca25980d5682c26207665b93c9417786b21760b2764d5821d9704c8a'
-
 const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 const TEST_RESOURCES_DIR = fileURLToPath(new URL('../../testResources', import.meta.url))
 const IMAGE_ASSETS_DIR = fileURLToPath(new URL('./image', import.meta.url))
@@ -56,9 +54,6 @@ const CONTAINER_TELEMETRY_ENVIRONMENT = {
   OTEL_SERVICE_NAME: process.env['OTEL_SERVICE_NAME'] ?? 'stryker-e2e',
   OTEL_EXPORTER_OTLP_ENDPOINT: process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? 'http://127.0.0.1:4318',
 }
-
-const workspacePackageDirectory = (packageName: string): string =>
-  join(REPO_ROOT, 'packages', packageName.slice('@systemfsoftware/'.length))
 
 export type ExecResult = {
   readonly exitCode: number

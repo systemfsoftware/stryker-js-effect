@@ -1,11 +1,14 @@
 import { describe, it } from '@effect/vitest'
 import { Match } from 'effect'
-import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
-import { HIT_LIMIT_REASON_PREFIX, hitLimitReachedReason } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  HIT_LIMIT_REASON_PREFIX,
+  hitLimitReachedReason,
+  type TestResult,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   interpretVitestRun,
   MutantDryError,
@@ -55,24 +58,11 @@ const commandWith = <T = unknown>(
   })
 
 const testsIn = (
-  testsJson: string,
-): { readonly ids: readonly string[]; readonly failed: readonly string[] } | null => {
-  const decoded = S.decodeOption(
-    S.fromJsonString(S.Array(S.Struct({ id: S.String, status: S.optional(S.Unknown) }))),
-  )(testsJson)
-  if (Option.isNone(decoded)) {
-    return null
-  }
-  const ids: string[] = []
-  const failed: string[] = []
-  for (const entry of decoded.value) {
-    ids.push(entry.id)
-    if (entry.status === 'failed') {
-      failed.push(entry.id)
-    }
-  }
-  return { ids, failed }
-}
+  tests: readonly TestResult[],
+): { readonly ids: readonly string[]; readonly failed: readonly string[] } => ({
+  ids: tests.map((test) => test.id),
+  failed: tests.filter((test) => test.status === 'failed').map((test) => test.id),
+})
 
 describe('interpretVitestRun', () => {
   it.prop(
@@ -119,7 +109,7 @@ describe('interpretVitestRun', () => {
       }
       return (
         carriesFamilyBrand(result.success) &&
-        result.success.testsJson === '[]' &&
+        result.success.tests.length === 0 &&
         result.success.reason === hitLimitReachedReason(hitCount, hitLimit) &&
         result.success.reason.startsWith(HIT_LIMIT_REASON_PREFIX) === true
       )
@@ -215,7 +205,7 @@ describe('interpretVitestRun', () => {
       }
       return (
         carriesFamilyBrand(result.success) &&
-        result.success.testsJson === '[]' &&
+        result.success.tests.length === 0 &&
         result.success.errorMessage === `An error occurred outside of a test run: ${input.externalErrorText}`
       )
     },
@@ -252,10 +242,7 @@ describe('interpretVitestRun', () => {
       if (!carriesFamilyBrand(result.success)) {
         return false
       }
-      const tests = testsIn(result.success.testsJson)
-      if (tests === null) {
-        return false
-      }
+      const tests = testsIn(result.success.tests)
       const killerIds = result.success.killerIds
       return (
         tests.failed.length === 1 &&
@@ -294,10 +281,7 @@ describe('interpretVitestRun', () => {
       if (!carriesFamilyBrand(result.success)) {
         return false
       }
-      const tests = testsIn(result.success.testsJson)
-      if (tests === null) {
-        return false
-      }
+      const tests = testsIn(result.success.tests)
       return tests.ids.length === 1 && tests.failed.length === 0
     },
   )
