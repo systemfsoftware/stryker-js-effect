@@ -86,6 +86,10 @@
   dir: packages/stryker-js-html-reporter
   intents:
     - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-js-html-reporter@4.0.5":
+  dir: packages/stryker-js-html-reporter
+  intents:
+    - systemf-toolchain-unknown-discipline
 "@systemfsoftware/stryker-js-instrumenter@7.0.0":
   dir: packages/stryker-js-instrumenter
   intents:
@@ -107,6 +111,10 @@
   intents:
     - effect-rc116-and-toolchain-bump
     - instrumenter-placement-as-const
+"@systemfsoftware/stryker-js-instrumenter@8.0.2":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - systemf-toolchain-unknown-discipline
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -134,6 +142,10 @@
   dir: packages/stryker-js-plugin-interface
   intents:
     - machine-invariant-mutation-oracle
+"@systemfsoftware/stryker-js-plugin-interface@7.2.1":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - systemf-toolchain-unknown-discipline
 "@systemfsoftware/stryker-js-plugin-runtime@5.0.0":
   dir: packages/stryker-js-plugin-runtime
   intents:
@@ -170,6 +182,10 @@
   dir: packages/stryker-js-typescript-checker
   intents:
     - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-js-typescript-checker@7.0.5":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - systemf-toolchain-unknown-discipline
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -195,6 +211,10 @@
   intents:
     - machine-invariant-mutation-oracle
     - vitest-hit-limit-hooks
+"@systemfsoftware/stryker-js-vitest-runner@7.1.1":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - systemf-toolchain-unknown-discipline
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
@@ -208,6 +228,10 @@
   dir: packages/stryker-js
   intents:
     - machine-invariant-mutation-oracle
+"@systemfsoftware/stryker-js@10.1.1":
+  dir: packages/stryker-js
+  intents:
+    - systemf-toolchain-unknown-discipline
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
