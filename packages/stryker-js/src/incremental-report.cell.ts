@@ -4,6 +4,7 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import type { PlatformError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -106,4 +107,9 @@ export const incrementalReportCell = Sandwich.read(readIncrementalReportRaw)
   .decode(Sandwich.pure(decodeIncrementalReportRaw))
   .decide(admitIncrementalReport)
   .encode(Sandwich.pure((outcome: Result.Result<IncrementalReportDecision, never>) => Result.succeed(outcome)))
-  .write(writeIncrementalReportOutcome) satisfies Cell.Cell<IncrementalReportCellInput, unknown, unknown, unknown>
+  .write(writeIncrementalReportOutcome) satisfies Cell.Cell<
+    IncrementalReportCellInput,
+    Option.Option<MutationTestResult>,
+    PlatformError,
+    FileSystem.FileSystem
+  >

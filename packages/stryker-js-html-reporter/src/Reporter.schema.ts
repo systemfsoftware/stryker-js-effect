@@ -1,5 +1,5 @@
+import { MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
-const MutationTestResultSchema = S.Unknown
 
 export class HtmlReportCommand extends S.TaggedClass<HtmlReportCommand>()('HtmlReportCommand', {
   report: MutationTestResultSchema,

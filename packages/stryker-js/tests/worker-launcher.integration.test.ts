@@ -8,6 +8,7 @@ import {
 } from '@systemfsoftware/stryker-js'
 import type { WorkerSpawnParams } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
@@ -38,8 +39,8 @@ const spawnParams = (): WorkerSpawnParams => ({
   env: undefined,
 })
 
-interface BootOutcome {
-  readonly answer: Result.Result<string, unknown>
+interface BootOutcome<E = unknown> {
+  readonly answer: Result.Result<string, E>
   readonly spawns: readonly WorkerSpawnParams[]
 }
 
@@ -56,7 +57,7 @@ const bootPingWorker = (
     return { answer, spawns: yield* Ref.get(launcher.spawns) }
   }).pipe(Effect.scoped)
 
-const bootFailure = (boot: BootOutcome): unknown =>
+const bootFailure = <E = unknown>(boot: BootOutcome<E>): E =>
   Result.match(boot.answer, {
     onFailure: (error) => error,
     onSuccess: (answer) => {
@@ -103,6 +104,7 @@ const readingOf = (error: ChildProcessCrashedError | OutOfMemoryError): string =
   )
 
 Feature('Running each plugin worker as its own process')
+  .withLayer(Layer.empty)
   .liveClock()
   .body(({ scenario, scenarioOutline }) => {
     scenario(

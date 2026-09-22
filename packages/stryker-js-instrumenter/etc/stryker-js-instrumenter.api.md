@@ -9,7 +9,7 @@ import * as S from 'effect/Schema';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
-export const causeText: (cause: unknown, depth: number) => string | undefined;
+export const causeText: <A = unknown>(cause: A, depth: number) => string | undefined;
 
 // @public (undocumented)
 export interface Coverage {
@@ -54,7 +54,7 @@ export const ERROR_CODES: Readonly<{
 }>;
 
 // @public (undocumented)
-export function errorToString(error: unknown): string;
+export function errorToString<A = unknown>(error: A): string;
 
 // @public (undocumented)
 interface File_2 extends FileDescription {

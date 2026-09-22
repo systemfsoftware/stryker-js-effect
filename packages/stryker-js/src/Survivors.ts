@@ -38,12 +38,12 @@ export const SURVIVORS_RUN_FIRST_REMEDIATION = 'run a full `stryker run` first, 
 
 export const SURVIVORS_BOOKKEEPING_KEYS = ['survivorsPriorReport'] as const
 
-export const decodePriorReport: (raw: unknown) => Result.Result<PriorReportDocument, S.SchemaError> = S
-  .decodeUnknownResult(PriorReportDocumentSchema)
+export const decodePriorReport = <A = unknown>(raw: A): Result.Result<PriorReportDocument, S.SchemaError> =>
+  S.decodeUnknownResult(PriorReportDocumentSchema)(raw)
 
 const { entries: objectEntries, fromEntries: objectFromEntries } = Object
 
-const EMPTY_CONFIG: Record<string, unknown> = {}
+const EMPTY_CONFIG: Record<string, string> = {}
 
 export type HashContent = (content: string) => string
 
@@ -200,7 +200,21 @@ export const survivorsAdmissionCell = Sandwich.read((input: SurvivorsAdmissionIn
       }),
     onFailure: Effect.fail,
   })
-) satisfies Cell.Cell<SurvivorsAdmissionInput, unknown, unknown, unknown>
+) satisfies Cell.Cell<
+  SurvivorsAdmissionInput,
+  {
+    readonly admission: SurvivorsAdmission
+    readonly resolvedOptions: StrykerOptions
+    readonly priorReportPath: string
+  },
+  | ConfigFileInvalidError
+  | ConfigFileNotFoundError
+  | ConfigFileUnreadableError
+  | ConfigFileUnsupportedError
+  | S.SchemaError
+  | SurvivorsRejection,
+  FileSystem.FileSystem | Path.Path
+>
 
 export function runSurvivorsAdmission(
   cliOptions: PartialStrykerOptions,
@@ -241,9 +255,9 @@ function priorReportPathOf(resolved: StrykerOptions): string {
   return DEFAULT_SURVIVORS_PRIOR_REPORT
 }
 
-interface PriorReportRead {
+interface PriorReportRead<A = unknown> {
   readonly found: boolean
-  readonly raw: unknown
+  readonly raw: A
 }
 
 function readPriorReport(
@@ -268,7 +282,7 @@ function readPriorReport(
   })
 }
 
-function priorReportFileKeys(raw: unknown): readonly string[] {
+function priorReportFileKeys<A = unknown>(raw: A): readonly string[] {
   return Option.getOrElse(
     Option.map(
       Option.flatMap(

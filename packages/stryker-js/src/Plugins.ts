@@ -69,14 +69,14 @@ export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource
 
 const NO_IGNORERS: readonly IgnorerDescriptor[] = []
 
-export interface PluginLoaderEntryLike {
+export interface PluginLoaderEntryLike<A = unknown> {
   readonly moduleName: string
   readonly plugins: readonly PluginDescriptor[] | undefined
-  readonly schemaContribution: Record<string, unknown> | undefined
+  readonly schemaContribution: Record<string, A> | undefined
 }
 
-export interface PluginLoadPlan {
-  readonly schemaContributions: readonly Record<string, unknown>[]
+export interface PluginLoadPlan<A = unknown> {
+  readonly schemaContributions: readonly Record<string, A>[]
   readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>
   readonly pluginModulePaths: readonly string[]
   readonly pluginSources: readonly PluginSource[]
@@ -182,32 +182,32 @@ export const buildPluginLoadPlan = (entries: readonly PluginLoaderEntryLike[]): 
   }
 }
 
-interface SchemaValidationContribution {
-  strykerValidationSchema: Record<string, unknown>
+interface SchemaValidationContribution<A = unknown> {
+  strykerValidationSchema: Record<string, A>
 }
 
-export interface LoadedPlugins {
-  readonly schemaContributions: readonly Record<string, unknown>[]
+export interface LoadedPlugins<A = unknown> {
+  readonly schemaContributions: readonly Record<string, A>[]
   readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>
   readonly pluginModulePaths: readonly string[]
   readonly pluginSources: readonly PluginSource[]
   readonly ignorers: readonly IgnorerDescriptor[]
 }
 
-interface PluginContributions {
+interface PluginContributions<A = unknown> {
   readonly plugins: readonly PluginDescriptor[] | undefined
   readonly ignorers: readonly IgnorerDescriptor[] | undefined
-  readonly schemaContribution: Record<string, unknown> | undefined
+  readonly schemaContribution: Record<string, A> | undefined
 }
 
-const failPluginLoad = (descriptor: string, error: unknown): Effect.Effect<never, PluginLoadFailedError> =>
+const failPluginLoad = <E = unknown>(descriptor: string, error: E): Effect.Effect<never, PluginLoadFailedError> =>
   Effect.logWarning(`Error during loading "${descriptor}" plugin`).pipe(
     Effect.annotateLogs('cause', error),
     Effect.andThen(() => Effect.fail(PluginLoadFailedError.make({ descriptor, cause: error }))),
   )
 
-const modulePluginContributions = (
-  module: unknown,
+const modulePluginContributions = <A = unknown>(
+  module: A,
 ): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
   Match.value(Predicate.hasProperty(module, 'strykerPlugins')).pipe(
     Match.when(true, () =>
@@ -219,8 +219,8 @@ const modulePluginContributions = (
     ),
   )
 
-const moduleIgnorers = (
-  module: unknown,
+const moduleIgnorers = <A = unknown>(
+  module: A,
 ): Result.Result<readonly IgnorerDescriptor[] | undefined, S.SchemaError> =>
   Match.value(Predicate.hasProperty(module, 'strykerIgnorers')).pipe(
     Match.when(true, () =>
@@ -232,17 +232,15 @@ const moduleIgnorers = (
     ),
   )
 
-const moduleSchemaContribution = (module: unknown): Record<string, unknown> | undefined =>
-  Match.value(module).pipe(
-    Match.when(
-      hasValidationSchemaContribution,
-      (contribution: SchemaValidationContribution) => contribution.strykerValidationSchema,
-    ),
-    Match.orElse((): undefined => undefined),
-  )
+const moduleSchemaContribution = <A = unknown, S = unknown>(module: A): Record<string, S> | undefined => {
+  if (hasValidationSchemaContribution<S>(module)) {
+    return module.strykerValidationSchema
+  }
+  return undefined
+}
 
-const pluginContributionsOf = (
-  module: unknown,
+const pluginContributionsOf = <A = unknown>(
+  module: A,
 ): Result.Result<PluginContributions, S.SchemaError> =>
   Result.flatMap(moduleIgnorers(module), (ignorers) =>
     Result.map(modulePluginContributions(module), (plugins) => ({
@@ -261,9 +259,9 @@ const warnUndescribedPluginModule = (descriptor: string): Effect.Effect<undefine
     `Module "${descriptor}" did not contribute a StrykerJS plugin. It didn't export a "strykerPlugins", "strykerIgnorers", or "strykerValidationSchema".`,
   ).pipe(Effect.as(undefined))
 
-const describeLoadedPlugin = (
+const describeLoadedPlugin = <A = unknown>(
   descriptor: string,
-  module: unknown,
+  module: A,
 ): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError> =>
   Result.match(pluginContributionsOf(module), {
     onFailure: (cause) => failPluginLoad(descriptor, cause),
@@ -291,10 +289,10 @@ function loadPlugin(
   })
 }
 
-interface PluginLoaderRawEntry {
+interface PluginLoaderRawEntry<A = unknown> {
   readonly moduleName: string
   readonly plugins: readonly PluginDescriptor[] | undefined
-  readonly schemaContribution: Record<string, unknown> | undefined
+  readonly schemaContribution: Record<string, A> | undefined
 }
 export function loadPlugins(
   pluginDescriptors: readonly string[],
@@ -360,7 +358,7 @@ export const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[
   ...options.checkers.map((checker) => checker.plugin),
 ]
 
-function hasValidationSchemaContribution(module: unknown): module is SchemaValidationContribution {
+function hasValidationSchemaContribution<A = unknown>(module: unknown): module is SchemaValidationContribution<A> {
   return S.is(SchemaValidationContributionSchema)(module)
 }
 

@@ -36,7 +36,7 @@ export function print(file: Ast): string {
   }
 }
 
-const HASHBANG_FIELDS: Readonly<Record<string, (field: unknown) => boolean>> = {
+const HASHBANG_FIELDS: Readonly<Record<string, <A = unknown>(field: A) => boolean>> = {
   type: (field) => field === 'Hashbang',
   value: (field) => typeof field === 'string',
   start: (field) => typeof field === 'number',
@@ -46,15 +46,15 @@ function isHashbang(value: unknown): value is Hashbang {
   return Predicate.isObject(value) && Object.entries(HASHBANG_FIELDS).every(([key, accepts]) => accepts(value[key]))
 }
 
-const hashbangOf = (root: Ast['root']): Hashbang | null => {
-  const hashbang: unknown = Reflect.get(root, 'hashbang')
-  if (!isHashbang(hashbang)) return null
-  return hashbang
+const toHashbang = <A = unknown>(hashbang: A): Hashbang | null => (isHashbang(hashbang) ? hashbang : null)
+
+function getHashbang(root: Ast['root']): Hashbang | null {
+  return toHashbang('hashbang' in root ? root.hashbang : null)
 }
 
-const jsPrint: Printer<JSAst> = (file) => printProgram(file.root, { hashbang: hashbangOf(file.root) })
+const jsPrint: Printer<JSAst> = (file) => printProgram(file.root, { hashbang: getHashbang(file.root) })
 
-const tsPrint: Printer<TSAst | TsxAst> = (file) => printProgram(file.root, { hashbang: hashbangOf(file.root) })
+const tsPrint: Printer<TSAst | TsxAst> = (file) => printProgram(file.root, { hashbang: getHashbang(file.root) })
 
 function getScriptStart(script: HtmlAst['root']['scripts'][number]): number {
   const span = spanOf(script.root)

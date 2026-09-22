@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
-import { Effect } from 'effect'
+import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
 import { instrument } from './__fixtures__/instrument.js'
@@ -15,6 +15,7 @@ const COMPONENT = `<script>
 const Feature = makeFeature({ it, layer })
 
 Feature('Svelte component instrumentation')
+  .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       // Svelte is an OPTIONAL PEER, not a bundled dependency: the parser reads the

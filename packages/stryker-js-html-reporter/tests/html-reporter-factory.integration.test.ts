@@ -167,7 +167,7 @@ function toStream(events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent
   }
 }
 
-Feature('Writing the html mutation report').body(({ scenario }) => {
+Feature('Writing the html mutation report').withLayer(nodeFsPathLayer).body(({ scenario }) => {
   scenario(
     'A completed run writes a self-contained report',
     Gherkin.Do.pipe(

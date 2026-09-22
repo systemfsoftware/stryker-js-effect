@@ -26,7 +26,7 @@ const sampleReport: DecodedReport = {
   files: {},
 }
 
-const constantFrom = <const A extends readonly [unknown, ...unknown[]]>(
+const constantFrom = <Item = unknown, const A extends readonly [Item, ...Item[]] = readonly [Item, ...Item[]]>(
   ...values: A
 ): Arbitrary.Arbitrary<A[number]> =>
   Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: values.length - 1 }))).pipe(

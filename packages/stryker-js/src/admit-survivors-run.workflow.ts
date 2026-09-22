@@ -37,45 +37,48 @@ export const PriorReportDocument = S.Struct({
   ),
 })
 
-const isArray: (value: unknown) => value is unknown[] = Array.isArray
 const { entries: objectEntries, fromEntries: objectFromEntries, keys: objectKeys } = Object
 const stringify = JSON.stringify
 
 const SURVIVORS_RUN_FIRST_REMEDIATION = 'run a full `stryker run` first, then re-run with --survivors'
 const SURVIVORS_BOOKKEEPING_KEYS: readonly string[] = ['survivorsPriorReport']
 
-function stripSurvivorsKeys(config: Record<string, unknown>): Record<string, unknown> {
+function stripSurvivorsKeys<A = unknown>(config: Record<string, A>): Record<string, A> {
   return objectFromEntries(
     objectEntries(config).filter(([key]) => !SURVIVORS_BOOKKEEPING_KEYS.includes(key)),
   )
 }
 
-function wasProducedBySurvivorsRun(priorReport: { readonly config: unknown }): boolean {
+function wasProducedBySurvivorsRun<A = unknown>(priorReport: { readonly config: A }): boolean {
   return Option.exists(
     Option.liftPredicate(priorReport.config, Match.record),
     (config) => SURVIVORS_BOOKKEEPING_KEYS.some((bookkeeping) => bookkeeping in config),
   )
 }
 
-function serializeSurvivorsHashInput(input: {
-  readonly resolvedOptions: Record<string, unknown>
+const sortedEntriesOf = <A = unknown>(source: Readonly<Record<string, A>>): ReadonlyArray<readonly [string, A]> =>
+  objectKeys(source)
+    .sort()
+    .flatMap((key) =>
+      Option.match(Option.fromNullishOr(source[key]), {
+        onNone: () => [],
+        onSome: (value) => [[key, value] as const],
+      })
+    )
+
+const sortRecordOf = <A = unknown>(source: Readonly<Record<string, A>>): Record<string, A> =>
+  Object.fromEntries(sortedEntriesOf(source))
+
+function serializeSurvivorsHashInput<A = unknown>(input: {
+  readonly resolvedOptions: Record<string, A>
   readonly frameworkVersion: string | undefined
   readonly sourceContentHashes: Readonly<Record<string, string>>
 }): string {
-  return stringify(sortKeys(input))
-}
-
-function sortKeys(value: unknown): unknown {
-  return Match.value(value).pipe(
-    Match.when(isArray, (many) => many.map((member) => sortKeys(member))),
-    Match.when(Match.record, (named) =>
-      objectFromEntries(
-        objectKeys(named)
-          .sort()
-          .map((key): readonly [string, unknown] => [key, sortKeys(named[key])]),
-      )),
-    Match.orElse((leaf) => leaf),
-  )
+  return stringify({
+    frameworkVersion: input.frameworkVersion,
+    resolvedOptions: sortRecordOf(input.resolvedOptions),
+    sourceContentHashes: sortRecordOf(input.sourceContentHashes),
+  })
 }
 export class PriorReportFacts extends S.Class<PriorReportFacts>('PriorReportFacts')({
   config: S.Record(S.String, S.Unknown),

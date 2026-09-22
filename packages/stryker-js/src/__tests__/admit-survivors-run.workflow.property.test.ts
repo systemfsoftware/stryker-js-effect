@@ -27,7 +27,7 @@ const absPath = (file: string): string => `/work/${file}`
 
 const intIn = (minimum: number, maximum: number) => Arbitrary.schema(S.Int.check(S.isBetween({ minimum, maximum })))
 
-const oneOf = <A>(...arbs: ReadonlyArray<Arbitrary.Arbitrary<A>>): Arbitrary.Arbitrary<A> =>
+const oneOf = <A = unknown>(...arbs: ReadonlyArray<Arbitrary.Arbitrary<A>>): Arbitrary.Arbitrary<A> =>
   intIn(0, arbs.length - 1).pipe(
     Arbitrary.flatMap((index) => {
       const chosen = arbs[index]
@@ -68,8 +68,10 @@ const recordOf = <A>(value: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<Record<
   )
 
 /** Keys are short enough that `survivorsPriorReport` can never be generated. */
-const cleanConfigArb: Arbitrary.Arbitrary<Record<string, unknown>> = recordOf(
-  oneOf<unknown>(shortKeyArb, Arbitrary.schema(S.Int), Arbitrary.schema(S.Boolean)),
+type CleanConfig = Record<string, string | number | boolean>
+
+const cleanConfigArb: Arbitrary.Arbitrary<CleanConfig> = recordOf(
+  oneOf<string | number | boolean>(shortKeyArb, Arbitrary.schema(S.Int), Arbitrary.schema(S.Boolean)),
 )
 
 const sourceArb = Arbitrary.schema(S.String.check(S.isMaxLength(16), S.isPattern(/^[\x20-\x7E]*$/)))
@@ -95,7 +97,7 @@ const nonSurvivingFilesArb: Arbitrary.Arbitrary<Record<string, schema.FileResult
 
 const reportArb = (
   files: Arbitrary.Arbitrary<Record<string, schema.FileResult>>,
-  config: Arbitrary.Arbitrary<Record<string, unknown>> = cleanConfigArb,
+  config: Arbitrary.Arbitrary<CleanConfig> = cleanConfigArb,
 ): Arbitrary.Arbitrary<schema.MutationTestResult> =>
   Arbitrary.all({
     config,
@@ -196,7 +198,7 @@ const fingerprint = (
     mutant.location.end.column,
   ])
 
-const rejectionOf = (result: Result.Result<unknown, SurvivorsRejection>): SurvivorsRejection | undefined => {
+const rejectionOf = <A = unknown>(result: Result.Result<A, SurvivorsRejection>): SurvivorsRejection | undefined => {
   if (Result.isFailure(result)) {
     return result.failure
   }
@@ -330,7 +332,7 @@ describe('admitSurvivorsRun', () => {
   it.prop(
     '∀l_MalformedLocation_≡RefusedByAdmissionDecode',
     [
-      oneOf<unknown>(
+      oneOf(
         Arbitrary.Constant({}),
         Arbitrary.all({ start: Arbitrary.Constant({}), end: reportPositionArb }),
         Arbitrary.all({ start: reportPositionArb, end: Arbitrary.Constant({}) }),

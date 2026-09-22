@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
-import { Effect } from 'effect'
+import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
 import { instrument } from './__fixtures__/instrument.js'
@@ -22,6 +22,7 @@ const SOURCE = OBJECT_PROTOTYPE_MEMBERS
 const Feature = makeFeature({ it, layer })
 
 Feature('Mutating a method named after an Object.prototype member')
+  .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       'Prototype-named method calls instrument without proposing a method replacement',

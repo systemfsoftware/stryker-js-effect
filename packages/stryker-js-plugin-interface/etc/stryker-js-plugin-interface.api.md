@@ -7,6 +7,7 @@
 import * as Context from 'effect/Context';
 import * as Effect$1 from 'effect/Effect';
 import * as HashMap from 'effect/HashMap';
+import { JsonSchema } from 'effect/JsonSchema';
 import { Location } from '@systemfsoftware/stryker-js-instrumenter';
 import { LocationSchema } from '@systemfsoftware/stryker-js-instrumenter';
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter';
@@ -219,7 +220,7 @@ export { CoverageAnalysisMode as CoverageAnalysisModeType }
 export const CoverageAnalysisSchema: S.Literals<readonly ["off", "all", "perTest"]>;
 
 // @public
-export type DeepOptional<T> = { -readonly [P in keyof T]?: T[P] extends Record<string, unknown> ? DeepOptional<T[P]> | undefined : T[P]; };
+export type DeepOptional<T, V = unknown> = { -readonly [P in keyof T]?: T[P] extends Record<string, V> ? DeepOptional<T[P], V> | undefined : T[P]; };
 
 // @public (undocumented)
 export type Dependencies = typeof DependenciesSchema.Type;
@@ -819,7 +820,7 @@ export const ReporterEventKind: S.Literals<readonly ["dryRunCompleted", "mutatio
 export type ReporterEventKind = typeof ReporterEventKind.Type;
 
 // @public (undocumented)
-export const ReporterEventSchema: StandardSchemaV1<unknown, ReporterEvent>;
+export const ReporterEventSchema: StandardSchemaV1<typeof ReporterEventUnion['Encoded'], ReporterEvent>;
 
 // @public (undocumented)
 export const ReporterEventUnion: S.Union<readonly [typeof DryRunCompleted, typeof MutationTestingPlanReady, typeof MutantTested, typeof MutationTestReportReady]>;
@@ -892,7 +893,7 @@ export interface SkippedTestResult extends BaseTestResult {
 }
 
 // @public
-export const strykerCoreSchema: Record<string, unknown>;
+export const strykerCoreSchema: JsonSchema;
 
 // @public
 export type StrykerOptions = S.Schema.Type<typeof StrykerOptionsSchema>;

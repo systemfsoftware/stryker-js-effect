@@ -79,6 +79,7 @@ import {
   progressStreamFileName,
   runOnHost,
 } from './run-host.js'
+import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { STREAM_SCHEMA_VERSION } from './StreamVersion.js'
 import type { StrykerRun } from './StrykerRun.js'
 import { runSurvivorsAdmission, survivorMutateSpans } from './Survivors.js'
@@ -102,7 +103,7 @@ export {
 }
 export { STREAM_SCHEMA_VERSION }
 
-export function resolveCliExitCode(exit: Exit.Exit<unknown, unknown>): number {
+export function resolveCliExitCode<E = unknown, A = unknown>(exit: Exit.Exit<E, A>): number {
   return runOutcomeCode(classifyRunOutcome(exit, []))
 }
 
@@ -331,7 +332,7 @@ const runOptions = {
       "Re-run only the mutants that survived a previous run. Admits against the previous run's mutation report (the `survivorsPriorReport` config option, default `reports/mutation-report.json`) and re-tests exactly the survivor set. Exits 2 with a remediation naming a full run when the report is missing, drifted, or the configuration changed; exits 0 with a null score when the report has no survivors.",
     ),
   ),
-} satisfies Record<string, Flag.Flag<unknown>>
+}
 
 const runArgs = {
   configFile: Argument.optional(Argument.String('configFile')),
@@ -356,7 +357,7 @@ const mergeReportsOptions = {
       ),
       optional,
     ),
-} satisfies Record<string, Flag.Flag<unknown>>
+}
 
 function makeStrykerCommand(requestRef: Ref.Ref<Option.Option<CliRequest>>) {
   const runCommand = Command.make(
@@ -521,7 +522,7 @@ export const runStrykerCli = (
     const dispatch = (
       request: CliRequest,
     ): Effect.Effect<
-      unknown,
+      void | MutationTestDone,
       | SchemaError
       | SurvivorsRejection
       | ConfigFileNotFoundError

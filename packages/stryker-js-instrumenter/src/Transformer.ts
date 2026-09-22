@@ -101,7 +101,7 @@ export function hasPlacedMutants(
 
 const WILDCARD = 'all'
 const DEFAULT_REASON = 'Ignored using a comment'
-const NO_CHILDREN: readonly unknown[] = Object.freeze([])
+const NO_CHILDREN: readonly Node[] = Object.freeze([])
 
 const strykerCommentDirectiveRegex = /^\s?Stryker (disable|restore)(?: (next-line))? ([a-zA-Z, ]+)(?::(.+)?)?/
 
@@ -214,7 +214,7 @@ function attachedComments(node: Node): readonly LocatedComment[] {
   return leadingCommentsOn(node) ?? NO_COMMENTS
 }
 
-function leadingCommentsOn(value: unknown): readonly LocatedComment[] | undefined {
+function leadingCommentsOn<A = unknown>(value: A): readonly LocatedComment[] | undefined {
   if (isCommentBearing(value)) return value.leadingComments
   return undefined
 }
@@ -676,7 +676,7 @@ interface ParenthesizedWrapper {
 
 function innerExpression(node: Node): Option.Option<Node> {
   return Option.flatMap(
-    Option.filter(Option.some<unknown>(node), isParenthesizedWrapper),
+    Option.filter(Option.some(node), isParenthesizedWrapper),
     (parenthesized) => Option.map(Option.fromNullishOr(parenthesized.expression), unwrapParenthesizedExpression),
   )
 }
@@ -778,7 +778,7 @@ export const allMutantPlacers: readonly MutantPlacer[] = Object.freeze([
   switchCaseMutantPlacer,
 ])
 
-function isCommentArray(value: unknown): value is readonly unknown[] {
+function isCommentArray(value: unknown): value is readonly LocatedComment[] {
   return Array.isArray(value)
 }
 
@@ -871,11 +871,11 @@ const headerFor = (root: Program): Effect.Effect<readonly Statement[], ParseFail
       onSome: (leadingComments) => [commentedHeader(leadingComments, header), ...header.slice(1)],
     }))
 
-function leadingCommentsOf(root: Program): Option.Option<readonly unknown[]> {
-  return Option.filter(Option.some<unknown>(leadingCommentsOn(root.body[0])), isCommentArray)
+function leadingCommentsOf(root: Program): Option.Option<readonly LocatedComment[]> {
+  return Option.filter(Option.some(leadingCommentsOn(root.body[0])), isCommentArray)
 }
 
-function commentedHeader(leadingComments: readonly unknown[], header: readonly Statement[]): Statement {
+function commentedHeader(leadingComments: readonly LocatedComment[], header: readonly Statement[]): Statement {
   const firstHeader = Option.getOrThrowWith(
     Option.fromNullishOr(header[0]),
     () => new Error('Instrumentation header is empty'),
@@ -885,46 +885,47 @@ function commentedHeader(leadingComments: readonly unknown[], header: readonly S
   return cloned
 }
 
-function deepFreeze(value: unknown): unknown {
+function deepFreeze<A = unknown>(value: A): A {
   return Option.match(frozenContainer(value), {
     onNone: () => value,
     onSome: (frozen) => frozen,
   })
 }
 
-function frozenContainer(value: unknown): Option.Option<unknown> {
+function frozenContainer<A = unknown>(value: A): Option.Option<A> {
   return Option.map(Option.filter(Option.some(value), isObjectValue), (object) => {
     freezableChildren(object).forEach((child) => {
       deepFreeze(child)
     })
-    return Object.freeze(object)
+    Object.freeze(object)
+    return value
   })
 }
 
-function freezableChildren(value: Record<string, unknown>): readonly unknown[] {
+function freezableChildren(value: Record<string, object | null | undefined>): readonly (object | null | undefined)[] {
   return [...mapEntries(value), ...setItems(value), ...Object.values(value)]
 }
 
-function mapEntries(value: object): readonly unknown[] {
+function mapEntries(value: object): readonly (object | null | undefined)[] {
   return Option.getOrElse(
     Option.map(Option.filter(Option.some(value), isMap), (map) => [...map.entries()].flat()),
     () => NO_CHILDREN,
   )
 }
 
-function setItems(value: object): readonly unknown[] {
+function setItems(value: object): readonly (object | null | undefined)[] {
   return Option.getOrElse(Option.map(Option.filter(Option.some(value), isSet), (set) => [...set]), () => NO_CHILDREN)
 }
 
-function isObjectValue(value: unknown): value is Record<string, unknown> {
+function isObjectValue(value: unknown): value is Record<string, object | null | undefined> {
   return value !== null && typeof value === 'object'
 }
 
-function isMap(value: object): value is Map<unknown, unknown> {
+function isMap(value: object): value is Map<object | null | undefined, object | null | undefined> {
   return value instanceof Map
 }
 
-function isSet(value: object): value is Set<unknown> {
+function isSet(value: object): value is Set<object | null | undefined> {
   return value instanceof Set
 }
 
@@ -1258,7 +1259,7 @@ function toMutatorContext(ancestors: readonly Node[]): MutatorContext {
   }
 }
 
-function toError(value: unknown): Error {
+function toError<A = unknown>(value: A): Error {
   if (value instanceof Error) {
     return value
   }

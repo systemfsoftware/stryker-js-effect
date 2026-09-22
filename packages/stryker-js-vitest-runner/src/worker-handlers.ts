@@ -40,8 +40,9 @@ export const testRunnerHandlers = TestRunnerRpcs.toLayer(
       Match.orElse(() => 'vitest'),
     )
     const sandboxDirectory = yield* Config.String('STRYKER_SANDBOX_DIR')
-    const failed = (phase: TestRunnerPhase) => (cause: Cause.Cause<unknown>): Effect.Effect<never, TestRunnerFailed> =>
-      Effect.fail(new TestRunnerFailed({ cause: Cause.pretty(cause), phase, runnerName }))
+    const failed =
+      (phase: TestRunnerPhase) => <E = unknown>(cause: Cause.Cause<E>): Effect.Effect<never, TestRunnerFailed> =>
+        Effect.fail(new TestRunnerFailed({ cause: Cause.pretty(cause), phase, runnerName }))
 
     const underlying = yield* Effect.cached(
       TestRunner.pipe(

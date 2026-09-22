@@ -6,7 +6,7 @@ import * as S from 'effect/Schema'
 
 export type Primitive = boolean | number | string | null | undefined
 
-export type ImmutablePrimitive = Primitive | ((...args: never[]) => unknown)
+export type ImmutablePrimitive = Primitive | ((...args: never[]) => void)
 
 export type Immutable<T> = T extends ImmutablePrimitive ? T
   : T extends Array<infer U> ? ReadonlyArray<Immutable<U>>
@@ -17,37 +17,48 @@ export type Immutable<T> = T extends ImmutablePrimitive ? T
 
 const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 
-const isArrayValue = (value: unknown): value is readonly unknown[] => Array.isArray(value)
+const isRecordValue = <A = unknown>(value: unknown): value is Record<string, A> =>
+  isNonNullObject(value) && Array.isArray(value) === false
 
-const freezeArrayValue = (value: readonly unknown[]): unknown => Object.freeze(value.map(deepFreeze))
+const isArrayValue = <A = unknown>(value: unknown): value is readonly A[] => Array.isArray(value)
 
-const freezeMapEntry = (
-  [entryKey, entryValue]: readonly [unknown, unknown],
-): [unknown, unknown] => [deepFreeze(entryKey), deepFreeze(entryValue)]
+const freezeArrayValue = <A = unknown>(value: readonly A[]): ReadonlyArray<Immutable<A>> =>
+  Object.freeze(value.map((element) => deepFreeze(element)))
 
-const freezeMapValue = (value: Map<unknown, unknown>): unknown =>
+const freezeMapEntry = <K = unknown, V = unknown>(
+  [entryKey, entryValue]: readonly [K, V],
+): readonly [Immutable<K>, Immutable<V>] => [deepFreeze(entryKey), deepFreeze(entryValue)]
+
+const freezeMapValue = <K = unknown, V = unknown>(value: Map<K, V>): ReadonlyMap<Immutable<K>, Immutable<V>> =>
   Object.freeze(new Map([...value.entries()].map(freezeMapEntry)))
 
-const freezeSetValue = (value: Set<unknown>): unknown => Object.freeze(new Set([...value.values()].map(deepFreeze)))
+const freezeSetValue = <A = unknown>(value: Set<A>): ReadonlySet<Immutable<A>> =>
+  Object.freeze(new Set([...value.values()].map((element) => deepFreeze(element))))
 
-const freezeRegExpValue = (value: RegExp): unknown => Object.freeze(value)
+const freezeRegExpValue = (value: RegExp): RegExp => Object.freeze(value)
 
-const freezeRecordValue = (value: object): unknown =>
+const freezeRecordValue = <A = unknown>(value: Record<string, A>): Record<string, Immutable<A>> =>
   Object.freeze(
-    Object.entries(value).reduce<Record<string, unknown>>((frozen, [property, propertyValue]) => {
+    Object.entries(value).reduce<Record<string, Immutable<A>>>((frozen, [property, propertyValue]) => {
       frozen[property] = deepFreeze(propertyValue)
       return frozen
     }, {}),
   )
 
 export function deepFreeze<T>(target: T): Immutable<T>
-export function deepFreeze(target: unknown): unknown {
+export function deepFreeze(target: object | Primitive): object | Primitive {
   return Match.value(target).pipe(
     Match.when(isArrayValue, freezeArrayValue),
-    Match.when((value: unknown): value is Map<unknown, unknown> => value instanceof Map, freezeMapValue),
+    Match.when(
+      <K = unknown, V = unknown>(value: unknown): value is Map<K, V> => value instanceof Map,
+      freezeMapValue,
+    ),
     Match.when((value: unknown): value is RegExp => value instanceof RegExp, freezeRegExpValue),
-    Match.when((value: unknown): value is Set<unknown> => value instanceof Set, freezeSetValue),
-    Match.when(isNonNullObject, freezeRecordValue),
+    Match.when(
+      <A2 = unknown>(value: unknown): value is Set<A2> => value instanceof Set,
+      freezeSetValue,
+    ),
+    Match.when(isRecordValue, freezeRecordValue),
     Match.orElse(() => target),
   )
 }
@@ -99,8 +110,8 @@ const scopedUnserializable =
     path: [scope, ...description.path],
   })
 
-const describeUnserializableChild = (
-  child: unknown,
+const describeUnserializableChild = <A = unknown>(
+  child: A,
   scope: string,
 ): UnserializableDescription[] =>
   Match.value(findUnserializables(child)).pipe(
@@ -116,8 +127,8 @@ const collectUnserializables = (
   return undefined
 }
 
-const describeUnserializableArray = (
-  value: readonly unknown[],
+const describeUnserializableArray = <A = unknown>(
+  value: readonly A[],
 ): UnserializableDescription[] | undefined =>
   collectUnserializables(
     value.map((child, index) => describeUnserializableChild(child, index.toString())),
@@ -162,10 +173,10 @@ const NON_JSON_PRIMITIVE_TYPES: readonly string[] = ['bigint', 'function', 'symb
 
 const isNonJsonPrimitive = (
   value: unknown,
-): value is bigint | symbol | ((...args: never[]) => unknown) => NON_JSON_PRIMITIVE_TYPES.includes(typeof value)
+): value is bigint | symbol | ((...args: never[]) => void) => NON_JSON_PRIMITIVE_TYPES.includes(typeof value)
 
 const describeNonJsonPrimitive = (
-  value: bigint | symbol | ((...args: never[]) => unknown),
+  value: bigint | symbol | ((...args: never[]) => void),
 ): UnserializableDescription[] | undefined => [
   {
     path: [],
@@ -183,15 +194,25 @@ const describeNumber = (value: number): UnserializableDescription[] | undefined 
   ]
 }
 
-export function findUnserializables(
-  thing: unknown,
+export function findUnserializables<A = unknown>(
+  thing: A,
 ): UnserializableDescription[] | undefined {
-  return Match.value(thing).pipe(
-    Match.when((value: unknown): value is number => typeof value === 'number', describeNumber),
-    Match.when(isNonJsonPrimitive, describeNonJsonPrimitive),
-    Match.when(isNonNullObject, describeUnserializableObject),
-    Match.orElse(() => undefined),
-  )
+  if (typeof thing === 'number') {
+    return describeNumber(thing)
+  }
+  return describeNonNumberValue(thing)
+}
+
+function describeNonNumberValue<A = unknown>(
+  thing: A,
+): UnserializableDescription[] | undefined {
+  return isNonJsonPrimitive(thing) ? describeNonJsonPrimitive(thing) : describeObjectValue(thing)
+}
+
+function describeObjectValue<A = unknown>(
+  thing: A,
+): UnserializableDescription[] | undefined {
+  return isNonNullObject(thing) ? describeUnserializableObject(thing) : undefined
 }
 
 export type KnownKeys<T> = keyof {

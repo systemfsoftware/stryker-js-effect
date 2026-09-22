@@ -19,7 +19,7 @@ export interface BuiltinReporterServices {
   readonly stdio: Stdio.Stdio
 }
 
-const failAsJsonReporter = (cause: unknown): ReporterFailed =>
+const failAsJsonReporter = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'json',
     event: 'mutationTestReportReady',
@@ -65,7 +65,7 @@ const rememberReport = (seen: SeenReport, event: ReporterEvent): void => {
   )
 }
 
-const streamErrorOf = (cause: unknown): ReporterFailed =>
+const streamErrorOf = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({ reporterName: 'json', event: 'mutationTestReportReady', cause: errorToString(cause) })
 export const makeJsonReporter = (services: BuiltinReporterServices): ReporterFactory => (options) => (events) => {
   const seen: SeenReport = {}

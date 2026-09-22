@@ -177,7 +177,7 @@ const PROGRESS_BAR_FORMAT =
 
 const PROGRESS_BAR_OPTIONS = { complete: '=', incomplete: ' ', width: 50 }
 
-const progressStreamErrorOf = (cause: unknown): ReporterFailed =>
+const progressStreamErrorOf = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'progress',
     event: 'mutationTestReportReady',

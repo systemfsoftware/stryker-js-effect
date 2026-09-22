@@ -122,7 +122,7 @@ export function strykerReportBugUrl(titleSuggestion: string): string {
  * one is a schema - the generated law suite does exactly that, and a document
  * handed to `toEncoded` takes the whole suite down with it.
  */
-export const strykerCoreSchema: Record<string, unknown> = (() => {
+export const strykerCoreSchema = (() => {
   const { schema, definitions } = S.toJsonSchemaDocument(StrykerOptionsSchema)
   if (Object.keys(definitions).length === 0) {
     return schema

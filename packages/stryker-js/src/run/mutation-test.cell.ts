@@ -368,20 +368,9 @@ const reportDroppedMutants = (dropped: readonly Mutant[]): Effect.Effect<void> =
     ),
   )
 
-const hasStringReason = (r: object): r is { readonly reason: string } => 'reason' in r && typeof r.reason === 'string'
-
-const reasonOf = (result: unknown): string | undefined =>
-  Match.value(result).pipe(
-    Match.when(
-      (r: unknown): r is object => typeof r === 'object' && r !== null,
-      (r) =>
-        Match.value(r).pipe(
-          Match.when(hasStringReason, (obj) => obj.reason),
-          Match.orElse(() => undefined),
-        ),
-    ),
-    Match.orElse(() => undefined),
-  )
+const stringReasonOrUndefined = <V = unknown>(val: V): string | undefined => typeof val === 'string' ? val : undefined
+const reasonOf = (result: object): string | undefined =>
+  'reason' in result ? stringReasonOrUndefined(result.reason) : undefined
 
 const stopWallClock = (
   result: { readonly status: string; readonly reason?: string },

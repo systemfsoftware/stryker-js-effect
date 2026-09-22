@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -80,77 +81,87 @@ export class VitestDryRunOutput extends S.TaggedClass<VitestDryRunOutput>()('Vit
 
 type TaskState = 'pass' | 'fail' | 'skip' | 'todo' | 'run' | 'queued' | 'only' | undefined
 
-const recordOption = (value: unknown): Option.Option<Record<string, unknown>> =>
-  S.decodeUnknownOption(S.Record(S.String, S.Unknown))(value)
+export interface RawVitestRecord<A = unknown> {
+  readonly [key: string]: A
+}
 
-const getStringField = (record: Record<string, unknown>, key: string): Option.Option<string> =>
-  Option.fromNullishOr(record[key]).pipe(Option.filter((v): v is string => typeof v === 'string'))
+const isRecordValue = <A = unknown>(value: unknown): value is RawVitestRecord<A> => Predicate.isObject(value)
 
-const getNumberField = (record: Record<string, unknown>, key: string): Option.Option<number> =>
-  Option.fromNullishOr(record[key]).pipe(Option.filter((v): v is number => typeof v === 'number'))
+const recordOption = <A = unknown>(value: A): Option.Option<RawVitestRecord<A>> =>
+  Option.liftPredicate(value, isRecordValue<A>)
 
-const getSuite = (value: unknown): Option.Option<unknown> =>
-  recordOption(value).pipe(Option.flatMap((rec) => Option.fromNullishOr(rec['suite'])))
+const asString = (value: unknown): value is string => typeof value === 'string'
 
-const getFile = (value: unknown): Option.Option<unknown> =>
-  recordOption(value).pipe(Option.flatMap((rec) => Option.fromNullishOr(rec['file'])))
+const asNumber = (value: unknown): value is number => typeof value === 'number'
 
-const getResult = (value: unknown): Option.Option<unknown> =>
-  recordOption(value).pipe(Option.flatMap((rec) => Option.fromNullishOr(rec['result'])))
+const asStringOption = <A = unknown>(value: A): Option.Option<string> => Option.liftPredicate(value, asString)
 
-const getErrors = (value: unknown): Option.Option<readonly unknown[]> =>
-  recordOption(value).pipe(
-    Option.flatMap((rec) => Option.fromNullishOr(rec['errors'])),
-    Option.filter((v): v is readonly unknown[] => Array.isArray(v)),
-  )
+const asNumberOption = <A = unknown>(value: A): Option.Option<number> => Option.liftPredicate(value, asNumber)
 
-const getMessage = (value: unknown): Option.Option<string> =>
-  recordOption(value).pipe(
-    Option.flatMap((rec) => Option.fromNullishOr(rec['message'])),
-    Option.filter((v): v is string => typeof v === 'string'),
-  )
+const asArrayOption = <A = unknown>(value: A): Option.Option<readonly A[]> => Option.liftPredicate(value, Array.isArray)
 
-const getName = (value: unknown): string =>
+const getStringField = <A = unknown>(record: RawVitestRecord<A>, key: string): Option.Option<string> =>
+  asStringOption(record[key])
+
+const getNumberField = <A = unknown>(record: RawVitestRecord<A>, key: string): Option.Option<number> =>
+  asNumberOption(record[key])
+
+const getSuite = <A = unknown>(value: A): Option.Option<A> =>
+  Option.flatMap(recordOption(value), (rec) => Option.fromNullishOr(rec['suite']))
+
+const getFile = <A = unknown>(value: A): Option.Option<A> =>
+  Option.flatMap(recordOption(value), (rec) => Option.fromNullishOr(rec['file']))
+
+const getResult = <A = unknown>(value: A): Option.Option<A> =>
+  Option.flatMap(recordOption(value), (rec) => Option.fromNullishOr(rec['result']))
+
+const getErrors = <A = unknown>(value: A): Option.Option<readonly A[]> =>
+  Option.flatMap(recordOption(value), (rec) => asArrayOption(rec['errors']))
+
+const getMessage = <A = unknown>(value: A): Option.Option<string> =>
+  Option.flatMap(recordOption(value), (rec) => getStringField(rec, 'message'))
+
+const getName = <A = unknown>(value: A): string =>
   Option.match(recordOption(value), {
     onNone: () => '',
     onSome: (rec) => Option.getOrElse(getStringField(rec, 'name'), () => ''),
   })
 
-const getMode = (value: unknown): string =>
+const getMode = <A = unknown>(value: A): string =>
   Option.match(recordOption(value), {
     onNone: () => 'run',
     onSome: (rec) => Option.getOrElse(getStringField(rec, 'mode'), () => 'run'),
   })
 
-const getState = (value: unknown): TaskState =>
-  Match.value(value).pipe(
-    Match.when('pass', (): TaskState => 'pass'),
-    Match.when('fail', (): TaskState => 'fail'),
-    Match.when('skip', (): TaskState => 'skip'),
-    Match.when('todo', (): TaskState => 'todo'),
-    Match.when('run', (): TaskState => 'run'),
-    Match.when('queued', (): TaskState => 'queued'),
-    Match.when('only', (): TaskState => 'only'),
-    Match.when(undefined, (): TaskState => undefined),
-    Match.orElse((): TaskState => undefined),
-  )
+const TASK_STATES: Readonly<Record<string, TaskState>> = Object.freeze({
+  pass: 'pass',
+  fail: 'fail',
+  skip: 'skip',
+  todo: 'todo',
+  run: 'run',
+  queued: 'queued',
+  only: 'only',
+})
 
-const getDuration = (value: unknown): number =>
+const getState = <A = unknown>(value: A): TaskState =>
+  Option.match(asStringOption(value), {
+    onNone: (): TaskState => undefined,
+    onSome: (state): TaskState => TASK_STATES[state],
+  })
+
+const getDuration = <A = unknown>(value: A): number =>
   Option.match(recordOption(value), {
     onNone: () => 0,
     onSome: (rec) => Option.getOrElse(getNumberField(rec, 'duration'), () => 0),
   })
 
-const getFilepath = (value: unknown): string | undefined =>
+const getFilepath = <A = unknown>(value: A): string | undefined =>
   Option.match(recordOption(value), {
     onNone: (): string | undefined => undefined,
-    onSome: (rec) =>
-      Option.getOrUndefined(
-        Option.fromNullishOr(rec['filepath']).pipe(Option.filter((v): v is string => typeof v === 'string')),
-      ),
+    onSome: (rec): string | undefined => Option.getOrUndefined(getStringField(rec, 'filepath')),
   })
 
-const collectSuiteNames = (suite: unknown): readonly string[] =>
+const collectSuiteNames = <A = unknown>(suite: A): readonly string[] =>
   Option.match(Option.fromNullishOr(suite), {
     onNone: (): readonly string[] => [],
     onSome: (current): readonly string[] =>
@@ -169,7 +180,7 @@ const collectSuiteNames = (suite: unknown): readonly string[] =>
       }),
   })
 
-const collectTestNameRaw = (test: unknown): string => {
+const collectTestNameRaw = <A = unknown>(test: A): string => {
   const name = getName(test)
   const suite = Option.getOrUndefined(getSuite(test))
   const suiteNames = collectSuiteNames(suite)
@@ -177,7 +188,7 @@ const collectTestNameRaw = (test: unknown): string => {
   return parts.join(' ').trim()
 }
 
-const toRawTestIdRaw = (test: unknown): string => {
+const toRawTestIdRaw = <A = unknown>(test: A): string => {
   const filepath = Option.match(getFile(test), {
     onNone: (): string => 'unknown.js',
     onSome: (file): string => Option.getOrElse(Option.fromNullishOr(getFilepath(file)), (): string => 'unknown.js'),
@@ -219,7 +230,7 @@ const toTestStatus = (taskState: TaskState, mode: string): TestStatus =>
     Match.exhaustive,
   )
 
-const findSuiteErrorRaw = (suite: unknown): string | undefined =>
+const findSuiteErrorRaw = <A = unknown>(suite: A): string | undefined =>
   Option.match(Option.fromNullishOr(suite), {
     onNone: (): string | undefined => undefined,
     onSome: (current): string | undefined =>
@@ -242,7 +253,7 @@ const findSuiteErrorRaw = (suite: unknown): string | undefined =>
       }),
   })
 
-const extractStatus = (test: unknown): TestStatus => {
+const extractStatus = <A = unknown>(test: A): TestStatus => {
   const result = Option.getOrUndefined(getResult(test))
   const mode = getMode(test)
   const state = Option.match(Option.fromNullishOr(result), {
@@ -256,7 +267,7 @@ const extractStatus = (test: unknown): TestStatus => {
   return toTestStatus(state, mode)
 }
 
-const extractDuration = (test: unknown): number =>
+const extractDuration = <A = unknown>(test: A): number =>
   Option.match(getResult(test), {
     onNone: (): number => 0,
     onSome: (result): number =>
@@ -266,18 +277,18 @@ const extractDuration = (test: unknown): number =>
       }),
   })
 
-const extractFileName = (test: unknown): string | undefined =>
+const extractFileName = <A = unknown>(test: A): string | undefined =>
   Option.match(getFile(test), {
     onNone: (): string | undefined => undefined,
     onSome: (file): string | undefined => getFilepath(file),
   })
 
-const extractRawId = (test: unknown, projectRoot: string): string =>
+const extractRawId = <A = unknown>(test: A, projectRoot: string): string =>
   normalizeTestIdRaw(toRawTestIdRaw(test), projectRoot)
 
-const extractName = (test: unknown): string => collectTestNameRaw(test)
+const extractName = <A = unknown>(test: A): string => collectTestNameRaw(test)
 
-const extractFailureMessage = (test: unknown): string =>
+const extractFailureMessage = <A = unknown>(test: A): string =>
   Option.match(getResult(test), {
     onNone: (): string => 'StrykerJS: Unknown test failure',
     onSome: (result): string =>
@@ -297,8 +308,8 @@ const extractFailureMessage = (test: unknown): string =>
       }),
   })
 
-const convertTestRaw = (
-  test: unknown,
+const convertTestRaw = <A = unknown>(
+  test: A,
   projectRoot: string,
 ): {
   readonly id: string
@@ -470,19 +481,21 @@ const decideVitestMutantRun = (
                 }),
               )),
             Match.when(false, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> => {
-              const testsOption = Option.liftThrowable((input: string): unknown => JSON.parse(input))(dry.testsJson)
-                .pipe(
-                  Option.filter((v): v is readonly {
-                    readonly id: string
-                    readonly status: TestStatus
-                    readonly failureMessage?: string
-                  }[] => Array.isArray(v)),
-                )
-              const tests = Option.getOrElse(testsOption, (): readonly {
+              const dryTestsSchema = S.fromJsonString(
+                S.Array(
+                  S.Struct({
+                    id: S.String,
+                    status: S.Literals(['success', 'failed', 'skipped', 'ignored'] as const),
+                    failureMessage: S.optional(S.String),
+                  }),
+                ),
+              )
+              type ReportedStatus = TestStatus | 'ignored'
+              const tests: readonly {
                 readonly id: string
-                readonly status: TestStatus
+                readonly status: ReportedStatus
                 readonly failureMessage?: string
-              }[] => [])
+              }[] = Option.getOrElse(S.decodeOption(dryTestsSchema)(dry.testsJson), () => [])
               const killed = tests.filter((t) => t.status === 'failed')
               return Match.value(killed.length > 0).pipe(
                 Match.when(

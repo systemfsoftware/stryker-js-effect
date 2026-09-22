@@ -1,5 +1,6 @@
 import { describe, it } from '@effect/vitest'
 import { Match } from 'effect'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
@@ -28,10 +29,10 @@ const tagOf = (result: Result.Result<VitestMutantRunOutput, VitestMutantRunError
     Match.exhaustive,
   )
 
-const commandWith = (
+const commandWith = <T = unknown>(
   input: VitestMutantRunCommand,
   override: {
-    readonly rawTests?: readonly unknown[]
+    readonly rawTests?: readonly T[]
     readonly hasExternalError?: boolean
     readonly externalErrorText?: string
     readonly hitCount: number | undefined
@@ -56,19 +57,17 @@ const commandWith = (
 const testsIn = (
   testsJson: string,
 ): { readonly ids: readonly string[]; readonly failed: readonly string[] } | null => {
-  const parsed: unknown = JSON.parse(testsJson)
-  if (!Array.isArray(parsed)) {
+  const decoded = S.decodeOption(
+    S.fromJsonString(S.Array(S.Struct({ id: S.String, status: S.optional(S.Unknown) }))),
+  )(testsJson)
+  if (Option.isNone(decoded)) {
     return null
   }
-  const items: readonly unknown[] = parsed
   const ids: string[] = []
   const failed: string[] = []
-  for (const entry of items) {
-    if (typeof entry !== 'object' || entry === null || !('id' in entry) || typeof entry.id !== 'string') {
-      return null
-    }
+  for (const entry of decoded.value) {
     ids.push(entry.id)
-    if ('status' in entry && entry.status === 'failed') {
+    if (entry.status === 'failed') {
       failed.push(entry.id)
     }
   }

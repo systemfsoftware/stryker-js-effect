@@ -138,7 +138,7 @@ function toStream(events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent
   }
 }
 
-Feature('Keeping the report when a run is interrupted').body(({ scenario }) => {
+Feature('Keeping the report when a run is interrupted').withLayer(nodeFsPathLayer).body(({ scenario }) => {
   scenario(
     'An interrupted run leaves no report behind',
     Gherkin.Do.pipe(

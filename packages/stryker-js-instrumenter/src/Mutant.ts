@@ -100,17 +100,21 @@ export interface ErrnoException extends Error {
 
 const hasText = (value: unknown): value is string => Predicate.isString(value) && value.length > 0
 
-const textIfNonEmpty = (value: unknown): string | undefined =>
+const textIfNonEmpty = <A = unknown>(value: A): string | undefined =>
   Option.getOrUndefined(Option.filter(Option.fromUndefinedOr(value), hasText))
 
-const fieldOf = (value: object, key: string): unknown =>
-  Match.value(key in value).pipe(
-    Match.when(true, () => {
-      const field: unknown = Reflect.get(value, key)
-      return field
-    }),
-    Match.orElse(() => undefined),
-  )
+function readFieldOf<A = unknown>(record: Record<string, A>, key: string): A | undefined {
+  return record[key]
+}
+
+const hasFieldIn = <A = unknown>(value: object, key: string): value is Record<string, A> => key in value
+
+const fieldOf = <A = unknown>(value: object, key: string): A | undefined => {
+  if (!hasFieldIn<A>(value, key)) {
+    return undefined
+  }
+  return readFieldOf(value, key)
+}
 
 const hasStringCode = (error: Error): boolean =>
   Match.value(fieldOf(error, 'code')).pipe(
@@ -131,7 +135,7 @@ const isEmptyNumber = (value: number): boolean =>
     Match.orElse(Number.isNaN),
   )
 
-const isEmptyError = (error: unknown): boolean =>
+const isEmptyError = (error: unknown): error is undefined | null | '' | 0 | false =>
   Match.value(error).pipe(
     Match.when(Match.undefined, () => true),
     Match.when(Match.null, () => true),
@@ -140,7 +144,6 @@ const isEmptyError = (error: unknown): boolean =>
     Match.when(Match.boolean, (value) => !value),
     Match.orElse(() => false),
   )
-
 const formatErrnoException = (error: ErrnoException): string =>
   Match.value(error.stack).pipe(
     Match.when(hasText, (stack) => `${error.name}: ${error.code} (${error.syscall}) ${stack}`),
@@ -161,7 +164,7 @@ const isJsonPrimitive = (value: unknown): value is number | boolean | bigint =>
     Match.orElse(() => false),
   )
 
-const jsonText = (error: unknown): string | undefined => {
+const jsonText = <A = unknown>(error: A): string | undefined => {
   try {
     return textIfNonEmpty(JSON.stringify(error))
   } catch {
@@ -181,11 +184,7 @@ const isUsableText = (value: unknown): value is string =>
     Match.orElse(() => false),
   )
 
-const usableText = (value: unknown): string =>
-  Match.value(value).pipe(
-    Match.when(isUsableText, (text) => text),
-    Match.orElse(() => ''),
-  )
+const usableText = <A = unknown>(value: A): string => (isUsableText(value) ? value : '')
 
 const objectToStringText = (value: object): string =>
   Match.value(fieldOf(value, 'toString')).pipe(
@@ -201,25 +200,24 @@ const objectToStringText = (value: object): string =>
 
 const isObjectType = (cause: unknown): cause is object => typeof cause === 'object'
 
-const toStringText = (error: unknown): string =>
-  Match.value(error).pipe(
-    Match.when(Match.null, () => ''),
-    Match.when(isObjectType, (value) => objectToStringText(value)),
-    Match.orElse(() => ''),
-  )
+const isNonNullObjectType = <A = unknown>(error: A): error is A & object => error !== null && isObjectType(error)
 
-const stringifyRest = (error: unknown): string =>
-  Match.value(jsonText(error)).pipe(
-    Match.when(hasText, (json) => json),
-    Match.orElse(() => toStringText(error)),
-  )
+const toStringText = <A = unknown>(error: A): string => (isNonNullObjectType(error) ? objectToStringText(error) : '')
 
-const stringifyNonError = (error: unknown): string =>
-  Match.value(error).pipe(
-    Match.when(Match.string, (text) => text),
-    Match.when(isJsonPrimitive, (primitive) => JSON.stringify(primitive)),
-    Match.orElse(() => stringifyRest(error)),
-  )
+const stringifyRest = <A = unknown>(error: A): string => {
+  const json = jsonText(error)
+  return hasText(json) ? json : toStringText(error)
+}
+
+function primitiveJsonOf<A = unknown>(error: A): string | undefined {
+  return isJsonPrimitive(error) ? JSON.stringify(error) : undefined
+}
+
+const stringifyNonError = <A = unknown>(error: A): string => typeof error === 'string' ? error : nonStringTextOf(error)
+
+function nonStringTextOf<A = unknown>(error: A): string {
+  return primitiveJsonOf(error) ?? stringifyRest(error)
+}
 
 const errorText = (error: Error): string =>
   Match.value(error).pipe(
@@ -227,7 +225,7 @@ const errorText = (error: Error): string =>
     Match.orElse(() => formatError(error)),
   )
 
-export function errorToString(error: unknown): string {
+export function errorToString<A = unknown>(error: A): string {
   return Match.value(error).pipe(
     Match.when(isEmptyError, () => ''),
     Match.when(Match.instanceOf(Error), errorText),
@@ -303,15 +301,23 @@ const ownCauseText = (value: object): string | undefined =>
     Match.orElse(() => messageText(value)),
   )
 
-export const causeText = (cause: unknown, depth: number): string | undefined =>
-  Match.value(cause).pipe(
-    Match.when(() => depth > 4, () => undefined),
-    Match.when(Match.undefined, () => undefined),
-    Match.when(Match.null, () => undefined),
-    Match.when(Match.string, textIfNonEmpty),
-    Match.when(isObjectType, (value) =>
-      textWithNested(ownCauseText(value), causeText(fieldOf(value, 'cause'), depth + 1))),
-    Match.orElse(() =>
-      undefined
-    ),
-  )
+const isPastDepth = (depth: number): boolean => depth > 4
+
+const isMissingCause = <A = unknown>(cause: A): boolean => cause === undefined || cause === null
+
+export const causeText = <A = unknown>(cause: A, depth: number): string | undefined =>
+  isPastDepth(depth) ? undefined : missingCauseTextOf(cause, depth)
+
+function missingCauseTextOf<A = unknown>(cause: A, depth: number): string | undefined {
+  return isMissingCause(cause) ? undefined : causeTextOfValue(cause, depth)
+}
+
+function causeTextOfValue<A = unknown>(cause: A, depth: number): string | undefined {
+  return typeof cause === 'string' ? textIfNonEmpty(cause) : objectCauseTextOf(cause, depth)
+}
+
+function objectCauseTextOf<A = unknown>(cause: A, depth: number): string | undefined {
+  return isObjectType(cause)
+    ? textWithNested(ownCauseText(cause), causeText(fieldOf(cause, 'cause'), depth + 1))
+    : undefined
+}

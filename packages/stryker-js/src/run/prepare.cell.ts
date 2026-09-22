@@ -11,7 +11,6 @@ import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
@@ -74,19 +73,12 @@ interface PrepareRaw {
   readonly reporterChoicesByName: HashMap.HashMap<string, ReporterChoice>
 }
 
-const isRecord = Predicate.isObject
+const schemaPropertiesOf = <A = unknown>(document: ValidationSchemaDocument<A>): Record<string, NonNullable<A>> =>
+  Option.getOrElse(Option.fromNullishOr(document.properties), () => ({}))
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  Match.value(value).pipe(
-    Match.when(isRecord, (record) => Object.fromEntries(Object.entries(record))),
-    Match.orElse((): Record<string, unknown> => ({})),
-  )
-
-const schemaPropertiesOf = (document: unknown): Record<string, unknown> => asRecord(asRecord(document)['properties'])
-
-const buildMergedSchema = (
+const buildMergedSchema = <A = unknown>(
   core: ValidationSchemaDocument,
-  contributions: readonly Record<string, unknown>[],
+  contributions: readonly Record<string, A>[],
 ): ValidationSchemaDocument =>
   Match.value(contributions.length === 0).pipe(
     Match.when(true, (): ValidationSchemaDocument => core),
@@ -237,7 +229,7 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
       Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
     )
     const mergedSchema = buildMergedSchema(coreSchema, loaded.schemaContributions)
-    const record: Record<string, unknown> = { ...options }
+    const record = { ...options }
     yield* validateOptions(record, mergedSchema).pipe(
       Effect.mapError(
         (cause) =>
