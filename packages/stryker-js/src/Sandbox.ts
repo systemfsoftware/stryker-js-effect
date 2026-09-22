@@ -369,7 +369,7 @@ export class TemporaryDirectory extends Context.Service<TemporaryDirectory, Temp
   '@systemfsoftware/stryker-js/Sandbox/TemporaryDirectory',
 ) {}
 
-const removesTempDir = <E = unknown, A = unknown>(exit: Exit.Exit<E, A>, cleanTempDir: 'always' | boolean): boolean =>
+const removesTempDir = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>, cleanTempDir: 'always' | boolean): boolean =>
   Exit.isSuccess(exit) || cleanTempDir === 'always'
 
 const removeEmptyParentDirectory = (

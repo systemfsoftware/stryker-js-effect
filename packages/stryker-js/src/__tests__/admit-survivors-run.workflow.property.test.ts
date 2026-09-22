@@ -280,6 +280,38 @@ describe('admitSurvivorsRun', () => {
   )
 
   it.prop(
+    '∀r_NestedConfigOrder_≡Admitted',
+    [reportWithSurvivorsArb, cleanConfigArb, shortKeyArb],
+    ([report, config, key]) => {
+      const prior = { ...report, config: { ...config, [key]: { alpha: 1, beta: 2 } } }
+      const command = AdmitSurvivorsRunCommand.make({
+        ...matchingFields(prior),
+        currentConfig: { ...config, [key]: { beta: 2, alpha: 1 } },
+      })
+      const admission = admitSurvivorsRun(command)
+      return Result.isSuccess(admission) && S.is(Admitted)(admission.success)
+    },
+  )
+
+  it.prop(
+    '∀r_NullVsAbsentOption_≡MismatchRejection',
+    [reportWithSurvivorsArb, cleanConfigArb, shortKeyArb],
+    ([report, config, key]) => {
+      const prior = { ...report, config: { ...config, [key]: null } }
+      const command = AdmitSurvivorsRunCommand.make({
+        ...matchingFields(prior),
+        currentConfig: { ...config },
+      })
+      const rejection = rejectionOf(admitSurvivorsRun(command))
+      if (rejection === undefined) {
+        return false
+      }
+      return rejection.reason === 'mismatch' &&
+        rejection.remediation.includes('does not match the current run')
+    },
+  )
+
+  it.prop(
     '∀r_EveryRejection_≡EndsWithRunFirstRemediation',
     [oneOf<schema.MutationTestResult>(reportWithSurvivorsArb, survivorsProducedReportArb)],
     ([report]) => {

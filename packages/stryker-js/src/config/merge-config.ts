@@ -11,13 +11,7 @@ const isConfigRecord = <A = unknown>(
   value: A | MergedConfigRecord<A> | undefined,
 ): value is MergedConfigRecord<A> => Predicate.isObject(value)
 
-const copyRecord = <A = unknown>(source: MergedConfigRecord<A>): MergedConfigRecord<A> => {
-  const copied: MergedConfigRecord<A> = Record.empty()
-  for (const [key, value] of Object.entries(Record.filter(source, usable))) {
-    copied[key] = value
-  }
-  return copied
-}
+const copyRecord = <A = unknown>(source: MergedConfigRecord<A>): MergedConfigRecord<A> => Record.filter(source, usable)
 
 const mergeNested = <A = unknown>(
   base: MergedConfigRecord<A>,

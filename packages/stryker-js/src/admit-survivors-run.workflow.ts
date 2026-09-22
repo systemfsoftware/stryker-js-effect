@@ -37,8 +37,7 @@ export const PriorReportDocument = S.Struct({
   ),
 })
 
-const { entries: objectEntries, fromEntries: objectFromEntries, keys: objectKeys } = Object
-const stringify = JSON.stringify
+const { entries: objectEntries, fromEntries: objectFromEntries } = Object
 
 const SURVIVORS_RUN_FIRST_REMEDIATION = 'run a full `stryker run` first, then re-run with --survivors'
 const SURVIVORS_BOOKKEEPING_KEYS: readonly string[] = ['survivorsPriorReport']
@@ -56,29 +55,30 @@ function wasProducedBySurvivorsRun<A = unknown>(priorReport: { readonly config: 
   )
 }
 
-const sortedEntriesOf = <A = unknown>(source: Readonly<Record<string, A>>): ReadonlyArray<readonly [string, A]> =>
-  objectKeys(source)
-    .sort()
-    .flatMap((key) =>
-      Option.match(Option.fromNullishOr(source[key]), {
-        onNone: () => [],
-        onSome: (value) => [[key, value] as const],
-      })
-    )
+const hashValueSchema = (): S.Codec<S.Json> =>
+  S.Union([
+    S.Null,
+    S.Finite,
+    S.Boolean,
+    S.String,
+    S.Array(S.suspend(hashValueSchema)),
+    S.Record(S.String, S.suspend(hashValueSchema)),
+  ])
 
-const sortRecordOf = <A = unknown>(source: Readonly<Record<string, A>>): Record<string, A> =>
-  Object.fromEntries(sortedEntriesOf(source))
+const SurvivorsHashInput = S.Struct({
+  frameworkVersion: S.UndefinedOr(S.String),
+  resolvedOptions: S.Record(S.String, S.UndefinedOr(S.suspend(hashValueSchema))),
+  sourceContentHashes: S.Record(S.String, S.String),
+})
 
-function serializeSurvivorsHashInput<A = unknown>(input: {
+const hashesEquivalent = S.toEquivalence(SurvivorsHashInput)
+
+function decodeSurvivorsHashInput<A = unknown>(input: {
   readonly resolvedOptions: Record<string, A>
   readonly frameworkVersion: string | undefined
   readonly sourceContentHashes: Readonly<Record<string, string>>
-}): string {
-  return stringify({
-    frameworkVersion: input.frameworkVersion,
-    resolvedOptions: sortRecordOf(input.resolvedOptions),
-    sourceContentHashes: sortRecordOf(input.sourceContentHashes),
-  })
+}): Result.Result<S.Schema.Type<typeof SurvivorsHashInput>, S.SchemaError> {
+  return S.decodeUnknownResult(SurvivorsHashInput)(input)
 }
 export class PriorReportFacts extends S.Class<PriorReportFacts>('PriorReportFacts')({
   config: S.Record(S.String, S.Unknown),
@@ -104,15 +104,28 @@ function hashesMatch(
   priorReport: PriorReportFacts,
   input: AdmitSurvivorsRunCommand,
 ): boolean {
-  return serializeSurvivorsHashInput({
-    resolvedOptions: stripSurvivorsKeys(priorReport.config),
-    frameworkVersion: priorReport.frameworkVersion,
-    sourceContentHashes: input.priorSourceHashes,
-  }) === serializeSurvivorsHashInput({
-    resolvedOptions: stripSurvivorsKeys(input.currentConfig),
-    frameworkVersion: input.frameworkVersion,
-    sourceContentHashes: input.sourceContentHashes,
-  })
+  return Result.match(
+    decodeSurvivorsHashInput({
+      resolvedOptions: stripSurvivorsKeys(priorReport.config),
+      frameworkVersion: priorReport.frameworkVersion,
+      sourceContentHashes: input.priorSourceHashes,
+    }),
+    {
+      onFailure: () => false,
+      onSuccess: (prior) =>
+        Result.match(
+          decodeSurvivorsHashInput({
+            resolvedOptions: stripSurvivorsKeys(input.currentConfig),
+            frameworkVersion: input.frameworkVersion,
+            sourceContentHashes: input.sourceContentHashes,
+          }),
+          {
+            onFailure: () => false,
+            onSuccess: (current) => hashesEquivalent(prior, current),
+          },
+        ),
+    },
+  )
 }
 
 const SurvivorsAdmissionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/SurvivorsAdmission')

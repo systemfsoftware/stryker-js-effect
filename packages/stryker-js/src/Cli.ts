@@ -103,7 +103,7 @@ export {
 }
 export { STREAM_SCHEMA_VERSION }
 
-export function resolveCliExitCode<E = unknown, A = unknown>(exit: Exit.Exit<E, A>): number {
+export function resolveCliExitCode<A = unknown, E = unknown>(exit: Exit.Exit<A, E>): number {
   return runOutcomeCode(classifyRunOutcome(exit, []))
 }
 

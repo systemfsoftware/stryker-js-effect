@@ -10,6 +10,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { isGlob } from '../glob-match.js'
 
+import { findUnserializables, type UnserializableDescription } from '../config-defaults.js'
 import {
   ConfigDocumentSchema,
   ConfigError,
@@ -130,121 +131,6 @@ export function deepFreeze(target: object | Primitive): object | Primitive {
     Match.when(isRecordValue, freezeRecordValue),
     Match.orElse(() => target),
   )
-}
-
-export interface UnserializableDescription {
-  path: string[]
-  reason: string
-}
-
-const scopedUnserializable =
-  (scope: string) => (description: UnserializableDescription): UnserializableDescription => ({
-    ...description,
-    path: [scope, ...description.path],
-  })
-
-const describeUnserializableChild = <A = unknown>(
-  child: A,
-  scope: string,
-): UnserializableDescription[] =>
-  Match.value(findUnserializables(child)).pipe(
-    Match.when(undefined, (): UnserializableDescription[] => []),
-    Match.orElse((descriptions) => descriptions.map(scopedUnserializable(scope))),
-  )
-
-const collectUnserializables = (
-  groups: readonly (readonly UnserializableDescription[])[],
-): UnserializableDescription[] | undefined => {
-  const found = groups.flat()
-  if (found.length > 0) return found
-  return undefined
-}
-
-const describeUnserializableArray = <A = unknown>(
-  value: readonly A[],
-): UnserializableDescription[] | undefined =>
-  collectUnserializables(
-    value.map((child, index) => describeUnserializableChild(child, index.toString())),
-  )
-
-const describeUnserializableRecord = (
-  value: object,
-): UnserializableDescription[] | undefined =>
-  collectUnserializables(
-    Object.entries(value).map(([key, child]) => describeUnserializableChild(child, key)),
-  )
-
-const isPlainObjectValue = (value: object): boolean => !Array.isArray(value) && value.constructor === Object
-
-const classNameOf = (value: object): string =>
-  Match.value(value.constructor).pipe(
-    Match.when(Match.defined, (ctor) => ctor.name),
-    Match.orElse(() => 'Object'),
-  )
-const describeUnserializableInstance = (
-  value: object,
-): UnserializableDescription[] | undefined => [
-  {
-    path: [],
-    reason: `Value is an instance of "${
-      classNameOf(value)
-    }", this detail will get lost in translation during serialization`,
-  },
-]
-
-const describeUnserializableObject = (
-  value: object,
-): UnserializableDescription[] | undefined =>
-  Match.value(value).pipe(
-    Match.when(isArrayValue, describeUnserializableArray),
-    Match.when(isPlainObjectValue, describeUnserializableRecord),
-    Match.orElse(describeUnserializableInstance),
-  )
-
-const NON_JSON_PRIMITIVE_TYPES: readonly string[] = ['bigint', 'function', 'symbol']
-
-const isNonJsonPrimitive = (
-  value: unknown,
-): value is bigint | symbol | ((...args: never[]) => void) => NON_JSON_PRIMITIVE_TYPES.includes(typeof value)
-
-const describeNonJsonPrimitive = (
-  value: bigint | symbol | ((...args: never[]) => void),
-): UnserializableDescription[] | undefined => [
-  {
-    path: [],
-    reason: `Primitive type "${typeof value}" has no JSON representation`,
-  },
-]
-
-const describeNumber = (value: number): UnserializableDescription[] | undefined => {
-  if (isFinite(value)) return undefined
-  return [
-    {
-      reason: `Number value \`${value}\` has no JSON representation`,
-      path: [],
-    },
-  ]
-}
-
-export function findUnserializables<A = unknown>(
-  thing: A,
-): UnserializableDescription[] | undefined {
-  if (typeof thing === 'number') {
-    return describeNumber(thing)
-  }
-  return describeNonNumberValue(thing)
-}
-
-function describeNonNumberValue<A = unknown>(
-  thing: A,
-): UnserializableDescription[] | undefined {
-  return isNonJsonPrimitive(thing) ? describeNonJsonPrimitive(thing) : describeObjectValue(thing)
-}
-
-function describeObjectValue<A = unknown>(
-  thing: A,
-): UnserializableDescription[] | undefined {
-  return isNonNullObject(thing) ? describeUnserializableObject(thing) : undefined
 }
 
 export type KnownKeys<T> = keyof {
