@@ -131,6 +131,7 @@ const describedMutant = (): Mutant => Mutant.make({ ...identityFields, id: 'muta
 const undescribableMutant = (): Mutant => ({ ...identityFields, _tag: 'Mutant', id: '' })
 
 Feature('Verifying mutants through an external checker worker')
+  .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       'Mutant descriptions travel across the process boundary intact',

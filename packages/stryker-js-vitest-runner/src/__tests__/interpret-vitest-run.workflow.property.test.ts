@@ -4,7 +4,11 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
-import { HIT_LIMIT_REASON_PREFIX, hitLimitReachedReason } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  HIT_LIMIT_REASON_PREFIX,
+  hitLimitReachedReason,
+  type TestResult,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   interpretVitestRun,
   MutantDryError,
@@ -28,10 +32,10 @@ const tagOf = (result: Result.Result<VitestMutantRunOutput, VitestMutantRunError
     Match.exhaustive,
   )
 
-const commandWith = (
+const commandWith = <T = unknown>(
   input: VitestMutantRunCommand,
   override: {
-    readonly rawTests?: readonly unknown[]
+    readonly rawTests?: readonly T[]
     readonly hasExternalError?: boolean
     readonly externalErrorText?: string
     readonly hitCount: number | undefined
@@ -54,26 +58,11 @@ const commandWith = (
   })
 
 const testsIn = (
-  testsJson: string,
-): { readonly ids: readonly string[]; readonly failed: readonly string[] } | null => {
-  const parsed: unknown = JSON.parse(testsJson)
-  if (!Array.isArray(parsed)) {
-    return null
-  }
-  const items: readonly unknown[] = parsed
-  const ids: string[] = []
-  const failed: string[] = []
-  for (const entry of items) {
-    if (typeof entry !== 'object' || entry === null || !('id' in entry) || typeof entry.id !== 'string') {
-      return null
-    }
-    ids.push(entry.id)
-    if ('status' in entry && entry.status === 'failed') {
-      failed.push(entry.id)
-    }
-  }
-  return { ids, failed }
-}
+  tests: readonly TestResult[],
+): { readonly ids: readonly string[]; readonly failed: readonly string[] } => ({
+  ids: tests.map((test) => test.id),
+  failed: tests.filter((test) => test.status === 'failed').map((test) => test.id),
+})
 
 describe('interpretVitestRun', () => {
   it.prop(
@@ -120,7 +109,7 @@ describe('interpretVitestRun', () => {
       }
       return (
         carriesFamilyBrand(result.success) &&
-        result.success.testsJson === '[]' &&
+        result.success.tests.length === 0 &&
         result.success.reason === hitLimitReachedReason(hitCount, hitLimit) &&
         result.success.reason.startsWith(HIT_LIMIT_REASON_PREFIX) === true
       )
@@ -216,7 +205,7 @@ describe('interpretVitestRun', () => {
       }
       return (
         carriesFamilyBrand(result.success) &&
-        result.success.testsJson === '[]' &&
+        result.success.tests.length === 0 &&
         result.success.errorMessage === `An error occurred outside of a test run: ${input.externalErrorText}`
       )
     },
@@ -253,10 +242,7 @@ describe('interpretVitestRun', () => {
       if (!carriesFamilyBrand(result.success)) {
         return false
       }
-      const tests = testsIn(result.success.testsJson)
-      if (tests === null) {
-        return false
-      }
+      const tests = testsIn(result.success.tests)
       const killerIds = result.success.killerIds
       return (
         tests.failed.length === 1 &&
@@ -295,10 +281,7 @@ describe('interpretVitestRun', () => {
       if (!carriesFamilyBrand(result.success)) {
         return false
       }
-      const tests = testsIn(result.success.testsJson)
-      if (tests === null) {
-        return false
-      }
+      const tests = testsIn(result.success.tests)
       return tests.ids.length === 1 && tests.failed.length === 0
     },
   )

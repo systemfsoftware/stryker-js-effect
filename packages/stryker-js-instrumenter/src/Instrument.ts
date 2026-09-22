@@ -223,7 +223,7 @@ interface ParsedFile {
   readonly ast: Ast
 }
 
-function printedFile(file: FileSchemaType, ast: unknown): readonly FileSchemaType[] {
+function printedFile<A = unknown>(file: FileSchemaType, ast: A): readonly FileSchemaType[] {
   if (!isAst(ast)) return []
   return [{ name: file.name, mutate: file.mutate, content: print(ast) }]
 }

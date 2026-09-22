@@ -126,7 +126,11 @@ test('running one mutation run through the packed runner', async ({ bdd, expect,
     events = parseEventStream(run.stdout)
     const terminal = lastEvent(events)
     if (terminal._tag !== 'verdict') {
-      throw new Error(`Expected terminal verdict event, received: ${terminal._tag}`)
+      throw new Error(
+        `Expected terminal verdict event, received: ${terminal._tag} ${
+          JSON.stringify(terminal).slice(0, 4000)
+        }\nstderr tail: ${run.stderr.slice(-3000)}`,
+      )
     }
     verdict = terminal
   })

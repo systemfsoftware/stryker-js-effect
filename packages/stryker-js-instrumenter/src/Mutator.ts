@@ -458,15 +458,13 @@ function mutantsWhen(holds: boolean, build: () => readonly Node[]): readonly Nod
   )
 }
 
-/** A named property of a node that may or may not carry it. */
-function propertyOf(node: unknown, key: string): unknown {
-  return Match.value(node).pipe(
-    Match.when(
-      (candidate: unknown): candidate is Record<string, unknown> => Predicate.hasProperty(candidate, key),
-      (host) => host[key],
-    ),
-    Match.orElse(() => undefined),
-  )
+const hasPropertyIn = <B = unknown>(node: object, key: string): node is Record<string, B> => key in node
+
+const readPropertyOf = <B = unknown>(node: object, key: string): B | undefined =>
+  hasPropertyIn<B>(node, key) ? node[key] : undefined
+
+function propertyOf<A = unknown, B = unknown>(node: A, key: string): B | undefined {
+  return Predicate.isObject(node) ? readPropertyOf<B>(node, key) : undefined
 }
 
 function isIdentifier(node: unknown): node is IdentifierReference {
@@ -519,7 +517,7 @@ function isStringConcatenation(node: BinaryExpression): boolean {
 }
 
 /** A chained `a + b + c` carries its value on the innermost left operand's right side. */
-function outerLeftOperand(node: BinaryExpression): unknown {
+function outerLeftOperand(node: BinaryExpression): Node {
   if (node.left.type === 'BinaryExpression') {
     return node.left.right
   }
@@ -622,7 +620,7 @@ function isStringLiteral(value: unknown): value is StringLiteral {
   return nodeType(value) === 'Literal' && hasStringValue(value)
 }
 
-function hasStringValue(value: unknown): boolean {
+function hasStringValue<A = unknown>(value: A): boolean {
   if (!Predicate.hasProperty(value, 'value')) {
     return false
   }
@@ -720,15 +718,15 @@ function isPropertyDefinition(node: Node): node is PropertyDefinition {
   return node.type === 'PropertyDefinition'
 }
 
-function isSuperType(node: unknown): boolean {
+function isSuperType<A = unknown>(node: A): boolean {
   return Predicate.hasProperty(node, 'type') && node['type'] === 'Super'
 }
 
-function isSuperCallExpression(node: unknown): boolean {
+function isSuperCallExpression<A = unknown>(node: A): boolean {
   return nodeType(node) === 'CallExpression' && isSuperType(propertyOf(node, 'callee'))
 }
 
-function containsSuperCall(node: unknown): boolean {
+function containsSuperCall<A = unknown>(node: A): boolean {
   return isObjectLike(node) && containsSuperIn(node)
 }
 
@@ -740,7 +738,7 @@ function containsSuperIn(node: object): boolean {
   return isSuperReference(node) || hasSuperInChildren(node)
 }
 
-function isSuperReference(node: unknown): boolean {
+function isSuperReference<A = unknown>(node: A): boolean {
   return isSuperType(node) || isSuperCallExpression(node)
 }
 
@@ -748,7 +746,7 @@ function hasSuperInChildren(node: object): boolean {
   return Object.keys(node).some((key) => containsSuperInValue(propertyOf(node, key)))
 }
 
-function containsSuperInValue(value: unknown): boolean {
+function containsSuperInValue<A = unknown>(value: A): boolean {
   if (Array.isArray(value)) {
     return value.some(containsSuperCall)
   }
@@ -1148,7 +1146,7 @@ function isRegExpIdentifier(node: Node): boolean {
   return node.type === 'Identifier' && node.name === RegExp.name
 }
 
-function newExpressionArgument(parent: Node | undefined, index: number): unknown {
+function newExpressionArgument(parent: Node | undefined, index: number): Expression | SpreadElement | undefined {
   return Match.value(parent).pipe(
     Match.when(isNewExpression, (call) => call.arguments[index]),
     Match.orElse(() => undefined),

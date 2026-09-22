@@ -1,7 +1,7 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
-import { Effect } from 'effect'
+import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
 import { instrument } from './__fixtures__/instrument.js'
@@ -36,17 +36,12 @@ type Mutant = {
   replacement?: string | undefined
 }
 
-const keepArgs = (node: unknown): readonly unknown[] => {
-  if (typeof node !== 'object' || node === null || !('type' in node) || node.type !== 'CallExpression') {
-    return []
-  }
-  if (!('callee' in node) || !('arguments' in node) || !Array.isArray(node.arguments)) {
+const keepArgs = (node: Node): readonly Node[] => {
+  if (node.type !== 'CallExpression') {
     return []
   }
   const callee = node.callee
-  const isKeepCall = typeof callee === 'object' && callee !== null && 'type' in callee &&
-    callee.type === 'Identifier' &&
-    'name' in callee && callee.name === 'keep'
+  const isKeepCall = callee.type === 'Identifier' && callee.name === 'keep'
   if (!isKeepCall) {
     return []
   }
@@ -56,7 +51,7 @@ const keepArgs = (node: unknown): readonly unknown[] => {
 const invertedKeepIgnorer: Ignorer = {
   name: 'inverted-keep',
   shouldIgnore: (node, ancestors) => {
-    let child: unknown = node
+    let child: Node = node
     for (const ancestor of ancestors) {
       if (keepArgs(ancestor).includes(child)) {
         return undefined
@@ -67,16 +62,12 @@ const invertedKeepIgnorer: Ignorer = {
   },
 }
 
-const isFlagIf = (node: unknown): boolean => {
-  if (typeof node !== 'object' || node === null || !('type' in node) || node.type !== 'IfStatement') {
-    return false
-  }
-  if (!('test' in node)) {
+const isFlagIf = (node: Node): boolean => {
+  if (node.type !== 'IfStatement') {
     return false
   }
   const test = node.test
-  return typeof test === 'object' && test !== null && 'type' in test && test.type === 'Identifier' &&
-    'name' in test && test.name === 'flag'
+  return test.type === 'Identifier' && test.name === 'flag'
 }
 
 const regionFlagIgnorer: Ignorer = {
@@ -103,6 +94,7 @@ const isActive = (mutant: Mutant): boolean => mutant.status !== 'Ignored'
 const Feature = makeFeature({ it, layer })
 
 Feature('Instrumenter characterization')
+  .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       'The baseline snippet yields thirteen mutants across six families',

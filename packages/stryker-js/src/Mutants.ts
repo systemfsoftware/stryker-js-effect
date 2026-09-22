@@ -1099,25 +1099,31 @@ export const computeIncrementalDiff = (
     Match.orElse(() => incrementalDiffOfChanges(input)),
   )
 
-const previousFilesOf = (rawReport: unknown): S.Schema.Type<typeof PreviousFilesSchema> =>
-  Match.value(rawReport).pipe(
-    Match.when(Predicate.isObject, (report) =>
-      Option.getOrElse(
-        Option.filter(Option.fromUndefinedOr(report['files']), S.is(PreviousFilesSchema)),
-        () => ({}),
-      )),
-    Match.orElse(() => ({})),
+const filesFieldOf = <F = unknown>(report: { readonly files: F }): S.Schema.Type<typeof PreviousFilesSchema> =>
+  Option.getOrElse(
+    S.decodeUnknownOption(PreviousFilesSchema)(report.files),
+    (): S.Schema.Type<typeof PreviousFilesSchema> => ({}),
   )
 
-const previousTestFilesOf = (rawReport: unknown): S.Schema.Type<typeof PreviousTestFilesSchema> =>
-  Match.value(rawReport).pipe(
-    Match.when(Predicate.isObject, (report) =>
-      Option.getOrElse(
-        Option.filter(Option.fromUndefinedOr(report['testFiles']), S.is(PreviousTestFilesSchema)),
-        () => ({}),
-      )),
-    Match.orElse(() => ({})),
+const previousFilesFrom = (report: object): S.Schema.Type<typeof PreviousFilesSchema> =>
+  Predicate.hasProperty(report, 'files') ? filesFieldOf(report) : {}
+
+const previousFilesOf = <T = unknown>(rawReport: T): S.Schema.Type<typeof PreviousFilesSchema> =>
+  Predicate.isObject(rawReport) ? previousFilesFrom(rawReport) : {}
+
+const testFilesFieldOf = <F = unknown>(
+  report: { readonly testFiles: F },
+): S.Schema.Type<typeof PreviousTestFilesSchema> =>
+  Option.getOrElse(
+    S.decodeUnknownOption(PreviousTestFilesSchema)(report.testFiles),
+    (): S.Schema.Type<typeof PreviousTestFilesSchema> => ({}),
   )
+
+const previousTestFilesFrom = (report: object): S.Schema.Type<typeof PreviousTestFilesSchema> =>
+  Predicate.hasProperty(report, 'testFiles') ? testFilesFieldOf(report) : {}
+
+const previousTestFilesOf = <T = unknown>(rawReport: T): S.Schema.Type<typeof PreviousTestFilesSchema> =>
+  Predicate.isObject(rawReport) ? previousTestFilesFrom(rawReport) : {}
 const hasTestFileName = (result: TestResult): result is TestResult & { readonly fileName: string } =>
   result.fileName !== undefined
 
@@ -1150,11 +1156,11 @@ const coveringTestFilesByMutantId = (testCoverage: TestCoverage, basePath: strin
   return byMutant
 }
 
-export const incrementalDiff = (
+export const incrementalDiff = <Report = unknown>(
   input: Readonly<{
     currentMutants: readonly Mutant[]
     testCoverage: TestCoverage
-    incrementalReport: unknown
+    incrementalReport: Report
     currentRelativeFiles: Record<string, string>
     basePath: string
     force?: boolean

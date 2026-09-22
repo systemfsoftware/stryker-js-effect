@@ -348,7 +348,7 @@ const encodeMerge = (
       Match.exhaustive,
     ))
 
-const encodeReport = (report: unknown): Effect.Effect<string> =>
+const encodeReport = (report: typeof MutationTestResultSchema.Type): Effect.Effect<string> =>
   S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(report).pipe(Effect.orDie)
 
 const putFile = (file: string, content: string, append: boolean) =>
@@ -436,4 +436,4 @@ export const mergeReportsCell = Sandwich.read(readMerge)
   .decide(mergeReportParts)
   .write((outcome: MergeOutcome, raw: MergeCommand) =>
     writeEncoded(encodeMerge(outcome, raw), raw)
-  ) satisfies Cell.Cell<MergeReportsRequest, unknown, unknown, unknown>
+  ) satisfies Cell.Cell<MergeReportsRequest, void, MergeReportsFailed, FileSystem.FileSystem | Path.Path>

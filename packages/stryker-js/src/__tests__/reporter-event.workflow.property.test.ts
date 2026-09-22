@@ -15,44 +15,44 @@ import { RunMutantTested } from '../RunEvent.schema.js'
 
 type Validation = StandardSchemaV1.Result<ReporterEvent> | 'async'
 
-const validateSync = (input: unknown): Validation => {
+const validateSync = <T = unknown>(input: T): Validation => {
   const out = ReporterEventSchema['~standard'].validate(input)
   if (out instanceof Promise) return 'async'
   return out
 }
 
-const encodeFixture = <S extends S.ConstraintEncoder<unknown>>(schema: S, value: S['Type']): S['Encoded'] =>
-  Result.getOrThrow(S.encodeResult(schema)(value))
+const encodeFixture = <Enc = unknown, S extends S.ConstraintEncoder<Enc> = S.ConstraintEncoder<Enc>>(
+  schema: S,
+  value: S['Type'],
+): S['Encoded'] => Result.getOrThrow(S.encodeResult(schema)(value))
 
 const reencoded = (value: ReporterEvent): string => JSON.stringify(encodeFixture(ReporterEventUnion, value))
 
-const withTag = (input: unknown, tag: unknown): unknown => {
+const withTag = <T = unknown, Tag = unknown>(input: T, tag: Tag): T => {
   if (typeof input !== 'object' || input === null) return input
   return { ...input, _tag: tag }
 }
 
-const withoutTag = (input: unknown): unknown => {
+const withoutTag = <T = unknown>(input: T): T => {
   if (typeof input !== 'object' || input === null) return input
-  const rest: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(input)) {
-    if (key !== '_tag') rest[key] = value
-  }
-  return rest
+  const copy = { ...input }
+  Reflect.deleteProperty(copy, '_tag')
+  return copy
 }
 
-const corruptByDraw = (encoded: unknown): unknown => {
+const corruptByDraw = <T = unknown>(encoded: T): T => {
   const fingerprint = JSON.stringify(encoded).length % 3
   if (fingerprint === 1) return withTag(encoded, 'not-a-kind')
   if (fingerprint === 2) return withoutTag(encoded)
   return encoded
 }
 
-const injectCoverage = (input: unknown): unknown => {
+const injectCoverage = <T = unknown>(input: T): T => {
   if (typeof input !== 'object' || input === null) return input
   return { ...input, mutantCoverage: { perTest: { t1: { m1: 1 } }, static: { m1: 2 } } }
 }
 
-const agreesWithDecode = (input: unknown): boolean => {
+const agreesWithDecode = <T = unknown>(input: T): boolean => {
   const standard = validateSync(input)
   if (standard === 'async') return false
   const decoded = S.decodeUnknownExit(ReporterEventUnion)(input)
@@ -70,7 +70,7 @@ const hasResultShape = (result: Validation): boolean => {
   return result.issues.length > 0
 }
 
-const stripsMutantCoverage = (encoded: unknown): boolean => {
+const stripsMutantCoverage = <T = unknown>(encoded: T): boolean => {
   const clean = validateSync(encoded)
   if (clean === 'async' || !('value' in clean)) return false
   const stripped = validateSync(injectCoverage(encoded))

@@ -10,6 +10,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { isGlob } from '../glob-match.js'
 
+import { findUnserializables, type UnserializableDescription } from '../config-defaults.js'
 import {
   ConfigDocumentSchema,
   ConfigError,
@@ -33,6 +34,9 @@ import { StrykerError } from '../stryker-error.schema.js'
 import { isCommandRunner } from '../TestRunner.js'
 
 const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
+
+const isRecordValue = <A = unknown>(value: unknown): value is Record<string, A> =>
+  isNonNullObject(value) && Array.isArray(value) === false
 
 export const optionsPath = (...path: string[]): string => path.join('.')
 
@@ -79,7 +83,7 @@ const shadowedLegacyWarning = (legacyFile: string, supportedFile: string): strin
 
 export type Primitive = boolean | number | string | null | undefined
 
-export type ImmutablePrimitive = Primitive | ((...args: never[]) => unknown)
+export type ImmutablePrimitive = Primitive | ((...args: never[]) => void)
 
 export type Immutable<T> = T extends ImmutablePrimitive ? T
   : T extends Array<infer U> ? ReadonlyArray<Immutable<U>>
@@ -88,143 +92,44 @@ export type Immutable<T> = T extends ImmutablePrimitive ? T
   : T extends RegExp ? Readonly<RegExp>
   : { readonly [K in keyof T]: Immutable<T[K]> }
 
-const isArrayValue = (value: unknown): value is readonly unknown[] => Array.isArray(value)
+const isArrayValue = <A = unknown>(value: unknown): value is readonly A[] => Array.isArray(value)
 
-const freezeArrayValue = (value: readonly unknown[]): unknown => Object.freeze(value.map(deepFreeze))
+const isMapValue = <K = unknown, V = unknown>(value: unknown): value is Map<K, V> => value instanceof Map
 
-const freezeMapEntry = (
-  [entryKey, entryValue]: readonly [unknown, unknown],
-): [unknown, unknown] => [deepFreeze(entryKey), deepFreeze(entryValue)]
+const isSetValue = <A = unknown>(value: unknown): value is Set<A> => value instanceof Set
 
-const freezeMapValue = (value: Map<unknown, unknown>): unknown =>
+const freezeArrayValue = <A = unknown>(value: readonly A[]): ReadonlyArray<Immutable<A>> =>
+  Object.freeze(value.map((element) => deepFreeze(element)))
+
+const freezeMapEntry = <K = unknown, V = unknown>(
+  [entryKey, entryValue]: readonly [K, V],
+): readonly [Immutable<K>, Immutable<V>] => [deepFreeze(entryKey), deepFreeze(entryValue)]
+
+const freezeMapValue = <K = unknown, V = unknown>(value: Map<K, V>): ReadonlyMap<Immutable<K>, Immutable<V>> =>
   Object.freeze(new Map([...value.entries()].map(freezeMapEntry)))
 
-const freezeSetValue = (value: Set<unknown>): unknown => Object.freeze(new Set([...value.values()].map(deepFreeze)))
+const freezeSetValue = <A = unknown>(value: Set<A>): ReadonlySet<Immutable<A>> =>
+  Object.freeze(new Set([...value.values()].map((element) => deepFreeze(element))))
 
-const freezeRegExpValue = (value: RegExp): unknown => Object.freeze(value)
+const freezeRegExpValue = (value: RegExp): RegExp => Object.freeze(value)
 
-const freezeRecordValue = (value: object): unknown =>
+const freezeRecordValue = <A = unknown>(value: Record<string, A>): Record<string, Immutable<A>> =>
   Object.freeze(
-    Object.entries(value).reduce<Record<string, unknown>>((frozen, [property, propertyValue]) => {
+    Object.entries(value).reduce<Record<string, Immutable<A>>>((frozen, [property, propertyValue]) => {
       frozen[property] = deepFreeze(propertyValue)
       return frozen
     }, {}),
   )
 
 export function deepFreeze<T>(target: T): Immutable<T>
-export function deepFreeze(target: unknown): unknown {
+export function deepFreeze(target: object | Primitive): object | Primitive {
   return Match.value(target).pipe(
     Match.when(isArrayValue, freezeArrayValue),
-    Match.when((value: unknown): value is Map<unknown, unknown> => value instanceof Map, freezeMapValue),
+    Match.when(isMapValue, freezeMapValue),
     Match.when((value: unknown): value is RegExp => value instanceof RegExp, freezeRegExpValue),
-    Match.when((value: unknown): value is Set<unknown> => value instanceof Set, freezeSetValue),
-    Match.when(isNonNullObject, freezeRecordValue),
+    Match.when(isSetValue, freezeSetValue),
+    Match.when(isRecordValue, freezeRecordValue),
     Match.orElse(() => target),
-  )
-}
-
-export interface UnserializableDescription {
-  path: string[]
-  reason: string
-}
-
-const scopedUnserializable =
-  (scope: string) => (description: UnserializableDescription): UnserializableDescription => ({
-    ...description,
-    path: [scope, ...description.path],
-  })
-
-const describeUnserializableChild = (
-  child: unknown,
-  scope: string,
-): UnserializableDescription[] =>
-  Match.value(findUnserializables(child)).pipe(
-    Match.when(undefined, (): UnserializableDescription[] => []),
-    Match.orElse((descriptions) => descriptions.map(scopedUnserializable(scope))),
-  )
-
-const collectUnserializables = (
-  groups: readonly (readonly UnserializableDescription[])[],
-): UnserializableDescription[] | undefined => {
-  const found = groups.flat()
-  if (found.length > 0) return found
-  return undefined
-}
-
-const describeUnserializableArray = (
-  value: readonly unknown[],
-): UnserializableDescription[] | undefined =>
-  collectUnserializables(
-    value.map((child, index) => describeUnserializableChild(child, index.toString())),
-  )
-
-const describeUnserializableRecord = (
-  value: object,
-): UnserializableDescription[] | undefined =>
-  collectUnserializables(
-    Object.entries(value).map(([key, child]) => describeUnserializableChild(child, key)),
-  )
-
-const isPlainObjectValue = (value: object): boolean => !Array.isArray(value) && value.constructor === Object
-
-const classNameOf = (value: object): string =>
-  Match.value(value.constructor).pipe(
-    Match.when(Match.defined, (ctor) => ctor.name),
-    Match.orElse(() => 'Object'),
-  )
-const describeUnserializableInstance = (
-  value: object,
-): UnserializableDescription[] | undefined => [
-  {
-    path: [],
-    reason: `Value is an instance of "${
-      classNameOf(value)
-    }", this detail will get lost in translation during serialization`,
-  },
-]
-
-const describeUnserializableObject = (
-  value: object,
-): UnserializableDescription[] | undefined =>
-  Match.value(value).pipe(
-    Match.when(isArrayValue, describeUnserializableArray),
-    Match.when(isPlainObjectValue, describeUnserializableRecord),
-    Match.orElse(describeUnserializableInstance),
-  )
-
-const NON_JSON_PRIMITIVE_TYPES: readonly string[] = ['bigint', 'function', 'symbol']
-
-const isNonJsonPrimitive = (
-  value: unknown,
-): value is bigint | symbol | ((...args: never[]) => unknown) => NON_JSON_PRIMITIVE_TYPES.includes(typeof value)
-
-const describeNonJsonPrimitive = (
-  value: bigint | symbol | ((...args: never[]) => unknown),
-): UnserializableDescription[] | undefined => [
-  {
-    path: [],
-    reason: `Primitive type "${typeof value}" has no JSON representation`,
-  },
-]
-
-const describeNumber = (value: number): UnserializableDescription[] | undefined => {
-  if (isFinite(value)) return undefined
-  return [
-    {
-      reason: `Number value \`${value}\` has no JSON representation`,
-      path: [],
-    },
-  ]
-}
-
-export function findUnserializables(
-  thing: unknown,
-): UnserializableDescription[] | undefined {
-  return Match.value(thing).pipe(
-    Match.when((value: unknown): value is number => typeof value === 'number', describeNumber),
-    Match.when(isNonJsonPrimitive, describeNonJsonPrimitive),
-    Match.when(isNonNullObject, describeUnserializableObject),
-    Match.orElse(() => undefined),
   )
 }
 
@@ -350,11 +255,11 @@ export function describeErrors(error: S.SchemaError): string[] {
   return errorMessageOrFallback(completedErrorMessages(state), error.message)
 }
 
-export function importModule(
+export function importModule<A = unknown>(
   moduleName: string,
-): Effect.Effect<unknown, StrykerError> {
+): Effect.Effect<A, StrykerError> {
   return Effect.tryPromise({
-    try: (): Promise<unknown> => import(moduleName),
+    try: (): Promise<A> => import(moduleName),
     catch: (cause) => StrykerError.make({ message: `Failed to import module "${moduleName}"`, cause }),
   })
 }
@@ -366,46 +271,50 @@ export const initialExtendsStepState: ExtendsStepState = {
   documents: [],
 }
 
-const asUnknownArray = (value: unknown): readonly unknown[] => {
+const asUnknownArray = <A = unknown>(value: A): readonly A[] => {
   if (Array.isArray(value)) return value
   return []
 }
 
 const isFirstDescriptorOccurrence =
-  (descriptors: readonly unknown[]) => (descriptor: unknown, index: number): boolean =>
+  <A = unknown>(descriptors: readonly A[]) => (descriptor: A, index: number): boolean =>
     typeof descriptor !== 'string' || descriptors.slice(0, index).includes(descriptor) === false
 
-const mergePluginDescriptors = (
-  parentPlugins: readonly unknown[],
-  childPlugins: readonly unknown[],
-): readonly unknown[] => {
+const mergePluginDescriptors = <A = unknown>(
+  parentPlugins: readonly A[],
+  childPlugins: readonly A[],
+): readonly A[] => {
   const merged = [...parentPlugins, ...childPlugins]
   return merged.filter(isFirstDescriptorOccurrence(merged))
 }
 
-const inheritNested = (parentValue: unknown, childValue: unknown): unknown =>
-  Match.value(parentValue).pipe(
-    Match.when(
-      (value: unknown): value is Record<string, unknown> => isNonNullObject(value) && Array.isArray(value) === false,
-      (parentNested) =>
-        Match.value(childValue).pipe(
-          Match.when(
-            (value: unknown): value is Record<string, unknown> =>
-              isNonNullObject(value) && Array.isArray(value) === false,
-            (childNested) => ({ ...parentNested, ...childNested }),
-          ),
-          Match.orElse(() => childValue),
-        ),
-    ),
-    Match.orElse(() => childValue),
-  )
+const isConfigOptionsRecord = <A = unknown>(value: unknown): value is Record<string, A> =>
+  isNonNullObject(value) && Array.isArray(value) === false
+
+function mergeConfigRecords<A = unknown>(
+  parentNested: Record<string, A>,
+  childNested: Record<string, A>,
+): Record<string, A> {
+  return { ...parentNested, ...childNested }
+}
+
+const toConfigRecordOption = <A = unknown>(value: A): Option.Option<Record<string, A>> =>
+  isConfigOptionsRecord<A>(value) ? Option.some(value) : Option.none()
+
+const inheritNested = <A = unknown>(parentValue: A, childValue: A): A | Record<string, A> =>
+  Option.match(Option.all([toConfigRecordOption(parentValue), toConfigRecordOption(childValue)]), {
+    onSome: ([parentNested, childNested]) => mergeConfigRecords(parentNested, childNested),
+    onNone: () => childValue,
+  })
+
+type ConfigOptionValue = PartialStrykerOptions extends Record<string, infer OptionValue> ? OptionValue : never
 
 const inheritEntry = (
-  out: Record<string, unknown>,
+  out: PartialStrykerOptions,
   key: string,
-  parentValue: unknown,
-  childValue: unknown,
-): Record<string, unknown> =>
+  parentValue: ConfigOptionValue,
+  childValue: ConfigOptionValue,
+): PartialStrykerOptions =>
   Match.value(childValue).pipe(
     Match.when(null, () => {
       const next = { ...out }
@@ -490,44 +399,46 @@ export const decideExtendsStep = (
   )
 }
 
-const decodeConfigDocument = (
+const decodeConfigDocument = <A = unknown>(
   configFile: string,
-  document: unknown,
+  document: A,
 ): Effect.Effect<PartialStrykerOptions, ConfigFileInvalidError> =>
   S.decodeUnknownEffect(ConfigDocumentSchema)(document).pipe(
     Effect.mapError((cause) => ConfigFileInvalidError.make({ file: configFile, cause })),
   )
 
-const requireDefaultExport = (
-  configFile: string,
-  defaultExport: unknown,
-): Effect.Effect<object, ConfigFileInvalidError> =>
-  Match.value(defaultExport).pipe(
-    Match.when(undefined, () =>
-      Effect.fail(
-        ConfigFileInvalidError.make({ file: configFile, cause: 'Config file must have a default export!' }),
-      )),
-    Match.when(isNonNullObject, (value) => Effect.succeed(value)),
-    Match.orElse(() =>
-      Effect.fail(
-        ConfigFileInvalidError.make({ file: configFile, cause: 'Default export of config file must be an object!' }),
-      )
-    ),
-  )
+const failInvalidConfig = (configFile: string, cause: string): Effect.Effect<object, ConfigFileInvalidError> =>
+  Effect.fail(ConfigFileInvalidError.make({ file: configFile, cause }))
 
-type ConfigFactory = (env: ConfigEnv) => unknown
+const requireDefaultExport = <A = unknown>(
+  configFile: string,
+  defaultExport: A,
+): Effect.Effect<object, ConfigFileInvalidError> =>
+  defaultExport === undefined
+    ? failInvalidConfig(configFile, 'Config file must have a default export!')
+    : settleObjectExport(configFile, defaultExport)
+
+function settleObjectExport<A = unknown>(
+  configFile: string,
+  value: A,
+): Effect.Effect<object, ConfigFileInvalidError> {
+  return isNonNullObject(value)
+    ? Effect.succeed(value)
+    : failInvalidConfig(configFile, 'Default export of config file must be an object!')
+}
+
+type ConfigFactory<A = unknown> = (env: ConfigEnv) => A
 
 const isConfigFactory = (value: unknown): value is ConfigFactory => typeof value === 'function'
 
-const factoryFailureCause = (cause: unknown): unknown =>
-  Match.value(cause).pipe(
-    Match.when(
-      Match.instanceOf(Error),
-      (error) =>
-        new Error(`Evaluating the config module's exported factory failed: ${error.message}`, { cause: error }),
-    ),
-    Match.orElse(() => cause),
-  )
+function wrappedFactoryFailure(error: Error): Error {
+  return new Error(`Evaluating the config module's exported factory failed: ${error.message}`, { cause: error })
+}
+
+const factoryFailureCause = <A = unknown>(cause: A): A | Error =>
+  cause instanceof Error ? wrappedFactoryFailure(cause) : cause
+
+const applyConfigFactory = <A = unknown>(factory: ConfigFactory<A>, configEnv: ConfigEnv): A => factory(configEnv)
 
 /**
  * Settle a config module's default export into the object the document schema decodes.
@@ -538,18 +449,15 @@ const factoryFailureCause = (cause: unknown): unknown =>
  * config is being read for; the promise is awaited here because a promise is a
  * non-null object and would otherwise reach the document decoder as one.
  */
-const settleConfigDefault = (
+const settleConfigDefault = <A = unknown>(
   configFile: string,
-  defaultExport: unknown,
+  defaultExport: A,
   configEnv: ConfigEnv,
 ): Effect.Effect<object, ConfigFileInvalidError> =>
   Effect.tryPromise({
     try: () =>
       Promise.resolve(defaultExport).then((exported) =>
-        Match.value(exported).pipe(
-          Match.when(isConfigFactory, (factory) => factory(configEnv)),
-          Match.orElse((value) => value),
-        )
+        isConfigFactory(exported) ? applyConfigFactory(exported, configEnv) : exported
       ),
     catch: (cause) => ConfigFileInvalidError.make({ file: configFile, cause: factoryFailureCause(cause) }),
   }).pipe(Effect.flatMap((settled) => requireDefaultExport(configFile, settled)))
@@ -557,29 +465,26 @@ const settleConfigDefault = (
 const ERASABLE_SYNTAX_HELP =
   'Config modules may use only erasable TypeScript syntax: no enums, no namespaces with runtime code, no parameter properties, and no decorators.'
 
-const carriesCode = (cause: unknown): cause is { readonly code: unknown } => cause instanceof Error && 'code' in cause
+const carriesCode = <A = unknown>(cause: unknown): cause is { readonly code: A } =>
+  cause instanceof Error && 'code' in cause
 
-const errorCodeOf = (cause: unknown): string | undefined => {
-  const code: unknown = Match.value(cause).pipe(
-    Match.when(carriesCode, (error): unknown => error.code),
-    Match.orElse(() => undefined),
-  )
-  if (typeof code === 'string') return code
-  return undefined
+function codeOf(coded: { readonly code: string }): string | undefined {
+  return typeof coded.code === 'string' ? coded.code : undefined
 }
 
-const errorMessageOf = (cause: unknown): string | undefined => {
-  const message: unknown = Match.value(cause).pipe(
-    Match.when(Match.instanceOf(Error), (error): unknown => error.message),
-    Match.orElse(() => undefined),
-  )
-  if (typeof message === 'string') return message
-  return undefined
+const errorCodeOf = <A = unknown>(cause: A): string | undefined =>
+  carriesCode<string>(cause) ? codeOf(cause) : undefined
+
+const errorMessageOf = <A = unknown>(cause: A): string | undefined =>
+  cause instanceof Error ? errorTextOf(cause) : undefined
+
+function errorTextOf(error: Error): string | undefined {
+  return typeof error.message === 'string' ? error.message : undefined
 }
 
 const importFailureDetail = (failure: StrykerError): string => errorMessageOf(failure.cause) ?? failure.message
 
-const configImportCause = (configFile: string, failure: StrykerError): unknown =>
+const configImportCause = (configFile: string, failure: StrykerError): Error | StrykerError =>
   Match.value(errorCodeOf(failure.cause)).pipe(
     Match.when(
       'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX',
@@ -758,16 +663,16 @@ function resolveExtends(
   })
 }
 
-export type ValidationSchemaDocument = {
-  readonly properties?: unknown
-  readonly [key: string]: unknown
+export type ValidationSchemaDocument<A = unknown> = {
+  readonly properties?: A
+  readonly [key: string]: A
 }
 
-export const forkCoreSchema: Record<string, unknown> = S.toJsonSchemaDocument(forkOptionsSchema).schema
+export const forkCoreSchema = S.toJsonSchemaDocument(forkOptionsSchema).schema
 
 const decodeOptions = S.decodeUnknownResult(StrykerOptionsSchema, { errors: 'all' })
 
-function recordOf(value: object): Record<string, unknown> {
+function recordOf<A = unknown>(value: object): Record<string, A> {
   return { ...value }
 }
 
@@ -880,8 +785,8 @@ function customValidation(
   )
 }
 
-function schemaValidate(
-  options: Record<string, unknown>,
+function schemaValidate<A = unknown>(
+  options: Record<string, A>,
 ): Effect.Effect<StrykerOptions, ConfigError> {
   const decoded = decodeOptions(options)
   if (Result.isFailure(decoded)) {
@@ -1014,8 +919,8 @@ function markOptions(
   })
 }
 
-export function validateOptions(
-  options: Record<string, unknown>,
+export function validateOptions<A = unknown>(
+  options: Record<string, A>,
   schema: ValidationSchemaDocument,
 ): Effect.Effect<StrykerOptions, ConfigError> {
   return Effect.gen(function*() {
@@ -1171,32 +1076,25 @@ const discoverConfigFile = (): Effect.Effect<
     ),
   )
 
-function findConfigFile(
-  configFileName: unknown,
+function findConfigFile<A = unknown>(
+  configFileName: A,
 ): Effect.Effect<
   string | undefined,
   ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileUnsupportedError,
   FileSystem.FileSystem | Path.Path
 > {
-  return Match.value(configFileName).pipe(
-    Match.when(Match.string, (fileName) => configFileFor(fileName)),
-    Match.orElse(() => discoverConfigFile()),
-  )
+  return typeof configFileName === 'string' ? configFileFor(configFileName) : discoverConfigFile()
 }
 
 const resolveChildExtends = (
   configFile: string,
-  child: Record<string, unknown>,
+  child: PartialStrykerOptions,
   configEnv: ConfigEnv,
 ): Effect.Effect<
-  unknown,
+  PartialStrykerOptions,
   ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   Path.Path
-> =>
-  Match.value('extends' in child).pipe(
-    Match.when(true, () => resolveExtends(configFile, child, configEnv)),
-    Match.orElse(() => Effect.succeed(child)),
-  )
+> => 'extends' in child ? resolveExtends(configFile, child, configEnv) : Effect.succeed(child)
 
 export interface ConfigInvocation {
   readonly command: 'run' | 'merge-reports'
@@ -1216,10 +1114,10 @@ const isCiEnvironment: Effect.Effect<boolean> = Config.String('CI').pipe(
 )
 
 function loadOptionsFromConfigFile(
-  cliOptions: Record<string, unknown>,
+  cliOptions: PartialStrykerOptions,
   configEnv: ConfigEnv,
 ): Effect.Effect<
-  unknown,
+  PartialStrykerOptions,
   ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   FileSystem.FileSystem | Path.Path
 > {
@@ -1253,7 +1151,7 @@ export function readConfig(
     }
     const cliRecord = yield* S.decodeEffect(ConfigDocumentSchema)(cliOptions).pipe(Effect.orDie)
     const fileRecord = yield* loadOptionsFromConfigFile(cliRecord, configEnv)
-    const fileOptions = yield* Result.match(S.decodeUnknownResult(ConfigDocumentSchema)(fileRecord), {
+    const fileOptions = yield* Result.match(S.decodeResult(ConfigDocumentSchema)(fileRecord), {
       onFailure: (cause) => Effect.fail(ConfigFileInvalidError.make({ file: 'config', cause })),
       onSuccess: (options) => Effect.succeed(options),
     })

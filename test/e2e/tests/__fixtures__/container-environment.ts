@@ -1,18 +1,13 @@
 import { execFile, spawn } from 'node:child_process'
-import { createHash, type Hash } from 'node:crypto'
 import { copyFile, cp, mkdir, mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
-import { readPackableWorkspaceManifests, resolveWorkspaceClosure } from './closure-resolver.js'
-
 const execFileAsync = promisify(execFile)
 
 export const CONTAINER_WORKROOT = '/work'
-
-const NODE_IMAGE = 'node:24-alpine@sha256:333f6b3eca25980d5682c26207665b93c9417786b21760b2764d5821d9704c8a'
 
 const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 const TEST_RESOURCES_DIR = fileURLToPath(new URL('../../testResources', import.meta.url))
@@ -33,7 +28,7 @@ const PACKED_TARBALL_VERSION = /-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\.tgz$/
 
 const HOST_NETWORK_MODE = 'host'
 
-const IMAGE_TAG_PREFIX = 'stryker-js-effect-e2e'
+const IMAGE_TAG = 'stryker-js-effect-e2e:latest'
 
 let probedRuntime: Promise<string> | undefined
 
@@ -59,9 +54,6 @@ const CONTAINER_TELEMETRY_ENVIRONMENT = {
   OTEL_SERVICE_NAME: process.env['OTEL_SERVICE_NAME'] ?? 'stryker-e2e',
   OTEL_EXPORTER_OTLP_ENDPOINT: process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? 'http://127.0.0.1:4318',
 }
-
-const workspacePackageDirectory = (packageName: string): string =>
-  join(REPO_ROOT, 'packages', packageName.slice('@systemfsoftware/'.length))
 
 export type ExecResult = {
   readonly exitCode: number
@@ -116,8 +108,34 @@ const packedTarballOf = (fileNames: readonly string[], packageName: string, dire
   return { name: packageName, version, fileName, tarballPath: join(directory, fileName) }
 }
 
+const resolvePackableClosureFromTurbo = async (): Promise<ReadonlyArray<string>> => {
+  const turboDry = await execFileAsync(
+    'pnpm',
+    [
+      'exec',
+      'turbo',
+      'run',
+      'build',
+      ...ENTRY_PACKAGES.map((pkg) => `--filter=${pkg}`),
+      '--dry=json',
+    ],
+    { cwd: REPO_ROOT },
+  )
+  const jsonStart = turboDry.stdout.indexOf('{')
+  const parsed = JSON.parse(turboDry.stdout.slice(jsonStart)) as {
+    readonly tasks: ReadonlyArray<{ readonly taskId: string; readonly package?: string; readonly command?: string }>
+  }
+  const packages = new Set<string>()
+  for (const task of parsed.tasks) {
+    if ((task.command === 'build' || task.taskId.endsWith('#build')) && task.package) {
+      packages.add(task.package)
+    }
+  }
+  return [...packages].sort()
+}
+
 const packWorkspaceClosure = async (directory: string): Promise<Readonly<Record<string, PackedPackage>>> => {
-  const closure = resolveWorkspaceClosure(await readPackableWorkspaceManifests(REPO_ROOT), ENTRY_PACKAGES)
+  const closure = await resolvePackableClosureFromTurbo()
   await requireStep('build the packed workspace closure', () =>
     execFileAsync(
       'pnpm',
@@ -155,55 +173,6 @@ const copyFixturesIntoContext = async (contextDir: string): Promise<void> => {
     )
   }
 }
-
-const HASH_SKIP: Record<string, true> = {
-  '.stryker-tmp': true,
-  dist: true,
-  node_modules: true,
-  reports: true,
-}
-
-const hashDirectory = async (hash: Hash, root: string, relative: string): Promise<void> => {
-  const entries = await readdir(join(root, relative), { withFileTypes: true })
-  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (HASH_SKIP[entry.name] === true) continue
-    const entryRelative = relative === '' ? entry.name : `${relative}/${entry.name}`
-    if (entry.isDirectory()) {
-      await hashDirectory(hash, root, entryRelative)
-    } else if (entry.isFile()) {
-      hash.update(entryRelative)
-      hash.update(await readFile(join(root, entryRelative)))
-    }
-  }
-}
-
-const hashIfPresent = async (hash: Hash, root: string, relative: string): Promise<void> => {
-  const info = await stat(join(root, relative)).catch(() => undefined)
-  if (info === undefined) return
-  if (info.isDirectory()) {
-    hash.update(relative)
-    await hashDirectory(hash, root, relative)
-    return
-  }
-  hash.update(relative)
-  hash.update(await readFile(join(root, relative)))
-}
-
-const fingerprintTag = async (): Promise<string> => {
-  const hash = createHash('sha256')
-  hash.update(NODE_IMAGE)
-  const closure = resolveWorkspaceClosure(await readPackableWorkspaceManifests(REPO_ROOT), ENTRY_PACKAGES)
-  for (const packageName of [...closure].sort()) {
-    const directory = workspacePackageDirectory(packageName)
-    hash.update(packageName)
-    await hashIfPresent(hash, directory, 'package.json')
-    await hashIfPresent(hash, directory, 'src')
-  }
-  await hashDirectory(hash, TEST_RESOURCES_DIR, '')
-  await hashDirectory(hash, IMAGE_ASSETS_DIR, '')
-  return `${IMAGE_TAG_PREFIX}:${hash.digest('hex').slice(0, 16)}`
-}
-
 const tmpfsBuildScaffoldEnv = async (): Promise<Record<string, string> | undefined> => {
   const shm = await stat('/dev/shm').catch(() => undefined)
   if (shm === undefined || !shm.isDirectory()) {
@@ -281,7 +250,7 @@ const assembleBuildContext = async (contextDir: string): Promise<void> => {
 }
 
 const ensureImage = async (): Promise<void> => {
-  const tag = await fingerprintTag()
+  const tag = IMAGE_TAG
   if (await adoptExistingImage(tag)) return
   const directory = await requireStep(
     'create the image build scratch directory',

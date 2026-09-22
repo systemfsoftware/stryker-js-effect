@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Effect } from 'effect'
+import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
 import { instrument } from './__fixtures__/instrument.js'
@@ -156,6 +156,7 @@ const replacementsByLine = (mutants: readonly RegexMutant[]): readonly (readonly
 const Feature = makeFeature({ it, layer })
 
 Feature('Regex mutation characterization')
+  .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       'The full corpus yields exactly its recorded replacements in order',

@@ -47,7 +47,7 @@ interface CheckerDeps {
 
 type RunAnswers = CheckFinished['results']
 
-const refuse = (mutantIds: ReadonlyArray<string>, cause: unknown): CheckerFailed =>
+const refuse = <E = unknown>(mutantIds: ReadonlyArray<string>, cause: E): CheckerFailed =>
   CheckerFailed.make({ checkerName: 'typescript', mutantIds: [...mutantIds], cause: errorToString(cause) })
 
 const severityOf = (category: DiagnosticCategory): string =>

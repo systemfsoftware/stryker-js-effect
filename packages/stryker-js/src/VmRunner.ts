@@ -21,10 +21,10 @@ import * as Ref from 'effect/Ref'
 import type { PooledTestRunner } from './TestRunner.js'
 
 export interface VmScript {
-  readonly runInContext: (context: object) => unknown
+  readonly runInContext: <A = unknown>(context: object) => A
 }
 
-export type VmRequire = (specifier: string) => unknown
+export type VmRequire = <A = unknown>(specifier: string) => A
 
 export interface VmModule {
   readonly createContext: (sandbox: object) => object
@@ -67,13 +67,13 @@ export interface CompiledTests {
   readonly script: VmScript
 }
 
-const errorText = (error: unknown): string =>
+const errorText = <A = unknown>(error: A): string =>
   Match.value(error).pipe(
     Match.when(Match.instanceOf(Error), (failure) => failure.message),
     Match.orElse((value) => String(value)),
   )
 
-const compileFailure = (file: string, cause: unknown): TestRunnerFailed =>
+const compileFailure = <A = unknown>(file: string, cause: A): TestRunnerFailed =>
   TestRunnerFailed.make({
     runnerName: vmRunnerName,
     phase: 'init',
@@ -108,12 +108,12 @@ const sandboxFor = (
   platform: VmPlatform,
   fileName: string,
   activeMutantId: string | undefined,
-): Record<string, unknown> => {
+): object => {
   const namespace = hostStrykerNamespace()
   namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
-  const moduleExports: Record<string, unknown> = {}
+  const moduleExports = {}
   const moduleObj = { exports: moduleExports }
-  const sandbox: Record<string, unknown> = {
+  const sandbox = {
     ...globalThis,
     [INSTRUMENTER_CONSTANTS.NAMESPACE]: namespace,
     require: platform.module.createRequire(fileName),
@@ -121,9 +121,10 @@ const sandboxFor = (
     exports: moduleExports,
     __filename: fileName,
   }
-  sandbox['global'] = sandbox
-  sandbox['globalThis'] = sandbox
-  return sandbox
+  return Object.assign(sandbox, {
+    global: sandbox,
+    globalThis: sandbox,
+  })
 }
 
 const resultFromRun = (failureMessage: string | undefined, timeSpentMs: number): CompleteDryRunResult =>
@@ -144,26 +145,24 @@ const resultFromRun = (failureMessage: string | undefined, timeSpentMs: number):
     })),
   )
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+const isPlainObject = <A = unknown>(value: unknown): value is Record<string, A> => {
   if (!Predicate.isObject(value)) {
     return false
   }
   return true
 }
 
-const descriptorValue = (descriptor: PropertyDescriptor | undefined): unknown => {
-  if (descriptor === undefined) {
-    return undefined
-  }
-  return descriptor.value
-}
+const descriptorValue = <A = unknown>(descriptor: TypedPropertyDescriptor<A> | undefined): A | undefined =>
+  descriptor === undefined ? undefined : descriptor.value
 
-const hostStrykerNamespace = (): Record<string, unknown> => {
-  const current = descriptorValue(Object.getOwnPropertyDescriptor(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE))
-  if (isPlainObject(current)) {
+const hostStrykerNamespace = <A = unknown>(): Record<string, A> => {
+  const current = descriptorValue<Record<string, A>>(
+    Object.getOwnPropertyDescriptor(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE),
+  )
+  if (isPlainObject<A>(current)) {
     return current
   }
-  const created: Record<string, unknown> = {}
+  const created: Record<string, A> = {}
   Object.defineProperty(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE, {
     configurable: true,
     enumerable: true,

@@ -15,7 +15,7 @@ export interface NodeDecodedShape {
   readonly children: readonly NodeDecodedShape[]
 }
 
-const TSFileNodeSchema: S.Codec<NodeDecodedShape, unknown> = S.suspend(() =>
+const TSFileNodeSchema: S.Codec<NodeDecodedShape, NodeDecodedShape> = S.suspend(() =>
   S.Struct({
     fileName: SourceFileSchema,
     parents: S.Array(TSFileNodeSchema),

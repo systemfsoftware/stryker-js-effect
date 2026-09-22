@@ -467,8 +467,8 @@ const mutantActivation = (
     Match.orElse(() => undefined),
   )
 
-const spawnResult = (
-  outcome: Exit.Exit<{ readonly output: string; readonly exitCode: number }, unknown>,
+const spawnResult = <E = unknown>(
+  outcome: Exit.Exit<{ readonly output: string; readonly exitCode: number }, E>,
   elapsed: number,
 ): DryRunResult =>
   Match.value(outcome).pipe(

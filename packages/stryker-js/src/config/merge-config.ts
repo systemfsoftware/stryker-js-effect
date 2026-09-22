@@ -3,26 +3,40 @@ import * as Record from 'effect/Record'
 
 import type { StrykerConfig } from './stryker-config.js'
 
-type ConfigRecord = { readonly [key: string]: unknown }
+interface MergedConfigRecord<A = unknown> extends Record<string, A | MergedConfigRecord<A>> {}
 
-const usable = (value: unknown, key: string): boolean => key !== '__proto__' && value !== undefined
+const usable = <A = unknown>(value: A, key: string): boolean => key !== '__proto__' && value !== undefined
 
-const combineNested = (left: ConfigRecord, right: unknown): unknown => {
-  if (Predicate.isObject(right)) {
-    return mergeRecords(left, right)
-  }
-  return right
+const isConfigRecord = <A = unknown>(
+  value: A | MergedConfigRecord<A> | undefined,
+): value is MergedConfigRecord<A> => Predicate.isObject(value)
+
+const copyRecord = <A = unknown>(source: MergedConfigRecord<A>): MergedConfigRecord<A> => Record.filter(source, usable)
+
+const mergeNested = <A = unknown>(
+  base: MergedConfigRecord<A>,
+  override: A | MergedConfigRecord<A>,
+): A | MergedConfigRecord<A> => (isConfigRecord(override) ? mergeRecords(base, override) : override)
+
+const mergeKeyInto = <A = unknown>(
+  merged: MergedConfigRecord<A>,
+  key: string,
+  override: A | MergedConfigRecord<A>,
+): void => {
+  const base = merged[key]
+  merged[key] = isConfigRecord(base) ? mergeNested(base, override) : override
 }
 
-const combine = (left: unknown, right: unknown): unknown => {
-  if (Predicate.isObject(left)) {
-    return combineNested(left, right)
+const mergeRecords = <A = unknown>(
+  base: MergedConfigRecord<A>,
+  overrides: MergedConfigRecord<A>,
+): MergedConfigRecord<A> => {
+  const merged = copyRecord(base)
+  for (const [key, override] of Object.entries(Record.filter(overrides, usable))) {
+    mergeKeyInto(merged, key, override)
   }
-  return right
+  return merged
 }
-
-const mergeRecords = (base: ConfigRecord, overrides: ConfigRecord): ConfigRecord =>
-  Record.union(base, Record.filter(overrides, usable), combine)
 
 export const mergeConfig = (defaults: StrykerConfig, overrides: StrykerConfig): StrykerConfig =>
   mergeRecords(defaults, overrides)

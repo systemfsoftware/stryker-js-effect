@@ -1,5 +1,12 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { type ConfigInvocation, readConfig } from '@systemfsoftware/stryker-js'
+import {
+  type ConfigFileInvalidError,
+  type ConfigFileNotFoundError,
+  type ConfigFileUnreadableError,
+  type ConfigFileUnsupportedError,
+  type ConfigInvocation,
+  readConfig,
+} from '@systemfsoftware/stryker-js'
 import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Context from 'effect/Context'
@@ -57,7 +64,7 @@ const fileSystemLayer = FileSystem.layerNoop({
     ),
 })
 
-const warningLogger = (recorder: ReadRecorderShape): Logger.Logger<unknown, void> =>
+const warningLogger = <Message = unknown>(recorder: ReadRecorderShape): Logger.Logger<Message, void> =>
   Logger.make((options) => {
     recorder.warnings.push(Array.ensure(options.message).map(String).join(' '))
   })
@@ -71,8 +78,14 @@ const configReadLayer = Layer.mergeAll(
   loggerLayer.pipe(Layer.provide(recorderLayer)),
 )
 
-interface ReadOutcome {
-  readonly result: Result.Result<StrykerOptions, unknown>
+type ConfigFileReadError =
+  | ConfigFileNotFoundError
+  | ConfigFileUnreadableError
+  | ConfigFileInvalidError
+  | ConfigFileUnsupportedError
+
+interface ReadOutcome<E = ConfigFileReadError> {
+  readonly result: Result.Result<StrykerOptions, E>
   readonly recorder: ReadRecorderShape
 }
 
@@ -113,10 +126,10 @@ const optionsOrThrow = (outcome: ReadOutcome): StrykerOptions => {
   return outcome.result.success
 }
 
-const isFailureRecord = (failure: unknown): failure is Record<string, unknown> =>
-  typeof failure === 'object' && failure !== null
+const isFailureRecord = (failure: unknown): failure is ConfigFileReadError =>
+  typeof failure === 'object' && failure !== null && '_tag' in failure
 
-const failureOrThrow = (outcome: ReadOutcome): Record<string, unknown> => {
+const failureOrThrow = (outcome: ReadOutcome): ConfigFileReadError => {
   if (Result.isSuccess(outcome.result)) {
     throw new Error('the config read was expected to fail')
   }
@@ -127,15 +140,18 @@ const failureOrThrow = (outcome: ReadOutcome): Record<string, unknown> => {
   return failure
 }
 
-const fileOf = (failure: Record<string, unknown>): string => String(failure['file'])
+const fileOf = (failure: ConfigFileReadError): string => failure.file
 
-const hintOf = (failure: Record<string, unknown>): string => String(failure['hint'])
+const hintOf = (failure: ConfigFileReadError): string =>
+  'hint' in failure && typeof failure.hint === 'string' ? failure.hint : ''
 
-const causeTextOf = (failure: Record<string, unknown>): string =>
-  Match.value(failure['cause']).pipe(
+const causeTextOf = (failure: ConfigFileReadError): string => {
+  if (!('cause' in failure)) return ''
+  return Match.value(failure.cause).pipe(
     Match.when(Match.instanceOf(Error), (error) => error.message),
     Match.orElse((value) => String(value)),
   )
+}
 
 Feature('Configuring a Stryker run from a module config file')
   .withScenarioLayer(configReadLayer)

@@ -147,6 +147,7 @@ const suiteFailure = (
   }).pipe(Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
 
 Feature('Verifying mutants without spawning a child process')
+  .withLayer(Layer.empty)
   .liveClock()
   .body(({ scenario }) => {
     scenario(

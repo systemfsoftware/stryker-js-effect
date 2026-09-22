@@ -37,45 +37,48 @@ export const PriorReportDocument = S.Struct({
   ),
 })
 
-const isArray: (value: unknown) => value is unknown[] = Array.isArray
-const { entries: objectEntries, fromEntries: objectFromEntries, keys: objectKeys } = Object
-const stringify = JSON.stringify
+const { entries: objectEntries, fromEntries: objectFromEntries } = Object
 
 const SURVIVORS_RUN_FIRST_REMEDIATION = 'run a full `stryker run` first, then re-run with --survivors'
 const SURVIVORS_BOOKKEEPING_KEYS: readonly string[] = ['survivorsPriorReport']
 
-function stripSurvivorsKeys(config: Record<string, unknown>): Record<string, unknown> {
+function stripSurvivorsKeys<A = unknown>(config: Record<string, A>): Record<string, A> {
   return objectFromEntries(
     objectEntries(config).filter(([key]) => !SURVIVORS_BOOKKEEPING_KEYS.includes(key)),
   )
 }
 
-function wasProducedBySurvivorsRun(priorReport: { readonly config: unknown }): boolean {
+function wasProducedBySurvivorsRun<A = unknown>(priorReport: { readonly config: A }): boolean {
   return Option.exists(
     Option.liftPredicate(priorReport.config, Match.record),
     (config) => SURVIVORS_BOOKKEEPING_KEYS.some((bookkeeping) => bookkeeping in config),
   )
 }
 
-function serializeSurvivorsHashInput(input: {
-  readonly resolvedOptions: Record<string, unknown>
+const hashValueSchema = (): S.Codec<S.Json> =>
+  S.Union([
+    S.Null,
+    S.Finite,
+    S.Boolean,
+    S.String,
+    S.Array(S.suspend(hashValueSchema)),
+    S.Record(S.String, S.suspend(hashValueSchema)),
+  ])
+
+const SurvivorsHashInput = S.Struct({
+  frameworkVersion: S.UndefinedOr(S.String),
+  resolvedOptions: S.Record(S.String, S.UndefinedOr(S.suspend(hashValueSchema))),
+  sourceContentHashes: S.Record(S.String, S.String),
+})
+
+const hashesEquivalent = S.toEquivalence(SurvivorsHashInput)
+
+function decodeSurvivorsHashInput<A = unknown>(input: {
+  readonly resolvedOptions: Record<string, A>
   readonly frameworkVersion: string | undefined
   readonly sourceContentHashes: Readonly<Record<string, string>>
-}): string {
-  return stringify(sortKeys(input))
-}
-
-function sortKeys(value: unknown): unknown {
-  return Match.value(value).pipe(
-    Match.when(isArray, (many) => many.map((member) => sortKeys(member))),
-    Match.when(Match.record, (named) =>
-      objectFromEntries(
-        objectKeys(named)
-          .sort()
-          .map((key): readonly [string, unknown] => [key, sortKeys(named[key])]),
-      )),
-    Match.orElse((leaf) => leaf),
-  )
+}): Result.Result<S.Schema.Type<typeof SurvivorsHashInput>, S.SchemaError> {
+  return S.decodeUnknownResult(SurvivorsHashInput)(input)
 }
 export class PriorReportFacts extends S.Class<PriorReportFacts>('PriorReportFacts')({
   config: S.Record(S.String, S.Unknown),
@@ -101,15 +104,28 @@ function hashesMatch(
   priorReport: PriorReportFacts,
   input: AdmitSurvivorsRunCommand,
 ): boolean {
-  return serializeSurvivorsHashInput({
-    resolvedOptions: stripSurvivorsKeys(priorReport.config),
-    frameworkVersion: priorReport.frameworkVersion,
-    sourceContentHashes: input.priorSourceHashes,
-  }) === serializeSurvivorsHashInput({
-    resolvedOptions: stripSurvivorsKeys(input.currentConfig),
-    frameworkVersion: input.frameworkVersion,
-    sourceContentHashes: input.sourceContentHashes,
-  })
+  return Result.match(
+    decodeSurvivorsHashInput({
+      resolvedOptions: stripSurvivorsKeys(priorReport.config),
+      frameworkVersion: priorReport.frameworkVersion,
+      sourceContentHashes: input.priorSourceHashes,
+    }),
+    {
+      onFailure: () => false,
+      onSuccess: (prior) =>
+        Result.match(
+          decodeSurvivorsHashInput({
+            resolvedOptions: stripSurvivorsKeys(input.currentConfig),
+            frameworkVersion: input.frameworkVersion,
+            sourceContentHashes: input.sourceContentHashes,
+          }),
+          {
+            onFailure: () => false,
+            onSuccess: (current) => hashesEquivalent(prior, current),
+          },
+        ),
+    },
+  )
 }
 
 const SurvivorsAdmissionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/SurvivorsAdmission')
