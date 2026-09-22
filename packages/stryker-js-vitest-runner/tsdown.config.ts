@@ -28,6 +28,7 @@ export default defineConfig([
       neverBundle: [/^vitest$/, /^vitest\//],
       alwaysBundle: [/./],
       onlyBundle: false,
+      onlyImport: ['vitest'],
     },
   },
 ])

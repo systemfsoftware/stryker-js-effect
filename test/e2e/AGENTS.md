@@ -19,7 +19,6 @@ pnpm test:e2e
 | **E2E-2** | Fixture oracles are authored literals in the journey that asserts them: a run may confirm the numbers, never originate them. A mismatch is triaged as a fixture-authoring error or a product bug, never auto-copied into the oracle.                                                         | `review` — every expected count appears as an authored literal in `tests/*.e2e.test.ts` (CONST-T10)               |
 | **E2E-3** | The lane's assertions import no workspace package: they decode the machine stream's plain JSON events against authored expectations and read the trace over Tempo's HTTP API. A fixture _input_ under `testResources/` may import the published contract — a plugin cannot exist without it. | `review` — no workspace import under `tests/`; an import under `testResources/` names only the published contract |
 | **E2E-4** | Each fixture declares every plugin it loads in its own `stryker.config.ts`. There is no plugin glob: that array is the only source of what loads.                                                                                                                                            | `review` — every `testResources/*/stryker.config.ts` names each plugin its run loads                              |
-| **E2E-5** | The Effect-skew fixture plugin's worker release is the `SKEW_EFFECT_VERSION` pin in `tests/__fixtures__/container-environment.ts`, and the journey's trace expectation reads the same pin.                                                                                                   | `review` — the `effect.version` the journey asserts equals `SKEW_EFFECT_VERSION`                                  |
 | **E2E-6** | Diagnosing failing or flaky E2E runs MUST query Grafana LGTM traces (OTLP export to Tempo) to isolate the diverging span or event; adding ephemeral `console.log`/print statements or running blind reboot loops is prohibited.                                                              | `review` — diagnoses cite concrete span IDs or timestamps from Tempo; no temporary logging injected               |
 
 ## Lint scope
@@ -44,7 +43,7 @@ Read by `container-environment.ts`; the `test:e2e` turbo task passes them throug
 | Variable                      | Value                                                             | Why                                                                                           |
 | ----------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `RUNTIME`                     | `podman` or `docker`                                              | Container binary override; without it the lane probes `podman` then `docker` on `PATH`        |
-| `OTEL_ENABLED`                | `true` starts the CLI's, its workers' and the test process's SDKs | The Effect-skew journey grades the run's trace; the CI `e2e` job sets it                      |
+| `OTEL_ENABLED`                | `true` starts the CLI's, its workers' and the test process's SDKs | The lifecycle journey grades the run's trace; the CI `e2e` job sets it                        |
 | `OTEL_SERVICE_NAME`           | default `stryker-e2e`                                             | One service name across the CLI, its workers and the test process — what the journey searches |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | default `http://127.0.0.1:4318`                                   | The collector the container exports to                                                        |
 
@@ -53,11 +52,3 @@ The lane probes host networking once per image: where the runtime supports `--ne
 podman) the container reaches the loopback collector directly; otherwise the endpoint's loopback host is
 rewritten to `host.containers.internal`. Buildah's overlay scaffolding cannot live on an overlay filesystem, so
 image builds run with `TMPDIR` on `/dev/shm` when it exists (nix dev shells bind TMPDIR onto an overlay).
-
-## Fixture plugins
-
-`testResources/effect-skew-checker/` is a checker plugin the bed builds and packs at lane time: the
-worker half is bundled with its own `effect` release (`SKEW_EFFECT_VERSION`) inlined, so it cannot be
-re-consolidated with the CLI's release by any install layout. Its host half is a plain descriptor.
-The bundle is produced by that fixture's `tsdown.config.mjs` through the vitest-runner package's
-`tsdown` bin, with `SKEW_EFFECT_DIR`, `SKEW_RUNNER_MANIFEST` and `SKEW_OUT_DIR` supplied per build.
