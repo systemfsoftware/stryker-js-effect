@@ -11,9 +11,6 @@ if [ "${1:-}" = "--bake-all" ]; then
     cp -a "$src/." "$dest/"
     cd "$dest"
     npm install --no-audit --no-fund --loglevel=error
-    if [ "$id" = "skew-fixture" ]; then
-      npm install --no-audit --no-fund --loglevel=error /packs-skew/*.tgz
-    fi
     npm install --no-audit --no-fund --loglevel=error /packs/*.tgz
   done
   exit 0

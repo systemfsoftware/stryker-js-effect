@@ -26,6 +26,7 @@ export default defineConfig([
       neverBundle: [/^typescript$/, /^typescript\//],
       alwaysBundle: [/./],
       onlyBundle: false,
+      onlyImport: ['typescript'],
     },
   },
 ])
