@@ -31,17 +31,7 @@ export const ENTRY_PACKAGES = [CLI_PACKAGE, ...PLUGIN_PACKAGES]
 
 const PACKED_TARBALL_VERSION = /-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\.tgz$/
 
-const VITEST_RUNNER_PACKAGE = PLUGIN_PACKAGES[0]
-
 const HOST_NETWORK_MODE = 'host'
-
-const SKEW_CHECKER_PACKAGE = '@systemfsoftware/stryker-js-effect-skew-checker'
-
-export const SKEW_EFFECT_VERSION = '4.0.0-rc.115'
-
-const SKEW_CHECKER_DIRECTORY = join(TEST_RESOURCES_DIR, 'effect-skew-checker')
-
-const NON_FIXTURE_RESOURCE_DIRS: Record<string, true> = { 'effect-skew-checker': true }
 
 const IMAGE_TAG_PREFIX = 'stryker-js-effect-e2e'
 
@@ -147,77 +137,11 @@ const packWorkspaceClosure = async (directory: string): Promise<Readonly<Record<
   )
 }
 
-const buildSkewCheckerBundle = async (directory: string): Promise<string> => {
-  const skewedEffectDirectory = join(directory, 'skew-effect')
-  await requireStep(`fetch effect@${SKEW_EFFECT_VERSION} for the skew bundle`, () =>
-    execFileAsync(
-      'npm',
-      [
-        'install',
-        '--prefix',
-        skewedEffectDirectory,
-        '--no-save',
-        '--no-package-lock',
-        '--silent',
-        `effect@${SKEW_EFFECT_VERSION}`,
-      ],
-      { cwd: directory },
-    ))
-  const bundledDirectory = join(directory, 'skew-checker-dist')
-  await requireStep('bundle the effect-skew checker worker', () =>
-    execFileAsync(
-      'pnpm',
-      [
-        '--filter',
-        VITEST_RUNNER_PACKAGE,
-        'exec',
-        'tsdown',
-        '--config',
-        join(SKEW_CHECKER_DIRECTORY, 'tsdown.config.mjs'),
-      ],
-      {
-        cwd: REPO_ROOT,
-        env: {
-          ...process.env,
-          SKEW_EFFECT_DIR: join(skewedEffectDirectory, 'node_modules', 'effect'),
-          SKEW_RUNNER_MANIFEST: join(workspacePackageDirectory(VITEST_RUNNER_PACKAGE), 'package.json'),
-          SKEW_OUT_DIR: bundledDirectory,
-        },
-      },
-    ))
-  return bundledDirectory
-}
-
-const stageSkewCheckerPackage = async (directory: string, bundledDirectory: string): Promise<string> => {
-  const packageDirectory = join(directory, 'skew-checker-package')
-  const distDirectory = join(packageDirectory, 'dist')
-  await requireStep('stage the effect-skew checker package', async () => {
-    await mkdir(distDirectory, { recursive: true })
-    await copyFile(join(SKEW_CHECKER_DIRECTORY, 'package.json'), join(packageDirectory, 'package.json'))
-    for (const fileName of await readdir(bundledDirectory)) {
-      await copyFile(join(bundledDirectory, fileName), join(distDirectory, fileName))
-    }
-  })
-  return packageDirectory
-}
-
-const packSkewChecker = async (directory: string, destination: string): Promise<PackedPackage> => {
-  const bundledDirectory = await buildSkewCheckerBundle(directory)
-  const packageDirectory = await stageSkewCheckerPackage(directory, bundledDirectory)
-  await mkdir(destination, { recursive: true })
-  await requireStep(
-    'pack the effect-skew checker',
-    () => execFileAsync('npm', ['pack', packageDirectory, '--pack-destination', destination], { cwd: directory }),
-  )
-  const fileNames = await requireStep('read the packed effect-skew checker', () => readdir(destination))
-  return packedTarballOf(fileNames, SKEW_CHECKER_PACKAGE, destination)
-}
-
 const copyFixturesIntoContext = async (contextDir: string): Promise<void> => {
   const fixturesDir = join(contextDir, 'fixtures')
   await mkdir(fixturesDir, { recursive: true })
   for (const entry of await readdir(TEST_RESOURCES_DIR, { withFileTypes: true })) {
-    if (!entry.isDirectory() || NON_FIXTURE_RESOURCE_DIRS[entry.name] === true) {
+    if (!entry.isDirectory()) {
       continue
     }
     const source = join(TEST_RESOURCES_DIR, entry.name)
@@ -268,7 +192,6 @@ const hashIfPresent = async (hash: Hash, root: string, relative: string): Promis
 const fingerprintTag = async (): Promise<string> => {
   const hash = createHash('sha256')
   hash.update(NODE_IMAGE)
-  hash.update(SKEW_EFFECT_VERSION)
   const closure = resolveWorkspaceClosure(await readPackableWorkspaceManifests(REPO_ROOT), ENTRY_PACKAGES)
   for (const packageName of [...closure].sort()) {
     const directory = workspacePackageDirectory(packageName)
@@ -351,7 +274,6 @@ const assembleBuildContext = async (contextDir: string): Promise<void> => {
   const packsDir = join(contextDir, 'packs')
   await mkdir(packsDir, { recursive: true })
   await packWorkspaceClosure(packsDir)
-  await packSkewChecker(scratch ?? contextDir, join(contextDir, 'packs-skew'))
   await copyFixturesIntoContext(contextDir)
   await mkdir(join(contextDir, 'image'), { recursive: true })
   await copyFile(join(IMAGE_ASSETS_DIR, 'Dockerfile'), join(contextDir, 'Dockerfile'))
