@@ -1,6 +1,6 @@
 import { describe, it } from '@effect/vitest'
+import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type { StandardSchemaV1 } from 'effect/StandardSchema'
 
@@ -21,12 +21,15 @@ const validateSync = <T = unknown>(input: T): Validation => {
   return out
 }
 
-const encodeFixture = <Enc = unknown, S extends S.ConstraintEncoder<Enc> = S.ConstraintEncoder<Enc>>(
-  schema: S,
-  value: S['Type'],
-): S['Encoded'] => Result.getOrThrow(S.encodeResult(schema)(value))
+const encodeFixture = (
+  schema: typeof ReporterEventUnion | typeof DryRunCompleted | typeof MutantTested,
+  value: ReporterEvent,
+) => S.encodeEffect(schema)(value)
 
-const reencoded = (value: ReporterEvent): string => JSON.stringify(encodeFixture(ReporterEventUnion, value))
+const reencoded = (run: Effect.Effect<ReporterEvent>) =>
+  Effect.map(Effect.flatMap(run, (value) => encodeFixture(ReporterEventUnion, value)), (encoded) =>
+    JSON.stringify(encoded))
+
 
 const withTag = <T = unknown, Tag = unknown>(input: T, tag: Tag): T => {
   if (typeof input !== 'object' || input === null) return input
@@ -51,19 +54,6 @@ const injectCoverage = <T = unknown>(input: T): T => {
   if (typeof input !== 'object' || input === null) return input
   return { ...input, mutantCoverage: { perTest: { t1: { m1: 1 } }, static: { m1: 2 } } }
 }
-
-const agreesWithDecode = <T = unknown>(input: T): boolean => {
-  const standard = validateSync(input)
-  if (standard === 'async') return false
-  const decoded = S.decodeUnknownExit(ReporterEventUnion)(input)
-  if ('value' in standard) {
-    if (Exit.isFailure(decoded)) return false
-    if ('issues' in standard) return false
-    return reencoded(standard.value) === reencoded(decoded.value)
-  }
-  return Exit.isFailure(decoded) && standard.issues.length > 0
-}
-
 const hasResultShape = (result: Validation): boolean => {
   if (result === 'async') return false
   if ('value' in result) return !('issues' in result)
@@ -86,40 +76,64 @@ const rejectsUnknownTag = (result: Validation): boolean => {
   return fingerprint.includes('_tag') || fingerprint.includes('Expected')
 }
 
+
 describe('ReporterEvent', () => {
-  it.prop(
+  it.effect.prop(
     '∀e_Event_≡Decode',
     [ReporterEventUnion],
-    ([event]) => agreesWithDecode(corruptByDraw(encodeFixture(ReporterEventUnion, event))),
+    ([event]) =>
+      Effect.gen(function*() {
+        const encoded = yield* encodeFixture(ReporterEventUnion, event)
+        const drawn = corruptByDraw(encoded)
+        const valid = validateSync(drawn)
+        const decoded = S.decodeExit(ReporterEventUnion)(drawn)
+        if (!('value' in valid) || 'issues' in valid) {
+          return Exit.isFailure(decoded) && !('value' in valid) && valid.issues.length > 0
+        }
+        if (Exit.isFailure(decoded)) return false
+        return (yield* reencoded(Effect.succeed(valid.value))) === (yield* reencoded(Effect.succeed(decoded.value)))
+      }),
   )
-
-  it.prop(
+  it.effect.prop(
     '∀e_Validate_≡Shape',
     [ReporterEventUnion],
-    ([event]) => hasResultShape(validateSync(corruptByDraw(encodeFixture(ReporterEventUnion, event)))),
+    ([event]) =>
+      Effect.map(
+        encodeFixture(ReporterEventUnion, event),
+        (encoded) => hasResultShape(validateSync(corruptByDraw(encoded))),
+      ),
   )
 
-  it.prop(
+
+
+
+  it.effect.prop(
     '∀d_DryRun_≠Coverage',
     [DryRunCompleted],
-    ([event]) => stripsMutantCoverage(encodeFixture(DryRunCompleted, event)),
+    ([event]) =>
+      Effect.map(encodeFixture(DryRunCompleted, event), (encoded) => stripsMutantCoverage(encoded)),
   )
 
-  it.prop(
+
+  it.effect.prop(
     '∀e_UnknownTag_≡Reject',
     [ReporterEventUnion],
-    ([event]) => rejectsUnknownTag(validateSync(withTag(encodeFixture(ReporterEventUnion, event), 'not-a-kind'))),
+    ([event]) =>
+      Effect.map(encodeFixture(ReporterEventUnion, event), (encoded) =>
+        rejectsUnknownTag(validateSync(withTag(encoded, 'not-a-kind')))),
   )
 
-  it.prop(
+
+  it.effect.prop(
     '∀m_Tested_≡MachineAlphabet',
     [MutantTested],
-    ([event]) => {
-      const encoded = encodeFixture(MutantTested, event)
-      const members = Object.keys(encoded).filter((key) => key !== '_tag').sort()
-      const pinned = ['completed', 'file', 'id', 'location', 'mutator', 'replacement', 'status', 'total']
-      if (members.join(',') !== pinned.join(',')) return false
-      return Exit.isSuccess(S.decodeExit(RunMutantTested)({ ...encoded, _tag: 'mutant' }))
-    },
+    ([event]) =>
+      Effect.gen(function*() {
+        const encoded = yield* encodeFixture(MutantTested, event)
+        const members = Object.keys(encoded).filter((key) => key !== '_tag').sort()
+        const pinned = ['completed', 'file', 'id', 'location', 'mutator', 'replacement', 'status', 'total']
+        if (members.join(',') !== pinned.join(',')) return false
+        return Exit.isSuccess(S.decodeExit(RunMutantTested)({ ...encoded, _tag: 'mutant' }))
+      }),
   )
 })

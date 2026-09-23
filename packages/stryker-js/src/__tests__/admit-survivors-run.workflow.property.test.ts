@@ -6,6 +6,7 @@ import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Equivalence from 'effect/Equivalence'
 import * as Exit from 'effect/Exit'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
@@ -54,15 +55,23 @@ const priorSourceHashesOf = (report: schema.MutationTestResult) =>
 
 const intIn = (minimum: number, maximum: number) => Arbitrary.schema(S.Int.check(S.isBetween({ minimum, maximum })))
 
-const oneOf = <A = unknown>(...arbs: ReadonlyArray<Arbitrary.Arbitrary<A>>): Arbitrary.Arbitrary<A> =>
-  intIn(0, arbs.length - 1).pipe(
-    Arbitrary.flatMap((index) => {
-      const chosen = arbs[index]
-      if (chosen === undefined) {
-        throw new Error(`oneOf was asked for an arbitrary at index ${index}, which is unbound`)
-      }
-      return chosen
-    }),
+const oneOf2 = <A>(first: Arbitrary.Arbitrary<A>, second: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<A> =>
+  Arbitrary.schema(S.Boolean).pipe(Arbitrary.flatMap((pick) => (pick ? first : second)))
+
+const oneOf3 = <A>(
+  first: Arbitrary.Arbitrary<A>,
+  second: Arbitrary.Arbitrary<A>,
+  third: Arbitrary.Arbitrary<A>,
+): Arbitrary.Arbitrary<A> =>
+  Arbitrary.schema(S.Literals([0, 1, 2])).pipe(
+    Arbitrary.flatMap((index) =>
+      Match.value(index).pipe(
+        Match.when(0, () => first),
+        Match.when(1, () => second),
+        Match.when(2, () => third),
+        Match.exhaustive,
+      ),
+    ),
   )
 
 const reportPositionArb = Arbitrary.all({
@@ -98,7 +107,7 @@ const recordOf = <A>(value: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<Record<
 type CleanConfig = Record<string, string | number | boolean>
 
 const cleanConfigArb: Arbitrary.Arbitrary<CleanConfig> = recordOf(
-  oneOf<string | number | boolean>(shortKeyArb, Arbitrary.schema(S.Int), Arbitrary.schema(S.Boolean)),
+  Arbitrary.schema(S.Union([S.String.check(S.isMaxLength(6)), S.Int, S.Boolean])),
 )
 
 const sourceArb = Arbitrary.schema(S.String.check(S.isMaxLength(16), S.isPattern(/^[\x20-\x7E]*$/)))
@@ -364,7 +373,7 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀r_EveryRejection_≡EndsWithRunFirstRemediation',
-    [oneOf<schema.MutationTestResult>(reportWithSurvivorsArb, survivorsProducedReportArb)],
+    [oneOf2<schema.MutationTestResult>(reportWithSurvivorsArb, survivorsProducedReportArb)],
     ([report]) => {
       const rejections = [
         rejectionOf(admitSurvivorsRun(commandWithoutPriorReport(report))),
@@ -415,7 +424,7 @@ describe('admitSurvivorsRun', () => {
   it.prop(
     '∀l_MalformedLocation_≡RefusedByAdmissionDecode',
     [
-      oneOf(
+      oneOf3(
         Arbitrary.Constant({}),
         Arbitrary.all({ start: Arbitrary.Constant({}), end: reportPositionArb }),
         Arbitrary.all({ start: reportPositionArb, end: Arbitrary.Constant({}) }),

@@ -10,7 +10,7 @@ import { ConfigDocumentSchema } from '../Config.schema.js'
 const LoadConfigDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/LoadConfigDecision')
 type LoadConfigDecisionTypeId = typeof LoadConfigDecisionTypeId
 
-const isOptionsRecord = (value: unknown): value is StrykerOptions => Predicate.isRecord(value)
+const isOptionsRecord = (value: unknown): value is StrykerOptions => Predicate.isObject(value)
 
 const DecodedOptions = S.declare<StrykerOptions>(isOptionsRecord)
 

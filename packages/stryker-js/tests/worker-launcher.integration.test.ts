@@ -29,7 +29,7 @@ const Feature = makeFeature({ it, layer })
 
 const WORKING_DIRECTORY = '/project/.stryker-tmp/sandbox-1'
 const EXEC_ARGV: readonly string[] = ['--enable-source-maps']
-const PLUGIN_OPTIONS = { plugins: ['@acme/stryker-runner'] }
+const PLUGIN_OPTIONS = { plugins: ['file:///project/node_modules/@acme/stryker-runner/dist/worker.mjs'] }
 const TEMP_DIR_PREFIX = 'stryker-plugin-'
 
 interface BootOutcome<E = unknown> {
@@ -42,7 +42,7 @@ const bootPingWorker = (
   behaviour: ChildBehaviour,
 ): Effect.Effect<BootOutcome> =>
   Effect.gen(function*() {
-    const options = yield* S.decodeEffect(StrykerOptionsSchema)(PLUGIN_OPTIONS)
+    const options = yield* S.decodeEffect(StrykerOptionsSchema)(PLUGIN_OPTIONS).pipe(Effect.orDie)
     const launcher = yield* substitutedLauncher(behaviour)
     const answer = yield* makeWorkerClient({
       rpcs: PingRpcs,
@@ -129,7 +129,7 @@ Feature('Running each plugin worker as its own process')
               onNone: () => Effect.die('the host never started the substituted worker'),
               onSome: (spawn) =>
                 Effect.map(
-                  S.decodeEffect(StrykerOptionsSchema)(JSON.parse(spawn.optionsJson)),
+                  S.decodeUnknownEffect(StrykerOptionsSchema)(JSON.parse(spawn.optionsJson)),
                   (options) => ({ spawn, options }),
                 ),
             })
