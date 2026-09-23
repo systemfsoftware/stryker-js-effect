@@ -17,7 +17,7 @@ const base = {
 describe('decode probes', () => {
   it('without extra key', () => {
     const exit = S.decodeExit(SurvivorsAdmission)({ _tag: 'Admitted', survivors: [base] })
-    out('no-extra success:', String(exit._tag === 'Success'), exit._tag === 'Failure' ? JSON.stringify(exit.failure) : '')
+    out('no-extra:', exit._tag, JSON.stringify(exit, (_k, v) => typeof v === 'bigint' ? String(v) : v))
   })
 
   it('with extra key', () => {
@@ -25,7 +25,7 @@ describe('decode probes', () => {
       _tag: 'Admitted',
       survivors: [{ ...base, relativeFileName: '!' }],
     })
-    out('extra success:', String(exit._tag === 'Success'), exit._tag === 'Failure' ? JSON.stringify(exit.failure) : '')
+    out('extra:', exit._tag, JSON.stringify(exit, (_k, v) => typeof v === 'bigint' ? String(v) : v))
   })
 
   it('with extra key via decodeUnknownExit', () => {
@@ -33,7 +33,7 @@ describe('decode probes', () => {
       _tag: 'Admitted',
       survivors: [{ ...base, relativeFileName: '!' }],
     })
-    out('unknown-extra success:', String(exit._tag === 'Success'), exit._tag === 'Failure' ? JSON.stringify(exit.failure) : '')
+    out('unknown-extra:', exit._tag, JSON.stringify(exit, (_k, v) => typeof v === 'bigint' ? String(v) : v))
   })
 
   it('admitted type id', () => {

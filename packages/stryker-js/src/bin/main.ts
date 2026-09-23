@@ -287,16 +287,19 @@ const nodePlatformLayer = Layer.mergeAll(
   nodeVmPlatformLayer,
 )
 
-const cliLayer = Layer.empty.pipe(
-  Layer.provideMerge(nodePlatformLayer),
-  Layer.provideMerge(OutputModeProbeLive),
-  Layer.provideMerge(RunEventDrain.fileLayer),
-  Layer.provideMerge(RunEventStreamPortTag.layer),
-  Layer.provideMerge(machineConsoleByModeLayer),
-  Layer.provideMerge(telemetryLayer),
-  Layer.provideMerge(CliConfig.layer({ builtIns: GlobalFlag.BuiltIns })),
-  Layer.provideMerge(NodeTerminal.layer),
-)
+const probeGroup = Layer.mergeAll(
+  OutputModeProbeLive,
+  RunEventStreamPortTag.layer.pipe(Layer.provide(RunEventDrain.fileLayer)),
+  RunEventDrain.fileLayer,
+).pipe(Layer.provide(nodeBase))
+
+const cliLayer = Layer.mergeAll(
+  probeGroup,
+  machineConsoleByModeLayer.pipe(Layer.provide(probeGroup)),
+  telemetryLayer,
+  CliConfig.layer({ builtIns: GlobalFlag.BuiltIns }),
+  NodeTerminal.layer,
+).pipe(Layer.provideMerge(nodePlatformLayer))
 
 const program = Effect.scoped(
   cliLayer.pipe(

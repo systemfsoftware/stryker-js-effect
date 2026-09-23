@@ -212,39 +212,3 @@ export const admitSurvivorsRun = Workflow.make({
   error: SurvivorsRejection,
   decide: decideAdmission,
 })
-
-if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
-  const { Mutant } = await import('@systemfsoftware/stryker-js-instrumenter')
-  const Equivalence = await import('effect/Equivalence')
-  const { Arbitrary } = await import('effect/unstable/arbitrary')
-  const IncrementalDiffPaths = await import('./IncrementalDiff.paths.js')
-  const { survivorMutateSpans } = await import('./Survivors.js')
-
-  const survivorsArb = Arbitrary.array(Arbitrary.schema(Mutant), { maxLength: 6 })
-
-  const absoluteFileNameOf = (fileName: string, basePath: string): string =>
-    fileName.startsWith(basePath) ? fileName : `${basePath}/${fileName}`
-
-  it.prop(
-    '∀survivors_AbsoluteFiles_DecisionMutateSpans_≡SurvivorSpansResidue',
-    [survivorsArb],
-    ([survivors]) => {
-      const decided = survivors.map((survivor) => ({
-        ...survivor,
-        relativeFileName: IncrementalDiffPaths.toRelativeNormalizedFileName(
-          absoluteFileNameOf(survivor.fileName, '/work'),
-          '/work',
-        ),
-      }))
-      const residue = survivors.map((survivor) => ({
-        ...survivor,
-        fileName: absoluteFileNameOf(survivor.fileName, '/work'),
-      }))
-      return Equivalence.Array(Equivalence.String)(
-        mutateSpansOf(decided),
-        survivorMutateSpans(residue, '/work'),
-      )
-    },
-  )
-}

@@ -408,7 +408,7 @@ describe('admitSurvivorsRun', () => {
     [Arbitrary.all({ id: Arbitrary.schema(S.String), fileName: Arbitrary.schema(S.String) })],
     ([partial]) =>
       Exit.isFailure(
-        S.decodeUnknownExit(SurvivorsAdmission)({ _tag: 'Admitted', survivors: [partial] }),
+        S.decodeUnknownExit(SurvivorsAdmission)({ _tag: 'Admitted', survivors: [partial], mutateSpans: [] }),
       ),
   )
 
@@ -432,6 +432,7 @@ describe('admitSurvivorsRun', () => {
         S.decodeUnknownExit(SurvivorsAdmission)({
           _tag: 'Admitted',
           survivors: [{ ...fields, location }],
+          mutateSpans: [],
         }),
       ),
   )
@@ -444,6 +445,11 @@ describe('admitSurvivorsRun', () => {
         S.decodeExit(SurvivorsAdmission)({
           _tag: 'Admitted',
           survivors: survivorsOf(report),
+          mutateSpans: survivorsOf(report).map((survivor) =>
+            `${survivor.relativeFileName}:${survivor.location.start.line + 1}:${survivor.location.start.column}-${
+              survivor.location.end.line + 1
+            }:${survivor.location.end.column}`
+          ),
         }),
       ),
   )
