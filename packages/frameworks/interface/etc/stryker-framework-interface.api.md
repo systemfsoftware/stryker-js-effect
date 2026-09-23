@@ -18,9 +18,7 @@ export interface EmbeddedDocument {
 }
 
 // @public (undocumented)
-export type FormatId = string & {
-    readonly [FormatIdTypeId]: typeof FormatIdTypeId;
-};
+export type FormatId = string;
 
 // @public (undocumented)
 export interface Framework {

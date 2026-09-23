@@ -2,9 +2,7 @@ import type { Program, Statement } from '@systemfsoftware/stryker-ignorer-interf
 
 export type * from '@systemfsoftware/stryker-ignorer-interface'
 
-declare const FormatIdTypeId: unique symbol
-
-export type FormatId = string & { readonly [FormatIdTypeId]: typeof FormatIdTypeId }
+export type FormatId = string
 
 export type ScriptFormat = 'js' | 'ts' | 'tsx'
 
