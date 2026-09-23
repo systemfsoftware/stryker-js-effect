@@ -531,7 +531,7 @@ const readCliRoute = (
   Effect.gen(function*() {
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
     const command = makeStrykerCommand(requestRef)
-    const parsed = yield* Effect.result(Command.runWith(command, { version: cliPkgJson.version })(invocation.argv))
+    const parsed = yield* Effect.result(Command.runWith(command, { version: cliPkgJson.version, renderErrors: false })(invocation.argv))
     const request = yield* Ref.get(requestRef)
     const drain = yield* RunEventDrain
     yield* drain.setProgressStreamFile(progressStreamFileName(request))

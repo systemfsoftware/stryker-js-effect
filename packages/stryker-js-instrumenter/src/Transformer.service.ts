@@ -270,10 +270,10 @@ const strykerDirective = (
       }))))
 
 const matchGroup = (match: RegExpExecArray, group: number): Result.Result<string, DirectiveIncomplete> =>
-  Result.fromOption(Option.fromNullishOr(match[group]), DirectiveIncomplete.make)
+  Result.fromOption(Option.fromNullishOr(match[group]), () => DirectiveIncomplete.make())
 
 const commentLocation = (loc: LocatedComment['loc']): Result.Result<CommentLocation, CommentLocationMissing> =>
-  Result.fromOption(Option.fromNullishOr(loc), CommentLocationMissing.make)
+  Result.fromOption(Option.fromNullishOr(loc), () => CommentLocationMissing.make())
 
 const applyStrykerDirective = (rule: Rule, directive: StrykerDirective): Rule =>
   Match.value(directive.type).pipe(
@@ -823,7 +823,7 @@ const headerFor = (
   })
 
 const firstHeaderOf = (header: readonly Statement[]): Result.Result<Statement, HeaderEmpty> =>
-  Result.fromOption(Option.fromNullishOr(header[0]), HeaderEmpty.make)
+  Result.fromOption(Option.fromNullishOr(header[0]), () => HeaderEmpty.make())
 
 const leadingCommentsOf = (root: Program) =>
   Option.fromUndefinedOr(root.body[0]).pipe(

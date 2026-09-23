@@ -661,9 +661,9 @@ const isSuperReference = <A>(node: A): boolean => isSuperType(node) || isSuperCa
 const hasSuperInChildren = (node: object): boolean =>
   Object.keys(node).some((key) => containsSuperInValue(propertyOf(node, key)))
 
-const containsSuperInValue = (value: unknown): boolean =>
+const containsSuperInValue = <A>(value: A): boolean =>
   Match.value(value).pipe(
-    Match.when(Predicate.isArray, (items) => items.some(containsSuperCall)),
+    Match.when(Array.isArray, (items) => items.some(containsSuperCall)),
     Match.orElse(containsSuperCall),
   )
 

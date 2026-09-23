@@ -10,6 +10,7 @@ import { Arbitrary } from 'effect/unstable/arbitrary'
 import {
   ClearTextReportCommand,
   ClearTextReportRendered,
+  ClearTextRenderOptions,
   renderClearTextReport,
 } from '../render-clear-text-report.workflow.js'
 
