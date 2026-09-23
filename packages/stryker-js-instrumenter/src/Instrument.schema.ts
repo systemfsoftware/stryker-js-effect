@@ -49,7 +49,19 @@ export const InstrumenterOptionsSchema = S.Struct({
 
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
 
+export class InstrumentFileSkip extends S.TaggedClass<InstrumentFileSkip>()('InstrumentFileSkip', {
+  file: S.String,
+  extension: S.String,
+  reason: S.String,
+}) {}
+
+export class InstrumentFilesCommand extends S.TaggedClass<InstrumentFilesCommand>()('InstrumentFilesCommand', {
+  fileCount: S.Finite,
+  claimedCount: S.Finite,
+  skipped: S.Array(InstrumentFileSkip),
+}) {}
 export class InstrumentResult extends S.TaggedClass<InstrumentResult>()('InstrumentResult', {
   files: S.Array(FileSchema),
   mutants: S.Array(Mutant),
+  skipped: S.Array(InstrumentFileSkip),
 }) {}

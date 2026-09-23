@@ -11,7 +11,6 @@ import {
   buildLineTable,
   callExpression,
   type ClassExpression,
-  cloneNode,
   type Comment,
   conditionalExpression,
   type Expression,
@@ -26,7 +25,6 @@ import {
   type Node,
   nodeType,
   positionFromLineTable,
-  type Program,
   returnStatement,
   sequenceExpression,
   spanOf,
@@ -39,27 +37,23 @@ import {
   type VariableDeclarator,
   variableDeclarator,
 } from './Ast.js'
+import type { FormatRegistry } from './format-registry.js'
+import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './instrument-header.js'
 import { type MutateDescription, type Position } from './Instrument.schema.js'
-import { INSTRUMENTER_CONSTANTS as ID } from './Mutant.js'
-import { applyMutant, createMutant, type Mutable, type Mutant } from './Mutator.js'
+import { InstrumentError } from './Instrument.schema.js'
 import { type MutatorContext, type MutatorOptions } from './Mutator.js'
-import { allMutators } from './Mutator.js'
-import { type ParseFailed, parseWithOxc } from './Parser.js'
+import { allMutators, applyMutant, createMutant, type Mutable, type Mutant } from './Mutator.js'
+import { type ParseFailed } from './Parser.js'
 import {
   type Ast,
-  type AstByFormat,
-  AstFormat,
+  formatKeyOf,
   locationIncluded,
   locationOverlaps,
-  type ScriptFormat,
+  type ScriptAst,
   type SourceLocationInFile,
 } from './Syntax.js'
 import { PlacementFailed, TransformFailed } from './Transformer.schema.js'
 export { PlacementFailed, TransformFailed }
-
-const STRYKER_NAMESPACE_HELPER = 'stryNS_9fa48'
-const COVER_MUTANT_HELPER = 'stryCov_9fa48'
-const IS_MUTANT_ACTIVE_HELPER = 'stryMutAct_9fa48'
 
 export interface TransformerOptions extends MutatorOptions {
   ignorers: readonly Ignorer[]
@@ -101,8 +95,6 @@ export function hasPlacedMutants(
 
 const WILDCARD = 'all'
 const DEFAULT_REASON = 'Ignored using a comment'
-const NO_CHILDREN: readonly Node[] = Object.freeze([])
-
 const strykerCommentDirectiveRegex = /^\s?Stryker (disable|restore)(?: (next-line))? ([a-zA-Z, ]+)(?::(.+)?)?/
 
 export type Rule =
@@ -778,266 +770,42 @@ export const allMutantPlacers: readonly MutantPlacer[] = Object.freeze([
   switchCaseMutantPlacer,
 ])
 
-function isCommentArray(value: unknown): value is readonly LocatedComment[] {
-  return Array.isArray(value)
-}
-
-const INSTRUMENTATION_HEADER_SOURCE = `// @ts-nocheck
-var ${STRYKER_NAMESPACE_HELPER} = function(){
-  var g = typeof globalThis === 'object' && globalThis && globalThis.Math === Math && globalThis || new Function("return this")();
-  var ns = g.${ID.NAMESPACE} || (g.${ID.NAMESPACE} = {});
-  if (ns.${ID.ACTIVE_MUTANT} === undefined && g.process && g.process.env && g.process.env.${ID.ACTIVE_MUTANT_ENV_VARIABLE}) {
-    ns.${ID.ACTIVE_MUTANT} = g.process.env.${ID.ACTIVE_MUTANT_ENV_VARIABLE};
-  }
-  function retrieveNS(){
-    return ns;
-  }
-  ${STRYKER_NAMESPACE_HELPER} = retrieveNS;
-  return retrieveNS();
-};
-${STRYKER_NAMESPACE_HELPER}();
-
-var ${COVER_MUTANT_HELPER} = function() {
-  var ns = ${STRYKER_NAMESPACE_HELPER}();
-  var cov = ns.${ID.MUTATION_COVERAGE_OBJECT} || (ns.${ID.MUTATION_COVERAGE_OBJECT} = { static: {}, perTest: {} });
-  function cover() {
-    var c = cov.static;
-    if (ns.${ID.CURRENT_TEST_ID}) {
-      c = cov.perTest[ns.${ID.CURRENT_TEST_ID}] = cov.perTest[ns.${ID.CURRENT_TEST_ID}] || {};
-    }
-    var a = arguments;
-    for(var i=0; i < a.length; i++){
-      c[a[i]] = (c[a[i]] || 0) + 1;
-    }
-  }
-  ${COVER_MUTANT_HELPER} = cover;
-  cover.apply(null, arguments);
-};
-var ${IS_MUTANT_ACTIVE_HELPER} = function(id) {
-  var ns = ${STRYKER_NAMESPACE_HELPER}();
-  function isActive(id) {
-    if (ns.${ID.ACTIVE_MUTANT} === id) {
-      if (ns.${ID.HIT_COUNT} !== void 0 && ++ns.${ID.HIT_COUNT} > ns.${ID.HIT_LIMIT}) {
-        throw new Error('Stryker: Hit count limit reached (' + ns.${ID.HIT_COUNT} + ')');
-      }
-      return true;
-    }
-    return false;
-  }
-  ${IS_MUTANT_ACTIVE_HELPER} = isActive;
-  return isActive(id);
-}`
-
-let instrumentationHeaderValue: readonly Statement[] | undefined
-
-const instrumentationHeader: Effect.Effect<readonly Statement[], ParseFailed> = Effect.gen(function*() {
-  if (instrumentationHeaderValue === undefined) {
-    const parsed = yield* parseWithOxc(INSTRUMENTATION_HEADER_SOURCE, 'instrumenter-header.js', 'js')
-    instrumentationHeaderValue = parsed.root.body
-    deepFreeze(instrumentationHeaderValue)
-  }
-  return instrumentationHeaderValue
-})
-
-export const placeHeaderIfNeeded = (
-  mutantCollector: MutantCollector,
-  originFileName: string,
-  options: MutatorOptions,
-  root: Program,
-): Effect.Effect<void, ParseFailed> =>
-  Effect.gen(function*() {
-    if (shouldPlaceHeader(mutantCollector, originFileName, options)) {
-      yield* placeHeader(root)
-    }
-  })
-
-export const placeHeader = (root: Program): Effect.Effect<void, ParseFailed> =>
-  Effect.map(headerFor(root), (header) => {
-    root.body.unshift(...header)
-  })
-
-function shouldPlaceHeader(
-  mutantCollector: MutantCollector,
-  originFileName: string,
-  options: MutatorOptions,
-): boolean {
-  return hasPlacedMutants(mutantCollector, originFileName) && options.noHeader !== true
-}
-
-const headerFor = (root: Program): Effect.Effect<readonly Statement[], ParseFailed> =>
-  Effect.map(instrumentationHeader, (header) =>
-    Option.match(leadingCommentsOf(root), {
-      onNone: () => header,
-      onSome: (leadingComments) => [commentedHeader(leadingComments, header), ...header.slice(1)],
-    }))
-
-function leadingCommentsOf(root: Program): Option.Option<readonly LocatedComment[]> {
-  return Option.filter(Option.some(leadingCommentsOn(root.body[0])), isCommentArray)
-}
-
-function commentedHeader(leadingComments: readonly LocatedComment[], header: readonly Statement[]): Statement {
-  const firstHeader = Option.getOrThrowWith(
-    Option.fromNullishOr(header[0]),
-    () => new Error('Instrumentation header is empty'),
-  )
-  const cloned = cloneNode(firstHeader)
-  Object.assign(cloned, { leadingComments })
-  return cloned
-}
-
-function deepFreeze<A = unknown>(value: A): A {
-  return Option.match(frozenContainer(value), {
-    onNone: () => value,
-    onSome: (frozen) => frozen,
-  })
-}
-
-function frozenContainer<A = unknown>(value: A): Option.Option<A> {
-  return Option.map(Option.filter(Option.some(value), isObjectValue), (object) => {
-    freezableChildren(object).forEach((child) => {
-      deepFreeze(child)
-    })
-    Object.freeze(object)
-    return value
-  })
-}
-
-function freezableChildren(value: Record<string, object | null | undefined>): readonly (object | null | undefined)[] {
-  return [...mapEntries(value), ...setItems(value), ...Object.values(value)]
-}
-
-function mapEntries(value: object): readonly (object | null | undefined)[] {
-  return Option.getOrElse(
-    Option.map(Option.filter(Option.some(value), isMap), (map) => [...map.entries()].flat()),
-    () => NO_CHILDREN,
-  )
-}
-
-function setItems(value: object): readonly (object | null | undefined)[] {
-  return Option.getOrElse(Option.map(Option.filter(Option.some(value), isSet), (set) => [...set]), () => NO_CHILDREN)
-}
-
-function isObjectValue(value: unknown): value is Record<string, object | null | undefined> {
-  return value !== null && typeof value === 'object'
-}
-
-function isMap(value: object): value is Map<object | null | undefined, object | null | undefined> {
-  return value instanceof Map
-}
-
-function isSet(value: object): value is Set<object | null | undefined> {
-  return value instanceof Set
-}
-
 export const transform = (
   ast: Ast,
   mutantCollector: MutantCollector,
   transformerContext: Omit<TransformerContext, 'transform'>,
-): Effect.Effect<readonly string[], ParseFailed> => {
+): Effect.Effect<readonly string[], ParseFailed | InstrumentError> => {
   const context: TransformerContext = {
     ...transformerContext,
     transform,
   }
-  switch (ast.format) {
-    case 'html':
-      return transformHtml(ast, mutantCollector, context)
-    case 'js':
-    case 'ts':
-    case 'tsx':
-      return transformScript(ast, mutantCollector, context)
-    case 'svelte':
-      return transformSvelte(ast, mutantCollector, context)
-  }
+  const formatKey = formatKeyOf(ast)
+  return Match.value(transformerContext.registry.entryForFormat(formatKey)).pipe(
+    Match.when(Option.isSome, (entry) => entry.value.transform(ast, mutantCollector, context)),
+    Match.orElse(() =>
+      Effect.fail(
+        InstrumentError.make({
+          message: `No registered format transforms the "${formatKey}" AST`,
+          cause: new Error(`Missing format entry for "${formatKey}"`),
+        }),
+      )
+    ),
+  )
 }
 
-export type AstTransformer<T extends AstFormat> = (
-  ast: AstByFormat[T],
+export type AstTransformer<T extends Ast = Ast> = (
+  ast: T,
   mutantCollector: MutantCollector,
   context: TransformerContext,
-) => Effect.Effect<readonly string[], ParseFailed>
+) => Effect.Effect<readonly string[], ParseFailed | InstrumentError>
 
 export interface TransformerContext {
-  transform: AstTransformer<AstFormat>
+  transform: AstTransformer
   options: TransformerOptions
   mutateDescription: MutateDescription
+  registry: FormatRegistry
   readonly basePath?: string | undefined
 }
-
-export const transformHtml: AstTransformer<'html'> = (
-  { root },
-  mutantCollector,
-  context,
-) =>
-  Effect.map(
-    Effect.forEach(root.scripts, (script) => context.transform(script, mutantCollector, context)),
-    (perScript) => perScript.flat(),
-  )
-
-const moduleScriptStart = '<script context="module">\n'
-const moduleScript = `${moduleScriptStart}\n</script>\n`
-
-export const transformSvelte: AstTransformer<'svelte'> = (
-  svelte,
-  mutantCollector,
-  context,
-) =>
-  Effect.gen(function*() {
-    const { root } = svelte
-    const scripts = [root.moduleScript, ...root.additionalScripts].filter(Predicate.isNotNullish)
-    const perScript = yield* Effect.forEach(scripts, (script) =>
-      context.transform(script.ast, mutantCollector, {
-        ...context,
-        options: {
-          ...context.options,
-          noHeader: true,
-        },
-      }))
-    const warnings: string[] = perScript.flat()
-    yield* placeModuleHeaderIfNeeded(svelte, mutantCollector)
-    return warnings
-  })
-
-const placeModuleHeaderIfNeeded = (
-  svelte: AstByFormat['svelte'],
-  mutantCollector: MutantCollector,
-): Effect.Effect<void, ParseFailed> =>
-  Effect.gen(function*() {
-    if (hasPlacedMutants(mutantCollector, svelte.originFileName)) {
-      yield* placeModuleHeader(svelte)
-    }
-  })
-
-const placeModuleHeader = (svelte: AstByFormat['svelte']): Effect.Effect<void, ParseFailed> =>
-  Effect.gen(function*() {
-    const { root, originFileName } = svelte
-    if (!root.moduleScript) {
-      root.moduleScript = {
-        ast: {
-          format: 'js',
-          root: emptyProgram(),
-          comments: [],
-          rawContent: '',
-          originFileName,
-        },
-        range: {
-          start: moduleScriptStart.length,
-          end: moduleScriptStart.length,
-        },
-        isExpression: false,
-      }
-      svelte.rawContent = `${moduleScript}${svelte.rawContent}`
-      svelte.root.additionalScripts.forEach((script) => {
-        script.range.start += moduleScript.length
-        script.range.end += moduleScript.length
-      })
-    }
-    yield* placeHeader(root.moduleScript.ast.root)
-  })
-
-function emptyProgram(): Program {
-  return { type: 'Program', sourceType: 'module', body: [], hashbang: null }
-}
-
 interface MutantsPlacement {
   appliedMutants: Map<Mutant, Node>
   placer: MutantPlacer
@@ -1051,7 +819,7 @@ function isMutateRangeList(value: MutateDescription): value is readonly SourceLo
   return Array.isArray(value)
 }
 
-export const transformScript: AstTransformer<ScriptFormat> = (
+export const transformScript: AstTransformer<ScriptAst> = (
   { root, originFileName, rawContent, offset, comments },
   mutantCollector,
   { options, mutateDescription, basePath },
@@ -1085,7 +853,7 @@ export const transformScript: AstTransformer<ScriptFormat> = (
       },
     })
 
-    yield* placeHeaderIfNeeded(mutantCollector, originFileName, options, root)
+    yield* placeHeaderIfNeeded(hasPlacedMutants(mutantCollector, originFileName), options, root)
 
     return warnings
 
