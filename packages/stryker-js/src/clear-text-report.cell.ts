@@ -257,7 +257,7 @@ if (import.meta.vitest !== void 0) {
     if (replacement === undefined) return []
     return replacement
       .split('\n')
-      .filter(Boolean)
+      .filter((line) => line !== '')
       .map((l) => {
         if (allowColor) {
           return ansi.green(`+   ${l}`)
@@ -807,10 +807,12 @@ if (import.meta.vitest !== void 0) {
         const newStdout = rendered.stdout.map((chunk) => renderChunk(chunk))
         const newDebug = rendered.diagnostics.map((chunk) => renderChunk(chunk))
         if (!sameChunks(newStdout, legacy.stdout)) {
-          rendered.stdout.forEach((chunk, chunkIndex) =>
-            chunk.forEach((line, lineIndex) =>
-              console.log('SPAN', chunkIndex, lineIndex, line.length, line.map((span) =>
-                `${JSON.stringify(span.text)} l${span.leftPad} r${span.rightPad} x${span.repeat}`).join(' '))))
+          legacy.stdout.forEach((chunk, chunkIndex) =>
+            chunk.split('\n').forEach((row, rowIndex) =>
+              console.log('OLD', chunkIndex, rowIndex, JSON.stringify(row))))
+          newStdout.forEach((chunk, chunkIndex) =>
+            chunk.split('\n').forEach((row, rowIndex) =>
+              console.log('NEW', chunkIndex, rowIndex, JSON.stringify(row))))
         }
         if (!sameChunks(newDebug, legacy.debug)) {
           newDebug.forEach((line, index) =>

@@ -9,7 +9,6 @@ import type {
   Node,
   Program,
   Statement,
-  SwitchCase,
   VariableDeclarator,
 } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Arr from 'effect/Array'

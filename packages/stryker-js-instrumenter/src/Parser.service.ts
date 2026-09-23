@@ -308,7 +308,7 @@ const parseScriptOf = <T extends ScriptFormat>(el: NGAst.Element, scriptFormat: 
 
 const elementScriptText = (element: NGAst.Element, document: string): Result.Result<string, HtmlEndSpanMissing> =>
   Result.map(
-    Result.fromOption(Option.fromNullishOr(element.endSourceSpan), HtmlEndSpanMissing.make),
+    Result.fromOption(Option.fromNullishOr(element.endSourceSpan), () => HtmlEndSpanMissing.make()),
     (endSourceSpan) => document.substring(element.startSourceSpan.end.offset, endSourceSpan.start.offset),
   )
 
@@ -599,7 +599,7 @@ const templateScriptRangesOf = <A = unknown, B = unknown>(
 
 const htmlRootOf = <A = unknown, B = unknown>(ast: A): Result.Result<B, SvelteHtmlMissing> =>
   Result.map(
-    Result.fromOption(Option.filter(Option.some(ast), hasHtmlField<B>), SvelteHtmlMissing.make),
+    Result.fromOption(Option.filter(Option.some(ast), hasHtmlField<B>), () => SvelteHtmlMissing.make()),
     (withHtml) => withHtml.html,
   )
 
