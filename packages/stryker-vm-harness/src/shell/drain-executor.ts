@@ -9,15 +9,33 @@ import {
   drainRegistry as pureDrainRegistry,
   DrainRegistryCommand,
   DrainTimedOut,
+  PlannedTestView,
   type TestOutcome,
-} from '../core/drain.js'
-import { type HarnessTestContext, hooksFor, planRun, type TestRegistry } from '../core/registry.js'
+} from '../core/drain-registry.workflow.js'
+import {
+  type HarnessTestContext,
+  type HarnessTestFunction,
+  hooksFor,
+  type PlannedTest,
+  planRun,
+  type TestRegistry,
+} from '../core/registry.js'
 import { closeOpenLayerScopes } from './effect-adapter.js'
-const messageOf = (cause: unknown): string =>
+
+const plannedViewOf = (planned: PlannedTest): PlannedTestView =>
+  PlannedTestView.make({
+    fullName: planned.fullName,
+    file: planned.test.file,
+    seq: planned.test.seq,
+    inverted: planned.test.inverted,
+    skipped: planned.skipped,
+  })
+
+const messageOf = <A = unknown>(cause: A): string =>
   cause instanceof Error ? cause.message : new Error('drain failure', { cause }).message
 
 const fireHooks = (
-  hooks: readonly ((context: HarnessTestContext) => unknown)[],
+  hooks: readonly HarnessTestFunction[],
   context: HarnessTestContext,
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
@@ -77,7 +95,7 @@ export const executeDrainRegistry = (
           })
 
         const lateRejections: string[] = []
-        const rejectionListener = (cause: unknown): void => {
+        const rejectionListener = <A = unknown>(cause: A): void => {
           lateRejections.push(messageOf(cause))
         }
         globalThis.process.on('unhandledRejection', rejectionListener)
@@ -91,7 +109,7 @@ export const executeDrainRegistry = (
                 continue
               }
               const signal = yield* Effect.abortSignal
-              const finalizers: Array<(context: HarnessTestContext) => unknown> = []
+              const finalizers: Array<HarnessTestFunction> = []
               const context: HarnessTestContext = {
                 signal,
                 task: planned.test,
@@ -113,7 +131,7 @@ export const executeDrainRegistry = (
                 const outcome = yield* Effect.promise(() =>
                   testPromise.then(
                     () => undefined,
-                    (cause: unknown) => ({ cause }),
+                    <A = unknown>(cause: A) => ({ cause }),
                   )
                 )
                 if (outcome !== undefined) {
@@ -160,8 +178,7 @@ export const executeDrainRegistry = (
           })
 
           const command = DrainRegistryCommand.make({
-            registry,
-            plan,
+            plan: plan.map(plannedViewOf),
             timedOut: false,
             outcomes: collectedOutcomes,
             lateRejections,

@@ -1,13 +1,4 @@
 export {
-  createHarnessApi,
-  createRegistry,
-  formatEachName,
-  guardedExpect,
-  guardedVi,
-  harnessSourceFor,
-  harnessUrlForSpecifier,
-} from './core/index.js'
-export {
   DrainCompleted,
   type DrainedStatus,
   type DrainedTest,
@@ -18,6 +9,15 @@ export {
   DrainTimedOut,
   type TestOutcome,
   TestOutcomeSchema,
+} from './core/drain-registry.workflow.js'
+export {
+  createHarnessApi,
+  createRegistry,
+  formatEachName,
+  guardedExpect,
+  guardedVi,
+  harnessSourceFor,
+  harnessUrlForSpecifier,
 } from './core/index.js'
 export {
   activateSandbox,

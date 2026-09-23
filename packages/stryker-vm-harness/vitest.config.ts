@@ -4,7 +4,7 @@ export default defineConfig({
   ...sharedConfig,
   test: {
     ...sharedConfig.test,
-    include: ['src/**/*.test.ts'],
+    include: ['tests/**/*.integration.test.ts', 'src/**/__tests__/*.test.ts'],
     exclude: [
       ...(sharedConfig.test?.exclude ?? []),
       '**/.stryker-tmp/**',

@@ -1,4 +1,3 @@
-/* eslint-disable effecttsgo/any-unknown-in-error-context, effecttsgo/unsafe-effect-type-assertion, effecttsgo/lazy-promise-in-effect-sync, effecttsgo/promise-in-effect-success */
 import * as Cause from 'effect/Cause'
 import type * as Context from 'effect/Context'
 import * as Duration from 'effect/Duration'
@@ -7,8 +6,8 @@ import * as Exit from 'effect/Exit'
 import { flow, pipe } from 'effect/Function'
 import * as Layer from 'effect/Layer'
 
-import { Cell } from '@systemfsoftware/effect-cell-types'
 import * as Schedule from 'effect/Schedule'
+import type * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as TestClock from 'effect/testing/TestClock'
 import * as TestConsole from 'effect/testing/TestConsole'
@@ -29,7 +28,15 @@ export interface EffectTestOptions {
 
 type PropertyTimeout = number | EffectTestOptions
 
-export type EffectTestFunction<R> = (context: HarnessTestContext) => Effect.Effect<unknown, unknown, R>
+type AnyDecoded<A = unknown> = A
+
+export type ArbitraryInput =
+  | S.Schema<AnyDecoded>
+  | Arbitrary.Arbitrary<AnyDecoded>
+  | ReadonlyArray<ArbitraryInput>
+  | { readonly [key: string]: ArbitraryInput }
+
+export type EffectTestFunction<R, A = unknown, E = unknown> = (context: HarnessTestContext) => Effect.Effect<A, E, R>
 
 export interface EffectTesterVariants<R> {
   (name: string, self: EffectTestFunction<R>, timeout?: number | EffectTestOptions): void
@@ -38,10 +45,12 @@ export interface EffectTesterVariants<R> {
 }
 
 export interface EachBinder<R> {
-  (cases: readonly unknown[]): (name: string, self: EachFn<R>) => void
+  <A = unknown>(cases: readonly A[]): <E = unknown>(name: string, self: EachFn<R, A, E>) => void
 }
 
-export type EachFn<R> = (...args: readonly unknown[]) => Effect.Effect<unknown, unknown, R>
+export type EachFn<R, A = unknown, E = unknown, B = unknown> = (
+  ...args: ReadonlyArray<A | HarnessTestContext>
+) => Effect.Effect<B, E, R>
 
 export interface EffectTester<R> extends EffectTesterVariants<R> {
   readonly skip: EffectTesterVariants<R>
@@ -51,10 +60,10 @@ export interface EffectTester<R> extends EffectTesterVariants<R> {
 }
 
 export interface PropBinder {
-  (
+  <A = unknown, R = unknown>(
     name: string,
-    arbitraries: unknown,
-    self: (values: unknown, context: HarnessTestContext) => unknown,
+    arbitraries: ArbitraryInput,
+    self: (values: A, context: HarnessTestContext) => R,
     timeout?: PropertyTimeout,
   ): void
 }
@@ -71,9 +80,16 @@ export interface EffectVitestIt extends RegistryTestApi {
   readonly layer: LayerBinder
 }
 
-export interface LayeredVitestIt<R2> extends Omit<EffectVitestIt, 'effect' | 'live'> {
+export interface LayeredVitestIt<R2> extends RegistryTestApi {
+  readonly describe: RegistrySuiteApi
   readonly effect: EffectTester<Scope.Scope | R2>
   readonly live: EffectTester<Scope.Scope | R2>
+  readonly prop: PropBinder
+  readonly flakyTest: <A, E, R3>(
+    self: Effect.Effect<A, E, R3 | Scope.Scope>,
+    timeout?: Duration.Input,
+  ) => Effect.Effect<A, never, R3>
+  readonly layer: LayerBinder
 }
 
 export interface LayerBinder {
@@ -105,42 +121,41 @@ export interface EffectAdapterRegistration {
 }
 
 const TestEnv = Layer.mergeAll(TestConsole.layer, TestClock.layer())
-const runTest = (context: HarnessTestContext) => (effect: Effect.Effect<unknown, unknown, never>): Promise<void> => {
-  const promise = Effect.runPromiseExit(effect).then((exit) => {
-    if (Exit.isFailure(exit)) {
-      const errors = Cause.prettyErrors(exit.cause)
-      const errorToThrow = errors.length > 0 ? errors[0] : new Error(Cause.pretty(exit.cause))
-      throw errorToThrow instanceof Error ? errorToThrow : new Error('effect failed', { cause: errorToThrow })
-    }
-  })
-  const onAbort = () => context.onTestFinished(() => promise.then(() => {}, () => {}))
-  context.signal.addEventListener('abort', onAbort, { once: true })
-  promise.then(
-    () => context.signal.removeEventListener('abort', onAbort),
-    () => context.signal.removeEventListener('abort', onAbort),
-  )
-  return promise
-}
+const runTest =
+  (context: HarnessTestContext) => <A = unknown, E = unknown>(effect: Effect.Effect<A, E, never>): Promise<void> => {
+    const promise = Effect.runPromiseExit(effect).then((exit) => {
+      if (Exit.isFailure(exit)) {
+        const errors = Cause.prettyErrors(exit.cause)
+        const errorToThrow = errors.length > 0 ? errors[0] : new Error(Cause.pretty(exit.cause))
+        throw errorToThrow instanceof Error ? errorToThrow : new Error('effect failed', { cause: errorToThrow })
+      }
+    })
+    const onAbort = () => context.onTestFinished(() => promise.then(() => {}, () => {}))
+    context.signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      () => context.signal.removeEventListener('abort', onAbort),
+      () => context.signal.removeEventListener('abort', onAbort),
+    )
+    return promise
+  }
 
 const testOptions = (timeout?: number | EffectTestOptions): EffectTestOptions =>
   typeof timeout === 'number' ? { timeout } : (timeout ?? {})
 
 const checkOptions = (timeout: PropertyTimeout | undefined): Arbitrary.CheckOptions | undefined =>
   typeof timeout === 'number' ? undefined : timeout?.arbitrary
-
-const compileArbitraryInput = (input: unknown): Arbitrary.Arbitrary<unknown> =>
+const compileArbitraryInput = (input: ArbitraryInput): Arbitrary.Arbitrary<AnyDecoded> =>
   Arbitrary.isArbitrary(input) ? input : Arbitrary.schema(input as never)
-
-const makeArbitrary = (arbitraries: unknown): Arbitrary.Arbitrary<unknown> => {
+const makeArbitrary = (arbitraries: ArbitraryInput): Arbitrary.Arbitrary<AnyDecoded> => {
   if (Arbitrary.isArbitrary(arbitraries)) {
     return arbitraries
   }
   if (Array.isArray(arbitraries)) {
     return Arbitrary.all(arbitraries.map(compileArbitraryInput))
   }
-  if (arbitraries !== null && typeof arbitraries === 'object') {
-    const record: Record<string, Arbitrary.Arbitrary<unknown>> = {}
-    for (const [key, value] of Object.entries(arbitraries as Record<string, unknown>)) {
+  if (typeof arbitraries === 'object') {
+    const record: Record<string, Arbitrary.Arbitrary<AnyDecoded>> = {}
+    for (const [key, value] of Object.entries(arbitraries)) {
       record[key] = compileArbitraryInput(value)
     }
     return Arbitrary.all(record)
@@ -148,10 +163,10 @@ const makeArbitrary = (arbitraries: unknown): Arbitrary.Arbitrary<unknown> => {
   return compileArbitraryInput(arbitraries)
 }
 
-const normalizeProperty = (
-  property: (value: unknown) => boolean | Effect.Effect<boolean, unknown, never>,
-  value: unknown,
-): Effect.Effect<boolean, unknown, never> =>
+const normalizeProperty = <A = unknown, E = unknown>(
+  property: (value: A) => boolean | Effect.Effect<boolean, E, never>,
+  value: A,
+): Effect.Effect<boolean, E | Cause.Cause<E>, never> =>
   Effect.catchCause(
     Effect.suspend(() => {
       const output = property(value)
@@ -160,15 +175,15 @@ const normalizeProperty = (
     (cause) => Effect.fail(cause),
   )
 
-const runCheck = <E>(
+const runCheck = <A = unknown, E = unknown>(
   context: HarnessTestContext,
-  arbitrary: Arbitrary.Arbitrary<unknown>,
-  property: (values: unknown) => boolean | Effect.Effect<boolean, E, never>,
+  arbitrary: Arbitrary.Arbitrary<AnyDecoded>,
+  property: (values: A) => boolean | Effect.Effect<boolean, E, never>,
   options: Arbitrary.CheckOptions | undefined,
 ): Promise<void> =>
   runTest(context)(
     Effect.flatMap(
-      Arbitrary.checkEffect(arbitrary, (value) => normalizeProperty(property, value), options),
+      Arbitrary.checkEffect(arbitrary, (value) => normalizeProperty(property, value as A), options),
       (result) => {
         const failure = Arbitrary.formatCheckFailure(result)
         return failure === undefined ? Effect.void : Effect.die(new Error(failure))
@@ -186,10 +201,10 @@ const makeEach = <R>(
   variant: VariantBinder,
   mapEffect: <A, E>(self: Effect.Effect<A, E, R>) => Effect.Effect<A, E, never>,
 ): EachBinder<R> =>
-(cases: readonly unknown[]) =>
-(name: string, self: EachFn<R>) => {
+<A = unknown>(cases: readonly A[]) =>
+<E = unknown>(name: string, self: EachFn<R, A, E>) => {
   for (const [index, row] of cases.entries()) {
-    const args: readonly unknown[] = Array.isArray(row) ? row : [row]
+    const args: readonly A[] = Array.isArray(row) ? row : [row]
     variant(`${name} [${index}]`, {}, (context: HarnessTestContext) =>
       pipe(
         Effect.suspend(() => {
@@ -206,16 +221,16 @@ const makeTester = <R>(
   mapEffect: <A, E>(self: Effect.Effect<A, E, R>) => Effect.Effect<A, E, never>,
   it: RegistryTestApi,
 ): EffectTester<R> => {
-  const run = (
+  const run = <A = unknown, E = unknown>(
     context: HarnessTestContext,
-    self: (context: HarnessTestContext) => Effect.Effect<unknown, unknown, R>,
+    self: (context: HarnessTestContext) => Effect.Effect<A, E, R>,
   ) => pipe(Effect.suspend(() => self(context)), mapEffect, runTest(context))
 
   const makeVariant = (variant: VariantBinder): EffectTesterVariants<R> =>
     Object.assign(
       (
         name: string,
-        self: (context: HarnessTestContext) => Effect.Effect<unknown, unknown, R>,
+        self: EffectTestFunction<R>,
         timeout?: number | EffectTestOptions,
       ) => {
         variant(name, testOptions(timeout), (context: HarnessTestContext) => run(context, self))
@@ -226,10 +241,10 @@ const makeTester = <R>(
       },
     )
 
-  const prop = (
+  const prop = <A = unknown, E = unknown>(
     name: string,
-    arbitraries: unknown,
-    self: (values: unknown, context: HarnessTestContext) => boolean | Effect.Effect<boolean, unknown, R>,
+    arbitraries: ArbitraryInput,
+    self: (values: A, context: HarnessTestContext) => boolean | Effect.Effect<boolean, E, R>,
     timeout?: number | EffectTestOptions,
   ): void => {
     const arbitrary = makeArbitrary(arbitraries)
@@ -237,10 +252,10 @@ const makeTester = <R>(
       name,
       testOptions(timeout),
       (context: HarnessTestContext) =>
-        runCheck(
+        runCheck<A, E>(
           context,
           arbitrary,
-          (values) =>
+          (values: A) =>
             mapEffect(
               Effect.suspend(() => {
                 const output = self(values, context)
@@ -257,7 +272,7 @@ const makeTester = <R>(
   return Object.assign(
     (
       name: string,
-      self: (context: HarnessTestContext) => Effect.Effect<unknown, unknown, R>,
+      self: EffectTestFunction<R>,
       timeout?: number | EffectTestOptions,
     ) => {
       it(name, testOptions(timeout), (context: HarnessTestContext) => run(context, self))
@@ -273,16 +288,22 @@ const makeTester = <R>(
   )
 }
 
-const standaloneProp = (it: RegistryTestApi): PropBinder => (name, arbitraries, self, timeout) => {
+const standaloneProp = (it: RegistryTestApi): PropBinder =>
+<A = unknown, E = unknown>(
+  name: string,
+  arbitraries: ArbitraryInput,
+  self: (values: A, context: HarnessTestContext) => E,
+  timeout?: number | EffectTestOptions,
+) => {
   const arbitrary = makeArbitrary(arbitraries)
   it(
     name,
     testOptions(timeout),
     (context: HarnessTestContext) =>
-      runCheck(
+      runCheck<A, E>(
         context,
         arbitrary,
-        (values) => self(values, context) !== false,
+        (values: A) => self(values, context) !== false,
         checkOptions(timeout),
       ),
   )
@@ -300,14 +321,14 @@ const flakyTest = <A, E, R2>(
     Effect.orDie,
   )
 
-const makeItProxy = (
+const makeItProxy = <R>(
   it: RegistryTestApi,
-  overrides: Record<PropertyKey, unknown>,
+  overrides: Partial<LayeredVitestIt<R>>,
   describe: RegistrySuiteApi,
-): EffectVitestIt =>
-  new Proxy(it as unknown as EffectVitestIt, {
+): LayeredVitestIt<R> =>
+  new Proxy(it, {
     apply(target, thisArg, argArray) {
-      return Reflect.apply(target, thisArg, argArray) as unknown
+      return Reflect.apply(target, thisArg, argArray)
     },
     get(target, property, receiver) {
       if (Object.hasOwn(overrides, property)) {
@@ -316,30 +337,22 @@ const makeItProxy = (
       if (property === 'describe') {
         return describe
       }
-      return Reflect.get(target, property, receiver) as unknown
+      return Reflect.get(target, property, receiver)
     },
-  })
+  }) as LayeredVitestIt<R>
 
-const runToPromise = (effect: Effect.Effect<unknown, unknown, never> | Context.Context<never>): Promise<void> =>
+const runToPromise = <A = unknown, E = unknown>(
+  effect: Effect.Effect<A, E, never> | Context.Context<never>,
+): Promise<void> =>
   Effect.isEffect(effect)
     ? Effect.runPromise(Effect.asVoid(Effect.exit(effect))).then(() => {})
     : Promise.resolve()
 
-interface BuildLayerCommand {
-  readonly layer: Layer.Layer<never, never>
-  readonly memoMap: Layer.MemoMap
-  readonly scope: Scope.Scope
-}
-export const buildLayerCell: Cell.Cell<BuildLayerCommand, Context.Context<never>> = Cell.suspend(
-  () =>
-    Cell.id<BuildLayerCommand>().pipe(
-      Cell.map((cmd) =>
-        Effect.runSync(
-          pipe(Layer.buildWithMemoMap(cmd.layer, cmd.memoMap, cmd.scope), Effect.orDie),
-        )
-      ),
-    ),
-)
+const buildIntoScope = <E>(
+  layer: Layer.Layer<never, E>,
+  memoMap: Layer.MemoMap,
+  scope: Scope.Scope,
+): Context.Context<never> => Effect.runSync(pipe(Layer.buildWithMemoMap(layer, memoMap, scope), Effect.orDie))
 
 const openLayerScopes = new Set<() => Promise<void>>()
 
@@ -349,18 +362,21 @@ export const closeOpenLayerScopes = (): Promise<void> => {
   return Promise.all(closers.map((close) => close().catch(() => undefined))).then(() => undefined)
 }
 
+type LayeredBody<R> = (it: LayeredVitestIt<R>) => void
+type LayeredArgs<R> = readonly [body: LayeredBody<R>] | readonly [name: string, body: LayeredBody<R>]
+
 export const layerBinderFor = (context: LayerRegistrationContext): LayerBinder => {
-  const binder = (layer_: Layer.Layer<never, never>, options?: Parameters<LayerBinder>[1]) =>
-  (
-    ...args: readonly unknown[]
-  ): void => {
+  const binder = <R, E>(
+    layer_: Layer.Layer<R, E>,
+    options?: Parameters<LayerBinder>[1],
+  ) =>
+  (...args: LayeredArgs<R>): void => {
+    const layer: Layer.Layer<never, E> = layer_
     const excludeTestServices = options?.excludeTestServices ?? false
-    const withTestEnv = excludeTestServices ? layer_ : Layer.provideMerge(layer_, TestEnv)
+    const withTestEnv = excludeTestServices ? layer : Layer.provideMerge(layer, TestEnv)
     const memoMap = options?.memoMap ?? Layer.makeMemoMapUnsafe()
     const scope = Scope.makeUnsafe('sequential')
-    const built: Context.Context<never> = Effect.runSync(
-      buildLayerCell.run({ layer: withTestEnv, memoMap, scope }),
-    )
+    const built: Context.Context<never> = buildIntoScope(withTestEnv, memoMap, scope)
     let closed = false
     const closeScope = (): Promise<void> => {
       if (closed) {
@@ -372,15 +388,18 @@ export const layerBinderFor = (context: LayerRegistrationContext): LayerBinder =
     }
     openLayerScopes.add(closeScope)
 
-    const makeIt = (base: RegistryTestApi): EffectVitestIt =>
-      makeItProxy(
+    const makeIt = <S2>(base: RegistryTestApi): LayeredVitestIt<S2> =>
+      makeItProxy<S2>(
         base,
         {
-          effect: makeTester<Scope.Scope>(
-            (effect) => pipe(effect, Effect.scoped, Effect.provide(built as Context.Context<Scope.Scope>)),
+          effect: makeTester<Scope.Scope | S2>(
+            (effect) => pipe(effect, Effect.scoped, Effect.provide(built as Context.Context<Scope.Scope | S2>)),
             base,
           ),
-          layer: (nestedLayer: Layer.Layer<never, never>, nestedOptions?: Parameters<LayerBinder>[1]) =>
+          layer: <R2, E2>(
+            nestedLayer: Layer.Layer<R2, E2>,
+            nestedOptions?: Parameters<LayerBinder>[1],
+          ) =>
             layerBinderFor(context)(
               Layer.provideMerge(nestedLayer, withTestEnv),
               { ...nestedOptions, memoMap: Layer.forkMemoMapUnsafe(memoMap), excludeTestServices },
@@ -390,13 +409,13 @@ export const layerBinderFor = (context: LayerRegistrationContext): LayerBinder =
       )
 
     if (typeof args[0] === 'function') {
-      const body = args[0] as (it: EffectVitestIt) => void
+      const body = args[0]
       const firstNewTest = context.tests.length
-      body(makeIt(context.api))
+      body(makeIt<R>(context.api))
       const blockTaskSet = new Set<RegisteredTest>(context.tests.slice(firstNewTest))
       let remaining = blockTaskSet.size
       context.hooks.beforeEach((ctx) => {
-        if (!blockTaskSet.has(ctx.task as unknown as RegisteredTest)) {
+        if (!blockTaskSet.has(ctx.task as RegisteredTest)) {
           return undefined
         }
         ctx.onTestFinished(() => {
@@ -412,16 +431,15 @@ export const layerBinderFor = (context: LayerRegistrationContext): LayerBinder =
       return
     }
 
-    const [name, body] = args as [string, (it: EffectVitestIt) => void]
+    const [name, body] = args as readonly [name: string, body: LayeredBody<R>]
     context.describe(name, () => {
       context.hooks.beforeAll(() => runToPromise(built))
       context.hooks.afterAll(() => closeScope())
-      body(makeIt(context.api))
+      body(makeIt<R>(context.api))
     })
   }
-  return binder as unknown as LayerBinder
+  return binder
 }
-
 export const makeEffectMethods = (context: EffectAdapterRegistration): EffectVitestIt => {
   const effect = makeTester<Scope.Scope>(flow(Effect.scoped, Effect.provide(TestEnv)), context.api)
   const live = makeTester<Scope.Scope>(Effect.scoped, context.api)

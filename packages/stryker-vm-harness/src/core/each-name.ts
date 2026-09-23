@@ -1,7 +1,7 @@
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
 
-const propertyOf = (row: unknown, key: string): unknown => {
+const propertyOf = <A = unknown>(row: A, key: string): A | undefined => {
   const isObj = Predicate.isObject(row)
   return Match.value(isObj).pipe(
     Match.when(true, () => Object.getOwnPropertyDescriptor(row, key)?.value),
@@ -10,7 +10,7 @@ const propertyOf = (row: unknown, key: string): unknown => {
   )
 }
 
-const formatScalar = (value: unknown): string =>
+const formatScalar = <A = unknown>(value: A): string =>
   Match.value(typeof value).pipe(
     Match.when('string', () => String(value)),
     Match.when('number', () => String(value)),
@@ -19,7 +19,7 @@ const formatScalar = (value: unknown): string =>
     Match.orElse(() => JSON.stringify(value)),
   )
 
-const templateValue = (row: unknown, key: string): string => {
+const templateValue = <A = unknown>(row: A, key: string): string => {
   const value = propertyOf(row, key)
   return Match.value(value === undefined).pipe(
     Match.when(true, () => ''),
@@ -28,7 +28,7 @@ const templateValue = (row: unknown, key: string): string => {
   )
 }
 
-const replaceToken = (token: string, next: () => unknown, index: () => number): string =>
+const replaceToken = <A = unknown>(token: string, next: () => A | undefined, index: () => number): string =>
   Match.value(token).pipe(
     Match.when('%%', () => '%'),
     Match.when('%i', () => String(parseInt(String(next()), 10))),
@@ -50,15 +50,10 @@ const replaceToken = (token: string, next: () => unknown, index: () => number): 
     }),
   )
 
-export const formatEachName = (template: string, row: unknown): string => {
-  const isArr = Array.isArray(row)
-  const values: ReadonlyArray<unknown> = Match.value(isArr).pipe(
-    Match.when(true, () => row as ReadonlyArray<unknown>),
-    Match.when(false, () => [row]),
-    Match.exhaustive,
-  )
+export const formatEachName = <A = unknown>(template: string, row: A): string => {
+  const values: ReadonlyArray<A> = Array.isArray(row) ? row : [row]
   let index = 0
-  const next = (): unknown => {
+  const next = (): A | undefined => {
     const value = values[index]
     index += 1
     return value

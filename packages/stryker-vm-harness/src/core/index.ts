@@ -39,7 +39,7 @@ export {
   DrainTimedOut,
   type TestOutcome,
   TestOutcomeSchema,
-} from './drain.js'
+} from './drain-registry.workflow.js'
 
 export {
   EFFECT_VITEST_HARNESS_URL,

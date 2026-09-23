@@ -51,6 +51,7 @@
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
+    "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",

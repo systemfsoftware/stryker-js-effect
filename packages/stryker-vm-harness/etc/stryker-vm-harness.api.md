@@ -91,7 +91,7 @@ export { executeDrainRegistry as drainRegistry }
 export { executeDrainRegistry }
 
 // @public (undocumented)
-export const formatEachName: (template: string, row: unknown) => string;
+export const formatEachName: <A = unknown>(template: string, row: A) => string;
 
 // @public (undocumented)
 export const guardedExpect: (real: object) => object;
@@ -123,7 +123,7 @@ export const installInterception: (nodeModule: HarnessModuleBuiltin) => void;
 export const makeEffectMethods: (context: EffectAdapterRegistration) => EffectVitestIt;
 
 // @public (undocumented)
-export const nativeImport: (url: string) => Promise<unknown>;
+export const nativeImport: <A = unknown>(url: string) => Promise<A>;
 
 // @public (undocumented)
 export const pureDrainRegistry: ((command: DrainRegistryCommand) => Result.Result<DrainOutcome, never>) & Workflow.WorkflowBrand;

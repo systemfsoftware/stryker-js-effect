@@ -19,7 +19,7 @@ const isMockProp = (property: PropertyKey): boolean => property === 'mock' || pr
 
 export const guardedExpect = (real: object): object =>
   new Proxy(real, {
-    get(target, property, receiver): unknown {
+    get(target, property, receiver) {
       return Match.value(isSnapshotProp(property)).pipe(
         Match.when(true, () => unsupportedSnapshot),
         Match.when(false, () => Reflect.get(target, property, receiver)),
@@ -30,7 +30,7 @@ export const guardedExpect = (real: object): object =>
 
 export const guardedVi = (real: object): object =>
   new Proxy(real, {
-    get(target, property, receiver): unknown {
+    get(target, property, receiver) {
       return Match.value(isMockProp(property)).pipe(
         Match.when(true, () => () => unsupportedMocking(String(property))),
         Match.when(false, () => Reflect.get(target, property, receiver)),

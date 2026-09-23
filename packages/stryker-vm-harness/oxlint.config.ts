@@ -22,17 +22,5 @@ export default defineConfig({
         'no-restricted-imports': 'off',
       },
     },
-    {
-      files: ['src/shell/**/*.test.ts'],
-      rules: {
-        'vitest/no-conditional-in-test': 'off',
-        'typescript/no-unnecessary-condition': 'off',
-        'typescript/no-unsafe-call': 'off',
-        'typescript/no-unsafe-member-access': 'off',
-        'effecttsgo/async-function': 'off',
-        'effecttsgo/global-error-in-effect-failure': 'off',
-        'effecttsgo/node-builtin-import': 'off',
-      },
-    },
   ],
 })

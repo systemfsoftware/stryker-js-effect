@@ -1181,6 +1181,9 @@ importers:
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
+      '@systemfsoftware/effect-gherkin-spec':
+        specifier: 'catalog:'
+        version: 4.2.2(@effect/vitest@4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1))(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@systemfsoftware/oxlint-config-recommended':
         specifier: 'catalog:'
         version: 1.1.0(effect@4.0.0-rc.116)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)

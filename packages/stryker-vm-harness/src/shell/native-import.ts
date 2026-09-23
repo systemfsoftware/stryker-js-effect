@@ -1,1 +1,1 @@
-export const nativeImport = (url: string): Promise<unknown> => import(/* @vite-ignore */ url)
+export const nativeImport = <A = unknown>(url: string): Promise<A> => import(/* @vite-ignore */ url)
