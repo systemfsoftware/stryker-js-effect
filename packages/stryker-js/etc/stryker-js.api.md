@@ -14,6 +14,7 @@ import * as Effect from 'effect/Effect';
 import * as EffectDuration from 'effect/Duration';
 import * as Exit from 'effect/Exit';
 import * as FileSystem from 'effect/FileSystem';
+import { HarnessModuleBuiltin } from '@systemfsoftware/stryker-vm-harness';
 import * as HashMap from 'effect/HashMap';
 import { JsonSchema } from 'effect/JsonSchema';
 import * as Layer from 'effect/Layer';
@@ -192,14 +193,6 @@ export class ChildProcessCrashedError extends ChildProcessCrashedError_base {
 
 // @public (undocumented)
 export const classifyWorkerExit: (pid: number, exitCode: number) => ChildProcessCrashedError | OutOfMemoryError;
-
-// @public (undocumented)
-export interface CompiledTests {
-    // (undocumented)
-    readonly fileName: string;
-    // (undocumented)
-    readonly script: VmScript;
-}
 
 // @public (undocumented)
 export interface CompleteDryRunResult {
@@ -1709,35 +1702,14 @@ export interface VerdictThresholds {
 }
 
 // @public (undocumented)
-export interface VmModule {
-    // (undocumented)
-    readonly createContext: (sandbox: object) => object;
-    // (undocumented)
-    readonly Script: new (code: string, options?: {
-        readonly filename?: string;
-    }) => VmScript;
-}
-
-// @public (undocumented)
-export interface VmModuleBuiltin {
-    // (undocumented)
-    readonly createRequire: (fileName: string | URL) => VmRequire;
-    // (undocumented)
-    readonly stripTypeScriptTypes: (source: string, options?: {
-        readonly mode?: 'strip' | 'transform';
-    }) => string;
-}
-
-// @public (undocumented)
 export interface VmPlatform {
     // (undocumented)
-    readonly module: VmModuleBuiltin;
+    readonly moduleBuiltin: HarnessModuleBuiltin;
+    // Warning: (ae-forgotten-export) The symbol "VmFileUrl" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
-    readonly vm: VmModule;
+    readonly pathToFileURL: (path: string) => VmFileUrl;
 }
-
-// @public (undocumented)
-export type VmRequire = <A = unknown>(specifier: string) => A;
 
 // Warning: (ae-forgotten-export) The symbol "VmRunner_base" needs to be exported by the entry point index.d.mts
 //
@@ -1753,16 +1725,12 @@ export const vmRunnerCapabilities: {
 export const vmRunnerName = "vm";
 
 // @public (undocumented)
-export interface VmScript {
-    // (undocumented)
-    readonly runInContext: <A = unknown>(context: object) => A;
-}
-
-// @public (undocumented)
-export const vmTestRunner: (config: VmTestRunnerConfig) => Effect.Effect<PooledTestRunner, TestRunnerFailed, FileSystem.FileSystem | VmRunner>;
+export const vmTestRunner: (config: VmTestRunnerConfig) => Effect.Effect<PooledTestRunner, TestRunnerFailed, VmRunner>;
 
 // @public (undocumented)
 export interface VmTestRunnerConfig {
+    // (undocumented)
+    readonly sandboxWorkingDirectory?: string;
     // (undocumented)
     readonly testFiles: readonly string[];
 }

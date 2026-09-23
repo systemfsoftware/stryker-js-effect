@@ -599,7 +599,13 @@ const inProcessRunner = (context: TestRunnerBuildContext): Option.Option<InProce
       )),
     Match.when(
       isVmRunner,
-      () => Option.some(vmTestRunner({ testFiles: context.testFiles }).pipe(Effect.provide(nodeVmPlatformLayer))),
+      () =>
+        Option.some(
+          vmTestRunner({
+            testFiles: context.testFiles,
+            sandboxWorkingDirectory: context.sandboxWorkingDirectory,
+          }).pipe(Effect.provide(nodeVmPlatformLayer)),
+        ),
     ),
     Match.orElse(() => Option.none()),
   )

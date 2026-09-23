@@ -124,8 +124,8 @@ export const nodeVmPlatformLayer: Layer.Layer<VmRunner> = Layer.effect(
   VmRunner,
   Effect.sync(
     (): VmPlatform => ({
-      module: globalThis.process.getBuiltinModule('node:module'),
-      vm: globalThis.process.getBuiltinModule('node:vm'),
+      moduleBuiltin: globalThis.process.getBuiltinModule('node:module'),
+      pathToFileURL: (path) => globalThis.process.getBuiltinModule('node:url').pathToFileURL(path),
     }),
   ),
 )
