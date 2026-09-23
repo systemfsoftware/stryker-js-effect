@@ -497,11 +497,11 @@ const parseSvelte = (text: string, fileName: string, parserContext: ParserShape)
       parserContext,
       text,
       fileName,
-      lineStarts,
+      lineTable,
     )
     const additionalScripts = yield* Effect.forEach(
       remappedScriptRanges,
-      (range) => parseTemplateScript(range, parserContext, text, fileName, lineStarts),
+      (range) => parseTemplateScript(range, parserContext, text, fileName, lineTable),
     )
 
     return {

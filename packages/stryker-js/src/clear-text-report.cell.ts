@@ -807,8 +807,10 @@ if (import.meta.vitest !== void 0) {
         const newStdout = rendered.stdout.map((chunk) => renderChunk(chunk))
         const newDebug = rendered.diagnostics.map((chunk) => renderChunk(chunk))
         if (!sameChunks(newStdout, legacy.stdout)) {
-          newStdout.forEach((line, index) =>
-            console.log('STDOUT', index, JSON.stringify(legacy.stdout[index]), '|', JSON.stringify(line)))
+          rendered.stdout.forEach((chunk, chunkIndex) =>
+            chunk.forEach((line, lineIndex) =>
+              console.log('SPAN', chunkIndex, lineIndex, line.length, line.map((span) =>
+                `${JSON.stringify(span.text)} l${span.leftPad} r${span.rightPad} x${span.repeat}`).join(' '))))
         }
         if (!sameChunks(newDebug, legacy.debug)) {
           newDebug.forEach((line, index) =>
