@@ -29,16 +29,6 @@ Run a specific test:
 cd test/e2e && pnpm exec vitest run <path-to-test>
 ```
 
-### CI runners
-
-GitHub-hosted `ubuntu-latest` runners expose `/dev/kvm` as `root:kvm` mode `0660`. Open it to the runner user before `pnpm test:e2e`:
-
-```bash
-echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-sudo udevadm control --reload-rules
-sudo udevadm trigger --name-match=kvm
-```
-
 ### Fixture cache
 
 Global setup keys the baked fixtures on the base image, `tests/__fixtures__/bake-fixtures.sh`, the unpacked contents of every packed tarball, and every fixture source file. A hit reuses `node_modules/.cache/stryker-e2e/baked/<key>`; a miss re-bakes and prunes older keys. Editing a workspace package therefore re-bakes on the next run with no manual invalidation.
