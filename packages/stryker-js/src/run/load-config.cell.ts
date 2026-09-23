@@ -45,13 +45,7 @@ import { MutationRangeSpecifierSchema, type MutationRangeSpecifier } from '../Mu
 import type { OutputMode } from '../output-mode.schema.js'
 import { StrykerError } from '../stryker-error.schema.js'
 import { isCommandRunner } from '../command-runner.resource.js'
-import {
-  ConfigFromFile,
-  LoadConfigCommand,
-  configErrorMessage,
-  describeErrors,
-  resolveConfig,
-} from './resolve-config.workflow.js'
+import { LoadConfigCommand, resolveConfig } from './resolve-config.workflow.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 import * as Clock from 'effect/Clock'
 import * as Queue from 'effect/Queue'
@@ -99,6 +93,115 @@ const extendsChildHint = (file: string): string =>
 
 const shadowedLegacyWarning = (legacyFile: string, supportedFile: string): string =>
   `Ignoring the legacy config file "${legacyFile}": "${supportedFile}" is the config Stryker reads. Stryker no longer reads JSON or CommonJS config files; delete the legacy file.`
+
+const PATH_LINE = /^at\s+(\[.*\])$/
+const PATH_SEGMENT = /\["([^"]*)"\]|\[(\d+)\]/g
+const EXPECTED_PATTERN = /^Expected a string matching the RegExp (.+)$/
+const EXPECTED_TYPE = /^Expected (.+)$/
+
+const appendPathSegment = (path: string, segment: RegExpMatchArray): string =>
+  Match.value(segment[2]).pipe(
+    Match.when(undefined, () => appendKeySegment(path, segment[1] ?? '')),
+    Match.orElse((index) => `${path}[${index}]`),
+  )
+
+const appendKeySegment = (path: string, key: string): string =>
+  Match.value(path.length > 0).pipe(
+    Match.when(true, () => `${path}.${key}`),
+    Match.orElse(() => `${path}${key}`),
+  )
+
+const dottedPath = (raw: string): string => Array.from(raw.matchAll(PATH_SEGMENT)).reduce(appendPathSegment, '')
+
+const phraseExpectedType = (expectation: string): string =>
+  Match.value(EXPECTED_TYPE.exec(expectation)).pipe(
+    Match.when(
+      (match: RegExpExecArray | null): match is RegExpExecArray => match !== null,
+      (match) => `should be ${match[1] ?? ''}`,
+    ),
+    Match.orElse(() => expectation),
+  )
+
+const phrase = (expectation: string): string =>
+  Match.value(EXPECTED_PATTERN.exec(expectation)).pipe(
+    Match.when(
+      (match: RegExpExecArray | null): match is RegExpExecArray => match !== null,
+      (match) => `must match pattern "${match[1] ?? ''}"`,
+    ),
+    Match.orElse(() => phraseExpectedType(expectation)),
+  )
+
+interface ErrorDescriptionState {
+  readonly messages: readonly string[]
+  readonly expectation: string | undefined
+}
+
+const EMPTY_ERROR_DESCRIPTION_STATE: ErrorDescriptionState = {
+  messages: [],
+  expectation: undefined,
+}
+
+const isBlankLine = (line: string): boolean => line.length === 0
+
+const startExpectation = (state: ErrorDescriptionState, line: string): ErrorDescriptionState =>
+  Match.value(state.expectation).pipe(
+    Match.when(undefined, () => ({ messages: state.messages, expectation: line })),
+    Match.orElse((pending) => ({ messages: [...state.messages, pending], expectation: line })),
+  )
+
+const completeExpectation = (
+  state: ErrorDescriptionState,
+  pathText: string,
+  line: string,
+): ErrorDescriptionState =>
+  Match.value(state.expectation).pipe(
+    Match.when(undefined, () => startExpectation(state, line)),
+    Match.orElse((pending) => ({
+      messages: [...state.messages, `Config option "${dottedPath(pathText)}" ${phrase(pending)}.`],
+      expectation: undefined,
+    })),
+  )
+
+const applyErrorLine = (state: ErrorDescriptionState, line: string): ErrorDescriptionState =>
+  Match.value(PATH_LINE.exec(line)).pipe(
+    Match.when(
+      (match: RegExpExecArray | null): match is RegExpExecArray => match !== null,
+      (match) => completeExpectation(state, match[1] ?? '', line),
+    ),
+    Match.orElse(() => startExpectation(state, line)),
+  )
+
+const advanceErrorDescription = (
+  state: ErrorDescriptionState,
+  rawLine: string,
+): ErrorDescriptionState =>
+  Match.value(rawLine.trim()).pipe(
+    Match.when(isBlankLine, () => state),
+    Match.orElse((line) => applyErrorLine(state, line)),
+  )
+
+const completedErrorMessages = (state: ErrorDescriptionState): readonly string[] =>
+  Match.value(state.expectation).pipe(
+    Match.when(undefined, () => state.messages),
+    Match.orElse((pending) => [...state.messages, pending]),
+  )
+
+const errorMessageOrFallback = (messages: readonly string[], fallback: string): string[] =>
+  Match.value(messages.length > 0).pipe(
+    Match.when(true, () => [...messages]),
+    Match.orElse(() => [fallback]),
+  )
+
+const describeMessageOf = (message: string): readonly string[] => {
+  const state = message
+    .split('\n')
+    .reduce(advanceErrorDescription, EMPTY_ERROR_DESCRIPTION_STATE)
+  return errorMessageOrFallback(completedErrorMessages(state), message)
+}
+
+export function describeErrors(error: S.SchemaError): string[] {
+  return describeMessageOf(error.message)
+}
 
 export function importModule<A = unknown>(
   moduleName: string,
@@ -662,6 +765,14 @@ const schemaValidate = <A = unknown>(options: Record<string, A>): Effect.Effect<
     onSuccess: (success) => Effect.as(Effect.sync(() => Object.assign(options, success)), success),
   })
 
+const configErrorHeadline = (errors: readonly string[]): string =>
+  Match.value(errors.length === 1).pipe(
+    Match.when(true, () => 'Please correct this configuration error and try again.'),
+    Match.orElse(() => 'Please correct these configuration errors and try again.'),
+  )
+
+const configErrorMessage = (errors: readonly string[]): string => `${configErrorHeadline(errors)} ${errors.join(' ')}`
+
 const logConfigErrors = (errors: readonly string[]): Effect.Effect<void> =>
   Effect.forEach(errors, (error) => Effect.logError(error), { discard: true })
 
@@ -1012,7 +1123,8 @@ export const loadConfig = Sandwich.named('stryker.config_read')(readLoadConfig)
   .write({
     ConfigFromFile: ({ options }) => Effect.succeed(options),
     ConfigFromDefaults: ({ options }) => Effect.succeed(options),
-    LoadConfigRefused: (refused) => Effect.fail(ConfigError.make({ message: refused.message })),
+    LoadConfigRefused: (refused) =>
+      failConfigWith(configErrorMessage(describeMessageOf(refused.message))),
     CommandRejected: ({ issue }) => Effect.fail(ConfigError.make({ message: issue })),
   })
 
@@ -1090,6 +1202,7 @@ export const loadConfigCell = Sandwich.named('stryker.load_config')(readRunConfi
         targetMutatePatterns: raw.targetMutatePatterns,
         basePath: raw.basePath,
       }),
-    LoadConfigRefused: (refused) => failConfigWith(refused.message),
+    LoadConfigRefused: (refused) =>
+      failConfigWith(configErrorMessage(describeMessageOf(refused.message))),
     CommandRejected: ({ issue }) => failConfigWith(issue),
   })

@@ -1,6 +1,5 @@
 /// <reference types="vitest/importMeta" />
 import { parse } from '@std/jsonc'
-import type { Position } from '@systemfsoftware/stryker-js-instrumenter'
 import type { CheckerMutantWire, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -94,35 +93,46 @@ export interface TSCompiler extends Pipeable {
 
 export const isTSCompiler = (u: unknown): u is TSCompiler => Predicate.hasProperty(u, TypeId)
 
-export const make = (
-  options: StrykerOptions,
-  services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
-): TSCompiler => {
-  const files = makeTSFiles(services.host)
-  const tsconfigFile = normalizeFileName(options.tsconfigFile)
-  const initialState: CompilerState = {
-    api: undefined,
-    snapshot: undefined,
-    sourceFiles: MutableHashMap.empty(),
-    nodes: HashMap.empty(),
-    lastMutants: [],
-    lastMutatedFileNames: [],
-    allTSConfigFiles: MutableHashSet.fromIterable([tsconfigFile]),
-    tsconfigFile,
-  }
-  return {
-    [TypeId]: TypeId,
-    [RuntimeTypeId]: {
-      options,
-      host: services.host,
-      pathService: services.pathService,
-      files,
-      sourceFileSystem: tsFileSystem(files),
-      state: Ref.makeUnsafe(initialState),
-    },
-    ...Prototype,
-  }
-}
+export const make: {
+  (
+    options: StrykerOptions,
+    services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
+  ): TSCompiler
+  (
+    services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
+  ): (options: StrykerOptions) => TSCompiler
+} = dual(
+  2,
+  (
+    options: StrykerOptions,
+    services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
+  ): TSCompiler => {
+    const files = makeTSFiles(services.host)
+    const tsconfigFile = normalizeFileName(options.tsconfigFile)
+    const initialState: CompilerState = {
+      api: undefined,
+      snapshot: undefined,
+      sourceFiles: MutableHashMap.empty(),
+      nodes: HashMap.empty(),
+      lastMutants: [],
+      lastMutatedFileNames: [],
+      allTSConfigFiles: MutableHashSet.fromIterable([tsconfigFile]),
+      tsconfigFile,
+    }
+    return {
+      [TypeId]: TypeId,
+      [RuntimeTypeId]: {
+        options,
+        host: services.host,
+        pathService: services.pathService,
+        files,
+        sourceFileSystem: tsFileSystem(files),
+        state: Ref.makeUnsafe(initialState),
+      },
+      ...Prototype,
+    }
+  },
+)
 
 interface TypeScriptVersion {
   readonly major: number
@@ -410,31 +420,6 @@ const importSpecifierOf = (
       )
     },
   })
-
-const externalSpecifiersOf = (
-  statement: SourceFile['statements'][number],
-  sourceFile: SourceFile,
-): ReadonlyArray<string> => {
-  const specifiers: Array<string> = []
-  Option.map(
-    Option.liftPredicate(statement, (node) => node.kind === SyntaxKind.ImportEqualsDeclaration),
-    (declaration) =>
-      declaration.forEachChild((child) =>
-        child.forEachChild((reference) =>
-          Option.map(
-            Boolean.match(reference.kind === SyntaxKind.StringLiteral, {
-              onTrue: () => Option.some<Node>(reference),
-              onFalse: () => Option.none<Node>(),
-            }),
-            (literal) => {
-              specifiers.push(literal.getText(sourceFile))
-            },
-          ),
-        ),
-      ),
-  )
-  return specifiers
-}
 
 const keepSome = <A>(option: Option.Option<A>): Result.Result<A, void> =>
   Option.match(option, {
@@ -963,9 +948,14 @@ if (import.meta.vitest !== void 0) {
     const mutants = mutantsOf(fileIndexes)
     const placed = Arr.flatten(groupedOf(mutants, nodes, prioritize))
     const expected = Arr.map(mutants, (mutant) => mutant.id)
-    return placed.length === mutants.length &&
-      HashSet.size(HashSet.fromIterable(placed)) === mutants.length &&
-      HashSet.size(HashSet.fromIterable([...placed, ...expected])) === mutants.length
+    return Arr.every(
+      [
+        placed.length === mutants.length,
+        HashSet.size(HashSet.fromIterable(placed)) === mutants.length,
+        HashSet.size(HashSet.fromIterable([...placed, ...expected])) === mutants.length,
+      ],
+      (holds) => holds,
+    )
   })
 
   it.prop('∀graph_Group_≈Independent', [EdgesSchema, MutantsSchema], ([edges, fileIndexes]) => {

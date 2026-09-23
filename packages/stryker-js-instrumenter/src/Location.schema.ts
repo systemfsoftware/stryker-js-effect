@@ -36,6 +36,10 @@ export class LineTable extends S.Class<LineTable>('LineTable')({
   locationAt(span: { readonly start: number; readonly end: number }): Location {
     return { start: this.positionAt(span.start), end: this.positionAt(span.end) }
   }
+
+  zeroBasedPositionAt(offset: number): Position {
+    return zeroBasedPositionOf(this.lineStarts, offset)
+  }
 }
 
 const LINE_TERMINATOR = /\r\n|[\n\r\u2028\u2029]/g
@@ -66,20 +70,25 @@ export const LineTableFromText = S.String.pipe(
 
 const middleIndex = (low: number, high: number): number => low + ((high - low) >> 1)
 
-const positionOf = (lineStarts: Arr.NonEmptyReadonlyArray<number>, offset: number): Position => {
+const zeroBasedPositionOf = (lineStarts: Arr.NonEmptyReadonlyArray<number>, offset: number): Position => {
   const search = (low: number, high: number, start: number): Position =>
     Boolean.match(low > high, {
-      onTrue: () => ({ line: low, column: offset - start + 1 }),
+      onTrue: () => ({ line: low - 1, column: offset - start }),
       onFalse: () => {
         const middle = middleIndex(low, high)
         return Match.value(lineStarts[middle]).pipe(
-          Match.when((mid) => mid === offset, (mid) => ({ line: middle + 1, column: offset - mid + 1 })),
+          Match.when((mid) => mid === offset, (mid) => ({ line: middle, column: offset - mid })),
           Match.when((mid) => mid < offset, (mid) => search(middle + 1, high, mid)),
           Match.orElse(() => search(low, middle - 1, start)),
         )
       },
     })
   return search(0, lineStarts.length - 1, 0)
+}
+
+const positionOf = (lineStarts: Arr.NonEmptyReadonlyArray<number>, offset: number): Position => {
+  const zeroBased = zeroBasedPositionOf(lineStarts, offset)
+  return { line: zeroBased.line + 1, column: zeroBased.column + 1 }
 }
 
 if (import.meta.vitest !== void 0) {

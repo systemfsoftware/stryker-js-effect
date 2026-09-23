@@ -3,6 +3,7 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import * as mutants from '@systemfsoftware/stryker-js-instrumenter'
 import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Equivalence from 'effect/Equivalence'
 import * as Exit from 'effect/Exit'
 import * as Result from 'effect/Result'
@@ -38,6 +39,7 @@ const survivorsOf = (report: schema.MutationTestResult) =>
       .map((mutant) => ({
         id: mutant.id,
         fileName: absPath(file),
+        relativeFileName: file,
         mutatorName: mutant.mutatorName,
         replacement: mutant.replacement ?? mutant.mutatorName,
         location: {
@@ -305,6 +307,26 @@ describe('admitSurvivorsRun', () => {
           admission.success.survivors.map(fingerprint),
           expected.map(fingerprint),
         )
+    },
+  )
+
+  it.prop(
+    '∀r_Report_≡AdmittedMutateSpansRe-readFromReport',
+    [reportWithSurvivorsArb],
+    ([report]) => {
+      const admission = admitSurvivorsRun(matchingCommand(report))
+      if (!Result.isSuccess(admission)) {
+        return false
+      }
+      if (!S.is(Admitted)(admission.success)) {
+        return false
+      }
+      const expected = survivorsOf(report).map((survivor) =>
+        `${survivor.relativeFileName}:${survivor.location.start.line + 1}:${survivor.location.start.column}-${
+          survivor.location.end.line + 1
+        }:${survivor.location.end.column}`
+      )
+      return expected.length > 0 && stringArrayEquivalence(admission.success.mutateSpans, Arr.dedupe(expected))
     },
   )
 

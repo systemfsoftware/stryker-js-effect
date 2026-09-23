@@ -5,8 +5,6 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
-
 export const MutantShape = S.Struct({
   id: S.String,
   fileName: S.String,
@@ -18,6 +16,11 @@ export const MutantShape = S.Struct({
   }),
 })
 
+export const AdmittedSurvivorShape = S.Struct({
+  ...MutantShape.fields,
+  relativeFileName: S.String,
+})
+
 const SurvivorsAdmissionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/SurvivorsAdmission')
 type SurvivorsAdmissionTypeId = typeof SurvivorsAdmissionTypeId
 
@@ -25,15 +28,13 @@ export class PriorReportFacts extends S.Class<PriorReportFacts>('PriorReportFact
   config: S.Record(S.String, S.Unknown),
   frameworkVersion: S.UndefinedOr(S.String),
 }) {}
-
 export class AdmitSurvivorsRunCommand extends S.Class<AdmitSurvivorsRunCommand>('AdmitSurvivorsRunCommand')({
   priorReport: S.UndefinedOr(PriorReportFacts),
   currentConfig: S.Record(S.String, S.Unknown),
   frameworkVersion: S.String,
   sourceContentHashes: S.Record(S.String, S.String),
   priorSourceHashes: S.Record(S.String, S.String),
-  priorSurvivors: S.Array(MutantShape),
-  basePath: S.String,
+  priorSurvivors: S.Array(AdmittedSurvivorShape),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     frameworkVersion: 'stryker.survivors.framework_version',
@@ -44,10 +45,6 @@ export class Admitted extends S.TaggedClass<Admitted>()('Admitted', {
   survivors: S.Array(MutantShape),
   mutateSpans: S.Array(S.String),
 }) {
-  readonly [SurvivorsAdmissionTypeId] = SurvivorsAdmissionTypeId
-}
-
-export class NoSurvivors extends S.TaggedClass<NoSurvivors>()('NoSurvivors', {}) {
   readonly [SurvivorsAdmissionTypeId] = SurvivorsAdmissionTypeId
 }
 
@@ -179,15 +176,13 @@ const reject = (reason: 'no-report' | 'mismatch', detail: string) =>
     }),
   )
 
-const mutateSpansOf = (survivors: ReadonlyArray<S.Schema.Type<typeof MutantShape>>, basePath: string) => [
-  ...new Set(
-    survivors.map((survivor) =>
-      `${toRelativeNormalizedFileName(survivor.fileName, basePath)}:${
-        survivor.location.start.line + 1
-      }:${survivor.location.start.column}-${survivor.location.end.line + 1}:${survivor.location.end.column}`
-    ),
-  ),
-]
+const spanOf = (survivor: S.Schema.Type<typeof AdmittedSurvivorShape>) =>
+  `${survivor.relativeFileName}:${survivor.location.start.line + 1}:${survivor.location.start.column}-${
+    survivor.location.end.line + 1
+  }:${survivor.location.end.column}`
+
+const mutateSpansOf = (survivors: ReadonlyArray<S.Schema.Type<typeof AdmittedSurvivorShape>>) =>
+  Arr.dedupe(survivors.map(spanOf))
 
 const decideAdmission = (
   input: AdmitSurvivorsRunCommand,
@@ -201,7 +196,7 @@ const decideAdmission = (
       'SurvivorsMatch',
       (matched) =>
         Result.succeed(
-          Admitted.make({ survivors: matched.survivors, mutateSpans: mutateSpansOf(matched.survivors, input.basePath) }),
+          Admitted.make({ survivors: matched.survivors, mutateSpans: mutateSpansOf(matched.survivors) }),
         ),
     ),
     Match.exhaustive,
@@ -219,17 +214,24 @@ if (import.meta.vitest !== void 0) {
   const { Mutant } = await import('@systemfsoftware/stryker-js-instrumenter')
   const Equivalence = await import('effect/Equivalence')
   const { Arbitrary } = await import('effect/unstable/arbitrary')
+  const IncrementalDiffPaths = await import('./IncrementalDiff.paths.js')
   const { survivorMutateSpans } = await import('./Survivors.js')
 
   const survivorsArb = Arbitrary.array(Arbitrary.schema(Mutant), { maxLength: 6 })
 
   it.prop(
-    '∀survivors_basePath_DecisionMutateSpans_≡SurvivorSpansResidue',
-    [survivorsArb, S.String.check(S.isMinLength(1), S.isMaxLength(8))],
-    ([survivors, basePath]) =>
-      Equivalence.Array(Equivalence.String)(
-        mutateSpansOf(survivors, basePath),
-        survivorMutateSpans(survivors, basePath),
-      ),
+    '∀survivors_RelativeFiles_DecisionMutateSpans_≡SurvivorSpansResidue',
+    [survivorsArb],
+    ([survivors]) => {
+      const decided = survivors.map((survivor) => ({
+        ...survivor,
+        relativeFileName: IncrementalDiffPaths.toRelativeNormalizedFileName(survivor.fileName, '/work'),
+      }))
+      const residue = survivors.map((survivor) => ({ ...survivor, fileName: `/work/${survivor.fileName}` }))
+      return Equivalence.Array(Equivalence.String)(
+        mutateSpansOf(decided),
+        survivorMutateSpans(residue, '/work'),
+      )
+    },
   )
 }

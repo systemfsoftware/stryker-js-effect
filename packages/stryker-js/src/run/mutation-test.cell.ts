@@ -50,11 +50,12 @@ import { REMEMBERED_REASON, toRelativeNormalizedFileName } from '../IncrementalD
 import { checkerMutantsSkipped } from '../metrics.js'
 import { toSchemaLocation } from '../mutant-result-mapping.js'
 import { decidePlans, incrementalDiff, partitionRunPlans, sortRunPlans } from '../Mutants.js'
-import { makeMutationReportingService } from '../mutation-reporting.service.js'
-import type { MutationReportingService } from '../mutation-reporting.service.js'
+import { MutationReporting } from '../mutation-reporting.service.js'
+import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
 import { missingWorkerEntry, resolveConfiguredWorkerSpawn } from '../plugin-worker-entry.js'
-import { FILE_CONCURRENCY, readOriginal } from '../read-project.cell.js'
+import { ProjectFiles } from '../project-files.service.js'
 import type { Project } from '../Project.schema.js'
+import type { SandboxHandle } from '../Sandbox.handle.js'
 import { reportFileName } from '../report-assembly.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
 import { StageError } from '../Run.schema.js'
@@ -65,7 +66,7 @@ import { IdGenerator, type IdGeneratorShape } from '../Worker.service.js'
 import { ChildProcessCrashedError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import type { DryRunDone } from './dry-run.cell.js'
-import { RunEnvironment } from './RunEnvironment.service.js'
+import { RunEnvironment, type RunEnvironmentShape } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 
 export interface MutationTestDone {
@@ -76,17 +77,46 @@ export interface MutationTestDone {
 const readCurrentRelativeFiles = (
   project: Project,
   basePath: string,
-): Effect.Effect<Record<string, string>, PlatformError, FileSystem.FileSystem> =>
+): Effect.Effect<Record<string, string>, PlatformError, ProjectFiles> =>
   Effect.gen(function*() {
-    const entries = yield* Effect.forEach(
-      MutableHashMap.values(project.files),
-      (file) =>
-        Effect.map(readOriginal(file), (content) =>
-          [toRelativeNormalizedFileName(file.name, basePath), content] as const),
-      { concurrency: FILE_CONCURRENCY },
+    const projectFiles = yield* ProjectFiles
+    const entries = yield* projectFiles.readAllOriginal(MutableHashMap.values(project.files))
+    return Object.fromEntries(
+      entries.map(([file, content]) => [toRelativeNormalizedFileName(file.name, basePath), content] as const),
     )
-    return Object.fromEntries(entries)
   })
+
+const reportingInputOf = (
+  prev: DryRunDone,
+  env: RunEnvironmentShape,
+  results: readonly RunMutantResult[],
+): MutationReportingInput => ({
+  results,
+  options: prev.options,
+  project: prev.project,
+  testCoverage: prev.testCoverage,
+  runId: env.runId,
+  resolvedMode: env.resolvedMode,
+  basePath: env.basePath,
+  reporterStage: prev.reporterStage,
+})
+
+const sandboxFilePairsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
+  Result.all(
+    fileNames.map((fileName) =>
+      Result.map(
+        sandbox.sandboxFileFor(fileName),
+        (sandboxFileName): readonly [string, string] => [fileName, sandboxFileName],
+      )
+    ),
+  )
+
+const sandboxFilesOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
+  Effect.fromResult(sandboxFilePairsOf(sandbox, fileNames)).pipe(
+    Effect.mapError((cause) =>
+      StageError.make({ stage: 'mutationTest', reason: 'Failed to resolve sandbox file', cause })
+    ),
+  )
 
 interface RememberedMutantResult {
   readonly mutantId: string
@@ -421,13 +451,17 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
     const env = yield* RunEnvironment
     const idGenerator = yield* IdGenerator
     const checkerPool = yield* makeCheckerPool(prev, env.basePath)
+    const testFiles = yield* Effect.map(
+      sandboxFilesOf(prev.sandbox, prev.project.testFiles),
+      Array.map(([, sandboxFileName]) => sandboxFileName),
+    )
     const testRunnerContext = {
       options: prev.options,
       fileDescriptions: prev.project.fileDescriptions,
       sandboxWorkingDirectory: prev.sandbox.workingDirectory,
       idGenerator: idGenerator,
       retire: Effect.void,
-      testFiles: prev.project.testFiles.map((file) => prev.sandbox.sandboxFileFor(file)),
+      testFiles,
     }
     const testRunnerPool: Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError> = yield* Pool
       .make({
@@ -459,21 +493,9 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
         ),
         size: prev.concurrency.testRunners,
       })
-    const reporting = makeMutationReportingService({
-      reporterStage: prev.reporterStage,
-      options: prev.options,
-      project: prev.project,
-      testCoverage: prev.testCoverage,
-      runId: env.runId,
-      resolvedMode: env.resolvedMode,
-      sandboxDirectory: prev.sandbox.workingDirectory,
-      basePath: env.basePath,
-    })
+    const reporting = yield* MutationReporting
     const sandboxFileByName: Record<string, string> = Object.fromEntries(
-      [...MutableHashMap.keys(prev.project.filesToMutate)].map((name) => [
-        name,
-        prev.sandbox.sandboxFileFor(name),
-      ]),
+      yield* sandboxFilesOf(prev.sandbox, [...MutableHashMap.keys(prev.project.filesToMutate)]),
     )
     const currentRelativeFiles = yield* readCurrentRelativeFiles(prev.project, env.basePath)
     const incremental = incrementalDiff({
@@ -617,15 +639,15 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       ...checkerResults,
     ])
     const checkpointGate = yield* Semaphore.make(1)
-    yield* reporting.checkpoint(yield* Ref.get(completedMutants)).pipe(
+    yield* reporting.checkpoint(reportingInputOf(prev, env, yield* Ref.get(completedMutants))).pipe(
       Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
       Effect.ignoreCause,
     )
     const persist = (result: RunMutantResult) =>
       checkpointGate.withPermits(1)(
         Effect.gen(function*() {
-          const next = yield* Ref.updateAndGet(completedMutants, (prev) => [...prev, result])
-          yield* reporting.checkpoint(next).pipe(
+          const next = yield* Ref.updateAndGet(completedMutants, (completed) => [...completed, result])
+          yield* reporting.checkpoint(reportingInputOf(prev, env, next)).pipe(
             Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
             Effect.ignoreCause,
           )
@@ -694,7 +716,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       ...checkerResults,
       ...runResults,
     ]
-    const outcomeResult = yield* reporting.reportAll(allResults)
+    const outcomeResult = yield* reporting.reportAll(reportingInputOf(prev, env, allResults))
     const doneNow = yield* Clock.currentTimeMillis
     const elapsed = Duration.millis(doneNow - env.runStartedAt)
     yield* Effect.logInfo(`Done in ${Duration.format(elapsed)}.`)

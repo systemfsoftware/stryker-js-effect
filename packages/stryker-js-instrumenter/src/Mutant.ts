@@ -1,5 +1,6 @@
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
+import * as Result from 'effect/Result'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
@@ -165,13 +166,14 @@ const isJsonPrimitive = (value: unknown): value is number | boolean | bigint =>
     Match.orElse(() => false),
   )
 
-const jsonText = <A = unknown>(error: A): string | undefined => {
-  try {
-    return textIfNonEmpty(JSON.stringify(error))
-  } catch {
-    return undefined
-  }
-}
+const jsonText = <A = unknown>(error: A): string | undefined =>
+  Result.getOrElse(
+    Result.try({
+      try: () => textIfNonEmpty(JSON.stringify(error)),
+      catch: () => undefined,
+    }),
+    () => undefined,
+  )
 
 const isNonPlaceholderText = (text: string): boolean =>
   Match.value({ hasLength: text.length > 0, isPlaceholder: text === '[object Object]' }).pipe(
@@ -189,13 +191,14 @@ const usableText = <A = unknown>(value: A): string => (isUsableText(value) ? val
 
 const objectToStringText = (value: object): string =>
   Match.value(fieldOf(value, 'toString')).pipe(
-    Match.when(Match.instanceOf(Function), (callable) => {
-      try {
-        return usableText(Reflect.apply(callable, value, []))
-      } catch {
-        return ''
-      }
-    }),
+    Match.when(Match.instanceOf(Function), (callable) =>
+      Result.getOrElse(
+        Result.try({
+          try: () => usableText(Reflect.apply(callable, value, [])),
+          catch: () => '',
+        }),
+        () => '',
+      )),
     Match.orElse(() => ''),
   )
 

@@ -9,7 +9,7 @@ import type { CheckerRuntimeShape } from './CheckerRuntime.service.js'
 import { CheckerRuntime } from './CheckerRuntime.service.js'
 
 const refuse = (checkerName: string, mutants: readonly CheckerMutantWire[], cause: string): CheckerFailed =>
-  CheckerFailed.make({ checkerName, mutantIds: [...mutants.map((mutant) => mutant.id)], cause })
+  CheckerFailed.make({ checkerName, mutantIds: mutants.map((mutant) => mutant.id), cause })
 
 const resolve = (
   runtime: CheckerRuntimeShape,

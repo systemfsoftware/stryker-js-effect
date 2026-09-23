@@ -19,7 +19,7 @@ import { checkCell } from './Checker.cell.js'
 import { CheckMutantsCommand } from './Checker.schema.js'
 import { DryRunCompileErrors, type CompilerError, NodeNotInGraph } from './Compiler.schema.js'
 import type { CheckMutantsAnswer } from './check-mutants.workflow.js'
-import { check, getLineAndCharacterOfPosition, groups, init, type TSCompiler } from './ts-compiler.handle.js'
+import { getLineAndCharacterOfPosition, groups, init, type TSCompiler } from './ts-compiler.handle.js'
 import { layer as compilerLayer } from './ts-compiler.resource.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
 
@@ -150,14 +150,14 @@ export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRunti
       CheckerRuntime,
       Effect.gen(function*() {
         const compiler = yield* TypeScriptCompiler
-        const checker = Effect.flatten(
-          Effect.cached(
-            Effect.gen(function*() {
-              const service = makeChecker(options, compiler)
-              yield* service.init
-              return service
-            }).pipe(Effect.catchCause((cause) => Effect.fail(cause))),
-          ),
+        const checker = Effect.gen(function*() {
+          const service = makeChecker(options, compiler)
+          yield* service.init
+          return service
+        }).pipe(
+          Effect.catchCause((cause) => Effect.fail(cause)),
+          Effect.cached,
+          Effect.flatten,
         )
         return CheckerRuntime.of({ checker })
       }),

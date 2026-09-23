@@ -6,7 +6,7 @@ import type {
   TestResult,
   TestRunnerCapabilities,
 } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Array from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -15,6 +15,7 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import { PhaseEntered, RunEvents } from '../run-events.service.js'
@@ -24,7 +25,9 @@ import { testCoverageFrom } from '../Mutants.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { missingWorkerEntry, resolveConfiguredWorkerSpawn } from '../plugin-worker-entry.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
+import type { SandboxHandle } from '../Sandbox.handle.js'
 import { StageError } from '../Run.schema.js'
+import { StrykerError } from '../stryker-error.schema.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.resource.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { InstrumentDone } from './instrument.cell.js'
@@ -36,13 +39,25 @@ export interface DryRunDone extends InstrumentDone {
   readonly timeOverhead: EffectDuration.Duration
 }
 
-const buildDryRunFiles = (prev: InstrumentDone) => ({
-  files: [...MutableHashMap.keys(prev.project.filesToMutate)].map((name) => prev.sandbox.sandboxFileFor(name)),
-  testFiles: Array.match(prev.project.testFiles, {
-    onEmpty: () => undefined,
-    onNonEmpty: (testFiles) => testFiles.map((file) => prev.sandbox.sandboxFileFor(file)),
-  }),
-})
+const sandboxPathsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
+  Result.all(fileNames.map((fileName) => sandbox.sandboxFileFor(fileName)))
+
+const optionalSandboxPathsOf = (command: InstrumentDone) =>
+  Boolean.match(command.project.testFiles.length === 0, {
+    onTrue: () => Result.succeed(undefined),
+    onFalse: () => sandboxPathsOf(command.sandbox, command.project.testFiles),
+  })
+
+const buildDryRunFiles = (command: InstrumentDone) =>
+  Result.flatMap(
+    sandboxPathsOf(command.sandbox, [...MutableHashMap.keys(command.project.filesToMutate)]),
+    (files) => Result.map(optionalSandboxPathsOf(command), (testFiles) => ({ files, testFiles })),
+  )
+
+const resolveDryRunFiles = (command: InstrumentDone) =>
+  Effect.fromResult(buildDryRunFiles(command)).pipe(
+    Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Failed to resolve sandbox file', cause })),
+  )
 type FailedDryRun = Extract<DryRunResult, { readonly status: 'error' }>
 type TimedOutDryRun = Extract<DryRunResult, { readonly status: 'timeout' }>
 
@@ -205,7 +220,7 @@ const readDryRun = (command: InstrumentDone) =>
     yield* Scope.Scope
     const idGenerator = yield* IdGenerator
 
-    const { files, testFiles } = buildDryRunFiles(command)
+    const { files, testFiles } = yield* resolveDryRunFiles(command)
     const dryRunTimeout = command.options.dryRunTimeoutMinutes * 60 * 1000
 
     yield* Effect.logInfo('Starting dry run')

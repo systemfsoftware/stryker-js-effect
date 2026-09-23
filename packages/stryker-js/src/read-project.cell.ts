@@ -719,13 +719,17 @@ export const readProjectCell = Sandwich.named('stryker.project_read')(readProjec
       Effect.fail(badArgument({ module: 'stryker-js', method: 'incremental-report.cell', description: issue })),
   })
 
-const rangeLawHolds = (line: number, column: number) => {
-  const range = Option.getOrUndefined(mutationRangeOf(`src/a.ts:${line}:${column}-${line}`))
-  return JSON.stringify(range) ===
-    JSON.stringify({
-      pattern: 'src/a.ts',
-      mutate: [{ start: { line: line - 1, column }, end: { line: line - 1, column: Number.MAX_SAFE_INTEGER } }],
-    })
+const rangeLawHolds = (startLine: number, endLine: number, column: number) => {
+  const expectedSpanOf = (startColumn: number, endColumn: number) => ({
+    pattern: 'src/a.ts',
+    mutate: [{ start: { line: startLine - 1, column: startColumn }, end: { line: endLine - 1, column: endColumn } }],
+  })
+  const caseHolds = (pattern: string, startColumn: number, endColumn: number) =>
+    JSON.stringify(Option.getOrUndefined(mutationRangeOf(pattern))) === JSON.stringify(expectedSpanOf(startColumn, endColumn))
+  return caseHolds(`src/a.ts:${startLine}:${column}-${endLine}:${column}`, column, column) &&
+    caseHolds(`src/a.ts:${startLine}:${column}-${endLine}`, column, Number.MAX_SAFE_INTEGER) &&
+    caseHolds(`src/a.ts:${startLine}-${endLine}:${column}`, 0, column) &&
+    caseHolds(`src/a.ts:${startLine}-${endLine}`, 0, Number.MAX_SAFE_INTEGER)
 }
 
 const exclusionLawHolds = (files: readonly string[], include: string, exclude: string) => {
@@ -763,9 +767,9 @@ if (import.meta.vitest !== void 0) {
   )
 
   it.prop(
-    '∀line_col_Range_≡ZeroBasedSpan',
-    [LineSchema, ColumnSchema],
-    ([line, column]) => rangeLawHolds(line, column),
+    '∀startLine_endLine_col_Range_≡ZeroBasedSpan',
+    [LineSchema, LineSchema, ColumnSchema],
+    ([startLine, endLine, column]) => rangeLawHolds(startLine, endLine, column),
   )
 
   it.prop(

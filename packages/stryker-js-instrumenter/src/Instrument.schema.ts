@@ -49,6 +49,17 @@ export const InstrumenterOptionsSchema = S.Struct({
 
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
 
+export class ScriptRootWithoutSpan
+  extends S.TaggedError<ScriptRootWithoutSpan>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/ScriptRootWithoutSpan')(
+    'ScriptRootWithoutSpan',
+    { edge: S.Literals(['start', 'end']) },
+  )
+{
+  override get message(): string {
+    return `Script AST root without ${this.edge}`
+  }
+}
+
 export class InstrumentResult extends S.TaggedClass<InstrumentResult>()('InstrumentResult', {
   files: S.Array(FileSchema),
   mutants: S.Array(Mutant),

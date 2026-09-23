@@ -8,7 +8,7 @@ import * as Path from 'effect/Path'
 import { type Pipeable, Prototype } from 'effect/Pipeable'
 import type * as Scope from 'effect/Scope'
 
-import { close, type TSCompiler, TypeId as TSCompilerTypeId, make as makeTSCompiler } from './ts-compiler.handle.js'
+import { close, type TSCompiler, make as makeTSCompiler } from './ts-compiler.handle.js'
 
 const TypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSCompilerResource')
 export type TypeId = typeof TypeId
@@ -27,7 +27,7 @@ export const scoped = (
     const host = yield* FileSystem.FileSystem
     const pathService = yield* Path.Path
     const compiler = makeTSCompiler(options, { host, pathService })
-    yield* Effect.addFinalizer(() => Effect.uninterruptible(close(compiler)))
+    yield* Effect.addFinalizer(() => close(compiler).pipe(Effect.uninterruptible))
     return compiler
   })
 
@@ -61,5 +61,3 @@ export const make = (options: StrykerOptions): TSCompilerResource => {
   }
   return self
 }
-
-export { TSCompilerTypeId }

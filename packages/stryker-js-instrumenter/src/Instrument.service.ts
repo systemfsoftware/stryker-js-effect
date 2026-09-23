@@ -8,19 +8,24 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import { spanOf, type Node } from './Ast.js'
+import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
+import * as Arr from 'effect/Array'
+import * as Result from 'effect/Result'
+import { spanOf } from './Ast.handle.js'
+import type { Ast, HtmlAst, ScriptAst, SvelteAst, SpannedComment } from './Ast.schema.js'
 import {
   FileSchema,
   type InstrumenterOptions,
   InstrumentError,
   InstrumentResult as InstrumentResultSchema,
+  ScriptRootWithoutSpan,
 } from './Instrument.schema.js'
 import type { FileDescription, MutateDescription } from './Mutant.js'
 import { Mutant as ApiMutant } from './Mutant.schema.js'
-import { toApiMutant } from './Mutator.js'
+import { Mutators, type MutatorsShape } from './Mutator.service.js'
 import { Parser, type ParserError, type ParserShape } from './Parser.service.js'
 import { print } from './Printer.js'
-import { type Ast, AstFormat, type HtmlAst, type ScriptAst, type SvelteAst, type SpannedComment } from './Syntax.js'
+import { AstFormat } from './Syntax.schema.js'
 import { type MutantCollector, Transformer, type TransformerOptions, type TransformerShape } from './Transformer.service.js'
 
 export interface File extends FileDescription {
@@ -57,14 +62,15 @@ export class Instrument
   extends Context.Service<Instrument, InstrumentShape>()(
     '@systemfsoftware/stryker-js-instrumenter/Instrument.service/Instrument',
   ) {
-  static readonly layer: Layer.Layer<Instrument, ParserError, Parser | Transformer> = Layer.effect(
+  static readonly layer: Layer.Layer<Instrument, ParserError, Parser | Transformer | Mutators> = Layer.effect(
     Instrument,
     Effect.gen(function*() {
       const parser = yield* Parser
       const transformer = yield* Transformer
+      const mutators = yield* Mutators
       return Instrument.of({
         disableTypeChecks: (file) => disableTypeChecksWith(parser, file),
-        instrument: instrumentDual(parser, transformer),
+        instrument: instrumentDual(parser, transformer, mutators),
       })
     }),
   )
@@ -73,11 +79,12 @@ export class Instrument
 const instrumentDual: (
   parser: ParserShape,
   transformer: TransformerShape,
-) => InstrumentShape['instrument'] = (parser, transformer) =>
+  mutators: MutatorsShape,
+) => InstrumentShape['instrument'] = (parser, transformer, mutators) =>
   dual(
     (args: IArguments): boolean => args.length >= 2,
     (files: readonly File[], options: InstrumenterOptions, basePath?: string) =>
-      instrumentWith(files, options, basePath, parser, transformer),
+      instrumentWith(files, options, basePath, parser, transformer, mutators),
   )
 
 const disableTypeChecksWith = (
@@ -89,8 +96,9 @@ const disableTypeChecksWith = (
     onSome: (format) => disableTypeChecksFor(parser, file, format),
   })
 
-const baseLayers: Layer.Layer<Parser | Transformer, ParserError> = Transformer.layer.pipe(
+const baseLayers: Layer.Layer<Parser | Transformer | Mutators, ParserError> = Transformer.layer.pipe(
   Layer.provideMerge(Parser.layer),
+  Layer.provideMerge(Mutators.layer),
 )
 
 const instrumenterLayers: Layer.Layer<Parser | Transformer | Instrument, ParserError> = Instrument.layer.pipe(
@@ -116,7 +124,7 @@ const disableTypeChecksFor = (parser: ParserShape, file: File, format: AstFormat
   Boolean.match(isJSFileWithoutTSDirectives(file, format), {
     onTrue: () => Effect.succeed({ ...file, content: prefixWithNoCheck(file.content) }),
     onFalse: () =>
-      Effect.map(
+      Effect.flatMap(
         parser.parse(file.content, file.name).pipe(
           Effect.mapError((cause) => InstrumentError.make({ message: `Failed to parse ${file.name}`, cause })),
         ),
@@ -124,13 +132,15 @@ const disableTypeChecksFor = (parser: ParserShape, file: File, format: AstFormat
       ),
   })
 
-const withDisabledTypeChecking = (file: File, ast: Ast): File =>
+const withDisabledTypeChecking = (file: File, ast: Ast): Effect.Effect<File, ScriptRootWithoutSpan> =>
   Match.value(ast).pipe(
-    Match.when({ format: 'js' }, (script) => ({ ...file, content: disableTypeCheckingInScript(script) })),
-    Match.when({ format: 'ts' }, (script) => ({ ...file, content: disableTypeCheckingInScript(script) })),
-    Match.when({ format: 'tsx' }, (script) => ({ ...file, content: disableTypeCheckingInScript(script) })),
-    Match.when({ format: 'html' }, (html) => ({ ...file, content: disableTypeCheckingInHtml(html) })),
-    Match.when({ format: 'svelte' }, (svelte) => ({ ...file, content: disableTypeCheckingInSvelte(svelte) })),
+    Match.when({ format: 'js' }, (script) => Effect.succeed({ ...file, content: disableTypeCheckingInScript(script) })),
+    Match.when({ format: 'ts' }, (script) => Effect.succeed({ ...file, content: disableTypeCheckingInScript(script) })),
+    Match.when({ format: 'tsx' }, (script) => Effect.succeed({ ...file, content: disableTypeCheckingInScript(script) })),
+    Match.when({ format: 'html' }, (html) =>
+      Effect.map(disableTypeCheckingInHtml(html), (content) => ({ ...file, content }))),
+    Match.when({ format: 'svelte' }, (svelte) =>
+      Effect.map(disableTypeCheckingInSvelte(svelte), (content) => ({ ...file, content }))),
     Match.exhaustive,
   )
 
@@ -165,42 +175,64 @@ const afterLeadingComment = (code: string) =>
 
 const leadingCommentOf = (code: string) => Option.fromNullishOr(STARTING_COMMENT.exec(code)?.[0])
 
-const requiredSpanOf = (root: Node, missing: string) =>
-  Option.getOrThrowWith(Option.fromUndefinedOr(spanOf(root)), () => new Error(missing))
-
-const getScriptStart = (script: HtmlAst['root']['scripts'][number]): number =>
-  requiredSpanOf(script.root, 'Script AST root without start').start
-
-const getScriptEnd = (script: HtmlAst['root']['scripts'][number]): number =>
-  requiredSpanOf(script.root, 'Script AST root without end').end
-
-interface WrittenText {
-  readonly text: string
-  readonly cursor: number
+interface PositionedScript<A> {
+  readonly script: A
+  readonly start: number
+  readonly end: number
 }
 
-const disableTypeCheckingInHtml = (ast: HtmlAst): string => {
-  const sortedScripts = [...ast.root.scripts].sort((a, b) => getScriptStart(a) - getScriptStart(b))
-  const written = Arr.reduce(sortedScripts, { text: '', cursor: 0 }, (state, script) => ({
-    text: `${state.text}${ast.rawContent.substring(state.cursor, getScriptStart(script))}\n${
-      prefixWithNoCheck(removeTSDirectives(script.rawContent, script.comments))
-    }\n`,
-    cursor: getScriptEnd(script),
-  }))
-  return written.text + ast.rawContent.substring(written.cursor)
-}
+const htmlScriptPositionOf = (
+  script: HtmlAst['root']['scripts'][number],
+): Result.Result<PositionedScript<HtmlAst['root']['scripts'][number]>, ScriptRootWithoutSpan> =>
+  Option.match(Option.fromNullishOr(spanOf(script.root)), {
+    onNone: () => Result.fail(ScriptRootWithoutSpan.make({ edge: 'start' })),
+    onSome: (span) => Result.succeed({ script, start: span.start, end: span.end }),
+  })
 
-const disableTypeCheckingInSvelte = (ast: SvelteAst): string => {
-  const sortedScripts = [ast.root.moduleScript, ...ast.root.additionalScripts]
+const disableTypeCheckingInHtml = (ast: HtmlAst): Effect.Effect<string, ScriptRootWithoutSpan> =>
+  Result.match(Result.all(Arr.map(ast.root.scripts, htmlScriptPositionOf)), {
+    onSuccess: (positioned) =>
+      Effect.succeed(
+        writeAround(
+          ast.rawContent,
+          [...positioned].sort((left, right) => left.start - right.start),
+          (script) => prefixWithNoCheck(removeTSDirectives(script.rawContent, script.comments)),
+        ),
+      ),
+    onFailure: Effect.fail,
+  })
+
+const svelteScriptPositionOf = (script: TemplateSvelteScript): PositionedScript<TemplateSvelteScript> => ({
+  script,
+  start: script.range.start,
+  end: script.range.end,
+})
+
+const disableTypeCheckingInSvelte = (ast: SvelteAst): Effect.Effect<string, ScriptRootWithoutSpan> => {
+  const positioned = [ast.root.moduleScript, ...ast.root.additionalScripts]
     .filter(Predicate.isNotNullish)
-    .sort((a, b) => a.range.start - b.range.start)
-  const written = Arr.reduce(sortedScripts, { text: '', cursor: 0 } satisfies WrittenText, (state, script) => ({
-    text: `${state.text}${ast.rawContent.substring(state.cursor, script.range.start)}\n${
-      prefixWithNoCheck(removeTSDirectives(script.ast.rawContent, script.ast.comments))
-    }\n`,
-    cursor: script.range.end,
+    .map(svelteScriptPositionOf)
+  return Effect.succeed(
+    writeAround(
+      ast.rawContent,
+      [...positioned].sort((left, right) => left.start - right.start),
+      (script) => prefixWithNoCheck(removeTSDirectives(script.ast.rawContent, script.ast.comments)),
+    ),
+  )
+}
+
+type TemplateSvelteScript = NonNullable<SvelteAst['root']['moduleScript']>
+
+const writeAround = <A>(
+  rawContent: string,
+  positioned: ReadonlyArray<PositionedScript<A>>,
+  replacementOf: (script: A) => string,
+): string => {
+  const written = Arr.reduce(positioned, { text: '', cursor: 0 }, (state, entry) => ({
+    text: `${state.text}${rawContent.substring(state.cursor, entry.start)}\n${replacementOf(entry.script)}\n`,
+    cursor: entry.end,
   }))
-  return written.text + ast.rawContent.substring(written.cursor)
+  return written.text + rawContent.substring(written.cursor)
 }
 
 interface DirectiveRange {
@@ -228,15 +260,12 @@ const removeRanges = (text: string, ranges: readonly DirectiveRange[]): string =
 }
 
 const tryParseTSDirective = (comment: SpannedComment) =>
-  Option.map(Option.fromNullishOr(commentDirectiveRegEx.exec(comment.value)), (match) => {
-    const directivePrefix = requirePart(match[1], 'TS directive match without prefix')
-    const directiveName = requirePart(match[2], 'TS directive match without directive name')
-    const startPos = comment.start + directivePrefix.length + 2
-    return { startPos, endPos: startPos + directiveName.length + 1 }
-  })
-
-const requirePart = (part: string | undefined, message: string) =>
-  Option.getOrThrowWith(Option.fromUndefinedOr(part), () => new Error(message))
+  Option.flatMap(Option.fromNullishOr(commentDirectiveRegEx.exec(comment.value)), (match) =>
+    Option.flatMap(Option.fromNullishOr(match[1]), (directivePrefix) =>
+      Option.map(Option.fromNullishOr(match[2]), (directiveName) => {
+        const startPos = comment.start + directivePrefix.length + 2
+        return { startPos, endPos: startPos + directiveName.length + 1 }
+      })))
 
 const toOneBasedLineNumber = (range: MutateDescription): MutateDescription =>
   Match.value(range).pipe(
@@ -267,10 +296,10 @@ const isAst = (value: unknown): value is Ast =>
 
 type FileSchemaType = typeof FileSchema.Type
 
-const printedFile = (file: FileSchemaType, ast: Ast): readonly FileSchemaType[] =>
+const printedFile = (file: FileSchemaType, ast: Ast): Result.Result<readonly FileSchemaType[], PrintFailed> =>
   Option.match(Option.filter(Option.some(ast), isAst), {
-    onNone: () => [],
-    onSome: (parsed) => [{ name: file.name, mutate: file.mutate, content: print(parsed) }],
+    onNone: () => Result.succeed([]),
+    onSome: (parsed) => Result.map(print(parsed), (content) => [{ name: file.name, mutate: file.mutate, content }]),
   })
 
 
@@ -280,6 +309,7 @@ const instrumentWith = (
   basePath: string | undefined,
   parser: ParserShape,
   transformer: TransformerShape,
+  mutators: MutatorsShape,
 ) =>
   Effect.gen(function*() {
     const schemaFiles = files.map((file) => ({ name: file.name, content: file.content, mutate: file.mutate }))
@@ -299,13 +329,13 @@ const instrumentWith = (
       }).pipe(
         Effect.mapError((cause) => InstrumentError.make({ message: `Failed to transform ${file.name}`, cause })),
       ))
-    const mutants = yield* Effect.try({
-      try: () => collector.map(toApiMutant),
-      catch: (cause) => InstrumentError.make({ message: 'Failed to instrument', cause }),
+    const mutants = yield* Result.match(Result.all(Arr.map(collector, mutators.toApi)), {
+      onSuccess: Effect.succeed,
+      onFailure: (failure) => Effect.fail(InstrumentError.make({ message: 'Failed to instrument', cause: failure })),
     })
-    const printed = yield* Effect.try({
-      try: () => parsed.flatMap(({ file, ast }) => printedFile(file, ast)),
-      catch: (cause) => InstrumentError.make({ message: 'Failed to print', cause }),
+    const printed = yield* Result.match(Result.all(Arr.flatMap(parsed, ({ file, ast }) => printedFile(file, ast))), {
+      onSuccess: (files) => Effect.succeed(files.flat()),
+      onFailure: (failure) => Effect.fail(InstrumentError.make({ message: 'Failed to print', cause: failure })),
     })
     return InstrumentResultSchema.make({ files: printed, mutants })
   })

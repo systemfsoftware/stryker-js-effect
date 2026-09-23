@@ -27,7 +27,7 @@ import * as Flag from 'effect/unstable/cli/Flag'
 import { Admitted, NoSurvivors } from './admit-survivors-run.workflow.js'
 import { survivorsAdmissionCell } from './Survivors/Survivors.cell.js'
 import type { SurvivorsRejection } from './Survivors/mod.js'
-import type { CliRequest, MergeReportsRequest } from './Cli.schema.js'
+import type { CliRequest } from './Cli.schema.js'
 import {
   type ConfigFileInvalidError,
   type ConfigFileNotFoundError,
@@ -53,13 +53,8 @@ import {
   runOnHost,
 } from './run/main.js'
 import {
-  CliHelpRequested,
-  CliMergeReportsRequested,
-  CliRunRequested,
-  CliSurvivorsRequested,
   routeCliRequest,
 } from './route-cli-request.workflow.js'
-import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mergeReportsCell } from './merge-reports.cell.js'
 import { MergeReportsFailed } from './merge-reports.schema.js'
 import { RunExit } from './classify-run-outcome.workflow.js'
@@ -539,6 +534,56 @@ const readCliRoute = (
         }),
     })
   })
+
+const runMutationTestOf = (environment: CliEnvironment): StrykerRun =>
+  environment.runMutationTest ??
+    ((options, targetMutatePatterns) => runOnHost(environment.host, prepareCommandOf(options, targetMutatePatterns)))
+
+const runEffectOf = (environment: CliEnvironment, options: PartialStrykerOptions) =>
+  Effect.orDie(runMutationTestOf(environment)(options, undefined))
+
+const restrictedOptionsOf = (
+  resolvedOptions: StrykerOptions,
+  priorReportPath: string,
+  admitted: Admitted,
+): PartialStrykerOptions & {
+  readonly survivors?: ReadonlyArray<Mutant>
+  readonly survivorsPriorReport?: string
+  readonly mutate?: string[]
+  readonly incremental?: boolean
+} => {
+  const admittedMutants = admitted.survivors.map((survivor) => Mutant.make(survivor))
+  return {
+    ...resolvedOptions,
+    survivors: admittedMutants,
+    mutate: [...admitted.mutateSpans],
+    survivorsPriorReport: priorReportPath,
+    incremental: false,
+  }
+}
+
+const admissionOf = (
+  answer: { readonly admission: Admitted | NoSurvivors; readonly resolvedOptions: StrykerOptions; readonly priorReportPath: string },
+  channel: CliRead,
+): Cell.Cell<typeof answer, CliAnswer, CliFailure, CliRunServices> =>
+  Match.value(answer.admission).pipe(
+    Match.tag('NoSurvivors', () =>
+      Cell.fromEffect(
+        channel.environment.runEvents.emitNullScoreVerdict({
+          stream: channel.environment.stream,
+          mode: channel.environment.mode,
+          thresholds: answer.resolvedOptions.thresholds,
+          config: answer.resolvedOptions,
+          basePath: channel.environment.basePath,
+          pathService: channel.environment.pathService,
+        }),
+      )),
+    Match.tag('Admitted', (admitted) =>
+      Cell.fromEffect(
+        runEffectOf(channel.environment, restrictedOptionsOf(answer.resolvedOptions, answer.priorReportPath, admitted)),
+      )),
+    Match.exhaustive,
+  )
 
 const cliRouteCell = Sandwich.named('stryker.cli')(readCliRoute)
   .decide(routeCliRequest)

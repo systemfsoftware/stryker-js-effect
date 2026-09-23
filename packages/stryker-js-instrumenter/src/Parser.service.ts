@@ -8,26 +8,30 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
+import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import type * as OxcModule from 'oxc-parser'
-import { buildLineTable, type Node, positionFromLineTable } from './Ast.js'
+import type {
+  Ast,
+  AstByFormat,
+  Range,
+  ScriptAst,
+  ScriptFormat,
+  TemplateScript,
+} from './Ast.schema.js'
+import { LineTable, LineTableFromText } from './Location.schema.js'
 import {
+  HtmlEndSpanMissing,
   ParseFailed,
   ParserNotFound,
+  SvelteHtmlMissing,
   SvelteParseFailed,
+  SvelteRangeMissing,
   SvelteVersionNotSupported,
   SvelteWalkerNotFound,
 } from './Parser.schema.js'
-import {
-  type Ast,
-  type AstByFormat,
-  type AstFormat,
-  computeLineStarts,
-  positionFromOffset,
-  type Range,
-  type ScriptAst,
-  type ScriptFormat,
-  type TemplateScript,
-} from './Syntax.js'
+import type { AstFormat } from './Syntax.schema.js'
 
 export interface ParserOptions {}
 
@@ -95,18 +99,19 @@ const fieldOf = <A = unknown, B = unknown>(value: A, key: string) =>
 const parseWithOxcOf = (oxc: Oxc) => (text: string, fileName: string, lang: 'js' | 'jsx' | 'ts' | 'tsx') =>
   Effect.gen(function*() {
     const result = oxc.parseSync(fileName, text, { lang, range: true })
-    return yield* Option.match(oxcParseFailure(oxc, result.errors, text, fileName), {
+    const lineTable = yield* Effect.orDie(S.decode(LineTableFromText)(text))
+    return yield* Option.match(oxcParseFailure(oxc, result.errors, fileName, lineTable), {
       onSome: Effect.fail,
       onNone: () => Effect.succeed({ root: result.program, comments: result.comments }),
     })
   })
 
-const oxcParseFailure = (oxc: Oxc, errors: readonly OxcModule.OxcError[], text: string, fileName: string) =>
+const oxcParseFailure = (oxc: Oxc, errors: readonly OxcModule.OxcError[], fileName: string, lineTable: LineTable) =>
   Option.map(Arr.head(errors), (first) =>
     ParseFailed.make({
       fileName,
       message: first.message,
-      location: positionFromLineTable(oxcErrorLabelStart(first), buildLineTable(text)),
+      location: lineTable.positionAt(oxcErrorLabelStart(first)),
       cause: errors.map((reported) => reported.message),
     }))
 
@@ -282,28 +287,30 @@ const parseScriptOf = <T extends ScriptFormat>(el: NGAst.Element, scriptFormat: 
   fileName: string,
   parserContext: ParserShape,
 ) =>
-  Effect.map(
-    parserContext.parse(elementScriptText(el, text), fileName, scriptFormat),
-    (ast) => {
-      const offset = el.startSourceSpan.end
-      shiftScriptOffsets(ast, offset.offset)
-      return {
-        ...ast,
-        offset: {
-          column: offset.offset,
-          line: offset.line,
+  Result.match(elementScriptText(el, text), {
+    onSuccess: (scriptText) =>
+      Effect.map(
+        parserContext.parse(scriptText, fileName, scriptFormat),
+        (ast) => {
+          const offset = el.startSourceSpan.end
+          shiftScriptOffsets(ast, offset.offset)
+          return {
+            ...ast,
+            offset: {
+              column: offset.offset,
+              line: offset.line,
+            },
+          }
         },
-      }
-    },
-  )
+      ),
+    onFailure: Effect.die,
+  })
 
-const elementScriptText = (element: NGAst.Element, document: string) => {
-  const endSourceSpan = Option.getOrThrowWith(
-    Option.fromNullishOr(element.endSourceSpan),
-    () => new Error('HTML element without an end source span'),
+const elementScriptText = (element: NGAst.Element, document: string): Result.Result<string, HtmlEndSpanMissing> =>
+  Result.map(
+    Result.fromOption(Option.fromNullishOr(element.endSourceSpan), HtmlEndSpanMissing.make),
+    (endSourceSpan) => document.substring(element.startSourceSpan.end.offset, endSourceSpan.start.offset),
   )
-  return document.substring(element.startSourceSpan.end.offset, endSourceSpan.start.offset)
-}
 
 const toSourceLocation = ({ line, col }: { line: number; col: number }) => ({
   // Offset line with 1, since ngHtmlParser is 0-based
@@ -362,9 +369,6 @@ const SVELTE_5: Version = { major: 5, minor: 0 }
 
 const WALKER_MODULE_MISSING = 'walker module without walk export'
 const COMPILER_WALK_MISSING = 'svelte/compiler module without walk export'
-
-const INSTANCE_RANGE_MISSING = 'Svelte instance script without a source range'
-const MODULE_RANGE_MISSING = 'Svelte module script without a source range'
 
 const VERSION_PATTERN = /^(\d+)\.(\d+)(?:\.\d+)?/
 
@@ -469,12 +473,18 @@ const parseSvelte = (text: string, fileName: string, parserContext: ParserShape)
     yield* supportedVersionOf(VERSION, fileName)
     const walk = yield* loadWalker(VERSION, fileName)
 
-    const lineStarts = computeLineStarts(text)
+    const lineTable = yield* Effect.orDie(S.decode(LineTableFromText)(text))
     const { replacedCode, scriptMap } = yield* replaceScripts(text, preprocess)
     const svelteAst = svelteParse(replacedCode, { filename: fileName })
 
-    const moduleScriptRange = getModuleScriptRange(svelteAst)
-    const templateRanges = getTemplateScriptRanges(svelteAst, walk)
+    const moduleScriptRange = yield* Result.match(getModuleScriptRange(svelteAst), {
+      onSuccess: Effect.succeed,
+      onFailure: Effect.die,
+    })
+    const templateRanges = yield* Result.match(templateScriptRangesOf(svelteAst, walk), {
+      onSuccess: Effect.succeed,
+      onFailure: Effect.die,
+    })
     const { remappedModuleScriptRange, remappedScriptRanges } = remapScriptLocations(
       replacedCode,
       scriptMap,
@@ -539,11 +549,11 @@ const parseTemplateScriptIfDefined = (
   parserContext: ParserShape,
   text: string,
   fileName: string,
-  lineStarts: readonly number[],
+  lineTable: LineTable,
 ): Effect.Effect<Option.Option<TemplateScript>, ParserError> =>
   Option.match(Option.fromUndefinedOr(range), {
     onNone: () => Effect.succeedNone,
-    onSome: (scriptRange) => Effect.asSome(parseTemplateScript(scriptRange, parserContext, text, fileName, lineStarts)),
+    onSome: (scriptRange) => Effect.asSome(parseTemplateScript(scriptRange, parserContext, text, fileName, lineTable)),
   })
 
 const parseTemplateScript = (
@@ -551,14 +561,14 @@ const parseTemplateScript = (
   parserContext: ParserShape,
   text: string,
   fileName: string,
-  lineStarts: readonly number[],
+  lineTable: LineTable,
 ) =>
   Effect.map(
     parserContext.parse(text.slice(start, end), fileName, format),
     (parsed): TemplateScript => ({
       ast: {
         ...parsed,
-        offset: positionFromOffset(lineStarts, start),
+        offset: lineTable.zeroBasedPositionAt(start),
       },
       range: { start, end },
       isExpression,
@@ -571,53 +581,57 @@ const svelteRoot = (moduleScript: Option.Option<TemplateScript>, additionalScrip
     onSome: (script) => ({ moduleScript: script, additionalScripts }),
   })
 
-const getTemplateScriptRanges = <A = unknown>(ast: A, walker: WalkFn): Array<TemplateRange> => {
-  const visited: Array<TemplateRange> = []
-  walker(htmlRootOf(ast), {
-    enter: (node) => {
-      Option.toArray(tryGetScriptRangeFromElement(node)).forEach((range) => visited.push(range))
-      Option.toArray(templateExpressionRange(node)).forEach((range) => visited.push(range))
-    },
-  })
-  return Arr.appendAll(Option.toArray(instanceScriptRange(ast)), visited)
-}
+const templateScriptRangesOf = <A = unknown, B = unknown>(
+  ast: A,
+  walker: WalkFn,
+): Result.Result<Array<TemplateRange>, SvelteHtmlMissing | SvelteRangeMissing> =>
+  Result.flatMap(htmlRootOf(ast), (root) =>
+    Result.map(instanceScriptRange(ast), (instance) => {
+      const visited: Array<TemplateRange> = []
+      walker(root, {
+        enter: (node) => {
+          Option.toArray(tryGetScriptRangeFromElement(node)).forEach((range) => visited.push(range))
+          Option.toArray(templateExpressionRange(node)).forEach((range) => visited.push(range))
+        },
+      })
+      return Arr.appendAll(Option.toArray(instance), visited)
+    }))
 
-const htmlRootOf = <A = unknown, B = unknown>(ast: A): B =>
-  Option.getOrThrowWith(Option.filter(Option.some(ast), hasHtmlField<B>), () => new Error('Svelte AST without html'))
-    .html
-
-const instanceScriptRange = <A = unknown>(ast: A) =>
-  Option.map(
-    Option.fromUndefinedOr(contentFieldOf(fieldOf(ast, 'instance'))),
-    (record) => scriptContentRange(record['content'], INSTANCE_RANGE_MISSING),
+const htmlRootOf = <A = unknown, B = unknown>(ast: A): Result.Result<B, SvelteHtmlMissing> =>
+  Result.map(
+    Result.fromOption(Option.filter(Option.some(ast), hasHtmlField<B>), SvelteHtmlMissing.make),
+    (withHtml) => withHtml.html,
   )
 
-const scriptContentRange = <A = unknown>(content: A, missingRange: string): TemplateRange =>
-  Option.getOrThrowWith(
+const instanceScriptRange = <A = unknown>(ast: A): Result.Result<Option.Option<TemplateRange>, SvelteRangeMissing> =>
+  Option.match(Option.fromUndefinedOr(contentFieldOf(fieldOf(ast, 'instance'))), {
+    onNone: () => Result.succeed(Option.none()),
+    onSome: (record) => Result.map(rangeOf(record['content'], 'instance'), Option.some),
+  })
+
+const rangeOf = <A = unknown>(content: A, script: 'instance' | 'module'): Result.Result<TemplateRange, SvelteRangeMissing> =>
+  Result.fromOption(
     Option.map(
       Option.filter(Option.some(content), isRange),
       (range) => ({ start: range.start, end: range.end, isExpression: false }),
     ),
-    () => new Error(missingRange),
+    () => SvelteRangeMissing.make({ script }),
   )
 
-const getModuleScriptRange = <A = unknown>(svelteAst: A) =>
+const getModuleScriptRange = <A = unknown>(svelteAst: A): Result.Result<Option.Option<TemplateRange>, SvelteRangeMissing> =>
   Match.value(fieldOf(svelteAst, 'module')).pipe(
-    Match.when(undefined, () => undefined),
-    Match.when(null, () => undefined),
-    Match.orElse((block) => moduleBlockRange(block)),
+    Match.when(undefined, () => Result.succeed(Option.none())),
+    Match.when(null, () => Result.succeed(Option.none())),
+    Match.orElse((block) => Result.map(moduleBlockRange(block), Option.some)),
   )
 
 const contentFieldOf = <A = unknown>(value: A | undefined) =>
   Option.getOrUndefined(Option.filter(Option.fromNullishOr(value), hasContentField<A>))
 
-const moduleBlockRange = <A = unknown>(block: A): TemplateRange =>
-  scriptContentRange(
-    Option.getOrThrowWith(
-      Option.fromUndefinedOr(contentFieldOf(block)),
-      () => new Error(MODULE_RANGE_MISSING),
-    )['content'],
-    MODULE_RANGE_MISSING,
+const moduleBlockRange = <A = unknown>(block: A): Result.Result<TemplateRange, SvelteRangeMissing> =>
+  Result.flatMap(
+    Result.fromOption(Option.fromNullishOr(contentFieldOf(block)), () => SvelteRangeMissing.make({ script: 'module' })),
+    (record) => rangeOf(record['content'], 'module'),
   )
 
 interface RemappedScript {
