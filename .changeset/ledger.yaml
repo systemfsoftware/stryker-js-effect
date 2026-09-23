@@ -232,6 +232,11 @@
   dir: packages/stryker-js
   intents:
     - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js@10.1.2":
+  dir: packages/stryker-js
+  intents:
+    - stryker-vm-harness-package
+    - vm-runner-native-esm-suites
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
@@ -273,3 +278,7 @@
   dir: packages/stryker-test-contribution
   intents:
     - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-vm-harness@1.0.0":
+  dir: packages/stryker-vm-harness
+  intents:
+    - stryker-vm-harness-package
