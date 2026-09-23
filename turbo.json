@@ -84,10 +84,6 @@
         "^build"
       ],
       "passThroughEnv": [
-        "TESTCONTAINERS_RYUK_DISABLED",
-        "TESTCONTAINERS_RYUK_PRIVILEGED",
-        "TESTCONTAINERS_HOST_OVERRIDE",
-        "DOCKER_HOST",
         "CI",
         "OTEL_ENABLED",
         "OTEL_EXPORTER_OTLP_ENDPOINT",
