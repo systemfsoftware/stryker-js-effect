@@ -34,7 +34,7 @@ export interface ExtendedTestContext {
 export const test = baseTest
   .extend<Pick<ExtendedTestContext, 'microvmHarness'>>({
     microvmHarness: [
-      async (_context, use) => {
+      async ({ onTestFinished: _onTestFinished }, use) => {
         const runtime = ManagedRuntime.make(HarnessLive)
         try {
           await use(
