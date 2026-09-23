@@ -114,9 +114,6 @@ catalogs:
     lint-staged:
       specifier: ^17
       version: 17.5.1
-    microsandbox:
-      specifier: 0.7.2
-      version: 0.7.2
     oxc-parser:
       specifier: ^0.150.0
       version: 0.150.0
@@ -1276,9 +1273,6 @@ importers:
       fast-check:
         specifier: 'catalog:'
         version: 4.9.0
-      microsandbox:
-        specifier: 'catalog:'
-        version: 0.7.2
       oxlint:
         specifier: 'catalog:'
         version: 1.82.0(oxlint-tsgolint@7.0.2001)

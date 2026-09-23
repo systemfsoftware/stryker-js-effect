@@ -1,13 +1,8 @@
+import { ManagedRuntime } from 'effect'
+
 import { test as baseTest } from 'vitest'
 
-import {
-  ensureMicroVMEnvironment,
-  type ExecResult,
-  installFixture,
-  readWorkspaceFile,
-  runCli,
-  teardownMicroVMEnvironment,
-} from './microvm-environment.js'
+import { BakedFixtureCache, type ExecResult, HarnessLive, StrykerCliRunner } from './microvm-environment.js'
 
 export interface MicroVMHarness {
   readonly install: (fixtureUrl: URL, name: string) => Promise<string>
@@ -15,6 +10,7 @@ export interface MicroVMHarness {
     args: readonly string[],
     opts: { readonly cwd: string; readonly signal?: AbortSignal },
   ) => Promise<ExecResult>
+  readonly readFile: (path: string) => Promise<string>
 }
 export interface PreparedFixture {
   readonly path: string
@@ -38,15 +34,24 @@ export interface ExtendedTestContext {
 export const test = baseTest
   .extend<Pick<ExtendedTestContext, 'microvmHarness'>>({
     microvmHarness: [
-      async ({ onTestFinished: _onTestFinished }, use) => {
-        await ensureMicroVMEnvironment()
-        await use(
-          {
-            install: (fixtureUrl: URL, name: string) => installFixture(fixtureUrl, name),
-            run: (args, opts) => runCli(args, opts),
-          } satisfies MicroVMHarness,
-        )
-        await teardownMicroVMEnvironment()
+      async (_context, use) => {
+        const runtime = ManagedRuntime.make(HarnessLive)
+        try {
+          await use(
+            {
+              install: (fixtureUrl: URL, name: string) =>
+                runtime.runPromise(BakedFixtureCache.use((cache) => cache.install({ url: fixtureUrl, name }))),
+              run: (args, opts) =>
+                runtime.runPromise(
+                  StrykerCliRunner.use((runner) => runner.run(args, opts.cwd)),
+                  { signal: opts.signal },
+                ),
+              readFile: (path: string) => runtime.runPromise(BakedFixtureCache.use((cache) => cache.readFile(path))),
+            } satisfies MicroVMHarness,
+          )
+        } finally {
+          await runtime.dispose()
+        }
       },
       { scope: 'file' },
     ],
@@ -57,7 +62,7 @@ export const test = baseTest
         microvmHarness.install(fixtureUrl, name).then((path) => ({
           path,
           run: (args: readonly string[]) => microvmHarness.run(args, { cwd: path, signal }),
-          readFile: (relativePath: string) => readWorkspaceFile(`${path}/${relativePath}`),
+          readFile: (relativePath: string) => microvmHarness.readFile(`${path}/${relativePath}`),
         }))
       )
     },

@@ -50,5 +50,4 @@ Read by `microvm-environment.ts`; the `test:e2e` turbo task passes the OTEL vari
 
 `microvm-environment.ts` passes the OTEL variables into every job microVM, so a spawned worker inherits them.
 Each job opts into host access, and the endpoint's loopback host is rewritten to `host.microsandbox.internal`,
-so the collector must publish 4318 beyond loopback (`process-compose.yaml` does). Global setup and its teardown
-destroy any `effect-microsandbox-<pid>-*` sandbox whose owning process is gone.
+so the collector must publish 4318 beyond loopback (`process-compose.yaml` does).
