@@ -1,37 +1,34 @@
-import type { Program, ScriptRegion } from '@systemfsoftware/stryker-framework-interface'
-import { FrameworkFailed, Module } from '@systemfsoftware/stryker-js-language'
 import type {
   EmbeddedDocument,
+  FormatId,
+  Framework,
   FrameworkClaim,
   FrameworkContext,
-  FrameworkService,
+  FrameworkParseResult,
+  Program,
   ScriptFormat,
-} from '@systemfsoftware/stryker-js-language'
+  ScriptRegion,
+} from '@systemfsoftware/stryker-framework-interface'
 import { type Ast as NGAst, parse, type ParseTreeResult, visitAll } from 'angular-html-parser'
-import * as Effect from 'effect/Effect'
-import * as Match from 'effect/Match'
-import * as Predicate from 'effect/Predicate'
-import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
+import parserManifest from 'angular-html-parser/package.json' with { type: 'json' }
 
 /**
- * The Angular format: HTML templates, and single-file components that keep
- * their script in an HTML `<script>` tag. Only embedded script regions are
- * claimed — template expressions are never parsed, never mutated, and never
- * printed — which is why every region carries `isExpression: false`.
+ * The Angular format: HTML templates and single-file components that keep
+ * their script inside an HTML `<script>` tag. Only embedded script regions
+ * are claimed — template expressions are never parsed, never mutated, and
+ * never printed — which is why every region carries `isExpression: false`.
  *
- * The core owns the pipeline around these hooks: it slices each region, parses
- * the slice through the toolkit context, mutates the resulting AST in place,
- * and hands the document back to `print` to be framed into the raw content. The
- * hooks here are therefore only the two things the core cannot know: where the
- * script regions are, and how the mutation survives the trip back into the
- * document.
+ * The core owns the pipeline around these hooks: it slices each region,
+ * parses the slice through the toolkit context, mutates the resulting
+ * program, and hands the document back to `print` to be framed into the raw
+ * content. The hooks here are only the two things the core cannot know:
+ * where the script regions are, and how a mutation survives the trip back
+ * into the document.
  */
-const FORMAT_ID = 'html'
+const FORMAT_ID_TEXT = 'html'
 const LANGUAGE = 'html'
 const CONTRACT_VERSION = '1'
-const EXTENSIONS: readonly string[] = ['.html', '.htm', '.vue']
-const PARSER_MANIFEST_SPECIFIER = 'angular-html-parser/package.json'
+const EXTENSIONS = ['.html', '.htm', '.vue']
 
 const SCRIPT_TAG = 'script'
 const SRC_ATTRIBUTE = 'src'
@@ -39,6 +36,9 @@ const TYPE_ATTRIBUTE = 'type'
 const LANG_ATTRIBUTE = 'lang'
 const DEFAULT_SCRIPT_FORMAT: ScriptFormat = 'js'
 const NEWLINE = '\n'
+const NO_CHECK_COMMENT = '// @ts-nocheck'
+const UNCLOSED_SCRIPT_MESSAGE = 'the script element never closes'
+const NON_ERROR_FAILURE = 'the Angular parser reported a failure that is not an Error'
 
 const PARSE_OPTIONS = {
   canSelfClose: true,
@@ -58,13 +58,7 @@ const SCRIPT_TYPE_FORMATS: Readonly<Record<string, ScriptFormat>> = {
   module: 'js',
 }
 
-const claimOf = (ownerVersion: string): FrameworkClaim => ({
-  formatId: FORMAT_ID,
-  extensions: [...EXTENSIONS],
-  language: LANGUAGE,
-  ownerVersion,
-  contractVersion: CONTRACT_VERSION,
-})
+const STARTING_COMMENT = /^\s*\/\*[\s\S]*?\*\//
 
 interface ScriptLocation {
   readonly start: number
@@ -72,229 +66,226 @@ interface ScriptLocation {
   readonly scriptFormat: ScriptFormat
 }
 
-const scriptLocations = (document: string): readonly ScriptLocation[] => {
-  const { rootNodes, errors } = parse(document, PARSE_OPTIONS)
-  const failure = parseFailure(errors)
-  if (failure !== undefined) {
-    throw failure
-  }
-  return collectScripts(rootNodes, document)
+interface ScriptLocationFinding extends ScriptLocation {
+  readonly kind: 'Location'
 }
 
-const parseFailure = (errors: readonly ParseTreeResult['errors'][number][]): FrameworkFailed | undefined => {
-  const first = errors.at(0)
-  if (first === undefined) {
-    return undefined
-  }
-  return new FrameworkFailed({ reason: first.msg, cause: first })
+interface ScriptProblemFinding {
+  readonly kind: 'Problem'
+  readonly message: string
 }
+type ScriptFinding = ScriptLocationFinding | ScriptProblemFinding
 
-const collectScripts = (rootNodes: readonly NGAst.Node[], document: string): readonly ScriptLocation[] => {
-  const collected: ScriptLocation[] = []
-  const collector: NGAst.Visitor = {
-    visitElement: (element, context) => {
-      appendScriptLocation(element, document, collected)
-      visitAll(collector, element.children, context)
-    },
-    visitAttribute: () => undefined,
-    visitText: () => undefined,
-    visitComment: () => undefined,
-    visitDocType: () => undefined,
-    visitExpansion: () => undefined,
-    visitExpansionCase: () => undefined,
-    visitBlock: () => undefined,
-    visitBlockParameter: () => undefined,
-    visitLetDeclaration: () => undefined,
-    visitCdata: () => undefined,
-    visitComponent: () => undefined,
-    visitDirective: () => undefined,
-  }
-  visitAll(collector, [...rootNodes])
-  return collected
-}
+type ParserError = ParseTreeResult['errors'][number]
 
-const appendScriptLocation = (
-  element: NGAst.Element,
-  document: string,
-  collected: ScriptLocation[],
-): void => {
-  const scriptFormat = scriptFormatOf(element)
-  if (scriptFormat !== undefined) {
-    collected.push(scriptLocation(element, scriptFormat))
-  }
-}
+const HTML_FORMAT_ID: FormatId = FORMAT_ID_TEXT
 
-const scriptLocation = (element: NGAst.Element, scriptFormat: ScriptFormat): ScriptLocation => {
-  const endSourceSpan = element.endSourceSpan
-  if (endSourceSpan == null) {
-    throw new Error('HTML element without an end source span')
-  }
-  return {
-    start: element.startSourceSpan.end.offset,
-    end: endSourceSpan.start.offset,
-    scriptFormat,
-  }
+const claimOf = (ownerVersion: string): FrameworkClaim => ({
+  formatId: HTML_FORMAT_ID,
+  extensions: [...EXTENSIONS],
+  language: LANGUAGE,
+  ownerVersion,
+  contractVersion: CONTRACT_VERSION,
+})
+
+const isScriptRegionTag = (element: NGAst.Element): boolean =>
+  element.name === SCRIPT_TAG && !element.attrs.some((attribute) => attribute.name === SRC_ATTRIBUTE)
+
+const scriptTypeAttribute = (element: NGAst.Element): NGAst.Attribute | undefined =>
+  element.attrs.find((attribute) => attribute.name === TYPE_ATTRIBUTE) ??
+    element.attrs.find((attribute) => attribute.name === LANG_ATTRIBUTE)
+
+const scriptFormatOfAttribute = (attribute: NGAst.Attribute): ScriptFormat | undefined =>
+  SCRIPT_TYPE_FORMATS[attribute.value.toLowerCase()]
+
+const scriptFormatOfElement = (element: NGAst.Element): ScriptFormat | undefined => {
+  const attribute = scriptTypeAttribute(element)
+  return attribute === undefined ? DEFAULT_SCRIPT_FORMAT : scriptFormatOfAttribute(attribute)
 }
 
 const scriptFormatOf = (element: NGAst.Element): ScriptFormat | undefined =>
-  Match.value(element).pipe(
-    Match.when(isScriptTag, (script) => scriptTypeFormat(script)),
-    Match.orElse(() => undefined),
-  )
+  isScriptRegionTag(element) ? scriptFormatOfElement(element) : undefined
 
-const isScriptTag = (element: NGAst.Element): boolean =>
-  element.name === SCRIPT_TAG && !element.attrs.some((attribute) => attribute.name === SRC_ATTRIBUTE)
-
-const scriptTypeFormat = (element: NGAst.Element): ScriptFormat | undefined => {
-  const attribute = scriptTypeAttribute(element)
-  if (attribute === undefined) {
-    return DEFAULT_SCRIPT_FORMAT
-  }
-  return SCRIPT_TYPE_FORMATS[attribute.value.toLowerCase()]
+const locationOf = (element: NGAst.Element, scriptFormat: ScriptFormat): ScriptFinding => {
+  const endSpan = element.endSourceSpan
+  return endSpan === null
+    ? { kind: 'Problem', message: UNCLOSED_SCRIPT_MESSAGE }
+    : {
+      kind: 'Location',
+      start: element.startSourceSpan.end.offset,
+      end: endSpan.start.offset,
+      scriptFormat,
+    }
 }
 
-const scriptTypeAttribute = (element: NGAst.Element): NGAst.Attribute | undefined => {
-  const typeAttribute = element.attrs.find((attribute) => attribute.name === TYPE_ATTRIBUTE)
-  if (typeAttribute !== undefined) {
-    return typeAttribute
+const appendLocation = (element: NGAst.Element, findings: ScriptFinding[]): void => {
+  const scriptFormat = scriptFormatOf(element)
+  if (scriptFormat !== undefined) {
+    findings.push(locationOf(element, scriptFormat))
   }
-  return element.attrs.find((attribute) => attribute.name === LANG_ATTRIBUTE)
 }
+
+const ignoreVisited = (): undefined => undefined
+
+const collectorOf = (findings: ScriptFinding[]): NGAst.Visitor => {
+  const walk: NGAst.Visitor = {
+    visitElement: (element) => {
+      appendLocation(element, findings)
+      visitAll(walk, element.children)
+    },
+    visitAttribute: ignoreVisited,
+    visitText: ignoreVisited,
+    visitComment: ignoreVisited,
+    visitDocType: ignoreVisited,
+    visitExpansion: ignoreVisited,
+    visitExpansionCase: ignoreVisited,
+    visitBlock: ignoreVisited,
+    visitBlockParameter: ignoreVisited,
+    visitLetDeclaration: ignoreVisited,
+    visitCdata: ignoreVisited,
+    visitComponent: ignoreVisited,
+    visitDirective: ignoreVisited,
+  }
+  return walk
+}
+
+const isProblem = (finding: ScriptFinding): finding is ScriptProblemFinding => finding.kind === 'Problem'
+
+const isLocation = (finding: ScriptFinding): finding is ScriptLocationFinding => finding.kind === 'Location'
+
+const reportedProblemOf = (
+  findings: readonly ScriptFinding[],
+  firstError: ParserError | undefined,
+): ScriptProblemFinding | undefined =>
+  firstError === undefined ? findings.find(isProblem) : { kind: 'Problem', message: firstError.msg }
+
+const scriptFindings = (rootNodes: NGAst.Node[]): readonly ScriptFinding[] => {
+  const findings: ScriptFinding[] = []
+  visitAll(collectorOf(findings), rootNodes)
+  return findings
+}
+
+const locationsOf = (rawContent: string): FrameworkParseResult<readonly ScriptLocation[]> => {
+  const { rootNodes, errors } = parse(rawContent, PARSE_OPTIONS)
+  const findings = scriptFindings(rootNodes)
+  const problem = reportedProblemOf(findings, errors.at(0))
+  return problem === undefined
+    ? { kind: 'Parsed', value: findings.filter(isLocation) }
+    : { kind: 'ParseFailed', message: problem.message }
+}
+
+const failureMessage = (cause: unknown): string => cause instanceof Error ? cause.message : NON_ERROR_FAILURE
+
+const documentOf = (
+  rawContent: string,
+  context: FrameworkContext,
+  locations: readonly ScriptLocation[],
+): EmbeddedDocument => ({
+  formatId: HTML_FORMAT_ID,
+  rawContent,
+  regions: locations.map((location) => ({
+    start: location.start,
+    end: location.end,
+    isExpression: false,
+    scriptAst: context.parseScript(rawContent.substring(location.start, location.end), location.scriptFormat),
+  })),
+})
+
+const documentResult = (
+  rawContent: string,
+  context: FrameworkContext,
+): FrameworkParseResult<EmbeddedDocument> => {
+  const locations = locationsOf(rawContent)
+  return locations.kind === 'Parsed'
+    ? { kind: 'Parsed', value: documentOf(rawContent, context, locations.value) }
+    : locations
+}
+
+const parseDocument = (rawContent: string, context: FrameworkContext): FrameworkParseResult<EmbeddedDocument> => {
+  try {
+    return documentResult(rawContent, context)
+  } catch (cause) {
+    return { kind: 'ParseFailed', message: failureMessage(cause) }
+  }
+}
+
+const unchangedDocument = (document: EmbeddedDocument): EmbeddedDocument => document
 
 const byStart = (left: { readonly start: number }, right: { readonly start: number }): number =>
   left.start - right.start
 
-const regionOf = (rawContent: string, context: FrameworkContext, location: ScriptLocation): ScriptRegion => ({
-  start: location.start,
-  end: location.end,
-  isExpression: false,
-  scriptAst: context.parseScript(rawContent.substring(location.start, location.end), location.scriptFormat),
-})
+const isProgramAst = (value: unknown): value is Program =>
+  value instanceof Object && Array.isArray(Reflect.get(value, 'body'))
 
-const documentOf = (rawContent: string, context: FrameworkContext): EmbeddedDocument => ({
-  formatId: FORMAT_ID,
-  rawContent,
-  regions: scriptLocations(rawContent).map((location) => regionOf(rawContent, context, location)),
-})
-
-const isProgram = (value: unknown): value is Program =>
-  Predicate.isObject(value) && Array.isArray(Reflect.get(value, 'body'))
-
-const programOf = (value: unknown): Program => {
-  if (!isProgram(value)) {
-    throw new Error('A script region without its parsed program cannot be printed')
+function assertIsProgram(value: unknown): asserts value is Program {
+  if (!isProgramAst(value)) {
+    throw new Error('a script region reached print without its parsed program')
   }
-  return value
+}
+
+const programOf = (region: ScriptRegion): Program => {
+  const candidate: unknown = region.scriptAst
+  assertIsProgram(candidate)
+  return candidate
 }
 
 const printedDocument = (document: EmbeddedDocument, context: FrameworkContext): string => {
   let printed = ''
   let cursor = 0
-  for (const region of [...document.regions].sort(byStart)) {
+  for (const region of document.regions.toSorted(byStart)) {
     printed += document.rawContent.substring(cursor, region.start)
-    printed += NEWLINE
-    printed += context.printScript(programOf(region.scriptAst))
-    printed += NEWLINE
+    printed += context.printScript(programOf(region))
     cursor = region.end
   }
   return printed + document.rawContent.substring(cursor)
 }
 
-const noCheckDocument = (content: string): string => {
-  let spliced = ''
-  let cursor = 0
-  for (const location of [...scriptLocations(content)].sort(byStart)) {
-    spliced += content.substring(cursor, location.start)
-    spliced += NEWLINE
-    spliced += prefixWithNoCheck(content.substring(location.start, location.end))
-    spliced += NEWLINE
-    cursor = location.end
-  }
-  return spliced + content.substring(cursor)
-}
-
-const toFrameworkFailed = (cause: unknown): FrameworkFailed =>
-  Match.value(cause).pipe(
-    Match.when(
-      (subject: unknown): subject is FrameworkFailed => subject instanceof FrameworkFailed,
-      (failure: FrameworkFailed) => failure,
-    ),
-    Match.orElse(() => new FrameworkFailed({ reason: reasonOf(cause), cause })),
-  )
-
-const reasonOf = (cause: unknown): string =>
-  Match.value(cause).pipe(
-    Match.when((subject: unknown): subject is Error => subject instanceof Error, (error) => error.message),
-    Match.orElse(() => NON_ERROR_FAILURE),
-  )
-
-const NON_ERROR_FAILURE = 'the Angular parser reported a failure that is not an Error'
-
-const unchangedDocument = (document: EmbeddedDocument): Effect.Effect<EmbeddedDocument, FrameworkFailed> =>
-  Effect.succeed(document)
-
-const disableTypeChecksInDocument = (content: string): Effect.Effect<string, FrameworkFailed> =>
-  Effect.try({ try: () => noCheckDocument(content), catch: toFrameworkFailed })
-
-const parsedDocument = (
-  rawContent: string,
-  context: FrameworkContext,
-): Effect.Effect<EmbeddedDocument, FrameworkFailed> =>
-  Effect.try({ try: () => documentOf(rawContent, context), catch: toFrameworkFailed })
-
-const renderedDocument = (
-  document: EmbeddedDocument,
-  context: FrameworkContext,
-): Effect.Effect<string, FrameworkFailed> =>
-  Effect.try({ try: () => printedDocument(document, context), catch: toFrameworkFailed })
-
-const parserContributionFailure = (detail: string): FrameworkFailed =>
-  new FrameworkFailed({ reason: 'InvalidContribution', cause: detail })
-
-export const resolveParserVersion: Effect.Effect<string, FrameworkFailed, Module> = Effect.gen(function*() {
-  const moduleService = yield* Module
-  const requireFromPlugin = moduleService.createRequire(import.meta.url)
-  const manifest = yield* Effect.try({
-    try: () => requireFromPlugin(PARSER_MANIFEST_SPECIFIER),
-    catch: () => parserContributionFailure(`the "${PARSER_MANIFEST_SPECIFIER}" hard dependency is not resolvable`),
-  })
-  return yield* Result.match(S.decodeUnknownResult(S.Struct({ version: S.String }))(manifest), {
-    onFailure: () => Effect.fail(parserContributionFailure(`"${PARSER_MANIFEST_SPECIFIER}" declares no version`)),
-    onSuccess: (parsed) => Effect.succeed(parsed.version),
-  })
-})
-
-export const angularFormatService = (ownerVersion: string): FrameworkService => ({
-  claim: claimOf(ownerVersion),
-  parse: parsedDocument,
-  transform: unchangedDocument,
-  print: renderedDocument,
-  disableTypeChecks: disableTypeChecksInDocument,
-})
-
-const STARTING_COMMENT = /^\s*\/\*[\s\S]*?\*\//
-
-function prefixWithNoCheck(code: string): string {
-  if (code.startsWith('#')) {
-    return afterHashbang(code)
-  }
-  return afterLeadingComment(code)
-}
-
-function afterHashbang(code: string): string {
+const afterHashbang = (code: string): string => {
   const newLineIndex = code.indexOf(NEWLINE)
-  if (newLineIndex <= 0) {
-    return code
-  }
-  return `${code.substring(0, newLineIndex)}${NEWLINE}// @ts-nocheck${NEWLINE}${code.substring(newLineIndex + 1)}`
+  return newLineIndex <= 0
+    ? code
+    : `${code.substring(0, newLineIndex)}${NEWLINE}${NO_CHECK_COMMENT}${NEWLINE}${code.substring(newLineIndex + 1)}`
 }
 
 const leadingCommentOf = (code: string): string | undefined => STARTING_COMMENT.exec(code)?.[0]
 
-function afterLeadingComment(code: string): string {
+const afterLeadingComment = (code: string): string => {
   const leadingComment = leadingCommentOf(code)
-  if (leadingComment === undefined) {
-    return `// @ts-nocheck${NEWLINE}${code}`
-  }
-  return `${leadingComment}${NEWLINE}// @ts-nocheck${NEWLINE}${code.substring(leadingComment.length)}`
+  return leadingComment === undefined
+    ? `${NO_CHECK_COMMENT}${NEWLINE}${code}`
+    : `${leadingComment}${NEWLINE}${NO_CHECK_COMMENT}${NEWLINE}${code.substring(leadingComment.length)}`
 }
+
+const noCheckedScript = (code: string): string => code.startsWith('#') ? afterHashbang(code) : afterLeadingComment(code)
+
+const withNoCheckSplices = (rawContent: string, locations: readonly ScriptLocation[]): string => {
+  let spliced = ''
+  let cursor = 0
+  for (const location of locations) {
+    spliced += rawContent.substring(cursor, location.start)
+    spliced += noCheckedScript(rawContent.substring(location.start, location.end))
+    cursor = location.end
+  }
+  return spliced + rawContent.substring(cursor)
+}
+
+const splicedResult = (rawContent: string): FrameworkParseResult<string> => {
+  const locations = locationsOf(rawContent)
+  return locations.kind === 'Parsed'
+    ? { kind: 'Parsed', value: withNoCheckSplices(rawContent, locations.value) }
+    : locations
+}
+
+const disableTypeChecksIn = (rawContent: string): FrameworkParseResult<string> => splicedResult(rawContent)
+
+const angularFramework: Framework = {
+  kind: 'Framework',
+  name: 'angular',
+  claim: claimOf(parserManifest.version),
+  parse: parseDocument,
+  transform: unchangedDocument,
+  print: printedDocument,
+  disableTypeChecks: disableTypeChecksIn,
+}
+
+export { angularFramework }

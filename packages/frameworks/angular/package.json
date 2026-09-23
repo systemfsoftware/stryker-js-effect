@@ -9,8 +9,10 @@
     "directory": "packages/frameworks/angular"
   },
   "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/frameworks/angular#readme",
-  "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
-  "description": "Stryker framework plugin for Angular templates: instruments the script regions of .html, .htm, and .vue files — never template expressions — and bundles the Angular signal ignorer for input, model, output, and query configuration objects.",
+  "bugs": {
+    "url": "https://github.com/systemfsoftware/stryker-js-effect/issues"
+  },
+  "description": "Stryker framework plugin for Angular and Vue templates: claims .html, .htm, and .vue files and instruments their embedded script regions, never template expressions.",
   "keywords": [
     "stryker",
     "stryker-mutator",
@@ -19,8 +21,7 @@
     "vue",
     "html",
     "framework",
-    "plugin",
-    "format"
+    "plugin"
   ],
   "type": "module",
   "files": [
@@ -46,24 +47,18 @@
   },
   "dependencies": {
     "@systemfsoftware/stryker-framework-interface": "workspace:^",
-    "@systemfsoftware/stryker-js-language": "workspace:^",
-    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
-    "angular-html-parser": "~10.4.0",
-    "effect": "catalog:"
+    "angular-html-parser": "catalog:"
   },
   "devDependencies": {
-    "@effect/platform-node-shared": "catalog:",
     "@microsoft/api-extractor": "catalog:",
-    "@oxc-project/types": "catalog:",
-    "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
-    "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
     "oxc-parser": "catalog:",
-    "oxc-walker": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
