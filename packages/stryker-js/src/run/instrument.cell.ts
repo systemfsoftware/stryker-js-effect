@@ -19,7 +19,6 @@ import { withPhaseSpan } from '../reporter-stream.service.js'
 import { StageError } from '../Run.schema.js'
 import { makeSandbox } from '../Sandbox.resource.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
-import { makeConcurrency } from '../concurrency.cell.js'
 import type { PrepareDone } from './prepare.cell.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 
@@ -96,7 +95,9 @@ const withInstrumentedFiles = (
       }),
   )
 
-export const instrumentCell = Sandwich.named('stryker.instrument')((command: PrepareDone) =>
+export const instrumentCell = Sandwich.named('stryker.instrument')((command: PrepareDone & {
+  readonly concurrency: { readonly testRunners: number; readonly checkers: number }
+}) =>
   Effect.gen(function*() {
     yield* Scope.Scope
     const env = yield* RunEnvironment
@@ -130,12 +131,6 @@ export const instrumentCell = Sandwich.named('stryker.instrument')((command: Pre
     }).pipe(Effect.mapError((cause) =>
       StageError.make({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
     ))
-
-    const concurrency = yield* makeConcurrency(command.options).pipe(
-      Effect.mapError((cause) =>
-        StageError.make({ stage: 'instrument', reason: 'Failed to compute concurrency', cause })
-      ),
-    )
 
     const raw: InstrumentRaw = {
       _tag: 'InstrumentCommand',

@@ -1,5 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { PluginFileUrl, RENDERED_OPTION_DEFAULTS } from '@systemfsoftware/stryker-js-plugin-interface'
 import type {
   PartialStrykerOptions,
@@ -11,6 +12,7 @@ import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type { PlatformError } from 'effect/PlatformError'
@@ -45,20 +47,17 @@ import {
   runOutcomeCode,
 } from './Envelope.js'
 import { type HostServices, type StrykerRun } from './run/host.service.js'
-import {
-  applyProgressStreamFile,
-  hostOptionsOf,
-  prepareCommandOf,
-  progressStreamFileName,
-  runOnHost,
-} from './run/host.cell.js'
+import { RunEnvironment } from './run/RunEnvironment.service.js'
+import type { EnginePorts } from './run/StageServices.service.js'
+import { mutationTestCell } from './run/run-stages.cell.js'
 import {
   routeCliRequest,
 } from './route-cli-request.workflow.js'
 import { mergeReportsCell } from './merge-reports.cell.js'
 import { MergeReportsFailed } from './merge-reports.schema.js'
 import { RunExit } from './classify-run-outcome.workflow.js'
-import type { RunEventStreamPort } from './run-event-stream.service.js'
+import { RunEventDrain, type RunEventStreamPort, type RunEventStream } from './run-event-stream.service.js'
+import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { StrykerError } from './stryker-error.schema.js'
 import type { OutputModeProbe } from './output-mode-probe.service.js'
 import type { ResolvedMode } from './output-mode.schema.js'
@@ -94,8 +93,6 @@ type CliFailure =
   | ConfigFileInvalidError
   | ConfigFileUnsupportedError
   | MergeReportsFailed
-
-type CliRunServices = FileSystem.FileSystem | Path.Path
 
 const createSplitter = (separator: string) => (value: string) => value.split(separator).filter(Boolean)
 
@@ -510,6 +507,21 @@ const optionsOf = (request: Option.Option<CliRequest>): PartialStrykerOptions =>
       ),
   })
 
+const progressStreamFileName = (request: Option.Option<CliRequest>): string =>
+  Option.match(request, {
+    onNone: () => RunEventDrain.DefaultProgressStreamFile,
+    onSome: (cliRequest) =>
+      Match.value(cliRequest).pipe(
+        Match.tag('merge-reports', () => RunEventDrain.DefaultProgressStreamFile),
+        Match.tag('run', (runRequest) =>
+          Option.getOrElse(
+            S.decodeUnknownOption(S.NonEmptyString)(runRequest.options['progressStreamFile']),
+            () => RunEventDrain.DefaultProgressStreamFile,
+          )),
+        Match.exhaustive,
+      ),
+  })
+
 const readCliRoute = (
   invocation: StrykerCliInvocation,
 ): Effect.Effect<
@@ -522,7 +534,8 @@ const readCliRoute = (
     const command = makeStrykerCommand(requestRef)
     const parsed = yield* Effect.result(Command.runWith(command, { version: cliPkgJson.version })(invocation.argv))
     const request = yield* Ref.get(requestRef)
-    yield* request.pipe(progressStreamFileName, applyProgressStreamFile)
+    const drain = yield* RunEventDrain
+    yield* drain.setProgressStreamFile(progressStreamFileName(request))
     yield* invocation.environment.stream.open
     return yield* Result.match(parsed, {
       onFailure: (failure) => Effect.fail(failure),
@@ -535,12 +548,25 @@ const readCliRoute = (
     })
   })
 
-const runMutationTestOf = (environment: CliEnvironment): StrykerRun =>
-  environment.runMutationTest ??
-    ((options, targetMutatePatterns) => runOnHost(environment.host, prepareCommandOf(options, targetMutatePatterns)))
+const stageRunOf = (environment: CliEnvironment, options: PartialStrykerOptions) =>
+  Effect.scoped(
+    Effect.flatMap(
+      Layer.build(RunEnvironment.stage(environment.host.env, environment.host.events)),
+      (context) =>
+        Cell.provideContext(mutationTestCell, context).run({
+          cliOptions: options,
+          targetMutatePatterns: undefined,
+        }),
+    ),
+  )
 
 const runEffectOf = (environment: CliEnvironment, options: PartialStrykerOptions) =>
-  Effect.orDie(runMutationTestOf(environment)(options, undefined))
+  Effect.orDie(
+    Option.match(Option.fromUndefinedOr(environment.runMutationTest), {
+      onSome: (run) => run(options, undefined),
+      onNone: () => stageRunOf(environment, options),
+    }),
+  )
 
 const restrictedOptionsOf = (
   resolvedOptions: StrykerOptions,
@@ -565,7 +591,7 @@ const restrictedOptionsOf = (
 const admissionOf = (
   answer: { readonly admission: Admitted | NoSurvivors; readonly resolvedOptions: StrykerOptions; readonly priorReportPath: string },
   channel: CliRead,
-): Cell.Cell<typeof answer, CliAnswer, CliFailure, CliRunServices> =>
+) =>
   Match.value(answer.admission).pipe(
     Match.tag('NoSurvivors', () =>
       Cell.fromEffect(
@@ -637,13 +663,16 @@ const errorTextOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>)
 export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effect<
   void,
   PlatformError | RunExit | CliError.CliError,
-  Command.Environment | RunEventDrain
+  Command.Environment | RunEventDrain | EnginePorts
 > =>
   Effect.gen(function*() {
     const mode = yield* options.detectMode
     const stream = yield* options.runEvents.createRunEventStream(mode)
     const noColor = yield* Config.String('NO_COLOR').pipe(Effect.option)
-    const hostOptions = yield* hostOptionsOf(mode, stream, Option.getOrUndefined(noColor))
+    const hostOptions = yield* RunEnvironment.forStream(mode, stream, {
+      noColor: Option.getOrUndefined(noColor),
+      builtinReporters: { html: makeHtmlReporter },
+    })
     const pathService = yield* Path.Path
     const environment: CliEnvironment = {
       mode,

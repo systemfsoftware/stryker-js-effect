@@ -33,9 +33,9 @@ export type Tone = typeof ToneSchema.Type
 export const ReportSpanSchema = S.TaggedStruct('ReportSpan', {
   text: S.String,
   tone: ToneSchema,
-  leftPad: S.Natural,
-  rightPad: S.Natural,
-  repeat: S.Natural.pipe(S.check(S.isGreaterThan(0))),
+  leftPad: S.Finite,
+  rightPad: S.Finite,
+  repeat: S.Finite,
 })
 export const ReportLineSchema = S.Array(ReportSpanSchema)
 export type ReportLine = typeof ReportLineSchema.Type
