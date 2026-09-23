@@ -23,6 +23,13 @@ import {
   renderJsonReport,
 } from './render-json-report.workflow.js'
 
+const failAsJsonReporter = (cause: unknown) =>
+  ReporterFailed.make({
+    reporterName: 'json',
+    event: 'mutationTestReportReady',
+    cause: errorToString(cause),
+  })
+
 const reportOf = Filter.make((event: ReporterEvent): Result.Result<reportApi.MutationTestResult, unknown> =>
   Match.value(event).pipe(
     Match.tag('mutationTestReportReady', (ready) => Result.succeed(ready.report)),

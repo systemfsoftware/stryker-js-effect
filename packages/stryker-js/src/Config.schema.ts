@@ -83,6 +83,12 @@ export class ConfigModuleUnreadable extends S.TaggedError<ConfigModuleUnreadable
   readonly exitClass = 'ConfigError' as const
 }
 
+export class LoadConfigRefused extends S.TaggedError<LoadConfigRefused>()('LoadConfigRefused', {
+  message: S.String,
+}) {
+  readonly exitClass = 'ConfigError' as const
+}
+
 export type LoadConfigDecision = ConfigFromFile | ConfigFromDefaults
 
 export const survivorsPriorReport = S.optionalKey(

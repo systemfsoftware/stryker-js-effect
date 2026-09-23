@@ -1,21 +1,11 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
-import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
 import { MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 const JsonReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/JsonReport')
 type JsonReportTypeId = typeof JsonReportTypeId
-
-export const failAsJsonReporter = (cause: unknown) =>
-  ReporterFailed.make({
-    reporterName: 'json',
-    event: 'mutationTestReportReady',
-    cause: errorToString(cause),
-  })
 
 export class JsonReportCommand extends S.TaggedClass<JsonReportCommand>()('JsonReportCommand', {
   reported: S.optional(MutationTestResultSchema),

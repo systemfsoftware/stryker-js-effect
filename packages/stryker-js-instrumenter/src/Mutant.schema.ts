@@ -45,3 +45,25 @@ export const MutantRunOptionsSchema = S.Struct({
   testFilter: S.String.pipe(S.Array, S.optionalKey),
   hitLimit: S.optionalKey(S.Finite),
 })
+
+export class MutantNotApplied
+  extends S.TaggedError<MutantNotApplied>('@systemfsoftware/stryker-js-instrumenter/Mutant.schema/MutantNotApplied')(
+    'MutantNotApplied',
+    { replacement: S.String },
+  )
+{
+  override get message(): string {
+    return `Could not apply mutant ${this.replacement}.`
+  }
+}
+
+export class MutantSpanMissing
+  extends S.TaggedError<MutantSpanMissing>('@systemfsoftware/stryker-js-instrumenter/Mutant.schema/MutantSpanMissing')(
+    'MutantSpanMissing',
+    { edge: S.Literals(['start', 'end']) },
+  )
+{
+  override get message(): string {
+    return `Node without a ${this.edge} offset`
+  }
+}

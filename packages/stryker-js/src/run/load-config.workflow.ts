@@ -11,7 +11,7 @@ import {
   type LoadConfigDecision,
   LoadConfigRefused,
 } from '../Config.schema.js'
-import { configErrorMessage, describeErrors } from './config-error-messages.js'
+import { configErrorMessage, describeErrors } from './load-config.cell.js'
 
 export class LoadConfigCommand extends S.TaggedClass<LoadConfigCommand>()('LoadConfigCommand', {
   cliOptions: S.Record(S.String, S.Unknown),

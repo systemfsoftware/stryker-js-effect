@@ -1,16 +1,20 @@
 import { describe, it } from '@effect/vitest'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
+import { CliRouteCommand } from '../Cli.schema.js'
 import {
   CliMergeReportsRequested,
-  CliRouteCommand,
-} from '../route-cli-request.workflow.js'
-import {
-  type CliRouteDecision,
   routeCliRequest,
 } from '../route-cli-request.workflow.js'
 
-const tagOf = (decision: CliRouteDecision): string => decision._tag
+const routeTagOf = (command: CliRouteCommand): string =>
+  Match.value(command.route).pipe(
+    Match.tag('help', () => 'CliHelpRequested'),
+    Match.tag('merge-reports', () => 'CliMergeReportsRequested'),
+    Match.tag('run', (run) => run.survivors ? 'CliSurvivorsRequested' : 'CliRunRequested'),
+    Match.exhaustive,
+  )
 
 describe('routeCliRequest', () => {
   it.prop(
@@ -19,14 +23,7 @@ describe('routeCliRequest', () => {
     ([command]) =>
       Result.match(routeCliRequest(command), {
         onFailure: () => false,
-        onSuccess: (decision) =>
-          command.route._tag === 'help'
-            ? tagOf(decision) === 'CliHelpRequested'
-          : command.route._tag === 'merge-reports'
-            ? tagOf(decision) === 'CliMergeReportsRequested'
-          : command.route.survivors
-            ? tagOf(decision) === 'CliSurvivorsRequested'
-          : tagOf(decision) === 'CliRunRequested',
+        onSuccess: (decision) => decision._tag === routeTagOf(command),
       }),
   )
 
@@ -34,13 +31,19 @@ describe('routeCliRequest', () => {
     '∀m_MergeRoute_≡MergePayloadRoundtrips',
     [CliRouteCommand],
     ([command]) =>
-      command.route._tag !== 'merge-reports' || Result.match(routeCliRequest(command), {
-        onFailure: () => false,
-        onSuccess: (decision) =>
-          decision instanceof CliMergeReportsRequested
-          && decision.parts === command.route.parts
-          && decision.out === command.route.out
-          && decision.packages === command.route.packages,
-      }),
+      Match.value(command.route).pipe(
+        Match.tag('help', () => true),
+        Match.tag('run', () => true),
+        Match.tag('merge-reports', (route) =>
+          Result.match(routeCliRequest(command), {
+            onFailure: () => false,
+            onSuccess: (decision) =>
+              decision instanceof CliMergeReportsRequested
+              && decision.parts === route.parts
+              && decision.out === route.out
+              && decision.packages === route.packages,
+          })),
+        Match.exhaustive,
+      ),
   )
 })

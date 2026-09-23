@@ -694,9 +694,14 @@ const lineOrderErrors = (
     Match.orElse((): readonly string[] => []),
   )
 
+const rangeTextOf = (specifier: MutationRangeSpecifier): string =>
+  `${specifier.startLine}${specifier.startColumn === undefined ? '' : `:${specifier.startColumn}`}-${
+    specifier.endLine
+  }${specifier.endColumn === undefined ? '' : `:${specifier.endColumn}`}`
+
 const mutationRangeBoundErrors = (index: number, specifier: MutationRangeSpecifier): readonly string[] => [
-  ...startLineErrors(index, specifier.range, specifier.startLine),
-  ...lineOrderErrors(index, specifier.range, specifier.startLine, specifier.endLine),
+  ...startLineErrors(index, rangeTextOf(specifier), specifier.startLine),
+  ...lineOrderErrors(index, rangeTextOf(specifier), specifier.startLine, specifier.endLine),
 ]
 
 const requireUnmagicalMutationRange = (
@@ -1067,17 +1072,18 @@ function loadOptionsFromConfigFile(
   cliOptions: PartialStrykerOptions,
   configEnv: ConfigEnv,
 ): Effect.Effect<
-  PartialStrykerOptions,
+  Option.Option<PartialStrykerOptions>,
   ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   FileSystem.FileSystem | Path.Path
 > {
   return findConfigFile(cliOptions['configFile']).pipe(
     Effect.flatMap((configFile) =>
       Match.value(configFile).pipe(
-        Match.when(undefined, () => Effect.succeed({})),
+        Match.when(undefined, () => Effect.succeedNone),
         Match.orElse((found) =>
           readConfigModule(found, configEnv).pipe(
             Effect.flatMap((child) => resolveChildExtends(found, child, configEnv)),
+            Effect.map(Option.some),
           )
         ),
       )
@@ -1097,13 +1103,10 @@ const readLoadConfig = (input: {
     }
     const cliRecord = yield* S.decodeEffect(ConfigDocumentSchema)(input.cliOptions).pipe(Effect.orDie)
     return yield* loadOptionsFromConfigFile(cliRecord, configEnv).pipe(
-      Effect.mapError((cause) => ConfigModuleUnreadable.make({ file: 'config', cause })),
       Effect.map((fileOptions) =>
         LoadConfigCommand.make({
           cliOptions: cliRecord,
           fileOptions: Option.getOrUndefined(fileOptions),
-          file: 'config',
-          cause: undefined,
         }),
       ),
     )
@@ -1114,14 +1117,7 @@ export const loadConfig = Sandwich.named('stryker.config_read')(readLoadConfig)
   .write({
     ConfigFromFile: ({ options }) => Effect.succeed(options),
     ConfigFromDefaults: ({ options }) => Effect.succeed(options),
-    ConfigModuleUnreadable: (refusal) =>
-      Result.match(
-        S.decodeUnknownResult(StrykerOptionsSchema)(refusal.cause),
-        {
-          onFailure: (failure) => Effect.fail(ConfigError.make({ message: failure.pipe(describeErrors, configErrorMessage) })),
-          onSuccess: (options) => Effect.succeed(options),
-        },
-      ),
+    LoadConfigRefused: (refused) => Effect.fail(ConfigError.make({ message: refused.message })),
     CommandRejected: ({ issue }) => Effect.fail(ConfigError.make({ message: issue })),
   })
 
@@ -1177,15 +1173,17 @@ const readRunConfig = (input: {
 export const loadConfigCell = Sandwich.named('stryker.load_config')(readRunConfig)
   .decide(resolveConfig)
   .write({
-    ConfigResolved: (_resolved, raw) =>
-      Result.match(raw.outcome, {
-        onSuccess: (options) =>
-          Effect.succeed({
-            options,
-            targetMutatePatterns: raw.targetMutatePatterns,
-            basePath: raw.basePath,
-          }),
-        onFailure: (message) => Effect.fail(ConfigError.make({ message })),
+    ConfigFromFile: (resolved, raw) =>
+      Effect.succeed({
+        options: resolved.options,
+        targetMutatePatterns: raw.targetMutatePatterns,
+        basePath: raw.basePath,
+      }),
+    ConfigFromDefaults: (resolved, raw) =>
+      Effect.succeed({
+        options: resolved.options,
+        targetMutatePatterns: raw.targetMutatePatterns,
+        basePath: raw.basePath,
       }),
     LoadConfigRefused: (refused) => Effect.fail(ConfigError.make({ message: refused.message })),
     CommandRejected: ({ issue }) => Effect.fail(ConfigError.make({ message: issue })),

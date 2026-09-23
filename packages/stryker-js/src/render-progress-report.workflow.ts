@@ -8,29 +8,29 @@ import * as S from 'effect/Schema'
 const ProgressReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ProgressReport')
 type ProgressReportTypeId = typeof ProgressReportTypeId
 
-const ProgressTimingSchema = S.Struct({ net: S.Number, overhead: S.Number })
+const ProgressTimingSchema = S.Struct({ net: S.Finite, overhead: S.Finite })
 
 const ProgressCapabilitiesSchema = S.Struct({ reloadEnvironment: S.Boolean })
 
 export const ProgressTallySchema = S.Struct({
-  survived: S.Number,
-  timedOut: S.Number,
-  tested: S.Number,
-  mutants: S.Number,
-  total: S.Number,
-  ticks: S.Number,
-  ticksByMutantId: S.Record(S.String, S.Number),
+  survived: S.Finite,
+  timedOut: S.Finite,
+  tested: S.Finite,
+  mutants: S.Finite,
+  total: S.Finite,
+  ticks: S.Finite,
+  ticksByMutantId: S.Record(S.String, S.Finite),
   timing: ProgressTimingSchema,
   capabilities: ProgressCapabilitiesSchema,
-  startedAt: S.Number,
+  startedAt: S.Finite,
 })
 export type ProgressTally = typeof ProgressTallySchema.Type
 
 export const ProgressBarStateSchema = S.Struct({
   format: S.String,
-  total: S.Number,
-  curr: S.Number,
-  width: S.Number,
+  total: S.Finite,
+  curr: S.Finite,
+  width: S.Finite,
   complete: S.String,
   incomplete: S.String,
 })
@@ -45,7 +45,7 @@ export type ProgressState = typeof ProgressStateSchema.Type
 export class ProgressReportCommand extends S.TaggedClass<ProgressReportCommand>()('ProgressReportCommand', {
   kind: S.Literals(['tick', 'skip', 'finalize']),
   state: ProgressStateSchema,
-  now: S.Number,
+  now: S.Finite,
 }) {
   static readonly [Workflow.InstrumentationBrand] = { now: 'stryker.report.rendered' } as const
 }
@@ -59,11 +59,6 @@ export class ProgressChunkRendered extends S.TaggedClass<ProgressChunkRendered>(
 export class ProgressChunkSuppressed extends S.TaggedClass<ProgressChunkSuppressed>()('ProgressChunkSuppressed', {}) {
   readonly [ProgressReportTypeId] = ProgressReportTypeId
 }
-
-const PROGRESS_BAR_FORMAT =
-  'Mutation testing  [:bar] :percent (elapsed: :et, remaining: :etc) :tested/:mutants Mutants tested (:survived survived, :timedOut timed out)'
-
-const PROGRESS_BAR_OPTIONS = { complete: '=', incomplete: ' ', width: 50 }
 
 const isComplete = (state: ProgressBarState) => state.curr >= state.total
 

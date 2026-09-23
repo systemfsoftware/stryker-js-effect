@@ -135,7 +135,7 @@ export const printNode: {
   (opts?: PrintOptions): (node: Node) => string
 } = dual(
   (args: IArguments): boolean => args.length >= 1 && isNodeArg(args[0]),
-  (node: Node, opts: PrintOptions = {}): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence),
+  (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence),
 )
 
 interface PrintContext {
@@ -1471,10 +1471,10 @@ const printTSImportTypeQualifierNode = (
   )
 
 const printTSImportType = (ctx: PrintContext, node: TSImportType): string =>
-  `${`import(${JSON.stringify(node.source.value)}${flagText(
+  `import(${JSON.stringify(node.source.value)}${flagText(
     node.options,
     `, ${assignmentNodeText(ctx, node.options)}`,
-  )})`}${Option.match(Option.fromNull(node.qualifier), {
+  )})${Option.match(Option.fromNull(node.qualifier), {
     onSome: (qualifier) => `.${printTSImportTypeQualifierNode(ctx, qualifier)}`,
     onNone: () => '',
   })}${typeArgumentsText(ctx, node.typeArguments)}`
@@ -1712,17 +1712,21 @@ const isAccessorKind = (fields: PropertyLike): boolean => fields.kind === 'get' 
 const isMethodKind = (fields: PropertyLike): boolean => fields.method === true
 
 const isShorthandMatch = (fields: PropertyLike): boolean =>
-  fields.shorthand === true && namesMatch(identifierNameText(fields.key), identifierNameText(fields.value))
+  fields.shorthand === true && namesMatch(identifierName(fields.key), identifierName(fields.value))
 
 const isShorthandDefaultMatch = (fields: PropertyLike): boolean =>
-  fields.shorthand === true && namesMatch(identifierNameText(fields.key), defaultTargetName(fields.value))
+  fields.shorthand === true && namesMatch(identifierName(fields.key), defaultTargetName(fields.value))
 
 const defaultTargetName = (node: Node | null | undefined): string | undefined =>
   Option.getOrUndefined(
-    Option.map(Option.filter(Option.some(node), isAssignmentPattern), (value) => identifierNameText(value.left)),
+    Option.map(Option.filter(Option.some(node), isAssignmentPattern), (value) => identifierName(value.left)),
   )
 
-const namesMatch = (key: string, value: string): boolean => key === value
+const namesMatch = (key: string | undefined, value: string | undefined): boolean =>
+  Option.match(Option.fromUndefinedOr(value), {
+    onNone: () => false,
+    onSome: (nonNull) => key === nonNull,
+  })
 
 const BINDING_TYPE_ANNOTATION_KINDS: Readonly<Record<string, true>> = {
   Identifier: true,
@@ -1869,14 +1873,16 @@ const bareParameterName = (param: Option.Option<ParamPattern>): string =>
     onNone: () => '',
   })
 
-const bareParameterNameOf = (param: ParamPattern): string =>
-  Match.value(param.type === 'Identifier' && param.typeAnnotation == null).pipe(
-    Match.when(true, () => (param as Extract<ParamPattern, { readonly type: 'Identifier' }>).name),
-    Match.orElse(() => ''),
-  )
+const isUnannotatedIdentifier = (
+  param: ParamPattern,
+): param is Extract<ParamPattern, { readonly type: 'Identifier' }> =>
+  param.type === 'Identifier' && param.typeAnnotation == null
 
-const arrowBodyIsBlock = (body: ArrowFunctionExpression['body']): body is Extract<Node, { type: 'BlockStatement' }> =>
-  body.type === 'BlockStatement'
+const bareParameterNameOf = (param: ParamPattern): string =>
+  Option.getOrElse(
+    Option.map(Option.filter(Option.some(param), isUnannotatedIdentifier), (n) => n.name),
+    () => '',
+  )
 
 const functionHeaderText = (node: FunctionNode): string =>
   `${flagText(node.declare, 'declare ')}${flagText(node.async, 'async ')}function${flagText(
@@ -1929,8 +1935,6 @@ type LiteralSource = {
   readonly bigint?: string
   readonly regex?: { readonly pattern: string; readonly flags: string }
 }
-
-type LiteralNode = Literal
 
 const BARE_DEFAULT_EXPORT_KINDS: Readonly<Record<string, true>> = {
   FunctionDeclaration: true,
@@ -1992,20 +1996,9 @@ if (import.meta.vitest !== void 0) {
     (fragments) => fragments.join('\n'),
   )
 
-  const parsedProgram = (source: string) => {
+  it.prop('∀src_TemplateTypePrint_≡Legacy', [snippet], ([source]) => {
     const parsed = oxc.parseSync('law.ts', source, { lang: 'ts', range: true })
-    return parsed.errors.length === 0 ? Option.some(parsed) : Option.none()
-  }
-
-  const printedOf = (printer: typeof printProgram, parsed: (typeof oxc.ParseTreeResult extends never ? never : Awaited<ReturnType<typeof oxc.parseSync>>)): string =>
-    printer(parsed.program, { comments: parsed.comments as never, hashbang: null })
-
-  it.prop('∀src_TemplateTypePrint_≡Legacy', [snippet], ([source]) =>
-    Option.match(parsedProgram(source), {
-      onNone: () => true,
-      onSome: (parsed) =>
-        printedOf(printProgram, parsed) ===
-        printedOf(legacy.printProgram as typeof printProgram, parsed as never),
-    }),
-  )
+    const printed = printProgram(parsed.program, { comments: parsed.comments, hashbang: null })
+    return printed === legacy.printProgram(parsed.program, { comments: parsed.comments, hashbang: null })
+  })
 }
