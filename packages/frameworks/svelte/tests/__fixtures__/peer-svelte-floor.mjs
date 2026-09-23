@@ -87,7 +87,9 @@ const nodesOf = (code) => {
 const walkNodes = (node, handlers) => {
   handlers.enter(node)
   const children = node.children ?? []
-  children.forEach((child) => walkNodes(child, handlers))
+  for (const child of children) {
+    walkNodes(child, handlers)
+  }
 }
 
 export const VERSION = `${floor}.0`
@@ -101,11 +103,11 @@ export const preprocess = (code, handlers) => {
   const blocks = scriptBlocks(code)
   let replaced = ''
   let cursor = 0
-  blocks.forEach((block) => {
+  for (const block of blocks) {
     replaced += code.slice(cursor, block.contentStart)
     replaced += handlers.script({ content: code.slice(block.contentStart, block.contentEnd), attributes: {} }).code
     cursor = block.contentEnd
-  })
+  }
   replaced += code.slice(cursor)
   return Promise.resolve({ code: replaced })
 }

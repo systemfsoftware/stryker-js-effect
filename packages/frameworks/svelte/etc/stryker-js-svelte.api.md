@@ -4,10 +4,10 @@
 
 ```ts
 
-import { PluginLayerContribution } from '@systemfsoftware/stryker-js-plugin-interface';
+import { FrameworkContribution } from '@systemfsoftware/stryker-framework-interface';
 
 // @public (undocumented)
-export const strykerPlugins: PluginLayerContribution<"Framework">[];
+export const strykerFrameworks: readonly FrameworkContribution[];
 
 // (No @packageDocumentation comment for this package)
 

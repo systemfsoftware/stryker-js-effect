@@ -9,16 +9,17 @@
     "directory": "packages/frameworks/svelte"
   },
   "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/frameworks/svelte#readme",
-  "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
-  "description": "Stryker framework plugin for Svelte components: claims the svelte format for .svelte files, owns the optional svelte peer, and resolves and version-checks the compiler when its plugin layer is built.",
+  "bugs": {
+    "url": "https://github.com/systemfsoftware/stryker-js-effect/issues"
+  },
+  "description": "Stryker framework plugin for Svelte components: claims .svelte files, resolves the svelte compiler from the project install, and refuses the run with a typed reason when the compiler is missing or too old.",
   "keywords": [
     "stryker",
     "stryker-mutator",
     "mutation-testing",
     "svelte",
     "framework",
-    "plugin",
-    "format"
+    "plugin"
   ],
   "type": "module",
   "files": [
@@ -44,27 +45,32 @@
   },
   "dependencies": {
     "@systemfsoftware/stryker-framework-interface": "workspace:^",
-    "@systemfsoftware/stryker-js-language": "workspace:^",
-    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
-    "effect": "catalog:",
     "oxc-walker": "catalog:"
   },
   "devDependencies": {
     "@microsoft/api-extractor": "catalog:",
-    "@oxc-project/types": "catalog:",
-    "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
-    "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "oxc-parser": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
-    "svelte": "5.55.1",
+    "svelte": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "svelte": ">=3.30"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
   },
   "publishConfig": {
     "access": "public",
@@ -75,14 +81,6 @@
         "default": "./dist/index.mjs"
       },
       "./package.json": "./package.json"
-    }
-  },
-  "peerDependencies": {
-    "svelte": ">=3.30"
-  },
-  "peerDependenciesMeta": {
-    "svelte": {
-      "optional": true
     }
   }
 }

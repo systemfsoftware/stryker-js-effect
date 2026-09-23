@@ -1,17 +1,21 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "@systemfsoftware/tsconfig/tsc/no-dom/library",
+  "extends": ["@systemfsoftware/tsconfig/tsc/dom/library-monorepo"],
   "compilerOptions": {
-    "customConditions": ["@systemfsoftware/source"],
-    "outDir": "dist",
-    "rootDir": ".",
-    "types": ["node"],
-    "plugins": [
-      {
-        "name": "@effect/language-service"
-      }
-    ]
+    "types": [],
+    "customConditions": ["@systemfsoftware/source"]
   },
-  "include": ["src", "tests"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src",
+    "tests"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ]
 }

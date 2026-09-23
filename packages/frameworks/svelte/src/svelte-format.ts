@@ -1,558 +1,282 @@
-import type { Program, Statement } from '@systemfsoftware/stryker-framework-interface'
-import { FrameworkFailed } from '@systemfsoftware/stryker-js-language'
 import type {
   EmbeddedDocument,
-  FrameworkClaim,
+  FormatId,
+  Framework,
   FrameworkContext,
-  FrameworkService,
+  FrameworkContractVersion,
+  FrameworkParseResult,
+  Program,
   ScriptFormat,
-} from '@systemfsoftware/stryker-js-language'
-import * as Effect from 'effect/Effect'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
+  ScriptRegion,
+  Statement,
+} from '@systemfsoftware/stryker-framework-interface'
 
-import type { SvelteCompiler, SvelteScriptTag, SvelteWalkFn } from './compiler-resolution.js'
+import { isNonEmptyArray, isRecord, isString } from './guards.js'
 
-const FORMAT_ID = 'svelte'
+export interface SvelteCompilerModule {
+  readonly VERSION: string
+  readonly parse: (source: string, options: { readonly filename: string }) => unknown
+  readonly walk?: SvelteWalkFn
+}
+
+export type SvelteWalkFn = (root: unknown, handlers: { readonly enter: (node: unknown) => void }) => unknown
+
+const FORMAT_NAME = 'svelte'
 const LANGUAGE = 'svelte'
-const CONTRACT_VERSION = '1'
+const CONTRACT_VERSION: FrameworkContractVersion = '1'
 const EXTENSIONS: readonly string[] = ['.svelte']
 
 const NEWLINE = '\n'
+const NO_CHECK = '// @ts-nocheck'
 const PARSE_FILENAME = 'component.svelte'
 const SCRIPT_MODULE_OPEN = '<script context="module">\n'
 const SCRIPT_MODULE_BLOCK = `${SCRIPT_MODULE_OPEN}\n</script>\n`
-
-const INSTANCE_RANGE_MISSING = 'Svelte instance script without a source range'
-const MODULE_RANGE_MISSING = 'Svelte module script without a source range'
+const TS_LANGUAGE = 'ts'
+const LANG_ATTRIBUTE = 'lang'
 
 const TEMPLATE_EXPRESSION_TYPES: Readonly<Record<string, true>> = {
-  MustacheTag: true,
-  RawMustacheTag: true,
-  IfBlock: true,
+  AwaitBlock: true,
   ConstTag: true,
   EachBlock: true,
-  AwaitBlock: true,
-  KeyBlock: true,
   EventHandler: true,
+  IfBlock: true,
+  KeyBlock: true,
+  MustacheTag: true,
+  RawMustacheTag: true,
 }
 
-const claimOf = (ownerVersion: string): FrameworkClaim => ({
-  formatId: FORMAT_ID,
-  extensions: [...EXTENSIONS],
-  language: LANGUAGE,
-  ownerVersion,
-  contractVersion: CONTRACT_VERSION,
-})
+const HTML_MISSING = 'Svelte AST without html'
+const SCRIPT_RANGE_MISSING = 'Svelte script without a source range'
+const PROGRAM_MISSING = 'A script region without its parsed program cannot be printed'
+const NON_ERROR_FAILURE = 'the svelte compiler reported a failure that is not an Error'
 
-const STATE = Symbol('svelte-format-state')
+const STARTING_COMMENT = /^\s*\/\*[\s\S]*?\*\//
 
-interface SvelteRegion {
-  start: number
-  end: number
-  isExpression: boolean
-  scriptAst?: unknown
-}
+const FORMAT_ID: FormatId = FORMAT_NAME
 
-interface SvelteFormatState {
-  rawContent: string
-  regions: SvelteRegion[]
-  moduleRegion: number | undefined
-}
+const hasSpan = (value: Record<string, unknown>): boolean =>
+  typeof value['start'] === 'number' && typeof value['end'] === 'number'
 
-interface SvelteFormatDocument extends EmbeddedDocument {
-  readonly [STATE]: SvelteFormatState
-}
+const isRanged = (value: unknown): value is { readonly start: number; readonly end: number } =>
+  isRecord(value) && hasSpan(value)
 
-interface TemplateRange {
-  readonly start: number
-  readonly end: number
-  readonly isExpression: boolean
-}
+const fieldOf = (record: unknown, key: string): unknown => (isRecord(record) ? record[key] : undefined)
 
-interface TemplateScriptRange extends TemplateRange {
-  readonly format: ScriptFormat
-}
+const firstOf = (value: unknown): unknown => (isNonEmptyArray(value) ? value.at(0) : value)
 
-interface RemappedScript {
-  readonly range: TemplateRange
-  readonly scriptRange: TemplateScriptRange
-  readonly hadScript: boolean
-}
+const dataOf = (node: unknown): unknown => fieldOf(node, 'data')
 
-interface RangeRemap {
-  readonly placeholderLength: number
-  readonly contentLength: number
-  readonly format: ScriptFormat
-  readonly hadScript: boolean
-}
-
-interface DiscoveredRegion {
+interface LocatedRegion {
   readonly start: number
   readonly end: number
   readonly isExpression: boolean
   readonly scriptFormat: ScriptFormat
+  readonly isModuleScript: boolean
 }
 
-interface DiscoveredScriptRange {
-  readonly range: TemplateScriptRange
-  readonly module: boolean
-}
+const regionFrom = (
+  range: { readonly start: number; readonly end: number },
+  attributes: unknown,
+  isModuleScript: boolean,
+): LocatedRegion => ({
+  start: range.start,
+  end: range.end,
+  isExpression: false,
+  scriptFormat: scriptFormatOf(attributes),
+  isModuleScript,
+})
 
-interface Discovery {
-  readonly regions: readonly DiscoveredRegion[]
-  readonly moduleRegion: number | undefined
-}
+const langPatternOf = (attribute: string): RegExp => new RegExp(`${attribute}\\s*=\\s*["']([^"']*)["']`)
 
-interface ReplacedScripts {
-  readonly replacedCode: string
-  readonly scriptMap: ReadonlyMap<string, SvelteScriptTag>
-}
+const langAttributeOf = (attributes: unknown): unknown =>
+  isNonEmptyArray(attributes)
+    ? fieldOf(attributes.find((attribute) => fieldOf(attribute, 'name') === LANG_ATTRIBUTE), 'value')
+    : undefined
 
-const hasField = (value: unknown, key: string): value is { readonly [field: PropertyKey]: unknown } =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (record) => key in record),
-    Match.orElse(() => false),
-  )
+const langListOf = (attributes: unknown): unknown => firstOf(langAttributeOf(attributes))
 
-const hasContent = (value: unknown): value is { readonly content: unknown } => hasField(value, 'content')
+const matchLangOf = (tag: string): string | undefined => tag.match(langPatternOf(LANG_ATTRIBUTE))?.[1]
 
-const hasHtml = (value: unknown): value is { readonly html: unknown } => hasField(value, 'html')
+const langOf = (attributes: unknown): unknown =>
+  isString(attributes) ? matchLangOf(attributes) : dataOf(langListOf(attributes))
 
-const isScriptTagRecord = (
-  value: unknown,
-): value is { readonly content: unknown; readonly attributes: unknown } =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (tag) => 'content' in tag),
-    Match.orElse(() => false),
-  )
+const scriptFormatOf = (attributes: unknown): ScriptFormat => (langOf(attributes) === TS_LANGUAGE ? 'ts' : 'js')
 
-const fieldOf = (value: unknown, key: string): unknown =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (record) => record[key]),
-    Match.orElse(() => undefined),
-  )
+const byStart = (left: LocatedRegion, right: LocatedRegion): number => left.start - right.start
 
-const hasNumericRange = (value: { readonly [field: PropertyKey]: unknown }): boolean =>
-  areNumbers(value['start']) && areNumbers(value['end'])
-
-const areNumbers = (value: unknown): boolean => typeof value === 'number'
-
-const isRange = (value: unknown): value is { readonly start: number; readonly end: number } =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (record) => hasNumericRange(record)),
-    Match.orElse(() => false),
-  )
-
-const isTypedRecord = (value: unknown): value is { readonly type: string } =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (record) => Predicate.isString(record['type'])),
-    Match.orElse(() => false),
-  )
-
-const isTagged = (value: unknown, type: string): value is { readonly [field: PropertyKey]: unknown } =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (record) => record['type'] === type),
-    Match.orElse(() => false),
-  )
-
-const isScriptElement = (value: unknown): value is { readonly [field: PropertyKey]: unknown } =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (element) => element['type'] === 'Element' && element['name'] === 'script'),
-    Match.orElse(() => false),
-  )
-
-const isTextRange = (value: unknown): value is TemplateRange =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (text) => isTagged(text, 'Text') && hasNumericRange(text)),
-    Match.orElse(() => false),
-  )
-
-const isTemplateExpressionTag = (value: unknown): value is { readonly [field: PropertyKey]: unknown } =>
-  Match.value(value).pipe(
-    Match.when(isTypedRecord, (record) => TEMPLATE_EXPRESSION_TYPES[record.type] === true),
-    Match.orElse(() => false),
-  )
-
-const isRangedBaseNode = (value: unknown): value is TemplateRange =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (node) => isTypedRecord(node) && hasNumericRange(node)),
-    Match.orElse(() => false),
-  )
-
-const isNonEmptyArray = (value: unknown): value is readonly unknown[] => Array.isArray(value) && value.length > 0
-
-const appendIfDefined = <A>(values: A[], value: A | undefined): void => {
-  if (value !== undefined) {
-    values.push(value)
+const appendRegion = (collected: LocatedRegion[], region: LocatedRegion | undefined): void => {
+  if (region !== undefined) {
+    collected.push(region)
   }
 }
 
+const rangedContentOf = (script: unknown): { readonly start: number; readonly end: number } => {
+  const content = fieldOf(script, 'content')
+  if (!isRanged(content)) {
+    throw new Error(SCRIPT_RANGE_MISSING)
+  }
+  return content
+}
+
+const scriptNodeRegion = (script: unknown, rawContent: string, isModuleScript: boolean): LocatedRegion | undefined => {
+  if (script == null) {
+    return undefined
+  }
+  return regionFrom(rangedContentOf(script), attributesOf(rawContent, rangedContentOf(script)), isModuleScript)
+}
+
+const attributesOf = (rawContent: string, range: { readonly start: number }): unknown =>
+  openTagOf(rawContent, range.start)
+
+const openTagOf = (rawContent: string, contentStart: number): string =>
+  rawContent.substring(rawContent.lastIndexOf('<', contentStart - 1), contentStart)
+
+const nodeTypeOf = (node: unknown): string | undefined => {
+  const type = fieldOf(node, 'type')
+  return isString(type) ? type : undefined
+}
+
+const isTagged = (node: unknown): boolean => {
+  const type = nodeTypeOf(node)
+  return type !== undefined && TEMPLATE_EXPRESSION_TYPES[type] === true
+}
+
+const isScriptTagged = (node: unknown): boolean => nodeTypeOf(node) === 'Element' && fieldOf(node, 'name') === 'script'
+
+const scriptTextOf = (node: unknown): { readonly start: number; readonly end: number } | undefined => {
+  const text = firstOf(fieldOf(node, 'children'))
+  return isRanged(text) ? text : undefined
+}
+
+const elementTextOf = (node: unknown): { readonly start: number; readonly end: number } | undefined =>
+  isScriptTagged(node) ? scriptTextOf(node) : undefined
+
+const scriptElementRegion = (node: unknown): LocatedRegion | undefined => {
+  const text = elementTextOf(node)
+  return text === undefined ? undefined : regionFrom(text, fieldOf(node, 'attributes'), false)
+}
+
+const taggedExpressionOf = (node: unknown): unknown => isTagged(node) ? fieldOf(node, 'expression') : undefined
+
+const expressionRegion = (node: unknown): LocatedRegion | undefined => {
+  const expression = taggedExpressionOf(node)
+  return isRanged(expression)
+    ? { start: expression.start, end: expression.end, isExpression: true, scriptFormat: 'js', isModuleScript: false }
+    : undefined
+}
+
+const htmlRootOf = (ast: unknown): unknown => {
+  const html = fieldOf(ast, 'html')
+  if (html == null) {
+    throw new Error(HTML_MISSING)
+  }
+  return html
+}
+
+const collectTemplateRegions = (root: unknown, walk: SvelteWalkFn): readonly LocatedRegion[] => {
+  const collected: LocatedRegion[] = []
+  walk(root, {
+    enter: (node: unknown): void => {
+      appendRegion(collected, scriptElementRegion(node))
+      appendRegion(collected, expressionRegion(node))
+    },
+  })
+  return collected
+}
+
+const scriptRegionsOf = (
+  rawContent: string,
+  moduleScript: unknown,
+  instanceScript: unknown,
+): readonly LocatedRegion[] => {
+  const regions: LocatedRegion[] = []
+  appendRegion(regions, scriptNodeRegion(moduleScript, rawContent, true))
+  appendRegion(regions, scriptNodeRegion(instanceScript, rawContent, false))
+  return regions
+}
+
+const discoveredRegions = (
+  walk: SvelteWalkFn,
+  compiler: SvelteCompilerModule,
+  rawContent: string,
+): readonly LocatedRegion[] => {
+  const ast: unknown = compiler.parse(rawContent, { filename: PARSE_FILENAME })
+  return [
+    ...scriptRegionsOf(rawContent, fieldOf(ast, 'module'), fieldOf(ast, 'instance')),
+    ...collectTemplateRegions(htmlRootOf(ast), walk),
+  ].toSorted(byStart)
+}
+
+const moduleRegionIndex = (regions: readonly LocatedRegion[]): number | undefined => {
+  const index = regions.findIndex((region) => region.isModuleScript)
+  return index === -1 ? undefined : index
+}
+
+interface Discovery {
+  readonly regions: readonly LocatedRegion[]
+  readonly moduleRegion: number | undefined
+}
+
+const discoveryOf = (walk: SvelteWalkFn, compiler: SvelteCompilerModule, rawContent: string): Discovery => {
+  const regions = discoveredRegions(walk, compiler, rawContent)
+  return { regions, moduleRegion: moduleRegionIndex(regions) }
+}
+
+const failureMessageOf = (cause: unknown): string => (cause instanceof Error ? cause.message : NON_ERROR_FAILURE)
+
+const regionOf = (rawContent: string, context: FrameworkContext, located: LocatedRegion): ScriptRegion => ({
+  start: located.start,
+  end: located.end,
+  isExpression: located.isExpression,
+  scriptAst: context.parseScript(rawContent.substring(located.start, located.end), located.scriptFormat),
+})
+
+const parsedDocument = (
+  walk: SvelteWalkFn,
+  compiler: SvelteCompilerModule,
+  rawContent: string,
+  context: FrameworkContext,
+): FrameworkParseResult<EmbeddedDocument> => {
+  try {
+    const discovery = discoveryOf(walk, compiler, rawContent)
+    return {
+      kind: 'Parsed',
+      value: {
+        formatId: FORMAT_ID,
+        rawContent,
+        regions: discovery.regions.map((region) => regionOf(rawContent, context, region)),
+      },
+    }
+  } catch (cause) {
+    return { kind: 'ParseFailed', message: failureMessageOf(cause) }
+  }
+}
+
+const isProgram = (value: unknown): value is Program => isRecord(value) && Array.isArray(value['body'])
+
 const programOf = (value: unknown): Program => {
   if (!isProgram(value)) {
-    throw new Error('A script region without its parsed program cannot be printed')
+    throw new Error(PROGRAM_MISSING)
   }
   return value
 }
 
-const isProgram = (value: unknown): value is Program =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (program) => Array.isArray(program['body'])),
-    Match.orElse(() => false),
-  )
-
-const scriptFormatOf = (tag: SvelteScriptTag): ScriptFormat =>
-  Match.value(tag.lang).pipe(
-    Match.when('ts', (): ScriptFormat => 'ts'),
-    Match.orElse((): ScriptFormat => 'js'),
-  )
-
-const contentTextOf = (content: unknown): string =>
-  Match.value(content).pipe(
-    Match.when(Predicate.isString, (text) => text),
-    Match.orElse(() => ''),
-  )
-
-const langOf = (attributes: unknown): unknown => fieldOf(attributes, 'lang')
-
-const scriptTagOf = (script: unknown): SvelteScriptTag | undefined =>
-  Match.value(script).pipe(
-    Match.when(isScriptTagRecord, (tag) => ({
-      content: contentTextOf(tag.content),
-      lang: langOf(tag.attributes),
-    })),
-    Match.orElse(() => undefined),
-  )
-
-const scriptChild = (node: unknown): unknown =>
-  Match.value(node).pipe(
-    Match.when(isScriptElement, (element) =>
-      Match.value(element['children']).pipe(
-        Match.when(isNonEmptyArray, (children) => Option.getOrUndefined(Option.fromNullishOr(children.at(0)))),
-        Match.orElse(() => undefined),
-      )),
-    Match.orElse(() => undefined),
-  )
-
-const tryGetScriptRangeFromElement = (node: unknown): TemplateRange | undefined =>
-  Match.value(scriptChild(node)).pipe(
-    Match.when(isTextRange, (range) => ({ start: range.start, end: range.end, isExpression: false })),
-    Match.orElse(() => undefined),
-  )
-
-const rangedExpressionOf = (payload: unknown): TemplateRange | undefined =>
-  Match.value(payload).pipe(
-    Match.when(isRangedBaseNode, (expression) => ({
-      start: expression.start,
-      end: expression.end,
-      isExpression: true,
-    })),
-    Match.orElse(() => undefined),
-  )
-
-const templateExpressionRange = (node: unknown): TemplateRange | undefined =>
-  Match.value(node).pipe(
-    Match.when(isTemplateExpressionTag, (tag) => rangedExpressionOf(tag['expression'])),
-    Match.orElse(() => undefined),
-  )
-
-const scriptContentRange = (content: unknown, missingRange: string): TemplateRange =>
-  Match.value(content).pipe(
-    Match.when(isRange, (range) => ({ start: range.start, end: range.end, isExpression: false })),
-    Match.orElse(() => {
-      throw new Error(missingRange)
-    }),
-  )
-
-const instanceScriptRange = (ast: unknown): TemplateRange | undefined =>
-  Match.value(fieldOf(ast, 'instance')).pipe(
-    Match.when(hasContent, (instance) => scriptContentRange(instance.content, INSTANCE_RANGE_MISSING)),
-    Match.orElse(() => undefined),
-  )
-
-const moduleBlockRange = (block: unknown): TemplateRange =>
-  Match.value(block).pipe(
-    Match.when(hasContent, (module) => scriptContentRange(module.content, MODULE_RANGE_MISSING)),
-    Match.orElse(() => {
-      throw new Error(MODULE_RANGE_MISSING)
-    }),
-  )
-
-const getModuleScriptRange = (ast: unknown): TemplateRange | undefined =>
-  Match.value(fieldOf(ast, 'module')).pipe(
-    Match.when(undefined, () => undefined),
-    Match.when(null, () => undefined),
-    Match.orElse((block) => moduleBlockRange(block)),
-  )
-
-const htmlRootOf = (ast: unknown): unknown =>
-  Match.value(ast).pipe(
-    Match.when(hasHtml, (record) => record.html),
-    Match.orElse(() => {
-      throw new Error('Svelte AST without html')
-    }),
-  )
-
-const getTemplateScriptRanges = (ast: unknown, walker: SvelteWalkFn): TemplateRange[] => {
-  const ranges: TemplateRange[] = []
-  appendIfDefined(ranges, instanceScriptRange(ast))
-  walker(htmlRootOf(ast), {
-    enter(node: unknown): void {
-      appendIfDefined(ranges, tryGetScriptRangeFromElement(node))
-      appendIfDefined(ranges, templateExpressionRange(node))
-    },
-  })
-  return ranges
-}
-
-const replaceScripts = async (compiler: SvelteCompiler, code: string): Promise<ReplacedScripts> => {
-  const scriptMap = new Map<string, SvelteScriptTag>()
-  let scriptIndex = 0
-  const result = await compiler.preprocess(code, {
-    script: (script) => {
-      const scriptName = `script${scriptIndex++}`
-      const tag = scriptTagOf(script)
-      if (tag !== undefined) {
-        scriptMap.set(scriptName, tag)
-      }
-      return { code: scriptName }
-    },
-  })
-  return { replacedCode: result.code, scriptMap }
-}
-
-const remapRange = (
-  range: TemplateRange,
-  code: string,
-  scriptMap: ReadonlyMap<string, SvelteScriptTag>,
-): RangeRemap => {
-  const placeholder = code.substring(range.start, range.end)
-  return Match.value(scriptMap.get(placeholder)).pipe(
-    Match.when(Predicate.isNotNullish, (script): RangeRemap => ({
-      placeholderLength: placeholder.length,
-      contentLength: script.content.length,
-      format: scriptFormatOf(script),
-      hadScript: true,
-    })),
-    Match.orElse((): RangeRemap => ({
-      placeholderLength: placeholder.length,
-      contentLength: placeholder.length,
-      format: 'js',
-      hadScript: false,
-    })),
-  )
-}
-
-const remapInOrder = (
-  ranges: readonly TemplateRange[],
-  code: string,
-  scriptMap: ReadonlyMap<string, SvelteScriptTag>,
-): RemappedScript[] => {
-  let offset = 0
-  return ranges.map((range) => {
-    const remap = remapRange(range, code, scriptMap)
-    const start = range.start + offset
-    offset += remap.contentLength - remap.placeholderLength
-    return {
-      range,
-      scriptRange: {
-        start,
-        end: start + remap.contentLength,
-        isExpression: range.isExpression,
-        format: remap.format,
-      },
-      hadScript: remap.hadScript,
-    }
-  })
-}
-
-const remappedModuleScript = (
-  remapped: readonly RemappedScript[],
-  moduleScriptRange: TemplateRange | undefined,
-): TemplateScriptRange | undefined =>
-  Option.getOrUndefined(
-    Option.map(
-      Option.fromNullishOr(remapped.find((script) => script.range === moduleScriptRange && script.hadScript)),
-      (script) => script.scriptRange,
-    ),
-  )
-
-const remapScriptLocations = (
-  code: string,
-  scriptMap: ReadonlyMap<string, SvelteScriptTag>,
-  moduleScriptRange: TemplateRange | undefined,
-  templateRanges: readonly TemplateRange[],
-): {
-  readonly remappedModuleScriptRange: TemplateScriptRange | undefined
-  readonly remappedScriptRanges: readonly TemplateScriptRange[]
-} => {
-  const ordered = [moduleScriptRange, ...templateRanges]
-    .filter(Predicate.isNotNullish)
-    .sort((left, right) => left.start - right.start)
-  const remapped = remapInOrder(ordered, code, scriptMap)
-  const remappedModuleScriptRange = remappedModuleScript(remapped, moduleScriptRange)
-  return {
-    remappedModuleScriptRange,
-    remappedScriptRanges: remapped
-      .map((script) => script.scriptRange)
-      .filter((range) => range !== remappedModuleScriptRange),
-  }
-}
-
-const discoveredRegion = (range: TemplateScriptRange): DiscoveredRegion => ({
-  start: range.start,
-  end: range.end,
-  isExpression: range.isExpression,
-  scriptFormat: range.format,
-})
-
-const moduleIndexOf = (scriptRanges: readonly DiscoveredScriptRange[]): number | undefined => {
-  const index = scriptRanges.findIndex((script) => script.module)
-  return Match.value(index).pipe(
-    Match.when(-1, () => undefined),
-    Match.orElse(() => index),
-  )
-}
-
-const markedRanges = (
-  moduleScriptRange: TemplateScriptRange | undefined,
-  scriptRanges: readonly TemplateScriptRange[],
-): readonly DiscoveredScriptRange[] =>
-  Match.value(moduleScriptRange).pipe(
-    Match.when(Predicate.isNotNullish, (module): readonly DiscoveredScriptRange[] => [
-      { range: module, module: true },
-      ...scriptRanges.map((range) => ({ range, module: false })),
-    ]),
-    Match.orElse((): readonly DiscoveredScriptRange[] => scriptRanges.map((range) => ({ range, module: false }))),
-  )
-
-const discoveryOf = (
-  moduleScriptRange: TemplateScriptRange | undefined,
-  scriptRanges: readonly TemplateScriptRange[],
-): Discovery => {
-  const marked = [...markedRanges(moduleScriptRange, scriptRanges)]
-    .sort((left, right) => left.range.start - right.range.start)
-  return {
-    regions: marked.map((script) => discoveredRegion(script.range)),
-    moduleRegion: moduleIndexOf(marked),
-  }
-}
-
-const discoverRegions = async (compiler: SvelteCompiler, text: string): Promise<Discovery> => {
-  const { replacedCode, scriptMap } = await replaceScripts(compiler, text)
-  const svelteAst: unknown = compiler.parse(replacedCode, { filename: PARSE_FILENAME })
-  const moduleScriptRange = getModuleScriptRange(svelteAst)
-  const templateRanges = getTemplateScriptRanges(svelteAst, compiler.walk)
-  const { remappedModuleScriptRange, remappedScriptRanges } = remapScriptLocations(
-    replacedCode,
-    scriptMap,
-    moduleScriptRange,
-    templateRanges,
-  )
-  return discoveryOf(remappedModuleScriptRange, remappedScriptRanges)
-}
-
-const regionOf = (rawContent: string, context: FrameworkContext, region: DiscoveredRegion): SvelteRegion => ({
-  start: region.start,
-  end: region.end,
-  isExpression: region.isExpression,
-  scriptAst: context.parseScript(rawContent.substring(region.start, region.end), region.scriptFormat),
-})
-
-const documentOf = async (
-  compiler: SvelteCompiler,
-  rawContent: string,
-  context: FrameworkContext,
-): Promise<SvelteFormatDocument> => {
-  const discovery = await discoverRegions(compiler, rawContent)
-  const regions = discovery.regions.map((region) => regionOf(rawContent, context, region))
-  return {
-    formatId: FORMAT_ID,
-    rawContent,
-    regions,
-    [STATE]: { rawContent, regions, moduleRegion: discovery.moduleRegion },
-  }
-}
-
-const documentFromState = (state: SvelteFormatState): SvelteFormatDocument => ({
-  formatId: FORMAT_ID,
-  rawContent: state.rawContent,
-  regions: state.regions,
-  [STATE]: state,
-})
-
-const hasState = (document: EmbeddedDocument): document is SvelteFormatDocument => STATE in document
-
-const stateOf = (document: EmbeddedDocument): SvelteFormatState | undefined =>
-  Match.value(document).pipe(
-    Match.when(hasState, (carrier) => carrier[STATE]),
-    Match.orElse(() => undefined),
-  )
-
-const invalidDocument = (): FrameworkFailed =>
-  new FrameworkFailed({
-    reason: 'InvalidContribution',
-    cause: 'a svelte document must come from the svelte format parse hook',
-  })
-
-const decodedState = (document: EmbeddedDocument): Effect.Effect<SvelteFormatState, FrameworkFailed> =>
-  Match.value(stateOf(document)).pipe(
-    Match.when(Predicate.isNotNullish, (state) => Effect.succeed(state)),
-    Match.orElse(() => Effect.fail(invalidDocument())),
-  )
-
-const toFrameworkFailed = (cause: unknown): FrameworkFailed =>
-  Match.value(cause).pipe(
-    Match.when(
-      (subject: unknown): subject is FrameworkFailed => subject instanceof FrameworkFailed,
-      (failure: FrameworkFailed) => failure,
-    ),
-    Match.orElse(() => new FrameworkFailed({ reason: reasonOf(cause), cause })),
-  )
-
-const reasonOf = (cause: unknown): string =>
-  Match.value(cause).pipe(
-    Match.when((subject: unknown): subject is Error => subject instanceof Error, (error) => error.message),
-    Match.orElse(() => NON_ERROR_FAILURE),
-  )
-
-const NON_ERROR_FAILURE = 'the svelte compiler reported a failure that is not an Error'
-
-const spanText = (statement: Statement): string =>
-  Option.getOrElse(
-    Option.map(Option.fromNullishOr(statement.range), (range) => `${range[0]}:${range[1]}`),
-    () => `${statement.start}-${statement.end}`,
-  )
-
-const statementIdentity = (statement: Statement): string => `${statement.type}:${spanText(statement)}`
+const statementIdentity = (statement: Statement): string => `${statement.type}:${statement.start}:${statement.end}`
 
 const matchesStatement = (present: Statement | undefined, expected: Statement): boolean =>
-  Match.value(present).pipe(
-    Match.when(Predicate.isNotNullish, (statement) => statementIdentity(statement) === statementIdentity(expected)),
-    Match.orElse(() => false),
-  )
+  present !== undefined && statementIdentity(present) === statementIdentity(expected)
 
-const removePlacedHeader = (program: Program, header: readonly Statement[]): boolean =>
-  Match.value(header.every((expected, index) => matchesStatement(program.body.at(index), expected))).pipe(
-    Match.when(true, () => {
-      program.body.splice(0, header.length)
-      return true
-    }),
-    Match.orElse(() => false),
-  )
+const removePlacedHeader = (program: Program, header: readonly Statement[]): boolean => {
+  const placed = header.every((expected, index) => matchesStatement(program.body.at(index), expected))
+  if (!placed) {
+    return false
+  }
+  program.body.splice(0, header.length)
+  return true
+}
 
 const stripPlacedHeader = (program: Program, header: readonly Statement[]): boolean =>
-  Match.value(header.length === 0).pipe(
-    Match.when(true, () => false),
-    Match.orElse(() => removePlacedHeader(program, header)),
-  )
-
-const moduleRegionOf = (state: SvelteFormatState): SvelteRegion | undefined =>
-  Match.value(state.moduleRegion).pipe(
-    Match.when(Predicate.isNotNullish, (index) => state.regions[index]),
-    Match.orElse(() => undefined),
-  )
+  header.length === 0 ? false : removePlacedHeader(program, header)
 
 const moduleProgramOf = (header: readonly Statement[]): Program => ({
   type: 'Program',
@@ -561,68 +285,74 @@ const moduleProgramOf = (header: readonly Statement[]): Program => ({
   hashbang: null,
 })
 
-const prependModuleRegion = (state: SvelteFormatState, header: readonly Statement[]): void => {
-  const shift = SCRIPT_MODULE_BLOCK.length
-  state.regions = [
+const shift = (region: ScriptRegion, offset: number): ScriptRegion => ({
+  ...region,
+  start: region.start + offset,
+  end: region.end + offset,
+})
+
+const prependModuleScript = (document: EmbeddedDocument, header: readonly Statement[]): EmbeddedDocument => ({
+  ...document,
+  rawContent: `${SCRIPT_MODULE_BLOCK}${document.rawContent}`,
+  regions: [
     {
       start: SCRIPT_MODULE_OPEN.length,
       end: SCRIPT_MODULE_OPEN.length,
       isExpression: false,
       scriptAst: moduleProgramOf(header),
     },
-    ...state.regions.map((region) => ({
-      start: region.start + shift,
-      end: region.end + shift,
-      isExpression: region.isExpression,
-      scriptAst: region.scriptAst,
-    })),
-  ]
-  state.rawContent = `${SCRIPT_MODULE_BLOCK}${state.rawContent}`
-}
+    ...document.regions.map((region) => shift(region, SCRIPT_MODULE_BLOCK.length)),
+  ],
+})
 
-const appendHeader = (region: SvelteRegion, header: readonly Statement[]): void => {
-  programOf(region.scriptAst).body.unshift(...header)
-}
+const moduleScriptOf = (
+  document: EmbeddedDocument,
+  moduleRegion: number | undefined,
+): ScriptRegion | undefined => (moduleRegion === undefined ? undefined : document.regions.at(moduleRegion))
 
-const placeModuleHeader = (state: SvelteFormatState, context: FrameworkContext): void => {
-  const header = context.instrumentationHeader()
-  const stripped = state.regions.map((region) => stripPlacedHeader(programOf(region.scriptAst), header))
-  if (!stripped.some((wasPlaced) => wasPlaced)) {
-    return
+const headerIntoModuleScript = (
+  document: EmbeddedDocument,
+  moduleRegion: number | undefined,
+  header: readonly Statement[],
+): EmbeddedDocument => {
+  const target = moduleScriptOf(document, moduleRegion)
+  if (target === undefined) {
+    return prependModuleScript(document, header)
   }
-  Match.value(moduleRegionOf(state)).pipe(
-    Match.when(Predicate.isNotNullish, (region) => appendHeader(region, header)),
-    Match.orElse(() => prependModuleRegion(state, header)),
-  )
+  programOf(target.scriptAst).body.unshift(...header)
+  return document
 }
 
-const printedRegionCode = (region: SvelteRegion, context: FrameworkContext): string =>
-  context.printScript(programOf(region.scriptAst))
+const placedDocument = (
+  document: EmbeddedDocument,
+  walk: SvelteWalkFn,
+  compiler: SvelteCompilerModule,
+  context: FrameworkContext,
+): EmbeddedDocument => {
+  const header = context.instrumentationHeader()
+  const stripped = document.regions.map((region) => stripPlacedHeader(programOf(region.scriptAst), header))
+  if (!stripped.some((wasPlaced) => wasPlaced)) {
+    return document
+  }
+  const discovery = discoveryOf(walk, compiler, document.rawContent)
+  return headerIntoModuleScript(document, discovery.moduleRegion, header)
+}
 
-const printedExpressionWithoutTerminator = (region: SvelteRegion, context: FrameworkContext): string =>
-  printedRegionCode(region, context).slice(0, -1)
+const printedRegion = (region: ScriptRegion, context: FrameworkContext): string => {
+  const printed = context.printScript(programOf(region.scriptAst))
+  return region.isExpression ? printed.slice(0, -1) : `${NEWLINE}${printed}${NEWLINE}`
+}
 
-const printedStatement = (region: SvelteRegion, context: FrameworkContext): string =>
-  `${NEWLINE}${printedRegionCode(region, context)}${NEWLINE}`
-
-const printedRegion = (region: SvelteRegion, context: FrameworkContext): string =>
-  Match.value(region.isExpression).pipe(
-    Match.when(true, () => printedExpressionWithoutTerminator(region, context)),
-    Match.orElse(() => printedStatement(region, context)),
-  )
-
-const printedDocument = (state: SvelteFormatState, context: FrameworkContext): string => {
+const printedDocument = (document: EmbeddedDocument, context: FrameworkContext): string => {
   let printed = ''
   let cursor = 0
-  for (const region of state.regions) {
-    printed += state.rawContent.substring(cursor, region.start)
+  for (const region of document.regions) {
+    printed += document.rawContent.substring(cursor, region.start)
     printed += printedRegion(region, context)
     cursor = region.end
   }
-  return printed + state.rawContent.substring(cursor)
+  return printed + document.rawContent.substring(cursor)
 }
-
-const STARTING_COMMENT = /^\s*\/\*[\s\S]*?\*\//
 
 const leadingCommentOf = (code: string): string | undefined => STARTING_COMMENT.exec(code)?.[0]
 
@@ -631,24 +361,21 @@ const afterHashbang = (code: string): string => {
   if (newLineIndex <= 0) {
     return code
   }
-  return `${code.substring(0, newLineIndex)}${NEWLINE}// @ts-nocheck${NEWLINE}${code.substring(newLineIndex + 1)}`
+  return `${code.substring(0, newLineIndex)}${NEWLINE}${NO_CHECK}${NEWLINE}${code.substring(newLineIndex + 1)}`
 }
 
 const afterLeadingComment = (code: string): string => {
   const leadingComment = leadingCommentOf(code)
   if (leadingComment === undefined) {
-    return `// @ts-nocheck${NEWLINE}${code}`
+    return `${NO_CHECK}${NEWLINE}${code}`
   }
-  return `${leadingComment}${NEWLINE}// @ts-nocheck${NEWLINE}${code.substring(leadingComment.length)}`
+  return `${leadingComment}${NEWLINE}${NO_CHECK}${NEWLINE}${code.substring(leadingComment.length)}`
 }
 
 const prefixWithNoCheck = (code: string): string =>
-  Match.value(code.startsWith('#')).pipe(
-    Match.when(true, () => afterHashbang(code)),
-    Match.orElse(() => afterLeadingComment(code)),
-  )
+  code.startsWith('#') ? afterHashbang(code) : afterLeadingComment(code)
 
-const noCheckDocument = (content: string, regions: readonly DiscoveredRegion[]): string => {
+const noCheckedDocument = (content: string, regions: readonly LocatedRegion[]): string => {
   let spliced = ''
   let cursor = 0
   for (const region of regions) {
@@ -661,48 +388,31 @@ const noCheckDocument = (content: string, regions: readonly DiscoveredRegion[]):
   return spliced + content.substring(cursor)
 }
 
-const parsedDocument = (
-  compiler: SvelteCompiler,
+const disableTypeChecksIn = (
+  walk: SvelteWalkFn,
+  compiler: SvelteCompilerModule,
   rawContent: string,
-  context: FrameworkContext,
-): Effect.Effect<EmbeddedDocument, FrameworkFailed> =>
-  Effect.tryPromise({
-    try: () => documentOf(compiler, rawContent, context),
-    catch: toFrameworkFailed,
-  })
+): FrameworkParseResult<string> => {
+  try {
+    const regions = discoveryOf(walk, compiler, rawContent).regions
+    return { kind: 'Parsed', value: noCheckedDocument(rawContent, regions) }
+  } catch (cause) {
+    return { kind: 'ParseFailed', message: failureMessageOf(cause) }
+  }
+}
 
-const transformedDocument = (
-  document: EmbeddedDocument,
-  context: FrameworkContext,
-): Effect.Effect<EmbeddedDocument, FrameworkFailed> =>
-  Effect.flatMap(decodedState(document), (state) =>
-    Effect.sync(() => {
-      placeModuleHeader(state, context)
-      return documentFromState(state)
-    }))
-
-const renderedDocument = (
-  document: EmbeddedDocument,
-  context: FrameworkContext,
-): Effect.Effect<string, FrameworkFailed> =>
-  Effect.flatMap(
-    decodedState(document),
-    (state) => Effect.try({ try: () => printedDocument(state, context), catch: toFrameworkFailed }),
-  )
-
-const disableTypeChecksInDocument = (
-  compiler: SvelteCompiler,
-  content: string,
-): Effect.Effect<string, FrameworkFailed> =>
-  Effect.tryPromise({
-    try: async () => noCheckDocument(content, (await discoverRegions(compiler, content)).regions),
-    catch: toFrameworkFailed,
-  })
-
-export const svelteFormatService = (compiler: SvelteCompiler): FrameworkService => ({
-  claim: claimOf(compiler.version),
-  parse: (rawContent, context) => parsedDocument(compiler, rawContent, context),
-  transform: (document, context) => transformedDocument(document, context),
-  print: (document, context) => renderedDocument(document, context),
-  disableTypeChecks: (content) => disableTypeChecksInDocument(compiler, content),
+export const svelteFramework = (version: string, compiler: SvelteCompilerModule, walk: SvelteWalkFn): Framework => ({
+  kind: 'Framework',
+  name: FORMAT_NAME,
+  claim: {
+    formatId: FORMAT_ID,
+    extensions: [...EXTENSIONS],
+    language: LANGUAGE,
+    ownerVersion: version,
+    contractVersion: CONTRACT_VERSION,
+  },
+  parse: (rawContent, context) => parsedDocument(walk, compiler, rawContent, context),
+  transform: (document, context) => placedDocument(document, walk, compiler, context),
+  print: (document, context) => printedDocument(document, context),
+  disableTypeChecks: (rawContent) => disableTypeChecksIn(walk, compiler, rawContent),
 })

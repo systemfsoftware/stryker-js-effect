@@ -11,7 +11,9 @@
 const walkNodes = (node, handlers) => {
   handlers.enter(node)
   const children = node.children ?? []
-  children.forEach((child) => walkNodes(child, handlers))
+  for (const child of children) {
+    walkNodes(child, handlers)
+  }
 }
 
 /**

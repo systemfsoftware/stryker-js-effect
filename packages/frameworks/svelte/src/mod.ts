@@ -1,17 +1,15 @@
-import { Framework } from '@systemfsoftware/stryker-js-language'
-import { declarePlugin } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Effect from 'effect/Effect'
-import * as Layer from 'effect/Layer'
+import type { FrameworkContribution } from '@systemfsoftware/stryker-framework-interface'
 
-import { peerLoader, resolveSvelteCompiler } from './compiler-resolution.js'
-import { svelteFormatService } from './svelte-format.js'
+import { frameworkContribution } from './compiler-resolution.js'
 
-const frameworkLayer = Layer.effect(
-  Framework,
-  Effect.gen(function*() {
-    const load = yield* peerLoader
-    return svelteFormatService(yield* resolveSvelteCompiler(load))
-  }),
-)
+const COMPILER_SPECIFIER = 'svelte/compiler'
+const WALKER_SPECIFIER = 'oxc-walker'
 
-export const strykerPlugins = [declarePlugin('Framework', 'svelte', frameworkLayer)]
+const loadModule = (specifier: string): Promise<unknown> => import(specifier)
+
+export const strykerFrameworks: readonly FrameworkContribution[] = [
+  await frameworkContribution(
+    () => loadModule(COMPILER_SPECIFIER),
+    () => loadModule(WALKER_SPECIFIER),
+  ),
+]

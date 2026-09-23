@@ -1,218 +1,161 @@
-import { FrameworkFailed, Module } from '@systemfsoftware/stryker-js-language'
-import type { ModuleRequire } from '@systemfsoftware/stryker-js-language'
-import { SandboxDirectory } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Effect from 'effect/Effect'
-import * as Match from 'effect/Match'
-import * as Path from 'effect/Path'
-import * as Predicate from 'effect/Predicate'
-import * as Result from 'effect/Result'
+import type {
+  Framework,
+  FrameworkContribution,
+  FrameworkRefusal,
+  FrameworkRefusalReason,
+} from '@systemfsoftware/stryker-framework-interface'
 
-const MINIMUM_SVELTE_VERSION: Version = { major: 3, minor: 30 }
-const SVELTE_5: Version = { major: 5, minor: 0 }
-const SVELTE_PEER = 'svelte'
-const SVELTE_PEER_RANGE = `>=${MINIMUM_SVELTE_VERSION.major}.${MINIMUM_SVELTE_VERSION.minor}`
+import { isFilled, isFunction, isRecord, isString } from './guards.js'
+import type { SvelteCompilerModule, SvelteWalkFn } from './svelte-format.js'
+import { svelteFramework } from './svelte-format.js'
 
+const PLUGIN_NAME = 'svelte'
+const PLUGIN_PEER = 'svelte'
 const COMPILER_SPECIFIER = 'svelte/compiler'
-const WALKER_SPECIFIER = 'oxc-walker'
+
+export const SUPPORTED_VERSION_RANGE = '>=3.30'
+
+const UNUSABLE_PEER = `the "${COMPILER_SPECIFIER}" module must export VERSION and parse`
+
 const VERSION_PATTERN = /^(\d+)\.(\d+)(?:\.\d+)?/
 
-export type PeerLoader = (specifier: string) => Promise<unknown>
+const RESOLUTION_CODES: Readonly<Record<string, true>> = { ERR_MODULE_NOT_FOUND: true, MODULE_NOT_FOUND: true }
 
-export interface SvelteWalkFn {
-  (node: unknown, handlers: { readonly enter: (node: unknown) => void }): unknown
-}
+const INTEROP_KEYS: readonly string[] = ['default', 'module.exports']
 
-export interface SvelteScriptTag {
-  readonly content: string
-  readonly lang: unknown
-}
-
-export interface SvelteCompiler {
-  readonly version: string
-  readonly parse: (source: string, options: { readonly filename: string }) => unknown
-  readonly preprocess: (
-    source: string,
-    handlers: { readonly script: (script: unknown) => { readonly code: string } },
-  ) => Promise<{ readonly code: string }>
-  readonly walk: SvelteWalkFn
-}
+const SVELTE_FIVE: Version = { major: 5, minor: 0 }
 
 interface Version {
   readonly major: number
   readonly minor: number
 }
 
-interface CompilerModule {
-  readonly VERSION: string
-  readonly parse: SvelteCompiler['parse']
-  readonly preprocess: SvelteCompiler['preprocess']
-}
+const hasFields = (value: Record<string, unknown>): boolean => hasVersion(value) && hasParse(value)
 
-const COMPILER_FIELDS: Readonly<Record<string, (value: unknown) => boolean>> = {
-  VERSION: (value) => typeof value === 'string',
-  parse: (value) => typeof value === 'function',
-  preprocess: (value) => typeof value === 'function',
-}
+const hasVersion = (value: Record<string, unknown>): boolean => isFilled(value['VERSION'])
 
-const WALK_FIELDS: Readonly<Record<string, (value: unknown) => boolean>> = {
-  walk: (value) => typeof value === 'function',
-}
+const hasParse = (value: Record<string, unknown>): boolean => isFunction(value['parse'])
 
-const isCompilerModule = (value: unknown): value is CompilerModule =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (module) => hasFields(module, COMPILER_FIELDS)),
-    Match.orElse(() => false),
-  )
+const isCompilerShapeModule = (value: unknown): value is SvelteCompilerModule => isRecord(value) && hasFields(value)
 
-const isRecordWithWalk = (value: unknown): value is { readonly walk: SvelteWalkFn } =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isObject, (module) => hasFields(module, WALK_FIELDS)),
-    Match.orElse(() => false),
-  )
+const hasWalk = (value: Record<string, unknown>): boolean => isFunction(value['walk'])
 
-const hasFields = (value: { readonly [key: PropertyKey]: unknown }, fields: typeof COMPILER_FIELDS): boolean =>
-  Object.entries(fields).every(([field, accepts]) => accepts(value[field]))
-
-const INTEROP_MEMBERS: readonly string[] = ['default', 'module.exports']
+const isWalkerModule = (value: unknown): value is { readonly walk: SvelteWalkFn } => isRecord(value) && hasWalk(value)
+const isCodedError = (value: unknown): value is Record<string, unknown> => isRecord(value) && 'code' in value
 
 const interopCandidates = (module: unknown): readonly unknown[] =>
-  Match.value(module).pipe(
-    Match.when(Predicate.isObject, (record) => [
-      record,
-      ...INTEROP_MEMBERS.map((member) => Reflect.get(record, member)),
-    ]),
-    Match.orElse(() => [module]),
-  )
+  isRecord(module) ? [module, ...INTEROP_KEYS.map((key) => module[key])] : [module]
 
-const unwrapInterop = <T>(module: unknown, accepts: (value: unknown) => value is T): T | undefined =>
+const unwrap = <Shape>(module: unknown, accepts: (value: unknown) => value is Shape): Shape | undefined =>
   interopCandidates(module).find(accepts)
+
+const decodedCompiler = (module: unknown): SvelteCompilerModule | undefined => unwrap(module, isCompilerShapeModule)
+
+const decodedWalk = (module: unknown): SvelteWalkFn | undefined => {
+  const walker = unwrap(module, isWalkerModule)
+  return walker === undefined ? undefined : walker.walk
+}
+
+const floorOfMatch = (match: RegExpExecArray): Version => ({
+  major: Number.parseInt(String(match[1]), 10),
+  minor: Number.parseInt(String(match[2]), 10),
+})
+
+export const versionFloorOf = (range: string): Version => {
+  const match = VERSION_PATTERN.exec(range.replace('>=', ''))
+  if (match === null) {
+    throw new Error(`the supported range "${range}" declares no minimum version`)
+  }
+  return floorOfMatch(match)
+}
+
+const MINIMUM_SVELTE_VERSION = versionFloorOf(SUPPORTED_VERSION_RANGE)
 
 const parseVersion = (version: string): Version | undefined => {
   const match = VERSION_PATTERN.exec(version)
-  if (match === null) {
-    return undefined
-  }
-  return versionFromMatch(match)
-}
-
-const versionFromMatch = (match: RegExpExecArray): Version | undefined => {
-  const major = Number.parseInt(String(match[1]), 10)
-  const minor = Number.parseInt(String(match[2]), 10)
-  const invalid = Number.isNaN(major) || Number.isNaN(minor)
-  return Match.value(invalid).pipe(
-    Match.when(true, (): Version | undefined => undefined),
-    Match.orElse((): Version | undefined => ({ major, minor })),
-  )
+  return match === null ? undefined : floorOfMatch(match)
 }
 
 const compareVersion = (left: Version, right: Version): number =>
-  Match.value(left.major === right.major).pipe(
-    Match.when(true, () => left.minor - right.minor),
-    Match.orElse(() => left.major - right.major),
-  )
+  left.major === right.major ? left.minor - right.minor : left.major - right.major
 
-const isAtLeast = (version: string, minimum: Version): boolean =>
-  Match.value(parseVersion(version)).pipe(
-    Match.when(Predicate.isNotNullish, (parsed) => compareVersion(parsed, minimum) >= 0),
-    Match.orElse(() => false),
-  )
-
-type PeerRefusalFields = Partial<Pick<FrameworkFailed, 'peer' | 'version' | 'supportedRange'>>
-
-const refusal = (
-  reason: string,
-  detail: string,
-  fields: PeerRefusalFields = {},
-): FrameworkFailed => new FrameworkFailed({ reason, cause: detail, ...fields })
-
-const peerMissing = (peer: string): FrameworkFailed =>
-  refusal('PeerMissing', `the "${peer}" peer is not installed`, { peer })
-
-const peerVersionUnsupported = (version: string): FrameworkFailed =>
-  refusal('PeerVersionUnsupported', `${SVELTE_PEER} ${version} is not supported (expected ${SVELTE_PEER_RANGE})`, {
-    peer: SVELTE_PEER,
-    version,
-    supportedRange: SVELTE_PEER_RANGE,
-  })
-
-const invalidContribution = (detail: string): FrameworkFailed => refusal('InvalidContribution', detail)
-
-const loadedCompilerModule = (load: PeerLoader): Effect.Effect<unknown, FrameworkFailed> =>
-  Effect.tryPromise({
-    try: () => load(COMPILER_SPECIFIER),
-    catch: () => peerMissing(SVELTE_PEER),
-  })
-
-const decodedCompilerModule = (module: unknown): Effect.Effect<CompilerModule, FrameworkFailed> =>
-  Match.value(unwrapInterop(module, isCompilerModule)).pipe(
-    Match.when(Predicate.isNotNullish, (compiler) => Effect.succeed(compiler)),
-    Match.orElse(() =>
-      Effect.fail(invalidContribution(`"${COMPILER_SPECIFIER}" must export VERSION, parse, and preprocess`))
-    ),
-  )
-
-const assertSupportedVersion = (version: string): Effect.Effect<void, FrameworkFailed> =>
-  Match.value(isAtLeast(version, MINIMUM_SVELTE_VERSION)).pipe(
-    Match.when(true, () => Effect.void),
-    Match.orElse(() => Effect.fail(peerVersionUnsupported(version))),
-  )
-
-const loadedWalker = (load: PeerLoader, specifier: string): Effect.Effect<SvelteWalkFn, FrameworkFailed> =>
-  Effect.flatMap(
-    Effect.tryPromise({
-      try: () => load(specifier),
-      catch: () => peerMissing(specifier),
-    }),
-    (module) =>
-      Match.value(unwrapInterop(module, isRecordWithWalk)).pipe(
-        Match.when(Predicate.isNotNullish, (withWalk) => Effect.succeed(withWalk.walk)),
-        Match.orElse(() => Effect.fail(invalidContribution(`"${specifier}" must export walk`))),
-      ),
-  )
-
-const resolveWalk = (load: PeerLoader, version: string): Effect.Effect<SvelteWalkFn, FrameworkFailed> =>
-  Match.value(isAtLeast(version, SVELTE_5)).pipe(
-    Match.when(true, () => loadedWalker(load, WALKER_SPECIFIER)),
-    Match.orElse(() => loadedWalker(load, COMPILER_SPECIFIER)),
-  )
-
-export const resolveSvelteCompiler = (load: PeerLoader): Effect.Effect<SvelteCompiler, FrameworkFailed> =>
-  Effect.gen(function*() {
-    const compiler = yield* Effect.flatMap(loadedCompilerModule(load), decodedCompilerModule)
-    yield* assertSupportedVersion(compiler.VERSION)
-    const walk = yield* resolveWalk(load, compiler.VERSION)
-    return {
-      version: compiler.VERSION,
-      parse: compiler.parse,
-      preprocess: compiler.preprocess,
-      walk,
-    }
-  })
-
-const loadResolvedPeer = async (
-  requireFromProject: ModuleRequire,
-  pathService: Path.Path,
-  specifier: string,
-): Promise<unknown> => import(await resolvePeerUrl(requireFromProject, pathService, specifier))
-
-const resolvePeerUrl = async (
-  requireFromProject: ModuleRequire,
-  pathService: Path.Path,
-  specifier: string,
-): Promise<string> => {
-  const resolved = Result.try(() => requireFromProject.resolve(specifier))
-  if (!Result.isSuccess(resolved)) {
-    return import.meta.resolve(specifier)
-  }
-  return (await Effect.runPromise(pathService.toFileUrl(resolved.success))).href
+const isAtLeast = (version: string, minimum: Version): boolean => {
+  const parsed = parseVersion(version)
+  return parsed !== undefined && compareVersion(parsed, minimum) >= 0
 }
 
-export const peerLoader: Effect.Effect<PeerLoader, never, Module | Path.Path | SandboxDirectory> = Effect.gen(
-  function*() {
-    const moduleService = yield* Module
-    const pathService = yield* Path.Path
-    const sandboxDirectory = yield* SandboxDirectory
-    const requireFromProject = moduleService.createRequire(pathService.join(sandboxDirectory, 'package.json'))
-    return (specifier: string): Promise<unknown> => loadResolvedPeer(requireFromProject, pathService, specifier)
-  },
-)
+const refusalOf = (reason: FrameworkRefusalReason, detail: string): FrameworkRefusal => ({
+  kind: 'FrameworkRefusal',
+  name: PLUGIN_NAME,
+  reason,
+  peer: PLUGIN_PEER,
+  detail,
+})
+
+const compilerWalkOf = (compilerModule: unknown): SvelteWalkFn | undefined => decodedWalk(compilerModule)
+
+const modernWalkOf = (walkerModule: unknown): SvelteWalkFn | undefined => decodedWalk(walkerModule)
+
+const legacyWalkOf = (compilerModule: unknown, walkerModule: unknown): SvelteWalkFn | undefined =>
+  compilerWalkOf(compilerModule) ?? decodedWalk(walkerModule)
+
+const walkerOf = (
+  version: string,
+  compilerModule: unknown,
+  walkerModule: unknown,
+): SvelteWalkFn | undefined =>
+  isAtLeast(version, SVELTE_FIVE) ? modernWalkOf(walkerModule) : legacyWalkOf(compilerModule, walkerModule)
+
+const frameworkWithWalker = (
+  version: string,
+  compiler: SvelteCompilerModule,
+  compilerModule: unknown,
+  walkerModule: unknown,
+): Framework => {
+  const walker = walkerOf(version, compilerModule, walkerModule)
+  if (walker === undefined) {
+    throw new Error(`the svelte ${version} compiler exports no template walker`)
+  }
+  return svelteFramework(version, compiler, walker)
+}
+
+const unsupportedVersion = (version: string): FrameworkContribution =>
+  refusalOf('PeerVersionUnsupported', `svelte ${version} is not supported (expected ${SUPPORTED_VERSION_RANGE})`)
+
+const servedVersion = (
+  version: string,
+  compiler: SvelteCompilerModule,
+  compilerModule: unknown,
+  walkerModule: unknown,
+): FrameworkContribution =>
+  isAtLeast(version, MINIMUM_SVELTE_VERSION)
+    ? frameworkWithWalker(version, compiler, compilerModule, walkerModule)
+    : unsupportedVersion(version)
+
+export const frameworkOf = (compilerModule: unknown, walkerModule: unknown): FrameworkContribution => {
+  const compiler = decodedCompiler(compilerModule)
+  return compiler === undefined
+    ? refusalOf('PeerVersionUnsupported', UNUSABLE_PEER)
+    : servedVersion(compiler.VERSION, compiler, compilerModule, walkerModule)
+}
+
+export const isResolutionError = (cause: unknown): boolean => isCodedError(cause) && isKnownCode(cause['code'])
+
+const isKnownCode = (code: unknown): boolean => isString(code) && RESOLUTION_CODES[code] === true
+
+export const frameworkContribution = async (
+  loadCompiler: () => Promise<unknown>,
+  loadWalker: () => Promise<unknown>,
+): Promise<FrameworkContribution> => {
+  const compilerModule = await loadCompiler().catch((cause: unknown) =>
+    isResolutionError(cause) ? missingCompiler() : Promise.reject(cause)
+  )
+  if (compilerModule === MISSING_COMPILER) {
+    return refusalOf('PeerMissing', `the "${PLUGIN_PEER}" peer is not installed`)
+  }
+  return frameworkOf(compilerModule, await loadWalker())
+}
+
+const MISSING_COMPILER = Symbol('the svelte compiler did not resolve')
+
+const missingCompiler = (): unknown => MISSING_COMPILER
