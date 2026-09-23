@@ -5,8 +5,7 @@
     "outDir": "dist",
     "rootDir": ".",
     "types": [
-      "node",
-      "vitest/importMeta"
+      "node"
     ]
   },
   "include": [

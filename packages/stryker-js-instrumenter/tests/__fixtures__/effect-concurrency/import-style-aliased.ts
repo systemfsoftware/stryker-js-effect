@@ -1,3 +1,3 @@
-import { Ref as R } from 'effect'
+import { Effect, Ref as R } from 'effect'
 
-export const aliasedImportUpdate = (ref: R.Ref<number>) => R.update(ref, (n) => n + 1)
+export const aliasedImportUpdate = (ref: R.Ref<number>): Effect.Effect<void> => R.update(ref, (n) => n + 1)

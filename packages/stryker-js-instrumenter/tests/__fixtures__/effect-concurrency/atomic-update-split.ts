@@ -1,4 +1,4 @@
-import { pipe, Ref, SynchronizedRef } from 'effect'
+import { Effect, pipe, Ref, SynchronizedRef } from 'effect'
 import type { Option } from 'effect'
 
 export const refModifyDataFirst = (ref: Ref.Ref<number>) => Ref.modify(ref, (n) => [n, n + 1])
@@ -22,7 +22,7 @@ export const refModifySomePipeMethod = (
   pf: (n: number) => readonly [string, Option.Option<number>],
 ) => ref.pipe(Ref.modifySome(pf))
 
-export const refUpdateDataFirst = (ref: Ref.Ref<number>) => Ref.update(ref, (n) => n + 1)
+export const refUpdateDataFirst = (ref: Ref.Ref<number>): Effect.Effect<void> => Ref.update(ref, (n) => n + 1)
 
 export const refUpdatePipeArg = (ref: Ref.Ref<number>) => pipe(ref, Ref.update((n: number) => n + 1))
 

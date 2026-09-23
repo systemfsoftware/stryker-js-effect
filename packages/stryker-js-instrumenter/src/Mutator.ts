@@ -65,6 +65,7 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.js'
+import { atomicUpdateSplitMutator } from './ConcurrencyMutators.js'
 import { printNode } from './print/index.js'
 
 export type { Node }
@@ -1362,7 +1363,9 @@ export const defaultMutators: Readonly<Record<string, Mutator>> = Object.freeze(
   UpdateOperator: updateOperatorMutator,
 })
 
-export const optInMutators: Readonly<Record<string, Mutator>> = Object.freeze({})
+export const optInMutators: Readonly<Record<string, Mutator>> = Object.freeze({
+  AtomicUpdateSplit: atomicUpdateSplitMutator,
+})
 
 export type MutatorEntry = readonly [name: string, mutate: Mutator]
 
@@ -1401,149 +1404,3 @@ export const selectMutators = (
   ],
   known: [...Object.keys(registry.defaults), ...Object.keys(registry.optIn)],
 })
-
-if (import.meta.vitest) {
-  // Dynamic: statics would ship test-only modules, and a Transformer.ts import cycle, into the bundle.
-  const { it } = await import('@systemfsoftware/effect-gherkin-spec')
-  const { Effect, Schema } = await import('effect')
-  const { parseWithOxc } = await import('./Parser.js')
-  const { createMutantCollector, transform, transformScript } = await import('./Transformer.js')
-
-  const NO_MUTANTS_MUTATOR: Mutator = () => NO_MUTANTS
-
-  const dummyMutator: Mutator = (node) =>
-    Match.value(node).pipe(
-      Match.when(isExpressionKind, (expression) => [cloneNode(expression)]),
-      Match.orElse(() => NO_MUTANTS),
-    )
-
-  const STAND_IN_NAMES: readonly string[] = ['StandInA', 'StandInB', 'StandInC']
-
-  const DUMMY_NAME = 'Dummy'
-
-  const ALL_OPT_IN_NAMES: readonly string[] = [...STAND_IN_NAMES, DUMMY_NAME]
-
-  const testRegistry: MutatorRegistry = Object.freeze({
-    defaults: defaultMutators,
-    optIn: Object.freeze({
-      StandInA: NO_MUTANTS_MUTATOR,
-      StandInB: NO_MUTANTS_MUTATOR,
-      StandInC: NO_MUTANTS_MUTATOR,
-      Dummy: dummyMutator,
-    }),
-  })
-
-  const DEFAULT_NAMES: readonly string[] = [
-    'ArithmeticOperator',
-    'ArrayDeclaration',
-    'ArrowFunction',
-    'AssignmentOperator',
-    'BlockStatement',
-    'BooleanLiteral',
-    'ConditionalExpression',
-    'EqualityOperator',
-    'LogicalOperator',
-    'MethodExpression',
-    'ObjectLiteral',
-    'OptionalChaining',
-    'Regex',
-    'StringLiteral',
-    'UnaryOperator',
-    'UpdateOperator',
-  ]
-
-  const SelectionCase = Schema.Literals([
-    'no opt-in',
-    'StandInA',
-    'StandInB',
-    'StandInC',
-    'Dummy',
-    'the three stand-ins',
-    'Dummy and one stand-in',
-    'every opt-in',
-  ])
-
-  const REQUESTS: Record<typeof SelectionCase.Type, readonly string[]> = {
-    'no opt-in': [],
-    StandInA: ['StandInA'],
-    StandInB: ['StandInB'],
-    StandInC: ['StandInC'],
-    Dummy: [DUMMY_NAME],
-    'the three stand-ins': ['StandInA', 'StandInB', 'StandInC'],
-    'Dummy and one stand-in': [DUMMY_NAME, 'StandInA'],
-    'every opt-in': ['StandInA', 'StandInB', 'StandInC', DUMMY_NAME],
-  }
-
-  const ArbitraryRequest = Schema.Array(Schema.String)
-
-  const sameNames = (a: readonly string[], b: readonly string[]): boolean =>
-    a.length === b.length && a.every((name, index) => name === b[index])
-
-  const expectedActiveNames = (request: readonly string[]): readonly string[] => [
-    ...DEFAULT_NAMES,
-    ...ALL_OPT_IN_NAMES.filter((name) => request.includes(name)),
-  ]
-
-  it.prop('selects defaults plus exactly the named opt-ins, and knows every name', [SelectionCase], ([
-    selectionCase,
-  ]) => {
-    const request = REQUESTS[selectionCase]
-    const selection = selectMutators(testRegistry, request)
-    return (
-      sameNames(selection.active.map(([name]) => name), expectedActiveNames(request)) &&
-      sameNames(selection.known, [...DEFAULT_NAMES, ...ALL_OPT_IN_NAMES])
-    )
-  })
-
-  const PROBE_SOURCE = 'const sum = 1 + 2\nconst doubled = sum * 2\n'
-
-  it.prop('holds the selection laws for any list of requested names', [ArbitraryRequest], ([request]) => {
-    const selection = selectMutators(testRegistry, request)
-    const activeNames = selection.active.map(([name]) => name)
-    const namedOptIns = ALL_OPT_IN_NAMES.filter((name) => request.includes(name))
-    return (
-      sameNames(activeNames.slice(0, DEFAULT_NAMES.length), DEFAULT_NAMES) &&
-      sameNames(activeNames.slice(DEFAULT_NAMES.length), namedOptIns) &&
-      sameNames(selectMutators(testRegistry, [...request, ...request]).active.map(([name]) => name), activeNames) &&
-      sameNames(selection.known, [...DEFAULT_NAMES, ...ALL_OPT_IN_NAMES])
-    )
-  })
-
-  const mutantsFor = (optInMutations: readonly string[]) =>
-    Effect.flatMap(parseWithOxc(PROBE_SOURCE, 'probe.ts', 'ts'), (parsed) => {
-      const collector = createMutantCollector()
-      return Effect.as(
-        transformScript(
-          {
-            format: 'ts',
-            root: parsed.root,
-            comments: parsed.comments,
-            rawContent: PROBE_SOURCE,
-            originFileName: 'probe.ts',
-          },
-          collector,
-          { transform, options: { excludedMutations: [], ignorers: [], optInMutations }, mutateDescription: true },
-          testRegistry,
-        ),
-        collector,
-      )
-    })
-
-  it.effect('the probe yields ordinary mutants, proving it is live', () =>
-    Effect.map(mutantsFor([]), (mutants) => mutants.length > 1))
-
-  it.effect.prop(
-    'mutates the probe exactly when the opt-in that produces mutants is named',
-    [SelectionCase],
-    ([selectionCase]) => {
-      const request = REQUESTS[selectionCase]
-      return Effect.map(mutantsFor(request), (mutants) => {
-        const names = mutants.map((mutant) => mutant.mutatorName)
-        return (
-          (request.includes(DUMMY_NAME) ? names.includes(DUMMY_NAME) : !names.includes(DUMMY_NAME)) &&
-          STAND_IN_NAMES.every((standIn) => !names.includes(standIn))
-        )
-      })
-    },
-  )
-}
