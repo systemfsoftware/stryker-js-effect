@@ -1,51 +1,31 @@
 #!/usr/bin/env node
 import * as NodeTerminal from '@effect/platform-node/NodeTerminal'
+import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { AggregationTemporalityPreference, OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics'
 import { BatchSpanProcessor, SimpleSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-base'
-import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
-import * as NodePath from '@effect/platform-node-shared/NodePath'
-import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
-import { NodeSocket } from '@effect/platform-node'
-import * as NodeStdio from '@effect/platform-node/NodeStdio'
-import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
-import * as NodeCrypto from '@effect/platform-node-shared/NodeCrypto'
 import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
-import * as Console from 'effect/Console'
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
-import * as Crypto from 'effect/Crypto'
 import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
-import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Path from 'effect/Path'
-import type { PlatformError } from 'effect/PlatformError'
-import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 import * as CliConfig from 'effect/unstable/cli/CliConfig'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
-import * as ChildProcess from 'effect/unstable/process/ChildProcess'
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import * as RpcClient from 'effect/unstable/rpc/RpcClient'
-import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 
 import { strykerCliEffect } from '../Cli.cell.js'
 import { machineConsoleLayer } from '../Envelope.js'
-
-import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
-import { classifyWorkerExit } from '../Worker.js'
-import { ChildProcessCrashedError } from '../Worker.schema.js'
-import { type SpawnedSocketWorker, type WorkerLauncherShape, WorkerLauncher } from '../WorkerLauncher.service.js'
+import { nodePlatformLayer } from '../promises/main.js'
 import { UnsupportedNodeVersion } from './main.schema.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
@@ -195,103 +175,11 @@ const machineConsoleByModeLayer = Layer.unwrap(
   ),
 )
 
-const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string) =>
-  fs.chmod(file, 0o600).pipe(
-    Effect.tapError((cause) =>
-      Effect.logWarning(
-        `Could not restrict "${file}" to its owner; the worker directory's own mode still protects it.`,
-      ).pipe(Effect.annotateLogs('cause', cause))
-    ),
-    Effect.catchTag('PlatformError', () => Effect.void),
-  )
-
-const nodeWorkerLauncherLayer = Layer.effect(
-  WorkerLauncher,
-  Effect.gen(function*() {
-    const crypto = yield* Crypto.Crypto
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-
-    return {
-      spawn: (
-        params: Parameters<WorkerLauncherShape['spawn']>[0],
-      ): Effect.Effect<SpawnedSocketWorker, ChildProcessCrashedError, Scope.Scope> =>
-        Effect.gen(function*() {
-          const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
-          const workerId = yield* crypto.randomUUIDv4
-          const socketPath = Match.value(globalThis.process.platform).pipe(
-            Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${workerId}`),
-            Match.orElse(() => path.join(workerDir, 'worker.sock')),
-          )
-          const optionsFile = path.join(workerDir, 'options.json')
-          yield* fs.writeFileString(optionsFile, params.optionsJson)
-          yield* restrictToOwnerOrWarn(fs, optionsFile)
-
-          const entrypointPath = yield* path.fromFileUrl(new URL(params.entrypoint))
-          const handle = yield* ChildProcess.make(
-            globalThis.process.execPath,
-            [...params.execArgv, entrypointPath],
-            {
-              cwd: params.workingDirectory,
-              extendEnv: true,
-              env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath, ...params.env },
-              stderr: 'inherit',
-            },
-          ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
-
-          const clientLayer = RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
-            Layer.provide(NodeSocket.layerNet({ path: socketPath })),
-            Layer.provide(RpcSerialization.layerNdjson),
-          )
-
-          const exited = handle.exitCode.pipe(
-            Effect.orDie,
-            Effect.flatMap((exitCode) => Effect.fail(classifyWorkerExit(Number(handle.pid), exitCode))),
-          )
-
-          return { pid: Number(handle.pid), clientLayer, exited }
-        }).pipe(
-          Effect.catchIf(S.is(ChildProcessCrashedError), (error) => Effect.fail(error), () =>
-            Effect.fail(
-              ChildProcessCrashedError.make({
-                pid: 0,
-                exit: { _tag: 'Code', code: 1 },
-                cause: 'worker spawn failed',
-              }),
-            )),
-        ),
-    }
-  }),
-)
-
-const nodeVmPlatformLayer = Layer.effect(
-  VmRunner,
-  Effect.sync(
-    (): VmPlatform => ({
-      module: globalThis.process.getBuiltinModule('node:module'),
-      vm: globalThis.process.getBuiltinModule('node:vm'),
-    }),
-  ),
-)
-
-const nodeFsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
-
-const nodeSpawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(nodeFsPathLayer))
-
-const nodeBase = Layer.mergeAll(nodeFsPathLayer, nodeSpawnerLayer, NodeStdio.layer)
-
-const nodePlatformLayer = Layer.mergeAll(
-  nodeWorkerLauncherLayer.pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
-  nodeBase,
-  nodeVmPlatformLayer,
-)
-
 const probeGroup = Layer.mergeAll(
   OutputModeProbeLive,
   RunEventStreamPortTag.layer.pipe(Layer.provide(RunEventDrain.fileLayer)),
   RunEventDrain.fileLayer,
-).pipe(Layer.provide(nodeBase))
+).pipe(Layer.provide(nodePlatformLayer))
 
 const cliLayer = Layer.mergeAll(
   probeGroup,

@@ -332,7 +332,7 @@ const instrumentWith = (
       onSuccess: Effect.succeed,
       onFailure: (failure) => Effect.fail(InstrumentError.make({ message: 'Failed to instrument', cause: failure })),
     })
-    const printed = yield* Result.match(Result.all(Arr.flatMap(parsed, ({ file, ast }) => printedFile(file, ast))), {
+    const printed = yield* Result.match(Result.all(Arr.map(parsed, ({ file, ast }) => printedFile(file, ast))), {
       onSuccess: (files) => Effect.succeed(files.flat()),
       onFailure: (failure) => Effect.fail(InstrumentError.make({ message: 'Failed to print', cause: failure })),
     })
