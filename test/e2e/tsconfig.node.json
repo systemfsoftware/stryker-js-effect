@@ -1,10 +1,15 @@
 {
   "extends": "@systemfsoftware/tsconfig/node",
   "compilerOptions": {
-    "target": "es2024"
+    "target": "es2024",
+    "composite": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "node_modules/.cache/tsconfig.node.tsbuildinfo"
   },
   "include": [
+    "otel.ts",
     "oxlint.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "vitest.oracle.config.ts"
   ]
 }

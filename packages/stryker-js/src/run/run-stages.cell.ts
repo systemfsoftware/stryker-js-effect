@@ -1,0 +1,83 @@
+import { Cell } from '@systemfsoftware/effect-cell-types'
+import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import * as Effect from 'effect/Effect'
+import { dual } from 'effect/Function'
+import * as Layer from 'effect/Layer'
+import * as Option from 'effect/Option'
+import type { PlatformError } from 'effect/PlatformError'
+import * as Predicate from 'effect/Predicate'
+
+import { concurrencyCell } from '../concurrency.cell.js'
+import { readProjectCell } from '../read-project.cell.js'
+import { RunEventDrainLive, makeRunEventStream } from '../run-event-stream.service.js'
+import { StageError } from '../Run.schema.js'
+import { dryRunCell } from './dry-run.cell.js'
+import { instrumentCell } from './instrument.cell.js'
+import { loadConfigCell } from './load-config.cell.js'
+import { mutationTestCell as mutationTestStageCell } from './mutation-test.cell.js'
+import type { MutationTestDone } from './mutation-test.cell.js'
+import { prepareCell } from './prepare.cell.js'
+import type { PrepareExecutorArgs } from './prepare.cell.js'
+import { RunEnvironment } from './RunEnvironment.service.js'
+import type { ResolvedMode } from '../output-mode.schema.js'
+import type { EnginePorts, StageServices } from './StageServices.service.js'
+
+const prepareStageCell = Cell.andThen(
+  Cell.andThen(
+    Cell.andThen(
+      Cell.mapError(loadConfigCell, (cause) =>
+        StageError.make({ stage: 'prepare', reason: 'Failed to read config', cause })),
+      Cell.mapError(readProjectCell, (cause) =>
+        StageError.make({ stage: 'prepare', reason: 'Failed to read project', cause })),
+    ),
+    prepareCell,
+  ),
+  Cell.andThen(
+    Cell.andThen(concurrencyCell, instrumentCell),
+    Cell.andThen(Cell.andThen(dryRunCell, mutationTestStageCell)),
+  ),
+)
+
+export const mutationTestCell: Cell.Cell<PrepareExecutorArgs, MutationTestDone, StageError, StageServices> =
+  prepareStageCell
+
+const HEADLESS_MODE: ResolvedMode = { mode: 'machine', signal: 'flag', stdoutIsTTY: false }
+
+const strykerRunLayer = Layer
+  .unwrap(
+    Effect.flatMap(makeRunEventStream(HEADLESS_MODE), (stream) =>
+      Effect.map(
+        RunEnvironment.forStream(HEADLESS_MODE, stream, { builtinReporters: { html: makeHtmlReporter } }),
+        (env) => RunEnvironment.stage(env, stream.queue),
+      )),
+  )
+  .pipe(Layer.provide(RunEventDrainLive))
+
+export const strykerCell: {
+  (
+    options: PartialStrykerOptions,
+    targetMutatePatterns?: readonly string[],
+  ): Effect.Effect<MutationTestDone, StageError | PlatformError, EnginePorts>
+  (
+    targetMutatePatterns?: readonly string[],
+  ): (
+    options: PartialStrykerOptions,
+  ) => Effect.Effect<MutationTestDone, StageError | PlatformError, EnginePorts>
+} = dual(
+  (args) => Predicate.isObject(args[0]),
+  (options: PartialStrykerOptions, targetMutatePatterns?: readonly string[]) =>
+    Effect.scoped(
+      Effect.flatMap(
+        Layer.build(strykerRunLayer),
+        (context) =>
+          Cell.provideContext(mutationTestCell, context).run({
+            cliOptions: options,
+            targetMutatePatterns: Option.match(Option.fromUndefinedOr(targetMutatePatterns), {
+              onNone: () => undefined,
+              onSome: (present) => [...present],
+            }),
+          }),
+      ),
+    ),
+)

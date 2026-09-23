@@ -70,3 +70,36 @@ export class SvelteParseFailed
     return `Failed to parse Svelte component ${this.fileName}`
   }
 }
+
+export class HtmlEndSpanMissing
+  extends S.TaggedError<HtmlEndSpanMissing>('@systemfsoftware/stryker-js-instrumenter/Parser.schema/HtmlEndSpanMissing')(
+    'HtmlEndSpanMissing',
+    {},
+  )
+{
+  override get message(): string {
+    return 'HTML element without an end source span'
+  }
+}
+
+export class SvelteHtmlMissing
+  extends S.TaggedError<SvelteHtmlMissing>('@systemfsoftware/stryker-js-instrumenter/Parser.schema/SvelteHtmlMissing')(
+    'SvelteHtmlMissing',
+    {},
+  )
+{
+  override get message(): string {
+    return 'Svelte AST without html'
+  }
+}
+
+export class SvelteRangeMissing
+  extends S.TaggedError<SvelteRangeMissing>('@systemfsoftware/stryker-js-instrumenter/Parser.schema/SvelteRangeMissing')(
+    'SvelteRangeMissing',
+    { script: S.Literals(['instance', 'module']) },
+  )
+{
+  override get message(): string {
+    return `Svelte ${this.script} script without a source range`
+  }
+}

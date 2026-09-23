@@ -1,5 +1,5 @@
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { OutputMode } from '../output-mode.js'
+import type { OutputMode } from '../output-mode.schema.js'
 
 export type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 

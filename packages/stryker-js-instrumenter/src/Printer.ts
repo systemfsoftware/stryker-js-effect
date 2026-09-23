@@ -1,39 +1,28 @@
-/**
- * Printer — turns the instrumenter's ASTs back into source text. The owned
- * ESTree printer (`./print/index.js`) renders; the script-root offsets that
- * html/svelte slicing needs come from the parsed `range`.
- */
+import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import { spanOf } from './Ast.js'
+import * as Result from 'effect/Result'
+import { spanOf } from './Ast.handle.js'
+import type { Ast, HtmlAst, JSAst, SvelteAst, TSAst, TemplateScript, TsxAst } from './Ast.schema.js'
+import { PrintFailed } from './print/PrintFailed.schema.js'
 import { type Hashbang, printProgram } from './print/index.js'
-import {
-  type Ast,
-  type HtmlAst,
-  type JSAst,
-  type SvelteAst,
-  type TemplateScript,
-  type TSAst,
-  type TsxAst,
-} from './Syntax.js'
 
-export type Printer<T extends Ast> = (file: T, context: PrinterContext) => string
+export type Printer<T extends Ast> = (file: T, context: PrinterContext) => Result.Result<string, PrintFailed>
 export interface PrinterContext {
   print: Printer<Ast>
 }
-export function print(file: Ast): string {
+export const print = (file: Ast): Result.Result<string, PrintFailed> => {
   const context: PrinterContext = { print }
-  switch (file.format) {
-    case 'js':
-      return jsPrint(file, context)
-    case 'ts':
-      return tsPrint(file, context)
-    case 'tsx':
-      return tsPrint(file, context)
-    case 'html':
-      return htmlPrint(file, context)
-    case 'svelte':
-      return sveltePrint(file, context)
-  }
+  return Match.value(file).pipe(
+    Match.when({ format: 'js' }, (ast) => scriptPrint(ast)),
+    Match.when({ format: 'ts' }, (ast) => scriptPrint(ast)),
+    Match.when({ format: 'tsx' }, (ast) => scriptPrint(ast)),
+    Match.when({ format: 'html' }, (ast) => htmlPrint(ast, context)),
+    Match.when({ format: 'svelte' }, (ast) => sveltePrint(ast, context)),
+    Match.exhaustive,
+  )
 }
 
 const HASHBANG_FIELDS: Readonly<Record<string, <A = unknown>(field: A) => boolean>> = {
@@ -42,101 +31,98 @@ const HASHBANG_FIELDS: Readonly<Record<string, <A = unknown>(field: A) => boolea
   start: (field) => typeof field === 'number',
 }
 
-function isHashbang(value: unknown): value is Hashbang {
-  return Predicate.isObject(value) && Object.entries(HASHBANG_FIELDS).every(([key, accepts]) => accepts(value[key]))
-}
+const isHashbang = (value: unknown): value is Hashbang =>
+  Predicate.isObject(value) && Object.entries(HASHBANG_FIELDS).every(([key, accepts]) => accepts(value[key]))
 
-const toHashbang = <A = unknown>(hashbang: A): Hashbang | null => (isHashbang(hashbang) ? hashbang : null)
+const toHashbang = <A = unknown>(hashbang: A): Hashbang | null =>
+  Option.match(Option.filter(Option.fromNullishOr(hashbang), isHashbang), {
+    onSome: (value) => value,
+    onNone: () => null,
+  })
 
-function getHashbang(root: Ast['root']): Hashbang | null {
-  return toHashbang('hashbang' in root ? root.hashbang : null)
-}
+const hasHashbangField = (root: Ast['root']): root is Ast['root'] & { readonly hashbang?: Hashbang | null } =>
+  'hashbang' in root
 
-const jsPrint: Printer<JSAst> = (file) => printProgram(file.root, { hashbang: getHashbang(file.root) })
-
-const tsPrint: Printer<TSAst | TsxAst> = (file) => printProgram(file.root, { hashbang: getHashbang(file.root) })
-
-function getScriptStart(script: HtmlAst['root']['scripts'][number]): number {
-  const span = spanOf(script.root)
-  if (span === undefined) {
-    throw new Error('Script AST root without start')
-  }
-  return span.start
-}
-
-function getScriptEnd(script: HtmlAst['root']['scripts'][number]): number {
-  const span = spanOf(script.root)
-  if (span === undefined) {
-    throw new Error('Script AST root without end')
-  }
-  return span.end
-}
-
-const htmlPrint: Printer<HtmlAst> = (ast, context) => {
-  const sortedScripts = [...ast.root.scripts].sort(
-    (a, b) => getScriptStart(a) - getScriptStart(b),
+const getHashbang = (root: Ast['root']): Hashbang | null =>
+  Option.match(
+    Option.map(Option.filter(Option.some(root), hasHashbangField), (value) => toHashbang(value.hashbang)),
+    {
+      onNone: () => null,
+      onSome: (hashbang) => hashbang,
+    },
   )
-  let currentIndex = 0
-  let html = ''
-  for (const script of sortedScripts) {
-    html += ast.rawContent.substring(currentIndex, getScriptStart(script))
-    html += '\n'
-    html += context.print(script, context)
-    html += '\n'
-    currentIndex = getScriptEnd(script)
-  }
-  html += ast.rawContent.substr(currentIndex)
-  return html
-}
 
-interface SvelteOutput {
+const scriptPrint = (file: JSAst | TSAst | TsxAst): Result.Result<string, PrintFailed> =>
+  Result.succeed(printProgram(file.root, { hashbang: getHashbang(file.root) }))
+
+interface WrittenText {
   readonly text: string
   readonly cursor: number
 }
+
+interface SpannedScript {
+  readonly script: HtmlAst['root']['scripts'][number]
+  readonly start: number
+  readonly end: number
+}
+
+const spannedScriptOf = (script: HtmlAst['root']['scripts'][number]): Result.Result<SpannedScript, PrintFailed> =>
+  Option.match(Option.fromUndefinedOr(spanOf(script.root)), {
+    onNone: () => Result.fail(PrintFailed.make({ message: 'Script AST root without start' })),
+    onSome: (span) => Result.succeed({ script, start: span.start, end: span.end }),
+  })
+
+const spannedScriptsOf = (
+  scripts: readonly HtmlAst['root']['scripts'][number][],
+): Result.Result<ReadonlyArray<SpannedScript>, PrintFailed> =>
+  Arr.reduce(scripts, Result.succeed<ReadonlyArray<SpannedScript>, PrintFailed>([]), (state, script) =>
+    Result.flatMap(state, (collected) =>
+      Result.map(spannedScriptOf(script), (spanned) => [...collected, spanned]),
+    ))
+
+const htmlPrint: Printer<HtmlAst> = (ast, context) =>
+  Result.flatMap(spannedScriptsOf(ast.root.scripts), (spanned) => {
+    const sorted = [...spanned].sort((a, b) => a.start - b.start)
+    return Result.map(
+      Arr.reduce(sorted, Result.succeed<WrittenText, PrintFailed>({ text: '', cursor: 0 }), (state, spannedScript) =>
+        Result.flatMap(state, (current) =>
+          Result.map(context.print(spannedScript.script, context), (code) => ({
+            text: `${current.text}${ast.rawContent.substring(current.cursor, spannedScript.start)}\n${code}\n`,
+            cursor: spannedScript.end,
+          })),
+        ),
+      ),
+      (written) => `${written.text}${ast.rawContent.substring(written.cursor)}`,
+    )
+  })
 
 const sveltePrint: Printer<SvelteAst> = ({ root, rawContent }, context) => {
   const sortedScripts = [root.moduleScript, ...root.additionalScripts]
     .filter(Predicate.isNotNullish)
     .sort((a, b) => a.range.start - b.range.start)
-  const written = sortedScripts.reduce(
-    (state, script) => appendScript(state, script, rawContent, context),
-    { text: '', cursor: 0 },
+  return Result.map(
+    Arr.reduce(sortedScripts, Result.succeed<WrittenText, PrintFailed>({ text: '', cursor: 0 }), (state, script) =>
+      Result.flatMap(state, (current) => appendSvelteScript(current, script, rawContent, context)),
+    ),
+    (written) => `${written.text}${rawContent.substring(written.cursor)}`,
   )
-  return written.text + rawContent.substring(written.cursor)
 }
 
-function appendScript(
-  state: SvelteOutput,
+const appendSvelteScript = (
+  state: WrittenText,
   script: TemplateScript,
   rawContent: string,
   context: PrinterContext,
-): SvelteOutput {
-  if (script.isExpression) return appendExpression(state, script, rawContent, context)
-  return appendStatement(state, script, rawContent, context)
-}
-
-function appendExpression(
-  state: SvelteOutput,
-  script: TemplateScript,
-  rawContent: string,
-  context: PrinterContext,
-): SvelteOutput {
-  const code = context.print(script.ast, context)
-  return {
-    text: `${state.text}${rawContent.substring(state.cursor, script.range.start)}${code.slice(0, -1)}`,
-    cursor: script.range.end,
-  }
-}
-
-function appendStatement(
-  state: SvelteOutput,
-  script: TemplateScript,
-  rawContent: string,
-  context: PrinterContext,
-): SvelteOutput {
-  const code = context.print(script.ast, context)
-  return {
-    text: `${state.text}${rawContent.substring(state.cursor, script.range.start)}\n${code}\n`,
-    cursor: script.range.end,
-  }
-}
+): Result.Result<WrittenText, PrintFailed> =>
+  Result.map(context.print(script.ast, context), (code) =>
+    Boolean.match(script.isExpression, {
+      onTrue: () => ({
+        text: `${state.text}${rawContent.substring(state.cursor, script.range.start)}${code.slice(0, -1)}`,
+        cursor: script.range.end,
+      }),
+      onFalse: () => ({
+        text: `${state.text}${rawContent.substring(state.cursor, script.range.start)}\n${code}\n`,
+        cursor: script.range.end,
+      }),
+    }),
+  )

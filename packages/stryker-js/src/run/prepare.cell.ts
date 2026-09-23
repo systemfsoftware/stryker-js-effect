@@ -1,32 +1,50 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
-import { type ReporterFactory, type StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  isCustomTestRunner,
+  type ReporterFactory,
+  type StrykerOptions,
+  type WorkerPluginKind,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
+import * as Array from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
+import * as Context from 'effect/Context'
+import { dual } from 'effect/Function'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
+import * as HashSet from 'effect/HashSet'
+import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
-import * as Stdio from 'effect/Stdio'
-import { type RunEvent } from '../RunEvents.js'
-import { PhaseEntered } from '../RunEvents.js'
-import { RunEvents } from '../RunEvents.js'
+import { type RunEvent } from '../run-events.service.js'
+import { PhaseEntered } from '../run-events.service.js'
+import { RunEvents } from '../run-events.service.js'
 
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { makeBuiltinReporterFactories } from '../builtin-reporters.js'
-import { resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
-import { missingWorkerEntry } from '../plugin-worker-entry.js'
-import { loadPlugins, pluginUrlsFromOptions } from '../Plugins.js'
-import type { LoadedPlugins, PluginDescriptor } from '../Plugins.js'
-import { readProject } from '../Project.js'
-import type { Project } from '../Project.js'
+import { PluginLoadFailedError, PluginNotFoundError } from '../PluginsError.schema.js'
+import {
+  EvaluatorPluginDescriptor,
+  IgnorerModuleSchema,
+  PluginModuleSchema,
+  SchemaValidationContributionSchema,
+  type LoadedPlugins,
+  type PluginDescriptor,
+  type PluginKind,
+} from '../Plugins.schema.js'
+import type { ReadProjectDone } from '../read-project.cell.js'
+import type { Project } from '../Project.schema.js'
+import { Reporter } from '../reporter.service.js'
 import { ansi } from '../Reporter.ansi.js'
 import {
   attachReporterFactories,
@@ -37,16 +55,16 @@ import {
   spawnReporterWorker,
   validateReporterNames,
   withPhaseSpan,
-} from '../ReporterStream.js'
+} from '../reporter-stream.service.js'
 import { PrepareError, StageError } from '../Run.schema.js'
-import { TemporaryDirectory, TemporaryDirectoryLive } from '../Sandbox.js'
-import { selectReporters } from '../select-reporters.js'
-import { WorkerLauncher } from '../WorkerLauncher.js'
-import { forkCoreSchema, readConfig, validateOptions } from './load-config.cell.js'
+import { TemporaryDirectory } from '../Sandbox.service.js'
+import { WorkerLauncher } from '../WorkerLauncher.service.js'
+import { forkCoreSchema, importModule, validateOptions } from './load-config.cell.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
-import { planPrepare, type PrepareDecision, PrepareDecoded } from './plan-prepare.workflow.js'
-import { RunEnvironment } from './RunEnvironment.js'
-import type { RunEnvironmentShape } from './RunEnvironment.js'
+import { planPrepare, PrepareDecoded } from './plan-prepare.workflow.js'
+import { RunEnvironment } from './RunEnvironment.service.js'
+import type { RunEnvironmentShape } from './RunEnvironment.service.js'
+import { ConfiguredPluginModulePath, ConfiguredPluginName, resolveConfiguredPlugin } from './resolve-configured-plugin.workflow.js'
 
 export interface PrepareDone {
   readonly project: Project
@@ -62,7 +80,299 @@ export interface PrepareExecutorArgs {
   targetMutatePatterns: string[] | undefined
 }
 
-interface PrepareRaw {
+const NO_IGNORERS: readonly Ignorer[] = []
+
+interface PluginLoaderEntry {
+  readonly moduleName: string
+  readonly plugins: readonly PluginDescriptor[] | undefined
+  readonly schemaContribution: Record<string, unknown> | undefined
+}
+
+interface PluginLoadPlan {
+  readonly schemaContributions: readonly Record<string, unknown>[]
+  readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>
+  readonly pluginModulePaths: readonly string[]
+  readonly pluginSources: readonly PluginSource[]
+  readonly shadowings: readonly {
+    readonly kind: PluginKind
+    readonly name: string
+    readonly shadowedIndex: number
+    readonly winnerIndex: number
+  }[]
+}
+
+const buildPluginLoadPlan = (entries: readonly PluginLoaderEntry[]): PluginLoadPlan => {
+  const declarations: readonly { plugin: PluginDescriptor; moduleName: string; entryIndex: number }[] = entries.flatMap(
+    (entry, index) =>
+      (entry.plugins ?? []).map((plugin) => ({ plugin, moduleName: entry.moduleName, entryIndex: index })),
+  )
+
+  const shadowingState = declarations.reduce<{
+    readonly seen: HashMap.HashMap<string, { readonly position: number; readonly entryIndex: number }>
+    readonly shadowings: readonly {
+      readonly kind: PluginKind
+      readonly name: string
+      readonly shadowedIndex: number
+      readonly winnerIndex: number
+    }[]
+  }>(
+    (acc, declaration, position) => {
+      const key = `${declaration.plugin.kind}:${declaration.plugin.name}`
+      return {
+        seen: HashMap.set(acc.seen, key, { position, entryIndex: declaration.entryIndex }),
+        shadowings: Option.match(HashMap.get(acc.seen, key), {
+          onNone: () => acc.shadowings,
+          onSome: (previous) => [
+            ...acc.shadowings,
+            {
+              kind: declaration.plugin.kind,
+              name: declaration.plugin.name,
+              shadowedIndex: previous.entryIndex,
+              winnerIndex: declaration.entryIndex,
+            },
+          ],
+        }),
+      }
+    },
+    { seen: HashMap.empty<string, { readonly position: number; readonly entryIndex: number }>(), shadowings: [] },
+  )
+
+  const winningDeclarations = declarations.filter((declaration, position) =>
+    Option.match(HashMap.get(shadowingState.seen, `${declaration.plugin.kind}:${declaration.plugin.name}`), {
+      onNone: () => false,
+      onSome: (winner) => winner.position === position,
+    })
+  )
+
+  const pluginsByKind = winningDeclarations.reduce<HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>>(
+    (map, declaration) =>
+      Option.match(HashMap.get(map, declaration.plugin.kind), {
+        onNone: () => HashMap.set(map, declaration.plugin.kind, [declaration.plugin]),
+        onSome: (existing) => HashMap.set(map, declaration.plugin.kind, [...existing, declaration.plugin]),
+      }),
+    HashMap.empty<PluginKind, readonly PluginDescriptor[]>(),
+  )
+
+  const pluginSources = winningDeclarations.map((declaration): PluginSource =>
+    Match.value(declaration.plugin).pipe(
+      Match.when(
+        (plugin): plugin is EvaluatorPluginDescriptor => plugin.kind === 'Evaluator',
+        (evaluator): PluginSource => ({
+          kind: 'Evaluator',
+          name: evaluator.name,
+          modulePath: declaration.moduleName,
+        }),
+      ),
+      Match.orElse((worker): PluginSource => ({
+        kind: worker.kind,
+        name: worker.name,
+        modulePath: declaration.moduleName,
+        workerEntry: worker.workerEntry,
+      })),
+    )
+  )
+
+  const pluginModulePaths = entries.flatMap((entry) =>
+    Option.match(Option.fromUndefinedOr(entry.plugins), {
+      onNone: () => [],
+      onSome: () => [entry.moduleName],
+    })
+  )
+
+  const schemaContributions = entries.flatMap((entry) =>
+    Option.match(Option.fromUndefinedOr(entry.schemaContribution), {
+      onNone: () => [],
+      onSome: (value) => [value],
+    })
+  )
+
+  return {
+    schemaContributions,
+    pluginsByKind,
+    pluginModulePaths,
+    pluginSources,
+    shadowings: shadowingState.shadowings,
+  }
+}
+
+interface SchemaValidationContribution {
+  strykerValidationSchema: Record<string, unknown>
+}
+
+interface PluginContributions {
+  readonly plugins: readonly PluginDescriptor[] | undefined
+  readonly ignorers: readonly Ignorer[] | undefined
+  readonly schemaContribution: Record<string, unknown> | undefined
+}
+
+const failPluginLoad = (descriptor: string, error: unknown): Effect.Effect<never, PluginLoadFailedError> =>
+  Effect.logWarning(`Error during loading "${descriptor}" plugin`).pipe(
+    Effect.annotateLogs('cause', error),
+    Effect.andThen(() => Effect.fail(PluginLoadFailedError.make({ descriptor, cause: error }))),
+  )
+
+const modulePluginContributions = (
+  module: unknown,
+): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
+  Match.value(Predicate.hasProperty(module, 'strykerPlugins')).pipe(
+    Match.when(true, () =>
+      S.decodeUnknownResult(PluginModuleSchema)(module).pipe(
+        Result.map((pluginModule) => pluginModule.strykerPlugins),
+      )),
+    Match.orElse((): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
+      Result.succeed(undefined)
+    ),
+  )
+
+const moduleIgnorers = (module: unknown): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> =>
+  Match.value(Predicate.hasProperty(module, 'strykerIgnorers')).pipe(
+    Match.when(true, () =>
+      S.decodeUnknownResult(IgnorerModuleSchema)(module).pipe(
+        Result.map((ignorerModule) => ignorerModule.strykerIgnorers),
+      )),
+    Match.orElse((): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> => Result.succeed(undefined)),
+  )
+
+const moduleSchemaContribution = (module: unknown): Record<string, unknown> | undefined =>
+  Option.getOrUndefined(
+    Option.map(
+      Option.liftPredicate(hasValidationSchemaContribution)(module),
+      (guarded) => guarded.strykerValidationSchema,
+    ),
+  )
+
+const pluginContributionsOf = (
+  module: unknown,
+): Result.Result<PluginContributions, S.SchemaError> =>
+  Result.flatMap(moduleIgnorers(module), (ignorers) =>
+    Result.map(modulePluginContributions(module), (plugins) => ({
+      plugins,
+      ignorers,
+      schemaContribution: moduleSchemaContribution(module),
+    })))
+
+const hasContribution = (contributions: PluginContributions): boolean =>
+  [contributions.plugins, contributions.ignorers, contributions.schemaContribution].some(
+    (contribution) => contribution !== undefined,
+  )
+
+const warnUndescribedPluginModule = (descriptor: string): Effect.Effect<undefined> =>
+  Effect.logWarning(
+    `Module "${descriptor}" did not contribute a StrykerJS plugin. It didn't export a "strykerPlugins", "strykerIgnorers", or "strykerValidationSchema".`,
+  ).pipe(Effect.as(undefined))
+
+const describeLoadedPlugin = (
+  descriptor: string,
+  module: unknown,
+): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError> =>
+  Result.match(pluginContributionsOf(module), {
+    onFailure: (cause) => failPluginLoad(descriptor, cause),
+    onSuccess: (contributions) =>
+      Match.value(hasContribution(contributions)).pipe(
+        Match.when(true, () => Effect.succeed<PluginContributions | undefined>(contributions)),
+        Match.orElse(() => warnUndescribedPluginModule(descriptor)),
+      ),
+  })
+
+const loadPlugin = (
+  descriptor: string,
+  entrypoint: string,
+): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError> =>
+  Effect.gen(function*() {
+    yield* Effect.logDebug(`Loading plugin ${descriptor}`)
+    const maybeModule = yield* importModule(entrypoint).pipe(
+      Effect.catch((error) => failPluginLoad(descriptor, error)),
+    )
+    return yield* Option.match(Option.fromUndefinedOr(maybeModule), {
+      onNone: () => Effect.succeed<PluginContributions | undefined>(undefined),
+      onSome: (module) => describeLoadedPlugin(descriptor, module),
+    })
+  })
+
+const loadPlugins = (
+  pluginDescriptors: readonly string[],
+): Effect.Effect<LoadedPlugins, PluginLoadFailedError, Path.Path> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    const entrypoints = yield* Effect.forEach(
+      Array.fromIterable(HashSet.fromIterable(pluginDescriptors)),
+      (specifier) =>
+        path.fromFileUrl(new URL(specifier)).pipe(
+          Effect.map((entrypoint) => ({ specifier, entrypoint })),
+          Effect.mapError((cause) => PluginLoadFailedError.make({ descriptor: specifier, cause })),
+        ),
+      { concurrency: 'unbounded' },
+    )
+    const loaded = yield* Effect.forEach(
+      entrypoints,
+      (resolved) =>
+        loadPlugin(resolved.specifier, resolved.entrypoint).pipe(
+          Effect.map((plugin) => {
+            if (plugin === undefined) {
+              return undefined
+            }
+            return {
+              ...plugin,
+              moduleName: resolved.specifier,
+            }
+          }),
+        ),
+      { concurrency: 'unbounded' },
+    ).pipe(Effect.map((arr) => arr.filter(Predicate.isNotNullish)))
+    const ignorers: readonly Ignorer[] = loaded.flatMap((entry) => entry.ignorers ?? NO_IGNORERS)
+    const entries: readonly PluginLoaderEntry[] = loaded.map((entry) => ({
+      moduleName: entry.moduleName,
+      plugins: entry.plugins,
+      schemaContribution: entry.schemaContribution,
+    }))
+    const plan = buildPluginLoadPlan(entries)
+    yield* Effect.forEach(
+      plan.shadowings,
+      (shadowing) =>
+        Effect.logWarning(
+          `Plugin "${shadowing.name}" of kind "${shadowing.kind}" at index ${shadowing.winnerIndex} shadows plugin at index ${shadowing.shadowedIndex}.`,
+        ),
+      { concurrency: 1 },
+    )
+    const result: LoadedPlugins = {
+      schemaContributions: plan.schemaContributions,
+      pluginsByKind: plan.pluginsByKind,
+      pluginModulePaths: plan.pluginModulePaths,
+      pluginSources: plan.pluginSources,
+      ignorers,
+    }
+    return result
+  })
+
+const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[] => [
+  ...options.plugins,
+  ...options.appendPlugins,
+  ...options.ignorers,
+  ...Match.value(options.testRunner).pipe(
+    Match.when(isCustomTestRunner, (runner) => [runner.plugin]),
+    Match.orElse(() => []),
+  ),
+  ...options.checkers.map((checker) => checker.plugin),
+]
+
+const hasValidationSchemaContribution = (module: unknown): module is SchemaValidationContribution =>
+  S.is(SchemaValidationContributionSchema)(module)
+
+const workerSpawnOf = (
+  stage: StageError['stage'],
+  loaded: Pick<LoadedPlugins, 'pluginSources'>,
+  kind: WorkerPluginKind,
+  configured: ConfiguredPluginName | ConfiguredPluginModulePath,
+) =>
+  Result.match(resolveConfiguredPlugin({ sources: loaded.pluginSources, kind, configured }), {
+    onSuccess: Effect.succeed,
+    onFailure: (missing) =>
+      Effect.fail(
+        StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
+      ),
+  })
+
+type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly env: RunEnvironmentShape
   readonly queue: Queue.Queue<RunEvent, Cause.Done>
   readonly options: StrykerOptions
@@ -79,35 +389,35 @@ const schemaPropertiesOf = <A = unknown>(document: ValidationSchemaDocument<A>):
 const buildMergedSchema = <A = unknown>(
   core: ValidationSchemaDocument,
   contributions: readonly Record<string, A>[],
-): ValidationSchemaDocument =>
-  Match.value(contributions.length === 0).pipe(
-    Match.when(true, (): ValidationSchemaDocument => core),
-    Match.orElse((): ValidationSchemaDocument => ({
+) =>
+  Boolean.match(contributions.length === 0, {
+    onTrue: () => core,
+    onFalse: () => ({
       ...core,
       properties: Object.assign(
         {},
         schemaPropertiesOf(core),
         ...contributions.map((contribution) => schemaPropertiesOf(contribution)),
       ),
-    })),
-  )
+    }),
+  })
 
 interface ReporterChoice {
   readonly name: string
   readonly builtinFactory: Option.Option<ReporterFactory>
 }
 
-const announceSummary = (env: RunEnvironmentShape, summary: string): Effect.Effect<void> =>
+const announceSummary = (env: RunEnvironmentShape, summary: string) =>
   Match.value(env.resolvedMode.mode).pipe(
     Match.when('human', () => announceHumanSummary(env.allowConsoleColors, summary)),
     Match.orElse(() => Effect.logInfo(summary)),
   )
 
-const announceHumanSummary = (allowConsoleColors: boolean, summary: string): Effect.Effect<void> =>
-  Match.value(allowConsoleColors).pipe(
-    Match.when(true, () => Console.log(ansi.green(summary))),
-    Match.orElse(() => Console.log(summary)),
-  )
+const announceHumanSummary = (allowConsoleColors: boolean, summary: string) =>
+  Boolean.match(allowConsoleColors, {
+    onTrue: () => Console.log(ansi.green(summary)),
+    onFalse: () => Console.log(summary),
+  })
 
 const NO_PLUGIN_DESCRIPTORS: readonly PluginDescriptor[] = []
 
@@ -164,56 +474,35 @@ const reporterInputsOf = (
     { concurrency: 1 },
   )
 
-const selectReporter = (
-  chosen: Map<string, ReporterChoice>,
-  name: string,
-  choicesByName: HashMap.HashMap<string, ReporterChoice>,
-): void => {
-  const key = name.toLowerCase()
-  Option.match(HashMap.get(choicesByName, key), {
-    onNone: () => undefined,
-    onSome: (choice) => {
-      if (!chosen.has(key)) {
-        chosen.set(key, choice)
-      }
-    },
-  })
-}
+const selectReporterChoices = (names: readonly string[], choicesByName: HashMap.HashMap<string, ReporterChoice>) =>
+  Array.map(
+    Array.reduce(
+      names,
+      Array.empty<readonly [string, ReporterChoice]>(),
+      (chosen, name) =>
+        Option.match(HashMap.get(choicesByName, name.toLowerCase()), {
+          onNone: () => chosen,
+          onSome: (choice) =>
+            Option.match(Array.findFirst(chosen, ([key]) => key === name.toLowerCase()), {
+              onNone: () => [...chosen, [name.toLowerCase(), choice] as const],
+              onSome: () => chosen,
+            }),
+        }),
+    ),
+    ([, choice]) => choice,
+  )
 
-const selectReporterChoices = (
-  names: readonly string[],
-  choicesByName: HashMap.HashMap<string, ReporterChoice>,
-): readonly ReporterChoice[] => {
-  const chosen = new Map<string, ReporterChoice>()
-  names.forEach((name) => selectReporter(chosen, name, choicesByName))
-  return [...chosen.values()]
-}
-
-const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
+const readPrepare = (command: ReadProjectDone): Effect.Effect<
   PrepareRaw,
   StageError,
-  | Scope.Scope
-  | RunEnvironment
-  | RunEvents
-  | WorkerLauncher
-  | FileSystem.FileSystem
-  | Path.Path
-  | Stdio.Stdio
+  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
 > =>
   Effect.gen(function*() {
     yield* Scope.Scope
     const env = yield* RunEnvironment
     const queue = yield* RunEvents
     const coreSchema: ValidationSchemaDocument = forkCoreSchema
-    const configured = yield* readConfig(command.cliOptions, { command: 'run', mode: env.resolvedMode.mode }).pipe(
-      Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read config', cause })),
-      Effect.tapCause(() =>
-        Effect.gen(function*() {
-          const now = yield* Clock.currentTimeMillis
-          yield* Queue.offer(queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
-        }).pipe(Effect.ignore)
-      ),
-    )
+    const configured = command.options
     const resolvedReporters = selectReporters([...configured.reporters], env.resolvedMode.mode)
     const options: StrykerOptions = {
       ...configured,
@@ -240,17 +529,10 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
           }),
       ),
     )
-    const project = yield* readProject(options, command.targetMutatePatterns, env.basePath).pipe(
-      Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read project', cause })),
-    )
     const ignorers: readonly Ignorer[] = loaded.ignorers
 
     const builtinReporterFactories: Record<string, ReporterFactory> = {
-      ...makeBuiltinReporterFactories({
-        fileSystem: yield* FileSystem.FileSystem,
-        path: yield* Path.Path,
-        stdio: yield* Stdio.Stdio,
-      }),
+      ...(yield* Reporter).builtin,
       ...env.builtinReporters,
     }
     const pluginReporterDescriptors = Option.getOrElse(
@@ -269,25 +551,24 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
           ] as const,
       ),
     ])
-    return { env, queue, options, loaded, project, ignorers, builtinReporterFactories, reporterChoicesByName }
+    return {
+      mode: env.resolvedMode.mode,
+      reporters: [...options.reporters],
+      fileCount: MutableHashMap.size(command.project.files),
+      availableReporters: [...HashMap.values(reporterChoicesByName)].map((choice) => choice.name),
+      env,
+      queue,
+      options,
+      loaded,
+      project: command.project,
+      ignorers,
+      builtinReporterFactories,
+      reporterChoicesByName,
+    }
   })
 
-const decodePrepare = (raw: PrepareRaw): Result.Result<PrepareDecoded, StageError> =>
-  Result.succeed(
-    PrepareDecoded.make({
-      mode: raw.env.resolvedMode.mode,
-      reporters: [...raw.options.reporters],
-      fileCount: MutableHashMap.size(raw.project.files),
-      availableReporters: [...HashMap.values(raw.reporterChoicesByName)].map((choice) => choice.name),
-    }),
-  )
-
-const encodePrepareDecision = (
-  outcome: Result.Result<PrepareDecision, StageError>,
-): Result.Result<PrepareDecision, StageError> => outcome
-
 const writePrepare = (
-  outcome: Result.Result<PrepareDecision, StageError>,
+  reporters: readonly string[],
   raw: PrepareRaw,
 ): Effect.Effect<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
   withPhaseSpan(
@@ -295,7 +576,6 @@ const writePrepare = (
     {},
     (span) =>
       Effect.gen(function*() {
-        const decision = yield* Effect.fromResult(outcome)
         const mutateCount = MutableHashMap.size(raw.project.filesToMutate)
         yield* announceSummary(
           raw.env,
@@ -307,35 +587,30 @@ const writePrepare = (
         ).pipe(
           Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: cause.message, cause })),
         )
-        yield* Match.value(MutableHashMap.size(raw.project.files)).pipe(
-          Match.when(0, () =>
-            Effect.fail(
-              StageError.make({
-                stage: 'prepare',
-                reason: 'No input files found.',
-                cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
-              }),
-            )),
-          Match.orElse(() => Effect.void),
-        )
-        const temporaryDirectoryPath = yield* Effect.gen(function*() {
-          const live = TemporaryDirectoryLive(raw.options)
-          const service = yield* Effect.service(TemporaryDirectory).pipe(Effect.provide(live))
-          return service.path
-        }).pipe(
+        const failOnEmptyProject = (fileCount: number): Effect.Effect<void, StageError> =>
+          Match.value(fileCount).pipe(
+            Match.when(0, () =>
+              Effect.fail(
+                StageError.make({
+                  stage: 'prepare',
+                  reason: 'No input files found.',
+                  cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
+                }),
+              )),
+            Match.orElse(() => Effect.void),
+          )
+
+        yield* failOnEmptyProject(raw.project.files.pipe(MutableHashMap.size))
+        const temporaryDirectoryPath = yield* Effect.map(
+          Layer.build(TemporaryDirectory.layer(raw.options)),
+          (temporaryDirectory) => Context.get(temporaryDirectory, TemporaryDirectory).path,
+        ).pipe(
           Effect.mapError((cause) =>
             StageError.make({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
           ),
         )
         const reporterInputs = yield* reporterInputsOf(
-          Option.getOrElse(
-            Match.value(decision).pipe(
-              Match.tag('HumanReporters', (human) => Option.some(human.reporters)),
-              Match.tag('MachineReporters', (machine) => Option.some(machine.reporters)),
-              Match.exhaustive,
-            ),
-            () => raw.options.reporters,
-          ),
+          reporters,
           raw.reporterChoicesByName,
           raw.loaded,
           raw.env.basePath,
@@ -356,13 +631,44 @@ const writePrepare = (
       }),
   )
 
+const STREAM_REPORTER = 'progress-stream'
+const HUMAN_REPORTER = 'clear-text'
+
+const STDOUT_REPORTERS: Readonly<Record<string, true>> = { 'clear-text': true, 'progress': true }
+
+const asHumanReporter = (name: string): string => {
+  if (name === STREAM_REPORTER) {
+    return HUMAN_REPORTER
+  }
+  return name
+}
+
+const selectReporters: {
+  (configured: readonly string[], mode: 'human' | 'machine'): readonly string[]
+  (mode: 'human' | 'machine'): (configured: readonly string[]) => readonly string[]
+} = dual(2, (configured: readonly string[], mode: 'human' | 'machine'): readonly string[] =>
+  Match.value(mode).pipe(
+    Match.when('human', () => [...new Set(configured.map(asHumanReporter))]),
+    Match.when('machine', () => {
+      const permitted = configured.filter((name) => STDOUT_REPORTERS[name] !== true)
+      return Match.value(permitted.includes(STREAM_REPORTER)).pipe(
+        Match.when(true, () => permitted),
+        Match.when(false, () => [...permitted, STREAM_REPORTER]),
+        Match.exhaustive,
+      )
+    }),
+    Match.exhaustive,
+  ))
+
 export const prepareCell: Cell.Cell<
-  PrepareExecutorArgs,
+  ReadProjectDone,
   PrepareDone,
   StageError,
-  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Stdio.Stdio
-> = Sandwich.read(readPrepare)
-  .decode(Sandwich.pure(decodePrepare))
+  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
+> = Sandwich.named('stryker.prepare')(readPrepare)
   .decide(planPrepare)
-  .encode(Sandwich.pure((outcome) => Result.succeed(encodePrepareDecision(outcome))))
-  .write(writePrepare)
+  .write({
+    HumanReporters: ({ reporters }, raw) => writePrepare(reporters, raw),
+    MachineReporters: ({ reporters }, raw) => writePrepare(reporters, raw),
+    CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'prepare', reason: issue })),
+  })

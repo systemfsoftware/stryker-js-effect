@@ -18,7 +18,7 @@
     "derive-oracle": "node --import tsx scripts/derive-oracle.ts",
     "bless-oracle": "tsx scripts/blessed-baseline.ts",
     "reconcile-oracle": "tsx scripts/reconcile-oracle.ts",
-    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit"
+    "typecheck": "tsc -b"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",

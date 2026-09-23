@@ -14,7 +14,9 @@ export class ResolveModeCommand extends S.TaggedClass<ResolveModeCommand>()('Res
   envMode: S.optional(S.String),
   agent: S.optional(S.String),
   toolVars: S.optional(S.Record(S.String, S.String)),
-}) {}
+}) {
+  static readonly [Workflow.InstrumentationBrand] = { stdoutIsTTY: 'stryker.output_mode.stdout_is_tty' } as const
+}
 
 const ResolveModeTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ResolveMode')
 type ResolveModeTypeId = typeof ResolveModeTypeId
@@ -107,4 +109,9 @@ const decideMode = (command: ResolveModeCommand): Result.Result<ResolveModeDecis
     Match.orElse((rest) => Result.succeed(modeFromEnvironment(rest))),
   )
 
-export const resolveOutputMode = Workflow.make(ResolveModeCommand, decideMode)
+export const resolveOutputMode = Workflow.make({
+  command: ResolveModeCommand,
+  decision: S.Union([HumanOutput, MachineOutput]),
+  error: ModeConflictError,
+  decide: decideMode,
+})

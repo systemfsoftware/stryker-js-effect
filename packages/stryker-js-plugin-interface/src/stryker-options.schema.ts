@@ -151,7 +151,7 @@ export const PluginFileUrl = S.String.pipe(S.check(S.isStartsWith('file://')))
 
 export const TestRunnerCustomConfigSchema = S.Struct({
   plugin: PluginFileUrl,
-  nodeArgs: S.optional(S.Array(S.String)),
+  nodeArgs: S.String.pipe(S.Array, S.optional),
   options: S.optional(S.Record(S.String, S.Unknown)),
 })
 export type TestRunnerCustomConfig = typeof TestRunnerCustomConfigSchema.Type
@@ -161,7 +161,7 @@ export type TestRunnerConfig = typeof TestRunnerConfigSchema.Type
 
 export const CheckerCustomConfigSchema = S.Struct({
   plugin: PluginFileUrl,
-  nodeArgs: S.optional(S.Array(S.String)),
+  nodeArgs: S.String.pipe(S.Array, S.optional),
   options: S.optional(S.Record(S.String, S.Unknown)),
 })
 export type CheckerCustomConfig = typeof CheckerCustomConfigSchema.Type

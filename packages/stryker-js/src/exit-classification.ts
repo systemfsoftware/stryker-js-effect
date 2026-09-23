@@ -1,4 +1,5 @@
 import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 
@@ -11,11 +12,11 @@ export const EXIT_CODE: Record<ExitClass, number> = {
   InternalError: 4,
 }
 
-export function verdictExitClass(
-  score: number | null,
-  breakingThreshold: number | null,
-): ExitClass | null {
-  return Option.match(
+export const verdictExitClass: {
+  (score: number | null, breakingThreshold: number | null): ExitClass | null
+  (breakingThreshold: number | null): (score: number | null) => ExitClass | null
+} = dual(2, (score: number | null, breakingThreshold: number | null): ExitClass | null =>
+  Option.match(
     Option.all([Option.fromNullishOr(score), Option.fromNullishOr(breakingThreshold)]),
     {
       onNone: (): ExitClass | null => null,
@@ -26,22 +27,22 @@ export function verdictExitClass(
           Match.exhaustive,
         ),
     },
-  )
-}
+  ),
+)
 
-export function resolveExitCode(
-  pending: Iterable<ExitClass>,
-  signal: number | null,
-): number {
-  return Match.value(signal).pipe(
+export const resolveExitCode: {
+  (pending: Iterable<ExitClass>, signal: number | null): number
+  (signal: number | null): (pending: Iterable<ExitClass>) => number
+} = dual(2, (pending: Iterable<ExitClass>, signal: number | null): number =>
+  Match.value(signal).pipe(
     Match.when(null, () =>
       Option.match(Option.fromNullishOr(highestExitClass(pending)), {
         onNone: () => 0,
         onSome: (highest) => EXIT_CODE[highest],
       })),
     Match.orElse((present) => 128 + present),
-  )
-}
+  ),
+)
 
 export function highestExitClass(pending: Iterable<ExitClass>): ExitClass | null {
   return [...pending].reduce<ExitClass | null>(

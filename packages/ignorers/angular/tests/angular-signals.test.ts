@@ -1,6 +1,6 @@
 import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { testIgnorer } from '@systemfsoftware/stryker-ignorer-kit/tester'
-import { describe, expect, it } from 'vitest'
+import { assert, describe, expect, it } from 'vitest'
 
 import {
   INPUT_MODEL_OUTPUT_CONFIG_MSG,
@@ -10,7 +10,7 @@ import {
 } from '@systemfsoftware/stryker-ignorer-angular'
 
 const descriptor = strykerIgnorers[0]
-if (descriptor === undefined) throw new Error('the package publishes one ignorer descriptor')
+assert(descriptor !== undefined, 'the package publishes one ignorer descriptor')
 
 const INLINE_CLASS = 'class C {\n  foo = input.required({ required: true })\n}\n'
 const VALUE_CLASS = 'class C {\n  foo = input(0, { value: 1 })\n}\n'

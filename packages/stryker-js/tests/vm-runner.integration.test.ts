@@ -6,6 +6,7 @@ import {
   type PooledTestRunner,
   type PooledTestRunnerError,
   type TestRunnerBuildContext,
+  VmRunner,
   WorkerLauncher,
 } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
@@ -19,6 +20,7 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import type * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { expect } from 'vitest'
 
@@ -37,6 +39,14 @@ const spawnerCanary = Layer.succeed(
 )
 
 const stubPortsLayer = Layer.merge(spawnerCanary, workerCanary)
+
+const vmPlatformLayer = Layer.succeed(
+  VmRunner,
+  VmRunner.of({
+    module: globalThis.process.getBuiltinModule('node:module'),
+    vm: globalThis.process.getBuiltinModule('node:vm'),
+  }),
+)
 
 const suiteFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
@@ -110,16 +120,12 @@ interface RunOutcome {
   readonly elapsedMs: number
 }
 
-const runnerFor = (fixture: SuiteFixture): Effect.Effect<PooledTestRunner, never, never> =>
+const runnerFor = (fixture: SuiteFixture): Effect.Effect<PooledTestRunner, never, Scope.Scope> =>
   Effect.gen(function*() {
     const context = yield* buildContextFor(fixture)
     const neverSpawned = Effect.die(new Error('the child-process runner was built for an in-memory run'))
     return yield* buildTestRunner(context, neverSpawned)
-  }).pipe(
-    Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer)),
-    Effect.scoped,
-    Effect.orDie,
-  )
+  }).pipe(Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer, vmPlatformLayer)), Effect.orDie)
 
 const runSuite = (fixture: SuiteFixture): Effect.Effect<RunOutcome, never, never> =>
   Effect.gen(function*() {
@@ -136,7 +142,7 @@ const runSuite = (fixture: SuiteFixture): Effect.Effect<RunOutcome, never, never
       }),
     )
     return { dryRun, mutantRun: timed[1], elapsedMs: Duration.toMillis(timed[0]) }
-  }).pipe(Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
+  }).pipe(Effect.scoped, Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
 
 const suiteFailure = (
   fixture: SuiteFixture,
@@ -144,7 +150,7 @@ const suiteFailure = (
   Effect.gen(function*() {
     const runner = yield* runnerFor(fixture)
     return yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }).pipe(Effect.exit)
-  }).pipe(Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
+  }).pipe(Effect.scoped, Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
 
 Feature('Verifying mutants without spawning a child process')
   .withLayer(Layer.empty)

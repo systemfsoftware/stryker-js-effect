@@ -23,6 +23,8 @@ import { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from './IncrementalDiff.schema.js'
 import type { PreviousFileRecord, PreviousMutantRecord, PreviousTestFileRecord } from './IncrementalDiff.schema.js'
 import { toSchemaLocation } from './mutant-result-mapping.js'
+import { UnknownPlannedMutant } from './MutantsError.schema.js'
+import type { TestCoverage } from './test-coverage.schema.js'
 
 export const HIT_LIMIT_FACTOR = 100
 
@@ -38,7 +40,6 @@ export interface DiffStatistics {
   readonly total: DiffChanges
 }
 const ZERO = 0
-const ONE = 1
 
 const firstDefined = <Value>(first: Value | undefined, second: Value | undefined): Value | undefined =>
   Option.getOrElse(Option.fromNullishOr(first), () => second)
@@ -61,63 +62,6 @@ const testFilterField = (testFilter: readonly string[] | undefined): { readonly 
     onSome: (present) => ({ testFilter: [...present] }),
   })
 
-export const emptyDiffChanges = (): DiffChanges => ({ added: ZERO, removed: ZERO })
-
-export const diffChangesToString = (changes: Readonly<DiffChanges>): string => `+${changes.added} -${changes.removed}`
-
-export const emptyDiffStatistics = (): DiffStatistics => ({
-  changesByFile: MutableHashMap.empty<string, DiffChanges>(),
-  total: emptyDiffChanges(),
-})
-
-const applyDiffChange = (
-  stats: Readonly<DiffStatistics>,
-  input: Readonly<{ file: string; change: DiffChange }>,
-  amount: number,
-): DiffStatistics => {
-  const base = Option.getOrElse(MutableHashMap.get(stats.changesByFile, input.file), emptyDiffChanges)
-  const next = Match.value(input.change).pipe(
-    Match.when('added', () => ({
-      changes: { added: base.added + amount, removed: base.removed },
-      total: { added: stats.total.added + amount, removed: stats.total.removed },
-    })),
-    Match.when('removed', () => ({
-      changes: { added: base.added, removed: base.removed + amount },
-      total: { added: stats.total.added, removed: stats.total.removed + amount },
-    })),
-    Match.exhaustive,
-  )
-  const nextMap = MutableHashMap.fromIterable(stats.changesByFile)
-  MutableHashMap.set(nextMap, input.file, next.changes)
-  return { changesByFile: nextMap, total: next.total }
-}
-
-export const diffStatisticsCount = (
-  stats: Readonly<DiffStatistics>,
-  input: Readonly<{ file: string; change: DiffChange; amount?: number }>,
-): DiffStatistics => {
-  const amount = Option.getOrElse(Option.fromNullishOr(input.amount), () => ONE)
-  return Match.value(amount).pipe(
-    Match.when(ZERO, () => stats),
-    Match.orElse(() => applyDiffChange(stats, input, amount)),
-  )
-}
-
-export const diffStatisticsDetailedReport = (stats: Readonly<DiffStatistics>): readonly string[] =>
-  [...stats.changesByFile].map(([fileName, changes]) => `${fileName} ${diffChangesToString(changes)}`)
-
-export const diffStatisticsTotalsReport = (stats: Readonly<DiffStatistics>): string =>
-  `${MutableHashMap.size(stats.changesByFile)} files changed (${diffChangesToString(stats.total)})`
-
-export interface TestCoverage {
-  readonly testsByMutantId: MutableHashMap.MutableHashMap<string, MutableHashSet.MutableHashSet<TestResult>>
-  readonly testsById: MutableHashMap.MutableHashMap<string, TestResult>
-  readonly staticCoverage: CoverageData | undefined
-  readonly hitsByMutantId: MutableHashMap.MutableHashMap<string, number>
-}
-
-export const hasCoverage = (coverage: Readonly<TestCoverage>): boolean => !!coverage.staticCoverage
-
 const staticCoverageCountOf = (
   staticCoverage: CoverageData | undefined,
   mutantId: string,
@@ -128,72 +72,6 @@ const staticCoverageCountOf = (
     () =>
       ZERO,
   )
-
-export const hasStaticCoverage = (
-  coverage: Readonly<TestCoverage>,
-  mutantId: string,
-): boolean => staticCoverageCountOf(coverage.staticCoverage, mutantId) > ZERO
-
-export const forMutant = (
-  coverage: Readonly<TestCoverage>,
-  mutantId: string,
-): MutableHashSet.MutableHashSet<TestResult> | undefined => {
-  const opt = MutableHashMap.get(coverage.testsByMutantId, mutantId)
-  if (Option.isSome(opt)) return opt.value
-  return undefined
-}
-
-export const addTest = (
-  coverage: Readonly<TestCoverage>,
-  testResult: TestResult,
-): TestCoverage => {
-  const nextTestsById = MutableHashMap.fromIterable(coverage.testsById)
-  MutableHashMap.set(nextTestsById, testResult.id, testResult)
-  return {
-    testsByMutantId: coverage.testsByMutantId,
-    testsById: nextTestsById,
-    staticCoverage: coverage.staticCoverage,
-    hitsByMutantId: coverage.hitsByMutantId,
-  }
-}
-
-const withMutantTests = (
-  coverage: Readonly<TestCoverage>,
-  mutantId: string,
-  tests: MutableHashSet.MutableHashSet<TestResult>,
-): TestCoverage => {
-  const nextMap = MutableHashMap.fromIterable(coverage.testsByMutantId)
-  MutableHashMap.set(nextMap, mutantId, tests)
-  return {
-    testsByMutantId: nextMap,
-    testsById: coverage.testsById,
-    staticCoverage: coverage.staticCoverage,
-    hitsByMutantId: coverage.hitsByMutantId,
-  }
-}
-
-export const addCoverage = (
-  coverage: Readonly<TestCoverage>,
-  mutantId: string,
-  testIds: readonly string[],
-): TestCoverage => {
-  const existing = MutableHashMap.get(coverage.testsByMutantId, mutantId)
-  const nextSet = Option.match(existing, {
-    onNone: () => MutableHashSet.empty<TestResult>(),
-    onSome: (tests) => MutableHashSet.fromIterable(tests),
-  })
-  for (const testId of testIds) {
-    Option.match(MutableHashMap.get(coverage.testsById, testId), {
-      onNone: () => undefined,
-      onSome: (test) => MutableHashSet.add(nextSet, test),
-    })
-  }
-  const unchanged = Option.exists(existing, (tests) => MutableHashSet.size(nextSet) === MutableHashSet.size(tests))
-  return Match.value(unchanged).pipe(
-    Match.when(true, () => coverage),
-    Match.orElse(() => withMutantTests(coverage, mutantId, nextSet)),
-  )
-}
 
 const testsByIdOf = (result: Readonly<CompleteDryRunResult>): MutableHashMap.MutableHashMap<string, TestResult> => {
   const testsById: MutableHashMap.MutableHashMap<string, TestResult> = MutableHashMap.empty()
@@ -376,7 +254,7 @@ const coveredWhenKnown = (covered: boolean, coverageKnown: boolean): boolean => 
   return covered
 }
 
-export const isMissingHitCount = (
+const isMissingHitCount = (
   hitCount: number | undefined,
   covered: boolean,
   coverageKnown: boolean,
@@ -630,7 +508,7 @@ const coverageToCommand = (
 ): PlanMutantTestsInput => ({
   mutants: [...mutants],
   timeOverheadMS,
-  timeSpentAllTests: calculateTotalTime(MutableHashMap.values(testCoverage.testsById)),
+  timeSpentAllTests: calculateTotalTime(testCoverage.testsById.pipe(MutableHashMap.values)),
   hitsByMutantId: hitsRecordOf(testCoverage),
   testsByMutantId: testsByMutantIdRecordOf(testCoverage),
   testTimeById: testTimeRecordOf(testCoverage),
@@ -734,7 +612,12 @@ const materializeKnown = (
 ): Effect.Effect<MutantTestPlan, never> => {
   const original = byId.get(plan.mutantId)
   if (original === undefined) {
-    return Effect.die(new Error(`planner returned an unknown mutant id: ${plan.mutantId}`))
+    return Effect.die(
+      UnknownPlannedMutant.make({
+        mutantId: plan.mutantId,
+        message: `planner returned an unknown mutant id: ${plan.mutantId}`,
+      }),
+    )
   }
   return Effect.succeed(materializePlan(plan, original))
 }
@@ -752,21 +635,30 @@ export const makeMutantTestPlanner = (
 
 export const plan = makeMutantTestPlanner
 
+export interface DecidePlansInput {
+  readonly mutants: readonly Mutant[]
+  readonly testCoverage: TestCoverage
+  readonly options: {
+    readonly disableBail: boolean
+    readonly timeoutMS: number
+    readonly timeoutFactor: number
+    readonly ignoreStatic: boolean
+  }
+  readonly timeOverheadMS: number
+  readonly globalTestFilter: string[] | undefined
+  readonly sandboxFileByName: Record<string, string>
+}
+
 export const decidePlans = (
-  mutants: readonly Mutant[],
-  testCoverage: TestCoverage,
-  options: { disableBail: boolean; timeoutMS: number; timeoutFactor: number; ignoreStatic: boolean },
-  timeOverheadMS: number,
-  globalTestFilter: string[] | undefined,
-  sandboxFileByName: Record<string, string>,
+  input: DecidePlansInput,
 ): Effect.Effect<readonly MutantTestPlan[], StageError, never> => {
   const command = coverageToCommand(
-    mutants,
-    testCoverage,
-    options,
-    timeOverheadMS,
-    globalTestFilter,
-    sandboxFileByName,
+    input.mutants,
+    input.testCoverage,
+    input.options,
+    input.timeOverheadMS,
+    input.globalTestFilter,
+    input.sandboxFileByName,
   )
   return makeMutantTestPlanner(command)
 }
@@ -791,7 +683,7 @@ export const partitionRunPlans = (plans: readonly MutantTestPlan[]): Partitioned
   earlyResults: plans.filter(isEarlyPlan).map(earlyResultOf),
 })
 
-export const byReloadEnvironment = (left: RunPlan, right: RunPlan): number =>
+const byReloadEnvironment = (left: RunPlan, right: RunPlan): number =>
   Number(left.runOptions.reloadEnvironment) - Number(right.runOptions.reloadEnvironment)
 
 export const sortRunPlans = (plans: readonly RunPlan[]): readonly RunPlan[] => [...plans].sort(byReloadEnvironment)

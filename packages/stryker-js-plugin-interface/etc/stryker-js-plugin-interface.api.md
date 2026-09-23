@@ -453,7 +453,10 @@ export const FrameworkInformationSchema: S.Struct<{
 export const HIT_LIMIT_REASON_PREFIX = "Hit limit reached";
 
 // @public (undocumented)
-export const hitLimitReachedReason: (count: number, limit: number) => string;
+export const hitLimitReachedReason: {
+    (count: number, limit: number): string;
+    (limit: number): (count: number) => string;
+};
 
 // @public (undocumented)
 export const InvalidStatus: S.Union<readonly [S.Literal<"CompileError">, S.Literal<"RuntimeError">]>;
@@ -465,7 +468,10 @@ export const isCustomTestRunner: (value: TestRunnerConfig) => value is TestRunne
 export const isHitLimitReason: (reason: string | undefined) => boolean;
 
 // @public (undocumented)
-export const isNamedTrap: (activeMutantId: string, namedTrapId: string | undefined) => boolean;
+export const isNamedTrap: {
+    (activeMutantId: string, namedTrapId: string | undefined): boolean;
+    (namedTrapId: string | undefined): (activeMutantId: string) => boolean;
+};
 
 // @public (undocumented)
 export interface KilledMutantRunResult {
@@ -1237,7 +1243,10 @@ export interface TimeoutMutantRunResult {
 }
 
 // @public (undocumented)
-export function toMutantRunResult(dryRunResult: DryRunResult, reportAllKillers: boolean): MutantRunResult;
+export const toMutantRunResult: {
+    (dryRunResult: DryRunResult, reportAllKillers: boolean): MutantRunResult;
+    (reportAllKillers: boolean): (dryRunResult: DryRunResult) => MutantRunResult;
+};
 
 // Warning: (ae-forgotten-export) The symbol "TraceContextMiddleware_base" needs to be exported by the entry point index.d.mts
 //
@@ -1286,7 +1295,10 @@ export const UntestedStatus: S.Union<readonly [S.Literal<"Ignored">, S.Literal<"
 export const WALL_CLOCK_TIMEOUT_REASON = "wall-clock-timeout";
 
 // @public (undocumented)
-export const wallClockTimeoutStopsRun: (status: string, reason: string | undefined) => boolean;
+export const wallClockTimeoutStopsRun: {
+    (status: string, reason: string | undefined): boolean;
+    (reason: string | undefined): (status: string) => boolean;
+};
 
 // @public (undocumented)
 export const WorkerEntryUrl: S.String;

@@ -9,7 +9,7 @@ import {
   WorkerLauncher,
 } from '@systemfsoftware/stryker-js'
 import { Mutant, type MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
-import type { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type CheckerMutantWire, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import { layerTraceContextServer } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -18,6 +18,7 @@ import * as Layer from 'effect/Layer'
 import * as Metric from 'effect/Metric'
 import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
+import * as S from 'effect/Schema'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
@@ -68,7 +69,7 @@ const makeHarness = () =>
     const [clientSocket, serverSocket] = yield* memorySocketPair
     const receivedRef = yield* Ref.make<readonly CheckerMutantWire[]>([])
 
-    yield* Effect.forkScoped(Layer.launch(makeCheckerServer(serverSocket, receivedRef)))
+    yield* Effect.forkScoped(makeCheckerServer(serverSocket, receivedRef).pipe(Layer.launch))
 
     const launcherLayer = Layer.succeed(WorkerLauncher, {
       spawn: () =>
@@ -82,10 +83,11 @@ const makeHarness = () =>
         }),
     })
 
+    const options = yield* S.decodeEffect(StrykerOptionsSchema)({}).pipe(Effect.orDie)
     const client = yield* makeWorkerClient({
       entrypoint: '/project/checker.mjs',
       execArgv: [],
-      optionsJson: '{}',
+      options,
       rpcs: CheckerRpcs,
       tempDirPrefix: 'checker-',
       workingDirectory: '/project',

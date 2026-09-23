@@ -22,7 +22,7 @@ export class Mutant extends S.TaggedClass<Mutant>()('Mutant', {
   location: LocationSchema,
   status: S.optional(MutantStatusSchema),
   statusReason: S.optional(S.String),
-  coveredBy: S.optional(S.Array(S.String)),
+  coveredBy: S.String.pipe(S.Array, S.optional),
   static: S.optional(S.Boolean),
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
@@ -42,6 +42,28 @@ export const MutantRunOptionsSchema = S.Struct({
   sandboxFileName: S.String,
   mutantActivation: MutantActivationSchema,
   reloadEnvironment: S.Boolean,
-  testFilter: S.optionalKey(S.Array(S.String)),
+  testFilter: S.String.pipe(S.Array, S.optionalKey),
   hitLimit: S.optionalKey(S.Finite),
 })
+
+export class MutantNotApplied
+  extends S.TaggedError<MutantNotApplied>('@systemfsoftware/stryker-js-instrumenter/Mutant.schema/MutantNotApplied')(
+    'MutantNotApplied',
+    { replacement: S.String },
+  )
+{
+  override get message(): string {
+    return `Could not apply mutant ${this.replacement}.`
+  }
+}
+
+export class MutantSpanMissing
+  extends S.TaggedError<MutantSpanMissing>('@systemfsoftware/stryker-js-instrumenter/Mutant.schema/MutantSpanMissing')(
+    'MutantSpanMissing',
+    { edge: S.Literals(['start', 'end']) },
+  )
+{
+  override get message(): string {
+    return `Node without a ${this.edge} offset`
+  }
+}

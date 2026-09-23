@@ -8,4 +8,4 @@ export {
   SYMBOL_DESCRIPTION_IGNORED,
   TAGGED_FIELDS_IGNORED,
   TAGGED_TAG_IGNORED,
-} from './SchemaDeclarationIgnore.js'
+} from './effect-schema-declarations.js'

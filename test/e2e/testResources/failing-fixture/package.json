@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "@systemfsoftware/effect-cell-types": "^8",
+    "@systemfsoftware/effect-cell-types": "^10",
     "effect": "4.0.0-rc.116",
     "vitest": "^4"
   }

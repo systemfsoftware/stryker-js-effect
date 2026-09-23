@@ -16,24 +16,20 @@
   "scripts": {
     "clean": "rimraf dist",
     "build": "tsdown",
-    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
+    "typecheck": "tsc -b",
     "test": "vitest run",
     "attw": "attw --pack .",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "api:check": "api-extractor run",
     "api:update": "api-extractor run --local",
-    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text}"
   },
   "license": "Apache-2.0",
   "engines": {
     "node": ">=22.18.0"
   },
   "dependencies": {
-    "@effect/opentelemetry": "catalog:",
-    "@effect/platform-node": "catalog:",
     "@opentelemetry/api": "catalog:",
-    "@opentelemetry/exporter-trace-otlp-http": "catalog:",
-    "@opentelemetry/sdk-trace-base": "catalog:",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "effect": "catalog:"
   },
@@ -67,7 +63,7 @@
   },
   "exports": {
     ".": {
-      "@systemfsoftware/source": "./src/index.ts",
+      "@systemfsoftware/source": "./src/mod.ts",
       "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
     },

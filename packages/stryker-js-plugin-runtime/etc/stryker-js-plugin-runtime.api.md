@@ -6,6 +6,7 @@
 
 import * as api from '@opentelemetry/api';
 import * as Config from 'effect/Config';
+import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Layer from 'effect/Layer';
@@ -18,104 +19,9 @@ import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware';
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization';
 import * as RpcServer from 'effect/unstable/rpc/RpcServer';
 import * as S from 'effect/Schema';
-import { SocketServer } from 'effect/unstable/socket/SocketServer';
-import { SocketServerError } from 'effect/unstable/socket/SocketServer';
-import { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface';
+import * as SocketServer from 'effect/unstable/socket/SocketServer';
 import { TraceContextMiddleware } from '@systemfsoftware/stryker-js-plugin-interface';
 import { TraceContextParts } from '@systemfsoftware/stryker-js-plugin-interface';
-
-// @public (undocumented)
-export const decodeWorkerOptions: (raw: string) => Effect.Effect<{
-    readonly [x: string]: unknown;
-    readonly allowConsoleColors: boolean;
-    readonly buildCommand?: string | undefined;
-    readonly checkers: readonly {
-        readonly plugin: string;
-        readonly nodeArgs?: readonly string[] | undefined;
-        readonly options?: {
-            readonly [x: string]: unknown;
-        } | undefined;
-    }[];
-    readonly checkerNodeArgs: readonly string[];
-    readonly concurrency?: string | number | undefined;
-    readonly commandRunner: {
-        readonly [x: string]: unknown;
-        readonly command: string;
-    };
-    readonly coverageAnalysis: "all" | "off" | "perTest";
-    readonly clearTextReporter: {
-        readonly [x: string]: unknown;
-        readonly allowColor: boolean;
-        readonly allowEmojis: boolean;
-        readonly logTests: boolean;
-        readonly maxTestsToLog: number;
-        readonly reportTests: boolean;
-        readonly reportMutants: boolean;
-        readonly reportScoreTable: boolean;
-        readonly skipFull: boolean;
-    };
-    readonly dryRunOnly: boolean;
-    readonly ignorePatterns: readonly string[];
-    readonly ignoreStatic: boolean;
-    readonly incremental: boolean;
-    readonly incrementalFile: string;
-    readonly progressStreamFile: string;
-    readonly force: boolean;
-    readonly fileLogLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
-    readonly inPlace: boolean;
-    readonly logLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
-    readonly maxConcurrentTestRunners: number;
-    readonly maxTestRunnerReuse: number;
-    readonly mutate: readonly string[];
-    readonly mutator: {
-        readonly excludedMutations: readonly string[];
-    };
-    readonly packageManager?: "npm" | "pnpm" | "yarn" | undefined;
-    readonly plugins: readonly string[];
-    readonly appendPlugins: readonly string[];
-    readonly reporters: readonly string[];
-    readonly htmlReporter: {
-        readonly fileName: string;
-    };
-    readonly jsonReporter: {
-        readonly fileName: string;
-    };
-    readonly disableTypeChecks: string | boolean;
-    readonly symlinkNodeModules: boolean;
-    readonly tempDirName: string;
-    readonly cleanTempDir: "always" | boolean;
-    readonly testRunner: string | {
-        readonly plugin: string;
-        readonly nodeArgs?: readonly string[] | undefined;
-        readonly options?: {
-            readonly [x: string]: unknown;
-        } | undefined;
-    };
-    readonly testRunnerNodeArgs: readonly string[];
-    readonly thresholds: {
-        readonly high: number;
-        readonly low: number;
-        readonly break: number | null;
-    };
-    readonly timeoutFactor: number;
-    readonly timeoutMS: number;
-    readonly dryRunTimeoutMinutes: number;
-    readonly tsconfigFile: string;
-    readonly warnings: boolean | {
-        readonly [x: string]: unknown;
-        readonly unknownOptions: boolean;
-        readonly preprocessorErrors: boolean;
-        readonly unserializableOptions: boolean;
-        readonly slow: boolean;
-    };
-    readonly disableBail: boolean;
-    readonly allowEmpty: boolean;
-    readonly ignorers: readonly string[];
-    readonly testFiles: readonly string[];
-}, S.SchemaError, never>;
-
-// @public (undocumented)
-export const encodeWorkerOptions: (options: StrykerOptions) => Effect.Effect<string>;
 
 // @public (undocumented)
 export const layerTraceContextClient: Layer.Layer<RpcMiddleware.ForClient<TraceContextMiddleware>, never, never>;
@@ -131,116 +37,132 @@ export const partsOfEffectSpan: (span: {
 }) => TraceContextParts;
 
 // @public (undocumented)
-export const readWorkerOptionsFromEnv: Effect.Effect<{
-    readonly [x: string]: unknown;
-    readonly allowConsoleColors: boolean;
-    readonly buildCommand?: string | undefined;
-    readonly checkers: readonly {
-        readonly plugin: string;
-        readonly nodeArgs?: readonly string[] | undefined;
-        readonly options?: {
-            readonly [x: string]: unknown;
-        } | undefined;
-    }[];
-    readonly checkerNodeArgs: readonly string[];
-    readonly concurrency?: string | number | undefined;
-    readonly commandRunner: {
-        readonly [x: string]: unknown;
-        readonly command: string;
-    };
-    readonly coverageAnalysis: "all" | "off" | "perTest";
-    readonly clearTextReporter: {
-        readonly [x: string]: unknown;
-        readonly allowColor: boolean;
-        readonly allowEmojis: boolean;
-        readonly logTests: boolean;
-        readonly maxTestsToLog: number;
-        readonly reportTests: boolean;
-        readonly reportMutants: boolean;
-        readonly reportScoreTable: boolean;
-        readonly skipFull: boolean;
-    };
-    readonly dryRunOnly: boolean;
-    readonly ignorePatterns: readonly string[];
-    readonly ignoreStatic: boolean;
-    readonly incremental: boolean;
-    readonly incrementalFile: string;
-    readonly progressStreamFile: string;
-    readonly force: boolean;
-    readonly fileLogLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
-    readonly inPlace: boolean;
-    readonly logLevel: "debug" | "error" | "fatal" | "info" | "off" | "trace" | "warn";
-    readonly maxConcurrentTestRunners: number;
-    readonly maxTestRunnerReuse: number;
-    readonly mutate: readonly string[];
-    readonly mutator: {
-        readonly excludedMutations: readonly string[];
-    };
-    readonly packageManager?: "npm" | "pnpm" | "yarn" | undefined;
-    readonly plugins: readonly string[];
-    readonly appendPlugins: readonly string[];
-    readonly reporters: readonly string[];
-    readonly htmlReporter: {
-        readonly fileName: string;
-    };
-    readonly jsonReporter: {
-        readonly fileName: string;
-    };
-    readonly disableTypeChecks: string | boolean;
-    readonly symlinkNodeModules: boolean;
-    readonly tempDirName: string;
-    readonly cleanTempDir: "always" | boolean;
-    readonly testRunner: string | {
-        readonly plugin: string;
-        readonly nodeArgs?: readonly string[] | undefined;
-        readonly options?: {
-            readonly [x: string]: unknown;
-        } | undefined;
-    };
-    readonly testRunnerNodeArgs: readonly string[];
-    readonly thresholds: {
-        readonly high: number;
-        readonly low: number;
-        readonly break: number | null;
-    };
-    readonly timeoutFactor: number;
-    readonly timeoutMS: number;
-    readonly dryRunTimeoutMinutes: number;
-    readonly tsconfigFile: string;
-    readonly warnings: boolean | {
-        readonly [x: string]: unknown;
-        readonly unknownOptions: boolean;
-        readonly preprocessorErrors: boolean;
-        readonly unserializableOptions: boolean;
-        readonly slow: boolean;
-    };
-    readonly disableBail: boolean;
-    readonly allowEmpty: boolean;
-    readonly ignorers: readonly string[];
-    readonly testFiles: readonly string[];
-}, Config.ConfigError | PlatformError | S.SchemaError, FileSystem.FileSystem | Path.Path>;
-
-// @public (undocumented)
 export const tracePartsOf: (context: api.SpanContext) => Option.Option<TraceContextParts>;
 
 // @public (undocumented)
-export const withLinkedSpan: <A, E, R>(spanName: string, attributes: Record<string, string | number | boolean>, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+export const withLinkedSpan: {
+    <A, E, R>(spanName: string, attributes: Record<string, string | number | boolean>, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R>;
+    <A, E, R>(attributes: Record<string, string | number | boolean>, effect: Effect.Effect<A, E, R>): (spanName: string) => Effect.Effect<A, E, R>;
+};
 
+// Warning: (ae-forgotten-export) The symbol "WorkerOptions_base" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
-export const workerServerLayer: <Rpcs extends Rpc.Any, HE>(params: WorkerServerParams<Rpcs, HE>) => Layer.Layer<never, HE | Config.ConfigError | PlatformError | SocketServerError, Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<FileSystem.FileSystem, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware>, never> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Path.Path, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware>, never> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<RpcServer.Protocol, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware>, never> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.Middleware<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware>, never> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ServicesServer<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware>, never> | Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ToHandler<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, SocketServer>, FileSystem.FileSystem | Path.Path>, TraceContextMiddleware>, never>>;
-
-// @public (undocumented)
-export interface WorkerServerParams<Rpcs extends Rpc.Any, HE> {
+export class WorkerOptions extends WorkerOptions_base {
     // (undocumented)
-    readonly handlers: Layer.Layer<Rpc.ToHandler<Rpcs>, HE, FileSystem.FileSystem | Path.Path>;
+    static readonly layer: Layer.Layer<WorkerOptions, Config.ConfigError | PlatformError | S.SchemaError, FileSystem.FileSystem | Path.Path>;
+}
+
+// @public (undocumented)
+export const WorkerOptionsWire: S.fromJsonString<S.StructWithRest<S.Struct<{
+    readonly allowConsoleColors: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly buildCommand: S.optional<S.String>;
+    readonly checkers: S.withDecodingDefaultKey<S.$Array<S.Struct<{
+        readonly plugin: S.String;
+        readonly nodeArgs: S.optional<S.$Array<S.String>>;
+        readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+    }>>, never>;
+    readonly checkerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly concurrency: S.optional<S.Union<readonly [S.Finite, S.String]>>;
+    readonly commandRunner: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
+        readonly command: S.withDecodingDefaultKey<S.String, never>;
+    }>, readonly [S.$Record<S.String, S.Unknown>]>, never>;
+    readonly coverageAnalysis: S.withDecodingDefaultKey<S.Literals<readonly ["off", "all", "perTest"]>, never>;
+    readonly clearTextReporter: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
+        readonly allowColor: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly allowEmojis: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly logTests: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly maxTestsToLog: S.withDecodingDefaultKey<S.Finite, never>;
+        readonly reportTests: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly reportMutants: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly reportScoreTable: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly skipFull: S.withDecodingDefaultKey<S.Boolean, never>;
+    }>, readonly [S.$Record<S.String, S.Unknown>]>, never>;
+    readonly dryRunOnly: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly ignorePatterns: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly ignoreStatic: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly incremental: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly incrementalFile: S.withDecodingDefaultKey<S.String, never>;
+    readonly progressStreamFile: S.withDecodingDefaultKey<S.String, never>;
+    readonly force: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly fileLogLevel: S.withDecodingDefaultKey<S.Literals<readonly ["off", "fatal", "error", "warn", "info", "debug", "trace"]>, never>;
+    readonly inPlace: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly logLevel: S.withDecodingDefaultKey<S.Literals<readonly ["off", "fatal", "error", "warn", "info", "debug", "trace"]>, never>;
+    readonly maxConcurrentTestRunners: S.withDecodingDefaultKey<S.Finite, never>;
+    readonly maxTestRunnerReuse: S.withDecodingDefaultKey<S.Finite, never>;
+    readonly mutate: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly mutator: S.withDecodingDefaultKey<S.Struct<{
+        readonly excludedMutations: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    }>, never>;
+    readonly packageManager: S.optional<S.Literals<readonly ["npm", "yarn", "pnpm"]>>;
+    readonly plugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly appendPlugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly reporters: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly htmlReporter: S.withDecodingDefaultKey<S.Struct<{
+        readonly fileName: S.withDecodingDefaultKey<S.String, never>;
+    }>, never>;
+    readonly jsonReporter: S.withDecodingDefaultKey<S.Struct<{
+        readonly fileName: S.withDecodingDefaultKey<S.String, never>;
+    }>, never>;
+    readonly disableTypeChecks: S.withDecodingDefaultKey<S.Union<readonly [S.Boolean, S.String]>, never>;
+    readonly symlinkNodeModules: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly tempDirName: S.withDecodingDefaultKey<S.String, never>;
+    readonly cleanTempDir: S.withDecodingDefaultKey<S.Literals<readonly ["always", false, true]>, never>;
+    readonly testRunner: S.withDecodingDefaultKey<S.Union<readonly [S.String, S.Struct<{
+        readonly plugin: S.String;
+        readonly nodeArgs: S.optional<S.$Array<S.String>>;
+        readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+    }>]>, never>;
+    readonly testRunnerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly thresholds: S.withDecodingDefaultKey<S.decodeTo<S.declare<{
+        readonly high: number;
+        readonly low: number;
+        readonly break: number | null;
+    }, {
+        readonly high: number;
+        readonly low: number;
+        readonly break: number | null;
+    }>, S.Struct<{
+        readonly high: S.withDecodingDefaultKey<S.Finite, never>;
+        readonly low: S.withDecodingDefaultKey<S.Finite, never>;
+        readonly break: S.withDecodingDefaultKey<S.NullOr<S.Finite>, never>;
+    }>, never, never>, never>;
+    readonly timeoutFactor: S.withDecodingDefaultKey<S.Finite, never>;
+    readonly timeoutMS: S.withDecodingDefaultKey<S.Finite, never>;
+    readonly dryRunTimeoutMinutes: S.withDecodingDefaultKey<S.Finite, never>;
+    readonly tsconfigFile: S.withDecodingDefaultKey<S.String, never>;
+    readonly warnings: S.withDecodingDefaultKey<S.Union<readonly [S.Boolean, S.StructWithRest<S.Struct<{
+        readonly unknownOptions: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly preprocessorErrors: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly unserializableOptions: S.withDecodingDefaultKey<S.Boolean, never>;
+        readonly slow: S.withDecodingDefaultKey<S.Boolean, never>;
+    }>, readonly [S.$Record<S.String, S.Unknown>]>]>, never>;
+    readonly disableBail: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly allowEmpty: S.withDecodingDefaultKey<S.Boolean, never>;
+    readonly ignorers: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly testFiles: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+}>, readonly [S.$Record<S.String, S.Unknown>]>>;
+
+// @public (undocumented)
+export const workerServerLayer: <Rpcs extends Rpc.Any, HE, R>(params: WorkerServerParams<Rpcs, HE, R>) => Layer.Layer<never, HE | PlatformError, FileSystem.FileSystem | SocketServer.SocketServer | Exclude<Exclude<Exclude<Exclude<R, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<RpcServer.Protocol, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.Middleware<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ServicesServer<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, TraceContextMiddleware> | Exclude<Exclude<Exclude<Exclude<Exclude<Rpc.ToHandler<Rpcs>, Rpc.ToHandler<Rpcs>>, Rpc.ServicesServer<Rpcs>>, RpcServer.Protocol>, RpcSerialization.RpcSerialization>, TraceContextMiddleware>>;
+
+// @public (undocumented)
+export interface WorkerServerParams<Rpcs extends Rpc.Any, HE, R = never> {
+    // (undocumented)
+    readonly handlers: Layer.Layer<Rpc.ToHandler<Rpcs>, HE, R>;
     // (undocumented)
     readonly rpcs: RpcGroup.RpcGroup<Rpcs>;
     // (undocumented)
     readonly schemaServices: Layer.Layer<Rpc.ServicesServer<Rpcs>, never, never>;
 }
 
+// Warning: (ae-forgotten-export) The symbol "WorkerTelemetry_base" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
-export const workerTelemetryLayer: Layer.Layer<never, Config.ConfigError>;
+export class WorkerTelemetry extends WorkerTelemetry_base {
+    // (undocumented)
+    static readonly layer: Layer.Layer<WorkerTelemetry, Config.ConfigError>;
+}
 
 // (No @packageDocumentation comment for this package)
 

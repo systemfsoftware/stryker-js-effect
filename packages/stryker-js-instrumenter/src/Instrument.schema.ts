@@ -1,3 +1,4 @@
+import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
 import { Mutant } from './Mutant.schema.js'
 
@@ -11,10 +12,10 @@ export class InstrumentError
   )
 {
   override get message(): string {
-    if (this.message.length === 0) {
-      return 'Instrumenter failure'
-    }
-    return this.message
+    return Boolean.match(this.message.length === 0, {
+      onTrue: () => 'Instrumenter failure',
+      onFalse: () => this.message,
+    })
   }
 }
 
@@ -48,6 +49,17 @@ export const InstrumenterOptionsSchema = S.Struct({
 })
 
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
+
+export class ScriptRootWithoutSpan
+  extends S.TaggedError<ScriptRootWithoutSpan>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/ScriptRootWithoutSpan')(
+    'ScriptRootWithoutSpan',
+    { edge: S.Literals(['start', 'end']) },
+  )
+{
+  override get message(): string {
+    return `Script AST root without ${this.edge}`
+  }
+}
 
 export class InstrumentResult extends S.TaggedClass<InstrumentResult>()('InstrumentResult', {
   files: S.Array(FileSchema),

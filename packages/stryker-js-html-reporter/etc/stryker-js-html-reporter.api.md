@@ -4,10 +4,14 @@
 
 ```ts
 
-import { ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface';
+import * as Effect from 'effect/Effect';
+import { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface';
+import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface';
+import { ReporterInit } from '@systemfsoftware/stryker-js-plugin-interface';
+import { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface';
 
 // @public (undocumented)
-export const makeHtmlReporter: ReporterFactory;
+export const makeHtmlReporter: ((options: StrykerOptions) => (init: ReporterInit) => (events: AsyncIterable<ReporterEvent>) => Effect.Effect<void, ReporterFailed>) & ((options: StrykerOptions, init: ReporterInit) => (events: AsyncIterable<ReporterEvent>) => Effect.Effect<void, ReporterFailed>);
 
 // (No @packageDocumentation comment for this package)
 

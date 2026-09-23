@@ -9,7 +9,7 @@ import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
 import { calculateMetrics } from './calculate-metrics.js'
 
-import type { ModeSignal, OutputMode } from './output-mode.js'
+import type { ModeSignal, OutputMode } from './output-mode.schema.js'
 
 const normalizeFileName = (fileName: string): string => fileName.replaceAll('\\', '/')
 

@@ -18,7 +18,10 @@ export const contributionByTestFile: (report: ReportView) => ReadonlyMap<string,
 export const defaultRequireTestContributionSuffixes: readonly ['.workflow.property.test.ts', '.policy.property.test.ts', '.kernel.property.test.ts'];
 
 // @public (undocumented)
-export const judgeTestContribution: (report: ReportView, everyKillerRecorded: boolean, suffixes?: readonly string[]) => TestContributionVerdict;
+export const judgeTestContribution: {
+    (report: ReportView, everyKillerRecorded: boolean, suffixes?: readonly string[]): TestContributionVerdict;
+    (everyKillerRecorded: boolean, suffixes?: readonly string[]): (report: ReportView) => TestContributionVerdict;
+};
 
 // @public (undocumented)
 export const makeTestContributionEvaluatorService: (options: {
@@ -67,7 +70,10 @@ export interface TestFileContribution {
 }
 
 // @public (undocumented)
-export const toothlessTestFiles: (contribution: ReadonlyMap<string, TestFileContribution>, input: TestContributionInput) => readonly string[];
+export const toothlessTestFiles: {
+    (contribution: ReadonlyMap<string, TestFileContribution>, input: TestContributionInput): readonly string[];
+    (input: TestContributionInput): (contribution: ReadonlyMap<string, TestFileContribution>) => readonly string[];
+};
 
 // (No @packageDocumentation comment for this package)
 

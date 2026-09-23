@@ -65,10 +65,16 @@ export interface BaseTestResult {
 }
 
 // @public (undocumented)
-export const buildTestRunner: <ChildRunnerError>(context: TestRunnerBuildContext, childProcessRunner: Effect.Effect<PooledTestRunner, ChildRunnerError, Scope.Scope | WorkerLauncher>) => Effect.Effect<PooledTestRunner, PooledTestRunnerError | ChildRunnerError, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | WorkerLauncher>;
+export const buildTestRunner: {
+    <ChildRunnerError>(context: TestRunnerBuildContext, childProcessRunner: Effect.Effect<PooledTestRunner, ChildRunnerError, Scope.Scope | WorkerLauncher>): Effect.Effect<PooledTestRunner, PooledTestRunnerError | ChildRunnerError, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | VmRunner | WorkerLauncher>;
+    <ChildRunnerError>(childProcessRunner: Effect.Effect<PooledTestRunner, ChildRunnerError, Scope.Scope | WorkerLauncher>): (context: TestRunnerBuildContext) => Effect.Effect<PooledTestRunner, PooledTestRunnerError | ChildRunnerError, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | VmRunner | WorkerLauncher>;
+};
 
 // @public (undocumented)
-export function buildVerdictEnvelope(report: MutationTestResult, mode: OutputMode, signal: ModeSignal, runId: string, basePath: string, pathService: Path.Path): VerdictEnvelope;
+export const buildVerdictEnvelope: {
+    (report: MutationTestResult, mode: OutputMode, signal: ModeSignal, runId: string, basePath: string, pathService: Path.Path): VerdictEnvelope;
+    (mode: OutputMode, signal: ModeSignal, runId: string, basePath: string, pathService: Path.Path): (report: MutationTestResult) => VerdictEnvelope;
+};
 
 // @public (undocumented)
 export const calculateMetrics: (files: Readonly<Record<string, FileResult>>) => MetricsResult;
@@ -177,7 +183,10 @@ export const CheckerRpcs: RpcGroup.RpcGroup<TracedRpc<'check', typeof CheckerReq
 export class CheckerSkippedRequested extends CheckerSkippedRequested_base {}
 
 // @public (undocumented)
-export const checkGroupedPlans: (checker: CheckerResourceService, checkerName: string, plans: readonly RunPlan[]) => Effect.Effect<readonly (readonly [RunPlan, CheckResult])[], CheckerCrash | CheckerFailed | CheckerContractBroken>;
+export const checkGroupedPlans: {
+    (checker: CheckerResourceService, checkerName: string, plans: readonly RunPlan[]): Effect.Effect<readonly (readonly [RunPlan, CheckResult])[], CheckerCrash | CheckerFailed | CheckerContractBroken>;
+    (checkerName: string, plans: readonly RunPlan[]): (checker: CheckerResourceService) => Effect.Effect<readonly (readonly [RunPlan, CheckResult])[], CheckerCrash | CheckerFailed | CheckerContractBroken>;
+};
 
 // @public (undocumented)
 export type CheckResult = FailedCheckResult | PassedCheckResult;
@@ -191,7 +200,10 @@ export class ChildProcessCrashedError extends ChildProcessCrashedError_base {
 }
 
 // @public (undocumented)
-export const classifyWorkerExit: (pid: number, exitCode: number) => ChildProcessCrashedError | OutOfMemoryError;
+export const classifyWorkerExit: {
+    (pid: number, exitCode: number): ChildProcessCrashedError | OutOfMemoryError;
+    (exitCode: number): (pid: number) => ChildProcessCrashedError | OutOfMemoryError;
+};
 
 // @public (undocumented)
 export interface CompiledTests {
@@ -283,10 +295,10 @@ export type CoverageData = Record<string, number>;
 export const createDefaultOptions: Effect.Effect<StrykerOptions>;
 
 // @public (undocumented)
-export function createFileMatcher(pattern: boolean | string, pathService: Path.Path, allowHiddenFiles?: boolean): (fileName: string) => boolean;
+export const createFileMatcher: ((pathService: Path.Path, allowHiddenFiles?: boolean) => (pattern: boolean | string) => (fileName: string) => boolean) & ((pattern: boolean | string, pathService: Path.Path, allowHiddenFiles?: boolean) => (fileName: string) => boolean);
 
 // @public (undocumented)
-export const decideExtendsStep: (state: ExtendsStepState, document: PartialStrykerOptions, file: string, pathService: Path.Path) => ExtendsStepDecision;
+export const decideExtendsStep: ((document: PartialStrykerOptions, file: string, pathService: Path.Path) => (state: ExtendsStepState) => ExtendsStepDecision) & ((state: ExtendsStepState, document: PartialStrykerOptions, file: string, pathService: Path.Path) => ExtendsStepDecision);
 
 // @public (undocumented)
 export function deepFreeze<T>(target: T): Immutable<T>;
@@ -329,7 +341,7 @@ export interface DryRunOptions extends RunOptions {
 export type DryRunResult = CompleteDryRunResult | ErrorDryRunResult | TimeoutDryRunResult;
 
 // @public (undocumented)
-export type EnginePorts = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path | Stdio.Stdio | WorkerLauncher;
+export type EnginePorts = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path | Stdio.Stdio | VmRunner | WorkerLauncher;
 
 // @public (undocumented)
 export interface ErrorDryRunResult {
@@ -713,7 +725,7 @@ export function isModuleSpecifier(value: string): boolean;
 export const isVmRunner: (name: TestRunnerConfig) => name is 'vm';
 
 // @public (undocumented)
-export function isWarningEnabled(warningType: KnownKeys<WarningOptions>, warningOptions: WarningOptions | boolean): boolean;
+export const isWarningEnabled: ((warningOptions: WarningOptions | boolean) => (warningType: KnownKeys<WarningOptions>) => boolean) & ((warningType: KnownKeys<WarningOptions>, warningOptions: WarningOptions | boolean) => boolean);
 
 // @public (undocumented)
 export interface KilledMutantRunResult {
@@ -731,7 +743,7 @@ export interface KilledMutantRunResult {
 export type KnownKeys<T> = keyof { [P in keyof T as string extends P ? never : number extends P ? never : P]: T[P]; };
 
 // @public (undocumented)
-export const loadConfigCell: typeof readConfig;
+export const loadConfigCell: ((invocation: ConfigInvocation) => (cliOptions: PartialStrykerOptions) => Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Path.Path>) & ((cliOptions: PartialStrykerOptions, invocation: ConfigInvocation) => Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Path.Path>);
 
 // @public (undocumented)
 export interface LoadedPlugins<A = unknown> {
@@ -766,13 +778,16 @@ export const LocationSchema: S.Struct<{
 export const makeRunEventStream: (resolved: ResolvedModeInput) => Effect.Effect<RunEventStream, never, Stdio.Stdio | RunEventDrain>;
 
 // @public (undocumented)
-export const makeRunLayer: (env: RunEnvironmentShape, events?: Queue.Queue<RunEvent, Cause.Done>) => Layer.Layer<RunStageServices, never, EnginePorts>;
+export const makeRunLayer: {
+    (env: RunEnvironmentShape, events?: Queue.Queue<RunEvent, Cause.Done>): Layer.Layer<RunStageServices, never, EnginePorts>;
+    (events?: Queue.Queue<RunEvent, Cause.Done>): (env: RunEnvironmentShape) => Layer.Layer<RunStageServices, never, EnginePorts>;
+};
 
 // @public (undocumented)
 export const makeWorkerClient: <Rpcs extends Rpc.Any>(params: WorkerClientParams<Rpcs>) => Effect.Effect<RpcClient.RpcClient<Rpcs, RpcClientError>, WorkerBootError, Scope.Scope | WorkerLauncher>;
 
 // @public (undocumented)
-export function matchesFile(pattern: boolean | string, fileName: string, pathService: Path.Path, allowHiddenFiles?: boolean): boolean;
+export const matchesFile: ((fileName: string, pathService: Path.Path, allowHiddenFiles?: boolean) => (pattern: boolean | string) => boolean) & ((pattern: boolean | string, fileName: string, pathService: Path.Path, allowHiddenFiles?: boolean) => boolean);
 
 // Warning: (ae-forgotten-export) The symbol "MergeCommand_base" needs to be exported by the entry point index.d.mts
 //
@@ -780,7 +795,7 @@ export function matchesFile(pattern: boolean | string, fileName: string, pathSer
 export class MergeCommand extends MergeCommand_base {}
 
 // @public (undocumented)
-export function mergeConfigs(parent: PartialStrykerOptions, child: PartialStrykerOptions): PartialStrykerOptions;
+export const mergeConfigs: ((child: PartialStrykerOptions) => (parent: PartialStrykerOptions) => PartialStrykerOptions) & ((parent: PartialStrykerOptions, child: PartialStrykerOptions) => PartialStrykerOptions);
 
 // Warning: (ae-forgotten-export) The symbol "MergeResult_base" needs to be exported by the entry point index.d.mts
 //
@@ -1136,7 +1151,7 @@ export interface ProjectFile extends FileDescription {
 }
 
 // @public (undocumented)
-export function readConfig(cliOptions: PartialStrykerOptions, invocation: ConfigInvocation): Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Path.Path>;
+export const readConfig: ((invocation: ConfigInvocation) => (cliOptions: PartialStrykerOptions) => Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Path.Path>) & ((cliOptions: PartialStrykerOptions, invocation: ConfigInvocation) => Effect.Effect<StrykerOptions, ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError, FileSystem.FileSystem | Path.Path>);
 
 // Warning: (ae-forgotten-export) The symbol "ReadConfigCommand_base" needs to be exported by the entry point index.d.mts
 //
@@ -1220,7 +1235,10 @@ export interface ResolvedModeInput {
 }
 
 // @public (undocumented)
-export function resolveExitCode(pending: Iterable<ExitClass>, signal: number | null): number;
+export const resolveExitCode: {
+    (pending: Iterable<ExitClass>, signal: number | null): number;
+    (signal: number | null): (pending: Iterable<ExitClass>) => number;
+};
 
 // @public (undocumented)
 export const RUN_EVENTS_QUEUE_BOUND = 256;
@@ -1372,7 +1390,7 @@ export interface SandboxHandle {
 }
 
 // @public (undocumented)
-export const shouldKeepTempDir: <A = unknown, E = unknown>(exit: Exit.Exit<A, E>, cleanTempDir: 'always' | boolean) => boolean;
+export const shouldKeepTempDir: (<A = unknown, E = unknown>(cleanTempDir: 'always' | boolean) => (exit: Exit.Exit<A, E>) => boolean) & (<A = unknown, E = unknown>(exit: Exit.Exit<A, E>, cleanTempDir: 'always' | boolean) => boolean);
 
 // @public (undocumented)
 export interface SkippedTestResult extends BaseTestResult {
@@ -1422,10 +1440,13 @@ export class StageError extends StageError_base {
 }
 
 // @public (undocumented)
-export type StageServices = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | IdGenerator | Path.Path | RunEnvironment | RunEvents | Scope.Scope | Stdio.Stdio | WorkerLauncher;
+export type StageServices = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | IdGenerator | Path.Path | RunEnvironment | RunEvents | Scope.Scope | Stdio.Stdio | VmRunner | WorkerLauncher;
 
 // @public (undocumented)
-export const strykerCell: (options: PartialStrykerOptions, targetMutatePatterns?: readonly string[]) => Effect.Effect<MutationTestDone, StageError | PlatformError, FileSystem.FileSystem | Path.Path | Stdio.Stdio>;
+export const strykerCell: {
+    (options: PartialStrykerOptions, targetMutatePatterns?: readonly string[]): Effect.Effect<MutationTestDone, StageError | PlatformError, FileSystem.FileSystem | Path.Path | Stdio.Stdio>;
+    (targetMutatePatterns?: readonly string[]): (options: PartialStrykerOptions) => Effect.Effect<MutationTestDone, StageError | PlatformError, FileSystem.FileSystem | Path.Path | Stdio.Stdio>;
+};
 
 // Warning: (ae-forgotten-export) The symbol "StrykerError_base" needs to be exported by the entry point index.d.mts
 //
@@ -1619,7 +1640,10 @@ export interface TimeoutMutantRunResult {
 }
 
 // @public (undocumented)
-export const toRelativeNormalizedFileName: (fileName: string | undefined, basePath: string) => string;
+export const toRelativeNormalizedFileName: {
+    (fileName: string | undefined, basePath: string): string;
+    (basePath: string): (fileName: string | undefined) => string;
+};
 
 // Warning: (ae-forgotten-export) The symbol "TraceContextMiddleware_base" needs to be exported by the entry point index.d.mts
 //
@@ -1638,7 +1662,7 @@ export interface UnserializableDescription {
 }
 
 // @public (undocumented)
-export function validateOptions<A = unknown>(options: Record<string, A>, schema: ValidationSchemaDocument): Effect.Effect<StrykerOptions, ConfigError>;
+export const validateOptions: (<A = unknown>(schema: ValidationSchemaDocument) => (options: Record<string, A>) => Effect.Effect<StrykerOptions, ConfigError>) & (<A = unknown>(options: Record<string, A>, schema: ValidationSchemaDocument) => Effect.Effect<StrykerOptions, ConfigError>);
 
 // @public (undocumented)
 export type ValidationSchemaDocument<A = unknown> = {
@@ -1675,7 +1699,10 @@ export interface VerdictEnvelope {
 }
 
 // @public (undocumented)
-export function verdictExitClass(score: number | null, breakingThreshold: number | null): ExitClass | null;
+export const verdictExitClass: {
+    (score: number | null, breakingThreshold: number | null): ExitClass | null;
+    (breakingThreshold: number | null): (score: number | null) => ExitClass | null;
+};
 
 // @public (undocumented)
 export interface VerdictMutant {

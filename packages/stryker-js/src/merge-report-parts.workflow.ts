@@ -58,8 +58,10 @@ export const MergeSurvivor = S.Struct({
 
 export class MergeReportPartsCommand extends S.Class<MergeReportPartsCommand>('MergeReportPartsCommand')({
   parts: S.Array(ReportPart),
-  expectedPackages: S.optional(S.Array(S.String)),
-}) {}
+  expectedPackages: S.String.pipe(S.Array, S.optional),
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
 
 const MergeReportPartsTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MergeReportParts')
 type MergeReportPartsTypeId = typeof MergeReportPartsTypeId
@@ -388,4 +390,9 @@ const decide = (command: MergeReportPartsCommand): Result.Result<Decision, Decis
     Match.exhaustive,
   )
 
-export const mergeReportParts = Workflow.make(MergeReportPartsCommand, decide)
+export const mergeReportParts = Workflow.make({
+  command: MergeReportPartsCommand,
+  decision: S.Union([MergedReports, NoMergedReports]),
+  error: S.Union([DuplicatePackageLabel, MissingPackages]),
+  decide,
+})

@@ -1,4 +1,4 @@
-import type { BaselineCounts } from './baseline.js'
+import type { BaselineCounts } from '../../src/Oracle/baseline.schema.js'
 
 export interface NormalizedCounts {
   readonly compileErrors: number

@@ -1,4 +1,5 @@
 import { describe, it } from '@effect/vitest'
+import { assert } from 'vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
@@ -32,9 +33,7 @@ const constantFrom = <Item = unknown, const A extends readonly [Item, ...Item[]]
   Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: values.length - 1 }))).pipe(
     Arbitrary.flatMap((index) => {
       const chosen = values[index]
-      if (chosen === undefined) {
-        throw new Error(`constantFrom was asked for a value at index ${index}, which is unbound`)
-      }
+      assert(chosen !== undefined, `constantFrom index ${index} unbound over ${values.length} values`)
       return Arbitrary.Constant(chosen)
     }),
   )

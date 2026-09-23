@@ -5,7 +5,6 @@
  * workflow. Decoded at the checker boundary; no I/O.
  */
 import { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Match from 'effect/Match'
 import * as S from 'effect/Schema'
 
 export const TypescriptCheckerOptionsSchema = S.Struct({
@@ -24,31 +23,3 @@ export class CheckMutantsCommand extends S.TaggedClass<CheckMutantsCommand>()(
     mutants: S.Array(CheckerMutantWire),
   },
 ) {}
-
-// ── compiler errors ──────────────────────────────────────────────────────
-
-/**
- * Every way the TypeScript compiler can fail while serving a check.
- * One tagged error — callers branch only on failure itself; `reason` keeps
- * cases distinguishable in reports.
- */
-export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFailed', {
-  reason: S.Literals(['not-initialized', 'no-projects', 'unknown-file-node', 'file-not-in-project']),
-  subject: S.optional(S.String),
-}) {
-  override get message(): string {
-    return Match.value(this.reason).pipe(
-      Match.when('not-initialized', () => 'The TypeScript compiler was used before it was initialized'),
-      Match.when('no-projects', () => `No projects were found for ${this.subject ?? 'the tsconfig'}`),
-      Match.when(
-        'unknown-file-node',
-        () => `The file graph has no node for '${this.subject ?? 'a file'}', which should not happen`,
-      ),
-      Match.when(
-        'file-not-in-project',
-        () => `'${this.subject ?? 'a file'}' is part of your TypeScript project but could not be found on disk`,
-      ),
-      Match.exhaustive,
-    )
-  }
-}

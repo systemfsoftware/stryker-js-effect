@@ -6,3 +6,11 @@ export const Traceparent = S.String.check(
   S.isPattern(TRACEPARENT_PATTERN, { expected: 'a W3C traceparent: version-traceId-spanId-flags' }),
 )
 export type Traceparent = typeof Traceparent.Type
+
+export interface TraceContextParts {
+  readonly version: string
+  readonly traceId: string
+  readonly spanId: string
+  readonly traceFlags: number
+  readonly traceState?: string | undefined
+}

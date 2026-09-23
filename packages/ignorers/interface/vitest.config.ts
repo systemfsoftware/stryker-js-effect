@@ -5,6 +5,6 @@ export default defineConfig({
   test: {
     ...sharedConfig.test,
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
-    typecheck: { enabled: true },
+    typecheck: { enabled: true, tsconfig: './tsconfig.test.json', build: true },
   },
 })

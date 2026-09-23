@@ -1,4 +1,6 @@
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
+import * as Result from 'effect/Result'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
@@ -109,12 +111,12 @@ function readFieldOf<A = unknown>(record: Record<string, A>, key: string): A | u
 
 const hasFieldIn = <A = unknown>(value: object, key: string): value is Record<string, A> => key in value
 
-const fieldOf = <A = unknown>(value: object, key: string): A | undefined => {
-  if (!hasFieldIn<A>(value, key)) {
-    return undefined
-  }
-  return readFieldOf(value, key)
-}
+const fieldOf = <A = unknown>(value: object, key: string): A | undefined =>
+  Option.getOrUndefined(
+    Option.filter(Option.some(value), (candidate): candidate is Record<string, A> => hasFieldIn<A>(candidate, key)).pipe(
+      Option.map((record) => readFieldOf(record, key)),
+    ),
+  )
 
 const hasStringCode = (error: Error): boolean =>
   Match.value(fieldOf(error, 'code')).pipe(
@@ -164,13 +166,14 @@ const isJsonPrimitive = (value: unknown): value is number | boolean | bigint =>
     Match.orElse(() => false),
   )
 
-const jsonText = <A = unknown>(error: A): string | undefined => {
-  try {
-    return textIfNonEmpty(JSON.stringify(error))
-  } catch {
-    return undefined
-  }
-}
+const jsonText = <A = unknown>(error: A): string | undefined =>
+  Result.getOrElse(
+    Result.try({
+      try: () => textIfNonEmpty(JSON.stringify(error)),
+      catch: () => undefined,
+    }),
+    () => undefined,
+  )
 
 const isNonPlaceholderText = (text: string): boolean =>
   Match.value({ hasLength: text.length > 0, isPlaceholder: text === '[object Object]' }).pipe(
@@ -188,13 +191,14 @@ const usableText = <A = unknown>(value: A): string => (isUsableText(value) ? val
 
 const objectToStringText = (value: object): string =>
   Match.value(fieldOf(value, 'toString')).pipe(
-    Match.when(Match.instanceOf(Function), (callable) => {
-      try {
-        return usableText(Reflect.apply(callable, value, []))
-      } catch {
-        return ''
-      }
-    }),
+    Match.when(Match.instanceOf(Function), (callable) =>
+      Result.getOrElse(
+        Result.try({
+          try: () => usableText(Reflect.apply(callable, value, [])),
+          catch: () => '',
+        }),
+        () => '',
+      )),
     Match.orElse(() => ''),
   )
 
@@ -204,13 +208,18 @@ const isNonNullObjectType = <A = unknown>(error: A): error is A & object => erro
 
 const toStringText = <A = unknown>(error: A): string => (isNonNullObjectType(error) ? objectToStringText(error) : '')
 
-const stringifyRest = <A = unknown>(error: A): string => {
-  const json = jsonText(error)
-  return hasText(json) ? json : toStringText(error)
-}
+const stringifyRest = <A = unknown>(error: A): string =>
+  Option.match(Option.filter(Option.fromUndefinedOr(jsonText(error)), hasText), {
+    onNone: () => toStringText(error),
+    onSome: (json) => json,
+  })
 
 function primitiveJsonOf<A = unknown>(error: A): string | undefined {
-  return isJsonPrimitive(error) ? JSON.stringify(error) : undefined
+  return Option.getOrUndefined(
+    Option.filter(Option.some(error), isJsonPrimitive).pipe(
+      Option.map((primitive) => JSON.stringify(primitive)),
+    ),
+  )
 }
 
 const stringifyNonError = <A = unknown>(error: A): string => typeof error === 'string' ? error : nonStringTextOf(error)
@@ -305,19 +314,37 @@ const isPastDepth = (depth: number): boolean => depth > 4
 
 const isMissingCause = <A = unknown>(cause: A): boolean => cause === undefined || cause === null
 
-export const causeText = <A = unknown>(cause: A, depth: number): string | undefined =>
-  isPastDepth(depth) ? undefined : missingCauseTextOf(cause, depth)
+export const causeText: {
+  <A = unknown>(cause: A, depth: number): string | undefined
+  <A = unknown>(depth: number): (cause: A) => string | undefined
+} = dual(
+  (args: IArguments): boolean => args.length >= 2,
+  <A = unknown>(cause: A, depth: number): string | undefined =>
+    Boolean.match(isPastDepth(depth), {
+      onTrue: () => undefined,
+      onFalse: () => missingCauseTextOf(cause, depth),
+    }),
+)
 
 function missingCauseTextOf<A = unknown>(cause: A, depth: number): string | undefined {
-  return isMissingCause(cause) ? undefined : causeTextOfValue(cause, depth)
+  return Boolean.match(isMissingCause(cause), {
+    onTrue: () => undefined,
+    onFalse: () => causeTextOfValue(cause, depth),
+  })
 }
 
 function causeTextOfValue<A = unknown>(cause: A, depth: number): string | undefined {
-  return typeof cause === 'string' ? textIfNonEmpty(cause) : objectCauseTextOf(cause, depth)
+  return Match.value(cause).pipe(
+    Match.when(Match.string, (text) => textIfNonEmpty(text)),
+    Match.orElse((value) => objectCauseTextOf(value, depth)),
+  )
 }
 
 function objectCauseTextOf<A = unknown>(cause: A, depth: number): string | undefined {
-  return isObjectType(cause)
-    ? textWithNested(ownCauseText(cause), causeText(fieldOf(cause, 'cause'), depth + 1))
-    : undefined
+  return Option.getOrUndefined(
+    Option.map(
+      Option.filter(Option.some(cause), isObjectType),
+      (object) => textWithNested(ownCauseText(object), causeText(fieldOf(object, 'cause'), depth + 1)),
+    ),
+  )
 }

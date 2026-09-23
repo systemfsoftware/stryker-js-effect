@@ -1,3 +1,4 @@
+import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
@@ -30,7 +31,9 @@ export class CheckMutantsInput extends S.TaggedClass<CheckMutantsInput>()(
     diagnostics: S.Array(DiagnosticSchema),
     nodes: S.Record(SourceFileSchema, TSFileNodeSchema),
   },
-) {}
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
 
 export type MutantDecoded = CheckerMutantWire
 export type DiagnosticDecoded = S.Schema.Type<typeof DiagnosticSchema>

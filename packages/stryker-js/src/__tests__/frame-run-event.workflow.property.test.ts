@@ -18,7 +18,7 @@ import {
   RunFailed,
   RunMutantTested,
   RunStarted,
-} from '../RunEvent.schema.js'
+} from '../run-event.schema.js'
 
 const FrameRunEventTypeId = Symbol.for(
   '@systemfsoftware/stryker-js/FrameRunEventDecision',

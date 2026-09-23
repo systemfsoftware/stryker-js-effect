@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import type { CheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import { CheckResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -27,22 +28,23 @@ export class CheckerSkippedRequested extends S.TaggedError<CheckerSkippedRequest
 
 export type CheckerContractBroken = CheckerAnsweredUnrequested | CheckerSkippedRequested
 
-const isCheckResult = (_value: unknown): _value is CheckResult => true
-const CheckResultSchema = S.Unknown.pipe(S.refine(isCheckResult))
-
 export class CheckerCommand extends S.TaggedClass<CheckerCommand>()('CheckerCommand', {
   checkerName: S.String,
   requestedIds: S.Array(S.String),
   phase: S.Literals(['check', 'group']),
-  idGroups: S.optional(S.Array(S.Array(S.String))),
+  idGroups: S.String.pipe(S.Array, S.Array, S.optional),
   answers: S.optional(S.Record(S.String, CheckResultSchema)),
-}) {}
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {
+    checkerName: 'stryker.checker.name',
+  } as const
+}
 
 const CheckerDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CheckerDecision')
 type CheckerDecisionTypeId = typeof CheckerDecisionTypeId
 
 export class CheckGroupDecision extends S.TaggedClass<CheckGroupDecision>()('CheckGroupDecision', {
-  groups: S.Array(S.Array(S.String)),
+  groups: S.String.pipe(S.Array, S.Array),
 }) {
   readonly [CheckerDecisionTypeId] = CheckerDecisionTypeId
 }
@@ -67,7 +69,7 @@ const answeredUnrequested = (
   command: CheckerCommand,
   submitted: readonly string[],
   requested: Readonly<Record<string, true>>,
-): Option.Option<CheckerContractBroken> =>
+) =>
   Option.liftPredicate(Arr.isReadonlyArrayNonEmpty)(submitted.filter((id) => !(id in requested))).pipe(
     Option.map(
       (unrequestedIds) =>
@@ -80,10 +82,7 @@ const answeredUnrequested = (
     ),
   )
 
-const skippedRequested = (
-  command: CheckerCommand,
-  acknowledged: Readonly<Record<string, true>>,
-): Option.Option<CheckerContractBroken> =>
+const skippedRequested = (command: CheckerCommand, acknowledged: Readonly<Record<string, true>>) =>
   Option.liftPredicate(Arr.isReadonlyArrayNonEmpty)(command.requestedIds.filter((id) => !(id in acknowledged))).pipe(
     Option.map(
       (missingIds) =>
@@ -95,12 +94,11 @@ const skippedRequested = (
     ),
   )
 
-/** The first contract breach the answer commits: an unrequested id outranks an unanswered one. */
 const contractBreach = (
   command: CheckerCommand,
   requested: Readonly<Record<string, true>>,
   submitted: readonly string[],
-): Option.Option<CheckerContractBroken> =>
+) =>
   Option.firstSomeOf([
     answeredUnrequested(command, submitted, requested),
     skippedRequested(command, acknowledgedIds(submitted, requested)),
@@ -111,19 +109,19 @@ const admit = (
   requested: Readonly<Record<string, true>>,
   submitted: readonly string[],
   decision: CheckerDecision,
-): Result.Result<CheckerDecision, CheckerContractBroken> =>
+) =>
   Option.match(contractBreach(command, requested, submitted), {
     onNone: () => Result.succeed(decision),
     onSome: (breach) => Result.fail(breach),
   })
 
-const idGroupsOf = (command: CheckerCommand): readonly (readonly string[])[] =>
+const idGroupsOf = (command: CheckerCommand) =>
   Option.getOrElse((): readonly (readonly string[])[] => [])(Option.fromUndefinedOr(command.idGroups))
 
-const answersOf = (command: CheckerCommand): Record<string, CheckResult> =>
+const answersOf = (command: CheckerCommand) =>
   Option.getOrElse((): Record<string, CheckResult> => ({}))(Option.fromUndefinedOr(command.answers))
 
-const evaluateGroup = (command: CheckerCommand): Result.Result<CheckerDecision, CheckerContractBroken> => {
+const evaluateGroup = (command: CheckerCommand) => {
   const idGroups = idGroupsOf(command)
   return admit(
     command,
@@ -133,19 +131,21 @@ const evaluateGroup = (command: CheckerCommand): Result.Result<CheckerDecision, 
   )
 }
 
-const evaluateCheckResult = (command: CheckerCommand): Result.Result<CheckerDecision, CheckerContractBroken> => {
+const evaluateCheckResult = (command: CheckerCommand) => {
   const requested = idRecord(command.requestedIds)
   const entries = Object.entries(answersOf(command))
   const pairs = entries.filter(([id]) => requested[id] === true).map(([id, result]) => ({ id, result }))
   return admit(command, requested, entries.map(([id]) => id), CheckResultDecision.make({ pairs }))
 }
 
-export const admitCheckerAnswer = Workflow.make(
-  CheckerCommand,
-  (command: CheckerCommand): Result.Result<CheckerDecision, CheckerContractBroken> =>
+export const admitCheckerAnswer = Workflow.make({
+  command: CheckerCommand,
+  decision: S.Union([CheckGroupDecision, CheckResultDecision]),
+  error: S.Union([CheckerAnsweredUnrequested, CheckerSkippedRequested]),
+  decide: (command): Result.Result<CheckerDecision, CheckerContractBroken> =>
     Match.value(command.phase).pipe(
       Match.when('group', () => evaluateGroup(command)),
       Match.when('check', () => evaluateCheckResult(command)),
       Match.exhaustive,
     ),
-)
+})

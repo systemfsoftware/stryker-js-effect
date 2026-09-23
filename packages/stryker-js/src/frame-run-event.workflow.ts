@@ -5,7 +5,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { RunEvent } from './RunEvent.schema.js'
+import { RunEvent } from './run-event.schema.js'
 
 const FrameRunEventTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-js/FrameRunEventDecision',
@@ -35,7 +35,9 @@ export class FrameRunEventCommand extends S.TaggedClass<FrameRunEventCommand>()(
     state: FramingState,
     event: RunEvent,
   },
-) {}
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
 
 export class EventFramed extends S.TaggedClass<EventFramed>()('EventFramed', {
   state: FramingState,
@@ -171,4 +173,9 @@ const decideFrame = (
   )
 }
 
-export const frameRunEvent = Workflow.total(FrameRunEventCommand, decideFrame)
+export const frameRunEvent = Workflow.make({
+  command: FrameRunEventCommand,
+  decision: S.Union([EventFramed, EventSuppressed]),
+  error: S.Never,
+  decide: decideFrame,
+})
