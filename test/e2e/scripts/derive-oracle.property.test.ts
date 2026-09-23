@@ -4,7 +4,7 @@ import * as fc from 'fast-check'
 import * as fs from 'node:fs'
 import { Project } from 'ts-morph'
 import { describe, expect, it } from 'vitest'
-import { allMutators } from '../../../packages/stryker-js-instrumenter/src/Mutator.js'
+import { defaultMutators } from '../../../packages/stryker-js-instrumenter/src/Mutator.js'
 import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
 import { determineCompileErrorsWithDiagnostics } from './oracle/diagnostics.js'
 import {
@@ -348,7 +348,7 @@ describe('SOTA Metamorphic & Differential Oracle Properties (fast-check)', () =>
     return true
   }
 
-  it('Registry Exhaustiveness Invariant 5: allMutators registry families are either covered or declared gaps', () => {
+  it('Registry Exhaustiveness Invariant 5: defaultMutators registry families are either covered or declared gaps', () => {
     const coveredMap: Record<string, boolean> = {}
     for (const [name, entry] of Object.entries(MUTATOR_REGISTRY)) {
       if (entry.covered) {
@@ -357,7 +357,7 @@ describe('SOTA Metamorphic & Differential Oracle Properties (fast-check)', () =>
     }
 
     return fc.assert(
-      fc.property(fc.constantFrom(...Object.keys(allMutators)), (family) => {
+      fc.property(fc.constantFrom(...Object.keys(defaultMutators)), (family) => {
         return checkFamilyExhaustiveness(family, coveredMap, DECLARED_GAPS)
       }),
     )
@@ -365,7 +365,7 @@ describe('SOTA Metamorphic & Differential Oracle Properties (fast-check)', () =>
 
   it('Registry Exhaustiveness: injecting a synthetic 17th family into a stubbed registry fails with the family named', () => {
     const stubbedRegistry: Record<string, unknown> = {
-      ...allMutators,
+      ...defaultMutators,
       SyntheticMutator: () => [],
     }
     const coveredMap: Record<string, boolean> = {}

@@ -43,7 +43,7 @@ import { type MutateDescription, type Position } from './Instrument.schema.js'
 import { INSTRUMENTER_CONSTANTS as ID } from './Mutant.js'
 import { applyMutant, createMutant, type Mutable, type Mutant } from './Mutator.js'
 import { type MutatorContext, type MutatorOptions } from './Mutator.js'
-import { allMutators } from './Mutator.js'
+import { defaultMutators, type MutatorRegistry, optInMutators, selectMutators } from './Mutator.js'
 import { type ParseFailed, parseWithOxc } from './Parser.js'
 import {
   type Ast,
@@ -64,6 +64,9 @@ const IS_MUTANT_ACTIVE_HELPER = 'stryMutAct_9fa48'
 export interface TransformerOptions extends MutatorOptions {
   ignorers: readonly Ignorer[]
 }
+
+const DEFAULT_MUTATOR_REGISTRY: MutatorRegistry = { defaults: defaultMutators, optIn: optInMutators }
+
 export type MutantCollector = Mutant[]
 
 export function createMutantCollector(): MutantCollector {
@@ -202,11 +205,11 @@ const MISSING_LOCATION = 'Comment without location'
 export function processStrykerDirectives(
   rule: Rule,
   node: Node,
-  allMutatorNames: readonly string[],
+  knownMutatorNames: readonly string[],
   originFileName: string,
 ): { rule: Rule; warnings: readonly string[] } {
   const directives = attachedComments(node).map(parseStrykerDirective).flatMap(Option.toArray)
-  const warnings = directives.flatMap((directive) => mutatorWarnings(directive, allMutatorNames, originFileName))
+  const warnings = directives.flatMap((directive) => mutatorWarnings(directive, knownMutatorNames, originFileName))
   return { rule: directives.reduce(applyStrykerDirective, rule), warnings }
 }
 
@@ -284,15 +287,15 @@ function commentLocation(loc: LocatedComment['loc']): NonNullable<LocatedComment
   return Option.getOrThrowWith(Option.fromNullishOr(loc), () => new Error(MISSING_LOCATION))
 }
 
-/** Warnings for the directive's mutator names that the configured mutators do not know. */
+/** Warnings for the directive's mutator names that no registered mutator answers to, selected or not. */
 function mutatorWarnings(
   directive: StrykerDirective,
-  allMutatorNames: readonly string[],
+  knownMutatorNames: readonly string[],
   originFileName: string,
 ): readonly string[] {
   return directive.mutatorNames
     .filter((mutatorName) => mutatorName !== WILDCARD)
-    .filter((mutatorName) => !allMutatorNames.includes(mutatorName.toLowerCase()))
+    .filter((mutatorName) => !knownMutatorNames.includes(mutatorName.toLowerCase()))
     .map((mutatorName) => mutatorWarning(directive, mutatorName, originFileName))
 }
 
@@ -954,6 +957,8 @@ export type AstTransformer<T extends AstFormat> = (
   ast: AstByFormat[T],
   mutantCollector: MutantCollector,
   context: TransformerContext,
+  registry?: MutatorRegistry,
+  mutantPlacers?: readonly MutantPlacer[],
 ) => Effect.Effect<readonly string[], ParseFailed>
 
 export interface TransformerContext {
@@ -1055,7 +1060,7 @@ export const transformScript: AstTransformer<ScriptFormat> = (
   { root, originFileName, rawContent, offset, comments },
   mutantCollector,
   { options, mutateDescription, basePath },
-  mutators?: typeof allMutators,
+  registry?: MutatorRegistry,
   mutantPlacers?: readonly MutantPlacer[],
 ) => {
   const placementMap: PlacementMap = new Map()
@@ -1064,15 +1069,17 @@ export const transformScript: AstTransformer<ScriptFormat> = (
 
     attachComments(root, comments, lineTable)
     let directiveRule: Rule = rootRule
-    const mutatorEntries = Object.entries(Option.getOrElse(Option.fromNullishOr(mutators), () => allMutators))
+    const mutatorRegistry = Option.getOrElse(Option.fromNullishOr(registry), () => DEFAULT_MUTATOR_REGISTRY)
+    const selection = selectMutators(mutatorRegistry, options.optInMutations)
+    const mutatorEntries = selection.active
     const placers = Option.getOrElse(Option.fromNullishOr(mutantPlacers), () => allMutantPlacers)
-    const allMutatorNames = mutatorEntries.map(([name]) => name.toLowerCase())
+    const knownMutatorNames = selection.known.map((name) => name.toLowerCase())
 
     const warnings: string[] = []
 
     traverse(root, {
       enter(path) {
-        const result = processStrykerDirectives(directiveRule, path.node, allMutatorNames, originFileName)
+        const result = processStrykerDirectives(directiveRule, path.node, knownMutatorNames, originFileName)
         directiveRule = result.rule
         warnings.push(...result.warnings)
         visitNode(path)
