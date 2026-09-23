@@ -41,9 +41,6 @@ import {
 import {
   classifyRunOutcome,
   errorText,
-  runOutcomeCode,
-  classifyRunOutcome,
-  errorText,
   readCapturedConsole,
   runOutcomeCode,
 } from './Envelope.js'

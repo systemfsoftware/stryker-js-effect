@@ -1607,15 +1607,13 @@ const isFunctionNode = (node: Node): node is FunctionNode => FUNCTION_KINDS[node
 
 const isAssignmentPattern = (node: Node): node is AssignmentPattern => node.type === 'AssignmentPattern'
 
-const identifierNameText = (node: Node | null | undefined): string =>
-  Option.match(Option.fromNullishOr(node), {
-    onSome: (value) =>
-      Match.value(value.type).pipe(
-        Match.when('Identifier', () => (value as Extract<Node, { type: 'Identifier' }>).name),
-        Match.orElse(() => ''),
-      ),
-    onNone: () => '',
-  })
+const isIdentifierNode = (node: Node | null | undefined): node is Extract<Node, { type: 'Identifier' }> =>
+  node?.type === 'Identifier'
+
+const identifierName = (node: Node | null | undefined): string | undefined =>
+  Option.getOrUndefined(Option.map(Option.filter(Option.fromNullishOr(node), isIdentifierNode), (n) => n.name))
+
+const identifierNameText = (node: Node | null | undefined): string => identifierName(node) ?? ''
 
 const privateIdentifierText = (node: Node | null | undefined): string =>
   Match.value(node).pipe(
@@ -1963,6 +1961,12 @@ const externalModuleArgumentText = (value: string): string =>
 interface AttachedComment {
   readonly type: string
   readonly value: string
+}
+
+interface CommentHost {
+  readonly type: string
+  readonly leadingComments?: readonly AttachedComment[]
+  readonly trailingComments?: readonly AttachedComment[]
 }
 
 if (import.meta.vitest !== void 0) {

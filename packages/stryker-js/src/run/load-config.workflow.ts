@@ -3,7 +3,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { PartialStrykerOptionsSchema, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '../config/merge-config.js'
 import {
   ConfigFromDefaults,
@@ -11,11 +11,11 @@ import {
   type LoadConfigDecision,
   LoadConfigRefused,
 } from '../Config.schema.js'
-import { configErrorMessage, describeErrors } from './load-config-errors.js'
+import { configErrorMessage, describeErrors } from './config-error-messages.js'
 
 export class LoadConfigCommand extends S.TaggedClass<LoadConfigCommand>()('LoadConfigCommand', {
-  cliOptions: PartialStrykerOptionsSchema,
-  fileOptions: S.optional(PartialStrykerOptionsSchema),
+  cliOptions: S.Record(S.String, S.Unknown),
+  fileOptions: S.optional(S.Record(S.String, S.Unknown)),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -25,11 +25,11 @@ export const resolveConfig = Workflow.make({
   decision: S.Union([ConfigFromFile, ConfigFromDefaults]),
   error: LoadConfigRefused,
   decide: (command) =>
-    Result.map(
+    Result.mapError(
       S.decodeUnknownResult(StrykerOptionsSchema)(
-        mergeConfig(Option.getOrUndefined(command.fileOptions) ?? {}, command.cliOptions),
+        mergeConfig(Option.getOrElse(command.fileOptions, () => ({})), command.cliOptions),
       ),
-      { onError: (failure) => LoadConfigRefused.make({ message: failure.pipe(describeErrors, configErrorMessage) }) },
+      (failure) => LoadConfigRefused.make({ message: failure.pipe(describeErrors, configErrorMessage) }),
     ).pipe(
       Result.flatMap((options) =>
         Result.succeed(
