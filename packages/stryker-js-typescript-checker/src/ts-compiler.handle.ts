@@ -6,6 +6,8 @@ import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import type * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
+import * as HashMap from 'effect/HashMap'
+import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as MutableHashSet from 'effect/MutableHashSet'
@@ -57,7 +59,7 @@ const ignoredGraphFileNamePattern = /\.d\.ts$|node_modules/
 
 type FileNode = NodeDecodedShape
 
-type GraphNodes = MutableHashMap.MutableHashMap<string, FileNode>
+type GraphNodes = HashMap.HashMap<string, FileNode>
 
 type SourceFiles = MutableHashMap.MutableHashMap<
   string,
@@ -101,7 +103,7 @@ export const make = (
     api: undefined,
     snapshot: undefined,
     sourceFiles: MutableHashMap.empty(),
-    nodes: MutableHashMap.empty(),
+    nodes: HashMap.empty(),
     lastMutants: [],
     lastMutatedFileNames: [],
     allTSConfigFiles: MutableHashSet.fromIterable([tsconfigFile]),
@@ -578,166 +580,127 @@ const buildGraph = (rt: TSCompilerRuntime, programs: readonly Program[]) => {
   })
 }
 
-const parentNodesOf = (node: FileNode, nodes: GraphNodes): ReadonlyArray<FileNode> => {
-  const parents: Array<FileNode> = []
-  MutableHashMap.forEach(nodes, (candidate) => {
-    Boolean.match(candidate.children.includes(node), {
-      onTrue: () => {
-        parents.push(candidate)
-      },
-      onFalse: () => undefined,
-    })
-  })
-  return parents
+const fileNode = (fileName: string, children: ReadonlyArray<FileNode>): FileNode => ({ children, fileName, parents: [] })
+
+const graphNodesOf = (sourceFiles: SourceFiles): GraphNodes => {
+  const entries = Arr.fromIterable(sourceFiles)
+  const leaves = HashMap.fromIterable(
+    Arr.map(entries, ([fileName]): readonly [string, FileNode] => [fileName, fileNode(fileName, [])]),
+  )
+  return HashMap.fromIterable(
+    Arr.map(entries, ([fileName, file]): readonly [string, FileNode] => [
+      fileName,
+      fileNode(fileName, Arr.filterMap(Arr.fromIterable(file.imports), (imported) => HashMap.get(leaves, imported))),
+    ]),
+  )
 }
 
-const replaceWith = <K, V>(target: MutableHashMap.MutableHashMap<K, V>, source: MutableHashMap.MutableHashMap<K, V>) => {
-  MutableHashMap.clear(target)
-  MutableHashMap.forEach(source, (value, key) => {
-    MutableHashMap.set(target, key, value)
-  })
-}
-
-const buildFileNodes = (rt: TSCompilerRuntime): Effect.Effect<void, CompilerFailed> =>
-  Effect.gen(function*() {
-    const state = yield* Ref.get(rt.state)
-    Arr.forEach(Array.from(state.sourceFiles), ([fileName]) => {
-      MutableHashMap.set(state.nodes, fileName, { children: [], fileName, parents: [] })
-    })
-    const withChildren = MutableHashMap.empty<string, FileNode>()
-    yield* Effect.forEach(
-      Array.from(state.sourceFiles),
-      ([fileName, file]) => (
-        Effect.map(
-          Effect.fromOption(
-            MutableHashMap.get(state.nodes, fileName),
-            () => CompilerFailed.make({ reason: 'unknown-file-node', subject: fileName }),
-          ),
-          (node) => ({
-            ...node,
-            parents: [],
-            children: Arr.filterMap(Array.from(file.imports), (importName) => keepSome(MutableHashMap.get(state.nodes, importName))),
-          })
-        )
-      ),
-      { discard: true },
-    )
-    replaceWith(state.nodes, withChildren)
-    const withParents = MutableHashMap.empty<string, FileNode>()
-    MutableHashMap.forEach(state.nodes, (node, fileName) => {
-      MutableHashMap.set(withParents, fileName, { ...node, parents: parentNodesOf(node, state.nodes) })
-    })
-    replaceWith(state.nodes, withParents)
-  })
-
-const nodesOf = (rt: TSCompilerRuntime): Effect.Effect<GraphNodes, CompilerFailed> =>
+const nodesOf = (rt: TSCompilerRuntime) =>
   Effect.flatMap(Ref.get(rt.state), (state) =>
-    Effect.as(
-      Boolean.match(MutableHashMap.size(state.nodes) > 0, {
-        onTrue: () => Effect.void,
-        onFalse: () => buildFileNodes(rt),
-      }),
-      state.nodes,
-    ))
+    Boolean.match(HashMap.isEmpty(state.nodes), {
+      onFalse: () => Effect.succeed(state.nodes),
+      onTrue: () => {
+        const nodes = graphNodesOf(state.sourceFiles)
+        return Effect.as(Ref.update(rt.state, (prev) => ({ ...prev, nodes })), nodes)
+      },
+    }))
 
-interface MutantGroup {
-  readonly mutantIds: Array<string>
-  readonly nodes: MutableHashSet.MutableHashSet<FileNode>
-  readonly ignoredNodes: MutableHashSet.MutableHashSet<FileNode>
-}
-
-const collectParentReference = (into: MutableHashSet.MutableHashSet<FileNode>, parent: FileNode) =>
-  Boolean.match(MutableHashSet.has(into, parent), {
-    onTrue: () => undefined,
-    onFalse: () => {
-      MutableHashSet.add(into, parent)
-      Arr.forEach(parent.parents, (ancestor) => collectParentReference(into, ancestor))
-    },
+const ancestorFileNamesOf = (node: FileNode, visited: HashSet.HashSet<string>): HashSet.HashSet<string> =>
+  Boolean.match(HashSet.has(visited, node.fileName), {
+    onTrue: () => visited,
+    onFalse: () =>
+      Arr.reduce(node.parents, HashSet.add(visited, node.fileName), (names, parent) => ancestorFileNamesOf(parent, names)),
   })
 
-const parentReferencesOf = (node: FileNode): MutableHashSet.MutableHashSet<FileNode> => {
-  const references = MutableHashSet.empty<FileNode>()
-  MutableHashSet.add(references, node)
-  Arr.forEach(node.parents, (parent) => collectParentReference(references, parent))
-  return references
-}
-
-const joinsGroup = (node: FileNode, group: MutantGroup) =>
-  !MutableHashSet.has(group.ignoredNodes, node) &&
-  !Arr.some(Array.from(parentReferencesOf(node)), (parent) => MutableHashSet.has(group.nodes, parent))
-
-const nodeOf = (fileName: string, nodes: GraphNodes): Effect.Effect<FileNode, NodeNotInGraph> =>
-  Effect.fromOption(
-    Option.firstSomeOf([MutableHashMap.get(nodes, normalizeFileName(fileName)), MutableHashMap.get(nodes, fileName)]),
+const nodeOf = (fileName: string, nodes: GraphNodes): Result.Result<FileNode, NodeNotInGraph> =>
+  Result.fromOption(
+    Option.firstSomeOf([HashMap.get(nodes, normalizeFileName(fileName)), HashMap.get(nodes, fileName)]),
     () => new NodeNotInGraph({ fileName }),
   )
 
-const addToGroup = (
-  remaining: MutableHashSet.MutableHashSet<CheckerMutantWire>,
-  nodes: GraphNodes,
-  group: MutantGroup,
-  mutant: CheckerMutantWire,
-): Effect.Effect<void, NodeNotInGraph> =>
-  Effect.flatMap(nodeOf(mutant.fileName, nodes), (node) =>
-    Boolean.match(joinsGroup(node, group), {
-      onFalse: () => Effect.void,
-      onTrue: () =>
-        Effect.sync(() => {
-          group.mutantIds.push(mutant.id)
-          MutableHashSet.add(group.nodes, node)
-          MutableHashSet.remove(remaining, mutant)
-          Arr.forEach(Array.from(parentReferencesOf(node)), (parent) => MutableHashSet.add(group.ignoredNodes, parent))
-        }),
-    }))
-
-const takeIndependentGroup = (
-  remaining: MutableHashSet.MutableHashSet<CheckerMutantWire>,
-  nodes: GraphNodes,
-): Effect.Effect<ReadonlyArray<string>, NodeNotInGraph> => {
-  const group: MutantGroup = {
-    ignoredNodes: MutableHashSet.empty(),
-    mutantIds: [],
-    nodes: MutableHashSet.empty(),
-  }
-  return Effect.as(
-    Effect.forEach(Arr.fromIterable(remaining), (mutant) => addToGroup(remaining, nodes, group, mutant), { discard: true }),
-    group.mutantIds,
-  )
+interface MutantRound {
+  readonly ids: ReadonlyArray<string>
+  readonly members: HashSet.HashSet<string>
+  readonly ignored: HashSet.HashSet<string>
+  readonly taken: HashSet.HashSet<CheckerMutantWire>
 }
 
-const createGroups = (
-  mutants: readonly CheckerMutantWire[],
+const emptyRound: MutantRound = {
+  ids: [],
+  ignored: HashSet.empty(),
+  members: HashSet.empty(),
+  taken: HashSet.empty(),
+}
+
+const sharesDependencyPath = (node: FileNode, round: MutantRound): boolean =>
+  HashSet.has(round.ignored, node.fileName) ||
+  Arr.some(Arr.fromIterable(ancestorFileNamesOf(node, HashSet.empty())), (name) => HashSet.has(round.members, name))
+
+const joinRound = (round: MutantRound, mutant: CheckerMutantWire, node: FileNode): MutantRound =>
+  Boolean.match(sharesDependencyPath(node, round), {
+    onFalse: () => ({
+      ids: [...round.ids, mutant.id],
+      ignored: HashSet.union(round.ignored, ancestorFileNamesOf(node, HashSet.empty())),
+      members: HashSet.add(round.members, node.fileName),
+      taken: HashSet.add(round.taken, mutant),
+    }),
+    onTrue: () => round,
+  })
+
+const takeRound = (
+  remaining: ReadonlyArray<CheckerMutantWire>,
   nodes: GraphNodes,
-): Effect.Effect<ReadonlyArray<ReadonlyArray<string>>, NodeNotInGraph> => {
-  const remaining = MutableHashSet.fromIterable(mutants)
-  const groupAll = (groups: ReadonlyArray<ReadonlyArray<string>>): Effect.Effect<ReadonlyArray<ReadonlyArray<string>>, NodeNotInGraph> =>
-    Boolean.match(MutableHashSet.size(remaining) > 0, {
-      onTrue: () => Effect.flatMap(takeIndependentGroup(remaining, nodes), (taken) => groupAll([...groups, taken])),
-      onFalse: () => Effect.succeed(groups),
-    })
-  return groupAll([])
+): Result.Result<MutantRound, NodeNotInGraph> =>
+  Arr.reduce(remaining, Result.succeed(emptyRound), (round, mutant) =>
+    Result.flatMap(round, (current) =>
+      Result.map(nodeOf(mutant.fileName, nodes), (node) => joinRound(current, mutant, node))))
+
+interface Grouping {
+  readonly groups: ReadonlyArray<ReadonlyArray<string>>
+  readonly remaining: ReadonlyArray<CheckerMutantWire>
+}
+
+const emptyGrouping = (remaining: ReadonlyArray<CheckerMutantWire>): Grouping => ({ groups: [], remaining })
+
+const takeNextRound = (nodes: GraphNodes) => (grouping: Grouping) =>
+  Boolean.match(grouping.remaining.length === 0, {
+    onTrue: () => Result.succeed(grouping),
+    onFalse: () =>
+      Result.map(takeRound(grouping.remaining, nodes), (round) => ({
+        groups: [...grouping.groups, round.ids],
+        remaining: Arr.filter(grouping.remaining, (mutant) => !HashSet.has(round.taken, mutant)),
+      })),
+  })
+
+const roundsOf = (inside: ReadonlyArray<CheckerMutantWire>, nodes: GraphNodes) => {
+  const pending = Arr.dedupe(inside)
+  return Result.map(
+    Arr.reduce(pending, Result.succeed(emptyGrouping(pending)), (grouping, _mutant) =>
+      Result.flatMap(grouping, takeNextRound(nodes))),
+    (grouping) => grouping.groups,
+  )
 }
 
 const groupMutants = (
   mutants: readonly CheckerMutantWire[],
   nodes: GraphNodes,
   prioritizePerformanceOverAccuracy: boolean,
-): Effect.Effect<ReadonlyArray<ReadonlyArray<string>>, NodeNotInGraph> =>
+) =>
   Boolean.match(prioritizePerformanceOverAccuracy, {
-    onFalse: () => Effect.succeed(Arr.map(mutants, (mutant) => [mutant.id])),
+    onFalse: () => Result.succeed(Arr.map(mutants, (mutant) => [mutant.id])),
     onTrue: () => {
       const inside = Arr.filter(mutants, (mutant) =>
-        Option.isSome(MutableHashMap.get(nodes, normalizeFileName(mutant.fileName))))
+        Option.isSome(HashMap.get(nodes, normalizeFileName(mutant.fileName))))
       const outside = Arr.filter(mutants, (mutant) =>
-        Option.isNone(MutableHashMap.get(nodes, normalizeFileName(mutant.fileName))))
+        Option.isNone(HashMap.get(nodes, normalizeFileName(mutant.fileName))))
       return Boolean.match(inside.length === 0, {
-        onTrue: () => Effect.succeed(Arr.map(mutants, (mutant) => [mutant.id])),
+        onTrue: () => Result.succeed(Arr.map(mutants, (mutant) => [mutant.id])),
         onFalse: () =>
-          Boolean.match(outside.length === 0, {
-            onTrue: () => createGroups(inside, nodes),
-            onFalse: () =>
-              Effect.map(createGroups(inside, nodes), (created) => [Arr.map(outside, (mutant) => mutant.id), ...created]),
-          }),
+          Result.map(roundsOf(inside, nodes), (created) =>
+            Boolean.match(outside.length === 0, {
+              onTrue: () => created,
+              onFalse: () => [Arr.map(outside, (mutant) => mutant.id), ...created],
+            })),
       })
     },
   })
@@ -829,7 +792,7 @@ export const check: {
   },
 )
 
-export const nodes = (self: TSCompiler): Effect.Effect<GraphNodes, CompilerError> => nodesOf(self[RuntimeTypeId])
+export const nodes = (self: TSCompiler) => nodesOf(self[RuntimeTypeId])
 
 export const groups: {
   (
@@ -848,7 +811,8 @@ export const groups: {
     mutants: readonly CheckerMutantWire[],
     prioritizePerformanceOverAccuracy: boolean,
   ): Effect.Effect<ReadonlyArray<ReadonlyArray<string>>, CompilerError | NodeNotInGraph> =>
-    Effect.flatMap(nodes(self), (graphNodes) => groupMutants(mutants, graphNodes, prioritizePerformanceOverAccuracy)),
+    Effect.flatMap(nodes(self), (graphNodes) =>
+      Effect.fromResult(groupMutants(mutants, graphNodes, prioritizePerformanceOverAccuracy))),
 )
 
 export const getLineAndCharacterOfPosition: {
@@ -884,5 +848,133 @@ export const close = (self: TSCompiler): Effect.Effect<void> => {
     yield* Effect.sync(() => state.snapshot?.dispose())
     yield* Effect.sync(() => state.api?.close())
     yield* Ref.update(rt.state, (prev) => ({ ...prev, snapshot: undefined, api: undefined }))
+  })
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
+  const Equal = await import('effect/Equal')
+
+  const FILE_INDEX_LIMIT = 4
+
+  const indexSchema = S.Int.check(S.isBetween({ minimum: 0, maximum: FILE_INDEX_LIMIT }))
+  const fileNameOf = (index: number) => `src/file-${index}.ts`
+  const linkedNode = (fileName: string, parents: ReadonlyArray<FileNode>): FileNode => ({ children: [], fileName, parents })
+
+  const graphOfEdges = (edges: ReadonlyArray<readonly [number, number]>): GraphNodes => {
+    const size = 1 + Arr.reduce(edges, 0, (largest, [child, parent]) => Math.max(largest, child, parent))
+    const leaves = HashMap.fromIterable(
+      Arr.map(Arr.range(0, size - 1), (index): readonly [string, FileNode] => [
+        fileNameOf(index),
+        linkedNode(fileNameOf(index), []),
+      ]),
+    )
+    return HashMap.fromIterable(
+      Arr.map(Arr.range(0, size - 1), (index): readonly [string, FileNode] => [
+        fileNameOf(index),
+        linkedNode(
+          fileNameOf(index),
+          Arr.filterMap(
+            Arr.filter(edges, ([child]) => child === index),
+            ([, parent]) => HashMap.get(leaves, fileNameOf(parent)),
+          ),
+        ),
+      ]),
+    )
+  }
+
+  const mutantWireOf = (id: string, fileName: string): CheckerMutantWire => ({
+    id,
+    fileName,
+    mutatorName: 'foo-mutator',
+    replacement: 'x',
+    location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
+  })
+
+  const graphArb = Arbitrary.array(Arbitrary.schema(S.Tuple([indexSchema, indexSchema])), { minLength: 0, maxLength: 6 })
+    .pipe(Arbitrary.map(graphOfEdges))
+
+  const mutantsArb = Arbitrary.array(
+    Arbitrary.all([Arbitrary.schema(S.String.check(S.isMaxLength(6))), Arbitrary.schema(indexSchema)]),
+    { minLength: 0, maxLength: 6 },
+  ).pipe(
+    Arbitrary.map((draws) =>
+      Arr.dedupe(Arr.map(draws, ([tail, index]) => mutantWireOf(`${tail}-${index}`, fileNameOf(index))))),
+  )
+
+  const groupedOf = (mutants: ReadonlyArray<CheckerMutantWire>, nodes: GraphNodes, prioritize: boolean) =>
+    Result.getOrElse(groupMutants(mutants, nodes, prioritize), () => [])
+
+  const relatedNodes = (left: FileNode, right: FileNode): boolean =>
+    HashSet.has(ancestorFileNamesOf(left, HashSet.empty()), right.fileName) ||
+    HashSet.has(ancestorFileNamesOf(right, HashSet.empty()), left.fileName)
+
+  interface Assignment {
+    readonly ids: ReadonlyArray<string>
+    readonly members: ReadonlyArray<FileNode>
+  }
+
+  const noAssignments: ReadonlyArray<Assignment> = []
+
+  const firstFitGrouping = (mutants: ReadonlyArray<CheckerMutantWire>, nodes: GraphNodes, prioritize: boolean) =>
+    Boolean.match(prioritize, {
+      onFalse: () => Arr.map(mutants, (mutant) => [mutant.id]),
+      onTrue: () => {
+        const inside = Arr.dedupe(Arr.filter(mutants, (mutant) =>
+          Option.isSome(HashMap.get(nodes, normalizeFileName(mutant.fileName)))))
+        const outside = Arr.filter(mutants, (mutant) =>
+          Option.isNone(HashMap.get(nodes, normalizeFileName(mutant.fileName))))
+        const assignments = Arr.reduce(
+          Arr.filterMap(inside, (mutant) =>
+            Option.map(HashMap.get(nodes, normalizeFileName(mutant.fileName)), (node) => ({ id: mutant.id, node }))),
+          noAssignments,
+          (groups, candidate) =>
+            Option.match(
+              Arr.findFirstIndex(groups, (group) => !Arr.some(group.members, (member) => relatedNodes(member, candidate.node))),
+              {
+                onSome: (index) =>
+                  Arr.map(groups, (group, at) =>
+                    Boolean.match(at === index, {
+                      onTrue: () => ({ ids: [...group.ids, candidate.id], members: [...group.members, candidate.node] }),
+                      onFalse: () => group,
+                    })),
+                onNone: () => [...groups, { ids: [candidate.id], members: [candidate.node] }],
+              },
+            ),
+        )
+        const ids = Arr.map(assignments, (group) => group.ids)
+        return Boolean.match(outside.length === 0, {
+          onTrue: () => ids,
+          onFalse: () => [Arr.map(outside, (mutant) => mutant.id), ...ids],
+        })
+      },
+    })
+
+  it.prop('∀graph_Mutants_≡ReferenceFirstFit', [graphArb, mutantsArb, S.Boolean], ([nodes, mutants, prioritize]) =>
+    Result.match(groupMutants(mutants, nodes, prioritize), {
+      onFailure: () => false,
+      onSuccess: (grouped) => Equal.equals(grouped, firstFitGrouping(mutants, nodes, prioritize)),
+    }))
+
+  it.prop('∀graph_Mutants_≡Partition', [graphArb, mutantsArb, S.Boolean], ([nodes, mutants, prioritize]) => {
+    const placed = Arr.flatten(groupedOf(mutants, nodes, prioritize))
+    const expected = Arr.map(mutants, (mutant) => mutant.id)
+    return placed.length === mutants.length &&
+      HashSet.size(HashSet.fromIterable(placed)) === mutants.length &&
+      HashSet.size(HashSet.fromIterable([...placed, ...expected])) === mutants.length
+  })
+
+  it.prop('∀graph_Group_≈Independent', [graphArb, mutantsArb], ([nodes, mutants]) => {
+    const byId = HashMap.fromIterable(
+      Arr.map(mutants, (mutant): readonly [string, CheckerMutantWire] => [mutant.id, mutant]),
+    )
+    const pairs = Arr.flatMap(groupedOf(mutants, nodes, true), (ids) => {
+      const members = Arr.filterMap(ids, (id) =>
+        Option.flatMap(HashMap.get(byId, id), (mutant) => HashMap.get(nodes, normalizeFileName(mutant.fileName))))
+      return Arr.flatMap(members, (left, index) =>
+        Arr.map(Arr.drop(members, index + 1), (right): readonly [FileNode, FileNode] => [left, right]))
+    })
+    return Arr.every(pairs, ([left, right]) => !relatedNodes(left, right))
   })
 }

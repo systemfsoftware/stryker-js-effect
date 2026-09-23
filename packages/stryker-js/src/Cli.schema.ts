@@ -19,9 +19,9 @@
  * Declaring the resolved `StrykerOptions` described a value this type never
  * holds, which is why its `Type` had to be discarded and patched by hand.
  */
+import { Workflow } from '@systemfsoftware/effect-cell-types'
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
-
 const RunRequestBase = S.TaggedStruct('run', { survivors: S.Boolean })
 
 export type RunRequest = S.Schema.Type<typeof RunRequestBase> & {
@@ -37,8 +37,6 @@ const MergeReportsRequestBase = S.TaggedStruct('merge-reports', {
 export type MergeReportsRequest = S.Schema.Type<typeof MergeReportsRequestBase>
 
 export type CliRequest = RunRequest | MergeReportsRequest
-
-import { Workflow } from '@systemfsoftware/effect-cell-types'
 
 export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteCommand', {
   route: S.Union([

@@ -10,10 +10,11 @@ This package owns:
 
 - the worker RPC server layer a plugin process launches — `workerServerLayer` and
   its `WorkerServerParams`;
-- the worker's OTel exporter as a layer — `workerTelemetryLayer`, merged inside
-  `workerServerLayer` and a no-op unless `OTEL_ENABLED=true`;
-- the worker-options wire codec — `encodeWorkerOptions`, `decodeWorkerOptions`,
-  `readWorkerOptionsFromEnv`;
+- the telemetry a worker process reads to export with — `WorkerTelemetryConfig`,
+  the OTLP endpoint rule `TracesUrl`, and the `WorkerTelemetry` service a
+  worker's program root reads before binding its own OTel SDK;
+- the worker-options wire schema — `WorkerOptionsWire` — and the
+  `WorkerOptions` service a worker reads its `options.json` through;
 - the trace-context middleware implementations that carry W3C
   `traceparent`/`tracestate` across the process split — `layerTraceContextClient`,
   `layerTraceContextServer`, `withLinkedSpan`, `tracePartsOf`,
@@ -33,10 +34,9 @@ pnpm add @systemfsoftware/stryker-js-plugin-runtime
 
 ## The entry a plugin ships
 
-`workerServerLayer` builds the `RpcServer` for one kind's RPC group over a socket
-the host names in `STRYKER_SOCKET`, starts the worker's telemetry, and provides
-the Node file system, the Node path service, `nodeModuleLayer`, and the
-server-side trace-context middleware:
+`workerServerLayer` builds the `RpcServer` for one kind's RPC group over a socket,
+file system, and path the program root provides, restricts the socket file to
+its owner, and provides the server-side trace-context middleware:
 
 ```ts
 import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -52,9 +52,9 @@ NodeRuntime.runMain(
 ## Worker options
 
 The host writes the run's options to `options.json` in the worker directory it
-creates; `readWorkerOptionsFromEnv` reads that file and decodes it into the same
-`StrykerOptions` a local `stryker` run uses, so a worker's handlers see the run's
-options without the host passing them over the wire.
+creates; `WorkerOptions`, read through `WorkerOptions.layer`, decodes that file
+into the same `StrykerOptions` a local `stryker` run uses, so a worker's
+handlers see the run's options without the host passing them over the wire.
 
 ## Trace context
 

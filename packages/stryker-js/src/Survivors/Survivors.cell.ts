@@ -32,6 +32,12 @@ export interface SurvivorsAdmissionInput {
   readonly basePath: string
 }
 
+export interface SurvivorsAdmissionAnswer {
+  readonly admission: Admitted | NoSurvivors
+  readonly resolvedOptions: StrykerOptions
+  readonly priorReportPath: string
+}
+
 type SurvivorsRaw = typeof AdmitSurvivorsRunCommand.Encoded & {
   readonly resolvedOptions: StrykerOptions
   readonly priorReportPath: string

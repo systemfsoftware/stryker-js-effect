@@ -9,7 +9,25 @@ export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('U
   reason: S.String,
 }) {}
 
-export const CheckerMutantFromMutant = S.suspend(
-  (): S.Schema<CheckerMutantWire, Mutant> =>
-    Mutant.pipe(S.decodeTo(CheckerMutantWire, SchemaTransformation.transform({}))),
-).annotations({ identifier: 'CheckerMutantFromMutant' })
+export const CheckerMutantFromMutant = Mutant.pipe(
+  S.decodeTo(
+    CheckerMutantWire,
+    SchemaTransformation.transform({
+      decode: (m) => ({
+        id: m.id,
+        fileName: m.fileName,
+        mutatorName: m.mutatorName,
+        replacement: m.replacement,
+        location: m.location,
+      }),
+      encode: (w) =>
+        Mutant.make({
+          id: w.id,
+          fileName: w.fileName,
+          mutatorName: w.mutatorName,
+          replacement: w.replacement,
+          location: w.location,
+        }),
+    }),
+  ),
+)

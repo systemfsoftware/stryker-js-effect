@@ -26,7 +26,7 @@ export const ClearTextRenderOptions = S.Struct({
   allowColor: S.Boolean,
   allowEmojis: S.Boolean,
   logTests: S.Boolean,
-  maxTestsToLog: S.Number,
+  maxTestsToLog: S.Finite,
   reportMutants: S.Boolean,
   reportScoreTable: S.Boolean,
   skipFull: S.Boolean,

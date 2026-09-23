@@ -42,7 +42,6 @@ import type {
   JSXOpeningElement,
   LabeledStatement,
   LabelIdentifier,
-  Literal,
   LogicalExpression,
   MemberExpression,
   MetaProperty,
@@ -66,10 +65,8 @@ import type {
   TryStatement,
   TSAsExpression,
   TSCallSignatureDeclaration,
-  TSConstructorType,
   TSConstructSignatureDeclaration,
   TSEnumDeclaration,
-  TSFunctionType,
   TSImportEqualsDeclaration,
   TSImportType,
   TSIndexSignature,
@@ -214,7 +211,7 @@ const withoutHashbangComment = (
   comments: readonly Comment[],
   hashbang: Hashbang | null,
 ): readonly Comment[] =>
-  Option.match(Option.fromNull(hashbang), {
+  Option.match(Option.fromNullishOr(hashbang), {
     onNone: () => comments,
     onSome: (value) => comments.filter((comment) => comment.type === 'Line' && comment.start === value.start),
   })
@@ -250,14 +247,17 @@ const pendingComments = (
   cursor: number,
   pos: number,
 ): readonly [text: string, cursor: number] => {
-  const end = commentLimit(comments, cursor, pos)
+  const end = Option.match(Arr.findFirstIndex(comments, (comment) => comment.start >= pos), {
+    onSome: (index) => Math.max(cursor, index),
+    onNone: () => comments.length,
+  })
   return [comments.slice(cursor, end).map(emitComment).join(''), end]
 }
 
-const commentLimit = (comments: readonly Comment[], cursor: number, pos: number): number =>
-  Boolean.match(cursor < comments.length && comments[cursor].start < pos, {
-    onTrue: () => commentLimit(comments, cursor + 1, pos),
-    onFalse: () => cursor,
+const jumpStatementText = (keyword: string, label: LabelIdentifier | null): string =>
+  Option.match(Option.fromNullishOr(label), {
+    onSome: (value) => `${keyword} ${value.name};`,
+    onNone: () => `${keyword};`,
   })
 
 const emitComment = (comment: Comment): string =>
@@ -267,7 +267,7 @@ const emitComment = (comment: Comment): string =>
   )
 
 const hashbangPrefix = (hashbang: Hashbang | null): string =>
-  Option.match(Option.fromNull(hashbang), {
+  Option.match(Option.fromNullishOr(hashbang), {
     onNone: () => '',
     onSome: (value) => `#!${value.value}\n`,
   })
@@ -395,7 +395,7 @@ const dispatchNode = (ctx: PrintContext, node: Node, prec: number): string =>
     Match.when({ type: 'JSXClosingElement' }, () => ''),
     Match.when({ type: 'JSXIdentifier' }, (n) => n.name),
     Match.when({ type: 'JSXNamespacedName' }, (n) => `${n.namespace.name}:${n.name.name}`),
-    Match.when({ type: 'JSXMemberExpression' }, (n) => jsxMemberExpressionText(ctx, n)),
+    Match.when({ type: 'JSXMemberExpression' }, (n) => jsxMemberExpressionText(n)),
     Match.when({ type: 'JSXAttribute' }, (n) => jsxAttributeText(ctx, n)),
     Match.when(
       { type: 'JSXSpreadAttribute' },
@@ -507,45 +507,45 @@ const statementKindText = (ctx: PrintContext, node: Statement): string =>
     Match.orElse(() => ''),
   )
 
-const literalText = (node: LiteralSource): string => node.raw ?? literalWithoutRaw(node)
+const literalText = <A = unknown>(node: LiteralSource<A>): string => node.raw ?? literalWithoutRaw(node)
 
-const literalWithoutRaw = (node: LiteralSource): string =>
+const literalWithoutRaw = <A = unknown>(node: LiteralSource<A>): string =>
   Option.match(Option.fromNullishOr(node.regex), {
     onSome: (regex) => `/${regex.pattern}/${regex.flags}`,
     onNone: () => literalWithoutRegex(node),
   })
 
-const literalWithoutRegex = (node: LiteralSource): string =>
+const literalWithoutRegex = <A = unknown>(node: LiteralSource<A>): string =>
   Option.match(Option.fromNullishOr(node.bigint), {
     onSome: (bigint) => bigint,
     onNone: () => valueLiteralText(node.value),
   })
 
-const valueLiteralText = (value: unknown): string =>
+const valueLiteralText = <A = unknown>(value: A): string =>
   Match.value(value).pipe(
     Match.when(Match.string, (v) => JSON.stringify(v)),
     Match.orElse(nonStringLiteralText),
   )
 
-const nonStringLiteralText = (value: unknown): string =>
+const nonStringLiteralText = <A = unknown>(value: A): string =>
   Match.value(value).pipe(
     Match.when(Match.number, (v) => String(v)),
     Match.orElse(booleanOrBigintText),
   )
 
-const booleanOrBigintText = (value: unknown): string =>
+const booleanOrBigintText = <A = unknown>(value: A): string =>
   Match.value(value).pipe(
     Match.when(Match.boolean, (v) => String(v)),
     Match.orElse(bigintText),
   )
 
-const bigintText = (value: unknown): string =>
+const bigintText = <A = unknown>(value: A): string =>
   Match.value(typeof value === 'bigint').pipe(
     Match.when(true, () => `${value}n`),
     Match.orElse(() => 'null'),
   )
 
-const flagText = (present: unknown, text: string): string =>
+const flagText = <A = unknown>(present: A, text: string): string =>
   Boolean.match(Boolean(present), {
     onTrue: () => text,
     onFalse: () => '',
@@ -615,7 +615,7 @@ const functionTailText = (ctx: PrintContext, fn: FunctionNode): string =>
   )}${functionBodyText(ctx, fn)}`
 
 const functionBodyText = (ctx: PrintContext, fn: FunctionNode): string =>
-  Option.match(Option.fromNull(fn.body), {
+  Option.match(Option.fromNullishOr(fn.body), {
     onSome: (body) => ` ${blockStatementText(ctx, body)}`,
     onNone: () => ';',
   })
@@ -815,7 +815,7 @@ const classText = (ctx: PrintContext, node: Class): string =>
   )}${classImplementsText(ctx, node)} ${classBodyText(ctx, node.body)}`
 
 const classHeritageText = (ctx: PrintContext, node: Class): string =>
-  Option.match(Option.fromNull(node.superClass), {
+  Option.match(Option.fromNullishOr(node.superClass), {
     onSome: (superClass) =>
       ` extends ${assignmentNodeText(ctx, superClass)}${typeArgumentsText(ctx, node.superTypeArguments)}`,
     onNone: () => '',
@@ -848,7 +848,7 @@ const jsxElementText = (ctx: PrintContext, node: JSXElement): string =>
     .join('')}${jsxClosingElementText(ctx, node)}`
 
 const jsxClosingElementText = (ctx: PrintContext, node: JSXElement): string =>
-  Option.match(Option.fromNull(node.closingElement), {
+  Option.match(Option.fromNullishOr(node.closingElement), {
     onSome: (closingElement) => `</${jsxElementNameText(ctx, closingElement.name)}>`,
     onNone: () => '',
   })
@@ -868,21 +868,21 @@ const jsxElementNameText = (ctx: PrintContext, name: JSXOpeningElement['name']):
   Match.value(name).pipe(
     Match.when({ type: 'JSXIdentifier' }, (n) => n.name),
     Match.when({ type: 'JSXNamespacedName' }, (n) => `${n.namespace.name}:${n.name.name}`),
-    Match.when({ type: 'JSXMemberExpression' }, (n) => jsxMemberExpressionText(ctx, n)),
+    Match.when({ type: 'JSXMemberExpression' }, (n) => jsxMemberExpressionText(n)),
     Match.orElse(() => ''),
   )
 
-const jsxMemberExpressionText = (ctx: PrintContext, node: JSXMemberExpression): string =>
+const jsxMemberExpressionText = (node: JSXMemberExpression): string =>
   Match.value(node.object).pipe(
     Match.when({ type: 'JSXIdentifier' }, (obj) => `${obj.name}.${node.property.name}`),
-    Match.orElse((obj) => `${jsxMemberExpressionText(ctx, obj)}.${node.property.name}`),
+    Match.orElse((obj) => `${jsxMemberExpressionText(obj)}.${node.property.name}`),
   )
 
 const jsxAttributeText = (ctx: PrintContext, node: JSXAttribute): string =>
   `${jsxAttributeNameText(node.name)}${jsxAttributeValueClauseText(ctx, node.value)}`
 
 const jsxAttributeValueClauseText = (ctx: PrintContext, value: JSXAttribute['value']): string =>
-  Option.match(Option.fromNull(value), {
+  Option.match(Option.fromNullishOr(value), {
     onSome: (nonNull) => `=${jsxAttributeValueText(ctx, nonNull)}`,
     onNone: () => '',
   })
@@ -948,7 +948,7 @@ const isDirective = (directive: string | null | undefined): boolean =>
 
 const ifStatementText = (ctx: PrintContext, node: IfStatement): string =>
   `if (${printNodePrec(ctx, node.test, PREC.Sequence)}) ${statementOrBlockText(ctx, node.consequent)}${Option.match(
-    Option.fromNull(node.alternate),
+    Option.fromNullishOr(node.alternate),
     {
       onSome: (alternate) => ` else ${statementOrBlockText(ctx, alternate)}`,
       onNone: () => '',
@@ -1002,7 +1002,7 @@ const forOfStatementText = (ctx: PrintContext, node: ForOfStatement): string =>
   )}`
 
 const returnStatementText = (ctx: PrintContext, node: ReturnStatement): string =>
-  Option.match(Option.fromNull(node.argument), {
+  Option.match(Option.fromNullishOr(node.argument), {
     onSome: (argument) => `return ${printNodePrec(ctx, argument, PREC.Sequence)};`,
     onNone: () => 'return;',
   })
@@ -1021,7 +1021,7 @@ const switchCaseText = (ctx: PrintContext, node: SwitchCase): string =>
   `${switchCaseHeaderText(ctx, node)}${indentedBodyText(ctx, node.consequent, statementText)}`
 
 const switchCaseHeaderText = (ctx: PrintContext, node: SwitchCase): string =>
-  Option.match(Option.fromNull(node.test), {
+  Option.match(Option.fromNullishOr(node.test), {
     onSome: (test) => `case ${sequenceNodeText(ctx, test)}:\n`,
     onNone: () => 'default:\n',
   })
@@ -1200,7 +1200,7 @@ const importSourceText = (source: StringLiteral, attrs: readonly ImportAttribute
   `${source.raw ?? JSON.stringify(source.value)}${importAttributesText(attrs)}`
 
 const exportNamedDeclarationText = (ctx: PrintContext, node: ExportNamedDeclaration): string =>
-  Option.match(Option.fromNull(node.declaration), {
+  Option.match(Option.fromNullishOr(node.declaration), {
     onSome: (declaration) => `export ${statementText(ctx, declaration)}`,
     onNone: () =>
       `export ${flagText(node.exportKind === 'type', 'type ')}{ ${node.specifiers
@@ -1209,7 +1209,7 @@ const exportNamedDeclarationText = (ctx: PrintContext, node: ExportNamedDeclarat
   })
 
 const exportSourceClauseText = (node: ExportNamedDeclaration): string =>
-  Option.match(Option.fromNull(node.source), {
+  Option.match(Option.fromNullishOr(node.source), {
     onSome: (source) => ` from ${JSON.stringify(source.value)}${importAttributesText(node.attributes)}`,
     onNone: () => '',
   })
@@ -1300,7 +1300,7 @@ const moduleHeaderText = (ctx: PrintContext, node: Extract<Node, { type: 'TSModu
   })
 
 const moduleBodyText = (ctx: PrintContext, node: Extract<Node, { type: 'TSModuleDeclaration' }>): string =>
-  Option.match(Option.fromNull(node.body), {
+  Option.match(Option.fromNullishOr(node.body), {
     onSome: (body) => ` ${tsModuleBlockText(ctx, body)}`,
     onNone: () => ';',
   })
@@ -1454,7 +1454,7 @@ const printTSTypeName = (ctx: PrintContext, name: TSTypeReference['typeName']): 
   )
 
 const printTSImportTypeQualifier = (ctx: PrintContext, qualifier: TSImportType['qualifier']): string =>
-  Option.match(Option.fromNull(qualifier), {
+  Option.match(Option.fromNullishOr(qualifier), {
     onSome: (value) => printTSImportTypeQualifierNode(ctx, value),
     onNone: () => '',
   })
@@ -1474,7 +1474,7 @@ const printTSImportType = (ctx: PrintContext, node: TSImportType): string =>
   `import(${JSON.stringify(node.source.value)}${flagText(
     node.options,
     `, ${assignmentNodeText(ctx, node.options)}`,
-  )})${Option.match(Option.fromNull(node.qualifier), {
+  )})${Option.match(Option.fromNullishOr(node.qualifier), {
     onSome: (qualifier) => `.${printTSImportTypeQualifierNode(ctx, qualifier)}`,
     onNone: () => '',
   })}${typeArgumentsText(ctx, node.typeArguments)}`
@@ -1485,7 +1485,7 @@ const printMappedType = (ctx: PrintContext, node: TSMappedType): string =>
     node.constraint,
   )}${printTypeClause(ctx, ' as ', node.nameType)}]${printMappedTypeModifier(node.optional, '?')}${printTypeClause(ctx, ': ', node.typeAnnotation)} }`
 
-const printMappedTypeModifier = (modifier: unknown, rendered: string): string =>
+const printMappedTypeModifier = <A = unknown>(modifier: A, rendered: string): string =>
   Match.value(modifier).pipe(
     Match.when(true, () => rendered),
     Match.when('+', () => `+${rendered}`),
@@ -1510,7 +1510,7 @@ const printTSTypePredicate = (ctx: PrintContext, node: TSTypePredicate): string 
   `${flagText(node.asserts, 'asserts ')}${typePredicateParameterText(node.parameterName)}${printPredicateAnnotation(ctx, node)}`
 
 const printPredicateAnnotation = (ctx: PrintContext, node: TSTypePredicate): string =>
-  Option.match(Option.fromNull(node.typeAnnotation), {
+  Option.match(Option.fromNullishOr(node.typeAnnotation), {
     onSome: (annotation) => printTypeClause(ctx, ' is ', annotation.typeAnnotation),
     onNone: () => '',
   })
@@ -1929,8 +1929,8 @@ const propertyDefinitionModifiers = (node: PropertyDefinition): string =>
     'static ',
   )}${flagText(node.readonly, 'readonly ')}${flagText(node.override, 'override ')}`
 
-type LiteralSource = {
-  readonly value: unknown
+type LiteralSource<A = unknown> = {
+  readonly value: A
   readonly raw: string | null
   readonly bigint?: string
   readonly regex?: { readonly pattern: string; readonly flags: string }

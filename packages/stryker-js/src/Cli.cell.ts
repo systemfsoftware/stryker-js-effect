@@ -27,7 +27,7 @@ import * as Flag from 'effect/unstable/cli/Flag'
 import { Admitted, NoSurvivors } from './admit-survivors-run.workflow.js'
 import { survivorsAdmissionCell } from './Survivors/Survivors.cell.js'
 import type { SurvivorsRejection } from './Survivors/mod.js'
-import type { CliRequest, MergeReportsRequest } from './Cli.schema.js'
+import { CliRouteCommand } from './Cli.schema.js'
 import {
   type ConfigFileInvalidError,
   type ConfigFileNotFoundError,
@@ -58,9 +58,11 @@ import {
 } from './route-cli-request.workflow.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mergeReportsCell } from './merge-reports.cell.js'
-import { MergeReportsFailed } from './merge-reports.schema.js'
 import type { RunEventDrain, RunEventStream } from './run-event-stream.service.js'
-import { RunExit } from './classify-run-outcome.workflow.js'
+import type { RunEventStreamPort } from './run-event-stream.service.js'
+import { StrykerError } from './stryker-error.schema.js'
+import type { OutputModeProbe } from './output-mode-probe.service.js'
+import type { ResolvedMode } from './output-mode.schema.js'
 
 interface CliEnvironment {
   readonly mode: ResolvedMode

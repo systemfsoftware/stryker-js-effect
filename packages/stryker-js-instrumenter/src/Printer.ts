@@ -34,13 +34,14 @@ const HASHBANG_FIELDS: Readonly<Record<string, <A = unknown>(field: A) => boolea
 const isHashbang = (value: unknown): value is Hashbang =>
   Predicate.isObject(value) && Object.entries(HASHBANG_FIELDS).every(([key, accepts]) => accepts(value[key]))
 
-const toHashbang = (hashbang: unknown): Hashbang | null =>
-  Option.match(Option.filter(Option.some(hashbang), isHashbang), {
+const toHashbang = <A = unknown>(hashbang: A): Hashbang | null =>
+  Option.match(Option.filter(Option.fromNullishOr(hashbang), isHashbang), {
     onSome: (value) => value,
     onNone: () => null,
   })
 
-const hasHashbangField = (root: object): root is object & { readonly hashbang?: unknown } => 'hashbang' in root
+const hasHashbangField = (root: Ast['root']): root is Ast['root'] & { readonly hashbang?: Hashbang | null } =>
+  'hashbang' in root
 
 const getHashbang = (root: Ast['root']): Hashbang | null =>
   Option.match(

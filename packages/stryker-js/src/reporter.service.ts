@@ -17,7 +17,7 @@ export interface ReporterShape {
   readonly builtin: Readonly<Record<string, ReporterFactory>>
 }
 
-const failAsStreamDrain = (cause: unknown) =>
+const failAsStreamDrain = (cause: string) =>
   ReporterFailed.make({
     reporterName: 'progress',
     event: 'mutationTestReportReady',

@@ -18,8 +18,6 @@ import { ReporterOutput } from './reporter-output.service.js'
 import {
   failAsJsonReporter,
   JsonReportCommand,
-  JsonReportRefused,
-  JsonReportSuppressed,
   renderJsonReport,
 } from './render-json-report.workflow.js'
 
@@ -30,10 +28,10 @@ const failAsJsonReporter = (cause: unknown) =>
     cause: errorToString(cause),
   })
 
-const reportOf = Filter.make((event: ReporterEvent): Result.Result<reportApi.MutationTestResult, unknown> =>
+const reportOf = Filter.make((event: ReporterEvent): Result.Result<reportApi.MutationTestResult, 'not-ready'> =>
   Match.value(event).pipe(
     Match.tag('mutationTestReportReady', (ready) => Result.succeed(ready.report)),
-    Match.orElse(() => Result.fail(undefined)),
+    Match.orElse(() => Result.fail('not-ready' as const)),
   ))
 
 type JsonReportRaw = (typeof JsonReportCommand)['Encoded'] & {

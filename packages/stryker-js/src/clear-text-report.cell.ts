@@ -15,13 +15,11 @@ import * as Stream from 'effect/Stream'
 
 import { ReporterOutput } from './reporter-output.service.js'
 import {
-  ClearTextReportCommand,
-  ClearTextReportSuppressed,
   renderClearTextReport,
   type ClearTextRenderOptions,
 } from './render-clear-text-report.workflow.js'
 
-const failAsClearText = (cause: unknown) =>
+const failAsClearText = (cause: string) =>
   ReporterFailed.make({
     reporterName: 'clear-text',
     event: 'mutationTestReportReady',
@@ -33,10 +31,10 @@ interface TerminalReport {
   readonly metrics: reportApi.MetricsResult
 }
 
-const terminalReportOf = Filter.make((event: ReporterEvent): Result.Result<TerminalReport, unknown> =>
+const terminalReportOf = Filter.make((event: ReporterEvent): Result.Result<TerminalReport, 'not-terminal'> =>
   Match.value(event).pipe(
     Match.tag('mutationTestReportReady', (ready) => Result.succeed({ report: ready.report, metrics: ready.metrics })),
-    Match.orElse(() => Result.fail(undefined)),
+    Match.orElse(() => Result.fail('not-terminal' as const)),
   ))
 
 const renderOptionsOf = (options: StrykerOptions): ClearTextRenderOptions => ({

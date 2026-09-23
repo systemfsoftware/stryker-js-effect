@@ -37,7 +37,11 @@ import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 
 import type { CliRequest } from '../Cli.schema.js'
+import { MutationReporting } from '../mutation-reporting.service.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
+import { ProjectFiles } from '../project-files.service.js'
+import { Reporter } from '../reporter.service.js'
+import { ReporterOutput } from '../reporter-output.service.js'
 import {
   RunEventDrain,
   RunEventDrainLive,
@@ -88,7 +92,7 @@ export const makeRunLayer: {
       Match.when(undefined, () => Layer.effect(RunEvents, Queue.bounded<RunEvent, Cause.Done>(RUN_EVENTS_QUEUE_BOUND))),
       Match.orElse((queue) => Layer.succeed(RunEvents, queue)),
     )
-    return Layer.mergeAll(
+    const stageLayer = Layer.mergeAll(
       Layer.succeed(RunEnvironment, env),
       eventsLayer,
       idGeneratorLayer,
@@ -101,6 +105,11 @@ export const makeRunLayer: {
           return stageScope
         }),
       ),
+    )
+    return Layer.mergeAll(
+      stageLayer,
+      MutationReporting.layer.pipe(Layer.provide(stageLayer)),
+      Reporter.layer.pipe(Layer.provide(ReporterOutput.layer)).pipe(Layer.provide(stageLayer)),
     )
   },
 )
