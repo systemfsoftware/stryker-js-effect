@@ -59,6 +59,7 @@ export const instrumentCell = Sandwich.read((command: PrepareDone) =>
     const instrumentResult = yield* instrument(filesToMutate, {
       ignorers: [...command.ignorers],
       excludedMutations: [...command.options.mutator.excludedMutations],
+      optInMutations: [...command.options.mutator.optInMutations],
     }, env.basePath).pipe(Effect.mapError((cause) =>
       StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })
     ))

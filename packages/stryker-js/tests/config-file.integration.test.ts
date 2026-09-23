@@ -439,6 +439,40 @@ Feature('Configuring a Stryker run from a module config file')
     )
 
     scenario(
+      'An empty config module keeps the mutation settings empty',
+      Gherkin.Do.pipe(
+        Given('a config module with no settings')(
+          'read',
+          () => readExplicit(fixtureFile('empty-config', 'stryker.config.ts')),
+        ),
+        When('the run reads it')(
+          'seen',
+          (s) => Effect.sync(() => ({ mutations: optionsOrThrow(s.read).mutator })),
+        ),
+        Then('nothing is excluded from mutation and nothing extra is opted into')((s) => {
+          expect(s.seen.mutations).toStrictEqual({ excludedMutations: [], optInMutations: [] })
+        }),
+      ),
+    )
+
+    scenario(
+      'A config module that opts into extra mutations keeps them exactly as written',
+      Gherkin.Do.pipe(
+        Given('a config module opting into the extra mutations it names')(
+          'read',
+          () => readExplicit(fixtureFile('opt-in-mutators', 'stryker.config.ts')),
+        ),
+        When('the run reads its configuration')(
+          'seen',
+          (s) => Effect.sync(() => ({ optedInto: optionsOrThrow(s.read).mutator.optInMutations })),
+        ),
+        Then('the run opts into exactly the names the file listed, in order')((s) => {
+          expect(s.seen.optedInto).toStrictEqual(['FinalizerEscape'])
+        }),
+      ),
+    )
+
+    scenario(
       'A config module that derives its settings from how the run was invoked is handed those details',
       Gherkin.Do.pipe(
         Given('a project whose config module derives its settings from how the run was invoked')(
