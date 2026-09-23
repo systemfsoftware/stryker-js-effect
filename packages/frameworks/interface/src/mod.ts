@@ -8,17 +8,14 @@ export type FormatId = string & { readonly [FormatIdTypeId]: typeof FormatIdType
 
 export type ScriptFormat = 'js' | 'ts' | 'tsx'
 
+export type FrameworkContractVersion = '1'
+
 export interface FrameworkClaim {
   readonly formatId: FormatId
   readonly extensions: readonly string[]
   readonly language: string
-  /**
-   * The framework runtime this plugin resolves and owns — its compiler or parser
-   * version. Upgrading that runtime invalidates the mutants incremental state
-   * remembered for this plugin's files; `contractVersion` does not move with it.
-   */
   readonly ownerVersion: string
-  readonly contractVersion: string
+  readonly contractVersion: FrameworkContractVersion
 }
 
 export interface ScriptRegion {
@@ -40,3 +37,29 @@ export interface FrameworkContext {
   readonly printScript: (script: Program) => string
   readonly instrumentationHeader: () => readonly Statement[]
 }
+
+export type FrameworkParseResult<A> =
+  | { readonly kind: 'Parsed'; readonly value: A }
+  | { readonly kind: 'ParseFailed'; readonly message: string }
+
+export interface Framework {
+  readonly kind: 'Framework'
+  readonly name: string
+  readonly claim: FrameworkClaim
+  readonly parse: (rawContent: string, context: FrameworkContext) => FrameworkParseResult<EmbeddedDocument>
+  readonly transform: (document: EmbeddedDocument, context: FrameworkContext) => EmbeddedDocument
+  readonly print: (document: EmbeddedDocument, context: FrameworkContext) => string
+  readonly disableTypeChecks: (rawContent: string) => FrameworkParseResult<string>
+}
+
+export type FrameworkRefusalReason = 'PeerMissing' | 'PeerVersionUnsupported'
+
+export interface FrameworkRefusal {
+  readonly kind: 'FrameworkRefusal'
+  readonly name: string
+  readonly reason: FrameworkRefusalReason
+  readonly peer: string
+  readonly detail: string
+}
+
+export type FrameworkContribution = Framework | FrameworkRefusal

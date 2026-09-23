@@ -10,7 +10,7 @@
   },
   "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/frameworks/interface#readme",
   "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
-  "description": "The framework interface for StrykerJS-style mutation tooling — the format claim a plugin declares, the embedded document and script regions it produces, and the toolkit context its hooks receive. Types only, with no runtime exports and no Effect dependency.",
+  "description": "The framework interface for StrykerJS-style mutation tooling — the plain framework object a plugin exports, its format claim, the embedded document and script regions it produces, and the toolkit context its hooks receive. Types only, with no runtime exports and no Effect dependency.",
   "keywords": [
     "stryker",
     "mutation-testing",
@@ -41,12 +41,14 @@
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "attw": "attw --pack .",
     "api:check": "api-extractor run",
-    "api:update": "api-extractor run --local"
+    "api:update": "api-extractor run --local",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
   },
   "dependencies": {
     "@systemfsoftware/stryker-ignorer-interface": "workspace:^"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/oxlint-ignorer-config": "workspace:^",

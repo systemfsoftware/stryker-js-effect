@@ -23,15 +23,34 @@ export type FormatId = string & {
 };
 
 // @public (undocumented)
+export interface Framework {
+    // (undocumented)
+    readonly claim: FrameworkClaim;
+    // (undocumented)
+    readonly disableTypeChecks: (rawContent: string) => FrameworkParseResult<string>;
+    // (undocumented)
+    readonly kind: 'Framework';
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly parse: (rawContent: string, context: FrameworkContext) => FrameworkParseResult<EmbeddedDocument>;
+    // (undocumented)
+    readonly print: (document: EmbeddedDocument, context: FrameworkContext) => string;
+    // (undocumented)
+    readonly transform: (document: EmbeddedDocument, context: FrameworkContext) => EmbeddedDocument;
+}
+
+// @public (undocumented)
 export interface FrameworkClaim {
     // (undocumented)
-    readonly contractVersion: string;
+    readonly contractVersion: FrameworkContractVersion;
     // (undocumented)
     readonly extensions: readonly string[];
     // (undocumented)
     readonly formatId: FormatId;
     // (undocumented)
     readonly language: string;
+    // (undocumented)
     readonly ownerVersion: string;
 }
 
@@ -46,6 +65,38 @@ export interface FrameworkContext {
     // (undocumented)
     readonly transformScript: (script: Program) => Program;
 }
+
+// @public (undocumented)
+export type FrameworkContractVersion = '1';
+
+// @public (undocumented)
+export type FrameworkContribution = Framework | FrameworkRefusal;
+
+// @public (undocumented)
+export type FrameworkParseResult<A> = {
+    readonly kind: 'Parsed';
+    readonly value: A;
+} | {
+    readonly kind: 'ParseFailed';
+    readonly message: string;
+};
+
+// @public (undocumented)
+export interface FrameworkRefusal {
+    // (undocumented)
+    readonly detail: string;
+    // (undocumented)
+    readonly kind: 'FrameworkRefusal';
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly peer: string;
+    // (undocumented)
+    readonly reason: FrameworkRefusalReason;
+}
+
+// @public (undocumented)
+export type FrameworkRefusalReason = 'PeerMissing' | 'PeerVersionUnsupported';
 
 // @public (undocumented)
 export type ScriptFormat = 'js' | 'ts' | 'tsx';
