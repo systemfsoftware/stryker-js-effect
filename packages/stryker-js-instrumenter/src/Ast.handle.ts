@@ -474,7 +474,7 @@ interface NodeEntry {
 
 const isNodeList = (value: unknown): value is Array<Node> => Array.isArray(value)
 
-const walkableNode = (root: Program | Node): Oxc.Program | Oxc.Node => root as Oxc.Program | Oxc.Node
+const walkableNode = (root: Program | Node): Oxc.Program | Oxc.Node => root
 
 const walker: Walker = (root, visitors) => {
   const ancestors: Oxc.Node[] = []

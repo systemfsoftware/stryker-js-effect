@@ -121,6 +121,11 @@ if (import.meta.vitest !== void 0) {
     })
   }
 
+  const positionStartsItsLine = (table: LineTable, position: Position, offset: number): boolean =>
+    Arr.get(table.lineStarts, position.line - 1).pipe(
+      Option.exists((start) => start + position.column - 1 === offset),
+    )
+
   const terminatorEndsAtOrBefore = (text: string, offset: number): number =>
     [...text.matchAll(LINE_TERMINATOR)].filter((match) => match.index + match[0].length <= offset).length
 
@@ -129,14 +134,14 @@ if (import.meta.vitest !== void 0) {
     [textWithOffset],
     ([{ text, offset }]) =>
       Effect.gen(function*() {
-        const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
+        const table = yield* S.decodeEffect(LineTableFromText)(text)
         const position = table.positionAt(offset)
-        const startOfLine = Arr.get(table.lineStarts, position.line - 1)
-        return Option.isSome(startOfLine) &&
-          startOfLine.value + position.column - 1 === offset &&
-          position.column >= 1 &&
-          position.line - 1 === terminatorEndsAtOrBefore(text, offset)
-      }),
+        return [
+          positionStartsItsLine(table, position, offset),
+          position.column >= 1,
+          position.line - 1 === terminatorEndsAtOrBefore(text, offset),
+        ].every((condition) => condition)
+      }).pipe(Effect.orDie),
   )
 
   it.effect.prop(
@@ -145,10 +150,10 @@ if (import.meta.vitest !== void 0) {
     ([fragments]) =>
       Effect.gen(function*() {
         const text = fragments.join('')
-        const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
-        const sameLengthUnixEndings = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text.replaceAll('\r\n', ' \n')))
+        const table = yield* S.decodeEffect(LineTableFromText)(text)
+        const sameLengthUnixEndings = yield* S.decodeEffect(LineTableFromText)(text.replaceAll('\r\n', ' \n'))
         return table.lineStarts.join(',') === sameLengthUnixEndings.lineStarts.join(',')
-      }),
+      }).pipe(Effect.orDie),
   )
 
   it.effect.prop(
@@ -168,12 +173,12 @@ if (import.meta.vitest !== void 0) {
     [textWithOffset, Schema.Int],
     ([{ text, offset }, draw]) =>
       Effect.gen(function*() {
-        const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
+        const table = yield* S.decodeEffect(LineTableFromText)(text)
         const limit = text.length
         const first = ((draw % (limit + 1)) + limit + 1) % (limit + 1)
         const [start, end] = [first, offset].sort((left, right) => left - right)
         const location = table.locationAt({ start, end })
         return comparePositions(location.start, location.end) <= 0
-      }),
+      }).pipe(Effect.orDie),
   )
 }

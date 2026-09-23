@@ -131,7 +131,7 @@ const disableTypeChecksFor = (parser: ParserShape, file: File, format: AstFormat
       ),
   })
 
-const withDisabledTypeChecking = (file: File, ast: Ast): Effect.Effect<File, ScriptRootWithoutSpan> =>
+const withDisabledTypeChecking = (file: File, ast: Ast): Effect.Effect<File> =>
   Match.value(ast).pipe(
     Match.when({ format: 'js' }, (script) => Effect.succeed({ ...file, content: disableTypeCheckingInScript(script) })),
     Match.when({ format: 'ts' }, (script) => Effect.succeed({ ...file, content: disableTypeCheckingInScript(script) })),
@@ -188,7 +188,7 @@ const htmlScriptPositionOf = (
     onSome: (span) => Result.succeed({ script, start: span.start, end: span.end }),
   })
 
-const disableTypeCheckingInHtml = (ast: HtmlAst): Effect.Effect<string, ScriptRootWithoutSpan> =>
+const disableTypeCheckingInHtml = (ast: HtmlAst): Effect.Effect<string> =>
   Result.match(Result.all(Arr.map(ast.root.scripts, htmlScriptPositionOf)), {
     onSuccess: (positioned) =>
       Effect.succeed(
@@ -198,7 +198,7 @@ const disableTypeCheckingInHtml = (ast: HtmlAst): Effect.Effect<string, ScriptRo
           (script) => prefixWithNoCheck(removeTSDirectives(script.rawContent, script.comments)),
         ),
       ),
-    onFailure: Effect.fail,
+    onFailure: (failure) => Effect.die(failure),
   })
 
 const svelteScriptPositionOf = (script: TemplateSvelteScript): PositionedScript<TemplateSvelteScript> => ({
