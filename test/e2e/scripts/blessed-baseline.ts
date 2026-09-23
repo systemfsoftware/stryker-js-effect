@@ -10,9 +10,10 @@ import { type RunEvent, RunEventWireLine, S } from '@systemfsoftware/stryker-js'
 import {
   type BakedFixtureCacheService,
   type ExecResult,
-  HarnessLive,
+  type HarnessError,
   installFixture,
   runCli,
+  SelfBakingHarnessLive,
   type StrykerCliRunnerService,
 } from '../tests/__fixtures__/microvm-environment.js'
 import {
@@ -36,7 +37,7 @@ const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 const BASELINE_OUTPUT_DIR = join(REPO_ROOT, 'test/e2e/oracle-baselines')
 
-type HarnessRuntime = ManagedRuntime.ManagedRuntime<BakedFixtureCacheService | StrykerCliRunnerService, never>
+type HarnessRuntime = ManagedRuntime.ManagedRuntime<BakedFixtureCacheService | StrykerCliRunnerService, HarnessError>
 
 const foldForGate = (baseline: BlessedBaseline): BlessedBaseline => ({
   ...baseline,
@@ -289,7 +290,7 @@ async function main(): Promise<void> {
   if (args.verify && args.slices.length > 1) {
     throw new Error('--verify runs two consecutive runs per slice; pass exactly one slice with --verify')
   }
-  const runtime = ManagedRuntime.make(HarnessLive)
+  const runtime = ManagedRuntime.make(SelfBakingHarnessLive)
   try {
     for (const requested of args.slices) {
       const known = ensureKnownSlice(requested)

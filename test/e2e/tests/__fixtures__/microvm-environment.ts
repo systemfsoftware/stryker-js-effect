@@ -2,7 +2,21 @@ import { fileURLToPath } from 'node:url'
 
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import { MicroVM } from '@systemfsoftware/effect-microsandbox'
-import { Cache, Config, Context, Crypto, Effect, FileSystem, Layer, Option, Path, Schema, Scope, Stream } from 'effect'
+import {
+  Cache,
+  Config,
+  ConfigProvider,
+  Context,
+  Crypto,
+  Effect,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Schema,
+  Scope,
+  Stream,
+} from 'effect'
 import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/unstable/process'
 
@@ -147,7 +161,7 @@ export type HarnessFailure =
   | GuestSignaledFailure
   | PackFailure
 
-type HarnessError = Config.ConfigError | HarnessFailure | PlatformError
+export type HarnessError = Config.ConfigError | HarnessFailure | PlatformError
 
 const runCommand = (
   argv: Argv,
@@ -460,12 +474,8 @@ export const bakeFixtureCache: Effect.Effect<string, HarnessError, NodePlatform>
   },
 )
 
-const resolveBakedRoot: Effect.Effect<string, HarnessError, NodePlatform> = Effect.gen(function*() {
-  const provided = yield* Config.option(Config.String(BAKED_ROOT_ENV))
-  if (Option.isSome(provided)) {
-    return provided.value
-  }
-  return yield* bakeFixtureCache
+const resolveBakedRoot: Effect.Effect<string, Config.ConfigError> = Effect.gen(function*() {
+  return yield* Config.String(BAKED_ROOT_ENV)
 })
 
 const readWorkspaceFile = (filePath: string): Effect.Effect<string, PlatformError, FileSystem.FileSystem> =>
@@ -589,6 +599,19 @@ export const HarnessLive: Layer.Layer<BakedFixtureCacheService | StrykerCliRunne
   bakedFixtureCacheLayer,
   strykerCliRunnerLayer,
 ).pipe(Layer.provide(nodeServicesLayer))
+
+export const SelfBakingHarnessLive: Layer.Layer<BakedFixtureCacheService | StrykerCliRunnerService, HarnessError> =
+  HarnessLive.pipe(
+    Layer.provideMerge(
+      ConfigProvider.layerAdd(
+        bakeFixtureCache.pipe(
+          Effect.map((root) => ConfigProvider.fromUnknown({ [BAKED_ROOT_ENV]: root })),
+          Effect.provide(nodeServicesLayer),
+        ),
+        { asPrimary: true },
+      ),
+    ),
+  )
 
 export const installFixture = (
   request: FixtureRequest,
