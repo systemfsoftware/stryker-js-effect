@@ -9,7 +9,6 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 import { spanOf } from './Ast.handle.js'
 import type { Ast, HtmlAst, ScriptAst, SvelteAst, SpannedComment } from './Ast.schema.js'
 import {
@@ -207,7 +206,7 @@ const svelteScriptPositionOf = (script: TemplateSvelteScript): PositionedScript<
   end: script.range.end,
 })
 
-const disableTypeCheckingInSvelte = (ast: SvelteAst): Effect.Effect<string, ScriptRootWithoutSpan> => {
+const disableTypeCheckingInSvelte = (ast: SvelteAst): Effect.Effect<string> => {
   const positioned = [ast.root.moduleScript, ...ast.root.additionalScripts]
     .filter(Predicate.isNotNullish)
     .map(svelteScriptPositionOf)

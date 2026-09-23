@@ -30,8 +30,7 @@ export const ToneSchema = S.Literals([
 ])
 export type Tone = typeof ToneSchema.Type
 
-export const ReportSpanSchema = S.Struct({
-  _tag: S.Literal('ReportSpan'),
+const ReportSpanSchema = S.TaggedStruct('ReportSpan', {
   text: S.String,
   tone: ToneSchema,
   leftPad: S.Finite,
@@ -40,10 +39,10 @@ export const ReportSpanSchema = S.Struct({
 })
 export type ReportSpan = typeof ReportSpanSchema.Type
 
-export const ReportLineSchema = S.Array(ReportSpanSchema)
+const ReportLineSchema = S.Array(ReportSpanSchema)
 export type ReportLine = typeof ReportLineSchema.Type
 
-export const ReportChunkSchema = S.Array(ReportLineSchema)
+const ReportChunkSchema = S.Array(ReportLineSchema)
 export type ReportChunk = typeof ReportChunkSchema.Type
 
 export const ClearTextRenderOptions = S.Struct({
