@@ -87,7 +87,7 @@ export const jsonReportCell = Sandwich.named('stryker.report.json')(readJsonRepo
     CommandRejected: ({ issue }) => Effect.fail(failAsJsonReporter(issue)),
   })
 
-type ReporterCellServices<C> = C extends Cell.Cell<never, unknown, unknown, infer S> ? S : never
+type ReporterCellServices<C> = C extends Cell.Cell<infer _I, infer _A, infer _E, infer S> ? S : never
 
 export const jsonReporterFactory = (
   context: Context.Context<ReporterCellServices<typeof jsonReportCell>>,

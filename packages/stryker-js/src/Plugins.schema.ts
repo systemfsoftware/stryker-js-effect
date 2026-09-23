@@ -41,25 +41,6 @@ export const SchemaValidationContributionSchema = S.Struct({
   strykerValidationSchema: S.Record(S.String, S.Unknown),
 })
 
-export class PluginNotFoundError extends S.TaggedError<PluginNotFoundError>()(
-  'PluginNotFoundError',
-  {
-    descriptor: S.String,
-  },
-) {
-  readonly exitClass = 'ConfigError' as const
-}
-
-export class PluginLoadFailedError extends S.TaggedError<PluginLoadFailedError>()(
-  'PluginLoadFailedError',
-  {
-    descriptor: S.String,
-    cause: S.Unknown,
-  },
-) {
-  readonly exitClass = 'InternalError' as const
-}
-
 export const PluginSourceSchema = S.Union([
   S.Struct({ kind: WorkerPluginKind, name: S.String, modulePath: S.String, workerEntry: S.String }),
   S.Struct({ kind: S.Literals(['Evaluator']), name: S.String, modulePath: S.String }),

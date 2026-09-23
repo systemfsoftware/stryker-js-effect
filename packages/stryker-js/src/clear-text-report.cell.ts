@@ -26,6 +26,7 @@ import {
   type Tone,
 } from './render-clear-text-report.workflow.js'
 import { calculateMetrics } from './calculate-metrics.js'
+import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
 
 const failAsClearText = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
@@ -758,75 +759,12 @@ if (import.meta.vitest !== void 0) {
     }
   }
 
-  const intIn = (minimum: number, maximum: number) =>
-    Arbitrary.schema(Schema.Int.check(Schema.isBetween({ minimum, maximum })))
+  const { ClearTextRenderOptions } = await import('./render-clear-text-report.workflow.js')
+  const { MutationTestResultSchema } = await import('@systemfsoftware/stryker-js-plugin-interface')
 
-  const shortText = Arbitrary.schema(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(12)))
+  const reportArb = Arbitrary.schema(MutationTestResultSchema)
 
-  const optionalOf = <A>(arb: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<A | undefined> =>
-    intIn(0, 1).pipe(
-      Arbitrary.flatMap((pick) => (pick === 0 ? Arbitrary.Constant<A | undefined>(undefined) : arb)),
-    )
-
-  const statusArb = Arbitrary.schema(Schema.Literals([
-    'Killed',
-    'Survived',
-    'NoCoverage',
-    'CompileError',
-    'RuntimeError',
-    'Timeout',
-    'Ignored',
-    'Pending',
-  ]))
-
-  const positionArb = Arbitrary.all({ line: intIn(1, 40), column: intIn(0, 40) })
-  const locationArb = Arbitrary.all({ start: positionArb, end: positionArb })
-
-  const sourceArb = Arbitrary.array(Arbitrary.schema(Schema.String.check(Schema.isMaxLength(12))), { maxLength: 4 })
-    .pipe(Arbitrary.map((lines) => lines.join('\n')))
-
-  const mutantArb = Arbitrary.all({
-    id: shortText,
-    mutatorName: shortText,
-    replacement: optionalOf(shortText),
-    status: statusArb,
-    location: locationArb,
-    coveredBy: optionalOf(Arbitrary.array(shortText, { maxLength: 3 })),
-    killedBy: optionalOf(Arbitrary.array(shortText, { maxLength: 3 })),
-    statusReason: optionalOf(shortText),
-    static: optionalOf(Arbitrary.schema(Schema.Boolean)),
-    testsCompleted: optionalOf(intIn(0, 9)),
-  })
-
-  const fileArb = Arbitrary.all({
-    language: Arbitrary.Constant('typescript'),
-    source: optionalOf(sourceArb),
-    mutants: Arbitrary.array(mutantArb, { maxLength: 3 }),
-  })
-
-  const fileRecordArb = Arbitrary.array(Arbitrary.all([shortText, fileArb]), { maxLength: 3 }).pipe(
-    Arbitrary.map((entries) => Object.fromEntries(entries)),
-  )
-
-  const thresholdsArb = Arbitrary.all({ high: intIn(60, 100), low: intIn(0, 59) })
-
-  const reportArb = Arbitrary.all({
-    schemaVersion: Arbitrary.Constant('1.0'),
-    files: fileRecordArb,
-    thresholds: thresholdsArb,
-  })
-
-  const renderArb = Arbitrary.all({
-    allowColor: Arbitrary.schema(Schema.Boolean),
-    allowEmojis: Arbitrary.schema(Schema.Boolean),
-    logTests: Arbitrary.schema(Schema.Boolean),
-    maxTestsToLog: intIn(-1, 3),
-    reportMutants: Arbitrary.schema(Schema.Boolean),
-    reportScoreTable: Arbitrary.schema(Schema.Boolean),
-    skipFull: Arbitrary.schema(Schema.Boolean),
-    debug: Arbitrary.schema(Schema.Boolean),
-    thresholds: thresholdsArb,
-  })
+  const renderArb = Arbitrary.schema(ClearTextRenderOptions)
 
   const sameChunks = (left: readonly string[], right: readonly string[]): boolean =>
     left.length === right.length && left.every((chunk, index) => chunk === right[index])

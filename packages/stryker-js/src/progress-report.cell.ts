@@ -232,7 +232,7 @@ const lineBreakOf = (complete: boolean): string =>
 const renderTick = (tick: { readonly bar: ProgressBarState; readonly tally: ProgressTally; readonly now: number }): string =>
   `\r${formatBar(tick.bar, progressData(tick.tally, tick.now))}${lineBreakOf(isComplete(tick.bar))}`
 
-const writeChunk = (chunk: string): Effect.Effect<void> =>
+const writeChunk = (chunk: string) =>
   Effect.flatMap(ReporterOutput, (output) => Effect.ignore(output.write('stdout', [chunk])))
 
 export const progressReportCell = Sandwich.named('stryker.report.progress')(readProgressStep)
@@ -244,7 +244,7 @@ export const progressReportCell = Sandwich.named('stryker.report.progress')(read
     CommandRejected: ({ issue }) => Effect.fail(failAsProgress(issue)),
   })
 
-type ReporterCellServices<C> = C extends Cell.Cell<never, unknown, unknown, infer S> ? S : never
+type ReporterCellServices<C> = C extends Cell.Cell<infer _I, infer _A, infer _E, infer S> ? S : never
 
 export const progressReporterFactory = (context: Context.Context<ReporterCellServices<typeof progressReportCell>>): ReporterFactory => {
   const step = Cell.provideContext(progressReportCell, context)

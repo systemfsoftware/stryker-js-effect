@@ -1,9 +1,9 @@
 import { describe, it } from '@effect/vitest'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 import type { StandardSchemaV1 } from 'effect/StandardSchema'
-
 import {
   DryRunCompleted,
   MutantTested,
@@ -14,6 +14,16 @@ import type { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface
 import { RunMutantTested } from '../run-event.schema.js'
 
 type Validation = StandardSchemaV1.Result<ReporterEvent> | 'async'
+
+
+const hasIssues = (
+  result: Validation,
+): result is StandardSchemaV1.FailureResult => result !== 'async' && 'issues' in result
+
+const hasValue = <T>(result: Validation): result is StandardSchemaV1.SuccessResult<T> =>
+  result !== 'async' && 'value' in result
+
+
 
 const validateSync = <T = unknown>(input: T): Validation => {
   const out = ReporterEventSchema['~standard'].validate(input)
@@ -87,11 +97,18 @@ describe('ReporterEvent', () => {
         const drawn = corruptByDraw(encoded)
         const valid = validateSync(drawn)
         const decoded = S.decodeExit(ReporterEventUnion)(drawn)
-        if (!('value' in valid) || 'issues' in valid) {
-          return Exit.isFailure(decoded) && !('value' in valid) && valid.issues.length > 0
-        }
-        if (Exit.isFailure(decoded)) return false
-        return (yield* reencoded(Effect.succeed(valid.value))) === (yield* reencoded(Effect.succeed(decoded.value)))
+        const rejected = Option.match(Option.liftPredicate(valid, hasIssues), {
+          onNone: () => false,
+          onSome: () => Exit.isFailure(decoded),
+        })
+        const accepted = Option.match(Option.liftPredicate(valid, hasValue), {
+          onNone: () => false,
+          onSome: (success) =>
+            Exit.isSuccess(decoded) &&
+            Effect.runSync(reencoded(Effect.succeed(success.value))) ===
+              Effect.runSync(reencoded(Effect.succeed(decoded.value))),
+        })
+        return rejected || accepted
       }),
   )
   it.effect.prop(

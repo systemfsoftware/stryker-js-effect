@@ -142,7 +142,7 @@ export const instrumentCell = Sandwich.named('stryker.instrument')((command: Pre
       instrumentResult,
       instrumentedProject,
       sandbox,
-      concurrency,
+      concurrency: command.concurrency,
     }
     return raw
   })
