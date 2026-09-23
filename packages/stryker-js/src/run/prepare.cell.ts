@@ -2,31 +2,35 @@ import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import { type ReporterFactory, type StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
+import * as Array from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
+import * as Context from 'effect/Context'
+import { dual } from 'effect/Function'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
+import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
-import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
-import { type RunEvent } from '../RunEvents.js'
-import { PhaseEntered } from '../RunEvents.js'
-import { RunEvents } from '../RunEvents.js'
+import { type RunEvent } from '../run-events.service.js'
+import { PhaseEntered } from '../run-events.service.js'
+import { RunEvents } from '../run-events.service.js'
 
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { makeBuiltinReporterFactories } from '../builtin-reporters.js'
-import { resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
-import { missingWorkerEntry } from '../plugin-worker-entry.js'
-import { loadPlugins, pluginUrlsFromOptions } from '../Plugins.js'
-import type { LoadedPlugins, PluginDescriptor } from '../Plugins.js'
-import { readProject } from '../Project.js'
-import type { Project } from '../Project.js'
+import { makeClearTextReporter } from '../clear-text-report.service.js'
+import { type BuiltinReporterServices, makeJsonReporter } from '../json-reporter.service.js'
+import { makeProgressBarReporter, makeProgressStreamReporter } from '../progress-reporter.service.js'
+import { loadPlugins, pluginUrlsFromOptions, type LoadedPlugins, type PluginDescriptor } from '../Plugins.js'
+import { missingWorkerEntry, resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
+import { readProject } from '../read-project.cell.js'
+import type { Project } from '../Project.schema.js'
 import { ansi } from '../Reporter.ansi.js'
 import {
   attachReporterFactories,
@@ -37,16 +41,15 @@ import {
   spawnReporterWorker,
   validateReporterNames,
   withPhaseSpan,
-} from '../ReporterStream.js'
+} from '../reporter-stream.service.js'
 import { PrepareError, StageError } from '../Run.schema.js'
-import { TemporaryDirectory, TemporaryDirectoryLive } from '../Sandbox.js'
-import { selectReporters } from '../select-reporters.js'
-import { WorkerLauncher } from '../WorkerLauncher.js'
+import { TemporaryDirectory } from '../Sandbox.service.js'
+import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { forkCoreSchema, readConfig, validateOptions } from './load-config.cell.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
-import { planPrepare, type PrepareDecision, PrepareDecoded } from './plan-prepare.workflow.js'
-import { RunEnvironment } from './RunEnvironment.js'
-import type { RunEnvironmentShape } from './RunEnvironment.js'
+import { planPrepare, PrepareDecoded } from './plan-prepare.workflow.js'
+import { RunEnvironment } from './RunEnvironment.service.js'
+import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 
 export interface PrepareDone {
   readonly project: Project
@@ -62,7 +65,7 @@ export interface PrepareExecutorArgs {
   targetMutatePatterns: string[] | undefined
 }
 
-interface PrepareRaw {
+type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly env: RunEnvironmentShape
   readonly queue: Queue.Queue<RunEvent, Cause.Done>
   readonly options: StrykerOptions
@@ -79,35 +82,35 @@ const schemaPropertiesOf = <A = unknown>(document: ValidationSchemaDocument<A>):
 const buildMergedSchema = <A = unknown>(
   core: ValidationSchemaDocument,
   contributions: readonly Record<string, A>[],
-): ValidationSchemaDocument =>
-  Match.value(contributions.length === 0).pipe(
-    Match.when(true, (): ValidationSchemaDocument => core),
-    Match.orElse((): ValidationSchemaDocument => ({
+) =>
+  Boolean.match(contributions.length === 0, {
+    onTrue: () => core,
+    onFalse: () => ({
       ...core,
       properties: Object.assign(
         {},
         schemaPropertiesOf(core),
         ...contributions.map((contribution) => schemaPropertiesOf(contribution)),
       ),
-    })),
-  )
+    }),
+  })
 
 interface ReporterChoice {
   readonly name: string
   readonly builtinFactory: Option.Option<ReporterFactory>
 }
 
-const announceSummary = (env: RunEnvironmentShape, summary: string): Effect.Effect<void> =>
+const announceSummary = (env: RunEnvironmentShape, summary: string) =>
   Match.value(env.resolvedMode.mode).pipe(
     Match.when('human', () => announceHumanSummary(env.allowConsoleColors, summary)),
     Match.orElse(() => Effect.logInfo(summary)),
   )
 
-const announceHumanSummary = (allowConsoleColors: boolean, summary: string): Effect.Effect<void> =>
-  Match.value(allowConsoleColors).pipe(
-    Match.when(true, () => Console.log(ansi.green(summary))),
-    Match.orElse(() => Console.log(summary)),
-  )
+const announceHumanSummary = (allowConsoleColors: boolean, summary: string) =>
+  Boolean.match(allowConsoleColors, {
+    onTrue: () => Console.log(ansi.green(summary)),
+    onFalse: () => Console.log(summary),
+  })
 
 const NO_PLUGIN_DESCRIPTORS: readonly PluginDescriptor[] = []
 
@@ -164,30 +167,23 @@ const reporterInputsOf = (
     { concurrency: 1 },
   )
 
-const selectReporter = (
-  chosen: Map<string, ReporterChoice>,
-  name: string,
-  choicesByName: HashMap.HashMap<string, ReporterChoice>,
-): void => {
-  const key = name.toLowerCase()
-  Option.match(HashMap.get(choicesByName, key), {
-    onNone: () => undefined,
-    onSome: (choice) => {
-      if (!chosen.has(key)) {
-        chosen.set(key, choice)
-      }
-    },
-  })
-}
-
-const selectReporterChoices = (
-  names: readonly string[],
-  choicesByName: HashMap.HashMap<string, ReporterChoice>,
-): readonly ReporterChoice[] => {
-  const chosen = new Map<string, ReporterChoice>()
-  names.forEach((name) => selectReporter(chosen, name, choicesByName))
-  return [...chosen.values()]
-}
+const selectReporterChoices = (names: readonly string[], choicesByName: HashMap.HashMap<string, ReporterChoice>) =>
+  Array.map(
+    Array.reduce(
+      names,
+      Array.empty<readonly [string, ReporterChoice]>(),
+      (chosen, name) =>
+        Option.match(HashMap.get(choicesByName, name.toLowerCase()), {
+          onNone: () => chosen,
+          onSome: (choice) =>
+            Option.match(Array.findFirst(chosen, ([key]) => key === name.toLowerCase()), {
+              onNone: () => [...chosen, [name.toLowerCase(), choice] as const],
+              onSome: () => chosen,
+            }),
+        }),
+    ),
+    ([, choice]) => choice,
+  )
 
 const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
   PrepareRaw,
@@ -269,25 +265,24 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
           ] as const,
       ),
     ])
-    return { env, queue, options, loaded, project, ignorers, builtinReporterFactories, reporterChoicesByName }
+    return {
+      mode: env.resolvedMode.mode,
+      reporters: [...options.reporters],
+      fileCount: MutableHashMap.size(project.files),
+      availableReporters: [...HashMap.values(reporterChoicesByName)].map((choice) => choice.name),
+      env,
+      queue,
+      options,
+      loaded,
+      project,
+      ignorers,
+      builtinReporterFactories,
+      reporterChoicesByName,
+    }
   })
 
-const decodePrepare = (raw: PrepareRaw): Result.Result<PrepareDecoded, StageError> =>
-  Result.succeed(
-    PrepareDecoded.make({
-      mode: raw.env.resolvedMode.mode,
-      reporters: [...raw.options.reporters],
-      fileCount: MutableHashMap.size(raw.project.files),
-      availableReporters: [...HashMap.values(raw.reporterChoicesByName)].map((choice) => choice.name),
-    }),
-  )
-
-const encodePrepareDecision = (
-  outcome: Result.Result<PrepareDecision, StageError>,
-): Result.Result<PrepareDecision, StageError> => outcome
-
 const writePrepare = (
-  outcome: Result.Result<PrepareDecision, StageError>,
+  reporters: readonly string[],
   raw: PrepareRaw,
 ): Effect.Effect<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
   withPhaseSpan(
@@ -295,7 +290,6 @@ const writePrepare = (
     {},
     (span) =>
       Effect.gen(function*() {
-        const decision = yield* Effect.fromResult(outcome)
         const mutateCount = MutableHashMap.size(raw.project.filesToMutate)
         yield* announceSummary(
           raw.env,
@@ -307,35 +301,30 @@ const writePrepare = (
         ).pipe(
           Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: cause.message, cause })),
         )
-        yield* Match.value(MutableHashMap.size(raw.project.files)).pipe(
-          Match.when(0, () =>
-            Effect.fail(
-              StageError.make({
-                stage: 'prepare',
-                reason: 'No input files found.',
-                cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
-              }),
-            )),
-          Match.orElse(() => Effect.void),
-        )
-        const temporaryDirectoryPath = yield* Effect.gen(function*() {
-          const live = TemporaryDirectoryLive(raw.options)
-          const service = yield* Effect.service(TemporaryDirectory).pipe(Effect.provide(live))
-          return service.path
-        }).pipe(
+        const failOnEmptyProject = (fileCount: number): Effect.Effect<void, StageError> =>
+          Match.value(fileCount).pipe(
+            Match.when(0, () =>
+              Effect.fail(
+                StageError.make({
+                  stage: 'prepare',
+                  reason: 'No input files found.',
+                  cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
+                }),
+              )),
+            Match.orElse(() => Effect.void),
+          )
+
+        yield* failOnEmptyProject(raw.project.files.pipe(MutableHashMap.size))
+        const temporaryDirectoryPath = yield* Effect.map(
+          Layer.build(TemporaryDirectory.layer(raw.options)),
+          (temporaryDirectory) => Context.get(temporaryDirectory, TemporaryDirectory).path,
+        ).pipe(
           Effect.mapError((cause) =>
             StageError.make({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
           ),
         )
         const reporterInputs = yield* reporterInputsOf(
-          Option.getOrElse(
-            Match.value(decision).pipe(
-              Match.tag('HumanReporters', (human) => Option.some(human.reporters)),
-              Match.tag('MachineReporters', (machine) => Option.some(machine.reporters)),
-              Match.exhaustive,
-            ),
-            () => raw.options.reporters,
-          ),
+          reporters,
           raw.reporterChoicesByName,
           raw.loaded,
           raw.env.basePath,
@@ -356,13 +345,51 @@ const writePrepare = (
       }),
   )
 
+const STREAM_REPORTER = 'progress-stream'
+const HUMAN_REPORTER = 'clear-text'
+
+const STDOUT_REPORTERS: Readonly<Record<string, true>> = { 'clear-text': true, 'progress': true }
+
+const asHumanReporter = (name: string): string => {
+  if (name === STREAM_REPORTER) {
+    return HUMAN_REPORTER
+  }
+  return name
+}
+
+const selectReporters: {
+  (configured: readonly string[], mode: 'human' | 'machine'): readonly string[]
+  (mode: 'human' | 'machine'): (configured: readonly string[]) => readonly string[]
+} = dual(2, (configured: readonly string[], mode: 'human' | 'machine'): readonly string[] =>
+  Match.value(mode).pipe(
+    Match.when('human', () => [...new Set(configured.map(asHumanReporter))]),
+    Match.when('machine', () => {
+      const permitted = configured.filter((name) => STDOUT_REPORTERS[name] !== true)
+      return Match.value(permitted.includes(STREAM_REPORTER)).pipe(
+        Match.when(true, () => permitted),
+        Match.when(false, () => [...permitted, STREAM_REPORTER]),
+        Match.exhaustive,
+      )
+    }),
+    Match.exhaustive,
+  ))
+
+const makeBuiltinReporterFactories = (services: BuiltinReporterServices): Record<string, ReporterFactory> => ({
+  'json': makeJsonReporter(services),
+  'clear-text': makeClearTextReporter(services),
+  'progress': makeProgressBarReporter(services),
+  'progress-stream': makeProgressStreamReporter,
+})
+
 export const prepareCell: Cell.Cell<
   PrepareExecutorArgs,
   PrepareDone,
   StageError,
   Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Stdio.Stdio
-> = Sandwich.read(readPrepare)
-  .decode(Sandwich.pure(decodePrepare))
+> = Sandwich.named('stryker.prepare')(readPrepare)
   .decide(planPrepare)
-  .encode(Sandwich.pure((outcome) => Result.succeed(encodePrepareDecision(outcome))))
-  .write(writePrepare)
+  .write({
+    HumanReporters: ({ reporters }, raw) => writePrepare(reporters, raw),
+    MachineReporters: ({ reporters }, raw) => writePrepare(reporters, raw),
+    CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'prepare', reason: issue })),
+  })

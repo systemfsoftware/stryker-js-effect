@@ -1,3 +1,9 @@
+import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
+import { dual } from 'effect/Function'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import { isNodeArg } from '../Ast.handle.js'
 import type {
   AccessorProperty,
   ArrayExpression,
@@ -94,7 +100,7 @@ import type {
   WhileStatement,
   WithStatement,
   YieldExpression,
-} from '../Ast.js'
+} from '@systemfsoftware/stryker-ignorer-interface'
 
 export interface Comment {
   readonly type: 'Line' | 'Block'
@@ -116,12 +122,24 @@ export interface PrintOptions {
 
 export interface PrintProgramOptions extends PrintOptions {}
 
-export function printProgram(program: Program, opts: PrintProgramOptions = {}): string {
-  return renderProgram(createState(opts), program)
-}
+export const printProgram: {
+  (program: Program, opts?: PrintProgramOptions): string
+  (opts?: PrintProgramOptions): (program: Program) => string
+} = dual(
+  (args: IArguments): boolean => args.length >= 1 && isNodeArg(args[0]),
+  (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program),
+)
 
-export function printNode(node: Node, opts: PrintOptions = {}): string {
-  return renderAnyNode(createState(opts), node)
+export const printNode: {
+  (node: Node, opts?: PrintOptions): string
+  (opts?: PrintOptions): (node: Node) => string
+} = dual(
+  (args: IArguments): boolean => args.length >= 1 && isNodeArg(args[0]),
+  (node: Node, opts: PrintOptions = {}): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence),
+)
+
+interface PrintContext {
+  readonly indentLevel: number
 }
 
 const PREC = {
@@ -147,49 +165,35 @@ const PREC = {
   Primary: 19,
 }
 
-function binaryPrec(op: string): number {
-  switch (op) {
-    case '||':
-      return PREC.LogicalOR
-    case '&&':
-      return PREC.LogicalAND
-    case '??':
-      return PREC.NullishCoalescing
-    case '|':
-      return PREC.BitwiseOR
-    case '^':
-      return PREC.BitwiseXOR
-    case '&':
-      return PREC.BitwiseAND
-    case '==':
-    case '!=':
-    case '===':
-    case '!==':
-      return PREC.Equality
-    case '<':
-    case '>':
-    case '<=':
-    case '>=':
-    case 'in':
-    case 'instanceof':
-      return PREC.Relational
-    case '<<':
-    case '>>':
-    case '>>>':
-      return PREC.Shift
-    case '+':
-    case '-':
-      return PREC.Additive
-    case '*':
-    case '/':
-    case '%':
-      return PREC.Multiplicative
-    case '**':
-      return PREC.Exponential
-    default:
-      return PREC.Additive
-  }
+const BINARY_PRECEDENCE: Readonly<Record<string, number>> = {
+  '||': PREC.LogicalOR,
+  '&&': PREC.LogicalAND,
+  '??': PREC.NullishCoalescing,
+  '|': PREC.BitwiseOR,
+  '^': PREC.BitwiseXOR,
+  '&': PREC.BitwiseAND,
+  '==': PREC.Equality,
+  '!=': PREC.Equality,
+  '===': PREC.Equality,
+  '!==': PREC.Equality,
+  '<': PREC.Relational,
+  '>': PREC.Relational,
+  '<=': PREC.Relational,
+  '>=': PREC.Relational,
+  in: PREC.Relational,
+  instanceof: PREC.Relational,
+  '<<': PREC.Shift,
+  '>>': PREC.Shift,
+  '>>>': PREC.Shift,
+  '+': PREC.Additive,
+  '-': PREC.Additive,
+  '*': PREC.Multiplicative,
+  '/': PREC.Multiplicative,
+  '%': PREC.Multiplicative,
+  '**': PREC.Exponential,
 }
+
+const binaryPrec = (op: string): number => BINARY_PRECEDENCE[op] ?? PREC.Additive
 
 const LOGICAL_PRECEDENCE: Readonly<Record<string, number>> = {
   '??': PREC.NullishCoalescing,
@@ -197,2114 +201,1356 @@ const LOGICAL_PRECEDENCE: Readonly<Record<string, number>> = {
   '&&': PREC.LogicalAND,
 }
 
-function logicalPrec(op: string): number {
-  return LOGICAL_PRECEDENCE[op] ?? PREC.LogicalAND
-}
+const logicalPrec = (op: string): number => LOGICAL_PRECEDENCE[op] ?? PREC.LogicalAND
 
-interface PrintState {
-  out: string
-  indentLevel: number
-  readonly hashbang: Hashbang | null
-  commentIdx: number
-  readonly sortedComments: readonly Comment[]
-}
+const EVERY_COMMENT_POSITION = Number.POSITIVE_INFINITY
 
-function createState(opts: PrintOptions): PrintState {
+const sortedCommentsWithoutHashbang = (
+  comments: readonly Comment[] | undefined,
+  hashbang: Hashbang | null,
+): readonly Comment[] => [...withoutHashbangComment(comments ?? [], hashbang)].sort((a, b) => a.start - b.start)
+
+const withoutHashbangComment = (
+  comments: readonly Comment[],
+  hashbang: Hashbang | null,
+): readonly Comment[] =>
+  Option.match(Option.fromNull(hashbang), {
+    onNone: () => comments,
+    onSome: (value) => comments.filter((comment) => comment.type === 'Line' && comment.start === value.start),
+  })
+
+const programText = (opts: PrintProgramOptions, program: Program): string => {
+  const ctx: PrintContext = { indentLevel: 0 }
   const hashbang = opts.hashbang ?? null
-  return {
-    out: '',
-    indentLevel: 0,
-    hashbang,
-    commentIdx: 0,
-    sortedComments: [...sortedCommentsWithoutHashbang(opts.comments, hashbang), END_OF_COMMENTS],
-  }
+  const comments = sortedCommentsWithoutHashbang(opts.comments, hashbang)
+  const [cursorAfterHead, headComments] = pendingComments(comments, 0, headPosition(program))
+  const [cursorAfterBody, statements] = Arr.mapAccum(
+    program.body,
+    cursorAfterHead,
+    (cursor: number, statement: Program['body'][number]) => programStatementPart(ctx, comments, cursor, statement),
+  )
+  const [tailComments] = pendingComments(comments, cursorAfterBody, EVERY_COMMENT_POSITION)
+  return `${hashbangPrefix(hashbang)}${headComments}${Arr.join(statements, '')}${tailComments}`
 }
 
-function renderProgram(state: PrintState, program: Program): string {
-  state.out = ''
-  state.indentLevel = 0
-  state.commentIdx = 0
+const headPosition = (program: Program): number => program.body[0]?.start ?? EVERY_COMMENT_POSITION
 
-  printHashbang(state)
-
-  emitCommentsBefore(state, program.body[0]?.start)
-  printProgramBody(state, program.body)
-
-  emitCommentsBefore(state, undefined)
-
-  return state.out
+const programStatementPart = (
+  ctx: PrintContext,
+  comments: readonly Comment[],
+  cursor: number,
+  statement: Program['body'][number],
+): readonly [cursor: number, text: string] => {
+  const [prefix, next] = pendingComments(comments, cursor, statement.start ?? -1)
+  return [next, `${prefix}${statementText(ctx, statement)}\n`]
 }
 
-function renderAnyNode(state: PrintState, node: Node): string {
-  state.out = ''
-  state.indentLevel = 0
-  printNodePrec(state, node, PREC.Sequence)
-  return state.out
+const pendingComments = (
+  comments: readonly Comment[],
+  cursor: number,
+  pos: number,
+): readonly [text: string, cursor: number] => {
+  const end = commentLimit(comments, cursor, pos)
+  return [comments.slice(cursor, end).map(emitComment).join(''), end]
 }
 
-function printHashbang(state: PrintState): void {
-  if (state.hashbang !== null) state.out += `#!${state.hashbang.value}\n`
-}
+const commentLimit = (comments: readonly Comment[], cursor: number, pos: number): number =>
+  Boolean.match(cursor < comments.length && comments[cursor].start < pos, {
+    onTrue: () => commentLimit(comments, cursor + 1, pos),
+    onFalse: () => cursor,
+  })
 
-function printProgramBody(state: PrintState, body: Program['body']): void {
-  body.forEach((statement) => printProgramStatement(state, statement))
-}
+const emitComment = (comment: Comment): string =>
+  Match.value(comment.type).pipe(
+    Match.when('Line', () => `//${comment.value}\n`),
+    Match.orElse(() => `/*${comment.value}*/\n`),
+  )
 
-function printProgramStatement(state: PrintState, statement: Program['body'][number]): void {
-  emitCommentsBefore(state, statement.start ?? -1)
-  printStatement(state, statement)
-  state.out += '\n'
-}
+const hashbangPrefix = (hashbang: Hashbang | null): string =>
+  Option.match(Option.fromNull(hashbang), {
+    onNone: () => '',
+    onSome: (value) => `#!${value.value}\n`,
+  })
 
-function printJumpStatement(state: PrintState, keyword: string, label: LabelIdentifier | null): void {
-  state.out += keyword
-  if (label !== null) state.out += ` ${label.name}`
-  state.out += ';'
-}
+const statementText = (ctx: PrintContext, node: Statement): string =>
+  `${attachedCommentsText(ctx, node, 'leadingComments')}${statementKindText(ctx, node)}${attachedCommentsText(
+    ctx,
+    node,
+    'trailingComments',
+  )}`
 
-function emitCommentsBefore(state: PrintState, pos: number | undefined): void {
-  emitPendingCommentsBefore(state, pos ?? EVERY_COMMENT_POSITION)
-}
+const attachedCommentsText = (
+  ctx: PrintContext,
+  node: CommentHost,
+  field: 'leadingComments' | 'trailingComments',
+): string =>
+  Option.match(Option.fromNullishOr(node[field]), {
+    onNone: () => '',
+    onSome: (comments) => comments.map((comment) => attachedCommentText(ctx, comment, field)).join(''),
+  })
 
-function emitPendingCommentsBefore(state: PrintState, pos: number): void {
-  let comment = state.sortedComments[state.commentIdx]
-  while (isCommentBefore(comment, pos)) {
-    emitComment(state, comment)
-    state.commentIdx++
-    comment = state.sortedComments[state.commentIdx]
-  }
-}
+const attachedCommentText = (
+  ctx: PrintContext,
+  comment: AttachedComment,
+  field: 'leadingComments' | 'trailingComments',
+): string =>
+  Boolean.match(field === 'leadingComments', {
+    onTrue: () => `${indent(ctx)}${commentText(comment)}\n`,
+    onFalse: () => `${commentText(comment)} `,
+  })
 
-function isCommentBefore(comment: Comment | undefined, pos: number): comment is Comment {
-  return comment !== undefined && comment.start < pos
-}
+const indent = (ctx: PrintContext): string => '  '.repeat(ctx.indentLevel)
 
-function emitComment(state: PrintState, c: Comment): void {
-  if (c.type === 'Line') {
-    state.out += `//${c.value}\n`
-  } else {
-    state.out += `/*${c.value}*/\n`
-  }
-}
+const needsParens = (childPrec: number, parentPrec: number, isRight: boolean, op?: string): boolean =>
+  Boolean.match(childPrec === parentPrec, {
+    onTrue: () => equalPrecedenceNeedsParens(isRight, op),
+    onFalse: () => childPrec < parentPrec,
+  })
 
-function indent(state: PrintState): string {
-  return '  '.repeat(state.indentLevel)
-}
+const equalPrecedenceNeedsParens = (isRight: boolean, op?: string): boolean =>
+  Boolean.match(op === '**', {
+    onTrue: () => !isRight,
+    onFalse: () => isRight,
+  })
 
-function capture(state: PrintState, render: () => void): string {
-  const saved = state.out
-  state.out = ''
-  render()
-  const result = state.out
-  state.out = saved
-  return result
-}
-
-function needsParens(childPrec: number, parentPrec: number, isRight: boolean, op?: string): boolean {
-  if (childPrec === parentPrec) return equalPrecedenceNeedsParens(isRight, op)
-  return childPrec < parentPrec
-}
-
-function equalPrecedenceNeedsParens(isRight: boolean, op?: string): boolean {
-  if (op === '**') return !isRight
-  return isRight
-}
-
-function wrapIfNeeded(
-  state: PrintState,
+const wrapIfNeeded = (
+  ctx: PrintContext,
   node: Node,
   prec: number,
   parentPrec: number,
   isRight: boolean,
   op?: string,
-): string {
-  const inner = printExpressionToString(state, node, prec)
-  if (needsParens(prec, parentPrec, isRight, op)) return `(${inner})`
-  return inner
-}
+): string => parenthesizedIf(needsParens(prec, parentPrec, isRight, op), dispatchNode(ctx, node, prec))
 
-function printExpressionToString(state: PrintState, node: Node, prec: number): string {
-  return capture(state, () => printNodePrec(state, node, prec))
-}
+const sequenceNodeText = (ctx: PrintContext, node: Node | null | undefined): string =>
+  printNodePrec(ctx, node, PREC.Sequence)
 
-function sequenceNodeText(state: PrintState, node: Node | null | undefined): string {
-  return capture(state, () => printNodePrec(state, node, PREC.Sequence))
-}
+const assignmentNodeText = (ctx: PrintContext, node: Node | null | undefined): string =>
+  printNodePrec(ctx, node, PREC.Assignment)
 
-function assignmentNodeText(state: PrintState, node: Node | null | undefined): string {
-  return capture(state, () => printNodePrec(state, node, PREC.Assignment))
-}
+const nodeListText = (ctx: PrintContext, nodes: readonly Node[], prec: number): string =>
+  nodes.map((node) => dispatchNode(ctx, node, prec)).join(', ')
 
-function nodeListText(state: PrintState, nodes: readonly Node[], prec: number): string {
-  return nodes.map((node) => capture(state, () => printNodePrec(state, node, prec))).join(', ')
-}
-
-function wrappedExpressionText(
-  state: PrintState,
+const wrappedExpressionText = (
+  ctx: PrintContext,
   node: Node,
   prec: number,
   wrappedKinds: Readonly<Record<string, true>>,
-): string {
-  const printed = printExpressionToString(state, node, prec)
-  if (wrappedKinds[node.type] === true) return `(${printed})`
-  return printed
-}
+): string => parenthesizedIf(wrappedKinds[node.type] === true, dispatchNode(ctx, node, prec))
 
-function printNodePrec(state: PrintState, node: Node | null | undefined, prec: number): void {
-  if (node == null) return
-  dispatchNode(state, node, prec)
-}
+const printNodePrec = (ctx: PrintContext, node: Node | null | undefined, prec: number): string =>
+  Option.match(Option.fromNullishOr(node), {
+    onNone: () => '',
+    onSome: (value) => dispatchNode(ctx, value, prec),
+  })
 
-function dispatchNode(state: PrintState, node: Node, prec: number): void {
-  switch (node.type) {
-    case 'Literal':
-      printLiteral(state, node)
-      break
-    case 'Identifier':
-      printIdentifier(state, node)
-      break
-    case 'PrivateIdentifier':
-      state.out += `#${node.name}`
-      break
-    case 'ThisExpression':
-      state.out += 'this'
-      break
-    case 'Super':
-      state.out += 'super'
-      break
-    case 'ArrayExpression':
-      printArrayExpression(state, node)
-      break
-    case 'ObjectExpression':
-      printObjectExpression(state, node)
-      break
-    case 'Property':
-      printProperty(state, node)
-      break
-    case 'TemplateLiteral':
-      printTemplateLiteral(state, node)
-      break
-    case 'TemplateElement':
-      state.out += node.value.raw
-      break
-    case 'TaggedTemplateExpression':
-      printTaggedTemplate(state, node)
-      break
-    case 'MemberExpression':
-      printMemberExpression(state, node, prec)
-      break
-    case 'CallExpression':
-      printCallExpression(state, node, prec)
-      break
-    case 'NewExpression':
-      printNewExpression(state, node, prec)
-      break
-    case 'MetaProperty':
-      printMetaProperty(state, node)
-      break
-    case 'SpreadElement':
-      state.out += '...'
-      printNodePrec(state, node.argument, PREC.Assignment)
-      break
-    case 'RestElement':
-      state.out += '...'
-      printNodePrec(state, node.argument, PREC.Assignment)
-      break
-    case 'UpdateExpression':
-      printUpdateExpression(state, node, prec)
-      break
-    case 'UnaryExpression':
-      printUnaryExpression(state, node, prec)
-      break
-    case 'BinaryExpression':
-      printBinaryExpression(state, node, prec)
-      break
-    case 'LogicalExpression':
-      printLogicalExpression(state, node, prec)
-      break
-    case 'ConditionalExpression':
-      printConditionalExpression(state, node, prec)
-      break
-    case 'AssignmentExpression':
-      printAssignmentExpression(state, node, prec)
-      break
-    case 'AssignmentPattern':
-      printAssignmentPattern(state, node, prec)
-      break
-    case 'ObjectPattern':
-      printObjectPattern(state, node)
-      break
-    case 'ArrayPattern':
-      printArrayPattern(state, node)
-      break
-    case 'SequenceExpression':
-      printSequenceExpression(state, node, prec)
-      break
-    case 'AwaitExpression':
-      state.out += 'await '
-      printNodePrec(state, node.argument, PREC.Unary)
-      break
-    case 'YieldExpression':
-      printYieldExpression(state, node, prec)
-      break
-    case 'ChainExpression':
-      printNodePrec(state, node.expression, prec)
-      break
-    case 'ParenthesizedExpression':
-      state.out += '('
-      printNodePrec(state, node.expression, PREC.Sequence)
-      state.out += ')'
-      break
-    case 'ImportExpression':
-      printImportExpression(state, node)
-      break
-    case 'V8IntrinsicExpression':
-      printV8Intrinsic(state, node)
-      break
-    case 'ArrowFunctionExpression':
-      printArrowFunction(state, node, prec)
-      break
-    case 'FunctionExpression':
-    case 'FunctionDeclaration':
-    case 'TSDeclareFunction':
-    case 'TSEmptyBodyFunctionExpression':
-      printFunction(state, node, prec)
-      break
-    case 'ClassDeclaration':
-    case 'ClassExpression':
-      printClass(state, node, prec)
-      break
-    case 'JSXElement':
-      printJSXElement(state, node)
-      break
-    case 'JSXFragment':
-      printJSXFragment(state, node)
-      break
-    case 'JSXOpeningElement':
-      printJSXOpeningElement(state, node)
-      break
-    case 'JSXClosingElement':
-      break
-    case 'JSXIdentifier':
-      state.out += node.name
-      break
-    case 'JSXNamespacedName':
-      state.out += `${node.namespace.name}:${node.name.name}`
-      break
-    case 'JSXMemberExpression':
-      printJSXMemberExpression(state, node)
-      break
-    case 'JSXAttribute':
-      printJSXAttribute(state, node)
-      break
-    case 'JSXSpreadAttribute':
-      state.out += '{...'
-      printNodePrec(state, node.argument, PREC.Assignment)
-      state.out += '}'
-      break
-    case 'JSXExpressionContainer':
-      state.out += '{'
-      printNodePrec(state, node.expression, PREC.Sequence)
-      state.out += '}'
-      break
-    case 'JSXEmptyExpression':
-      break
-    case 'JSXText':
-      state.out += node.value
-      break
-    case 'JSXSpreadChild':
-      state.out += '{...'
-      printNodePrec(state, node.expression, PREC.Assignment)
-      state.out += '}'
-      break
-    case 'TSAsExpression':
-      printTSAsExpression(state, node, prec)
-      break
-    case 'TSSatisfiesExpression':
-      printTSSatisfiesExpression(state, node, prec)
-      break
-    case 'TSTypeAssertion':
-      printTSTypeAssertion(state, node, prec)
-      break
-    case 'TSNonNullExpression':
-      printNodePrec(state, node.expression, PREC.Member)
-      state.out += '!'
-      break
-    case 'TSInstantiationExpression':
-      printTSInstantiationExpression(state, node, prec)
-      break
-    case 'BlockStatement':
-      printBlockStatement(state, node)
-      break
-    case 'EmptyStatement':
-      state.out += ';'
-      break
-    case 'ExpressionStatement':
-      printExpressionStatement(state, node)
-      break
-    case 'IfStatement':
-      printIfStatement(state, node)
-      break
-    case 'DoWhileStatement':
-      printDoWhileStatement(state, node)
-      break
-    case 'WhileStatement':
-      printWhileStatement(state, node)
-      break
-    case 'ForStatement':
-      printForStatement(state, node)
-      break
-    case 'ForInStatement':
-      printForInStatement(state, node)
-      break
-    case 'ForOfStatement':
-      printForOfStatement(state, node)
-      break
-    case 'ContinueStatement':
-      printJumpStatement(state, 'continue', node.label)
-      break
-    case 'BreakStatement':
-      printJumpStatement(state, 'break', node.label)
-      break
-    case 'ReturnStatement':
-      printReturnStatement(state, node)
-      break
-    case 'WithStatement':
-      printWithStatement(state, node)
-      break
-    case 'SwitchStatement':
-      printSwitchStatement(state, node)
-      break
-    case 'SwitchCase':
-      break
-    case 'LabeledStatement':
-      printLabeledStatement(state, node)
-      break
-    case 'ThrowStatement':
-      state.out += 'throw '
-      printNodePrec(state, node.argument, PREC.Sequence)
-      state.out += ';'
-      break
-    case 'TryStatement':
-      printTryStatement(state, node)
-      break
-    case 'CatchClause':
-      break
-    case 'DebuggerStatement':
-      state.out += 'debugger;'
-      break
-    case 'VariableDeclaration':
-      printVariableDeclaration(state, node)
-      break
-    case 'VariableDeclarator':
-      printVariableDeclarator(state, node)
-      break
-    case 'ClassBody':
-      printClassBody(state, node)
-      break
-    case 'MethodDefinition':
-    case 'TSAbstractMethodDefinition':
-      printMethodDefinition(state, node)
-      break
-    case 'PropertyDefinition':
-    case 'TSAbstractPropertyDefinition':
-      printPropertyDefinition(state, node)
-      break
-    case 'AccessorProperty':
-    case 'TSAbstractAccessorProperty':
-      printAccessorProperty(state, node)
-      break
-    case 'StaticBlock':
-      printStaticBlock(state, node)
-      break
-    case 'ImportDeclaration':
-      printImportDeclaration(state, node)
-      break
-    case 'ExportNamedDeclaration':
-      printExportNamedDeclaration(state, node)
-      break
-    case 'ExportDefaultDeclaration':
-      printExportDefaultDeclaration(state, node)
-      break
-    case 'ExportAllDeclaration':
-      printExportAllDeclaration(state, node)
-      break
-    case 'Decorator':
-      state.out += '@'
-      printNodePrec(state, node.expression, PREC.Member)
-      break
-    case 'TSTypeAliasDeclaration':
-      printTSTypeAliasDeclaration(state, node)
-      break
-    case 'TSInterfaceDeclaration':
-      printTSInterfaceDeclaration(state, node)
-      break
-    case 'TSEnumDeclaration':
-      printTSEnumDeclaration(state, node)
-      break
-    case 'TSModuleDeclaration':
-      printTSModuleDeclaration(state, node)
-      break
-    case 'TSImportEqualsDeclaration':
-      printTSImportEqualsDeclaration(state, node)
-      break
-    case 'TSExportAssignment':
-      state.out += `export = `
-      printNodePrec(state, node.expression, PREC.Sequence)
-      state.out += ';'
-      break
-    case 'TSNamespaceExportDeclaration':
-      state.out += `export as namespace ${node.id.name};`
-      break
-    case 'Program':
-    case 'ExportSpecifier':
-    case 'Hashbang':
-    case 'ImportAttribute':
-    case 'ImportDefaultSpecifier':
-    case 'ImportNamespaceSpecifier':
-    case 'ImportSpecifier':
-    case 'JSXClosingFragment':
-    case 'JSXOpeningFragment':
-    case 'TSAnyKeyword':
-    case 'TSArrayType':
-    case 'TSBigIntKeyword':
-    case 'TSBooleanKeyword':
-    case 'TSCallSignatureDeclaration':
-    case 'TSClassImplements':
-    case 'TSConditionalType':
-    case 'TSConstructSignatureDeclaration':
-    case 'TSConstructorType':
-    case 'TSEnumBody':
-    case 'TSEnumMember':
-    case 'TSExternalModuleReference':
-    case 'TSFunctionType':
-    case 'TSImportType':
-    case 'TSIndexSignature':
-    case 'TSIndexedAccessType':
-    case 'TSInferType':
-    case 'TSInterfaceBody':
-    case 'TSInterfaceHeritage':
-    case 'TSIntersectionType':
-    case 'TSIntrinsicKeyword':
-    case 'TSJSDocNonNullableType':
-    case 'TSJSDocNullableType':
-    case 'TSJSDocUnknownType':
-    case 'TSLiteralType':
-    case 'TSMappedType':
-    case 'TSMethodSignature':
-    case 'TSModuleBlock':
-    case 'TSNamedTupleMember':
-    case 'TSNeverKeyword':
-    case 'TSNullKeyword':
-    case 'TSNumberKeyword':
-    case 'TSObjectKeyword':
-    case 'TSOptionalType':
-    case 'TSParameterProperty':
-    case 'TSParenthesizedType':
-    case 'TSPropertySignature':
-    case 'TSQualifiedName':
-    case 'TSRestType':
-    case 'TSStringKeyword':
-    case 'TSSymbolKeyword':
-    case 'TSTemplateLiteralType':
-    case 'TSThisType':
-    case 'TSTupleType':
-    case 'TSTypeAnnotation':
-    case 'TSTypeLiteral':
-    case 'TSTypeOperator':
-    case 'TSTypeParameter':
-    case 'TSTypeParameterDeclaration':
-    case 'TSTypeParameterInstantiation':
-    case 'TSTypePredicate':
-    case 'TSTypeQuery':
-    case 'TSTypeReference':
-    case 'TSUndefinedKeyword':
-    case 'TSUnionType':
-    case 'TSUnknownKeyword':
-    case 'TSVoidKeyword':
-      printUnclassifiedNode(state, node, node.type)
-      break
-  }
-}
+const dispatchNode = (ctx: PrintContext, node: Node, prec: number): string =>
+  Match.value(node).pipe(
+    Match.when({ type: 'Literal' }, (n) => literalText(n)),
+    Match.when({ type: 'Identifier' }, (n) => n.name),
+    Match.when({ type: 'PrivateIdentifier' }, (n) => `#${n.name}`),
+    Match.when({ type: 'ThisExpression' }, () => 'this'),
+    Match.when({ type: 'Super' }, () => 'super'),
+    Match.when({ type: 'ArrayExpression' }, (n) => arrayExpressionText(ctx, n)),
+    Match.when({ type: 'ObjectExpression' }, (n) => objectExpressionText(ctx, n)),
+    Match.when({ type: 'Property' }, (n) => propertyText(ctx, n)),
+    Match.when({ type: 'TemplateLiteral' }, (n) => templateLiteralText(ctx, n)),
+    Match.when({ type: 'TemplateElement' }, (n) => n.value.raw),
+    Match.when({ type: 'TaggedTemplateExpression' }, (n) => taggedTemplateText(ctx, n)),
+    Match.when({ type: 'MemberExpression' }, (n) => memberExpressionText(ctx, n)),
+    Match.when({ type: 'CallExpression' }, (n) => callExpressionText(ctx, n)),
+    Match.when({ type: 'NewExpression' }, (n) => newExpressionText(ctx, n)),
+    Match.when({ type: 'MetaProperty' }, (n) => metaPropertyText(n)),
+    Match.when({ type: 'SpreadElement' }, (n) => `...${printNodePrec(ctx, n.argument, PREC.Assignment)}`),
+    Match.when({ type: 'RestElement' }, (n) => `...${printNodePrec(ctx, n.argument, PREC.Assignment)}`),
+    Match.when({ type: 'UpdateExpression' }, (n) => updateExpressionText(ctx, n)),
+    Match.when({ type: 'UnaryExpression' }, (n) => unaryExpressionText(ctx, n)),
+    Match.when({ type: 'BinaryExpression' }, (n) => binaryExpressionText(ctx, n, prec)),
+    Match.when({ type: 'LogicalExpression' }, (n) => logicalExpressionText(ctx, n, prec)),
+    Match.when({ type: 'ConditionalExpression' }, (n) => conditionalExpressionText(ctx, n, prec)),
+    Match.when({ type: 'AssignmentExpression' }, (n) => assignmentExpressionText(ctx, n, prec)),
+    Match.when({ type: 'AssignmentPattern' }, (n) => assignmentPatternText(ctx, n, prec)),
+    Match.when({ type: 'ObjectPattern' }, (n) => objectPatternText(ctx, n)),
+    Match.when({ type: 'ArrayPattern' }, (n) => arrayPatternText(ctx, n)),
+    Match.when({ type: 'SequenceExpression' }, (n) => sequenceExpressionText(ctx, n, prec)),
+    Match.when({ type: 'AwaitExpression' }, (n) => `await ${printNodePrec(ctx, n.argument, PREC.Unary)}`),
+    Match.when({ type: 'YieldExpression' }, (n) => yieldExpressionText(ctx, n)),
+    Match.when({ type: 'ChainExpression' }, (n) => printNodePrec(ctx, n.expression, prec)),
+    Match.when(
+      { type: 'ParenthesizedExpression' },
+      (n) => `(${printNodePrec(ctx, n.expression, PREC.Sequence)})`,
+    ),
+    Match.when({ type: 'ImportExpression' }, (n) => importExpressionText(ctx, n)),
+    Match.when({ type: 'V8IntrinsicExpression' }, (n) => v8IntrinsicText(ctx, n)),
+    Match.when({ type: 'ArrowFunctionExpression' }, (n) => arrowFunctionText(ctx, n, prec)),
+    Match.when({ type: 'FunctionDeclaration' }, (n) => functionText(ctx, n)),
+    Match.when({ type: 'FunctionExpression' }, (n) => functionText(ctx, n)),
+    Match.when({ type: 'TSDeclareFunction' }, (n) => functionText(ctx, n)),
+    Match.when({ type: 'TSEmptyBodyFunctionExpression' }, (n) => functionText(ctx, n)),
+    Match.when({ type: 'ClassDeclaration' }, (n) => classText(ctx, n)),
+    Match.when({ type: 'ClassExpression' }, (n) => classText(ctx, n)),
+    Match.when({ type: 'JSXElement' }, (n) => jsxElementText(ctx, n)),
+    Match.when({ type: 'JSXFragment' }, (n) => jsxFragmentText(ctx, n)),
+    Match.when({ type: 'JSXOpeningElement' }, (n) => jsxOpeningElementText(ctx, n)),
+    Match.when({ type: 'JSXClosingElement' }, () => ''),
+    Match.when({ type: 'JSXIdentifier' }, (n) => n.name),
+    Match.when({ type: 'JSXNamespacedName' }, (n) => `${n.namespace.name}:${n.name.name}`),
+    Match.when({ type: 'JSXMemberExpression' }, (n) => jsxMemberExpressionText(ctx, n)),
+    Match.when({ type: 'JSXAttribute' }, (n) => jsxAttributeText(ctx, n)),
+    Match.when(
+      { type: 'JSXSpreadAttribute' },
+      (n) => `{...${printNodePrec(ctx, n.argument, PREC.Assignment)}}`,
+    ),
+    Match.when(
+      { type: 'JSXExpressionContainer' },
+      (n) => `{${printNodePrec(ctx, n.expression, PREC.Sequence)}}`,
+    ),
+    Match.when({ type: 'JSXEmptyExpression' }, () => ''),
+    Match.when({ type: 'JSXText' }, (n) => n.value),
+    Match.when({ type: 'JSXSpreadChild' }, (n) => `{...${printNodePrec(ctx, n.expression, PREC.Assignment)}}`),
+    Match.when({ type: 'TSAsExpression' }, (n) => tsAsExpressionText(ctx, n, prec)),
+    Match.when({ type: 'TSSatisfiesExpression' }, (n) => tsSatisfiesExpressionText(ctx, n, prec)),
+    Match.when({ type: 'TSTypeAssertion' }, (n) => tsTypeAssertionText(ctx, n)),
+    Match.when({ type: 'TSNonNullExpression' }, (n) => `${printNodePrec(ctx, n.expression, PREC.Member)}!`),
+    Match.when({ type: 'TSInstantiationExpression' }, (n) => tsInstantiationExpressionText(ctx, n)),
+    Match.when({ type: 'BlockStatement' }, (n) => blockStatementText(ctx, n)),
+    Match.when({ type: 'EmptyStatement' }, () => ';'),
+    Match.when({ type: 'ExpressionStatement' }, (n) => expressionStatementText(ctx, n)),
+    Match.when({ type: 'IfStatement' }, (n) => ifStatementText(ctx, n)),
+    Match.when({ type: 'DoWhileStatement' }, (n) => doWhileStatementText(ctx, n)),
+    Match.when({ type: 'WhileStatement' }, (n) => whileStatementText(ctx, n)),
+    Match.when({ type: 'ForStatement' }, (n) => forStatementText(ctx, n)),
+    Match.when({ type: 'ForInStatement' }, (n) => forInStatementText(ctx, n)),
+    Match.when({ type: 'ForOfStatement' }, (n) => forOfStatementText(ctx, n)),
+    Match.when({ type: 'ContinueStatement' }, (n) => jumpStatementText('continue', n.label)),
+    Match.when({ type: 'BreakStatement' }, (n) => jumpStatementText('break', n.label)),
+    Match.when({ type: 'ReturnStatement' }, (n) => returnStatementText(ctx, n)),
+    Match.when({ type: 'WithStatement' }, (n) => withStatementText(ctx, n)),
+    Match.when({ type: 'SwitchStatement' }, (n) => switchStatementText(ctx, n)),
+    Match.when({ type: 'SwitchCase' }, () => ''),
+    Match.when({ type: 'LabeledStatement' }, (n) => labeledStatementText(ctx, n)),
+    Match.when({ type: 'ThrowStatement' }, (n) => `throw ${printNodePrec(ctx, n.argument, PREC.Sequence)};`),
+    Match.when({ type: 'TryStatement' }, (n) => tryStatementText(ctx, n)),
+    Match.when({ type: 'CatchClause' }, () => ''),
+    Match.when({ type: 'DebuggerStatement' }, () => 'debugger;'),
+    Match.when({ type: 'VariableDeclaration' }, (n) => variableDeclarationText(ctx, n)),
+    Match.when({ type: 'VariableDeclarator' }, (n) => variableDeclaratorText(ctx, n)),
+    Match.when({ type: 'ClassBody' }, (n) => classBodyText(ctx, n)),
+    Match.when({ type: 'MethodDefinition' }, (n) => methodDefinitionText(ctx, n)),
+    Match.when({ type: 'TSAbstractMethodDefinition' }, (n) => methodDefinitionText(ctx, n)),
+    Match.when({ type: 'PropertyDefinition' }, (n) => propertyDefinitionText(ctx, n)),
+    Match.when({ type: 'TSAbstractPropertyDefinition' }, (n) => propertyDefinitionText(ctx, n)),
+    Match.when({ type: 'AccessorProperty' }, (n) => accessorPropertyText(ctx, n)),
+    Match.when({ type: 'TSAbstractAccessorProperty' }, (n) => accessorPropertyText(ctx, n)),
+    Match.when({ type: 'StaticBlock' }, (n) => staticBlockText(ctx, n)),
+    Match.when({ type: 'ImportDeclaration' }, (n) => importDeclarationText(ctx, n)),
+    Match.when({ type: 'ExportNamedDeclaration' }, (n) => exportNamedDeclarationText(ctx, n)),
+    Match.when({ type: 'ExportDefaultDeclaration' }, (n) => exportDefaultDeclarationText(ctx, n)),
+    Match.when({ type: 'ExportAllDeclaration' }, (n) => exportAllDeclarationText(ctx, n)),
+    Match.when({ type: 'Decorator' }, (n) => `@${printNodePrec(ctx, n.expression, PREC.Member)}`),
+    Match.when({ type: 'TSTypeAliasDeclaration' }, (n) => tsTypeAliasDeclarationText(ctx, n)),
+    Match.when({ type: 'TSInterfaceDeclaration' }, (n) => tsInterfaceDeclarationText(ctx, n)),
+    Match.when({ type: 'TSEnumDeclaration' }, (n) => tsEnumDeclarationText(ctx, n)),
+    Match.when({ type: 'TSModuleDeclaration' }, (n) => tsModuleDeclarationText(ctx, n)),
+    Match.when({ type: 'TSImportEqualsDeclaration' }, (n) => tsImportEqualsDeclarationText(ctx, n)),
+    Match.when(
+      { type: 'TSExportAssignment' },
+      (n) => `export = ${printNodePrec(ctx, n.expression, PREC.Sequence)};`,
+    ),
+    Match.when({ type: 'TSNamespaceExportDeclaration' }, (n) => `export as namespace ${n.id.name};`),
+    Match.when({ type: 'TSTypeAnnotation' }, (n) => `: ${printTSTypeToString(ctx, n.typeAnnotation)}`),
+    Match.when({ type: 'TSTypeParameterDeclaration' }, (n) => printTSTypeParameterDeclaration(ctx, n)),
+    Match.when({ type: 'TSTypeParameterInstantiation' }, (n) => printTSTypeParameterInstantiation(ctx, n)),
+    Match.when({ type: 'TSTypeParameter' }, (n) => printTSTypeParameter(ctx, n)),
+    Match.when(isTSType, (n) => printTSTypeToString(ctx, n)),
+    Match.orElse((n) => `/* unknown:${n.type} */`),
+  )
 
-function printUnclassifiedNode(state: PrintState, node: Node, kind: string): void {
-  if (isTSType(node)) {
-    printTSType(state, node)
-    return
-  }
-  printTypeHolderNode(state, node, kind)
-}
+const statementKindText = (ctx: PrintContext, node: Statement): string =>
+  Match.value(node).pipe(
+    Match.when({ type: 'BlockStatement' }, (n) => blockStatementText(ctx, n)),
+    Match.when({ type: 'VariableDeclaration' }, (n) => `${variableDeclarationText(ctx, n)};`),
+    Match.when({ type: 'FunctionDeclaration' }, (n) => functionText(ctx, n)),
+    Match.when({ type: 'FunctionExpression' }, (n) => functionText(ctx, n)),
+    Match.when({ type: 'TSDeclareFunction' }, (n) => functionText(ctx, n)),
+    Match.when({ type: 'TSEmptyBodyFunctionExpression' }, (n) => functionText(ctx, n)),
+    Match.when({ type: 'ClassDeclaration' }, (n) => classText(ctx, n)),
+    Match.when({ type: 'ClassExpression' }, (n) => classText(ctx, n)),
+    Match.when({ type: 'ExpressionStatement' }, (n) => expressionStatementText(ctx, n)),
+    Match.when({ type: 'IfStatement' }, (n) => ifStatementText(ctx, n)),
+    Match.when({ type: 'ForStatement' }, (n) => forStatementText(ctx, n)),
+    Match.when({ type: 'ForInStatement' }, (n) => forInStatementText(ctx, n)),
+    Match.when({ type: 'ForOfStatement' }, (n) => forOfStatementText(ctx, n)),
+    Match.when({ type: 'WhileStatement' }, (n) => whileStatementText(ctx, n)),
+    Match.when({ type: 'DoWhileStatement' }, (n) => doWhileStatementText(ctx, n)),
+    Match.when({ type: 'ReturnStatement' }, (n) => returnStatementText(ctx, n)),
+    Match.when({ type: 'ThrowStatement' }, (n) => `throw ${printNodePrec(ctx, n.argument, PREC.Sequence)};`),
+    Match.when({ type: 'TryStatement' }, (n) => tryStatementText(ctx, n)),
+    Match.when({ type: 'SwitchStatement' }, (n) => switchStatementText(ctx, n)),
+    Match.when({ type: 'LabeledStatement' }, (n) => labeledStatementText(ctx, n)),
+    Match.when({ type: 'BreakStatement' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.when({ type: 'ContinueStatement' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.when({ type: 'DebuggerStatement' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.when({ type: 'EmptyStatement' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.when({ type: 'WithStatement' }, (n) => withStatementText(ctx, n)),
+    Match.when({ type: 'ImportDeclaration' }, (n) => importDeclarationText(ctx, n)),
+    Match.when({ type: 'ExportNamedDeclaration' }, (n) => exportNamedDeclarationText(ctx, n)),
+    Match.when({ type: 'ExportDefaultDeclaration' }, (n) => exportDefaultDeclarationText(ctx, n)),
+    Match.when({ type: 'ExportAllDeclaration' }, (n) => exportAllDeclarationText(ctx, n)),
+    Match.when({ type: 'TSTypeAliasDeclaration' }, (n) => tsTypeAliasDeclarationText(ctx, n)),
+    Match.when({ type: 'TSInterfaceDeclaration' }, (n) => tsInterfaceDeclarationText(ctx, n)),
+    Match.when({ type: 'TSEnumDeclaration' }, (n) => tsEnumDeclarationText(ctx, n)),
+    Match.when({ type: 'TSModuleDeclaration' }, (n) => tsModuleDeclarationText(ctx, n)),
+    Match.when({ type: 'TSImportEqualsDeclaration' }, (n) => tsImportEqualsDeclarationText(ctx, n)),
+    Match.when({ type: 'TSExportAssignment' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.when({ type: 'TSNamespaceExportDeclaration' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.orElse(() => ''),
+  )
 
-function printTypeHolderNode(state: PrintState, node: Node, kind: string): void {
-  switch (kind) {
-    case 'TSTypeAnnotation':
-      printTypeAnnotationHolder(state, node)
-      break
-    case 'TSTypeParameterDeclaration':
-      printTypeParameterDeclarationHolder(state, node)
-      break
-    case 'TSTypeParameterInstantiation':
-      printTypeParameterInstantiationHolder(state, node)
-      break
-    case 'TSTypeParameter':
-      printTypeParameterHolder(state, node)
-      break
-    default:
-      state.out += `/* unknown:${kind} */`
-      break
-  }
-}
+const literalText = (node: LiteralSource): string => node.raw ?? literalWithoutRaw(node)
 
-function printTypeAnnotationHolder(state: PrintState, node: Node): void {
-  if (isNodeOfKind(node, 'TSTypeAnnotation')) {
-    state.out += ': '
-    printTSType(state, node.typeAnnotation)
-  }
-}
+const literalWithoutRaw = (node: LiteralSource): string =>
+  Option.match(Option.fromNullishOr(node.regex), {
+    onSome: (regex) => `/${regex.pattern}/${regex.flags}`,
+    onNone: () => literalWithoutRegex(node),
+  })
 
-function printTypeParameterDeclarationHolder(state: PrintState, node: Node): void {
-  if (isNodeOfKind(node, 'TSTypeParameterDeclaration')) printTSTypeParameterDeclaration(state, node)
-}
+const literalWithoutRegex = (node: LiteralSource): string =>
+  Option.match(Option.fromNullishOr(node.bigint), {
+    onSome: (bigint) => bigint,
+    onNone: () => valueLiteralText(node.value),
+  })
 
-function printTypeParameterInstantiationHolder(state: PrintState, node: Node): void {
-  if (isNodeOfKind(node, 'TSTypeParameterInstantiation')) printTSTypeParameterInstantiation(state, node)
-}
+const valueLiteralText = (value: unknown): string =>
+  Match.value(value).pipe(
+    Match.when(Match.string, (v) => JSON.stringify(v)),
+    Match.orElse(nonStringLiteralText),
+  )
 
-function printTypeParameterHolder(state: PrintState, node: Node): void {
-  if (isNodeOfKind(node, 'TSTypeParameter')) printTSTypeParameter(state, node)
-}
+const nonStringLiteralText = (value: unknown): string =>
+  Match.value(value).pipe(
+    Match.when(Match.number, (v) => String(v)),
+    Match.orElse(booleanOrBigintText),
+  )
 
-function printLiteral(state: PrintState, node: LiteralNode): void {
-  state.out += literalText(node)
-}
+const booleanOrBigintText = (value: unknown): string =>
+  Match.value(value).pipe(
+    Match.when(Match.boolean, (v) => String(v)),
+    Match.orElse(bigintText),
+  )
 
-function printIdentifier(state: PrintState, node: { readonly name: string }): void {
-  state.out += node.name
-}
+const bigintText = (value: unknown): string =>
+  Match.value(typeof value === 'bigint').pipe(
+    Match.when(true, () => `${value}n`),
+    Match.orElse(() => 'null'),
+  )
 
-function printArrayExpression(state: PrintState, node: ArrayExpression): void {
-  state.out += `[${node.elements.map((element) => arrayElementText(state, element)).join(', ')}]`
-}
+const flagText = (present: unknown, text: string): string =>
+  Boolean.match(Boolean(present), {
+    onTrue: () => text,
+    onFalse: () => '',
+  })
 
-function arrayElementText(state: PrintState, element: Node | null): string {
-  if (element === null) return ''
-  return assignmentNodeText(state, element)
-}
+const parenthesizedIf = (wrap: boolean, text: string): string =>
+  Boolean.match(wrap, {
+    onTrue: () => `(${text})`,
+    onFalse: () => text,
+  })
 
-function printObjectExpression(state: PrintState, node: ObjectExpression): void {
-  switch (node.properties.length) {
-    case 0:
-      state.out += '{}'
-      break
-    default:
-      state.out += `{ ${nodeListText(state, node.properties, PREC.Sequence)} }`
-  }
-}
+const arrayExpressionText = (ctx: PrintContext, node: ArrayExpression): string =>
+  `[${node.elements.map((element) => printNodePrec(ctx, element, PREC.Assignment)).join(', ')}]`
 
-function printProperty(state: PrintState, node: PropertyLike): void {
-  switch (propertyForm(node)) {
-    case 'accessor':
-      state.out += `${node.kind} `
-      state.out += propertyKeyText(state, node.key, node.computed === true, PREC.Assignment)
-      printFunctionValueTail(state, node.value)
-      break
-    case 'method':
-      state.out += propertyKeyText(state, node.key, node.computed === true, PREC.Assignment)
-      printFunctionValueTail(state, node.value)
-      break
-    case 'shorthand':
-      state.out += identifierNameText(node.key)
-      break
-    case 'shorthandDefault':
-      printShorthandDefaultProperty(state, node)
-      break
-    default:
-      state.out += propertyKeyText(state, node.key, node.computed === true, PREC.Assignment)
-      state.out += ': '
-      printNodePrec(state, node.value, PREC.Assignment)
-      break
-  }
-}
+const objectExpressionText = (ctx: PrintContext, node: ObjectExpression): string =>
+  Boolean.match(node.properties.length === 0, {
+    onTrue: () => '{}',
+    onFalse: () => `{ ${nodeListText(ctx, node.properties, PREC.Sequence)} }`,
+  })
 
-function printFunctionValueTail(state: PrintState, value: Node): void {
-  if (isFunctionNode(value)) printFunctionTail(state, value)
-}
+type PropertyForm = 'accessor' | 'method' | 'shorthand' | 'shorthandDefault' | 'verbose'
 
-function printShorthandDefaultProperty(state: PrintState, node: PropertyLike): void {
-  if (!isAssignmentPattern(node.value)) return
-  const right = assignmentNodeText(state, node.value.right)
-  state.out += `${identifierNameText(node.key)} = ${right}`
-}
+const propertyText = (ctx: PrintContext, node: PropertyLike): string =>
+  Match.value(propertyFormOf(node)).pipe(
+    Match.when('accessor', () => `${node.kind} ${propertyKeyText(ctx, node.key, node.computed === true, PREC.Assignment)}${functionValueTailText(ctx, node.value)}`),
+    Match.when('method', () => `${propertyKeyText(ctx, node.key, node.computed === true, PREC.Assignment)}${functionValueTailText(ctx, node.value)}`),
+    Match.when('shorthand', () => identifierNameText(node.key)),
+    Match.when('shorthandDefault', () => shorthandDefaultPropertyText(ctx, node)),
+    Match.orElse(
+      () => `${propertyKeyText(ctx, node.key, node.computed === true, PREC.Assignment)}: ${printNodePrec(ctx, node.value, PREC.Assignment)}`,
+    ),
+  )
 
-function propertyKeyText(state: PrintState, key: Node, computed: boolean, computedPrec: number): string {
-  if (computed) return `[${capture(state, () => printNodePrec(state, key, computedPrec))}]`
-  return plainPropertyKeyText(state, key)
-}
+const functionValueTailText = (ctx: PrintContext, value: Node): string =>
+  Match.value(value).pipe(
+    Match.when(isFunctionNode, (fn) => functionTailText(ctx, fn)),
+    Match.orElse(() => ''),
+  )
 
-function plainPropertyKeyText(state: PrintState, key: Node): string {
-  switch (nodeKind(key)) {
-    case 'Identifier':
-      return identifierNameText(key)
-    case 'PrivateIdentifier':
-      return privateIdentifierText(key)
-    case 'Literal':
-      return literalCapture(state, key)
-    default:
-      return capture(state, () => printNodePrec(state, key, PREC.Assignment))
-  }
-}
+const shorthandDefaultPropertyText = (ctx: PrintContext, node: PropertyLike): string =>
+  Match.value(node.value).pipe(
+    Match.when(
+      isAssignmentPattern,
+      (value) => `${identifierNameText(node.key)} = ${printNodePrec(ctx, value.right, PREC.Assignment)}`,
+    ),
+    Match.orElse(() => ''),
+  )
 
-function printFunctionTail(state: PrintState, fn: FunctionNode): void {
-  state.out += typeParametersText(state, fn.typeParameters)
-  state.out += `(${paramsText(state, fn.params)})`
-  state.out += typeAnnotationText(state, fn.returnType)
-  state.out += functionBodyText(state, fn)
-}
+const propertyKeyText = (ctx: PrintContext, key: Node, computed: boolean, computedPrec: number): string =>
+  Boolean.match(computed, {
+    onTrue: () => `[${dispatchNode(ctx, key, computedPrec)}]`,
+    onFalse: () => plainPropertyKeyText(ctx, key),
+  })
 
-function functionBodyText(state: PrintState, fn: FunctionNode): string {
-  const body = fn.body
-  if (body !== null) return ` ${capture(state, () => printBlockStatement(state, body))}`
-  return ';'
-}
+const plainPropertyKeyText = (ctx: PrintContext, key: Node): string =>
+  Match.value(key).pipe(
+    Match.when({ type: 'Identifier' }, (n) => identifierNameText(n)),
+    Match.when({ type: 'PrivateIdentifier' }, (n) => privateIdentifierText(n)),
+    Match.when({ type: 'Literal' }, (n) => literalText(n)),
+    Match.orElse((n) => dispatchNode(ctx, n, PREC.Assignment)),
+  )
 
-function paramsText(state: PrintState, params: readonly ParamPattern[]): string {
-  return capture(state, () => printParams(state, params))
-}
+const functionTailText = (ctx: PrintContext, fn: FunctionNode): string =>
+  `${typeParametersText(ctx, fn.typeParameters)}(${paramsText(ctx, fn.params)})${typeAnnotationText(
+    ctx,
+    fn.returnType,
+  )}${functionBodyText(ctx, fn)}`
 
-function typeParametersText(state: PrintState, params: TSTypeParameterDeclaration | null | undefined): string {
-  if (params == null) return ''
-  return capture(state, () => printTSTypeParameterDeclaration(state, params))
-}
+const functionBodyText = (ctx: PrintContext, fn: FunctionNode): string =>
+  Option.match(Option.fromNull(fn.body), {
+    onSome: (body) => ` ${blockStatementText(ctx, body)}`,
+    onNone: () => ';',
+  })
 
-function typeArgumentsText(state: PrintState, args: TSTypeParameterInstantiation | null | undefined): string {
-  if (args == null) return ''
-  return capture(state, () => printTSTypeParameterInstantiation(state, args))
-}
+const paramsText = (ctx: PrintContext, params: readonly ParamPattern[]): string =>
+  params.map((param) => paramText(ctx, param)).join(', ')
 
-function typeAnnotationText(state: PrintState, annotation: TSTypeAnnotation | null | undefined): string {
-  if (annotation == null) return ''
-  return capture(state, () => printTSTypeAnnotation(state, annotation))
-}
+const typeParametersText = (ctx: PrintContext, params: TSTypeParameterDeclaration | null | undefined): string =>
+  Option.match(Option.fromNullishOr(params), {
+    onNone: () => '',
+    onSome: (value) => printTSTypeParameterDeclaration(ctx, value),
+  })
 
-function printTemplateLiteral(state: PrintState, node: TemplateLiteral): void {
-  state.out += `\`${
-    node.quasis
-      .map((quasi, index) => quasiText(state, quasi, node.expressions[index]))
-      .join('')
-  }\``
-}
+const typeArgumentsText = (ctx: PrintContext, args: TSTypeParameterInstantiation | null | undefined): string =>
+  Option.match(Option.fromNullishOr(args), {
+    onNone: () => '',
+    onSome: (value) => printTSTypeParameterInstantiation(ctx, value),
+  })
 
-function quasiText(state: PrintState, quasi: TemplateElement, expression: Expression | undefined): string {
-  if (quasi.tail) return quasi.value.raw
-  return `${quasi.value.raw}\${${sequenceNodeText(state, expression)}}`
-}
+const typeAnnotationText = (ctx: PrintContext, annotation: TSTypeAnnotation | null | undefined): string =>
+  Option.match(Option.fromNullishOr(annotation), {
+    onNone: () => '',
+    onSome: (value) => printTSTypeAnnotation(ctx, value),
+  })
 
-function printTaggedTemplate(state: PrintState, node: TaggedTemplateExpression): void {
-  printNodePrec(state, node.tag, PREC.Member)
-  if (node.typeArguments != null) printTSTypeParameterInstantiation(state, node.typeArguments)
-  printTemplateLiteral(state, node.quasi)
-}
+const templateLiteralText = (ctx: PrintContext, node: TemplateLiteral): string =>
+  `\`${node.quasis
+    .map((quasi, index) => quasiText(ctx, quasi, node.expressions[index]))
+    .join('')}\``
 
-function printMemberExpression(state: PrintState, node: MemberExpression, _prec: number): void {
-  state.out += wrappedExpressionText(state, node.object, PREC.Member, MEMBER_OBJECT_WRAPPED_KINDS)
-  state.out += flagText(node.optional, '?.')
-  state.out += memberSelectorText(state, node)
-}
+const quasiText = (ctx: PrintContext, quasi: TemplateElement, expression: Expression | undefined): string =>
+  Boolean.match(quasi.tail, {
+    onTrue: () => quasi.value.raw,
+    onFalse: () => `${quasi.value.raw}\${${sequenceNodeText(ctx, expression)}}`,
+  })
 
-function memberSelectorText(state: PrintState, access: MemberExpression): string {
-  if (access.computed) return `[${sequenceNodeText(state, access.property)}]`
-  return `${flagText(!access.optional, '.')}${memberPropertyText(state, access.property)}`
-}
+const taggedTemplateText = (ctx: PrintContext, node: TaggedTemplateExpression): string =>
+  `${printNodePrec(ctx, node.tag, PREC.Member)}${typeArgumentsText(ctx, node.typeArguments)}${templateLiteralText(
+    ctx,
+    node.quasi,
+  )}`
 
-function memberPropertyText(state: PrintState, property: Node): string {
-  switch (nodeKind(property)) {
-    case 'Identifier':
-      return identifierNameText(property)
-    case 'PrivateIdentifier':
-      return privateIdentifierText(property)
-    default:
-      return sequenceNodeText(state, property)
-  }
-}
+const memberExpressionText = (ctx: PrintContext, node: MemberExpression): string =>
+  `${wrappedExpressionText(ctx, node.object, PREC.Member, MEMBER_OBJECT_WRAPPED_KINDS)}${flagText(
+    node.optional,
+    '?.',
+  )}${memberSelectorText(ctx, node)}`
 
-function printCallExpression(state: PrintState, node: CallExpression, _prec: number): void {
-  state.out += wrappedExpressionText(state, node.callee, PREC.Member, CALLEE_WRAPPED_KINDS)
-  state.out += flagText(node.optional, '?.')
-  state.out += typeArgumentsText(state, node.typeArguments)
-  state.out += `(${nodeListText(state, node.arguments, PREC.Assignment)})`
-}
+const memberSelectorText = (ctx: PrintContext, access: MemberExpression): string =>
+  Boolean.match(access.computed, {
+    onTrue: () => `[${sequenceNodeText(ctx, access.property)}]`,
+    onFalse: () => `${flagText(!access.optional, '.')}${memberPropertyText(ctx, access.property)}`,
+  })
 
-function printNewExpression(state: PrintState, node: NewExpression, _prec: number): void {
-  state.out += 'new '
-  state.out += printExpressionToString(state, node.callee, PREC.Member)
-  state.out += typeArgumentsText(state, node.typeArguments)
-  state.out += `(${nodeListText(state, node.arguments, PREC.Assignment)})`
-}
+const memberPropertyText = (ctx: PrintContext, property: Node): string =>
+  Match.value(property).pipe(
+    Match.when({ type: 'Identifier' }, (n) => identifierNameText(n)),
+    Match.when({ type: 'PrivateIdentifier' }, (n) => privateIdentifierText(n)),
+    Match.orElse((n) => sequenceNodeText(ctx, n)),
+  )
 
-function printMetaProperty(state: PrintState, node: MetaProperty): void {
-  state.out += `${node.meta.name}.${node.property.name}`
-}
+const callExpressionText = (ctx: PrintContext, node: CallExpression): string =>
+  `${wrappedExpressionText(ctx, node.callee, PREC.Member, CALLEE_WRAPPED_KINDS)}${flagText(
+    node.optional,
+    '?.',
+  )}${typeArgumentsText(ctx, node.typeArguments)}(${nodeListText(ctx, node.arguments, PREC.Assignment)})`
 
-function printV8Intrinsic(
-  state: PrintState,
+const newExpressionText = (ctx: PrintContext, node: NewExpression): string =>
+  `new ${dispatchNode(ctx, node.callee, PREC.Member)}${typeArgumentsText(ctx, node.typeArguments)}(${nodeListText(
+    ctx,
+    node.arguments,
+    PREC.Assignment,
+  )})`
+
+const metaPropertyText = (node: MetaProperty): string => `${node.meta.name}.${node.property.name}`
+
+const v8IntrinsicText = (
+  ctx: PrintContext,
   node: { readonly name: { readonly name: string }; readonly arguments: readonly Node[] },
-): void {
-  state.out += `%${node.name.name}(${nodeListText(state, node.arguments, PREC.Assignment)})`
+): string => `%${node.name.name}(${nodeListText(ctx, node.arguments, PREC.Assignment)})`
+
+const importExpressionText = (ctx: PrintContext, node: ImportExpression): string =>
+  `import${flagText(node.phase, `.${node.phase}`)}(${assignmentNodeText(ctx, node.source)}${flagText(
+    node.options,
+    `, ${assignmentNodeText(ctx, node.options)}`,
+  )})`
+
+const updateExpressionText = (ctx: PrintContext, node: UpdateExpression): string => {
+  const operand = wrappedExpressionText(ctx, node.argument, PREC.Update, MEMBER_OBJECT_WRAPPED_KINDS)
+  return Boolean.match(node.prefix, {
+    onTrue: () => `${node.operator}${operand}`,
+    onFalse: () => `${operand}${node.operator}`,
+  })
 }
 
-function printImportExpression(state: PrintState, node: ImportExpression): void {
-  state.out += `import${flagText(node.phase, `.${node.phase}`)}(`
-  state.out += assignmentNodeText(state, node.source)
-  state.out += flagText(node.options, `, ${assignmentNodeText(state, node.options)}`)
-  state.out += ')'
-}
+const unaryExpressionText = (ctx: PrintContext, node: UnaryExpression): string =>
+  `${node.operator}${flagText(UNARY_WORD_OPERATORS[node.operator] === true, ' ')}${wrappedExpressionText(
+    ctx,
+    node.argument,
+    PREC.Unary,
+    UNARY_OPERAND_WRAPPED_KINDS,
+  )}`
 
-function printUpdateExpression(state: PrintState, node: UpdateExpression, _prec: number): void {
-  const operand = wrappedExpressionText(state, node.argument, PREC.Update, MEMBER_OBJECT_WRAPPED_KINDS)
-  if (node.prefix) {
-    state.out += `${node.operator}${operand}`
-    return
-  }
-  state.out += `${operand}${node.operator}`
-}
-
-function printUnaryExpression(state: PrintState, node: UnaryExpression, _prec: number): void {
-  state.out += node.operator
-  state.out += flagText(UNARY_WORD_OPERATORS[node.operator] === true, ' ')
-  state.out += wrappedExpressionText(state, node.argument, PREC.Unary, UNARY_OPERAND_WRAPPED_KINDS)
-}
-
-function printBinaryExpression(state: PrintState, node: BinaryLike, prec: number): void {
+const binaryExpressionText = (ctx: PrintContext, node: BinaryLike, prec: number): string => {
   const myPrec = binaryPrec(node.operator)
-  const leftStr = wrapIfNeeded(state, node.left, precOf(node.left), myPrec, false, node.operator)
-  const rightStr = wrapIfNeeded(state, node.right, precOf(node.right), myPrec, true, node.operator)
-  const whole = `${leftStr} ${node.operator} ${rightStr}`
-  if (myPrec < prec) {
-    state.out += `(${whole})`
-  } else {
-    state.out += whole
-  }
+  const leftStr = wrapIfNeeded(ctx, node.left, precOf(node.left), myPrec, false, node.operator)
+  const rightStr = wrapIfNeeded(ctx, node.right, precOf(node.right), myPrec, true, node.operator)
+  return parenthesizedIf(myPrec < prec, `${leftStr} ${node.operator} ${rightStr}`)
 }
 
-function printLogicalExpression(state: PrintState, node: LogicalExpression, prec: number): void {
+const logicalExpressionText = (ctx: PrintContext, node: LogicalExpression, prec: number): string => {
   const myPrec = logicalPrec(node.operator)
-  const leftStr = wrapIfNeeded(state, node.left, precOf(node.left), myPrec, false, node.operator)
-  const rightStr = wrapIfNeeded(state, node.right, precOf(node.right), myPrec, true, node.operator)
-  const whole = `${leftStr} ${node.operator} ${rightStr}`
-  if (myPrec < prec) state.out += `(${whole})`
-  else state.out += whole
+  const leftStr = wrapIfNeeded(ctx, node.left, precOf(node.left), myPrec, false, node.operator)
+  const rightStr = wrapIfNeeded(ctx, node.right, precOf(node.right), myPrec, true, node.operator)
+  return parenthesizedIf(myPrec < prec, `${leftStr} ${node.operator} ${rightStr}`)
 }
 
-function printConditionalExpression(state: PrintState, node: ConditionalExpression, prec: number): void {
+const conditionalExpressionText = (ctx: PrintContext, node: ConditionalExpression, prec: number): string => {
   const myPrec = PREC.Conditional
-  const testStr = wrapIfNeeded(state, node.test, precOf(node.test), myPrec, false)
-  const consStr = printExpressionToString(state, node.consequent, PREC.Assignment)
-  const altStr = printExpressionToString(state, node.alternate, PREC.Assignment)
-  const whole = `${testStr} ? ${consStr} : ${altStr}`
-  if (myPrec < prec) state.out += `(${whole})`
-  else state.out += whole
+  const testStr = wrapIfNeeded(ctx, node.test, precOf(node.test), myPrec, false)
+  const consStr = dispatchNode(ctx, node.consequent, PREC.Assignment)
+  const altStr = dispatchNode(ctx, node.alternate, PREC.Assignment)
+  return parenthesizedIf(myPrec < prec, `${testStr} ? ${consStr} : ${altStr}`)
 }
 
-function printAssignmentExpression(state: PrintState, node: AssignmentExpression, prec: number): void {
+const assignmentExpressionText = (ctx: PrintContext, node: AssignmentExpression, prec: number): string => {
   const myPrec = PREC.Assignment
-  const leftStr = printExpressionToString(state, node.left, myPrec)
-  const rightStr = printExpressionToString(state, node.right, myPrec - 0.1)
-  const whole = `${leftStr} ${node.operator} ${rightStr}`
-  if (myPrec < prec) state.out += `(${whole})`
-  else state.out += whole
+  const leftStr = dispatchNode(ctx, node.left, myPrec)
+  const rightStr = dispatchNode(ctx, node.right, myPrec - 0.1)
+  return parenthesizedIf(myPrec < prec, `${leftStr} ${node.operator} ${rightStr}`)
 }
 
-function printAssignmentPattern(
-  state: PrintState,
+const assignmentPatternText = (
+  ctx: PrintContext,
   node: Extract<Node, { type: 'AssignmentPattern' }>,
   prec: number,
-): void {
-  const leftText = printExpressionToString(state, node.left, PREC.Assignment) +
-    typeAnnotationText(state, bindingTypeAnnotation(node.left))
-  const rightText = printExpressionToString(state, node.right, PREC.Assignment)
-  state.out += parenthesizedIf(PREC.Assignment < prec, `${leftText} = ${rightText}`)
-}
+): string =>
+  parenthesizedIf(
+    PREC.Assignment < prec,
+    `${dispatchNode(ctx, node.left, PREC.Assignment)}${typeAnnotationText(ctx, bindingTypeAnnotation(node.left))} = ${dispatchNode(ctx, node.right, PREC.Assignment)}`,
+  )
 
-function printObjectPattern(state: PrintState, node: { readonly properties: readonly Node[] }): void {
-  switch (node.properties.length) {
-    case 0:
-      state.out += '{}'
-      break
-    default:
-      state.out += `{ ${nodeListText(state, node.properties, PREC.Sequence)} }`
-  }
-}
+const objectPatternText = (ctx: PrintContext, node: { readonly properties: readonly Node[] }): string =>
+  Boolean.match(node.properties.length === 0, {
+    onTrue: () => '{}',
+    onFalse: () => `{ ${nodeListText(ctx, node.properties, PREC.Sequence)} }`,
+  })
 
-function printArrayPattern(state: PrintState, node: Extract<Node, { type: 'ArrayPattern' }>): void {
-  state.out += `[${node.elements.map((element) => arrayElementText(state, element)).join(', ')}]`
-}
+const arrayPatternText = (ctx: PrintContext, node: Extract<Node, { type: 'ArrayPattern' }>): string =>
+  `[${node.elements.map((element) => printNodePrec(ctx, element, PREC.Assignment)).join(', ')}]`
 
-function printSequenceExpression(state: PrintState, node: SequenceExpression, prec: number): void {
-  const whole = node.expressions
-    .map((expression) => printExpressionToString(state, expression, PREC.Sequence))
-    .join(', ')
-  state.out += parenthesizedIf(PREC.Sequence < prec, whole)
-}
+const sequenceExpressionText = (ctx: PrintContext, node: SequenceExpression, prec: number): string =>
+  parenthesizedIf(
+    PREC.Sequence < prec,
+    node.expressions.map((expression) => dispatchNode(ctx, expression, PREC.Sequence)).join(', '),
+  )
 
-function printYieldExpression(state: PrintState, node: YieldExpression, _prec: number): void {
-  if (node.delegate) {
-    state.out += 'yield*'
-  } else {
-    state.out += 'yield'
-  }
-  state.out += flagText(node.argument, ` ${assignmentNodeText(state, node.argument)}`)
-}
+const yieldExpressionText = (ctx: PrintContext, node: YieldExpression): string =>
+  `${Boolean.match(node.delegate, {
+    onTrue: () => 'yield*',
+    onFalse: () => 'yield',
+  })}${flagText(node.argument, ` ${assignmentNodeText(ctx, node.argument)}`)}`
 
-function printArrowFunction(state: PrintState, node: ArrowFunctionExpression, prec: number): void {
-  const arrow = `${flagText(node.async, 'async ')}${typeParametersText(state, node.typeParameters)}` +
-    `${arrowParamsText(state, node)}${typeAnnotationText(state, node.returnType)} => ${arrowBodyText(state, node)}`
-  state.out += parenthesizedIf(PREC.Assignment < prec, arrow)
-}
+const arrowFunctionText = (ctx: PrintContext, node: ArrowFunctionExpression, prec: number): string =>
+  parenthesizedIf(
+    PREC.Assignment < prec,
+    `${flagText(node.async, 'async ')}${typeParametersText(ctx, node.typeParameters)}${arrowParamsText(
+      ctx,
+      node,
+    )}${typeAnnotationText(ctx, node.returnType)} => ${arrowBodyText(ctx, node)}`,
+  )
 
-function arrowParamsText(state: PrintState, node: ArrowFunctionExpression): string {
+const arrowParamsText = (ctx: PrintContext, node: ArrowFunctionExpression): string => {
   const bareParam = bareArrowParamName(node)
-  if (bareParam.length === 0) return `(${paramsText(state, node.params)})`
-  return bareParam
+  return Boolean.match(bareParam.length === 0, {
+    onTrue: () => `(${paramsText(ctx, node.params)})`,
+    onFalse: () => bareParam,
+  })
 }
 
-function arrowBodyText(state: PrintState, node: ArrowFunctionExpression): string {
-  const body = node.body
-  if (arrowBodyIsBlock(body)) return capture(state, () => printBlockStatement(state, body))
-  return assignmentNodeText(state, body)
-}
+const arrowBodyText = (ctx: PrintContext, node: ArrowFunctionExpression): string =>
+  Match.value(node.body).pipe(
+    Match.when({ type: 'BlockStatement' }, (body) => blockStatementText(ctx, body)),
+    Match.orElse((body) => assignmentNodeText(ctx, body)),
+  )
 
-function printFunction(state: PrintState, node: FunctionNode, _prec: number): void {
-  state.out += functionHeaderText(node)
-  printFunctionTail(state, node)
-}
+const functionText = (ctx: PrintContext, node: FunctionNode): string =>
+  `${functionHeaderText(node)}${functionTailText(ctx, node)}`
 
-function printClass(state: PrintState, node: Class, _prec: number): void {
-  state.out += capture(state, () => printDecorators(state, node.decorators))
-  state.out += `${flagText(node.declare, 'declare ')}${flagText(node.abstract, 'abstract ')}class${
-    namedDeclarationText(node)
-  }`
-  state.out += typeParametersText(state, node.typeParameters)
-  state.out += classHeritageText(state, node)
-  state.out += classImplementsText(state, node)
-  state.out += ' '
-  printClassBody(state, node.body)
-}
+const classText = (ctx: PrintContext, node: Class): string =>
+  `${decoratorsText(ctx, node.decorators)}${flagText(node.declare, 'declare ')}${flagText(
+    node.abstract,
+    'abstract ',
+  )}class${namedDeclarationText(node)}${typeParametersText(ctx, node.typeParameters)}${classHeritageText(
+    ctx,
+    node,
+  )}${classImplementsText(ctx, node)} ${classBodyText(ctx, node.body)}`
 
-function classHeritageText(state: PrintState, node: Class): string {
-  if (node.superClass !== null) {
-    return ` extends ${assignmentNodeText(state, node.superClass)}${typeArgumentsText(state, node.superTypeArguments)}`
-  }
-  return ''
-}
+const classHeritageText = (ctx: PrintContext, node: Class): string =>
+  Option.match(Option.fromNull(node.superClass), {
+    onSome: (superClass) =>
+      ` extends ${assignmentNodeText(ctx, superClass)}${typeArgumentsText(ctx, node.superTypeArguments)}`,
+    onNone: () => '',
+  })
 
-function classImplementsText(state: PrintState, node: Class): string {
-  const rendered = (node.implements ?? []).map((heritage) => heritageText(state, heritage)).join(', ')
+const classImplementsText = (ctx: PrintContext, node: Class): string => {
+  const rendered = (node.implements ?? []).map((heritage) => heritageText(ctx, heritage)).join(', ')
   return flagText(rendered, ` implements ${rendered}`)
 }
 
-function heritageText(
-  state: PrintState,
+const heritageText = (
+  ctx: PrintContext,
   heritage: {
     readonly expression: Node
     readonly typeArguments?: TSTypeParameterInstantiation | null
   },
-): string {
-  return `${assignmentNodeText(state, heritage.expression)}${typeArgumentsText(state, heritage.typeArguments)}`
+): string => `${assignmentNodeText(ctx, heritage.expression)}${typeArgumentsText(ctx, heritage.typeArguments)}`
+
+const decoratorsText = (ctx: PrintContext, decorators: readonly Decorator[] | undefined): string => {
+  const rendered = (decorators ?? []).map((decorator) => decoratorText(ctx, decorator)).join(' ')
+  return flagText(rendered, `${rendered} `)
 }
 
-function printDecorators(state: PrintState, decorators: readonly Decorator[] | undefined): void {
-  const rendered = (decorators ?? []).map((decorator) => decoratorText(state, decorator)).join(' ')
-  state.out += flagText(rendered, `${rendered} `)
-}
+const decoratorText = (ctx: PrintContext, decorator: Decorator): string =>
+  `@${dispatchNode(ctx, decorator.expression, PREC.Member)}`
 
-function decoratorText(state: PrintState, decorator: Decorator): string {
-  return `@${capture(state, () => printNodePrec(state, decorator.expression, PREC.Member))}`
-}
+const jsxElementText = (ctx: PrintContext, node: JSXElement): string =>
+  `${jsxOpeningElementText(ctx, node.openingElement)}${node.children
+    .map((child) => jsxChildText(ctx, child))
+    .join('')}${jsxClosingElementText(ctx, node)}`
 
-function printJSXElement(state: PrintState, node: JSXElement): void {
-  printJSXOpeningElement(state, node.openingElement)
-  node.children.forEach((child) => printJSXChild(state, child))
-  printJSXClosingElement(state, node)
-}
+const jsxClosingElementText = (ctx: PrintContext, node: JSXElement): string =>
+  Option.match(Option.fromNull(node.closingElement), {
+    onSome: (closingElement) => `</${jsxElementNameText(ctx, closingElement.name)}>`,
+    onNone: () => '',
+  })
 
-function printJSXClosingElement(state: PrintState, node: JSXElement): void {
-  if (node.closingElement === null) return
-  state.out += `</${jsxElementNameText(state, node.closingElement.name)}>`
-}
+const jsxFragmentText = (ctx: PrintContext, node: JSXFragment): string =>
+  `<>${node.children.map((child) => jsxChildText(ctx, child)).join('')}</>`
 
-function printJSXFragment(state: PrintState, node: JSXFragment): void {
-  state.out += '<>'
-  for (const child of node.children) {
-    printJSXChild(state, child)
-  }
-  state.out += '</>'
-}
+const jsxOpeningElementText = (ctx: PrintContext, node: JSXOpeningElement): string =>
+  `<${jsxElementNameText(ctx, node.name)}${typeArgumentsText(ctx, node.typeArguments)}${node.attributes
+    .map((attribute) => ` ${sequenceNodeText(ctx, attribute)}`)
+    .join('')}${Boolean.match(node.selfClosing, {
+    onTrue: () => ' />',
+    onFalse: () => '>',
+  })}`
 
-function printJSXOpeningElement(state: PrintState, node: JSXOpeningElement): void {
-  state.out += `<${jsxElementNameText(state, node.name)}`
-  state.out += typeArgumentsText(state, node.typeArguments)
-  state.out += node.attributes
-    .map((attribute) => ` ${sequenceNodeText(state, attribute)}`)
-    .join('')
-  if (node.selfClosing) {
-    state.out += ' />'
-    return
-  }
-  state.out += '>'
-}
+const jsxElementNameText = (ctx: PrintContext, name: JSXOpeningElement['name']): string =>
+  Match.value(name).pipe(
+    Match.when({ type: 'JSXIdentifier' }, (n) => n.name),
+    Match.when({ type: 'JSXNamespacedName' }, (n) => `${n.namespace.name}:${n.name.name}`),
+    Match.when({ type: 'JSXMemberExpression' }, (n) => jsxMemberExpressionText(ctx, n)),
+    Match.orElse(() => ''),
+  )
 
-function jsxElementNameText(state: PrintState, name: JSXOpeningElement['name']): string {
-  switch (name.type) {
-    case 'JSXIdentifier':
-      return name.name
-    case 'JSXNamespacedName':
-      return `${name.namespace.name}:${name.name.name}`
-    case 'JSXMemberExpression':
-      return capture(state, () => printJSXMemberExpression(state, name))
-  }
-}
+const jsxMemberExpressionText = (ctx: PrintContext, node: JSXMemberExpression): string =>
+  Match.value(node.object).pipe(
+    Match.when({ type: 'JSXIdentifier' }, (obj) => `${obj.name}.${node.property.name}`),
+    Match.orElse((obj) => `${jsxMemberExpressionText(ctx, obj)}.${node.property.name}`),
+  )
 
-function printJSXMemberExpression(state: PrintState, node: JSXMemberExpression): void {
-  const obj = node.object
-  if (obj.type === 'JSXIdentifier') {
-    state.out += `${obj.name}.${node.property.name}`
-    return
-  }
-  printJSXMemberExpression(state, obj)
-  state.out += `.${node.property.name}`
-}
+const jsxAttributeText = (ctx: PrintContext, node: JSXAttribute): string =>
+  `${jsxAttributeNameText(node.name)}${jsxAttributeValueClauseText(ctx, node.value)}`
 
-function printJSXAttribute(state: PrintState, node: JSXAttribute): void {
-  state.out += jsxAttributeNameText(node.name)
-  state.out += jsxAttributeValueClauseText(state, node.value)
-}
+const jsxAttributeValueClauseText = (ctx: PrintContext, value: JSXAttribute['value']): string =>
+  Option.match(Option.fromNull(value), {
+    onSome: (nonNull) => `=${jsxAttributeValueText(ctx, nonNull)}`,
+    onNone: () => '',
+  })
 
-function jsxAttributeValueClauseText(state: PrintState, value: JSXAttribute['value']): string {
-  if (value === null) return ''
-  return `=${jsxAttributeValueText(state, value)}`
-}
+const jsxAttributeValueText = (ctx: PrintContext, value: NonNullable<JSXAttribute['value']>): string =>
+  Match.value(value).pipe(
+    Match.when({ type: 'Literal' }, (n) => literalText(n)),
+    Match.when({ type: 'JSXExpressionContainer' }, (n) => `{${sequenceNodeText(ctx, n.expression)}}`),
+    Match.when({ type: 'JSXElement' }, (n) => sequenceNodeText(ctx, n)),
+    Match.when({ type: 'JSXFragment' }, (n) => sequenceNodeText(ctx, n)),
+    Match.orElse(() => ''),
+  )
 
-function jsxAttributeValueText(state: PrintState, value: NonNullable<JSXAttribute['value']>): string {
-  switch (value.type) {
-    case 'Literal':
-      return capture(state, () => printLiteral(state, value))
-    case 'JSXExpressionContainer':
-      return `{${sequenceNodeText(state, value.expression)}}`
-    case 'JSXElement':
-    case 'JSXFragment':
-      return sequenceNodeText(state, value)
-  }
-}
+const jsxChildText = (ctx: PrintContext, child: JSXElement['children'][number]): string =>
+  Match.value(child).pipe(
+    Match.when({ type: 'JSXText' }, (n) => n.value),
+    Match.when({ type: 'JSXElement' }, (n) => jsxElementText(ctx, n)),
+    Match.when({ type: 'JSXFragment' }, (n) => jsxFragmentText(ctx, n)),
+    Match.when(
+      { type: 'JSXExpressionContainer' },
+      (n) => `{${printNodePrec(ctx, n.expression, PREC.Sequence)}}`,
+    ),
+    Match.when({ type: 'JSXSpreadChild' }, (n) => `{...${printNodePrec(ctx, n.expression, PREC.Assignment)}}`),
+    Match.orElse(() => ''),
+  )
 
-function printJSXChild(state: PrintState, child: JSXElement['children'][number]): void {
-  switch (child.type) {
-    case 'JSXText':
-      state.out += child.value
-      return
-    case 'JSXElement':
-      printJSXElement(state, child)
-      return
-    case 'JSXFragment':
-      printJSXFragment(state, child)
-      return
-    case 'JSXExpressionContainer':
-      state.out += '{'
-      printNodePrec(state, child.expression, PREC.Sequence)
-      state.out += '}'
-      return
-    case 'JSXSpreadChild':
-      state.out += '{...'
-      printNodePrec(state, child.expression, PREC.Assignment)
-      state.out += '}'
-  }
-}
-
-function printTSAsExpression(state: PrintState, node: TSAsExpression, prec: number): void {
+const tsAsExpressionText = (ctx: PrintContext, node: TSAsExpression, prec: number): string => {
   const myPrec = PREC.Relational
-  const exprStr = printExpressionToString(state, node.expression, myPrec)
-  const typeStr = printTSTypeToString(state, node.typeAnnotation)
-  const whole = `${exprStr} as ${typeStr}`
-  if (myPrec < prec) state.out += `(${whole})`
-  else state.out += whole
+  return parenthesizedIf(
+    myPrec < prec,
+    `${dispatchNode(ctx, node.expression, myPrec)} as ${printTSTypeToString(ctx, node.typeAnnotation)}`,
+  )
 }
 
-function printTSSatisfiesExpression(state: PrintState, node: TSSatisfiesExpression, prec: number): void {
+const tsSatisfiesExpressionText = (ctx: PrintContext, node: TSSatisfiesExpression, prec: number): string => {
   const myPrec = PREC.Relational
-  const exprStr = printExpressionToString(state, node.expression, myPrec)
-  const typeStr = printTSTypeToString(state, node.typeAnnotation)
-  const whole = `${exprStr} satisfies ${typeStr}`
-  if (myPrec < prec) state.out += `(${whole})`
-  else state.out += whole
+  return parenthesizedIf(
+    myPrec < prec,
+    `${dispatchNode(ctx, node.expression, myPrec)} satisfies ${printTSTypeToString(ctx, node.typeAnnotation)}`,
+  )
 }
 
-function printTSTypeAssertion(state: PrintState, node: TSTypeAssertion, _prec: number): void {
-  state.out += `<${printTSTypeToString(state, node.typeAnnotation)}>`
-  printNodePrec(state, node.expression, PREC.Unary)
+const tsTypeAssertionText = (ctx: PrintContext, node: TSTypeAssertion): string =>
+  `<${printTSTypeToString(ctx, node.typeAnnotation)}>${printNodePrec(ctx, node.expression, PREC.Unary)}`
+
+const tsInstantiationExpressionText = (ctx: PrintContext, node: TSInstantiationExpression): string =>
+  `${printNodePrec(ctx, node.expression, PREC.Member)}${printTSTypeParameterInstantiation(ctx, node.typeArguments)}`
+
+const blockStatementText = (ctx: PrintContext, node: Extract<Node, { type: 'BlockStatement' }>): string =>
+  Boolean.match(node.body.length === 0, {
+    onTrue: () => '{}',
+    onFalse: () => `{\n${indentedBodyText(ctx, node.body, statementText)}${indent(ctx)}}`,
+  })
+
+const expressionStatementText = (ctx: PrintContext, node: ExpressionStatement): string =>
+  Boolean.match(isDirective(node.directive), {
+    onTrue: () => `${JSON.stringify(node.directive)};`,
+    onFalse: () => `${printNodePrec(ctx, node.expression, PREC.Sequence)};`,
+  })
+
+const isDirective = (directive: string | null | undefined): boolean =>
+  directive != null && directive !== ''
+
+const ifStatementText = (ctx: PrintContext, node: IfStatement): string =>
+  `if (${printNodePrec(ctx, node.test, PREC.Sequence)}) ${statementOrBlockText(ctx, node.consequent)}${Option.match(
+    Option.fromNull(node.alternate),
+    {
+      onSome: (alternate) => ` else ${statementOrBlockText(ctx, alternate)}`,
+      onNone: () => '',
+    },
+  )}`
+
+const statementOrBlockText = (ctx: PrintContext, node: Statement): string =>
+  Match.value(node).pipe(
+    Match.when({ type: 'BlockStatement' }, (n) => blockStatementText(ctx, n)),
+    Match.orElse((n) => statementText(ctx, n)),
+  )
+
+const whileStatementText = (ctx: PrintContext, node: WhileStatement): string =>
+  `while (${printNodePrec(ctx, node.test, PREC.Sequence)}) ${statementOrBlockText(ctx, node.body)}`
+
+const doWhileStatementText = (ctx: PrintContext, node: DoWhileStatement): string =>
+  `do ${statementOrBlockText(ctx, node.body)} while (${printNodePrec(ctx, node.test, PREC.Sequence)});`
+
+const forStatementText = (ctx: PrintContext, node: ForStatement): string =>
+  `for (${declarationOrExpressionText(ctx, node.init)}; ${optionalSequenceText(ctx, node.test)}; ${optionalSequenceText(
+    ctx,
+    node.update,
+  )}) ${statementOrBlockText(ctx, node.body)}`
+
+const declarationOrExpressionText = (ctx: PrintContext, node: Node | null | undefined): string =>
+  Option.match(Option.fromNullishOr(node), {
+    onNone: () => '',
+    onSome: (value) =>
+      Match.value(value).pipe(
+        Match.when({ type: 'VariableDeclaration' }, (n) => variableDeclarationText(ctx, n)),
+        Match.orElse((n) => printNodePrec(ctx, n, PREC.Sequence)),
+      ),
+  })
+
+const optionalSequenceText = (ctx: PrintContext, node: Node | null | undefined): string =>
+  sequenceNodeText(ctx, node)
+
+const forInStatementText = (ctx: PrintContext, node: ForInStatement): string =>
+  `for (${Match.value(node.left).pipe(
+    Match.when({ type: 'VariableDeclaration' }, (n) => variableDeclarationText(ctx, n)),
+    Match.orElse((n) => printNodePrec(ctx, n, PREC.Sequence)),
+  )} in ${printNodePrec(ctx, node.right, PREC.Sequence)}) ${statementOrBlockText(ctx, node.body)}`
+
+const forOfStatementText = (ctx: PrintContext, node: ForOfStatement): string =>
+  `${Boolean.match(node.await, {
+    onTrue: () => 'for await (',
+    onFalse: () => 'for (',
+  })}${declarationOrExpressionText(ctx, node.left)} of ${sequenceNodeText(ctx, node.right)}) ${statementOrBlockText(
+    ctx,
+    node.body,
+  )}`
+
+const returnStatementText = (ctx: PrintContext, node: ReturnStatement): string =>
+  Option.match(Option.fromNull(node.argument), {
+    onSome: (argument) => `return ${printNodePrec(ctx, argument, PREC.Sequence)};`,
+    onNone: () => 'return;',
+  })
+
+const withStatementText = (ctx: PrintContext, node: WithStatement): string =>
+  `with (${printNodePrec(ctx, node.object, PREC.Sequence)}) ${statementOrBlockText(ctx, node.body)}`
+
+const switchStatementText = (ctx: PrintContext, node: SwitchStatement): string => {
+  const inner: PrintContext = { indentLevel: ctx.indentLevel + 1 }
+  return `switch (${sequenceNodeText(ctx, node.discriminant)}) {\n${node.cases
+    .map((switchCase) => `${indent(inner)}${switchCaseText(inner, switchCase)}`)
+    .join('')}${indent(ctx)}}`
 }
 
-function printTSInstantiationExpression(state: PrintState, node: TSInstantiationExpression, _prec: number): void {
-  printNodePrec(state, node.expression, PREC.Member)
-  printTSTypeParameterInstantiation(state, node.typeArguments)
-}
+const switchCaseText = (ctx: PrintContext, node: SwitchCase): string =>
+  `${switchCaseHeaderText(ctx, node)}${indentedBodyText(ctx, node.consequent, statementText)}`
 
-function printStatement(state: PrintState, node: Statement): void {
-  printAttachedComments(state, node, 'leadingComments')
-  printStatementKind(state, node)
-  printAttachedComments(state, node, 'trailingComments')
-}
+const switchCaseHeaderText = (ctx: PrintContext, node: SwitchCase): string =>
+  Option.match(Option.fromNull(node.test), {
+    onSome: (test) => `case ${sequenceNodeText(ctx, test)}:\n`,
+    onNone: () => 'default:\n',
+  })
 
-function printStatementKind(state: PrintState, node: Statement): void {
-  switch (node.type) {
-    case 'BlockStatement':
-      printBlockStatement(state, node)
-      break
-    case 'VariableDeclaration':
-      printVariableDeclaration(state, node)
-      state.out += ';'
-      break
-    case 'FunctionDeclaration':
-    case 'FunctionExpression':
-    case 'TSDeclareFunction':
-    case 'TSEmptyBodyFunctionExpression':
-      printFunction(state, node, PREC.Sequence)
-      break
-    case 'ClassDeclaration':
-    case 'ClassExpression':
-      printClass(state, node, PREC.Sequence)
-      break
-    case 'ExpressionStatement':
-      printExpressionStatement(state, node)
-      break
-    case 'IfStatement':
-      printIfStatement(state, node)
-      break
-    case 'ForStatement':
-      printForStatement(state, node)
-      break
-    case 'ForInStatement':
-      printForInStatement(state, node)
-      break
-    case 'ForOfStatement':
-      printForOfStatement(state, node)
-      break
-    case 'WhileStatement':
-      printWhileStatement(state, node)
-      break
-    case 'DoWhileStatement':
-      printDoWhileStatement(state, node)
-      break
-    case 'ReturnStatement':
-      printReturnStatement(state, node)
-      break
-    case 'ThrowStatement':
-      state.out += 'throw '
-      printNodePrec(state, node.argument, PREC.Sequence)
-      state.out += ';'
-      break
-    case 'TryStatement':
-      printTryStatement(state, node)
-      break
-    case 'SwitchStatement':
-      printSwitchStatement(state, node)
-      break
-    case 'LabeledStatement':
-      printLabeledStatement(state, node)
-      break
-    case 'BreakStatement':
-    case 'ContinueStatement':
-    case 'DebuggerStatement':
-    case 'EmptyStatement':
-      printNodePrec(state, node, PREC.Sequence)
-      break
-    case 'WithStatement':
-      printWithStatement(state, node)
-      break
-    case 'ImportDeclaration':
-      printImportDeclaration(state, node)
-      break
-    case 'ExportNamedDeclaration':
-      printExportNamedDeclaration(state, node)
-      break
-    case 'ExportDefaultDeclaration':
-      printExportDefaultDeclaration(state, node)
-      break
-    case 'ExportAllDeclaration':
-      printExportAllDeclaration(state, node)
-      break
-    case 'TSTypeAliasDeclaration':
-      printTSTypeAliasDeclaration(state, node)
-      break
-    case 'TSInterfaceDeclaration':
-      printTSInterfaceDeclaration(state, node)
-      break
-    case 'TSEnumDeclaration':
-      printTSEnumDeclaration(state, node)
-      break
-    case 'TSModuleDeclaration':
-      printTSModuleDeclaration(state, node)
-      break
-    case 'TSImportEqualsDeclaration':
-      printTSImportEqualsDeclaration(state, node)
-      break
-    case 'TSExportAssignment':
-    case 'TSNamespaceExportDeclaration':
-      printNodePrec(state, node, PREC.Sequence)
-      break
-  }
-}
+const labeledStatementText = (ctx: PrintContext, node: LabeledStatement): string =>
+  `${node.label.name}: ${statementText(ctx, node.body)}`
 
-function printAttachedComments(
-  state: PrintState,
-  node: CommentHost,
-  field: 'leadingComments' | 'trailingComments',
-): void {
-  const comments = node[field]
-  if (comments === undefined) return
-  comments.forEach((comment) => printAttachedComment(state, comment, field))
-}
+const tryStatementText = (ctx: PrintContext, node: TryStatement): string =>
+  `try ${blockStatementText(ctx, node.block)}${catchClauseText(ctx, node.handler)}${finallyClauseText(ctx, node.finalizer)}`
 
-function printAttachedComment(
-  state: PrintState,
-  comment: AttachedComment,
-  field: 'leadingComments' | 'trailingComments',
-): void {
-  if (field === 'leadingComments') {
-    state.out += `${indent(state)}${commentText(comment)}\n`
-    return
-  }
-  state.out += `${commentText(comment)} `
-}
+const catchClauseText = (ctx: PrintContext, handler: CatchClause | null | undefined): string =>
+  Option.match(Option.fromNullishOr(handler), {
+    onSome: (value) => ` catch${catchParamText(ctx, value.param)} ${blockStatementText(ctx, value.body)}`,
+    onNone: () => '',
+  })
 
-function printBlockStatement(state: PrintState, node: Extract<Node, { type: 'BlockStatement' }>): void {
-  switch (node.body.length) {
-    case 0:
-      state.out += '{}'
-      break
-    default:
-      state.out += '{\n'
-      state.out += indentedBodyText(state, node.body, (statement) => printStatement(state, statement))
-      state.out += `${indent(state)}}`
-  }
-}
+const catchParamText = (ctx: PrintContext, param: BindingPattern | null | undefined): string =>
+  Option.match(Option.fromNullishOr(param), {
+    onSome: (value) => ` (${catchParamBodyText(ctx, value)})`,
+    onNone: () => '',
+  })
 
-function printExpressionStatement(state: PrintState, node: ExpressionStatement): void {
-  if (isDirective(node.directive)) {
-    state.out += JSON.stringify(node.directive) + ';'
-    return
-  }
-  printNodePrec(state, node.expression, PREC.Sequence)
-  state.out += ';'
-}
+const catchParamBodyText = (ctx: PrintContext, param: BindingPattern): string =>
+  Match.value(param).pipe(
+    Match.when({ type: 'Identifier' }, (n) => identifierWithOptionalText(n)),
+    Match.orElse((n) => sequenceNodeText(ctx, n)),
+  )
 
-function isDirective(directive: string | null | undefined): boolean {
-  return directive != null && directive !== ''
-}
+const finallyClauseText = (ctx: PrintContext, finalizer: BlockStatement | null | undefined): string =>
+  Option.match(Option.fromNullishOr(finalizer), {
+    onSome: (value) => ` finally ${blockStatementText(ctx, value)}`,
+    onNone: () => '',
+  })
 
-function printIfStatement(state: PrintState, node: IfStatement): void {
-  state.out += 'if ('
-  printNodePrec(state, node.test, PREC.Sequence)
-  state.out += ') '
-  printStatementOrBlock(state, node.consequent)
-  if (node.alternate !== null) {
-    state.out += ' else '
-    printStatementOrBlock(state, node.alternate)
-  }
-}
+const variableDeclarationText = (ctx: PrintContext, node: VariableDeclaration): string =>
+  `${flagText(node.declare, 'declare ')}${node.kind} ${node.declarations
+    .map((declaration) => variableDeclaratorText(ctx, declaration))
+    .join(', ')}`
 
-function printStatementOrBlock(state: PrintState, node: Statement): void {
-  if (node.type === 'BlockStatement') {
-    printBlockStatement(state, node)
-    return
-  }
-  printStatement(state, node)
-}
+const variableDeclaratorText = (ctx: PrintContext, node: VariableDeclarator): string =>
+  `${bindingTargetText(ctx, node.id)}${flagText(node.definite, '!')}${typeAnnotationText(
+    ctx,
+    bindingTypeAnnotation(node.id),
+  )}${initializerText(ctx, node.init)}`
 
-function printWhileStatement(state: PrintState, node: WhileStatement): void {
-  state.out += 'while ('
-  printNodePrec(state, node.test, PREC.Sequence)
-  state.out += ') '
-  printStatementOrBlock(state, node.body)
-}
+const bindingTargetText = (ctx: PrintContext, id: BindingPattern): string =>
+  Match.value(id).pipe(
+    Match.when({ type: 'Identifier' }, (n) => `${bindingNameText(n)}${flagText(n.optional, '?')}`),
+    Match.orElse((n) => sequenceNodeText(ctx, n)),
+  )
 
-function printDoWhileStatement(state: PrintState, node: DoWhileStatement): void {
-  state.out += 'do '
-  printStatementOrBlock(state, node.body)
-  state.out += ' while ('
-  printNodePrec(state, node.test, PREC.Sequence)
-  state.out += ');'
-}
+const identifierWithOptionalText = (ctx: PrintContext, node: BindingIdentifier): string =>
+  `${bindingNameText(node)}${flagText(node.optional, '?')}${typeAnnotationText(ctx, node.typeAnnotation)}`
 
-function printForStatement(state: PrintState, node: ForStatement): void {
-  state.out += 'for ('
-  printDeclarationOrExpression(state, node.init)
-  state.out += '; '
-  state.out += optionalSequenceText(state, node.test)
-  state.out += '; '
-  state.out += optionalSequenceText(state, node.update)
-  state.out += ') '
-  printStatementOrBlock(state, node.body)
-}
+const paramText = (ctx: PrintContext, param: ParamPattern): string =>
+  Match.value(param).pipe(
+    Match.when({ type: 'RestElement' }, (n) => restParamText(ctx, n)),
+    Match.when({ type: 'TSParameterProperty' }, (n) => parameterPropertyText(ctx, n)),
+    Match.when({ type: 'Identifier' }, (n) => formalParameterText(ctx, n)),
+    Match.when({ type: 'ObjectPattern' }, (n) => formalParameterText(ctx, n)),
+    Match.when({ type: 'ArrayPattern' }, (n) => formalParameterText(ctx, n)),
+    Match.when({ type: 'AssignmentPattern' }, (n) => formalParameterText(ctx, n)),
+    Match.orElse(() => ''),
+  )
 
-function printDeclarationOrExpression(state: PrintState, node: Node | null | undefined): void {
-  if (node == null) return
-  printDeclarationOrExpressionNode(state, node)
-}
+const restParamText = (
+  ctx: PrintContext,
+  param: Extract<ParamPattern, { readonly type: 'RestElement' }>,
+): string =>
+  `...${assignmentNodeText(ctx, param.argument)}${typeAnnotationText(ctx, param.typeAnnotation)}`
 
-function printDeclarationOrExpressionNode(state: PrintState, node: Node): void {
-  if (node.type === 'VariableDeclaration') {
-    printVariableDeclaration(state, node)
-    return
-  }
-  printNodePrec(state, node, PREC.Sequence)
-}
-
-function optionalSequenceText(state: PrintState, node: Node | null | undefined): string {
-  if (node == null) return ''
-  return sequenceNodeText(state, node)
-}
-
-function printForInStatement(state: PrintState, node: ForInStatement): void {
-  state.out += 'for ('
-  if (node.left.type === 'VariableDeclaration') {
-    printVariableDeclaration(state, node.left)
-  } else {
-    printNodePrec(state, node.left, PREC.Sequence)
-  }
-  state.out += ' in '
-  printNodePrec(state, node.right, PREC.Sequence)
-  state.out += ') '
-  printStatementOrBlock(state, node.body)
-}
-
-function printForOfStatement(state: PrintState, node: ForOfStatement): void {
-  if (node.await) {
-    state.out += 'for await ('
-  } else {
-    state.out += 'for ('
-  }
-  printDeclarationOrExpression(state, node.left)
-  state.out += ' of '
-  state.out += sequenceNodeText(state, node.right)
-  state.out += ') '
-  printStatementOrBlock(state, node.body)
-}
-
-function printReturnStatement(state: PrintState, node: ReturnStatement): void {
-  if (node.argument !== null) {
-    state.out += 'return '
-    printNodePrec(state, node.argument, PREC.Sequence)
-    state.out += ';'
-    return
-  }
-  state.out += 'return;'
-}
-
-function printWithStatement(state: PrintState, node: WithStatement): void {
-  state.out += 'with ('
-  printNodePrec(state, node.object, PREC.Sequence)
-  state.out += ') '
-  printStatementOrBlock(state, node.body)
-}
-
-function printSwitchStatement(state: PrintState, node: SwitchStatement): void {
-  state.out += `switch (${sequenceNodeText(state, node.discriminant)}) {\n`
-  state.indentLevel++
-  state.out += node.cases
-    .map((switchCase) => `${indent(state)}${capture(state, () => printSwitchCase(state, switchCase))}`)
-    .join('')
-  state.indentLevel--
-  state.out += `${indent(state)}}`
-}
-
-function printSwitchCase(state: PrintState, node: SwitchCase): void {
-  state.out += switchCaseHeaderText(state, node)
-  state.out += indentedBodyText(state, node.consequent, (statement: Statement) => printStatement(state, statement))
-}
-
-function switchCaseHeaderText(state: PrintState, node: SwitchCase): string {
-  if (node.test !== null) return `case ${sequenceNodeText(state, node.test)}:\n`
-  return 'default:\n'
-}
-
-function printLabeledStatement(state: PrintState, node: LabeledStatement): void {
-  state.out += `${node.label.name}: `
-  printStatement(state, node.body)
-}
-
-function printTryStatement(state: PrintState, node: TryStatement): void {
-  state.out += 'try '
-  printBlockStatement(state, node.block)
-  printCatchClause(state, node.handler)
-  printFinallyClause(state, node.finalizer)
-}
-
-function printCatchClause(state: PrintState, handler: CatchClause | null | undefined): void {
-  if (handler == null) return
-  state.out += ` catch${catchParamText(state, handler.param)} `
-  printBlockStatement(state, handler.body)
-}
-
-function catchParamText(state: PrintState, param: BindingPattern | null | undefined): string {
-  if (param == null) return ''
-  return ` (${catchParamBodyText(state, param)})`
-}
-
-function catchParamBodyText(state: PrintState, param: BindingPattern): string {
-  if (param.type === 'Identifier') return identifierWithOptionalText(state, param)
-  return sequenceNodeText(state, param)
-}
-
-function printFinallyClause(state: PrintState, finalizer: BlockStatement | null | undefined): void {
-  if (finalizer == null) return
-  state.out += ' finally '
-  printBlockStatement(state, finalizer)
-}
-
-function printVariableDeclaration(state: PrintState, node: VariableDeclaration): void {
-  state.out += `${flagText(node.declare, 'declare ')}${node.kind} `
-  state.out += node.declarations.map((declaration) => variableDeclaratorText(state, declaration)).join(', ')
-}
-
-function variableDeclaratorText(state: PrintState, node: VariableDeclarator): string {
-  return capture(state, () => printVariableDeclarator(state, node))
-}
-
-function printVariableDeclarator(state: PrintState, node: VariableDeclarator): void {
-  state.out += bindingTargetText(state, node.id)
-  state.out += flagText(node.definite, '!')
-  state.out += typeAnnotationText(state, bindingTypeAnnotation(node.id))
-  state.out += initializerText(state, node.init)
-}
-
-function bindingTargetText(state: PrintState, id: BindingPattern): string {
-  if (id.type === 'Identifier') return `${bindingNameText(id)}${flagText(id.optional, '?')}`
-  return sequenceNodeText(state, id)
-}
-
-function identifierWithOptionalText(state: PrintState, node: BindingIdentifier): string {
-  return `${bindingNameText(node)}${flagText(node.optional, '?')}${typeAnnotationText(state, node.typeAnnotation)}`
-}
-
-function printParams(state: PrintState, params: readonly ParamPattern[]): void {
-  state.out += params.map((param) => paramText(state, param)).join(', ')
-}
-
-function paramText(state: PrintState, param: ParamPattern): string {
-  switch (param.type) {
-    case 'RestElement':
-      return restParamText(state, param)
-    case 'TSParameterProperty':
-      return parameterPropertyText(state, param)
-    case 'Identifier':
-    case 'ObjectPattern':
-    case 'ArrayPattern':
-    case 'AssignmentPattern':
-      return formalParameterText(state, param)
-  }
-}
-
-function restParamText(state: PrintState, param: Extract<ParamPattern, { readonly type: 'RestElement' }>): string {
-  return `...${assignmentNodeText(state, param.argument)}${typeAnnotationText(state, param.typeAnnotation)}`
-}
-
-function parameterPropertyText(
-  state: PrintState,
+const parameterPropertyText = (
+  ctx: PrintContext,
   param: Extract<ParamPattern, { readonly type: 'TSParameterProperty' }>,
-): string {
-  return `${capture(state, () => printDecorators(state, param.decorators))}${parameterPropertyModifiers(param)}${
-    parameterPropertyTargetText(state, param.parameter)
-  }`
+): string =>
+  `${decoratorsText(ctx, param.decorators)}${parameterPropertyModifiers(param)}${parameterPropertyTargetText(
+    ctx,
+    param.parameter,
+  )}`
+
+const parameterPropertyTargetText = (ctx: PrintContext, parameter: BindingPattern): string =>
+  Match.value(parameter).pipe(
+    Match.when({ type: 'Identifier' }, (n) => identifierWithOptionalText(n)),
+    Match.orElse((n) => sequenceNodeText(ctx, n)),
+  )
+
+const formalParameterText = (ctx: PrintContext, param: BindingPattern): string =>
+  `${decoratorsText(ctx, param.decorators)}${formalParameterBodyText(ctx, param)}`
+
+const formalParameterBodyText = (ctx: PrintContext, param: BindingPattern): string =>
+  Match.value(param).pipe(
+    Match.when(
+      { type: 'Identifier' },
+      (n) => identifierWithOptionalText(n),
+    ),
+    Match.orElse(
+      (n) => `${assignmentNodeText(ctx, n)}${typeAnnotationText(ctx, bindingTypeAnnotation(n))}`,
+    ),
+  )
+
+const classBodyText = (ctx: PrintContext, node: ClassBody): string =>
+  Boolean.match(node.body.length === 0, {
+    onTrue: () => '{}',
+    onFalse: () =>
+      `{\n${indentedBodyText(
+        ctx,
+        node.body,
+        (inner, element) => printNodePrec(inner, element, PREC.Sequence),
+      )}${indent(ctx)}}`,
+  })
+
+const indentedBodyText = <T>(
+  ctx: PrintContext,
+  items: readonly T[],
+  print: (ctx: PrintContext, item: T) => string,
+): string => {
+  const inner: PrintContext = { indentLevel: ctx.indentLevel + 1 }
+  return items.map((item) => `${indent(inner)}${print(inner, item)}\n`).join('')
 }
 
-function parameterPropertyTargetText(state: PrintState, parameter: BindingPattern): string {
-  if (parameter.type === 'Identifier') return identifierWithOptionalText(state, parameter)
-  return sequenceNodeText(state, parameter)
+const methodDefinitionText = (ctx: PrintContext, node: MethodDefinition): string =>
+  `${decoratorsText(ctx, node.decorators)}${methodDefinitionPrefix(node, node.value)}${propertyKeyText(
+    ctx,
+    node.key,
+    node.computed === true,
+    PREC.Sequence,
+  )}${flagText(node.optional, '?')}${functionTailText(ctx, node.value)}`
+
+const propertyDefinitionText = (ctx: PrintContext, node: PropertyDefinition): string =>
+  `${decoratorsText(ctx, node.decorators)}${propertyDefinitionModifiers(node)}${propertyKeyText(
+    ctx,
+    node.key,
+    node.computed === true,
+    PREC.Sequence,
+  )}${flagText(node.optional, '?')}${flagText(node.definite, '!')}${typeAnnotationText(
+    ctx,
+    node.typeAnnotation,
+  )}${initializerText(ctx, node.value)};`
+
+const accessorPropertyText = (ctx: PrintContext, node: AccessorProperty): string =>
+  `${decoratorsText(ctx, node.decorators)}${flagText(node.accessibility, `${node.accessibility} `)}${flagText(
+    node.static,
+    'static ',
+  )}${flagText(node.override, 'override ')}accessor ${propertyKeyText(
+    ctx,
+    node.key,
+    node.computed === true,
+    PREC.Sequence,
+  )}${flagText(node.definite, '!')}${typeAnnotationText(ctx, node.typeAnnotation)}${initializerText(
+    ctx,
+    node.value,
+  )};`
+
+const initializerText = (ctx: PrintContext, value: Node | null | undefined): string =>
+  flagText(value, ` = ${assignmentNodeText(ctx, value)}`)
+
+const staticBlockText = (ctx: PrintContext, node: StaticBlock): string => {
+  const inner: PrintContext = { indentLevel: ctx.indentLevel + 1 }
+  return `static {\n${node.body
+    .map((stmt) => `${indent(inner)}${statementText(inner, stmt)}\n`)
+    .join('')}${indent(ctx)}}`
 }
 
-function formalParameterText(state: PrintState, param: BindingPattern): string {
-  return `${capture(state, () => printDecorators(state, param.decorators))}${formalParameterBodyText(state, param)}`
+const importDeclarationText = (ctx: PrintContext, node: ImportDeclaration): string => {
+  const source = importSourceText(node.source, node.attributes)
+  return `import ${importKindText(node)}${importClauseText(node, source)};`
 }
 
-function formalParameterBodyText(state: PrintState, param: BindingPattern): string {
-  if (param.type === 'Identifier') return identifierWithOptionalText(state, param)
-  return `${assignmentNodeText(state, param)}${typeAnnotationText(state, bindingTypeAnnotation(param))}`
-}
+const importClauseText = (node: ImportDeclaration, source: string): string =>
+  Boolean.match(node.specifiers.length === 0, {
+    onTrue: () => source,
+    onFalse: () => `${importBindingsText(node.specifiers)} from ${source}`,
+  })
 
-function printClassBody(state: PrintState, node: ClassBody): void {
-  switch (node.body.length) {
-    case 0:
-      state.out += '{}'
-      break
-    default:
-      state.out += '{\n'
-      state.out += indentedBodyText(state, node.body, (element) => printNodePrec(state, element, PREC.Sequence))
-      state.out += `${indent(state)}}`
-  }
-}
+const importSourceText = (source: StringLiteral, attrs: readonly ImportAttribute[]): string =>
+  `${source.raw ?? JSON.stringify(source.value)}${importAttributesText(attrs)}`
 
-function indentedBodyText<T>(state: PrintState, items: readonly T[], print: (item: T) => void): string {
-  state.indentLevel++
-  const body = items.map((item) => `${indent(state)}${capture(state, () => print(item))}\n`).join('')
-  state.indentLevel--
-  return body
-}
+const exportNamedDeclarationText = (ctx: PrintContext, node: ExportNamedDeclaration): string =>
+  Option.match(Option.fromNull(node.declaration), {
+    onSome: (declaration) => `export ${statementText(ctx, declaration)}`,
+    onNone: () =>
+      `export ${flagText(node.exportKind === 'type', 'type ')}{ ${node.specifiers
+        .map((specifier) => exportSpecifierText(specifier))
+        .join(', ')} }${exportSourceClauseText(node)};`,
+  })
 
-function printMethodDefinition(state: PrintState, node: MethodDefinition): void {
-  const fn = node.value
-  state.out += capture(state, () => printDecorators(state, node.decorators))
-  state.out += methodDefinitionPrefix(node, fn)
-  state.out += propertyKeyText(state, node.key, node.computed === true, PREC.Sequence)
-  state.out += flagText(node.optional, '?')
-  printFunctionTail(state, fn)
-}
+const exportSourceClauseText = (node: ExportNamedDeclaration): string =>
+  Option.match(Option.fromNull(node.source), {
+    onSome: (source) => ` from ${JSON.stringify(source.value)}${importAttributesText(node.attributes)}`,
+    onNone: () => '',
+  })
 
-function printPropertyDefinition(state: PrintState, node: PropertyDefinition): void {
-  state.out += capture(state, () => printDecorators(state, node.decorators))
-  state.out += propertyDefinitionModifiers(node)
-  state.out += propertyKeyText(state, node.key, node.computed === true, PREC.Sequence)
-  state.out += flagText(node.optional, '?')
-  state.out += flagText(node.definite, '!')
-  state.out += typeAnnotationText(state, node.typeAnnotation)
-  state.out += initializerText(state, node.value)
-  state.out += ';'
-}
+const exportDefaultDeclarationText = (ctx: PrintContext, node: ExportDefaultDeclaration): string =>
+  `export default ${Match.value(node.declaration).pipe(
+    Match.when(isBareDefaultExport, (declaration) => statementText(ctx, declaration)),
+    Match.orElse((declaration) => `${printNodePrec(ctx, declaration, PREC.Assignment)};`),
+  )}`
 
-function printAccessorProperty(state: PrintState, node: AccessorProperty): void {
-  state.out += capture(state, () => printDecorators(state, node.decorators))
-  state.out += flagText(node.accessibility, `${node.accessibility} `)
-  state.out += flagText(node.static, 'static ')
-  state.out += flagText(node.override, 'override ')
-  state.out += 'accessor '
-  state.out += propertyKeyText(state, node.key, node.computed === true, PREC.Sequence)
-  state.out += flagText(node.definite, '!')
-  state.out += typeAnnotationText(state, node.typeAnnotation)
-  state.out += initializerText(state, node.value)
-  state.out += ';'
-}
+const exportAllDeclarationText = (ctx: PrintContext, node: ExportAllDeclaration): string =>
+  `export ${flagText(node.exportKind === 'type', 'type ')}*${exportedNameClauseText(node.exported)} from ${JSON.stringify(node.source.value)}${importAttributesText(node.attributes)};`
 
-function initializerText(state: PrintState, value: Node | null | undefined): string {
-  return flagText(value, ` = ${assignmentNodeText(state, value)}`)
-}
+const tsTypeAliasDeclarationText = (ctx: PrintContext, node: TSTypeAliasDeclaration): string =>
+  `${flagText(node.declare, 'declare ')}type ${node.id.name}${typeParametersText(ctx, node.typeParameters)} = ${printTSTypeToString(ctx, node.typeAnnotation)};`
 
-function printStaticBlock(state: PrintState, node: StaticBlock): void {
-  state.out += 'static {\n'
-  state.indentLevel++
-  for (const stmt of node.body) {
-    state.out += indent(state)
-    printStatement(state, stmt)
-    state.out += '\n'
-  }
-  state.indentLevel--
-  state.out += `${indent(state)}}`
-}
+const tsInterfaceDeclarationText = (ctx: PrintContext, node: TSInterfaceDeclaration): string =>
+  `${flagText(node.declare, 'declare ')}interface ${node.id.name}${typeParametersText(
+    ctx,
+    node.typeParameters,
+  )}${interfaceExtendsText(ctx, node.extends)} ${tsInterfaceBodyText(ctx, node.body)}`
 
-function printImportDeclaration(state: PrintState, node: ImportDeclaration): void {
-  const source = printImportSource(node.source, node.attributes)
-  state.out += `import ${importKindText(node)}${importClauseText(node, source)};`
-}
-
-function importClauseText(node: ImportDeclaration, source: string): string {
-  if (node.specifiers.length === 0) return source
-  return `${importBindingsText(node.specifiers)} from ${source}`
-}
-
-function printImportSource(source: StringLiteral, attrs: readonly ImportAttribute[]): string {
-  const raw = source.raw ?? JSON.stringify(source.value)
-  return `${raw}${importAttributesText(attrs)}`
-}
-
-function printExportNamedDeclaration(state: PrintState, node: ExportNamedDeclaration): void {
-  const declaration = node.declaration
-  if (declaration !== null) {
-    state.out += `export ${capture(state, () => printStatement(state, declaration))}`
-    return
-  }
-  state.out += `export ${flagText(node.exportKind === 'type', 'type ')}{ ${
-    node.specifiers.map((specifier) => exportSpecifierText(specifier)).join(', ')
-  } }${exportSourceClauseText(node)};`
-}
-
-function exportSourceClauseText(node: ExportNamedDeclaration): string {
-  if (node.source === null) return ''
-  const rendered = ` from ${JSON.stringify(node.source.value)}${importAttributesText(node.attributes)}`
-  return rendered
-}
-
-function printExportDefaultDeclaration(state: PrintState, node: ExportDefaultDeclaration): void {
-  state.out += 'export default '
-  printExportDefaultDeclarationBody(state, node.declaration)
-}
-
-function printExportDefaultDeclarationBody(
-  state: PrintState,
-  declaration: ExportDefaultDeclaration['declaration'],
-): void {
-  if (isBareDefaultExport(declaration)) {
-    printStatement(state, declaration)
-    return
-  }
-  printNodePrec(state, declaration, PREC.Assignment)
-  state.out += ';'
-}
-
-function printExportAllDeclaration(state: PrintState, node: ExportAllDeclaration): void {
-  state.out += `export ${flagText(node.exportKind === 'type', 'type ')}*${exportedNameClauseText(node.exported)}`
-  state.out += ` from ${JSON.stringify(node.source.value)}${importAttributesText(node.attributes)};`
-}
-
-function printTSTypeAliasDeclaration(state: PrintState, node: TSTypeAliasDeclaration): void {
-  state.out += `${flagText(node.declare, 'declare ')}type ${node.id.name}${
-    typeParametersText(state, node.typeParameters)
-  } = ${printTSTypeToString(state, node.typeAnnotation)};`
-}
-
-function printTSInterfaceDeclaration(state: PrintState, node: TSInterfaceDeclaration): void {
-  state.out += `${flagText(node.declare, 'declare ')}interface ${node.id.name}${
-    typeParametersText(state, node.typeParameters)
-  }`
-  state.out += interfaceExtendsText(state, node.extends)
-  state.out += ' '
-  printTSInterfaceBody(state, node.body)
-}
-
-function interfaceExtendsText(state: PrintState, extensions: TSInterfaceDeclaration['extends']): string {
-  const rendered = extensions.map((heritage) => heritageText(state, heritage)).join(', ')
+const interfaceExtendsText = (ctx: PrintContext, extensions: TSInterfaceDeclaration['extends']): string => {
+  const rendered = extensions.map((heritage) => heritageText(ctx, heritage)).join(', ')
   return flagText(rendered, ` extends ${rendered}`)
 }
 
-function printTSInterfaceBody(state: PrintState, node: TSInterfaceBody): void {
-  switch (node.body.length) {
-    case 0:
-      state.out += '{}'
-      break
-    default:
-      state.out += '{\n'
-      state.out += indentedBodyText(state, node.body, (member) => printTSSignature(state, member))
-      state.out += `${indent(state)}}`
-  }
+const tsInterfaceBodyText = (ctx: PrintContext, node: TSInterfaceBody): string =>
+  Boolean.match(node.body.length === 0, {
+    onTrue: () => '{}',
+    onFalse: () => `{\n${indentedBodyText(ctx, node.body, printTSSignatureText)}${indent(ctx)}}`,
+  })
+
+const printTSSignatureText = (ctx: PrintContext, sig: TSInterfaceBody['body'][number]): string =>
+  Match.value(sig).pipe(
+    Match.when({ type: 'TSPropertySignature' }, (n) => printTSPropertySignatureText(ctx, n)),
+    Match.when({ type: 'TSIndexSignature' }, (n) => printTSIndexSignatureText(ctx, n)),
+    Match.when({ type: 'TSCallSignatureDeclaration' }, (n) => printTSCallSignatureText(ctx, n)),
+    Match.when({ type: 'TSConstructSignatureDeclaration' }, (n) => printTSConstructSignatureText(ctx, n)),
+    Match.when({ type: 'TSMethodSignature' }, (n) => printTSMethodSignatureText(ctx, n)),
+    Match.orElse(() => ''),
+  )
+
+const printTSPropertySignatureText = (ctx: PrintContext, node: TSPropertySignature): string =>
+  `${flagText(node.readonly, 'readonly ')}${propertyKeyText(ctx, node.key, node.computed === true, PREC.Sequence)}${flagText(node.optional, '?')}${typeAnnotationText(ctx, node.typeAnnotation)};`
+
+const printTSIndexSignatureText = (ctx: PrintContext, node: TSIndexSignature): string => {
+  const parameters = node.parameters.map((parameter) => indexParameterText(ctx, parameter)).join(', ')
+  return `${flagText(node.readonly, 'readonly ')}${flagText(node.static, 'static ')}[${parameters}]${typeAnnotationText(ctx, node.typeAnnotation)};`
 }
 
-function printTSSignature(state: PrintState, sig: TSInterfaceBody['body'][number]): void {
-  switch (sig.type) {
-    case 'TSPropertySignature':
-      printTSPropertySignature(state, sig)
-      return
-    case 'TSIndexSignature':
-      printTSIndexSignature(state, sig)
-      return
-    case 'TSCallSignatureDeclaration':
-      printTSCallSignature(state, sig)
-      return
-    case 'TSConstructSignatureDeclaration':
-      printTSConstructSignature(state, sig)
-      return
-    case 'TSMethodSignature':
-      printTSMethodSignature(state, sig)
-  }
+const indexParameterText = (ctx: PrintContext, parameter: TSIndexSignature['parameters'][number]): string =>
+  `${parameter.name}: ${printTSTypeToString(ctx, parameter.typeAnnotation.typeAnnotation)}`
+
+const printTSCallSignatureText = (ctx: PrintContext, node: TSCallSignatureDeclaration): string =>
+  `${typeParametersText(ctx, node.typeParameters)}(${paramsText(ctx, node.params)})${typeAnnotationText(ctx, node.returnType)};`
+
+const printTSConstructSignatureText = (ctx: PrintContext, node: TSConstructSignatureDeclaration): string =>
+  `new ${typeParametersText(ctx, node.typeParameters)}(${paramsText(ctx, node.params)})${typeAnnotationText(ctx, node.returnType)};`
+
+const printTSMethodSignatureText = (ctx: PrintContext, node: TSMethodSignature): string =>
+  `${methodKindText(node.kind)}${propertyKeyText(ctx, node.key, node.computed === true, PREC.Sequence)}${flagText(node.optional, '?')}${typeParametersText(ctx, node.typeParameters)}(${paramsText(ctx, node.params)})${typeAnnotationText(ctx, node.returnType)};`
+
+const tsEnumDeclarationText = (ctx: PrintContext, node: TSEnumDeclaration): string =>
+  `${flagText(node.declare, 'declare ')}${flagText(node.const, 'const ')}enum ${node.id.name} {\n${indentedBodyText(
+    ctx,
+    node.body.members,
+    printEnumMemberText,
+  )}${indent(ctx)}}`
+
+const printEnumMemberText = (ctx: PrintContext, member: TSEnumDeclaration['body']['members'][number]): string =>
+  `${identifierOrLiteralNameText(ctx, member.id)}${initializerText(ctx, member.initializer)},`
+
+const identifierOrLiteralNameText = (ctx: PrintContext, id: Node): string =>
+  Match.value(id).pipe(
+    Match.when({ type: 'Identifier' }, (n) => identifierNameText(n)),
+    Match.when({ type: 'Literal' }, (n) => literalText(n)),
+    Match.orElse((n) => sequenceNodeText(ctx, n)),
+  )
+
+const tsModuleDeclarationText = (ctx: PrintContext, node: Extract<Node, { type: 'TSModuleDeclaration' }>): string =>
+  `${flagText(node.declare, 'declare ')}${moduleHeaderText(ctx, node)}${moduleBodyText(ctx, node)}`
+
+const moduleHeaderText = (ctx: PrintContext, node: Extract<Node, { type: 'TSModuleDeclaration' }>): string =>
+  Boolean.match(node.global === true, {
+    onTrue: () => 'global ',
+    onFalse: () => `${node.kind} ${identifierOrLiteralNameText(ctx, node.id)}`,
+  })
+
+const moduleBodyText = (ctx: PrintContext, node: Extract<Node, { type: 'TSModuleDeclaration' }>): string =>
+  Option.match(Option.fromNull(node.body), {
+    onSome: (body) => ` ${tsModuleBlockText(ctx, body)}`,
+    onNone: () => ';',
+  })
+
+const tsModuleBlockText = (ctx: PrintContext, node: Extract<Node, { type: 'TSModuleBlock' }>): string =>
+  `{\n${indentedBodyText(ctx, node.body, statementText)}${indent(ctx)}}`
+
+const tsImportEqualsDeclarationText = (ctx: PrintContext, node: TSImportEqualsDeclaration): string =>
+  `import ${flagText(node.importKind === 'type', 'type ')}${node.id.name} = ${moduleReferenceText(ctx, node.moduleReference)};`
+
+const moduleReferenceText = (
+  ctx: PrintContext,
+  reference: TSImportEqualsDeclaration['moduleReference'],
+): string =>
+  Match.value(reference).pipe(
+    Match.when(
+      { type: 'TSExternalModuleReference' },
+      (n) => `require(${externalModuleArgumentText(n.expression.value)})`,
+    ),
+    Match.orElse((n) => sequenceNodeText(ctx, n)),
+  )
+
+const printTSTypeToString = (ctx: PrintContext, node: TSType): string =>
+  Match.value(node).pipe(
+    Match.when({ type: 'TSAnyKeyword' }, () => 'any'),
+    Match.when({ type: 'TSStringKeyword' }, () => 'string'),
+    Match.when({ type: 'TSBooleanKeyword' }, () => 'boolean'),
+    Match.when({ type: 'TSNumberKeyword' }, () => 'number'),
+    Match.when({ type: 'TSBigIntKeyword' }, () => 'bigint'),
+    Match.when({ type: 'TSSymbolKeyword' }, () => 'symbol'),
+    Match.when({ type: 'TSVoidKeyword' }, () => 'void'),
+    Match.when({ type: 'TSUndefinedKeyword' }, () => 'undefined'),
+    Match.when({ type: 'TSNullKeyword' }, () => 'null'),
+    Match.when({ type: 'TSNeverKeyword' }, () => 'never'),
+    Match.when({ type: 'TSUnknownKeyword' }, () => 'unknown'),
+    Match.when({ type: 'TSObjectKeyword' }, () => 'object'),
+    Match.when({ type: 'TSIntrinsicKeyword' }, () => 'intrinsic'),
+    Match.when({ type: 'TSThisType' }, () => 'this'),
+    Match.when(
+      { type: 'TSTypeReference' },
+      (n) => `${printTSTypeName(ctx, n.typeName)}${typeArgumentsText(ctx, n.typeArguments)}`,
+    ),
+    Match.when({ type: 'TSUnionType' }, (n) => tsTypeListText(ctx, n.types, ' | ')),
+    Match.when({ type: 'TSIntersectionType' }, (n) => tsTypeListText(ctx, n.types, ' & ')),
+    Match.when({ type: 'TSArrayType' }, (n) => `${arrayElementTypeText(ctx, n.elementType)}[]`),
+    Match.when({ type: 'TSTypeLiteral' }, (n) => printTSTypeLiteral(ctx, n.members)),
+    Match.when({ type: 'TSTupleType' }, (n) => printTupleType(ctx, n.elementTypes)),
+    Match.when(
+      { type: 'TSConditionalType' },
+      (n) =>
+        `${printTSTypeToString(ctx, n.checkType)} extends ${printTSTypeToString(ctx, n.extendsType)} ? ${printTSTypeToString(ctx, n.trueType)} : ${printTSTypeToString(ctx, n.falseType)}`,
+    ),
+    Match.when(
+      { type: 'TSInferType' },
+      (n) => `infer ${n.typeParameter.name.name}${printTypeClause(ctx, ' extends ', n.typeParameter.constraint)}`,
+    ),
+    Match.when(
+      { type: 'TSTypeQuery' },
+      (n) => `typeof ${printTypeQueryName(ctx, n)}${typeArgumentsText(ctx, n.typeArguments)}`,
+    ),
+    Match.when({ type: 'TSImportType' }, (n) => printTSImportType(ctx, n)),
+    Match.when(
+      { type: 'TSTypeOperator' },
+      (n) => `${n.operator} ${printTSTypeToString(ctx, n.typeAnnotation)}`,
+    ),
+    Match.when({ type: 'TSMappedType' }, (n) => printMappedType(ctx, n)),
+    Match.when({ type: 'TSTemplateLiteralType' }, (n) => printTSTemplateLiteral(ctx, n)),
+    Match.when(
+      { type: 'TSFunctionType' },
+      (n) =>
+        `${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
+    ),
+    Match.when(
+      { type: 'TSConstructorType' },
+      (n) =>
+        `${flagText(n.abstract, 'abstract ')}new ${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
+    ),
+    Match.when({ type: 'TSTypePredicate' }, (n) => printTSTypePredicate(ctx, n)),
+    Match.when(
+      { type: 'TSIndexedAccessType' },
+      (n) => `${printTSTypeToString(ctx, n.objectType)}[${printTSTypeToString(ctx, n.indexType)}]`,
+    ),
+    Match.when({ type: 'TSNamedTupleMember' }, (n) => printNamedTupleMember(ctx, n)),
+    Match.when({ type: 'TSLiteralType' }, (n) => printTSLiteralType(ctx, n.literal)),
+    Match.when(
+      { type: 'TSParenthesizedType' },
+      (n) => `(${printTSTypeToString(ctx, n.typeAnnotation)})`,
+    ),
+    Match.when({ type: 'TSJSDocNullableType' }, (n) => printJSDocPostfixModifier(ctx, n, '?')),
+    Match.when({ type: 'TSJSDocNonNullableType' }, (n) => printJSDocPostfixModifier(ctx, n, '!')),
+    Match.when({ type: 'TSJSDocUnknownType' }, () => '?'),
+    Match.orElse(() => ''),
+  )
+
+const tsTypeListText = (ctx: PrintContext, types: readonly TSType[], separator: string): string =>
+  types.map((type) => printTSTypeToString(ctx, type)).join(separator)
+
+const arrayElementTypeText = (ctx: PrintContext, type: TSType): string =>
+  parenthesizedIf(
+    ARRAY_ELEMENT_WRAPPED_KINDS[type.type] === true,
+    printTSTypeToString(ctx, type),
+  )
+
+const printTSTypeLiteral = (ctx: PrintContext, members: readonly TSInterfaceBody['body'][number][]): string =>
+  Boolean.match(members.length === 0, {
+    onTrue: () => '{}',
+    onFalse: () => `{ ${members.map((member) => signatureText(ctx, member)).join('; ')} }`,
+  })
+
+const signatureText = (ctx: PrintContext, member: TSInterfaceBody['body'][number]): string => {
+  const printed = printTSSignatureText(ctx, member)
+  return Boolean.match(printed.endsWith(';'), {
+    onTrue: () => printed.slice(0, -1),
+    onFalse: () => printed,
+  })
 }
 
-function printTSPropertySignature(state: PrintState, node: TSPropertySignature): void {
-  state.out += `${flagText(node.readonly, 'readonly ')}${
-    propertyKeyText(state, node.key, node.computed === true, PREC.Sequence)
-  }${flagText(node.optional, '?')}${typeAnnotationText(state, node.typeAnnotation)};`
-}
+const printTupleType = (ctx: PrintContext, elements: TSTupleType['elementTypes']): string =>
+  `[${elements.map((element) => printTupleElement(ctx, element)).join(', ')}]`
 
-function printTSIndexSignature(state: PrintState, node: TSIndexSignature): void {
-  const parameters = node.parameters.map((parameter) => indexParameterText(state, parameter)).join(', ')
-  state.out += `${flagText(node.readonly, 'readonly ')}${flagText(node.static, 'static ')}[${parameters}]${
-    typeAnnotationText(state, node.typeAnnotation)
-  };`
-}
+const printTupleElement = (ctx: PrintContext, element: TSTupleType['elementTypes'][number]): string =>
+  Match.value(element).pipe(
+    Match.when({ type: 'TSRestType' }, (n) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`),
+    Match.when({ type: 'TSOptionalType' }, (n) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`),
+    Match.when({ type: 'TSNamedTupleMember' }, (n) => printNamedTupleMember(ctx, n)),
+    Match.when(isTSType, (n) => printTSTypeToString(ctx, n)),
+    Match.orElse(() => ''),
+  )
 
-function indexParameterText(state: PrintState, parameter: TSIndexSignature['parameters'][number]): string {
-  return `${parameter.name}: ${printTSTypeToString(state, parameter.typeAnnotation.typeAnnotation)}`
-}
+const printNamedTupleMember = (ctx: PrintContext, member: TSNamedTupleMember): string =>
+  `${member.label.name}${flagText(member.optional, '?')}: ${printTupleElement(ctx, member.elementType)}`
 
-function printTSCallSignature(state: PrintState, node: TSCallSignatureDeclaration): void {
-  state.out += `${typeParametersText(state, node.typeParameters)}(${paramsText(state, node.params)})${
-    typeAnnotationText(state, node.returnType)
-  };`
-}
+const printTypeClause = (ctx: PrintContext, keyword: string, type: TSType | null | undefined): string =>
+  Option.match(Option.fromNullishOr(type), {
+    onSome: (value) => `${keyword}${printTSTypeToString(ctx, value)}`,
+    onNone: () => '',
+  })
 
-function printTSConstructSignature(state: PrintState, node: TSConstructSignatureDeclaration): void {
-  state.out += `new ${typeParametersText(state, node.typeParameters)}(${paramsText(state, node.params)})${
-    typeAnnotationText(state, node.returnType)
-  };`
-}
+const printTypeQueryName = (ctx: PrintContext, node: TSTypeQuery): string =>
+  Match.value(node.exprName).pipe(
+    Match.when({ type: 'TSImportType' }, (n) => printTSTypeToString(ctx, n)),
+    Match.orElse((n) => printTSTypeName(ctx, n)),
+  )
 
-function printTSMethodSignature(state: PrintState, node: TSMethodSignature): void {
-  state.out += `${methodKindText(node.kind)}${propertyKeyText(state, node.key, node.computed === true, PREC.Sequence)}${
-    flagText(node.optional, '?')
-  }${typeParametersText(state, node.typeParameters)}(${paramsText(state, node.params)})${
-    typeAnnotationText(state, node.returnType)
-  };`
-}
+const printTSTypeName = (ctx: PrintContext, name: TSTypeReference['typeName']): string =>
+  Match.value(name).pipe(
+    Match.when({ type: 'TSQualifiedName' }, (n) => `${printTSTypeName(ctx, n.left)}.${n.right.name}`),
+    Match.when({ type: 'Identifier' }, (n) => n.name),
+    Match.when({ type: 'ThisExpression' }, () => 'this'),
+    Match.orElse((n) => sequenceNodeText(ctx, n)),
+  )
 
-function printTSEnumDeclaration(state: PrintState, node: TSEnumDeclaration): void {
-  state.out += `${flagText(node.declare, 'declare ')}${flagText(node.const, 'const ')}enum ${node.id.name} {\n`
-  state.out += indentedBodyText(state, node.body.members, (member) => printEnumMember(state, member))
-  state.out += `${indent(state)}}`
-}
+const printTSImportTypeQualifier = (ctx: PrintContext, qualifier: TSImportType['qualifier']): string =>
+  Option.match(Option.fromNull(qualifier), {
+    onSome: (value) => printTSImportTypeQualifierNode(ctx, value),
+    onNone: () => '',
+  })
 
-function printEnumMember(state: PrintState, member: TSEnumDeclaration['body']['members'][number]): void {
-  state.out += `${identifierOrLiteralNameText(state, member.id)}${initializerText(state, member.initializer)},`
-}
-
-function identifierOrLiteralNameText(state: PrintState, id: Node): string {
-  switch (nodeKind(id)) {
-    case 'Identifier':
-      return identifierNameText(id)
-    case 'Literal':
-      return literalCapture(state, id)
-    default:
-      return sequenceNodeText(state, id)
-  }
-}
-
-function printTSModuleDeclaration(state: PrintState, node: Extract<Node, { type: 'TSModuleDeclaration' }>): void {
-  state.out += `${flagText(node.declare, 'declare ')}${moduleHeaderText(state, node)}${moduleBodyText(state, node)}`
-}
-
-function moduleHeaderText(state: PrintState, node: Extract<Node, { type: 'TSModuleDeclaration' }>): string {
-  if (node.global) return 'global '
-  return `${node.kind} ${identifierOrLiteralNameText(state, node.id)}`
-}
-
-function moduleBodyText(state: PrintState, node: Extract<Node, { type: 'TSModuleDeclaration' }>): string {
-  const body = node.body
-  if (body !== null) return ` ${capture(state, () => printTSModuleBlock(state, body))}`
-  return ';'
-}
-
-function printTSModuleBlock(state: PrintState, node: Extract<Node, { type: 'TSModuleBlock' }>): void {
-  state.out += '{\n'
-  state.out += indentedBodyText(state, node.body, (statement) => printStatement(state, statement))
-  state.out += `${indent(state)}}`
-}
-
-function printTSImportEqualsDeclaration(state: PrintState, node: TSImportEqualsDeclaration): void {
-  state.out += `import ${flagText(node.importKind === 'type', 'type ')}${node.id.name} = ${
-    moduleReferenceText(state, node.moduleReference)
-  };`
-}
-
-function moduleReferenceText(state: PrintState, reference: TSImportEqualsDeclaration['moduleReference']): string {
-  if (reference.type === 'TSExternalModuleReference') {
-    return `require(${externalModuleArgumentText(reference.expression.value)})`
-  }
-  return sequenceNodeText(state, reference)
-}
-
-function printTSType(state: PrintState, node: TSType): void {
-  state.out += printTSTypeToString(state, node)
-}
-
-function printTSTypeToString(state: PrintState, node: TSType): string {
-  const saved = state.out
-  state.out = ''
-  doPrintTSType(state, node)
-  const result = state.out
-  state.out = saved
-  return result
-}
-
-function doPrintTSType(state: PrintState, node: TSType): void {
-  switch (node.type) {
-    case 'TSAnyKeyword':
-      state.out += 'any'
-      break
-    case 'TSStringKeyword':
-      state.out += 'string'
-      break
-    case 'TSBooleanKeyword':
-      state.out += 'boolean'
-      break
-    case 'TSNumberKeyword':
-      state.out += 'number'
-      break
-    case 'TSBigIntKeyword':
-      state.out += 'bigint'
-      break
-    case 'TSSymbolKeyword':
-      state.out += 'symbol'
-      break
-    case 'TSVoidKeyword':
-      state.out += 'void'
-      break
-    case 'TSUndefinedKeyword':
-      state.out += 'undefined'
-      break
-    case 'TSNullKeyword':
-      state.out += 'null'
-      break
-    case 'TSNeverKeyword':
-      state.out += 'never'
-      break
-    case 'TSUnknownKeyword':
-      state.out += 'unknown'
-      break
-    case 'TSObjectKeyword':
-      state.out += 'object'
-      break
-    case 'TSIntrinsicKeyword':
-      state.out += 'intrinsic'
-      break
-    case 'TSThisType':
-      state.out += 'this'
-      break
-    case 'TSTypeReference':
-      printTSTypeName(state, node.typeName)
-      state.out += typeArgumentsText(state, node.typeArguments)
-      break
-    case 'TSUnionType':
-      state.out += tSTypeListText(state, node.types, ' | ')
-      break
-    case 'TSIntersectionType':
-      state.out += tSTypeListText(state, node.types, ' & ')
-      break
-    case 'TSArrayType':
-      state.out += `${arrayElementTypeText(state, node.elementType)}[]`
-      break
-    case 'TSTypeLiteral':
-      printTSTypeLiteral(state, node.members)
-      break
-    case 'TSTupleType':
-      printTupleType(state, node.elementTypes)
-      break
-    case 'TSConditionalType':
-      doPrintTSType(state, node.checkType)
-      state.out += ' extends '
-      doPrintTSType(state, node.extendsType)
-      state.out += ' ? '
-      doPrintTSType(state, node.trueType)
-      state.out += ' : '
-      doPrintTSType(state, node.falseType)
-      break
-    case 'TSInferType':
-      state.out += `infer ${node.typeParameter.name.name}`
-      printTypeClause(state, ' extends ', node.typeParameter.constraint)
-      break
-    case 'TSTypeQuery':
-      state.out += 'typeof '
-      printTypeQueryName(state, node)
-      state.out += typeArgumentsText(state, node.typeArguments)
-      break
-    case 'TSImportType':
-      printTSImportType(state, node)
-      break
-    case 'TSTypeOperator':
-      state.out += `${node.operator} `
-      doPrintTSType(state, node.typeAnnotation)
-      break
-    case 'TSMappedType':
-      printMappedType(state, node)
-      break
-    case 'TSTemplateLiteralType':
-      printTSTemplateLiteral(state, node)
-      break
-    case 'TSFunctionType':
-      printTSFunctionType(state, node)
-      break
-    case 'TSConstructorType':
-      printTSConstructorType(state, node)
-      break
-    case 'TSTypePredicate':
-      printTSTypePredicate(state, node)
-      break
-    case 'TSIndexedAccessType':
-      doPrintTSType(state, node.objectType)
-      state.out += '['
-      doPrintTSType(state, node.indexType)
-      state.out += ']'
-      break
-    case 'TSNamedTupleMember':
-      printNamedTupleMember(state, node)
-      break
-    case 'TSLiteralType':
-      printTSLiteralType(state, node.literal)
-      break
-    case 'TSParenthesizedType':
-      state.out += '('
-      doPrintTSType(state, node.typeAnnotation)
-      state.out += ')'
-      break
-    case 'TSJSDocNullableType':
-      printJSDocPostfixModifier(state, node, '?')
-      break
-    case 'TSJSDocNonNullableType':
-      printJSDocPostfixModifier(state, node, '!')
-      break
-    case 'TSJSDocUnknownType':
-      state.out += '?'
-      break
-  }
-}
-
-function tSTypeListText(state: PrintState, types: readonly TSType[], separator: string): string {
-  return types.map((type) => printTSTypeToString(state, type)).join(separator)
-}
-
-function arrayElementTypeText(state: PrintState, type: TSType): string {
-  const printed = printTSTypeToString(state, type)
-  if (ARRAY_ELEMENT_WRAPPED_KINDS[type.type] === true) return `(${printed})`
-  return printed
-}
-
-function printTSTypeLiteral(state: PrintState, members: readonly TSInterfaceBody['body'][number][]): void {
-  const rendered = members.map((member) => signatureText(state, member)).join('; ')
-  switch (members.length) {
-    case 0:
-      state.out += '{}'
-      break
-    default:
-      state.out += `{ ${rendered} }`
-  }
-}
-
-function signatureText(state: PrintState, member: TSInterfaceBody['body'][number]): string {
-  const printed = capture(state, () => printTSSignature(state, member))
-  if (printed.endsWith(';')) return printed.slice(0, -1)
-  return printed
-}
-
-function printTupleType(state: PrintState, elements: TSTupleType['elementTypes']): void {
-  state.out += `[${elements.map((element) => capture(state, () => printTupleElement(state, element))).join(', ')}]`
-}
-
-function printTupleElement(state: PrintState, element: TSTupleType['elementTypes'][number]): void {
-  switch (nodeKind(element)) {
-    case 'TSRestType':
-      printRestTupleElement(state, element)
-      break
-    case 'TSOptionalType':
-      printOptionalTupleElement(state, element)
-      break
-    case 'TSNamedTupleMember':
-      printNamedTupleElement(state, element)
-      break
-    default:
-      printTupleElementType(state, element)
-  }
-}
-
-function printRestTupleElement(state: PrintState, element: TSTupleType['elementTypes'][number]): void {
-  if (isNodeOfKind(element, 'TSRestType')) {
-    state.out += '...'
-    doPrintTSType(state, element.typeAnnotation)
-  }
-}
-
-function printOptionalTupleElement(state: PrintState, element: TSTupleType['elementTypes'][number]): void {
-  if (isNodeOfKind(element, 'TSOptionalType')) {
-    doPrintTSType(state, element.typeAnnotation)
-    state.out += '?'
-  }
-}
-
-function printNamedTupleElement(state: PrintState, element: TSTupleType['elementTypes'][number]): void {
-  if (isNodeOfKind(element, 'TSNamedTupleMember')) printNamedTupleMember(state, element)
-}
-
-function printTupleElementType(state: PrintState, element: TSTupleType['elementTypes'][number]): void {
-  if (isTSType(element)) doPrintTSType(state, element)
-}
-
-function printNamedTupleMember(state: PrintState, member: TSNamedTupleMember): void {
-  state.out += `${member.label.name}${flagText(member.optional, '?')}: `
-  printTupleElement(state, member.elementType)
-}
-
-function printTypeClause(state: PrintState, keyword: string, type: TSType | null | undefined): void {
-  if (type == null) return
-  state.out += keyword
-  doPrintTSType(state, type)
-}
-
-function printTypeQueryName(state: PrintState, node: TSTypeQuery): void {
-  const exprName = node.exprName
-  if (exprName.type === 'TSImportType') {
-    doPrintTSType(state, exprName)
-    return
-  }
-  printTSTypeName(state, exprName)
-}
-
-function printTSTypeName(state: PrintState, name: TSTypeReference['typeName']): void {
-  if (name.type === 'TSQualifiedName') {
-    printTSTypeName(state, name.left)
-    state.out += `.${name.right.name}`
-    return
-  }
-  state.out += tSTypeNameLeafText(state, name)
-}
-
-function tSTypeNameLeafText(state: PrintState, name: TSTypeReference['typeName']): string {
-  switch (name.type) {
-    case 'Identifier':
-      return name.name
-    case 'ThisExpression':
-      return 'this'
-    case 'TSQualifiedName':
-      return sequenceNodeText(state, name)
-  }
-}
-
-function printTSImportTypeQualifier(state: PrintState, qualifier: TSImportType['qualifier']): void {
-  if (qualifier === null) return
-  printTSImportTypeQualifierNode(state, qualifier)
-}
-
-function printTSImportTypeQualifierNode(
-  state: PrintState,
+const printTSImportTypeQualifierNode = (
+  ctx: PrintContext,
   qualifier: NonNullable<TSImportType['qualifier']>,
-): void {
-  if (qualifier.type === 'Identifier') {
-    state.out += qualifier.name
-    return
-  }
-  printTSImportTypeQualifier(state, qualifier.left)
-  state.out += `.${qualifier.right.name}`
+): string =>
+  Match.value(qualifier).pipe(
+    Match.when({ type: 'Identifier' }, (n) => n.name),
+    Match.orElse(
+      (n) => `${printTSImportTypeQualifier(ctx, n.left)}.${n.right.name}`,
+    ),
+  )
+
+const printTSImportType = (ctx: PrintContext, node: TSImportType): string =>
+  `${`import(${JSON.stringify(node.source.value)}${flagText(
+    node.options,
+    `, ${assignmentNodeText(ctx, node.options)}`,
+  )})`}${Option.match(Option.fromNull(node.qualifier), {
+    onSome: (qualifier) => `.${printTSImportTypeQualifierNode(ctx, qualifier)}`,
+    onNone: () => '',
+  })}${typeArgumentsText(ctx, node.typeArguments)}`
+
+const printMappedType = (ctx: PrintContext, node: TSMappedType): string =>
+  `{ ${printMappedTypeModifier(node.readonly, 'readonly ')}[${node.key.name} in ${printTSTypeToString(
+    ctx,
+    node.constraint,
+  )}${printTypeClause(ctx, ' as ', node.nameType)}]${printMappedTypeModifier(node.optional, '?')}${printTypeClause(ctx, ': ', node.typeAnnotation)} }`
+
+const printMappedTypeModifier = (modifier: unknown, rendered: string): string =>
+  Match.value(modifier).pipe(
+    Match.when(true, () => rendered),
+    Match.when('+', () => `+${rendered}`),
+    Match.when('-', () => `-${rendered}`),
+    Match.orElse(() => ''),
+  )
+
+const printTSTemplateLiteral = (ctx: PrintContext, node: TSTemplateLiteralType): string => {
+  const tail = Arr.last(node.quasis)
+  const segments = Arr.zipWith(
+    Arr.dropRight(node.quasis, 1),
+    node.types,
+    (quasi, type) => `${quasi.value.raw}\${${printTSTypeToString(ctx, type)}}`,
+  )
+  return `\`${Arr.join(segments, '')}${Option.match(tail, {
+    onSome: (quasi) => quasi.value.raw,
+    onNone: () => '',
+  })}\``
 }
 
-function printTSImportType(state: PrintState, node: TSImportType): void {
-  printTSImportTypeSource(state, node)
-  if (node.qualifier !== null) {
-    state.out += '.'
-    printTSImportTypeQualifier(state, node.qualifier)
-  }
-  state.out += typeArgumentsText(state, node.typeArguments)
-}
+const printTSTypePredicate = (ctx: PrintContext, node: TSTypePredicate): string =>
+  `${flagText(node.asserts, 'asserts ')}${typePredicateParameterText(node.parameterName)}${printPredicateAnnotation(ctx, node)}`
 
-function printTSImportTypeSource(state: PrintState, node: TSImportType): void {
-  state.out += `import(${JSON.stringify(node.source.value)}`
-  state.out += flagText(node.options, `, ${assignmentNodeText(state, node.options)}`)
-  state.out += ')'
-}
+const printPredicateAnnotation = (ctx: PrintContext, node: TSTypePredicate): string =>
+  Option.match(Option.fromNull(node.typeAnnotation), {
+    onSome: (annotation) => printTypeClause(ctx, ' is ', annotation.typeAnnotation),
+    onNone: () => '',
+  })
 
-function printMappedType(state: PrintState, node: TSMappedType): void {
-  state.out += '{ '
-  printMappedTypeModifier(state, node.readonly, 'readonly ')
-  state.out += `[${node.key.name} in `
-  doPrintTSType(state, node.constraint)
-  printTypeClause(state, ' as ', node.nameType)
-  state.out += ']'
-  printMappedTypeModifier(state, node.optional, '?')
-  printTypeClause(state, ': ', node.typeAnnotation)
-  state.out += ' }'
-}
+const printTSLiteralType = (ctx: PrintContext, literal: TSLiteralType['literal']): string =>
+  Match.value(literal).pipe(
+    Match.when({ type: 'Literal' }, (n) => literalText(n)),
+    Match.when({ type: 'TemplateLiteral' }, (n) => templateLiteralText(ctx, n)),
+    Match.when(
+      { type: 'UnaryExpression' },
+      (n) =>
+        `${n.operator}${Match.value(n.argument).pipe(
+          Match.when({ type: 'Literal' }, (argument) => literalText(argument)),
+          Match.orElse(() => ''),
+        )}`,
+    ),
+    Match.orElse(() => ''),
+  )
 
-function printMappedTypeModifier<A = unknown>(state: PrintState, modifier: A, rendered: string): void {
-  switch (modifier) {
-    case true:
-      state.out += rendered
-      break
-    case '+':
-      state.out += `+${rendered}`
-      break
-    case '-':
-      state.out += `-${rendered}`
-      break
-    default:
-      break
-  }
-}
-
-function printTSTemplateLiteral(state: PrintState, node: TSTemplateLiteralType): void {
-  state.out += `\`${
-    node.quasis
-      .map((quasi, index) => templateTypeQuasiText(state, quasi, node.types[index]))
-      .join('')
-  }\``
-}
-
-function templateTypeQuasiText(state: PrintState, quasi: TemplateElement, type: TSType | undefined): string {
-  switch (quasi.tail) {
-    case true:
-      return quasi.value.raw
-    case false:
-      return templateTypeText(state, quasi, type)
-  }
-}
-
-function templateTypeText(state: PrintState, quasi: TemplateElement, type: TSType | undefined): string {
-  if (type === undefined) throw new Error('Printer: template literal type has no type for its quasi')
-  return `${quasi.value.raw}\${${printTSTypeToString(state, type)}}`
-}
-
-function printTSFunctionType(state: PrintState, node: TSFunctionType): void {
-  state.out += `${typeParametersText(state, node.typeParameters)}(${paramsText(state, node.params)}) => ${
-    printTSTypeToString(state, node.returnType.typeAnnotation)
-  }`
-}
-
-function printTSConstructorType(state: PrintState, node: TSConstructorType): void {
-  state.out += `${flagText(node.abstract, 'abstract ')}new ${typeParametersText(state, node.typeParameters)}(${
-    paramsText(state, node.params)
-  }) => ${printTSTypeToString(state, node.returnType.typeAnnotation)}`
-}
-
-function printTSTypePredicate(state: PrintState, node: TSTypePredicate): void {
-  state.out += flagText(node.asserts, 'asserts ')
-  state.out += typePredicateParameterText(node.parameterName)
-  printPredicateAnnotation(state, node)
-}
-
-function printPredicateAnnotation(state: PrintState, node: TSTypePredicate): void {
-  if (node.typeAnnotation === null) return
-  printTypeClause(state, ' is ', node.typeAnnotation.typeAnnotation)
-}
-
-function printTSLiteralType(state: PrintState, literal: TSLiteralType['literal']): void {
-  switch (literal.type) {
-    case 'Literal':
-      printLiteral(state, literal)
-      return
-    case 'TemplateLiteral':
-      printTemplateLiteral(state, literal)
-      return
-    case 'UnaryExpression':
-      printTSLiteralUnary(state, literal)
-  }
-}
-
-function printTSLiteralUnary(state: PrintState, unary: UnaryExpression): void {
-  state.out += unary.operator
-  if (isLiteralNode(unary.argument)) printLiteral(state, unary.argument)
-}
-
-function printJSDocPostfixModifier(
-  state: PrintState,
+const printJSDocPostfixModifier = (
+  ctx: PrintContext,
   node: JSDocNullableType | JSDocNonNullableType,
   marker: string,
-): void {
-  if (node.postfix) {
-    doPrintTSType(state, node.typeAnnotation)
-    state.out += marker
-    return
-  }
-  state.out += marker
-  doPrintTSType(state, node.typeAnnotation)
-}
+): string =>
+  Boolean.match(node.postfix, {
+    onTrue: () => `${printTSTypeToString(ctx, node.typeAnnotation)}${marker}`,
+    onFalse: () => `${marker}${printTSTypeToString(ctx, node.typeAnnotation)}`,
+  })
 
-function printTSTypeAnnotation(state: PrintState, node: TSTypeAnnotation): void {
-  state.out += ': '
-  doPrintTSType(state, node.typeAnnotation)
-}
+const printTSTypeAnnotation = (ctx: PrintContext, node: TSTypeAnnotation): string =>
+  `: ${printTSTypeToString(ctx, node.typeAnnotation)}`
 
-function printTSTypeParameterDeclaration(state: PrintState, node: TSTypeParameterDeclaration): void {
-  state.out += `<${node.params.map((param) => capture(state, () => printTSTypeParameter(state, param))).join(', ')}>`
-}
+const printTSTypeParameterDeclaration = (ctx: PrintContext, node: TSTypeParameterDeclaration): string =>
+  `<${node.params.map((param) => printTSTypeParameter(ctx, param)).join(', ')}>`
 
-function printTSTypeParameterInstantiation(state: PrintState, node: TSTypeParameterInstantiation): void {
-  state.out += `<${node.params.map((param) => printTSTypeToString(state, param)).join(', ')}>`
-}
+const printTSTypeParameterInstantiation = (ctx: PrintContext, node: TSTypeParameterInstantiation): string =>
+  `<${node.params.map((param) => printTSTypeToString(ctx, param)).join(', ')}>`
 
-function printTSTypeParameter(state: PrintState, node: TSTypeParameterDeclaration['params'][number]): void {
-  state.out += typeParameterModifiersText(node)
-  state.out += node.name.name
-  printTypeClause(state, ' extends ', node.constraint)
-  printTypeClause(state, ' = ', node.default)
-}
+const printTSTypeParameter = (ctx: PrintContext, node: TSTypeParameterDeclaration['params'][number]): string =>
+  `${typeParameterModifiersText(node)}${node.name.name}${printTypeClause(ctx, ' extends ', node.constraint)}${printTypeClause(ctx, ' = ', node.default)}`
 
 const TS_TYPE_NODE_KINDS: Readonly<Record<string, true>> = {
   TSAnyKeyword: true,
@@ -2348,17 +1594,7 @@ const TS_TYPE_NODE_KINDS: Readonly<Record<string, true>> = {
   TSJSDocUnknownType: true,
 }
 
-function isTSTypeNode(kind: string): boolean {
-  return TS_TYPE_NODE_KINDS[kind] === true
-}
-
-function isTSType(node: Node): node is TSType {
-  return isTSTypeNode(node.type)
-}
-
-function isNodeOfKind<T extends Node['type']>(node: Node, kind: T): node is Extract<Node, { type: T }> {
-  return node.type === kind
-}
+const isTSType = (node: Node): node is TSType => TS_TYPE_NODE_KINDS[node.type] === true
 
 const FUNCTION_KINDS: Readonly<Record<string, true>> = {
   FunctionDeclaration: true,
@@ -2367,135 +1603,51 @@ const FUNCTION_KINDS: Readonly<Record<string, true>> = {
   TSEmptyBodyFunctionExpression: true,
 }
 
-function isFunctionNode(node: Node): node is FunctionNode {
-  return FUNCTION_KINDS[node.type] === true
-}
+const isFunctionNode = (node: Node): node is FunctionNode => FUNCTION_KINDS[node.type] === true
 
-function isAssignmentPattern(node: Node): node is AssignmentPattern {
-  return node.type === 'AssignmentPattern'
-}
+const isAssignmentPattern = (node: Node): node is AssignmentPattern => node.type === 'AssignmentPattern'
 
-function isLiteralNode(node: Node): node is LiteralNode {
-  return node.type === 'Literal'
-}
+const identifierNameText = (node: Node | null | undefined): string =>
+  Option.match(Option.fromNullishOr(node), {
+    onSome: (value) =>
+      Match.value(value.type).pipe(
+        Match.when('Identifier', () => (value as Extract<Node, { type: 'Identifier' }>).name),
+        Match.orElse(() => ''),
+      ),
+    onNone: () => '',
+  })
 
-const ABSENT_NODE_KIND = '\u0000absent'
+const privateIdentifierText = (node: Node | null | undefined): string =>
+  Match.value(node).pipe(
+    Match.when({ type: 'PrivateIdentifier' }, (n) => `#${n.name}`),
+    Match.orElse(() => ''),
+  )
 
-function nodeKind(node: { readonly type: string } | null | undefined): string {
-  if (node == null) return ABSENT_NODE_KIND
-  return node.type
-}
-
-function isIdentifierNode(node: Node | null | undefined): node is Extract<Node, { type: 'Identifier' }> {
-  if (node == null) return false
-  return node.type === 'Identifier'
-}
-
-function isPrivateIdentifierNode(
-  node: Node | null | undefined,
-): node is Extract<Node, { type: 'PrivateIdentifier' }> {
-  if (node == null) return false
-  return node.type === 'PrivateIdentifier'
-}
-
-function isAssignmentPatternNode(node: Node | null | undefined): node is AssignmentPattern {
-  if (node == null) return false
-  return node.type === 'AssignmentPattern'
-}
-
-function identifierName(node: Node | null | undefined): string | undefined {
-  if (isIdentifierNode(node)) return node.name
-  return undefined
-}
-
-function identifierNameText(node: Node | null | undefined): string {
-  return identifierName(node) ?? ''
-}
-
-function privateIdentifierText(node: Node | null | undefined): string {
-  if (isPrivateIdentifierNode(node)) return `#${node.name}`
-  return ''
-}
-
-function literalCapture(state: PrintState, node: Node): string {
-  if (isLiteralNode(node)) return capture(state, () => printLiteral(state, node))
-  return capture(state, () => printNodePrec(state, node, PREC.Assignment))
-}
-
-function precOf(node: Node): number {
-  switch (nodeKind(node)) {
-    case 'SequenceExpression':
-      return PREC.Sequence
-    case 'AssignmentExpression':
-      return PREC.Assignment
-    case 'ConditionalExpression':
-      return PREC.Conditional
-    case 'LogicalExpression':
-      return logicalPrecOf(node)
-    case 'BinaryExpression':
-      return binaryPrecOf(node)
-    case 'UnaryExpression':
-    case 'AwaitExpression':
-    case 'YieldExpression':
-      return PREC.Unary
-    case 'UpdateExpression':
-      return PREC.Update
-    case 'CallExpression':
-    case 'NewExpression':
-    case 'TaggedTemplateExpression':
-    case 'ImportExpression':
-      return PREC.Call
-    case 'MemberExpression':
-    case 'ChainExpression':
-      return PREC.Member
-    default:
-      return PREC.Primary
-  }
-}
-
-function logicalPrecOf(node: Node): number {
-  if (node.type === 'LogicalExpression') return logicalPrec(node.operator)
-  return PREC.Primary
-}
-
-function binaryPrecOf(node: Node): number {
-  if (node.type === 'BinaryExpression') return binaryPrec(node.operator)
-  return PREC.Primary
-}
-
-const EVERY_COMMENT_POSITION = Number.POSITIVE_INFINITY
-
-const END_OF_COMMENTS: Comment = {
-  type: 'Line',
-  value: '',
-  start: EVERY_COMMENT_POSITION,
-  end: EVERY_COMMENT_POSITION,
-}
-
-function sortedCommentsWithoutHashbang(
-  comments: readonly Comment[] | undefined,
-  hashbang: Hashbang | null,
-): readonly Comment[] {
-  const list = comments ?? []
-  return [...withoutHashbangComment(list, hashbang)].sort((a, b) => a.start - b.start)
-}
-
-function withoutHashbangComment(comments: readonly Comment[], hashbang: Hashbang | null): readonly Comment[] {
-  if (hashbang === null) return comments
-  const { start } = hashbang
-  return comments.filter((comment) => !(comment.type === 'Line' && comment.start === start))
-}
-
-interface AttachedComment {
-  readonly type: string
-  readonly value: string
-}
-
-interface CommentHost {
-  readonly type: string
-  readonly leadingComments?: readonly AttachedComment[]
-  readonly trailingComments?: readonly AttachedComment[]
-}
+const precOf = (node: Node): number =>
+  Match.value(node).pipe(
+    Match.when({ type: 'SequenceExpression' }, () => PREC.Sequence),
+    Match.when({ type: 'AssignmentExpression' }, () => PREC.Assignment),
+    Match.when({ type: 'ConditionalExpression' }, () => PREC.Conditional),
+    Match.when(
+      { type: 'LogicalExpression' },
+      (n) => logicalPrec(n.operator),
+    ),
+    Match.when(
+      { type: 'BinaryExpression' },
+      (n) => binaryPrec(n.operator),
+    ),
+    Match.when({ type: 'UnaryExpression' }, () => PREC.Unary),
+    Match.when({ type: 'AwaitExpression' }, () => PREC.Unary),
+    Match.when({ type: 'YieldExpression' }, () => PREC.Unary),
+    Match.when({ type: 'UpdateExpression' }, () => PREC.Update),
+    Match.when({ type: 'CallExpression' }, () => PREC.Call),
+    Match.when({ type: 'NewExpression' }, () => PREC.Call),
+    Match.when({ type: 'TaggedTemplateExpression' }, () => PREC.Call),
+    Match.when({ type: 'ImportExpression' }, () => PREC.Call),
+    Match.when({ type: 'MemberExpression' }, () => PREC.Member),
+    Match.when({ type: 'ChainExpression' }, () => PREC.Member),
+    Match.orElse(() => PREC.Primary),
+  )
 
 const MEMBER_OBJECT_WRAPPED_KINDS: Readonly<Record<string, true>> = {
   SequenceExpression: true,
@@ -2532,15 +1684,11 @@ const ARRAY_ELEMENT_WRAPPED_KINDS: Readonly<Record<string, true>> = {
   TSIntersectionType: true,
 }
 
-function parenthesizedIf(wrap: boolean, text: string): string {
-  if (wrap) return `(${text})`
-  return text
-}
-
-function jsxAttributeNameText(name: JSXAttribute['name']): string {
-  if (name.type === 'JSXIdentifier') return name.name
-  return `${name.namespace.name}:${name.name.name}`
-}
+const jsxAttributeNameText = (name: JSXAttribute['name']): string =>
+  Match.value(name).pipe(
+    Match.when({ type: 'JSXIdentifier' }, (n) => n.name),
+    Match.orElse((n) => `${n.namespace.name}:${n.name.name}`),
+  )
 
 interface PropertyLike {
   readonly type: 'Property'
@@ -2552,53 +1700,31 @@ interface PropertyLike {
   readonly value: Node
 }
 
-interface BinaryLike {
-  readonly left: Node
-  readonly right: Node
-  readonly operator: string
-}
+const propertyFormOf = (fields: PropertyLike): PropertyForm =>
+  Match.value(fields).pipe(
+    Match.when(isAccessorKind, () => 'accessor'),
+    Match.when(isMethodKind, () => 'method'),
+    Match.when(isShorthandMatch, () => 'shorthand'),
+    Match.when(isShorthandDefaultMatch, () => 'shorthandDefault'),
+    Match.orElse(() => 'verbose'),
+  )
 
-function propertyForm(fields: PropertyLike): string {
-  if (isAccessorKind(fields)) return 'accessor'
-  return propertyFormWithoutAccessor(fields)
-}
+const isAccessorKind = (fields: PropertyLike): boolean => fields.kind === 'get' || fields.kind === 'set'
 
-function isAccessorKind(fields: PropertyLike): boolean {
-  return fields.kind === 'get' || fields.kind === 'set'
-}
+const isMethodKind = (fields: PropertyLike): boolean => fields.method === true
 
-function propertyFormWithoutAccessor(fields: PropertyLike): string {
-  if (fields.method === true) return 'method'
-  return propertyFormShorthand(fields)
-}
+const isShorthandMatch = (fields: PropertyLike): boolean =>
+  fields.shorthand === true && namesMatch(identifierNameText(fields.key), identifierNameText(fields.value))
 
-function propertyFormShorthand(fields: PropertyLike): string {
-  if (isShorthandMatch(fields)) return 'shorthand'
-  return propertyFormDefault(fields)
-}
+const isShorthandDefaultMatch = (fields: PropertyLike): boolean =>
+  fields.shorthand === true && namesMatch(identifierNameText(fields.key), defaultTargetName(fields.value))
 
-function propertyFormDefault(fields: PropertyLike): string {
-  if (isShorthandDefaultMatch(fields)) return 'shorthandDefault'
-  return 'verbose'
-}
+const defaultTargetName = (node: Node | null | undefined): string | undefined =>
+  Option.getOrUndefined(
+    Option.map(Option.filter(Option.some(node), isAssignmentPattern), (value) => identifierNameText(value.left)),
+  )
 
-function isShorthandMatch(fields: PropertyLike): boolean {
-  return fields.shorthand === true && namesMatch(identifierName(fields.key), identifierName(fields.value))
-}
-
-function isShorthandDefaultMatch(fields: PropertyLike): boolean {
-  return fields.shorthand === true && namesMatch(identifierName(fields.key), defaultTargetName(fields.value))
-}
-
-function defaultTargetName(node: Node | null | undefined): string | undefined {
-  if (isAssignmentPatternNode(node)) return identifierName(node.left)
-  return undefined
-}
-
-function namesMatch(key: string | undefined, value: string | undefined): boolean {
-  if (value === undefined) return false
-  return key === value
-}
+const namesMatch = (key: string, value: string): boolean => key === value
 
 const BINDING_TYPE_ANNOTATION_KINDS: Readonly<Record<string, true>> = {
   Identifier: true,
@@ -2606,21 +1732,19 @@ const BINDING_TYPE_ANNOTATION_KINDS: Readonly<Record<string, true>> = {
   ArrayPattern: true,
 }
 
-function bindingTypeAnnotation(node: Node): TSTypeAnnotation | null | undefined {
-  if (isBindingTypeAnnotationCarrier(node)) return node.typeAnnotation
-  return undefined
-}
+const bindingTypeAnnotation = (node: Node): TSTypeAnnotation | null | undefined =>
+  Option.getOrUndefined(
+    Option.filter(Option.some(node), isBindingTypeAnnotationCarrier).pipe(
+      Option.map((carrier) => carrier.typeAnnotation),
+    ),
+  )
 
-function isBindingTypeAnnotationCarrier(
+const isBindingTypeAnnotationCarrier = (
   node: Node,
-): node is Extract<Node, { type: 'Identifier' | 'ObjectPattern' | 'ArrayPattern' }> {
-  return BINDING_TYPE_ANNOTATION_KINDS[node.type] === true
-}
+): node is Extract<Node, { type: 'Identifier' | 'ObjectPattern' | 'ArrayPattern' }> =>
+  BINDING_TYPE_ANNOTATION_KINDS[node.type] === true
 
-function bindingNameText(node: { readonly name?: string }): string {
-  if (node.name === undefined) return ''
-  return node.name
-}
+const bindingNameText = (node: { readonly name?: string }): string => node.name ?? ''
 
 interface ExportNameNode {
   readonly type: string
@@ -2633,14 +1757,10 @@ const EXPORT_NAME_TEXTS: Readonly<Record<string, (name: ExportNameNode) => strin
   Literal: (name) => name.value ?? '',
 }
 
-function exportNameToString(name: ExportNameNode): string {
-  const reader = EXPORT_NAME_TEXTS[name.type] ?? ((exported: ExportNameNode) => exported.value ?? '')
-  return reader(name)
-}
+const exportNameToString = (name: ExportNameNode): string =>
+  (EXPORT_NAME_TEXTS[name.type] ?? ((exported: ExportNameNode) => exported.value ?? ''))(name)
 
-function importKindText(node: ImportDeclaration): string {
-  return flagText(node.importKind === 'type', 'type ')
-}
+const importKindText = (node: ImportDeclaration): string => flagText(node.importKind === 'type', 'type ')
 
 interface ImportBinding {
   readonly type: string
@@ -2649,25 +1769,24 @@ interface ImportBinding {
   readonly importKind?: string
 }
 
-function importBindingsText(specifiers: readonly ImportBinding[]): string {
-  const parts = [
+const importBindingsText = (specifiers: readonly ImportBinding[]): string =>
+  [
     defaultSpecifierText(specifiers),
     namespaceSpecifierText(specifiers),
     namedSpecifiersText(specifiers),
   ]
-  return parts.filter((text) => text.length > 0).join(', ')
-}
+    .filter((text) => text.length > 0)
+    .join(', ')
 
-function defaultSpecifierText(specifiers: readonly ImportBinding[]): string {
-  return importLocalName(specifiers.find((specifier) => specifier.type === 'ImportDefaultSpecifier'))
-}
+const defaultSpecifierText = (specifiers: readonly ImportBinding[]): string =>
+  importLocalName(specifiers.find((specifier) => specifier.type === 'ImportDefaultSpecifier'))
 
-function namespaceSpecifierText(specifiers: readonly ImportBinding[]): string {
+const namespaceSpecifierText = (specifiers: readonly ImportBinding[]): string => {
   const name = importLocalName(specifiers.find((specifier) => specifier.type === 'ImportNamespaceSpecifier'))
   return flagText(name, `* as ${name}`)
 }
 
-function namedSpecifiersText(specifiers: readonly ImportBinding[]): string {
+const namedSpecifiersText = (specifiers: readonly ImportBinding[]): string => {
   const rendered = specifiers
     .filter((specifier) => specifier.type === 'ImportSpecifier')
     .map((specifier) => namedSpecifierText(specifier))
@@ -2675,221 +1794,145 @@ function namedSpecifiersText(specifiers: readonly ImportBinding[]): string {
   return flagText(rendered, `{ ${rendered} }`)
 }
 
-function namedSpecifierText(specifier: ImportBinding): string {
-  const alias = exportAliasText(importedNameText(specifier.imported), specifier.local.name)
-  return `${flagText(specifier.importKind === 'type', 'type ')}${alias}`
-}
+const namedSpecifierText = (specifier: ImportBinding): string =>
+  `${flagText(specifier.importKind === 'type', 'type ')}${exportAliasText(
+    importedNameText(specifier.imported),
+    specifier.local.name,
+  )}`
 
-function importLocalName(specifier: ImportBinding | undefined): string {
-  if (specifier === undefined) return ''
-  return specifier.local.name
-}
+const importLocalName = (specifier: ImportBinding | undefined): string =>
+  Option.match(Option.fromUndefinedOr(specifier), {
+    onSome: (value) => value.local.name,
+    onNone: () => '',
+  })
 
-function importedNameText(imported: ImportBinding['imported']): string {
-  if (imported === undefined) return ''
-  return importedNameOf(imported)
-}
+const importedNameText = (imported: ImportBinding['imported']): string =>
+  Option.match(Option.fromUndefinedOr(imported), {
+    onSome: (value) => importedNameOf(value),
+    onNone: () => '',
+  })
 
-function importedNameOf(imported: NonNullable<ImportBinding['imported']>): string {
-  if (imported.type === 'Identifier') return nameOrEmpty(imported.name)
-  return nameOrEmpty(imported.value)
-}
+const importedNameOf = (imported: NonNullable<ImportBinding['imported']>): string =>
+  Match.value(imported.type).pipe(
+    Match.when('Identifier', () => imported.name ?? ''),
+    Match.orElse(() => imported.value ?? ''),
+  )
 
-function nameOrEmpty(value: string | undefined): string {
-  return value ?? ''
-}
+const exportAliasText = (localName: string, exportedName: string): string =>
+  Boolean.match(localName === exportedName, {
+    onTrue: () => localName,
+    onFalse: () => `${localName} as ${exportedName}`,
+  })
 
-function exportAliasText(localName: string, exportedName: string): string {
-  if (localName === exportedName) return localName
-  return `${localName} as ${exportedName}`
-}
-
-function exportSpecifierText(specifier: {
+const exportSpecifierText = (specifier: {
   readonly local: ExportNameNode
   readonly exported: ExportNameNode
   readonly exportKind?: string
-}): string {
-  const alias = exportAliasText(exportNameToString(specifier.local), exportNameToString(specifier.exported))
-  return `${flagText(specifier.exportKind === 'type', 'type ')}${alias}`
-}
+}): string =>
+  `${flagText(specifier.exportKind === 'type', 'type ')}${exportAliasText(
+    exportNameToString(specifier.local),
+    exportNameToString(specifier.exported),
+  )}`
 
-function exportedNameClauseText(exported: ExportNameNode | null | undefined): string {
-  if (exported == null) return ''
-  return ` as ${exportNameToString(exported)}`
-}
+const exportedNameClauseText = (exported: ExportNameNode | null | undefined): string =>
+  Option.match(Option.fromNullishOr(exported), {
+    onSome: (value) => ` as ${exportNameToString(value)}`,
+    onNone: () => '',
+  })
 
-function importAttributesText(attrs: readonly ImportAttribute[]): string {
+const importAttributesText = (attrs: readonly ImportAttribute[]): string => {
   const rendered = attrs.map((attribute) => importAttributeText(attribute)).join(', ')
   return flagText(rendered, ` with { ${rendered} }`)
 }
 
-function importAttributeText(attribute: ImportAttribute): string {
-  return `${importAttrKeyText(attribute.key)}: ${JSON.stringify(attribute.value.value)}`
-}
+const importAttributeText = (attribute: ImportAttribute): string =>
+  `${importAttrKeyText(attribute.key)}: ${JSON.stringify(attribute.value.value)}`
 
-function importAttrKeyText(key: ImportAttribute['key']): string {
-  if (key.type === 'Identifier') return key.name
-  return JSON.stringify(key.value)
-}
+const importAttrKeyText = (key: ImportAttribute['key']): string =>
+  Match.value(key).pipe(
+    Match.when({ type: 'Identifier' }, (n) => n.name),
+    Match.orElse((n) => JSON.stringify(n.value)),
+  )
 
-function bareArrowParamName(node: ArrowFunctionExpression): string {
+const bareArrowParamName = (node: ArrowFunctionExpression): string => {
   const name = singleParamName(node)
-  if (name === '') return ''
-  return flagText(node.returnType == null, name)
+  return flagText(name.length > 0 && node.returnType == null, name)
 }
 
-function singleParamName(node: ArrowFunctionExpression): string {
-  switch (node.params.length) {
-    case 1:
-      return bareParameterName(node.params[0])
-    default:
-      return ''
-  }
-}
+const singleParamName = (node: ArrowFunctionExpression): string =>
+  Match.value(node.params.length).pipe(
+    Match.when(1, () => bareParameterName(Arr.head(node.params))),
+    Match.orElse(() => ''),
+  )
 
-function bareParameterName(param: ParamPattern | undefined): string {
-  if (param === undefined) return ''
-  return bareParameterNameOf(param)
-}
+const bareParameterName = (param: Option.Option<ParamPattern>): string =>
+  Option.match(param, {
+    onSome: (value) => bareParameterNameOf(value),
+    onNone: () => '',
+  })
 
-function bareParameterNameOf(param: ParamPattern): string {
-  if (!isUnannotatedIdentifier(param)) return ''
-  return param.name
-}
+const bareParameterNameOf = (param: ParamPattern): string =>
+  Match.value(param.type === 'Identifier' && param.typeAnnotation == null).pipe(
+    Match.when(true, () => (param as Extract<ParamPattern, { readonly type: 'Identifier' }>).name),
+    Match.orElse(() => ''),
+  )
 
-function isUnannotatedIdentifier(
-  param: ParamPattern,
-): param is Extract<ParamPattern, { readonly type: 'Identifier' }> {
-  if (param.type !== 'Identifier') return false
-  return param.typeAnnotation == null
-}
+const arrowBodyIsBlock = (body: ArrowFunctionExpression['body']): body is Extract<Node, { type: 'BlockStatement' }> =>
+  body.type === 'BlockStatement'
 
-function arrowBodyIsBlock(body: ArrowFunctionExpression['body']): body is Extract<Node, { type: 'BlockStatement' }> {
-  return body.type === 'BlockStatement'
-}
+const functionHeaderText = (node: FunctionNode): string =>
+  `${flagText(node.declare, 'declare ')}${flagText(node.async, 'async ')}function${flagText(
+    node.generator,
+    '*',
+  )}${namedDeclarationText(node)}`
 
-function functionHeaderText(node: FunctionNode): string {
-  return `${flagText(node.declare, 'declare ')}${flagText(node.async, 'async ')}function${
-    flagText(node.generator, '*')
-  }${namedDeclarationText(node)}`
-}
+const namedDeclarationText = (node: { readonly id?: { readonly name: string } | null }): string =>
+  Option.match(Option.fromNullishOr(node.id), {
+    onSome: (id) => ` ${id.name}`,
+    onNone: () => '',
+  })
 
-function namedDeclarationText(node: { readonly id?: { readonly name: string } | null }): string {
-  if (node.id == null) return ''
-  return ` ${node.id.name}`
-}
-
-function parameterPropertyModifiers(
+const parameterPropertyModifiers = (
   param: Extract<ParamPattern, { readonly type: 'TSParameterProperty' }>,
-): string {
-  return `${flagText(param.accessibility, `${param.accessibility} `)}${flagText(param.readonly, 'readonly ')}${
-    flagText(param.override, 'override ')
-  }${flagText(param.static, 'static ')}`
-}
+): string =>
+  `${flagText(param.accessibility, `${param.accessibility} `)}${flagText(param.readonly, 'readonly ')}${flagText(
+    param.override,
+    'override ',
+  )}${flagText(param.static, 'static ')}`
 
-function commentText(comment: AttachedComment): string {
-  if (comment.type === 'Block') return `/*${comment.value}*/`
-  return `//${comment.value}`
-}
+const commentText = (comment: AttachedComment): string =>
+  Match.value(comment.type).pipe(
+    Match.when('Block', () => `/*${comment.value}*/`),
+    Match.orElse(() => `//${comment.value}`),
+  )
 
-function methodDefinitionPrefix(node: MethodDefinition, fn: FunctionNode): string {
-  return `${flagText(node.accessibility, `${node.accessibility} `)}${flagText(node.static, 'static ')}${
-    flagText(node.override, 'override ')
-  }${flagText(fn.async, 'async ')}${flagText(fn.generator, '*')}${methodKindText(node.kind)}`
-}
+const methodDefinitionPrefix = (node: MethodDefinition, fn: FunctionNode): string =>
+  `${flagText(node.accessibility, `${node.accessibility} `)}${flagText(node.static, 'static ')}${flagText(
+    node.override,
+    'override ',
+  )}${flagText(fn.async, 'async ')}${flagText(fn.generator, '*')}${methodKindText(node.kind)}`
 
-function methodKindText(kind: string): string {
-  switch (kind) {
-    case 'get':
-      return 'get '
-    case 'set':
-      return 'set '
-    default:
-      return ''
-  }
-}
+const methodKindText = (kind: string): string =>
+  Match.value(kind).pipe(
+    Match.when('get', () => 'get '),
+    Match.when('set', () => 'set '),
+    Match.orElse(() => ''),
+  )
 
-function propertyDefinitionModifiers(node: PropertyDefinition): string {
-  return `${flagText(node.declare, 'declare ')}${flagText(node.accessibility, `${node.accessibility} `)}${
-    flagText(node.static, 'static ')
-  }${flagText(node.readonly, 'readonly ')}${flagText(node.override, 'override ')}`
-}
+const propertyDefinitionModifiers = (node: PropertyDefinition): string =>
+  `${flagText(node.declare, 'declare ')}${flagText(node.accessibility, `${node.accessibility} `)}${flagText(
+    node.static,
+    'static ',
+  )}${flagText(node.readonly, 'readonly ')}${flagText(node.override, 'override ')}`
 
-type LiteralNode = Literal
-
-type LiteralSource<A = unknown> = {
-  readonly value: A
+type LiteralSource = {
+  readonly value: unknown
   readonly raw: string | null
   readonly bigint?: string
   readonly regex?: { readonly pattern: string; readonly flags: string }
 }
 
-function literalText(node: LiteralSource): string {
-  if (node.raw != null) return node.raw
-  return literalWithoutRaw(node)
-}
-
-function literalWithoutRaw(node: LiteralSource): string {
-  if (node.regex != null) return `/${node.regex.pattern}/${node.regex.flags}`
-  return literalWithoutRegex(node)
-}
-
-function literalWithoutRegex(node: LiteralSource): string {
-  if (node.bigint != null) return node.bigint
-  return valueLiteralText(node.value)
-}
-
-function valueLiteralText<A = unknown>(value: A): string {
-  if (typeof value === 'string') {
-    return JSON.stringify(value)
-  }
-  return nonStringLiteralText(value)
-}
-
-function nonStringLiteralText<A = unknown>(value: A): string {
-  if (typeof value === 'number') {
-    return String(value)
-  }
-  return booleanOrBigintText(value)
-}
-
-function booleanOrBigintText<A = unknown>(value: A): string {
-  if (typeof value === 'boolean') {
-    return String(value)
-  }
-  return bigintText(value)
-}
-
-function bigintText<A = unknown>(value: A): string {
-  return typeof value === 'bigint' ? `${value}n` : 'null'
-}
-
-function flagText<A = unknown>(present: A, text: string): string {
-  switch (Boolean(present)) {
-    case true:
-      return text
-    case false:
-      return ''
-  }
-}
-
-function typeParameterModifiersText(node: TSTypeParameterDeclaration['params'][number]): string {
-  return `${flagText(node.in, 'in ')}${flagText(node.out, 'out ')}${flagText(node.const, 'const ')}`
-}
-
-function typePredicateParameterText(parameterName: TSTypePredicate['parameterName']): string {
-  if (parameterName.type === 'TSThisType') return 'this'
-  return parameterName.name
-}
-
-function externalModuleArgumentText(value: string): string {
-  switch (Boolean(value)) {
-    case true:
-      return JSON.stringify(value)
-    case false:
-      return '""'
-  }
-}
+type LiteralNode = Literal
 
 const BARE_DEFAULT_EXPORT_KINDS: Readonly<Record<string, true>> = {
   FunctionDeclaration: true,
@@ -2897,8 +1940,68 @@ const BARE_DEFAULT_EXPORT_KINDS: Readonly<Record<string, true>> = {
   TSInterfaceDeclaration: true,
 }
 
-function isBareDefaultExport(
+const isBareDefaultExport = (
   node: ExportDefaultDeclaration['declaration'],
-): node is FunctionNode | Class | TSInterfaceDeclaration {
-  return BARE_DEFAULT_EXPORT_KINDS[node.type] === true
+): node is FunctionNode | Class | TSInterfaceDeclaration =>
+  BARE_DEFAULT_EXPORT_KINDS[node.type] === true
+
+const typeParameterModifiersText = (node: TSTypeParameterDeclaration['params'][number]): string =>
+  `${flagText(node.in, 'in ')}${flagText(node.out, 'out ')}${flagText(node.const, 'const ')}`
+
+const typePredicateParameterText = (parameterName: TSTypePredicate['parameterName']): string =>
+  Match.value(parameterName).pipe(
+    Match.when({ type: 'TSThisType' }, () => 'this'),
+    Match.orElse((n) => n.name),
+  )
+
+const externalModuleArgumentText = (value: string): string =>
+  Boolean.match(Boolean(value), {
+    onTrue: () => JSON.stringify(value),
+    onFalse: () => '""',
+  })
+
+interface AttachedComment {
+  readonly type: string
+  readonly value: string
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const { Schema } = await import('effect')
+  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
+  const oxc = await import('oxc-parser')
+  const legacy = await import('./legacy.tmp.js')
+
+  const TEMPLATE_TYPE_FRAGMENTS = Schema.Literals([
+    'export type T1 = `v${string}`;',
+    'export type T2 = `x${T1 | string}y${number}`;',
+    'export type T3 = `a${T2}${T1}b`;',
+    'export interface W1 { readonly f: `p${T3}` }',
+    'export type T4 = ``;',
+    'export type T5 = `${T1}`;',
+    'export type T6 = `mix ${T4 | `inner ${T1}`}`;',
+    'export const once = (x: string) => x;',
+  ])
+
+  const snippet = Arbitrary.map(
+    Arbitrary.schema(Schema.Array(TEMPLATE_TYPE_FRAGMENTS)),
+    (fragments) => fragments.join('\n'),
+  )
+
+  const parsedProgram = (source: string) => {
+    const parsed = oxc.parseSync('law.ts', source, { lang: 'ts', range: true })
+    return parsed.errors.length === 0 ? Option.some(parsed) : Option.none()
+  }
+
+  const printedOf = (printer: typeof printProgram, parsed: (typeof oxc.ParseTreeResult extends never ? never : Awaited<ReturnType<typeof oxc.parseSync>>)): string =>
+    printer(parsed.program, { comments: parsed.comments as never, hashbang: null })
+
+  it.prop('∀src_TemplateTypePrint_≡Legacy', [snippet], ([source]) =>
+    Option.match(parsedProgram(source), {
+      onNone: () => true,
+      onSome: (parsed) =>
+        printedOf(printProgram, parsed) ===
+        printedOf(legacy.printProgram as typeof printProgram, parsed as never),
+    }),
+  )
 }

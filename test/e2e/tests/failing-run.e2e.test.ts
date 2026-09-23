@@ -1,6 +1,6 @@
 import { type RunEvent, RunEventWireLine, type RunFailed, S } from '@systemfsoftware/stryker-js'
 import type { ExpectStatic } from 'vitest'
-import type { ExecResult } from './__fixtures__/microvm-environment.js'
+import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
 
 const FAILING_DRY_RUN_RUNTIME_ERROR_CODE = 3

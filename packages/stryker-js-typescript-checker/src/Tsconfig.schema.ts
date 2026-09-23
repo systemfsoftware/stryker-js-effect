@@ -4,6 +4,7 @@
  * Typed by Effect Schema and decoded at the boundary; the compiler capability
  * consumes only validated shapes.
  */
+import * as Boolean from 'effect/Boolean'
 import { Schema as S } from 'effect'
 
 /** The configured tsconfig failed to parse or is not a shape this package can consume. */

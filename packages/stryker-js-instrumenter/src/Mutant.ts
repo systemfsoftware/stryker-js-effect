@@ -1,3 +1,4 @@
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -305,8 +306,14 @@ const isPastDepth = (depth: number): boolean => depth > 4
 
 const isMissingCause = <A = unknown>(cause: A): boolean => cause === undefined || cause === null
 
-export const causeText = <A = unknown>(cause: A, depth: number): string | undefined =>
-  isPastDepth(depth) ? undefined : missingCauseTextOf(cause, depth)
+export const causeText: {
+  <A = unknown>(cause: A, depth: number): string | undefined
+  <A = unknown>(depth: number): (cause: A) => string | undefined
+} = dual(
+  (args: IArguments): boolean => args.length >= 2,
+  <A = unknown>(cause: A, depth: number): string | undefined =>
+    isPastDepth(depth) ? undefined : missingCauseTextOf(cause, depth),
+)
 
 function missingCauseTextOf<A = unknown>(cause: A, depth: number): string | undefined {
   return isMissingCause(cause) ? undefined : causeTextOfValue(cause, depth)

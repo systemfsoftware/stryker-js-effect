@@ -1,8 +1,3 @@
-/**
- * Printer — turns the instrumenter's ASTs back into source text. The owned
- * ESTree printer (`./print/index.js`) renders; the script-root offsets that
- * html/svelte slicing needs come from the parsed `range`.
- */
 import * as Predicate from 'effect/Predicate'
 import { spanOf } from './Ast.js'
 import { type Hashbang, printProgram } from './print/index.js'

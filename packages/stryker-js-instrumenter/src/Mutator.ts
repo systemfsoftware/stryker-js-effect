@@ -2,6 +2,7 @@
  * Mutator — every mutation operator and its registry.
  */
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
 import type {
@@ -72,7 +73,7 @@ export type { Node }
  * (parsed with `range: true`), which is a stronger identity than the old
  * line/column loc.
  */
-export function eqNode(a: Node, b: Node): boolean {
+function eqNode(a: Node, b: Node): boolean {
   const identity = nodeIdentity(a)
   return identity !== undefined && identity === nodeIdentity(b)
 }
@@ -102,14 +103,17 @@ function orDefault<T>(value: T | undefined, fallback: T): T {
   return value ?? fallback
 }
 
-export function createMutant(
-  id: string,
-  fileName: string,
-  original: Node,
-  specs: Mutable,
-  offset?: Position,
-  lineTable?: readonly number[],
-): Mutant {
+export interface CreateMutantOptions {
+  readonly id: string
+  readonly fileName: string
+  readonly original: Node
+  readonly specs: Mutable
+  readonly offset?: Position | undefined
+  readonly lineTable?: readonly number[] | undefined
+}
+
+export const createMutant = (params: CreateMutantOptions): Mutant => {
+  const { id, fileName, original, specs, offset, lineTable } = params
   return {
     id,
     fileName,
@@ -150,12 +154,18 @@ function nodeOffset(mutant: Mutant, edge: 'start' | 'end'): number {
   return span[edge]
 }
 
-export function applyMutant(mutant: Mutant, originalTree: Node): Node {
-  if (originalTree === mutant.original) {
-    return mutant.replacement
-  }
-  return cloneWithReplacement(mutant, originalTree)
-}
+export const applyMutant: {
+  (mutant: Mutant, originalTree: Node): Node
+  (originalTree: Node): (mutant: Mutant) => Node
+} = dual(
+  (args: IArguments): boolean => args.length >= 2,
+  (mutant: Mutant, originalTree: Node): Node => {
+    if (originalTree === mutant.original) {
+      return mutant.replacement
+    }
+    return cloneWithReplacement(mutant, originalTree)
+  },
+)
 
 function cloneWithReplacement(mutant: Mutant, originalTree: Node): Node {
   const mutatedAst = cloneNode(originalTree)
@@ -258,7 +268,7 @@ export interface MutatorOptions {
  * its position: anchors first, then each remaining position left to right with
  * quantifier removal ahead of class negation.
  */
-export function mutateRegexPattern(pattern: string, flags: string | undefined): readonly string[] {
+function mutateRegexPattern(pattern: string, flags: string | undefined): readonly string[] {
   if (pattern.length === 0) {
     return []
   }
@@ -489,7 +499,7 @@ const ARITHMETIC_OPERATOR_KEYS: readonly string[] = Object.keys(arithmeticOperat
 
 type ArithmeticBinary = BinaryExpression & { operator: keyof typeof arithmeticOperatorReplacements }
 
-export const arithmeticOperatorMutator: Mutator = (node) =>
+const arithmeticOperatorMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isArithmeticBinary, (binary) => [withOperator(binary, arithmeticOperatorReplacements[binary.operator])]),
     Match.orElse(() => NO_MUTANTS),
@@ -528,7 +538,7 @@ type ArrayConstructorCall = (CallExpression | NewExpression) & {
   callee: IdentifierReference & { name: 'Array' }
 }
 
-export const arrayDeclarationMutator: Mutator = (node) =>
+const arrayDeclarationMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isArrayExpression, (array) => [arrayDeclarationReplacement(array)]),
     Match.when(isArrayConstructorCall, (construct) => [arrayConstructorReplacement(construct)]),
@@ -541,7 +551,7 @@ function isArrayExpression(node: Node): node is ArrayExpression {
 
 function arrayDeclarationReplacement(array: ArrayExpression): Expression {
   if (array.elements.length > 0) {
-    return arrayExpression()
+    return arrayExpression([])
   }
   return arrayExpression([stringLiteral('Stryker was here')])
 }
@@ -570,10 +580,10 @@ function constructorArguments(args: ReadonlyArray<Expression | SpreadElement>): 
   if (args.length > 0) {
     return []
   }
-  return [arrayExpression()]
+  return [arrayExpression([])]
 }
 
-export const arrowFunctionMutator: Mutator = (node) =>
+const arrowFunctionMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isExpressionBodiedArrow, () => [arrowFunctionExpression([], identifier('undefined'))]),
     Match.orElse(() => NO_MUTANTS),
@@ -633,7 +643,7 @@ const ASSIGNMENT_OPERATOR_KEYS: readonly string[] = Object.keys(assignmentOperat
 
 type AssignmentBinary = AssignmentExpression & { operator: keyof typeof assignmentOperatorReplacements }
 
-export const assignmentOperatorMutator: Mutator = (node) =>
+const assignmentOperatorMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isMutatableAssignment, (assignment) => [
       withOperator(assignment, assignmentOperatorReplacements[assignment.operator]),
@@ -653,7 +663,7 @@ function isSupportedAssignmentExpression(node: AssignmentExpression): boolean {
   return !isStringLike(node.right) || stringAssignmentTypes.includes(node.operator)
 }
 
-export const blockStatementMutator: Mutator = (node, context) =>
+const blockStatementMutator: Mutator = (node, context) =>
   mutantsWhen(isMutableBlock(node, context), () => [blockStatement([])])
 
 function isMutableBlock(node: Node, context: MutatorContext): boolean {
@@ -753,7 +763,7 @@ function containsSuperInValue<A = unknown>(value: A): boolean {
   return containsSuperCall(value)
 }
 
-export const booleanLiteralMutator: Mutator = (node) =>
+const booleanLiteralMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isBooleanLiteral, (literal) => [booleanLiteral(!literal.value)]),
     Match.when(isNegatedPrefix, (unary) => [cloneNode(unary.argument)]),
@@ -780,7 +790,7 @@ function isNegation(unary: UnaryExpression): unary is NegatedPrefix {
 
 const booleanOperators = Object.freeze(['!=', '!==', '&&', '<', '<=', '==', '===', '>', '>=', '||'])
 
-export const conditionalExpressionMutator: Mutator = (node, context) =>
+const conditionalExpressionMutator: Mutator = (node, context) =>
   Match.value(isTestOfLoop(node, context)).pipe(
     Match.when(true, () => [booleanLiteral(false)]),
     Match.orElse(() => conditionTestMutants(node, context)),
@@ -913,7 +923,7 @@ const EQUALITY_OPERATOR_KEYS: readonly string[] = Object.keys(operators)
 
 type EqualityBinary = BinaryExpression & { operator: keyof typeof operators }
 
-export const equalityOperatorMutator: Mutator = (node) =>
+const equalityOperatorMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isEqualityBinary, (binary) => mutatedEqualityOperators(binary)),
     Match.orElse(() => NO_MUTANTS),
@@ -939,7 +949,7 @@ const LOGICAL_OPERATOR_KEYS: readonly string[] = Object.keys(logicalOperatorRepl
 
 type LogicalBinary = LogicalExpression & { operator: keyof typeof logicalOperatorReplacements }
 
-export const logicalOperatorMutator: Mutator = (node) =>
+const logicalOperatorMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isSupportedLogicalOperator, (binary) => [
       withOperator(binary, logicalOperatorReplacements[binary.operator]),
@@ -996,7 +1006,7 @@ interface MethodMutation {
   readonly newName: string | null
 }
 
-export const methodExpressionMutator: Mutator = (node) =>
+const methodExpressionMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isCallExpression, (call) => methodCallMutants(call)),
     Match.orElse(() => NO_MUTANTS),
@@ -1072,7 +1082,7 @@ function isNotSpreadElement(node: Expression | SpreadElement): node is Expressio
   return node.type !== 'SpreadElement'
 }
 
-export const objectLiteralMutator: Mutator = (node) =>
+const objectLiteralMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isNonEmptyObjectLiteral, (): readonly Node[] => [{ type: 'ObjectExpression', properties: [] }]),
     Match.orElse(() => NO_MUTANTS),
@@ -1082,7 +1092,7 @@ function isNonEmptyObjectLiteral(node: Node): node is ObjectExpression {
   return node.type === 'ObjectExpression' && node.properties.length > 0
 }
 
-export const optionalChainingMutator: Mutator = (node) =>
+const optionalChainingMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isOptionalMember, (member) => [withoutOptional(member)]),
     Match.when(isOptionalCall, (call) => [withoutOptional(call)]),
@@ -1105,7 +1115,7 @@ function withoutOptional<T extends Node & { optional?: boolean }>(node: T): T {
 
 type RegexLiteral = Literal & { regex: { pattern: string; flags: string } }
 
-export const regexMutator: Mutator = (node, context) =>
+const regexMutator: Mutator = (node, context) =>
   Match.value(node).pipe(
     Match.when(isRegexLiteral, (literal) => regexLiteralMutants(literal)),
     Match.when(isStringLiteral, (literal) =>
@@ -1162,7 +1172,7 @@ function regexFlags(parent: Node | undefined): string | undefined {
 
 const PLACEHOLDER = 'Stryker was here!'
 
-export const stringLiteralMutator: Mutator = (node, context) =>
+const stringLiteralMutator: Mutator = (node, context) =>
   Match.value(node).pipe(
     Match.when(isTemplateLiteral, (template) => templateMutants(template)),
     Match.when(isStringLiteral, (literal) =>
@@ -1274,7 +1284,7 @@ const UNARY_OPERATOR_KEYS: readonly string[] = Object.keys(UnaryOperator)
 
 type SupportedUnaryExpression = UnaryExpression & { operator: keyof typeof UnaryOperator }
 
-export const unaryOperatorMutator: Mutator = (node) =>
+const unaryOperatorMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isSupportedUnaryExpression, (unary) => [unaryOperatorReplacement(unary)]),
     Match.orElse(() => NO_MUTANTS),
@@ -1310,7 +1320,7 @@ const UpdateOperators = {
   '--': '++',
 } as const
 
-export const updateOperatorMutator: Mutator = (node) =>
+const updateOperatorMutator: Mutator = (node) =>
   Match.value(node).pipe(
     Match.when(isUpdateExpression, (update) => [
       updateExpression(UpdateOperators[update.operator], cloneNode(update.argument), update.prefix),

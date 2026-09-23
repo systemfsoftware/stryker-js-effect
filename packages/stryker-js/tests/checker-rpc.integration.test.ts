@@ -68,7 +68,7 @@ const makeHarness = () =>
     const [clientSocket, serverSocket] = yield* memorySocketPair
     const receivedRef = yield* Ref.make<readonly CheckerMutantWire[]>([])
 
-    yield* Effect.forkScoped(Layer.launch(makeCheckerServer(serverSocket, receivedRef)))
+    yield* Effect.forkScoped(makeCheckerServer(serverSocket, receivedRef).pipe(Layer.launch))
 
     const launcherLayer = Layer.succeed(WorkerLauncher, {
       spawn: () =>

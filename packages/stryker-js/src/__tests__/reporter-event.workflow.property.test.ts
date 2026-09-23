@@ -11,7 +11,7 @@ import {
   ReporterEventUnion,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface'
-import { RunMutantTested } from '../RunEvent.schema.js'
+import { RunMutantTested } from '../run-event.schema.js'
 
 type Validation = StandardSchemaV1.Result<ReporterEvent> | 'async'
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { assert, describe, expect, it } from 'vitest'
 
 import {
   ANNOTATION_OBJECT_IGNORED,
@@ -14,7 +14,7 @@ import {
 import { testIgnorer } from '@systemfsoftware/stryker-ignorer-kit/tester'
 
 const descriptor = strykerIgnorers[0]
-if (descriptor === undefined) throw new Error('the package publishes one ignorer descriptor')
+assert(descriptor !== undefined, 'the package publishes one ignorer descriptor')
 
 const annotations = (object: string): string => `S.annotations(${object})`
 

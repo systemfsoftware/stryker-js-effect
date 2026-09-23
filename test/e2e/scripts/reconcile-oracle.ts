@@ -1,9 +1,11 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Result, Schema } from 'effect'
 import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
-import { type BaselineCountKey, type BlessedBaseline, decodeBaseline, type OracleSliceId } from './oracle/baseline.js'
-import { createPackageProjects, evaluateWithProjects } from './oracle/diagnostics.js'
+import { type BaselineCountKey, BlessedBaseline, type OracleSliceId } from '../src/Oracle/baseline.schema.js'
+import { OracleSliceConfig } from '../src/Oracle/slice-config.schema.js'
+import { createPackageProjects, evaluateWithProjects, type PackageProject } from './oracle/diagnostics.js'
 import {
   extractLiteralBlock,
   type JourneyLiterals,
@@ -11,11 +13,10 @@ import {
   spliceLiteralBlock,
 } from './oracle/literal-block.js'
 import { normalizeCounts, normalizeTally } from './oracle/normalize.js'
-import { listRegisteredSlices, ORACLE_SLICES, type OracleSliceConfig } from './oracle/slice-config.js'
 import { type CompileErrorFlags, deriveStaticOracleSlice, type StaticOracleSlice } from './oracle/status-derivation.js'
 import type { IndependentInventory, IndependentMutant } from './oracle/types.js'
 
-export type { BaselineCountKey, BlessedBaseline, OracleSliceId } from './oracle/baseline.js'
+export type { BaselineCountKey, BlessedBaseline, OracleSliceId } from '../src/Oracle/baseline.schema.js'
 
 export type CountKey = BaselineCountKey
 
@@ -110,11 +111,12 @@ function globToRegExp(glob: string): RegExp {
 }
 
 export function expandSliceMutateFiles(slice: OracleSliceConfig): readonly string[] {
+  const fixtureDir = fixtureDirOf(slice)
   const positives: string[] = []
   const negatives: string[] = []
   for (const pattern of slice.mutateFiles) {
     if (pattern.startsWith('!')) negatives.push(pattern.slice(1))
-    else positives.push(...expandMutateGlob(slice.fixtureDir, pattern))
+    else positives.push(...expandMutateGlob(fixtureDir, pattern))
   }
   const excludeRe = negatives.map((n) => globToRegExp(n))
   const filtered = positives.filter((p) => !excludeRe.some((re) => re.test(p)))
@@ -149,13 +151,13 @@ function inventoryForFile(
 
 export function recomputeStaticSlice(slice: OracleSliceConfig): StaticOracleSlice {
   const files = expandSliceMutateFiles(slice)
-  const projects = createPackageProjects(slice.fixtureDir, slice.packageGlobs)
+  const projects = createPackageProjects(fixtureDirOf(slice), slice.packageGlobs)
   const allMutants: IndependentMutant[] = []
   const allCodesByMutator: Record<string, number[]> = {}
   let totalIgnored = 0
 
   for (const rel of files) {
-    const { inventory, flags } = inventoryForFile(projects, slice.fixtureDir, rel, slice.excludedMutations)
+    const { inventory, flags } = inventoryForFile(projects, fixtureDirOf(slice), rel, slice.excludedMutations)
     for (const m of inventory.mutants) {
       allMutants.push(m)
     }
@@ -193,7 +195,7 @@ export function loadBaseline(slice: OracleSliceId): BlessedBaseline | undefined 
   const filePath = path.join(BASELINES_DIR, `${slice}.json`)
   if (!fs.existsSync(filePath)) return undefined
   const text = fs.readFileSync(filePath, 'utf8')
-  return decodeBaseline(text)
+  return Result.getOrThrow(Schema.decodeUnknownResult(BlessedBaseline)(JSON.parse(text)))
 }
 
 export interface CliOptions {
@@ -227,6 +229,8 @@ export interface CliRunResult {
 }
 
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+
+const fixtureDirOf = (slice: OracleSliceConfig): string => path.join(REPO_ROOT, slice.fixtureDir)
 
 function journeyPath(slice: OracleSliceConfig): string {
   return path.join(REPO_ROOT, slice.journey)
@@ -265,11 +269,12 @@ export function reconcileJourneys(slices: readonly OracleSliceConfig[]): readonl
 export function runCli(argv: readonly string[]): CliRunResult {
   const opts = parseCliArgs(argv)
   for (const id of opts.sliceIds) {
-    if (!(id in ORACLE_SLICES)) {
-      throw new Error(`Unknown slice "${id}". Valid slices: ${Object.keys(ORACLE_SLICES).join(', ')}`)
+    if (!(id in OracleSliceConfig.SLICES)) {
+      throw new Error(`Unknown slice "${id}". Valid slices: ${Object.keys(OracleSliceConfig.SLICES).join(', ')}`)
     }
   }
-  const slices = opts.sliceIds.length === 0 ? listRegisteredSlices() : opts.sliceIds.map((id) => ORACLE_SLICES[id])
+  const slices =
+    opts.sliceIds.length === 0 ? Object.values(OracleSliceConfig.SLICES) : opts.sliceIds.map((id) => OracleSliceConfig.SLICES[id])
   if (opts.reconcile) {
     const reconciledJourneys = reconcileJourneys(slices)
     for (const journey of reconciledJourneys) {

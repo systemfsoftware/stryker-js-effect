@@ -6,7 +6,7 @@ import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-
 import { MetricsResultSchema, NonNegativeFinite, NonNegativeInt } from './Metrics.schema.js'
 
 import { MutationTestResultSchema } from './Report.schema.js'
-import type { StrykerOptions } from './stryker-options.js'
+import type { StrykerOptions } from './stryker-options.schema.js'
 import { TestResultSchema, TestRunnerCapabilitiesSchema } from './TestRunner.schema.js'
 
 export const ReporterEventKind = S.Literals([

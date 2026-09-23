@@ -3,53 +3,50 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { ManagedRuntime } from 'effect'
+import { Array, Boolean, ConfigProvider, Effect, Layer, ManagedRuntime, Match, Option, Result, Schema } from 'effect'
+import * as Crypto from 'effect/Crypto'
+import * as FileSystem from 'effect/FileSystem'
+import * as Path from 'effect/Path'
+import { ChildProcessSpawner } from 'effect/unstable/process'
 
-import { type RunEvent, RunEventWireLine, S } from '@systemfsoftware/stryker-js'
+import { type RunEvent, RunEventWireLine } from '@systemfsoftware/stryker-js'
+import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 
+import { BakedFixtureCache } from '../src/Harness/fixture-cache.service.js'
+import type { ExecResult } from '../src/Harness/guest-job.schema.js'
+import { GuestJobs } from '../src/Harness/guest-job.service.js'
+import type { HarnessError } from '../src/Harness/harness-failure.schema.js'
+import { StrykerCliRunner } from '../src/Harness/stryker-cli-runner.service.js'
 import {
-  type BakedFixtureCacheService,
-  type ExecResult,
-  type HarnessError,
-  installFixture,
-  runCli,
-  SelfBakingHarnessLive,
-  type StrykerCliRunnerService,
-} from '../tests/__fixtures__/microvm-environment.js'
-import {
-  ARTIFACT_CONTRACT,
-  type BaselineCountKey,
   type BaselineCounts,
-  type BlessedBaseline,
-  compareBaselines,
-  decodeBaseline,
-  encodeBaseline,
-  formatBaselineDiff,
+  BlessedBaseline,
   type OracleSliceId,
-  sortTally,
-  tallyMutatorStatuses,
-  ZERO_COUNTS,
-} from './oracle/baseline.js'
+  OracleSliceId as OracleSliceIds,
+} from '../src/Oracle/baseline.schema.js'
+import { OracleSliceConfig } from '../src/Oracle/slice-config.schema.js'
 import { foldTimeoutIntoKilled, normalizeTally } from './oracle/normalize.js'
-import { ORACLE_SLICES, type OracleSliceConfig } from './oracle/slice-config.js'
 
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 const BASELINE_OUTPUT_DIR = join(REPO_ROOT, 'test/e2e/oracle-baselines')
 
-type HarnessRuntime = ManagedRuntime.ManagedRuntime<BakedFixtureCacheService | StrykerCliRunnerService, HarnessError>
+type HarnessRuntime = ManagedRuntime.ManagedRuntime<
+  BakedFixtureCache | StrykerCliRunner | GuestJobs | ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path,
+  HarnessError
+>
 
 const foldForGate = (baseline: BlessedBaseline): BlessedBaseline => ({
   ...baseline,
   counts: foldTimeoutIntoKilled(baseline.counts),
   mutatorStatusTally: normalizeTally(baseline.mutatorStatusTally),
 })
+
 const SABOTAGE_SLICE = 'sabotage'
 const SABOTAGE_REASON =
   'R9: sabotage is never blessable — threshold-breach assertions stay hand-authored outside regeneration scope (R12)'
 
 const REGISTERED_IDS: ReadonlyArray<OracleSliceId> = Object.freeze(
-  Object.keys(ORACLE_SLICES) as OracleSliceId[],
+  Object.values(OracleSliceConfig.SLICES).map((slice) => slice.id),
 )
 
 function listValidSliceIds(): string {
@@ -84,104 +81,112 @@ function ensureKnownSlice(id: string): OracleSliceId {
   if (id === SABOTAGE_SLICE) {
     throw new Error(`Slice "${SABOTAGE_SLICE}" cannot be blessed. ${SABOTAGE_REASON}`)
   }
-  if (!(id in ORACLE_SLICES)) {
-    throw new Error(
-      `Unknown slice "${id}". Valid slices: ${listValidSliceIds()}. ${SABOTAGE_SLICE} is rejected because ${SABOTAGE_REASON}`,
-    )
-  }
-  return id as OracleSliceId
+  return Option.match(Schema.decodeUnknownOption(OracleSliceIds)(id), {
+    onNone: () => {
+      throw new Error(
+        `Unknown slice "${id}". Valid slices: ${listValidSliceIds()}. ${SABOTAGE_SLICE} is rejected because ${SABOTAGE_REASON}`,
+      )
+    },
+    onSome: (sliceId) => sliceId,
+  })
 }
 
-const COUNTS_KEY_MAP: Readonly<Record<keyof BaselineCounts, BaselineCountKey>> = Object.freeze({
-  compileErrors: 'compileErrors',
-  ignored: 'ignored',
-  killed: 'killed',
-  noCoverage: 'noCoverage',
-  pending: 'pending',
-  runtimeErrors: 'runtimeErrors',
-  survived: 'survived',
-  timeout: 'timeout',
-})
-
-type MutantEvent = Extract<RunEvent, { _tag: 'mutant' }>
 type VerdictEvent = Extract<RunEvent, { _tag: 'verdict' }>
 
-function decodeWireLine(line: string, _slice: OracleSliceId): RunEvent {
-  return S.decodeUnknownSync(RunEventWireLine)(line)
-}
+const BASELINE_COUNT_KEYS = [
+  'compileErrors',
+  'ignored',
+  'killed',
+  'noCoverage',
+  'pending',
+  'runtimeErrors',
+  'survived',
+  'timeout',
+] as const
+
+const tallyMutatorStatuses = (pairs: ReadonlyArray<readonly [string, string]>): Readonly<Record<string, number>> =>
+  pairs.reduce<Record<string, number>>((tally, [mutator, status]) => {
+    const key = `${mutator}:${status}`
+    return { ...tally, [key]: (tally[key] ?? 0) + 1 }
+  }, {})
+
+const sortEntryOf = (key: string, count: number): ReadonlyArray<readonly [string, number]> =>
+  Boolean.match(count > 0, {
+    onTrue: () => [[key, count]],
+    onFalse: () => [],
+  })
+
+const sortTally = (tally: Readonly<Record<string, number>>): Readonly<Record<string, number>> =>
+  Object.fromEntries(
+    Object.keys(tally).sort().flatMap((key): ReadonlyArray<readonly [string, number]> => sortEntryOf(key, tally[key] ?? 0)),
+  )
+
+const countsOf = (verdict: VerdictEvent): BaselineCounts => ({
+  compileErrors: verdict.counts.compileErrors,
+  ignored: verdict.counts.ignored,
+  killed: verdict.counts.killed,
+  noCoverage: verdict.counts.noCoverage,
+  pending: verdict.counts.pending,
+  runtimeErrors: verdict.counts.runtimeErrors,
+  survived: verdict.counts.survived,
+  timeout: verdict.counts.timeout,
+})
+
+const decodeEvent = (line: string, slice: OracleSliceId): RunEvent =>
+  Result.match(Schema.decodeResult(RunEventWireLine)(line), {
+    onFailure: (issue) => {
+      throw new Error(
+        `Slice "${slice}" produced a malformed RunEvent line; refusing to bless garbage: ${issue.message}`,
+        { cause: issue },
+      )
+    },
+    onSuccess: (event) => event,
+  })
 
 interface ParsedRun {
   readonly baseline: BlessedBaseline
 }
 
+const statusPairOf = (mutator: string, status: string): readonly [string, string] => [mutator, status]
+
+const mutatorStatusPairsOf = (events: ReadonlyArray<RunEvent>): ReadonlyArray<readonly [string, string]> =>
+  events.flatMap((event) =>
+    Match.value(event).pipe(
+      Match.tag('mutant', (mutant) => [statusPairOf(mutant.mutator, mutant.status)]),
+      Match.orElse(() => []),
+    ))
+
 function parseRunEvents(stdout: string, slice: OracleSliceId): ParsedRun {
-  const events: RunEvent[] = []
-  for (const rawLine of stdout.split('\n')) {
+  const events = stdout.split('\n').flatMap((rawLine) => {
     const line = rawLine.trim()
-    if (line.length === 0 || !line.startsWith('{') || !line.endsWith('}')) {
-      continue
-    }
-    let event: RunEvent
-    try {
-      event = decodeWireLine(line, slice)
-    } catch (cause) {
-      throw new Error(
-        `Slice "${slice}" produced a malformed RunEvent line; refusing to bless garbage: ${(cause as Error).message}`,
-        { cause },
-      )
-    }
-    events.push(event)
-  }
-  if (events.length === 0) {
-    throw new Error(`Slice "${slice}" produced no RunEvents on stdout; refusing to bless an empty stream.`)
-  }
-  const terminal = events.at(-1) as RunEvent
-  if (terminal._tag !== 'verdict') {
-    throw new Error(
-      `Slice "${slice}" terminated with event _tag "${terminal._tag}", expected "verdict". Refusing to bless garbage.`,
-    )
-  }
-  const verdict = terminal as VerdictEvent
-  const counts = verdict.counts as unknown as Readonly<Record<keyof BaselineCounts, unknown>>
-  const validatedCounts = { ...ZERO_COUNTS } as Record<BaselineCountKey, number>
-  for (const key of Object.keys(ZERO_COUNTS) as ReadonlyArray<keyof BaselineCounts>) {
-    const value = counts[key]
-    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-      throw new Error(
-        `Slice "${slice}" verdict.counts.${key} was ${
-          JSON.stringify(value)
-        }; expected non-negative integer. Refusing to bless garbage.`,
-      )
-    }
-    validatedCounts[COUNTS_KEY_MAP[key]] = value
-  }
-  const mutatorStatusPairs: Array<[string, string]> = []
-  for (const event of events) {
-    if (event._tag !== 'mutant') {
-      continue
-    }
-    const mutantEvent = event as MutantEvent
-    const mutator = mutantEvent.mutator
-    const status = mutantEvent.status
-    if (typeof mutator !== 'string' || typeof status !== 'string') {
-      throw new Error(
-        `Slice "${slice}" emitted a "mutant" event with non-string mutator/status: mutator=${
-          JSON.stringify(mutator)
-        }, status=${JSON.stringify(status)}. Refusing to bless garbage.`,
-      )
-    }
-    mutatorStatusPairs.push([mutator, status])
-  }
-  const config = ORACLE_SLICES[slice]
-  return {
-    baseline: {
-      artifactContract: ARTIFACT_CONTRACT,
-      slice,
-      strykerConfig: config.strykerConfig,
-      counts: validatedCounts as BaselineCounts,
-      mutatorStatusTally: sortTally(tallyMutatorStatuses(mutatorStatusPairs)),
+    return Boolean.match(line.length > 0 && line.startsWith('{') && line.endsWith('}'), {
+      onFalse: () => [],
+      onTrue: () => [decodeEvent(line, slice)],
+    })
+  })
+  const mutatorStatusPairs = mutatorStatusPairsOf(events)
+  return Option.match(Option.fromNullishOr(events.at(-1)), {
+    onNone: () => {
+      throw new Error(`Slice "${slice}" produced no RunEvents on stdout; refusing to bless an empty stream.`)
     },
-  }
+    onSome: (terminal) =>
+      Match.value(terminal).pipe(
+        Match.tag('verdict', (verdict) => ({
+          baseline: BlessedBaseline.make({
+            artifactContract: BlessedBaseline.ARTIFACT_CONTRACT,
+            slice,
+            strykerConfig: OracleSliceConfig.SLICES[slice].strykerConfig,
+            counts: countsOf(verdict),
+            mutatorStatusTally: sortTally(tallyMutatorStatuses(mutatorStatusPairs)),
+          }),
+        })),
+        Match.orElse((terminal) => {
+          throw new Error(
+            `Slice "${slice}" terminated with event _tag "${terminal._tag}", expected "verdict". Refusing to bless garbage.`,
+          )
+        }),
+      ),
+  })
 }
 
 async function runSliceOnce(
@@ -189,13 +194,13 @@ async function runSliceOnce(
   slice: OracleSliceId,
   attempt: number,
 ): Promise<BlessedBaseline> {
-  const config = ORACLE_SLICES[slice]
+  const config = OracleSliceConfig.SLICES[slice]
   const fixtureName = `oracle-${slice}`
   const installedPath = await runtime.runPromise(
-    installFixture({ url: ENTERPRISE_FIXTURE_URL, name: fixtureName }),
+    BakedFixtureCache.use((cache) => cache.install({ url: ENTERPRISE_FIXTURE_URL, name: fixtureName })),
   )
   const args: string[] = ['run', config.strykerConfig]
-  const run: ExecResult = await runtime.runPromise(runCli(args, installedPath))
+  const run: ExecResult = await runtime.runPromise(StrykerCliRunner.use((runner) => runner.run(args, installedPath)))
   if (run.exitCode !== 0) {
     throw new Error(
       `Slice "${slice}" (attempt ${attempt}) exited with code ${run.exitCode}; refusing to bless a failing run.\nstdout: ${
@@ -203,14 +208,14 @@ async function runSliceOnce(
       }\nstderr: ${run.stderr.slice(-2000)}`,
     )
   }
-  const parsed = parseRunEvents(run.stdout, slice)
-  return parsed.baseline
+  return parseRunEvents(run.stdout, slice).baseline
 }
 
 async function writeBaselineFile(baseline: BlessedBaseline): Promise<string> {
   const outPath = join(BASELINE_OUTPUT_DIR, `${baseline.slice}.json`)
   await mkdir(dirname(outPath), { recursive: true })
-  await writeFile(outPath, encodeBaseline(baseline), 'utf8')
+  const encoded = Result.getOrThrow(Schema.encodeUnknownResult(BlessedBaseline)(baseline))
+  await writeFile(outPath, `${JSON.stringify(encoded, undefined, 2)}\n`, 'utf8')
   return outPath
 }
 
@@ -218,7 +223,7 @@ async function readExistingBaseline(slice: OracleSliceId): Promise<BlessedBaseli
   const path = join(BASELINE_OUTPUT_DIR, `${slice}.json`)
   try {
     const text = await readFile(path, 'utf8')
-    return decodeBaseline(text)
+    return Result.getOrThrow(Schema.decodeUnknownResult(BlessedBaseline)(JSON.parse(text)))
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === 'ENOENT') {
       return undefined
@@ -231,8 +236,68 @@ function reportRun(slice: OracleSliceId, attempt: number, startedMs: number, fin
   console.log(`[${slice}] run ${attempt}: wall=${(finishedMs - startedMs) / 1000}s`)
 }
 
+interface BaselineDiff {
+  readonly countsDiff: Readonly<Record<string, readonly [number, number]>>
+  readonly tallyDiff: Readonly<Record<string, readonly [number, number]>>
+  isEmpty(): boolean
+}
+
+const driftPairOf = (first: number, second: number): readonly [number, number] => [first, second]
+
+const countDiffOf = (a: BlessedBaseline, b: BlessedBaseline): Record<string, readonly [number, number]> =>
+  BASELINE_COUNT_KEYS.reduce<Record<string, readonly [number, number]>>((diff, key) =>
+    Boolean.match(a.counts[key] === b.counts[key], {
+      onTrue: () => diff,
+      onFalse: () => ({ ...diff, [key]: driftPairOf(a.counts[key], b.counts[key]) }),
+    }), {})
+
+const tallyDiffOf = (a: BlessedBaseline, b: BlessedBaseline): Record<string, readonly [number, number]> =>
+  Array.dedupe([...Object.keys(a.mutatorStatusTally), ...Object.keys(b.mutatorStatusTally)])
+    .reduce<Record<string, readonly [number, number]>>((diff, key) => {
+      const av = a.mutatorStatusTally[key] ?? 0
+      const bv = b.mutatorStatusTally[key] ?? 0
+      return Boolean.match(av === bv, {
+        onTrue: () => diff,
+        onFalse: () => ({ ...diff, [key]: driftPairOf(av, bv) }),
+      })
+    }, {})
+
+const compareBaselines = (a: BlessedBaseline, b: BlessedBaseline): BaselineDiff => {
+  const countsDiff = countDiffOf(a, b)
+  const tallyDiff = tallyDiffOf(a, b)
+  return {
+    countsDiff,
+    tallyDiff,
+    isEmpty: () => Object.keys(countsDiff).length === 0 && Object.keys(tallyDiff).length === 0,
+  }
+}
+
+const diffSectionLines = (
+  label: string,
+  section: Readonly<Record<string, readonly [number, number]>>,
+): readonly string[] =>
+  Boolean.match(Object.keys(section).length === 0, {
+    onTrue: () => [],
+    onFalse: () => [
+      `  ${label}:`,
+      ...Object.entries(section)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, [av, bv]]) => `    ${key}: ${av} -> ${bv}`),
+    ],
+  })
+
+const formatBaselineDiff = (diff: BaselineDiff): string =>
+  Boolean.match(diff.isEmpty(), {
+    onTrue: () => 'baseline diff: <empty>',
+    onFalse: () => [
+      'baseline diff:',
+      ...diffSectionLines('counts', diff.countsDiff),
+      ...diffSectionLines('mutatorStatusTally', diff.tallyDiff),
+    ].join('\n'),
+  })
+
 async function blessSlice(runtime: HarnessRuntime, slice: OracleSliceId, verify: boolean): Promise<void> {
-  const sliceConfig: OracleSliceConfig = ORACLE_SLICES[slice]
+  const sliceConfig: OracleSliceConfig = OracleSliceConfig.SLICES[slice]
   const existing = await readExistingBaseline(slice)
   const wallStartMs = Date.now()
   const firstStartMs = Date.now()
@@ -285,12 +350,27 @@ async function blessSlice(runtime: HarnessRuntime, slice: OracleSliceId, verify:
   console.log(`[${slice}] total wall=${(Date.now() - wallStartMs) / 1000}s`)
 }
 
+const selfBakingHarness = Layer.mergeAll(
+  BakedFixtureCache.layer,
+  StrykerCliRunner.layer,
+  GuestJobs.layer,
+).pipe(
+  Layer.provideMerge(
+    ConfigProvider.layerAdd(
+      Effect.map(BakedFixtureCache.bakeProgram, (root) =>
+        ConfigProvider.fromUnknown({ [BakedFixtureCache.BAKED_ROOT_ENV]: root })),
+      { asPrimary: true },
+    ),
+  ),
+  Layer.provideMerge(Layer.mergeAll(GuestJobs.layer, nodeServicesLayer)),
+)
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
   if (args.verify && args.slices.length > 1) {
     throw new Error('--verify runs two consecutive runs per slice; pass exactly one slice with --verify')
   }
-  const runtime = ManagedRuntime.make(SelfBakingHarnessLive)
+  const runtime = ManagedRuntime.make(selfBakingHarness)
   try {
     for (const requested of args.slices) {
       const known = ensureKnownSlice(requested)

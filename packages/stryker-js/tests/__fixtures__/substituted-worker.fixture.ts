@@ -86,7 +86,7 @@ const clientProtocol = (
   socket: Socket.Socket,
 ): Layer.Layer<RpcClient.Protocol, Socket.SocketError> => {
   if (behaviour !== 'acceptsConnection') {
-    return Layer.effect(RpcClient.Protocol)(Effect.fail(unboundAddress()))
+    return Layer.effect(RpcClient.Protocol)(unboundAddress().pipe(Effect.fail))
   }
   return RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
     Layer.provide(Layer.succeed(Socket.Socket, socket)),
@@ -133,7 +133,7 @@ export const servingLauncher = (
       Effect.gen(function*() {
         yield* Ref.update(spawns, (recorded) => [...recorded, workerParams])
         if (params.server !== undefined) {
-          yield* Effect.forkScoped(Layer.launch(params.server(serverSocket)))
+          yield* Effect.forkScoped(params.server(serverSocket).pipe(Layer.launch))
         }
         return { pid: params.pid, clientLayer: params.clientLayer(clientSocket), exited: params.exited }
       })

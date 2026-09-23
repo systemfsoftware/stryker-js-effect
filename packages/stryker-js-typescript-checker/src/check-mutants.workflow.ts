@@ -27,7 +27,7 @@ export class DiagnosticInUnrelatedFileError extends S.TaggedError<DiagnosticInUn
   },
 ) {}
 
-type CheckMutantsError = DiagnosticWithoutFileError | DiagnosticInUnrelatedFileError
+export type CheckMutantsError = DiagnosticWithoutFileError | DiagnosticInUnrelatedFileError
 
 const CheckMutantsTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/CheckMutants')
 type CheckMutantsTypeId = typeof CheckMutantsTypeId
@@ -53,6 +53,8 @@ export class RetestRequired extends S.TaggedClass<RetestRequired>()('RetestRequi
 }
 
 export type CheckMutantsDecision = CheckFinished | RetestRequired
+
+export type CheckMutantsAnswer = S.Codec.Encoded<typeof CheckFinished | typeof RetestRequired>
 
 const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
 
@@ -227,4 +229,9 @@ const verdict = (input: CheckMutantsInput): Result.Result<CheckMutantsDecision, 
     onSome: (decision) => Result.succeed(decision),
   })
 
-export const checkMutants = Workflow.make(CheckMutantsInput, verdict)
+export const checkMutants = Workflow.make({
+  command: CheckMutantsInput,
+  decision: S.Union([CheckFinished, RetestRequired]),
+  error: S.Union([DiagnosticWithoutFileError, DiagnosticInUnrelatedFileError]),
+  decide: verdict,
+})

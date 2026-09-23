@@ -1,0 +1,49 @@
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
+import { CheckerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Effect from 'effect/Effect'
+
+import type { CompilerError } from './Compiler.schema.js'
+import { CheckMutantsCommand } from './Checker.schema.js'
+import { CheckMutantsInput } from './CheckMutants.schema.js'
+import type { CheckMutantsError } from './check-mutants.workflow.js'
+import { checkMutants, DiagnosticInUnrelatedFileError, DiagnosticWithoutFileError } from './check-mutants.workflow.js'
+import { check, nodes } from './ts-compiler.handle.js'
+import { TypeScriptCompiler } from './ts-compiler.service.js'
+
+type CheckRefusalCause = CompilerError | CheckMutantsError | string
+
+const refuse = (options: { readonly mutantIds: readonly string[]; readonly cause: CheckRefusalCause }): CheckerFailed =>
+  CheckerFailed.make({
+    checkerName: 'typescript',
+    mutantIds: options.mutantIds,
+    cause: errorToString(options.cause),
+  })
+
+export type CheckMutantsRead = (typeof CheckMutantsInput)['Encoded']
+
+export const checkCell = Sandwich.named('stryker.typescript_checker.check_mutants')((command: CheckMutantsCommand) =>
+  Effect.flatMap(TypeScriptCompiler, (compiler) =>
+    Effect.zipWith(
+      nodes(compiler),
+      check(compiler, [...command.mutants]),
+      (graphNodes, diagnostics): CheckMutantsRead =>
+        CheckMutantsInput.make({
+          mutants: [...command.mutants],
+          diagnostics: [...diagnostics],
+          nodes: Object.fromEntries(graphNodes),
+        }),
+    )).pipe(
+      Effect.mapError((cause) => refuse({ mutantIds: command.mutants.map((mutant) => mutant.id), cause })),
+    ),
+)
+  .decide(checkMutants)
+  .write({
+    CheckFinished: (answer) => Effect.succeed(answer),
+    RetestRequired: (answer) => Effect.succeed(answer),
+    DiagnosticWithoutFileError: ({ text }) =>
+      Effect.fail(refuse({ mutantIds: [], cause: DiagnosticWithoutFileError.make({ text }) })),
+    DiagnosticInUnrelatedFileError: ({ text, fileName }) =>
+      Effect.fail(refuse({ mutantIds: [], cause: DiagnosticInUnrelatedFileError.make({ text, fileName }) })),
+    CommandRejected: ({ issue }) => Effect.fail(refuse({ mutantIds: [], cause: issue })),
+  })

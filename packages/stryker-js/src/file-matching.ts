@@ -1,3 +1,4 @@
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import type * as Path from 'effect/Path'
 
@@ -17,32 +18,49 @@ const normalizePattern = (
     Match.orElse(() => false),
   )
 
-export function createFileMatcher(
-  pattern: boolean | string,
-  pathService: Path.Path,
-  allowHiddenFiles = true,
-): (fileName: string) => boolean {
-  return Match.value(normalizePattern(pattern, pathService)).pipe(
-    Match.when(
-      Match.string,
-      (normalized) => (fileName: string) => {
-        const path = normalizeFileName(pathService.resolve(fileName))
-        const hidden = path.split('/').some((segment) => segment.startsWith('.'))
-        return Match.value(allowHiddenFiles || !hidden).pipe(
-          Match.when(true, () => matchesGlob(path, normalized)),
-          Match.orElse(() => false),
-        )
-      },
+export const createFileMatcher = dual<
+  (
+    pathService: Path.Path,
+    allowHiddenFiles?: boolean,
+  ) => (pattern: boolean | string) => (fileName: string) => boolean,
+  (
+    pattern: boolean | string,
+    pathService: Path.Path,
+    allowHiddenFiles?: boolean,
+  ) => (fileName: string) => boolean
+>(
+  (args) => (args.length === 2 ? typeof args[1] !== 'boolean' : args.length >= 3),
+  (pattern, pathService, allowHiddenFiles = true) =>
+    Match.value(normalizePattern(pattern, pathService)).pipe(
+      Match.when(
+        Match.string,
+        (normalized) => (fileName: string) => {
+          const path = normalizeFileName(pathService.resolve(fileName))
+          const hidden = path.split('/').some((segment) => segment.startsWith('.'))
+          return Match.value(allowHiddenFiles || !hidden).pipe(
+            Match.when(true, () => matchesGlob(path, normalized)),
+            Match.orElse(() => false),
+          )
+        },
+      ),
+      Match.orElse((normalized) => () => normalized),
     ),
-    Match.orElse((normalized) => () => normalized),
-  )
-}
+)
 
-export function matchesFile(
-  pattern: boolean | string,
-  fileName: string,
-  pathService: Path.Path,
-  allowHiddenFiles = true,
-): boolean {
-  return createFileMatcher(pattern, pathService, allowHiddenFiles)(fileName)
-}
+export const matchesFile = dual<
+  (
+    fileName: string,
+    pathService: Path.Path,
+    allowHiddenFiles?: boolean,
+  ) => (pattern: boolean | string) => boolean,
+  (
+    pattern: boolean | string,
+    fileName: string,
+    pathService: Path.Path,
+    allowHiddenFiles?: boolean,
+  ) => boolean
+>(
+  (args) => (args.length === 3 ? typeof args[2] !== 'boolean' : args.length === 4),
+  (pattern, fileName, pathService, allowHiddenFiles = true) =>
+    createFileMatcher(pattern, pathService, allowHiddenFiles)(fileName),
+)

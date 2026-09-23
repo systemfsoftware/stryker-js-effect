@@ -1,19 +1,15 @@
 {
-  "extends": ["@systemfsoftware/tsconfig/tsc/no-dom/library", "@systemfsoftware/tsconfig/effect"],
-  "compilerOptions": {
-    "customConditions": ["@systemfsoftware/source"],
-    "outDir": "dist",
-    "rootDir": ".",
-    "types": [
-      "node"
-    ]
-  },
-  "include": [
-    "src",
-    "tests"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist"
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "files": [],
+  "references": [
+    {
+      "path": "./tsconfig.app.json"
+    },
+    {
+      "path": "./tsconfig.test.json"
+    },
+    {
+      "path": "./tsconfig.node.json"
+    }
   ]
 }

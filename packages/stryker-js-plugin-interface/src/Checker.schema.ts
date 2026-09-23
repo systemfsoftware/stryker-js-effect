@@ -35,3 +35,14 @@ export class CheckerFailed extends S.TaggedError<CheckerFailed>()('CheckerFailed
   checkerName: S.String,
   mutantIds: S.Array(S.String),
 }) {}
+
+export interface FailedCheckResult {
+  readonly reason: string
+  readonly status: 'compileError'
+}
+
+export interface PassedCheckResult {
+  readonly status: 'passed'
+}
+
+export type CheckResult = FailedCheckResult | PassedCheckResult

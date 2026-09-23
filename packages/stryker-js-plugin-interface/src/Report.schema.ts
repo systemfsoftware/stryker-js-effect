@@ -13,8 +13,8 @@ export const MutantResultSchema = S.Struct({
   description: S.optional(S.String),
   statusReason: S.optional(S.String),
   static: S.optional(S.Boolean),
-  coveredBy: S.optional(S.Array(S.String)),
-  killedBy: S.optional(S.Array(S.String)),
+  coveredBy: S.String.pipe(S.Array, S.optional),
+  killedBy: S.String.pipe(S.Array, S.optional),
   testsCompleted: S.optional(NonNegativeInt),
   duration: S.optional(NonNegativeFinite),
 })

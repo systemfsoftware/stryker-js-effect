@@ -16,6 +16,7 @@ import type {
   Walker,
 } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Arr from 'effect/Array'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -125,79 +126,122 @@ function mark<T extends object>(node: T, loc: Loc): T {
   return node
 }
 
-export function identifier(name: string, loc?: Loc): IdentifierReference {
-  return mark({ type: 'Identifier', name }, loc)
-}
+type Span = { start: number; end: number }
 
-export function stringLiteral(value: string, loc?: Loc): Expression {
-  return mark({ type: 'Literal', value, raw: null }, loc)
-}
+const isObjectArg = (value: unknown): value is object => typeof value === 'object' && value !== null
 
-export function booleanLiteral(value: boolean, loc?: Loc): Expression {
-  return mark({ type: 'Literal', value, raw: null }, loc)
-}
+export const isNodeArg = (value: unknown): value is { type: string } => isObjectArg(value) && 'type' in value
 
-export function regExpLiteral(pattern: string, flags: string, loc?: Loc): Expression {
-  return mark({ type: 'Literal', value: null, raw: null, regex: { pattern, flags } }, loc)
-}
+const hasRangeKeys = (value: object): boolean => 'start' in value && 'end' in value
 
-export function arrayExpression(elements: ReadonlyArray<Expression | null> = [], loc?: Loc): Expression {
-  return mark<Expression>({ type: 'ArrayExpression', elements: elements.filter(Predicate.isNotNullish) }, loc)
-}
+const isSpanObject = (value: object): boolean => !isNodeArg(value) && hasRangeKeys(value)
 
-export function callExpression(
-  callee: Expression,
-  args: ReadonlyArray<Expression> = [],
-  optional?: boolean,
-  loc?: Loc,
-): Expression {
-  return mark<Expression>({ type: 'CallExpression', callee, arguments: [...args], optional: optional === true }, loc)
-}
+const isLocArg = (value: unknown): value is Span => isObjectArg(value) && isSpanObject(value)
 
-export function newExpression(callee: Expression, args: ReadonlyArray<Expression> = [], loc?: Loc): Expression {
-  return mark<Expression>({ type: 'NewExpression', callee, arguments: [...args] }, loc)
-}
+const atArityWithoutLoc = (args: IArguments, arity: number): boolean =>
+  args.length === arity && !isLocArg(args[arity - 1])
 
-export function memberExpression(
-  object: Expression,
-  property: IdentifierName,
-  optional: boolean,
-  loc?: Loc,
-): Expression {
-  return mark<Expression>(
-    { type: 'MemberExpression', object, property, computed: false, optional },
-    loc,
-  )
-}
+const isDataFirstArity = (args: IArguments, arity: number): boolean =>
+  args.length > arity || atArityWithoutLoc(args, arity)
 
-export function optionalCallExpression(
-  callee: Expression,
-  args: ReadonlyArray<Expression>,
-  optional: boolean,
-  loc?: Loc,
-): Expression {
-  return mark<Expression>({ type: 'CallExpression', callee, arguments: [...args], optional }, loc)
-}
+const isNodeOrNullArg = (value: unknown): value is Expression | null => value === null || isNodeArg(value)
 
-export function arrowFunctionExpression(
-  params: ReadonlyArray<ParamPattern>,
-  body: Expression | Statement,
-  loc?: Loc,
-): Expression {
-  const fnBody = arrowFunctionBody(body)
-  return mark<Expression>(
-    {
-      type: 'ArrowFunctionExpression',
-      id: null,
-      generator: false,
-      params: [...params],
-      body: fnBody,
-      async: false,
-      expression: fnBody.type !== 'BlockStatement',
-    },
-    loc,
-  )
-}
+const isElementsArg = (value: unknown): value is ReadonlyArray<Expression | null> | undefined =>
+  Array.isArray(value) || value === undefined
+
+export const identifier: {
+  (name: string, loc?: Loc): IdentifierReference
+  (loc?: Loc): (name: string) => IdentifierReference
+} = dual(
+  (args: IArguments): boolean => typeof args[0] === 'string',
+  (name: string, loc?: Loc): IdentifierReference => mark({ type: 'Identifier', name }, loc),
+)
+
+export const stringLiteral: {
+  (value: string, loc?: Loc): Expression
+  (loc?: Loc): (value: string) => Expression
+} = dual(
+  (args: IArguments): boolean => typeof args[0] === 'string',
+  (value: string, loc?: Loc): Expression => mark({ type: 'Literal', value, raw: null }, loc),
+)
+
+export const booleanLiteral: {
+  (value: boolean, loc?: Loc): Expression
+  (loc?: Loc): (value: boolean) => Expression
+} = dual(
+  (args: IArguments): boolean => typeof args[0] === 'boolean',
+  (value: boolean, loc?: Loc): Expression => mark({ type: 'Literal', value, raw: null }, loc),
+)
+
+export const regExpLiteral: {
+  (pattern: string, flags: string, loc?: Loc): Expression
+  (flags: string, loc?: Loc): (pattern: string) => Expression
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 2),
+  (pattern: string, flags: string, loc?: Loc): Expression =>
+    mark({ type: 'Literal', value: null, raw: null, regex: { pattern, flags } }, loc),
+)
+
+export const arrayExpression: {
+  (elements: ReadonlyArray<Expression | null> | undefined, loc?: Loc): Expression
+  (loc?: Loc): (elements: ReadonlyArray<Expression | null> | undefined) => Expression
+} = dual(
+  (args: IArguments): boolean => args.length >= 1 && isElementsArg(args[0]),
+  (elements: ReadonlyArray<Expression | null> | undefined = [], loc?: Loc): Expression =>
+    mark<Expression>({ type: 'ArrayExpression', elements: elements.filter(Predicate.isNotNullish) }, loc),
+)
+
+export const callExpression: {
+  (callee: Expression, args?: ReadonlyArray<Expression>, optional?: boolean, loc?: Loc): Expression
+  (args?: ReadonlyArray<Expression>, optional?: boolean, loc?: Loc): (callee: Expression) => Expression
+} = dual(
+  (args: IArguments): boolean => args.length >= 1 && isNodeArg(args[0]),
+  (callee: Expression, args: ReadonlyArray<Expression> = [], optional?: boolean, loc?: Loc): Expression =>
+    mark<Expression>({ type: 'CallExpression', callee, arguments: [...args], optional: optional === true }, loc),
+)
+
+export const newExpression: {
+  (callee: Expression, args?: ReadonlyArray<Expression>, loc?: Loc): Expression
+  (args?: ReadonlyArray<Expression>, loc?: Loc): (callee: Expression) => Expression
+} = dual(
+  (args: IArguments): boolean => args.length >= 1 && isNodeArg(args[0]),
+  (callee: Expression, args: ReadonlyArray<Expression> = [], loc?: Loc): Expression =>
+    mark<Expression>({ type: 'NewExpression', callee, arguments: [...args] }, loc),
+)
+
+export const memberExpression: {
+  (object: Expression, property: IdentifierName, optional: boolean, loc?: Loc): Expression
+  (property: IdentifierName, optional: boolean, loc?: Loc): (object: Expression) => Expression
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 3),
+  (object: Expression, property: IdentifierName, optional: boolean, loc?: Loc): Expression =>
+    mark<Expression>(
+      { type: 'MemberExpression', object, property, computed: false, optional },
+      loc,
+    ),
+)
+
+export const arrowFunctionExpression: {
+  (params: ReadonlyArray<ParamPattern>, body: Expression | Statement, loc?: Loc): Expression
+  (body: Expression | Statement, loc?: Loc): (params: ReadonlyArray<ParamPattern>) => Expression
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 2),
+  (params: ReadonlyArray<ParamPattern>, body: Expression | Statement, loc?: Loc): Expression => {
+    const fnBody = arrowFunctionBody(body)
+    return mark<Expression>(
+      {
+        type: 'ArrowFunctionExpression',
+        id: null,
+        generator: false,
+        params: [...params],
+        body: fnBody,
+        async: false,
+        expression: fnBody.type !== 'BlockStatement',
+      },
+      loc,
+    )
+  },
+)
 
 function arrowFunctionBody(body: Expression | Statement): BlockStatement | Expression {
   if (isArrowBody(body)) return body
@@ -212,88 +256,129 @@ function isBlockStatementNode(node: Expression | Statement): node is BlockStatem
   return nodeType(node) === 'BlockStatement'
 }
 
-export function blockStatement(body: ReadonlyArray<Statement>, loc?: Loc): Statement {
-  return mark<Statement>({ type: 'BlockStatement', body: [...body] }, loc)
-}
+export const blockStatement: {
+  (body: ReadonlyArray<Statement>, loc?: Loc): Statement
+  (loc?: Loc): (body: ReadonlyArray<Statement>) => Statement
+} = dual(
+  (args: IArguments): boolean => Array.isArray(args[0]),
+  (body: ReadonlyArray<Statement>, loc?: Loc): Statement =>
+    mark<Statement>({ type: 'BlockStatement', body: [...body] }, loc),
+)
 
-export function expressionStatement(expression: Expression, loc?: Loc): Statement {
-  return mark<Statement>({ type: 'ExpressionStatement', expression }, loc)
-}
+export const expressionStatement: {
+  (expression: Expression, loc?: Loc): Statement
+  (loc?: Loc): (expression: Expression) => Statement
+} = dual(
+  (args: IArguments): boolean => args.length >= 1 && isNodeArg(args[0]),
+  (expression: Expression, loc?: Loc): Statement => mark<Statement>({ type: 'ExpressionStatement', expression }, loc),
+)
 
-export function ifStatement(
-  test: Expression,
-  consequent: Statement,
-  alternate?: Statement | null,
-  loc?: Loc,
-): Statement {
-  return mark<Statement>({ type: 'IfStatement', test, consequent, alternate: alternate ?? null }, loc)
-}
+export const ifStatement: {
+  (test: Expression, consequent: Statement, alternate?: Statement | null, loc?: Loc): Statement
+  (consequent: Statement, alternate?: Statement | null, loc?: Loc): (test: Expression) => Statement
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 2),
+  (test: Expression, consequent: Statement, alternate?: Statement | null, loc?: Loc): Statement =>
+    mark<Statement>({ type: 'IfStatement', test, consequent, alternate: alternate ?? null }, loc),
+)
 
-export function variableDeclarator(
-  id: BindingPattern | IdentifierReference,
-  init: Expression | null,
-  loc?: Loc,
-): VariableDeclarator {
-  return mark<VariableDeclarator>({ type: 'VariableDeclarator', id, init }, loc)
-}
+export const variableDeclarator: {
+  (id: BindingPattern | IdentifierReference, init: Expression | null, loc?: Loc): VariableDeclarator
+  (init: Expression | null, loc?: Loc): (id: BindingPattern | IdentifierReference) => VariableDeclarator
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 2),
+  (id: BindingPattern | IdentifierReference, init: Expression | null, loc?: Loc): VariableDeclarator =>
+    mark<VariableDeclarator>({ type: 'VariableDeclarator', id, init }, loc),
+)
 
-export function variableDeclaration(
-  kind: 'const' | 'let' | 'var',
-  declarations: ReadonlyArray<VariableDeclarator>,
-  loc?: Loc,
-): Statement {
-  return mark<Statement>({ type: 'VariableDeclaration', kind, declarations: [...declarations] }, loc)
-}
+export const variableDeclaration: {
+  (kind: 'const' | 'let' | 'var', declarations: ReadonlyArray<VariableDeclarator>, loc?: Loc): Statement
+  (declarations: ReadonlyArray<VariableDeclarator>, loc?: Loc): (kind: 'const' | 'let' | 'var') => Statement
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 2),
+  (kind: 'const' | 'let' | 'var', declarations: ReadonlyArray<VariableDeclarator>, loc?: Loc): Statement =>
+    mark<Statement>({ type: 'VariableDeclaration', kind, declarations: [...declarations] }, loc),
+)
 
-export function returnStatement(argument: Expression | null, loc?: Loc): Statement {
-  return mark<Statement>({ type: 'ReturnStatement', argument }, loc)
-}
+export const returnStatement: {
+  (argument: Expression | null, loc?: Loc): Statement
+  (loc?: Loc): (argument: Expression | null) => Statement
+} = dual(
+  (args: IArguments): boolean => args.length >= 1 && isNodeOrNullArg(args[0]),
+  (argument: Expression | null, loc?: Loc): Statement => mark<Statement>({ type: 'ReturnStatement', argument }, loc),
+)
 
-export function sequenceExpression(expressions: ReadonlyArray<Expression>, loc?: Loc): Expression {
-  return mark<Expression>({ type: 'SequenceExpression', expressions: [...expressions] }, loc)
-}
+export const sequenceExpression: {
+  (expressions: ReadonlyArray<Expression>, loc?: Loc): Expression
+  (loc?: Loc): (expressions: ReadonlyArray<Expression>) => Expression
+} = dual(
+  (args: IArguments): boolean => Array.isArray(args[0]),
+  (expressions: ReadonlyArray<Expression>, loc?: Loc): Expression =>
+    mark<Expression>({ type: 'SequenceExpression', expressions: [...expressions] }, loc),
+)
 
-export function conditionalExpression(
-  test: Expression,
-  consequent: Expression,
-  alternate: Expression,
-  loc?: Loc,
-): Expression {
-  return mark<Expression>({ type: 'ConditionalExpression', test, consequent, alternate }, loc)
-}
+export const conditionalExpression: {
+  (test: Expression, consequent: Expression, alternate: Expression, loc?: Loc): Expression
+  (consequent: Expression, alternate: Expression, loc?: Loc): (test: Expression) => Expression
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 3),
+  (test: Expression, consequent: Expression, alternate: Expression, loc?: Loc): Expression =>
+    mark<Expression>({ type: 'ConditionalExpression', test, consequent, alternate }, loc),
+)
 
-export function unaryExpression(
-  operator: Extract<Oxc.UnaryOperator, '+' | '-' | '!' | '~' | 'typeof' | 'void' | 'delete'>,
-  argument: Expression,
-  loc?: Loc,
-): Expression {
-  return mark<Expression>({ type: 'UnaryExpression', operator, argument, prefix: true }, loc)
-}
+export const unaryExpression: {
+  (
+    operator: Extract<Oxc.UnaryOperator, '+' | '-' | '!' | '~' | 'typeof' | 'void' | 'delete'>,
+    argument: Expression,
+    loc?: Loc,
+  ): Expression
+  (argument: Expression, loc?: Loc): (
+    operator: Extract<Oxc.UnaryOperator, '+' | '-' | '!' | '~' | 'typeof' | 'void' | 'delete'>,
+  ) => Expression
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 2),
+  (
+    operator: Extract<Oxc.UnaryOperator, '+' | '-' | '!' | '~' | 'typeof' | 'void' | 'delete'>,
+    argument: Expression,
+    loc?: Loc,
+  ): Expression => mark<Expression>({ type: 'UnaryExpression', operator, argument, prefix: true }, loc),
+)
 
-export function updateExpression(
-  operator: '++' | '--',
-  argument: SimpleAssignmentTarget,
-  prefix: boolean,
-  loc?: Loc,
-): Expression {
-  return mark<Expression>({ type: 'UpdateExpression', operator, argument, prefix }, loc)
-}
+export const updateExpression: {
+  (operator: '++' | '--', argument: SimpleAssignmentTarget, prefix: boolean, loc?: Loc): Expression
+  (argument: SimpleAssignmentTarget, prefix: boolean, loc?: Loc): (operator: '++' | '--') => Expression
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 3),
+  (operator: '++' | '--', argument: SimpleAssignmentTarget, prefix: boolean, loc?: Loc): Expression =>
+    mark<Expression>({ type: 'UpdateExpression', operator, argument, prefix }, loc),
+)
 
-export function templateElement(raw: string, loc?: Loc): TemplateElement {
-  return mark<TemplateElement>({ type: 'TemplateElement', value: { raw, cooked: raw }, tail: true }, loc)
-}
+export const templateElement: {
+  (raw: string, loc?: Loc): TemplateElement
+  (loc?: Loc): (raw: string) => TemplateElement
+} = dual(
+  (args: IArguments): boolean => typeof args[0] === 'string',
+  (raw: string, loc?: Loc): TemplateElement =>
+    mark<TemplateElement>({ type: 'TemplateElement', value: { raw, cooked: raw }, tail: true }, loc),
+)
 
-export function templateLiteral(
-  quasis: ReadonlyArray<TemplateElement>,
-  expressions: ReadonlyArray<Expression>,
-  loc?: Loc,
-): Expression {
-  return mark<Expression>({ type: 'TemplateLiteral', quasis: [...quasis], expressions: [...expressions] }, loc)
-}
+export const templateLiteral: {
+  (quasis: ReadonlyArray<TemplateElement>, expressions: ReadonlyArray<Expression>, loc?: Loc): Expression
+  (expressions: ReadonlyArray<Expression>, loc?: Loc): (quasis: ReadonlyArray<TemplateElement>) => Expression
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 2),
+  (quasis: ReadonlyArray<TemplateElement>, expressions: ReadonlyArray<Expression>, loc?: Loc): Expression =>
+    mark<Expression>({ type: 'TemplateLiteral', quasis: [...quasis], expressions: [...expressions] }, loc),
+)
 
-export function switchCase(test: Expression | null, consequent: ReadonlyArray<Statement>, loc?: Loc): SwitchCase {
-  return mark<SwitchCase>({ type: 'SwitchCase', test, consequent: [...consequent] }, loc)
-}
+export const switchCase: {
+  (test: Expression | null, consequent: ReadonlyArray<Statement>, loc?: Loc): SwitchCase
+  (consequent: ReadonlyArray<Statement>, loc?: Loc): (test: Expression | null) => SwitchCase
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 2),
+  (test: Expression | null, consequent: ReadonlyArray<Statement>, loc?: Loc): SwitchCase =>
+    mark<SwitchCase>({ type: 'SwitchCase', test, consequent: [...consequent] }, loc),
+)
 
 export function cloneNode<T extends Node>(node: T): T {
   return structuredClone(node)
@@ -310,18 +395,20 @@ export interface AttachedComment extends Comment {
   readonly loc?: { start: { line: number; column: number }; end: { line: number; column: number } }
 }
 
-export function attachComments(
-  root: Node,
-  comments: ReadonlyArray<Comment>,
-  lineTable: readonly number[],
-): void {
-  if (comments.length === 0) return
-  const nodes = collectNodes(root).filter((entry) => entry.node !== root)
-  nodes.sort((a, b) => a.start - b.start)
-  const groups = groupComments(nodes, comments)
-  assignComments(groups.leading, lineTable, 'leadingComments')
-  assignComments(groups.trailing, lineTable, 'trailingComments')
-}
+export const attachComments: {
+  (root: Node, comments: ReadonlyArray<Comment>, lineTable: readonly number[]): void
+  (comments: ReadonlyArray<Comment>, lineTable: readonly number[]): (root: Node) => void
+} = dual(
+  (args: IArguments): boolean => args.length >= 3,
+  (root: Node, comments: ReadonlyArray<Comment>, lineTable: readonly number[]): void => {
+    if (comments.length === 0) return
+    const nodes = collectNodes(root).filter((entry) => entry.node !== root)
+    nodes.sort((a, b) => a.start - b.start)
+    const groups = groupComments(nodes, comments)
+    assignComments(groups.leading, lineTable, 'leadingComments')
+    assignComments(groups.trailing, lineTable, 'trailingComments')
+  },
+)
 
 interface CommentGroups {
   readonly leading: Map<Node, Comment[]>
@@ -446,10 +533,16 @@ export function buildLineTable(content: string): readonly number[] {
   return computeLineStarts(content)
 }
 
-export function positionFromLineTable(offset: number, lineTable: readonly number[]): { line: number; column: number } {
-  const zeroBased = positionFromOffset(lineTable, offset)
-  return { line: zeroBased.line + 1, column: zeroBased.column + 1 }
-}
+export const positionFromLineTable: {
+  (offset: number, lineTable: readonly number[]): { line: number; column: number }
+  (lineTable: readonly number[]): (offset: number) => { line: number; column: number }
+} = dual(
+  (args: IArguments): boolean => args.length >= 2,
+  (offset: number, lineTable: readonly number[]): { line: number; column: number } => {
+    const zeroBased = positionFromOffset(lineTable, offset)
+    return { line: zeroBased.line + 1, column: zeroBased.column + 1 }
+  },
+)
 
 export interface TraversePath {
   readonly node: Node
@@ -494,14 +587,20 @@ const handleTraverseError = <A = unknown>(error: A): void => {
   if (!S.is(TraversalStopped)(err)) throw err
 }
 
-export function traverse(root: Program | Node, visitors: TraverseVisitors): void {
-  const stack: TraversePath[] = []
-  try {
-    walkTraverse(root, stack, visitors)
-  } catch (error: unknown) {
-    handleTraverseError(error)
-  }
-}
+export const traverse: {
+  (root: Program | Node, visitors: TraverseVisitors): void
+  (visitors: TraverseVisitors): (root: Program | Node) => void
+} = dual(
+  (args: IArguments): boolean => args.length >= 2,
+  (root: Program | Node, visitors: TraverseVisitors): void => {
+    const stack: TraversePath[] = []
+    try {
+      walkTraverse(root, stack, visitors)
+    } catch (error: unknown) {
+      handleTraverseError(error)
+    }
+  },
+)
 
 const readPath = (
   stack: TraversePath[],

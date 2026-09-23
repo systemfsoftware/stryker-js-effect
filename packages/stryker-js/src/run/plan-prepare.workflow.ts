@@ -11,7 +11,12 @@ export class PrepareDecoded extends S.Class<PrepareDecoded>('PrepareDecoded')({
   reporters: S.Array(S.String),
   fileCount: S.Finite,
   availableReporters: S.Array(S.String),
-}) {}
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {
+    mode: 'stryker.prepare.mode',
+    fileCount: 'stryker.prepare.file_count',
+  } as const
+}
 
 export class HumanReporters extends S.TaggedClass<HumanReporters>()('HumanReporters', {
   reporters: S.Array(S.String),
@@ -27,12 +32,14 @@ export class MachineReporters extends S.TaggedClass<MachineReporters>()('Machine
 
 export type PrepareDecision = HumanReporters | MachineReporters
 
-export const planPrepare = Workflow.total(
-  PrepareDecoded,
-  (decoded) =>
+export const planPrepare = Workflow.make({
+  command: PrepareDecoded,
+  decision: S.Union([HumanReporters, MachineReporters]),
+  error: S.Never,
+  decide: (decoded): Result.Result<PrepareDecision, never> =>
     Match.value(decoded.mode).pipe(
       Match.when('human', () => Result.succeed(HumanReporters.make({ reporters: decoded.reporters }))),
       Match.when('machine', () => Result.succeed(MachineReporters.make({ reporters: decoded.reporters }))),
       Match.exhaustive,
     ),
-)
+})

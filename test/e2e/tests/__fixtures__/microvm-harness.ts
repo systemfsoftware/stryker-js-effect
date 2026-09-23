@@ -1,8 +1,19 @@
-import { ManagedRuntime } from 'effect'
+import { Layer, ManagedRuntime } from 'effect'
+
+import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 
 import { test as baseTest } from 'vitest'
 
-import { BakedFixtureCache, type ExecResult, HarnessLive, StrykerCliRunner } from './microvm-environment.js'
+import { BakedFixtureCache } from '../../src/Harness/fixture-cache.service.js'
+import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
+import { GuestJobs } from '../../src/Harness/guest-job.service.js'
+import { StrykerCliRunner } from '../../src/Harness/stryker-cli-runner.service.js'
+
+const HarnessLive = Layer.mergeAll(
+  BakedFixtureCache.layer,
+  StrykerCliRunner.layer,
+  GuestJobs.layer,
+).pipe(Layer.provideMerge(nodeServicesLayer))
 
 export interface MicroVMHarness {
   readonly install: (fixtureUrl: URL, name: string) => Promise<string>

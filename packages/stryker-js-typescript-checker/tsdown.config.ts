@@ -7,6 +7,7 @@ const exports = { ...sourceExports({ dtsExt: '.d.mts' }), exclude: internalArtif
 const shared = {
   format: 'esm' as const,
   dts: true,
+  tsconfig: './tsconfig.build.json',
   exports,
   define: { 'import.meta.vitest': 'undefined' },
 }
@@ -14,7 +15,7 @@ const shared = {
 export default defineConfig([
   {
     ...shared,
-    entry: { index: './src/index.ts' },
+    entry: { index: './src/mod.ts' },
     clean: true,
     deps: { alwaysBundle: ['@std/jsonc'] },
   },

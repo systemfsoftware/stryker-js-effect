@@ -1,3 +1,4 @@
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 
 const GLOB_META = /[*?[{]/
@@ -58,8 +59,13 @@ const globToRegExp = (pattern: string, caseInsensitive: boolean): RegExp =>
     ),
   )
 
-export const matchesGlob = (path: string, pattern: string, caseInsensitive = false): boolean =>
-  globToRegExp(pattern, caseInsensitive).test(path)
+export const matchesGlob = dual<
+  (pattern: string, caseInsensitive?: boolean) => (path: string) => boolean,
+  (path: string, pattern: string, caseInsensitive?: boolean) => boolean
+>(
+  (args) => typeof args[1] === 'string',
+  (path, pattern, caseInsensitive = false) => globToRegExp(pattern, caseInsensitive).test(path),
+)
 
 export type IgnoreRule = {
   readonly negate: boolean

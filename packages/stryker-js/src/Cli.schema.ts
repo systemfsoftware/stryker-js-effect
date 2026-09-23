@@ -37,3 +37,20 @@ const MergeReportsRequestBase = S.TaggedStruct('merge-reports', {
 export type MergeReportsRequest = S.Schema.Type<typeof MergeReportsRequestBase>
 
 export type CliRequest = RunRequest | MergeReportsRequest
+
+import { Workflow } from '@systemfsoftware/effect-cell-types'
+
+export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteCommand', {
+  route: S.Union([
+    S.TaggedStruct('help', {}),
+    S.TaggedStruct('merge-reports', {
+      parts: S.String,
+      out: S.String,
+      packages: S.optional(S.String),
+    }),
+    S.TaggedStruct('run', { survivors: S.Boolean }),
+  ]),
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+

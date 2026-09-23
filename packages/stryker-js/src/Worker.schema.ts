@@ -1,10 +1,3 @@
-/**
- * Worker — wire types and failure identities for the child-process pool.
- *
- * Holds the JSON IPC alphabet, the ways a spawned worker can fail before the
- * host can use it, and the crash discriminants the engine branches on.
- */
-
 import { Schema as S } from 'effect'
 
 // ---------------------------------------------------------------------------
@@ -70,3 +63,4 @@ export class WorkerBootTimeoutError extends S.TaggedError<WorkerBootTimeoutError
 ) {
   readonly exitClass = 'InternalError' as const
 }
+

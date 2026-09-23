@@ -27,7 +27,13 @@ const nodeFsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 const runNode = <A, E>(
   effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>,
-): Promise<A> => Effect.runPromise(Effect.provide(effect, nodeFsPathLayer))
+): Promise<A> =>
+  nodeFsPathLayer.pipe(
+    Layer.build,
+    Effect.flatMap((platformServices) => Effect.provideContext(effect, platformServices)),
+    Effect.scoped,
+    Effect.runPromise,
+  )
 
 const makeTempDir = (prefix: string): Promise<string> =>
   runNode(

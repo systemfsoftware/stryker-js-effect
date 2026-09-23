@@ -1,6 +1,4 @@
-/**
- * Syntax — the instrumenter's AST shapes, location helpers and syntax utilities.
- */
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import type { Program } from './Ast.js'
 import type { Position } from './Location.schema.js'
@@ -19,10 +17,6 @@ export type Ast = HtmlAst | JSAst | SvelteAst | TSAst | TsxAst
 
 export type ScriptFormat = Extract<AstFormat, 'js' | 'ts' | 'tsx'>
 
-/**
- * A parsed comment with its source span. oxc emits comments flat with offsets
- * (no loc); consumers that need line/column derive it from the line table.
- */
 export interface SpannedComment {
   readonly type: 'Line' | 'Block'
   readonly value: string
@@ -37,54 +31,34 @@ export interface BaseAst {
   offset?: Position
 }
 
-/**
- * Represents an Html AST.
- */
 export interface HtmlAst extends BaseAst {
   format: 'html'
   root: HtmlRootNode
 }
 
-/**
- * Represents a TS AST
- */
 export interface JSAst extends BaseAst {
   format: 'js'
   root: Program
   comments: readonly SpannedComment[]
 }
 
-/**
- * Represents a TS AST
- */
 export interface TSAst extends BaseAst {
   format: 'ts'
   root: Program
   comments: readonly SpannedComment[]
 }
 
-/**
- * Represents a TS AST
- */
 export interface TsxAst extends BaseAst {
   format: 'tsx'
   root: Program
   comments: readonly SpannedComment[]
 }
 
-/**
- * Represents a Svelte AST
- */
 export interface SvelteAst extends BaseAst {
   format: 'svelte'
   root: SvelteRootNode
 }
 
-/**
- * Represents the root node of an HTML AST
- * We've taken a shortcut here, instead of representing the entire AST, we're only representing the script tags.
- * We might need to expand this in the future if we would ever want to support mutating the actual HTML (rather than only the JS/TS)
- */
 export interface HtmlRootNode {
   scripts: ScriptAst[]
 }
@@ -94,10 +68,6 @@ export interface SvelteRootNode {
   additionalScripts: TemplateScript[]
 }
 
-/**
- * Represents a svelte script or binding expression
- * We've taken a shortcut here, instead of representing the entire AST, we're only representing the script tags and expression bindings.
- */
 export interface TemplateScript {
   ast: ScriptAst
   range: Range
@@ -109,40 +79,29 @@ export interface Range {
   end: number
 }
 
-/**
- * A location of an ast node in a file
- */
 export interface SourceLocationInFile {
   end: Position
   start: Position
 }
 
-/**
- * Determines if a location (needle) is included in an other location (haystack)
- * @param haystack The range to look in
- * @param needle the range to search for
- */
-export function locationIncluded(
-  haystack: SourceLocationInFile,
-  needle: SourceLocationInFile,
-): boolean {
-  return comparePositions(haystack.start, needle.start) <= 0 && comparePositions(haystack.end, needle.end) >= 0
-}
+export const locationIncluded: {
+  (haystack: SourceLocationInFile, needle: SourceLocationInFile): boolean
+  (needle: SourceLocationInFile): (haystack: SourceLocationInFile) => boolean
+} = dual(
+  (args: IArguments): boolean => args.length >= 2,
+  (haystack: SourceLocationInFile, needle: SourceLocationInFile): boolean =>
+    comparePositions(haystack.start, needle.start) <= 0 && comparePositions(haystack.end, needle.end) >= 0,
+)
 
-/**
- * Determines if two locations overlap with each other
- */
-export function locationOverlaps(
-  a: SourceLocationInFile,
-  b: SourceLocationInFile,
-): boolean {
-  return comparePositions(a.start, b.end) <= 0 && comparePositions(a.end, b.start) >= 0
-}
+export const locationOverlaps: {
+  (a: SourceLocationInFile, b: SourceLocationInFile): boolean
+  (b: SourceLocationInFile): (a: SourceLocationInFile) => boolean
+} = dual(
+  (args: IArguments): boolean => args.length >= 2,
+  (a: SourceLocationInFile, b: SourceLocationInFile): boolean =>
+    comparePositions(a.start, b.end) <= 0 && comparePositions(a.end, b.start) >= 0,
+)
 
-/**
- * Source order of two positions: negative when `a` precedes `b`, zero when both
- * are the same position, positive when `a` follows `b`.
- */
 function comparePositions(a: Position, b: Position): number {
   const lineDelta = a.line - b.line
   if (lineDelta !== 0) return lineDelta
@@ -182,20 +141,23 @@ export function computeLineStarts(text: string): LineStarts {
   return [0, ...terminatorEnds]
 }
 
-export function positionFromOffset(
-  lineStarts: LineStarts,
-  offset: number,
-): Position {
-  const lineNumber = computeLineOfPosition(lineStarts, offset)
-  const lineStart = lineStarts[lineNumber]
-  if (lineStart === undefined) {
-    throw new Error('Line start not found for computed line number')
-  }
-  return {
-    line: lineNumber,
-    column: offset - lineStart,
-  }
-}
+export const positionFromOffset: {
+  (lineStarts: LineStarts, offset: number): Position
+  (offset: number): (lineStarts: LineStarts) => Position
+} = dual(
+  (args: IArguments): boolean => args.length >= 2,
+  (lineStarts: LineStarts, offset: number): Position => {
+    const lineNumber = computeLineOfPosition(lineStarts, offset)
+    const lineStart = lineStarts[lineNumber]
+    if (lineStart === undefined) {
+      throw new Error('Line start not found for computed line number')
+    }
+    return {
+      line: lineNumber,
+      column: offset - lineStart,
+    }
+  },
+)
 
 function computeLineOfPosition(
   lineStarts: LineStarts,

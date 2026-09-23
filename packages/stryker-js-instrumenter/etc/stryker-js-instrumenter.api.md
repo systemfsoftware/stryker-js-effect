@@ -9,7 +9,10 @@ import * as S from 'effect/Schema';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
-export const causeText: <A = unknown>(cause: A, depth: number) => string | undefined;
+export const causeText: {
+    <A = unknown>(cause: A, depth: number): string | undefined;
+    <A = unknown>(depth: number): (cause: A) => string | undefined;
+};
 
 // @public (undocumented)
 export interface Coverage {
@@ -75,7 +78,10 @@ export interface FileDescription {
 export type FileDescriptions = Record<string, FileDescription>;
 
 // @public (undocumented)
-export const instrument: (files: readonly File_2[], options: InstrumenterOptions, basePath?: string) => Effect.Effect<InstrumentResult, InstrumentError>;
+export const instrument: {
+    (files: readonly File_2[], options: InstrumenterOptions, basePath?: string): Effect.Effect<InstrumentResult, InstrumentError>;
+    (options: InstrumenterOptions, basePath?: string): (files: readonly File_2[]) => Effect.Effect<InstrumentResult, InstrumentError>;
+};
 
 // @public (undocumented)
 export const INSTRUMENTER_CONSTANTS: Readonly<{

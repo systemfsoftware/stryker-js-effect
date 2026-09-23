@@ -19,7 +19,7 @@ export const CheckerRequest = S.Struct({ checkerName: S.String, mutants: S.Array
 export type CheckerRequest = typeof CheckerRequest.Type
 
 export const CheckerCheckResult = S.Record(S.String, CheckResultSchema)
-export const CheckerGroupResult = S.Array(S.Array(S.String))
+export const CheckerGroupResult = S.String.pipe(S.Array, S.Array)
 
 export const ReporterInitOptions = S.Struct({
   traceparent: S.optionalKey(S.String),

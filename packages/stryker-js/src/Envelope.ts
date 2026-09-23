@@ -14,7 +14,7 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as CliError from 'effect/unstable/cli/CliError'
-import { SurvivorsRejection } from './admit-survivors-run.workflow.js'
+import { SurvivorsRejection } from './Survivors/mod.js'
 import {
   classifyRunOutcome as classifyRunOutcomeWorkflow,
   type FailedRunOutcome,

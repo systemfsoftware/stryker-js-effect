@@ -10,7 +10,7 @@ import type { MutationTestResult, ReporterEvent } from '@systemfsoftware/stryker
 import { MutationTestReportReady, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import { DryRunCompleted, MutantTested, MutationTestingPlanReady } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ReporterInitOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { decodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { WorkerOptionsWire } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
@@ -220,7 +220,7 @@ Feature('Reporting a mutation run through a reporter plugin process')
             const spawn = spawnOf(s.driven.spawns)
             expect(spawn.workingDirectory).toBe(PROJECT_BASE_PATH)
             expect(spawn.entrypoint).toBe(REPORTER_WORKER_ENTRYPOINT)
-            const options = yield* decodeWorkerOptions(spawn.optionsJson)
+            const options = yield* S.decodeEffect(WorkerOptionsWire)(spawn.optionsJson)
             expect(options.htmlReporter.fileName).toBe('reports/mutation/mutation.html')
           })
         ),

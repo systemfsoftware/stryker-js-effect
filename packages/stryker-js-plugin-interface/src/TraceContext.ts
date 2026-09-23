@@ -1,18 +1,9 @@
-import * as Context from 'effect/Context'
 import * as Option from 'effect/Option'
 
-import type { Traceparent } from './TraceContext.schema.js'
+import type { TraceContextParts, Traceparent } from './TraceContext.schema.js'
 
 export const TRACEPARENT_HEADER = 'traceparent'
 export const TRACESTATE_HEADER = 'tracestate'
-
-export interface TraceContextParts {
-  readonly version: string
-  readonly traceId: string
-  readonly spanId: string
-  readonly traceFlags: number
-  readonly traceState?: string | undefined
-}
 
 export const formatTraceparent = (parts: TraceContextParts): Traceparent =>
   `${parts.version}-${parts.traceId}-${parts.spanId}-${(parts.traceFlags & 0xff).toString(16).padStart(2, '0')}`
@@ -71,8 +62,3 @@ export const parseTraceparent = (value: string): Option.Option<TraceContextParts
     }),
   )
 }
-
-export const TraceContextReference: Context.Reference<Option.Option<TraceContextParts>> = Context.Reference(
-  '@systemfsoftware/stryker-js-plugin-interface/TraceContextReference',
-  { defaultValue: () => Option.none() },
-)

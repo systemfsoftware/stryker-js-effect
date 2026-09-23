@@ -19,7 +19,18 @@ export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOu
   highestExitClass: S.optional(ExitClass),
   configDetail: S.optional(S.String),
   diagnostic: S.optional(S.String),
-}) {}
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {
+    succeeded: 'stryker.run_outcome.succeeded',
+    interrupted: 'stryker.run_outcome.interrupted',
+    helpErrorCount: 'stryker.run_outcome.help_error_count',
+    cliError: 'stryker.run_outcome.cli_error',
+    survivorsReason: 'stryker.run_outcome.survivors_reason',
+    schemaError: 'stryker.run_outcome.schema_error',
+    successExitClass: 'stryker.run_outcome.success_exit_class',
+    highestExitClass: 'stryker.run_outcome.highest_exit_class',
+  } as const
+}
 export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: S.Finite }) {
   override get [Runtime.errorExitCode](): number {
     return this.code
@@ -147,9 +158,11 @@ function classify(command: RunOutcomeCommand): RunOutcomeDecision | RunOutcomeEr
   )
 }
 
-export const classifyRunOutcome = Workflow.make(
-  RunOutcomeCommand,
-  (command): Result.Result<RunOutcomeDecision, RunOutcomeError> =>
+export const classifyRunOutcome = Workflow.make({
+  command: RunOutcomeCommand,
+  decision: S.Union([RunOk, RunParseFailed, RunSurvivorsRejected, RunConfigFailed, RunFailed]),
+  error: RunInterrupted,
+  decide: (command): Result.Result<RunOutcomeDecision, RunOutcomeError> =>
     Match.value(classify(command)).pipe(
       Match.tag('RunInterrupted', (error) => Result.fail(error)),
       Match.when(
@@ -158,4 +171,4 @@ export const classifyRunOutcome = Workflow.make(
       ),
       Match.exhaustive,
     ),
-)
+})
