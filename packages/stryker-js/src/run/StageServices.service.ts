@@ -36,7 +36,13 @@ export type EnginePorts =
   | Stdio.Stdio
   | VmRunner
   | WorkerLauncher
-
-export type RunStageServices = ProjectFiles | RunEnvironment | RunEvents | IdGenerator | Scope.Scope
+export type RunStageServices =
+  | ProjectFiles
+  | Reporter
+  | RunEnvironment
+  | RunEvents
+  | IdGenerator
+  | MutationReporting
+  | Scope.Scope
 
 export type WiredRunLayer = Layer.Layer<RunStageServices | EnginePorts, never, never>

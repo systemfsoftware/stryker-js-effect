@@ -905,31 +905,37 @@ if (import.meta.vitest !== void 0) {
           Option.isSome(HashMap.get(nodes, normalizeFileName(mutant.fileName))))
         const outside = Arr.filter(mutants, (mutant) =>
           Option.isNone(HashMap.get(nodes, normalizeFileName(mutant.fileName))))
-        const assignments = Arr.reduce(
-          Arr.filterMap(inside, (mutant) =>
-            Result.map(keepSome(HashMap.get(nodes, normalizeFileName(mutant.fileName))), (node) => ({
-              id: mutant.id,
-              node,
-            }))),
-          noAssignments,
-          (groups, candidate) =>
-            Option.match(
-              Arr.findFirstIndex(groups, (group) => !Arr.some(group.members, (member) => relatedNodes(member, candidate.node))),
-              {
-                onSome: (index) =>
-                  Arr.map(groups, (group, at) =>
-                    Boolean.match(at === index, {
-                      onTrue: () => ({ ids: [...group.ids, candidate.id], members: [...group.members, candidate.node] }),
-                      onFalse: () => group,
-                    })),
-                onNone: () => [...groups, { ids: [candidate.id], members: [candidate.node] }],
-              },
-            ),
-        )
-        const ids = Arr.map(assignments, (group) => group.ids)
-        return Boolean.match(outside.length === 0, {
-          onTrue: () => ids,
-          onFalse: () => [Arr.map(outside, (mutant) => mutant.id), ...ids],
+        return Boolean.match(inside.length === 0, {
+          onTrue: () => Arr.map(mutants, (mutant) => [mutant.id]),
+          onFalse: () => {
+            const assignments = Arr.reduce(
+              Arr.filterMap(inside, (mutant) =>
+                Result.map(keepSome(HashMap.get(nodes, normalizeFileName(mutant.fileName))), (node) => ({
+                  id: mutant.id,
+                  node,
+                }))),
+              noAssignments,
+              (groups, candidate) =>
+                Option.match(
+                  Arr.findFirstIndex(groups, (group) =>
+                    !Arr.some(group.members, (member) => relatedNodes(member, candidate.node))),
+                  {
+                    onSome: (index) =>
+                      Arr.map(groups, (group, at) =>
+                        Boolean.match(at === index, {
+                          onTrue: () => ({ ids: [...group.ids, candidate.id], members: [...group.members, candidate.node] }),
+                          onFalse: () => group,
+                        })),
+                    onNone: () => [...groups, { ids: [candidate.id], members: [candidate.node] }],
+                  },
+                ),
+            )
+            const ids = Arr.map(assignments, (group) => group.ids)
+            return Boolean.match(outside.length === 0, {
+              onTrue: () => ids,
+              onFalse: () => [Arr.map(outside, (mutant) => mutant.id), ...ids],
+            })
+          }
         })
       },
     })

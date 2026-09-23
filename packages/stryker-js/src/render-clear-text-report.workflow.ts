@@ -258,8 +258,6 @@ const PIPE = plain('|')
 
 const rowOf = (cells: readonly ReportSpan[]): ReportLine => [...cells.flatMap((cell) => [cell, PIPE]), PIPE]
 
-const PIPE_ROW: ReportLine = [PIPE]
-
 const EMPTY_LINE: ReportLine = []
 
 const chunkOf = (line: ReportLine): ReportChunk => [line]
@@ -619,7 +617,7 @@ const leafRules = (columns: readonly GroupColumn): readonly ReportSpan[] =>
   columns.flatMap((column) => column.leaves.map((leaf) => rule('-', slotWidthOf(leaf))))
 
 const leafHeaders = (columns: readonly GroupColumn): readonly ReportSpan[] =>
-  columns.flatMap((column) => column.leaves.map((leaf) => placedLine(leaf.header, leaf.style, leaf.netWidth))).flat(1)
+  columns.flatMap((column) => column.leaves.flatMap((leaf) => placedLine(leaf.header, leaf.style, leaf.netWidth)))
 
 const fullRowVisible = (render: ClearTextRenderOptions, row: MetricsResult): boolean =>
   Boolean.match(render.skipFull, {

@@ -50,9 +50,15 @@ export class ProgressReportCommand extends S.TaggedClass<ProgressReportCommand>(
   static readonly [Workflow.InstrumentationBrand] = { now: 'stryker.report.rendered' } as const
 }
 
-export class ProgressChunkRendered extends S.TaggedClass<ProgressChunkRendered>()('ProgressChunkRendered', {
-  chunk: S.String,
+export class ProgressBarTick extends S.TaggedClass<ProgressBarTick>()('ProgressBarTick', {
+  bar: ProgressBarStateSchema,
+  tally: ProgressTallySchema,
+  now: S.Finite,
 }) {
+  readonly [ProgressReportTypeId] = ProgressReportTypeId
+}
+
+export class ProgressLineBreak extends S.TaggedClass<ProgressLineBreak>()('ProgressLineBreak', {}) {
   readonly [ProgressReportTypeId] = ProgressReportTypeId
 }
 
@@ -60,76 +66,14 @@ export class ProgressChunkSuppressed extends S.TaggedClass<ProgressChunkSuppress
   readonly [ProgressReportTypeId] = ProgressReportTypeId
 }
 
-const isComplete = (state: ProgressBarState) => state.curr >= state.total
+export const ProgressReportDecision = S.Union([ProgressBarTick, ProgressLineBreak, ProgressChunkSuppressed])
+export type ProgressReportDecision = typeof ProgressReportDecision.Type
 
-const formatBar = (
-  format: string,
-  curr: number,
-  total: number,
-  data: Readonly<Record<string, string | number>>,
-  options: { readonly width: number; readonly complete: string; readonly incomplete: string },
-): string => {
-  const ratio = Match.value(total === 0).pipe(
-    Match.when(true, () => 0),
-    Match.when(false, () => Math.min(curr / total, 1)),
-    Match.exhaustive,
-  )
-  const filled = Math.floor(ratio * options.width)
-  const bar = options.complete.repeat(filled) + options.incomplete.repeat(options.width - filled)
-  const percent = `${Math.floor(ratio * 100).toString().padStart(3, ' ')}%`
-  const printed = format.replace(':bar', bar).replace(':percent', percent)
-  return Object.entries(data).reduce((out, [key, value]) => out.replaceAll(`:${key}`, String(value)), printed)
-}
-
-const formatTime = (timeInSeconds: number): string => {
-  const hours = Math.floor(timeInSeconds / 3600)
-  const minutes = Math.floor((timeInSeconds % 3600) / 60)
-  return Match.value(hours > 0).pipe(
-    Match.when(true, () => `~${hours}h ${minutes}m`),
-    Match.when(false, () =>
-      Match.value(minutes > 0).pipe(
-        Match.when(true, () => `~${minutes}m`),
-        Match.when(false, () => '<1m'),
-        Match.exhaustive,
-      )),
-    Match.exhaustive,
-  )
-}
-
-const getElapsedTime = (tally: ProgressTally, now: number): string =>
-  formatTime(Math.floor((now - tally.startedAt) / 1000))
-
-const getEtc = (tally: ProgressTally, now: number): string => {
-  const elapsed = Math.floor((now - tally.startedAt) / 1000)
-  const remaining = Math.floor((elapsed / tally.ticks) * (tally.total - tally.ticks))
-  return Match.value(Number.isFinite(remaining) && remaining > 0).pipe(
-    Match.when(true, () => formatTime(remaining)),
-    Match.when(false, () => 'n/a'),
-    Match.exhaustive,
-  )
-}
-
-const progressData = (tally: ProgressTally, now: number): Record<string, string | number> => ({
-  survived: tally.survived,
-  timedOut: tally.timedOut,
-  tested: tally.tested,
-  mutants: tally.mutants,
-  total: tally.total,
-  ticks: tally.ticks,
-  et: getElapsedTime(tally, now),
-  etc: getEtc(tally, now),
-})
-
-const renderProgressBar = (state: ProgressBarState, data: Readonly<Record<string, string | number>>) =>
-  formatBar(state.format, state.curr, state.total, data, {
-    width: state.width,
-    complete: state.complete,
-    incomplete: state.incomplete,
-  })
+const isComplete = (bar: ProgressBarState): boolean => bar.curr >= bar.total
 
 export const renderProgressReport = Workflow.make({
   command: ProgressReportCommand,
-  decision: S.Union([ProgressChunkRendered, ProgressChunkSuppressed]),
+  decision: ProgressReportDecision,
   error: S.Never,
   decide: (command) =>
     Result.succeed(
@@ -140,21 +84,14 @@ export const renderProgressReport = Workflow.make({
             onSome: (bar) =>
               Boolean.match(isComplete(bar), {
                 onTrue: () => ProgressChunkSuppressed.make({}),
-                onFalse: () => ProgressChunkRendered.make({ chunk: '\n' }),
+                onFalse: () => ProgressLineBreak.make({}),
               }),
           })),
         Match.when('skip', () => ProgressChunkSuppressed.make({})),
         Match.when('tick', () =>
           Option.match(Option.fromNullishOr(command.state.bar), {
             onNone: () => ProgressChunkSuppressed.make({}),
-            onSome: (bar) => {
-              const line = renderProgressBar(bar, progressData(command.state.tally, command.now))
-              const newline = Boolean.match(isComplete(bar), {
-                onTrue: () => '\n',
-                onFalse: () => '',
-              })
-              return ProgressChunkRendered.make({ chunk: `\r${line}${newline}` })
-            },
+            onSome: (bar) => ProgressBarTick.make({ bar, tally: command.state.tally, now: command.now }),
           })),
         Match.exhaustive,
       ),

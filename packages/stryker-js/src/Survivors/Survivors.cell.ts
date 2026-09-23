@@ -21,6 +21,7 @@ import {
 } from '../admit-survivors-run.workflow.js'
 import { ConfigFileUnreadableError } from '../ConfigError.schema.js'
 import { toRelativeNormalizedFileName } from '../IncrementalDiff.paths.js'
+import type { OutputMode } from '../output-mode.schema.js'
 import { readConfig } from '../run/load-config.cell.js'
 import { strykerVersion } from '../stryker-package.js'
 import { PriorReportDocument, type PriorReportMutant } from './Survivors.schema.js'
@@ -141,6 +142,19 @@ const readSourceFile = (file: string) =>
   Effect.flatMap(
     FileSystem.FileSystem,
     (fs) => fs.readFileString(file).pipe(Effect.mapError((cause) => ConfigFileUnreadableError.make({ file, cause }))),
+  )
+
+const SOURCE_HASH_CONCURRENCY = 24
+
+const currentSourceHashesFor = (files: readonly string[]) =>
+  Effect.map(
+    Effect.forEach(
+      files,
+      (file) =>
+        Effect.map(readSourceFile(file), (content): readonly [string, string] => [file, hashContent(content)]),
+      { concurrency: SOURCE_HASH_CONCURRENCY },
+    ),
+    (pairs): Record<string, string> => Object.fromEntries(pairs),
   )
 
 export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admission')((input: SurvivorsAdmissionInput) =>

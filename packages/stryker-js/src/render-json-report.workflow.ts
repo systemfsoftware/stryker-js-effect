@@ -15,18 +15,12 @@ export class JsonReportCommand extends S.TaggedClass<JsonReportCommand>()('JsonR
 }
 
 export class JsonReportRendered extends S.TaggedClass<JsonReportRendered>()('JsonReportRendered', {
-  json: S.String,
+  report: MutationTestResultSchema,
 }) {
   readonly [JsonReportTypeId] = JsonReportTypeId
 }
 
 export class JsonReportSuppressed extends S.TaggedClass<JsonReportSuppressed>()('JsonReportSuppressed', {}) {
-  readonly [JsonReportTypeId] = JsonReportTypeId
-}
-
-export class JsonReportRefused extends S.TaggedError<JsonReportRefused>()('JsonReportRefused', {
-  cause: S.Unknown,
-}) {
   readonly [JsonReportTypeId] = JsonReportTypeId
 }
 
@@ -36,14 +30,10 @@ export type JsonReportDecision = typeof JsonReportDecision.Type
 export const renderJsonReport = Workflow.make({
   command: JsonReportCommand,
   decision: JsonReportDecision,
-  error: JsonReportRefused,
+  error: S.Never,
   decide: (command) =>
     Option.match(Option.fromUndefinedOr(command.reported), {
       onNone: () => Result.succeed(JsonReportSuppressed.make({})),
-      onSome: (report) =>
-        Result.mapBoth(S.encodeResult(S.fromJsonString(S.Unknown, { space: 0 }))(report), {
-          onFailure: (cause) => JsonReportRefused.make({ cause }),
-          onSuccess: (json) => JsonReportRendered.make({ json }),
-        }),
+      onSome: (report) => Result.succeed(JsonReportRendered.make({ report })),
     }),
 })

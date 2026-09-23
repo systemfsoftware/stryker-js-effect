@@ -68,6 +68,163 @@ import {
 } from './Ast.handle.js'
 import { printNode } from './print/index.js'
 
+export interface MutatorContext {
+  readonly parent: Node | undefined
+  readonly grandParent: Node | undefined
+  readonly ancestors: readonly Node[]
+}
+
+/**
+ * One mutator: a pure function from a node to the mutants it produces.
+ *
+ * A function, not an object with a `mutate` method and a `name` field. The name
+ * lived inside every mutator AND as its position in a hand-written list, so the
+ * two could disagree; the registry's key is now the only place a name is
+ * written.
+ */
+export type Mutator = (node: Node, context: MutatorContext) => Iterable<Node>
+
+export interface MutatorOptions {
+  excludedMutations: string[]
+  noHeader?: boolean
+}
+
+export interface Mutable {
+  mutatorName: string
+  ignoreReason?: string | undefined
+  replacement: Node
+}
+
+export interface Mutant extends Mutable {
+  readonly id: string
+  readonly fileName: string
+  readonly original: Node
+  readonly offset: Position
+  readonly lineTable: Arr.NonEmptyReadonlyArray<number>
+  readonly replacementCode: string
+}
+
+export interface CreateMutantOptions {
+  readonly id: string
+  readonly fileName: string
+  readonly original: Node
+  readonly specs: Mutable
+  readonly offset?: Position | undefined
+  readonly lineTable?: Arr.NonEmptyReadonlyArray<number> | undefined
+}
+
+const eqNode = (a: Node, b: Node): boolean => {
+  const identity = nodeIdentity(a)
+  return identity !== undefined && identity === nodeIdentity(b)
+}
+
+const nodeIdentity = (node: Node): string | undefined =>
+  Option.map(Option.fromNullishOr(spanOf(node)), (span) => `${node.type}:${span.start}:${span.end}`).pipe(
+    Option.getOrUndefined,
+  )
+
+const orDefault = <T>(value: T | undefined, fallback: T): T => value ?? fallback
+
+const EMPTY_LINE_STARTS: Arr.NonEmptyReadonlyArray<number> = [0]
+
+const NO_LINE_OFFSET: Position = { column: 0, line: 0 }
+
+const createMutant = (params: CreateMutantOptions): Mutant => ({
+  id: params.id,
+  fileName: params.fileName,
+  original: params.original,
+  offset: orDefault(params.offset, NO_LINE_OFFSET),
+  lineTable: orDefault(params.lineTable, EMPTY_LINE_STARTS),
+  replacement: params.specs.replacement,
+  mutatorName: params.specs.mutatorName,
+  ignoreReason: params.specs.ignoreReason,
+  replacementCode: printNode(params.specs.replacement),
+})
+
+const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing> =>
+  Option.match(Option.fromNullishOr(spanOf(mutant.original)), {
+    onNone: () => Result.fail(MutantSpanMissing.make({ edge: 'start' })),
+    onSome: (span) => {
+      const baseFields = {
+        fileName: mutant.fileName,
+        id: mutant.id,
+        location: toApiLocation(span.start, span.end, mutant.lineTable, mutant.offset),
+        mutatorName: mutant.mutatorName,
+        replacement: mutant.replacementCode,
+      }
+      return Result.succeed(
+        Option.match(Option.fromNullishOr(mutant.ignoreReason), {
+          onNone: () => ApiMutant.make(baseFields),
+          onSome: (ignoreReason) =>
+            ApiMutant.make({
+              ...baseFields,
+              statusReason: ignoreReason,
+              status: 'Ignored' as const,
+            }),
+        }),
+      )
+    },
+  })
+
+const toApiLocation = (
+  startOffset: number,
+  endOffset: number,
+  lineTable: Arr.NonEmptyReadonlyArray<number>,
+  offset: Position,
+): Location => {
+  const table = LineTable.make({ lineStarts: lineTable })
+  return {
+    start: toPosition(table.positionAt(startOffset), offset),
+    end: toPosition(table.positionAt(endOffset), offset),
+  }
+}
+
+const toPosition = (source: Position, offset: Position): Position => {
+  const columnOffset = Boolean.match(source.line === 1, {
+    onTrue: () => offset.column,
+    onFalse: () => 0,
+  })
+  return { column: source.column + columnOffset, line: source.line + offset.line - 1 }
+}
+
+const applyMutant = (mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> =>
+  Boolean.match(originalTree === mutant.original, {
+    onTrue: () => Result.succeed(mutant.replacement),
+    onFalse: () => cloneWithReplacement(mutant, originalTree),
+  })
+
+const cloneWithReplacement = (mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> => {
+  const mutatedAst = cloneNode(originalTree)
+  return Boolean.match(hasReplaced(mutatedAst, mutant.original, mutant.replacement), {
+    onTrue: () => Result.succeed(mutatedAst),
+    onFalse: () => Result.fail(MutantNotApplied.make({ replacement: JSON.stringify(mutant.replacement) })),
+  })
+}
+
+const hasReplaced = (root: Node, original: Node, replacement: Node): boolean => {
+  const applied = { current: false }
+  traverse(make(root), {
+    enter(path) {
+      Boolean.match(applied.current, {
+        onTrue: () => undefined,
+        onFalse: () => {
+          applied.current = replaceFirstMatch(path, original, replacement)
+        },
+      })
+    },
+  })
+  return applied.current
+}
+
+const replaceFirstMatch = (path: TraversePath, original: Node, replacement: Node): boolean =>
+  Boolean.match(eqNode(path.node, original), {
+    onTrue: () => {
+      path.replaceWith(replacement)
+      return true
+    },
+    onFalse: () => false,
+  })
+
 /**
  * The mutations of a regular expression pattern.
  *

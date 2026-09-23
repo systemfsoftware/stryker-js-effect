@@ -1119,17 +1119,25 @@ const readLoadConfig = (input: {
     )
   })
 
-const decodeDocument = (document: Record<string, unknown>) =>
+const decodeDocument = <A = unknown>(document: Record<string, A>) =>
   Result.mapError(
-    S.decodeUnknownResult(StrykerOptionsSchema)(document),
+    S.decodeResult(StrykerOptionsSchema)(document),
     (failure) => configErrorMessage(describeMessageOf(failure.message)),
   )
 
 export const loadConfig = Sandwich.named('stryker.config_read')(readLoadConfig)
   .decide(resolveConfig)
   .write({
-    ConfigFromFile: ({ document }) => Result.toEffect(decodeDocument(document)),
-    ConfigFromDefaults: ({ document }) => Result.toEffect(decodeDocument(document)),
+    ConfigFromFile: ({ document }) =>
+      Result.match(decodeDocument(document), {
+        onSuccess: (options) => Effect.succeed(options),
+        onFailure: (message) => Effect.fail(ConfigError.make({ message })),
+      }),
+    ConfigFromDefaults: ({ document }) =>
+      Result.match(decodeDocument(document), {
+        onSuccess: (options) => Effect.succeed(options),
+        onFailure: (message) => Effect.fail(ConfigError.make({ message })),
+      }),
     CommandRejected: ({ issue }) => Effect.fail(ConfigError.make({ message: issue })),
   })
 

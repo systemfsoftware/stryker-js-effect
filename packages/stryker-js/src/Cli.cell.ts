@@ -44,14 +44,14 @@ import {
   readCapturedConsole,
   runOutcomeCode,
 } from './Envelope.js'
-import { type HostServices, type StrykerRun } from './run/main.js'
+import { type HostServices, type StrykerRun } from './run/host.service.js'
 import {
   applyProgressStreamFile,
   hostOptionsOf,
   prepareCommandOf,
   progressStreamFileName,
   runOnHost,
-} from './run/main.js'
+} from './run/host.cell.js'
 import {
   routeCliRequest,
 } from './route-cli-request.workflow.js'

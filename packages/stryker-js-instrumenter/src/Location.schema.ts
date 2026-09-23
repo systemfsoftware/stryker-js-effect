@@ -56,9 +56,8 @@ const canonicalTextOf = (table: LineTable): string =>
   Boolean.match(table.lineStarts.length === 1, {
     onTrue: () => '',
     onFalse: () =>
-      `${table.lineStarts
-        .slice(0, -1)
-        .map((start, index) => ' '.repeat(table.lineStarts[index + 1] - start - 1))
+      `${Arr.zip(table.lineStarts.slice(0, -1), table.lineStarts.slice(1))
+        .map(([start, next]) => ' '.repeat(next - start - 1))
         .join('\n')}\n`,
   })
 

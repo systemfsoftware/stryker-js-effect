@@ -141,9 +141,8 @@ export type { VmRequire } from './VmRunner.service.js'
 export type { IdGeneratorShape } from './Worker.service.js'
 export { IdGenerator } from './Worker.service.js'
 export { RUN_EVENTS_QUEUE_BOUND, shouldKeepTempDir } from './Run.js'
-export type { StrykerRun } from './run/main.js'
-export { makeRunLayer, strykerCell } from './run/main.js'
-export { mutationTestCell } from './run/run-stages.cell.js'
+export type { HostServices, StrykerRun } from './run/host.service.js'
+export { mutationTestCell, strykerCell } from './run/run-stages.cell.js'
 
 export {
   Heartbeat,
@@ -229,8 +228,7 @@ export {
   readConfig,
   validateOptions,
 } from './run/load-config.cell.js'
-export type { ConfigInvocation, ValidationSchemaDocument } from './run/load-config.cell.js'
-
+export type { ConfigInvocation, LoadedConfig, ValidationSchemaDocument } from './run/load-config.cell.js'
 export type { ModeSignal, OutputMode, ResolvedMode } from './output-mode.schema.js'
 
 export {

@@ -7,8 +7,9 @@ import { BatchSpanProcessor, SimpleSpanProcessor, type SpanProcessor } from '@op
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
-import * as NodeStdio from '@effect/platform-node/NodeStdio'
+import { NodeSocket } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
+import * as NodeCrypto from '@effect/platform-node-shared/NodeCrypto'
 import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Console from 'effect/Console'
@@ -29,6 +30,19 @@ import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 
 import { strykerCliEffect } from '../Cli.cell.js'
 import { machineConsoleLayer } from '../Envelope.js'
+import * as FileSystem from 'effect/FileSystem'
+import * as Path from 'effect/Path'
+import type { PlatformError } from 'effect/PlatformError'
+import * as S from 'effect/Schema'
+import * as ChildProcess from 'effect/unstable/process/ChildProcess'
+import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
+import * as RpcClient from 'effect/unstable/rpc/RpcClient'
+import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
+
+import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
+import { classifyWorkerExit } from '../Worker.js'
+import { ChildProcessCrashedError } from '../Worker.schema.js'
+import { type SpawnedSocketWorker, WorkerLauncher } from '../WorkerLauncher.service.js'
 import { UnsupportedNodeVersion } from './main.schema.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
@@ -174,24 +188,101 @@ const machineConsoleByModeLayer = Layer.unwrap(
         Match.orElse(() => Layer.empty),
       ),
   ),
-).pipe(
-  Layer.provide(Layer.mergeAll(OutputModeProbeLive, NodeStdio.layer, NodeFileSystem.layer, NodePath.layer)),
 )
 
-const cliLayer = Layer.mergeAll(
-  Layer.mergeAll(
-    OutputModeProbeLive,
-    RunEventStreamPortTag.layer.pipe(Layer.provide(RunEventDrain.fileLayer)),
-    RunEventDrain.fileLayer,
-  ).pipe(Layer.provide(Layer.mergeAll(NodeStdio.layer, NodeFileSystem.layer, NodePath.layer))),
-  telemetryLayer,
-  NodeStdio.layer,
-  machineConsoleByModeLayer,
-  CliConfig.layer({ builtIns: GlobalFlag.BuiltIns }),
-  NodeTerminal.layer,
-  NodeChildProcessSpawner.layer,
-  NodeFileSystem.layer,
-  NodePath.layer,
+const cliLayer = Layer.empty.pipe(
+  Layer.provideMerge(NodeStdio.layer),
+  Layer.provideMerge(NodeFileSystem.layer),
+  Layer.provideMerge(NodePath.layer),
+  Layer.provideMerge(OutputModeProbeLive),
+  Layer.provideMerge(RunEventDrain.fileLayer),
+  Layer.provideMerge(RunEventStreamPortTag.layer),
+  Layer.provideMerge(machineConsoleByModeLayer),
+  Layer.provideMerge(telemetryLayer),
+  Layer.provideMerge(CliConfig.layer({ builtIns: GlobalFlag.BuiltIns })),
+  Layer.provideMerge(NodeTerminal.layer),
+  Layer.provideMerge(NodeChildProcessSpawner.layer),
+  Layer.provideMerge(NodeCrypto.layer),
+  Layer.provideMerge(nodeWorkerLauncherLayer),
+  Layer.provideMerge(nodeVmPlatformLayer),
+)
+
+const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string) =>
+  fs.chmod(file, 0o600).pipe(
+    Effect.tapError((cause) =>
+      Effect.logWarning(
+        `Could not restrict "${file}" to its owner; the worker directory's own mode still protects it.`,
+      ).pipe(Effect.annotateLogs('cause', cause))
+    ),
+    Effect.catchTag('PlatformError', () => Effect.void),
+  )
+
+const nodeWorkerLauncherLayer = Layer.effect(
+  WorkerLauncher,
+  Effect.gen(function*() {
+    const crypto = yield* Crypto.Crypto
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+
+    return {
+      spawn: (params): Effect.Effect<SpawnedSocketWorker, ChildProcessCrashedError, Scope.Scope> =>
+        Effect.gen(function*() {
+          const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
+          const workerId = yield* crypto.randomUUIDv4
+          const socketPath = Match.value(globalThis.process.platform).pipe(
+            Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${workerId}`),
+            Match.orElse(() => path.join(workerDir, 'worker.sock')),
+          )
+          const optionsFile = path.join(workerDir, 'options.json')
+          yield* fs.writeFileString(optionsFile, params.optionsJson)
+          yield* restrictToOwnerOrWarn(fs, optionsFile)
+
+          const entrypointPath = yield* path.fromFileUrl(new URL(params.entrypoint))
+          const handle = yield* ChildProcess.make(
+            globalThis.process.execPath,
+            [...params.execArgv, entrypointPath],
+            {
+              cwd: params.workingDirectory,
+              extendEnv: true,
+              env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath, ...params.env },
+              stderr: 'inherit',
+            },
+          ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
+
+          const clientLayer = RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
+            Layer.provide(NodeSocket.layerNet({ path: socketPath })),
+            Layer.provide(RpcSerialization.layerNdjson),
+          )
+
+          const exited = handle.exitCode.pipe(
+            Effect.orDie,
+            Effect.flatMap((exitCode) => Effect.fail(classifyWorkerExit(Number(handle.pid), exitCode))),
+          )
+
+          return { pid: Number(handle.pid), clientLayer, exited }
+        }).pipe(
+          Effect.catchIf(S.is(ChildProcessCrashedError), (error) => Effect.fail(error), () =>
+            Effect.fail(
+              ChildProcessCrashedError.make({
+                pid: 0,
+                exit: { _tag: 'Code', code: 1 },
+                cause: 'worker spawn failed',
+              }),
+            )),
+        ),
+    }
+  }),
+)
+
+const nodeVmPlatformLayer = Layer.effect(
+  VmRunner,
+  Effect.sync(
+    (): VmPlatform => ({
+      module: globalThis.process.getBuiltinModule('node:module'),
+      vm: globalThis.process.getBuiltinModule('node:vm'),
+    }),
+  ),
 )
 const program = Effect.scoped(
   cliLayer.pipe(

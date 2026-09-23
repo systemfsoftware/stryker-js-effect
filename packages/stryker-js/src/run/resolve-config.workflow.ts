@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Match from 'effect/Match'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 const LoadConfigDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/LoadConfigDecision')

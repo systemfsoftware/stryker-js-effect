@@ -726,10 +726,12 @@ const rangeLawHolds = (startLine: number, endLine: number, column: number) => {
   })
   const caseHolds = (pattern: string, startColumn: number, endColumn: number) =>
     JSON.stringify(Option.getOrUndefined(mutationRangeOf(pattern))) === JSON.stringify(expectedSpanOf(startColumn, endColumn))
-  return caseHolds(`src/a.ts:${startLine}:${column}-${endLine}:${column}`, column, column) &&
-    caseHolds(`src/a.ts:${startLine}:${column}-${endLine}`, column, Number.MAX_SAFE_INTEGER) &&
-    caseHolds(`src/a.ts:${startLine}-${endLine}:${column}`, 0, column) &&
-    caseHolds(`src/a.ts:${startLine}-${endLine}`, 0, Number.MAX_SAFE_INTEGER)
+  return ([
+    [`src/a.ts:${startLine}:${column}-${endLine}:${column}`, column, column],
+    [`src/a.ts:${startLine}:${column}-${endLine}`, column, Number.MAX_SAFE_INTEGER],
+    [`src/a.ts:${startLine}-${endLine}:${column}`, 0, column],
+    [`src/a.ts:${startLine}-${endLine}`, 0, Number.MAX_SAFE_INTEGER],
+  ] as const).every(([pattern, startColumn, endColumn]) => caseHolds(pattern, startColumn, endColumn))
 }
 
 const exclusionLawHolds = (files: readonly string[], include: string, exclude: string) => {

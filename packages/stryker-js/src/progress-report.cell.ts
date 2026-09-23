@@ -20,7 +20,7 @@ import {
   type ProgressTally,
 } from './render-progress-report.workflow.js'
 
-const failAsProgress = (cause: unknown) =>
+const failAsProgress = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'progress',
     event: 'mutationTestReportReady',
@@ -159,14 +159,87 @@ const readProgressStep = (input: {
       },
     }))
 
+const isComplete = (bar: ProgressBarState): boolean => bar.curr >= bar.total
+
+const secondsBetween = (now: number, startedAt: number): number => Math.floor((now - startedAt) / 1000)
+
+const formatTime = (timeInSeconds: number): string => {
+  const hours = Math.floor(timeInSeconds / 3600)
+  const minutes = Math.floor((timeInSeconds % 3600) / 60)
+  return Match.value(hours > 0).pipe(
+    Match.when(true, () => `~${hours}h ${minutes}m`),
+    Match.when(false, () =>
+      Match.value(minutes > 0).pipe(
+        Match.when(true, () => `~${minutes}m`),
+        Match.when(false, () => '<1m'),
+        Match.exhaustive,
+      )),
+    Match.exhaustive,
+  )
+}
+
+const remainingSeconds = (tally: ProgressTally, now: number): number =>
+  Math.floor((secondsBetween(now, tally.startedAt) / tally.ticks) * (tally.total - tally.ticks))
+
+const positiveTimeLabel = (remaining: number): string =>
+  Match.value(remaining > 0).pipe(
+    Match.when(true, () => formatTime(remaining)),
+    Match.when(false, () => 'n/a'),
+    Match.exhaustive,
+  )
+
+const remainingLabel = (tally: ProgressTally, now: number): string => {
+  const remaining = remainingSeconds(tally, now)
+  return Boolean.match(Number.isFinite(remaining), {
+    onTrue: () => positiveTimeLabel(remaining),
+    onFalse: () => 'n/a',
+  })
+}
+
+const progressData = (tally: ProgressTally, now: number): Record<string, string | number> => ({
+  survived: tally.survived,
+  timedOut: tally.timedOut,
+  tested: tally.tested,
+  mutants: tally.mutants,
+  total: tally.total,
+  ticks: tally.ticks,
+  et: formatTime(secondsBetween(now, tally.startedAt)),
+  etc: remainingLabel(tally, now),
+})
+
+const formatBar = (
+  bar: ProgressBarState,
+  data: Readonly<Record<string, string | number>>,
+): string => {
+  const ratio = Match.value(bar.total === 0).pipe(
+    Match.when(true, () => 0),
+    Match.when(false, () => Math.min(bar.curr / bar.total, 1)),
+    Match.exhaustive,
+  )
+  const filled = Math.floor(ratio * bar.width)
+  const filledBar = bar.complete.repeat(filled) + bar.incomplete.repeat(bar.width - filled)
+  const percent = `${Math.floor(ratio * 100).toString().padStart(3, ' ')}%`
+  const printed = bar.format.replace(':bar', filledBar).replace(':percent', percent)
+  return Object.entries(data).reduce((out, [key, value]) => out.replaceAll(`:${key}`, String(value)), printed)
+}
+
+const lineBreakOf = (complete: boolean): string =>
+  Boolean.match(complete, {
+    onTrue: () => '\n',
+    onFalse: () => '',
+  })
+
+const renderTick = (tick: { readonly bar: ProgressBarState; readonly tally: ProgressTally; readonly now: number }): string =>
+  `\r${formatBar(tick.bar, progressData(tick.tally, tick.now))}${lineBreakOf(isComplete(tick.bar))}`
+
+const writeChunk = (chunk: string): Effect.Effect<void> =>
+  Effect.flatMap(ReporterOutput, (output) => Effect.ignore(output.write('stdout', [chunk])))
+
 export const progressReportCell = Sandwich.named('stryker.report.progress')(readProgressStep)
   .decide(renderProgressReport)
   .write({
-    ProgressChunkRendered: (rendered, raw) =>
-      Effect.as(
-        Effect.flatMap(ReporterOutput, (output) => Effect.ignore(output.write('stdout', [rendered.chunk]))),
-        raw.state,
-      ),
+    ProgressBarTick: (tick, raw) => Effect.as(writeChunk(renderTick(tick)), raw.state),
+    ProgressLineBreak: (_lineBreak, raw) => Effect.as(writeChunk('\n'), raw.state),
     ProgressChunkSuppressed: (_suppressed, raw) => Effect.succeed(raw.state),
     CommandRejected: ({ issue }) => Effect.fail(failAsProgress(issue)),
   })

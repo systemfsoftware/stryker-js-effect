@@ -18,7 +18,6 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
-import * as Stdio from 'effect/Stdio'
 import { type RunEvent } from '../run-events.service.js'
 import { PhaseEntered } from '../run-events.service.js'
 import { RunEvents } from '../run-events.service.js'
@@ -351,18 +350,11 @@ const selectReporters: {
     Match.exhaustive,
   ))
 
-const makeBuiltinReporterFactories = (services: BuiltinReporterServices): Record<string, ReporterFactory> => ({
-  'json': makeJsonReporter(services),
-  'clear-text': makeClearTextReporter(services),
-  'progress': makeProgressBarReporter(services),
-  'progress-stream': makeProgressStreamReporter,
-})
-
 export const prepareCell: Cell.Cell<
-  PrepareExecutorArgs,
+  ReadProjectDone,
   PrepareDone,
   StageError,
-  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Stdio.Stdio
+  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
 > = Sandwich.named('stryker.prepare')(readPrepare)
   .decide(planPrepare)
   .write({

@@ -9,17 +9,23 @@ import * as Effect from 'effect/Effect'
 import * as Filter from 'effect/Filter'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Arr from 'effect/Array'
 import * as Result from 'effect/Result'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
-import { ReporterOutput } from './reporter-output.service.js'
+import { ansi } from './Reporter.ansi.js'
+import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
 import {
   renderClearTextReport,
   type ClearTextRenderOptions,
+  type ReportChunk,
+  type ReportLine,
+  type ReportSpan,
+  type Tone,
 } from './render-clear-text-report.workflow.js'
 
-const failAsClearText = (cause: string) =>
+const failAsClearText = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'clear-text',
     event: 'mutationTestReportReady',
@@ -73,22 +79,68 @@ const readClearTextReport = (input: {
     }),
   )
 
+const TINT_BY_TONE: Record<Tone, (text: string) => string> = {
+  'plain': (text) => text,
+  'identifier': ansi.cyan,
+  'emphasis': ansi.yellow,
+  'positive': ansi.green,
+  'warning': ansi.yellow,
+  'negative': ansi.red,
+  'muted': ansi.grey,
+}
+
+const runsMergeable = (left: ReportSpan, right: ReportSpan): boolean =>
+  Arr.every(
+    [
+      left.tone === right.tone,
+      left.leftPad === right.leftPad,
+      left.rightPad === right.rightPad,
+      left.repeat === 1,
+      right.repeat === 1,
+    ],
+    (holds) => holds,
+  )
+
+const mergeInto = (runs: readonly ReportSpan[], span: ReportSpan): readonly ReportSpan[] =>
+  Option.match(Arr.last(runs), {
+    onNone: () => [span],
+    onSome: (last) =>
+      Boolean.match(runsMergeable(last, span), {
+        onTrue: () => [...runs.slice(0, -1), { ...last, text: `${last.text}${span.text}` }],
+        onFalse: () => [...runs, span],
+      }),
+  })
+
+const runsOf = (line: ReportLine): readonly ReportSpan[] => Arr.reduce(line, [], mergeInto)
+
+const renderSpan = (span: ReportSpan): string =>
+  TINT_BY_TONE[span.tone](
+    `${' '.repeat(span.leftPad)}${span.text.repeat(span.repeat)}${' '.repeat(span.rightPad)}`,
+  )
+
+const renderLine = (line: ReportLine): string => runsOf(line).map(renderSpan).join('')
+
+const renderChunk = (chunk: ReportChunk): string => chunk.map(renderLine).join('\n')
+
+const writeChunks = (
+  output: ReporterOutputShape,
+  channel: 'stdout' | 'stderr',
+  chunks: readonly ReportChunk[],
+): Effect.Effect<void, ReporterFailed> =>
+  output.write(channel, chunks.map((chunk) => `${renderChunk(chunk)}\n`)).pipe(
+    Effect.mapError(failAsClearText),
+    Effect.asVoid,
+  )
+
 export const clearTextReportCell = Sandwich.named('stryker.report.clearText')(readClearTextReport)
   .decide(renderClearTextReport)
   .write({
     ClearTextReportRendered: (rendered, raw) =>
       Effect.gen(function*() {
         const output = yield* ReporterOutput
-        yield* output.write('stdout', rendered.stdout.map((line) => `${line}\n`)).pipe(
-          Effect.mapError(failAsClearText),
-          Effect.asVoid,
-        )
+        yield* writeChunks(output, 'stdout', rendered.stdout)
         yield* Boolean.match(raw.render.debug, {
-          onTrue: () =>
-            output.write('stderr', rendered.diagnostics.map((line) => `${line}\n`)).pipe(
-              Effect.mapError(failAsClearText),
-              Effect.asVoid,
-            ),
+          onTrue: () => writeChunks(output, 'stderr', rendered.diagnostics),
           onFalse: () => Effect.void,
         })
       }),
