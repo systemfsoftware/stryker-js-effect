@@ -14,6 +14,8 @@ This package owns:
   shape and the OTLP endpoint rule `TracesUrl` in
   `worker-telemetry.schema.ts`, read through the `WorkerTelemetry` service a
   worker's program root binds its own OTel SDK from;
+- the worker-options wire schema — `WorkerOptionsWire` — and the
+  `WorkerOptions` service a worker reads its `options.json` through;
 - the trace-context middleware implementations that carry W3C
   `traceparent`/`tracestate` across the process split — `layerTraceContextClient`,
   `layerTraceContextServer`, `withLinkedSpan`, `tracePartsOf`,

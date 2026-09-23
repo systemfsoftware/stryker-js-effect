@@ -16,8 +16,8 @@ import * as Path from 'effect/Path'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
-import { ReporterOutput } from './reporter-output.service.js'
-import { JsonReportCommand, renderJsonReport } from './render-json-report.workflow.js'
+import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
+import { renderJsonReport } from './render-json-report.workflow.js'
 
 const failAsJsonReporter = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
@@ -31,10 +31,6 @@ const reportOf = Filter.make((event: ReporterEvent): Result.Result<reportApi.Mut
     Match.tag('mutationTestReportReady', (ready) => Result.succeed(ready.report)),
     Match.orElse(() => Result.fail('not-ready' as const)),
   ))
-
-type JsonReportRaw = (typeof JsonReportCommand)['Encoded'] & {
-  readonly options: StrykerOptions
-}
 
 const readJsonReport = (input: {
   readonly options: StrykerOptions
@@ -59,7 +55,7 @@ const jsonBytesOf = (report: reportApi.MutationTestResult): Effect.Effect<string
   )
 
 const announceRelativePath = (
-  output: Context.Context.Tag.Service<ReporterOutput>,
+  output: ReporterOutputShape,
   options: StrykerOptions,
   path: Path.Path,
 ): Effect.Effect<void> =>
@@ -91,7 +87,9 @@ export const jsonReportCell = Sandwich.named('stryker.report.json')(readJsonRepo
     CommandRejected: ({ issue }) => Effect.fail(failAsJsonReporter(issue)),
   })
 
-export const jsonReporterFactory = (context: Context.Context<ReporterOutput>): ReporterFactory => {
+export const jsonReporterFactory = (
+  context: Context.Context<ReporterOutput | FileSystem.FileSystem | Path.Path>,
+): ReporterFactory => {
   const report = Cell.provideContext(jsonReportCell, context)
   return (options) => (events) => Effect.asVoid(report.run({ options, events }))
 }

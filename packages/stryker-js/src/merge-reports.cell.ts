@@ -1,4 +1,4 @@
-import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface'

@@ -369,9 +369,9 @@ type ReporterDrainOutcome =
   | { readonly kind: 'detached'; readonly name: string }
   | { readonly kind: 'terminal-failed'; readonly name: string }
 
-const failedOutcome = (
+const failedOutcome = <E = unknown>(
   attachment: ReporterAttachment,
-  cause: Cause.Cause<unknown>,
+  cause: Cause.Cause<E>,
 ): Effect.Effect<ReporterDrainOutcome, never, never> =>
   Effect.as(
     Effect.logError(`Reporter "${attachment.name}" failed while draining the terminal report.`).pipe(
@@ -380,9 +380,9 @@ const failedOutcome = (
     { kind: 'terminal-failed' as const, name: attachment.name },
   )
 
-const detachedOutcome = (
+const detachedOutcome = <E = unknown>(
   attachment: ReporterAttachment,
-  cause: Cause.Cause<unknown>,
+  cause: Cause.Cause<E>,
 ): Effect.Effect<ReporterDrainOutcome, never, never> =>
   Effect.as(
     Effect.logWarning(

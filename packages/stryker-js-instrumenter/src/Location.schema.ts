@@ -126,7 +126,7 @@ if (import.meta.vitest !== void 0) {
   it.effect.prop(
     '∀to_Offset→Position≡Model∧ConservesOffset',
     [textWithOffset],
-    ({ text, offset }) =>
+    ([{ text, offset }]) =>
       Effect.gen(function*() {
         const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
         const position = table.positionAt(offset)
@@ -141,19 +141,19 @@ if (import.meta.vitest !== void 0) {
   it.effect.prop(
     '∀t_CRLF_CountsOneLine',
     [Arbitrary.array(Arbitrary.schema(FRAGMENTS))],
-    (fragments) =>
+    ([fragments]) =>
       Effect.gen(function*() {
         const text = fragments.join('')
         const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
-        const withUnixEndings = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text.replaceAll('\r\n', '\n')))
-        return table.lineStarts.join(',') === withUnixEndings.lineStarts.join(',')
+        const sameLengthUnixEndings = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text.replaceAll('\r\n', ' \n')))
+        return table.lineStarts.join(',') === sameLengthUnixEndings.lineStarts.join(',')
       }),
   )
 
   it.effect.prop(
     '∀t_LineStarts_StrictlyRisingFromZero',
     [textArbitrary],
-    (text) =>
+    ([text]) =>
       Effect.map(
         Effect.orDie(S.decodeEffect(LineTableFromText)(text)),
         (table) =>

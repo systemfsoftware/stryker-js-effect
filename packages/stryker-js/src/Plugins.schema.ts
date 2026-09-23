@@ -3,8 +3,9 @@
  */
 
 import { Schema as S, SchemaGetter } from 'effect'
+import * as HashMap from 'effect/HashMap'
 
-import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
+import type { Ignorer as IgnorerDescriptor, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { WorkerEntryUrl, WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export const PluginDescriptorSchema = S.Union([
@@ -57,4 +58,59 @@ export class PluginLoadFailedError extends S.TaggedError<PluginLoadFailedError>(
   },
 ) {
   readonly exitClass = 'InternalError' as const
+}
+
+export const PluginSourceSchema = S.Union([
+  S.Struct({ kind: WorkerPluginKind, name: S.String, modulePath: S.String, workerEntry: S.String }),
+  S.Struct({ kind: S.Literals(['Evaluator']), name: S.String, modulePath: S.String }),
+])
+
+export type PluginKind = WorkerPluginKind | 'Evaluator'
+
+export interface WorkerPluginDescriptor<K extends WorkerPluginKind = WorkerPluginKind> {
+  readonly kind: K
+  readonly name: string
+  readonly workerEntry: string
+}
+
+export interface EvaluatorPluginDescriptor {
+  readonly kind: 'Evaluator'
+  readonly name: string
+}
+
+export type AnyWorkerPluginDescriptor = {
+  [K in WorkerPluginKind]: WorkerPluginDescriptor<K>
+}[WorkerPluginKind]
+
+export type AnyPluginDescriptor = AnyWorkerPluginDescriptor | EvaluatorPluginDescriptor
+
+export type PluginDescriptorOf<K extends PluginKind> = Extract<AnyPluginDescriptor, { readonly kind: K }>
+
+export type PluginDescriptor<K extends PluginKind = PluginKind> = PluginDescriptorOf<K>
+
+export interface WorkerPluginSource<K extends WorkerPluginKind = WorkerPluginKind> {
+  readonly kind: K
+  readonly name: string
+  readonly modulePath: string
+  readonly workerEntry: string
+}
+
+export interface EvaluatorPluginSource {
+  readonly kind: 'Evaluator'
+  readonly name: string
+  readonly modulePath: string
+}
+
+export type AnyWorkerPluginSource = {
+  [K in WorkerPluginKind]: WorkerPluginSource<K>
+}[WorkerPluginKind]
+
+export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource
+
+export interface LoadedPlugins<A = unknown> {
+  readonly schemaContributions: readonly Record<string, A>[]
+  readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>
+  readonly pluginModulePaths: readonly string[]
+  readonly pluginSources: readonly PluginSource[]
+  readonly ignorers: readonly IgnorerDescriptor[]
 }

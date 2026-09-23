@@ -107,7 +107,7 @@ const recordOf = <A>(value: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<Record<
 type CleanConfig = Record<string, string | number | boolean>
 
 const cleanConfigArb: Arbitrary.Arbitrary<CleanConfig> = recordOf(
-  Arbitrary.schema(S.Union([S.String.check(S.isMaxLength(6)), S.Int, S.Boolean])),
+  Arbitrary.schema(S.Union([S.String, S.Int, S.Boolean])),
 )
 
 const sourceArb = Arbitrary.schema(S.String.check(S.isMaxLength(16), S.isPattern(/^[\x20-\x7E]*$/)))

@@ -1,5 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
+import type { MutantStatus, Position } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ReporterEvent, ReporterFactory, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -15,8 +16,8 @@ import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
 import { ansi } from './Reporter.ansi.js'
-import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
 import {
+  ClearTextReportCommand,
   renderClearTextReport,
   type ClearTextRenderOptions,
   type ReportChunk,
@@ -24,6 +25,7 @@ import {
   type ReportSpan,
   type Tone,
 } from './render-clear-text-report.workflow.js'
+import { calculateMetrics } from './calculate-metrics.js'
 
 const failAsClearText = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
