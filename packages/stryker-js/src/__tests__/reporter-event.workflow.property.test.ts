@@ -101,12 +101,24 @@ describe('ReporterEvent', () => {
           onNone: () => false,
           onSome: () => Exit.isFailure(decoded),
         })
-        const accepted = Option.match(Option.liftPredicate(valid, hasValue), {
+        const bothRuns = Option.zipWith(
+          Option.liftPredicate(valid, hasValue),
+          Option.match(Exit.match(decoded, {
+            onSuccess: (actual) => Option.some(actual),
+            onFailure: () => Option.none(),
+          }), {
+            onNone: () => Option.none<never>(),
+            onSome: (actual) => Option.some(actual as ReporterEvent),
+          }),
+          (success, actual) => [success.value, actual] as const,
+        )
+        const acceptedRuns = yield* Option.match(bothRuns, {
+          onNone: () => Effect.void,
+          onSome: ([expected, actual]) => Effect.zip(reencoded(Effect.succeed(expected)), reencoded(Effect.succeed(actual))),
+        })
+        const accepted = Option.match(Option.fromUndefinedOr(acceptedRuns), {
           onNone: () => false,
-          onSome: (success) =>
-            Exit.isSuccess(decoded) &&
-            Effect.runSync(reencoded(Effect.succeed(success.value))) ===
-              Effect.runSync(reencoded(Effect.succeed(decoded.value))),
+          onSome: ([expected, actual]) => Exit.isSuccess(decoded) && expected === actual,
         })
         return rejected || accepted
       }),

@@ -2,6 +2,7 @@ import { Cell } from '@systemfsoftware/effect-cell-types'
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import * as Effect from 'effect/Effect'
+import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import type { PlatformError } from 'effect/PlatformError'
@@ -43,16 +44,15 @@ export const mutationTestCell: Cell.Cell<PrepareExecutorArgs, MutationTestDone, 
 
 const HEADLESS_MODE: ResolvedMode = { mode: 'machine', signal: 'flag', stdoutIsTTY: false }
 
-const strykerRunLayer = Layer.unwrap(
-  Effect.map(
+const strykerRunLayer = Layer
+  .unwrap(
     Effect.flatMap(makeRunEventStream(HEADLESS_MODE), (stream) =>
       Effect.map(
         RunEnvironment.forStream(HEADLESS_MODE, stream, { builtinReporters: { html: makeHtmlReporter } }),
         (env) => RunEnvironment.stage(env, stream.queue),
       )),
-    (stageLayer) => Layer.provide(stageLayer, RunEventDrainLive),
-  ),
-)
+  )
+  .pipe(Layer.provide(RunEventDrainLive))
 
 export const strykerCell: {
   (

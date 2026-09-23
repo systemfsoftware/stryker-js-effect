@@ -804,8 +804,17 @@ if (import.meta.vitest !== void 0) {
       onNone: () => false,
       onSome: (rendered) => {
         const legacy = legacyRenderClearText(report, calculateMetrics(report.files), render)
-        return sameChunks(rendered.stdout.map((chunk) => renderChunk(chunk)), legacy.stdout) &&
-          sameChunks(rendered.diagnostics.map((chunk) => renderChunk(chunk)), legacy.debug)
+        const newStdout = rendered.stdout.map((chunk) => renderChunk(chunk))
+        const newDebug = rendered.diagnostics.map((chunk) => renderChunk(chunk))
+        if (!sameChunks(newStdout, legacy.stdout)) {
+          newStdout.forEach((line, index) =>
+            console.log('STDOUT', index, JSON.stringify(legacy.stdout[index]), '|', JSON.stringify(line)))
+        }
+        if (!sameChunks(newDebug, legacy.debug)) {
+          newDebug.forEach((line, index) =>
+            console.log('DEBUG', index, JSON.stringify(legacy.debug[index]), '|', JSON.stringify(line)))
+        }
+        return sameChunks(newStdout, legacy.stdout) && sameChunks(newDebug, legacy.debug)
       },
     }))
 

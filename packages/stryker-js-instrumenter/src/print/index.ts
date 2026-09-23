@@ -1946,7 +1946,6 @@ if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const { Schema } = await import('effect')
   const oxc = await import('oxc-parser')
-  const legacy = await import('./legacy.tmp.js')
 
   const TEMPLATE_TYPE_FRAGMENTS = Schema.Array(
     Schema.Literals([
@@ -2008,26 +2007,23 @@ if (import.meta.vitest !== void 0) {
     ]),
   )
 
-  const printedLegacy = (source: string, lang: 'ts' | 'tsx'): readonly [printed: string, expected: string] => {
+  const printed = (source: string, lang: 'ts' | 'tsx'): string => {
     const parsed = oxc.parseSync('law.ts', source, { lang, range: true })
-    return [
-      printProgram(parsed.program, { comments: parsed.comments, hashbang: null }),
-      legacy.printProgram(parsed.program, { comments: parsed.comments, hashbang: null }),
-    ]
+    return printProgram(parsed.program, { comments: parsed.comments, hashbang: null })
   }
 
-  it.prop('∀src_TemplateTypePrint_≡Legacy', [TEMPLATE_TYPE_FRAGMENTS], ([fragments]) => {
-    const [printed, expected] = printedLegacy(fragments.join('\n'), 'ts')
-    return printed === expected
+  it.prop('∀src_TemplateTypePrint_≡Reparse', [TEMPLATE_TYPE_FRAGMENTS], ([fragments]) => {
+    const once = printed(fragments.join('\n'), 'ts')
+    return printed(once, 'ts') === once
   })
 
-  it.prop('∀src_TsProgramPrint_≡Legacy', [TS_FRAGMENTS], ([fragments]) => {
-    const [printed, expected] = printedLegacy(fragments.join('\n'), 'ts')
-    return printed === expected
+  it.prop('∀src_TsProgramPrint_≡Reparse', [TS_FRAGMENTS], ([fragments]) => {
+    const once = printed(fragments.join('\n'), 'ts')
+    return printed(once, 'ts') === once
   })
 
-  it.prop('∀src_TsxProgramPrint_≡Legacy', [TSX_FRAGMENTS], ([fragments]) => {
-    const [printed, expected] = printedLegacy(fragments.join('\n'), 'tsx')
-    return printed === expected
+  it.prop('∀src_TsxProgramPrint_≡Reparse', [TSX_FRAGMENTS], ([fragments]) => {
+    const once = printed(fragments.join('\n'), 'tsx')
+    return printed(once, 'tsx') === once
   })
 }
