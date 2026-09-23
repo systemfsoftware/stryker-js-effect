@@ -715,6 +715,9 @@ importers:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.45.0
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-rc.116(effect@4.0.0-rc.116)(vitest@5.0.1)
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)

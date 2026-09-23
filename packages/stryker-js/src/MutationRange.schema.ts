@@ -27,9 +27,9 @@ const CanonicalFile = S.String.pipe(
 export const MutationRangeSpecifier = S.Struct({
   file: CanonicalFile,
   startLine: NON_NEGATIVE_LINE,
-  startColumn: S.optional(NON_NEGATIVE_LINE),
+  startColumn: S.optionalKey(NON_NEGATIVE_LINE),
   endLine: NON_NEGATIVE_LINE,
-  endColumn: S.optional(NON_NEGATIVE_LINE),
+  endColumn: S.optionalKey(NON_NEGATIVE_LINE),
 })
 
 export type MutationRangeSpecifier = typeof MutationRangeSpecifier.Type
@@ -60,13 +60,13 @@ const numberGroupOf = (match: RegExpExecArray, index: number, fallback: string) 
 const columnGroupOf = (match: RegExpExecArray, index: number) => Option.fromUndefinedOr(match[index])
 
 const startColumnOf = (match: RegExpExecArray) =>
-  Option.match(Option.fromUndefinedOr(columnGroupOf(match, 4)), {
+  Option.match(columnGroupOf(match, 4), {
     onNone: () => ({}),
     onSome: (column) => ({ startColumn: Number(column) }),
   })
 
 const endColumnOf = (match: RegExpExecArray) =>
-  Option.match(Option.fromUndefinedOr(columnGroupOf(match, 6)), {
+  Option.match(columnGroupOf(match, 6), {
     onNone: () => ({}),
     onSome: (column) => ({ endColumn: Number(column) }),
   })

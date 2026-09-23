@@ -641,13 +641,7 @@ const takeOrAscend = (
 ): TraversePath =>
   Boolean.match(predicate(path), {
     onTrue: () => path,
-    onFalse: () => {
-      const parent = nearest(path.parentPath, predicate)
-      if (parent === undefined) {
-        return path
-      }
-      return parent
-    },
+    onFalse: () => nearest(path.parentPath, predicate) ?? path,
   })
 
 const replaceInSlot = (

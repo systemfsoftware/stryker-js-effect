@@ -1,10 +1,12 @@
 import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as fc from 'fast-check'
 import * as fs from 'node:fs'
 import { Project } from 'ts-morph'
 import { describe, expect, it } from 'vitest'
-import { MutatorRegistry } from '../../../packages/stryker-js-instrumenter/src/Mutator.handle.js'
+import { Mutators } from '../../../packages/stryker-js-instrumenter/src/Mutator.service.js'
 import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
 import { determineCompileErrorsWithDiagnostics } from './oracle/diagnostics.js'
 import {
@@ -17,7 +19,9 @@ import {
 } from './oracle/metamorphic.js'
 import { DECLARED_GAPS, MUTATOR_REGISTRY } from './oracle/mutator-registry.js'
 
-const allMutators = MutatorRegistry.mutators
+const allMutators = Effect.runSync(
+  Effect.scoped(Layer.build(Mutators.layer).pipe(Effect.map(Context.get(Mutators)))),
+).mutators
 
 const RESERVED_WORDS = new Set([
   'do',

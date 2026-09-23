@@ -280,10 +280,18 @@ const mutantsWhen = (holds: boolean, build: () => readonly Node[]): readonly Nod
 const hasPropertyIn = <B>(node: object, key: string): node is Record<string, B> => key in node
 
 const readPropertyOf = <B>(node: object, key: string): B | undefined =>
-  hasPropertyIn<B>(node, key) ? node[key] : undefined
+  Option.getOrUndefined(
+    Option.filter(Option.some(node), (candidate): candidate is Record<string, B> => hasPropertyIn<B>(candidate, key)).pipe(
+      Option.map((record) => record[key]),
+    ),
+  )
 
 const propertyOf = <A, B>(node: A, key: string): B | undefined =>
-  Predicate.isObject(node) ? readPropertyOf<B>(node, key) : undefined
+  Option.getOrUndefined(
+    Option.filter(Option.some(node), Predicate.isObject).pipe(
+      Option.map((object) => readPropertyOf<B>(object, key)),
+    ),
+  )
 
 const isIdentifier = (node: unknown): node is IdentifierReference => nodeType(node) === 'Identifier'
 
@@ -322,12 +330,11 @@ const isSupportedArithmeticOperator = (operator: string, node: BinaryExpression)
 const isStringConcatenation = (node: BinaryExpression): boolean =>
   isStringLike(node.right) || isStringLike(outerLeftOperand(node))
 
-const outerLeftOperand = (node: BinaryExpression): Node => {
-  if (node.left.type === 'BinaryExpression') {
-    return node.left.right
-  }
-  return node.left
-}
+const outerLeftOperand = (node: BinaryExpression): Node =>
+  Match.value(node.left).pipe(
+    Match.when(isBinaryExpression, (left) => left.right),
+    Match.orElse((left) => left),
+  )
 
 type ArrayConstructorCall = (CallExpression | NewExpression) & {
   callee: IdentifierReference & { name: 'Array' }

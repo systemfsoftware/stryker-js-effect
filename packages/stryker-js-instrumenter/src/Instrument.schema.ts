@@ -1,3 +1,4 @@
+import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
 import { Mutant } from './Mutant.schema.js'
 
@@ -11,10 +12,10 @@ export class InstrumentError
   )
 {
   override get message(): string {
-    if (this.message.length === 0) {
-      return 'Instrumenter failure'
-    }
-    return this.message
+    return Boolean.match(this.message.length === 0, {
+      onTrue: () => 'Instrumenter failure',
+      onFalse: () => this.message,
+    })
   }
 }
 

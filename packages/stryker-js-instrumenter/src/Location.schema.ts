@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
@@ -112,8 +113,13 @@ if (import.meta.vitest !== void 0) {
   const textWithOffset = Arbitrary.flatMap(textArbitrary, (text) =>
     Arbitrary.map(offsetIn(text), (offset) => ({ text, offset })))
 
-  const comparePositions = (a: Position, b: Position): number =>
-    a.line !== b.line ? a.line - b.line : a.column - b.column
+  const comparePositions = (a: Position, b: Position): number => {
+    const lineDelta = a.line - b.line
+    return Boolean.match(lineDelta !== 0, {
+      onTrue: () => lineDelta,
+      onFalse: () => a.column - b.column,
+    })
+  }
 
   const terminatorEndsAtOrBefore = (text: string, offset: number): number =>
     [...text.matchAll(LINE_TERMINATOR)].filter((match) => match.index + match[0].length <= offset).length
@@ -165,7 +171,7 @@ if (import.meta.vitest !== void 0) {
         const table = yield* Effect.orDie(S.decode(LineTableFromText)(text))
         const limit = text.length
         const first = ((draw % (limit + 1)) + limit + 1) % (limit + 1)
-        const [start, end] = first <= offset ? [first, offset] : [offset, first]
+        const [start, end] = [first, offset].sort((left, right) => left - right)
         const location = table.locationAt({ start, end })
         return comparePositions(location.start, location.end) <= 0
       }),

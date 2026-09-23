@@ -48,6 +48,10 @@ export class Admitted extends S.TaggedClass<Admitted>()('Admitted', {
   readonly [SurvivorsAdmissionTypeId] = SurvivorsAdmissionTypeId
 }
 
+export class NoSurvivors extends S.TaggedClass<NoSurvivors>()('NoSurvivors', {}) {
+  readonly [SurvivorsAdmissionTypeId] = SurvivorsAdmissionTypeId
+}
+
 export const SurvivorsAdmission = S.Union([Admitted, NoSurvivors])
 export type SurvivorsAdmission = S.Schema.Type<typeof SurvivorsAdmission>
 

@@ -40,6 +40,7 @@ import {
   type ExtendsStepDocument,
   type ExtendsStepState,
 } from '../Config.schema.js'
+import { mergeConfig } from '../config/merge-config.js'
 import type { ConfigEnv } from '../config/stryker-config.js'
 import { MutationRangeSpecifierSchema, type MutationRangeSpecifier } from '../MutationRange.schema.js'
 import type { OutputMode } from '../output-mode.schema.js'
@@ -1111,20 +1112,24 @@ const readLoadConfig = (input: {
     return yield* loadOptionsFromConfigFile(cliRecord, configEnv).pipe(
       Effect.map((fileOptions) =>
         LoadConfigCommand.make({
-          cliOptions: cliRecord,
-          fileOptions: Option.getOrUndefined(fileOptions),
+          document: mergeConfig(Option.getOrElse(fileOptions, () => ({})), cliRecord),
+          fileFound: Option.isSome(fileOptions),
         }),
       ),
     )
   })
 
+const decodeDocument = (document: Record<string, unknown>) =>
+  Result.mapError(
+    S.decodeUnknownResult(StrykerOptionsSchema)(document),
+    (failure) => configErrorMessage(describeMessageOf(failure.message)),
+  )
+
 export const loadConfig = Sandwich.named('stryker.config_read')(readLoadConfig)
   .decide(resolveConfig)
   .write({
-    ConfigFromFile: ({ options }) => Effect.succeed(options),
-    ConfigFromDefaults: ({ options }) => Effect.succeed(options),
-    LoadConfigRefused: (refused) =>
-      failConfigWith(configErrorMessage(describeMessageOf(refused.message))),
+    ConfigFromFile: ({ document }) => Result.toEffect(decodeDocument(document)),
+    ConfigFromDefaults: ({ document }) => Result.toEffect(decodeDocument(document)),
     CommandRejected: ({ issue }) => Effect.fail(ConfigError.make({ message: issue })),
   })
 
@@ -1191,18 +1196,28 @@ export const loadConfigCell = Sandwich.named('stryker.load_config')(readRunConfi
   .decide(resolveConfig)
   .write({
     ConfigFromFile: (resolved, raw) =>
-      Effect.succeed({
-        options: resolved.options,
-        targetMutatePatterns: raw.targetMutatePatterns,
-        basePath: raw.basePath,
-      }),
+      decodeDocument(resolved.document).pipe(
+        Result.match({
+          onSuccess: (options) =>
+            Effect.succeed({
+              options,
+              targetMutatePatterns: raw.targetMutatePatterns,
+              basePath: raw.basePath,
+            }),
+          onFailure: failConfigWith,
+        }),
+      ),
     ConfigFromDefaults: (resolved, raw) =>
-      Effect.succeed({
-        options: resolved.options,
-        targetMutatePatterns: raw.targetMutatePatterns,
-        basePath: raw.basePath,
-      }),
-    LoadConfigRefused: (refused) =>
-      failConfigWith(configErrorMessage(describeMessageOf(refused.message))),
+      decodeDocument(resolved.document).pipe(
+        Result.match({
+          onSuccess: (options) =>
+            Effect.succeed({
+              options,
+              targetMutatePatterns: raw.targetMutatePatterns,
+              basePath: raw.basePath,
+            }),
+          onFailure: failConfigWith,
+        }),
+      ),
     CommandRejected: ({ issue }) => failConfigWith(issue),
   })

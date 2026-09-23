@@ -1,7 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
@@ -51,6 +50,8 @@ type HashContent = (content: string) => string
 
 type ResolveAbsolutePath = (file: string) => string
 
+type RelativizeFileName = (fileName: string) => string
+
 const hashContent: HashContent = (content) => bytesToHex(sha256(utf8ToBytes(content)))
 
 const priorSourceHashes = (priorReport: PriorReportDocument, hash: HashContent) =>
@@ -60,34 +61,32 @@ const reportMutantToMutant = (
   file: string,
   mutant: PriorReportMutant,
   resolveAbsolutePath: ResolveAbsolutePath,
-  relativize: (fileName: string) => string,
+  relativize: RelativizeFileName,
 ) => {
   const fileName = resolveAbsolutePath(file)
   return {
-    ...Mutant.make({
-      id: mutant.id,
-      fileName,
-      mutatorName: mutant.mutatorName,
-      replacement: mutant.replacement ?? mutant.mutatorName,
-      location: {
-        start: {
-          line: mutant.location.start.line - 1,
-          column: mutant.location.start.column - 1,
-        },
-        end: {
-          line: mutant.location.end.line - 1,
-          column: mutant.location.end.column - 1,
-        },
-      },
-    }),
+    id: mutant.id,
+    fileName,
     relativeFileName: relativize(fileName),
+    mutatorName: mutant.mutatorName,
+    replacement: mutant.replacement ?? mutant.mutatorName,
+    location: {
+      start: {
+        line: mutant.location.start.line - 1,
+        column: mutant.location.start.column - 1,
+      },
+      end: {
+        line: mutant.location.end.line - 1,
+        column: mutant.location.end.column - 1,
+      },
+    },
   }
 }
 
 const extractSurvivors = (
   priorReport: PriorReportDocument,
   resolveAbsolutePath: ResolveAbsolutePath,
-  relativize: (fileName: string) => string,
+  relativize: RelativizeFileName,
 ) =>
   Object.entries(priorReport.files).flatMap(([file, fileResult]) =>
     fileResult.mutants
