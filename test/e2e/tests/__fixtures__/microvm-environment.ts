@@ -268,8 +268,6 @@ const bakeKeyOf = async (
   return hash.digest('hex')
 }
 
-const exists = async (path: string): Promise<boolean> => (await stat(path).catch(() => undefined)) !== undefined
-
 const stageFixtures = async (stagingDir: string, fixtureIds: ReadonlyArray<string>): Promise<void> => {
   for (const fixtureId of fixtureIds) {
     const source = join(TEST_RESOURCES_DIR, fixtureId)
@@ -299,11 +297,10 @@ const publishEntry = async (stagingDir: string, entryDir: string): Promise<void>
 }
 
 const pruneOtherEntries = async (keep: string): Promise<void> => {
-  for (const entry of await readdir(BAKED_CACHE_ROOT, { withFileTypes: true })) {
-    if (entry.isDirectory() && entry.name !== keep && !entry.name.includes('.staging-')) {
-      await rm(join(BAKED_CACHE_ROOT, entry.name), { recursive: true, force: true })
-    }
-  }
+  const stale = (await readdir(BAKED_CACHE_ROOT, { withFileTypes: true })).filter(
+    (entry) => entry.isDirectory() && entry.name !== keep && !entry.name.includes('.staging-'),
+  )
+  await Promise.all(stale.map((entry) => rm(join(BAKED_CACHE_ROOT, entry.name), { recursive: true, force: true })))
 }
 
 const bakeFixtureCache = async (): Promise<string> => {
@@ -318,7 +315,7 @@ const bakeFixtureCache = async (): Promise<string> => {
     const fixtureIds = await listFixtureIds()
     const key = await requireStep('derive the bake cache key', () => bakeKeyOf(packs, fixtureIds, scratch))
     const entryDir = join(BAKED_CACHE_ROOT, key)
-    if (await exists(entryDir)) {
+    if ((await stat(entryDir).catch(() => undefined)) !== undefined) {
       return entryDir
     }
     const stagingDir = `${entryDir}.staging-${process.pid}`
@@ -364,9 +361,7 @@ export const teardownMicroVMEnvironment = async (): Promise<void> => {
   installedFixtures.clear()
   const dirs = [...workspaceDirs]
   workspaceDirs.clear()
-  for (const dir of dirs) {
-    await rm(dir, { recursive: true, force: true })
-  }
+  await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })))
 }
 
 const guestTelemetryEnvironment = (): Record<string, string> => ({
