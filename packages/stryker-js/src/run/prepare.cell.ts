@@ -1,6 +1,11 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
-import { type ReporterFactory, type StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  coreFormatRegistry,
+  type FormatRegistry,
+  frameworkEntryOf,
+  registerEntries,
+} from '@systemfsoftware/stryker-js-instrumenter'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
@@ -13,18 +18,25 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
 import { type RunEvent } from '../RunEvents.js'
-import { PhaseEntered } from '../RunEvents.js'
+import { FormatRegistryResolved, PhaseEntered, PluginsReported, RunFailed } from '../RunEvents.js'
 import { RunEvents } from '../RunEvents.js'
 
-import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type {
+  PartialStrykerOptions,
+  ReporterFactory,
+  StrykerOptions,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import { makeBuiltinReporterFactories } from '../builtin-reporters.js'
+import { EXIT_CODE } from '../exit-classification.js'
 import { resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
 import { missingWorkerEntry } from '../plugin-worker-entry.js'
 import { loadPlugins, pluginUrlsFromOptions } from '../Plugins.js'
 import type { LoadedPlugins, PluginDescriptor } from '../Plugins.js'
+import { type PluginLoadFailureReason, PluginLoadRefusedError } from '../Plugins.schema.js'
 import { readProject } from '../Project.js'
 import type { Project } from '../Project.js'
 import { ansi } from '../Reporter.ansi.js'
@@ -39,9 +51,12 @@ import {
   withPhaseSpan,
 } from '../ReporterStream.js'
 import { PrepareError, StageError } from '../Run.schema.js'
+import type { FrameworkContributionRow, FrameworkModuleRow } from '../RunEvent.schema.js'
 import { TemporaryDirectory, TemporaryDirectoryLive } from '../Sandbox.js'
 import { selectReporters } from '../select-reporters.js'
+import { STREAM_SCHEMA_VERSION } from '../StreamVersion.js'
 import { WorkerLauncher } from '../WorkerLauncher.js'
+import { foldFormatClaims, FoldFormatClaimsCommand, FormatClaimsFolded } from './fold-format-claims.workflow.js'
 import { forkCoreSchema, readConfig, validateOptions } from './load-config.cell.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
 import { planPrepare, type PrepareDecision, PrepareDecoded } from './plan-prepare.workflow.js'
@@ -52,6 +67,8 @@ export interface PrepareDone {
   readonly project: Project
   readonly loadedPlugins: LoadedPlugins
   readonly ignorers: readonly Ignorer[]
+  readonly formatRegistry: FormatRegistry
+  readonly formatReport: FormatClaimsFolded
   readonly options: StrykerOptions
   readonly temporaryDirectoryPath: string
   readonly reporterStage: ReporterStage
@@ -69,9 +86,84 @@ interface PrepareRaw {
   readonly loaded: LoadedPlugins
   readonly project: Project
   readonly ignorers: readonly Ignorer[]
+  readonly formatRegistry: FormatRegistry
+  readonly formatReport: FormatClaimsFolded
   readonly builtinReporterFactories: Record<string, ReporterFactory>
   readonly reporterChoicesByName: HashMap.HashMap<string, ReporterChoice>
 }
+
+const PLUGIN_FAILURE_REMEDIATION: Record<PluginLoadFailureReason['_tag'], string> = {
+  PeerMissing: 'install the peer dependency the plugin needs',
+  PeerVersionUnsupported: 'install a supported version of the peer dependency',
+  InvalidContribution: 'fix the contribution the plugin declares',
+  ImportFailed: 'fix the plugin so that it imports cleanly',
+}
+
+const pluginLoadFailureEvents = (
+  error: PluginLoadRefusedError,
+  elapsedMs: number,
+): readonly [PhaseEntered, RunFailed] => [
+  PhaseEntered.make({ phase: 'prepare', elapsedMs }),
+  RunFailed.make({
+    schemaVersion: STREAM_SCHEMA_VERSION,
+    code: EXIT_CODE[error.exitClass],
+    error: error.message,
+    remediation: PLUGIN_FAILURE_REMEDIATION[error.reason._tag],
+    reason: error.reason._tag,
+  }),
+]
+
+type FrameworkContributionModule = LoadedPlugins['frameworks'][number]
+
+const frameworkRowOf = (entry: FrameworkContributionModule): FrameworkContributionRow => ({
+  name: entry.framework.name,
+  formatId: entry.framework.claim.formatId,
+  extensions: [...entry.framework.claim.extensions],
+})
+
+interface ModuleRowAccumulator {
+  readonly modules: ReadonlyArray<FrameworkModuleRow>
+}
+
+const emptyModuleRows = (): ModuleRowAccumulator => ({ modules: [] })
+
+const appendModuleRow = (
+  accumulator: ModuleRowAccumulator,
+  entry: FrameworkContributionModule,
+): ModuleRowAccumulator =>
+  Option.match(Option.fromUndefinedOr(accumulator.modules.find((row) => row.moduleName === entry.moduleName)), {
+    onNone: () => ({
+      modules: [...accumulator.modules, { moduleName: entry.moduleName, contributions: [frameworkRowOf(entry)] }],
+    }),
+    onSome: (found) => ({
+      modules: accumulator.modules.map((row) =>
+        row.moduleName === found.moduleName
+          ? { moduleName: row.moduleName, contributions: [...row.contributions, frameworkRowOf(entry)] }
+          : row
+      ),
+    }),
+  })
+
+const moduleRowsOf = (loaded: LoadedPlugins): readonly FrameworkModuleRow[] =>
+  loaded.frameworks.reduce(appendModuleRow, emptyModuleRows()).modules
+const reportPluginLoad = (
+  queue: Queue.Queue<RunEvent, Cause.Done>,
+  loaded: LoadedPlugins,
+  formatReport: FormatClaimsFolded,
+): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    yield* Queue.offer(
+      queue,
+      PluginsReported.make({
+        modules: [...moduleRowsOf(loaded)],
+        shadowings: [...formatReport.shadowings],
+      }),
+    )
+    yield* Queue.offer(
+      queue,
+      FormatRegistryResolved.make({ rows: [...formatReport.rows] }),
+    )
+  })
 
 const schemaPropertiesOf = <A = unknown>(document: ValidationSchemaDocument<A>): Record<string, NonNullable<A>> =>
   Option.getOrElse(Option.fromNullishOr(document.properties), () => ({}))
@@ -226,8 +318,45 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
     }
     const descriptors: readonly string[] = pluginUrlsFromOptions(options)
     const loaded = yield* loadPlugins(descriptors).pipe(
+      Effect.tapError((error) =>
+        Effect.gen(function*() {
+          const failedAt = yield* Clock.currentTimeMillis
+          yield* Effect.forEach(
+            pluginLoadFailureEvents(error, failedAt - env.runStartedAt),
+            (event) => Queue.offer(queue, event),
+            { discard: true },
+          )
+        })
+      ),
       Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
     )
+    const registry = registerEntries(
+      coreFormatRegistry,
+      loaded.frameworks.map(({ moduleName, framework }) => frameworkEntryOf(moduleName, framework)),
+    )
+    const folded = Result.getOrThrow(
+      foldFormatClaims(
+        FoldFormatClaimsCommand.make({
+          coreClaims: coreFormatRegistry.entries.map((entry) => ({
+            ownerModule: entry.owner,
+            formatId: entry.claim.formatId,
+            language: entry.claim.language,
+            extensions: [...entry.claim.extensions],
+          })),
+          frameworkClaims: loaded.frameworks.map(({ moduleName, framework }) => ({
+            ownerModule: moduleName,
+            formatId: framework.claim.formatId,
+            language: framework.claim.language,
+            extensions: [...framework.claim.extensions],
+          })),
+        }),
+      ),
+    )
+    if (!S.is(FormatClaimsFolded)(folded)) {
+      throw new Error('the total claim fold was expected to fold the claims')
+    }
+    const formatReport = folded
+    yield* reportPluginLoad(queue, loaded, formatReport)
     const mergedSchema = buildMergedSchema(coreSchema, loaded.schemaContributions)
     const record = { ...options }
     yield* validateOptions(record, mergedSchema).pipe(
@@ -269,7 +398,18 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
           ] as const,
       ),
     ])
-    return { env, queue, options, loaded, project, ignorers, builtinReporterFactories, reporterChoicesByName }
+    return {
+      env,
+      queue,
+      options,
+      loaded,
+      project,
+      ignorers,
+      formatRegistry: registry,
+      formatReport,
+      builtinReporterFactories,
+      reporterChoicesByName,
+    }
   })
 
 const decodePrepare = (raw: PrepareRaw): Result.Result<PrepareDecoded, StageError> =>
@@ -349,6 +489,8 @@ const writePrepare = (
           project: raw.project,
           loadedPlugins: raw.loaded,
           ignorers: raw.ignorers,
+          formatRegistry: raw.formatRegistry,
+          formatReport: raw.formatReport,
           options: raw.options,
           temporaryDirectoryPath,
           reporterStage,

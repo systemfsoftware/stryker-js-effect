@@ -30,8 +30,8 @@ const Feature = makeFeature({ it, layer })
 const PLAN_KNOWN = PlanKnown.make({ total: 4 })
 const PHASE_ENTERED = PhaseEntered.make({ phase: 'dry-run', elapsedMs: 1 })
 const HEARTBEAT = Heartbeat.make({ elapsedMs: 2, completed: 1, total: 4 })
-const HELP_RENDERED = HelpRendered.make({ schemaVersion: '1.0', code: 0, help: 'usage' })
-const RUN_FAILED = RunFailed.make({ schemaVersion: '1.0', code: 3, error: 'x', remediation: 'y' })
+const HELP_RENDERED = HelpRendered.make({ schemaVersion: '1.1', code: 0, help: 'usage' })
+const RUN_FAILED = RunFailed.make({ schemaVersion: '1.1', code: 3, error: 'x', remediation: 'y', reason: null })
 
 interface StreamFixture {
   readonly stream: RunEventStream
@@ -120,7 +120,7 @@ Feature('Streaming a run to machine readers')
           if (Option.isSome(opening)) {
             expect(opening.value.mode).toBe('machine')
             expect(opening.value.signal).toBe('tty')
-            expect(opening.value.schemaVersion).toBe('1.0')
+            expect(opening.value.schemaVersion).toBe('1.1')
             expect(typeof opening.value.runId).toBe('string')
             expect(opening.value.runId.length).toBeGreaterThan(0)
           }
@@ -177,7 +177,7 @@ Feature('Streaming a run to machine readers')
             expect(failure.value.code).toBe(3)
             expect(failure.value.error).toBe('x')
             expect(failure.value.remediation).toBe('y')
-            expect(failure.value.schemaVersion).toBe('1.0')
+            expect(failure.value.schemaVersion).toBe('1.1')
           }
         }),
         Then('the stream is permanently closed')((s) => {

@@ -94,6 +94,9 @@ const nextFramingState = (state: FramingState, event: RunEvent): FramingState =>
     Match.tag('stream', () => state),
     Match.tag('phase', () => state),
     Match.tag('tick', () => state),
+    Match.tag('plugins', () => state),
+    Match.tag('formats', () => state),
+    Match.tag('skipped', () => state),
     Match.exhaustive,
   )
 
@@ -127,6 +130,9 @@ const formatStderrEvent = (event: RunEvent): string | null =>
     Match.tag('stream', () => null),
     Match.tag('mutant', () => null),
     Match.tag('help', () => null),
+    Match.tag('plugins', () => null),
+    Match.tag('formats', () => null),
+    Match.tag('skipped', () => null),
     Match.exhaustive,
   )
 
