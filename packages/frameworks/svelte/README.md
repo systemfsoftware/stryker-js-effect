@@ -5,10 +5,35 @@
 
 > Framework plugin that makes Svelte components first-class mutation targets.
 
-Installing this package is the only setup step. The default
-`@systemfsoftware/stryker-js-*` plugin glob discovers the module, and the
-`Framework` contribution it publishes — named `svelte` — claims the `svelte`
-format for `.svelte` files. There is nothing to add to your configuration.
+Install the package and add it to `plugins`. The `Framework` contribution it
+exports — named `svelte` — claims `.svelte` files.
+
+## Install
+
+```bash
+pnpm add -D @systemfsoftware/stryker-js-svelte
+```
+
+Add the module to `plugins` in your StrykerJS config:
+
+```ts
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
+
+export default defineConfig({
+  testRunner: 'vitest',
+  plugins: [
+    import.meta.resolve('@systemfsoftware/stryker-js-svelte'),
+  ],
+  mutate: ['src/**/*.svelte'],
+})
+```
+
+Svelte itself is an optional peer dependency, installed in the project you
+mutate:
+
+```bash
+pnpm add -D svelte
+```
 
 ## What gets mutated
 
@@ -22,33 +47,24 @@ Mutants inside a component are activated by a small header the plugin places in
 the component's module script. A component no mutant lands in is left
 byte-for-byte alone.
 
-## Install
+## Missing or old compiler
 
-```bash
-pnpm add -D @systemfsoftware/stryker-js-svelte
-```
+The compiler is resolved from your project when the plugin module is evaluated,
+never from a copy bundled at publish time. The supported range is `>=3.30` (the
+`svelte` entry under `peerDependencies`). When no compiler is installed, or the
+installed one is older than that range, the plugin exports a refusal naming the
+peer instead of its framework, and the run stops before instrumentation as a
+configuration error.
 
-Svelte itself is an optional peer dependency, installed in the project you
-mutate:
-
-```bash
-pnpm add -D svelte
-```
+Svelte 5 no longer exports a template walker, so Svelte 5 templates are walked
+by the plugin's own walker dependency.
 
 ## Boundaries
 
-- The package depends inward only: on the plugin contract, the language
-  vocabulary, and the framework interface. It never depends on the instrumenter
-  or the engine.
-- The compiler is resolved from your project when the run prepares, never from a
-  copy bundled at publish time. The supported range is the `svelte` entry under
-  `peerDependencies`: when no compiler is installed, or the installed one is
-  older than that range, the run stops before instrumentation with a
-  configuration error naming the peer.
-- Svelte 5 no longer exports a template walker, so Svelte 5 templates are walked
-  by the plugin's own walker dependency.
-- The format, the document, and the script regions are typed against
-  [`@systemfsoftware/stryker-framework-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-framework-interface).
+- The package depends inward only: on
+  [`@systemfsoftware/stryker-framework-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-framework-interface)
+  and its template-walker dependency. It has no Effect dependency and never
+  depends on the instrumenter or the host.
 
 ## Contributing
 

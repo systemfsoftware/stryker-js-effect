@@ -26,7 +26,7 @@ the lint preset bans Effect imports outright.
 | `FrameworkClaim`           | `{ formatId, extensions, language, ownerVersion, contractVersion }` — the extensions the plugin owns, the report language its files carry, the framework runtime it resolved, and the contract it targets       |
 | `FrameworkContractVersion` | The contract version this package describes (`'1'`); the host refuses a claim that names any other                                                                                                              |
 | `FrameworkParseResult<A>`  | `{ kind: 'Parsed', value } \| { kind: 'ParseFailed', message }` — how `parse` and `disableTypeChecks` report a claimed file that does not parse                                                                 |
-| `FormatId`                 | The claimed format's identity — a branded string, so it cannot be transposed with the extension list or the language label beside it                                                                            |
+| `FormatId`                 | The claimed format's identity — a plain string the plugin picks once, where it declares the claim                                                                                                               |
 | `ScriptFormat`             | The script vocabulary an embedded region may carry — `js`, `ts`, or `tsx`                                                                                                                                       |
 | `EmbeddedDocument`         | A parsed framework file: `{ formatId, rawContent, regions }` — the untouched document plus the script regions the core instruments                                                                              |
 | `ScriptRegion`             | One located script inside that document: `{ start, end, isExpression, scriptAst? }`, offsets into the document, never the slice                                                                                 |
@@ -53,7 +53,7 @@ const html: Framework = {
   kind: 'Framework',
   name: 'html',
   claim: {
-    formatId: 'html' as FormatId,
+    formatId: 'html',
     extensions: ['.html', '.htm', '.vue'],
     language: 'html',
     ownerVersion: '10.12.0',
@@ -78,9 +78,9 @@ that reason before instrumenting anything. Any other failure while importing
 the peer is left to propagate: the host reports it as a plugin that crashed on
 import.
 
-`FormatId` is a branded string: a plugin brands its own id once, where it
-declares the claim, so the value cannot be transposed with an extension or a
-language label downstream.
+`FormatId` is a plain string: a plugin picks its own id once, where it declares
+the claim, and keeps it stable across releases — incremental state keys a file's
+format identity on it.
 
 The claim's `ownerVersion` names the framework runtime the plugin resolved and
 owns — the compiler or parser a mutant's printed form has to survive. The host

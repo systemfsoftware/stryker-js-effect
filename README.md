@@ -133,6 +133,39 @@ export default defineConfig({
 })
 ```
 
+---
+
+## 🧩 Framework Plugins: Angular, Vue, and Svelte Files
+
+`.html`, `.htm`, `.vue`, and `.svelte` files are not instrumented by the core —
+a framework plugin package claims them. Install the package for your framework
+and add it to `plugins`:
+
+```bash
+pnpm add -D @systemfsoftware/stryker-js-angular # .html, .htm, .vue
+# or
+pnpm add -D @systemfsoftware/stryker-js-svelte # .svelte
+```
+
+```ts
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
+
+export default defineConfig({
+  testRunner: 'vitest',
+  plugins: [
+    import.meta.resolve('@systemfsoftware/stryker-js-angular'),
+  ],
+  mutate: ['src/**/*.html', 'src/**/*.vue'],
+})
+```
+
+Framework plugins instrument only the embedded script regions of a framework
+file — template expressions are never mutated. A file whose extension no
+installed format claims is skipped with a reason naming the plugin package to
+add, and the run continues. For Angular, pair the plugin with
+`@systemfsoftware/stryker-ignorer-angular` so signal-configuration mutants are
+ignored.
+
 ## 🛠️ Configuration Recipes
 
 ### 1. The Production Monorepo / Strict Quality Gate
