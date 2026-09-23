@@ -275,10 +275,20 @@ const nodeVmPlatformLayer = Layer.effect(
   ),
 )
 
+const nodeFsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+
+const nodeSpawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(nodeFsPathLayer))
+
+const nodeBase = Layer.mergeAll(nodeFsPathLayer, nodeSpawnerLayer, NodeStdio.layer)
+
+const nodePlatformLayer = Layer.mergeAll(
+  nodeWorkerLauncherLayer.pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
+  nodeBase,
+  nodeVmPlatformLayer,
+)
+
 const cliLayer = Layer.empty.pipe(
-  Layer.provideMerge(NodeStdio.layer),
-  Layer.provideMerge(NodeFileSystem.layer),
-  Layer.provideMerge(NodePath.layer),
+  Layer.provideMerge(nodePlatformLayer),
   Layer.provideMerge(OutputModeProbeLive),
   Layer.provideMerge(RunEventDrain.fileLayer),
   Layer.provideMerge(RunEventStreamPortTag.layer),
@@ -286,10 +296,6 @@ const cliLayer = Layer.empty.pipe(
   Layer.provideMerge(telemetryLayer),
   Layer.provideMerge(CliConfig.layer({ builtIns: GlobalFlag.BuiltIns })),
   Layer.provideMerge(NodeTerminal.layer),
-  Layer.provideMerge(NodeChildProcessSpawner.layer),
-  Layer.provideMerge(NodeCrypto.layer),
-  Layer.provideMerge(nodeWorkerLauncherLayer),
-  Layer.provideMerge(nodeVmPlatformLayer),
 )
 
 const program = Effect.scoped(

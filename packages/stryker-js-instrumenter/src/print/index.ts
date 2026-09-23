@@ -3,6 +3,7 @@ import * as Boolean from 'effect/Boolean'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import { isNodeArg } from '../Ast.handle.js'
 import type {
   AccessorProperty,
@@ -545,7 +546,7 @@ const bigintText = <A = unknown>(value: A): string =>
   )
 
 const flagText = <A = unknown>(present: A, text: string): string =>
-  Boolean.match(Boolean(present), {
+  Boolean.match(Predicate.isTruthy(present), {
     onTrue: () => text,
     onFalse: () => '',
   })
@@ -1101,7 +1102,7 @@ const parameterPropertyText = (
 
 const parameterPropertyTargetText = (ctx: PrintContext, parameter: BindingPattern): string =>
   Match.value(parameter).pipe(
-    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(n)),
+    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(ctx, n)),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 
@@ -1110,8 +1111,7 @@ const formalParameterText = (ctx: PrintContext, param: BindingPattern): string =
 
 const formalParameterBodyText = (ctx: PrintContext, param: BindingPattern): string =>
   Match.value(param).pipe(
-    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(n),
-    ),
+    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(ctx, n)),
     Match.orElse(
       (n) => `${assignmentNodeText(ctx, n)}${typeAnnotationText(ctx, bindingTypeAnnotation(n))}`,
     ),
@@ -1926,7 +1926,7 @@ const typePredicateParameterText = (parameterName: TSTypePredicate['parameterNam
   )
 
 const externalModuleArgumentText = (value: string): string =>
-  Boolean.match(Boolean(value), {
+  Boolean.match(Predicate.isTruthy(value), {
     onTrue: () => JSON.stringify(value),
     onFalse: () => '""',
   })

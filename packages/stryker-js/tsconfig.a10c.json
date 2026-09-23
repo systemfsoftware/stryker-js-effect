@@ -1,0 +1,36 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "noEmit": true,
+    "incremental": false,
+    "tsBuildInfoFile": null,
+    "pretty": false
+  },
+  "include": [
+    "src/render-clear-text-report.workflow.ts",
+    "src/render-progress-report.workflow.ts",
+    "src/render-json-report.workflow.ts",
+    "src/clear-text-report.cell.ts",
+    "src/progress-report.cell.ts",
+    "src/json-report.cell.ts",
+    "src/reporter.service.ts",
+    "src/reporter-output.service.ts",
+    "src/reporter-stream.service.ts",
+    "src/mutation-reporting.service.ts",
+    "src/mutation-reporting.schema.ts",
+    "src/stryker-error.schema.ts",
+    "src/run-event-stream.service.ts",
+    "src/run-events.service.ts",
+    "src/run-event.schema.ts",
+    "src/run-event-wire.schema.ts",
+    "src/merge-reports.cell.ts",
+    "src/merge-report-parts.workflow.ts",
+    "src/merge-reports.schema.ts",
+    "src/resolve-output-mode.workflow.ts",
+    "src/output-mode.schema.ts",
+    "src/output-mode-probe.service.ts"
+  ]
+}

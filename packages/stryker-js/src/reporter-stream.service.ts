@@ -358,35 +358,46 @@ export const offerTerminalReport: {
   ): Effect.Effect<void, never> => offerReporterEvent(stage, MutationTestReportReady.make({ report, metrics })),
 )
 
-export const terminalDrainClass = (summary: ReporterDrainSummary): ExitClass | null => {
-  if (summary.terminalFailed.length > 0) {
-    return 'RuntimeError'
-  }
-  return null
-}
+export const terminalDrainClass = (summary: ReporterDrainSummary): ExitClass | null =>
+  Boolean.match(summary.terminalFailed.length > 0, {
+    onTrue: () => 'RuntimeError',
+    onFalse: () => null,
+  })
 
 type ReporterDrainOutcome =
   | { readonly kind: 'completed'; readonly name: string }
   | { readonly kind: 'detached'; readonly name: string }
   | { readonly kind: 'terminal-failed'; readonly name: string }
 
+const failedOutcome = (
+  attachment: ReporterAttachment,
+  cause: Cause.Cause<unknown>,
+): Effect.Effect<ReporterDrainOutcome, never, never> =>
+  Effect.as(
+    Effect.logError(`Reporter "${attachment.name}" failed while draining the terminal report.`).pipe(
+      Effect.annotateLogs('cause', cause),
+    ),
+    { kind: 'terminal-failed' as const, name: attachment.name },
+  )
+
+const detachedOutcome = (
+  attachment: ReporterAttachment,
+  cause: Cause.Cause<unknown>,
+): Effect.Effect<ReporterDrainOutcome, never, never> =>
+  Effect.as(
+    Effect.logWarning(
+      `Reporter "${attachment.name}" failed before the terminal report and was detached; exit code unchanged.`,
+    ).pipe(Effect.annotateLogs('cause', cause)),
+    { kind: 'detached' as const, name: attachment.name },
+  )
+
 const settleFailedAttachment = <E = unknown>(
   attachment: ReporterAttachment,
   cause: Cause.Cause<E>,
 ): Effect.Effect<ReporterDrainOutcome, never, never> =>
-  Effect.gen(function*() {
-    if (attachment.latch.state === 'terminal') {
-      yield* Effect.logError(`Reporter "${attachment.name}" failed while draining the terminal report.`).pipe(
-        Effect.annotateLogs('cause', cause),
-      )
-      const failed: ReporterDrainOutcome = { kind: 'terminal-failed', name: attachment.name }
-      return failed
-    }
-    yield* Effect.logWarning(
-      `Reporter "${attachment.name}" failed before the terminal report and was detached; exit code unchanged.`,
-    ).pipe(Effect.annotateLogs('cause', cause))
-    const detached: ReporterDrainOutcome = { kind: 'detached', name: attachment.name }
-    return detached
+  Boolean.match(attachment.latch.state === 'terminal', {
+    onTrue: () => failedOutcome(attachment, cause),
+    onFalse: () => detachedOutcome(attachment, cause),
   })
 
 const settleAttachment = (attachment: ReporterAttachment): Effect.Effect<ReporterDrainOutcome, never, never> =>
@@ -411,47 +422,52 @@ const settleAttachment = (attachment: ReporterAttachment): Effect.Effect<Reporte
     })
   })
 
-const failedReporterNames = (outcome: ReporterDrainOutcome): readonly string[] => {
-  if (outcome.kind === 'terminal-failed') return [outcome.name]
-  return []
-}
+const failedReporterNames = (outcome: ReporterDrainOutcome): readonly string[] =>
+  Match.value(outcome).pipe(
+    Match.when({ kind: 'terminal-failed' }, (failed) => [failed.name]),
+    Match.orElse(() => []),
+  )
 
 export const closeReporterStage = (
   stage: ReporterStage,
 ): Effect.Effect<ReporterDrainSummary, never, never> =>
-  Effect.gen(function*() {
-    const attachments = stageAttachments(stage)
-    yield* Effect.forEach(attachments, (attachment) => Queue.end(attachment.inbox), { discard: true })
-    yield* Effect.forEach(attachments, (attachment) => attachment.emitter.pipe(Fiber.join, Effect.exit), {
-      discard: true,
-    })
-    const outcomes = yield* Effect.forEach(attachments, settleAttachment, { concurrency: 'unbounded' })
-    return { terminalFailed: outcomes.flatMap((outcome) => failedReporterNames(outcome)) }
+  Effect.flatMap(stageAttachments(stage), (attachments) =>
+    Effect.gen(function*() {
+      yield* Effect.forEach(attachments, (attachment) => Queue.end(attachment.inbox), { discard: true })
+      yield* Effect.forEach(attachments, (attachment) => attachment.emitter.pipe(Fiber.join, Effect.exit), {
+        discard: true,
+      })
+      const outcomes = yield* Effect.forEach(attachments, settleAttachment, { concurrency: 'unbounded' })
+      return { terminalFailed: outcomes.flatMap((outcome) => failedReporterNames(outcome)) }
+    }))
+
+const traceparentInit = (traceparent: string | undefined): ReporterInitOptions =>
+  Option.match(Option.fromUndefinedOr(traceparent), {
+    onNone: () => ({}),
+    onSome: (present) => ({ traceparent: present }),
   })
 
-const traceparentInit = (traceparent: string | undefined): ReporterInitOptions => {
-  if (traceparent === undefined) return {}
-  return { traceparent }
-}
+const tracestateInit = (tracestate: string | undefined): ReporterInitOptions =>
+  Option.match(Option.fromUndefinedOr(tracestate), {
+    onNone: () => ({}),
+    onSome: (present) => ({ tracestate: present }),
+  })
 
-const tracestateInit = (tracestate: string | undefined): ReporterInitOptions => {
-  if (tracestate === undefined) return {}
-  return { tracestate }
-}
+const hasTraceFields = (init: ReporterInit): boolean =>
+  Option.isSome(Option.fromUndefinedOr(init.traceparent)) ||
+  Option.isSome(Option.fromUndefinedOr(init.tracestate))
 
-const hasTraceFields = (init: ReporterInit): boolean => {
-  if (init.traceparent !== undefined) return true
-  return init.tracestate !== undefined
-}
-
-const initFromPhaseSpan = (span: PhaseSpan | undefined): ReporterInit | undefined => {
-  if (span === undefined) return undefined
-  const parts = partsOfEffectSpan(span)
-  return {
-    traceparent: formatTraceparent(parts),
-    ...tracestateInit(parts.traceState),
-  }
-}
+const initFromPhaseSpan = (span: PhaseSpan | undefined): ReporterInit | undefined =>
+  Option.match(Option.fromNullishOr(span), {
+    onNone: () => undefined,
+    onSome: (present) => {
+      const parts = partsOfEffectSpan(present)
+      return {
+        traceparent: formatTraceparent(parts),
+        ...tracestateInit(parts.traceState),
+      }
+    },
+  })
 
 export interface PhaseSpan {
   readonly traceId: string
@@ -470,10 +486,10 @@ const environmentTraceInit = (): Effect.Effect<ReporterInit> =>
   })
 
 const initFromEnvironment = (): Effect.Effect<ReporterInit | undefined> =>
-  Effect.map(environmentTraceInit(), (init) => {
-    if (!hasTraceFields(init)) return undefined
-    return init
-  })
+  Effect.map(
+    environmentTraceInit(),
+    (init) => Option.getOrUndefined(Option.filter(Option.some(init), hasTraceFields)),
+  )
 
 export const currentReporterInit = (span?: PhaseSpan): Effect.Effect<ReporterInit> =>
   Effect.gen(function*() {

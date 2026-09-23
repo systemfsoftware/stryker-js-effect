@@ -133,7 +133,7 @@ const PriorReportAbsentOutcome = S.TaggedStruct('PriorReportAbsent', {})
 const PriorReportIsSurvivorsRunOutcome = S.TaggedStruct('PriorReportIsSurvivorsRun', {})
 const NoSurvivorsFoundOutcome = S.TaggedStruct('NoSurvivorsFound', {})
 const PriorReportDriftedOutcome = S.TaggedStruct('PriorReportDrifted', {})
-const SurvivorsMatchOutcome = S.TaggedStruct('SurvivorsMatch', { survivors: S.Array(MutantShape) })
+const SurvivorsMatchOutcome = S.TaggedStruct('SurvivorsMatch', { survivors: S.Array(AdmittedSurvivorShape) })
 
 const AdmissionOutcome = S.Union([
   PriorReportAbsentOutcome,

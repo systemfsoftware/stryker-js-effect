@@ -11,7 +11,7 @@ import {
 import * as S from 'effect/Schema'
 import * as Result from 'effect/Result'
 
-const out = (line: string) => appendFileSync('/tmp/a9e-probe.log', `${line}\n`)
+const out = (...line: readonly unknown[]) => appendFileSync('/tmp/a9e-probe.log', `${line.join(' ')}\n`)
 
 const survivor = {
   id: 'a',
@@ -32,18 +32,18 @@ describe('probes', () => {
       priorSourceHashes: {},
       priorSurvivors: [survivor],
     })
-    console.log('command.priorSurvivors[0]:', JSON.stringify(command.priorSurvivors[0]))
+    out('command.priorSurvivors[0]:', JSON.stringify(command.priorSurvivors[0]))
   })
 
   it('tagged struct make strips unknown keys', () => {
     const Probe = S.TaggedStruct('P', { survivors: S.Array(MutantShape) })
     const made = Probe.make({ survivors: [survivor] })
-    console.log('probe survivors[0]:', JSON.stringify((made as any).survivors[0]))
+    out('probe survivors[0]:', JSON.stringify((made as any).survivors[0]))
   })
 
   it('admitted make strips', () => {
     const made = Admitted.make({ survivors: [survivor], mutateSpans: ['x'] })
-    console.log('admitted survivors[0]:', JSON.stringify(made.survivors[0]))
+    out('admitted survivors[0]:', JSON.stringify(made.survivors[0]))
   })
 
   it('end to end', () => {
@@ -57,9 +57,9 @@ describe('probes', () => {
     })
     const admission = admitSurvivorsRun(command)
     if (Result.isSuccess(admission)) {
-      console.log('e2e mutateSpans:', JSON.stringify(admission.success.mutateSpans))
+      out('e2e mutateSpans:', JSON.stringify(admission.success.mutateSpans))
     } else {
-      console.log('e2e rejected:', admission.failure.reason)
+      out('e2e rejected:', admission.failure.reason)
     }
   })
 })
