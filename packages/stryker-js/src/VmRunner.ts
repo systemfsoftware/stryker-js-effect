@@ -65,7 +65,7 @@ const errorText = <A = unknown>(error: A): string =>
     Match.orElse((value) => String(value)),
   )
 
-const isInitFailure = (error: unknown): boolean => {
+const isInitFailure = <A = unknown>(error: A): boolean => {
   if (error instanceof SyntaxError) {
     return true
   }
@@ -177,7 +177,7 @@ const runOnce = (
     try {
       const real = yield* Effect.tryPromise({
         try: () => import('vitest'),
-        catch: (cause: unknown) =>
+        catch: (cause) =>
           TestRunnerFailed.make({
             runnerName: vmRunnerName,
             phase: 'init',
@@ -216,7 +216,7 @@ const runOnce = (
         const outcome = yield* Effect.promise(() =>
           nativeImport(url).then(
             () => undefined,
-            (cause: unknown) => ({ cause }),
+            <A = unknown>(cause: A) => ({ cause }),
           )
         )
         if (outcome !== undefined) {
