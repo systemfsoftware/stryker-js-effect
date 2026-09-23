@@ -5,6 +5,7 @@ import type {
   DryRunResult,
   TestResult,
   TestRunnerCapabilities,
+  WorkerPluginKind,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
@@ -22,8 +23,9 @@ import { PhaseEntered, RunEvents } from '../run-events.service.js'
 
 import { dryRun, DryRunCommand, DryRunError, DryRunFailed } from '../dry-run.workflow.js'
 import { testCoverageFrom } from '../Mutants.js'
+import { PluginNotFoundError } from '../PluginsError.schema.js'
+import type { LoadedPlugins } from '../Plugins.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
-import { missingWorkerEntry, resolveConfiguredWorkerSpawn } from '../plugin-worker-entry.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { StageError } from '../Run.schema.js'
@@ -32,6 +34,11 @@ import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.resou
 import { IdGenerator } from '../Worker.service.js'
 import type { InstrumentDone } from './instrument.cell.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
+import {
+  ConfiguredPluginModulePath,
+  ConfiguredPluginName,
+  resolveConfiguredPlugin,
+} from './resolve-configured-plugin.workflow.js'
 
 export interface DryRunDone extends InstrumentDone {
   readonly dryRunResult: CompleteDryRunResult
@@ -41,6 +48,26 @@ export interface DryRunDone extends InstrumentDone {
 
 const sandboxPathsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
   Result.all(fileNames.map((fileName) => sandbox.sandboxFileFor(fileName)))
+
+const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
+  Match.value(configured).pipe(
+    Match.when(isCustomTestRunner, (custom) => ConfiguredPluginModulePath.make({ modulePath: custom.plugin })),
+    Match.orElse((name) => ConfiguredPluginName.make({ name })),
+  )
+
+const workerSpawnOf = (
+  stage: StageError['stage'],
+  loaded: Pick<LoadedPlugins, 'pluginSources'>,
+  kind: WorkerPluginKind,
+  configured: ConfiguredPluginName | ConfiguredPluginModulePath,
+) =>
+  Result.match(resolveConfiguredPlugin({ sources: loaded.pluginSources, kind, configured }), {
+    onSuccess: Effect.succeed,
+    onFailure: (missing) =>
+      Effect.fail(
+        StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
+      ),
+  })
 
 const optionalSandboxPathsOf = (command: InstrumentDone) =>
   Boolean.match(command.project.testFiles.length === 0, {
@@ -228,22 +255,13 @@ const readDryRun = (command: InstrumentDone) =>
       Effect.gen(function*() {
         const childRunnerEffect = Effect.suspend(() => {
           const runnerConfigured = command.options.testRunner
-          const runnerLabel = Match.value(runnerConfigured).pipe(
-            Match.when(isCustomTestRunner, (runner) => runner.plugin),
-            Match.orElse((name) => name),
-          )
-          return resolveConfiguredWorkerSpawn({
-            loaded: command.loadedPlugins,
-            kind: 'TestRunner',
-            configured: runnerConfigured,
-          }).pipe(
-            Effect.mapError(missingWorkerEntry('dryRun', 'test runner', runnerLabel)),
-            Effect.flatMap(({ spawn }) =>
+          return workerSpawnOf('dryRun', command.loadedPlugins, 'TestRunner', configuredPluginOf(runnerConfigured)).pipe(
+            Effect.flatMap((resolved) =>
               makeChildProcessTestRunner({
                 options: command.options,
                 fileDescriptions: command.project.fileDescriptions,
                 sandboxWorkingDirectory: command.sandbox.workingDirectory,
-                workerEntrypoint: spawn.entrypoint,
+                workerEntrypoint: resolved.entrypoint,
                 idGenerator,
               })
             ),

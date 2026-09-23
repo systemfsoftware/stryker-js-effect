@@ -30,13 +30,16 @@ export const ToneSchema = S.Literals([
 ])
 export type Tone = typeof ToneSchema.Type
 
-export const ReportSpanSchema = S.TaggedStruct('ReportSpan', {
+export const ReportSpanSchema = S.Struct({
+  _tag: S.Literal('ReportSpan'),
   text: S.String,
   tone: ToneSchema,
   leftPad: S.Finite,
   rightPad: S.Finite,
   repeat: S.Finite,
 })
+export type ReportSpan = typeof ReportSpanSchema.Type
+
 export const ReportLineSchema = S.Array(ReportSpanSchema)
 export type ReportLine = typeof ReportLineSchema.Type
 
@@ -655,7 +658,7 @@ const scoreTable = (metricsResult: MetricsResult, render: ClearTextRenderOptions
   const columns = createColumns(metricsResult, render)
   return [
     rowOf(columns.map((column) => rule('-', slotWidthOf(column)))),
-    rowOf(columns.map((column) => placedLine(column.header, column.style, column.netWidth))),
+    rowOf(columns.flatMap((column) => placedLine(column.header, column.style, column.netWidth))),
     rowOf(leafHeaders(columns)),
     rowOf(leafRules(columns)),
     ...bodyRows(columns, render, metricsResult, 0),

@@ -39,6 +39,7 @@ import type {
   CheckResult,
   ExitClass,
   FailedCheckResult,
+  WorkerPluginKind,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import { WALL_CLOCK_TIMEOUT_REASON, wallClockTimeoutStopsRun } from '@systemfsoftware/stryker-js-plugin-interface'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
@@ -52,7 +53,8 @@ import { toSchemaLocation } from '../mutant-result-mapping.js'
 import { decidePlans, incrementalDiff, partitionRunPlans, sortRunPlans } from '../Mutants.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
-import { missingWorkerEntry, resolveConfiguredWorkerSpawn } from '../plugin-worker-entry.js'
+import { PluginNotFoundError } from '../PluginsError.schema.js'
+import type { LoadedPlugins } from '../Plugins.schema.js'
 import { ProjectFiles } from '../project-files.service.js'
 import type { Project } from '../Project.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
@@ -67,6 +69,11 @@ import { ChildProcessCrashedError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import type { DryRunDone } from './dry-run.cell.js'
 import { RunEnvironment, type RunEnvironmentShape } from './RunEnvironment.service.js'
+import {
+  ConfiguredPluginModulePath,
+  ConfiguredPluginName,
+  resolveConfiguredPlugin,
+} from './resolve-configured-plugin.workflow.js'
 import type { StageServices } from './StageServices.service.js'
 
 export interface MutationTestDone {
@@ -202,6 +209,26 @@ const isCheckerCrash = (error: StageError | CheckerCrash): boolean =>
     Match.orElse(() => false),
   )
 
+const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
+  Match.value(configured).pipe(
+    Match.when(isCustomTestRunner, (custom) => ConfiguredPluginModulePath.make({ modulePath: custom.plugin })),
+    Match.orElse((name) => ConfiguredPluginName.make({ name })),
+  )
+
+const workerSpawnOf = (
+  stage: StageError['stage'],
+  loaded: Pick<LoadedPlugins, 'pluginSources'>,
+  kind: WorkerPluginKind,
+  configured: ConfiguredPluginName | ConfiguredPluginModulePath,
+) =>
+  Result.match(resolveConfiguredPlugin({ sources: loaded.pluginSources, kind, configured }), {
+    onSuccess: Effect.succeed,
+    onFailure: (missing) =>
+      Effect.fail(
+        StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
+      ),
+  })
+
 const makeCheckerPool = (
   prev: DryRunDone,
   projectDirectory: string,
@@ -216,14 +243,15 @@ const makeCheckerPool = (
       Pool.make({
         acquire: Effect.forEach(prev.options.checkers, (checker) =>
           Effect.gen(function*() {
-            const resolved = yield* resolveConfiguredWorkerSpawn({
-              loaded: prev.loadedPlugins,
-              kind: 'Checker',
-              configured: checker,
-            }).pipe(Effect.mapError(missingWorkerEntry('mutationTest', 'checker', checker.plugin)))
+            const resolved = yield* workerSpawnOf(
+              'mutationTest',
+              prev.loadedPlugins,
+              'Checker',
+              ConfiguredPluginModulePath.make({ modulePath: checker.plugin }),
+            )
             const service = yield* scoped({
               options: { ...prev.options, checkers: [checker] },
-              workerEntrypoint: resolved.spawn.entrypoint,
+              workerEntrypoint: resolved.entrypoint,
               workingDirectory: projectDirectory,
             }).pipe(Effect.retry({ times: CHECKER_ACQUIRE_RETRIES, while: isCheckerCrash }))
             return { checkerName: resolved.name, checker: service }
@@ -469,22 +497,18 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
           testRunnerContext,
           Effect.suspend(() => {
             const runnerConfigured = prev.options.testRunner
-            const runnerLabel = Match.value(runnerConfigured).pipe(
-              Match.when(isCustomTestRunner, (runner) => runner.plugin),
-              Match.orElse((name) => name),
-            )
-            return resolveConfiguredWorkerSpawn({
-              loaded: prev.loadedPlugins,
-              kind: 'TestRunner',
-              configured: runnerConfigured,
-            }).pipe(
-              Effect.mapError(missingWorkerEntry('mutationTest', 'test runner', runnerLabel)),
-              Effect.flatMap(({ spawn }) =>
+            return workerSpawnOf(
+              'mutationTest',
+              prev.loadedPlugins,
+              'TestRunner',
+              configuredPluginOf(runnerConfigured),
+            ).pipe(
+              Effect.flatMap((resolved) =>
                 makeChildProcessTestRunner({
                   options: prev.options,
                   fileDescriptions: prev.project.fileDescriptions,
                   sandboxWorkingDirectory: prev.sandbox.workingDirectory,
-                  workerEntrypoint: spawn.entrypoint,
+                  workerEntrypoint: resolved.entrypoint,
                   idGenerator: idGenerator,
                 })
               ),

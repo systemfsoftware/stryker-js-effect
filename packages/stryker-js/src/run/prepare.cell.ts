@@ -1,6 +1,11 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
-import { type ReporterFactory, type StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  isCustomTestRunner,
+  type ReporterFactory,
+  type StrykerOptions,
+  type WorkerPluginKind,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Array from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -11,20 +16,32 @@ import { dual } from 'effect/Function'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
+import * as HashSet from 'effect/HashSet'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import { type RunEvent } from '../run-events.service.js'
 import { PhaseEntered } from '../run-events.service.js'
 import { RunEvents } from '../run-events.service.js'
 
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { loadPlugins, pluginUrlsFromOptions, type LoadedPlugins, type PluginDescriptor } from '../Plugins.js'
-import { missingWorkerEntry, resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
+import { PluginLoadFailedError, PluginNotFoundError } from '../PluginsError.schema.js'
+import {
+  EvaluatorPluginDescriptor,
+  IgnorerModuleSchema,
+  PluginModuleSchema,
+  SchemaValidationContributionSchema,
+  type LoadedPlugins,
+  type PluginDescriptor,
+  type PluginKind,
+} from '../Plugins.schema.js'
 import type { ReadProjectDone } from '../read-project.cell.js'
 import type { Project } from '../Project.schema.js'
 import { Reporter } from '../reporter.service.js'
@@ -42,11 +59,12 @@ import {
 import { PrepareError, StageError } from '../Run.schema.js'
 import { TemporaryDirectory } from '../Sandbox.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
-import { forkCoreSchema, validateOptions } from './load-config.cell.js'
+import { forkCoreSchema, importModule, validateOptions } from './load-config.cell.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
 import { planPrepare, PrepareDecoded } from './plan-prepare.workflow.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
+import { ConfiguredPluginModulePath, ConfiguredPluginName, resolveConfiguredPlugin } from './resolve-configured-plugin.workflow.js'
 
 export interface PrepareDone {
   readonly project: Project
@@ -61,6 +79,298 @@ export interface PrepareExecutorArgs {
   cliOptions: PartialStrykerOptions
   targetMutatePatterns: string[] | undefined
 }
+
+const NO_IGNORERS: readonly Ignorer[] = []
+
+interface PluginLoaderEntry {
+  readonly moduleName: string
+  readonly plugins: readonly PluginDescriptor[] | undefined
+  readonly schemaContribution: Record<string, unknown> | undefined
+}
+
+interface PluginLoadPlan {
+  readonly schemaContributions: readonly Record<string, unknown>[]
+  readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>
+  readonly pluginModulePaths: readonly string[]
+  readonly pluginSources: readonly PluginSource[]
+  readonly shadowings: readonly {
+    readonly kind: PluginKind
+    readonly name: string
+    readonly shadowedIndex: number
+    readonly winnerIndex: number
+  }[]
+}
+
+const buildPluginLoadPlan = (entries: readonly PluginLoaderEntry[]): PluginLoadPlan => {
+  const declarations: readonly { plugin: PluginDescriptor; moduleName: string; entryIndex: number }[] = entries.flatMap(
+    (entry, index) =>
+      (entry.plugins ?? []).map((plugin) => ({ plugin, moduleName: entry.moduleName, entryIndex: index })),
+  )
+
+  const shadowingState = declarations.reduce<{
+    readonly seen: HashMap.HashMap<string, { readonly position: number; readonly entryIndex: number }>
+    readonly shadowings: readonly {
+      readonly kind: PluginKind
+      readonly name: string
+      readonly shadowedIndex: number
+      readonly winnerIndex: number
+    }[]
+  }>(
+    (acc, declaration, position) => {
+      const key = `${declaration.plugin.kind}:${declaration.plugin.name}`
+      return {
+        seen: HashMap.set(acc.seen, key, { position, entryIndex: declaration.entryIndex }),
+        shadowings: Option.match(HashMap.get(acc.seen, key), {
+          onNone: () => acc.shadowings,
+          onSome: (previous) => [
+            ...acc.shadowings,
+            {
+              kind: declaration.plugin.kind,
+              name: declaration.plugin.name,
+              shadowedIndex: previous.entryIndex,
+              winnerIndex: declaration.entryIndex,
+            },
+          ],
+        }),
+      }
+    },
+    { seen: HashMap.empty<string, { readonly position: number; readonly entryIndex: number }>(), shadowings: [] },
+  )
+
+  const winningDeclarations = declarations.filter((declaration, position) =>
+    Option.match(HashMap.get(shadowingState.seen, `${declaration.plugin.kind}:${declaration.plugin.name}`), {
+      onNone: () => false,
+      onSome: (winner) => winner.position === position,
+    })
+  )
+
+  const pluginsByKind = winningDeclarations.reduce<HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>>(
+    (map, declaration) =>
+      Option.match(HashMap.get(map, declaration.plugin.kind), {
+        onNone: () => HashMap.set(map, declaration.plugin.kind, [declaration.plugin]),
+        onSome: (existing) => HashMap.set(map, declaration.plugin.kind, [...existing, declaration.plugin]),
+      }),
+    HashMap.empty<PluginKind, readonly PluginDescriptor[]>(),
+  )
+
+  const pluginSources = winningDeclarations.map((declaration): PluginSource =>
+    Match.value(declaration.plugin).pipe(
+      Match.when(
+        (plugin): plugin is EvaluatorPluginDescriptor => plugin.kind === 'Evaluator',
+        (evaluator): PluginSource => ({
+          kind: 'Evaluator',
+          name: evaluator.name,
+          modulePath: declaration.moduleName,
+        }),
+      ),
+      Match.orElse((worker): PluginSource => ({
+        kind: worker.kind,
+        name: worker.name,
+        modulePath: declaration.moduleName,
+        workerEntry: worker.workerEntry,
+      })),
+    )
+  )
+
+  const pluginModulePaths = entries.flatMap((entry) =>
+    Option.match(Option.fromUndefinedOr(entry.plugins), {
+      onNone: () => [],
+      onSome: () => [entry.moduleName],
+    })
+  )
+
+  const schemaContributions = entries.flatMap((entry) =>
+    Option.match(Option.fromUndefinedOr(entry.schemaContribution), {
+      onNone: () => [],
+      onSome: (value) => [value],
+    })
+  )
+
+  return {
+    schemaContributions,
+    pluginsByKind,
+    pluginModulePaths,
+    pluginSources,
+    shadowings: shadowingState.shadowings,
+  }
+}
+
+interface SchemaValidationContribution {
+  strykerValidationSchema: Record<string, unknown>
+}
+
+interface PluginContributions {
+  readonly plugins: readonly PluginDescriptor[] | undefined
+  readonly ignorers: readonly Ignorer[] | undefined
+  readonly schemaContribution: Record<string, unknown> | undefined
+}
+
+const failPluginLoad = (descriptor: string, error: unknown): Effect.Effect<never, PluginLoadFailedError> =>
+  Effect.logWarning(`Error during loading "${descriptor}" plugin`).pipe(
+    Effect.annotateLogs('cause', error),
+    Effect.andThen(() => Effect.fail(PluginLoadFailedError.make({ descriptor, cause: error }))),
+  )
+
+const modulePluginContributions = (
+  module: unknown,
+): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
+  Match.value(Predicate.hasProperty(module, 'strykerPlugins')).pipe(
+    Match.when(true, () =>
+      S.decodeUnknownResult(PluginModuleSchema)(module).pipe(
+        Result.map((pluginModule) => pluginModule.strykerPlugins),
+      )),
+    Match.orElse((): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
+      Result.succeed(undefined)
+    ),
+  )
+
+const moduleIgnorers = (module: unknown): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> =>
+  Match.value(Predicate.hasProperty(module, 'strykerIgnorers')).pipe(
+    Match.when(true, () =>
+      S.decodeUnknownResult(IgnorerModuleSchema)(module).pipe(
+        Result.map((ignorerModule) => ignorerModule.strykerIgnorers),
+      )),
+    Match.orElse((): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> => Result.succeed(undefined)),
+  )
+
+const moduleSchemaContribution = (module: unknown): Record<string, unknown> | undefined =>
+  Option.getOrUndefined(
+    Option.map(
+      Option.liftPredicate(hasValidationSchemaContribution)(module),
+      (guarded) => guarded.strykerValidationSchema,
+    ),
+  )
+
+const pluginContributionsOf = (
+  module: unknown,
+): Result.Result<PluginContributions, S.SchemaError> =>
+  Result.flatMap(moduleIgnorers(module), (ignorers) =>
+    Result.map(modulePluginContributions(module), (plugins) => ({
+      plugins,
+      ignorers,
+      schemaContribution: moduleSchemaContribution(module),
+    })))
+
+const hasContribution = (contributions: PluginContributions): boolean =>
+  [contributions.plugins, contributions.ignorers, contributions.schemaContribution].some(
+    (contribution) => contribution !== undefined,
+  )
+
+const warnUndescribedPluginModule = (descriptor: string): Effect.Effect<undefined> =>
+  Effect.logWarning(
+    `Module "${descriptor}" did not contribute a StrykerJS plugin. It didn't export a "strykerPlugins", "strykerIgnorers", or "strykerValidationSchema".`,
+  ).pipe(Effect.as(undefined))
+
+const describeLoadedPlugin = (
+  descriptor: string,
+  module: unknown,
+): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError> =>
+  Result.match(pluginContributionsOf(module), {
+    onFailure: (cause) => failPluginLoad(descriptor, cause),
+    onSuccess: (contributions) =>
+      Match.value(hasContribution(contributions)).pipe(
+        Match.when(true, () => Effect.succeed<PluginContributions | undefined>(contributions)),
+        Match.orElse(() => warnUndescribedPluginModule(descriptor)),
+      ),
+  })
+
+const loadPlugin = (
+  descriptor: string,
+  entrypoint: string,
+): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError> =>
+  Effect.gen(function*() {
+    yield* Effect.logDebug(`Loading plugin ${descriptor}`)
+    const maybeModule = yield* importModule(entrypoint).pipe(
+      Effect.catch((error) => failPluginLoad(descriptor, error)),
+    )
+    return yield* Option.match(Option.fromUndefinedOr(maybeModule), {
+      onNone: () => Effect.succeed<PluginContributions | undefined>(undefined),
+      onSome: (module) => describeLoadedPlugin(descriptor, module),
+    })
+  })
+
+const loadPlugins = (
+  pluginDescriptors: readonly string[],
+): Effect.Effect<LoadedPlugins, PluginLoadFailedError, Path.Path> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    const entrypoints = yield* Effect.forEach(
+      Array.fromIterable(HashSet.fromIterable(pluginDescriptors)),
+      (specifier) =>
+        path.fromFileUrl(new URL(specifier)).pipe(
+          Effect.map((entrypoint) => ({ specifier, entrypoint })),
+          Effect.mapError((cause) => PluginLoadFailedError.make({ descriptor: specifier, cause })),
+        ),
+      { concurrency: 'unbounded' },
+    )
+    const loaded = yield* Effect.forEach(
+      entrypoints,
+      (resolved) =>
+        loadPlugin(resolved.specifier, resolved.entrypoint).pipe(
+          Effect.map((plugin) => {
+            if (plugin === undefined) {
+              return undefined
+            }
+            return {
+              ...plugin,
+              moduleName: resolved.specifier,
+            }
+          }),
+        ),
+      { concurrency: 'unbounded' },
+    ).pipe(Effect.map((arr) => arr.filter(Predicate.isNotNullish)))
+    const ignorers: readonly Ignorer[] = loaded.flatMap((entry) => entry.ignorers ?? NO_IGNORERS)
+    const entries: readonly PluginLoaderEntry[] = loaded.map((entry) => ({
+      moduleName: entry.moduleName,
+      plugins: entry.plugins,
+      schemaContribution: entry.schemaContribution,
+    }))
+    const plan = buildPluginLoadPlan(entries)
+    yield* Effect.forEach(
+      plan.shadowings,
+      (shadowing) =>
+        Effect.logWarning(
+          `Plugin "${shadowing.name}" of kind "${shadowing.kind}" at index ${shadowing.winnerIndex} shadows plugin at index ${shadowing.shadowedIndex}.`,
+        ),
+      { concurrency: 1 },
+    )
+    const result: LoadedPlugins = {
+      schemaContributions: plan.schemaContributions,
+      pluginsByKind: plan.pluginsByKind,
+      pluginModulePaths: plan.pluginModulePaths,
+      pluginSources: plan.pluginSources,
+      ignorers,
+    }
+    return result
+  })
+
+const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[] => [
+  ...options.plugins,
+  ...options.appendPlugins,
+  ...options.ignorers,
+  ...Match.value(options.testRunner).pipe(
+    Match.when(isCustomTestRunner, (runner) => [runner.plugin]),
+    Match.orElse(() => []),
+  ),
+  ...options.checkers.map((checker) => checker.plugin),
+]
+
+const hasValidationSchemaContribution = (module: unknown): module is SchemaValidationContribution =>
+  S.is(SchemaValidationContributionSchema)(module)
+
+const workerSpawnOf = (
+  stage: StageError['stage'],
+  loaded: Pick<LoadedPlugins, 'pluginSources'>,
+  kind: WorkerPluginKind,
+  configured: ConfiguredPluginName | ConfiguredPluginModulePath,
+) =>
+  Result.match(resolveConfiguredPlugin({ sources: loaded.pluginSources, kind, configured }), {
+    onSuccess: Effect.succeed,
+    onFailure: (missing) =>
+      Effect.fail(
+        StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
+      ),
+  })
 
 type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly env: RunEnvironmentShape

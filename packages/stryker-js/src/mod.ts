@@ -123,7 +123,7 @@ export type {
   PluginSource,
   WorkerPluginDescriptor,
   WorkerPluginSource,
-} from './Plugins.js'
+} from './Plugins.schema.js'
 export type { Project, ProjectFile } from './Project.schema.js'
 export type { ReporterStage } from './reporter-stream.service.js'
 export { StageError } from './Run.schema.js'

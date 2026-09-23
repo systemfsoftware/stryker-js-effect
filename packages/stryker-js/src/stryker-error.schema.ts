@@ -6,3 +6,9 @@ export class StrykerError extends S.TaggedError<StrykerError>()('StrykerError', 
 }) {}
 
 export class ReporterStageForged extends S.TaggedError<ReporterStageForged>()('ReporterStageForged', {}) {}
+
+export class ReporterFactoryThrew extends S.TaggedError<ReporterFactoryThrew>()('ReporterFactoryThrew', {
+  reporterName: S.String,
+  message: S.String,
+  cause: S.Defect(),
+}) {}

@@ -244,7 +244,9 @@ export const progressReportCell = Sandwich.named('stryker.report.progress')(read
     CommandRejected: ({ issue }) => Effect.fail(failAsProgress(issue)),
   })
 
-export const progressReporterFactory = (context: Context.Context<ReporterOutput>): ReporterFactory => {
+type ReporterCellServices<C> = C extends Cell.Cell<never, unknown, unknown, infer S> ? S : never
+
+export const progressReporterFactory = (context: Context.Context<ReporterCellServices<typeof progressReportCell>>): ReporterFactory => {
   const step = Cell.provideContext(progressReportCell, context)
   return () => (events) =>
     Effect.gen(function*() {

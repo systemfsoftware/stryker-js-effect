@@ -15,7 +15,6 @@ import { partsOfEffectSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
-import * as Data from 'effect/Data'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -34,7 +33,7 @@ import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
 
 import { ConfigError } from './ConfigError.schema.js'
-import { ReporterStageForged } from './stryker-error.schema.js'
+import { ReporterFactoryThrew, ReporterStageForged } from './stryker-error.schema.js'
 import { makeWorkerClient } from './worker-client.resource.js'
 import type { WorkerBootError, WorkerLauncher } from './WorkerLauncher.service.js'
 
@@ -223,7 +222,12 @@ export const attachReporterFactories: {
         const consumer = Effect.flatten(
           Effect.try({
             try: () => input.factory(options, init)(singleUse),
-            catch: (reason) => new Data.Error(`Reporter "${input.name}" factory threw: ${String(reason)}`),
+            catch: (reason) =>
+              ReporterFactoryThrew.make({
+                reporterName: input.name,
+                message: `Reporter "${input.name}" factory threw: ${String(reason)}`,
+                cause: reason,
+              }),
           }),
         ).pipe(Effect.ensuring(markDetachedEffect(ports)))
         const consumerFiber = yield* Effect.forkScoped(consumer)
