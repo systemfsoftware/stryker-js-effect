@@ -98,7 +98,7 @@ A consuming repository wants CI to fail when its concurrency tests stop catching
 - AE5. Opt-out is inert
   - **Covers R12.**
   - **Given:** every existing instrumenter fixture and the new Effect fixtures, instrumented without `optInMutations`.
-  - **Then:** ids, mutator names, and replacements equal the snapshot taken at `432b15ac`.
+  - **Then:** ids, mutator names, and replacements equal the output recorded at `432b15ac`. Per CONST-T11 that recording is development-time evidence in a gitignored `.scratch/` directory, compared before the PR opens and then deleted. The committed proof is the existing integration suites, which pass unchanged with their hand-written expectations, plus an opt-out test showing that no opt-in mutator name appears.
 
 ### Scope Boundaries
 
@@ -228,29 +228,28 @@ U1 comes first, so the opt-out snapshot records pre-change output. U2 comes befo
 
 ## Implementation Units
 
-### U1. Definitions fixtures and opt-out characterization snapshot
+### U1. Definitions fixtures and opt-out characterization
 
-- **Goal:** Record, before any source change, the exact default mutant set on every instrumenter fixture plus the new Effect fixtures.
+- **Goal:** Commit the Effect definitions fixtures and an opt-out test. Record the pre-change default mutant set as scratch evidence before any source change.
 - **Requirements:** R12. Covers AE5.
 - **Dependencies:** none.
 - **Files:**
-  - Create `packages/stryker-js-instrumenter/tests/__fixtures__/effect-concurrency/` with one module per mutator: `atomic-update-split.ts`, `synchronization-removal.ts`, and `finalizer-escape.ts`. Also create `import-styles.ts` and `refusals.ts`.
-  - Create `packages/stryker-js-instrumenter/tests/__fixtures__/sources.ts`, which lifts the inline source constants out of the existing integration tests so both the tests and the snapshot read one copy.
-  - Create `packages/stryker-js-instrumenter/tests/opt-out-parity.integration.test.ts` and its recorded snapshot file.
-  - Modify the existing integration tests to import their sources from `sources.ts`.
+  - Create `packages/stryker-js-instrumenter/tests/__fixtures__/effect-concurrency/` with one module per mutator: `atomic-update-split.ts`, `synchronization-removal.ts`, and `finalizer-escape.ts`. Also create `import-styles.ts`, `refusals.ts`, and `shapes.ts`.
+  - Create `packages/stryker-js-instrumenter/tests/opt-out.integration.test.ts`.
+  - Add `.scratch/` to the root `.gitignore`. It holds the development-time parity recording (CONST-T11).
 - **Approach:**
   1. Author the fixtures as real, type-checked modules. They export small functions that build the target effects from parameters, so U6 can run them.
   2. Cover every R6–R8 call shape in data-first and data-last form, the four import styles of AE1, and the refusals of AE2.
   3. Include a spread-argument call, a wrong-arity call, a data-last call outside a pipe, and a nested covered call.
-  4. Add `tests/__fixtures__/effect-concurrency/shapes.ts`. It is a table of every R6–R8 call shape × form, giving each entry's fixture export, owning mutator, and the U6 scenario kinds it needs. U3–U7 iterate this table rather than hand-listing shapes. A completeness assertion checks the table against the R6–R8 operation lists.
-  5. The snapshot records `id`, `mutatorName`, `replacement`, and `location` per fixture with default options.
-  6. Freeze the fixture modules once the snapshot is recorded. Cases that U3–U5 add later go into separate `extra-*.ts` fixture modules or inline test sources, which are outside the parity snapshot. Editing a frozen module would change the recorded baseline.
-- **Execution note:** Characterization first. Record the snapshot on the unmodified `src/` tree at `432b15ac` and commit it before U2 touches the instrumenter source.
-- **Patterns to follow:** `packages/stryker-js-instrumenter/tests/regex-mutation.integration.test.ts` for the Gherkin feature shape. `makeFeature({ it, layer })`.
+  4. `shapes.ts` is a table of every R6–R8 call shape × form. Each entry gives its fixture export, its owning mutator, and the U6 scenario kinds it needs. U3–U7 iterate this table rather than hand-listing shapes. A completeness assertion in the opt-out test checks the table against the R6–R8 operation lists written out as literals.
+  5. Before U2 touches `src/`, a throwaway script run through `vitest` records `id`, `mutatorName`, `replacement`, and `location` for every file under `tests/__fixtures__/` with default options, and writes them to `.scratch/opt-out-parity/baseline.json`. The script is not committed.
+  6. Freeze the fixture modules once the baseline is recorded. Cases that U3–U5 add later go into separate `extra-*.ts` fixture modules or into inline test sources.
+- **Execution note:** Characterization first, as scratch evidence only. Record the baseline on the unmodified `src/` tree at `432b15ac`. Commit the fixtures and the opt-out test before U2. The recorded output is never committed (CONST-T11).
+- **Patterns to follow:** The Gherkin feature shape, `makeFeature({ it, layer })`, in `packages/stryker-js-instrumenter/tests/regex-mutation.integration.test.ts`.
 - **Test scenarios:**
-  - Covers AE5. Each fixture source, instrumented with `{ ignorers: [], excludedMutations: [] }`, matches its snapshot entry by id, mutator name, replacement, and location.
-  - The snapshot contains no mutant named `AtomicUpdateSplit`, `SynchronizationRemoval`, or `FinalizerEscape`.
-- **Verification:** The snapshot file exists and passes on the pre-change tree. The fixture modules type-check under the package's test project.
+  - Covers AE5 (committed half). Every effect-concurrency fixture, instrumented with `{ ignorers: [], excludedMutations: [] }`, yields no mutant named `AtomicUpdateSplit`, `SynchronizationRemoval`, or `FinalizerEscape`, and still yields at least one default mutant (the fixtures are live).
+  - `shapes.ts` lists every operation named in R6–R8, checked against literal lists in the test.
+- **Verification:** The opt-out test passes on the pre-change tree. The fixture modules type-check under the package's test project. The scratch baseline exists.
 
 ### U2. Opt-in registry, selection, and the instrumenter option
 
@@ -275,8 +274,8 @@ U1 comes first, so the opt-out snapshot records pre-change output. U2 comes befo
   - A test-local registry holds three named stand-in opt-ins plus a `Dummy` opt-in that returns one mutant for every node. Selecting the three stand-in names produces zero `Dummy` mutants over a non-trivial source. This is the in-source selection test. U5 repeats the check against the real `optInMutators`.
   - The same registry with `Dummy` selected yields `Dummy` mutants, which proves the fixture is live.
   - `optInMutations: ['AtomicUpdateSplt']` makes `instrument` fail with an error naming the three valid opt-ins.
-  - `optInMutations` absent and `optInMutations: []` both reproduce the U1 snapshot exactly.
-- **Verification:** U1's parity test still passes. The e2e oracle property test passes unchanged in meaning. The API report diff shows only the new optional field.
+  - Absent `optInMutations` and `optInMutations: []` both yield zero opt-in mutants on the effect-concurrency fixtures. The scratch parity comparison against the baseline also matches (development evidence).
+- **Verification:** The opt-out test and the existing integration suites pass unchanged. The e2e oracle property test passes unchanged in meaning. The API report diff shows only the new optional field.
 
 ### U3. Effect call resolution and `AtomicUpdateSplit`
 
@@ -314,7 +313,7 @@ U1 comes first, so the opt-out snapshot records pre-change output. U2 comes befo
   - The same directive in a run that does not opt in emits no "Unused 'Stryker disable' directive" warning (R15).
   - No replacement text contains `@ts-ignore`, `@ts-expect-error`, `as any`, or `as unknown`.
   - Gatekeeper: removing the registry entry fails this file.
-- **Verification:** The integration file passes. U1 parity passes with the opt-in absent.
+- **Verification:** The integration file passes. The opt-out test and the scratch parity comparison pass with the opt-in absent.
 
 ### U4. `SynchronizationRemoval`
 
@@ -371,13 +370,13 @@ U1 comes first, so the opt-out snapshot records pre-change output. U2 comes befo
 - **Dependencies:** U3, U4, U5.
 - **Files:**
   - Create `packages/stryker-js-instrumenter/tests/concurrency-mutant-behaviour.integration.test.ts`.
-  - Add a gitignored scratch directory for instrumented fixture output inside the package.
+  - Write instrumented fixture output to `packages/stryker-js-instrumenter/.scratch/concurrency-behaviour/`, which the U1 `.gitignore` entry already covers, and remove it after the suite.
 - **Approach:**
   1. Instrument the U1 fixture modules with all three opt-ins.
   2. Write the instrumented output under the scratch directory and import it.
   3. Per mutant id, run the fixture's exported builder with `ACTIVE_MUTANT` unset and then set, on the host namespace object from `INSTRUMENTER_CONSTANTS`.
-  4. Compare the `Exit` (tag plus success value, or squashed failure and defect) and the final observable state. The state is read with `Ref.get`, a semaphore's available permits via `take`/`release` probes, and whether a scope finalizer ran.
-  5. For the single-fiber cases, build the effect once and run it twice in sequence, comparing after each run, so any per-run re-evaluation of moved arguments (KTD5) would surface.
+  4. Assert each run's `Exit` and final observable state against literal expected values written in the scenario, such as AE3's counter values. Check both the original and the mutant against those literals, and never compute an expected value by running the other (CONST-T10). State is read with `Ref.get`, with a semaphore's available permits via `take`/`release` probes, and with whether a scope finalizer ran.
+  5. For the single-fiber cases, build the effect once and run it twice in sequence, checking after each run, so any per-run re-evaluation of moved arguments (KTD5) would surface.
 - **Execution note:** Use deterministic coordination: `Deferred`, `Effect.yieldNow`, and `Fiber.interrupt`. Never use wall-clock sleeps (`docs/solutions/tooling-decisions/do-not-sleep-to-prove-a-mutation-timeout.md`). Drive every scenario from the U1 shape table so that no shape is skipped.
 - **Test scenarios:**
   - Covers AE3. For each `AtomicUpdateSplit` shape, one fiber gives the same result value and final ref value. For the partial-function operations, both the matching and the non-matching function give the same result. Two concurrent fibers leave the final value different from the original's (a lost update).
@@ -448,15 +447,15 @@ Gatekeeper check for each of U3–U5: temporarily delete that mutator's `optInMu
 
 Each admitted test runs in-process through a published surface or an in-source block. No test spawns a process. Any child process the TypeScript compiler itself uses is inside the library under test.
 
-| Test                        | Layer                                                                          | Why admitted                                                                                                |
-| --------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| U1 opt-out parity snapshot  | Integration via `instrument()`                                                 | Characterizes the published output contract (R12).                                                          |
-| U2 dummy-registry selection | In-source block in `Mutator.ts`                                                | Internal pure selection function. The AC requires an injected registry that the public API does not expose. |
-| U2 unknown-name refusal     | Integration via `instrument()`                                                 | A refusal next to the acceptance path.                                                                      |
-| U3–U5 per-mutator files     | Integration via `instrument()`                                                 | Published mutant output. These are the gatekeepers the AC names.                                            |
-| U6 behaviour                | Integration: instrumented code loaded in-process and run on the Effect runtime | The only layer where R9 and R10 are observable.                                                             |
-| U7 checker                  | Integration via `makeCheckerService`                                           | Proves R11 against the real checker, not a stand-in.                                                        |
-| U8 option decode            | Schema decode seam                                                             | Proves the default and pass-through of a public config field.                                               |
+| Test                        | Layer                                                                          | Why admitted                                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| U1 opt-out test             | Integration via `instrument()`                                                 | Asserts the published default set excludes the opt-ins (R12). The byte-level parity baseline is scratch evidence only (CONST-T11). |
+| U2 dummy-registry selection | In-source block in `Mutator.ts`                                                | Internal pure selection function. The AC requires an injected registry that the public API does not expose.                        |
+| U2 unknown-name refusal     | Integration via `instrument()`                                                 | A refusal next to the acceptance path.                                                                                             |
+| U3–U5 per-mutator files     | Integration via `instrument()`                                                 | Published mutant output. These are the gatekeepers the AC names.                                                                   |
+| U6 behaviour                | Integration: instrumented code loaded in-process and run on the Effect runtime | The only layer where R9 and R10 are observable.                                                                                    |
+| U7 checker                  | Integration via `makeCheckerService`                                           | Proves R11 against the real checker, not a stand-in.                                                                               |
+| U8 option decode            | Schema decode seam                                                             | Proves the default and pass-through of a public config field.                                                                      |
 
 Refused: no unit tests for `EffectCall.ts` helpers, which U3–U5 cover through `instrument()`. No e2e journey, which is deferred.
 
@@ -466,11 +465,11 @@ Refused: no unit tests for `EffectCall.ts` helpers, which U3–U5 cover through 
 
 - R1–R15 each have a passing test named in U1–U8.
 - AE1–AE5 pass.
-- The U1 snapshot passes unchanged after all units land.
+- The opt-out test and the existing integration suites pass unchanged after all units land. The scratch parity comparison matches the `432b15ac` baseline, and `.scratch/` is then emptied.
 - Each of the three per-mutator integration files fails when its mutator is removed from the registry.
 - No replacement contains a cast or suppression, and no source file gains a lint or Effect-diagnostic suppression.
 - The `pnpm check:ci` and changeset gates pass.
-- The scratch directory for executed fixtures is gitignored and empty after the suite. No spike or dead-end code remains in the diff.
+- The scratch directories (`.scratch/`, and U6's executed-fixture output) are gitignored and empty after the suite. No spike or dead-end code remains in the diff.
 
 ### Risks
 
