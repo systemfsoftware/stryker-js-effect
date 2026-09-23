@@ -1,1 +1,0 @@
-{"extends": "./tsconfig.app.json", "compilerOptions": {"composite": false, "noEmit": true, "incremental": false}, "files": ["/home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/packages/stryker-js/src/exit-classification.ts"], "include": []}

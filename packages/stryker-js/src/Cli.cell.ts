@@ -479,6 +479,8 @@ const makeStrykerCommand = (requestRef: Ref.Ref<Option.Option<CliRequest>>) => {
   return strykerCommand
 }
 
+export const a7dProbeCommand = makeStrykerCommand
+
 const EMPTY_OPTIONS: PartialStrykerOptions = {}
 
 const routeOf = (request: Option.Option<CliRequest>): CliRouteCommand =>
