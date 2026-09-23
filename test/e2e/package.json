@@ -2,7 +2,7 @@
   "name": "@systemfsoftware/stryker-e2e",
   "private": true,
   "version": "0.1.0",
-  "description": "End-to-end lane for the shipped stryker artifact: the packed workspace tarball installed with npm in a pinned container",
+  "description": "End-to-end lane for the shipped stryker artifact: the packed workspace tarball installed with npm and run in one-shot microVMs",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -21,10 +21,12 @@
     "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit"
   },
   "devDependencies": {
+    "@effect/platform-node": "catalog:",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
     "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
+    "@systemfsoftware/effect-microsandbox": "catalog:",
     "@systemfsoftware/stryker-js": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",

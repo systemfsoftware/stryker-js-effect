@@ -3,14 +3,19 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { ManagedRuntime } from 'effect'
+
 import { type RunEvent, RunEventWireLine, S } from '@systemfsoftware/stryker-js'
 
 import {
+  type BakedFixtureCacheService,
   type ExecResult,
+  type HarnessError,
   installFixture,
   runCli,
-  teardownContainerEnvironment,
-} from '../tests/__fixtures__/container-environment.js'
+  SelfBakingHarnessLive,
+  type StrykerCliRunnerService,
+} from '../tests/__fixtures__/microvm-environment.js'
 import {
   ARTIFACT_CONTRACT,
   type BaselineCountKey,
@@ -31,6 +36,8 @@ import { ORACLE_SLICES, type OracleSliceConfig } from './oracle/slice-config.js'
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 const BASELINE_OUTPUT_DIR = join(REPO_ROOT, 'test/e2e/oracle-baselines')
+
+type HarnessRuntime = ManagedRuntime.ManagedRuntime<BakedFixtureCacheService | StrykerCliRunnerService, HarnessError>
 
 const foldForGate = (baseline: BlessedBaseline): BlessedBaseline => ({
   ...baseline,
@@ -177,12 +184,18 @@ function parseRunEvents(stdout: string, slice: OracleSliceId): ParsedRun {
   }
 }
 
-async function runSliceOnce(slice: OracleSliceId, attempt: number): Promise<BlessedBaseline> {
+async function runSliceOnce(
+  runtime: HarnessRuntime,
+  slice: OracleSliceId,
+  attempt: number,
+): Promise<BlessedBaseline> {
   const config = ORACLE_SLICES[slice]
   const fixtureName = `oracle-${slice}`
-  const installedPath = await installFixture(ENTERPRISE_FIXTURE_URL, fixtureName)
+  const installedPath = await runtime.runPromise(
+    installFixture({ url: ENTERPRISE_FIXTURE_URL, name: fixtureName }),
+  )
   const args: string[] = ['run', config.strykerConfig]
-  const run: ExecResult = await runCli(args, { cwd: installedPath })
+  const run: ExecResult = await runtime.runPromise(runCli(args, installedPath))
   if (run.exitCode !== 0) {
     throw new Error(
       `Slice "${slice}" (attempt ${attempt}) exited with code ${run.exitCode}; refusing to bless a failing run.\nstdout: ${
@@ -218,18 +231,18 @@ function reportRun(slice: OracleSliceId, attempt: number, startedMs: number, fin
   console.log(`[${slice}] run ${attempt}: wall=${(finishedMs - startedMs) / 1000}s`)
 }
 
-async function blessSlice(slice: OracleSliceId, verify: boolean): Promise<void> {
+async function blessSlice(runtime: HarnessRuntime, slice: OracleSliceId, verify: boolean): Promise<void> {
   const sliceConfig: OracleSliceConfig = ORACLE_SLICES[slice]
   const existing = await readExistingBaseline(slice)
   const wallStartMs = Date.now()
   const firstStartMs = Date.now()
-  const first = await runSliceOnce(slice, 1)
+  const first = await runSliceOnce(runtime, slice, 1)
   const firstFinishedMs = Date.now()
   reportRun(slice, 1, firstStartMs, firstFinishedMs)
 
   if (verify) {
     const secondStartMs = Date.now()
-    const second = await runSliceOnce(slice, 2)
+    const second = await runSliceOnce(runtime, slice, 2)
     const secondFinishedMs = Date.now()
     reportRun(slice, 2, secondStartMs, secondFinishedMs)
     const gateDiff = compareBaselines(foldForGate(first), foldForGate(second))
@@ -277,13 +290,14 @@ async function main(): Promise<void> {
   if (args.verify && args.slices.length > 1) {
     throw new Error('--verify runs two consecutive runs per slice; pass exactly one slice with --verify')
   }
+  const runtime = ManagedRuntime.make(SelfBakingHarnessLive)
   try {
     for (const requested of args.slices) {
       const known = ensureKnownSlice(requested)
-      await blessSlice(known, args.verify)
+      await blessSlice(runtime, known, args.verify)
     }
   } finally {
-    await teardownContainerEnvironment()
+    await runtime.dispose()
   }
 }
 

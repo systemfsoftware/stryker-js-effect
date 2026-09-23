@@ -1,7 +1,7 @@
 import { type RunEvent, RunEventWireLine, type RunFailed, S } from '@systemfsoftware/stryker-js'
 import type { ExpectStatic } from 'vitest'
-import type { ExecResult } from './__fixtures__/container-environment.js'
-import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
+import type { ExecResult } from './__fixtures__/microvm-environment.js'
+import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
 
 const FAILING_DRY_RUN_RUNTIME_ERROR_CODE = 3
 const FAILING_FIXTURE_URL = new URL('../testResources/failing-fixture', import.meta.url)

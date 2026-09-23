@@ -1,6 +1,6 @@
 import { type RunEvent, RunEventWireLine, S } from '@systemfsoftware/stryker-js'
-import type { ExecResult } from './__fixtures__/container-environment.js'
-import { type PreparedFixture, test } from './__fixtures__/container-harness.js'
+import type { ExecResult } from './__fixtures__/microvm-environment.js'
+import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
 
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 

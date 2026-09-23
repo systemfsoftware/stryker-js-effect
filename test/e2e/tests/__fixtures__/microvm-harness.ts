@@ -1,17 +1,16 @@
+import { ManagedRuntime } from 'effect'
+
 import { test as baseTest } from 'vitest'
 
-import {
-  ensureContainerEnvironment,
-  type ExecResult,
-  installFixture,
-  readWorkspaceFile,
-  runCli,
-  teardownContainerEnvironment,
-} from './container-environment.js'
+import { BakedFixtureCache, type ExecResult, HarnessLive, StrykerCliRunner } from './microvm-environment.js'
 
-export interface ContainerHarness {
+export interface MicroVMHarness {
   readonly install: (fixtureUrl: URL, name: string) => Promise<string>
-  readonly run: (args: readonly string[], opts: { readonly cwd: string }) => Promise<ExecResult>
+  readonly run: (
+    args: readonly string[],
+    opts: { readonly cwd: string; readonly signal?: AbortSignal },
+  ) => Promise<ExecResult>
+  readonly readFile: (path: string) => Promise<string>
 }
 export interface PreparedFixture {
   readonly path: string
@@ -27,34 +26,43 @@ export interface BddStepContext {
 }
 
 export interface ExtendedTestContext {
-  readonly containerHarness: ContainerHarness
+  readonly microvmHarness: MicroVMHarness
   readonly prepareFixture: (fixtureUrl: URL, name: string) => Promise<PreparedFixture>
   readonly bdd: BddStepContext
 }
 
 export const test = baseTest
-  .extend<Pick<ExtendedTestContext, 'containerHarness'>>({
-    containerHarness: [
+  .extend<Pick<ExtendedTestContext, 'microvmHarness'>>({
+    microvmHarness: [
       async ({ onTestFinished: _onTestFinished }, use) => {
-        await ensureContainerEnvironment()
-        await use(
-          {
-            install: (fixtureUrl: URL, name: string) => installFixture(fixtureUrl, name),
-            run: (args: readonly string[], opts: { readonly cwd: string }) => runCli(args, opts),
-          } satisfies ContainerHarness,
-        )
-        await teardownContainerEnvironment()
+        const runtime = ManagedRuntime.make(HarnessLive)
+        try {
+          await use(
+            {
+              install: (fixtureUrl: URL, name: string) =>
+                runtime.runPromise(BakedFixtureCache.use((cache) => cache.install({ url: fixtureUrl, name }))),
+              run: (args, opts) =>
+                runtime.runPromise(
+                  StrykerCliRunner.use((runner) => runner.run(args, opts.cwd)),
+                  { signal: opts.signal },
+                ),
+              readFile: (path: string) => runtime.runPromise(BakedFixtureCache.use((cache) => cache.readFile(path))),
+            } satisfies MicroVMHarness,
+          )
+        } finally {
+          await runtime.dispose()
+        }
       },
       { scope: 'file' },
     ],
   })
   .extend<Pick<ExtendedTestContext, 'prepareFixture' | 'bdd'>>({
-    prepareFixture: async ({ containerHarness }, use) => {
+    prepareFixture: async ({ microvmHarness, signal }, use) => {
       await use((fixtureUrl: URL, name: string): Promise<PreparedFixture> =>
-        containerHarness.install(fixtureUrl, name).then((path) => ({
+        microvmHarness.install(fixtureUrl, name).then((path) => ({
           path,
-          run: (args: readonly string[]) => containerHarness.run(args, { cwd: path }),
-          readFile: (relativePath: string) => readWorkspaceFile(`${path}/${relativePath}`),
+          run: (args: readonly string[]) => microvmHarness.run(args, { cwd: path, signal }),
+          readFile: (relativePath: string) => microvmHarness.readFile(`${path}/${relativePath}`),
         }))
       )
     },
