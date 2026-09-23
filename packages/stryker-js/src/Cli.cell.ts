@@ -532,6 +532,7 @@ const readCliRoute = (
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
     const command = makeStrykerCommand(requestRef)
     const parsed = yield* Effect.result(Command.runWith(command, { version: cliPkgJson.version, renderErrors: false })(invocation.argv))
+    yield* Effect.logWarning(`A7D parsedSuccess=${Result.isSuccess(parsed)}`)
     const request = yield* Ref.get(requestRef)
     const drain = yield* RunEventDrain
     yield* drain.setProgressStreamFile(progressStreamFileName(request))
@@ -690,6 +691,7 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
               strykerCliCell.run({ argv: options.argv, environment }),
             ),
           )
+          if (Exit.isFailure(exit)) yield* Effect.logError(`A7D-DEBUG ${Cause.pretty(exit.cause)}`)
           const outcome = classifyRunOutcome(exit, options.argv)
           const code = runOutcomeCode(outcome)
           yield* Effect.annotateCurrentSpan({
