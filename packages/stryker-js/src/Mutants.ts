@@ -348,12 +348,7 @@ export interface PlannedTestPlans {
   readonly totalNetTime: number
 }
 
-const hasCoverageForPlan = (staticCoverage: Record<string, number> | undefined): boolean => {
-  if (staticCoverage === undefined) {
-    return false
-  }
-  return Object.keys(staticCoverage).length > 0
-}
+const hasCoverageForPlan = (staticCoverage: Record<string, number> | undefined): boolean => staticCoverage !== undefined
 
 const hasStaticCoverageForPlan = (staticCoverage: Record<string, number> | undefined, mutantId: string): boolean =>
   staticCoverageCountOf(staticCoverage, mutantId) > ZERO

@@ -34,6 +34,25 @@ const plannedViewOf = (planned: PlannedTest): PlannedTestView =>
 const messageOf = <A = unknown>(cause: A): string =>
   cause instanceof Error ? cause.message : new Error('drain failure', { cause }).message
 
+const testIdOf = (planned: PlannedTest): string => `${planned.test.file}#${planned.fullName}`
+
+const planWithinFilter = (
+  plan: ReadonlyArray<PlannedTest>,
+  testFilter: readonly string[] | undefined,
+): ReadonlyArray<PlannedTest> => {
+  if (testFilter === undefined) {
+    return plan
+  }
+  const wanted = new Set(testFilter)
+  return plan.filter((planned) => wanted.has(testIdOf(planned)))
+}
+
+export interface DrainRunOptions {
+  readonly testFilter?: readonly string[] | undefined
+  readonly onTestStart?: ((testId: string) => void) | undefined
+  readonly onTestEnd?: (() => void) | undefined
+}
+
 const fireHooks = (
   hooks: readonly HarnessTestFunction[],
   context: HarnessTestContext,
@@ -47,11 +66,13 @@ const fireHooks = (
 export const executeDrainRegistry = (
   registry: TestRegistry,
   timeoutMs: number | undefined,
+  runOptions?: DrainRunOptions,
 ): Promise<DrainOutcome> =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function*() {
-        const plan = planRun(registry)
+        const { onTestEnd, onTestStart, testFilter } = runOptions ?? {}
+        const plan = planWithinFilter(planRun(registry), testFilter)
         const runnableCounts = MutableHashMap.empty<number, number>()
         for (const planned of plan) {
           if (!planned.skipped) {
@@ -120,6 +141,9 @@ export const executeDrainRegistry = (
               registry.currentTest = context
 
               yield* fireBeforeAll(planned.chain, context)
+              if (onTestStart !== undefined) {
+                onTestStart(testIdOf(planned))
+              }
               yield* fireHooks(hooksFor(registry, 'beforeEach', planned.chain), context)
 
               const startedAt = performance.now()
@@ -141,6 +165,9 @@ export const executeDrainRegistry = (
               const timeSpentMs = performance.now() - startedAt
 
               yield* fireHooks([...hooksFor(registry, 'afterEach', planned.chain)].reverse(), context)
+              if (onTestEnd !== undefined) {
+                onTestEnd()
+              }
               yield* fireHooks([...finalizers].reverse(), context)
               for (const id of [...planned.chain].reverse()) {
                 yield* fireAfterAll(id, context)

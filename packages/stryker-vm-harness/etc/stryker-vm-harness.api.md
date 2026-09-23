@@ -17,7 +17,6 @@ import { Workflow } from '@systemfsoftware/effect-cell-types';
 // @public (undocumented)
 export const activateSandbox: (prefix: string) => void;
 
-// Warning: (ae-forgotten-export) The symbol "TestRegistry" needs to be exported by the entry point index.d.mts
 // Warning: (ae-forgotten-export) The symbol "HarnessApi" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
@@ -85,8 +84,10 @@ export class DrainTimedOut extends DrainTimedOut_base {
     readonly kind: 'timeout';
 }
 
+// Warning: (ae-forgotten-export) The symbol "DrainRunOptions" needs to be exported by the entry point index.d.mts
+//
 // @public (undocumented)
-const executeDrainRegistry: (registry: TestRegistry, timeoutMs: number | undefined) => Promise<DrainOutcome>;
+const executeDrainRegistry: (registry: TestRegistry, timeoutMs: number | undefined, runOptions?: DrainRunOptions) => Promise<DrainOutcome>;
 export { executeDrainRegistry as drainRegistry }
 export { executeDrainRegistry }
 
@@ -139,6 +140,44 @@ export const TestOutcomeSchema: S.Struct<{
     readonly failureMessage: S.optional<S.String>;
     readonly timeSpentMs: S.optional<S.Finite>;
 }>;
+
+// @public (undocumented)
+export interface TestRegistry {
+    // Warning: (ae-forgotten-export) The symbol "HarnessTestContext" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    currentTest: HarnessTestContext | undefined;
+    // (undocumented)
+    readonly files: {
+        current: string;
+    };
+    // (undocumented)
+    readonly frames: {
+        current: readonly number[];
+    };
+    // Warning: (ae-forgotten-export) The symbol "TestMode" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    registerSuite(name: string, parentIds: readonly number[], mode: TestMode): RegisteredSuite;
+    // Warning: (ae-forgotten-export) The symbol "HarnessTestFunction" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    registerTest(name: string, suiteIds: readonly number[], mode: TestMode, inverted: boolean, fn: HarnessTestFunction | undefined): RegisteredTest;
+    // Warning: (ae-forgotten-export) The symbol "HookSets" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly rootHooks: HookSets;
+    // (undocumented)
+    readonly suiteHooks: Map<number, HookSets>;
+    // Warning: (ae-forgotten-export) The symbol "RegisteredSuite" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly suites: Map<number, RegisteredSuite>;
+    // Warning: (ae-forgotten-export) The symbol "RegisteredTest" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly tests: RegisteredTest[];
+}
 
 // @public (undocumented)
 export const uninstallInterception: () => void;

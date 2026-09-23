@@ -18,6 +18,7 @@ export {
   guardedVi,
   harnessSourceFor,
   harnessUrlForSpecifier,
+  type TestRegistry,
 } from './core/index.js'
 export {
   activateSandbox,
