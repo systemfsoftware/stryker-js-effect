@@ -66,7 +66,9 @@ import {
   updateExpression,
 } from './Ast.js'
 import { atomicUpdateSplitMutator } from './AtomicUpdateSplit.js'
+import { finalizerEscapeMutator } from './FinalizerEscape.js'
 import { printNode } from './print/index.js'
+import { synchronizationRemovalMutator } from './SynchronizationRemoval.js'
 
 export type { Node }
 /**
@@ -1365,6 +1367,8 @@ export const defaultMutators: Readonly<Record<string, Mutator>> = Object.freeze(
 
 export const optInMutators: Readonly<Record<string, Mutator>> = Object.freeze({
   AtomicUpdateSplit: atomicUpdateSplitMutator,
+  SynchronizationRemoval: synchronizationRemovalMutator,
+  FinalizerEscape: finalizerEscapeMutator,
 })
 
 export type MutatorEntry = readonly [name: string, mutate: Mutator]
