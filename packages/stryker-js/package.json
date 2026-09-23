@@ -1,0 +1,158 @@
+{
+  "name": "@systemfsoftware/stryker-js",
+  "version": "10.1.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "packages/stryker-js"
+  },
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect",
+  "bugs": {
+    "url": "https://github.com/systemfsoftware/stryker-js-effect/issues"
+  },
+  "description": "The Stryker mutation testing tool — the stryker executable, the run engine, and the configuration surface.",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "stryker": "./dist/main.mjs"
+  },
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "pnpm run typecheck && rimraf dist && tsdown --config tsdown.bin.config.ts && tsdown --config tsdown.config.ts",
+    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
+    "test": "vitest run",
+    "mutation": "stryker run",
+    "attw": "attw --pack .",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "api:check": "api-extractor run",
+    "api:update": "api-extractor run --local",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "dependencies": {
+    "@effect/opentelemetry": "catalog:",
+    "@effect/platform-node": "catalog:",
+    "@effect/platform-node-shared": "catalog:",
+    "@noble/hashes": "catalog:",
+    "@opentelemetry/api": "catalog:",
+    "@opentelemetry/exporter-metrics-otlp-http": "catalog:",
+    "@opentelemetry/exporter-trace-otlp-http": "catalog:",
+    "@opentelemetry/sdk-metrics": "catalog:",
+    "@opentelemetry/sdk-trace-base": "catalog:",
+    "@systemfsoftware/effect-cell-types": "catalog:"
+  },
+  "peerDependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/tsgo": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@microsoft/api-extractor": "catalog:",
+    "@oxc-parser/binding-wasm32-wasi": "catalog:",
+    "@std/jsonc": "catalog:",
+    "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/effect-schema-law": "catalog:",
+    "@systemfsoftware/effect-schema-vite": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
+    "@systemfsoftware/stryker-config": "workspace:^",
+    "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "catalog:stryker",
+    "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "catalog:stryker",
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
+    "@systemfsoftware/stryker-js": "catalog:stryker",
+    "@systemfsoftware/stryker-js-html-reporter": "workspace:^",
+    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-runtime": "workspace:^",
+    "@systemfsoftware/stryker-js-typescript-checker": "catalog:stryker",
+    "@systemfsoftware/stryker-js-vitest-runner": "catalog:stryker",
+    "@systemfsoftware/stryker-test-contribution": "catalog:stryker",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
+    "@systemfsoftware/vitest-config": "workspace:^",
+    "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "concurrently": "catalog:",
+    "mutation-testing-elements": "catalog:stryker",
+    "oxc-parser": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "./config": {
+        "types": "./dist/config.d.mts",
+        "default": "./dist/config.mjs"
+      },
+      "./events": {
+        "types": "./dist/events.d.mts",
+        "default": "./dist/events.mjs"
+      },
+      "./promises": {
+        "types": "./dist/promises.d.mts",
+        "default": "./dist/promises.mjs"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "exports": {
+    ".": {
+      "@systemfsoftware/source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./config": {
+      "@systemfsoftware/source": "./src/config/index.ts",
+      "types": "./dist/config.d.mts",
+      "default": "./dist/config.mjs"
+    },
+    "./events": {
+      "@systemfsoftware/source": "./src/events/index.ts",
+      "types": "./dist/events.d.mts",
+      "default": "./dist/events.mjs"
+    },
+    "./promises": {
+      "@systemfsoftware/source": "./src/promises/index.ts",
+      "types": "./dist/promises.d.mts",
+      "default": "./dist/promises.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "inlinedDependencies": {
+    "@eslint-community/regexpp": "4.12.2",
+    "@jridgewell/gen-mapping": "0.3.13",
+    "@jridgewell/remapping": "2.3.5",
+    "@jridgewell/resolve-uri": "3.1.2",
+    "@jridgewell/sourcemap-codec": "1.6.0",
+    "@jridgewell/trace-mapping": "0.3.31",
+    "@jsr/std__jsonc": "1.0.2",
+    "@sveltejs/acorn-typescript": "1.0.13",
+    "acorn": "8.18.0",
+    "angular-html-parser": "10.12.0",
+    "aria-query": "5.3.1",
+    "axobject-query": "4.1.0",
+    "esrap": "2.3.7",
+    "is-reference": "3.0.3",
+    "locate-character": "3.0.0",
+    "magic-string": "0.30.21",
+    "oxc-parser": "0.150.0",
+    "oxc-walker": "1.1.1",
+    "svelte": "5.57.0",
+    "zimmerframe": "1.1.5"
+  }
+}

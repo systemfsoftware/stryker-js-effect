@@ -1,7 +1,7 @@
 {
   "name": "@systemfsoftware/stryker-ignorer-interface",
   "license": "Apache-2.0",
-  "version": "0.0.0",
+  "version": "0.1.1",
   "author": "Ryan Lee <drdgvhbh@gmail.com>",
   "repository": {
     "type": "git",
@@ -40,9 +40,11 @@
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "attw": "attw --pack .",
     "api:check": "api-extractor run",
-    "api:update": "api-extractor run --local"
+    "api:update": "api-extractor run --local",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@oxc-project/types": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
@@ -69,6 +71,6 @@
     }
   },
   "inlinedDependencies": {
-    "@oxc-project/types": "0.140.0"
+    "@oxc-project/types": "0.150.0"
   }
 }

@@ -1,0 +1,24 @@
+const isAgent = process.env['AGENT'] !== undefined
+const isCI = !isAgent && typeof process.env['CI'] === 'string' && process.env['CI'].length > 0
+
+export const sharedConfig = {
+  packageManager: 'pnpm',
+  reporters: isAgent || isCI ? ['json', 'html'] : ['progress', 'html', 'json'],
+  htmlReporter: { fileName: 'reports/mutation-report.html' },
+  jsonReporter: { fileName: 'reports/mutation-report.json' },
+  concurrency: process.env['STRYKER_CONCURRENCY'] ?? (isAgent ? '50%' : '100%'),
+  coverageAnalysis: 'perTest',
+  incremental: true,
+  incrementalFile: 'reports/stryker-incremental.json',
+  ignorePatterns: ['reports', 'coverage'],
+  disableBail: true,
+  cleanTempDir: 'always',
+  thresholds: { high: 100, low: 80, break: 100 },
+  mutate: [
+    'src/**/*.workflow.ts',
+    '!src/**/*.test.ts',
+    '!src/**/*.property.test.ts',
+    '!src/**/*.d.ts',
+    '!src/**/__tests__/**',
+  ],
+}

@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import * as schema from '@systemfsoftware/stryker-js-language'
-import { Effect } from 'effect'
+import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
+import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
 import {
@@ -9,6 +9,8 @@ import {
   judgeTestContribution,
   toothlessTestFiles,
 } from '@systemfsoftware/stryker-test-contribution'
+
+import { optionalRunnerFields } from './__fixtures__/optional-runner-fields.js'
 
 const Feature = makeFeature({ it, layer })
 
@@ -24,8 +26,7 @@ const mutantOf = (
   status,
   mutatorName: 'BooleanLiteral',
   location: LOCATION,
-  ...(killedBy === undefined ? {} : { killedBy }),
-  ...(coveredBy === undefined ? {} : { coveredBy }),
+  ...optionalRunnerFields(killedBy, coveredBy),
 })
 
 const reportOf = (
@@ -60,6 +61,7 @@ const earnsAndIdleReport = (): Pick<schema.MutationTestResult, 'files' | 'testFi
   )
 
 Feature('Judging test contribution under the test-contribution gate')
+  .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       'A mutant killed by one file earns sole credit for that file',

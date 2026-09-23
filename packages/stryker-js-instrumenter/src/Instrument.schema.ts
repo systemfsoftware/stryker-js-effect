@@ -1,8 +1,8 @@
-import { Mutant } from '@systemfsoftware/stryker-js-language'
 import * as S from 'effect/Schema'
+import { Mutant } from './Mutant.schema.js'
 
 export class InstrumentError
-  extends S.TaggedError<InstrumentError>('@systemfsoftware/stryker-js-instrumenter/InstrumentError')(
+  extends S.TaggedError<InstrumentError>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/InstrumentError')(
     'InstrumentError',
     {
       message: S.String,
@@ -18,17 +18,9 @@ export class InstrumentError
   }
 }
 
-export const PositionSchema = S.Struct({
+const PositionSchema = S.Struct({
   line: S.Finite,
   column: S.Finite,
-})
-
-export const SourceLineSchema = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
-export const SourceColumnSchema = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
-
-export const NodePositionSchema = S.Struct({
-  line: S.Int,
-  column: S.Int,
 })
 
 const RangeSchema = S.Struct({
@@ -38,6 +30,9 @@ const RangeSchema = S.Struct({
 
 export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(RangeSchema)])
 
+export type MutateDescription = typeof MutateDescriptionSchema.Type
+export type Position = typeof PositionSchema.Type
+
 export const FileSchema = S.Struct({
   name: S.String,
   content: S.String,
@@ -46,7 +41,7 @@ export const FileSchema = S.Struct({
 
 const IgnorerSchema = S.Unknown
 
-const InstrumenterOptionsSchema = S.Struct({
+export const InstrumenterOptionsSchema = S.Struct({
   excludedMutations: S.Array(S.String),
   ignorers: S.Array(IgnorerSchema),
   noHeader: S.optional(S.Boolean),
@@ -54,35 +49,7 @@ const InstrumenterOptionsSchema = S.Struct({
 
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
 
-export class InstrumentFileSkip extends S.TaggedClass<InstrumentFileSkip>()('InstrumentFileSkip', {
-  file: S.String,
-  extension: S.String,
-  reason: S.String,
-}) {}
-
-export class InstrumentFilesCommand extends S.TaggedClass<InstrumentFilesCommand>()('InstrumentFilesCommand', {
-  fileCount: S.Finite,
-  claimedCount: S.Finite,
-  skipped: S.Array(InstrumentFileSkip),
-}) {}
-
 export class InstrumentResult extends S.TaggedClass<InstrumentResult>()('InstrumentResult', {
   files: S.Array(FileSchema),
   mutants: S.Array(Mutant),
-  skipped: S.Array(InstrumentFileSkip),
-}) {}
-
-export const PlacerNameSchema = S.Literals(['expression', 'statement', 'switch-case'])
-export type PlacerName = typeof PlacerNameSchema.Type
-
-export class MutantsUnapplied extends S.TaggedError<MutantsUnapplied>()('MutantsUnapplied', {
-  fileName: S.String,
-  placer: PlacerNameSchema,
-  mutatorNames: S.Array(S.String),
-  cause: S.Defect(),
-}) {}
-
-export class MutantNotApplied extends S.TaggedError<MutantNotApplied>()('MutantNotApplied', {
-  fileName: S.String,
-  mutatorName: S.String,
 }) {}

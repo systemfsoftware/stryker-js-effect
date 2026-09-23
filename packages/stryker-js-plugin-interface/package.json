@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-plugin-interface",
-  "version": "4.0.0",
+  "version": "7.2.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -8,7 +8,7 @@
   },
   "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js-plugin-interface#readme",
   "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
-  "description": "The mutation-testing plugin interface — declare and compose checker, test-runner, reporter, ignorer, and evaluator contributions.",
+  "description": "The mutation-testing plugin boundary — the @effect/rpc groups, boundary payload schemas, typed failures, and worker plugin spawn contract.",
   "type": "module",
   "files": [
     "dist"
@@ -21,23 +21,24 @@
     "attw": "attw --pack .",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "api:check": "api-extractor run",
-    "api:update": "api-extractor run --local"
+    "api:update": "api-extractor run --local",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
   },
   "license": "Apache-2.0",
   "engines": {
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@systemfsoftware/stryker-js-language": "workspace:^",
+    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
-    "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
-    "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/effect-schema-vite": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",

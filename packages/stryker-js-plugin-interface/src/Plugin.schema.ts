@@ -1,38 +1,74 @@
-import type { ReporterFactory } from '@systemfsoftware/stryker-js-language'
-
+import { MutantRunOptionsSchema } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
-import type * as Layer from 'effect/Layer'
+import { CheckerFailed, CheckerMutantWire, CheckResultSchema } from './Checker.schema.js'
+import { ReporterEventUnion, ReporterFailed } from './ReporterEvent.schema.js'
 
-import type { PluginEnvironment, PluginInterfaces, PluginLayerError } from './Plugin.js'
+import { DryRunOptionsSchema, TestRunnerFailed } from './TestRunner.schema.js'
 
-export const PluginKind = S.Literals(['Checker', 'TestRunner', 'Reporter', 'Ignore', 'Evaluator', 'Framework'])
-export type PluginKind = typeof PluginKind.Type
+export const WorkerPluginKind = S.Literals(['TestRunner', 'Checker', 'Reporter'])
+export type WorkerPluginKind = typeof WorkerPluginKind.Type
 
-export const PluginLayerKind = S.Literals(['Checker', 'TestRunner', 'Ignore', 'Evaluator', 'Framework'])
-export type PluginLayerKind = typeof PluginLayerKind.Type
+export const TestRunnerDryRunRequest = S.Struct({ options: DryRunOptionsSchema })
+export type TestRunnerDryRunRequest = typeof TestRunnerDryRunRequest.Type
 
-export class PluginLayerContribution<K extends PluginLayerKind = PluginLayerKind>
-  extends S.TaggedClass<PluginLayerContribution<PluginLayerKind>>()('PluginContribution', {
-    kind: PluginLayerKind,
-    name: S.String,
-    layer: S.Unknown,
-  })
-{
-  declare readonly kind: K
-  declare readonly name: string
-  declare readonly layer: Layer.Layer<PluginInterfaces[K], PluginLayerError<K>, PluginEnvironment>
-}
+export const TestRunnerMutantRunRequest = S.Struct({ options: MutantRunOptionsSchema })
+export type TestRunnerMutantRunRequest = typeof TestRunnerMutantRunRequest.Type
 
-export class PluginReporterContribution extends S.TaggedClass<PluginReporterContribution>()('PluginContribution', {
-  kind: PluginKind,
-  name: S.String,
-  make: S.Unknown,
-}) {
-  declare readonly kind: 'Reporter'
-  declare readonly name: string
-  declare readonly make: ReporterFactory
-}
+export const CheckerRequest = S.Struct({ checkerName: S.String, mutants: S.Array(CheckerMutantWire) })
+export type CheckerRequest = typeof CheckerRequest.Type
 
-export type PluginContribution<K extends PluginKind = PluginKind> = K extends 'Reporter' ? PluginReporterContribution
-  : PluginLayerContribution<Extract<K, PluginLayerKind>>
+export const CheckerCheckResult = S.Record(S.String, CheckResultSchema)
+export const CheckerGroupResult = S.Array(S.Array(S.String))
+
+export const ReporterInitOptions = S.Struct({
+  traceparent: S.optionalKey(S.String),
+  tracestate: S.optionalKey(S.String),
+})
+export type ReporterInitOptions = typeof ReporterInitOptions.Type
+
+export const ReporterEventBatch = S.Array(ReporterEventUnion)
+export type ReporterEventBatch = typeof ReporterEventBatch.Type
+
+export const ReporterAck = S.Void
+export const ReporterDrained = S.Void
+
+export class BoundaryPayloadRejected extends S.TaggedError<BoundaryPayloadRejected>()(
+  'BoundaryPayloadRejected',
+  {
+    pluginName: S.String,
+    method: S.String,
+    cause: S.String,
+  },
+) {}
+
+export class BoundaryUnrecognizedSignal extends S.TaggedError<BoundaryUnrecognizedSignal>()(
+  'BoundaryUnrecognizedSignal',
+  {
+    pluginName: S.String,
+    method: S.String,
+    signal: S.String,
+  },
+) {}
+
+export const BoundaryErrorSchema = S.Union([
+  BoundaryPayloadRejected,
+  BoundaryUnrecognizedSignal,
+  TestRunnerFailed,
+  CheckerFailed,
+  ReporterFailed,
+])
+export type BoundaryError = typeof BoundaryErrorSchema.Type
+
+const FILE_URL_PREFIX = /^file:\/\//
+
+export const WorkerEntryUrl = S.String.check(
+  S.isPattern(FILE_URL_PREFIX, { expected: 'a file: URL of the worker program' }),
+)
+export type WorkerEntryUrl = typeof WorkerEntryUrl.Type
+
+export const WorkerPluginSpawnSchema = S.Struct({
+  kind: WorkerPluginKind,
+  entrypoint: WorkerEntryUrl,
+})
+export type WorkerPluginSpawn = typeof WorkerPluginSpawnSchema.Type

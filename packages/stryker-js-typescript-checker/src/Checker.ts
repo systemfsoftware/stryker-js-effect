@@ -1,11 +1,9 @@
-import { Cell } from '@systemfsoftware/effect-cell-types'
-import { Checker } from '@systemfsoftware/stryker-js-language'
-import { CheckerFailed } from '@systemfsoftware/stryker-js-language'
-import type { CheckResult } from '@systemfsoftware/stryker-js-language'
-import type { Mutant } from '@systemfsoftware/stryker-js-language'
-import { errorToString } from '@systemfsoftware/stryker-js-language'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
-import { Result, Schema as S } from 'effect'
+import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
+import { Checker, CheckerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { CheckerMutantWire, CheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Result } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
@@ -20,39 +18,37 @@ import {
   DiagnosticInUnrelatedFileError,
   DiagnosticWithoutFileError,
 } from './check-mutants.workflow.js'
-import { CheckMutantsCommand, TypescriptCheckerOptionsSchema } from './Checker.schema.js'
+import { CheckMutantsCommand } from './Checker.schema.js'
 import { CheckMutantsInput } from './CheckMutants.schema.js'
 import { TypeScriptCompiler } from './Compiler.js'
 import { groupMutants } from './mutant-groups.js'
 
-export interface TypescriptCheckerPluginOptions {
-  typescriptChecker?: {
-    prioritizePerformanceOverAccuracy?: boolean
-  }
+function getPrioritize(options: StrykerOptions): boolean {
+  return Match.value(options.checkers[0]).pipe(
+    Match.when(Match.undefined, () => false),
+    Match.orElse((first) =>
+      Match.value(first.options).pipe(
+        Match.when(Match.undefined, () => false),
+        Match.orElse((opts) =>
+          Match.value(opts['prioritizePerformanceOverAccuracy']).pipe(
+            Match.when(true, () => true),
+            Match.orElse(() => false),
+          )
+        ),
+      )
+    ),
+  )
 }
-
-export interface TypescriptCheckerOptionsWithStrykerOptions extends TypescriptCheckerPluginOptions, StrykerOptions {}
 
 interface CheckerDeps {
-  readonly options: unknown
+  readonly options: StrykerOptions
   readonly compiler: TypeScriptCompiler['Service']
-}
-
-function getPrioritize(options: unknown): boolean {
-  const decoded = S.decodeUnknownOption(TypescriptCheckerOptionsSchema)(options)
-  return Option.getOrElse(
-    Option.flatMap(
-      decoded,
-      (value) => Option.fromUndefinedOr(value.typescriptChecker?.prioritizePerformanceOverAccuracy),
-    ),
-    () => false,
-  )
 }
 
 type RunAnswers = CheckFinished['results']
 
-const refuse = (mutantIds: ReadonlyArray<string>, cause: unknown): CheckerFailed =>
-  new CheckerFailed({ checkerName: 'typescript', mutantIds: [...mutantIds], cause: errorToString(cause) })
+const refuse = <E = unknown>(mutantIds: ReadonlyArray<string>, cause: E): CheckerFailed =>
+  CheckerFailed.make({ checkerName: 'typescript', mutantIds: [...mutantIds], cause: errorToString(cause) })
 
 const severityOf = (category: DiagnosticCategory): string =>
   Match.value(category).pipe(
@@ -76,26 +72,26 @@ const mergeAnswers = (runs: ReadonlyArray<RunAnswers>): HashMap.HashMap<string, 
     HashMap.empty<string, CheckResult>(),
   )
 
-const checkCell = Cell.layer({
-  read: (command: CheckMutantsCommand) =>
-    Effect.flatMap(TypeScriptCompiler, (compiler) =>
-      Effect.zipWith(
-        compiler.nodes,
-        compiler.check([...command.mutants]),
-        (nodes, diagnostics): CheckMutantsInput =>
-          new CheckMutantsInput({
-            mutants: [...command.mutants],
-            diagnostics: [...diagnostics],
-            nodes: Object.fromEntries(nodes),
-          }),
-      )).pipe(Effect.mapError((cause) => refuse(command.mutants.map((mutant) => mutant.id), cause))),
-  decide: checkMutants,
-  write: (outcome: Result.Result<CheckMutantsDecision, DiagnosticWithoutFileError | DiagnosticInUnrelatedFileError>) =>
+const checkCell = Sandwich.read((command: CheckMutantsCommand) =>
+  Effect.flatMap(TypeScriptCompiler, (compiler) =>
+    Effect.zipWith(
+      compiler.nodes,
+      compiler.check([...command.mutants]),
+      (nodes, diagnostics): CheckMutantsInput =>
+        CheckMutantsInput.make({
+          mutants: [...command.mutants],
+          diagnostics: [...diagnostics],
+          nodes: Object.fromEntries(nodes),
+        }),
+    )).pipe(Effect.mapError((cause) => refuse(command.mutants.map((mutant) => mutant.id), cause)))
+)
+  .decide(checkMutants)
+  .write((outcome: Result.Result<CheckMutantsDecision, DiagnosticWithoutFileError | DiagnosticInUnrelatedFileError>) =>
     Result.match(outcome, {
       onFailure: (failure) => Effect.fail(refuse([], failure)),
       onSuccess: Effect.succeed,
-    }),
-})
+    })
+  )
 
 export const makeCheckerService = ({ options, compiler }: CheckerDeps): Checker['Service'] => {
   const verify = Cell.provide(checkCell, Layer.succeed(TypeScriptCompiler, compiler))
@@ -123,8 +119,13 @@ export const makeCheckerService = ({ options, compiler }: CheckerDeps): Checker[
   const createErrorText = (errors: readonly Diagnostic[]): Effect.Effect<string> =>
     Effect.map(Effect.forEach(errors, formatDiagnostic), (parts) => parts.join('\n'))
 
-  const soloRound = (mutant: Mutant): Effect.Effect<RunAnswers, CheckerFailed> =>
-    verify.run(new CheckMutantsCommand({ mutants: [mutant] })).pipe(
+  const soloRound = (mutant: CheckerMutantWire): Effect.Effect<RunAnswers, CheckerFailed> =>
+    verify.run(CheckMutantsCommand.make({ mutants: [mutant] })).pipe(
+      Effect.withSpan('typescript-checker.soloRound', {
+        attributes: {
+          'stryker.mutant.id': mutant.id,
+        },
+      }),
       Effect.map((decision) => decision.results),
     )
 
@@ -132,7 +133,7 @@ export const makeCheckerService = ({ options, compiler }: CheckerDeps): Checker[
     Match.value(decision).pipe(
       Match.tag('CheckFinished', () => Effect.succeed<ReadonlyArray<RunAnswers>>([])),
       Match.tag('RetestRequired', (retest) =>
-        verify.run(new CheckMutantsCommand({ mutants: [] })).pipe(
+        verify.run(CheckMutantsCommand.make({ mutants: [] })).pipe(
           Effect.flatMap(() => Effect.forEach(retest.needsRetest, soloRound)),
         )),
       Match.exhaustive,
@@ -153,8 +154,13 @@ export const makeCheckerService = ({ options, compiler }: CheckerDeps): Checker[
     ),
 
     check: (mutants) =>
-      verify.run(new CheckMutantsCommand({ mutants: [...mutants] })).pipe(
+      verify.run(CheckMutantsCommand.make({ mutants: [...mutants] })).pipe(
         Effect.flatMap((first) => Effect.map(soloRounds(first), (rounds) => mergeAnswers([first.results, ...rounds]))),
+        Effect.withSpan('typescript-checker.check', {
+          attributes: {
+            'stryker.mutants.count': mutants.length,
+          },
+        }),
       ),
 
     group: (mutants) =>

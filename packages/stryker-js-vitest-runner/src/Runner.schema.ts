@@ -1,22 +1,17 @@
 import { Effect } from 'effect'
-import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
-import type * as VitestNode from 'vitest/node'
+import { type StrykerOptions, TestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export const VitestRunnerOptionsSchema = S.Struct({
   dir: S.optional(S.String),
-  related: S.optional(S.Boolean).pipe(S.withDecodingDefault(Effect.succeed(true))),
+  related: S.Boolean.pipe(S.withDecodingDefaultKey(Effect.succeed(true))),
   configFile: S.optional(S.String),
+  timeoutTrapFile: S.optional(S.String),
+  timeoutTrapMutantId: S.optional(S.String),
 })
 
 export type VitestRunnerOptions = S.Schema.Type<typeof VitestRunnerOptionsSchema>
-
-export const VitestSectionSchema = S.optional(VitestRunnerOptionsSchema).pipe(
-  S.withDecodingDefault(Effect.succeed({ related: true })),
-)
-
 export interface StrykerVitestRunnerOptions {
   vitest: VitestRunnerOptions
 }
@@ -55,14 +50,6 @@ export const PackageManifest = S.StructWithRest(
 
 export type PackageManifest = S.Schema.Type<typeof PackageManifest>
 export type ExportEntry = S.Schema.Type<typeof ExportEntry>
-
-export const VitestNodeModuleSchema = S.declare(
-  (input: unknown): input is typeof VitestNode => Predicate.isObject(input),
-  { description: 'The project-local vitest/node module' },
-)
-
-export const VitestPackageSchema = S.Struct({ version: S.String })
-
 export class VitestDryRunCommand extends S.TaggedClass<VitestDryRunCommand>()('VitestDryRunCommand', {
   rawTests: S.Array(S.Unknown),
   projectRoot: S.String,
@@ -71,11 +58,11 @@ export class VitestDryRunCommand extends S.TaggedClass<VitestDryRunCommand>()('V
 }) {}
 
 export class DryRunComplete extends S.TaggedClass<DryRunComplete>()('Complete', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
 }) {}
 
 export class DryRunExternalError extends S.TaggedClass<DryRunExternalError>()('Error', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
   errorMessage: S.String,
 }) {}
 

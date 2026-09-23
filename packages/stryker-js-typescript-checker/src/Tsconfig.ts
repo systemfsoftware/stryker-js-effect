@@ -9,17 +9,17 @@ import { parse } from '@std/jsonc'
 import { Predicate, Result, Schema as S } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import type * as Path from 'effect/Path'
 
 import { type TsConfig, TsConfigParseError, TsConfigSchema } from './Tsconfig.schema.js'
 
 const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
 
+type CompilerOptionValue = boolean | string | number | readonly string[] | undefined
+
 // Override some compiler options that have to do with code quality. When mutating, we're not interested in the resulting code quality
 // See https://github.com/stryker-mutator/stryker-js/issues/391 for more info
-const COMPILER_OPTIONS_OVERRIDES: Readonly<Record<string, unknown>> = Object.freeze({
+const COMPILER_OPTIONS_OVERRIDES: Readonly<Record<string, CompilerOptionValue>> = Object.freeze({
   allowUnreachableCode: true,
   noUnusedLocals: false,
   noUnusedParameters: false,
@@ -27,7 +27,7 @@ const COMPILER_OPTIONS_OVERRIDES: Readonly<Record<string, unknown>> = Object.fre
 })
 
 // When we're running in 'single-project' mode, we can safely disable emit
-const NO_EMIT_OPTIONS_FOR_SINGLE_PROJECT: Readonly<Record<string, unknown>> = Object.freeze({
+const NO_EMIT_OPTIONS_FOR_SINGLE_PROJECT: Readonly<Record<string, CompilerOptionValue>> = Object.freeze({
   noEmit: true,
   incremental: false, // incremental and composite off: https://github.com/microsoft/TypeScript/issues/36917
   tsBuildInfoFile: undefined,
@@ -35,7 +35,7 @@ const NO_EMIT_OPTIONS_FOR_SINGLE_PROJECT: Readonly<Record<string, unknown>> = Ob
 })
 
 // When we're running in 'project references' mode, we need to enable declaration output
-const LOW_EMIT_OPTIONS_FOR_PROJECT_REFERENCES: Readonly<Record<string, unknown>> = Object.freeze({
+const LOW_EMIT_OPTIONS_FOR_PROJECT_REFERENCES: Readonly<Record<string, CompilerOptionValue>> = Object.freeze({
   emitDeclarationOnly: true,
   noEmit: false,
   declarationMap: true,
@@ -43,17 +43,10 @@ const LOW_EMIT_OPTIONS_FOR_PROJECT_REFERENCES: Readonly<Record<string, unknown>>
   composite: true,
 })
 
-const reasonOfThrown = (error: unknown): string =>
-  Match.value(error).pipe(
-    Match.when(Predicate.isError, (thrown) => thrown.message),
-    Match.when(Predicate.isString, (thrown) => thrown),
-    Match.orElse((thrown) =>
-      Option.match(Option.filter(Option.fromUndefinedOr(JSON.stringify(thrown)), (text) => text.length > 0), {
-        onNone: () => 'a non-Error value was thrown',
-        onSome: (text) => text,
-      })
-    ),
-  )
+const nonErrorMessage = <E = unknown>(error: E): string =>
+  typeof error === 'string' ? error : 'a non-Error value was thrown'
+const reasonOfThrown = <E = unknown>(error: E): string =>
+  Predicate.isError(error) ? error.message : nonErrorMessage(error)
 
 /**
  * Parses the raw text of a tsconfig file into a typed config, rejecting shapes this package cannot consume.
@@ -65,10 +58,10 @@ export function parseTsConfig(fileName: string, jsonText: string): Result.Result
     const value = parse(jsonText.replace(/^\uFEFF/, ''))
     return Result.mapError(
       S.decodeUnknownResult(TsConfigSchema)(value),
-      (error) => new TsConfigParseError({ file: fileName, reason: error.message }),
+      (error) => TsConfigParseError.make({ file: fileName, reason: error.message }),
     )
   } catch (error) {
-    return Result.fail(new TsConfigParseError({ file: fileName, reason: reasonOfThrown(error) }))
+    return Result.fail(TsConfigParseError.make({ file: fileName, reason: reasonOfThrown(error) }))
   }
 }
 
@@ -76,9 +69,9 @@ export function parseTsConfig(fileName: string, jsonText: string): Result.Result
 export const determineBuildModeEnabled = (
   tsconfigFileName: string,
   fsService: FileSystem.FileSystem,
-): Effect.Effect<boolean, unknown> =>
+): Effect.Effect<boolean, never> =>
   Effect.gen(function*() {
-    const tsconfigFile = yield* fsService.readFileString(tsconfigFileName)
+    const tsconfigFile = yield* fsService.readFileString(tsconfigFileName).pipe(Effect.orElseSucceed(() => ''))
     const parsed = parseTsConfig(tsconfigFileName, tsconfigFile)
     return Result.match(parsed, {
       onFailure: () => false,
@@ -86,10 +79,11 @@ export const determineBuildModeEnabled = (
     })
   })
 
-const withCompilerOverrides = (
+type CompilerOptionRecord<A = CompilerOptionValue> = Record<string, A>
+const withCompilerOverrides = <A = CompilerOptionValue>(
   config: TsConfig,
-  extraOptions: Readonly<Record<string, unknown>>,
-): Record<string, unknown> => ({
+  extraOptions: Readonly<CompilerOptionRecord<A>>,
+) => ({
   ...config.compilerOptions,
   ...COMPILER_OPTIONS_OVERRIDES,
   ...extraOptions,

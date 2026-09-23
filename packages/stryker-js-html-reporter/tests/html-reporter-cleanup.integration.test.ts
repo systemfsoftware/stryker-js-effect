@@ -2,11 +2,11 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import type { MetricsResult } from '@systemfsoftware/stryker-js-language'
-import type * as reportApi from '@systemfsoftware/stryker-js-language'
-import { DryRunCompleted, MutationTestReportReady } from '@systemfsoftware/stryker-js-language'
-import type { ReporterEvent } from '@systemfsoftware/stryker-js-language'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
+import type { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
+import { DryRunCompleted, MutationTestReportReady } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface'
+import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -64,7 +64,7 @@ const removeDir = (dir: string): Promise<void> =>
     }),
   )
 
-const optionsWith = (fileName: string) => S.decodeUnknownSync(StrykerOptionsSchema)({ htmlReporter: { fileName } })
+const optionsWith = (fileName: string) => S.decodeEffect(StrykerOptionsSchema)({ htmlReporter: { fileName } })
 
 const reportFixture = (): reportApi.MutationTestResult => ({
   schemaVersion: '1.0',
@@ -109,7 +109,7 @@ const metricsFixture = (): MetricsResult => ({
 })
 
 const dryRunEvent = (): ReporterEvent =>
-  new DryRunCompleted({
+  DryRunCompleted.make({
     timing: { net: 1, overhead: 0 },
     capabilities: { reloadEnvironment: false },
     testCount: 0,
@@ -117,34 +117,51 @@ const dryRunEvent = (): ReporterEvent =>
   })
 
 const terminalEvent = (): ReporterEvent =>
-  new MutationTestReportReady({ report: reportFixture(), metrics: metricsFixture() })
+  MutationTestReportReady.make({ report: reportFixture(), metrics: metricsFixture() })
 
-async function* toStream(events: readonly ReporterEvent[]): AsyncGenerator<ReporterEvent> {
-  yield* events
+function toStream(events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> {
+  let index = 0
+  return {
+    [Symbol.asyncIterator](): AsyncIterator<ReporterEvent> {
+      return {
+        next(): Promise<IteratorResult<ReporterEvent>> {
+          const value: ReporterEvent | undefined = events[index]
+          index += 1
+          if (value !== undefined) {
+            return Promise.resolve({ value, done: false })
+          }
+          const done: IteratorResult<ReporterEvent> = { done: true, value: undefined }
+          return Promise.resolve(done)
+        },
+      }
+    },
+  }
 }
 
-Feature('Keeping the report when a run is interrupted').body(({ scenario }) => {
+Feature('Keeping the report when a run is interrupted').withLayer(nodeFsPathLayer).body(({ scenario }) => {
   scenario(
     'An interrupted run leaves no report behind',
     Gherkin.Do.pipe(
       Given('an output directory')('output', () =>
-        Effect.promise(async () => {
-          const dir = await makeTempDir('html-cleanup-early-')
-          return { dir, fileName: await joinPath(dir, 'index.html') }
+        Effect.gen(function*() {
+          const dir = yield* Effect.promise(() => makeTempDir('html-cleanup-early-'))
+          const fileName = yield* Effect.promise(() => joinPath(dir, 'index.html'))
+          return { dir, fileName }
         })),
       When('the interrupted run is followed by a completed run')(
         'outcome',
         (s) =>
-          Effect.promise(async () => {
+          Effect.gen(function*() {
             try {
-              const first = makeHtmlReporter(optionsWith(s.output.fileName), {})
-              await first(toStream([dryRunEvent()]))
-              const earlyWritten = await fileExists(s.output.fileName)
-              const followUp = makeHtmlReporter(optionsWith(s.output.fileName), {})
-              await followUp(toStream([dryRunEvent(), terminalEvent()]))
-              return { earlyWritten, html: await readText(s.output.fileName) }
+              const options = yield* optionsWith(s.output.fileName)
+              const first = makeHtmlReporter(options, {})
+              yield* first(toStream([dryRunEvent()]))
+              const earlyWritten = yield* Effect.promise(() => fileExists(s.output.fileName))
+              const followUp = makeHtmlReporter(options, {})
+              yield* followUp(toStream([dryRunEvent(), terminalEvent()]))
+              return { earlyWritten, html: yield* Effect.promise(() => readText(s.output.fileName)) }
             } finally {
-              await removeDir(s.output.dir)
+              yield* Effect.promise(() => removeDir(s.output.dir))
             }
           }),
       ),
@@ -161,35 +178,43 @@ Feature('Keeping the report when a run is interrupted').body(({ scenario }) => {
     'A run that fails after writing its report leaves the report on disk',
     Gherkin.Do.pipe(
       Given('an output directory')('output', () =>
-        Effect.promise(async () => {
-          const dir = await makeTempDir('html-cleanup-abrupt-')
-          return { dir, fileName: await joinPath(dir, 'index.html') }
+        Effect.gen(function*() {
+          const dir = yield* Effect.promise(() => makeTempDir('html-cleanup-abrupt-'))
+          const fileName = yield* Effect.promise(() => joinPath(dir, 'index.html'))
+          return { dir, fileName }
         })),
       When('the run fails after the report is ready')(
         'outcome',
         (s) =>
-          Effect.promise(async () => {
-            async function* breakingStream(): AsyncGenerator<ReporterEvent> {
-              yield terminalEvent()
-              throw new Error('stream broke')
+          Effect.gen(function*() {
+            const breakingStream = (): AsyncIterable<ReporterEvent> => {
+              let step = 0
+              return {
+                [Symbol.asyncIterator](): AsyncIterator<ReporterEvent> {
+                  return {
+                    next(): Promise<IteratorResult<ReporterEvent>> {
+                      step += 1
+                      if (step === 1) {
+                        return Promise.resolve({ value: terminalEvent(), done: false })
+                      }
+                      return Promise.reject(new Error('stream broke'))
+                    },
+                  }
+                },
+              }
             }
             try {
-              const consume = makeHtmlReporter(optionsWith(s.output.fileName), {})
-              const failure = await consume(breakingStream()).then(
-                () => 'resolved',
-                (error: unknown) => {
-                  if (error instanceof Error) {
-                    return error.message
-                  }
-                  throw error
-                },
+              const options = yield* optionsWith(s.output.fileName)
+              const consume = makeHtmlReporter(options, {})
+              const failure = yield* Effect.flip(consume(breakingStream())).pipe(
+                Effect.map((failed: { readonly cause: string }) => failed.cause),
               )
-              const html = await readText(s.output.fileName)
-              const followUp = makeHtmlReporter(optionsWith(s.output.fileName), {})
-              await followUp(toStream([terminalEvent()]))
-              return { failure, html, rerun: await readText(s.output.fileName) }
+              const html = yield* Effect.promise(() => readText(s.output.fileName))
+              const followUp = makeHtmlReporter(options, {})
+              yield* followUp(toStream([terminalEvent()]))
+              return { failure, html, rerun: yield* Effect.promise(() => readText(s.output.fileName)) }
             } finally {
-              await removeDir(s.output.dir)
+              yield* Effect.promise(() => removeDir(s.output.dir))
             }
           }),
       ),

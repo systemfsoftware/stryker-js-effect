@@ -1,1 +1,275 @@
-{}
+"@systemfsoftware/oxlint-ignorer-config@0.1.0":
+  dir: packages/toolchain/oxlint-ignorer-config
+  intents:
+    - force-all-packages-patch
+    - ignorer-process-global
+    - oxlint-ignorer-config-debut
+"@systemfsoftware/oxlint-ignorer-config@0.1.1":
+  dir: packages/toolchain/oxlint-ignorer-config
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-ignorer-angular@0.1.0":
+  dir: packages/ignorers/angular
+  intents:
+    - force-all-packages-patch
+    - stryker-ignorer-angular-debut
+"@systemfsoftware/stryker-ignorer-angular@0.1.1":
+  dir: packages/ignorers/angular
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-ignorer-effect-schema-declarations@0.1.0":
+  dir: packages/ignorers/effect-schema-declarations
+  intents:
+    - effect-schema-kit-reauthor
+    - force-all-packages-patch
+    - stryker-ignorer-effect-schema-declarations-debut
+"@systemfsoftware/stryker-ignorer-effect-schema-declarations@0.1.1":
+  dir: packages/ignorers/effect-schema-declarations
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-ignorer-in-source-vitest-block@0.1.0":
+  dir: packages/ignorers/in-source-vitest-block
+  intents:
+    - force-all-packages-patch
+    - stryker-ignorer-in-source-vitest-block-debut
+    - vitest-block-kit-reauthor
+"@systemfsoftware/stryker-ignorer-in-source-vitest-block@0.1.1":
+  dir: packages/ignorers/in-source-vitest-block
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-ignorer-interface@0.1.0":
+  dir: packages/ignorers/interface
+  intents:
+    - force-all-packages-patch
+    - stryker-ignorer-interface-debut
+"@systemfsoftware/stryker-ignorer-interface@0.1.1":
+  dir: packages/ignorers/interface
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-ignorer-kit@0.1.0":
+  dir: packages/ignorers/kit
+  intents:
+    - force-all-packages-patch
+    - stryker-ignorer-kit-debut
+"@systemfsoftware/stryker-ignorer-kit@0.1.1":
+  dir: packages/ignorers/kit
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-js-cli@9.0.0":
+  dir: apps/stryker-js-cli
+  intents:
+    - cli-exit-teardown
+    - famous-rockets-judge
+    - force-35319686633-patch
+    - stryker-cli-otel-run-telemetry
+    - stryker-config-module-format
+"@systemfsoftware/stryker-js-engine@5.0.0":
+  dir: packages/stryker-js-engine
+  intents:
+    - engine-reporter-stdio
+    - esm-only-module-loading
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - remove-engine-base-preset
+    - run-pipeline-cell
+    - stryker-config-module-format
+    - stryker-js-engine-home-migration
+    - stryker-js-engine-mutation-test-done
+    - stryker-js-engine-plain-ignorer-loader
+"@systemfsoftware/stryker-js-html-reporter@4.0.0":
+  dir: packages/stryker-js-html-reporter
+  intents:
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - stryker-js-html-reporter-home-migration
+"@systemfsoftware/stryker-js-html-reporter@4.0.4":
+  dir: packages/stryker-js-html-reporter
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-js-html-reporter@4.0.5":
+  dir: packages/stryker-js-html-reporter
+  intents:
+    - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js-instrumenter@7.0.0":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - force-all-packages-patch
+    - instrumenter-base-path
+    - stryker-js-instrumenter-effect-surface
+    - stryker-js-instrumenter-home-migration
+    - stryker-js-instrumenter-walker-contract
+"@systemfsoftware/stryker-js-instrumenter@7.1.0":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - export-forgotten-public-types
+"@systemfsoftware/stryker-js-instrumenter@8.0.0":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - remove-bankrupt-subpath-exports
+"@systemfsoftware/stryker-js-instrumenter@8.0.1":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - effect-rc116-and-toolchain-bump
+    - instrumenter-placement-as-const
+"@systemfsoftware/stryker-js-instrumenter@8.0.2":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js-plugin-interface@5.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - stryker-js-plugin-interface-extraction
+"@systemfsoftware/stryker-js-plugin-interface@6.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - drop-naked-ignorers
+    - plucky-plugins-resolve
+"@systemfsoftware/stryker-js-plugin-interface@7.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - checker-request-carries-a-data-record
+"@systemfsoftware/stryker-js-plugin-interface@7.1.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - checker-failures-and-metrics
+"@systemfsoftware/stryker-js-plugin-interface@7.1.1":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-js-plugin-interface@7.2.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - machine-invariant-mutation-oracle
+"@systemfsoftware/stryker-js-plugin-interface@7.2.1":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js-plugin-runtime@5.0.0":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - esm-only-module-loading
+    - force-all-packages-patch
+    - stryker-js-plugin-interface-extraction
+"@systemfsoftware/stryker-js-plugin-runtime@5.0.1":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - worker-socket-owner-mode
+"@systemfsoftware/stryker-js-plugin-runtime@5.0.3":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-js-typescript-checker@6.0.0":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - stryker-js-typescript-checker-home-migration
+"@systemfsoftware/stryker-js-typescript-checker@7.0.0":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - drop-naked-ignorers
+"@systemfsoftware/stryker-js-typescript-checker@7.0.2":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - checker-request-carries-a-data-record
+"@systemfsoftware/stryker-js-typescript-checker@7.0.3":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - checker-failures-and-metrics
+"@systemfsoftware/stryker-js-typescript-checker@7.0.4":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-js-typescript-checker@7.0.5":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js-vitest-runner@5.0.0":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - esm-only-module-loading
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - stryker-js-vitest-runner-home-migration
+    - vitest-runner-spawn-env
+"@systemfsoftware/stryker-js-vitest-runner@6.0.0":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - drop-naked-ignorers
+"@systemfsoftware/stryker-js-vitest-runner@7.0.0":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - narrow-vitest-runner-peer-vitest
+"@systemfsoftware/stryker-js-vitest-runner@7.0.1":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-js-vitest-runner@7.1.0":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - machine-invariant-mutation-oracle
+    - vitest-hit-limit-hooks
+"@systemfsoftware/stryker-js-vitest-runner@7.1.1":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js@10.0.0":
+  dir: packages/stryker-js
+  intents:
+    - checker-failures-and-metrics
+    - run-event-stream-rebuild
+"@systemfsoftware/stryker-js@10.0.1":
+  dir: packages/stryker-js
+  intents:
+    - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-js@10.1.0":
+  dir: packages/stryker-js
+  intents:
+    - machine-invariant-mutation-oracle
+"@systemfsoftware/stryker-js@10.1.1":
+  dir: packages/stryker-js
+  intents:
+    - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js@5.0.0":
+  dir: packages/stryker-js
+  intents:
+    - plucky-plugins-resolve
+    - public-worms-watch
+    - stryker-js-home-migration
+    - stryker-js-language-declarations-only
+    - stryker-js-language-typed-positions
+"@systemfsoftware/stryker-js@6.0.0":
+  dir: packages/stryker-js
+  intents:
+    - drop-naked-ignorers
+    - worker-socket-owner-mode
+"@systemfsoftware/stryker-js@6.1.0":
+  dir: packages/stryker-js
+  intents:
+    - bundle-cli-workspace-deps
+    - drop-minimatch-use-std-path
+    - export-forgotten-public-types
+"@systemfsoftware/stryker-js@7.0.0":
+  dir: packages/stryker-js
+  intents:
+    - remove-bankrupt-subpath-exports
+"@systemfsoftware/stryker-js@8.0.0":
+  dir: packages/stryker-js
+  intents:
+    - checker-request-carries-a-data-record
+"@systemfsoftware/stryker-js@9.0.0":
+  dir: packages/stryker-js
+  intents:
+    - incremental-file-version
+"@systemfsoftware/stryker-test-contribution@3.0.0":
+  dir: packages/stryker-test-contribution
+  intents:
+    - famous-rockets-judge
+    - force-all-packages-patch
+    - stryker-test-contribution-home-migration
+"@systemfsoftware/stryker-test-contribution@3.0.3":
+  dir: packages/stryker-test-contribution
+  intents:
+    - effect-rc116-and-toolchain-bump

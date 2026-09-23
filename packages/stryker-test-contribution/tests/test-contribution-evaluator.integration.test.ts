@@ -5,14 +5,14 @@
  *
  * Warrant: composition — real gate decision through the Evaluator port's
  * Layer, not a mock; property tests cover the pure decision, this covers the
- * shell wiring (options via RunConfiguration, success value vs error channel).
+ * shell wiring (options through the layer factory, success value vs error channel).
  * Refusal: not a tautology — removing the system under test (the evaluator's
  * evaluate) would make the Then assertions fail (no VerdictFail where expected,
  * or no EvaluatorFailed where breaking expected).
  */
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import * as schema from '@systemfsoftware/stryker-js-language'
-import { type PartialStrykerOptions, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
+import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
+import { type PartialStrykerOptions, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -22,14 +22,15 @@ import * as Option from 'effect/Option'
 import * as Schema from 'effect/Schema'
 import { expect } from 'vitest'
 
-import { Evaluator, type EvaluatorFailed, type ExitClass } from '@systemfsoftware/stryker-js-language'
-import { RunConfiguration } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Evaluator, type EvaluatorFailed, type ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   makeTestContributionEvaluatorService,
   testContributionEvaluatorLayer,
 } from '@systemfsoftware/stryker-test-contribution'
 
 import { strykerPlugins } from '@systemfsoftware/stryker-test-contribution'
+
+import { optionalRunnerFields } from './__fixtures__/optional-runner-fields.js'
 
 const Feature = makeFeature({ it, layer })
 
@@ -40,8 +41,7 @@ const kernelMutant = (id: string, killedBy?: string[], coveredBy?: string[]): sc
   status: 'Killed',
   mutatorName: 'BooleanLiteral',
   location: LOCATION,
-  ...(killedBy === undefined ? {} : { killedBy }),
-  ...(coveredBy === undefined ? {} : { coveredBy }),
+  ...optionalRunnerFields(killedBy, coveredBy),
 })
 
 const reportWithToothlessKernelFile = (
@@ -62,26 +62,20 @@ const reportWithToothlessKernelFile = (
   },
 })
 
-// test fixture constructing StrykerOptions via decodeUnknownSync — allowed per no-sync-schema-codecs (test file)
-const evaluatorServiceWith = (options: PartialStrykerOptions) => {
-  const decoded = Schema.decodeUnknownSync(StrykerOptionsSchema)(options)
-  return makeTestContributionEvaluatorService(decoded)
-}
+const evaluatorServiceWith = (options: PartialStrykerOptions) =>
+  Effect.map(Schema.decodeUnknownEffect(StrykerOptionsSchema)(options), makeTestContributionEvaluatorService)
 
-const evaluatorViaLayerWith = (options: PartialStrykerOptions) => {
-  const decoded = Schema.decodeUnknownSync(StrykerOptionsSchema)(options)
-  return Effect.gen(function*() {
-    const context = yield* Layer.build(
-      testContributionEvaluatorLayer.pipe(Layer.provide(Layer.succeed(RunConfiguration, decoded))),
-    )
+const evaluatorViaLayerWith = (options: PartialStrykerOptions) =>
+  Effect.gen(function*() {
+    const decoded = yield* Schema.decodeUnknownEffect(StrykerOptionsSchema)(options)
+    const context = yield* Layer.build(testContributionEvaluatorLayer(decoded))
     return Context.get(context, Evaluator)
   })
-}
 interface EvaluatorServiceShape {
   readonly evaluate: (report: schema.MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed>
 }
 
-const causeStringOf = (cause: unknown): string | null => {
+const causeStringOf = <E = unknown>(cause: E): string | null => {
   if (cause === null || cause === undefined) return null
   if (typeof cause === 'string') return cause
   return JSON.stringify(cause)
@@ -108,6 +102,7 @@ const expectVerdictFail = (exit: Exit.Exit<ExitClass | null, EvaluatorFailed>): 
 }
 
 Feature('test-contribution evaluator plugin')
+  .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       'The published plugin list declares one evaluator named test-contribution',
@@ -126,7 +121,7 @@ Feature('test-contribution evaluator plugin')
       Gherkin.Do.pipe(
         Given('an evaluator service with disableBail true')(
           'evaluator',
-          () => Effect.sync(() => evaluatorServiceWith({ disableBail: true })),
+          () => evaluatorServiceWith({ disableBail: true }),
         ),
         When('a report with one toothless kernel property file is evaluated')(
           'exit',
@@ -143,7 +138,7 @@ Feature('test-contribution evaluator plugin')
       Gherkin.Do.pipe(
         Given('an evaluator service with bail active (disableBail unset)')(
           'evaluator',
-          () => Effect.sync(() => evaluatorServiceWith({})),
+          () => evaluatorServiceWith({}),
         ),
         When('a report with one toothless kernel property file is evaluated')(
           'exit',
@@ -160,7 +155,7 @@ Feature('test-contribution evaluator plugin')
       Gherkin.Do.pipe(
         Given('an evaluator service with disableBail true')(
           'evaluator',
-          () => Effect.sync(() => evaluatorServiceWith({ disableBail: true })),
+          () => evaluatorServiceWith({ disableBail: true }),
         ),
         When('a report where every kernel file kills a distinct mutant is evaluated')(
           'exit',
@@ -182,7 +177,10 @@ Feature('test-contribution evaluator plugin')
     scenario(
       'The layer-provided evaluator fails on a toothless file',
       Gherkin.Do.pipe(
-        Given('a RunConfiguration with disableBail true')('options', () => Effect.succeed({ disableBail: true })),
+        Given('test-contribution options with disableBail true')(
+          'options',
+          () => Effect.succeed({ disableBail: true }),
+        ),
         When('the evaluator layer is built with that configuration')('exit', (s) =>
           Effect.gen(function*() {
             const evaluator = yield* evaluatorViaLayerWith(s.options)
@@ -199,7 +197,7 @@ Feature('test-contribution evaluator plugin')
       Gherkin.Do.pipe(
         Given('an evaluator service with disableBail true')(
           'evaluator',
-          () => Effect.sync(() => evaluatorServiceWith({ disableBail: true })),
+          () => evaluatorServiceWith({ disableBail: true }),
         ),
         When('a report missing required fields is evaluated')('exit', (s) => {
           const brokenReport = reportWithToothlessKernelFile()

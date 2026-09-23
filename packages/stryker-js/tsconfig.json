@@ -1,0 +1,23 @@
+{
+  "extends": ["@systemfsoftware/tsconfig/tsc/no-dom/library", "@systemfsoftware/tsconfig/effect"],
+  "compilerOptions": {
+    "customConditions": ["@systemfsoftware/source"],
+    "outDir": "dist",
+    "rootDir": ".",
+    "skipLibCheck": true,
+    "types": [
+      "node",
+      "vitest/globals"
+    ]
+  },
+
+  "include": [
+    "src",
+    "test",
+    "tests"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

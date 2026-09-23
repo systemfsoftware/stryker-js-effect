@@ -1,10 +1,19 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import type { TestStatus } from '@systemfsoftware/stryker-js-language'
+import { type TestResult, TestResultSchema, type TestStatus } from '@systemfsoftware/stryker-js-plugin-interface'
+
+const HIT_LIMIT_REASON_PREFIX = 'Hit limit reached'
+const hitLimitReachedReason = (count: number, limit: number): string => `${HIT_LIMIT_REASON_PREFIX} (${count}/${limit})`
+const isNamedTrap = (activeMutantId: string, namedTrapId: string | undefined): boolean =>
+  Option.match(Option.fromNullishOr(namedTrapId), {
+    onNone: () => false,
+    onSome: (id) => id === activeMutantId,
+  })
 
 export class VitestMutantRunCommand extends S.TaggedClass<VitestMutantRunCommand>()('VitestMutantRunCommand', {
   rawTests: S.Array(S.Unknown),
@@ -14,13 +23,15 @@ export class VitestMutantRunCommand extends S.TaggedClass<VitestMutantRunCommand
   hitCount: S.optional(S.Finite),
   hitLimit: S.optional(S.Finite),
   reportAllKillers: S.Boolean,
+  activeMutantId: S.String,
+  namedTrapId: S.optional(S.String),
 }) {}
 
 const VitestMutantRunTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestMutantRun')
 type VitestMutantRunTypeId = typeof VitestMutantRunTypeId
 
 export class MutantKilled extends S.TaggedClass<MutantKilled>()('Killed', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
   killerIds: S.optional(S.Array(S.String)),
   failureMessage: S.optional(S.String),
 }) {
@@ -28,20 +39,20 @@ export class MutantKilled extends S.TaggedClass<MutantKilled>()('Killed', {
 }
 
 export class MutantSurvived extends S.TaggedClass<MutantSurvived>()('Survived', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
 }
 
 export class MutantTimeout extends S.TaggedClass<MutantTimeout>()('Timeout', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
   reason: S.optional(S.String),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
 }
 
 export class MutantDryError extends S.TaggedClass<MutantDryError>()('Error', {
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
   errorMessage: S.optional(S.String),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
@@ -64,83 +75,93 @@ export class VitestDryRunCommand extends S.TaggedClass<VitestDryRunCommand>()('V
 
 export class VitestDryRunOutput extends S.TaggedClass<VitestDryRunOutput>()('VitestDryRunOutput', {
   status: S.Literals(['Complete', 'Error']),
-  testsJson: S.String,
+  tests: S.Array(TestResultSchema),
   errorMessage: S.optional(S.String),
 }) {}
 
 type TaskState = 'pass' | 'fail' | 'skip' | 'todo' | 'run' | 'queued' | 'only' | undefined
 
-const recordOption = (value: unknown): Option.Option<Record<string, unknown>> =>
-  S.decodeUnknownOption(S.Record(S.String, S.Unknown))(value)
+export interface RawVitestRecord<A = unknown> {
+  readonly [key: string]: A
+}
 
-const getStringField = (record: Record<string, unknown>, key: string): Option.Option<string> =>
-  Option.fromNullishOr(record[key]).pipe(Option.filter((v): v is string => typeof v === 'string'))
+const isRecordValue = <A = unknown>(value: unknown): value is RawVitestRecord<A> => Predicate.isObject(value)
 
-const getNumberField = (record: Record<string, unknown>, key: string): Option.Option<number> =>
-  Option.fromNullishOr(record[key]).pipe(Option.filter((v): v is number => typeof v === 'number'))
+const recordOption = <A = unknown>(value: A): Option.Option<RawVitestRecord<A>> =>
+  Option.liftPredicate(value, isRecordValue<A>)
 
-const getSuite = (value: unknown): Option.Option<unknown> =>
-  recordOption(value).pipe(Option.flatMap((rec) => Option.fromNullishOr(rec['suite'])))
+const asString = (value: unknown): value is string => typeof value === 'string'
 
-const getFile = (value: unknown): Option.Option<unknown> =>
-  recordOption(value).pipe(Option.flatMap((rec) => Option.fromNullishOr(rec['file'])))
+const asNumber = (value: unknown): value is number => typeof value === 'number'
 
-const getResult = (value: unknown): Option.Option<unknown> =>
-  recordOption(value).pipe(Option.flatMap((rec) => Option.fromNullishOr(rec['result'])))
+const asStringOption = <A = unknown>(value: A): Option.Option<string> => Option.liftPredicate(value, asString)
 
-const getErrors = (value: unknown): Option.Option<readonly unknown[]> =>
-  recordOption(value).pipe(
-    Option.flatMap((rec) => Option.fromNullishOr(rec['errors'])),
-    Option.filter((v): v is readonly unknown[] => Array.isArray(v)),
-  )
+const asNumberOption = <A = unknown>(value: A): Option.Option<number> => Option.liftPredicate(value, asNumber)
 
-const getMessage = (value: unknown): Option.Option<string> =>
-  recordOption(value).pipe(
-    Option.flatMap((rec) => Option.fromNullishOr(rec['message'])),
-    Option.filter((v): v is string => typeof v === 'string'),
-  )
+const asArrayOption = <A = unknown>(value: A): Option.Option<readonly A[]> => Option.liftPredicate(value, Array.isArray)
 
-const getName = (value: unknown): string =>
+const getStringField = <A = unknown>(record: RawVitestRecord<A>, key: string): Option.Option<string> =>
+  asStringOption(record[key])
+
+const getNumberField = <A = unknown>(record: RawVitestRecord<A>, key: string): Option.Option<number> =>
+  asNumberOption(record[key])
+
+const getSuite = <A = unknown>(value: A): Option.Option<A> =>
+  Option.flatMap(recordOption(value), (rec) => Option.fromNullishOr(rec['suite']))
+
+const getFile = <A = unknown>(value: A): Option.Option<A> =>
+  Option.flatMap(recordOption(value), (rec) => Option.fromNullishOr(rec['file']))
+
+const getResult = <A = unknown>(value: A): Option.Option<A> =>
+  Option.flatMap(recordOption(value), (rec) => Option.fromNullishOr(rec['result']))
+
+const getErrors = <A = unknown>(value: A): Option.Option<readonly A[]> =>
+  Option.flatMap(recordOption(value), (rec) => asArrayOption(rec['errors']))
+
+const getMessage = <A = unknown>(value: A): Option.Option<string> =>
+  Option.flatMap(recordOption(value), (rec) => getStringField(rec, 'message'))
+
+const getName = <A = unknown>(value: A): string =>
   Option.match(recordOption(value), {
     onNone: () => '',
     onSome: (rec) => Option.getOrElse(getStringField(rec, 'name'), () => ''),
   })
 
-const getMode = (value: unknown): string =>
+const getMode = <A = unknown>(value: A): string =>
   Option.match(recordOption(value), {
     onNone: () => 'run',
     onSome: (rec) => Option.getOrElse(getStringField(rec, 'mode'), () => 'run'),
   })
 
-const getState = (value: unknown): TaskState =>
-  Match.value(value).pipe(
-    Match.when('pass', (): TaskState => 'pass'),
-    Match.when('fail', (): TaskState => 'fail'),
-    Match.when('skip', (): TaskState => 'skip'),
-    Match.when('todo', (): TaskState => 'todo'),
-    Match.when('run', (): TaskState => 'run'),
-    Match.when('queued', (): TaskState => 'queued'),
-    Match.when('only', (): TaskState => 'only'),
-    Match.when(undefined, (): TaskState => undefined),
-    Match.orElse((): TaskState => undefined),
-  )
+const TASK_STATES: Readonly<Record<string, TaskState>> = Object.freeze({
+  pass: 'pass',
+  fail: 'fail',
+  skip: 'skip',
+  todo: 'todo',
+  run: 'run',
+  queued: 'queued',
+  only: 'only',
+})
 
-const getDuration = (value: unknown): number =>
+const getState = <A = unknown>(value: A): TaskState =>
+  Option.match(asStringOption(value), {
+    onNone: (): TaskState => undefined,
+    onSome: (state): TaskState => TASK_STATES[state],
+  })
+
+const getDuration = <A = unknown>(value: A): number =>
   Option.match(recordOption(value), {
     onNone: () => 0,
     onSome: (rec) => Option.getOrElse(getNumberField(rec, 'duration'), () => 0),
   })
 
-const getFilepath = (value: unknown): string | undefined =>
+const getFilepath = <A = unknown>(value: A): string | undefined =>
   Option.match(recordOption(value), {
     onNone: (): string | undefined => undefined,
-    onSome: (rec) =>
-      Option.getOrUndefined(
-        Option.fromNullishOr(rec['filepath']).pipe(Option.filter((v): v is string => typeof v === 'string')),
-      ),
+    onSome: (rec): string | undefined => Option.getOrUndefined(getStringField(rec, 'filepath')),
   })
 
-const collectSuiteNames = (suite: unknown): readonly string[] =>
+const collectSuiteNames = <A = unknown>(suite: A): readonly string[] =>
   Option.match(Option.fromNullishOr(suite), {
     onNone: (): readonly string[] => [],
     onSome: (current): readonly string[] =>
@@ -159,7 +180,7 @@ const collectSuiteNames = (suite: unknown): readonly string[] =>
       }),
   })
 
-const collectTestNameRaw = (test: unknown): string => {
+const collectTestNameRaw = <A = unknown>(test: A): string => {
   const name = getName(test)
   const suite = Option.getOrUndefined(getSuite(test))
   const suiteNames = collectSuiteNames(suite)
@@ -167,7 +188,7 @@ const collectTestNameRaw = (test: unknown): string => {
   return parts.join(' ').trim()
 }
 
-const toRawTestIdRaw = (test: unknown): string => {
+const toRawTestIdRaw = <A = unknown>(test: A): string => {
   const filepath = Option.match(getFile(test), {
     onNone: (): string => 'unknown.js',
     onSome: (file): string => Option.getOrElse(Option.fromNullishOr(getFilepath(file)), (): string => 'unknown.js'),
@@ -209,7 +230,7 @@ const toTestStatus = (taskState: TaskState, mode: string): TestStatus =>
     Match.exhaustive,
   )
 
-const findSuiteErrorRaw = (suite: unknown): string | undefined =>
+const findSuiteErrorRaw = <A = unknown>(suite: A): string | undefined =>
   Option.match(Option.fromNullishOr(suite), {
     onNone: (): string | undefined => undefined,
     onSome: (current): string | undefined =>
@@ -232,7 +253,7 @@ const findSuiteErrorRaw = (suite: unknown): string | undefined =>
       }),
   })
 
-const extractStatus = (test: unknown): TestStatus => {
+const extractStatus = <A = unknown>(test: A): TestStatus => {
   const result = Option.getOrUndefined(getResult(test))
   const mode = getMode(test)
   const state = Option.match(Option.fromNullishOr(result), {
@@ -246,7 +267,7 @@ const extractStatus = (test: unknown): TestStatus => {
   return toTestStatus(state, mode)
 }
 
-const extractDuration = (test: unknown): number =>
+const extractDuration = <A = unknown>(test: A): number =>
   Option.match(getResult(test), {
     onNone: (): number => 0,
     onSome: (result): number =>
@@ -256,18 +277,18 @@ const extractDuration = (test: unknown): number =>
       }),
   })
 
-const extractFileName = (test: unknown): string | undefined =>
+const extractFileName = <A = unknown>(test: A): string | undefined =>
   Option.match(getFile(test), {
     onNone: (): string | undefined => undefined,
     onSome: (file): string | undefined => getFilepath(file),
   })
 
-const extractRawId = (test: unknown, projectRoot: string): string =>
+const extractRawId = <A = unknown>(test: A, projectRoot: string): string =>
   normalizeTestIdRaw(toRawTestIdRaw(test), projectRoot)
 
-const extractName = (test: unknown): string => collectTestNameRaw(test)
+const extractName = <A = unknown>(test: A): string => collectTestNameRaw(test)
 
-const extractFailureMessage = (test: unknown): string =>
+const extractFailureMessage = <A = unknown>(test: A): string =>
   Option.match(getResult(test), {
     onNone: (): string => 'StrykerJS: Unknown test failure',
     onSome: (result): string =>
@@ -287,72 +308,33 @@ const extractFailureMessage = (test: unknown): string =>
       }),
   })
 
-const convertTestRaw = (
-  test: unknown,
-  projectRoot: string,
-): {
-  readonly id: string
-  readonly name: string
-  readonly timeSpentMs: number
-  readonly fileName: string | undefined
-  readonly status: TestStatus
-  readonly failureMessage?: string
-} => {
+const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestResult => {
   const status = extractStatus(test)
+  const fileNameField = Match.value(extractFileName(test)).pipe(
+    Match.when(undefined, () => ({})),
+    Match.orElse((fileName) => ({ fileName })),
+  )
   const base = {
     id: extractRawId(test, projectRoot),
     name: extractName(test),
     timeSpentMs: extractDuration(test),
-    fileName: extractFileName(test),
     status,
+    ...fileNameField,
   }
   return Match.value(status).pipe(
-    Match.when('failed', (): {
-      readonly id: string
-      readonly name: string
-      readonly timeSpentMs: number
-      readonly fileName: string | undefined
-      readonly status: TestStatus
-      readonly failureMessage?: string
-    } => ({ ...base, status, failureMessage: extractFailureMessage(test) })),
-    Match.when('skipped', (): {
-      readonly id: string
-      readonly name: string
-      readonly timeSpentMs: number
-      readonly fileName: string | undefined
-      readonly status: TestStatus
-      readonly failureMessage?: string
-    } =>
+    Match.when(
+      'failed',
+      (): TestResult => ({ ...base, status: 'failed', failureMessage: extractFailureMessage(test) }),
+    ),
+    Match.when('skipped', (): TestResult =>
       Match.value(findSuiteErrorRaw(Option.getOrUndefined(getSuite(test)))).pipe(
-        Match.when(Match.defined, (suiteError): {
-          readonly id: string
-          readonly name: string
-          readonly timeSpentMs: number
-          readonly fileName: string | undefined
-          readonly status: TestStatus
-          readonly failureMessage?: string
-        } => ({
-          ...base,
-          status: 'failed',
-          failureMessage: suiteError,
-        })),
-        Match.orElse((): {
-          readonly id: string
-          readonly name: string
-          readonly timeSpentMs: number
-          readonly fileName: string | undefined
-          readonly status: TestStatus
-          readonly failureMessage?: string
-        } => ({ ...base, status })),
+        Match.when(
+          Match.defined,
+          (suiteError): TestResult => ({ ...base, status: 'failed', failureMessage: suiteError }),
+        ),
+        Match.orElse((): TestResult => ({ ...base, status: 'skipped' })),
       )),
-    Match.orElse((): {
-      readonly id: string
-      readonly name: string
-      readonly timeSpentMs: number
-      readonly fileName: string | undefined
-      readonly status: TestStatus
-      readonly failureMessage?: string
-    } => ({ ...base, status })),
+    Match.orElse((): TestResult => ({ ...base, status: 'success' })),
   )
 }
 
@@ -378,7 +360,7 @@ const decideVitestDryRun = (command: VitestDryRunCommand): Result.Result<VitestD
         Result.succeed(
           VitestDryRunOutput.make({
             status: 'Error',
-            testsJson: JSON.stringify(tests),
+            tests,
             errorMessage: `An error occurred outside of a test run: ${command.externalErrorText}`,
           }),
         ),
@@ -387,7 +369,7 @@ const decideVitestDryRun = (command: VitestDryRunCommand): Result.Result<VitestD
       Result.succeed(
         VitestDryRunOutput.make({
           status: 'Complete',
-          testsJson: JSON.stringify(tests),
+          tests,
           errorMessage: undefined,
         }),
       )
@@ -400,7 +382,7 @@ const hitLimitReason = (hitCount: number | undefined, hitLimit: number | undefin
     (count) =>
       Option.flatMap(Option.fromNullishOr(hitLimit), (limit) =>
         Match.value(count > limit).pipe(
-          Match.when(true, (): Option.Option<string> => Option.some(`Hit limit reached (${count}/${limit})`)),
+          Match.when(true, (): Option.Option<string> => Option.some(hitLimitReachedReason(count, limit))),
           Match.when(false, (): Option.Option<string> => Option.none()),
           Match.exhaustive,
         )),
@@ -413,11 +395,22 @@ const decideVitestMutantRun = (
     Match.when(Option.isSome, (
       hit,
     ): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
-      Result.succeed(
-        MutantTimeout.make({
-          testsJson: '[]',
-          reason: hit.value,
-        }),
+      Match.value(isNamedTrap(command.activeMutantId, command.namedTrapId)).pipe(
+        Match.when(true, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
+          Result.succeed(
+            MutantTimeout.make({
+              tests: [],
+              reason: hit.value,
+            }),
+          )),
+        Match.when(false, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
+          Result.succeed(
+            MutantKilled.make({
+              tests: [],
+              failureMessage: hit.value,
+            }),
+          )),
+        Match.exhaustive,
       )),
     Match.when(Option.isNone, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> => {
       const dryOut = decideVitestDryRun(
@@ -438,31 +431,18 @@ const decideVitestMutantRun = (
           const dry = Result.getOrElse(
             dryOut,
             (): VitestDryRunOutput =>
-              VitestDryRunOutput.make({ status: 'Complete', testsJson: '[]', errorMessage: undefined }),
+              VitestDryRunOutput.make({ status: 'Complete', tests: [], errorMessage: undefined }),
           )
           return Match.value(dry.status === 'Error').pipe(
             Match.when(true, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
               Result.succeed(
                 MutantDryError.make({
-                  testsJson: '[]',
+                  tests: [],
                   errorMessage: dry.errorMessage,
                 }),
               )),
             Match.when(false, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> => {
-              const testsOption = Option.liftThrowable((input: string): unknown => JSON.parse(input))(dry.testsJson)
-                .pipe(
-                  Option.filter((v): v is readonly {
-                    readonly id: string
-                    readonly status: TestStatus
-                    readonly failureMessage?: string
-                  }[] => Array.isArray(v)),
-                )
-              const tests = Option.getOrElse(testsOption, (): readonly {
-                readonly id: string
-                readonly status: TestStatus
-                readonly failureMessage?: string
-              }[] => [])
-              const killed = tests.filter((t) => t.status === 'failed')
+              const killed = dry.tests.filter((t) => t.status === 'failed')
               return Match.value(killed.length > 0).pipe(
                 Match.when(
                   true,
@@ -476,7 +456,7 @@ const decideVitestMutantRun = (
                         })
                         return Result.succeed(
                           MutantKilled.make({
-                            testsJson: dry.testsJson,
+                            tests: dry.tests,
                             killerIds: killed.map((t) => t.id),
                             failureMessage,
                           }),
@@ -494,7 +474,7 @@ const decideVitestMutantRun = (
                             (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
                               Result.succeed(
                                 MutantKilled.make({
-                                  testsJson: dry.testsJson,
+                                  tests: dry.tests,
                                   killerIds: Option.match(first, {
                                     onNone: (): readonly string[] | undefined => undefined,
                                     onSome: (k): readonly string[] => [k.id],
@@ -508,7 +488,7 @@ const decideVitestMutantRun = (
                             (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
                               Result.succeed(
                                 MutantKilled.make({
-                                  testsJson: dry.testsJson,
+                                  tests: dry.tests,
                                   killerIds: Option.getOrUndefined(
                                     Option.match(first, {
                                       onNone: (): Option.Option<readonly string[]> => Option.none(),
@@ -528,7 +508,7 @@ const decideVitestMutantRun = (
                 Match.when(false, (): Result.Result<VitestMutantRunOutput, VitestMutantRunError> =>
                   Result.succeed(
                     MutantSurvived.make({
-                      testsJson: dry.testsJson,
+                      tests: dry.tests,
                     }),
                   )),
                 Match.exhaustive,

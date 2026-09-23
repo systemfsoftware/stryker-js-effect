@@ -1,0 +1,677 @@
+{
+  "metadata": {
+    "skill_name": "stryker-mutation-testing",
+    "skill_path": "/tmp/stryker-skill-eval-ws/iteration-1",
+    "executor_model": "openrouter/meta/muse-spark-1.3-contributor",
+    "analyzer_model": "openrouter/meta/muse-spark-1.3-contributor",
+    "timestamp": "2026-09-18T21:21:16Z",
+    "evals_run": [
+      "eval-0",
+      "eval-1",
+      "eval-2",
+      "eval-3",
+      "eval-4",
+      "eval-5",
+      "eval-6",
+      "eval-7"
+    ],
+    "runs_per_configuration": 1
+  },
+  "runs": [
+    {
+      "eval_id": "eval-0",
+      "eval_name": "vitest-plugin-url",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 4.52,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "import.meta.resolve",
+          "passed": true,
+          "evidence": "Per **STRYK-R1**:\n\n```ts\nplugins: [\n  import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')…"
+        },
+        {
+          "text": "@systemfsoftware/stryker-js-vitest-runner",
+          "passed": true,
+          "evidence": "…**:\n\n```ts\nplugins: [\n  import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),\n]\n```\n\nBare `'@systemfsoftware/stryker-js…"
+        },
+        {
+          "text": "file:",
+          "passed": true,
+          "evidence": "…ails with `PluginLoadFailedError` — MUST be `file:` URL via `import.meta.resolve()`.\n\n"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-0",
+      "eval_name": "vitest-plugin-url",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0,
+        "passed": 0,
+        "failed": 3,
+        "total": 3,
+        "time_seconds": 13.95,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "import.meta.resolve",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "@systemfsoftware/stryker-js-vitest-runner",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "file:",
+          "passed": false,
+          "evidence": "not found"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-1",
+      "eval_name": "local-v8-ci-vitest-dual-engine",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 14.32,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "isCi",
+          "passed": true,
+          "evidence": "…r-js/config'\n\nexport default defineConfig(({ isCi }) => ({\n  testRunner: isCi ? 'vitest' : 'vm…"
+        },
+        {
+          "text": "testRunner",
+          "passed": true,
+          "evidence": "…port default defineConfig(({ isCi }) => ({\n  testRunner: isCi ? 'vitest' : 'vm', // STRYK-R2\n  check…"
+        },
+        {
+          "text": "vm",
+          "passed": true,
+          "evidence": "Use dual-engine: `vm` locally, `vitest` in CI.\n\n```ts\nimport { de…"
+        },
+        {
+          "text": "testFiles",
+          "passed": true,
+          "evidence": "…ware/stryker-js-typescript-checker'),\n  ],\n  testFiles: ['test/**/*.test.ts'],\n  mutate: [ // STRYK…"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-1",
+      "eval_name": "local-v8-ci-vitest-dual-engine",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0,
+        "passed": 0,
+        "failed": 4,
+        "total": 4,
+        "time_seconds": 15.37,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "isCi",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "testRunner",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "vm",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "testFiles",
+          "passed": false,
+          "evidence": "not found"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-2",
+      "eval_name": "zero-plugin-command-runner",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 10.65,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "command",
+          "passed": true,
+          "evidence": "…YK-R2** custom runners require `testRunner: 'command'` with zero plugins; per **STRYK-R1** that m…"
+        },
+        {
+          "text": "commandRunner",
+          "passed": true,
+          "evidence": "…lt defineConfig({\n  testRunner: 'command',\n  commandRunner: {\n    command: 'npm run test:unit',\n  },\n  …"
+        },
+        {
+          "text": "npm run test:unit",
+          "passed": true,
+          "evidence": "… 'command',\n  commandRunner: {\n    command: 'npm run test:unit',\n  },\n  mutate: ['src/**/*.ts', '!src/**/*.…"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-2",
+      "eval_name": "zero-plugin-command-runner",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 34.73,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "command",
+          "passed": true,
+          "evidence": "Use built-in `command` runner — no install:\n\n```ts\n// stryker.conf…"
+        },
+        {
+          "text": "commandRunner",
+          "passed": true,
+          "evidence": "…trykerOptions = {\n  testRunner: 'command',\n  commandRunner: {\n    command: 'npm run test:unit',\n  },\n  …"
+        },
+        {
+          "text": "npm run test:unit",
+          "passed": true,
+          "evidence": "… 'command',\n  commandRunner: {\n    command: 'npm run test:unit',\n  },\n  coverageAnalysis: 'off', // command…"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-3",
+      "eval_name": "mutate-exclusions",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 12.46,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "!src/**/*.test.ts",
+          "passed": true,
+          "evidence": "…Config({\n  mutate: [\n    'src/**/*.ts',\n    '!src/**/*.test.ts',\n    '!src/**/__tests__/**',\n    '!src/**/*…"
+        },
+        {
+          "text": "!src/**/__tests__/**",
+          "passed": true,
+          "evidence": "…'src/**/*.ts',\n    '!src/**/*.test.ts',\n    '!src/**/__tests__/**',\n    '!src/**/*.d.ts',\n  ],\n  ignorers: ['i…"
+        },
+        {
+          "text": "!src/**/*.d.ts",
+          "passed": true,
+          "evidence": "…*.test.ts',\n    '!src/**/__tests__/**',\n    '!src/**/*.d.ts',\n  ],\n  ignorers: ['in-source-vitest-block'…"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-3",
+      "eval_name": "mutate-exclusions",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.3333,
+        "passed": 1,
+        "failed": 2,
+        "total": 3,
+        "time_seconds": 9.55,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "!src/**/*.test.ts",
+          "passed": true,
+          "evidence": "…_tests__`? If co-located blocks matter, add `!src/**/*.test.ts` pattern already covers.\n"
+        },
+        {
+          "text": "!src/**/__tests__/**",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "!src/**/*.d.ts",
+          "passed": false,
+          "evidence": "not found"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-4",
+      "eval_name": "effect-schema-ignorer-pairing",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 10.97,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "@systemfsoftware/stryker-ignorer-effect-schema-declarations",
+          "passed": true,
+          "evidence": "…uide.md` §3).\n\nInstall:\n\n```bash\npnpm add -D @systemfsoftware/stryker-ignorer-effect-schema-declarations\n```\n\n`stryker.config.ts`:\n\n```ts\nimport { de…"
+        },
+        {
+          "text": "import.meta.resolve",
+          "passed": true,
+          "evidence": "…  checkers: ['typescript'],\n  plugins: [\n    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')…"
+        },
+        {
+          "text": "effect-schema-declarations",
+          "passed": true,
+          "evidence": "Register `effect-schema-declarations` ignorer (STRYK-R4 per `references/decision-…"
+        },
+        {
+          "text": "ignorers",
+          "passed": true,
+          "evidence": "…ignorer-effect-schema-declarations'),\n  ],\n  ignorers: ['effect-schema-declarations'],\n  mutate: […"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-4",
+      "eval_name": "effect-schema-ignorer-pairing",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0,
+        "passed": 0,
+        "failed": 4,
+        "total": 4,
+        "time_seconds": 20.65,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "@systemfsoftware/stryker-ignorer-effect-schema-declarations",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "import.meta.resolve",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "effect-schema-declarations",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "ignorers",
+          "passed": false,
+          "evidence": "not found"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-5",
+      "eval_name": "decision-guide-routing",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 5.56,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "vm",
+          "passed": true,
+          "evidence": "**Decision:**\n\n* `vm` — local iteration only. In-memory V8, no sa…"
+        },
+        {
+          "text": "vitest",
+          "passed": true,
+          "evidence": "…e pure Node (`node:test`, no DOM/browser, no Vitest-specific APIs). No plugin needed, `testRunne…"
+        },
+        {
+          "text": "command",
+          "passed": true,
+          "evidence": "…a `import.meta.resolve()` per `STRYK-R1`.\n* `command` — Jest / custom / shell-driven suites. Zero…"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-5",
+      "eval_name": "decision-guide-routing",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 12.23,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "vm",
+          "passed": true,
+          "evidence": "… runner docs / repo paths defining in-memory vm, vitest, and command runners to ground answe…"
+        },
+        {
+          "text": "vitest",
+          "passed": true,
+          "evidence": "…ner docs / repo paths defining in-memory vm, vitest, and command runners to ground answer.\n"
+        },
+        {
+          "text": "command",
+          "passed": true,
+          "evidence": "…epo paths defining in-memory vm, vitest, and command runners to ground answer.\n"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-6",
+      "eval_name": "negative-trigger-boundary",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 11.38,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "coverage",
+          "passed": true,
+          "evidence": "…\nexport default defineConfig({\n  test: {\n    coverage: {\n      provider: 'v8',\n      reporter: ['t…"
+        },
+        {
+          "text": "vitest.config",
+          "passed": true,
+          "evidence": "In `vitest.config.ts`:\n\n```ts\nimport { defineConfig } from 'vi…"
+        },
+        {
+          "text": "@systemfsoftware/stryker-js",
+          "passed": true,
+          "evidence": "correctly absent"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-6",
+      "eval_name": "negative-trigger-boundary",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 6.89,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "coverage",
+          "passed": true,
+          "evidence": "In `vitest.config.ts`, set `test.coverage.provider: 'v8'`:\n\n```ts\nimport { defineConfi…"
+        },
+        {
+          "text": "vitest.config",
+          "passed": true,
+          "evidence": "In `vitest.config.ts`, set `test.coverage.provider: 'v8'`:\n\n``…"
+        },
+        {
+          "text": "@systemfsoftware/stryker-js",
+          "passed": true,
+          "evidence": "correctly absent"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-7",
+      "eval_name": "messy-realistic-intro",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 22.58,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "@systemfsoftware/stryker-js",
+          "passed": true,
+          "evidence": "…. Install (your repo):**\n```bash\npnpm add -D @systemfsoftware/stryker-js @systemfsoftware/stryker-js-vitest-runner @s…"
+        },
+        {
+          "text": "@systemfsoftware/stryker-js-vitest-runner",
+          "passed": true,
+          "evidence": "…bash\npnpm add -D @systemfsoftware/stryker-js @systemfsoftware/stryker-js-vitest-runner @systemfsoftware/stryker-js-typescript-check…"
+        },
+        {
+          "text": "defineConfig",
+          "passed": true,
+          "evidence": "…his (dual-engine STRYK-R2):**\n```ts\nimport { defineConfig } from '@systemfsoftware/stryker-js/config'\n…"
+        },
+        {
+          "text": "stryker run",
+          "passed": true,
+          "evidence": "…\n\n**3. Prove to manager:**\n```bash\npnpm exec stryker run --dryRunOnly  # gate: MUST exit 0 first\npnpm…"
+        }
+      ]
+    },
+    {
+      "eval_id": "eval-7",
+      "eval_name": "messy-realistic-intro",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.25,
+        "passed": 1,
+        "failed": 3,
+        "total": 4,
+        "time_seconds": 12.36,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "harness_failure": false,
+        "exit_code": 0
+      },
+      "expectations": [
+        {
+          "text": "@systemfsoftware/stryker-js",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "@systemfsoftware/stryker-js-vitest-runner",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "defineConfig",
+          "passed": false,
+          "evidence": "not found"
+        },
+        {
+          "text": "stryker run",
+          "passed": true,
+          "evidence": "…*/*.spec.ts\"]\n}\n```\n\nThen:\n```bash\npnpm exec stryker run\n```\n\nCheck: `reports/mutation/mutation.html`…"
+        }
+      ]
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1,
+        "stddev": 0,
+        "min": 1,
+        "max": 1
+      },
+      "time_seconds": {
+        "mean": 11.56,
+        "stddev": 5.56,
+        "min": 4.52,
+        "max": 22.58
+      },
+      "tokens": {
+        "mean": 0,
+        "stddev": 0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.4479,
+        "stddev": 0.4734,
+        "min": 0,
+        "max": 1
+      },
+      "time_seconds": {
+        "mean": 15.72,
+        "stddev": 8.69,
+        "min": 6.89,
+        "max": 34.73
+      },
+      "tokens": {
+        "mean": 0,
+        "stddev": 0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.55",
+      "time_seconds": "-4.2",
+      "tokens": "+0"
+    }
+  },
+  "small_n_warning": false,
+  "statistics": {
+    "with_skill": {
+      "n": 27,
+      "pass_rate": 1,
+      "ci95_low": 1,
+      "ci95_high": 1,
+      "harness_failures": 0
+    },
+    "without_skill": {
+      "n": 27,
+      "pass_rate": 0.4074,
+      "ci95_low": 0.2221,
+      "ci95_high": 0.5927,
+      "harness_failures": 0
+    },
+    "verdict": "+59.3pp"
+  }
+}

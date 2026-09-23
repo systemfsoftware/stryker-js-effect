@@ -2,16 +2,16 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import type { MetricsResult } from '@systemfsoftware/stryker-js-language'
-import type * as reportApi from '@systemfsoftware/stryker-js-language'
+import type { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   DryRunCompleted,
   MutantTested,
   MutationTestingPlanReady,
   MutationTestReportReady,
-} from '@systemfsoftware/stryker-js-language'
-import type { ReporterEvent } from '@systemfsoftware/stryker-js-language'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
+} from '@systemfsoftware/stryker-js-plugin-interface'
+import type { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface'
+import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -77,7 +77,7 @@ const removeDir = (dir: string): Promise<void> =>
     }),
   )
 
-const optionsWith = (fileName: string) => S.decodeUnknownSync(StrykerOptionsSchema)({ htmlReporter: { fileName } })
+const optionsWith = (fileName: string) => S.decodeEffect(StrykerOptionsSchema)({ htmlReporter: { fileName } })
 
 const reportFixture = (): reportApi.MutationTestResult => ({
   schemaVersion: '1.0',
@@ -125,17 +125,17 @@ const runEvents = (
   report: reportApi.MutationTestResult,
   metrics: MetricsResult,
 ): readonly ReporterEvent[] => [
-  new DryRunCompleted({
+  DryRunCompleted.make({
     timing: { net: 1, overhead: 0 },
     capabilities: { reloadEnvironment: false },
     testCount: 0,
     tests: [],
   }),
-  new MutationTestingPlanReady({
+  MutationTestingPlanReady.make({
     total: 1,
     plans: [{ mutantId: '0', plan: 'Run', netTime: 1, reloadEnvironment: false }],
   }),
-  new MutantTested({
+  MutantTested.make({
     id: '0',
     status: 'Killed',
     file: 'src/marker.ts',
@@ -145,32 +145,49 @@ const runEvents = (
     completed: 1,
     total: 1,
   }),
-  new MutationTestReportReady({ report, metrics }),
+  MutationTestReportReady.make({ report, metrics }),
 ]
 
-async function* toStream(events: readonly ReporterEvent[]): AsyncGenerator<ReporterEvent> {
-  yield* events
+function toStream(events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> {
+  let index = 0
+  return {
+    [Symbol.asyncIterator](): AsyncIterator<ReporterEvent> {
+      return {
+        next(): Promise<IteratorResult<ReporterEvent>> {
+          const value: ReporterEvent | undefined = events[index]
+          index += 1
+          if (value !== undefined) {
+            return Promise.resolve({ value, done: false })
+          }
+          const done: IteratorResult<ReporterEvent> = { done: true, value: undefined }
+          return Promise.resolve(done)
+        },
+      }
+    },
+  }
 }
 
-Feature('Writing the html mutation report').body(({ scenario }) => {
+Feature('Writing the html mutation report').withLayer(nodeFsPathLayer).body(({ scenario }) => {
   scenario(
     'A completed run writes a self-contained report',
     Gherkin.Do.pipe(
       Given('an output directory beside an unrelated bundle file')('output', () =>
-        Effect.promise(async () => {
-          const dir = await makeTempDir('html-factory-pin-')
-          const fileName = await joinPath(dir, 'index.html')
-          await writeText(await joinPath(dir, 'mutation-test-elements.js'), 'DECOY-BUNDLE')
+        Effect.gen(function*() {
+          const dir = yield* Effect.promise(() => makeTempDir('html-factory-pin-'))
+          const fileName = yield* Effect.promise(() => joinPath(dir, 'index.html'))
+          const decoy = yield* Effect.promise(() => joinPath(dir, 'mutation-test-elements.js'))
+          yield* Effect.promise(() => writeText(decoy, 'DECOY-BUNDLE'))
           return { dir, fileName }
         })),
       When('the reporter consumes a completed run')('html', (s) =>
-        Effect.promise(async () => {
+        Effect.gen(function*() {
           try {
-            const consume = makeHtmlReporter(optionsWith(s.output.fileName), {})
-            await consume(toStream(runEvents(reportFixture(), metricsFixture())))
-            return await readText(s.output.fileName)
+            const options = yield* optionsWith(s.output.fileName)
+            const consume = makeHtmlReporter(options, {})
+            yield* consume(toStream(runEvents(reportFixture(), metricsFixture())))
+            return yield* Effect.promise(() => readText(s.output.fileName))
           } finally {
-            await removeDir(s.output.dir)
+            yield* Effect.promise(() => removeDir(s.output.dir))
           }
         })),
       Then('the written document embeds the run result')((s) => {
@@ -193,19 +210,25 @@ Feature('Writing the html mutation report').body(({ scenario }) => {
           metrics: metricsFixture(),
         })),
       When('the reporter writes the same run into two directories')('documents', (s) =>
-        Effect.promise(async () => {
-          const dirA = await makeTempDir('html-purity-a-')
-          const dirB = await makeTempDir('html-purity-b-')
+        Effect.gen(function*() {
+          const dirA = yield* Effect.promise(() => makeTempDir('html-purity-a-'))
+          const dirB = yield* Effect.promise(() => makeTempDir('html-purity-b-'))
           try {
-            const fileA = await joinPath(dirA, 'index.html')
-            const fileB = await joinPath(dirB, 'index.html')
-            await makeHtmlReporter(optionsWith(fileA), {})(toStream(runEvents(s.run.report, s.run.metrics)))
-            await makeHtmlReporter(optionsWith(fileB), {})(toStream(runEvents(s.run.report, s.run.metrics)))
-            const existed = await fileExists(fileA)
-            return { a: await readText(fileA), b: await readText(fileB), existed }
+            const fileA = yield* Effect.promise(() => joinPath(dirA, 'index.html'))
+            const fileB = yield* Effect.promise(() => joinPath(dirB, 'index.html'))
+            const optionsA = yield* optionsWith(fileA)
+            const optionsB = yield* optionsWith(fileB)
+            yield* makeHtmlReporter(optionsA, {})(toStream(runEvents(s.run.report, s.run.metrics)))
+            yield* makeHtmlReporter(optionsB, {})(toStream(runEvents(s.run.report, s.run.metrics)))
+            const existed = yield* Effect.promise(() => fileExists(fileA))
+            return {
+              a: yield* Effect.promise(() => readText(fileA)),
+              b: yield* Effect.promise(() => readText(fileB)),
+              existed,
+            }
           } finally {
-            await removeDir(dirA)
-            await removeDir(dirB)
+            yield* Effect.promise(() => removeDir(dirA))
+            yield* Effect.promise(() => removeDir(dirB))
           }
         })),
       Then('a report is written')((s) => {

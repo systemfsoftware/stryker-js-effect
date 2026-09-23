@@ -1,128 +1,83 @@
+import * as Rpc from 'effect/unstable/rpc/Rpc'
+import * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
+
+import { CheckerFailed } from './Checker.schema.js'
+import { ReporterFailed } from './ReporterEvent.schema.js'
 import {
-  Checker,
-  type Evaluator,
-  Framework,
-  type FrameworkFailed,
-  Ignorer,
-  Module,
-  TestRunner,
-} from '@systemfsoftware/stryker-js-language'
-import type { ReporterFactory, StrykerOptions } from '@systemfsoftware/stryker-js-language'
-import * as Context from 'effect/Context'
-import * as FileSystem from 'effect/FileSystem'
-import * as Layer from 'effect/Layer'
-import * as Match from 'effect/Match'
-import * as MutableHashMap from 'effect/MutableHashMap'
-import * as Option from 'effect/Option'
-import * as Path from 'effect/Path'
+  DryRunResultSchema,
+  MutantRunResultSchema,
+  TestRunnerCapabilitiesSchema,
+  TestRunnerFailed,
+} from './TestRunner.schema.js'
 
+import type { Schema } from 'effect'
 import {
-  type PluginContribution,
-  PluginKind,
-  PluginLayerContribution,
-  type PluginLayerKind,
-  PluginReporterContribution,
+  CheckerCheckResult,
+  CheckerGroupResult,
+  CheckerRequest,
+  ReporterAck,
+  ReporterDrained,
+  ReporterEventBatch,
+  ReporterInitOptions,
+  TestRunnerDryRunRequest,
+  TestRunnerMutantRunRequest,
 } from './Plugin.schema.js'
+import { TraceContextMiddleware, type TracedRpc } from './TraceContextRpc.js'
 
-export {
-  type PluginContribution,
-  PluginKind,
-  PluginLayerContribution,
-  type PluginLayerKind,
-  PluginReporterContribution,
-} from './Plugin.schema.js'
+export const TestRunnerRpcs: RpcGroup.RpcGroup<
+  | TracedRpc<'capabilities', Schema.Void, typeof TestRunnerCapabilitiesSchema, typeof TestRunnerFailed>
+  | TracedRpc<'dryRun', typeof TestRunnerDryRunRequest, typeof DryRunResultSchema, typeof TestRunnerFailed>
+  | TracedRpc<'mutantRun', typeof TestRunnerMutantRunRequest, typeof MutantRunResultSchema, typeof TestRunnerFailed>
+> = RpcGroup.make(
+  Rpc.make('capabilities', {
+    success: TestRunnerCapabilitiesSchema,
+    error: TestRunnerFailed,
+  }),
+  Rpc.make('dryRun', {
+    payload: TestRunnerDryRunRequest,
+    success: DryRunResultSchema,
+    error: TestRunnerFailed,
+  }),
+  Rpc.make('mutantRun', {
+    payload: TestRunnerMutantRunRequest,
+    success: MutantRunResultSchema,
+    error: TestRunnerFailed,
+  }),
+).middleware(TraceContextMiddleware)
 
-export class RunConfiguration extends Context.Service<RunConfiguration, StrykerOptions>()(
-  '~@systemfsoftware/stryker-js-plugin-interface/RunConfiguration',
-) {}
+export const CheckerRpcs: RpcGroup.RpcGroup<
+  | TracedRpc<'check', typeof CheckerRequest, typeof CheckerCheckResult, typeof CheckerFailed>
+  | TracedRpc<'group', typeof CheckerRequest, typeof CheckerGroupResult, typeof CheckerFailed>
+> = RpcGroup.make(
+  Rpc.make('check', {
+    payload: CheckerRequest,
+    success: CheckerCheckResult,
+    error: CheckerFailed,
+  }),
+  Rpc.make('group', {
+    payload: CheckerRequest,
+    success: CheckerGroupResult,
+    error: CheckerFailed,
+  }),
+).middleware(TraceContextMiddleware)
 
-export class SandboxDirectory extends Context.Service<SandboxDirectory, string>()(
-  '~@systemfsoftware/stryker-js-plugin-interface/SandboxDirectory',
-) {}
-
-export interface PluginInterfaces {
-  Checker: Checker
-  TestRunner: TestRunner
-  Ignore: Ignorer
-  Evaluator: Evaluator
-  Framework: Framework
-}
-
-export type PluginLayerError<K extends PluginLayerKind> = K extends 'Framework' ? FrameworkFailed : never
-
-export type PluginEnvironment = RunConfiguration | SandboxDirectory | FileSystem.FileSystem | Module | Path.Path
-
-export type AnyPluginContribution = { [K in PluginKind]: PluginContribution<K> }[PluginKind]
-
-export type ContributionOf<K extends PluginKind> = Extract<AnyPluginContribution, { readonly kind: K }>
-
-export function declarePlugin(
-  kind: 'Reporter',
-  name: string,
-  make: ReporterFactory,
-): PluginContribution<'Reporter'>
-export function declarePlugin<K extends PluginLayerKind>(
-  kind: K,
-  name: string,
-  layer: Layer.Layer<PluginInterfaces[K], PluginLayerError<K>, PluginEnvironment>,
-): PluginContribution<K>
-export function declarePlugin(
-  kind: PluginKind,
-  name: string,
-  payload: unknown,
-): AnyPluginContribution | PluginLayerContribution<PluginLayerKind> {
-  if (kind === 'Reporter') {
-    return new PluginReporterContribution({ kind, name, make: payload })
-  }
-  return new PluginLayerContribution({ kind, name, layer: payload })
-}
-
-export type MergedPluginServices = Checker & Ignorer & TestRunner
-
-export interface SelectedReporterFactory {
-  readonly name: string
-  readonly make: ReporterFactory
-}
-
-export interface ComposedPlugins {
-  readonly layer: Option.Option<Layer.Layer<MergedPluginServices, PluginLayerError<PluginLayerKind>, PluginEnvironment>>
-  readonly reporterFactories: readonly SelectedReporterFactory[]
-}
-
-const resolveContributions = (
-  contributions: readonly AnyPluginContribution[],
-): MutableHashMap.MutableHashMap<string, AnyPluginContribution> => {
-  const resolved = MutableHashMap.empty<string, AnyPluginContribution>()
-  contributions.forEach((contribution) => {
-    MutableHashMap.set(resolved, `${contribution.kind}:${contribution.name}`, contribution)
-  })
-  return resolved
-}
-
-const reporterFactoryOf = (contribution: AnyPluginContribution): readonly SelectedReporterFactory[] =>
-  Match.value(contribution).pipe(
-    Match.discriminator('kind')('Reporter', (reporter): readonly SelectedReporterFactory[] => [
-      { name: reporter.name, make: reporter.make },
-    ]),
-    Match.orElse((): readonly SelectedReporterFactory[] => []),
-  )
-
-type ComposedPluginLayer = Layer.Layer<never, PluginLayerError<PluginLayerKind>, PluginEnvironment>
-
-const layerOf = (contribution: AnyPluginContribution): readonly ComposedPluginLayer[] =>
-  Match.value(contribution).pipe(
-    Match.discriminator('kind')('Reporter', (): readonly ComposedPluginLayer[] => []),
-    Match.orElse((nonReporter) => [nonReporter.layer]),
-  )
-
-const mergedLayer = (layers: ReadonlyArray<ComposedPluginLayer>): ComposedPluginLayer =>
-  layers.reduce((accumulated, next) => Layer.merge(accumulated, next))
-
-export function composePlugins(contributions: readonly AnyPluginContribution[]): ComposedPlugins {
-  const allResolved = Array.from(MutableHashMap.values(resolveContributions(contributions)))
-  const layers = allResolved.flatMap(layerOf)
-  return {
-    layer: Option.map(Option.fromUndefinedOr(layers.at(0)), () => mergedLayer(layers)),
-    reporterFactories: allResolved.flatMap(reporterFactoryOf),
-  }
-}
+export const ReporterRpcs: RpcGroup.RpcGroup<
+  | TracedRpc<'init', typeof ReporterInitOptions, typeof ReporterAck, typeof ReporterFailed>
+  | TracedRpc<'onEventBatch', typeof ReporterEventBatch, typeof ReporterAck, typeof ReporterFailed>
+  | TracedRpc<'flush', Schema.Void, typeof ReporterDrained, typeof ReporterFailed>
+> = RpcGroup.make(
+  Rpc.make('init', {
+    payload: ReporterInitOptions,
+    success: ReporterAck,
+    error: ReporterFailed,
+  }),
+  Rpc.make('onEventBatch', {
+    payload: ReporterEventBatch,
+    success: ReporterAck,
+    error: ReporterFailed,
+  }),
+  Rpc.make('flush', {
+    success: ReporterDrained,
+    error: ReporterFailed,
+  }),
+).middleware(TraceContextMiddleware)

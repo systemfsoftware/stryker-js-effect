@@ -12,9 +12,6 @@
         "tsconfig.*.json",
         "package.json",
         "tsdown.config.*",
-        "api-extractor.json",
-        "api-extractor.*.json",
-        "etc/*.api.md",
         "$TURBO_ROOT$/packages/toolchain/tsdown-config/lib/**",
         "$TURBO_ROOT$/packages/toolchain/tsdown-config/package.json"
       ],
@@ -22,8 +19,7 @@
         "dist/**"
       ],
       "dependsOn": [
-        "^build",
-        "^api:check"
+        "^build"
       ]
     },
     "typecheck": {
@@ -82,6 +78,18 @@
       ],
       "cache": true
     },
+    "test:e2e": {
+      "cache": false,
+      "dependsOn": [
+        "^build"
+      ],
+      "passThroughEnv": [
+        "CI",
+        "OTEL_ENABLED",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_SERVICE_NAME"
+      ]
+    },
     "lint": {
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -121,6 +129,12 @@
         "api:check"
       ]
     },
+    "mutation": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false
+    },
     "clean": {
       "cache": false
     },
@@ -142,6 +156,20 @@
       "dependsOn": [
         "build"
       ]
+    },
+    "lint:tsgo": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "tsconfig.json",
+        "tsconfig.*.json",
+        "$TURBO_ROOT$/node_modules/@systemfsoftware/tsconfig/effect.json",
+        "!**/*.md"
+      ],
+      "outputs": [],
+      "env": [
+        "TSGO_FORMAT"
+      ],
+      "cache": true
     }
   }
 }

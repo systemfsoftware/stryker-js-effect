@@ -6,7 +6,7 @@ on:
       package:
         description: "Package to force release for"
         required: true
-        default: "@systemfsoftware/stryker-js-cli"
+        default: "@systemfsoftware/stryker-js"
         type: string
       bump:
         description: "Release bump (patch, minor, major)"

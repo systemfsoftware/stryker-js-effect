@@ -1,16 +1,29 @@
-#!/usr/bin/env -S deno run --config=scripts/deno.json --allow-read --allow-write --allow-run=git,pnpm --allow-net=jsr.io,registry.npmjs.org --allow-import
+#!/usr/bin/env -S deno run --config=scripts/deno.json --allow-read --allow-write --allow-run=git,pnpm --allow-env=GITHUB_REPOSITORY --allow-net=jsr.io,registry.npmjs.org --allow-import
 
 import { parseArgs } from '@std/cli/parse-args'
 import { loadCaptured, loadWorkspaceCycle, unpublishedOf } from './lib/cycle.ts'
+import { expectedSlug } from './lib/oidc.ts'
 import { run } from './lib/run.ts'
-
 const flags = parseArgs(Deno.args, {
   boolean: ['dry-run', 'json', 'unpublished', 'publish'],
-  string: ['output', 'captured'],
+  string: ['output', 'captured', 'exclude'],
 })
 
+const readExcluded = async (path?: string): Promise<Set<string>> => {
+  if (!path) return new Set()
+  try {
+    const text = await Deno.readTextFile(path)
+    return new Set(text.split('\n').map((l) => l.trim()).filter(Boolean))
+  } catch {
+    return new Set()
+  }
+}
+
+const excluded = await readExcluded(flags.exclude)
+
 const loaded = flags.captured ? await loadCaptured(flags.captured) : await loadWorkspaceCycle()
-const cycle = flags.captured && flags.unpublished ? await unpublishedOf(loaded) : loaded
+const filtered = loaded.filter((entry) => !excluded.has(entry.name))
+const cycle = flags.captured && flags.unpublished ? await unpublishedOf(filtered) : filtered
 
 if (flags.publish) {
   if (cycle.length === 0) {
@@ -24,8 +37,15 @@ if (flags.publish) {
     stderr: 'inherit',
   }).output()
   if (!published.success) {
+    const slug = await expectedSlug().catch(() => 'systemfsoftware/stryker-js-effect')
     console.error(
-      `::error::pnpm publish -r --provenance --access public --no-git-checks failed (exit ${published.code})`,
+      `::error::pnpm publish failed (exit ${published.code}).`,
+    )
+    console.error(
+      `\nIf OIDC authentication failed because packages are not yet published or trusted:`,
+    )
+    console.error(
+      `Run \`pnpm publish:unpublished\` (or \`pnpm publish:unpublished --fix\` to align repository URLs to ${slug}) to debut unpublished packages and register trusted publishing.`,
     )
     Deno.exit(published.code || 1)
   }

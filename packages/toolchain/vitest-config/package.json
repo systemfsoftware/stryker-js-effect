@@ -13,17 +13,22 @@
         "types": "./lib/base.d.ts",
         "default": "./lib/base.js"
       }
-    }
+    },
+    "./setup": "./lib/setup.js"
   },
   "files": [
     "lib"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit --incremental"
+    "typecheck": "tsc --noEmit --incremental",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
     "@types/node": "catalog:",
+    "effect": "catalog:",
+    "fast-check": "catalog:",
     "vitest": "catalog:"
   },
   "repository": {

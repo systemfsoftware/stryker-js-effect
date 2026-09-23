@@ -37,6 +37,7 @@
           };
         in {
           inherit dprint;
+          deno = pkgs.deno;
           comment-checker = sandboxed;
           comment-checker-unwrapped = unwrapped;
           default = dprint;
@@ -52,6 +53,7 @@
             self.packages.${pkgs.stdenv.hostPlatform.system}.comment-checker
             pkgs.nodejs_24
             pkgs.deno
+            pkgs.process-compose
           ];
         };
       });

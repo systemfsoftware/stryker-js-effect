@@ -1,11 +1,12 @@
-import { type Mutant, normalizeFileName } from '@systemfsoftware/stryker-js-language'
+import { normalizeFileName } from '@systemfsoftware/stryker-js-instrumenter'
+import { type CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import { createGroups, type TSFileNode } from './Compiler.js'
 
 const groupsWithStrangers = (
-  inside: readonly Mutant[],
-  outside: readonly Mutant[],
+  inside: readonly CheckerMutantWire[],
+  outside: readonly CheckerMutantWire[],
   nodes: MutableHashMap.MutableHashMap<string, TSFileNode>,
 ): ReadonlyArray<ReadonlyArray<string>> => {
   const groups = createGroups([...inside], nodes)
@@ -16,7 +17,7 @@ const groupsWithStrangers = (
 }
 
 const knownFileGroups = (
-  mutants: readonly Mutant[],
+  mutants: readonly CheckerMutantWire[],
   nodes: MutableHashMap.MutableHashMap<string, TSFileNode>,
 ): ReadonlyArray<ReadonlyArray<string>> => {
   const inside = mutants.filter((mutant) =>
@@ -32,12 +33,12 @@ const knownFileGroups = (
 }
 
 export const groupMutants = (
-  mutants: readonly Mutant[],
+  mutants: readonly CheckerMutantWire[],
   nodes: MutableHashMap.MutableHashMap<string, TSFileNode>,
   prioritizePerformanceOverAccuracy: boolean,
 ): ReadonlyArray<ReadonlyArray<string>> => {
   if (prioritizePerformanceOverAccuracy) {
     return knownFileGroups(mutants, nodes)
   }
-  return [mutants.map((mutant) => mutant.id)]
+  return mutants.map((mutant) => [mutant.id])
 }

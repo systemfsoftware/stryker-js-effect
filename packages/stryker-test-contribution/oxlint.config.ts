@@ -1,32 +1,13 @@
-import all from '@systemfsoftware/all'
+import recommended from '@systemfsoftware/oxlint-config-recommended'
 import { defineConfig } from 'oxlint'
 
 export default defineConfig({
-  extends: [all],
+  extends: [recommended],
 
   rules: {
     'typescript/no-unnecessary-condition': 'error',
     'typescript/strict-boolean-expressions': 'error',
     'typescript/no-non-null-assertion': 'error',
-    'no-ternary': 'off',
-    'typescript/consistent-type-assertions': 'off',
+    'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
-
-  overrides: [
-    {
-      files: ['**/*.test.ts', '**/*.spec.ts'],
-      rules: { 'typescript/no-unsafe-type-assertion': 'off' },
-    },
-    {
-      files: ['**/fixtures/**', '**/__fixtures__/**', '**/testResources/**'],
-      rules: {
-        'typescript/no-unsafe-argument': 'off',
-        'typescript/no-unsafe-assignment': 'off',
-        'typescript/no-unsafe-call': 'off',
-        'typescript/no-unsafe-member-access': 'off',
-        'typescript/no-unsafe-return': 'off',
-        'typescript/no-unsafe-type-assertion': 'off',
-      },
-    },
-  ],
 })

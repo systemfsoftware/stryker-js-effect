@@ -34,7 +34,7 @@ export const strykerIgnorers = [myIgnorer]
 ```
 
 Consumers wire the pair in their Stryker config — `plugins` takes the module
-specifier, `ignorers` the contribution name (`myIgnorer`'s `name`); a mismatched
+specifier, `ignorers` the ignorer's own name (`myIgnorer`'s `name`); a mismatched
 pair fails silent-green, so keep the two strings in step.
 
 ### 2. The visitors
@@ -147,7 +147,7 @@ Case semantics:
 ### 4. Ship it
 
 `pnpm --filter <your-package> test` green, `api:update` for the report, a
-changeset entry, and the AGENTS/README wording true to what ships. The family
+changeset entry, and the README wording true to what ships. The family
 rules bind: zero Effect, no type assertions, complexity ≤ 2 per function —
 narrow with small type-predicate functions, as above.
 

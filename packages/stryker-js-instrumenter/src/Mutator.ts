@@ -2,12 +2,8 @@
  * Mutator — every mutation operator and its registry.
  */
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
-import { type Location, Mutant as ApiMutant } from '@systemfsoftware/stryker-js-language'
-import * as Brand from 'effect/Brand'
 import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import * as Result from 'effect/Result'
 import type {
   ArrayExpression,
   ArrowFunctionExpression,
@@ -42,18 +38,22 @@ import type {
   UpdateExpression,
   WhileStatement,
 } from './Ast.js'
+import type { Location, Position } from './Location.schema.js'
+import { Mutant as ApiMutant } from './Mutant.schema.js'
 
 import {
   arrayExpression,
   arrowFunctionExpression,
   blockStatement,
   booleanLiteral,
+  buildLineTable,
   callExpression,
   cloneNode,
   identifier,
   memberExpression,
   newExpression,
   nodeType,
+  positionFromLineTable,
   regExpLiteral,
   spanOf,
   stringLiteral,
@@ -64,14 +64,9 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.js'
-import { MutantNotApplied } from './Instrument.schema.js'
-import { type PlannedMutant } from './plan-mutants.workflow.js'
+import { printNode } from './print/index.js'
 
 export type { Node }
-
-export type MutantId = Brand.Branded<string, 'MutantId'>
-
-export const MutantId = Brand.nominal<MutantId>()
 /**
  * Node identity: same kind, same span. oxc nodes always carry a range
  * (parsed with `range: true`), which is a stronger identity than the old
@@ -96,72 +91,79 @@ export interface Mutable {
   replacement: Node
 }
 export interface Mutant extends Mutable {
-  readonly id: MutantId
+  readonly id: string
   readonly fileName: string
   readonly original: Node
-  readonly location: Location
+  readonly offset: Position
+  readonly lineTable: readonly number[]
   readonly replacementCode: string
 }
-
 function orDefault<T>(value: T | undefined, fallback: T): T {
   return value ?? fallback
 }
 
 export function createMutant(
-  planned: PlannedMutant,
+  id: string,
   fileName: string,
   original: Node,
-  replacement: Node,
+  specs: Mutable,
+  offset?: Position,
+  lineTable?: readonly number[],
 ): Mutant {
   return {
-    id: MutantId(planned.id),
+    id,
     fileName,
     original,
-    location: planned.location,
-    replacement,
-    mutatorName: planned.mutatorName,
-    ignoreReason: planned.ignoreReason,
-    replacementCode: planned.replacementCode,
+    offset: orDefault(offset, { column: 0, line: 0 }),
+    lineTable: orDefault(lineTable, buildLineTable('')),
+    replacement: specs.replacement,
+    mutatorName: specs.mutatorName,
+    ignoreReason: specs.ignoreReason,
+    replacementCode: printNode(specs.replacement),
   }
 }
 export function toApiMutant(mutant: Mutant): ApiMutant {
+  const start = nodeOffset(mutant, 'start')
+  const end = nodeOffset(mutant, 'end')
   const baseFields = {
     fileName: mutant.fileName,
     id: mutant.id,
-    location: mutant.location,
+    location: toApiLocation(start, end, mutant.lineTable, mutant.offset),
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacementCode,
   }
-  return Match.value(Option.fromNullishOr(mutant.ignoreReason)).pipe(
-    Match.when(Option.isSome, (reason) =>
-      ApiMutant.make({
-        ...baseFields,
-        statusReason: reason.value,
-        status: 'Ignored' as const,
-      })),
-    Match.orElse(() => ApiMutant.make(baseFields)),
-  )
+  if (mutant.ignoreReason !== undefined) {
+    return ApiMutant.make({
+      ...baseFields,
+      statusReason: mutant.ignoreReason,
+      status: 'Ignored' as const,
+    })
+  }
+  return ApiMutant.make(baseFields)
 }
 
-export function applyMutant(mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> {
-  return Match.value(originalTree === mutant.original).pipe(
-    Match.when(true, () => Result.succeed(mutant.replacement)),
-    Match.when(false, () => cloneWithReplacement(mutant, originalTree)),
-    Match.exhaustive,
-  )
+function nodeOffset(mutant: Mutant, edge: 'start' | 'end'): number {
+  const span = spanOf(mutant.original)
+  if (span === undefined) {
+    throw new Error(`Node without a ${edge} offset`)
+  }
+  return span[edge]
 }
 
-function cloneWithReplacement(mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> {
+export function applyMutant(mutant: Mutant, originalTree: Node): Node {
+  if (originalTree === mutant.original) {
+    return mutant.replacement
+  }
+  return cloneWithReplacement(mutant, originalTree)
+}
+
+function cloneWithReplacement(mutant: Mutant, originalTree: Node): Node {
   const mutatedAst = cloneNode(originalTree)
   const { original, replacement } = mutant
-  return Match.value(hasReplaced(mutatedAst, original, replacement)).pipe(
-    Match.when(true, () => Result.succeed(mutatedAst)),
-    Match.when(
-      false,
-      () => Result.fail(new MutantNotApplied({ fileName: mutant.fileName, mutatorName: mutant.mutatorName })),
-    ),
-    Match.exhaustive,
-  )
+  if (hasReplaced(mutatedAst, original, replacement) === false) {
+    throw new Error(`Could not apply mutant ${JSON.stringify(replacement)}.`)
+  }
+  return mutatedAst
 }
 
 function hasReplaced(root: Node, original: Node, replacement: Node): boolean {
@@ -184,6 +186,29 @@ function replaceFirstMatch(path: TraversePath, original: Node, replacement: Node
   }
   path.replaceWith(replacement)
   return true
+}
+
+/**
+ * Converts a node span to the API location: offsets become positions via the
+ * file's line table, then the embedding-document offset (html/svelte) applies.
+ */
+function toApiLocation(
+  startOffset: number,
+  endOffset: number,
+  lineTable: readonly number[],
+  offset: Position,
+): Location {
+  return {
+    start: toPosition(positionFromLineTable(startOffset, lineTable), offset),
+    end: toPosition(positionFromLineTable(endOffset, lineTable), offset),
+  }
+}
+function toPosition(source: Position, offset: Position): Position {
+  let columnOffset = 0
+  if (source.line === 1) {
+    columnOffset = offset.column
+  }
+  return { column: source.column + columnOffset, line: source.line + offset.line - 1 }
 }
 
 export interface MutatorContext {
@@ -433,15 +458,13 @@ function mutantsWhen(holds: boolean, build: () => readonly Node[]): readonly Nod
   )
 }
 
-/** A named property of a node that may or may not carry it. */
-function propertyOf(node: unknown, key: string): unknown {
-  return Match.value(node).pipe(
-    Match.when(
-      (candidate: unknown): candidate is Record<string, unknown> => Predicate.hasProperty(candidate, key),
-      (host) => host[key],
-    ),
-    Match.orElse(() => undefined),
-  )
+const hasPropertyIn = <B = unknown>(node: object, key: string): node is Record<string, B> => key in node
+
+const readPropertyOf = <B = unknown>(node: object, key: string): B | undefined =>
+  hasPropertyIn<B>(node, key) ? node[key] : undefined
+
+function propertyOf<A = unknown, B = unknown>(node: A, key: string): B | undefined {
+  return Predicate.isObject(node) ? readPropertyOf<B>(node, key) : undefined
 }
 
 function isIdentifier(node: unknown): node is IdentifierReference {
@@ -494,7 +517,7 @@ function isStringConcatenation(node: BinaryExpression): boolean {
 }
 
 /** A chained `a + b + c` carries its value on the innermost left operand's right side. */
-function outerLeftOperand(node: BinaryExpression): unknown {
+function outerLeftOperand(node: BinaryExpression): Node {
   if (node.left.type === 'BinaryExpression') {
     return node.left.right
   }
@@ -597,7 +620,7 @@ function isStringLiteral(value: unknown): value is StringLiteral {
   return nodeType(value) === 'Literal' && hasStringValue(value)
 }
 
-function hasStringValue(value: unknown): boolean {
+function hasStringValue<A = unknown>(value: A): boolean {
   if (!Predicate.hasProperty(value, 'value')) {
     return false
   }
@@ -695,15 +718,15 @@ function isPropertyDefinition(node: Node): node is PropertyDefinition {
   return node.type === 'PropertyDefinition'
 }
 
-function isSuperType(node: unknown): boolean {
+function isSuperType<A = unknown>(node: A): boolean {
   return Predicate.hasProperty(node, 'type') && node['type'] === 'Super'
 }
 
-function isSuperCallExpression(node: unknown): boolean {
+function isSuperCallExpression<A = unknown>(node: A): boolean {
   return nodeType(node) === 'CallExpression' && isSuperType(propertyOf(node, 'callee'))
 }
 
-function containsSuperCall(node: unknown): boolean {
+function containsSuperCall<A = unknown>(node: A): boolean {
   return isObjectLike(node) && containsSuperIn(node)
 }
 
@@ -715,7 +738,7 @@ function containsSuperIn(node: object): boolean {
   return isSuperReference(node) || hasSuperInChildren(node)
 }
 
-function isSuperReference(node: unknown): boolean {
+function isSuperReference<A = unknown>(node: A): boolean {
   return isSuperType(node) || isSuperCallExpression(node)
 }
 
@@ -723,7 +746,7 @@ function hasSuperInChildren(node: object): boolean {
   return Object.keys(node).some((key) => containsSuperInValue(propertyOf(node, key)))
 }
 
-function containsSuperInValue(value: unknown): boolean {
+function containsSuperInValue<A = unknown>(value: A): boolean {
   if (Array.isArray(value)) {
     return value.some(containsSuperCall)
   }
@@ -1123,7 +1146,7 @@ function isRegExpIdentifier(node: Node): boolean {
   return node.type === 'Identifier' && node.name === RegExp.name
 }
 
-function newExpressionArgument(parent: Node | undefined, index: number): unknown {
+function newExpressionArgument(parent: Node | undefined, index: number): Expression | SpreadElement | undefined {
   return Match.value(parent).pipe(
     Match.when(isNewExpression, (call) => call.arguments[index]),
     Match.orElse(() => undefined),
@@ -1150,10 +1173,11 @@ export const stringLiteralMutator: Mutator = (node, context) =>
   )
 
 function templateMutants(template: TemplateLiteral): readonly Node[] {
-  return Match.value(template.quasis[0]).pipe(
-    Match.when(undefined, () => NO_MUTANTS),
-    Match.orElse((first) => [emptyOrPlaceholderTemplate(template, first)]),
-  )
+  const first = template.quasis[0]
+  if (first === undefined) {
+    return NO_MUTANTS
+  }
+  return [emptyOrPlaceholderTemplate(template, first)]
 }
 
 function emptyOrPlaceholderTemplate(template: TemplateLiteral, first: TemplateElement): Node {

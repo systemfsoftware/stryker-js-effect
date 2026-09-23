@@ -1,12 +1,11 @@
-import { Evaluator, EvaluatorFailed } from '@systemfsoftware/stryker-js-language'
-import type { ExitClass } from '@systemfsoftware/stryker-js-language'
-import { RunConfiguration } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Evaluator, EvaluatorFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 
 import { judgeTestContribution } from './test-contribution.js'
 
-import type * as schema from '@systemfsoftware/stryker-js-language'
+import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 
 export const makeTestContributionEvaluatorService = (options: {
   readonly disableBail: boolean
@@ -31,12 +30,8 @@ export const makeTestContributionEvaluatorService = (options: {
     }),
 })
 
-const make = Effect.gen(function*() {
-  const options = yield* RunConfiguration
-  return Evaluator.of(makeTestContributionEvaluatorService(options))
-})
-
-export const testContributionEvaluatorLayer: Layer.Layer<Evaluator, never, RunConfiguration> = Layer.effect(
-  Evaluator,
-  make,
-)
+export const testContributionEvaluatorLayer = (
+  options: {
+    readonly disableBail: boolean
+  },
+): Layer.Layer<Evaluator> => Layer.succeed(Evaluator, makeTestContributionEvaluatorService(options))

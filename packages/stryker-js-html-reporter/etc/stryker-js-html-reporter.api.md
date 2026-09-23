@@ -4,17 +4,10 @@
 
 ```ts
 
-import { PluginReporterContribution } from '@systemfsoftware/stryker-js-plugin-interface';
-import { ReporterFactory } from '@systemfsoftware/stryker-js-language';
-
-// @public (undocumented)
-export const htmlReporterFactory: ReporterFactory;
+import { ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface';
 
 // @public (undocumented)
 export const makeHtmlReporter: ReporterFactory;
-
-// @public (undocumented)
-export const strykerPlugins: PluginReporterContribution[];
 
 // (No @packageDocumentation comment for this package)
 

@@ -1,0 +1,47 @@
+{
+  "name": "@systemfsoftware/stryker-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "description": "End-to-end lane for the shipped stryker artifact: the packed workspace tarball installed with npm and run in one-shot microVMs",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "test/e2e"
+  },
+  "type": "module",
+  "scripts": {
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "test:e2e": "vitest run",
+    "test:oracle": "vitest run --config vitest.oracle.config.ts",
+    "check:oracle-drift": "tsx scripts/reconcile-oracle.ts --check",
+    "derive-oracle": "node --import tsx scripts/derive-oracle.ts",
+    "bless-oracle": "tsx scripts/blessed-baseline.ts",
+    "reconcile-oracle": "tsx scripts/reconcile-oracle.ts",
+    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "catalog:",
+    "@opentelemetry/api": "catalog:",
+    "@opentelemetry/exporter-trace-otlp-http": "catalog:",
+    "@opentelemetry/sdk-node": "catalog:",
+    "@opentelemetry/sdk-trace-base": "catalog:",
+    "@systemfsoftware/effect-microsandbox": "catalog:",
+    "@systemfsoftware/stryker-js": "workspace:^",
+    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
+    "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
+    "@systemfsoftware/stryker-js-vitest-runner": "workspace:^",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "fast-check": "catalog:",
+    "oxlint": "catalog:",
+    "ts-morph": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

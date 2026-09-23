@@ -708,7 +708,7 @@ export interface ExportSpecifier extends Span$1 {
 }
 
 // @public (undocumented)
-export type Expression$1 = BooleanLiteral$1 | NullLiteral$1 | NumericLiteral$1 | BigIntLiteral$1 | RegExpLiteral$1 | StringLiteral$1 | TemplateLiteral$1 | IdentifierReference$1 | MetaProperty$1 | Super$1 | ArrayExpression$1 | ArrowFunctionExpression$1 | AssignmentExpression$1 | AwaitExpression | BinaryExpression$1 | CallExpression$1 | ChainExpression$1 | Class$1 | ConditionalExpression$1 | Function$1 | ImportExpression$1 | LogicalExpression$1 | NewExpression$1 | ObjectExpression$1 | ParenthesizedExpression | SequenceExpression$1 | TaggedTemplateExpression$1 | ThisExpression$1 | UnaryExpression$1 | UpdateExpression$1 | YieldExpression$1 | PrivateInExpression$1 | JSXElement$1 | JSXFragment$1 | TSAsExpression$1 | TSSatisfiesExpression$1 | TSTypeAssertion$1 | TSNonNullExpression$1 | TSInstantiationExpression$1 | V8IntrinsicExpression | MemberExpression$1;
+export type Expression$1 = BooleanLiteral$1 | NullLiteral$1 | NumericLiteral$1 | BigIntLiteral$1 | RegExpLiteral$1 | StringLiteral$1 | TemplateLiteral$1 | IdentifierReference$1 | Super$1 | ArrayExpression$1 | ArrowFunctionExpression$1 | AssignmentExpression$1 | AwaitExpression | BinaryExpression$1 | CallExpression$1 | ChainExpression$1 | Class$1 | ConditionalExpression$1 | Function$1 | ImportExpression$1 | LogicalExpression$1 | NewExpression$1 | ObjectExpression$1 | ParenthesizedExpression | SequenceExpression$1 | TaggedTemplateExpression$1 | ThisExpression$1 | UnaryExpression$1 | UpdateExpression$1 | YieldExpression$1 | PrivateInExpression$1 | MetaProperty$1 | JSXElement$1 | JSXFragment$1 | TSAsExpression$1 | TSSatisfiesExpression$1 | TSTypeAssertion$1 | TSNonNullExpression$1 | TSInstantiationExpression$1 | V8IntrinsicExpression | MemberExpression$1;
 
 // @public (undocumented)
 export type Expression = Simplify<Built<Expression$1>> | Expression$1;
@@ -755,7 +755,7 @@ export interface FormalParameterRest extends Span$1 {
     // (undocumented)
     argument: BindingPattern$1;
     // (undocumented)
-    decorators?: [];
+    decorators?: Array<Decorator$1>;
     // (undocumented)
     optional?: boolean;
     // (undocumented)

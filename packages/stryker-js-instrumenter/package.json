@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-instrumenter",
-  "version": "6.0.1",
+  "version": "8.0.2",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -29,31 +29,33 @@
     "test": "vitest run",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "api:check": "api-extractor run",
-    "api:update": "api-extractor run --local"
+    "api:update": "api-extractor run --local",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
   },
   "license": "Apache-2.0",
   "dependencies": {
-    "@eslint-community/regexpp": "4.12.2",
+    "@eslint-community/regexpp": "catalog:",
     "@oxc-project/types": "catalog:",
     "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/stryker-framework-interface": "workspace:^",
-    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
-    "@systemfsoftware/stryker-js-language": "workspace:^",
+    "angular-html-parser": "catalog:",
     "effect": "catalog:",
     "oxc-parser": "catalog:",
     "oxc-walker": "catalog:"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
-    "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
+    "svelte": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
@@ -69,6 +71,14 @@
         "default": "./dist/index.mjs"
       },
       "./package.json": "./package.json"
+    }
+  },
+  "peerDependencies": {
+    "svelte": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
     }
   }
 }

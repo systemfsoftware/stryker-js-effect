@@ -4,13 +4,12 @@
 
 ```ts
 
-import { PluginLayerContribution } from '@systemfsoftware/stryker-js-plugin-interface';
-
 // @public (undocumented)
-export const strykerPlugins: PluginLayerContribution<"Checker">[];
-
-// @public (undocumented)
-export const strykerValidationSchema: Record<string, unknown>;
+export const strykerPlugins: readonly {
+    readonly kind: 'Checker';
+    readonly name: string;
+    readonly workerEntry: string;
+}[];
 
 // (No @packageDocumentation comment for this package)
 

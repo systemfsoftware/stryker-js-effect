@@ -11,7 +11,7 @@ const categories = {
 
 /** @type {import('oxlint').OxlintConfig['rules']} */
 const rules = {
-  'no-ternary': 'off',
+  'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   'typescript/consistent-type-assertions': ['error', { assertionStyle: 'never' }],
   'typescript/no-explicit-any': 'error',
   'typescript/no-non-null-assertion': 'error',

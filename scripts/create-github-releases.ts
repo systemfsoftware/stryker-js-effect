@@ -2,7 +2,7 @@
 
 import { parseArgs } from '@std/cli/parse-args'
 import { Octokit, RequestError } from 'octokit'
-import { type CycleEntry, loadCaptured, loadWorkspaceCycle } from './lib/cycle.ts'
+import { type CycleEntry, ensureChangelog, loadCaptured, loadWorkspaceCycle } from './lib/cycle.ts'
 import { run } from './lib/run.ts'
 
 const flags = parseArgs(Deno.args, {
@@ -20,16 +20,10 @@ if (cycle.length === 0) {
 const pending: { entry: CycleEntry; body: string }[] = []
 for (const entry of cycle) {
   const { name, version, changelog } = entry
-  let raw: string | null = null
-  try {
-    raw = await Deno.readTextFile(changelog)
-  } catch {
-    raw = null
-  }
-  if (raw === null || raw.trim().length === 0) {
-    const state = raw === null ? 'Missing' : 'Empty'
+  let raw = await ensureChangelog(name, version)
+  if (raw.trim().length === 0) {
     console.error(
-      `::error::${state} changelog for ${name}@${version}: expected ${changelog} — body must be the pnpm-generated changelog.`,
+      `::error::Missing or empty changelog for ${name}@${version}: expected ${changelog} — body must be the pnpm-generated changelog.`,
     )
     Deno.exit(1)
   }

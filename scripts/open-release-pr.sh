@@ -21,7 +21,7 @@ if [ -z "$(git status --porcelain)" ]; then
   exit 0
 fi
 
-if [ -z "$(git diff --name-only "origin/$BASE" -- 'apps/**/package.json' 'packages/**/package.json')" ]; then
+if [ -z "$(git diff --name-only "origin/$BASE" -- 'packages/**/package.json')" ]; then
   echo "no package.json version bumps against origin/$BASE — not opening a release PR"
   close_if_open "No package version bumps against $BASE."
   exit 0
@@ -30,7 +30,7 @@ fi
 git config user.name 'github-actions[bot]'
 git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 git switch --force-create "$BRANCH"
-git add -A -- apps packages .changeset pnpm-lock.yaml
+git add -A -- packages .changeset pnpm-lock.yaml
 git commit -m 'chore(release): version packages'
 git push --force origin "$BRANCH"
 
@@ -39,8 +39,10 @@ trap 'rm -f "$body"' EXIT
 cat > "$body" <<'BODY'
 Consumes pending `.changeset/` intents via `pnpm version -r`.
 
-Merging runs the gate, then builds, publishes (OIDC + provenance),
-and tags the changed packages.
+Merging runs `pnpm check:ci` in the Release workflow's gate job; the
+build, publish (OIDC + provenance), and tags only start once that gate
+is green. The same gate runs before this PR is opened, so a red suite
+fails the release here rather than after version numbers are written.
 
 Review every consumed `none` intent before merging — a `none` on a
 behavior-visible change is a silent non-release.

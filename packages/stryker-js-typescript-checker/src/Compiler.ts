@@ -6,11 +6,13 @@
  * only the Effect-typed service surface.
  */
 
-import type { Mutant, Position } from '@systemfsoftware/stryker-js-language'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-language'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-language'
+import type { Position } from '@systemfsoftware/stryker-js-instrumenter'
+import type { CheckerMutantWire, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Predicate, Result } from 'effect'
+import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
+import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -52,32 +54,29 @@ const isString = (value: unknown): value is string => typeof value === 'string'
 
 const isNonEmptyString = (value: string | undefined): value is string => value !== undefined && value !== ''
 
-const versionFieldOf = (raw: unknown): Option.Option<unknown> => {
-  if (Predicate.hasProperty(raw, 'version')) {
-    return Option.some(raw.version)
-  }
-  return Option.none()
-}
+const versionFieldOf = <A = unknown>(raw: A): Option.Option<string> =>
+  Predicate.hasProperty(raw, 'version') ? Option.liftPredicate(raw.version, isString) : Option.none()
 
 const readTypescriptPackageVersion = (
   fsService: FileSystem.FileSystem,
   pathService: Path.Path,
-): Effect.Effect<string, unknown> =>
+): Effect.Effect<string, never> =>
   Effect.gen(function*() {
     const urlString = import.meta.resolve('typescript/package.json')
     const pkgPath = yield* pathService.fromFileUrl(new URL(urlString))
     const text = yield* fsService.readFileString(pkgPath)
-    const raw: unknown = JSON.parse(text)
+    const decoded = S.decodeResult(S.fromJsonString(S.Unknown))(text)
+    const raw = Result.match(decoded, { onFailure: () => ({}), onSuccess: (value) => value })
     return Option.getOrElse(
-      Option.flatMap(versionFieldOf(raw), (version) => Option.liftPredicate(version, isString)),
+      versionFieldOf(raw),
       () => '',
     )
-  })
+  }).pipe(Effect.orElseSucceed(() => ''))
 
 export const getTSVersion = (
   fsService: FileSystem.FileSystem,
   pathService: Path.Path,
-): Effect.Effect<string, unknown> =>
+): Effect.Effect<string, never> =>
   Effect.gen(function*() {
     if (cachedTSVersion !== undefined) {
       return cachedTSVersion
@@ -134,11 +133,11 @@ export function isSupportedTypescriptVersion(version: string): boolean {
 export const guardTSVersion = (
   fsService: FileSystem.FileSystem,
   pathService: Path.Path,
-): Effect.Effect<void, unknown> =>
+): Effect.Effect<void, UnsupportedTypeScriptVersionError> =>
   Effect.gen(function*() {
     const version = yield* getTSVersion(fsService, pathService)
     if (!isSupportedTypescriptVersion(version)) {
-      return yield* new UnsupportedTypeScriptVersionError({ version })
+      return yield* UnsupportedTypeScriptVersionError.make({ version })
     }
   })
 
@@ -148,32 +147,35 @@ export interface ScriptFile {
   readonly fileName: string
   readonly originalContent: string
   readonly content: string
-  readonly modifiedTime: Date
+  readonly modifiedTime: DateTime.Utc
 }
 
-export function makeScriptFile(content: string, fileName: string, modifiedTime = new Date()): ScriptFile {
-  return { content, fileName, originalContent: content, modifiedTime }
+export function makeScriptFile(content: string, fileName: string, now: DateTime.Utc): ScriptFile {
+  return { content, fileName, originalContent: content, modifiedTime: now }
+}
+export function withContent(file: ScriptFile, content: string, now: DateTime.Utc): ScriptFile {
+  return { ...file, content, modifiedTime: now }
 }
 
-export function withContent(file: ScriptFile, content: string): ScriptFile {
-  return { ...file, content, modifiedTime: new Date() }
-}
-
-export function mutateScriptFile(file: ScriptFile, mutant: Pick<Mutant, 'location' | 'replacement'>): ScriptFile {
+export function mutateScriptFile(
+  file: ScriptFile,
+  mutant: Pick<CheckerMutantWire, 'location' | 'replacement'>,
+  now: DateTime.Utc,
+): ScriptFile {
   const start = getOffset(file, mutant.location.start)
   const end = getOffset(file, mutant.location.end)
   const content = `${file.originalContent.slice(0, start)}${mutant.replacement}${file.originalContent.slice(end)}`
-  return { ...file, content, modifiedTime: new Date() }
+  return { ...file, content, modifiedTime: now }
 }
 
-export function resetScriptFile(file: ScriptFile): ScriptFile {
-  return { ...file, content: file.originalContent, modifiedTime: new Date() }
+export function resetScriptFile(file: ScriptFile, now: DateTime.Utc): ScriptFile {
+  return { ...file, content: file.originalContent, modifiedTime: now }
 }
 
 function getOffset(file: ScriptFile, pos: Position): number {
   const lines = file.originalContent.split('\n')
   const lineCount = Math.min(pos.line, lines.length)
-  let offset = pos.column
+  let offset = Math.max(0, pos.column - 1)
   lines.forEach((line, index) => {
     if (index < lineCount) {
       offset += line.length + 1
@@ -188,7 +190,7 @@ export interface HybridFileSystem {
   readonly writeFile: (fileName: string, data: string) => Effect.Effect<void>
   readonly mutateFile: (
     fileName: string,
-    mutant: Pick<Mutant, 'location' | 'replacement'>,
+    mutant: Pick<CheckerMutantWire, 'location' | 'replacement'>,
   ) => Effect.Effect<void, HybridFileNotFoundError>
   readonly resetFile: (fileName: string) => Effect.Effect<void>
   readonly existsInMemory: (fileName: string) => Effect.Effect<boolean>
@@ -274,11 +276,12 @@ export const makeHybridFileSystem = (fsService: FileSystem.FileSystem): Effect.E
 
     const readFileFromDisk = (fileName: string): Effect.Effect<ScriptFile | undefined, never> =>
       Effect.gen(function*() {
+        const now = DateTime.makeUnsafe(yield* Clock.currentTimeMillis)
         const content: string | undefined = yield* fsService
           .readFileString(fileName)
           .pipe(Effect.orElseSucceed(() => undefined))
         const file = Option.getOrUndefined(
-          Option.map(Option.fromUndefinedOr(content), (text) => makeScriptFile(text, fileName)),
+          Option.map(Option.fromUndefinedOr(content), (text) => makeScriptFile(text, fileName, now)),
         )
         yield* Ref.update(filesRef, (m) => setInPlace(m, fileName, file))
         return file
@@ -295,44 +298,52 @@ export const makeHybridFileSystem = (fsService: FileSystem.FileSystem): Effect.E
         return yield* readFileFromDisk(normalized)
       })
 
-    const fileForWrite = (existing: ScriptFile | undefined, data: string, fileName: string): ScriptFile => {
+    const fileForWrite = (
+      existing: ScriptFile | undefined,
+      data: string,
+      fileName: string,
+      now: DateTime.Utc,
+    ): ScriptFile => {
       if (existing === undefined) {
-        return makeScriptFile(data, fileName)
+        return makeScriptFile(data, fileName, now)
       }
-      return withContent(existing, data)
+      return withContent(existing, data, now)
     }
 
     const writeFile = (fileName: string, data: string): Effect.Effect<void> =>
       Effect.gen(function*() {
+        const now = DateTime.makeUnsafe(yield* Clock.currentTimeMillis)
         const normalized = normalizeFileName(fileName)
         const files = yield* Ref.get(filesRef)
         const existing = Option.getOrUndefined(MutableHashMap.get(files, normalized))
-        yield* Ref.update(filesRef, (m) => setInPlace(m, normalized, fileForWrite(existing, data, normalized)))
+        yield* Ref.update(filesRef, (m) => setInPlace(m, normalized, fileForWrite(existing, data, normalized, now)))
       })
 
     const mutateFile = (
       fileName: string,
-      mutant: Pick<Mutant, 'location' | 'replacement'>,
+      mutant: Pick<CheckerMutantWire, 'location' | 'replacement'>,
     ): Effect.Effect<void, HybridFileNotFoundError> =>
       Effect.gen(function*() {
+        const now = DateTime.makeUnsafe(yield* Clock.currentTimeMillis)
         const file = yield* getFile(fileName)
         if (file === undefined) {
-          return yield* new HybridFileNotFoundError({ fileName })
+          return yield* HybridFileNotFoundError.make({ fileName })
         }
-        const next = mutateScriptFile(file, mutant)
+        const next = mutateScriptFile(file, mutant, now)
         const normalized = normalizeFileName(fileName)
         yield* Ref.update(filesRef, (m) => setInPlace(m, normalized, next))
       })
 
     const resetFile = (fileName: string): Effect.Effect<void> =>
       Effect.gen(function*() {
+        const now = DateTime.makeUnsafe(yield* Clock.currentTimeMillis)
         const normalized = normalizeFileName(fileName)
         const files = yield* Ref.get(filesRef)
         const file = Option.getOrUndefined(MutableHashMap.get(files, normalized))
         if (file === undefined) {
           return
         }
-        yield* Ref.update(filesRef, (m) => setInPlace(m, normalized, resetScriptFile(file)))
+        yield* Ref.update(filesRef, (m) => setInPlace(m, normalized, resetScriptFile(file, now)))
       })
 
     const existsInMemory = (fileName: string): Effect.Effect<boolean> =>
@@ -405,13 +416,17 @@ function collectChildReference(
  */
 export function getMutantsWithReferenceToChildrenOrSelf(
   node: TSFileNode,
-  mutants: Mutant[],
+  mutants: CheckerMutantWire[],
   nodesChecked: string[] = [],
-): Mutant[] {
+): CheckerMutantWire[] {
   return collectRelatedMutants(node, mutants, nodesChecked)
 }
 
-function collectRelatedMutants(node: TSFileNode, mutants: Mutant[], nodesChecked: string[]): Mutant[] {
+function collectRelatedMutants(
+  node: TSFileNode,
+  mutants: CheckerMutantWire[],
+  nodesChecked: string[],
+): CheckerMutantWire[] {
   if (nodesChecked.includes(node.fileName)) {
     return []
   }
@@ -463,8 +478,8 @@ function mutantCanJoinGroup(currentNode: TSFileNode, group: MutantGroup): boolea
 }
 
 function addMutantToGroup(
-  currentMutant: Mutant,
-  mutantsToGroup: MutableHashSet.MutableHashSet<Mutant>,
+  currentMutant: CheckerMutantWire,
+  mutantsToGroup: MutableHashSet.MutableHashSet<CheckerMutantWire>,
   group: MutantGroup,
   nodes: MutableHashMap.MutableHashMap<string, TSFileNode>,
 ): void {
@@ -479,7 +494,7 @@ function addMutantToGroup(
 }
 
 function takeGroup(
-  mutantsToGroup: MutableHashSet.MutableHashSet<Mutant>,
+  mutantsToGroup: MutableHashSet.MutableHashSet<CheckerMutantWire>,
   nodes: MutableHashMap.MutableHashMap<string, TSFileNode>,
 ): string[] {
   const group: MutantGroup = {
@@ -493,7 +508,10 @@ function takeGroup(
   return group.mutantIds
 }
 
-export function createGroups(mutants: Mutant[], nodes: MutableHashMap.MutableHashMap<string, TSFileNode>): string[][] {
+export function createGroups(
+  mutants: CheckerMutantWire[],
+  nodes: MutableHashMap.MutableHashMap<string, TSFileNode>,
+): string[][] {
   const groups: string[][] = []
   const mutantsToGroup = MutableHashSet.fromIterable(mutants)
   while (MutableHashSet.size(mutantsToGroup) > 0) {
@@ -513,22 +531,30 @@ interface CompilerState {
   snapshot: Snapshot | undefined
   sourceFiles: SourceFiles
   nodes: MutableHashMap.MutableHashMap<string, TSFileNode>
-  lastMutants: Mutant[]
+  lastMutants: CheckerMutantWire[]
   lastMutatedFileNames: string[]
   allTSConfigFiles: MutableHashSet.MutableHashSet<string>
   tsconfigFile: string
 }
 
+export type CompilerError =
+  | CompilerFailed
+  | UnsupportedTypeScriptVersionError
+  | TsConfigNotFoundError
+  | TsConfigParseError
+
 export class TypeScriptCompiler extends Context.Service<TypeScriptCompiler, {
-  readonly init: Effect.Effect<readonly Diagnostic[], unknown>
-  readonly check: (mutants: readonly Mutant[]) => Effect.Effect<readonly Diagnostic[], unknown>
-  readonly nodes: Effect.Effect<MutableHashMap.MutableHashMap<string, TSFileNode>, unknown>
-  readonly close: Effect.Effect<void, unknown>
+  readonly init: Effect.Effect<readonly Diagnostic[], CompilerError>
+  readonly check: (mutants: readonly CheckerMutantWire[]) => Effect.Effect<readonly Diagnostic[], CompilerError>
+  readonly nodes: Effect.Effect<MutableHashMap.MutableHashMap<string, TSFileNode>, never>
+  readonly close: Effect.Effect<void, never>
   readonly getLineAndCharacterOfPosition: (
     fileName: string,
     position: number,
-  ) => Effect.Effect<{ line: number; character: number } | undefined, unknown>
-}>()('@systemfsoftware/stryker-js-typescript-checker/TypeScriptCompiler') {}
+  ) => Effect.Effect<{ line: number; character: number } | undefined, never>
+}>()('@systemfsoftware/stryker-js-typescript-checker/Compiler/TypeScriptCompiler') {}
+
+const noPosition: { line: number; character: number } | undefined = undefined
 
 const makeDummy = Effect.gen(function*() {
   const stateRef = yield* Ref.make<CompilerState>({
@@ -558,7 +584,7 @@ const makeDummy = Effect.gen(function*() {
       yield* Effect.sync(() => s.api?.close())
       yield* Ref.update(stateRef, (prev) => ({ ...prev, snapshot: undefined, api: undefined }))
     }),
-    getLineAndCharacterOfPosition: () => Effect.succeed(undefined),
+    getLineAndCharacterOfPosition: () => Effect.succeed(noPosition),
   } satisfies TypeScriptCompiler['Service']
 })
 
@@ -567,8 +593,8 @@ export const layer = Layer.effect(TypeScriptCompiler)(makeDummy)
 export type ITypescriptCompiler = Pick<TypeScriptCompiler['Service'], 'init' | 'check'>
 export type IFileRelationCreator = Pick<TypeScriptCompiler['Service'], 'nodes'>
 
-export function makeTypescriptCompiler(
-  options: unknown,
+export function makeTypescriptCompiler<A = unknown>(
+  options: A,
   fs: HybridFileSystem,
   fsService: FileSystem.FileSystem,
   pathService: Path.Path,
@@ -590,32 +616,32 @@ export function makeTypescriptCompiler(
   }
   const stateRef = Ref.makeUnsafe(initialState)
 
-  const snapshotOf = (state: CompilerState): Effect.Effect<Snapshot, unknown> => {
+  const snapshotOf = (state: CompilerState): Effect.Effect<Snapshot, CompilerFailed> => {
     if (state.snapshot === undefined) {
-      return Effect.fail(new CompilerFailed({ reason: 'not-initialized' }))
+      return Effect.fail(CompilerFailed.make({ reason: 'not-initialized' }))
     }
     return Effect.succeed(state.snapshot)
   }
 
-  const programsOf = (snapshot: Snapshot, tsconfigFile: string): Effect.Effect<Program[], unknown> => {
+  const programsOf = (snapshot: Snapshot, tsconfigFile: string): Effect.Effect<Program[], CompilerFailed> => {
     const projects = snapshot.getProjects()
     if (projects.length === 0) {
-      return Effect.fail(new CompilerFailed({ reason: 'no-projects', subject: tsconfigFile }))
+      return Effect.fail(CompilerFailed.make({ reason: 'no-projects', subject: tsconfigFile }))
     }
     return Effect.succeed(projects.map((project) => project.program))
   }
 
-  const getProgramsEffect = (): Effect.Effect<Program[], unknown> =>
+  const getPrograms = (): Effect.Effect<Program[], CompilerFailed> =>
     Effect.gen(function*() {
       const state = yield* Ref.get(stateRef)
       const snapshot = yield* snapshotOf(state)
       return yield* programsOf(snapshot, state.tsconfigFile)
     })
 
-  const guardTSConfigFileExistsEffect: Effect.Effect<void, unknown> = Effect.gen(function*() {
+  const guardTSConfigFileExistsEffect: Effect.Effect<void, TsConfigNotFoundError> = Effect.gen(function*() {
     const s = yield* Ref.get(stateRef)
     yield* fsService.readFileString(s.tsconfigFile).pipe(
-      Effect.mapError(() => new TsConfigNotFoundError({ file: s.tsconfigFile })),
+      Effect.mapError(() => TsConfigNotFoundError.make({ file: s.tsconfigFile })),
     )
   })
 
@@ -656,18 +682,20 @@ export function makeTypescriptCompiler(
     recordParsedTsConfig(current, parsed.success, traversal)
   }
 
-  const processNextTsConfig = (traversal: TsConfigTraversal): Effect.Effect<void, unknown> =>
+  const processNextTsConfig = (traversal: TsConfigTraversal): Effect.Effect<void, CompilerError> =>
     Effect.gen(function*() {
       const current = traversal.pending.pop()
       if (!isUnprocessedTsConfigPath(current, traversal.processed)) {
         return
       }
       MutableHashSet.add(traversal.processed, current)
-      const content = yield* fsService.readFileString(current)
+      const content = yield* fsService
+        .readFileString(current)
+        .pipe(Effect.mapError(() => TsConfigNotFoundError.make({ file: current })))
       recordTsConfig(current, content, parseTsConfig(current, content), traversal)
     })
 
-  const collectAllTSConfigFiles = (buildModeEnabled: boolean): Effect.Effect<void, unknown> =>
+  const collectAllTSConfigFiles = (buildModeEnabled: boolean): Effect.Effect<void, CompilerError> =>
     Effect.gen(function*() {
       const state = yield* Ref.get(stateRef)
       const traversal: TsConfigTraversal = {
@@ -787,19 +815,23 @@ export function makeTypescriptCompiler(
   const readFileText = (fileName: string): Option.Option<string> =>
     Option.liftPredicate(fs.fileSystem.readFile?.(fileName), isString)
 
-  const sourcesFieldOf = (rawMap: unknown): Option.Option<readonly unknown[]> => {
-    if (!Predicate.hasProperty(rawMap, 'sources')) {
-      return Option.none()
-    }
-    return Option.liftPredicate(rawMap.sources, Array.isArray)
-  }
+  const sourcesFieldOf = <A = unknown>(rawMap: A): Option.Option<readonly string[]> =>
+    Option.liftPredicate(rawMap, (m) => Predicate.hasProperty(m, 'sources')).pipe(
+      Option.flatMap((m) => Option.liftPredicate(m.sources, Array.isArray)),
+      Option.map((sources) => sources.filter(isString)),
+    )
 
-  const onlySourceOf = (sources: readonly unknown[]): Option.Option<string> => {
-    const names = sources.filter(isString)
-    if (names.length !== 1) {
+  const parseSourceMapSources = (content: string): Option.Option<readonly string[]> =>
+    Result.match(S.decodeResult(S.fromJsonString(S.Unknown))(content), {
+      onFailure: () => Option.none(),
+      onSuccess: sourcesFieldOf,
+    })
+
+  const onlySourceOf = (sources: readonly string[]): Option.Option<string> => {
+    if (sources.length !== 1) {
       return Option.none()
     }
-    return Option.fromUndefinedOr(names[0])
+    return Option.fromUndefinedOr(sources[0])
   }
 
   const sourcePathFromMap = (
@@ -813,7 +845,7 @@ export function makeTypescriptCompiler(
     return Option.flatMap(
       Option.flatMap(
         readFileText(sourceMapFileName),
-        (content) => Option.flatMap(sourcesFieldOf(JSON.parse(content)), onlySourceOf),
+        (content) => Option.flatMap(parseSourceMapSources(content), onlySourceOf),
       ),
       (source) => Option.some(normalizeFileName(pathService.resolve(pathService.dirname(sourceMapFileName), source))),
     )
@@ -885,7 +917,7 @@ export function makeTypescriptCompiler(
     extractImports(sourceFile).forEach((specifier) => linkImport(fileName, specifier, sourceFiles))
   }
 
-  const buildDependencyGraph = (programs: Program[]): Effect.Effect<void, unknown> =>
+  const buildDependencyGraph = (programs: Program[]): Effect.Effect<void, never> =>
     Effect.gen(function*() {
       const state = yield* Ref.get(stateRef)
       registerSourceFiles(programs, state.sourceFiles)
@@ -908,11 +940,11 @@ export function makeTypescriptCompiler(
     state: CompilerState,
     fileName: string,
     imports: MutableHashSet.MutableHashSet<string>,
-  ): Effect.Effect<TSFileNode, unknown> =>
+  ): Effect.Effect<TSFileNode, CompilerFailed> =>
     Effect.gen(function*() {
       const node = MutableHashMap.get(state.nodes, fileName)
       if (Option.isNone(node)) {
-        return yield* new CompilerFailed({ reason: 'unknown-file-node', subject: fileName })
+        return yield* CompilerFailed.make({ reason: 'unknown-file-node', subject: fileName })
       }
       const children = Array.from(imports)
         .map((importName) => Option.getOrUndefined(MutableHashMap.get(state.nodes, importName)))
@@ -923,7 +955,7 @@ export function makeTypescriptCompiler(
   const collectChildNodes = (
     state: CompilerState,
     withChildren: MutableHashMap.MutableHashMap<string, TSFileNode>,
-  ): Effect.Effect<void, unknown> =>
+  ): Effect.Effect<void, CompilerFailed> =>
     Effect.gen(function*() {
       for (const [fileName, file] of state.sourceFiles) {
         const node = yield* childNodeOf(state, fileName, file.imports)
@@ -962,7 +994,7 @@ export function makeTypescriptCompiler(
     replaceMapContents(state.nodes, withParents)
   }
 
-  const buildFileNodes = (state: CompilerState): Effect.Effect<void, unknown> =>
+  const buildFileNodes = (state: CompilerState): Effect.Effect<void, CompilerFailed> =>
     Effect.gen(function*() {
       createEmptyNodes(state)
       const withChildren = MutableHashMap.empty<string, TSFileNode>()
@@ -972,7 +1004,7 @@ export function makeTypescriptCompiler(
       yield* Ref.update(stateRef, (prev) => ({ ...prev, nodes: MutableHashMap.fromIterable(state.nodes) }))
     })
 
-  const getNodesEffect: Effect.Effect<MutableHashMap.MutableHashMap<string, TSFileNode>, unknown> = Effect.gen(
+  const getNodesEffect: Effect.Effect<MutableHashMap.MutableHashMap<string, TSFileNode>, CompilerFailed> = Effect.gen(
     function*() {
       const state = yield* Ref.get(stateRef)
       if (MutableHashMap.size(state.nodes) > 0) {
@@ -983,23 +1015,28 @@ export function makeTypescriptCompiler(
     },
   )
 
-  const resetMutatedFiles = (mutants: readonly Mutant[]): Effect.Effect<void, unknown> =>
+  const resolveFileName = (fileName: string): string => normalizeFileName(pathService.resolve(fileName))
+
+  const resetMutatedFiles = (mutants: readonly CheckerMutantWire[]): Effect.Effect<void, never> =>
     Effect.gen(function*() {
       for (const mutant of mutants) {
-        yield* fs.resetFile(mutant.fileName)
+        yield* fs.resetFile(resolveFileName(mutant.fileName))
       }
     })
 
-  const applyMutant = (mutant: Mutant): Effect.Effect<void, unknown> =>
+  const applyMutant = (mutant: CheckerMutantWire): Effect.Effect<void, CompilerFailed> =>
     Effect.gen(function*() {
-      const file = yield* fs.getFile(mutant.fileName)
+      const resolved = resolveFileName(mutant.fileName)
+      const file = yield* fs.getFile(resolved)
       if (file === undefined) {
-        return yield* new CompilerFailed({ reason: 'file-not-in-project', subject: mutant.fileName })
+        return yield* CompilerFailed.make({ reason: 'file-not-in-project', subject: mutant.fileName })
       }
-      yield* fs.mutateFile(mutant.fileName, mutant)
+      yield* fs.mutateFile(resolved, mutant).pipe(
+        Effect.mapError(() => CompilerFailed.make({ reason: 'file-not-in-project', subject: mutant.fileName })),
+      )
     })
 
-  const applyMutants = (mutants: readonly Mutant[]): Effect.Effect<void, unknown> =>
+  const applyMutants = (mutants: readonly CheckerMutantWire[]): Effect.Effect<void, CompilerFailed> =>
     Effect.gen(function*() {
       for (const mutant of mutants) {
         yield* applyMutant(mutant)
@@ -1014,7 +1051,7 @@ export function makeTypescriptCompiler(
   const hasOpenSnapshot = (state: CompilerState): state is InitializedCompilerState =>
     state.api !== undefined && state.snapshot !== undefined
 
-  const updateSnapshot = (state: InitializedCompilerState, changedFiles: string[]): Effect.Effect<void, unknown> =>
+  const updateSnapshot = (state: InitializedCompilerState, changedFiles: string[]): Effect.Effect<void, never> =>
     Effect.gen(function*() {
       const previous = state.snapshot
       const next = state.api.updateSnapshot({
@@ -1025,37 +1062,73 @@ export function makeTypescriptCompiler(
       yield* Ref.update(stateRef, (prev) => ({ ...prev, snapshot: next }))
     })
 
-  const check: (mutants: readonly Mutant[]) => Effect.Effect<readonly Diagnostic[], unknown> = (mutants) =>
+  const refreshSnapshotIfOpen = (
+    current: CompilerState,
+    changedFiles: string[],
+  ): Effect.Effect<void, never> => {
+    if (!hasOpenSnapshot(current)) {
+      return Effect.void
+    }
+    return updateSnapshot(current, changedFiles)
+  }
+
+  const annotateDiagnosticSample = (diagnostics: readonly Diagnostic[]): Effect.Effect<void> => {
+    if (diagnostics.length === 0) {
+      return Effect.void
+    }
+    const summary = diagnostics
+      .slice(0, 10)
+      .map((d) => `${d.fileName ?? 'unknown'}:${d.code}: ${d.text}`)
+      .join('; ')
+    return Effect.annotateCurrentSpan({
+      'typescript.diagnostics.sample': summary,
+    })
+  }
+
+  const check: (mutants: readonly CheckerMutantWire[]) => Effect.Effect<readonly Diagnostic[], CompilerError> = (
+    mutants,
+  ) =>
     Effect.gen(function*() {
       const state = yield* Ref.get(stateRef)
       yield* resetMutatedFiles(state.lastMutants)
       yield* applyMutants(mutants)
       const mutatedFileNames = Array.from(
-        MutableHashSet.fromIterable(mutants.map((mutant) => normalizeFileName(mutant.fileName))),
+        MutableHashSet.fromIterable(mutants.map((mutant) => resolveFileName(mutant.fileName))),
       )
       const changedFiles = Array.from(MutableHashSet.fromIterable([...state.lastMutatedFileNames, ...mutatedFileNames]))
       const current = yield* Ref.get(stateRef)
-      if (hasOpenSnapshot(current)) {
-        yield* updateSnapshot(current, changedFiles)
-      }
+      yield* refreshSnapshotIfOpen(current, changedFiles)
       yield* Ref.update(
         stateRef,
         (prev) => ({
           ...prev,
-          lastMutants: [...mutants] satisfies readonly Mutant[],
+          lastMutants: [...mutants] satisfies readonly CheckerMutantWire[],
           lastMutatedFileNames: mutatedFileNames,
         }),
       )
-      return (yield* getProgramsEffect())
+      const programs = yield* getPrograms()
+      const diagnostics = programs
         .flatMap((program) => [
           ...program.getConfigFileParsingDiagnostics(),
           ...program.getSemanticDiagnostics(),
           ...program.getProgramDiagnostics(),
         ])
         .filter((diagnostic) => diagnostic.category === DiagnosticCategory.Error)
-    })
+      yield* Effect.annotateCurrentSpan({
+        'typescript.diagnostics.count': diagnostics.length,
+      })
+      yield* annotateDiagnosticSample(diagnostics)
+      return diagnostics
+    }).pipe(
+      Effect.withSpan('typescript-checker.compiler.check', {
+        attributes: {
+          'stryker.mutants.count': mutants.length,
+          'stryker.mutants.ids': mutants.map((m) => m.id).join(','),
+        },
+      }),
+    )
 
-  const init: Effect.Effect<readonly Diagnostic[], unknown> = Effect.gen(function*() {
+  const init: Effect.Effect<readonly Diagnostic[], CompilerError> = Effect.gen(function*() {
     yield* guardTSVersion(fsService, pathService)
     const absoluteTsconfigFile = normalizeFileName(pathService.resolve(rawTsconfigFile))
     yield* Ref.update(
@@ -1073,12 +1146,12 @@ export function makeTypescriptCompiler(
     const api = new API({ fs: fs.fileSystem })
     const snapshot = api.updateSnapshot({ openProjects: Array.from(s.allTSConfigFiles) })
     yield* Ref.update(stateRef, (prev) => ({ ...prev, api, snapshot }))
-    const programs = yield* getProgramsEffect()
+    const programs = yield* getPrograms()
     yield* buildDependencyGraph(programs)
     return yield* check([])
   })
 
-  const close: Effect.Effect<void, unknown> = Effect.gen(function*() {
+  const close: Effect.Effect<void, never> = Effect.gen(function*() {
     const s = yield* Ref.get(stateRef)
     yield* Effect.sync(() => s.snapshot?.dispose())
     yield* Effect.sync(() => s.api?.close())
@@ -1088,16 +1161,18 @@ export function makeTypescriptCompiler(
   const getLineAndCharacterOfPosition = (
     fileName: string,
     position: number,
-  ): Effect.Effect<{ line: number; character: number } | undefined, unknown> =>
+  ): Effect.Effect<{ line: number; character: number } | undefined, never> =>
     Effect.gen(function*() {
-      const programs = yield* getProgramsEffect()
+      const programs = yield* getPrograms().pipe(Effect.orElseSucceed(() => []))
       return programs
         .map((program) => program.getSourceFile(fileName))
         .find((sourceFile) => sourceFile !== undefined)
         ?.getLineAndCharacterOfPosition(position)
     })
 
-  const nodes: Effect.Effect<MutableHashMap.MutableHashMap<string, TSFileNode>, unknown> = getNodesEffect
+  const nodes: Effect.Effect<MutableHashMap.MutableHashMap<string, TSFileNode>, never> = getNodesEffect.pipe(
+    Effect.orDie,
+  )
 
   return { init, check, nodes, close, getLineAndCharacterOfPosition }
 }
