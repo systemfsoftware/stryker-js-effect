@@ -65,7 +65,7 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.js'
-import { atomicUpdateSplitMutator } from './ConcurrencyMutators.js'
+import { atomicUpdateSplitMutator } from './AtomicUpdateSplit.js'
 import { printNode } from './print/index.js'
 
 export type { Node }

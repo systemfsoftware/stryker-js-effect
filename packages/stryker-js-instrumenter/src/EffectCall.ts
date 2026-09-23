@@ -52,7 +52,7 @@ import type {
   TSModuleDeclaration,
   VariableDeclaration,
 } from './Ast.js'
-import { identifier, memberExpression, nodeType, traverse, type TraversePath } from './Ast.js'
+import { callExpression, identifier, memberExpression, nodeType, traverse, type TraversePath } from './Ast.js'
 import type { MutatorContext } from './Mutator.js'
 
 export type EffectModuleName = 'Effect' | 'Ref' | 'Semaphore' | 'SynchronizedRef'
@@ -909,13 +909,16 @@ const pruneAtFunction = (path: TraversePath): void =>
     onSome: (atFunction) => atFunction.skip(),
   })
 
-const onlyWhen = <A>(holds: boolean, value: A): Option.Option<A> =>
+export const moduleCall = (module: Expression, property: string, args: readonly Expression[]): Expression =>
+  callExpression(memberExpression(module, identifier(property), false), args)
+
+export const onlyWhen = <A>(holds: boolean, value: A): Option.Option<A> =>
   Match.value(holds).pipe(
     Match.when(true, () => Option.some(value)),
     Match.orElse(() => Option.none()),
   )
 
-const bothHold = (first: boolean, second: boolean): boolean =>
+export const bothHold = (first: boolean, second: boolean): boolean =>
   Match.value(first).pipe(Match.when(true, () => second), Match.orElse(() => false))
 
 const holdsAny = (conditions: readonly boolean[]): boolean => conditions.some((condition) => condition)

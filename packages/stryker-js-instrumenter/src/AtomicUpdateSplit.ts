@@ -2,12 +2,15 @@ import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type { Expression, Node } from './Ast.js'
-import { arrowFunctionExpression, callExpression, cloneNode, identifier, memberExpression } from './Ast.js'
+import { arrowFunctionExpression, cloneNode, identifier, memberExpression } from './Ast.js'
 import {
+  bothHold,
   type EffectModuleName,
   freshIdentifier,
   identifiersIn,
   isMovableArgument,
+  moduleCall,
+  onlyWhen,
   type ResolvedEffectCall,
   resolveEffectCall,
 } from './EffectCall.js'
@@ -138,38 +141,38 @@ const replacementExpression = (operation: SplitOperation): Expression =>
   Option.match(operation.ref, {
     onNone: () => arrowFunctionExpression([identifier(operation.binders.self)], splitBody(operation)),
     onSome: (ref) =>
-      memberCall(operation.effectModule, 'flatMap', [
-        memberCall(operation.effectModule, 'succeed', [ref]),
+      moduleCall(operation.effectModule, 'flatMap', [
+        moduleCall(operation.effectModule, 'succeed', [ref]),
         arrowFunctionExpression([identifier(operation.binders.self)], splitBody(operation)),
       ]),
   })
 
 const splitBody = (operation: SplitOperation): Expression =>
-  memberCall(operation.effectModule, 'flatMap', [
-    memberCall(operation.operationModule, 'get', [identifier(operation.binders.self)]),
+  moduleCall(operation.effectModule, 'flatMap', [
+    moduleCall(operation.operationModule, 'get', [identifier(operation.binders.self)]),
     arrowFunctionExpression(
       [identifier(operation.binders.s)],
-      memberCall(operation.effectModule, 'flatMap', [
-        memberCall(operation.operationModule, 'make', [identifier(operation.binders.s)]),
+      moduleCall(operation.effectModule, 'flatMap', [
+        moduleCall(operation.operationModule, 'make', [identifier(operation.binders.s)]),
         arrowFunctionExpression(
           [identifier(operation.binders.snap)],
-          memberCall(operation.effectModule, 'flatMap', [
-            memberCall(operation.operationModule, operation.exportName, [
+          moduleCall(operation.effectModule, 'flatMap', [
+            moduleCall(operation.operationModule, operation.exportName, [
               identifier(operation.binders.snap),
               operation.f,
             ]),
             arrowFunctionExpression(
               [identifier(operation.binders.b)],
-              memberCall(operation.effectModule, 'flatMap', [
-                moduleMember(operation.effectModule, 'yieldNow'),
+              moduleCall(operation.effectModule, 'flatMap', [
+                memberExpression(operation.effectModule, identifier('yieldNow'), false),
                 arrowFunctionExpression(
                   [],
-                  memberCall(operation.effectModule, 'flatMap', [
-                    memberCall(operation.operationModule, 'get', [identifier(operation.binders.snap)]),
+                  moduleCall(operation.effectModule, 'flatMap', [
+                    moduleCall(operation.operationModule, 'get', [identifier(operation.binders.snap)]),
                     arrowFunctionExpression(
                       [identifier(operation.binders.a)],
-                      memberCall(operation.effectModule, 'as', [
-                        memberCall(operation.operationModule, 'set', [
+                      moduleCall(operation.effectModule, 'as', [
+                        moduleCall(operation.operationModule, 'set', [
                           identifier(operation.binders.self),
                           identifier(operation.binders.a),
                         ]),
@@ -186,19 +189,4 @@ const splitBody = (operation: SplitOperation): Expression =>
     ),
   ])
 
-const memberCall = (object: Expression, property: string, args: readonly Expression[]): Expression =>
-  callExpression(moduleMember(object, property), args)
-
-const moduleMember = (object: Expression, property: string): Expression =>
-  memberExpression(object, identifier(property), false)
-
 const included = <T>(values: readonly T[], value: T): boolean => values.includes(value)
-
-const onlyWhen = <A>(holds: boolean, value: A): Option.Option<A> =>
-  Match.value(holds).pipe(
-    Match.when(true, () => Option.some(value)),
-    Match.orElse(() => Option.none()),
-  )
-
-const bothHold = (first: boolean, second: boolean): boolean =>
-  Match.value(first).pipe(Match.when(true, () => second), Match.orElse(() => false))
