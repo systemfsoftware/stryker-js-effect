@@ -9,8 +9,8 @@ import {
   type ExecResult,
   installFixture,
   runCli,
-  teardownContainerEnvironment,
-} from '../tests/__fixtures__/container-environment.js'
+  teardownMicroVMEnvironment,
+} from '../tests/__fixtures__/microvm-environment.js'
 import {
   ARTIFACT_CONTRACT,
   type BaselineCountKey,
@@ -283,7 +283,7 @@ async function main(): Promise<void> {
       await blessSlice(known, args.verify)
     }
   } finally {
-    await teardownContainerEnvironment()
+    await teardownMicroVMEnvironment()
   }
 }
 

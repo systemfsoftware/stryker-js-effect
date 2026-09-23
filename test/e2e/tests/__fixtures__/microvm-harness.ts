@@ -1,17 +1,20 @@
 import { test as baseTest } from 'vitest'
 
 import {
-  ensureContainerEnvironment,
+  ensureMicroVMEnvironment,
   type ExecResult,
   installFixture,
   readWorkspaceFile,
   runCli,
-  teardownContainerEnvironment,
-} from './container-environment.js'
+  teardownMicroVMEnvironment,
+} from './microvm-environment.js'
 
-export interface ContainerHarness {
+export interface MicroVMHarness {
   readonly install: (fixtureUrl: URL, name: string) => Promise<string>
-  readonly run: (args: readonly string[], opts: { readonly cwd: string }) => Promise<ExecResult>
+  readonly run: (
+    args: readonly string[],
+    opts: { readonly cwd: string; readonly signal?: AbortSignal },
+  ) => Promise<ExecResult>
 }
 export interface PreparedFixture {
   readonly path: string
@@ -27,33 +30,33 @@ export interface BddStepContext {
 }
 
 export interface ExtendedTestContext {
-  readonly containerHarness: ContainerHarness
+  readonly microvmHarness: MicroVMHarness
   readonly prepareFixture: (fixtureUrl: URL, name: string) => Promise<PreparedFixture>
   readonly bdd: BddStepContext
 }
 
 export const test = baseTest
-  .extend<Pick<ExtendedTestContext, 'containerHarness'>>({
-    containerHarness: [
+  .extend<Pick<ExtendedTestContext, 'microvmHarness'>>({
+    microvmHarness: [
       async ({ onTestFinished: _onTestFinished }, use) => {
-        await ensureContainerEnvironment()
+        await ensureMicroVMEnvironment()
         await use(
           {
             install: (fixtureUrl: URL, name: string) => installFixture(fixtureUrl, name),
-            run: (args: readonly string[], opts: { readonly cwd: string }) => runCli(args, opts),
-          } satisfies ContainerHarness,
+            run: (args, opts) => runCli(args, opts),
+          } satisfies MicroVMHarness,
         )
-        await teardownContainerEnvironment()
+        await teardownMicroVMEnvironment()
       },
       { scope: 'file' },
     ],
   })
   .extend<Pick<ExtendedTestContext, 'prepareFixture' | 'bdd'>>({
-    prepareFixture: async ({ containerHarness }, use) => {
+    prepareFixture: async ({ microvmHarness, signal }, use) => {
       await use((fixtureUrl: URL, name: string): Promise<PreparedFixture> =>
-        containerHarness.install(fixtureUrl, name).then((path) => ({
+        microvmHarness.install(fixtureUrl, name).then((path) => ({
           path,
-          run: (args: readonly string[]) => containerHarness.run(args, { cwd: path }),
+          run: (args: readonly string[]) => microvmHarness.run(args, { cwd: path, signal }),
           readFile: (relativePath: string) => readWorkspaceFile(`${path}/${relativePath}`),
         }))
       )

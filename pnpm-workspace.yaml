@@ -72,6 +72,7 @@ minimumReleaseAgeExclude:
   - "@systemfsoftware/*"
 overrides:
   effect: 4.0.0-rc.116
+  "@systemfsoftware/effect-readiness@0.1.0>@systemfsoftware/effect-cell-types": ^9.0.0
 packages:
   - test/*
   - packages/*
