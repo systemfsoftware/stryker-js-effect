@@ -1,9 +1,9 @@
 # AGENTS.md — `@systemfsoftware/stryker-e2e`
 
 Private E2E lane for the shipped `stryker` artifact: it packs the workspace closure, bakes every fixture's
-`npm install` into one immutable digest-pinned `node:24-alpine` image, and runs each engine invocation as a
-one-shot `run --rm` container against a fresh host-side workspace bind-mounted at `/work`. Publishes no
-artifact. Parent: `test/AGENTS.md`.
+`npm install` in a preparation microVM into a content-addressed host cache, and runs each engine invocation
+as a one-shot `@systemfsoftware/effect-microsandbox` job microVM on the digest-pinned `node:24-alpine` image
+against a fresh host-side workspace mounted at `/work`. Publishes no artifact. Parent: `test/AGENTS.md`.
 
 ## Run
 
@@ -29,7 +29,7 @@ package here sets. It deliberately does not extend `@systemfsoftware/all`: that
 preset encodes the layers this app sits _below_ (suffix and shape rules for
 `src/` workflow and property tests, the Gherkin requirement for behaviour files),
 and none of them describe a lane that drives a packed artifact through a
-container. `tests/__fixtures__/` is the repo's home for non-test helper modules
+microVM. `tests/__fixtures__/` is the repo's home for non-test helper modules
 under `tests/`.
 
 ## Machine stream
@@ -37,19 +37,18 @@ under `tests/`.
 The CLI writes machine-mode events to stdout and to `reports/mutation-stream.jsonl`
 under the run's working directory. Journeys parse stdout.
 
-## Container environment
+## MicroVM environment
 
-Read by `container-environment.ts`; the `test:e2e` turbo task passes them through.
+Read by `microvm-environment.ts`; the `test:e2e` turbo task passes the OTEL variables through.
 
 | Variable                      | Value                                                             | Why                                                                                           |
 | ----------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `RUNTIME`                     | `podman` or `docker`                                              | Container binary override; without it the lane probes `podman` then `docker` on `PATH`        |
 | `OTEL_ENABLED`                | `true` starts the CLI's, its workers' and the test process's SDKs | The lifecycle journey grades the run's trace; the CI `e2e` job sets it                        |
 | `OTEL_SERVICE_NAME`           | default `stryker-e2e`                                             | One service name across the CLI, its workers and the test process — what the journey searches |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | default `http://127.0.0.1:4318`                                   | The collector the container exports to                                                        |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | default `http://127.0.0.1:4318`                                   | The host collector the job microVM exports to                                                 |
+| `STRYKER_E2E_BAKED_ROOT`      | set by global setup                                               | The baked fixture cache entry every worker copies its workspaces from                         |
 
-`container-environment.ts` passes the OTEL variables into every one-shot run, so a spawned worker inherits them.
-The lane probes host networking once per image: where the runtime supports `--network host` (docker, rootful
-podman) the container reaches the loopback collector directly; otherwise the endpoint's loopback host is
-rewritten to `host.containers.internal`. Buildah's overlay scaffolding cannot live on an overlay filesystem, so
-image builds run with `TMPDIR` on `/dev/shm` when it exists (nix dev shells bind TMPDIR onto an overlay).
+`microvm-environment.ts` passes the OTEL variables into every job microVM, so a spawned worker inherits them.
+Each job opts into host access, and the endpoint's loopback host is rewritten to `host.microsandbox.internal`,
+so the collector must publish 4318 beyond loopback (`process-compose.yaml` does). Global setup and its teardown
+destroy any `effect-microsandbox-<pid>-*` sandbox whose owning process is gone.
