@@ -22,7 +22,7 @@ import type { FileDescription, MutateDescription } from './Mutant.js'
 import { Mutant as ApiMutant } from './Mutant.schema.js'
 import { Mutators, type MutatorsShape } from './Mutator.service.js'
 import { Parser, type ParserError, type ParserShape } from './Parser.service.js'
-import { print } from './Printer.js'
+import { print, type PrintFailed } from './Printer.js'
 import { AstFormat } from './Syntax.schema.js'
 import { type MutantCollector, Transformer, type TransformerOptions, type TransformerShape } from './Transformer.service.js'
 

@@ -531,14 +531,19 @@ const readCliRoute = (
   Command.Environment | RunEventDrain
 > =>
   Effect.gen(function*() {
+    const tap = (text: string) => Effect.sync(() => globalThis.process.stderr.write(`A7DR ${text}\n`))
+    yield* tap('read:start')
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
     const command = makeStrykerCommand(requestRef)
+    yield* tap('read:before-runWith')
     const parsed = yield* Effect.result(Command.runWith(command, { version: cliPkgJson.version, renderErrors: false })(invocation.argv))
-    yield* Effect.logWarning(`A7D parsedSuccess=${Result.isSuccess(parsed)}`)
+    yield* tap(`read:after-runWith success=${Result.isSuccess(parsed)}`)
     const request = yield* Ref.get(requestRef)
     const drain = yield* RunEventDrain
     yield* drain.setProgressStreamFile(progressStreamFileName(request))
+    yield* tap('read:after-progress-file')
     yield* invocation.environment.stream.open
+    yield* tap('read:after-stream-open')
     return yield* Result.match(parsed, {
       onFailure: (failure) => Effect.fail(failure),
       onSuccess: () =>
@@ -616,7 +621,13 @@ const admissionOf = (
 const cliRouteCell = Sandwich.named('stryker.cli')(readCliRoute)
   .decide(routeCliRequest)
   .write({
-    CliHelpRequested: () => Cell.succeed<CliAnswer, CliRead>(undefined),
+    CliHelpRequested: () =>
+      Cell.fromEffect(
+        Effect.andThen(
+          Effect.sync(() => globalThis.process.stderr.write('A7DR write:help\n')),
+          Effect.succeed(undefined),
+        ),
+      ),
     CliMergeReportsRequested: (merge) =>
       Cell.succeed({ _tag: 'merge-reports', parts: merge.parts, out: merge.out, packages: merge.packages }).pipe(
         Cell.andThen(mergeReportsCell),

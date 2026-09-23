@@ -1029,6 +1029,8 @@ const transformScript = (
 
     const warnings: string[] = []
 
+    const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> =>
+      Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
     const shouldSkip = (path: TraversePath): boolean =>
       [
         isTypeNode(path),
@@ -1059,8 +1061,6 @@ const transformScript = (
             onSome: (location) => ranges.some((range) => locationIncluded(range, location)),
           }),
       )
-    const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> =>
-      Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
     const ignoreMessageFor = (node: Node, ancestors: readonly Node[]): string | undefined =>
       ignorerReason(node, ancestors)
     const ignorerReason = (node: Node, ancestors: readonly Node[]): string | undefined =>

@@ -45,13 +45,8 @@ export class LineTable extends S.Class<LineTable>('LineTable')({
 
 const LINE_TERMINATOR = /\r\n|[\n\r\u2028\u2029]/g
 
-const lineStartsOf = (text: string): {
-  readonly lineStarts: readonly [number, ...Array<number>]
-} => ({
-  lineStarts: [
-    0,
-    ...[...text.matchAll(LINE_TERMINATOR)].map((match) => match.index + match[0].length),
-  ],
+const lineStartsOf = (text: string): { readonly lineStarts: readonly [number, ...Array<number>] } => ({
+  lineStarts: [0, ...[...text.matchAll(LINE_TERMINATOR)].map((match) => match.index + match[0].length)],
 })
 
 const canonicalTextOf = (table: LineTable): string =>
@@ -78,11 +73,15 @@ const zeroBasedPositionOf = (lineStarts: Arr.NonEmptyReadonlyArray<number>, offs
       onTrue: () => ({ line: low - 1, column: offset - start }),
       onFalse: () => {
         const middle = middleIndex(low, high)
-        return Match.value(lineStarts[middle]).pipe(
-          Match.when((mid) => mid === offset, (mid) => ({ line: middle, column: offset - mid })),
-          Match.when((mid) => mid < offset, (mid) => search(middle + 1, high, mid)),
-          Match.orElse(() => search(low, middle - 1, start)),
-        )
+        const found = lineStarts[middle]
+        return Boolean.match(found === offset, {
+          onTrue: () => ({ line: middle, column: offset - found }),
+          onFalse: () =>
+            Boolean.match(found < offset, {
+              onTrue: () => search(middle + 1, high, found),
+              onFalse: () => search(low, middle - 1, start),
+            }),
+        })
       },
     })
   return search(0, lineStarts.length - 1, 0)
@@ -130,56 +129,69 @@ if (import.meta.vitest !== void 0) {
   const terminatorEndsAtOrBefore = (text: string, offset: number): number =>
     [...text.matchAll(LINE_TERMINATOR)].filter((match) => match.index + match[0].length <= offset).length
 
-  it.effect.prop(
-    '∀to_Offset→Position≡Model∧ConservesOffset',
-    [textWithOffset],
-    ([{ text, offset }]) =>
-      Effect.gen(function*() {
-        const table = yield* S.decodeEffect(LineTableFromText)(text)
+  const conservedAt = (text: string, offset: number) =>
+    Effect.map(
+      S.decodeEffect(LineTableFromText)(text),
+      (table) => {
         const position = table.positionAt(offset)
         return [
           positionStartsItsLine(table, position, offset),
           position.column >= 1,
           position.line - 1 === terminatorEndsAtOrBefore(text, offset),
         ].every((condition) => condition)
-      }).pipe(Effect.orDie),
+      },
+    )
+
+  it.effect.prop(
+    '∀to_Offset→Position≡Model∧ConservesOffset',
+    [textWithOffset],
+    ([{ text, offset }]) => conservedAt(text, offset).pipe(Effect.orDie),
   )
+
+  const crlfCountsOneLine = (fragments: ReadonlyArray<string>) =>
+    Effect.gen(function*() {
+      const text = fragments.join('')
+      const table = yield* S.decodeEffect(LineTableFromText)(text)
+      const sameLengthUnixEndings = yield* S.decodeEffect(LineTableFromText)(text.replaceAll('\r\n', ' \n'))
+      return table.lineStarts.join(',') === sameLengthUnixEndings.lineStarts.join(',')
+    })
 
   it.effect.prop(
     '∀t_CRLF_CountsOneLine',
     [Arbitrary.array(Arbitrary.schema(FRAGMENTS))],
-    ([fragments]) =>
-      Effect.gen(function*() {
-        const text = fragments.join('')
-        const table = yield* S.decodeEffect(LineTableFromText)(text)
-        const sameLengthUnixEndings = yield* S.decodeEffect(LineTableFromText)(text.replaceAll('\r\n', ' \n'))
-        return table.lineStarts.join(',') === sameLengthUnixEndings.lineStarts.join(',')
-      }).pipe(Effect.orDie),
+    ([fragments]) => crlfCountsOneLine(fragments).pipe(Effect.orDie),
   )
+
+  const lineStartsRiseFromZero = (text: string) =>
+    Effect.map(
+      S.decodeEffect(LineTableFromText)(text),
+      (table) =>
+        table.lineStarts[0] === 0 &&
+        table.lineStarts.every((start, index) => index === 0 || start > positionLineStartAt(table, index)),
+    )
+
+  const positionLineStartAt = (table: LineTable, index: number): number =>
+    Option.getOrElse(Arr.get(table.lineStarts, index), () => 0)
 
   it.effect.prop(
     '∀t_LineStarts_StrictlyRisingFromZero',
     [textArbitrary],
-    ([text]) =>
-      Effect.map(
-        Effect.orDie(S.decodeEffect(LineTableFromText)(text)),
-        (table) =>
-          table.lineStarts[0] === 0 &&
-          table.lineStarts.every((start, index) => index === 0 || start > table.lineStarts[index - 1]),
-      ),
+    ([text]) => lineStartsRiseFromZero(text).pipe(Effect.orDie),
   )
+
+  const locationStartsBeforeItEnds = (text: string, offset: number, draw: number) =>
+    Effect.gen(function*() {
+      const table = yield* S.decodeEffect(LineTableFromText)(text)
+      const limit = text.length
+      const first = ((draw % (limit + 1)) + limit + 1) % (limit + 1)
+      const [start, end] = [first, offset].sort((left, right) => left - right)
+      const location = table.locationAt({ start, end })
+      return comparePositions(location.start, location.end) <= 0
+    })
 
   it.effect.prop(
     '∀st_Location_Start≤End',
     [textWithOffset, Schema.Int],
-    ([{ text, offset }, draw]) =>
-      Effect.gen(function*() {
-        const table = yield* S.decodeEffect(LineTableFromText)(text)
-        const limit = text.length
-        const first = ((draw % (limit + 1)) + limit + 1) % (limit + 1)
-        const [start, end] = [first, offset].sort((left, right) => left - right)
-        const location = table.locationAt({ start, end })
-        return comparePositions(location.start, location.end) <= 0
-      }).pipe(Effect.orDie),
+    ([{ text, offset }, draw]) => locationStartsBeforeItEnds(text, offset, draw).pipe(Effect.orDie),
   )
 }
