@@ -1034,6 +1034,101 @@ const transformScript = (
 
     const warnings: string[] = []
 
+    const shouldSkip = (path: TraversePath): boolean =>
+      [
+        isTypeNode(path),
+        isImportDeclaration(path),
+        nodeType(path.node) === 'Decorator',
+        mutateDescription === false,
+        isOutsideMutateRanges(path),
+      ].some((skip) => skip)
+    const mutateRanges = (): Option.Option<readonly SourceLocationInFile[]> =>
+      Option.filter(Option.some(mutateDescription), isMutateRangeList)
+    const isOutsideMutateRanges = (path: TraversePath): boolean =>
+      Option.exists(
+        mutateRanges(),
+        (ranges) =>
+          Option.match(nodeLocationOf(path.node), {
+            onNone: () => true,
+            onSome: (location) => ranges.every((range) => !locationOverlaps(range, location)),
+          }),
+      )
+    const shouldMutate = (path: TraversePath): boolean =>
+      mutateDescription === true || isInsideMutateRanges(path)
+    const isInsideMutateRanges = (path: TraversePath): boolean =>
+      Option.exists(
+        mutateRanges(),
+        (ranges) =>
+          Option.match(nodeLocationOf(path.node), {
+            onNone: () => false,
+            onSome: (location) => ranges.some((range) => locationIncluded(range, location)),
+          }),
+      )
+    const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> =>
+      Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
+    const ignoreMessageFor = (node: Node, ancestors: readonly Node[]): string | undefined =>
+      ignorerReason(node, ancestors)
+    const ignorerReason = (node: Node, ancestors: readonly Node[]): string | undefined =>
+      options.ignorers.map((ignorer) => ignorer.shouldIgnore(node, ancestors)).find((reason) =>
+        reason !== undefined
+      )
+    const collectMutants = (path: TraversePath): Mutant[] =>
+      mutablesFor(path).map((mutable) => collect(mutable, path))
+        .filter((mutant) => mutant.ignoreReason === undefined)
+    function collect(mutable: Mutable, path: TraversePath): Mutant {
+      const mutant = mutators.create({
+        id: mutantCollector.length.toString(),
+        fileName: originFileName,
+        original: path.node,
+        specs: mutable,
+        offset,
+        lineTable: lineTable.lineStarts,
+      })
+      mutantCollector.push(mutant)
+      return mutant
+    }
+    const mutablesFor = (path: TraversePath): readonly Mutable[] =>
+      Option.match(nodeLocationOf(path.node), {
+        onNone: () => [],
+        onSome: (location) => {
+          const ancestors = ancestorsOf(path)
+          const context = toMutatorContext(ancestors)
+          const line = location.start.line
+          return mutatorEntries.flatMap(([mutatorName, mutate]) =>
+            [...mutate(path.node, context)].map((replacement) =>
+              mutableFor(path.node, ancestors, mutatorName, replacement, line)
+            )
+          )
+        },
+      })
+    const mutableFor = (
+      node: Node,
+      ancestors: readonly Node[],
+      mutatorName: string,
+      replacement: Node,
+      line: number,
+    ): Mutable => {
+      const mutableEntry: Mutable = { replacement, mutatorName }
+      return Option.match(Option.fromUndefinedOr(ignoreReasonFor(node, ancestors, mutatorName, line)), {
+        onNone: () => mutableEntry,
+        onSome: (ignoreReason) => ({ ...mutableEntry, ignoreReason }),
+      })
+    }
+    const ignoreReasonFor = (
+      node: Node,
+      ancestors: readonly Node[],
+      mutatorName: string,
+      line: number,
+    ): string | undefined => directiveOrExclusion(mutatorName, line) ?? ignoreMessageFor(node, ancestors)
+    const directiveOrExclusion = (mutatorName: string, line: number): string | undefined =>
+      findIgnoreReason(directives.rule, mutatorName, line) ?? findExcludedMutatorIgnoreReason(mutatorName)
+    const findExcludedMutatorIgnoreReason = (mutatorName: string): string | undefined =>
+      Boolean.match(options.excludedMutations.includes(mutatorName), {
+        onTrue: () => `Ignored because of excluded mutation "${mutatorName}"`,
+        onFalse: () => undefined,
+      })
+
+
     traverse(make(root), {
       enter(path) {
         Option.match(Option.fromNullishOr(broken.current), {
@@ -1152,99 +1247,6 @@ const transformScript = (
         },
       })
     }
-    const shouldSkip = (path: TraversePath): boolean =>
-      [
-        isTypeNode(path),
-        isImportDeclaration(path),
-        nodeType(path.node) === 'Decorator',
-        mutateDescription === false,
-        isOutsideMutateRanges(path),
-      ].some((skip) => skip)
-    const mutateRanges = (): Option.Option<readonly SourceLocationInFile[]> =>
-      Option.filter(Option.some(mutateDescription), isMutateRangeList)
-    const isOutsideMutateRanges = (path: TraversePath): boolean =>
-      Option.exists(
-        mutateRanges(),
-        (ranges) =>
-          Option.match(nodeLocationOf(path.node), {
-            onNone: () => true,
-            onSome: (location) => ranges.every((range) => !locationOverlaps(range, location)),
-          }),
-      )
-    const shouldMutate = (path: TraversePath): boolean =>
-      mutateDescription === true || isInsideMutateRanges(path)
-    const isInsideMutateRanges = (path: TraversePath): boolean =>
-      Option.exists(
-        mutateRanges(),
-        (ranges) =>
-          Option.match(nodeLocationOf(path.node), {
-            onNone: () => false,
-            onSome: (location) => ranges.some((range) => locationIncluded(range, location)),
-          }),
-      )
-    const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> =>
-      Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
-    const ignoreMessageFor = (node: Node, ancestors: readonly Node[]): string | undefined =>
-      ignorerReason(node, ancestors)
-    const ignorerReason = (node: Node, ancestors: readonly Node[]): string | undefined =>
-      options.ignorers.map((ignorer) => ignorer.shouldIgnore(node, ancestors)).find((reason) =>
-        reason !== undefined
-      )
-    const collectMutants = (path: TraversePath): Mutant[] =>
-      mutablesFor(path).map((mutable) => collect(mutable, path))
-        .filter((mutant) => mutant.ignoreReason === undefined)
-    function collect(mutable: Mutable, path: TraversePath): Mutant {
-      const mutant = mutators.create({
-        id: mutantCollector.length.toString(),
-        fileName: originFileName,
-        original: path.node,
-        specs: mutable,
-        offset,
-        lineTable: lineTable.lineStarts,
-      })
-      mutantCollector.push(mutant)
-      return mutant
-    }
-    const mutablesFor = (path: TraversePath): readonly Mutable[] =>
-      Option.match(nodeLocationOf(path.node), {
-        onNone: () => [],
-        onSome: (location) => {
-          const ancestors = ancestorsOf(path)
-          const context = toMutatorContext(ancestors)
-          const line = location.start.line
-          return mutatorEntries.flatMap(([mutatorName, mutate]) =>
-            [...mutate(path.node, context)].map((replacement) =>
-              mutableFor(path.node, ancestors, mutatorName, replacement, line)
-            )
-          )
-        },
-      })
-    const mutableFor = (
-      node: Node,
-      ancestors: readonly Node[],
-      mutatorName: string,
-      replacement: Node,
-      line: number,
-    ): Mutable => {
-      const mutableEntry: Mutable = { replacement, mutatorName }
-      return Option.match(Option.fromUndefinedOr(ignoreReasonFor(node, ancestors, mutatorName, line)), {
-        onNone: () => mutableEntry,
-        onSome: (ignoreReason) => ({ ...mutableEntry, ignoreReason }),
-      })
-    }
-    const ignoreReasonFor = (
-      node: Node,
-      ancestors: readonly Node[],
-      mutatorName: string,
-      line: number,
-    ): string | undefined => directiveOrExclusion(mutatorName, line) ?? ignoreMessageFor(node, ancestors)
-    const directiveOrExclusion = (mutatorName: string, line: number): string | undefined =>
-      findIgnoreReason(directives.rule, mutatorName, line) ?? findExcludedMutatorIgnoreReason(mutatorName)
-    const findExcludedMutatorIgnoreReason = (mutatorName: string): string | undefined =>
-      Boolean.match(options.excludedMutations.includes(mutatorName), {
-        onTrue: () => `Ignored because of excluded mutation "${mutatorName}"`,
-        onFalse: () => undefined,
-      })
   })
 }
 

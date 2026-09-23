@@ -1044,7 +1044,7 @@ const catchParamText = (ctx: PrintContext, param: BindingPattern | null | undefi
 
 const catchParamBodyText = (ctx: PrintContext, param: BindingPattern): string =>
   Match.value(param).pipe(
-    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(n)),
+    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(ctx, n)),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 

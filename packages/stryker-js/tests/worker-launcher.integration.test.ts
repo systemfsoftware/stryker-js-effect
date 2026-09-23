@@ -4,12 +4,14 @@ import {
   classifyWorkerExit,
   makeWorkerClient,
   OutOfMemoryError,
+  StrykerOptionsSchema,
   WorkerBootTimeoutError,
 } from '@systemfsoftware/stryker-js'
-import type { WorkerSpawnParams } from '@systemfsoftware/stryker-js'
+import type { StrykerOptions, WorkerSpawnParams } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -27,34 +29,35 @@ const Feature = makeFeature({ it, layer })
 
 const WORKING_DIRECTORY = '/project/.stryker-tmp/sandbox-1'
 const EXEC_ARGV: readonly string[] = ['--enable-source-maps']
-const OPTIONS_JSON = '{"plugins":["@acme/stryker-runner"]}'
+const PLUGIN_OPTIONS = { plugins: ['@acme/stryker-runner'] }
 const TEMP_DIR_PREFIX = 'stryker-plugin-'
-
-const spawnParams = (): WorkerSpawnParams => ({
-  entrypoint: WORKER_ENTRYPOINT,
-  workingDirectory: WORKING_DIRECTORY,
-  execArgv: EXEC_ARGV,
-  optionsJson: OPTIONS_JSON,
-  tempDirPrefix: TEMP_DIR_PREFIX,
-  env: undefined,
-})
 
 interface BootOutcome<E = unknown> {
   readonly answer: Result.Result<string, E>
   readonly spawns: readonly WorkerSpawnParams[]
+  readonly options: StrykerOptions
 }
 
 const bootPingWorker = (
   behaviour: ChildBehaviour,
 ): Effect.Effect<BootOutcome> =>
   Effect.gen(function*() {
+    const options = yield* S.decodeEffect(StrykerOptionsSchema)(PLUGIN_OPTIONS)
     const launcher = yield* substitutedLauncher(behaviour)
-    const answer = yield* makeWorkerClient({ rpcs: PingRpcs, ...spawnParams() }).pipe(
+    const answer = yield* makeWorkerClient({
+      rpcs: PingRpcs,
+      options,
+      entrypoint: WORKER_ENTRYPOINT,
+      workingDirectory: WORKING_DIRECTORY,
+      execArgv: EXEC_ARGV,
+      tempDirPrefix: TEMP_DIR_PREFIX,
+      env: undefined,
+    }).pipe(
       Effect.flatMap((client) => client.ping({ message: 'boot' })),
       Effect.provide(launcher.layer),
       Effect.result,
     )
-    return { answer, spawns: yield* Ref.get(launcher.spawns) }
+    return { answer, spawns: yield* Ref.get(launcher.spawns), options }
   }).pipe(Effect.scoped)
 
 const bootFailure = <E = unknown>(boot: BootOutcome<E>): E =>
@@ -119,9 +122,23 @@ Feature('Running each plugin worker as its own process')
           (s) => Effect.sync(() => ({ answer: bootAnswer(s.boot), spawns: s.boot.spawns })),
         ),
         Then('the worker answers over the connection, and the host started it by the entry the plugin resolved')((s) =>
-          Effect.sync(() => {
+          Effect.gen(function*() {
             expect(s.seen.answer).toBe('pong:boot')
-            expect(s.seen.spawns).toStrictEqual([spawnParams()])
+            expect(s.seen.spawns).toHaveLength(1)
+            const handedToWorker = yield* Option.match(Option.fromNullishOr(s.seen.spawns.at(0)), {
+              onNone: () => Effect.die('the host never started the substituted worker'),
+              onSome: (spawn) =>
+                Effect.map(
+                  S.decodeEffect(StrykerOptionsSchema)(JSON.parse(spawn.optionsJson)),
+                  (options) => ({ spawn, options }),
+                ),
+            })
+            expect(handedToWorker.options).toStrictEqual(s.boot.options)
+            expect(handedToWorker.spawn.entrypoint).toBe(WORKER_ENTRYPOINT)
+            expect(handedToWorker.spawn.workingDirectory).toBe(WORKING_DIRECTORY)
+            expect(handedToWorker.spawn.execArgv).toStrictEqual(EXEC_ARGV)
+            expect(handedToWorker.spawn.tempDirPrefix).toBe(TEMP_DIR_PREFIX)
+            expect(handedToWorker.spawn.env).toBeUndefined()
           })
         ),
       ),

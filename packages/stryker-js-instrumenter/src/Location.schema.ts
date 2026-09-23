@@ -90,3 +90,89 @@ const positionOf = (lineStarts: Arr.NonEmptyReadonlyArray<number>, offset: numbe
   const zeroBased = zeroBasedPositionOf(lineStarts, offset)
   return { line: zeroBased.line + 1, column: zeroBased.column + 1 }
 }
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const { Schema } = await import('effect')
+  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
+
+  const FRAGMENTS = S.Literals(['\r\n', '\r', '\n', '\u2028', '\u2029', 'a', ''])
+
+  const textArbitrary = Arbitrary.map(
+    Arbitrary.array(Arbitrary.schema(FRAGMENTS)),
+    (fragments) => fragments.join(''),
+  )
+
+  const offsetIn = (text: string) =>
+    Arbitrary.map(
+      Arbitrary.schema(Schema.Int),
+      (draw) => ((draw % (text.length + 1)) + text.length + 1) % (text.length + 1),
+    )
+
+  const textWithOffset = Arbitrary.flatMap(textArbitrary, (text) =>
+    Arbitrary.map(offsetIn(text), (offset) => ({ text, offset })))
+
+  const comparePositions = (a: Position, b: Position): number => {
+    const lineDelta = a.line - b.line
+    return Boolean.match(lineDelta !== 0, {
+      onTrue: () => lineDelta,
+      onFalse: () => a.column - b.column,
+    })
+  }
+
+  const terminatorEndsAtOrBefore = (text: string, offset: number): number =>
+    [...text.matchAll(LINE_TERMINATOR)].filter((match) => match.index + match[0].length <= offset).length
+
+  it.effect.prop(
+    '∀to_Offset→Position≡Model∧ConservesOffset',
+    [textWithOffset],
+    ({ text, offset }) =>
+      Effect.gen(function*() {
+        const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
+        const position = table.positionAt(offset)
+        const startOfLine = Arr.get(table.lineStarts, position.line - 1)
+        return Option.isSome(startOfLine) &&
+          startOfLine.value + position.column - 1 === offset &&
+          position.column >= 1 &&
+          position.line - 1 === terminatorEndsAtOrBefore(text, offset)
+      }),
+  )
+
+  it.effect.prop(
+    '∀t_CRLF_CountsOneLine',
+    [Arbitrary.array(Arbitrary.schema(FRAGMENTS))],
+    (fragments) =>
+      Effect.gen(function*() {
+        const text = fragments.join('')
+        const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
+        const withUnixEndings = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text.replaceAll('\r\n', '\n')))
+        return table.lineStarts.join(',') === withUnixEndings.lineStarts.join(',')
+      }),
+  )
+
+  it.effect.prop(
+    '∀t_LineStarts_StrictlyRisingFromZero',
+    [textArbitrary],
+    (text) =>
+      Effect.map(
+        Effect.orDie(S.decodeEffect(LineTableFromText)(text)),
+        (table) =>
+          table.lineStarts[0] === 0 &&
+          table.lineStarts.every((start, index) => index === 0 || start > table.lineStarts[index - 1]),
+      ),
+  )
+
+  it.effect.prop(
+    '∀st_Location_Start≤End',
+    [textWithOffset, Schema.Int],
+    ({ text, offset }, draw) =>
+      Effect.gen(function*() {
+        const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
+        const limit = text.length
+        const first = ((draw % (limit + 1)) + limit + 1) % (limit + 1)
+        const [start, end] = [first, offset].sort((left, right) => left - right)
+        const location = table.locationAt({ start, end })
+        return comparePositions(location.start, location.end) <= 0
+      }),
+  )
+}

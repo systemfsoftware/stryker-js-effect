@@ -1119,25 +1119,13 @@ const readLoadConfig = (input: {
     )
   })
 
-const decodeDocument = <A = unknown>(document: Record<string, A>) =>
-  Result.mapError(
-    S.decodeResult(StrykerOptionsSchema)(document),
-    (failure) => configErrorMessage(describeMessageOf(failure.message)),
-  )
-
 export const loadConfig = Sandwich.named('stryker.config_read')(readLoadConfig)
   .decide(resolveConfig)
   .write({
-    ConfigFromFile: ({ document }) =>
-      Result.match(decodeDocument(document), {
-        onSuccess: (options) => Effect.succeed(options),
-        onFailure: (message) => Effect.fail(ConfigError.make({ message })),
-      }),
-    ConfigFromDefaults: ({ document }) =>
-      Result.match(decodeDocument(document), {
-        onSuccess: (options) => Effect.succeed(options),
-        onFailure: (message) => Effect.fail(ConfigError.make({ message })),
-      }),
+    ConfigFromFile: ({ options }) => Effect.succeed(options),
+    ConfigFromDefaults: ({ options }) => Effect.succeed(options),
+    ConfigOptionsRefused: ({ message }) =>
+      Effect.fail(ConfigError.make({ message: configErrorMessage(describeMessageOf(message)) })),
     CommandRejected: ({ issue }) => Effect.fail(ConfigError.make({ message: issue })),
   })
 
@@ -1203,29 +1191,18 @@ const readRunConfig = (input: {
 export const loadConfigCell = Sandwich.named('stryker.load_config')(readRunConfig)
   .decide(resolveConfig)
   .write({
-    ConfigFromFile: (resolved, raw) =>
-      decodeDocument(resolved.document).pipe(
-        Result.match({
-          onSuccess: (options) =>
-            Effect.succeed({
-              options,
-              targetMutatePatterns: raw.targetMutatePatterns,
-              basePath: raw.basePath,
-            }),
-          onFailure: failConfigWith,
-        }),
-      ),
-    ConfigFromDefaults: (resolved, raw) =>
-      decodeDocument(resolved.document).pipe(
-        Result.match({
-          onSuccess: (options) =>
-            Effect.succeed({
-              options,
-              targetMutatePatterns: raw.targetMutatePatterns,
-              basePath: raw.basePath,
-            }),
-          onFailure: failConfigWith,
-        }),
-      ),
+    ConfigFromFile: ({ options }, raw) =>
+      Effect.succeed({
+        options,
+        targetMutatePatterns: raw.targetMutatePatterns,
+        basePath: raw.basePath,
+      }),
+    ConfigFromDefaults: ({ options }, raw) =>
+      Effect.succeed({
+        options,
+        targetMutatePatterns: raw.targetMutatePatterns,
+        basePath: raw.basePath,
+      }),
+    ConfigOptionsRefused: ({ message }) => failConfigWith(configErrorMessage(describeMessageOf(message))),
     CommandRejected: ({ issue }) => failConfigWith(issue),
   })

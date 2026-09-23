@@ -1,20 +1,32 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { type StrykerOptions, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+
+import { ConfigDocumentSchema } from '../Config.schema.js'
 
 const LoadConfigDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/LoadConfigDecision')
 type LoadConfigDecisionTypeId = typeof LoadConfigDecisionTypeId
 
+const isOptionsRecord = (value: unknown): value is StrykerOptions => Predicate.isRecord(value)
+
+const DecodedOptions = S.declare<StrykerOptions>(isOptionsRecord)
+
+export class ConfigOptionsRefused extends S.TaggedError<ConfigOptionsRefused>()('ConfigOptionsRefused', {
+  message: S.String,
+}) {}
+
 export class ConfigFromFile extends S.TaggedClass<ConfigFromFile>()('ConfigFromFile', {
-  document: S.Record(S.String, S.Unknown),
+  options: DecodedOptions,
 }) {
   readonly [LoadConfigDecisionTypeId] = LoadConfigDecisionTypeId
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 export class ConfigFromDefaults extends S.TaggedClass<ConfigFromDefaults>()('ConfigFromDefaults', {
-  document: S.Record(S.String, S.Unknown),
+  options: DecodedOptions,
 }) {
   readonly [LoadConfigDecisionTypeId] = LoadConfigDecisionTypeId
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -23,21 +35,27 @@ export class ConfigFromDefaults extends S.TaggedClass<ConfigFromDefaults>()('Con
 export type LoadConfigDecision = ConfigFromFile | ConfigFromDefaults
 
 export class LoadConfigCommand extends S.TaggedClass<LoadConfigCommand>()('LoadConfigCommand', {
-  document: S.Record(S.String, S.Unknown),
+  document: ConfigDocumentSchema,
   fileFound: S.Boolean,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-const decidedFromOf = <A = unknown>(fileFound: boolean, document: Record<string, A>) =>
+const decodeOptions = S.decodeResult(StrykerOptionsSchema)
+
+const decidedFromOf = (fileFound: boolean, options: StrykerOptions) =>
   Match.value(fileFound).pipe(
-    Match.when(true, () => ConfigFromFile.make({ document })),
-    Match.orElse(() => ConfigFromDefaults.make({ document })),
+    Match.when(true, () => ConfigFromFile.make({ options })),
+    Match.orElse(() => ConfigFromDefaults.make({ options })),
   )
 
 export const resolveConfig = Workflow.make({
   command: LoadConfigCommand,
   decision: S.Union([ConfigFromFile, ConfigFromDefaults]),
-  error: S.Never,
-  decide: (command) => Result.succeed(decidedFromOf(command.fileFound, command.document)),
+  error: ConfigOptionsRefused,
+  decide: (command) =>
+    Result.match(decodeOptions(command.document), {
+      onSuccess: (options) => Result.succeed(decidedFromOf(command.fileFound, options)),
+      onFailure: (failure) => Result.fail(ConfigOptionsRefused.make({ message: failure.message })),
+    }),
 })
