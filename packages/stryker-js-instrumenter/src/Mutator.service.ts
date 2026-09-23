@@ -173,18 +173,14 @@ const toApiLocation = (
   offset: Position,
 ): Location => {
   const table = LineTable.make({ lineStarts: lineTable })
-  return {
-    start: toPosition(table.positionAt(startOffset), offset),
-    end: toPosition(table.positionAt(endOffset), offset),
-  }
-}
-
-const toPosition = (source: Position, offset: Position): Position => {
-  const columnOffset = Boolean.match(source.line === 1, {
-    onTrue: () => offset.column,
-    onFalse: () => 0,
+  const shifted = (position: Position): Position => ({
+    column: position.column + offset.column,
+    line: position.line + offset.line - 1,
   })
-  return { column: source.column + columnOffset, line: source.line + offset.line - 1 }
+  return {
+    start: shifted(table.positionAt(startOffset)),
+    end: shifted(table.positionAt(endOffset)),
+  }
 }
 
 const applyMutant = (mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> =>

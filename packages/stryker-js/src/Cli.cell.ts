@@ -479,8 +479,6 @@ const makeStrykerCommand = (requestRef: Ref.Ref<Option.Option<CliRequest>>) => {
   return strykerCommand
 }
 
-export const a7dProbeCommand = makeStrykerCommand
-
 const EMPTY_OPTIONS: PartialStrykerOptions = {}
 
 const routeOf = (request: Option.Option<CliRequest>): CliRouteCommand =>
@@ -531,19 +529,13 @@ const readCliRoute = (
   Command.Environment | RunEventDrain
 > =>
   Effect.gen(function*() {
-    const tap = (text: string) => Effect.sync(() => globalThis.process.stderr.write(`A7DR ${text}\n`))
-    yield* tap('read:start')
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
     const command = makeStrykerCommand(requestRef)
-    yield* tap('read:before-runWith')
     const parsed = yield* Effect.result(Command.runWith(command, { version: cliPkgJson.version, renderErrors: false })(invocation.argv))
-    yield* tap(`read:after-runWith success=${Result.isSuccess(parsed)}`)
     const request = yield* Ref.get(requestRef)
     const drain = yield* RunEventDrain
     yield* drain.setProgressStreamFile(progressStreamFileName(request))
-    yield* tap('read:after-progress-file')
     yield* invocation.environment.stream.open
-    yield* tap('read:after-stream-open')
     return yield* Result.match(parsed, {
       onFailure: (failure) => Effect.fail(failure),
       onSuccess: () =>
@@ -621,13 +613,7 @@ const admissionOf = (
 const cliRouteCell = Sandwich.named('stryker.cli')(readCliRoute)
   .decide(routeCliRequest)
   .write({
-    CliHelpRequested: () =>
-      Cell.fromEffect(
-        Effect.andThen(
-          Effect.sync(() => globalThis.process.stderr.write('A7DR write:help\n')),
-          Effect.succeed(undefined),
-        ),
-      ),
+    CliHelpRequested: () => Cell.succeed<CliAnswer, CliRead>(undefined),
     CliMergeReportsRequested: (merge) =>
       Cell.succeed({ _tag: 'merge-reports', parts: merge.parts, out: merge.out, packages: merge.packages }).pipe(
         Cell.andThen(mergeReportsCell),
@@ -704,7 +690,6 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
               strykerCliCell.run({ argv: options.argv, environment }),
             ),
           )
-          if (Exit.isFailure(exit)) yield* Effect.logError(`A7D-DEBUG ${Cause.pretty(exit.cause)}`)
           const outcome = classifyRunOutcome(exit, options.argv)
           const code = runOutcomeCode(outcome)
           yield* Effect.annotateCurrentSpan({

@@ -466,27 +466,12 @@ const pushComment = (map: Map<Node, SpannedComment[]>, node: Node, comment: Span
     onSome: (list) => list.push(comment),
   })
 
-const isProgram = (root: Program | Node): root is Program => nodeType(root) === 'Program'
-const isPlainNode = (root: Program | Node): root is Node => !isProgram(root)
-const absurdExpression = (node: Node): Oxc.Node => node
-const narrowRoot = (root: Program | Node): Oxc.Program | Oxc.Node =>
-  Option.match(Option.filter(Option.some(root), isProgram), {
-    onNone: () => absurdNotProgram(root),
-    onSome: (program) => program,
-  })
-const absurdNotProgram = (root: Program | Node): Oxc.Node =>
-  Option.getOrElse(Option.filter(Option.some(root), isPlainNode), () => narrowProgramAsNode(root))
-const narrowProgramAsNode = (root: Program | Node): Oxc.Node => walk(OxcNodeOf(root))
-
-interface NodeEntry {
-  readonly node: Node
-  readonly start: number
-  readonly end: number
-}
-
-const isNodeList = (value: unknown): value is Array<Node> => Array.isArray(value)
-
-const walkableNode = (root: Program | Node): Oxc.Program | Oxc.Node => narrowRoot(root)
+const isProgram = (node: Program | Node): node is Program => nodeType(node) === 'Program'
+const walkableNode = (root: Program | Node): Oxc.Program | Oxc.Node =>
+  Option.getOrElse(Option.filter(Option.some(root), isProgram), () => absurdMember(root))
+const absurdMember = (root: Program | Node): Oxc.Program | Oxc.Node =>
+  Option.getOrElse(Option.filter(Option.some(root), isAstNode), () => absurdEmptyRoot())
+const absurdEmptyRoot = (): Oxc.Program | Oxc.Node => narrowAbsurdRoot() as Oxc.Program | Oxc.Node
 const walker: Walker = (root, visitors) => {
   const ancestors: Oxc.Node[] = []
   walk(walkableNode(root), {
