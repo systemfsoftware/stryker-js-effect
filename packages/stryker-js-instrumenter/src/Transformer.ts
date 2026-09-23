@@ -207,10 +207,12 @@ export function processStrykerDirectives(
   node: Node,
   knownMutatorNames: readonly string[],
   originFileName: string,
+  nodeLine: number,
 ): { rule: Rule; warnings: readonly string[] } {
   const directives = attachedComments(node).map(parseStrykerDirective).flatMap(Option.toArray)
   const warnings = directives.flatMap((directive) => mutatorWarnings(directive, knownMutatorNames, originFileName))
-  return { rule: directives.reduce(applyStrykerDirective, rule), warnings }
+  const lines = directives.map((directive) => nextLineOn(directive, nodeLine))
+  return { rule: lines.reduce(applyStrykerDirective, rule), warnings }
 }
 
 function attachedComments(node: Node): readonly LocatedComment[] {
@@ -248,41 +250,49 @@ function matchGroup(match: RegExpExecArray, group: number): string {
   return Option.getOrThrowWith(Option.fromNullishOr(match[group]), () => new Error(PARSE_FAILURE))
 }
 
-function applyStrykerDirective(rule: Rule, directive: StrykerDirective): Rule {
-  return Match.value(directive.type).pipe(
-    Match.when('disable', () => ignoreRuleFor(rule, directive)),
-    Match.when('restore', () => restoreRuleFor(rule, directive)),
+interface DirectedDirective {
+  readonly directive: StrykerDirective
+  readonly nodeLine: number
+}
+
+const nextLineOn = (directive: StrykerDirective, nodeLine: number): DirectedDirective => ({
+  directive,
+  nodeLine,
+})
+
+function applyStrykerDirective(rule: Rule, directed: DirectedDirective): Rule {
+  return Match.value(directed.directive.type).pipe(
+    Match.when('disable', () => ignoreRuleFor(rule, directed)),
+    Match.when('restore', () => restoreRuleFor(rule, directed)),
     Match.orElse(() => rule),
   )
 }
 
-function ignoreRuleFor(rule: Rule, directive: StrykerDirective): Rule {
+function ignoreRuleFor(rule: Rule, directed: DirectedDirective): Rule {
   return {
     kind: 'Ignore',
-    mutatorNames: directive.mutatorNames.map((mutatorName) => mutatorName.toLowerCase()),
-    line: directiveLine(directive),
-    ignoreReason: directive.reason,
+    mutatorNames: directed.directive.mutatorNames.map((mutatorName) => mutatorName.toLowerCase()),
+    line: directiveLine(directed),
+    ignoreReason: directed.directive.reason,
     previous: rule,
   }
 }
 
-function restoreRuleFor(rule: Rule, directive: StrykerDirective): Rule {
+function restoreRuleFor(rule: Rule, directed: DirectedDirective): Rule {
   return {
     kind: 'Restore',
-    mutatorNames: directive.mutatorNames.map((mutatorName) => mutatorName.toLowerCase()),
-    line: directiveLine(directive),
+    mutatorNames: directed.directive.mutatorNames.map((mutatorName) => mutatorName.toLowerCase()),
+    line: directiveLine(directed),
     previous: rule,
   }
 }
 
-/** `next-line` directives carry the line they were written on; a block directive carries none. */
-function directiveLine(directive: StrykerDirective): number | undefined {
-  return Match.value(directive.scope).pipe(
-    Match.when('next-line', () => commentLocation(directive.loc).start.line),
+function directiveLine(directed: DirectedDirective): number | undefined {
+  return Match.value(directed.directive.scope).pipe(
+    Match.when('next-line', () => directed.nodeLine),
     Match.orElse(() => undefined),
   )
 }
-
 function commentLocation(loc: LocatedComment['loc']): NonNullable<LocatedComment['loc']> {
   return Option.getOrThrowWith(Option.fromNullishOr(loc), () => new Error(MISSING_LOCATION))
 }
@@ -1079,7 +1089,13 @@ export const transformScript: AstTransformer<ScriptFormat> = (
 
     traverse(root, {
       enter(path) {
-        const result = processStrykerDirectives(directiveRule, path.node, knownMutatorNames, originFileName)
+        const result = processStrykerDirectives(
+          directiveRule,
+          path.node,
+          knownMutatorNames,
+          originFileName,
+          nodeStartLine(path.node),
+        )
         directiveRule = result.rule
         warnings.push(...result.warnings)
         visitNode(path)
@@ -1091,6 +1107,13 @@ export const transformScript: AstTransformer<ScriptFormat> = (
         }
       },
     })
+
+    function nodeStartLine(node: Node): number {
+      return Option.match(Option.fromNullishOr(spanOf(node)), {
+        onNone: () => 0,
+        onSome: (span) => positionFromLineTable(span.start, lineTable).line,
+      })
+    }
 
     yield* placeHeaderIfNeeded(mutantCollector, originFileName, options, root)
 
