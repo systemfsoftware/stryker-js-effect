@@ -28,7 +28,7 @@ import * as Flag from 'effect/unstable/cli/Flag'
 import { Admitted, NoSurvivors } from './admit-survivors-run.workflow.js'
 import { survivorsAdmissionCell } from './Survivors/Survivors.cell.js'
 import type { SurvivorsRejection } from './Survivors/mod.js'
-import type { CliRequest } from './Cli.schema.js'
+import { CliRouteCommand, type CliRequest } from './Cli.schema.js'
 import {
   type ConfigFileInvalidError,
   type ConfigFileNotFoundError,
