@@ -1,5 +1,4 @@
 import * as S from 'effect/Schema'
-import { Workflow } from '@systemfsoftware/effect-cell-types'
 
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 
@@ -58,38 +57,6 @@ export class ExtendsStepRefused extends S.TaggedClass<ExtendsStepRefused>()('ref
 }) {}
 
 export type ExtendsStepDecision = ExtendsStepDone | ExtendsStepRead | ExtendsStepResolve | ExtendsStepRefused
-
-const LoadConfigDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/LoadConfigDecision')
-type LoadConfigDecisionTypeId = typeof LoadConfigDecisionTypeId
-
-export class ConfigFromFile extends S.TaggedClass<ConfigFromFile>()('ConfigFromFile', {
-  options: StrykerOptionsSchema,
-}) {
-  readonly [LoadConfigDecisionTypeId] = LoadConfigDecisionTypeId
-  static readonly [Workflow.InstrumentationBrand] = {} as const
-}
-
-export class ConfigFromDefaults extends S.TaggedClass<ConfigFromDefaults>()('ConfigFromDefaults', {
-  options: StrykerOptionsSchema,
-}) {
-  readonly [LoadConfigDecisionTypeId] = LoadConfigDecisionTypeId
-  static readonly [Workflow.InstrumentationBrand] = {} as const
-}
-
-export class ConfigModuleUnreadable extends S.TaggedError<ConfigModuleUnreadable>()('ConfigModuleUnreadable', {
-  file: S.String,
-  cause: S.Unknown,
-}) {
-  readonly exitClass = 'ConfigError' as const
-}
-
-export class LoadConfigRefused extends S.TaggedError<LoadConfigRefused>()('LoadConfigRefused', {
-  message: S.String,
-}) {
-  readonly exitClass = 'ConfigError' as const
-}
-
-export type LoadConfigDecision = ConfigFromFile | ConfigFromDefaults
 
 export const survivorsPriorReport = S.optionalKey(
   S.String.pipe(

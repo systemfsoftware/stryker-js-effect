@@ -10,11 +10,10 @@ This package owns:
 
 - the worker RPC server layer a plugin process launches — `workerServerLayer` and
   its `WorkerServerParams`;
-- the telemetry a worker process reads to export with — `WorkerTelemetryConfig`,
-  the OTLP endpoint rule `TracesUrl`, and the `WorkerTelemetry` service a
-  worker's program root reads before binding its own OTel SDK;
-- the worker-options wire schema — `WorkerOptionsWire` — and the
-  `WorkerOptions` service a worker reads its `options.json` through;
+- the telemetry a worker process exports with — the `WorkerTelemetryConfig`
+  shape and the OTLP endpoint rule `TracesUrl` in
+  `worker-telemetry.schema.ts`, read through the `WorkerTelemetry` service a
+  worker's program root binds its own OTel SDK from;
 - the trace-context middleware implementations that carry W3C
   `traceparent`/`tracestate` across the process split — `layerTraceContextClient`,
   `layerTraceContextServer`, `withLinkedSpan`, `tracePartsOf`,

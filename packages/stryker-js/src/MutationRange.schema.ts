@@ -57,7 +57,7 @@ const groupOf = (match: RegExpExecArray, index: number, fallback: string) => mat
 const numberGroupOf = (match: RegExpExecArray, index: number, fallback: string) =>
   Number(groupOf(match, index, fallback))
 
-const columnGroupOf = (match: RegExpExecArray, index: number) => groupOf(match, index, '')
+const columnGroupOf = (match: RegExpExecArray, index: number) => Option.fromUndefinedOr(match[index])
 
 const startColumnOf = (match: RegExpExecArray) =>
   Option.match(Option.fromUndefinedOr(columnGroupOf(match, 4)), {

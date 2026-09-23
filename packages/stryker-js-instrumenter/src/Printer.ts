@@ -52,7 +52,7 @@ const getHashbang = (root: Ast['root']): Hashbang | null =>
     },
   )
 
-const scriptPrint: Printer<JSAst | TSAst | TsxAst> = (file) =>
+const scriptPrint = (file: JSAst | TSAst | TsxAst): Result.Result<string, PrintFailed> =>
   Result.succeed(printProgram(file.root, { hashbang: getHashbang(file.root) }))
 
 interface WrittenText {
@@ -75,7 +75,7 @@ const spannedScriptOf = (script: HtmlAst['root']['scripts'][number]): Result.Res
 const spannedScriptsOf = (
   scripts: readonly HtmlAst['root']['scripts'][number][],
 ): Result.Result<ReadonlyArray<SpannedScript>, PrintFailed> =>
-  Arr.reduce(scripts, Result.succeed<ReadonlyArray<SpannedScript>>([]), (state, script) =>
+  Arr.reduce(scripts, Result.succeed<ReadonlyArray<SpannedScript>, PrintFailed>([]), (state, script) =>
     Result.flatMap(state, (collected) =>
       Result.map(spannedScriptOf(script), (spanned) => [...collected, spanned]),
     ))
@@ -84,7 +84,7 @@ const htmlPrint: Printer<HtmlAst> = (ast, context) =>
   Result.flatMap(spannedScriptsOf(ast.root.scripts), (spanned) => {
     const sorted = [...spanned].sort((a, b) => a.start - b.start)
     return Result.map(
-      Arr.reduce(sorted, Result.succeed({ text: '', cursor: 0 } satisfies WrittenText), (state, spannedScript) =>
+      Arr.reduce(sorted, Result.succeed<WrittenText, PrintFailed>({ text: '', cursor: 0 }), (state, spannedScript) =>
         Result.flatMap(state, (current) =>
           Result.map(context.print(spannedScript.script, context), (code) => ({
             text: `${current.text}${ast.rawContent.substring(current.cursor, spannedScript.start)}\n${code}\n`,
@@ -101,7 +101,7 @@ const sveltePrint: Printer<SvelteAst> = ({ root, rawContent }, context) => {
     .filter(Predicate.isNotNullish)
     .sort((a, b) => a.range.start - b.range.start)
   return Result.map(
-    Arr.reduce(sortedScripts, Result.succeed({ text: '', cursor: 0 } satisfies WrittenText), (state, script) =>
+    Arr.reduce(sortedScripts, Result.succeed<WrittenText, PrintFailed>({ text: '', cursor: 0 }), (state, script) =>
       Result.flatMap(state, (current) => appendSvelteScript(current, script, rawContent, context)),
     ),
     (written) => `${written.text}${rawContent.substring(written.cursor)}`,

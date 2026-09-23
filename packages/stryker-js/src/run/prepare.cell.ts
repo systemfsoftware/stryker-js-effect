@@ -24,13 +24,11 @@ import { PhaseEntered } from '../run-events.service.js'
 import { RunEvents } from '../run-events.service.js'
 
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { makeClearTextReporter } from '../clear-text-report.service.js'
-import { type BuiltinReporterServices, makeJsonReporter } from '../json-reporter.service.js'
-import { makeProgressBarReporter, makeProgressStreamReporter } from '../progress-reporter.service.js'
 import { loadPlugins, pluginUrlsFromOptions, type LoadedPlugins, type PluginDescriptor } from '../Plugins.js'
 import { missingWorkerEntry, resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
-import { readProject } from '../read-project.cell.js'
+import type { ReadProjectDone } from '../read-project.cell.js'
 import type { Project } from '../Project.schema.js'
+import { Reporter } from '../reporter.service.js'
 import { ansi } from '../Reporter.ansi.js'
 import {
   attachReporterFactories,
@@ -45,7 +43,7 @@ import {
 import { PrepareError, StageError } from '../Run.schema.js'
 import { TemporaryDirectory } from '../Sandbox.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
-import { forkCoreSchema, readConfig, validateOptions } from './load-config.cell.js'
+import { forkCoreSchema, validateOptions } from './load-config.cell.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
 import { planPrepare, PrepareDecoded } from './plan-prepare.workflow.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
@@ -185,31 +183,17 @@ const selectReporterChoices = (names: readonly string[], choicesByName: HashMap.
     ([, choice]) => choice,
   )
 
-const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
+const readPrepare = (command: ReadProjectDone): Effect.Effect<
   PrepareRaw,
   StageError,
-  | Scope.Scope
-  | RunEnvironment
-  | RunEvents
-  | WorkerLauncher
-  | FileSystem.FileSystem
-  | Path.Path
-  | Stdio.Stdio
+  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
 > =>
   Effect.gen(function*() {
     yield* Scope.Scope
     const env = yield* RunEnvironment
     const queue = yield* RunEvents
     const coreSchema: ValidationSchemaDocument = forkCoreSchema
-    const configured = yield* readConfig(command.cliOptions, { command: 'run', mode: env.resolvedMode.mode }).pipe(
-      Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read config', cause })),
-      Effect.tapCause(() =>
-        Effect.gen(function*() {
-          const now = yield* Clock.currentTimeMillis
-          yield* Queue.offer(queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
-        }).pipe(Effect.ignore)
-      ),
-    )
+    const configured = command.options
     const resolvedReporters = selectReporters([...configured.reporters], env.resolvedMode.mode)
     const options: StrykerOptions = {
       ...configured,
@@ -236,17 +220,10 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
           }),
       ),
     )
-    const project = yield* readProject(options, command.targetMutatePatterns, env.basePath).pipe(
-      Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read project', cause })),
-    )
     const ignorers: readonly Ignorer[] = loaded.ignorers
 
     const builtinReporterFactories: Record<string, ReporterFactory> = {
-      ...makeBuiltinReporterFactories({
-        fileSystem: yield* FileSystem.FileSystem,
-        path: yield* Path.Path,
-        stdio: yield* Stdio.Stdio,
-      }),
+      ...(yield* Reporter).builtin,
       ...env.builtinReporters,
     }
     const pluginReporterDescriptors = Option.getOrElse(
@@ -268,13 +245,13 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
     return {
       mode: env.resolvedMode.mode,
       reporters: [...options.reporters],
-      fileCount: MutableHashMap.size(project.files),
+      fileCount: MutableHashMap.size(command.project.files),
       availableReporters: [...HashMap.values(reporterChoicesByName)].map((choice) => choice.name),
       env,
       queue,
       options,
       loaded,
-      project,
+      project: command.project,
       ignorers,
       builtinReporterFactories,
       reporterChoicesByName,

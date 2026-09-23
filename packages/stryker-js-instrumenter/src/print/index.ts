@@ -230,7 +230,11 @@ const programText = (opts: PrintProgramOptions, program: Program): string => {
   return `${hashbangPrefix(hashbang)}${headComments}${Arr.join(statements, '')}${tailComments}`
 }
 
-const headPosition = (program: Program): number => program.body[0]?.start ?? EVERY_COMMENT_POSITION
+const headPosition = (program: Program): number =>
+  Option.match(Arr.head(program.body), {
+    onSome: (statement) => statement.start ?? EVERY_COMMENT_POSITION,
+    onNone: () => EVERY_COMMENT_POSITION,
+  })
 
 const programStatementPart = (
   ctx: PrintContext,
@@ -344,166 +348,161 @@ const printNodePrec = (ctx: PrintContext, node: Node | null | undefined, prec: n
     onSome: (value) => dispatchNode(ctx, value, prec),
   })
 
+const isNode = <T extends Node['type']>(type: T) => (node: Node): node is Extract<Node, { type: T }> =>
+  node.type === type
+
 const dispatchNode = (ctx: PrintContext, node: Node, prec: number): string =>
   Match.value(node).pipe(
-    Match.when({ type: 'Literal' }, (n) => literalText(n)),
-    Match.when({ type: 'Identifier' }, (n) => n.name),
-    Match.when({ type: 'PrivateIdentifier' }, (n) => `#${n.name}`),
-    Match.when({ type: 'ThisExpression' }, () => 'this'),
-    Match.when({ type: 'Super' }, () => 'super'),
-    Match.when({ type: 'ArrayExpression' }, (n) => arrayExpressionText(ctx, n)),
-    Match.when({ type: 'ObjectExpression' }, (n) => objectExpressionText(ctx, n)),
-    Match.when({ type: 'Property' }, (n) => propertyText(ctx, n)),
-    Match.when({ type: 'TemplateLiteral' }, (n) => templateLiteralText(ctx, n)),
-    Match.when({ type: 'TemplateElement' }, (n) => n.value.raw),
-    Match.when({ type: 'TaggedTemplateExpression' }, (n) => taggedTemplateText(ctx, n)),
-    Match.when({ type: 'MemberExpression' }, (n) => memberExpressionText(ctx, n)),
-    Match.when({ type: 'CallExpression' }, (n) => callExpressionText(ctx, n)),
-    Match.when({ type: 'NewExpression' }, (n) => newExpressionText(ctx, n)),
-    Match.when({ type: 'MetaProperty' }, (n) => metaPropertyText(n)),
-    Match.when({ type: 'SpreadElement' }, (n) => `...${printNodePrec(ctx, n.argument, PREC.Assignment)}`),
-    Match.when({ type: 'RestElement' }, (n) => `...${printNodePrec(ctx, n.argument, PREC.Assignment)}`),
-    Match.when({ type: 'UpdateExpression' }, (n) => updateExpressionText(ctx, n)),
-    Match.when({ type: 'UnaryExpression' }, (n) => unaryExpressionText(ctx, n)),
-    Match.when({ type: 'BinaryExpression' }, (n) => binaryExpressionText(ctx, n, prec)),
-    Match.when({ type: 'LogicalExpression' }, (n) => logicalExpressionText(ctx, n, prec)),
-    Match.when({ type: 'ConditionalExpression' }, (n) => conditionalExpressionText(ctx, n, prec)),
-    Match.when({ type: 'AssignmentExpression' }, (n) => assignmentExpressionText(ctx, n, prec)),
-    Match.when({ type: 'AssignmentPattern' }, (n) => assignmentPatternText(ctx, n, prec)),
-    Match.when({ type: 'ObjectPattern' }, (n) => objectPatternText(ctx, n)),
-    Match.when({ type: 'ArrayPattern' }, (n) => arrayPatternText(ctx, n)),
-    Match.when({ type: 'SequenceExpression' }, (n) => sequenceExpressionText(ctx, n, prec)),
-    Match.when({ type: 'AwaitExpression' }, (n) => `await ${printNodePrec(ctx, n.argument, PREC.Unary)}`),
-    Match.when({ type: 'YieldExpression' }, (n) => yieldExpressionText(ctx, n)),
-    Match.when({ type: 'ChainExpression' }, (n) => printNodePrec(ctx, n.expression, prec)),
-    Match.when(
-      { type: 'ParenthesizedExpression' },
-      (n) => `(${printNodePrec(ctx, n.expression, PREC.Sequence)})`,
+    Match.when(isNode('Literal'), (n) => literalText(n)),
+    Match.when(isNode('Identifier'), (n) => n.name),
+    Match.when(isNode('PrivateIdentifier'), (n) => `#${n.name}`),
+    Match.when(isNode('ThisExpression'), () => 'this'),
+    Match.when(isNode('Super'), () => 'super'),
+    Match.when(isNode('ArrayExpression'), (n) => arrayExpressionText(ctx, n)),
+    Match.when(isNode('ObjectExpression'), (n) => objectExpressionText(ctx, n)),
+    Match.when(isNode('Property'), (n) => propertyText(ctx, n)),
+    Match.when(isNode('TemplateLiteral'), (n) => templateLiteralText(ctx, n)),
+    Match.when(isNode('TemplateElement'), (n) => n.value.raw),
+    Match.when(isNode('TaggedTemplateExpression'), (n) => taggedTemplateText(ctx, n)),
+    Match.when(isNode('MemberExpression'), (n) => memberExpressionText(ctx, n)),
+    Match.when(isNode('CallExpression'), (n) => callExpressionText(ctx, n)),
+    Match.when(isNode('NewExpression'), (n) => newExpressionText(ctx, n)),
+    Match.when(isNode('MetaProperty'), (n) => metaPropertyText(n)),
+    Match.when(isNode('SpreadElement'), (n) => `...${printNodePrec(ctx, n.argument, PREC.Assignment)}`),
+    Match.when(isNode('RestElement'), (n) => `...${printNodePrec(ctx, n.argument, PREC.Assignment)}`),
+    Match.when(isNode('UpdateExpression'), (n) => updateExpressionText(ctx, n)),
+    Match.when(isNode('UnaryExpression'), (n) => unaryExpressionText(ctx, n)),
+    Match.when(isNode('BinaryExpression'), (n) => binaryExpressionText(ctx, n, prec)),
+    Match.when(isNode('LogicalExpression'), (n) => logicalExpressionText(ctx, n, prec)),
+    Match.when(isNode('ConditionalExpression'), (n) => conditionalExpressionText(ctx, n, prec)),
+    Match.when(isNode('AssignmentExpression'), (n) => assignmentExpressionText(ctx, n, prec)),
+    Match.when(isNode('AssignmentPattern'), (n) => assignmentPatternText(ctx, n, prec)),
+    Match.when(isNode('ObjectPattern'), (n) => objectPatternText(ctx, n)),
+    Match.when(isNode('ArrayPattern'), (n) => arrayPatternText(ctx, n)),
+    Match.when(isNode('SequenceExpression'), (n) => sequenceExpressionText(ctx, n, prec)),
+    Match.when(isNode('AwaitExpression'), (n) => `await ${printNodePrec(ctx, n.argument, PREC.Unary)}`),
+    Match.when(isNode('YieldExpression'), (n) => yieldExpressionText(ctx, n)),
+    Match.when(isNode('ChainExpression'), (n) => printNodePrec(ctx, n.expression, prec)),
+    Match.when(isNode('ParenthesizedExpression'), (n) => `(${printNodePrec(ctx, n.expression, PREC.Sequence)})`,
     ),
-    Match.when({ type: 'ImportExpression' }, (n) => importExpressionText(ctx, n)),
-    Match.when({ type: 'V8IntrinsicExpression' }, (n) => v8IntrinsicText(ctx, n)),
-    Match.when({ type: 'ArrowFunctionExpression' }, (n) => arrowFunctionText(ctx, n, prec)),
-    Match.when({ type: 'FunctionDeclaration' }, (n) => functionText(ctx, n)),
-    Match.when({ type: 'FunctionExpression' }, (n) => functionText(ctx, n)),
-    Match.when({ type: 'TSDeclareFunction' }, (n) => functionText(ctx, n)),
-    Match.when({ type: 'TSEmptyBodyFunctionExpression' }, (n) => functionText(ctx, n)),
-    Match.when({ type: 'ClassDeclaration' }, (n) => classText(ctx, n)),
-    Match.when({ type: 'ClassExpression' }, (n) => classText(ctx, n)),
-    Match.when({ type: 'JSXElement' }, (n) => jsxElementText(ctx, n)),
-    Match.when({ type: 'JSXFragment' }, (n) => jsxFragmentText(ctx, n)),
-    Match.when({ type: 'JSXOpeningElement' }, (n) => jsxOpeningElementText(ctx, n)),
-    Match.when({ type: 'JSXClosingElement' }, () => ''),
-    Match.when({ type: 'JSXIdentifier' }, (n) => n.name),
-    Match.when({ type: 'JSXNamespacedName' }, (n) => `${n.namespace.name}:${n.name.name}`),
-    Match.when({ type: 'JSXMemberExpression' }, (n) => jsxMemberExpressionText(n)),
-    Match.when({ type: 'JSXAttribute' }, (n) => jsxAttributeText(ctx, n)),
-    Match.when(
-      { type: 'JSXSpreadAttribute' },
-      (n) => `{...${printNodePrec(ctx, n.argument, PREC.Assignment)}}`,
+    Match.when(isNode('ImportExpression'), (n) => importExpressionText(ctx, n)),
+    Match.when(isNode('V8IntrinsicExpression'), (n) => v8IntrinsicText(ctx, n)),
+    Match.when(isNode('ArrowFunctionExpression'), (n) => arrowFunctionText(ctx, n, prec)),
+    Match.when(isNode('FunctionDeclaration'), (n) => functionText(ctx, n)),
+    Match.when(isNode('FunctionExpression'), (n) => functionText(ctx, n)),
+    Match.when(isNode('TSDeclareFunction'), (n) => functionText(ctx, n)),
+    Match.when(isNode('TSEmptyBodyFunctionExpression'), (n) => functionText(ctx, n)),
+    Match.when(isNode('ClassDeclaration'), (n) => classText(ctx, n)),
+    Match.when(isNode('ClassExpression'), (n) => classText(ctx, n)),
+    Match.when(isNode('JSXElement'), (n) => jsxElementText(ctx, n)),
+    Match.when(isNode('JSXFragment'), (n) => jsxFragmentText(ctx, n)),
+    Match.when(isNode('JSXOpeningElement'), (n) => jsxOpeningElementText(ctx, n)),
+    Match.when(isNode('JSXClosingElement'), () => ''),
+    Match.when(isNode('JSXIdentifier'), (n) => n.name),
+    Match.when(isNode('JSXNamespacedName'), (n) => `${n.namespace.name}:${n.name.name}`),
+    Match.when(isNode('JSXMemberExpression'), (n) => jsxMemberExpressionText(n)),
+    Match.when(isNode('JSXAttribute'), (n) => jsxAttributeText(ctx, n)),
+    Match.when(isNode('JSXSpreadAttribute'), (n) => `{...${printNodePrec(ctx, n.argument, PREC.Assignment)}}`,
     ),
-    Match.when(
-      { type: 'JSXExpressionContainer' },
-      (n) => `{${printNodePrec(ctx, n.expression, PREC.Sequence)}}`,
+    Match.when(isNode('JSXExpressionContainer'), (n) => `{${printNodePrec(ctx, n.expression, PREC.Sequence)}}`,
     ),
-    Match.when({ type: 'JSXEmptyExpression' }, () => ''),
-    Match.when({ type: 'JSXText' }, (n) => n.value),
-    Match.when({ type: 'JSXSpreadChild' }, (n) => `{...${printNodePrec(ctx, n.expression, PREC.Assignment)}}`),
-    Match.when({ type: 'TSAsExpression' }, (n) => tsAsExpressionText(ctx, n, prec)),
-    Match.when({ type: 'TSSatisfiesExpression' }, (n) => tsSatisfiesExpressionText(ctx, n, prec)),
-    Match.when({ type: 'TSTypeAssertion' }, (n) => tsTypeAssertionText(ctx, n)),
-    Match.when({ type: 'TSNonNullExpression' }, (n) => `${printNodePrec(ctx, n.expression, PREC.Member)}!`),
-    Match.when({ type: 'TSInstantiationExpression' }, (n) => tsInstantiationExpressionText(ctx, n)),
-    Match.when({ type: 'BlockStatement' }, (n) => blockStatementText(ctx, n)),
-    Match.when({ type: 'EmptyStatement' }, () => ';'),
-    Match.when({ type: 'ExpressionStatement' }, (n) => expressionStatementText(ctx, n)),
-    Match.when({ type: 'IfStatement' }, (n) => ifStatementText(ctx, n)),
-    Match.when({ type: 'DoWhileStatement' }, (n) => doWhileStatementText(ctx, n)),
-    Match.when({ type: 'WhileStatement' }, (n) => whileStatementText(ctx, n)),
-    Match.when({ type: 'ForStatement' }, (n) => forStatementText(ctx, n)),
-    Match.when({ type: 'ForInStatement' }, (n) => forInStatementText(ctx, n)),
-    Match.when({ type: 'ForOfStatement' }, (n) => forOfStatementText(ctx, n)),
-    Match.when({ type: 'ContinueStatement' }, (n) => jumpStatementText('continue', n.label)),
-    Match.when({ type: 'BreakStatement' }, (n) => jumpStatementText('break', n.label)),
-    Match.when({ type: 'ReturnStatement' }, (n) => returnStatementText(ctx, n)),
-    Match.when({ type: 'WithStatement' }, (n) => withStatementText(ctx, n)),
-    Match.when({ type: 'SwitchStatement' }, (n) => switchStatementText(ctx, n)),
-    Match.when({ type: 'SwitchCase' }, () => ''),
-    Match.when({ type: 'LabeledStatement' }, (n) => labeledStatementText(ctx, n)),
-    Match.when({ type: 'ThrowStatement' }, (n) => `throw ${printNodePrec(ctx, n.argument, PREC.Sequence)};`),
-    Match.when({ type: 'TryStatement' }, (n) => tryStatementText(ctx, n)),
-    Match.when({ type: 'CatchClause' }, () => ''),
-    Match.when({ type: 'DebuggerStatement' }, () => 'debugger;'),
-    Match.when({ type: 'VariableDeclaration' }, (n) => variableDeclarationText(ctx, n)),
-    Match.when({ type: 'VariableDeclarator' }, (n) => variableDeclaratorText(ctx, n)),
-    Match.when({ type: 'ClassBody' }, (n) => classBodyText(ctx, n)),
-    Match.when({ type: 'MethodDefinition' }, (n) => methodDefinitionText(ctx, n)),
-    Match.when({ type: 'TSAbstractMethodDefinition' }, (n) => methodDefinitionText(ctx, n)),
-    Match.when({ type: 'PropertyDefinition' }, (n) => propertyDefinitionText(ctx, n)),
-    Match.when({ type: 'TSAbstractPropertyDefinition' }, (n) => propertyDefinitionText(ctx, n)),
-    Match.when({ type: 'AccessorProperty' }, (n) => accessorPropertyText(ctx, n)),
-    Match.when({ type: 'TSAbstractAccessorProperty' }, (n) => accessorPropertyText(ctx, n)),
-    Match.when({ type: 'StaticBlock' }, (n) => staticBlockText(ctx, n)),
-    Match.when({ type: 'ImportDeclaration' }, (n) => importDeclarationText(ctx, n)),
-    Match.when({ type: 'ExportNamedDeclaration' }, (n) => exportNamedDeclarationText(ctx, n)),
-    Match.when({ type: 'ExportDefaultDeclaration' }, (n) => exportDefaultDeclarationText(ctx, n)),
-    Match.when({ type: 'ExportAllDeclaration' }, (n) => exportAllDeclarationText(ctx, n)),
-    Match.when({ type: 'Decorator' }, (n) => `@${printNodePrec(ctx, n.expression, PREC.Member)}`),
-    Match.when({ type: 'TSTypeAliasDeclaration' }, (n) => tsTypeAliasDeclarationText(ctx, n)),
-    Match.when({ type: 'TSInterfaceDeclaration' }, (n) => tsInterfaceDeclarationText(ctx, n)),
-    Match.when({ type: 'TSEnumDeclaration' }, (n) => tsEnumDeclarationText(ctx, n)),
-    Match.when({ type: 'TSModuleDeclaration' }, (n) => tsModuleDeclarationText(ctx, n)),
-    Match.when({ type: 'TSImportEqualsDeclaration' }, (n) => tsImportEqualsDeclarationText(ctx, n)),
-    Match.when(
-      { type: 'TSExportAssignment' },
-      (n) => `export = ${printNodePrec(ctx, n.expression, PREC.Sequence)};`,
+    Match.when(isNode('JSXEmptyExpression'), () => ''),
+    Match.when(isNode('JSXText'), (n) => n.value),
+    Match.when(isNode('JSXSpreadChild'), (n) => `{...${printNodePrec(ctx, n.expression, PREC.Assignment)}}`),
+    Match.when(isNode('TSAsExpression'), (n) => tsAsExpressionText(ctx, n, prec)),
+    Match.when(isNode('TSSatisfiesExpression'), (n) => tsSatisfiesExpressionText(ctx, n, prec)),
+    Match.when(isNode('TSTypeAssertion'), (n) => tsTypeAssertionText(ctx, n)),
+    Match.when(isNode('TSNonNullExpression'), (n) => `${printNodePrec(ctx, n.expression, PREC.Member)}!`),
+    Match.when(isNode('TSInstantiationExpression'), (n) => tsInstantiationExpressionText(ctx, n)),
+    Match.when(isNode('BlockStatement'), (n) => blockStatementText(ctx, n)),
+    Match.when(isNode('EmptyStatement'), () => ';'),
+    Match.when(isNode('ExpressionStatement'), (n) => expressionStatementText(ctx, n)),
+    Match.when(isNode('IfStatement'), (n) => ifStatementText(ctx, n)),
+    Match.when(isNode('DoWhileStatement'), (n) => doWhileStatementText(ctx, n)),
+    Match.when(isNode('WhileStatement'), (n) => whileStatementText(ctx, n)),
+    Match.when(isNode('ForStatement'), (n) => forStatementText(ctx, n)),
+    Match.when(isNode('ForInStatement'), (n) => forInStatementText(ctx, n)),
+    Match.when(isNode('ForOfStatement'), (n) => forOfStatementText(ctx, n)),
+    Match.when(isNode('ContinueStatement'), (n) => jumpStatementText('continue', n.label)),
+    Match.when(isNode('BreakStatement'), (n) => jumpStatementText('break', n.label)),
+    Match.when(isNode('ReturnStatement'), (n) => returnStatementText(ctx, n)),
+    Match.when(isNode('WithStatement'), (n) => withStatementText(ctx, n)),
+    Match.when(isNode('SwitchStatement'), (n) => switchStatementText(ctx, n)),
+    Match.when(isNode('SwitchCase'), () => ''),
+    Match.when(isNode('LabeledStatement'), (n) => labeledStatementText(ctx, n)),
+    Match.when(isNode('ThrowStatement'), (n) => `throw ${printNodePrec(ctx, n.argument, PREC.Sequence)};`),
+    Match.when(isNode('TryStatement'), (n) => tryStatementText(ctx, n)),
+    Match.when(isNode('CatchClause'), () => ''),
+    Match.when(isNode('DebuggerStatement'), () => 'debugger;'),
+    Match.when(isNode('VariableDeclaration'), (n) => variableDeclarationText(ctx, n)),
+    Match.when(isNode('VariableDeclarator'), (n) => variableDeclaratorText(ctx, n)),
+    Match.when(isNode('ClassBody'), (n) => classBodyText(ctx, n)),
+    Match.when(isNode('MethodDefinition'), (n) => methodDefinitionText(ctx, n)),
+    Match.when(isNode('TSAbstractMethodDefinition'), (n) => methodDefinitionText(ctx, n)),
+    Match.when(isNode('PropertyDefinition'), (n) => propertyDefinitionText(ctx, n)),
+    Match.when(isNode('TSAbstractPropertyDefinition'), (n) => propertyDefinitionText(ctx, n)),
+    Match.when(isNode('AccessorProperty'), (n) => accessorPropertyText(ctx, n)),
+    Match.when(isNode('TSAbstractAccessorProperty'), (n) => accessorPropertyText(ctx, n)),
+    Match.when(isNode('StaticBlock'), (n) => staticBlockText(ctx, n)),
+    Match.when(isNode('ImportDeclaration'), (n) => importDeclarationText(ctx, n)),
+    Match.when(isNode('ExportNamedDeclaration'), (n) => exportNamedDeclarationText(ctx, n)),
+    Match.when(isNode('ExportDefaultDeclaration'), (n) => exportDefaultDeclarationText(ctx, n)),
+    Match.when(isNode('ExportAllDeclaration'), (n) => exportAllDeclarationText(ctx, n)),
+    Match.when(isNode('Decorator'), (n) => `@${printNodePrec(ctx, n.expression, PREC.Member)}`),
+    Match.when(isNode('TSTypeAliasDeclaration'), (n) => tsTypeAliasDeclarationText(ctx, n)),
+    Match.when(isNode('TSInterfaceDeclaration'), (n) => tsInterfaceDeclarationText(ctx, n)),
+    Match.when(isNode('TSEnumDeclaration'), (n) => tsEnumDeclarationText(ctx, n)),
+    Match.when(isNode('TSModuleDeclaration'), (n) => tsModuleDeclarationText(ctx, n)),
+    Match.when(isNode('TSImportEqualsDeclaration'), (n) => tsImportEqualsDeclarationText(ctx, n)),
+    Match.when(isNode('TSExportAssignment'), (n) => `export = ${printNodePrec(ctx, n.expression, PREC.Sequence)};`,
     ),
-    Match.when({ type: 'TSNamespaceExportDeclaration' }, (n) => `export as namespace ${n.id.name};`),
-    Match.when({ type: 'TSTypeAnnotation' }, (n) => `: ${printTSTypeToString(ctx, n.typeAnnotation)}`),
-    Match.when({ type: 'TSTypeParameterDeclaration' }, (n) => printTSTypeParameterDeclaration(ctx, n)),
-    Match.when({ type: 'TSTypeParameterInstantiation' }, (n) => printTSTypeParameterInstantiation(ctx, n)),
-    Match.when({ type: 'TSTypeParameter' }, (n) => printTSTypeParameter(ctx, n)),
+    Match.when(isNode('TSNamespaceExportDeclaration'), (n) => `export as namespace ${n.id.name};`),
+    Match.when(isNode('TSTypeAnnotation'), (n) => `: ${printTSTypeToString(ctx, n.typeAnnotation)}`),
+    Match.when(isNode('TSTypeParameterDeclaration'), (n) => printTSTypeParameterDeclaration(ctx, n)),
+    Match.when(isNode('TSTypeParameterInstantiation'), (n) => printTSTypeParameterInstantiation(ctx, n)),
+    Match.when(isNode('TSTypeParameter'), (n) => printTSTypeParameter(ctx, n)),
     Match.when(isTSType, (n) => printTSTypeToString(ctx, n)),
     Match.orElse((n) => `/* unknown:${n.type} */`),
   )
 
 const statementKindText = (ctx: PrintContext, node: Statement): string =>
   Match.value(node).pipe(
-    Match.when({ type: 'BlockStatement' }, (n) => blockStatementText(ctx, n)),
-    Match.when({ type: 'VariableDeclaration' }, (n) => `${variableDeclarationText(ctx, n)};`),
-    Match.when({ type: 'FunctionDeclaration' }, (n) => functionText(ctx, n)),
-    Match.when({ type: 'FunctionExpression' }, (n) => functionText(ctx, n)),
-    Match.when({ type: 'TSDeclareFunction' }, (n) => functionText(ctx, n)),
-    Match.when({ type: 'TSEmptyBodyFunctionExpression' }, (n) => functionText(ctx, n)),
-    Match.when({ type: 'ClassDeclaration' }, (n) => classText(ctx, n)),
-    Match.when({ type: 'ClassExpression' }, (n) => classText(ctx, n)),
-    Match.when({ type: 'ExpressionStatement' }, (n) => expressionStatementText(ctx, n)),
-    Match.when({ type: 'IfStatement' }, (n) => ifStatementText(ctx, n)),
-    Match.when({ type: 'ForStatement' }, (n) => forStatementText(ctx, n)),
-    Match.when({ type: 'ForInStatement' }, (n) => forInStatementText(ctx, n)),
-    Match.when({ type: 'ForOfStatement' }, (n) => forOfStatementText(ctx, n)),
-    Match.when({ type: 'WhileStatement' }, (n) => whileStatementText(ctx, n)),
-    Match.when({ type: 'DoWhileStatement' }, (n) => doWhileStatementText(ctx, n)),
-    Match.when({ type: 'ReturnStatement' }, (n) => returnStatementText(ctx, n)),
-    Match.when({ type: 'ThrowStatement' }, (n) => `throw ${printNodePrec(ctx, n.argument, PREC.Sequence)};`),
-    Match.when({ type: 'TryStatement' }, (n) => tryStatementText(ctx, n)),
-    Match.when({ type: 'SwitchStatement' }, (n) => switchStatementText(ctx, n)),
-    Match.when({ type: 'LabeledStatement' }, (n) => labeledStatementText(ctx, n)),
-    Match.when({ type: 'BreakStatement' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
-    Match.when({ type: 'ContinueStatement' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
-    Match.when({ type: 'DebuggerStatement' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
-    Match.when({ type: 'EmptyStatement' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
-    Match.when({ type: 'WithStatement' }, (n) => withStatementText(ctx, n)),
-    Match.when({ type: 'ImportDeclaration' }, (n) => importDeclarationText(ctx, n)),
-    Match.when({ type: 'ExportNamedDeclaration' }, (n) => exportNamedDeclarationText(ctx, n)),
-    Match.when({ type: 'ExportDefaultDeclaration' }, (n) => exportDefaultDeclarationText(ctx, n)),
-    Match.when({ type: 'ExportAllDeclaration' }, (n) => exportAllDeclarationText(ctx, n)),
-    Match.when({ type: 'TSTypeAliasDeclaration' }, (n) => tsTypeAliasDeclarationText(ctx, n)),
-    Match.when({ type: 'TSInterfaceDeclaration' }, (n) => tsInterfaceDeclarationText(ctx, n)),
-    Match.when({ type: 'TSEnumDeclaration' }, (n) => tsEnumDeclarationText(ctx, n)),
-    Match.when({ type: 'TSModuleDeclaration' }, (n) => tsModuleDeclarationText(ctx, n)),
-    Match.when({ type: 'TSImportEqualsDeclaration' }, (n) => tsImportEqualsDeclarationText(ctx, n)),
-    Match.when({ type: 'TSExportAssignment' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
-    Match.when({ type: 'TSNamespaceExportDeclaration' }, (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.when(isNode('BlockStatement'), (n) => blockStatementText(ctx, n)),
+    Match.when(isNode('VariableDeclaration'), (n) => `${variableDeclarationText(ctx, n)};`),
+    Match.when(isNode('FunctionDeclaration'), (n) => functionText(ctx, n)),
+    Match.when(isNode('FunctionExpression'), (n) => functionText(ctx, n)),
+    Match.when(isNode('TSDeclareFunction'), (n) => functionText(ctx, n)),
+    Match.when(isNode('TSEmptyBodyFunctionExpression'), (n) => functionText(ctx, n)),
+    Match.when(isNode('ClassDeclaration'), (n) => classText(ctx, n)),
+    Match.when(isNode('ClassExpression'), (n) => classText(ctx, n)),
+    Match.when(isNode('ExpressionStatement'), (n) => expressionStatementText(ctx, n)),
+    Match.when(isNode('IfStatement'), (n) => ifStatementText(ctx, n)),
+    Match.when(isNode('ForStatement'), (n) => forStatementText(ctx, n)),
+    Match.when(isNode('ForInStatement'), (n) => forInStatementText(ctx, n)),
+    Match.when(isNode('ForOfStatement'), (n) => forOfStatementText(ctx, n)),
+    Match.when(isNode('WhileStatement'), (n) => whileStatementText(ctx, n)),
+    Match.when(isNode('DoWhileStatement'), (n) => doWhileStatementText(ctx, n)),
+    Match.when(isNode('ReturnStatement'), (n) => returnStatementText(ctx, n)),
+    Match.when(isNode('ThrowStatement'), (n) => `throw ${printNodePrec(ctx, n.argument, PREC.Sequence)};`),
+    Match.when(isNode('TryStatement'), (n) => tryStatementText(ctx, n)),
+    Match.when(isNode('SwitchStatement'), (n) => switchStatementText(ctx, n)),
+    Match.when(isNode('LabeledStatement'), (n) => labeledStatementText(ctx, n)),
+    Match.when(isNode('BreakStatement'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.when(isNode('ContinueStatement'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.when(isNode('DebuggerStatement'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.when(isNode('EmptyStatement'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.when(isNode('WithStatement'), (n) => withStatementText(ctx, n)),
+    Match.when(isNode('ImportDeclaration'), (n) => importDeclarationText(ctx, n)),
+    Match.when(isNode('ExportNamedDeclaration'), (n) => exportNamedDeclarationText(ctx, n)),
+    Match.when(isNode('ExportDefaultDeclaration'), (n) => exportDefaultDeclarationText(ctx, n)),
+    Match.when(isNode('ExportAllDeclaration'), (n) => exportAllDeclarationText(ctx, n)),
+    Match.when(isNode('TSTypeAliasDeclaration'), (n) => tsTypeAliasDeclarationText(ctx, n)),
+    Match.when(isNode('TSInterfaceDeclaration'), (n) => tsInterfaceDeclarationText(ctx, n)),
+    Match.when(isNode('TSEnumDeclaration'), (n) => tsEnumDeclarationText(ctx, n)),
+    Match.when(isNode('TSModuleDeclaration'), (n) => tsModuleDeclarationText(ctx, n)),
+    Match.when(isNode('TSImportEqualsDeclaration'), (n) => tsImportEqualsDeclarationText(ctx, n)),
+    Match.when(isNode('TSExportAssignment'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
+    Match.when(isNode('TSNamespaceExportDeclaration'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
     Match.orElse(() => ''),
   )
 
@@ -540,8 +539,8 @@ const booleanOrBigintText = <A = unknown>(value: A): string =>
   )
 
 const bigintText = <A = unknown>(value: A): string =>
-  Match.value(typeof value === 'bigint').pipe(
-    Match.when(true, () => `${value}n`),
+  Match.value(value).pipe(
+    Match.when((candidate): candidate is bigint => typeof candidate === 'bigint', (v) => `${v}n`),
     Match.orElse(() => 'null'),
   )
 
@@ -602,9 +601,9 @@ const propertyKeyText = (ctx: PrintContext, key: Node, computed: boolean, comput
 
 const plainPropertyKeyText = (ctx: PrintContext, key: Node): string =>
   Match.value(key).pipe(
-    Match.when({ type: 'Identifier' }, (n) => identifierNameText(n)),
-    Match.when({ type: 'PrivateIdentifier' }, (n) => privateIdentifierText(n)),
-    Match.when({ type: 'Literal' }, (n) => literalText(n)),
+    Match.when(isNode('Identifier'), (n) => identifierNameText(n)),
+    Match.when(isNode('PrivateIdentifier'), (n) => privateIdentifierText(n)),
+    Match.when(isNode('Literal'), (n) => literalText(n)),
     Match.orElse((n) => dispatchNode(ctx, n, PREC.Assignment)),
   )
 
@@ -672,8 +671,8 @@ const memberSelectorText = (ctx: PrintContext, access: MemberExpression): string
 
 const memberPropertyText = (ctx: PrintContext, property: Node): string =>
   Match.value(property).pipe(
-    Match.when({ type: 'Identifier' }, (n) => identifierNameText(n)),
-    Match.when({ type: 'PrivateIdentifier' }, (n) => privateIdentifierText(n)),
+    Match.when(isNode('Identifier'), (n) => identifierNameText(n)),
+    Match.when(isNode('PrivateIdentifier'), (n) => privateIdentifierText(n)),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 
@@ -798,7 +797,7 @@ const arrowParamsText = (ctx: PrintContext, node: ArrowFunctionExpression): stri
 
 const arrowBodyText = (ctx: PrintContext, node: ArrowFunctionExpression): string =>
   Match.value(node.body).pipe(
-    Match.when({ type: 'BlockStatement' }, (body) => blockStatementText(ctx, body)),
+    Match.when(isNode('BlockStatement'), (body) => blockStatementText(ctx, body)),
     Match.orElse((body) => assignmentNodeText(ctx, body)),
   )
 
@@ -866,15 +865,15 @@ const jsxOpeningElementText = (ctx: PrintContext, node: JSXOpeningElement): stri
 
 const jsxElementNameText = (ctx: PrintContext, name: JSXOpeningElement['name']): string =>
   Match.value(name).pipe(
-    Match.when({ type: 'JSXIdentifier' }, (n) => n.name),
-    Match.when({ type: 'JSXNamespacedName' }, (n) => `${n.namespace.name}:${n.name.name}`),
-    Match.when({ type: 'JSXMemberExpression' }, (n) => jsxMemberExpressionText(n)),
+    Match.when(isNode('JSXIdentifier'), (n) => n.name),
+    Match.when(isNode('JSXNamespacedName'), (n) => `${n.namespace.name}:${n.name.name}`),
+    Match.when(isNode('JSXMemberExpression'), (n) => jsxMemberExpressionText(n)),
     Match.orElse(() => ''),
   )
 
 const jsxMemberExpressionText = (node: JSXMemberExpression): string =>
   Match.value(node.object).pipe(
-    Match.when({ type: 'JSXIdentifier' }, (obj) => `${obj.name}.${node.property.name}`),
+    Match.when(isNode('JSXIdentifier'), (obj) => `${obj.name}.${node.property.name}`),
     Match.orElse((obj) => `${jsxMemberExpressionText(obj)}.${node.property.name}`),
   )
 
@@ -889,23 +888,21 @@ const jsxAttributeValueClauseText = (ctx: PrintContext, value: JSXAttribute['val
 
 const jsxAttributeValueText = (ctx: PrintContext, value: NonNullable<JSXAttribute['value']>): string =>
   Match.value(value).pipe(
-    Match.when({ type: 'Literal' }, (n) => literalText(n)),
-    Match.when({ type: 'JSXExpressionContainer' }, (n) => `{${sequenceNodeText(ctx, n.expression)}}`),
-    Match.when({ type: 'JSXElement' }, (n) => sequenceNodeText(ctx, n)),
-    Match.when({ type: 'JSXFragment' }, (n) => sequenceNodeText(ctx, n)),
+    Match.when(isNode('Literal'), (n) => literalText(n)),
+    Match.when(isNode('JSXExpressionContainer'), (n) => `{${sequenceNodeText(ctx, n.expression)}}`),
+    Match.when(isNode('JSXElement'), (n) => sequenceNodeText(ctx, n)),
+    Match.when(isNode('JSXFragment'), (n) => sequenceNodeText(ctx, n)),
     Match.orElse(() => ''),
   )
 
 const jsxChildText = (ctx: PrintContext, child: JSXElement['children'][number]): string =>
   Match.value(child).pipe(
-    Match.when({ type: 'JSXText' }, (n) => n.value),
-    Match.when({ type: 'JSXElement' }, (n) => jsxElementText(ctx, n)),
-    Match.when({ type: 'JSXFragment' }, (n) => jsxFragmentText(ctx, n)),
-    Match.when(
-      { type: 'JSXExpressionContainer' },
-      (n) => `{${printNodePrec(ctx, n.expression, PREC.Sequence)}}`,
+    Match.when(isNode('JSXText'), (n) => n.value),
+    Match.when(isNode('JSXElement'), (n) => jsxElementText(ctx, n)),
+    Match.when(isNode('JSXFragment'), (n) => jsxFragmentText(ctx, n)),
+    Match.when(isNode('JSXExpressionContainer'), (n) => `{${printNodePrec(ctx, n.expression, PREC.Sequence)}}`,
     ),
-    Match.when({ type: 'JSXSpreadChild' }, (n) => `{...${printNodePrec(ctx, n.expression, PREC.Assignment)}}`),
+    Match.when(isNode('JSXSpreadChild'), (n) => `{...${printNodePrec(ctx, n.expression, PREC.Assignment)}}`),
     Match.orElse(() => ''),
   )
 
@@ -957,7 +954,7 @@ const ifStatementText = (ctx: PrintContext, node: IfStatement): string =>
 
 const statementOrBlockText = (ctx: PrintContext, node: Statement): string =>
   Match.value(node).pipe(
-    Match.when({ type: 'BlockStatement' }, (n) => blockStatementText(ctx, n)),
+    Match.when(isNode('BlockStatement'), (n) => blockStatementText(ctx, n)),
     Match.orElse((n) => statementText(ctx, n)),
   )
 
@@ -978,7 +975,7 @@ const declarationOrExpressionText = (ctx: PrintContext, node: Node | null | unde
     onNone: () => '',
     onSome: (value) =>
       Match.value(value).pipe(
-        Match.when({ type: 'VariableDeclaration' }, (n) => variableDeclarationText(ctx, n)),
+        Match.when(isNode('VariableDeclaration'), (n) => variableDeclarationText(ctx, n)),
         Match.orElse((n) => printNodePrec(ctx, n, PREC.Sequence)),
       ),
   })
@@ -988,7 +985,7 @@ const optionalSequenceText = (ctx: PrintContext, node: Node | null | undefined):
 
 const forInStatementText = (ctx: PrintContext, node: ForInStatement): string =>
   `for (${Match.value(node.left).pipe(
-    Match.when({ type: 'VariableDeclaration' }, (n) => variableDeclarationText(ctx, n)),
+    Match.when(isNode('VariableDeclaration'), (n) => variableDeclarationText(ctx, n)),
     Match.orElse((n) => printNodePrec(ctx, n, PREC.Sequence)),
   )} in ${printNodePrec(ctx, node.right, PREC.Sequence)}) ${statementOrBlockText(ctx, node.body)}`
 
@@ -1046,7 +1043,7 @@ const catchParamText = (ctx: PrintContext, param: BindingPattern | null | undefi
 
 const catchParamBodyText = (ctx: PrintContext, param: BindingPattern): string =>
   Match.value(param).pipe(
-    Match.when({ type: 'Identifier' }, (n) => identifierWithOptionalText(n)),
+    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(n)),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 
@@ -1069,7 +1066,7 @@ const variableDeclaratorText = (ctx: PrintContext, node: VariableDeclarator): st
 
 const bindingTargetText = (ctx: PrintContext, id: BindingPattern): string =>
   Match.value(id).pipe(
-    Match.when({ type: 'Identifier' }, (n) => `${bindingNameText(n)}${flagText(n.optional, '?')}`),
+    Match.when(isNode('Identifier'), (n) => `${bindingNameText(n)}${flagText(n.optional, '?')}`),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 
@@ -1078,12 +1075,12 @@ const identifierWithOptionalText = (ctx: PrintContext, node: BindingIdentifier):
 
 const paramText = (ctx: PrintContext, param: ParamPattern): string =>
   Match.value(param).pipe(
-    Match.when({ type: 'RestElement' }, (n) => restParamText(ctx, n)),
-    Match.when({ type: 'TSParameterProperty' }, (n) => parameterPropertyText(ctx, n)),
-    Match.when({ type: 'Identifier' }, (n) => formalParameterText(ctx, n)),
-    Match.when({ type: 'ObjectPattern' }, (n) => formalParameterText(ctx, n)),
-    Match.when({ type: 'ArrayPattern' }, (n) => formalParameterText(ctx, n)),
-    Match.when({ type: 'AssignmentPattern' }, (n) => formalParameterText(ctx, n)),
+    Match.when(isNode('RestElement'), (n) => restParamText(ctx, n)),
+    Match.when(isNode('TSParameterProperty'), (n) => parameterPropertyText(ctx, n)),
+    Match.when(isNode('Identifier'), (n) => formalParameterText(ctx, n)),
+    Match.when(isNode('ObjectPattern'), (n) => formalParameterText(ctx, n)),
+    Match.when(isNode('ArrayPattern'), (n) => formalParameterText(ctx, n)),
+    Match.when(isNode('AssignmentPattern'), (n) => formalParameterText(ctx, n)),
     Match.orElse(() => ''),
   )
 
@@ -1104,7 +1101,7 @@ const parameterPropertyText = (
 
 const parameterPropertyTargetText = (ctx: PrintContext, parameter: BindingPattern): string =>
   Match.value(parameter).pipe(
-    Match.when({ type: 'Identifier' }, (n) => identifierWithOptionalText(n)),
+    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(n)),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 
@@ -1113,9 +1110,7 @@ const formalParameterText = (ctx: PrintContext, param: BindingPattern): string =
 
 const formalParameterBodyText = (ctx: PrintContext, param: BindingPattern): string =>
   Match.value(param).pipe(
-    Match.when(
-      { type: 'Identifier' },
-      (n) => identifierWithOptionalText(n),
+    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(n),
     ),
     Match.orElse(
       (n) => `${assignmentNodeText(ctx, n)}${typeAnnotationText(ctx, bindingTypeAnnotation(n))}`,
@@ -1245,11 +1240,11 @@ const tsInterfaceBodyText = (ctx: PrintContext, node: TSInterfaceBody): string =
 
 const printTSSignatureText = (ctx: PrintContext, sig: TSInterfaceBody['body'][number]): string =>
   Match.value(sig).pipe(
-    Match.when({ type: 'TSPropertySignature' }, (n) => printTSPropertySignatureText(ctx, n)),
-    Match.when({ type: 'TSIndexSignature' }, (n) => printTSIndexSignatureText(ctx, n)),
-    Match.when({ type: 'TSCallSignatureDeclaration' }, (n) => printTSCallSignatureText(ctx, n)),
-    Match.when({ type: 'TSConstructSignatureDeclaration' }, (n) => printTSConstructSignatureText(ctx, n)),
-    Match.when({ type: 'TSMethodSignature' }, (n) => printTSMethodSignatureText(ctx, n)),
+    Match.when(isNode('TSPropertySignature'), (n) => printTSPropertySignatureText(ctx, n)),
+    Match.when(isNode('TSIndexSignature'), (n) => printTSIndexSignatureText(ctx, n)),
+    Match.when(isNode('TSCallSignatureDeclaration'), (n) => printTSCallSignatureText(ctx, n)),
+    Match.when(isNode('TSConstructSignatureDeclaration'), (n) => printTSConstructSignatureText(ctx, n)),
+    Match.when(isNode('TSMethodSignature'), (n) => printTSMethodSignatureText(ctx, n)),
     Match.orElse(() => ''),
   )
 
@@ -1285,8 +1280,8 @@ const printEnumMemberText = (ctx: PrintContext, member: TSEnumDeclaration['body'
 
 const identifierOrLiteralNameText = (ctx: PrintContext, id: Node): string =>
   Match.value(id).pipe(
-    Match.when({ type: 'Identifier' }, (n) => identifierNameText(n)),
-    Match.when({ type: 'Literal' }, (n) => literalText(n)),
+    Match.when(isNode('Identifier'), (n) => identifierNameText(n)),
+    Match.when(isNode('Literal'), (n) => literalText(n)),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 
@@ -1316,82 +1311,62 @@ const moduleReferenceText = (
   reference: TSImportEqualsDeclaration['moduleReference'],
 ): string =>
   Match.value(reference).pipe(
-    Match.when(
-      { type: 'TSExternalModuleReference' },
-      (n) => `require(${externalModuleArgumentText(n.expression.value)})`,
+    Match.when(isNode('TSExternalModuleReference'), (n) => `require(${externalModuleArgumentText(n.expression.value)})`,
     ),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 
 const printTSTypeToString = (ctx: PrintContext, node: TSType): string =>
   Match.value(node).pipe(
-    Match.when({ type: 'TSAnyKeyword' }, () => 'any'),
-    Match.when({ type: 'TSStringKeyword' }, () => 'string'),
-    Match.when({ type: 'TSBooleanKeyword' }, () => 'boolean'),
-    Match.when({ type: 'TSNumberKeyword' }, () => 'number'),
-    Match.when({ type: 'TSBigIntKeyword' }, () => 'bigint'),
-    Match.when({ type: 'TSSymbolKeyword' }, () => 'symbol'),
-    Match.when({ type: 'TSVoidKeyword' }, () => 'void'),
-    Match.when({ type: 'TSUndefinedKeyword' }, () => 'undefined'),
-    Match.when({ type: 'TSNullKeyword' }, () => 'null'),
-    Match.when({ type: 'TSNeverKeyword' }, () => 'never'),
-    Match.when({ type: 'TSUnknownKeyword' }, () => 'unknown'),
-    Match.when({ type: 'TSObjectKeyword' }, () => 'object'),
-    Match.when({ type: 'TSIntrinsicKeyword' }, () => 'intrinsic'),
-    Match.when({ type: 'TSThisType' }, () => 'this'),
-    Match.when(
-      { type: 'TSTypeReference' },
-      (n) => `${printTSTypeName(ctx, n.typeName)}${typeArgumentsText(ctx, n.typeArguments)}`,
+    Match.when(isNode('TSAnyKeyword'), () => 'any'),
+    Match.when(isNode('TSStringKeyword'), () => 'string'),
+    Match.when(isNode('TSBooleanKeyword'), () => 'boolean'),
+    Match.when(isNode('TSNumberKeyword'), () => 'number'),
+    Match.when(isNode('TSBigIntKeyword'), () => 'bigint'),
+    Match.when(isNode('TSSymbolKeyword'), () => 'symbol'),
+    Match.when(isNode('TSVoidKeyword'), () => 'void'),
+    Match.when(isNode('TSUndefinedKeyword'), () => 'undefined'),
+    Match.when(isNode('TSNullKeyword'), () => 'null'),
+    Match.when(isNode('TSNeverKeyword'), () => 'never'),
+    Match.when(isNode('TSUnknownKeyword'), () => 'unknown'),
+    Match.when(isNode('TSObjectKeyword'), () => 'object'),
+    Match.when(isNode('TSIntrinsicKeyword'), () => 'intrinsic'),
+    Match.when(isNode('TSThisType'), () => 'this'),
+    Match.when(isNode('TSTypeReference'), (n) => `${printTSTypeName(ctx, n.typeName)}${typeArgumentsText(ctx, n.typeArguments)}`,
     ),
-    Match.when({ type: 'TSUnionType' }, (n) => tsTypeListText(ctx, n.types, ' | ')),
-    Match.when({ type: 'TSIntersectionType' }, (n) => tsTypeListText(ctx, n.types, ' & ')),
-    Match.when({ type: 'TSArrayType' }, (n) => `${arrayElementTypeText(ctx, n.elementType)}[]`),
-    Match.when({ type: 'TSTypeLiteral' }, (n) => printTSTypeLiteral(ctx, n.members)),
-    Match.when({ type: 'TSTupleType' }, (n) => printTupleType(ctx, n.elementTypes)),
-    Match.when(
-      { type: 'TSConditionalType' },
-      (n) =>
+    Match.when(isNode('TSUnionType'), (n) => tsTypeListText(ctx, n.types, ' | ')),
+    Match.when(isNode('TSIntersectionType'), (n) => tsTypeListText(ctx, n.types, ' & ')),
+    Match.when(isNode('TSArrayType'), (n) => `${arrayElementTypeText(ctx, n.elementType)}[]`),
+    Match.when(isNode('TSTypeLiteral'), (n) => printTSTypeLiteral(ctx, n.members)),
+    Match.when(isNode('TSTupleType'), (n) => printTupleType(ctx, n.elementTypes)),
+    Match.when(isNode('TSConditionalType'), (n) =>
         `${printTSTypeToString(ctx, n.checkType)} extends ${printTSTypeToString(ctx, n.extendsType)} ? ${printTSTypeToString(ctx, n.trueType)} : ${printTSTypeToString(ctx, n.falseType)}`,
     ),
-    Match.when(
-      { type: 'TSInferType' },
-      (n) => `infer ${n.typeParameter.name.name}${printTypeClause(ctx, ' extends ', n.typeParameter.constraint)}`,
+    Match.when(isNode('TSInferType'), (n) => `infer ${n.typeParameter.name.name}${printTypeClause(ctx, ' extends ', n.typeParameter.constraint)}`,
     ),
-    Match.when(
-      { type: 'TSTypeQuery' },
-      (n) => `typeof ${printTypeQueryName(ctx, n)}${typeArgumentsText(ctx, n.typeArguments)}`,
+    Match.when(isNode('TSTypeQuery'), (n) => `typeof ${printTypeQueryName(ctx, n)}${typeArgumentsText(ctx, n.typeArguments)}`,
     ),
-    Match.when({ type: 'TSImportType' }, (n) => printTSImportType(ctx, n)),
-    Match.when(
-      { type: 'TSTypeOperator' },
-      (n) => `${n.operator} ${printTSTypeToString(ctx, n.typeAnnotation)}`,
+    Match.when(isNode('TSImportType'), (n) => printTSImportType(ctx, n)),
+    Match.when(isNode('TSTypeOperator'), (n) => `${n.operator} ${printTSTypeToString(ctx, n.typeAnnotation)}`,
     ),
-    Match.when({ type: 'TSMappedType' }, (n) => printMappedType(ctx, n)),
-    Match.when({ type: 'TSTemplateLiteralType' }, (n) => printTSTemplateLiteral(ctx, n)),
-    Match.when(
-      { type: 'TSFunctionType' },
-      (n) =>
+    Match.when(isNode('TSMappedType'), (n) => printMappedType(ctx, n)),
+    Match.when(isNode('TSTemplateLiteralType'), (n) => printTSTemplateLiteral(ctx, n)),
+    Match.when(isNode('TSFunctionType'), (n) =>
         `${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
     ),
-    Match.when(
-      { type: 'TSConstructorType' },
-      (n) =>
+    Match.when(isNode('TSConstructorType'), (n) =>
         `${flagText(n.abstract, 'abstract ')}new ${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
     ),
-    Match.when({ type: 'TSTypePredicate' }, (n) => printTSTypePredicate(ctx, n)),
-    Match.when(
-      { type: 'TSIndexedAccessType' },
-      (n) => `${printTSTypeToString(ctx, n.objectType)}[${printTSTypeToString(ctx, n.indexType)}]`,
+    Match.when(isNode('TSTypePredicate'), (n) => printTSTypePredicate(ctx, n)),
+    Match.when(isNode('TSIndexedAccessType'), (n) => `${printTSTypeToString(ctx, n.objectType)}[${printTSTypeToString(ctx, n.indexType)}]`,
     ),
-    Match.when({ type: 'TSNamedTupleMember' }, (n) => printNamedTupleMember(ctx, n)),
-    Match.when({ type: 'TSLiteralType' }, (n) => printTSLiteralType(ctx, n.literal)),
-    Match.when(
-      { type: 'TSParenthesizedType' },
-      (n) => `(${printTSTypeToString(ctx, n.typeAnnotation)})`,
+    Match.when(isNode('TSNamedTupleMember'), (n) => printNamedTupleMember(ctx, n)),
+    Match.when(isNode('TSLiteralType'), (n) => printTSLiteralType(ctx, n.literal)),
+    Match.when(isNode('TSParenthesizedType'), (n) => `(${printTSTypeToString(ctx, n.typeAnnotation)})`,
     ),
-    Match.when({ type: 'TSJSDocNullableType' }, (n) => printJSDocPostfixModifier(ctx, n, '?')),
-    Match.when({ type: 'TSJSDocNonNullableType' }, (n) => printJSDocPostfixModifier(ctx, n, '!')),
-    Match.when({ type: 'TSJSDocUnknownType' }, () => '?'),
+    Match.when(isNode('TSJSDocNullableType'), (n) => printJSDocPostfixModifier(ctx, n, '?')),
+    Match.when(isNode('TSJSDocNonNullableType'), (n) => printJSDocPostfixModifier(ctx, n, '!')),
+    Match.when(isNode('TSJSDocUnknownType'), () => '?'),
     Match.orElse(() => ''),
   )
 
@@ -1423,9 +1398,9 @@ const printTupleType = (ctx: PrintContext, elements: TSTupleType['elementTypes']
 
 const printTupleElement = (ctx: PrintContext, element: TSTupleType['elementTypes'][number]): string =>
   Match.value(element).pipe(
-    Match.when({ type: 'TSRestType' }, (n) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`),
-    Match.when({ type: 'TSOptionalType' }, (n) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`),
-    Match.when({ type: 'TSNamedTupleMember' }, (n) => printNamedTupleMember(ctx, n)),
+    Match.when(isNode('TSRestType'), (n) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`),
+    Match.when(isNode('TSOptionalType'), (n) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`),
+    Match.when(isNode('TSNamedTupleMember'), (n) => printNamedTupleMember(ctx, n)),
     Match.when(isTSType, (n) => printTSTypeToString(ctx, n)),
     Match.orElse(() => ''),
   )
@@ -1441,15 +1416,15 @@ const printTypeClause = (ctx: PrintContext, keyword: string, type: TSType | null
 
 const printTypeQueryName = (ctx: PrintContext, node: TSTypeQuery): string =>
   Match.value(node.exprName).pipe(
-    Match.when({ type: 'TSImportType' }, (n) => printTSTypeToString(ctx, n)),
+    Match.when(isNode('TSImportType'), (n) => printTSTypeToString(ctx, n)),
     Match.orElse((n) => printTSTypeName(ctx, n)),
   )
 
 const printTSTypeName = (ctx: PrintContext, name: TSTypeReference['typeName']): string =>
   Match.value(name).pipe(
-    Match.when({ type: 'TSQualifiedName' }, (n) => `${printTSTypeName(ctx, n.left)}.${n.right.name}`),
-    Match.when({ type: 'Identifier' }, (n) => n.name),
-    Match.when({ type: 'ThisExpression' }, () => 'this'),
+    Match.when(isNode('TSQualifiedName'), (n) => `${printTSTypeName(ctx, n.left)}.${n.right.name}`),
+    Match.when(isNode('Identifier'), (n) => n.name),
+    Match.when(isNode('ThisExpression'), () => 'this'),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 
@@ -1464,7 +1439,7 @@ const printTSImportTypeQualifierNode = (
   qualifier: NonNullable<TSImportType['qualifier']>,
 ): string =>
   Match.value(qualifier).pipe(
-    Match.when({ type: 'Identifier' }, (n) => n.name),
+    Match.when(isNode('Identifier'), (n) => n.name),
     Match.orElse(
       (n) => `${printTSImportTypeQualifier(ctx, n.left)}.${n.right.name}`,
     ),
@@ -1517,13 +1492,11 @@ const printPredicateAnnotation = (ctx: PrintContext, node: TSTypePredicate): str
 
 const printTSLiteralType = (ctx: PrintContext, literal: TSLiteralType['literal']): string =>
   Match.value(literal).pipe(
-    Match.when({ type: 'Literal' }, (n) => literalText(n)),
-    Match.when({ type: 'TemplateLiteral' }, (n) => templateLiteralText(ctx, n)),
-    Match.when(
-      { type: 'UnaryExpression' },
-      (n) =>
+    Match.when(isNode('Literal'), (n) => literalText(n)),
+    Match.when(isNode('TemplateLiteral'), (n) => templateLiteralText(ctx, n)),
+    Match.when(isNode('UnaryExpression'), (n) =>
         `${n.operator}${Match.value(n.argument).pipe(
-          Match.when({ type: 'Literal' }, (argument) => literalText(argument)),
+          Match.when(isNode('Literal'), (argument) => literalText(argument)),
           Match.orElse(() => ''),
         )}`,
     ),
@@ -1617,33 +1590,29 @@ const identifierNameText = (node: Node | null | undefined): string => identifier
 
 const privateIdentifierText = (node: Node | null | undefined): string =>
   Match.value(node).pipe(
-    Match.when({ type: 'PrivateIdentifier' }, (n) => `#${n.name}`),
+    Match.when(isNode('PrivateIdentifier'), (n) => `#${n.name}`),
     Match.orElse(() => ''),
   )
 
 const precOf = (node: Node): number =>
   Match.value(node).pipe(
-    Match.when({ type: 'SequenceExpression' }, () => PREC.Sequence),
-    Match.when({ type: 'AssignmentExpression' }, () => PREC.Assignment),
-    Match.when({ type: 'ConditionalExpression' }, () => PREC.Conditional),
-    Match.when(
-      { type: 'LogicalExpression' },
-      (n) => logicalPrec(n.operator),
+    Match.when(isNode('SequenceExpression'), () => PREC.Sequence),
+    Match.when(isNode('AssignmentExpression'), () => PREC.Assignment),
+    Match.when(isNode('ConditionalExpression'), () => PREC.Conditional),
+    Match.when(isNode('LogicalExpression'), (n) => logicalPrec(n.operator),
     ),
-    Match.when(
-      { type: 'BinaryExpression' },
-      (n) => binaryPrec(n.operator),
+    Match.when(isNode('BinaryExpression'), (n) => binaryPrec(n.operator),
     ),
-    Match.when({ type: 'UnaryExpression' }, () => PREC.Unary),
-    Match.when({ type: 'AwaitExpression' }, () => PREC.Unary),
-    Match.when({ type: 'YieldExpression' }, () => PREC.Unary),
-    Match.when({ type: 'UpdateExpression' }, () => PREC.Update),
-    Match.when({ type: 'CallExpression' }, () => PREC.Call),
-    Match.when({ type: 'NewExpression' }, () => PREC.Call),
-    Match.when({ type: 'TaggedTemplateExpression' }, () => PREC.Call),
-    Match.when({ type: 'ImportExpression' }, () => PREC.Call),
-    Match.when({ type: 'MemberExpression' }, () => PREC.Member),
-    Match.when({ type: 'ChainExpression' }, () => PREC.Member),
+    Match.when(isNode('UnaryExpression'), () => PREC.Unary),
+    Match.when(isNode('AwaitExpression'), () => PREC.Unary),
+    Match.when(isNode('YieldExpression'), () => PREC.Unary),
+    Match.when(isNode('UpdateExpression'), () => PREC.Update),
+    Match.when(isNode('CallExpression'), () => PREC.Call),
+    Match.when(isNode('NewExpression'), () => PREC.Call),
+    Match.when(isNode('TaggedTemplateExpression'), () => PREC.Call),
+    Match.when(isNode('ImportExpression'), () => PREC.Call),
+    Match.when(isNode('MemberExpression'), () => PREC.Member),
+    Match.when(isNode('ChainExpression'), () => PREC.Member),
     Match.orElse(() => PREC.Primary),
   )
 
@@ -1684,7 +1653,7 @@ const ARRAY_ELEMENT_WRAPPED_KINDS: Readonly<Record<string, true>> = {
 
 const jsxAttributeNameText = (name: JSXAttribute['name']): string =>
   Match.value(name).pipe(
-    Match.when({ type: 'JSXIdentifier' }, (n) => n.name),
+    Match.when(isNode('JSXIdentifier'), (n) => n.name),
     Match.orElse((n) => `${n.namespace.name}:${n.name.name}`),
   )
 
@@ -1852,7 +1821,7 @@ const importAttributeText = (attribute: ImportAttribute): string =>
 
 const importAttrKeyText = (key: ImportAttribute['key']): string =>
   Match.value(key).pipe(
-    Match.when({ type: 'Identifier' }, (n) => n.name),
+    Match.when(isNode('Identifier'), (n) => n.name),
     Match.orElse((n) => JSON.stringify(n.value)),
   )
 
@@ -1952,7 +1921,7 @@ const typeParameterModifiersText = (node: TSTypeParameterDeclaration['params'][n
 
 const typePredicateParameterText = (parameterName: TSTypePredicate['parameterName']): string =>
   Match.value(parameterName).pipe(
-    Match.when({ type: 'TSThisType' }, () => 'this'),
+    Match.when(isNode('TSThisType'), () => 'this'),
     Match.orElse((n) => n.name),
   )
 
