@@ -219,7 +219,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
     symlinkNodeModules: defaulted(S.Boolean, true),
     tempDirName: defaulted(S.String, RENDERED_OPTION_DEFAULTS.tempDirName),
     cleanTempDir: defaulted(S.Literals(['always', false, true]), true),
-    testRunner: defaulted(TestRunnerConfigSchema, 'command'),
+    testRunner: defaulted(TestRunnerConfigSchema, 'vm'),
     testRunnerNodeArgs: defaulted(S.Array(S.String), []),
     thresholds: defaulted(MutationScoreThresholdsSchema, { high: 80, low: 60, break: null }),
     timeoutFactor: defaulted(S.Finite, 1.5),

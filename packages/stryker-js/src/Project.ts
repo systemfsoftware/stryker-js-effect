@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import type { File as InstrumentFile } from '@systemfsoftware/stryker-js-instrumenter'
 import type { FileDescription, FileDescriptions, MutateDescription } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutationTestResult } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -12,12 +13,48 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
+import * as S from 'effect/Schema'
 import { compileIgnoreRule, type IgnoreRule } from './glob-match.js'
 
 import { defaultOptions } from './config-defaults.js'
 import { incrementalReportCell } from './incremental-report.cell.js'
 import { ALWAYS_IGNORE, IGNORE_PATTERN_CHARACTER, MUTATION_RANGE_REGEX } from './Project.ignore.js'
+import { isVmRunner } from './VmRunner.js'
 const DEFAULT_GLOB = '**/*.{js,ts,jsx,tsx,html,vue,mjs,mts,cts,cjs}'
+
+export const VITEST_DEFAULT_TEST_FILE_PATTERNS: readonly string[] = [
+  '**/*.{test,spec}.{js,jsx,ts,tsx,cjs,cjsx,cts,ctsx,mjs,mjsx,mts,mtsx}',
+]
+
+/**
+ * Vitest's default excludes for discovered test files. `inputFileNames` already
+ * drops `node_modules` and the temp directory, these keep the discovery honest
+ * on its own terms.
+ */
+export const defaultTestFileIgnores = (tempDirName: string): readonly string[] => [
+  '**/node_modules/**',
+  '**/dist/**',
+  '**/.{idea,git,cache,output,temp}/**',
+  `**/${tempDirName}/**`,
+]
+
+const shouldDiscoverTestFiles = (
+  options: Pick<StrykerOptions, 'testFiles' | 'testRunner'>,
+): boolean => options.testFiles.length === 0 && isVmRunner(options.testRunner)
+
+const testFileSelectionOf = (
+  options: Pick<StrykerOptions, 'tempDirName' | 'testFiles' | 'testRunner'>,
+): { readonly testFileIgnores: readonly string[]; readonly testFilePatterns: readonly string[] } =>
+  Match.value(shouldDiscoverTestFiles(options)).pipe(
+    Match.when(true, () => ({
+      testFilePatterns: VITEST_DEFAULT_TEST_FILE_PATTERNS,
+      testFileIgnores: defaultTestFileIgnores(options.tempDirName),
+    })),
+    Match.orElse(() => ({
+      testFilePatterns: options.testFiles,
+      testFileIgnores: [],
+    })),
+  )
 
 const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
 
@@ -26,6 +63,7 @@ export interface FileSelectionInput {
   readonly mutatePatterns: readonly string[]
   readonly targetMutatePatterns?: readonly string[]
   readonly testFilePatterns: readonly string[]
+  readonly testFileIgnores?: readonly string[]
   readonly basePath: string
 }
 
@@ -390,13 +428,15 @@ function resolveTestFilesPure(
   inputFileNames: readonly string[],
   testFilePatterns: readonly string[],
   basePath: string,
+  testFileIgnores: readonly string[],
 ): readonly string[] {
   if (testFilePatterns.length === 0) {
     return []
   }
+  const ignoredBy = testFileIgnores.map((pattern) => createPureMatcher(pattern, false, basePath))
   const allMatched = testFilePatterns.flatMap((pattern) => {
     const matches = createPureMatcher(pattern, false, basePath)
-    return inputFileNames.filter((fileName) => matches(fileName))
+    return inputFileNames.filter((fileName) => matches(fileName) && !ignoredBy.some((ignores) => ignores(fileName)))
   })
   return Array.from(HashSet.fromIterable(allMatched))
 }
@@ -408,7 +448,12 @@ export const selectFiles = (input: FileSelectionInput): SelectedFiles => ({
     input.targetMutatePatterns,
     input.basePath,
   ),
-  testFiles: resolveTestFilesPure(input.inputFileNames, input.testFilePatterns, input.basePath),
+  testFiles: resolveTestFilesPure(
+    input.inputFileNames,
+    input.testFilePatterns,
+    input.basePath,
+    input.testFileIgnores ?? [],
+  ),
 })
 
 export const FILE_CONCURRENCY = 24
@@ -718,10 +763,9 @@ export function readProject(
     progressStreamFile,
     htmlReporter,
     jsonReporter,
-    testFiles,
   } = options
   const mutatePatterns: readonly string[] = mutate
-  const testFilePatterns: readonly string[] = testFiles
+  const { testFileIgnores, testFilePatterns } = testFileSelectionOf(options)
   const ignoreRules: readonly string[] = [
     ...ALWAYS_IGNORE,
     tempDirName,
@@ -737,12 +781,13 @@ export function readProject(
     const defaults = yield* defaultOptions
     const selection = ((): FileSelectionInput => {
       if (targetMutatePatterns === undefined) {
-        return { inputFileNames, mutatePatterns, testFilePatterns, basePath }
+        return { inputFileNames, mutatePatterns, testFilePatterns, testFileIgnores, basePath }
       }
       return {
         inputFileNames,
         mutatePatterns,
         testFilePatterns,
+        testFileIgnores,
         basePath,
         targetMutatePatterns,
       }
@@ -793,4 +838,66 @@ export function readProject(
     const incrementalReport = yield* incrementalReportCell.run({ incremental, incrementalFile })
     return makeProject(decision.fileDescriptions, Option.getOrUndefined(incrementalReport), [...decision.testFiles])
   })
+}
+
+if (import.meta.vitest) {
+  // dynamic import because a static one would ship @effect/vitest/vitest into prod bundles
+  const { it } = await import('@effect/vitest')
+
+  const FileNameSchema = S.Struct({
+    dir: S.Literals(['src', 'lib', 'docs', 'node_modules', 'dist', '.stryker-tmp', '.cache', '.git']),
+    stem: S.Literals(['calc', 'util', 'index']),
+    middle: S.Literals(['test', 'spec', 'util', 'index', 'readme']),
+    ext: S.Literals(['ts', 'tsx', 'js', 'mjs', 'cts', 'md']),
+  })
+  type FileName = S.Schema.Type<typeof FileNameSchema>
+  const BASE = '/project'
+  const EXCLUDED_DIRS: readonly string[] = ['node_modules', 'dist', '.stryker-tmp', '.cache', '.git']
+  const isTestShaped = (file: FileName): boolean =>
+    Match.value(`${file.middle}.${file.ext}`).pipe(
+      Match.when('test.ts', () => true),
+      Match.when('test.tsx', () => true),
+      Match.when('test.js', () => true),
+      Match.when('test.mjs', () => true),
+      Match.when('test.cts', () => true),
+      Match.when('spec.ts', () => true),
+      Match.when('spec.tsx', () => true),
+      Match.when('spec.js', () => true),
+      Match.when('spec.mjs', () => true),
+      Match.when('spec.cts', () => true),
+      Match.orElse(() => false),
+    )
+  const expectedFor = (file: FileName, path: string): readonly string[] =>
+    Match.value(isTestShaped(file) && !EXCLUDED_DIRS.includes(file.dir)).pipe(
+      Match.when(true, () => [path]),
+      Match.orElse(() => []),
+    )
+  const sorted = (files: readonly string[]): readonly string[] => [...files].sort()
+
+  it.prop(
+    '∀f_Discovery_≡TestShapedOutsideExcluded',
+    [FileNameSchema],
+    ([file]) => {
+      const path = `${BASE}/${file.dir}/${file.stem}.${file.middle}.${file.ext}`
+      const selected = resolveTestFilesPure(
+        [path],
+        VITEST_DEFAULT_TEST_FILE_PATTERNS,
+        BASE,
+        defaultTestFileIgnores('.stryker-tmp'),
+      )
+      return selected.join('\n') === expectedFor(file, path).join('\n')
+    },
+  )
+
+  it.prop(
+    '∀f_Discovery_=DiscoveryOfItsOwnResult',
+    [S.Array(FileNameSchema)],
+    ([files]) => {
+      const input = files.map((file) => `${BASE}/${file.dir}/${file.stem}.${file.middle}.${file.ext}`)
+      const ignores = defaultTestFileIgnores('.stryker-tmp')
+      const once = resolveTestFilesPure(input, VITEST_DEFAULT_TEST_FILE_PATTERNS, BASE, ignores)
+      const again = resolveTestFilesPure([...input, ...once], VITEST_DEFAULT_TEST_FILE_PATTERNS, BASE, ignores)
+      return sorted(once).join('\n') === sorted(again).join('\n')
+    },
+  )
 }

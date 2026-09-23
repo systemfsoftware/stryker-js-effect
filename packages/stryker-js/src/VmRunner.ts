@@ -116,25 +116,26 @@ const hostStrykerNamespace = <A = unknown>(): Record<string, A> => {
   return created
 }
 
-const monolithicResult = (failureMessage: string | undefined, timeSpentMs: number): CompleteDryRunResult =>
-  Match.value(failureMessage).pipe(
-    Match.when(Match.string, (failure) => ({
-      status: 'complete' as const,
-      tests: [
-        {
-          id: ALL_TESTS_ID,
-          name: ALL_TESTS_NAME,
-          status: 'failed' as const,
-          failureMessage: failure,
-          timeSpentMs,
-        },
-      ],
-    })),
-    Match.orElse(() => ({
-      status: 'complete' as const,
-      tests: [{ id: ALL_TESTS_ID, name: ALL_TESTS_NAME, status: 'success' as const, timeSpentMs }],
-    })),
-  )
+const monolithicResult = (failureMessage: string, timeSpentMs: number): CompleteDryRunResult => ({
+  status: 'complete' as const,
+  tests: [
+    {
+      id: ALL_TESTS_ID,
+      name: ALL_TESTS_NAME,
+      status: 'failed' as const,
+      failureMessage,
+      timeSpentMs,
+    },
+  ],
+})
+
+const noTestsFound = (): TestRunnerFailed =>
+  TestRunnerFailed.make({
+    runnerName: vmRunnerName,
+    phase: 'init',
+    cause:
+      'The "vm" test runner ran zero tests. Set the "testFiles" option so it knows which files to load, or use testRunner "vitest" or "command".',
+  })
 
 const prefixOf = (file: string, pathToFileURL: (path: string) => VmFileUrl): string => {
   const href = pathToFileURL(file).href
@@ -274,7 +275,7 @@ const runOnce = (
     let armed = false
     try {
       if (reusable === undefined && request.testFiles[0] === undefined) {
-        return { result: monolithicResult(undefined, 0), graph: current }
+        return yield* noTestsFound()
       }
       let graph: LoadedGraph
       let runFailure: RunFailure | undefined
@@ -363,7 +364,10 @@ const runOnce = (
       }
       const drainedElapsed = outcome.tests.reduce((total, test) => total + test.timeSpentMs, 0)
       if (graph.registry.tests.length === 0) {
-        return { result: monolithicResult(runFailure?.message, drainedElapsed), graph }
+        if (runFailure === undefined) {
+          return yield* noTestsFound()
+        }
+        return { result: monolithicResult(runFailure.message, drainedElapsed), graph }
       }
       const tests: TestResult[] = outcome.tests.map((test): TestResult => {
         const base = {

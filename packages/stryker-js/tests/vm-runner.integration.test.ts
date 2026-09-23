@@ -68,15 +68,20 @@ const writeSuites = (
   }).pipe(Effect.orDie)
 
 const NOTICING_SUITE = [
-  'const host: Record<string, unknown> = globalThis as unknown as Record<string, unknown>',
-  'const stryker: Record<string, unknown> | undefined = host["__stryker__"] as Record<string, unknown> | undefined',
+  'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
+  'const stryker = globalThis["__stryker__"]',
   'const active: unknown = stryker === undefined ? undefined : stryker.activeMutant',
-  'if (active === "mutant-1") {',
-  '  throw new Error("the mutated program ran")',
-  '}',
+  "slot.api.it('notices the change', () => {",
+  '  if (active === "mutant-1") {',
+  '    throw new Error("the mutated program ran")',
+  '  }',
+  '})',
 ].join('\n')
 
-const IGNORING_SUITE = 'globalThis.__strykerRun = "completed"'
+const IGNORING_SUITE = [
+  'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
+  "slot.api.it('ignores the change', () => {})",
+].join('\n')
 const FINALIZER_SUITE = [
   'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
   'const { test, hooks } = slot.api',
@@ -499,7 +504,7 @@ Feature('Verifying mutants without spawning a child process')
     )
 
     scenario(
-      'A project with nothing to run still reports a completed initial run',
+      'A project with nothing to run stops the run naming the runner',
       Gherkin.Do.pipe(
         Given('a written project whose test file list is empty')(
           'suite',
@@ -509,16 +514,23 @@ Feature('Verifying mutants without spawning a child process')
           'attempt',
           (s) => suiteFailure(s.suite, []),
         ),
-        Then('the run completes and reports no tests')((s) =>
+        Then('the run is refused with guidance to point the runner at test files')((s) =>
           Effect.sync(() => {
-            expect(Exit.isSuccess(s.attempt)).toBe(true)
-            if (Exit.isSuccess(s.attempt)) {
-              expect(s.attempt.value.status).toBe('complete')
-              if (s.attempt.value.status === 'complete') {
-                expect(s.attempt.value.tests).toEqual([
-                  { id: 'all', name: 'All tests', status: 'success', timeSpentMs: 0 },
-                ])
-              }
+            expect(Exit.isFailure(s.attempt)).toBe(true)
+            if (Exit.isFailure(s.attempt)) {
+              const failure = Cause.findErrorOption(s.attempt.cause)
+              const described = Match.value(failure).pipe(
+                Match.when(Option.isNone, () => 'no failure was reported'),
+                Match.orElse((reported) =>
+                  Match.value(reported.value).pipe(
+                    Match.tag('TestRunnerFailed', (typed) => `${typed.phase}: ${typed.cause}`),
+                    Match.orElse(() => 'a different failure was reported'),
+                  )
+                ),
+              )
+              expect(described).toContain('init')
+              expect(described).toContain('"vm"')
+              expect(described).toContain('testFiles')
             }
           })
         ),

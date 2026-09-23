@@ -54,6 +54,10 @@ pnpm exec stryker run
 
 ## Zero-Plugin Built-in Runners
 
+The in-memory V8 VM runner is the default: with no `testRunner` and no `testFiles`
+configured, it discovers `*.test` / `*.spec` files itself and runs them. Set
+`testFiles` explicitly, or pick one of the runners below, to take control.
+
 ### 1. Shell Command Runner (`testRunner: 'command'`)
 
 Execute any test suite without extra plugins:
