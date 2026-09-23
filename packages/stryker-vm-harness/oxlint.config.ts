@@ -1,8 +1,8 @@
-import all from '@systemfsoftware/all'
+import recommended from '@systemfsoftware/oxlint-config-recommended'
 import { defineConfig } from 'oxlint'
 
 export default defineConfig({
-  extends: [all],
+  extends: [recommended],
   rules: {
     'typescript/no-unnecessary-condition': 'error',
     'typescript/strict-boolean-expressions': 'error',
@@ -17,14 +17,6 @@ export default defineConfig({
         'no-ternary': 'off',
         'typescript/consistent-type-assertions': 'off',
         'typescript/no-unsafe-return': 'off',
-        '@systemfsoftware/oxlint-plugin-effect-dmmf/make-file-location': 'off',
-        '@systemfsoftware/oxlint-plugin-effect-dmmf/schema-declaration-location': 'off',
-        '@systemfsoftware/oxlint-plugin-effect-dmmf/make-body-purity': 'off',
-        '@systemfsoftware/oxlint-plugin-effect-dmmf/no-test-file-in-src': 'off',
-        '@systemfsoftware/oxlint-plugin-effect-dmmf/src-property-test-cell': 'off',
-        '@systemfsoftware/oxlint-plugin-effect-dmmf/damp-test-naming': 'off',
-        '@systemfsoftware/oxlint-plugin-effect-dmmf/no-nested-quantification': 'off',
-        '@systemfsoftware/oxlint-plugin-effect-dmmf/pbt-naming': 'off',
         'typescript/no-non-null-assertion': 'off',
         'no-restricted-globals': 'off',
         'no-restricted-imports': 'off',
@@ -33,8 +25,6 @@ export default defineConfig({
     {
       files: ['src/shell/**/*.test.ts'],
       rules: {
-        '@systemfsoftware/oxlint-plugin-effect-dmmf/behaviour-test-requires-gherkin': 'off',
-        '@systemfsoftware/oxlint-plugin-effect-dmmf/behaviour-one-feature-per-file': 'off',
         'vitest/no-conditional-in-test': 'off',
         'typescript/no-unnecessary-condition': 'off',
         'typescript/no-unsafe-call': 'off',

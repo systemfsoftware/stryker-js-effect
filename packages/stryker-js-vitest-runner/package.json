@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-vitest-runner",
-  "version": "7.0.1",
+  "version": "7.1.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -58,9 +58,9 @@
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
-    "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/stryker-config": "workspace:^",
     "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "catalog:stryker",
     "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "catalog:stryker",
@@ -113,7 +113,7 @@
     "@opentelemetry/sdk-trace-base": "2.11.0",
     "@opentelemetry/sdk-trace-node": "2.11.0",
     "@opentelemetry/semantic-conventions": "1.43.0",
-    "@systemfsoftware/effect-cell-types": "8.3.1",
+    "@systemfsoftware/effect-cell-types": "8.3.2",
     "effect": "4.0.0-rc.116",
     "oxc-parser": "0.150.0",
     "ws": "8.21.3"

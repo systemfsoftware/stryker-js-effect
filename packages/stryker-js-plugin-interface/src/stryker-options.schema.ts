@@ -249,7 +249,7 @@ export type PartialStrykerOptions = DeepOptional<StrykerOptions>
  * caller CONSTRUCTS by assignment, so `readonly` is stripped. The decoded
  * `StrykerOptions` keeps it - that side is read, never built.
  */
-export type DeepOptional<T> = {
-  -readonly [P in keyof T]?: T[P] extends Record<string, unknown> ? DeepOptional<T[P]> | undefined
+export type DeepOptional<T, V = unknown> = {
+  -readonly [P in keyof T]?: T[P] extends Record<string, V> ? DeepOptional<T[P], V> | undefined
     : T[P]
 }

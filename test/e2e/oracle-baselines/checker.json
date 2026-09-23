@@ -1,0 +1,30 @@
+{
+  "artifactContract": "stryker-oracle-baseline/v1",
+  "slice": "checker",
+  "strykerConfig": "stryker.checker.config.ts",
+  "counts": {
+    "compileErrors": 15,
+    "ignored": 0,
+    "killed": 12,
+    "noCoverage": 0,
+    "pending": 0,
+    "runtimeErrors": 0,
+    "survived": 0,
+    "timeout": 0
+  },
+  "mutatorStatusTally": {
+    "ArrowFunction:CompileError": 4,
+    "BlockStatement:CompileError": 2,
+    "BlockStatement:Killed": 1,
+    "BooleanLiteral:Killed": 1,
+    "ConditionalExpression:CompileError": 3,
+    "ConditionalExpression:Killed": 3,
+    "EqualityOperator:CompileError": 1,
+    "EqualityOperator:Killed": 2,
+    "LogicalOperator:Killed": 1,
+    "ObjectLiteral:CompileError": 1,
+    "OptionalChaining:CompileError": 1,
+    "StringLiteral:CompileError": 3,
+    "StringLiteral:Killed": 4
+  }
+}

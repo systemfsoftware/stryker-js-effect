@@ -348,14 +348,14 @@ const decodeClearTextReport = (terminal: TerminalReport): Effect.Effect<ClearTex
     ),
   )
 
-const streamErrorOf = (cause: unknown): ReporterFailed =>
+const streamErrorOf = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'clear-text',
     event: 'mutationTestReportReady',
     cause: errorToString(cause),
   })
 
-const failAsClearText = (cause: unknown): ReporterFailed =>
+const failAsClearText = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'clear-text',
     event: 'mutationTestReportReady',

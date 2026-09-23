@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@enterprise/core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@enterprise/core/*": [
+        "./packages/core/src/*.ts"
+      ],
+      "@enterprise/services": [
+        "./packages/services/src/index.ts"
+      ],
+      "@enterprise/analytics": [
+        "./packages/analytics/src/index.ts"
+      ],
+      "@core/*": [
+        "./packages/core/src/*.ts"
+      ]
+    }
+  },
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/services"
+    },
+    {
+      "path": "./packages/analytics"
+    },
+    {
+      "path": "./packages/api"
+    }
+  ]
+}

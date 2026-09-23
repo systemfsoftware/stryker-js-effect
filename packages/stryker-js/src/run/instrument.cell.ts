@@ -4,10 +4,13 @@ import type { File as InstrumenterFile, InstrumentResult } from '@systemfsoftwar
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
 import * as MutableHashMap from 'effect/MutableHashMap'
+import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
+import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { PhaseEntered, RunEvents } from '../RunEvents.js'
 
 import { InstrumentCommand, planInstrumentation } from '../plan-instrumentation.workflow.js'
@@ -132,4 +135,14 @@ export const instrumentCell = Sandwich.read((command: PrepareDone) =>
         }
       }),
   )
-) satisfies Cell.Cell<PrepareDone, unknown, unknown, unknown>
+) satisfies Cell.Cell<
+  PrepareDone,
+  InstrumentDone,
+  StageError,
+  | Scope.Scope
+  | RunEnvironment
+  | RunEvents
+  | ChildProcessSpawner.ChildProcessSpawner
+  | FileSystem.FileSystem
+  | Path.Path
+>

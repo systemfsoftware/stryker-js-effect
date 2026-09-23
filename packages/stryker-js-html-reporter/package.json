@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-html-reporter",
-  "version": "4.0.4",
+  "version": "4.0.5",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -34,9 +34,9 @@
   "devDependencies": {
     "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
-    "@systemfsoftware/all": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",

@@ -9,6 +9,14 @@ export * from './Checker.js'
 export * from './Evaluator.js'
 export * from './ExitClass.js'
 export * from './Metrics.schema.js'
+export {
+  HIT_LIMIT_REASON_PREFIX,
+  hitLimitReachedReason,
+  isHitLimitReason,
+  isNamedTrap,
+  WALL_CLOCK_TIMEOUT_REASON,
+  wallClockTimeoutStopsRun,
+} from './mutant-timeout-reason.js'
 export { CheckerRpcs, ReporterRpcs, TestRunnerRpcs } from './Plugin.js'
 export {
   type BoundaryError,

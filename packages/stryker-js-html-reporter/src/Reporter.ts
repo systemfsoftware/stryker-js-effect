@@ -2,7 +2,7 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { ReporterEvent, ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface'
 import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -20,7 +20,7 @@ function escapeHtmlTags(json: string): string {
   return json.replace(/</g, '<"+"')
 }
 
-function buildReportHtml(report: unknown, scriptContent: string): string {
+function buildReportHtml(report: MutationTestReportReady['report'], scriptContent: string): string {
   return `<!DOCTYPE html>
   <html>
   <head>
@@ -120,12 +120,12 @@ const writeReportHtml = (
       ).html,
     ))
 
-const failAsHtmlReporter = (cause: unknown): ReporterFailed =>
+const failAsHtmlReporter = <A = unknown>(cause: A): ReporterFailed =>
   ReporterFailed.make({ reporterName: 'html', event: 'mutationTestReportReady', cause: errorToString(cause) })
 
 const writeReportHtmlIfReady = (
   fileName: string,
-  event: unknown,
+  event: ReporterEvent,
   cached: Ref.Ref<string | undefined>,
 ): Effect.Effect<void, ReporterFailed, FileSystem.FileSystem | Path.Path> => {
   if (S.is(MutationTestReportReady)(event)) {
@@ -134,12 +134,12 @@ const writeReportHtmlIfReady = (
   return Effect.void
 }
 
-const streamErrorOf = (cause: unknown): ReporterFailed =>
+const streamErrorOf = <A = unknown>(cause: A): ReporterFailed =>
   ReporterFailed.make({ reporterName: 'html', event: 'mutationTestReportReady', cause: errorToString(cause) })
 
 const drainEvents = (
   fileName: string,
-  events: AsyncIterable<unknown>,
+  events: AsyncIterable<ReporterEvent>,
 ): Effect.Effect<void, ReporterFailed, FileSystem.FileSystem | Path.Path> =>
   Effect.flatMap(
     Ref.make<string | undefined>(undefined),

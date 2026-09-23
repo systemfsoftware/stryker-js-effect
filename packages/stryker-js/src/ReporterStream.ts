@@ -155,9 +155,9 @@ const declaresTerminalReport = (result: IteratorResult<ReporterEvent>): boolean 
   return false
 }
 
-const closeIterator = (
+const closeIterator = <V = unknown>(
   iterator: AsyncIterator<ReporterEvent>,
-  value: unknown,
+  value: V,
 ): Promise<IteratorResult<ReporterEvent>> => {
   const finish: AsyncIterator<ReporterEvent>['return'] | undefined = iterator.return?.bind(iterator)
   return Match.value(finish).pipe(
@@ -216,7 +216,7 @@ export const REPORTER_EVENT_BATCH_BOUND = 128
 
 export type ReporterWorkerClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof ReporterRpcs>, RpcClientError>
 
-const workerStreamErrorOf = (cause: unknown): ReporterFailed =>
+const workerStreamErrorOf = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({ reporterName: 'worker', event: 'mutationTestReportReady', cause: errorToString(cause) })
 
 const reporterInitPayload = (init: ReporterInit): ReporterInitOptions => ({
@@ -331,9 +331,9 @@ type ReporterDrainOutcome =
   | { readonly kind: 'detached'; readonly name: string }
   | { readonly kind: 'terminal-failed'; readonly name: string }
 
-const settleFailedAttachment = (
+const settleFailedAttachment = <E = unknown>(
   attachment: ReporterAttachment,
-  cause: Cause.Cause<unknown>,
+  cause: Cause.Cause<E>,
 ): Effect.Effect<ReporterDrainOutcome, never, never> =>
   Effect.gen(function*() {
     if (attachment.latch.state === 'terminal') {

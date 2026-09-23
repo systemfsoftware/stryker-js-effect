@@ -51,7 +51,7 @@ export const mutationTestCell: Cell.Cell<PrepareExecutorArgs, MutationTestDone, 
     mutationTestStageCell,
   )
 
-export const shouldKeepTempDir = (
-  exit: Exit.Exit<unknown, unknown>,
+export const shouldKeepTempDir = <A = unknown, E = unknown>(
+  exit: Exit.Exit<A, E>,
   cleanTempDir: 'always' | boolean,
 ): boolean => Exit.isFailure(exit) && cleanTempDir !== 'always'

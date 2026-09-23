@@ -1,8 +1,8 @@
-import all from '@systemfsoftware/all'
+import recommended from '@systemfsoftware/oxlint-config-recommended'
 import { defineConfig } from 'oxlint'
 
 export default defineConfig({
-  extends: [all],
+  extends: [recommended],
 
   rules: {
     'typescript/no-unnecessary-condition': 'error',

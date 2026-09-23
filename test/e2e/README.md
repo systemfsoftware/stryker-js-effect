@@ -1,38 +1,37 @@
 # `@systemfsoftware/stryker-e2e`
 
-Container-isolated end-to-end tests for the packaged `@systemfsoftware/stryker-js` binary and its plugins.
+MicroVM-isolated end-to-end tests for the packaged `@systemfsoftware/stryker-js` binary and its plugins.
 
 ## What it tests
 
-The suite resolves the workspace closure of the CLI and its plugins, packs each member with `pnpm pack`, starts a clean container, installs the whole closure into isolated fixture projects, and runs `stryker run` to verify behavior across the process boundary. The lane also runs the harness's own unit suite (for example the closure resolution above) before the container journeys:
+The suite resolves the workspace closure of the CLI and its plugins, packs each member with `pnpm pack`, installs the whole closure into isolated fixture projects inside a preparation microVM, and runs every `stryker` invocation in its own one-shot [`@systemfsoftware/effect-microsandbox`](https://www.npmjs.com/package/@systemfsoftware/effect-microsandbox) job microVM to verify behavior across the process boundary:
 
 - Full mutation runs against realistic test suites
 - Exit codes and typed machine-mode JSON error envelopes on failure
-- Worker RPC compatibility across different Effect dependency versions
 
 ## Running locally
 
-Local runs require Docker or Podman with an active socket.
+Local runs need hardware virtualization and nothing else: no Docker daemon, Podman socket, or container CLI.
 
-With Docker:
+- **Linux:** a read/write `/dev/kvm`. When it exists but belongs to the `kvm` group, add yourself to that group (`sudo usermod -aG kvm "$USER"`, then log in again) or grant an ACL (`sudo setfacl -m u:"$USER":rw /dev/kvm`).
+- **macOS:** Apple Silicon (Hypervisor.framework).
+- **Inside a rootless podman container** (for example an agent sandbox run as a quadlet): add `AddDevice=/dev/kvm` to the unit's `[Container]` section, plus `GroupAdd=keep-groups` when the host's `/dev/kvm` is `root:kvm` mode `0660`, then `systemctl --user daemon-reload` and restart the unit.
 
 ```bash
 pnpm test:e2e
 ```
 
-With Podman:
-
-```bash
-DOCKER_HOST=unix://$(podman info --format '{{.Host.RemoteSocket.Path}}') \
-TESTCONTAINERS_RYUK_PRIVILEGED=true \
-pnpm test:e2e
-```
+Without usable virtualization the lane stops in global setup with a `VirtualizationUnsupportedError` naming the fix.
 
 Run a specific test:
 
 ```bash
 cd test/e2e && pnpm exec vitest run <path-to-test>
 ```
+
+### Fixture cache
+
+Global setup keys the baked fixtures on the base image, `tests/__fixtures__/bake-fixtures.sh`, the unpacked contents of every packed tarball, and every fixture source file. A hit reuses `node_modules/.cache/stryker-e2e/baked/<key>`; a miss re-bakes and prunes older keys. Editing a workspace package therefore re-bakes on the next run with no manual invalidation.
 
 ## Tracing and telemetry
 

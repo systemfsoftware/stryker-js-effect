@@ -255,6 +255,7 @@ const suiteFailure = (
   )
 
 Feature('Verifying mutants without spawning a child process')
+  .withLayer(Layer.empty)
   .liveClock()
   .body(({ scenario }) => {
     scenario(

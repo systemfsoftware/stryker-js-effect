@@ -54,12 +54,8 @@ const isString = (value: unknown): value is string => typeof value === 'string'
 
 const isNonEmptyString = (value: string | undefined): value is string => value !== undefined && value !== ''
 
-const versionFieldOf = (raw: unknown): Option.Option<unknown> => {
-  if (Predicate.hasProperty(raw, 'version')) {
-    return Option.some(raw.version)
-  }
-  return Option.none()
-}
+const versionFieldOf = <A = unknown>(raw: A): Option.Option<string> =>
+  Predicate.hasProperty(raw, 'version') ? Option.liftPredicate(raw.version, isString) : Option.none()
 
 const readTypescriptPackageVersion = (
   fsService: FileSystem.FileSystem,
@@ -70,9 +66,9 @@ const readTypescriptPackageVersion = (
     const pkgPath = yield* pathService.fromFileUrl(new URL(urlString))
     const text = yield* fsService.readFileString(pkgPath)
     const decoded = S.decodeResult(S.fromJsonString(S.Unknown))(text)
-    const raw: unknown = Result.match(decoded, { onFailure: () => ({}), onSuccess: (value) => value })
+    const raw = Result.match(decoded, { onFailure: () => ({}), onSuccess: (value) => value })
     return Option.getOrElse(
-      Option.flatMap(versionFieldOf(raw), (version) => Option.liftPredicate(version, isString)),
+      versionFieldOf(raw),
       () => '',
     )
   }).pipe(Effect.orElseSucceed(() => ''))
@@ -597,8 +593,8 @@ export const layer = Layer.effect(TypeScriptCompiler)(makeDummy)
 export type ITypescriptCompiler = Pick<TypeScriptCompiler['Service'], 'init' | 'check'>
 export type IFileRelationCreator = Pick<TypeScriptCompiler['Service'], 'nodes'>
 
-export function makeTypescriptCompiler(
-  options: unknown,
+export function makeTypescriptCompiler<A = unknown>(
+  options: A,
   fs: HybridFileSystem,
   fsService: FileSystem.FileSystem,
   pathService: Path.Path,
@@ -819,25 +815,23 @@ export function makeTypescriptCompiler(
   const readFileText = (fileName: string): Option.Option<string> =>
     Option.liftPredicate(fs.fileSystem.readFile?.(fileName), isString)
 
-  const sourcesFieldOf = (rawMap: unknown): Option.Option<readonly unknown[]> => {
-    if (!Predicate.hasProperty(rawMap, 'sources')) {
-      return Option.none()
-    }
-    return Option.liftPredicate(rawMap.sources, Array.isArray)
-  }
+  const sourcesFieldOf = <A = unknown>(rawMap: A): Option.Option<readonly string[]> =>
+    Option.liftPredicate(rawMap, (m) => Predicate.hasProperty(m, 'sources')).pipe(
+      Option.flatMap((m) => Option.liftPredicate(m.sources, Array.isArray)),
+      Option.map((sources) => sources.filter(isString)),
+    )
 
-  const parseSourceMapSources = (content: string): Option.Option<readonly unknown[]> =>
+  const parseSourceMapSources = (content: string): Option.Option<readonly string[]> =>
     Result.match(S.decodeResult(S.fromJsonString(S.Unknown))(content), {
       onFailure: () => Option.none(),
       onSuccess: sourcesFieldOf,
     })
 
-  const onlySourceOf = (sources: readonly unknown[]): Option.Option<string> => {
-    const names = sources.filter(isString)
-    if (names.length !== 1) {
+  const onlySourceOf = (sources: readonly string[]): Option.Option<string> => {
+    if (sources.length !== 1) {
       return Option.none()
     }
-    return Option.fromUndefinedOr(names[0])
+    return Option.fromUndefinedOr(sources[0])
   }
 
   const sourcePathFromMap = (

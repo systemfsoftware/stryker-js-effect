@@ -1,0 +1,17 @@
+{
+  "name": "@enterprise/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*"
+    }
+  },
+  "dependencies": {
+    "@enterprise/core": "1.0.0",
+    "@enterprise/services": "1.0.0",
+    "@enterprise/analytics": "1.0.0"
+  }
+}

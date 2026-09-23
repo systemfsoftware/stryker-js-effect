@@ -35,7 +35,8 @@ if (mode === 'mutant') {
     })
   }
 
-  afterAll((_context, suite: SuiteWithTaskMeta) => {
+  // oxlint-disable-next-line no-empty-pattern
+  afterAll(({}, suite: SuiteWithTaskMeta) => {
     suite.meta.hitCount = ns.hitCount
   })
 } else {
@@ -49,7 +50,8 @@ if (mode === 'mutant') {
     ns.currentTestId = undefined
   })
 
-  afterAll((_context, suite: SuiteWithTaskMeta) => {
+  // oxlint-disable-next-line no-empty-pattern
+  afterAll(({}, suite: SuiteWithTaskMeta) => {
     suite.meta.mutantCoverage = ns.mutantCoverage
   })
 }

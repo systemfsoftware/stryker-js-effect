@@ -1,4 +1,4 @@
-import { parse } from '@std/jsonc'
+import { type JsonValue, parse } from '@std/jsonc'
 import { disableTypeChecks } from '@systemfsoftware/stryker-js-instrumenter'
 import { errorToString, normalizeFileName } from '@systemfsoftware/stryker-js-instrumenter'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -131,7 +131,7 @@ const mergeUpdatedInto =
 const tsConfigParseError = (file: string, reason: string): TsConfigParseError =>
   TsConfigParseError.make({ file, reason, exitClass: 'ConfigError' })
 
-const parseJsonText = (jsonText: string): Result.Result<unknown, string> => {
+const parseJsonText = (jsonText: string): Result.Result<JsonValue, string> => {
   try {
     return Result.succeed(parse(jsonText.replace(/^\uFEFF/, '')))
   } catch (error) {
@@ -139,22 +139,20 @@ const parseJsonText = (jsonText: string): Result.Result<unknown, string> => {
   }
 }
 
-const parseTsConfigShape = (fileName: string, parsed: unknown): Result.Result<TSConfig, TsConfigParseError> =>
-  Match.value(parsed).pipe(
-    Match.when(
-      S.is(TsConfigSchema),
-      (config): Result.Result<TSConfig, TsConfigParseError> => Result.succeed(config),
-    ),
-    Match.orElse(
-      (): Result.Result<TSConfig, TsConfigParseError> =>
-        Result.fail(
-          tsConfigParseError(
-            fileName,
-            `parsed to ${JSON.stringify(parsed)}, which does not match the tsconfig shape this package consumes`,
-          ),
-        ),
+const parseTsConfigShape = (
+  fileName: string,
+  parsed: JsonValue,
+): Result.Result<TSConfig, TsConfigParseError> => {
+  if (S.is(TsConfigSchema)(parsed)) {
+    return Result.succeed(parsed)
+  }
+  return Result.fail(
+    tsConfigParseError(
+      fileName,
+      `parsed to ${JSON.stringify(parsed)}, which does not match the tsconfig shape this package consumes`,
     ),
   )
+}
 
 export function parseTsConfig(
   fileName: string,
@@ -190,7 +188,7 @@ const makeTSConfigPreprocessor = (options: StrykerOptions, basePath: string): Fi
     )
 
   const rewriteEntryAtIndex = (
-    value: unknown[],
+    value: string[],
     index: number,
     tsconfigFileName: string,
     pathService: Path.Path,
@@ -371,7 +369,7 @@ export class TemporaryDirectory extends Context.Service<TemporaryDirectory, Temp
   '@systemfsoftware/stryker-js/Sandbox/TemporaryDirectory',
 ) {}
 
-const removesTempDir = (exit: Exit.Exit<unknown, unknown>, cleanTempDir: 'always' | boolean): boolean =>
+const removesTempDir = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>, cleanTempDir: 'always' | boolean): boolean =>
   Exit.isSuccess(exit) || cleanTempDir === 'always'
 
 const removeEmptyParentDirectory = (

@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
-import { Effect } from 'effect'
+import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
 import {
@@ -61,6 +61,7 @@ const earnsAndIdleReport = (): Pick<schema.MutationTestResult, 'files' | 'testFi
   )
 
 Feature('Judging test contribution under the test-contribution gate')
+  .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       'A mutant killed by one file earns sole credit for that file',

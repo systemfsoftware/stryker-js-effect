@@ -75,7 +75,7 @@ interface EvaluatorServiceShape {
   readonly evaluate: (report: schema.MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed>
 }
 
-const causeStringOf = (cause: unknown): string | null => {
+const causeStringOf = <E = unknown>(cause: E): string | null => {
   if (cause === null || cause === undefined) return null
   if (typeof cause === 'string') return cause
   return JSON.stringify(cause)
@@ -102,6 +102,7 @@ const expectVerdictFail = (exit: Exit.Exit<ExitClass | null, EvaluatorFailed>): 
 }
 
 Feature('test-contribution evaluator plugin')
+  .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       'The published plugin list declares one evaluator named test-contribution',

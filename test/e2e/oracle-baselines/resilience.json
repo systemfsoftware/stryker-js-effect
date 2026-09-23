@@ -1,0 +1,37 @@
+{
+  "artifactContract": "stryker-oracle-baseline/v1",
+  "slice": "resilience",
+  "strykerConfig": "stryker.resilience.config.ts",
+  "counts": {
+    "compileErrors": 14,
+    "ignored": 0,
+    "killed": 21,
+    "noCoverage": 0,
+    "pending": 0,
+    "runtimeErrors": 0,
+    "survived": 15,
+    "timeout": 4
+  },
+  "mutatorStatusTally": {
+    "ArrayDeclaration:CompileError": 1,
+    "AssignmentOperator:Killed": 1,
+    "AssignmentOperator:Timeout": 1,
+    "BlockStatement:CompileError": 3,
+    "BlockStatement:Killed": 6,
+    "BlockStatement:Survived": 6,
+    "BlockStatement:Timeout": 2,
+    "BooleanLiteral:CompileError": 1,
+    "ConditionalExpression:CompileError": 3,
+    "ConditionalExpression:Killed": 6,
+    "ConditionalExpression:Survived": 6,
+    "EqualityOperator:Killed": 6,
+    "EqualityOperator:Survived": 1,
+    "MethodExpression:Killed": 1,
+    "MethodExpression:Survived": 1,
+    "ObjectLiteral:CompileError": 2,
+    "OptionalChaining:CompileError": 4,
+    "StringLiteral:Killed": 1,
+    "StringLiteral:Survived": 1,
+    "UpdateOperator:Timeout": 1
+  }
+}

@@ -9,6 +9,7 @@ import type {
 import * as Clock from 'effect/Clock'
 import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
@@ -17,6 +18,7 @@ import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
+import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { PhaseEntered } from '../RunEvents.js'
 import { RunEvents } from '../RunEvents.js'
 
@@ -28,6 +30,7 @@ import { offerReporterEvent, withPhaseSpan } from '../ReporterStream.js'
 import { StageError } from '../Run.schema.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.js'
 import { IdGenerator } from '../Worker.js'
+import { WorkerLauncher } from '../WorkerLauncher.js'
 import type { InstrumentDone } from './instrument.cell.js'
 import { RunEnvironment } from './RunEnvironment.js'
 
@@ -299,4 +302,15 @@ export const dryRunCell = Sandwich.read((command: InstrumentDone) =>
         )
       }),
   )
-) satisfies Cell.Cell<InstrumentDone, unknown, unknown, unknown>
+) satisfies Cell.Cell<
+  InstrumentDone,
+  DryRunDone,
+  StageError,
+  | Scope.Scope
+  | RunEnvironment
+  | RunEvents
+  | IdGenerator
+  | ChildProcessSpawner.ChildProcessSpawner
+  | FileSystem.FileSystem
+  | WorkerLauncher
+>

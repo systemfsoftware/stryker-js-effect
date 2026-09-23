@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
-import { Effect } from 'effect'
+import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
 import { instrument } from './__fixtures__/instrument.js'
@@ -31,6 +31,7 @@ export const workflow = Workflow.make({} as never, (command) =>
 const Feature = makeFeature({ it, layer })
 
 Feature('Parenthesized type predicates in make bodies')
+  .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       'A make body whose when arm carries a type-predicate arrow stays instrumentable',

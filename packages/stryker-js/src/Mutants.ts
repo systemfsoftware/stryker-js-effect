@@ -1,11 +1,3 @@
-import * as Effect from 'effect/Effect'
-import * as Match from 'effect/Match'
-import * as MutableHashMap from 'effect/MutableHashMap'
-import * as MutableHashSet from 'effect/MutableHashSet'
-import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
-import * as S from 'effect/Schema'
-
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type {
   Coverage,
@@ -17,6 +9,15 @@ import type {
   TestPlan as MutantTestPlan,
 } from '@systemfsoftware/stryker-js-instrumenter'
 import type { CompleteDryRunResult, TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Effect from 'effect/Effect'
+import * as Match from 'effect/Match'
+import * as MutableHashMap from 'effect/MutableHashMap'
+import * as MutableHashSet from 'effect/MutableHashSet'
+import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
+import * as S from 'effect/Schema'
+
+import { StageError } from './Run.schema.js'
 
 import { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from './IncrementalDiff.schema.js'
@@ -366,11 +367,31 @@ const calculateTotalTimeForIds = (testIds: readonly string[], testTimeById: Reco
     return acc
   }, 0)
 
+export const hitLimitForCount = (hitCount: number): number => hitCount * HIT_LIMIT_FACTOR
+
+const coveredWhenKnown = (covered: boolean, coverageKnown: boolean): boolean => {
+  if (!coverageKnown) {
+    return false
+  }
+  return covered
+}
+
+export const isMissingHitCount = (
+  hitCount: number | undefined,
+  covered: boolean,
+  coverageKnown: boolean,
+): boolean => {
+  if (!coveredWhenKnown(covered, coverageKnown)) {
+    return false
+  }
+  return hitCount === undefined
+}
+
 const getHitLimit = (hitCount: number | undefined): number | undefined => {
   if (hitCount === undefined) {
     return undefined
   }
-  return hitCount * HIT_LIMIT_FACTOR
+  return hitLimitForCount(hitCount)
 }
 
 const getMutantActivation = (testFilter: readonly string[] | undefined): 'runtime' | 'static' => {
@@ -495,6 +516,29 @@ const planForStaticallyCovered = (
   )
 }
 
+const hasCoveringTests = (tests: readonly string[] | undefined): boolean => {
+  if (tests === undefined) {
+    return false
+  }
+  return tests.length > 0
+}
+
+const mutantIsCovered = (command: PlanMutantTestsInput, mutantId: string): boolean => {
+  if (hasCoveringTests(command.testsByMutantId[mutantId])) {
+    return true
+  }
+  return hasStaticCoverageForPlan(command.staticCoverage, mutantId)
+}
+
+const coverageKnown = (command: PlanMutantTestsInput): boolean => command.staticCoverage !== undefined
+
+const boundFor = (command: PlanMutantTestsInput, mutant: Mutant): boolean =>
+  isMissingHitCount(
+    command.hitsByMutantId[mutant.id],
+    mutantIsCovered(command, mutant.id),
+    coverageKnown(command),
+  )
+
 const decidePlanForMutant = (
   mutant: Mutant,
   command: PlanMutantTestsInput,
@@ -518,6 +562,23 @@ const decidePlanForMutant = (
       ),
   })
 }
+
+const isClosedMutant = (mutant: Mutant): boolean => mutant.status !== undefined
+
+const missingIdOf = (command: PlanMutantTestsInput, mutant: Mutant): readonly string[] => {
+  if (!boundFor(command, mutant)) {
+    return []
+  }
+  return [mutant.id]
+}
+
+export const missingHitCountIds = (command: PlanMutantTestsInput): readonly string[] =>
+  command.mutants.flatMap((mutant) => {
+    if (isClosedMutant(mutant)) {
+      return []
+    }
+    return missingIdOf(command, mutant)
+  })
 
 export const planMutantTests = (
   command: PlanMutantTestsInput,
@@ -647,21 +708,46 @@ const materializePlan = (plan: TestPlan, original: Mutant): MutantTestPlan => {
   }
 }
 
-export const makeMutantTestPlanner = (
-  command: PlanMutantTestsInput,
-): Effect.Effect<readonly MutantTestPlan[], never, never> => {
-  const { plans } = planMutantTests(command)
+const missingHitFailure = (
+  missing: readonly string[],
+): Effect.Effect<never, StageError> | undefined => {
+  if (missing.length === 0) {
+    return undefined
+  }
+  return Effect.fail(StageError.make({
+    stage: 'mutationTest',
+    reason: `covered mutant missing dry-run hit count: ${missing.join(', ')}`,
+  }))
+}
+
+const mutantsById = (mutants: readonly Mutant[]): Map<string, Mutant> => {
   const byId = new Map<string, Mutant>()
-  for (const mutant of command.mutants) {
+  for (const mutant of mutants) {
     byId.set(mutant.id, mutant)
   }
-  return Effect.forEach(plans, (plan) => {
-    const original = byId.get(plan.mutantId)
-    if (original === undefined) {
-      return Effect.die(new Error(`planner returned an unknown mutant id: ${plan.mutantId}`))
-    }
-    return Effect.succeed(materializePlan(plan, original))
-  })
+  return byId
+}
+
+const materializeKnown = (
+  plan: TestPlan,
+  byId: Map<string, Mutant>,
+): Effect.Effect<MutantTestPlan, never> => {
+  const original = byId.get(plan.mutantId)
+  if (original === undefined) {
+    return Effect.die(new Error(`planner returned an unknown mutant id: ${plan.mutantId}`))
+  }
+  return Effect.succeed(materializePlan(plan, original))
+}
+
+export const makeMutantTestPlanner = (
+  command: PlanMutantTestsInput,
+): Effect.Effect<readonly MutantTestPlan[], StageError, never> => {
+  const failed = missingHitFailure(missingHitCountIds(command))
+  if (failed !== undefined) {
+    return failed
+  }
+  const { plans } = planMutantTests(command)
+  return Effect.forEach(plans, (plan) => materializeKnown(plan, mutantsById(command.mutants)))
 }
 
 export const plan = makeMutantTestPlanner
@@ -673,7 +759,7 @@ export const decidePlans = (
   timeOverheadMS: number,
   globalTestFilter: string[] | undefined,
   sandboxFileByName: Record<string, string>,
-): Effect.Effect<readonly MutantTestPlan[], never, never> => {
+): Effect.Effect<readonly MutantTestPlan[], StageError, never> => {
   const command = coverageToCommand(
     mutants,
     testCoverage,
@@ -1013,25 +1099,31 @@ export const computeIncrementalDiff = (
     Match.orElse(() => incrementalDiffOfChanges(input)),
   )
 
-const previousFilesOf = (rawReport: unknown): S.Schema.Type<typeof PreviousFilesSchema> =>
-  Match.value(rawReport).pipe(
-    Match.when(Predicate.isObject, (report) =>
-      Option.getOrElse(
-        Option.filter(Option.fromUndefinedOr(report['files']), S.is(PreviousFilesSchema)),
-        () => ({}),
-      )),
-    Match.orElse(() => ({})),
+const filesFieldOf = <F = unknown>(report: { readonly files: F }): S.Schema.Type<typeof PreviousFilesSchema> =>
+  Option.getOrElse(
+    S.decodeUnknownOption(PreviousFilesSchema)(report.files),
+    (): S.Schema.Type<typeof PreviousFilesSchema> => ({}),
   )
 
-const previousTestFilesOf = (rawReport: unknown): S.Schema.Type<typeof PreviousTestFilesSchema> =>
-  Match.value(rawReport).pipe(
-    Match.when(Predicate.isObject, (report) =>
-      Option.getOrElse(
-        Option.filter(Option.fromUndefinedOr(report['testFiles']), S.is(PreviousTestFilesSchema)),
-        () => ({}),
-      )),
-    Match.orElse(() => ({})),
+const previousFilesFrom = (report: object): S.Schema.Type<typeof PreviousFilesSchema> =>
+  Predicate.hasProperty(report, 'files') ? filesFieldOf(report) : {}
+
+const previousFilesOf = <T = unknown>(rawReport: T): S.Schema.Type<typeof PreviousFilesSchema> =>
+  Predicate.isObject(rawReport) ? previousFilesFrom(rawReport) : {}
+
+const testFilesFieldOf = <F = unknown>(
+  report: { readonly testFiles: F },
+): S.Schema.Type<typeof PreviousTestFilesSchema> =>
+  Option.getOrElse(
+    S.decodeUnknownOption(PreviousTestFilesSchema)(report.testFiles),
+    (): S.Schema.Type<typeof PreviousTestFilesSchema> => ({}),
   )
+
+const previousTestFilesFrom = (report: object): S.Schema.Type<typeof PreviousTestFilesSchema> =>
+  Predicate.hasProperty(report, 'testFiles') ? testFilesFieldOf(report) : {}
+
+const previousTestFilesOf = <T = unknown>(rawReport: T): S.Schema.Type<typeof PreviousTestFilesSchema> =>
+  Predicate.isObject(rawReport) ? previousTestFilesFrom(rawReport) : {}
 const hasTestFileName = (result: TestResult): result is TestResult & { readonly fileName: string } =>
   result.fileName !== undefined
 
@@ -1064,11 +1156,11 @@ const coveringTestFilesByMutantId = (testCoverage: TestCoverage, basePath: strin
   return byMutant
 }
 
-export const incrementalDiff = (
+export const incrementalDiff = <Report = unknown>(
   input: Readonly<{
     currentMutants: readonly Mutant[]
     testCoverage: TestCoverage
-    incrementalReport: unknown
+    incrementalReport: Report
     currentRelativeFiles: Record<string, string>
     basePath: string
     force?: boolean

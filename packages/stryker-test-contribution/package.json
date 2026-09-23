@@ -52,7 +52,7 @@
     "@effect/tsgo": "catalog:",
     "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
-    "@systemfsoftware/all": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",

@@ -44,6 +44,7 @@ const EXPRESSION_KINDS: ReadonlySet<string> = new Set([
   'JSXFragment',
   'Literal',
   'LogicalExpression',
+  'MemberExpression',
   'MetaProperty',
   'NewExpression',
   'ObjectExpression',
@@ -100,7 +101,7 @@ export function spanOf(node: Node): { start: number; end: number } | undefined {
   return { start: range[0], end: range[1] }
 }
 
-export function nodeType(node: unknown): string | undefined {
+export function nodeType<A = unknown>(node: A): string | undefined {
   if (!isAstNode(node)) return undefined
   return node.type
 }
@@ -388,7 +389,7 @@ interface NodeEntry {
   readonly end: number
 }
 
-const isNodeList = (value: unknown): value is Array<unknown> => Array.isArray(value)
+const isNodeList = (value: unknown): value is Array<Node> => Array.isArray(value)
 
 const walkableNode = (node: Node): Oxc.Node => {
   if (isAstNode(node)) return node
@@ -424,8 +425,20 @@ function appendEntry(node: Node, out: NodeEntry[]): void {
   if (span === undefined) return
   out.push({ node, start: span.start, end: span.end })
 }
+export interface AstNodeRecord {
+  readonly [k: string]:
+    | Node
+    | readonly Node[]
+    | string
+    | number
+    | boolean
+    | null
+    | undefined
+    | AstNodeRecord
+    | readonly AstNodeRecord[]
+}
 
-export function isAstNode(value: unknown): value is Oxc.Node & Record<string, unknown> {
+export function isAstNode(value: unknown): value is Oxc.Node & AstNodeRecord {
   return Predicate.isObject(value) && typeof value['type'] === 'string'
 }
 
@@ -459,28 +472,35 @@ type TraverseVisitor = (path: TraversePath) => void
 
 const COMMENT_KEYS: ReadonlySet<string> = new Set(['leadingComments', 'trailingComments'])
 
-function isCommentKey(key: unknown): boolean {
+function isCommentKey<A = unknown>(key: A): boolean {
   return typeof key === 'string' && COMMENT_KEYS.has(key)
+}
+
+function walkTraverse(root: Program | Node, stack: TraversePath[], visitors: TraverseVisitors): void {
+  walk(walkableNode(root), {
+    enter(node, _parent, context) {
+      readPath(stack, node, this, context, visitors)
+    },
+    leave(_node, _parent, context) {
+      closePath(stack, context, visitors)
+    },
+  })
+}
+const toTraverseError = <A = unknown>(error: A): Error =>
+  error instanceof Error ? error : new Error('Traversal failed', { cause: error })
+
+const handleTraverseError = <A = unknown>(error: A): void => {
+  const err = toTraverseError(error)
+  if (!S.is(TraversalStopped)(err)) throw err
 }
 
 export function traverse(root: Program | Node, visitors: TraverseVisitors): void {
   const stack: TraversePath[] = []
   try {
-    walk(walkableNode(root), {
-      enter(node, _parent, context) {
-        readPath(stack, node, this, context, visitors)
-      },
-      leave(_node, _parent, context) {
-        closePath(stack, context, visitors)
-      },
-    })
-  } catch (error) {
-    rethrowUnlessStopped(error)
+    walkTraverse(root, stack, visitors)
+  } catch (error: unknown) {
+    handleTraverseError(error)
   }
-}
-
-const rethrowUnlessStopped = (error: unknown): void => {
-  if (!S.is(TraversalStopped)(error)) throw error
 }
 
 const readPath = (
@@ -580,29 +600,38 @@ function replaceInSlot(
   writeInto(parentPath.node, key, index, replacement)
 }
 
-function writeInto(parent: unknown, key: unknown, index: number | null, replacement: Node): void {
+function writeInto<A = unknown, B = unknown>(parent: A, key: B, index: number | null, replacement: Node): void {
   if (!isAstNode(parent)) return
   writeAtKey(parent, key, index, replacement)
 }
 
-function writeAtKey(parent: Record<string, unknown>, key: unknown, index: number | null, replacement: Node): void {
-  Match.value(key).pipe(
-    Match.when(Predicate.isString, (slot) => writeAtSlot(parent, slot, index, replacement)),
-    Match.orElse(() => undefined),
-  )
+function writeAtKey<A = unknown>(
+  parent: Record<string, AstNodeRecord[string]>,
+  key: A,
+  index: number | null,
+  replacement: Node,
+): void {
+  if (Predicate.isString(key)) {
+    writeAtSlot(parent, key, index, replacement)
+  }
 }
 
-function writeAtSlot(parent: Record<string, unknown>, key: string, index: number | null, replacement: Node): void {
+function writeAtSlot(
+  parent: Record<string, AstNodeRecord[string]>,
+  key: string,
+  index: number | null,
+  replacement: Node,
+): void {
   Match.value(index).pipe(
     Match.when(Match.null, () => overwrite(parent, key, replacement)),
     Match.orElse((position) => writeElement(parent[key], position, replacement)),
   )
 }
 
-const overwrite = (parent: Record<string, unknown>, key: string, replacement: Node): void => {
+const overwrite = (parent: Record<string, AstNodeRecord[string]>, key: string, replacement: Node): void => {
   parent[key] = replacement
 }
 
-const writeElement = (container: unknown, index: number, replacement: Node): void => {
+const writeElement = <A = unknown>(container: A, index: number, replacement: Node): void => {
   if (isNodeList(container)) container[index] = replacement
 }

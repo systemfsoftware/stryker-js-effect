@@ -50,25 +50,25 @@ export function isExitClass(value: unknown): value is ExitClass {
 
 const asExitClass = Option.liftPredicate(isExitClass)
 
-const carriesExitClass = (value: unknown): value is { readonly exitClass: unknown } =>
+const carriesExitClass = <A = unknown>(value: unknown): value is { readonly exitClass: A } =>
   Predicate.isObjectOrArray(value) && 'exitClass' in value
 
-const carriesCause = (value: unknown): value is { readonly cause: unknown } =>
+const carriesCause = <A = unknown>(value: unknown): value is { readonly cause: A } =>
   Predicate.isObjectOrArray(value) && 'cause' in value
 
-const carriesReason = (value: unknown): value is { readonly reason: unknown } =>
+const carriesReason = <A = unknown>(value: unknown): value is { readonly reason: A } =>
   Predicate.isObjectOrArray(value) && 'reason' in value
 
-const carriesMessageField = (value: unknown): value is { readonly message: unknown } =>
+const carriesMessageField = <A = unknown>(value: unknown): value is { readonly message: A } =>
   Predicate.isObjectOrArray(value) && 'message' in value
 
-export function exitClassOf(value: unknown): ExitClass | undefined {
-  return Option.getOrUndefined(
-    Match.value(value).pipe(
-      Match.when(carriesExitClass, (carrier) => asExitClass(carrier.exitClass)),
-      Match.orElse(() => Option.none()),
-    ),
-  )
+const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
+
+export function exitClassOf<A = unknown>(value: A): ExitClass | undefined {
+  if (!carriesExitClass(value)) {
+    return undefined
+  }
+  return Option.getOrUndefined(asExitClass(value.exitClass))
 }
 
 const MAX_TRAVERSAL_DEPTH = 10
@@ -81,23 +81,20 @@ function isReachableValue(value: unknown, depth: number, seen: WeakSet<object>):
   return depth <= MAX_TRAVERSAL_DEPTH && isUnseenObject(value, seen)
 }
 
-function isChildList(value: unknown): value is ReadonlyArray<unknown> {
+function isChildList<A = unknown>(value: unknown): value is ReadonlyArray<A> {
   return Array.isArray(value)
 }
 
-function causeChildrenOf(value: object): ReadonlyArray<unknown> {
-  const cause: unknown = Match.value(value).pipe(
-    Match.when(carriesCause, (carrier) => carrier.cause),
-    Match.orElse(() => undefined),
-  )
-  return Match.value(cause).pipe(
-    Match.when(isChildList, (children) => children),
-    Match.orElse(() => [cause]),
-  )
+function causeChildrenOf<A = unknown>(value: object): ReadonlyArray<A> {
+  const cause = carriesCause<A>(value) ? value.cause : undefined
+  return Option.match(Option.fromNullishOr(cause), {
+    onNone: (): ReadonlyArray<A> => [],
+    onSome: (settled) => (isChildList<A>(settled) ? settled : [settled]),
+  })
 }
 
-function visitReachableValue(
-  value: unknown,
+function visitReachableValue<A = unknown>(
+  value: A,
   depth: number,
   seen: WeakSet<object>,
   visit: (value: object) => void,
@@ -109,8 +106,8 @@ function visitReachableValue(
   }
 }
 
-function findReachableValue<A>(
-  value: unknown,
+function findReachableValue<V = unknown, A = unknown>(
+  value: V,
   depth: number,
   seen: WeakSet<object>,
   read: (value: object) => Option.Option<A>,
@@ -125,17 +122,21 @@ function findReachableValue<A>(
   )
 }
 
-function causePayloadOf(reason: Cause.Reason<unknown>): unknown {
-  return Match.value(reason).pipe(
-    Match.when(Cause.isFailReason, (failed) => failed.error),
-    Match.when(Cause.isDieReason, (died) => died.defect),
-    Match.orElse(() => undefined),
-  )
+function causePayloadOf<E = unknown>(reason: Cause.Reason<E>): E | object | undefined {
+  return Cause.isFailReason(reason) ? reason.error : objectPayloadOf(reason)
+}
+
+function objectPayloadOf<E = unknown>(reason: Cause.Reason<E>): object | undefined {
+  return Option.getOrUndefined(Option.filter(dieDefectOf(reason), isNonNullObject))
+}
+
+function dieDefectOf<E = unknown>(reason: Cause.Reason<E>) {
+  return Cause.isDieReason(reason) ? Option.some(reason.defect) : Option.none()
 }
 
 const failedExit = Option.liftPredicate(Exit.isFailure)
 
-function failurePayloads(exit: Exit.Exit<unknown, unknown>): ReadonlyArray<unknown> {
+function failurePayloads<A = unknown, E = unknown>(exit: Exit.Exit<A, E>): ReadonlyArray<E | object | undefined> {
   return Option.getOrElse(
     Option.map(failedExit(exit), (failure) => failure.cause.reasons.map(causePayloadOf)),
     () => [],
@@ -149,7 +150,7 @@ function appendExitClass(value: object, out: Array<ExitClass>): void {
   }
 }
 
-export function collectExitClasses(exit: Exit.Exit<unknown, unknown>): Array<ExitClass> {
+export function collectExitClasses<A = unknown, E = unknown>(exit: Exit.Exit<A, E>): Array<ExitClass> {
   const out: Array<ExitClass> = []
   const seen = new WeakSet<object>()
   failurePayloads(exit).forEach((payload) =>
@@ -161,7 +162,7 @@ export function collectExitClasses(exit: Exit.Exit<unknown, unknown>): Array<Exi
 const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
 
 function reasonOf(value: object): string | undefined {
-  const declared: unknown = Match.value(value).pipe(
+  const declared = Match.value(value).pipe(
     Match.when(carriesReason, (carrier) => carrier.reason),
     Match.orElse(() => undefined),
   )
@@ -175,7 +176,7 @@ function reasonOf(value: object): string | undefined {
 }
 
 function causeTextOf(value: object): string | undefined {
-  const cause: unknown = Match.value(value).pipe(
+  const cause = Match.value(value).pipe(
     Match.when(carriesCause, (carrier) => carrier.cause),
     Match.orElse(() => undefined),
   )
@@ -183,11 +184,11 @@ function causeTextOf(value: object): string | undefined {
 }
 
 function firstConfiguredText(value: object): Option.Option<string> {
-  const reason: unknown = Match.value(value).pipe(
+  const reason = Match.value(value).pipe(
     Match.when(carriesReason, (carrier) => carrier.reason),
     Match.orElse(() => undefined),
   )
-  const message: unknown = Match.value(value).pipe(
+  const message = Match.value(value).pipe(
     Match.when(carriesMessageField, (carrier) => carrier.message),
     Match.orElse(() => undefined),
   )
@@ -201,7 +202,7 @@ function configDetailAt(value: object): Option.Option<string> {
   return firstConfiguredText(value)
 }
 
-function firstConfigErrorDetail(exit: Exit.Exit<unknown, unknown>): string | undefined {
+function firstConfigErrorDetail<A = unknown, E = unknown>(exit: Exit.Exit<A, E>): string | undefined {
   const seen = new WeakSet<object>()
   // The reasons are read newest-first, the order the previous stack walk visited them in.
   const roots = [...failurePayloads(exit)].reverse()
@@ -210,11 +211,11 @@ function firstConfigErrorDetail(exit: Exit.Exit<unknown, unknown>): string | und
   )
 }
 
-export function remediationFor(exit: Exit.Exit<unknown, unknown>, code: number): string {
+export function remediationFor<A = unknown, E = unknown>(exit: Exit.Exit<A, E>, code: number): string {
   return buildErrorEnvelope(exit, code, '', []).remediation
 }
 
-const PRIMITIVE_REFINEMENTS: ReadonlyArray<Predicate.Predicate<unknown>> = [
+const PRIMITIVE_REFINEMENTS = [
   Predicate.isString,
   Predicate.isNumber,
   Predicate.isBoolean,
@@ -222,7 +223,7 @@ const PRIMITIVE_REFINEMENTS: ReadonlyArray<Predicate.Predicate<unknown>> = [
   Predicate.isSymbol,
 ]
 
-const isPrimitiveText = Predicate.some<unknown>(PRIMITIVE_REFINEMENTS)
+const isPrimitiveText = Predicate.some(PRIMITIVE_REFINEMENTS)
 
 function isMessageError(value: unknown): value is Error {
   return value instanceof Error && value.message.length > 0
@@ -232,29 +233,43 @@ function declaresReasonText(value: unknown): value is object {
   return carriesReason(value) && Option.isSome(nonEmptyText(value.reason))
 }
 
-function failureValueDescription(value: unknown): Option.Option<string> {
-  return Match.value(value).pipe(
-    Match.when(S.is(SurvivorsRejection), (rejected) => Option.some(rejected.remediation)),
-    Match.when(declaresReasonText, (carrier) => Option.fromNullishOr(reasonOf(carrier))),
-    Match.when(isMessageError, (error) => Option.some(error.message)),
-    Match.when(isPrimitiveText, (primitive) => Option.some(String(primitive))),
-    Match.orElse(() => Option.none()),
+function remediationTextOf<A = unknown>(value: A): Option.Option<string> {
+  return S.is(SurvivorsRejection)(value) ? Option.some(value.remediation) : Option.none()
+}
+
+function reasonTextOf<A = unknown>(value: A): Option.Option<string> {
+  return declaresReasonText(value) ? Option.fromNullishOr(reasonOf(value)) : Option.none()
+}
+
+function errorMessageTextOf<A = unknown>(value: A): Option.Option<string> {
+  return isMessageError(value) ? Option.some(value.message) : Option.none()
+}
+
+function primitiveTextOf<A = unknown>(value: A): Option.Option<string> {
+  return isPrimitiveText(value) ? Option.some(String(value)) : Option.none()
+}
+
+function failureValueDescription<A = unknown>(value: A): Option.Option<string> {
+  return remediationTextOf(value).pipe(
+    Option.orElse(() => reasonTextOf(value)),
+    Option.orElse(() => errorMessageTextOf(value)),
+    Option.orElse(() => primitiveTextOf(value)),
   )
 }
 
-function failureDescriptionOf(exit: Exit.Exit<unknown, unknown>): Option.Option<string> {
+function failureDescriptionOf<A = unknown, E = unknown>(exit: Exit.Exit<A, E>): Option.Option<string> {
   return failureValueDescription(failureValue(exit)).pipe(
     Option.orElse(() => Option.fromNullishOr(firstConfigErrorDetail(exit))),
     Option.orElse(() => Option.flatMap(failedExit(exit), (failure) => nonEmptyText(Cause.pretty(failure.cause)))),
   )
 }
 
-export function describeFailure(exit: Exit.Exit<unknown, unknown>): string {
+export function describeFailure<A = unknown, E = unknown>(exit: Exit.Exit<A, E>): string {
   return Option.getOrElse(failureDescriptionOf(exit), () => UNKNOWN_FAILURE)
 }
 
-export function unrecognizedArgumentOf(
-  exit: Exit.Exit<unknown, unknown>,
+export function unrecognizedArgumentOf<A = unknown, E = unknown>(
+  exit: Exit.Exit<A, E>,
   argv: readonly string[],
 ): string | undefined {
   return Option.getOrUndefined(
@@ -264,12 +279,22 @@ export function unrecognizedArgumentOf(
   )
 }
 
-function cliErrorList(exit: Exit.Exit<unknown, unknown>): Option.Option<ReadonlyArray<CliError.CliError>> {
-  return Match.value(failureValue(exit)).pipe(
-    Match.when(S.is(CliError.ShowHelp), (help) => Option.some<ReadonlyArray<CliError.CliError>>(help.errors)),
-    Match.when(CliError.isCliError, (cliError) => Option.some<ReadonlyArray<CliError.CliError>>([cliError])),
-    Match.orElse(() => Option.none()),
-  )
+function showHelpErrors(help: CliError.ShowHelp): ReadonlyArray<CliError.CliError> {
+  return help.errors
+}
+
+function showHelpErrorsOf<A = unknown>(value: A): Option.Option<ReadonlyArray<CliError.CliError>> {
+  return S.is(CliError.ShowHelp)(value) ? Option.some(showHelpErrors(value)) : Option.none()
+}
+
+function cliErrorList<A = unknown, E = unknown>(
+  exit: Exit.Exit<A, E>,
+): Option.Option<ReadonlyArray<CliError.CliError>> {
+  const value = failureValue(exit)
+  return Option.match(showHelpErrorsOf(value), {
+    onSome: (errors) => Option.some(errors),
+    onNone: () => (CliError.isCliError(value) ? Option.some([value]) : Option.none()),
+  })
 }
 
 function argumentHintOf(error: CliError.CliError, argv: readonly string[]): Option.Option<string> {
@@ -295,7 +320,7 @@ function followingArgument(argv: readonly string[], option: string): Option.Opti
   )
 }
 
-export function failureValue(exit: Exit.Exit<unknown, unknown>): unknown {
+export function failureValue<A = unknown, E = unknown>(exit: Exit.Exit<A, E>): E | undefined {
   return Option.getOrUndefined(
     Option.flatMap(failedExit(exit), (failure) => Cause.findErrorOption(failure.cause)),
   )
@@ -312,32 +337,26 @@ const SIGNAL_REMEDIATION = 'the run was interrupted by a signal; re-run it to co
 const PARSE_REMEDIATION = 're-run with --help to see the full usage'
 const DEFAULT_REMEDIATION = 'see --reportFile or the verdict envelope on stdout'
 
-function verdictExitClass(value: unknown): ExitClass | undefined {
-  return Match.value(value).pipe(
-    Match.when(Predicate.hasProperty('verdict'), (carrier) => Option.getOrUndefined(asExitClass(carrier.verdict))),
-    Match.orElse(() => undefined),
-  )
+function verdictExitClass<A = unknown>(value: A): ExitClass | undefined {
+  return Predicate.hasProperty('verdict')(value)
+    ? Option.getOrUndefined(asExitClass(value.verdict))
+    : undefined
 }
 
-function successExitClassOf(exit: Exit.Exit<unknown, unknown>): ExitClass | undefined {
-  return Match.value(exit).pipe(
-    Match.when(Exit.isSuccess, (success) => verdictExitClass(success.value)),
-    Match.orElse(() => undefined),
-  )
+function successExitClassOf<A = unknown, E = unknown>(exit: Exit.Exit<A, E>): ExitClass | undefined {
+  return Exit.isSuccess(exit) ? verdictExitClass(exit.value) : undefined
 }
 
-function helpErrorCountOf(value: unknown): number | undefined {
-  return Match.value(value).pipe(
-    Match.when(S.is(CliError.ShowHelp), (help) => help.errors.length),
-    Match.orElse(() => undefined),
-  )
+function showHelpErrorCount(help: CliError.ShowHelp): number {
+  return help.errors.length
 }
 
-function survivorsRejectionOf(value: unknown): SurvivorsRejection | undefined {
-  return Match.value(value).pipe(
-    Match.when(S.is(SurvivorsRejection), (survivors) => survivors),
-    Match.orElse(() => undefined),
-  )
+function helpErrorCountOf<A = unknown>(value: A): number | undefined {
+  return S.is(CliError.ShowHelp)(value) ? showHelpErrorCount(value) : undefined
+}
+
+function survivorsRejectionOf<A = unknown>(value: A): SurvivorsRejection | undefined {
+  return S.is(SurvivorsRejection)(value) ? value : undefined
 }
 
 function present<A>(value: A | null): A | undefined {
@@ -374,19 +393,22 @@ function capturedOrUnknown(captured: string): string {
   return Option.getOrElse(nonEmptyText(captured), () => UNKNOWN_FAILURE)
 }
 
-function hasOnlyInterrupts(exit: Exit.Exit<unknown, unknown>): boolean {
+function hasOnlyInterrupts<A = unknown, E = unknown>(exit: Exit.Exit<A, E>): boolean {
   return Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
 }
 
-function carriesCliError(value: unknown): boolean {
+function carriesCliError<A = unknown>(value: A): boolean {
   return value !== undefined && CliError.isCliError(value)
 }
 
-function carriesSchemaError(value: unknown): boolean {
+function carriesSchemaError<A = unknown>(value: A): boolean {
   return value !== undefined && S.isSchemaError(value)
 }
 
-export function gatherRunOutcome(exit: Exit.Exit<unknown, unknown>, argv: readonly string[]): RunOutcomeCommand {
+export function gatherRunOutcome<A = unknown, E = unknown>(
+  exit: Exit.Exit<A, E>,
+  argv: readonly string[],
+): RunOutcomeCommand {
   const value = failureValue(exit)
   const survivors = survivorsRejectionOf(value)
   return RunOutcomeCommand.make({
@@ -460,15 +482,15 @@ export function shapeEnvelope(error: FailedRunOutcome, captured: string): ErrorE
   }
 }
 
-export function classifyRunOutcome(
-  exit: Exit.Exit<unknown, unknown>,
+export function classifyRunOutcome<A = unknown, E = unknown>(
+  exit: Exit.Exit<A, E>,
   argv: readonly string[],
 ): Result.Result<RunOutcomeDecision, RunOutcomeError> {
   return classifyRunOutcomeWorkflow(gatherRunOutcome(exit, argv))
 }
 
-export function buildErrorEnvelope(
-  exit: Exit.Exit<unknown, unknown>,
+export function buildErrorEnvelope<A = unknown, E = unknown>(
+  exit: Exit.Exit<A, E>,
   code: number,
   captured: string,
   argv: readonly string[],
@@ -497,15 +519,15 @@ const capturedConsoleChunks: string[] = []
 const countByLabel = new Map<string, number>()
 const timeByLabel = new Map<string, bigint>()
 
-function inspectValue(value: unknown): string {
+function inspectValue<A = unknown>(value: A): string {
   if (typeof value === 'string') {
     return value
   }
   return Formatter.format(value)
 }
 
-interface FormatProgress {
-  readonly args: ReadonlyArray<unknown>
+interface FormatProgress<A = unknown> {
+  readonly args: ReadonlyArray<A>
   readonly cursor: number
   readonly text: string
 }
@@ -513,7 +535,7 @@ interface FormatProgress {
 const PLACEHOLDER = /(%[sdijfopO%])/g
 const PLACEHOLDER_PART = /^%[sdijfopO%]$/
 
-function jsonArgumentText(argument: unknown): string {
+function jsonArgumentText<A = unknown>(argument: A): string {
   try {
     return String(JSON.stringify(argument))
   } catch {
@@ -521,7 +543,7 @@ function jsonArgumentText(argument: unknown): string {
   }
 }
 
-function placeholderText(placeholder: string, argument: unknown): string {
+function placeholderText<A = unknown>(placeholder: string, argument: A): string {
   return Match.value(placeholder).pipe(
     Match.when(Match.is('%s'), () => String(argument)),
     Match.when(Match.is('%d', '%i', '%f'), () => Number(argument).toString()),
@@ -566,29 +588,23 @@ function formatStep(progress: FormatProgress, part: string): FormatProgress {
   )
 }
 
-function formatTemplate(template: string, args: ReadonlyArray<unknown>): string {
+function formatTemplate<A = unknown>(template: string, args: ReadonlyArray<A>): string {
   const parts = template.split(PLACEHOLDER)
   const progress = parts.reduce<FormatProgress>(formatStep, { args, cursor: 0, text: '' })
   const trailing = progress.args.slice(progress.cursor).map((argument) => ` ${inspectValue(argument)}`)
   return progress.text + trailing.join('')
 }
 
-function isTextTemplate(args: readonly unknown[]): args is readonly [string, ...Array<unknown>] {
-  return typeof args[0] === 'string'
+function formatArgs<A = unknown>(args: ReadonlyArray<A>): string {
+  const [first, ...rest] = args
+  return typeof first === 'string' ? formatTemplate(first, rest) : args.map(inspectValue).join(' ')
 }
 
-function formatArgs(args: readonly unknown[]): string {
-  return Match.value(args).pipe(
-    Match.when(isTextTemplate, (values) => formatTemplate(values[0], values.slice(1))),
-    Match.orElse((values) => values.map(inspectValue).join(' ')),
-  )
-}
-
-function captureSync(args: readonly unknown[]): void {
+function captureSync<A = unknown>(args: ReadonlyArray<A>): void {
   capturedConsoleChunks.push(formatArgs(args))
 }
 
-function captureAssert(condition: boolean, args: readonly unknown[]): void {
+function captureAssert<A = unknown>(condition: boolean, args: ReadonlyArray<A>): void {
   if (!condition) {
     capturedConsoleChunks.push(`Assertion failed: ${formatArgs(args)}`)
   }
@@ -625,7 +641,7 @@ function captureTimeEnd(label: string | undefined, nowNanos: bigint): void {
   }
 }
 
-function captureTimeLog(label: string | undefined, args: readonly unknown[], clock: Clock.Clock): void {
+function captureTimeLog<A = unknown>(label: string | undefined, args: ReadonlyArray<A>, clock: Clock.Clock): void {
   const key = consoleLabel(label)
   const started = timeByLabel.get(key)
   if (started === undefined) {
@@ -633,36 +649,37 @@ function captureTimeLog(label: string | undefined, args: readonly unknown[], clo
   }
   const elapsed = elapsedMs(started, clock.monotonicTimeNanosUnsafe())
   const elapsedText = Match.value(args).pipe(
-    Match.when((values: readonly unknown[]) => values.length === 0, () => `${key}: ${elapsed}ms`),
+    Match.when(<B = unknown>(values: ReadonlyArray<B>) => values.length === 0, () => `${key}: ${elapsed}ms`),
     Match.orElse((values) => `${key}: ${elapsed}ms ${formatArgs(values)}`),
   )
   capturedConsoleChunks.push(elapsedText)
 }
 
-function captureTrace(args: readonly unknown[]): void {
+function captureTrace<A = unknown>(args: ReadonlyArray<A>): void {
   capturedConsoleChunks.push(`Trace: ${formatArgs(args)}\n${new Error().stack ?? ''}`)
 }
 
 const makeCapturingConsole = (clock: Clock.Clock): Console.Console => ({
-  assert: (condition: boolean, ...args: readonly unknown[]) => captureAssert(condition, args),
+  assert: <A = unknown>(condition: boolean, ...args: ReadonlyArray<A>) => captureAssert(condition, args),
   clear: () => {},
   count: (label) => captureCount(label),
   countReset: (label) => countByLabel.delete(consoleLabel(label)),
-  debug: (...args: readonly unknown[]) => captureSync(args),
-  dir: (item: unknown, _options?: Record<string, unknown>) => capturedConsoleChunks.push(Formatter.format(item)),
+  debug: <A = unknown>(...args: ReadonlyArray<A>) => captureSync(args),
+  dir: <A = unknown, B = unknown>(item: A, _options?: Record<string, B>) =>
+    capturedConsoleChunks.push(Formatter.format(item)),
   dirxml: (item) => capturedConsoleChunks.push(Formatter.format(item)),
-  error: (...args: readonly unknown[]) => captureSync(args),
+  error: <A = unknown>(...args: ReadonlyArray<A>) => captureSync(args),
   group: () => {},
   groupCollapsed: () => {},
   groupEnd: () => {},
-  info: (...args: readonly unknown[]) => captureSync(args),
-  log: (...args: readonly unknown[]) => captureSync(args),
+  info: <A = unknown>(...args: ReadonlyArray<A>) => captureSync(args),
+  log: <A = unknown>(...args: ReadonlyArray<A>) => captureSync(args),
   table: (tabularData) => capturedConsoleChunks.push(Formatter.format(tabularData)),
   time: (label) => timeByLabel.set(consoleLabel(label), clock.monotonicTimeNanosUnsafe()),
   timeEnd: (label) => captureTimeEnd(label, clock.monotonicTimeNanosUnsafe()),
   timeLog: (label, ...args) => captureTimeLog(label, args, clock),
-  trace: (...args: readonly unknown[]) => captureTrace(args),
-  warn: (...args: readonly unknown[]) => captureSync(args),
+  trace: <A = unknown>(...args: ReadonlyArray<A>) => captureTrace(args),
+  warn: <A = unknown>(...args: ReadonlyArray<A>) => captureSync(args),
 })
 
 export const machineConsoleLayer: Layer.Layer<never> = Layer.effect(

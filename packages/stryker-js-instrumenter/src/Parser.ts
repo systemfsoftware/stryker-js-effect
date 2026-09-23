@@ -62,15 +62,19 @@ export type Parser<T extends Ast = Ast> = (
 // Unknown-value narrowing
 // ---------------------------------------------------------------------------
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
+interface PlainRecord<A = unknown> {
+  readonly [k: string]: A
+}
+
+function isPlainRecord<A = unknown>(value: unknown): value is PlainRecord<A> {
   return typeof value === 'object' && value !== null
 }
 
-function isTagged(value: unknown, type: string): value is Record<string, unknown> {
+function isTagged(value: unknown, type: string): value is PlainRecord {
   return isPlainRecord(value) && value['type'] === type
 }
 
-function hasNumericRange(value: Record<string, unknown>): value is Record<string, unknown> & Range {
+function hasNumericRange(value: PlainRecord): value is PlainRecord & Range {
   return typeof value['start'] === 'number' && typeof value['end'] === 'number'
 }
 
@@ -78,7 +82,7 @@ function isRange(value: unknown): value is Range {
   return isPlainRecord(value) && hasNumericRange(value)
 }
 
-function isTypedRecord(value: unknown): value is Record<string, unknown> & { type: string } {
+function isTypedRecord(value: unknown): value is PlainRecord & { type: string } {
   return isPlainRecord(value) && Predicate.isString(value['type'])
 }
 
@@ -86,29 +90,23 @@ function isRangedBaseNode(value: unknown): value is Node & Range {
   return isTypedRecord(value) && hasNumericRange(value)
 }
 
-function isNonEmptyArray(value: unknown): value is unknown[] {
+function isNonEmptyArray<A = unknown>(value: unknown): value is A[] {
   return Array.isArray(value) && value.length > 0
 }
 
-function hasField(value: unknown, key: string): value is Record<string, unknown> {
-  return isPlainRecord(value) && key in value
+function hasContentField<A = unknown>(value: unknown): value is PlainRecord<A> & { readonly content: A } {
+  return isPlainRecord<A>(value) && 'content' in value
 }
 
-function hasContent(value: unknown): value is Record<string, unknown> {
-  return hasField(value, 'content')
+function hasHtmlField<A = unknown>(value: unknown): value is PlainRecord<A> & { readonly html: A } {
+  return isPlainRecord<A>(value) && 'html' in value
 }
+const readRecordField = <B = unknown>(record: PlainRecord<B>, key: string): B | undefined => record[key]
 
-function hasHtml(value: unknown): value is Record<string, unknown> {
-  return hasField(value, 'html')
+function fieldOf<A = unknown, B = unknown>(value: A, key: string): B | undefined {
+  if (!isPlainRecord<B>(value)) return undefined
+  return readRecordField(value, key)
 }
-
-function fieldOf(value: unknown, key: string): unknown {
-  return Match.value(value).pipe(
-    Match.when(isPlainRecord, (record) => record[key]),
-    Match.orElse(() => undefined),
-  )
-}
-
 function appendIfDefined<T>(values: T[], value: T | undefined): void {
   if (value !== undefined) {
     values.push(value)
@@ -164,7 +162,7 @@ function oxcErrorLabelStart(error: OxcError): number {
  * mutant positions are re-mapped through the AST's `offset` field.
  */
 function shiftScriptOffsets(ast: Ast, offset: number): void {
-  const root: unknown = ast.root
+  const root = ast.root
   if (isRange(root)) {
     root.start += offset
     root.end += offset
@@ -370,7 +368,7 @@ const ngHtmlParser = (
       >
     > = []
     const scriptCollector: NGAst.Visitor = {
-      visitElement: (el: NGAst.Element, context: unknown): void => {
+      visitElement: <A = unknown>(el: NGAst.Element, context: A): void => {
         const scriptFormat = getScriptType(el)
         if (scriptFormat) {
           scriptEffects.push(parseScript(el, scriptFormat))
@@ -501,10 +499,10 @@ interface ScriptTag {
   attributes: Record<string, boolean | string>
 }
 
-type WalkFn = (
-  node: unknown,
-  handlers: { enter(node: unknown): void },
-) => unknown
+type WalkFn<A = unknown, R = unknown> = (
+  node: A,
+  handlers: { enter<B = unknown>(node: B): void },
+) => R
 
 interface Version {
   major: number
@@ -574,7 +572,7 @@ function isRecordWithWalk(value: unknown): value is { walk: WalkFn } {
   return isPlainRecord(value) && isWalkFunction(value['walk'])
 }
 
-function isScriptElement(value: unknown): value is Record<string, unknown> {
+function isScriptElement(value: unknown): value is PlainRecord {
   return isTagged(value, 'Element') && value['name'] === 'script'
 }
 
@@ -582,48 +580,39 @@ function isTextRange(value: unknown): value is Range {
   return isTagged(value, 'Text') && hasNumericRange(value)
 }
 
-function isTemplateExpressionTag(value: unknown): value is Record<string, unknown> {
+function isTemplateExpressionTag(value: unknown): value is PlainRecord {
   return isTypedRecord(value) && TEMPLATE_EXPRESSION_TYPES[value['type']] === true
 }
 
-/**
- * The first child of a `<script>` element node. A template `<script>` tag
- * carries its code as that single `Text` child.
- */
-function scriptChild(node: unknown): unknown {
-  return Match.value(node).pipe(
-    Match.when(isScriptElement, (element) =>
-      Match.value(element['children']).pipe(
-        Match.when(isNonEmptyArray, (values) => Option.getOrUndefined(Arr.head(values))),
-        Match.orElse(() => undefined),
-      )),
-    Match.orElse(() => undefined),
-  )
+const firstChild = <B = unknown>(element: PlainRecord): B | undefined => {
+  const children = element['children']
+  return isNonEmptyArray<B>(children) ? Option.getOrUndefined(Arr.head(children)) : undefined
 }
 
-function tryGetScriptRangeFromElement(node: unknown): TemplateRange | undefined {
+function scriptChild<A = unknown, B = unknown>(node: A): B | undefined {
+  return isScriptElement(node) ? firstChild<B>(node) : undefined
+}
+
+function tryGetScriptRangeFromElement<A = unknown>(node: A): TemplateRange | undefined {
   return Match.value(scriptChild(node)).pipe(
     Match.when(isTextRange, (range) => ({ start: range.start, end: range.end, isExpression: false })),
     Match.orElse(() => undefined),
   )
 }
 
-function templateExpressionRange(node: unknown): TemplateRange | undefined {
-  return Match.value(node).pipe(
-    Match.when(isTemplateExpressionTag, (tag) => rangedExpressionOf(tag['expression'])),
-    Match.orElse(() => undefined),
-  )
+function templateExpressionRange<A = unknown>(node: A): TemplateRange | undefined {
+  return isTemplateExpressionTag(node) ? rangedExpressionOf(node['expression']) : undefined
 }
 
-function rangedExpressionOf(payload: unknown): TemplateRange | undefined {
-  return Match.value(payload).pipe(
-    Match.when(isRangedBaseNode, (expression) => ({
-      start: expression.start,
-      end: expression.end,
+function rangedExpressionOf<A = unknown>(payload: A): TemplateRange | undefined {
+  if (isRangedBaseNode(payload)) {
+    return {
+      start: payload.start,
+      end: payload.end,
       isExpression: true,
-    })),
-    Match.orElse(() => undefined),
-  )
+    }
+  }
+  return undefined
 }
 
 /**
@@ -644,23 +633,19 @@ const loadWalker = (
  * The specifier is chosen at run time and both modules are optional peers of
  * this package, so neither can be a static import.
  */
+const findWalker = <A = unknown>(module: A): WalkFn | undefined => isRecordWithWalk(module) ? module.walk : undefined
+
 const loadWalkerModule = (
   specifier: string,
   fileName: string,
   cause: string,
 ): Effect.Effect<WalkFn, SvelteWalkerNotFound> =>
   Effect.gen(function*() {
-    const module: unknown = yield* Effect.promise(() => import(specifier))
-    const walk = Match.value(module).pipe(
-      Match.when(isRecordWithWalk, (record) => record.walk),
-      Match.orElse(() => undefined),
-    )
-    if (walk === undefined) {
-      return yield* SvelteWalkerNotFound.make({ fileName, cause })
-    }
+    const module = yield* Effect.promise<PlainRecord>(() => import(specifier))
+    const walk = findWalker(module)
+    if (walk === undefined) return yield* SvelteWalkerNotFound.make({ fileName, cause })
     return walk
   })
-
 export const parseSvelte = (
   text: string,
   fileName: string,
@@ -687,7 +672,7 @@ export const parseSvelte = (
 
     const lineStarts = computeLineStarts(text)
     const { replacedCode, scriptMap } = yield* replaceScripts(text, preprocess)
-    const svelteAst: unknown = svelteParse(replacedCode, { filename: fileName })
+    const svelteAst = svelteParse(replacedCode, { filename: fileName })
 
     const moduleScriptRange = getModuleScriptRange(svelteAst)
     const templateRanges = getTemplateScriptRanges(svelteAst, walk)
@@ -791,11 +776,11 @@ function svelteRoot(
  * Every script range the compiler reports outside `<script>` tag bodies: the
  * instance script plus each template expression the walker visits.
  */
-function getTemplateScriptRanges(ast: unknown, walker: WalkFn): TemplateRange[] {
+function getTemplateScriptRanges<A = unknown>(ast: A, walker: WalkFn): TemplateRange[] {
   const ranges: TemplateRange[] = []
   appendIfDefined(ranges, instanceScriptRange(ast))
   walker(htmlRootOf(ast), {
-    enter(node: unknown): void {
+    enter<B = unknown>(node: B): void {
       appendIfDefined(ranges, tryGetScriptRangeFromElement(node))
       appendIfDefined(ranges, templateExpressionRange(node))
     },
@@ -803,33 +788,27 @@ function getTemplateScriptRanges(ast: unknown, walker: WalkFn): TemplateRange[] 
   return ranges
 }
 
-function htmlRootOf(ast: unknown): unknown {
-  return Match.value(ast).pipe(
-    Match.when(hasHtml, (record) => record['html']),
-    Match.orElse(() => {
-      throw new Error('Svelte AST without html')
-    }),
-  )
+function htmlRootOf<A = unknown, B = unknown>(ast: A): B {
+  if (!hasHtmlField<B>(ast)) {
+    throw new Error('Svelte AST without html')
+  }
+  return ast['html']
 }
 
-function instanceScriptRange(ast: unknown): TemplateRange | undefined {
-  return Match.value(fieldOf(ast, 'instance')).pipe(
-    Match.when(hasContent, (instance) => scriptContentRange(instance['content'], INSTANCE_RANGE_MISSING)),
-    Match.orElse(() => undefined),
-  )
+function instanceScriptRange<A = unknown>(ast: A): TemplateRange | undefined {
+  const record = contentFieldOf(fieldOf(ast, 'instance'))
+  return record === undefined ? undefined : scriptContentRange(record['content'], INSTANCE_RANGE_MISSING)
 }
 
-function scriptContentRange(content: unknown, missingRange: string): TemplateRange {
-  return Match.value(content).pipe(
-    Match.when(isRange, (range) => ({ start: range.start, end: range.end, isExpression: false })),
-    Match.orElse(() => {
-      throw new Error(missingRange)
-    }),
-  )
+function scriptContentRange<A = unknown>(content: A, missingRange: string): TemplateRange {
+  if (isRange(content)) {
+    return { start: content.start, end: content.end, isExpression: false }
+  }
+  throw new Error(missingRange)
 }
 
-function getModuleScriptRange(
-  svelteAst: unknown,
+function getModuleScriptRange<A = unknown>(
+  svelteAst: A,
 ): TemplateRange | undefined {
   return Match.value(fieldOf(svelteAst, 'module')).pipe(
     Match.when(undefined, () => undefined),
@@ -838,13 +817,16 @@ function getModuleScriptRange(
   )
 }
 
-function moduleBlockRange(block: unknown): TemplateRange {
-  return Match.value(block).pipe(
-    Match.when(hasContent, (record) => scriptContentRange(record['content'], MODULE_RANGE_MISSING)),
-    Match.orElse(() => {
-      throw new Error(MODULE_RANGE_MISSING)
-    }),
-  )
+function contentFieldOf<A = unknown>(value: A | undefined): PlainRecord<A> & { readonly content: A } | undefined {
+  return Option.getOrUndefined(Option.filter(Option.fromNullishOr(value), hasContentField<A>))
+}
+
+function moduleBlockRange<A = unknown>(block: A): TemplateRange {
+  const record = contentFieldOf(block)
+  if (record === undefined) {
+    throw new Error(MODULE_RANGE_MISSING)
+  }
+  return scriptContentRange(record['content'], MODULE_RANGE_MISSING)
 }
 
 /** A script range after its placeholder was replaced by the real script text. */

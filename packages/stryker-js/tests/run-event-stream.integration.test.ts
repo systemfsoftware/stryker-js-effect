@@ -88,137 +88,139 @@ const expectTags = (lines: ReadonlyArray<string>, expectedTags: ReadonlyArray<st
   expect(events.map(tagOf)).toEqual(expectedTags)
 }
 
-Feature('Streaming a run to machine readers').body(({ scenario }) => {
-  scenario(
-    'A machine run reports its opening header and sequential lifecycle events ended by newlines',
-    Gherkin.Do.pipe(
-      Given('a run configured to emit machine-readable events to stdout')(
-        'fixture',
-        () => streamingFixture('machine'),
+Feature('Streaming a run to machine readers')
+  .withLayer(Layer.empty)
+  .body(({ scenario }) => {
+    scenario(
+      'A machine run reports its opening header and sequential lifecycle events ended by newlines',
+      Gherkin.Do.pipe(
+        Given('a run configured to emit machine-readable events to stdout')(
+          'fixture',
+          () => streamingFixture('machine'),
+        ),
+        When('the stream opens, receives lifecycle progress events, and closes gracefully')(
+          'lines',
+          (s) =>
+            Effect.gen(function*() {
+              yield* s.fixture.stream.open
+              yield* offerAll(s.fixture.stream, [PLAN_KNOWN, PHASE_ENTERED, HEARTBEAT, HELP_RENDERED])
+              yield* s.fixture.stream.closeAndDrain
+              return yield* rawLinesOf(s.fixture)
+            }),
+        ),
+        Then('the consumer receives all framed lines in chronological sequence')((s) => {
+          expectTags(s.lines, ['stream', 'plan', 'phase', 'tick', 'help'])
+        }),
+        Then('every framed line terminates with a newline character')((s) => {
+          expect(s.lines.every((line) => line.endsWith('\n'))).toBe(true)
+        }),
+        Then('the opening event identifies the session with machine mode metadata')((s) => {
+          const opening = Option.filter(decodedEventAt(s.lines, 0), S.is(RunStarted))
+          expect(Option.isSome(opening)).toBe(true)
+          if (Option.isSome(opening)) {
+            expect(opening.value.mode).toBe('machine')
+            expect(opening.value.signal).toBe('tty')
+            expect(opening.value.schemaVersion).toBe('1.0')
+            expect(typeof opening.value.runId).toBe('string')
+            expect(opening.value.runId.length).toBeGreaterThan(0)
+          }
+        }),
       ),
-      When('the stream opens, receives lifecycle progress events, and closes gracefully')(
-        'lines',
-        (s) =>
-          Effect.gen(function*() {
-            yield* s.fixture.stream.open
-            yield* offerAll(s.fixture.stream, [PLAN_KNOWN, PHASE_ENTERED, HEARTBEAT, HELP_RENDERED])
-            yield* s.fixture.stream.closeAndDrain
-            return yield* rawLinesOf(s.fixture)
-          }),
-      ),
-      Then('the consumer receives all framed lines in chronological sequence')((s) => {
-        expectTags(s.lines, ['stream', 'plan', 'phase', 'tick', 'help'])
-      }),
-      Then('every framed line terminates with a newline character')((s) => {
-        expect(s.lines.every((line) => line.endsWith('\n'))).toBe(true)
-      }),
-      Then('the opening event identifies the session with machine mode metadata')((s) => {
-        const opening = Option.filter(decodedEventAt(s.lines, 0), S.is(RunStarted))
-        expect(Option.isSome(opening)).toBe(true)
-        if (Option.isSome(opening)) {
-          expect(opening.value.mode).toBe('machine')
-          expect(opening.value.signal).toBe('tty')
-          expect(opening.value.schemaVersion).toBe('1.0')
-          expect(typeof opening.value.runId).toBe('string')
-          expect(opening.value.runId.length).toBeGreaterThan(0)
-        }
-      }),
-    ),
-  )
+    )
 
-  scenario(
-    'A human run streams nothing to the machine reader',
-    Gherkin.Do.pipe(
-      Given('a run streaming in human mode')('fixture', () => streamingFixture('human')),
-      When('the run opens and fails')(
-        'result',
-        (s) =>
-          Effect.gen(function*() {
-            yield* s.fixture.stream.open
-            yield* offerAll(s.fixture.stream, [RUN_FAILED])
-            yield* s.fixture.stream.closeAndDrain
-            const lines = yield* rawLinesOf(s.fixture)
-            const open = yield* s.fixture.stream.isOpen
-            return { lines, open }
-          }),
+    scenario(
+      'A human run streams nothing to the machine reader',
+      Gherkin.Do.pipe(
+        Given('a run streaming in human mode')('fixture', () => streamingFixture('human')),
+        When('the run opens and fails')(
+          'result',
+          (s) =>
+            Effect.gen(function*() {
+              yield* s.fixture.stream.open
+              yield* offerAll(s.fixture.stream, [RUN_FAILED])
+              yield* s.fixture.stream.closeAndDrain
+              const lines = yield* rawLinesOf(s.fixture)
+              const open = yield* s.fixture.stream.isOpen
+              return { lines, open }
+            }),
+        ),
+        Then('the reader receives no lines and the stream is closed')((s) => {
+          expect(s.result.lines).toEqual([])
+          expect(s.result.open).toBe(false)
+        }),
       ),
-      Then('the reader receives no lines and the stream is closed')((s) => {
-        expect(s.result.lines).toEqual([])
-        expect(s.result.open).toBe(false)
-      }),
-    ),
-  )
+    )
 
-  scenario(
-    'A terminal failure closes the stream and suppresses subsequent events',
-    Gherkin.Do.pipe(
-      Given('a run streaming in machine mode')('fixture', () => streamingFixture('machine')),
-      When('a fatal error occurs followed by trailing heartbeat ticks before drain')(
-        'result',
-        (s) =>
-          Effect.gen(function*() {
-            yield* s.fixture.stream.open
-            yield* offerAll(s.fixture.stream, [RUN_FAILED, HEARTBEAT])
-            yield* s.fixture.stream.closeAndDrain
-            const lines = yield* rawLinesOf(s.fixture)
-            const open = yield* s.fixture.stream.isOpen
-            return { lines, open }
-          }),
+    scenario(
+      'A terminal failure closes the stream and suppresses subsequent events',
+      Gherkin.Do.pipe(
+        Given('a run streaming in machine mode')('fixture', () => streamingFixture('machine')),
+        When('a fatal error occurs followed by trailing heartbeat ticks before drain')(
+          'result',
+          (s) =>
+            Effect.gen(function*() {
+              yield* s.fixture.stream.open
+              yield* offerAll(s.fixture.stream, [RUN_FAILED, HEARTBEAT])
+              yield* s.fixture.stream.closeAndDrain
+              const lines = yield* rawLinesOf(s.fixture)
+              const open = yield* s.fixture.stream.isOpen
+              return { lines, open }
+            }),
+        ),
+        Then('the consumer receives only the opening header and the error document')((s) => {
+          expectTags(s.result.lines, ['stream', 'error'])
+        }),
+        Then('the error document carries the failure code, error message, and remediation guidance')((s) => {
+          const failure = Option.filter(decodedEventAt(s.result.lines, 1), S.is(RunFailed))
+          expect(Option.isSome(failure)).toBe(true)
+          if (Option.isSome(failure)) {
+            expect(failure.value.code).toBe(3)
+            expect(failure.value.error).toBe('x')
+            expect(failure.value.remediation).toBe('y')
+            expect(failure.value.schemaVersion).toBe('1.0')
+          }
+        }),
+        Then('the stream is permanently closed')((s) => {
+          expect(s.result.open).toBe(false)
+        }),
       ),
-      Then('the consumer receives only the opening header and the error document')((s) => {
-        expectTags(s.result.lines, ['stream', 'error'])
-      }),
-      Then('the error document carries the failure code, error message, and remediation guidance')((s) => {
-        const failure = Option.filter(decodedEventAt(s.result.lines, 1), S.is(RunFailed))
-        expect(Option.isSome(failure)).toBe(true)
-        if (Option.isSome(failure)) {
-          expect(failure.value.code).toBe(3)
-          expect(failure.value.error).toBe('x')
-          expect(failure.value.remediation).toBe('y')
-          expect(failure.value.schemaVersion).toBe('1.0')
-        }
-      }),
-      Then('the stream is permanently closed')((s) => {
-        expect(s.result.open).toBe(false)
-      }),
-    ),
-  )
+    )
 
-  scenario(
-    'A broken report sink is reported to the operator and never stops the run',
-    Gherkin.Do.pipe(
-      Given('a machine run whose report sink always breaks')('fixture', () =>
-        Effect.gen(function*() {
-          const messages: Array<string> = []
-          const capturing = Logger.make((options) => {
-            messages.push(String(options.message))
-          })
-          const lines = yield* Ref.make<ReadonlyArray<string>>([])
-          const failingStdio = Stdio.layerTest({
-            stdout: () => Sink.die(new Error('the report sink broke')),
-          })
-          const stream = yield* makeRunEventStream({ mode: 'machine', signal: 'tty' }).pipe(
-            Effect.provide(
-              Layer.mergeAll(failingStdio, RunEventDrainLive.pipe(Layer.provide(failingStdio))),
-            ),
-          )
-          return { stream, lines, messages, logging: Logger.layer([capturing]) }
-        })),
-      When('the run opens, reports a failure, and closes')(
-        'result',
-        (s) =>
+    scenario(
+      'A broken report sink is reported to the operator and never stops the run',
+      Gherkin.Do.pipe(
+        Given('a machine run whose report sink always breaks')('fixture', () =>
           Effect.gen(function*() {
-            yield* s.fixture.stream.open
-            yield* offerAll(s.fixture.stream, [RUN_FAILED])
-            yield* s.fixture.stream.closeAndDrain
-            const lines = yield* rawLinesOf(s.fixture)
-            return { lines, messages: s.fixture.messages }
-          }).pipe(Effect.provide(s.fixture.logging)),
+            const messages: Array<string> = []
+            const capturing = Logger.make((options) => {
+              messages.push(String(options.message))
+            })
+            const lines = yield* Ref.make<ReadonlyArray<string>>([])
+            const failingStdio = Stdio.layerTest({
+              stdout: () => Sink.die(new Error('the report sink broke')),
+            })
+            const stream = yield* makeRunEventStream({ mode: 'machine', signal: 'tty' }).pipe(
+              Effect.provide(
+                Layer.mergeAll(failingStdio, RunEventDrainLive.pipe(Layer.provide(failingStdio))),
+              ),
+            )
+            return { stream, lines, messages, logging: Logger.layer([capturing]) }
+          })),
+        When('the run opens, reports a failure, and closes')(
+          'result',
+          (s) =>
+            Effect.gen(function*() {
+              yield* s.fixture.stream.open
+              yield* offerAll(s.fixture.stream, [RUN_FAILED])
+              yield* s.fixture.stream.closeAndDrain
+              const lines = yield* rawLinesOf(s.fixture)
+              return { lines, messages: s.fixture.messages }
+            }).pipe(Effect.provide(s.fixture.logging)),
+        ),
+        Then('the stream failure is logged without aborting or crashing the run')((s) => {
+          expect(s.result.messages.join('\n')).toContain('stryker.output.drain_failed')
+          expect(s.result.lines).toEqual([])
+        }),
       ),
-      Then('the stream failure is logged without aborting or crashing the run')((s) => {
-        expect(s.result.messages.join('\n')).toContain('stryker.output.drain_failed')
-        expect(s.result.lines).toEqual([])
-      }),
-    ),
-  )
-})
+    )
+  })

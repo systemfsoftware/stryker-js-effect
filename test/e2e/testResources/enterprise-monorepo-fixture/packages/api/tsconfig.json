@@ -1,0 +1,48 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "lib": [
+      "ES2024"
+    ],
+    "strict": true,
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "rootDir": "src",
+    "outDir": "dist",
+    "paths": {
+      "@enterprise/core": [
+        "../core/src/index.ts"
+      ],
+      "@enterprise/services": [
+        "../services/src/index.ts"
+      ],
+      "@enterprise/analytics": [
+        "../analytics/src/index.ts"
+      ],
+      "@core/*": [
+        "../core/src/*.ts"
+      ]
+    }
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../services"
+    },
+    {
+      "path": "../analytics"
+    }
+  ]
+}

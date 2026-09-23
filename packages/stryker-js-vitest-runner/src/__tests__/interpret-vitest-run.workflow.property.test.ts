@@ -5,6 +5,11 @@ import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
+  HIT_LIMIT_REASON_PREFIX,
+  hitLimitReachedReason,
+  type TestResult,
+} from '@systemfsoftware/stryker-js-plugin-interface'
+import {
   interpretVitestRun,
   MutantDryError,
   MutantKilled,
@@ -27,15 +32,17 @@ const tagOf = (result: Result.Result<VitestMutantRunOutput, VitestMutantRunError
     Match.exhaustive,
   )
 
-const commandWith = (
+const commandWith = <T = unknown>(
   input: VitestMutantRunCommand,
   override: {
-    readonly rawTests?: readonly unknown[]
+    readonly rawTests?: readonly T[]
     readonly hasExternalError?: boolean
     readonly externalErrorText?: string
     readonly hitCount: number | undefined
     readonly hitLimit: number | undefined
     readonly reportAllKillers?: boolean
+    readonly activeMutantId?: string
+    readonly namedTrapId?: string
   },
 ): VitestMutantRunCommand =>
   VitestMutantRunCommand.make({
@@ -46,29 +53,16 @@ const commandWith = (
     hitCount: override.hitCount,
     hitLimit: override.hitLimit,
     reportAllKillers: override.reportAllKillers ?? input.reportAllKillers,
+    activeMutantId: override.activeMutantId ?? input.activeMutantId,
+    namedTrapId: override.namedTrapId ?? input.namedTrapId,
   })
 
 const testsIn = (
-  testsJson: string,
-): { readonly ids: readonly string[]; readonly failed: readonly string[] } | null => {
-  const parsed: unknown = JSON.parse(testsJson)
-  if (!Array.isArray(parsed)) {
-    return null
-  }
-  const items: readonly unknown[] = parsed
-  const ids: string[] = []
-  const failed: string[] = []
-  for (const entry of items) {
-    if (typeof entry !== 'object' || entry === null || !('id' in entry) || typeof entry.id !== 'string') {
-      return null
-    }
-    ids.push(entry.id)
-    if ('status' in entry && entry.status === 'failed') {
-      failed.push(entry.id)
-    }
-  }
-  return { ids, failed }
-}
+  tests: readonly TestResult[],
+): { readonly ids: readonly string[]; readonly failed: readonly string[] } => ({
+  ids: tests.map((test) => test.id),
+  failed: tests.filter((test) => test.status === 'failed').map((test) => test.id),
+})
 
 describe('interpretVitestRun', () => {
   it.prop(
@@ -93,7 +87,7 @@ describe('interpretVitestRun', () => {
   )
 
   it.prop(
-    '→h_HitLimitExceeded_=Timeout',
+    '→h_HitLimitOnNamedTrap_=Timeout',
     [
       VitestMutantRunCommand,
       Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 100000 }))),
@@ -101,7 +95,12 @@ describe('interpretVitestRun', () => {
     ],
     ([input, hitLimit, extra]) => {
       const hitCount = hitLimit + extra
-      const result = interpretVitestRun(commandWith(input, { hitCount, hitLimit }))
+      const result = interpretVitestRun(commandWith(input, {
+        hitCount,
+        hitLimit,
+        activeMutantId: input.activeMutantId,
+        namedTrapId: input.activeMutantId,
+      }))
       if (!Result.isSuccess(result)) {
         return false
       }
@@ -110,9 +109,79 @@ describe('interpretVitestRun', () => {
       }
       return (
         carriesFamilyBrand(result.success) &&
-        result.success.testsJson === '[]' &&
-        result.success.reason === `Hit limit reached (${hitCount}/${hitLimit})`
+        result.success.tests.length === 0 &&
+        result.success.reason === hitLimitReachedReason(hitCount, hitLimit) &&
+        result.success.reason.startsWith(HIT_LIMIT_REASON_PREFIX) === true
       )
+    },
+  )
+
+  it.prop(
+    '→h_HitLimitOnOtherMutant_=Killed',
+    [
+      VitestMutantRunCommand,
+      Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 100000 }))),
+      Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 1, maximum: 100 }))),
+    ],
+    ([input, hitLimit, extra]) => {
+      const hitCount = hitLimit + extra
+      const result = interpretVitestRun(commandWith(input, {
+        hitCount,
+        hitLimit,
+        activeMutantId: `${input.activeMutantId}-finite`,
+        namedTrapId: input.activeMutantId,
+      }))
+      if (!Result.isSuccess(result)) {
+        return false
+      }
+      return S.is(MutantKilled)(result.success) && !S.is(MutantTimeout)(result.success)
+    },
+  )
+
+  it.prop(
+    '→h_HitCountAtBound_≠Timeout',
+    [
+      VitestMutantRunCommand,
+      Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 100000 }))),
+    ],
+    ([input, hitLimit]) => {
+      const result = interpretVitestRun(commandWith(input, {
+        hitCount: hitLimit,
+        hitLimit,
+        activeMutantId: input.activeMutantId,
+        namedTrapId: input.activeMutantId,
+      }))
+      if (!Result.isSuccess(result)) {
+        return false
+      }
+      return !S.is(MutantTimeout)(result.success)
+    },
+  )
+
+  it.prop(
+    '→f_FailedTestPlusHitBound_=Killed',
+    [
+      VitestMutantRunCommand,
+      Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 1000 }))),
+      Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 1, maximum: 100 }))),
+    ],
+    ([input, hitLimit, extra]) => {
+      const failedTest = {
+        id: 'a.ts#fails',
+        status: 'failed',
+        failureMessage: 'boom',
+      }
+      const result = interpretVitestRun(commandWith(input, {
+        rawTests: [{ ...failedTest }],
+        hitCount: hitLimit + extra,
+        hitLimit,
+        activeMutantId: `${input.activeMutantId}-finite`,
+        namedTrapId: input.activeMutantId,
+      }))
+      if (!Result.isSuccess(result)) {
+        return false
+      }
+      return S.is(MutantKilled)(result.success) && !S.is(MutantTimeout)(result.success)
     },
   )
 
@@ -136,7 +205,7 @@ describe('interpretVitestRun', () => {
       }
       return (
         carriesFamilyBrand(result.success) &&
-        result.success.testsJson === '[]' &&
+        result.success.tests.length === 0 &&
         result.success.errorMessage === `An error occurred outside of a test run: ${input.externalErrorText}`
       )
     },
@@ -173,10 +242,7 @@ describe('interpretVitestRun', () => {
       if (!carriesFamilyBrand(result.success)) {
         return false
       }
-      const tests = testsIn(result.success.testsJson)
-      if (tests === null) {
-        return false
-      }
+      const tests = testsIn(result.success.tests)
       const killerIds = result.success.killerIds
       return (
         tests.failed.length === 1 &&
@@ -215,10 +281,7 @@ describe('interpretVitestRun', () => {
       if (!carriesFamilyBrand(result.success)) {
         return false
       }
-      const tests = testsIn(result.success.testsJson)
-      if (tests === null) {
-        return false
-      }
+      const tests = testsIn(result.success.tests)
       return tests.ids.length === 1 && tests.failed.length === 0
     },
   )

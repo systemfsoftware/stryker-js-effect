@@ -78,7 +78,8 @@ export type ReporterEvent = DryRunCompleted | MutationTestingPlanReady | MutantT
 
 const standardReporterEvents = S.toStandardSchemaV1(ReporterEventUnion)
 
-export const ReporterEventSchema: StandardSchemaV1<unknown, ReporterEvent> = standardReporterEvents
+export const ReporterEventSchema: StandardSchemaV1<typeof ReporterEventUnion['Encoded'], ReporterEvent> =
+  standardReporterEvents
 
 export interface ReporterInit {
   readonly traceparent?: string | undefined

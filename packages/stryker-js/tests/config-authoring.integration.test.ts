@@ -1,6 +1,7 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { type ConfigEnv, defineConfig, mergeConfig, type StrykerConfig } from '@systemfsoftware/stryker-js/config'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import { expect } from 'vitest'
 
 const Feature = makeFeature({ it, layer })
@@ -8,6 +9,7 @@ const Feature = makeFeature({ it, layer })
 const RUN_ENV: ConfigEnv = { command: 'run', isDryRun: false, mode: 'human', isCi: false }
 
 Feature('Authoring a Stryker configuration with the published helper')
+  .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       'A configuration the author wrote is the one the run receives',

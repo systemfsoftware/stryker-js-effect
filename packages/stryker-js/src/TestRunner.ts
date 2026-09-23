@@ -6,7 +6,7 @@
 import { type FileDescriptions, INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
 import type { StrykerOptions, TestRunnerConfig } from '@systemfsoftware/stryker-js-plugin-interface'
-import { isCustomTestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { isCustomTestRunner, WALL_CLOCK_TIMEOUT_REASON } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   type CompleteDryRunResult,
   type DryRunOptions,
@@ -188,18 +188,23 @@ export const withTimeout: TestRunnerCombinator = (inner) => ({
   dryRun: (options) => {
     const policy: RunPolicy<DryRunResult, PooledTestRunnerError> = Effect.timeoutOrElse({
       duration: Duration.millis(options.timeout),
-      orElse: (): Effect.Effect<DryRunResult> => Effect.succeed({ status: 'timeout' }),
+      orElse: (): Effect.Effect<DryRunResult> =>
+        Effect.succeed({ status: 'timeout', reason: WALL_CLOCK_TIMEOUT_REASON }),
     })
     return inner.dryRun(options).pipe(policy)
   },
   mutantRun: (options) => {
     const policy: RunPolicy<MutantRunResult, PooledTestRunnerError> = Effect.timeoutOrElse({
       duration: Duration.millis(options.timeout),
-      orElse: (): Effect.Effect<MutantRunResult> => Effect.succeed({ status: 'timeout' }),
+      orElse: (): Effect.Effect<MutantRunResult> =>
+        Effect.succeed({ status: 'timeout', reason: WALL_CLOCK_TIMEOUT_REASON }),
     })
     return inner.mutantRun(options).pipe(policy)
   },
 })
+
+export const invalidatesRunnerPool = (status: string, reason: string | undefined): boolean =>
+  status === 'timeout' && reason === WALL_CLOCK_TIMEOUT_REASON
 
 /** How many times a crashed runner is restarted before the run gives up on it. */
 export const maxRetries = 2
@@ -462,8 +467,8 @@ const mutantActivation = (
     Match.orElse(() => undefined),
   )
 
-const spawnResult = (
-  outcome: Exit.Exit<{ readonly output: string; readonly exitCode: number }, unknown>,
+const spawnResult = <E = unknown>(
+  outcome: Exit.Exit<{ readonly output: string; readonly exitCode: number }, E>,
   elapsed: number,
 ): DryRunResult =>
   Match.value(outcome).pipe(

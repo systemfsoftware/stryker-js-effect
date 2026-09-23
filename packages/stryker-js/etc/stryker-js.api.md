@@ -16,6 +16,7 @@ import * as Exit from 'effect/Exit';
 import * as FileSystem from 'effect/FileSystem';
 import { HarnessModuleBuiltin } from '@systemfsoftware/stryker-vm-harness';
 import * as HashMap from 'effect/HashMap';
+import { JsonSchema } from 'effect/JsonSchema';
 import * as Layer from 'effect/Layer';
 import * as Metric from 'effect/Metric';
 import * as MutableHashMap from 'effect/MutableHashMap';
@@ -284,7 +285,7 @@ export const decideExtendsStep: (state: ExtendsStepState, document: PartialStryk
 export function deepFreeze<T>(target: T): Immutable<T>;
 
 // @public
-export type DeepOptional<T> = { -readonly [P in keyof T]?: T[P] extends Record<string, unknown> ? DeepOptional<T[P]> | undefined : T[P]; };
+export type DeepOptional<T, V = unknown> = { -readonly [P in keyof T]?: T[P] extends Record<string, V> ? DeepOptional<T[P], V> | undefined : T[P]; };
 
 // @public (undocumented)
 export const defaultOptions: Effect.Effect<Immutable<StrykerOptions>, never, never>;
@@ -474,10 +475,10 @@ export const FileResultSchema: S.Struct<{
 }>;
 
 // @public (undocumented)
-export function findUnserializables(thing: unknown): UnserializableDescription[] | undefined;
+export function findUnserializables<A = unknown>(thing: A): UnserializableDescription[] | undefined;
 
 // @public (undocumented)
-export const forkCoreSchema: Record<string, unknown>;
+export const forkCoreSchema: JsonSchema;
 
 // @public (undocumented)
 export const forkOptionsSchema: S.StructWithRest<S.Struct<{
@@ -612,7 +613,7 @@ export interface Ignorer {
 export type Immutable<T> = T extends ImmutablePrimitive ? T : T extends Array<infer U> ? ReadonlyArray<Immutable<U>> : T extends Map<infer K, infer V> ? ReadonlyMap<Immutable<K>, Immutable<V>> : T extends Set<infer M> ? ReadonlySet<Immutable<M>> : T extends RegExp ? Readonly<RegExp> : { readonly [K in keyof T]: Immutable<T[K]>; };
 
 // @public (undocumented)
-export type ImmutablePrimitive = Primitive | ((...args: never[]) => unknown);
+export type ImmutablePrimitive = Primitive | ((...args: never[]) => void);
 
 // @public (undocumented)
 export const ImportedModuleSchema: S.Struct<{
@@ -620,7 +621,7 @@ export const ImportedModuleSchema: S.Struct<{
 }>;
 
 // @public (undocumented)
-export function importModule(moduleName: string): Effect.Effect<unknown, StrykerError>;
+export function importModule<A = unknown>(moduleName: string): Effect.Effect<A, StrykerError>;
 
 // @public (undocumented)
 export const IncrementalReportSchema: S.StructWithRest<S.Struct<{
@@ -726,7 +727,7 @@ export type KnownKeys<T> = keyof { [P in keyof T as string extends P ? never : n
 export const loadConfigCell: typeof readConfig;
 
 // @public (undocumented)
-export interface LoadedPlugins {
+export interface LoadedPlugins<A = unknown> {
     // (undocumented)
     readonly ignorers: readonly Ignorer[];
     // (undocumented)
@@ -736,7 +737,7 @@ export interface LoadedPlugins {
     // (undocumented)
     readonly pluginSources: readonly PluginSource[];
     // (undocumented)
-    readonly schemaContributions: readonly Record<string, unknown>[];
+    readonly schemaContributions: readonly Record<string, A>[];
 }
 
 // @public (undocumented)
@@ -1364,7 +1365,7 @@ export interface SandboxHandle {
 }
 
 // @public (undocumented)
-export const shouldKeepTempDir: (exit: Exit.Exit<unknown, unknown>, cleanTempDir: 'always' | boolean) => boolean;
+export const shouldKeepTempDir: <A = unknown, E = unknown>(exit: Exit.Exit<A, E>, cleanTempDir: 'always' | boolean) => boolean;
 
 // @public (undocumented)
 export interface SkippedTestResult extends BaseTestResult {
@@ -1630,12 +1631,12 @@ export interface UnserializableDescription {
 }
 
 // @public (undocumented)
-export function validateOptions(options: Record<string, unknown>, schema: ValidationSchemaDocument): Effect.Effect<StrykerOptions, ConfigError>;
+export function validateOptions<A = unknown>(options: Record<string, A>, schema: ValidationSchemaDocument): Effect.Effect<StrykerOptions, ConfigError>;
 
 // @public (undocumented)
-export type ValidationSchemaDocument = {
-    readonly properties?: unknown;
-    readonly [key: string]: unknown;
+export type ValidationSchemaDocument<A = unknown> = {
+    readonly properties?: A;
+    readonly [key: string]: A;
 };
 
 // @public (undocumented)

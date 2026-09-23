@@ -21,11 +21,11 @@ import { STREAM_SCHEMA_VERSION } from './StreamVersion.js'
 import { strykerVersion } from './stryker-package.js'
 import { buildVerdictEnvelope } from './verdict-envelope.js'
 
-export function emitNullScoreVerdict(
+export function emitNullScoreVerdict<Config = unknown>(
   stream: RunEventStream,
   mode: ResolvedMode,
   thresholds: schema.Thresholds,
-  config: Readonly<Record<string, unknown>>,
+  config: Readonly<Record<string, Config>>,
   basePath: string,
   pathService: Path.Path,
 ): Effect.Effect<void, never, never> {

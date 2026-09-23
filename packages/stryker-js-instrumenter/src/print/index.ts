@@ -2193,7 +2193,7 @@ function printMappedType(state: PrintState, node: TSMappedType): void {
   state.out += ' }'
 }
 
-function printMappedTypeModifier(state: PrintState, modifier: unknown, rendered: string): void {
+function printMappedTypeModifier<A = unknown>(state: PrintState, modifier: A, rendered: string): void {
   switch (modifier) {
     case true:
       state.out += rendered
@@ -2817,8 +2817,8 @@ function propertyDefinitionModifiers(node: PropertyDefinition): string {
 
 type LiteralNode = Literal
 
-type LiteralSource = {
-  readonly value: unknown
+type LiteralSource<A = unknown> = {
+  readonly value: A
   readonly raw: string | null
   readonly bigint?: string
   readonly regex?: { readonly pattern: string; readonly flags: string }
@@ -2839,25 +2839,32 @@ function literalWithoutRegex(node: LiteralSource): string {
   return valueLiteralText(node.value)
 }
 
-function valueLiteralText(value: unknown): string {
-  switch (typeof value) {
-    case 'string':
-      return JSON.stringify(value)
-    case 'number':
-      return String(value)
-    case 'boolean':
-      return String(value)
-    case 'bigint':
-      return `${value}n`
-    case 'symbol':
-    case 'undefined':
-    case 'object':
-    case 'function':
-      return 'null'
+function valueLiteralText<A = unknown>(value: A): string {
+  if (typeof value === 'string') {
+    return JSON.stringify(value)
   }
+  return nonStringLiteralText(value)
 }
 
-function flagText(present: unknown, text: string): string {
+function nonStringLiteralText<A = unknown>(value: A): string {
+  if (typeof value === 'number') {
+    return String(value)
+  }
+  return booleanOrBigintText(value)
+}
+
+function booleanOrBigintText<A = unknown>(value: A): string {
+  if (typeof value === 'boolean') {
+    return String(value)
+  }
+  return bigintText(value)
+}
+
+function bigintText<A = unknown>(value: A): string {
+  return typeof value === 'bigint' ? `${value}n` : 'null'
+}
+
+function flagText<A = unknown>(present: A, text: string): string {
   switch (Boolean(present)) {
     case true:
       return text

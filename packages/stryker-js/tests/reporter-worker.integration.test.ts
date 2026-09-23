@@ -12,6 +12,7 @@ import { DryRunCompleted, MutantTested, MutationTestingPlanReady } from '@system
 import type { ReporterInitOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { decodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
@@ -92,7 +93,7 @@ const largeRun = (gauge: ReporterWorkerGauge, total: number): AsyncIterable<Repo
   [Symbol.asyncIterator]: () => {
     let index = 0
     return {
-      next: (..._args: [] | [unknown]): Promise<IteratorResult<ReporterEvent>> => {
+      next: <A = unknown>(..._args: [] | [A]): Promise<IteratorResult<ReporterEvent>> => {
         if (index >= total) return Promise.resolve({ done: true, value: undefined })
         Effect.runSync(
           Effect.gen(function*() {
@@ -117,7 +118,7 @@ const ofEvents = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent
   [Symbol.asyncIterator]: () => {
     const iterator = events[Symbol.iterator]()
     return {
-      next: (...args: [] | [unknown]) => Promise.resolve(iterator.next(...args)),
+      next: <A = unknown>(...args: [] | [A]) => Promise.resolve(iterator.next(...args)),
     }
   },
 })
@@ -195,62 +196,64 @@ const driveReporterWorker = (
     }),
   ).pipe(Effect.orDie)
 
-Feature('Reporting a mutation run through a reporter plugin process').body(({ scenario }) => {
-  scenario(
-    'A completed run reaches the reporter process and is drained',
-    Gherkin.Do.pipe(
-      Given('a reporter plugin whose own process is ready to serve')('plugin', () => Effect.succeed(REPORTER_PLUGIN)),
-      When('the host reports the completed run to it')(
-        'driven',
-        (s) => driveReporterWorker(s.plugin, () => ofEvents(completedRun())),
+Feature('Reporting a mutation run through a reporter plugin process')
+  .withLayer(Layer.empty)
+  .body(({ scenario }) => {
+    scenario(
+      'A completed run reaches the reporter process and is drained',
+      Gherkin.Do.pipe(
+        Given('a reporter plugin whose own process is ready to serve')('plugin', () => Effect.succeed(REPORTER_PLUGIN)),
+        When('the host reports the completed run to it')(
+          'driven',
+          (s) => driveReporterWorker(s.plugin, () => ofEvents(completedRun())),
+        ),
+        Then('the process receives the whole run in order')((s) => {
+          expect(tagsOf(s.driven.delivered)).toStrictEqual(tagsOf(completedRun()))
+          expect(s.driven.deliverySizes).toStrictEqual([completedRun().length])
+        }),
+        Then('the process is initialised with the run trace and drained once')((s) => {
+          expect(s.driven.inits).toStrictEqual([{ traceparent: TRACEPARENT }])
+          expect(s.driven.flushes).toBe(1)
+        }),
+        Then('the process is started in the project being reported')((s) =>
+          Effect.gen(function*() {
+            const spawn = spawnOf(s.driven.spawns)
+            expect(spawn.workingDirectory).toBe(PROJECT_BASE_PATH)
+            expect(spawn.entrypoint).toBe(REPORTER_WORKER_ENTRYPOINT)
+            const options = yield* decodeWorkerOptions(spawn.optionsJson)
+            expect(options.htmlReporter.fileName).toBe('reports/mutation/mutation.html')
+          })
+        ),
       ),
-      Then('the process receives the whole run in order')((s) => {
-        expect(tagsOf(s.driven.delivered)).toStrictEqual(tagsOf(completedRun()))
-        expect(s.driven.deliverySizes).toStrictEqual([completedRun().length])
-      }),
-      Then('the process is initialised with the run trace and drained once')((s) => {
-        expect(s.driven.inits).toStrictEqual([{ traceparent: TRACEPARENT }])
-        expect(s.driven.flushes).toBe(1)
-      }),
-      Then('the process is started in the project being reported')((s) =>
-        Effect.gen(function*() {
-          const spawn = spawnOf(s.driven.spawns)
-          expect(spawn.workingDirectory).toBe(PROJECT_BASE_PATH)
-          expect(spawn.entrypoint).toBe(REPORTER_WORKER_ENTRYPOINT)
-          const options = yield* decodeWorkerOptions(spawn.optionsJson)
-          expect(options.htmlReporter.fileName).toBe('reports/mutation/mutation.html')
-        })
-      ),
-    ),
-  )
+    )
 
-  scenario(
-    'A fast run cannot outrun the reporter process',
-    Gherkin.Do.pipe(
-      Given(
-        'a reporter plugin whose own process is ready to serve, and a run producing far more events than one delivery',
-      )(
-        'plan',
-        () => Effect.succeed({ target: REPORTER_PLUGIN, total: LARGE_RUN }),
+    scenario(
+      'A fast run cannot outrun the reporter process',
+      Gherkin.Do.pipe(
+        Given(
+          'a reporter plugin whose own process is ready to serve, and a run producing far more events than one delivery',
+        )(
+          'plan',
+          () => Effect.succeed({ target: REPORTER_PLUGIN, total: LARGE_RUN }),
+        ),
+        When('the host reports that run to it')(
+          'driven',
+          (s) => driveReporterWorker(s.plan.target, (gauge) => largeRun(gauge, s.plan.total)),
+        ),
+        Then('every event of the run arrives')((s) => {
+          expect(s.driven.yielded).toBe(LARGE_RUN)
+          expect(s.driven.delivered.length).toBe(LARGE_RUN)
+          expect(s.driven.deliverySizes).toStrictEqual([
+            REPORTER_EVENT_BATCH_BOUND,
+            REPORTER_EVENT_BATCH_BOUND,
+            REPORTER_EVENT_BATCH_BOUND,
+            LARGE_RUN - 3 * REPORTER_EVENT_BATCH_BOUND,
+          ])
+        }),
+        Then('the producer stays at most one delivery ahead of the process')((s) => {
+          expect(s.driven.maxLag).toBeGreaterThan(0)
+          expect(s.driven.maxLag).toBeLessThanOrEqual(REPORTER_EVENT_BATCH_BOUND)
+        }),
       ),
-      When('the host reports that run to it')(
-        'driven',
-        (s) => driveReporterWorker(s.plan.target, (gauge) => largeRun(gauge, s.plan.total)),
-      ),
-      Then('every event of the run arrives')((s) => {
-        expect(s.driven.yielded).toBe(LARGE_RUN)
-        expect(s.driven.delivered.length).toBe(LARGE_RUN)
-        expect(s.driven.deliverySizes).toStrictEqual([
-          REPORTER_EVENT_BATCH_BOUND,
-          REPORTER_EVENT_BATCH_BOUND,
-          REPORTER_EVENT_BATCH_BOUND,
-          LARGE_RUN - 3 * REPORTER_EVENT_BATCH_BOUND,
-        ])
-      }),
-      Then('the producer stays at most one delivery ahead of the process')((s) => {
-        expect(s.driven.maxLag).toBeGreaterThan(0)
-        expect(s.driven.maxLag).toBeLessThanOrEqual(REPORTER_EVENT_BATCH_BOUND)
-      }),
-    ),
-  )
-})
+    )
+  })

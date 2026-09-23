@@ -52,7 +52,7 @@
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
-    "@systemfsoftware/all": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/stryker-config": "workspace:^",
     "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "catalog:stryker",

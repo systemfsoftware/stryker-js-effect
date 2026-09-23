@@ -3,8 +3,8 @@ is_tui_disabled: true
 
 processes:
   lgtm:
-    description: Grafana LGTM — Grafana :3000, Tempo :3200, OTLP 4317/4318 (loopback)
-    command: 'bash -c ''"${RUNTIME:-podman}" rm -f stryker-lgtm >/dev/null 2>&1 || true; exec "${RUNTIME:-podman}" run --pull=missing --stop-timeout 5 --rm --name stryker-lgtm -p 127.0.0.1:3000:3000 -p 127.0.0.1:3200:3200 -p 127.0.0.1:4317:4317 -p 127.0.0.1:4318:4318 docker.io/grafana/otel-lgtm@sha256:475319e883b66594d1a2f22ef168c2459802bb94548e6f25d9782bd5f5c19a3a'''
+    description: Grafana LGTM — Grafana :3000, Tempo :3200 (loopback), OTLP 4317/4318 (all interfaces, container-reachable)
+    command: 'bash -c ''"${RUNTIME:-podman}" rm -f stryker-lgtm >/dev/null 2>&1 || true; exec "${RUNTIME:-podman}" run --pull=missing --stop-timeout 5 --rm --name stryker-lgtm -p 127.0.0.1:3000:3000 -p 127.0.0.1:3200:3200 -p 4317:4317 -p 4318:4318 docker.io/grafana/otel-lgtm@sha256:475319e883b66594d1a2f22ef168c2459802bb94548e6f25d9782bd5f5c19a3a'''
     availability:
       restart: "no"
     readiness_probe:

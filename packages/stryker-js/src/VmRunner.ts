@@ -59,7 +59,7 @@ export interface VmTestRunnerConfig {
   readonly sandboxWorkingDirectory?: string
 }
 
-const errorText = (error: unknown): string =>
+const errorText = <A = unknown>(error: A): string =>
   Match.value(error).pipe(
     Match.when(Match.instanceOf(Error), (failure) => failure.message),
     Match.orElse((value) => String(value)),
@@ -84,7 +84,7 @@ interface RunFailure {
   readonly fatal: boolean
 }
 
-const runFailureFor = (file: string, cause: unknown): RunFailure => {
+const runFailureFor = <A = unknown>(file: string, cause: A): RunFailure => {
   const fatal = isInitFailure(cause)
   const message = fatal
     ? `Could not load "${file}" for the in-memory runner: ${errorText(cause)}`
@@ -94,21 +94,19 @@ const runFailureFor = (file: string, cause: unknown): RunFailure => {
 
 let saltCounter = 0
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> => Predicate.isObject(value)
+const isPlainObject = <A = unknown>(value: unknown): value is Record<string, A> => Predicate.isObject(value)
 
-const descriptorValue = (descriptor: PropertyDescriptor | undefined): unknown => {
-  if (descriptor === undefined) {
-    return undefined
-  }
-  return descriptor.value
-}
+const descriptorValue = <A = unknown>(descriptor: TypedPropertyDescriptor<A> | undefined): A | undefined =>
+  descriptor === undefined ? undefined : descriptor.value
 
-const hostStrykerNamespace = (): Record<string, unknown> => {
-  const current = descriptorValue(Object.getOwnPropertyDescriptor(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE))
-  if (isPlainObject(current)) {
+const hostStrykerNamespace = <A = unknown>(): Record<string, A> => {
+  const current = descriptorValue<Record<string, A>>(
+    Object.getOwnPropertyDescriptor(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE),
+  )
+  if (isPlainObject<A>(current)) {
     return current
   }
-  const created: Record<string, unknown> = {}
+  const created: Record<string, A> = {}
   Object.defineProperty(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE, {
     configurable: true,
     enumerable: true,
