@@ -33,12 +33,10 @@ export type Tone = typeof ToneSchema.Type
 export const ReportSpanSchema = S.TaggedStruct('ReportSpan', {
   text: S.String,
   tone: ToneSchema,
-  leftPad: S.Finite,
-  rightPad: S.Finite,
-  repeat: S.Finite,
+  leftPad: S.Natural,
+  rightPad: S.Natural,
+  repeat: S.Natural.pipe(S.check(S.isGreaterThan(0))),
 })
-export type ReportSpan = typeof ReportSpanSchema.Type
-
 export const ReportLineSchema = S.Array(ReportSpanSchema)
 export type ReportLine = typeof ReportLineSchema.Type
 
@@ -234,11 +232,12 @@ const untilLast = (index: number, lastIndex: number, pad: number): number =>
 const placedLine = (line: ReportLine, style: PadStyle, netWidth: number): ReportLine => {
   const pads = padsOf(style, lineWidth(line), netWidth)
   const lastIndex = line.length - 1
-  return Arr.map(line, (span, index) => ({
+  const placed = (span: ReportSpan, index: number): ReportSpan => ({
     ...span,
     leftPad: fromFirst(index, pads.leftPad),
     rightPad: untilLast(index, lastIndex, pads.rightPad),
-  }))
+  })
+  return Arr.map(line, placed)
 }
 
 const placedCell = (content: CellContent, style: PadStyle, netWidth: number, tone: Tone): ReportSpan => {

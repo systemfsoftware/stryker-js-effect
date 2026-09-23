@@ -1,10 +1,10 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 
+import type { PrepareDone } from './run/prepare.cell.js'
 import { ResolveConcurrency, resolveConcurrency } from './resolve-concurrency.workflow.js'
 
 const ASSUMED_PARALLELISM = 4
@@ -20,19 +20,17 @@ const reportedParallelism = () =>
 
 const availableParallelism = () => Option.getOrElse(reportedParallelism(), () => ASSUMED_PARALLELISM)
 
-interface ConcurrencyRequest {
-  readonly concurrency: number | string | undefined
-  readonly checkerCount: number
-}
-
 type ConcurrencyRaw = (typeof ResolveConcurrency)['Encoded']
 
-const readConcurrency = (request: ConcurrencyRequest): Effect.Effect<ConcurrencyRaw> =>
+type ConcurrencyRead = ConcurrencyRaw & { readonly record: PrepareDone }
+
+const readConcurrency = (record: PrepareDone): Effect.Effect<ConcurrencyRead> =>
   Effect.sync(() => ({
     _tag: 'ResolveConcurrency',
-    concurrency: request.concurrency,
-    checkerCount: request.checkerCount,
+    concurrency: record.options.concurrency,
+    checkerCount: record.options.checkers.length,
     availableParallelism: availableParallelism(),
+    record,
   }))
 
 const announcePercentage = (command: ConcurrencyRaw, total: number, isPercentage: boolean) =>
@@ -55,7 +53,7 @@ export const concurrencyCell = Sandwich.named('stryker.concurrency')(readConcurr
             `Creating ${split.checkers} checker process(es) and ${split.testRunners} test runner process(es).`,
           ),
         ),
-        { testRunners: split.testRunners, checkers: split.checkers },
+        { ...command.record, concurrency: { testRunners: split.testRunners, checkers: split.checkers } },
       ),
     TestRunnersOnly: (split, command) =>
       Effect.as(
@@ -63,10 +61,7 @@ export const concurrencyCell = Sandwich.named('stryker.concurrency')(readConcurr
           announcePercentage(command, split.total, split.isPercentage),
           Effect.logInfo(`Creating ${split.testRunners} test runner process(es).`),
         ),
-        { testRunners: split.testRunners, checkers: 0 },
+        { ...command.record, concurrency: { testRunners: split.testRunners, checkers: 0 } },
       ),
     CommandRejected: (rejected) => Effect.die(rejected),
   })
-
-export const makeConcurrency = (options: Pick<StrykerOptions, 'checkers' | 'concurrency'>) =>
-  concurrencyCell.run({ concurrency: options.concurrency, checkerCount: options.checkers.length })

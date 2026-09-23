@@ -1190,18 +1190,21 @@ const transformScript = (
     function applyPlacement(path: TraversePath, placement: MutantsPlacement): void {
       Result.match(
         Result.mapError(
-          Result.flatten(Result.try({
-            try: () => placement.placer.place(path, placement.appliedMutants),
-            catch: (cause) =>
-              Result.fail(
-                MutantPlacementFailed.make({
-                  ...placementLocation(path.node, lineTable, basePath, originFileName),
-                  placerName: placement.placer.name,
-                  mutatorNames: [...placement.appliedMutants.keys()].map((mutant) => mutant.mutatorName),
-                  cause,
-                }),
-              ),
-          })),
+          Result.flatMap(
+            Result.try({
+              try: () => placement.placer.place(path, placement.appliedMutants),
+              catch: (cause) =>
+                Result.fail(
+                  MutantPlacementFailed.make({
+                    ...placementLocation(path.node, lineTable, basePath, originFileName),
+                    placerName: placement.placer.name,
+                    mutatorNames: [...placement.appliedMutants.keys()].map((mutant) => mutant.mutatorName),
+                    cause,
+                  }),
+                ),
+            }),
+            (placed) => placed,
+          ),
           (kindMismatch) =>
             MutantPlacementFailed.make({
               ...placementLocation(path.node, lineTable, basePath, originFileName),

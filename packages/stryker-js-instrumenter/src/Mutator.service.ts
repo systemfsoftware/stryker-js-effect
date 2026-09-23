@@ -627,7 +627,7 @@ const constructorBodyMatters = (
 ): boolean => containsSuperCall(block) && hasConstructorInitialization(constructor, context)
 
 const hasConstructorInitialization = (constructor: MethodDefinition, context: MutatorContext): boolean =>
-  [constructor.value.params.some(isParameterProperty), hasInitializedProperties(context)].some(Boolean)
+  [constructor.value.params.some(isParameterProperty), hasInitializedProperties(context)].some((flag) => flag === true)
 
 type ParameterProperty = { readonly type: 'TSParameterProperty' }
 
@@ -1038,7 +1038,7 @@ const templateMutants = (template: TemplateLiteral): readonly Node[] =>
   })
 
 const emptyOrPlaceholderTemplate = (template: TemplateLiteral, first: TemplateElement): Node => {
-  const isEmptyTemplate = [template.quasis.length === 1, first.value.raw.length === 0].every(Boolean)
+  const isEmptyTemplate = [template.quasis.length === 1, first.value.raw.length === 0].every((flag) => flag === true)
   return templateLiteral([templateElement(replacementText(isEmptyTemplate))], [])
 }
 
@@ -1059,7 +1059,7 @@ const isDisallowedParent = (parent: Node, child: Node): boolean =>
     isJsxOrExpressionRelated(parent),
     isObjectOrClassPropertyKey(parent, child),
     isDisallowedCallExpression(parent),
-  ].some(Boolean)
+  ].some((flag) => flag === true)
 
 const MODULE_KINDS: Readonly<Record<string, true>> = {
   ImportDeclaration: true,

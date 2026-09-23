@@ -165,7 +165,7 @@ if (import.meta.vitest !== void 0) {
   it.effect.prop(
     '∀st_Location_Start≤End',
     [textWithOffset, Schema.Int],
-    ({ text, offset }, draw) =>
+    ([{ text, offset }, draw]) =>
       Effect.gen(function*() {
         const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
         const limit = text.length

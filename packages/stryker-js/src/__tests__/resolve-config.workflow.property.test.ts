@@ -1,6 +1,7 @@
 import { describe, it } from '@effect/vitest'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type StrykerOptions, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
+import * as Equal from 'effect/Equal'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -8,17 +9,18 @@ import {
   ConfigFromFile,
   ConfigFromDefaults,
   ConfigOptionsRefused,
+  type LoadConfigDecision,
   LoadConfigCommand,
   resolveConfig,
 } from '../run/resolve-config.workflow.js'
 
-const optionsEquivalence = S.toEquivalence(StrykerOptionsSchema)
-
-const variantIs = (fileFound: boolean) => (outcome: unknown) =>
+const variantIs = (fileFound: boolean) => (outcome: LoadConfigDecision) =>
   Boolean.match(fileFound, {
     onTrue: () => S.is(ConfigFromFile)(outcome),
     onFalse: () => S.is(ConfigFromDefaults)(outcome),
   })
+
+const optionsEqual = (first: StrykerOptions, second: StrykerOptions) => Equal.equals(first, second)
 
 describe('resolveConfig', () => {
   it.prop('∀c_Command_≡VariantFollowsFileFound', [LoadConfigCommand], ([command]) =>
@@ -40,7 +42,7 @@ describe('resolveConfig', () => {
             Result.match(decision, {
               onFailure: () => false,
               onSuccess: (outcome) =>
-                optionsEquivalence(outcome.options, decoded) && variantIs(fileFound)(outcome),
+                optionsEqual(outcome.options, decoded) && variantIs(fileFound)(outcome),
             }),
         })
       },

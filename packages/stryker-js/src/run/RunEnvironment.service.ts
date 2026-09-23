@@ -3,14 +3,19 @@ import type * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import type { PlatformError } from 'effect/PlatformError'
 import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
 import type { ResolvedMode } from '../output-mode.schema.js'
+import type { RunEventStream } from '../run-event-stream.service.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import { ProjectFiles } from '../project-files.service.js'
 import { Reporter } from '../reporter.service.js'
@@ -72,5 +77,45 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
         Reporter.layer.pipe(Layer.provide(ReporterOutput.layer)).pipe(Layer.provide(stageLayer)),
       )
     },
+  )
+
+  static readonly forStream: {
+    (
+      mode: ResolvedMode,
+      stream: RunEventStream,
+      host: {
+        readonly noColor?: string | undefined
+        readonly builtinReporters: Readonly<Record<string, ReporterFactory>>
+      },
+    ): Effect.Effect<RunEnvironmentShape, PlatformError, FileSystem.FileSystem>
+    (
+      stream: RunEventStream,
+      host: {
+        readonly noColor?: string | undefined
+        readonly builtinReporters: Readonly<Record<string, ReporterFactory>>
+      },
+    ): (mode: ResolvedMode) => Effect.Effect<RunEnvironmentShape, PlatformError, FileSystem.FileSystem>
+  } = dual(
+    3,
+    (
+      mode: ResolvedMode,
+      stream: RunEventStream,
+      host: {
+        readonly noColor?: string | undefined
+        readonly builtinReporters: Readonly<Record<string, ReporterFactory>>
+      },
+    ): Effect.Effect<RunEnvironmentShape, PlatformError, FileSystem.FileSystem> =>
+      Effect.map(
+        Effect.flatMap(FileSystem.FileSystem, (fs) => fs.realPath('.')),
+        (basePath) => ({
+          runId: stream.runId,
+          resolvedMode: mode,
+          runStartedAt: stream.startedAt,
+          basePath,
+          builtinReporters: host.builtinReporters,
+          allowConsoleColors: mode.mode === 'human' &&
+            Option.isNone(Option.filter(Option.fromUndefinedOr(host.noColor), S.is(S.NonEmptyString))),
+        }),
+      ),
   )
 }

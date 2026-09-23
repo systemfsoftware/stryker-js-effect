@@ -3,7 +3,6 @@ import type { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interf
 import * as Array from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -11,6 +10,18 @@ import { type PluginSource, PluginSourceSchema } from '../Plugins.schema.js'
 
 const ResolvedWorkerSpawnTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ResolvedWorkerSpawn')
 type ResolvedWorkerSpawnTypeId = typeof ResolvedWorkerSpawnTypeId
+
+export class ConfiguredPluginName extends S.TaggedClass<ConfiguredPluginName>()('ConfiguredPluginName', {
+  name: S.String,
+}) {}
+
+export class ConfiguredPluginModulePath
+  extends S.TaggedClass<ConfiguredPluginModulePath>()('ConfiguredPluginModulePath', {
+    modulePath: S.String,
+  })
+{}
+
+export const ConfiguredPluginSchema = S.Union([ConfiguredPluginName, ConfiguredPluginModulePath])
 
 export class WorkerSpawnResolved extends S.TaggedClass<WorkerSpawnResolved>()('WorkerSpawnResolved', {
   kind: WorkerPluginKind,
@@ -28,7 +39,7 @@ export class WorkerSpawnMissing extends S.TaggedError<WorkerSpawnMissing>()('Wor
 export class WorkerSpawnCommand extends S.TaggedClass<WorkerSpawnCommand>()('WorkerSpawnCommand', {
   sources: S.Array(PluginSourceSchema),
   kind: WorkerPluginKind,
-  configured: S.Union([S.String, S.Struct({ plugin: S.String })]),
+  configured: ConfiguredPluginSchema,
 }) {
   static readonly [Workflow.InstrumentationBrand] = { kind: 'stryker.plugin.kind' } as const
 }
@@ -41,11 +52,20 @@ const labelOfKind = (kind: WorkerPluginKind) =>
     Match.exhaustive,
   )
 
+const kindIs = (kind: WorkerPluginKind) => (source: PluginSource): source is WorkerPluginSource =>
+  Match.value(source.kind).pipe(
+    Match.when(kind, () => true),
+    Match.orElse(() => false),
+  )
+
 const workerSourceOf = (
   sources: readonly PluginSource[],
   kind: WorkerPluginKind,
   matches: (worker: WorkerPluginSource) => boolean,
-) => Array.findFirst(sources, (source): source is WorkerPluginSource => source.kind === kind && matches(source))
+) =>
+  Array.findFirst(sources, (source) =>
+    Option.liftPredicate(kindIs(kind))(source).pipe(Option.filter(matches), Option.isSome),
+  )
 
 const resolvedSpawnOf = (
   command: WorkerSpawnCommand,
@@ -54,7 +74,9 @@ const resolvedSpawnOf = (
 ): Result.Result<WorkerSpawnResolved, WorkerSpawnMissing> =>
   Option.match(workerSourceOf(command.sources, command.kind, matches), {
     onSome: (worker) =>
-      Result.succeed(WorkerSpawnResolved.make({ kind: command.kind, name: worker.name, entrypoint: worker.workerEntry })),
+      Result.succeed(
+        WorkerSpawnResolved.make({ kind: command.kind, name: worker.name, entrypoint: worker.workerEntry }),
+      ),
     onNone: () => {
       const kindLabel = labelOfKind(command.kind)
       return Result.fail(
@@ -68,13 +90,15 @@ const resolvedSpawnOf = (
 
 const decide = (command: WorkerSpawnCommand): Result.Result<WorkerSpawnResolved, WorkerSpawnMissing> =>
   Match.value(command.configured).pipe(
-    Match.when(
-      Predicate.isString,
-      (name) => resolvedSpawnOf(command, (worker) => worker.name.toLowerCase() === name.toLowerCase(), name),
-    ),
-    Match.orElse((custom) =>
-      resolvedSpawnOf(command, (worker) => worker.modulePath === custom.plugin, custom.plugin),
-    ),
+    Match.tag('ConfiguredPluginName', (configured) =>
+      resolvedSpawnOf(
+        command,
+        (worker) => worker.name.toLowerCase() === configured.name.toLowerCase(),
+        configured.name,
+      )),
+    Match.tag('ConfiguredPluginModulePath', (configured) =>
+      resolvedSpawnOf(command, (worker) => worker.modulePath === configured.modulePath, configured.modulePath)),
+    Match.exhaustive,
   )
 
 export const resolveConfiguredPlugin = Workflow.make({
