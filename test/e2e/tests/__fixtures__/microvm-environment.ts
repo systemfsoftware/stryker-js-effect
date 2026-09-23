@@ -202,7 +202,7 @@ const runGuestJob = (
 const requireExited = (
   step: string,
   completion: MicroVM.JobCompletion,
-): Effect.Effect<number, ExitFailure | GuestSignaledFailure> => {
+): Effect.Effect<number, GuestSignaledFailure> => {
   const verdict = classifyJobExit(completion)
   if (verdict._tag === 'Signaled') {
     return Effect.fail(
@@ -213,11 +213,6 @@ const requireExited = (
       }),
     )
   }
-  if (verdict.code !== 0) {
-    return Effect.fail(
-      new ExitFailure({ step, exitCode: verdict.code, stderrTail: tailOf(decodeUtf8(completion.stderr)) }),
-    )
-  }
   return Effect.succeed(verdict.code)
 }
 
@@ -225,7 +220,14 @@ const requireCleanExit = (
   step: string,
   job: MicroVM.JobResource,
 ): Effect.Effect<void, ExitFailure | GuestJobFailure | GuestSignaledFailure, Crypto.Crypto | FileSystem.FileSystem> =>
-  Effect.flatMap(runGuestJob(step, job), (completion) => requireExited(step, completion).pipe(Effect.asVoid))
+  Effect.flatMap(
+    runGuestJob(step, job),
+    (completion) =>
+      Effect.flatMap(requireExited(step, completion), (code) =>
+        code === 0
+          ? Effect.void
+          : Effect.fail(new ExitFailure({ step, exitCode: code, stderrTail: tailOf(decodeUtf8(completion.stderr)) }))),
+  )
 
 const listTree = (
   root: string,
