@@ -1,16 +1,18 @@
-import { Effect } from 'effect'
-import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import * as oxc from 'oxc-parser'
+import { printProgram } from '../src/print/index.js'
+import { printProgram as legacyPrintProgram } from '../src/print/legacy.tmp.js'
 import { expect, it } from 'vitest'
 
-const replacer = (_key: string, value: unknown): unknown => (typeof value === 'bigint' ? String(value) : value)
+const cases: readonly string[] = ['', '\n', 'export const add = (a: number, b: number) => a + b\n']
 
-it('diagnoses instrument', async () => {
-  const source = 'export const add = (a: number, b: number) => a + b\n'
-  for (const mutate of [false, true] as const) {
-    const exit = await Effect.runPromiseExit(
-      instrument([{ name: 'diag.ts', content: source, mutate }], { ignorers: [], excludedMutations: [] }),
-    )
-    console.log(mutate ? '=== mutate:true' : '=== mutate:false', JSON.stringify(exit, replacer))
-    expect(exit._tag, `instrument(mutate=${mutate}) should succeed`).toBe('Success')
+it('prints both ways for diagnosis', () => {
+  for (const [index, source] of cases.entries()) {
+    const parsed = oxc.parseSync('law.ts', source, { lang: 'ts', range: true })
+    const printed = printProgram(parsed.program, { comments: parsed.comments, hashbang: null })
+    const legacy = legacyPrintProgram(parsed.program, { comments: parsed.comments, hashbang: null })
+    console.log(`case ${index} source=${JSON.stringify(source)}`)
+    console.log(`  new=${JSON.stringify(printed)}`)
+    console.log(`legacy=${JSON.stringify(legacy)}`)
+    expect(printed, `case ${index} must match legacy`).toBe(legacy)
   }
 })

@@ -4,3 +4,5 @@ export class StrykerError extends S.TaggedError<StrykerError>()('StrykerError', 
   message: S.String,
   cause: S.optional(S.Unknown),
 }) {}
+
+export class ReporterStageForged extends S.TaggedError<ReporterStageForged>()('ReporterStageForged', {}) {}

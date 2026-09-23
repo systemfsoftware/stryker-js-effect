@@ -28,7 +28,7 @@ import * as S from 'effect/Schema'
 import { calculateMetrics } from './calculate-metrics.js'
 import { highestExitClass, verdictExitClass } from './exit-classification.js'
 import { checkStatusToMutantStatus, mapRunResult, toSchemaLocation } from './mutant-result-mapping.js'
-import { ManifestUnreadable } from './mutation-reporting.schema.js'
+import { ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js'
@@ -80,8 +80,6 @@ const MANIFEST_SPECIFIERS = [
 ] as const
 
 const MANIFEST_CONCURRENCY = 24
-
-const ManifestSchema = S.Struct({ version: S.optional(S.String) })
 
 export interface MutationReportingInput {
   readonly results: readonly RunMutantResult[]

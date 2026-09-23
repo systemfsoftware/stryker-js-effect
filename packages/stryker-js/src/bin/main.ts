@@ -31,6 +31,7 @@ import type { PlatformError } from 'effect/PlatformError'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
+import * as Stream from 'effect/Stream'
 import * as CliConfig from 'effect/unstable/cli/CliConfig'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
@@ -75,13 +76,15 @@ const isSupportedNodeVersion = (version: string) =>
 const unsupportedNodeVersion = (version: string) =>
   UnsupportedNodeVersion.make({ version, required: cliPkgJson.engines.node })
 
-const checkNodeVersion = (version: string) =>
+const checkNodeVersion = (stdio: Stdio.Stdio, version: string) =>
   Effect.flatMap(Effect.succeed(isSupportedNodeVersion(version)), (supported) =>
     Boolean.match(supported, {
       onTrue: () => Effect.void,
       onFalse: () => {
         const failure = unsupportedNodeVersion(version)
-        return Console.error(failure.message).pipe(Effect.andThen(Effect.fail(failure)))
+        return Stream.run(Stream.make(`${failure.message}\n`), stdio.stderr()).pipe(
+          Effect.andThen(Effect.fail(failure)),
+        )
       },
     }))
 
@@ -271,6 +274,24 @@ const nodeVmPlatformLayer = Layer.effect(
     }),
   ),
 )
+
+const cliLayer = Layer.empty.pipe(
+  Layer.provideMerge(NodeStdio.layer),
+  Layer.provideMerge(NodeFileSystem.layer),
+  Layer.provideMerge(NodePath.layer),
+  Layer.provideMerge(OutputModeProbeLive),
+  Layer.provideMerge(RunEventDrain.fileLayer),
+  Layer.provideMerge(RunEventStreamPortTag.layer),
+  Layer.provideMerge(machineConsoleByModeLayer),
+  Layer.provideMerge(telemetryLayer),
+  Layer.provideMerge(CliConfig.layer({ builtIns: GlobalFlag.BuiltIns })),
+  Layer.provideMerge(NodeTerminal.layer),
+  Layer.provideMerge(NodeChildProcessSpawner.layer),
+  Layer.provideMerge(NodeCrypto.layer),
+  Layer.provideMerge(nodeWorkerLauncherLayer),
+  Layer.provideMerge(nodeVmPlatformLayer),
+)
+
 const program = Effect.scoped(
   cliLayer.pipe(
     Layer.build,
@@ -278,7 +299,7 @@ const program = Effect.scoped(
       Effect.provideContext(
         Effect.gen(function*() {
           const stdio = yield* Stdio.Stdio
-          yield* checkNodeVersion(globalThis.process.version)
+          yield* checkNodeVersion(stdio, globalThis.process.version)
           const outputMode = yield* OutputModeProbe
           const runEvents = yield* RunEventStreamPort
           const args = [...(yield* stdio.args)]

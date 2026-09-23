@@ -220,7 +220,7 @@ const programText = (opts: PrintProgramOptions, program: Program): string => {
   const ctx: PrintContext = { indentLevel: 0 }
   const hashbang = opts.hashbang ?? null
   const comments = sortedCommentsWithoutHashbang(opts.comments, hashbang)
-  const [cursorAfterHead, headComments] = pendingComments(comments, 0, headPosition(program))
+  const [headComments, cursorAfterHead] = pendingComments(comments, 0, headPosition(program))
   const [cursorAfterBody, statements] = Arr.mapAccum(
     program.body,
     cursorAfterHead,

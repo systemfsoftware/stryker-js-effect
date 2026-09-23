@@ -99,7 +99,7 @@ const fieldOf = <A = unknown, B = unknown>(value: A, key: string) =>
 const parseWithOxcOf = (oxc: Oxc) => (text: string, fileName: string, lang: 'js' | 'jsx' | 'ts' | 'tsx') =>
   Effect.gen(function*() {
     const result = oxc.parseSync(fileName, text, { lang, range: true })
-    const lineTable = yield* Effect.orDie(S.decode(LineTableFromText)(text))
+    const lineTable = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
     return yield* Option.match(oxcParseFailure(oxc, result.errors, fileName, lineTable), {
       onSome: Effect.fail,
       onNone: () => Effect.succeed({ root: result.program, comments: result.comments }),
@@ -473,7 +473,7 @@ const parseSvelte = (text: string, fileName: string, parserContext: ParserShape)
     yield* supportedVersionOf(VERSION, fileName)
     const walk = yield* loadWalker(VERSION, fileName)
 
-    const lineTable = yield* Effect.orDie(S.decode(LineTableFromText)(text))
+    const lineTable = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
     const { replacedCode, scriptMap } = yield* replaceScripts(text, preprocess)
     const svelteAst = svelteParse(replacedCode, { filename: fileName })
 

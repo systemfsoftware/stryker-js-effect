@@ -4,3 +4,5 @@ export class ManifestUnreadable extends S.TaggedError<ManifestUnreadable>()('Man
   specifier: S.String,
   cause: S.Unknown,
 }) {}
+
+export const ManifestSchema = S.Struct({ version: S.optional(S.String) })

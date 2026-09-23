@@ -128,7 +128,7 @@ if (import.meta.vitest !== void 0) {
     [textWithOffset],
     ({ text, offset }) =>
       Effect.gen(function*() {
-        const table = yield* Effect.orDie(S.decode(LineTableFromText)(text))
+        const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
         const position = table.positionAt(offset)
         const startOfLine = Arr.get(table.lineStarts, position.line - 1)
         return Option.isSome(startOfLine) &&
@@ -144,8 +144,8 @@ if (import.meta.vitest !== void 0) {
     (fragments) =>
       Effect.gen(function*() {
         const text = fragments.join('')
-        const table = yield* Effect.orDie(S.decode(LineTableFromText)(text))
-        const withUnixEndings = yield* Effect.orDie(S.decode(LineTableFromText)(text.replaceAll('\r\n', '\n')))
+        const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
+        const withUnixEndings = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text.replaceAll('\r\n', '\n')))
         return table.lineStarts.join(',') === withUnixEndings.lineStarts.join(',')
       }),
   )
@@ -155,7 +155,7 @@ if (import.meta.vitest !== void 0) {
     [textArbitrary],
     (text) =>
       Effect.map(
-        Effect.orDie(S.decode(LineTableFromText)(text)),
+        Effect.orDie(S.decodeEffect(LineTableFromText)(text)),
         (table) =>
           table.lineStarts[0] === 0 &&
           table.lineStarts.every((start, index) => index === 0 || start > table.lineStarts[index - 1]),
@@ -167,7 +167,7 @@ if (import.meta.vitest !== void 0) {
     [textWithOffset, Schema.Int],
     ({ text, offset }, draw) =>
       Effect.gen(function*() {
-        const table = yield* Effect.orDie(S.decode(LineTableFromText)(text))
+        const table = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
         const limit = text.length
         const first = ((draw % (limit + 1)) + limit + 1) % (limit + 1)
         const [start, end] = [first, offset].sort((left, right) => left - right)

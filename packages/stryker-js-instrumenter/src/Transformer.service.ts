@@ -1025,7 +1025,7 @@ const transformScript = (
     broken.current = broken.current ?? candidate
   }
   return Effect.gen(function*() {
-    const lineTable = yield* Effect.orDie(S.decode(LineTableFromText)(rawContent))
+    const lineTable = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(rawContent))
 
     attachComments(make(root), comments, lineTable)
     const directives: { rule: Rule } = { rule: rootRule }

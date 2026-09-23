@@ -12,6 +12,7 @@ import {
   TraceContextReference,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import { partsOfEffectSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
+import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
 import * as Data from 'effect/Data'
@@ -33,6 +34,7 @@ import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
 
 import { ConfigError } from './ConfigError.schema.js'
+import { ReporterStageForged } from './stryker-error.schema.js'
 import { makeWorkerClient } from './worker-client.resource.js'
 import type { WorkerBootError, WorkerLauncher } from './WorkerLauncher.service.js'
 
@@ -76,12 +78,14 @@ const makeReporterStage = (attachments: readonly ReporterAttachment[]): Reporter
   return stage
 }
 
-const stageAttachments = (stage: ReporterStage): readonly ReporterAttachment[] => {
-  if (!carriesAttachments(stage)) {
-    throw new Error('not a reporter stage constructed by attachReporterFactories')
-  }
-  return stage.attachments
-}
+const attachmentsOf = (stage: ReporterStage): Option.Option<readonly ReporterAttachment[]> =>
+  Option.map(Option.filter(Option.some(stage), carriesAttachments), (attached) => attached.attachments)
+
+const stageAttachments = (stage: ReporterStage): Effect.Effect<readonly ReporterAttachment[], never, never> =>
+  Option.match(attachmentsOf(stage), {
+    onNone: () => Effect.die(ReporterStageForged.make({})),
+    onSome: Effect.succeed,
+  })
 
 export interface ReporterDrainSummary {
   readonly terminalFailed: readonly string[]
@@ -94,18 +98,19 @@ export interface AttachReporterInput {
 
 export const isTerminalReportEvent = (event: ReporterEvent): boolean => S.is(MutationTestReportReady)(event)
 
-const availableReporters = (available: readonly string[]): string => {
-  if (available.length === 0) return '(none)'
-  return available.join(', ')
-}
+const availableReporters = (available: readonly string[]): string =>
+  Boolean.match(available.length === 0, {
+    onTrue: () => '(none)',
+    onFalse: () => available.join(', '),
+  })
 
 const unknownReporterMessage = (unknown: readonly string[], available: readonly string[]): string => {
   const quoted = unknown.map((name) => `"${name}"`).join(', ')
   const candidates = availableReporters(available)
-  if (unknown.length > 1) {
-    return `Unknown reporters ${quoted}. Available reporters: ${candidates}.`
-  }
-  return `Unknown reporter ${quoted}. Available reporters: ${candidates}.`
+  return Boolean.match(unknown.length > 1, {
+    onTrue: () => `Unknown reporters ${quoted}. Available reporters: ${candidates}.`,
+    onFalse: () => `Unknown reporter ${quoted}. Available reporters: ${candidates}.`,
+  })
 }
 
 export const validateReporterNames: {
@@ -114,10 +119,10 @@ export const validateReporterNames: {
 } = dual(2, (configured: readonly string[], available: readonly string[]): Effect.Effect<void, ConfigError> => {
   const known = HashSet.fromIterable(available.map((name) => name.toLowerCase()))
   const unknown = configured.filter((name) => !HashSet.has(known, name.toLowerCase()))
-  if (unknown.length === 0) {
-    return Effect.void
-  }
-  return Effect.fail(ConfigError.make({ message: unknownReporterMessage(unknown, available) }))
+  return Boolean.match(unknown.length === 0, {
+    onTrue: () => Effect.void,
+    onFalse: () => Effect.fail(ConfigError.make({ message: unknownReporterMessage(unknown, available) })),
+  })
 })
 
 export const acquireReporterIterator = <A>(
@@ -134,14 +139,17 @@ interface EmitterPorts {
   readonly latch: ReporterStreamLatch
 }
 
-const markDetachedEffect = (ports: EmitterPorts): Effect.Effect<void> =>
+const detach = (ports: EmitterPorts): Effect.Effect<void> =>
   Effect.gen(function*() {
-    if (ports.latch.state === 'terminal') {
-      return
-    }
     ports.latch.state = 'detached'
     yield* Queue.shutdown(ports.queue)
     yield* Queue.shutdown(ports.inbox)
+  })
+
+const markDetachedEffect = (ports: EmitterPorts): Effect.Effect<void> =>
+  Boolean.match(ports.latch.state === 'terminal', {
+    onTrue: () => Effect.void,
+    onFalse: () => detach(ports),
   })
 
 const pumpEmitter = (ports: EmitterPorts): Effect.Effect<void> =>
@@ -152,10 +160,17 @@ const pumpEmitter = (ports: EmitterPorts): Effect.Effect<void> =>
 
 const closedIteratorResult: IteratorResult<ReporterEvent> = { done: true, value: undefined }
 
-const declaresTerminalReport = (result: IteratorResult<ReporterEvent>): boolean => {
-  if (result.done !== true) return isTerminalReportEvent(result.value)
-  return false
-}
+const isYielded = (result: IteratorResult<ReporterEvent>): result is IteratorYieldResult<ReporterEvent> =>
+  result.done !== true
+
+const yieldedOf = (result: IteratorResult<ReporterEvent>): Option.Option<IteratorYieldResult<ReporterEvent>> =>
+  Option.filter(Option.some(result), isYielded)
+
+const declaresTerminalReport = (result: IteratorResult<ReporterEvent>): boolean =>
+  Option.match(yieldedOf(result), {
+    onNone: () => false,
+    onSome: (yielded) => isTerminalReportEvent(yielded.value),
+  })
 
 const closeIterator = <V = unknown>(
   iterator: AsyncIterator<ReporterEvent>,
@@ -191,12 +206,14 @@ export const attachReporterFactories: {
         const ports: EmitterPorts = { inbox, queue, latch }
         const singleUse: AsyncIterable<ReporterEvent> = {
           [Symbol.asyncIterator]: () => {
-            const observe = (result: IteratorResult<ReporterEvent>): IteratorResult<ReporterEvent> => {
-              if (declaresTerminalReport(result)) {
-                latch.state = 'terminal'
-              }
-              return result
-            }
+            const observe = (result: IteratorResult<ReporterEvent>): IteratorResult<ReporterEvent> =>
+              Boolean.match(declaresTerminalReport(result), {
+                onTrue: () => {
+                  latch.state = 'terminal'
+                  return result
+                },
+                onFalse: () => result,
+              })
             return {
               next: () => iterator.next().then(observe),
               return: (value) => closeIterator(iterator, value),
@@ -264,24 +281,20 @@ export interface SpawnReporterWorkerParams {
 export const spawnReporterWorker = (
   params: SpawnReporterWorkerParams,
 ): Effect.Effect<ReporterWorkerClient, WorkerBootError, Scope.Scope | WorkerLauncher> =>
-  Effect.gen(function*() {
-    return yield* makeWorkerClient({
-      rpcs: ReporterRpcs,
-      options: params.options,
-      entrypoint: params.entrypoint,
-      workingDirectory: params.projectBasePath,
-      execArgv: [...params.execArgv],
-      optionsJson,
-      tempDirPrefix: params.tempDirPrefix,
-    })
+  makeWorkerClient({
+    rpcs: ReporterRpcs,
+    options: params.options,
+    entrypoint: params.entrypoint,
+    workingDirectory: params.projectBasePath,
+    execArgv: [...params.execArgv],
+    tempDirPrefix: params.tempDirPrefix,
   })
 
 const warnEventDropped = (attachment: ReporterAttachment): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    if (attachment.latch.state === 'detached') {
-      return
-    }
-    yield* Effect.logWarning(`Reporter "${attachment.name}" stream closed before an event could be delivered.`)
+  Boolean.match(attachment.latch.state === 'detached', {
+    onTrue: () => Effect.void,
+    onFalse: () =>
+      Effect.logWarning(`Reporter "${attachment.name}" stream closed before an event could be delivered.`),
   })
 
 const REPORTER_STALL_TIMEOUT = Duration.seconds(30)
@@ -311,11 +324,9 @@ const offerToInbox = (attachment: ReporterAttachment, event: ReporterEvent): Eff
   })
 
 const deliverReporterEvent = (attachment: ReporterAttachment, event: ReporterEvent): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    if (attachment.latch.state === 'detached') {
-      return
-    }
-    yield* offerToInbox(attachment, event)
+  Boolean.match(attachment.latch.state === 'detached', {
+    onTrue: () => Effect.void,
+    onFalse: () => offerToInbox(attachment, event),
   })
 
 export const offerReporterEvent: {
@@ -324,7 +335,8 @@ export const offerReporterEvent: {
 } = dual(
   2,
   (stage: ReporterStage, event: ReporterEvent): Effect.Effect<void, never> =>
-    Effect.forEach(stageAttachments(stage), (attachment) => deliverReporterEvent(attachment, event), { discard: true }),
+    Effect.flatMap(stageAttachments(stage), (attachments) =>
+      Effect.forEach(attachments, (attachment) => deliverReporterEvent(attachment, event), { discard: true })),
 )
 
 export const offerTerminalReport: {
