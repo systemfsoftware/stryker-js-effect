@@ -8,6 +8,7 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { NodeSocket } from '@effect/platform-node'
+import * as NodeStdio from '@effect/platform-node/NodeStdio'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeCrypto from '@effect/platform-node-shared/NodeCrypto'
 import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
@@ -16,33 +17,34 @@ import * as Console from 'effect/Console'
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
+import * as Crypto from 'effect/Crypto'
 import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
+import type { PlatformError } from 'effect/PlatformError'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
 import * as CliConfig from 'effect/unstable/cli/CliConfig'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
-
-import { strykerCliEffect } from '../Cli.cell.js'
-import { machineConsoleLayer } from '../Envelope.js'
-import * as FileSystem from 'effect/FileSystem'
-import * as Path from 'effect/Path'
-import type { PlatformError } from 'effect/PlatformError'
-import * as S from 'effect/Schema'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 
+import { strykerCliEffect } from '../Cli.cell.js'
+import { machineConsoleLayer } from '../Envelope.js'
+
 import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
 import { classifyWorkerExit } from '../Worker.js'
 import { ChildProcessCrashedError } from '../Worker.schema.js'
-import { type SpawnedSocketWorker, WorkerLauncher } from '../WorkerLauncher.service.js'
+import { type SpawnedSocketWorker, type WorkerLauncherShape, WorkerLauncher } from '../WorkerLauncher.service.js'
 import { UnsupportedNodeVersion } from './main.schema.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
@@ -190,23 +192,6 @@ const machineConsoleByModeLayer = Layer.unwrap(
   ),
 )
 
-const cliLayer = Layer.empty.pipe(
-  Layer.provideMerge(NodeStdio.layer),
-  Layer.provideMerge(NodeFileSystem.layer),
-  Layer.provideMerge(NodePath.layer),
-  Layer.provideMerge(OutputModeProbeLive),
-  Layer.provideMerge(RunEventDrain.fileLayer),
-  Layer.provideMerge(RunEventStreamPortTag.layer),
-  Layer.provideMerge(machineConsoleByModeLayer),
-  Layer.provideMerge(telemetryLayer),
-  Layer.provideMerge(CliConfig.layer({ builtIns: GlobalFlag.BuiltIns })),
-  Layer.provideMerge(NodeTerminal.layer),
-  Layer.provideMerge(NodeChildProcessSpawner.layer),
-  Layer.provideMerge(NodeCrypto.layer),
-  Layer.provideMerge(nodeWorkerLauncherLayer),
-  Layer.provideMerge(nodeVmPlatformLayer),
-)
-
 const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string) =>
   fs.chmod(file, 0o600).pipe(
     Effect.tapError((cause) =>
@@ -226,7 +211,9 @@ const nodeWorkerLauncherLayer = Layer.effect(
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
 
     return {
-      spawn: (params): Effect.Effect<SpawnedSocketWorker, ChildProcessCrashedError, Scope.Scope> =>
+      spawn: (
+        params: Parameters<WorkerLauncherShape['spawn']>[0],
+      ): Effect.Effect<SpawnedSocketWorker, ChildProcessCrashedError, Scope.Scope> =>
         Effect.gen(function*() {
           const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
           const workerId = yield* crypto.randomUUIDv4

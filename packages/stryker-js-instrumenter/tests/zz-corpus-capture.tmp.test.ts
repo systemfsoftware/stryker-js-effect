@@ -6,7 +6,7 @@ import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { it } from 'vitest'
 
 const ROOT = '/home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates'
-const OUT = '/tmp/refactor/printer-corpus'
+const OUT = process.env['A2D_CORPUS_OUT'] ?? '/tmp/refactor/printer-corpus'
 
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue', '.html', '.htm', '.svelte']
 const SKIP_DIRS: Record<string, true> = {

@@ -223,15 +223,24 @@ if (import.meta.vitest !== void 0) {
 
   const survivorsArb = Arbitrary.array(Arbitrary.schema(Mutant), { maxLength: 6 })
 
+  const absoluteFileNameOf = (fileName: string, basePath: string): string =>
+    fileName.startsWith(basePath) ? fileName : `${basePath}/${fileName}`
+
   it.prop(
-    '∀survivors_RelativeFiles_DecisionMutateSpans_≡SurvivorSpansResidue',
+    '∀survivors_AbsoluteFiles_DecisionMutateSpans_≡SurvivorSpansResidue',
     [survivorsArb],
     ([survivors]) => {
       const decided = survivors.map((survivor) => ({
         ...survivor,
-        relativeFileName: IncrementalDiffPaths.toRelativeNormalizedFileName(survivor.fileName, '/work'),
+        relativeFileName: IncrementalDiffPaths.toRelativeNormalizedFileName(
+          absoluteFileNameOf(survivor.fileName, '/work'),
+          '/work',
+        ),
       }))
-      const residue = survivors.map((survivor) => ({ ...survivor, fileName: `/work/${survivor.fileName}` }))
+      const residue = survivors.map((survivor) => ({
+        ...survivor,
+        fileName: absoluteFileNameOf(survivor.fileName, '/work'),
+      }))
       return Equivalence.Array(Equivalence.String)(
         mutateSpansOf(decided),
         survivorMutateSpans(residue, '/work'),

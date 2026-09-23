@@ -23,8 +23,9 @@ import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 import { mutationTestCell } from './run-stages.cell.js'
 import type { HostServices } from './host.service.js'
 import type { PrepareExecutorArgs } from './prepare.cell.js'
+import type { EnginePorts, RunStageServices } from './StageServices.service.js'
 
-const hostRunLayer = Layer.unwrap(
+const hostRunLayer: Layer.Layer<RunStageServices, never, EnginePorts | RunEnvironment | RunEvents> = Layer.unwrap(
   Effect.map(
     Effect.all([RunEnvironment, RunEvents], { concurrency: 1 }),
     ([env, events]) => RunEnvironment.stage(env, events),

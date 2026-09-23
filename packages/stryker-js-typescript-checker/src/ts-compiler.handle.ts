@@ -601,7 +601,7 @@ const ancestorFileNamesOf = (node: FileNode, visited: HashSet.HashSet<string>): 
 const nodeOf = (fileName: string, nodes: GraphNodes): Result.Result<FileNode, NodeNotInGraph> =>
   Result.fromOption(
     Option.firstSomeOf([HashMap.get(nodes, normalizeFileName(fileName)), HashMap.get(nodes, fileName)]),
-    () => new NodeNotInGraph({ fileName }),
+    () => NodeNotInGraph.make({ fileName }),
   )
 
 interface MutantRound {

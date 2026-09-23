@@ -83,10 +83,11 @@ const makeHarness = () =>
         }),
     })
 
+    const options = yield* S.decodeEffect(StrykerOptionsSchema)({}).pipe(Effect.orDie)
     const client = yield* makeWorkerClient({
       entrypoint: '/project/checker.mjs',
       execArgv: [],
-      options: S.decodeUnknownSync(StrykerOptionsSchema)({}),
+      options,
       rpcs: CheckerRpcs,
       tempDirPrefix: 'checker-',
       workingDirectory: '/project',

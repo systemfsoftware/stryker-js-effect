@@ -613,10 +613,10 @@ const createColumns = (metricsResult: MetricsResult, render: ClearTextRenderOpti
   ),
 ]
 
-const leafRules = (columns: readonly GroupColumn): readonly ReportSpan[] =>
+const leafRules = (columns: readonly GroupColumn[]): readonly ReportSpan[] =>
   columns.flatMap((column) => column.leaves.map((leaf) => rule('-', slotWidthOf(leaf))))
 
-const leafHeaders = (columns: readonly GroupColumn): readonly ReportSpan[] =>
+const leafHeaders = (columns: readonly GroupColumn[]): readonly ReportSpan[] =>
   columns.flatMap((column) => column.leaves.flatMap((leaf) => placedLine(leaf.header, leaf.style, leaf.netWidth)))
 
 const fullRowVisible = (render: ClearTextRenderOptions, row: MetricsResult): boolean =>
@@ -625,21 +625,26 @@ const fullRowVisible = (render: ClearTextRenderOptions, row: MetricsResult): boo
     onFalse: () => true,
   })
 
-const bodyRow = (columns: readonly GroupColumn, row: MetricsResult, ancestorCount: number): ReportLine =>
+const bodyRow = (columns: readonly GroupColumn[], row: MetricsResult, ancestorCount: number): ReportLine =>
   rowOf(
     columns.flatMap((column) =>
       column.leaves.map((leaf) => placedCell(leaf.cell(row, ancestorCount), leaf.style, leaf.netWidth, leaf.tone(row)))
     ),
   )
 
-const ownRow = (columns: readonly GroupColumn, render: ClearTextRenderOptions, row: MetricsResult, ancestorCount: number) =>
+const ownRow = (
+  columns: readonly GroupColumn[],
+  render: ClearTextRenderOptions,
+  row: MetricsResult,
+  ancestorCount: number,
+) =>
   Boolean.match(fullRowVisible(render, row), {
     onTrue: () => [bodyRow(columns, row, ancestorCount)],
     onFalse: () => [],
   })
 
 const bodyRows = (
-  columns: readonly GroupColumn,
+  columns: readonly GroupColumn[],
   render: ClearTextRenderOptions,
   current: MetricsResult,
   ancestorCount: number,

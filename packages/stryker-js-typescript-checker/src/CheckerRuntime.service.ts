@@ -141,7 +141,7 @@ const makeChecker = (options: StrykerOptions, compiler: TSCompiler): Checker['Se
 }
 
 export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRuntimeShape>()(
-  '@systemfsoftware/stryker-js-typescript-checker/CheckerRuntime',
+  '@systemfsoftware/stryker-js-typescript-checker/CheckerRuntime.service/CheckerRuntime',
 ) {
   static readonly layer = (
     options: StrykerOptions,
