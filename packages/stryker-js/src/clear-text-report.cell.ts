@@ -570,7 +570,7 @@ if (import.meta.vitest !== void 0) {
     valueFactory: LegacyCellFactory,
     rows: reportApi.MetricsResult,
   ): LegacyColumn => {
-    const maxContentSize = legacyContentWidth(rows, valueFactory)
+    const maxContentSize = legacyContentWidth(rows, valueFactory, 0)
     const netWidth = legacyMaxOf([maxContentSize, legacyStringWidth(header)])
     return {
       kind: 'single',
@@ -589,7 +589,7 @@ if (import.meta.vitest !== void 0) {
       }
       return legacySpaces(ancestorCount) + row.name
     }
-    const netWidth = legacyMaxOf([legacyContentWidth(rows, valueFactory), legacyStringWidth('File')])
+    const netWidth = legacyMaxOf([legacyContentWidth(rows, valueFactory, 0), legacyStringWidth('File')])
     return {
       kind: 'file',
       header: 'File',
@@ -611,7 +611,7 @@ if (import.meta.vitest !== void 0) {
         Match.when((present: number) => Number.isNaN(present), () => 'n/a'),
         Match.orElse((present) => present.toFixed(2)),
       )
-    const netWidth = legacyMaxOf([legacyContentWidth(rows, valueFactory), legacyStringWidth(scoreType)])
+    const netWidth = legacyMaxOf([legacyContentWidth(rows, valueFactory, 0), legacyStringWidth(scoreType)])
     return {
       kind: 'mutationScore',
       header: scoreType,
@@ -760,9 +760,13 @@ if (import.meta.vitest !== void 0) {
   }
 
   const { ClearTextRenderOptions } = await import('./render-clear-text-report.workflow.js')
-  const { MutationTestResultSchema } = await import('@systemfsoftware/stryker-js-plugin-interface')
+  const { MetricsResultSchema, MutationTestResultSchema } = await import(
+    '@systemfsoftware/stryker-js-plugin-interface'
+  )
 
   const reportArb = Arbitrary.schema(MutationTestResultSchema)
+
+  const computedArb = Arbitrary.schema(MetricsResultSchema)
 
   const renderArb = Arbitrary.schema(ClearTextRenderOptions)
 
@@ -779,12 +783,12 @@ if (import.meta.vitest !== void 0) {
     'muted',
   ]))
 
-  const renderedOf = (report: reportApi.MutationTestResult, render: ClearTextRenderOptions) =>
+  const renderedOf = (report: reportApi.MutationTestResult, computed: reportApi.MetricsResult, render: ClearTextRenderOptions) =>
     Result.match(
       renderClearTextReport(
         ClearTextReportCommand.make({
           reported: report,
-          computed: calculateMetrics(report.files),
+          computed,
           render,
           rendered: true,
         }),
@@ -799,11 +803,11 @@ if (import.meta.vitest !== void 0) {
       },
     )
 
-  it.prop('∀report_NewBytes_≡LegacyBytes', [reportArb, renderArb], ([report, render]) =>
-    Option.match(renderedOf(report, render), {
+  it.prop('∀rcs_Report_≡LegacyBytes', [reportArb, computedArb, renderArb], ([report, computed, render]) =>
+    Option.match(renderedOf(report, computed, render), {
       onNone: () => false,
       onSome: (rendered) => {
-        const legacy = legacyRenderClearText(report, calculateMetrics(report.files), render)
+        const legacy = legacyRenderClearText(report, computed, render)
         const newStdout = rendered.stdout.map((chunk) => renderChunk(chunk))
         const newDebug = rendered.diagnostics.map((chunk) => renderChunk(chunk))
         if (!sameChunks(newStdout, legacy.stdout)) {

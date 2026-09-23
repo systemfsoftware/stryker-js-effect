@@ -581,7 +581,7 @@ const svelteRoot = (moduleScript: Option.Option<TemplateScript>, additionalScrip
     onSome: (script) => ({ moduleScript: script, additionalScripts }),
   })
 
-const templateScriptRangesOf = <A = unknown, B = unknown>(
+const templateScriptRangesOf = <A = unknown>(
   ast: A,
   walker: WalkFn,
 ): Result.Result<Array<TemplateRange>, SvelteHtmlMissing | SvelteRangeMissing> =>

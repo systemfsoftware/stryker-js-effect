@@ -1,5 +1,5 @@
 import { describe, it } from '@effect/vitest'
-import { MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { MetricsResultSchema, MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
@@ -7,7 +7,6 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
-import { calculateMetrics } from '../calculate-metrics.js'
 import {
   ClearTextReportCommand,
   ClearTextReportRendered,
@@ -31,6 +30,7 @@ const colorOffArb = commandArb.pipe(
 
 const coherentArb = Arbitrary.all({
   report: Arbitrary.schema(MutationTestResultSchema),
+  computed: Arbitrary.schema(MetricsResultSchema),
   render: Arbitrary.schema(ClearTextRenderOptions),
 })
 
@@ -71,9 +71,8 @@ describe('renderClearTextReport', () => {
         ),
     }))
 
-  it.prop('∀cs_Report_≡OneTableRowPerFile', [coherentArb], ([{ report, render }]) => {
-    const computed = calculateMetrics(report.files)
-    return Result.match(
+  it.prop('∀rcs_Metrics_≡OneTableRowPerFile', [coherentArb], ([{ report, computed, render }]) =>
+    Result.match(
       renderClearTextReport(
         ClearTextReportCommand.make({
           reported: report,
@@ -91,6 +90,5 @@ describe('renderClearTextReport', () => {
             Match.exhaustive,
           ),
       },
-    )
-  })
+    ))
 })

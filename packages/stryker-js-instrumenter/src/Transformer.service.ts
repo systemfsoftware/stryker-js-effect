@@ -55,7 +55,7 @@ import type {
   TemplateScript,
 } from './Ast.schema.js'
 import { AstFormat } from './Syntax.schema.js'
-import { type MutateDescription, type Position } from './Instrument.schema.js'
+import { type MutateDescription } from './Instrument.schema.js'
 import { LineTable, LineTableFromText } from './Location.schema.js'
 import { INSTRUMENTER_CONSTANTS as ID } from './Mutant.js'
 import {
@@ -222,7 +222,6 @@ interface NodeWithLeadingComments {
 }
 
 const NO_COMMENTS: readonly LocatedComment[] = []
-const MISSING_LOCATION = 'Comment without location'
 
 const processStrykerDirectives = (
   rule: Rule,
@@ -893,7 +892,7 @@ const transformOf = (header: readonly Statement[], mutators: MutatorsShape): Tra
         Match.when({ format: 'js' }, (script) => transformScript(script, mutantCollector, context, header, mutators)),
         Match.when({ format: 'ts' }, (script) => transformScript(script, mutantCollector, context, header, mutators)),
         Match.when({ format: 'tsx' }, (script) => transformScript(script, mutantCollector, context, header, mutators)),
-        Match.when({ format: 'svelte' }, (svelte) => transformSvelte(svelte, mutantCollector, context, header, mutators)),
+        Match.when({ format: 'svelte' }, (svelte) => transformSvelte(svelte, mutantCollector, context, header)),
         Match.exhaustive,
       )
     },
@@ -932,7 +931,6 @@ const transformSvelte = (
   mutantCollector: MutantCollector,
   context: TransformerContext,
   header: readonly Statement[],
-  mutators: MutatorsShape,
 ) =>
   Effect.gen(function*() {
     const { root } = svelte
@@ -946,7 +944,7 @@ const transformSvelte = (
         },
       }))
     const warnings: string[] = perScript.flat()
-    yield* placeModuleHeaderIfNeeded(svelte, mutantCollector, header, mutators)
+    yield* placeModuleHeaderIfNeeded(svelte, mutantCollector, header)
     return warnings
   })
 
@@ -954,17 +952,15 @@ const placeModuleHeaderIfNeeded = (
   svelte: AstByFormat['svelte'],
   mutantCollector: MutantCollector,
   header: readonly Statement[],
-  mutators: MutatorsShape,
 ): Effect.Effect<void, ParseFailed> =>
   Boolean.match(hasPlacedMutants(mutantCollector, svelte.originFileName), {
-    onTrue: () => placeModuleHeader(svelte, header, mutators),
+    onTrue: () => placeModuleHeader(svelte, header),
     onFalse: () => Effect.void,
   })
 
 const placeModuleHeader = (
   svelte: AstByFormat['svelte'],
   header: readonly Statement[],
-  mutators: MutatorsShape,
 ): Effect.Effect<void, ParseFailed> =>
   Effect.flatMap(ensureModuleScriptOf(svelte), (moduleScript) => placeHeader(moduleScript.ast.root, header))
 
