@@ -372,8 +372,19 @@ const mergeReportsOptions = {
       optional,
     ),
 }
+const unrecognizedTail = (argv: readonly string[]): ReadonlyArray<string> => {
+  const tail = Match.value(argv).pipe(
+    Match.when((input: readonly string[]) => input.length > 0 && input[0] === 'run', (input) => input.slice(1)),
+    Match.orElse((input) => input),
+  )
+  const unrecognized = tail.filter((argument) => argument.startsWith('-'))
+  return Match.value(unrecognized.length > 0).pipe(
+    Match.when(true, () => unrecognized),
+    Match.orElse(() => tail),
+  )
+}
 
-const makeStrykerCommand = (requestRef: Ref.Ref<Option.Option<CliRequest>>) => {
+const makeStrykerCommand = (requestRef: Ref.Ref<Option.Option<CliRequest>>, invocationArgv: readonly string[]) => {
   const runCommand = Command.make(
     'run',
     runConfig,
@@ -473,7 +484,8 @@ const makeStrykerCommand = (requestRef: Ref.Ref<Option.Option<CliRequest>>) => {
     CliError.CliError,
     never
   > = Command
-    .make('stryker', {}, (_config) => Effect.fail(CliError.ShowHelp.make({ commandPath: ['stryker'], errors: [] })))
+    .make('stryker', {}, (_config) =>
+      Effect.fail(CliError.UnexpectedArgument.make({ arguments: unrecognizedTail(invocationArgv) })))
 
   const strykerCommand = root.pipe(Command.withSubcommands([runCommand, mergeReportsCommand]))
   return strykerCommand
@@ -530,19 +542,30 @@ const readCliRoute = (
 > =>
   Effect.gen(function*() {
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
-    const command = makeStrykerCommand(requestRef)
+    const command = makeStrykerCommand(requestRef, invocation.argv)
     const parsed = yield* Effect.result(Command.runWith(command, { version: cliPkgJson.version, renderErrors: false })(invocation.argv))
-    const request = yield* Ref.get(requestRef)
-    const drain = yield* RunEventDrain
-    yield* drain.setProgressStreamFile(progressStreamFileName(request))
-    yield* invocation.environment.stream.open
-    return yield* Result.match(parsed, {
-      onFailure: (failure) => Effect.fail(failure),
-      onSuccess: () =>
+    return yield* Bool.match(invocation.argv.length === 0, {
+      onTrue: () =>
         Effect.succeed({
-          ...routeOf(request),
+          ...routeOf(Option.none()),
           environment: invocation.environment,
-          options: optionsOf(request),
+          options: EMPTY_OPTIONS,
+        }),
+      onFalse: () =>
+        Effect.gen(function*() {
+          const request = yield* Ref.get(requestRef)
+          const drain = yield* RunEventDrain
+          yield* drain.setProgressStreamFile(progressStreamFileName(request))
+          yield* invocation.environment.stream.open
+          return yield* Result.match(parsed, {
+            onFailure: (failure) => Effect.fail(failure),
+            onSuccess: () =>
+              Effect.succeed({
+                ...routeOf(request),
+                environment: invocation.environment,
+                options: optionsOf(request),
+              }),
+          })
         }),
     })
   })

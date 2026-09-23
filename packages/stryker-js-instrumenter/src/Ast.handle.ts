@@ -468,10 +468,11 @@ const pushComment = (map: Map<Node, SpannedComment[]>, node: Node, comment: Span
 
 const isProgram = (node: Program | Node): node is Program => nodeType(node) === 'Program'
 const walkableNode = (root: Program | Node): Oxc.Program | Oxc.Node =>
-  Option.getOrElse(Option.filter(Option.some(root), isProgram), () => absurdMember(root))
-const absurdMember = (root: Program | Node): Oxc.Program | Oxc.Node =>
-  Option.getOrElse(Option.filter(Option.some(root), isAstNode), () => absurdEmptyRoot())
-const absurdEmptyRoot = (): Oxc.Program | Oxc.Node => narrowAbsurdRoot() as Oxc.Program | Oxc.Node
+  Boolean.match(isProgram(root), {
+    onTrue: () => root,
+    onFalse: () => absurdMember(root),
+  })
+const absurdMember = (root: Program | Node): Oxc.Node => root as Oxc.Node
 const walker: Walker = (root, visitors) => {
   const ancestors: Oxc.Node[] = []
   walk(walkableNode(root), {

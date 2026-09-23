@@ -45,11 +45,15 @@ export class LineTable extends S.Class<LineTable>('LineTable')({
 
 const LINE_TERMINATOR = /\r\n|[\n\r\u2028\u2029]/g
 
-const lineStartsOf = (text: string): { readonly lineStarts: readonly [number, ...Array<number>] } => ({
+interface LineStarts {
+  readonly lineStarts: readonly [number, ...Array<number>]
+}
+
+const lineStartsOf = (text: string): LineStarts => ({
   lineStarts: [0, ...[...text.matchAll(LINE_TERMINATOR)].map((match) => match.index + match[0].length)],
 })
 
-const canonicalTextOf = (table: LineTable): string =>
+const canonicalTextOf = (table: LineStarts): string =>
   Boolean.match(table.lineStarts.length === 1, {
     onTrue: () => '',
     onFalse: () =>
