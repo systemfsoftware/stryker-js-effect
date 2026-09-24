@@ -2,7 +2,10 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
-export const CanonicalReportFileName = S.String.pipe(S.check(S.isPattern(/^[^\\]*$/)))
+export const CanonicalReportFileName = S.String.pipe(
+  S.check(S.isPattern(/^[^\\]*$/)),
+  S.brand('CanonicalReportFileName'),
+)
 export type CanonicalReportFileName = typeof CanonicalReportFileName.Type
 
 const normalizeSeparators = (relativePath: string) => relativePath.replaceAll('\\', '/')
@@ -56,7 +59,7 @@ if (import.meta.vitest !== void 0) {
     return Result.match(S.decodeResult(ReportFileNames)(names), {
       onFailure: () => false,
       onSuccess: (canonical) =>
-        Object.entries(canonical).every(([fileName, value]) =>
+        Object.entries(canonical).every(([, value]) =>
           Result.isSuccess(S.decodeResult(CanonicalReportFileName)(value)),
         ) && Object.keys(canonical).length === Object.keys(names).length,
     })

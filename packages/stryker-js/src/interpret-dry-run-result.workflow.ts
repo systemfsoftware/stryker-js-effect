@@ -1,6 +1,10 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { DryRunResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { FailedTestResult, TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import type {
+  FailedTestResult,
+  MutantRunResult,
+  TestResult,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -13,26 +17,50 @@ export class MutantRunErrored extends S.TaggedClass<MutantRunErrored>()('Error',
   errorMessage: S.String,
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
+
+  get asResult(): MutantRunResult {
+    return { errorMessage: this.errorMessage, status: 'error' }
+  }
 }
 
 export class MutantRunKilled extends S.TaggedClass<MutantRunKilled>()('Killed', {
   failureMessage: S.String,
   killedBy: S.Array(S.String),
-  nrOfTests: S.Finite,
+  nrOfTests: S.Natural,
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
+
+  get asResult(): MutantRunResult {
+    return {
+      failureMessage: this.failureMessage,
+      killedBy: this.killedBy,
+      nrOfTests: this.nrOfTests,
+      status: 'killed',
+    }
+  }
 }
 
 export class MutantRunSurvived extends S.TaggedClass<MutantRunSurvived>()('Survived', {
-  nrOfTests: S.Finite,
+  nrOfTests: S.Natural,
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
+
+  get asResult(): MutantRunResult {
+    return { nrOfTests: this.nrOfTests, status: 'survived' }
+  }
 }
 
 export class MutantRunTimedOut extends S.TaggedClass<MutantRunTimedOut>()('Timeout', {
   reason: S.optional(S.String),
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
+
+  get asResult(): MutantRunResult {
+    return Option.match(Option.fromUndefinedOr(this.reason), {
+      onNone: (): MutantRunResult => ({ status: 'timeout' }),
+      onSome: (reason): MutantRunResult => ({ reason, status: 'timeout' }),
+    })
+  }
 }
 
 export type MutantRunDecision = MutantRunErrored | MutantRunKilled | MutantRunSurvived | MutantRunTimedOut

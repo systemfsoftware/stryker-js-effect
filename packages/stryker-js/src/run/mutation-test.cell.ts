@@ -427,8 +427,9 @@ const decidePlans = (
                 Match.exhaustive,
               ),
           })),
-    }),
+    })
 }
+
 const isRunPlan = (plan: MutantTestPlan): plan is Extract<MutantTestPlan, { readonly plan: 'Run' }> =>
   plan.plan === 'Run'
 

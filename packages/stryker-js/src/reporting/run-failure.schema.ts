@@ -22,11 +22,15 @@ const PARSE_REMEDIATION = 're-run with --help to see the full usage'
 const DEFAULT_REMEDIATION = 'see --reportFile or the verdict envelope on stdout'
 
 export class ErrorEnvelope extends S.Class<ErrorEnvelope>('ErrorEnvelope')({
-  schemaVersion: S.String,
-  code: S.Finite,
-  error: S.String,
-  remediation: S.String,
+  schemaVersion: StreamSchemaVersion,
+  code: S.Int.pipe(S.isBetween({ minimum: 0, maximum: 255 })),
+  error: S.String.pipe(S.check(S.isMinLength(1))),
+  remediation: S.String.pipe(S.check(S.isMinLength(1))),
 }) {
+  get envelopeText(): string {
+    return this.error
+  }
+
   static readonly fromOutcome = (input: { readonly error: FailedRunOutcome; readonly captured: string }) =>
     ErrorEnvelope.make({
       schemaVersion: StreamSchemaVersion.literal,
@@ -36,7 +40,9 @@ export class ErrorEnvelope extends S.Class<ErrorEnvelope>('ErrorEnvelope')({
     })
 }
 
-export class RunExitCode extends S.Class<RunExitCode>('RunExitCode')({ code: S.Finite }) {
+export class RunExitCode extends S.Class<RunExitCode>('RunExitCode')({
+  code: S.Int.pipe(S.isBetween({ minimum: 0, maximum: 255 })),
+}) {
   static readonly fromOutcome = (outcome: RunOutcomeDecision | RunOutcomeError) =>
     RunExitCode.make({ code: exitCodeOf(outcome) })
 }

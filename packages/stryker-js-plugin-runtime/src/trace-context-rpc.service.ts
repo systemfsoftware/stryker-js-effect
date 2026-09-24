@@ -157,7 +157,7 @@ if (import.meta.vitest !== void 0) {
     Arbitrary.schema(S.String.check(S.isPattern(/^[0-9a-f]{16}$/))),
     (id) => /^[1-9a-f][0-9a-f]*$/.test(id),
   )
-  const flagsArbitrary = Arbitrary.schema(S.Int)
+  const flagsArbitrary = Arbitrary.schema(S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))))
   const traceStateArbitrary = Arbitrary.map(
     Arbitrary.schema(S.Literals(['absent', 'k=v', 'a=1,b=2', 'x=y,z=w'])),
     (pick) =>

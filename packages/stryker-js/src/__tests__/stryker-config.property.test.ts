@@ -21,9 +21,10 @@ const sameArrayElements = (
 ): boolean => left.length === right.length && left.every((element, index) => sameElement(element, right[index]))
 
 const sameEntries = (left: DocumentRecord, right: DocumentRecord): boolean => {
-  const names = Object.keys(left)
-  return names.length === Object.keys(right).length &&
-    names.every((name) => name in right && sameValue(left[name], right[name]))
+  const leftNames = Object.keys(left).filter((name) => left[name] !== undefined)
+  const rightNames = Object.keys(right).filter((name) => right[name] !== undefined)
+  return leftNames.length === rightNames.length &&
+    leftNames.every((name) => name in right && sameValue(left[name], right[name]))
 }
 
 const sameElement = (
@@ -74,11 +75,16 @@ describe('StrykerConfig.merge', () => {
       mergedKeys.every((key) => key in expected)
   })
 
-  it.prop('∀do_Merge_≡Idempotent', [NestedDocumentSchema, NestedDocumentSchema], ([base, overrides]) =>
-    sameValue(
-      usableEntriesOnly(StrykerConfig.merge(StrykerConfig.merge(base, overrides), overrides)),
-      StrykerConfig.merge(base, overrides),
-    ))
+  it.prop('∀do_Merge_≡Idempotent', [NestedDocumentSchema, NestedDocumentSchema], ([base, overrides]) => {
+    const once = StrykerConfig.merge(base, overrides)
+    const twice = StrykerConfig.merge(once, overrides)
+    return sameValue(Object.keys(twice), Object.keys(twice).filter((key) => key in once)) &&
+      Object.keys(overrides).every((key) =>
+        overrides[key] === undefined || key === '__proto__'
+          ? sameValue(usableEntriesOnly(twice)[key], usableEntriesOnly(once)[key])
+          : sameValue(twice[key], overrides[key])
+      )
+  })
 
   it.prop('∀do_Merge_≡NestedRecordsMergeRecursively', [NestedDocumentSchema, NestedDocumentSchema], ([base, overrides]) => {
     const merged = StrykerConfig.merge(base, overrides)

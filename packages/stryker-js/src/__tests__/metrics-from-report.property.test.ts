@@ -1,12 +1,13 @@
 import { describe, it } from '@effect/vitest'
-import { FileResultDictionarySchema, MetricsResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as S from 'effect/Schema'
+import {
+  FileResultDictionarySchema,
+  type FileResult,
+  MetricsResultSchema,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 
 import { MetricsResultFromReport } from '../reporting/metrics-from-report.schema.js'
 
-const treeEquals = S.toEquivalence(MetricsResultSchema)
-
-type Files = Readonly<Record<string, { readonly mutants: ReadonlyArray<unknown> }>>
+type Files = Readonly<Record<string, FileResult>>
 
 const inputMutantCountOf = (files: Files) =>
   Object.values(files).reduce((total, file) => total + file.mutants.length, 0)

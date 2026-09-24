@@ -2,14 +2,18 @@ import type { Location, Position } from '@systemfsoftware/stryker-js-instrumente
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
+const MutantCoordinate = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
+
 const MutantLocationSchema = S.Struct({
-  start: S.Struct({ line: S.Finite, column: S.Finite }),
-  end: S.Struct({ line: S.Finite, column: S.Finite }),
+  start: S.Struct({ line: MutantCoordinate, column: MutantCoordinate }),
+  end: S.Struct({ line: MutantCoordinate, column: MutantCoordinate }),
 })
 
+const ReportCoordinate = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
+
 const ReportPositionSchema = S.Struct({
-  column: S.Finite,
-  line: S.Finite,
+  column: ReportCoordinate,
+  line: ReportCoordinate,
 })
 
 const ReportLocationSchema = S.Struct({

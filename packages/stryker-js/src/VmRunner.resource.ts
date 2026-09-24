@@ -19,7 +19,7 @@ import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 
 import { ALL_TESTS_ID, ALL_TESTS_NAME } from './command-runner.resource.js'
-import { InterpretDryRunResultCommand, type MutantRunDecision, interpretDryRunResult } from './interpret-dry-run-result.workflow.js'
+import { InterpretDryRunResultCommand, interpretDryRunResult } from './interpret-dry-run-result.workflow.js'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
 import { VmRunner } from './VmRunner.service.js'
 import type { VmPlatform, VmScript } from './VmRunner.service.js'
@@ -41,24 +41,6 @@ export interface CompiledTests {
 }
 
 const FALLBACK_FILE_NAME = 'stryker-vm-tests.js'
-
-const wireResultOf = (decision: MutantRunDecision) =>
-  Match.value(decision).pipe(
-    Match.tag('Killed', (killed): MutantRunResult => ({
-      failureMessage: killed.failureMessage,
-      killedBy: killed.killedBy,
-      nrOfTests: killed.nrOfTests,
-      status: 'killed',
-    })),
-    Match.tag('Survived', (survived): MutantRunResult => ({ nrOfTests: survived.nrOfTests, status: 'survived' })),
-    Match.tag('Timeout', (timedOut): MutantRunResult =>
-      Option.match(Option.fromUndefinedOr(timedOut.reason), {
-        onNone: (): MutantRunResult => ({ status: 'timeout' }),
-        onSome: (reason): MutantRunResult => ({ reason, status: 'timeout' }),
-      })),
-    Match.tag('Error', (errored): MutantRunResult => ({ errorMessage: errored.errorMessage, status: 'error' })),
-    Match.exhaustive,
-  )
 
 const errorText = <A = unknown>(error: A): string =>
   Match.value(error).pipe(
@@ -241,7 +223,7 @@ export const vmTestRunner = (
           Effect.flatMap((decided) =>
             Result.match(decided, {
               onFailure: (failure) => Effect.fail(failure),
-              onSuccess: (decision) => Effect.succeed(wireResultOf(decision)),
+              onSuccess: (decision) => Effect.succeed(decision.asResult),
             })),
           Effect.catchTag('TestRunnerFailed', (failure): Effect.Effect<MutantRunResult> =>
             Effect.succeed({ status: 'error', errorMessage: failure.cause })),

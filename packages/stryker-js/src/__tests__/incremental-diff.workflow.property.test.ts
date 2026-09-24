@@ -71,7 +71,7 @@ describe('incrementalDiff', () => {
     )
   })
 
-  it.prop('∀ilt_StableFile_RememberedCarriesPreviousFields', [S.NonEmptyString, RememberedStatusSchema, S.Finite, S.Finite], ([
+  it.prop('∀ilt_StableFile_RememberedCarriesPreviousFields', [S.NonEmptyString, RememberedStatusSchema, S.Finite, S.Int], ([
     id,
     status,
     testsCompleted,

@@ -1,4 +1,9 @@
-import { type FileResult, Metrics } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  type FileResult,
+  type MetricsResult,
+  type MetricsResultEncoded,
+  Metrics,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -6,18 +11,6 @@ import * as S from 'effect/Schema'
 
 type Files = Readonly<Record<string, FileResult>>
 type SegmentGroups = Readonly<Record<string, ReadonlyArray<readonly [string, FileResult]>>>
-
-export interface MetricsResultFromReportEncoded {
-  readonly name: string
-  readonly metrics: typeof Metrics.Encoded
-  readonly childResults: ReadonlyArray<MetricsResultFromReportEncoded>
-}
-
-export interface MetricsResultFromReportType {
-  readonly name: string
-  readonly metrics: Metrics
-  readonly childResults: ReadonlyArray<MetricsResultFromReportType>
-}
 
 const segmentOf = (fileName: string): string =>
   Match.value(fileName.indexOf('/')).pipe(
@@ -48,17 +41,27 @@ const soleSegmentFileResult = (segment: string, entries: readonly (readonly [str
     ([fileName, file]) =>
       Match.value(fileName === segment && entries.length === 1).pipe(
         Match.when(true, () => Option.some(fileResultOf(fileName, file))),
-        Match.orElse(() => Option.none<MetricsResultFromReportType>()),
+        Match.orElse(() => Option.none<MetricsResult>()),
       ),
   )
 
-const childResultOf = (segment: string, entries: readonly (readonly [string, FileResult])[]) =>
+const childResultOf = (segment: string, entries: readonly (readonly [string, Files[keyof Files]])[]) =>
   Option.getOrElse(soleSegmentFileResult(segment, entries), () => nestedGroupResult(segment, entries))
 
-const childResultsOf = (files: Files): ReadonlyArray<MetricsResultFromReportType> =>
+const childResultsOf = (files: Files): ReadonlyArray<MetricsResult> =>
   Object.entries(groupBySegment(files))
     .map(([segment, grouped]) => childResultOf(segment, grouped))
     .sort((left, right) => left.name.localeCompare(right.name))
+
+export class MetricsResultFromReport extends S.Class<MetricsResultFromReport, MetricsResultEncoded>(
+  'MetricsResultFromReport',
+)({
+  name: S.String,
+  metrics: Metrics,
+  childResults: S.Array(S.suspend((): S.Codec<MetricsResult, MetricsResultEncoded> => MetricsResultFromReport)),
+}) {
+  static readonly fromFiles = (files: Files) => metricsResultOf(files)
+}
 
 const metricsResultOf = (files: Files) =>
   MetricsResultFromReport.make({
@@ -66,17 +69,3 @@ const metricsResultOf = (files: Files) =>
     metrics: metricsOf(files),
     childResults: childResultsOf(files),
   })
-
-export class MetricsResultFromReport extends S.Class<MetricsResultFromReport, MetricsResultFromReportEncoded>(
-  'MetricsResultFromReport',
-)({
-  name: S.String,
-  metrics: Metrics,
-  childResults: S.Array(
-    S.suspend(
-      (): S.Codec<MetricsResultFromReportType, MetricsResultFromReportEncoded> => MetricsResultFromReport,
-    ),
-  ),
-}) {
-  static readonly fromFiles = (files: Files) => metricsResultOf(files)
-}

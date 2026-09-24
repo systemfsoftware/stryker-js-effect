@@ -24,9 +24,9 @@ const judgeLawsCommand = (command: LawsCommandType) => ({
 })
 
 const decidedOf = (command: LawsCommandType) =>
-const contributionKeysOf = (report: ReportView): readonly string[] =>
+  judgeTestContribution(judgeLawsCommand(command) as JudgeTestContribution).pipe(Result.merge)
 
-const verdictOfLaw = (command: LawsCommandType): boolean => {
+const contributionKeysOf = (report: ReportView): readonly string[] =>
   const decision = decidedOf(command)
   const suffixes = command.suffixes.join(', ')
   return Match.value(decision).pipe(
