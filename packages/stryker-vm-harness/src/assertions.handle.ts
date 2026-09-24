@@ -20,7 +20,7 @@ const isSnapshotProp = (property: PropertyKey): boolean =>
 
 const isMockProp = (property: PropertyKey): boolean => Boolean.or(property === 'mock', property === 'hoisted')
 
-const memberOf = (target: object, property: PropertyKey, receiver: object): AnyDecoded => {
+const memberOf = (target: object, property: PropertyKey, receiver: AnyDecoded): AnyDecoded => {
   const value: AnyDecoded = Reflect.get(target, property, receiver)
   return value
 }

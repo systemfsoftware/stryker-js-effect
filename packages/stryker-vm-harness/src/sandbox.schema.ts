@@ -11,10 +11,12 @@ export interface ResolveContext {
   readonly conditions?: ReadonlyArray<string> | undefined
 }
 
+export type NextResolve = (specifier: string, context: ResolveContext) => ResolveFnOutput
+
 export type ResolveHookSync = (
   specifier: string,
   context: ResolveContext,
-  nextResolve: ResolveHookSync,
+  nextResolve: NextResolve,
 ) => ResolveFnOutput
 
 export interface LoadContext {
@@ -28,17 +30,14 @@ export interface LoadFnOutput {
   readonly shortCircuit?: boolean | undefined
 }
 
-export type LoadHookSync = (url: string, context: LoadContext, nextLoad: LoadHookSync) => LoadFnOutput
+export type NextLoad = (url: string, context: LoadContext) => LoadFnOutput
 
-export interface RegisterHooksOptions {
-  readonly resolve?: ResolveHookSync | undefined
-  readonly load?: LoadHookSync | undefined
-}
+export type LoadHookSync = (url: string, context: LoadContext, nextLoad: NextLoad) => LoadFnOutput
 
-export type RegisterHooksFn = (hooks: RegisterHooksOptions) => { readonly deregister: () => void } | undefined
+type AnyDecoded<A = unknown> = A
 
 export interface HarnessModuleBuiltin {
-  readonly registerHooks: RegisterHooksFn
+  registerHooks(hooks: AnyDecoded): { readonly deregister: () => void } | undefined
 }
 
 export interface ActivateSandboxCommand {

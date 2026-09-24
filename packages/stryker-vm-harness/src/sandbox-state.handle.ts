@@ -3,7 +3,7 @@ import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 
-import { STATE_KEY } from './harness-sources.schema.js'
+import { STATE_KEY } from './harness-sources.handle.js'
 import type { VmRunnerGlobalState } from './sandbox.schema.js'
 
 type AnyDecoded<A = unknown> = A

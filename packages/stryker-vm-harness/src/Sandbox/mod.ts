@@ -1,4 +1,4 @@
-export { harnessSourceFor, harnessUrlForSpecifier } from '../harness-sources.schema.js'
+export { harnessSourceFor, harnessUrlForSpecifier } from '../harness-sources.handle.js'
 export { nativeImport } from '../native-import.handle.js'
 export {
   activateSandbox,

@@ -9,7 +9,7 @@ import { expect } from 'vitest'
 const Feature = makeFeature({ it, layer })
 
 const VITEST_PACKAGE = 'vitest'
-const VITEST_HARNESS_ADDRESS = harnessUrlForSpecifier(VITEST_PACKAGE) ?? 'vmrunner-harness:vitest'
+const VITEST_HARNESS_ADDRESS = Sandbox.harnessUrlForSpecifier(VITEST_PACKAGE) ?? 'vmrunner-harness:vitest'
 
 interface ServedModule {
   readonly describe: (name: string, body: () => void) => void
@@ -17,7 +17,7 @@ interface ServedModule {
 }
 
 const harnessSource = (address: string): string => {
-  const source = harnessSourceFor(address)
+  const source = Sandbox.harnessSourceFor(address)
   if (source === undefined) {
     throw new Error(`no module is served for "${address}"`)
   }
@@ -26,7 +26,7 @@ const harnessSource = (address: string): string => {
 
 const servedModuleFor = (address: string, salt: string): Effect.Effect<ServedModule> =>
   Effect.promise(() =>
-    nativeImport<ServedModule>(
+    Sandbox.nativeImport<ServedModule>(
       `data:text/javascript;charset=utf-8,${encodeURIComponent(`${harnessSource(address)}\n// salt: ${salt}`)}`,
     )
   )
@@ -43,15 +43,15 @@ interface SandboxRegistry {
 interface SandboxRun {
   readonly prefix: string
   readonly registry: SandboxRegistry
-  readonly state: VmRunnerGlobalState
+  readonly state: Sandbox.VmRunnerGlobalState
   readonly suiteName: string
   readonly testName: string
 }
 
 const sandboxRunFor = (prefix: string, suiteName: string, testName: string): SandboxRun => {
-  const registry = createRegistry()
-  const state: VmRunnerGlobalState = {
-    api: createHarnessApi(registry),
+  const registry = Registry.createRegistry()
+  const state: Sandbox.VmRunnerGlobalState = {
+    api: Registry.createHarnessApi(registry),
     expect,
     vi: undefined,
     effectVitest: undefined,
@@ -62,23 +62,23 @@ const sandboxRunFor = (prefix: string, suiteName: string, testName: string): San
 const sandboxSignal = new AbortController().signal
 
 const releaseSandbox = Effect.sync(() => {
-  deactivateSandbox()
-  writeGlobalState(undefined)
-  uninstallInterception()
+  Sandbox.deactivateSandbox()
+  Sandbox.writeGlobalState(undefined)
+  Sandbox.uninstallInterception()
 })
 
 interface SessionOutcome {
   readonly suiteCount: number
   readonly testNames: readonly string[]
-  readonly published: VmRunnerGlobalState | undefined
-  readonly afterRelease: VmRunnerGlobalState | undefined
+  readonly published: Sandbox.VmRunnerGlobalState | undefined
+  readonly afterRelease: Sandbox.VmRunnerGlobalState | undefined
   readonly hookEvents: readonly string[]
 }
 
 const runSandboxSession = (run: SandboxRun): Effect.Effect<SessionOutcome> =>
   Effect.gen(function*() {
     const hookEvents: string[] = []
-    installInterception({
+    Sandbox.installInterception({
       registerHooks: () => {
         hookEvents.push('register')
         return {
@@ -88,9 +88,9 @@ const runSandboxSession = (run: SandboxRun): Effect.Effect<SessionOutcome> =>
         }
       },
     })
-    activateSandbox(run.prefix)
-    writeGlobalState(run.state)
-    const published = readGlobalState()
+    Sandbox.activateSandbox(run.prefix)
+    Sandbox.writeGlobalState(run.state)
+    const published = Sandbox.readGlobalState()
     const served = yield* servedModuleFor(VITEST_HARNESS_ADDRESS, run.prefix)
     served.describe(run.suiteName, () => {
       served.it(run.testName, () => undefined)
@@ -98,7 +98,7 @@ const runSandboxSession = (run: SandboxRun): Effect.Effect<SessionOutcome> =>
     const suiteCount = run.registry.suites.size
     const testNames = run.registry.tests.map((registered) => registered.name)
     yield* releaseSandbox
-    return { suiteCount, testNames, published, afterRelease: readGlobalState(), hookEvents }
+    return { suiteCount, testNames, published, afterRelease: Sandbox.readGlobalState(), hookEvents }
   }).pipe(Effect.ensuring(releaseSandbox))
 
 Feature('Intercepting module resolution for an in-memory sandbox')
@@ -119,15 +119,15 @@ Feature('Intercepting module resolution for an in-memory sandbox')
           (s) =>
             Effect.gen(function*() {
               let hooksRegistered = false
-              installInterception({
+              Sandbox.installInterception({
                 registerHooks: () => {
                   hooksRegistered = true
                   return undefined
                 },
               })
-              activateSandbox(s.run.prefix)
-              writeGlobalState(s.run.state)
-              const published = readGlobalState()
+              Sandbox.activateSandbox(s.run.prefix)
+              Sandbox.writeGlobalState(s.run.state)
+              const published = Sandbox.readGlobalState()
               const served = yield* servedModuleFor(VITEST_HARNESS_ADDRESS, s.run.prefix)
               served.describe(s.run.suiteName, () => {
                 served.it(s.run.testName, () => undefined)
@@ -190,14 +190,14 @@ Feature('Intercepting module resolution for an in-memory sandbox')
           'outcome',
           (s) =>
             Effect.sync(() => {
-              installInterception(s.release.builtin)
-              activateSandbox(s.release.run.prefix)
-              writeGlobalState(s.release.run.state)
-              const whileActive = readGlobalState()
-              deactivateSandbox()
-              writeGlobalState(undefined)
-              uninstallInterception()
-              return { whileActive, afterRelease: readGlobalState() }
+              Sandbox.installInterception(s.release.builtin)
+              Sandbox.activateSandbox(s.release.run.prefix)
+              Sandbox.writeGlobalState(s.release.run.state)
+              const whileActive = Sandbox.readGlobalState()
+              Sandbox.deactivateSandbox()
+              Sandbox.writeGlobalState(undefined)
+              Sandbox.uninstallInterception()
+              return { whileActive, afterRelease: Sandbox.readGlobalState() }
             }),
         ),
         Then('nothing stays published and the installed hooks were deregistered')((s) =>
@@ -256,11 +256,11 @@ Feature('Intercepting module resolution for an in-memory sandbox')
           'harness',
           () =>
             Effect.sync(() => {
-              const registry = createRegistry()
-              const api = createHarnessApi(registry)
+              const registry = Registry.createRegistry()
+              const api = Registry.createHarnessApi(registry)
               return {
                 registry,
-                methods: makeEffectMethods({
+                methods: EffectAdapter.makeEffectMethods({
                   api: api.it,
                   describe: api.describe,
                   hooks: api.hooks,

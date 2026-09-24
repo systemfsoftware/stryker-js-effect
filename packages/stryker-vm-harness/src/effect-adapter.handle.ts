@@ -1,4 +1,5 @@
 import * as Arbitrary from 'effect/unstable/arbitrary/Arbitrary'
+import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
 import type * as Context from 'effect/Context'
 import * as Duration from 'effect/Duration'
@@ -252,11 +253,11 @@ const runToPromise = <A = unknown, E = unknown>(
   effect: Effect.Effect<A, E, never> | Context.Context<never>,
 ): Promise<void> => (Effect.isEffect(effect) ? settleEffect(effect) : Promise.resolve())
 
-const buildIntoScope = <E>(
-  layer: Layer.Layer<never, E>,
+const buildIntoScope = <ROut, E>(
+  layer: Layer.Layer<ROut, E>,
   memoMap: Layer.MemoMap,
   scope: Scope.Scope,
-): Context.Context<never> =>
+): Context.Context<ROut> =>
   Effect.runSync(Layer.buildWithMemoMap(layer, memoMap, scope).pipe(Effect.orDie))
 
 const openLayerScopes = new Set<() => Promise<void>>()
@@ -267,16 +268,19 @@ export const closeOpenLayerScopes = (): Promise<void> => {
   return Promise.all(closers.map((close) => close().catch(() => undefined))).then(() => undefined)
 }
 
-interface OpenedLayer {
-  readonly built: Context.Context<never>
+interface OpenedLayer<ROut> {
+  readonly built: Context.Context<ROut>
   readonly close: () => Promise<void>
   readonly memoMap: Layer.MemoMap
 }
 
-const openLayerScope = <E>(layer: Layer.Layer<never, E>, options: LayerBinderOptions | undefined): OpenedLayer => {
+const openLayerScope = <ROut, E>(
+  layer: Layer.Layer<ROut, E>,
+  options: LayerBinderOptions | undefined,
+): OpenedLayer<ROut> => {
   const memoMap = Option.getOrElse(Option.fromNullishOr(options?.memoMap), () => Layer.makeMemoMapUnsafe())
   const scope = Scope.makeUnsafe('sequential')
-  const built: Context.Context<never> = buildIntoScope(layer, memoMap, scope)
+  const built: Context.Context<ROut> = buildIntoScope(layer, memoMap, scope)
   const closed = { value: false }
   const close = (): Promise<void> => {
     if (closed.value) {
@@ -315,10 +319,15 @@ const blockFinalizer =
     )
   }
 
+interface LayerScopeHandle {
+  readonly built: Context.Context<never>
+  readonly close: () => Promise<void>
+}
+
 const beforeBlockHook = (
   blockTaskSet: ReadonlySet<RegistryTaskInfo>,
   remaining: { value: number },
-  opened: OpenedLayer,
+  opened: LayerScopeHandle,
   ctx: HarnessTestContext,
 ): Promise<void> | undefined =>
   Match.value(blockTaskSet.has(ctx.task)).pipe(
@@ -332,7 +341,7 @@ const beforeBlockHook = (
 
 const runBlock = <R>(
   context: EffectAdapterRegistration,
-  opened: OpenedLayer,
+  opened: LayerScopeHandle,
   makeIt: (base: RegistryTestApi) => LayeredVitestIt<R>,
   body: LayeredBody<R>,
 ): void => {
@@ -346,7 +355,7 @@ const runBlock = <R>(
 
 const runNamedBlock = <R>(
   context: EffectAdapterRegistration,
-  opened: OpenedLayer,
+  opened: LayerScopeHandle,
   makeIt: (base: RegistryTestApi) => LayeredVitestIt<R>,
   name: string,
   body: LayeredBody<R>,
@@ -360,7 +369,7 @@ const runNamedBlock = <R>(
 
 const runLayered = <R>(
   context: EffectAdapterRegistration,
-  opened: OpenedLayer,
+  opened: LayerScopeHandle,
   makeIt: (base: RegistryTestApi) => LayeredVitestIt<R>,
   args: LayeredArgs<R>,
 ): void => {
@@ -374,9 +383,17 @@ const runLayered = <R>(
 export const layerBinderFor = (context: EffectAdapterRegistration): LayerBinder => {
   const binder = <R, E>(layer_: Layer.Layer<R, E>, options?: LayerBinderOptions) =>
   (...args: LayeredArgs<R>): void => {
-    const layer: Layer.Layer<never, E> = layer_
-    const excludeTestServices = options?.excludeTestServices ?? false
-    const withTestEnv = excludeTestServices ? layer : Layer.provideMerge(layer, TestEnv)
+    const excludeTestServices = Option.getOrElse(
+      Option.flatMap(
+        Option.fromNullishOr(options),
+        (present) => Option.fromNullishOr(present.excludeTestServices),
+      ),
+      () => false,
+    )
+    const withTestEnv = Boolean.match(excludeTestServices, {
+      onTrue: () => layer_,
+      onFalse: () => Layer.provideMerge(layer_, TestEnv),
+    })
     const opened = openLayerScope(withTestEnv, options)
 
     const nestedLayerBinder = <R2, E2>(
@@ -388,22 +405,22 @@ export const layerBinderFor = (context: EffectAdapterRegistration): LayerBinder 
         { ...nestedOptions, memoMap: Layer.forkMemoMapUnsafe(opened.memoMap), excludeTestServices },
       )
 
-    const layeredOverrides = <S2>(base: RegistryTestApi): LayeredOverrides<S2> => ({
+    const layeredOverrides = (base: RegistryTestApi): LayeredOverrides<R> => ({
       describe: context.describe,
-      effect: makeTester<Scope.Scope | S2>(
+      effect: makeTester<Scope.Scope | R>(
         (effect) => effect.pipe(Effect.scoped, Effect.provide(opened.built)),
         base,
       ),
-      live: makeTester<Scope.Scope | S2>(Effect.scoped, base),
+      live: makeTester<Scope.Scope | R>((effect) => effect.pipe(Effect.scoped, Effect.provide(opened.built)), base),
       prop: standaloneProp(base),
       flakyTest,
       layer: nestedLayerBinder,
     })
 
-    const makeIt = <S2>(base: RegistryTestApi): LayeredVitestIt<S2> =>
-      makeLayered<S2>(base, layeredOverrides<S2>(base))
+    const makeIt = (base: RegistryTestApi): LayeredVitestIt<R> =>
+      makeLayered<R>(base, layeredOverrides(base))
 
-    runLayered(context, opened, makeIt<R>, args)
+    runLayered(context, opened, makeIt, args)
   }
   return binder
 }

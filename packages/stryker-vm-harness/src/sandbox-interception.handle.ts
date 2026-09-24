@@ -5,11 +5,12 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as Semaphore from 'effect/Semaphore'
 
-import { harnessSourceFor, harnessUrlForSpecifier } from './harness-sources.schema.js'
+import { harnessSourceFor, harnessUrlForSpecifier } from './harness-sources.handle.js'
 import type {
   ActivateSandboxCommand,
   HarnessModuleBuiltin,
   LoadHookSync,
+  NextResolve,
   ResolveContext,
   ResolveFnOutput,
   ResolveHookSync,
@@ -76,7 +77,7 @@ const harnessModuleSource = (url: string): Option.Option<string> =>
 const resolveFromHarness = (
   specifier: string,
   context: ResolveContext,
-  nextResolve: ResolveHookSync,
+  nextResolve: NextResolve,
   sandbox: ActiveSandbox | undefined,
 ): ResolveFnOutput =>
   Option.match(Option.fromNullishOr(sandbox), {
@@ -99,7 +100,7 @@ const canRetryAsTypeScript = (
 const retryAsTypeScript = (
   specifier: string,
   context: ResolveContext,
-  nextResolve: ResolveHookSync,
+  nextResolve: NextResolve,
   sandbox: ActiveSandbox | undefined,
   cause: AnyDecoded,
 ): ResolveFnOutput =>
@@ -139,7 +140,7 @@ const saltScoped = (
 const nextResolveOutcome = (
   specifier: string,
   context: ResolveContext,
-  nextResolve: ResolveHookSync,
+  nextResolve: NextResolve,
 ): Result.Result<ResolveFnOutput, AnyDecoded> =>
   Result.try({
     try: (): ResolveFnOutput => nextResolve(specifier, context),
@@ -149,7 +150,7 @@ const nextResolveOutcome = (
 const resolveDelegated = (
   specifier: string,
   context: ResolveContext,
-  nextResolve: ResolveHookSync,
+  nextResolve: NextResolve,
   sandbox: ActiveSandbox | undefined,
 ): ResolveFnOutput =>
   Result.match(nextResolveOutcome(specifier, context, nextResolve), {
@@ -174,7 +175,7 @@ const scopedHarnessUrl = (
 const resolveMappedOrDelegated = (
   specifier: string,
   context: ResolveContext,
-  nextResolve: ResolveHookSync,
+  nextResolve: NextResolve,
   sandbox: ActiveSandbox | undefined,
 ): ResolveFnOutput =>
   Option.match(scopedHarnessUrl(specifier, parentUrlOf(context), sandbox), {
@@ -185,7 +186,7 @@ const resolveMappedOrDelegated = (
 const resolveFromSandbox = (
   specifier: string,
   context: ResolveContext,
-  nextResolve: ResolveHookSync,
+  nextResolve: NextResolve,
   sandbox: ActiveSandbox | undefined,
 ): ResolveFnOutput =>
   Boolean.match(specifier.startsWith(HARNESS_PREFIX), {
@@ -196,7 +197,7 @@ const resolveFromSandbox = (
 const resolveRequest = (
   specifier: string,
   context: ResolveContext,
-  nextResolve: ResolveHookSync,
+  nextResolve: NextResolve,
   sandbox: ActiveSandbox | undefined,
 ): ResolveFnOutput =>
   Boolean.match(parentUrlOf(context).startsWith(HARNESS_PREFIX), {

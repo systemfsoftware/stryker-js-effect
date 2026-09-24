@@ -1,1 +1,1 @@
-export { guardedExpect, guardedVi } from '../assertions.schema.js'
+export { guardedExpect, guardedVi } from '../assertions.handle.js'

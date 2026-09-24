@@ -6,6 +6,7 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as MutableHashSet from 'effect/MutableHashSet'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
+import * as Scope from 'effect/Scope'
 
 import {
   drainRegistry as pureDrainRegistry,
@@ -100,7 +101,7 @@ const fireOnce = (
   Effect.suspend(() =>
     Boolean.match(MutableHashSet.has(fired, key), {
       onTrue: () => Effect.void,
-      onFalse: () => Effect.sync(() => MutableHashSet.add(fired, key)).pipe(Effect.zipRight(fire())),
+      onFalse: () => Effect.sync(() => MutableHashSet.add(fired, key)).pipe(Effect.andThen(fire())),
     })
   )
 
@@ -167,7 +168,7 @@ const runPlannedTest = (
   fired: MutableHashSet.MutableHashSet<number | null>,
   lastRunnableIndex: number,
 ) =>
-(planned: PlannedTest): Effect.Effect<TestOutcome> =>
+(planned: PlannedTest): Effect.Effect<TestOutcome, never, Scope.Scope> =>
   Effect.gen(function*() {
     const signal = yield* Effect.abortSignal
     const finalizers: Array<HarnessTestFunction> = []
@@ -197,7 +198,7 @@ const runPlan = (
   plan: ReadonlyArray<PlannedTest>,
   counts: MutableHashMap.MutableHashMap<number, number>,
   fired: MutableHashSet.MutableHashSet<number | null>,
-): Effect.Effect<Record<string, TestOutcome>> => {
+): Effect.Effect<Record<string, TestOutcome>, never, Scope.Scope> => {
   const lastRunnableIndex = lastRunnableIndexOf(plan)
   const outcomes: Record<string, TestOutcome> = {}
   return Effect.forEach(
@@ -215,11 +216,11 @@ const runPlan = (
 }
 
 const runPlanWithTimeout = (
-  run: Effect.Effect<Record<string, TestOutcome>>,
+  run: Effect.Effect<Record<string, TestOutcome>, never, Scope.Scope>,
   timeoutMs: number | undefined,
-): Effect.Effect<Option.Option<Record<string, TestOutcome>>> =>
+): Effect.Effect<Option.Option<Record<string, TestOutcome>>, never, Scope.Scope> =>
   Option.match(Option.fromNullishOr(timeoutMs), {
-    onNone: () => Effect.map(run, Option.some),
+    onNone: () => Effect.asSome(run),
     onSome: (ms) => run.pipe(Effect.timeoutOption(ms)),
   })
 
@@ -251,11 +252,11 @@ const settle =
     Option.match(outcomes, {
       onNone: () =>
         waitForNextTick().pipe(
-          Effect.zipRight(Effect.promise(() => closeOpenLayerScopes())),
+          Effect.andThen(Effect.promise(() => closeOpenLayerScopes()).pipe(Effect.orDie)),
           Effect.as(DrainTimedOut.make({})),
         ),
       onSome: (collected) =>
-        waitForNextTick().pipe(Effect.as(decidedOutcome(plan, collected, lateRejections))),
+        waitForNextTick().pipe(Effect.map(() => decidedOutcome(plan, collected, lateRejections))),
     })
 
 export const executeDrainRegistry: {
