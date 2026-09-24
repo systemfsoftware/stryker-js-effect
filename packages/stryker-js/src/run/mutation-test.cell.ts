@@ -63,8 +63,10 @@ import { ReportFileName } from '../reporting/report-assembly.schema.js'
 import { StageError } from '../Run.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.resource.js'
+import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import { ChildProcessCrashedError } from '../Worker.schema.js'
 import { IdGenerator } from '../Worker.service.js'
+import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { isStageError } from './dry-run.cell.js'
 import type { DryRunDone } from './dry-run.cell.js'
 import {
@@ -1115,6 +1117,7 @@ const mapMutationTestCause = (
 ): StageError =>
   Match.value({ cause }).pipe(
     Match.when({ cause: isStageError }, ({ cause }) => cause),
+    Match.orElse(({ cause }) => StageError.make({ stage: 'mutationTest', reason: 'Mutation testing failed', cause })),
   )
 
 if (import.meta.vitest !== void 0) {

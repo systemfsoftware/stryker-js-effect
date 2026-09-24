@@ -7,6 +7,7 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
+import * as Path from 'effect/Path'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -44,6 +45,8 @@ import type { OutputMode } from '../output-mode.schema.js'
 import { StrykerError } from '../stryker-error.schema.js'
 import { LoadConfigCommand, resolveConfig } from './resolve-config.workflow.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
+
+const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 
 const combine = (
   prefixes: string[],
@@ -1278,11 +1281,13 @@ export const readConfig: {
 
 export interface LoadedConfig {
   readonly options: Options.StrykerOptions
-  readonly targetMutatePatterns: readonly string[] | undefined
   readonly basePath: string
 }
 
 const emitPreparePhaseEntered = phaseEntered('prepare')
+
+const failConfigWith = (message: string) =>
+  Effect.fail(ConfigError.make({ message })).pipe(Effect.tapCause(() => emitPreparePhaseEntered))
 
 const readRunConfig = (input: {
   readonly cliOptions: Options.PartialStrykerOptions
