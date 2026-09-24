@@ -101,45 +101,40 @@ const serviceFrom = (
     client.group({ checkerName, mutants: [...mutants] }).pipe(Effect.mapError(crashedFrom)),
 })
 
-interface DraftMutant {
-  readonly fileName: string
-  readonly mutatorName: string
-  readonly replacement: string
-  readonly location: {
-    readonly start: { readonly line: number; readonly column: number }
-    readonly end: { readonly line: number; readonly column: number }
-  }
-}
+type CheckerWireEncoded = typeof Plugin.CheckerRequest.Encoded
 
-const identityFields: DraftMutant = {
+type CheckerMutantEncoded = CheckerWireEncoded['mutants'][number]
+
+const identityEncoded: CheckerMutantEncoded = {
+  id: 'mutant-1',
   fileName: 'src/core.ts',
   mutatorName: 'ArithmeticOperator',
   replacement: '-',
   location: { start: { line: 10, column: 5 }, end: { line: 10, column: 6 } },
 }
 
-const describedFields = { ...identityFields, _tag: 'Mutant', id: 'mutant-1' }
+const encodedRequestOf = (mutants: ReadonlyArray<CheckerMutantEncoded>): CheckerWireEncoded => ({
+  checkerName: 'test-checker',
+  mutants,
+})
+
+const invalidRequest: CheckerWireEncoded = encodedRequestOf([{ ...identityEncoded, id: '' }])
+
+const describedFields = { ...identityEncoded, _tag: 'Mutant' }
 
 const describedMutant = (): Mutant.Mutant =>
   Effect.runSync(S.decodeEffect(Mutant.MutantFromUnknown)(describedFields).pipe(Effect.orDie))
 
-const invalidRequest: { readonly checkerName: string; readonly mutants: ReadonlyArray<Record<string, unknown>> } = {
-  checkerName: 'test-checker',
-  mutants: [{ ...identityFields, id: '' }],
-}
-
+const undescribableFields = { ...structuredClone(describedFields), mutatorName: 0 }
 
 const undescribableMutant = (): Mutant.Mutant =>
-  Result.match(S.decodeResult(Mutant.MutantFromUnknown)(undescribableTyped), {
+  Result.match(S.decodeResult(Mutant.MutantFromUnknown)(undescribableFields), {
     onFailure: () => describedMutant(),
     onSuccess: () => {
       throw new Error('planned mutant was unexpectedly accepted')
     },
-  })
-
 const planOf = (mutant: Mutant.Mutant): Mutant.MutantRunPlan => ({
   plan: 'Run',
-  mutant,
   runOptions: {
     timeout: 1000,
     disableBail: false,
@@ -204,27 +199,10 @@ Feature('Verifying mutants through an external checker worker')
         When('the runner submits a mutant whose identifier is empty')(
           'outcome',
           (s) =>
-            s.harness.client
-              .check(
-                JSON.parse(
-                  JSON.stringify({
-                    checkerName: 'test-checker',
-                    mutants: [
-                      {
-                        id: '',
-                        fileName: 'src/core.ts',
-                        mutatorName: 'ArithmeticOperator',
-                        replacement: '-',
-                        location: {
-                          start: { line: 10, column: 5 },
-                          end: { line: 10, column: 6 },
-                        },
-                      },
-                    ],
-                  }),
-                ),
-              )
-              .pipe(Effect.exit),
+            S.decodeEffect(Plugin.CheckerRequest)(invalidRequest).pipe(
+              Effect.flatMap((request) => s.harness.client.check(request)),
+              Effect.exit,
+            ),
         ),
         Then('the request is refused and the worker is never asked')((s) =>
           Effect.gen(function*() {
