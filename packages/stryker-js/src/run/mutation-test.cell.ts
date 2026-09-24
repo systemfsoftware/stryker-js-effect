@@ -44,16 +44,16 @@ import type {
   FailedCheckResult,
   MutationTestResult,
   TestResult,
+  TestRunnerFailed,
   WorkerPluginKind,
 } from '@systemfsoftware/stryker-js-plugin-interface'
-import { HitLimitReasonText, WallClockTimeoutReason } from '@systemfsoftware/stryker-js-plugin-interface'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
 import { CheckerMutantFromMutant } from '../Checker/mod.js'
 import type { CheckerContractBroken, CheckerCrash, CheckerResourceService } from '../Checker/mod.js'
 import { checkGroupedPlans, scoped } from '../Checker/mod.js'
 import { checkerMutantsSkipped } from '../metrics.js'
-import { ReportLocationFromMutant } from '../ReportLocation.schema.js'
+import { ReportLocationFromMutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import { ProjectFiles } from '../project-files.service.js'
@@ -192,11 +192,16 @@ const rememberedResultOf = (
 
 const mutantsByIdOf = (mutants: readonly Mutant[]) => new Map(mutants.map((mutant) => [mutant.id, mutant] as const))
 
-const rememberedOf = (mutant: Mutant, entry: RememberedMutantResult) =>
-  Effect.map(
-    Effect.orDie(S.decodeEffect(ReportLocationFromMutant)(mutant.location)),
-    (reportLocation) => rememberedResultOf(mutant, entry, reportLocation),
-  )
+const mutantRunFailureResultOf = (failure: TestRunnerFailed): RunMutantResult => ({
+  status: 'error' as const,
+  errorMessage: `Test runner "${failure.runnerName}" crashed during mutant run: ${failure.cause}`
+})
+
+ const rememberedOf = (mutant: Mutant, entry: RememberedMutantResult) =>
+   Effect.map(
+     Effect.orDie(S.decodeEffect(ReportLocationFromMutant)(mutant.location)),
+     (reportLocation) => rememberedResultOf(mutant, entry, reportLocation),
+   )
 
 const rememberedResultsOf = (
   mutants: readonly Mutant[],
@@ -677,9 +682,9 @@ const checkSlotPlans = (
     Effect.catchTags({
       OutOfMemoryError: (error) => invalidateSlot(pool, slot, error),
       ChildProcessCrashedError: (error) => invalidateSlot(pool, slot, error),
+      CheckerFailed: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
       CheckerAnsweredUnrequested: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
       CheckerSkippedRequested: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
-      CheckerFailed: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
     }),
   )
 
@@ -1062,7 +1067,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
               Effect.gen(function*() {
                 const pool = testRunnerPool
                 const runner = yield* Pool.get(pool)
-                const result = yield* runner.mutantRun(plan.runOptions).pipe(
+                const candidate = yield* runner.mutantRun(plan.runOptions).pipe(
                   Effect.withSpan('stryker.testRunner.mutantRun', {
                     attributes: {
                       'stryker.mutant.id': plan.mutant.id,
@@ -1075,10 +1080,19 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
                       'stryker.mutant.status': runResult.status,
                     })
                   ),
+                  Effect.flip,
                   Effect.catchTags({
-                    OutOfMemoryError: (error) => invalidateSlot(pool, runner, error),
                     ChildProcessCrashedError: (error) => invalidateSlot(pool, runner, error),
+                    OutOfMemoryError: (error) => invalidateSlot(pool, runner, error),
                   }),
+                )
+                const result = yield* Match.value(candidate).pipe(
+                  Match.tag('TestRunnerFailed', (failure) =>
+                    Match.value(failure.phase).pipe(
+                      Match.when('mutantRun', () => Effect.succeed(mutantRunFailureResultOf(failure))),
+                      Match.orElse(() => Effect.fail(failure)),
+                    )),
+                  Match.orElse(Effect.succeed),
                 )
                 yield* Boolean.match(invalidatesRunnerPool(result.status, reasonOf(result)), {
                   onTrue: () =>

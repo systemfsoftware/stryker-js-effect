@@ -1,4 +1,5 @@
 import type { Mutant, MutantTestCoverage, Position, RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
+import { ReportLocationFromMutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as Cause from 'effect/Cause'
 import type {
   CheckResult,
@@ -29,7 +30,6 @@ import * as S from 'effect/Schema'
 
 import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
 import { ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
-import { ReportLocationFromMutant } from './ReportLocation.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js'

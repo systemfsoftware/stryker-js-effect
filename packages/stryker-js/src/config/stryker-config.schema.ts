@@ -33,7 +33,7 @@ export type StrykerConfigFn = (env: ConfigEnv) => PartialStrykerOptions | Promis
 
 export type StrykerConfigExport = PartialStrykerOptions | Promise<PartialStrykerOptions> | StrykerConfigFn
 
-interface MergedConfigRecord<A = unknown> extends Record<string, A | MergedConfigRecord<A>> {}
+export interface MergedConfigRecord<A = unknown> extends Record<string, A | MergedConfigRecord<A>> {}
 
 const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 
@@ -115,7 +115,7 @@ const ownValueOf = <A = unknown>(
 
 const hasUsableMember =
   (key: string) =>
-  <A>(merged: MergedConfigRecord<A>): merged is { -readonly [_ in string]: A } =>
+  <A>(merged: MergedConfigRecord<A>): boolean =>
     merged.hasOwnProperty(key) && merged[key] !== undefined
 
 const baseRecordOf = <A = unknown>(
@@ -171,11 +171,11 @@ export class StrykerConfig extends S.Class<StrykerConfig>('StrykerConfig')({
   } = (config) => config
 
   static readonly merge: {
-    <A>(overrides: DocumentRecord<A>): (defaults: DocumentRecord<A>) => DocumentRecord<A>
-    <A>(defaults: DocumentRecord<A>, overrides: DocumentRecord<A>): DocumentRecord<A>
+    <A>(overrides: MergedConfigRecord<A>): (defaults: MergedConfigRecord<A>) => MergedConfigRecord<A>
+    <A>(defaults: MergedConfigRecord<A>, overrides: MergedConfigRecord<A>): MergedConfigRecord<A>
   } = dual(
     2,
-    <A>(defaults: DocumentRecord<A>, overrides: DocumentRecord<A>): DocumentRecord<A> =>
+    <A>(defaults: MergedConfigRecord<A>, overrides: MergedConfigRecord<A>): MergedConfigRecord<A> =>
       mergeRecords(defaults, overrides),
   )
 

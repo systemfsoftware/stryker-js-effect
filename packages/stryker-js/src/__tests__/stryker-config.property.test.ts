@@ -82,12 +82,10 @@ describe('StrykerConfig.merge', () => {
     ))
 
   it.prop('∀do_Merge_≡NestedRecordsMergeRecursively', [NestedDocumentSchema, NestedDocumentSchema], ([base, overrides]) => {
+    const kept = usableEntriesOnly(base)
     const merged = StrykerConfig.merge(base, overrides)
-    return Object.keys(overrides).every((key) => {
+    return statedKeys(overrides).every((key) => {
       const override = overrides[key]
-      if (override === undefined) {
-        return sameValue(merged[key], base[key])
-      }
       const mergedValue = merged[key]
       if (isOptionRecord(override) === false) {
         return sameValue(mergedValue, override)
@@ -95,10 +93,8 @@ describe('StrykerConfig.merge', () => {
       if (isOptionRecord(mergedValue) === false) {
         return false
       }
-      return Object.keys(override).every((child) =>
-        override[child] === undefined ? true : sameValue(mergedValue[child], override[child])
-      )
-    })
+      return statedKeys(override).every((child) => sameValue(mergedValue[child], override[child]))
+    }) && statedKeys(kept).every((key) => key in merged)
   })
 
   it.prop('∀do_Merge_∈DocumentKeysNeverReachThePrototype', [poisonedDocumentArb, poisonedDocumentArb], ([base, overrides]) => {

@@ -3,7 +3,7 @@ import * as Boolean from 'effect/Boolean'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { type ChildExitCode, type ProcessId } from './Worker.schema.js'
+import { ChildExitCode, ProcessId } from './Worker.schema.js'
 
 const WorkerExitTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/WorkerExit')
 type WorkerExitTypeId = typeof WorkerExitTypeId

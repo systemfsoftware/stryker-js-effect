@@ -18,12 +18,12 @@ export class WorkerMethodError extends S.TaggedError<WorkerMethodError>()('Worke
 // Process exit — crash discriminants
 // ---------------------------------------------------------------------------
 
-export const ProcessId = S.NonNegativeInt
+export const ProcessId = S.Int
 
-export const ChildExitCode = S.NonNegativeInt
+export const ChildExitCode = S.Int
 
 const ChildExit = S.Union([
-  S.Struct({ _tag: S.Literals(['Code']), code: S.Int }),
+  S.Struct({ _tag: S.Literals(['Code']), code: ChildExitCode }),
   S.Struct({ _tag: S.Literals(['Signal']), signal: S.NonEmptyString }),
 ])
 

@@ -1,5 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { causeText } from '@systemfsoftware/stryker-js-instrumenter'
+import { CauseText } from '@systemfsoftware/stryker-js-instrumenter'
 import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Config from 'effect/Config'
@@ -40,6 +40,10 @@ import {
   type ExtendsStepState,
 } from '../Config.schema.js'
 import { StrykerConfig, type ConfigEnv } from '../config/stryker-config.schema.js'
+import {
+  MutationRangeSpecifier,
+  MutationRangeSpecifierSchema,
+} from '../MutationRange.schema.js'
 import type { OutputMode } from '../output-mode.schema.js'
 import { StrykerError } from '../stryker-error.schema.js'
 import { isCommandRunner } from '../command-runner.resource.js'
@@ -386,14 +390,12 @@ type ConfigFactory<A = unknown> = (env: ConfigEnv) => A
 
 const isConfigFactory = (value: unknown): value is ConfigFactory => typeof value === 'function'
 
-const FACTORY_FAILED = "Evaluating the config module's exported factory failed"
-
 const factoryFailureOf = <A>(cause: A): ConfigFactoryFailed =>
   ConfigFactoryFailed.make({
     cause,
-    message: Option.match(Option.fromUndefinedOr(causeText(cause, 1)), {
+    message: Option.match(CauseText.fromCause(cause), {
       onNone: () => FACTORY_FAILED,
-      onSome: (detail) => `${FACTORY_FAILED}: ${detail}`,
+      onSome: (detail) => `${FACTORY_FAILED}: ${detail.text}`,
     }),
   })
 
@@ -850,6 +852,7 @@ const markExcessOptions = (
   Match.value(warningDecisionOf('unknownOptions', options.warnings)).pipe(
     Match.tag('WarningEnabled', () => unknownOptionWarning(options, schema)),
     Match.tag('WarningDisabled', () => Effect.void),
+    Match.exhaustive,
   )
 
 const logUnserializableWarnings = (
@@ -890,56 +893,44 @@ const scopedUnserializable =
 
 const describedChild =
   (scope: string) =>
-  <A>(child: A): UnserializableDescription[] =>
-    Match.value(findUnserializables(child)).pipe(
-      Match.when(isUndefinedFound, (): UnserializableDescription[] => []),
-      Match.orElse((descriptions) => descriptions.map(scopedUnserializable(scope))),
-    )
+  (child: unknown): UnserializableDescription[] =>
+    Option.match(Option.fromUndefinedOr(findUnserializables(child)), {
+      onNone: () => [],
+      onSome: (descriptions) => descriptions.map(scopedUnserializable(scope)),
+    })
 
-const isUndefinedFound = (
-  found: UnserializableDescription[] | undefined,
-): found is undefined => found === undefined
+const describedEntries = (
+  entries: ReadonlyArray<readonly [string, unknown]>,
+): UnserializableDescription[] =>
+  entries.flatMap(([scope, child]) => describedChild(scope)(child))
 
-const isReadonlyArrayValue = <A>(candidate: A): candidate is A & ReadonlyArray<A> =>
-  Array.isArray(candidate)
+const classNameOf = (value: object): string =>
+  Match.value(value.constructor).pipe(
+    Match.when(Match.defined, (constructor) => constructor.name),
+    Match.orElse(() => 'Object'),
+  )
 
 const describeUnserializableInstance = (value: object): UnserializableDescription[] => [
   {
     path: [],
-    reason: `Value is an instance of "${
-      Match.value(value.constructor).pipe(
-        Match.when(Match.defined, (constructor) => constructor.name),
-        Match.orElse(() => 'Object'),
-      )
-    }", this detail will get lost in translation during serialization`,
+    reason: `Value is an instance of "${classNameOf(
+      value,
+    )}", this detail will get lost in translation during serialization`,
   },
 ]
 
-const describeUnserializableRecord = (
-  value: object,
-): UnserializableDescription[] =>
-  Option.match(
-    Option.liftPredicate(Option.some(value), (candidate) => candidate.constructor === Object),
-    {
-      onNone: () => describeUnserializableInstance(value),
-      onSome: (plain) => describedEntries(Object.entries(plain)),
-    },
-  )
+const isArrayValue = (value: object): value is ReadonlyArray<unknown> => Array.isArray(value)
 
-const describeUnserializableStructured = <A>(value: A | ReadonlyArray<A>): UnserializableDescription[] =>
-  Match.value(value).pipe(
-    Match.when(isReadonlyArrayValue, (arrayed) =>
-      describedEntries(arrayed.map((child, index) => [index.toString(), child] as const))),
-    Match.orElse((recorded: object) => describeUnserializableRecord(recorded)),
-  )
+const isPlainObjectValue = (value: object): boolean =>
+  Array.isArray(value) === false && value.constructor === Object
 
-const describeUnserializableNonNullish = <A>(value: Exclude<A, null>): UnserializableDescription[] =>
+const describeUnserializableObject = (value: object): UnserializableDescription[] =>
   Match.value(value).pipe(
-    Match.when(isReadonlyArrayValue, (arrayed) =>
+    Match.when(isArrayValue, (arrayed) =>
       describedEntries(arrayed.map((child, index) => [index.toString(), child] as const))),
-    Match.orElse((recorded: object) =>
+    Match.orElse((recorded) =>
       Option.match(
-        Option.liftPredicate(Option.some(recorded), (candidate) => candidate.constructor === Object),
+        Option.liftPredicate(Option.some(recorded), isPlainObjectValue),
         {
           onNone: () => describeUnserializableInstance(recorded),
           onSome: (plain) => describedEntries(Object.entries(plain)),
@@ -947,34 +938,58 @@ const describeUnserializableNonNullish = <A>(value: Exclude<A, null>): Unseriali
       )),
   )
 
+const describeUnserializableNonNullish = (value: unknown): UnserializableDescription[] =>
+  Option.match(Option.liftPredicate(Option.some(value), isNonNullObject), {
+    onNone: () => [],
+    onSome: (present) => describeUnserializableObject(present),
+  })
+
+const isNumberValue = (value: unknown): value is number => typeof value === 'number'
+
 const describeUnserializableFiniteNumber = (value: number): UnserializableDescription[] =>
-  Match.value(Number.isFinite(value)).pipe(
-    Match.when(true, (): UnserializableDescription[] => []),
-    Match.orElse((): UnserializableDescription[] => [
+  Boolean.match(Number.isFinite(value), {
+    onTrue: () => [],
+    onFalse: () => [
       {
         path: [],
         reason: `Number value \`${value}\` has no JSON representation`,
       },
-    ]),
+    ],
+  })
+
+type JsonlessPrimitive = bigint | symbol | ((...args: never[]) => void)
+
+const isNonJsonPrimitive = (value: unknown): value is JsonlessPrimitive =>
+  NON_JSON_PRIMITIVE_TYPES[typeof value] === true
+
+const describeNonJsonPrimitive = (value: JsonlessPrimitive): UnserializableDescription[] => [
+  {
+    path: [],
+    reason: `Primitive type "${typeof value}" has no JSON representation`,
+  },
+]
+
+const describeUnserializableUnknown = (value: unknown): UnserializableDescription[] =>
+  Match.value(value).pipe(
+    Match.when(isNonJsonPrimitive, describeNonJsonPrimitive),
+    Match.orElse(describeUnserializableNonNullish),
   )
 
-const hasDescriptions = (
-  found: UnserializableDescription[],
-): found is UnserializableDescription[] => found.length > 0
+const hasDescriptions = (found: UnserializableDescription[]): boolean => found.length > 0
 
-const describeUnserializableValue = <A>(value: A): UnserializableDescription[] =>
+const describeUnserializableValue = (value: unknown): UnserializableDescription[] =>
   Match.value(value).pipe(
-    Match.when(isNumberValue, (whole) => describeUnserializableFiniteNumber(whole)),
+    Match.when(isNumberValue, describeUnserializableFiniteNumber),
     Match.orElse(describeUnserializableUnknown),
   )
 
-const findUnserializables = <A>(thing: A): UnserializableDescription[] | undefined =>
-  Match.value(describeUnserializableValue(thing)).pipe(
-    Match.when(
-      hasDescriptions,
-      (found) => found,
-    ),
-    Match.orElse(() => undefined),
+const findUnserializables = (thing: unknown): UnserializableDescription[] | undefined =>
+  Option.match(
+    Option.liftPredicate(Option.some(describeUnserializableValue(thing)), hasDescriptions),
+    {
+      onNone: () => undefined,
+      onSome: (found) => found,
+    },
   )
 const warnAboutUnserializableOptions = (options: StrykerOptions): Effect.Effect<void> =>
   Option.match(
@@ -989,6 +1004,7 @@ const markUnserializableOptions = (options: StrykerOptions): Effect.Effect<void>
   Match.value(warningDecisionOf('unserializableOptions', options.warnings)).pipe(
     Match.tag('WarningEnabled', () => warnAboutUnserializableOptions(options)),
     Match.tag('WarningDisabled', () => Effect.void),
+    Match.exhaustive,
   )
 
 function markOptions(
@@ -1106,7 +1122,7 @@ const legacyConfigWarning = (file: string, supportedFile: string): Effect.Effect
 
 const refuseLegacyOnlyProject = (): Effect.Effect<
   Option.Option<string>,
-  ConfigFileUnsupportedError,
+  ConfigFileUnreadableError | ConfigFileUnsupportedError,
   FileSystem.FileSystem
 > =>
   firstLegacyConfigFile().pipe(
@@ -1120,7 +1136,7 @@ const refuseLegacyOnlyProject = (): Effect.Effect<
 
 const warnShadowedLegacyConfig = (
   supportedFile: string,
-): Effect.Effect<string, ConfigFileUnreadableError, FileSystem.FileSystem> =>
+): Effect.Effect<string, ConfigFileUnreadableError | ConfigFileUnsupportedError, FileSystem.FileSystem> =>
   firstLegacyConfigFile().pipe(
     Effect.flatMap((legacyFile) =>
       Option.match(legacyFile, {

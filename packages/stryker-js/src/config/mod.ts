@@ -4,6 +4,7 @@ export type {
   DocumentRecord,
   Immutable,
   ImmutablePrimitive,
+  MergedConfigRecord,
   Primitive,
   StrykerConfigExport,
   StrykerConfigFn,
