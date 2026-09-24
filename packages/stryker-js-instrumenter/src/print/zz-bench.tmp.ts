@@ -19,59 +19,46 @@ const PREC = {
 const logicalPrec = (op: string): number => (op === '||' ? 1 : op === '&&' ? 2 : 3)
 const binaryPrec = (op: string): number => (op === '+' ? 4 : op === '*' ? 5 : 6)
 
-type TSTen = Extract<TSType, { readonly type: 'TSAnyKeyword' | 'TSStringKeyword' | 'TSUnionType' | 'TSIntersectionType' | 'TSArrayType' | 'TSConditionalType' | 'TSIndexedAccessType' | 'TSTypeOperator' | 'TSParenthesizedType' | 'TSTypeReference' }>
-type N15 = Extract<Node, { readonly type: 'SequenceExpression' | 'AssignmentExpression' | 'ConditionalExpression' | 'LogicalExpression' | 'BinaryExpression' | 'UnaryExpression' | 'AwaitExpression' | 'YieldExpression' | 'UpdateExpression' | 'CallExpression' | 'NewExpression' | 'TaggedTemplateExpression' | 'ImportExpression' | 'MemberExpression' | 'ChainExpression' }>
+const tsTypeTextOf = Match.type<TSType>().pipe(
+  Match.discriminatorsExhaustive('type')({
+    TSAnyKeyword: () => 'any',
+    TSStringKeyword: () => 'string',
+    TSUnionType: (n) => (ctx) => n.types.map((t) => printTSType(ctx, t)).join(' | '),
+    TSIntersectionType: (n) => (ctx) => n.types.map((t) => printTSType(ctx, t)).join(' & '),
+    TSArrayType: (n) => `${printTSType(ctx, n.elementType)}[]`,
+    TSConditionalType: (n) => `${printTSType(ctx, n.checkType)} extends ${printTSType(ctx, n.extendsType)} ? ${printTSType(ctx, n.trueType)} : ${printTSType(ctx, n.falseType)}`,
+    TSIndexedAccessType: (n) => `${printTSType(ctx, n.objectType)}[${printTSType(ctx, n.indexType)}]`,
+    TSTypeOperator: (n) => `${n.operator} ${printTSType(ctx, n.typeAnnotation)}`,
+    TSParenthesizedType: (n) => `(${printTSType(ctx, n.typeAnnotation)})`,
+    TSTypeReference: () => 'ref',
+  }),
+)
 
-type TSRenderer<K extends TSTen['type']> = (
-  ctx: PrintContext,
-  node: Extract<TSTen, { readonly type: K }>,
-) => string
+const printTSType = (ctx: PrintContext, node: TSType): string => tsTypeTextOf(node)(ctx)
 
-const TS_TEXT: { readonly [K in TSTen['type']]: TSRenderer<K> } = {
-  TSAnyKeyword: () => 'any',
-  TSStringKeyword: () => 'string',
-  TSUnionType: (ctx, n) => n.types.map((t) => matchTSC(ctx, t)).join(' | '),
-  TSIntersectionType: (ctx, n) => n.types.map((t) => matchTSC(ctx, t)).join(' & '),
-  TSArrayType: (ctx, n) => `${matchTSC(ctx, n.elementType)}[]`,
-  TSConditionalType: (ctx, n) => `${matchTSC(ctx, n.checkType)} extends ${matchTSC(ctx, n.extendsType)} ? ${matchTSC(ctx, n.trueType)} : ${matchTSC(ctx, n.falseType)}`,
-  TSIndexedAccessType: (ctx, n) => `${matchTSC(ctx, n.objectType)}[${matchTSC(ctx, n.indexType)}]`,
-  TSTypeOperator: (ctx, n) => `${n.operator} ${matchTSC(ctx, n.typeAnnotation)}`,
-  TSParenthesizedType: (ctx, n) => `(${matchTSC(ctx, n.typeAnnotation)})`,
-  TSTypeReference: () => 'ref',
-}
+export const threeSites = (ctx: PrintContext, x: TSType, y: TSType, z: TSType): string =>
+  [printTSType(ctx, x), printTSType(ctx, y), printTSType(ctx, z)].join(',')
 
-const matchTSC = (ctx: PrintContext, node: TSType): string => TS_TEXT[node.type](ctx, node)
+const precOf = Match.type<Node>().pipe(
+  Match.discriminators('type')({
+    SequenceExpression: () => PREC.Sequence,
+    AssignmentExpression: () => PREC.Assignment,
+    ConditionalExpression: () => PREC.Conditional,
+    LogicalExpression: (n) => logicalPrec(n.operator),
+    BinaryExpression: (n) => binaryPrec(n.operator),
+    UnaryExpression: () => PREC.Unary,
+    AwaitExpression: () => PREC.Unary,
+    YieldExpression: () => PREC.Unary,
+    UpdateExpression: () => PREC.Update,
+    CallExpression: () => PREC.Call,
+    NewExpression: () => PREC.Call,
+    TaggedTemplateExpression: () => PREC.Call,
+    ImportExpression: () => PREC.Call,
+    MemberExpression: () => PREC.Member,
+    ChainExpression: () => PREC.Member,
+  }),
+  Match.orElse(() => PREC.Primary),
+  Match.exhaustive,
+)
 
-type PrecRenderer<K extends N15['type']> = (node: Extract<N15, { readonly type: K }>) => number
-
-const NODE_TEXT: { readonly [K in N15['type']]: PrecRenderer<K> } = {
-  SequenceExpression: () => PREC.Sequence,
-  AssignmentExpression: () => PREC.Assignment,
-  ConditionalExpression: () => PREC.Conditional,
-  LogicalExpression: (n) => logicalPrec(n.operator),
-  BinaryExpression: (n) => binaryPrec(n.operator),
-  UnaryExpression: () => PREC.Unary,
-  AwaitExpression: () => PREC.Unary,
-  YieldExpression: () => PREC.Unary,
-  UpdateExpression: () => PREC.Update,
-  CallExpression: () => PREC.Call,
-  NewExpression: () => PREC.Call,
-  TaggedTemplateExpression: () => PREC.Call,
-  ImportExpression: () => PREC.Call,
-  MemberExpression: () => PREC.Member,
-  ChainExpression: () => PREC.Member,
-}
-
-export const precOfC = (node: N15): number => NODE_TEXT[node.type](node)
-
-export const threeSitesC = (ctx: PrintContext, x: TSTen, y: TSTen, z: TSTen): string =>
-  [matchTSC(ctx, x), matchTSC(ctx, y), matchTSC(ctx, z)].join(',')
-
-type PrivOnly = Extract<Node, { readonly type: 'PrivateIdentifier' }>
-const PRIV_TEXT: {
-  readonly [K in PrivOnly['type']]: (n: Extract<PrivOnly, { readonly type: K }>) => string
-} = {
-  PrivateIdentifier: (n) => `#${n.name}`,
-}
-
-export const privateTextC = (node: PrivOnly): string => PRIV_TEXT[node.type](node)
+export const usePrecOf = (node: Node): number => precOf(node)
