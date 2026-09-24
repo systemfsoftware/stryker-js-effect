@@ -34,7 +34,7 @@ const stepVerifyTypedErrorDocument = (
   expect.soft(terminal._tag).toBe('error')
   if (terminal._tag === 'error') {
     const errorDoc: RunFailed = terminal
-    expect.soft(errorDoc.schemaVersion).toBe('1.0')
+    expect.soft(errorDoc.schemaVersion).toBe('1.1')
     expect.soft(errorDoc.code).toBe(FAILING_DRY_RUN_RUNTIME_ERROR_CODE)
     expect.soft(typeof errorDoc.error).toBe('string')
     expect.soft(errorDoc.remediation).toMatch(/\S/)
