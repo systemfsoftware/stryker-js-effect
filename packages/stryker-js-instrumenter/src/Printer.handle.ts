@@ -30,17 +30,13 @@ function missingFormatPrint(file: Ast): never {
   throw new Error(`No registered format renders the "${formatKeyOf(file)}" AST`)
 }
 
-const hashbangOf = (root: AstRoot): Hashbang | null => Predicate.isObject(root) ? hashbangField(root) : null
+function hashbangOf(root: AstRoot): Hashbang | null {
+  if (!hasHashbang(root)) return null
+  return printHashbang(root.hashbang)
+}
 
-const hashbangField = (root: object): Hashbang | null => hasHashbangProp(root) ? narrowHashbang(root) : null
-
-const hasHashbangProp = (value: object): value is { readonly hashbang: OxcHashbang | null } =>
-  Predicate.hasProperty(value, 'hashbang')
-
-const narrowHashbang = (root: { readonly hashbang: OxcHashbang | null }): Hashbang | null =>
-  isNarrowHashbang(root.hashbang) ? printHashbang(root.hashbang) : null
-
-const isNarrowHashbang = (field: OxcHashbang | null): field is OxcHashbang => Predicate.isObject(field)
+const hasHashbang = (root: object): root is { readonly hashbang: OxcHashbang } =>
+  Predicate.hasProperty(root, 'hashbang') && Predicate.isObject(root.hashbang)
 
 const printHashbang = (field: OxcHashbang): Hashbang => ({
   type: 'Hashbang',
@@ -48,16 +44,21 @@ const printHashbang = (field: OxcHashbang): Hashbang => ({
   start: field.start,
 })
 
-const hashbangValue = (field: OxcHashbang): string => (typeof field.value === 'string' ? field.value : '')
+function hashbangValue(field: OxcHashbang): string {
+  if (typeof field.value !== 'string') return ''
+  return field.value
+}
 
-const jsPrintDataFirst: Printer<JSAst> = (file) => printProgram(file.root, { hashbang: hashbangOf(file.root) })
+const printScriptAst = (root: AstRoot): string => printProgram(root, { hashbang: hashbangOf(root) })
+
+const jsPrintDataFirst: Printer<JSAst> = (file) => printScriptAst(file.root)
 
 export const jsPrint: {
   (file: JSAst, context: PrinterContext): string
   (context: PrinterContext): (file: JSAst) => string
 } = dual((args: IArguments): boolean => args.length >= 2, jsPrintDataFirst)
 
-const tsPrintDataFirst: Printer<TSAst | TsxAst> = (file) => printProgram(file.root, { hashbang: hashbangOf(file.root) })
+const tsPrintDataFirst: Printer<TSAst | TsxAst> = (file) => printScriptAst(file.root)
 
 export const tsPrint: {
   (file: TSAst | TsxAst, context: PrinterContext): string

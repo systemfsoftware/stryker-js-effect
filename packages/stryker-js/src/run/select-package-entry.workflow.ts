@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -52,10 +53,7 @@ type Selection = S.Schema.Type<typeof Selection>
 const isString = (value: PackageExportValue): value is string => typeof value === 'string'
 const isArray = (value: PackageExportValue): value is readonly PackageExportValue[] => Array.isArray(value)
 const isMapRecord = (value: PackageExportValue): value is { readonly [key: string]: PackageExportValue } =>
-  Match.value(value).pipe(
-    Match.when(Match.record, (): boolean => true),
-    Match.orElse((): boolean => false),
-  )
+  Predicate.isObject(value)
 
 const subpathOf = (specifier: string): string => {
   const segments = specifier.split('/')

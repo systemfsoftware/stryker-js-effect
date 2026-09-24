@@ -44,10 +44,8 @@ function rejectAst(ast: Ast, expected: string): never {
 export const extensionOf = (fileName: string): string => {
   const dot = fileName.lastIndexOf('.')
   const slash = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'))
-  return dot > slash ? fileName.slice(dot).toLowerCase() : extensionlessFile(dot, slash)
+  return dot > slash ? fileName.slice(dot).toLowerCase() : ''
 }
-
-const extensionlessFile = (_dot: number, _slash: number): string => ''
 
 const CORE_OWNER = '@systemfsoftware/stryker-js-instrumenter'
 const CORE_OWNER_VERSION = 'builtin'
@@ -118,14 +116,12 @@ const parseScriptFormat = (
   text: string,
   fileName: string,
 ): Effect.Effect<Ast, ParseFailed | InstrumentError> =>
-  scriptFormat === 'tsx' ? parseTsx(text, fileName) : parseJsOrTs(scriptFormat, text, fileName)
-
-const parseJsOrTs = (
-  scriptFormat: ScriptFormat,
-  text: string,
-  fileName: string,
-): Effect.Effect<Ast, ParseFailed | InstrumentError> =>
-  scriptFormat === 'js' ? parseJS(text, fileName) : parseTS(text, fileName)
+  Match.value(scriptFormat).pipe(
+    Match.when('js', () => parseJS(text, fileName)),
+    Match.when('ts', () => parseTS(text, fileName)),
+    Match.when('tsx', () => parseTsx(text, fileName)),
+    Match.exhaustive,
+  )
 
 const printScriptAst = (ast: Ast, context: PrinterContext): string =>
   ast.format === 'js' ? jsPrint(requireJsAst(ast), context) : tsPrint(requireTsFamilyAst(ast), context)

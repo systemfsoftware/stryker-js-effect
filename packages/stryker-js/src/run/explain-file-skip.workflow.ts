@@ -62,13 +62,14 @@ const claimedReasonOf = (extension: string, claimants: readonly string[]): strin
 const unclaimedReasonOf = (extension: string): string =>
   `No loaded framework claims "${extension}". No installed package declares it as a framework plugin: install the framework plugin that claims this file type and add it to "plugins" to instrument it.`
 
-const explainedOf = (command: ExplainFileSkipCommand): FileSkipExplained =>
-  Match.value(claimantsOf(command).length > 0).pipe(
+const explainedOf = (command: ExplainFileSkipCommand): FileSkipExplained => {
+  const claimants = claimantsOf(command)
+  return Match.value(claimants.length > 0).pipe(
     Match.when(true, () =>
       FileSkipExplained.make({
         extension: command.extension,
-        reason: claimedReasonOf(command.extension, claimantsOf(command)),
-        ownerPackage: Option.getOrNull(Option.fromUndefinedOr(claimantsOf(command).at(0))),
+        reason: claimedReasonOf(command.extension, claimants),
+        ownerPackage: Option.getOrNull(Option.fromUndefinedOr(claimants.at(0))),
       })),
     Match.orElse(() =>
       FileSkipExplained.make({
@@ -78,6 +79,7 @@ const explainedOf = (command: ExplainFileSkipCommand): FileSkipExplained =>
       })
     ),
   )
+}
 
 const skipKnownOrUnknownOf = (
   explained: FileSkipExplained,
