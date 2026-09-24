@@ -8,12 +8,12 @@ import {
   RunFailed,
   RunInterrupted,
   RunOk,
-  RunOutcomeCommand,
   type RunOutcomeDecision,
   type RunOutcomeError,
   RunParseFailed,
   RunSurvivorsRejected,
 } from '../classify-run-outcome.workflow.js'
+import { RunOutcomeCommand } from '../RunOutcomeCommand.schema.js'
 
 const classCode = (exitClass: 'VerdictFail' | 'ConfigError' | 'RuntimeError' | 'InternalError'): number => {
   if (exitClass === 'VerdictFail') {

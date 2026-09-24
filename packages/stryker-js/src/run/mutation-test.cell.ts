@@ -46,12 +46,11 @@ import type {
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import { HitLimitReasonText, WallClockTimeoutReason } from '@systemfsoftware/stryker-js-plugin-interface'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
-import { checkerMutantsSkipped } from '../Checker/checker.metrics.js'
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { checkGroupedPlans } from '../Checker/Checker.cell.js'
 import type { CheckerCrash, CheckerResourceService } from '../Checker/Checker.handle.js'
 import { scoped } from '../Checker/Checker.resource.js'
-import { CheckerMutantFromMutant } from '../Checker/Checker.schema.js'
+import { CheckerMutantFromMutant, UndescribableMutant } from '../Checker/Checker.schema.js'
 import {
   incrementalDiff as incrementalDiffDecisions,
   IncrementalDiffCommand,
@@ -744,7 +743,7 @@ const reportDroppedMutants = (dropped: readonly Mutant[]) =>
     Match.when(0, () => Effect.void),
     Match.orElse(() =>
       Effect.gen(function*() {
-        yield* Metric.update(checkerMutantsSkipped, dropped.length)
+        yield* Metric.update(UndescribableMutant.skipped, dropped.length)
         yield* Effect.logWarning(
           `${dropped.length} mutant(s) cannot be described to a checker and were left out of the run (${
             droppedIdsOf(dropped)

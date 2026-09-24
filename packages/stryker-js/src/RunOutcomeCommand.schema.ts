@@ -1,3 +1,4 @@
+import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { CauseText } from '@systemfsoftware/stryker-js-instrumenter'
 import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
@@ -10,7 +11,6 @@ import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 import * as CliError from 'effect/unstable/cli/CliError'
 
-import { RunOutcomeCommand } from './classify-run-outcome.workflow.js'
 import { SurvivorsRejection } from './Survivors/mod.js'
 
 const UNKNOWN_FAILURE = 'Unknown failure'
@@ -267,7 +267,7 @@ const bySeverity: Order.Order<ExitClass> = Order.mapInput(
 const highestExitClassOf = (pending: ReadonlyArray<ExitClass>): ExitClass | undefined =>
   Option.getOrUndefined(Arr.last(Arr.sort(pending, bySeverity)))
 
-export const runOutcomeCommandOf = <A, E>(
+const runOutcomeCommandOf = <A, E>(
   { argv, exit }: { readonly exit: Exit.Exit<A, E>; readonly argv: readonly string[] },
 ): RunOutcomeCommand => {
   const value = failureValueOf(exit)
@@ -288,6 +288,34 @@ export const runOutcomeCommandOf = <A, E>(
   })
 }
 
+export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOutcomeCommand', {
+  succeeded: S.Boolean,
+  interrupted: S.Boolean,
+  helpErrorCount: S.optional(S.Finite),
+  cliError: S.Boolean,
+  unrecognized: S.optional(S.String),
+  survivorsReason: S.optional(S.Literals(['no-report', 'mismatch'])),
+  survivorsDiagnostic: S.optional(S.String),
+  schemaError: S.Boolean,
+  successExitClass: S.optional(ExitClass),
+  highestExitClass: S.optional(ExitClass),
+  configDetail: S.optional(S.String),
+  diagnostic: S.optional(S.String),
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {
+    succeeded: 'stryker.run_outcome.succeeded',
+    interrupted: 'stryker.run_outcome.interrupted',
+    helpErrorCount: 'stryker.run_outcome.help_error_count',
+    cliError: 'stryker.run_outcome.cli_error',
+    survivorsReason: 'stryker.run_outcome.survivors_reason',
+    schemaError: 'stryker.run_outcome.schema_error',
+    successExitClass: 'stryker.run_outcome.success_exit_class',
+    highestExitClass: 'stryker.run_outcome.highest_exit_class',
+  } as const
+
+  static readonly fromExit = runOutcomeCommandOf
+}
+
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const Equal = await import('effect/Equal')
@@ -295,7 +323,7 @@ if (import.meta.vitest !== void 0) {
   const severityOf = (exitClass: ExitClass): number => ExitClass.literals.indexOf(exitClass)
 
   it.prop('∀text_runOutcomeCommandOf_PrimitiveFailureBecomesDiagnostic', [S.String], ([text]) => {
-    const command = runOutcomeCommandOf({ exit: Exit.fail(text), argv: [] })
+    const command = RunOutcomeCommand.fromExit({ exit: Exit.fail(text), argv: [] })
     const observed = [
       command.succeeded,
       command.interrupted,
@@ -321,7 +349,7 @@ if (import.meta.vitest !== void 0) {
 
   it.prop('∀deeperList_runOutcomeCommandOf_FindsConfigDetail', [S.NonEmptyString], ([detail]) => {
     const exit = Exit.fail({ exitClass: 'ConfigError', reason: detail })
-    return runOutcomeCommandOf({ exit, argv: [] }).configDetail === detail
+    return RunOutcomeCommand.fromExit({ exit, argv: [] }).configDetail === detail
   })
 
   it.prop(
@@ -329,7 +357,7 @@ if (import.meta.vitest !== void 0) {
     [ExitClass, ExitClass, ExitClass],
     ([left, middle, right]) => {
       const exit = Exit.fail({ exitClass: left, cause: { exitClass: middle, cause: { exitClass: right } } })
-      const command = runOutcomeCommandOf({ exit, argv: [] })
+      const command = RunOutcomeCommand.fromExit({ exit, argv: [] })
       return Equal.equals(
         Option.map(Option.fromUndefinedOr(command.highestExitClass), severityOf),
         Option.some(Math.max(severityOf(left), severityOf(middle), severityOf(right))),

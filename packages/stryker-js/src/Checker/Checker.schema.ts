@@ -1,5 +1,6 @@
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Metric from 'effect/Metric'
 import * as S from 'effect/Schema'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
@@ -7,7 +8,11 @@ export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('U
   id: S.String,
   fileName: S.String,
   reason: S.String,
-}) {}
+}) {
+  static readonly skipped = Metric.counter('stryker.checker.mutants.skipped', {
+    description: 'Total number of mutants dropped because they cannot be described to a checker',
+  })
+}
 
 const CheckerMutant = S.toType(CheckerMutantWire)
 

@@ -7,32 +7,8 @@ import * as Runtime from 'effect/Runtime'
 import * as S from 'effect/Schema'
 
 import { ExitCode } from './exit-code.schema.js'
+import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
 
-export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOutcomeCommand', {
-  succeeded: S.Boolean,
-  interrupted: S.Boolean,
-  helpErrorCount: S.optional(S.Finite),
-  cliError: S.Boolean,
-  unrecognized: S.optional(S.String),
-  survivorsReason: S.optional(S.Literals(['no-report', 'mismatch'])),
-  survivorsDiagnostic: S.optional(S.String),
-  schemaError: S.Boolean,
-  successExitClass: S.optional(ExitClass),
-  highestExitClass: S.optional(ExitClass),
-  configDetail: S.optional(S.String),
-  diagnostic: S.optional(S.String),
-}) {
-  static readonly [Workflow.InstrumentationBrand] = {
-    succeeded: 'stryker.run_outcome.succeeded',
-    interrupted: 'stryker.run_outcome.interrupted',
-    helpErrorCount: 'stryker.run_outcome.help_error_count',
-    cliError: 'stryker.run_outcome.cli_error',
-    survivorsReason: 'stryker.run_outcome.survivors_reason',
-    schemaError: 'stryker.run_outcome.schema_error',
-    successExitClass: 'stryker.run_outcome.success_exit_class',
-    highestExitClass: 'stryker.run_outcome.highest_exit_class',
-  } as const
-}
 export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: ExitCode }) {
   override get [Runtime.errorExitCode](): number {
     return this.code

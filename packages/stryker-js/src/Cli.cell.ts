@@ -50,7 +50,7 @@ import { MachineConsole } from './reporting/machine-console.service.js'
 import { ErrorEnvelope, RunExitCode } from './reporting/run-failure.schema.js'
 import { routeCliRequest } from './route-cli-request.workflow.js'
 import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
-import { runOutcomeCommandOf } from './run-outcome-of-exit.js'
+import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
 import { type HostServices, type StrykerRun } from './run/host.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
@@ -712,7 +712,7 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
               strykerCliCell.run({ argv: options.argv, environment }),
             ),
           )
-          const outcome = classifyRunOutcome(runOutcomeCommandOf({ exit, argv: options.argv }))
+          const outcome = classifyRunOutcome(RunOutcomeCommand.fromExit({ exit, argv: options.argv }))
           const code = RunExitCode.fromOutcome(
             Result.match(outcome, {
               onSuccess: (decision) => decision,

@@ -3,7 +3,7 @@ import { dual } from 'effect/Function'
 import * as ManagedRuntime from 'effect/ManagedRuntime'
 
 import { nodePlatformLayer } from '../drivers/node.js'
-import { strykerCell } from '../mod.js'
+import { strykerCell } from '../run/run-stages.cell.js'
 import type { MutationTestDone } from '../run/mutation-test.cell.js'
 
 export const run = dual<

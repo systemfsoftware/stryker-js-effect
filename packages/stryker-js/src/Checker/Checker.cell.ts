@@ -20,7 +20,6 @@ import {
   CheckResultDecision,
 } from '../admit-checker-answer.workflow.js'
 import { type CheckerCrash, type CheckerResourceService } from './Checker.handle.js'
-import { checkerMutantsSkipped } from './checker.metrics.js'
 import { CheckerMutantFromMutant, UndescribableMutant } from './Checker.schema.js'
 
 interface GroupPartition {
@@ -253,7 +252,7 @@ const logSkippedMutants = (checkerName: string, undescribable: readonly Undescri
 
 const recordSkipped = (skipped: number) =>
   Boolean.match(skipped > 0, {
-    onTrue: () => Metric.update(checkerMutantsSkipped, skipped),
+    onTrue: () => Metric.update(UndescribableMutant.skipped, skipped),
     onFalse: () => Effect.void,
   })
 

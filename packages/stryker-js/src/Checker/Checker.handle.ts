@@ -15,12 +15,24 @@ import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
 
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
-import { checkerDuration, checkerMutantsChecked, checkerRpcFailures } from './checker.metrics.js'
 
 export type CheckerCrash = ChildProcessCrashedError | OutOfMemoryError
 
 export const TypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CheckerHandle')
 export type TypeId = typeof TypeId
+
+const checkerDuration = Metric.timer('stryker.checker.duration', {
+  description: 'Checker worker RPC duration in milliseconds',
+})
+
+const checkerMutantsChecked = Metric.counter('stryker.checker.mutants.checked', {
+  description: 'Total number of mutants a checker worker answered for',
+})
+
+const checkerRpcFailures = Metric.counter('stryker.checker.rpc_failures', {
+  description: 'Checker worker RPC calls that did not complete, excluding interruptions',
+  incremental: true,
+})
 
 const ClientTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CheckerHandle/client')
 
