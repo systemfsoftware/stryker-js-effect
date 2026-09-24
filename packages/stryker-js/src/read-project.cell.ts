@@ -821,6 +821,20 @@ const exclusionLawHolds = (files: readonly string[], include: string, exclude: s
   })
 }
 
+const targetLawHolds = (files: readonly string[], target: string) => {
+  const selected = selectFiles({
+    inputFileNames: files,
+    mutatePatterns: ['**/*'],
+    targetMutatePatterns: [target],
+    testFilePatterns: [],
+    basePath: '/',
+  })
+  const mutateMatcher = createPureMatcher('**/*', false, '/')
+  const targetMatcher = createPureMatcher(target, false, '/')
+  const expectedOf = (fileName: string) => mutateMatcher(fileName) && targetMatcher(fileName)
+  return files.every((fileName) => selected.fileDescriptions[fileName]?.mutate === expectedOf(fileName))
+}
+
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const { Schema } = await import('effect')
@@ -845,20 +859,7 @@ if (import.meta.vitest !== void 0) {
   it.prop(
     '∀files_P_Target_≡IntersectedSelection',
     [FileBatchSchema, GlobSchema],
-    ([files, target]) => {
-      const selected = selectFiles({
-        inputFileNames: files,
-        mutatePatterns: ['**/*'],
-        targetMutatePatterns: [target],
-        testFilePatterns: [],
-        basePath: '/',
-      })
-      const matcher = createPureMatcher(target, false, '/')
-      return files.every((fileName) => {
-        const description = selected.fileDescriptions[fileName]
-        return description === undefined || description.mutate === matcher(fileName)
-      })
-    },
+    ([files, target]) => targetLawHolds(files, target),
   )
 
   const FileNameSchema = Schema.Struct({
