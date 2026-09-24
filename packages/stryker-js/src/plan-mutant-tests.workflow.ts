@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant, MutantId, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
@@ -13,7 +13,7 @@ const MutantPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/
 type MutantPlanTypeId = typeof MutantPlanTypeId
 
 export class PlannedRunMutant extends S.TaggedClass<PlannedRunMutant>()('PlannedRunMutant', {
-  mutantId: S.NonEmptyString,
+  mutantId: MutantId,
   netTime: S.Finite,
   runOptions: PlannedMutantRunOptions,
   static: S.optional(S.Boolean),
@@ -23,7 +23,7 @@ export class PlannedRunMutant extends S.TaggedClass<PlannedRunMutant>()('Planned
 }
 
 export class PlannedEarlyResultMutant extends S.TaggedClass<PlannedEarlyResultMutant>()('PlannedEarlyResultMutant', {
-  mutantId: S.NonEmptyString,
+  mutantId: MutantId,
   status: MutantStatusSchema,
   statusReason: S.optional(S.String),
   static: S.optional(S.Boolean),

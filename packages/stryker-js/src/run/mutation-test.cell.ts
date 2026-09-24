@@ -26,6 +26,7 @@ import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Pool from 'effect/Pool'
 import * as Predicate from 'effect/Predicate'
+import * as Record from 'effect/Record'
 import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
@@ -60,6 +61,7 @@ import { ReportLocationFromMutant } from '@systemfsoftware/stryker-js-instrument
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import type { PreviousMutantRecord } from '../IncrementalDiff.schema.js'
+import { ProjectFiles } from '../project-files.service.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
@@ -70,6 +72,7 @@ import {
   IncrementalDiffCommand,
   incrementalDiff as incrementalDiffDecisions,
   type IncrementalDiffDecision,
+  type MutantRemembered,
 } from '../incremental-diff.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import type { Project } from '../Project.schema.js'
@@ -146,10 +149,7 @@ const sandboxFilesOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
     ),
   )
 
-type RememberedMutantResult = Pick<
-  PreviousMutantRecord,
-  'mutantId' | 'status' | 'testsCompleted' | 'coveredBy' | 'killedBy'
->
+type RememberedMutantResult = MutantRemembered
 
 const rememberedCoveredBy = (entry: RememberedMutantResult): { readonly coveredBy?: readonly string[] } =>
   Option.match(Option.fromNullishOr(entry.coveredBy), {
@@ -173,8 +173,7 @@ const rememberedCoverage = (entry: RememberedMutantResult): {
 
 const REMEMBERED_REASON = 'Remembered'
 
-const rememberedStatusOf = (entry: RememberedMutantResult) =>
-  S.decode(MutantStatusSchema)(entry.status)
+const rememberedStatusOf = (entry: RememberedMutantResult) => S.decodeUnknownEffect(MutantStatusSchema)(entry.status)
 
 const rememberedResultOf = (
   mutant: Mutant,
@@ -186,6 +185,7 @@ const rememberedResultOf = (
     {},
     mutant,
     {
+      location: reportLocation,
       status,
       statusReason: REMEMBERED_REASON,
       testsCompleted: entry.testsCompleted,
@@ -464,63 +464,40 @@ const byReloadEnvironment = (left: RunPlan, right: RunPlan) =>
 
 const sortRunPlans = (plans: readonly RunPlan[]) => [...plans].sort(byReloadEnvironment)
 
-const previousFilesFieldOf = (report: { readonly files: unknown }) =>
+const previousFilesOf = (report: MutationTestResult | undefined): S.Schema.Type<typeof PreviousFilesSchema> =>
   Option.getOrElse(
-    S.decodeUnknownResult(PreviousFilesSchema)(report.files),
+    Option.flatMap(Option.fromUndefinedOr(report), (present) => S.decodeUnknownOption(PreviousFilesSchema)(present.files)),
     (): S.Schema.Type<typeof PreviousFilesSchema> => ({}),
   )
 
-const emptyPreviousFiles: S.Schema.Type<typeof PreviousFilesSchema> = {}
-
-const previousFilesOf = <A>(report: A) =>
+const previousTestFilesOf = (report: MutationTestResult | undefined): S.Schema.Type<typeof PreviousTestFilesSchema> =>
   Option.getOrElse(
-    Option.map(
-      Option.filter(Option.fromNullishOr(report), S.is(S.Struct({ files: S.Unknown }))),
-      previousFilesFieldOf,
+    Option.flatMap(
+      Option.flatMap(Option.fromUndefinedOr(report), (present) => Option.fromUndefinedOr(present.testFiles)),
+      (testFiles) => S.decodeUnknownOption(PreviousTestFilesSchema)(testFiles),
     ),
-    () => emptyPreviousFiles,
-  )
-
-const previousTestFilesFieldOf = (report: { readonly testFiles: unknown }) =>
-  Option.getOrElse(
-    S.decodeUnknownResult(PreviousTestFilesSchema)(report.testFiles),
     (): S.Schema.Type<typeof PreviousTestFilesSchema> => ({}),
   )
 
-const emptyPreviousTestFiles: S.Schema.Type<typeof PreviousTestFilesSchema> = {}
+type LocatedTestResult = TestResult & { readonly fileName: string }
 
-const previousTestFilesOf = <A>(report: A) =>
-  Option.getOrElse(
-    Option.map(
-      Option.filter(Option.fromNullishOr(report), S.is(S.Struct({ testFiles: S.Unknown }))),
-      previousTestFilesFieldOf,
-    ),
-    () => emptyPreviousTestFiles,
-  )
+const hasTestFileName = (result: TestResult): result is LocatedTestResult => result.fileName !== undefined
 
-const hasTestFileName = (result: TestResult): result is FailedTestResult & { readonly fileName: string } =>
-  result.status === 'failed' && S.is(S.Struct({ fileName: S.String }))(result)
-
-const relativeFileOfTest = (result: FailedTestResult & { readonly fileName: string }, basePath: string) =>
+const relativeFileOfTest = (result: LocatedTestResult, basePath: string) =>
   RelativeNormalizedFileName.fromAbsolute(result.fileName, basePath).fileName
 
-const testIdsByRelativeFileOf = (testCoverage: TestCoverage, basePath: string) => {
-  const byFile: Record<string, string[]> = {}
-  const located: ReadonlyArray<FailedTestResult & { readonly fileName: string }> = [...MutableHashMap.values(testCoverage.testsById)].filter(hasTestFileName)
-  return located.reduce<Record<string, string[]>>(
+const testIdsByRelativeFileOf = (testCoverage: TestCoverage, basePath: string) =>
+  [...MutableHashMap.values(testCoverage.testsById)].filter(hasTestFileName).reduce<Record<string, string[]>>(
     (accumulator, result) => {
-      const file = RelativeNormalizedFileName.fromAbsolute(result.fileName, basePath).fileName
-      const ids = Option.getOrElse(Option.fromUndefinedOr(accumulator[file]), () => [])
+      const file = relativeFileOfTest(result, basePath)
+      const ids = Option.getOrElse(Record.get(accumulator, file), (): string[] => [])
       return { ...accumulator, [file]: [...ids, result.id] }
     },
-    byFile,
+    {},
   )
-}
 
-const coveredFilesOfTests = (
-  tests: Iterable<FailedTestResult & { readonly fileName: string }>,
-  basePath: string,
-) => [...new Set([...tests].map((result) => relativeFileOfTest(result, basePath)))]
+const coveredFilesOfTests = (tests: Iterable<LocatedTestResult>, basePath: string) =>
+  [...new Set([...tests].map((result) => relativeFileOfTest(result, basePath)))]
 
 const coveringTestFilesByMutantIdOf = (testCoverage: TestCoverage, basePath: string) =>
   Object.fromEntries(
@@ -588,14 +565,7 @@ const mutantsOfDecision = (decision: IncrementalDiffDecision) =>
 const rememberedOfDecision = (decision: IncrementalDiffDecision) =>
   Match.value(decision).pipe(
     Match.tag('MutantToRun', () => [] as const),
-    Match.tag('MutantRemembered', (remembered) =>
-      [{
-        mutantId: remembered.mutantId,
-        status: remembered.status,
-        testsCompleted: remembered.testsCompleted,
-        coveredBy: remembered.coveredBy,
-        killedBy: remembered.killedBy,
-      }] as const),
+    Match.tag('MutantRemembered', (remembered) => [remembered] as const),
     Match.exhaustive,
   )
 
@@ -1064,7 +1034,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
               Effect.gen(function*() {
                 const pool = testRunnerPool
                 const runner = yield* Pool.get(pool)
-                const candidate = yield* Effect.flip(runner.mutantRun(plan.runOptions)).pipe(
+                const result = yield* runner.mutantRun(plan.runOptions).pipe(
                   Effect.withSpan('stryker.testRunner.mutantRun', {
                     attributes: {
                       'stryker.mutant.id': plan.mutant.id,
@@ -1078,17 +1048,9 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
                     })
                   ),
                   Effect.catchTags({
-                    ChildProcessCrashedError: (error) => invalidateSlot(pool, runner, error),
                     OutOfMemoryError: (error) => invalidateSlot(pool, runner, error),
+                    ChildProcessCrashedError: (error) => invalidateSlot(pool, runner, error),
                   }),
-                )
-                const result: RunMutantResult = yield* Match.value(candidate).pipe(
-                  Match.tag('TestRunnerFailed', (failure) =>
-                    Match.value(failure.phase).pipe(
-                      Match.when('mutantRun', () => Effect.succeed(mutantRunFailureResultOf(failure))),
-                      Match.orElse(() => Effect.fail(failure)),
-                    )),
-                  Match.orElse(Effect.succeed),
                 )
                 yield* Boolean.match(invalidatesRunnerPool(result.status, reasonOf(result)), {
                   onTrue: () =>

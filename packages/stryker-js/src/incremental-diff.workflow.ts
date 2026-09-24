@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant, MutantId } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
@@ -36,7 +36,7 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
 }
 
 export class MutantRemembered extends S.TaggedClass<MutantRemembered>()('MutantRemembered', {
-  mutantId: S.String,
+  mutantId: MutantId,
   status: S.String,
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
