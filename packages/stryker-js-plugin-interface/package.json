@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-plugin-interface",
-  "version": "7.3.0",
+  "version": "8.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -34,8 +34,8 @@
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
-    "@microsoft/api-extractor": "catalog:",
     "@effect/vitest": "catalog:",
+    "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/effect-schema-vite": "catalog:",
