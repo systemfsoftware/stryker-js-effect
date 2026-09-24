@@ -20,7 +20,7 @@ const hasIssues = (
   result: Validation,
 ): result is StandardSchemaV1.FailureResult => result !== 'async' && 'issues' in result
 
-const hasValue = <T>(result: Validation): result is StandardSchemaV1.SuccessResult<T> =>
+const hasValue = (result: Validation): result is StandardSchemaV1.SuccessResult<ReporterEvent> =>
   result !== 'async' && 'value' in result
 
 
@@ -31,10 +31,10 @@ const validateSync = <T = unknown>(input: T): Validation => {
   return out
 }
 
-const encodeFixture = (
-  schema: typeof ReporterEventUnion | typeof DryRunCompleted | typeof MutantTested,
-  value: ReporterEvent,
-) => S.encodeEffect(schema)(value)
+const encodeFixture = <Schema_ extends S.Constraint>(
+  schema: Schema_,
+  value: Schema_["Type"],
+): Effect.Effect<Schema_["Encoded"], SchemaError, Schema_["EncodingServices"]> => S.encodeEffect(schema)(value)
 
 const reencoded = (run: Effect.Effect<ReporterEvent>) =>
   Effect.map(Effect.flatMap(run, (value) => encodeFixture(ReporterEventUnion, value)), (encoded) =>
@@ -72,9 +72,9 @@ const hasResultShape = (result: Validation): boolean => {
 
 const stripsMutantCoverage = <T = unknown>(encoded: T): boolean => {
   const clean = validateSync(encoded)
-  if (clean === 'async' || !('value' in clean)) return false
+  if (!hasValue(clean)) return false
   const stripped = validateSync(injectCoverage(encoded))
-  if (stripped === 'async' || !('value' in stripped)) return false
+  if (!hasValue(stripped)) return false
   return !('mutantCoverage' in stripped.value)
 }
 
@@ -112,13 +112,13 @@ describe('ReporterEvent', () => {
           }),
           (success, actual) => [success.value, actual] as const,
         )
-        const acceptedRuns = yield* Option.match(bothRuns, {
-          onNone: () => Effect.void,
-          onSome: ([expected, actual]) => Effect.zip(reencoded(Effect.succeed(expected)), reencoded(Effect.succeed(actual))),
-        })
-        const accepted = Option.match(Option.fromUndefinedOr(acceptedRuns), {
-          onNone: () => false,
-          onSome: ([expected, actual]) => Exit.isSuccess(decoded) && expected === actual,
+        const accepted = yield* Option.match(bothRuns, {
+          onNone: () => Effect.succeed(false),
+          onSome: ([expected, actual]) =>
+            Effect.map(
+              Effect.zip(reencoded(Effect.succeed(expected)), reencoded(Effect.succeed(actual))),
+              ([encodedExpected, encodedActual]) => Exit.isSuccess(decoded) && encodedExpected === encodedActual,
+            ),
         })
         return rejected || accepted
       }),

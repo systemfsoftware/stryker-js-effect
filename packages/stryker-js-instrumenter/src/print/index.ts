@@ -544,7 +544,7 @@ const tsTypeText: (node: TSType) => (ctx: PrintContext) => string = Match.type<T
     TSObjectKeyword: () => () => 'object',
     TSIntrinsicKeyword: () => () => 'intrinsic',
     TSThisType: () => () => 'this',
-    TSTypeReference: (n) => (ctx) => `${printTSTypeName(ctx, n.typeName)}${typeArgumentsText(ctx, n.typeArguments)}`,
+    TSTypeReference: (n) => (ctx) => `${printTSTypeName(n.typeName)}${typeArgumentsText(ctx, n.typeArguments)}`,
     TSUnionType: (n) => (ctx) => tsTypeListText(ctx, n.types, ' | '),
     TSIntersectionType: (n) => (ctx) => tsTypeListText(ctx, n.types, ' & '),
     TSArrayType: (n) => (ctx) => `${arrayElementTypeText(ctx, n.elementType)}[]`,
@@ -581,15 +581,11 @@ const typeTextOf = (ctx: PrintContext, node: Node): string =>
 const statementKindText = (ctx: PrintContext, node: Statement): string =>
   Match.value(node).pipe(
     Match.withReturnType<string>(),
-    Match.discriminators('type')({
+    Match.when(isFunctionNode, (n) => functionText(ctx, n)),
+    Match.when(isClassNode, (n) => classText(ctx, n)),
+    Match.discriminatorsExhaustive('type')({
       BlockStatement: (n) => blockStatementText(ctx, n),
       VariableDeclaration: (n) => `${variableDeclarationText(ctx, n)};`,
-      FunctionDeclaration: (n) => functionText(ctx, n),
-      FunctionExpression: (n) => functionText(ctx, n),
-      TSDeclareFunction: (n) => functionText(ctx, n),
-      TSEmptyBodyFunctionExpression: (n) => functionText(ctx, n),
-      ClassDeclaration: (n) => classText(ctx, n),
-      ClassExpression: (n) => classText(ctx, n),
       ExpressionStatement: (n) => expressionStatementText(ctx, n),
       IfStatement: (n) => ifStatementText(ctx, n),
       ForStatement: (n) => forStatementText(ctx, n),
@@ -619,7 +615,6 @@ const statementKindText = (ctx: PrintContext, node: Statement): string =>
       TSExportAssignment: (n) => printNodePrec(ctx, n, PREC.Sequence),
       TSNamespaceExportDeclaration: (n) => printNodePrec(ctx, n, PREC.Sequence),
     }),
-    Match.orElse(() => ''),
   )
 
 const literalText = (node: LiteralSource): string => node.raw ?? literalWithoutRaw(node)
@@ -1518,18 +1513,17 @@ const printTypeQueryName = (ctx: PrintContext, node: TSTypeQuery): string =>
     Match.discriminators('type')({
       TSImportType: (n) => printTSTypeToString(ctx, n),
     }),
-    Match.orElse((n) => printTSTypeName(ctx, n)),
+    Match.orElse((n) => printTSTypeName(n)),
   )
 
-const printTSTypeName = (ctx: PrintContext, name: TSTypeReference['typeName']): string =>
+const printTSTypeName = (name: TSTypeReference['typeName']): string =>
   Match.value(name).pipe(
     Match.withReturnType<string>(),
-    Match.discriminators('type')({
-      TSQualifiedName: (n) => `${printTSTypeName(ctx, n.left)}.${n.right.name}`,
+    Match.discriminatorsExhaustive('type')({
+      TSQualifiedName: (n) => `${printTSTypeName(n.left)}.${n.right.name}`,
       Identifier: (n) => n.name,
       ThisExpression: () => 'this',
     }),
-    Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 
 const printTSImportTypeQualifier = (ctx: PrintContext, qualifier: TSImportType['qualifier']): string =>
@@ -1687,6 +1681,13 @@ const FUNCTION_KINDS: Readonly<Record<string, true>> = {
 }
 
 const isFunctionNode = (node: Node): node is FunctionNode => FUNCTION_KINDS[node.type] === true
+
+const CLASS_KINDS: Readonly<Record<string, true>> = {
+  ClassDeclaration: true,
+  ClassExpression: true,
+}
+
+const isClassNode = (node: Node): node is Class => CLASS_KINDS[node.type] === true
 
 const isAssignmentPattern = (node: Node): node is AssignmentPattern => node.type === 'AssignmentPattern'
 
