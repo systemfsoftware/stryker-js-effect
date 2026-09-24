@@ -1,18 +1,27 @@
-import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Array from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
+import { absurd } from 'effect/Function'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
+import * as Queue from 'effect/Queue'
+import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
+import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { InstrumentCommand, InstrumentError, planInstrumentation } from '../plan-instrumentation.workflow.js'
 import { ProjectFiles } from '../project-files.service.js'
 import type { Project, ProjectFile } from '../Project.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
+import type { SkippedFileRow } from '../run-event.schema.js'
+import { RunEvents, SkippedReported } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { makeSandbox } from '../Sandbox.resource.js'
+import { explainFileSkip, ExplainFileSkipCommand, type FrameworkClaimant } from './explain-file-skip.workflow.js'
 import type { PrepareDone } from './prepare.cell.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 
@@ -34,6 +43,32 @@ type InstrumentRaw = typeof InstrumentCommand.Encoded & {
   readonly concurrency: { readonly testRunners: number; readonly checkers: number }
 }
 
+const offerSkipsIfAny = (
+  skipped: readonly Instrument.InstrumentFileSkip[],
+  claimants: readonly FrameworkClaimant[],
+) =>
+  Boolean.match(skipped.length === 0, {
+    onTrue: () => Effect.void,
+    onFalse: () =>
+      Effect.gen(function*() {
+        const files = skipped.map((skip) =>
+          Result.match(
+            explainFileSkip(ExplainFileSkipCommand.make({ extension: skip.extension, claimants: [...claimants] })),
+            {
+              onFailure: absurd<SkippedFileRow>,
+              onSuccess: (explained): SkippedFileRow => ({
+                file: skip.file,
+                extension: skip.extension,
+                reason: explained.reason,
+              }),
+            },
+          )
+        )
+        const queue = yield* RunEvents
+        yield* Queue.offer(queue, SkippedReported.make({ files }))
+      }),
+  })
+
 const enteringInstrumentPhase = <A, E, R>(raw: InstrumentRaw, body: Effect.Effect<A, E, R>) =>
   withPhaseSpan(
     'instrument',
@@ -48,16 +83,19 @@ const enteringInstrumentPhase = <A, E, R>(raw: InstrumentRaw, body: Effect.Effec
 const writeInstrument = (raw: InstrumentRaw) =>
   enteringInstrumentPhase(
     raw,
-    Effect.succeed({
-      ...raw.prev,
-      project: raw.instrumentedProject,
-      mutants: raw.instrumentResult.mutants,
-      sandbox: raw.sandbox,
-      concurrency: {
-        testRunners: raw.concurrency.testRunners,
-        checkers: raw.concurrency.checkers,
+    Effect.as(
+      offerSkipsIfAny(raw.instrumentResult.skipped, raw.prev.frameworkClaimants),
+      {
+        ...raw.prev,
+        project: raw.instrumentedProject,
+        mutants: raw.instrumentResult.mutants,
+        sandbox: raw.sandbox,
+        concurrency: {
+          testRunners: raw.concurrency.testRunners,
+          checkers: raw.concurrency.checkers,
+        },
       },
-    }),
+    ),
   )
 
 const sandboxDirectoriesOf = (command: PrepareDone, basePath: string) =>
@@ -91,7 +129,18 @@ const withInstrumentedFiles = (
       }),
   )
 
-export const instrumentCell = Sandwich.named('stryker.instrument')((
+export const instrumentCell: Cell.Cell<
+  PrepareDone & { readonly concurrency: { readonly testRunners: number; readonly checkers: number } },
+  InstrumentDone,
+  StageError,
+  | Scope.Scope
+  | RunEnvironment
+  | ProjectFiles
+  | RunEvents
+  | FileSystem.FileSystem
+  | Path.Path
+  | ChildProcessSpawner.ChildProcessSpawner
+> = Sandwich.named('stryker.instrument')((
   command: PrepareDone & {
     readonly concurrency: { readonly testRunners: number; readonly checkers: number }
   },
@@ -114,7 +163,7 @@ export const instrumentCell = Sandwich.named('stryker.instrument')((
       ignorers: [...command.ignorers],
       excludedMutations: [...command.options.mutator.excludedMutations],
       optInMutations: [...command.options.mutator.optInMutations],
-    }, env.basePath).pipe(
+    }, command.formatRegistry).pipe(
       Effect.mapError((cause) => StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })),
     )
 
@@ -127,6 +176,7 @@ export const instrumentCell = Sandwich.named('stryker.instrument')((
       workingDirectory: directories.workingDirectory,
       backupDirectory: directories.backupDirectory,
       basePath: env.basePath,
+      formatRegistry: command.formatRegistry,
     }).pipe(Effect.mapError((cause) =>
       StageError.make({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
     ))

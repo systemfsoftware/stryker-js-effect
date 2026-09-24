@@ -1,3 +1,4 @@
+import type { EmbeddedDocument, FormatId, FrameworkContext } from '@systemfsoftware/stryker-framework-interface'
 import type { Node, Program } from '@systemfsoftware/stryker-ignorer-interface'
 import type { Position } from './Location.schema.js'
 import type { AstFormat } from './Syntax.schema.js'
@@ -9,11 +10,6 @@ export interface SpannedComment {
   readonly end: number
 }
 
-export interface Range {
-  start: number
-  end: number
-}
-
 export interface SourceLocationInFile {
   end: Position
   start: Position
@@ -21,16 +17,28 @@ export interface SourceLocationInFile {
 
 export type ScriptFormat = Extract<AstFormat, 'js' | 'ts' | 'tsx'>
 
+export type AstRoot = Program
+
 export interface BaseAst {
   originFileName: string
   rawContent: string
-  root: Ast['root']
+  root: Program
   offset?: Position
 }
 
-export interface HtmlAst extends BaseAst {
-  format: 'html'
-  root: HtmlRootNode
+export interface EmbeddedAst {
+  format: 'embedded'
+  formatId: FormatId
+  originFileName: string
+  rawContent: string
+  document: EmbeddedDocument
+  readonly context: FrameworkContext
+  scripts: readonly EmbeddedScript[]
+}
+
+export interface EmbeddedScript {
+  readonly region: number
+  readonly ast: ScriptAst
 }
 
 export interface JSAst extends BaseAst {
@@ -51,36 +59,14 @@ export interface TsxAst extends BaseAst {
   comments: readonly SpannedComment[]
 }
 
-export interface SvelteAst extends BaseAst {
-  format: 'svelte'
-  root: SvelteRootNode
-}
-
-export interface HtmlRootNode {
-  scripts: ScriptAst[]
-}
-
-export interface SvelteRootNode {
-  moduleScript?: TemplateScript
-  additionalScripts: TemplateScript[]
-}
-
-export interface TemplateScript {
-  ast: ScriptAst
-  range: Range
-  isExpression: boolean
-}
-
 export type ScriptAst = JSAst | TSAst | TsxAst
 
-export type Ast = HtmlAst | JSAst | SvelteAst | TSAst | TsxAst
+export type Ast = JSAst | TSAst | TsxAst | EmbeddedAst
 
 export interface AstByFormat {
-  html: HtmlAst
   js: JSAst
   ts: TSAst
   tsx: TsxAst
-  svelte: SvelteAst
 }
 
 export type AstNode = Node

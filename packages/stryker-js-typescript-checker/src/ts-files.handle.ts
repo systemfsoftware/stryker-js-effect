@@ -69,7 +69,7 @@ const withContent = (file: ScriptFile, content: string, now: DateTime.Utc): Scri
 
 const offsetOf = (file: ScriptFile, pos: Mutant.Position) => {
   const lines = file.originalContent.split('\n')
-  const lineCount = Math.min(pos.line, lines.length)
+  const lineCount = Math.min(pos.line - 1, lines.length)
   return lines.slice(0, lineCount).reduce((total, line) => total + line.length + 1, Math.max(0, pos.column - 1))
 }
 

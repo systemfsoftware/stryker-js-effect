@@ -25,6 +25,12 @@ import * as Predicate from 'effect/Predicate'
 import type { SpannedComment } from './Ast.schema.js'
 import type { LineTable } from './Location.schema.js'
 
+export type * from '@systemfsoftware/stryker-ignorer-interface'
+
+import type { Ast } from './Ast.schema.js'
+
+export const formatKeyOf = (ast: Ast): string => (ast.format === 'embedded' ? ast.formatId : ast.format)
+
 const TypeId = Symbol.for('~systemfsoftware/stryker-js-instrumenter/Ast')
 type TypeId = typeof TypeId
 

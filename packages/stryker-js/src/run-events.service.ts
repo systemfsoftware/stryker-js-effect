@@ -18,17 +18,26 @@ export class RunIdentity extends Context.Service<RunIdentity, RunIdentityShape>(
 ) {}
 
 export {
+  FormatClaimShadowingRow,
+  FormatRegistryResolved,
+  FormatRegistryRow,
+  FrameworkContributionRow,
+  FrameworkModuleRow,
   Heartbeat,
   HelpRendered,
   ModeSignal,
   OutputMode,
   PhaseEntered,
   PlanKnown,
+  PluginFailureReason,
+  PluginsReported,
   RunEvent,
   RunFailed,
   RunMutantTested,
   RunPhase,
   RunStarted,
   type RunTerminalEvent,
+  SkippedFileRow,
+  SkippedReported,
   VerdictReached,
 } from './run-event.schema.js'

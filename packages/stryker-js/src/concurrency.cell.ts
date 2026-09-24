@@ -1,4 +1,4 @@
-import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
@@ -42,7 +42,12 @@ const announcePercentage = (command: ConcurrencyRaw, total: number, isPercentage
     onFalse: () => Effect.void,
   })
 
-export const concurrencyCell = Sandwich.named('stryker.concurrency')(readConcurrency)
+export const concurrencyCell: Cell.Cell<
+  PrepareDone,
+  PrepareDone & { readonly concurrency: { readonly testRunners: number; readonly checkers: number } },
+  never,
+  never
+> = Sandwich.named('stryker.concurrency')(readConcurrency)
   .decide(resolveConcurrency)
   .write({
     TestRunnersAndCheckers: (split, command) =>

@@ -77,6 +77,12 @@ const regionFlagIgnorer: Ignorer = {
     return undefined
   },
 }
+const failingRuleIgnorer: Ignorer = {
+  name: 'failing-rule',
+  shouldIgnore: () => {
+    throw new Error('the rule refuses to decide')
+  },
+}
 const countByMutator = (mutants: readonly Mutant[]): Record<string, number> => {
   const counts: Record<string, number> = {}
   for (const mutant of mutants) {
@@ -555,6 +561,28 @@ export function price(n) {
               expect(mutant.statusReason).toBe(OUTSIDE_KEEP)
               expect(mutant.statusReason).not.toBe(INSIDE_FLAG)
             }
+          })
+        ),
+      ),
+    )
+    scenario(
+      'A rule that cannot decide stops the run with the rule failure as the reason',
+      Gherkin.Do.pipe(
+        Given('a source with a mutable addition')('source', () => Effect.succeed('export const a = 1 + 1\n')),
+        When('it is instrumented with a rule that refuses to decide')(
+          'error',
+          ({ source }: { source: string }) =>
+            Instrument.instrument([{ name: '/tmp/failing-rule.ts', content: source, mutate: true }], {
+              ignorers: [failingRuleIgnorer],
+              excludedMutations: [],
+            }).pipe(Effect.flip),
+        ),
+        Then('the run stops naming the file and carrying the rule failure')((
+          { error }: { error: Instrument.InstrumentError },
+        ) =>
+          Effect.sync(() => {
+            expect(error.message).toContain('/tmp/failing-rule.ts')
+            expect(error.cause instanceof Error ? error.cause.message : '').toContain('the rule refuses to decide')
           })
         ),
       ),

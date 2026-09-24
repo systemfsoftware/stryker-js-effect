@@ -103,11 +103,69 @@ export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   mutants: S.Array(VerdictMutant),
 }) {}
 
+export const FrameworkContributionRow = S.Struct({
+  name: S.String,
+  formatId: S.String,
+  extensions: S.Array(S.String),
+})
+export type FrameworkContributionRow = typeof FrameworkContributionRow.Type
+
+export const FrameworkModuleRow = S.Struct({
+  moduleName: S.String,
+  contributions: S.Array(FrameworkContributionRow),
+})
+export type FrameworkModuleRow = typeof FrameworkModuleRow.Type
+
+export const FormatClaimShadowingRow = S.Struct({
+  extension: S.String,
+  winner: S.String,
+  loser: S.String,
+})
+export type FormatClaimShadowingRow = typeof FormatClaimShadowingRow.Type
+
+export class PluginsReported extends S.TaggedClass<PluginsReported>()('plugins', {
+  modules: S.Array(FrameworkModuleRow),
+  shadowings: S.Array(FormatClaimShadowingRow),
+}) {}
+
+export const FormatRegistryRow = S.Struct({
+  extension: S.String,
+  formatId: S.String,
+  ownerModule: S.String,
+  language: S.String,
+})
+export type FormatRegistryRow = typeof FormatRegistryRow.Type
+
+export class FormatRegistryResolved extends S.TaggedClass<FormatRegistryResolved>()('formats', {
+  rows: S.Array(FormatRegistryRow),
+}) {}
+
+export const SkippedFileRow = S.Struct({
+  file: S.String,
+  extension: S.String,
+  reason: S.String,
+})
+export type SkippedFileRow = typeof SkippedFileRow.Type
+
+export class SkippedReported extends S.TaggedClass<SkippedReported>()('skipped', {
+  files: S.Array(SkippedFileRow),
+}) {}
+
+export const PluginFailureReason = S.Literals([
+  'PeerMissing',
+  'PeerVersionUnsupported',
+  'PeerUnrecognized',
+  'InvalidContribution',
+  'ImportFailed',
+])
+export type PluginFailureReason = typeof PluginFailureReason.Type
+
 export class RunFailed extends S.TaggedClass<RunFailed>()('error', {
   schemaVersion: S.String,
   code: S.Finite,
   error: S.String,
   remediation: S.String,
+  reason: S.NullOr(PluginFailureReason),
 }) {}
 
 export class HelpRendered extends S.TaggedClass<HelpRendered>()('help', {
@@ -122,6 +180,9 @@ export const RunEvent = Object.assign(
     PlanKnown,
     RunMutantTested,
     Heartbeat,
+    PluginsReported,
+    FormatRegistryResolved,
+    SkippedReported,
     VerdictReached,
     RunFailed,
     HelpRendered,

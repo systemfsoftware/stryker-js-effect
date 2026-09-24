@@ -113,9 +113,13 @@ gate(invocation I) == artifact(J)      -- measures I vs J, not the contract
   the next invocation can flip back. Confirm the generated and committed
   artifacts are byte-identical before calling the gate satisfied.
 - The durable fix is to pin the alias choice rather than to align artifacts
-  afterwards. Nothing in this repo pins api-extractor's alias assignment, so any
-  change to a package's import graph can re-roll it - which means this gate can
-  fail a pull request whose public surface is untouched.
+  afterwards. A forgotten export gets its alias from encounter order, and an
+  exported type is rendered under its exported name. So the pin is to export
+  the type the public signature reaches. `@systemfsoftware/stryker-js` does
+  this for the ignorer `Node` type
+  (`docs/solutions/api-extractor-node-alias-nondeterminism.md`). A package that
+  leaves such a type unexported can still fail this gate when its import graph
+  changes, even with the public surface untouched.
 
 ## Related Issues
 

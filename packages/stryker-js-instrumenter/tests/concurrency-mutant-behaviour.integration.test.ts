@@ -18,12 +18,12 @@ import {
 } from 'effect'
 import { afterAll, beforeAll, expect } from 'vitest'
 
+import type { Form, Module, ScenarioKind, ShapeEntry } from '../testResources/effect-concurrency/shapes.js'
+import { shapes } from '../testResources/effect-concurrency/shapes.js'
 import { FixtureImportError } from './__fixtures__/concurrency-mutant-behaviour.schema.js'
-import type { Form, Module, ScenarioKind, ShapeEntry } from './__fixtures__/effect-concurrency/shapes.js'
-import { shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
-const FIXTURE_URL = new URL('./__fixtures__/effect-concurrency/', import.meta.url)
+const FIXTURE_URL = new URL('../testResources/effect-concurrency/', import.meta.url)
 const SCRATCH_URL = new URL('../.scratch/concurrency-behaviour/', import.meta.url)
 const FIXTURE_MODULES = [
   'atomic-update-split.ts',
@@ -52,10 +52,10 @@ interface AcquiredResult {
 
 type Outcome = void | undefined | number | string | boolean | AcquiredState | AcquiredResult
 
-type AtomicModule = typeof import('./__fixtures__/effect-concurrency/atomic-update-split.js')
-type SynchronizationRemovalModule = typeof import('./__fixtures__/effect-concurrency/synchronization-removal.js')
-type FinalizerEscapeModule = typeof import('./__fixtures__/effect-concurrency/finalizer-escape.js')
-type RefusalsModule = typeof import('./__fixtures__/effect-concurrency/refusals.js')
+type AtomicModule = typeof import('../testResources/effect-concurrency/atomic-update-split.js')
+type SynchronizationRemovalModule = typeof import('../testResources/effect-concurrency/synchronization-removal.js')
+type FinalizerEscapeModule = typeof import('../testResources/effect-concurrency/finalizer-escape.js')
+type RefusalsModule = typeof import('../testResources/effect-concurrency/refusals.js')
 
 interface Instrumented {
   readonly atomic: Partial<AtomicModule>
@@ -1318,7 +1318,7 @@ const operationCallSite = (
     throw new Error(`${entry.file} ${entry.exportName} has no ${entry.module}.${entry.operation} call`)
   }
   const line = lines.at(at) ?? ''
-  return { line: at, column: line.indexOf(marker) + 1 }
+  return { line: at + 1, column: line.indexOf(marker) + 1 }
 }
 
 const mutantsInside = (entry: ShapeEntry): readonly Mutant.Mutant[] => {
@@ -1329,7 +1329,7 @@ const mutantsInside = (entry: ShapeEntry): readonly Mutant.Mutant[] => {
   }
   const range = exportLineRange(source, entry.exportName)
   const inside = current.mutants.filter((mutant) => {
-    const sourceLine = mutant.location.start.line + 1
+    const sourceLine = mutant.location.start.line
     return mutant.mutatorName === entry.mutator &&
       mutant.fileName === entry.file &&
       range.firstLine <= sourceLine &&

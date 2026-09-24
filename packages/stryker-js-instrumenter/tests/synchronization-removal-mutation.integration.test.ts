@@ -4,12 +4,12 @@ import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
+import { shapes } from '../testResources/effect-concurrency/shapes.js'
 import {
   effectConcurrencyFixtureContent,
   effectConcurrencyFixtureFiles,
   type FixtureFile,
 } from './__fixtures__/effect-concurrency-files.js'
-import { shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
 const SYNCHRONIZATION_REMOVAL = 'SynchronizationRemoval'
@@ -192,7 +192,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
               const content = contentByFile.get(entry.file) ?? ''
               const range = exportLineRange(content, entry.exportName)
               const located = mutantsIn(entry.file).filter((mutant) => {
-                const sourceLine = mutant.location.start.line + 1
+                const sourceLine = mutant.location.start.line
                 return range.firstLine <= sourceLine && sourceLine <= range.lastLine
               })
               expect(
@@ -320,7 +320,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
             const [maskMutant] = mutants
             expect(maskMutant?.replacement.startsWith('Effect.suspend(')).toBe(true)
             const range = exportLineRange(content, 'leaderLockScopeClose')
-            const sourceLine = (maskMutant?.location.start.line ?? Number.NaN) + 1
+            const sourceLine = maskMutant?.location.start.line ?? Number.NaN
             expect(range.firstLine <= sourceLine && sourceLine <= range.lastLine).toBe(true)
           })
         ),

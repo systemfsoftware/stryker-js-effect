@@ -11,4 +11,6 @@ export default defineConfig({
     '@systemfsoftware/oxlint-plugin-cell-architecture/ban-classes': 'error',
     'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
+
+  ignorePatterns: [...(recommended.ignorePatterns ?? []), '**/testResources/**'],
 })

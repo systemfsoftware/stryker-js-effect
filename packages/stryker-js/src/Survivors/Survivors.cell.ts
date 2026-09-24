@@ -59,12 +59,12 @@ const priorSourceHashes = (priorReport: PriorReportDocument, hash: HashContent) 
 
 const survivorLocationOf = (mutant: PriorReportMutant) => ({
   start: {
-    line: mutant.location.start.line - 1,
-    column: mutant.location.start.column - 1,
+    line: mutant.location.start.line,
+    column: mutant.location.start.column,
   },
   end: {
-    line: mutant.location.end.line - 1,
-    column: mutant.location.end.column - 1,
+    line: mutant.location.end.line,
+    column: mutant.location.end.column,
   },
 })
 

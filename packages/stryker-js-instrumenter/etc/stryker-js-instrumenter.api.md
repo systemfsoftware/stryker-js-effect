@@ -10,13 +10,18 @@ export namespace ErrorText {
 }
 
 // @public (undocumented)
+export namespace Format {
+    export { EmbeddedFormatEntry, FormatClaim, FormatEntry, FormatHooks, FormatKind, FormatRegistry, ScriptFormatEntry, coreFormatRegistry, extensionOf, frameworkEntryOf, registerEntries };
+}
+
+// @public (undocumented)
 export namespace Instrument {
-    export { File, FileDescription, FileDescriptions, InstrumentError, InstrumentResult, InstrumenterOptions, MutateDescription, MutationRange, ParserOptions, disableTypeChecks, instrument };
+    export { File, FileDescription, FileDescriptions, InstrumentError, InstrumentFileSkip, InstrumentResult, InstrumenterOptions, MutateDescription, MutationRange, ParserOptions, disableTypeChecks, instrument };
 }
 
 // @public (undocumented)
 export namespace Mutant {
-    export { CanonicalFileName, CanonicalFileName as CanonicalFileNameValue, Coverage, CoverageData, CoveragePerTestId, EarlyResultPlan, InstrumenterContext, Location, LocationSchema, Mutant, MutantActivation, MutantActivationSchema, MutantCoverage, MutantCoverageSchema, MutantEarlyResultPlan, MutantFromUnknown, MutantFromUnknown as MutantFromUnknownValue, MutantId, MutantId as MutantIdValue, MutantRunOptions, MutantRunOptionsSchema, MutantRunPlan, MutantStatus, MutantStatusSchema, MutantTestCoverage, MutantTestPlan, MutatorName, MutatorName as MutatorNameValue, OpenEndLocation, OpenEndLocationSchema, Position, PositionSchema, ReportLocationFromMutant, RunMutantResult, RunOptions, RunOptionsFields, RunPlan, TestPlan };
+    export { CanonicalFileName, CanonicalFileName as CanonicalFileNameValue, Coverage, CoverageData, CoveragePerTestId, EarlyResultPlan, InstrumenterContext, Location, LocationSchema, Mutant$1 as Mutant, MutantActivation, MutantActivationSchema, MutantCoverage, MutantCoverageSchema, MutantEarlyResultPlan, MutantFromUnknown, MutantFromUnknown as MutantFromUnknownValue, MutantId, MutantId as MutantIdValue, MutantRunOptions, MutantRunOptionsSchema, MutantRunPlan, MutantStatus, MutantStatusSchema, MutantTestCoverage, MutantTestPlan, MutatorName, MutatorName as MutatorNameValue, OpenEndLocation, OpenEndLocationSchema, Position, PositionSchema, ReportLocationFromMutant, RunMutantResult, RunOptions, RunOptionsFields, RunPlan, TestPlan };
 }
 
 // (No @packageDocumentation comment for this package)

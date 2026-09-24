@@ -11,21 +11,36 @@ import {
   FramingState,
 } from '../frame-run-event.workflow.js'
 import {
+  FormatRegistryResolved,
   Heartbeat,
   HelpRendered,
   PhaseEntered,
   PlanKnown,
+  PluginsReported,
   RunFailed,
   RunMutantTested,
   RunStarted,
+  SkippedReported,
 } from '../run-event.schema.js'
 
 const arbitraryTerminalEvent = Arbitrary.schema(S.Union([RunFailed, HelpRendered]))
 
-const arbitraryNonTerminalEvent = Arbitrary.schema(S.Union([RunStarted, PhaseEntered, PlanKnown, Heartbeat]))
+const arbitraryNonTerminalEvent = Arbitrary.schema(
+  S.Union([RunStarted, PhaseEntered, PlanKnown, Heartbeat, PluginsReported, FormatRegistryResolved, SkippedReported]),
+)
 
 const arbitraryEvent = Arbitrary.schema(
-  S.Union([RunFailed, HelpRendered, RunStarted, PhaseEntered, PlanKnown, Heartbeat]),
+  S.Union([
+    RunFailed,
+    HelpRendered,
+    RunStarted,
+    PhaseEntered,
+    PlanKnown,
+    Heartbeat,
+    PluginsReported,
+    FormatRegistryResolved,
+    SkippedReported,
+  ]),
 )
 
 const arbitraryState = Arbitrary.schema(FramingState)

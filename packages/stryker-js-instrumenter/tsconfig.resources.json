@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": [
+    "@systemfsoftware/tsconfig/tsc/no-dom/library",
+    "@systemfsoftware/tsconfig/effect/entrypoint"
+  ],
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "tsBuildInfoFile": "node_modules/.cache/tsconfig.resources.tsbuildinfo",
+    "outDir": "node_modules/.cache/tsc/resources",
+    "customConditions": [
+      "@systemfsoftware/source"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "testResources"
+  ]
+}

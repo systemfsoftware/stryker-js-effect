@@ -56,8 +56,7 @@ plain descriptor and validates at load that `name` is a string and
 `shouldIgnore` is callable — an entry that fails fails the load by name.
 
 A module exporting `strykerIgnorers` loads in any engine carrying the plain-ignorer
-loader, and the host runs every ignorer the module contributes. List the module
-in `ignorers` with `import.meta.resolve`.
+loader, and the host runs every ignorer the module contributes. List the module's bare package name in `ignorers` (a `file://` URL to a local build works too).
 
 ## License
 
