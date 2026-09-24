@@ -87,10 +87,13 @@ const extractSurvivors = (
   resolveAbsolutePath: ResolveAbsolutePath,
   relativize: RelativizeFileName,
 ) =>
-  Object.entries(priorReport.files).flatMap(([file, fileResult]) =>
-    fileResult.mutants
-      .filter((mutant) => mutant.status === 'Survived')
-      .map((mutant) => reportMutantToMutant(file, mutant, resolveAbsolutePath, relativize))
+  Effect.forEach(
+    Object.entries(priorReport.files).flatMap(([file, fileResult]) =>
+      fileResult.mutants
+        .filter((mutant) => mutant.status === 'Survived')
+        .map((mutant) => reportMutantToMutant(file, mutant, resolveAbsolutePath, relativize))
+    ),
+    (entry) => entry,
   )
 
 const resolveSurvivorsRunOptions = (cliOptions: PartialStrykerOptions, mode: OutputMode) =>
@@ -178,10 +181,13 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
           priorReportPath,
         }),
       onTrue: () =>
-        Effect.fromResult(Result.match(S.decodeUnknownResult(PriorReportDocument)(read.raw), {
-          onFailure: (error) => Result.fail(error),
-          onSuccess: (document) =>
-            Result.succeed<SurvivorsRaw>({
+        Effect.flatMap(
+          Effect.fromResult(Result.match(S.decodeUnknownResult(PriorReportDocument)(read.raw), {
+            onFailure: (error) => Result.fail(error),
+            onSuccess: (document) => Result.succeed(document),
+          })),
+          (document) =>
+            Effect.map(extractSurvivors(document, resolveAbsolutePath, relativize), (priorSurvivors) => ({
               currentConfig: resolvedOptions,
               frameworkVersion: strykerVersion,
               priorReport: {
@@ -194,12 +200,12 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
                 ),
               },
               priorSourceHashes: priorSourceHashes(document, hashContent),
-              priorSurvivors: extractSurvivors(document, resolveAbsolutePath, relativize),
+              priorSurvivors,
               sourceContentHashes,
               resolvedOptions,
               priorReportPath,
-            }),
-        })),
+            })),
+        ),
     })
   })
 ).decide(admitSurvivorsRun).write({

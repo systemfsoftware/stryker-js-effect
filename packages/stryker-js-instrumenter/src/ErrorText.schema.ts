@@ -9,7 +9,7 @@ import * as SGetter from 'effect/SchemaGetter'
 export const ErrorText = S.Unknown.pipe(
   S.decodeTo(S.NonEmptyString, {
     decode: SGetter.transform(errorTextOf),
-    encode: SGetter.forbiddenEncoding(),
+    encode: SGetter.forbiddenEncoding,
   }),
 )
 export type ErrorTextValue = typeof ErrorText.Type
@@ -17,7 +17,7 @@ export type ErrorTextValue = typeof ErrorText.Type
 export const CauseText = S.Unknown.pipe(
   S.decodeTo(S.NonEmptyString, {
     decode: SGetter.transform(causeChainTextOf),
-    encode: SGetter.forbiddenEncoding(),
+    encode: SGetter.forbiddenEncoding,
   }),
 )
 export type CauseTextValue = typeof CauseText.Type

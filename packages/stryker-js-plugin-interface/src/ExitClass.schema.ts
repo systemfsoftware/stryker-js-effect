@@ -1,6 +1,9 @@
+import { SchemaGetter, SchemaTransformation } from 'effect'
 import * as S from 'effect/Schema'
 
-type ExitClassName = 'VerdictFail' | 'ConfigError' | 'RuntimeError' | 'InternalError'
+export const ExitClass = S.Literals(['VerdictFail', 'ConfigError', 'RuntimeError', 'InternalError'])
+
+export type ExitClass = typeof ExitClass.Type
 
 const BASELINE_EXIT_CODES = {
   VerdictFail: 1,
@@ -9,9 +12,12 @@ const BASELINE_EXIT_CODES = {
   InternalError: 4,
 } as const
 
-export const ExitClass = Object.assign(S.Literals(['VerdictFail', 'ConfigError', 'RuntimeError', 'InternalError']), {
-  EXIT_CODE: BASELINE_EXIT_CODES,
-  codeOf: (exitClass: ExitClassName) => BASELINE_EXIT_CODES[exitClass],
-})
+const codeOfClass = (exitClass: ExitClass): number => BASELINE_EXIT_CODES[exitClass]
 
-export type ExitClass = typeof ExitClass.Type
+export const ExitCodeFromClass = S.decodeTo(
+  S.Int,
+  SchemaTransformation.transform({
+    decode: codeOfClass,
+    encode: SchemaGetter.forbiddenEncoding,
+  }),
+)(ExitClass)

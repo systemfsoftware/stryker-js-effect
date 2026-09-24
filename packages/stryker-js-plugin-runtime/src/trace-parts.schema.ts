@@ -3,6 +3,7 @@ import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
+import * as SchemaGetter from 'effect/SchemaGetter'
 import * as SchemaIssue from 'effect/SchemaIssue'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
@@ -45,30 +46,19 @@ const traceStateFieldOf = (traceState: api.TraceState | undefined): { readonly t
     onSome: (serialized) => ({ traceState: serialized }),
   })
 
-const traceStateEntryOf = (traceState: string | undefined) =>
-  Option.match(Option.map(Option.fromUndefinedOr(traceState), (state) => api.createTraceState(state)), {
-    onNone: () => ({}),
-    onSome: (state) => ({ traceState: state }),
-  })
+const malformedSpanContext = (context: api.SpanContext) =>
+  new SchemaIssue.InvalidValue({ message: 'expected a valid W3C span context' }, context)
 
 const sampledFlagOf = (sampled: boolean) =>
   Boolean.match(sampled, { onTrue: () => SAMPLED_FLAG, onFalse: () => 0 })
 
 const sampledOf = (traceFlags: number) => (traceFlags & SAMPLED_FLAG) === SAMPLED_FLAG
 
-const spanContextOf = (parts: TraceContextParts) => ({
-  traceId: parts.traceId,
-  spanId: parts.spanId,
-  traceFlags: parts.traceFlags,
-  ...traceStateEntryOf(parts.traceState),
-  isRemote: false,
-})
-
 export const TraceContextPartsFromSpanContext: S.Codec<TraceContextParts, api.SpanContext> = SpanContext.pipe(
   S.decodeTo(
     TraceContextPartsSchema,
-    SchemaTransformation.transformEffect({
-      decode: (context, options) =>
+    SchemaTransformation.makeTransformation({
+      decode: SchemaGetter.transformEffect((context: api.SpanContext) =>
         Boolean.match(api.isValidTraceId(context.traceId) && api.isValidSpanId(context.spanId), {
           onTrue: () =>
             Effect.succeed({
@@ -78,10 +68,9 @@ export const TraceContextPartsFromSpanContext: S.Codec<TraceContextParts, api.Sp
               traceFlags: context.traceFlags,
               ...traceStateFieldOf(context.traceState),
             }),
-          onFalse: () =>
-            Effect.fail(new SchemaIssue.InvalidValue({ expected: 'a valid W3C span context' }, context, options)),
-        }),
-      encode: (parts) => Effect.succeed(spanContextOf(parts)),
+          onFalse: () => Effect.fail(malformedSpanContext(context)),
+        })),
+      encode: SchemaGetter.forbiddenEncoding,
     }),
   ),
 )

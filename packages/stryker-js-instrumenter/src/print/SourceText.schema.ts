@@ -108,7 +108,7 @@ import { spanOf } from '../Ast.handle.js'
 export const SourceText = S.Unknown.pipe(
   S.decodeTo(S.NonEmptyString, {
     decode: SGetter.transform(sourceTextOf),
-    encode: SGetter.forbiddenEncoding(),
+    encode: SGetter.forbiddenEncoding,
   }),
 )
 export type SourceTextValue = typeof SourceText.Type

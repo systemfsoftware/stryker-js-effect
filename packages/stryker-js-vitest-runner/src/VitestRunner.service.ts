@@ -4,9 +4,9 @@ import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import {
   type CoverageData,
-  errorToString,
+  ErrorText,
   type MutantCoverage as DryRunMutantCoverage,
-  normalizeFileName,
+  CanonicalFileName,
 } from '@systemfsoftware/stryker-js-instrumenter'
 import type { RunnerTestCase, RunnerTestFile, RunnerTestSuite, RunnerTask } from 'vitest'
 import * as Boolean from 'effect/Boolean'
@@ -45,10 +45,14 @@ import {
 } from './VitestRunner.schema.js'
 import { VitestDryRunCommand } from './vitest-run-command.schema.js'
 
-/** Wrap an error value into the runner's failure envelope, keeping a runner failure as-is. */
 const asRunnerFailure = (phase: TestRunnerPhase) => <E>(cause: E) =>
   Option.match(Option.liftPredicate(cause, S.is(TestRunnerFailed)), {
-    onNone: () => new TestRunnerFailed({ runnerName: 'vitest', phase, cause: errorToString(cause) }),
+    onNone: () =>
+      new TestRunnerFailed({
+        runnerName: 'vitest',
+        phase,
+        cause: Option.getOrElse(S.decodeUnknownOption(ErrorText)(cause), () => ''),
+      }),
     onSome: (failed) => failed,
   })
 

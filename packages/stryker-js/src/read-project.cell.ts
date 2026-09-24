@@ -492,7 +492,7 @@ const resolveInputFileNames = (
   ignoreRules: readonly string[],
   basePath: string,
 ): Effect.Effect<string[], PlatformError, FileSystem.FileSystem | Path.Path> =>
-  crawlDir(ignoreRules.map(IgnoreRule.compile), basePath, basePath)
+  crawlDir(ignoreRules.map((pattern) => Effect.runSync(IgnoreRule.decode(pattern))), basePath, basePath)
 
 const selectionOf = (
   inputFileNames: readonly string[],

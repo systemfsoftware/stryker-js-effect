@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ExitClass, ExitCodeFromClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -17,27 +17,37 @@ export class ClassifyExitCommand extends S.TaggedClass<ClassifyExitCommand>()('C
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ClassifyExitDecision extends S.TaggedClass<ClassifyExitDecision>()('ClassifyExitDecision', {
-  highestClass: S.NullOr(ExitClass),
+export class HighestExitClass extends S.TaggedClass<HighestExitClass>()('HighestExitClass', {
+  exitClass: S.NullOr(ExitClass),
+}) {
+  readonly [ClassifyExitTypeId] = ClassifyExitTypeId
+}
+
+export class VerdictExitClass extends S.TaggedClass<VerdictExitClass>()('VerdictExitClass', {
   verdictClass: S.NullOr(ExitClass),
 }) {
   readonly [ClassifyExitTypeId] = ClassifyExitTypeId
 }
 
-const highestExitClass = (pending: ReadonlyArray<ExitClass>) =>
-  pending.reduce<ExitClass | null>(
-    (highest, candidate) =>
-      Option.match(Option.fromNullishOr(highest), {
-        onNone: () => candidate,
-        onSome: (current) =>
-          Match.value(ExitClass.codeOf(candidate) > ExitClass.codeOf(current)).pipe(
-            Match.when(true, () => candidate),
-            Match.when(false, () => current),
-            Match.exhaustive,
-          ),
-      }),
-    null,
-  )
+export const ClassifyExitDecision = S.Union([HighestExitClass, VerdictExitClass])
+export type ClassifyExitDecision = typeof ClassifyExitDecision.Type
+
+const codeOf = (exitClass: ExitClass): number =>
+  Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)(exitClass), () => -1)
+
+const worstOf = (left: ExitClass | null, right: ExitClass): ExitClass =>
+  Option.match(Option.fromNullishOr(left), {
+    onNone: () => right,
+    onSome: (current) =>
+      Match.value(codeOf(right) > codeOf(current)).pipe(
+        Match.when(true, () => right),
+        Match.when(false, () => current),
+        Match.exhaustive,
+      ),
+  })
+
+const highestExitClass = (pending: ReadonlyArray<ExitClass>): ExitClass | null =>
+  pending.reduce<ExitClass | null>((highest, candidate) => worstOf(highest, candidate), null)
 
 const verdictExitClass = (score: number | null, breakingThreshold: number | null) =>
   Option.match(

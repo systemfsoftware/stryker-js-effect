@@ -51,6 +51,15 @@ export const FileSchema = S.Struct({
   mutate: MutateDescriptionSchema,
 })
 
+const IgnorerSchema = S.Unknown
+
+export const InstrumenterOptionsSchema = S.Struct({
+  excludedMutations: S.Array(S.String),
+  ignorers: S.Array(IgnorerSchema),
+  noHeader: S.optional(S.Boolean),
+})
+export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
+
 export class ScriptRootWithoutSpan
   extends S.TaggedError<ScriptRootWithoutSpan>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/ScriptRootWithoutSpan')(
     'ScriptRootWithoutSpan',

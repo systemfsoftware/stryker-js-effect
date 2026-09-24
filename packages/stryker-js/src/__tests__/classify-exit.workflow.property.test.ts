@@ -1,9 +1,13 @@
 import { describe, it } from '@effect/vitest'
-import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ExitClass, ExitCodeFromClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 import { classifyExit, ClassifyExitCommand } from '../classify-exit.workflow.js'
+
+const codeOf = (exitClass: ExitClass): number =>
+  Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)(exitClass), () => -1)
 
 const decidedOf = (pending: ReadonlyArray<ExitClass>, score: number | null, breakingThreshold: number | null) =>
   classifyExit(new ClassifyExitCommand({ pending: [...pending], signal: null, score, breakingThreshold }))
@@ -16,8 +20,8 @@ describe('classifyExit', () => {
     return Option.match(Option.fromNullishOr(result.success.highestClass), {
       onNone: () => false,
       onSome: (highest) =>
-        ExitClass.EXIT_CODE[highest] >= ExitClass.EXIT_CODE[first] &&
-        ExitClass.EXIT_CODE[highest] >= ExitClass.EXIT_CODE[second] &&
+        codeOf(highest) >= codeOf(first) &&
+        codeOf(highest) >= codeOf(second) &&
         (highest === first || highest === second),
     })
   })

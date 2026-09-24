@@ -1,6 +1,18 @@
 import * as S from 'effect/Schema'
 
-export const AnsiCodes = S.Struct({
+export const AnsiColor = S.Literals([
+  'red',
+  'green',
+  'yellow',
+  'grey',
+  'cyan',
+  'greenBright',
+  'redBright',
+  'blueBright',
+])
+export type AnsiColor = typeof AnsiColor.Type
+
+export const AnsiCode = S.Struct({
   red: S.Literal('\u001b[31m'),
   green: S.Literal('\u001b[32m'),
   yellow: S.Literal('\u001b[33m'),
@@ -11,4 +23,4 @@ export const AnsiCodes = S.Struct({
   blueBright: S.Literal('\u001b[94m'),
   reset: S.Literal('\u001b[39m'),
 })
-export type AnsiColor = Exclude<keyof typeof AnsiCodes.fields, 'reset'>
+export type AnsiCode = typeof AnsiCode.Type

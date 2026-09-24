@@ -40,8 +40,10 @@ export {
   RunOptionsFields,
 } from './Mutant.schema.js'
 export type {
+  CanonicalFileName as CanonicalFileNameValue,
   MutantActivation,
   MutantCoverage,
+  MutantFromUnknown as MutantFromUnknownValue,
   MutantStatus,
 } from './Mutant.schema.js'
 export type { ParserOptions } from './Parser.service.js'

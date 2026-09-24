@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ExitClass, ExitCodeFromClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -34,7 +34,8 @@ const decide = (command: ResolveExitCodeCommand) =>
           ExitCodeResolved.make({
             code: Option.match(Option.fromNullishOr(decision.highestClass), {
               onNone: () => 0,
-              onSome: ExitClass.codeOf,
+              onSome: (highest) =>
+                Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)(highest), () => -1),
             }),
           }),
       )),

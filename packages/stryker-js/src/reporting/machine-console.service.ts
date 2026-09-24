@@ -1,11 +1,13 @@
+import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Formatter from 'effect/Formatter'
 import * as Layer from 'effect/Layer'
-import * as Predicate from 'effect/Predicate'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import { CircularJson } from './machine-console.schema.js'
 
@@ -18,7 +20,7 @@ const jsonArgumentText = <A = unknown>(argument: A): string =>
     () => '[Circular]',
   )
 
-const inspectValue = (value: string | object): string =>
+const inspectValue = (value: unknown): string =>
   Match.value(value).pipe(
     Match.when(Predicate.isString, (text) => text),
     Match.orElse((item) => Formatter.format(item)),
@@ -30,8 +32,8 @@ interface FormatProgress<A = unknown> {
   readonly text: string
 }
 
-const PLACEHOLDER = /(%[sdijfopO%])/gu
-const PLACEHOLDER_PART = /^%[sdijfopO%]$/u
+const PLACEHOLDER = /(%[sdijfopO%])/g
+const PLACEHOLDER_PART = /^%[sdijfopO%]$/
 
 const placeholderText = <A = unknown>(placeholder: string, argument: A): string =>
   Match.value(placeholder).pipe(
@@ -49,15 +51,14 @@ const appendLiteral = <A>(progress: FormatProgress<A>, literal: string): FormatP
 })
 
 const substitutePlaceholder = <A>(progress: FormatProgress<A>, placeholder: string): FormatProgress<A> =>
-  Match.value(progress.cursor < progress.args.length).pipe(
-    Match.when(true, () => ({
+  Boolean.match(progress.cursor < progress.args.length, {
+    onTrue: () => ({
       args: progress.args,
       cursor: progress.cursor + 1,
       text: progress.text + placeholderText(placeholder, progress.args[progress.cursor]),
-    })),
-    Match.when(false, () => appendLiteral(progress, placeholder)),
-    Match.exhaustive,
-  )
+    }),
+    onFalse: () => appendLiteral(progress, placeholder),
+  })
 
 const consumePlaceholder = <A>(progress: FormatProgress<A>, placeholder: string): FormatProgress<A> =>
   Match.value(placeholder).pipe(
@@ -67,29 +68,22 @@ const consumePlaceholder = <A>(progress: FormatProgress<A>, placeholder: string)
 
 const formatStep = <A>(progress: FormatProgress<A>, part: string): FormatProgress<A> =>
   Match.value(part).pipe(
-    Match.when(
-      (candidate: string) => PLACEHOLDER_PART.test(candidate),
-      (placeholder) => consumePlaceholder(progress, placeholder),
-    ),
+    Match.when(PLACEHOLDER_PART.test, (placeholder) => consumePlaceholder(progress, placeholder)),
     Match.orElse((literal) => appendLiteral(progress, literal)),
   )
 
 const formatTemplate = <A = unknown>(template: string, args: ReadonlyArray<A>): string => {
-  const parts = template.split(PLACEHOLDER)
-  const progress = parts.reduce<FormatProgress<A>>(formatStep, { args, cursor: 0, text: '' })
-  const trailing = progress.args
-    .slice(progress.cursor)
-    .map((argument) => ` ${inspectValue(argument)}`)
+  const progress = template.split(PLACEHOLDER).reduce<FormatProgress<A>>(formatStep, { args, cursor: 0, text: '' })
+  const trailing = progress.args.slice(progress.cursor).map((argument) => ` ${inspectValue(argument)}`)
   return progress.text + trailing.join('')
 }
 
 const formatArgs = <A = unknown>(args: ReadonlyArray<A>): string => {
   const [first, ...rest] = args
-  return Match.value(typeof first === 'string').pipe(
-    Match.when(true, () => formatTemplate(first, rest)),
-    Match.when(false, () => args.map(inspectValue).join(' ')),
-    Match.exhaustive,
-  )
+  return Boolean.match(typeof first === 'string', {
+    onTrue: () => formatTemplate(first, rest),
+    onFalse: () => args.map(inspectValue).join(' '),
+  })
 }
 
 const DEFAULT_CONSOLE_LABEL = 'default'
@@ -107,28 +101,53 @@ interface MachineConsoleBuffers {
 
 const buffersOf = (): MachineConsoleBuffers => ({ chunks: [], counts: new Map(), timers: new Map() })
 
-const joinChunks = (chunks: ReadonlyArray<string>): string => chunks.join('\n')
+const nextCount = (buffers: MachineConsoleBuffers, key: string): number =>
+  Option.getOrElse(Option.fromNullishOr(buffers.counts.get(key)), () => 0) + 1
 
-const resetBuffers = (buffers: MachineConsoleBuffers): void => {
-  buffers.chunks.length = 0
-  buffers.counts.clear()
-  buffers.timers.clear()
+const recordCount = (buffers: MachineConsoleBuffers, label: string | undefined): void => {
+  const key = consoleLabel(label)
+  buffers.counts.set(key, nextCount(buffers, key))
+  buffers.chunks.push(`${key}: ${nextCount(buffers, key)}`)
+}
+
+const recordTimeEnd = (buffers: MachineConsoleBuffers, label: string | undefined, nowNanos: bigint): void => {
+  const key = consoleLabel(label)
+  Option.match(Option.fromNullishOr(buffers.timers.get(key)), {
+    onNone: () => undefined,
+    onSome: (started) => {
+      buffers.timers.delete(key)
+      buffers.chunks.push(`${key}: ${elapsedMs(started, nowNanos)}ms`)
+    },
+  })
+}
+
+const recordTimeLog = <A = unknown>(
+  buffers: MachineConsoleBuffers,
+  label: string | undefined,
+  args: ReadonlyArray<A>,
+  nowNanos: bigint,
+): void => {
+  const key = consoleLabel(label)
+  Option.match(Option.fromNullishOr(buffers.timers.get(key)), {
+    onNone: () => undefined,
+    onSome: (started) =>
+      buffers.chunks.push(
+        Boolean.match(args.length === 0, {
+          onTrue: () => `${key}: ${elapsedMs(started, nowNanos)}ms`,
+          onFalse: () => `${key}: ${elapsedMs(started, nowNanos)}ms ${formatArgs(args)}`,
+        }),
+      ),
+  })
 }
 
 const makeCapturingConsole = (clock: Clock.Clock, buffers: MachineConsoleBuffers): Console.Console => ({
   assert: <A = unknown>(condition: boolean, ...args: ReadonlyArray<A>) =>
-    Match.value(condition).pipe(
-      Match.when(false, () => buffers.chunks.push(`Assertion failed: ${formatArgs(args)}`)),
-      Match.when(true, () => undefined),
-      Match.exhaustive,
-    ),
+    Boolean.match(condition, {
+      onTrue: () => undefined,
+      onFalse: () => buffers.chunks.push(`Assertion failed: ${formatArgs(args)}`),
+    }),
   clear: () => {},
-  count: (label) => {
-    const key = consoleLabel(label)
-    const next = Option.getOrElse(Option.fromNullishOr(buffers.counts.get(key)), () => 0) + 1
-    buffers.counts.set(key, next)
-    buffers.chunks.push(`${key}: ${next}`)
-  },
+  count: (label) => recordCount(buffers, label),
   countReset: (label) => buffers.counts.delete(consoleLabel(label)),
   debug: <A = unknown>(...args: ReadonlyArray<A>) => buffers.chunks.push(formatArgs(args)),
   dir: <A = unknown, B = unknown>(item: A, _options?: Record<string, B>) =>
@@ -142,34 +161,8 @@ const makeCapturingConsole = (clock: Clock.Clock, buffers: MachineConsoleBuffers
   log: <A = unknown>(...args: ReadonlyArray<A>) => buffers.chunks.push(formatArgs(args)),
   table: (tabularData) => buffers.chunks.push(Formatter.format(tabularData)),
   time: (label) => buffers.timers.set(consoleLabel(label), clock.monotonicTimeNanosUnsafe()),
-  timeEnd: (label) => {
-    const key = consoleLabel(label)
-    Option.match(Option.fromNullishOr(buffers.timers.get(key)), {
-      onSome: (started) => {
-        buffers.timers.delete(key)
-        buffers.chunks.push(`${key}: ${elapsedMs(started, clock.monotonicTimeNanosUnsafe())}ms`)
-      },
-      onNone: () => undefined,
-    })
-  },
-  timeLog: (label, ...args) => {
-    const key = consoleLabel(label)
-    Option.match(Option.fromNullishOr(buffers.timers.get(key)), {
-      onNone: () => undefined,
-      onSome: (started) => {
-        const elapsed = elapsedMs(started, clock.monotonicTimeNanosUnsafe())
-        Match.value(args).pipe(
-const inspectValue = (value: string | object): string =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isString, (text) => text),
-    Match.orElse((item) => Formatter.format(item)),
-  )
-          ),
-          Match.orElse((values) => buffers.chunks.push(`${key}: ${elapsed}ms ${formatArgs(values)}`)),
-        )
-      },
-    })
-  },
+  timeEnd: (label) => recordTimeEnd(buffers, label, clock.monotonicTimeNanosUnsafe()),
+  timeLog: (label, ...args) => recordTimeLog(buffers, label, args, clock.monotonicTimeNanosUnsafe()),
   trace: <A = unknown>(...args: ReadonlyArray<A>) =>
     buffers.chunks.push(`Trace: ${formatArgs(args)}\n${new Error().stack ?? ''}`),
   warn: <A = unknown>(...args: ReadonlyArray<A>) => buffers.chunks.push(formatArgs(args)),
@@ -185,8 +178,12 @@ const machineConsoleOf = (clock: Clock.Clock): MachineConsoleShape => {
   const buffers = buffersOf()
   return {
     console: makeCapturingConsole(clock, buffers),
-    read: () => joinChunks(buffers.chunks),
-    reset: () => resetBuffers(buffers),
+    read: () => buffers.chunks.join('\n'),
+    reset: () => {
+      buffers.chunks.length = 0
+      buffers.counts.clear()
+      buffers.timers.clear()
+    },
   }
 }
 
