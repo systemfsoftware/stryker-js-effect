@@ -106,7 +106,7 @@ export interface MutationReportingService {
 }
 
 export class MutationReporting extends Context.Service<MutationReporting, MutationReportingService>()(
-  '@systemfsoftware/stryker-js/mutation-reporting/MutationReporting',
+  '@systemfsoftware/stryker-js/mutation-reporting.service/MutationReporting',
 ) {
   static readonly layer: Layer.Layer<
     MutationReporting,

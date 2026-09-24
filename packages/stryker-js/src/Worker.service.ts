@@ -8,7 +8,7 @@ export interface IdGeneratorShape {
 }
 
 export class IdGenerator extends Context.Service<IdGenerator, IdGeneratorShape>()(
-  '@systemfsoftware/stryker-js/Worker/IdGenerator',
+  '@systemfsoftware/stryker-js/Worker.service/IdGenerator',
 ) {}
 
 const makeIdGenerator = Effect.gen(function*() {

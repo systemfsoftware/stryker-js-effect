@@ -28,7 +28,7 @@ const drainReporterFactory: ReporterFactory = () => (events) =>
   Stream.runDrain(Stream.fromAsyncIterable(events, failAsStreamDrain))
 
 export class Reporter extends Context.Service<Reporter, ReporterShape>()(
-  '@systemfsoftware/stryker-js/reporting/Reporter',
+  '@systemfsoftware/stryker-js/reporter.service/Reporter',
 ) {
   static readonly layer: Layer.Layer<Reporter, never, ReporterOutput | FileSystem.FileSystem | Path.Path> =
     Layer.effect(

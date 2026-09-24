@@ -72,7 +72,7 @@ const makeTemporaryDirectory = (
   })
 
 export class TemporaryDirectory extends Context.Service<TemporaryDirectory, TemporaryDirectoryShape>()(
-  '@systemfsoftware/stryker-js/Sandbox/TemporaryDirectory',
+  '@systemfsoftware/stryker-js/Sandbox.service/TemporaryDirectory',
 ) {
   static layer(
     options: StrykerOptions,
