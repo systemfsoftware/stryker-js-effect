@@ -311,7 +311,7 @@ const collectSplices = (pattern: string, flags: string): SpliceGroups => {
 const collectAssertion = (assertion: AST.Assertion, pattern: string, groups: SpliceGroups): void =>
   Match.value(assertion).pipe(
     Match.when(isEdgeAssertion, (edge) => pushAnchor(edge, pattern, groups)),
-    Match.when(isLookaround, (lookaround) => groups.rest.push(lookaroundNegation(lookaround))),
+    Match.when(isLookaround, (lookaround) => pushWhen(groups.rest, lookaroundNegation(lookaround))),
     Match.orElse(() => undefined),
   )
 
@@ -408,7 +408,9 @@ const anchorRemoval = (assertion: AST.Assertion, pattern: string): Splice | unde
 const pushWhen = <T>(list: T[], splice: T | undefined): void =>
   Option.match(Option.fromNullishOr(splice), {
     onNone: () => undefined,
-    onSome: (present) => list.push(present),
+    onSome: (present) => {
+      list.push(present)
+    },
   })
 
 const spliceText = (pattern: string, splice: Splice): string =>
@@ -659,7 +661,7 @@ const hasSuperInChildren = (node: object): boolean =>
 
 const isObjectArray = (value: unknown): value is ReadonlyArray<object> => Array.isArray(value)
 
-const containsSuperInValue = <A>(value: A): boolean =>
+const containsSuperInValue = (value: unknown): boolean =>
   Match.value(value).pipe(
     Match.when(isObjectArray, (items) => items.some(containsSuperCall)),
     Match.orElse(containsSuperCall),

@@ -190,8 +190,11 @@ if (import.meta.vitest !== void 0) {
       const table = yield* S.decodeEffect(LineTableFromText)(text)
       const limit = text.length
       const first = ((draw % (limit + 1)) + limit + 1) % (limit + 1)
-      const [start, end] = [first, offset].sort((left, right) => left - right)
-      const location = table.locationAt({ start, end })
+      const sorted = [first, offset].sort((left, right) => left - right)
+      const location = table.locationAt({
+        start: Option.getOrElse(Arr.get(sorted, 0), () => first),
+        end: Option.getOrElse(Arr.get(sorted, 1), () => offset),
+      })
       return comparePositions(location.start, location.end) <= 0
     })
 
