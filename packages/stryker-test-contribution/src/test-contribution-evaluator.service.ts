@@ -3,8 +3,8 @@ import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
-
-import { judgeTestContribution } from './test-contribution.js'
+import * as Result from 'effect/Result'
+import { JudgeTestContribution, judgeTestContribution } from './judge-test-contribution.workflow.js'
 
 import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 
@@ -18,7 +18,14 @@ export const makeTestContributionEvaluatorService = (options: {
   evaluate: (report) =>
     Effect.flatMap(
       Effect.try({
-        try: () => judgeTestContribution(report, options.disableBail === true),
+        try: () =>
+          judgeTestContribution(
+            JudgeTestContribution.make({
+              report,
+              everyKillerRecorded: options.disableBail === true,
+              suffixes: JudgeTestContribution.defaultRequireTestContributionSuffixes,
+            }),
+          ).pipe(Result.merge),
         catch: (cause) => EvaluatorFailed.make({ cause }),
       }),
       (verdict) =>

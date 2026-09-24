@@ -82,14 +82,16 @@ export interface PrepareExecutorArgs {
 
 const NO_IGNORERS: readonly Ignorer[] = []
 
+type ValidationSchemaProperties = S.Schema.Type<typeof SchemaValidationContributionSchema>['strykerValidationSchema']
+
 interface PluginLoaderEntry {
   readonly moduleName: string
   readonly plugins: readonly PluginDescriptor[] | undefined
-  readonly schemaContribution: Record<string, unknown> | undefined
+  readonly schemaContribution: ValidationSchemaProperties | undefined
 }
 
 interface PluginLoadPlan {
-  readonly schemaContributions: readonly Record<string, unknown>[]
+  readonly schemaContributions: readonly ValidationSchemaProperties[]
   readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>
   readonly pluginModulePaths: readonly string[]
   readonly pluginSources: readonly PluginSource[]
@@ -195,24 +197,20 @@ const buildPluginLoadPlan = (entries: readonly PluginLoaderEntry[]): PluginLoadP
   }
 }
 
-interface SchemaValidationContribution {
-  strykerValidationSchema: Record<string, unknown>
-}
-
 interface PluginContributions {
   readonly plugins: readonly PluginDescriptor[] | undefined
   readonly ignorers: readonly Ignorer[] | undefined
-  readonly schemaContribution: Record<string, unknown> | undefined
+  readonly schemaContribution: ValidationSchemaProperties | undefined
 }
 
-const failPluginLoad = (descriptor: string, error: unknown): Effect.Effect<never, PluginLoadFailedError> =>
+const failPluginLoad = (descriptor: string, error: StrykerError): Effect.Effect<never, PluginLoadFailedError> =>
   Effect.logWarning(`Error during loading "${descriptor}" plugin`).pipe(
     Effect.annotateLogs('cause', error),
     Effect.andThen(() => Effect.fail(PluginLoadFailedError.make({ descriptor, cause: error }))),
   )
 
 const modulePluginContributions = (
-  module: unknown,
+  module: object,
 ): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
   Match.value(Predicate.hasProperty(module, 'strykerPlugins')).pipe(
     Match.when(true, () =>
@@ -224,7 +222,7 @@ const modulePluginContributions = (
     ),
   )
 
-const moduleIgnorers = (module: unknown): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> =>
+const moduleIgnorers = (module: object): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> =>
   Match.value(Predicate.hasProperty(module, 'strykerIgnorers')).pipe(
     Match.when(true, () =>
       S.decodeUnknownResult(IgnorerModuleSchema)(module).pipe(
@@ -233,7 +231,7 @@ const moduleIgnorers = (module: unknown): Result.Result<readonly Ignorer[] | und
     Match.orElse((): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> => Result.succeed(undefined)),
   )
 
-const moduleSchemaContribution = (module: unknown): Record<string, unknown> | undefined =>
+const moduleSchemaContribution = (module: object): ValidationSchemaProperties | undefined =>
   Option.getOrUndefined(
     Option.map(
       Option.liftPredicate(hasValidationSchemaContribution)(module),
@@ -242,7 +240,7 @@ const moduleSchemaContribution = (module: unknown): Record<string, unknown> | un
   )
 
 const pluginContributionsOf = (
-  module: unknown,
+  module: object,
 ): Result.Result<PluginContributions, S.SchemaError> =>
   Result.flatMap(moduleIgnorers(module), (ignorers) =>
     Result.map(modulePluginContributions(module), (plugins) => ({
@@ -263,7 +261,7 @@ const warnUndescribedPluginModule = (descriptor: string): Effect.Effect<undefine
 
 const describeLoadedPlugin = (
   descriptor: string,
-  module: unknown,
+  module: object,
 ): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError> =>
   Result.match(pluginContributionsOf(module), {
     onFailure: (cause) => failPluginLoad(descriptor, cause),
@@ -280,12 +278,12 @@ const loadPlugin = (
 ): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError> =>
   Effect.gen(function*() {
     yield* Effect.logDebug(`Loading plugin ${descriptor}`)
-    const maybeModule = yield* importModule(entrypoint).pipe(
+    const maybeModule = yield* importModule<object>(entrypoint).pipe(
       Effect.catch((error) => failPluginLoad(descriptor, error)),
     )
     return yield* Option.match(Option.fromUndefinedOr(maybeModule), {
-      onNone: () => Effect.succeed<PluginContributions | undefined>(undefined),
-      onSome: (module) => describeLoadedPlugin(descriptor, module),
+      onNone: () => Effect.succeed(Option.none()),
+      onSome: (module) => Effect.map(describeLoadedPlugin(descriptor, module), Option.fromUndefinedOr),
     })
   })
 
@@ -593,7 +591,7 @@ const writePrepare = (
                   cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
                 }),
               )),
-            Match.orElse(() => Effect.succeed(undefined)),
+            Match.orElse(() => Effect.void),
           )
 
         yield* failOnEmptyProject(raw.project.files.pipe(MutableHashMap.size))

@@ -481,14 +481,14 @@ const EMPTY_OPTIONS: PartialStrykerOptions = {}
 
 const routeOf = (request: Option.Option<CliRequest>): CliRouteCommand =>
   Option.match(request, {
-    onNone: () => new CliRouteCommand({ route: { _tag: 'help' } }),
+    onNone: () => CliRouteCommand.make({ route: { _tag: 'help' } }),
     onSome: (cliRequest) =>
       Match.value(cliRequest).pipe(
         Match.tag('merge-reports', (merge) =>
-          new CliRouteCommand({
+          CliRouteCommand.make({
             route: { _tag: 'merge-reports', parts: merge.parts, out: merge.out, packages: merge.packages },
           })),
-        Match.tag('run', (run) => new CliRouteCommand({ route: { _tag: 'run', survivors: run.survivors } })),
+        Match.tag('run', (run) => CliRouteCommand.make({ route: { _tag: 'run', survivors: run.survivors } })),
         Match.exhaustive,
       ),
   })
@@ -530,9 +530,10 @@ const readCliRoute = (
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
     const command = makeStrykerCommand(requestRef)
     const machineConsole = invocation.environment.mode.mode === 'machine' ? machineConsoleLayer : Layer.empty
-    const parsed = yield* Effect.result(
-      Command.runWith(command, { version: cliPkgJson.version })(invocation.argv),
-    ).pipe(Effect.provide(machineConsole))
+    const parsed = yield* Command.runWith(command, { version: cliPkgJson.version })(invocation.argv).pipe(
+      Effect.result,
+      Effect.provide(machineConsole),
+    )
     const request = yield* Ref.get(requestRef)
     const drain = yield* RunEventDrain
     yield* drain.setProgressStreamFile(progressStreamFileName(request))
@@ -592,27 +593,20 @@ const restrictedOptionsOf = (
 }
 
 
-type CliRoutedAction =
-  | { readonly _tag: 'CliHelpRequested'; readonly channel: CliRead }
-  | { readonly _tag: 'CliMergeReportsRequested'; readonly request: MergeReportsRequest; readonly channel: CliRead }
-  | { readonly _tag: 'CliRunRequested'; readonly channel: CliRead }
-  | { readonly _tag: 'CliSurvivorsRequested'; readonly channel: CliRead }
+interface CliRoutedAction<A> {
+  readonly decision: A
+  readonly channel: CliRead
+}
 
 const cliRouteCell = Sandwich.named('stryker.cli')(readCliRoute)
   .decide(routeCliRequest)
   .write({
-    CliHelpRequested: (_outcome, channel) => Effect.succeed<CliRoutedAction>({ _tag: 'CliHelpRequested', channel }),
-    CliMergeReportsRequested: (merge, channel) =>
-      Effect.succeed<CliRoutedAction>({
-        _tag: 'CliMergeReportsRequested',
-        request: { _tag: 'merge-reports', parts: merge.parts, out: merge.out, packages: merge.packages },
-        channel,
-      }),
-    CliRunRequested: (_outcome, channel) => Effect.succeed<CliRoutedAction>({ _tag: 'CliRunRequested', channel }),
-    CliSurvivorsRequested: (_outcome, channel) =>
-      Effect.succeed<CliRoutedAction>({ _tag: 'CliSurvivorsRequested', channel }),
+    CliHelpRequested: (decision, channel) => Effect.succeed({ decision, channel }),
+    CliMergeReportsRequested: (decision, channel) => Effect.succeed({ decision, channel }),
+    CliRunRequested: (decision, channel) => Effect.succeed({ decision, channel }),
+    CliSurvivorsRequested: (decision, channel) => Effect.succeed({ decision, channel }),
     CommandRejected: ({ issue }) =>
-      Effect.fail(new StrykerError({ message: `the CLI read resolved a command the route schema rejects: ${issue}` })),
+      Effect.fail(StrykerError.make({ message: `the CLI read resolved a command the route schema rejects: ${issue}` })),
   })
 
 const survivorsInputOf = (channel: CliRead): SurvivorsAdmissionInput => ({
@@ -649,15 +643,23 @@ const runCellOf = (channel: CliRead) =>
 export const strykerCliCell = Cell.flatMap(
   cliRouteCell,
   (action): Cell.Cell<StrykerCliInvocation, CliAnswer, CliFailure, EnginePorts> =>
-    Match.value(action).pipe(
+    Match.value(action.decision).pipe(
       Match.tag('CliHelpRequested', () => Cell.succeed<CliAnswer>(undefined)),
-      Match.tag('CliMergeReportsRequested', (merge) => Cell.mapInput(mergeReportsCell, () => merge.request)),
-      Match.tag('CliRunRequested', (run) => runCellOf(run.channel)),
-      Match.tag('CliSurvivorsRequested', (survivors) =>
+      Match.tag('CliMergeReportsRequested', (merge) =>
+        Cell.mapInput(mergeReportsCell, () => ({
+          _tag: 'merge-reports',
+          parts: merge.parts,
+          out: merge.out,
+          packages: merge.packages,
+        })),
+      ),
+      Match.tag('CliRunRequested', () => runCellOf(action.channel)),
+      Match.tag('CliSurvivorsRequested', () =>
         Cell.andThen(
-          Cell.mapInput(survivorsAdmissionCell, () => survivorsInputOf(survivors.channel)),
-          (answer) => admissionCellOf(answer, survivors.channel),
-        )),
+          Cell.mapInput(survivorsAdmissionCell, () => survivorsInputOf(action.channel)),
+          (answer) => admissionCellOf(answer, action.channel),
+        ),
+      ),
       Match.exhaustive,
     ),
 )

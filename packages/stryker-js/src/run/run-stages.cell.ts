@@ -44,15 +44,15 @@ export const mutationTestCell: Cell.Cell<PrepareExecutorArgs, MutationTestDone, 
 
 const HEADLESS_MODE: ResolvedMode = { mode: 'machine', signal: 'flag', stdoutIsTTY: false }
 
-const strykerRunLayer = Layer
-  .unwrap(
-    Effect.flatMap(makeRunEventStream(HEADLESS_MODE), (stream) =>
-      Effect.map(
-        RunEnvironment.forStream(HEADLESS_MODE, stream, { builtinReporters: { html: makeHtmlReporter } }),
-        (env) => RunEnvironment.stage(env, stream.queue),
-      )),
-  )
-  .pipe(Layer.provide(RunEventDrainLive))
+const strykerRunLayer = makeRunEventStream(HEADLESS_MODE).pipe(
+  Effect.flatMap((stream) =>
+    Effect.map(
+      RunEnvironment.forStream(HEADLESS_MODE, stream, { builtinReporters: { html: makeHtmlReporter } }),
+      (env) => RunEnvironment.stage(env, stream.queue),
+    )),
+  Layer.unwrap,
+  Layer.provide(RunEventDrainLive),
+)
 
 export const strykerCell: {
   (

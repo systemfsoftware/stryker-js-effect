@@ -9,25 +9,23 @@ export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('U
   reason: S.String,
 }) {}
 
-export const CheckerMutantFromMutant: S.Codec<CheckerMutantWire, Mutant> = Mutant.pipe(
-  S.decodeTo(
-    CheckerMutantWire,
-    SchemaTransformation.transform({
-      decode: (mutant) => ({
-        id: mutant.id,
-        fileName: mutant.fileName,
-        mutatorName: mutant.mutatorName,
-        replacement: mutant.replacement,
-        location: mutant.location,
-      }),
-      encode: (wire) =>
-        Mutant.make({
-          id: wire.id,
-          fileName: wire.fileName,
-          mutatorName: wire.mutatorName,
-          replacement: wire.replacement,
-          location: wire.location,
-        }),
+export const CheckerMutantFromMutant = S.decodeTo(
+  CheckerMutantWire,
+  SchemaTransformation.transform({
+    decode: (mutant) => ({
+      id: mutant.id,
+      fileName: mutant.fileName,
+      mutatorName: mutant.mutatorName,
+      replacement: mutant.replacement,
+      location: mutant.location,
     }),
-  ),
-)
+    encode: (wire) =>
+      Mutant.make({
+        id: wire.id,
+        fileName: wire.fileName,
+        mutatorName: wire.mutatorName,
+        replacement: wire.replacement,
+        location: wire.location,
+      }),
+  }),
+)(Mutant)

@@ -113,14 +113,11 @@ const KILLING_STATUSES: Readonly<Record<string, true>> = { Killed: true, Timeout
 
 const PRECISION = 'every killing test was recorded'
 
-const testFilesOf = (report: ReportView): Record<string, { readonly tests: ReadonlyArray<{ readonly id: string }> }> =>
-  report.testFiles ?? {}
+const testFilesOf = (report: ReportView): Record<string, TestFileMapEntry> => report.testFiles ?? {}
 
 const isDefined = <T>(value: T | undefined): value is T => value !== undefined
 
-const testFileById = (
-  testFiles: Record<string, { readonly tests: ReadonlyArray<{ readonly id: string }> }>,
-): TestFileById =>
+const testFileById = (testFiles: Record<string, TestFileMapEntry>): TestFileById =>
   new Map(
     Object.entries(testFiles).flatMap(([fileName, testFile]) =>
       testFile.tests.map((test): readonly [string, string] => [test.id, fileName]),
@@ -135,41 +132,15 @@ const realFiles = (testIds: readonly string[], fileById: TestFileById): Readonly
 const killersOf = (killedBy: readonly string[], fileById: TestFileById): ReadonlySet<string> =>
   new Set(killedBy.map((testId) => fileById.get(testId) ?? testId))
 
-type JudgeMutant = {
-  readonly status: 'Killed' | 'Timeout' | 'Ignored'
-  readonly killedBy: readonly string[] | undefined
-  readonly coveredBy: readonly string[] | undefined
-}
+const isKillingMutant = (mutant: schema.MutantResult): boolean => KILLING_STATUSES[mutant.status] === true
 
-const isKillingMutant = (mutant: JudgeMutant): boolean => KILLING_STATUSES[mutant.status] === true
+const isKillableMutant = (mutant: schema.MutantResult): boolean => mutant.status !== 'Ignored'
 
-const isKillableMutant = (mutant: JudgeMutant): boolean => mutant.status !== 'Ignored'
-
-const realKillersOf = (mutant: JudgeMutant, fileById: TestFileById): ReadonlySet<string> =>
+const realKillersOf = (mutant: schema.MutantResult, fileById: TestFileById): ReadonlySet<string> =>
   realFiles(idsOf(mutant.killedBy), fileById)
 
-const realCoverersOf = (mutant: JudgeMutant, fileById: TestFileById): ReadonlySet<string> =>
+const realCoverersOf = (mutant: schema.MutantResult, fileById: TestFileById): ReadonlySet<string> =>
   realFiles(idsOf(mutant.coveredBy), fileById)
-
-interface Kill {
-  readonly killers: ReadonlySet<string>
-  readonly coverers: ReadonlySet<string>
-  readonly claimedAlone: boolean
-}
-
-const killOf = (mutant: JudgeMutant, fileById: TestFileById): Kill => ({
-  killers: realKillersOf(mutant, fileById),
-  coverers: realCoverersOf(mutant, fileById),
-  claimedAlone: killersOf(idsOf(mutant.killedBy), fileById).size === 1,
-})
-
-const mutantsOf = (report: ReportView): readonly JudgeMutant[] =>
-  Object.values(report.files).flatMap((file) => file.mutants)
-
-const killsOf = (mutants: readonly JudgeMutant[], fileById: TestFileById): readonly Kill[] =>
-  mutants.filter(isKillingMutant).map((mutant) => killOf(mutant, fileById))
-
-const isUnattributedKill = (kill: Kill): boolean => kill.killers.size === 0
 
 const countOf = (counts: ReadonlyMap<string, number>, fileName: string): number => counts.get(fileName) ?? 0
 
@@ -188,7 +159,6 @@ interface ContributionTally {
   readonly unattributed: ReadonlySet<string>
 }
 
-const tallyOf = (mutants: readonly JudgeMutant[], fileById: TestFileById): ContributionTally => {
   const kills = killsOf(mutants, fileById)
   return {
     soleKills: countBy(kills.filter((kill) => kill.claimedAlone).flatMap((kill) => [...kill.killers])),

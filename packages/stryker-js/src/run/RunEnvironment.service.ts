@@ -74,7 +74,7 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
       return Layer.mergeAll(
         stageLayer,
         MutationReporting.layer.pipe(Layer.provide(stageLayer)),
-        Reporter.layer.pipe(Layer.provide(ReporterOutput.layer)).pipe(Layer.provide(stageLayer)),
+        Reporter.layer.pipe(Layer.provide(ReporterOutput.layer), Layer.provide(stageLayer)),
       )
     },
   )
