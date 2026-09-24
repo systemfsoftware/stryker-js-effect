@@ -32,9 +32,9 @@ export const scoped = (
   })
 
 export const layer: {
-  <Id>(
-    service: Context.Key<Id, TSCompiler>,
-  ): (options: Options.StrykerOptions) => Layer.Layer<Id, never, FileSystem.FileSystem | Path.Path>
+  (
+    options: Options.StrykerOptions,
+  ): <Id>(service: Context.Key<Id, TSCompiler>) => Layer.Layer<Id, never, FileSystem.FileSystem | Path.Path>
   <Id>(
     service: Context.Key<Id, TSCompiler>,
     options: Options.StrykerOptions,
