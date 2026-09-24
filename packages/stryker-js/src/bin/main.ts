@@ -25,7 +25,7 @@ import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 
 import { strykerCliEffect } from '../Cli.cell.js'
 import { machineConsoleLayer } from '../Envelope.js'
-import { nodePlatformLayer } from '../promises/main.js'
+import { nodePlatformLayer } from '../drivers/node.js'
 import { UnsupportedNodeVersion } from './main.schema.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'

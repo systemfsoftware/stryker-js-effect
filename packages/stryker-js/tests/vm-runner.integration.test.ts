@@ -24,6 +24,8 @@ import type * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { expect } from 'vitest'
 
+import { nodeVmPlatformLayer } from '../src/drivers/node.js'
+
 const Feature = makeFeature({ it, layer })
 
 const workerCanary = Layer.succeed(
@@ -40,13 +42,7 @@ const spawnerCanary = Layer.succeed(
 
 const stubPortsLayer = Layer.merge(spawnerCanary, workerCanary)
 
-const vmPlatformLayer = Layer.succeed(
-  VmRunner,
-  VmRunner.of({
-    module: globalThis.process.getBuiltinModule('node:module'),
-    vm: globalThis.process.getBuiltinModule('node:vm'),
-  }),
-)
+const vmPlatformLayer = nodeVmPlatformLayer
 
 const suiteFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
