@@ -1,7 +1,6 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { InstrumentResult, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   Cause,
   Deferred,
@@ -66,7 +65,7 @@ interface Instrumented {
 }
 
 interface Harness {
-  readonly mutants: readonly Mutant[]
+  readonly mutants: readonly Mutant.Mutant[]
   readonly fixtureSources: Record<string, string>
   readonly modules: Instrumented
 }
@@ -98,16 +97,16 @@ const isNamespaceRecord = (u: unknown): u is Record<string, string | undefined> 
 
 const hostNamespace = (): object =>
   Option.getOrElse(
-    Option.liftPredicate(isNamespaceRecord)(Reflect.get(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE)),
+    Option.liftPredicate(isNamespaceRecord)(Reflect.get(globalThis, Mutant.InstrumenterContext.NAMESPACE)),
     () => {
       const created: Record<string, string | undefined> = {}
-      Reflect.set(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE, created)
+      Reflect.set(globalThis, Mutant.InstrumenterContext.NAMESPACE, created)
       return created
     },
   )
 
 const setActiveMutant = (id: string | undefined): Effect.Effect<void> =>
-  Effect.sync(() => Reflect.set(hostNamespace(), INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT, id))
+  Effect.sync(() => Reflect.set(hostNamespace(), Mutant.InstrumenterContext.ACTIVE_MUTANT, id))
 
 const withActiveMutant = <A, E>(id: string | undefined, effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
   Effect.flatMap(setActiveMutant(id), () => Effect.ensuring(effect, setActiveMutant(undefined)))
@@ -1322,7 +1321,7 @@ const operationCallSite = (
   return { line: at, column: line.indexOf(marker) + 1 }
 }
 
-const mutantsInside = (entry: ShapeEntry): readonly Mutant[] => {
+const mutantsInside = (entry: ShapeEntry): readonly Mutant.Mutant[] => {
   const current = harnessOf()
   const source = current.fixtureSources[entry.file]
   if (source === undefined) {
@@ -1466,7 +1465,7 @@ const buildHarness = Effect.gen(function*() {
         content,
       })),
   )
-  const result: InstrumentResult = yield* instrument(
+  const result: Instrument.InstrumentResult = yield* instrument(
     [
       ...sources.map((source) => ({ ...source, mutate: true })),
       ...supportSources.map((source) => ({ ...source, mutate: false })),

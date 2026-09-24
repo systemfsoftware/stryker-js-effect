@@ -1,20 +1,32 @@
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Boolean from 'effect/Boolean'
-import * as Clock from 'effect/Clock'
+import {
+  activateSandbox,
+  createHarnessApi,
+  createRegistry,
+  deactivateSandbox,
+  drainRegistry,
+  guardedExpect,
+  guardedVi,
+  installInterception,
+  makeEffectMethods,
+  nativeImport,
+  uninstallInterception,
+  writeGlobalState,
+} from '@systemfsoftware/stryker-vm-harness'
+import type { VmRunnerGlobalState } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
-import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
+import * as Semaphore from 'effect/Semaphore'
 
 import { ALL_TESTS_ID, ALL_TESTS_NAME } from './command-runner.resource.js'
 import { interpretDryRunResult, InterpretDryRunResultCommand } from './interpret-dry-run-result.workflow.js'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
 import { VmRunner } from './VmRunner.service.js'
-import type { VmPlatform, VmScript } from './VmRunner.service.js'
+import type { VmPlatform } from './VmRunner.service.js'
 
 const vmRunnerName = 'vm'
 
@@ -25,14 +37,8 @@ export const isVmRunner = (name: Options.TestRunnerConfig): name is 'vm' =>
 
 export interface VmTestRunnerConfig {
   readonly testFiles: readonly string[]
+  readonly sandboxWorkingDirectory?: string
 }
-
-export interface CompiledTests {
-  readonly fileName: string
-  readonly script: VmScript
-}
-
-const FALLBACK_FILE_NAME = 'stryker-vm-tests.js'
 
 const errorText = <A = unknown>(error: A): string =>
   Match.value(error).pipe(
@@ -40,78 +46,40 @@ const errorText = <A = unknown>(error: A): string =>
     Match.orElse((value) => String(value)),
   )
 
-const compileFailure = <A = unknown>(file: string, cause: A): TestRunner.TestRunnerFailed =>
-  TestRunner.TestRunnerFailed.make({
-    runnerName: vmRunnerName,
-    phase: 'init',
-    cause: `Could not compile "${file}" for the in-memory runner: ${errorText(cause)}`,
-  })
-
-const compileTests = (platform: VmPlatform, fs: FileSystem.FileSystem, testFiles: readonly string[]) =>
-  Effect.gen(function*() {
-    const sources = yield* Effect.forEach(testFiles, (file) =>
-      fs.readFileString(file).pipe(
-        Effect.mapError((cause) => compileFailure(file, cause)),
-        Effect.flatMap((source) =>
-          Effect.try({
-            try: (): string => platform.module.stripTypeScriptTypes(source, { mode: 'transform' }),
-            catch: (cause) => compileFailure(file, cause),
-          })
-        ),
-      ))
-    const fileName = Option.getOrElse(Option.fromUndefinedOr(testFiles.at(0)), () => FALLBACK_FILE_NAME)
-    const script = yield* Effect.try({
-      try: (): VmScript => new platform.vm.Script(sources.join('\n;\n'), { filename: fileName }),
-      catch: (cause) => compileFailure(fileName, cause),
-    })
-    return { fileName, script }
-  })
-
-const sandboxFor = (
-  platform: VmPlatform,
-  fileName: string,
-  activeMutantId: string | undefined,
-): object => {
-  const namespace = hostStrykerNamespace<string | undefined>()
-  namespace[Mutant.InstrumenterContext.ACTIVE_MUTANT] = activeMutantId
-  const moduleExports = {}
-  const moduleObj = { exports: moduleExports }
-  const sandbox = {
-    ...globalThis,
-    [Mutant.InstrumenterContext.NAMESPACE]: namespace,
-    require: platform.module.createRequire(fileName),
-    module: moduleObj,
-    exports: moduleExports,
-    __filename: fileName,
+const isInitFailure = <A = unknown>(error: A): boolean => {
+  if (error instanceof SyntaxError) {
+    return true
   }
-  return Object.assign(sandbox, {
-    global: sandbox,
-    globalThis: sandbox,
-  })
+  if (typeof error !== 'object' || error === null) {
+    return false
+  }
+  if ('code' in error && error.code === 'ERR_MODULE_NOT_FOUND') {
+    return true
+  }
+  return error instanceof Error && error.message.includes('[PARSE_ERROR]')
 }
 
-const resultFromRun = (failureMessage: string | undefined, timeSpentMs: number): TestRunner.CompleteDryRunResult =>
-  Match.value(failureMessage).pipe(
-    Match.when(Predicate.isString, (failure) => ({
-      status: 'complete' as const,
-      tests: [{
-        id: ALL_TESTS_ID,
-        name: ALL_TESTS_NAME,
-        status: 'failed' as const,
-        failureMessage: failure,
-        timeSpentMs,
-      }],
-    })),
-    Match.orElse(() => ({
-      status: 'complete' as const,
-      tests: [{ id: ALL_TESTS_ID, name: ALL_TESTS_NAME, status: 'success' as const, timeSpentMs }],
-    })),
-  )
+interface RunFailure {
+  readonly file: string
+  readonly message: string
+  readonly fatal: boolean
+}
+
+const runFailureFor = <A = unknown>(file: string, cause: A): RunFailure => {
+  const fatal = isInitFailure(cause)
+  const message = fatal
+    ? `Could not load "${file}" for the in-memory runner: ${errorText(cause)}`
+    : errorText(cause)
+  return { file, message, fatal }
+}
+
+let saltCounter = 0
 
 const isPlainObject = <A = unknown>(value: unknown): value is Record<string, A> => Predicate.isObject(value)
 
 const descriptorValue = <A>(descriptor: TypedPropertyDescriptor<A> | undefined) =>
   Option.fromNullishOr(descriptor?.value)
+
 const createHostNamespace = <A = unknown>(): Record<string, A> => {
   const created: Record<string, A> = {}
   Object.defineProperty(globalThis, Mutant.InstrumenterContext.NAMESPACE, {
@@ -131,81 +99,196 @@ const hostStrykerNamespace = <A = unknown>(): Record<string, A> =>
     {
       onNone: () => createHostNamespace<A>(),
       onSome: (current) =>
-        Boolean.match(isPlainObject<A>(current), {
-          onTrue: (): Record<string, A> => current,
-          onFalse: () => createHostNamespace<A>(),
-        }),
+        Match.value(isPlainObject<A>(current)).pipe(
+          Match.when(true, (): Record<string, A> => current),
+          Match.orElse(() => createHostNamespace<A>()),
+        ),
     },
   )
 
-const setActiveMutant = (activeMutantId: string | undefined) => {
-  hostStrykerNamespace<string | undefined>()[Mutant.InstrumenterContext.ACTIVE_MUTANT] = activeMutantId
+const monolithicResult = (failureMessage: string | undefined, timeSpentMs: number): TestRunner.CompleteDryRunResult =>
+  Match.value(failureMessage).pipe(
+    Match.when(Predicate.isString, (failure) => ({
+      status: 'complete' as const,
+      tests: [{
+        id: ALL_TESTS_ID,
+        name: ALL_TESTS_NAME,
+        status: 'failed' as const,
+        failureMessage: failure,
+        timeSpentMs,
+      }],
+    })),
+    Match.orElse(() => ({
+      status: 'complete' as const,
+      tests: [{ id: ALL_TESTS_ID, name: ALL_TESTS_NAME, status: 'success' as const, timeSpentMs }],
+    })),
+  )
+
+const prefixOf = (file: string, pathToFileURL: (path: string) => { readonly href: string }): string => {
+  const href = pathToFileURL(file).href
+  const lastSlash = href.lastIndexOf('/')
+  return href.slice(0, lastSlash + 1)
 }
 
-const withActiveMutant = <A, E, R>(activeMutantId: string | undefined, run: Effect.Effect<A, E, R>) =>
-  Effect.acquireUseRelease(
-    Effect.sync(() => {
-      const namespace = hostStrykerNamespace<string | undefined>()
-      const previous = namespace[Mutant.InstrumenterContext.ACTIVE_MUTANT]
-      namespace[Mutant.InstrumenterContext.ACTIVE_MUTANT] = activeMutantId
-      return previous
-    }),
-    () => run,
-    (previous) => Effect.sync(() => setActiveMutant(previous)),
-  )
+const commonPrefixOf = (
+  files: readonly string[],
+  pathToFileURL: (path: string) => { readonly href: string },
+): string => {
+  const dirs = files.map((file) => prefixOf(file, pathToFileURL))
+  return Option.match(Option.fromNullishOr(dirs[0]), {
+    onNone: () => '',
+    onSome: (first) =>
+      dirs.slice(1).reduce((prefix, dir) => shrinkPrefixTo(prefix, dir), first),
+  })
+}
 
-const runScriptIn = (context: object, compiled: CompiledTests): Effect.Effect<string | undefined> =>
-  Effect.match(
-    Effect.try({
-      try: (): undefined => {
-        compiled.script.runInContext(context)
-        return undefined
-      },
-      catch: (cause) => errorText(cause),
-    }),
-    {
-      onFailure: (message) => message,
-      onSuccess: () => undefined,
-    },
-  )
+const shrinkPrefixTo = (prefix: string, dir: string): string => {
+  let current = prefix
+  while (current !== '' && !dir.startsWith(current)) {
+    const cut = current.lastIndexOf('/', current.length - 2)
+    current = cut > 0 ? current.slice(0, cut + 1) : ''
+  }
+  return current
+}
 
-const runInFreshContext = (platform: VmPlatform, compiled: CompiledTests, activeMutantId: string | undefined) =>
-  Effect.acquireUseRelease(
-    Effect.sync(() => platform.vm.createContext(sandboxFor(platform, compiled.fileName, activeMutantId))),
-    (context) => withActiveMutant(activeMutantId, runScriptIn(context, compiled)),
-    () => Effect.void,
-  )
+const serialRunGate = Semaphore.makeUnsafe(1)
 
-const elapsedSince = (startedAt: number) => Effect.map(Clock.currentTimeMillis, (now) => now - startedAt)
-
-const runOnce = (platform: VmPlatform, compiled: CompiledTests, activeMutantId: string | undefined) =>
-  Effect.flatMap(
-    Clock.currentTimeMillis,
-    (startedAt) =>
-      Effect.flatMap(runInFreshContext(platform, compiled, activeMutantId), (failure) =>
-        Effect.map(elapsedSince(startedAt), (elapsedMs) => resultFromRun(failure, elapsedMs))),
+const testResultOf = (test: {
+  readonly file: string
+  readonly fullName: string
+  readonly timeSpentMs: number
+  readonly status: string
+  readonly failureMessage?: string | undefined
+}): TestRunner.TestResult => {
+  const base = { id: `${test.file}#${test.fullName}`, name: test.fullName, timeSpentMs: test.timeSpentMs }
+  return Match.value(test.status).pipe(
+    Match.when('failed', (): TestRunner.TestResult => ({
+      ...base,
+      status: 'failed',
+      failureMessage: test.failureMessage ?? '',
+    })),
+    Match.when('skipped', (): TestRunner.TestResult => ({ ...base, status: 'skipped' })),
+    Match.orElse((): TestRunner.TestResult => ({ ...base, status: 'success' })),
   )
+}
+
+const loadErrorResult = (runFailure: RunFailure): TestRunner.TestResult => ({
+  id: `${runFailure.file}#load error`,
+  name: `${runFailure.file} (load error)`,
+  status: 'failed',
+  failureMessage: runFailure.message,
+  timeSpentMs: 0,
+})
+
+const runOnce = (
+  platform: VmPlatform,
+  testFiles: readonly string[],
+  timeoutMs: number | undefined,
+  activeMutantId: string | undefined,
+  sandboxWorkingDirectory: string | undefined,
+): Effect.Effect<TestRunner.DryRunResult, TestRunner.TestRunnerFailed> =>
+  Effect.gen(function*() {
+    const firstFile = Option.fromNullishOr(testFiles[0])
+    if (Option.isNone(firstFile)) {
+      return monolithicResult(undefined, 0)
+    }
+    const registry = createRegistry()
+    const api = createHarnessApi(registry)
+    const namespace = hostStrykerNamespace<string | undefined>()
+    const previousActive = namespace[Mutant.InstrumenterContext.ACTIVE_MUTANT]
+    namespace[Mutant.InstrumenterContext.ACTIVE_MUTANT] = activeMutantId
+    let armed = false
+    try {
+      const real = yield* Effect.tryPromise({
+        try: () => import('vitest'),
+        catch: (cause) =>
+          TestRunner.TestRunnerFailed.make({
+            runnerName: vmRunnerName,
+            phase: 'init',
+            cause: cause instanceof Error ? cause.message : 'the vitest module failed to load',
+          }),
+      })
+      const state: VmRunnerGlobalState = {
+        api,
+        expect: guardedExpect(real.expect),
+        vi: guardedVi(real.vi),
+        effectVitest: {
+          it: makeEffectMethods({
+            api: api.it,
+            describe: api.describe,
+            hooks: api.hooks,
+            tests: registry.tests,
+          }),
+        },
+      }
+
+      const prefix = Option.match(Option.fromNullishOr(sandboxWorkingDirectory), {
+        onNone: () => commonPrefixOf(testFiles, platform.pathToFileURL),
+        onSome: (directory) => platform.pathToFileURL(directory).href.replace(/\/?$/, '/'),
+      })
+
+      installInterception(platform.moduleBuiltin)
+      activateSandbox(prefix)
+      writeGlobalState(state)
+      armed = true
+
+      const salt = saltCounter++
+      const loadFailure = yield* Effect.forEach(testFiles, (file) =>
+        Effect.promise(() => {
+          registry.files.current = file
+          registry.frames.current = []
+          const url = `${platform.pathToFileURL(file).href}?salt=${salt}`
+          return nativeImport(url).then(
+            () => Option.none<RunFailure>(),
+            <A = unknown>(cause: A) => Option.some(runFailureFor(file, cause)),
+          )
+        }))
+      const fatal = loadFailure.find((failure) => failure.fatal)
+      if (fatal !== undefined) {
+        return yield* TestRunner.TestRunnerFailed.make({
+          runnerName: vmRunnerName,
+          phase: 'init',
+          cause: fatal.message,
+        })
+      }
+      const runFailure = loadFailure[0]
+
+      const outcome = yield* Effect.promise(() => drainRegistry(registry, timeoutMs))
+      if (outcome.kind === 'timeout') {
+        return { status: 'timeout' }
+      }
+      const drainedElapsed = outcome.tests.reduce((total, test) => total + test.timeSpentMs, 0)
+      if (registry.tests.length === 0) {
+        return monolithicResult(Option.map(runFailure, (failure) => failure.message).pipe(Option.getOrUndefined), drainedElapsed)
+      }
+      const tests: TestRunner.TestResult[] = outcome.tests.map(testResultOf)
+      return {
+        status: 'complete',
+        tests: Option.match(runFailure, {
+          onNone: () => tests,
+          onSome: (failure) => [...tests, loadErrorResult(failure)],
+        }),
+      }
+    } finally {
+      if (armed) {
+        writeGlobalState(undefined)
+        deactivateSandbox()
+        uninstallInterception()
+      }
+      namespace[Mutant.InstrumenterContext.ACTIVE_MUTANT] = previousActive
+    }
+  })
 
 export const vmTestRunner = (
   config: VmTestRunnerConfig,
-): Effect.Effect<PooledTestRunner, TestRunner.TestRunnerFailed, FileSystem.FileSystem | VmRunner> =>
+): Effect.Effect<PooledTestRunner, TestRunner.TestRunnerFailed, VmRunner> =>
   Effect.gen(function*() {
     const platform = yield* VmRunner
-    const fs = yield* FileSystem.FileSystem
-    const compiled = yield* Ref.make<Option.Option<CompiledTests>>(Option.none())
 
-    const compiledTests = (testFiles: readonly string[]) =>
-      Effect.flatMap(
-        Ref.get(compiled),
-        Option.match({
-          onNone: () =>
-            Effect.tap(compileTests(platform, fs, testFiles), (tests) => Ref.set(compiled, Option.some(tests))),
-          onSome: Effect.succeed,
-        }),
+    const run = (testFiles: readonly string[], timeoutMs: number | undefined, activeMutantId: string | undefined) =>
+      serialRunGate.withPermits(1)(
+        runOnce(platform, testFiles, timeoutMs, activeMutantId, config.sandboxWorkingDirectory),
       )
-
-    const run = (testFiles: readonly string[], activeMutantId: string | undefined) =>
-      Effect.flatMap(compiledTests(testFiles), (tests) => runOnce(platform, tests, activeMutantId))
 
     const testFilesOf = (override: readonly string[] | undefined) =>
       Match.value(config.testFiles).pipe(
@@ -216,9 +299,9 @@ export const vmTestRunner = (
     return makePooledTestRunner({
       capabilities: Effect.succeed(vmRunnerCapabilities),
       init: Effect.void,
-      dryRun: (options: TestRunner.DryRunOptions) => run(testFilesOf(options.testFiles), undefined),
+      dryRun: (options: TestRunner.DryRunOptions) => run(testFilesOf(options.testFiles), options.timeout, undefined),
       mutantRun: (options: Mutant.MutantRunOptions) =>
-        run(config.testFiles, options.activeMutant.id).pipe(
+        run(config.testFiles, options.timeout, options.activeMutant.id).pipe(
           Effect.map((dryRunResult) => interpretDryRunResult(InterpretDryRunResultCommand.make({ dryRunResult }))),
           Effect.flatMap((decided) =>
             Result.match(decided, {

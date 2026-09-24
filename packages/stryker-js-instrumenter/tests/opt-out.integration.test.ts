@@ -1,6 +1,6 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
@@ -64,7 +64,7 @@ Feature('Keeping the Effect concurrency faults off unless a run asks for them')
             ),
         ),
         Then('the report names no concurrency mutator, and no fixture came out empty')((
-          { fixtures, result }: { fixtures: readonly FixtureFile[]; result: InstrumentResult },
+          { fixtures, result }: { fixtures: readonly FixtureFile[]; result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const concurrencyMutants = result.mutants

@@ -51,8 +51,8 @@ import type {
   TSModuleBlock,
   TSModuleDeclaration,
   VariableDeclaration,
-} from './Ast.handle.js'
-import { callExpression, identifier, memberExpression, nodeType, traverse, type TraversePath } from './Ast.handle.js'
+} from '@systemfsoftware/stryker-ignorer-interface'
+import { callExpression, identifier, make, memberExpression, nodeType, traverse, type TraversePath } from './Ast.handle.js'
 import type { MutatorContext } from './Mutator.service.js'
 
 export type EffectModuleName = 'Effect' | 'Ref' | 'Semaphore' | 'SynchronizedRef'
@@ -884,7 +884,7 @@ const staticMemberName = (member: MemberExpression): Option.Option<string> =>
 
 const nodesOutsideFunctions = (root: Node): readonly Node[] => {
   const collected: Node[] = []
-  traverse(root, {
+  traverse(make(root), {
     enter(path) {
       collected.push(path.node)
       pruneAtFunction(path)
@@ -895,7 +895,7 @@ const nodesOutsideFunctions = (root: Node): readonly Node[] => {
 
 const allNodesUnder = (root: Node): readonly Node[] => {
   const collected: Node[] = []
-  traverse(root, {
+  traverse(make(root), {
     enter(path) {
       collected.push(path.node)
     },

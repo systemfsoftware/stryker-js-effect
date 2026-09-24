@@ -107,6 +107,7 @@ export interface Mutant extends Mutable {
   readonly original: Node
   readonly offset: Position
   readonly lineTable: Arr.NonEmptyReadonlyArray<number>
+  readonly replacementCode: Result.Result<string, PrintFailed>
 }
 
 export interface CreateMutantOptions {
@@ -143,11 +144,12 @@ const createMutant = (params: CreateMutantOptions): Mutant => ({
   replacement: params.specs.replacement,
   mutatorName: params.specs.mutatorName,
   ignoreReason: params.specs.ignoreReason,
+  replacementCode: printedReplacement(params.id, params.specs.replacement),
 })
 
-const replacementTextOf = (mutant: Mutant): Result.Result<string, PrintFailed> =>
-  Option.match(SourceText.printedOrEmpty(mutant.replacement), {
-    onNone: () => Result.fail(PrintFailed.make({ message: `Mutant ${mutant.id} replacement is not printable` })),
+const printedReplacement = (id: string, replacement: Node): Result.Result<string, PrintFailed> =>
+  Option.match(SourceText.printedOrEmpty(replacement), {
+    onNone: () => Result.fail(PrintFailed.make({ message: `Mutant ${id} replacement is not printable` })),
     onSome: Result.succeed,
   })
 
@@ -155,7 +157,7 @@ const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing
   Option.match(Option.fromNullishOr(spanOf(mutant.original)), {
     onNone: () => Result.fail(MutantSpanMissing.make({ edge: 'start' })),
     onSome: (span) =>
-      Result.flatMap(replacementTextOf(mutant), (replacement) => {
+      Result.flatMap(mutant.replacementCode, (replacement) => {
         const baseFields = {
           _tag: 'Mutant' as const,
           fileName: mutant.fileName,
@@ -1142,8 +1144,51 @@ const updateOperatorMutator: Mutator = (node) =>
 
 const isUpdateExpression = (node: Node): node is UpdateExpression => node.type === 'UpdateExpression'
 
+export const optInMutators: Readonly<Record<string, Mutator>> = Object.freeze({
+  AtomicUpdateSplit: atomicUpdateSplitMutator,
+  SynchronizationRemoval: synchronizationRemovalMutator,
+  FinalizerEscape: finalizerEscapeMutator,
+})
+
+export type MutatorEntry = readonly [name: string, mutate: Mutator]
+
+export interface MutatorRegistry {
+  readonly defaults: Readonly<Record<string, Mutator>>
+  readonly optIn: Readonly<Record<string, Mutator>>
+}
+
+export interface MutatorSelection {
+  readonly active: readonly MutatorEntry[]
+  readonly known: readonly string[]
+}
+
+/**
+ * The entries a run applies, and the names its directives may reference.
+ *
+ * Naming is additive, never a whitelist: `optInMutations` adds entries on top
+ * of the defaults and removes none. Selection walks the registry's declared
+ * order, not the order the run listed its names in, so a mutant's identity
+ * never depends on how a config happened to spell the list; a name listed
+ * twice selects its entry once. An unknown name selects nothing here —
+ * `instrument` refuses it before any file is parsed, because a typo that
+ * silently enables nothing removes mutants and raises the score.
+ *
+ * Pure: a registry and a run's names in, entries and names out.
+ */
+export const selectMutators = (
+  registry: MutatorRegistry,
+  optInMutations: readonly string[],
+): MutatorSelection => ({
+  active: [
+    ...Object.entries(registry.defaults),
+    ...Object.entries(registry.optIn).filter(([name]) => optInMutations.includes(name)),
+  ],
+  known: [...Object.keys(registry.defaults), ...Object.keys(registry.optIn)],
+})
+
 export interface MutatorsShape {
   readonly mutators: Readonly<Record<string, Mutator>>
+  readonly optInMutators: Readonly<Record<string, Mutator>>
   readonly create: (options: CreateMutantOptions) => Mutant
   readonly apply: (mutant: Mutant, originalTree: Node) => Result.Result<Node, MutantNotApplied>
   readonly toApi: (mutant: Mutant) => Result.Result<ApiMutant, MutantSpanMissing | PrintFailed | S.SchemaError>
@@ -1171,6 +1216,7 @@ export class Mutators extends Context.Service<Mutators, MutatorsShape>()(
       UnaryOperator: unaryOperatorMutator,
       UpdateOperator: updateOperatorMutator,
     }),
+    optInMutators,
     create: createMutant,
     apply: applyMutant,
     toApi: toApiMutant,
