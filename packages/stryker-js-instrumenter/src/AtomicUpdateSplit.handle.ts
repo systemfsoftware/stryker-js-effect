@@ -1,8 +1,8 @@
+import type { Expression, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Arr from 'effect/Array'
 import * as Bool from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type { Expression, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { arrowFunctionExpression, cloneNode, identifier, memberExpression } from './Ast.handle.js'
 import {
   type EffectModuleName,

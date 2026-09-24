@@ -58,7 +58,9 @@ const runFromProject = (
       }),
   )
 
-const failureOf = (outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>): Engine.StageError => {
+const failureOf = (
+  outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
+): Engine.StageError => {
   if (Result.isSuccess(outcome)) {
     throw new Error('the run was expected to be refused, but it completed')
   }

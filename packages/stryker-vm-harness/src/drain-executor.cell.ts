@@ -9,8 +9,8 @@ import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 
 import {
-  drainRegistry as pureDrainRegistry,
   type DrainOutcome,
+  drainRegistry as pureDrainRegistry,
   DrainRegistryCommand,
   DrainTimedOut,
   PlannedTestView,
@@ -18,13 +18,7 @@ import {
 } from './drain-registry.workflow.js'
 import { closeOpenLayerScopes } from './effect-adapter.handle.js'
 import { planRun } from './registry.handle.js'
-import type {
-  HarnessTestContext,
-  HarnessTestFunction,
-  HookKind,
-  PlannedTest,
-  TestRegistry,
-} from './registry.schema.js'
+import type { HarnessTestContext, HarnessTestFunction, HookKind, PlannedTest, TestRegistry } from './registry.schema.js'
 
 const plannedViewOf = (planned: PlannedTest): PlannedTestView =>
   PlannedTestView.make({
@@ -255,8 +249,7 @@ const settle =
           Effect.andThen(Effect.promise(() => closeOpenLayerScopes()).pipe(Effect.orDie)),
           Effect.as(DrainTimedOut.make({})),
         ),
-      onSome: (collected) =>
-        waitForNextTick().pipe(Effect.map(() => decidedOutcome(plan, collected, lateRejections))),
+      onSome: (collected) => waitForNextTick().pipe(Effect.map(() => decidedOutcome(plan, collected, lateRejections))),
     })
 
 export const executeDrainRegistry: {

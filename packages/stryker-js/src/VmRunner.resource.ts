@@ -155,7 +155,10 @@ const commonPrefixOf = (files: readonly string[], pathToFileURL: (path: string) 
     onSome: (first) =>
       files
         .slice(1)
-        .reduce((prefix, file) => shrinkPrefixTo(prefix, prefixOf(file, pathToFileURL)), prefixOf(first, pathToFileURL)),
+        .reduce(
+          (prefix, file) => shrinkPrefixTo(prefix, prefixOf(file, pathToFileURL)),
+          prefixOf(first, pathToFileURL),
+        ),
   })
 
 const sandboxPrefixOf = (
@@ -192,8 +195,10 @@ const loadErrorResult = (runFailure: RunFailure): TestRunner.TestResult => ({
 })
 
 const initFailureOf = (failures: readonly RunFailure[]): Option.Option<TestRunner.TestRunnerFailed> =>
-  Option.map(Arr.findFirst(failures, (failure) => failure.fatal), (failure) =>
-    TestRunner.TestRunnerFailed.make({ runnerName: vmRunnerName, phase: 'init', cause: failure.message }))
+  Option.map(
+    Arr.findFirst(failures, (failure) => failure.fatal),
+    (failure) => TestRunner.TestRunnerFailed.make({ runnerName: vmRunnerName, phase: 'init', cause: failure.message }),
+  )
 
 const loadErrorsOf = (failures: readonly RunFailure[]): readonly TestRunner.TestResult[] =>
   Option.toArray(Option.map(Arr.head(failures), loadErrorResult))
@@ -269,7 +274,12 @@ const runOnce = (
           expect: Assertions.guardedExpect(real.expect),
           vi: Assertions.guardedVi(real.vi),
           effectVitest: {
-            it: EffectAdapter.makeEffectMethods({ api: api.it, describe: api.describe, hooks: api.hooks, tests: registry.tests }),
+            it: EffectAdapter.makeEffectMethods({
+              api: api.it,
+              describe: api.describe,
+              hooks: api.hooks,
+              tests: registry.tests,
+            }),
           },
         }
         Sandbox.installInterception(platform.moduleBuiltin)

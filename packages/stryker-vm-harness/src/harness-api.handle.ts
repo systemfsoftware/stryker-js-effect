@@ -103,9 +103,7 @@ const resolveFn = (
 ): TestFunctionWithTimeout | undefined =>
   Match.value(fnOrOptions).pipe(
     Match.when(isTestFunction, (resolved) => resolved),
-    Match.orElse(() =>
-      Option.getOrUndefined(Option.filter(Option.fromNullishOr(maybeFn), isTestFunction))
-    ),
+    Match.orElse(() => Option.getOrUndefined(Option.filter(Option.fromNullishOr(maybeFn), isTestFunction))),
   )
 
 const eachArgsOf = (

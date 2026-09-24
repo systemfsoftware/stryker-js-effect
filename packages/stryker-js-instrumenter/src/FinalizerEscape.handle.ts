@@ -1,7 +1,3 @@
-import * as Arr from 'effect/Array'
-import * as Bool from 'effect/Boolean'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import type {
   ArrowFunctionExpression,
   Expression,
@@ -9,6 +5,10 @@ import type {
   Node,
   ParamPattern,
 } from '@systemfsoftware/stryker-ignorer-interface'
+import * as Arr from 'effect/Array'
+import * as Bool from 'effect/Boolean'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import {
   arrowFunctionExpression,
   binaryExpression,

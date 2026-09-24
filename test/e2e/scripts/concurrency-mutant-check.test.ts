@@ -88,7 +88,9 @@ const instrumentedWires = (layout: FixtureLayout) =>
       optInMutations: [...LIVE_OPT_IN_MUTATIONS],
     })
     return instrumented.mutants
-      .filter((mutant) => LIVE_OPT_IN_MUTATIONS.includes(mutant.mutatorName))
+      .filter((mutant) =>
+        LIVE_OPT_IN_MUTATIONS.includes(mutant.mutatorName)
+      )
       .map(wireOf)
   })
 
@@ -102,7 +104,9 @@ interface CheckerRig {
 const optionsFor = (layout: FixtureLayout): Effect.Effect<Options.StrykerOptions, S.SchemaError> =>
   S.decodeEffect(Options.StrykerOptionsSchema)({ tsconfigFile: layout.projectTsConfig })
 
-const rigLayers = (layout: FixtureLayout): Layer.Layer<CheckerRuntime | TypeScriptCompiler, never, FileSystem.FileSystem | Path.Path> =>
+const rigLayers = (
+  layout: FixtureLayout,
+): Layer.Layer<CheckerRuntime | TypeScriptCompiler, never, FileSystem.FileSystem | Path.Path> =>
   Layer.unwrap(
     Effect.map(Effect.orDie(optionsFor(layout)), (options) =>
       Layer.mergeAll(compilerLayer(TypeScriptCompiler, options), CheckerRuntime.layer(options))),
@@ -125,8 +129,7 @@ const checkerRig = (layout: FixtureLayout): Effect.Effect<CheckerRig, never, Fil
 const withChecker = <A, E, R>(
   rig: CheckerRig,
   use: (checker: Checker.Checker['Service']) => Effect.Effect<A, E, R>,
-): Effect.Effect<A, E | Cause.Cause<Checker.CheckerFailed>, R> =>
-  Effect.flatMap(rig.runtime.checker, use)
+): Effect.Effect<A, E | Cause.Cause<Checker.CheckerFailed>, R> => Effect.flatMap(rig.runtime.checker, use)
 
 const startComplaints = (start: Result.Result<void, Cause.Cause<Checker.CheckerFailed>>): ReadonlyArray<string> =>
   Result.match(start, {

@@ -21,7 +21,7 @@ import {
   ScriptRootWithoutSpan,
 } from './Instrument.schema.js'
 import { Mutant as ApiMutant } from './Mutant.schema.js'
-import { optInMutators, Mutators, type MutatorsShape } from './Mutator.service.js'
+import { Mutators, type MutatorsShape, optInMutators } from './Mutator.service.js'
 import { Parser, type ParserError, type ParserShape } from './Parser.service.js'
 import { PrintFailed } from './print/PrintFailed.schema.js'
 import { SourceText } from './print/SourceText.schema.js'

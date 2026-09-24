@@ -1,4 +1,3 @@
-import * as Arbitrary from 'effect/unstable/arbitrary/Arbitrary'
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
 import type * as Context from 'effect/Context'
@@ -14,28 +13,25 @@ import * as Schedule from 'effect/Schedule'
 import * as Scope from 'effect/Scope'
 import * as TestClock from 'effect/testing/TestClock'
 import * as TestConsole from 'effect/testing/TestConsole'
+import * as Arbitrary from 'effect/unstable/arbitrary/Arbitrary'
 
 import type {
   ArbitraryInput,
   EachBinder,
   EachFn,
   EffectAdapterRegistration,
-  EffectTestFunction,
-  EffectTestOptions,
   EffectTester,
   EffectTesterVariants,
+  EffectTestFunction,
+  EffectTestOptions,
   EffectVitestIt,
-  LayeredVitestIt,
   LayerBinder,
   LayerBinderOptions,
+  LayeredVitestIt,
   PropBinder,
   PropertyTimeout,
 } from './effect-adapter.schema.js'
-import type {
-  HarnessTestContext,
-  RegistryTaskInfo,
-  RegistryTestApi,
-} from './registry.schema.js'
+import type { HarnessTestContext, RegistryTaskInfo, RegistryTestApi } from './registry.schema.js'
 
 type AnyDecoded<A = unknown> = A
 
@@ -48,8 +44,7 @@ const failureErrorOf = (cause: Cause.Cause<AnyDecoded>): Error =>
   )
 
 const runTest =
-  (context: HarnessTestContext) =>
-  <A = unknown, E = unknown>(effect: Effect.Effect<A, E, never>): Promise<void> => {
+  (context: HarnessTestContext) => <A = unknown, E = unknown>(effect: Effect.Effect<A, E, never>): Promise<void> => {
     const promise = Effect.runPromiseExit(effect).then((exit) => {
       if (Exit.isFailure(exit)) {
         throw failureErrorOf(exit.cause)
@@ -257,8 +252,7 @@ const buildIntoScope = <ROut, E>(
   layer: Layer.Layer<ROut, E>,
   memoMap: Layer.MemoMap,
   scope: Scope.Scope,
-): Context.Context<ROut> =>
-  Effect.runSync(Layer.buildWithMemoMap(layer, memoMap, scope).pipe(Effect.orDie))
+): Context.Context<ROut> => Effect.runSync(Layer.buildWithMemoMap(layer, memoMap, scope).pipe(Effect.orDie))
 
 const openLayerScopes = new Set<() => Promise<void>>()
 
@@ -297,8 +291,7 @@ const openLayerScope = <ROut, E>(
 type LayeredBody<R> = (it: LayeredVitestIt<R>) => void
 type LayeredArgs<R> = readonly [body: LayeredBody<R>] | readonly [name: string, body: LayeredBody<R>]
 
-const isBodyOnly = <R>(args: LayeredArgs<R>): args is readonly [body: LayeredBody<R>] =>
-  typeof args[0] === 'function'
+const isBodyOnly = <R>(args: LayeredArgs<R>): args is readonly [body: LayeredBody<R>] => typeof args[0] === 'function'
 
 interface LayerInvocation<R> {
   readonly name: string | undefined
@@ -308,16 +301,14 @@ interface LayerInvocation<R> {
 const invocationOf = <R>(args: LayeredArgs<R>): LayerInvocation<R> =>
   isBodyOnly(args) ? { name: undefined, body: args[0] } : { name: args[0], body: args[1] }
 
-const blockFinalizer =
-  (remaining: { value: number }, close: () => Promise<void>) =>
-  (): Promise<void> | undefined => {
-    remaining.value -= 1
-    return Match.value(remaining.value === 0).pipe(
-      Match.when(true, () => close()),
-      Match.when(false, () => undefined),
-      Match.exhaustive,
-    )
-  }
+const blockFinalizer = (remaining: { value: number }, close: () => Promise<void>) => (): Promise<void> | undefined => {
+  remaining.value -= 1
+  return Match.value(remaining.value === 0).pipe(
+    Match.when(true, () => close()),
+    Match.when(false, () => undefined),
+    Match.exhaustive,
+  )
+}
 
 interface LayerScopeHandle {
   readonly built: Context.Context<never>
@@ -381,8 +372,7 @@ const runLayered = <R>(
 }
 
 export const layerBinderFor = (context: EffectAdapterRegistration): LayerBinder => {
-  const binder = <R, E>(layer_: Layer.Layer<R, E>, options?: LayerBinderOptions) =>
-  (...args: LayeredArgs<R>): void => {
+  const binder = <R, E>(layer_: Layer.Layer<R, E>, options?: LayerBinderOptions) => (...args: LayeredArgs<R>): void => {
     const excludeTestServices = Option.getOrElse(
       Option.flatMap(
         Option.fromNullishOr(options),
@@ -417,8 +407,7 @@ export const layerBinderFor = (context: EffectAdapterRegistration): LayerBinder 
       layer: nestedLayerBinder,
     })
 
-    const makeIt = (base: RegistryTestApi): LayeredVitestIt<R> =>
-      makeLayered<R>(base, layeredOverrides(base))
+    const makeIt = (base: RegistryTestApi): LayeredVitestIt<R> => makeLayered<R>(base, layeredOverrides(base))
 
     runLayered(context, opened, makeIt, args)
   }

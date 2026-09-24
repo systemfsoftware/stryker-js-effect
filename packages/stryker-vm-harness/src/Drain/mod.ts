@@ -1,9 +1,9 @@
 export { executeDrainRegistry, executeDrainRegistry as drainRegistry } from '../drain-executor.cell.js'
 export {
   DrainCompleted,
-  DrainRegistryCommand,
   DrainedTestSchema,
   drainRegistry as pureDrainRegistry,
+  DrainRegistryCommand,
   DrainTimedOut,
   TestOutcomeSchema,
 } from '../drain-registry.workflow.js'

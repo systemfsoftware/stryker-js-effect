@@ -22,11 +22,11 @@
  * no mutant whenever the replacement would evaluate an argument twice or lean on
  * a moved argument that can yield.
  */
+import type { Expression, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Arr from 'effect/Array'
 import * as Bool from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type { Expression, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { arrowFunctionExpression, callExpression, cloneNode, identifier, memberExpression } from './Ast.handle.js'
 import {
   type EffectCallForm,

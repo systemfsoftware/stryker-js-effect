@@ -89,11 +89,9 @@ const isOnlyMode = (mode: TestMode | undefined): boolean =>
     Match.orElse(() => false),
   )
 
-const suiteHolds = (registry: TestRegistry, id: number): boolean =>
-  isHeldMode(registry.suites.get(id)?.mode)
+const suiteHolds = (registry: TestRegistry, id: number): boolean => isHeldMode(registry.suites.get(id)?.mode)
 
-const suiteOnly = (registry: TestRegistry, id: number): boolean =>
-  isOnlyMode(registry.suites.get(id)?.mode)
+const suiteOnly = (registry: TestRegistry, id: number): boolean => isOnlyMode(registry.suites.get(id)?.mode)
 
 const isSkipped = (registry: TestRegistry, test: RegisteredTest, onlyPresent: boolean): boolean =>
   Boolean.or(

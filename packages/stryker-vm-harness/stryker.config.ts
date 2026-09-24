@@ -7,8 +7,8 @@ export default defineConfig({
     'src/drain-registry.workflow.ts',
     'src/registry.handle.ts',
     'src/harness-api.handle.ts',
-    'src/assertions.schema.ts',
-    'src/harness-sources.schema.ts',
+    'src/assertions.handle.ts',
+    'src/harness-sources.handle.ts',
   ],
   testRunner: {
     plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
