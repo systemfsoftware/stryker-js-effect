@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Worker } from '@systemfsoftware/stryker-js'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -9,6 +8,7 @@ import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { expect } from 'vitest'
+import { Worker } from '../src/mod.js'
 
 import {
   type ChildBehaviour,

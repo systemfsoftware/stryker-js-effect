@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { RunEvent } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
@@ -11,6 +10,7 @@ import * as Sink from 'effect/Sink'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 import { expect } from 'vitest'
+import { RunEvent } from '../src/mod.js'
 
 const Feature = makeFeature({ it, layer })
 

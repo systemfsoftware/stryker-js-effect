@@ -1,4 +1,3 @@
-import { Worker } from '@systemfsoftware/stryker-js'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
@@ -11,6 +10,7 @@ import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 import * as Socket from 'effect/unstable/socket/Socket'
 import * as SocketServer from 'effect/unstable/socket/SocketServer'
+import { Worker } from '../../src/mod.js'
 
 import { servingLauncher, singleConnection } from './substituted-worker.fixture.js'
 

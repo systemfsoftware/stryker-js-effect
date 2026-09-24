@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Configuration } from '@systemfsoftware/stryker-js'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Context from 'effect/Context'
@@ -12,6 +11,7 @@ import * as Path from 'effect/Path'
 import { systemError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 import { expect } from 'vitest'
+import { Configuration } from '../src/mod.js'
 
 const Feature = makeFeature({ it, layer })
 

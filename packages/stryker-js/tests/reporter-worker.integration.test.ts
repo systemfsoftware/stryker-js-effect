@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Plugin as StrykerPlugin, RunEvent, type Worker as StrykerWorker } from '@systemfsoftware/stryker-js'
 import { Options, type Plugin, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
@@ -8,6 +7,7 @@ import * as Match from 'effect/Match'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import { expect } from 'vitest'
+import { Plugin as StrykerPlugin, RunEvent, type Worker as StrykerWorker } from '../src/mod.js'
 
 import {
   makeReporterWorkerTrace,

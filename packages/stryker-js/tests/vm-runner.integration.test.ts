@@ -1,6 +1,5 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Configuration, Plugin, Worker } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
@@ -15,6 +14,7 @@ import * as Path from 'effect/Path'
 import type * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { expect } from 'vitest'
+import { Configuration, Plugin, Worker } from '../src/mod.js'
 
 import { nodeVmPlatformLayer } from '../src/drivers/node.js'
 

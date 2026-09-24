@@ -16,7 +16,7 @@ export namespace Configuration {
 
 // @public (undocumented)
 export namespace Engine {
-    export { DryRunDone, EnginePorts, IdGenerator, IdGeneratorShape, IncrementalReportSchema, InstrumentDone, MutationTestDone, PrepareDone, PrepareExecutorArgs, Project, ProjectFile, RunEnvironment, RunEnvironmentShape, RunStageServices, SandboxHandle, StageError, StageServices, StrykerError, StrykerRun, TestCoverage, WiredRunLayer, mutationTestCell, strykerCell };
+    export { DryRunDone, EnginePorts, IdGenerator, IdGeneratorShape, IncrementalReportSchema, InstrumentDone, MutationTestDone, PrepareDone, PrepareExecutorArgs, Project, ProjectFile, RunEnvironment, RunEnvironmentShape, RunStageServices, SandboxHandle, StageError, StageServices, StrykerError, StrykerRun, TestCoverage, WiredRunLayer, mutationTestCell, nodePlatformLayer, strykerCell };
 }
 
 // @public (undocumented)

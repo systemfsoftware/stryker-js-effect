@@ -1,7 +1,6 @@
 import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Plugin } from '@systemfsoftware/stryker-js'
 import { Options, Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace as RuntimeTrace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
@@ -11,6 +10,7 @@ import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import * as Headers from 'effect/unstable/http/Headers'
 import { expect } from 'vitest'
+import { Plugin } from '../src/mod.js'
 
 import {
   makeTraceWorkerRecord,
