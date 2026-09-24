@@ -1,5 +1,5 @@
 import type { InstrumenterContext, MutantCoverage } from '@systemfsoftware/stryker-js-instrumenter'
-import { afterAll, afterEach, beforeAll, beforeEach, inject, RunnerTestCase, RunnerTestSuite } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, inject, RunnerTestCase } from 'vitest'
 
 // This file is copied to the sandbox dir, don't import anything local!
 // Runtime-copied artifact — copied verbatim into the sandbox at runtime; must remain standalone with no local imports.
@@ -56,23 +56,7 @@ if (mode === 'mutant') {
   })
 }
 
-function collectTestName({
-  name,
-  suite,
-}: {
-  name: string
-  suite?: RunnerTestSuite
-}): string {
-  const nameParts = [name]
-  let currentSuite = suite
-  while (currentSuite) {
-    nameParts.unshift(currentSuite.name)
-    currentSuite = currentSuite.suite
-  }
-  return nameParts.join(' ').trim()
-}
-
 function toRawTestId(test: RunnerTestCase): string {
-  return `${test.file.filepath}#${collectTestName(test)}`
+  return `${test.file.filepath}#${test.fullTestName}`
 }
 // Stryker restore all
