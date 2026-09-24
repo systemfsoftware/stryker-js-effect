@@ -1,7 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { CanonicalFileName, Mutant, MutantId, MutatorName } from '@systemfsoftware/stryker-js-instrumenter'
 import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
@@ -20,6 +19,7 @@ import {
   SurvivorsRejection,
 } from '../admit-survivors-run.workflow.js'
 import { ConfigFileUnreadableError } from '../ConfigError.schema.js'
+import { RelativeNormalizedFileName } from '../matching.schema.js'
 import type { OutputMode } from '../output-mode.schema.js'
 import { readConfig } from '../run/load-config.cell.js'
 import { StrykerPackage } from '../stryker-package.schema.js'
@@ -50,6 +50,8 @@ type HashContent = (content: string) => string
 
 type ResolveAbsolutePath = (file: string) => string
 
+type RelativizeFileName = (fileName: string) => string
+
 const hashContent: HashContent = (content) => bytesToHex(sha256(utf8ToBytes(content)))
 
 const priorSourceHashes = (priorReport: PriorReportDocument, hash: HashContent) =>
@@ -66,42 +68,33 @@ const survivorLocationOf = (mutant: PriorReportMutant) => ({
   },
 })
 
-const survivorFieldsOf = (
-  file: string,
-  mutant: PriorReportMutant,
-  resolveAbsolutePath: ResolveAbsolutePath,
-  basePath: string,
-) => {
-  const absolute = resolveAbsolutePath(file)
-  return {
-    id: MutantId.make(mutant.id),
-    fileName: CanonicalFileName.make(absolute),
-    mutatorName: MutatorName.make(mutant.mutatorName),
-    replacement: mutant.replacement ?? mutant.mutatorName,
-    location: survivorLocationOf(mutant),
-    relativeFileName: Boolean.match(absolute.startsWith(basePath), {
-      onTrue: () => absolute.slice(basePath.length).replace(/^\/+/, ''),
-      onFalse: () => absolute,
-    }).replace(/\\/g, '/'),
-  }
-}
-
 const reportMutantToMutant = (
   file: string,
   mutant: PriorReportMutant,
   resolveAbsolutePath: ResolveAbsolutePath,
-  basePath: string,
-) => Mutant.make(survivorFieldsOf(file, mutant, resolveAbsolutePath, basePath))
+  relativize: RelativizeFileName,
+) => {
+  const fileName = resolveAbsolutePath(file)
+  return {
+    _tag: 'Mutant' as const,
+    id: mutant.id,
+    fileName,
+    relativeFileName: relativize(fileName),
+    mutatorName: mutant.mutatorName,
+    replacement: mutant.replacement ?? mutant.mutatorName,
+    location: survivorLocationOf(mutant),
+  }
+}
 
 const extractSurvivors = (
   priorReport: PriorReportDocument,
   resolveAbsolutePath: ResolveAbsolutePath,
-  basePath: string,
+  relativize: RelativizeFileName,
 ) =>
   Object.entries(priorReport.files).flatMap(([file, fileResult]) =>
     fileResult.mutants
       .filter((mutant) => mutant.status === 'Survived')
-      .map((mutant) => reportMutantToMutant(file, mutant, resolveAbsolutePath, basePath))
+      .map((mutant) => reportMutantToMutant(file, mutant, resolveAbsolutePath, relativize))
   )
 
 const resolveAbsolutePathOf = (basePath: string): ResolveAbsolutePath => (file) => `${basePath}/${file}`
@@ -172,6 +165,8 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
   Effect.gen(function*() {
     const resolvedOptions = yield* resolveSurvivorsRunOptions(input.cliOptions, input.mode)
     const priorReportPath = priorReportPathOf(resolvedOptions)
+    const relativize: RelativizeFileName = (fileName) =>
+      RelativeNormalizedFileName.fromAbsolute(fileName, input.basePath).fileName
     const resolveAbsolutePath = resolveAbsolutePathOf(input.basePath)
     const read = yield* readPriorReport(priorReportPath)
     const sourceContentHashes = yield* currentSourceHashesFor(priorReportFileKeys(read.raw))
@@ -188,13 +183,10 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
           priorReportPath,
         }),
       onTrue: () =>
-        Effect.flatMap(
-          Effect.fromResult(Result.match(S.decodeUnknownResult(PriorReportDocument)(read.raw), {
-            onFailure: (error) => Result.fail(error),
-            onSuccess: (document) => Result.succeed(document),
-          })),
-          (document) =>
-            Effect.succeed<SurvivorsRaw>({
+        Effect.fromResult(Result.match(S.decodeUnknownResult(PriorReportDocument)(read.raw), {
+          onFailure: (error) => Result.fail(error),
+          onSuccess: (document) =>
+            Result.succeed<SurvivorsRaw>({
               currentConfig: resolvedOptions,
               frameworkVersion: StrykerPackage.version,
               priorReport: {
@@ -207,21 +199,24 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
                 ),
               },
               priorSourceHashes: priorSourceHashes(document, hashContent),
-              priorSurvivors: extractSurvivors(document, resolveAbsolutePath, input.basePath),
+              priorSurvivors: extractSurvivors(document, resolveAbsolutePath, relativize),
               sourceContentHashes,
               resolvedOptions,
               priorReportPath,
             }),
-        ),
+        })),
     })
   })
 ).decide(admitSurvivorsRun).write({
   Admitted: (admitted, raw) =>
-    Effect.succeed({
-      admission: Admitted.make({ survivors: [...admitted.survivors], mutateSpans: [...admitted.mutateSpans] }),
-      resolvedOptions: raw.resolvedOptions,
-      priorReportPath: raw.priorReportPath,
-    }),
+    Effect.map(
+      S.decodeEffect(Admitted)(admitted),
+      (admission) => ({
+        admission,
+        resolvedOptions: raw.resolvedOptions,
+        priorReportPath: raw.priorReportPath,
+      }),
+    ),
   NoSurvivors: (_outcome, raw) =>
     Effect.succeed({
       admission: NoSurvivors.make(),

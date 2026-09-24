@@ -70,8 +70,8 @@ const mutantResultArb = (
   status: Arbitrary.Arbitrary<mutants.MutantStatus>,
 ): Arbitrary.Arbitrary<schema.MutantResult> =>
   Arbitrary.all({
-    id: Arbitrary.schema(S.String.check(S.isMinLength(1), S.isMaxLength(8))),
-    mutatorName: Arbitrary.schema(S.String.check(S.isMinLength(1), S.isMaxLength(8))),
+    id: Arbitrary.schema(mutants.MutantId),
+    mutatorName: Arbitrary.schema(mutants.MutatorName),
     location: reportLocationArb,
     status,
     replacement: Arbitrary.schema(S.String.check(S.isMaxLength(8))),
@@ -94,7 +94,7 @@ const cleanConfigArb: Arbitrary.Arbitrary<CleanConfig> = recordOf(
 const sourceArb = Arbitrary.schema(S.String.check(S.isMaxLength(16), S.isPattern(/^[\x20-\x7E]*$/)))
 
 const segmentKeyArb = Arbitrary.schema(
-  S.String.check(S.isMinLength(1), S.isMaxLength(6), S.isPattern(/^[\x21-\x7E]+(\/[\x21-\x7E]+)*$/)),
+  S.String.check(S.isMinLength(1), S.isMaxLength(6), S.isPattern(/^[\x21-\x5B\x5D-\x7E]+(\/[\x21-\x5B\x5D-\x7E]+)*$/)),
 )
 
 const survivingFilesArb: Arbitrary.Arbitrary<Record<string, schema.FileResult>> = Arbitrary.all([
