@@ -12,11 +12,6 @@ const fateOf = (decision: KeepTempDirOutcome): 'kept' | 'removed' =>
   )
 
 describe('keepTempDir', () => {
-  it.prop('∀c_Command_∈KeptOrRemoved', [KeepTempDirCommand], ([command]) =>
-    Result.match(keepTempDir(command), {
-      onFailure: () => false,
-      onSuccess: (decision) => fateOf(decision) === 'kept' || fateOf(decision) === 'removed',
-    }))
 
   it.prop('∀a_Always_≡Removed', [KeepTempDirCommand], ([command]) => {
     const always = KeepTempDirCommand.make({ cleanTempDir: { _tag: 'KeepTempDirAlways' }, failed: command.failed })

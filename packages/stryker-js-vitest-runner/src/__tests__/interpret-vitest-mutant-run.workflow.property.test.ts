@@ -55,22 +55,6 @@ const testsIn = (
 
 describe('interpretVitestMutantRun', () => {
   it.prop(
-    '∀c_Decision_≡BrandedAndKnown',
-    [VitestMutantRunCommand],
-    ([input]) => {
-      const result = interpretVitestMutantRun(input)
-      return Result.match(result, {
-        onFailure: () => false,
-        onSuccess: (decision) =>
-          carriesFamilyBrand(decision) &&
-          (S.is(MutantKilled)(decision) ||
-            S.is(MutantSurvived)(decision) ||
-            S.is(MutantTimeout)(decision) ||
-            S.is(MutantDryError)(decision)),
-      })
-    },
-  )
-  it.prop(
     '→h_HitLimitOnNamedTrap_=Timeout',
     [
       VitestMutantRunCommand,

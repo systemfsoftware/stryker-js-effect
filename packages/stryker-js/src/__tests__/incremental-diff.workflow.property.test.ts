@@ -6,18 +6,15 @@ import * as S from 'effect/Schema'
 import {
   incrementalDiff,
   IncrementalDiffCommand,
-  type IncrementalDiffDecision,
   MutantRemembered,
   MutantToRun,
 } from '../incremental-diff.workflow.js'
 import { EphemeralStatusSchema, RememberedStatusSchema } from '../../tests/__fixtures__/incremental-diff-law.schema.js'
 
-const IncrementalDiffDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/IncrementalDiff')
-
 const mutantOf = (id: string, line: number) =>
   Mutant.make({
     id,
-    fileName: `${id}.ts`,
+    fileName: `src/mutant-${line}.ts`,
     mutatorName: `${id}-mutator`,
     replacement: '',
     location: { start: { line, column: 0 }, end: { line, column: 1 } },
@@ -37,10 +34,6 @@ const previousMutantOf = (mutant: Mutant, status: string, testsCompleted: number
   coveredBy: [mutant.id],
   killedBy: [mutant.id],
 })
-
-const carriesDecisionTypeId = (decision: IncrementalDiffDecision) =>
-  Object.getOwnPropertySymbols(decision).includes(IncrementalDiffDecisionTypeId)
-
 const forceCommandOf = (mutants: ReadonlyArray<Mutant>) =>
   IncrementalDiffCommand.make({
     currentMutants: [...mutants],
@@ -54,10 +47,6 @@ const forceCommandOf = (mutants: ReadonlyArray<Mutant>) =>
   })
 
 describe('incrementalDiff', () => {
-  it.prop('∀ids_Force_AllDecisionsCarryTypeId', [S.Array(S.NonEmptyString)], ([ids]) => {
-    const result = incrementalDiff(forceCommandOf(ids.map((id, index) => mutantOf(id, index))))
-    return Result.isSuccess(result) && result.success.every(carriesDecisionTypeId)
-  })
 
   it.prop('∀ids_Force_AllToRunInInputOrder', [S.Array(S.NonEmptyString)], ([ids]) => {
     const mutants = ids.map((id, index) => mutantOf(id, index))

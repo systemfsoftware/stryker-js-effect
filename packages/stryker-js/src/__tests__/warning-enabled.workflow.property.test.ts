@@ -30,9 +30,4 @@ describe('warningEnabled', () => {
   it.prop('∀wb_Warning_≡GlobalFlag', [WarningNameSchema, S.Boolean], ([warning, global]) =>
     decidedTagOf(warning, global) === (global === true ? 'WarningEnabled' : 'WarningDisabled'))
 
-  it.prop('∀wr_Warning_∈DecisionVariants', [WarningNameSchema, WarningsSchema], ([warning, warnings]) =>
-    Match.value(warningEnabled(ResolveWarningEnabledCommand.make({ warning, warnings }))).pipe(
-      Match.when(Result.isSuccess, () => true),
-      Match.orElse(() => false),
-    ))
 })

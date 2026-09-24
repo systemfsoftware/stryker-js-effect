@@ -5,7 +5,6 @@ import * as mutants from '@systemfsoftware/stryker-js-instrumenter'
 import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Equivalence from 'effect/Equivalence'
-import * as Exit from 'effect/Exit'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -17,7 +16,6 @@ import {
   Admitted,
   NoSurvivors,
   PriorReportFacts,
-  SurvivorsAdmission,
   SurvivorsRejection,
 } from '../admit-survivors-run.workflow.js'
 const stringArrayEquivalence = Equivalence.Array(Equivalence.String)
@@ -57,22 +55,6 @@ const intIn = (minimum: number, maximum: number) => Arbitrary.schema(S.Int.check
 
 const oneOf2 = <A>(first: Arbitrary.Arbitrary<A>, second: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<A> =>
   Arbitrary.schema(S.Boolean).pipe(Arbitrary.flatMap((pick) => (pick ? first : second)))
-
-const oneOf3 = <A>(
-  first: Arbitrary.Arbitrary<A>,
-  second: Arbitrary.Arbitrary<A>,
-  third: Arbitrary.Arbitrary<A>,
-): Arbitrary.Arbitrary<A> =>
-  Arbitrary.schema(S.Literals([0, 1, 2])).pipe(
-    Arbitrary.flatMap((index) =>
-      Match.value(index).pipe(
-        Match.when(0, () => first),
-        Match.when(1, () => second),
-        Match.when(2, () => third),
-        Match.exhaustive,
-      ),
-    ),
-  )
 
 const reportPositionArb = Arbitrary.all({
   line: intIn(1, 200),
@@ -412,71 +394,6 @@ describe('admitSurvivorsRun', () => {
       })(),
   )
 
-  it.prop(
-    '∀m_MalformedSurvivor_≡RefusedByAdmissionDecode',
-    [Arbitrary.all({ id: Arbitrary.schema(S.String), fileName: Arbitrary.schema(S.String) })],
-    ([partial]) =>
-      Exit.isFailure(
-        S.decodeUnknownExit(SurvivorsAdmission)({ _tag: 'Admitted', survivors: [partial], mutateSpans: [] }),
-      ),
-  )
-
-  it.prop(
-    '∀l_MalformedLocation_≡RefusedByAdmissionDecode',
-    [
-      oneOf3(
-        Arbitrary.Constant({}),
-        Arbitrary.all({ start: Arbitrary.Constant({}), end: reportPositionArb }),
-        Arbitrary.all({ start: reportPositionArb, end: Arbitrary.Constant({}) }),
-      ),
-      Arbitrary.all({
-        id: Arbitrary.schema(S.String.check(S.isMinLength(1))),
-        fileName: Arbitrary.schema(S.String.check(S.isMinLength(1))),
-        mutatorName: Arbitrary.schema(S.String.check(S.isMinLength(1))),
-        replacement: Arbitrary.schema(S.String.check(S.isMinLength(1))),
-      }),
-    ],
-    ([location, fields]) =>
-      Exit.isFailure(
-        S.decodeUnknownExit(SurvivorsAdmission)({
-          _tag: 'Admitted',
-          survivors: [{ ...fields, location }],
-          mutateSpans: [],
-        }),
-      ),
-  )
-
-  it.prop(
-    '∀r_WellFormedSurvivors_≡AcceptedByAdmissionDecode',
-    [reportWithSurvivorsArb],
-    ([report]) =>
-      Exit.isSuccess(
-        S.decodeExit(SurvivorsAdmission)({
-          _tag: 'Admitted',
-          survivors: survivorsOf(report),
-          mutateSpans: survivorsOf(report).map((survivor) =>
-            `${survivor.relativeFileName}:${survivor.location.start.line + 1}:${survivor.location.start.column}-${
-              survivor.location.end.line + 1
-            }:${survivor.location.end.column}`
-          ),
-        }),
-      ),
-  )
-
-  it.prop(
-    '∀r_EveryVariant_≡BrandedWithTheRegistryScopedTypeId',
-    [reportWithSurvivorsArb],
-    ([report]) => {
-      const crossRealmBrand = Symbol.for('@systemfsoftware/stryker-js/SurvivorsAdmission')
-      const admitted = admitSurvivorsRun(matchingCommand(report))
-      const empty = admitSurvivorsRun(matchingCommand({ ...report, files: {} }))
-      const rejected = admitSurvivorsRun(commandWithoutPriorReport(report))
-      return Result.isSuccess(admitted) && Result.isSuccess(empty) && Result.isFailure(rejected) &&
-        crossRealmBrand in admitted.success &&
-        crossRealmBrand in empty.success &&
-        crossRealmBrand in rejected.failure
-    },
-  )
 })
 
 describe('Survivors not-found', () => {

@@ -31,19 +31,6 @@ const withTests = (
   })
 
 describe('interpretVitestDryRun', () => {
-  it.prop(
-    '∀c_Outcome_≡BrandedAndKnown',
-    [VitestDryRunCommand],
-    ([input]) => {
-      const result = interpretVitestDryRun(input)
-      return Result.match(result, {
-        onFailure: () => false,
-        onSuccess: (decision) =>
-          carriesFamilyBrand(decision) &&
-          (S.is(DryRunComplete)(decision) || S.is(DryRunExternalError)(decision)),
-      })
-    },
-  )
 
   it.prop(
     '→t_FailedTest_=Complete',

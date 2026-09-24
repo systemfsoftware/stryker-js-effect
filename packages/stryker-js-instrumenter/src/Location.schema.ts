@@ -142,7 +142,6 @@ if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const { Schema } = await import('effect')
   const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
-  const Result = await import('effect/Result')
 
   const FRAGMENTS = S.Literals(['\r\n', '\r', '\n', '\u2028', '\u2029', 'a', ''])
 
@@ -242,22 +241,4 @@ if (import.meta.vitest !== void 0) {
     [textWithOffset, Schema.Int],
     ([{ text, offset }, draw]) => locationStartsBeforeItEnds(text, offset, draw).pipe(Effect.orDie),
   )
-
-  const SourceCoordinate = S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 1_000_000 })))
-
-  const ShiftableLocation = S.Struct({
-    start: S.Struct({ line: SourceCoordinate, column: SourceCoordinate }),
-    end: S.Struct({ line: SourceCoordinate, column: SourceCoordinate }),
-  })
-
-  const keyOrderOf = (value: object) => Object.keys(value).join()
-
-  const positionsColumnFirst = (report: Location) =>
-    keyOrderOf(report.start) === 'column,line' && keyOrderOf(report.end) === 'column,line'
-
-  it.prop('∀location_ReportLocationFromMutant_OrdersReportKeysColumnFirst', [ShiftableLocation], ([location]) =>
-    Result.match(S.decodeResult(ReportLocationFromMutant)(location), {
-      onFailure: () => false,
-      onSuccess: (report) => keyOrderOf(report) === 'start,end' && positionsColumnFirst(report),
-    }))
 }

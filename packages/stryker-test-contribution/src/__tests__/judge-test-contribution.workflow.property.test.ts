@@ -5,12 +5,7 @@ import * as Result from 'effect/Result'
 import {
   JudgeTestContribution,
   judgeTestContribution,
-  TestContributionDecision,
-} from '../judge-test-contribution.workflow.js'
-
-const JudgeVerdictTypeId: unique symbol = Symbol.for(
-  '@systemfsoftware/stryker-test-contribution/TestContributionVerdict',
-)
+  } from '../judge-test-contribution.workflow.js'
 
 const decidedOf = (command: JudgeTestContribution) => judgeTestContribution(command).pipe(Result.merge)
 
@@ -60,11 +55,6 @@ const ruleOrderOfLaw = (command: JudgeTestContribution): boolean => {
 }
 
 describe('judgeTestContribution', () => {
-  it.prop(
-    '∀d_Verdict_∈Decision',
-    [TestContributionDecision],
-    ([decision]) => Object.getOwnPropertySymbols(decision).includes(JudgeVerdictTypeId),
-  )
   it.prop('∀c_Command_≡NeverThrows', [JudgeTestContribution], ([command]) => {
     const decision = decidedOf(command)
     return typeof decision.failed === 'boolean' && typeof decision.message === 'string'

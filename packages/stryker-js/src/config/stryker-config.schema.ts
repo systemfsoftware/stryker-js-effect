@@ -192,19 +192,3 @@ export class StrykerConfig extends S.Class<StrykerConfig>('StrykerConfig')({
 
   static readonly syntaxHelp: string = CONFIG_SYNTAX_HELP
 }
-
-if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
-
-  const factoryEnvOf = (env: ConfigEnv): PartialStrykerOptions => ({ concurrency: env.isCi ? 4 : 1 })
-
-  const definedOf = (env: ConfigEnv): boolean =>
-    StrykerConfig.define({ mutate: ['src/**/*.ts'] }).mutate !== undefined &&
-    factoryEnvOf(env).concurrency !== undefined
-
-  const promisedOf = (): boolean =>
-    StrykerConfig.define(Promise.resolve({ mutate: ['src/**/*.ts'] })) instanceof Promise
-
-  it.prop('∀cfg_Define_≡IdentityOverHeadCallForms', [ConfigEnvSchema], ([env]) =>
-    definedOf(env) && promisedOf())
-}

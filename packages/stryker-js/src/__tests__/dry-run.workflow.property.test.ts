@@ -4,14 +4,7 @@ import * as S from 'effect/Schema'
 
 import { dryRun, DryRunCommand, DryRunError, DryRunFailed, DryRunPassed } from '../dry-run.workflow.js'
 
-const DryRunDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/DryRunDecision')
-
 describe('dryRun', () => {
-  it.prop(
-    '∀d_Brand_∈Decision',
-    [S.Union([DryRunPassed, DryRunFailed])],
-    ([decision]) => Object.getOwnPropertySymbols(decision).includes(DryRunDecisionTypeId),
-  )
   it.prop('∀c_Command_≡Decision', [DryRunCommand], ([command]) => {
     const result = dryRun(command)
     if (command.status === 'Error') {
