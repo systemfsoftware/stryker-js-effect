@@ -1,5 +1,5 @@
 import { describe, it } from '@effect/vitest'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant, PositionSchema } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -60,7 +60,7 @@ describe('incrementalDiff', () => {
     )
   })
 
-  it.prop('∀ilt_StableFile_RememberedCarriesPreviousFields', [S.NonEmptyString, RememberedStatusSchema, S.Finite, S.Int], ([
+  it.prop('∀ilt_StableFile_RememberedCarriesPreviousFields', [S.NonEmptyString, RememberedStatusSchema, S.Finite, PositionSchema.fields.line], ([
     id,
     status,
     testsCompleted,
@@ -94,7 +94,7 @@ describe('incrementalDiff', () => {
     )
   })
 
-  it.prop('∀il_EphemeralStatus_ToRun', [S.NonEmptyString, EphemeralStatusSchema, S.Finite], ([id, status, line]) => {
+  it.prop('∀il_EphemeralStatus_ToRun', [S.NonEmptyString, EphemeralStatusSchema, PositionSchema.fields.line], ([id, status, line]) => {
     const mutant = mutantOf(id, line)
     const previous = previousMutantOf(mutant, status, line)
     const result = incrementalDiff(
@@ -112,7 +112,7 @@ describe('incrementalDiff', () => {
     return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
   })
 
-  it.prop('∀il_ChangedSourceFile_ToRun', [S.NonEmptyString, RememberedStatusSchema, S.Finite], ([id, status, line]) => {
+  it.prop('∀il_ChangedSourceFile_ToRun', [S.NonEmptyString, RememberedStatusSchema, PositionSchema.fields.line], ([id, status, line]) => {
     const mutant = mutantOf(id, line)
     const previous = previousMutantOf(mutant, status, line)
     const result = incrementalDiff(
@@ -130,7 +130,7 @@ describe('incrementalDiff', () => {
     return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
   })
 
-  it.prop('∀il_UnshiftedPreviousKey_ToRun', [S.NonEmptyString, RememberedStatusSchema, S.Finite], ([id, status, line]) => {
+  it.prop('∀il_UnshiftedPreviousKey_ToRun', [S.NonEmptyString, RememberedStatusSchema, PositionSchema.fields.line], ([id, status, line]) => {
     const mutant = mutantOf(id, line)
     const previous = { ...previousMutantOf(mutant, status, line), location: mutant.location }
     const result = incrementalDiff(
@@ -150,7 +150,7 @@ describe('incrementalDiff', () => {
 
   it.prop(
     '∀ilt_ChangedCoverage_ToRun',
-    [S.NonEmptyString, RememberedStatusSchema, S.Finite, S.NonEmptyString],
+    [S.NonEmptyString, RememberedStatusSchema, PositionSchema.fields.line, S.NonEmptyString],
     ([id, status, line, testFile]) => {
       const mutant = mutantOf(id, line)
       const previous = previousMutantOf(mutant, status, line)

@@ -9,8 +9,10 @@ export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('U
   reason: S.String,
 }) {}
 
-export const CheckerMutantFromMutant = S.decodeTo<typeof CheckerMutantWire, typeof Mutant>(
-  CheckerMutantWire,
+const CheckerMutant = S.toType(CheckerMutantWire)
+
+export const CheckerMutantFromMutant = S.decodeTo<typeof CheckerMutant, typeof Mutant>(
+  CheckerMutant,
   SchemaTransformation.transform({
     decode: (mutant) => ({
       id: mutant.id,

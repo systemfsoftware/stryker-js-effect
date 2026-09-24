@@ -1,5 +1,4 @@
 import { describe, it } from '@effect/vitest'
-import { assert } from 'vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'

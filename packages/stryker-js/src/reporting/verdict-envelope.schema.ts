@@ -69,7 +69,9 @@ const runIdTextOf = (now: DateTime.Utc) => {
   )
 }
 
-export class RunId extends S.Class<RunId>('RunId')({ value: S.String }) {
+const RunIdText = S.String.pipe(S.check(S.isPattern(/^[0-9A-HJKMNP-TV-Z]{26}$/)))
+
+export class RunId extends S.Class<RunId>('RunId')({ value: RunIdText }) {
   static readonly generate = (now: DateTime.Utc) => RunId.make({ value: runIdTextOf(now) })
 }
 

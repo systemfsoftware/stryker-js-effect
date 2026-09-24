@@ -10,8 +10,6 @@ import { ModeSignal, OutputMode } from '../run-event.schema.js'
 
 const pathService = Effect.runSync(Effect.provide(Path.Path, Path.layer))
 
-const CROCKFORD_RUN_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/
-
 const buildOf = (report: MutationTestResult, mode: OutputMode, signal: ModeSignal) =>
   VerdictEnvelope.build(report, mode, signal, RunId.generate(DateTime.makeUnsafe(0)).value, '/base', pathService)
 
@@ -36,12 +34,6 @@ describe('VerdictEnvelope.build', () => {
 })
 
 describe('RunId.generate', () => {
-  it.prop(
-    '∀t_RunId_∈Crockford26',
-    [S.Int.check(S.isBetween({ minimum: 0, maximum: 2 ** 40 }))],
-    ([millis]) => CROCKFORD_RUN_ID.test(RunId.generate(DateTime.makeUnsafe(millis)).value),
-  )
-
   it.prop(
     '∀t_RunIdTimePrefix_≡Deterministic',
     [S.Int.check(S.isBetween({ minimum: 0, maximum: 2 ** 40 }))],
