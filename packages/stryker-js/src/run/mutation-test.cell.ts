@@ -31,7 +31,7 @@ import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { PhaseEntered } from '../run-events.service.js'
-import { RunEvents, RunMutantTested } from '../run-events.service.js'
+import { PlanKnown, RunEvents, RunMutantTested } from '../run-events.service.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
@@ -758,9 +758,9 @@ const reasonOf = (result: object) =>
 
 const stopWallClock = (result: { readonly status: string; readonly reason?: string }) =>
   Boolean.match(wallClockTimeoutStopsRun(result.status, reasonOf(result)), {
-    onTrue: () => Effect.void,
-    onFalse: () =>
+    onTrue: () =>
       Effect.fail(StageError.make({ stage: 'mutationTest', reason: TestRunner.WallClockTimeoutReason.literal })),
+    onFalse: () => Effect.void,
   })
 
 type MutationTestRaw = typeof MutationTestCommand.Encoded & {
@@ -893,13 +893,6 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
     )
     const noCoverageResults = yield* Effect.forEach(earlyPlans, earlyResultOf)
     const sortedPlans = sortRunPlans(runPlans)
-    const { passedPlans, checkerResults } = yield* checkPlansWithConfiguredCheckers(
-      checkerPool,
-      sortedPlans,
-      reporting,
-    )
-    const testRunnerStream = Stream.fromIterable(passedPlans)
-    const plannedTotal = sortedPlans.length + noCoverageResults.length + rememberedResults.length
     const allPlansForReporter: readonly Mutant.RunPlan[] = [...sortedPlans]
     yield* offerReporterEvent(
       prev.reporterStage,
@@ -913,9 +906,17 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
         })),
       }),
     ).pipe(Effect.ignoreCause)
+    const progressQueue = yield* RunEvents
+    yield* Queue.offer(progressQueue, PlanKnown.make({ total: allPlansForReporter.length + noCoverageResults.length }))
+    const { passedPlans, checkerResults } = yield* checkPlansWithConfiguredCheckers(
+      checkerPool,
+      sortedPlans,
+      reporting,
+    )
+    const testRunnerStream = Stream.fromIterable(passedPlans)
+    const plannedTotal = sortedPlans.length + noCoverageResults.length + rememberedResults.length
     const completedRef = yield* Ref.make(0)
     const pathService = yield* Path.Path
-    const progressQueue = yield* RunEvents
     interface PreparedStreamableMutant {
       readonly status: ValidMutantStatus
       readonly file: string
@@ -1142,3 +1143,24 @@ const mapMutationTestCause = (
     Match.when({ cause: isStageError }, ({ cause }) => cause),
     Match.orElse(({ cause }) => StageError.make({ stage: 'mutationTest', reason: 'Mutation testing failed', cause })),
   )
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const Exit = await import('effect/Exit')
+
+  const [Killed, Survived, , Errored] = TestRunner.MutantRunResultSchema.members
+  const SettledResult = S.Union([Killed, Survived, Errored])
+  const ReasonlessTimeout = S.Struct({ status: S.Literal('timeout') })
+
+  it.effect.prop(
+    '∀settled_StopWallClock_LetsTheRunContinue',
+    [SettledResult],
+    ([result]) => Effect.map(Effect.exit(stopWallClock(result)), Exit.isSuccess),
+  )
+
+  it.effect.prop(
+    '∀timeout_StopWallClock_StopsTheRunWithoutAHitLimitReason',
+    [ReasonlessTimeout],
+    ([result]) => Effect.map(Effect.exit(stopWallClock(result)), Exit.isFailure),
+  )
+}

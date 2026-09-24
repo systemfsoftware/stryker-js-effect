@@ -4,11 +4,13 @@ import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Predicate from 'effect/Predicate'
 
 import { concurrencyCell } from '../concurrency.cell.js'
+import type { ConfigReadError } from '../ConfigError.schema.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
 import { readProjectCell } from '../read-project.cell.js'
 import { makeRunEventStream, RunEventDrainLive } from '../run-event-stream.service.js'
@@ -23,12 +25,18 @@ import type { PrepareExecutorArgs } from './prepare.cell.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { EnginePorts, StageServices } from './StageServices.service.js'
 
+const configReadReasonOf = (cause: ConfigReadError): string =>
+  Match.value(cause).pipe(
+    Match.tag('ConfigError', (refused) => refused.message),
+    Match.orElse(() => 'Failed to read config'),
+  )
+
 const prepareStageCell = Cell.andThen(
   Cell.andThen(
     Cell.andThen(
       Cell.mapError(
         loadConfigCell,
-        (cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read config', cause }),
+        (cause) => StageError.make({ stage: 'prepare', reason: configReadReasonOf(cause), cause }),
       ),
       Cell.mapError(
         readProjectCell,
