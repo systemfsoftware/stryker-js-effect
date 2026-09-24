@@ -57,7 +57,7 @@ const saltOf = (url: string | undefined): string | null =>
 const withSalt = (url: string, salt: string | null): string =>
   Option.getOrElse(Option.map(Option.fromNullishOr(salt), (present) => `${url}?salt=${present}`), () => url)
 
-const hasSalt = (url: string): boolean => Boolean.or(url.includes('?salt='), url.includes('&salt='))
+const hasSalt = (url: string): boolean => url.includes('?salt=') || url.includes('&salt=')
 
 const appendedSalt = (url: string, salt: string): string =>
   `${url}${Boolean.match(url.includes('?'), { onTrue: () => '&', onFalse: () => '?' })}salt=${salt}`
@@ -216,7 +216,7 @@ const loadWithin: LoadHookSync = (url, context, nextLoad) =>
 
 const sandboxGate = Semaphore.makeUnsafe(1)
 
-export const installInterceptionCell: Cell.Cell<HarnessModuleBuiltin, void> = Cell.fromEffect(Effect.void).pipe(
+const installInterceptionCell: Cell.Cell<HarnessModuleBuiltin, void> = Cell.fromEffect(Effect.void).pipe(
   Cell.mapInput((nodeModule: HarnessModuleBuiltin) => {
     if (!interceptionState.installed) {
       interceptionState.hooks = nodeModule.registerHooks({ resolve: resolveWithin, load: loadWithin })
@@ -226,7 +226,7 @@ export const installInterceptionCell: Cell.Cell<HarnessModuleBuiltin, void> = Ce
   }),
 )
 
-export const uninstallInterceptionCell: Cell.Cell<void, void> = Cell.fromEffect(
+const uninstallInterceptionCell: Cell.Cell<void, void> = Cell.fromEffect(
   Effect.sync(() => {
     interceptionState.hooks?.deregister()
     interceptionState.hooks = undefined
@@ -234,7 +234,7 @@ export const uninstallInterceptionCell: Cell.Cell<void, void> = Cell.fromEffect(
   }),
 )
 
-export const activateSandboxCell: Cell.Cell<ActivateSandboxCommand, void> = Cell.mapInput(
+const activateSandboxCell: Cell.Cell<ActivateSandboxCommand, void> = Cell.mapInput(
   Cell.fromEffect(Effect.void),
   (command: ActivateSandboxCommand) => {
     Effect.runSync(
@@ -246,7 +246,7 @@ export const activateSandboxCell: Cell.Cell<ActivateSandboxCommand, void> = Cell
   },
 )
 
-export const deactivateSandboxCell: Cell.Cell<void, void> = Cell.fromEffect(
+const deactivateSandboxCell: Cell.Cell<void, void> = Cell.fromEffect(
   Effect.sync(() => {
     interceptionState.activeSandboxes.pop()
   }),
@@ -266,11 +266,4 @@ export const activateSandbox = (prefix: string): void => {
 
 export const deactivateSandbox = (): void => {
   Effect.runSync(deactivateSandboxCell.run(undefined))
-}
-
-export const resetInterceptionForTests = (): void => {
-  interceptionState.hooks?.deregister()
-  interceptionState.hooks = undefined
-  interceptionState.installed = false
-  interceptionState.activeSandboxes.length = 0
 }

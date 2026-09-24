@@ -12,7 +12,7 @@ import type {
 import type { AST } from 'svelte/compiler'
 
 import type { CompilerModule } from './compiler.js'
-import { attemptedDiscovery, discoveredOf, type Discovery, type LocatedRegion } from './discovery.js'
+import { attemptedDiscovery, discoveredOf, type Discovery, failureMessageOf, type LocatedRegion } from './discovery.js'
 
 const CONTRACT_VERSION: FrameworkContractVersion = '1'
 
@@ -159,11 +159,7 @@ const optionalFormat = (region: LocatedRegion | undefined): ScriptFormat | undef
 const formatOrJs = (format: ScriptFormat | undefined): ScriptFormat => format ?? 'js'
 
 const instanceRegionOf = (discovery: Discovery | undefined): LocatedRegion | undefined =>
-  discovery?.regions.find(instanceScript)
-
-const instanceScript = (region: LocatedRegion): boolean => plainInstance(region)
-
-const plainInstance = (region: LocatedRegion): boolean => !region.isModuleScript && !region.isExpression
+  discovery?.regions.find((region) => !region.isModuleScript && !region.isExpression)
 
 const moduleOpenTag = (scriptFormat: ScriptFormat): string =>
   scriptFormat === TS_LANGUAGE ? '<script module lang="ts">\n' : '<script module>\n'
@@ -358,7 +354,3 @@ const commentPrefix = (leadingComment: string | undefined, code: string): string
 
 const commentSplice = (code: string, leadingComment: string): string =>
   `${leadingComment}${NEWLINE}${NO_CHECK}${NEWLINE}${code.substring(leadingComment.length)}`
-
-const NON_ERROR_FAILURE = 'the svelte compiler reported a failure that is not an Error'
-
-const failureMessageOf = (cause: unknown): string => cause instanceof Error ? cause.message : NON_ERROR_FAILURE

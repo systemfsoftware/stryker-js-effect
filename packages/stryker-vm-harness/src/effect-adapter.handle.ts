@@ -291,7 +291,7 @@ const openLayerScope = <ROut, E>(
 type LayeredBody<R> = (it: LayeredVitestIt<R>) => void
 type LayeredArgs<R> = readonly [body: LayeredBody<R>] | readonly [name: string, body: LayeredBody<R>]
 
-const isBodyOnly = <R>(args: LayeredArgs<R>): args is readonly [body: LayeredBody<R>] => typeof args[0] === 'function'
+const isBodyOnly = <R>(args: LayeredArgs<R>): args is readonly [body: LayeredBody<R>] => Predicate.isFunction(args[0])
 
 interface LayerInvocation<R> {
   readonly name: string | undefined

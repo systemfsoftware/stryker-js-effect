@@ -179,10 +179,11 @@ const runPlannedTest = (
     const startedAt = performance.now()
     const failureMessage = yield* failureMessageOfTest(planned.test.fn, context)
     const timeSpentMs = performance.now() - startedAt
-    yield* fireHooks([...hooksFor(registry, 'afterEach', planned.chain)].reverse(), context)
-    yield* fireHooks([...finalizers].reverse(), context)
-    yield* Effect.forEach([...planned.chain].reverse(), fireAfterAllOf(registry, counts, context), { discard: true })
-    yield* maybeFireAfterAll(planned, lastRunnableIndex, fireAfterAllOf(registry, counts, context))
+    const fireAfterAll = fireAfterAllOf(registry, counts, context)
+    yield* fireHooks(hooksFor(registry, 'afterEach', planned.chain).toReversed(), context)
+    yield* fireHooks(finalizers.toReversed(), context)
+    yield* Effect.forEach([...planned.chain].reverse(), fireAfterAll, { discard: true })
+    yield* maybeFireAfterAll(planned, lastRunnableIndex, fireAfterAll)
     registry.currentTest = undefined
     return { failureMessage, timeSpentMs }
   })
