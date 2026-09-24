@@ -1,4 +1,4 @@
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
@@ -254,5 +254,65 @@ if (import.meta.vitest !== void 0) {
     '∀om_EnvironmentReload_DryRun≡Wrapped',
     [TestRunner.DryRunOptionsSchema, S.String],
     ([options, errorMessage]) => decoratedDryRunsWrapped(options, errorMessage).pipe(Effect.orDie),
+  )
+
+  const recordingRunner = (canReload: boolean, log: Ref.Ref<ReadonlyArray<string>>): PooledTestRunner =>
+    make({
+      capabilities: Effect.succeed({ reloadEnvironment: canReload }),
+      init: Effect.void,
+      dryRun: () => Effect.succeed({ status: 'error', errorMessage: 'dry run' }),
+      mutantRun: (options) =>
+        Ref.update(log, (events) => [...events, `run:${options.reloadEnvironment}`]).pipe(
+          Effect.as({ status: 'error', errorMessage: 'mutant run' }),
+        ),
+    })
+
+  const leftStaticMutant = (requests: ReadonlyArray<boolean>, index: number): boolean =>
+    index > 0 && requests[index - 1] === true
+
+  const environmentLoaded = (index: number, dryRunFirst: boolean): boolean => index > 0 || dryRunFirst
+
+  const reloadRequired = (requested: boolean, loaded: boolean, staticMutantLeft: boolean): boolean =>
+    Boolean.match(requested, { onTrue: () => loaded, onFalse: () => staticMutantLeft })
+
+  const retireRequired = (canReload: boolean, staticMutantLeft: boolean): boolean => !canReload && staticMutantLeft
+
+  const expectedEvents = (requests: ReadonlyArray<boolean>, canReload: boolean, dryRunFirst: boolean) =>
+    requests.flatMap((requested, index) => {
+      const staticMutantLeft = leftStaticMutant(requests, index)
+      const loaded = environmentLoaded(index, dryRunFirst)
+      const run = `run:${canReload && reloadRequired(requested, loaded, staticMutantLeft)}`
+      return Boolean.match(retireRequired(canReload, staticMutantLeft), {
+        onTrue: () => ['retire', run],
+        onFalse: () => [run],
+      })
+    })
+
+  const mutantRunsFollowReloadContract = (
+    options: Mutant.MutantRunOptions,
+    requests: ReadonlyArray<boolean>,
+    canReload: boolean,
+    dryRunFirst: boolean,
+  ) =>
+    Effect.gen(function*() {
+      const log = yield* Ref.make<ReadonlyArray<string>>([])
+      const retire = Ref.update(log, (events) => [...events, 'retire'])
+      const decorated = yield* withEnvironmentReload(recordingRunner(canReload, log), retire)
+      yield* Effect.when(
+        decorated.dryRun({ timeout: 1000, disableBail: false, coverageAnalysis: 'off' }),
+        Effect.succeed(dryRunFirst),
+      )
+      yield* Effect.forEach(requests, (reloadEnvironment) => decorated.mutantRun({ ...options, reloadEnvironment }), {
+        discard: true,
+      })
+      const events = yield* Ref.get(log)
+      return events.join(' ') === expectedEvents(requests, canReload, dryRunFirst).join(' ')
+    })
+
+  it.effect.prop(
+    '∀om_EnvironmentReload_MutantRun≡ReloadOrRetireAfterStaticMutant',
+    [Mutant.MutantRunOptionsSchema, S.Array(S.Boolean), S.Boolean, S.Boolean],
+    ([options, requests, canReload, dryRunFirst]) =>
+      mutantRunsFollowReloadContract(options, requests, canReload, dryRunFirst).pipe(Effect.orDie),
   )
 }
