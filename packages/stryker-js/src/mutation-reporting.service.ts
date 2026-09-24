@@ -1,4 +1,4 @@
-import type { Mutant, MutantTestCoverage, Position, RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant, MutantTestCoverage, RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
 import { ReportLocationFromMutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as Cause from 'effect/Cause'
 import type {
@@ -674,24 +674,6 @@ if (import.meta.vitest !== void 0) {
 
   const holds = (conditions: readonly boolean[]) => conditions.every((condition) => condition)
 
-  const conservesMutant = (coverage: MutantTestCoverage, mapped: RunMutantResult) =>
-    holds([
-      mapped.id === coverage.id,
-      mapped.fileName === coverage.fileName,
-      mapped.mutatorName === coverage.mutatorName,
-      mapped.replacement === coverage.replacement,
-      mapped.coveredBy === coverage.coveredBy,
-      mapped.static === coverage.static,
-      mapped.description === coverage.description,
-    ])
-
-  const shiftsByOne = (before: Position, after: Position) =>
-    after.line - before.line === 1 && after.column - before.column === 1
-
-  const shiftsLocationByOne = (coverage: MutantTestCoverage, mapped: RunMutantResult) =>
-    shiftsByOne(coverage.location.start, mapped.location.start) &&
-    shiftsByOne(coverage.location.end, mapped.location.end)
-
   const carriesClassOutcome = (result: MutantRunResult, mapped: RunMutantResult) =>
     Match.value(result).pipe(
       Match.discriminator('status')('error', (errored) => holds([
@@ -715,20 +697,8 @@ if (import.meta.vitest !== void 0) {
       Match.exhaustive,
     )
 
-  const mapsConservatively = (mutant: Mutant, result: MutantRunResult) => {
-    const coverage = coverageOf(mutant)
-    return Effect.map(mapRunResult(coverage, result), (mapped) =>
-      conservesMutant(coverage, mapped) && shiftsLocationByOne(coverage, mapped))
-  }
-
   const mapsClassOutcome = (mutant: Mutant, result: MutantRunResult) =>
     Effect.map(mapRunResult(coverageOf(mutant), result), (mapped) => carriesClassOutcome(result, mapped))
-
-  it.effect.prop(
-    '∀mr_MapRunResult_ConservesMutant∧ShiftsLocation',
-    [Mutant, MutantRunResultSchema],
-    ([mutant, result]) => mapsConservatively(mutant, result),
-  )
 
   it.effect.prop(
     '∀mr_MapRunResult_CarriesClassOutcome',

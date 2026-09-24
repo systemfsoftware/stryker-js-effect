@@ -1,11 +1,11 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
-import { Effect, Layer } from 'effect'
 import * as Result from 'effect/Result'
 import { expect } from 'vitest'
+
 import {
   JudgeTestContribution,
   judgeTestContribution,
+  type ReportView,
   type TestContributionDecision,
 } from '@systemfsoftware/stryker-test-contribution'
 

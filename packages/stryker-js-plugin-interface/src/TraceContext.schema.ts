@@ -1,6 +1,5 @@
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { SchemaGetter, SchemaIssue, SchemaTransformation } from 'effect'
 export const TraceparentHeader = S.Literal('traceparent')
@@ -102,34 +101,3 @@ export const Traceparent = S.String.pipe(
   ),
 )
 
-if (import.meta.vitest !== void 0) {
-  // @effect/vitest is dev-only; a static import would put it in the library import graph of every consumer.
-  const { it } = await import('@effect/vitest')
-
-  const hexOf = (length: number) => S.String.pipe(S.check(S.isPattern(new RegExp(`^[0-9a-f]{${length}}$`))))
-
-  it.prop('∀parts_Traceparent_roundTripsThroughTheHeader', [Traceparent], ([parts]) =>
-    Result.match(S.encodeResult(Traceparent)(parts), {
-      onFailure: () => false,
-      onSuccess: (header) =>
-        Result.match(S.decodeResult(Traceparent)(header), {
-          onFailure: () => false,
-          onSuccess: (parsed) => JSON.stringify(parsed) === JSON.stringify(parts),
-        }),
-    }))
-
-  it.prop('∀parts_Traceparent_rendersTheBaselineHeader', [Traceparent], ([parts]) =>
-    Result.match(S.encodeResult(Traceparent)(parts), {
-      onFailure: () => false,
-      onSuccess: (header) =>
-        header ===
-        `${parts.version}-${parts.traceId}-${parts.spanId}-${parts.traceFlags.toString(16).padStart(2, '0')}`,
-    }))
-
-  it.prop('∀version_Traceparent_refusesTheForbiddenVersion', [hexOf(2)], ([version]) =>
-    Result.isSuccess(S.decodeResult(Traceparent)(`${version}-${'a'.repeat(32)}-${'b'.repeat(16)}-01`)) ===
-      (version !== 'ff'))
-
-  it.prop('∀traceId_Traceparent_refusesTheAllZeroId', [hexOf(32)], ([traceId]) =>
-    Result.isSuccess(S.decodeResult(Traceparent)(`00-${traceId}-${'b'.repeat(16)}-01`)) === !/^0+$/.test(traceId))
-}

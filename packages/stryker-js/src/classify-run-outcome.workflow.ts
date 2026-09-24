@@ -2,7 +2,6 @@ import { CauseText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
 import * as Exit from 'effect/Exit'
 import * as Match from 'effect/Match'
@@ -40,8 +39,8 @@ export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOu
     highestExitClass: 'stryker.run_outcome.highest_exit_class',
   } as const
 
-  static readonly fromExit = (input: {
-    readonly exit: Exit.Exit<object, FailurePayload>
+  static readonly fromExit = <A, E>(input: {
+    readonly exit: Exit.Exit<A, E>
     readonly argv: readonly string[]
   }) => gatherRunOutcomeOf(input)
 }
@@ -192,7 +191,13 @@ const MAX_TRAVERSAL_DEPTH = 10
 
 const asExitClass = Option.liftPredicate(S.is(ExitClass))
 
+const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
+
+const failedExit = Option.liftPredicate(Exit.isFailure)
+
 const hasExitClass = Predicate.hasProperty('exitClass')
+
+const hasVerdict = Predicate.hasProperty('verdict')
 
 const hasCause = Predicate.hasProperty('cause')
 
@@ -200,377 +205,259 @@ const hasReason = Predicate.hasProperty('reason')
 
 const hasMessageField = Predicate.hasProperty('message')
 
-const hasVerdict = Predicate.hasProperty('verdict')
+const isUnseenObject = <A>(value: A, seen: WeakSet<object>): value is A & object =>
+  Predicate.isObjectOrArray(value) && !seen.has(value)
 
-const isShowHelp = (value: { readonly _tag: CliError.CliError['_tag'] }): value is CliError.ShowHelp =>
-  S.is(CliError.ShowHelp)(value)
+const isReachableValue = <A>(value: A, depth: number, seen: WeakSet<object>): value is A & object =>
+  depth <= MAX_TRAVERSAL_DEPTH && isUnseenObject(value, seen)
 
-const isSurvivorsRejection = S.is(SurvivorsRejection)
-
-const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
-
-type ExitClassCarrier = { readonly exitClass: unknown }
-
-type VerdictCarrier = { readonly verdict: unknown }
-
-type ReasonCarrier = { readonly reason: unknown }
-
-type MessageCarrier = { readonly message: unknown }
-
-type CauseCarrier = { readonly cause: unknown }
-
-type TraceCarrier = { readonly cause: unknown; readonly reason: unknown; readonly message: unknown }
-
-type CauseNode = string | number | boolean | bigint | symbol | Error | CauseCarrier | TraceCarrier | CliError.CliError
-
-type FailurePayload = CauseNode | ExitClassCarrier | VerdictCarrier | SurvivorsRejection
-
-const failureOf = <A, E>(exit: Exit.Exit<A, E>) =>
-  Option.map(Option.filter(Option.some(exit), Exit.isFailure), (failure) => failure)
-
-const causeReasonsOf = (failure: Exit.Failure<unknown, unknown>) => failure.cause.reasons
-
-const exitClassFieldOf = (carrier: ExitClassCarrier) => Option.getOrUndefined(asExitClass(carrier.exitClass))
-
-const exitClassOf = (value: ExitClassCarrier | object): ExitClass | undefined =>
-  Option.getOrUndefined(
-    Option.map(Option.filter(Option.some(value), hasExitClass), (carrier) => exitClassFieldOf(carrier)),
-  )
-
-const verdictExitClassOf = (value: VerdictCarrier | object): ExitClass | undefined =>
-  Option.getOrUndefined(
-    Option.map(Option.filter(Option.some(value), hasVerdict), (carrier) =>
-      exitClassFieldOf({ exitClass: carrier.verdict })),
-  )
-
-const successExitClassOf = (exit: Exit.Exit<object, FailurePayload>): ExitClass | undefined =>
-  Option.getOrUndefined(
-    Option.flatMap(Option.filter(Option.some(exit), Exit.isSuccess), (success) =>
-      Option.fromNullishOr(verdictExitClassOf(success.value))),
-  )
-
-const reasonFieldOf = (value: ReasonCarrier | object): Option.Option<string> =>
-  Option.flatMap(Option.filter(Option.some(value), hasReason), (carrier) => nonEmptyText(carrier.reason))
-
-const messageFieldOf = (value: MessageCarrier | object): Option.Option<string> =>
-  Option.flatMap(Option.filter(Option.some(value), hasMessageField), (carrier) =>
-    nonEmptyText(carrier.message))
-
-const causeFieldOf = (value: CauseCarrier | object): Option.Option<CauseNode> =>
-  Option.flatMap(
-    Option.filter(Option.some(value), hasCause),
-    (carrier) => Option.filter(Option.some(carrier.cause), isCauseNode),
-  )
-
-const isCauseNode = (value: CauseNode | object): value is CauseNode =>
-  Predicate.isString(value) || Predicate.isNumber(value) || Predicate.isBoolean(value) ||
-    Predicate.isBigInt(value) || Predicate.isSymbol(value) || Predicate.isError(value) ||
-    isCauseCarrier(value) || hasExitClass(value) || hasVerdict(value) || hasReason(value) ||
-    hasMessageField(value) || CliError.isCliError(value) || isSurvivorsRejection(value)
-
-const isCauseCarrier = (value: CauseNode | object): value is CauseCarrier =>
-  Predicate.isObjectOrArray(value) && 'cause' in value
-
-const causeTextOf = (value: CauseCarrier | object): Option.Option<string> =>
-  Option.map(CauseText.fromCause(causeFieldOf(value)), (decoded) => decoded.text)
-
-const reasonOf = (value: ReasonCarrier | object): Option.Option<string> =>
-  Option.flatMap(reasonFieldOf(value), (reason) =>
-    Option.match(causeTextOf(value), {
-      onNone: () => Option.some(reason),
-      onSome: (detail) => Option.some(`${reason}: ${detail}`),
-    }))
-
-const firstConfiguredTextOf = (value: ReasonCarrier & MessageCarrier): Option.Option<string> =>
-  Option.orElse(reasonFieldOf(value), () => messageFieldOf(value))
-
-const configDetailAt = (value: ReasonCarrier & MessageCarrier): Option.Option<string> =>
-  Match.value(exitClassOf(value)).pipe(
-    Match.when('ConfigError', () => firstConfiguredTextOf(value)),
-    Match.orElse(() => Option.none()),
-  )
-const reachableAt = <A>(value: A, depth: number, seen: WeakSet<object>) =>
-  Option.filter(
-    Option.filter(Option.some(value), Predicate.isObjectOrArray),
-    (candidate) => depth <= MAX_TRAVERSAL_DEPTH && !seen.has(candidate),
-  )
-
-
-const causeChildrenOf = (value: CauseCarrier): ReadonlyArray<CauseNode> =>
-  Option.match(Option.fromNullishOr(value.cause), {
-    onNone: () => [],
-    onSome: (settled) => (Array.isArray(settled) ? settled : [settled]),
-  })
-
-const findWalkOf = (
-  value: CauseNode | object,
-  depth: number,
-  seen: WeakSet<object>,
-  read: (node: TraceCarrier) => Option.Option<string>,
-): Option.Option<string> =>
-  Option.flatMap(reachableAt(value, depth, seen), (node) =>
-    Match.value(visitReachable(node, seen)).pipe(
-      Match.when(hasTraceCarrier, (carrier) =>
-        Option.orElse(read(carrier), () =>
-          causeChildrenOf(carrier).reduce<Option.Option<string>>(
-            (found, child) =>
-              Option.match(found, {
-                onSome: () => found,
-                onNone: () => findWalkOf(child, depth + 1, seen, read),
-              }),
-            Option.none(),
-          ))),
-      Match.orElse(() => Option.none()),
-    ))
-
-const hasTraceCarrier = (visited: object): visited is TraceCarrier =>
-  hasCause(visited) && hasReason(visited) && hasMessageField(visited)
-
-const visitReachable = (node: object, seen: WeakSet<object>) => {
-  seen.add(node)
-  return node
+const causeChildrenOf = (value: object): ReadonlyArray<object> => {
+  const cause = hasCause(value) ? value.cause : undefined
+  if (Array.isArray(cause)) {
+    return cause.filter(Predicate.isObjectOrArray)
+  }
+  return Predicate.isObjectOrArray(cause) ? [cause] : []
 }
 
-const collectExitClassesFrom = (
-  value: CauseNode | object,
+const visitReachableValue = <A>(
+  value: A,
   depth: number,
   seen: WeakSet<object>,
-): ReadonlyArray<ExitClass> =>
-  Option.match(reachableAt(value, depth, seen), {
-    onNone: () => [],
-    onSome: (node) =>
-      Match.value(visitReachable(node, seen)).pipe(
-        Match.when(hasCause, (carrier) => [...exitClassListOf(node), ...collectChildrenOf(carrier, depth, seen)]),
-        Match.orElse(() => exitClassListOf(node)),
-      ),
-  })
+  visit: (node: object) => void,
+): void => {
+  if (isReachableValue(value, depth, seen)) {
+    seen.add(value)
+    visit(value)
+    causeChildrenOf(value).forEach((child) => visitReachableValue(child, depth + 1, seen, visit))
+  }
+}
 
-const exitClassListOf = (node: object) => Option.toArray(Option.fromNullishOr(exitClassOf(node)))
+const findReachableValue = <A, B>(
+  value: A,
+  depth: number,
+  seen: WeakSet<object>,
+  read: (node: object) => Option.Option<B>,
+): Option.Option<B> => {
+  if (!isReachableValue(value, depth, seen)) {
+    return Option.none()
+  }
+  seen.add(value)
+  return Option.orElse(read(value), () =>
+    Arr.findFirst(causeChildrenOf(value), (child) => findReachableValue(child, depth + 1, seen, read)))
+}
 
-const collectChildrenOf = (carrier: CauseCarrier, depth: number, seen: WeakSet<object>) =>
-  causeChildrenOf(carrier).flatMap((child) => collectExitClassesFrom(child, depth + 1, seen))
+const causePayloadOf = <E>(reason: Cause.Reason<E>): E | object | undefined =>
+  Cause.isFailReason(reason) ? reason.error : objectPayloadOf(reason)
 
-const collectExitClassesOf = (exit: Exit.Exit<object, FailurePayload>): ReadonlyArray<ExitClass> =>
-  Option.match(failurePayloadsOf(exit), {
-    onNone: () => [],
-    onSome: (payloads) => payloads.flatMap((payload) => collectExitClassesFrom(payload, 0, new WeakSet())),
-  })
-
-const dieDefectOf = (reason: Cause.Reason<FailurePayload>) =>
-  Match.value(reason).pipe(
-    Match.when(Cause.isDieReason, (die) => Option.some(die.defect)),
-    Match.orElse(() => Option.none()),
-  )
-
-const objectPayloadOf = (reason: Cause.Reason<FailurePayload>) =>
+const objectPayloadOf = <E>(reason: Cause.Reason<E>): object | undefined =>
   Option.getOrUndefined(Option.filter(dieDefectOf(reason), Predicate.isObject))
 
-const causePayloadOf = (reason: Cause.Reason<FailurePayload>): FailurePayload | object | undefined =>
-  Match.value(reason).pipe(
-    Match.when(Cause.isFailReason, (fail) => fail.error),
-    Match.orElse(objectPayloadOf),
+const dieDefectOf = <E>(reason: Cause.Reason<E>) =>
+  Cause.isDieReason(reason) ? Option.some(reason.defect) : Option.none()
+
+const failurePayloads = <A, E>(exit: Exit.Exit<A, E>): ReadonlyArray<E | object | undefined> =>
+  Option.getOrElse(
+    Option.map(failedExit(exit), (failure) => failure.cause.reasons.map(causePayloadOf)),
+    (): ReadonlyArray<E | object | undefined> => [],
   )
 
-const failurePayloadsOf = (exit: Exit.Exit<object, FailurePayload>) =>
-  Option.flatMap(failureOf(exit), (failure) =>
-    Option.some(causeReasonsOf(failure).map(causePayloadOf)))
+const exitClassOf = <A>(value: A): ExitClass | undefined => {
+  if (!hasExitClass(value)) {
+    return undefined
+  }
+  return Option.getOrUndefined(asExitClass(value.exitClass))
+}
 
-const firstConfigErrorDetailOf = (exit: Exit.Exit<object, FailurePayload>): string | undefined =>
-  Option.getOrUndefined(
-    Option.flatMap(failurePayloadsOf(exit), (payloads) =>
-      Arr.findFirst([...payloads].reverse(), (root) =>
-        findWalkOf(acceptPayload(root), 0, new WeakSet(), configDetailAt))),
-  )
+const appendExitClass = (value: object, out: Array<ExitClass>): void => {
+  const declared = exitClassOf(value)
+  if (declared !== undefined) {
+    out.push(declared)
+  }
+}
 
-const acceptPayload = (payload: FailurePayload | object | undefined): CauseNode | object =>
-  Match.value(payload).pipe(
-    Match.when(Predicate.isObjectOrArray, (reached) => reached),
-    Match.when(Predicate.isString, (text) => text),
-    Match.when(Predicate.isNumber, (count) => count),
-    Match.when(Predicate.isBoolean, (flag) => flag),
-    Match.when(Predicate.isBigInt, (big) => big),
-    Match.when(Predicate.isSymbol, (glyph) => glyph),
-    Match.orElse(() => ({})),
-  )
-const failureValueOf = (exit: Exit.Exit<object, FailurePayload>): FailurePayload | undefined =>
-  Option.getOrUndefined(
-    Option.flatMap(failureOf(exit), (failure) => Cause.findErrorOption(failure.cause)),
-  )
+const collectExitClasses = <A, E>(exit: Exit.Exit<A, E>): Array<ExitClass> => {
+  const out: Array<ExitClass> = []
+  const seen = new WeakSet<object>()
+  failurePayloads(exit).forEach((payload) =>
+    visitReachableValue(payload, 0, seen, (node) => appendExitClass(node, out)))
+  return out
+}
 
-const messageErrorTextOf = (value: FailurePayload | object): Option.Option<string> =>
-  Option.flatMap(
-    Option.filter(Option.some(value), Predicate.isError),
-    (error) => Option.fromNullishOr(nonEmptyText(error.message)),
-  )
+const causeTextOf = <A>(value: A): Option.Option<string> =>
+  Option.map(CauseText.fromCause(hasCause(value) ? value.cause : undefined), (decoded) => decoded.text)
 
-const isPrimitiveText = Predicate.some([
+const reasonOf = <A>(value: A): string | undefined => {
+  const declared = hasReason(value) ? value.reason : undefined
+  return Option.getOrUndefined(
+    Option.map(nonEmptyText(declared), (reason) =>
+      Option.match(causeTextOf(value), {
+        onNone: () => reason,
+        onSome: (detail) => `${reason}: ${detail}`,
+      })),
+  )
+}
+
+const firstConfiguredText = <A>(value: A): Option.Option<string> => {
+  const reason = hasReason(value) ? value.reason : undefined
+  const message = hasMessageField(value) ? value.message : undefined
+  return Option.orElse(nonEmptyText(reason), () => nonEmptyText(message))
+}
+
+const configDetailAt = (value: object): Option.Option<string> =>
+  exitClassOf(value) === 'ConfigError' ? firstConfiguredText(value) : Option.none()
+
+const firstConfigErrorDetail = <A, E>(exit: Exit.Exit<A, E>): string | undefined => {
+  const seen = new WeakSet<object>()
+  const roots = [...failurePayloads(exit)].reverse()
+  return Option.getOrUndefined(
+    Arr.findFirst(roots, (root) => findReachableValue(root, 0, seen, configDetailAt)),
+  )
+}
+
+const PRIMITIVE_REFINEMENTS = [
   Predicate.isString,
   Predicate.isNumber,
   Predicate.isBoolean,
   Predicate.isBigInt,
   Predicate.isSymbol,
-])
+]
 
-const primitiveTextOf = (value: FailurePayload | object): Option.Option<string> =>
-  Option.match(Option.filter(Option.some(value), isPrimitiveText), {
-    onSome: (primitive) => Option.some(String(primitive)),
-    onNone: () => Option.none(),
-  })
+const isPrimitiveText = Predicate.some(PRIMITIVE_REFINEMENTS)
 
-const failureValueDescriptionOf = (value: FailurePayload | object): Option.Option<string> =>
-  Option.orElse(
-    Option.orElse(
-      Option.orElse(
-        Option.flatMap(Option.some(value), survivorsRemediationOptionOf),
-        () => Option.flatMap(Option.some(value), reasonTextOptionOf),
-      ),
-      () => messageErrorTextOf(value),
-    ),
-    () => primitiveTextOf(value),
+const declaresReasonText = <A>(value: A): boolean =>
+  hasReason(value) && Option.isSome(nonEmptyText(value.reason))
+
+const remediationTextOf = <A>(value: A): Option.Option<string> =>
+  S.is(SurvivorsRejection)(value) ? Option.some(value.remediation) : Option.none()
+
+const reasonTextOf = <A>(value: A): Option.Option<string> =>
+  declaresReasonText(value) ? Option.fromNullishOr(reasonOf(value)) : Option.none()
+
+const errorMessageTextOf = <A>(value: A): Option.Option<string> =>
+  Option.flatMap(Option.filter(Option.some(value), Predicate.isError), (error) => nonEmptyText(error.message))
+
+const primitiveTextOf = <A>(value: A): Option.Option<string> =>
+  isPrimitiveText(value) ? Option.some(String(value)) : Option.none()
+
+const failureValueDescription = <A>(value: A): Option.Option<string> =>
+  remediationTextOf(value).pipe(
+    Option.orElse(() => reasonTextOf(value)),
+    Option.orElse(() => errorMessageTextOf(value)),
+    Option.orElse(() => primitiveTextOf(value)),
   )
 
-const survivorsRemediationOptionOf = (value: FailurePayload | object): Option.Option<string> =>
-  Option.flatMap(Option.some(value), survivorsRemediationOf)
+const failureValueOf = <A, E>(exit: Exit.Exit<A, E>): E | undefined =>
+  Option.getOrUndefined(Option.flatMap(failedExit(exit), (failure) => Cause.findErrorOption(failure.cause)))
 
-const declaresReasonText = (value: ReasonCarrier | object) => Option.isSome(reasonFieldOf(value))
-
-const reasonTextOf = (value: TraceCarrier | object): Option.Option<string> =>
-  Boolean.match(declaresReasonText(value), {
-    onTrue: () =>
-      Option.flatMap(reasonFieldOf(value), (reason) =>
-        Option.match(causeTextOf(value), {
-          onNone: () => Option.some(reason),
-          onSome: (detail) => Option.some(`${reason}: ${detail}`),
-        })),
-    onFalse: () => Option.none(),
-  })
-
-const reasonTextOptionOf = (value: FailurePayload | object): Option.Option<string> =>
-  Option.flatMap(Option.some(value), reasonTextOf)
-
-const survivorsRemediationOf = (value: SurvivorsRejection | object): Option.Option<string> =>
-  Option.flatMap(Option.filter(Option.some(value), isSurvivorsRejection), (rejection) =>
-    Option.fromNullishOr(nonEmptyText(rejection.remediation)))
-
-const failureDescriptionOf = (exit: Exit.Exit<object, FailurePayload>): Option.Option<string> =>
-  Option.orElse(
-    Option.orElse(
-      Option.flatMap(Option.some(failureValueOf(exit)), failureValueDescriptionOf),
-      () => Option.fromNullishOr(firstConfigErrorDetailOf(exit)),
-    ),
-    () =>
-      Option.flatMap(Option.filter(Option.some(exit), Exit.isFailure), (failure) =>
-        nonEmptyText(Cause.pretty(failure.cause))),
+const failureDescriptionOf = <A, E>(exit: Exit.Exit<A, E>): Option.Option<string> =>
+  failureValueDescription(failureValueOf(exit)).pipe(
+    Option.orElse(() => Option.fromNullishOr(firstConfigErrorDetail(exit))),
+    Option.orElse(() => Option.flatMap(failedExit(exit), (failure) => nonEmptyText(Cause.pretty(failure.cause)))),
   )
 
-const describeFailureOf = (exit: Exit.Exit<object, FailurePayload>): string =>
+const describeFailureOf = <A, E>(exit: Exit.Exit<A, E>): string =>
   Option.getOrElse(failureDescriptionOf(exit), () => UNKNOWN_FAILURE)
 
-const showHelpErrorsOf = (value: FailurePayload | object): Option.Option<ReadonlyArray<CliError.CliError>> =>
-  Option.flatMap(Option.filter(Option.some(value), isShowHelp), (help) => Option.some(help.errors))
+const showHelpErrors = (help: CliError.ShowHelp): ReadonlyArray<CliError.CliError> => help.errors
 
-const singleCliErrorOf = (value: FailurePayload | object): Option.Option<ReadonlyArray<CliError.CliError>> =>
-  Option.flatMap(Option.filter(Option.some(value), CliError.isCliError), (cliError) =>
-    Option.some([cliError]))
+const showHelpErrorsOf = <A>(value: A): Option.Option<ReadonlyArray<CliError.CliError>> =>
+  S.is(CliError.ShowHelp)(value) ? Option.some(showHelpErrors(value)) : Option.none()
 
-const cliErrorListOf = (exit: Exit.Exit<object, FailurePayload>) =>
-  Option.match(
-    Option.flatMap(Option.some(failureValueOf(exit)), showHelpErrorsOf),
-    {
-      onSome: Option.some,
-      onNone: () => Option.flatMap(Option.some(failureValueOf(exit)), singleCliErrorOf),
-    },
-  )
+const cliErrorListOf = <A, E>(exit: Exit.Exit<A, E>): Option.Option<ReadonlyArray<CliError.CliError>> => {
+  const value = failureValueOf(exit)
+  return Option.match(showHelpErrorsOf(value), {
+    onSome: (errors) => Option.some(errors),
+    onNone: () => (CliError.isCliError(value) ? Option.some([value]) : Option.none()),
+  })
+}
 
-const followingArgumentOf = (argv: readonly string[], option: string) =>
+const followingArgumentOf = (argv: readonly string[], option: string): Option.Option<string> =>
   Match.value(argv.indexOf(option)).pipe(
     Match.when((at) => at >= 0, (at) => Option.fromNullishOr(argv[at + 1])),
     Match.orElse(() => Option.none()),
   )
 
-const unrecognizedArgumentOf = (argv: readonly string[], option: string) =>
+const unrecognizedArgumentOf = (argv: readonly string[], option: string): string =>
   Option.getOrElse(
     Option.filter(followingArgumentOf(argv, option), (argument) => !argument.startsWith('-')),
     () => option,
   )
 
-const argumentHintOf = (error: CliError.CliError, argv: readonly string[]) =>
+const argumentHintOf = (error: CliError.CliError, argv: readonly string[]): Option.Option<string> =>
   Match.value(error).pipe(
-    Match.tag('UnrecognizedOption', (unrecognized) =>
-      Option.some(unrecognizedArgumentOf(argv, unrecognized.option))),
+    Match.tag('UnrecognizedOption', (unrecognized) => Option.some(unrecognizedArgumentOf(argv, unrecognized.option))),
     Match.tag('UnexpectedArgument', (unexpected) => Option.fromNullishOr(unexpected.arguments[0])),
     Match.tag('UnknownSubcommand', (unknown) => Option.some(unknown.subcommand)),
     Match.orElse(() => Option.none()),
   )
 
-const unrecognizedHintOf = (
-  exit: Exit.Exit<object, FailurePayload>,
-  argv: readonly string[],
-): string | undefined =>
+const unrecognizedHintOf = <A, E>(exit: Exit.Exit<A, E>, argv: readonly string[]): string | undefined =>
   Option.getOrUndefined(
     Option.flatMap(cliErrorListOf(exit), (errors) => Arr.findFirst(errors, (error) => argumentHintOf(error, argv))),
   )
 
-const survivorsReasonOf = (value: SurvivorsRejection | object): Option.Option<SurvivorsRejection['reason']> =>
-  Option.map(
-    Option.filter(Option.some(value), isSurvivorsRejection),
-    (rejection) => rejection.reason,
-  )
+const survivorsRejectionOf = <A>(value: A): SurvivorsRejection | undefined =>
+  S.is(SurvivorsRejection)(value) ? value : undefined
 
-const hasOnlyInterruptsOf = (exit: Exit.Exit<object, FailurePayload>): boolean =>
-  Option.match(Option.filter(Option.some(exit), Exit.isFailure), {
-    onSome: (failure) => Cause.hasInterruptsOnly(failure.cause),
-    onNone: () => false,
-  })
+const present = <A>(value: A | null): A | undefined => (value === null ? undefined : value)
 
-const carriesCliError = (value: FailurePayload | object | undefined): boolean =>
-  value !== undefined && CliError.isCliError(value)
+const survivorsReasonOf = (
+  survivors: SurvivorsRejection | undefined,
+): 'no-report' | 'mismatch' | undefined => survivors?.reason
 
-const carriesSchemaError = (value: FailurePayload | object | undefined): boolean =>
-  value !== undefined && S.isSchemaError(value)
-
-const helpErrorCountOf = (value: FailurePayload | object): Option.Option<number> =>
-  Option.flatMap(Option.filter(Option.some(value), isShowHelp), (help) => Option.some(help.errors.length))
+const survivorsDiagnosticOf = (survivors: SurvivorsRejection | undefined): string | undefined =>
+  survivors?.remediation
 
 const omitUnknownFailure = (diagnostic: string): string | undefined =>
-  Option.getOrUndefined(Option.filter(Option.some(diagnostic), (candidate) => candidate !== UNKNOWN_FAILURE))
+  diagnostic === UNKNOWN_FAILURE ? undefined : diagnostic
+
+const hasOnlyInterruptsOf = <A, E>(exit: Exit.Exit<A, E>): boolean =>
+  Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+
+const carriesCliError = <A>(value: A): boolean => value !== undefined && CliError.isCliError(value)
+
+const carriesSchemaError = <A>(value: A): boolean => value !== undefined && S.isSchemaError(value)
+
+const helpErrorCountOf = <A>(value: A): number | undefined =>
+  S.is(CliError.ShowHelp)(value) ? value.errors.length : undefined
+
+const verdictExitClassOf = <A>(value: A): ExitClass | undefined =>
+  hasVerdict(value) ? Option.getOrUndefined(asExitClass(value.verdict)) : undefined
+
+const successExitClassOf = <A, E>(exit: Exit.Exit<A, E>): ExitClass | undefined =>
+  Exit.isSuccess(exit) ? verdictExitClassOf(exit.value) : undefined
 
 const highestExitClassOf = (pending: ReadonlyArray<ExitClass>): ExitClass | null =>
-  pending.reduce<ExitClass | null>(
-    (highest, candidate) =>
-      Option.match(Option.fromNullishOr(highest), {
-        onNone: () => candidate,
-        onSome: (current) =>
-          Boolean.match(classCode(candidate) > classCode(current), {
-            onTrue: () => candidate,
-            onFalse: () => current,
-          }),
-      }),
-    null,
-  )
+  pending.reduce<ExitClass | null>((highest, candidate) => {
+    if (highest === null) {
+      return candidate
+    }
+    return classCode(candidate) > classCode(highest) ? candidate : highest
+  }, null)
 
-const gatherRunOutcomeOf = (input: {
-  readonly exit: Exit.Exit<object, FailurePayload>
-  readonly argv: readonly string[]
-}) => {
-  const { exit, argv } = input
-  const value: FailurePayload | object = failureValueOf(exit) ?? {}
+const gatherRunOutcome = <A, E>(exit: Exit.Exit<A, E>, argv: readonly string[]): RunOutcomeCommand => {
+  const value = failureValueOf(exit)
+  const survivors = survivorsRejectionOf(value)
   return RunOutcomeCommand.make({
-    succeeded: Option.isSome(Option.filter(Option.some(exit), Exit.isSuccess)),
+    succeeded: Exit.isSuccess(exit),
     interrupted: hasOnlyInterruptsOf(exit),
-    helpErrorCount: Option.getOrUndefined(helpErrorCountOf(value)),
+    helpErrorCount: helpErrorCountOf(value),
     cliError: carriesCliError(value),
     unrecognized: unrecognizedHintOf(exit, argv),
-    survivorsReason: Option.getOrUndefined(survivorsReasonOf(value)),
-    survivorsDiagnostic: Option.getOrUndefined(survivorsRemediationOf(value)),
+    survivorsReason: survivorsReasonOf(survivors),
+    survivorsDiagnostic: survivorsDiagnosticOf(survivors),
     schemaError: carriesSchemaError(value),
     successExitClass: successExitClassOf(exit),
-    highestExitClass: Option.getOrUndefined(Option.fromNullishOr(highestExitClassOf(collectExitClassesOf(exit)))),
-    configDetail: firstConfigErrorDetailOf(exit),
+    highestExitClass: present(highestExitClassOf(collectExitClasses(exit))),
+    configDetail: firstConfigErrorDetail(exit),
     diagnostic: omitUnknownFailure(describeFailureOf(exit)),
   })
 }
 
+const gatherRunOutcomeOf = <A, E>(input: {
+  readonly exit: Exit.Exit<A, E>
+  readonly argv: readonly string[]
+}): RunOutcomeCommand => gatherRunOutcome(input.exit, input.argv)
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const ExitModule = await import('effect/Exit')

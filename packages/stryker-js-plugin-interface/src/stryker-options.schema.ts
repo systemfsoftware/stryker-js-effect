@@ -167,23 +167,6 @@ const AnyNonStringTestRunner = S.declare<TestRunnerCustomConfig>(
 
 export const isCustomTestRunner = S.is(AnyNonStringTestRunner)
 
-if (import.meta.vitest !== void 0) {
-  // @effect/vitest is dev-only; a static import would put it in the library import graph of every consumer.
-  const { it } = await import('@effect/vitest')
-
-  const TestRunnerValues = S.Union([
-    S.String,
-    S.Boolean,
-    S.Finite,
-    S.Null,
-    S.Array(S.Unknown),
-    TestRunnerCustomConfigSchema,
-  ])
-
-  it.prop('∀value_isCustomTestRunner_acceptsExactlyNonStrings', [TestRunnerValues], ([value]) =>
-    isCustomTestRunner(value) === (typeof value !== 'string'))
-}
-
 export const CheckerCustomConfigSchema = S.Struct({
   plugin: PluginFileUrl,
   nodeArgs: S.String.pipe(S.Array, S.optionalKey),

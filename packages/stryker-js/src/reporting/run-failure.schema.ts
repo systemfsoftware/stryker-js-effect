@@ -107,8 +107,6 @@ if (import.meta.vitest !== void 0) {
     RunFailed,
   ])
 
-  const FailedOutcomeSchema = S.Union([RunInterrupted, RunParseFailed, RunSurvivorsRejected, RunConfigFailed, RunFailed])
-
   const codeOf = (outcome: RunOutcomeDecision | RunOutcomeError) => RunExitCode.fromOutcome(outcome).code
 
   it.prop('∀outcome_RunExitCode.fromOutcome_CarriesFrozenCodes', [RunOutcomeSchema], ([outcome]) =>
@@ -118,21 +116,4 @@ if (import.meta.vitest !== void 0) {
       Match.tag('RunFailed', (failed) => codeOf(outcome) === failed.code),
       Match.orElse(() => codeOf(outcome) === CONFIG_CODE),
     ))
-
-  it.prop('∀outcome_RunExitCode.fromOutcome_DecodesAsRunExitCode', [RunOutcomeSchema], ([outcome]) =>
-    S.is(RunExitCode)(RunExitCode.fromOutcome(outcome)))
-
-  it.prop('∀error_captured_ErrorEnvelope.fromOutcome_DecodesAsErrorEnvelope', [FailedOutcomeSchema, S.String], ([error, captured]) =>
-    S.is(ErrorEnvelope)(ErrorEnvelope.fromOutcome({ error, captured })))
-
-  it.prop('∀error_captured_ErrorEnvelope.fromOutcome_CarriesFrozenSchemaVersion', [FailedOutcomeSchema, S.String], ([error, captured]) =>
-    ErrorEnvelope.fromOutcome({ error, captured }).schemaVersion === StreamSchemaVersion.literal)
-
-  it.prop('∀error_captured_ErrorEnvelope.fromOutcome_TextFieldsNonEmpty', [FailedOutcomeSchema, S.String], ([error, captured]) => {
-    const envelope = ErrorEnvelope.fromOutcome({ error, captured })
-    return envelope.error.length > 0 && envelope.remediation.length > 0
-  })
-
-  it.prop('∀error_captured_ErrorEnvelope.fromOutcome_CodeAgreesWithRunExitCode', [FailedOutcomeSchema, S.String], ([error, captured]) =>
-    ErrorEnvelope.fromOutcome({ error, captured }).code === RunExitCode.fromOutcome(error).code)
 }

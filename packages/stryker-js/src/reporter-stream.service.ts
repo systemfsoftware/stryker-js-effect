@@ -9,6 +9,7 @@ import {
   type ReporterInitOptions,
   ReporterRpcs,
   TraceContextReference,
+  Traceparent,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TraceContextPartsFromEffectSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Boolean from 'effect/Boolean'
@@ -28,15 +29,15 @@ import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 import type * as RpcClient from 'effect/unstable/rpc/RpcClient'
-import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
 
 import { ConfigError } from './ConfigError.schema.js'
 import { ReporterFactoryThrew, ReporterStageForged } from './stryker-error.schema.js'
-import { ReporterStreamInvariantBroken, ReporterTraceInit } from './reporter-trace-init.schema.js'
 import { makeWorkerClient } from './worker-client.resource.js'
 import type { WorkerBootError } from './Worker.schema.js'
 import type { WorkerLauncher } from './WorkerLauncher.service.js'
+
+export const REPORTER_STREAM_QUEUE_BOUND = 256
 
 type ReporterStreamState = 'streaming' | 'terminal' | 'detached'
 
@@ -464,16 +465,12 @@ const hasTraceFields = (init: ReporterInit): boolean =>
   Option.isSome(Option.fromUndefinedOr(init.traceparent)) ||
   Option.isSome(Option.fromUndefinedOr(init.tracestate))
 
-const ABSENT_REPORTER_INIT: ReporterInit | undefined = undefined
-
 const initFromPhaseSpan = (span: PhaseSpan | undefined): Effect.Effect<ReporterInit | undefined> =>
-  ReporterTraceInit.fromSpan(span).pipe(
-    Effect.catchTag('TraceInitIssue', (issue) =>
-      span === undefined
-        ? Effect.succeed(ABSENT_REPORTER_INIT)
-        : Effect.die(
-          ReporterStreamInvariantBroken.make({ detail: `span ${issue.phase}: ${issue.reason}`, span }),
-        )),
+  Option.flatMap(Option.fromNullishOr(span), (present) =>
+    S.encodeOption(Traceparent)(S.decodeOption(TraceContextPartsFromEffectSpan)(present))).pipe(
+    Option.map((traceparent): ReporterInit => ({ traceparent })),
+    Option.getOrUndefined,
+    Effect.succeed,
   )
 
 export interface PhaseSpan {

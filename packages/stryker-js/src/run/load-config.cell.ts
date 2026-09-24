@@ -52,8 +52,7 @@ import { RunEnvironment } from './RunEnvironment.service.js'
 import * as Clock from 'effect/Clock'
 import * as Queue from 'effect/Queue'
 import { PhaseEntered, RunEvents } from '../run-events.service.js'
-const isNonNullObject = <A>(value: A): value is Extract<A, object> => typeof value === 'object' && value !== null
-
+const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 const combine = (
   prefixes: string[],
   suffixes: string[],
@@ -944,7 +943,29 @@ const describeUnserializableNonNullish = <A>(value: A): UnserializableDescriptio
     onNone: () => [],
     onSome: (present) => describeUnserializableObject(present),
   })
-const isNumberValue = <A>(value: A): value is Extract<A, number> => typeof value === 'number'
+const isNumberValue = (value: unknown): value is number => typeof value === 'number'
+
+type JsonlessPrimitive = bigint | symbol | ((...args: never[]) => void)
+
+const isNonJsonPrimitive = (value: unknown): value is JsonlessPrimitive =>
+  NON_JSON_PRIMITIVE_TYPES[typeof value] === true
+
+const primitiveKindOf = (primitive: JsonlessPrimitive): string => typeof primitive
+
+const describeUnserializablePrimitive = (primitive: JsonlessPrimitive): UnserializableDescription[] => [
+  {
+    path: [],
+    reason: `Primitive type "${primitiveKindOf(primitive)}" has no JSON representation`,
+  },
+]
+
+const describeUnserializableUnknown = <A>(value: A): UnserializableDescription[] =>
+  Option.match(Option.liftPredicate(Option.some(value), isNonJsonPrimitive), {
+    onNone: () => describeUnserializableNonNullish(value),
+    onSome: describeUnserializablePrimitive,
+  })
+
+const hasDescriptions = (found: UnserializableDescription[]): boolean => found.length > 0
 
 const describeUnserializableFiniteNumber = (value: number): UnserializableDescription[] =>
   Boolean.match(Number.isFinite(value), {
@@ -957,32 +978,11 @@ const describeUnserializableFiniteNumber = (value: number): UnserializableDescri
     ],
   })
 
-type JsonlessPrimitive = bigint | symbol | ((...args: never[]) => void)
-
-const isNonJsonPrimitive = <A>(value: A): value is Extract<A, JsonlessPrimitive> =>
-  NON_JSON_PRIMITIVE_TYPES[typeof value] === true
-
-const describeNonJsonPrimitive = (value: JsonlessPrimitive): UnserializableDescription[] => [
-  {
-    path: [],
-    reason: `Primitive type "${typeof value}" has no JSON representation`,
-  },
-]
-
-const describeUnserializableUnknown = <A>(value: A): UnserializableDescription[] =>
-  Match.value(value).pipe(
-    Match.when(isNonJsonPrimitive, describeNonJsonPrimitive),
-    Match.orElse(describeUnserializableNonNullish),
-  )
-
-const hasDescriptions = (found: UnserializableDescription[]): boolean => found.length > 0
-
 const describeUnserializableValue = <A>(value: A): UnserializableDescription[] =>
-  Match.value(value).pipe(
-    Match.when(isNumberValue, describeUnserializableFiniteNumber),
-    Match.orElse(describeUnserializableUnknown),
-  )
-
+  Option.match(Option.liftPredicate(Option.some(value), isNumberValue), {
+    onNone: () => describeUnserializableUnknown(value),
+    onSome: describeUnserializableFiniteNumber,
+  })
 const findUnserializables = <A>(thing: A): UnserializableDescription[] | undefined =>
   Option.match(
     Option.filter(Option.some(describeUnserializableValue(thing)), hasDescriptions),

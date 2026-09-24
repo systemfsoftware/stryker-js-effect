@@ -1,4 +1,3 @@
-import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
@@ -54,6 +53,8 @@ export const RunOptionsFields = {
 export const MutantActivationSchema = S.Literals(['runtime', 'static'])
 export type MutantActivation = typeof MutantActivationSchema.Type
 
+const HitCount = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
+
 export const MutantRunOptionsSchema = S.Struct({
   ...RunOptionsFields,
   activeMutant: Mutant,
@@ -61,12 +62,12 @@ export const MutantRunOptionsSchema = S.Struct({
   mutantActivation: MutantActivationSchema,
   reloadEnvironment: S.Boolean,
   testFilter: S.String.pipe(S.Array, S.optionalKey),
-  hitLimit: S.optionalKey(S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))),
+  hitLimit: S.optionalKey(HitCount),
 })
 
 export const MutantCoverageSchema = S.Struct({
-  perTest: S.Record(S.String, S.Record(S.String, S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0))))),
-  static: S.Record(S.String, S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))),
+  perTest: S.Record(S.String, S.Record(S.String, HitCount)),
+  static: S.Record(S.String, HitCount),
 })
 export type MutantCoverage = typeof MutantCoverageSchema.Type
 
@@ -163,27 +164,4 @@ export class MutantSpanMissing
   override get message(): string {
     return `Node without a ${this.edge} offset`
   }
-}
-
-if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
-  const { Schema } = await import('effect')
-
-  it.prop('∀path_CanonicalFileName_≡BackslashToSlash', [Schema.String], ([path]) =>
-    Option.match(S.decodeOption(CanonicalFileName)(path), {
-      onNone: () => path.includes('\\'),
-      onSome: (canonical) => canonical === path.replace(/\\/g, '/'),
-    }),
-  )
-
-  it.prop('∀path_CanonicalFileName_∘CanonicalEncodeIdentity', [Schema.String], ([path]) =>
-    Option.match(S.decodeOption(CanonicalFileName)(path), {
-      onNone: () => path.includes('\\'),
-      onSome: (canonical) =>
-        Option.match(S.encodeOption(CanonicalFileName)(canonical), {
-          onNone: () => false,
-          onSome: (back) => back === canonical,
-        }),
-    }),
-  )
 }

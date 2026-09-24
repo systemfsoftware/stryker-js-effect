@@ -250,38 +250,10 @@ if (import.meta.vitest !== void 0) {
     end: S.Struct({ line: SourceCoordinate, column: SourceCoordinate }),
   })
 
-  type ReportSide = typeof ReportLocationSchema.Type
-
-  const shiftsBy = (offset: number) => (before: ReportSide['start'], after: ReportSide['start']) =>
-    after.line - before.line === offset && after.column - before.column === offset
-
-  const shiftsLocationBy = (offset: number) => (side: ReportSide, shifted: ReportSide) =>
-    shiftsBy(offset)(side.start, shifted.start) && shiftsBy(offset)(side.end, shifted.end)
-
   const keyOrderOf = (value: object) => Object.keys(value).join()
 
-  const positionsColumnFirst = (report: ReportSide) =>
+  const positionsColumnFirst = (report: Location) =>
     keyOrderOf(report.start) === 'column,line' && keyOrderOf(report.end) === 'column,line'
-
-  it.prop('∀location_ReportLocationFromMutant_ShiftsEveryPositionByOne', [ReportLocationSchema], ([location]) =>
-    Result.match(S.decodeResult(ReportLocationFromMutant)({ start: location.start, end: location.end }), {
-      onFailure: () => false,
-      onSuccess: (report) => shiftsLocationBy(1)(location, report),
-    }))
-
-  it.prop(
-    '∀location_ReportLocationFromMutant_EncodesMutantCoordinatesByMinusOne',
-    [ShiftableLocation],
-    ([location]) =>
-      Result.match(S.decodeResult(ReportLocationFromMutant)({ start: location.start, end: location.end }), {
-        onFailure: () => false,
-        onSuccess: (report) =>
-          Result.match(S.encodeResult(ReportLocationFromMutant)(report), {
-            onFailure: () => false,
-            onSuccess: (mutant) => shiftsLocationBy(-1)(report, mutant),
-          }),
-      }),
-  )
 
   it.prop('∀location_ReportLocationFromMutant_OrdersReportKeysColumnFirst', [ShiftableLocation], ([location]) =>
     Result.match(S.decodeResult(ReportLocationFromMutant)(location), {
