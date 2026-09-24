@@ -11,7 +11,7 @@ export namespace Assertions {
 
 // @public (undocumented)
 export namespace Drain {
-    export { DrainCompleted, DrainOutcome, DrainRegistryCommand, DrainTimedOut, DrainedStatus, DrainedTest, DrainedTestSchema, TestOutcome, TestOutcomeSchema, executeDrainRegistry as drainRegistry, executeDrainRegistry, drainRegistry as pureDrainRegistry };
+    export { DrainCompleted, DrainOutcome, DrainRegistryCommand, DrainTimedOut, DrainedStatus, DrainedTest, DrainedTestSchema, TestOutcome, TestOutcomeSchema, executeDrainRegistry as drainRegistry, drainRegistry as pureDrainRegistry };
 }
 
 // @public (undocumented)

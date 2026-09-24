@@ -417,10 +417,6 @@ function spliceText(pattern: string, splice: Splice): string {
 
 const NO_MUTANTS: readonly Node[] = []
 
-function isPresent<T>(value: T | null | undefined): value is T {
-  return value !== null && value !== undefined
-}
-
 /** A copy of the node carrying a different operator. */
 function withOperator<T extends Node & { operator: string }>(node: T, operator: T['operator']): T {
   const replacement = cloneNode(node)
@@ -689,7 +685,7 @@ function isClassBody(node: Node | undefined): node is ClassBody {
 }
 
 function isInitializedField(member: Node): boolean {
-  return isPropertyDefinition(member) && isPresent(member.value)
+  return isPropertyDefinition(member) && Predicate.isNotNullish(member.value)
 }
 
 function isPropertyDefinition(node: Node): node is PropertyDefinition {
@@ -1094,7 +1090,7 @@ const regexMutator: Mutator = (node, context) =>
   )
 
 function isRegexLiteral(node: Node): node is RegexLiteral {
-  return nodeType(node) === 'Literal' && isPresent(propertyOf(node, 'regex'))
+  return nodeType(node) === 'Literal' && Predicate.isNotNullish(propertyOf(node, 'regex'))
 }
 
 function regexLiteralMutants(literal: RegexLiteral): readonly Node[] {

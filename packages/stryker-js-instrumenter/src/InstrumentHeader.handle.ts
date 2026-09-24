@@ -14,23 +14,10 @@ interface LocatedComment extends SpannedComment {
   }
 }
 
-function leadingCommentsOn(value: object): readonly LocatedComment[] | undefined {
-  return hasCommentsProp(value) ? narrowComments(value) : undefined
-}
-
-const hasCommentsProp = (value: object): value is { readonly leadingComments: SpannedComment[] | undefined } =>
-  Predicate.hasProperty(value, 'leadingComments')
-
-const narrowComments = (
-  value: { readonly leadingComments: SpannedComment[] | undefined },
-): readonly LocatedComment[] | undefined => isCommentHost(value) ? value.leadingComments : undefined
-
-const isCommentHost = (value: { readonly leadingComments: SpannedComment[] | undefined }): boolean =>
-  isCommentArray(value.leadingComments)
-
-function isCommentArray(value: unknown): value is readonly LocatedComment[] {
-  return Array.isArray(value)
-}
+const hasLeadingComments = (
+  value: object | undefined,
+): value is { readonly leadingComments: readonly LocatedComment[] } =>
+  Predicate.hasProperty(value, 'leadingComments') && Array.isArray(value.leadingComments)
 
 export interface HeaderOptions {
   readonly noHeader?: boolean | undefined
@@ -128,7 +115,9 @@ const placeHeaderWhenWanted = (options: HeaderOptions, root: Program): Effect.Ef
   options.noHeader === true ? Effect.void : placeHeader(root)
 
 function leadingCommentsOf(root: Program): Option.Option<readonly LocatedComment[]> {
-  return Option.filter(Option.fromNullishOr(leadingCommentsOn(root.body[0] ?? {})), isCommentArray)
+  const first = root.body[0]
+  if (!hasLeadingComments(first)) return Option.none()
+  return Option.some(first.leadingComments)
 }
 
 function commentedHeader(leadingComments: readonly LocatedComment[], header: readonly Statement[]): Statement {

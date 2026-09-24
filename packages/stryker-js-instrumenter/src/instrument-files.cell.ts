@@ -60,7 +60,7 @@ const isIgnorer = (value: unknown): value is Ignorer =>
 
 const NO_OPT_IN_MUTATIONS: readonly string[] = []
 
-const optInMutationsOf = (options: InstrumenterOptions): readonly string[] =>
+export const optInMutationsOf = (options: InstrumenterOptions): readonly string[] =>
   options.optInMutations ?? NO_OPT_IN_MUTATIONS
 
 const toTransformerOptions = (options: InstrumenterOptions): TransformerOptions => ({

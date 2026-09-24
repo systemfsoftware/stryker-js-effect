@@ -2,6 +2,7 @@ import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Assertions, Drain, EffectAdapter, Registry, Sandbox } from '@systemfsoftware/stryker-vm-harness'
 import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -101,10 +102,10 @@ const hostStrykerNamespace = <A = unknown>(): Record<string, A> =>
     {
       onNone: () => createHostNamespace<A>(),
       onSome: (current) =>
-        Match.value(isPlainObject<A>(current)).pipe(
-          Match.when(true, (): Record<string, A> => current),
-          Match.orElse(() => createHostNamespace<A>()),
-        ),
+        Boolean.match(isPlainObject<A>(current), {
+          onTrue: (): Record<string, A> => current,
+          onFalse: () => createHostNamespace<A>(),
+        }),
     },
   )
 

@@ -6,7 +6,7 @@ import * as S from 'effect/Schema'
 import { disableTypeChecksCell } from './disable-type-checks.cell.js'
 import { coreFormatRegistry } from './Format.handle.js'
 import type { FormatRegistry } from './Format.schema.js'
-import { instrumentFilesCell } from './instrument-files.cell.js'
+import { instrumentFilesCell, optInMutationsOf } from './instrument-files.cell.js'
 import {
   type FileDescription,
   FileSchema,
@@ -37,12 +37,7 @@ const toSchemaFile = (file: File): S.Schema.Type<typeof FileSchema> => ({
   mutate: file.mutate,
 })
 
-const EMPTY_MUTATION_NAMES: readonly string[] = []
-
 const KNOWN_OPT_IN_MUTATIONS: readonly string[] = Object.keys(optInMutators)
-
-const requestedOptInMutations = (options: InstrumenterOptions): readonly string[] =>
-  Option.getOrElse(Option.fromNullishOr(options.optInMutations), () => EMPTY_MUTATION_NAMES)
 
 const unknownOptInMutations = (requested: readonly string[]): readonly string[] =>
   requested.filter((name) => !KNOWN_OPT_IN_MUTATIONS.includes(name))
@@ -66,7 +61,7 @@ const unknownOptInMutationsError = (requested: readonly string[]): Option.Option
   )
 
 const refuseUnknownOptInMutations = (options: InstrumenterOptions): Effect.Effect<void, InstrumentError> =>
-  Option.match(unknownOptInMutationsError(requestedOptInMutations(options)), {
+  Option.match(unknownOptInMutationsError(optInMutationsOf(options)), {
     onNone: (): Effect.Effect<void, InstrumentError> => Effect.void,
     onSome: (error): Effect.Effect<void, InstrumentError> => Effect.fail(error),
   })

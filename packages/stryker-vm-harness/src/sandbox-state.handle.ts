@@ -1,5 +1,3 @@
-import { Cell } from '@systemfsoftware/effect-cell-types'
-import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 
@@ -18,15 +16,3 @@ export const readGlobalState = (): VmRunnerGlobalState | undefined => {
 export const writeGlobalState = (state: VmRunnerGlobalState | undefined): void => {
   Reflect.set(globalThis, STATE_KEY, state)
 }
-
-export const readGlobalStateCell: Cell.Cell<void, VmRunnerGlobalState | undefined> = Cell.fromEffect(
-  Effect.sync(readGlobalState),
-)
-
-export const writeGlobalStateCell: Cell.Cell<VmRunnerGlobalState | undefined, void> = Cell.mapInput(
-  Cell.id<VmRunnerGlobalState | undefined>(),
-  (state) => {
-    writeGlobalState(state)
-    return undefined
-  },
-)

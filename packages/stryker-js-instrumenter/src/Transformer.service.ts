@@ -154,23 +154,18 @@ interface LocatedComment extends SpannedComment {
 }
 
 interface NodeWithLeadingComments {
-  readonly leadingComments?: readonly LocatedComment[]
+  readonly leadingComments: readonly LocatedComment[]
 }
 
 const NO_COMMENTS: readonly LocatedComment[] = []
 
 function attachedComments(node: Node): readonly LocatedComment[] {
-  return leadingCommentsOn(node) ?? NO_COMMENTS
+  if (!hasLeadingComments(node)) return NO_COMMENTS
+  return node.leadingComments
 }
 
-function leadingCommentsOn<A = unknown>(value: A): readonly LocatedComment[] | undefined {
-  if (isCommentBearing(value)) return value.leadingComments
-  return undefined
-}
-
-function isCommentBearing(value: unknown): value is NodeWithLeadingComments {
-  return Predicate.hasProperty(value, 'leadingComments')
-}
+const hasLeadingComments = (value: object): value is NodeWithLeadingComments =>
+  Predicate.hasProperty(value, 'leadingComments') && Array.isArray(value.leadingComments)
 
 function ancestorsOf(path: TraversePath): Node[] {
   const ancestors: Node[] = []

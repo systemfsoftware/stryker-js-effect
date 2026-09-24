@@ -8,12 +8,7 @@ import type { Ast } from './Ast.schema.js'
 import { parseWithEntry, resolutionCommandOf } from './Format.handle.js'
 import type { FormatEntry, FormatRegistry, ScriptFormatEntry } from './Format.schema.js'
 import { type FileSchema, InstrumentError } from './Instrument.schema.js'
-import {
-  type FormatOverrideUnclaimed,
-  FormatOverrideUnclaimed as FormatOverrideUnclaimedError,
-  type FormatResolutionCommand,
-  resolveFormat,
-} from './resolve-format.workflow.js'
+import { FormatOverrideUnclaimed, type FormatResolutionCommand, resolveFormat } from './resolve-format.workflow.js'
 import { prefixWithNoCheck, tsDirectiveLikeRegEx } from './TypeCheckDisablers.handle.js'
 
 export interface DisableTypeChecksInput {
@@ -38,11 +33,7 @@ const prefixesWithoutParsing = (file: typeof FileSchema.Type, entry: FormatEntry
   )
 
 const prefixesScriptWithoutParsing = (file: typeof FileSchema.Type, entry: ScriptFormatEntry): boolean =>
-  Match.value(entry.scriptFormat === 'tsx').pipe(
-    Match.when(true, () => false),
-    Match.when(false, () => lacksTsDirective(file)),
-    Match.exhaustive,
-  )
+  entry.scriptFormat !== 'tsx' && lacksTsDirective(file)
 
 const readDisable = (input: DisableTypeChecksInput): Effect.Effect<DisableTypeChecksRaw, never> =>
   Effect.sync(() => {
@@ -104,6 +95,6 @@ export const disableTypeChecksCell: Cell.Cell<
     FormatAssigned: (assigned, raw): Effect.Effect<typeof FileSchema.Type, InstrumentError> =>
       spliceAssigned(raw, assigned),
     FormatSkipped: (_skipped, raw) => unchanged(raw),
-    FormatOverrideUnclaimed: (failure) => Effect.fail(FormatOverrideUnclaimedError.make(failure)),
+    FormatOverrideUnclaimed: (failure) => Effect.fail(FormatOverrideUnclaimed.make(failure)),
     CommandRejected: ({ issue }) => Effect.fail(InstrumentError.make({ message: issue, cause: new Error(issue) })),
   })

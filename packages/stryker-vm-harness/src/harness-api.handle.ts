@@ -95,7 +95,7 @@ export const formatEachName: {
 
 const isTestFunction = <A>(
   value: TestFunctionWithTimeout<A> | TestOptions | number | undefined,
-): value is TestFunctionWithTimeout<A> => typeof value === 'function'
+): value is TestFunctionWithTimeout<A> => Predicate.isFunction(value)
 
 const resolveFn = (
   fnOrOptions: TestFunctionWithTimeout | TestOptions | undefined,

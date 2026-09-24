@@ -44,13 +44,9 @@ export interface ActivateSandboxCommand {
   readonly prefix: string
 }
 
-export interface EffectVitestSurface<A = unknown> {
-  readonly it: A
-}
-
 export interface VmRunnerGlobalState {
   readonly api: HarnessApi
   readonly expect: object | undefined
   readonly vi: object | undefined
-  readonly effectVitest: EffectVitestSurface | undefined
+  readonly effectVitest: { readonly it: object } | undefined
 }

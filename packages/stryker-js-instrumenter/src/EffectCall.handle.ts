@@ -643,7 +643,7 @@ const namedModuleAccess = (
 ): Option.Option<Expression> =>
   Option.map(
     Option.fromNullishOr(
-      [...table.moduleBindings].find(([local, bound]) => Bool.and(bound === module, isVisible(local, context))),
+      table.moduleBindings.entries().find(([local, bound]) => Bool.and(bound === module, isVisible(local, context))),
     ),
     ([local]) => identifier(local),
   )
@@ -655,7 +655,9 @@ const rootNamespaceAccess = (
 ): Option.Option<Expression> =>
   Option.map(
     Option.fromNullishOr(
-      [...table.namespaces].find(([local, binding]) => Bool.and(binding.kind === 'root', isVisible(local, context))),
+      table.namespaces.entries().find(([local, binding]) =>
+        Bool.and(binding.kind === 'root', isVisible(local, context))
+      ),
     ),
     ([local]) => memberExpression(identifier(local), identifier(module), false),
   )
@@ -667,8 +669,8 @@ const moduleNamespaceAccess = (
 ): Option.Option<Expression> =>
   Option.map(
     Option.fromNullishOr(
-      [...table.namespaces].find(([local, binding]) =>
-        Bool.and(Option.exists(moduleOf(binding), (bound) => bound === module), isVisible(local, context))
+      table.namespaces.entries().find(([local, binding]) =>
+        Option.exists(moduleOf(binding), (bound) => bound === module) && isVisible(local, context)
       ),
     ),
     ([local]) => identifier(local),

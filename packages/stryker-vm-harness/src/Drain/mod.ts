@@ -1,4 +1,4 @@
-export { executeDrainRegistry, executeDrainRegistry as drainRegistry } from '../drain-executor.cell.js'
+export { executeDrainRegistry as drainRegistry } from '../drain-executor.cell.js'
 export {
   DrainCompleted,
   DrainedTestSchema,
