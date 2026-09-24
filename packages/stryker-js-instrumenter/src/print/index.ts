@@ -1,3 +1,4 @@
+import * as Match from 'effect/Match'
 import type {
   AccessorProperty,
   ArrayExpression,
@@ -355,376 +356,186 @@ function printNodePrec(state: PrintState, node: Node | null | undefined, prec: n
   dispatchNode(state, node, prec)
 }
 
-function dispatchNode(state: PrintState, node: Node, prec: number): void {
-  switch (node.type) {
-    case 'Literal':
-      printLiteral(state, node)
-      break
-    case 'Identifier':
-      printIdentifier(state, node)
-      break
-    case 'PrivateIdentifier':
+type NodeArm = (state: PrintState, prec: number) => void
+
+const spreadArm = (node: { readonly argument: Node | null | undefined }): NodeArm => (state) => {
+  state.out += '...'
+  printNodePrec(state, node.argument, PREC.Assignment)
+}
+
+const functionArm = (node: FunctionNode): NodeArm => (state, prec) => printFunction(state, node, prec)
+
+const classArm = (node: Class): NodeArm => (state, prec) => printClass(state, node, prec)
+
+const methodArm = (node: MethodDefinition): NodeArm => (state) => printMethodDefinition(state, node)
+
+const propertyDefinitionArm = (node: PropertyDefinition): NodeArm => (state) => printPropertyDefinition(state, node)
+
+const accessorPropertyArm = (node: AccessorProperty): NodeArm => (state) => printAccessorProperty(state, node)
+
+const absentArm = (): NodeArm => () => undefined
+
+const printNodeByKind = Match.type<Node>().pipe(
+  Match.discriminators('type')({
+    Literal: (node): NodeArm => (state) => printLiteral(state, node),
+    Identifier: (node): NodeArm => (state) => printIdentifier(state, node),
+    PrivateIdentifier: (node): NodeArm => (state) => {
       state.out += `#${node.name}`
-      break
-    case 'ThisExpression':
+    },
+    ThisExpression: (): NodeArm => (state) => {
       state.out += 'this'
-      break
-    case 'Super':
+    },
+    Super: (): NodeArm => (state) => {
       state.out += 'super'
-      break
-    case 'ArrayExpression':
-      printArrayExpression(state, node)
-      break
-    case 'ObjectExpression':
-      printObjectExpression(state, node)
-      break
-    case 'Property':
-      printProperty(state, node)
-      break
-    case 'TemplateLiteral':
-      printTemplateLiteral(state, node)
-      break
-    case 'TemplateElement':
+    },
+    ArrayExpression: (node): NodeArm => (state) => printArrayExpression(state, node),
+    ObjectExpression: (node): NodeArm => (state) => printObjectExpression(state, node),
+    Property: (node): NodeArm => (state) => printProperty(state, node),
+    TemplateLiteral: (node): NodeArm => (state) => printTemplateLiteral(state, node),
+    TemplateElement: (node): NodeArm => (state) => {
       state.out += node.value.raw
-      break
-    case 'TaggedTemplateExpression':
-      printTaggedTemplate(state, node)
-      break
-    case 'MemberExpression':
-      printMemberExpression(state, node, prec)
-      break
-    case 'CallExpression':
-      printCallExpression(state, node, prec)
-      break
-    case 'NewExpression':
-      printNewExpression(state, node, prec)
-      break
-    case 'MetaProperty':
-      printMetaProperty(state, node)
-      break
-    case 'SpreadElement':
-      state.out += '...'
-      printNodePrec(state, node.argument, PREC.Assignment)
-      break
-    case 'RestElement':
-      state.out += '...'
-      printNodePrec(state, node.argument, PREC.Assignment)
-      break
-    case 'UpdateExpression':
-      printUpdateExpression(state, node, prec)
-      break
-    case 'UnaryExpression':
-      printUnaryExpression(state, node, prec)
-      break
-    case 'BinaryExpression':
-      printBinaryExpression(state, node, prec)
-      break
-    case 'LogicalExpression':
-      printLogicalExpression(state, node, prec)
-      break
-    case 'ConditionalExpression':
-      printConditionalExpression(state, node, prec)
-      break
-    case 'AssignmentExpression':
-      printAssignmentExpression(state, node, prec)
-      break
-    case 'AssignmentPattern':
-      printAssignmentPattern(state, node, prec)
-      break
-    case 'ObjectPattern':
-      printObjectPattern(state, node)
-      break
-    case 'ArrayPattern':
-      printArrayPattern(state, node)
-      break
-    case 'SequenceExpression':
-      printSequenceExpression(state, node, prec)
-      break
-    case 'AwaitExpression':
+    },
+    TaggedTemplateExpression: (node): NodeArm => (state) => printTaggedTemplate(state, node),
+    MemberExpression: (node): NodeArm => (state, prec) => printMemberExpression(state, node, prec),
+    CallExpression: (node): NodeArm => (state, prec) => printCallExpression(state, node, prec),
+    NewExpression: (node): NodeArm => (state, prec) => printNewExpression(state, node, prec),
+    MetaProperty: (node): NodeArm => (state) => printMetaProperty(state, node),
+    SpreadElement: spreadArm,
+    RestElement: spreadArm,
+    UpdateExpression: (node): NodeArm => (state, prec) => printUpdateExpression(state, node, prec),
+    UnaryExpression: (node): NodeArm => (state, prec) => printUnaryExpression(state, node, prec),
+    BinaryExpression: (node): NodeArm => (state, prec) => printBinaryExpression(state, node, prec),
+    LogicalExpression: (node): NodeArm => (state, prec) => printLogicalExpression(state, node, prec),
+    ConditionalExpression: (node): NodeArm => (state, prec) => printConditionalExpression(state, node, prec),
+    AssignmentExpression: (node): NodeArm => (state, prec) => printAssignmentExpression(state, node, prec),
+    AssignmentPattern: (node): NodeArm => (state, prec) => printAssignmentPattern(state, node, prec),
+    ObjectPattern: (node): NodeArm => (state) => printObjectPattern(state, node),
+    ArrayPattern: (node): NodeArm => (state) => printArrayPattern(state, node),
+    SequenceExpression: (node): NodeArm => (state, prec) => printSequenceExpression(state, node, prec),
+    AwaitExpression: (node): NodeArm => (state) => {
       state.out += 'await '
       printNodePrec(state, node.argument, PREC.Unary)
-      break
-    case 'YieldExpression':
-      printYieldExpression(state, node, prec)
-      break
-    case 'ChainExpression':
-      printNodePrec(state, node.expression, prec)
-      break
-    case 'ParenthesizedExpression':
+    },
+    YieldExpression: (node): NodeArm => (state, prec) => printYieldExpression(state, node, prec),
+    ChainExpression: (node): NodeArm => (state, prec) => printNodePrec(state, node.expression, prec),
+    ParenthesizedExpression: (node): NodeArm => (state) => {
       state.out += '('
       printNodePrec(state, node.expression, PREC.Sequence)
       state.out += ')'
-      break
-    case 'ImportExpression':
-      printImportExpression(state, node)
-      break
-    case 'V8IntrinsicExpression':
-      printV8Intrinsic(state, node)
-      break
-    case 'ArrowFunctionExpression':
-      printArrowFunction(state, node, prec)
-      break
-    case 'FunctionExpression':
-    case 'FunctionDeclaration':
-    case 'TSDeclareFunction':
-    case 'TSEmptyBodyFunctionExpression':
-      printFunction(state, node, prec)
-      break
-    case 'ClassDeclaration':
-    case 'ClassExpression':
-      printClass(state, node, prec)
-      break
-    case 'JSXElement':
-      printJSXElement(state, node)
-      break
-    case 'JSXFragment':
-      printJSXFragment(state, node)
-      break
-    case 'JSXOpeningElement':
-      printJSXOpeningElement(state, node)
-      break
-    case 'JSXClosingElement':
-      break
-    case 'JSXIdentifier':
+    },
+    ImportExpression: (node): NodeArm => (state) => printImportExpression(state, node),
+    V8IntrinsicExpression: (node): NodeArm => (state) => printV8Intrinsic(state, node),
+    ArrowFunctionExpression: (node): NodeArm => (state, prec) => printArrowFunction(state, node, prec),
+    FunctionExpression: functionArm,
+    FunctionDeclaration: functionArm,
+    TSDeclareFunction: functionArm,
+    TSEmptyBodyFunctionExpression: functionArm,
+    ClassDeclaration: classArm,
+    ClassExpression: classArm,
+    JSXElement: (node): NodeArm => (state) => printJSXElement(state, node),
+    JSXFragment: (node): NodeArm => (state) => printJSXFragment(state, node),
+    JSXOpeningElement: (node): NodeArm => (state) => printJSXOpeningElement(state, node),
+    JSXClosingElement: absentArm,
+    JSXIdentifier: (node): NodeArm => (state) => {
       state.out += node.name
-      break
-    case 'JSXNamespacedName':
+    },
+    JSXNamespacedName: (node): NodeArm => (state) => {
       state.out += `${node.namespace.name}:${node.name.name}`
-      break
-    case 'JSXMemberExpression':
-      printJSXMemberExpression(state, node)
-      break
-    case 'JSXAttribute':
-      printJSXAttribute(state, node)
-      break
-    case 'JSXSpreadAttribute':
+    },
+    JSXMemberExpression: (node): NodeArm => (state) => printJSXMemberExpression(state, node),
+    JSXAttribute: (node): NodeArm => (state) => printJSXAttribute(state, node),
+    JSXSpreadAttribute: (node): NodeArm => (state) => {
       state.out += '{...'
       printNodePrec(state, node.argument, PREC.Assignment)
       state.out += '}'
-      break
-    case 'JSXExpressionContainer':
+    },
+    JSXExpressionContainer: (node): NodeArm => (state) => {
       state.out += '{'
       printNodePrec(state, node.expression, PREC.Sequence)
       state.out += '}'
-      break
-    case 'JSXEmptyExpression':
-      break
-    case 'JSXText':
+    },
+    JSXEmptyExpression: absentArm,
+    JSXText: (node): NodeArm => (state) => {
       state.out += node.value
-      break
-    case 'JSXSpreadChild':
+    },
+    JSXSpreadChild: (node): NodeArm => (state) => {
       state.out += '{...'
       printNodePrec(state, node.expression, PREC.Assignment)
       state.out += '}'
-      break
-    case 'TSAsExpression':
-      printTSAsExpression(state, node, prec)
-      break
-    case 'TSSatisfiesExpression':
-      printTSSatisfiesExpression(state, node, prec)
-      break
-    case 'TSTypeAssertion':
-      printTSTypeAssertion(state, node, prec)
-      break
-    case 'TSNonNullExpression':
+    },
+    TSAsExpression: (node): NodeArm => (state, prec) => printTSAsExpression(state, node, prec),
+    TSSatisfiesExpression: (node): NodeArm => (state, prec) => printTSSatisfiesExpression(state, node, prec),
+    TSTypeAssertion: (node): NodeArm => (state, prec) => printTSTypeAssertion(state, node, prec),
+    TSNonNullExpression: (node): NodeArm => (state) => {
       printNodePrec(state, node.expression, PREC.Member)
       state.out += '!'
-      break
-    case 'TSInstantiationExpression':
-      printTSInstantiationExpression(state, node, prec)
-      break
-    case 'BlockStatement':
-      printBlockStatement(state, node)
-      break
-    case 'EmptyStatement':
+    },
+    TSInstantiationExpression: (node): NodeArm => (state, prec) => printTSInstantiationExpression(state, node, prec),
+    BlockStatement: (node): NodeArm => (state) => printBlockStatement(state, node),
+    EmptyStatement: (): NodeArm => (state) => {
       state.out += ';'
-      break
-    case 'ExpressionStatement':
-      printExpressionStatement(state, node)
-      break
-    case 'IfStatement':
-      printIfStatement(state, node)
-      break
-    case 'DoWhileStatement':
-      printDoWhileStatement(state, node)
-      break
-    case 'WhileStatement':
-      printWhileStatement(state, node)
-      break
-    case 'ForStatement':
-      printForStatement(state, node)
-      break
-    case 'ForInStatement':
-      printForInStatement(state, node)
-      break
-    case 'ForOfStatement':
-      printForOfStatement(state, node)
-      break
-    case 'ContinueStatement':
-      printJumpStatement(state, 'continue', node.label)
-      break
-    case 'BreakStatement':
-      printJumpStatement(state, 'break', node.label)
-      break
-    case 'ReturnStatement':
-      printReturnStatement(state, node)
-      break
-    case 'WithStatement':
-      printWithStatement(state, node)
-      break
-    case 'SwitchStatement':
-      printSwitchStatement(state, node)
-      break
-    case 'SwitchCase':
-      break
-    case 'LabeledStatement':
-      printLabeledStatement(state, node)
-      break
-    case 'ThrowStatement':
+    },
+    ExpressionStatement: (node): NodeArm => (state) => printExpressionStatement(state, node),
+    IfStatement: (node): NodeArm => (state) => printIfStatement(state, node),
+    DoWhileStatement: (node): NodeArm => (state) => printDoWhileStatement(state, node),
+    WhileStatement: (node): NodeArm => (state) => printWhileStatement(state, node),
+    ForStatement: (node): NodeArm => (state) => printForStatement(state, node),
+    ForInStatement: (node): NodeArm => (state) => printForInStatement(state, node),
+    ForOfStatement: (node): NodeArm => (state) => printForOfStatement(state, node),
+    ContinueStatement: (node): NodeArm => (state) => printJumpStatement(state, 'continue', node.label),
+    BreakStatement: (node): NodeArm => (state) => printJumpStatement(state, 'break', node.label),
+    ReturnStatement: (node): NodeArm => (state) => printReturnStatement(state, node),
+    WithStatement: (node): NodeArm => (state) => printWithStatement(state, node),
+    SwitchStatement: (node): NodeArm => (state) => printSwitchStatement(state, node),
+    SwitchCase: absentArm,
+    LabeledStatement: (node): NodeArm => (state) => printLabeledStatement(state, node),
+    ThrowStatement: (node): NodeArm => (state) => {
       state.out += 'throw '
       printNodePrec(state, node.argument, PREC.Sequence)
       state.out += ';'
-      break
-    case 'TryStatement':
-      printTryStatement(state, node)
-      break
-    case 'CatchClause':
-      break
-    case 'DebuggerStatement':
+    },
+    TryStatement: (node): NodeArm => (state) => printTryStatement(state, node),
+    CatchClause: absentArm,
+    DebuggerStatement: (): NodeArm => (state) => {
       state.out += 'debugger;'
-      break
-    case 'VariableDeclaration':
-      printVariableDeclaration(state, node)
-      break
-    case 'VariableDeclarator':
-      printVariableDeclarator(state, node)
-      break
-    case 'ClassBody':
-      printClassBody(state, node)
-      break
-    case 'MethodDefinition':
-    case 'TSAbstractMethodDefinition':
-      printMethodDefinition(state, node)
-      break
-    case 'PropertyDefinition':
-    case 'TSAbstractPropertyDefinition':
-      printPropertyDefinition(state, node)
-      break
-    case 'AccessorProperty':
-    case 'TSAbstractAccessorProperty':
-      printAccessorProperty(state, node)
-      break
-    case 'StaticBlock':
-      printStaticBlock(state, node)
-      break
-    case 'ImportDeclaration':
-      printImportDeclaration(state, node)
-      break
-    case 'ExportNamedDeclaration':
-      printExportNamedDeclaration(state, node)
-      break
-    case 'ExportDefaultDeclaration':
-      printExportDefaultDeclaration(state, node)
-      break
-    case 'ExportAllDeclaration':
-      printExportAllDeclaration(state, node)
-      break
-    case 'Decorator':
+    },
+    VariableDeclaration: (node): NodeArm => (state) => printVariableDeclaration(state, node),
+    VariableDeclarator: (node): NodeArm => (state) => printVariableDeclarator(state, node),
+    ClassBody: (node): NodeArm => (state) => printClassBody(state, node),
+    MethodDefinition: methodArm,
+    TSAbstractMethodDefinition: methodArm,
+    PropertyDefinition: propertyDefinitionArm,
+    TSAbstractPropertyDefinition: propertyDefinitionArm,
+    AccessorProperty: accessorPropertyArm,
+    TSAbstractAccessorProperty: accessorPropertyArm,
+    StaticBlock: (node): NodeArm => (state) => printStaticBlock(state, node),
+    ImportDeclaration: (node): NodeArm => (state) => printImportDeclaration(state, node),
+    ExportNamedDeclaration: (node): NodeArm => (state) => printExportNamedDeclaration(state, node),
+    ExportDefaultDeclaration: (node): NodeArm => (state) => printExportDefaultDeclaration(state, node),
+    ExportAllDeclaration: (node): NodeArm => (state) => printExportAllDeclaration(state, node),
+    Decorator: (node): NodeArm => (state) => {
       state.out += '@'
       printNodePrec(state, node.expression, PREC.Member)
-      break
-    case 'TSTypeAliasDeclaration':
-      printTSTypeAliasDeclaration(state, node)
-      break
-    case 'TSInterfaceDeclaration':
-      printTSInterfaceDeclaration(state, node)
-      break
-    case 'TSEnumDeclaration':
-      printTSEnumDeclaration(state, node)
-      break
-    case 'TSModuleDeclaration':
-      printTSModuleDeclaration(state, node)
-      break
-    case 'TSImportEqualsDeclaration':
-      printTSImportEqualsDeclaration(state, node)
-      break
-    case 'TSExportAssignment':
+    },
+    TSTypeAliasDeclaration: (node): NodeArm => (state) => printTSTypeAliasDeclaration(state, node),
+    TSInterfaceDeclaration: (node): NodeArm => (state) => printTSInterfaceDeclaration(state, node),
+    TSEnumDeclaration: (node): NodeArm => (state) => printTSEnumDeclaration(state, node),
+    TSModuleDeclaration: (node): NodeArm => (state) => printTSModuleDeclaration(state, node),
+    TSImportEqualsDeclaration: (node): NodeArm => (state) => printTSImportEqualsDeclaration(state, node),
+    TSExportAssignment: (node): NodeArm => (state) => {
       state.out += `export = `
       printNodePrec(state, node.expression, PREC.Sequence)
       state.out += ';'
-      break
-    case 'TSNamespaceExportDeclaration':
+    },
+    TSNamespaceExportDeclaration: (node): NodeArm => (state) => {
       state.out += `export as namespace ${node.id.name};`
-      break
-    case 'Program':
-    case 'ExportSpecifier':
-    case 'Hashbang':
-    case 'ImportAttribute':
-    case 'ImportDefaultSpecifier':
-    case 'ImportNamespaceSpecifier':
-    case 'ImportSpecifier':
-    case 'JSXClosingFragment':
-    case 'JSXOpeningFragment':
-    case 'TSAnyKeyword':
-    case 'TSArrayType':
-    case 'TSBigIntKeyword':
-    case 'TSBooleanKeyword':
-    case 'TSCallSignatureDeclaration':
-    case 'TSClassImplements':
-    case 'TSConditionalType':
-    case 'TSConstructSignatureDeclaration':
-    case 'TSConstructorType':
-    case 'TSEnumBody':
-    case 'TSEnumMember':
-    case 'TSExternalModuleReference':
-    case 'TSFunctionType':
-    case 'TSImportType':
-    case 'TSIndexSignature':
-    case 'TSIndexedAccessType':
-    case 'TSInferType':
-    case 'TSInterfaceBody':
-    case 'TSInterfaceHeritage':
-    case 'TSIntersectionType':
-    case 'TSIntrinsicKeyword':
-    case 'TSJSDocNonNullableType':
-    case 'TSJSDocNullableType':
-    case 'TSJSDocUnknownType':
-    case 'TSLiteralType':
-    case 'TSMappedType':
-    case 'TSMethodSignature':
-    case 'TSModuleBlock':
-    case 'TSNamedTupleMember':
-    case 'TSNeverKeyword':
-    case 'TSNullKeyword':
-    case 'TSNumberKeyword':
-    case 'TSObjectKeyword':
-    case 'TSOptionalType':
-    case 'TSParameterProperty':
-    case 'TSParenthesizedType':
-    case 'TSPropertySignature':
-    case 'TSQualifiedName':
-    case 'TSRestType':
-    case 'TSStringKeyword':
-    case 'TSSymbolKeyword':
-    case 'TSTemplateLiteralType':
-    case 'TSThisType':
-    case 'TSTupleType':
-    case 'TSTypeAnnotation':
-    case 'TSTypeLiteral':
-    case 'TSTypeOperator':
-    case 'TSTypeParameter':
-    case 'TSTypeParameterDeclaration':
-    case 'TSTypeParameterInstantiation':
-    case 'TSTypePredicate':
-    case 'TSTypeQuery':
-    case 'TSTypeReference':
-    case 'TSUndefinedKeyword':
-    case 'TSUnionType':
-    case 'TSUnknownKeyword':
-    case 'TSVoidKeyword':
-      printUnclassifiedNode(state, node, node.type)
-      break
-  }
+    },
+  }),
+  Match.orElse((node): NodeArm => (state) => printUnclassifiedNode(state, node, node.type)),
+)
+
+function dispatchNode(state: PrintState, node: Node, prec: number): void {
+  printNodeByKind(node)(state, prec)
 }
 
 function printUnclassifiedNode(state: PrintState, node: Node, kind: string): void {

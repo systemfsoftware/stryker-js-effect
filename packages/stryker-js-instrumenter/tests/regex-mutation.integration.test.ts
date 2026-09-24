@@ -150,7 +150,7 @@ const replacementsByLine = (mutants: readonly RegexMutant[]): readonly (readonly
     if (existing === undefined) byLine.set(line, [mutant.replacement])
     else existing.push(mutant.replacement)
   }
-  return CORPUS.map((_row, index) => byLine.get(index) ?? [])
+  return CORPUS.map((_row, index) => byLine.get(index + 1) ?? [])
 }
 
 const Feature = makeFeature({ it, layer })

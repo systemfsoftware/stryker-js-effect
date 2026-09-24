@@ -1,7 +1,7 @@
 import * as Effect from 'effect/Effect'
 import type * as OxcModule from 'oxc-parser'
 
-type Oxc = typeof OxcModule
+export type Oxc = typeof OxcModule
 
 let oxc: Oxc | undefined
 

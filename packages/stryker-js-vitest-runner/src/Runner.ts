@@ -1,11 +1,5 @@
 import type * as PathType from 'effect/Path'
-import type {
-  RunMode,
-  RunnerTestCase,
-  RunnerTestFile as VitestFile,
-  RunnerTestSuite,
-  TaskState as VitestTaskState,
-} from 'vitest'
+import type { RunnerTestCase, RunnerTestFile as VitestFile, RunnerTestSuite } from 'vitest'
 import { createVitest as createVitestOriginal } from 'vitest/node'
 import type { Vitest } from 'vitest/node'
 
@@ -19,7 +13,6 @@ import {
   normalizeFileName,
 } from '@systemfsoftware/stryker-js-instrumenter'
 import {
-  type BaseTestResult,
   DryRunResult,
   isCustomTestRunner,
   MutantRunResult,
@@ -66,102 +59,6 @@ export class VitestHarness extends Context.Service<VitestHarness, {
     value: V,
   ) => Effect.Effect<void, TestRunnerFailed>
 }>()('VitestHarness') {}
-
-export function collectTestName({ name, suite }: { name: string; suite?: RunnerTestSuite }): string {
-  const nameParts = [name]
-  let currentSuite = suite
-  while (currentSuite) {
-    nameParts.unshift(currentSuite.name)
-    currentSuite = currentSuite.suite
-  }
-  return nameParts.join(' ').trim()
-}
-
-export function toRawTestId(test: RunnerTestCase): string {
-  return `${test.file.filepath}#${collectTestName(test)}`
-}
-
-function convertTaskStateToTestStatus(taskState: VitestTaskState | undefined, testMode: RunMode): TestStatus {
-  return Match.value(testMode).pipe(
-    Match.when('skip', (): TestStatus => 'skipped'),
-    Match.orElse((): TestStatus =>
-      Match.value(taskState).pipe(
-        Match.when('pass', (): TestStatus => 'success'),
-        Match.when('fail', (): TestStatus => 'failed'),
-        Match.when('skip', (): TestStatus => 'skipped'),
-        Match.when('todo', (): TestStatus => 'skipped'),
-        Match.orElse((): TestStatus => 'failed'),
-      )
-    ),
-  )
-}
-
-const UNKNOWN_TEST_FAILURE = 'StrykerJS: Unknown test failure'
-const SUITE_EXECUTION_FAILED = 'StrykerJS: Suite execution failed'
-
-const firstErrorMessage = (errors: readonly { readonly message?: string }[] | undefined): Option.Option<string> =>
-  Option.flatMap(
-    Option.fromNullishOr(errors),
-    (list) => Option.flatMap(Option.fromNullishOr(list[0]), (error) => Option.fromNullishOr(error.message)),
-  )
-
-const taskStateOf = (test: RunnerTestCase): VitestTaskState | undefined =>
-  Option.getOrUndefined(
-    Option.fromNullishOr(test.result).pipe(Option.flatMap((result) => Option.fromNullishOr(result.state))),
-  )
-
-const timeSpentMsOf = (test: RunnerTestCase): number =>
-  Option.getOrElse(
-    Option.fromNullishOr(test.result).pipe(Option.flatMap((result) => Option.fromNullishOr(result.duration))),
-    (): number => 0,
-  )
-
-const failureMessageOf = (test: RunnerTestCase): string =>
-  Option.getOrElse(
-    Option.fromNullishOr(test.result).pipe(Option.flatMap((result) => firstErrorMessage(result.errors))),
-    (): string => UNKNOWN_TEST_FAILURE,
-  )
-
-const suiteFailureMessageOf = (suite: RunnerTestSuite): string =>
-  Option.getOrElse(
-    Option.fromNullishOr(suite.result).pipe(Option.flatMap((result) => firstErrorMessage(result.errors))),
-    (): string => SUITE_EXECUTION_FAILED,
-  )
-
-const isFailedSuite = (suite: RunnerTestSuite): boolean =>
-  Option.exists(Option.fromNullishOr(suite.result), (result) => result.state === 'fail')
-
-const findSuiteError = (suite: RunnerTestSuite | undefined): Option.Option<string> =>
-  Option.flatMap(Option.fromNullishOr(suite), (node) =>
-    Match.value(isFailedSuite(node)).pipe(
-      Match.when(true, (): Option.Option<string> => Option.some(suiteFailureMessageOf(node))),
-      Match.when(false, (): Option.Option<string> => findSuiteError(node.suite)),
-      Match.exhaustive,
-    ))
-
-const skippedTestResult = (baseTestResult: BaseTestResult, test: RunnerTestCase): TestResult =>
-  Option.match(findSuiteError(test.suite).pipe(Option.filter((message) => message.length > 0)), {
-    onNone: (): TestResult => ({ ...baseTestResult, status: 'skipped' }),
-    onSome: (failureMessage): TestResult => ({ ...baseTestResult, status: 'failed', failureMessage }),
-  })
-
-export function convertTestToTestResult(test: RunnerTestCase, projectRoot: string, pathService: Path.Path): TestResult {
-  const baseTestResult: BaseTestResult = {
-    id: normalizeTestId(toRawTestId(test), projectRoot, pathService),
-    name: collectTestName(test),
-    timeSpentMs: timeSpentMsOf(test),
-    fileName: pathService.resolve(test.file.filepath),
-  }
-  return Match.value(convertTaskStateToTestStatus(taskStateOf(test), test.mode)).pipe(
-    Match.when('failed', (): TestResult => ({
-      ...baseTestResult,
-      status: 'failed',
-      failureMessage: failureMessageOf(test),
-    })),
-    Match.when('skipped', (): TestResult => skippedTestResult(baseTestResult, test)),
-    Match.orElse((): TestResult => ({ ...baseTestResult, status: 'success' })),
-  )
-}
 
 export function fromTestId(id: string): { file: string; test: string } {
   const [file, ...name] = id.split('#')
@@ -305,13 +202,17 @@ const collectSuiteNames = <A = unknown>(suite: A): readonly string[] =>
       }),
   })
 
-const collectTestNameRaw = <A = unknown>(test: A): string => {
-  const name = getName(test)
-  const suite = Option.getOrUndefined(getSuite(test))
-  const suiteNames = collectSuiteNames(suite)
-  const parts = [...suiteNames, name]
-  return parts.join(' ').trim()
-}
+const collectTestNameRaw = <A = unknown>(test: A): string =>
+  Option.match(Option.flatMap(recordOption(test), (rec) => getStringField(rec, 'fullTestName')), {
+    onSome: (fullTestName) => fullTestName,
+    onNone: (): string => {
+      const name = getName(test)
+      const suite = Option.getOrUndefined(getSuite(test))
+      const suiteNames = collectSuiteNames(suite)
+      const parts = [...suiteNames, name]
+      return parts.join(' > ').trim()
+    },
+  })
 
 const toRawTestIdRaw = <A = unknown>(test: A): string => {
   const filepath = Option.match(getFile(test), {
@@ -674,13 +575,25 @@ const relatedFilesOf = <A = unknown>(
     Match.orElse((): string[] | undefined => undefined),
   )
 
+/**
+ * The regex vitest matches against each task's `fullTestName` to select the
+ * tests a mutant run must execute. Built from stored test ids, whose name
+ * part IS vitest's `fullTestName` (`toRawTestId`), so an escaped name matches
+ * exactly and no other test whose full name merely contains it runs instead.
+ */
+const testNamePatternOf = (testIds: readonly string[] | undefined): RegExp | undefined =>
+  Option.getOrUndefined(
+    Option.map(Option.filter(Option.fromNullishOr(testIds), (ids) => ids.length > 0), (ids) =>
+      new RegExp(ids.map((id) => RegExp.escape(fromTestId(id).test)).join('|'))),
+  )
+
 const testIdPlan = (
   testIds: readonly string[] | undefined,
   projectRoot: string,
   pathService: Path.Path,
 ): Option.Option<RunFilterPlan> =>
   Option.map(Option.filter(Option.fromNullishOr(testIds), (ids) => ids.length > 0), (ids) => ({
-    testNamePattern: new RegExp(ids.map((id) => RegExp.escape(fromTestId(id).test)).join('|')),
+    testNamePattern: testNamePatternOf(ids),
     testFiles: ids.map((id) => pathService.resolve(projectRoot, fromTestId(id).file)),
   }))
 

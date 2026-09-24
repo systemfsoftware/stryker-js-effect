@@ -43,11 +43,12 @@ const commandWith = <T = unknown>(
     readonly reportAllKillers?: boolean
     readonly activeMutantId?: string
     readonly namedTrapId?: string
+    readonly projectRoot?: string
   },
 ): VitestMutantRunCommand =>
   VitestMutantRunCommand.make({
     rawTests: [...(override.rawTests ?? input.rawTests)],
-    projectRoot: input.projectRoot,
+    projectRoot: override.projectRoot ?? input.projectRoot,
     hasExternalError: override.hasExternalError ?? input.hasExternalError,
     externalErrorText: override.externalErrorText ?? input.externalErrorText,
     hitCount: override.hitCount,
@@ -283,6 +284,52 @@ describe('interpretVitestRun', () => {
       }
       const tests = testsIn(result.success.tests)
       return tests.ids.length === 1 && tests.failed.length === 0
+    },
+  )
+
+  const SUITE_NAME = S.String.check(S.isMinLength(1), S.isMaxLength(12), S.isPattern(/^[^#]+$/))
+  interface SuiteLink {
+    readonly name: string
+    readonly suite?: SuiteLink
+  }
+  const nestedTaskArb = Arbitrary.all({
+    suites: Arbitrary.array(Arbitrary.schema(SUITE_NAME), { minLength: 1, maxLength: 2 }),
+    name: Arbitrary.schema(SUITE_NAME),
+  })
+
+  it.prop(
+    '→t_KillerId_≡vitestFullTestName',
+    [VitestMutantRunCommand, nestedTaskArb],
+    ([input, { suites, name }]) => {
+      const fullTestName = [...suites, name].join(' > ')
+      const projectRoot = input.projectRoot.replaceAll('#', '')
+      const suiteChain = suites.reduceRight<SuiteLink | undefined>(
+        (child, suiteName) => ({ name: suiteName, suite: child }),
+        undefined,
+      )
+      const result = interpretVitestRun(
+        commandWith(input, {
+          rawTests: [
+            {
+              name,
+              fullTestName,
+              suite: suiteChain,
+              result: { state: 'fail', duration: 5, errors: [{ message: 'boom' }] },
+              file: { filepath: `${projectRoot}/tests/a.spec.ts` },
+            },
+          ],
+          hasExternalError: false,
+          hitCount: undefined,
+          hitLimit: undefined,
+          projectRoot,
+        }),
+      )
+      if (!Result.isSuccess(result) || !S.is(MutantKilled)(result.success)) {
+        return false
+      }
+      const killerIds = result.success.killerIds
+      return killerIds !== undefined && killerIds.length === 1 &&
+        killerIds[0] === `tests/a.spec.ts#${fullTestName}`
     },
   )
 })

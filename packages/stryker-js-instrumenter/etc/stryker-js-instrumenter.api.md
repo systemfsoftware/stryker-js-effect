@@ -5,11 +5,20 @@
 ```ts
 
 import * as Effect from 'effect/Effect';
+import { EmbeddedDocument } from '@systemfsoftware/stryker-framework-interface';
+import { FormatId } from '@systemfsoftware/stryker-framework-interface';
+import { Framework } from '@systemfsoftware/stryker-framework-interface';
+import { FrameworkContext } from '@systemfsoftware/stryker-framework-interface';
+import { Literals } from 'effect/Schema';
+import * as Option from 'effect/Option';
 import * as S from 'effect/Schema';
 import { YieldableError } from 'effect/Cause';
 
 // @public (undocumented)
 export const causeText: <A = unknown>(cause: A, depth: number) => string | undefined;
+
+// @public (undocumented)
+export const coreFormatRegistry: FormatRegistry;
 
 // @public (undocumented)
 export interface Coverage {
@@ -26,7 +35,7 @@ export type CoverageData = Record<string, number>;
 export type CoveragePerTestId = Record<string, CoverageData>;
 
 // @public (undocumented)
-export const disableTypeChecks: (file: File_2) => Effect.Effect<File_2, InstrumentError>;
+export const disableTypeChecks: (file: File_2, registry?: FormatRegistry) => Effect.Effect<File_2, InstrumentError>;
 
 // @public (undocumented)
 export interface EarlyResultPlan {
@@ -34,6 +43,12 @@ export interface EarlyResultPlan {
     readonly mutant: Mutant;
     // (undocumented)
     readonly plan: 'EarlyResult';
+}
+
+// @public (undocumented)
+export interface EmbeddedFormatEntry extends FormatHooks {
+    // (undocumented)
+    readonly claim: FormatClaim<'embedded'>;
 }
 
 // @public (undocumented)
@@ -57,6 +72,9 @@ export const ERROR_CODES: Readonly<{
 export function errorToString<A = unknown>(error: A): string;
 
 // @public (undocumented)
+export const extensionOf: (fileName: string) => string;
+
+// @public (undocumented)
 interface File_2 extends FileDescription {
     // (undocumented)
     content: string;
@@ -75,7 +93,52 @@ export interface FileDescription {
 export type FileDescriptions = Record<string, FileDescription>;
 
 // @public (undocumented)
-export const instrument: (files: readonly File_2[], options: InstrumenterOptions, basePath?: string) => Effect.Effect<InstrumentResult, InstrumentError>;
+export interface FormatClaim<Kind extends FormatKind = FormatKind> {
+    // (undocumented)
+    readonly extensions: readonly string[];
+    // (undocumented)
+    readonly formatId: FormatId;
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly language: string;
+}
+
+// @public (undocumented)
+export type FormatEntry = ScriptFormatEntry | EmbeddedFormatEntry;
+
+// Warning: (ae-forgotten-export) The symbol "ScriptHooks" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export interface FormatHooks extends ScriptHooks {
+    // (undocumented)
+    readonly owner: string;
+    // (undocumented)
+    readonly ownerVersion: string;
+}
+
+// @public (undocumented)
+export type FormatKind = 'script' | 'embedded';
+
+// @public (undocumented)
+export interface FormatRegistry {
+    // (undocumented)
+    readonly entries: readonly FormatEntry[];
+    // (undocumented)
+    readonly entryForExtension: (extension: string) => Option.Option<FormatEntry>;
+    // Warning: (ae-forgotten-export) The symbol "EntryForFormat" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly entryForFormat: EntryForFormat;
+}
+
+// @public (undocumented)
+export const frameworkEntryOf: (moduleName: string, framework: Framework) => EmbeddedFormatEntry;
+
+// Warning: (ae-forgotten-export) The symbol "InstrumentResult$1" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export const instrument: (files: readonly File_2[], options: InstrumenterOptions, registry?: FormatRegistry) => Effect.Effect<InstrumentResult$1, InstrumentError>;
 
 // @public (undocumented)
 export const INSTRUMENTER_CONSTANTS: Readonly<{
@@ -121,12 +184,19 @@ export class InstrumentError extends InstrumentError_base {
     get message(): string;
 }
 
+// Warning: (ae-forgotten-export) The symbol "InstrumentFileSkip_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class InstrumentFileSkip extends InstrumentFileSkip_base {}
+
 // @public (undocumented)
 export interface InstrumentResult {
     // (undocumented)
     files: readonly File_2[];
     // (undocumented)
     mutants: readonly Mutant[];
+    // (undocumented)
+    skipped: readonly InstrumentFileSkip[];
 }
 
 // @public (undocumented)
@@ -152,7 +222,7 @@ export const LocationSchema: S.Struct<{
 
 // Warning: (ae-forgotten-export) The symbol "Mutant_base" needs to be exported by the entry point index.d.mts
 //
-// @public (undocumented)
+// @public
 export class Mutant extends Mutant_base {}
 
 // @public (undocumented)
@@ -253,11 +323,14 @@ export interface ParserOptions {}
 // @public (undocumented)
 export type Position = typeof PositionSchema.Type;
 
-// @public (undocumented)
+// @public
 export const PositionSchema: S.Struct<{
     readonly line: S.Finite;
     readonly column: S.Finite;
 }>;
+
+// @public (undocumented)
+export const registerEntries: (registry: FormatRegistry, additions: readonly FormatEntry[]) => FormatRegistry;
 
 // @public (undocumented)
 export type RunMutantResult = Mutant & {
@@ -293,6 +366,16 @@ export interface RunPlan {
     readonly plan: 'Run';
     // (undocumented)
     readonly runOptions: MutantRunOptions;
+}
+
+// @public (undocumented)
+export interface ScriptFormatEntry extends FormatHooks {
+    // (undocumented)
+    readonly claim: FormatClaim<'script'>;
+    // Warning: (ae-forgotten-export) The symbol "ScriptFormat" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly scriptFormat: ScriptFormat;
 }
 
 // @public (undocumented)

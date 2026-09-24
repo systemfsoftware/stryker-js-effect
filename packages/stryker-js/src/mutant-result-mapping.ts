@@ -16,10 +16,13 @@ interface MutantOutcome {
   readonly killedBy?: readonly string[] | undefined
 }
 
-export const toSchemaPosition = (pos: Position): schema.Position => ({
-  column: pos.column + 1,
-  line: pos.line + 1,
-})
+/**
+ * The instrumenter's `Mutant.location` already speaks the
+ * mutation-testing-report-schema contract (1-based line, 1-based column),
+ * so the host passes it through unchanged: the JSON report, the machine
+ * stream, and the remembered mutants all emit the identical coordinates.
+ */
+export const toSchemaPosition = (pos: Position): schema.Position => ({ column: pos.column, line: pos.line })
 
 export const toSchemaLocation = (location: Location): schema.Location => ({
   start: toSchemaPosition(location.start),

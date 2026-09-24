@@ -174,7 +174,7 @@ export function resetScriptFile(file: ScriptFile, now: DateTime.Utc): ScriptFile
 
 function getOffset(file: ScriptFile, pos: Position): number {
   const lines = file.originalContent.split('\n')
-  const lineCount = Math.min(pos.line, lines.length)
+  const lineCount = Math.min(pos.line - 1, lines.length)
   let offset = Math.max(0, pos.column - 1)
   lines.forEach((line, index) => {
     if (index < lineCount) {

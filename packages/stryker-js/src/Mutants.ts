@@ -15,13 +15,20 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as MutableHashSet from 'effect/MutableHashSet'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { StageError } from './Run.schema.js'
 
+import { admitFileIdentity, AdmitFileIdentityCommand, FileIdentityReuse } from './admit-file-identity.workflow.js'
 import { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from './IncrementalDiff.schema.js'
-import type { PreviousFileRecord, PreviousMutantRecord, PreviousTestFileRecord } from './IncrementalDiff.schema.js'
+import type {
+  FormatIdentity,
+  PreviousFileRecord,
+  PreviousMutantRecord,
+  PreviousTestFileRecord,
+} from './IncrementalDiff.schema.js'
 import { toSchemaLocation } from './mutant-result-mapping.js'
 
 export const HIT_LIMIT_FACTOR = 100
@@ -830,6 +837,7 @@ export interface IncrementalDiffInput {
   readonly currentRelativeFiles: Record<string, string>
   readonly testIdsByRelativeFile: Record<string, readonly string[]>
   readonly coveringTestFilesByMutantId: Record<string, readonly string[]>
+  readonly identitiesByFile: Record<string, FormatIdentity>
   readonly force: boolean
 }
 
@@ -870,12 +878,20 @@ type KeyedMutant = {
 const currentMutantKey = (mutant: KeyedMutant): string =>
   mutantKeyOf(mutant.mutatorName, mutant.replacement, mutant.location.start, mutant.location.end)
 
+/**
+ * Reports written before the location-base fix stored correct 1-based lines
+ * but columns one too high, so a prior entry maps into the current key
+ * space by subtracting one from the columns only. New reports already
+ * persist the 1-based form and match through `currentMutantKey` directly;
+ * this fallback only ever reads, and drops out once the next full run
+ * rewrites the file.
+ */
 const previousMutantKey = (mutant: KeyedMutant): string =>
   mutantKeyOf(
     mutant.mutatorName,
     mutant.replacement,
-    { line: mutant.location.start.line - 1, column: mutant.location.start.column - 1 },
-    { line: mutant.location.end.line - 1, column: mutant.location.end.column - 1 },
+    { line: mutant.location.start.line, column: mutant.location.start.column - 1 },
+    { line: mutant.location.end.line, column: mutant.location.end.column - 1 },
   )
 
 const changedSourceFiles = (
@@ -906,7 +922,7 @@ const findRemembered = (
     Option.flatMap(Option.fromUndefinedOr(previousFiles[file]), (record) => Option.fromUndefinedOr(record.mutants)),
     () => NO_PREVIOUS_MUTANTS,
   )
-  return candidates.find((candidate) => previousMutantKey(candidate) === key)
+  return candidates.find((candidate) => previousMutantKey(candidate) === key || currentMutantKey(candidate) === key)
 }
 
 const hasChangedCoverage = (
@@ -914,6 +930,25 @@ const hasChangedCoverage = (
   coveringTestFilesByMutantId: Readonly<Record<string, readonly string[]>>,
   changedTests: readonly string[],
 ): boolean => (coveringTestFilesByMutantId[mutantId] ?? []).some((file) => changedTests.includes(file))
+
+const fileIdentityReuses = (input: IncrementalDiffInput, file: string): boolean =>
+  Option.match(Option.fromUndefinedOr(input.previousFiles[file]), {
+    onNone: () => false,
+    onSome: (previous) =>
+      Result.match(
+        admitFileIdentity(
+          AdmitFileIdentityCommand.make({
+            file,
+            recorded: previous.formatIdentity,
+            claimed: input.identitiesByFile[file],
+          }),
+        ),
+        {
+          onFailure: () => false,
+          onSuccess: (decision) => S.is(FileIdentityReuse)(decision),
+        },
+      ),
+  })
 
 type MutantDecision =
   | { readonly kind: 'run' }
@@ -930,9 +965,14 @@ const isRememberable = (
   Match.value(REMEMBERED_STATUS.has(previous.status)).pipe(
     Match.when(false, () => false),
     Match.orElse(() =>
-      Match.value(changedFiles.includes(file)).pipe(
-        Match.when(true, () => false),
-        Match.orElse(() => !hasChangedCoverage(mutant.id, input.coveringTestFilesByMutantId, changedTests)),
+      Match.value(fileIdentityReuses(input, file)).pipe(
+        Match.when(false, () => false),
+        Match.orElse(() =>
+          Match.value(changedFiles.includes(file)).pipe(
+            Match.when(true, () => false),
+            Match.orElse(() => !hasChangedCoverage(mutant.id, input.coveringTestFilesByMutantId, changedTests)),
+          )
+        ),
       )
     ),
   )
@@ -997,16 +1037,21 @@ const testStatisticsOf = (
   return statisticsOf(added, removed)
 }
 
+const matchesCurrentKeys = (candidate: PreviousMutantRecord, keys: readonly string[]): boolean =>
+  keys.includes(previousMutantKey(candidate)) || keys.includes(currentMutantKey(candidate))
+
 const removedMutantFiles = (
   input: IncrementalDiffInput,
   currentKeysByFile: Readonly<Record<string, readonly string[]>>,
 ): readonly string[] =>
   Object.entries(input.previousFiles).flatMap(([file, previous]) => {
     const keys = currentKeysByFile[file]
-    const removed = (previous.mutants ?? []).filter((candidate) => {
-      if (keys === undefined) return true
-      return !keys.includes(previousMutantKey(candidate))
-    })
+    const removed = (previous.mutants ?? []).filter((candidate) =>
+      Option.match(Option.fromUndefinedOr(keys), {
+        onNone: () => true,
+        onSome: (present) => !matchesCurrentKeys(candidate, present),
+      })
+    )
     return removed.map(() => file)
   })
 
@@ -1164,6 +1209,7 @@ export const incrementalDiff = <Report = unknown>(
     currentRelativeFiles: Record<string, string>
     basePath: string
     force?: boolean
+    identitiesByFile: Record<string, FormatIdentity>
   }>,
 ): IncrementalDiffResult => {
   const output = computeIncrementalDiff({
@@ -1174,6 +1220,7 @@ export const incrementalDiff = <Report = unknown>(
     currentRelativeFiles: input.currentRelativeFiles,
     testIdsByRelativeFile: testIdsByRelativeFile(input.testCoverage, input.basePath),
     coveringTestFilesByMutantId: coveringTestFilesByMutantId(input.testCoverage, input.basePath),
+    identitiesByFile: input.identitiesByFile,
     force: input.force ?? false,
   })
   return {

@@ -243,7 +243,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
               const content = contentByFile.get(pair.file) ?? ''
               const range = exportLineRange(content, pair.exportName)
               const located = mutantsIn(pair.file).filter((mutant) => {
-                const sourceLine = mutant.location.start.line + 1
+                const sourceLine = mutant.location.start.line
                 return range.firstLine <= sourceLine && sourceLine <= range.lastLine
               })
               expect(

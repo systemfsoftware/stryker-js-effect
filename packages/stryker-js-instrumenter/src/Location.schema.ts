@@ -1,5 +1,12 @@
 import * as S from 'effect/Schema'
 
+/**
+ * File coordinates in the mutation-testing-report-schema contract: both line
+ * and column are 1-based. The first line of a file is line 1, and the first
+ * character of a line is column 1. Slicing a source line by one of these
+ * positions uses `line - 1` for the line index and `column - 1` for the
+ * character offset.
+ */
 export const PositionSchema = S.Struct({
   line: S.Finite,
   column: S.Finite,

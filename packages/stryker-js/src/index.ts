@@ -31,7 +31,8 @@ export {
   checkerRpcFailures,
 } from './metrics.js'
 
-export type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+export type { Framework } from '@systemfsoftware/stryker-framework-interface'
+export type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 export type {
   CoverageData,
   FileDescription,
@@ -151,16 +152,25 @@ export { IdGenerator } from './Worker.js'
 export { makeRunLayer, mutationTestCell, RUN_EVENTS_QUEUE_BOUND, shouldKeepTempDir }
 
 export {
+  FormatClaimShadowingRow,
+  FormatRegistryResolved,
+  FormatRegistryRow,
+  FrameworkContributionRow,
+  FrameworkModuleRow,
   Heartbeat,
   HelpRendered,
   PhaseEntered,
   PlanKnown,
+  PluginFailureReason,
+  PluginsReported,
   RunEvents,
   RunFailed,
   RunIdentity,
   RunMutantTested,
   RunPhase,
   RunStarted,
+  SkippedFileRow,
+  SkippedReported,
   VerdictReached,
 } from './RunEvents.js'
 export type { RunEvent, RunIdentityShape, RunTerminalEvent } from './RunEvents.js'

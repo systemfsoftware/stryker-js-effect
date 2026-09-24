@@ -1,27 +1,41 @@
-import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
+import { extensionOf, type FormatRegistry, type RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import type { TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as HashMap from 'effect/HashMap'
 import * as Option from 'effect/Option'
 
-const extensionOf = (fileName: string): string => {
-  const base = fileName.slice(fileName.lastIndexOf('/') + 1)
-  const dot = base.lastIndexOf('.')
-  if (dot <= 0) {
-    return ''
-  }
-  return base.slice(dot).toLowerCase()
-}
+import type { FormatIdentity } from './IncrementalDiff.schema.js'
 
-const EXTENSION_LANGUAGES: Readonly<Record<string, string>> = {
-  '.ts': 'typescript',
-  '.tsx': 'typescript',
-  '.html': 'html',
-  '.vue': 'html',
-}
+const UNCLAIMED_LANGUAGE = 'javascript'
 
-export const determineLanguage = (fileName: string): string =>
-  EXTENSION_LANGUAGES[extensionOf(fileName)] ?? 'javascript'
+export const determineLanguage = (fileName: string, registry: FormatRegistry): string =>
+  Option.match(registry.entryForExtension(extensionOf(fileName)), {
+    onNone: () => UNCLAIMED_LANGUAGE,
+    onSome: (entry) => entry.claim.language,
+  })
+
+export const identityOf = (fileName: string, registry: FormatRegistry): Option.Option<FormatIdentity> =>
+  Option.map(registry.entryForExtension(extensionOf(fileName)), (entry) => ({
+    formatId: entry.claim.formatId,
+    ownerModule: entry.owner,
+    ownerVersion: entry.ownerVersion,
+  }))
+
+export type FileResultWithIdentity = schema.FileResult & { readonly formatIdentity?: FormatIdentity }
+
+export const stampFileIdentities = (
+  files: schema.FileResultDictionary,
+  identities: HashMap.HashMap<string, Option.Option<FormatIdentity>>,
+): Record<string, FileResultWithIdentity> =>
+  Object.fromEntries(
+    Object.entries(files).map(([name, file]): readonly [string, FileResultWithIdentity] => [
+      name,
+      Option.match(Option.flatMap(HashMap.get(identities, name), (present) => present), {
+        onNone: () => file,
+        onSome: (identity) => ({ ...file, formatIdentity: identity }),
+      }),
+    ]),
+  )
 
 export const reportFileName = (relativePath: string | undefined): string =>
   Option.match(Option.fromUndefinedOr(relativePath), {

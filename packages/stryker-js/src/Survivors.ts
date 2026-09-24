@@ -97,12 +97,12 @@ export function reportMutantToMutant(
     replacement: mutant.replacement ?? mutant.mutatorName,
     location: {
       start: {
-        line: mutant.location.start.line - 1,
-        column: mutant.location.start.column - 1,
+        line: mutant.location.start.line,
+        column: mutant.location.start.column,
       },
       end: {
-        line: mutant.location.end.line - 1,
-        column: mutant.location.end.column - 1,
+        line: mutant.location.end.line,
+        column: mutant.location.end.column,
       },
     },
   })
@@ -123,9 +123,9 @@ export function survivorMutateSpans(survivors: readonly Mutant[], basePath: stri
   return [
     ...new Set(
       survivors.map((survivor) =>
-        `${toRelativeNormalizedFileName(survivor.fileName, basePath)}:${
-          survivor.location.start.line + 1
-        }:${survivor.location.start.column}-${survivor.location.end.line + 1}:${survivor.location.end.column}`
+        `${
+          toRelativeNormalizedFileName(survivor.fileName, basePath)
+        }:${survivor.location.start.line}:${survivor.location.start.column}-${survivor.location.end.line}:${survivor.location.end.column}`
       ),
     ),
   ]

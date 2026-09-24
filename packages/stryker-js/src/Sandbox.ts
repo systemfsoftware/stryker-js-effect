@@ -1,5 +1,5 @@
 import { type JsonValue, parse } from '@std/jsonc'
-import { disableTypeChecks } from '@systemfsoftware/stryker-js-instrumenter'
+import { disableTypeChecks, type FormatRegistry } from '@systemfsoftware/stryker-js-instrumenter'
 import { errorToString, normalizeFileName } from '@systemfsoftware/stryker-js-instrumenter'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Schema as S } from 'effect'
@@ -21,7 +21,6 @@ import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
-import { isWarningEnabled, optionsPath } from './config-defaults.js'
 import { createFileMatcher } from './file-matching.js'
 import {
   backupTo,
@@ -50,6 +49,7 @@ export interface MakeSandboxInput {
   readonly workingDirectory: string
   readonly backupDirectory: string
   readonly basePath: string
+  readonly formatRegistry: FormatRegistry
 }
 
 /**
@@ -58,13 +58,14 @@ export interface MakeSandboxInput {
  */
 type FilePreprocessor = (
   project: Project,
-) => Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path>
+) => Effect.Effect<void, PlatformError | StrykerError, FileSystem.FileSystem | Path.Path>
 
 const combinePreprocessors = (preprocessors: readonly FilePreprocessor[]): FilePreprocessor => (project) =>
   Effect.forEach(preprocessors, (pre) => pre(project), { discard: true })
 
 const makeDisableTypeChecksPreprocessor = (
   options: StrykerOptions,
+  registry: FormatRegistry,
   impl: typeof disableTypeChecks,
 ): FilePreprocessor =>
 (project) =>
@@ -76,26 +77,13 @@ const makeDisableTypeChecksPreprocessor = (
         Match.when(true, () =>
           Effect.gen(function*() {
             const instrumenterFile = yield* toInstrumenterFile(file)
-            const content = yield* Effect.map(impl(instrumenterFile), (instrumented) =>
+            const content = yield* Effect.map(impl(instrumenterFile, registry), (instrumented) =>
               instrumented.content).pipe(
-                Effect.mapError((cause) => StrykerError.make({ message: 'disableTypeChecks failed', cause })),
-                Effect.tapError(() =>
-                  Effect.gen(function*() {
-                    if (isWarningEnabled('preprocessorErrors', options.warnings)) {
-                      yield* Effect.logWarning(
-                        `Unable to disable type checking for file "${name}". Shouldn't type checking be disabled for this file? Consider configuring a more restrictive "${
-                          optionsPath('disableTypeChecks')
-                        }" settings (or turn it completely off with \`false\`)`,
-                      )
-                    }
-                  })
+                Effect.mapError((cause) =>
+                  StrykerError.make({ message: 'disableTypeChecks failed', cause })
                 ),
-                Effect.orElseSucceed(() => undefined),
               )
-            if (content !== undefined) {
-              return withContent(file, content)
-            }
-            return undefined
+            return withContent(file, content)
           })),
         Match.orElse(() => Effect.succeedNone),
       ), { concurrency: FILE_CONCURRENCY })
@@ -355,9 +343,10 @@ const makeTSConfigPreprocessor = (options: StrykerOptions, basePath: string): Fi
 const createPreprocessor = (
   options: StrykerOptions,
   basePath: string,
+  registry: FormatRegistry,
 ): FilePreprocessor =>
   combinePreprocessors([
-    makeDisableTypeChecksPreprocessor(options, disableTypeChecks),
+    makeDisableTypeChecksPreprocessor(options, registry, disableTypeChecks),
     makeTSConfigPreprocessor(options, basePath),
   ])
 
@@ -844,7 +833,7 @@ export const makeSandbox = (
   FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
 > =>
   Effect.gen(function*() {
-    const { options, project, workingDirectory, backupDirectory, basePath } = input
+    const { options, project, workingDirectory, backupDirectory, basePath, formatRegistry } = input
     yield* Scope.Scope
     const pathService = yield* Path.Path
 
@@ -853,7 +842,7 @@ export const makeSandbox = (
       restoreOriginalFiles(workingDirectory, backupDirectory, basePath),
       Effect.succeed(hasBackupToRestore(options, backupDirectory)),
     )
-    yield* createPreprocessor(options, basePath)(project).pipe(
+    yield* createPreprocessor(options, basePath, formatRegistry)(project).pipe(
       Effect.mapError((cause) => StrykerError.make({ message: 'Sandbox preprocessor failed', cause })),
     )
     const entries: Array<readonly [string, string]> = yield* Effect.forEach(

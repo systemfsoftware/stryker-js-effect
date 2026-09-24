@@ -1,26 +1,29 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { instrument, type InstrumentFileSkip } from '@systemfsoftware/stryker-js-instrumenter'
 import type { File as InstrumenterFile, InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import { absurd } from 'effect/Function'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import { PhaseEntered, RunEvents } from '../RunEvents.js'
-
 import { InstrumentCommand, planInstrumentation } from '../plan-instrumentation.workflow.js'
 import { FILE_CONCURRENCY, toInstrumenterFile, withInstrumentedFiles } from '../Project.js'
 import type { Project } from '../Project.js'
 import { withPhaseSpan } from '../ReporterStream.js'
 import { StageError } from '../Run.schema.js'
-import { makeSandbox } from '../Sandbox.js'
-import type { SandboxHandle } from '../Sandbox.js'
+import type { SkippedFileRow } from '../RunEvent.schema.js'
+import { type RunEvent } from '../RunEvents.js'
+import { PhaseEntered, RunEvents, SkippedReported } from '../RunEvents.js'
+import { makeSandbox, type SandboxHandle } from '../Sandbox.js'
 import { makeConcurrency } from '../Worker.js'
+import { explainFileSkip, ExplainFileSkipCommand, type FrameworkClaimant } from './explain-file-skip.workflow.js'
 import type { PrepareDone } from './prepare.cell.js'
 import { RunEnvironment } from './RunEnvironment.js'
 
@@ -42,6 +45,27 @@ interface InstrumentRaw {
   readonly concurrency: { readonly testRunners: number; readonly checkers: number }
 }
 
+const offerSkipsIfAny = (
+  queue: Queue.Queue<RunEvent, Cause.Done>,
+  skipped: readonly InstrumentFileSkip[],
+  claimants: readonly FrameworkClaimant[],
+): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    if (skipped.length === 0) {
+      return
+    }
+    const files = skipped.map((skip) =>
+      Result.match(
+        explainFileSkip(ExplainFileSkipCommand.make({ extension: skip.extension, claimants: [...claimants] })),
+        {
+          onFailure: absurd<SkippedFileRow>,
+          onSuccess: (explained) => ({ file: skip.file, extension: skip.extension, reason: explained.reason }),
+        },
+      )
+    )
+    yield* Queue.offer(queue, SkippedReported.make({ files }))
+  })
+
 export const instrumentCell = Sandwich.read((command: PrepareDone) =>
   Effect.gen(function*() {
     yield* Scope.Scope
@@ -60,7 +84,7 @@ export const instrumentCell = Sandwich.read((command: PrepareDone) =>
       ignorers: [...command.ignorers],
       excludedMutations: [...command.options.mutator.excludedMutations],
       optInMutations: [...command.options.mutator.optInMutations],
-    }, env.basePath).pipe(Effect.mapError((cause) =>
+    }, command.formatRegistry).pipe(Effect.mapError((cause) =>
       StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })
     ))
 
@@ -80,6 +104,7 @@ export const instrumentCell = Sandwich.read((command: PrepareDone) =>
       workingDirectory,
       backupDirectory,
       basePath,
+      formatRegistry: command.formatRegistry,
     }).pipe(Effect.mapError((cause) =>
       StageError.make({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
     ))
@@ -118,7 +143,7 @@ export const instrumentCell = Sandwich.read((command: PrepareDone) =>
         const now = yield* Clock.currentTimeMillis
         const queue = yield* RunEvents
         yield* Queue.offer(queue, PhaseEntered.make({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
-
+        yield* offerSkipsIfAny(queue, raw.instrumentResult.skipped, raw.prev.frameworkClaimants)
         const out = output
         if (Result.isFailure(out)) {
           const err = out.failure

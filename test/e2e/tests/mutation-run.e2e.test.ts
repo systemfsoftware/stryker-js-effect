@@ -23,7 +23,16 @@ const CALC_FIXTURE_ORACLE = {
 
 const CALC_FIXTURE_URL = new URL('../testResources/calc-fixture', import.meta.url)
 const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
-const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutant', 'tick']
+const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = [
+  'stream',
+  'phase',
+  'plan',
+  'mutant',
+  'tick',
+  'plugins',
+  'formats',
+  'skipped',
+]
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)
 
 const parseEventStream = (stdout: string): ReadonlyArray<RunEvent> =>

@@ -14,6 +14,12 @@ export const MutantStatusSchema = S.Literals([
 ])
 export type MutantStatus = typeof MutantStatusSchema.Type
 
+/**
+ * A mutant's file location in the mutation-testing-report-schema contract:
+ * 1-based line and 1-based column, the same base the JSON report and the
+ * machine stream emit. Every producer on the instrument path (node spans,
+ * embedded-region shifts) targets this base; no downstream layer converts.
+ */
 export class Mutant extends S.TaggedClass<Mutant>()('Mutant', {
   id: S.NonEmptyString,
   fileName: S.NonEmptyString,

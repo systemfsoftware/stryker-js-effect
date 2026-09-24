@@ -1,5 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { FormatRegistry } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantTestCoverage } from '@systemfsoftware/stryker-js-instrumenter'
 import type { RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
@@ -38,6 +39,7 @@ import { wireRecordOf } from '../checker-mutant-wire.js'
 import type { CheckerContractBroken, CheckerCrash, CheckerResourceService } from '../Checker.js'
 import { checkGroupedPlans, createCheckerFactory } from '../Checker.js'
 import { REMEMBERED_REASON, toRelativeNormalizedFileName } from '../IncrementalDiff.paths.js'
+import type { FormatIdentity } from '../IncrementalDiff.schema.js'
 import { checkerMutantsSkipped } from '../metrics.js'
 import { toSchemaLocation } from '../mutant-result-mapping.js'
 import { decidePlans, incrementalDiff, partitionRunPlans, sortRunPlans } from '../Mutants.js'
@@ -47,7 +49,7 @@ import { MutationTestCommand } from '../MutationTest.schema.js'
 import { missingWorkerEntry, resolveConfiguredWorkerSpawn } from '../plugin-worker-entry.js'
 import { FILE_CONCURRENCY, readOriginal } from '../Project.js'
 import type { Project } from '../Project.js'
-import { reportFileName } from '../report-assembly.js'
+import { identityOf, reportFileName } from '../report-assembly.js'
 import { offerReporterEvent, withPhaseSpan } from '../ReporterStream.js'
 import { StageError } from '../Run.schema.js'
 import { buildTestRunner, invalidatesRunnerPool, makeChildProcessTestRunner } from '../TestRunner.js'
@@ -78,6 +80,20 @@ const readCurrentRelativeFiles = (
     )
     return Object.fromEntries(entries)
   })
+
+const claimedIdentities = (
+  project: Project,
+  registry: FormatRegistry,
+  basePath: string,
+): Record<string, FormatIdentity> =>
+  Object.fromEntries(
+    [...MutableHashMap.keys(project.filesToMutate)].flatMap((name) =>
+      Option.match(identityOf(name, registry), {
+        onNone: (): ReadonlyArray<readonly [string, FormatIdentity]> => [],
+        onSome: (identity) => [[toRelativeNormalizedFileName(name, basePath), identity] as const],
+      })
+    ),
+  )
 
 interface RememberedMutantResult {
   readonly mutantId: string
@@ -512,6 +528,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                 resolvedMode: env.resolvedMode,
                 sandboxDirectory: prev.sandbox.workingDirectory,
                 basePath: env.basePath,
+                formatRegistry: prev.formatRegistry,
               })
               const sandboxFileByName: Record<string, string> = Object.fromEntries(
                 [...MutableHashMap.keys(prev.project.filesToMutate)].map((name) => [
@@ -527,6 +544,7 @@ export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageErro
                 currentRelativeFiles,
                 basePath: env.basePath,
                 force: prev.options.force,
+                identitiesByFile: claimedIdentities(prev.project, prev.formatRegistry, env.basePath),
               })
               const rememberedResults = rememberedResultsOf(plannableMutants, incremental.remembered)
               yield* Effect.when(

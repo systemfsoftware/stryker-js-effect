@@ -288,8 +288,8 @@ function mutationRangeOf(mutatePattern: string): MutationRangePattern | undefine
     pattern: rangeGroup(match, 1, mutatePattern),
     mutate: [
       {
-        start: { line: startLine - 1, column: startColumn },
-        end: { line: endLine - 1, column: endColumn },
+        start: { line: startLine, column: startColumn },
+        end: { line: endLine, column: endColumn },
       },
     ],
   }

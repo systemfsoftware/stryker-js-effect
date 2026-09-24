@@ -1,7 +1,19 @@
+export { coreFormatRegistry, extensionOf, registerEntries } from './format-registry.js'
+export type {
+  EmbeddedFormatEntry,
+  FormatClaim,
+  FormatEntry,
+  FormatHooks,
+  FormatKind,
+  FormatRegistry,
+  ScriptFormatEntry,
+} from './format-registry.js'
+export { frameworkEntryOf } from './framework-entry.js'
 export { disableTypeChecks, instrument } from './Instrument.js'
 export type { File, InstrumenterOptions, InstrumentResult } from './Instrument.js'
 export type { InstrumentError } from './Instrument.schema.js'
 export { InstrumenterOptionsSchema } from './Instrument.schema.js'
+export type { InstrumentFileSkip } from './Instrument.schema.js'
 export { LocationSchema, OpenEndLocationSchema, PositionSchema } from './Location.schema.js'
 export type { Location, OpenEndLocation, Position } from './Location.schema.js'
 export {

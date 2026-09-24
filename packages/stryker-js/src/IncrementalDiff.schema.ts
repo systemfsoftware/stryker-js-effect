@@ -3,6 +3,14 @@ import * as S from 'effect/Schema'
 const PositionSchema = S.Struct({ line: S.Finite, column: S.Finite })
 const PreviousLocationSchema = S.Struct({ start: PositionSchema, end: PositionSchema })
 
+export const FormatIdentitySchema = S.Struct({
+  formatId: S.String,
+  ownerModule: S.String,
+  ownerVersion: S.String,
+})
+
+export type FormatIdentity = S.Schema.Type<typeof FormatIdentitySchema>
+
 const PreviousMutantSchema = S.Struct({
   mutatorName: S.String,
   replacement: S.String,
@@ -16,6 +24,7 @@ const PreviousMutantSchema = S.Struct({
 const PreviousFileSchema = S.Struct({
   source: S.optional(S.String),
   mutants: S.optional(S.Array(PreviousMutantSchema)),
+  formatIdentity: S.optional(FormatIdentitySchema),
 })
 
 const PreviousTestFileSchema = S.Struct({

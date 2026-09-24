@@ -264,7 +264,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
               const range = exportLineRange(content, entry.exportName)
               const located = mutantsIn(entry.file).filter(
                 (mutant) => {
-                  const sourceLine = mutant.location.start.line + 1
+                  const sourceLine = mutant.location.start.line
                   return range.firstLine <= sourceLine && sourceLine <= range.lastLine
                 },
               )

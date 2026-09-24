@@ -18,6 +18,7 @@ import { HarnessModuleBuiltin } from '@systemfsoftware/stryker-vm-harness';
 import * as HashMap from 'effect/HashMap';
 import { JsonSchema } from 'effect/JsonSchema';
 import * as Layer from 'effect/Layer';
+import { Literals } from 'effect/Schema';
 import * as Metric from 'effect/Metric';
 import * as MutableHashMap from 'effect/MutableHashMap';
 import * as MutableHashSet from 'effect/MutableHashSet';
@@ -485,7 +486,7 @@ export const forkOptionsSchema: S.StructWithRest<S.Struct<{
     readonly allowConsoleColors: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly buildCommand: S.optional<S.String>;
     readonly checkers: S.withDecodingDefaultKey<S.$Array<S.Struct<{
-        readonly plugin: S.String;
+        readonly plugin: S.declare<string, string>;
         readonly nodeArgs: S.optional<S.$Array<S.String>>;
         readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
     }>>, never>;
@@ -523,8 +524,8 @@ export const forkOptionsSchema: S.StructWithRest<S.Struct<{
         readonly optInMutations: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     }>, never>;
     readonly packageManager: S.optional<S.Literals<readonly ["npm", "yarn", "pnpm"]>>;
-    readonly plugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly appendPlugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly plugins: S.withDecodingDefaultKey<S.$Array<S.declare<string, string>>, never>;
+    readonly appendPlugins: S.withDecodingDefaultKey<S.$Array<S.declare<string, string>>, never>;
     readonly reporters: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly htmlReporter: S.withDecodingDefaultKey<S.Struct<{
         readonly fileName: S.withDecodingDefaultKey<S.String, never>;
@@ -537,7 +538,7 @@ export const forkOptionsSchema: S.StructWithRest<S.Struct<{
     readonly tempDirName: S.withDecodingDefaultKey<S.String, never>;
     readonly cleanTempDir: S.withDecodingDefaultKey<S.Literals<readonly ["always", false, true]>, never>;
     readonly testRunner: S.withDecodingDefaultKey<S.Union<readonly [S.String, S.Struct<{
-        readonly plugin: S.String;
+        readonly plugin: S.declare<string, string>;
         readonly nodeArgs: S.optional<S.$Array<S.String>>;
         readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
     }>]>, never>;
@@ -567,11 +568,84 @@ export const forkOptionsSchema: S.StructWithRest<S.Struct<{
     }>, readonly [S.$Record<S.String, S.Unknown>]>]>, never>;
     readonly disableBail: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly allowEmpty: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly ignorers: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly ignorers: S.withDecodingDefaultKey<S.$Array<S.declare<string, string>>, never>;
     readonly testFiles: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly survivorsPriorReport: S.optionalKey<S.String>;
     readonly extends: S.optionalKey<S.String>;
 }>, readonly [S.$Record<S.String, S.Unknown>]>;
+
+// @public (undocumented)
+export const FormatClaimShadowingRow: S.Struct<{
+    readonly extension: S.String;
+    readonly winner: S.String;
+    readonly loser: S.String;
+}>;
+
+// @public (undocumented)
+export type FormatClaimShadowingRow = typeof FormatClaimShadowingRow.Type;
+
+// Warning: (ae-forgotten-export) The symbol "FormatRegistryResolved_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class FormatRegistryResolved extends FormatRegistryResolved_base {}
+
+// @public (undocumented)
+export const FormatRegistryRow: S.Struct<{
+    readonly extension: S.String;
+    readonly formatId: S.String;
+    readonly ownerModule: S.String;
+    readonly language: S.String;
+}>;
+
+// @public (undocumented)
+export type FormatRegistryRow = typeof FormatRegistryRow.Type;
+
+// @public (undocumented)
+export interface Framework {
+    // Warning: (ae-forgotten-export) The symbol "FrameworkClaim" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly claim: FrameworkClaim;
+    // (undocumented)
+    readonly disableTypeChecks: (rawContent: string) => FrameworkParseResult<string>;
+    // (undocumented)
+    readonly kind: 'Framework';
+    // (undocumented)
+    readonly name: string;
+    // Warning: (ae-forgotten-export) The symbol "FrameworkContext" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "FrameworkParseResult" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "EmbeddedDocument" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly parse: (rawContent: string, context: FrameworkContext) => FrameworkParseResult<EmbeddedDocument>;
+    // (undocumented)
+    readonly print: (document: EmbeddedDocument, context: FrameworkContext) => string;
+    // (undocumented)
+    readonly transform: (document: EmbeddedDocument, context: FrameworkContext) => EmbeddedDocument;
+}
+
+// @public (undocumented)
+export const FrameworkContributionRow: S.Struct<{
+    readonly name: S.String;
+    readonly formatId: S.String;
+    readonly extensions: S.$Array<S.String>;
+}>;
+
+// @public (undocumented)
+export type FrameworkContributionRow = typeof FrameworkContributionRow.Type;
+
+// @public (undocumented)
+export const FrameworkModuleRow: S.Struct<{
+    readonly moduleName: S.String;
+    readonly contributions: S.$Array<S.Struct<{
+        readonly name: S.String;
+        readonly formatId: S.String;
+        readonly extensions: S.$Array<S.String>;
+    }>>;
+}>;
+
+// @public (undocumented)
+export type FrameworkModuleRow = typeof FrameworkModuleRow.Type;
 
 // @public (undocumented)
 export function generateRunId(now: DateTime.Utc): string;
@@ -604,10 +678,8 @@ export interface IdGeneratorShape {
 export interface Ignorer {
     // (undocumented)
     readonly name: string;
-    // Warning: (ae-forgotten-export) The symbol "Node_2" needs to be exported by the entry point index.d.mts
-    //
     // (undocumented)
-    shouldIgnore(node: Node_2, ancestors: readonly Node_2[]): string | undefined;
+    shouldIgnore(node: Node, ancestors: readonly Node[]): string | undefined;
 }
 
 // @public (undocumented)
@@ -657,6 +729,11 @@ export const IncrementalReportSchema: S.StructWithRest<S.Struct<{
             readonly testsCompleted: S.optional<S.Finite>;
             readonly description: S.optional<S.String>;
             readonly duration: S.optional<S.Finite>;
+        }>>;
+        readonly formatIdentity: S.optional<S.Struct<{
+            readonly formatId: S.String;
+            readonly ownerModule: S.String;
+            readonly ownerVersion: S.String;
         }>>;
     }>>;
     readonly testFiles: S.optional<S.$Record<S.String, S.Struct<{
@@ -729,6 +806,11 @@ export const loadConfigCell: typeof readConfig;
 
 // @public (undocumented)
 export interface LoadedPlugins<A = unknown> {
+    // (undocumented)
+    readonly frameworks: readonly {
+        readonly moduleName: string;
+        readonly framework: Framework;
+    }[];
     // (undocumented)
     readonly ignorers: readonly Ignorer[];
     // (undocumented)
@@ -825,7 +907,7 @@ export type ModeSignal = 'flag' | 'env' | 'tty' | 'agent' | 'tool';
 
 // Warning: (ae-forgotten-export) The symbol "Mutant_base" needs to be exported by the entry point index.d.mts
 //
-// @public (undocumented)
+// @public
 export class Mutant extends Mutant_base {}
 
 // @public (undocumented)
@@ -1005,6 +1087,13 @@ export const MutationTestResultSchema: S.Struct<{
     }>>;
 }>;
 
+// Warning: (ae-forgotten-export) The symbol "Simplify$1" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "Built$1" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "Node$1$1" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export type Node = Simplify$1<Built$1<Node$1$1>> | Node$1$1;
+
 // @public (undocumented)
 export const optionsPath: (...path: string[]) => string;
 
@@ -1047,10 +1136,21 @@ export type PluginDescriptorOf<K extends PluginKind> = Extract<AnyPluginDescript
 }>;
 
 // @public (undocumented)
+export const PluginFailureReason: S.Literals<readonly ["PeerMissing", "PeerVersionUnsupported", "PeerUnrecognized", "InvalidContribution", "ImportFailed"]>;
+
+// @public (undocumented)
+export type PluginFailureReason = typeof PluginFailureReason.Type;
+
+// @public (undocumented)
 export type PluginKind = WorkerPluginKind | 'Evaluator';
 
 // @public (undocumented)
 export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource;
+
+// Warning: (ae-forgotten-export) The symbol "PluginsReported_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class PluginsReported extends PluginsReported_base {}
 
 // @public
 export interface PooledTestRunner {
@@ -1070,7 +1170,7 @@ export type PooledTestRunnerError = TestRunnerFailed | ChildProcessCrashedError 
 // @public (undocumented)
 export type Position = typeof PositionSchema.Type;
 
-// @public (undocumented)
+// @public
 export const PositionSchema: S.Struct<{
     readonly line: S.Finite;
     readonly column: S.Finite;
@@ -1078,6 +1178,14 @@ export const PositionSchema: S.Struct<{
 
 // @public (undocumented)
 export interface PrepareDone {
+    // Warning: (ae-forgotten-export) The symbol "FormatRegistry" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly formatRegistry: FormatRegistry;
+    // Warning: (ae-forgotten-export) The symbol "FrameworkClaimant" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly frameworkClaimants: readonly FrameworkClaimant[];
     // (undocumented)
     readonly ignorers: readonly Ignorer[];
     // (undocumented)
@@ -1241,7 +1349,7 @@ export interface RunEnvironmentShape {
 }
 
 // @public (undocumented)
-export const RunEvent: S.Union<readonly [typeof RunStarted, typeof PhaseEntered, typeof PlanKnown, typeof RunMutantTested, typeof Heartbeat, typeof VerdictReached, typeof RunFailed, typeof HelpRendered]>;
+export const RunEvent: S.Union<readonly [typeof RunStarted, typeof PhaseEntered, typeof PlanKnown, typeof RunMutantTested, typeof Heartbeat, typeof PluginsReported, typeof FormatRegistryResolved, typeof SkippedReported, typeof VerdictReached, typeof RunFailed, typeof HelpRendered]>;
 
 // @public (undocumented)
 export type RunEvent = typeof RunEvent.Type;
@@ -1278,7 +1386,7 @@ export interface RunEventStream {
 }
 
 // @public (undocumented)
-export const RunEventWireLine: S.decodeTo<S.fromJsonString<S.Union<readonly [typeof RunStarted, typeof PhaseEntered, typeof PlanKnown, typeof RunMutantTested, typeof Heartbeat, typeof VerdictReached, typeof RunFailed, typeof HelpRendered]>>, S.String, never, never>;
+export const RunEventWireLine: S.decodeTo<S.fromJsonString<S.Union<readonly [typeof RunStarted, typeof PhaseEntered, typeof PlanKnown, typeof RunMutantTested, typeof Heartbeat, typeof PluginsReported, typeof FormatRegistryResolved, typeof SkippedReported, typeof VerdictReached, typeof RunFailed, typeof HelpRendered]>>, S.String, never, never>;
 
 // @public (undocumented)
 export type RunEventWireLine = typeof RunEventWireLine.Type;
@@ -1369,6 +1477,21 @@ export interface SandboxHandle {
 export const shouldKeepTempDir: <A = unknown, E = unknown>(exit: Exit.Exit<A, E>, cleanTempDir: 'always' | boolean) => boolean;
 
 // @public (undocumented)
+export const SkippedFileRow: S.Struct<{
+    readonly file: S.String;
+    readonly extension: S.String;
+    readonly reason: S.String;
+}>;
+
+// @public (undocumented)
+export type SkippedFileRow = typeof SkippedFileRow.Type;
+
+// Warning: (ae-forgotten-export) The symbol "SkippedReported_base" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export class SkippedReported extends SkippedReported_base {}
+
+// @public (undocumented)
 export interface SkippedTestResult extends BaseTestResult {
     // (undocumented)
     readonly status: 'skipped';
@@ -1434,7 +1557,7 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly allowConsoleColors: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly buildCommand: S.optional<S.String>;
     readonly checkers: S.withDecodingDefaultKey<S.$Array<S.Struct<{
-        readonly plugin: S.String;
+        readonly plugin: S.declare<string, string>;
         readonly nodeArgs: S.optional<S.$Array<S.String>>;
         readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
     }>>, never>;
@@ -1472,8 +1595,8 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
         readonly optInMutations: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     }>, never>;
     readonly packageManager: S.optional<S.Literals<readonly ["npm", "yarn", "pnpm"]>>;
-    readonly plugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly appendPlugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly plugins: S.withDecodingDefaultKey<S.$Array<S.declare<string, string>>, never>;
+    readonly appendPlugins: S.withDecodingDefaultKey<S.$Array<S.declare<string, string>>, never>;
     readonly reporters: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly htmlReporter: S.withDecodingDefaultKey<S.Struct<{
         readonly fileName: S.withDecodingDefaultKey<S.String, never>;
@@ -1486,7 +1609,7 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly tempDirName: S.withDecodingDefaultKey<S.String, never>;
     readonly cleanTempDir: S.withDecodingDefaultKey<S.Literals<readonly ["always", false, true]>, never>;
     readonly testRunner: S.withDecodingDefaultKey<S.Union<readonly [S.String, S.Struct<{
-        readonly plugin: S.String;
+        readonly plugin: S.declare<string, string>;
         readonly nodeArgs: S.optional<S.$Array<S.String>>;
         readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
     }>]>, never>;
@@ -1516,7 +1639,7 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     }>, readonly [S.$Record<S.String, S.Unknown>]>]>, never>;
     readonly disableBail: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly allowEmpty: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly ignorers: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly ignorers: S.withDecodingDefaultKey<S.$Array<S.declare<string, string>>, never>;
     readonly testFiles: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
 }>, readonly [S.$Record<S.String, S.Unknown>]>;
 
@@ -1587,7 +1710,7 @@ export type TestRunnerConfig = typeof TestRunnerConfigSchema.Type;
 
 // @public (undocumented)
 export const TestRunnerConfigSchema: S.Union<readonly [S.String, S.Struct<{
-    readonly plugin: S.String;
+    readonly plugin: S.declare<string, string>;
     readonly nodeArgs: S.optional<S.$Array<S.String>>;
     readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
 }>]>;
