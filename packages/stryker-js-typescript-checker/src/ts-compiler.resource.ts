@@ -27,7 +27,7 @@ export const scoped = (
     const host = yield* FileSystem.FileSystem
     const pathService = yield* Path.Path
     const compiler = makeTSCompiler(options, { host, pathService })
-    yield* Effect.addFinalizer(() => close(compiler).pipe(Effect.uninterruptible))
+    yield* Effect.addFinalizer(() => close(compiler))
     return compiler
   })
 
