@@ -32,7 +32,7 @@ import type {
   ForStatement,
   Function as FunctionNode,
   IfStatement,
-  ImportAttribute,
+  IdentifierReference,
   ImportDeclaration,
   ImportExpression,
   JSDocNonNullableType,
@@ -352,11 +352,11 @@ const printNodePrec = (ctx: PrintContext, node: Node | null | undefined, prec: n
 
 const unknownNodeText = (type: string): string => `/* unknown:${type} */`
 
-type NodeText = (context: PrintContext, precedence: number) => string
 
 const nodeText = Match.type<Node>().pipe(
   Match.discriminatorsExhaustive('type')({
     Literal: (n) => () => literalText(n),
+    Identifier: (n) => () => n.name,
     PrivateIdentifier: (n) => () => `#${n.name}`,
     ThisExpression: () => () => 'this',
     Super: () => () => 'super',
@@ -521,6 +521,52 @@ const nodeText = Match.type<Node>().pipe(
     TSParameterProperty: (n) => () => unknownNodeText(n.type),
     TSPropertySignature: (n) => () => unknownNodeText(n.type),
     TSQualifiedName: (n) => () => unknownNodeText(n.type),
+  }),
+)
+
+const dispatchNode = (ctx: PrintContext, node: Node, prec: number): string => nodeText(node)(ctx, prec)
+
+const printTSTypeToString = Match.type<TSType>().pipe(
+  Match.discriminatorsExhaustive('type')({
+    TSAnyKeyword: () => () => 'any',
+    TSStringKeyword: () => () => 'string',
+    TSBooleanKeyword: () => () => 'boolean',
+    TSNumberKeyword: () => () => 'number',
+    TSBigIntKeyword: () => () => 'bigint',
+    TSSymbolKeyword: () => () => 'symbol',
+    TSVoidKeyword: () => () => 'void',
+    TSUndefinedKeyword: () => () => 'undefined',
+    TSNullKeyword: () => () => 'null',
+    TSNeverKeyword: () => () => 'never',
+    TSUnknownKeyword: () => () => 'unknown',
+    TSObjectKeyword: () => () => 'object',
+    TSIntrinsicKeyword: () => () => 'intrinsic',
+    TSThisType: () => () => 'this',
+    TSTypeReference: (n) => (ctx) => `${printTSTypeName(ctx, n.typeName)}${typeArgumentsText(ctx, n.typeArguments)}`,
+    TSUnionType: (n) => (ctx) => tsTypeListText(ctx, n.types, ' | '),
+    TSIntersectionType: (n) => (ctx) => tsTypeListText(ctx, n.types, ' & '),
+    TSArrayType: (n) => (ctx) => `${arrayElementTypeText(ctx, n.elementType)}[]`,
+    TSTypeLiteral: (n) => (ctx) => printTSTypeLiteral(ctx, n.members),
+    TSTupleType: (n) => (ctx) => printTupleType(ctx, n.elementTypes),
+    TSConditionalType: (n) => (ctx) => `${printTSTypeToString(ctx, n.checkType)} extends ${printTSTypeToString(ctx, n.extendsType)} ? ${printTSTypeToString(ctx, n.trueType)} : ${printTSTypeToString(ctx, n.falseType)}`,
+    TSInferType: (n) => (ctx) => `infer ${n.typeParameter.name.name}${printTypeClause(ctx, ' extends ', n.typeParameter.constraint)}`,
+    TSTypeQuery: (n) => (ctx) => `typeof ${printTypeQueryName(ctx, n)}${typeArgumentsText(ctx, n.typeArguments)}`,
+    TSImportType: (n) => (ctx) => printTSImportType(ctx, n),
+    TSTypeOperator: (n) => (ctx) => `${n.operator} ${printTSTypeToString(ctx, n.typeAnnotation)}`,
+    TSMappedType: (n) => (ctx) => printMappedType(ctx, n),
+    TSTemplateLiteralType: (n) => (ctx) => printTSTemplateLiteral(ctx, n),
+    TSFunctionType: (n) => (ctx) => `${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
+    TSConstructorType: (n) => (ctx) => `${flagText(n.abstract, 'abstract ')}new ${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
+    TSTypePredicate: (n) => (ctx) => printTSTypePredicate(ctx, n),
+    TSIndexedAccessType: (n) => (ctx) => `${printTSTypeToString(ctx, n.objectType)}[${printTSTypeToString(ctx, n.indexType)}]`,
+    TSNamedTupleMember: (n) => (ctx) => printNamedTupleMember(ctx, n),
+    TSLiteralType: (n) => (ctx) => printTSLiteralType(ctx, n.literal),
+    TSParenthesizedType: (n) => (ctx) => `(${printTSTypeToString(ctx, n.typeAnnotation)})`,
+    TSJSDocNullableType: (n) => (ctx) => printJSDocPostfixModifier(ctx, n, '?'),
+    TSJSDocNonNullableType: (n) => (ctx) => printJSDocPostfixModifier(ctx, n, '!'),
+    TSJSDocUnknownType: () => () => '?',
+    TSRestType: (n) => (ctx) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`,
+    TSOptionalType: (n) => (ctx) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`,
   }),
 )
 
