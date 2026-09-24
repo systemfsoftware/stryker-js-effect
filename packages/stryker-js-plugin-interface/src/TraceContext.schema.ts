@@ -9,7 +9,7 @@ export const TraceContextPartsSchema = S.Struct({
   version: S.String,
   traceId: S.String,
   spanId: S.String,
-  traceFlags: S.Finite,
+  traceFlags: S.Finite.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
   traceState: S.optional(S.String),
 })
 export type TraceContextParts = typeof TraceContextPartsSchema.Type
@@ -74,3 +74,46 @@ export const Traceparent = S.String.pipe(
     SchemaTransformation.makeTransformation({ decode: decodeParts, encode: encodeText }),
   ),
 )
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const Result = await import('effect/Result')
+
+  const hexOf = (length: number) => S.String.pipe(S.check(S.isPattern(new RegExp(`^[0-9a-f]{${length}}$`))))
+  const nonZeroHexOf = (length: number) =>
+    S.String.pipe(S.check(S.isPattern(new RegExp(`^[0-9a-f]{${length - 1}}[1-9a-f]$`))))
+
+  const RoundTrippableParts = S.Struct({
+    version: S.String.pipe(S.check(S.isPattern(/^(?!ff$)[0-9a-f]{2}$/))),
+    traceId: nonZeroHexOf(32),
+    spanId: nonZeroHexOf(16),
+    traceFlags: S.Finite.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
+  })
+
+  it.prop('∀parts_Traceparent_roundTripsThroughTheHeader', [RoundTrippableParts], ([parts]) =>
+    Result.match(S.encodeResult(Traceparent)(parts), {
+      onFailure: () => false,
+      onSuccess: (header) =>
+        Result.match(S.decodeResult(Traceparent)(header), {
+          onFailure: () => false,
+          onSuccess: (parsed) =>
+            parsed.version === parts.version && parsed.traceId === parts.traceId &&
+            parsed.spanId === parts.spanId && parsed.traceFlags === parts.traceFlags,
+        })),
+  )
+
+  it.prop('∀parts_Traceparent_rendersTheBaselineHeader', [RoundTrippableParts], ([parts]) =>
+    Result.match(S.encodeResult(Traceparent)(parts), {
+      onFailure: () => false,
+      onSuccess: (header) =>
+        header ===
+        `${parts.version}-${parts.traceId}-${parts.spanId}-${parts.traceFlags.toString(16).padStart(2, '0')}`,
+    }))
+
+  it.prop('∀version_Traceparent_refusesTheForbiddenVersion', [hexOf(2)], ([version]) =>
+    Result.isSuccess(S.decodeResult(Traceparent)(`${version}-${'a'.repeat(32)}-${'b'.repeat(16)}-01`)) ===
+      (version !== 'ff'))
+
+  it.prop('∀traceId_Traceparent_refusesTheAllZeroId', [hexOf(32)], ([traceId]) =>
+    Result.isSuccess(S.decodeResult(Traceparent)(`00-${traceId}-${'b'.repeat(16)}-01`)) === !/^0+$/.test(traceId))
+}

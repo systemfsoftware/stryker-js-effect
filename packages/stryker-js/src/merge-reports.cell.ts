@@ -14,7 +14,6 @@ import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
-import { calculateMetrics } from './calculate-metrics.js'
 import type { MergeReportsRequest } from './Cli.schema.js'
 import {
   DuplicatePackageLabel,
@@ -28,6 +27,7 @@ import {
   type StreamMutantLine,
   StreamMutantLineSchema,
 } from './merge-reports.schema.js'
+import { MetricsResultFromReport } from './reporting/metrics-from-report.schema.js'
 
 const PART_MARKER = 'mutation-part.json'
 const PART_REPORT = 'mutation-report.json'
@@ -376,7 +376,7 @@ const writeHtml = (fileName: string, report: typeof MutationTestResultSchema.Typ
     onNone: () => failReason(`cannot configure the html report at ${fileName}`),
     onSome: (options) =>
       Effect.gen(function*() {
-        const metrics = calculateMetrics(report.files)
+        const metrics = MetricsResultFromReport.fromFiles(report.files)
         yield* makeHtmlReporter(options, {})(
           toStream([MutationTestReportReady.make({ report, metrics })]),
         ).pipe(Effect.catchCause(() => failReason(`cannot write the html report at ${fileName}`)))

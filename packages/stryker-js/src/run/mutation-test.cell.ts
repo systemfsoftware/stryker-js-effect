@@ -70,7 +70,7 @@ import {
 } from '../incremental-diff.workflow.js'
 import type { Project } from '../Project.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
-import { reportFileName } from '../report-assembly.js'
+import { ReportFileName } from '../reporting/report-assembly.schema.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
 import { StageError } from '../Run.schema.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.resource.js'
@@ -947,6 +947,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
                 completed,
                 total: plannedTotal,
               }),
+            )
             return Option.some(completed)
           }),
       })
@@ -983,6 +984,9 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
     ])
     const checkpointGate = yield* Semaphore.make(1)
     yield* reporting.checkpoint(reportingInputOf(prev, env, yield* Ref.get(completedMutants))).pipe(
+      Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
+      Effect.ignoreCause,
+    )
     const persist = (result: RunMutantResult) =>
       checkpointGate.withPermits(1)(
         Effect.gen(function*() {

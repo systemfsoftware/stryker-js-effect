@@ -2,26 +2,6 @@ import { describe, it } from '@effect/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
-import * as S from 'effect/Schema'
-
-const Status = S.Union([S.Literal('Killed'), S.Literal('Timeout'), S.Literal('Ignored')])
-const MutantView = S.Struct({
-  status: Status,
-  killedBy: S.optional(S.Array(S.String)),
-  coveredBy: S.optional(S.Array(S.String)),
-})
-const FileView = S.Struct({ mutants: S.Array(MutantView) })
-const TestFileView = S.Struct({ tests: S.Array(S.Struct({ id: S.String })) })
-const LawsReport = S.Struct({
-  files: S.Record(S.String, FileView),
-  testFiles: S.optional(S.Record(S.String, TestFileView)),
-})
-const LawsCommand = S.Struct({
-  report: LawsReport,
-  everyKillerRecorded: S.Boolean,
-  suffixes: S.Array(S.String),
-})
-
 import {
   BailHidesKillers,
   JointlyDeletable,
@@ -32,14 +12,13 @@ import {
   RunUnjudged,
 } from '../judge-test-contribution.workflow.js'
 import type { ReportView } from '../test-contribution.schema.js'
-
-type LawsCommand = typeof LawsCommand.Type
+import { LawsCommand, type LawsCommand as LawsCommandType } from '../../tests/__fixtures__/laws-command.schema.js'
 
 const JudgeVerdictTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-test-contribution/TestContributionVerdict',
 )
 
-const judgeLawsCommand = (command: LawsCommand) => ({
+const judgeLawsCommand = (command: LawsCommandType) => ({
   report: {
     schemaVersion: '2',
     files: command.report.files,
@@ -50,13 +29,13 @@ const judgeLawsCommand = (command: LawsCommand) => ({
   everyKillerRecorded: command.everyKillerRecorded,
 })
 
-const decidedOf = (command: LawsCommand) =>
+const decidedOf = (command: LawsCommandType) =>
   judgeTestContribution(judgeLawsCommand(command) as JudgeTestContribution).pipe(Result.merge)
 
 const contributionKeysOf = (report: ReportView): readonly string[] =>
   Object.keys(report.testFiles ?? {})
 
-const verdictOfLaw = (command: LawsCommand): boolean => {
+const verdictOfLaw = (command: LawsCommandType): boolean => {
   const decision = decidedOf(command)
   const suffixes = command.suffixes.join(', ')
   return Match.value(decision).pipe(
@@ -76,7 +55,7 @@ const verdictOfLaw = (command: LawsCommand): boolean => {
   )
 }
 
-const ruleOrderOfLaw = (command: LawsCommand): boolean => {
+const ruleOrderOfLaw = (command: LawsCommandType): boolean => {
   const decision = decidedOf(command)
   const inScopeCount = decision.contribution.filter(([fileName]) =>
     command.suffixes.some((suffix) => fileName.endsWith(suffix))).length

@@ -465,16 +465,20 @@ const hasTraceFields = (init: ReporterInit): boolean =>
   Option.isSome(Option.fromUndefinedOr(init.traceparent)) ||
   Option.isSome(Option.fromUndefinedOr(init.tracestate))
 
-const initFromPhaseSpan = (span: PhaseSpan | undefined): ReporterInit | undefined =>
+const initFromPhaseSpan = (span: PhaseSpan | undefined): Effect.Effect<ReporterInit | undefined> =>
   Option.match(Option.fromNullishOr(span), {
-    onNone: () => undefined,
+    onNone: () => Effect.succeed(undefined),
     onSome: (present) =>
       Option.match(S.decodeUnknownOption(TraceContextPartsFromEffectSpan)(present), {
-        onNone: () => undefined,
-        onSome: (parts) => ({
-          traceparent: S.encodeSync(Traceparent)(parts),
-          ...tracestateInit(parts.traceState),
-        }),
+        onNone: () => Effect.succeed(undefined),
+        onSome: (parts) =>
+          S.encode(Traceparent)(parts).pipe(
+            Effect.orDie,
+            Effect.map((traceparent): ReporterInit => ({
+              traceparent,
+              ...tracestateInit(parts.traceState),
+            })),
+          ),
       }),
   })
 
@@ -504,11 +508,9 @@ export const currentReporterInit = (span?: PhaseSpan): Effect.Effect<ReporterIni
   Effect.gen(function*() {
     const fromEnvironment = yield* initFromEnvironment()
     const current = Option.getOrUndefined(yield* Effect.currentSpan.pipe(Effect.option))
-    return [
-      initFromPhaseSpan(span),
-      initFromPhaseSpan(current),
-      fromEnvironment,
-    ].find(Predicate.isNotUndefined) ?? {}
+    const fromSpanPhase = yield* initFromPhaseSpan(span)
+    const fromSpanCurrent = yield* initFromPhaseSpan(current)
+    return [fromSpanPhase, fromSpanCurrent, fromEnvironment].find(Predicate.isNotUndefined) ?? {}
   })
 
 export const withPhaseSpan: {

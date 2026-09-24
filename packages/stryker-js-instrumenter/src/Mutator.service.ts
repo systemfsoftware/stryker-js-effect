@@ -66,7 +66,8 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.handle.js'
-import { printNode } from './print/SourceText.schema.js'
+import { PrintFailed } from './print/PrintFailed.schema.js'
+import { SourceText } from './print/SourceText.schema.js'
 
 export interface MutatorContext {
   readonly parent: Node | undefined
@@ -101,7 +102,6 @@ export interface Mutant extends Mutable {
   readonly original: Node
   readonly offset: Position
   readonly lineTable: Arr.NonEmptyReadonlyArray<number>
-  readonly replacementCode: string
 }
 
 export interface CreateMutantOptions {
@@ -138,22 +138,27 @@ const createMutant = (params: CreateMutantOptions): Mutant => ({
   replacement: params.specs.replacement,
   mutatorName: params.specs.mutatorName,
   ignoreReason: params.specs.ignoreReason,
-  replacementCode: printNode(params.specs.replacement),
 })
 
-const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing> =>
+const replacementTextOf = (mutant: Mutant): Result.Result<string, PrintFailed> =>
+  Option.match(SourceText.fromValue(mutant.replacement), {
+    onNone: () => Result.fail(PrintFailed.make({ message: `Mutant ${mutant.id} replacement prints no source text` })),
+    onSome: (rendered) => Result.succeed(rendered.text),
+  })
+
+const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing | PrintFailed> =>
   Option.match(Option.fromNullishOr(spanOf(mutant.original)), {
     onNone: () => Result.fail(MutantSpanMissing.make({ edge: 'start' })),
-    onSome: (span) => {
-      const baseFields = {
-        fileName: mutant.fileName,
-        id: mutant.id,
-        location: toApiLocation(span.start, span.end, mutant.lineTable, mutant.offset),
-        mutatorName: mutant.mutatorName,
-        replacement: mutant.replacementCode,
-      }
-      return Result.succeed(
-        Option.match(Option.fromNullishOr(mutant.ignoreReason), {
+    onSome: (span) =>
+      Result.map(replacementTextOf(mutant), (replacement) => {
+        const baseFields = {
+          fileName: mutant.fileName,
+          id: mutant.id,
+          location: toApiLocation(span.start, span.end, mutant.lineTable, mutant.offset),
+          mutatorName: mutant.mutatorName,
+          replacement,
+        }
+        return Option.match(Option.fromNullishOr(mutant.ignoreReason), {
           onNone: () => ApiMutant.make(baseFields),
           onSome: (ignoreReason) =>
             ApiMutant.make({
@@ -161,9 +166,8 @@ const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing
               statusReason: ignoreReason,
               status: 'Ignored' as const,
             }),
-        }),
-      )
-    },
+        })
+      }),
   })
 
 const toApiLocation = (
@@ -1160,7 +1164,7 @@ export interface MutatorsShape {
   readonly mutators: Readonly<Record<string, Mutator>>
   readonly create: (options: CreateMutantOptions) => Mutant
   readonly apply: (mutant: Mutant, originalTree: Node) => Result.Result<Node, MutantNotApplied>
-  readonly toApi: (mutant: Mutant) => Result.Result<ApiMutant, MutantSpanMissing>
+  readonly toApi: (mutant: Mutant) => Result.Result<ApiMutant, MutantSpanMissing | PrintFailed>
 }
 
 export class Mutators

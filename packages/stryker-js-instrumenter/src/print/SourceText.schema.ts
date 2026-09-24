@@ -105,10 +105,8 @@ import { PrintFailed } from './PrintFailed.schema.js'
 import { spanOf } from '../Ast.handle.js'
 
 export class SourceText extends S.Class<SourceText>('SourceText')({ text: S.NonEmptyString }) {
-  static fromValue = <A>(value: A) =>
-    Option.getOrUndefined(
-      Option.flatMap(nonEmptyOf(sourceTextOf(value)), (text) => SourceText.makeOption({ text })),
-    )
+  static fromValue = <A>(value: A): Option.Option<SourceText> =>
+    Option.flatMap(nonEmptyOf(sourceTextOf(value)), (text) => SourceText.makeOption({ text }))
 }
 export type SourceTextValue = typeof SourceText.Type
 
@@ -303,7 +301,7 @@ const spannedScriptsOf = (
 
 const printProgram = (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program)
 
-export const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
+const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
 
 interface PrintContext {
   readonly indentLevel: number
@@ -2305,7 +2303,7 @@ if (import.meta.vitest !== void 0) {
     Option.getOrElse(
       Option.flatMap(
         Option.fromNullishOr(oxc.parseSync('law.ts', source, { lang, range: true }).program),
-        (program) => Option.map(Option.fromUndefinedOr(SourceText.fromValue(program)), renderedText),
+        (program) => Option.map(SourceText.fromValue(program), renderedText),
       ),
       () => printedScriptOf(source, lang),
     )
@@ -2328,6 +2326,6 @@ if (import.meta.vitest !== void 0) {
   it.prop('∀ast_SourceText_∋NodeText≡PrintedProgram', [TS_FRAGMENTS], ([fragments]) => {
     const source = fragments.join('\n')
     const parsed = oxc.parseSync('law.ts', source, { lang: 'ts', range: true })
-    return Option.isSome(Option.fromUndefinedOr(SourceText.fromValue(parsed.program)))
+    return Option.isSome(SourceText.fromValue(parsed.program))
   })
 }

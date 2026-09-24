@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import {
-  calculateMetrics,
+  MetricsResultFromReport,
   REPORTER_EVENT_BATCH_BOUND,
   reporterWorkerFactory,
   spawnReporterWorker,
@@ -57,7 +57,7 @@ const markerReport = (): MutationTestResult => ({
   thresholds: { high: 80, low: 60 },
 })
 
-const metricsFixture = (report: MutationTestResult) => calculateMetrics(report.files)
+const metricsFixture = (report: MutationTestResult) => MetricsResultFromReport.fromFiles(report.files)
 
 const killedMutant = (index: number, total: number): MutantTested =>
   MutantTested.make({
