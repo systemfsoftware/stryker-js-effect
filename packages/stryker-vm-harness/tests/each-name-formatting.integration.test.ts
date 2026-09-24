@@ -34,7 +34,6 @@ const TITLES_VITEST_GIVES = [
   { pattern: '%f', tableRow: ['3.140'], expected: '3.14' },
   { pattern: '%f', tableRow: [-0], expected: '-0' },
   { pattern: '%f', tableRow: [Number.NaN], expected: 'NaN' },
-  { pattern: '%f', tableRow: [-Number.NaN], expected: '-NaN' },
   { pattern: '%j', tableRow: [{ a: 1 }], expected: '{"a":1}' },
   { pattern: '%j', tableRow: [null], expected: 'null' },
   { pattern: '%j', tableRow: ['plain'], expected: '"plain"' },

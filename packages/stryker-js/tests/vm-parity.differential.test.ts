@@ -32,6 +32,7 @@ const INTERRUPT_AFTER_MS = 280_000
  */
 const MUTANT_RUN_BOUND_MS = 5_000
 const MUTANT_KILL_GRACE = Duration.seconds(1)
+const BASELINE_RUN_BOUND_MS = 60_000
 
 const workerCanary = Layer.succeed(
   Worker.WorkerLauncher,
@@ -317,18 +318,15 @@ const mutationEngineEffect = (root: string): Effect.Effect<readonly MutantRecord
       }),
   ).pipe(Effect.provide(Engine.nodePlatformLayer), dieOnFailure)
 
-const runMutationEngine = (root: string): Effect.Effect<readonly MutantRecord[]> =>
-  serialized(mutationEngineEffect(root))
-
-/**
- * Mutant identity — file, span, replacement — is shared input: both sides derive the same
- * spans from the same engine report, and only the reference's verdicts come from real vitest.
- */
 const mutantReportOf = (fixture: Fixture): Effect.Effect<readonly MutantRecord[]> =>
-  withSandbox(fixture.name, (root) => runMutationEngine(root)).pipe(
-    Effect.provide(Engine.nodePlatformLayer),
-    dieOnFailure,
+  withSandbox(
+    fixture.name,
+    (root) => serialized(Effect.andThen(recordUnmutatedSnapshots(fixture, root), mutationEngineEffect(root))),
   )
+    .pipe(
+      Effect.provide(Engine.nodePlatformLayer),
+      dieOnFailure,
+    )
 
 const offsetOf = (lines: readonly string[], line: number, column: number): number => {
   let offset = 0
@@ -356,13 +354,14 @@ const applyMutant = (
 const runBoundedVitestProcess = (
   root: string,
   boundMs: number,
+  args: ReadonlyArray<string>,
 ): Effect.Effect<string, never, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
   Effect.scoped(
     Effect.gen(function*() {
       const path = yield* Path.Path
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
       const handle = yield* spawner.spawn(
-        ChildProcess.make(path.join(root, 'node_modules', '.bin', 'vitest'), ['run', '--bail=1'], {
+        ChildProcess.make(path.join(root, 'node_modules', '.bin', 'vitest'), [...args], {
           cwd: root,
           stdin: 'ignore',
           stdout: 'ignore',
@@ -378,6 +377,18 @@ const runBoundedVitestProcess = (
     }),
   ).pipe(dieOnFailure)
 
+const recordUnmutatedSnapshots = (
+  fixture: Fixture,
+  root: string,
+): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
+  Effect.flatMap(
+    runBoundedVitestProcess(root, BASELINE_RUN_BOUND_MS, ['run', '--update']),
+    (baseline) =>
+      baseline === 'Survived'
+        ? Effect.void
+        : Effect.die(new Error(`the unmutated ${fixture.name} baseline did not pass: ${baseline}`)),
+  )
+
 const realVerdictForMutant = (
   fixture: Fixture,
   mutant: MutantRecord,
@@ -385,12 +396,9 @@ const realVerdictForMutant = (
   withSandbox(fixture.name, (root) =>
     serialized(
       Effect.gen(function*() {
-        const baseline = yield* runBoundedVitestProcess(root, MUTANT_RUN_BOUND_MS)
-        if (baseline !== 'Survived') {
-          return yield* Effect.die(new Error(`the unmutated ${fixture.name} baseline did not pass: ${baseline}`))
-        }
+        yield* recordUnmutatedSnapshots(fixture, root)
         yield* applyMutant(root, mutant)
-        return yield* runBoundedVitestProcess(root, MUTANT_RUN_BOUND_MS)
+        return yield* runBoundedVitestProcess(root, MUTANT_RUN_BOUND_MS, ['run', '--bail=1'])
       }),
     ))
 
