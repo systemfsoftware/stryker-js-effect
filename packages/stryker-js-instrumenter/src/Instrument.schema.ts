@@ -46,6 +46,7 @@ export const InstrumenterOptionsSchema = S.Struct({
   excludedMutations: S.Array(S.String),
   ignorers: S.Array(IgnorerSchema),
   noHeader: S.optional(S.Boolean),
+  optInMutations: S.optional(S.Array(S.String)),
 })
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
 

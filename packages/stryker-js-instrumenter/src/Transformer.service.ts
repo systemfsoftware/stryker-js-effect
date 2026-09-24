@@ -56,8 +56,10 @@ import {
   type Mutant,
   type MutatorContext,
   type MutatorOptions,
+  type MutatorRegistry,
   Mutators,
   type MutatorsShape,
+  selectMutators,
 } from './Mutator.service.js'
 import { ParseFailed } from './Parser.schema.js'
 import { Parser } from './Parser.service.js'
@@ -241,8 +243,9 @@ const NO_COMMENTS: readonly LocatedComment[] = []
 const processStrykerDirectives = (
   rule: Rule,
   node: Node,
-  allMutatorNames: readonly string[],
+  knownMutatorNames: readonly string[],
   originFileName: string,
+  nodeLine: number,
 ): {
   rule: Rule
   warnings: readonly string[]
@@ -252,8 +255,12 @@ const processStrykerDirectives = (
   const parsed = Arr.getSomes(outcomes)
   const directives = Arr.filterMap(parsed, (result) => result)
   const failure = Arr.head(Arr.filterMap(parsed, Result.flip))
-  const warnings = directives.flatMap((directive) => mutatorWarnings(directive, allMutatorNames, originFileName))
-  return { rule: directives.reduce(applyStrykerDirective, rule), warnings, failure }
+  const warnings = directives.flatMap((directive) => mutatorWarnings(directive, knownMutatorNames, originFileName))
+  return {
+    rule: directives.map((directive) => nextLineOn(directive, nodeLine)).reduce(applyStrykerDirective, rule),
+    warnings,
+    failure,
+  }
 }
 
 const attachedComments = (node: Node): readonly LocatedComment[] => leadingCommentsOn(node) ?? NO_COMMENTS
@@ -298,42 +305,49 @@ const matchGroup = (match: RegExpExecArray, group: number): Result.Result<string
 const commentLocation = (loc: LocatedComment['loc']): Result.Result<CommentLocation, CommentLocationMissing> =>
   Result.fromOption(Option.fromNullishOr(loc), () => CommentLocationMissing.make())
 
-const applyStrykerDirective = (rule: Rule, directive: StrykerDirective): Rule =>
-  Match.value(directive.type).pipe(
-    Match.when('disable', () => ignoreRuleFor(rule, directive)),
-    Match.when('restore', () => restoreRuleFor(rule, directive)),
+interface DirectedDirective {
+  readonly directive: StrykerDirective
+  readonly nodeLine: number
+}
+
+const nextLineOn = (directive: StrykerDirective, nodeLine: number): DirectedDirective => ({ directive, nodeLine })
+
+const applyStrykerDirective = (rule: Rule, directed: DirectedDirective): Rule =>
+  Match.value(directed.directive.type).pipe(
+    Match.when('disable', () => ignoreRuleFor(rule, directed)),
+    Match.when('restore', () => restoreRuleFor(rule, directed)),
     Match.orElse(() => rule),
   )
 
-const ignoreRuleFor = (rule: Rule, directive: StrykerDirective): Rule => ({
+const ignoreRuleFor = (rule: Rule, directed: DirectedDirective): Rule => ({
   kind: 'Ignore',
-  mutatorNames: directive.mutatorNames.map((mutatorName) => mutatorName.toLowerCase()),
-  line: directiveLine(directive),
-  ignoreReason: directive.reason,
+  mutatorNames: directed.directive.mutatorNames.map((mutatorName) => mutatorName.toLowerCase()),
+  line: directiveLine(directed),
+  ignoreReason: directed.directive.reason,
   previous: rule,
 })
 
-const restoreRuleFor = (rule: Rule, directive: StrykerDirective): Rule => ({
+const restoreRuleFor = (rule: Rule, directed: DirectedDirective): Rule => ({
   kind: 'Restore',
-  mutatorNames: directive.mutatorNames.map((mutatorName) => mutatorName.toLowerCase()),
-  line: directiveLine(directive),
+  mutatorNames: directed.directive.mutatorNames.map((mutatorName) => mutatorName.toLowerCase()),
+  line: directiveLine(directed),
   previous: rule,
 })
 
-const directiveLine = (directive: StrykerDirective): number | undefined =>
-  Match.value(directive.scope).pipe(
-    Match.when('next-line', () => directive.loc.start.line),
+const directiveLine = (directed: DirectedDirective): number | undefined =>
+  Match.value(directed.directive.scope).pipe(
+    Match.when('next-line', () => directed.nodeLine),
     Match.orElse(() => undefined),
   )
 
 const mutatorWarnings = (
   directive: StrykerDirective,
-  allMutatorNames: readonly string[],
+  knownMutatorNames: readonly string[],
   originFileName: string,
 ): readonly string[] =>
   directive.mutatorNames
     .filter((mutatorName) => mutatorName !== WILDCARD)
-    .filter((mutatorName) => !allMutatorNames.includes(mutatorName.toLowerCase()))
+    .filter((mutatorName) => !knownMutatorNames.includes(mutatorName.toLowerCase()))
     .map((mutatorName) => mutatorWarning(directive, mutatorName, originFileName))
 
 const mutatorWarning = (directive: StrykerDirective, mutatorName: string, originFileName: string): string => {
@@ -1053,14 +1067,22 @@ const transformScript = (
 
     attachComments(make(root), comments, lineTable)
     const directives: { rule: Rule } = { rule: rootRule }
-    const mutatorEntries = Object.entries(mutators.mutators)
-    const allMutatorNames = mutatorEntries.map(([name]) => name.toLowerCase())
+    const registry: MutatorRegistry = { defaults: mutators.mutators, optIn: mutators.optInMutators }
+    const selection = selectMutators(registry, options.optInMutations)
+    const mutatorEntries = selection.active
+    const knownMutatorNames = selection.known.map((name) => name.toLowerCase())
     const excludedSet = HashSet.fromIterable(options.excludedMutations)
 
     const warnings: string[] = []
 
     const locationAt = (node: Node): Option.Option<SourceLocationInFile> =>
       Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
+
+    const nodeStartLine = (node: Node): number =>
+      Option.match(locationAt(node), {
+        onNone: () => 0,
+        onSome: (location) => location.start.line,
+      })
 
     const locationCache = new WeakMap<Node, Option.Option<SourceLocationInFile>>()
     const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> => {
@@ -1161,7 +1183,13 @@ const transformScript = (
       enter(path) {
         Option.match(Option.fromNullishOr(broken.current), {
           onNone: () => {
-            const result = processStrykerDirectives(directives.rule, path.node, allMutatorNames, originFileName)
+            const result = processStrykerDirectives(
+              directives.rule,
+              path.node,
+              knownMutatorNames,
+              originFileName,
+              nodeStartLine(path.node),
+            )
             directives.rule = result.rule
             warnings.push(...result.warnings)
             Option.match(result.failure, {

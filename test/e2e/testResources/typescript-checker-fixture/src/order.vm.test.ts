@@ -1,6 +1,11 @@
-const assert = require('node:assert/strict')
+import { expect, test } from 'vitest'
 
-const { calculateTotal, initialStatus } = require('./order.ts')
+import { calculateTotal, initialStatus } from './order.js'
 
-assert.equal(initialStatus(), 'pending')
-assert.equal(calculateTotal(100, 0.1), 110)
+test('order initial status is pending', () => {
+  expect(initialStatus()).toBe('pending')
+})
+
+test('calculateTotal calculates total with tax', () => {
+  expect(calculateTotal(100, 0.1)).toBe(110)
+})
