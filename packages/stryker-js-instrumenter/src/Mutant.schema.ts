@@ -23,9 +23,7 @@ export const MutatorName = S.NonEmptyString.pipe(S.brand('MutatorName'))
 export type MutatorName = typeof MutatorName.Type
 
 export const CanonicalFileName = S.String.pipe(
-  S.check(S.isPattern(/^[^\\]*$/)),
-  S.brand('CanonicalFileName'),
-  S.decodeTo(S.String, {
+  S.decodeTo(S.String.pipe(S.check(S.isPattern(/^[^\\]*$/)), S.brand('CanonicalFileName')), {
     decode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
     encode: SGetter.transform((canonical) => canonical),
   }),
@@ -49,7 +47,7 @@ export const MutantFromUnknown = S.Unknown.pipe(S.decodeTo(Mutant))
 export type MutantFromUnknown = typeof MutantFromUnknown.Type
 
 export const RunOptionsFields = {
-  timeout: S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0))),
+  timeout: S.Finite.pipe(S.check(S.isGreaterThanOrEqualTo(0))),
   disableBail: S.Boolean,
 }
 

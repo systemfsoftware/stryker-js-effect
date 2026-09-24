@@ -29,6 +29,8 @@ export type ConfigEnv = typeof ConfigEnvSchema.Type
 
 export type DocumentRecord<A = unknown> = { readonly [key: string]: A }
 
+export type StrykerConfigFn = (env: ConfigEnv) => PartialStrykerOptions | Promise<PartialStrykerOptions>
+
 export type StrykerConfigExport = PartialStrykerOptions | Promise<PartialStrykerOptions> | StrykerConfigFn
 
 interface MergedConfigRecord<A = unknown> extends Record<string, A | MergedConfigRecord<A>> {}
@@ -107,10 +109,14 @@ const ownValueOf = <A = unknown>(
   merged: MergedConfigRecord<A>,
   key: string,
 ): Option.Option<A | MergedConfigRecord<A>> =>
-  Option.filter(
-    Option.fromUndefinedOr(merged[key]),
-    (candidate): candidate is A | MergedConfigRecord<A> => candidate !== undefined || merged.hasOwnProperty(key),
+  Option.liftPredicate(merged, hasUsableMember(key)).pipe(
+    Option.map((present) => present[key]),
   )
+
+const hasUsableMember =
+  (key: string) =>
+  <A>(merged: MergedConfigRecord<A>): merged is { -readonly [_ in string]: A } =>
+    merged.hasOwnProperty(key) && merged[key] !== undefined
 
 const baseRecordOf = <A = unknown>(
   ownValue: Option.Option<A | MergedConfigRecord<A>>,

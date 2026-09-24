@@ -5,7 +5,7 @@ import type {
   TestPlan as MutantTestPlan,
 } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { RunMutantResult, RunPlan } from '@systemfsoftware/stryker-js-instrumenter'
+import type { MutantRunPlan, RunMutantResult, RunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter'
 import {
@@ -55,6 +55,8 @@ import { checkGroupedPlans, scoped } from '../Checker/mod.js'
 import { checkerMutantsSkipped } from '../metrics.js'
 import { ReportLocationFromMutant } from '../ReportLocation.schema.js'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
+import { PluginNotFoundError } from '../PluginsError.schema.js'
+import { ProjectFiles } from '../project-files.service.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
@@ -300,7 +302,7 @@ const planCommandOf = (
     sandboxFileByName,
     ...Option.match(Option.fromNullishOr(testCoverage.staticCoverage), {
       onNone: () => ({}),
-      onSome: (staticCoverage) => ({ staticCoverage: Object.fromEntries([...staticCoverage]) }),
+      onSome: (staticCoverage) => ({ staticCoverage }),
     }),
     ...Option.match(Option.fromUndefinedOr(globalTestFilter), {
       onNone: () => ({}),
@@ -520,8 +522,13 @@ const coveredFilesOfTests = (tests: Iterable<TestResult>, basePath: string) =>
 
 const coveringTestFilesByMutantIdOf = (testCoverage: TestCoverage, basePath: string) =>
   Object.fromEntries(
-    [...MutableHashMap.entries(testCoverage.testsByMutantId)].map(([mutantId, tests]) =>
+    [...testCoverage.testsByMutantId].map(([mutantId, tests]) =>
       [mutantId, coveredFilesOfTests(tests, basePath)] as const),
+  )
+
+const relativeFileByMutantIdOf = (mutants: readonly Mutant[], basePath: string) =>
+  Object.fromEntries(
+    mutants.map((mutant) => [mutant.id, relativeFileNameOf(mutant.fileName, basePath)] as const),
   )
 
 const incrementalDiffCommandOf = (
@@ -740,6 +747,10 @@ const checkPlansWithConfiguredCheckers = (
     onSome: (pool) => runConfiguredCheckers(pool, plans, reporting),
   })
 
+const isPlannable = (mutant: Mutant) => Result.isSuccess(S.decodeResult(CheckerMutantFromMutant)(mutant))
+
+const DROPPED_IDS_IN_WARNING = 5
+
 const partitionPlannable = (mutants: readonly Mutant[]) => ({
   plannable: mutants.filter(isPlannable),
   dropped: mutants.filter((candidate) => !isPlannable(candidate)),
@@ -752,6 +763,21 @@ const droppedIdsOf = (dropped: readonly Mutant[]): string =>
       onSome: (count) => `, +${count - DROPPED_IDS_IN_WARNING} more`,
     })
   }`
+
+const reportDroppedMutants = (dropped: readonly Mutant[]) =>
+  Match.value(dropped.length).pipe(
+    Match.when(0, () => Effect.void),
+    Match.orElse(() =>
+      Effect.gen(function*() {
+        yield* Metric.update(checkerMutantsSkipped, dropped.length)
+        yield* Effect.logWarning(
+          `${dropped.length} mutant(s) cannot be described to a checker and were left out of the run (${
+            droppedIdsOf(dropped)
+          })`,
+        )
+      })
+    ),
+  )
 
 const wallClockTimeoutStopsRun = (status: string, reason: string | undefined) =>
   status === 'timeout' && !S.is(HitLimitReasonText)(reason)

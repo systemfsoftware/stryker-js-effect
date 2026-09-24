@@ -3,6 +3,8 @@ import * as Boolean from 'effect/Boolean'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { type ChildExitCode, type ProcessId } from './Worker.schema.js'
+
 const WorkerExitTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/WorkerExit')
 type WorkerExitTypeId = typeof WorkerExitTypeId
 
@@ -10,7 +12,7 @@ export class ClassifyWorkerExitCommand extends S.TaggedClass<ClassifyWorkerExitC
   'ClassifyWorkerExitCommand',
   {
     pid: ProcessId,
-    exitCode: WorkerExitCode,
+    exitCode: ChildExitCode,
   },
 ) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -18,14 +20,14 @@ export class ClassifyWorkerExitCommand extends S.TaggedClass<ClassifyWorkerExitC
 
 export class WorkerOutOfMemory extends S.TaggedClass<WorkerOutOfMemory>()('WorkerOutOfMemory', {
   pid: ProcessId,
-  exitCode: WorkerExitCode,
+  exitCode: ChildExitCode,
 }) {
   readonly [WorkerExitTypeId] = WorkerExitTypeId
 }
 
 export class WorkerCrashed extends S.TaggedClass<WorkerCrashed>()('WorkerCrashed', {
   pid: ProcessId,
-  exitCode: WorkerExitCode,
+  exitCode: ChildExitCode,
 }) {
   readonly [WorkerExitTypeId] = WorkerExitTypeId
 }

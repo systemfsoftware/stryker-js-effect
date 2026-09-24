@@ -62,6 +62,9 @@ export const WorkerOptionsWire: S.fromJsonString<S.StructWithRest<S.Struct<{
     }>>, never>;
     readonly checkerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly concurrency: S.optionalKey<S.Union<readonly [S.Finite, S.String]>>;
+    readonly commandRunner: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
+        readonly command: S.withDecodingDefaultKey<S.String, never>;
+    }>, readonly [S.$Record<S.String, S.Unknown>]>, never>;
     readonly coverageAnalysis: S.withDecodingDefaultKey<S.Literals<readonly ["off", "all", "perTest"]>, never>;
     readonly clearTextReporter: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
         readonly allowColor: S.withDecodingDefaultKey<S.Boolean, never>;
@@ -81,6 +84,7 @@ export const WorkerOptionsWire: S.fromJsonString<S.StructWithRest<S.Struct<{
     readonly progressStreamFile: S.withDecodingDefaultKey<S.String, never>;
     readonly force: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly fileLogLevel: S.withDecodingDefaultKey<S.Literals<readonly ["off", "fatal", "error", "warn", "info", "debug", "trace"]>, never>;
+    readonly inPlace: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly logLevel: S.withDecodingDefaultKey<S.Literals<readonly ["off", "fatal", "error", "warn", "info", "debug", "trace"]>, never>;
     readonly maxConcurrentTestRunners: S.withDecodingDefaultKey<S.Finite, never>;
     readonly maxTestRunnerReuse: S.withDecodingDefaultKey<S.Finite, never>;
@@ -98,6 +102,8 @@ export const WorkerOptionsWire: S.fromJsonString<S.StructWithRest<S.Struct<{
     readonly jsonReporter: S.withDecodingDefaultKey<S.Struct<{
         readonly fileName: S.withDecodingDefaultKey<S.String, never>;
     }>, never>;
+    readonly disableTypeChecks: S.withDecodingDefaultKey<S.Union<readonly [S.Boolean, S.String]>, never>;
+    readonly symlinkNodeModules: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly tempDirName: S.withDecodingDefaultKey<S.String, never>;
     readonly cleanTempDir: S.withDecodingDefaultKey<S.Literals<readonly ["always", false, true]>, never>;
     readonly testRunner: S.withDecodingDefaultKey<S.Union<readonly [S.String, S.Struct<{

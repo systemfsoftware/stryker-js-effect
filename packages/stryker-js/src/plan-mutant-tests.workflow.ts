@@ -205,31 +205,15 @@ const mutantIsCovered = (command: MutantTestPlanCommand, mutantId: string) =>
     onSome: (tests) => tests.length > 0 || mutantIsStatic(command, mutantId),
   })
 
-const mutantHitCountKnown = (command: MutantTestPlanCommand, mutant: Mutant) =>
-  Option.match(Option.fromUndefinedOr(command.hitsByMutantId[mutant.id]), {
-    onNone: () => Boolean.match(mutantIsCovered(command, mutant.id), {
-      onTrue: () => Option.fromUndefinedOr(command.staticCoverage),
-      onFalse: () => Option.some(undefined),
-    }),
-    onSome: () => Option.some(undefined),
-  })
-
-const decidePlanForMutant = (mutant: Mutant, command: MutantTestPlanCommand): MutantPlanDecision => {
+const decidePlanForMutant = (mutant: Mutant, command: MutantTestPlanCommand) => {
   const isStatic = mutantIsStatic(command, mutant.id)
   return Option.match(Option.fromUndefinedOr(mutant.status), {
     onSome: (status) => toEarlyResultPlan(mutant, isStatic, status, mutant.statusReason, coveredByOfMutant(mutant)),
     onNone: () =>
-      Option.match(Option.fromUndefinedOr(command.staticCoverage), {
-        onNone: () =>
-          toRunPlan(
-            mutant,
-            command,
-            command.timeSpentAllTests,
-            testFilterOf(command.globalTestFilter),
-            undefined,
-            undefined,
-          ),
-        onSome: () => planForStaticallyCovered(mutant, command, isStatic),
+      Boolean.match(hasCoverageForPlan(command.staticCoverage), {
+        onTrue: () => planForStaticallyCovered(mutant, command, isStatic),
+        onFalse: () =>
+          toRunPlan(mutant, command, command.timeSpentAllTests, command.globalTestFilter, undefined, undefined),
       }),
   })
 }
@@ -238,19 +222,22 @@ const isClosedMutant = (mutant: Mutant) => Option.isSome(Option.fromUndefinedOr(
 
 const openMutantsOf = (mutants: ReadonlyArray<Mutant>) => mutants.filter((mutant) => !isClosedMutant(mutant))
 
+const hitCountRequiredAndAbsent = (command: MutantTestPlanCommand, mutant: Mutant) =>
+  mutantIsCovered(command, mutant.id) &&
+  command.staticCoverage !== undefined &&
+  Option.isNone(Option.fromUndefinedOr(command.hitsByMutantId[mutant.id]))
+
 const missingHitCountIds = (command: MutantTestPlanCommand) =>
   openMutantsOf(command.mutants).flatMap((mutant) =>
-    Option.match(mutantHitCountKnown(command, mutant), {
-      onNone: () => [mutant.id] as const,
-      onSome: () => [] as const,
+    Boolean.match(hitCountRequiredAndAbsent(command, mutant), {
+      onTrue: () => [mutant.id] as const,
+      onFalse: () => [] as const,
     }))
 
 const plannedMutantsOf = (command: MutantTestPlanCommand) =>
   command.mutants.map((mutant) => decidePlanForMutant(mutant, command))
 
-const decide = (
-  command: MutantTestPlanCommand,
-): Result.Result<ReadonlyArray<MutantPlanDecision>, CoveredMutantHitCountMissing> =>
+const decide = (command: MutantTestPlanCommand) =>
   Option.match(Option.fromUndefinedOr(missingHitCountIds(command)[0]), {
     onNone: () => Result.succeed(plannedMutantsOf(command)),
     onSome: (first) =>

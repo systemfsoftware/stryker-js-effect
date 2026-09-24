@@ -900,14 +900,8 @@ const isUndefinedFound = (
   found: UnserializableDescription[] | undefined,
 ): found is undefined => found === undefined
 
-const isReadonlyArrayValue = <A>(candidate: A): candidate is A & { readonly length: number } =>
+const isReadonlyArrayValue = <A>(candidate: A): candidate is A & ReadonlyArray<A> =>
   Array.isArray(candidate)
-
-const isNumberValue = (numeric: unknown): numeric is number => typeof numeric === 'number'
-
-const describedEntries = <A>(
-  entries: ReadonlyArray<readonly [string, A]>,
-): UnserializableDescription[] => entries.flatMap(([scope, child]) => describedChild(scope)(child))
 
 const describeUnserializableInstance = (value: object): UnserializableDescription[] => [
   {
@@ -932,37 +926,25 @@ const describeUnserializableRecord = (
     },
   )
 
-const describeUnserializableStructured = (value: object): UnserializableDescription[] =>
-  Option.match(
-    Option.filter(Option.some(value), isReadonlyArrayValue),
-    {
-      onNone: () => describeUnserializableRecord(value),
-      onSome: (arrayed) => describedEntries(arrayed.map((child, index) => [index.toString(), child] as const)),
-    },
+const describeUnserializableStructured = <A>(value: A | ReadonlyArray<A>): UnserializableDescription[] =>
+  Match.value(value).pipe(
+    Match.when(isReadonlyArrayValue, (arrayed) =>
+      describedEntries(arrayed.map((child, index) => [index.toString(), child] as const))),
+    Match.orElse((recorded: object) => describeUnserializableRecord(recorded)),
   )
 
-const describeUnserializableNonNullish = <A>(value: A): UnserializableDescription[] =>
+const describeUnserializableNonNullish = <A>(value: Exclude<A, null>): UnserializableDescription[] =>
   Match.value(value).pipe(
-    Match.when(isNullValue, (): UnserializableDescription[] => []),
-    Match.orElse((present: object) => describeUnserializableStructured(present)),
-  )
-
-const isNullValue = (value: unknown): value is null => value === null
-
-const describeUnserializablePrimitive = <A>(value: A): UnserializableDescription[] => [
-  {
-    path: [],
-    reason: `Primitive type "${typeof value}" has no JSON representation`,
-  },
-]
-
-const isNonJsonPrimitive = (value: unknown): value is bigint | symbol =>
-  NON_JSON_PRIMITIVE_TYPES[typeof value] === true
-
-const describeUnserializableUnknown = <A>(value: A): UnserializableDescription[] =>
-  Match.value(value).pipe(
-    Match.when(isNonJsonPrimitive, (primitive) => describeUnserializablePrimitive(primitive)),
-    Match.orElse((present: object) => describeUnserializableNonNullish(present)),
+    Match.when(isReadonlyArrayValue, (arrayed) =>
+      describedEntries(arrayed.map((child, index) => [index.toString(), child] as const))),
+    Match.orElse((recorded: object) =>
+      Option.match(
+        Option.liftPredicate(Option.some(recorded), (candidate) => candidate.constructor === Object),
+        {
+          onNone: () => describeUnserializableInstance(recorded),
+          onSome: (plain) => describedEntries(Object.entries(plain)),
+        },
+      )),
   )
 
 const describeUnserializableFiniteNumber = (value: number): UnserializableDescription[] =>
@@ -994,7 +976,6 @@ const findUnserializables = <A>(thing: A): UnserializableDescription[] | undefin
     ),
     Match.orElse(() => undefined),
   )
-
 const warnAboutUnserializableOptions = (options: StrykerOptions): Effect.Effect<void> =>
   Option.match(
     Option.liftPredicate(findUnserializables(options), (found) => found.length === 0),

@@ -4,12 +4,8 @@ import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interfac
 import {
   isCustomTestRunner,
   type DryRunOptions,
-  type DryRunResult,
-  type MutantRunResult,
-  type TestRunnerCapabilities,
   TestRunnerFailed,
   TestRunnerRpcs,
-  WallClockTimeoutReason,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import type * as FileSystem from 'effect/FileSystem'
@@ -141,7 +137,7 @@ const commandRunnerEffect = (
   context: TestRunnerBuildContext,
 ): Effect.Effect<PooledTestRunner, PooledTestRunnerError, ChildProcessSpawner.ChildProcessSpawner> =>
   ChildProcessSpawner.ChildProcessSpawner.pipe(
-    Effect.map((spawner) => withRetry(withTimeout(commandRunner(context, spawner)))),
+    Effect.map((spawner) => commandRunner(context, spawner).pipe(withTimeout, withRetry)),
   )
 
 const inProcessRunner = (

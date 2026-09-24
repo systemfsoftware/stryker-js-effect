@@ -10,14 +10,8 @@ const CURRENT_VERSION = '00'
 const SAMPLED_FLAG = 0x01
 
 const EffectSpanShape = S.Struct({
-  traceId: S.String.pipe(
-    S.check(S.isPattern(/^[0-9a-f]{32}$/)),
-    S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
-  ),
-  spanId: S.String.pipe(
-    S.check(S.isPattern(/^[0-9a-f]{16}$/)),
-    S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
-  ),
+  traceId: S.String,
+  spanId: S.String,
   sampled: S.Boolean,
 })
 export type EffectSpanIdentity = {

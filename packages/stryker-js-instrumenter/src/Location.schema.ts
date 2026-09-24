@@ -7,8 +7,8 @@ import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
 export const PositionSchema = S.Struct({
-  line: S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1))),
-  column: S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1))),
+  line: S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0))),
+  column: S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0))),
 })
 export type Position = typeof PositionSchema.Type
 
