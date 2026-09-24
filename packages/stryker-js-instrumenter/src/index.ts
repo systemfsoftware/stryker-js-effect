@@ -1,4 +1,4 @@
-export { coreFormatRegistry, registerEntries } from './format-registry.js'
+export { coreFormatRegistry, extensionOf, registerEntries } from './format-registry.js'
 export type {
   EmbeddedFormatEntry,
   FormatClaim,

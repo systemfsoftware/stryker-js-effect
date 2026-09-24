@@ -660,10 +660,10 @@ export interface IdGeneratorShape {
 export interface Ignorer {
     // (undocumented)
     readonly name: string;
-    // Warning: (ae-forgotten-export) The symbol "Node$2" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "Node_2$1" needs to be exported by the entry point index.d.mts
     //
     // (undocumented)
-    shouldIgnore(node: Node$2, ancestors: readonly Node$2[]): string | undefined;
+    shouldIgnore(node: Node_2$1, ancestors: readonly Node_2$1[]): string | undefined;
 }
 
 // @public (undocumented)
@@ -1940,7 +1940,7 @@ export interface WorkerSpawnParams {
 
 // Warnings were encountered during analysis:
 //
-// dist/mutation-test.cell-XIxHlSWM.d.mts:153:5 - (ae-forgotten-export) The symbol "Framework" needs to be exported by the entry point index.d.mts
+// dist/mutation-test.cell-CUVLD5L_.d.mts:153:5 - (ae-forgotten-export) The symbol "Framework" needs to be exported by the entry point index.d.mts
 
 // (No @packageDocumentation comment for this package)
 

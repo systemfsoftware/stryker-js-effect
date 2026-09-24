@@ -3,6 +3,7 @@ import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@system
 import {
   type EnginePorts,
   FormatRegistryResolved,
+  IncrementalReportSchema,
   makeRunLayer,
   mutationTestCell,
   type MutationTestDone,
@@ -114,10 +115,18 @@ const environmentFor = (directory: string): RunEnvironmentShape => ({
   allowConsoleColors: false,
 })
 
+const incrementalFileOf = (directory: string): string => `${directory}/reports/stryker-incremental.json`
+
 interface RunObservation {
   readonly exit: Exit.Exit<MutationTestDone, StageError>
   readonly events: ReadonlyArray<RunEvent>
+  readonly incrementalState: string
 }
+
+const incrementalStateOf = (directory: string): Effect.Effect<string, never, FileSystem.FileSystem> =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(incrementalFileOf(directory))).pipe(
+    Effect.orElseSucceed(() => ''),
+  )
 
 const runOver = (workspace: Workspace): Effect.Effect<RunObservation, never, never> =>
   Effect.gen(function*() {
@@ -136,12 +145,15 @@ const runOver = (workspace: Workspace): Effect.Effect<RunObservation, never, nev
           testFiles: ['test/**/*.mjs'],
           mutate: [...workspace.mutatePatterns],
           cleanTempDir: 'always',
+          incremental: true,
+          incrementalFile: incrementalFileOf(workspace.directory),
         },
         targetMutatePatterns: undefined,
       })
       .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit)
     const events = yield* Queue.takeAll(queue).pipe(Effect.orElseSucceed(() => []))
-    return { exit, events: [...events] }
+    const incrementalState = yield* incrementalStateOf(workspace.directory)
+    return { exit, events: [...events], incrementalState }
   }).pipe(
     Effect.ensuring(Effect.provide(removeWorkspace(workspace.directory), filePorts)),
     Effect.provide(filePorts),
@@ -273,6 +285,20 @@ Feature('Framework plugins joining a mutation run')
           expect(fromClaimed).toBeDefined()
           expect(fromClaimed?.status).toBe('Survived')
         }),
+        And('the remembered run state labels the component with its framework and records who claimed it')((s) =>
+          Effect.gen(function*() {
+            const state = yield* S.decodeEffect(S.fromJsonString(IncrementalReportSchema))(
+              s.observation.incrementalState,
+            )
+            expect(state.files['src/widget.fixture']?.language).toBe('fixture')
+            expect(state.files['src/widget.fixture']?.formatIdentity).toStrictEqual({
+              formatId: 'fixture',
+              ownerModule: pluginUrlOf('valid-framework.fixture.mjs'),
+              ownerVersion: '1.0.0',
+            })
+            expect(state.files['src/math.js']?.language).toBe('javascript')
+          })
+        ),
       ),
     )
 

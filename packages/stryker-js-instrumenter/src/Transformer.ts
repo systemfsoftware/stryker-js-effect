@@ -968,18 +968,22 @@ export const transformScript: AstTransformer<ScriptAst> = (
         start: positionFromLineTable(span.start, lineTable),
         end: positionFromLineTable(span.end, lineTable),
       }))
-      return mutatorEntries.flatMap(([mutatorName, mutate]) =>
-        [...mutate(path.node, context)].map((replacement): MutableCandidate => ({
-          node: path.node,
-          replacement,
-          data: {
-            mutatorName,
-            replacementCode: printNode(replacement),
-            location: Option.getOrUndefined(location),
-            ignorerReason: Option.getOrUndefined(ignorersReason(path.node, ancestors)),
-          },
-        }))
+      const replacements = mutatorEntries.flatMap(([mutatorName, mutate]) =>
+        [...mutate(path.node, context)].map((replacement) => ({ mutatorName, replacement }))
       )
+      const ignorerReason = replacements.length === 0
+        ? undefined
+        : Option.getOrUndefined(ignorersReason(path.node, ancestors))
+      return replacements.map(({ mutatorName, replacement }): MutableCandidate => ({
+        node: path.node,
+        replacement,
+        data: {
+          mutatorName,
+          replacementCode: printNode(replacement),
+          location: Option.getOrUndefined(location),
+          ignorerReason,
+        },
+      }))
     }
     function ignorersReason(node: Node, ancestors: readonly Node[]): Option.Option<string> {
       return options.ignorers.reduce(

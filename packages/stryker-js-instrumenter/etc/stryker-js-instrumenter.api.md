@@ -72,6 +72,9 @@ export const ERROR_CODES: Readonly<{
 export function errorToString<A = unknown>(error: A): string;
 
 // @public (undocumented)
+export const extensionOf: (fileName: string) => string;
+
+// @public (undocumented)
 interface File_2 extends FileDescription {
     // (undocumented)
     content: string;

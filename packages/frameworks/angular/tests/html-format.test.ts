@@ -1,6 +1,5 @@
 import type {
   EmbeddedDocument,
-  FormatId,
   Framework,
   FrameworkContext,
   FrameworkParseResult,
@@ -165,7 +164,7 @@ const firstRegion = (document: EmbeddedDocument) => {
 }
 
 const documentWithRegion = (scriptAst: unknown): EmbeddedDocument => ({
-  formatId: 'html' as FormatId,
+  formatId: 'html',
   rawContent: SINGLE_SCRIPT_HTML,
   regions: [{ start: 8, end: 23, isExpression: false, scriptAst }],
 })

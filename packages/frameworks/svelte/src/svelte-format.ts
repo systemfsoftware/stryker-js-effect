@@ -86,7 +86,7 @@ const regionFrom = (
   isModuleScript,
 })
 
-const langPatternOf = (attribute: string): RegExp => new RegExp(`${attribute}\\s*=\\s*["']([^"']*)["']`)
+const LANG_PATTERN = /lang\s*=\s*["']([^"']*)["']/
 
 const langAttributeOf = (attributes: unknown): unknown =>
   isNonEmptyArray(attributes)
@@ -95,7 +95,7 @@ const langAttributeOf = (attributes: unknown): unknown =>
 
 const langListOf = (attributes: unknown): unknown => firstOf(langAttributeOf(attributes))
 
-const matchLangOf = (tag: string): string | undefined => tag.match(langPatternOf(LANG_ATTRIBUTE))?.[1]
+const matchLangOf = (tag: string): string | undefined => tag.match(LANG_PATTERN)?.[1]
 
 const langOf = (attributes: unknown): unknown =>
   isString(attributes) ? matchLangOf(attributes) : dataOf(langListOf(attributes))
