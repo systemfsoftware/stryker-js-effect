@@ -927,7 +927,7 @@ const describeUnserializableObject = (value: object): UnserializableDescription[
     Match.when(isArrayValue, describedIndexedChildren),
     Match.orElse((recorded) =>
       Option.match(
-        Option.liftPredicate(Option.some(recorded), isPlainObjectValue),
+        Option.liftPredicate(recorded, isPlainObjectValue),
         {
           onNone: () => describeUnserializableInstance(recorded),
           onSome: (plain) => describedEntries(Object.entries(plain)),
@@ -937,7 +937,7 @@ const describeUnserializableObject = (value: object): UnserializableDescription[
   )
 
 const describeUnserializableNonNullish = <A>(value: A): UnserializableDescription[] =>
-  Option.match(Option.liftPredicate(Option.some(value), isNonNullObject), {
+  Option.match(Option.liftPredicate(value, isNonNullObject), {
     onNone: () => [],
     onSome: (present) => describeUnserializableObject(present),
   })
@@ -958,7 +958,7 @@ const describeUnserializablePrimitive = (primitive: JsonlessPrimitive): Unserial
 ]
 
 const describeUnserializableUnknown = <A>(value: A): UnserializableDescription[] =>
-  Option.match(Option.liftPredicate(Option.some(value), isNonJsonPrimitive), {
+  Option.match(Option.liftPredicate(value, isNonJsonPrimitive), {
     onNone: () => describeUnserializableNonNullish(value),
     onSome: describeUnserializablePrimitive,
   })
@@ -977,7 +977,7 @@ const describeUnserializableFiniteNumber = (value: number): UnserializableDescri
   })
 
 const describeUnserializableValue = <A>(value: A): UnserializableDescription[] =>
-  Option.match(Option.liftPredicate(Option.some(value), isNumberValue), {
+  Option.match(Option.liftPredicate(value, isNumberValue), {
     onNone: () => describeUnserializableUnknown(value),
     onSome: describeUnserializableFiniteNumber,
   })
@@ -1333,3 +1333,36 @@ export const loadConfigCell = Sandwich.named('stryker.load_config')(readRunConfi
     ConfigOptionsRefused: ({ message }) => failConfigWith(configErrorMessage(describeMessageOf(message))),
     CommandRejected: ({ issue }) => failConfigWith(issue),
   })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const Logger = await import('effect/Logger')
+
+  const JsonLeaf = S.Union([S.Finite, S.String, S.Boolean, S.Null])
+  const PlainSiblings = S.Record(S.String, S.Union([JsonLeaf, S.Array(JsonLeaf), S.Record(S.String, JsonLeaf)]))
+
+  const serializabilityWarningsOf = (options: Record<string, unknown>) =>
+    Effect.gen(function*() {
+      const warnings: string[] = []
+      const recording = Logger.layer([
+        Logger.make((entry) => {
+          warnings.push([entry.message].flat().map(String).join(' '))
+        }),
+      ])
+      yield* validateOptions(options, forkCoreSchema).pipe(Effect.provide(recording))
+      return warnings.filter((warning) => warning.includes('is not (fully) serializable'))
+    })
+
+  it.effect.prop(
+    '∀siblings,key_ValidateOptions_WarnsOnlyForTheNonJsonLeaf',
+    [PlainSiblings, S.String, S.Boolean],
+    ([siblings, key, asFunction]) =>
+      Effect.map(
+        serializabilityWarningsOf({
+          custom: { nested: { ...siblings, [key]: asFunction ? () => key : 1n } },
+        }),
+        (warnings) =>
+          warnings.length === 1 && warnings[0]?.startsWith(`Config option "custom.nested.${key}" is not`) === true,
+      ),
+  )
+}

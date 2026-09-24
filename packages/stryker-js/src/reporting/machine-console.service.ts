@@ -197,7 +197,11 @@ export class MachineConsole extends Context.Service<MachineConsole, MachineConso
     Clock.clockWith((clock) => Effect.succeed(MachineConsole.of(machineConsoleOf(clock)))),
   )
 
-  static readonly resetLayer: Layer.Layer<never, never, MachineConsole> = Layer.effectDiscard(
-    Effect.map(MachineConsole, (machine) => machine.reset()),
+  static readonly captureLayer: Layer.Layer<never, never, MachineConsole> = Layer.effect(
+    Console.Console,
+    Effect.map(MachineConsole, (machine) => {
+      machine.reset()
+      return machine.console
+    }),
   )
 }
