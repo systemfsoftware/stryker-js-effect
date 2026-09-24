@@ -142,9 +142,9 @@ const createMutant = (params: CreateMutantOptions): Mutant => ({
 })
 
 const replacementTextOf = (mutant: Mutant): Result.Result<string, PrintFailed> =>
-  Option.match(SourceText.fromValue(mutant.replacement), {
-    onNone: () => Result.fail(PrintFailed.make({ message: `Mutant ${mutant.id} replacement prints no source text` })),
-    onSome: (rendered) => Result.succeed(rendered.text),
+  Option.match(SourceText.printedOrEmpty(mutant.replacement), {
+    onNone: () => Result.fail(PrintFailed.make({ message: `Mutant ${mutant.id} replacement is not printable` })),
+    onSome: Result.succeed,
   })
 
 const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing | PrintFailed | S.SchemaError> =>

@@ -227,6 +227,45 @@ Feature('Instrumenter characterization')
     )
 
     scenario(
+      'A switch whose first case falls through to the next is still instrumented',
+      Gherkin.Do.pipe(
+        Given('a formatter whose "js" case shares the "ts" case body')(
+          'source',
+          () =>
+            Effect.succeed(`export function extensionOf(format) {
+  switch (format) {
+    case 'js':
+    case 'ts':
+      return '.ts'
+    default:
+      return '.txt'
+  }
+}`),
+        ),
+        When('the module is instrumented')(
+          'result',
+          ({ source }: { source: string }) =>
+            Instrument.instrument([{ name: '/tmp/fall-through.ts', content: source, mutate: true }], {
+              ignorers: [],
+              excludedMutations: [],
+            }),
+        ),
+        Then('the file is instrumented with a mutant that removes the empty "js" case')((
+          { result }: { result: Instrument.InstrumentResult },
+        ) =>
+          Effect.sync(() => {
+            expect(result.files).toHaveLength(1)
+            expect(
+              result.mutants.filter(isActive).some((mutant) =>
+                mutant.mutatorName === 'ConditionalExpression' && mutant.replacement === ''
+              ),
+            ).toBe(true)
+          })
+        ),
+      ),
+    )
+
+    scenario(
       'Instrumented output carries a switch for every active mutant',
       Gherkin.Do.pipe(
         // A mutant that is counted but never wrapped prints pristine code:

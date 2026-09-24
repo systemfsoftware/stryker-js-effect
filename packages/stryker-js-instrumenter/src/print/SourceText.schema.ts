@@ -107,17 +107,21 @@ import { PrintFailed } from './PrintFailed.schema.js'
 export class SourceText extends S.Class<SourceText>('SourceText')({ text: S.NonEmptyString }) {
   static fromValue = <A>(value: A): Option.Option<SourceText> =>
     Option.flatMap(printedTextOf(value), (text) => SourceText.makeOption({ text }))
+
+  static printedOrEmpty = <A>(value: A): Option.Option<string> => printedOrEmptyOf(value)
 }
 export type SourceTextValue = SourceText
 
 const nonEmptyOf = (text: string): Option.Option<string> =>
   Option.filter(Option.some(text), (candidate) => candidate.length > 0)
 
-const printedTextOf = <A = unknown>(value: A) =>
+const printedOrEmptyOf = <A = unknown>(value: A): Option.Option<string> =>
   Option.flatMap(
     Option.filter(Option.fromNullishOr(value), isPrintableValue),
-    (printable) => Option.flatMap(Result.getSuccess(printedResultOf(printable)), nonEmptyOf),
+    (printable) => Result.getSuccess(printedResultOf(printable)),
   )
+
+const printedTextOf = <A = unknown>(value: A) => Option.flatMap(printedOrEmptyOf(value), nonEmptyOf)
 
 const AST_SHAPE = ['format', 'root'] as const
 
