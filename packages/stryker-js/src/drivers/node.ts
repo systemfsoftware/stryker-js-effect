@@ -11,13 +11,12 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import * as RpcClient from 'effect/unstable/rpc/RpcClient'
-import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
 import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
+import { layerWorkerProtocol } from '../worker-protocol.resource.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 
@@ -64,10 +63,7 @@ const nodeWorkerLauncherLayer = Layer.effect(
             },
           ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
 
-          const clientLayer = RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
-            Layer.provide(NodeSocket.layerNet({ path: socketPath })),
-            Layer.provide(RpcSerialization.layerNdjson),
-          )
+          const clientLayer = layerWorkerProtocol(NodeSocket.layerNet({ path: socketPath }))
 
           const exited = handle.exitCode.pipe(
             Effect.orDie,

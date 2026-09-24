@@ -20,8 +20,8 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type { Node, SourceFile } from 'typescript/unstable/ast'
 import { SyntaxKind } from 'typescript/unstable/ast'
+import { API, type Diagnostic, DiagnosticCategory, type Program, type Snapshot } from 'typescript/unstable/async'
 import type { FileSystem as TSFileSystem } from 'typescript/unstable/fs'
-import { API, type Diagnostic, DiagnosticCategory, type Program, type Snapshot } from 'typescript/unstable/sync'
 
 import type { NodeDecodedShape } from './CheckMutants.schema.js'
 import {
@@ -379,11 +379,13 @@ const updateSnapshot = (
   changedFiles: ReadonlyArray<string>,
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
-    const next = initialized.api.updateSnapshot({
-      openProjects: Array.from(initialized.allTSConfigFiles),
-      fileChanges: { changed: [...changedFiles] },
-    })
-    yield* Effect.sync(() => initialized.snapshot.dispose())
+    const next = yield* Effect.promise(() =>
+      initialized.api.updateSnapshot({
+        openProjects: Array.from(initialized.allTSConfigFiles),
+        fileChanges: { changed: [...changedFiles] },
+      })
+    )
+    yield* Effect.promise(() => initialized.snapshot.dispose())
     yield* Ref.update(rt.state, (prev) => ({ ...prev, snapshot: next }))
   })
 
@@ -541,11 +543,19 @@ const registerGraphFile = (sourceFiles: SourceFiles, fileName: string) =>
     },
   })
 
-const sourceFileOf = (programs: readonly Program[], fileName: string): Option.Option<SourceFile> =>
-  Option.flatMap(
-    Arr.findFirst(programs, (program) => program.getSourceFile(fileName) !== undefined),
-    (program) => Option.fromUndefinedOr(program.getSourceFile(fileName)),
-  )
+const sourceFileIn = (program: Program, fileName: string): Effect.Effect<Option.Option<SourceFile>> =>
+  Effect.map(Effect.promise(() => program.getSourceFile(fileName)), (found) => Option.fromUndefinedOr(found))
+
+const sourceFileOf = (
+  programs: readonly Program[],
+  fileName: string,
+): Effect.Effect<Option.Option<SourceFile>> =>
+  Option.match(Arr.head(programs), {
+    onNone: () => Effect.succeed(Option.none<SourceFile>()),
+    onSome: (program) =>
+      Effect.flatMap(sourceFileIn(program, fileName), (found) =>
+        Option.isSome(found) ? Effect.succeed(found) : sourceFileOf(Arr.drop(programs, 1), fileName)),
+  })
 
 const linkImport = (rt: TSCompilerRuntime, sourceFiles: SourceFiles, fileName: string, specifier: string) =>
   Option.map(
@@ -563,21 +573,31 @@ const linkImport = (rt: TSCompilerRuntime, sourceFiles: SourceFiles, fileName: s
     },
   )
 
-const buildGraph = (rt: TSCompilerRuntime, programs: readonly Program[]) => {
-  const state = Ref.getUnsafe(rt.state)
-  Arr.forEach(
-    programs,
-    (program) =>
-      Arr.forEach(program.getSourceFileNames(), (fileName) => registerGraphFile(state.sourceFiles, fileName)),
-  )
-  Arr.forEach(Array.from(state.sourceFiles), ([fileName]) => {
-    Option.map(
-      sourceFileOf(programs, fileName),
-      (sourceFile) =>
-        Arr.forEach(importsOf(sourceFile), (specifier) => linkImport(rt, state.sourceFiles, fileName, specifier)),
+const buildGraph = (rt: TSCompilerRuntime, programs: readonly Program[]): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const state = Ref.getUnsafe(rt.state)
+    yield* Effect.forEach(
+      programs,
+      (program) =>
+        Effect.map(
+          Effect.promise(() => program.getSourceFileNames()),
+          (fileNames) => Arr.forEach(fileNames, (fileName) => registerGraphFile(state.sourceFiles, fileName)),
+        ),
+      { discard: true },
+    )
+    yield* Effect.forEach(
+      Array.from(state.sourceFiles),
+      ([fileName]) =>
+        Effect.map(
+          sourceFileOf(programs, fileName),
+          (found) =>
+            Option.map(found, (sourceFile) =>
+              Arr.forEach(importsOf(sourceFile), (specifier) =>
+                linkImport(rt, state.sourceFiles, fileName, specifier))),
+        ),
+      { discard: true },
     )
   })
-}
 
 const fileNode = (fileName: string, children: ReadonlyArray<FileNode>): FileNode => ({
   children,
@@ -764,12 +784,21 @@ export const init = (self: TSCompiler): Effect.Effect<readonly Diagnostic[], Com
     yield* setOverrides(rt.files, walk.overrides)
     yield* Ref.update(rt.state, (prev) => ({ ...prev, allTSConfigFiles: walk.files }))
     const api = new API({ fs: rt.sourceFileSystem })
-    const snapshot = api.updateSnapshot({ openProjects: Array.from(walk.files) })
+    const snapshot = yield* Effect.promise(() => api.updateSnapshot({ openProjects: Array.from(walk.files) }))
     yield* Ref.update(rt.state, (prev) => ({ ...prev, api, snapshot }))
-    buildGraph(rt, yield* programsOf(rt))
+    yield* buildGraph(rt, yield* programsOf(rt))
     return yield* check(self, [])
   })
 }
+
+const diagnosticsOf = (program: Program): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.promise(() =>
+    Promise.all([
+      program.getConfigFileParsingDiagnostics(),
+      program.getSemanticDiagnostics(),
+      program.getProgramDiagnostics(),
+    ]).then(([config, semantic, programWide]) => [...config, ...semantic, ...programWide])
+  )
 
 export const check: {
   (
@@ -801,11 +830,7 @@ export const check: {
       }))
       const programs = yield* programsOf(rt)
       const diagnostics = Arr.filter(
-        Arr.flatMap(programs, (program) => [
-          ...program.getConfigFileParsingDiagnostics(),
-          ...program.getSemanticDiagnostics(),
-          ...program.getProgramDiagnostics(),
-        ]),
+        Arr.flatten(yield* Effect.forEach(programs, (program) => diagnosticsOf(program))),
         (diagnostic) => diagnostic.category === DiagnosticCategory.Error,
       )
       yield* Effect.annotateCurrentSpan({ 'typescript.diagnostics.count': diagnostics.length })
@@ -864,16 +889,15 @@ export const getLineAndCharacterOfPosition: {
     fileName: string,
     position: number,
   ): Effect.Effect<{ line: number; character: number } | undefined> =>
-    Effect.map(
+    Effect.flatMap(
       Effect.orElseSucceed(programsOf(self[RuntimeTypeId]), (): ReadonlyArray<Program> => []),
       (programs) =>
-        Option.getOrUndefined(
-          Option.map(
-            Arr.head(
-              Arr.filterMap(programs, (program) => keepSome(Option.fromUndefinedOr(program.getSourceFile(fileName)))),
+        Effect.map(
+          sourceFileOf(programs, fileName),
+          (found) =>
+            Option.getOrUndefined(
+              Option.map(found, (sourceFile) => sourceFile.getLineAndCharacterOfPosition(position)),
             ),
-            (found) => found.getLineAndCharacterOfPosition(position),
-          ),
         ),
     ),
 )
@@ -882,8 +906,8 @@ export const close = (self: TSCompiler): Effect.Effect<void> => {
   const rt = self[RuntimeTypeId]
   return Effect.gen(function*() {
     const state = yield* Ref.get(rt.state)
-    yield* Effect.sync(() => state.snapshot?.dispose())
-    yield* Effect.sync(() => state.api?.close())
+    yield* Effect.promise(() => state.snapshot?.dispose() ?? Promise.resolve())
+    yield* Effect.promise(() => state.api?.close() ?? Promise.resolve())
     yield* Ref.update(rt.state, (prev) => ({ ...prev, snapshot: undefined, api: undefined }))
   })
 }

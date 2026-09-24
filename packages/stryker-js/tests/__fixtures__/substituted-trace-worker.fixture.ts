@@ -5,7 +5,6 @@ import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'
 import type * as Scope from 'effect/Scope'
 import type * as Headers from 'effect/unstable/http/Headers'
-import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 import * as Socket from 'effect/unstable/socket/Socket'
@@ -50,11 +49,7 @@ export const traceServingLauncher = (
     servingLauncher({
       pid: TRACE_WORKER_PID,
       server: (socket) => traceServer(socket, record),
-      clientLayer: (socket) =>
-        RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
-          Layer.provide(Layer.succeed(Socket.Socket, socket)),
-          Layer.provide(RpcSerialization.layerNdjson),
-        ),
+      clientLayer: (socket) => Worker.layerWorkerProtocol(Layer.succeed(Socket.Socket, socket)),
       exited: Effect.never,
     }),
     (launcher) => launcher.layer,

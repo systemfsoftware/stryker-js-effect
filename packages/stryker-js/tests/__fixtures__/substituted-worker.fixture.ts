@@ -87,10 +87,7 @@ const clientProtocol = (
   if (behaviour !== 'acceptsConnection') {
     return Layer.effect(RpcClient.Protocol)(unboundAddress().pipe(Effect.fail))
   }
-  return RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
-    Layer.provide(Layer.succeed(Socket.Socket, socket)),
-    Layer.provide(RpcSerialization.layerNdjson),
-  )
+  return Worker.layerWorkerProtocol(Layer.succeed(Socket.Socket, socket))
 }
 
 const exitOf = (behaviour: ChildBehaviour): Effect.Effect<never, Worker.WorkerExit> => {

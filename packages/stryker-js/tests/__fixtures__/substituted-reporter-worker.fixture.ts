@@ -4,12 +4,11 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'
 import type * as Scope from 'effect/Scope'
-import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 import * as Socket from 'effect/unstable/socket/Socket'
 import * as SocketServer from 'effect/unstable/socket/SocketServer'
-import type { Worker } from '../../src/mod.js'
+import { Worker } from '../../src/mod.js'
 
 import { servingLauncher, singleConnection } from './substituted-worker.fixture.js'
 
@@ -76,10 +75,6 @@ export const reporterServingLauncher = (
   servingLauncher({
     pid: REPORTER_WORKER_PID,
     server: (socket) => reporterServer(socket, trace),
-    clientLayer: (socket) =>
-      RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
-        Layer.provide(Layer.succeed(Socket.Socket, socket)),
-        Layer.provide(RpcSerialization.layerNdjson),
-      ),
+    clientLayer: (socket) => Worker.layerWorkerProtocol(Layer.succeed(Socket.Socket, socket)),
     exited: Effect.never,
   })

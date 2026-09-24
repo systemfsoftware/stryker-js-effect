@@ -66,10 +66,7 @@ const makeHarness = () =>
         Effect.succeed(
           makeSpawnedSocketWorker({
             pid: 4242,
-            clientLayer: RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
-              Layer.provide(Layer.succeed(Socket.Socket, clientSocket)),
-              Layer.provide(RpcSerialization.layerNdjson),
-            ),
+            clientLayer: Worker.layerWorkerProtocol(Layer.succeed(Socket.Socket, clientSocket)),
             exited: Effect.never,
           }),
         ),
