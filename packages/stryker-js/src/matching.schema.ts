@@ -66,6 +66,10 @@ const globToRegExp = (pattern: string, caseInsensitive: boolean) =>
     Boolean.match(caseInsensitive, { onTrue: (): 'i' => 'i', onFalse: (): '' => '' }),
   )
 const matchesGlob = (path: string, pattern: string) => globToRegExp(pattern, false).test(path)
+const compileIgnorePattern = (pattern: string) => {
+  const expression = globToRegExp(pattern, true)
+  return { expression, prefix: new RegExp(expression.source.replace(/\$$/, ''), expression.flags) }
+}
 
 export class FileMatcher extends S.Class<FileMatcher>('FileMatcher')({
   pattern: S.Union([S.Boolean, S.String]),
@@ -98,13 +102,18 @@ export class IgnoreRule extends S.Class<IgnoreRule>('IgnoreRule')({
       onFalse: () => IgnoreRule.make({ negate: false, pattern }),
     })
 
+  #compiled: { readonly expression: RegExp; readonly prefix: RegExp } | undefined
+
+  #compiledRule() {
+    return this.#compiled ??= compileIgnorePattern(this.pattern)
+  }
+
   matches(candidate: string): boolean {
-    return globToRegExp(this.pattern, true).test(candidate)
+    return this.#compiledRule().expression.test(candidate)
   }
 
   matchesPrefix(candidate: string): boolean {
-    const expression = globToRegExp(this.pattern, true)
-    return new RegExp(expression.source.replace(/\$$/, ''), expression.flags).test(candidate)
+    return this.#compiledRule().prefix.test(candidate)
   }
 }
 
