@@ -128,7 +128,6 @@ const isTraversable = (value: unknown): value is object => Predicate.isObjectOrA
 const isReachableAt = (depth: number) => (value: unknown): value is object =>
   depth <= MAX_TRAVERSAL_DEPTH && isTraversable(value)
 
-const isChildList = <A = unknown>(value: unknown): value is ReadonlyArray<A> => Array.isArray(value)
 
 const childrenOf = <A>(settled: A): ReadonlyArray<A> =>
   Match.value(settled).pipe(
@@ -161,23 +160,18 @@ const reachableOf = (value: unknown, depth: number): ReadonlyArray<object> =>
   })
 
 const causePayloadOf = <E = unknown>(reason: Cause.Reason<E>): E | object | undefined =>
-  Cause.isFailReason(reason) ? reason.error : objectPayloadOf(reason)
-
-function objectPayloadOf<E = unknown>(reason: Cause.Reason<E>): object | undefined {
-  return Option.getOrUndefined(Option.filter(dieDefectOf(reason), isNonNullObject))
-}
-
-const dieDefectOf = <E = unknown>(reason: Cause.Reason<E>) =>
-  Cause.isDieReason(reason) ? Option.some(reason.defect) : Option.none()
-
-const failedExit = Option.liftPredicate(Exit.isFailure)
-
-function failurePayloads<A = unknown, E = unknown>(exit: Exit.Exit<A, E>): ReadonlyArray<E | object | undefined> {
-  return Option.getOrElse(
-    Option.map(failedExit(exit), (failure) => failure.cause.reasons.map(causePayloadOf)),
-    () => [],
+  Match.value(reason).pipe(
+    Match.tag('Fail', (failed) => failed.error),
+    Match.tag('Die', (died) => Option.getOrUndefined(Option.filter(Option.some(died.defect), isNonNullObject))),
+    Match.tag('Interrupt', () => undefined),
+    Match.exhaustive,
   )
-}
+
+const failureExitOf = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): Option.Option<Exit.Failure<A, E>> =>
+  Option.filter(Option.some(exit), Exit.isFailure)
+
+const findExitError = <A = unknown, E = unknown>(failure: Exit.Failure<A, E>): Option.Option<E> =>
+  Cause.findErrorOption(failure.cause)
 
 const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
 
@@ -201,8 +195,6 @@ function causeTextOf(value: object): string | undefined {
     Match.orElse(() => undefined),
   )
   return causeText(cause, 1)
-}
-
 function firstConfiguredText(value: object): Option.Option<string> {
   const reason = Match.value(value).pipe(
     Match.when(carriesReason, (carrier) => carrier.reason),
@@ -212,7 +204,13 @@ function firstConfiguredText(value: object): Option.Option<string> {
     Match.when(carriesMessageField, (carrier) => carrier.message),
     Match.orElse(() => undefined),
   )
-  return Option.orElse(nonEmptyText(reason), () => nonEmptyText(message))
+  return pipeReasonMessage(nonEmptyText(reason), nonEmptyText(message))
+}
+
+const pipeReasonMessage = (
+  reason: Option.Option<string>,
+  message: Option.Option<string>,
+): Option.Option<string> => Option.orElse(reason, () => message)
 }
 
 const configDetailAt = (value: object): Option.Option<string> =>
@@ -261,38 +259,24 @@ const primitiveTextOf = <A = unknown>(value: A): Option.Option<string> =>
   isPrimitiveText(value) ? Option.some(String(value)) : Option.none()
 
 const failureValueDescription = <A = unknown>(value: A): Option.Option<string> =>
-  remediationTextOf(value).pipe(
-    Option.orElse(() => reasonTextOf(value)),
-    Option.orElse(() => errorMessageTextOf(value)),
-    Option.orElse(() => primitiveTextOf(value)),
+  Option.orElse(
+    Option.orElse(Option.orElse(remediationTextOf(value), () => reasonTextOf(value)), () =>
+      errorMessageTextOf(value)),
+    () => primitiveTextOf(value),
   )
 
 const failureValue = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): E | undefined =>
-  Option.getOrUndefined(Option.flatMap(failedExit(exit), (failure) => Cause.findErrorOption(failure.cause)))
+  Option.getOrUndefined(Option.flatMap(failureExitOf(exit), (failure) => findExitError(failure)))
 
 const failureDescriptionOf = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): Option.Option<string> =>
-  failureValueDescription(failureValue(exit)).pipe(
-    Option.orElse(() => Option.fromNullishOr(firstConfigErrorDetail(exit))),
-    Option.orElse(() => Option.flatMap(failedExit(exit), (failure) => nonEmptyText(Cause.pretty(failure.cause)))),
+  Option.orElse(
+    Option.orElse(Option.some(failureValueDescription(failureValue(exit))), () =>
+      Option.fromNullishOr(firstConfigErrorDetail(exit))),
+    () => Option.flatMap(failureExitOf(exit), (failure) => nonEmptyText(Cause.pretty(failure.cause))),
   )
 
 const describeFailure = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): string =>
   Option.getOrElse(failureDescriptionOf(exit), () => UNKNOWN_FAILURE)
-
-function unrecognizedArgumentOf<A = unknown, E = unknown>(
-  exit: Exit.Exit<A, E>,
-  argv: readonly string[],
-): string | undefined {
-  return Option.getOrUndefined(
-    cliErrorList(exit).pipe(
-      Option.flatMap((errors) => Arr.findFirst(errors, (error) => argumentHintOf(error, argv))),
-    ),
-  )
-}
-
-function showHelpErrors(help: CliError.ShowHelp): ReadonlyArray<CliError.CliError> {
-  return help.errors
-}
 
 function showHelpErrorsOf<A = unknown>(value: A): Option.Option<ReadonlyArray<CliError.CliError>> {
   return S.is(CliError.ShowHelp)(value) ? Option.some(showHelpErrors(value)) : Option.none()
@@ -324,9 +308,9 @@ function argumentHintOf(error: CliError.CliError, argv: readonly string[]): Opti
 }
 
 function unrecognizedArgument(argv: readonly string[], option: string): string {
-  return followingArgument(argv, option).pipe(
-    Option.filter((argument) => !argument.startsWith('-')),
-    Option.getOrElse(() => option),
+  return Option.getOrElse(
+    Option.filter(followingArgument(argv, option), (argument) => !argument.startsWith('-')),
+    () => option,
   )
 }
 

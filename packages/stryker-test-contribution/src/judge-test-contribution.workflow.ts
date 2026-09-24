@@ -102,15 +102,17 @@ const PRECISION = 'every killing test was recorded'
 const noTestFiles: Record<string, schema.TestFile> = {}
 
 const testFilesOf = (report: schema.MutationTestResult): Record<string, schema.TestFile> =>
-  Option.getOrElse(Option.fromNullable(report.testFiles), () => noTestFiles)
+  Option.getOrElse(Option.fromUndefinedOr(report.testFiles), () => noTestFiles)
 
-const testFileById = (testFiles: Record<string, schema.TestFile>): TestFileById =>
-  Object.entries(testFiles).flatMap(([fileName, testFile]) =>
+const testFileById = (testFiles: Record<string, schema.TestFile>): TestFileById => {
+  const entries = Object.entries(testFiles).flatMap(([fileName, testFile]): TestFileById =>
     testFile.tests.map((test): readonly [string, string] => [test.id, fileName]),
   )
+  return entries
+}
 
 const idsOf = (testIds: readonly string[] | undefined): readonly string[] =>
-  Option.getOrElse(Option.fromNullable(testIds), () => [])
+  Option.getOrElse(Option.fromUndefinedOr(testIds), () => [])
 
 const fileNameOf = (fileById: TestFileById, testId: string): Option.Option<string> =>
   Option.map(
@@ -118,8 +120,14 @@ const fileNameOf = (fileById: TestFileById, testId: string): Option.Option<strin
     ([, fileName]) => fileName,
   )
 
+const keepReal = (fileById: TestFileById) =>
+  (testId: string): ReadonlyArray<string> => Option.match(fileNameOf(fileById, testId), {
+    onNone: () => [],
+    onSome: () => [testId],
+  })
+
 const realFiles = (testIds: readonly string[], fileById: TestFileById): ReadonlyArray<string> =>
-  Array.dedupe(Array.filterMap(testIds, (testId) => fileNameOf(fileById, testId)))
+  Array.dedupe(testIds.flatMap(keepReal(fileById)))
 
 const killersOf = (killedBy: readonly string[], fileById: TestFileById): ReadonlyArray<string> =>
   Array.dedupe(

@@ -3,6 +3,10 @@ import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
+import type { Ast, HtmlAst, JSAst, ScriptAst, SvelteAst, TemplateScript, TsxAst } from '../Ast.schema.js'
+import * as S from 'effect/Schema'
+import * as SGetter from 'effect/SchemaGetter'
+
 import type {
   AccessorProperty,
   ArrayExpression,
@@ -99,29 +103,49 @@ import type {
   YieldExpression,
 } from '@systemfsoftware/stryker-ignorer-interface'
 
-export interface Comment {
-  readonly type: 'Line' | 'Block'
-  readonly value: string
-  readonly start: number
-  readonly end: number
-}
+export const SourceText = S.Unknown.pipe(
+  S.decodeTo(S.NonEmptyString, {
+    decode: SGetter.transform(sourceTextOf),
+    encode: SGetter.passthroughSubtype<unknown, string>(),
+  }),
+)
+export type SourceText = typeof SourceText.Type
 
-export interface Hashbang {
-  readonly type: 'Hashbang'
-  readonly value: string
-  readonly start: number
-}
+const sourceTextOf = (value: unknown) =>
+  Option.match(Option.filter(Option.fromNullishOr(value), (candidate): candidate is Ast | Node => isAst(candidate) || isPrinterNode(candidate)), {
+    onNone: () => '',
+    onSome: (printed) => renderPrintable(printed),
+  })
 
-export interface PrintOptions {
-  readonly comments?: readonly Comment[]
-  readonly hashbang?: Hashbang | null
-}
+const AST_SHAPE = ['format', 'root'] as const
 
-export interface PrintProgramOptions extends PrintOptions {}
+const isAst = (value: unknown): value is Ast =>
+  Predicate.isObject(value) && AST_SHAPE.every((key) => key in value)
 
-const printProgram = (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program)
+const isPrinterNode = (value: unknown): value is Node =>
+  Predicate.isObject(value) && 'type' in value && Predicate.isString(value['type'])
 
-const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
+const renderPrintable = (value: Ast | Node) =>
+  Match.value(value).pipe(
+    Match.when(isPrinterAst, (ast) => printedAstText(ast)),
+    Match.orElse((node) => nodeTextOf(node)),
+  )
+
+const isPrinterAst = (value: Ast | Node): value is Ast => isAst(value)
+
+const printedAstText = (ast: Ast) =>
+  Match.value(ast).pipe(
+    Match.when({ format: 'js' }, (script) => Result.succeed(printProgram(script.root, { hashbang: getHashbang(script.root) }))),
+    Match.when({ format: 'ts' }, (script) => Result.succeed(printProgram(script.root, { hashbang: getHashbang(script.root) }))),
+    Match.when({ format: 'tsx' }, (script) => Result.succeed(printProgram(script.root, { hashbang: getHashbang(script.root) }))),
+    Match.when({ format: 'html' }, (htmlAst) => printedHtml(htmlAst)),
+    Match.when({ format: 'svelte' }, (svelteAst) => printedSvelte(svelteAst)),
+    Match.exhaustive,
+  )
+
+const nodeTextOf = (node: Node) => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
+
+)
 
 interface PrintContext {
   readonly indentLevel: number

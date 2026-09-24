@@ -1,4 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import type { Coverage, CoverageData } from '@systemfsoftware/stryker-js-instrumenter'
 import { DryRunCompleted, isCustomTestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import type {
   CompleteDryRunResult,
@@ -13,6 +14,7 @@ import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
+import * as MutableHashSet from 'effect/MutableHashSet'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
@@ -22,7 +24,6 @@ import * as Scope from 'effect/Scope'
 import { PhaseEntered, RunEvents } from '../run-events.service.js'
 
 import { dryRun, DryRunCommand, DryRunError, DryRunFailed } from '../dry-run.workflow.js'
-import { testCoverageFrom } from '../Mutants.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
@@ -184,6 +185,80 @@ const withOriginalFileName = (test: TestResult, prev: InstrumentDone): TestResul
 
 const withOriginalFileNames = (tests: readonly TestResult[], prev: InstrumentDone): readonly TestResult[] =>
   tests.map((test) => withOriginalFileName(test, prev))
+
+const ZERO = 0
+
+const testsByIdOf = (result: Readonly<CompleteDryRunResult>) =>
+  MutableHashMap.fromIterable(result.tests.map((test) => [test.id, test] as const))
+
+const withTestForMutant = (
+  testsByMutantId: MutableHashMap.MutableHashMap<string, MutableHashSet.MutableHashSet<TestResult>>,
+  mutantId: string,
+  test: TestResult,
+) =>
+  MutableHashMap.set(
+    testsByMutantId,
+    mutantId,
+    MutableHashSet.add(
+      Option.getOrElse(MutableHashMap.get(testsByMutantId, mutantId), () => MutableHashSet.empty<TestResult>()),
+      test,
+    ),
+  )
+
+const coveredMutantIdsOf = (coverage: CoverageData) =>
+  Object.entries(coverage).filter(([, count]) => count > ZERO).map(([mutantId]) => mutantId)
+
+const testsByMutantIdOf = (
+  mutantCoverage: Coverage,
+  testsById: MutableHashMap.MutableHashMap<string, TestResult>,
+) =>
+  Object.entries(mutantCoverage.perTest).reduce(
+    (testsByMutantId, [testId, coverage]) =>
+      Option.match(MutableHashMap.get(testsById, testId), {
+        onNone: () => testsByMutantId,
+        onSome: (test) =>
+          coveredMutantIdsOf(coverage).reduce(
+            (acc, mutantId) => withTestForMutant(acc, mutantId, test),
+            testsByMutantId,
+          ),
+      }),
+    MutableHashMap.empty<string, MutableHashSet.MutableHashSet<TestResult>>(),
+  )
+
+const hitsByMutantIdOf = (mutantCoverage: Coverage) =>
+  [mutantCoverage.static, ...Object.values(mutantCoverage.perTest)].reduce(
+    (hitsByMutantId, coverage) =>
+      Object.entries(coverage).reduce(
+        (acc, [mutantId, count]) =>
+          MutableHashMap.set(
+            acc,
+            mutantId,
+            Option.getOrElse(MutableHashMap.get(acc, mutantId), () => ZERO) + count,
+          ),
+        hitsByMutantId,
+      ),
+    MutableHashMap.empty<string, number>(),
+  )
+
+const testCoverageFrom = (result: Readonly<CompleteDryRunResult>) => {
+  const testsById = testsByIdOf(result)
+  const mutantCoverage = Option.fromNullishOr(result.mutantCoverage)
+  return {
+    testsByMutantId: Option.match(mutantCoverage, {
+      onNone: () => MutableHashMap.empty<string, MutableHashSet.MutableHashSet<TestResult>>(),
+      onSome: (coverage) => testsByMutantIdOf(coverage, testsById),
+    }),
+    testsById,
+    staticCoverage: Option.match(mutantCoverage, {
+      onNone: () => undefined,
+      onSome: (coverage) => coverage.static,
+    }),
+    hitsByMutantId: Option.match(mutantCoverage, {
+      onNone: () => MutableHashMap.empty<string, number>(),
+      onSome: (coverage) => hitsByMutantIdOf(coverage),
+    }),
+  }
+}
 
 const announceDryRunOutcome = (
   tests: readonly TestResult[],

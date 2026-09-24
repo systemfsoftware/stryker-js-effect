@@ -2,12 +2,13 @@ import { Effect, SchemaGetter, SchemaTransformation } from 'effect'
 import * as S from 'effect/Schema'
 import { Percentage } from './Metrics.schema.js'
 
-const RENDERED_OPTION_DEFAULTS = {
-  coverageAnalysis: 'perTest',
-  fileLogLevel: 'off',
-  logLevel: 'info',
-  tempDirName: '.stryker-tmp',
-} as const
+export const StrykerCoverageAnalysis = S.Literal('perTest')
+
+export const StrykerFileLogLevel = S.Literal('off')
+
+export const StrykerLogLevel = S.Literal('info')
+
+export const StrykerTempDirName = S.Literal('.stryker-tmp')
 
 /**
  * The Stryker option set, declared as ONE Effect Schema.
@@ -15,7 +16,7 @@ const RENDERED_OPTION_DEFAULTS = {
  * Replaces the vendored `schema/stryker-core.json` codegen chain
  * (`tasks/generate-stryker-core.mjs` → `src-generated/stryker-core.ts`): every
  * option name, type, optionality and default is preserved, and
- * `strykerCoreSchema` is the JSON Schema document **derived** from
+ * the JSON Schema document is **derived** from
  * `StrykerOptionsSchema` (no file read).
  *
  * Layering mirrors the original document:
@@ -159,6 +160,8 @@ export type TestRunnerCustomConfig = typeof TestRunnerCustomConfigSchema.Type
 export const TestRunnerConfigSchema = S.Union([S.String, TestRunnerCustomConfigSchema])
 export type TestRunnerConfig = typeof TestRunnerConfigSchema.Type
 
+export const isCustomTestRunner = S.is(TestRunnerCustomConfigSchema)
+
 export const CheckerCustomConfigSchema = S.Struct({
   plugin: PluginFileUrl,
   nodeArgs: S.String.pipe(S.Array, S.optional),
@@ -180,8 +183,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
     checkers: defaulted(S.Array(CheckerEntryConfigSchema), []),
     checkerNodeArgs: defaulted(S.Array(S.String), []),
     concurrency: S.optional(S.Union([ConcurrencyCount, ConcurrencyPercent])),
-    commandRunner: defaulted(CommandRunnerOptionsSchema, { command: 'npm test' }),
-    coverageAnalysis: defaulted(CoverageAnalysisMode, RENDERED_OPTION_DEFAULTS.coverageAnalysis),
+    coverageAnalysis: defaulted(CoverageAnalysisMode, StrykerCoverageAnalysis.literal),
     clearTextReporter: defaulted(ClearTextReporterOptions, {
       allowColor: true,
       allowEmojis: false,
@@ -199,9 +201,8 @@ export const StrykerOptionsSchema = S.StructWithRest(
     incrementalFile: defaulted(S.String, 'reports/stryker-incremental.json'),
     progressStreamFile: defaulted(S.String, 'reports/mutation-stream.jsonl'),
     force: defaulted(S.Boolean, false),
-    fileLogLevel: defaulted(LogLevel, RENDERED_OPTION_DEFAULTS.fileLogLevel),
-    inPlace: defaulted(S.Boolean, false),
-    logLevel: defaulted(LogLevel, RENDERED_OPTION_DEFAULTS.logLevel),
+    fileLogLevel: defaulted(LogLevel, StrykerFileLogLevel.literal),
+    logLevel: defaulted(LogLevel, StrykerLogLevel.literal),
     maxConcurrentTestRunners: defaulted(S.Finite, 9007199254740991),
     maxTestRunnerReuse: defaulted(S.Finite, 0),
     mutate: defaulted(S.Array(S.String), [
@@ -215,9 +216,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
     reporters: defaulted(S.Array(S.String), ['clear-text', 'progress', 'html']),
     htmlReporter: defaulted(HtmlReporterOptions, { fileName: 'reports/mutation/mutation.html' }),
     jsonReporter: defaulted(JsonReporterOptions, { fileName: 'reports/mutation/mutation.json' }),
-    disableTypeChecks: defaulted(S.Union([S.Boolean, S.String]), true),
-    symlinkNodeModules: defaulted(S.Boolean, true),
-    tempDirName: defaulted(S.String, RENDERED_OPTION_DEFAULTS.tempDirName),
+    tempDirName: defaulted(S.String, StrykerTempDirName.literal),
     cleanTempDir: defaulted(S.Literals(['always', false, true]), true),
     testRunner: defaulted(TestRunnerConfigSchema, 'command'),
     testRunnerNodeArgs: defaulted(S.Array(S.String), []),

@@ -56,7 +56,9 @@ const commandOf = (
 ) =>
   JudgeTestContribution.make({
     report: {
+      schemaVersion: '2',
       files: report.files,
+      thresholds: { high: 80, low: 60, break: null },
       ...(report.testFiles === undefined ? {} : { testFiles: report.testFiles }),
     },
     suffixes,

@@ -1,8 +1,10 @@
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
+import { isNodeArg } from '../Ast.handle.js'
 import type {
   AccessorProperty,
   ArrayExpression,
@@ -119,9 +121,21 @@ export interface PrintOptions {
 
 export interface PrintProgramOptions extends PrintOptions {}
 
-const printProgram = (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program)
+export const printProgram: {
+  (program: Program, opts?: PrintProgramOptions): string
+  (opts?: PrintProgramOptions): (program: Program) => string
+} = dual(
+  (args: IArguments): boolean => args.length >= 1 && isNodeArg(args[0]),
+  (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program),
+)
 
-const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
+export const printNode: {
+  (node: Node, opts?: PrintOptions): string
+  (opts?: PrintOptions): (node: Node) => string
+} = dual(
+  (args: IArguments): boolean => args.length >= 1 && isNodeArg(args[0]),
+  (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence),
+)
 
 interface PrintContext {
   readonly indentLevel: number
