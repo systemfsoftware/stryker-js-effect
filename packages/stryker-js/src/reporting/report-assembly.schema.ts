@@ -66,9 +66,9 @@ const reportMutantOf = (mutant: RunMutantResult, remap: TestIdRemap): schema.Mut
   coveredBy: remap.testIds(mutant.coveredBy),
 })
 
-const reportTestOf = (test: TestResult, remap: TestIdRemap): schema.TestDefinition =>
+const reportTestOf = (test: TestResult, remap: TestIdRemap) =>
   Option.match(Option.fromUndefinedOr(test.startPosition), {
-    onNone: (): schema.TestDefinition => ({ id: remap.testId(test.id), name: test.name }),
+    onNone: () => ({ id: remap.testId(test.id), name: test.name }),
     onSome: (start) => ({ id: remap.testId(test.id), name: test.name, location: { start } }),
   })
 

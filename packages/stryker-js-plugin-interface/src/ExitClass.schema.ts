@@ -1,17 +1,17 @@
 import * as S from 'effect/Schema'
 
-export const ExitClass = S.Literals(['VerdictFail', 'ConfigError', 'RuntimeError', 'InternalError'])
+type ExitClassName = 'VerdictFail' | 'ConfigError' | 'RuntimeError' | 'InternalError'
+
+const BASELINE_EXIT_CODES = {
+  VerdictFail: 1,
+  ConfigError: 2,
+  RuntimeError: 3,
+  InternalError: 4,
+} as const
+
+export const ExitClass = Object.assign(S.Literals(['VerdictFail', 'ConfigError', 'RuntimeError', 'InternalError']), {
+  EXIT_CODE: BASELINE_EXIT_CODES,
+  codeOf: (exitClass: ExitClassName) => BASELINE_EXIT_CODES[exitClass],
+})
 
 export type ExitClass = typeof ExitClass.Type
-
-export class ClassifyExitCommand extends S.TaggedClass<ClassifyExitCommand>()('ClassifyExitCommand', {
-  pending: S.Array(ExitClass),
-  signal: S.NullOr(S.Finite),
-  score: S.NullOr(S.Finite),
-  breakingThreshold: S.NullOr(S.Finite),
-}) {}
-
-export class ClassifyExitDecision extends S.TaggedClass<ClassifyExitDecision>()('ClassifyExitDecision', {
-  highestClass: S.NullOr(ExitClass),
-  verdictClass: S.NullOr(ExitClass),
-}) {}

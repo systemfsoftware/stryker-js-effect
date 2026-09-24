@@ -37,6 +37,9 @@ export type ChildExit = typeof ChildExit.Type
 /**
  * The child process hosting a worker ended when it was not supposed to.
  */
+const WorkerExitTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/WorkerExit')
+type WorkerExitTypeId = typeof WorkerExitTypeId
+
 export class ChildProcessCrashedError extends S.TaggedError<ChildProcessCrashedError>()(
   'ChildProcessCrashedError',
   {
@@ -45,6 +48,7 @@ export class ChildProcessCrashedError extends S.TaggedError<ChildProcessCrashedE
     cause: S.optional(S.String),
   },
 ) {
+  readonly [WorkerExitTypeId] = WorkerExitTypeId
   readonly exitClass = 'InternalError' as const
 }
 
@@ -52,8 +56,13 @@ export class OutOfMemoryError extends S.TaggedError<OutOfMemoryError>()('OutOfMe
   pid: ProcessId,
   exitCode: S.Int,
 }) {
+  readonly [WorkerExitTypeId] = WorkerExitTypeId
   readonly exitClass = 'RuntimeError' as const
 }
+
+export type WorkerExit = ChildProcessCrashedError | OutOfMemoryError
+
+export type WorkerBootError = WorkerExit | WorkerBootTimeoutError
 
 export class WorkerBootTimeoutError extends S.TaggedError<WorkerBootTimeoutError>()(
   'WorkerBootTimeoutError',

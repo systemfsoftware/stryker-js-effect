@@ -1,6 +1,14 @@
+import type {
+  MutantCoverage,
+  Position,
+  RunOptions,
+} from '@systemfsoftware/stryker-js-instrumenter'
+import {
+  PositionSchema,
+  RunOptionsFields,
+} from '@systemfsoftware/stryker-js-instrumenter'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-
 import * as S from 'effect/Schema'
 import { SchemaGetter } from 'effect'
 
@@ -42,7 +50,7 @@ export const DryRunResultSchema = S.Union([
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
 ])
 
-export const MutantRunResultSchema = S.Union([
+export const MutantRunResultWireSchema = S.Union([
   S.Struct({
     status: S.Literal('killed'),
     killedBy: S.Array(S.String),
@@ -141,6 +149,7 @@ export type MutantRunResult =
   | KilledMutantRunResult
   | SurvivedMutantRunResult
   | TimeoutMutantRunResult
+
 const completeTestsOf = (dryRunResult: DryRunResult): readonly TestResult[] =>
   Match.value(dryRunResult).pipe(
     Match.discriminator('status')('complete', (complete) => complete.tests),

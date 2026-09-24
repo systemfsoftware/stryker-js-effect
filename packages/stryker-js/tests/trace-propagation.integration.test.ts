@@ -4,11 +4,12 @@ import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoft
 import { spawnReporterWorker } from '@systemfsoftware/stryker-js'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
-  parseTraceparent,
+  StrykerOptionsSchema,
   TraceContextReference,
-  TRACEPARENT_HEADER,
+  Traceparent,
+  TraceparentHeader,
 } from '@systemfsoftware/stryker-js-plugin-interface'
-import { partsOfEffectSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { TraceContextPartsFromEffectSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
@@ -86,7 +87,7 @@ const runTracedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> => {
       const host = yield* Effect.useSpan('host.run', {}, (host) =>
         Effect.as(
           client.init({}).pipe(
-            Effect.provideService(TraceContextReference, Option.some(partsOfEffectSpan(host))),
+            Effect.provideService(TraceContextReference, S.decodeUnknownOption(TraceContextPartsFromEffectSpan)(host)),
           ),
           host,
         ))

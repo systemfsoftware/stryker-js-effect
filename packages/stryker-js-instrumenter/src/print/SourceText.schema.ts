@@ -113,17 +113,19 @@ export const SourceText = S.Unknown.pipe(
 )
 export type SourceText = typeof SourceText.Type
 
-const sourceTextOf = (value: unknown) =>
-  Option.match(
+function sourceTextOf(value: unknown): string {
+  return Option.match(
     Option.filter(
       Option.fromNullishOr(value),
-      (candidate): candidate is Ast | ScriptAst | Node => isAst(candidate) || isPrintableScript(candidate),
+      (candidate): candidate is Ast | ScriptAst | Node =>
+        isAst(candidate) || isPrintableScript(candidate) || isPrinterNode(candidate),
     ),
     {
       onNone: () => '',
       onSome: (printable) => printableTextOf(printable),
     },
   )
+}
 
 const AST_SHAPE = ['format', 'root'] as const
 
@@ -133,11 +135,15 @@ const isAst = (value: unknown): value is Ast =>
 const isPrintableScript = (value: unknown): value is ScriptAst =>
   Predicate.isObject(value) && 'format' in value && 'root' in value && 'rawContent' in value
 
+const isPrinterNode = (value: unknown): value is Node =>
+  Predicate.isObject(value) && 'type' in value && Predicate.isString(value['type'])
+
 const printableTextOf = (value: Ast | ScriptAst | Node) =>
   Match.value(value).pipe(
     Match.when(isPrintableAst, (ast) => Result.getOrElse(printedAstText(ast), () => '')),
     Match.when(isPrintableScriptValue, (script) => Result.getOrElse(printedScript(script), () => '')),
-    Match.orElse((node) => printNode(node)),
+    Match.when(isPrinterNode, (node) => printNode(node)),
+    Match.orElse(() => ''),
   )
 
 const isPrintableAst = (value: Ast | ScriptAst | Node): value is Ast => isAst(value)
@@ -185,6 +191,8 @@ const isHashbang = (value: unknown): value is Hashbang =>
   Predicate.isObject(value) && Object.entries(HASHBANG_FIELDS).every(([key, accepts]) => accepts(value[key]))
 
 const printedScripts = (ast: HtmlAst | SvelteAst): Result.Result<string, PrintFailed> =>
+  Match.value(ast).pipe(
+    Match.when({ format: 'html' }, (htmlAst) => printedHtml(htmlAst)),
     Match.when({ format: 'svelte' }, (svelteAst) => printedSvelte(svelteAst)),
     Match.exhaustive,
   )
@@ -235,7 +243,25 @@ const appendPrintedScript = (
     }),
   )
 
-const seedOf = <A>(value: A): Result.Result<A, PrintFailed> => Result.succeed(value)
+interface Comment {
+  readonly type: 'Line' | 'Block'
+  readonly value: string
+  readonly start: number
+  readonly end: number
+}
+
+interface Hashbang {
+  readonly type: 'Hashbang'
+  readonly value: string
+  readonly start: number
+}
+
+interface PrintOptions {
+  readonly comments?: readonly Comment[]
+  readonly hashbang?: Hashbang | null
+}
+
+interface PrintProgramOptions extends PrintOptions {}
 
 interface WrittenText {
   readonly text: string
@@ -261,6 +287,7 @@ const spannedScriptsOf = (
     Result.flatMap(state, (collected) =>
       Result.map(spannedScriptOf(script), (spanned) => [...collected, spanned]),
     ))
+
 const printProgram = (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program)
 
 const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
@@ -2256,10 +2283,19 @@ if (import.meta.vitest !== void 0) {
     ]),
   )
 
-  const printed = (source: string, lang: 'ts' | 'tsx'): string => {
+  const printedScriptOf = (source: string, lang: 'ts' | 'tsx'): string => {
     const parsed = oxc.parseSync('law.ts', source, { lang, range: true })
     return printProgram(parsed.program, { comments: parsed.comments, hashbang: null })
   }
+
+  const printed = (source: string, lang: 'ts' | 'tsx'): string =>
+    Option.getOrElse(
+      Option.flatMap(
+        Option.fromNullishOr(oxc.parseSync('law.ts', source, { lang, range: true }).program),
+        (program) => S.decodeUnknownOption(SourceText)(program),
+      ),
+      () => printedScriptOf(source, lang),
+    )
 
   it.prop('∀src_TemplateTypePrint_≡Reparse', [TEMPLATE_TYPE_FRAGMENTS], ([fragments]) => {
     const once = printed(fragments.join('\n'), 'ts')
@@ -2274,5 +2310,14 @@ if (import.meta.vitest !== void 0) {
   it.prop('∀src_TsxProgramPrint_≡Reparse', [TSX_FRAGMENTS], ([fragments]) => {
     const once = printed(fragments.join('\n'), 'tsx')
     return printed(once, 'tsx') === once
+  })
+
+  it.prop('∀ast_SourceText_∋NodeText≡PrintedProgram', [TS_FRAGMENTS], ([fragments]) => {
+    const source = fragments.join('\n')
+    const parsed = oxc.parseSync('law.ts', source, { lang: 'ts', range: true })
+    return Option.match(S.decodeUnknownOption(SourceText)(parsed.program), {
+      onNone: () => false,
+      onSome: (text) => printedScriptOf(text, 'ts') === text,
+    })
   })
 }

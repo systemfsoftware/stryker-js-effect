@@ -2,7 +2,6 @@ import { causeText } from '@systemfsoftware/stryker-js-instrumenter'
 import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
-import * as Exit from 'effect/Exit'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -53,9 +52,9 @@ export class RunFailure extends S.TaggedClass<RunFailure>()('RunFailure', {}) {
   static readonly classify = dual<
     <A = unknown, E = unknown>(
       argv: readonly string[],
-    ) => (exit: Exit.Exit<A, E>) => Result.Result<RunOutcomeDecision, RunOutcomeError>,
+    ) => (exit: ExitTypes.Exit<A, E>) => Result.Result<RunOutcomeDecision, RunOutcomeError>,
     <A = unknown, E = unknown>(
-      exit: Exit.Exit<A, E>,
+      exit: ExitTypes.Exit<A, E>,
       argv: readonly string[],
     ) => Result.Result<RunOutcomeDecision, RunOutcomeError>
   >(2, (exit, argv) => classifyRunOutcomeWorkflow(gatherRunOutcome(exit, argv)))
@@ -128,7 +127,6 @@ const isTraversable = (value: unknown): value is object => Predicate.isObjectOrA
 const isReachableAt = (depth: number) => (value: unknown): value is object =>
   depth <= MAX_TRAVERSAL_DEPTH && isTraversable(value)
 
-
 const childrenOf = <A>(settled: A): ReadonlyArray<A> =>
   Match.value(settled).pipe(
     Match.when(
@@ -167,10 +165,10 @@ const causePayloadOf = <E = unknown>(reason: Cause.Reason<E>): E | object | unde
     Match.exhaustive,
   )
 
-const failureExitOf = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): Option.Option<Exit.Failure<A, E>> =>
-  Option.filter(Option.some(exit), Exit.isFailure)
+const failureExitOf = <A = unknown, E = unknown>(exit: ExitTypes.Exit<A, E>): Option.Option<ExitTypes.Failure<A, E>> =>
+  Option.filter(Option.some(exit), ExitRuntime.isFailure)
 
-const findExitError = <A = unknown, E = unknown>(failure: Exit.Failure<A, E>): Option.Option<E> =>
+const findExitError = <A = unknown, E = unknown>(failure: ExitTypes.Failure<A, E>): Option.Option<E> =>
   Cause.findErrorOption(failure.cause)
 
 const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
@@ -195,6 +193,8 @@ function causeTextOf(value: object): string | undefined {
     Match.orElse(() => undefined),
   )
   return causeText(cause, 1)
+}
+
 function firstConfiguredText(value: object): Option.Option<string> {
   const reason = Match.value(value).pipe(
     Match.when(carriesReason, (carrier) => carrier.reason),
@@ -204,13 +204,7 @@ function firstConfiguredText(value: object): Option.Option<string> {
     Match.when(carriesMessageField, (carrier) => carrier.message),
     Match.orElse(() => undefined),
   )
-  return pipeReasonMessage(nonEmptyText(reason), nonEmptyText(message))
-}
-
-const pipeReasonMessage = (
-  reason: Option.Option<string>,
-  message: Option.Option<string>,
-): Option.Option<string> => Option.orElse(reason, () => message)
+  return Option.orElse(nonEmptyText(reason), () => nonEmptyText(message))
 }
 
 const configDetailAt = (value: object): Option.Option<string> =>
@@ -219,7 +213,7 @@ const configDetailAt = (value: object): Option.Option<string> =>
     Match.orElse(() => Option.none()),
   )
 
-const firstConfigErrorDetail = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): string | undefined =>
+const firstConfigErrorDetail = <A = unknown, E = unknown>(exit: ExitTypes.Exit<A, E>): string | undefined =>
   Option.getOrUndefined(
     Arr.findFirst(
       Arr.flatMap(Arr.reverse(failurePayloads(exit)), (payload) => reachableOf(payload, 0)),
@@ -265,31 +259,33 @@ const failureValueDescription = <A = unknown>(value: A): Option.Option<string> =
     () => primitiveTextOf(value),
   )
 
-const failureValue = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): E | undefined =>
+const failureValue = <A = unknown, E = unknown>(exit: ExitTypes.Exit<A, E>): E | undefined =>
   Option.getOrUndefined(Option.flatMap(failureExitOf(exit), (failure) => findExitError(failure)))
 
-const failureDescriptionOf = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): Option.Option<string> =>
+const failureDescriptionOf = <A = unknown, E = unknown>(exit: ExitTypes.Exit<A, E>): Option.Option<string> =>
   Option.orElse(
     Option.orElse(Option.some(failureValueDescription(failureValue(exit))), () =>
       Option.fromNullishOr(firstConfigErrorDetail(exit))),
-    () => Option.flatMap(failureExitOf(exit), (failure) => nonEmptyText(Cause.pretty(failure.cause))),
+    () =>
+      Option.flatMap(failureExitOf(exit), (failure) => nonEmptyText(Cause.pretty(failure.cause))),
   )
 
-const describeFailure = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): string =>
-  Option.getOrElse(failureDescriptionOf(exit), () => UNKNOWN_FAILURE)
+const isShowHelp = <A = unknown>(value: A): value is A & CliError.ShowHelp => S.is(CliError.ShowHelp)(value)
 
-function showHelpErrorsOf<A = unknown>(value: A): Option.Option<ReadonlyArray<CliError.CliError>> {
-  return S.is(CliError.ShowHelp)(value) ? Option.some(showHelpErrors(value)) : Option.none()
-}
+const showHelpErrorsOf = <A = unknown>(value: A): Option.Option<ReadonlyArray<CliError.CliError>> =>
+  Match.value(value).pipe(
+    Match.when(isShowHelp, (help) => Option.some(showHelpErrors(help))),
+    Match.orElse(() => Option.none()),
+  )
 
-const singleCliErrorOf = (value: unknown): Option.Option<ReadonlyArray<CliError.CliError>> =>
+const singleCliErrorOf = <A = unknown>(value: A): Option.Option<ReadonlyArray<CliError.CliError>> =>
   Match.value(value).pipe(
     Match.when(CliError.isCliError, (cliError) => Option.some([cliError])),
     Match.orElse(() => Option.none()),
   )
 
 function cliErrorList<A = unknown, E = unknown>(
-  exit: Exit.Exit<A, E>,
+  exit: ExitTypes.Exit<A, E>,
 ): Option.Option<ReadonlyArray<CliError.CliError>> {
   const value = failureValue(exit)
   return Option.match(showHelpErrorsOf(value), {
@@ -321,9 +317,6 @@ function followingArgument(argv: readonly string[], option: string): Option.Opti
   )
 }
 
-const survivorsRejectionOf = <A = unknown>(value: A): SurvivorsRejection | undefined =>
-  S.is(SurvivorsRejection)(value) ? value : undefined
-
 const presentOf = <A>(value: A | null): A | undefined =>
   Option.getOrUndefined(Option.filter(Option.fromNullishOr(value), (present) => present !== null))
 
@@ -339,17 +332,17 @@ const omitUnknownFailure = (diagnostic: string): string | undefined =>
 const capturedOrUnknown = (captured: string): string =>
   Option.getOrElse(nonEmptyText(captured), () => UNKNOWN_FAILURE)
 
-const hasOnlyInterrupts = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): boolean =>
-  Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+const hasOnlyInterrupts = <A = unknown, E = unknown>(exit: ExitTypes.Exit<A, E>): boolean =>
+  ExitRuntime.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
 
 const carriesCliError = <A = unknown>(value: A): boolean => value !== undefined && CliError.isCliError(value)
 
 const carriesSchemaError = <A = unknown>(value: A): boolean => value !== undefined && S.isSchemaError(value)
 
-const successExitClassOf = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): ExitClass | undefined =>
+const successExitClassOf = <A = unknown, E = unknown>(exit: ExitTypes.Exit<A, E>): ExitClass | undefined =>
   Option.getOrUndefined(
     Option.flatMap(
-      Option.filter(Option.some(exit), Exit.isSuccess),
+      Option.filter(Option.some(exit), ExitRuntime.isSuccess),
       (success) => verdictExitClassOf(success.value),
     ),
   )
@@ -371,13 +364,13 @@ const helpErrorCountOf = <A = unknown>(value: A): number | undefined =>
   S.is(CliError.ShowHelp)(value) ? showHelpErrorCount(value) : undefined
 
 function gatherRunOutcome<A = unknown, E = unknown>(
-  exit: Exit.Exit<A, E>,
+  exit: ExitTypes.Exit<A, E>,
   argv: readonly string[],
 ): RunOutcomeCommand {
   const value = failureValue(exit)
   const survivors = survivorsRejectionOf(value)
   return RunOutcomeCommand.make({
-    succeeded: Exit.isSuccess(exit),
+    succeeded: ExitRuntime.isSuccess(exit),
     interrupted: hasOnlyInterrupts(exit),
     helpErrorCount: helpErrorCountOf(value),
     cliError: carriesCliError(value),
@@ -392,7 +385,7 @@ function gatherRunOutcome<A = unknown, E = unknown>(
   })
 }
 
-const collectExitClasses = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>): ReadonlyArray<ExitClass> =>
+const collectExitClasses = <A = unknown, E = unknown>(exit: ExitTypes.Exit<A, E>): ReadonlyArray<ExitClass> =>
   Arr.filterMap(
     Arr.flatMap(failurePayloads(exit), (payload) => reachableOf(payload, 0)),
     (value) => Option.fromNullishOr(exitClassOf(value)),

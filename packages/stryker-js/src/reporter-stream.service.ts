@@ -6,12 +6,12 @@ import type { ReporterEvent, ReporterFactory, ReporterInit } from '@systemfsoftw
 import { MutationTestReportReady, ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
-  formatTraceparent,
   type ReporterInitOptions,
   ReporterRpcs,
   TraceContextReference,
+  Traceparent,
 } from '@systemfsoftware/stryker-js-plugin-interface'
-import { partsOfEffectSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { TraceContextPartsFromEffectSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
@@ -464,13 +464,14 @@ const hasTraceFields = (init: ReporterInit): boolean =>
 const initFromPhaseSpan = (span: PhaseSpan | undefined): ReporterInit | undefined =>
   Option.match(Option.fromNullishOr(span), {
     onNone: () => undefined,
-    onSome: (present) => {
-      const parts = partsOfEffectSpan(present)
-      return {
-        traceparent: formatTraceparent(parts),
-        ...tracestateInit(parts.traceState),
-      }
-    },
+    onSome: (present) =>
+      Option.match(S.decodeUnknownOption(TraceContextPartsFromEffectSpan)(present), {
+        onNone: () => undefined,
+        onSome: (parts) => ({
+          traceparent: S.encodeSync(Traceparent)(parts),
+          ...tracestateInit(parts.traceState),
+        }),
+      }),
   })
 
 export interface PhaseSpan {
@@ -523,5 +524,5 @@ export const withPhaseSpan: {
 ): Effect.Effect<A, E, R> =>
   Effect.useSpan(spanName, { attributes }, (span) =>
     effect(span).pipe(
-      Effect.provideService(TraceContextReference, Option.some(partsOfEffectSpan(span))),
+      Effect.provideService(TraceContextReference, S.decodeUnknownOption(TraceContextPartsFromEffectSpan)(span)),
     )))

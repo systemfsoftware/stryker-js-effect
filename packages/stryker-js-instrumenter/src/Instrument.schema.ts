@@ -31,24 +31,30 @@ const RangeSchema = S.Struct({
 
 export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(RangeSchema)])
 
+export interface MutationRange {
+  readonly start: Position
+  readonly end: Position
+}
+
 export type MutateDescription = typeof MutateDescriptionSchema.Type
 export type Position = typeof PositionSchema.Type
+
+export interface MutationRange {
+  readonly start: Position
+  readonly end: Position
+}
+
+export interface FileDescription {
+  readonly mutate: MutateDescription
+}
+
+export type FileDescriptions = Record<string, FileDescription>
 
 export const FileSchema = S.Struct({
   name: S.String,
   content: S.String,
   mutate: MutateDescriptionSchema,
 })
-
-const IgnorerSchema = S.Unknown
-
-export const InstrumenterOptionsSchema = S.Struct({
-  excludedMutations: S.Array(S.String),
-  ignorers: S.Array(IgnorerSchema),
-  noHeader: S.optional(S.Boolean),
-})
-
-export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
 
 export class ScriptRootWithoutSpan
   extends S.TaggedError<ScriptRootWithoutSpan>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/ScriptRootWithoutSpan')(

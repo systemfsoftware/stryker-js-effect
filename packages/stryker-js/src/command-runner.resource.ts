@@ -5,19 +5,16 @@ import {
   type CompleteDryRunResult,
   type DryRunResult,
   type MutantRunResult,
-  toMutantRunResult,
+  MutantRunResultSchema,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import * as Stream from 'effect/Stream'
-import * as ChildProcess from 'effect/unstable/process/ChildProcess'
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-
-import type { PooledTestRunner } from './TestRunner.resource.js'
+import { SchemaGetter } from 'effect'
 
 export const ALL_TESTS_ID = 'all'
 export const ALL_TESTS_NAME = 'All tests'
@@ -105,7 +102,12 @@ const commandRunnerMutantRun = (
   config: CommandTestRunnerConfig,
   mutantPick: Pick<MutantRunOptions, 'activeMutant'>,
 ): Effect.Effect<MutantRunResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
-  runCommand(config, mutantPick.activeMutant.id).pipe(Effect.map((result) => toMutantRunResult(result, true)))
+  runCommand(config, mutantPick.activeMutant.id).pipe(
+    Effect.map((result) =>
+      SchemaGetter.run(MutantRunResultSchema.decode({ reportAllKillers: true }), Option.some(result), {})
+    ),
+    Effect.map((decoded) => Option.getOrThrow(decoded)),
+  )
 
 export const commandRunner: {
   (

@@ -9,7 +9,9 @@ export interface IdGeneratorShape {
 
 export class IdGenerator extends Context.Service<IdGenerator, IdGeneratorShape>()(
   '@systemfsoftware/stryker-js/Worker.service/IdGenerator',
-) {}
+) {
+  static readonly layer = Layer.effect(IdGenerator)(makeIdGenerator)
+}
 
 const makeIdGenerator = Effect.gen(function*() {
   const ref = yield* Ref.make(0)
@@ -17,5 +19,3 @@ const makeIdGenerator = Effect.gen(function*() {
     next: Ref.getAndUpdate(ref, (n) => n + 1),
   }
 })
-
-export const layer = Layer.effect(IdGenerator)(makeIdGenerator)

@@ -3,7 +3,6 @@ import {
   FileResultSchema,
   Metrics,
   type MetricsResult,
-  MetricsResultSchema,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { MutantResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'

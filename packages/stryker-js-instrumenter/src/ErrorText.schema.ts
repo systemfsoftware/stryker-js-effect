@@ -22,6 +22,14 @@ export const CauseText = S.Unknown.pipe(
 )
 export type CauseText = typeof CauseText.Type
 
+function errorTextOf<A = unknown>(error: A): string {
+  return Match.value(error).pipe(
+    Match.when(isEmptyError, () => ''),
+    Match.when(Match.instanceOf(Error), errorText),
+    Match.orElse(() => stringifyNonError(error)),
+  )
+}
+
 export interface ErrnoException extends Error {
   code?: string
   errno?: number
@@ -29,7 +37,9 @@ export interface ErrnoException extends Error {
   syscall?: string
 }
 
-const causeChainTextOf = <A = unknown>(cause: A): string => causeText(cause, 1) ?? ''
+function causeChainTextOf<A = unknown>(cause: A): string {
+  return causeText(cause, 1) ?? ''
+}
 
 const hasText = (value: unknown): value is string => Predicate.isString(value) && value.length > 0
 
@@ -165,13 +175,6 @@ const errorText = (error: Error): string =>
     Match.orElse(() => formatError(error)),
   )
 
-function errorTextOf<A = unknown>(error: A): string {
-  return Match.value(error).pipe(
-    Match.when(isEmptyError, () => ''),
-    Match.when(Match.instanceOf(Error), errorText),
-    Match.orElse(() => stringifyNonError(error)),
-  )
-}
 
 const errorNameOf = (value: object): string | undefined =>
   Match.value(value).pipe(
@@ -253,4 +256,65 @@ function objectCauseTextOf<A = unknown>(cause: A, depth: number): string | undef
       (object) => textWithNested(ownCauseText(object), causeText(fieldOf(object, 'cause'), depth + 1)),
     ),
   )
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const { Schema } = await import('effect')
+
+  const WORDS = Schema.Array(Schema.String)
+
+  const errorOf = (parts: ReadonlyArray<string>) =>
+    Object.assign(new Error(parts.slice(1).join(' ')), { name: parts[0] ?? 'Error' })
+
+  const errnoOf = (parts: ReadonlyArray<string>) =>
+    Object.assign(new Error(parts.slice(2).join(' ')), {
+      name: 'Error',
+      code: parts[0] ?? 'ENOENT',
+      syscall: parts[1] ?? 'open',
+    })
+
+  const nestedOf = (parts: ReadonlyArray<string>) =>
+    Object.assign(new Error(parts.slice(1).join(' ')), {
+      name: parts[0] ?? 'Error',
+      cause: Object.assign(new Error(parts.slice(2).join(' ')), { name: 'CausedBy' }),
+    })
+
+  const absentIsEmpty = (parts: ReadonlyArray<string>) =>
+    [undefined, null, '', 0, false].every((empty) => Option.isNone(S.decodeUnknownOption(ErrorText)(empty)))
+
+  it.prop('∀cause_ErrorText_∋NameAndMessage', [WORDS], ([parts]) => {
+    const error = errorOf(parts)
+    return Option.match(S.decodeUnknownOption(ErrorText)(error), {
+      onNone: () => false,
+      onSome: (text) => text.includes(error.name) && text.includes(error.message),
+    })
+  })
+
+  it.prop('∀text_ErrorText_≡StringPassthrough', [WORDS], ([parts]) => {
+    const source = parts.join(' ')
+    return Option.match(S.decodeUnknownOption(ErrorText)(source), {
+      onNone: () => source.length === 0,
+      onSome: (rendered) => rendered === source,
+    })
+  })
+
+  it.prop('∀cause_ErrorText_∅ForAbsentCause', [WORDS], ([parts]) => absentIsEmpty(parts))
+
+  it.prop('∀cause_ErrorText_∋ErrnoCode', [WORDS], ([parts]) => {
+    const error = errnoOf(parts) as Error & { code: string; syscall: string }
+    return Option.match(S.decodeUnknownOption(ErrorText)(error), {
+      onNone: () => false,
+      onSome: (text) => text.startsWith(`${error.name}: ${error.code} (${error.syscall})`),
+    })
+  })
+
+  it.prop('∀cause_CauseText_∋NestedMessage', [WORDS], ([parts]) => {
+    const error = nestedOf(parts)
+    const inner = error.cause instanceof Error ? error.cause.message : ''
+    return Option.match(S.decodeUnknownOption(CauseText)(error), {
+      onNone: () => error.message.length === 0 && inner.length === 0,
+      onSome: (text) => text.includes(error.message) && (inner.length === 0 || text.includes(inner)),
+    })
+  })
 }

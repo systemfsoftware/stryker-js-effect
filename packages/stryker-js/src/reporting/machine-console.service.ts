@@ -7,9 +7,7 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
-
-class CircularJson extends S.TaggedError<CircularJson>()('CircularJson', {}) {}
+import { CircularJson } from './machine-console.schema.js'
 
 const jsonArgumentText = <A = unknown>(argument: A): string =>
   Result.getOrElse(

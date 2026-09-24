@@ -1,37 +1,37 @@
 import { type FileDescriptions } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { isCustomTestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
+  isCustomTestRunner,
   type DryRunOptions,
   type DryRunResult,
   type MutantRunResult,
   type TestRunnerCapabilities,
   TestRunnerFailed,
-  WALL_CLOCK_TIMEOUT_REASON,
+  WallClockTimeoutReason,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Boolean from 'effect/Boolean'
-import * as Cause from 'effect/Cause'
-import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
-import type * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Ref from 'effect/Ref'
-import * as S from 'effect/Schema'
-import type * as Scope from 'effect/Scope'
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
+import type * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 
 import { commandRunner, isCommandRunner } from './command-runner.resource.js'
+import {
+  make as makePooledTestRunner,
+  type PooledTestRunner,
+  withEnvironmentReload,
+  withMaxReuse,
+  withRetry,
+  withTimeout,
+} from './pooled-test-runner.handle.js'
 import type { PooledTestRunnerError } from './TestRunner.schema.js'
 import { isVmRunner, vmTestRunner } from './VmRunner.resource.js'
 import { VmRunner } from './VmRunner.service.js'
 import type { IdGeneratorShape } from './Worker.service.js'
-import { OutOfMemoryError } from './Worker.schema.js'
-import type { WorkerBootError } from './WorkerLauncher.service.js'
+import type { WorkerBootError } from './Worker.schema.js'
 import { WorkerLauncher } from './WorkerLauncher.service.js'
 import { makeWorkerClient } from './worker-client.resource.js'
 
@@ -151,7 +151,7 @@ export const withTimeout: TestRunnerCombinator = (inner) => ({
       Effect.timeoutOrElse({
         duration: Duration.millis(options.timeout),
         orElse: (): Effect.Effect<DryRunResult> =>
-          Effect.succeed({ status: 'timeout', reason: WALL_CLOCK_TIMEOUT_REASON }),
+          Effect.succeed({ status: 'timeout', reason: WallClockTimeoutReason.literal }),
       }),
     ),
   mutantRun: (options) =>
@@ -159,7 +159,7 @@ export const withTimeout: TestRunnerCombinator = (inner) => ({
       Effect.timeoutOrElse({
         duration: Duration.millis(options.timeout),
         orElse: (): Effect.Effect<MutantRunResult> =>
-          Effect.succeed({ status: 'timeout', reason: WALL_CLOCK_TIMEOUT_REASON }),
+          Effect.succeed({ status: 'timeout', reason: WallClockTimeoutReason.literal }),
       }),
     ),
 })
@@ -169,7 +169,7 @@ export const invalidatesRunnerPool: {
   (reason: string | undefined): (status: string) => boolean
 } = dual(
   2,
-  (status: string, reason: string | undefined): boolean => status === 'timeout' && reason === WALL_CLOCK_TIMEOUT_REASON,
+  (status: string, reason: string | undefined): boolean => status === 'timeout' && reason === WallClockTimeoutReason.literal,
 )
 
 const maxRetries = 2

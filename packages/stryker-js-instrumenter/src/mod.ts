@@ -4,44 +4,42 @@ export type { InstrumentError } from './Instrument.schema.js'
 export { InstrumenterOptionsSchema } from './Instrument.schema.js'
 export { LocationSchema, OpenEndLocationSchema, PositionSchema } from './Location.schema.js'
 export type { Location, OpenEndLocation, Position } from './Location.schema.js'
-export {
-  causeText,
-  ERROR_CODES,
-  errorToString,
-  INSTRUMENTER_CONSTANTS,
-  isErrnoException,
-  isMutant,
-  normalizeFileName,
-} from './Mutant.js'
+export { CauseText, ErrorText } from './ErrorText.schema.js'
+export type { CauseText, ErrorText } from './ErrorText.schema.js'
+export type { ErrnoException } from './ErrorText.schema.js'
 export type {
   Coverage,
   CoverageData,
   CoveragePerTestId,
   EarlyResultPlan,
-  ErrnoException,
-  FileDescription,
-  FileDescriptions,
-  InstrumenterContext,
-  MutantActivation,
-  MutantCoverage,
   MutantEarlyResultPlan,
   MutantRunOptions,
   MutantRunPlan,
   MutantTestCoverage,
   MutantTestPlan,
-  MutateDescription,
-  MutationRange,
   RunMutantResult,
   RunOptions,
   RunPlan,
   TestPlan,
-} from './Mutant.js'
+} from './Mutant.schema.js'
+export type {
+  FileDescription,
+  FileDescriptions,
+  MutateDescription,
+  MutationRange,
+} from './Instrument.schema.js'
 export {
+  InstrumenterContext,
   Mutant,
   MutantActivationSchema,
+  MutantCoverageSchema,
   MutantRunOptionsSchema,
   MutantStatusSchema,
   RunOptionsFields,
 } from './Mutant.schema.js'
-export type { MutantStatus } from './Mutant.schema.js'
+export type {
+  MutantActivation,
+  MutantCoverage,
+  MutantStatus,
+} from './Mutant.schema.js'
 export type { ParserOptions } from './Parser.service.js'

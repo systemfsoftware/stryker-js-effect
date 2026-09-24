@@ -4,8 +4,8 @@ import * as S from 'effect/Schema'
 
 import {
   type FailedTestResult,
-  HIT_LIMIT_REASON_PREFIX,
-  hitLimitReachedReason,
+  HitLimitReason,
+  HitLimitReasonPrefix,
   type TestResult,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
@@ -91,9 +91,9 @@ describe('interpretVitestMutantRun', () => {
       if (!S.is(MutantTimeout)(result.success)) {
         return false
       }
-      const reasonReached = result.success.reason === hitLimitReachedReason(hitCount, hitLimit)
+      const reasonReached = result.success.reason === S.encodeSync(HitLimitReason)({ count: hitCount, limit: hitLimit })
       const reasonPrefixed =
-        result.success.reason !== undefined && result.success.reason.startsWith(HIT_LIMIT_REASON_PREFIX)
+        result.success.reason !== undefined && result.success.reason.startsWith(HitLimitReasonPrefix.literal)
       return carriesFamilyBrand(result.success) && result.success.tests.length === 0 && reasonReached && reasonPrefixed
     },
   )

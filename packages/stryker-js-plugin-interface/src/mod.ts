@@ -31,7 +31,8 @@ export {
   HitLimitReasonPrefix,
   HitLimitReasonText,
   WallClockTimeoutReason,
-} from './mutant-timeout-reason.js'
+} from './mutant-timeout-reason.schema.js'
+
 export { CheckerRpcs, ReporterRpcs, TestRunnerRpcs } from './PluginRpcs.service.js'
 export {
   type BoundaryError,
@@ -54,7 +55,6 @@ export {
 } from './Plugin.schema.js'
 export * from './Report.schema.js'
 export * from './ReporterEvent.schema.js'
-export * from './stryker-options.js'
 export {
   type CheckerCustomConfig,
   CheckerCustomConfigSchema,
@@ -62,10 +62,20 @@ export {
   CheckerEntryConfigSchema,
   type CommandRunnerOptions,
   CommandRunnerOptionsSchema,
+  CoverageAnalysisMode,
   type DeepOptional,
+  isCustomTestRunner,
+  LogLevel,
   type MutationScoreThresholds,
   MutationScoreThresholdsSchema,
+  PackageManager,
   PluginFileUrl,
+  ReportType,
+  StrykerCoverageAnalysis,
+  StrykerFileLogLevel,
+  StrykerLogLevel,
+  StrykerOptionsSchema,
+  StrykerTempDirName,
   type TestRunnerConfig,
   TestRunnerConfigSchema,
   type TestRunnerCustomConfig,

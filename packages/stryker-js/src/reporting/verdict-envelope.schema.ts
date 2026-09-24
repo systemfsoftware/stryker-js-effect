@@ -1,13 +1,14 @@
 import { randomBytes } from '@noble/hashes/utils.js'
 import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   MetricsSchema,
   type MutationTestResult,
+  Percentage,
   type Thresholds,
 } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as DateTimeRuntime from 'effect/DateTime'
+import type { DateTime as DateTimeTypes } from 'effect/DateTime'
 import * as Arr from 'effect/Array'
-import * as DateTime from 'effect/DateTime'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -22,10 +23,9 @@ export const ActionableStatus = S.Literals(['Survived', 'NoCoverage', 'Timeout',
 export type ActionableStatus = typeof ActionableStatus.Type
 
 const isActionableStatus = S.is(ActionableStatus)
-
-const runIdTextOf = (now: DateTime.Utc): string => {
-  const epoch = DateTime.toEpochMillis(now)
-  const bytes = [
+const runIdTextOf = (now: DateTimeTypes.Utc): string => {
+  const epoch = DateTimeRuntime.toEpochMillis(now)
+  const bytes: ReadonlyArray<number> = [
     (epoch / 0x10000000000) % 0x100,
     (epoch / 0x100000000) % 0x100,
     (epoch / 0x1000000) % 0x100,
@@ -50,15 +50,6 @@ interface Base32Accumulator {
   readonly chars: string
 }
 
-const emitQuint = (accumulator: Base32Accumulator): Base32Accumulator => {
-  const bits = accumulator.bits - 5
-  return {
-    value: accumulator.value & ((1 << bits) - 1),
-    bits,
-    chars: accumulator.chars + CROCKFORD_BASE32[(accumulator.value >>> bits) & 0x1f],
-  }
-}
-
 const drainQuints = (accumulator: Base32Accumulator): Base32Accumulator =>
   Match.value(accumulator.bits >= 5).pipe(
     Match.when(true, () => drainQuints(emitQuint(accumulator))),
@@ -70,7 +61,7 @@ const pushByte = (accumulator: Base32Accumulator, byte: number): Base32Accumulat
   drainQuints({ value: (accumulator.value << 8) | byte, bits: accumulator.bits + 8, chars: accumulator.chars })
 
 export class RunId extends S.Class<RunId>('RunId')({ value: S.String }) {
-  static readonly generate = (now: DateTime.Utc): RunId => RunId.make({ value: runIdTextOf(now) })
+  static readonly generate = (now: DateTimeTypes.Utc): RunId => RunId.make({ value: runIdTextOf(now) })
 }
 
 export const VerdictMutant = S.Struct({
@@ -84,9 +75,9 @@ export const VerdictMutant = S.Struct({
 export type VerdictMutant = typeof VerdictMutant.Type
 
 export const VerdictThresholds = S.Struct({
-  high: S.Finite,
-  low: S.Finite,
-  break: S.NullOr(S.Finite),
+  high: Percentage,
+  low: Percentage,
+  break: S.NullOr(Percentage),
 })
 export type VerdictThresholds = typeof VerdictThresholds.Type
 
@@ -97,7 +88,7 @@ export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')
   runId: S.String,
   mode: OutputMode,
   signal: ModeSignal,
-  score: S.NullOr(S.Finite),
+  score: S.NullOr(Percentage),
   thresholds: VerdictThresholds,
   counts: MetricsSchema,
   reportFile: S.NullOr(S.String),
@@ -173,7 +164,6 @@ function embeddedConfig(report: MutationTestResult): {
     jsonReporterFileName: Option.getOrUndefined(Option.map(jsonReporter, (reporter) => reporter.fileName)),
   }
 }
-
 function breakThreshold(thresholds: Thresholds): number | null {
   const ThresholdsBreakSchema = S.StructWithRest(
     S.Struct({
@@ -185,16 +175,19 @@ function breakThreshold(thresholds: Thresholds): number | null {
   return Option.getOrNull(Option.flatMap(decoded, (value) => Option.fromNullishOr(value.break)))
 }
 
-const actionableMutants = (files: MutationTestResult['files']): readonly VerdictMutant[] =>
-  Object.entries(files).flatMap(([file, fileResult]) =>
-    fileResult.mutants
-      .filter((mutant) => isActionableStatus(mutant.status))
-      .map((mutant): VerdictMutant => ({
+const actionableMutants = (files: MutationTestResult['files']): ReadonlyArray<VerdictMutant> =>
+  Arr.reduce(Object.entries(files), [], (accumulator, [file, fileResult]) =>
+    Arr.reduce(Arr.filter(fileResult.mutants, (mutant) => isActionableStatus(mutant.status)), accumulator, (
+      present,
+      mutant,
+    ) => [
+      ...present,
+      VerdictMutant.make({
         id: mutant.id,
         file,
         location: mutant.location,
         mutator: mutant.mutatorName,
         replacement: mutant.replacement ?? null,
         status: mutant.status,
-      })),
-  )
+      }),
+    ]))

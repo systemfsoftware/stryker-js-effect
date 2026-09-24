@@ -73,4 +73,3 @@ export const Traceparent = S.String.pipe(
     TraceContextPartsSchema,
     SchemaTransformation.makeTransformation({ decode: decodeParts, encode: encodeText }),
   ),
-)

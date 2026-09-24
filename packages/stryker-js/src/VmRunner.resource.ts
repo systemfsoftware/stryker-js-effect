@@ -4,9 +4,9 @@ import {
   type CompleteDryRunResult,
   type DryRunOptions,
   type MutantRunResult,
+  MutantRunResultSchema,
   type TestRunnerConfig,
   TestRunnerFailed,
-  toMutantRunResult,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
@@ -16,6 +16,7 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Ref from 'effect/Ref'
+import { SchemaGetter } from 'effect'
 
 import { ALL_TESTS_ID, ALL_TESTS_NAME } from './command-runner.resource.js'
 import type { PooledTestRunner } from './TestRunner.resource.js'
@@ -215,12 +216,20 @@ export const vmTestRunner = (
       dryRun: (options: DryRunOptions) => run(testFilesOf(options.testFiles), undefined),
       mutantRun: (options: MutantRunOptions) =>
         run(config.testFiles, options.activeMutant.id).pipe(
-          Effect.map((result) => toMutantRunResult(result, true)),
-          Effect.catchTag(
-            'TestRunnerFailed',
-            (failure): Effect.Effect<MutantRunResult> =>
-              Effect.succeed(toMutantRunResult({ status: 'error', errorMessage: failure.cause }, true)),
+          Effect.map((result) =>
+            SchemaGetter.run(MutantRunResultSchema.decode({ reportAllKillers: true }), Option.some(result), {})
           ),
+          Effect.map((decoded) => Option.getOrThrow(decoded)),
+          Effect.catchTag('TestRunnerFailed', (failure): Effect.Effect<MutantRunResult> =>
+            Effect.succeed(
+              Option.getOrThrow(
+                SchemaGetter.run(
+                  MutantRunResultSchema.decode({ reportAllKillers: true }),
+                  Option.some({ status: 'error', errorMessage: failure.cause }),
+                  {},
+                ),
+              ),
+            )),
         ),
     }
   })

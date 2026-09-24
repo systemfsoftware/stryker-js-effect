@@ -1,7 +1,6 @@
 import type { MutantRunOptions, DryRunOptions, DryRunResult, TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
-import { testFilesProvided } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import {
   type CoverageData,
@@ -296,7 +295,7 @@ const makeRunner = (input: VitestSessionInput) =>
       const relatedFiles = Option.getOrUndefined(
         Option.map(Option.fromNullishOr(options.files), (files) => [...files]),
       )
-      return Boolean.match(testFilesProvided(options), {
+      return Boolean.match(options.testFiles !== undefined && options.testFiles.length > 0, {
         onFalse: () => ({ relatedFiles }),
         onTrue: () => ({
           relatedFiles,

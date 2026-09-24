@@ -114,17 +114,10 @@ const testFileById = (testFiles: Record<string, schema.TestFile>): TestFileById 
 const idsOf = (testIds: readonly string[] | undefined): readonly string[] =>
   Option.getOrElse(Option.fromUndefinedOr(testIds), () => [])
 
-const fileNameOf = (fileById: TestFileById, testId: string): Option.Option<string> =>
-  Option.map(
-    Array.findLast(fileById, ([id]) => id === testId),
-    ([, fileName]) => fileName,
-  )
 
-const keepReal = (fileById: TestFileById) =>
-  (testId: string): ReadonlyArray<string> => Option.match(fileNameOf(fileById, testId), {
-    onNone: () => [],
-    onSome: () => [testId],
-  })
+const keepReal =
+  (fileById: TestFileById) =>
+  (testId: string): ReadonlyArray<string> =>
 
 const realFiles = (testIds: readonly string[], fileById: TestFileById): ReadonlyArray<string> =>
   Array.dedupe(testIds.flatMap(keepReal(fileById)))
