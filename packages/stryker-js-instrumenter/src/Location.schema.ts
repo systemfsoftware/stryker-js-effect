@@ -174,7 +174,7 @@ if (import.meta.vitest !== void 0) {
       S.decodeEffect(LineTableFromText)(text),
       (table) =>
         Option.getOrElse(Arr.head(table.lineStarts), () => -1) === 0 &&
-        table.lineStarts.every((start, index) => index === 0 || start > positionLineStartAt(table, index)),
+        table.lineStarts.every((start, index) => index === 0 || start > positionLineStartAt(table, index - 1)),
     )
   const positionLineStartAt = (table: LineTable, index: number): number =>
     Option.getOrElse(Arr.get(table.lineStarts, index), () => 0)
