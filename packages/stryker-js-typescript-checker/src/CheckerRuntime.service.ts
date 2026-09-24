@@ -159,7 +159,7 @@ export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRunti
 ) {
   static readonly layer = (
     options: Options.StrykerOptions,
-  ): Layer.Layer<CheckerRuntime, never, FileSystem.FileSystem | Path.Path> =>
+  ): Layer.Layer<CheckerRuntime | TypeScriptCompiler, never, FileSystem.FileSystem | Path.Path> =>
     Layer.effect(
       CheckerRuntime,
       Effect.gen(function*() {
@@ -175,5 +175,5 @@ export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRunti
         )
         return CheckerRuntime.of({ checker })
       }),
-    ).pipe(Layer.provide(compilerLayer(TypeScriptCompiler, options)))
+    ).pipe(Layer.provideMerge(compilerLayer(TypeScriptCompiler, options)))
 }

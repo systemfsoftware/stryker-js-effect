@@ -16,7 +16,6 @@ import {
   type CheckerRuntimeShape,
 } from '../../../packages/stryker-js-typescript-checker/src/CheckerRuntime.service.js'
 import { nodes } from '../../../packages/stryker-js-typescript-checker/src/ts-compiler.handle.js'
-import { layer as compilerLayer } from '../../../packages/stryker-js-typescript-checker/src/ts-compiler.resource.js'
 import { TypeScriptCompiler } from '../../../packages/stryker-js-typescript-checker/src/ts-compiler.service.js'
 
 const LIVE_OPT_IN_MUTATIONS: readonly string[] = [
@@ -107,8 +106,7 @@ const rigLayers = (
   layout: FixtureLayout,
 ): Layer.Layer<CheckerRuntime | TypeScriptCompiler, never, FileSystem.FileSystem | Path.Path> =>
   Layer.unwrap(
-    Effect.map(Effect.orDie(optionsFor(layout)), (options) =>
-      Layer.mergeAll(compilerLayer(TypeScriptCompiler, options), CheckerRuntime.layer(options))),
+    Effect.map(Effect.orDie(optionsFor(layout)), (options) => CheckerRuntime.layer(options)),
   )
 
 const checkerRig = (layout: FixtureLayout): Effect.Effect<CheckerRig, never, FileSystem.FileSystem | Path.Path> =>
