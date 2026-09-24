@@ -14,11 +14,6 @@
  * built once per Program and memoised in a WeakMap, because every visited node
  * asks for it and a file's imports never change mid-parse (KTD4).
  */
-import * as Arr from 'effect/Array'
-import * as Bool from 'effect/Boolean'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
 import type {
   Argument,
   ArrowFunctionExpression,
@@ -52,7 +47,20 @@ import type {
   TSModuleDeclaration,
   VariableDeclaration,
 } from '@systemfsoftware/stryker-ignorer-interface'
-import { callExpression, identifier, make, memberExpression, nodeType, traverse, type TraversePath } from './Ast.handle.js'
+import * as Arr from 'effect/Array'
+import * as Bool from 'effect/Boolean'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
+import {
+  callExpression,
+  identifier,
+  make,
+  memberExpression,
+  nodeType,
+  traverse,
+  type TraversePath,
+} from './Ast.handle.js'
 import type { MutatorContext } from './Mutator.service.js'
 
 export type EffectModuleName = 'Effect' | 'Ref' | 'Semaphore' | 'SynchronizedRef'
