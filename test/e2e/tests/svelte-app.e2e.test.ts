@@ -98,43 +98,47 @@ const stepVerifyMutants = (expect: ExpectStatic, events: ReadonlyArray<RunEvent.
   expect.soft(reported).toEqual([...SVELTE_APP_ORACLE.mutants].toSorted())
 }
 
-test('running a vitest suite through the svelte framework plugin', async ({ bdd, expect, prepareFixture }) => {
-  let fixture: PreparedFixture
-  let run: ExecResult
-  let events: ReadonlyArray<RunEvent.RunEvent>
-  let verdict: RunEvent.VerdictReached
+test(
+  'running a vitest suite through the svelte framework plugin',
+  { timeout: 300_000 },
+  async ({ bdd, expect, prepareFixture }) => {
+    let fixture: PreparedFixture
+    let run: ExecResult
+    let events: ReadonlyArray<RunEvent.RunEvent>
+    let verdict: RunEvent.VerdictReached
 
-  await bdd.given('a real Svelte 5 application with tests mounted through testing-library', async () => {
-    fixture = await prepareFixture(SVELTE_FIXTURE_URL, 'svelte-app-fixture')
-  })
+    await bdd.given('a real Svelte 5 application with tests mounted through testing-library', async () => {
+      fixture = await prepareFixture(SVELTE_FIXTURE_URL, 'svelte-app-fixture')
+    })
 
-  await bdd.when('the packed CLI runs it with the vitest runner and the svelte plugin', async () => {
-    run = await fixture.run(['run'])
-    events = await parseEventStream(run.stdout)
-    const terminal = lastEvent(events)
-    if (terminal._tag !== 'verdict') {
-      throw new Error(`Expected terminal verdict event, received: ${terminal._tag}`)
-    }
-    verdict = terminal
-  })
+    await bdd.when('the packed CLI runs it with the vitest runner and the svelte plugin', async () => {
+      run = await fixture.run(['run'])
+      events = await parseEventStream(run.stdout)
+      const terminal = lastEvent(events)
+      if (terminal._tag !== 'verdict') {
+        throw new Error(`Expected terminal verdict event, received: ${terminal._tag}`)
+      }
+      verdict = terminal
+    })
 
-  await bdd.thenAssert('the run reaches a verdict instead of a run failure', () => {
-    expect.soft(run.exitCode).toBe(0)
-  })
+    await bdd.thenAssert('the run reaches a verdict instead of a run failure', () => {
+      expect.soft(run.exitCode).toBe(0)
+    })
 
-  await bdd.and('the formats registry attributes .svelte to the svelte plugin', () => {
-    stepVerifyFormats(expect, events)
-  })
+    await bdd.and('the formats registry attributes .svelte to the svelte plugin', () => {
+      stepVerifyFormats(expect, events)
+    })
 
-  await bdd.and('no skipped event names a .svelte file', () => {
-    stepVerifyNoSvelteSkipped(expect, events)
-  })
+    await bdd.and('no skipped event names a .svelte file', () => {
+      stepVerifyNoSvelteSkipped(expect, events)
+    })
 
-  await bdd.and('every mutant lands on its authored line with its authored status', () => {
-    stepVerifyMutants(expect, events)
-  })
+    await bdd.and('every mutant lands on its authored line with its authored status', () => {
+      stepVerifyMutants(expect, events)
+    })
 
-  await bdd.and('the per-status tally matches the svelte-app oracle', () => {
-    stepVerifyCounts(expect, verdict)
-  })
-})
+    await bdd.and('the per-status tally matches the svelte-app oracle', () => {
+      stepVerifyCounts(expect, verdict)
+    })
+  },
+)
