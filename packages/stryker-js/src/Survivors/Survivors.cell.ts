@@ -229,8 +229,15 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const { Schema } = await import('effect')
+  const { Arbitrary } = await import('effect/unstable/arbitrary')
 
   const SourceText = Schema.String.check(Schema.isPattern(/^\P{Surrogate}*$/u), Schema.isMaxLength(64))
+
+  const KNOWN_SHA256_VECTORS = [
+    ['', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'],
+    ['abc', 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'],
+    ['✓', '1dabba21cdad44541f6b15796f8d22978fc7ea10c46aeceeeeb66c23b3ac7604'],
+  ] as const
 
   it.prop('∀s_HashContent_∈Sha256Hex', [SourceText], ([source]) => /^[0-9a-f]{64}$/.test(hashContent(source)))
 
@@ -238,5 +245,11 @@ if (import.meta.vitest !== void 0) {
     '∀ab_HashContent_DistinctPerDraw',
     [SourceText, SourceText],
     ([a, b]) => a === b || hashContent(a) !== hashContent(b),
+  )
+
+  it.prop(
+    '∀kv_HashContent_≡KnownAnswerVectors',
+    [Arbitrary.Constant(KNOWN_SHA256_VECTORS)],
+    ([vectors]) => vectors.every(([content, digest]) => hashContent(content) === digest),
   )
 }

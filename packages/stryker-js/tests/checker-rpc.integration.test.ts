@@ -1,8 +1,9 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant, type MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Checker, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
@@ -14,7 +15,7 @@ import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 import * as Socket from 'effect/unstable/socket/Socket'
 import * as SocketServer from 'effect/unstable/socket/SocketServer'
 import { expect } from 'vitest'
-import { Worker } from '../src/mod.js'
+import { Checker as StrykerChecker, Worker } from '../src/mod.js'
 
 import { make as makeSpawnedSocketWorker } from '../src/spawned-socket-worker.handle.js'
 import { memorySocketPair, singleConnection } from './__fixtures__/substituted-worker.fixture.js'
@@ -36,7 +37,7 @@ const makeCheckerServer = (
     Layer.provide(
       Plugin.CheckerRpcs.toLayer({
         check: ({ mutants }) =>
-          Ref.set(receivedRef, mutants).pipe(
+          Ref.update(receivedRef, (received) => [...received, ...mutants]).pipe(
             Effect.map(() =>
               Object.fromEntries(
                 mutants.map((m) => [m.id, { status: 'passed' as const }]),
@@ -87,6 +88,42 @@ const makeHarness = () =>
     return { client, receivedRef } satisfies CheckerHarness
   })
 
+const crashedFrom = (error: { readonly message: string }): Worker.ChildProcessCrashedError =>
+  Worker.ChildProcessCrashedError.make({ pid: 0, exit: { _tag: 'Code', code: 1 }, cause: error.message })
+
+const serviceFrom = (
+  client: RpcClient.RpcClient<CheckerRpcsUnion, RpcClientError>,
+): StrykerChecker.CheckerResourceService => ({
+  check: (checkerName, mutants) =>
+    client.check({ checkerName, mutants: [...mutants] }).pipe(Effect.mapError(crashedFrom)),
+  group: (checkerName, mutants) =>
+    client.group({ checkerName, mutants: [...mutants] }).pipe(Effect.mapError(crashedFrom)),
+})
+
+const identityFields = {
+  fileName: Mutant.CanonicalFileName.make('src/core.ts'),
+  mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
+  replacement: '-',
+  location: { start: { line: 10, column: 5 }, end: { line: 10, column: 6 } },
+} as const
+
+const planOf = (mutant: Mutant.Mutant): MutantRunPlan => ({
+  plan: 'Run',
+  mutant,
+  runOptions: {
+    timeout: 1000,
+    disableBail: false,
+    activeMutant: mutant,
+    sandboxFileName: 'sandbox.js',
+    mutantActivation: 'static',
+    reloadEnvironment: false,
+  },
+  netTime: 1,
+})
+
+const describedMutant = (): Mutant.Mutant => Mutant.Mutant.make({ ...identityFields, id: Mutant.MutantId.make('mutant-1') })
+const undescribableMutant = (): Mutant.Mutant => ({ ...identityFields, _tag: 'Mutant', id: '' }) as Mutant.Mutant
+
 Feature('Verifying mutants through an external checker worker')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
@@ -128,6 +165,67 @@ Feature('Verifying mutants through an external checker worker')
               start: { line: 10, column: 5 },
               end: { line: 10, column: 6 },
             })
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A mutant with no identifier is refused before the worker is asked',
+      Gherkin.Do.pipe(
+        Given('a worker process ready to verify code mutations')('harness', makeHarness),
+        When('the runner submits a mutant whose identifier is empty')(
+          'outcome',
+          (s) =>
+            s.harness.client
+              .check({
+                checkerName: 'test-checker',
+                mutants: [
+                  {
+                    id: '' as Mutant.MutantIdValue,
+                    fileName: Mutant.CanonicalFileName.make('src/core.ts'),
+                    mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
+                    replacement: '-',
+                    location: {
+                      start: { line: 10, column: 5 },
+                      end: { line: 10, column: 6 },
+                    },
+                  },
+                ],
+              })
+              .pipe(Effect.exit),
+        ),
+        Then('the request is refused and the worker is never asked')((s) =>
+          Effect.gen(function*() {
+            expect(Exit.isFailure(s.outcome)).toBe(true)
+            expect(yield* Ref.get(s.harness.receivedRef)).toHaveLength(0)
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A mutant the checker cannot be told about is reported instead of stopping the run',
+      Gherkin.Do.pipe(
+        Given('a worker process ready to verify code mutations')('harness', makeHarness),
+        When('the runner verifies one mutant it can describe beside one it cannot')(
+          'outcome',
+          (s) =>
+            StrykerChecker.checkGroupedPlans(
+              serviceFrom(s.harness.client),
+              'test-checker',
+              [planOf(describedMutant()), planOf(undescribableMutant())],
+            ),
+        ),
+        Then('the mutant it cannot describe is reported as a compile error and is not sent to the worker')((s) =>
+          Effect.gen(function*() {
+            const statusOf = (id: string) =>
+              s.outcome.find(([plan]) => plan.mutant.id === id)?.[1].status
+            expect(s.outcome).toHaveLength(2)
+            expect(statusOf('')).toBe('compileError')
+            expect(statusOf('mutant-1')).toBe('passed')
+            const received = yield* Ref.get(s.harness.receivedRef)
+            expect(received.map((mutant) => mutant.id)).toEqual(['mutant-1'])
           })
         ),
       ),
