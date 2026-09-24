@@ -4,7 +4,6 @@ import {
   isCustomTestRunner,
   type ReporterFactory,
   type StrykerOptions,
-  type WorkerPluginKind,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Array from 'effect/Array'
@@ -34,13 +33,14 @@ import { RunEvents } from '../run-events.service.js'
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { PluginLoadFailedError, PluginNotFoundError } from '../PluginsError.schema.js'
 import {
-  EvaluatorPluginDescriptor,
+  type EvaluatorPluginDescriptor,
   IgnorerModuleSchema,
   PluginModuleSchema,
   SchemaValidationContributionSchema,
   type LoadedPlugins,
   type PluginDescriptor,
   type PluginKind,
+  type PluginSource,
 } from '../Plugins.schema.js'
 import type { ReadProjectDone } from '../read-project.cell.js'
 import type { Project } from '../Project.schema.js'
@@ -64,7 +64,7 @@ import type { ValidationSchemaDocument } from './load-config.cell.js'
 import { planPrepare, PrepareDecoded } from './plan-prepare.workflow.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
-import { ConfiguredPluginModulePath, ConfiguredPluginName, resolveConfiguredPlugin } from './resolve-configured-plugin.workflow.js'
+import { ConfiguredPluginName, resolveConfiguredPlugin, WorkerSpawnCommand } from './resolve-configured-plugin.workflow.js'
 
 export interface PrepareDone {
   readonly project: Project
@@ -358,20 +358,6 @@ const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[] => [
 const hasValidationSchemaContribution = (module: unknown): module is SchemaValidationContribution =>
   S.is(SchemaValidationContributionSchema)(module)
 
-const workerSpawnOf = (
-  stage: StageError['stage'],
-  loaded: Pick<LoadedPlugins, 'pluginSources'>,
-  kind: WorkerPluginKind,
-  configured: ConfiguredPluginName | ConfiguredPluginModulePath,
-) =>
-  Result.match(resolveConfiguredPlugin({ sources: loaded.pluginSources, kind, configured }), {
-    onSuccess: Effect.succeed,
-    onFailure: (missing) =>
-      Effect.fail(
-        StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
-      ),
-  })
-
 type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly env: RunEnvironmentShape
   readonly queue: Queue.Queue<RunEvent, Cause.Done>
@@ -432,8 +418,18 @@ const spawnPluginReporterFactory = (
   Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function*() {
-    const entry = yield* resolvePluginWorkerEntry({ loaded, kind: 'Reporter', name }).pipe(
-      Effect.mapError(missingWorkerEntry('prepare', 'reporter', name)),
+    const entry = yield* Effect.mapError(
+      Effect.fromResult(
+        resolveConfiguredPlugin(
+          WorkerSpawnCommand.make({
+            sources: loaded.pluginSources,
+            kind: 'Reporter',
+            configured: ConfiguredPluginName.make({ name }),
+          }),
+        ),
+      ),
+      (missing) =>
+        StageError.make({ stage: 'prepare', reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
     )
     const client = yield* spawnReporterWorker({
       entrypoint: entry.entrypoint,
@@ -597,7 +593,7 @@ const writePrepare = (
                   cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
                 }),
               )),
-            Match.orElse(() => Effect.void),
+            Match.orElse(() => Effect.succeed(undefined)),
           )
 
         yield* failOnEmptyProject(raw.project.files.pipe(MutableHashMap.size))

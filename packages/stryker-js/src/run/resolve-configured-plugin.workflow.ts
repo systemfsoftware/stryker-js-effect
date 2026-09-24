@@ -6,7 +6,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { type PluginSource, PluginSourceSchema } from '../Plugins.schema.js'
+import { type PluginSource, PluginSourceSchema, type WorkerPluginSource } from '../Plugins.schema.js'
 
 const ResolvedWorkerSpawnTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ResolvedWorkerSpawn')
 type ResolvedWorkerSpawnTypeId = typeof ResolvedWorkerSpawnTypeId
@@ -62,10 +62,7 @@ const workerSourceOf = (
   sources: readonly PluginSource[],
   kind: WorkerPluginKind,
   matches: (worker: WorkerPluginSource) => boolean,
-) =>
-  Array.findFirst(sources, (source) =>
-    Option.liftPredicate(kindIs(kind))(source).pipe(Option.filter(matches), Option.isSome),
-  )
+): Option.Option<WorkerPluginSource> => Array.findFirst(Array.filter(sources, kindIs(kind)), matches)
 
 const resolvedSpawnOf = (
   command: WorkerSpawnCommand,

@@ -9,7 +9,6 @@ import type {
   Node,
   Program,
   Statement,
-  SwitchCase,
   VariableDeclarator,
 } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Arr from 'effect/Array'
@@ -56,8 +55,8 @@ import type {
   TemplateScript,
 } from './Ast.schema.js'
 import { AstFormat } from './Syntax.schema.js'
-import { type MutateDescription, type Position } from './Instrument.schema.js'
-import { LineTable, LineTableFromText } from './Location.schema.js'
+import { type MutateDescription } from './Instrument.schema.js'
+import { LineTable, LineTableFromText, type Position } from './Location.schema.js'
 import { INSTRUMENTER_CONSTANTS as ID } from './Mutant.js'
 import {
   Mutators,
@@ -82,6 +81,20 @@ import {
 } from './Transformer.schema.js'
 
 const STRYKER_NAMESPACE_HELPER = 'stryNS_9fa48'
+const comparePositions = (a: Position, b: Position): number => {
+  const lineDelta = a.line - b.line
+  return Boolean.match(lineDelta !== 0, {
+    onTrue: () => lineDelta,
+    onFalse: () => a.column - b.column,
+  })
+}
+
+const locationIncluded = (haystack: SourceLocationInFile, needle: SourceLocationInFile): boolean =>
+  comparePositions(haystack.start, needle.start) <= 0 && comparePositions(haystack.end, needle.end) >= 0
+
+const locationOverlaps = (a: SourceLocationInFile, b: SourceLocationInFile): boolean =>
+  comparePositions(a.start, b.end) <= 0 && comparePositions(a.end, b.start) >= 0
+
 const COVER_MUTANT_HELPER = 'stryCov_9fa48'
 const IS_MUTANT_ACTIVE_HELPER = 'stryMutAct_9fa48'
 
@@ -223,7 +236,6 @@ interface NodeWithLeadingComments {
 }
 
 const NO_COMMENTS: readonly LocatedComment[] = []
-const MISSING_LOCATION = 'Comment without location'
 
 const processStrykerDirectives = (
   rule: Rule,
@@ -232,8 +244,9 @@ const processStrykerDirectives = (
   originFileName: string,
 ): { rule: Rule; warnings: readonly string[]; failure: Option.Option<DirectiveIncomplete | CommentLocationMissing> } => {
   const outcomes = Arr.map(attachedComments(node), parseStrykerDirective)
-  const directives = Arr.filterMap(outcomes, (outcome) => Option.flatMap(outcome, Result.getSuccess))
-  const failure = Arr.head(Arr.filterMap(outcomes, (outcome) => Option.flatMap(outcome, Result.getFailure)))
+  const parsed = Arr.getSomes(outcomes)
+  const directives = Arr.filterMap(parsed, (result) => result)
+  const failure = Arr.head(Arr.filterMap(parsed, Result.flip))
   const warnings = directives.flatMap((directive) => mutatorWarnings(directive, allMutatorNames, originFileName))
   return { rule: directives.reduce(applyStrykerDirective, rule), warnings, failure }
 }
@@ -272,10 +285,10 @@ const strykerDirective = (
       }))))
 
 const matchGroup = (match: RegExpExecArray, group: number): Result.Result<string, DirectiveIncomplete> =>
-  Result.fromOption(Option.fromNullishOr(match[group]), DirectiveIncomplete.make)
+  Result.fromOption(Option.fromNullishOr(match[group]), () => DirectiveIncomplete.make())
 
 const commentLocation = (loc: LocatedComment['loc']): Result.Result<CommentLocation, CommentLocationMissing> =>
-  Result.fromOption(Option.fromNullishOr(loc), CommentLocationMissing.make)
+  Result.fromOption(Option.fromNullishOr(loc), () => CommentLocationMissing.make())
 
 const applyStrykerDirective = (rule: Rule, directive: StrykerDirective): Rule =>
   Match.value(directive.type).pipe(
@@ -825,7 +838,7 @@ const headerFor = (
   })
 
 const firstHeaderOf = (header: readonly Statement[]): Result.Result<Statement, HeaderEmpty> =>
-  Result.fromOption(Option.fromNullishOr(header[0]), HeaderEmpty.make)
+  Result.fromOption(Option.fromNullishOr(header[0]), () => HeaderEmpty.make())
 
 const leadingCommentsOf = (root: Program) =>
   Option.fromUndefinedOr(root.body[0]).pipe(
@@ -894,7 +907,7 @@ const transformOf = (header: readonly Statement[], mutators: MutatorsShape): Tra
         Match.when({ format: 'js' }, (script) => transformScript(script, mutantCollector, context, header, mutators)),
         Match.when({ format: 'ts' }, (script) => transformScript(script, mutantCollector, context, header, mutators)),
         Match.when({ format: 'tsx' }, (script) => transformScript(script, mutantCollector, context, header, mutators)),
-        Match.when({ format: 'svelte' }, (svelte) => transformSvelte(svelte, mutantCollector, context, header, mutators)),
+        Match.when({ format: 'svelte' }, (svelte) => transformSvelte(svelte, mutantCollector, context, header)),
         Match.exhaustive,
       )
     },
@@ -933,7 +946,6 @@ const transformSvelte = (
   mutantCollector: MutantCollector,
   context: TransformerContext,
   header: readonly Statement[],
-  mutators: MutatorsShape,
 ) =>
   Effect.gen(function*() {
     const { root } = svelte
@@ -947,7 +959,7 @@ const transformSvelte = (
         },
       }))
     const warnings: string[] = perScript.flat()
-    yield* placeModuleHeaderIfNeeded(svelte, mutantCollector, header, mutators)
+    yield* placeModuleHeaderIfNeeded(svelte, mutantCollector, header)
     return warnings
   })
 
@@ -955,17 +967,15 @@ const placeModuleHeaderIfNeeded = (
   svelte: AstByFormat['svelte'],
   mutantCollector: MutantCollector,
   header: readonly Statement[],
-  mutators: MutatorsShape,
 ): Effect.Effect<void, ParseFailed> =>
   Boolean.match(hasPlacedMutants(mutantCollector, svelte.originFileName), {
-    onTrue: () => placeModuleHeader(svelte, header, mutators),
+    onTrue: () => placeModuleHeader(svelte, header),
     onFalse: () => Effect.void,
   })
 
 const placeModuleHeader = (
   svelte: AstByFormat['svelte'],
   header: readonly Statement[],
-  mutators: MutatorsShape,
 ): Effect.Effect<void, ParseFailed> =>
   Effect.flatMap(ensureModuleScriptOf(svelte), (moduleScript) => placeHeader(moduleScript.ast.root, header))
 
@@ -1034,6 +1044,8 @@ const transformScript = (
 
     const warnings: string[] = []
 
+    const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> =>
+      Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
     const shouldSkip = (path: TraversePath): boolean =>
       [
         isTypeNode(path),
@@ -1064,8 +1076,6 @@ const transformScript = (
             onSome: (location) => ranges.some((range) => locationIncluded(range, location)),
           }),
       )
-    const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> =>
-      Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
     const ignoreMessageFor = (node: Node, ancestors: readonly Node[]): string | undefined =>
       ignorerReason(node, ancestors)
     const ignorerReason = (node: Node, ancestors: readonly Node[]): string | undefined =>

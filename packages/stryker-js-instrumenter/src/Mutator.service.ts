@@ -173,18 +173,14 @@ const toApiLocation = (
   offset: Position,
 ): Location => {
   const table = LineTable.make({ lineStarts: lineTable })
-  return {
-    start: toPosition(table.positionAt(startOffset), offset),
-    end: toPosition(table.positionAt(endOffset), offset),
-  }
-}
-
-const toPosition = (source: Position, offset: Position): Position => {
-  const columnOffset = Boolean.match(source.line === 1, {
-    onTrue: () => offset.column,
-    onFalse: () => 0,
+  const shifted = (position: Position): Position => ({
+    column: position.column + offset.column,
+    line: position.line + offset.line - 1,
   })
-  return { column: source.column + columnOffset, line: source.line + offset.line - 1 }
+  return {
+    start: shifted(table.positionAt(startOffset)),
+    end: shifted(table.positionAt(endOffset)),
+  }
 }
 
 const applyMutant = (mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> =>
@@ -315,7 +311,7 @@ const collectSplices = (pattern: string, flags: string): SpliceGroups => {
 const collectAssertion = (assertion: AST.Assertion, pattern: string, groups: SpliceGroups): void =>
   Match.value(assertion).pipe(
     Match.when(isEdgeAssertion, (edge) => pushAnchor(edge, pattern, groups)),
-    Match.when(isLookaround, (lookaround) => groups.rest.push(lookaroundNegation(lookaround))),
+    Match.when(isLookaround, (lookaround) => pushWhen(groups.rest, lookaroundNegation(lookaround))),
     Match.orElse(() => undefined),
   )
 
@@ -412,7 +408,9 @@ const anchorRemoval = (assertion: AST.Assertion, pattern: string): Splice | unde
 const pushWhen = <T>(list: T[], splice: T | undefined): void =>
   Option.match(Option.fromNullishOr(splice), {
     onNone: () => undefined,
-    onSome: (present) => list.push(present),
+    onSome: (present) => {
+      list.push(present)
+    },
   })
 
 const spliceText = (pattern: string, splice: Splice): string =>
@@ -661,11 +659,13 @@ const isSuperReference = <A>(node: A): boolean => isSuperType(node) || isSuperCa
 const hasSuperInChildren = (node: object): boolean =>
   Object.keys(node).some((key) => containsSuperInValue(propertyOf(node, key)))
 
-const containsSuperInValue = (value: unknown): boolean =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isArray, (items) => items.some(containsSuperCall)),
-    Match.orElse(containsSuperCall),
-  )
+const isObjectArray = (value: unknown): value is ReadonlyArray<object> => Array.isArray(value)
+
+const containsSuperInValue = <A = unknown>(value: A): boolean =>
+  Option.match(Option.filter(Option.some(value), isObjectArray), {
+    onSome: (items) => items.some(containsSuperCall),
+    onNone: () => containsSuperCall(value),
+  })
 
 const booleanLiteralMutator: Mutator = (node) =>
   Match.value(node).pipe(

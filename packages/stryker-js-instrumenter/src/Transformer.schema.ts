@@ -1,5 +1,9 @@
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
+
+import { errorToString } from './Mutant.js'
+import type { MutantNotApplied } from './Mutant.schema.js'
 
 export type TransformerFailure =
   | MutantPlacementFailed
@@ -9,6 +13,7 @@ export type TransformerFailure =
   | MutantsUnplaced
   | PlacementMissing
   | HeaderEmpty
+  | MutantNotApplied
 
 export class MutantPlacementFailed
   extends S.TaggedError<MutantPlacementFailed>('@systemfsoftware/stryker-js-instrumenter/Transformer.schema/MutantPlacementFailed')(
@@ -36,19 +41,25 @@ const PLACEMENT_LIST_FORMAT = new Intl.ListFormat('en')
 
 interface PlacementSite {
   readonly fileName: string
-  readonly line: number | undefined
-  readonly column: number | undefined
+  readonly line?: number | undefined
+  readonly column?: number | undefined
 }
 
+const placementSiteText = (value: number | undefined): string =>
+  Option.match(Option.fromUndefinedOr(value), {
+    onNone: () => 'undefined',
+    onSome: (present) => String(present),
+  })
+
 const placementLocation = (site: PlacementSite): string =>
-  `${site.fileName}:${site.line ?? 'undefined'}:${site.column ?? 'undefined'}`
+  `${site.fileName}:${placementSiteText(site.line)}:${placementSiteText(site.column)}`
 
 const hasStackText = (value: unknown): value is { readonly stack: string } =>
-  typeof value === 'object' && value !== null && 'stack' in value && typeof value['stack'] === 'string'
+  Predicate.isObject(value) && Predicate.isString(value['stack'])
 
-const stackOf = (cause: unknown): string =>
+const stackOf = <A>(cause: A): string =>
   Option.match(Option.filter(Option.some(cause), hasStackText), {
-    onNone: () => String(cause),
+    onNone: () => errorToString(cause),
     onSome: (thrown) => thrown.stack,
   })
 

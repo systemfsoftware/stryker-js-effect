@@ -64,7 +64,7 @@ import { StageError } from '../Run.schema.js'
 import { buildTestRunner, invalidatesRunnerPool, makeChildProcessTestRunner } from '../TestRunner.resource.js'
 import type { PooledTestRunner } from '../TestRunner.resource.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
-import { IdGenerator, type IdGeneratorShape } from '../Worker.service.js'
+import { IdGenerator } from '../Worker.service.js'
 import { ChildProcessCrashedError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import type { DryRunDone } from './dry-run.cell.js'
@@ -73,6 +73,8 @@ import {
   ConfiguredPluginModulePath,
   ConfiguredPluginName,
   resolveConfiguredPlugin,
+  WorkerSpawnCommand,
+  type WorkerSpawnResolved,
 } from './resolve-configured-plugin.workflow.js'
 import type { StageServices } from './StageServices.service.js'
 
@@ -220,14 +222,14 @@ const workerSpawnOf = (
   loaded: Pick<LoadedPlugins, 'pluginSources'>,
   kind: WorkerPluginKind,
   configured: ConfiguredPluginName | ConfiguredPluginModulePath,
-) =>
-  Result.match(resolveConfiguredPlugin({ sources: loaded.pluginSources, kind, configured }), {
-    onSuccess: Effect.succeed,
-    onFailure: (missing) =>
-      Effect.fail(
-        StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
-      ),
-  })
+): Effect.Effect<WorkerSpawnResolved, StageError> =>
+  Effect.mapError(
+    Effect.fromResult(
+      resolveConfiguredPlugin(WorkerSpawnCommand.make({ sources: loaded.pluginSources, kind, configured })),
+    ),
+    (missing) =>
+      StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
+  )
 
 const makeCheckerPool = (
   prev: DryRunDone,

@@ -28,10 +28,3 @@ export const ansi = {
   redBright: (text: string): string => wrap('redBright', text),
   blueBright: (text: string): string => wrap('blueBright', text),
 }
-
-export function colorEnabled(enabled: boolean, color: AnsiColor, text: string): string {
-  if (enabled) {
-    return wrap(color, text)
-  }
-  return text
-}

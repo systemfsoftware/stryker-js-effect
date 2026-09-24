@@ -5,7 +5,7 @@ import type * as Queue from 'effect/Queue'
 import type { RunEvent } from './run-event.schema.js'
 
 export class RunEvents extends Context.Service<RunEvents, Queue.Queue<RunEvent, Cause.Done>>()(
-  '@systemfsoftware/stryker-js/RunEvents',
+  '@systemfsoftware/stryker-js/run-events.service/RunEvents',
 ) {}
 
 export interface RunIdentityShape {
@@ -14,7 +14,7 @@ export interface RunIdentityShape {
 }
 
 export class RunIdentity extends Context.Service<RunIdentity, RunIdentityShape>()(
-  '@systemfsoftware/stryker-js/RunEvents/RunIdentity',
+  '@systemfsoftware/stryker-js/run-events.service/RunIdentity',
 ) {}
 
 export {

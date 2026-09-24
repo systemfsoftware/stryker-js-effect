@@ -32,5 +32,5 @@ export interface WorkerLauncherShape {
 }
 
 export class WorkerLauncher extends Context.Service<WorkerLauncher, WorkerLauncherShape>()(
-  '@systemfsoftware/stryker-js/WorkerLauncher',
+  '@systemfsoftware/stryker-js/WorkerLauncher.service/WorkerLauncher',
 ) {}

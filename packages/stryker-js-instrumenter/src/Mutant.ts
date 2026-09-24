@@ -4,6 +4,7 @@ import * as Result from 'effect/Result'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
+import * as Boolean from 'effect/Boolean'
 
 import type { Position } from './Location.schema.js'
 import { Mutant } from './Mutant.schema.js'

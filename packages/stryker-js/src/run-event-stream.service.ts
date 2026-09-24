@@ -33,7 +33,7 @@ import { RunEventWireLine } from './run-event-wire.schema.js'
 import { RUN_EVENTS_QUEUE_BOUND } from './Run.js'
 import { Heartbeat, HelpRendered, RunEvent, RunFailed, RunStarted, VerdictReached } from './run-event.schema.js'
 import { STREAM_SCHEMA_VERSION } from './StreamVersion.js'
-import { strykerVersion } from './stryker-package.schema.js'
+import { strykerVersion } from './stryker-package.js'
 import { buildVerdictEnvelope, generateRunId } from './verdict-envelope.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'
@@ -102,7 +102,7 @@ export interface RunEventDrainShape {
 }
 
 export class RunEventDrain extends Context.Service<RunEventDrain, RunEventDrainShape>()(
-  '@systemfsoftware/stryker-js/run-event-stream/RunEventDrain',
+  '@systemfsoftware/stryker-js/run-event-stream.service/RunEventDrain',
 ) {
   static readonly layer: Layer.Layer<RunEventDrain, never, Stdio.Stdio> = Layer.effect(
     RunEventDrain,
@@ -331,7 +331,7 @@ export interface RunEventStreamPort {
 }
 
 export class RunEventStreamPortTag extends Context.Service<RunEventStreamPortTag, RunEventStreamPort>()(
-  '@systemfsoftware/stryker-js/run-event-stream/RunEventStreamPortTag',
+  '@systemfsoftware/stryker-js/run-event-stream.service/RunEventStreamPortTag',
 ) {
 
   static readonly layer: Layer.Layer<RunEventStreamPortTag, never, never> = Layer.succeed(

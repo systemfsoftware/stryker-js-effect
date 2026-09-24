@@ -1,6 +1,7 @@
 import { Config, Context, Effect, Layer, Option } from 'effect'
 import * as Crypto from 'effect/Crypto'
 import * as FileSystem from 'effect/FileSystem'
+import type { Readiness } from '@systemfsoftware/effect-readiness'
 
 import type { ExecResult } from './guest-job.schema.js'
 import { GuestJobs } from './guest-job.service.js'
@@ -49,7 +50,7 @@ export interface StrykerCliRunnerShape {
   readonly run: (
     args: ReadonlyArray<string>,
     cwd: string,
-  ) => Effect.Effect<ExecResult, HarnessError, GuestJobs | Crypto.Crypto | FileSystem.FileSystem>
+  ) => Effect.Effect<ExecResult, HarnessError, GuestJobs | Crypto.Crypto | FileSystem.FileSystem | Readiness.HostProber>
 }
 
 export class StrykerCliRunner extends Context.Service<StrykerCliRunner, StrykerCliRunnerShape>()('@systemfsoftware/stryker-e2e/Harness/StrykerCliRunner') {

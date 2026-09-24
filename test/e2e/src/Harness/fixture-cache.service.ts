@@ -1,6 +1,7 @@
 import { Array, Boolean, Cache, Config, Context, Crypto, Effect, FileSystem, Layer, Match, Option, Path, Result, Schema, Scope, Stream } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/unstable/process'
 import type { PlatformError } from 'effect/PlatformError'
+import type { Readiness } from '@systemfsoftware/effect-readiness'
 
 import type { BakedInput, FileBytes, PackedPackage, PackedPackageLookup, TurboDryClosure } from './bake-key.schema.js'
 import { TurboDryRun } from './bake-key.schema.js'
@@ -14,6 +15,7 @@ export type BakePlatform =
   | Crypto.Crypto
   | FileSystem.FileSystem
   | Path.Path
+  | Readiness.HostProber
 
 export interface FixtureRequest {
   readonly url: URL

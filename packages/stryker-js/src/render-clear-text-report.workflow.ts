@@ -30,8 +30,7 @@ export const ToneSchema = S.Literals([
 ])
 export type Tone = typeof ToneSchema.Type
 
-export const ReportSpanSchema = S.Struct({
-  _tag: S.Literal('ReportSpan'),
+const ReportSpanSchema = S.TaggedStruct('ReportSpan', {
   text: S.String,
   tone: ToneSchema,
   leftPad: S.Finite,
@@ -40,10 +39,10 @@ export const ReportSpanSchema = S.Struct({
 })
 export type ReportSpan = typeof ReportSpanSchema.Type
 
-export const ReportLineSchema = S.Array(ReportSpanSchema)
+const ReportLineSchema = S.Array(ReportSpanSchema)
 export type ReportLine = typeof ReportLineSchema.Type
 
-export const ReportChunkSchema = S.Array(ReportLineSchema)
+const ReportChunkSchema = S.Array(ReportLineSchema)
 export type ReportChunk = typeof ReportChunkSchema.Type
 
 export const ClearTextRenderOptions = S.Struct({
@@ -244,7 +243,7 @@ const placedLine = (line: ReportLine, style: PadStyle, netWidth: number): Report
 }
 
 const placedCell = (content: CellContent, style: PadStyle, netWidth: number, tone: Tone): ReportSpan => {
-  const pads = padsOf(style, content.indent + content.text.length, netWidth)
+  const pads = padsOf(style, content.indent + stringWidth(content.text), netWidth)
   return {
     _tag: 'ReportSpan',
     text: content.text,
@@ -257,7 +256,7 @@ const placedCell = (content: CellContent, style: PadStyle, netWidth: number, ton
 
 const PIPE = plain('|')
 
-const rowOf = (cells: readonly ReportSpan[]): ReportLine => [...cells.flatMap((cell) => [cell, PIPE]), PIPE]
+const rowOfLines = (cells: readonly ReportLine[]): ReportLine => cells.flatMap((cell) => [...cell, PIPE])
 
 const EMPTY_LINE: ReportLine = []
 
@@ -488,10 +487,10 @@ const scoreText = (scoreType: ScoreType, row: MetricsResult): string => {
 
 const thresholdTone = (thresholds: MutationScoreThresholds, score: number): Tone =>
   Match.value(score).pipe(
-    Match.when((present: number) => Number.isNaN(present), () => 'muted'),
-    Match.when((present) => present >= thresholds.high, () => 'positive'),
-    Match.when((present) => present >= thresholds.low, () => 'warning'),
-    Match.orElse(() => 'negative'),
+    Match.when((present: number) => Number.isNaN(present), (): Tone => 'muted'),
+    Match.when((present) => present >= thresholds.high, (): Tone => 'positive'),
+    Match.when((present) => present >= thresholds.low, (): Tone => 'warning'),
+    Match.orElse((): Tone => 'negative'),
   )
 
 const scoreTone = (
@@ -501,7 +500,7 @@ const scoreTone = (
 ): ((row: MetricsResult) => Tone) =>
   Boolean.match(allowColor, {
     onTrue: () => (row) => thresholdTone(thresholds, mutationScoreOf(scoreType, row.metrics)),
-    onFalse: () => () => 'plain',
+    onFalse: () => (): Tone => 'plain',
   })
 
 const contentWidth = (content: CellContent): number => content.indent + content.text.length
@@ -523,7 +522,7 @@ const leafColumn = (
   style,
   cell,
   tone,
-  netWidth: widest([determineContentWidth(rows, cell), lineWidth(header)]),
+  netWidth: widest([determineContentWidth(rows, cell, 0), lineWidth(header)]),
 })
 
 const fileCell = (row: MetricsResult, ancestorCount: number): CellContent => ({
@@ -614,11 +613,11 @@ const createColumns = (metricsResult: MetricsResult, render: ClearTextRenderOpti
   ),
 ]
 
-const leafRules = (columns: readonly GroupColumn[]): readonly ReportSpan[] =>
-  columns.flatMap((column) => column.leaves.map((leaf) => rule('-', slotWidthOf(leaf))))
+const leafRules = (columns: readonly GroupColumn[]): readonly ReportLine[] =>
+  columns.flatMap((column) => column.leaves.map((leaf) => [rule('-', slotWidthOf(leaf))]))
 
-const leafHeaders = (columns: readonly GroupColumn[]): readonly ReportSpan[] =>
-  columns.flatMap((column) => column.leaves.flatMap((leaf) => placedLine(leaf.header, leaf.style, leaf.netWidth)))
+const leafHeaders = (columns: readonly GroupColumn[]): readonly ReportLine[] =>
+  columns.flatMap((column) => column.leaves.map((leaf) => placedLine(leaf.header, leaf.style, leaf.netWidth)))
 
 const fullRowVisible = (render: ClearTextRenderOptions, row: MetricsResult): boolean =>
   Boolean.match(render.skipFull, {
@@ -627,9 +626,9 @@ const fullRowVisible = (render: ClearTextRenderOptions, row: MetricsResult): boo
   })
 
 const bodyRow = (columns: readonly GroupColumn[], row: MetricsResult, ancestorCount: number): ReportLine =>
-  rowOf(
+  rowOfLines(
     columns.flatMap((column) =>
-      column.leaves.map((leaf) => placedCell(leaf.cell(row, ancestorCount), leaf.style, leaf.netWidth, leaf.tone(row)))
+      column.leaves.map((leaf) => [placedCell(leaf.cell(row, ancestorCount), leaf.style, leaf.netWidth, leaf.tone(row))]),
     ),
   )
 
@@ -657,12 +656,12 @@ const bodyRows = (
 const scoreTable = (metricsResult: MetricsResult, render: ClearTextRenderOptions): ReportChunk => {
   const columns = createColumns(metricsResult, render)
   return [
-    rowOf(columns.map((column) => rule('-', slotWidthOf(column)))),
-    rowOf(columns.flatMap((column) => placedLine(column.header, column.style, column.netWidth))),
-    rowOf(leafHeaders(columns)),
-    rowOf(leafRules(columns)),
+    rowOfLines(columns.map((column) => [rule('-', slotWidthOf(column))])),
+    rowOfLines(columns.map((column) => placedLine(column.header, column.style, column.netWidth))),
+    rowOfLines(leafHeaders(columns)),
+    rowOfLines(leafRules(columns)),
     ...bodyRows(columns, render, metricsResult, 0),
-    rowOf(leafRules(columns)),
+    rowOfLines(leafRules(columns)),
   ]
 }
 

@@ -1,29 +1,23 @@
 import { NodeFileSystem, NodePath, NodeSocket, NodeStdio } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeCrypto from '@effect/platform-node-shared/NodeCrypto'
-import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Crypto from 'effect/Crypto'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
-import * as ManagedRuntime from 'effect/ManagedRuntime'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
-import * as Scope from 'effect/Scope'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 
-import { strykerCell } from '../mod.js'
-import type { MutationTestDone } from '../run/mutation-test.cell.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
 import { classifyWorkerExit } from '../Worker.js'
 import { ChildProcessCrashedError } from '../Worker.schema.js'
-import { type SpawnedSocketWorker, WorkerLauncher } from '../WorkerLauncher.service.js'
+import { WorkerLauncher } from '../WorkerLauncher.service.js'
 
 const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string) =>
   fs.chmod(file, 0o600).pipe(
@@ -109,24 +103,10 @@ const nodeVmPlatformLayer = Layer.effect(
   ),
 )
 
+export { nodeVmPlatformLayer }
+
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = Layer.mergeAll(
   nodeWorkerLauncherLayer.pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
   nodeBase,
   nodeVmPlatformLayer,
-)
-
-export const run = dual<
-  (
-    targetMutatePatterns?: readonly string[],
-  ) => (options: PartialStrykerOptions) => Promise<MutationTestDone>,
-  (options: PartialStrykerOptions, targetMutatePatterns?: readonly string[]) => Promise<MutationTestDone>
->(
-  (args) => args.length === 2 || Array.isArray(args[0]) === false,
-  (options, targetMutatePatterns) => {
-    const runtime = ManagedRuntime.make(nodePlatformLayer)
-    return runtime.runPromise(strykerCell(options, targetMutatePatterns)).then(
-      (done) => runtime.dispose().then(() => done),
-      (cause) => runtime.dispose().then(() => Promise.reject(cause)),
-    )
-  },
 )

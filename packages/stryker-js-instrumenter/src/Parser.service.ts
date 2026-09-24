@@ -308,7 +308,7 @@ const parseScriptOf = <T extends ScriptFormat>(el: NGAst.Element, scriptFormat: 
 
 const elementScriptText = (element: NGAst.Element, document: string): Result.Result<string, HtmlEndSpanMissing> =>
   Result.map(
-    Result.fromOption(Option.fromNullishOr(element.endSourceSpan), HtmlEndSpanMissing.make),
+    Result.fromOption(Option.fromNullishOr(element.endSourceSpan), () => HtmlEndSpanMissing.make()),
     (endSourceSpan) => document.substring(element.startSourceSpan.end.offset, endSourceSpan.start.offset),
   )
 
@@ -581,7 +581,7 @@ const svelteRoot = (moduleScript: Option.Option<TemplateScript>, additionalScrip
     onSome: (script) => ({ moduleScript: script, additionalScripts }),
   })
 
-const templateScriptRangesOf = <A = unknown, B = unknown>(
+const templateScriptRangesOf = <A = unknown>(
   ast: A,
   walker: WalkFn,
 ): Result.Result<Array<TemplateRange>, SvelteHtmlMissing | SvelteRangeMissing> =>
@@ -599,7 +599,7 @@ const templateScriptRangesOf = <A = unknown, B = unknown>(
 
 const htmlRootOf = <A = unknown, B = unknown>(ast: A): Result.Result<B, SvelteHtmlMissing> =>
   Result.map(
-    Result.fromOption(Option.filter(Option.some(ast), hasHtmlField<B>), SvelteHtmlMissing.make),
+    Result.fromOption(Option.filter(Option.some(ast), hasHtmlField<B>), () => SvelteHtmlMissing.make()),
     (withHtml) => withHtml.html,
   )
 
@@ -650,17 +650,18 @@ interface RangeRemap {
 const remapScriptLocations = (
   code: string,
   scriptMap: Map<string, ScriptTag>,
-  moduleScriptRange: TemplateRange | undefined,
+  moduleScriptRange: Option.Option<TemplateRange>,
   templateRanges: Array<TemplateRange>,
 ) => {
-  const ordered = Arr.appendAll(Option.toArray(Option.fromUndefinedOr(moduleScriptRange)), templateRanges).sort((
-    left,
-    right,
-  ) => left.start - right.start)
+  const ordered = Arr.appendAll(Option.toArray(moduleScriptRange), templateRanges).sort((left, right) =>
+    left.start - right.start
+  )
   const remapped = remapInOrder(ordered, code, scriptMap)
   const remappedModuleScriptRange = Option.getOrUndefined(
     Option.map(
-      Arr.findFirst(remapped, (script) => script.range === moduleScriptRange && script.hadScript),
+      Arr.findFirst(remapped, (script) =>
+        Option.exists(moduleScriptRange, (range) => script.range === range && script.hadScript)
+      ),
       (script) => script.scriptRange,
     ),
   )

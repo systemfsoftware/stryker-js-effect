@@ -8,6 +8,7 @@ import type {
 import type * as schema from '@systemfsoftware/stryker-js-instrumenter'
 import type { CheckResult, CheckStatus, PassedCheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { MutantRunResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 
 interface MutantOutcome {
@@ -49,32 +50,33 @@ const mutantResult = (
   ...outcome,
 })
 
-export const mapCheckResult = (
-  mutant: MutantTestCoverage,
-  result: Exclude<CheckResult, PassedCheckResult>,
-): RunMutantResult => mutantResult(mutant, checkStatusToMutantStatus(result.status), { statusReason: result.reason })
-
-export const mapRunResult = (mutant: MutantTestCoverage, result: MutantRunResult): RunMutantResult =>
-  Match.value(result).pipe(
-    Match.discriminator('status')(
-      'error',
-      (errored) => mutantResult(mutant, 'RuntimeError', { statusReason: errored.errorMessage }),
+export const mapRunResult = dual<
+  (result: MutantRunResult) => (mutant: MutantTestCoverage) => RunMutantResult,
+  (mutant: MutantTestCoverage, result: MutantRunResult) => RunMutantResult
+>(
+  2,
+  (mutant, result) =>
+    Match.value(result).pipe(
+      Match.discriminator('status')(
+        'error',
+        (errored) => mutantResult(mutant, 'RuntimeError', { statusReason: errored.errorMessage }),
+      ),
+      Match.discriminator('status')('killed', (killed) =>
+        mutantResult(mutant, 'Killed', {
+          testsCompleted: killed.nrOfTests,
+          killedBy: [...killed.killedBy],
+          statusReason: killed.failureMessage,
+        })),
+      Match.discriminator('status')('timeout', (timedOut) => {
+        if (timedOut.reason === undefined) {
+          return mutantResult(mutant, 'Timeout')
+        }
+        return mutantResult(mutant, 'Timeout', { statusReason: timedOut.reason })
+      }),
+      Match.discriminator('status')(
+        'survived',
+        (survived) => mutantResult(mutant, 'Survived', { testsCompleted: survived.nrOfTests }),
+      ),
+      Match.exhaustive,
     ),
-    Match.discriminator('status')('killed', (killed) =>
-      mutantResult(mutant, 'Killed', {
-        testsCompleted: killed.nrOfTests,
-        killedBy: [...killed.killedBy],
-        statusReason: killed.failureMessage,
-      })),
-    Match.discriminator('status')('timeout', (timedOut) => {
-      if (timedOut.reason === undefined) {
-        return mutantResult(mutant, 'Timeout')
-      }
-      return mutantResult(mutant, 'Timeout', { statusReason: timedOut.reason })
-    }),
-    Match.discriminator('status')(
-      'survived',
-      (survived) => mutantResult(mutant, 'Survived', { testsCompleted: survived.nrOfTests }),
-    ),
-    Match.exhaustive,
-  )
+)

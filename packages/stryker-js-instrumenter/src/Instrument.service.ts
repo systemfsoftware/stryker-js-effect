@@ -8,7 +8,6 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Result from 'effect/Result'
 import { spanOf } from './Ast.handle.js'
 import type { Ast, HtmlAst, ScriptAst, SvelteAst, SpannedComment } from './Ast.schema.js'
@@ -23,6 +22,7 @@ import type { FileDescription, MutateDescription } from './Mutant.js'
 import { Mutant as ApiMutant } from './Mutant.schema.js'
 import { Mutators, type MutatorsShape } from './Mutator.service.js'
 import { Parser, type ParserError, type ParserShape } from './Parser.service.js'
+import type { PrintFailed } from './print/PrintFailed.schema.js'
 import { print } from './Printer.js'
 import { AstFormat } from './Syntax.schema.js'
 import { type MutantCollector, Transformer, type TransformerOptions, type TransformerShape } from './Transformer.service.js'
@@ -131,7 +131,7 @@ const disableTypeChecksFor = (parser: ParserShape, file: File, format: AstFormat
       ),
   })
 
-const withDisabledTypeChecking = (file: File, ast: Ast): Effect.Effect<File, ScriptRootWithoutSpan> =>
+const withDisabledTypeChecking = (file: File, ast: Ast): Effect.Effect<File> =>
   Match.value(ast).pipe(
     Match.when({ format: 'js' }, (script) => Effect.succeed({ ...file, content: disableTypeCheckingInScript(script) })),
     Match.when({ format: 'ts' }, (script) => Effect.succeed({ ...file, content: disableTypeCheckingInScript(script) })),
@@ -188,7 +188,7 @@ const htmlScriptPositionOf = (
     onSome: (span) => Result.succeed({ script, start: span.start, end: span.end }),
   })
 
-const disableTypeCheckingInHtml = (ast: HtmlAst): Effect.Effect<string, ScriptRootWithoutSpan> =>
+const disableTypeCheckingInHtml = (ast: HtmlAst): Effect.Effect<string> =>
   Result.match(Result.all(Arr.map(ast.root.scripts, htmlScriptPositionOf)), {
     onSuccess: (positioned) =>
       Effect.succeed(
@@ -198,7 +198,7 @@ const disableTypeCheckingInHtml = (ast: HtmlAst): Effect.Effect<string, ScriptRo
           (script) => prefixWithNoCheck(removeTSDirectives(script.rawContent, script.comments)),
         ),
       ),
-    onFailure: Effect.fail,
+    onFailure: (failure) => Effect.die(failure),
   })
 
 const svelteScriptPositionOf = (script: TemplateSvelteScript): PositionedScript<TemplateSvelteScript> => ({
@@ -207,7 +207,7 @@ const svelteScriptPositionOf = (script: TemplateSvelteScript): PositionedScript<
   end: script.range.end,
 })
 
-const disableTypeCheckingInSvelte = (ast: SvelteAst): Effect.Effect<string, ScriptRootWithoutSpan> => {
+const disableTypeCheckingInSvelte = (ast: SvelteAst): Effect.Effect<string> => {
   const positioned = [ast.root.moduleScript, ...ast.root.additionalScripts]
     .filter(Predicate.isNotNullish)
     .map(svelteScriptPositionOf)

@@ -11,6 +11,7 @@ import { ChildProcessSpawner } from 'effect/unstable/process'
 
 import { type RunEvent, RunEventWireLine } from '@systemfsoftware/stryker-js'
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
+import { Readiness } from '@systemfsoftware/effect-readiness'
 
 import { BakedFixtureCache } from '../src/Harness/fixture-cache.service.js'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
@@ -31,7 +32,14 @@ const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fix
 const BASELINE_OUTPUT_DIR = join(REPO_ROOT, 'test/e2e/oracle-baselines')
 
 type HarnessRuntime = ManagedRuntime.ManagedRuntime<
-  BakedFixtureCache | StrykerCliRunner | GuestJobs | ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path,
+  | BakedFixtureCache
+  | StrykerCliRunner
+  | GuestJobs
+  | ChildProcessSpawner.ChildProcessSpawner
+  | Crypto.Crypto
+  | FileSystem.FileSystem
+  | Path.Path
+  | Readiness.HostProber,
   HarnessError
 >
 
@@ -362,7 +370,7 @@ const selfBakingHarness = Layer.mergeAll(
       { asPrimary: true },
     ),
   ),
-  Layer.provideMerge(Layer.mergeAll(GuestJobs.layer, nodeServicesLayer)),
+  Layer.provideMerge(Layer.mergeAll(GuestJobs.layer, nodeServicesLayer, Readiness.NodeHostProber.layer)),
 )
 
 async function main(): Promise<void> {

@@ -46,7 +46,7 @@ export interface ProjectFilesShape {
 }
 
 export class ProjectFiles extends Context.Service<ProjectFiles, ProjectFilesShape>()(
-  '@systemfsoftware/stryker-js/ProjectFiles',
+  '@systemfsoftware/stryker-js/project-files.service/ProjectFiles',
 ) {
   static readonly layer: Layer.Layer<ProjectFiles, never, FileSystem.FileSystem | Path.Path> = Layer.effect(
     ProjectFiles,

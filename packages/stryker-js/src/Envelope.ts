@@ -7,6 +7,7 @@ import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Formatter from 'effect/Formatter'
+import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -211,10 +212,6 @@ function firstConfigErrorDetail<A = unknown, E = unknown>(exit: Exit.Exit<A, E>)
   )
 }
 
-export function remediationFor<A = unknown, E = unknown>(exit: Exit.Exit<A, E>, code: number): string {
-  return buildErrorEnvelope(exit, code, '', []).remediation
-}
-
 const PRIMITIVE_REFINEMENTS = [
   Predicate.isString,
   Predicate.isNumber,
@@ -268,7 +265,7 @@ export function describeFailure<A = unknown, E = unknown>(exit: Exit.Exit<A, E>)
   return Option.getOrElse(failureDescriptionOf(exit), () => UNKNOWN_FAILURE)
 }
 
-export function unrecognizedArgumentOf<A = unknown, E = unknown>(
+function unrecognizedArgumentOf<A = unknown, E = unknown>(
   exit: Exit.Exit<A, E>,
   argv: readonly string[],
 ): string | undefined {
@@ -405,7 +402,7 @@ function carriesSchemaError<A = unknown>(value: A): boolean {
   return value !== undefined && S.isSchemaError(value)
 }
 
-export function gatherRunOutcome<A = unknown, E = unknown>(
+function gatherRunOutcome<A = unknown, E = unknown>(
   exit: Exit.Exit<A, E>,
   argv: readonly string[],
 ): RunOutcomeCommand {
@@ -434,8 +431,11 @@ function capturedThenRecorded(captured: string, recorded: string | undefined): s
   )
 }
 
-export function errorText(error: FailedRunOutcome, captured: string): string {
-  return Match.value(error).pipe(
+export const errorText = dual<
+  (captured: string) => (error: FailedRunOutcome) => string,
+  (error: FailedRunOutcome, captured: string) => string
+>(2, (error, captured) =>
+  Match.value(error).pipe(
     Match.tag('RunParseFailed', (failed) =>
       Option.getOrElse(
         Option.map(Option.fromNullishOr(failed.unrecognized), (value) => `Received unknown argument: '${value}'`),
@@ -449,8 +449,8 @@ export function errorText(error: FailedRunOutcome, captured: string): string {
     Match.tag('RunConfigFailed', (failed) => capturedThenRecorded(captured, failed.detail)),
     Match.tag('RunFailed', (failed) => capturedThenRecorded(captured, failed.diagnostic)),
     Match.exhaustive,
+  ),
   )
-}
 
 function remediationText(error: FailedRunOutcome): string {
   return Match.value(error).pipe(
@@ -473,47 +473,25 @@ function remediationText(error: FailedRunOutcome): string {
   )
 }
 
-export function shapeEnvelope(error: FailedRunOutcome, captured: string): ErrorEnvelope {
-  return {
-    schemaVersion: STREAM_SCHEMA_VERSION,
-    code: runOutcomeCode(Result.fail(error)),
-    error: errorText(error, captured),
-    remediation: remediationText(error),
-  }
-}
+export const shapeEnvelope = dual<
+  (captured: string) => (error: FailedRunOutcome) => ErrorEnvelope,
+  (error: FailedRunOutcome, captured: string) => ErrorEnvelope
+>(2, (error, captured) => ({
+  schemaVersion: STREAM_SCHEMA_VERSION,
+  code: runOutcomeCode(Result.fail(error)),
+  error: errorText(error, captured),
+  remediation: remediationText(error),
+}))
 
-export function classifyRunOutcome<A = unknown, E = unknown>(
-  exit: Exit.Exit<A, E>,
-  argv: readonly string[],
-): Result.Result<RunOutcomeDecision, RunOutcomeError> {
-  return classifyRunOutcomeWorkflow(gatherRunOutcome(exit, argv))
-}
-
-export function buildErrorEnvelope<A = unknown, E = unknown>(
-  exit: Exit.Exit<A, E>,
-  code: number,
-  captured: string,
-  argv: readonly string[],
-): ErrorEnvelope {
-  const result = classifyRunOutcome(exit, argv)
-  return Result.match(result, {
-    onFailure: (failure) => shapeEnvelope(failure, captured),
-    onSuccess: (decision) =>
-      Match.value(decision).pipe(
-        Match.tag('RunParseFailed', (failed) => shapeEnvelope(failed, captured)),
-        Match.tag('RunSurvivorsRejected', (failed) => shapeEnvelope(failed, captured)),
-        Match.tag('RunConfigFailed', (failed) => shapeEnvelope(failed, captured)),
-        Match.tag('RunFailed', (failed) => shapeEnvelope(failed, captured)),
-        Match.tag('RunOk', () => ({
-          schemaVersion: STREAM_SCHEMA_VERSION,
-          code,
-          error: capturedOrUnknown(captured),
-          remediation: DEFAULT_REMEDIATION,
-        })),
-        Match.exhaustive,
-      ),
-  })
-}
+export const classifyRunOutcome = dual<
+  <A = unknown, E = unknown>(
+    argv: readonly string[],
+  ) => (exit: Exit.Exit<A, E>) => Result.Result<RunOutcomeDecision, RunOutcomeError>,
+  <A = unknown, E = unknown>(
+    exit: Exit.Exit<A, E>,
+    argv: readonly string[],
+  ) => Result.Result<RunOutcomeDecision, RunOutcomeError>
+>(2, (exit, argv) => classifyRunOutcomeWorkflow(gatherRunOutcome(exit, argv)))
 
 const capturedConsoleChunks: string[] = []
 const countByLabel = new Map<string, number>()

@@ -10,6 +10,7 @@ import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: '
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
+import * as Console from 'effect/Console'
 import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -21,11 +22,11 @@ import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 import * as CliConfig from 'effect/unstable/cli/CliConfig'
+import * as Flag from 'effect/unstable/cli/Flag'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 
 import { strykerCliEffect } from '../Cli.cell.js'
-import { machineConsoleLayer } from '../Envelope.js'
-import { nodePlatformLayer } from '../promises/main.js'
+import { nodePlatformLayer } from '../drivers/node.js'
 import { UnsupportedNodeVersion } from './main.schema.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
@@ -164,16 +165,6 @@ const telemetryLayer: Layer.Layer<never> = Layer.unwrap(
   ),
 )
 
-const machineConsoleByModeLayer = Layer.unwrap(
-  Effect.map(
-    Effect.flatMap(OutputModeProbe, (probe) => probe.detectMode),
-    (mode) =>
-      Match.value(mode.mode).pipe(
-        Match.when('machine', () => machineConsoleLayer),
-        Match.orElse(() => Layer.empty),
-      ),
-  ),
-)
 
 const probeGroup = Layer.mergeAll(
   OutputModeProbeLive,
@@ -183,9 +174,19 @@ const probeGroup = Layer.mergeAll(
 
 const cliLayer = Layer.mergeAll(
   probeGroup,
-  machineConsoleByModeLayer.pipe(Layer.provide(probeGroup)),
   telemetryLayer,
-  CliConfig.layer({ builtIns: GlobalFlag.BuiltIns }),
+  CliConfig.layer({
+    builtIns: [
+      GlobalFlag.Help,
+      GlobalFlag.Action({
+        flag: Flag.Boolean('version').pipe(Flag.withAlias('v'), Flag.withDescription('Show version information')),
+        run: () => Console.log(cliPkgJson.version),
+      }),
+      GlobalFlag.Wizard,
+      GlobalFlag.Completions,
+      GlobalFlag.LogLevel,
+    ],
+  }),
   NodeTerminal.layer,
 ).pipe(Layer.provideMerge(nodePlatformLayer))
 

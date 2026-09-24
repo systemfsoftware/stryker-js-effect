@@ -1,6 +1,7 @@
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as S from 'effect/Schema'
 
@@ -221,13 +222,13 @@ export type KnownKeys<T> = keyof {
 
 export type WarningOptions = Exclude<StrykerOptions['warnings'], boolean>
 
-export function isWarningEnabled(
-  warningType: KnownKeys<WarningOptions>,
-  warningOptions: WarningOptions | boolean,
-): boolean {
+export const isWarningEnabled = dual<
+  (warningOptions: WarningOptions | boolean) => (warningType: KnownKeys<WarningOptions>) => boolean,
+  (warningType: KnownKeys<WarningOptions>, warningOptions: WarningOptions | boolean) => boolean
+>(2, (warningType, warningOptions) => {
   if (typeof warningOptions === 'boolean') {
     return warningOptions
   } else {
     return warningOptions[warningType] === true
   }
-}
+})

@@ -200,7 +200,7 @@ const describeMessageOf = (message: string): readonly string[] => {
   return errorMessageOrFallback(completedErrorMessages(state), message)
 }
 
-export function describeErrors(error: S.SchemaError): string[] {
+export function describeErrors(error: S.SchemaError): readonly string[] {
   return describeMessageOf(error.message)
 }
 

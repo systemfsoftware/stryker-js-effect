@@ -36,7 +36,7 @@ export interface RunEnvironmentShape {
 }
 
 export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironmentShape>()(
-  '@systemfsoftware/stryker-js/run/RunEnvironment',
+  '@systemfsoftware/stryker-js/run/RunEnvironment.service/RunEnvironment',
 ) {
   static readonly stage: {
     (

@@ -1,7 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { type StrykerOptions, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Match from 'effect/Match'
-import * as Predicate from 'effect/Predicate'
+import * as Boolean from 'effect/Boolean'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -10,9 +9,7 @@ import { ConfigDocumentSchema } from '../Config.schema.js'
 const LoadConfigDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/LoadConfigDecision')
 type LoadConfigDecisionTypeId = typeof LoadConfigDecisionTypeId
 
-const isOptionsRecord = (value: unknown): value is StrykerOptions => Predicate.isObject(value)
-
-const DecodedOptions = S.declare<StrykerOptions>(isOptionsRecord)
+const DecodedOptions = S.toType(StrykerOptionsSchema)
 
 export class ConfigOptionsRefused extends S.TaggedError<ConfigOptionsRefused>()('ConfigOptionsRefused', {
   message: S.String,
@@ -44,10 +41,10 @@ export class LoadConfigCommand extends S.TaggedClass<LoadConfigCommand>()('LoadC
 const decodeOptions = S.decodeResult(StrykerOptionsSchema)
 
 const decidedFromOf = (fileFound: boolean, options: StrykerOptions) =>
-  Match.value(fileFound).pipe(
-    Match.when(true, () => ConfigFromFile.make({ options })),
-    Match.orElse(() => ConfigFromDefaults.make({ options })),
-  )
+  Boolean.match(fileFound, {
+    onTrue: () => ConfigFromFile.make({ options }),
+    onFalse: () => ConfigFromDefaults.make({ options }),
+  })
 
 export const resolveConfig = Workflow.make({
   command: LoadConfigCommand,

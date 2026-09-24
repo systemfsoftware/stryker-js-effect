@@ -1,1 +1,1 @@
-export { run } from './main.js'
+export { run } from './run.js'
