@@ -200,12 +200,14 @@ const program = Effect.scoped(
           const outputMode = yield* OutputModeProbe
           const runEvents = yield* RunEventStreamPort
           const args = [...(yield* stdio.args)]
+          globalThis.process.stderr.write('TAP main: pre-cli\n')
           yield* strykerCliEffect({
             argv: args,
             runMutationTest: undefined,
             detectMode: outputMode.detectMode,
             runEvents,
           })
+          globalThis.process.stderr.write('TAP main: post-cli\n')
         }).pipe(Effect.provideService(Logger.LogToStderr, true)),
         context,
       )

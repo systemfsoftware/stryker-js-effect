@@ -532,10 +532,12 @@ const readCliRoute = (
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
     const command = makeStrykerCommand(requestRef)
     const parsed = yield* Effect.result(Command.runWith(command, { version: cliPkgJson.version })(invocation.argv))
+    globalThis.process.stderr.write(`TAP read: runWith ${parsed._tag}\n`)
     const request = yield* Ref.get(requestRef)
     const drain = yield* RunEventDrain
     yield* drain.setProgressStreamFile(progressStreamFileName(request))
     yield* invocation.environment.stream.open
+    globalThis.process.stderr.write('TAP read: stream open\n')
     return yield* Result.match(parsed, {
       onFailure: (failure) => Effect.fail(failure),
       onSuccess: () =>
@@ -690,8 +692,10 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
               strykerCliCell.run({ argv: options.argv, environment }),
             ),
           )
+          globalThis.process.stderr.write(`TAP cli: cell exit ${exit._tag}\n`)
           const outcome = classifyRunOutcome(exit, options.argv)
           const code = runOutcomeCode(outcome)
+          globalThis.process.stderr.write(`TAP cli: classified ${outcomeOf(outcome)} code ${code}\n`)
           yield* Effect.annotateCurrentSpan({
             'stryker.run.outcome': outcomeOf(outcome),
             'stryker.run.exit_code': code,
@@ -708,7 +712,9 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
               }),
             onFalse: () => Effect.void,
           })
+          globalThis.process.stderr.write('TAP cli: emitted machine output\n')
           yield* stream.closeAndDrain
+          globalThis.process.stderr.write('TAP cli: closed and drained\n')
           yield* Result.match(outcome, {
             onSuccess: (decision) =>
               Match.value(decision).pipe(
