@@ -33,6 +33,7 @@ import type {
   Function as FunctionNode,
   IfStatement,
   IdentifierReference,
+  ImportAttribute,
   ImportDeclaration,
   ImportExpression,
   JSDocNonNullableType,
@@ -659,7 +660,7 @@ const bigintText = <A = unknown>(value: A): string =>
     Match.orElse(() => 'null'),
   )
 
-type BinaryLike = BinaryExpression | LogicalExpression
+type BinaryLike = Extract<Node, { readonly type: 'BinaryExpression' }>
 
 const flagText = <A = unknown>(present: A, text: string): string =>
   Boolean.match(Predicate.isTruthy(present), {
@@ -1564,7 +1565,10 @@ const printMappedType = (ctx: PrintContext, node: TSMappedType): string =>
     node.constraint,
   )}${printTypeClause(ctx, ' as ', node.nameType)}]${printMappedTypeModifier(node.optional, '?')}${printTypeClause(ctx, ': ', node.typeAnnotation)} }`
 
-const printMappedTypeModifier = <A = unknown>(modifier: A, rendered: string): string =>
+const printMappedTypeModifier = (
+  modifier: TSMappedType['readonly'] | TSMappedType['optional'],
+  rendered: string,
+): string =>
   Match.value(modifier).pipe(
     Match.when(true, () => rendered),
     Match.when('+', () => `+${rendered}`),
@@ -1781,6 +1785,7 @@ interface PropertyLike {
 
 const propertyFormOf = (fields: PropertyLike): PropertyForm =>
   Match.value(fields).pipe(
+    Match.withReturnType<PropertyForm>(),
     Match.when(isAccessorKind, () => 'accessor'),
     Match.when(isMethodKind, () => 'method'),
     Match.when(isShorthandMatch, () => 'shorthand'),
@@ -1800,7 +1805,7 @@ const isShorthandDefaultMatch = (fields: PropertyLike): boolean =>
 
 const defaultTargetName = (node: Node | null | undefined): string | undefined =>
   Option.getOrUndefined(
-    Option.map(Option.filter(Option.some(node), isAssignmentPattern), (value) => identifierName(value.left)),
+    Option.map(Option.filter(Option.fromNullishOr(node), isAssignmentPattern), (value) => identifierName(value.left)),
   )
 
 const namesMatch = (key: string | undefined, value: string | undefined): boolean =>
