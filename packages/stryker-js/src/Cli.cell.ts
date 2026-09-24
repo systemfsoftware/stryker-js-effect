@@ -1,7 +1,13 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import { PluginFileUrl, RENDERED_OPTION_DEFAULTS } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  PluginFileUrl,
+  StrykerCoverageAnalysis,
+  StrykerFileLogLevel,
+  StrykerLogLevel,
+  StrykerTempDirName,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import type {
   PartialStrykerOptions,
   StrykerOptions,
@@ -208,7 +214,7 @@ const runOptions = {
   coverageAnalysis: Flag.Literals('coverageAnalysis', ['perTest', 'all', 'off'])
     .pipe(
       Flag.withDescription(
-        `The coverage analysis strategy you want to use. Default value: "${RENDERED_OPTION_DEFAULTS.coverageAnalysis}"`,
+        `The coverage analysis strategy you want to use. Default value: "${StrykerCoverageAnalysis.literal}"`,
       ),
       optional,
     ),
@@ -303,14 +309,14 @@ const runOptions = {
   logLevel: Flag.Literals('logLevel', ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'off'] as const)
     .pipe(
       Flag.withDescription(
-        `Set the log level for the console. Possible values: fatal, error, warn, info, debug, trace and off. Default is "${RENDERED_OPTION_DEFAULTS.logLevel}"`,
+        `Set the log level for the console. Possible values: fatal, error, warn, info, debug, trace and off. Default is "${StrykerLogLevel.literal}"`,
       ),
       optional,
     ),
   fileLogLevel: Flag.Literals('fileLogLevel', ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'off'] as const)
     .pipe(
       Flag.withDescription(
-        `Set the log level for the "stryker.log" file. Possible values: fatal, error, warn, info, debug, trace and off. Default is "${RENDERED_OPTION_DEFAULTS.fileLogLevel}"`,
+        `Set the log level for the "stryker.log" file. Possible values: fatal, error, warn, info, debug, trace and off. Default is "${StrykerFileLogLevel.literal}"`,
       ),
       optional,
     ),
@@ -329,7 +335,7 @@ const runOptions = {
   cleanTempDir: Flag.String('cleanTempDir')
     .pipe(
       Flag.withDescription(
-        `Choose whether or not to clean the temp dir (which is "${RENDERED_OPTION_DEFAULTS.tempDirName}" inside the current working directory by default) after a run.\n- false: Never delete the temp dir;\n- true: Delete the tmp dir after a successful run;\n- always: Always delete the temp dir, regardless of whether the run was successful.`,
+        `Choose whether or not to clean the temp dir (which is "${StrykerTempDirName.literal}" inside the current working directory by default) after a run.\n- false: Never delete the temp dir;\n- true: Delete the tmp dir after a successful run;\n- always: Always delete the temp dir, regardless of whether the run was successful.`,
       ),
       Flag.map(parseCleanDirOption),
       optional,

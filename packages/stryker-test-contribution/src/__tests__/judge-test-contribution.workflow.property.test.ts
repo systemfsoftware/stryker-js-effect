@@ -3,13 +3,8 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
 import {
-  BailHidesKillers,
-  JointlyDeletable,
   judgeTestContribution,
-  NoKillCredited,
-  NotJointlyDeletable,
-  RunReviewed,
-  RunUnjudged,
+  TestContributionDecision,
 } from '../judge-test-contribution.workflow.js'
 import type { ReportView } from '../test-contribution.schema.js'
 import { LawsCommand, type LawsCommand as LawsCommandType } from '../../tests/__fixtures__/laws-command.schema.js'
@@ -17,12 +12,11 @@ import { LawsCommand, type LawsCommand as LawsCommandType } from '../../tests/__
 const JudgeVerdictTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-test-contribution/TestContributionVerdict',
 )
-
 const judgeLawsCommand = (command: LawsCommandType) => ({
   report: {
     schemaVersion: '2',
     files: command.report.files,
-    thresholds: { high: 80, low: 60, break: null as null },
+    thresholds: { high: 80, low: 60, break: null },
     testFiles: command.report.testFiles,
   },
   suffixes: command.suffixes,
@@ -30,10 +24,7 @@ const judgeLawsCommand = (command: LawsCommandType) => ({
 })
 
 const decidedOf = (command: LawsCommandType) =>
-  judgeTestContribution(judgeLawsCommand(command) as JudgeTestContribution).pipe(Result.merge)
-
 const contributionKeysOf = (report: ReportView): readonly string[] =>
-  Object.keys(report.testFiles ?? {})
 
 const verdictOfLaw = (command: LawsCommandType): boolean => {
   const decision = decidedOf(command)
@@ -80,7 +71,7 @@ const ruleOrderOfLaw = (command: LawsCommandType): boolean => {
 describe('judgeTestContribution', () => {
   it.prop(
     '∀d_Verdict_∈Decision',
-    [[RunUnjudged, BailHidesKillers, NoKillCredited, RunReviewed, JointlyDeletable, NotJointlyDeletable]],
+    [TestContributionDecision],
     ([decision]) => Object.getOwnPropertySymbols(decision).includes(JudgeVerdictTypeId),
   )
   it.prop('∀c_Command_≡NeverThrows', [LawsCommand], ([command]) => {

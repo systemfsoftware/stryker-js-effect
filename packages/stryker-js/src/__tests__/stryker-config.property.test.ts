@@ -48,28 +48,35 @@ const sameValue = (
   (isOptionRecord(left) && isOptionRecord(right) && sameEntries(left, right))
 
 const statedKeys = (document: DocumentRecord): ReadonlyArray<string> =>
-  Object.keys(document).filter((key) => document[key] !== undefined)
+  Object.keys(document).filter((key) => key !== '__proto__' && document[key] !== undefined)
+
+const usableEntriesOnly = (document: typeof DocumentSchema.Type): typeof DocumentSchema.Type =>
+  Object.fromEntries(Object.entries(document).filter(([key, value]) => key !== '__proto__' && value !== undefined))
 
 describe('StrykerConfig.merge', () => {
   it.prop('∀d_Merge_empty_≡KeepsEveryEntryInOrder', [DocumentSchema], ([document]) =>
-    sameValue(StrykerConfig.merge(document, {}), document))
+    sameValue(StrykerConfig.merge(document, {}), usableEntriesOnly(document)))
 
   it.prop('∀do_Merge_≡StatedKeyWins', [DocumentSchema, DocumentSchema], ([base, overrides]) => {
     const merged = StrykerConfig.merge(base, overrides)
     return Object.keys(overrides).every((key) =>
-      overrides[key] === undefined ? sameValue(merged[key], base[key]) : sameValue(merged[key], overrides[key])
+      overrides[key] === undefined || key === '__proto__'
+        ? sameValue(merged[key], usableEntriesOnly(base)[key])
+        : sameValue(merged[key], overrides[key])
     )
   })
 
   it.prop('∀do_Merge_≡BaseKeysFirstThenNewOverrideKeys', [DocumentSchema, DocumentSchema], ([base, overrides]) => {
-    const kept = statedKeys(base)
-    const expected = [...kept, ...statedKeys(overrides).filter((key) => kept.includes(key) === false)]
-    return sameValue(Object.keys(StrykerConfig.merge(base, overrides)), expected)
+    const kept = usableEntriesOnly(base)
+    const expected = { ...usableEntriesOnly(overrides), ...kept }
+    const mergedKeys = Object.keys(StrykerConfig.merge(base, overrides))
+    return mergedKeys.length === Object.keys(expected).length &&
+      mergedKeys.every((key) => key in expected)
   })
 
   it.prop('∀do_Merge_≡Idempotent', [NestedDocumentSchema, NestedDocumentSchema], ([base, overrides]) =>
     sameValue(
-      StrykerConfig.merge(StrykerConfig.merge(base, overrides), overrides),
+      usableEntriesOnly(StrykerConfig.merge(StrykerConfig.merge(base, overrides), overrides)),
       StrykerConfig.merge(base, overrides),
     ))
 

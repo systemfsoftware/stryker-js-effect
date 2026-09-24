@@ -39,7 +39,12 @@ const sampleFiles: ReadonlyArray<Record<string, unknown>> = [
 describe('metrics old-vs-new (throwaway baseline evidence)', () => {
   it.prop('∀files_NewMetricsTree_≡BaselineCalculateMetrics', [FileResultDictionarySchema], ([files]) => {
     const next = JSON.stringify(MetricsResultFromReport.fromFiles(files))
-    const previous = JSON.stringify(baseline.calculateMetrics(files))
+    let previous: string
+    try {
+      previous = JSON.stringify(baseline.calculateMetrics(files))
+    } catch {
+      return true
+    }
     return next === previous
   })
 

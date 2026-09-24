@@ -235,48 +235,4 @@ if (import.meta.vitest !== void 0) {
     ([traceId, spanId, traceFlags, traceState, badTraceId, badSpanId]) =>
       refusedFixture(contextFixture(traceId, spanId, traceFlags, traceState), badTraceId, badSpanId),
   )
-
-  // U4b THROWAWAY — DELETE AFTER RUN; dynamic because /tmp/refactor/baseline is outside the module graph.
-  const oracle = await import('/tmp/refactor/baseline/packages/stryker-js-plugin-runtime/dist/index.mjs')
-
-  const stateTextOf = (traceState: string | undefined) =>
-    Option.match(Option.fromUndefinedOr(traceState), {
-      onNone: () => '-',
-      onSome: (state) => state,
-    })
-
-  const wireTextOf = (parts: TraceContextParts | undefined) =>
-    Option.match(Option.fromUndefinedOr(parts), {
-      onNone: () => 'none',
-      onSome: (present) =>
-        [present.version, present.traceId, present.spanId, String(present.traceFlags), stateTextOf(present.traceState)].join(
-          '|',
-        ),
-    })
-
-  const agreesWithBaseline = (context: api.SpanContext) =>
-    wireTextOf(Option.getOrUndefined(oracle.tracePartsOf(context))) ===
-    wireTextOf(Option.getOrUndefined(partsOfSpanContext(context)))
-
-  const validGrid = ['a'.repeat(32), 'f0e1d2c3b4a5968778695a4b3c2d1e0f'].flatMap((traceId) =>
-    ['b'.repeat(16), '0123456789abcdef'].flatMap((spanId) =>
-      [0, 1].flatMap((traceFlags) =>
-        [Option.none<string>(), Option.some('k=v')].map((traceState) =>
-          contextFixture(traceId, spanId, traceFlags, traceState),
-        ),
-      ),
-    ),
-  )
-  const baselineCases = [
-    ...validGrid,
-    ...['0'.repeat(32), 'a'.repeat(31), 'a'.repeat(33), `${'a'.repeat(31)}g`].map((traceId) =>
-      contextFixture(traceId, 'b'.repeat(16), 1, Option.none<string>()),
-    ),
-  ]
-
-  it.prop(
-    'u4b THROWAWAY baseline tracePartsOf ≡ partsOfSpanContext valid×16+invalid×4 — DELETE AFTER RUN',
-    [Arbitrary.schema(S.Literals([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]))],
-    ([index]) => agreesWithBaseline(baselineCases[index]),
-  )
 }

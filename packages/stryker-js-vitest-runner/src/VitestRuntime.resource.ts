@@ -157,7 +157,8 @@ export const resolveVitest: VitestResolver = (_dir) => {
     const resolutionFailure = (specifier: string, detail: string): TestRunnerFailed =>
       vitestUnresolved(specifier, import.meta.url, detail)
     const resolveSpecifier = (specifier: string): Effect.Effect<string, TestRunnerFailed> =>
-      Effect.try({
+      Effect.try<string, TestRunnerFailed>({
+        try: () => import.meta.resolve(specifier),
         catch: (cause) => resolutionFailure(specifier, Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => '')),
       })
     const vitestNodeUrl = yield* resolveSpecifier('vitest/node')

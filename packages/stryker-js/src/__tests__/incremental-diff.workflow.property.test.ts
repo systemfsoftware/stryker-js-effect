@@ -3,20 +3,32 @@ import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { incrementalDiff, IncrementalDiffCommand, MutantRemembered, MutantToRun } from '../incremental-diff.workflow.js'
+import {
+  incrementalDiff,
+  IncrementalDiffCommand,
+  type IncrementalDiffDecision,
+  MutantRemembered,
+  MutantToRun,
+} from '../incremental-diff.workflow.js'
+import { EphemeralStatusSchema, RememberedStatusSchema } from '../../tests/__fixtures__/incremental-diff-law.schema.js'
 
 const IncrementalDiffDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/IncrementalDiff')
 
-const RememberedStatus = S.Literals(['Killed', 'Survived', 'Timeout', 'NoCoverage', 'Ignored'])
+const mutantOf = (id: string, line: number) =>
+  Mutant.make({
+    id,
+    fileName: `${id}.ts`,
+    mutatorName: `${id}-mutator`,
+    replacement: '',
+    location: { start: { line, column: 0 }, end: { line, column: 1 } },
+  })
 
-const EphemeralStatus = S.Literals(['CompileError', 'RuntimeError', 'Pending'])
-
-const shiftedLocationOf = (mutant: typeof Mutant.Type) => ({
-  start: { line: mutant.location.start.line - 1, column: mutant.location.start.column - 1 },
-  end: { line: mutant.location.end.line - 1, column: mutant.location.end.column - 1 },
+const shiftedLocationOf = (mutant: Mutant) => ({
+  start: { line: mutant.location.start.line + 1, column: mutant.location.start.column + 1 },
+  end: { line: mutant.location.end.line + 1, column: mutant.location.end.column + 1 },
 })
 
-const previousMutantOf = (mutant: typeof Mutant.Type, status: string, testsCompleted: number) => ({
+const previousMutantOf = (mutant: Mutant, status: string, testsCompleted: number) => ({
   mutatorName: mutant.mutatorName,
   replacement: mutant.replacement,
   location: shiftedLocationOf(mutant),
@@ -26,10 +38,10 @@ const previousMutantOf = (mutant: typeof Mutant.Type, status: string, testsCompl
   killedBy: [mutant.id],
 })
 
-const carriesDecisionTypeId = (decision: unknown) =>
+const carriesDecisionTypeId = (decision: IncrementalDiffDecision) =>
   Object.getOwnPropertySymbols(decision).includes(IncrementalDiffDecisionTypeId)
 
-const forceCommandOf = (mutants: ReadonlyArray<typeof Mutant.Type>) =>
+const forceCommandOf = (mutants: ReadonlyArray<Mutant>) =>
   IncrementalDiffCommand.make({
     currentMutants: [...mutants],
     relativeFileByMutantId: Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant.fileName])),
@@ -42,12 +54,13 @@ const forceCommandOf = (mutants: ReadonlyArray<typeof Mutant.Type>) =>
   })
 
 describe('incrementalDiff', () => {
-  it.prop('∀d_Decision_CarriesIncrementalDiffTypeId', [S.Array(Mutant)], (mutants) => {
-    const result = incrementalDiff(forceCommandOf(mutants))
+  it.prop('∀ids_Force_AllDecisionsCarryTypeId', [S.Array(S.NonEmptyString)], ([ids]) => {
+    const result = incrementalDiff(forceCommandOf(ids.map((id, index) => mutantOf(id, index))))
     return Result.isSuccess(result) && result.success.every(carriesDecisionTypeId)
   })
 
-  it.prop('∀ms_Force_AllToRunInInputOrder', [S.Array(Mutant)], (mutants) => {
+  it.prop('∀ids_Force_AllToRunInInputOrder', [S.Array(S.NonEmptyString)], ([ids]) => {
+    const mutants = ids.map((id, index) => mutantOf(id, index))
     const result = incrementalDiff(forceCommandOf(mutants))
     return (
       Result.isSuccess(result) &&
@@ -58,11 +71,13 @@ describe('incrementalDiff', () => {
     )
   })
 
-  it.prop('∀mnt_StableFile_RememberedCarriesPreviousFields', [Mutant, RememberedStatus, S.Finite], ([
-    mutant,
+  it.prop('∀ilt_StableFile_RememberedCarriesPreviousFields', [S.NonEmptyString, RememberedStatusSchema, S.Finite, S.Finite], ([
+    id,
     status,
     testsCompleted,
+    line,
   ]) => {
+    const mutant = mutantOf(id, line)
     const previous = previousMutantOf(mutant, status, testsCompleted)
     const result = incrementalDiff(
       IncrementalDiffCommand.make({
@@ -90,8 +105,9 @@ describe('incrementalDiff', () => {
     )
   })
 
-  it.prop('∀me_EphemeralStatus_ToRun', [Mutant, EphemeralStatus], ([mutant, status]) => {
-    const previous = previousMutantOf(mutant, status, mutant.location.start.column)
+  it.prop('∀il_EphemeralStatus_ToRun', [S.NonEmptyString, EphemeralStatusSchema, S.Finite], ([id, status, line]) => {
+    const mutant = mutantOf(id, line)
+    const previous = previousMutantOf(mutant, status, line)
     const result = incrementalDiff(
       IncrementalDiffCommand.make({
         currentMutants: [mutant],
@@ -107,8 +123,9 @@ describe('incrementalDiff', () => {
     return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
   })
 
-  it.prop('∀mc_ChangedSourceFile_ToRun', [Mutant, RememberedStatus], ([mutant, status]) => {
-    const previous = previousMutantOf(mutant, status, mutant.location.start.column)
+  it.prop('∀il_ChangedSourceFile_ToRun', [S.NonEmptyString, RememberedStatusSchema, S.Finite], ([id, status, line]) => {
+    const mutant = mutantOf(id, line)
+    const previous = previousMutantOf(mutant, status, line)
     const result = incrementalDiff(
       IncrementalDiffCommand.make({
         currentMutants: [mutant],
@@ -124,8 +141,9 @@ describe('incrementalDiff', () => {
     return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
   })
 
-  it.prop('∀mk_UnshiftedPreviousKey_ToRun', [Mutant, RememberedStatus], ([mutant, status]) => {
-    const previous = { ...previousMutantOf(mutant, status, mutant.location.start.column), location: mutant.location }
+  it.prop('∀il_UnshiftedPreviousKey_ToRun', [S.NonEmptyString, RememberedStatusSchema, S.Finite], ([id, status, line]) => {
+    const mutant = mutantOf(id, line)
+    const previous = { ...previousMutantOf(mutant, status, line), location: mutant.location }
     const result = incrementalDiff(
       IncrementalDiffCommand.make({
         currentMutants: [mutant],
@@ -141,24 +159,25 @@ describe('incrementalDiff', () => {
     return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
   })
 
-  it.prop('∀mtc_ChangedCoverage_ToRun', [Mutant, RememberedStatus, S.NonEmptyString], ([
-    mutant,
-    status,
-    testFile,
-  ]) => {
-    const previous = previousMutantOf(mutant, status, mutant.location.start.column)
-    const result = incrementalDiff(
-      IncrementalDiffCommand.make({
-        currentMutants: [mutant],
-        relativeFileByMutantId: { [mutant.id]: mutant.fileName },
-        previousFiles: { [mutant.fileName]: { source: mutant.fileName, mutants: [previous] } },
-        previousTestFiles: { [testFile]: { source: `${testFile}~previous` } },
-        currentRelativeFiles: { [mutant.fileName]: mutant.fileName },
-        testIdsByRelativeFile: { [testFile]: [mutant.id] },
-        coveringTestFilesByMutantId: { [mutant.id]: [testFile] },
-        force: false,
-      }),
-    )
-    return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
-  })
+  it.prop(
+    '∀ilt_ChangedCoverage_ToRun',
+    [S.NonEmptyString, RememberedStatusSchema, S.Finite, S.NonEmptyString],
+    ([id, status, line, testFile]) => {
+      const mutant = mutantOf(id, line)
+      const previous = previousMutantOf(mutant, status, line)
+      const result = incrementalDiff(
+        IncrementalDiffCommand.make({
+          currentMutants: [mutant],
+          relativeFileByMutantId: { [mutant.id]: mutant.fileName },
+          previousFiles: { [mutant.fileName]: { source: mutant.fileName, mutants: [previous] } },
+          previousTestFiles: { [testFile]: { source: `${testFile}~previous` } },
+          currentRelativeFiles: { [mutant.fileName]: mutant.fileName },
+          testIdsByRelativeFile: { [testFile]: [mutant.id] },
+          coveringTestFilesByMutantId: { [mutant.id]: [testFile] },
+          force: false,
+        }),
+      )
+      return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
+    },
+  )
 })

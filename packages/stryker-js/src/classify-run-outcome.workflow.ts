@@ -192,19 +192,19 @@ const MAX_TRAVERSAL_DEPTH = 10
 
 const asExitClass = Option.liftPredicate(S.is(ExitClass))
 
-const carriesExitClass = <A = unknown>(value: unknown): value is { readonly exitClass: A } =>
+const carriesExitClass = (value: unknown): value is { readonly exitClass: unknown } =>
   Predicate.isObjectOrArray(value) && 'exitClass' in value
 
-const carriesCause = <A = unknown>(value: unknown): value is { readonly cause: A } =>
+const carriesCause = (value: unknown): value is { readonly cause: unknown } =>
   Predicate.isObjectOrArray(value) && 'cause' in value
 
-const carriesReason = <A = unknown>(value: unknown): value is { readonly reason: A } =>
+const carriesReason = (value: unknown): value is { readonly reason: unknown } =>
   Predicate.isObjectOrArray(value) && 'reason' in value
 
-const carriesMessageField = <A = unknown>(value: unknown): value is { readonly message: A } =>
+const carriesMessageField = (value: unknown): value is { readonly message: unknown } =>
   Predicate.isObjectOrArray(value) && 'message' in value
 
-const carriesVerdict = <A = unknown>(value: unknown): value is { readonly verdict: A } =>
+const carriesVerdict = (value: unknown): value is { readonly verdict: unknown } =>
   Predicate.isObjectOrArray(value) && 'verdict' in value
 
 const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
@@ -213,7 +213,7 @@ const isChildList = (value: unknown): value is ReadonlyArray<unknown> => Array.i
 
 const isMessageError = (value: unknown): value is Error => value instanceof Error && value.message.length > 0
 
-const isShowHelp = <A = unknown>(value: A): value is A & CliError.ShowHelp => S.is(CliError.ShowHelp)(value)
+const isShowHelp = (value: unknown): value is CliError.ShowHelp => S.is(CliError.ShowHelp)(value)
 
 const isSurvivorsRejection = S.is(SurvivorsRejection)
 

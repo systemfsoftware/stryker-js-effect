@@ -27,7 +27,7 @@ export const ConfigEnvSchema = S.Struct({
 })
 export type ConfigEnv = typeof ConfigEnvSchema.Type
 
-export type DocumentRecord = { readonly [key: string]: unknown }
+export type DocumentRecord<A = unknown> = { readonly [key: string]: A }
 
 export type StrykerConfigExport = PartialStrykerOptions | Promise<PartialStrykerOptions> | StrykerConfigFn
 
@@ -165,9 +165,13 @@ export class StrykerConfig extends S.Class<StrykerConfig>('StrykerConfig')({
   } = (config) => config
 
   static readonly merge: {
-    (overrides: DocumentRecord): (defaults: DocumentRecord) => DocumentRecord
-    (defaults: DocumentRecord, overrides: DocumentRecord): DocumentRecord
-  } = dual(2, (defaults: DocumentRecord, overrides: DocumentRecord) => mergeRecords(defaults, overrides))
+    <A>(overrides: DocumentRecord<A>): (defaults: DocumentRecord<A>) => DocumentRecord<A>
+    <A>(defaults: DocumentRecord<A>, overrides: DocumentRecord<A>): DocumentRecord<A>
+  } = dual(
+    2,
+    <A>(defaults: DocumentRecord<A>, overrides: DocumentRecord<A>): DocumentRecord<A> =>
+      mergeRecords(defaults, overrides),
+  )
 
   static readonly createDefaultOptions: Effect.Effect<StrykerOptions> = S.decodeEffect(StrykerOptionsSchema)({}).pipe(
     Effect.orDie,

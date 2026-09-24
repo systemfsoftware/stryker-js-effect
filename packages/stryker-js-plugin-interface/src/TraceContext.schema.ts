@@ -7,13 +7,38 @@ import { SchemaGetter, SchemaIssue, SchemaTransformation } from 'effect'
 export const TraceparentHeader = S.Literal('traceparent')
 export const TracestateHeader = S.Literal('tracestate')
 export const TraceContextPartsSchema = S.Struct({
-  version: S.String,
-  traceId: S.String,
-  spanId: S.String,
-  traceFlags: S.Finite.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
+  version: S.String.pipe(
+    S.check(S.isPattern(/^[0-9a-f]{2}$/)),
+    S.check(S.isPattern(/^([0-9a-e][0-9a-f]|[0-9a-f][0-9a-e])$/)),
+  ),
+  traceId: S.String.pipe(
+    S.check(S.isPattern(/^[0-9a-f]{32}$/)),
+    S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
+  ),
+  spanId: S.String.pipe(
+    S.check(S.isPattern(/^[0-9a-f]{16}$/)),
+    S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
+  ),
+  traceFlags: S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
   traceState: S.optional(S.String),
 })
 export type TraceContextParts = typeof TraceContextPartsSchema.Type
+
+const TraceparentPartsSchema = S.Struct({
+  version: S.String.pipe(
+    S.check(S.isPattern(/^[0-9a-f]{2}$/)),
+    S.check(S.isPattern(/^([0-9a-e][0-9a-f]|[0-9a-f][0-9a-e])$/)),
+  ),
+  traceId: S.String.pipe(
+    S.check(S.isPattern(/^[0-9a-f]{32}$/)),
+    S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
+  ),
+  spanId: S.String.pipe(
+    S.check(S.isPattern(/^[0-9a-f]{16}$/)),
+    S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
+  ),
+  traceFlags: S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
+})
 
 const HEX_VERSION = /^[0-9a-f]{2}$/
 const HEX_TRACE_ID = /^[0-9a-f]{32}$/
@@ -54,7 +79,7 @@ const partsOf = (value: string) => {
   }
 }
 
-const formatOf = (parts: TraceContextParts) =>
+const formatOf = (parts: { readonly version: string; readonly traceId: string; readonly spanId: string; readonly traceFlags: number }) =>
   `${parts.version}-${parts.traceId}-${parts.spanId}-${(parts.traceFlags & 0xff).toString(16).padStart(2, '0')}`
 
 const malformedTraceparent = (value: string) =>
@@ -71,7 +96,7 @@ const encodeText = SchemaGetter.transform(formatOf)
 
 export const Traceparent = S.String.pipe(
   S.decodeTo(
-    TraceContextPartsSchema,
+    TraceparentPartsSchema,
     SchemaTransformation.makeTransformation({ decode: decodeParts, encode: encodeText }),
   ),
 )
@@ -81,17 +106,8 @@ if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
 
   const hexOf = (length: number) => S.String.pipe(S.check(S.isPattern(new RegExp(`^[0-9a-f]{${length}}$`))))
-  const nonZeroHexOf = (length: number) =>
-    S.String.pipe(S.check(S.isPattern(new RegExp(`^[0-9a-f]{${length - 1}}[1-9a-f]$`))))
 
-  const RoundTrippableParts = S.Struct({
-    version: S.String.pipe(S.check(S.isPattern(/^(?!ff$)[0-9a-f]{2}$/))),
-    traceId: nonZeroHexOf(32),
-    spanId: nonZeroHexOf(16),
-    traceFlags: S.Finite.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
-  })
-
-  it.prop('∀parts_Traceparent_roundTripsThroughTheHeader', [RoundTrippableParts], ([parts]) =>
+  it.prop('∀parts_Traceparent_roundTripsThroughTheHeader', [Traceparent], ([parts]) =>
     Result.match(S.encodeResult(Traceparent)(parts), {
       onFailure: () => false,
       onSuccess: (header) =>
@@ -103,7 +119,7 @@ if (import.meta.vitest !== void 0) {
         }),
     }))
 
-  it.prop('∀parts_Traceparent_rendersTheBaselineHeader', [RoundTrippableParts], ([parts]) =>
+  it.prop('∀parts_Traceparent_rendersTheBaselineHeader', [Traceparent], ([parts]) =>
     Result.match(S.encodeResult(Traceparent)(parts), {
       onFailure: () => false,
       onSuccess: (header) =>
