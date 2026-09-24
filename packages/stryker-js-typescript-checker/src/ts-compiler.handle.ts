@@ -588,15 +588,41 @@ const linkImport = (rt: TSCompilerRuntime, sourceFiles: SourceFiles, fileName: s
     },
   )
 
+const recordOwner = (owners: MutableHashMap.MutableHashMap<string, Program>, program: Program, fileName: string) => {
+  const normalized = normalizeFileName(fileName)
+  Boolean.match(MutableHashMap.has(owners, normalized), {
+    onTrue: () => undefined,
+    onFalse: () => {
+      MutableHashMap.set(owners, normalized, program)
+    },
+  })
+}
+
+const ownedSourceFileOf = (
+  owners: MutableHashMap.MutableHashMap<string, Program>,
+  programs: readonly Program[],
+  fileName: string,
+): Effect.Effect<Option.Option<SourceFile>> =>
+  Option.match(MutableHashMap.get(owners, fileName), {
+    onNone: () => sourceFileOf(programs, fileName),
+    onSome: (owner) =>
+      Effect.filterOrElse(sourceFileIn(owner, fileName), Option.isSome, () => sourceFileOf(programs, fileName)),
+  })
+
 const buildGraph = (rt: TSCompilerRuntime, programs: readonly Program[]): Effect.Effect<void> =>
   Effect.gen(function*() {
     const state = Ref.getUnsafe(rt.state)
+    const owners = MutableHashMap.empty<string, Program>()
     yield* Effect.forEach(
       programs,
       (program) =>
         Effect.map(
           Effect.promise(() => program.getSourceFileNames()),
-          (fileNames) => Arr.forEach(fileNames, (fileName) => registerGraphFile(state.sourceFiles, fileName)),
+          (fileNames) =>
+            Arr.forEach(fileNames, (fileName) => {
+              registerGraphFile(state.sourceFiles, fileName)
+              recordOwner(owners, program, fileName)
+            }),
         ),
       { discard: true },
     )
@@ -604,7 +630,7 @@ const buildGraph = (rt: TSCompilerRuntime, programs: readonly Program[]): Effect
       Array.from(state.sourceFiles),
       ([fileName]) =>
         Effect.map(
-          sourceFileOf(programs, fileName),
+          ownedSourceFileOf(owners, programs, fileName),
           (found) =>
             Option.map(found, (sourceFile) =>
               Arr.forEach(importsOf(sourceFile), (specifier) =>
@@ -921,8 +947,14 @@ export const close = (self: TSCompiler): Effect.Effect<void> => {
   const rt = self[RuntimeTypeId]
   return Effect.gen(function*() {
     const state = yield* Ref.get(rt.state)
-    yield* Effect.promise(() => Promise.resolve(state.snapshot?.dispose()))
-    yield* Effect.promise(() => Promise.resolve(state.api?.close()))
+    yield* Option.match(Option.fromUndefinedOr(state.snapshot), {
+      onNone: () => Effect.void,
+      onSome: (snapshot) => Effect.promise(() => snapshot.dispose()),
+    })
+    yield* Option.match(Option.fromUndefinedOr(state.api), {
+      onNone: () => Effect.void,
+      onSome: (api) => Effect.promise(() => api.close()),
+    })
     yield* Ref.update(rt.state, (prev) => ({ ...prev, snapshot: undefined, api: undefined }))
   })
 }
@@ -1126,6 +1158,7 @@ if (import.meta.vitest !== void 0) {
   const KnownTsConfigFields = S.Struct({
     extends: S.optional(S.Union([S.String, S.Array(S.String)])),
     include: S.Array(S.String).pipe(S.optional),
+    files: S.Array(S.String).pipe(S.optional),
     exclude: S.Array(S.String).pipe(S.optional),
     watchOptions: S.optional(JsonRecordSchema),
     typeAcquisition: S.optional(JsonRecordSchema),
