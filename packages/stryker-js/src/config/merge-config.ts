@@ -1,3 +1,4 @@
+import { dual } from 'effect/Function'
 import * as Predicate from 'effect/Predicate'
 import * as Record from 'effect/Record'
 
@@ -38,5 +39,7 @@ const mergeRecords = <A = unknown>(
   return merged
 }
 
-export const mergeConfig = (defaults: StrykerConfig, overrides: StrykerConfig): StrykerConfig =>
-  mergeRecords(defaults, overrides)
+export const mergeConfig = dual<
+  (overrides: StrykerConfig) => (defaults: StrykerConfig) => StrykerConfig,
+  (defaults: StrykerConfig, overrides: StrykerConfig) => StrykerConfig
+>(2, (defaults, overrides) => mergeRecords(defaults, overrides))

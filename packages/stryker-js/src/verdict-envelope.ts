@@ -3,6 +3,7 @@ import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as mutants from '@systemfsoftware/stryker-js-instrumenter'
 import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import * as DateTime from 'effect/DateTime'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -141,36 +142,48 @@ const actionableMutants = (files: schema.MutationTestResult['files']): readonly 
       }))
   )
 
-export function buildVerdictEnvelope(
-  report: schema.MutationTestResult,
-  mode: OutputMode,
-  signal: ModeSignal,
-  runId: string,
-  basePath: string,
-  pathService: Path.Path,
-): VerdictEnvelope {
-  const metrics = calculateMetrics(report.files).metrics
-  const { jsonReporterFileName } = embeddedConfig(report)
-  return {
-    schemaVersion: VERDICT_ENVELOPE_SCHEMA_VERSION,
-    runId,
-    mode,
-    signal,
-    score: Option.getOrNull(
-      Option.filter(Option.some(metrics.mutationScore), (score) => metrics.totalMutants > 0 && Number.isFinite(score)),
-    ),
-    thresholds: {
-      high: report.thresholds.high,
-      low: report.thresholds.low,
-      break: breakThreshold(report.thresholds),
-    },
-    counts: metrics,
-    reportFile: Option.getOrNull(
-      Option.map(
-        Option.filter(Option.fromUndefinedOr(jsonReporterFileName), () => metrics.totalMutants > 0),
-        (fileName) => normalizeFileName(pathService.relative(basePath, fileName)),
+export const buildVerdictEnvelope = dual<
+  (
+    mode: OutputMode,
+    signal: ModeSignal,
+    runId: string,
+    basePath: string,
+    pathService: Path.Path,
+  ) => (report: schema.MutationTestResult) => VerdictEnvelope,
+  (
+    report: schema.MutationTestResult,
+    mode: OutputMode,
+    signal: ModeSignal,
+    runId: string,
+    basePath: string,
+    pathService: Path.Path,
+  ) => VerdictEnvelope
+>(
+  (args) => args.length === 6,
+  (report, mode, signal, runId, basePath, pathService) => {
+    const metrics = calculateMetrics(report.files).metrics
+    const { jsonReporterFileName } = embeddedConfig(report)
+    return {
+      schemaVersion: VERDICT_ENVELOPE_SCHEMA_VERSION,
+      runId,
+      mode,
+      signal,
+      score: Option.getOrNull(
+        Option.filter(Option.some(metrics.mutationScore), (score) => metrics.totalMutants > 0 && Number.isFinite(score)),
       ),
-    ),
-    mutants: actionableMutants(report.files),
-  }
-}
+      thresholds: {
+        high: report.thresholds.high,
+        low: report.thresholds.low,
+        break: breakThreshold(report.thresholds),
+      },
+      counts: metrics,
+      reportFile: Option.getOrNull(
+        Option.map(
+          Option.filter(Option.fromUndefinedOr(jsonReporterFileName), () => metrics.totalMutants > 0),
+          (fileName) => normalizeFileName(pathService.relative(basePath, fileName)),
+        ),
+      ),
+      mutants: actionableMutants(report.files),
+    }
+  },
+)

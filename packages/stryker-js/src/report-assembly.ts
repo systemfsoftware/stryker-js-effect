@@ -48,7 +48,7 @@ export const testIdRemap = (testIds: readonly string[]): TestIdRemap => {
   return { testId: remapId, testIds: remapIds }
 }
 
-export const toReportMutant = (mutant: RunMutantResult, remap: TestIdRemap): schema.MutantResult => ({
+const toReportMutant = (mutant: RunMutantResult, remap: TestIdRemap): schema.MutantResult => ({
   id: mutant.id,
   mutatorName: mutant.mutatorName,
   replacement: mutant.replacement,
@@ -62,7 +62,7 @@ export const toReportMutant = (mutant: RunMutantResult, remap: TestIdRemap): sch
   coveredBy: remap.testIds(mutant.coveredBy),
 })
 
-export const toReportTest = (test: TestResult, remap: TestIdRemap): schema.TestDefinition => {
+const toReportTest = (test: TestResult, remap: TestIdRemap): schema.TestDefinition => {
   const base: schema.TestDefinition = { id: remap.testId(test.id), name: test.name }
   if (test.startPosition === undefined) {
     return base
