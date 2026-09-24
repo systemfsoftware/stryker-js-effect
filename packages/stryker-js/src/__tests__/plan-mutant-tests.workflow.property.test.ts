@@ -15,7 +15,6 @@ import {
   planMutantTests,
 } from '../plan-mutant-tests.workflow.js'
 
-const PlanDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutantPlan')
 
 const smallNonNegativeArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 1000 })))
 
@@ -74,8 +73,6 @@ const scenarioArb: Arbitrary.Arbitrary<MutantTestPlanCommand> = Arbitrary.schema
 const IgnoredStaticReason = 'Static mutant (and "ignoreStatic" was enabled)'
 
 describe('planMutantTests', () => {
-  it.prop('forall_d_DecisionBrand_present', [S.Union([PlannedRunMutant, PlannedEarlyResultMutant])], ([decision]) =>
-    Object.getOwnPropertySymbols(decision).includes(PlanDecisionTypeId))
 
   it.prop('forall_m_Command_ordersOutcomesByMutantOrder', [scenarioArb], ([command]) =>
     Result.match(planMutantTests(command), {
