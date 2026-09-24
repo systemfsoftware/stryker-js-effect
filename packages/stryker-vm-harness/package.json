@@ -55,7 +55,7 @@
   },
   "peerDependencies": {
     "effect": "catalog:",
-    "vitest": ">=4.1.0"
+    "vitest": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

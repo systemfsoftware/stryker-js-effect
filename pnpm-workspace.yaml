@@ -23,6 +23,9 @@ catalog:
   "@oxc-project/types": ^0.150.0
   "@std/jsonc": jsr:^1
   svelte: ^5
+  "@sveltejs/vite-plugin-svelte": ^7.3.1
+  "@testing-library/svelte": ^5.4.2
+  vite: ^8.3.0
   "@systemfsoftware/arethetypeswrong-cli": ^4.2.0
   "@systemfsoftware/differential-spec": ^0.3.0
   "@systemfsoftware/effect-cell-types": ^10.1.1

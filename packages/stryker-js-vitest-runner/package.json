@@ -52,7 +52,7 @@
     "@systemfsoftware/effect-cell-types": "catalog:"
   },
   "peerDependencies": {
-    "vitest": ">=4.1.0"
+    "vitest": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
