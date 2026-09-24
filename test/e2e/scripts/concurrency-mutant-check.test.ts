@@ -104,7 +104,7 @@ const optionsFor = (layout: FixtureLayout): Effect.Effect<Options.StrykerOptions
 
 const rigLayers = (layout: FixtureLayout): Layer.Layer<CheckerRuntime | TypeScriptCompiler, never, FileSystem.FileSystem | Path.Path> =>
   Layer.unwrap(
-    Effect.map(optionsFor(layout), (options) =>
+    Effect.map(Effect.orDie(optionsFor(layout)), (options) =>
       Layer.mergeAll(compilerLayer(TypeScriptCompiler, options), CheckerRuntime.layer(options))),
   )
 
@@ -118,7 +118,7 @@ const checkerRig = (layout: FixtureLayout): Effect.Effect<CheckerRig, never, Fil
       layout,
       runtime,
       start: Result.map(service, () => undefined),
-      projectFiles: [...graph.keys()],
+      projectFiles: [...HashMap.keys(graph)],
     }
   }).pipe(Effect.provide(rigLayers(layout)), Effect.orDie)
 

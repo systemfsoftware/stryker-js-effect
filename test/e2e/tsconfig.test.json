@@ -19,6 +19,9 @@
   "references": [
     {
       "path": "../../packages/stryker-js-instrumenter/tsconfig.app.json"
+    },
+    {
+      "path": "../../packages/stryker-js-typescript-checker/tsconfig.app.json"
     }
   ]
 }

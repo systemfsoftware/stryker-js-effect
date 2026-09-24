@@ -9,7 +9,6 @@ import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { RegisterHooksOptions } from 'node:module';
-import * as Result from 'effect/Result';
 import * as S from 'effect/Schema';
 import * as Scope from 'effect/Scope';
 import { Workflow } from '@systemfsoftware/effect-cell-types';
@@ -73,7 +72,10 @@ export type DrainOutcome = DrainCompleted | DrainTimedOut;
 // Warning: (ae-forgotten-export) The symbol "DrainRegistryCommand_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
-export class DrainRegistryCommand extends DrainRegistryCommand_base {}
+export class DrainRegistryCommand extends DrainRegistryCommand_base {
+    // (undocumented)
+    static readonly [Workflow.InstrumentationBrand]: {};
+}
 
 // Warning: (ae-forgotten-export) The symbol "DrainTimedOut_base" needs to be exported by the entry point index.d.mts
 //
@@ -126,7 +128,7 @@ export const makeEffectMethods: (context: EffectAdapterRegistration) => EffectVi
 export const nativeImport: <A = unknown>(url: string) => Promise<A>;
 
 // @public (undocumented)
-export const pureDrainRegistry: ((command: DrainRegistryCommand) => Result.Result<DrainOutcome, never>) & Workflow.WorkflowBrand;
+export const pureDrainRegistry: Workflow.MadeWorkflow<typeof DrainRegistryCommand, S.Union<readonly [typeof DrainCompleted, typeof DrainTimedOut]>, S.Never>;
 
 // @public (undocumented)
 export const readGlobalState: () => VmRunnerGlobalState | undefined;
