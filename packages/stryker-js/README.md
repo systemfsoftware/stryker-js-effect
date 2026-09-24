@@ -2,7 +2,7 @@
 
 The modern mutation testing framework for JavaScript and TypeScript.
 A ground-up, breaking-change fork of `@stryker-mutator/core` built with Effect 4:
-provides the `stryker` executable, in-memory V8 and isolated Vitest runners,
+provides the `stryker` executable, in-process `vm` and isolated Vitest runners,
 and the typed `./config` authoring surface.
 
 ## Install
@@ -54,9 +54,10 @@ pnpm exec stryker run
 
 ## Zero-Plugin Built-in Runners
 
-The in-memory V8 VM runner is the default: with no `testRunner` and no `testFiles`
-configured, it discovers `*.test` / `*.spec` files itself and runs them. Set
-`testFiles` explicitly, or pick one of the runners below, to take control.
+The `vm` runner is the default: with no `testRunner` and no `testFiles`
+configured, it discovers `*.test` / `*.spec` files itself and runs them. It loads
+your suites through your project's `vitest`, so `vitest` must be installed.
+Set `testFiles` explicitly, or pick one of the runners below, to take control.
 
 ### 1. Shell Command Runner (`testRunner: 'command'`)
 
@@ -74,9 +75,9 @@ export default defineConfig({
 })
 ```
 
-### 2. In-Memory V8 VM Runner (`testRunner: 'vm'`)
+### 2. In-Process `vm` Runner (`testRunner: 'vm'`)
 
-Run pure unit tests directly inside Node's native V8 VM with zero process spawning overhead:
+Runs Vitest suites in-process, in one worker thread per test runner, loading each test file as native ESM through Node's module hooks. No child process and no bundler step. Each file gets its own module state by default; your `vitest.config.*` (environment, setup files, globals, projects) is picked up through your project's `vitest` install. Vitest browser-mode suites are refused with an error naming `testRunner: 'vitest'`; pick the `vitest` runner for those.
 
 ```ts
 import { defineConfig } from '@systemfsoftware/stryker-js/config'

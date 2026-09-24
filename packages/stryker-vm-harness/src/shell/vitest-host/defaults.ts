@@ -1,0 +1,43 @@
+import type { VmProjectConfig, VmVitestConfig } from '../../core/vitest-config.schema.js'
+
+export const defaultProjectConfig = (root: string): VmProjectConfig => ({
+  name: '',
+  root,
+  include: ['**/*.{test,spec}.?(c|m)[jt]s?(x)'],
+  exclude: ['**/node_modules/**', '**/.git/**'],
+  includeSource: [],
+  setupFiles: [],
+  globals: false,
+  environment: 'node',
+  environmentOptions: {},
+  isolate: true,
+  testTimeout: 5000,
+  hookTimeout: 10000,
+  retry: 0,
+  repeats: 0,
+  maxConcurrency: 5,
+  restoreMocks: false,
+  clearMocks: true,
+  mockReset: false,
+  unstubGlobals: false,
+  unstubEnvs: false,
+  snapshotFormat: {},
+  snapshotSerializers: [],
+  fakeTimers: { loopLimit: 10000, shouldClearNativeTimers: true },
+  expect: { requireAssertions: false, poll: { timeout: 1000, interval: 50 } },
+  define: {},
+  env: {},
+  alias: [],
+  conditions: [],
+  globalSetup: [],
+  injectCjsGlobals: true,
+  tags: [],
+  strictTags: true,
+  sequence: { concurrent: false, shuffle: false, hooks: 'stack', setupFiles: 'parallel' },
+  allowOnly: false,
+})
+
+export const defaultVitestConfig = (root: string): VmVitestConfig => ({
+  browser: false,
+  projects: [defaultProjectConfig(root)],
+})

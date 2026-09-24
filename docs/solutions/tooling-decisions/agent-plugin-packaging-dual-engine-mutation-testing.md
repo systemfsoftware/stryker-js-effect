@@ -7,7 +7,7 @@ tags:
   - "stryker-js"
   - "mutation-testing"
   - "dual-engine"
-  - "v8-vm"
+  - "vm-runner"
   - "vitest"
 ---
 
@@ -26,9 +26,9 @@ When engineers and autonomous coding agents attempt to set up mutation testing i
 
 The mutation runner architecture must differentiate between local development feedback and CI gate enforcement without requiring diverging configuration files:
 
-$$\text{Runner}(E) = \begin{cases} \text{In-Memory V8 VM (`vm`)}, & E \neq \text{CI} \\ \text{Isolated Vitest Workers (`vitest`)}, & E = \text{CI} \end{cases}$$
+$$\text{Runner}(E) = \begin{cases} \text{In-Process Worker-Thread `vm`}, & E \neq \text{CI} \\ \text{Isolated Vitest Workers (`vitest`)}, & E = \text{CI} \end{cases}$$
 
-- **Local (`testRunner: 'vm'`)**: Evaluates pure unit tests directly inside Node's V8 VM context via `stripTypeScriptTypes`. Eliminates process-forking overhead and operates with in-memory execution speed.
+- **Local (`testRunner: 'vm'`)**: Runs Vitest suites in-process in a worker thread per runner, loading each test file as native ESM through Node's module hooks. No child process and no bundler step; the real matchers, mocks, and snapshots come from the `vitest` installed in the project.
 - **CI (`testRunner: 'vitest'`)**: Executes within isolated worker processes, capturing comprehensive per-test coverage analysis and supporting complete mock/DOM environments.
 
 ```ts

@@ -44,6 +44,17 @@ const dummyIdGenerator = {
   next: Effect.succeed(1),
 }
 
+const SANDBOX_DEPENDENCIES = decodeURIComponent(new URL('../node_modules', import.meta.url).pathname)
+
+const linkSandboxDependencies = (
+  directory: string,
+): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    yield* fs.symlink(SANDBOX_DEPENDENCIES, path.join(directory, 'node_modules'))
+  }).pipe(Effect.orDie)
+
 interface SuiteFixture {
   readonly directory: string
   readonly file: string
@@ -58,6 +69,7 @@ const writeSuites = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const directory = yield* fs.makeTempDirectory()
+    yield* linkSandboxDependencies(directory)
     const files: string[] = []
     for (const [index, source] of sources.entries()) {
       const file = path.join(directory, `${prefix}-${index}.test.ts`)
@@ -160,6 +172,61 @@ const KILL_ATTRIBUTION_SUITE = [
   '})',
 ].join('\n')
 
+const SPINNING_SUITE = [
+  "import { test } from 'vitest'",
+  '',
+  "test('spins forever', () => {",
+  '  while (true) {}',
+  '})',
+].join('\n')
+
+const EXITING_SUITE = [
+  "import { test } from 'vitest'",
+  '',
+  "test('ends the program', () => {",
+  '  process.exit(3)',
+  '})',
+].join('\n')
+
+const OVERLAPPING_SUITE = (marker: string): string =>
+  [
+    "import { test } from 'vitest'",
+    "import { appendFileSync } from 'node:fs'",
+    "import { dirname, join } from 'node:path'",
+    '',
+    'const workerFile = (globalThis as { __vitest_worker__?: { filepath?: string } }).__vitest_worker__?.filepath ?? globalThis.process.cwd()',
+    `const stampFile = join(dirname(workerFile), ${JSON.stringify(`${marker}.stamps`)})`,
+    `test(${JSON.stringify(`overlaps ${marker}`)}, async () => {`,
+    '  const { promise, resolve } = Promise.withResolvers<void>()',
+    '  setTimeout(resolve, 300)',
+    '  appendFileSync(stampFile, `start ${performance.now()}\\n`)',
+    '  await promise',
+    '  appendFileSync(stampFile, `end ${performance.now()}\\n`)',
+    '})',
+  ].join('\n')
+
+const OUTSIDE_HOOK_SUITE = [
+  "import { test, beforeEach } from 'vitest'",
+  '',
+  'beforeEach(() => {',
+  '  const told = (globalThis as { __OUTSIDE_HOOK__?: string[] }).__OUTSIDE_HOOK__ ?? []',
+  '  told.push("outside hook ran")',
+  '  ;(globalThis as { __OUTSIDE_HOOK__?: string[] }).__OUTSIDE_HOOK__ = told',
+  '})',
+  '',
+  "test('first file test', () => {})",
+].join('\n')
+
+const OUTSIDE_HOOK_VICTIM_SUITE = [
+  "import { test } from 'vitest'",
+  '',
+  "test('second file test', () => {",
+  '  const told = (globalThis as { __OUTSIDE_HOOK__?: string[] }).__OUTSIDE_HOOK__',
+  '  if (told !== undefined && told.length > 0) {',
+  '    throw new Error("the other file\'s hook ran here")',
+  '  }',
+  '})',
+].join('\n')
 const writeSuite = (
   prefix: string,
   source: string,
@@ -168,9 +235,28 @@ const writeSuite = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const directory = yield* fs.makeTempDirectory()
+    yield* linkSandboxDependencies(directory)
     const file = path.join(directory, `${prefix}.test.ts`)
     yield* fs.writeFileString(file, source)
     return { directory, file }
+  }).pipe(Effect.orDie)
+const writeEmptyProject = (): Effect.Effect<SuiteFixture, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const directory = yield* fs.makeTempDirectory()
+    return { directory, file: directory, files: [] }
+  }).pipe(Effect.orDie)
+const readStamps = (
+  directory: string,
+  marker: string,
+): Effect.Effect<readonly string[], never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const raw = yield* fs.readFileString(path.join(directory, `${marker}.stamps`)).pipe(
+      Effect.orElseSucceed(() => ''),
+    )
+    return raw.split('\n').filter((line) => line.length > 0)
   }).pipe(Effect.orDie)
 
 const removeSuite = (directory: string): Effect.Effect<void> =>
@@ -506,9 +592,9 @@ Feature('Verifying mutants without spawning a child process')
     scenario(
       'A project with nothing to run stops the run naming the runner',
       Gherkin.Do.pipe(
-        Given('a written project whose test file list is empty')(
+        Given('a project whose folder holds no test files at all')(
           'suite',
-          () => writeSuite('empty-list', IGNORING_SUITE).pipe(Effect.provide(suiteFileLayer)),
+          () => writeEmptyProject().pipe(Effect.provide(suiteFileLayer)),
         ),
         When('the runner performs the initial run without any test files')(
           'attempt',
@@ -593,6 +679,141 @@ Feature('Verifying mutants without spawning a child process')
                 expect(loadFailure.failureMessage).toContain('boom at import time')
               }
               expect(tests.some((test) => test.name === 'math > adds numbers')).toBe(true)
+            }
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A test that never stops executing is reported as timed out and the next run starts over',
+      Gherkin.Do.pipe(
+        Given('a written suite whose only test spins forever without ever awaiting')(
+          'suite',
+          () => writeSuite('spinning', SPINNING_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the runner checks the suite and then checks it again on the same runner')(
+          'attempts',
+          (s) =>
+            Effect.gen(function*() {
+              const runner = yield* runnerFor(s.suite)
+              const first = yield* runner.dryRun({ timeout: 300, coverageAnalysis: 'off', disableBail: false }).pipe(
+                Effect.exit,
+              )
+              const second = yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false })
+              return { first, second }
+            }).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
+        ),
+        Then('each run is reported as timed out and the runner recovers between them')((s) =>
+          Effect.sync(() => {
+            const firstTimedOut = Exit.isSuccess(s.attempts.first)
+              ? s.attempts.first.value.status === 'timeout'
+              : false
+            expect(firstTimedOut).toBe(true)
+            expect(s.attempts.second.status).toBe('timeout')
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A test that ends the whole program is reported as an error and the next run starts over',
+      Gherkin.Do.pipe(
+        Given('a written suite whose only test asks the program to end immediately')(
+          'suite',
+          () => writeSuite('exiting', EXITING_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the runner checks the suite and then checks it again on the same runner')(
+          'attempts',
+          (s) =>
+            Effect.gen(function*() {
+              const runner = yield* runnerFor(s.suite)
+              const first = yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }).pipe(
+                Effect.exit,
+              )
+              const second = yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false })
+              return { first, second }
+            }).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
+        ),
+        Then('the first run is reported as an error and the second passes from a fresh start')((s) =>
+          Effect.sync(() => {
+            expect(Exit.isSuccess(s.attempts.first)).toBe(true)
+            if (Exit.isSuccess(s.attempts.first) && s.attempts.first.value.status !== 'complete') {
+              expect(s.attempts.first.value.status).toBe('error')
+            }
+            expect(s.attempts.second.status).toBe('complete')
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Two runners checked at the same time do not wait for each other',
+      Gherkin.Do.pipe(
+        Given('two written suites whose only test stamps when its body runs')(
+          'suites',
+          () =>
+            Effect.all([
+              writeSuite('slow-a', OVERLAPPING_SUITE('slow-a')).pipe(Effect.provide(suiteFileLayer)),
+              writeSuite('slow-b', OVERLAPPING_SUITE('slow-b')).pipe(Effect.provide(suiteFileLayer)),
+            ]),
+        ),
+        When('each runner checks its own suite and both checks run side by side')(
+          'checked',
+          (s) =>
+            Effect.gen(function*() {
+              const runners = yield* Effect.forEach(s.suites, (suite) => runnerFor(suite))
+              const results = yield* Effect.forEach(
+                runners,
+                (runner) => runner.dryRun({ timeout: 10000, coverageAnalysis: 'off', disableBail: false }),
+                { concurrency: 'unbounded' },
+              )
+              const stamps = yield* Effect.all([
+                readStamps(s.suites[0].directory, 'slow-a').pipe(Effect.provide(suiteFileLayer)),
+                readStamps(s.suites[1].directory, 'slow-b').pipe(Effect.provide(suiteFileLayer)),
+              ])
+              return { results, stamps }
+            }).pipe(
+              Effect.ensuring(Effect.forEach(s.suites, (suite) => removeSuite(suite.directory), {
+                concurrency: 'unbounded',
+              })),
+            ),
+        ),
+        Then('both checks pass and the two test bodies ran at the same time')((s) =>
+          Effect.sync(() => {
+            expect(s.checked.results.every((result) => result.status === 'complete')).toBe(true)
+            const moments = s.checked.stamps.map((lines) => lines.map((line) => Number(line.split(' ')[1])))
+            expect(moments.map((times) => times.length)).toEqual([2, 2])
+            const [first, second] = moments as [[number, number], [number, number]]
+            expect(Math.max(first[0], second[0])).toBeLessThan(Math.min(first[1], second[1]))
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A hook declared outside every suite in one file never runs for another file',
+      Gherkin.Do.pipe(
+        Given('two written suites where only the first declares such a hook')(
+          'suites',
+          () =>
+            writeSuites('hooked', [OUTSIDE_HOOK_SUITE, OUTSIDE_HOOK_VICTIM_SUITE]).pipe(
+              Effect.provide(suiteFileLayer),
+            ),
+        ),
+        When('the runner checks both files together before any mutant runs')(
+          'outcome',
+          (s) =>
+            Effect.flatMap(
+              runnerFor(s.suites),
+              (runner) => runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }),
+            ).pipe(Effect.ensuring(removeSuite(s.suites.directory))),
+        ),
+        Then('both files pass, so the hook stayed with the file that declared it')((s) =>
+          Effect.sync(() => {
+            expect(s.outcome.status).toBe('complete')
+            if (s.outcome.status === 'complete') {
+              expect(s.outcome.tests.map((test) => test.status)).toEqual(['success', 'success'])
             }
           })
         ),

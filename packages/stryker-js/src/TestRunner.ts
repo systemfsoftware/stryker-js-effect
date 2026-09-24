@@ -36,9 +36,8 @@ import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 
-import { nodeVmPlatformLayer } from './platform/node.js'
 import { CommandRunnerUnsupportedOption } from './TestRunner.schema.js'
-import { ALL_TESTS_ID, ALL_TESTS_NAME, isVmRunner, vmTestRunner } from './VmRunner.js'
+import { isVmRunner, vmTestRunner } from './VmRunner.js'
 import type { IdGeneratorShape } from './Worker.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from './Worker.schema.js'
 import type { WorkerBootError } from './WorkerLauncher.js'
@@ -396,6 +395,9 @@ export const commandRunnerName = 'command'
 export const isCommandRunner = (name: TestRunnerConfig): name is 'command' =>
   typeof name === 'string' && name.toLowerCase() === commandRunnerName
 
+export const ALL_TESTS_ID = 'all'
+export const ALL_TESTS_NAME = 'All tests'
+
 /**
  * A test runner that shells out to one command — `npm test` by default — and
  * mimics a single test result from the exit code. It cannot know how many tests
@@ -604,7 +606,7 @@ const inProcessRunner = (context: TestRunnerBuildContext): Option.Option<InProce
           vmTestRunner({
             testFiles: context.testFiles,
             sandboxWorkingDirectory: context.sandboxWorkingDirectory,
-          }).pipe(Effect.provide(nodeVmPlatformLayer)),
+          }),
         ),
     ),
     Match.orElse(() => Option.none()),

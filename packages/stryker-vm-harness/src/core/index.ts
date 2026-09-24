@@ -21,6 +21,7 @@ export {
   type RegistryTestApi,
   type SuiteBody,
   type SuiteEachApi,
+  suiteHooksFor,
   type SuiteVariants,
   type TestFunctionWithTimeout,
   type TestMode,
@@ -46,9 +47,29 @@ export {
   GHERKIN_HARNESS_URL,
   harnessSourceFor,
   harnessUrlForSpecifier,
+  STATE_KEY,
   VITEST_HARNESS_URL,
 } from './sources.js'
 
-export { formatEachName } from './each-name.js'
+export {
+  DEFAULT_TITLE_VALUE_FORMAT_TRUNCATE,
+  defaultFormatValue,
+  type EachValueFormatter,
+  formatEachName,
+} from './each-name.js'
 
 export { guardedExpect, guardedVi } from './guards.js'
+export {
+  defaultSnapshotPath,
+  SNAPSHOT_DIRECTORY,
+  SNAPSHOT_SUFFIX,
+  type SnapshotUpdateMode,
+  snapshotUpdateMode,
+} from './snapshot-paths.js'
+export {
+  currentSnapshotTest,
+  setSnapshotTest,
+  type SnapshotTask,
+  snapshotTaskOf,
+  type SnapshotTest,
+} from './snapshot-test.js'

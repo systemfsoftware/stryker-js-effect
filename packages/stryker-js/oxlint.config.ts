@@ -9,6 +9,7 @@ export default defineConfig({
     'typescript/no-non-null-assertion': 'error',
     'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
+  ignorePatterns: [...(recommended.ignorePatterns ?? []), '**/testResources/**'],
   overrides: [
     {
       files: ['src/VmRunner.ts'],

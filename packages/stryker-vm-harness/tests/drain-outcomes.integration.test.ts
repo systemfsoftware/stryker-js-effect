@@ -96,7 +96,7 @@ Feature('Draining a registered suite into per-test outcomes')
             const outcome = completedOf(s.outcome)
             expect(outcome.tests.length).toBe(1)
             expect(outcome.tests[0]?.status).toBe('failed')
-            expect(outcome.tests[0]?.failureMessage).toBe('flaky was expected to fail, but passed')
+            expect(outcome.tests[0]?.failureMessage).toBe('Expect test to fail')
           })
         ),
       ),

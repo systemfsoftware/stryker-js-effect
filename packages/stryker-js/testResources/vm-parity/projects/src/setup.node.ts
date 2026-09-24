@@ -1,0 +1,1 @@
+globalThis['projectMarker'] = 'node-setup'

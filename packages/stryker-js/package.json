@@ -79,6 +79,8 @@
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "concurrently": "catalog:",
+    "happy-dom": "catalog:",
+    "jsdom": "catalog:",
     "mutation-testing-elements": "catalog:stryker",
     "oxc-parser": "catalog:",
     "oxlint": "catalog:",
@@ -147,21 +149,13 @@
     "angular-html-parser": "10.12.0",
     "aria-query": "5.3.1",
     "axobject-query": "4.1.0",
-    "chai": "6.2.2",
     "esrap": "2.3.7",
-    "expect-type": "1.4.0",
     "is-reference": "3.0.3",
     "locate-character": "3.0.0",
-    "magic-string": [
-      "0.30.21",
-      "1.4.1"
-    ],
+    "magic-string": "0.30.21",
     "oxc-parser": "0.150.0",
     "oxc-walker": "1.1.1",
     "svelte": "5.57.0",
-    "tinybench": "6.1.4",
-    "vite": "8.2.2",
-    "vitest": "5.0.1",
     "zimmerframe": "1.1.5"
   }
 }

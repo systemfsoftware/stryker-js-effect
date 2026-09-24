@@ -412,10 +412,10 @@ export const layerBinderFor = (context: LayerRegistrationContext): LayerBinder =
       const body = args[0]
       const firstNewTest = context.tests.length
       body(makeIt<R>(context.api))
-      const blockTaskSet = new Set<RegisteredTest>(context.tests.slice(firstNewTest))
+      const blockTaskSet = new Set(context.tests.slice(firstNewTest).map((test) => test.task))
       let remaining = blockTaskSet.size
       context.hooks.beforeEach((ctx) => {
-        if (!blockTaskSet.has(ctx.task as RegisteredTest)) {
+        if (!blockTaskSet.has(ctx.task)) {
           return undefined
         }
         ctx.onTestFinished(() => {

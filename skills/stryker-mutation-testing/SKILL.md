@@ -12,7 +12,7 @@ Configure, execute, and verify Stryker mutation testing using `@systemfsoftware/
 ```yaml
 - id: A1
   title: Activate on mutation testing setup or configuration
-  do: trigger this skill when a project needs mutation testing, stryker.config.ts setup, runner configuration (Vitest, V8 in-memory, Command), or custom ignorer/runner development
+  do: trigger this skill when a project needs mutation testing, stryker.config.ts setup, runner configuration (Vitest, in-process `vm`, Command), or custom ignorer/runner development
   dont: install legacy @stryker-mutator/core or configure bare module strings in plugins array
   check: the repository is a JavaScript or TypeScript project needing test efficacy verification
 - id: A2
@@ -54,9 +54,9 @@ For deep comparison of execution models, read `references/decision-guide.md` (ha
   harm: bare specifier strings cannot be resolved across isolated ESM boundaries and throw fatal `PluginLoadFailedError` at startup
   check: pnpm exec stryker run --dryRunOnly succeeds without PluginLoadFailedError
 - id: STRYK-R2
-  title: Dual-Engine Workflow (Fast Local V8, Isolated CI Vitest)
+  title: Dual-Engine Workflow (In-Process vm Locally, Isolated CI Vitest)
   do: use the `isCi` parameter in `defineConfig(({ isCi }) => ...)` to set `testRunner: isCi ? 'vitest' : 'vm'`
-  dont: run heavy child-process test runners for fast local iteration when in-memory V8 is applicable
+  dont: run heavy child-process test runners for fast local iteration when the in-process `vm` runner is applicable
   harm: developers suffer 5-10x latency overhead locally, discouraging frequent mutation testing
   check: stryker.config.ts switches runner based on isCi
 - id: STRYK-R3
@@ -191,7 +191,7 @@ pnpm exec stryker run --survivors
 
 | Reference                          | When to load (intent)                                                                         | Hash     |
 | ---------------------------------- | --------------------------------------------------------------------------------------------- | -------- |
-| `references/decision-guide.md`     | When choosing between in-memory V8, Vitest, and Command runners                               | `c52521` |
+| `references/decision-guide.md`     | When choosing between the in-process `vm`, Vitest, and Command runners                        | `c52521` |
 | `references/authoring-ignorers.md` | When creating a custom AST ignorer with `@systemfsoftware/stryker-ignorer-kit`                | `c4237f` |
 | `references/authoring-runners.md`  | When building a custom test runner worker with `@systemfsoftware/stryker-js-plugin-interface` | `ce7f3c` |
 

@@ -6,27 +6,6 @@ import { expect } from 'vitest'
 
 const Feature = makeFeature({ it, layer })
 
-const SNAPSHOTS_UNSUPPORTED =
-  "Snapshot assertions (toMatchSnapshot, toMatchInlineSnapshot) are not supported by the in-memory 'vm' runner."
-const MODULE_MOCK_UNSUPPORTED =
-  "vi.mock is not supported by the in-memory 'vm' runner. Use testRunner: 'vitest' for suites that need module mocking."
-const HOISTED_MOCK_UNSUPPORTED =
-  "vi.hoisted is not supported by the in-memory 'vm' runner. Use testRunner: 'vitest' for suites that need module mocking."
-
-const NO_REFUSAL_WAS_RAISED = 'the call was allowed through'
-
-const refusalOf = (attempt: () => void): string => {
-  try {
-    attempt()
-  } catch (error) {
-    if (error instanceof Error) {
-      return error.message
-    }
-    throw error
-  }
-  return NO_REFUSAL_WAS_RAISED
-}
-
 const isCallable = (value: unknown): value is (() => void) | undefined =>
   value === undefined || typeof value === 'function'
 
@@ -40,50 +19,15 @@ const handedAnswer = (handedOut: object, member: string): void => {
   answerIfCallable(Reflect.get(handedOut, member))
 }
 
+const memberIsCallable = (handedOut: object, member: string): boolean =>
+  typeof Reflect.get(handedOut, member) === 'function'
+
 const handsThrough = (handedOut: object, member: string, real: object): boolean =>
   Object.is(Reflect.get(handedOut, member), Reflect.get(real, member))
 
 Feature('Assertion helpers handed to a suite that runs in memory')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
-    scenario(
-      'A stored snapshot comparison is refused with a message naming the in-memory runner',
-      Gherkin.Do.pipe(
-        Given('a suite holding the assertion helpers the in-memory runner hands out')(
-          'assertions',
-          () => Effect.succeed(guardedExpect({})),
-        ),
-        When('it compares against a stored snapshot')(
-          'refusal',
-          (s) => Effect.sync(() => refusalOf(() => handedAnswer(s.assertions, 'toMatchSnapshot'))),
-        ),
-        Then('it is refused because snapshots are not kept by the in-memory runner')((s) =>
-          Effect.sync(() => {
-            expect(s.refusal).toContain(SNAPSHOTS_UNSUPPORTED)
-          })
-        ),
-      ),
-    )
-
-    scenario(
-      'An inline snapshot comparison is refused with a message naming the in-memory runner',
-      Gherkin.Do.pipe(
-        Given('a suite holding the assertion helpers the in-memory runner hands out')(
-          'assertions',
-          () => Effect.succeed(guardedExpect({})),
-        ),
-        When('it writes an inline snapshot beside its expectation')(
-          'refusal',
-          (s) => Effect.sync(() => refusalOf(() => handedAnswer(s.assertions, 'toMatchInlineSnapshot'))),
-        ),
-        Then('it is refused because snapshots are not kept by the in-memory runner')((s) =>
-          Effect.sync(() => {
-            expect(s.refusal).toContain(SNAPSHOTS_UNSUPPORTED)
-          })
-        ),
-      ),
-    )
-
     scenario(
       'Any other assertion behaves exactly as it normally does',
       Gherkin.Do.pipe(
@@ -112,35 +56,30 @@ Feature('Assertion helpers handed to a suite that runs in memory')
     )
 
     scenario(
-      'Mocking a module is refused with a message naming the runner to use instead',
+      'The mock and hoisted helpers are the ones the suite was handed',
       Gherkin.Do.pipe(
         Given('a suite holding the mocking helpers the in-memory runner hands out')(
-          'mocks',
-          () => Effect.succeed(guardedVi({})),
+          'suite',
+          () =>
+            Effect.sync(() => {
+              const real = { mock: (): string => 'mocked', hoisted: (): string => 'hoisted' }
+              return { handedOut: guardedVi(real), real }
+            }),
         ),
-        When('it mocks a module')('refusal', (s) => Effect.sync(() => refusalOf(() => handedAnswer(s.mocks, 'mock')))),
-        Then('it is pointed at the test runner that supports module mocking')((s) =>
+        When('it reads the mock and hoisted helpers from what was handed out')(
+          'readable',
+          (s) =>
+            Effect.sync(() => ({
+              mock: memberIsCallable(s.suite.handedOut, 'mock'),
+              hoisted: memberIsCallable(s.suite.handedOut, 'hoisted'),
+            })),
+        ),
+        Then('both helpers are callable and are the ones the suite was handed')((s) =>
           Effect.sync(() => {
-            expect(s.refusal).toContain(MODULE_MOCK_UNSUPPORTED)
-          })
-        ),
-      ),
-    )
-
-    scenario(
-      'Hoisting a mock is refused with a message naming the runner to use instead',
-      Gherkin.Do.pipe(
-        Given('a suite holding the mocking helpers the in-memory runner hands out')(
-          'mocks',
-          () => Effect.succeed(guardedVi({})),
-        ),
-        When('it hoists a mock above its expectations')(
-          'refusal',
-          (s) => Effect.sync(() => refusalOf(() => handedAnswer(s.mocks, 'hoisted'))),
-        ),
-        Then('it is pointed at the test runner that supports module mocking')((s) =>
-          Effect.sync(() => {
-            expect(s.refusal).toContain(HOISTED_MOCK_UNSUPPORTED)
+            expect(s.readable.mock).toBe(true)
+            expect(s.readable.hoisted).toBe(true)
+            expect(handsThrough(s.suite.handedOut, 'mock', s.suite.real)).toBe(true)
+            expect(handsThrough(s.suite.handedOut, 'hoisted', s.suite.real)).toBe(true)
           })
         ),
       ),

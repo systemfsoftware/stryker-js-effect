@@ -14,7 +14,6 @@ import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawne
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import type { EnginePorts } from '../run/StageServices.js'
-import { type VmPlatform, VmRunner } from '../VmRunner.js'
 import { classifyWorkerExit } from '../Worker.js'
 import { ChildProcessCrashedError } from '../Worker.schema.js'
 import { type SpawnedSocketWorker, WorkerLauncher } from '../WorkerLauncher.js'
@@ -109,23 +108,4 @@ const nodeBase = Layer.mergeAll(nodeFsPathLayer, nodeSpawnerLayer, NodeStdio.lay
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = Layer.mergeAll(
   nodeWorkerLauncherLayer.pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
   nodeBase,
-)
-
-/**
- * The in-memory runner's platform: the V8 sandbox module and the module
- * builtin that strips TypeScript and resolves a sandbox's `require`.
- *
- * Reached through `globalThis.process.getBuiltinModule` rather than an `import` because a
- * Node builtin import is forbidden in product code; the call is wrapped in
- * `Effect.promise` so a platform without `node:vm` fails as a defect — the
- * runner has no fallback to fall back to.
- */
-export const nodeVmPlatformLayer: Layer.Layer<VmRunner> = Layer.effect(
-  VmRunner,
-  Effect.sync(
-    (): VmPlatform => ({
-      moduleBuiltin: globalThis.process.getBuiltinModule('node:module'),
-      pathToFileURL: (path) => globalThis.process.getBuiltinModule('node:url').pathToFileURL(path),
-    }),
-  ),
 )
