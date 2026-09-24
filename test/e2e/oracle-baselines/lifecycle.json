@@ -4,13 +4,13 @@
   "strykerConfig": "stryker.config.ts",
   "counts": {
     "compileErrors": 98,
-    "ignored": 0,
-    "killed": 191,
+    "ignored": 2,
+    "killed": 193,
     "noCoverage": 0,
     "pending": 0,
     "runtimeErrors": 0,
     "survived": 30,
-    "timeout": 4
+    "timeout": 0
   },
   "mutatorStatusTally": {
     "ArithmeticOperator:Killed": 14,
@@ -18,17 +18,16 @@
     "ArrayDeclaration:Killed": 2,
     "ArrowFunction:CompileError": 17,
     "ArrowFunction:Killed": 1,
-    "AssignmentOperator:Killed": 3,
+    "AssignmentOperator:Killed": 4,
     "AssignmentOperator:Survived": 1,
-    "AssignmentOperator:Timeout": 1,
     "BlockStatement:CompileError": 24,
-    "BlockStatement:Killed": 29,
+    "BlockStatement:Killed": 31,
     "BlockStatement:Survived": 10,
-    "BlockStatement:Timeout": 2,
     "BooleanLiteral:CompileError": 2,
     "BooleanLiteral:Killed": 12,
     "ConditionalExpression:CompileError": 11,
-    "ConditionalExpression:Killed": 60,
+    "ConditionalExpression:Ignored": 2,
+    "ConditionalExpression:Killed": 58,
     "ConditionalExpression:Survived": 9,
     "EqualityOperator:CompileError": 6,
     "EqualityOperator:Killed": 30,
@@ -44,7 +43,6 @@
     "StringLiteral:CompileError": 6,
     "StringLiteral:Killed": 29,
     "StringLiteral:Survived": 1,
-    "UpdateOperator:Killed": 3,
-    "UpdateOperator:Timeout": 1
+    "UpdateOperator:Killed": 4
   }
 }

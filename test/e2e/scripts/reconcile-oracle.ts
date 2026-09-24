@@ -180,13 +180,7 @@ export function recomputeStaticSlice(slice: OracleSliceConfig): StaticOracleSlic
     ignoredCount: totalIgnored,
   }
 
-  const sliceStatic = deriveStaticOracleSlice(allInventory, { codesByMutator: allCodesByMutator })
-  const excludedFamilies = new Set(slice.excludedMutations.map((name) => name.toLowerCase()))
-  const configIgnoredCount = allInventory.mutants.filter(
-    (m) => m.status === 'Ignored' && excludedFamilies.has(m.mutatorName.toLowerCase()),
-  ).length
-
-  return { ...sliceStatic, ignoredCount: configIgnoredCount }
+  return deriveStaticOracleSlice(allInventory, { codesByMutator: allCodesByMutator })
 }
 
 const BASELINES_DIR = fileURLToPath(new URL('../oracle-baselines', import.meta.url))

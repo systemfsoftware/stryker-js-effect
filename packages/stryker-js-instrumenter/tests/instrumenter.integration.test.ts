@@ -227,6 +227,7 @@ Feature('Instrumenter characterization')
     )
 
     scenario(
+<<<<<<< HEAD
       'A switch whose first case falls through to the next is still instrumented',
       Gherkin.Do.pipe(
         Given('a formatter whose "js" case shares the "ts" case body')(
@@ -246,10 +247,27 @@ Feature('Instrumenter characterization')
           'result',
           ({ source }: { source: string }) =>
             Instrument.instrument([{ name: '/tmp/fall-through.ts', content: source, mutate: true }], {
+=======
+      'A next-line disable directive suppresses the mutant on the following line',
+      Gherkin.Do.pipe(
+        Given('a file with a disable next-line directive above a plus')(
+          'source',
+          () =>
+            Effect.succeed(`export const a = 1 + 1
+// Stryker disable next-line ArithmeticOperator: consecutive run
+export const b = 2 + 2
+`),
+        ),
+        When('it is instrumented')(
+          'result',
+          ({ source }: { source: string }) =>
+            instrument([{ name: '/tmp/next-line.ts', content: source, mutate: true }], {
+>>>>>>> origin/main
               ignorers: [],
               excludedMutations: [],
             }),
         ),
+<<<<<<< HEAD
         Then('the file is instrumented with a mutant that removes the empty "js" case')((
           { result }: { result: Instrument.InstrumentResult },
         ) =>
@@ -260,11 +278,28 @@ Feature('Instrumenter characterization')
                 mutant.mutatorName === 'ConditionalExpression' && mutant.replacement === ''
               ),
             ).toBe(true)
+=======
+        Then('the plus under the directive is ignored with the reason, and the sibling stays live')((
+          { result }: { result: InstrumentResult },
+        ) =>
+          Effect.sync(() => {
+            const arithmetic = result.mutants.filter((m) => m.mutatorName === 'ArithmeticOperator')
+            expect(arithmetic.length).toBe(2)
+            const ignored = arithmetic.filter((mutant) => mutant.status === 'Ignored')
+            expect(ignored.length).toBe(1)
+            for (const mutant of ignored) {
+              expect(mutant.statusReason).toBe('consecutive run')
+              expect(mutant.replacement).toBe('2 - 2')
+            }
+>>>>>>> origin/main
           })
         ),
       ),
     )
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/main
     scenario(
       'Instrumented output carries a switch for every active mutant',
       Gherkin.Do.pipe(

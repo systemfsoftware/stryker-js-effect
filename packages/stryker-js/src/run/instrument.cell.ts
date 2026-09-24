@@ -113,6 +113,7 @@ export const instrumentCell = Sandwich.named('stryker.instrument')((
     const instrumentResult = yield* Instrument.instrument(filesToMutate, {
       ignorers: [...command.ignorers],
       excludedMutations: [...command.options.mutator.excludedMutations],
+      optInMutations: [...command.options.mutator.optInMutations],
     }, env.basePath).pipe(
       Effect.mapError((cause) => StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })),
     )

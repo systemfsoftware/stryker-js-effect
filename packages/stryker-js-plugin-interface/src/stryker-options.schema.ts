@@ -137,6 +137,7 @@ export type MutationScoreThresholds = typeof MutationScoreThresholdsSchema.Type
 
 const MutatorDescriptor = S.Struct({
   excludedMutations: defaulted(S.Array(S.String), []),
+  optInMutations: defaulted(S.Array(S.String), []),
 })
 
 const WarningOptions = openStruct({
@@ -216,7 +217,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
       '{src,lib}/**/!(*.+(s|S)pec|*.+(t|T)est).+(cjs|mjs|js|ts|mts|cts|jsx|tsx|html|vue|svelte)',
       '!{src,lib}/**/__tests__/**/*.+(cjs|mjs|js|ts|mts|cts|jsx|tsx|html|vue|svelte)',
     ]),
-    mutator: defaulted(MutatorDescriptor, { excludedMutations: [] }),
+    mutator: defaulted(MutatorDescriptor, { excludedMutations: [], optInMutations: [] }),
     packageManager: S.optionalKey(PackageManager),
     plugins: defaulted(S.Array(PluginFileUrl), []),
     appendPlugins: defaulted(S.Array(PluginFileUrl), []),

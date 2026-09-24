@@ -45,6 +45,7 @@ const isLockfile = matchesAny(
 const isTooling = matchesAny(
   /^\.claude\//,
   /^\.husky\//,
+  /^scripts\//,
   /(^|\/)commitlint\.config\.[mc]?[jt]s$/,
   /(^|\/)\.lintstagedrc(\..+)?$/,
   /(^|\/)tsconfig.*\.json$/,

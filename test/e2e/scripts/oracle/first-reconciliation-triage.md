@@ -33,3 +33,7 @@ Each row lists a first-reconciliation delta between hand/static expectations and
 - Ignored counts on all four slices: reconciled exactly (edge 4/4, others 0/0) after Delta 1's fix and the config-exclusion scoping. Directive-muted mutants are placement-absent in engine results — established by the Delta 1 probe method, not assumed; `recomputeStaticSlice` scopes its ignored comparison accordingly (`test/e2e/scripts/reconcile-oracle.ts`).
 - Unblessed findings: none; all four slices blessed at HEAD, flake gate 2/2 each.
 - Journey literal blocks: byte-identical to `renderLiteralBlock` output; `pnpm derive-oracle --reconcile` performs zero writes at HEAD.
+
+## 2026-09-24 follow-up: directive-muted mutants
+
+The "placement-absent" observation in the Ignored bullet above came from a defect. `// Stryker disable next-line` directives were recorded on the comment's own line, so they muted nothing. Issue #83 fixed this. The engine now reports those mutants as Ignored: the lifecycle slice's `if (level > threshold)` pair in `packages/services/src/inventory.ts` moved from Killed to Ignored. `recomputeStaticSlice` therefore compares every analyzer-ignored mutant, from config exclusions and from directives alike. After re-blessing the lifecycle slice, all four slices reconcile exactly (lifecycle 2/2, edge 4/4, others 0/0).

@@ -115,6 +115,11 @@
   dir: packages/stryker-js-instrumenter
   intents:
     - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js-instrumenter@8.1.0":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - next-line-directive-applies
+    - opt-in-effect-concurrency-mutators
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -146,6 +151,10 @@
   dir: packages/stryker-js-plugin-interface
   intents:
     - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js-plugin-interface@7.3.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - opt-in-effect-concurrency-mutators
 "@systemfsoftware/stryker-js-plugin-runtime@5.0.0":
   dir: packages/stryker-js-plugin-runtime
   intents:
@@ -160,6 +169,10 @@
   dir: packages/stryker-js-plugin-runtime
   intents:
     - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-js-plugin-runtime@5.0.4":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - opt-in-effect-concurrency-mutators
 "@systemfsoftware/stryker-js-typescript-checker@6.0.0":
   dir: packages/stryker-js-typescript-checker
   intents:
@@ -232,6 +245,15 @@
   dir: packages/stryker-js
   intents:
     - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js@10.1.2":
+  dir: packages/stryker-js
+  intents:
+    - stryker-vm-harness-package
+    - vm-runner-native-esm-suites
+"@systemfsoftware/stryker-js@10.2.0":
+  dir: packages/stryker-js
+  intents:
+    - opt-in-effect-concurrency-mutators
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
@@ -273,3 +295,7 @@
   dir: packages/stryker-test-contribution
   intents:
     - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-vm-harness@1.0.0":
+  dir: packages/stryker-vm-harness
+  intents:
+    - stryker-vm-harness-package
