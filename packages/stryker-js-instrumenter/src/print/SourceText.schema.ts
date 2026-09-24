@@ -105,16 +105,21 @@ import * as SGetter from 'effect/SchemaGetter'
 import { PrintFailed } from './PrintFailed.schema.js'
 import { spanOf } from '../Ast.handle.js'
 
-export class SourceText extends S.Class<SourceText>('SourceText')({ text: S.NonEmptyString }) {
-  static fromValue = <A>(value: A) =>
-    Option.getOrUndefined(Option.map(nonEmptyOf(sourceTextOf(value)), (text) => SourceText.make({ text })))
-}
+export const SourceText = S.Unknown.pipe(
+  S.decodeTo(
+    S.Struct({ text: S.NonEmptyString }),
+    {
+      decode: (value: unknown) => ({ text: sourceTextOf(value) }),
+      encode: SGetter.forbiddenEncoding,
+    },
+  ),
+)
 export type SourceTextValue = typeof SourceText.Type
 
-const nonEmptyOf = (text: string): Option.Option<S.NonEmptyString> =>
-  Option.filter(Option.some(text as unknown as S.NonEmptyString), (candidate) => candidate.length > 0)
-
-export const textOf = (value: SourceText): string => value.text
+export const textOf = (value: unknown) =>
+  Option.flatMap(S.decodeOption(SourceText)(value), (decoded) =>
+    Option.filter(Option.some(decoded.text), (text) => text.length > 0),
+  )
 
 function sourceTextOf<A = unknown>(value: A): string {
   return Option.match(
@@ -302,7 +307,7 @@ const spannedScriptsOf = (
 
 const printProgram = (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program)
 
-export const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
+const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
 
 interface PrintContext {
   readonly indentLevel: number
@@ -2304,7 +2309,7 @@ if (import.meta.vitest !== void 0) {
     Option.getOrElse(
       Option.flatMap(
         Option.fromNullishOr(oxc.parseSync('law.ts', source, { lang, range: true }).program),
-        (program) => Option.map(Option.fromUndefinedOr(SourceText.fromValue(program)), (rendered) => rendered.text),
+        (program) => textOf(program),
       ),
       () => printedScriptOf(source, lang),
     )
@@ -2327,9 +2332,9 @@ if (import.meta.vitest !== void 0) {
   it.prop('∀ast_SourceText_∋NodeText≡PrintedProgram', [TS_FRAGMENTS], ([fragments]) => {
     const source = fragments.join('\n')
     const parsed = oxc.parseSync('law.ts', source, { lang: 'ts', range: true })
-    return Option.match(Option.fromUndefinedOr(SourceText.fromValue(parsed.program)), {
+    return Option.match(textOf(parsed.program), {
       onNone: () => source === '',
-      onSome: (rendered) => printedScriptOf(rendered.text, 'ts') === rendered.text,
+      onSome: (text) => printedScriptOf(text, 'ts') === text,
     })
   })
 }

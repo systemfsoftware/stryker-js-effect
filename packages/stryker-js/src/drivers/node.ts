@@ -17,7 +17,7 @@ import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
 import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
-import { ChildProcessCrashedError } from '../Worker.schema.js'
+import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 
 const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string) =>
@@ -75,7 +75,25 @@ const nodeWorkerLauncherLayer = Layer.effect(
                 classifyWorkerExit(new ClassifyWorkerExitCommand({ pid: Number(handle.pid), exitCode })),
                 {
                   onFailure: (refused) => Effect.fail(refused),
-                  onSuccess: Effect.fail,
+                  onSuccess: (decision) =>
+                    Match.value(decision).pipe(
+                      Match.tag(
+                        'WorkerOutOfMemory',
+                        (outOfMemory) => Effect.fail(OutOfMemoryError.make({ pid: outOfMemory.pid, exitCode: outOfMemory.exitCode })),
+                      ),
+                      Match.tag(
+                        'WorkerCrashed',
+                        (crashed) =>
+                          Effect.fail(
+                            ChildProcessCrashedError.make({
+                              pid: crashed.pid,
+                              exit: { _tag: 'Code', code: crashed.exitCode },
+                              cause: 'worker exited before it accepted the RPC connection',
+                            }),
+                          ),
+                      ),
+                      Match.exhaustive,
+                    ),
                 },
               )),
           )

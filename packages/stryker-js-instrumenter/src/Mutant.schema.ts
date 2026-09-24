@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
@@ -31,13 +32,10 @@ export class Mutant extends S.TaggedClass<Mutant>()('Mutant', {
 }) {}
 
 export const CanonicalFileName = S.String.pipe(
-  S.decodeTo(
-    S.String.pipe(S.check(S.makeFilter((fileName) => !fileName.includes('\\'), { expected: 'a file name without backslashes' }))),
-    {
-      decode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
-      encode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
-    },
-  ),
+  S.decodeTo(S.String, {
+    decode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
+    encode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
+  }),
 )
 export type CanonicalFileName = typeof CanonicalFileName.Type
 
@@ -165,30 +163,23 @@ export class MutantSpanMissing
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
-  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
+  const { Schema } = await import('effect')
 
-  const SEGMENTS = S.Literals(['src', 'a-b_c', '0', 'build', 'dist'])
-  const SEPARATORS = S.Literals(['/', '\\'])
-  const FILE_PATHS = Arbitrary.flatMap(
-    Arbitrary.array(Arbitrary.schema(SEGMENTS), { minLength: 1, maxLength: 5 }),
-    (segments) =>
-      Arbitrary.map(Arbitrary.schema(SEPARATORS), (separator) =>
-        segments.flatMap((segment, index) => (index === 0 ? [segment] : [separator, segment])).join(''),
-      ),
+  it.prop('∀path_CanonicalFileName_≡BackslashToSlash', [Schema.String], ([path]) =>
+    Option.match(S.decodeOption(CanonicalFileName)(path), {
+      onNone: () => path.length === 0,
+      onSome: (canonical) => canonical === path.replace(/\\/g, '/'),
+    }),
   )
 
-  const canonicalOf = (path: string) =>
-    S.decodeEffect(CanonicalFileName)(path).pipe(Effect.map((canonical) => canonical === path.replace(/\\/g, '/')))
-
-  const idempotentOf = (path: string) =>
-    S.decodeEffect(CanonicalFileName)(path).pipe(
-      Effect.flatMap((once) => S.decodeEffect(CanonicalFileName)(once)),
-      Effect.map((twice) => twice === path.replace(/\\/g, '/')),
-    )
-
-  it.effect.prop('∀path_CanonicalFileName_≡BackslashToSlash', [FILE_PATHS], ([path]) =>
-    canonicalOf(path).pipe(Effect.orDie),
+  it.prop('∀path_CanonicalFileName_∘CanonicalEncodeStable', [Schema.String], ([path]) =>
+    Option.match(S.decodeOption(CanonicalFileName)(path), {
+      onNone: () => path.length === 0,
+      onSome: (canonical) =>
+        Option.match(S.encodeOption(CanonicalFileName)(canonical), {
+          onNone: () => false,
+          onSome: (back) => back === canonical,
+        }),
+    }),
   )
-
-  it.effect.prop('∀path_CanonicalFileName_∘Idempotent', [FILE_PATHS], ([path]) => idempotentOf(path).pipe(Effect.orDie))
 }

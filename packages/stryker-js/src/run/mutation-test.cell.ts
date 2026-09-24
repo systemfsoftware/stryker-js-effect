@@ -1,7 +1,6 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type {
-  MutantEarlyResultPlan,
   MutantTestCoverage,
   RunPlan,
   TestResult,
@@ -15,7 +14,6 @@ import {
   MutantTested,
   MutationTestingPlanReady,
 } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Array from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'
@@ -37,7 +35,7 @@ import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import { PhaseEntered, PlanKnown } from '../run-events.service.js'
+import { PhaseEntered } from '../run-events.service.js'
 import { RunEvents, RunMutantTested } from '../run-events.service.js'
 
 import type {
@@ -45,6 +43,7 @@ import type {
   CheckResult,
   ExitClass,
   FailedCheckResult,
+  MutationTestResult,
   WorkerPluginKind,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import { WALL_CLOCK_TIMEOUT_REASON, wallClockTimeoutStopsRun } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -63,7 +62,6 @@ import { RelativeNormalizedFileName } from '../matching.schema.js'
 import {
   MutantTestPlanCommand,
   planMutantTests,
-  type MutantPlanDecision,
 } from '../plan-mutant-tests.workflow.js'
 import {
   IncrementalDiffCommand,
@@ -253,28 +251,16 @@ const workerSpawnOf = (
   Effect.mapError(
     Effect.fromResult(
       resolveConfiguredPlugin(WorkerSpawnCommand.make({ sources: loaded.pluginSources, kind, configured })),
-    ),
-    (missing) =>
-      StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
-  )
-
-const ZERO = 0
-
-const calculateTotalTime = (testResults: Iterable<TestResult>) =>
-  [...testResults].reduce((acc, test) => acc + test.timeSpentMs, 0)
-
-const toTestIds = (testResults: Iterable<TestResult>) => [...testResults].map((test) => test.id)
-
 const hitsRecordOf = (testCoverage: TestCoverage) =>
-  Object.fromEntries(MutableHashMap.entries(testCoverage.hitsByMutantId))
+  Object.fromEntries([...testCoverage.hitsByMutantId])
 
 const testsByMutantIdRecordOf = (testCoverage: TestCoverage) =>
   Object.fromEntries(
-    [...MutableHashMap.entries(testCoverage.testsByMutantId)].map(([mutantId, tests]) => [mutantId, toTestIds(tests)]),
+    [...testCoverage.testsByMutantId].map(([mutantId, tests]) => [mutantId, toTestIds(tests)]),
   )
 
 const testTimeRecordOf = (testCoverage: TestCoverage) =>
-  Object.fromEntries([...MutableHashMap.entries(testCoverage.testsById)].map(([id, result]) => [id, result.timeSpentMs]))
+  Object.fromEntries([...testCoverage.testsById].map(([id, result]) => [id, result.timeSpentMs]))
 
 const planCommandOf = (
   mutants: readonly Mutant[],
@@ -485,37 +471,21 @@ const withFileEntry = (
 })
 
 const testIdsByRelativeFileOf = (testCoverage: TestCoverage) =>
-  Effect.forEach([...MutableHashMap.values(testCoverage.testsById)].filter(hasTestFileName), (result) =>
+  Effect.forEach([...testCoverage.testsById].filter(hasTestByIdFileName), (entry) =>
     Effect.orDie(
-      S.decodeEffect(RelativeNormalizedFileName)({ fileName: result.fileName, basePath: '' }),
-    ).pipe(Effect.map((file) => [file, result.id] as const))).pipe(
+      S.decodeEffect(RelativeNormalizedFileName)({ fileName: entry[1].fileName, basePath: '' }),
+    ).pipe(Effect.map((file) => [file, entry[1].id] as const))).pipe(
     Effect.map((pairs) => pairs.reduce(withFileEntry, {} as Record<string, string[]>)),
   )
 
-const coveredTestFilesOf = (tests: Iterable<TestResult>) =>
-  Effect.forEach([...tests].filter(hasTestFileName), (test) =>
-    Effect.orDie(
-      S.decodeEffect(RelativeNormalizedFileName)({ fileName: test.fileName, basePath: '' }),
-    )).pipe(Effect.map((files) => [...new Set(files)]))
-
-const coveringTestFilesByMutantIdOf = (testCoverage: TestCoverage) =>
-  Effect.forEach(
-    [...MutableHashMap.entries(testCoverage.testsByMutantId)],
-    ([mutantId, tests]) => Effect.map(coveredTestFilesOf(tests), (files) => [mutantId, files] as const),
-  ).pipe(Effect.map((pairs) => Object.fromEntries(pairs)))
-
-const relativeFileByMutantIdOf = (currentMutants: readonly Mutant[], basePath: string) =>
-  Effect.forEach(currentMutants, (mutant) =>
-    Effect.orDie(
-      S.decodeEffect(RelativeNormalizedFileName)({ fileName: mutant.fileName, basePath }),
-    ).pipe(Effect.map((file) => [mutant.id, file] as const))).pipe(
-    Effect.map((pairs) => Object.fromEntries(pairs)),
-  )
+const hasTestByIdFileName = (
+  entry: readonly [string, TestResult],
+): entry is readonly [string, TestResult & { readonly fileName: string }] => entry[1].fileName !== undefined
 
 const incrementalDiffCommandOf = (
   currentMutants: readonly Mutant[],
   testCoverage: TestCoverage,
-  incrementalReport: unknown,
+  incrementalReport: MutationTestResult | undefined,
   currentRelativeFiles: Record<string, string>,
   basePath: string,
   force: boolean,
@@ -540,7 +510,7 @@ const incrementalDiff = (
   input: Readonly<{
     currentMutants: readonly Mutant[]
     testCoverage: TestCoverage
-    incrementalReport: unknown
+    incrementalReport: MutationTestResult | undefined
     currentRelativeFiles: Record<string, string>
     basePath: string
     force?: boolean
@@ -907,6 +877,13 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       }),
     )
     const sortedPlans = sortRunPlans(runPlans)
+    const { passedPlans, checkerResults } = yield* checkPlansWithConfiguredCheckers(
+      checkerPool,
+      sortedPlans,
+      reporting,
+    )
+    const testRunnerStream = Stream.fromIterable(passedPlans)
+    const plannedTotal = sortedPlans.length + noCoverageResults.length + rememberedResults.length
     const allPlansForReporter: readonly MutantRunPlan[] = [...sortedPlans]
     yield* offerReporterEvent(
       prev.reporterStage,

@@ -171,17 +171,25 @@ export {
 } from './run-events.service.js'
 export type { RunEvent, RunIdentityShape, RunTerminalEvent } from './run-events.service.js'
 
-export { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+export { ExitClass, ExitCodeFromClass } from '@systemfsoftware/stryker-js-plugin-interface'
 export {
   classifyExit,
   ClassifyExitCommand,
   ClassifyExitDecision,
+  ExitConfigErrored,
+  ExitInternalErrored,
+  ExitPassed,
+  ExitRuntimeErrored,
+  ExitSignalled,
+  ExitVerdictFailed,
 } from './classify-exit.workflow.js'
 export {
   classifyWorkerExit,
   ClassifyWorkerExitCommand,
+  ClassifyWorkerExitDecision,
+  WorkerCrashed,
+  WorkerOutOfMemory,
 } from './classify-worker-exit.workflow.js'
-export { ExitCodeResolved, resolveExitCode, ResolveExitCodeCommand } from './resolve-exit-code.workflow.js'
 export { buildTestRunner } from './TestRunner.resource.js'
 export { isCommandRunner } from './command-runner.resource.js'
 export { isVmRunner, vmTestRunner } from './VmRunner.resource.js'
@@ -192,6 +200,7 @@ export type { VmModule, VmModuleBuiltin, VmPlatform, VmScript } from './VmRunner
 export { StrykerConfig } from './config/stryker-config.schema.js'
 export type {
   ConfigEnv,
+  DocumentRecord,
   Immutable,
   ImmutablePrimitive,
   Primitive,

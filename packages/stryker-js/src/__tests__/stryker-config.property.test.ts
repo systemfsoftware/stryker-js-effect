@@ -1,7 +1,7 @@
 import { describe, it } from '@effect/vitest'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
-import { StrykerConfig } from '../config/stryker-config.schema.js'
+import { type DocumentRecord, StrykerConfig } from '../config/stryker-config.schema.js'
 import { DocumentSchema, NestedDocumentSchema } from '../../tests/__fixtures__/config-law.schema.js'
 
 const poisonedDocumentArb = Arbitrary.schema(DocumentSchema).pipe(
@@ -11,22 +11,43 @@ const poisonedDocumentArb = Arbitrary.schema(DocumentSchema).pipe(
   })),
 )
 
-const isOptionRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && Array.isArray(value) === false
+const isOptionRecord = (
+  value: typeof DocumentSchema.Type | typeof NestedDocumentSchema.Type[keyof typeof NestedDocumentSchema.Type],
+): value is DocumentRecord => typeof value === 'object' && value !== null && Array.isArray(value) === false
 
-const sameEntries = (left: Record<string, unknown>, right: Record<string, unknown>): boolean => {
+const sameArrayElements = (
+  left: ReadonlyArray<typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type]>,
+  right: ReadonlyArray<typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type]>,
+): boolean => left.length === right.length && left.every((element, index) => sameElement(element, right[index]))
+
+const sameEntries = (left: DocumentRecord, right: DocumentRecord): boolean => {
   const names = Object.keys(left)
   return names.length === Object.keys(right).length &&
     names.every((name) => name in right && sameValue(left[name], right[name]))
 }
 
-const sameValue = (left: unknown, right: unknown): boolean =>
+const sameElement = (
+  left: typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type],
+  right: typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type],
+): boolean =>
   left === right ||
-  (Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
-    left.every((element, index) => sameValue(element, right[index]))) ||
   (isOptionRecord(left) && isOptionRecord(right) && sameEntries(left, right))
 
-const statedKeys = (document: { readonly [key: string]: unknown }): readonly string[] =>
+const sameValue = (
+  left:
+    | typeof DocumentSchema.Type
+    | typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type]
+    | typeof NestedDocumentSchema.Type[keyof typeof NestedDocumentSchema.Type],
+  right:
+    | typeof DocumentSchema.Type
+    | typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type]
+    | typeof NestedDocumentSchema.Type[keyof typeof NestedDocumentSchema.Type],
+): boolean =>
+  left === right ||
+  (Array.isArray(left) && Array.isArray(right) && sameArrayElements(left, right)) ||
+  (isOptionRecord(left) && isOptionRecord(right) && sameEntries(left, right))
+
+const statedKeys = (document: DocumentRecord): ReadonlyArray<string> =>
   Object.keys(document).filter((key) => document[key] !== undefined)
 
 describe('StrykerConfig.merge', () => {

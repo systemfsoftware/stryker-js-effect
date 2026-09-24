@@ -19,7 +19,8 @@ import * as Stream from 'effect/Stream'
 
 import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
 import { StrykerConfig } from './config/stryker-config.schema.js'
-import { readCapturedConsole, shapeEnvelope } from './Envelope.js'
+import { MachineConsole } from './reporting/machine-console.service.js'
+import { ErrorEnvelope } from './reporting/run-failure.schema.js'
 import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ResolvedMode } from './output-mode.schema.js'
 import {
@@ -242,7 +243,7 @@ const offerFailureEnvelope = (
   failed: FailedRunOutcome,
   captured: string,
 ): Effect.Effect<void> => {
-  const envelope = shapeEnvelope(failed, captured)
+  const envelope = ErrorEnvelope.fromOutcome({ error: failed, captured })
   return Queue.offer(
     stream.queue,
     RunFailed.make({
@@ -290,10 +291,10 @@ const emitNullScoreVerdictWhenOpen = (
       onFalse: () => Effect.void,
     }))
 
-const emitMachineModeOutput = (params: EmitMachineModeOutputOptions): Effect.Effect<void> =>
+const emitMachineModeOutput = (params: EmitMachineModeOutputOptions): Effect.Effect<void, never, MachineConsole> =>
   Effect.gen(function*() {
     const { stream, mode, outcome, basePath, pathService } = params
-    const captured = readCapturedConsole()
+    const captured = (yield* MachineConsole).read()
     return yield* Result.match(outcome, {
       onSuccess: (decision) =>
         Match.value(decision).pipe(
@@ -325,7 +326,7 @@ export interface RunEventStreamPort {
   readonly emitNullScoreVerdict: <Config = unknown>(
     params: EmitNullScoreVerdictOptions<Config>,
   ) => Effect.Effect<void>
-  readonly emitMachineModeOutput: (params: EmitMachineModeOutputOptions) => Effect.Effect<void>
+  readonly emitMachineModeOutput: (params: EmitMachineModeOutputOptions) => Effect.Effect<void, never, MachineConsole>
 }
 
 export class RunEventStreamPortTag extends Context.Service<RunEventStreamPortTag, RunEventStreamPort>()(

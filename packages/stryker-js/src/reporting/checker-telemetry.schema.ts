@@ -1,7 +1,7 @@
 import * as Metric from 'effect/Metric'
 import * as S from 'effect/Schema'
 
-export class CheckerTelemetry extends S.TaggedClass<CheckerTelemetry>()('CheckerTelemetry', {
+export class CheckerTelemetry extends S.Class<CheckerTelemetry>('CheckerTelemetry')({
   instrument: S.Literals(['duration', 'mutantsChecked', 'mutantsSkipped', 'rpcFailures', 'processCrashes']),
 }) {
   static readonly duration = Metric.timer('stryker.checker.duration', {

@@ -36,13 +36,8 @@ import {
   type ConfigFileUnreadableError,
   type ConfigFileUnsupportedError,
 } from './ConfigError.schema.js'
-import {
-  classifyRunOutcome,
-  errorText,
-  machineConsoleLayer,
-  readCapturedConsole,
-  runOutcomeCode,
-} from './Envelope.js'
+import { MachineConsole } from './reporting/machine-console.service.js'
+import { ErrorEnvelope, RunExitCode } from './reporting/run-failure.schema.js'
 import { type HostServices, type StrykerRun } from './run/host.service.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import type { EnginePorts } from './run/StageServices.service.js'
@@ -52,7 +47,7 @@ import {
 } from './route-cli-request.workflow.js'
 import { mergeReportsCell } from './merge-reports.cell.js'
 import { MergeReportsFailed } from './merge-reports.schema.js'
-import { RunExit, type RunOutcomeDecision, type RunOutcomeError } from './classify-run-outcome.workflow.js'
+import { RunExit, RunOutcomeCommand, classifyRunOutcome, type RunOutcomeDecision, type RunOutcomeError } from './classify-run-outcome.workflow.js'
 import { RunEventDrain, type RunEventStreamPort, type RunEventStream } from './run-event-stream.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { StrykerError } from './stryker-error.schema.js'
@@ -524,12 +519,15 @@ const readCliRoute = (
 ): Effect.Effect<
   CliRead,
   CliError.CliError,
-  Command.Environment | RunEventDrain
+  Command.Environment | RunEventDrain | MachineConsole
 > =>
   Effect.gen(function*() {
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
     const command = makeStrykerCommand(requestRef)
-    const machineConsole = invocation.environment.mode.mode === 'machine' ? machineConsoleLayer : Layer.empty
+    const machineConsole = Bool.match(invocation.environment.mode.mode === 'machine', {
+      onTrue: () => MachineConsole.consoleLayer,
+      onFalse: () => Layer.empty,
+    })
     const parsed = yield* Command.runWith(command, { version: cliPkgJson.version })(invocation.argv).pipe(
       Effect.result,
       Effect.provide(machineConsole),
@@ -678,11 +676,11 @@ const outcomeOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>): 
 
 const EXPORTABLE_SPAN_ERROR_LIMIT = 1024
 
-const errorTextOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>): string =>
+const errorTextOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>, captured: string) =>
   Result.match(result, {
     onSuccess: () => '',
     onFailure: (failure) => {
-      const text = errorText(failure, readCapturedConsole())
+      const text = ErrorEnvelope.fromOutcome({ error: failure, captured }).error
       return Match.value(text.length > EXPORTABLE_SPAN_ERROR_LIMIT).pipe(
         Match.when(true, () => `${text.slice(0, EXPORTABLE_SPAN_ERROR_LIMIT)}…[truncated]`),
         Match.orElse(() => text),
@@ -693,9 +691,10 @@ const errorTextOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>)
 export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effect<
   void,
   PlatformError | RunExit | CliError.CliError,
-  Command.Environment | RunEventDrain | EnginePorts
+  Command.Environment | RunEventDrain | EnginePorts | MachineConsole
 > =>
   Effect.gen(function*() {
+    const machineConsole = yield* MachineConsole
     const mode = yield* options.detectMode
     const stream = yield* options.runEvents.createRunEventStream(mode)
     const noColor = yield* Config.String('NO_COLOR').pipe(Effect.option)
@@ -721,12 +720,17 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
               strykerCliCell.run({ argv: options.argv, environment }),
             ),
           )
-          const outcome = classifyRunOutcome(exit, options.argv)
-          const code = runOutcomeCode(outcome)
+          const outcome = classifyRunOutcome(RunOutcomeCommand.fromExit({ exit, argv: options.argv }))
+          const code = RunExitCode.fromOutcome(
+            Result.match(outcome, {
+              onSuccess: (decision) => decision,
+              onFailure: (interrupted) => interrupted,
+            }),
+          ).code
           yield* Effect.annotateCurrentSpan({
             'stryker.run.outcome': outcomeOf(outcome),
             'stryker.run.exit_code': code,
-            'stryker.run.error': errorTextOf(outcome),
+            'stryker.run.error': errorTextOf(outcome, machineConsole.read()),
           })
           yield* Bool.match(mode.mode === 'machine', {
             onTrue: () =>

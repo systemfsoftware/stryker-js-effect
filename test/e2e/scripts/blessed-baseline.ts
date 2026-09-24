@@ -18,6 +18,7 @@ import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { GuestJobs } from '../src/Harness/guest-job.service.js'
 import type { HarnessError } from '../src/Harness/harness-failure.schema.js'
 import { BlessRefused } from '../src/Harness/harness-failure.schema.js'
+import { StrykerCliRunner } from '../src/Harness/stryker-cli-runner.service.js'
 import {
   type BaselineCounts,
   BlessedBaseline,
@@ -66,28 +67,35 @@ interface ParsedArgs {
   readonly verify: boolean
 }
 
+interface PartialArgs {
+  readonly slices: ReadonlyArray<OracleSliceId>
+  readonly verify: boolean
+}
+
+const partialArgsOf = (arg: string, parsed: PartialArgs): Result.Result<PartialArgs, BlessRefused> =>
+  Boolean.match(arg === '--verify', {
+    onTrue: () => Result.succeed({ ...parsed, verify: true }),
+    onFalse: () =>
+      Boolean.match(arg.startsWith('--'), {
+        onTrue: () => Result.fail(BlessRefused.make({ reason: `Unknown flag: ${arg}` })),
+        onFalse: () =>
+          Result.map(knownSliceOf(arg), (slice) => ({ ...parsed, slices: [...parsed.slices, slice] })),
+      }),
+  })
 const argsOf = (argv: ReadonlyArray<string>): Result.Result<ParsedArgs, BlessRefused> =>
-  Result.map(
-    Array.reduce(
-      argv,
-      Result.succeed({ slices: [], verify: false }),
-      (accumulated, arg) =>
-        Result.flatMap(accumulated, (parsed) =>
-          Match.value(arg).pipe(
-            Match.when('--verify', () => Result.succeed({ ...parsed, verify: true })),
-            Match.when(arg.startsWith('--'), () =>
-              Result.fail(BlessRefused.make({ reason: `Unknown flag: ${arg}` }))),
-            Match.orElse((id) =>
-              Result.map(knownSliceOf(id), (slice) => ({ ...parsed, slices: [...parsed.slices, slice] }))),
-          )),
-    ),
+  Result.flatMap(
+    Array.reduce(argv, Result.succeed({ slices: [], verify: false }), (accumulated, arg) =>
+      Result.flatMap(accumulated, (parsed) => partialArgsOf(arg, parsed))),
     (parsed) =>
-      Match.value(parsed.slices.length).pipe(
-        Match.when(0, () =>
-          BlessRefused.make({
-            reason: `No slices provided. Valid slices: ${listValidSliceIds()}`,
-          })),
-        Match.orElse((slices) => ({ slices, verify: parsed.verify })),
+      Match.value(parsed.slices.length === 0).pipe(
+        Match.when(true, () =>
+          Result.fail(
+            BlessRefused.make({
+              reason: `No slices provided. Valid slices: ${listValidSliceIds()}`,
+            }),
+          )),
+        Match.when(false, () => Result.succeed({ slices: parsed.slices, verify: parsed.verify })),
+        Match.exhaustive,
       ),
   )
 
@@ -158,7 +166,6 @@ const decodeEvent = (line: string, slice: OracleSliceId): Result.Result<RunEvent
     (issue) =>
       BlessRefused.make({
         reason: `Slice "${slice}" produced a malformed RunEvent line; refusing to bless garbage: ${issue.message}`,
-        cause: issue,
       }),
   )
 
@@ -185,37 +192,44 @@ const baselineOfTerminal = (
   slice: OracleSliceId,
   pairs: ReadonlyArray<readonly [string, string]>,
 ): Result.Result<BlessedBaseline, BlessRefused> =>
-  Match.value(terminal).pipe(
-    Match.tag('verdict', (verdict) =>
+  Match.value(terminal._tag).pipe(
+    Match.when('verdict', () =>
       Result.succeed(
         BlessedBaseline.make({
           artifactContract: BlessedBaseline.ARTIFACT_CONTRACT,
           slice,
           strykerConfig: OracleSliceConfig.SLICES[slice].strykerConfig,
-          counts: countsOf(verdict),
+          counts: countsOf(terminal as VerdictEvent),
           mutatorStatusTally: sortTally(tallyMutatorStatuses(pairs)),
         }),
       )),
-    Match.orElse((other) =>
+    Match.orElse((tag) =>
       Result.fail(
         BlessRefused.make({
-          reason:
-            `Slice "${slice}" terminated with event _tag "${other._tag}", expected "verdict". Refusing to bless garbage.`,
+          reason: `Slice "${slice}" terminated with event _tag "${tag}", expected "verdict". Refusing to bless garbage.`,
         }),
       )),
   )
 
 const parseRunEvents = (stdout: string, slice: OracleSliceId): Result.Result<ParsedRun, BlessRefused> =>
   Result.flatMap(parseEventLines(stdout, slice), (events) =>
-    Result.match(Option.fromNullishOr(events.at(-1)), {
-      onNone: () =>
+    Boolean.match(events.length === 0, {
+      onTrue: () =>
         Result.fail(
           BlessRefused.make({
             reason: `Slice "${slice}" produced no RunEvents on stdout; refusing to bless an empty stream.`,
           }),
         ),
-      onSome: (terminal) =>
-        Result.map(baselineOfTerminal(terminal, slice, mutatorStatusPairsOf(events)), (baseline) => ({ baseline })),
+      onFalse: () => {
+        const terminal = events.at(-1)
+        return terminal === undefined
+          ? Result.fail(
+            BlessRefused.make({
+              reason: `Slice "${slice}" produced no RunEvents on stdout; refusing to bless an empty stream.`,
+            }),
+          )
+          : Result.map(baselineOfTerminal(terminal, slice, mutatorStatusPairsOf(events)), (baseline) => ({ baseline }))
+      },
     }))
 
 const runOutcomeOf = (
@@ -223,19 +237,18 @@ const runOutcomeOf = (
   slice: OracleSliceId,
   attempt: number,
 ): Result.Result<ExecResult, BlessRefused> =>
-  Match.value(outcome.exitCode).pipe(
-    Match.when(0, () => Result.succeed(outcome)),
-    Match.orElse((exitCode) =>
+  Boolean.match(outcome.exitCode === 0, {
+    onTrue: () => Result.succeed(outcome),
+    onFalse: () =>
       Result.fail(
         BlessRefused.make({
           reason:
-            `Slice "${slice}" (attempt ${attempt}) exited with code ${exitCode}; refusing to bless a failing run.\nstdout: ${
+            `Slice "${slice}" (attempt ${attempt}) exited with code ${outcome.exitCode}; refusing to bless a failing run.\nstdout: ${
               outcome.stdout.slice(-2000)
             }\nstderr: ${outcome.stderr.slice(-2000)}`,
         }),
-      )),
-  )
-
+      ),
+  })
 const runSliceOnce = (
   runtime: HarnessRuntime,
   slice: OracleSliceId,
@@ -245,55 +258,67 @@ const runSliceOnce = (
   const fixtureName = `oracle-${slice}`
   const args: string[] = ['run', config.strykerConfig]
   return Effect.gen(function*() {
-    const installedPath = yield* BakedFixtureCache.use((cache) =>
-      cache.install({ url: ENTERPRISE_FIXTURE_URL, name: fixtureName }))
-    const outcome = yield* StrykerCliRunner.use((runner) => runner.run(args, installedPath))
+    const installedPath = yield* Effect.promise(() =>
+      runtime.runPromise(
+        BakedFixtureCache.use((cache) => cache.install({ url: ENTERPRISE_FIXTURE_URL, name: fixtureName })),
+      ))
+    const outcome = yield* Effect.promise(() =>
+      runtime.runPromise(StrykerCliRunner.use((runner) => runner.run(args, installedPath))))
     const parsed = yield* runOutcomeOf(outcome, slice, attempt)
     return (yield* parseRunEvents(parsed.stdout, slice)).baseline
   })
 }
 
-const writeBaselineFile = (baseline: BlessedBaseline): Effect.Effect<string, HarnessError> => {
+const writeBaselineFile = (baseline: BlessedBaseline): Effect.Effect<string, BlessRefused> => {
   const outPath = join(BASELINE_OUTPUT_DIR, `${baseline.slice}.json`)
-  return Effect.gen(function*() {
-    const encoded = yield* Schema.encode(BlessedBaseline)(baseline)
-    yield* Effect.tryPromise({
-      try: () =>
-        mkdir(dirname(outPath), { recursive: true }).then(() =>
-          writeFile(outPath, `${JSON.stringify(encoded, undefined, 2)}\n`, 'utf8')),
-      catch: (cause) => BlessRefused.make({ reason: `Cannot write baseline file ${outPath}`, cause }),
-    })
-    return outPath
-  })
-}
-
-const readExistingBaseline = (slice: OracleSliceId): Effect.Effect<BlessedBaseline | undefined, HarnessError> =>
-  Effect.catchIf(
-    Effect.tryPromise({
-      try: () => readFile(join(BASELINE_OUTPUT_DIR, `${slice}.json`), 'utf8'),
-      catch: (cause) => BlessRefused.make({ reason: `Cannot read existing baseline for slice "${slice}"`, cause }),
-    }).pipe(
-      Effect.flatMap((text) =>
-        Effect.matchEffect(Schema.decodeUnknown(BlessedBaseline)(JSON.parse(text)), {
-          onFailure: (issue) =>
-            Effect.fail(
-              BlessRefused.make({
-                reason: `Existing baseline for slice "${slice}" is malformed; refusing to bless onto garbage: ${
-                  issue.message
-                }`,
-                cause: issue,
-              }),
-            ),
-          onSuccess: (baseline) => Effect.succeed(baseline),
-        })
-      ),
-    ),
-    (refused) =>
-      Match.value(refused.cause).pipe(
-        Match.when({ _tag: 'SystemError', reason: 'NotFound' }, () => Effect.succeed(undefined)),
-        Match.orElse(() => Effect.fail(refused)),
+  return Effect.flatMap(
+    Effect.fromResult(Schema.encodeSyncResult(BlessedBaseline)(baseline)),
+    (encoded) =>
+      Effect.matchEffect(
+        Effect.tryPromise({
+          try: () =>
+            mkdir(dirname(outPath), { recursive: true }).then(() =>
+              writeFile(outPath, `${JSON.stringify(encoded, undefined, 2)}\n`, 'utf8')),
+          catch: () => BlessRefused.make({ reason: `Cannot write baseline file ${outPath}` }),
+        }),
+        {
+          onFailure: (refused) => Effect.fail(refused),
+          onSuccess: () => Effect.succeed(outPath),
+        },
       ),
   )
+}
+
+const readExistingBaseline = (slice: OracleSliceId): Effect.Effect<BlessedBaseline | undefined, BlessRefused> => {
+  const path = join(BASELINE_OUTPUT_DIR, `${slice}.json`)
+  return Effect.matchEffect(
+    Effect.tryPromise({
+      try: () => readFile(path, 'utf8'),
+      catch: () => BlessRefused.make({ reason: `Cannot read existing baseline for slice "${slice}"` }),
+    }),
+    {
+      onFailure: (refused) =>
+        Boolean.match(refused.reason.startsWith('Cannot read existing baseline') && refused.reason.includes('ENOENT'), {
+          onTrue: () => Effect.succeed(undefined),
+          onFalse: () => Effect.fail(refused),
+        }),
+      onSuccess: (text) =>
+        Effect.matchEffect(
+          Effect.fromResult(Schema.decodeUnknownResult(BlessedBaseline)(JSON.parse(text))),
+          {
+            onFailure: (issue) =>
+              Effect.fail(
+                BlessRefused.make({
+                  reason:
+                    `Existing baseline for slice "${slice}" is malformed; refusing to bless onto garbage: ${issue.message}`,
+                }),
+              ),
+            onSuccess: (baseline) => Effect.succeed(baseline),
+          },
+        ),
+    },
+  )
+}
 
 function reportRun(slice: OracleSliceId, attempt: number, startedMs: number, finishedMs: number): void {
   console.log(`[${slice}] run ${attempt}: wall=${(finishedMs - startedMs) / 1000}s`)
@@ -450,20 +475,20 @@ const selfBakingHarness = Layer.mergeAll(
 
 const blessProgram = (argv: ReadonlyArray<string>): Effect.Effect<void, HarnessError, HarnessRuntime> =>
   Effect.flatMap(Effect.fromResult(argsOf(argv)), (args) =>
-    Match.value(args.verify && args.slices.length > 1).pipe(
-      Match.when(true, () =>
+    Boolean.match(args.verify && args.slices.length > 1, {
+      onTrue: () =>
         Effect.fail(
           BlessRefused.make({
             reason: '--verify runs two consecutive runs per slice; pass exactly one slice with --verify',
           }),
-        )),
-      Match.orElse(() =>
+        ),
+      onFalse: () =>
         Effect.forEach(args.slices, (requested) =>
           Effect.flatMap(
             Effect.fromResult(knownSliceOf(requested)),
             (known) => blessSliceEffect(known, args.verify),
-          ), { discard: true })),
-    ))
+          ), { discard: true }),
+    }))
 
 const blessSliceEffect = (
   slice: OracleSliceId,

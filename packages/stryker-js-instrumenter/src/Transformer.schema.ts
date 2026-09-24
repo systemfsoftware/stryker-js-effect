@@ -2,7 +2,7 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
-import { ErrorText, textOf } from './ErrorText.schema.js'
+import { ErrorText } from './ErrorText.schema.js'
 import type { MutantNotApplied } from './Mutant.schema.js'
 
 export type TransformerFailure =
@@ -59,7 +59,8 @@ const hasStackText = (value: unknown): value is { readonly stack: string } =>
 
 const stackOf = <A>(cause: A): string =>
   Option.match(Option.filter(Option.some(cause), hasStackText), {
-    onNone: () => Option.getOrElse(textOf(ErrorText)(cause), () => ''),
+    onNone: () =>
+      Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
     onSome: (thrown) => thrown.stack,
   })
 

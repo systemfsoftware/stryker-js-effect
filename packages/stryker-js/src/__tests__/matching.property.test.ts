@@ -88,14 +88,11 @@ describe('FileMatcher', () => {
         ['js', 'ts', 'jsx', 'tsx', 'html', 'vue', 'mjs', 'mts', 'cts', 'cjs'].includes(present))
   })
 
+  it.prop('∀ps_Span_StarStarSpansSegmentsStarDoesNot', [strictSegmentArb], ([segment]) => {
     const pathService = pathServiceOf()
-    const suffix = 'ts'
-    const suffixPattern = FileMatcher.make({ pattern: `**/*.${suffix}`, allowHiddenFiles: true })
-    const rival = other === suffix ? `md${other}` : other
-    return (
-      suffixPattern.matches(pathService, `/x/${stem}.${suffix}`) &&
-      suffixPattern.matches(pathService, `/x/${stem}.${rival}`) === false
-    )
+    const star = FileMatcher.make({ pattern: `/x/*/${segment}`, allowHiddenFiles: true })
+    const starStar = FileMatcher.make({ pattern: `/x/**/${segment}`, allowHiddenFiles: true })
+    return starStar.matches(pathService, `/x/y/z/${segment}`) && star.matches(pathService, `/x/y/z/${segment}`) === false
   })
 })
 

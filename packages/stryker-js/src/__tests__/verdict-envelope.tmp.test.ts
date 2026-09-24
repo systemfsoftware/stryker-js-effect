@@ -4,6 +4,7 @@ import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 import { pathToFileURL } from 'node:url'
 
 import { AnsiCode, AnsiColor } from '../reporting/ansi.schema.js'
@@ -50,16 +51,28 @@ const pathService = Effect.runSync(Effect.provide(Path.Path, Path.layer))
 
 const CROCKFORD_RUN_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/
 
+const baselineDefinedReportArb = Arbitrary.schema(MutationTestResultSchema).pipe(
+  Arbitrary.map((report) => ({
+    ...report,
+    files: Object.fromEntries(
+      Object.entries(report.files).map(([fileName, file]) => [
+        fileName in Object.prototype ? `src/${fileName}` : fileName,
+        file,
+      ]),
+    ),
+  })),
+)
+
 describe('verdict envelope old vs new (throwaway baseline evidence)', () => {
   it.effect.prop(
     '∀rms_NewWire_≡OldEnvelopeBytes',
-    [MutationTestResultSchema, OutputMode, ModeSignal],
+    [baselineDefinedReportArb, OutputMode, ModeSignal],
     ([report, mode, signal]) =>
       Effect.gen(function*() {
         const baseline = yield* baselineVerdictEnvelopeOf
         const runId = baseline.generateRunId(DateTime.makeUnsafe(0))
         const built = VerdictEnvelope.build(report, mode, signal, runId, '/base', pathService)
-        const encoded = yield* S.encode(VerdictEnvelope)(built)
+        const encoded = yield* S.encodeEffect(VerdictEnvelope)(built)
         const old = baseline.buildVerdictEnvelope(report, mode, signal, runId, '/base', pathService)
         return JSON.stringify(encoded) === JSON.stringify(old)
       }),

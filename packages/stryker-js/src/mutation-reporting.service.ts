@@ -164,7 +164,8 @@ const reportMutant = (
     ...outcome,
   })).pipe(Effect.orDie)
 
-const checkStatusToMutantStatus = (_status: Exclude<CheckStatus, 'passed'>) => 'CompileError'
+const checkStatusToMutantStatus = (_status: Exclude<CheckStatus, 'passed'>): RunMutantResult['status'] =>
+  'CompileError'
 
 const reportMutantStatus = (mutant: MutantTestCoverage, status: RunMutantResult['status'], statusReason?: string) =>
   reportMutant(mutant, status, { statusReason: statusReason ?? mutant.statusReason })
@@ -337,7 +338,11 @@ const determineExitCode = (input: MutationReportingInput) => (metrics: MetricsRe
           ),
           {
             onFailure: (refused) => refused,
-            onSuccess: (decision) => decision.verdictClass,
+            onSuccess: (decision) =>
+              Match.value(decision).pipe(
+                Match.tag('ExitVerdictFailed', (): ExitClass => 'VerdictFail'),
+                Match.orElse((): ExitClass | null => null),
+              ),
           },
         ),
       ),
@@ -434,7 +439,14 @@ const reportAll = (deps: MutationReportingDeps, input: MutationReportingInput) =
       ),
       {
         onFailure: (refused) => refused,
-        onSuccess: (decision) => decision.highestClass,
+        onSuccess: (decision) =>
+          Match.value(decision).pipe(
+            Match.tag('ExitVerdictFailed', (): ExitClass => 'VerdictFail'),
+            Match.tag('ExitConfigErrored', (): ExitClass => 'ConfigError'),
+            Match.tag('ExitRuntimeErrored', (): ExitClass => 'RuntimeError'),
+            Match.tag('ExitInternalErrored', (): ExitClass => 'InternalError'),
+            Match.orElse((): ExitClass | null => null),
+          ),
       },
     )
     yield* emitVerdict(deps, input)(report)

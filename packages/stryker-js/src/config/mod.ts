@@ -1,6 +1,7 @@
 export { StrykerConfig } from './stryker-config.schema.js'
 export type {
   ConfigEnv,
+  DocumentRecord,
   Immutable,
   ImmutablePrimitive,
   Primitive,

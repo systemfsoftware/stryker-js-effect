@@ -27,6 +27,7 @@ import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 
 import { strykerCliEffect } from '../Cli.cell.js'
 import { nodePlatformLayer } from '../drivers/node.js'
+import { MachineConsole } from '../reporting/machine-console.service.js'
 import { UnsupportedNodeVersion } from './main.schema.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
@@ -175,6 +176,7 @@ const probeGroup = Layer.mergeAll(
 const cliLayer = Layer.mergeAll(
   probeGroup,
   telemetryLayer,
+  MachineConsole.layer,
   CliConfig.layer({
     builtIns: [
       GlobalFlag.Help,

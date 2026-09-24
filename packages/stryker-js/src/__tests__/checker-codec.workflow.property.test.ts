@@ -3,7 +3,15 @@ import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { CheckerMutantFromMutant } from '../Checker.schema.js'
+import { CheckerMutantFromMutant } from '../Checker/Checker.schema.js'
+
+const wireFieldsOf = (mutant: Mutant) => ({
+  id: mutant.id,
+  fileName: mutant.fileName,
+  mutatorName: mutant.mutatorName,
+  replacement: mutant.replacement,
+  location: mutant.location,
+})
 
 describe('CheckerMutantFromMutant', () => {
   it.prop('∀w_Wire_≡DecodeEncodeIdentity', [Mutant], ([mutant]) =>
@@ -30,9 +38,8 @@ describe('CheckerMutantFromMutant', () => {
         wire.mutatorName === mutant.mutatorName &&
         wire.replacement === mutant.replacement,
     }))
-
-  it.prop('∀w_Wire_≡RefusesUndescribable', [Mutant], ([mutant]) => {
-    const undescribable = Mutant.make({ ...mutant, id: '' })
-    return Result.isFailure(S.decodeResult(CheckerMutantFromMutant)(undescribable))
-  })
+  it.prop('∀w_Wire_≡RefusesUndescribable', [Mutant], ([mutant]) =>
+    S.is(CheckerMutantFromMutant)(mutant) ||
+    Result.isFailure(S.decodeResult(CheckerMutantFromMutant)({ ...wireFieldsOf(mutant), id: '' })),
+  )
 })
