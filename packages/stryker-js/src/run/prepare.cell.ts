@@ -593,7 +593,7 @@ const writePrepare = (
                   cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
                 }),
               )),
-            Match.orElse(() => Effect.void),
+            Match.orElse(() => Effect.succeed(undefined)),
           )
 
         yield* failOnEmptyProject(raw.project.files.pipe(MutableHashMap.size))

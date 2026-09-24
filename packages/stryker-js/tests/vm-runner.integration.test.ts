@@ -6,7 +6,6 @@ import {
   type PooledTestRunner,
   type PooledTestRunnerError,
   type TestRunnerBuildContext,
-  VmRunner,
   WorkerLauncher,
 } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'

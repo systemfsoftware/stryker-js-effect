@@ -33,7 +33,7 @@ import { RunEventWireLine } from './run-event-wire.schema.js'
 import { RUN_EVENTS_QUEUE_BOUND } from './Run.js'
 import { Heartbeat, HelpRendered, RunEvent, RunFailed, RunStarted, VerdictReached } from './run-event.schema.js'
 import { STREAM_SCHEMA_VERSION } from './StreamVersion.js'
-import { strykerVersion } from './stryker-package.schema.js'
+import { strykerVersion } from './stryker-package.js'
 import { buildVerdictEnvelope, generateRunId } from './verdict-envelope.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'

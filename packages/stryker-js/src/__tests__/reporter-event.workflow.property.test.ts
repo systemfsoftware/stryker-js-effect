@@ -108,7 +108,7 @@ describe('ReporterEvent', () => {
             onFailure: () => Option.none(),
           }), {
             onNone: () => Option.none<never>(),
-            onSome: (actual) => Option.some(actual as ReporterEvent),
+            onSome: (actual) => Option.some(actual),
           }),
           (success, actual) => [success.value, actual] as const,
         )

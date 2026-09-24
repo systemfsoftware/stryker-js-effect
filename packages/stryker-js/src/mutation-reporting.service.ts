@@ -44,7 +44,7 @@ import {
 import type { ReporterStage } from './reporter-stream.service.js'
 import { closeReporterStage, offerTerminalReport, terminalDrainClass } from './reporter-stream.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
-import { strykerVersion } from './stryker-package.schema.js'
+import { strykerVersion } from './stryker-package.js'
 import type { TestCoverage } from './test-coverage.schema.js'
 import { buildVerdictEnvelope } from './verdict-envelope.js'
 

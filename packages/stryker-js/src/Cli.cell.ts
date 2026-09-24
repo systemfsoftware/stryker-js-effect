@@ -25,7 +25,7 @@ import * as CliError from 'effect/unstable/cli/CliError'
 import * as Command from 'effect/unstable/cli/Command'
 import * as Flag from 'effect/unstable/cli/Flag'
 
-import { Admitted, NoSurvivors } from './admit-survivors-run.workflow.js'
+import { Admitted } from './admit-survivors-run.workflow.js'
 import { survivorsAdmissionCell } from './Survivors/Survivors.cell.js'
 import type { SurvivorsAdmissionAnswer, SurvivorsAdmissionInput } from './Survivors/mod.js'
 import type { SurvivorsRejection } from './Survivors/mod.js'

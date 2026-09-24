@@ -62,11 +62,7 @@ const workerSourceOf = (
   sources: readonly PluginSource[],
   kind: WorkerPluginKind,
   matches: (worker: WorkerPluginSource) => boolean,
-): Option.Option<WorkerPluginSource> =>
-  Array.findFirst(
-    sources,
-    (source): source is WorkerPluginSource => kindIs(kind)(source) && matches(source),
-  )
+): Option.Option<WorkerPluginSource> => Array.findFirst(Array.filter(sources, kindIs(kind)), matches)
 
 const resolvedSpawnOf = (
   command: WorkerSpawnCommand,

@@ -1,5 +1,4 @@
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as ManagedRuntime from 'effect/ManagedRuntime'
 
