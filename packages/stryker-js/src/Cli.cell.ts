@@ -615,7 +615,13 @@ const admissionOf = (
 const cliRouteCell = Sandwich.named('stryker.cli')(readCliRoute)
   .decide(routeCliRequest)
   .write({
-    CliHelpRequested: () => Cell.succeed<CliAnswer, CliRead>(undefined),
+    CliHelpRequested: () =>
+      Cell.fromEffect(
+        Effect.tap(
+          Effect.succeed<CliAnswer>(undefined),
+          () => globalThis.process.stderr.write('TAP write: help handler ran\n'),
+        ),
+      ),
     CliMergeReportsRequested: (merge) =>
       Cell.succeed({ _tag: 'merge-reports', parts: merge.parts, out: merge.out, packages: merge.packages }).pipe(
         Cell.andThen(mergeReportsCell),
@@ -689,7 +695,14 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
         Effect.gen(function*() {
           const exit = yield* Effect.exit(
             restore(
-              strykerCliCell.run({ argv: options.argv, environment }),
+              strykerCliCell.run({ argv: options.argv, environment }).pipe(
+                Effect.tapDefect((defect) =>
+                  Effect.sync(() => globalThis.process.stderr.write(`TAP cli: DEFECT ${defect}\n`))
+                ),
+                Effect.onInterrupt(() =>
+                  Effect.sync(() => globalThis.process.stderr.write('TAP cli: INTERRUPTED\n'))
+                ),
+              ),
             ),
           )
           globalThis.process.stderr.write(`TAP cli: cell exit ${exit._tag}\n`)
