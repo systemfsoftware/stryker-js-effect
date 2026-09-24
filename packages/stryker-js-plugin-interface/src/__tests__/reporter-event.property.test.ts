@@ -16,8 +16,7 @@ const validateSync = <T = unknown>(input: T): Validation => {
   return out
 }
 
-const encodeUnionEvent = (value: ReporterEvent) =>
-  Result.getOrThrow(S.encodeResult(Reporter.ReporterEventUnion)(value))
+const encodeUnionEvent = (value: ReporterEvent) => Result.getOrThrow(S.encodeResult(Reporter.ReporterEventUnion)(value))
 
 const encodeDryRun = (value: Reporter.DryRunCompleted) =>
   Result.getOrThrow(S.encodeResult(Reporter.DryRunCompleted)(value))
