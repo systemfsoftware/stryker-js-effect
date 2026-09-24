@@ -326,17 +326,8 @@ const ownedFilesOf = (testFiles: readonly string[], testFilter: readonly string[
     onSome: (tests) => ownedAmong(testFiles, ownersOf(tests)),
   })
 
-const filterToDiscovered = (declared: readonly string[], runnable: ReadonlySet<string>): readonly string[] =>
-  declared.filter((file) => runnable.has(file))
-
-const runnableAmong = (declared: readonly string[], discovered: readonly string[]): readonly string[] =>
-  declared.length === 0 ? discovered : filterToDiscovered(declared, new Set(discovered))
-
 const runnableFilesOf = (declared: readonly string[], discovered: readonly string[] | undefined): readonly string[] =>
-  Option.match(Option.fromNullishOr(discovered), {
-    onNone: () => declared,
-    onSome: (files) => runnableAmong(declared, files),
-  })
+  declared.length > 0 ? declared : Option.getOrElse(Option.fromNullishOr(discovered), () => declared)
 
 const snapshotGlobals = (): ReadonlyMap<string, PropertyDescriptor> =>
   new Map(Object.entries(Object.getOwnPropertyDescriptors(globalThis)))
