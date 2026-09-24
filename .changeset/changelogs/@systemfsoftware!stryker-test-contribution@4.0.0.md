@@ -1,12 +1,7 @@
 ## 4.0.0
 
-### Major Changes
+### Minor Changes
 
-- The package entry point now exports only `strykerPlugins`, the list the engine loads the test-contribution evaluator from.
+- Projects using `@systemfsoftware/stryker-js` as a CLI tool no longer receive warnings or automatic installs for `effect`. The peer dependency is now optional, required only when importing programmatic APIs from the package.
 
-  - Remove imports of `judgeTestContribution`, its decision types, `makeTestContributionEvaluatorService`, `testContributionEvaluatorLayer` and the helpers removed alongside them. They have no public replacement.
-
-### Patch Changes
-
-- Updated dependencies:
-  - @systemfsoftware/stryker-js-plugin-interface@8.0.0
+  `@systemfsoftware/stryker-js-vitest-runner` and `@systemfsoftware/stryker-test-contribution` no longer declare a peer dependency on `effect`.

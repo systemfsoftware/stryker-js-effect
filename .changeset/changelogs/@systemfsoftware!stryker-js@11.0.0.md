@@ -2,61 +2,25 @@
 
 ### Major Changes
 
-- Each package's main entry point now groups its exports into namespaces named after a capability, such as `Plugin`, `TestRunner` and `Report`.
+- The in-process `vm` runner is now the default `testRunner`. With no `testRunner` and no `testFiles` configured, the vm runner asks Vitest which files are tests. It runs exactly the files `vitest run` would, including your config's `include`, `exclude`, and `includeSource`, or Vitest's defaults when there is no config file. A run that loads no test files, or whose initial run registers zero tests, now fails the dry run with an error naming the `vm` runner and pointing at `testFiles`, instead of reporting a successful run where every mutant survives. Projects that relied on the previous default shelling out to a test command must set `testRunner: 'command'` (or `'vitest'`) to keep that behaviour.
 
-  - Import the namespace and qualify each name, for example `Plugin.TestRunnerRpcs` after importing `Plugin` from the plugin interface.
-  - Import instrumenter schemas such as `Location` and `MutantStatus` from the instrumenter's `Mutant` namespace, and plugin-interface names from the plugin interface, instead of through another package's entry point.
-  - The engine's `/config`, `/events` and `/promises` entry points are unchanged.
+- The `VmRunner`, `VmPlatform`, and `VmFileUrl` exports are removed from the `Plugin` namespace of `@systemfsoftware/stryker-js`, and `VmTestRunnerConfig.sandboxWorkingDirectory` is now required rather than optional. Code that imported the removed names, or that built a vm runner config without a working directory, must drop those imports and pass `sandboxWorkingDirectory`.
 
-- Configuration helpers move onto `StrykerConfig`, and internal helpers leave the package entry point.
-
-  - Replace `defineConfig(…)` with `StrykerConfig.define(…)` and `mergeConfig(…)` with `StrykerConfig.merge(…)`, imported from the `./config` entry point.
-  - Replace `createDefaultOptions`, `defaultOptions`, `SUPPORTED_CONFIG_FILE_NAMES` and `CONFIG_SYNTAX_HELP` with the `StrykerConfig` statics `createDefaultOptions`, `defaultOptions`, `supportedFileNames` and `syntaxHelp`.
-  - Replace `calculateMetrics` with a decode through `MetricsResultFromReport`.
-  - Remove imports of the other dropped helpers, such as `resolveExitCode`, `buildVerdictEnvelope`, `makeRunLayer` and the checker metric instruments. They have no public replacement.
-
-- `Engine.strykerCell` now leaves the Node platform services to the caller, `createFileMatcher` and `matchesFile` are replaced by `Configuration.FileMatcher`, and the entry point no longer re-exports `effect/Schema` as `S`.
-
-  - Build a matcher with `FileMatcher.make({ pattern, allowHiddenFiles })` and call `matcher.matches(pathService, fileName)`.
-  - Import `effect/Schema` directly where you used `S`.
-  - Provide `Engine.nodePlatformLayer` to `Engine.strykerCell`, for example with `Effect.provide`.
-
-- Framework format support now arrives as a plugin. A package exporting `strykerFrameworks` and listed in `plugins` teaches a run new file formats — the Angular and Svelte plugins ship for `.html`, `.htm`, `.vue`, and `.svelte`. List each framework package by name: a bare package name resolves from the project, and a `file://` URL keeps working. There is no discovery, so a plugin you never list contributes nothing.
-
-  When two plugins claim one extension, the one listed first in `plugins` owns it, and the losing claim is reported with the winning and losing module names.
-
-  The `Framework` type a plugin's `strykerFrameworks` entries satisfy, and the AST `Node` type an ignorer's `shouldIgnore` receives, are exported beside `Ignorer`.
-
-- A framework plugin that cannot serve refuses the run before any file is instrumented. A missing peer, a peer installed outside the plugin's supported range, a peer that does not export what the plugin needs, or a contribution that fails validation ends the run as a configuration error (exit code 2); a plugin module that crashes on import stays an internal error (exit code 4).
-
-  An unclaimed file is skipped instead of failing the run. The skip report names its extension and the installed package whose manifest claims that extension, so the fix is adding that package to `plugins` — or installing a framework plugin when no installed package declares the extension. A file a loaded format claims but cannot parse still fails the run.
-
-- A report now labels each file with the language of the format that owns it, instead of the extension table the core used to carry, so a component a framework plugin claims is reported under that plugin's language.
-
-  Incremental runs reuse a file's remembered results only while the owner stamp of the format that owns it is unchanged — the module the format is registered from joined with the version of the framework runtime that plugin resolved. Upgrading either recomputes that file's mutants rather than reusing results the new runtime never produced. A file no loaded format claims is never remembered, so configuring the format that owns it mutates the file on the next run.
-
-- The machine-mode stream gains three event kinds: the framework each configured plugin module contributed, the resolved format registry mapping every claimed extension to its format and owning module, and the files skipped for want of a format. `RunFailed` gains a typed `reason` naming what ended the run, so a refusal reads without parsing prose.
-
-  `STREAM_SCHEMA_VERSION` is now `1.1`. A decoder that switches over the event kinds must handle the new members before it upgrades.
+  `Plugin.vmTestRunner` no longer needs a `VmRunner` service. It needs a `Scope` instead, and closing that scope stops the runner's worker thread. Call it inside `Effect.scoped`, or inside another scope that ends when the run ends.
 
 ### Minor Changes
 
-- Each run stage, checker call, report write and test-runner mutant run now records an OpenTelemetry span named after its cell. The span has `.read` and `.write` child spans and an `app.<name>.decision` or `app.<name>.failure` attribute holding the outcome. It also feeds an `app.<name>.duration` histogram labelled `result_class`.
+- Projects using `@systemfsoftware/stryker-js` as a CLI tool no longer receive warnings or automatic installs for `effect`. The peer dependency is now optional, required only when importing programmatic APIs from the package.
 
-- A `--survivors` run now reports a prior report as mismatched when a surviving mutant has an empty id or mutator name, or a file name containing a backslash.
+  `@systemfsoftware/stryker-js-vitest-runner` and `@systemfsoftware/stryker-test-contribution` no longer declare a peer dependency on `effect`.
+
+- The vm runner now runs Vitest suites that use module mocking (`vi.mock`, `vi.doMock`, automocking, spies), snapshot assertions with update modes and custom snapshot paths, test environments (`node`, `jsdom`, `happy-dom`), setup files, `globals` and `define`, `provide`/`inject`, in-source tests, and a project's own Vitest config — `include`, `exclude`, `alias`, `projects`, `isolate`, timeouts, mock-reset and fake-timer options, JSX/TSX and other custom transforms, and `import.meta.env`. Suites that need Vitest browser mode still fail with an error naming `testRunner: 'vitest'`.
+
+  As under `vitest run`, a discovered test file that registers no tests fails with `No test suite found in file <path>`, so a mutant that removes every test from an in-source test block is killed rather than surviving.
 
 ### Patch Changes
 
-- The JSON report and the machine stream now name the same place for every
-  mutant. The report's columns ran one too high, and the stream's line and column
-  ran one and two too high, so a consumer that highlighted the mutated code from
-  either landed beside the mutation. Both now carry the mutant's 1-based line and
-  column.
-
-  An incremental run keeps reusing the results remembered in a report written
-  before this fix, so upgrading does not re-run a project's mutants once.
-
-- Incremental runs and the verdict envelope now handle mutant ids and file names that match built-in object properties, such as `toString`.
+- The vm runner now runs far less work per mutant. Its dry run records per-test mutant coverage, so a mutant run executes only the tests that cover it instead of the whole suite; a run that reaches the configured test hit limit stops there, and a mutant run that does not reload the environment reuses the already-loaded module graph. A module with present-but-empty coverage no longer falls back to running every test, and each test-runner instance runs tests in its own worker thread instead of queueing behind one shared lock, so independent runs overlap.
 
 - Updated dependencies:
-  - @systemfsoftware/stryker-vm-harness@2.0.0
+  - @systemfsoftware/stryker-vm-harness@3.0.0
