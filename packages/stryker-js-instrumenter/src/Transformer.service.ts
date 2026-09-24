@@ -60,7 +60,7 @@ import {
 } from './Mutator.service.js'
 import { ParseFailed } from './Parser.schema.js'
 import { Parser } from './Parser.service.js'
-import type { ParserError, ParserShape } from './Parser.service.js'
+import type { ParserShape } from './Parser.service.js'
 import { AstFormat } from './Syntax.schema.js'
 import {
   CommentLocationMissing,
@@ -115,7 +115,7 @@ export interface TransformerShape {
 export class Transformer extends Context.Service<Transformer, TransformerShape>()(
   '@systemfsoftware/stryker-js-instrumenter/Transformer.service/Transformer',
 ) {
-  static readonly layer: Layer.Layer<Transformer, ParserError, Parser | Mutators> = Layer.effect(
+  static readonly layer: Layer.Layer<Transformer, never, Parser | Mutators> = Layer.effect(
     Transformer,
     Effect.flatMap(
       Parser,
@@ -123,7 +123,7 @@ export class Transformer extends Context.Service<Transformer, TransformerShape>(
         Effect.flatMap(
           Mutators,
           (mutators) =>
-            Effect.map(instrumentationHeaderOf(parser), (header) =>
+            Effect.map(Effect.cached(instrumentationHeaderOf(parser)), (header) =>
               Transformer.of({ transform: transformOf(header, mutators) })),
         ),
     ),
@@ -803,10 +803,14 @@ var ${IS_MUTANT_ACTIVE_HELPER} = function(id) {
   return isActive(id);
 }`
 
-const instrumentationHeaderOf = (parser: ParserShape): Effect.Effect<readonly Statement[], ParserError> =>
-  Effect.map(
-    parser.parse(INSTRUMENTATION_HEADER_SOURCE, 'instrumenter-header.js', 'js'),
-    (ast) => deepFreeze(ast.root.body),
+type InstrumentationHeader = Effect.Effect<readonly Statement[]>
+
+const instrumentationHeaderOf = (parser: ParserShape): InstrumentationHeader =>
+  Effect.orDie(
+    Effect.map(
+      parser.parse(INSTRUMENTATION_HEADER_SOURCE, 'instrumenter-header.js', 'js'),
+      (ast) => deepFreeze(ast.root.body),
+    ),
   )
 
 const placeHeaderIfNeeded = (
@@ -814,21 +818,22 @@ const placeHeaderIfNeeded = (
   originFileName: string,
   options: MutatorOptions,
   root: Program,
-  header: readonly Statement[],
+  header: InstrumentationHeader,
 ): Effect.Effect<void, ParseFailed> =>
   Boolean.match(shouldPlaceHeader(mutantCollector, originFileName, options), {
     onTrue: () => placeHeader(root, header),
     onFalse: () => Effect.void,
   })
 
-const placeHeader = (root: Program, header: readonly Statement[]): Effect.Effect<void, ParseFailed> =>
-  Result.match(headerFor(root, header), {
-    onSuccess: (resolved) =>
-      Effect.sync(() => {
-        root.body.unshift(...resolved)
-      }),
-    onFailure: (failure) => Effect.die(failure),
-  })
+const placeHeader = (root: Program, header: InstrumentationHeader): Effect.Effect<void, ParseFailed> =>
+  Effect.flatMap(header, (statements) =>
+    Result.match(headerFor(root, statements), {
+      onSuccess: (resolved) =>
+        Effect.sync(() => {
+          root.body.unshift(...resolved)
+        }),
+      onFailure: (failure) => Effect.die(failure),
+    }))
 
 const shouldPlaceHeader = (
   mutantCollector: MutantCollector,
@@ -904,7 +909,7 @@ const isMap = (value: object): value is Map<object | null | undefined, object | 
 
 const isSet = (value: object): value is Set<object | null | undefined> => value instanceof Set
 
-const transformOf = (header: readonly Statement[], mutators: MutatorsShape): Transform => {
+const transformOf = (header: InstrumentationHeader, mutators: MutatorsShape): Transform => {
   const transform: Transform = dual(
     3,
     (
@@ -959,7 +964,7 @@ const transformSvelte = (
   svelte: AstByFormat['svelte'],
   mutantCollector: MutantCollector,
   context: TransformerContext,
-  header: readonly Statement[],
+  header: InstrumentationHeader,
 ) =>
   Effect.gen(function*() {
     const { root } = svelte
@@ -980,7 +985,7 @@ const transformSvelte = (
 const placeModuleHeaderIfNeeded = (
   svelte: AstByFormat['svelte'],
   mutantCollector: MutantCollector,
-  header: readonly Statement[],
+  header: InstrumentationHeader,
 ): Effect.Effect<void, ParseFailed> =>
   Boolean.match(hasPlacedMutants(mutantCollector, svelte.originFileName), {
     onTrue: () => placeModuleHeader(svelte, header),
@@ -989,7 +994,7 @@ const placeModuleHeaderIfNeeded = (
 
 const placeModuleHeader = (
   svelte: AstByFormat['svelte'],
-  header: readonly Statement[],
+  header: InstrumentationHeader,
 ): Effect.Effect<void, ParseFailed> =>
   Effect.flatMap(ensureModuleScriptOf(svelte), (moduleScript) => placeHeader(moduleScript.ast.root, header))
 
@@ -1039,7 +1044,7 @@ const transformScript = (
   { root, originFileName, rawContent, offset, comments }: ScriptAst,
   mutantCollector: MutantCollector,
   { options, mutateDescription, basePath }: TransformerContext,
-  header: readonly Statement[],
+  header: InstrumentationHeader,
   mutators: MutatorsShape,
 ) => {
   const placementMap: PlacementMap = new Map()
