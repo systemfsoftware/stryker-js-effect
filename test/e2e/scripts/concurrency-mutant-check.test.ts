@@ -1,14 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type {
-  Checker,
-  CheckerFailed,
-  CheckerMutantWire,
-  CheckResult,
-} from '@systemfsoftware/stryker-js-plugin-interface'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
@@ -18,12 +10,18 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { expect } from 'vitest'
-
-import { makeCheckerService } from '../src/Checker.js'
-import { makeHybridFileSystem, makeTypescriptCompiler } from '../src/Compiler.js'
-
-const Feature = makeFeature({ it, layer })
+import { describe, expect, it } from 'vitest'
+import { StrykerOptionsSchema } from '../../../packages/stryker-js-plugin-interface/src/index.js'
+import type {
+  CheckerFailed,
+  CheckerMutantWire,
+  CheckResult,
+} from '../../../packages/stryker-js-plugin-interface/src/index.js'
+import { makeCheckerService } from '../../../packages/stryker-js-typescript-checker/src/Checker.js'
+import {
+  makeHybridFileSystem,
+  makeTypescriptCompiler,
+} from '../../../packages/stryker-js-typescript-checker/src/Compiler.js'
 
 const LIVE_OPT_IN_MUTATIONS: readonly string[] = [
   'AtomicUpdateSplit',
@@ -55,6 +53,8 @@ const fixtureLayout = Effect.gen(function*() {
     testDirectory,
     '..',
     '..',
+    '..',
+    'packages',
     'stryker-js-instrumenter',
     'tests',
     '__fixtures__',
@@ -65,9 +65,13 @@ const fixtureLayout = Effect.gen(function*() {
     definitionFiles: moduleNames
       .filter((moduleName) => moduleName.endsWith('.ts'))
       .map((moduleName) => path.join(definitionsDirectory, moduleName)),
-    projectTsConfig: path.join(testDirectory, '__fixtures__', 'effect-concurrency', 'tsconfig.json'),
+    projectTsConfig: path.join(testDirectory, 'oracle', 'effect-concurrency', 'tsconfig.json'),
   }
 })
+
+class MissingControlFault extends S.TaggedError<MissingControlFault>()('MissingControlFault', {
+  reason: S.String,
+}) {}
 
 const wireOf = (mutant: Mutant): CheckerMutantWire => ({
   id: mutant.id,
@@ -93,13 +97,6 @@ const instrumentedWires = (layout: FixtureLayout) =>
       )
       .map(wireOf)
   })
-
-interface CheckerRig {
-  readonly layout: FixtureLayout
-  readonly checker: Checker['Service']
-  readonly start: Result.Result<void, CheckerFailed>
-  readonly projectFiles: ReadonlyArray<string>
-}
 
 const checkerRig = (layout: FixtureLayout) =>
   Effect.gen(function*() {
@@ -165,71 +162,45 @@ const illTypedControl = (wires: ReadonlyArray<CheckerMutantWire>): Option.Option
     (wire) => ({ ...wire, replacement: '1' }),
   )
 
-Feature('The TypeScript checker accepting opted-in concurrency faults')
-  .withLayer(runLayer)
-  .body(({ scenario }) => {
-    scenario(
-      'The untouched definitions project is accepted without a complaint',
-      Gherkin.Do.pipe(
-        Given('a strict project around the Effect concurrency definitions')(
-          'rig',
-          () => Effect.flatMap(fixtureLayout, checkerRig),
-        ),
-        When('the checker inspects the project as it was written')(
-          'complaints',
-          (s) => Effect.succeed(startComplaints(s.rig.start)),
-        ),
-        Then('no compile problem is reported')((s) => {
-          expect(s.complaints).toEqual([])
-        }),
-        Then('every definition module is part of the inspected project')((s) => {
-          const inspected: Record<string, true> = {}
-          s.rig.projectFiles.forEach((fileName) => {
-            inspected[fileName] = true
-          })
-          expect(s.rig.layout.definitionFiles.filter((fileName) => inspected[fileName] !== true)).toEqual([])
-        }),
-      ),
-    )
+describe('The TypeScript checker accepting opted-in concurrency faults', () => {
+  it('the untouched definitions project is accepted without a complaint', () =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const rig = yield* Effect.flatMap(fixtureLayout, checkerRig)
+        expect(startComplaints(rig.start)).toEqual([])
+        const inspected: Record<string, true> = {}
+        rig.projectFiles.forEach((fileName) => {
+          inspected[fileName] = true
+        })
+        expect(rig.layout.definitionFiles.filter((fileName) => inspected[fileName] !== true)).toEqual([])
+      }).pipe(Effect.provide(runLayer)),
+    ))
 
-    scenario(
-      'Every proposed concurrency fault compiles like the code it replaces',
-      Gherkin.Do.pipe(
-        Given('a strict project around the Effect concurrency definitions')(
-          'rig',
-          () => Effect.flatMap(fixtureLayout, checkerRig),
-        ),
-        Given('the faults proposed for those definitions')('wires', (s) => instrumentedWires(s.rig.layout)),
-        When('the checker inspects every fault')('results', (s) => s.rig.checker.check(s.wires)),
-        Then('the proposal matches what the definitions promise')((s) => {
-          expect(s.wires.length).toBe(expectedMutantCount())
-        }),
-        Then('every fault keeps the original typing')((s) => {
-          expect(problemReports(s.wires, s.results)).toEqual([])
-        }),
-      ),
-    )
+  it('every proposed concurrency fault compiles like the code it replaces', () =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const rig = yield* Effect.flatMap(fixtureLayout, checkerRig)
+        const wires = yield* instrumentedWires(rig.layout)
+        const results = yield* rig.checker.check(wires)
+        expect(wires.length).toBe(expectedMutantCount())
+        expect(problemReports(wires, results)).toEqual([])
+      }).pipe(Effect.provide(runLayer)),
+    ))
 
-    scenario(
-      'A fault that breaks the typing is refused',
-      Gherkin.Do.pipe(
-        Given('a strict project around the Effect concurrency definitions')(
-          'rig',
-          () => Effect.flatMap(fixtureLayout, checkerRig),
-        ),
-        Given('the faults proposed for those definitions')('wires', (s) => instrumentedWires(s.rig.layout)),
-        When('one fault replaces an effect with a plain number')(
-          'refusals',
-          (s) =>
-            Option.match(illTypedControl(s.wires), {
-              onNone: () => Effect.fail(new Error('no fault on an effect-returning expression was proposed')),
-              onSome: (control) =>
-                Effect.map(s.rig.checker.check([control]), (results) => refusalReports([control], results)),
-            }),
-        ),
-        Then('the checker refuses that fault as a compile problem')((s) => {
-          expect(s.refusals).toHaveLength(1)
-        }),
-      ),
-    )
-  })
+  it('a fault that breaks the typing is refused as a compile problem', () =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const rig = yield* Effect.flatMap(fixtureLayout, checkerRig)
+        const wires = yield* instrumentedWires(rig.layout)
+        const refusals = yield* Option.match(illTypedControl(wires), {
+          onNone: () =>
+            Effect.fail(
+              MissingControlFault.make({ reason: 'no fault on an effect-returning expression was proposed' }),
+            ),
+          onSome: (control) =>
+            Effect.map(rig.checker.check([control]), (results) => refusalReports([control], results)),
+        })
+        expect(refusals).toHaveLength(1)
+      }).pipe(Effect.provide(runLayer)),
+    ))
+})
