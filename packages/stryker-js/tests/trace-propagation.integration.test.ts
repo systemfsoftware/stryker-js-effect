@@ -86,7 +86,7 @@ const runTracedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> => {
       const host = yield* Effect.useSpan('host.run', {}, (host) =>
         Effect.as(
           client.init({}).pipe(
-            Effect.provideService(TraceContextReference, S.decodeUnknownOption(TraceContextPartsFromEffectSpan)(host)),
+            Effect.provideService(TraceContextReference, S.decodeOption(TraceContextPartsFromEffectSpan)(host)),
           ),
           host,
         ))
@@ -105,7 +105,7 @@ const runCarriedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> => {
   return Effect.scoped(
     Effect.gen(function*() {
       const { record, client } = yield* makeClient(plan)
-      const parts = Option.getOrThrow(S.decodeUnknownOption(Traceparent)(FUTURE_TRACEPARENT))
+      const parts = Option.getOrThrow(S.decodeOption(Traceparent)(FUTURE_TRACEPARENT))
       yield* client.init({}, { headers: { [TraceparentHeader.literal]: FUTURE_TRACEPARENT } })
       return {
         hostTraceId: parts.traceId,
@@ -127,8 +127,8 @@ Feature('Linking a worker into the host run trace')
         When('the host reports the run inside a traced phase')('call', (s) => runTracedCall(s.plan)),
         Then('the boundary call carries the host span as a trace context header')((s) => {
           const traceparent = Option.getOrUndefined(Headers.get(s.call.headers, TraceparentHeader.literal))
-          expect(Option.isSome(S.decodeUnknownOption(Traceparent)(traceparent ?? ''))).toBe(true)
-          const parts = Option.getOrUndefined(S.decodeUnknownOption(Traceparent)(traceparent ?? ''))
+          expect(Option.isSome(S.decodeOption(Traceparent)(traceparent ?? ''))).toBe(true)
+          const parts = Option.getOrUndefined(S.decodeOption(Traceparent)(traceparent ?? ''))
           expect(parts?.traceId).toBe(s.call.hostTraceId)
           expect(parts?.spanId).toBe(s.call.hostSpanId)
         }),

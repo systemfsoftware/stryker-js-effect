@@ -208,7 +208,7 @@ Feature('Running each plugin worker as its own process')
             Effect.sync(() =>
               s.codes.map((code) =>
                 Result.match(
-                  classifyWorkerExit(new ClassifyWorkerExitCommand({ pid: WORKER_PID, exitCode: code })),
+                  classifyWorkerExit(ClassifyWorkerExitCommand.make({ pid: WORKER_PID, exitCode: code })),
                   {
                     onFailure: (refused) => refused,
                     onSuccess: (classified) => classified,

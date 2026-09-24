@@ -73,7 +73,7 @@ const nodeWorkerLauncherLayer = Layer.effect(
             Effect.orDie,
             Effect.flatMap((exitCode) =>
               Result.match(
-                classifyWorkerExit(new ClassifyWorkerExitCommand({ pid: Number(handle.pid), exitCode })),
+                classifyWorkerExit(ClassifyWorkerExitCommand.make({ pid: Number(handle.pid), exitCode })),
                 {
                   onFailure: (refused) => Effect.fail(refused),
                   onSuccess: (decision) =>

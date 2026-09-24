@@ -75,7 +75,11 @@ describe('interpretVitestMutantRun', () => {
       if (!S.is(MutantTimeout)(result.success)) {
         return false
       }
-      const reasonReached = result.success.reason === S.encodeSync(HitLimitReason)({ count: hitCount, limit: hitLimit })
+      const timeout = result.success
+      const reasonReached = Result.match(S.encodeResult(HitLimitReason)({ count: hitCount, limit: hitLimit }), {
+        onFailure: () => false,
+        onSuccess: (reason) => timeout.reason === reason,
+      })
       const reasonPrefixed = result.success.reason !== undefined &&
         result.success.reason.startsWith(HitLimitReasonPrefix.literal)
       return carriesFamilyBrand(result.success) && result.success.tests.length === 0 && reasonReached && reasonPrefixed

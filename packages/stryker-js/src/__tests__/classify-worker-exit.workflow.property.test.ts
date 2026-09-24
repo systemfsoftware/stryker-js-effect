@@ -10,7 +10,7 @@ import { ChildExitCode, ProcessId } from '../Worker.schema.js'
 const OUT_OF_MEMORY_CODES: ReadonlyArray<number> = [128 + 6, 128 + 9]
 
 const classifiedOf = (pid: number, exitCode: number) =>
-  classifyWorkerExit(new ClassifyWorkerExitCommand({ pid, exitCode }))
+  classifyWorkerExit(ClassifyWorkerExitCommand.make({ pid, exitCode }))
 
 describe('classifyWorkerExit', () => {
   it.prop(

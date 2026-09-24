@@ -122,9 +122,9 @@ const OrderedMutationScoreThresholds = S.declare<MutationScoreThresholdsValues>(
   toCodecArbitrary: () =>
     S.link<MutationScoreThresholdsValues>()(MutationScoreThresholdsValuesSchema, {
       decode: SchemaGetter.transform(({ break: breaking, high, low }) => ({
-        break: breaking,
         high: Math.max(high, low),
         low: Math.min(high, low),
+        break: breaking,
       })),
       encode: SchemaGetter.transform((thresholds) => thresholds),
     }),

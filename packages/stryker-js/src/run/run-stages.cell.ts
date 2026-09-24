@@ -72,17 +72,17 @@ export const strykerCell: {
 } = dual(
   (args) => Predicate.isObject(args[0]),
   (options: PartialStrykerOptions, targetMutatePatterns?: readonly string[]) =>
-    Effect.scoped(
-      Effect.flatMap(
-        Layer.build(strykerRunLayer),
-        (context) =>
-          Cell.provideContext(mutationTestCell, context).run({
-            cliOptions: options,
-            targetMutatePatterns: Option.match(Option.fromUndefinedOr(targetMutatePatterns), {
-              onNone: () => undefined,
-              onSome: (present) => [...present],
-            }),
+    strykerRunLayer.pipe(
+      Layer.build,
+      Effect.flatMap((context) =>
+        Cell.provideContext(mutationTestCell, context).run({
+          cliOptions: options,
+          targetMutatePatterns: Option.match(Option.fromUndefinedOr(targetMutatePatterns), {
+            onNone: () => undefined,
+            onSome: (present) => [...present],
           }),
+        })
       ),
+      Effect.scoped,
     ),
 )

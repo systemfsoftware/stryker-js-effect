@@ -6,7 +6,7 @@ export class MutantTestPlanCommand extends S.TaggedClass<MutantTestPlanCommand>(
   mutants: S.Array(Mutant),
   timeOverheadMS: S.Finite,
   timeSpentAllTests: S.Finite,
-  globalTestFilter: S.optional(S.Array(S.String)),
+  globalTestFilter: S.String.pipe(S.Array, S.optional),
   hitsByMutantId: S.Record(S.String, S.Finite),
   staticCoverage: S.optional(S.Record(S.String, S.Finite)),
   testsByMutantId: S.Record(S.String, S.Array(S.String)),

@@ -207,7 +207,7 @@ interface PluginContributions {
   readonly schemaContribution: ValidationSchemaProperties | undefined
 }
 
-const failPluginLoad = (descriptor: string, error: unknown): Effect.Effect<never, PluginLoadFailedError> =>
+const failPluginLoad = <E = unknown>(descriptor: string, error: E): Effect.Effect<never, PluginLoadFailedError> =>
   Effect.logWarning(`Error during loading "${descriptor}" plugin`).pipe(
     Effect.annotateLogs('cause', error),
     Effect.andThen(() => Effect.fail(PluginLoadFailedError.make({ descriptor, cause: error }))),
@@ -272,7 +272,7 @@ const describedContributionsOf = (
   contributions: PluginContributions,
 ): Effect.Effect<Option.Option<PluginContributions>, PluginLoadFailedError> =>
   Match.value(hasContribution(contributions)).pipe(
-    Match.when(true, () => Effect.succeed(Option.some(contributions))),
+    Match.when(true, () => Effect.succeedSome(contributions)),
     Match.orElse(() => Effect.as(warnUndescribedPluginModule(descriptor), Option.none<PluginContributions>())),
   )
 
@@ -295,7 +295,7 @@ const loadPlugin = (
       Effect.catch((error) => failPluginLoad(descriptor, error)),
     )
     return yield* Option.match(Option.fromUndefinedOr(maybeModule), {
-      onNone: () => Effect.succeed(Option.none()),
+      onNone: () => Effect.succeedNone,
       onSome: (module) => describeLoadedPlugin(descriptor, module),
     })
   })
@@ -385,10 +385,9 @@ const buildMergedSchema = <A = unknown>(
     onTrue: () => core,
     onFalse: () => ({
       ...core,
-      properties: Object.assign(
-        {},
+      properties: contributions.reduce(
+        (merged, contribution) => ({ ...merged, ...schemaPropertiesOf(contribution) }),
         schemaPropertiesOf(core),
-        ...contributions.map((contribution) => schemaPropertiesOf(contribution)),
       ),
     }),
   })

@@ -20,11 +20,8 @@ const jsonArgumentText = <A = unknown>(argument: A): string =>
     () => '[Circular]',
   )
 
-const inspectValue = (value: unknown): string =>
-  Match.value(value).pipe(
-    Match.when(Predicate.isString, (text) => text),
-    Match.orElse((item) => Formatter.format(item)),
-  )
+const inspectValue = <A = unknown>(value: A): string =>
+  Option.getOrElse(Option.liftPredicate(value, Predicate.isString), () => Formatter.format(value))
 
 interface FormatProgress<A = unknown> {
   readonly args: ReadonlyArray<A>
@@ -193,7 +190,7 @@ const machineConsoleOf = (clock: Clock.Clock): MachineConsoleShape => {
 }
 
 export class MachineConsole extends Context.Service<MachineConsole, MachineConsoleShape>()(
-  '@systemfsoftware/stryker-js/machine-console.service/MachineConsole',
+  '@systemfsoftware/stryker-js/reporting/machine-console.service/MachineConsole',
 ) {
   static readonly layer: Layer.Layer<MachineConsole> = Layer.effect(
     MachineConsole,

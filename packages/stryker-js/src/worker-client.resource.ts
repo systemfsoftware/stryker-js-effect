@@ -47,7 +47,9 @@ export const makeWorkerClient = <Rpcs extends Rpc.Any>(
       env: params.env,
     })
 
-    const protocol = yield* Layer.build(clientLayer(worker)).pipe(
+    const protocol = yield* worker.pipe(
+      clientLayer,
+      Layer.build,
       Effect.retry(connectRetry),
       Effect.raceFirst(worker.exited),
       Effect.catchTag('SocketError', () => Effect.fail(WorkerBootTimeoutError.make({ pid: worker.pid }))),

@@ -488,7 +488,7 @@ const determineExitCode = (input: MutationReportingInput) => (metrics: MetricsRe
       Option.fromNullishOr(
         Result.match(
           classifyExit(
-            new ClassifyExitCommand({ pending: [], score: mutationScore, breakingThreshold: breaking }),
+            ClassifyExitCommand.make({ pending: [], score: mutationScore, breakingThreshold: breaking }),
           ),
           {
             onFailure: (refused) => refused,
@@ -586,7 +586,7 @@ const reportAll = (deps: MutationReportingDeps, input: MutationReportingInput) =
     const verdict = yield* determineExitCode(input)(metrics)
     const finalVerdict = Result.match(
       classifyExit(
-        new ClassifyExitCommand({
+        ClassifyExitCommand.make({
           pending: [verdict, terminalDrain].filter((candidate): candidate is ExitClass => candidate !== null),
           score: null,
           breakingThreshold: null,

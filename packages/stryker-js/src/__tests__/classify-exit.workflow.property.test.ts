@@ -32,7 +32,7 @@ const worseOf = (first: ExitClass, second: ExitClass) =>
   })
 
 const decidedOf = (pending: ReadonlyArray<ExitClass>, score: number | null, breakingThreshold: number | null) =>
-  classifyExit(new ClassifyExitCommand({ pending: [...pending], score, breakingThreshold }))
+  classifyExit(ClassifyExitCommand.make({ pending: [...pending], score, breakingThreshold }))
 
 const isMemberClass = (exitClass: ExitClass, decision: ClassifyExitDecision): boolean =>
   Match.value(exitClass).pipe(

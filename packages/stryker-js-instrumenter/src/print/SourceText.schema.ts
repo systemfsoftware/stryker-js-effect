@@ -108,7 +108,7 @@ export class SourceText extends S.Class<SourceText>('SourceText')({ text: S.NonE
   static fromValue = <A>(value: A): Option.Option<SourceText> =>
     Option.flatMap(printedTextOf(value), (text) => SourceText.makeOption({ text }))
 }
-export type SourceTextValue = typeof SourceText.Type
+export type SourceTextValue = SourceText
 
 const nonEmptyOf = (text: string): Option.Option<string> =>
   Option.filter(Option.some(text), (candidate) => candidate.length > 0)

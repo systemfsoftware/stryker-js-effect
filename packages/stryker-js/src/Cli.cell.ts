@@ -584,15 +584,13 @@ const restrictedOptionsOf = (
   readonly survivorsPriorReport?: string
   readonly mutate?: string[]
   readonly incremental?: boolean
-} => {
-  return {
-    ...resolvedOptions,
-    survivors: admitted.survivors,
-    mutate: [...admitted.mutateSpans],
-    survivorsPriorReport: priorReportPath,
-    incremental: false,
-  }
-}
+} => ({
+  ...resolvedOptions,
+  survivors: admitted.survivors,
+  mutate: [...admitted.mutateSpans],
+  survivorsPriorReport: priorReportPath,
+  incremental: false,
+})
 
 const cliRouteCell = Sandwich.named('stryker.cli')(readCliRoute)
   .decide(routeCliRequest)
