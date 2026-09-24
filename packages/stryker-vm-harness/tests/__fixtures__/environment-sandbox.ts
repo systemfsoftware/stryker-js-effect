@@ -106,8 +106,36 @@ export const environmentSandboxOf = dual<
 >(2, (files, projectForFile) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
     const directory = yield* fs.makeTempDirectory()
+    return yield* sandboxInDirectory(directory, files, projectForFile)
+  }).pipe(Effect.orDie))
+
+export const symlinkedEnvironmentSandboxOf = dual<
+  (
+    projectForFile: (file: string) => SandboxProject,
+  ) => (
+    files: readonly SandboxFileSpec[],
+  ) => Effect.Effect<EnvironmentSandbox, never, FileSystem.FileSystem | Path.Path>,
+  (
+    files: readonly SandboxFileSpec[],
+    projectForFile: (file: string) => SandboxProject,
+  ) => Effect.Effect<EnvironmentSandbox, never, FileSystem.FileSystem | Path.Path>
+>(2, (files, projectForFile) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const real = yield* fs.makeTempDirectory()
+    yield* fs.symlink(real, `${real}-linked`)
+    return yield* sandboxInDirectory(`${real}-linked`, files, projectForFile)
+  }).pipe(Effect.orDie))
+
+const sandboxInDirectory = (
+  directory: string,
+  files: readonly SandboxFileSpec[],
+  projectForFile: (file: string) => SandboxProject,
+): Effect.Effect<EnvironmentSandbox, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
     yield* fs.writeFileString(path.join(directory, 'package.json'), '{"type":"module"}\n')
     yield* fs.symlink(NODE_MODULES_LINK_SOURCE, path.join(directory, 'node_modules'))
     const testFiles: Array<string> = []
@@ -157,6 +185,6 @@ export const environmentSandboxOf = dual<
       ),
       dispose: Effect.promise(() => session.then((started) => started.dispose())),
     }
-  }).pipe(Effect.orDie))
+  }).pipe(Effect.orDie)
 
 export const suiteFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)

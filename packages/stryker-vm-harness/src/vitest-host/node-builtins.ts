@@ -33,5 +33,13 @@ export const relative = dual<
 >(2, (from: string, to: string): string => pathModule.relative(from, to))
 export const resolve = (...parts: ReadonlyArray<string>): string => pathModule.resolve(...parts)
 
+export const realpath = (path: string): string => {
+  try {
+    return fsModule.realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
 export const fileURLToPath = (url: string | URL): string => urlModule.fileURLToPath(url)
 export const pathToFileURL = (path: string): URL => urlModule.pathToFileURL(path)

@@ -21,7 +21,7 @@ const writeBareSuite = (): Effect.Effect<SuiteOnDisk, never, FileSystem.FileSyst
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const outer = yield* fs.makeTempDirectory()
-    const directory = path.join(outer, 'isolated-sandbox')
+    const directory = path.join(yield* fs.realPath(outer), 'isolated-sandbox')
     yield* fs.makeDirectory(directory, { recursive: true })
     const stubDir = path.join(directory, 'node_modules', 'vitest')
     yield* fs.makeDirectory(stubDir, { recursive: true })

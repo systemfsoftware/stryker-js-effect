@@ -106,7 +106,7 @@ const prepareSandbox = (fixture: string): Effect.Effect<string, never, FileSyste
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const root = yield* fs.makeTempDirectory({ prefix: `vm-parity-${fixture}-` })
+    const root = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: `vm-parity-${fixture}-` }))
     yield* fs.copy(path.join(PACKAGE_ROOT, ...FIXTURES_DIR_SEGMENTS, fixture), root, { overwrite: true })
     yield* fs.remove(path.join(root, 'node_modules'), { recursive: true, force: true })
     yield* fs.symlink(path.join(PACKAGE_ROOT, 'node_modules'), path.join(root, 'node_modules'))
@@ -126,7 +126,7 @@ const prepareGeneratedSandbox = (): Effect.Effect<string, never, FileSystem.File
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const root = yield* fs.makeTempDirectory({ prefix: 'vm-parity-generated-' })
+    const root = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: 'vm-parity-generated-' }))
     yield* fs.writeFileString(
       path.join(root, 'package.json'),
       '{\n  "name": "vm-parity-generated",\n  "private": true,\n  "type": "module"\n}\n',

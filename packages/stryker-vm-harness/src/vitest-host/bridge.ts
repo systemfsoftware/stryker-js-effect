@@ -6,7 +6,7 @@ import { defaultProjectConfig, defaultVitestConfig } from './defaults.js'
 import { docblockOf } from './docblock-cache.js'
 import type { EnvironmentDocblock } from './docblock.js'
 import type { VmHostAnnouncement, VmHostInitMessage, VmHostReply, VmHostRequest } from './host-thread.js'
-import { basename, dirname, existsSync, globSync, join, resolve } from './node-builtins.js'
+import { basename, dirname, existsSync, globSync, join, realpath, resolve } from './node-builtins.js'
 import type { VmTransformResult, VmVitestRuntime } from './runtime.js'
 
 const moduleBuiltin = globalThis.process.getBuiltinModule('node:module')
@@ -240,7 +240,7 @@ const withDocblockOverride = (base: VmProjectConfig, testFile: string): VmProjec
 
 export const createVmVitestRuntime = (options: VmVitestBridgeOptions): VmVitestHostHandle => {
   const { sandboxWorkingDirectory, configFile } = options
-  const sandboxRoot = resolve(sandboxWorkingDirectory)
+  const sandboxRoot = realpath(resolve(sandboxWorkingDirectory))
 
   let state: HostState = 'unspawned'
   let worker: VmWorker | undefined

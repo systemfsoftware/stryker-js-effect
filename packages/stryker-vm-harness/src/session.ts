@@ -53,6 +53,7 @@ import {
   type StrykerNamespace,
   writeArmedMutant,
 } from './stryker-namespace.js'
+import { realpath } from './vitest-host/node-builtins.js'
 import { VM_VITEST_BAG_KEY, type VmVitestRuntime } from './vitest-host/runtime.js'
 import type {
   VmMutantCoverage,
@@ -70,6 +71,12 @@ const urlBuiltin = globalThis.process.getBuiltinModule('node:url')
 
 const { createRequire } = moduleBuiltin
 const { pathToFileURL } = urlBuiltin
+
+const canonicalSessionOptions = (options: VmSessionOptions): VmSessionOptions => ({
+  ...options,
+  sandboxWorkingDirectory: realpath(options.sandboxWorkingDirectory),
+  testFiles: options.testFiles.map(realpath),
+})
 
 const ZERO_TESTS_MESSAGE =
   'The "vm" test runner ran zero tests. Set the "testFiles" option so it knows which files to load, or use testRunner "vitest" or "command".'
@@ -267,7 +274,7 @@ const isAbsoluteFile = (file: string): boolean => file.startsWith('/') || /^[A-Z
 
 const absolutePartsOf = (sandboxWorkingDirectory: string, parts: TestIdParts): string =>
   isAbsoluteFile(parts.file)
-    ? `${parts.file}#${parts.name}`
+    ? `${realpath(parts.file)}#${parts.name}`
     : `${directoryBaseOf(sandboxWorkingDirectory)}${parts.file.replace(/^\/+/, '')}#${parts.name}`
 
 const absoluteTestIdOf = (sandboxWorkingDirectory: string, testId: string): string => {
@@ -507,7 +514,11 @@ const installExitGuard = (sandboxWorkingDirectory: string): () => void => {
 
 let saltCounter = 0
 
-const createSession = (options: VmSessionOptions, plugins: readonly VmSessionPlugin[]): Promise<VmSession> => {
+const createSession = (
+  received: VmSessionOptions,
+  plugins: readonly VmSessionPlugin[],
+): Promise<VmSession> => {
+  const options = canonicalSessionOptions(received)
   const prefix = pathToFileURL(options.sandboxWorkingDirectory).href.replace(/\/?$/, '/')
   const isolate = options.isolate ?? true
   const saltOwners = new Map<string, string>()
