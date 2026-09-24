@@ -64,7 +64,10 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.js'
+import { atomicUpdateSplitMutator } from './AtomicUpdateSplit.js'
+import { finalizerEscapeMutator } from './FinalizerEscape.js'
 import { printNode } from './print/index.js'
+import { synchronizationRemovalMutator } from './SynchronizationRemoval.js'
 
 export type { Node }
 /**
@@ -229,6 +232,7 @@ export type Mutator = (node: Node, context: MutatorContext) => Iterable<Node>
 
 export interface MutatorOptions {
   excludedMutations: string[]
+  optInMutations: readonly string[]
   noHeader?: boolean
 }
 
@@ -1337,8 +1341,11 @@ function isUpdateExpression(node: Node): node is UpdateExpression {
  *
  * Naming each mutator here costs one line when a mutator is added and makes
  * that line a compile-checked import instead of a runtime effect.
+ *
+ * `optInMutators` below follows the same hand-written rule, for the same
+ * reason: a mutator exists for a run only when a human named it here.
  */
-export const allMutators: Readonly<Record<string, Mutator>> = Object.freeze({
+export const defaultMutators: Readonly<Record<string, Mutator>> = Object.freeze({
   ArithmeticOperator: arithmeticOperatorMutator,
   ArrayDeclaration: arrayDeclarationMutator,
   ArrowFunction: arrowFunctionMutator,
@@ -1355,4 +1362,48 @@ export const allMutators: Readonly<Record<string, Mutator>> = Object.freeze({
   StringLiteral: stringLiteralMutator,
   UnaryOperator: unaryOperatorMutator,
   UpdateOperator: updateOperatorMutator,
+})
+
+export const optInMutators: Readonly<Record<string, Mutator>> = Object.freeze({
+  AtomicUpdateSplit: atomicUpdateSplitMutator,
+  SynchronizationRemoval: synchronizationRemovalMutator,
+  FinalizerEscape: finalizerEscapeMutator,
+})
+
+export type MutatorEntry = readonly [name: string, mutate: Mutator]
+
+export interface MutatorRegistry {
+  readonly defaults: Readonly<Record<string, Mutator>>
+  readonly optIn: Readonly<Record<string, Mutator>>
+}
+
+export interface MutatorSelection {
+  /** Every default, then each opt-in the run named, in the registry's declared order. */
+  readonly active: readonly MutatorEntry[]
+  /** Every name a `Stryker disable` directive may reference, selected or not. */
+  readonly known: readonly string[]
+}
+
+/**
+ * The entries a run applies, and the names its directives may reference.
+ *
+ * Naming is additive, never a whitelist: `optInMutations` adds entries on top
+ * of the defaults and removes none. Selection walks the registry's declared
+ * order, not the order the run listed its names in, so a mutant's identity
+ * never depends on how a config happened to spell the list; a name listed
+ * twice selects its entry once. An unknown name selects nothing here —
+ * `instrument` refuses it before any file is parsed, because a typo that
+ * silently enables nothing removes mutants and raises the score.
+ *
+ * Pure: a registry and a run's names in, entries and names out.
+ */
+export const selectMutators = (
+  registry: MutatorRegistry,
+  optInMutations: readonly string[],
+): MutatorSelection => ({
+  active: [
+    ...Object.entries(registry.defaults),
+    ...Object.entries(registry.optIn).filter(([name]) => optInMutations.includes(name)),
+  ],
+  known: [...Object.keys(registry.defaults), ...Object.keys(registry.optIn)],
 })

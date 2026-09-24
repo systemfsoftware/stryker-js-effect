@@ -69,6 +69,7 @@ export const decodeWorkerOptions: (raw: string) => Effect.Effect<{
     readonly mutate: readonly string[];
     readonly mutator: {
         readonly excludedMutations: readonly string[];
+        readonly optInMutations: readonly string[];
     };
     readonly packageManager?: "npm" | "pnpm" | "yarn" | undefined;
     readonly plugins: readonly string[];
@@ -175,6 +176,7 @@ export const readWorkerOptionsFromEnv: Effect.Effect<{
     readonly mutate: readonly string[];
     readonly mutator: {
         readonly excludedMutations: readonly string[];
+        readonly optInMutations: readonly string[];
     };
     readonly packageManager?: "npm" | "pnpm" | "yarn" | undefined;
     readonly plugins: readonly string[];

@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import type { FileDescription } from './Mutant.js'
 import { Mutant as ApiMutant } from './Mutant.schema.js'
@@ -29,7 +30,7 @@ export interface InstrumentResult {
 export type { InstrumenterOptions }
 
 import { spanOf } from './Ast.js'
-import { toApiMutant } from './Mutator.js'
+import { optInMutators, toApiMutant } from './Mutator.js'
 import { type SpannedComment } from './Syntax.js'
 
 const commentDirectiveRegEx = /^(\s*)@(ts-[a-z-]+).*$/
@@ -199,9 +200,44 @@ function isIgnorer(value: unknown): value is Ignorer {
   return Predicate.isObject(value) && typeof value['shouldIgnore'] === 'function'
 }
 
+const EMPTY_MUTATION_NAMES: readonly string[] = []
+
+const KNOWN_OPT_IN_MUTATIONS: readonly string[] = Object.keys(optInMutators)
+
+const requestedOptInMutations = (options: InstrumenterOptions): readonly string[] =>
+  Option.getOrElse(Option.fromNullishOr(options.optInMutations), () => EMPTY_MUTATION_NAMES)
+
+const unknownOptInMutations = (requested: readonly string[]): readonly string[] =>
+  requested.filter((name) => !KNOWN_OPT_IN_MUTATIONS.includes(name))
+
+const listNames = (names: readonly string[]): string =>
+  Option.match(Option.fromNullishOr(names.at(0)), {
+    onNone: () => 'none',
+    onSome: () => names.map((name) => `'${name}'`).join(', '),
+  })
+
+const unknownOptInMutationsError = (requested: readonly string[]): Option.Option<InstrumentError> =>
+  Option.map(
+    Option.fromNullishOr(unknownOptInMutations(requested).at(0)),
+    () =>
+      InstrumentError.make({
+        message: `Unknown opt-in mutations: ${listNames(unknownOptInMutations(requested))}. Known opt-in mutations: ${
+          listNames(KNOWN_OPT_IN_MUTATIONS)
+        }.`,
+        cause: undefined,
+      }),
+  )
+
+const refuseUnknownOptInMutations = (requested: readonly string[]): Effect.Effect<void, InstrumentError> =>
+  Option.match(unknownOptInMutationsError(requested), {
+    onNone: (): Effect.Effect<void, InstrumentError> => Effect.void,
+    onSome: (error): Effect.Effect<void, InstrumentError> => Effect.fail(error),
+  })
+
 function toTransformerOptions(options: InstrumenterOptions): TransformerOptions {
   const base: TransformerOptions = {
     excludedMutations: [...options.excludedMutations],
+    optInMutations: [...requestedOptInMutations(options)],
     ignorers: options.ignorers.filter(isIgnorer),
   }
   if (options.noHeader !== undefined) {
@@ -234,6 +270,7 @@ export const instrument = (
   basePath?: string,
 ): Effect.Effect<InstrumentResult, InstrumentError> =>
   Effect.gen(function*() {
+    yield* refuseUnknownOptInMutations(requestedOptInMutations(options))
     const schemaFiles: readonly FileSchemaType[] = files.map((file) => ({
       name: file.name,
       content: file.content,

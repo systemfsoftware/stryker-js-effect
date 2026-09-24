@@ -13,3 +13,4 @@ e2e-telemetry.tar.gz
 result
 result-*
 temp/
+.scratch/
