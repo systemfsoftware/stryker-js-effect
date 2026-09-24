@@ -1,7 +1,7 @@
 import { sharedConfig } from '@systemfsoftware/stryker-config'
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+const config = {
   ...sharedConfig,
   mutate: [
     'src/drain-registry.workflow.ts',
@@ -27,4 +27,6 @@ export default defineConfig({
   plugins: [
     import.meta.resolve('@systemfsoftware/stryker-test-contribution'),
   ],
-})
+} satisfies PartialStrykerOptions
+
+export default config
