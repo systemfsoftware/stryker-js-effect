@@ -53,7 +53,7 @@ const coveredByField = (coveredBy: readonly string[] | undefined) =>
   })
 
 const testFilterField = (testFilter: readonly string[] | undefined) =>
-  Option.match(Option.fromUndefinedOr(testFilter), {
+  Option.match(Option.filter(Option.fromUndefinedOr(testFilter), (filter) => filter.length > 0), {
     onNone: () => ({} as const),
     onSome: (present) => ({ testFilter: [...present] } as const),
   })
@@ -223,6 +223,7 @@ const isClosedMutant = (mutant: Mutant) => Option.isSome(Option.fromUndefinedOr(
 const openMutantsOf = (mutants: ReadonlyArray<Mutant>) => mutants.filter((mutant) => !isClosedMutant(mutant))
 
 const hitCountRequiredAndAbsent = (command: MutantTestPlanCommand, mutant: Mutant) =>
+  Option.isSome(Option.fromUndefinedOr(mutant.coveredBy)) &&
   mutantIsCovered(command, mutant.id) &&
   command.staticCoverage !== undefined &&
   Option.isNone(Option.fromUndefinedOr(command.hitsByMutantId[mutant.id]))

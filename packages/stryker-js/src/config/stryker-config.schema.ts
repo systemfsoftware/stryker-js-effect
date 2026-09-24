@@ -108,10 +108,8 @@ const mergeNested = <A = unknown>(
 const ownValueOf = <A = unknown>(
   merged: MergedConfigRecord<A>,
   key: string,
-): Option.Option<A | MergedConfigRecord<A>> =>
-  Option.liftPredicate(merged, hasUsableMember(key)).pipe(
-    Option.map((present) => present[key]),
-  )
+): Option.Option<A | MergedConfigRecord<A> | undefined> =>
+  Option.map(Option.liftPredicate(merged, hasUsableMember(key)), (present) => present[key])
 
 const hasUsableMember =
   (key: string) =>
@@ -119,8 +117,9 @@ const hasUsableMember =
     merged.hasOwnProperty(key) && merged[key] !== undefined
 
 const baseRecordOf = <A = unknown>(
-  ownValue: Option.Option<A | MergedConfigRecord<A>>,
-): Option.Option<MergedConfigRecord<A>> => Option.filter(ownValue, isConfigRecord)
+  ownValue: Option.Option<A | MergedConfigRecord<A> | undefined>,
+): Option.Option<MergedConfigRecord<A>> =>
+  Option.filter(Option.flatMap(ownValue, Option.fromUndefinedOr), isConfigRecord)
 
 const mergeKeyInto = <A = unknown>(
   merged: MergedConfigRecord<A>,
@@ -160,6 +159,14 @@ export default {
 };
 See https://stryker-mutator.io/docs/stryker-js/config-file for more information.`.trim()
 
+export function defineStrykerConfig(config: PartialStrykerOptions): PartialStrykerOptions
+export function defineStrykerConfig(config: Promise<PartialStrykerOptions>): Promise<PartialStrykerOptions>
+export function defineStrykerConfig(config: StrykerConfigFn): StrykerConfigFn
+export function defineStrykerConfig(config: StrykerConfigExport): StrykerConfigExport
+export function defineStrykerConfig(config: StrykerConfigExport): StrykerConfigExport {
+  return config
+}
+
 export class StrykerConfig extends S.Class<StrykerConfig>('StrykerConfig')({
   entries: S.Record(S.String, S.Unknown),
 }) {
@@ -168,7 +175,7 @@ export class StrykerConfig extends S.Class<StrykerConfig>('StrykerConfig')({
     (config: Promise<PartialStrykerOptions>): Promise<PartialStrykerOptions>
     (config: StrykerConfigFn): StrykerConfigFn
     (config: StrykerConfigExport): StrykerConfigExport
-  } = (config) => config
+  } = defineStrykerConfig
 
   static readonly merge: {
     <A>(overrides: MergedConfigRecord<A>): (defaults: MergedConfigRecord<A>) => MergedConfigRecord<A>

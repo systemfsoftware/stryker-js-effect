@@ -390,6 +390,8 @@ type ConfigFactory<A = unknown> = (env: ConfigEnv) => A
 
 const isConfigFactory = (value: unknown): value is ConfigFactory => typeof value === 'function'
 
+const FACTORY_FAILED = "Evaluating the config module's exported factory failed"
+
 const factoryFailureOf = <A>(cause: A): ConfigFactoryFailed =>
   ConfigFactoryFailed.make({
     cause,
@@ -985,20 +987,17 @@ const describeUnserializableValue = (value: unknown): UnserializableDescription[
 
 const findUnserializables = (thing: unknown): UnserializableDescription[] | undefined =>
   Option.match(
-    Option.liftPredicate(Option.some(describeUnserializableValue(thing)), hasDescriptions),
+    Option.filter(Option.some(describeUnserializableValue(thing)), hasDescriptions),
     {
       onNone: () => undefined,
       onSome: (found) => found,
     },
   )
 const warnAboutUnserializableOptions = (options: StrykerOptions): Effect.Effect<void> =>
-  Option.match(
-    Option.liftPredicate(findUnserializables(options), (found) => found.length === 0),
-    {
-      onNone: (unserializables) => logUnserializableWarnings(unserializables),
-      onSome: () => Effect.void,
-    },
-  )
+  Option.match(Option.fromUndefinedOr(findUnserializables(options)), {
+    onNone: () => Effect.void,
+    onSome: (unserializables) => logUnserializableWarnings(unserializables),
+  })
 
 const markUnserializableOptions = (options: StrykerOptions): Effect.Effect<void> =>
   Match.value(warningDecisionOf('unserializableOptions', options.warnings)).pipe(

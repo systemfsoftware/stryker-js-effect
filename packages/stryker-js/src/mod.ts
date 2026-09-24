@@ -177,7 +177,6 @@ export {
   ExitInternalErrored,
   ExitPassed,
   ExitRuntimeErrored,
-  ExitSignalled,
   ExitVerdictFailed,
 } from './classify-exit.workflow.js'
 export {

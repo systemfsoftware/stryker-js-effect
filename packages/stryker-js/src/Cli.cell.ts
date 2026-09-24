@@ -1,5 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import {
   PluginFileUrl,
@@ -557,15 +557,14 @@ const readCliRoute = (
   })
 
 const stageRunOf = (environment: CliEnvironment, options: PartialStrykerOptions) =>
-  Effect.scoped(
-    Effect.flatMap(
-      Layer.build(RunEnvironment.stage(environment.host.env, environment.host.events)),
-      (context) =>
-        Cell.provideContext(mutationTestCell, context).run({
-          cliOptions: options,
-          targetMutatePatterns: undefined,
-        }),
+  Layer.build(RunEnvironment.stage(environment.host.env, environment.host.events)).pipe(
+    Effect.flatMap((context) =>
+      Cell.provideContext(mutationTestCell, context).run({
+        cliOptions: options,
+        targetMutatePatterns: undefined,
+      })
     ),
+    Effect.scoped,
   )
 
 const runEffectOf = (environment: CliEnvironment, options: PartialStrykerOptions) =>
@@ -586,20 +585,13 @@ const restrictedOptionsOf = (
   readonly mutate?: string[]
   readonly incremental?: boolean
 } => {
-  const admittedMutants = admitted.survivors.map((survivor) => Mutant.make(survivor))
   return {
     ...resolvedOptions,
-    survivors: admittedMutants,
+    survivors: admitted.survivors,
     mutate: [...admitted.mutateSpans],
     survivorsPriorReport: priorReportPath,
     incremental: false,
   }
-}
-
-
-interface CliRoutedAction<A> {
-  readonly decision: A
-  readonly channel: CliRead
 }
 
 const cliRouteCell = Sandwich.named('stryker.cli')(readCliRoute)

@@ -9,6 +9,7 @@ import {
   ClassifyWorkerExitCommand,
   WorkerOutOfMemory,
 } from '../classify-worker-exit.workflow.js'
+import { ChildExitCode, ProcessId } from '../Worker.schema.js'
 
 const OUT_OF_MEMORY_CODES: ReadonlyArray<number> = [128 + 6, 128 + 9]
 
@@ -16,7 +17,7 @@ const classifiedOf = (pid: number, exitCode: number) =>
   classifyWorkerExit(new ClassifyWorkerExitCommand({ pid, exitCode }))
 
 describe('classifyWorkerExit', () => {
-  it.prop('∀oom_ClassifyWorkerExit_≡OutOfMemory', [S.Int, S.Literals([134, 137])], ([pid, exitCode]) =>
+  it.prop('∀oom_ClassifyWorkerExit_≡OutOfMemory', [ProcessId, S.Literals([134, 137])], ([pid, exitCode]) =>
     Result.match(classifiedOf(pid, exitCode), {
       onFailure: () => false,
       onSuccess: (classified) =>
@@ -27,7 +28,7 @@ describe('classifyWorkerExit', () => {
     }),
   )
 
-  it.prop('∀code_ClassifyWorkerExit_≡Crash', [S.Int, S.Int], ([pid, exitCode]) => {
+  it.prop('∀code_ClassifyWorkerExit_≡Crash', [ProcessId, ChildExitCode], ([pid, exitCode]) => {
     const result = classifiedOf(pid, exitCode)
     return Boolean.match(OUT_OF_MEMORY_CODES.includes(exitCode), {
       onTrue: () =>

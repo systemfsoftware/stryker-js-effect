@@ -6,10 +6,8 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
-  classifySignalledExit,
-  ClassifySignalledExitCommand,
-  classifyUnsignalledExit,
-  ClassifyUnsignalledExitCommand,
+  classifyExit,
+  ClassifyExitCommand,
   type ClassifyExitDecision,
   ExitConfigErrored,
   ExitInternalErrored,
@@ -34,7 +32,7 @@ const worseOf = (first: ExitClass, second: ExitClass) =>
   })
 
 const decidedOf = (pending: ReadonlyArray<ExitClass>, score: number | null, breakingThreshold: number | null) =>
-  classifyUnsignalledExit(new ClassifyUnsignalledExitCommand({ pending: [...pending], score, breakingThreshold }))
+  classifyExit(new ClassifyExitCommand({ pending: [...pending], score, breakingThreshold }))
 
 const isMemberClass = (exitClass: ExitClass, decision: ClassifyExitDecision): boolean =>
   Match.value(exitClass).pipe(

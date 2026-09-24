@@ -6,10 +6,8 @@ import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
-
+import type { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
 import {
-  type MutantTestPlanCommand,
   PlannedEarlyResultMutant,
   PlannedRunMutant,
   planMutantTests,
@@ -34,11 +32,7 @@ const loadBaselinePlanner = () =>
     readonly missingHitCountIds: (command: unknown) => ReadonlyArray<string>
   }>
 
-const smallNonNegativeArb = Arbitrary.schema(
-  S.Finite.check(S.compose(S.isGreaterThanOrEqualTo(0), S.isLessThanOrEqualTo(1000))),
-).pipe(
-  Arbitrary.filter((count) => Number.isInteger(count) && count >= 0),
-)
+const smallNonNegativeArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 1000 })))
 
 const scenarioArb = Arbitrary.schema(S.Array(Mutant).check(S.isMinLength(1))).pipe(
   Arbitrary.filter((mutants) => new Set(mutants.map((mutant) => mutant.id)).size === mutants.length),
@@ -52,6 +46,7 @@ const scenarioArb = Arbitrary.schema(S.Array(Mutant).check(S.isMinLength(1))).pi
       Arbitrary.flatMap((perMutant) =>
         Arbitrary.all([Arbitrary.schema(S.Boolean), Arbitrary.schema(S.Boolean), smallNonNegativeArb]).pipe(
           Arbitrary.map(([ignoreStatic, disableBail, timeOverheadMS]): MutantTestPlanCommand => {
+            const overheadBounded = timeOverheadMS % 4000
             const hitsByMutantId = Object.fromEntries(
               perMutant
                 .filter((entry) => entry.isCovered)
@@ -69,7 +64,7 @@ const scenarioArb = Arbitrary.schema(S.Array(Mutant).check(S.isMinLength(1))).pi
             return {
               _tag: 'MutantTestPlanCommand',
               mutants: [...mutants],
-              timeOverheadMS,
+              timeOverheadMS: overheadBounded,
               timeSpentAllTests: 42,
               hitsByMutantId,
               staticCoverage: Object.keys(staticCoverage).length === 0 ? undefined : staticCoverage,
@@ -125,19 +120,25 @@ describe('planMutantTests baseline oracle', () => {
   it.prop('forall_o_Oracle_matchesBaselinePlanner', [scenarioArb], async ([command]) => {
     const baseline = await loadBaselinePlanner()
     const encoded = JSON.parse(JSON.stringify(command))
-    const expected = baseline.planMutantTests(encoded)
-    const actual = planMutantTests(command)
     const missing = baseline.missingHitCountIds(encoded)
+    const actual = planMutantTests(command)
     return Boolean.match(missing.length > 0, {
       onTrue: () =>
         Result.isFailure(actual) &&
         JSON.stringify(actual.failure.missingIds) === JSON.stringify(missing),
       onFalse: () =>
-        Result.isSuccess(actual) &&
-        actual.success.length === expected.plans.length &&
-        actual.success.every((decision, index) => {
-          const expectedPlan = expected.plans[index]
-          return expectedPlan !== undefined && plansEqual(plainOf(decision), expectedPlan)
+        Result.match(actual, {
+          onFailure: () => false,
+          onSuccess: (decisions) => {
+            const expected = baseline.planMutantTests(encoded)
+            return (
+              decisions.length === expected.plans.length &&
+              decisions.every((decision, index) => {
+                const expectedPlan = expected.plans[index]
+                return expectedPlan !== undefined && plansEqual(plainOf(decision), expectedPlan)
+              })
+            )
+          },
         }),
     })
   })

@@ -13,20 +13,18 @@ const tracesUrlOf = (endpoint: string) =>
     },
   )
 
-const TracesUrlBrand = 'TracesUrl' as const
-
 const canonicalTracesUrl = S.String.pipe(
   S.check(S.isPattern(/\/v1\/traces$/u)),
   S.check(S.isPattern(/[^/]$/u)),
-  S.brand(TracesUrlBrand),
 )
+export type TracesUrl = typeof canonicalTracesUrl.Type
+
 export const TracesUrl: S.Codec<TracesUrl, string> = S.String.pipe(
   S.decodeTo(canonicalTracesUrl, {
     decode: SchemaGetter.transform(tracesUrlOf),
     encode: SchemaGetter.passthrough(),
   }),
 )
-
 export const WorkerTelemetryConfig = S.Struct({
   enabled: S.Boolean,
   serviceName: S.String,
@@ -34,3 +32,14 @@ export const WorkerTelemetryConfig = S.Struct({
 })
 
 export type WorkerTelemetryConfig = typeof WorkerTelemetryConfig.Type
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+
+  it.prop('∀default_TracesUrl_DecodesToItself', [S.String.pipe(S.check(S.isPattern(/^http:\/\/127\.0\.0\.1:4318\/v1\/traces$/u)))], ([endpoint]) =>
+    Option.match(S.decodeOption(TracesUrl)(endpoint), {
+      onNone: () => false,
+      onSome: (decoded) => decoded === endpoint,
+    }),
+  )
+}

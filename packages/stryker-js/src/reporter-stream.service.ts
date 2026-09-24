@@ -468,10 +468,10 @@ const hasTraceFields = (init: ReporterInit): boolean =>
 
 const initFromPhaseSpan = (span: PhaseSpan | undefined): Effect.Effect<ReporterInit | undefined> =>
   Option.match(Option.fromNullishOr(span), {
-    onNone: () => Effect.succeed(undefined),
+    onNone: () => Effect.void,
     onSome: (present) =>
-      Option.match(S.decodeUnknownOption(TraceContextPartsFromEffectSpan)(present), {
-        onNone: () => Effect.succeed(undefined),
+      Option.match(S.decodeOption(TraceContextPartsFromEffectSpan)(present), {
+        onNone: () => Effect.void,
         onSome: (parts) =>
           S.encodeEffect(Traceparent)(parts).pipe(
             Effect.orDie,
@@ -531,5 +531,5 @@ export const withPhaseSpan: {
 ): Effect.Effect<A, E, R> =>
   Effect.useSpan(spanName, { attributes }, (span) =>
     effect(span).pipe(
-      Effect.provideService(TraceContextReference, S.decodeUnknownOption(TraceContextPartsFromEffectSpan)(span)),
+      Effect.provideService(TraceContextReference, S.decodeOption(TraceContextPartsFromEffectSpan)(span)),
     )))

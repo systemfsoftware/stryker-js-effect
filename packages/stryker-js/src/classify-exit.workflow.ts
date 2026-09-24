@@ -9,23 +9,11 @@ import * as S from 'effect/Schema'
 const ExitDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ExitDecision')
 type ExitDecisionTypeId = typeof ExitDecisionTypeId
 
-export class ClassifySignalledExitCommand extends S.TaggedClass<ClassifySignalledExitCommand>()(
-  'ClassifySignalledExitCommand',
-  {
-    signal: S.Finite,
-  },
-) {
-  static readonly [Workflow.InstrumentationBrand] = {} as const
-}
-
-export class ClassifyUnsignalledExitCommand extends S.TaggedClass<ClassifyUnsignalledExitCommand>()(
-  'ClassifyUnsignalledExitCommand',
-  {
-    pending: S.Array(ExitClass),
-    score: S.NullOr(S.Finite),
-    breakingThreshold: S.NullOr(S.Finite),
-  },
-) {
+export class ClassifyExitCommand extends S.TaggedClass<ClassifyExitCommand>()('ClassifyExitCommand', {
+  pending: S.Array(ExitClass),
+  score: S.NullOr(S.Finite),
+  breakingThreshold: S.NullOr(S.Finite),
+}) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -49,19 +37,12 @@ export class ExitInternalErrored extends S.TaggedClass<ExitInternalErrored>()('E
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
-export class ExitSignalled extends S.TaggedClass<ExitSignalled>()('ExitSignalled', {
-  signal: S.Finite,
-}) {
-  readonly [ExitDecisionTypeId] = ExitDecisionTypeId
-}
-
 export const ClassifyExitDecision = S.Union([
   ExitPassed,
   ExitVerdictFailed,
   ExitConfigErrored,
   ExitRuntimeErrored,
   ExitInternalErrored,
-  ExitSignalled,
 ])
 export type ClassifyExitDecision = typeof ClassifyExitDecision.Type
 
@@ -95,9 +76,7 @@ const verdictExitClass = (score: number | null, breakingThreshold: number | null
     },
   )
 
-const decideUnsignalled = (
-  command: ClassifyUnsignalledExitCommand,
-): Result.Result<ClassifyExitDecision, never> =>
+const decide = (command: ClassifyExitCommand): Result.Result<ClassifyExitDecision, never> =>
   Option.match(Option.fromNullishOr(verdictExitClass(command.score, command.breakingThreshold)), {
     onNone: () =>
       Option.match(precedenceOf(command.pending), {
@@ -107,19 +86,9 @@ const decideUnsignalled = (
     onSome: () => Result.succeed(ExitVerdictFailed.make({})),
   })
 
-const decideSignalled = (command: ClassifySignalledExitCommand): Result.Result<ClassifyExitDecision, never> =>
-  Result.succeed(ExitSignalled.make({ signal: command.signal }))
-
-export const classifyUnsignalledExit = Workflow.make({
-  command: ClassifyUnsignalledExitCommand,
+export const classifyExit = Workflow.make({
+  command: ClassifyExitCommand,
   decision: ClassifyExitDecision,
   error: S.Never,
-  decide: decideUnsignalled,
-})
-
-export const classifySignalledExit = Workflow.make({
-  command: ClassifySignalledExitCommand,
-  decision: ClassifyExitDecision,
-  error: S.Never,
-  decide: decideSignalled,
+  decide,
 })

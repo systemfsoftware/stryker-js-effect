@@ -22,6 +22,7 @@ export const OpenEndLocationSchema = S.Struct({
   start: PositionSchema,
   end: S.optional(PositionSchema),
 })
+export type OpenEndLocation = typeof OpenEndLocationSchema.Type
 
 const ReportCoordinate = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
 

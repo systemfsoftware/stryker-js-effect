@@ -19,7 +19,7 @@ const CLASS_BY_BASELINE_CODE = {
   4: 'InternalError',
 } as const
 
-const codeOfClass = (exitClass: ExitClass): number => BASELINE_EXIT_CODES[exitClass]
+const codeOfClass = (exitClass: ExitClass): 1 | 2 | 3 | 4 => BASELINE_EXIT_CODES[exitClass]
 
 const classOfCode = (code: 1 | 2 | 3 | 4): ExitClass => CLASS_BY_BASELINE_CODE[code]
 
