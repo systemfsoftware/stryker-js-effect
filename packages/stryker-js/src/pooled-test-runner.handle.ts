@@ -188,10 +188,10 @@ const reloadPlanOf = (
 
 export const withEnvironmentReload: {
   (retire: Effect.Effect<void>): (inner: PooledTestRunner) => Effect.Effect<PooledTestRunner>
-  (inner: PooledTestRunner): (retire: Effect.Effect<void>) => Effect.Effect<PooledTestRunner>
+  (inner: PooledTestRunner, retire: Effect.Effect<void>): Effect.Effect<PooledTestRunner>
 } = dual(
   2,
-  (retire: Effect.Effect<void>, inner: PooledTestRunner): Effect.Effect<PooledTestRunner> =>
+  (inner: PooledTestRunner, retire: Effect.Effect<void>): Effect.Effect<PooledTestRunner> =>
     Effect.gen(function*() {
       const state = yield* Ref.make<EnvironmentState>('pristine')
 
@@ -226,3 +226,33 @@ export const withEnvironmentReload: {
       }
     }),
 )
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+
+  const answeringWith = (errorMessage: string): PooledTestRunner =>
+    make({
+      capabilities: Effect.succeed({ reloadEnvironment: true }),
+      init: Effect.void,
+      dryRun: () => Effect.succeed({ status: 'error', errorMessage }),
+      mutantRun: () => Effect.succeed({ status: 'error', errorMessage }),
+    })
+
+  const answeredBy = (errorMessage: string) => (result: TestRunner.DryRunResult): boolean =>
+    result.status === 'error' && result.errorMessage === errorMessage
+
+  const decoratedDryRunsWrapped = (options: TestRunner.DryRunOptions, errorMessage: string) =>
+    Effect.gen(function*() {
+      const wrapped = answeringWith(errorMessage)
+      const curried = yield* withEnvironmentReload(Effect.void)(wrapped)
+      const dataFirst = yield* withEnvironmentReload(wrapped, Effect.void)
+      const answers = [yield* curried.dryRun(options), yield* dataFirst.dryRun(options)]
+      return answers.every(answeredBy(errorMessage))
+    })
+
+  it.effect.prop(
+    '∀om_EnvironmentReload_DryRun≡Wrapped',
+    [TestRunner.DryRunOptionsSchema, S.String],
+    ([options, errorMessage]) => decoratedDryRunsWrapped(options, errorMessage).pipe(Effect.orDie),
+  )
+}

@@ -8,11 +8,7 @@ import type { Ast } from './Ast.schema.js'
 import { parseWithEntry, resolutionCommandOf } from './Format.handle.js'
 import type { FormatEntry, FormatRegistry, ScriptFormatEntry } from './Format.schema.js'
 import { type FileSchema, InstrumentError } from './Instrument.schema.js'
-import {
-  type FormatResolutionCommand,
-  FormatOverrideUnclaimed,
-  resolveFormat,
-} from './resolve-format.workflow.js'
+import { FormatOverrideUnclaimed, type FormatResolutionCommand, resolveFormat } from './resolve-format.workflow.js'
 import { prefixWithNoCheck, tsDirectiveLikeRegEx } from './TypeCheckDisablers.handle.js'
 
 export interface DisableTypeChecksInput {

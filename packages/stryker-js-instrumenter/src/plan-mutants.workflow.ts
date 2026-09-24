@@ -94,7 +94,7 @@ const lastReachingDirective = (
   line: number,
 ): Option.Option<LocatedDirective> =>
   Option.fromNullishOr(
-    rule.findLast((located) => [reachedLine(located, line), namesMutator(located, lowerMutatorName)].every(Boolean))
+    rule.findLast((located) => [reachedLine(located, line), namesMutator(located, lowerMutatorName)].every(Boolean)),
   )
 
 const directiveReason = (

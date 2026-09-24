@@ -52,8 +52,7 @@ const fixtureLayout = Effect.gen(function*() {
     '..',
     'packages',
     'stryker-js-instrumenter',
-    'tests',
-    '__fixtures__',
+    'testResources',
     'effect-concurrency',
   )
   const moduleNames = yield* fs.readDirectory(definitionsDirectory)
