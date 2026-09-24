@@ -2,7 +2,6 @@ import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { spawnReporterWorker } from '@systemfsoftware/stryker-js'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   StrykerOptionsSchema,
   TraceContextReference,

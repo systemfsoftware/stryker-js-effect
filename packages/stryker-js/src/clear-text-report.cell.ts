@@ -1,5 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ReporterEvent, ReporterFactory, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -30,7 +30,7 @@ const failAsClearText = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'clear-text',
     event: 'mutationTestReportReady',
-    cause: errorToString(cause),
+    cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
   })
 
 interface TerminalReport {

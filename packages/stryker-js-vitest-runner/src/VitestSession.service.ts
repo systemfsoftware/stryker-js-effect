@@ -1,4 +1,4 @@
-import { errorToString, INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText, InstrumenterContext } from '@systemfsoftware/stryker-js-instrumenter'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { isCustomTestRunner, TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
@@ -48,6 +48,8 @@ export interface VitestSessionShape {
   readonly provide: (key: HarnessKey, value: HarnessValue) => Effect.Effect<void, TestRunnerFailed>
   readonly close: Effect.Effect<void, TestRunnerFailed>
 }
+const errorTextOf = <A>(cause: A) =>
+  Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => '')
 
 const decodeOptions = (options: StrykerOptions): Effect.Effect<VitestRunnerOptions, TestRunnerFailed> =>
   S.decodeEffect(VitestRunnerOptionsSchema)(
@@ -57,7 +59,7 @@ const decodeOptions = (options: StrykerOptions): Effect.Effect<VitestRunnerOptio
     ),
   ).pipe(
     Effect.mapError((cause) =>
-      new TestRunnerFailed({ runnerName: 'vitest', phase: 'init', cause: errorToString(cause) })),
+      new TestRunnerFailed({ runnerName: 'vitest', phase: 'init', cause: errorTextOf(cause) })),
   )
 
 export class VitestSession extends Context.Service<VitestSession, VitestSessionShape>()(
@@ -120,4 +122,4 @@ const bailOf = (input: VitestSessionInput): number =>
   Boolean.match(input.options.disableBail, { onTrue: () => 0, onFalse: () => 1 })
 const namespaceOf = (input: VitestSessionInput): StrykerNamespace =>
   Option.getOrElse(Option.liftPredicate(input.globalNamespace, S.is(S.Literals(['__stryker__', '__stryker2__']))), () =>
-    INSTRUMENTER_CONSTANTS.NAMESPACE)
+    InstrumenterContext.NAMESPACE)

@@ -1,7 +1,7 @@
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { MutationTestReportReady } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ReporterEvent, ReporterInit, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -11,7 +11,7 @@ import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
-import * as S from 'effect/Schema'
+import * as Option from 'effect/Option'
 import * as Stream from 'effect/Stream'
 
 import { RenderHtmlReport, renderHtmlReport } from './render-html-report.workflow.js'
@@ -105,7 +105,11 @@ export const writeHtmlReport = Sandwich.named('html_report.write')(readRenderCom
 const nodeFsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 const failAsHtmlReporter = <A = unknown>(cause: A) =>
-  ReporterFailed.make({ reporterName: 'html', event: 'mutationTestReportReady', cause: errorToString(cause) })
+  ReporterFailed.make({
+    reporterName: 'html',
+    event: 'mutationTestReportReady',
+    cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
+  })
 
 const drainEvents = (fileName: string, events: AsyncIterable<ReporterEvent>) =>
   Stream.runForEach(

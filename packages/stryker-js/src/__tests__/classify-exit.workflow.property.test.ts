@@ -8,6 +8,7 @@ import * as S from 'effect/Schema'
 import {
   classifyExit,
   ClassifyExitCommand,
+  type ClassifyExitDecision,
   ExitConfigErrored,
   ExitInternalErrored,
   ExitPassed,
@@ -16,17 +17,17 @@ import {
 } from '../classify-exit.workflow.js'
 
 const codeOf = (exitClass: ExitClass): number =>
-  Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)(exitClass), () => -1)
+  Option.getOrElse(S.decodeOption(ExitCodeFromClass)(exitClass), () => -1)
 
 const decidedOf = (pending: ReadonlyArray<ExitClass>, score: number | null, breakingThreshold: number | null) =>
   classifyExit(new ClassifyExitCommand({ pending: [...pending], signal: null, score, breakingThreshold }))
 
-const tagOf = (exitClass: ExitClass): string =>
+const isMemberClass = (exitClass: ExitClass, decision: ClassifyExitDecision): boolean =>
   Match.value(exitClass).pipe(
-    Match.when('VerdictFail', () => ExitVerdictFailed.make({})._tag),
-    Match.when('ConfigError', () => ExitConfigErrored.make({})._tag),
-    Match.when('RuntimeError', () => ExitRuntimeErrored.make({})._tag),
-    Match.when('InternalError', () => ExitInternalErrored.make({})._tag),
+    Match.when('VerdictFail', () => S.is(ExitVerdictFailed)(decision)),
+    Match.when('ConfigError', () => S.is(ExitConfigErrored)(decision)),
+    Match.when('RuntimeError', () => S.is(ExitRuntimeErrored)(decision)),
+    Match.when('InternalError', () => S.is(ExitInternalErrored)(decision)),
     Match.exhaustive,
   )
 
@@ -36,7 +37,7 @@ describe('classifyExit', () => {
     const result = decidedOf([first, second], null, null)
     return Result.match(result, {
       onFailure: () => false,
-      onSuccess: (decision) => decision._tag === tagOf(expected),
+      onSuccess: (decision) => isMemberClass(expected, decision),
     })
   })
 
@@ -44,14 +45,14 @@ describe('classifyExit', () => {
     const result = decidedOf([only], null, null)
     return Result.match(result, {
       onFailure: () => false,
-      onSuccess: (decision) => decision._tag === tagOf(only),
+      onSuccess: (decision) => isMemberClass(only, decision),
     })
   })
 
   it.prop('∀below_Command_≡VerdictFailed', [S.Int, S.Int], ([score, threshold]) => {
     const result = decidedOf([], score, threshold)
     return Match.value(score < threshold).pipe(
-      Match.when(true, () => Result.isSuccess(result) && result.success._tag === 'ExitVerdictFailed'),
+      Match.when(true, () => Result.isSuccess(result) && S.is(ExitVerdictFailed)(result.success)),
       Match.orElse(() => true),
     )
   })
@@ -60,7 +61,7 @@ describe('classifyExit', () => {
     const result = decidedOf([], score, threshold)
     return Match.value(score < threshold).pipe(
       Match.when(true, () => true),
-      Match.orElse(() => Result.isSuccess(result) && result.success._tag === 'ExitPassed'),
+      Match.orElse(() => Result.isSuccess(result) && S.is(ExitPassed)(result.success)),
     )
   })
   it.prop('∀empty_Command_≡Passed', [S.Int], ([threshold]) => {

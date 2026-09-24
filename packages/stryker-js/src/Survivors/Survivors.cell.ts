@@ -7,7 +7,6 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -23,7 +22,7 @@ import { ConfigFileUnreadableError } from '../ConfigError.schema.js'
 import { RelativeNormalizedFileName } from '../matching.schema.js'
 import type { OutputMode } from '../output-mode.schema.js'
 import { readConfig } from '../run/load-config.cell.js'
-import { strykerVersion } from '../stryker-package.js'
+import { StrykerPackage } from '../stryker-package.schema.js'
 import { PriorReportDocument, type PriorReportMutant } from './Survivors.schema.js'
 
 export interface SurvivorsAdmissionInput {
@@ -96,6 +95,8 @@ const extractSurvivors = (
     (entry) => entry,
   )
 
+const resolveAbsolutePathOf = (basePath: string): ResolveAbsolutePath => (file) => `${basePath}/${file}`
+
 const resolveSurvivorsRunOptions = (cliOptions: PartialStrykerOptions, mode: OutputMode) =>
   readConfig(cliOptions, { command: 'run', mode })
 
@@ -160,19 +161,18 @@ const currentSourceHashesFor = (files: readonly string[]) =>
 
 export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admission')((input: SurvivorsAdmissionInput) =>
   Effect.gen(function*() {
-    const pathService = yield* Path.Path
     const resolvedOptions = yield* resolveSurvivorsRunOptions(input.cliOptions, input.mode)
     const priorReportPath = priorReportPathOf(resolvedOptions)
-    const resolveAbsolutePath: ResolveAbsolutePath = (file) => pathService.resolve(file)
     const relativize = (fileName: string | undefined) =>
-      Effect.orDie(S.decodeEffect(RelativeNormalizedFileName)({ fileName, basePath: input.basePath }))
+      Effect.succeed(RelativeNormalizedFileName.fromAbsolute(fileName, input.basePath).fileName)
+    const resolveAbsolutePath = resolveAbsolutePathOf(input.basePath)
     const read = yield* readPriorReport(priorReportPath)
     const sourceContentHashes = yield* currentSourceHashesFor(priorReportFileKeys(read.raw))
     return yield* Boolean.match(read.found, {
       onFalse: () =>
         Effect.succeed<SurvivorsRaw>({
           currentConfig: resolvedOptions,
-          frameworkVersion: strykerVersion,
+          frameworkVersion: StrykerPackage.version,
           priorReport: undefined,
           priorSourceHashes: {},
           priorSurvivors: [],
@@ -189,7 +189,7 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
           (document) =>
             Effect.map(extractSurvivors(document, resolveAbsolutePath, relativize), (priorSurvivors) => ({
               currentConfig: resolvedOptions,
-              frameworkVersion: strykerVersion,
+              frameworkVersion: StrykerPackage.version,
               priorReport: {
                 config: Option.getOrElse(Option.fromNullishOr(document.config), () => EMPTY_CONFIG),
                 frameworkVersion: Option.getOrUndefined(

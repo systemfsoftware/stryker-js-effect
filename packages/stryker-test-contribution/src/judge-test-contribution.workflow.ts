@@ -297,10 +297,10 @@ const hasKillerOutside = (killers: readonly string[], accused: readonly string[]
   killers.some((fileName) => !accused.includes(fileName))
 
 const escapesAccused = (killers: readonly string[], accused: readonly string[]): boolean =>
-  Match.value(killers.length).pipe(
-    Match.when(0, () => true),
-    Match.orElse(() => hasKillerOutside(killers, accused)),
-  )
+  Array.match(killers, {
+    onEmpty: () => true,
+    onNonEmpty: (nonEmpty) => hasKillerOutside(nonEmpty, accused),
+  })
 
 const isJointlySubsumed = (
   kills: readonly { readonly killers: readonly string[] }[],

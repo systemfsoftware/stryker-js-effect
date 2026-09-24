@@ -31,10 +31,13 @@ export class Mutant extends S.TaggedClass<Mutant>()('Mutant', {
 }) {}
 
 export const CanonicalFileName = S.String.pipe(
-  S.decodeTo(S.String, {
-    decode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
-    encode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
-  }),
+  S.decodeTo(
+    S.String.pipe(S.check(S.makeFilter((fileName) => !fileName.includes('\\'), { expected: 'a file name without backslashes' }))),
+    {
+      decode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
+      encode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
+    },
+  ),
 )
 export type CanonicalFileName = typeof CanonicalFileName.Type
 
@@ -173,6 +176,7 @@ if (import.meta.vitest !== void 0) {
         segments.flatMap((segment, index) => (index === 0 ? [segment] : [separator, segment])).join(''),
       ),
   )
+
   const canonicalOf = (path: string) =>
     S.decodeEffect(CanonicalFileName)(path).pipe(Effect.map((canonical) => canonical === path.replace(/\\/g, '/')))
 

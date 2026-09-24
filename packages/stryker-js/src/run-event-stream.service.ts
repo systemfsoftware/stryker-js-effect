@@ -18,7 +18,7 @@ import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 
 import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
-import { defaultOptions } from './config-defaults.js'
+import { StrykerConfig } from './config/stryker-config.schema.js'
 import { readCapturedConsole, shapeEnvelope } from './Envelope.js'
 import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ResolvedMode } from './output-mode.schema.js'
@@ -32,7 +32,7 @@ import {
 import { RunEventWireLine } from './run-event-wire.schema.js'
 import { Heartbeat, HelpRendered, RunEvent, RunFailed, RunStarted, VerdictReached } from './run-event.schema.js'
 import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
-import { strykerVersion } from './stryker-package.js'
+import { StrykerPackage } from './stryker-package.schema.js'
 import { RunId, VerdictEnvelope } from './reporting/verdict-envelope.schema.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'
@@ -205,14 +205,13 @@ export interface EmitMachineModeOutputOptions {
 }
 
 const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOptions<Config>): Effect.Effect<void> => {
-  const { stream, mode, thresholds, config, basePath, pathService } = params
+  const { stream, mode, thresholds, basePath, pathService } = params
   const report: schema.MutationTestResult = {
     schemaVersion: '1.0',
     files: {},
     thresholds,
     projectRoot: basePath,
-    config,
-    framework: { name: 'StrykerJS', version: strykerVersion },
+    framework: { name: 'StrykerJS', version: StrykerPackage.version },
   }
   const envelope = VerdictEnvelope.build(
     report,
@@ -278,7 +277,7 @@ const emitNullScoreVerdictWhenOpen = (
     Boolean.match(open, {
       onTrue: () =>
         Effect.gen(function*() {
-          const defaults = yield* defaultOptions
+          const defaults = yield* StrykerConfig.defaultOptions
           yield* emitNullScoreVerdict({
             stream,
             mode,

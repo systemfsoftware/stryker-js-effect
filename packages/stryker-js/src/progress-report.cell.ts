@@ -1,5 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantTested, MutationTestingPlanReady } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ReporterEvent, ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -24,7 +24,7 @@ const failAsProgress = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'progress',
     event: 'mutationTestReportReady',
-    cause: errorToString(cause),
+    cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
   })
 
 const PROGRESS_BAR_FORMAT =

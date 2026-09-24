@@ -1,5 +1,5 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, CheckerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { CheckerMutantWire, CheckResult, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
@@ -29,7 +29,7 @@ const refuse = (options: { readonly mutantIds: readonly string[]; readonly cause
   CheckerFailed.make({
     checkerName: 'typescript',
     mutantIds: options.mutantIds,
-    cause: errorToString(options.cause),
+    cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(options.cause)), (rendered) => rendered.text), () => ''),
   })
 
 export interface CheckerRuntimeShape {

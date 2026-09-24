@@ -7,21 +7,29 @@ import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
 export const ErrorText = S.Unknown.pipe(
-  S.decodeTo(S.NonEmptyString, {
-    decode: SGetter.transform(errorTextOf),
-    encode: SGetter.forbiddenEncoding,
-  }),
+  S.decodeTo(
+    S.Struct({ text: S.NonEmptyString }),
+    {
+      decode: (cause: unknown) => ({ text: errorTextOf(cause) }),
+      encode: SGetter.forbiddenEncoding,
+    },
+  ),
 )
 export type ErrorTextValue = typeof ErrorText.Type
 
 export const CauseText = S.Unknown.pipe(
-  S.decodeTo(S.NonEmptyString, {
-    decode: SGetter.transform(causeChainTextOf),
-    encode: SGetter.forbiddenEncoding,
-  }),
+  S.decodeTo(
+    S.Struct({ text: S.NonEmptyString }),
+    {
+      decode: (cause: unknown) => ({ text: causeChainTextOf(cause) }),
+      encode: SGetter.forbiddenEncoding,
+    },
+  ),
 )
 export type CauseTextValue = typeof CauseText.Type
 
+export const textOf = (schema: typeof ErrorText | typeof CauseText) => (value: unknown) =>
+  Option.flatMap(S.decodeOption(schema)(value), (decoded) => Option.filter(Option.some(decoded.text), hasText))
 function errorTextOf<A = unknown>(error: A): string {
   return Match.value(error).pipe(
     Match.when(isEmptyError, () => ''),
@@ -282,27 +290,30 @@ if (import.meta.vitest !== void 0) {
       cause: Object.assign(new Error(parts.slice(2).join(' ')), { name: 'CausedBy' }),
     })
 
+  const renderedOf = (rendered: ErrorText | CauseText | undefined) =>
+    Option.map(Option.fromUndefinedOr(rendered), (value) => value.text)
+
   const mentionsAll = (text: string, needles: ReadonlyArray<string>): boolean => {
     const present = needles.filter((needle) => needle.length > 0)
     return present.every((needle) => text.includes(needle))
   }
 
   const decodesEmptyAndPresent = (parts: ReadonlyArray<string>) => {
-    const absent = [undefined, null, '', 0, false].every((empty) => Option.isNone(S.decodeOption(ErrorText)(empty)))
-    return absent && Option.isSome(S.decodeOption(ErrorText)(errorOf(parts)))
+    const absent = [undefined, null, '', 0, false].every((empty) => renderedOf(ErrorText.fromCause(empty)) === undefined)
+    return absent && renderedOf(ErrorText.fromCause(errorOf(parts))) !== undefined
   }
 
   it.prop('∀cause_ErrorText_∋NameAndMessage', [WORDS], ([parts]) => {
     const error = errorOf(parts)
-    return Option.match(S.decodeOption(ErrorText)(error), {
-      onNone: () => false,
+    return Option.match(renderedOf(ErrorText.fromCause(error)), {
+      onNone: () => error.message.length === 0,
       onSome: (text) => text.includes(error.name) && text.includes(error.message),
     })
   })
 
   it.prop('∀text_ErrorText_≡StringPassthrough', [WORDS], ([parts]) => {
     const source = parts.join(' ')
-    return Option.match(S.decodeOption(ErrorText)(source), {
+    return Option.match(renderedOf(ErrorText.fromCause(source)), {
       onNone: () => source.length === 0,
       onSome: (rendered) => rendered === source,
     })
@@ -312,7 +323,7 @@ if (import.meta.vitest !== void 0) {
 
   it.prop('∀cause_ErrorText_∋ErrnoCode', [WORDS], ([parts]) => {
     const error = errnoOf(parts)
-    return Option.match(S.decodeOption(ErrorText)(error), {
+    return Option.match(renderedOf(ErrorText.fromCause(error)), {
       onNone: () => false,
       onSome: (text) => text.startsWith(`${error.name}: ${error.code} (${error.syscall})`),
     })
@@ -321,7 +332,7 @@ if (import.meta.vitest !== void 0) {
   it.prop('∀cause_CauseText_∋NestedMessage', [WORDS], ([parts]) => {
     const error = nestedOf(parts)
     const inner = error.cause instanceof Error ? error.cause.message : ''
-    return Option.match(S.decodeOption(CauseText)(error), {
+    return Option.match(renderedOf(CauseText.fromCause(error)), {
       onNone: () => error.message.length === 0 && inner.length === 0,
       onSome: (text) => mentionsAll(text, [error.message, inner]),
     })

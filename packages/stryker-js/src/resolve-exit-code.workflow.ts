@@ -33,14 +33,10 @@ const decide = (command: ResolveExitCodeCommand) =>
         (decision) =>
           ExitCodeResolved.make({
             code: Match.value(decision).pipe(
-              Match.tag('ExitVerdictFailed', () =>
-                Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)('VerdictFail'), () => -1)),
-              Match.tag('ExitConfigErrored', () =>
-                Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)('ConfigError'), () => -1)),
-              Match.tag('ExitRuntimeErrored', () =>
-                Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)('RuntimeError'), () => -1)),
-              Match.tag('ExitInternalErrored', () =>
-                Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)('InternalError'), () => -1)),
+              Match.tag('ExitVerdictFailed', () => Option.getOrElse(S.decodeOption(ExitCodeFromClass)('VerdictFail'), () => -1)),
+              Match.tag('ExitConfigErrored', () => Option.getOrElse(S.decodeOption(ExitCodeFromClass)('ConfigError'), () => -1)),
+              Match.tag('ExitRuntimeErrored', () => Option.getOrElse(S.decodeOption(ExitCodeFromClass)('RuntimeError'), () => -1)),
+              Match.tag('ExitInternalErrored', () => Option.getOrElse(S.decodeOption(ExitCodeFromClass)('InternalError'), () => -1)),
               Match.tag('ExitPassed', () => 0),
               Match.exhaustive,
             ),

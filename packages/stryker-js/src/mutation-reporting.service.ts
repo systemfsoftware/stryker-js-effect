@@ -28,8 +28,8 @@ import * as S from 'effect/Schema'
 
 import { calculateMetrics } from './calculate-metrics.js'
 import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
-import { ReportLocationFromMutant } from './ReportLocation.schema.js'
 import { ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
+import { ReportLocationFromMutant } from './ReportLocation.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js'
@@ -45,7 +45,7 @@ import {
 import type { ReporterStage } from './reporter-stream.service.js'
 import { closeReporterStage, offerTerminalReport, terminalDrainClass } from './reporter-stream.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
-import { strykerVersion } from './stryker-package.js'
+import { StrykerPackage } from './stryker-package.schema.js'
 import type { TestCoverage } from './test-coverage.schema.js'
 import { VerdictEnvelope } from './reporting/verdict-envelope.schema.js'
 
@@ -55,7 +55,7 @@ const STRYKER_FRAMEWORK: Readonly<Pick<schema.FrameworkInformation, 'branding' |
     imageUrl: 'https://stryker-mutator.io/assets/images/stryker-80x80.png',
   },
   name: 'StrykerJS',
-  version: strykerVersion,
+  version: StrykerPackage.version,
 })
 
 const MANIFEST_SPECIFIERS = [
@@ -410,7 +410,7 @@ const writeIncrementalReport = (
   Effect.gen(function*() {
     yield* deps.fs.makeDirectory(deps.path.dirname(input.options.incrementalFile), { recursive: true })
     const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
-      incrementalVersion: strykerVersion,
+      incrementalVersion: StrykerPackage.version,
       ...report,
     }).pipe(Effect.orDie)
     yield* deps.fs.writeFileString(input.options.incrementalFile, json)
@@ -460,7 +460,7 @@ const slimIncrementalReport =
     Effect.gen(function*() {
       const { files, testFiles } = yield* assembleReport(deps, input)(results)
       return {
-        incrementalVersion: strykerVersion,
+        incrementalVersion: StrykerPackage.version,
         schemaVersion: '1.0',
         thresholds: input.options.thresholds,
         files,
@@ -486,7 +486,7 @@ if (import.meta.vitest !== void 0) {
 
   const MAX_SOURCE_COORDINATE = 1_000_000
 
-  const sourceCoordinateOf = (coordinate: number) => Math.min(Math.abs(coordinate), MAX_SOURCE_COORDINATE)
+  const sourceCoordinateOf = (coordinate: number) => Math.min(Math.floor(Math.abs(coordinate)), MAX_SOURCE_COORDINATE)
 
   const coverageOf = (mutant: Mutant): MutantTestCoverage => ({
     _tag: mutant._tag,

@@ -3,7 +3,6 @@ import { Boolean } from 'effect'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
-import * as SGetter from 'effect/SchemaGetter'
 
 const DEFAULT_GLOB = '**/*.{js,ts,jsx,tsx,html,vue,mjs,mts,cts,cjs}'
 
@@ -89,14 +88,25 @@ export class FileMatcher extends S.Class<FileMatcher>('FileMatcher')({
     )
   }
 }
-
-
 export class IgnoreRule extends S.Class<IgnoreRule>('IgnoreRule')({
   negate: S.Boolean,
   expression: S.instanceOf(RegExp),
   prefixExpression: S.instanceOf(RegExp),
 }) {
-  static readonly decode = (pattern: string) => Effect.orDie(S.decodeEffect(IgnoreRuleFromPattern)(pattern))
+  static readonly fromPattern = (pattern: string) => {
+    const negate = pattern.startsWith('!')
+    const expression = globToRegExp(
+      Boolean.match(negate, { onTrue: () => pattern.slice(1), onFalse: () => pattern }),
+      true,
+    )
+    return IgnoreRule.make({
+      negate,
+      expression,
+      prefixExpression: new RegExp(expression.source.replace(/\$$/, ''), expression.flags),
+    })
+  }
+
+  static readonly decode = (pattern: string) => Effect.succeed(IgnoreRule.fromPattern(pattern))
 
   matches(candidate: string): boolean {
     return this.expression.test(candidate)
@@ -106,41 +116,17 @@ export class IgnoreRule extends S.Class<IgnoreRule>('IgnoreRule')({
     return this.prefixExpression.test(candidate)
   }
 }
-const ignoreRuleOf = (pattern: string) => {
-  const negate = pattern.startsWith('!')
-  const expression = globToRegExp(
-    Boolean.match(negate, { onTrue: () => pattern.slice(1), onFalse: () => pattern }),
-    true,
-  )
-  return IgnoreRule.make({
-    negate,
-    expression,
-    prefixExpression: new RegExp(expression.source.replace(/\$$/, ''), expression.flags),
-  })
+
+export class RelativeNormalizedFileName extends S.Class<RelativeNormalizedFileName>('RelativeNormalizedFileName')({
+  fileName: S.String,
+}) {
+  static readonly fromAbsolute = (fileName: string | undefined, basePath: string) => {
+    const raw = fileName ?? ''
+    return RelativeNormalizedFileName.make({
+      fileName: Boolean.match(raw.startsWith(basePath), {
+        onTrue: () => raw.slice(basePath.length).replace(/^\/+/, ''),
+        onFalse: () => raw,
+      }).replace(/\\/g, '/'),
+    })
+  }
 }
-
-export const IgnoreRuleFromPattern = S.String.pipe(
-  S.decodeTo(IgnoreRule, {
-    decode: SGetter.transform(ignoreRuleOf),
-    encode: SGetter.forbiddenEncoding,
-  }),
-)
-
-
-const relativeNormalizedFileNameOf = (input: { readonly fileName: string | undefined; readonly basePath: string }) => {
-  const raw = input.fileName ?? ''
-  return Boolean.match(raw.startsWith(input.basePath), {
-    onTrue: () => raw.slice(input.basePath.length).replace(/^\/+/, ''),
-    onFalse: () => raw,
-  }).replace(/\\/g, '/')
-}
-
-export const RelativeNormalizedFileName = S.Struct({
-  fileName: S.UndefinedOr(S.String),
-  basePath: S.String,
-}).pipe(
-  S.decodeTo(S.String, {
-    decode: SGetter.transform(relativeNormalizedFileNameOf),
-    encode: SGetter.forbiddenEncoding,
-  }),
-)

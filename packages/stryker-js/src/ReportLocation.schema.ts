@@ -27,10 +27,20 @@ const reportLocationOf = (location: Location) => ({
   end: reportPositionOf(location.end),
 })
 
+const mutantPositionOf = (position: Position) => ({
+  column: position.column - 1,
+  line: position.line - 1,
+})
+
+const mutantLocationOf = (location: Location) => ({
+  start: mutantPositionOf(location.start),
+  end: mutantPositionOf(location.end),
+})
+
 export const ReportLocationFromMutant = MutantLocationSchema.pipe(
   S.decodeTo(ReportLocationSchema, {
     decode: SGetter.transform(reportLocationOf),
-    encode: SGetter.forbiddenEncoding,
+    encode: SGetter.transform(mutantLocationOf),
   }),
 )
 
@@ -45,11 +55,11 @@ if (import.meta.vitest !== void 0) {
     end: S.Struct({ line: SourceCoordinate, column: SourceCoordinate }),
   })
 
-  const shiftsByOne = (before: Position, after: Position) =>
-    after.line - before.line === 1 && after.column - before.column === 1
+  const shiftsBy = (offset: number) => (before: Position, after: Position) =>
+    after.line - before.line === offset && after.column - before.column === offset
 
-  const shiftsLocationByOne = (location: Location, report: Location) =>
-    shiftsByOne(location.start, report.start) && shiftsByOne(location.end, report.end)
+  const shiftsLocationBy = (offset: number) => (location: Location, shifted: Location) =>
+    shiftsBy(offset)(location.start, shifted.start) && shiftsBy(offset)(location.end, shifted.end)
 
   const keyOrderOf = (value: object) => Object.keys(value).join()
 
@@ -59,18 +69,22 @@ if (import.meta.vitest !== void 0) {
   it.prop('∀location_ReportLocationFromMutant_ShiftsEveryPositionByOne', [ShiftableLocation], ([location]) =>
     Result.match(S.decodeResult(ReportLocationFromMutant)(location), {
       onFailure: () => false,
-      onSuccess: (report) => shiftsLocationByOne(location, report),
+      onSuccess: (report) => shiftsLocationBy(1)(location, report),
+    }))
+
+  it.prop('∀location_ReportLocationFromMutant_EncodesMutantCoordinatesByMinusOne', [ShiftableLocation], ([location]) =>
+    Result.match(S.decodeResult(ReportLocationFromMutant)(location), {
+      onFailure: () => false,
+      onSuccess: (report) =>
+        Result.match(S.encodeResult(ReportLocationFromMutant)(report), {
+          onFailure: () => false,
+          onSuccess: (mutant) => shiftsLocationBy(-1)(report, mutant) && shiftsLocationBy(1)(mutant, report),
+        }),
     }))
 
   it.prop('∀location_ReportLocationFromMutant_OrdersReportKeysColumnFirst', [ShiftableLocation], ([location]) =>
     Result.match(S.decodeResult(ReportLocationFromMutant)(location), {
       onFailure: () => false,
       onSuccess: (report) => keyOrderOf(report) === 'start,end' && positionsColumnFirst(report),
-    }))
-
-  it.prop('∀location_ReportLocationFromMutant_ForbidsEncoding', [ShiftableLocation], ([location]) =>
-    Result.match(S.decodeResult(ReportLocationFromMutant)(location), {
-      onFailure: () => false,
-      onSuccess: (report) => Result.isFailure(S.encodeResult(ReportLocationFromMutant)(report)),
     }))
 }

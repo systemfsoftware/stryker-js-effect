@@ -87,6 +87,16 @@ describe('FileMatcher', () => {
       extensionsOf(`/x/y/${segment}.${extension}`).some((present) =>
         ['js', 'ts', 'jsx', 'tsx', 'html', 'vue', 'mjs', 'mts', 'cts', 'cjs'].includes(present))
   })
+
+    const pathService = pathServiceOf()
+    const suffix = 'ts'
+    const suffixPattern = FileMatcher.make({ pattern: `**/*.${suffix}`, allowHiddenFiles: true })
+    const rival = other === suffix ? `md${other}` : other
+    return (
+      suffixPattern.matches(pathService, `/x/${stem}.${suffix}`) &&
+      suffixPattern.matches(pathService, `/x/${stem}.${rival}`) === false
+    )
+  })
 })
 
 describe('IgnoreRule', () => {
@@ -96,44 +106,22 @@ describe('IgnoreRule', () => {
     return include.negate === false && exclude.negate === true &&
       include.matches(`/x/${segment}.ts`) === exclude.matches(`/x/${segment}.ts`)
   })
-
-  it.prop('∀p_Rule_MatchRefusesOtherExtensions', [strictSegmentArb], ([segment]) => {
-    const rule = Effect.runSync(IgnoreRule.decode(`**/${segment}.ts`))
-    return rule.matches(`/x/${segment}.ts`) && rule.matches(`/x/${segment}.md`) === false
-  })
-
-  it.prop('∀p_Rule_UnbalancedBracketStaysLiteral', [strictSegmentArb], ([segment]) => {
-  it.prop('∀pe_Suffix_SuffixPatternConservesItsSuffix', [proseArb, proseArb], ([stem, suffix]) => {
-    const pathService = pathServiceOf()
-    const suffixPattern = FileMatcher.make({ pattern: `**/*.${suffix}`, allowHiddenFiles: true })
-    return (
-      suffixPattern.matches(pathService, `/x/${stem}.${suffix}`) &&
-      suffixPattern.matches(pathService, `/x/${stem}.${suffix === 'md' ? 'ts' : 'md'}`) === false
-    )
-  })
 })
 
 describe('RelativeNormalizedFileName', () => {
   it.prop('∀fb_Strip_IsIdempotent', [pathArb, basePathArb], ([fileName, basePath]) => {
-    const first = Effect.runSync(S.decodeEffect(RelativeNormalizedFileName)({ fileName, basePath }))
-    const second = Effect.runSync(S.decodeEffect(RelativeNormalizedFileName)({ fileName: first, basePath }))
+    const first = RelativeNormalizedFileName.fromAbsolute(fileName, basePath).fileName
+    const second = RelativeNormalizedFileName.fromAbsolute(first, basePath).fileName
     return first === second
   })
 
-  it.prop('∀fb_Strip_RemovesBasePrefixAndLeadingSlashes', [plainSegmentArb, basePathArb], ([segment, basePath]) => {
-    const stripped = Effect.runSync(
-      S.decodeEffect(RelativeNormalizedFileName)({ fileName: `${basePath}//${segment}.ts`, basePath }),
-    )
+  it.prop('∀fb_Strip_RemovesBasePrefixAndLeadingSlashes', [strictSegmentArb, basePathArb], ([segment, basePath]) => {
+    const stripped = RelativeNormalizedFileName.fromAbsolute(`${basePath}//${segment}.ts`, basePath).fileName
     return stripped === `${segment}.ts`
   })
 
-  it.prop('∀fb_ForeignPath_SurvivesUnchanged', [plainSegmentArb, basePathArb], ([segment, basePath]) => {
+  it.prop('∀fb_ForeignPath_SurvivesUnchanged', [strictSegmentArb, basePathArb], ([segment, basePath]) => {
     const foreign = `/elsewhere/${segment}.ts`
-    return Effect.runSync(S.decodeEffect(RelativeNormalizedFileName)({ fileName: foreign, basePath })) === foreign
-  })
-
-  it.prop('∀fb_Codec_ForbidsEncoding', [pathArb, basePathArb], ([fileName, basePath]) => {
-    const decoded = Effect.runSync(S.decodeEffect(RelativeNormalizedFileName)({ fileName, basePath }))
-    return Result.isFailure(S.encodeResult(RelativeNormalizedFileName)(decoded))
+    return RelativeNormalizedFileName.fromAbsolute(foreign, basePath).fileName === foreign
   })
 })

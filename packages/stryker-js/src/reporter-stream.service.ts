@@ -1,4 +1,4 @@
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
@@ -249,7 +249,11 @@ export const REPORTER_EVENT_BATCH_BOUND = 128
 export type ReporterWorkerClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof ReporterRpcs>, RpcClientError>
 
 const workerStreamErrorOf = <E = unknown>(cause: E): ReporterFailed =>
-  ReporterFailed.make({ reporterName: 'worker', event: 'mutationTestReportReady', cause: errorToString(cause) })
+  ReporterFailed.make({
+    reporterName: 'worker',
+    event: 'mutationTestReportReady',
+    cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
+  })
 
 const reporterInitPayload = (init: ReporterInit): ReporterInitOptions => ({
   ...traceparentInit(init.traceparent),
@@ -269,7 +273,7 @@ export const reporterWorkerFactory = (client: ReporterWorkerClient): ReporterFac
       ReporterFailed.make({
         reporterName: 'worker',
         event: 'mutationTestReportReady',
-        cause: errorToString(cause),
+        cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
       })
     ),
   )

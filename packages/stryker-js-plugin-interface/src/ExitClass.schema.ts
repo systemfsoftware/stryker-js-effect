@@ -1,4 +1,4 @@
-import { SchemaGetter, SchemaTransformation } from 'effect'
+import { SchemaTransformation } from 'effect'
 import * as S from 'effect/Schema'
 
 export const ExitClass = S.Literals(['VerdictFail', 'ConfigError', 'RuntimeError', 'InternalError'])

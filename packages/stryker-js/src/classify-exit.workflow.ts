@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { ExitClass, ExitCodeFromClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -37,31 +38,37 @@ export class ExitInternalErrored extends S.TaggedClass<ExitInternalErrored>()('E
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
+export class ExitSignalled extends S.TaggedClass<ExitSignalled>()('ExitSignalled', {
+  signal: S.Finite,
+}) {
+  readonly [ExitDecisionTypeId] = ExitDecisionTypeId
+}
+
 export const ClassifyExitDecision = S.Union([
   ExitPassed,
   ExitVerdictFailed,
   ExitConfigErrored,
   ExitRuntimeErrored,
   ExitInternalErrored,
+  ExitSignalled,
 ])
 export type ClassifyExitDecision = typeof ClassifyExitDecision.Type
 
-const codeOf = (exitClass: ExitClass): number =>
-  Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)(exitClass), () => -1)
+const PRECEDENCE = ['InternalError', 'RuntimeError', 'ConfigError', 'VerdictFail'] as const satisfies ReadonlyArray<
+  ExitClass
+>
 
-const worstOf = (left: ExitClass | null, right: ExitClass): ExitClass =>
-  Option.match(Option.fromNullishOr(left), {
-    onNone: () => right,
-    onSome: (current) =>
-      Match.value(codeOf(right) > codeOf(current)).pipe(
-        Match.when(true, () => right),
-        Match.when(false, () => current),
-        Match.exhaustive,
-      ),
-  })
+const precedenceOf = (pending: ReadonlyArray<ExitClass>) =>
+  Arr.findFirst(PRECEDENCE, (candidate) => pending.includes(candidate))
 
-const highestExitClass = (pending: ReadonlyArray<ExitClass>): ExitClass | null =>
-  pending.reduce<ExitClass | null>((highest, candidate) => worstOf(highest, candidate), null)
+const decisionOf = (exitClass: ExitClass) =>
+  Match.value(exitClass).pipe(
+    Match.when('VerdictFail', () => ExitVerdictFailed.make({})),
+    Match.when('ConfigError', () => ExitConfigErrored.make({})),
+    Match.when('RuntimeError', () => ExitRuntimeErrored.make({})),
+    Match.when('InternalError', () => ExitInternalErrored.make({})),
+    Match.exhaustive,
+  )
 
 const verdictExitClass = (score: number | null, breakingThreshold: number | null) =>
   Option.match(
@@ -77,14 +84,21 @@ const verdictExitClass = (score: number | null, breakingThreshold: number | null
     },
   )
 
+const unsignalledDecision = (command: ClassifyExitCommand): Result.Result<ClassifyExitDecision, never> =>
+  Option.match(Option.fromNullishOr(verdictExitClass(command.score, command.breakingThreshold)), {
+    onNone: () =>
+      Option.match(precedenceOf(command.pending), {
+        onNone: () => Result.succeed(ExitPassed.make({})),
+        onSome: (exitClass) => Result.succeed(decisionOf(exitClass)),
+      }),
+    onSome: () => Result.succeed(ExitVerdictFailed.make({})),
+  })
+
 const decide = (command: ClassifyExitCommand): Result.Result<ClassifyExitDecision, never> =>
-  Match.value(verdictExitClass(command.score, command.breakingThreshold) ?? highestExitClass(command.pending)).pipe(
-    Match.when('VerdictFail', () => Result.succeed(ExitVerdictFailed.make({}))),
-    Match.when('ConfigError', () => Result.succeed(ExitConfigErrored.make({}))),
-    Match.when('RuntimeError', () => Result.succeed(ExitRuntimeErrored.make({}))),
-    Match.when('InternalError', () => Result.succeed(ExitInternalErrored.make({}))),
-    Match.orElse(() => Result.succeed(ExitPassed.make({}))),
-  )
+  Option.match(Option.fromNullishOr(command.signal), {
+    onNone: () => unsignalledDecision(command),
+    onSome: (signal) => Result.succeed(ExitSignalled.make({ signal })),
+  })
 
 export const classifyExit = Workflow.make({
   command: ClassifyExitCommand,

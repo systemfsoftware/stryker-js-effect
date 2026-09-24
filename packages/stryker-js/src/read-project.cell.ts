@@ -16,12 +16,12 @@ import { badArgument, type PlatformError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 
 import { admitIncrementalReport, AdmitIncrementalReportCommand } from './admit-incremental-report.workflow.js'
-import { defaultOptions } from './config-defaults.js'
+import { StrykerConfig } from './config/stryker-config.schema.js'
 import { IgnoreRule } from './matching.schema.js'
 import { IncrementalReportSchema } from './IncrementalReport.schema.js'
 import { MutationRangeSpecifierSchema, type MutationRangeSpecifier } from './MutationRange.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
-import { strykerVersion } from './stryker-package.js'
+import { StrykerPackage } from './stryker-package.schema.js'
 
 const ALWAYS_IGNORE = Object.freeze([
   'node_modules',
@@ -492,7 +492,7 @@ const resolveInputFileNames = (
   ignoreRules: readonly string[],
   basePath: string,
 ): Effect.Effect<string[], PlatformError, FileSystem.FileSystem | Path.Path> =>
-  crawlDir(ignoreRules.map((pattern) => Effect.runSync(IgnoreRule.decode(pattern))), basePath, basePath)
+  crawlDir(ignoreRules.map(IgnoreRule.fromPattern), basePath, basePath)
 
 const selectionOf = (
   inputFileNames: readonly string[],
@@ -637,7 +637,7 @@ const readProjectCommand = (input: ReadProjectInput) =>
     const mutatePatterns: readonly string[] = input.options.mutate
     const testFilePatterns: readonly string[] = input.options.testFiles
     const inputFileNames = yield* resolveInputFileNames(ignoreRulesOf(input.options), input.basePath)
-    const defaults = yield* defaultOptions
+    const defaults = yield* StrykerConfig.defaultOptions
     const decision = selectFiles(
       selectionOf(inputFileNames, mutatePatterns, testFilePatterns, input.basePath, input.targetMutatePatterns),
     )
@@ -658,7 +658,7 @@ const readProjectCommand = (input: ReadProjectInput) =>
     const fs = yield* FileSystem.FileSystem
     const contents = Option.getOrUndefined(yield* incrementalContentsOf(fs, input.options))
     return Object.assign(
-      AdmitIncrementalReportCommand.make({ report: reportOf(contents), expectedVersion: strykerVersion }),
+      AdmitIncrementalReportCommand.make({ report: reportOf(contents), expectedVersion: StrykerPackage.version }),
       {
         options: input.options,
         targetMutatePatterns: input.targetMutatePatterns,

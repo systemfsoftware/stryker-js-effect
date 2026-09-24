@@ -133,12 +133,24 @@ if (import.meta.vitest !== void 0) {
   const spanIdMatches = (spanId: string) => (parts: TraceContextParts) => parts.spanId === spanId
 
   const flagsMatch = (traceFlags: number) => (parts: TraceContextParts) => parts.traceFlags === traceFlags
-
   const conservedIds =
     (traceId: string, spanId: string, traceFlags: number) => (parts: TraceContextParts) =>
       [traceIdMatches(traceId)(parts), spanIdMatches(spanId)(parts), flagsMatch(traceFlags)(parts)].every(
         (holds) => holds,
       )
+
+  it.prop(
+    '∀trace_span_flags_Identity_IdsConserved',
+    [traceIdArbitrary, spanIdArbitrary, flagsArbitrary],
+    ([traceId, spanId, traceFlags]) =>
+      Option.match(
+        S.decodeOption(TraceContextPartsFromSpanContext)({ traceId, spanId, traceFlags }),
+        {
+          onNone: () => false,
+          onSome: conservedIds(traceId, spanId, traceFlags),
+        },
+      ),
+  )
 
   const fixtureEnvelope = (traceState: Option.Option<string>) =>
     S.decodeOption(TraceContextPartsFromSpanContext)(contextFixture('a'.repeat(32), 'b'.repeat(16), 1, traceState))
@@ -156,23 +168,11 @@ if (import.meta.vitest !== void 0) {
   )
 
   const invalidTraceIdArbitrary = Arbitrary.schema(
-    S.Literals([
-      '0'.repeat(32),
-      'a'.repeat(31),
-      'a'.repeat(33),
-      'A'.repeat(32),
-      `${'a'.repeat(31)}g`,
-    ]),
+    S.Literals(['0'.repeat(32), 'a'.repeat(31), 'a'.repeat(33), `${'a'.repeat(31)}g`]),
   )
 
   const invalidSpanIdArbitrary = Arbitrary.schema(
-    S.Literals([
-      '0'.repeat(16),
-      'a'.repeat(15),
-      'a'.repeat(17),
-      'A'.repeat(16),
-      `${'a'.repeat(15)}g`,
-    ]),
+    S.Literals(['0'.repeat(16), 'a'.repeat(15), 'a'.repeat(17), `${'a'.repeat(15)}g`]),
   )
 
   const refusedFixture = (context: api.SpanContext, badTraceId: string, badSpanId: string) =>

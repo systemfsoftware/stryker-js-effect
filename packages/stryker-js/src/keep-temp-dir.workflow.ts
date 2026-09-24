@@ -36,18 +36,19 @@ export class KeepTempDirCommand extends S.TaggedClass<KeepTempDirCommand>()('Kee
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
+const keepOf = (failed: boolean): Result.Result<KeepTempDirOutcome, never> =>
+  Match.value(failed).pipe(
+    Match.when(true, () => TempDirKept.make({})),
+    Match.when(false, () => TempDirRemoved.make({})),
+    Match.exhaustive,
+    Result.succeed,
+  )
 const decide = (command: KeepTempDirCommand): Result.Result<KeepTempDirOutcome, never> =>
   Match.value(command.cleanTempDir).pipe(
     Match.tag('KeepTempDirAlways', () => Result.succeed(TempDirRemoved.make({}))),
-    Match.tag('KeepTempDirOnFailure', (option) =>
-      Match.value(option.failed).pipe(
-        Match.when(true, () => Result.succeed(TempDirKept.make({}))),
-        Match.when(false, () => Result.succeed(TempDirRemoved.make({}))),
-        Match.exhaustive,
-      )),
+    Match.tag('KeepTempDirOnFailure', (option) => keepOf(option.failed)),
     Match.exhaustive,
   )
-
 export const keepTempDir = Workflow.make({
   command: KeepTempDirCommand,
   decision: S.Union([TempDirKept, TempDirRemoved]),

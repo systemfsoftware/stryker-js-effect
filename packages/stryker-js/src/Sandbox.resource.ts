@@ -1,4 +1,4 @@
-import { disableTypeChecks, errorToString, normalizeFileName } from '@systemfsoftware/stryker-js-instrumenter'
+import { CanonicalFileName, disableTypeChecks, ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Predicate, Schema as S } from 'effect'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
@@ -12,8 +12,8 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
-import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
+import * as Result from 'effect/Result'
 import { Prototype, type Pipeable } from 'effect/Pipeable'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
@@ -21,7 +21,12 @@ import type { JsonValue } from '@std/jsonc'
 import { parse } from '@std/jsonc'
 
 import { FileMatcher } from './matching.schema.js'
-import { isWarningEnabled, optionsPath } from './config-defaults.js'
+import {
+  ResolveWarningEnabledCommand,
+  warningEnabled,
+  WarningDisabled,
+  WarningEnabled,
+} from './config/warning-enabled.workflow.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFiles } from './project-files.service.js'
 import { make as makeHandle, type SandboxHandle } from './Sandbox.handle.js'
@@ -66,14 +71,22 @@ const mergeUpdatedInto = (project: Project) => (updated: ProjectFile | Option.Op
   })
 }
 
+const preprocessorWarningsEnabled = (options: StrykerOptions): WarningEnabled | WarningDisabled =>
+  Result.match(warningEnabled(ResolveWarningEnabledCommand.make({ warning: 'preprocessorErrors', warnings: options.warnings })), {
+    onSuccess: (decision) => decision,
+    onFailure: () => WarningDisabled.make({}),
+  })
+
 const disableTypeChecksWarning = (name: string, options: StrykerOptions) =>
-  Effect.when(
-    Effect.logWarning(
-      `Unable to disable type checking for file "${name}". Shouldn't type checking be disabled for this file? Consider configuring a more restrictive "${
-        optionsPath('disableTypeChecks')
-      }" settings (or turn it completely off with \`false\`)`,
+  Match.value(preprocessorWarningsEnabled(options)).pipe(
+    Match.tag(
+      'WarningEnabled',
+      () =>
+        Effect.logWarning(
+          `Unable to disable type checking for file "${name}". Shouldn't type checking be disabled for this file? Consider configuring a more restrictive "${'disableTypeChecks'}" settings (or turn it completely off with \`false\`)`,
+        ),
     ),
-    Effect.succeed(isWarningEnabled('preprocessorErrors', options.warnings)),
+    Match.tag('WarningDisabled', () => Effect.void),
   )
 
 const makeDisableTypeChecksPreprocessor = (options: StrykerOptions, impl: typeof disableTypeChecks) => (project: Project) =>
@@ -103,7 +116,8 @@ const makeDisableTypeChecksPreprocessor = (options: StrykerOptions, impl: typeof
 const parseJsonText = (jsonText: string): Effect.Effect<JsonValue, string> =>
   Effect.try({
     try: () => parse(jsonText.replace(/^\uFEFF/, '')),
-    catch: errorToString,
+    catch: (cause) =>
+      Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
   })
 
 const tsConfigShapeOf = (parsed: JsonValue): Option.Option<TSConfig> =>
@@ -299,7 +313,7 @@ const tryRewriteReference = (
   const fileName = pathService.resolve(pathService.dirname(originTSConfigFileName), reference)
   const relativeToSandbox = pathService.relative(basePath, fileName)
   return Boolean.match(relativeToSandbox.startsWith('..'), {
-    onTrue: () => ['..', '..', normalizeFileName(reference)].join('/'),
+    onTrue: () => ['..', '..', Option.getOrElse(S.encodeOption(CanonicalFileName)(reference), () => reference)].join('/'),
     onFalse: () => false as const,
   })
 }

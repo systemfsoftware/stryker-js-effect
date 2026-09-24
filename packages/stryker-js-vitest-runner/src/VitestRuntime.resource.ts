@@ -1,6 +1,6 @@
 import { createVitest as createVitestOriginal, type Vitest } from 'vitest/node'
 
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText, InstrumenterContext } from '@systemfsoftware/stryker-js-instrumenter'
 import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Crypto from 'effect/Crypto'
 import * as Effect from 'effect/Effect'
@@ -128,10 +128,11 @@ export interface ResolvedVitest {
 }
 
 export type VitestResolver = (dir: string) => Effect.Effect<ResolvedVitest>
+const errorTextOf = <A>(cause: A) =>
+  Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => '')
 
 const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
-  new TestRunnerFailed({ runnerName: 'vitest', phase, cause: errorToString(cause) })
-
+  new TestRunnerFailed({ runnerName: 'vitest', phase, cause: errorTextOf(cause) })
 const vitestUnresolved = (specifier: string, base: string, detail: string): TestRunnerFailed =>
   new TestRunnerFailed({
     runnerName: 'vitest',
@@ -156,13 +157,12 @@ export const resolveVitest: VitestResolver = (_dir) => {
       vitestUnresolved(specifier, import.meta.url, detail)
     const resolveSpecifier = (specifier: string): Effect.Effect<string, TestRunnerFailed> =>
       Effect.try({
-        try: (): string => import.meta.resolve(specifier),
-        catch: (cause) => resolutionFailure(specifier, errorToString(cause)),
+        catch: (cause) => resolutionFailure(specifier, errorTextOf(cause)),
       })
     const vitestNodeUrl = yield* resolveSpecifier('vitest/node')
     const imported = yield* Effect.tryPromise({
       try: (): Promise<object> => import(vitestNodeUrl),
-      catch: (cause) => resolutionFailure('vitest/node', errorToString(cause)),
+      catch: (cause) => resolutionFailure('vitest/node', errorTextOf(cause)),
     })
     return yield* Option.match(Option.liftPredicate(Option.getOrUndefined(S.decodeUnknownOption(
       S.Record(S.String, S.Unknown),

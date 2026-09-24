@@ -189,25 +189,15 @@ export type { CompiledTests, VmTestRunnerConfig } from './VmRunner.resource.js'
 export { VmRunner } from './VmRunner.service.js'
 export type { VmModule, VmModuleBuiltin, VmPlatform, VmScript } from './VmRunner.service.js'
 
-export {
-  CONFIG_SYNTAX_HELP,
-  createDefaultOptions,
-  deepFreeze,
-  defaultOptions,
-  findUnserializables,
-  isModuleSpecifier,
-  isWarningEnabled,
-  optionsPath,
-  SUPPORTED_CONFIG_FILE_NAMES,
-} from './config-defaults.js'
+export { StrykerConfig } from './config/stryker-config.schema.js'
 export type {
+  ConfigEnv,
   Immutable,
   ImmutablePrimitive,
-  KnownKeys,
   Primitive,
-  UnserializableDescription,
-  WarningOptions,
-} from './config-defaults.js'
+  StrykerConfigExport,
+  StrykerConfigFn,
+} from './config/stryker-config.schema.js'
 export { ConfigDocumentSchema } from './Config.schema.js'
 export {
   ConfigError,
@@ -269,7 +259,7 @@ export { StrykerError } from './stryker-error.schema.js'
 export type { WorkerBootError, WorkerExit } from './Worker.schema.js'
 export { ChildProcessCrashedError, OutOfMemoryError, WorkerBootTimeoutError } from './Worker.schema.js'
 
-export { strykerVersion } from './stryker-package.js'
+export { StrykerPackage } from './stryker-package.schema.js'
 
 export {
   REPORTER_EVENT_BATCH_BOUND,

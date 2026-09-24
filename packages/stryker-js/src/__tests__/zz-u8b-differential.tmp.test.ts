@@ -1,25 +1,13 @@
 import { it } from '@effect/vitest'
-import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { mergeConfig as baselineMerge } from '../../.u8b-baseline/config.mjs'
 import { StrykerConfig } from '../config/stryker-config.schema.js'
+import { DocumentSchema } from '../../tests/__fixtures__/config-law.schema.js'
 
 const baseline = baselineMerge as unknown as (defaults: unknown, overrides: unknown) => Record<string, unknown>
 
-const Value = S.Union([
-  S.String,
-  S.Finite,
-  S.Boolean,
-  S.Null,
-  S.Undefined,
-  S.Array(S.Union([S.String, S.Finite, S.Boolean])),
-  S.Record(S.String, S.Union([S.String, S.Finite, S.Boolean, S.Null])),
-])
-
-const Document = S.Record(S.String, Value)
-
-const poisonedDocumentArb = Arbitrary.schema(Document).pipe(
+const poisonedDocumentArb = Arbitrary.schema(DocumentSchema).pipe(
   Arbitrary.map((document) => ({
     ...document,
     ...Object.fromEntries([['__proto__', Object.fromEntries([['polluted', true]])]]),
@@ -42,7 +30,7 @@ const sameValue = (left: unknown, right: unknown): boolean =>
   (isOptionRecord(left) && isOptionRecord(right) && sameEntries(left, right))
 
 describe('old vs new merge (dev-time differential, deleted before finish)', () => {
-  it.prop('∀do_Whitespace_≡Baseline', [Document, Document], ([base, overrides]) => {
+  it.prop('∀do_Whitespace_≡Baseline', [DocumentSchema, DocumentSchema], ([base, overrides]) => {
     const oldMerged = baseline(base, overrides)
     const newMerged = StrykerConfig.merge(base, overrides)
     return sameValue(oldMerged, newMerged) && sameValue(Object.keys(oldMerged), Object.keys(newMerged))
@@ -54,10 +42,10 @@ describe('old vs new merge (dev-time differential, deleted before finish)', () =
     return sameValue(oldMerged, newMerged) && sameValue(Object.keys(oldMerged), Object.keys(newMerged))
   })
 
-  it.prop('∀d_DataLast_≡Baseline', [Document, Document], ([base, overrides]) =>
+  it.prop('∀d_DataLast_≡Baseline', [DocumentSchema, DocumentSchema], ([base, overrides]) =>
     sameValue(baseline(base, overrides), StrykerConfig.merge(overrides)(base)))
 
-  it.prop('∀c_UndefinedOverride_≡Baseline', [Document, Document], ([base, overrides]) => {
+  it.prop('∀c_UndefinedOverride_≡Baseline', [DocumentSchema, DocumentSchema], ([base, overrides]) => {
     const withUndefined = { ...overrides, 'u8b-absent': undefined }
     const oldMerged = baseline(base, withUndefined)
     const newMerged = StrykerConfig.merge(base, withUndefined)

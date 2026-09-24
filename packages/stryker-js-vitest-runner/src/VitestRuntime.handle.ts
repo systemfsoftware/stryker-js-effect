@@ -38,10 +38,12 @@ export interface RunFilterInput {
   readonly testNamePattern: RegExp | undefined
 }
 
-const errorTextOf = <A>(cause: A) => Option.getOrElse(S.decodeUnknownOption(ErrorText)(cause), () => '')
-
 const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
-  new TestRunnerFailed({ runnerName: 'vitest', phase, cause: errorTextOf(cause) })
+  new TestRunnerFailed({
+    runnerName: 'vitest',
+    phase,
+    cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
+  })
 
 const disableScreenshotFailures = <A>(value: A) =>
   Option.map(Option.filter(Option.fromNullishOr(value), Predicate.isObject), (browser) => {
@@ -145,7 +147,12 @@ export const hasExternalErrors = (self: VitestRuntime): boolean =>
 export const externalErrorText = (self: VitestRuntime): string =>
   Option.match(errorsSetOf(self[DriverId]), {
     onNone: () => '',
-    onSome: (errorsSet) => Predicate.isIterable(errorsSet) ? [...errorsSet].map(errorTextOf).join('\n') : '',
+    onSome: (errorsSet) =>
+      Predicate.isIterable(errorsSet)
+        ? [...errorsSet].map((error) =>
+          Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(error)), (rendered) => rendered.text), () => ''),
+        ).join('\n')
+        : '',
   })
 
 export const metaOf = <A>(file: A) => Option.getOrUndefined(propertyOf(file, 'meta'))
