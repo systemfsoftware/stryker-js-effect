@@ -19,7 +19,7 @@ import {
   CheckerSkippedRequested,
   type CheckerContractBroken,
 } from '../admit-checker-answer.workflow.js'
-import { checkerMutantsSkipped } from '../metrics.js'
+import { checkerMutantsSkipped } from './checker.metrics.js'
 import { type CheckerCrash, type CheckerResourceService } from './Checker.handle.js'
 import { CheckerMutantFromMutant, UndescribableMutant } from './Checker.schema.js'
 

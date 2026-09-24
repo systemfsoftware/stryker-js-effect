@@ -14,7 +14,7 @@ import type * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
 
-import { checkerDuration, checkerMutantsChecked, checkerRpcFailures } from '../metrics.js'
+import { checkerDuration, checkerMutantsChecked, checkerRpcFailures } from './checker.metrics.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 
 export type CheckerCrash = ChildProcessCrashedError | OutOfMemoryError

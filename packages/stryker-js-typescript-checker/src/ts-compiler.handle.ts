@@ -840,6 +840,7 @@ export const close = (self: TSCompiler): Effect.Effect<void> => {
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const Equal = await import('effect/Equal')
+  const { CanonicalFileName, MutantId, MutatorName } = await import('@systemfsoftware/stryker-js-instrumenter')
 
   const FILE_INDEX_LIMIT = 4
 
@@ -872,23 +873,14 @@ if (import.meta.vitest !== void 0) {
     )
   }
 
-  const wireFieldsOf = (id: string, fileName: string) => ({
-    id,
-    fileName,
-    mutatorName: 'foo-mutator',
-    replacement: 'x',
-    location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
-  })
-
-  const seedWire: CheckerMutantWire = Result.match(S.decodeResult(CheckerMutantWire)(
-    wireFieldsOf('mutant-seed', 'src/file-0.ts'),
-  ), {
-    onFailure: (issue) => { throw issue },
-    onSuccess: (seed) => seed,
-  })
-
   const mutantWireOf = (id: string, fileName: string): CheckerMutantWire =>
-    Result.getOrElse(S.decodeResult(CheckerMutantWire)(wireFieldsOf(id, fileName)), () => seedWire)
+    CheckerMutantWire.make({
+      id: MutantId.make(id),
+      fileName: CanonicalFileName.make(fileName),
+      mutatorName: MutatorName.make('foo-mutator'),
+      replacement: 'x',
+      location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
+    })
 
   const mutantsOf = (fileIndexes: readonly number[]) =>
     Arr.map(fileIndexes, (index, position) => mutantWireOf(`mutant-${position}`, fileNameOf(index)))

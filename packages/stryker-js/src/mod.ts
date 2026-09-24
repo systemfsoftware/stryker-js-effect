@@ -11,14 +11,6 @@ export { EffectSchema as S }
 
 export { MetricsResultFromReport } from './reporting/metrics-from-report.schema.js'
 
-export {
-  checkerDuration,
-  checkerMutantsChecked,
-  checkerMutantsSkipped,
-  checkerProcessCrashes,
-  checkerRpcFailures,
-} from './metrics.js'
-
 export type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 export type {
   CoverageData,

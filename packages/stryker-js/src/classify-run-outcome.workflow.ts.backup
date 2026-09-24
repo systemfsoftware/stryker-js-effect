@@ -213,6 +213,13 @@ const isUnseenObject = <A>(value: A, seen: WeakSet<object>): value is A & object
 const isReachableValue = <A>(value: A, depth: number, seen: WeakSet<object>): value is A & object =>
   depth <= MAX_TRAVERSAL_DEPTH && isUnseenObject(value, seen)
 
+const causeChildrenOf = (value: object): ReadonlyArray<object> => {
+  const cause = hasCause(value) ? value.cause : undefined
+  if (Array.isArray(cause)) {
+    return cause.filter(Predicate.isObjectOrArray)
+  }
+  return Predicate.isObjectOrArray(cause) ? [cause] : []
+}
 
 const visitReachableValue = <A>(
   value: A,

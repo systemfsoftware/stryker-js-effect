@@ -8,6 +8,7 @@ import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interfac
 import {
   type ReporterInitOptions,
   ReporterRpcs,
+  type TraceContextParts,
   TraceContextReference,
   Traceparent,
 } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -29,6 +30,7 @@ import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 import type * as RpcClient from 'effect/unstable/rpc/RpcClient'
+import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
 
 import { ConfigError } from './ConfigError.schema.js'
@@ -465,12 +467,17 @@ const hasTraceFields = (init: ReporterInit): boolean =>
   Option.isSome(Option.fromUndefinedOr(init.traceparent)) ||
   Option.isSome(Option.fromUndefinedOr(init.tracestate))
 
-const initFromPhaseSpan = (span: PhaseSpan | undefined): Effect.Effect<ReporterInit | undefined> =>
-  Option.flatMap(Option.fromNullishOr(span), (present) =>
-    S.encodeOption(Traceparent)(S.decodeOption(TraceContextPartsFromEffectSpan)(present))).pipe(
-    Option.map((traceparent): ReporterInit => ({ traceparent })),
+const initFromParts = (parts: TraceContextParts): Option.Option<ReporterInit> =>
+  Option.map(S.encodeOption(Traceparent)(parts), (traceparent): ReporterInit => ({
+    traceparent,
+    ...tracestateInit(parts.traceState),
+  }))
+
+const initFromPhaseSpan = (span: PhaseSpan | undefined): ReporterInit | undefined =>
+  Option.fromNullishOr(span).pipe(
+    Option.flatMap(S.decodeOption(TraceContextPartsFromEffectSpan)),
+    Option.flatMap(initFromParts),
     Option.getOrUndefined,
-    Effect.succeed,
   )
 
 export interface PhaseSpan {
@@ -499,9 +506,7 @@ export const currentReporterInit = (span?: PhaseSpan): Effect.Effect<ReporterIni
   Effect.gen(function*() {
     const fromEnvironment = yield* initFromEnvironment()
     const current = Option.getOrUndefined(yield* Effect.currentSpan.pipe(Effect.option))
-    const fromSpanPhase = yield* initFromPhaseSpan(span)
-    const fromSpanCurrent = yield* initFromPhaseSpan(current)
-    return [fromSpanPhase, fromSpanCurrent, fromEnvironment].find(Predicate.isNotUndefined) ?? {}
+    return [initFromPhaseSpan(span), initFromPhaseSpan(current), fromEnvironment].find(Predicate.isNotUndefined) ?? {}
   })
 
 export const withPhaseSpan: {

@@ -6,7 +6,7 @@ import * as Metric from 'effect/Metric'
 import { type Pipeable, Prototype } from 'effect/Pipeable'
 import type * as Scope from 'effect/Scope'
 
-import { checkerProcessCrashes } from '../metrics.js'
+import { checkerProcessCrashes } from './checker.metrics.js'
 import { makeWorkerClient } from '../worker-client.resource.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import {
