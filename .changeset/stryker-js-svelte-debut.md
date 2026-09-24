@@ -2,21 +2,14 @@
 "@systemfsoftware/stryker-js-svelte": minor
 ---
 
-First release. Svelte support for mutation runs: `.svelte` files are
-instrumented, and their mutants are reported under the `svelte` language
-instead of `javascript`.
+First release. `.svelte` files are instrumented — script blocks and template
+expressions — and their mutants are reported under the `svelte` language.
 
-Svelte is an optional peer dependency, and `3.30` is the oldest supported
-version — Svelte 5 included, template expressions and all. The compiler is
-resolved from the project when the plugin module is evaluated. When no compiler
-is installed, or the installed one is older than that, the plugin exports a
-refusal naming the peer instead of its framework, and the run stops before
-instrumentation as a configuration error.
+Svelte is an optional peer dependency; `3.30` is the oldest supported version,
+Svelte 5 included. The compiler is resolved from your project when the plugin
+loads. When no compiler is installed, or the installed one is too old, the run
+stops before instrumentation as a configuration error naming the peer.
 
-Enable the plugin by installing it and adding it to `plugins`; there is no
-discovery by package name.
-
-The format's claim carries the version of the Svelte compiler the plugin
-resolved and owns, rather than a fixed constant. Upgrading that compiler
-therefore invalidates the mutant results an earlier incremental run remembered
-for `.svelte` files, instead of reusing results the new compiler never produced.
+Enable the plugin by installing it and adding it to `plugins`. Its format carries
+the Svelte compiler version it resolved, so upgrading the compiler invalidates the
+mutant results an earlier incremental run remembered for `.svelte` files.

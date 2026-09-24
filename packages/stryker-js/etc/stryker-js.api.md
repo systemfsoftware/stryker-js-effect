@@ -607,6 +607,30 @@ export const FormatRegistryRow: S.Struct<{
 export type FormatRegistryRow = typeof FormatRegistryRow.Type;
 
 // @public (undocumented)
+export interface Framework {
+    // Warning: (ae-forgotten-export) The symbol "FrameworkClaim" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly claim: FrameworkClaim;
+    // (undocumented)
+    readonly disableTypeChecks: (rawContent: string) => FrameworkParseResult<string>;
+    // (undocumented)
+    readonly kind: 'Framework';
+    // (undocumented)
+    readonly name: string;
+    // Warning: (ae-forgotten-export) The symbol "FrameworkContext" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "FrameworkParseResult" needs to be exported by the entry point index.d.mts
+    // Warning: (ae-forgotten-export) The symbol "EmbeddedDocument" needs to be exported by the entry point index.d.mts
+    //
+    // (undocumented)
+    readonly parse: (rawContent: string, context: FrameworkContext) => FrameworkParseResult<EmbeddedDocument>;
+    // (undocumented)
+    readonly print: (document: EmbeddedDocument, context: FrameworkContext) => string;
+    // (undocumented)
+    readonly transform: (document: EmbeddedDocument, context: FrameworkContext) => EmbeddedDocument;
+}
+
+// @public (undocumented)
 export const FrameworkContributionRow: S.Struct<{
     readonly name: S.String;
     readonly formatId: S.String;
@@ -660,10 +684,8 @@ export interface IdGeneratorShape {
 export interface Ignorer {
     // (undocumented)
     readonly name: string;
-    // Warning: (ae-forgotten-export) The symbol "Node_2$1" needs to be exported by the entry point index.d.mts
-    //
     // (undocumented)
-    shouldIgnore(node: Node_2$1, ancestors: readonly Node_2$1[]): string | undefined;
+    shouldIgnore(node: Node, ancestors: readonly Node[]): string | undefined;
 }
 
 // @public (undocumented)
@@ -1070,6 +1092,13 @@ export const MutationTestResultSchema: S.Struct<{
         readonly dependencies: S.optional<S.$Record<S.String, S.String>>;
     }>>;
 }>;
+
+// Warning: (ae-forgotten-export) The symbol "Simplify$1" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "Built$1" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "Node$1$1" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export type Node = Simplify$1<Built$1<Node$1$1>> | Node$1$1;
 
 // @public (undocumented)
 export const optionsPath: (...path: string[]) => string;
@@ -1937,10 +1966,6 @@ export interface WorkerSpawnParams {
     // (undocumented)
     readonly workingDirectory: string;
 }
-
-// Warnings were encountered during analysis:
-//
-// dist/mutation-test.cell-CUVLD5L_.d.mts:153:5 - (ae-forgotten-export) The symbol "Framework" needs to be exported by the entry point index.d.mts
 
 // (No @packageDocumentation comment for this package)
 

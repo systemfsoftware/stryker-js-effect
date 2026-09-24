@@ -8,6 +8,7 @@ import {
   mutationTestCell,
   type MutationTestDone,
   PhaseEntered,
+  PluginsReported,
   RUN_EVENTS_QUEUE_BOUND,
   type RunEnvironmentShape,
   type RunEvent,
@@ -299,6 +300,57 @@ Feature('Framework plugins joining a mutation run')
             expect(state.files['src/math.js']?.language).toBe('javascript')
           })
         ),
+      ),
+    )
+
+    scenario(
+      'When two configured frameworks claim the same file type the one listed first owns it',
+      Gherkin.Do.pipe(
+        Given('a workspace listing a rival framework before the fixture framework, both claiming the same file type')(
+          'workspace',
+          () =>
+            writeWorkspace([]).pipe(
+              Effect.map((directory) =>
+                workspaceOf(
+                  directory,
+                  [pluginUrlOf('rival-framework.fixture.mjs'), pluginUrlOf('valid-framework.fixture.mjs')],
+                  [],
+                )
+              ),
+              Effect.provide(filePorts),
+            ),
+        ),
+        When('a mutation run executes over the workspace')(
+          'observation',
+          (s) => runOver(s.workspace),
+        ),
+        Then('the resolved-formats report gives the shared file type to the first listed framework')((s) => {
+          const formats = s.observation.events.find(
+            (event): event is FormatRegistryResolved => S.is(FormatRegistryResolved)(event),
+          )
+          const row = formats?.rows.find((candidate) => candidate.extension === '.fixture')
+          expect(row?.ownerModule).toBe(pluginUrlOf('rival-framework.fixture.mjs'))
+          expect(formats?.rows.find((candidate) => candidate.extension === '.ts')?.ownerModule).toBe(
+            '@systemfsoftware/stryker-js-instrumenter',
+          )
+        }),
+        And('the plugins report names the later framework and the rival script claim as shadowed')((s) => {
+          const plugins = s.observation.events.find(
+            (event): event is PluginsReported => S.is(PluginsReported)(event),
+          )
+          expect(plugins?.shadowings).toStrictEqual([
+            {
+              extension: '.ts',
+              winner: '@systemfsoftware/stryker-js-instrumenter',
+              loser: pluginUrlOf('rival-framework.fixture.mjs'),
+            },
+            {
+              extension: '.fixture',
+              winner: pluginUrlOf('rival-framework.fixture.mjs'),
+              loser: pluginUrlOf('valid-framework.fixture.mjs'),
+            },
+          ])
+        }),
       ),
     )
 

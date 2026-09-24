@@ -1,7 +1,6 @@
 import { Schema as S } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as HashMap from 'effect/HashMap'
-import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -376,7 +375,7 @@ export function loadPlugins(
   return Effect.gen(function*() {
     const path = yield* Path.Path
     const entrypoints = yield* Effect.forEach(
-      Array.fromIterable(HashSet.fromIterable(pluginDescriptors)),
+      Array.dedupe(pluginDescriptors),
       (specifier) =>
         Effect.flatMap(
           Effect.try({

@@ -236,11 +236,11 @@ describe('the Angular framework plugin', () => {
   })
 
   it('refuses a script tag that never closes instead of passing it through', () => {
-    expect(failedParse(UNCLOSED_SCRIPT_HTML, toolkit()).length).toBeGreaterThan(0)
+    expect(failedParse(UNCLOSED_SCRIPT_HTML, toolkit())).toContain('EOF')
   })
 
   it('refuses type-check disabling for a script tag that never closes', () => {
-    expect(failedTypeCheckFree(UNCLOSED_SCRIPT_HTML).length).toBeGreaterThan(0)
+    expect(failedTypeCheckFree(UNCLOSED_SCRIPT_HTML)).toContain('EOF')
   })
 
   it('ignores script tags with a src attribute and scripts with an unknown type', () => {
@@ -261,7 +261,7 @@ describe('the Angular framework plugin', () => {
 
   it('contains a toolkit that crashes with a non-Error as a parse failure', () => {
     const message = failedParse(SINGLE_SCRIPT_HTML, crashingToolkit('the toolkit exploded'))
-    expect(message.length).toBeGreaterThan(0)
+    expect(message).toBe('the Angular parser reported a failure that is not an Error')
   })
 
   it.each([

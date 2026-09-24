@@ -31,7 +31,8 @@ export {
   checkerRpcFailures,
 } from './metrics.js'
 
-export type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+export type { Framework } from '@systemfsoftware/stryker-framework-interface'
+export type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 export type {
   CoverageData,
   FileDescription,
