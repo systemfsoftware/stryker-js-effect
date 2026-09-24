@@ -164,14 +164,13 @@ export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRunti
       CheckerRuntime,
       Effect.gen(function*() {
         const compiler = yield* TypeScriptCompiler
-        const checker = Effect.gen(function*() {
+        const checker = yield* Effect.gen(function*() {
           const service = makeChecker(options, compiler)
           yield* service.init
           return service
         }).pipe(
           Effect.catchCause((cause) => Effect.fail(cause)),
           Effect.cached,
-          Effect.flatten,
         )
         return CheckerRuntime.of({ checker })
       }),

@@ -10,6 +10,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import type * as Scope from 'effect/Scope'
 import { describe, expect, it } from 'vitest'
 import {
   CheckerRuntime,
@@ -109,19 +110,22 @@ const rigLayers = (
     Effect.map(Effect.orDie(optionsFor(layout)), (options) => CheckerRuntime.layer(options)),
   )
 
-const checkerRig = (layout: FixtureLayout): Effect.Effect<CheckerRig, never, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const runtime = yield* CheckerRuntime
-    const compiler = yield* TypeScriptCompiler
-    const service = yield* Effect.result(runtime.checker)
-    const graph = yield* nodes(compiler)
-    return {
-      layout,
-      runtime,
-      start: Result.map(service, () => undefined),
-      projectFiles: [...HashMap.keys(graph)],
-    }
-  }).pipe(Effect.provide(rigLayers(layout)), Effect.orDie)
+const checkerRig = (
+  layout: FixtureLayout,
+): Effect.Effect<CheckerRig, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
+  Effect.flatMap(Layer.build(rigLayers(layout)), (context) =>
+    Effect.gen(function*() {
+      const runtime = yield* CheckerRuntime
+      const compiler = yield* TypeScriptCompiler
+      const service = yield* Effect.result(runtime.checker)
+      const graph = yield* nodes(compiler)
+      return {
+        layout,
+        runtime,
+        start: Result.map(service, () => undefined),
+        projectFiles: [...HashMap.keys(graph)],
+      }
+    }).pipe(Effect.provideContext(context))).pipe(Effect.orDie)
 
 const withChecker = <A, E, R>(
   rig: CheckerRig,
@@ -184,7 +188,7 @@ describe('The TypeScript checker accepting opted-in concurrency faults', () => {
           inspected[fileName] = true
         })
         expect(rig.layout.definitionFiles.filter((fileName) => inspected[fileName] !== true)).toEqual([])
-      }).pipe(Effect.provide(runLayer)),
+      }).pipe(Effect.scoped, Effect.provide(runLayer)),
     ))
 
   it('every proposed concurrency fault compiles like the code it replaces', () =>
@@ -195,7 +199,7 @@ describe('The TypeScript checker accepting opted-in concurrency faults', () => {
         const results = yield* withChecker(rig, (checker) => checker.check(wires))
         expect(wires.length).toBe(expectedMutantCount())
         expect(problemReports(wires, results)).toEqual([])
-      }).pipe(Effect.provide(runLayer)),
+      }).pipe(Effect.scoped, Effect.provide(runLayer)),
     ))
 
   it('a fault that breaks the typing is refused as a compile problem', () =>
@@ -213,6 +217,6 @@ describe('The TypeScript checker accepting opted-in concurrency faults', () => {
               refusalReports([control], results)),
         })
         expect(refusals).toHaveLength(1)
-      }).pipe(Effect.provide(runLayer)),
+      }).pipe(Effect.scoped, Effect.provide(runLayer)),
     ))
 })
