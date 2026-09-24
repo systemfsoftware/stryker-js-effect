@@ -1389,6 +1389,56 @@ const moduleReferenceText = (
 
 type TypeRenderer<K extends TSType['type']> = (context: PrintContext, node: Extract<TSType, { type: K }>) => string
 
+const tsTypeListText = (ctx: PrintContext, types: readonly TSType[], separator: string): string =>
+  types.map((type) => printTSTypeToString(ctx, type)).join(separator)
+
+const arrayElementTypeText = (ctx: PrintContext, type: TSType): string =>
+  parenthesizedIf(
+    ARRAY_ELEMENT_WRAPPED_KINDS[type.type] === true,
+    printTSTypeToString(ctx, type),
+  )
+
+const printTSTypeLiteral = (ctx: PrintContext, members: readonly TSInterfaceBody['body'][number][]): string =>
+  Boolean.match(members.length === 0, {
+    onTrue: () => '{}',
+    onFalse: () => `{ ${members.map((member) => signatureText(ctx, member)).join('; ')} }`,
+  })
+
+const signatureText = (ctx: PrintContext, member: TSInterfaceBody['body'][number]): string => {
+  const printed = printTSSignatureText(ctx, member)
+  return Boolean.match(printed.endsWith(';'), {
+    onTrue: () => printed.slice(0, -1),
+    onFalse: () => printed,
+  })
+}
+
+const printTupleType = (ctx: PrintContext, elements: TSTupleType['elementTypes']): string =>
+  `[${elements.map((element) => printTupleElement(ctx, element)).join(', ')}]`
+
+const printTupleElement = (ctx: PrintContext, element: TSTupleType['elementTypes'][number]): string =>
+  Match.value(element).pipe(
+    Match.when(isNode('TSRestType'), (n) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`),
+    Match.when(isNode('TSOptionalType'), (n) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`),
+    Match.when(isNode('TSNamedTupleMember'), (n) => printNamedTupleMember(ctx, n)),
+    Match.when(isTSType, (n) => printTSTypeToString(ctx, n)),
+    Match.orElse(() => ''),
+  )
+
+const printNamedTupleMember = (ctx: PrintContext, member: TSNamedTupleMember): string =>
+  `${member.label.name}${flagText(member.optional, '?')}: ${printTupleElement(ctx, member.elementType)}`
+
+const printTypeClause = (ctx: PrintContext, keyword: string, type: TSType | null | undefined): string =>
+  Option.match(Option.fromNullishOr(type), {
+    onSome: (value) => `${keyword}${printTSTypeToString(ctx, value)}`,
+    onNone: () => '',
+  })
+
+const printTypeQueryName = (ctx: PrintContext, node: TSTypeQuery): string =>
+  Match.value(node.exprName).pipe(
+    Match.when(isNode('TSImportType'), (n) => printTSTypeToString(ctx, n)),
+    Match.orElse((n) => printTSTypeName(ctx, n)),
+  )
+
 const TS_TYPE_TEXT: { readonly [K in TSType['type']]: TypeRenderer<K> } = {
   TSAnyKeyword: (_ctx, _n) => 'any',
   TSStringKeyword: (_ctx, _n) => 'string',
