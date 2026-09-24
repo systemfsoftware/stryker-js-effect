@@ -1,12 +1,6 @@
-import { INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter'
+import { InstrumenterContext } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
-import type { StrykerOptions, TestRunnerConfig } from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  type CompleteDryRunResult,
-  type DryRunResult,
-  type MutantRunResult,
-  MutantRunResultSchema,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import { MutantRunOptionsSchema } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -50,7 +44,7 @@ const resultFromExit = (exitCode: number, output: string, timeSpentMs: number): 
 const mutantActivation = (activeMutantId: MutantRunOptions['activeMutant']['id'] | undefined) =>
   Match.value(activeMutantId).pipe(
     Match.when(Predicate.isString, (id) => ({
-      env: { [INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT_ENV_VARIABLE]: id },
+      env: { [InstrumenterContext.ACTIVE_MUTANT_ENV_VARIABLE]: id },
       extendEnv: true as const,
     })),
     Match.orElse(() => undefined),

@@ -5,8 +5,8 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-const ClassifyExitTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ClassifyExit')
-type ClassifyExitTypeId = typeof ClassifyExitTypeId
+const ExitDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ExitDecision')
+type ExitDecisionTypeId = typeof ExitDecisionTypeId
 
 export class ClassifyExitCommand extends S.TaggedClass<ClassifyExitCommand>()('ClassifyExitCommand', {
   pending: S.Array(ExitClass),
@@ -17,19 +17,33 @@ export class ClassifyExitCommand extends S.TaggedClass<ClassifyExitCommand>()('C
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class HighestExitClass extends S.TaggedClass<HighestExitClass>()('HighestExitClass', {
-  exitClass: S.NullOr(ExitClass),
-}) {
-  readonly [ClassifyExitTypeId] = ClassifyExitTypeId
+export class ExitPassed extends S.TaggedClass<ExitPassed>()('ExitPassed', {}) {
+  readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
-export class VerdictExitClass extends S.TaggedClass<VerdictExitClass>()('VerdictExitClass', {
-  verdictClass: S.NullOr(ExitClass),
-}) {
-  readonly [ClassifyExitTypeId] = ClassifyExitTypeId
+export class ExitVerdictFailed extends S.TaggedClass<ExitVerdictFailed>()('ExitVerdictFailed', {}) {
+  readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
-export const ClassifyExitDecision = S.Union([HighestExitClass, VerdictExitClass])
+export class ExitConfigErrored extends S.TaggedClass<ExitConfigErrored>()('ExitConfigErrored', {}) {
+  readonly [ExitDecisionTypeId] = ExitDecisionTypeId
+}
+
+export class ExitRuntimeErrored extends S.TaggedClass<ExitRuntimeErrored>()('ExitRuntimeErrored', {}) {
+  readonly [ExitDecisionTypeId] = ExitDecisionTypeId
+}
+
+export class ExitInternalErrored extends S.TaggedClass<ExitInternalErrored>()('ExitInternalErrored', {}) {
+  readonly [ExitDecisionTypeId] = ExitDecisionTypeId
+}
+
+export const ClassifyExitDecision = S.Union([
+  ExitPassed,
+  ExitVerdictFailed,
+  ExitConfigErrored,
+  ExitRuntimeErrored,
+  ExitInternalErrored,
+])
 export type ClassifyExitDecision = typeof ClassifyExitDecision.Type
 
 const codeOf = (exitClass: ExitClass): number =>
@@ -63,12 +77,13 @@ const verdictExitClass = (score: number | null, breakingThreshold: number | null
     },
   )
 
-const decide = (command: ClassifyExitCommand) =>
-  Result.succeed(
-    ClassifyExitDecision.make({
-      highestClass: highestExitClass(command.pending),
-      verdictClass: verdictExitClass(command.score, command.breakingThreshold),
-    }),
+const decide = (command: ClassifyExitCommand): Result.Result<ClassifyExitDecision, never> =>
+  Match.value(verdictExitClass(command.score, command.breakingThreshold) ?? highestExitClass(command.pending)).pipe(
+    Match.when('VerdictFail', () => Result.succeed(ExitVerdictFailed.make({}))),
+    Match.when('ConfigError', () => Result.succeed(ExitConfigErrored.make({}))),
+    Match.when('RuntimeError', () => Result.succeed(ExitRuntimeErrored.make({}))),
+    Match.when('InternalError', () => Result.succeed(ExitInternalErrored.make({}))),
+    Match.orElse(() => Result.succeed(ExitPassed.make({}))),
   )
 
 export const classifyExit = Workflow.make({

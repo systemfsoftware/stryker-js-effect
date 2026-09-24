@@ -5,7 +5,7 @@ import {
   type MutantRunResult,
   type StrykerOptions,
   type TestRunnerCapabilities,
-  WALL_CLOCK_TIMEOUT_REASON,
+  WallClockTimeoutReason,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
@@ -56,7 +56,7 @@ export const withTimeout: {
       Effect.timeoutOrElse({
         duration: Duration.millis(options.timeout),
         orElse: (): Effect.Effect<DryRunResult> =>
-          Effect.succeed({ status: 'timeout', reason: WALL_CLOCK_TIMEOUT_REASON }),
+          Effect.succeed({ status: 'timeout', reason: WallClockTimeoutReason.literal }),
       }),
     ),
   mutantRun: (options) =>
@@ -64,7 +64,7 @@ export const withTimeout: {
       Effect.timeoutOrElse({
         duration: Duration.millis(options.timeout),
         orElse: (): Effect.Effect<MutantRunResult> =>
-          Effect.succeed({ status: 'timeout', reason: WALL_CLOCK_TIMEOUT_REASON }),
+          Effect.succeed({ status: 'timeout', reason: WallClockTimeoutReason.literal }),
       }),
     ),
 })
@@ -74,9 +74,9 @@ export const invalidatesRunnerPool: {
   (reason: string | undefined): (status: string) => boolean
 } = dual(
   2,
-  (status: string, reason: string | undefined): boolean => status === 'timeout' && reason === WALL_CLOCK_TIMEOUT_REASON,
+  (status: string, reason: string | undefined): boolean =>
+    status === 'timeout' && reason === WallClockTimeoutReason.literal,
 )
-
 const maxRetries = 2
 
 const exhaustedMessage = (cause: Cause.Cause<PooledTestRunnerError>) =>

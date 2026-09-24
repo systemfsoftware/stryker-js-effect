@@ -30,11 +30,10 @@ import {
   type ResolvedModeInput,
 } from './frame-run-event.workflow.js'
 import { RunEventWireLine } from './run-event-wire.schema.js'
-import { RUN_EVENTS_QUEUE_BOUND } from './Run.js'
 import { Heartbeat, HelpRendered, RunEvent, RunFailed, RunStarted, VerdictReached } from './run-event.schema.js'
-import { STREAM_SCHEMA_VERSION } from './StreamVersion.js'
+import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
 import { strykerVersion } from './stryker-package.js'
-import { buildVerdictEnvelope, generateRunId } from './verdict-envelope.js'
+import { RunId, VerdictEnvelope } from './reporting/verdict-envelope.schema.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'
 
@@ -215,7 +214,7 @@ const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOpti
     config,
     framework: { name: 'StrykerJS', version: strykerVersion },
   }
-  const envelope = buildVerdictEnvelope(
+  const envelope = VerdictEnvelope.build(
     report,
     mode.mode,
     mode.signal,
@@ -260,7 +259,7 @@ const emitHelpEnvelope = (stream: RunEventStream, help: string): Effect.Effect<v
   Queue.offer(
     stream.queue,
     HelpRendered.make({
-      schemaVersion: STREAM_SCHEMA_VERSION,
+      schemaVersion: StreamSchemaVersion.literal,
       code: 0,
       help,
     }),
@@ -365,8 +364,8 @@ export const makeRunEventStream = (resolved: ResolvedModeInput) =>
     const stdio = yield* Stdio.Stdio
     const drain = yield* RunEventDrain
     const startedAt = yield* Clock.currentTimeMillis
-    const runId = generateRunId(DateTime.makeUnsafe(startedAt))
-    const queue = yield* Queue.bounded<RunEvent, Cause.Done>(RUN_EVENTS_QUEUE_BOUND)
+    const runId = RunId.generate(DateTime.makeUnsafe(startedAt)).value
+    const queue = yield* Queue.bounded<RunEvent, Cause.Done>(RunEvent.QUEUE_BOUND)
     const stateRef = yield* Ref.make<FramingState>(initialFramingState(resolved))
     const closedRef = yield* Ref.make(false)
     const drainFiberRef = yield* Ref.make(Option.none<Fiber.Fiber<void, never>>())
@@ -375,7 +374,7 @@ export const makeRunEventStream = (resolved: ResolvedModeInput) =>
       Queue.offer(
         queue,
         RunStarted.make({
-          schemaVersion: STREAM_SCHEMA_VERSION,
+          schemaVersion: StreamSchemaVersion.literal,
           runId,
           mode: state.mode,
           signal: state.signal,

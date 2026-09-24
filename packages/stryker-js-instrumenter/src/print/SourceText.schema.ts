@@ -113,13 +113,9 @@ export const SourceText = S.Unknown.pipe(
 )
 export type SourceTextValue = typeof SourceText.Type
 
-function sourceTextOf(value: unknown): string {
+function sourceTextOf<A = unknown>(value: A): string {
   return Option.match(
-    Option.filter(
-      Option.fromNullishOr(value),
-      (candidate): candidate is Ast | ScriptAst | Node =>
-        isAst(candidate) || isPrintableScript(candidate) || isPrinterNode(candidate),
-    ),
+    Option.filter(Option.fromNullishOr(value), isPrintableValue),
     {
       onNone: () => '',
       onSome: (printable) => printableTextOf(printable),
@@ -132,18 +128,29 @@ const AST_SHAPE = ['format', 'root'] as const
 const isAst = (value: unknown): value is Ast =>
   Predicate.isObject(value) && AST_SHAPE.every((key) => key in value)
 
+const SCRIPT_SHAPE = ['format', 'root', 'rawContent'] as const
+
 const isPrintableScript = (value: unknown): value is ScriptAst =>
-  Predicate.isObject(value) && 'format' in value && 'root' in value && 'rawContent' in value
+  Predicate.isObject(value) && SCRIPT_SHAPE.every((key) => key in value)
 
 const isPrinterNode = (value: unknown): value is Node =>
-  Predicate.isObject(value) && 'type' in value && Predicate.isString(value['type'])
+  Predicate.isObject(value) && Predicate.isString(value['type'])
+
+const PRINTABLE_GUARDS = [isAst, isPrintableScript, isPrinterNode]
+
+const isPrintableValue = (candidate: unknown): candidate is Ast | ScriptAst | Node =>
+  PRINTABLE_GUARDS.some((accepts) => accepts(candidate))
 
 const printableTextOf = (value: Ast | ScriptAst | Node) =>
   Match.value(value).pipe(
     Match.when(isPrintableAst, (ast) => Result.getOrElse(printedAstText(ast), () => '')),
+    Match.orElse((node) => scriptOrNodeTextOf(node)),
+  )
+
+const scriptOrNodeTextOf = (value: ScriptAst | Node) =>
+  Match.value(value).pipe(
     Match.when(isPrintableScriptValue, (script) => Result.getOrElse(printedScript(script), () => '')),
-    Match.when(isPrinterNode, (node) => printNode(node)),
-    Match.orElse(() => ''),
+    Match.orElse((node) => printNode(node)),
   )
 
 const isPrintableAst = (value: Ast | ScriptAst | Node): value is Ast => isAst(value)
@@ -2294,7 +2301,7 @@ if (import.meta.vitest !== void 0) {
     Option.getOrElse(
       Option.flatMap(
         Option.fromNullishOr(oxc.parseSync('law.ts', source, { lang, range: true }).program),
-        (program) => S.decodeUnknownOption(SourceText)(program),
+        (program) => S.decodeOption(SourceText)(program),
       ),
       () => printedScriptOf(source, lang),
     )
@@ -2317,7 +2324,7 @@ if (import.meta.vitest !== void 0) {
   it.prop('∀ast_SourceText_∋NodeText≡PrintedProgram', [TS_FRAGMENTS], ([fragments]) => {
     const source = fragments.join('\n')
     const parsed = oxc.parseSync('law.ts', source, { lang: 'ts', range: true })
-    return Option.match(S.decodeUnknownOption(SourceText)(parsed.program), {
+    return Option.match(S.decodeOption(SourceText)(parsed.program), {
       onNone: () => false,
       onSome: (text) => printedScriptOf(text, 'ts') === text,
     })

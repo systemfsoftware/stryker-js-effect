@@ -301,7 +301,7 @@ const printedFile = (file: FileSchemaType, ast: Ast): Result.Result<readonly Fil
   Option.match(Option.filter(Option.some(ast), isAst), {
     onNone: () => Result.succeed([]),
     onSome: (parsed) =>
-      Option.match(S.decodeUnknownOption(SourceText)(parsed), {
+      Option.match(S.decodeOption(SourceText)(parsed), {
         onNone: () => Result.fail(PrintFailed.make({ message: 'Script AST root without start' })),
         onSome: (content) => Result.succeed([{ name: file.name, mutate: file.mutate, content }]),
       }),

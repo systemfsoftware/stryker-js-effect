@@ -103,27 +103,27 @@ const mergeNested = <A = unknown>(
     onSome: (overrideRecord) => mergeRecords(base, overrideRecord),
   })
 
-const mergeKey = <A = unknown>(
+const baseRecordOf = <A = unknown>(
   base: MergedConfigRecord<A>,
-  additions: MergedConfigRecord<A>,
+): Option.Option<MergedConfigRecord<A>> => Option.filter(Option.fromUndefinedOr(base), isConfigRecord)
+
+const mergeKeyInto = <A = unknown>(
+  merged: MergedConfigRecord<A>,
   key: string,
-): A | MergedConfigRecord<A> =>
-  Option.match(Option.fromUndefinedOr(additions[key]), {
-    onNone: () => base[key],
-    onSome: (override) =>
-      Option.match(asConfigRecord(base[key]), {
-        onNone: () => override,
-        onSome: (baseRecord) => mergeNested(baseRecord, override),
-      }),
-  })
+  override: A | MergedConfigRecord<A>,
+): MergedConfigRecord<A> => ({
+  ...merged,
+  [key]: Option.match(baseRecordOf(merged[key]), {
+    onNone: () => override,
+    onSome: (baseRecord) => mergeNested(baseRecord, override),
+  }),
+})
 
 const mergeRecords = <A = unknown>(
   base: MergedConfigRecord<A>,
   overrides: MergedConfigRecord<A>,
-): MergedConfigRecord<A> => {
-  const additions = usableEntries(overrides)
-  return Record.map({ ...usableEntries(base), ...additions }, (_value, key) => mergeKey(base, additions, key))
-}
+): MergedConfigRecord<A> =>
+  Record.reduce(usableEntries(overrides), usableEntries(base), mergeKeyInto)
 
 const configFileNames = (extensions: readonly string[]): readonly string[] =>
   extensions.map((extension) => `stryker.config${extension}`)

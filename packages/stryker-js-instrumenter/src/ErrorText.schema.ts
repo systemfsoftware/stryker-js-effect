@@ -267,11 +267,11 @@ if (import.meta.vitest !== void 0) {
   const errorOf = (parts: ReadonlyArray<string>) =>
     Object.assign(new Error(parts.slice(1).join(' ')), { name: parts[0] ?? 'Error' })
 
-  const errnoOf = (parts: ReadonlyArray<string>) =>
+  const errnoOf = (parts: ReadonlyArray<string>): Error & { readonly code: string; readonly syscall: string } =>
     Object.assign(new Error(parts.slice(2).join(' ')), {
       name: 'Error',
-      code: parts[0] ?? 'ENOENT',
-      syscall: parts[1] ?? 'open',
+      code: parts[0] ?? '',
+      syscall: parts[1] ?? '',
     })
 
   const nestedOf = (parts: ReadonlyArray<string>) =>
@@ -280,12 +280,19 @@ if (import.meta.vitest !== void 0) {
       cause: Object.assign(new Error(parts.slice(2).join(' ')), { name: 'CausedBy' }),
     })
 
-  const absentIsEmpty = (parts: ReadonlyArray<string>) =>
-    [undefined, null, '', 0, false].every((empty) => Option.isNone(S.decodeUnknownOption(ErrorText)(empty)))
+  const mentionsAll = (text: string, needles: ReadonlyArray<string>): boolean => {
+    const present = needles.filter((needle) => needle.length > 0)
+    return present.every((needle) => text.includes(needle))
+  }
+
+  const decodesEmptyAndPresent = (parts: ReadonlyArray<string>) => {
+    const absent = [undefined, null, '', 0, false].every((empty) => Option.isNone(S.decodeOption(ErrorText)(empty)))
+    return absent && Option.isSome(S.decodeOption(ErrorText)(errorOf(parts)))
+  }
 
   it.prop('∀cause_ErrorText_∋NameAndMessage', [WORDS], ([parts]) => {
     const error = errorOf(parts)
-    return Option.match(S.decodeUnknownOption(ErrorText)(error), {
+    return Option.match(S.decodeOption(ErrorText)(error), {
       onNone: () => false,
       onSome: (text) => text.includes(error.name) && text.includes(error.message),
     })
@@ -293,17 +300,17 @@ if (import.meta.vitest !== void 0) {
 
   it.prop('∀text_ErrorText_≡StringPassthrough', [WORDS], ([parts]) => {
     const source = parts.join(' ')
-    return Option.match(S.decodeUnknownOption(ErrorText)(source), {
+    return Option.match(S.decodeOption(ErrorText)(source), {
       onNone: () => source.length === 0,
       onSome: (rendered) => rendered === source,
     })
   })
 
-  it.prop('∀cause_ErrorText_∅ForAbsentCause', [WORDS], ([parts]) => absentIsEmpty(parts))
+  it.prop('∀cause_ErrorText_∅ForAbsent∧∋ForPresent', [WORDS], ([parts]) => decodesEmptyAndPresent(parts))
 
   it.prop('∀cause_ErrorText_∋ErrnoCode', [WORDS], ([parts]) => {
-    const error = errnoOf(parts) as Error & { code: string; syscall: string }
-    return Option.match(S.decodeUnknownOption(ErrorText)(error), {
+    const error = errnoOf(parts)
+    return Option.match(S.decodeOption(ErrorText)(error), {
       onNone: () => false,
       onSome: (text) => text.startsWith(`${error.name}: ${error.code} (${error.syscall})`),
     })
@@ -312,9 +319,9 @@ if (import.meta.vitest !== void 0) {
   it.prop('∀cause_CauseText_∋NestedMessage', [WORDS], ([parts]) => {
     const error = nestedOf(parts)
     const inner = error.cause instanceof Error ? error.cause.message : ''
-    return Option.match(S.decodeUnknownOption(CauseText)(error), {
+    return Option.match(S.decodeOption(CauseText)(error), {
       onNone: () => error.message.length === 0 && inner.length === 0,
-      onSome: (text) => text.includes(error.message) && (inner.length === 0 || text.includes(inner)),
+      onSome: (text) => mentionsAll(text, [error.message, inner]),
     })
   })
 }

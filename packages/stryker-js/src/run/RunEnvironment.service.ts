@@ -20,8 +20,7 @@ import { MutationReporting } from '../mutation-reporting.service.js'
 import { ProjectFiles } from '../project-files.service.js'
 import { Reporter } from '../reporter.service.js'
 import { ReporterOutput } from '../reporter-output.service.js'
-import { RUN_EVENTS_QUEUE_BOUND } from '../Run.js'
-import type { RunEvent } from '../run-event.schema.js'
+import { RunEvent } from '../run-event.schema.js'
 import { RunEvents } from '../run-events.service.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { EnginePorts, RunStageServices } from './StageServices.service.js'
@@ -54,7 +53,7 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
     ): Layer.Layer<RunStageServices, never, EnginePorts> => {
       const eventsLayer: Layer.Layer<RunEvents> = Match.value(events).pipe(
         Match.when(undefined, () =>
-          Layer.effect(RunEvents, Queue.bounded<RunEvent, Cause.Done>(RUN_EVENTS_QUEUE_BOUND))),
+          Layer.effect(RunEvents, Queue.bounded<RunEvent, Cause.Done>(RunEvent.QUEUE_BOUND))),
         Match.orElse((queue) => Layer.succeed(RunEvents, queue)),
       )
       const stageLayer = Layer.mergeAll(

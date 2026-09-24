@@ -32,11 +32,18 @@ const decide = (command: ResolveExitCodeCommand) =>
         ),
         (decision) =>
           ExitCodeResolved.make({
-            code: Option.match(Option.fromNullishOr(decision.highestClass), {
-              onNone: () => 0,
-              onSome: (highest) =>
-                Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)(highest), () => -1),
-            }),
+            code: Match.value(decision).pipe(
+              Match.tag('ExitVerdictFailed', () =>
+                Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)('VerdictFail'), () => -1)),
+              Match.tag('ExitConfigErrored', () =>
+                Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)('ConfigError'), () => -1)),
+              Match.tag('ExitRuntimeErrored', () =>
+                Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)('RuntimeError'), () => -1)),
+              Match.tag('ExitInternalErrored', () =>
+                Option.getOrElse(S.decodeUnknownOption(ExitCodeFromClass)('InternalError'), () => -1)),
+              Match.tag('ExitPassed', () => 0),
+              Match.exhaustive,
+            ),
           }),
       )),
     Match.orElse((present) => Result.succeed(ExitCodeResolved.make({ code: 128 + present }))),

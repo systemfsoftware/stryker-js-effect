@@ -47,7 +47,7 @@ import { closeReporterStage, offerTerminalReport, terminalDrainClass } from './r
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { strykerVersion } from './stryker-package.js'
 import type { TestCoverage } from './test-coverage.schema.js'
-import { buildVerdictEnvelope } from './verdict-envelope.js'
+import { VerdictEnvelope } from './reporting/verdict-envelope.schema.js'
 
 const STRYKER_FRAMEWORK: Readonly<Pick<schema.FrameworkInformation, 'branding' | 'name' | 'version'>> = Object.freeze({
   branding: {
@@ -378,7 +378,7 @@ const determineExitCode = (input: MutationReportingInput) => (metrics: MetricsRe
 
 const emitVerdict = (deps: MutationReportingDeps, input: MutationReportingInput) => (report: schema.MutationTestResult) =>
   Effect.gen(function*() {
-    const envelope = buildVerdictEnvelope(
+    const envelope = VerdictEnvelope.build(
       report,
       input.resolvedMode.mode,
       input.resolvedMode.signal,

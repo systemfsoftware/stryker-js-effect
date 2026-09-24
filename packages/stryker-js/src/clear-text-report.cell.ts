@@ -14,7 +14,7 @@ import * as Result from 'effect/Result'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
-import { ansi } from './Reporter.ansi.js'
+import { AnsiCode, type AnsiColor } from './reporting/ansi.schema.js'
 import {
   ClearTextReportCommand,
   renderClearTextReport,
@@ -80,14 +80,17 @@ const readClearTextReport = (input: {
     }),
   )
 
+const tint = (color: AnsiColor, text: string) =>
+  `${AnsiCode.fields[color].literal}${text}${AnsiCode.fields.reset.literal}`
+
 const TINT_BY_TONE: Record<Tone, (text: string) => string> = {
   'plain': (text) => text,
-  'identifier': ansi.cyan,
-  'emphasis': ansi.yellow,
-  'positive': ansi.green,
-  'warning': ansi.yellow,
-  'negative': ansi.red,
-  'muted': ansi.grey,
+  'identifier': (text) => tint('cyan', text),
+  'emphasis': (text) => tint('yellow', text),
+  'positive': (text) => tint('green', text),
+  'warning': (text) => tint('yellow', text),
+  'negative': (text) => tint('red', text),
+  'muted': (text) => tint('grey', text),
 }
 
 const runsMergeable = (left: ReportSpan, right: ReportSpan): boolean =>

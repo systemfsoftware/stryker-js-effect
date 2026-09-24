@@ -10,7 +10,6 @@ import {
   TestRunnerFailed,
   WallClockTimeoutReason,
 } from '@systemfsoftware/stryker-js-plugin-interface'
-import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'

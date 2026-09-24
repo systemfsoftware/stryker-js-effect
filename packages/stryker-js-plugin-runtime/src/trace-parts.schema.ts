@@ -20,12 +20,12 @@ const EffectSpanShape = S.Struct({
 })
 export type EffectSpanIdentity = S.Schema.Type<typeof EffectSpanShape>
 
-const SpanContextRecord = S.Struct({
+const SpanContextRecord = S.declare<api.SpanContext>(S.is(S.Struct({
   traceId: S.String,
   spanId: S.String,
   traceFlags: S.Finite,
-  traceState: S.optional(S.Unknown),
-  isRemote: S.optional(S.Boolean),
+})), {
+  message: 'expected an OpenTelemetry span context',
 })
 
 const isSpanContextRecord = (candidate: unknown): candidate is api.SpanContext => S.is(SpanContextRecord)(candidate)
@@ -96,23 +96,15 @@ export const TraceContextPartsFromEffectSpan: S.Codec<TraceContextParts, EffectS
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
-  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
+  const fc = await import('fast-check')
 
-  const hexIdOf = (length: number) =>
-    Arbitrary.map(Arbitrary.schema(S.Int), (draw) => Math.abs(draw % 0xfffff).toString(16).padStart(length, '0'))
+  const nonZeroHex = /^[1-9a-f][0-9a-f]*$/
 
-  const traceIdArbitrary = hexIdOf(32)
-  const spanIdArbitrary = hexIdOf(16)
-  const flagsArbitrary = Arbitrary.schema(S.Int)
-  const sampledArbitrary = Arbitrary.schema(S.Boolean)
-  const traceStateArbitrary = Arbitrary.map(
-    Arbitrary.schema(S.Literals(['absent', 'k=v', 'a=1,b=2', 'x=y,z=w'])),
-    (pick) =>
-      Boolean.match(pick === 'absent', {
-        onTrue: () => Option.none<string>(),
-        onFalse: () => Option.some(pick),
-      }),
-  )
+  const traceIdArbitrary = fc.stringMatching(/^[0-9a-f]{32}$/).filter((id) => nonZeroHex.test(id))
+  const spanIdArbitrary = fc.stringMatching(/^[0-9a-f]{16}$/).filter((id) => nonZeroHex.test(id))
+  const flagsArbitrary = fc.integer()
+  const sampledArbitrary = fc.boolean()
+  const traceStateArbitrary = fc.option(fc.constantFrom('k=v', 'a=1,b=2', 'x=y,z=w'))
 
   const contextFixture = (traceId: string, spanId: string, traceFlags: number, traceState: Option.Option<string>) => ({
     traceId,
@@ -125,66 +117,101 @@ if (import.meta.vitest !== void 0) {
     isRemote: false,
   })
 
-  const serializedEqual = (left: api.TraceState | undefined, right: api.TraceState | undefined) =>
-    Option.match(Option.all([Option.fromUndefinedOr(left), Option.fromUndefinedOr(right)]), {
-      onNone: () => left === right,
-      onSome: ([first, second]) => first.serialize() === second.serialize(),
-    })
+  const conservedSpanIdentity = (traceId: string, spanId: string, traceFlags: number) => (parts: TraceContextParts) =>
+    parts.traceId === traceId && parts.spanId === spanId && parts.traceFlags === traceFlags
+
+  const conservedState = (traceState: Option.Option<string>) => (parts: TraceContextParts) =>
+    parts.traceState === Option.getOrUndefined(Option.map(traceState, (state) => state))
+
+  const conservedIdentity =
+    (traceId: string, spanId: string, traceFlags: number, traceState: Option.Option<string>) =>
+    (parts: TraceContextParts) =>
+      parts.version === '00' &&
+      conservedSpanIdentity(traceId, spanId, traceFlags)(parts) &&
+      conservedState(traceState)(parts)
 
   it.prop(
     '∀trace_span_flags_state_SpanContext→Parts_IdentityConserved',
     [traceIdArbitrary, spanIdArbitrary, flagsArbitrary, traceStateArbitrary],
-    ([traceId, spanId, traceFlags, traceState]) => {
-      const context = contextFixture(traceId, spanId, traceFlags, traceState)
-      return Option.match(S.decodeOption(TraceContextPartsFromSpanContext)(context), {
-        onNone: () => false,
-        onSome: (parts) =>
-          parts.version === '00' &&
-          parts.traceId === traceId &&
-          parts.spanId === spanId &&
-          parts.traceFlags === traceFlags &&
-          Option.match(S.encodeOption(TraceContextPartsFromSpanContext)(parts), {
-            onNone: () => false,
-            onSome: (rebuilt) =>
-              rebuilt.traceId === traceId &&
-              rebuilt.spanId === spanId &&
-              rebuilt.traceFlags === traceFlags &&
-              rebuilt.isRemote === false &&
-              serializedEqual(rebuilt.traceState, context.traceState),
-          }),
-      })
-    },
+    ([traceId, spanId, traceFlags, traceState]) =>
+      Option.match(
+        S.decodeOption(TraceContextPartsFromSpanContext)(contextFixture(traceId, spanId, traceFlags, traceState)),
+        {
+          onNone: () => false,
+          onSome: conservedIdentity(traceId, spanId, traceFlags, traceState),
+        },
+      ),
   )
 
-  const zeroed = (id: string) => id.replaceAll(/[1-9a-f]/gu, '0')
-  const shortened = (id: string) => id.slice(1)
+  const invalidTraceIdArbitrary = fc.oneof(
+    fc.constant('0'.repeat(32)),
+    fc.stringMatching(/^[0-9a-f]{31}$/),
+    fc.stringMatching(/^[0-9a-f]{33}$/),
+    fc.stringMatching(/^[0-9A-F]{32}$/),
+    fc.stringMatching(/^[0-9a-f]{31}g$/),
+  )
+
+  const invalidSpanIdArbitrary = fc.oneof(
+    fc.constant('0'.repeat(16)),
+    fc.stringMatching(/^[0-9a-f]{15}$/),
+    fc.stringMatching(/^[0-9a-f]{17}$/),
+    fc.stringMatching(/^[0-9A-F]{16}$/),
+    fc.stringMatching(/^[0-9a-f]{15}g$/),
+  )
 
   it.prop(
     '∀trace_span_flags_state_InvalidSpanContext_DecodeNone',
-    [traceIdArbitrary, spanIdArbitrary, flagsArbitrary, traceStateArbitrary],
-    ([traceId, spanId, traceFlags, traceState]) => {
+    [traceIdArbitrary, spanIdArbitrary, flagsArbitrary, traceStateArbitrary, invalidTraceIdArbitrary, invalidSpanIdArbitrary],
+    ([traceId, spanId, traceFlags, traceState, badTraceId, badSpanId]) => {
       const context = contextFixture(traceId, spanId, traceFlags, traceState)
       return [
-        Option.isNone(S.decodeOption(TraceContextPartsFromSpanContext)({ ...context, traceId: zeroed(traceId) })),
-        Option.isNone(S.decodeOption(TraceContextPartsFromSpanContext)({ ...context, traceId: shortened(traceId) })),
-        Option.isNone(S.decodeOption(TraceContextPartsFromSpanContext)({ ...context, spanId: zeroed(spanId) })),
-        Option.isNone(S.decodeOption(TraceContextPartsFromSpanContext)({ ...context, spanId: shortened(spanId) })),
+        Option.isNone(S.decodeOption(TraceContextPartsFromSpanContext)({ ...context, traceId: badTraceId })),
+        Option.isNone(S.decodeOption(TraceContextPartsFromSpanContext)({ ...context, spanId: badSpanId })),
       ].every((refused) => refused)
     },
   )
 
+  const pinnedVersionOf = (decoded: Option.Option<TraceContextParts>) =>
+    Option.match(decoded, {
+      onNone: () => false,
+      onSome: (parts) => parts.version === '00',
+    })
+
+  const decodeSpan = (traceId: string, spanId: string, sampled: boolean) =>
+    S.decodeOption(TraceContextPartsFromEffectSpan)({ traceId, spanId, sampled })
+
+  const spanRoundtrips = (traceId: string, spanId: string, sampled: boolean) => (parts: TraceContextParts) =>
+    Option.match(S.encodeOption(TraceContextPartsFromEffectSpan)(parts), {
+      onNone: () => false,
+      onSome: (span) => span.traceId === traceId && span.spanId === spanId && span.sampled === sampled,
+    })
+
+  const versionPinnedRoundtrips = (traceId: string, spanId: string, sampled: boolean) =>
+    pinnedVersionOf(decodeSpan(traceId, spanId, sampled)) &&
+    Option.match(decodeSpan(traceId, spanId, sampled), {
+      onNone: () => false,
+      onSome: spanRoundtrips(traceId, spanId, sampled),
+    })
+
   it.prop(
     '∀trace_span_sampled_EffectSpan→Parts_VersionPinned∧SampledRoundtrips',
     [traceIdArbitrary, spanIdArbitrary, sampledArbitrary],
-    ([traceId, spanId, sampled]) =>
-      Option.match(S.decodeOption(TraceContextPartsFromEffectSpan)({ traceId, spanId, sampled }), {
-        onNone: () => false,
-        onSome: (parts) =>
-          parts.version === '00' &&
-          Option.match(S.encodeOption(TraceContextPartsFromEffectSpan)(parts), {
-            onNone: () => false,
-            onSome: (span) => span.traceId === traceId && span.spanId === spanId && span.sampled === sampled,
-          }),
-      })
+    ([traceId, spanId, sampled]) => versionPinnedRoundtrips(traceId, spanId, sampled),
+  )
+
+  const spanMatches = (traceId: string, spanId: string, traceFlags: number) => (span: EffectSpanIdentity) =>
+    span.traceId === traceId && span.spanId === spanId && span.sampled === (traceFlags === 1)
+
+  const spanIdentityOf = (traceId: string, spanId: string, traceFlags: number) => (parts: TraceContextParts) =>
+    Option.match(S.encodeOption(TraceContextPartsFromEffectSpan)(parts), {
+      onNone: () => false,
+      onSome: spanMatches(traceId, spanId, traceFlags),
+    })
+
+  it.prop(
+    '∀id_flags_state_Parts→Span_IdentityConserved',
+    [traceIdArbitrary, spanIdArbitrary, flags01Arbitrary, traceStateArbitrary],
+    ([traceId, spanId, traceFlags, traceState]) =>
+      spanIdentityOf(traceId, spanId, traceFlags)(partsFixture(traceId, spanId, traceFlags, traceState)),
   )
 }

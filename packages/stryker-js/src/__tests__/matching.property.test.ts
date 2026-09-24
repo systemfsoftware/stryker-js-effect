@@ -36,26 +36,39 @@ const BASELINE_DIST_PATH = '/tmp/refactor/baseline/packages/stryker-js/dist/inde
 
 const baselinePresent = existsSync(`${BASELINE_SOURCE_DIR}/glob-match.ts`) && existsSync(BASELINE_DIST_PATH)
 
-const baselineMatchingOf = async (): Promise<BaselineMatching> => {
-  const globMatch = await import(pathToFileURL(`${BASELINE_SOURCE_DIR}/glob-match.ts`).href)
-  const dist = await import(pathToFileURL(BASELINE_DIST_PATH).href)
-  return {
-    createFileMatcher: dist.createFileMatcher,
-    matchesFile: dist.matchesFile,
-    toRelativeNormalizedFileName: dist.toRelativeNormalizedFileName,
-    compileIgnoreRule: globMatch.compileIgnoreRule,
-  }
+class BaselineOmission extends S.TaggedError<BaselineOmission>()('BaselineOmission', {
+  cause: S.optional(S.Unknown),
+}) {}
+
+interface BaselineGlobMatchModule {
+  readonly compileIgnoreRule: (pattern: string) => BaselineIgnoreRule
 }
 
-const pathServiceOf = () =>
-  Effect.runSync(
-    Effect.provide(
-      Effect.gen(function*() {
-        return yield* Path.Path
-      }),
-      Path.layer,
+interface BaselineDistModule {
+  readonly createFileMatcher: BaselineMatching['createFileMatcher']
+  readonly matchesFile: BaselineMatching['matchesFile']
+  readonly toRelativeNormalizedFileName: BaselineMatching['toRelativeNormalizedFileName']
+}
+
+const baselineMatchingOf = (): Effect.Effect<BaselineMatching, BaselineOmission> =>
+  Effect.zipWith(
+    Effect.promise(
+      (): Promise<BaselineGlobMatchModule> => import(pathToFileURL(`${BASELINE_SOURCE_DIR}/glob-match.ts`).href),
     ),
+    Effect.promise((): Promise<BaselineDistModule> => import(pathToFileURL(BASELINE_DIST_PATH).href)),
+    (globMatchModule, distModule): BaselineMatching => ({
+      createFileMatcher: distModule.createFileMatcher,
+      matchesFile: distModule.matchesFile,
+      toRelativeNormalizedFileName: distModule.toRelativeNormalizedFileName,
+      compileIgnoreRule: globMatchModule.compileIgnoreRule,
+    }),
   )
+
+const baselineEffectOf: Effect.Effect<BaselineMatching, BaselineOmission> = Effect.cached(baselineMatchingOf()).pipe(
+  Effect.flatten,
+)
+const pathServiceOf = (): Path.Path =>
+  Effect.runSync(Effect.provide(Path.Path, Path.layer))
 
 const plainSegmentArb = Arbitrary.schema(
   S.String.check(S.isPattern(/^[a-z][a-z0-9._-]{0,7}$/)),
@@ -86,58 +99,61 @@ const fileNameArb = Arbitrary.schema(S.Union([S.Undefined, S.String]))
 const basePathArb = Arbitrary.schema(S.String.check(S.isPattern(/^\/base(\/[a-z]{1,4}){0,2}$/)))
 
 describe.skipIf(!baselinePresent)('matching old-vs-new', () => {
-  it.prop(
+  it.effect.prop(
     '∀fpn_FileMatcher_≡PreRefactorCreateFileMatcher',
     [pathArb, patternOrBooleanArb, Arbitrary.schema(S.Boolean)],
-    async ([fileName, pattern, allowHiddenFiles]) => {
-      const baseline = await baselineMatchingOf()
-      const pathService = pathServiceOf()
-      const expected = baseline.createFileMatcher(pattern, pathService, allowHiddenFiles)(fileName)
-      const actual = FileMatcher.make({ pattern, allowHiddenFiles }).matches(pathService, fileName)
-      return actual === expected
-    },
+    ([fileName, pattern, allowHiddenFiles]) =>
+      Effect.gen(function*() {
+        const baseline = yield* baselineEffectOf
+        const pathService = pathServiceOf()
+        const expected = baseline.createFileMatcher(pattern, pathService, allowHiddenFiles)(fileName)
+        const actual = FileMatcher.make({ pattern, allowHiddenFiles }).matches(pathService, fileName)
+        return actual === expected
+      }),
   )
 
-  it.prop(
+  it.effect.prop(
     '∀fpn_MatchesFile_≡PreRefactorMatchesFile',
     [patternOrBooleanArb, pathArb, Arbitrary.schema(S.Boolean)],
-    async ([pattern, fileName, allowHiddenFiles]) => {
-      const baseline = await baselineMatchingOf()
-      const pathService = pathServiceOf()
-      const expected = baseline.matchesFile(pattern, fileName, pathService, allowHiddenFiles)
-      const actual = FileMatcher.make({ pattern, allowHiddenFiles }).matches(pathService, fileName)
-      return actual === expected
-    },
+    ([pattern, fileName, allowHiddenFiles]) =>
+      Effect.gen(function*() {
+        const baseline = yield* baselineEffectOf
+        const pathService = pathServiceOf()
+        const expected = baseline.matchesFile(pattern, fileName, pathService, allowHiddenFiles)
+        const actual = FileMatcher.make({ pattern, allowHiddenFiles }).matches(pathService, fileName)
+        return actual === expected
+      }),
   )
 
-  it.prop('∀pat_IgnoreRule_≡PreRefactorCompileIgnoreRule', [patternArb, pathArb], async ([pattern, candidate]) => {
-    const baseline = await baselineMatchingOf()
-    const expected = baseline.compileIgnoreRule(pattern)
-    const actual = Effect.runSync(IgnoreRule.decode(pattern))
-    return expected.negate === actual.negate && expected.matches(candidate) === actual.matches(candidate) &&
-      expected.matchesPrefix(candidate) === actual.matchesPrefix(candidate)
-  })
+  it.effect.prop('∀pat_IgnoreRule_≡PreRefactorCompileIgnoreRule', [patternArb, pathArb], ([pattern, candidate]) =>
+    Effect.gen(function*() {
+      const baseline = yield* baselineEffectOf
+      const expected = baseline.compileIgnoreRule(pattern)
+      const actual = yield* IgnoreRule.decode(pattern)
+      return expected.negate === actual.negate && expected.matches(candidate) === actual.matches(candidate) &&
+        expected.matchesPrefix(candidate) === actual.matchesPrefix(candidate)
+    }))
 
-  it.prop(
+  it.effect.prop(
     '∀fnbp_RelativeNormalizedFileName_≡PreRefactorToRelativeNormalizedFileName',
     [fileNameArb, basePathArb],
-    async ([fileName, basePath]) => {
-      const baseline = await baselineMatchingOf()
-      const expected = baseline.toRelativeNormalizedFileName(fileName, basePath)
-      return Result.match(S.decodeResult(RelativeNormalizedFileName)({ fileName, basePath }), {
-        onFailure: () => false,
-        onSuccess: (actual) => actual === expected,
-      })
-    },
+    ([fileName, basePath]) =>
+      Effect.gen(function*() {
+        const baseline = yield* baselineEffectOf
+        const expected = baseline.toRelativeNormalizedFileName(fileName, basePath)
+        const decoded = yield* S.decodeEffect(RelativeNormalizedFileName)({ fileName, basePath })
+        return decoded === expected
+      }),
   )
 
-  it.prop(
+  it.effect.prop(
     '∀fnbp_RelativeNormalizedFileName_ForbidsEncoding',
     [fileNameArb, basePathArb],
-    async ([fileName, basePath]) => {
-      const baseline = await baselineMatchingOf()
-      const decoded = baseline.toRelativeNormalizedFileName(fileName, basePath)
-      return Result.isFailure(S.encodeResult(RelativeNormalizedFileName)(decoded))
-    },
+    ([fileName, basePath]) =>
+      Effect.gen(function*() {
+        const baseline = yield* baselineEffectOf
+        const decoded = baseline.toRelativeNormalizedFileName(fileName, basePath)
+        return Result.isFailure(S.encodeResult(RelativeNormalizedFileName)(decoded))
+      }),
   )
 })

@@ -45,7 +45,7 @@ import {
 import type { ReadProjectDone } from '../read-project.cell.js'
 import type { Project } from '../Project.schema.js'
 import { Reporter } from '../reporter.service.js'
-import { ansi } from '../Reporter.ansi.js'
+import { AnsiCode } from '../reporting/ansi.schema.js'
 import {
   attachReporterFactories,
   type AttachReporterInput,
@@ -403,7 +403,7 @@ const announceSummary = (env: RunEnvironmentShape, summary: string) =>
 
 const announceHumanSummary = (allowConsoleColors: boolean, summary: string) =>
   Boolean.match(allowConsoleColors, {
-    onTrue: () => Console.log(ansi.green(summary)),
+    onTrue: () => Console.log(`${AnsiCode.fields.green.literal}${summary}${AnsiCode.fields.reset.literal}`),
     onFalse: () => Console.log(summary),
   })
 

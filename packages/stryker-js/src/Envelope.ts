@@ -24,7 +24,7 @@ import {
   type RunOutcomeError,
 } from './classify-run-outcome.workflow.js'
 import { highestExitClass } from './exit-classification.js'
-import { STREAM_SCHEMA_VERSION } from './StreamVersion.js'
+import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
 
 const CONFIG_CODE = 2
 const UNKNOWN_FAILURE = 'Unknown failure'
@@ -477,7 +477,7 @@ export const shapeEnvelope = dual<
   (captured: string) => (error: FailedRunOutcome) => ErrorEnvelope,
   (error: FailedRunOutcome, captured: string) => ErrorEnvelope
 >(2, (error, captured) => ({
-  schemaVersion: STREAM_SCHEMA_VERSION,
+  schemaVersion: StreamSchemaVersion.literal,
   code: runOutcomeCode(Result.fail(error)),
   error: errorText(error, captured),
   remediation: remediationText(error),

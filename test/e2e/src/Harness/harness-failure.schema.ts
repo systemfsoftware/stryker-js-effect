@@ -64,7 +64,16 @@ export class PackFailure extends Schema.TaggedError<PackFailure>()('PackFailure'
   }
 }
 
+export class BlessRefused extends Schema.TaggedError<BlessRefused>()('BlessRefused', {
+  reason: Schema.String,
+}) {
+  override get message(): string {
+    return this.reason
+  }
+}
+
 export type HarnessFailure =
+  | BlessRefused
   | ExitFailure
   | FixtureMissingFailure
   | GuestJobFailure

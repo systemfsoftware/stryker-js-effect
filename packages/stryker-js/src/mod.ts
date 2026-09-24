@@ -253,13 +253,13 @@ export type { ConfigInvocation, LoadedConfig, ValidationSchemaDocument } from '.
 export type { ModeSignal, OutputMode, ResolvedMode } from './output-mode.schema.js'
 
 export {
-  ACTIONABLE_STATUSES,
-  buildVerdictEnvelope,
-  generateRunId,
-  isActionableStatus,
-  VERDICT_ENVELOPE_SCHEMA_VERSION,
-} from './verdict-envelope.js'
-export type { VerdictCounts, VerdictEnvelope, VerdictMutant, VerdictThresholds } from './verdict-envelope.js'
+  ActionableStatus,
+  RunId,
+  VerdictEnvelope,
+  VerdictMutant,
+  VerdictThresholds,
+} from './reporting/verdict-envelope.schema.js'
+export type { VerdictCounts } from './reporting/verdict-envelope.schema.js'
 
 export { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 

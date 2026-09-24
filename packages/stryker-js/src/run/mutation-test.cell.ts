@@ -155,12 +155,18 @@ const rememberedCoverage = (entry: RememberedMutantResult): {
   ...rememberedKilledBy(entry),
 })
 
-const rememberedResultOf = (mutant: Mutant, entry: RememberedMutantResult): RunMutantResult =>
+const REMEMBERED_REASON = 'Remembered'
+
+const rememberedResultOf = (
+  mutant: Mutant,
+  entry: RememberedMutantResult,
+  reportLocation: reportSchema.Location,
+): RunMutantResult =>
   Object.assign(
     {},
     mutant,
     {
-      location: toSchemaLocation(mutant.location),
+      location: reportLocation,
       status: entry.status,
       statusReason: REMEMBERED_REASON,
       testsCompleted: entry.testsCompleted,
@@ -168,19 +174,26 @@ const rememberedResultOf = (mutant: Mutant, entry: RememberedMutantResult): RunM
     rememberedCoverage(entry),
   )
 
+const mutantsByIdOf = (mutants: readonly Mutant[]) => new Map(mutants.map((mutant) => [mutant.id, mutant] as const))
+
+const rememberedOf = (mutant: Mutant, entry: RememberedMutantResult) =>
+  Effect.map(Effect.orDie(S.decodeEffect(ReportLocationFromMutant)(mutant.location)), (reportLocation) =>
+    rememberedResultOf(mutant, entry, reportLocation))
 const rememberedResultsOf = (
   mutants: readonly Mutant[],
   remembered: readonly RememberedMutantResult[],
-): RunMutantResult[] => {
-  const byId = new Map(mutants.map((mutant) => [mutant.id, mutant] as const))
-  return remembered.flatMap((entry) =>
-    Option.match(Option.fromNullishOr(byId.get(entry.mutantId)), {
-      onNone: (): RunMutantResult[] => [],
-      onSome: (mutant) => [rememberedResultOf(mutant, entry)],
-    })
+) => {
+  const byId = mutantsByIdOf(mutants)
+  return Effect.forEach(
+    remembered.flatMap((entry) =>
+      Option.match(Option.fromUndefinedOr(byId.get(entry.mutantId)), {
+        onNone: (): readonly [Mutant, RememberedMutantResult][] => [],
+        onSome: (mutant) => [[mutant, entry] as const],
+      })),
+    ([mutant, entry]) => rememberedOf(mutant, entry),
+    { concurrency: 'inherit' },
   )
 }
-
 const VALID_MUTANT_STATUSES = [
   'Killed',
   'Survived',
@@ -230,6 +243,303 @@ const workerSpawnOf = (
     (missing) =>
       StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
   )
+
+const ZERO = 0
+
+const calculateTotalTime = (testResults: Iterable<TestResult>) =>
+  [...testResults].reduce((acc, test) => acc + test.timeSpentMs, 0)
+
+const toTestIds = (testResults: Iterable<TestResult>) => [...testResults].map((test) => test.id)
+
+const hitsRecordOf = (testCoverage: TestCoverage) =>
+  Object.fromEntries(MutableHashMap.entries(testCoverage.hitsByMutantId))
+
+const testsByMutantIdRecordOf = (testCoverage: TestCoverage) =>
+  Object.fromEntries(
+    [...MutableHashMap.entries(testCoverage.testsByMutantId)].map(([mutantId, tests]) => [mutantId, toTestIds(tests)]),
+  )
+
+const testTimeRecordOf = (testCoverage: TestCoverage) =>
+  Object.fromEntries([...MutableHashMap.entries(testCoverage.testsById)].map(([id, result]) => [id, result.timeSpentMs]))
+
+const planCommandOf = (
+  mutants: readonly Mutant[],
+  testCoverage: TestCoverage,
+  options: {
+    readonly disableBail: boolean
+    readonly timeoutMS: number
+    readonly timeoutFactor: number
+    readonly ignoreStatic: boolean
+  },
+  timeOverheadMS: number,
+  globalTestFilter: string[] | undefined,
+  sandboxFileByName: Record<string, string>,
+) =>
+  MutantTestPlanCommand.make({
+    mutants: [...mutants],
+    timeOverheadMS,
+    timeSpentAllTests: calculateTotalTime(MutableHashMap.values(testCoverage.testsById)),
+    hitsByMutantId: hitsRecordOf(testCoverage),
+    testsByMutantId: testsByMutantIdRecordOf(testCoverage),
+    testTimeById: testTimeRecordOf(testCoverage),
+    options,
+    sandboxFileByName,
+    ...Option.match(Option.fromUndefinedOr(testCoverage.staticCoverage), {
+      onNone: () => ({}),
+      onSome: (staticCoverage) => ({ staticCoverage }),
+    }),
+    ...Option.match(Option.fromUndefinedOr(globalTestFilter), {
+      onNone: () => ({}),
+      onSome: (testFilter) => ({ globalTestFilter: testFilter }),
+    }),
+  })
+
+const materializeMutant = (
+  original: Mutant,
+  decided: {
+    readonly status?: Mutant['status'] | undefined
+    readonly statusReason?: string | undefined
+    readonly static?: boolean | undefined
+    readonly coveredBy?: readonly string[] | undefined
+  },
+) =>
+  Mutant.make({
+    id: original.id,
+    fileName: original.fileName,
+    mutatorName: original.mutatorName,
+    replacement: original.replacement,
+    location: original.location,
+    ...firstDefined({
+      status: firstDefined(decided.status, original.status),
+      statusReason: firstDefined(decided.statusReason, original.statusReason),
+      static: firstDefined(decided.static, original.static),
+      coveredBy: firstDefined(decided.coveredBy, original.coveredBy),
+      testsCompleted: original.testsCompleted,
+      description: original.description,
+    }),
+  })
+
+const decidePlans = (
+  input: Readonly<{
+    mutants: readonly Mutant[]
+    testCoverage: TestCoverage
+    options: {
+      readonly disableBail: boolean
+      readonly timeoutMS: number
+      readonly timeoutFactor: number
+      readonly ignoreStatic: boolean
+    }
+    timeOverheadMS: number
+    globalTestFilter: string[] | undefined
+    sandboxFileByName: Record<string, string>
+  }>,
+) => {
+  const command = planCommandOf(
+    input.mutants,
+    input.testCoverage,
+    input.options,
+    input.timeOverheadMS,
+    input.globalTestFilter,
+    input.sandboxFileByName,
+  )
+  const byId = new Map(input.mutants.map((mutant) => [mutant.id, mutant] as const))
+  return Effect.flatMap(
+    Effect.fromResult(planMutantTests(command)).pipe(
+      Effect.mapError((failure) => StageError.make({ stage: 'mutationTest', reason: failure.reason })),
+    ),
+    (decisions) =>
+      Effect.forEach(decisions, (plan) =>
+        Option.match(Option.fromUndefinedOr(byId.get(plan.mutantId)), {
+          onNone: () =>
+            Effect.die(UnknownPlannedMutant.make({
+              mutantId: plan.mutantId,
+              message: `planner returned an unknown mutant id: ${plan.mutantId}`,
+            })),
+          onSome: (mutant) =>
+            Match.tag(plan, {
+              PlannedRunMutant: (run) =>
+                Effect.succeed({
+                  plan: 'Run' as const,
+                  mutant: materializeMutant(mutant, run),
+                  netTime: run.netTime,
+                  runOptions: {
+                    activeMutant: materializeMutant(mutant, run),
+                    mutantActivation: run.runOptions.mutantActivation,
+                    timeout: run.runOptions.timeout,
+                    sandboxFileName: run.runOptions.sandboxFileName,
+                    disableBail: run.runOptions.disableBail,
+                    reloadEnvironment: run.runOptions.reloadEnvironment,
+                    ...Option.match(Option.fromUndefinedOr(run.runOptions.testFilter), {
+                      onNone: () => ({}),
+                      onSome: (testFilter) => ({ testFilter }),
+                    }),
+                    ...Option.match(Option.fromUndefinedOr(run.runOptions.hitLimit), {
+                      onNone: () => ({}),
+                      onSome: (hitLimit) => ({ hitLimit }),
+                    }),
+                  },
+                }),
+              PlannedEarlyResultMutant: (early) =>
+                Effect.succeed({
+                  plan: 'EarlyResult' as const,
+                  mutant: materializeMutant(mutant, early),
+                }),
+            }),
+        })),
+  )
+}
+
+const isRunPlan = (plan: MutantTestPlan): plan is RunPlan => plan.plan === 'Run'
+
+const earlyResultOf = (plan: Extract<MutantTestPlan, { readonly plan: 'EarlyResult' }>) =>
+  Effect.map(Effect.orDie(S.decodeEffect(ReportLocationFromMutant)(plan.mutant.location)), (location) =>
+    Object.assign({}, plan.mutant, {
+      location,
+      status: plan.mutant.status ?? 'Ignored',
+    }))
+
+const partitionRunPlans = (plans: readonly MutantTestPlan[]) => ({
+  runPlans: plans.filter(isRunPlan),
+  earlyResults: plans.filter((plan): plan is Extract<MutantTestPlan, { readonly plan: 'EarlyResult' }> =>
+    !isRunPlan(plan)),
+})
+
+const partitionRunPlansEffect = (plans: readonly MutantTestPlan[]) =>
+  Effect.map(
+    Effect.forEach(partitionRunPlans(plans).earlyResults, earlyResultOf),
+    (earlyResults) => ({ runPlans: partitionRunPlans(plans).runPlans, earlyResults }),
+  )
+
+const byReloadEnvironment = (left: RunPlan, right: RunPlan) =>
+  Number(left.runOptions.reloadEnvironment) - Number(right.runOptions.reloadEnvironment)
+
+const sortRunPlans = (plans: readonly RunPlan[]) => [...plans].sort(byReloadEnvironment)
+
+const previousFilesFieldOf = (report: { readonly files: unknown }) =>
+  Option.getOrElse(
+    S.decodeUnknownResult(PreviousFilesSchema)(report.files),
+    (): S.Schema.Type<typeof PreviousFilesSchema> => ({}),
+  )
+
+const previousFilesOf = (rawReport: unknown) =>
+  Predicate.isObject(rawReport) && Predicate.hasProperty(rawReport, 'files')
+    ? previousFilesFieldOf(rawReport)
+    : {}
+
+const previousTestFilesFieldOf = (report: { readonly testFiles: unknown }) =>
+  Option.getOrElse(
+    S.decodeUnknownResult(PreviousTestFilesSchema)(report.testFiles),
+    (): S.Schema.Type<typeof PreviousTestFilesSchema> => ({}),
+  )
+
+const previousTestFilesOf = (rawReport: unknown) =>
+  Predicate.isObject(rawReport) && Predicate.hasProperty(rawReport, 'testFiles')
+    ? previousTestFilesFieldOf(rawReport)
+    : {}
+
+const hasTestFileName = (result: TestResult): result is TestResult & { readonly fileName: string } =>
+  result.fileName !== undefined
+
+const withFileEntry = (
+  byFile: Record<string, string[]>,
+  file: string,
+  id: string,
+) => ({
+  ...byFile,
+  [file]: [...(byFile[file] ?? []), id] as string[],
+})
+
+const testIdsByRelativeFileOf = (testCoverage: TestCoverage) =>
+  Effect.forEach([...MutableHashMap.values(testCoverage.testsById)].filter(hasTestFileName), (result) =>
+    Effect.orDie(
+      S.decodeEffect(RelativeNormalizedFileName)({ fileName: result.fileName, basePath: '' }),
+    ).pipe(Effect.map((file) => [file, result.id] as const))).pipe(
+    Effect.map((pairs) => pairs.reduce(withFileEntry, {} as Record<string, string[]>)),
+  )
+
+const coveredTestFilesOf = (tests: Iterable<TestResult>) =>
+  Effect.forEach([...tests].filter(hasTestFileName), (test) =>
+    Effect.orDie(
+      S.decodeEffect(RelativeNormalizedFileName)({ fileName: test.fileName, basePath: '' }),
+    )).pipe(Effect.map((files) => [...new Set(files)]))
+
+const coveringTestFilesByMutantIdOf = (testCoverage: TestCoverage) =>
+  Effect.forEach(
+    [...MutableHashMap.entries(testCoverage.testsByMutantId)],
+    ([mutantId, tests]) => Effect.map(coveredTestFilesOf(tests), (files) => [mutantId, files] as const),
+  ).pipe(Effect.map((pairs) => Object.fromEntries(pairs)))
+
+const relativeFileByMutantIdOf = (currentMutants: readonly Mutant[], basePath: string) =>
+  Effect.forEach(currentMutants, (mutant) =>
+    Effect.orDie(
+      S.decodeEffect(RelativeNormalizedFileName)({ fileName: mutant.fileName, basePath }),
+    ).pipe(Effect.map((file) => [mutant.id, file] as const))).pipe(
+    Effect.map((pairs) => Object.fromEntries(pairs)),
+  )
+
+const incrementalDiffCommandOf = (
+  currentMutants: readonly Mutant[],
+  testCoverage: TestCoverage,
+  incrementalReport: unknown,
+  currentRelativeFiles: Record<string, string>,
+  basePath: string,
+  force: boolean,
+) =>
+  Effect.gen(function*() {
+    const relativeFileByMutantId = yield* relativeFileByMutantIdOf(currentMutants, basePath)
+    const testIdsByRelativeFile = yield* testIdsByRelativeFileOf(testCoverage)
+    const coveringTestFilesByMutantId = yield* coveringTestFilesByMutantIdOf(testCoverage)
+    return IncrementalDiffCommand.make({
+      currentMutants: [...currentMutants],
+      relativeFileByMutantId,
+      previousFiles: previousFilesOf(incrementalReport),
+      previousTestFiles: previousTestFilesOf(incrementalReport),
+      currentRelativeFiles,
+      testIdsByRelativeFile,
+      coveringTestFilesByMutantId,
+      force,
+    })
+  })
+
+const incrementalDiff = (
+  input: Readonly<{
+    currentMutants: readonly Mutant[]
+    testCoverage: TestCoverage
+    incrementalReport: unknown
+    currentRelativeFiles: Record<string, string>
+    basePath: string
+    force?: boolean
+  }>,
+) =>
+  Effect.gen(function*() {
+    const command = yield* incrementalDiffCommandOf(
+      input.currentMutants,
+      input.testCoverage,
+      input.incrementalReport,
+      input.currentRelativeFiles,
+      input.basePath,
+      input.force ?? false,
+    )
+    const decisions = yield* Effect.fromResult(incrementalDiffDecisions(command))
+    return {
+      mutants: decisions.flatMap((decision) =>
+        Match.tag(decision, {
+          MutantToRun: (run) => [run.mutant] as const,
+          MutantRemembered: () => [] as const,
+        })),
+      remembered: decisions.flatMap((decision) =>
+        Match.tag(decision, {
+          MutantToRun: () => [] as const,
+          MutantRemembered: (remembered) => [{
+            mutantId: remembered.mutantId,
+            status: remembered.status,
+            testsCompleted: remembered.testsCompleted,
+            coveredBy: remembered.coveredBy,
+            killedBy: remembered.killedBy,
+          }] as const,
+        })),
+    }
+  })
 
 const makeCheckerPool = (
   prev: DryRunDone,

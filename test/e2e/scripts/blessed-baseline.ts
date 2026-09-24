@@ -66,38 +66,50 @@ interface ParsedArgs {
   readonly verify: boolean
 }
 
-function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
-  const slices: OracleSliceId[] = []
-  let verify = false
-  for (const arg of argv) {
-    if (arg === '--verify') {
-      verify = true
-      continue
-    }
-    if (arg.startsWith('--')) {
-      throw new Error(`Unknown flag: ${arg}`)
-    }
-    slices.push(ensureKnownSlice(arg))
-  }
-  if (slices.length === 0) {
-    throw new Error(`No slices provided. Valid slices: ${listValidSliceIds()}`)
-  }
-  return { slices, verify }
-}
+const argsOf = (argv: ReadonlyArray<string>): Result.Result<ParsedArgs, BlessRefused> =>
+  Result.map(
+    Array.reduce(
+      argv,
+      Result.succeed({ slices: [], verify: false }),
+      (accumulated, arg) =>
+        Result.flatMap(accumulated, (parsed) =>
+          Match.value(arg).pipe(
+            Match.when('--verify', () => Result.succeed({ ...parsed, verify: true })),
+            Match.when(arg.startsWith('--'), () =>
+              Result.fail(BlessRefused.make({ reason: `Unknown flag: ${arg}` }))),
+            Match.orElse((id) =>
+              Result.map(knownSliceOf(id), (slice) => ({ ...parsed, slices: [...parsed.slices, slice] }))),
+          )),
+    ),
+    (parsed) =>
+      Match.value(parsed.slices.length).pipe(
+        Match.when(0, () =>
+          BlessRefused.make({
+            reason: `No slices provided. Valid slices: ${listValidSliceIds()}`,
+          })),
+        Match.orElse((slices) => ({ slices, verify: parsed.verify })),
+      ),
+  )
 
-function ensureKnownSlice(id: string): OracleSliceId {
-  if (id === SABOTAGE_SLICE) {
-    throw new Error(`Slice "${SABOTAGE_SLICE}" cannot be blessed. ${SABOTAGE_REASON}`)
-  }
-  return Option.match(Schema.decodeUnknownOption(OracleSliceIds)(id), {
-    onNone: () => {
-      throw new Error(
-        `Unknown slice "${id}". Valid slices: ${listValidSliceIds()}. ${SABOTAGE_SLICE} is rejected because ${SABOTAGE_REASON}`,
-      )
-    },
-    onSome: (sliceId) => sliceId,
-  })
-}
+const knownSliceOf = (id: string): Result.Result<OracleSliceId, BlessRefused> =>
+  Match.value(id).pipe(
+    Match.when(SABOTAGE_SLICE, () =>
+      Result.fail(
+        BlessRefused.make({ reason: `Slice "${SABOTAGE_SLICE}" cannot be blessed. ${SABOTAGE_REASON}` }),
+      )),
+    Match.orElse((candidate) =>
+      Option.match(Schema.decodeUnknownOption(OracleSliceIds)(candidate), {
+        onNone: () =>
+          Result.fail(
+            BlessRefused.make({
+              reason:
+                `Unknown slice "${candidate}". Valid slices: ${listValidSliceIds()}. ${SABOTAGE_SLICE} is rejected because ${SABOTAGE_REASON}`,
+            }),
+          ),
+        onSome: (sliceId) => Result.succeed(sliceId),
+      })
+    ),
+  )
 
 type VerdictEvent = Extract<RunEvent, { _tag: 'verdict' }>
 

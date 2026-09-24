@@ -1,4 +1,4 @@
-import { INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter'
+import { InstrumenterContext } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type CompleteDryRunResult,
@@ -81,12 +81,12 @@ const sandboxFor = (
   activeMutantId: string | undefined,
 ): object => {
   const namespace = hostStrykerNamespace<string | undefined>()
-  namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
+  namespace[InstrumenterContext.ACTIVE_MUTANT] = activeMutantId
   const moduleExports = {}
   const moduleObj = { exports: moduleExports }
   const sandbox = {
     ...globalThis,
-    [INSTRUMENTER_CONSTANTS.NAMESPACE]: namespace,
+    [InstrumenterContext.NAMESPACE]: namespace,
     require: platform.module.createRequire(fileName),
     module: moduleObj,
     exports: moduleExports,
@@ -119,10 +119,9 @@ const resultFromRun = (failureMessage: string | undefined, timeSpentMs: number):
 const isPlainObject = <A = unknown>(value: unknown): value is Record<string, A> => Predicate.isObject(value)
 
 const descriptorValue = <A>(descriptor: TypedPropertyDescriptor<A> | undefined) => Option.fromNullishOr(descriptor?.value)
-
 const createHostNamespace = <A = unknown>(): Record<string, A> => {
   const created: Record<string, A> = {}
-  Object.defineProperty(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE, {
+  Object.defineProperty(globalThis, InstrumenterContext.NAMESPACE, {
     configurable: true,
     enumerable: true,
     value: created,
@@ -134,10 +133,8 @@ const createHostNamespace = <A = unknown>(): Record<string, A> => {
 const hostStrykerNamespace = <A = unknown>(): Record<string, A> =>
   Option.match(
     descriptorValue<Record<string, A>>(
-      Object.getOwnPropertyDescriptor(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE),
+      Object.getOwnPropertyDescriptor(globalThis, InstrumenterContext.NAMESPACE),
     ),
-    {
-      onNone: () => createHostNamespace<A>(),
       onSome: (current) =>
         Boolean.match(isPlainObject<A>(current), {
           onTrue: (): Record<string, A> => current,

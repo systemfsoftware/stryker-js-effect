@@ -139,7 +139,7 @@ const createMutant = (params: CreateMutantOptions): Mutant => ({
   replacement: params.specs.replacement,
   mutatorName: params.specs.mutatorName,
   ignoreReason: params.specs.ignoreReason,
-  replacementCode: Option.getOrElse(S.decodeUnknownOption(SourceText)(params.specs.replacement), () => ''),
+  replacementCode: Option.getOrElse(S.decodeOption(SourceText)(params.specs.replacement), () => ''),
 })
 
 const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing> =>

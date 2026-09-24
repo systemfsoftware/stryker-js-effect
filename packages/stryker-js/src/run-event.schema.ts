@@ -115,16 +115,19 @@ export class HelpRendered extends S.TaggedClass<HelpRendered>()('help', {
   code: S.Literals([0]),
   help: S.String,
 }) {}
-export const RunEvent = S.Union([
-  RunStarted,
-  PhaseEntered,
-  PlanKnown,
-  RunMutantTested,
-  Heartbeat,
-  VerdictReached,
-  RunFailed,
-  HelpRendered,
-])
+export const RunEvent = Object.assign(
+  S.Union([
+    RunStarted,
+    PhaseEntered,
+    PlanKnown,
+    RunMutantTested,
+    Heartbeat,
+    VerdictReached,
+    RunFailed,
+    HelpRendered,
+  ]),
+  { QUEUE_BOUND: 256 },
+)
 export type RunEvent = typeof RunEvent.Type
 
 export type RunTerminalEvent = VerdictReached | RunFailed | HelpRendered
