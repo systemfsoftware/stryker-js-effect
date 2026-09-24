@@ -1,4 +1,5 @@
-import type { MutantCoverage, Position, RunOptions } from '@systemfsoftware/stryker-js-instrumenter'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import { PositionSchema, RunOptionsFields } from '@systemfsoftware/stryker-js-instrumenter'
 
 import * as S from 'effect/Schema'
@@ -140,6 +141,62 @@ export type MutantRunResult =
   | KilledMutantRunResult
   | SurvivedMutantRunResult
   | TimeoutMutantRunResult
+const firstFailedTestOf = (tests: readonly FailedTestResult[]) =>
+  Option.fromUndefinedOr(tests.at(0))
+
+const failedTestsOf = (tests: readonly TestResult[]) =>
+  tests.filter((test): test is FailedTestResult => test.status === 'failed')
+
+const countedTestsOf = (tests: readonly TestResult[]) => tests.filter((test) => test.status !== 'skipped').length
+
+const killersOf = (
+  failed: readonly FailedTestResult[],
+  firstFailed: FailedTestResult,
+  reportAllKillers: boolean,
+) =>
+  Match.value(reportAllKillers).pipe(
+    Match.when(true, () => failed.map((test) => test.id)),
+    Match.when(false, () => [firstFailed.id]),
+    Match.exhaustive,
+  )
+
+const killedResultOf = (
+  complete: CompleteDryRunResult,
+  failed: readonly FailedTestResult[],
+  firstFailed: FailedTestResult,
+  reportAllKillers: boolean,
+): KilledMutantRunResult => ({
+  failureMessage: firstFailed.failureMessage,
+  killedBy: killersOf(failed, firstFailed, reportAllKillers),
+  nrOfTests: countedTestsOf(complete.tests),
+  status: 'killed',
+})
+
+const reasonedTimeoutOf = (timedOut: TimeoutDryRunResult): TimeoutMutantRunResult =>
+  Option.match(Option.fromUndefinedOr(timedOut.reason), {
+    onNone: (): TimeoutMutantRunResult => ({ status: 'timeout' }),
+    onSome: (reason): TimeoutMutantRunResult => ({ reason, status: 'timeout' }),
+  })
+
+const completeResultOf = (complete: CompleteDryRunResult, reportAllKillers: boolean): MutantRunResult =>
+  Option.match(firstFailedTestOf(failedTestsOf(complete.tests)), {
+    onNone: (): MutantRunResult => ({ nrOfTests: countedTestsOf(complete.tests), status: 'survived' }),
+    onSome: (firstFailed): MutantRunResult =>
+      killedResultOf(complete, failedTestsOf(complete.tests), firstFailed, reportAllKillers),
+  })
+
+export const decodeMutantRunResult = (options: { readonly reportAllKillers: boolean }) =>
+  SchemaGetter.transform((dryRunResult: DryRunResult): MutantRunResult =>
+    Match.value(dryRunResult).pipe(
+      Match.discriminator('status')('complete', (complete) => completeResultOf(complete, options.reportAllKillers)),
+      Match.discriminator('status')('error', (errored): MutantRunResult => ({
+        errorMessage: errored.errorMessage,
+        status: 'error',
+      })),
+      Match.discriminator('status')('timeout', reasonedTimeoutOf),
+      Match.exhaustive,
+    )
+  )
 
 export type CoverageAnalysis = 'off' | 'all' | 'perTest'
 

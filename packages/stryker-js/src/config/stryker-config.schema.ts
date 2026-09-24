@@ -1,6 +1,5 @@
 import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'

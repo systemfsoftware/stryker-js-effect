@@ -203,7 +203,7 @@ interface PluginContributions {
   readonly schemaContribution: ValidationSchemaProperties | undefined
 }
 
-const failPluginLoad = (descriptor: string, error: StrykerError): Effect.Effect<never, PluginLoadFailedError> =>
+const failPluginLoad = (descriptor: string, error: unknown): Effect.Effect<never, PluginLoadFailedError> =>
   Effect.logWarning(`Error during loading "${descriptor}" plugin`).pipe(
     Effect.annotateLogs('cause', error),
     Effect.andThen(() => Effect.fail(PluginLoadFailedError.make({ descriptor, cause: error }))),
@@ -230,6 +230,9 @@ const moduleIgnorers = (module: object): Result.Result<readonly Ignorer[] | unde
       )),
     Match.orElse((): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> => Result.succeed(undefined)),
   )
+
+const hasValidationSchemaContribution = (module: object): module is S.Schema.Type<typeof SchemaValidationContributionSchema> =>
+  S.is(SchemaValidationContributionSchema)(module)
 
 const moduleSchemaContribution = (module: object): ValidationSchemaProperties | undefined =>
   Option.getOrUndefined(
@@ -258,24 +261,31 @@ const warnUndescribedPluginModule = (descriptor: string): Effect.Effect<undefine
   Effect.logWarning(
     `Module "${descriptor}" did not contribute a StrykerJS plugin. It didn't export a "strykerPlugins", "strykerIgnorers", or "strykerValidationSchema".`,
   ).pipe(Effect.as(undefined))
+const describedContributionsOf = (
+  descriptor: string,
+  contributions: PluginContributions,
+): Effect.Effect<Option.Option<PluginContributions>, PluginLoadFailedError> =>
+  Match.value(hasContribution(contributions)).pipe(
+    Match.when(true, () => Effect.succeed(Option.some(contributions))),
+    Match.orElse(() =>
+      Effect.as(warnUndescribedPluginModule(descriptor), Option.none<PluginContributions>()),
+    ),
+  )
 
 const describeLoadedPlugin = (
   descriptor: string,
   module: object,
-): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError> =>
+): Effect.Effect<Option.Option<PluginContributions>, PluginLoadFailedError> =>
   Result.match(pluginContributionsOf(module), {
-    onFailure: (cause) => failPluginLoad(descriptor, cause),
-    onSuccess: (contributions) =>
-      Match.value(hasContribution(contributions)).pipe(
-        Match.when(true, () => Effect.succeed<PluginContributions | undefined>(contributions)),
-        Match.orElse(() => warnUndescribedPluginModule(descriptor)),
-      ),
+    onFailure: (cause) =>
+      Effect.as(failPluginLoad(descriptor, cause), Option.none<PluginContributions>()),
+    onSuccess: (contributions) => describedContributionsOf(descriptor, contributions),
   })
 
 const loadPlugin = (
   descriptor: string,
   entrypoint: string,
-): Effect.Effect<PluginContributions | undefined, PluginLoadFailedError> =>
+): Effect.Effect<Option.Option<PluginContributions>, PluginLoadFailedError> =>
   Effect.gen(function*() {
     yield* Effect.logDebug(`Loading plugin ${descriptor}`)
     const maybeModule = yield* importModule<object>(entrypoint).pipe(
@@ -283,7 +293,7 @@ const loadPlugin = (
     )
     return yield* Option.match(Option.fromUndefinedOr(maybeModule), {
       onNone: () => Effect.succeed(Option.none()),
-      onSome: (module) => Effect.map(describeLoadedPlugin(descriptor, module), Option.fromUndefinedOr),
+      onSome: (module) => describeLoadedPlugin(descriptor, module),
     })
   })
 
@@ -305,15 +315,12 @@ const loadPlugins = (
       entrypoints,
       (resolved) =>
         loadPlugin(resolved.specifier, resolved.entrypoint).pipe(
-          Effect.map((plugin) => {
-            if (plugin === undefined) {
-              return undefined
-            }
-            return {
-              ...plugin,
-              moduleName: resolved.specifier,
-            }
-          }),
+          Effect.map((plugin) =>
+            Option.match(plugin, {
+              onNone: () => undefined,
+              onSome: (contributions) => ({ ...contributions, moduleName: resolved.specifier }),
+            }),
+          ),
         ),
       { concurrency: 'unbounded' },
     ).pipe(Effect.map((arr) => arr.filter(Predicate.isNotNullish)))
@@ -352,9 +359,6 @@ const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[] => [
   ),
   ...options.checkers.map((checker) => checker.plugin),
 ]
-
-const hasValidationSchemaContribution = (module: unknown): module is SchemaValidationContribution =>
-  S.is(SchemaValidationContributionSchema)(module)
 
 type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly env: RunEnvironmentShape

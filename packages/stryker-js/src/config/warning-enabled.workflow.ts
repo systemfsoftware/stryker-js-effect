@@ -41,7 +41,7 @@ const decide = (command: ResolveWarningEnabledCommand): Result.Result<WarningDec
     }),
   )
 
-export const resolveWarningEnabled = Workflow.make({
+export const warningEnabled = Workflow.make({
   command: ResolveWarningEnabledCommand,
   decision: S.Union([WarningEnabled, WarningDisabled]),
   error: S.Never,

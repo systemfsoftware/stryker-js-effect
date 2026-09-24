@@ -12,18 +12,19 @@ import * as Result from 'effect/Result'
 import { spanOf } from './Ast.handle.js'
 import type { Ast, HtmlAst, ScriptAst, SvelteAst, SpannedComment } from './Ast.schema.js'
 import {
+  type FileDescription,
   FileSchema,
   type InstrumenterOptions,
   InstrumentError,
   InstrumentResult as InstrumentResultSchema,
+  type MutateDescription,
   ScriptRootWithoutSpan,
 } from './Instrument.schema.js'
-import type { FileDescription, MutateDescription } from './Mutant.js'
 import { Mutant as ApiMutant } from './Mutant.schema.js'
 import { Mutators, type MutatorsShape } from './Mutator.service.js'
 import { Parser, type ParserError, type ParserShape } from './Parser.service.js'
-import type { PrintFailed } from './print/PrintFailed.schema.js'
-import { print } from './Printer.js'
+import { PrintFailed } from './print/PrintFailed.schema.js'
+import { SourceText } from './print/SourceText.schema.js'
 import { AstFormat } from './Syntax.schema.js'
 import { type MutantCollector, Transformer, type TransformerOptions, type TransformerShape } from './Transformer.service.js'
 
@@ -292,13 +293,14 @@ const AST_SHAPE = ['format', 'root'] as const
 
 const isAst = (value: unknown): value is Ast =>
   Predicate.isObject(value) && AST_SHAPE.every((key) => key in value)
-
-type FileSchemaType = typeof FileSchema.Type
-
 const printedFile = (file: FileSchemaType, ast: Ast): Result.Result<readonly FileSchemaType[], PrintFailed> =>
   Option.match(Option.filter(Option.some(ast), isAst), {
     onNone: () => Result.succeed([]),
-    onSome: (parsed) => Result.map(print(parsed), (content) => [{ name: file.name, mutate: file.mutate, content }]),
+    onSome: (parsed) =>
+      Option.match(S.decodeUnknownOption(SourceText)(parsed), {
+        onNone: () => Result.fail(PrintFailed.make({ message: 'Script AST root without start' })),
+        onSome: (content) => Result.succeed([{ name: file.name, mutate: file.mutate, content }]),
+      }),
   })
 
 

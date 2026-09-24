@@ -1,6 +1,7 @@
 import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import type { TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as HashMap from 'effect/HashMap'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -71,7 +72,7 @@ const reportTestOf = (test: TestResult, remap: TestIdRemap): schema.TestDefiniti
     onSome: (start) => ({ id: remap.testId(test.id), name: test.name, location: { start } }),
   })
 
-const assembleMutantGroups = (input: FileResultsInput): HashMap.HashMap<string, MutantGroup> =>
+const groupMutants = (input: FileResultsInput): HashMap.HashMap<string, MutantGroup> =>
   Arr.reduce(
     input.mutants,
     HashMap.empty<string, MutantGroup>(),
@@ -92,7 +93,7 @@ const assembleMutantGroups = (input: FileResultsInput): HashMap.HashMap<string, 
       }),
   )
 
-const assembleTestGroups = (input: TestFilesInput): HashMap.HashMap<string, TestGroup> =>
+const groupTests = (input: TestFilesInput): HashMap.HashMap<string, TestGroup> =>
   Arr.reduce(
     input.tests,
     HashMap.empty<string, TestGroup>(),
@@ -117,22 +118,30 @@ const assembleTestGroups = (input: TestFilesInput): HashMap.HashMap<string, Test
       }),
   )
 
-const dictionaryOf = <Value>(
-  grouped: HashMap.HashMap<string, { readonly sourceFileName: string }>,
-  sources: HashMap.HashMap<string, Value>,
-  merge: (source: Value, group: never) => never,
-): Record<string, Value> =>
+const assembleFileResults = (input: FileResultsInput): schema.FileResultDictionary =>
   Object.fromEntries(
-    Arr.flatMap([...grouped], ([reportName, group]) =>
-      Option.match(HashMap.get(sources, (group as { readonly sourceFileName: string }).sourceFileName), {
-        onNone: (): ReadonlyArray<readonly [string, Value]> => [],
-        onSome: (source): ReadonlyArray<readonly [string, Value]> => [[reportName, merge(source, group as never)]],
+    Arr.flatMap([...groupMutants(input)], ([reportName, group]) =>
+      Option.match(HashMap.get(input.sources, group.sourceFileName), {
+        onNone: (): ReadonlyArray<readonly [string, schema.FileResult]> => [],
+        onSome: (source): ReadonlyArray<readonly [string, schema.FileResult]> => [
+          [reportName, { ...source, mutants: group.mutants }],
+        ],
+      })),
+  )
+
+const assembleTestFiles = (input: TestFilesInput): schema.TestFileDefinitionDictionary =>
+  Object.fromEntries(
+    Arr.flatMap([...groupTests(input)], ([reportName, group]) =>
+      Option.match(HashMap.get(input.testSources, group.sourceFileName), {
+        onNone: (): ReadonlyArray<readonly [string, schema.TestFile]> => [],
+        onSome: (source): ReadonlyArray<readonly [string, schema.TestFile]> => [
+          [reportName, { ...source, tests: group.tests }],
+        ],
       })),
   )
 
 export class ReportAssembly extends S.TaggedClass<ReportAssembly>()('ReportAssembly', {}) {
-  static readonly language = (fileName: string): string =>
-    EXTENSION_LANGUAGES[extensionOf(fileName)] ?? 'javascript'
+  static readonly language = (fileName: string): string => EXTENSION_LANGUAGES[extensionOf(fileName)] ?? 'javascript'
 
   static readonly fileName = (relativePath: string | undefined): string =>
     Option.match(Option.fromUndefinedOr(relativePath), {
@@ -155,15 +164,7 @@ export class ReportAssembly extends S.TaggedClass<ReportAssembly>()('ReportAssem
     }
   }
 
-  static readonly fileResults = (input: FileResultsInput): schema.FileResultDictionary =>
-    dictionaryOf(assembleMutantGroups(input), input.sources, (source, group: MutantGroup) => ({
-      ...source,
-      mutants: group.mutants,
-    })) as schema.FileResultDictionary
+  static readonly fileResults = assembleFileResults
 
-  static readonly testFiles = (input: TestFilesInput): schema.TestFileDefinitionDictionary =>
-    dictionaryOf(assembleTestGroups(input), input.testSources, (source, group: TestGroup) => ({
-      ...source,
-      tests: group.tests,
-    })) as schema.TestFileDefinitionDictionary
+  static readonly testFiles = assembleTestFiles
 }

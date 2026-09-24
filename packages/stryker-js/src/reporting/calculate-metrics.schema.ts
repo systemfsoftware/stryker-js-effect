@@ -1,4 +1,3 @@
-import { Workflow } from '@systemfsoftware/effect-cell-types'
 import {
   type FileResult,
   FileResultSchema,
@@ -6,24 +5,11 @@ import {
   type MetricsResult,
   MetricsResultSchema,
 } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { MutantResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-
-export class CalculateMetricsCommand extends S.TaggedClass<CalculateMetricsCommand>()(
-  'CalculateMetricsCommand',
-  {
-    files: S.Record(S.String, FileResultSchema),
-  },
-) {
-  static readonly [Workflow.InstrumentationBrand] = {} as const
-}
-
-export class MetricsCalculated extends S.TaggedClass<MetricsCalculated>()('MetricsCalculated', {
-  metrics: MetricsResultSchema,
-}) {}
 
 const segmentOf = (fileName: string): string =>
   Match.value(fileName.indexOf('/')).pipe(
@@ -71,20 +57,14 @@ const childResultsOf = (files: Readonly<Record<string, FileResult>>): readonly M
     .map(([segment, grouped]): MetricsResult => childResultOf(segment, grouped))
     .sort((left, right) => left.name.localeCompare(right.name))
 
-const decide = (command: CalculateMetricsCommand): Result.Result<MetricsCalculated, never> =>
-  Result.succeed(
-    MetricsCalculated.make({
-      metrics: {
-        name: 'All files',
-        metrics: metricsOf(command.files),
-        childResults: childResultsOf(command.files),
-      },
-    }),
-  )
+export class CalculateMetrics extends S.TaggedClass<CalculateMetrics>()('CalculateMetrics', {
+  files: S.Record(S.String, FileResultSchema),
+}) {
+  static readonly of = (files: Readonly<Record<string, FileResult>>): MetricsResult => ({
+    name: 'All files',
+    metrics: metricsOf(files),
+    childResults: childResultsOf(files),
+  })
 
-export const calculateMetrics = Workflow.make({
-  command: CalculateMetricsCommand,
-  decision: MetricsCalculated,
-  error: S.Never,
-  decide,
-})
+  static readonly count = (mutants: readonly MutantResult[]): Metrics => Metrics.fromMutants(mutants)
+}

@@ -646,7 +646,7 @@ export const strykerCliCell = Cell.flatMap(
     Match.value(action.decision).pipe(
       Match.tag('CliHelpRequested', () => Cell.succeed<CliAnswer>(undefined)),
       Match.tag('CliMergeReportsRequested', (merge) =>
-        Cell.mapInput(mergeReportsCell, () => ({
+        Cell.mapInput(mergeReportsCell, (): MergeReportsRequest => ({
           _tag: 'merge-reports',
           parts: merge.parts,
           out: merge.out,

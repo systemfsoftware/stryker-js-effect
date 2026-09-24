@@ -6,7 +6,7 @@ import type {
   RunMutantResult,
 } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as schema from '@systemfsoftware/stryker-js-instrumenter'
-import type { CheckResult, CheckStatus, PassedCheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { CheckStatus } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { MutantRunResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'

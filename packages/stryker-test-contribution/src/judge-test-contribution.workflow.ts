@@ -159,26 +159,16 @@ interface ContributionTally {
   readonly unattributed: ReadonlySet<string>
 }
 
+const tallyOf = (mutants: readonly schema.MutantResult[], fileById: TestFileById): ContributionTally => {
   const kills = killsOf(mutants, fileById)
   return {
-    soleKills: countBy(kills.filter((kill) => kill.claimedAlone).flatMap((kill) => [...kill.killers])),
     totalKills: countBy(kills.flatMap((kill) => [...kill.killers])),
     killableCovered: countBy(
       mutants.filter(isKillableMutant).flatMap((mutant) => [...realCoverersOf(mutant, fileById)]),
     ),
-    unattributed: new Set(
-      kills.filter(isUnattributedKill).flatMap((kill) => [...kill.coverers]),
-    ),
+    unattributed: new Set(kills.filter(isUnattributedKill).flatMap((kill) => [...kill.coverers])),
   }
 }
-
-const fileContributionOf = (fileName: string, tally: ContributionTally): TestFileContribution => ({
-  soleKills: countOf(tally.soleKills, fileName),
-  totalKills: countOf(tally.totalKills, fileName),
-  killableCovered: countOf(tally.killableCovered, fileName),
-  coversUnattributedKill: tally.unattributed.has(fileName),
-})
-
 const contributionOf = (report: ReportView): ReadonlyMap<string, TestFileContribution> => {
   const testFiles = testFilesOf(report)
   const fileById = testFileById(testFiles)
