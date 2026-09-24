@@ -4,7 +4,7 @@ import type {
   MutantTestCoverage,
   TestPlan as MutantTestPlan,
 } from '@systemfsoftware/stryker-js-instrumenter'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantRunPlan, MutantStatus, RunMutantResult, RunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter'
@@ -173,37 +173,36 @@ const rememberedCoverage = (entry: RememberedMutantResult): {
 
 const REMEMBERED_REASON = 'Remembered'
 
+const rememberedStatusOf = (entry: RememberedMutantResult) =>
+  S.decode(MutantStatusSchema)(entry.status)
+
 const rememberedResultOf = (
   mutant: Mutant,
   entry: RememberedMutantResult,
   reportLocation: reportSchema.Location,
+  status: MutantStatus,
 ): RunMutantResult =>
   Object.assign(
     {},
     mutant,
     {
-      location: reportLocation,
-      status: entry.status,
+      status,
       statusReason: REMEMBERED_REASON,
       testsCompleted: entry.testsCompleted,
     },
     rememberedCoverage(entry),
   )
 
-const mutantsByIdOf = (mutants: readonly Mutant[]) => new Map(mutants.map((mutant) => [mutant.id, mutant] as const))
+const mutantsByIdOf = (mutants: ReadonlyArray<Mutant>) => new Map(mutants.map((mutant) => [mutant.id, mutant] as const))
 
-const mutantRunFailureResultOf = (
-  failure: TestRunnerFailed,
-): Extract<MutantRunResult, { readonly status: 'error' }> => ({
-  status: 'error',
-  errorMessage: `Test runner "${failure.runnerName}" crashed during mutant run: ${failure.cause}`,
-})
-
- const rememberedOf = (mutant: Mutant, entry: RememberedMutantResult) =>
-   Effect.map(
-     Effect.orDie(S.decodeEffect(ReportLocationFromMutant)(mutant.location)),
-     (reportLocation) => rememberedResultOf(mutant, entry, reportLocation),
-   )
+const rememberedOf = (mutant: Mutant, entry: RememberedMutantResult) =>
+  Effect.map(
+    Effect.all([
+      Effect.orDie(S.decodeEffect(ReportLocationFromMutant)(mutant.location)),
+      rememberedStatusOf(entry).pipe(Effect.orDie),
+    ]),
+    ([reportLocation, status]) => rememberedResultOf(mutant, entry, reportLocation, status),
+  )
 
 const rememberedResultsOf = (
   mutants: readonly Mutant[],
@@ -502,12 +501,12 @@ const previousTestFilesOf = <A>(report: A) =>
 const hasTestFileName = (result: TestResult): result is FailedTestResult & { readonly fileName: string } =>
   result.status === 'failed' && S.is(S.Struct({ fileName: S.String }))(result)
 
-const relativeFileOfTest = (result: TestResult & { readonly fileName: string }, basePath: string) =>
+const relativeFileOfTest = (result: FailedTestResult & { readonly fileName: string }, basePath: string) =>
   RelativeNormalizedFileName.fromAbsolute(result.fileName, basePath).fileName
 
 const testIdsByRelativeFileOf = (testCoverage: TestCoverage, basePath: string) => {
   const byFile: Record<string, string[]> = {}
-  const located = [...MutableHashMap.values(testCoverage.testsById)].filter(hasTestFileName)
+  const located: ReadonlyArray<FailedTestResult & { readonly fileName: string }> = [...MutableHashMap.values(testCoverage.testsById)].filter(hasTestFileName)
   return located.reduce<Record<string, string[]>>(
     (accumulator, result) => {
       const file = RelativeNormalizedFileName.fromAbsolute(result.fileName, basePath).fileName
@@ -518,19 +517,15 @@ const testIdsByRelativeFileOf = (testCoverage: TestCoverage, basePath: string) =
   )
 }
 
-const coveredFilesOfTests = (tests: Iterable<TestResult>, basePath: string) =>
-  [...new Set(
-    [...tests].flatMap((result) =>
-      Option.match(Option.filter(Option.some(result), hasTestFileName), {
-        onNone: () => [] as const,
-        onSome: (located) => [relativeFileOfTest(located, basePath)] as const,
-      })),
-  )]
+const coveredFilesOfTests = (
+  tests: Iterable<FailedTestResult & { readonly fileName: string }>,
+  basePath: string,
+) => [...new Set([...tests].map((result) => relativeFileOfTest(result, basePath)))]
 
 const coveringTestFilesByMutantIdOf = (testCoverage: TestCoverage, basePath: string) =>
   Object.fromEntries(
     [...testCoverage.testsByMutantId].map(([mutantId, tests]) =>
-      [mutantId, coveredFilesOfTests(tests, basePath)] as const),
+      [mutantId, coveredFilesOfTests([...tests].filter(hasTestFileName), basePath)] as const),
   )
 
 const relativeFileByMutantIdOf = (mutants: readonly Mutant[], basePath: string) =>

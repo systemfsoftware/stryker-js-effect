@@ -52,8 +52,7 @@ import { RunEnvironment } from './RunEnvironment.service.js'
 import * as Clock from 'effect/Clock'
 import * as Queue from 'effect/Queue'
 import { PhaseEntered, RunEvents } from '../run-events.service.js'
-
-const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
+const isNonNullObject = <A>(value: A): value is Extract<A, object> => typeof value === 'object' && value !== null
 
 const combine = (
   prefixes: string[],
@@ -893,16 +892,14 @@ const scopedUnserializable =
     path: [scope, ...description.path],
   })
 
-const describedChild =
-  (scope: string) =>
-  (child: unknown): UnserializableDescription[] =>
-    Option.match(Option.fromUndefinedOr(findUnserializables(child)), {
-      onNone: () => [],
-      onSome: (descriptions) => descriptions.map(scopedUnserializable(scope)),
-    })
+const describedChild = <A>(scope: string) => (child: A): UnserializableDescription[] =>
+  Option.match(Option.fromUndefinedOr(findUnserializables(child)), {
+    onNone: () => [],
+    onSome: (descriptions) => descriptions.map(scopedUnserializable(scope)),
+  })
 
-const describedEntries = (
-  entries: ReadonlyArray<readonly [string, unknown]>,
+const describedEntries = <A>(
+  entries: ReadonlyArray<readonly [string, A]>,
 ): UnserializableDescription[] =>
   entries.flatMap(([scope, child]) => describedChild(scope)(child))
 
@@ -921,15 +918,17 @@ const describeUnserializableInstance = (value: object): UnserializableDescriptio
   },
 ]
 
-const isArrayValue = (value: object): value is ReadonlyArray<unknown> => Array.isArray(value)
+const isArrayValue = <A = unknown>(value: unknown): value is ReadonlyArray<A> => Array.isArray(value)
 
 const isPlainObjectValue = (value: object): boolean =>
   Array.isArray(value) === false && value.constructor === Object
 
+const describedIndexedChildren = <A = unknown>(arrayed: ReadonlyArray<A>): UnserializableDescription[] =>
+  describedEntries(arrayed.map((child, index) => [index.toString(), child] as const))
+
 const describeUnserializableObject = (value: object): UnserializableDescription[] =>
   Match.value(value).pipe(
-    Match.when(isArrayValue, (arrayed) =>
-      describedEntries(arrayed.map((child, index) => [index.toString(), child] as const))),
+    Match.when(isArrayValue, describedIndexedChildren),
     Match.orElse((recorded) =>
       Option.match(
         Option.liftPredicate(Option.some(recorded), isPlainObjectValue),
@@ -940,13 +939,12 @@ const describeUnserializableObject = (value: object): UnserializableDescription[
       )),
   )
 
-const describeUnserializableNonNullish = (value: unknown): UnserializableDescription[] =>
+const describeUnserializableNonNullish = <A>(value: A): UnserializableDescription[] =>
   Option.match(Option.liftPredicate(Option.some(value), isNonNullObject), {
     onNone: () => [],
     onSome: (present) => describeUnserializableObject(present),
   })
-
-const isNumberValue = (value: unknown): value is number => typeof value === 'number'
+const isNumberValue = <A>(value: A): value is Extract<A, number> => typeof value === 'number'
 
 const describeUnserializableFiniteNumber = (value: number): UnserializableDescription[] =>
   Boolean.match(Number.isFinite(value), {
@@ -961,7 +959,7 @@ const describeUnserializableFiniteNumber = (value: number): UnserializableDescri
 
 type JsonlessPrimitive = bigint | symbol | ((...args: never[]) => void)
 
-const isNonJsonPrimitive = (value: unknown): value is JsonlessPrimitive =>
+const isNonJsonPrimitive = <A>(value: A): value is Extract<A, JsonlessPrimitive> =>
   NON_JSON_PRIMITIVE_TYPES[typeof value] === true
 
 const describeNonJsonPrimitive = (value: JsonlessPrimitive): UnserializableDescription[] => [
@@ -971,7 +969,7 @@ const describeNonJsonPrimitive = (value: JsonlessPrimitive): UnserializableDescr
   },
 ]
 
-const describeUnserializableUnknown = (value: unknown): UnserializableDescription[] =>
+const describeUnserializableUnknown = <A>(value: A): UnserializableDescription[] =>
   Match.value(value).pipe(
     Match.when(isNonJsonPrimitive, describeNonJsonPrimitive),
     Match.orElse(describeUnserializableNonNullish),
@@ -979,13 +977,13 @@ const describeUnserializableUnknown = (value: unknown): UnserializableDescriptio
 
 const hasDescriptions = (found: UnserializableDescription[]): boolean => found.length > 0
 
-const describeUnserializableValue = (value: unknown): UnserializableDescription[] =>
+const describeUnserializableValue = <A>(value: A): UnserializableDescription[] =>
   Match.value(value).pipe(
     Match.when(isNumberValue, describeUnserializableFiniteNumber),
     Match.orElse(describeUnserializableUnknown),
   )
 
-const findUnserializables = (thing: unknown): UnserializableDescription[] | undefined =>
+const findUnserializables = <A>(thing: A): UnserializableDescription[] | undefined =>
   Option.match(
     Option.filter(Option.some(describeUnserializableValue(thing)), hasDescriptions),
     {

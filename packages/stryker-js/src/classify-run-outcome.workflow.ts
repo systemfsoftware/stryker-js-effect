@@ -265,11 +265,15 @@ const causeFieldOf = (value: CauseCarrier | object): Option.Option<CauseNode> =>
 const isCauseNode = (value: CauseNode | object): value is CauseNode =>
   Predicate.isString(value) || Predicate.isNumber(value) || Predicate.isBoolean(value) ||
     Predicate.isBigInt(value) || Predicate.isSymbol(value) || Predicate.isError(value) ||
-    hasCause(value) || hasExitClass(value) || hasVerdict(value) || hasReason(value) ||
+    isCauseCarrier(value) || hasExitClass(value) || hasVerdict(value) || hasReason(value) ||
     hasMessageField(value) || CliError.isCliError(value) || isSurvivorsRejection(value)
+
+const isCauseCarrier = (value: CauseNode | object): value is CauseCarrier =>
+  Predicate.isObjectOrArray(value) && 'cause' in value
 
 const causeTextOf = (value: CauseCarrier | object): Option.Option<string> =>
   Option.map(CauseText.fromCause(causeFieldOf(value)), (decoded) => decoded.text)
+
 const reasonOf = (value: ReasonCarrier | object): Option.Option<string> =>
   Option.flatMap(reasonFieldOf(value), (reason) =>
     Option.match(causeTextOf(value), {
@@ -374,9 +378,20 @@ const failurePayloadsOf = (exit: Exit.Exit<object, FailurePayload>) =>
 const firstConfigErrorDetailOf = (exit: Exit.Exit<object, FailurePayload>): string | undefined =>
   Option.getOrUndefined(
     Option.flatMap(failurePayloadsOf(exit), (payloads) =>
-      Arr.findFirst([...payloads].reverse(), (root) => findWalkOf(root, 0, new WeakSet(), configDetailAt))),
+      Arr.findFirst([...payloads].reverse(), (root) =>
+        findWalkOf(acceptPayload(root), 0, new WeakSet(), configDetailAt))),
   )
 
+const acceptPayload = (payload: FailurePayload | object | undefined): CauseNode | object =>
+  Match.value(payload).pipe(
+    Match.when(Predicate.isObjectOrArray, (reached) => reached),
+    Match.when(Predicate.isString, (text) => text),
+    Match.when(Predicate.isNumber, (count) => count),
+    Match.when(Predicate.isBoolean, (flag) => flag),
+    Match.when(Predicate.isBigInt, (big) => big),
+    Match.when(Predicate.isSymbol, (glyph) => glyph),
+    Match.orElse(() => ({})),
+  )
 const failureValueOf = (exit: Exit.Exit<object, FailurePayload>): FailurePayload | undefined =>
   Option.getOrUndefined(
     Option.flatMap(failureOf(exit), (failure) => Cause.findErrorOption(failure.cause)),
@@ -417,9 +432,6 @@ const failureValueDescriptionOf = (value: FailurePayload | object): Option.Optio
 const survivorsRemediationOptionOf = (value: FailurePayload | object): Option.Option<string> =>
   Option.flatMap(Option.some(value), survivorsRemediationOf)
 
-const reasonTextOptionOf = (value: FailurePayload | object): Option.Option<string> =>
-  Option.flatMap(Option.some(value), reasonTextOf)
-
 const declaresReasonText = (value: ReasonCarrier | object) => Option.isSome(reasonFieldOf(value))
 
 const reasonTextOf = (value: TraceCarrier | object): Option.Option<string> =>
@@ -432,6 +444,9 @@ const reasonTextOf = (value: TraceCarrier | object): Option.Option<string> =>
         })),
     onFalse: () => Option.none(),
   })
+
+const reasonTextOptionOf = (value: FailurePayload | object): Option.Option<string> =>
+  Option.flatMap(Option.some(value), reasonTextOf)
 
 const survivorsRemediationOf = (value: SurvivorsRejection | object): Option.Option<string> =>
   Option.flatMap(Option.filter(Option.some(value), isSurvivorsRejection), (rejection) =>

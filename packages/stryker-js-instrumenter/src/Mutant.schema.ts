@@ -23,7 +23,7 @@ export const MutatorName = S.NonEmptyString.pipe(S.brand('MutatorName'))
 export type MutatorName = typeof MutatorName.Type
 
 export const CanonicalFileName = S.String.pipe(
-  S.decodeTo(S.String.pipe(S.check(S.isPattern(/^[^\\]*$/)), S.brand('CanonicalFileName')), {
+  S.decodeTo(S.String.pipe(S.check(S.isPattern(/^[^\\]+$/)), S.brand('CanonicalFileName')), {
     decode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
     encode: SGetter.transform((canonical) => canonical),
   }),

@@ -31,6 +31,8 @@ export {
   CanonicalFileName,
   InstrumenterContext,
   Mutant,
+  MutantId,
+  MutatorName,
   MutantActivationSchema,
   MutantCoverageSchema,
   MutantFromUnknown,
@@ -41,6 +43,8 @@ export {
 export type {
   CanonicalFileName as CanonicalFileNameValue,
   MutantActivation,
+  MutantId as MutantIdValue,
+  MutatorName as MutatorNameValue,
   MutantCoverage,
   MutantFromUnknown as MutantFromUnknownValue,
   MutantStatus,

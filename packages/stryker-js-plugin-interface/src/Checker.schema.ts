@@ -1,24 +1,12 @@
+import { CanonicalFileName, LocationSchema, MutantId, MutatorName } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
-/** A position inside a file, in the coordinates the wire carries — 0-based line and column. */
-export const CheckerPositionWire = S.Struct({
-  line: S.Finite,
-  column: S.Finite,
-})
-export type CheckerPositionWire = typeof CheckerPositionWire.Type
-
-export const CheckerLocationWire = S.Struct({
-  start: CheckerPositionWire,
-  end: CheckerPositionWire,
-})
-export type CheckerLocationWire = typeof CheckerLocationWire.Type
-
 export const CheckerMutantWire = S.Struct({
-  id: S.NonEmptyString,
-  fileName: S.NonEmptyString,
-  mutatorName: S.NonEmptyString,
+  id: MutantId,
+  fileName: CanonicalFileName,
+  mutatorName: MutatorName,
   replacement: S.String,
-  location: CheckerLocationWire,
+  location: LocationSchema,
 })
 export type CheckerMutantWire = typeof CheckerMutantWire.Type
 

@@ -1,1 +1,0 @@
-{"compilerOptions": {"composite": false, "declaration": false, "declarationMap": false, "emitDeclarationOnly": false, "incremental": false, "noEmit": true}, "extends": "./tsconfig.app.json"}

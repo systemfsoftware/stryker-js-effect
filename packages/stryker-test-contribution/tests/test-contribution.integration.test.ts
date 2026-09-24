@@ -1,8 +1,8 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect, Layer } from 'effect'
 import * as Result from 'effect/Result'
 import { expect } from 'vitest'
-
 import {
   JudgeTestContribution,
   judgeTestContribution,
@@ -56,7 +56,7 @@ const commandOf = (
     report: {
       schemaVersion: '2',
       files: report.files,
-      thresholds: { high: 80, low: 60, break: null },
+      thresholds: { high: 80, low: 60 },
       ...(report.testFiles === undefined ? {} : { testFiles: report.testFiles }),
     },
     suffixes,

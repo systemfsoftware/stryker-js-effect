@@ -3,9 +3,8 @@
   "compilerOptions": {
     "composite": false,
     "incremental": false,
-    "noEmit": true,
     "declaration": false,
-    "declarationMap": false,
-    "emitDeclarationOnly": false
+    "emitDeclarationOnly": false,
+    "noEmit": true
   }
 }
