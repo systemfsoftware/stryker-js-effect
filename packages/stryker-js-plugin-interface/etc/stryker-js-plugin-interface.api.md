@@ -938,6 +938,7 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly mutate: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly mutator: S.withDecodingDefaultKey<S.Struct<{
         readonly excludedMutations: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+        readonly optInMutations: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     }>, never>;
     readonly packageManager: S.optional<S.Literals<readonly ["npm", "yarn", "pnpm"]>>;
     readonly plugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
