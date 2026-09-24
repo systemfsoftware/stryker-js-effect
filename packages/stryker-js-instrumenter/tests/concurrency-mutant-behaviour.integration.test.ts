@@ -26,7 +26,13 @@ import { instrument } from './__fixtures__/instrument.js'
 
 const FIXTURE_URL = new URL('./__fixtures__/effect-concurrency/', import.meta.url)
 const SCRATCH_URL = new URL('../.scratch/concurrency-behaviour/', import.meta.url)
-const FIXTURE_MODULES = ['atomic-update-split.ts', 'synchronization-removal.ts', 'finalizer-escape.ts'] as const
+const FIXTURE_MODULES = [
+  'atomic-update-split.ts',
+  'synchronization-removal.ts',
+  'finalizer-escape.ts',
+  'refusals.ts',
+] as const
+const SUPPORT_MODULES = ['local-ref.ts'] as const
 
 const LIVE = ['AtomicUpdateSplit', 'FinalizerEscape', 'SynchronizationRemoval'] as const
 const FAILURE = 'boom'
@@ -40,16 +46,23 @@ interface AcquiredState {
   readonly closed: boolean
 }
 
-type Outcome = void | undefined | number | string | boolean | AcquiredState
+interface AcquiredResult {
+  readonly acquired: boolean
+  readonly result: Outcome
+}
+
+type Outcome = void | undefined | number | string | boolean | AcquiredState | AcquiredResult
 
 type AtomicModule = typeof import('./__fixtures__/effect-concurrency/atomic-update-split.js')
 type SynchronizationRemovalModule = typeof import('./__fixtures__/effect-concurrency/synchronization-removal.js')
 type FinalizerEscapeModule = typeof import('./__fixtures__/effect-concurrency/finalizer-escape.js')
+type RefusalsModule = typeof import('./__fixtures__/effect-concurrency/refusals.js')
 
 interface Instrumented {
   readonly atomic: Partial<AtomicModule>
   readonly synchronization: Partial<SynchronizationRemovalModule>
   readonly finalizer: Partial<FinalizerEscapeModule>
+  readonly refusals: Partial<RefusalsModule>
 }
 
 interface Harness {
@@ -66,6 +79,9 @@ const isSynchronizationRemovalModule = (u: unknown): u is SynchronizationRemoval
 
 const isFinalizerEscapeModule = (u: unknown): u is FinalizerEscapeModule =>
   typeof u === 'object' && u !== null && 'ensuringDataFirst' in u
+
+const isRefusalsModule = (u: unknown): u is RefusalsModule =>
+  typeof u === 'object' && u !== null && 'nestedCoveredCalls' in u
 
 const filePathOf = (url: URL): string => url.pathname
 
@@ -769,6 +785,70 @@ const ACQUIRE_DIVERGENCE_CASE: InterruptExpectations = {
   mutant: { exit: interrupted, state: { acquired: true, closed: false } },
 }
 
+interface LeaderLockCase {
+  readonly equivalenceSuccess: TwiceReport
+  readonly equivalenceFailure: TwiceReport
+  readonly interrupt: InterruptExpectations
+}
+
+const LEADER_LOCK_CASE: LeaderLockCase = {
+  equivalenceSuccess: {
+    first: succeeded({ acquired: true, result: RESULT }),
+    second: succeeded({ acquired: true, result: RESULT }),
+    afterFirst: true,
+    afterSecond: true,
+  },
+  equivalenceFailure: { first: diedWith(FAILURE), second: diedWith(FAILURE), afterFirst: true, afterSecond: true },
+  interrupt: {
+    original: { exit: interrupted, state: true },
+    mutant: { exit: interrupted, state: false },
+  },
+}
+
+interface LeaderLockDriver {
+  readonly case: LeaderLockCase
+  readonly build: (
+    modules: Instrumented,
+    tryAcquire: Effect.Effect<boolean>,
+    guarded: Effect.Effect<number>,
+    closed: Ref.Ref<boolean>,
+  ) => Effect.Effect<Outcome, Failure>
+}
+
+const LEADER_LOCK_DRIVERS: Readonly<Record<string, LeaderLockDriver>> = {
+  leaderLockScopeClose: {
+    case: LEADER_LOCK_CASE,
+    build: (m, tryAcquire, guarded, closed) =>
+      requireExport(m.finalizer.leaderLockScopeClose, 'leaderLockScopeClose')(tryAcquire, guarded, closed),
+  },
+}
+
+interface NestedCoveredCase {
+  readonly equivalenceSuccess: TwiceReport
+  readonly equivalenceFailure: TwiceReport
+}
+
+const NESTED_COVERED_CASE: NestedCoveredCase = {
+  equivalenceSuccess: { first: succeeded(RESULT), second: succeeded(RESULT), afterFirst: true, afterSecond: true },
+  equivalenceFailure: { first: diedWith(FAILURE), second: diedWith(FAILURE), afterFirst: true, afterSecond: true },
+}
+
+interface NestedCoveredDriver {
+  readonly case: NestedCoveredCase
+  readonly build: (
+    modules: Instrumented,
+    inner: Effect.Effect<number>,
+    flag: Ref.Ref<boolean>,
+  ) => Effect.Effect<Outcome, Failure>
+}
+
+const NESTED_COVERED_DRIVERS: Readonly<Record<string, NestedCoveredDriver>> = {
+  nestedCoveredCalls: {
+    case: NESTED_COVERED_CASE,
+    build: (m, inner, flag) => requireExport(m.refusals.nestedCoveredCalls, 'nestedCoveredCalls')(inner, flag),
+  },
+}
+
 const requireExport = <A>(value: A | undefined, label: string): A => {
   if (value === undefined) {
     throw new Error(`the instrumented fixture lost its export ${label}`)
@@ -798,6 +878,11 @@ type SideRunner = (
   mutantId: string,
   withFault: boolean,
 ) => ScenarioSide
+
+interface ScenarioSides {
+  readonly withoutFault: ScenarioSide
+  readonly withFault: readonly ScenarioSide[]
+}
 
 const equivalenceSide = (
   prepare: Effect.Effect<Prepared>,
@@ -1158,6 +1243,60 @@ const acquireUseReleaseSide: SideRunner = (entry, kind, modules, mutantId, withF
   )
 }
 
+const leaderLockSide: SideRunner = (entry, kind, modules, mutantId, withFault) => {
+  const driver = lookupOrThrow(LEADER_LOCK_DRIVERS, entry.exportName, 'behaviour driver')
+  if (kind === 'divergence-interrupt-finalizer') {
+    const interruptPrepare: Effect.Effect<InterruptPrepared> = Effect.gen(function*() {
+      const closed = yield* Ref.make(false)
+      const started = yield* Deferred.make<void>()
+      const gate = yield* Deferred.make<void>()
+      return {
+        region: driver.build(modules, Effect.succeed(true), suspendingInner(started, gate), closed),
+        startSignal: Deferred.await(started),
+        resume: Deferred.succeed(gate, undefined),
+        readState: () => Ref.get(closed),
+      }
+    })
+    return interruptSide(
+      interruptPrepare,
+      driver.case.interrupt[withFault ? 'mutant' : 'original'],
+      mutantId,
+      withFault,
+    )
+  }
+  const failing = kind === 'equivalence-failure'
+  const guarded: Effect.Effect<number> = failing ? Effect.die(FAILURE) : Effect.succeed(RESULT)
+  return equivalenceSide(
+    Effect.map(Ref.make(false), (closed): Prepared => ({
+      effect: driver.build(modules, Effect.succeed(true), guarded, closed),
+      readState: () => Ref.get(closed),
+    })),
+    failing ? driver.case.equivalenceFailure : driver.case.equivalenceSuccess,
+    mutantId,
+    withFault,
+  )
+}
+
+const nestedCoveredSide: SideRunner = (entry, kind, modules, mutantId, withFault) => {
+  const driver = lookupOrThrow(NESTED_COVERED_DRIVERS, entry.exportName, 'behaviour driver')
+  const failing = kind === 'equivalence-failure'
+  const inner: Effect.Effect<number> = failing ? Effect.die(FAILURE) : Effect.succeed(RESULT)
+  return equivalenceSide(
+    Effect.map(Ref.make(false), (flag): Prepared => ({
+      effect: driver.build(modules, inner, flag),
+      readState: () => Ref.get(flag),
+    })),
+    failing ? driver.case.equivalenceFailure : driver.case.equivalenceSuccess,
+    mutantId,
+    withFault,
+  )
+}
+
+const SPECIAL_SIDE_RUNNERS: Readonly<Record<string, SideRunner>> = {
+  leaderLockScopeClose: leaderLockSide,
+  nestedCoveredCalls: nestedCoveredSide,
+}
+
 const SIDE_RUNNERS: Readonly<Record<string, SideRunner>> = {
   'Ref:modify': refPlainSide,
   'Ref:update': refPlainSide,
@@ -1188,9 +1327,17 @@ interface Subject {
   readonly kind: ScenarioKind
 }
 
-const sideFor = (subject: Subject, withFault: boolean): ScenarioSide => {
-  const runner = lookupOrThrow(SIDE_RUNNERS, `${subject.entry.module}:${subject.entry.operation}`, 'shape behaviour')
-  return runner(subject.entry, subject.kind, harnessOf().modules, mutantIdFor(subject.entry), withFault)
+const sideFor = (subject: Subject): ScenarioSides => {
+  const entry = subject.entry
+  const special = SPECIAL_SIDE_RUNNERS[entry.exportName]
+  const runner = special === undefined
+    ? lookupOrThrow(SIDE_RUNNERS, `${entry.module}:${entry.operation}`, 'shape behaviour')
+    : special
+  const mutantIds = mutantIdsFor(entry)
+  return {
+    withoutFault: runner(entry, subject.kind, harnessOf().modules, mutantIds.at(0) ?? '', false),
+    withFault: mutantIds.map((mutantId) => runner(entry, subject.kind, harnessOf().modules, mutantId, true)),
+  }
 }
 
 const scenarioEntries = (): readonly ShapeEntry[] => shapes.filter((entry) => entry.scenarios.length > 0)
@@ -1208,6 +1355,24 @@ const exportLineRange = (
   return { firstLine: marker + 1, lastLine: after === -1 ? lines.length : marker + after + 1 }
 }
 
+const operationCallSite = (
+  content: string,
+  entry: ShapeEntry,
+): { readonly line: number; readonly column: number } => {
+  const range = exportLineRange(content, entry.exportName)
+  const lines = content.split('\n')
+  const marker = `${entry.module}.${entry.operation}(`
+  const at = lines.findIndex((line, index) => {
+    const sourceLine = index + 1
+    return range.firstLine <= sourceLine && sourceLine <= range.lastLine && line.includes(marker)
+  })
+  if (at === -1) {
+    throw new Error(`${entry.file} ${entry.exportName} has no ${entry.module}.${entry.operation} call`)
+  }
+  const line = lines.at(at) ?? ''
+  return { line: at, column: line.indexOf(marker) + 1 }
+}
+
 const mutantsInside = (entry: ShapeEntry): readonly Mutant[] => {
   const current = harnessOf()
   const source = current.fixtureSources[entry.file]
@@ -1215,22 +1380,34 @@ const mutantsInside = (entry: ShapeEntry): readonly Mutant[] => {
     throw new Error(`${entry.file} was never instrumented`)
   }
   const range = exportLineRange(source, entry.exportName)
-  return current.mutants.filter((mutant) => {
+  const inside = current.mutants.filter((mutant) => {
     const sourceLine = mutant.location.start.line + 1
     return mutant.mutatorName === entry.mutator &&
       mutant.fileName === entry.file &&
       range.firstLine <= sourceLine &&
       sourceLine <= range.lastLine
   })
+  if (inside.length === entry.expectedMutants) {
+    return inside
+  }
+  const callSite = operationCallSite(source, entry)
+  const owned = inside.filter((mutant) =>
+    mutant.location.start.line === callSite.line && mutant.location.start.column === callSite.column
+  )
+  if (owned.length === 0) {
+    throw new Error(
+      `${entry.file} ${entry.exportName} matched none of ${inside.length} mutants at its ${entry.module}.${entry.operation} call`,
+    )
+  }
+  return owned
 }
 
-const mutantIdFor = (entry: ShapeEntry): string => {
+const mutantIdsFor = (entry: ShapeEntry): readonly string[] => {
   const located = mutantsInside(entry)
-  const mutant = located.at(0)
-  if (mutant === undefined || located.length > 1) {
-    throw new Error(`${entry.file} ${entry.exportName} mapped to ${located.length} mutants`)
+  if (located.length === 0) {
+    throw new Error(`${entry.file} ${entry.exportName} mapped to no mutants`)
   }
-  return mutant.id
+  return located.map((mutant) => mutant.id)
 }
 
 const mappingMismatches = (): readonly string[] => {
@@ -1313,7 +1490,8 @@ const loadInstrumentedModules: Effect.Effect<Instrumented, FixtureImportError> =
     new URL('effect-concurrency/finalizer-escape.ts', SCRATCH_URL),
     isFinalizerEscapeModule,
   )
-  return { atomic, synchronization, finalizer }
+  const refusals = yield* loadModule(new URL('effect-concurrency/refusals.ts', SCRATCH_URL), isRefusalsModule)
+  return { atomic, synchronization, finalizer, refusals }
 })
 
 const removeScratch: Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem> = Effect.flatMap(
@@ -1331,8 +1509,19 @@ const buildHarness = Effect.gen(function*() {
         content,
       })),
   )
+  const supportSources = yield* Effect.forEach(
+    SUPPORT_MODULES,
+    (name) =>
+      Effect.map(fs.readFileString(filePathOf(new URL(name, FIXTURE_URL))), (content) => ({
+        name: `effect-concurrency/${name}`,
+        content,
+      })),
+  )
   const result: InstrumentResult = yield* instrument(
-    sources.map((source) => ({ ...source, mutate: true })),
+    [
+      ...sources.map((source) => ({ ...source, mutate: true })),
+      ...supportSources.map((source) => ({ ...source, mutate: false })),
+    ],
     { ignorers: [], excludedMutations: [], optInMutations: [...LIVE] },
   )
   yield* fs.remove(filePathOf(SCRATCH_URL), { recursive: true, force: true })
@@ -1383,8 +1572,8 @@ Feature('Keeping single-fiber behaviour while exposing races in Effect concurren
             expect(coverage.notLive).toStrictEqual([])
             expect(coverage.shapesPerFault).toStrictEqual({
               AtomicUpdateSplit: 37,
-              FinalizerEscape: 16,
-              SynchronizationRemoval: 10,
+              FinalizerEscape: 19,
+              SynchronizationRemoval: 11,
             })
           })
         ),
@@ -1401,15 +1590,21 @@ Feature('Keeping single-fiber behaviour while exposing races in Effect concurren
               'report',
               (s) =>
                 Effect.flatMap(
-                  sideFor(s.subject, false).run,
+                  sideFor(s.subject).withoutFault.run,
                   (withoutFault) =>
-                    Effect.map(sideFor(s.subject, true).run, (withFault) => ({ withoutFault, withFault })),
+                    Effect.map(
+                      Effect.forEach(sideFor(s.subject).withFault, (side) => side.run),
+                      (withFault) => ({ withoutFault, withFault }),
+                    ),
                 ),
             ),
             Then('each run matches the outcome this specification states')((s) =>
               Effect.sync(() => {
-                expect(s.report.withoutFault, 'without the fault').toStrictEqual(sideFor(s.subject, false).expected)
-                expect(s.report.withFault, 'with the fault').toStrictEqual(sideFor(s.subject, true).expected)
+                const sides = sideFor(s.subject)
+                expect(s.report.withoutFault, 'without the fault').toStrictEqual(sides.withoutFault.expected)
+                expect(s.report.withFault, 'with each fault active one at a time').toStrictEqual(
+                  sides.withFault.map((side) => side.expected),
+                )
               })
             ),
           ),

@@ -169,7 +169,7 @@ export const shapes: readonly ShapeEntry[] = [
     FINALIZER,
     'leaderLockScopeClose',
     1,
-    noScenarios,
+    bracketKinds,
   ),
 
   finalizerOp('ensuring', 'data-first', 'ensuringDataFirst'),
@@ -234,7 +234,7 @@ export const shapes: readonly ShapeEntry[] = [
     FINALIZER,
     'leaderLockScopeClose',
     1,
-    noScenarios,
+    bracketKinds,
   ),
   shape(
     'FinalizerEscape',
@@ -244,7 +244,7 @@ export const shapes: readonly ShapeEntry[] = [
     FINALIZER,
     'leaderLockScopeClose',
     1,
-    noScenarios,
+    finalizerKinds,
   ),
 
   shape(
@@ -295,7 +295,7 @@ export const shapes: readonly ShapeEntry[] = [
     REFUSALS,
     'nestedCoveredCalls',
     2,
-    noScenarios,
+    bracketKinds,
   ),
   shape(
     'AtomicUpdateSplit',
