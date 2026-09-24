@@ -57,7 +57,9 @@ export class DrainRegistryCommand extends S.TaggedClass<DrainRegistryCommand>()(
   timedOut: S.optional(S.Boolean),
   outcomes: S.optional(S.Record(S.String, TestOutcomeSchema)),
   lateRejections: S.optional(S.Array(S.String)),
-}) {}
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
 
 const LATE_REJECTION_NAME = 'unhandled rejection'
 
@@ -136,7 +138,9 @@ const decideDrain = (command: DrainRegistryCommand): DrainOutcome =>
     Match.exhaustive,
   )
 
-export const drainRegistry = Workflow.total(
-  DrainRegistryCommand,
-  (command: DrainRegistryCommand) => Result.succeed(decideDrain(command)),
-)
+export const drainRegistry = Workflow.make({
+  command: DrainRegistryCommand,
+  decision: S.Union([DrainCompleted, DrainTimedOut]),
+  error: S.Never,
+  decide: (command: DrainRegistryCommand) => Result.succeed(decideDrain(command)),
+})

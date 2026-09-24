@@ -140,8 +140,14 @@ const inProcessRunner = (
     Match.when(
       isVmRunner,
       (): Option.Option<
-        Effect.Effect<PooledTestRunner, PooledTestRunnerError, FileSystem.FileSystem | VmRunner>
-      > => Option.some(vmTestRunner({ testFiles: context.testFiles })),
+        Effect.Effect<PooledTestRunner, PooledTestRunnerError, VmRunner>
+      > =>
+        Option.some(
+          vmTestRunner({
+            testFiles: context.testFiles,
+            sandboxWorkingDirectory: context.sandboxWorkingDirectory,
+          }),
+        ),
     ),
     Match.orElse(() => Option.none()),
   )
