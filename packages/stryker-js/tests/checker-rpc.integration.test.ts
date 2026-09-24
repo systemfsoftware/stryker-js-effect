@@ -29,6 +29,7 @@ import * as SocketServer from 'effect/unstable/socket/SocketServer'
 import { expect } from 'vitest'
 
 import { memorySocketPair, singleConnection } from './__fixtures__/substituted-worker.fixture.js'
+import { make as makeSpawnedSocketWorker } from '../src/spawned-socket-worker.handle.js'
 
 const Feature = makeFeature({ it, layer })
 
@@ -73,14 +74,16 @@ const makeHarness = () =>
 
     const launcherLayer = Layer.succeed(WorkerLauncher, {
       spawn: () =>
-        Effect.succeed({
-          pid: 4242,
-          clientLayer: RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
-            Layer.provide(Layer.succeed(Socket.Socket, clientSocket)),
-            Layer.provide(RpcSerialization.layerNdjson),
-          ),
-          exited: Effect.never,
-        }),
+        Effect.succeed(
+          makeSpawnedSocketWorker({
+            pid: 4242,
+            clientLayer: RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
+              Layer.provide(Layer.succeed(Socket.Socket, clientSocket)),
+              Layer.provide(RpcSerialization.layerNdjson),
+            ),
+            exited: Effect.never,
+          }),
+        ),
     })
 
     const options = yield* S.decodeEffect(StrykerOptionsSchema)({}).pipe(Effect.orDie)
