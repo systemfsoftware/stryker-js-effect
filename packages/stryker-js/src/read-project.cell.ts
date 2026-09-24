@@ -1,7 +1,7 @@
 /// <reference types="vitest/importMeta" />
-import type { FileDescriptions, MutateDescription } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutationTestResult, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Schema as S } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Equivalence from 'effect/Equivalence'
@@ -16,12 +16,12 @@ import { badArgument, type PlatformError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 
 import { admitIncrementalReport, AdmitIncrementalReportCommand } from './admit-incremental-report.workflow.js'
-import { defaultOptions } from './config-defaults.js'
-import { compileIgnoreRule, type IgnoreRule } from './glob-match.js'
+import { StrykerConfig } from './config/stryker-config.schema.js'
 import { IncrementalReportSchema } from './IncrementalReport.schema.js'
-import { MutationRangeSpecifierSchema, type MutationRangeSpecifier } from './MutationRange.schema.js'
+import { IgnoreRule } from './matching.schema.js'
+import { type MutationRangeSpecifier, MutationRangeSpecifierSchema } from './MutationRange.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
-import { strykerVersion } from './stryker-package.js'
+import { StrykerPackage } from './stryker-package.schema.js'
 
 const ALWAYS_IGNORE = Object.freeze([
   'node_modules',
@@ -136,10 +136,12 @@ const resolveAgainstBase = (basePath: string, pattern: string) => {
   return Boolean.match(normalized.startsWith('/'), {
     onTrue: () => normalized,
     onFalse: () =>
-      `${base}/${Boolean.match(normalized.startsWith('./'), {
-        onTrue: () => normalized.slice(2),
-        onFalse: () => normalized,
-      })}`,
+      `${base}/${
+        Boolean.match(normalized.startsWith('./'), {
+          onTrue: () => normalized.slice(2),
+          onFalse: () => normalized,
+        })
+      }`,
   })
 }
 
@@ -158,7 +160,12 @@ const hasHiddenSegment = (fileName: string, base: string) => {
   return relative.split('/').some((segment) => segment.startsWith('.'))
 }
 
-const isExcludedHiddenFile = (normalizedFile: string, base: string, allowHiddenFiles: boolean, patternHasDot: boolean) =>
+const isExcludedHiddenFile = (
+  normalizedFile: string,
+  base: string,
+  allowHiddenFiles: boolean,
+  patternHasDot: boolean,
+) =>
   Boolean.match(allowHiddenFiles, {
     onTrue: () => false,
     onFalse: () =>
@@ -296,11 +303,15 @@ const applyMutatePattern = (
     },
     onFalse: () => {
       const matched = filterMutatePatternPure(inputFileNames, pattern, basePath)
-      return HashMap.reduce(matched, selected, (inner, description, fileName) =>
-        Option.match(HashMap.get(inner, fileName), {
-          onNone: () => HashMap.set(inner, fileName, unionDescription(description, undefined)),
-          onSome: (existing) => HashMap.set(inner, fileName, unionDescription(description, existing)),
-        }))
+      return HashMap.reduce(
+        matched,
+        selected,
+        (inner, description, fileName) =>
+          Option.match(HashMap.get(inner, fileName), {
+            onNone: () => HashMap.set(inner, fileName, unionDescription(description, undefined)),
+            onSome: (existing) => HashMap.set(inner, fileName, unionDescription(description, existing)),
+          }),
+      )
     },
   })
 }
@@ -312,15 +323,19 @@ const intersectTarget = (
   basePath: string,
 ) => {
   const matched = filterMutatePatternPure(HashMap.keys(afterMutate), pattern, basePath)
-  return HashMap.reduce(matched, seen, (innerSeen, description, fileName) =>
-    Option.match(HashMap.get(afterMutate, fileName), {
-      onNone: () => innerSeen,
-      onSome: (current) => {
-        const intersected = intersectFileDescriptions(current, description)
-        const alreadySeen = Option.getOrElse(HashMap.get(innerSeen, fileName), () => undefined)
-        return HashMap.set(innerSeen, fileName, unionDescription(intersected, alreadySeen))
-      },
-    }))
+  return HashMap.reduce(
+    matched,
+    seen,
+    (innerSeen, description, fileName) =>
+      Option.match(HashMap.get(afterMutate, fileName), {
+        onNone: () => innerSeen,
+        onSome: (current) => {
+          const intersected = intersectFileDescriptions(current, description)
+          const alreadySeen = Option.getOrElse(HashMap.get(innerSeen, fileName), () => undefined)
+          return HashMap.set(innerSeen, fileName, unionDescription(intersected, alreadySeen))
+        },
+      }),
+  )
 }
 
 const restrictToTargets = (
@@ -363,7 +378,11 @@ const resolveFileDescriptionsPure = (
   })
 }
 
-const resolveTestFilesPure = (inputFileNames: readonly string[], testFilePatterns: readonly string[], basePath: string) =>
+const resolveTestFilesPure = (
+  inputFileNames: readonly string[],
+  testFilePatterns: readonly string[],
+  basePath: string,
+) =>
   Boolean.match(testFilePatterns.length === 0, {
     onTrue: (): readonly string[] => [],
     onFalse: () =>
@@ -385,12 +404,12 @@ const selectFiles = (input: FileSelectionInput): SelectedFiles => ({
 const stringArrayEquivalence = Equivalence.Array(Equivalence.String)
 
 type ReadProjectInput = {
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
   readonly basePath: string
 }
 
-const ignoreRulesOf = (options: StrykerOptions) => [
+const ignoreRulesOf = (options: Options.StrykerOptions) => [
   ...ALWAYS_IGNORE,
   options.tempDirName,
   options.incrementalFile,
@@ -492,7 +511,7 @@ const resolveInputFileNames = (
   ignoreRules: readonly string[],
   basePath: string,
 ): Effect.Effect<string[], PlatformError, FileSystem.FileSystem | Path.Path> =>
-  crawlDir(ignoreRules.map(compileIgnoreRule), basePath, basePath)
+  crawlDir(ignoreRules.map(IgnoreRule.fromPattern), basePath, basePath)
 
 const selectionOf = (
   inputFileNames: readonly string[],
@@ -566,7 +585,7 @@ const reportOf = (contents: string | undefined) =>
 
 const incrementalContentsOf = (
   fs: FileSystem.FileSystem,
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
 ): Effect.Effect<Option.Option<string>, PlatformError> =>
   Boolean.match(options.incremental, {
     onFalse: () => Effect.succeedNone,
@@ -591,7 +610,7 @@ const incrementalContentsOf = (
   })
 
 type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
   readonly basePath: string
   readonly incremental: boolean
@@ -605,7 +624,7 @@ const addProjectFile = (
   files: MutableHashMap.MutableHashMap<string, ProjectFile>,
   filesToMutate: MutableHashMap.MutableHashMap<string, ProjectFile>,
   name: string,
-  desc: { readonly mutate: MutateDescription },
+  desc: { readonly mutate: Instrument.MutateDescription },
 ): void => {
   const file: ProjectFile = { name, mutate: desc.mutate, content: undefined, originalContent: undefined }
   MutableHashMap.set(files, name, file)
@@ -616,8 +635,8 @@ const addProjectFile = (
 }
 
 const makeProject = (
-  fileDescriptions: FileDescriptions,
-  incrementalReport?: MutationTestResult,
+  fileDescriptions: Instrument.FileDescriptions,
+  incrementalReport?: Report.MutationTestResult,
   testFiles: readonly string[] = [],
 ): Project => {
   const files: MutableHashMap.MutableHashMap<string, ProjectFile> = MutableHashMap.empty<string, ProjectFile>()
@@ -637,7 +656,7 @@ const readProjectCommand = (input: ReadProjectInput) =>
     const mutatePatterns: readonly string[] = input.options.mutate
     const testFilePatterns: readonly string[] = input.options.testFiles
     const inputFileNames = yield* resolveInputFileNames(ignoreRulesOf(input.options), input.basePath)
-    const defaults = yield* defaultOptions
+    const defaults = yield* StrykerConfig.defaultOptions
     const decision = selectFiles(
       selectionOf(inputFileNames, mutatePatterns, testFilePatterns, input.basePath, input.targetMutatePatterns),
     )
@@ -658,7 +677,7 @@ const readProjectCommand = (input: ReadProjectInput) =>
     const fs = yield* FileSystem.FileSystem
     const contents = Option.getOrUndefined(yield* incrementalContentsOf(fs, input.options))
     return Object.assign(
-      AdmitIncrementalReportCommand.make({ report: reportOf(contents), expectedVersion: strykerVersion }),
+      AdmitIncrementalReportCommand.make({ report: reportOf(contents), expectedVersion: StrykerPackage.version }),
       {
         options: input.options,
         targetMutatePatterns: input.targetMutatePatterns,
@@ -696,13 +715,13 @@ const discardLogOf = (
   })
 
 export interface ReadProjectDone {
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
   readonly basePath: string
   readonly project: Project
 }
 
-const projectOf = (command: ReadProjectCommand, report: MutationTestResult | undefined): ReadProjectDone => ({
+const projectOf = (command: ReadProjectCommand, report: Report.MutationTestResult | undefined): ReadProjectDone => ({
   options: command.options,
   targetMutatePatterns: command.targetMutatePatterns,
   basePath: command.basePath,
@@ -725,7 +744,8 @@ const rangeLawHolds = (startLine: number, endLine: number, column: number) => {
     mutate: [{ start: { line: startLine - 1, column: startColumn }, end: { line: endLine - 1, column: endColumn } }],
   })
   const caseHolds = (pattern: string, startColumn: number, endColumn: number) =>
-    JSON.stringify(Option.getOrUndefined(mutationRangeOf(pattern))) === JSON.stringify(expectedSpanOf(startColumn, endColumn))
+    JSON.stringify(Option.getOrUndefined(mutationRangeOf(pattern))) ===
+      JSON.stringify(expectedSpanOf(startColumn, endColumn))
   return ([
     [`src/a.ts:${startLine}:${column}-${endLine}:${column}`, column, column],
     [`src/a.ts:${startLine}:${column}-${endLine}`, column, Number.MAX_SAFE_INTEGER],
@@ -793,4 +813,3 @@ if (import.meta.vitest !== void 0) {
     },
   )
 }
-

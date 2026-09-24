@@ -1,7 +1,7 @@
 import { sharedConfig } from '@systemfsoftware/stryker-config'
-import { defineConfig, type StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js/config'
 
-const config: StrykerConfig = defineConfig({
+const config = {
   ...sharedConfig,
   testRunner: {
     plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
@@ -20,6 +20,6 @@ const config: StrykerConfig = defineConfig({
   plugins: [
     import.meta.resolve('@systemfsoftware/stryker-test-contribution'),
   ],
-})
+} satisfies PartialStrykerOptions
 
 export default config

@@ -1,8 +1,6 @@
 import { Effect } from 'effect'
 import * as S from 'effect/Schema'
 
-import { type StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-
 export type StrykerNamespace = '__stryker__' | '__stryker2__'
 
 export type TestRunnerPhase = 'capabilities' | 'init' | 'dryRun' | 'mutantRun' | 'dispose'
@@ -16,11 +14,6 @@ export const VitestRunnerOptionsSchema = S.Struct({
 })
 
 export type VitestRunnerOptions = S.Schema.Type<typeof VitestRunnerOptionsSchema>
-export interface StrykerVitestRunnerOptions {
-  vitest: VitestRunnerOptions
-}
-
-export interface VitestRunnerOptionsWithStrykerOptions extends StrykerVitestRunnerOptions, StrykerOptions {}
 
 export const HitCountMetaSchema = S.Struct({ hitCount: S.optional(S.Finite) })
 

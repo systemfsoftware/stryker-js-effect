@@ -1,10 +1,35 @@
-import { Array, Boolean, Cache, Config, Context, Crypto, Effect, FileSystem, Layer, Match, Option, Path, Result, Schema, Scope, Stream } from 'effect'
-import { ChildProcess, ChildProcessSpawner } from 'effect/unstable/process'
-import type { PlatformError } from 'effect/PlatformError'
 import type { Readiness } from '@systemfsoftware/effect-readiness'
+import {
+  Array,
+  Boolean,
+  Cache,
+  Config,
+  Context,
+  Crypto,
+  Effect,
+  Encoding,
+  FileSystem,
+  Layer,
+  Match,
+  Option,
+  Path,
+  Result,
+  Schema,
+  Scope,
+  Stream,
+} from 'effect'
+import type { PlatformError } from 'effect/PlatformError'
+import { ChildProcess, ChildProcessSpawner } from 'effect/unstable/process'
 
 import type { BakedInput, FileBytes, PackedPackage, PackedPackageLookup, TurboDryClosure } from './bake-key.schema.js'
-import { TurboDryRun } from './bake-key.schema.js'
+import {
+  FoundPackage,
+  MalformedClosure,
+  MissingTarball,
+  TurboClosure,
+  TurboDryRun,
+  UnreadableVersion,
+} from './bake-key.schema.js'
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
@@ -75,11 +100,13 @@ const requireZeroExit = (step: string, outcome: CommandOutcome) =>
   Boolean.match(outcome.exitCode === 0, {
     onTrue: () => Effect.succeed(outcome),
     onFalse: () =>
-      Effect.fail(new ExitFailure({
-        step,
-        exitCode: outcome.exitCode,
-        stderrTail: outcome.stderr.slice(-GuestJobs.STDERR_TAIL_CHARS),
-      })),
+      Effect.fail(
+        new ExitFailure({
+          step,
+          exitCode: outcome.exitCode,
+          stderrTail: outcome.stderr.slice(-GuestJobs.STDERR_TAIL_CHARS),
+        }),
+      ),
   })
 
 const runChecked = (step: string, argv: Argv, cwd?: string) =>
@@ -200,8 +227,7 @@ const canonicalJson = (value: unknown): unknown =>
 
 const canonicalBytes = (relativePath: string, bytes: Uint8Array): Uint8Array =>
   Boolean.match(relativePath.split('/').pop() === 'package.json', {
-    onTrue: () =>
-      new TextEncoder().encode(JSON.stringify(canonicalJson(JSON.parse(new TextDecoder().decode(bytes))))),
+    onTrue: () => new TextEncoder().encode(JSON.stringify(canonicalJson(JSON.parse(new TextDecoder().decode(bytes))))),
     onFalse: () => bytes,
   })
 
@@ -241,11 +267,8 @@ const keyBytes = (input: BakedInput): Uint8Array => {
   return bytes
 }
 
-const hexOf = (digest: Uint8Array): string =>
-  Array.fromIterable(digest).map((byte) => byte.toString(16).padStart(2, '0')).join('')
-
 const bakeCacheKey = (crypto: Crypto.Crypto, input: BakedInput) =>
-  Effect.map(crypto.digest('SHA-256', keyBytes(input)), hexOf)
+  Effect.map(crypto.digest('SHA-256', keyBytes(input)), Encoding.encodeHex)
 
 const packageNameOf = (task: typeof TurboDryRun.Type.tasks[number]): ReadonlyArray<string> =>
   Option.match(
@@ -259,14 +282,12 @@ const packageNameOf = (task: typeof TurboDryRun.Type.tasks[number]): ReadonlyArr
 const resolveTurboDryClosure = (stdout: string): TurboDryClosure => {
   const jsonStart = stdout.indexOf('{')
   return Option.match(Option.filter(Option.some(jsonStart), (start) => start >= 0), {
-    onNone: (): TurboDryClosure => ({ _tag: 'Malformed' }),
+    onNone: (): TurboDryClosure => MalformedClosure.make({}),
     onSome: (start): TurboDryClosure =>
       Result.match(Schema.decodeResult(Schema.fromJsonString(TurboDryRun))(stdout.slice(start)), {
-        onFailure: (): TurboDryClosure => ({ _tag: 'Malformed' }),
-        onSuccess: (dryRun): TurboDryClosure => ({
-          _tag: 'Closure',
-          packages: [...Array.dedupe(dryRun.tasks.flatMap(packageNameOf))].sort(),
-        }),
+        onFailure: (): TurboDryClosure => MalformedClosure.make({}),
+        onSuccess: (dryRun): TurboDryClosure =>
+          TurboClosure.make({ packages: [...Array.dedupe(dryRun.tasks.flatMap(packageNameOf))].sort() }),
       }),
   })
 }
@@ -279,14 +300,14 @@ const lookupOf = (
   return Option.match(
     Array.findFirst(fileNames, (candidate) => candidate.startsWith(prefix) && candidate.endsWith('.tgz')),
     {
-      onNone: (): PackedPackageLookup => ({ _tag: 'MissingTarball', prefix, directory }),
+      onNone: (): PackedPackageLookup => MissingTarball.make({ prefix, directory }),
       onSome: (fileName): PackedPackageLookup =>
         Option.match(Option.fromNullishOr(PACKED_TARBALL_VERSION.exec(fileName)?.[1]), {
-          onNone: (): PackedPackageLookup => ({ _tag: 'UnreadableVersion', fileName }),
-          onSome: (version): PackedPackageLookup => ({
-            _tag: 'Found',
-            pack: { name: packageName, version, fileName, tarballPath: `${directory}/${fileName}` },
-          }),
+          onNone: (): PackedPackageLookup => UnreadableVersion.make({ fileName }),
+          onSome: (version): PackedPackageLookup =>
+            FoundPackage.make({
+              pack: { name: packageName, version, fileName, tarballPath: `${directory}/${fileName}` },
+            }),
         }),
     },
   )
@@ -296,15 +317,19 @@ const packedTarballOf = (fileNames: ReadonlyArray<string>, packageName: string, 
   Match.value(lookupOf(fileNames, packageName, directory)).pipe(
     Match.tag('Found', (lookup) => Effect.succeed(lookup.pack)),
     Match.tag('MissingTarball', (lookup) =>
-      Effect.fail(new PackFailure({
-        step: STEP_TARBALLS,
-        detail: `pnpm pack wrote no ${lookup.prefix}*.tgz into ${lookup.directory}`,
-      }))),
+      Effect.fail(
+        new PackFailure({
+          step: STEP_TARBALLS,
+          detail: `pnpm pack wrote no ${lookup.prefix}*.tgz into ${lookup.directory}`,
+        }),
+      )),
     Match.tag('UnreadableVersion', (lookup) =>
-      Effect.fail(new PackFailure({
-        step: STEP_TARBALLS,
-        detail: `the packed tarball ${lookup.fileName} carries no parseable version`,
-      }))),
+      Effect.fail(
+        new PackFailure({
+          step: STEP_TARBALLS,
+          detail: `the packed tarball ${lookup.fileName} carries no parseable version`,
+        }),
+      )),
     Match.exhaustive,
   )
 
@@ -319,15 +344,24 @@ const packWorkspaceClosure = (environment: BakeEnvironment, directory: string) =
     const closure = resolveTurboDryClosure(dryRun.stdout)
     return yield* Match.value(closure).pipe(
       Match.tag('Malformed', () =>
-        Effect.fail(new PackFailure({
-          step: STEP_CLOSURE,
-          detail: 'the turbo dry run wrote no parseable closure document',
-        }))),
+        Effect.fail(
+          new PackFailure({
+            step: STEP_CLOSURE,
+            detail: 'the turbo dry run wrote no parseable closure document',
+          }),
+        )),
       Match.tag('Closure', (closure) =>
         Effect.gen(function*() {
           yield* runChecked(
             STEP_CLOSURE,
-            ['pnpm', 'exec', 'turbo', 'run', 'build', ...closure.packages.map((packageName) => `--filter=${packageName}`)],
+            [
+              'pnpm',
+              'exec',
+              'turbo',
+              'run',
+              'build',
+              ...closure.packages.map((packageName) => `--filter=${packageName}`),
+            ],
             environment.repoRoot,
           )
           yield* Effect.forEach(
@@ -486,7 +520,9 @@ export interface BakedFixtureCacheShape {
   readonly readFile: (filePath: string) => Effect.Effect<string, PlatformError, FileSystem.FileSystem>
 }
 
-export class BakedFixtureCache extends Context.Service<BakedFixtureCache, BakedFixtureCacheShape>()('@systemfsoftware/stryker-e2e/Harness/BakedFixtureCache') {
+export class BakedFixtureCache extends Context.Service<BakedFixtureCache, BakedFixtureCacheShape>()(
+  '@systemfsoftware/stryker-e2e/Harness/BakedFixtureCache',
+) {
   static readonly BAKED_ROOT_ENV = 'STRYKER_E2E_BAKED_ROOT'
 
   static readonly bakeProgram: Effect.Effect<string, HarnessError, BakePlatform> = Effect.flatMap(bakeEnvironment, bake)
@@ -504,8 +540,7 @@ export class BakedFixtureCache extends Context.Service<BakedFixtureCache, BakedF
       return {
         root,
         install: (request: FixtureRequest) => Cache.get(installed, cacheKeyOf(request)),
-        readFile: (filePath: string) =>
-          Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(filePath)),
+        readFile: (filePath: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(filePath)),
       }
     }),
   )

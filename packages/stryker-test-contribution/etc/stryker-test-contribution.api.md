@@ -4,76 +4,11 @@
 
 ```ts
 
-import * as Effect from 'effect/Effect';
-import { Evaluator } from '@systemfsoftware/stryker-js-plugin-interface';
-import { EvaluatorFailed } from '@systemfsoftware/stryker-js-plugin-interface';
-import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface';
-import * as Layer from 'effect/Layer';
-import * as schema from '@systemfsoftware/stryker-js-plugin-interface';
-
-// @public (undocumented)
-export const contributionByTestFile: (report: ReportView) => ReadonlyMap<string, TestFileContribution>;
-
-// @public (undocumented)
-export const defaultRequireTestContributionSuffixes: readonly ['.workflow.property.test.ts', '.policy.property.test.ts', '.kernel.property.test.ts'];
-
-// @public (undocumented)
-export const judgeTestContribution: {
-    (report: ReportView, everyKillerRecorded: boolean, suffixes?: readonly string[]): TestContributionVerdict;
-    (everyKillerRecorded: boolean, suffixes?: readonly string[]): (report: ReportView) => TestContributionVerdict;
-};
-
-// @public (undocumented)
-export const makeTestContributionEvaluatorService: (options: {
-    readonly disableBail: boolean;
-}) => {
-    readonly evaluate: (report: schema.MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed>;
-};
-
-// @public (undocumented)
-export type ReportView = Pick<schema.MutationTestResult, 'files' | 'testFiles'>;
-
 // @public (undocumented)
 export const strykerPlugins: readonly {
     readonly kind: 'Evaluator';
     readonly name: string;
 }[];
-
-// @public (undocumented)
-export const testContributionEvaluatorLayer: (options: {
-    readonly disableBail: boolean;
-}) => Layer.Layer<Evaluator>;
-
-// @public (undocumented)
-export interface TestContributionInput {
-    readonly everyKillerRecorded: boolean;
-    // (undocumented)
-    readonly suffixes: readonly string[];
-}
-
-// @public (undocumented)
-export interface TestContributionVerdict {
-    // (undocumented)
-    readonly failed: boolean;
-    // (undocumented)
-    readonly message: string;
-}
-
-// @public (undocumented)
-export interface TestFileContribution {
-    readonly coversUnattributedKill: boolean;
-    readonly killableCovered: number;
-    // (undocumented)
-    readonly soleKills: number;
-    // (undocumented)
-    readonly totalKills: number;
-}
-
-// @public (undocumented)
-export const toothlessTestFiles: {
-    (contribution: ReadonlyMap<string, TestFileContribution>, input: TestContributionInput): readonly string[];
-    (input: TestContributionInput): (contribution: ReadonlyMap<string, TestFileContribution>) => readonly string[];
-};
 
 // (No @packageDocumentation comment for this package)
 

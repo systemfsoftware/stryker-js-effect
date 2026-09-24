@@ -20,12 +20,12 @@
  * holds, which is why its `Type` had to be discarded and patched by hand.
  */
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 const RunRequestBase = S.TaggedStruct('run', { survivors: S.Boolean })
 
 export type RunRequest = S.Schema.Type<typeof RunRequestBase> & {
-  readonly options: PartialStrykerOptions
+  readonly options: Options.PartialStrykerOptions
 }
 
 const MergeReportsRequestBase = S.TaggedStruct('merge-reports', {
@@ -51,4 +51,3 @@ export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteC
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
-

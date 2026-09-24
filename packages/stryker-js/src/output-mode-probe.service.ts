@@ -94,7 +94,7 @@ export interface OutputModeProbe {
 class OutputModeProbeTag extends Context.Service<
   OutputModeProbeTag,
   OutputModeProbe
->()('@systemfsoftware/stryker-js/output-mode-probe/OutputModeProbeTag') {
+>()('@systemfsoftware/stryker-js/output-mode-probe.service/OutputModeProbeTag') {
   static readonly layer: Layer.Layer<OutputModeProbeTag, never, Stdio.Stdio> = Layer.effect(
     OutputModeProbeTag,
     Effect.map(Stdio.Stdio, (stdio) =>

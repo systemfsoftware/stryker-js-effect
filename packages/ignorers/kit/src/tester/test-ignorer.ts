@@ -65,8 +65,7 @@ const FILE_NAMES: Record<ScriptLang, string> = {
   tsx: 'case.tsx',
 }
 
-const toSpan = (expect: string | IgnoredSpan): IgnoredSpan =>
-  typeof expect === 'string' ? { text: expect } : expect
+const toSpan = (expect: string | IgnoredSpan): IgnoredSpan => typeof expect === 'string' ? { text: expect } : expect
 
 const langOf = (one: { readonly lang?: ScriptLang }) => one.lang ?? 'ts'
 

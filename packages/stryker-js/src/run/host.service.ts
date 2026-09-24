@@ -1,4 +1,4 @@
-import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import type * as Effect from 'effect/Effect'
 import type * as Queue from 'effect/Queue'
@@ -14,6 +14,6 @@ export interface HostServices {
 }
 
 export type StrykerRun = (
-  options: PartialStrykerOptions,
+  options: Options.PartialStrykerOptions,
   targetMutatePatterns?: string[],
 ) => Effect.Effect<MutationTestDone, StageError, never>

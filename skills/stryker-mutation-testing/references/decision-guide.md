@@ -16,9 +16,9 @@ content_hash: 570282
 ### Dynamic Switch via `isCi`
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig(({ isCi }) => ({
+export default StrykerConfig.define(({ isCi }) => ({
   testRunner: isCi ? 'vitest' : 'vm',
   plugins: [
     import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),

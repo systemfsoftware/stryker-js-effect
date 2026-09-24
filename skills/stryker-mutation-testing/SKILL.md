@@ -100,15 +100,15 @@ pnpm add -D @systemfsoftware/stryker-js \
 ```yaml
 - id: W3
   title: Author stryker.config.ts
-  do: generate configuration using defineConfig with negative mutate globs and import.meta.resolve()
+  do: generate configuration using StrykerConfig.define with negative mutate globs and import.meta.resolve()
   dont: hand-craft JSON configuration files or omit type checking
   check: test -f stryker.config.ts
 ```
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig(({ isCi }) => ({
+export default StrykerConfig.define(({ isCi }) => ({
   testRunner: isCi ? 'vitest' : 'vm',
   checkers: ['typescript'],
   plugins: [

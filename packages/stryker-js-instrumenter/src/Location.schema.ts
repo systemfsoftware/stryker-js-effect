@@ -7,8 +7,8 @@ import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
 export const PositionSchema = S.Struct({
-  line: S.Finite,
-  column: S.Finite,
+  line: S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0))),
+  column: S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0))),
 })
 export type Position = typeof PositionSchema.Type
 
@@ -23,6 +23,45 @@ export const OpenEndLocationSchema = S.Struct({
   end: S.optional(PositionSchema),
 })
 export type OpenEndLocation = typeof OpenEndLocationSchema.Type
+
+const ReportCoordinate = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
+
+const ReportPositionSchema = S.Struct({
+  column: ReportCoordinate,
+  line: ReportCoordinate,
+})
+
+const ReportLocationSchema = S.Struct({
+  start: ReportPositionSchema,
+  end: ReportPositionSchema,
+})
+
+const reportPositionOf = (position: Position) => ({
+  column: position.column + 1,
+  line: position.line + 1,
+})
+
+const reportLocationOf = (location: Location) => ({
+  start: reportPositionOf(location.start),
+  end: reportPositionOf(location.end),
+})
+
+const mutantPositionOf = (position: Position) => ({
+  column: position.column - 1,
+  line: position.line - 1,
+})
+
+const mutantLocationOf = (location: Location) => ({
+  start: mutantPositionOf(location.start),
+  end: mutantPositionOf(location.end),
+})
+
+export const ReportLocationFromMutant = LocationSchema.pipe(
+  S.decodeTo(ReportLocationSchema, {
+    decode: SGetter.transform(reportLocationOf),
+    encode: SGetter.transform(mutantLocationOf),
+  }),
+)
 
 const NonNegativeInt = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
 
@@ -52,16 +91,17 @@ const lineStartsOf = (text: string): LineStarts => ({
   lineStarts: [0, ...[...text.matchAll(LINE_TERMINATOR)].map((match) => endOfMatch(match))],
 })
 
-const endOfMatch = (match: RegExpMatchArray): number =>
-  (match.index ?? 0) + match[0].length
+const endOfMatch = (match: RegExpMatchArray): number => (match.index ?? 0) + match[0].length
 
 const canonicalTextOf = (table: LineStarts): string =>
   Boolean.match(table.lineStarts.length === 1, {
     onTrue: () => '',
     onFalse: () =>
-      `${Arr.zip(table.lineStarts.slice(0, -1), table.lineStarts.slice(1))
-        .map(([start, next]) => ' '.repeat(next - start - 1))
-        .join('\n')}\n`,
+      `${
+        Arr.zip(table.lineStarts.slice(0, -1), table.lineStarts.slice(1))
+          .map(([start, next]) => ' '.repeat(next - start - 1))
+          .join('\n')
+      }\n`,
   })
 
 export const LineTableFromText = S.String.pipe(
@@ -117,8 +157,10 @@ if (import.meta.vitest !== void 0) {
       (draw) => ((draw % (text.length + 1)) + text.length + 1) % (text.length + 1),
     )
 
-  const textWithOffset = Arbitrary.flatMap(textArbitrary, (text) =>
-    Arbitrary.map(offsetIn(text), (offset) => ({ text, offset })))
+  const textWithOffset = Arbitrary.flatMap(
+    textArbitrary,
+    (text) => Arbitrary.map(offsetIn(text), (offset) => ({ text, offset })),
+  )
 
   const comparePositions = (a: Position, b: Position): number => {
     const lineDelta = a.line - b.line

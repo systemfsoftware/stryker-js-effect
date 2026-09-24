@@ -1,12 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import type {
-  FileResult,
-  MutantResult,
-  MutationTestResult,
-  TestFile,
-  Thresholds,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -31,13 +24,13 @@ const ALL_PACKAGES_LABEL = '**all**'
 const SEGMENT_SEPARATORS = /[/\\]/
 const EMPTY_SEGMENTS: readonly string[] = []
 const EMPTY_PACKAGES: readonly string[] = []
-const EMPTY_TEST_FILES: Readonly<Record<string, TestFile>> = {}
+const EMPTY_TEST_FILES: Readonly<Record<string, Report.TestFile>> = {}
 
 export const ReportPart = S.Struct({
   label: S.String,
   outcome: S.String,
   incomplete: S.Boolean,
-  report: S.optional(MutationTestResultSchema),
+  report: S.optional(Report.MutationTestResultSchema),
 })
 
 export const MergeVerdictRow = S.Struct({
@@ -67,7 +60,7 @@ const MergeReportPartsTypeId: unique symbol = Symbol.for('@systemfsoftware/stryk
 type MergeReportPartsTypeId = typeof MergeReportPartsTypeId
 
 export class MergedReports extends S.TaggedClass<MergedReports>()('MergedReports', {
-  report: MutationTestResultSchema,
+  report: Report.MutationTestResultSchema,
   rows: S.Array(MergeVerdictRow),
   survivors: S.Array(MergeSurvivor),
 }) {
@@ -93,7 +86,7 @@ type DecisionError = DuplicatePackageLabel | MissingPackages
 type VerdictRow = S.Schema.Type<typeof MergeVerdictRow>
 type Survivor = S.Schema.Type<typeof MergeSurvivor>
 type ReportPartValue = S.Schema.Type<typeof ReportPart>
-type PartWithReport = ReportPartValue & { readonly report: MutationTestResult }
+type PartWithReport = ReportPartValue & { readonly report: Report.MutationTestResult }
 
 interface Score {
   readonly mutationScore: number
@@ -103,7 +96,7 @@ interface Score {
 /** The value a present option carries, or the fallback a missing one takes. */
 const orDefault = <A>(present: Option.Option<A>, fallback: A): A => Option.getOrElse(present, () => fallback)
 
-const thresholdsOf = (part: PartWithReport | undefined): Thresholds =>
+const thresholdsOf = (part: PartWithReport | undefined): Report.Thresholds =>
   orDefault(Option.map(Option.fromUndefinedOr(part), (present) => present.report.thresholds), DEFAULT_THRESHOLDS)
 
 const hasReport = (part: ReportPartValue): part is PartWithReport => part.report !== undefined
@@ -152,24 +145,27 @@ const uniqueIds = (label: string, ids: readonly string[] | undefined): readonly 
     Option.map(Option.fromUndefinedOr(ids), (present) => present.map((id) => uniqueId(label, id))),
   )
 
-const rewrittenMutant = (label: string, mutant: MutantResult): MutantResult => ({
+const rewrittenMutant = (label: string, mutant: Report.MutantResult): Report.MutantResult => ({
   ...mutant,
   id: uniqueId(label, mutant.id),
   killedBy: uniqueIds(label, mutant.killedBy),
   coveredBy: uniqueIds(label, mutant.coveredBy),
 })
 
-const withProjectRoot = (report: MutationTestResult, projectRoot: string | undefined): MutationTestResult =>
+const withProjectRoot = (
+  report: Report.MutationTestResult,
+  projectRoot: string | undefined,
+): Report.MutationTestResult =>
   Option.match(Option.fromUndefinedOr(projectRoot), {
     onNone: () => report,
     onSome: (root) => ({ ...report, projectRoot: root }),
   })
 
-const mergedFiles = (parts: readonly PartWithReport[]): Record<string, FileResult> =>
+const mergedFiles = (parts: readonly PartWithReport[]): Record<string, Report.FileResult> =>
   Object.fromEntries(
     parts.flatMap((part) =>
       Object.entries(normalizedNames(part.report.files)).map(
-        ([fileName, file]): readonly [string, FileResult] => [
+        ([fileName, file]): readonly [string, Report.FileResult] => [
           `${part.label}/${fileName}`,
           { ...file, mutants: file.mutants.map((mutant) => rewrittenMutant(part.label, mutant)) },
         ],
@@ -177,13 +173,13 @@ const mergedFiles = (parts: readonly PartWithReport[]): Record<string, FileResul
     ),
   )
 
-const mergedTestFiles = (parts: readonly PartWithReport[]): Record<string, TestFile> =>
+const mergedTestFiles = (parts: readonly PartWithReport[]): Record<string, Report.TestFile> =>
   Object.fromEntries(
     parts.flatMap((part) =>
       Object.entries(
         normalizedNames(orDefault(Option.fromUndefinedOr(part.report.testFiles), EMPTY_TEST_FILES)),
       ).map(
-        ([fileName, testFile]): readonly [string, TestFile] => [
+        ([fileName, testFile]): readonly [string, Report.TestFile] => [
           `${part.label}/${fileName}`,
           { ...testFile, tests: testFile.tests.map((test) => ({ ...test, id: uniqueId(part.label, test.id) })) },
         ],
@@ -191,15 +187,18 @@ const mergedTestFiles = (parts: readonly PartWithReport[]): Record<string, TestF
     ),
   )
 
-const withTestFiles = (report: MutationTestResult, testFiles: Record<string, TestFile>): MutationTestResult =>
+const withTestFiles = (
+  report: Report.MutationTestResult,
+  testFiles: Record<string, Report.TestFile>,
+): Report.MutationTestResult =>
   Match.value(Object.keys(testFiles).length > 0).pipe(
     Match.when(true, () => ({ ...report, testFiles })),
     Match.when(false, () => report),
     Match.exhaustive,
   )
 
-const mergeParts = (parts: readonly PartWithReport[]): MutationTestResult => {
-  const merged: MutationTestResult = {
+const mergeParts = (parts: readonly PartWithReport[]): Report.MutationTestResult => {
+  const merged: Report.MutationTestResult = {
     files: mergedFiles(parts),
     schemaVersion: MERGED_SCHEMA_VERSION,
     thresholds: thresholdsOf(parts[0]),
@@ -219,7 +218,7 @@ const mutationScoreOf = (totalDetected: number, totalValid: number): number =>
     Match.exhaustive,
   )
 
-const scoreOf = (files: Readonly<Record<string, FileResult>>): Score => {
+const scoreOf = (files: Readonly<Record<string, Report.FileResult>>): Score => {
   const mutants = Object.values(files).flatMap((file) => file.mutants)
   const count = (status: string): number => mutants.filter((mutant) => mutant.status === status).length
   const killed = count('Killed')
@@ -310,7 +309,7 @@ const byFileThenLine = (left: Survivor, right: Survivor): number =>
     left.line - right.line,
   )
 
-const survivorsOf = (report: MutationTestResult): readonly Survivor[] =>
+const survivorsOf = (report: Report.MutationTestResult): readonly Survivor[] =>
   Object.entries(report.files)
     .flatMap(([file, fileResult]) =>
       fileResult.mutants
@@ -339,7 +338,7 @@ const packageRows = (parts: readonly ReportPartValue[], expected: readonly strin
     .map((label) => rowOf(label, parts.find((candidate) => candidate.label === label)))
 }
 
-const allPackagesRow = (reports: readonly PartWithReport[], merged: MutationTestResult): VerdictRow =>
+const allPackagesRow = (reports: readonly PartWithReport[], merged: Report.MutationTestResult): VerdictRow =>
   verdictOf(ALL_PACKAGES_LABEL, scoreOf(merged.files), outcomeOf(reports), reports.some((part) => part.incomplete))
 
 const mergedReports = (reports: readonly PartWithReport[], rows: readonly VerdictRow[]): MergedReports => {

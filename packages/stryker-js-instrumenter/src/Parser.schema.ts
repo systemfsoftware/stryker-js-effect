@@ -71,12 +71,12 @@ export class SvelteParseFailed
   }
 }
 
-export class HtmlEndSpanMissing
-  extends S.TaggedError<HtmlEndSpanMissing>('@systemfsoftware/stryker-js-instrumenter/Parser.schema/HtmlEndSpanMissing')(
-    'HtmlEndSpanMissing',
-    {},
-  )
-{
+export class HtmlEndSpanMissing extends S.TaggedError<HtmlEndSpanMissing>(
+  '@systemfsoftware/stryker-js-instrumenter/Parser.schema/HtmlEndSpanMissing',
+)(
+  'HtmlEndSpanMissing',
+  {},
+) {
   override get message(): string {
     return 'HTML element without an end source span'
   }
@@ -93,12 +93,12 @@ export class SvelteHtmlMissing
   }
 }
 
-export class SvelteRangeMissing
-  extends S.TaggedError<SvelteRangeMissing>('@systemfsoftware/stryker-js-instrumenter/Parser.schema/SvelteRangeMissing')(
-    'SvelteRangeMissing',
-    { script: S.Literals(['instance', 'module']) },
-  )
-{
+export class SvelteRangeMissing extends S.TaggedError<SvelteRangeMissing>(
+  '@systemfsoftware/stryker-js-instrumenter/Parser.schema/SvelteRangeMissing',
+)(
+  'SvelteRangeMissing',
+  { script: S.Literals(['instance', 'module']) },
+) {
   override get message(): string {
     return `Svelte ${this.script} script without a source range`
   }

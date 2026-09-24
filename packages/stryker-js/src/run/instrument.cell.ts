@@ -1,29 +1,23 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import type { File as InstrumenterFile, InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Array from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
-import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
-import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
-import { PhaseEntered, RunEvents } from '../run-events.service.js'
-
 import { InstrumentCommand, InstrumentError, planInstrumentation } from '../plan-instrumentation.workflow.js'
-import type { Project, ProjectFile } from '../Project.schema.js'
 import { ProjectFiles } from '../project-files.service.js'
+import type { Project, ProjectFile } from '../Project.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
 import { StageError } from '../Run.schema.js'
-import { makeSandbox } from '../Sandbox.resource.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
+import { makeSandbox } from '../Sandbox.resource.js'
 import type { PrepareDone } from './prepare.cell.js'
-import { RunEnvironment } from './RunEnvironment.service.js'
+import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 
 export interface InstrumentDone extends PrepareDone {
-  readonly mutants: readonly Mutant[]
+  readonly mutants: readonly Mutant.Mutant[]
   readonly sandbox: SandboxHandle
   readonly concurrency: {
     readonly testRunners: number
@@ -33,35 +27,37 @@ export interface InstrumentDone extends PrepareDone {
 
 type InstrumentRaw = typeof InstrumentCommand.Encoded & {
   readonly prev: PrepareDone
-  readonly filesToMutate: readonly InstrumenterFile[]
-  readonly instrumentResult: InstrumentResult
+  readonly filesToMutate: readonly Instrument.File[]
+  readonly instrumentResult: Instrument.InstrumentResult
   readonly instrumentedProject: Project
   readonly sandbox: SandboxHandle
   readonly concurrency: { readonly testRunners: number; readonly checkers: number }
 }
 
-const writeInstrument = (raw: InstrumentRaw) =>
+const enteringInstrumentPhase = <A, E, R>(raw: InstrumentRaw, body: Effect.Effect<A, E, R>) =>
   withPhaseSpan(
     'instrument',
     { fileCount: raw.filesToMutate.length },
     () =>
       Effect.gen(function*() {
-        const env = yield* RunEnvironment
-        const now = yield* Clock.currentTimeMillis
-        const queue = yield* RunEvents
-        yield* Queue.offer(queue, PhaseEntered.make({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
-
-        return {
-          ...raw.prev,
-          project: raw.instrumentedProject,
-          mutants: raw.instrumentResult.mutants,
-          sandbox: raw.sandbox,
-          concurrency: {
-            testRunners: raw.concurrency.testRunners,
-            checkers: raw.concurrency.checkers,
-          },
-        }
+        yield* phaseEntered('instrument')
+        return yield* body
       }),
+  )
+
+const writeInstrument = (raw: InstrumentRaw) =>
+  enteringInstrumentPhase(
+    raw,
+    Effect.succeed({
+      ...raw.prev,
+      project: raw.instrumentedProject,
+      mutants: raw.instrumentResult.mutants,
+      sandbox: raw.sandbox,
+      concurrency: {
+        testRunners: raw.concurrency.testRunners,
+        checkers: raw.concurrency.checkers,
+      },
+    }),
   )
 
 const sandboxDirectoriesOf = (command: PrepareDone, basePath: string) =>
@@ -95,9 +91,11 @@ const withInstrumentedFiles = (
       }),
   )
 
-export const instrumentCell = Sandwich.named('stryker.instrument')((command: PrepareDone & {
-  readonly concurrency: { readonly testRunners: number; readonly checkers: number }
-}) =>
+export const instrumentCell = Sandwich.named('stryker.instrument')((
+  command: PrepareDone & {
+    readonly concurrency: { readonly testRunners: number; readonly checkers: number }
+  },
+) =>
   Effect.gen(function*() {
     yield* Scope.Scope
     const env = yield* RunEnvironment
@@ -112,12 +110,12 @@ export const instrumentCell = Sandwich.named('stryker.instrument')((command: Pre
       ),
     )
 
-    const instrumentResult = yield* instrument(filesToMutate, {
+    const instrumentResult = yield* Instrument.instrument(filesToMutate, {
       ignorers: [...command.ignorers],
       excludedMutations: [...command.options.mutator.excludedMutations],
-    }, env.basePath).pipe(Effect.mapError((cause) =>
-      StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })
-    ))
+    }, env.basePath).pipe(
+      Effect.mapError((cause) => StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })),
+    )
 
     const instrumentedProject = withInstrumentedFiles(command.project, instrumentResult.files)
 
@@ -149,8 +147,11 @@ export const instrumentCell = Sandwich.named('stryker.instrument')((command: Pre
 ).decide(planInstrumentation).write({
   InPlaceInstrument: (_decision, raw) => writeInstrument(raw),
   EphemeralInstrument: (_decision, raw) => writeInstrument(raw),
-  InstrumentError: ({ stage, reason }) =>
-    Effect.fail(StageError.make({ stage, reason, cause: InstrumentError.make({ stage, reason }) })),
+  InstrumentError: ({ stage, reason }, raw) =>
+    enteringInstrumentPhase(
+      raw,
+      Effect.fail(StageError.make({ stage, reason, cause: InstrumentError.make({ stage, reason }) })),
+    ),
   CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'instrument', reason: issue })),
 })
 
@@ -186,7 +187,7 @@ const filesMatchReference = (
     Option.match(MutableHashMap.get(folded.files, file.name), {
       onNone: () => false,
       onSome: (after) => contentApplied(updates, file, after) && untouchedApartFromContent(updates, file, after),
-    }),
+    })
   )
 
 const filesToMutateMatchReference = (folded: Project, mutatable: readonly ProjectFile[]): boolean =>
@@ -199,7 +200,7 @@ const filesToMutateMatchReference = (folded: Project, mutatable: readonly Projec
           onNone: () => false,
           onSome: (inFiles) => after.content === inFiles.content,
         }),
-    }),
+    })
   )
 
 const referenceLawHolds = (

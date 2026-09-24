@@ -1,0 +1,73 @@
+{
+  "numTotalTestSuites": 1,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 1,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 3,
+  "numPassedTests": 0,
+  "numFailedTests": 1,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1790243567426,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "∀s_HashContent_∈Sha256Hex",
+          "status": "failed",
+          "title": "∀s_HashContent_∈Sha256Hex",
+          "duration": 13.271698000000015,
+          "failureMessages": [
+            "Error: Property falsified after 1 run(s) and 0 shrink(s)\nShrunk input: [\"\"]\nFailure: returned false\nReplay: [0,\"-3302517241646843\",0,0,[],\"ReturnedFalse\"]\n    at OnSuccessImpl.~effect/Effect/successCont (/home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/node_modules/.pnpm/@effect+vitest@4.0.0-rc.117_effect@4.0.0-rc.117_vitest@5.0.1/node_modules/@effect/vitest/src/internal/internal.ts:120:65)\n    at ExitPrimitive.~effect/Effect/evaluate (file:///home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/node_modules/.pnpm/effect@4.0.0-rc.117/node_modules/effect/dist/internal/core.js:297:30)\n    at FiberImpl.runLoop (file:///home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/node_modules/.pnpm/effect@4.0.0-rc.117/node_modules/effect/dist/internal/effect.js:487:95)\n    at FiberImpl.evaluate (file:///home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/node_modules/.pnpm/effect@4.0.0-rc.117/node_modules/effect/dist/internal/effect.js:438:23)\n    at file:///home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/node_modules/.pnpm/effect@4.0.0-rc.117/node_modules/effect/dist/internal/effect.js:2428:9\n    at file:///home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/node_modules/.pnpm/effect@4.0.0-rc.117/node_modules/effect/dist/internal/effect.js:2480:19\n    at Module.<anonymous> (file:///home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/node_modules/.pnpm/effect@4.0.0-rc.117/node_modules/effect/dist/internal/effect.js:2491:31)\n    at Array.<anonymous> (/home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/node_modules/.pnpm/@effect+vitest@4.0.0-rc.117_effect@4.0.0-rc.117_vitest@5.0.1/node_modules/@effect/vitest/src/internal/internal.ts:34:31)\n    at fn (file:///home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/node_modules/.pnpm/effect@4.0.0-rc.117/node_modules/effect/dist/internal/effect.js:883:28)\n    at /home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/node_modules/.pnpm/@effect+vitest@4.0.0-rc.117_effect@4.0.0-rc.117_vitest@5.0.1/node_modules/@effect/vitest/src/internal/internal.ts:38:19"
+          ],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "∀ab_HashContent_DistinctPerDraw",
+          "status": "pending",
+          "title": "∀ab_HashContent_DistinctPerDraw",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "∀kv_HashContent_≡KnownAnswerVectors",
+          "status": "pending",
+          "title": "∀kv_HashContent_≡KnownAnswerVectors",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1790243568203,
+      "endTime": 1790243568216.2717,
+      "status": "failed",
+      "message": "",
+      "name": "/home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/packages/stryker-js/src/Survivors/Survivors.bite-copy.cell.ts"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -24,7 +24,7 @@ export class ConfiguredPluginModulePath
 export const ConfiguredPluginSchema = S.Union([ConfiguredPluginName, ConfiguredPluginModulePath])
 
 export class WorkerSpawnResolved extends S.TaggedClass<WorkerSpawnResolved>()('WorkerSpawnResolved', {
-  kind: WorkerPluginKind,
+  kind: Plugin.WorkerPluginKind,
   name: S.String,
   entrypoint: S.String,
 }) {
@@ -38,13 +38,13 @@ export class WorkerSpawnMissing extends S.TaggedError<WorkerSpawnMissing>()('Wor
 
 export class WorkerSpawnCommand extends S.TaggedClass<WorkerSpawnCommand>()('WorkerSpawnCommand', {
   sources: S.Array(PluginSourceSchema),
-  kind: WorkerPluginKind,
+  kind: Plugin.WorkerPluginKind,
   configured: ConfiguredPluginSchema,
 }) {
   static readonly [Workflow.InstrumentationBrand] = { kind: 'stryker.plugin.kind' } as const
 }
 
-const labelOfKind = (kind: WorkerPluginKind) =>
+const labelOfKind = (kind: Plugin.WorkerPluginKind) =>
   Match.value(kind).pipe(
     Match.when('TestRunner', () => 'test runner'),
     Match.when('Checker', () => 'checker'),
@@ -52,7 +52,7 @@ const labelOfKind = (kind: WorkerPluginKind) =>
     Match.exhaustive,
   )
 
-const kindIs = (kind: WorkerPluginKind) => (source: PluginSource): source is WorkerPluginSource =>
+const kindIs = (kind: Plugin.WorkerPluginKind) => (source: PluginSource): source is WorkerPluginSource =>
   Match.value(source.kind).pipe(
     Match.when(kind, () => true),
     Match.orElse(() => false),
@@ -60,7 +60,7 @@ const kindIs = (kind: WorkerPluginKind) => (source: PluginSource): source is Wor
 
 const workerSourceOf = (
   sources: readonly PluginSource[],
-  kind: WorkerPluginKind,
+  kind: Plugin.WorkerPluginKind,
   matches: (worker: WorkerPluginSource) => boolean,
 ): Option.Option<WorkerPluginSource> => Array.findFirst(Array.filter(sources, kindIs(kind)), matches)
 
@@ -93,8 +93,11 @@ const decide = (command: WorkerSpawnCommand): Result.Result<WorkerSpawnResolved,
         (worker) => worker.name.toLowerCase() === configured.name.toLowerCase(),
         configured.name,
       )),
-    Match.tag('ConfiguredPluginModulePath', (configured) =>
-      resolvedSpawnOf(command, (worker) => worker.modulePath === configured.modulePath, configured.modulePath)),
+    Match.tag(
+      'ConfiguredPluginModulePath',
+      (configured) =>
+        resolvedSpawnOf(command, (worker) => worker.modulePath === configured.modulePath, configured.modulePath),
+    ),
     Match.exhaustive,
   )
 

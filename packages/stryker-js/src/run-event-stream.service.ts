@@ -1,5 +1,5 @@
-import type * as Cause from 'effect/Cause'
 import * as Boolean from 'effect/Boolean'
+import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
@@ -17,11 +17,9 @@ import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 
+import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
-import { defaultOptions } from './config-defaults.js'
-import { readCapturedConsole, shapeEnvelope } from './Envelope.js'
-import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ResolvedMode } from './output-mode.schema.js'
+import { StrykerConfig } from './config/stryker-config.schema.js'
 import {
   frameRunEvent,
   FrameRunEventCommand,
@@ -29,12 +27,14 @@ import {
   FramingState,
   type ResolvedModeInput,
 } from './frame-run-event.workflow.js'
+import type { ResolvedMode } from './output-mode.schema.js'
+import { MachineConsole } from './reporting/machine-console.service.js'
+import { ErrorEnvelope } from './reporting/run-failure.schema.js'
+import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
+import { RunId, VerdictEnvelope } from './reporting/verdict-envelope.schema.js'
 import { RunEventWireLine } from './run-event-wire.schema.js'
-import { RUN_EVENTS_QUEUE_BOUND } from './Run.js'
 import { Heartbeat, HelpRendered, RunEvent, RunFailed, RunStarted, VerdictReached } from './run-event.schema.js'
-import { STREAM_SCHEMA_VERSION } from './StreamVersion.js'
-import { strykerVersion } from './stryker-package.js'
-import { buildVerdictEnvelope, generateRunId } from './verdict-envelope.js'
+import { StrykerPackage } from './stryker-package.schema.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'
 
@@ -123,8 +123,10 @@ export class RunEventDrain extends Context.Service<RunEventDrain, RunEventDrainS
     Stdio.Stdio | FileSystem.FileSystem | Path.Path
   > = Layer.effect(
     RunEventDrain,
-    Effect.flatMap(Effect.all([Stdio.Stdio, FileSystem.FileSystem, Path.Path]), ([stdio, fs, path]) =>
-      drainFileOf(stdio, fs, path)),
+    Effect.flatMap(
+      Effect.all([Stdio.Stdio, FileSystem.FileSystem, Path.Path]),
+      ([stdio, fs, path]) => drainFileOf(stdio, fs, path),
+    ),
   )
 }
 
@@ -191,7 +193,7 @@ export interface RunEventStream {
 export interface EmitNullScoreVerdictOptions<Config = unknown> {
   readonly stream: RunEventStream
   readonly mode: ResolvedMode
-  readonly thresholds: schema.Thresholds
+  readonly thresholds: Report.Thresholds
   readonly config: Readonly<Record<string, Config>>
   readonly basePath: string
   readonly pathService: Path.Path
@@ -206,16 +208,15 @@ export interface EmitMachineModeOutputOptions {
 }
 
 const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOptions<Config>): Effect.Effect<void> => {
-  const { stream, mode, thresholds, config, basePath, pathService } = params
-  const report: schema.MutationTestResult = {
+  const { stream, mode, thresholds, basePath, pathService } = params
+  const report: Report.MutationTestResult = {
     schemaVersion: '1.0',
     files: {},
     thresholds,
     projectRoot: basePath,
-    config,
-    framework: { name: 'StrykerJS', version: strykerVersion },
+    framework: { name: 'StrykerJS', version: StrykerPackage.version },
   }
-  const envelope = buildVerdictEnvelope(
+  const envelope = VerdictEnvelope.build(
     report,
     mode.mode,
     mode.signal,
@@ -244,7 +245,7 @@ const offerFailureEnvelope = (
   failed: FailedRunOutcome,
   captured: string,
 ): Effect.Effect<void> => {
-  const envelope = shapeEnvelope(failed, captured)
+  const envelope = ErrorEnvelope.fromOutcome({ error: failed, captured })
   return Queue.offer(
     stream.queue,
     RunFailed.make({
@@ -260,7 +261,7 @@ const emitHelpEnvelope = (stream: RunEventStream, help: string): Effect.Effect<v
   Queue.offer(
     stream.queue,
     HelpRendered.make({
-      schemaVersion: STREAM_SCHEMA_VERSION,
+      schemaVersion: StreamSchemaVersion.literal,
       code: 0,
       help,
     }),
@@ -279,7 +280,7 @@ const emitNullScoreVerdictWhenOpen = (
     Boolean.match(open, {
       onTrue: () =>
         Effect.gen(function*() {
-          const defaults = yield* defaultOptions
+          const defaults = yield* StrykerConfig.defaultOptions
           yield* emitNullScoreVerdict({
             stream,
             mode,
@@ -292,10 +293,10 @@ const emitNullScoreVerdictWhenOpen = (
       onFalse: () => Effect.void,
     }))
 
-const emitMachineModeOutput = (params: EmitMachineModeOutputOptions): Effect.Effect<void> =>
+const emitMachineModeOutput = (params: EmitMachineModeOutputOptions): Effect.Effect<void, never, MachineConsole> =>
   Effect.gen(function*() {
     const { stream, mode, outcome, basePath, pathService } = params
-    const captured = readCapturedConsole()
+    const captured = (yield* MachineConsole).read()
     return yield* Result.match(outcome, {
       onSuccess: (decision) =>
         Match.value(decision).pipe(
@@ -327,13 +328,12 @@ export interface RunEventStreamPort {
   readonly emitNullScoreVerdict: <Config = unknown>(
     params: EmitNullScoreVerdictOptions<Config>,
   ) => Effect.Effect<void>
-  readonly emitMachineModeOutput: (params: EmitMachineModeOutputOptions) => Effect.Effect<void>
+  readonly emitMachineModeOutput: (params: EmitMachineModeOutputOptions) => Effect.Effect<void, never, MachineConsole>
 }
 
 export class RunEventStreamPortTag extends Context.Service<RunEventStreamPortTag, RunEventStreamPort>()(
   '@systemfsoftware/stryker-js/run-event-stream.service/RunEventStreamPortTag',
 ) {
-
   static readonly layer: Layer.Layer<RunEventStreamPortTag, never, never> = Layer.succeed(
     RunEventStreamPortTag,
     RunEventStreamPortTag.of({
@@ -365,8 +365,8 @@ export const makeRunEventStream = (resolved: ResolvedModeInput) =>
     const stdio = yield* Stdio.Stdio
     const drain = yield* RunEventDrain
     const startedAt = yield* Clock.currentTimeMillis
-    const runId = generateRunId(DateTime.makeUnsafe(startedAt))
-    const queue = yield* Queue.bounded<RunEvent, Cause.Done>(RUN_EVENTS_QUEUE_BOUND)
+    const runId = RunId.generate(DateTime.makeUnsafe(startedAt)).value
+    const queue = yield* Queue.bounded<RunEvent, Cause.Done>(RunEvent.QUEUE_BOUND)
     const stateRef = yield* Ref.make<FramingState>(initialFramingState(resolved))
     const closedRef = yield* Ref.make(false)
     const drainFiberRef = yield* Ref.make(Option.none<Fiber.Fiber<void, never>>())
@@ -375,7 +375,7 @@ export const makeRunEventStream = (resolved: ResolvedModeInput) =>
       Queue.offer(
         queue,
         RunStarted.make({
-          schemaVersion: STREAM_SCHEMA_VERSION,
+          schemaVersion: StreamSchemaVersion.literal,
           runId,
           mode: state.mode,
           signal: state.signal,

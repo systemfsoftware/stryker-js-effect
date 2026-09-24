@@ -1,25 +1,33 @@
-import { Evaluator, EvaluatorFailed } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Evaluator, type Plugin, type Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
+import * as Result from 'effect/Result'
+import { JudgeTestContribution, judgeTestContribution } from './judge-test-contribution.workflow.js'
 
-import { judgeTestContribution } from './test-contribution.js'
-
-import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
-
-const EXIT_VERDICT_FAIL: ExitClass = 'VerdictFail'
+const EXIT_VERDICT_FAIL: Plugin.ExitClass = 'VerdictFail'
 const VERDICT_FAIL_NOTE =
   '(sharpen or delete them, or remove the test-contribution plugin from `plugins` to prevent this error in the future)'
 
 export const makeTestContributionEvaluatorService = (options: {
   readonly disableBail: boolean
-}): { readonly evaluate: (report: schema.MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed> } => ({
+}): {
+  readonly evaluate: (
+    report: Report.MutationTestResult,
+  ) => Effect.Effect<Plugin.ExitClass | null, Evaluator.EvaluatorFailed>
+} => ({
   evaluate: (report) =>
     Effect.flatMap(
       Effect.try({
-        try: () => judgeTestContribution(report, options.disableBail === true),
-        catch: (cause) => EvaluatorFailed.make({ cause }),
+        try: () =>
+          judgeTestContribution(
+            JudgeTestContribution.make({
+              report,
+              everyKillerRecorded: options.disableBail === true,
+              suffixes: JudgeTestContribution.defaultRequireTestContributionSuffixes,
+            }),
+          ).pipe(Result.merge),
+        catch: (cause) => Evaluator.EvaluatorFailed.make({ cause }),
       }),
       (verdict) =>
         Match.value(verdict.failed).pipe(
@@ -41,4 +49,4 @@ export const testContributionEvaluatorLayer = (
   options: {
     readonly disableBail: boolean
   },
-): Layer.Layer<Evaluator> => Layer.succeed(Evaluator, makeTestContributionEvaluatorService(options))
+): Layer.Layer<Evaluator.Evaluator> => Layer.succeed(Evaluator.Evaluator, makeTestContributionEvaluatorService(options))

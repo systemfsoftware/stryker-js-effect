@@ -1,8 +1,7 @@
 import { Boolean, Predicate } from 'effect'
-import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
-import * as Result from 'effect/Result'
 import type * as Path from 'effect/Path'
+import * as Result from 'effect/Result'
 
 import { StrykerError } from './stryker-error.schema.js'
 
@@ -50,16 +49,6 @@ const originalFileNameOf = (
     onFalse: () => resolvedSandbox.replace(resolvedWorking, base),
   })
 }
-
-export const sandboxFileFor: {
-  (fileName: string): (self: SandboxHandle) => Result.Result<string, StrykerError>
-  (self: SandboxHandle, fileName: string): Result.Result<string, StrykerError>
-} = dual(2, (self: SandboxHandle, fileName: string) => self.sandboxFileFor(fileName))
-
-export const originalFileFor: {
-  (sandboxFileName: string): (self: SandboxHandle) => string
-  (self: SandboxHandle, sandboxFileName: string): string
-} = dual(2, (self: SandboxHandle, sandboxFileName: string) => self.originalFileFor(sandboxFileName))
 
 export const make = (options: {
   readonly fileMap: Map<string, string>

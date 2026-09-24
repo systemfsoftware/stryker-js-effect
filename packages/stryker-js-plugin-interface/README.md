@@ -32,31 +32,34 @@ pnpm add @systemfsoftware/stryker-js-plugin-runtime
 
 ## Entry point
 
-The interface package publishes the per-kind RPC groups (`TestRunnerRpcs`,
+The interface package groups its exports into namespaces. `Plugin` holds the per-kind RPC groups (`TestRunnerRpcs`,
 `CheckerRpcs`, `ReporterRpcs`), the boundary payload schemas
 (`TestRunnerDryRunRequest`, `CheckerRequest`, `ReporterEventBatch`,
 `ReporterInitOptions`, …), the typed error taxonomy (`BoundaryPayloadRejected`,
-`BoundaryUnrecognizedSignal`), the spawn contract (`WorkerPluginKind`,
-`WorkerPluginSpawn`, `WorkerPluginSpawnSchema`, `WorkerEntryUrl`), and the
-trace-context contract the groups carry (`TraceContextMiddleware`,
+`BoundaryUnrecognizedSignal`) and the spawn contract (`WorkerPluginKind`,
+`WorkerPluginSpawn`, `WorkerPluginSpawnSchema`, `WorkerEntryUrl`). `Trace` holds
+the trace-context contract the groups carry (`TraceContextMiddleware`,
 `PropagatedTrace`, `TracedRpc`, `TraceContextReference`, `TraceContextParts`,
-`formatTraceparent`, `parseTraceparent`, `Traceparent`, `TRACEPARENT_HEADER`,
-`TRACESTATE_HEADER`):
+`Traceparent`, `TraceparentHeader`, `TracestateHeader`). `Checker`,
+`TestRunner`, `Evaluator`, `Reporter`, `Report` and `Options` hold each plugin
+kind's contract, the mutation report and the Stryker options:
 
 ```ts
-import { ReporterRpcs, TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+
+Plugin.TestRunnerRpcs
 ```
 
-The runtime package publishes the worker server layer a plugin's `main.ts`
-launches (`workerServerLayer`, `WorkerServerParams`), the worker-options wire
-schema and its service (`WorkerOptionsWire`, `WorkerOptions`), the telemetry
-contract a worker root binds its OTel SDK from (`WorkerTelemetryConfig`,
-`TracesUrl`, `WorkerTelemetry`), and the trace-context implementations
-(`layerTraceContextClient`, `layerTraceContextServer`, `withLinkedSpan`,
-`tracePartsOf`, `partsOfEffectSpan`):
+The runtime package's `Worker` namespace publishes the worker server layer a
+plugin's `main.ts` launches (`workerServerLayer`, `WorkerServerParams`), the
+worker-options wire schema and its service (`WorkerOptionsWire`,
+`WorkerOptions`), and the telemetry service a worker root binds its OTel SDK
+from (`WorkerTelemetry`). Its `Trace` namespace publishes the trace-context
+implementations (`layerTraceContextClient`, `layerTraceContextServer`,
+`withLinkedSpan`, `TraceContextPartsFromEffectSpan`):
 
 ```ts
-import { layerTraceContextServer, workerServerLayer } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Trace, Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 ```
 
 Telemetry is a layer everywhere: a worker root reads `WorkerTelemetry` and binds
@@ -73,12 +76,16 @@ takes — and the package declares the built artifact at the `./worker` subpath 
 its exports map, which is where the host resolves a worker entry from.
 
 ```ts
-import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
-import { workerServerLayer } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 
 NodeRuntime.runMain(
   Layer.launch(
-    workerServerLayer({ rpcs: TestRunnerRpcs, handlers: testRunnerHandlers, schemaServices: Layer.empty }),
+    Worker.workerServerLayer({
+      rpcs: Plugin.TestRunnerRpcs,
+      handlers: testRunnerHandlers,
+      schemaServices: Layer.empty,
+    }),
   ).pipe(Effect.provideService(Logger.LogToStderr, true)),
 )
 ```

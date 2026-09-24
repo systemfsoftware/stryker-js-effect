@@ -1,6 +1,5 @@
 import { describe, it } from '@effect/vitest'
-import { MetricsResultSchema, MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -8,9 +7,9 @@ import * as Result from 'effect/Result'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
+  ClearTextRenderOptions,
   ClearTextReportCommand,
   ClearTextReportRendered,
-  ClearTextRenderOptions,
   renderClearTextReport,
 } from '../render-clear-text-report.workflow.js'
 
@@ -25,17 +24,17 @@ const colorOffArb = commandArb.pipe(
       computed: command.computed,
       render: { ...command.render, allowColor: false },
       rendered: command.rendered,
-    }),
+    })
   ),
 )
 
 const coherentArb = Arbitrary.all({
-  report: Arbitrary.schema(MutationTestResultSchema),
-  computed: Arbitrary.schema(MetricsResultSchema),
+  report: Arbitrary.schema(Report.MutationTestResultSchema),
+  computed: Arbitrary.schema(Report.MetricsResultSchema),
   render: Arbitrary.schema(ClearTextRenderOptions),
 })
 
-const fileRowsOf = (metrics: MetricsResult): number =>
+const fileRowsOf = (metrics: Report.MetricsResult): number =>
   1 + Arr.reduce(metrics.childResults, 0, (rows, child) => rows + fileRowsOf(child))
 
 const TABLE_CHROME_ROWS = 5
@@ -47,26 +46,33 @@ const tableBodyRowsOf = (rendered: ClearTextReportRendered): number =>
   })
 
 describe('renderClearTextReport', () => {
-  it.prop('∀c_SuppressedIffNoTerminalReport', [commandArb], ([command]) =>
-    Result.match(renderClearTextReport(command), {
-      onFailure: () => false,
-      onSuccess: (value) =>
-        Match.value(value).pipe(
-          Match.tag('ClearTextReportSuppressed', () =>
-            command.reported === undefined || command.computed === undefined),
-          Match.tag('ClearTextReportRendered', () =>
-            command.reported !== undefined && command.computed !== undefined),
-          Match.exhaustive,
-        ),
-    }))
+  it.prop(
+    '∀c_SuppressedIffNoTerminalReport',
+    [commandArb],
+    ([command]) =>
+      Result.match(renderClearTextReport(command), {
+        onFailure: () => false,
+        onSuccess: (value) =>
+          Match.value(value).pipe(
+            Match.tag(
+              'ClearTextReportSuppressed',
+              () => command.reported === undefined || command.computed === undefined,
+            ),
+            Match.tag(
+              'ClearTextReportRendered',
+              () => command.reported !== undefined && command.computed !== undefined,
+            ),
+            Match.exhaustive,
+          ),
+      }),
+  )
 
   it.prop('∀c_ColorOff_≡PlainSpans', [colorOffArb], ([command]) =>
     Result.match(renderClearTextReport(command), {
       onFailure: () => false,
       onSuccess: (value) =>
         Match.value(value).pipe(
-          Match.tag('ClearTextReportRendered', (rendered) =>
-            spansOf(rendered).every((span) => span.tone === 'plain')),
+          Match.tag('ClearTextReportRendered', (rendered) => spansOf(rendered).every((span) => span.tone === 'plain')),
           Match.tag('ClearTextReportSuppressed', () => true),
           Match.exhaustive,
         ),

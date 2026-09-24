@@ -7,7 +7,6 @@ import { TracesUrl, WorkerTelemetryConfig } from './worker-telemetry.schema.js'
 
 const WORKER_SERVICE_NAME = 'stryker-js-plugin-worker'
 const DEFAULT_TRACES_URL = 'http://127.0.0.1:4318/v1/traces'
-
 export class WorkerTelemetry extends Context.Service<WorkerTelemetry, WorkerTelemetryConfig>()(
   '@systemfsoftware/stryker-js-plugin-runtime/worker-telemetry.service/WorkerTelemetry',
 ) {

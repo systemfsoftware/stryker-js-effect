@@ -19,21 +19,19 @@ import * as Boolean from 'effect/Boolean'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
 import type { Pipeable } from 'effect/Pipeable'
 import { Prototype } from 'effect/Pipeable'
+import * as Predicate from 'effect/Predicate'
 import type { SpannedComment } from './Ast.schema.js'
 import type { LineTable } from './Location.schema.js'
 
-export const TypeId = Symbol.for('~systemfsoftware/stryker-js-instrumenter/Ast')
-export type TypeId = typeof TypeId
+const TypeId = Symbol.for('~systemfsoftware/stryker-js-instrumenter/Ast')
+type TypeId = typeof TypeId
 
 export interface AstHandle extends Pipeable {
   readonly [TypeId]: typeof TypeId
   readonly root: Program | Node
 }
-
-export const isAstHandle = (value: unknown): value is AstHandle => Predicate.hasProperty(value, TypeId)
 
 export const make = (root: Program | Node): AstHandle => ({ [TypeId]: TypeId, root, ...Prototype })
 
@@ -133,15 +131,15 @@ const mark = <T extends object>(node: T, loc: Loc): T =>
 
 type Span = { start: number; end: number }
 
-const isObjectArg = (value: unknown): value is object => typeof value === 'object' && value !== null
+export const isNodeArg = (value: unknown): value is { type: string } =>
+  Predicate.isObjectOrArray(value) && 'type' in value
 
-export const isNodeArg = (value: unknown): value is { type: string } => isObjectArg(value) && 'type' in value
+const isSpanObject = (value: object): boolean => !isNodeArg(value) && hasSpanBounds(value)
 
-const hasRangeKeys = (value: object): boolean => 'start' in value && 'end' in value
+const hasSpanBounds = (value: object): boolean =>
+  Predicate.hasProperty('start')(value) && Predicate.hasProperty('end')(value)
 
-const isSpanObject = (value: object): boolean => !isNodeArg(value) && hasRangeKeys(value)
-
-const isLocArg = (value: unknown): value is Span => isObjectArg(value) && isSpanObject(value)
+const isLocArg = (value: unknown): value is Span => Predicate.isObjectOrArray(value) && isSpanObject(value)
 
 const atArityWithoutLoc = (args: IArguments, arity: number): boolean =>
   args.length === arity && !isLocArg(args[arity - 1])
@@ -372,10 +370,6 @@ export const switchCase: {
 
 export const cloneNode = <T extends Node>(node: T): T => structuredClone(node)
 
-export interface AttachedComment extends SpannedComment {
-  readonly loc?: { start: { line: number; column: number }; end: { line: number; column: number } }
-}
-
 export const attachComments: {
   (comments: ReadonlyArray<SpannedComment>, lineTable: LineTable): (self: AstHandle) => void
   (self: AstHandle, comments: ReadonlyArray<SpannedComment>, lineTable: LineTable): void
@@ -458,7 +452,7 @@ const assignComments = (
           end: lineTable.positionAt(comment.end),
         },
       })),
-    }),
+    })
   )
 
 const pushComment = (

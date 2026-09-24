@@ -11,8 +11,8 @@
  * or no EvaluatorFailed where breaking expected).
  */
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
-import { type PartialStrykerOptions, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Evaluator, Options, type Plugin, type Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { strykerPlugins } from '@systemfsoftware/stryker-test-contribution'
 import * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -21,14 +21,10 @@ import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Schema from 'effect/Schema'
 import { expect } from 'vitest'
-
-import { Evaluator, type EvaluatorFailed, type ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   makeTestContributionEvaluatorService,
   testContributionEvaluatorLayer,
-} from '@systemfsoftware/stryker-test-contribution'
-
-import { strykerPlugins } from '@systemfsoftware/stryker-test-contribution'
+} from '../src/test-contribution-evaluator.service.js'
 
 import { optionalRunnerFields } from './__fixtures__/optional-runner-fields.js'
 
@@ -36,7 +32,7 @@ const Feature = makeFeature({ it, layer })
 
 const LOCATION = { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } }
 
-const kernelMutant = (id: string, killedBy?: string[], coveredBy?: string[]): schema.MutantResult => ({
+const kernelMutant = (id: string, killedBy?: string[], coveredBy?: string[]): Report.MutantResult => ({
   id,
   status: 'Killed',
   mutatorName: 'BooleanLiteral',
@@ -45,8 +41,8 @@ const kernelMutant = (id: string, killedBy?: string[], coveredBy?: string[]): sc
 })
 
 const reportWithToothlessKernelFile = (
-  mutants: schema.MutantResult[] = [kernelMutant('m1', ['t1'], ['t1', 't2'])],
-): schema.MutationTestResult => ({
+  mutants: Report.MutantResult[] = [kernelMutant('m1', ['t1'], ['t1', 't2'])],
+): Report.MutationTestResult => ({
   schemaVersion: '2',
   thresholds: { high: 80, low: 60 },
   files: {
@@ -62,17 +58,19 @@ const reportWithToothlessKernelFile = (
   },
 })
 
-const evaluatorServiceWith = (options: PartialStrykerOptions) =>
-  Effect.map(Schema.decodeUnknownEffect(StrykerOptionsSchema)(options), makeTestContributionEvaluatorService)
+const evaluatorServiceWith = (options: Options.PartialStrykerOptions) =>
+  Effect.map(Schema.decodeUnknownEffect(Options.StrykerOptionsSchema)(options), makeTestContributionEvaluatorService)
 
-const evaluatorViaLayerWith = (options: PartialStrykerOptions) =>
+const evaluatorViaLayerWith = (options: Options.PartialStrykerOptions) =>
   Effect.gen(function*() {
-    const decoded = yield* Schema.decodeUnknownEffect(StrykerOptionsSchema)(options)
+    const decoded = yield* Schema.decodeUnknownEffect(Options.StrykerOptionsSchema)(options)
     const context = yield* Layer.build(testContributionEvaluatorLayer(decoded))
-    return Context.get(context, Evaluator)
+    return Context.get(context, Evaluator.Evaluator)
   })
 interface EvaluatorServiceShape {
-  readonly evaluate: (report: schema.MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed>
+  readonly evaluate: (
+    report: Report.MutationTestResult,
+  ) => Effect.Effect<Plugin.ExitClass | null, Evaluator.EvaluatorFailed>
 }
 
 const causeStringOf = <E = unknown>(cause: E): string | null => {
@@ -81,10 +79,10 @@ const causeStringOf = <E = unknown>(cause: E): string | null => {
   return JSON.stringify(cause)
 }
 
-const exitOf = (evaluator: EvaluatorServiceShape, report: schema.MutationTestResult) =>
+const exitOf = (evaluator: EvaluatorServiceShape, report: Report.MutationTestResult) =>
   Effect.exit(evaluator.evaluate(report))
 
-const causeOfExit = (exit: Exit.Exit<ExitClass | null, EvaluatorFailed>): string | null => {
+const causeOfExit = (exit: Exit.Exit<Plugin.ExitClass | null, Evaluator.EvaluatorFailed>): string | null => {
   if (Exit.isSuccess(exit)) return null
   const errorOption = Exit.findErrorOption(exit)
   if (Option.isSome(errorOption)) {
@@ -94,7 +92,7 @@ const causeOfExit = (exit: Exit.Exit<ExitClass | null, EvaluatorFailed>): string
   return Cause.pretty(exit.cause)
 }
 // A VerdictFail on a success exit is the evaluator's non-error failure signal; assert it once here.
-const expectVerdictFail = (exit: Exit.Exit<ExitClass | null, EvaluatorFailed>): void => {
+const expectVerdictFail = (exit: Exit.Exit<Plugin.ExitClass | null, Evaluator.EvaluatorFailed>): void => {
   expect(Exit.isSuccess(exit)).toBe(true)
   if (Exit.isSuccess(exit)) {
     expect(exit.value).toBe('VerdictFail')

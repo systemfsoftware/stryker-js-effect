@@ -1,5 +1,3 @@
-import { ChildProcessCrashedError, OutOfMemoryError, WorkerLauncher } from '@systemfsoftware/stryker-js'
-import type { SpawnedSocketWorker, WorkerExit, WorkerSpawnParams } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
@@ -16,6 +14,7 @@ import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 import * as Socket from 'effect/unstable/socket/Socket'
 import * as SocketServer from 'effect/unstable/socket/SocketServer'
+import { Worker } from '../../src/mod.js'
 
 export const WORKER_PID = 4242
 
@@ -94,10 +93,10 @@ const clientProtocol = (
   )
 }
 
-const exitOf = (behaviour: ChildBehaviour): Effect.Effect<never, WorkerExit> => {
+const exitOf = (behaviour: ChildBehaviour): Effect.Effect<never, Worker.WorkerExit> => {
   if (behaviour === 'crashes') {
     return Effect.fail(
-      ChildProcessCrashedError.make({
+      Worker.ChildProcessCrashedError.make({
         pid: WORKER_PID,
         exit: { _tag: 'Code', code: 9 },
         cause: 'the substituted worker died during boot',
@@ -105,40 +104,46 @@ const exitOf = (behaviour: ChildBehaviour): Effect.Effect<never, WorkerExit> => 
     )
   }
   if (behaviour === 'runsOutOfMemory') {
-    return Effect.fail(OutOfMemoryError.make({ pid: WORKER_PID, exitCode: 137 }))
+    return Effect.fail(Worker.OutOfMemoryError.make({ pid: WORKER_PID, exitCode: 137 }))
   }
   return Effect.never
 }
 
 export interface SubstitutedLauncher {
-  readonly spawns: Ref.Ref<readonly WorkerSpawnParams[]>
-  readonly layer: Layer.Layer<WorkerLauncher>
+  readonly spawns: Ref.Ref<readonly Worker.WorkerSpawnParams[]>
+  readonly layer: Layer.Layer<Worker.WorkerLauncher>
 }
 
 export interface ServingLauncherParams {
   readonly pid: number
   readonly server: ((serverSocket: Socket.Socket) => Layer.Layer<never>) | undefined
   readonly clientLayer: (clientSocket: Socket.Socket) => Layer.Layer<RpcClient.Protocol, Socket.SocketError>
-  readonly exited: Effect.Effect<never, WorkerExit>
+  readonly exited: Effect.Effect<never, Worker.WorkerExit>
 }
 
 export const servingLauncher = (
   params: ServingLauncherParams,
 ): Effect.Effect<SubstitutedLauncher, never, Scope.Scope> =>
   Effect.gen(function*() {
-    const spawns = yield* Ref.make<readonly WorkerSpawnParams[]>([])
+    const spawns = yield* Ref.make<readonly Worker.WorkerSpawnParams[]>([])
     const [clientSocket, serverSocket] = yield* memorySocketPair
 
-    const spawn = (workerParams: WorkerSpawnParams): Effect.Effect<SpawnedSocketWorker, never, Scope.Scope> =>
+    const spawn = (
+      workerParams: Worker.WorkerSpawnParams,
+    ): Effect.Effect<Worker.SpawnedSocketWorker, never, Scope.Scope> =>
       Effect.gen(function*() {
         yield* Ref.update(spawns, (recorded) => [...recorded, workerParams])
         if (params.server !== undefined) {
           yield* Effect.forkScoped(params.server(serverSocket).pipe(Layer.launch))
         }
-        return { pid: params.pid, clientLayer: params.clientLayer(clientSocket), exited: params.exited }
+        return Worker.makeSpawnedSocketWorker({
+          pid: params.pid,
+          clientLayer: params.clientLayer(clientSocket),
+          exited: params.exited,
+        })
       })
 
-    return { spawns, layer: Layer.succeed(WorkerLauncher, { spawn }) }
+    return { spawns, layer: Layer.succeed(Worker.WorkerLauncher, { spawn }) }
   })
 
 export const substitutedLauncher = (

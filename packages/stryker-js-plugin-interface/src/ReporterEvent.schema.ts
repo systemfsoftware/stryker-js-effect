@@ -2,7 +2,7 @@ import type * as Effect from 'effect/Effect'
 import * as S from 'effect/Schema'
 import type { StandardSchemaV1 } from 'effect/StandardSchema'
 
-import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { MetricsResultSchema, NonNegativeFinite, NonNegativeInt } from './Metrics.schema.js'
 
 import { MutationTestResultSchema } from './Report.schema.js'
@@ -50,9 +50,9 @@ export class MutationTestingPlanReady extends S.TaggedClass<MutationTestingPlanR
 
 export class MutantTested extends S.TaggedClass<MutantTested>()('mutantTested', {
   id: S.String,
-  status: MutantStatusSchema,
+  status: Mutant.MutantStatusSchema,
   file: S.String,
-  location: LocationSchema,
+  location: Mutant.LocationSchema,
   mutator: S.String,
   replacement: S.NullOr(S.String),
   completed: NonNegativeInt,

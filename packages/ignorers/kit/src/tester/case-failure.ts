@@ -20,8 +20,7 @@ export interface CaseFailure {
 
 export const reasonSuffix = (reason: string) => ` reason ${JSON.stringify(reason)}`
 
-const spanLine = (span: CaseFailureSpan) =>
-  `- ${JSON.stringify(span.text)} (${span.type})${reasonSuffix(span.reason)}`
+const spanLine = (span: CaseFailureSpan) => `- ${JSON.stringify(span.text)} (${span.type})${reasonSuffix(span.reason)}`
 
 const receivedLines = (received: readonly CaseFailureSpan[]) =>
   received.length === 0 ? ['- none'] : received.map(spanLine)

@@ -1,13 +1,12 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -20,26 +19,26 @@ import {
   SurvivorsRejection,
 } from '../admit-survivors-run.workflow.js'
 import { ConfigFileUnreadableError } from '../ConfigError.schema.js'
-import { toRelativeNormalizedFileName } from '../IncrementalDiff.paths.js'
+import { RelativeNormalizedFileName } from '../matching.schema.js'
 import type { OutputMode } from '../output-mode.schema.js'
 import { readConfig } from '../run/load-config.cell.js'
-import { strykerVersion } from '../stryker-package.js'
+import { StrykerPackage } from '../stryker-package.schema.js'
 import { PriorReportDocument, type PriorReportMutant } from './Survivors.schema.js'
 
 export interface SurvivorsAdmissionInput {
-  readonly cliOptions: PartialStrykerOptions
+  readonly cliOptions: Options.PartialStrykerOptions
   readonly mode: OutputMode
   readonly basePath: string
 }
 
 export interface SurvivorsAdmissionAnswer {
   readonly admission: Admitted | NoSurvivors
-  readonly resolvedOptions: StrykerOptions
+  readonly resolvedOptions: Options.StrykerOptions
   readonly priorReportPath: string
 }
 
 type SurvivorsRaw = typeof AdmitSurvivorsRunCommand.Encoded & {
-  readonly resolvedOptions: StrykerOptions
+  readonly resolvedOptions: Options.StrykerOptions
   readonly priorReportPath: string
 }
 
@@ -58,6 +57,17 @@ const hashContent: HashContent = (content) => bytesToHex(sha256(utf8ToBytes(cont
 const priorSourceHashes = (priorReport: PriorReportDocument, hash: HashContent) =>
   Object.fromEntries(Object.entries(priorReport.files).map(([file, fileResult]) => [file, hash(fileResult.source)]))
 
+const survivorLocationOf = (mutant: PriorReportMutant) => ({
+  start: {
+    line: mutant.location.start.line - 1,
+    column: mutant.location.start.column - 1,
+  },
+  end: {
+    line: mutant.location.end.line - 1,
+    column: mutant.location.end.column - 1,
+  },
+})
+
 const reportMutantToMutant = (
   file: string,
   mutant: PriorReportMutant,
@@ -66,21 +76,13 @@ const reportMutantToMutant = (
 ) => {
   const fileName = resolveAbsolutePath(file)
   return {
+    _tag: 'Mutant' as const,
     id: mutant.id,
     fileName,
     relativeFileName: relativize(fileName),
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacement ?? mutant.mutatorName,
-    location: {
-      start: {
-        line: mutant.location.start.line - 1,
-        column: mutant.location.start.column - 1,
-      },
-      end: {
-        line: mutant.location.end.line - 1,
-        column: mutant.location.end.column - 1,
-      },
-    },
+    location: survivorLocationOf(mutant),
   }
 }
 
@@ -95,10 +97,12 @@ const extractSurvivors = (
       .map((mutant) => reportMutantToMutant(file, mutant, resolveAbsolutePath, relativize))
   )
 
-const resolveSurvivorsRunOptions = (cliOptions: PartialStrykerOptions, mode: OutputMode) =>
+const resolveAbsolutePathOf = (basePath: string): ResolveAbsolutePath => (file) => `${basePath}/${file}`
+
+const resolveSurvivorsRunOptions = (cliOptions: Options.PartialStrykerOptions, mode: OutputMode) =>
   readConfig(cliOptions, { command: 'run', mode })
 
-const priorReportPathOf = (resolved: StrykerOptions) =>
+const priorReportPathOf = (resolved: Options.StrykerOptions) =>
   Option.getOrElse(
     Option.filter(Option.fromUndefinedOr(resolved['survivorsPriorReport']), Predicate.isString),
     () => DEFAULT_SURVIVORS_PRIOR_REPORT,
@@ -150,8 +154,7 @@ const currentSourceHashesFor = (files: readonly string[]) =>
   Effect.map(
     Effect.forEach(
       files,
-      (file) =>
-        Effect.map(readSourceFile(file), (content): readonly [string, string] => [file, hashContent(content)]),
+      (file) => Effect.map(readSourceFile(file), (content): readonly [string, string] => [file, hashContent(content)]),
       { concurrency: SOURCE_HASH_CONCURRENCY },
     ),
     (pairs): Record<string, string> => Object.fromEntries(pairs),
@@ -159,18 +162,18 @@ const currentSourceHashesFor = (files: readonly string[]) =>
 
 export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admission')((input: SurvivorsAdmissionInput) =>
   Effect.gen(function*() {
-    const pathService = yield* Path.Path
     const resolvedOptions = yield* resolveSurvivorsRunOptions(input.cliOptions, input.mode)
     const priorReportPath = priorReportPathOf(resolvedOptions)
-    const resolveAbsolutePath: ResolveAbsolutePath = (file) => pathService.resolve(file)
-    const relativize = toRelativeNormalizedFileName(input.basePath)
+    const relativize: RelativizeFileName = (fileName) =>
+      RelativeNormalizedFileName.fromAbsolute(fileName, input.basePath).fileName
+    const resolveAbsolutePath = resolveAbsolutePathOf(input.basePath)
     const read = yield* readPriorReport(priorReportPath)
     const sourceContentHashes = yield* currentSourceHashesFor(priorReportFileKeys(read.raw))
     return yield* Boolean.match(read.found, {
       onFalse: () =>
         Effect.succeed<SurvivorsRaw>({
           currentConfig: resolvedOptions,
-          frameworkVersion: strykerVersion,
+          frameworkVersion: StrykerPackage.version,
           priorReport: undefined,
           priorSourceHashes: {},
           priorSurvivors: [],
@@ -184,7 +187,7 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
           onSuccess: (document) =>
             Result.succeed<SurvivorsRaw>({
               currentConfig: resolvedOptions,
-              frameworkVersion: strykerVersion,
+              frameworkVersion: StrykerPackage.version,
               priorReport: {
                 config: Option.getOrElse(Option.fromNullishOr(document.config), () => EMPTY_CONFIG),
                 frameworkVersion: Option.getOrUndefined(
@@ -205,11 +208,14 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
   })
 ).decide(admitSurvivorsRun).write({
   Admitted: (admitted, raw) =>
-    Effect.succeed({
-      admission: Admitted.make({ survivors: [...admitted.survivors], mutateSpans: [...admitted.mutateSpans] }),
-      resolvedOptions: raw.resolvedOptions,
-      priorReportPath: raw.priorReportPath,
-    }),
+    Effect.map(
+      S.decodeEffect(Admitted)(admitted),
+      (admission) => ({
+        admission,
+        resolvedOptions: raw.resolvedOptions,
+        priorReportPath: raw.priorReportPath,
+      }),
+    ),
   NoSurvivors: (_outcome, raw) =>
     Effect.succeed({
       admission: NoSurvivors.make(),
@@ -220,17 +226,30 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
   CommandRejected: ({ issue }) => Effect.fail(SurvivorsRejection.make({ reason: 'mismatch', remediation: issue })),
 })
 
-
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const { Schema } = await import('effect')
-  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
+  const { Arbitrary } = await import('effect/unstable/arbitrary')
 
-  const sourceArb = Arbitrary.schema(Schema.String.check(Schema.isMaxLength(64)))
+  const SourceText = Schema.String.check(Schema.isPattern(/^\P{Surrogate}*$/u), Schema.isMaxLength(64))
 
-  it.prop('∀s_HashContent_∈Sha256Hex', [sourceArb], ([source]) =>
-    /^[0-9a-f]{64}$/.test(hashContent(source)))
+  const KNOWN_SHA256_VECTORS = [
+    ['', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'],
+    ['abc', 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'],
+    ['✓', '1dabba21cdad44541f6b15796f8d22978fc7ea10c46aeceeeeb66c23b3ac7604'],
+  ] as const
 
-  it.prop('∀ab_HashContent_DistinctPerDraw', [sourceArb, sourceArb], ([a, b]) =>
-    a === b || hashContent(a) !== hashContent(b))
+  it.prop('∀s_HashContent_∈Sha256Hex', [SourceText], ([source]) => /^[0-9a-f]{64}$/.test(hashContent(source)))
+
+  it.prop(
+    '∀ab_HashContent_DistinctPerDraw',
+    [SourceText, SourceText],
+    ([a, b]) => a === b || hashContent(a) !== hashContent(b),
+  )
+
+  it.prop(
+    '∀kv_HashContent_≡KnownAnswerVectors',
+    [Arbitrary.Constant(KNOWN_SHA256_VECTORS)],
+    ([vectors]) => vectors.every(([content, digest]) => hashContent(content) === digest),
+  )
 }

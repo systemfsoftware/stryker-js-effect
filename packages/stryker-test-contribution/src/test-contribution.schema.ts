@@ -1,6 +1,6 @@
 import * as S from 'effect/Schema'
 
-import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export interface TestFileContribution {
   readonly soleKills: number
@@ -18,22 +18,11 @@ export interface TestFileContribution {
 }
 
 export const TestFileContributionSchema = S.Struct({
-  soleKills: S.Finite,
-  totalKills: S.Finite,
-  killableCovered: S.Finite,
+  soleKills: Report.NonNegativeInt,
+  totalKills: Report.NonNegativeInt,
+  killableCovered: Report.NonNegativeInt,
   coversUnattributedKill: S.Boolean,
 })
 
-export interface TestContributionInput {
-  readonly suffixes: readonly string[]
-  readonly everyKillerRecorded: boolean
-}
-
-export interface TestContributionVerdict {
-  readonly failed: boolean
-  readonly message: string
-}
-
-export type ReportView = Pick<schema.MutationTestResult, 'files' | 'testFiles'>
-
 export type ContributionEntry = readonly [string, TestFileContribution]
+export type ReportView = Pick<Report.MutationTestResult, 'files' | 'testFiles'>

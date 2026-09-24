@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { type TestResult, TestResultSchema, type TestStatus } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -17,13 +17,9 @@ const isRecordValue = <A = unknown>(value: unknown): value is RawVitestRecord<A>
 const recordOption = <A = unknown>(value: A): Option.Option<RawVitestRecord<A>> =>
   Option.liftPredicate(value, isRecordValue<A>)
 
-const asString = (value: unknown): value is string => typeof value === 'string'
+const asStringOption = <A = unknown>(value: A): Option.Option<string> => Option.liftPredicate(value, Predicate.isString)
 
-const asNumber = (value: unknown): value is number => typeof value === 'number'
-
-const asStringOption = <A = unknown>(value: A): Option.Option<string> => Option.liftPredicate(value, asString)
-
-const asNumberOption = <A = unknown>(value: A): Option.Option<number> => Option.liftPredicate(value, asNumber)
+const asNumberOption = <A = unknown>(value: A): Option.Option<number> => Option.liftPredicate(value, Predicate.isNumber)
 
 const asArrayOption = <A = unknown>(value: A): Option.Option<readonly A[]> => Option.liftPredicate(value, Array.isArray)
 
@@ -139,15 +135,15 @@ const normalizeTestIdRaw = (id: string, projectRoot: string): string => {
   )
 }
 
-const toTestStatus = (taskState: TaskState, mode: string): TestStatus =>
+const toTestStatus = (taskState: TaskState, mode: string): TestRunner.TestStatus =>
   Match.value(mode === 'skip').pipe(
-    Match.when(true, (): TestStatus => 'skipped'),
-    Match.when(false, (): TestStatus =>
+    Match.when(true, (): TestRunner.TestStatus => 'skipped'),
+    Match.when(false, (): TestRunner.TestStatus =>
       Match.value(taskState).pipe(
-        Match.when('pass', (): TestStatus => 'success'),
-        Match.when('skip', (): TestStatus => 'skipped'),
-        Match.when('todo', (): TestStatus => 'skipped'),
-        Match.orElse((): TestStatus => 'failed'),
+        Match.when('pass', (): TestRunner.TestStatus => 'success'),
+        Match.when('skip', (): TestRunner.TestStatus => 'skipped'),
+        Match.when('todo', (): TestRunner.TestStatus => 'skipped'),
+        Match.orElse((): TestRunner.TestStatus => 'failed'),
       )),
     Match.exhaustive,
   )
@@ -167,7 +163,8 @@ const findSuiteErrorRaw = <A = unknown>(suite: A): string | undefined =>
                 Match.exhaustive,
               )))
           return Option.match(maybeError, {
-            onNone: (): string | undefined => findSuiteErrorRaw(rec['suite']),
+            onNone: (): string | undefined =>
+              findSuiteErrorRaw(rec['suite']),
             onSome: (msg): string | undefined => msg,
           })
         },
@@ -182,10 +179,11 @@ const extractResultState = <A = unknown>(result: Option.Option<A>): Option.Optio
       Option.match(recordOption(value), {
         onNone: (): Option.Option<TaskState> => Option.none(),
         onSome: (rec): Option.Option<TaskState> => Option.some(getState(rec['state'])),
-      })),
+      })
+    ),
   )
 
-const extractStatus = <A = unknown>(test: A): TestStatus =>
+const extractStatus = <A = unknown>(test: A): TestRunner.TestStatus =>
   toTestStatus(extractResultState(getResult(test)).pipe(Option.getOrUndefined), getMode(test))
 
 const extractDuration = <A = unknown>(test: A): number =>
@@ -224,7 +222,7 @@ const extractFailureMessage = <A = unknown>(test: A): string =>
       }),
   })
 
-const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestResult => {
+const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestRunner.TestResult => {
   const status = extractStatus(test)
   const fileNameField = Match.value(extractFileName(test)).pipe(
     Match.when(undefined, () => ({})),
@@ -240,33 +238,31 @@ const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestResult =
   return Match.value(status).pipe(
     Match.when(
       'failed',
-      (): TestResult => ({ ...base, status: 'failed', failureMessage: extractFailureMessage(test) }),
+      (): TestRunner.TestResult => ({ ...base, status: 'failed', failureMessage: extractFailureMessage(test) }),
     ),
-    Match.when('skipped', (): TestResult =>
-      Match.value(getSuite(test).pipe(Option.getOrUndefined, findSuiteErrorRaw)).pipe(
-        Match.when(
-          Match.defined,
-          (suiteError): TestResult => ({ ...base, status: 'failed', failureMessage: suiteError }),
+    Match.when(
+      'skipped',
+      (): TestRunner.TestResult =>
+        Match.value(getSuite(test).pipe(Option.getOrUndefined, findSuiteErrorRaw)).pipe(
+          Match.when(
+            Match.defined,
+            (suiteError): TestRunner.TestResult => ({ ...base, status: 'failed', failureMessage: suiteError }),
+          ),
+          Match.orElse((): TestRunner.TestResult => ({ ...base, status: 'skipped' })),
         ),
-        Match.orElse((): TestResult => ({ ...base, status: 'skipped' })),
-      )),
-    Match.orElse((): TestResult => ({ ...base, status: 'success' })),
+    ),
+    Match.orElse((): TestRunner.TestResult => ({ ...base, status: 'success' })),
   )
-}
-
-export interface RawVitestRun {
-  readonly projectRoot: string
-  readonly records: readonly RawVitestRecord[]
 }
 
 export const VitestTestRun = S.Unknown.pipe(
   S.decodeTo(
-    S.Array(TestResultSchema),
+    S.Array(TestRunner.TestResultSchema),
     SchemaTransformation.transform({
       decode: (payload) =>
         Option.match(recordOption(payload), {
-          onNone: (): readonly TestResult[] => [],
-          onSome: (run): readonly TestResult[] => {
+          onNone: (): readonly TestRunner.TestResult[] => [],
+          onSome: (run): readonly TestRunner.TestResult[] => {
             const projectRoot = Option.getOrElse(getStringField(run, 'projectRoot'), () => '')
             const records = Option.getOrElse(asArrayOption(run['records']), (): readonly RawVitestRecord[] => [])
             return records.map((record) => convertTestRaw(record, projectRoot))

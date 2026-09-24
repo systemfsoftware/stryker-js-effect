@@ -12,4 +12,3 @@ export class PluginLoadFailedError extends S.TaggedError<PluginLoadFailedError>(
 }) {
   readonly exitClass = 'InternalError' as const
 }
-

@@ -1,6 +1,4 @@
-import type { MutantCoverage, Position, RunOptions } from '@systemfsoftware/stryker-js-instrumenter'
-import { PositionSchema, RunOptionsFields } from '@systemfsoftware/stryker-js-instrumenter'
-
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
 export const DryRunStatus = S.Literals(['complete', 'error', 'timeout'])
@@ -17,7 +15,7 @@ const TestResultBase = {
   name: S.String,
   timeSpentMs: S.Finite,
   fileName: S.optionalKey(S.String),
-  startPosition: S.optionalKey(PositionSchema),
+  startPosition: S.optionalKey(Mutant.PositionSchema),
 }
 
 export const TestResultSchema = S.Union([
@@ -56,7 +54,7 @@ export const MutantRunResultSchema = S.Union([
 export const CoverageAnalysisSchema = S.Literals(['off', 'all', 'perTest'])
 
 export const DryRunOptionsSchema = S.Struct({
-  ...RunOptionsFields,
+  ...Mutant.RunOptionsFields,
   coverageAnalysis: CoverageAnalysisSchema,
   files: S.String.pipe(S.Array, S.optionalKey),
   testFiles: S.String.pipe(S.Array, S.optionalKey),
@@ -77,7 +75,7 @@ export interface BaseTestResult {
   readonly name: string
   readonly timeSpentMs: number
   readonly fileName?: string
-  readonly startPosition?: Position
+  readonly startPosition?: Mutant.Position
 }
 
 export interface FailedTestResult extends BaseTestResult {
@@ -97,7 +95,7 @@ export type TestResult = FailedTestResult | SkippedTestResult | SuccessTestResul
 
 export interface CompleteDryRunResult {
   readonly tests: readonly TestResult[]
-  readonly mutantCoverage?: MutantCoverage
+  readonly mutantCoverage?: Mutant.MutantCoverage
   readonly status: 'complete'
 }
 
@@ -143,7 +141,7 @@ export type MutantRunResult =
 
 export type CoverageAnalysis = 'off' | 'all' | 'perTest'
 
-export interface DryRunOptions extends RunOptions {
+export interface DryRunOptions extends Mutant.RunOptions {
   readonly coverageAnalysis: CoverageAnalysis
   readonly files?: readonly string[]
   readonly testFiles?: readonly string[]

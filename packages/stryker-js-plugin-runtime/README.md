@@ -35,17 +35,21 @@ pnpm add @systemfsoftware/stryker-js-plugin-runtime
 
 ## The entry a plugin ships
 
-`workerServerLayer` builds the `RpcServer` for one kind's RPC group over a socket,
+`Worker.workerServerLayer` builds the `RpcServer` for one kind's RPC group over a socket,
 file system, and path the program root provides, restricts the socket file to
 its owner, and provides the server-side trace-context middleware:
 
 ```ts
-import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
-import { workerServerLayer } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 
 NodeRuntime.runMain(
   Layer.launch(
-    workerServerLayer({ rpcs: TestRunnerRpcs, handlers: testRunnerHandlers, schemaServices: Layer.empty }),
+    Worker.workerServerLayer({
+      rpcs: Plugin.TestRunnerRpcs,
+      handlers: testRunnerHandlers,
+      schemaServices: Layer.empty,
+    }),
   ).pipe(Effect.provideService(Logger.LogToStderr, true)),
 )
 ```
@@ -53,7 +57,7 @@ NodeRuntime.runMain(
 ## Worker options
 
 The host writes the run's options to `options.json` in the worker directory it
-creates; `WorkerOptions`, read through `WorkerOptions.layer`, decodes that file
+creates; `Worker.WorkerOptions`, read through `Worker.WorkerOptions.layer`, decodes that file
 into the same `StrykerOptions` a local `stryker` run uses, so a worker's
 handlers see the run's options without the host passing them over the wire.
 
@@ -63,7 +67,7 @@ A synchronous RPC call is the parent of the spans it invokes: the client
 middleware injects the active trace context into the request headers as W3C
 `traceparent`/`tracestate`, and the server middleware continues that trace for
 the handler. Asynchronous plugin work — anything that outlives its call — is
-linked instead of parented, through `withLinkedSpan`.
+linked instead of parented, through `Trace.withLinkedSpan`.
 
 ## License
 

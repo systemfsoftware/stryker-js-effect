@@ -16,6 +16,7 @@ import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
+import * as HashSet from 'effect/HashSet'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -46,29 +47,22 @@ import {
   variableDeclaration,
   variableDeclarator,
 } from './Ast.handle.js'
-import type {
-  Ast,
-  AstByFormat,
-  ScriptAst,
-  SourceLocationInFile,
-  SpannedComment,
-  TemplateScript,
-} from './Ast.schema.js'
-import { AstFormat } from './Syntax.schema.js'
+import type { Ast, AstByFormat, ScriptAst, SourceLocationInFile, SpannedComment, TemplateScript } from './Ast.schema.js'
 import { type MutateDescription } from './Instrument.schema.js'
 import { LineTable, LineTableFromText, type Position } from './Location.schema.js'
-import { INSTRUMENTER_CONSTANTS as ID } from './Mutant.js'
+import { InstrumenterContext as ID } from './Mutant.schema.js'
 import {
-  Mutators,
-  type Mutant,
-  type MutatorsShape,
   type Mutable,
+  type Mutant,
   type MutatorContext,
   type MutatorOptions,
+  Mutators,
+  type MutatorsShape,
 } from './Mutator.service.js'
-import { Parser } from './Parser.service.js'
-import type { ParserError, ParserShape } from './Parser.service.js'
 import { ParseFailed } from './Parser.schema.js'
+import { Parser } from './Parser.service.js'
+import type { ParserShape } from './Parser.service.js'
+import { AstFormat } from './Syntax.schema.js'
 import {
   CommentLocationMissing,
   DirectiveIncomplete,
@@ -77,6 +71,7 @@ import {
   MutantsUnplaced,
   NodeKindMismatch,
   PlacementMissing,
+  type PlacementSite,
   type TransformerFailure,
 } from './Transformer.schema.js'
 
@@ -119,14 +114,21 @@ export interface TransformerShape {
   readonly transform: Transform
 }
 
-export class Transformer
-  extends Context.Service<Transformer, TransformerShape>()('@systemfsoftware/stryker-js-instrumenter/Transformer.service/Transformer')
-{
-  static readonly layer: Layer.Layer<Transformer, ParserError, Parser | Mutators> = Layer.effect(
+export class Transformer extends Context.Service<Transformer, TransformerShape>()(
+  '@systemfsoftware/stryker-js-instrumenter/Transformer.service/Transformer',
+) {
+  static readonly layer: Layer.Layer<Transformer, never, Parser | Mutators> = Layer.effect(
     Transformer,
-    Effect.flatMap(Parser, (parser) =>
-      Effect.flatMap(Mutators, (mutators) =>
-        Effect.map(instrumentationHeaderOf(parser), (header) => Transformer.of({ transform: transformOf(header, mutators) })))),
+    Effect.flatMap(
+      Parser,
+      (parser) =>
+        Effect.flatMap(
+          Mutators,
+          (mutators) =>
+            Effect.map(Effect.cached(instrumentationHeaderOf(parser)), (header) =>
+              Transformer.of({ transform: transformOf(header, mutators) })),
+        ),
+    ),
   )
 }
 
@@ -170,8 +172,7 @@ const findIgnoreReason = (
   rule: Rule,
   mutatorName: string,
   line: number,
-): string | undefined =>
-  Option.getOrUndefined(ignoreReasonIn(rule, mutatorName.toLowerCase(), line))
+): string | undefined => Option.getOrUndefined(ignoreReasonIn(rule, mutatorName.toLowerCase(), line))
 
 const ignoreReasonIn = (
   rule: Rule,
@@ -242,7 +243,11 @@ const processStrykerDirectives = (
   node: Node,
   allMutatorNames: readonly string[],
   originFileName: string,
-): { rule: Rule; warnings: readonly string[]; failure: Option.Option<DirectiveIncomplete | CommentLocationMissing> } => {
+): {
+  rule: Rule
+  warnings: readonly string[]
+  failure: Option.Option<DirectiveIncomplete | CommentLocationMissing>
+} => {
   const outcomes = Arr.map(attachedComments(node), parseStrykerDirective)
   const parsed = Arr.getSomes(outcomes)
   const directives = Arr.filterMap(parsed, (result) => result)
@@ -274,15 +279,18 @@ const strykerDirective = (
   match: RegExpExecArray,
   loc: LocatedComment['loc'],
 ): Result.Result<StrykerDirective, DirectiveIncomplete | CommentLocationMissing> =>
-  Result.flatMap(matchGroup(match, 1), (type) =>
-    Result.flatMap(matchGroup(match, 3), (names) =>
-      Result.map(commentLocation(loc), (located) => ({
-        type,
-        scope: match[2],
-        mutatorNames: names.split(',').map((mutator) => mutator.trim()),
-        reason: (match[4] ?? DEFAULT_REASON).trim(),
-        loc: located,
-      }))))
+  Result.flatMap(
+    matchGroup(match, 1),
+    (type) =>
+      Result.flatMap(matchGroup(match, 3), (names) =>
+        Result.map(commentLocation(loc), (located) => ({
+          type,
+          scope: match[2],
+          mutatorNames: names.split(',').map((mutator) => mutator.trim()),
+          reason: (match[4] ?? DEFAULT_REASON).trim(),
+          loc: located,
+        }))),
+  )
 
 const matchGroup = (match: RegExpExecArray, group: number): Result.Result<string, DirectiveIncomplete> =>
   Result.fromOption(Option.fromNullishOr(match[group]), () => DirectiveIncomplete.make())
@@ -395,7 +403,10 @@ const mutationCoverageSequenceExpression = (
 ): Expression => {
   const mutantIds = [...mutants].map((mutant) => stringLiteral(mutant.id))
   return sequenceExpression(
-    Arr.appendAll([callExpression(identifier(COVER_MUTANT_HELPER), mutantIds)], Option.toArray(Option.fromUndefinedOr(targetExpression))),
+    Arr.appendAll(
+      [callExpression(identifier(COVER_MUTANT_HELPER), mutantIds)],
+      Option.toArray(Option.fromUndefinedOr(targetExpression)),
+    ),
   )
 }
 
@@ -442,7 +453,12 @@ const switchCaseOf = (node: Node): Result.Result<Node & SwitchCaseShape, NodeKin
 const fileNameWithin = (basePath: string | undefined, fileName: string): string =>
   Option.getOrElse(Option.map(Option.fromUndefinedOr(basePath), (base) => relativeTo(base, fileName)), () => fileName)
 
-const placementLocation = (node: Node, lineTable: LineTable, basePath: string | undefined, fileName: string): PlacementSite => {
+const placementLocation = (
+  node: Node,
+  lineTable: LineTable,
+  basePath: string | undefined,
+  fileName: string,
+): PlacementSite => {
   const relativeFile = fileNameWithin(basePath, fileName)
   return Option.match(Option.fromNullishOr(spanOf(node)), {
     onNone: () => ({ fileName: relativeFile, line: undefined, column: undefined }),
@@ -451,12 +467,6 @@ const placementLocation = (node: Node, lineTable: LineTable, basePath: string | 
       return { fileName: relativeFile, line: at.line, column: at.column }
     },
   })
-}
-
-interface PlacementSite {
-  readonly fileName: string
-  readonly line: number | undefined
-  readonly column: number | undefined
 }
 
 type AnonymousFunctionOrClass = FunctionExpression | ClassExpression
@@ -631,8 +641,7 @@ const isCalleeParent = (path: TraversePath, parent: TraversePath): boolean => {
 const isNotACallOnTheNode = (member: MemberExpression, node: Node): boolean =>
   !(member.computed && member.property === node)
 
-const unwrapParenthesizedExpression = (node: Node): Node =>
-  Option.getOrElse(innerExpression(node), () => node)
+const unwrapParenthesizedExpression = (node: Node): Node => Option.getOrElse(innerExpression(node), () => node)
 
 interface ParenthesizedWrapper {
   readonly expression?: Node | null
@@ -722,8 +731,7 @@ const switchCaseMutantPlacer: MutantPlacer = {
                 nodeOfKind(mutant, appliedMutant, isSwitchCaseNode, 'a switch case'),
                 (replacement) => Result.succeed(replacement.consequent),
               ),
-              (consequent) =>
-                ifStatement(mutantTestExpression(mutant.id), blockStatement(consequent), current),
+              (consequent) => ifStatement(mutantTestExpression(mutant.id), blockStatement(consequent), current),
             )),
         Result.succeed(
           blockStatement([
@@ -791,10 +799,14 @@ var ${IS_MUTANT_ACTIVE_HELPER} = function(id) {
   return isActive(id);
 }`
 
-const instrumentationHeaderOf = (parser: ParserShape): Effect.Effect<readonly Statement[], ParserError> =>
-  Effect.map(
-    parser.parse(INSTRUMENTATION_HEADER_SOURCE, 'instrumenter-header.js', 'js'),
-    (ast) => deepFreeze(ast.root.body),
+type InstrumentationHeader = Effect.Effect<readonly Statement[]>
+
+const instrumentationHeaderOf = (parser: ParserShape): InstrumentationHeader =>
+  Effect.orDie(
+    Effect.map(
+      parser.parse(INSTRUMENTATION_HEADER_SOURCE, 'instrumenter-header.js', 'js'),
+      (ast) => deepFreeze(ast.root.body),
+    ),
   )
 
 const placeHeaderIfNeeded = (
@@ -802,21 +814,22 @@ const placeHeaderIfNeeded = (
   originFileName: string,
   options: MutatorOptions,
   root: Program,
-  header: readonly Statement[],
+  header: InstrumentationHeader,
 ): Effect.Effect<void, ParseFailed> =>
   Boolean.match(shouldPlaceHeader(mutantCollector, originFileName, options), {
     onTrue: () => placeHeader(root, header),
     onFalse: () => Effect.void,
   })
 
-const placeHeader = (root: Program, header: readonly Statement[]): Effect.Effect<void, ParseFailed> =>
-  Result.match(headerFor(root, header), {
-    onSuccess: (resolved) =>
-      Effect.sync(() => {
-        root.body.unshift(...resolved)
-      }),
-    onFailure: (failure) => Effect.die(failure),
-  })
+const placeHeader = (root: Program, header: InstrumentationHeader): Effect.Effect<void, ParseFailed> =>
+  Effect.flatMap(header, (statements) =>
+    Result.match(headerFor(root, statements), {
+      onSuccess: (resolved) =>
+        Effect.sync(() => {
+          root.body.unshift(...resolved)
+        }),
+      onFailure: (failure) => Effect.die(failure),
+    }))
 
 const shouldPlaceHeader = (
   mutantCollector: MutantCollector,
@@ -867,7 +880,9 @@ const frozenContainer = <A = unknown>(value: A): Option.Option<A> =>
     return value
   })
 
-const freezableChildren = (value: Record<string, object | null | undefined>): readonly (object | null | undefined)[] => [
+const freezableChildren = (
+  value: Record<string, object | null | undefined>,
+): readonly (object | null | undefined)[] => [
   ...mapEntries(value),
   ...setItems(value),
   ...Object.values(value),
@@ -883,14 +898,14 @@ const setItems = (value: object): readonly (object | null | undefined)[] =>
   Option.getOrElse(Option.map(Option.filter(Option.some(value), isSet), (set) => [...set]), () => NO_CHILDREN)
 
 const isObjectValue = (value: unknown): value is Record<string, object | null | undefined> =>
-  value !== null && typeof value === 'object'
+  Predicate.isObjectOrArray(value)
 
 const isMap = (value: object): value is Map<object | null | undefined, object | null | undefined> =>
-  value instanceof Map
+  Predicate.isMap(value)
 
-const isSet = (value: object): value is Set<object | null | undefined> => value instanceof Set
+const isSet = (value: object): value is Set<object | null | undefined> => Predicate.isSet(value)
 
-const transformOf = (header: readonly Statement[], mutators: MutatorsShape): Transform => {
+const transformOf = (header: InstrumentationHeader, mutators: MutatorsShape): Transform => {
   const transform: Transform = dual(
     3,
     (
@@ -945,7 +960,7 @@ const transformSvelte = (
   svelte: AstByFormat['svelte'],
   mutantCollector: MutantCollector,
   context: TransformerContext,
-  header: readonly Statement[],
+  header: InstrumentationHeader,
 ) =>
   Effect.gen(function*() {
     const { root } = svelte
@@ -966,7 +981,7 @@ const transformSvelte = (
 const placeModuleHeaderIfNeeded = (
   svelte: AstByFormat['svelte'],
   mutantCollector: MutantCollector,
-  header: readonly Statement[],
+  header: InstrumentationHeader,
 ): Effect.Effect<void, ParseFailed> =>
   Boolean.match(hasPlacedMutants(mutantCollector, svelte.originFileName), {
     onTrue: () => placeModuleHeader(svelte, header),
@@ -975,7 +990,7 @@ const placeModuleHeaderIfNeeded = (
 
 const placeModuleHeader = (
   svelte: AstByFormat['svelte'],
-  header: readonly Statement[],
+  header: InstrumentationHeader,
 ): Effect.Effect<void, ParseFailed> =>
   Effect.flatMap(ensureModuleScriptOf(svelte), (moduleScript) => placeHeader(moduleScript.ast.root, header))
 
@@ -1019,14 +1034,13 @@ type PlacementMap = Map<Node, MutantsPlacement>
 
 const emptyAppliedMutants = (): Map<Mutant, Node> => new Map()
 
-const isMutateRangeList = (value: MutateDescription): value is readonly SourceLocationInFile[] =>
-  Array.isArray(value)
+const isMutateRangeList = (value: MutateDescription): value is readonly SourceLocationInFile[] => Array.isArray(value)
 
 const transformScript = (
   { root, originFileName, rawContent, offset, comments }: ScriptAst,
   mutantCollector: MutantCollector,
   { options, mutateDescription, basePath }: TransformerContext,
-  header: readonly Statement[],
+  header: InstrumentationHeader,
   mutators: MutatorsShape,
 ) => {
   const placementMap: PlacementMap = new Map()
@@ -1041,11 +1055,19 @@ const transformScript = (
     const directives: { rule: Rule } = { rule: rootRule }
     const mutatorEntries = Object.entries(mutators.mutators)
     const allMutatorNames = mutatorEntries.map(([name]) => name.toLowerCase())
+    const excludedSet = HashSet.fromIterable(options.excludedMutations)
 
     const warnings: string[] = []
 
-    const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> =>
+    const locationAt = (node: Node): Option.Option<SourceLocationInFile> =>
       Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
+
+    const locationCache = new WeakMap<Node, Option.Option<SourceLocationInFile>>()
+    const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> => {
+      const location = locationCache.get(node) ?? locationAt(node)
+      locationCache.set(node, location)
+      return location
+    }
     const shouldSkip = (path: TraversePath): boolean =>
       [
         isTypeNode(path),
@@ -1065,8 +1087,7 @@ const transformScript = (
             onSome: (location) => ranges.every((range) => !locationOverlaps(range, location)),
           }),
       )
-    const shouldMutate = (path: TraversePath): boolean =>
-      mutateDescription === true || isInsideMutateRanges(path)
+    const shouldMutate = (path: TraversePath): boolean => mutateDescription === true || isInsideMutateRanges(path)
     const isInsideMutateRanges = (path: TraversePath): boolean =>
       Option.exists(
         mutateRanges(),
@@ -1079,9 +1100,7 @@ const transformScript = (
     const ignoreMessageFor = (node: Node, ancestors: readonly Node[]): string | undefined =>
       ignorerReason(node, ancestors)
     const ignorerReason = (node: Node, ancestors: readonly Node[]): string | undefined =>
-      options.ignorers.map((ignorer) => ignorer.shouldIgnore(node, ancestors)).find((reason) =>
-        reason !== undefined
-      )
+      options.ignorers.map((ignorer) => ignorer.shouldIgnore(node, ancestors)).find((reason) => reason !== undefined)
     const collectMutants = (path: TraversePath): Mutant[] =>
       mutablesFor(path).map((mutable) => collect(mutable, path))
         .filter((mutant) => mutant.ignoreReason === undefined)
@@ -1133,11 +1152,10 @@ const transformScript = (
     const directiveOrExclusion = (mutatorName: string, line: number): string | undefined =>
       findIgnoreReason(directives.rule, mutatorName, line) ?? findExcludedMutatorIgnoreReason(mutatorName)
     const findExcludedMutatorIgnoreReason = (mutatorName: string): string | undefined =>
-      Boolean.match(options.excludedMutations.includes(mutatorName), {
+      Boolean.match(HashSet.has(excludedSet, mutatorName), {
         onTrue: () => `Ignored because of excluded mutation "${mutatorName}"`,
         onFalse: () => undefined,
       })
-
 
     traverse(make(root), {
       enter(path) {
@@ -1241,8 +1259,7 @@ const transformScript = (
         onTrue: () => undefined,
         onFalse: () => {
           Option.match(Option.fromNullishOr(path.find((ancestor) => placementMap.has(ancestor.node))), {
-            onNone: () =>
-              recordFailure(MutantsUnplaced.make({ mutants: JSON.stringify(mutantsToPlace, null, 2) })),
+            onNone: () => recordFailure(MutantsUnplaced.make({ mutants: JSON.stringify(mutantsToPlace, null, 2) })),
             onSome: (placementPath) =>
               Option.match(Option.fromNullishOr(placementMap.get(placementPath.node)), {
                 onNone: () => recordFailure(PlacementMissing.make({})),
@@ -1253,7 +1270,8 @@ const transformScript = (
                         placement.appliedMutants.set(mutant, applied)
                       },
                       onFailure: recordFailure,
-                    }))
+                    })
+                  )
                 },
               }),
           })

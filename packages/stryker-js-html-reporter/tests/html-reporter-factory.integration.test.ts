@@ -1,17 +1,8 @@
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import type { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface'
-import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  DryRunCompleted,
-  MutantTested,
-  MutationTestingPlanReady,
-  MutationTestReportReady,
-} from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import { Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -83,9 +74,9 @@ const removeDir = (dir: string): Promise<void> =>
     }),
   )
 
-const optionsWith = (fileName: string) => S.decodeEffect(StrykerOptionsSchema)({ htmlReporter: { fileName } })
+const optionsWith = (fileName: string) => S.decodeEffect(Options.StrykerOptionsSchema)({ htmlReporter: { fileName } })
 
-const reportFixture = (): reportApi.MutationTestResult => ({
+const reportFixture = (): Report.MutationTestResult => ({
   schemaVersion: '1.0',
   files: {
     'src/marker.ts': {
@@ -104,7 +95,7 @@ const reportFixture = (): reportApi.MutationTestResult => ({
   thresholds: { high: 80, low: 60 },
 })
 
-const metricsFixture = (): MetricsResult => ({
+const metricsFixture = (): Report.MetricsResult => ({
   name: 'All files',
   metrics: {
     pending: 0,
@@ -128,20 +119,20 @@ const metricsFixture = (): MetricsResult => ({
 })
 
 const runEvents = (
-  report: reportApi.MutationTestResult,
-  metrics: MetricsResult,
-): readonly ReporterEvent[] => [
-  DryRunCompleted.make({
+  report: Report.MutationTestResult,
+  metrics: Report.MetricsResult,
+): readonly Reporter.ReporterEvent[] => [
+  Reporter.DryRunCompleted.make({
     timing: { net: 1, overhead: 0 },
     capabilities: { reloadEnvironment: false },
     testCount: 0,
     tests: [],
   }),
-  MutationTestingPlanReady.make({
+  Reporter.MutationTestingPlanReady.make({
     total: 1,
     plans: [{ mutantId: '0', plan: 'Run', netTime: 1, reloadEnvironment: false }],
   }),
-  MutantTested.make({
+  Reporter.MutantTested.make({
     id: '0',
     status: 'Killed',
     file: 'src/marker.ts',
@@ -151,21 +142,21 @@ const runEvents = (
     completed: 1,
     total: 1,
   }),
-  MutationTestReportReady.make({ report, metrics }),
+  Reporter.MutationTestReportReady.make({ report, metrics }),
 ]
 
-function toStream(events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> {
+function toStream(events: readonly Reporter.ReporterEvent[]): AsyncIterable<Reporter.ReporterEvent> {
   let index = 0
   return {
-    [Symbol.asyncIterator](): AsyncIterator<ReporterEvent> {
+    [Symbol.asyncIterator](): AsyncIterator<Reporter.ReporterEvent> {
       return {
-        next(): Promise<IteratorResult<ReporterEvent>> {
-          const value: ReporterEvent | undefined = events[index]
+        next(): Promise<IteratorResult<Reporter.ReporterEvent>> {
+          const value: Reporter.ReporterEvent | undefined = events[index]
           index += 1
           if (value !== undefined) {
             return Promise.resolve({ value, done: false })
           }
-          const done: IteratorResult<ReporterEvent> = { done: true, value: undefined }
+          const done: IteratorResult<Reporter.ReporterEvent> = { done: true, value: undefined }
           return Promise.resolve(done)
         },
       }
@@ -189,7 +180,7 @@ Feature('Writing the html mutation report').withLayer(nodeFsPathLayer).body(({ s
         Effect.gen(function*() {
           try {
             const options = yield* optionsWith(s.output.fileName)
-            const consume = makeHtmlReporter(options, {})
+            const consume = HtmlReporter.makeHtmlReporter(options, {})
             yield* consume(toStream(runEvents(reportFixture(), metricsFixture())))
             return yield* Effect.promise(() => readText(s.output.fileName))
           } finally {
@@ -224,8 +215,8 @@ Feature('Writing the html mutation report').withLayer(nodeFsPathLayer).body(({ s
             const fileB = yield* Effect.promise(() => joinPath(dirB, 'index.html'))
             const optionsA = yield* optionsWith(fileA)
             const optionsB = yield* optionsWith(fileB)
-            yield* makeHtmlReporter(optionsA, {})(toStream(runEvents(s.run.report, s.run.metrics)))
-            yield* makeHtmlReporter(optionsB, {})(toStream(runEvents(s.run.report, s.run.metrics)))
+            yield* HtmlReporter.makeHtmlReporter(optionsA, {})(toStream(runEvents(s.run.report, s.run.metrics)))
+            yield* HtmlReporter.makeHtmlReporter(optionsB, {})(toStream(runEvents(s.run.report, s.run.metrics)))
             const existed = yield* Effect.promise(() => fileExists(fileA))
             return {
               a: yield* Effect.promise(() => readText(fileA)),

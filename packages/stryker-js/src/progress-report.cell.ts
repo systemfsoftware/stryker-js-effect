@@ -1,9 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutantTested, MutationTestingPlanReady } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ReporterEvent, ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface'
-import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, type Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -12,19 +9,19 @@ import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as Stream from 'effect/Stream'
 
-import { ReporterOutput } from './reporter-output.service.js'
 import {
-  renderProgressReport,
   type ProgressBarState,
   type ProgressState,
   type ProgressTally,
+  renderProgressReport,
 } from './render-progress-report.workflow.js'
+import { ReporterOutput } from './reporter-output.service.js'
 
-const failAsProgress = <E = unknown>(cause: E): ReporterFailed =>
-  ReporterFailed.make({
+const failAsProgress = <E = unknown>(cause: E): Reporter.ReporterFailed =>
+  Reporter.ReporterFailed.make({
     reporterName: 'progress',
     event: 'mutationTestReportReady',
-    cause: errorToString(cause),
+    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
 const PROGRESS_BAR_FORMAT =
@@ -49,7 +46,7 @@ const emptyTally = (startedAt: number): ProgressTally => ({
 
 const INITIAL_PROGRESS: ProgressState = { tally: emptyTally(0), bar: null }
 
-const TALLY_COUNTED: Record<MutantStatus, { readonly survived: number; readonly timedOut: number }> = {
+const TALLY_COUNTED: Record<Mutant.MutantStatus, { readonly survived: number; readonly timedOut: number }> = {
   Killed: { survived: 0, timedOut: 0 },
   NoCoverage: { survived: 0, timedOut: 0 },
   Ignored: { survived: 0, timedOut: 0 },
@@ -74,7 +71,7 @@ const ticksFor = (
     onFalse: () => plan.netTime,
   })
 
-const tallyAfterTest = (tally: ProgressTally, tested: MutantTested, ticks: number): ProgressTally => {
+const tallyAfterTest = (tally: ProgressTally, tested: Reporter.MutantTested, ticks: number): ProgressTally => {
   const counted = TALLY_COUNTED[tested.status]
   return {
     ...tally,
@@ -87,7 +84,11 @@ const tallyAfterTest = (tally: ProgressTally, tested: MutantTested, ticks: numbe
 
 type ProgressStep = { readonly kind: 'tick' | 'skip'; readonly state: ProgressState }
 
-const planReadyState = (state: ProgressState, planReady: MutationTestingPlanReady, now: number): ProgressState => {
+const planReadyState = (
+  state: ProgressState,
+  planReady: Reporter.MutationTestingPlanReady,
+  now: number,
+): ProgressState => {
   const ticksByMutantId = Object.fromEntries(
     planReady.plans
       .filter((plan) => plan.plan === 'Run')
@@ -113,7 +114,7 @@ const planReadyState = (state: ProgressState, planReady: MutationTestingPlanRead
   }
 }
 
-const advance = (state: ProgressState, event: ReporterEvent, now: number): ProgressStep =>
+const advance = (state: ProgressState, event: Reporter.ReporterEvent, now: number): ProgressStep =>
   Match.value(event).pipe(
     Match.tag('dryRunCompleted', (dryRun) => ({
       kind: 'skip' as const,
@@ -148,7 +149,7 @@ const advance = (state: ProgressState, event: ReporterEvent, now: number): Progr
 
 const readProgressStep = (input: {
   readonly state: ProgressState
-  readonly event: ReporterEvent | undefined
+  readonly event: Reporter.ReporterEvent | undefined
 }) =>
   Effect.map(Effect.sync(() => performance.now()), (now) =>
     Option.match(Option.fromNullishOr(input.event), {
@@ -229,8 +230,9 @@ const lineBreakOf = (complete: boolean): string =>
     onFalse: () => '',
   })
 
-const renderTick = (tick: { readonly bar: ProgressBarState; readonly tally: ProgressTally; readonly now: number }): string =>
-  `\r${formatBar(tick.bar, progressData(tick.tally, tick.now))}${lineBreakOf(isComplete(tick.bar))}`
+const renderTick = (
+  tick: { readonly bar: ProgressBarState; readonly tally: ProgressTally; readonly now: number },
+): string => `\r${formatBar(tick.bar, progressData(tick.tally, tick.now))}${lineBreakOf(isComplete(tick.bar))}`
 
 const writeChunk = (chunk: string) =>
   Effect.flatMap(ReporterOutput, (output) => Effect.ignore(output.write('stdout', [chunk])))
@@ -246,7 +248,9 @@ export const progressReportCell = Sandwich.named('stryker.report.progress')(read
 
 type ReporterCellServices<C> = C extends Cell.Cell<infer _I, infer _A, infer _E, infer S> ? S : never
 
-export const progressReporterFactory = (context: Context.Context<ReporterCellServices<typeof progressReportCell>>): ReporterFactory => {
+export const progressReporterFactory = (
+  context: Context.Context<ReporterCellServices<typeof progressReportCell>>,
+): Reporter.ReporterFactory => {
   const step = Cell.provideContext(progressReportCell, context)
   return () => (events) =>
     Effect.gen(function*() {

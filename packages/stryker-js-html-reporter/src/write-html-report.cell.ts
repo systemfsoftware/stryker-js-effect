@@ -1,15 +1,14 @@
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
-import { MutationTestReportReady } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ReporterEvent, ReporterInit, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
+import { type Options, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
@@ -18,7 +17,8 @@ import { RenderHtmlReport, renderHtmlReport } from './render-html-report.workflo
 
 const escapeHtmlTags = (json: string) => json.replace(/</g, '<"+"')
 
-const buildReportHtml = (report: MutationTestReportReady['report'], scriptContent: string) => `<!DOCTYPE html>
+const buildReportHtml = (report: Reporter.MutationTestReportReady['report'], scriptContent: string) =>
+  `<!DOCTYPE html>
   <html>
   <head>
     <meta charset="utf-8">
@@ -76,12 +76,12 @@ const writeHtmlFile = (fileName: string, html: string) =>
   })
 
 export type RenderHtmlReportRead = (typeof RenderHtmlReport)['Encoded'] & {
-  readonly report: MutationTestReportReady['report']
+  readonly report: Reporter.MutationTestReportReady['report']
 }
 
 const readRenderCommand = (input: {
   readonly fileName: string
-  readonly report: MutationTestReportReady['report']
+  readonly report: Reporter.MutationTestReportReady['report']
 }): Effect.Effect<RenderHtmlReportRead> =>
   Effect.succeed({
     _tag: 'RenderHtmlReport',
@@ -105,27 +105,33 @@ export const writeHtmlReport = Sandwich.named('html_report.write')(readRenderCom
 const nodeFsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 const failAsHtmlReporter = <A = unknown>(cause: A) =>
-  ReporterFailed.make({ reporterName: 'html', event: 'mutationTestReportReady', cause: errorToString(cause) })
+  Reporter.ReporterFailed.make({
+    reporterName: 'html',
+    event: 'mutationTestReportReady',
+    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+  })
 
-const drainEvents = (fileName: string, events: AsyncIterable<ReporterEvent>) =>
+const drainEvents = (fileName: string, events: AsyncIterable<Reporter.ReporterEvent>) =>
   Stream.runForEach(
-    Stream.fromAsyncIterable(events, failAsHtmlReporter).pipe(Stream.filter(S.is(MutationTestReportReady))),
+    Stream.fromAsyncIterable(events, failAsHtmlReporter).pipe(Stream.filter(S.is(Reporter.MutationTestReportReady))),
     (ready) => writeHtmlReport.run({ fileName, report: ready.report }).pipe(Effect.mapError(failAsHtmlReporter)),
   )
 
 export const makeHtmlReporter = dual<
   (
-    options: StrykerOptions,
-  ) => (init: ReporterInit) => (events: AsyncIterable<ReporterEvent>) => Effect.Effect<void, ReporterFailed>,
+    options: Options.StrykerOptions,
+  ) => (
+    init: Reporter.ReporterInit,
+  ) => (events: AsyncIterable<Reporter.ReporterEvent>) => Effect.Effect<void, Reporter.ReporterFailed>,
   (
-    options: StrykerOptions,
-    init: ReporterInit,
-  ) => (events: AsyncIterable<ReporterEvent>) => Effect.Effect<void, ReporterFailed>
+    options: Options.StrykerOptions,
+    init: Reporter.ReporterInit,
+  ) => (events: AsyncIterable<Reporter.ReporterEvent>) => Effect.Effect<void, Reporter.ReporterFailed>
 >(
   2,
   (options, _init) => (events) =>
-  Layer.build(nodeFsPathLayer).pipe(
-    Effect.flatMap((platform) =>
-      Effect.provideContext(drainEvents(options.htmlReporter.fileName, events), platform)),
-    Effect.scoped,
-  ))
+    Layer.build(nodeFsPathLayer).pipe(
+      Effect.flatMap((platform) => Effect.provideContext(drainEvents(options.htmlReporter.fileName, events), platform)),
+      Effect.scoped,
+    ),
+)

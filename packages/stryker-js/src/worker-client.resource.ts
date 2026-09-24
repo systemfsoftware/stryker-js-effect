@@ -1,8 +1,9 @@
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { layerTraceContextClient, WorkerOptionsWire } from '@systemfsoftware/stryker-js-plugin-runtime'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Trace, Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Schedule from 'effect/Schedule'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import type * as Rpc from 'effect/unstable/rpc/Rpc'
@@ -10,14 +11,16 @@ import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
 
-import { connectRetry } from './WorkerLauncher.js'
-import { WorkerLauncher } from './WorkerLauncher.service.js'
-import type { WorkerBootError } from './WorkerLauncher.service.js'
+import { clientLayer } from './spawned-socket-worker.handle.js'
+import type { WorkerBootError } from './Worker.schema.js'
 import { WorkerBootTimeoutError } from './Worker.schema.js'
+import { WorkerLauncher } from './WorkerLauncher.service.js'
+
+const connectRetry = Schedule.max([Schedule.spaced(50), Schedule.recurs(100)])
 
 export interface WorkerClientParams<Rpcs extends Rpc.Any> {
   readonly rpcs: RpcGroup.RpcGroup<Rpcs>
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly entrypoint: string
   readonly workingDirectory: string
   readonly execArgv: readonly string[]
@@ -34,7 +37,7 @@ export const makeWorkerClient = <Rpcs extends Rpc.Any>(
 > =>
   Effect.gen(function*() {
     const launcher = yield* WorkerLauncher
-    const optionsJson = yield* S.encodeEffect(WorkerOptionsWire)(params.options).pipe(Effect.orDie)
+    const optionsJson = yield* S.encodeEffect(Worker.WorkerOptionsWire)(params.options).pipe(Effect.orDie)
     const worker = yield* launcher.spawn({
       entrypoint: params.entrypoint,
       workingDirectory: params.workingDirectory,
@@ -44,12 +47,14 @@ export const makeWorkerClient = <Rpcs extends Rpc.Any>(
       env: params.env,
     })
 
-    const protocol = yield* Layer.build(worker.clientLayer).pipe(
+    const protocol = yield* worker.pipe(
+      clientLayer,
+      Layer.build,
       Effect.retry(connectRetry),
       Effect.raceFirst(worker.exited),
       Effect.catchTag('SocketError', () => Effect.fail(WorkerBootTimeoutError.make({ pid: worker.pid }))),
     )
-    const traceContext = yield* Layer.build(layerTraceContextClient)
+    const traceContext = yield* Layer.build(Trace.layerTraceContextClient)
 
     return yield* RpcClient.make(params.rpcs).pipe(
       Effect.provideContext(Context.merge(protocol, traceContext)),

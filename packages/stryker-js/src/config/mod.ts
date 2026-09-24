@@ -1,10 +1,13 @@
-export { defineConfig } from './define-config.js'
-export { mergeConfig } from './merge-config.js'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+
+export type PartialStrykerOptions = Options.PartialStrykerOptions
+export type StrykerOptions = Options.StrykerOptions
+export { StrykerConfig } from './stryker-config.schema.js'
 export type {
   ConfigEnv,
-  PartialStrykerOptions,
-  StrykerConfig,
+  Immutable,
+  ImmutablePrimitive,
+  Primitive,
   StrykerConfigExport,
   StrykerConfigFn,
-  StrykerOptions,
-} from './stryker-config.js'
+} from './stryker-config.schema.js'

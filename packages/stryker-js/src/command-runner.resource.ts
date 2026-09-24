@@ -1,38 +1,32 @@
-import { INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
-import type { StrykerOptions, TestRunnerConfig } from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  type CompleteDryRunResult,
-  type DryRunResult,
-  type MutantRunResult,
-  toMutantRunResult,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
 import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-
-import type { PooledTestRunner } from './TestRunner.resource.js'
+import { interpretDryRunResult, InterpretDryRunResultCommand } from './interpret-dry-run-result.workflow.js'
+import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
 
 export const ALL_TESTS_ID = 'all'
 export const ALL_TESTS_NAME = 'All tests'
 
-export const isCommandRunner = (name: TestRunnerConfig): name is 'command' =>
+export const isCommandRunner = (name: Options.TestRunnerConfig): name is 'command' =>
   typeof name === 'string' && name.toLowerCase() === 'command'
 
 interface CommandTestRunnerConfig {
   readonly workingDir: string
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
 }
 
 const commandRunnerCapabilities = { reloadEnvironment: true } as const
 
-const resultFromExit = (exitCode: number, output: string, timeSpentMs: number): CompleteDryRunResult =>
+const resultFromExit = (exitCode: number, output: string, timeSpentMs: number): TestRunner.CompleteDryRunResult =>
   Match.value(exitCode).pipe(
     Match.when(0, () => ({
       status: 'complete' as const,
@@ -50,10 +44,10 @@ const resultFromExit = (exitCode: number, output: string, timeSpentMs: number): 
     })),
   )
 
-const mutantActivation = (activeMutantId: MutantRunOptions['activeMutant']['id'] | undefined) =>
+const mutantActivation = (activeMutantId: Mutant.MutantRunOptions['activeMutant']['id'] | undefined) =>
   Match.value(activeMutantId).pipe(
     Match.when(Predicate.isString, (id) => ({
-      env: { [INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT_ENV_VARIABLE]: id },
+      env: { [Mutant.InstrumenterContext.ACTIVE_MUTANT_ENV_VARIABLE]: id },
       extendEnv: true as const,
     })),
     Match.orElse(() => undefined),
@@ -62,20 +56,23 @@ const mutantActivation = (activeMutantId: MutantRunOptions['activeMutant']['id']
 const spawnResult = <E = unknown>(
   outcome: Exit.Exit<{ readonly output: string; readonly exitCode: number }, E>,
   elapsed: number,
-): DryRunResult =>
+): TestRunner.DryRunResult =>
   Match.value(outcome).pipe(
-    Match.tag('Failure', (failed): DryRunResult => ({ status: 'error', errorMessage: String(failed.cause) })),
+    Match.tag(
+      'Failure',
+      (failed): TestRunner.DryRunResult => ({ status: 'error', errorMessage: String(failed.cause) }),
+    ),
     Match.tag(
       'Success',
-      (exited): DryRunResult => resultFromExit(exited.value.exitCode, exited.value.output, elapsed),
+      (exited): TestRunner.DryRunResult => resultFromExit(exited.value.exitCode, exited.value.output, elapsed),
     ),
     Match.exhaustive,
   )
 
 const runCommand = (
   config: CommandTestRunnerConfig,
-  activeMutantId: MutantRunOptions['activeMutant']['id'] | undefined,
-): Effect.Effect<DryRunResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  activeMutantId: Mutant.MutantRunOptions['activeMutant']['id'] | undefined,
+): Effect.Effect<TestRunner.DryRunResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function*() {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const startedAt = yield* Clock.currentTimeMillis
@@ -99,26 +96,37 @@ const runCommand = (
 
 const commandRunnerDryRun = (
   config: CommandTestRunnerConfig,
-): Effect.Effect<DryRunResult, never, ChildProcessSpawner.ChildProcessSpawner> => runCommand(config, undefined)
+): Effect.Effect<TestRunner.DryRunResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  runCommand(config, undefined)
 
 const commandRunnerMutantRun = (
   config: CommandTestRunnerConfig,
-  mutantPick: Pick<MutantRunOptions, 'activeMutant'>,
-): Effect.Effect<MutantRunResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
-  runCommand(config, mutantPick.activeMutant.id).pipe(Effect.map((result) => toMutantRunResult(result, true)))
+  mutantPick: Pick<Mutant.MutantRunOptions, 'activeMutant'>,
+): Effect.Effect<TestRunner.MutantRunResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  runCommand(config, mutantPick.activeMutant.id).pipe(
+    Effect.map((dryRunResult) => interpretDryRunResult(InterpretDryRunResultCommand.make({ dryRunResult }))),
+    Effect.flatMap((decided) =>
+      Result.match(decided, {
+        onFailure: (failure) => Effect.fail(failure),
+        onSuccess: (decision) => Effect.succeed(decision.asResult),
+      })
+    ),
+  )
 
 export const commandRunner: {
   (
-    context: { readonly sandboxWorkingDirectory: string; readonly options: StrykerOptions },
+    context: { readonly sandboxWorkingDirectory: string; readonly options: Options.StrykerOptions },
     spawner: ChildProcessSpawner.ChildProcessSpawner['Service'],
   ): PooledTestRunner
   (
     spawner: ChildProcessSpawner.ChildProcessSpawner['Service'],
-  ): (context: { readonly sandboxWorkingDirectory: string; readonly options: StrykerOptions }) => PooledTestRunner
+  ): (
+    context: { readonly sandboxWorkingDirectory: string; readonly options: Options.StrykerOptions },
+  ) => PooledTestRunner
 } = dual(
   2,
   (
-    context: { readonly sandboxWorkingDirectory: string; readonly options: StrykerOptions },
+    context: { readonly sandboxWorkingDirectory: string; readonly options: Options.StrykerOptions },
     spawner: ChildProcessSpawner.ChildProcessSpawner['Service'],
   ): PooledTestRunner => {
     const config = {
@@ -127,11 +135,11 @@ export const commandRunner: {
     }
     const provided = Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)
 
-    return {
+    return makePooledTestRunner({
       capabilities: Effect.succeed(commandRunnerCapabilities),
       init: Effect.void,
       dryRun: () => commandRunnerDryRun(config).pipe(provided),
-      mutantRun: (options: MutantRunOptions) => commandRunnerMutantRun(config, options).pipe(provided),
-    }
+      mutantRun: (options: Mutant.MutantRunOptions) => commandRunnerMutantRun(config, options).pipe(provided),
+    })
   },
 )

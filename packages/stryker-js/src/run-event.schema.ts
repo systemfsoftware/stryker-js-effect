@@ -1,5 +1,5 @@
-import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
-import { Metrics, NonNegativeFinite, NonNegativeInt, Percentage } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { SchemaGetter, SchemaTransformation } from 'effect'
 import * as S from 'effect/Schema'
 
@@ -21,34 +21,34 @@ export class RunStarted extends S.TaggedClass<RunStarted>()('stream', {
 
 export class PhaseEntered extends S.TaggedClass<PhaseEntered>()('phase', {
   phase: RunPhase,
-  elapsedMs: NonNegativeFinite,
+  elapsedMs: Report.NonNegativeFinite,
 }) {}
 
 export class PlanKnown extends S.TaggedClass<PlanKnown>()('plan', {
-  total: NonNegativeInt,
+  total: Report.NonNegativeInt,
 }) {}
 
 export class RunMutantTested extends S.TaggedClass<RunMutantTested>()('mutant', {
   id: S.String,
-  status: MutantStatusSchema,
+  status: Mutant.MutantStatusSchema,
   file: S.String,
-  location: LocationSchema,
+  location: Mutant.LocationSchema,
   mutator: S.String,
   replacement: S.NullOr(S.String),
-  completed: NonNegativeInt,
-  total: NonNegativeInt,
+  completed: Report.NonNegativeInt,
+  total: Report.NonNegativeInt,
 }) {}
 
 export class Heartbeat extends S.TaggedClass<Heartbeat>()('tick', {
-  elapsedMs: NonNegativeFinite,
-  completed: NonNegativeInt,
-  total: S.NullOr(NonNegativeInt),
+  elapsedMs: Report.NonNegativeFinite,
+  completed: Report.NonNegativeInt,
+  total: S.NullOr(Report.NonNegativeInt),
 }) {}
 
 const VerdictThresholdsValuesSchema = S.Struct({
-  high: Percentage,
-  low: Percentage,
-  break: S.NullOr(Percentage),
+  high: Report.Percentage,
+  low: Report.Percentage,
+  break: S.NullOr(Report.Percentage),
 })
 export type VerdictThresholds = typeof VerdictThresholdsValuesSchema.Type
 
@@ -83,23 +83,23 @@ const VerdictThresholds = VerdictThresholdsValuesSchema.pipe(
 const VerdictMutant = S.Struct({
   id: S.String,
   file: S.String,
-  location: LocationSchema,
+  location: Mutant.LocationSchema,
   mutator: S.String,
   replacement: S.NullOr(S.String),
-  status: MutantStatusSchema,
+  status: Mutant.MutantStatusSchema,
 })
 export type VerdictMutant = typeof VerdictMutant.Type
 
-export type VerdictCounts = Metrics
+export type VerdictCounts = Report.Metrics
 export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   schemaVersion: S.String,
   runId: S.String,
   mode: OutputMode,
   signal: ModeSignal,
-  score: S.NullOr(Percentage),
+  score: S.NullOr(Report.Percentage),
   thresholds: VerdictThresholds,
   reportFile: S.NullOr(S.String),
-  counts: Metrics,
+  counts: Report.Metrics,
   mutants: S.Array(VerdictMutant),
 }) {}
 
@@ -115,16 +115,19 @@ export class HelpRendered extends S.TaggedClass<HelpRendered>()('help', {
   code: S.Literals([0]),
   help: S.String,
 }) {}
-export const RunEvent = S.Union([
-  RunStarted,
-  PhaseEntered,
-  PlanKnown,
-  RunMutantTested,
-  Heartbeat,
-  VerdictReached,
-  RunFailed,
-  HelpRendered,
-])
+export const RunEvent = Object.assign(
+  S.Union([
+    RunStarted,
+    PhaseEntered,
+    PlanKnown,
+    RunMutantTested,
+    Heartbeat,
+    VerdictReached,
+    RunFailed,
+    HelpRendered,
+  ]),
+  { QUEUE_BOUND: 256 },
+)
 export type RunEvent = typeof RunEvent.Type
 
 export type RunTerminalEvent = VerdictReached | RunFailed | HelpRendered

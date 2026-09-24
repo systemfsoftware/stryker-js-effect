@@ -1,13 +1,5 @@
-import { INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
-import {
-  type CompleteDryRunResult,
-  type DryRunOptions,
-  type MutantRunResult,
-  type TestRunnerConfig,
-  TestRunnerFailed,
-  toMutantRunResult,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
@@ -16,14 +8,19 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Ref from 'effect/Ref'
+import * as Result from 'effect/Result'
 
 import { ALL_TESTS_ID, ALL_TESTS_NAME } from './command-runner.resource.js'
-import type { PooledTestRunner } from './TestRunner.resource.js'
-import { vmRunnerCapabilities, vmRunnerName } from './VmRunner.js'
+import { interpretDryRunResult, InterpretDryRunResultCommand } from './interpret-dry-run-result.workflow.js'
+import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
 import { VmRunner } from './VmRunner.service.js'
 import type { VmPlatform, VmScript } from './VmRunner.service.js'
 
-export const isVmRunner = (name: TestRunnerConfig): name is 'vm' =>
+const vmRunnerName = 'vm'
+
+const vmRunnerCapabilities = { reloadEnvironment: true } as const satisfies TestRunner.TestRunnerCapabilities
+
+export const isVmRunner = (name: Options.TestRunnerConfig): name is 'vm' =>
   typeof name === 'string' && name.toLowerCase() === vmRunnerName
 
 export interface VmTestRunnerConfig {
@@ -43,8 +40,8 @@ const errorText = <A = unknown>(error: A): string =>
     Match.orElse((value) => String(value)),
   )
 
-const compileFailure = <A = unknown>(file: string, cause: A): TestRunnerFailed =>
-  TestRunnerFailed.make({
+const compileFailure = <A = unknown>(file: string, cause: A): TestRunner.TestRunnerFailed =>
+  TestRunner.TestRunnerFailed.make({
     runnerName: vmRunnerName,
     phase: 'init',
     cause: `Could not compile "${file}" for the in-memory runner: ${errorText(cause)}`,
@@ -76,12 +73,12 @@ const sandboxFor = (
   activeMutantId: string | undefined,
 ): object => {
   const namespace = hostStrykerNamespace<string | undefined>()
-  namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
+  namespace[Mutant.InstrumenterContext.ACTIVE_MUTANT] = activeMutantId
   const moduleExports = {}
   const moduleObj = { exports: moduleExports }
   const sandbox = {
     ...globalThis,
-    [INSTRUMENTER_CONSTANTS.NAMESPACE]: namespace,
+    [Mutant.InstrumenterContext.NAMESPACE]: namespace,
     require: platform.module.createRequire(fileName),
     module: moduleObj,
     exports: moduleExports,
@@ -93,7 +90,7 @@ const sandboxFor = (
   })
 }
 
-const resultFromRun = (failureMessage: string | undefined, timeSpentMs: number): CompleteDryRunResult =>
+const resultFromRun = (failureMessage: string | undefined, timeSpentMs: number): TestRunner.CompleteDryRunResult =>
   Match.value(failureMessage).pipe(
     Match.when(Predicate.isString, (failure) => ({
       status: 'complete' as const,
@@ -113,11 +110,11 @@ const resultFromRun = (failureMessage: string | undefined, timeSpentMs: number):
 
 const isPlainObject = <A = unknown>(value: unknown): value is Record<string, A> => Predicate.isObject(value)
 
-const descriptorValue = <A>(descriptor: TypedPropertyDescriptor<A> | undefined) => Option.fromNullishOr(descriptor?.value)
-
+const descriptorValue = <A>(descriptor: TypedPropertyDescriptor<A> | undefined) =>
+  Option.fromNullishOr(descriptor?.value)
 const createHostNamespace = <A = unknown>(): Record<string, A> => {
   const created: Record<string, A> = {}
-  Object.defineProperty(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE, {
+  Object.defineProperty(globalThis, Mutant.InstrumenterContext.NAMESPACE, {
     configurable: true,
     enumerable: true,
     value: created,
@@ -129,7 +126,7 @@ const createHostNamespace = <A = unknown>(): Record<string, A> => {
 const hostStrykerNamespace = <A = unknown>(): Record<string, A> =>
   Option.match(
     descriptorValue<Record<string, A>>(
-      Object.getOwnPropertyDescriptor(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE),
+      Object.getOwnPropertyDescriptor(globalThis, Mutant.InstrumenterContext.NAMESPACE),
     ),
     {
       onNone: () => createHostNamespace<A>(),
@@ -142,15 +139,15 @@ const hostStrykerNamespace = <A = unknown>(): Record<string, A> =>
   )
 
 const setActiveMutant = (activeMutantId: string | undefined) => {
-  hostStrykerNamespace<string | undefined>()[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
+  hostStrykerNamespace<string | undefined>()[Mutant.InstrumenterContext.ACTIVE_MUTANT] = activeMutantId
 }
 
 const withActiveMutant = <A, E, R>(activeMutantId: string | undefined, run: Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
     Effect.sync(() => {
       const namespace = hostStrykerNamespace<string | undefined>()
-      const previous = namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT]
-      namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
+      const previous = namespace[Mutant.InstrumenterContext.ACTIVE_MUTANT]
+      namespace[Mutant.InstrumenterContext.ACTIVE_MUTANT] = activeMutantId
       return previous
     }),
     () => run,
@@ -182,23 +179,30 @@ const runInFreshContext = (platform: VmPlatform, compiled: CompiledTests, active
 const elapsedSince = (startedAt: number) => Effect.map(Clock.currentTimeMillis, (now) => now - startedAt)
 
 const runOnce = (platform: VmPlatform, compiled: CompiledTests, activeMutantId: string | undefined) =>
-  Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
-    Effect.flatMap(runInFreshContext(platform, compiled, activeMutantId), (failure) =>
-      Effect.map(elapsedSince(startedAt), (elapsedMs) => resultFromRun(failure, elapsedMs))))
+  Effect.flatMap(
+    Clock.currentTimeMillis,
+    (startedAt) =>
+      Effect.flatMap(runInFreshContext(platform, compiled, activeMutantId), (failure) =>
+        Effect.map(elapsedSince(startedAt), (elapsedMs) => resultFromRun(failure, elapsedMs))),
+  )
 
 export const vmTestRunner = (
   config: VmTestRunnerConfig,
-): Effect.Effect<PooledTestRunner, TestRunnerFailed, FileSystem.FileSystem | VmRunner> =>
+): Effect.Effect<PooledTestRunner, TestRunner.TestRunnerFailed, FileSystem.FileSystem | VmRunner> =>
   Effect.gen(function*() {
     const platform = yield* VmRunner
     const fs = yield* FileSystem.FileSystem
     const compiled = yield* Ref.make<Option.Option<CompiledTests>>(Option.none())
 
     const compiledTests = (testFiles: readonly string[]) =>
-      Effect.flatMap(Ref.get(compiled), Option.match({
-        onNone: () => Effect.tap(compileTests(platform, fs, testFiles), (tests) => Ref.set(compiled, Option.some(tests))),
-        onSome: Effect.succeed,
-      }))
+      Effect.flatMap(
+        Ref.get(compiled),
+        Option.match({
+          onNone: () =>
+            Effect.tap(compileTests(platform, fs, testFiles), (tests) => Ref.set(compiled, Option.some(tests))),
+          onSome: Effect.succeed,
+        }),
+      )
 
     const run = (testFiles: readonly string[], activeMutantId: string | undefined) =>
       Effect.flatMap(compiledTests(testFiles), (tests) => runOnce(platform, tests, activeMutantId))
@@ -209,18 +213,24 @@ export const vmTestRunner = (
         Match.orElse(() => override ?? []),
       )
 
-    return {
+    return makePooledTestRunner({
       capabilities: Effect.succeed(vmRunnerCapabilities),
       init: Effect.void,
-      dryRun: (options: DryRunOptions) => run(testFilesOf(options.testFiles), undefined),
-      mutantRun: (options: MutantRunOptions) =>
+      dryRun: (options: TestRunner.DryRunOptions) => run(testFilesOf(options.testFiles), undefined),
+      mutantRun: (options: Mutant.MutantRunOptions) =>
         run(config.testFiles, options.activeMutant.id).pipe(
-          Effect.map((result) => toMutantRunResult(result, true)),
+          Effect.map((dryRunResult) => interpretDryRunResult(InterpretDryRunResultCommand.make({ dryRunResult }))),
+          Effect.flatMap((decided) =>
+            Result.match(decided, {
+              onFailure: (failure) => Effect.fail(failure),
+              onSuccess: (decision) => Effect.succeed(decision.asResult),
+            })
+          ),
           Effect.catchTag(
             'TestRunnerFailed',
-            (failure): Effect.Effect<MutantRunResult> =>
-              Effect.succeed(toMutantRunResult({ status: 'error', errorMessage: failure.cause }, true)),
+            (failure): Effect.Effect<TestRunner.MutantRunResult> =>
+              Effect.succeed({ status: 'error', errorMessage: failure.cause }),
           ),
         ),
-    }
+    })
   })

@@ -28,8 +28,7 @@ const isIdentifier = (node: Node): node is IdentifierNode => node.type === 'Iden
 
 const isMemberExpression = (node: Node): node is MemberExpression => node.type === 'MemberExpression'
 
-const isIdentifierNamed = (node: Node, name: string): node is IdentifierNode =>
-  isIdentifier(node) && node.name === name
+const isIdentifierNamed = (node: Node, name: string): node is IdentifierNode => isIdentifier(node) && node.name === name
 
 const isIdentifierAmong = (node: Node, names: readonly string[]): node is IdentifierNode =>
   isIdentifier(node) && names.includes(node.name)
@@ -58,8 +57,7 @@ const SIGNAL_QUERY_CALL_MATCHERS: readonly ((callee: Node) => boolean)[] = [
   (callee) => hasNamedMember(callee, SIGNAL_QUERY_FUNCTIONS, 'required'),
 ]
 
-const signalIoArgumentIndex = (callee: Node) =>
-  SIGNAL_IO_ARGUMENT_MATCHERS.find(([, matches]) => matches(callee))?.[0]
+const signalIoArgumentIndex = (callee: Node) => SIGNAL_IO_ARGUMENT_MATCHERS.find(([, matches]) => matches(callee))?.[0]
 
 const isSignalQueryCall = (callee: Node) => SIGNAL_QUERY_CALL_MATCHERS.some((matches) => matches(callee))
 
@@ -72,16 +70,14 @@ type OwnsCallSite = (owner: Node | undefined) => boolean
 const holdsArgument = (call: CallExpression, node: Node) =>
   call.arguments.some((argument: unknown) => argument === node)
 
-const isObjectArgumentOf = (node: Node, call: CallExpression) =>
-  isObjectExpression(node) && holdsArgument(call, node)
+const isObjectArgumentOf = (node: Node, call: CallExpression) => isObjectExpression(node) && holdsArgument(call, node)
 
 const parentCallOf = (ancestors: readonly Node[], offset: number) => {
   const parent = ancestors[offset]
   return isCallExpression(parent) ? parent : undefined
 }
 
-const callOfObjectArgument = (node: Node, call: CallExpression) =>
-  isObjectArgumentOf(node, call) ? call : undefined
+const callOfObjectArgument = (node: Node, call: CallExpression) => isObjectArgumentOf(node, call) ? call : undefined
 
 const argumentCallOf = (node: Node, ancestors: readonly Node[], offset: number) => {
   const call = parentCallOf(ancestors, offset)

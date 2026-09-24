@@ -1,4 +1,4 @@
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -10,7 +10,7 @@ import * as S from 'effect/Schema'
 
 import { WorkerOptionsWire } from './worker-options.schema.js'
 
-export class WorkerOptions extends Context.Service<WorkerOptions, StrykerOptions>()(
+export class WorkerOptions extends Context.Service<WorkerOptions, Options.StrykerOptions>()(
   '@systemfsoftware/stryker-js-plugin-runtime/worker-options.service/WorkerOptions',
 ) {
   static readonly layer: Layer.Layer<

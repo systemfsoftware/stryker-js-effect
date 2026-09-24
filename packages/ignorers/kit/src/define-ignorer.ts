@@ -44,8 +44,7 @@ const claimedReasonOf = (visitors: IgnorerVisitors, node: Node, ctx: IgnorerCont
   return visit === undefined ? undefined : visit(node, ctx)
 }
 
-const anyReasonOf = (visitors: IgnorerVisitors, node: Node, ctx: IgnorerContext) =>
-  visitors.onAnyNode?.(node, ctx)
+const anyReasonOf = (visitors: IgnorerVisitors, node: Node, ctx: IgnorerContext) => visitors.onAnyNode?.(node, ctx)
 
 const reasonFrom = (visitors: IgnorerVisitors, node: Node, ctx: IgnorerContext) => {
   const claimed = claimedReasonOf(visitors, node, ctx)

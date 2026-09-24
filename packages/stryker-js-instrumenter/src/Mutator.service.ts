@@ -1,12 +1,4 @@
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
-import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
-import * as Context from 'effect/Context'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
-import * as Layer from 'effect/Layer'
-import * as Predicate from 'effect/Predicate'
-import * as Result from 'effect/Result'
 import type {
   ArrayExpression,
   ArrowFunctionExpression,
@@ -41,9 +33,15 @@ import type {
   UpdateExpression,
   WhileStatement,
 } from '@systemfsoftware/stryker-ignorer-interface'
-import type { Location, Position } from './Location.schema.js'
-import { LineTable } from './Location.schema.js'
-import { Mutant as ApiMutant, MutantNotApplied, MutantSpanMissing } from './Mutant.schema.js'
+import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
+import * as Context from 'effect/Context'
+import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import {
   arrayExpression,
   arrowFunctionExpression,
@@ -66,7 +64,11 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.handle.js'
-import { printNode } from './print/index.js'
+import type { Location, Position } from './Location.schema.js'
+import { LineTable } from './Location.schema.js'
+import { Mutant as ApiMutant, MutantNotApplied, MutantSpanMissing } from './Mutant.schema.js'
+import { PrintFailed } from './print/PrintFailed.schema.js'
+import { SourceText } from './print/SourceText.schema.js'
 
 export interface MutatorContext {
   readonly parent: Node | undefined
@@ -101,7 +103,6 @@ export interface Mutant extends Mutable {
   readonly original: Node
   readonly offset: Position
   readonly lineTable: Arr.NonEmptyReadonlyArray<number>
-  readonly replacementCode: string
 }
 
 export interface CreateMutantOptions {
@@ -138,32 +139,34 @@ const createMutant = (params: CreateMutantOptions): Mutant => ({
   replacement: params.specs.replacement,
   mutatorName: params.specs.mutatorName,
   ignoreReason: params.specs.ignoreReason,
-  replacementCode: printNode(params.specs.replacement),
 })
 
-const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing> =>
+const replacementTextOf = (mutant: Mutant): Result.Result<string, PrintFailed> =>
+  Option.match(SourceText.printedOrEmpty(mutant.replacement), {
+    onNone: () => Result.fail(PrintFailed.make({ message: `Mutant ${mutant.id} replacement is not printable` })),
+    onSome: Result.succeed,
+  })
+
+const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing | PrintFailed | S.SchemaError> =>
   Option.match(Option.fromNullishOr(spanOf(mutant.original)), {
     onNone: () => Result.fail(MutantSpanMissing.make({ edge: 'start' })),
-    onSome: (span) => {
-      const baseFields = {
-        fileName: mutant.fileName,
-        id: mutant.id,
-        location: toApiLocation(span.start, span.end, mutant.lineTable, mutant.offset),
-        mutatorName: mutant.mutatorName,
-        replacement: mutant.replacementCode,
-      }
-      return Result.succeed(
-        Option.match(Option.fromNullishOr(mutant.ignoreReason), {
-          onNone: () => ApiMutant.make(baseFields),
-          onSome: (ignoreReason) =>
-            ApiMutant.make({
-              ...baseFields,
-              statusReason: ignoreReason,
-              status: 'Ignored' as const,
-            }),
-        }),
-      )
-    },
+    onSome: (span) =>
+      Result.flatMap(replacementTextOf(mutant), (replacement) => {
+        const baseFields = {
+          _tag: 'Mutant' as const,
+          fileName: mutant.fileName,
+          id: mutant.id,
+          location: toApiLocation(span.start, span.end, mutant.lineTable, mutant.offset),
+          mutatorName: mutant.mutatorName,
+          replacement,
+        }
+        return S.decodeResult(ApiMutant)(
+          Option.match(Option.fromNullishOr(mutant.ignoreReason), {
+            onNone: () => baseFields,
+            onSome: (ignoreReason) => ({ ...baseFields, statusReason: ignoreReason, status: 'Ignored' as const }),
+          }),
+        )
+      }),
   })
 
 const toApiLocation = (
@@ -222,26 +225,8 @@ const replaceFirstMatch = (path: TraversePath, original: Node, replacement: Node
   })
 
 /**
- * The mutations of a regular expression pattern.
- *
- * Pure: a pattern and its flags in, replacement patterns out. No I/O, no clock,
- * no throwing — a pattern this cannot parse yields no mutants, which is the
- * honest answer for a literal whose syntax the engine does not model.
- *
- * The transformation set is fixed and small, and each member changes exactly
- * one thing about the pattern:
- *
- * | family                  | example                  |
- * | ----------------------- | ------------------------ |
- * | anchor removal          | `^abc$` -> `abc$`, `^abc` |
- * | character class negation| `[abc]` <-> `[^abc]`      |
- * | predefined class negation| `\d` <-> `\D`, `\p{L}` <-> `\P{L}` |
- * | quantifier removal      | `a+`, `a*`, `a{2,3}` -> `a` |
- * | lookaround negation     | `(?=a)` <-> `(?!a)`, `(?<=a)` <-> `(?<!a)` |
- *
- * Alternation and grouping are deliberately untouched: swapping a branch or
- * dropping a group produces mutants that survive for reasons unrelated to the
- * test suite's strength, which inflates a score rather than measuring one.
+ * The mutations of a regular expression pattern: a pattern and its flags in,
+ * replacement patterns out. A pattern this cannot parse yields no mutants.
  *
  * The order is part of the contract, because a mutant's identity in a report is
  * its position: anchors first, then each remaining position left to right with
@@ -418,8 +403,6 @@ const spliceText = (pattern: string, splice: Splice): string =>
 
 const NO_MUTANTS: readonly Node[] = []
 
-const isPresent = <T>(value: T | null | undefined): value is T => value !== null && value !== undefined
-
 const withOperator = <T extends Node & { operator: string }>(node: T, operator: T['operator']): T => {
   const replacement = cloneNode(node)
   replacement.operator = operator
@@ -432,15 +415,16 @@ const mutantsWhen = (holds: boolean, build: () => readonly Node[]): readonly Nod
     Match.orElse(() => NO_MUTANTS),
   )
 
-const hasPropertyIn = <B>(node: object, key: string): node is Record<string, B> => key in node
-
 const readPropertyOf = <B>(node: object, key: string): B | undefined =>
   Option.getOrUndefined(
-    Option.filter(Option.some(node), (candidate): candidate is Record<string, B> => hasPropertyIn<B>(candidate, key)).pipe(
-      Option.map((record) => record[key]),
-    ),
+    Option.filter(
+      Option.some(node),
+      (candidate): candidate is Record<string, B> => Predicate.hasProperty(key)(candidate),
+    )
+      .pipe(
+        Option.map((record) => record[key]),
+      ),
   )
-
 const propertyOf = <A, B>(node: A, key: string): B | undefined =>
   Option.getOrUndefined(
     Option.filter(Option.some(node), Predicate.isObject).pipe(
@@ -452,13 +436,15 @@ const isIdentifier = (node: unknown): node is IdentifierReference => nodeType(no
 
 const isCallExpression = (node: Node): node is CallExpression => node.type === 'CallExpression'
 
-const arithmeticOperatorReplacements = Object.freeze({
-  '+': '-',
-  '-': '+',
-  '*': '/',
-  '/': '*',
-  '%': '*',
-} as const)
+const arithmeticOperatorReplacements = Object.freeze(
+  {
+    '+': '-',
+    '-': '+',
+    '*': '/',
+    '/': '*',
+    '%': '*',
+  } as const,
+)
 
 const ARITHMETIC_OPERATOR_KEYS: readonly string[] = Object.keys(arithmeticOperatorReplacements)
 
@@ -548,20 +534,22 @@ const hasMutableArrowBody = (body: BlockStatement | Expression): boolean =>
 const isUndefinedExpression = (node: BlockStatement | Expression): node is IdentifierReference =>
   node.type === 'Identifier' && node.name === 'undefined'
 
-const assignmentOperatorReplacements = Object.freeze({
-  '+=': '-=',
-  '-=': '+=',
-  '*=': '/=',
-  '/=': '*=',
-  '%=': '*=',
-  '<<=': '>>=',
-  '>>=': '<<=',
-  '&=': '|=',
-  '|=': '&=',
-  '&&=': '||=',
-  '||=': '&&=',
-  '??=': '&&=',
-} as const)
+const assignmentOperatorReplacements = Object.freeze(
+  {
+    '+=': '-=',
+    '-=': '+=',
+    '*=': '/=',
+    '/=': '*=',
+    '%=': '*=',
+    '<<=': '>>=',
+    '>>=': '<<=',
+    '&=': '|=',
+    '|=': '&=',
+    '&&=': '||=',
+    '||=': '&&=',
+    '??=': '&&=',
+  } as const,
+)
 
 const isStringLike = (value: unknown): value is TemplateLiteral | StringLiteral =>
   isTemplateLiteral(value) || isStringLiteral(value)
@@ -629,8 +617,7 @@ const hasConstructorInitialization = (constructor: MethodDefinition, context: Mu
 
 type ParameterProperty = { readonly type: 'TSParameterProperty' }
 
-const isParameterProperty = (param: unknown): param is ParameterProperty =>
-  nodeType(param) === 'TSParameterProperty'
+const isParameterProperty = (param: unknown): param is ParameterProperty => nodeType(param) === 'TSParameterProperty'
 
 const hasInitializedProperties = (context: MutatorContext): boolean => {
   const classBody = context.grandParent
@@ -638,8 +625,8 @@ const hasInitializedProperties = (context: MutatorContext): boolean => {
 }
 
 const isClassBody = (node: Node | undefined): node is ClassBody => node?.type === 'ClassBody'
-
-const isInitializedField = (member: Node): boolean => isPropertyDefinition(member) && isPresent(member.value)
+const isInitializedField = (member: Node): boolean =>
+  isPropertyDefinition(member) && Predicate.isNotNullish(member.value)
 
 const isPropertyDefinition = (node: Node): node is PropertyDefinition => node.type === 'PropertyDefinition'
 
@@ -648,9 +635,7 @@ const isSuperType = <A>(node: A): boolean => Predicate.hasProperty(node, 'type')
 const isSuperCallExpression = <A>(node: A): boolean =>
   nodeType(node) === 'CallExpression' && isSuperType(propertyOf(node, 'callee'))
 
-const containsSuperCall = <A>(node: A): boolean => isObjectLike(node) && containsSuperIn(node)
-
-const isObjectLike = (value: unknown): value is object => typeof value === 'object' && value !== null
+const containsSuperCall = <A>(node: A): boolean => Predicate.isObjectOrArray(node) && containsSuperIn(node)
 
 const containsSuperIn = (node: object): boolean => isSuperReference(node) || hasSuperInChildren(node)
 
@@ -724,8 +709,7 @@ const withEmptyConsequent = (switchCase: SwitchCase): SwitchCase => {
   return replacement
 }
 
-const isEmptyTestForStatement = (node: Node): node is ForStatement =>
-  node.type === 'ForStatement' && node.test === null
+const isEmptyTestForStatement = (node: Node): node is ForStatement => node.type === 'ForStatement' && node.test === null
 
 const isNonEmptySwitchCase = (node: Node): node is SwitchCase =>
   node.type === 'SwitchCase' && node.consequent.length > 0
@@ -813,11 +797,13 @@ const isEqualityBinary = (node: Node): node is EqualityBinary =>
 const mutatedEqualityOperators = (binary: EqualityBinary): readonly Node[] =>
   operators[binary.operator].map((operator) => withOperator(binary, operator))
 
-const logicalOperatorReplacements = Object.freeze({
-  '&&': '||',
-  '||': '&&',
-  '??': '&&',
-} as const)
+const logicalOperatorReplacements = Object.freeze(
+  {
+    '&&': '||',
+    '||': '&&',
+    '??': '&&',
+  } as const,
+)
 
 const LOGICAL_OPERATOR_KEYS: readonly string[] = Object.keys(logicalOperatorReplacements)
 
@@ -891,8 +877,7 @@ const methodCallMutants = (call: CallExpression): readonly Node[] =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isMethodMutation = (mutation: MethodMutation | undefined): mutation is MethodMutation =>
-  mutation !== undefined
+const isMethodMutation = (mutation: MethodMutation | undefined): mutation is MethodMutation => mutation !== undefined
 
 const methodMutation = (call: CallExpression): MethodMutation | undefined => {
   const callee = namedMethodCallee(call)
@@ -923,8 +908,7 @@ const isNotSuperMember = (member: NamedMember): boolean => !isSuperType(member.o
 
 const methodExpressionReplacement = (mutation: MethodMutation): Expression =>
   Match.value(mutation.newName).pipe(
-    Match.when(null, () =>
-      callExpression(cloneNode(mutation.callee.object), [], mutation.callee.optional === true)),
+    Match.when(null, () => callExpression(cloneNode(mutation.callee.object), [], mutation.callee.optional === true)),
     Match.orElse((newName) => renamedMethodCall(mutation, newName)),
   )
 
@@ -940,8 +924,7 @@ const renamedMethodCall = (mutation: MethodMutation, newName: string): Expressio
 const spreadFreeArguments = (args: ReadonlyArray<Expression | SpreadElement>): Expression[] =>
   args.filter(isNotSpreadElement).map((argument) => cloneNode(argument))
 
-const isNotSpreadElement = (node: Expression | SpreadElement): node is Expression =>
-  node.type !== 'SpreadElement'
+const isNotSpreadElement = (node: Expression | SpreadElement): node is Expression => node.type !== 'SpreadElement'
 
 const objectLiteralMutator: Mutator = (node) =>
   Match.value(node).pipe(
@@ -983,7 +966,7 @@ const regexMutator: Mutator = (node, context) =>
   )
 
 const isRegexLiteral = (node: Node): node is RegexLiteral =>
-  nodeType(node) === 'Literal' && isPresent(propertyOf(node, 'regex'))
+  nodeType(node) === 'Literal' && Predicate.isNotNullish(propertyOf(node, 'regex'))
 
 const regexLiteralMutants = (literal: RegexLiteral): readonly Node[] =>
   mutateRegexPattern(literal.regex.pattern, literal.regex.flags).map((pattern) =>
@@ -1125,8 +1108,7 @@ const unaryOperatorMutator: Mutator = (node) =>
 const isSupportedUnaryExpression = (node: Node): node is SupportedUnaryExpression =>
   isPrefixUnaryExpression(node) && isSupportedUnaryOperator(node.operator)
 
-const isPrefixUnaryExpression = (node: Node): node is UnaryExpression =>
-  node.type === 'UnaryExpression' && node.prefix
+const isPrefixUnaryExpression = (node: Node): node is UnaryExpression => node.type === 'UnaryExpression' && node.prefix
 
 const unaryOperatorReplacement = (unary: SupportedUnaryExpression): Expression => {
   const mutatedOperator = UnaryOperator[unary.operator]
@@ -1160,12 +1142,12 @@ export interface MutatorsShape {
   readonly mutators: Readonly<Record<string, Mutator>>
   readonly create: (options: CreateMutantOptions) => Mutant
   readonly apply: (mutant: Mutant, originalTree: Node) => Result.Result<Node, MutantNotApplied>
-  readonly toApi: (mutant: Mutant) => Result.Result<ApiMutant, MutantSpanMissing>
+  readonly toApi: (mutant: Mutant) => Result.Result<ApiMutant, MutantSpanMissing | PrintFailed | S.SchemaError>
 }
 
-export class Mutators
-  extends Context.Service<Mutators, MutatorsShape>()('@systemfsoftware/stryker-js-instrumenter/Mutator.service/Mutators')
-{
+export class Mutators extends Context.Service<Mutators, MutatorsShape>()(
+  '@systemfsoftware/stryker-js-instrumenter/Mutator.service/Mutators',
+) {
   static readonly layer: Layer.Layer<Mutators> = Layer.succeed(Mutators, {
     mutators: Object.freeze({
       ArithmeticOperator: arithmeticOperatorMutator,

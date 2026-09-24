@@ -1,15 +1,7 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  buildTestRunner,
-  createDefaultOptions,
-  type PooledTestRunner,
-  type PooledTestRunnerError,
-  type TestRunnerBuildContext,
-  WorkerLauncher,
-} from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { DryRunResult, MutantRunResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -22,14 +14,15 @@ import * as Path from 'effect/Path'
 import type * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { expect } from 'vitest'
+import { Configuration, Plugin, Worker } from '../src/mod.js'
 
 import { nodeVmPlatformLayer } from '../src/drivers/node.js'
 
 const Feature = makeFeature({ it, layer })
 
 const workerCanary = Layer.succeed(
-  WorkerLauncher,
-  WorkerLauncher.of({
+  Worker.WorkerLauncher,
+  Worker.WorkerLauncher.of({
     spawn: () => Effect.die(new Error('a worker was launched for an in-memory run')),
   }),
 )
@@ -87,9 +80,9 @@ const removeSuite = (directory: string): Effect.Effect<void> =>
     Effect.orDie,
   )
 
-const buildContextFor = (fixture: SuiteFixture): Effect.Effect<TestRunnerBuildContext> =>
+const buildContextFor = (fixture: SuiteFixture): Effect.Effect<Plugin.TestRunnerBuildContext> =>
   Effect.gen(function*() {
-    const defaults = yield* createDefaultOptions
+    const defaults = yield* Configuration.StrykerConfig.createDefaultOptions
     return {
       options: { ...defaults, testRunner: 'vm' },
       fileDescriptions: {},
@@ -100,26 +93,26 @@ const buildContextFor = (fixture: SuiteFixture): Effect.Effect<TestRunnerBuildCo
     }
   })
 
-const mutantFor = (fileName: string): Mutant =>
-  Mutant.make({
-    id: 'mutant-1',
-    fileName,
-    mutatorName: 'ArithmeticOperator',
+const mutantFor = (fileName: string): Mutant.Mutant =>
+  Mutant.Mutant.make({
+    id: Mutant.MutantId.make('mutant-1'),
+    fileName: Mutant.CanonicalFileName.make(fileName),
+    mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
     replacement: '-',
     location: { start: { line: 1, column: 1 }, end: { line: 1, column: 5 } },
   })
 
 interface RunOutcome {
-  readonly dryRun: DryRunResult
-  readonly mutantRun: MutantRunResult
+  readonly dryRun: TestRunner.DryRunResult
+  readonly mutantRun: TestRunner.MutantRunResult
   readonly elapsedMs: number
 }
 
-const runnerFor = (fixture: SuiteFixture): Effect.Effect<PooledTestRunner, never, Scope.Scope> =>
+const runnerFor = (fixture: SuiteFixture): Effect.Effect<Plugin.PooledTestRunner, never, Scope.Scope> =>
   Effect.gen(function*() {
     const context = yield* buildContextFor(fixture)
     const neverSpawned = Effect.die(new Error('the child-process runner was built for an in-memory run'))
-    return yield* buildTestRunner(context, neverSpawned)
+    return yield* Plugin.buildTestRunner(context, neverSpawned)
   }).pipe(Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer, vmPlatformLayer)), Effect.orDie)
 
 const runSuite = (fixture: SuiteFixture): Effect.Effect<RunOutcome, never, never> =>
@@ -141,7 +134,7 @@ const runSuite = (fixture: SuiteFixture): Effect.Effect<RunOutcome, never, never
 
 const suiteFailure = (
   fixture: SuiteFixture,
-): Effect.Effect<Exit.Exit<DryRunResult, PooledTestRunnerError>, never, never> =>
+): Effect.Effect<Exit.Exit<TestRunner.DryRunResult, Plugin.PooledTestRunnerError>, never, never> =>
   Effect.gen(function*() {
     const runner = yield* runnerFor(fixture)
     return yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }).pipe(Effect.exit)

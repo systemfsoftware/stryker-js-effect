@@ -9,9 +9,9 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
 import { ChildProcessSpawner } from 'effect/unstable/process'
 
-import { type RunEvent, RunEventWireLine } from '@systemfsoftware/stryker-js'
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import { Readiness } from '@systemfsoftware/effect-readiness'
+import { RunEvent } from '@systemfsoftware/stryker-js'
 
 import { BakedFixtureCache } from '../src/Harness/fixture-cache.service.js'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
@@ -99,7 +99,7 @@ function ensureKnownSlice(id: string): OracleSliceId {
   })
 }
 
-type VerdictEvent = Extract<RunEvent, { _tag: 'verdict' }>
+type VerdictEvent = Extract<RunEvent.RunEvent, { _tag: 'verdict' }>
 
 const BASELINE_COUNT_KEYS = [
   'compileErrors',
@@ -126,7 +126,9 @@ const sortEntryOf = (key: string, count: number): ReadonlyArray<readonly [string
 
 const sortTally = (tally: Readonly<Record<string, number>>): Readonly<Record<string, number>> =>
   Object.fromEntries(
-    Object.keys(tally).sort().flatMap((key): ReadonlyArray<readonly [string, number]> => sortEntryOf(key, tally[key] ?? 0)),
+    Object.keys(tally).sort().flatMap((key): ReadonlyArray<readonly [string, number]> =>
+      sortEntryOf(key, tally[key] ?? 0)
+    ),
   )
 
 const countsOf = (verdict: VerdictEvent): BaselineCounts => ({
@@ -140,8 +142,8 @@ const countsOf = (verdict: VerdictEvent): BaselineCounts => ({
   timeout: verdict.counts.timeout,
 })
 
-const decodeEvent = (line: string, slice: OracleSliceId): RunEvent =>
-  Result.match(Schema.decodeResult(RunEventWireLine)(line), {
+const decodeEvent = (line: string, slice: OracleSliceId): RunEvent.RunEvent =>
+  Result.match(Schema.decodeResult(RunEvent.RunEventWireLine)(line), {
     onFailure: (issue) => {
       throw new Error(
         `Slice "${slice}" produced a malformed RunEvent line; refusing to bless garbage: ${issue.message}`,
@@ -157,12 +159,13 @@ interface ParsedRun {
 
 const statusPairOf = (mutator: string, status: string): readonly [string, string] => [mutator, status]
 
-const mutatorStatusPairsOf = (events: ReadonlyArray<RunEvent>): ReadonlyArray<readonly [string, string]> =>
+const mutatorStatusPairsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<readonly [string, string]> =>
   events.flatMap((event) =>
     Match.value(event).pipe(
       Match.tag('mutant', (mutant) => [statusPairOf(mutant.mutator, mutant.status)]),
       Match.orElse(() => []),
-    ))
+    )
+  )
 
 function parseRunEvents(stdout: string, slice: OracleSliceId): ParsedRun {
   const events = stdout.split('\n').flatMap((rawLine) => {
@@ -253,11 +256,14 @@ interface BaselineDiff {
 const driftPairOf = (first: number, second: number): readonly [number, number] => [first, second]
 
 const countDiffOf = (a: BlessedBaseline, b: BlessedBaseline): Record<string, readonly [number, number]> =>
-  BASELINE_COUNT_KEYS.reduce<Record<string, readonly [number, number]>>((diff, key) =>
-    Boolean.match(a.counts[key] === b.counts[key], {
-      onTrue: () => diff,
-      onFalse: () => ({ ...diff, [key]: driftPairOf(a.counts[key], b.counts[key]) }),
-    }), {})
+  BASELINE_COUNT_KEYS.reduce<Record<string, readonly [number, number]>>(
+    (diff, key) =>
+      Boolean.match(a.counts[key] === b.counts[key], {
+        onTrue: () => diff,
+        onFalse: () => ({ ...diff, [key]: driftPairOf(a.counts[key], b.counts[key]) }),
+      }),
+    {},
+  )
 
 const tallyDiffOf = (a: BlessedBaseline, b: BlessedBaseline): Record<string, readonly [number, number]> =>
   Array.dedupe([...Object.keys(a.mutatorStatusTally), ...Object.keys(b.mutatorStatusTally)])
@@ -297,11 +303,12 @@ const diffSectionLines = (
 const formatBaselineDiff = (diff: BaselineDiff): string =>
   Boolean.match(diff.isEmpty(), {
     onTrue: () => 'baseline diff: <empty>',
-    onFalse: () => [
-      'baseline diff:',
-      ...diffSectionLines('counts', diff.countsDiff),
-      ...diffSectionLines('mutatorStatusTally', diff.tallyDiff),
-    ].join('\n'),
+    onFalse: () =>
+      [
+        'baseline diff:',
+        ...diffSectionLines('counts', diff.countsDiff),
+        ...diffSectionLines('mutatorStatusTally', diff.tallyDiff),
+      ].join('\n'),
   })
 
 async function blessSlice(runtime: HarnessRuntime, slice: OracleSliceId, verify: boolean): Promise<void> {
@@ -365,8 +372,10 @@ const selfBakingHarness = Layer.mergeAll(
 ).pipe(
   Layer.provideMerge(
     ConfigProvider.layerAdd(
-      Effect.map(BakedFixtureCache.bakeProgram, (root) =>
-        ConfigProvider.fromUnknown({ [BakedFixtureCache.BAKED_ROOT_ENV]: root })),
+      Effect.map(
+        BakedFixtureCache.bakeProgram,
+        (root) => ConfigProvider.fromUnknown({ [BakedFixtureCache.BAKED_ROOT_ENV]: root }),
+      ),
       { asPrimary: true },
     ),
   ),

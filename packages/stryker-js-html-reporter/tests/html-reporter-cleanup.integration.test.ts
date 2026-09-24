@@ -1,12 +1,8 @@
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import type { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface'
-import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
-import { DryRunCompleted, MutationTestReportReady } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import { Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -70,9 +66,9 @@ const removeDir = (dir: string): Promise<void> =>
     }),
   )
 
-const optionsWith = (fileName: string) => S.decodeEffect(StrykerOptionsSchema)({ htmlReporter: { fileName } })
+const optionsWith = (fileName: string) => S.decodeEffect(Options.StrykerOptionsSchema)({ htmlReporter: { fileName } })
 
-const reportFixture = (): reportApi.MutationTestResult => ({
+const reportFixture = (): Report.MutationTestResult => ({
   schemaVersion: '1.0',
   files: {
     'src/marker.ts': {
@@ -91,7 +87,7 @@ const reportFixture = (): reportApi.MutationTestResult => ({
   thresholds: { high: 80, low: 60 },
 })
 
-const metricsFixture = (): MetricsResult => ({
+const metricsFixture = (): Report.MetricsResult => ({
   name: 'All files',
   metrics: {
     pending: 0,
@@ -114,29 +110,29 @@ const metricsFixture = (): MetricsResult => ({
   childResults: [],
 })
 
-const dryRunEvent = (): ReporterEvent =>
-  DryRunCompleted.make({
+const dryRunEvent = (): Reporter.ReporterEvent =>
+  Reporter.DryRunCompleted.make({
     timing: { net: 1, overhead: 0 },
     capabilities: { reloadEnvironment: false },
     testCount: 0,
     tests: [],
   })
 
-const terminalEvent = (): ReporterEvent =>
-  MutationTestReportReady.make({ report: reportFixture(), metrics: metricsFixture() })
+const terminalEvent = (): Reporter.ReporterEvent =>
+  Reporter.MutationTestReportReady.make({ report: reportFixture(), metrics: metricsFixture() })
 
-function toStream(events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> {
+function toStream(events: readonly Reporter.ReporterEvent[]): AsyncIterable<Reporter.ReporterEvent> {
   let index = 0
   return {
-    [Symbol.asyncIterator](): AsyncIterator<ReporterEvent> {
+    [Symbol.asyncIterator](): AsyncIterator<Reporter.ReporterEvent> {
       return {
-        next(): Promise<IteratorResult<ReporterEvent>> {
-          const value: ReporterEvent | undefined = events[index]
+        next(): Promise<IteratorResult<Reporter.ReporterEvent>> {
+          const value: Reporter.ReporterEvent | undefined = events[index]
           index += 1
           if (value !== undefined) {
             return Promise.resolve({ value, done: false })
           }
-          const done: IteratorResult<ReporterEvent> = { done: true, value: undefined }
+          const done: IteratorResult<Reporter.ReporterEvent> = { done: true, value: undefined }
           return Promise.resolve(done)
         },
       }
@@ -160,10 +156,10 @@ Feature('Keeping the report when a run is interrupted').withLayer(nodeFsPathLaye
           Effect.gen(function*() {
             try {
               const options = yield* optionsWith(s.output.fileName)
-              const first = makeHtmlReporter(options, {})
+              const first = HtmlReporter.makeHtmlReporter(options, {})
               yield* first(toStream([dryRunEvent()]))
               const earlyWritten = yield* Effect.promise(() => fileExists(s.output.fileName))
-              const followUp = makeHtmlReporter(options, {})
+              const followUp = HtmlReporter.makeHtmlReporter(options, {})
               yield* followUp(toStream([dryRunEvent(), terminalEvent()]))
               return { earlyWritten, html: yield* Effect.promise(() => readText(s.output.fileName)) }
             } finally {
@@ -193,12 +189,12 @@ Feature('Keeping the report when a run is interrupted').withLayer(nodeFsPathLaye
         'outcome',
         (s) =>
           Effect.gen(function*() {
-            const breakingStream = (): AsyncIterable<ReporterEvent> => {
+            const breakingStream = (): AsyncIterable<Reporter.ReporterEvent> => {
               let step = 0
               return {
-                [Symbol.asyncIterator](): AsyncIterator<ReporterEvent> {
+                [Symbol.asyncIterator](): AsyncIterator<Reporter.ReporterEvent> {
                   return {
-                    next(): Promise<IteratorResult<ReporterEvent>> {
+                    next(): Promise<IteratorResult<Reporter.ReporterEvent>> {
                       step += 1
                       if (step === 1) {
                         return Promise.resolve({ value: terminalEvent(), done: false })
@@ -211,12 +207,12 @@ Feature('Keeping the report when a run is interrupted').withLayer(nodeFsPathLaye
             }
             try {
               const options = yield* optionsWith(s.output.fileName)
-              const consume = makeHtmlReporter(options, {})
+              const consume = HtmlReporter.makeHtmlReporter(options, {})
               const failure = yield* Effect.flip(consume(breakingStream())).pipe(
                 Effect.map((failed: { readonly cause: string }) => failed.cause),
               )
               const html = yield* Effect.promise(() => readText(s.output.fileName))
-              const followUp = makeHtmlReporter(options, {})
+              const followUp = HtmlReporter.makeHtmlReporter(options, {})
               yield* followUp(toStream([terminalEvent()]))
               return { failure, html, rerun: yield* Effect.promise(() => readText(s.output.fileName)) }
             } finally {

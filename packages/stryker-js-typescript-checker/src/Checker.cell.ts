@@ -1,23 +1,27 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
-import { CheckerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
+import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
+import * as Option from 'effect/Option'
 
-import type { CompilerError } from './Compiler.schema.js'
-import { CheckMutantsCommand } from './Checker.schema.js'
-import { CheckMutantsInput } from './CheckMutants.schema.js'
 import type { CheckMutantsError } from './check-mutants.workflow.js'
 import { checkMutants, DiagnosticInUnrelatedFileError, DiagnosticWithoutFileError } from './check-mutants.workflow.js'
+import { CheckMutantsCommand } from './Checker.schema.js'
+import { CheckMutantsInput } from './CheckMutants.schema.js'
+import type { CompilerError } from './Compiler.schema.js'
 import { check, nodes } from './ts-compiler.handle.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
 
 type CheckRefusalCause = CompilerError | CheckMutantsError | string
 
-const refuse = (options: { readonly mutantIds: readonly string[]; readonly cause: CheckRefusalCause }): CheckerFailed =>
-  CheckerFailed.make({
+const refuse = (
+  options: { readonly mutantIds: readonly string[]; readonly cause: CheckRefusalCause },
+): Checker.CheckerFailed =>
+  Checker.CheckerFailed.make({
     checkerName: 'typescript',
     mutantIds: options.mutantIds,
-    cause: errorToString(options.cause),
+    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(options.cause), (rendered) => rendered.text), () =>
+      ''),
   })
 
 export type CheckMutantsRead = (typeof CheckMutantsInput)['Encoded']
@@ -35,7 +39,7 @@ export const checkCell = Sandwich.named('stryker.typescript_checker.check_mutant
         }),
     )).pipe(
       Effect.mapError((cause) => refuse({ mutantIds: command.mutants.map((mutant) => mutant.id), cause })),
-    ),
+    )
 )
   .decide(checkMutants)
   .write({

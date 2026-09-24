@@ -35,9 +35,11 @@
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
+    "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/effect-schema-vite": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",

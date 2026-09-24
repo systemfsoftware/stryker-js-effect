@@ -1,45 +1,46 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
-import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ReporterEvent, ReporterFactory, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
+import { type Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
 import * as Filter from 'effect/Filter'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import * as FileSystem from 'effect/FileSystem'
-import * as Path from 'effect/Path'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
-import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
 import { renderJsonReport } from './render-json-report.workflow.js'
+import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
 
-const failAsJsonReporter = <E = unknown>(cause: E): ReporterFailed =>
-  ReporterFailed.make({
+const failAsJsonReporter = <E = unknown>(cause: E): Reporter.ReporterFailed =>
+  Reporter.ReporterFailed.make({
     reporterName: 'json',
     event: 'mutationTestReportReady',
-    cause: errorToString(cause),
+    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
-const reportOf = Filter.make((event: ReporterEvent): Result.Result<reportApi.MutationTestResult, 'not-ready'> =>
+const reportOf = Filter.make((
+  event: Reporter.ReporterEvent,
+): Result.Result<Report.MutationTestResult, 'not-ready'> =>
   Match.value(event).pipe(
     Match.tag('mutationTestReportReady', (ready) => Result.succeed(ready.report)),
     Match.orElse(() => Result.fail('not-ready' as const)),
-  ))
+  )
+)
 
 const readJsonReport = (input: {
-  readonly options: StrykerOptions
-  readonly events: AsyncIterable<ReporterEvent>
+  readonly options: Options.StrykerOptions
+  readonly events: AsyncIterable<Reporter.ReporterEvent>
 }) =>
   Effect.map(
     Stream.fromAsyncIterable(input.events, failAsJsonReporter).pipe(
       Stream.filterMap(reportOf),
-      Stream.run(Sink.last<reportApi.MutationTestResult>()),
+      Stream.run(Sink.last<Report.MutationTestResult>()),
     ),
     (last) => ({
       _tag: 'JsonReportCommand' as const,
@@ -49,14 +50,14 @@ const readJsonReport = (input: {
     }),
   )
 
-const jsonBytesOf = (report: reportApi.MutationTestResult): Effect.Effect<string, ReporterFailed> =>
+const jsonBytesOf = (report: Report.MutationTestResult): Effect.Effect<string, Reporter.ReporterFailed> =>
   S.encodeEffect(S.fromJsonString(S.Unknown, { space: 0 }))(report).pipe(
     Effect.mapError(failAsJsonReporter),
   )
 
 const announceRelativePath = (
   output: ReporterOutputShape,
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
   path: Path.Path,
 ): Effect.Effect<void> =>
   Boolean.match(options.logLevel === 'debug', {
@@ -91,7 +92,7 @@ type ReporterCellServices<C> = C extends Cell.Cell<infer _I, infer _A, infer _E,
 
 export const jsonReporterFactory = (
   context: Context.Context<ReporterCellServices<typeof jsonReportCell>>,
-): ReporterFactory => {
+): Reporter.ReporterFactory => {
   const report = Cell.provideContext(jsonReportCell, context)
   return (options) => (events) => Effect.asVoid(report.run({ options, events }))
 }

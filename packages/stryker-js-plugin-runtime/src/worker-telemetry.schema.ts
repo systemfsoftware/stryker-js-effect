@@ -13,13 +13,18 @@ const tracesUrlOf = (endpoint: string) =>
     },
   )
 
-export const TracesUrl = S.String.pipe(
-  S.decodeTo(S.String, {
+const canonicalTracesUrl = S.String.pipe(
+  S.check(S.isPattern(/\/v1\/traces$/u)),
+  S.check(S.isPattern(/[^/]$/u)),
+)
+export type TracesUrl = typeof canonicalTracesUrl.Type
+
+export const TracesUrl: S.Codec<TracesUrl, string> = S.String.pipe(
+  S.decodeTo(canonicalTracesUrl, {
     decode: SchemaGetter.transform(tracesUrlOf),
     encode: SchemaGetter.passthrough(),
   }),
 )
-
 export const WorkerTelemetryConfig = S.Struct({
   enabled: S.Boolean,
   serviceName: S.String,

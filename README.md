@@ -37,12 +37,12 @@ Stryker JS Effect provides a dual-engine workflow:
 1. **Locally (`testRunner: 'vm'`)**: Evaluates pure unit tests directly in Node's native V8 VM with zero process-forking overhead and native TypeScript stripping. Lightning fast for authoring and debugging test assertions.
 2. **In CI (`testRunner: 'vitest'`)**: Runs full integration tests in isolated Vitest worker sandboxes with per-test coverage analysis.
 
-Because `defineConfig` provides `{ isCi }`, you can configure this seamlessly in one `stryker.config.ts`:
+Because `StrykerConfig.define` provides `{ isCi }`, you can configure this seamlessly in one `stryker.config.ts`:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig(({ isCi }) => ({
+export default StrykerConfig.define(({ isCi }) => ({
   // Use ultra-fast in-memory V8 locally; full Vitest sandbox in CI
   testRunner: isCi ? 'vitest' : 'vm',
   checkers: ['typescript'],
@@ -82,9 +82,9 @@ pnpm add -D @systemfsoftware/stryker-js \
 ```
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'vitest',
   checkers: ['typescript'],
   plugins: [
@@ -106,9 +106,9 @@ pnpm add -D @systemfsoftware/stryker-js @systemfsoftware/stryker-js-typescript-c
 ```
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'vm',
   testFiles: ['test/**/*.test.ts'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
@@ -122,9 +122,9 @@ export default defineConfig({
 If your project runs tests with Jest, Mocha, or a custom script:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'command',
   commandRunner: {
     command: 'pnpm test',
@@ -148,9 +148,9 @@ pnpm add -D @systemfsoftware/stryker-js \
 ```
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig(({ isCi }) => ({
+export default StrykerConfig.define(({ isCi }) => ({
   testRunner: 'vitest',
   checkers: ['typescript'],
   plugins: [
@@ -180,12 +180,12 @@ export default defineConfig(({ isCi }) => ({
 
 ### 2. Environment-Aware Configuration (`ConfigEnv`)
 
-`defineConfig` accepts a callback that receives `{ command, isDryRun, mode, isCi }`:
+`StrykerConfig.define` accepts a callback that receives `{ command, isDryRun, mode, isCi }`:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig(({ isCi, isDryRun }) => ({
+export default StrykerConfig.define(({ isCi, isDryRun }) => ({
   testRunner: 'vitest',
   plugins: [import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
@@ -201,7 +201,7 @@ export default defineConfig(({ isCi, isDryRun }) => ({
 `stryker-js-effect` is an intentional breaking fork, not a drop-in shim. Upstream patterns that do not work:
 
 1. **Plugins Are Resolved via `import.meta.resolve()`**: Bare string package names (`plugins: ['@stryker-mutator/...']`) are rejected. Plugins must be explicit `file:` URLs (`plugins: [import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')]`).
-2. **Single Flagship Package (`@systemfsoftware/stryker-js`)**: The separate CLI and engine packages are unified. Configuration helpers (`defineConfig`, `mergeConfig`) ship from `@systemfsoftware/stryker-js/config`.
+2. **Single Flagship Package (`@systemfsoftware/stryker-js`)**: The separate CLI and engine packages are unified. The configuration authoring surface (`StrykerConfig.define`, `StrykerConfig.merge`) ships from `@systemfsoftware/stryker-js/config`.
 3. **In-Memory V8 Runner**: The built-in `testRunner: 'vm'` runs tests directly in Node's V8 context with native TS type stripping, eliminating worker-spawning overhead.
 4. **Deterministic Exit Codes & Real-Time NDJSON**: Streams newline-delimited JSON events to `stdout` with distinct exit codes (`0` ok, `1` threshold failed, `2` config error, `3` runtime error, `4` internal error).
 
@@ -261,17 +261,17 @@ Detailed authoring guides are packaged in the agent skill:
 
 ## 📦 Workspace Packages
 
-| Package                                                                                                       | Purpose                                                                                           |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [`@systemfsoftware/stryker-js`](packages/stryker-js)                                                          | Flagship CLI binary, run engine, and `./config` authoring surface (`defineConfig`, `mergeConfig`) |
-| [`@systemfsoftware/stryker-js-vitest-runner`](packages/stryker-js-vitest-runner)                              | High-performance Vitest test runner plugin with sandbox isolation                                 |
-| [`@systemfsoftware/stryker-js-typescript-checker`](packages/stryker-js-typescript-checker)                    | Pre-execution TypeScript type checker plugin rejecting invalid mutants                            |
-| [`@systemfsoftware/stryker-js-html-reporter`](packages/stryker-js-html-reporter)                              | Interactive HTML mutation report generator (`reports/mutation/index.html`)                        |
-| [`@systemfsoftware/stryker-ignorer-kit`](packages/ignorers/kit)                                               | Authoring kit (`defineIgnorer`) and test harness (`testIgnorer`) for custom ignorers              |
-| [`@systemfsoftware/stryker-ignorer-interface`](packages/ignorers/interface)                                   | AST node types and `Ignorer` contract                                                             |
-| [`@systemfsoftware/stryker-ignorer-effect-schema-declarations`](packages/ignorers/effect-schema-declarations) | Ignorer filtering equivalent mutants on Effect Schema and Brand declarations                      |
-| [`@systemfsoftware/stryker-ignorer-in-source-vitest-block`](packages/ignorers/in-source-vitest-block)         | Ignorer removing unreachable mutants inside `if (import.meta.vitest)` blocks                      |
-| [`@systemfsoftware/stryker-test-contribution`](packages/stryker-test-contribution)                            | Test suite hygiene plugin enforcing unique mutant kills per test file                             |
+| Package                                                                                                       | Purpose                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [`@systemfsoftware/stryker-js`](packages/stryker-js)                                                          | Flagship CLI binary, run engine, and `./config` authoring surface (`StrykerConfig.define`, `StrykerConfig.merge`) |
+| [`@systemfsoftware/stryker-js-vitest-runner`](packages/stryker-js-vitest-runner)                              | High-performance Vitest test runner plugin with sandbox isolation                                                 |
+| [`@systemfsoftware/stryker-js-typescript-checker`](packages/stryker-js-typescript-checker)                    | Pre-execution TypeScript type checker plugin rejecting invalid mutants                                            |
+| [`@systemfsoftware/stryker-js-html-reporter`](packages/stryker-js-html-reporter)                              | Interactive HTML mutation report generator (`reports/mutation/index.html`)                                        |
+| [`@systemfsoftware/stryker-ignorer-kit`](packages/ignorers/kit)                                               | Authoring kit (`defineIgnorer`) and test harness (`testIgnorer`) for custom ignorers                              |
+| [`@systemfsoftware/stryker-ignorer-interface`](packages/ignorers/interface)                                   | AST node types and `Ignorer` contract                                                                             |
+| [`@systemfsoftware/stryker-ignorer-effect-schema-declarations`](packages/ignorers/effect-schema-declarations) | Ignorer filtering equivalent mutants on Effect Schema and Brand declarations                                      |
+| [`@systemfsoftware/stryker-ignorer-in-source-vitest-block`](packages/ignorers/in-source-vitest-block)         | Ignorer removing unreachable mutants inside `if (import.meta.vitest)` blocks                                      |
+| [`@systemfsoftware/stryker-test-contribution`](packages/stryker-test-contribution)                            | Test suite hygiene plugin enforcing unique mutant kills per test file                                             |
 
 If the mutation score falls below `thresholds.break`, Stryker exits with code `1`, failing the CI check.
 

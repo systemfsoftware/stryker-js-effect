@@ -1,3 +1,4 @@
+import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
 import type { Ast as NGAst, ParseTreeResult } from 'angular-html-parser'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -8,18 +9,10 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type * as OxcModule from 'oxc-parser'
-import type {
-  Ast,
-  AstByFormat,
-  Range,
-  ScriptAst,
-  ScriptFormat,
-  TemplateScript,
-} from './Ast.schema.js'
+import type { Ast, AstByFormat, Range, ScriptAst, ScriptFormat, TemplateScript } from './Ast.schema.js'
 import { LineTable, LineTableFromText } from './Location.schema.js'
 import {
   HtmlEndSpanMissing,
@@ -52,10 +45,15 @@ export interface ParserShape {
   readonly formatOf: (fileName: string, formatOverride?: AstFormat) => AstFormat | undefined
 }
 
-export class Parser extends Context.Service<Parser, ParserShape>()('@systemfsoftware/stryker-js-instrumenter/Parser.service/Parser') {
+export class Parser
+  extends Context.Service<Parser, ParserShape>()('@systemfsoftware/stryker-js-instrumenter/Parser.service/Parser')
+{
   static readonly layer: Layer.Layer<Parser> = Layer.effect(
     Parser,
-    Effect.map(Effect.promise(() => import('oxc-parser')), (oxc) => Parser.of(parserOf(oxc))),
+    Effect.map(
+      Effect.cached(Effect.map(Effect.promise(() => import('oxc-parser')), (oxc) => parserOf(oxc))),
+      (loadParser) => parserLoadedOnFirstParse(loadParser),
+    ),
   )
 }
 
@@ -65,11 +63,9 @@ interface PlainRecord<A = unknown> {
   readonly [k: string]: A
 }
 
-const isPlainRecord = <A = unknown>(value: unknown): value is PlainRecord<A> =>
-  typeof value === 'object' && value !== null
+const isPlainRecord = <A = unknown>(value: unknown): value is PlainRecord<A> => Predicate.isObjectOrArray(value)
 
-const isTagged = (value: unknown, type: string): value is PlainRecord =>
-  isPlainRecord(value) && value['type'] === type
+const isTagged = (value: unknown, type: string): value is PlainRecord => isPlainRecord(value) && value['type'] === type
 
 const hasNumericRange = (value: PlainRecord): value is PlainRecord & Range =>
   typeof value['start'] === 'number' && typeof value['end'] === 'number'
@@ -158,6 +154,18 @@ const parserOf = (oxc: Oxc): ParserShape => {
   return shape
 }
 
+const parserLoadedOnFirstParse = (loadParser: Effect.Effect<ParserShape>): ParserShape => {
+  function parse<T extends AstFormat>(
+    code: string,
+    fileName: string,
+    formatOverride: T,
+  ): Effect.Effect<AstByFormat[T], ParserError>
+  function parse(code: string, fileName: string, formatOverride?: AstFormat): Effect.Effect<Ast, ParserError> {
+    return Effect.flatMap(loadParser, (parser) => parser.parse(code, fileName, formatOverride))
+  }
+  return { parse, formatOf: getFormat }
+}
+
 const FORMAT_BY_EXTENSION: Readonly<Record<string, AstFormat>> = {
   '.js': 'js',
   '.jsx': 'js',
@@ -244,8 +252,7 @@ const ngHtmlParser = (text: string, fileName: string, parserContext: ParserShape
     const scriptCollector: NGAst.Visitor = {
       visitElement: <A = unknown>(el: NGAst.Element, context: A): void => {
         Option.match(Option.fromUndefinedOr(getScriptType(el)), {
-          onSome: (scriptFormat) =>
-            scriptEffects.push(parseScriptOf(el, scriptFormat)(text, fileName, parserContext)),
+          onSome: (scriptFormat) => scriptEffects.push(parseScriptOf(el, scriptFormat)(text, fileName, parserContext)),
           onNone: () => undefined,
         })
         ngParser.visitAll(scriptCollector, el.children, context)
@@ -384,8 +391,10 @@ const TEMPLATE_EXPRESSION_TYPES: Readonly<Record<string, true>> = {
 }
 
 const parseVersion = (version: string) =>
-  Option.flatMap(Option.fromNullishOr(VERSION_PATTERN.exec(version)), (match) =>
-    Option.fromUndefinedOr(versionFromMatch(match)))
+  Option.flatMap(
+    Option.fromNullishOr(VERSION_PATTERN.exec(version)),
+    (match) => Option.fromUndefinedOr(versionFromMatch(match)),
+  )
 
 const versionFromMatch = (match: RegExpExecArray) => {
   const major = Number.parseInt(String(match[1]), 10)
@@ -609,7 +618,10 @@ const instanceScriptRange = <A = unknown>(ast: A): Result.Result<Option.Option<T
     onSome: (record) => Result.map(rangeOf(record['content'], 'instance'), Option.some),
   })
 
-const rangeOf = <A = unknown>(content: A, script: 'instance' | 'module'): Result.Result<TemplateRange, SvelteRangeMissing> =>
+const rangeOf = <A = unknown>(
+  content: A,
+  script: 'instance' | 'module',
+): Result.Result<TemplateRange, SvelteRangeMissing> =>
   Result.fromOption(
     Option.map(
       Option.filter(Option.some(content), isRange),
@@ -618,7 +630,9 @@ const rangeOf = <A = unknown>(content: A, script: 'instance' | 'module'): Result
     () => SvelteRangeMissing.make({ script }),
   )
 
-const getModuleScriptRange = <A = unknown>(svelteAst: A): Result.Result<Option.Option<TemplateRange>, SvelteRangeMissing> =>
+const getModuleScriptRange = <A = unknown>(
+  svelteAst: A,
+): Result.Result<Option.Option<TemplateRange>, SvelteRangeMissing> =>
   Match.value(fieldOf(svelteAst, 'module')).pipe(
     Match.when(undefined, () => Result.succeed(Option.none())),
     Match.when(null, () => Result.succeed(Option.none())),
@@ -659,8 +673,9 @@ const remapScriptLocations = (
   const remapped = remapInOrder(ordered, code, scriptMap)
   const remappedModuleScriptRange = Option.getOrUndefined(
     Option.map(
-      Arr.findFirst(remapped, (script) =>
-        Option.exists(moduleScriptRange, (range) => script.range === range && script.hadScript)
+      Arr.findFirst(
+        remapped,
+        (script) => Option.exists(moduleScriptRange, (range) => script.range === range && script.hadScript),
       ),
       (script) => script.scriptRange,
     ),

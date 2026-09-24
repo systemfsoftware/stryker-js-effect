@@ -14,7 +14,11 @@ export interface GuestJobsShape {
   readonly runGuestJob: (
     step: string,
     job: MicroVM.JobResource,
-  ) => Effect.Effect<MicroVM.JobCompletion, GuestJobFailure, Crypto.Crypto | FileSystem.FileSystem | Readiness.HostProber>
+  ) => Effect.Effect<
+    MicroVM.JobCompletion,
+    GuestJobFailure,
+    Crypto.Crypto | FileSystem.FileSystem | Readiness.HostProber
+  >
   readonly requireExited: (
     step: string,
     completion: MicroVM.JobCompletion,
@@ -22,10 +26,16 @@ export interface GuestJobsShape {
   readonly requireCleanExit: (
     step: string,
     job: MicroVM.JobResource,
-  ) => Effect.Effect<void, ExitFailure | GuestJobFailure | GuestSignaledFailure, Crypto.Crypto | FileSystem.FileSystem | Readiness.HostProber>
+  ) => Effect.Effect<
+    void,
+    ExitFailure | GuestJobFailure | GuestSignaledFailure,
+    Crypto.Crypto | FileSystem.FileSystem | Readiness.HostProber
+  >
 }
 
-export class GuestJobs extends Context.Service<GuestJobs, GuestJobsShape>()('@systemfsoftware/stryker-e2e/Harness/GuestJobs') {
+export class GuestJobs
+  extends Context.Service<GuestJobs, GuestJobsShape>()('@systemfsoftware/stryker-e2e/Harness/GuestJobs')
+{
   static readonly BASE_IMAGE = 'node:24-alpine@sha256:333f6b3eca25980d5682c26207665b93c9417786b21760b2764d5821d9704c8a'
   static readonly GUEST_MEMORY_MIB = 4096
   static readonly GUEST_WORKROOT = '/work'
@@ -36,8 +46,7 @@ export class GuestJobs extends Context.Service<GuestJobs, GuestJobsShape>()('@sy
   static readonly layer = Layer.effect(
     GuestJobs,
     Effect.sync(() => {
-      const stderrTailOf = (stderr: Uint8Array) =>
-        new TextDecoder().decode(stderr).slice(-GuestJobs.STDERR_TAIL_CHARS)
+      const stderrTailOf = (stderr: Uint8Array) => new TextDecoder().decode(stderr).slice(-GuestJobs.STDERR_TAIL_CHARS)
 
       const job = (cmd: readonly [string, ...Array<string>], mounts: ReadonlyArray<MicroVM.Mount>) =>
         mounts.reduce(
@@ -51,23 +60,28 @@ export class GuestJobs extends Context.Service<GuestJobs, GuestJobsShape>()('@sy
       const requireExited = (step: string, completion: MicroVM.JobCompletion) =>
         Match.value(completion.status).pipe(
           Match.tag('JobSignaled', () =>
-            Effect.fail(new GuestSignaledFailure({
-              step,
-              memoryMiB: GuestJobs.GUEST_MEMORY_MIB,
-              stderrTail: stderrTailOf(completion.stderr),
-            }))),
+            Effect.fail(
+              new GuestSignaledFailure({
+                step,
+                memoryMiB: GuestJobs.GUEST_MEMORY_MIB,
+                stderrTail: stderrTailOf(completion.stderr),
+              }),
+            )),
           Match.tag('JobExited', (status) => Effect.succeed(status.code)),
           Match.exhaustive,
         )
 
       const requireCleanExit = (step: string, job: MicroVM.JobResource) =>
-        Effect.flatMap(runGuestJob(step, job), (completion) =>
-          Effect.flatMap(requireExited(step, completion), (code) =>
-            Boolean.match(code === 0, {
-              onTrue: () => Effect.void,
-              onFalse: () =>
-                Effect.fail(new ExitFailure({ step, exitCode: code, stderrTail: stderrTailOf(completion.stderr) })),
-            })))
+        Effect.flatMap(
+          runGuestJob(step, job),
+          (completion) =>
+            Effect.flatMap(requireExited(step, completion), (code) =>
+              Boolean.match(code === 0, {
+                onTrue: () => Effect.void,
+                onFalse: () =>
+                  Effect.fail(new ExitFailure({ step, exitCode: code, stderrTail: stderrTailOf(completion.stderr) })),
+              })),
+        )
 
       return { job, runGuestJob, requireExited, requireCleanExit }
     }),

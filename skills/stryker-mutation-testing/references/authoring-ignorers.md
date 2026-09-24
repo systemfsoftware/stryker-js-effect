@@ -114,9 +114,9 @@ await testIgnorer(strykerIgnorers[0], {
 In your `stryker.config.ts`, declare the plugin module URL in `plugins` and its `name` in `ignorers`:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   plugins: [
     import.meta.resolve('./packages/my-custom-ignorer/dist/index.js'),
   ],

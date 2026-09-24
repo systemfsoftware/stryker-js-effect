@@ -1,5 +1,5 @@
-import type { Position } from '@systemfsoftware/stryker-js-instrumenter'
-import type { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as DateTime from 'effect/DateTime'
@@ -67,7 +67,7 @@ const withContent = (file: ScriptFile, content: string, now: DateTime.Utc): Scri
   modifiedTime: now,
 })
 
-const offsetOf = (file: ScriptFile, pos: Position) => {
+const offsetOf = (file: ScriptFile, pos: Mutant.Position) => {
   const lines = file.originalContent.split('\n')
   const lineCount = Math.min(pos.line, lines.length)
   return lines.slice(0, lineCount).reduce((total, line) => total + line.length + 1, Math.max(0, pos.column - 1))
@@ -75,12 +75,16 @@ const offsetOf = (file: ScriptFile, pos: Position) => {
 
 const mutateScriptFile = (
   file: ScriptFile,
-  mutant: Pick<CheckerMutantWire, 'location' | 'replacement'>,
+  mutant: Pick<Checker.CheckerMutantWire, 'location' | 'replacement'>,
   now: DateTime.Utc,
 ): ScriptFile => {
   const start = offsetOf(file, mutant.location.start)
   const end = offsetOf(file, mutant.location.end)
-  return withContent(file, file.originalContent.slice(0, start) + mutant.replacement + file.originalContent.slice(end), now)
+  return withContent(
+    file,
+    file.originalContent.slice(0, start) + mutant.replacement + file.originalContent.slice(end),
+    now,
+  )
 }
 
 const resetScriptFile = (file: ScriptFile, now: DateTime.Utc): ScriptFile => ({
@@ -125,19 +129,19 @@ export const getFile: {
 export const mutateFile: {
   (
     fileName: string,
-    mutant: Pick<CheckerMutantWire, 'location' | 'replacement'>,
+    mutant: Pick<Checker.CheckerMutantWire, 'location' | 'replacement'>,
   ): (self: TSFiles) => Effect.Effect<void, HybridFileNotFoundError>
   (
     self: TSFiles,
     fileName: string,
-    mutant: Pick<CheckerMutantWire, 'location' | 'replacement'>,
+    mutant: Pick<Checker.CheckerMutantWire, 'location' | 'replacement'>,
   ): Effect.Effect<void, HybridFileNotFoundError>
 } = dual(
   3,
   (
     self: TSFiles,
     fileName: string,
-    mutant: Pick<CheckerMutantWire, 'location' | 'replacement'>,
+    mutant: Pick<Checker.CheckerMutantWire, 'location' | 'replacement'>,
   ): Effect.Effect<void, HybridFileNotFoundError> =>
     Effect.gen(function*() {
       const state = self[StateTypeId]
@@ -148,8 +152,7 @@ export const mutateFile: {
         onSome: (found) =>
           Ref.update(
             state.files,
-            (files) =>
-              setInPlace(files, normalizeFileName(fileName), Option.some(mutateScriptFile(found, mutant, at))),
+            (files) => setInPlace(files, normalizeFileName(fileName), Option.some(mutateScriptFile(found, mutant, at))),
           ),
       })
     }),
@@ -179,8 +182,11 @@ export const resetFile: {
 export const setOverrides: {
   (overrides: MutableHashMap.MutableHashMap<string, string>): (self: TSFiles) => Effect.Effect<void>
   (self: TSFiles, overrides: MutableHashMap.MutableHashMap<string, string>): Effect.Effect<void>
-} = dual(2, (self: TSFiles, overrides: MutableHashMap.MutableHashMap<string, string>): Effect.Effect<void> =>
-  Ref.set(self[StateTypeId].overrides, overrides))
+} = dual(
+  2,
+  (self: TSFiles, overrides: MutableHashMap.MutableHashMap<string, string>): Effect.Effect<void> =>
+    Ref.set(self[StateTypeId].overrides, overrides),
+)
 
 export const tsFileSystem = (self: TSFiles): TSFileSystem => {
   const state = self[StateTypeId]

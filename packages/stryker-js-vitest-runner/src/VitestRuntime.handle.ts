@@ -1,8 +1,8 @@
 import type { RunnerTestFile, RunnerTestSuite } from 'vitest'
 import type { Vitest } from 'vitest/node'
 
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
-import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -14,12 +14,10 @@ import * as Predicate from 'effect/Predicate'
 
 import { type StrykerNamespace, type TestRunnerPhase } from './VitestRunner.schema.js'
 
-export const TypeId = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestRuntime')
-export type TypeId = typeof TypeId
+const TypeId = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestRuntime')
+type TypeId = typeof TypeId
 
 const DriverId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestRuntime/driver')
-
-export const isVitestRuntime = (u: unknown): u is VitestRuntime => Predicate.hasProperty(u, TypeId)
 
 export interface VitestRuntime extends Pipeable {
   readonly [TypeId]: typeof TypeId
@@ -32,13 +30,17 @@ export type HarnessKey = 'hitLimit' | 'mutantActivation' | 'activeMutant'
 
 export type HarnessValue = number | string | undefined
 
-export interface RunFilterInput {
+interface RunFilterInput {
   readonly related: string[] | undefined
   readonly testNamePattern: RegExp | undefined
 }
 
 const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
-  new TestRunnerFailed({ runnerName: 'vitest', phase, cause: errorToString(cause) })
+  new TestRunner.TestRunnerFailed({
+    runnerName: 'vitest',
+    phase,
+    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+  })
 
 const disableScreenshotFailures = <A>(value: A) =>
   Option.map(Option.filter(Option.fromNullishOr(value), Predicate.isObject), (browser) => {
@@ -120,8 +122,8 @@ export const applyRunFilter: {
   }))
 
 export const start: {
-  (testFiles: string[] | undefined): (self: VitestRuntime) => Effect.Effect<void, TestRunnerFailed>
-  (self: VitestRuntime, testFiles: string[] | undefined): Effect.Effect<void, TestRunnerFailed>
+  (testFiles: string[] | undefined): (self: VitestRuntime) => Effect.Effect<void, TestRunner.TestRunnerFailed>
+  (self: VitestRuntime, testFiles: string[] | undefined): Effect.Effect<void, TestRunner.TestRunnerFailed>
 } = dual(2, (self: VitestRuntime, testFiles: string[] | undefined) =>
   Effect.tryPromise({
     try: () => self[DriverId].start(testFiles),
@@ -142,7 +144,12 @@ export const hasExternalErrors = (self: VitestRuntime): boolean =>
 export const externalErrorText = (self: VitestRuntime): string =>
   Option.match(errorsSetOf(self[DriverId]), {
     onNone: () => '',
-    onSome: (errorsSet) => Predicate.isIterable(errorsSet) ? [...errorsSet].map(errorToString).join('\n') : '',
+    onSome: (errorsSet) =>
+      Predicate.isIterable(errorsSet)
+        ? [...errorsSet].map((error) =>
+          Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(error), (rendered) => rendered.text), () => '')
+        ).join('\n')
+        : '',
   })
 
 export const metaOf = <A>(file: A) => Option.getOrUndefined(propertyOf(file, 'meta'))
@@ -157,7 +164,7 @@ export const reportAllKillersOf = (options: { readonly disableBail?: boolean }) 
 
 export const close = (
   self: VitestRuntime,
-): Effect.Effect<void, TestRunnerFailed, FileSystem.FileSystem> =>
+): Effect.Effect<void, TestRunner.TestRunnerFailed, FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const cleanup = Context.make(FileSystem.FileSystem, fs)

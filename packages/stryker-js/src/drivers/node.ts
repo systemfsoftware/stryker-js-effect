@@ -7,16 +7,18 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 
+import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
+import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
 import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
-import { classifyWorkerExit } from '../Worker.js'
-import { ChildProcessCrashedError } from '../Worker.schema.js'
+import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 
 const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string) =>
@@ -69,10 +71,37 @@ const nodeWorkerLauncherLayer = Layer.effect(
 
           const exited = handle.exitCode.pipe(
             Effect.orDie,
-            Effect.flatMap((exitCode) => Effect.fail(classifyWorkerExit(Number(handle.pid), exitCode))),
+            Effect.flatMap((exitCode) =>
+              Result.match(
+                classifyWorkerExit(ClassifyWorkerExitCommand.make({ pid: Number(handle.pid), exitCode })),
+                {
+                  onFailure: (refused) => Effect.fail(refused),
+                  onSuccess: (decision) =>
+                    Match.value(decision).pipe(
+                      Match.tag(
+                        'WorkerOutOfMemory',
+                        (outOfMemory) =>
+                          Effect.fail(OutOfMemoryError.make({ pid: outOfMemory.pid, exitCode: outOfMemory.exitCode })),
+                      ),
+                      Match.tag(
+                        'WorkerCrashed',
+                        (crashed) =>
+                          Effect.fail(
+                            ChildProcessCrashedError.make({
+                              pid: crashed.pid,
+                              exit: { _tag: 'Code', code: crashed.exitCode },
+                              cause: 'worker exited before it accepted the RPC connection',
+                            }),
+                          ),
+                      ),
+                      Match.exhaustive,
+                    ),
+                },
+              )
+            ),
           )
 
-          return { pid: Number(handle.pid), clientLayer, exited }
+          return makeSpawnedSocketWorker({ pid: Number(handle.pid), clientLayer, exited })
         }).pipe(
           Effect.catchIf(S.is(ChildProcessCrashedError), (error) => Effect.fail(error), () =>
             Effect.fail(

@@ -4,8 +4,8 @@
  * The error vocabulary every compiler operation refuses with; decoded and
  * reported at the checker boundary, no I/O.
  */
-import * as Match from 'effect/Match'
 import { Schema as S } from 'effect'
+import * as Match from 'effect/Match'
 
 import { TsConfigNotFoundError, TsConfigParseError } from './Tsconfig.schema.js'
 
@@ -69,7 +69,7 @@ export class NodeNotInGraph extends S.TaggedError<NodeNotInGraph>()('NodeNotInGr
   override get message(): string {
     return `Node not in graph: ${this.fileName}`
   }
- }
+}
 
 export type CompilerError =
   | CompilerFailed

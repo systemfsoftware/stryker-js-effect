@@ -1,13 +1,12 @@
 import * as S from 'effect/Schema'
 
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export const ConfigDocumentSchema = S.Record(S.String, S.Unknown)
 
 export const ImportedModuleSchema = S.Struct({
   default: S.optional(S.Unknown),
 })
-
 
 export class ReadConfigCommand extends S.TaggedClass<ReadConfigCommand>()('ReadConfigCommand', {
   cliOptions: S.Record(S.String, S.Unknown),
@@ -77,7 +76,7 @@ export const extendsPropertySchema = S.optionalKey(
 )
 export const forkOptionsSchema = S.StructWithRest(
   S.Struct({
-    ...StrykerOptionsSchema.schema.fields,
+    ...Options.StrykerOptionsSchema.schema.fields,
     survivorsPriorReport,
     extends: extendsPropertySchema,
   }),

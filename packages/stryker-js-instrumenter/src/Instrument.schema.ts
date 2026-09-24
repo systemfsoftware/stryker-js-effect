@@ -1,5 +1,6 @@
 import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
+import { LocationSchema, type Position } from './Location.schema.js'
 import { Mutant } from './Mutant.schema.js'
 
 export class InstrumentError
@@ -18,21 +19,20 @@ export class InstrumentError
     })
   }
 }
-
-const PositionSchema = S.Struct({
-  line: S.Finite,
-  column: S.Finite,
-})
-
-const RangeSchema = S.Struct({
-  start: PositionSchema,
-  end: PositionSchema,
-})
-
-export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(RangeSchema)])
+export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(LocationSchema)])
 
 export type MutateDescription = typeof MutateDescriptionSchema.Type
-export type Position = typeof PositionSchema.Type
+
+export interface MutationRange {
+  readonly start: Position
+  readonly end: Position
+}
+
+export interface FileDescription {
+  readonly mutate: MutateDescription
+}
+
+export type FileDescriptions = Record<string, FileDescription>
 
 export const FileSchema = S.Struct({
   name: S.String,
@@ -47,15 +47,14 @@ export const InstrumenterOptionsSchema = S.Struct({
   ignorers: S.Array(IgnorerSchema),
   noHeader: S.optional(S.Boolean),
 })
-
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
 
-export class ScriptRootWithoutSpan
-  extends S.TaggedError<ScriptRootWithoutSpan>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/ScriptRootWithoutSpan')(
-    'ScriptRootWithoutSpan',
-    { edge: S.Literals(['start', 'end']) },
-  )
-{
+export class ScriptRootWithoutSpan extends S.TaggedError<ScriptRootWithoutSpan>(
+  '@systemfsoftware/stryker-js-instrumenter/Instrument.schema/ScriptRootWithoutSpan',
+)(
+  'ScriptRootWithoutSpan',
+  { edge: S.Literals(['start', 'end']) },
+) {
   override get message(): string {
     return `Script AST root without ${this.edge}`
   }

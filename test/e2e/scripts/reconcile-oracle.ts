@@ -1,10 +1,10 @@
+import { Result, Schema } from 'effect'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Result, Schema } from 'effect'
-import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
 import { type BaselineCountKey, BlessedBaseline, type OracleSliceId } from '../src/Oracle/baseline.schema.js'
 import { OracleSliceConfig } from '../src/Oracle/slice-config.schema.js'
+import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
 import { createPackageProjects, evaluateWithProjects, type PackageProject } from './oracle/diagnostics.js'
 import {
   extractLiteralBlock,
@@ -273,8 +273,9 @@ export function runCli(argv: readonly string[]): CliRunResult {
       throw new Error(`Unknown slice "${id}". Valid slices: ${Object.keys(OracleSliceConfig.SLICES).join(', ')}`)
     }
   }
-  const slices =
-    opts.sliceIds.length === 0 ? Object.values(OracleSliceConfig.SLICES) : opts.sliceIds.map((id) => OracleSliceConfig.SLICES[id])
+  const slices = opts.sliceIds.length === 0
+    ? Object.values(OracleSliceConfig.SLICES)
+    : opts.sliceIds.map((id) => OracleSliceConfig.SLICES[id])
   if (opts.reconcile) {
     const reconciledJourneys = reconcileJourneys(slices)
     for (const journey of reconciledJourneys) {

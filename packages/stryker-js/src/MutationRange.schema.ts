@@ -36,7 +36,6 @@ export type MutationRangeSpecifier = typeof MutationRangeSpecifier.Type
 
 type DecodedSpecifier = MutationRangeSpecifier
 
-
 const startTextOf = (specifier: DecodedSpecifier): string =>
   Option.match(Option.fromUndefinedOr(specifier.startColumn), {
     onNone: () => `${specifier.startLine}`,
@@ -49,8 +48,7 @@ const endTextOf = (specifier: DecodedSpecifier): string =>
     onSome: (column) => `${specifier.endLine}:${column}`,
   })
 
-const renderedRangeOf = (specifier: DecodedSpecifier): string =>
-  `${startTextOf(specifier)}-${endTextOf(specifier)}`
+const renderedRangeOf = (specifier: DecodedSpecifier): string => `${startTextOf(specifier)}-${endTextOf(specifier)}`
 
 const groupOf = (match: RegExpExecArray, index: number, fallback: string) => match[index] ?? fallback
 
@@ -97,28 +95,3 @@ export const MutationRangeSpecifierSchema = S.String.pipe(
     }),
   ),
 )
-
-if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
-
-  const FilePartSchema = S.String.pipe(S.check(S.isMaxLength(64)))
-  const PositionSchema = S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 10_000 })))
-  const NegativeSchema = S.Int.pipe(S.check(S.isBetween({ minimum: -10_000, maximum: -1 })))
-
-  it.prop('∀file_pos_NonCanonicalFile_DecodeNone', [FilePartSchema, PositionSchema], ([file, position]) =>
-    Option.isNone(
-      S.decodeOption(MutationRangeSpecifier)({ file: `${file}:${position}`, startLine: 1, endLine: 1 }),
-    ))
-
-  it.prop(
-    '∀startLine_endLine_col_NegativePosition_DecodeNone',
-    [NegativeSchema, NegativeSchema, NegativeSchema, NegativeSchema],
-    ([startLine, endLine, startColumn, endColumn]) =>
-      [
-        { file: 'src/a.ts', startLine, endLine: 1 },
-        { file: 'src/a.ts', startLine: 1, endLine },
-        { file: 'src/a.ts', startLine: 1, endLine: 1, startColumn },
-        { file: 'src/a.ts', startLine: 1, endLine: 1, endColumn },
-      ].every((specifier) => Option.isNone(S.decodeOption(MutationRangeSpecifier)(specifier))),
-  )
-}

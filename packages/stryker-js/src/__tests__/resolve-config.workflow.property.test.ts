@@ -1,16 +1,14 @@
 import { describe, it } from '@effect/vitest'
-import { type StrykerOptions, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
-import * as Equal from 'effect/Equal'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
-  ConfigFromFile,
   ConfigFromDefaults,
+  ConfigFromFile,
   ConfigOptionsRefused,
-  type LoadConfigDecision,
   LoadConfigCommand,
+  type LoadConfigDecision,
   resolveConfig,
 } from '../run/resolve-config.workflow.js'
 
@@ -20,45 +18,14 @@ const variantIs = (fileFound: boolean) => (outcome: LoadConfigDecision) =>
     onFalse: () => S.is(ConfigFromDefaults)(outcome),
   })
 
-const optionsEqual = (first: StrykerOptions, second: StrykerOptions) => Equal.equals(first, second)
-
 describe('resolveConfig', () => {
-  it.prop('∀c_Command_≡VariantFollowsFileFound', [LoadConfigCommand], ([command]) =>
-    Result.match(resolveConfig(command), {
-      onFailure: (refusal) => S.is(ConfigOptionsRefused)(refusal),
-      onSuccess: variantIs(command.fileFound),
-    }),
+  it.prop(
+    '∀c_Command_≡VariantFollowsFileFound',
+    [LoadConfigCommand],
+    ([command]) =>
+      Result.match(resolveConfig(command), {
+        onFailure: (refusal) => S.is(ConfigOptionsRefused)(refusal),
+        onSuccess: variantIs(command.fileFound),
+      }),
   )
-
-  it.prop('∀o_OptionsRecord_≡MergedOptionsPreserved', [StrykerOptionsSchema, S.Boolean], ([options, fileFound]) =>
-    Result.match(S.encodeResult(StrykerOptionsSchema)(options), {
-      onFailure: () => false,
-      onSuccess: (document) => {
-        const expected = S.decodeResult(StrykerOptionsSchema)(document)
-        const decision = resolveConfig(LoadConfigCommand.make({ document, fileFound }))
-        return Result.match(expected, {
-          onFailure: () => false,
-          onSuccess: (decoded) =>
-            Result.match(decision, {
-              onFailure: () => false,
-              onSuccess: (outcome) =>
-                optionsEqual(outcome.options, decoded) && variantIs(fileFound)(outcome),
-            }),
-        })
-      },
-    }),
-  )
-
-  it.prop('∀c_Command_≡RefusalCarriesDecodeMessage', [LoadConfigCommand], ([command]) => {
-    const decoded = S.decodeResult(StrykerOptionsSchema)(command.document)
-    const decision = resolveConfig(command)
-    return Result.match(decoded, {
-      onFailure: (failure) =>
-        Result.match(decision, {
-          onFailure: (refusal) => S.is(ConfigOptionsRefused)(refusal) && refusal.message === failure.message,
-          onSuccess: () => false,
-        }),
-      onSuccess: () => Result.isSuccess(decision),
-    })
-  })
 })

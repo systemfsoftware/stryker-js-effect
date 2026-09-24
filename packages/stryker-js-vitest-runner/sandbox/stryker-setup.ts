@@ -1,16 +1,17 @@
-import type { InstrumenterContext, MutantCoverage } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import type * as Types from 'effect/Types'
 import { afterAll, afterEach, beforeAll, beforeEach, inject, RunnerTestCase, RunnerTestSuite } from 'vitest'
 
 const globalNamespace = inject('globalNamespace') as '__stryker__' | '__stryker2__'
 const mutantActivation = inject('mutantActivation') as 'runtime' | 'static' | undefined
 const mode = inject('mode') as 'dry-run' | 'mutant'
 
-const ns: InstrumenterContext = globalThis[globalNamespace] ?? (globalThis[globalNamespace] = {})
+const ns: Types.Mutable<Mutant.InstrumenterContext> = globalThis[globalNamespace] ?? (globalThis[globalNamespace] = {})
 
 interface SuiteWithTaskMeta {
-  meta: { hitCount?: number; mutantCoverage?: MutantCoverage }
+  meta: { hitCount?: number; mutantCoverage?: Mutant.MutantCoverage }
 }
 
 ns.hitLimit = inject('hitLimit')
@@ -27,7 +28,8 @@ const registerMutantRunHooks = () => {
     Match.orElse(() =>
       beforeAll(() => {
         ns.activeMutant = inject('activeMutant')
-      })),
+      })
+    ),
   )
 
   afterAll((_hookContext, suite: SuiteWithTaskMeta) => {

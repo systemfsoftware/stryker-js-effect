@@ -1,26 +1,15 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-export const MutantShape = S.Struct({
-  id: S.String,
-  fileName: S.String,
-  mutatorName: S.String,
-  replacement: S.String,
-  location: S.Struct({
-    start: S.Struct({ line: S.Finite, column: S.Finite }),
-    end: S.Struct({ line: S.Finite, column: S.Finite }),
-  }),
-})
-
 export const AdmittedSurvivorShape = S.Struct({
-  ...MutantShape.fields,
+  ...Mutant.Mutant.fields,
   relativeFileName: S.String,
 })
-
 const SurvivorsAdmissionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/SurvivorsAdmission')
 type SurvivorsAdmissionTypeId = typeof SurvivorsAdmissionTypeId
 
@@ -42,7 +31,7 @@ export class AdmitSurvivorsRunCommand extends S.Class<AdmitSurvivorsRunCommand>(
 }
 
 export class Admitted extends S.TaggedClass<Admitted>()('Admitted', {
-  survivors: S.Array(MutantShape),
+  survivors: S.Array(Mutant.Mutant),
   mutateSpans: S.Array(S.String),
 }) {
   readonly [SurvivorsAdmissionTypeId] = SurvivorsAdmissionTypeId
