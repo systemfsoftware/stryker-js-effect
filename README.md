@@ -5,7 +5,7 @@
 [![CI](https://github.com/systemfsoftware/stryker-js-effect/actions/workflows/release.yml/badge.svg)](https://github.com/systemfsoftware/stryker-js-effect/actions)
 
 > 🔬 **stryker-js-effect** is an Effect 4 mutation testing framework and breaking-change fork of `@stryker-mutator/core`.
-> ⚡ Built from first principles: in-memory V8 execution, standard ESM `file:` URL plugin resolution, real-time NDJSON streams, cancel-safe partial reports, reliable incremental state, and TypeScript 7 native support.
+> ⚡ Built from first principles: in-memory V8 execution, standard ESM plugin resolution (bare package names or `file:` URLs), real-time NDJSON streams, cancel-safe partial reports, reliable incremental state, and TypeScript 7 native support.
 > 🤖 Built for automated CI pipelines, fast local developer loops, and AI coding agents.
 
 ```bash
@@ -47,8 +47,8 @@ export default defineConfig(({ isCi }) => ({
   testRunner: isCi ? 'vitest' : 'vm',
   checkers: ['typescript'],
   plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
-    import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+    '@systemfsoftware/stryker-js-vitest-runner',
+    '@systemfsoftware/stryker-js-typescript-checker',
   ],
   // For local V8 runner:
   testFiles: ['test/**/*.test.ts', 'src/**/__tests__/**/*.test.ts'],
@@ -88,8 +88,8 @@ export default defineConfig({
   testRunner: 'vitest',
   checkers: ['typescript'],
   plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
-    import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+    '@systemfsoftware/stryker-js-vitest-runner',
+    '@systemfsoftware/stryker-js-typescript-checker',
   ],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.d.ts'],
 })
@@ -139,12 +139,12 @@ export default defineConfig({
 
 `.html`, `.htm`, `.vue`, and `.svelte` files are not instrumented by the core —
 a framework plugin package claims them. Install the package for your framework
-and add it to `plugins`:
+and add its package name to `plugins`:
 
 ```bash
 pnpm add -D @systemfsoftware/stryker-js-angular # .html, .htm, .vue
 # or
-pnpm add -D @systemfsoftware/stryker-js-svelte # .svelte
+pnpm add -D @systemfsoftware/stryker-js-svelte # .svelte (Svelte 5 only)
 ```
 
 ```ts
@@ -152,19 +152,25 @@ import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
 export default defineConfig({
   testRunner: 'vitest',
-  plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-angular'),
-  ],
+  plugins: ['@systemfsoftware/stryker-js-angular'],
   mutate: ['src/**/*.html', 'src/**/*.vue'],
 })
 ```
 
 Framework plugins instrument only the embedded script regions of a framework
-file — template expressions are never mutated. A file whose extension no
-installed format claims is skipped with a reason naming the plugin package to
-add, and the run continues. For Angular, pair the plugin with
-`@systemfsoftware/stryker-ignorer-angular` so signal-configuration mutants are
-ignored.
+file — template expressions are never mutated. A file whose extension no loaded
+plugin claims is skipped and the run continues; the skip reason names the plugin
+package to add, even when that package is already installed. Every framework
+plugin package declares the extensions it claims in its `package.json`
+(`"strykerFramework": { "extensions": [...] }`), and the host reads that field
+from the project's installed dependencies to name the package without importing
+it. A plugin whose peer cannot serve the run refuses instead of loading —
+`PeerMissing` (peer not installed), `PeerVersionUnsupported` (outside the
+supported range), or `PeerUnrecognized` (it resolved but does not export what
+the plugin needs) — and every refusal is a configuration error (exit code `2`).
+For Angular, pair the plugin with `@systemfsoftware/stryker-ignorer-angular` so
+signal-configuration mutants are ignored. The Svelte plugin is Svelte 5 only
+(`svelte` peer `^5.0.0`).
 
 ## 🛠️ Configuration Recipes
 
@@ -187,10 +193,10 @@ export default defineConfig(({ isCi }) => ({
   testRunner: 'vitest',
   checkers: ['typescript'],
   plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
-    import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
-    import.meta.resolve('@systemfsoftware/stryker-ignorer-effect-schema-declarations'),
-    import.meta.resolve('@systemfsoftware/stryker-ignorer-in-source-vitest-block'),
+    '@systemfsoftware/stryker-js-vitest-runner',
+    '@systemfsoftware/stryker-js-typescript-checker',
+    '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
+    '@systemfsoftware/stryker-ignorer-in-source-vitest-block',
   ],
   ignorers: [
     'effect-schema-declarations',
@@ -220,7 +226,7 @@ import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
 export default defineConfig(({ isCi, isDryRun }) => ({
   testRunner: 'vitest',
-  plugins: [import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')],
+  plugins: ['@systemfsoftware/stryker-js-vitest-runner'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
   // Run faster locally with incremental caching, strict in CI
   incremental: !isCi,
@@ -233,7 +239,7 @@ export default defineConfig(({ isCi, isDryRun }) => ({
 
 `stryker-js-effect` is an intentional breaking fork, not a drop-in shim. Upstream patterns that do not work:
 
-1. **Plugins Are Resolved via `import.meta.resolve()`**: Bare string package names (`plugins: ['@stryker-mutator/...']`) are rejected. Plugins must be explicit `file:` URLs (`plugins: [import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')]`).
+1. **Plugins Are Listed by Package Name**: `plugins` entries are bare package names resolved from the project's own dependencies (`plugins: ['@systemfsoftware/stryker-js-vitest-runner']`). Explicit `file:` URLs still work, but the upstream `import.meta.resolve(...)` dance is unnecessary.
 2. **Single Flagship Package (`@systemfsoftware/stryker-js`)**: The separate CLI and engine packages are unified. Configuration helpers (`defineConfig`, `mergeConfig`) ship from `@systemfsoftware/stryker-js/config`.
 3. **In-Memory V8 Runner**: The built-in `testRunner: 'vm'` runs tests directly in Node's V8 context with native TS type stripping, eliminating worker-spawning overhead.
 4. **Deterministic Exit Codes & Real-Time NDJSON**: Streams newline-delimited JSON events to `stdout` with distinct exit codes (`0` ok, `1` threshold failed, `2` config error, `3` runtime error, `4` internal error).
@@ -246,7 +252,7 @@ export default defineConfig(({ isCi, isDryRun }) => ({
 | ---------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `mutate`               | `string[]`                      | `['{src,lib}/**/!(*.+(s\|S)pec\|*.+(t\|T)est).+(cjs\|mjs\|js\|ts\|mts\|cts\|jsx\|tsx)', '!**/__tests__/**']` | Files to mutate. Prefix with `!` to exclude test files, fixtures, and declaration files.             |
 | `testRunner`           | `'command' \| 'vitest' \| 'vm'` | `'command'`                                                                                                  | Execution strategy for running tests against mutants.                                                |
-| `plugins`              | `string[]`                      | `[]`                                                                                                         | Explicit `file:` URLs to plugins, resolved with `import.meta.resolve('@systemfsoftware/...')`.       |
+| `plugins`              | `string[]`                      | `[]`                                                                                                         | Plugin packages to load: bare package names resolved from the project, or explicit `file:` URLs.     |
 | `checkers`             | `string[]`                      | `[]`                                                                                                         | Type checker plugins (e.g. `['typescript']`) that discard uncompilable mutants before running tests. |
 | `ignorers`             | `string[]`                      | `[]`                                                                                                         | Registered AST ignorer rules that skip equivalent or unobservable mutants.                           |
 | `concurrency`          | `number`                        | `CPU cores - 1`                                                                                              | Maximum parallel worker processes for checkers and test runners.                                     |
@@ -266,7 +272,7 @@ export default defineConfig(({ isCi, isDryRun }) => ({
 | **Incremental State**    | `stryker-incremental.json` frequently invalidates | Strict schema validation surviving aborted and interrupted runs                              |
 | **Agent / CI Mode**      | Generic CLI exit codes (`0` or `1`)               | Machine mode auto-detection (`AGENT`, `CLAUDECODE`, `CODEX_SANDBOX`) + classified exit codes |
 | **TypeScript 7**         | Slower AST parsing                                | Fast AST mutation powered by OXC parser with TS 7 native support                             |
-| **Plugin Resolution**    | Fragile `node_modules` walking                    | Standard ESM `file:` URL resolution via `import.meta.resolve()`                              |
+| **Plugin Resolution**    | Fragile `node_modules` walking                    | Standard ESM resolution from the project: bare package names or `file:` URLs                 |
 | **Runtime Architecture** | Imperative JavaScript                             | Pure functional Effect 4 architecture with typed domain errors                               |
 
 ---
