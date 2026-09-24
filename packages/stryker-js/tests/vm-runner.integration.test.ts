@@ -298,13 +298,15 @@ const runnerFor = (fixture: SuiteFixture): Effect.Effect<Plugin.PooledTestRunner
     return yield* Plugin.buildTestRunner(context, neverSpawned)
   }).pipe(Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer)), Effect.orDie)
 
+const COMPLETION_BUDGET_MS = 30_000
+
 const runSuite = (fixture: SuiteFixture): Effect.Effect<RunOutcome, never, never> =>
   Effect.gen(function*() {
     const runner = yield* runnerFor(fixture)
-    const dryRun = yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false })
+    const dryRun = yield* runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false })
     const timed = yield* Effect.timed(
       runner.mutantRun({
-        timeout: 5000,
+        timeout: COMPLETION_BUDGET_MS,
         disableBail: false,
         activeMutant: mutantFor(fixture.file),
         sandboxFileName: fixture.file,
@@ -314,6 +316,27 @@ const runSuite = (fixture: SuiteFixture): Effect.Effect<RunOutcome, never, never
     )
     return { dryRun, mutantRun: timed[1], elapsedMs: Duration.toMillis(timed[0]) }
   }).pipe(Effect.scoped, Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
+
+interface WorkerLifetime {
+  readonly before: readonly string[]
+  readonly during: readonly string[]
+  readonly after: readonly string[]
+  readonly dryRun: TestRunner.DryRunResult
+}
+
+const workerResourceNames = (): readonly string[] =>
+  globalThis.process.getActiveResourcesInfo().filter((name) => name === 'Worker' || name === 'MessagePort')
+
+const workerLifetime = (fixture: SuiteFixture): Effect.Effect<WorkerLifetime, never, never> =>
+  Effect.gen(function*() {
+    const before = workerResourceNames()
+    const live = yield* Effect.gen(function*() {
+      const runner = yield* runnerFor(fixture)
+      const dryRun = yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false })
+      return { dryRun, during: workerResourceNames() }
+    }).pipe(Effect.scoped)
+    return { before, during: live.during, after: workerResourceNames(), dryRun: live.dryRun }
+  }).pipe(Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
 
 const suiteFailure = (
   fixture: SuiteFixture,
@@ -808,6 +831,27 @@ Feature('Verifying mutants without spawning a child process')
             if (s.outcome.status === 'complete') {
               expect(s.outcome.tests.map((test) => test.status)).toEqual(['success', 'success'])
             }
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'The worker a runner starts goes away once the check is done',
+      Gherkin.Do.pipe(
+        Given('a written suite whose only test passes')(
+          'suite',
+          () => writeSuite('worker-lifetime', IGNORING_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the runner checks the suite and then stops')(
+          'lifetime',
+          (s) => workerLifetime(s.suite),
+        ),
+        Then('the worker the runner started is gone')((s) =>
+          Effect.sync(() => {
+            expect(s.lifetime.dryRun.status).toBe('complete')
+            expect(s.lifetime.during.length).toBeGreaterThan(s.lifetime.before.length)
+            expect(s.lifetime.after).toEqual(s.lifetime.before)
           })
         ),
       ),

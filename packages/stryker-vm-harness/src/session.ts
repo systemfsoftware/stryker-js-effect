@@ -3,7 +3,7 @@ import { dual } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
 import * as Option from 'effect/Option'
 
-import { guardedExpect, guardedVi } from './assertions.handle.js'
+import { dispatchingExpect, guardedExpect, guardedVi } from './assertions.handle.js'
 import {
   type DrainRunOptions,
   type DrainTestOutcome,
@@ -901,7 +901,7 @@ const createSession = (options: VmSessionOptions, plugins: readonly VmSessionPlu
   const guardedExpectFor = (vitest: VitestModuleNamespace): object | undefined =>
     vitest.createExpect === undefined
       ? guardedExpect(vitest.expect)
-      : guardedExpect(vitest.expect, vitest.createExpect)
+      : dispatchingExpect(vitest.expect, vitest.createExpect)
 
   const guardedViOf = (vitest: VitestModuleNamespace): object | undefined =>
     vitest.vi === undefined ? undefined : guardedVi(vitest.vi)

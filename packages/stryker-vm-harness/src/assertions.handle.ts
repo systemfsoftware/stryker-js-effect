@@ -80,21 +80,24 @@ const dispatcherExpect = (real: object, createExpect: CreateExpect): object => {
   })
 }
 
-export const guardedExpect: {
-  (createExpect?: CreateExpect): (real: object) => object
-  (real: object, createExpect?: CreateExpect): object
-} = dual(
-  (args: IArguments): boolean => args.length >= 1,
-  (real: object, createExpect?: CreateExpect): object =>
-    createExpect === undefined
-      ? new Proxy(real, {
-        apply(target, thisArg, args) {
-          return isExpectCall(target)
-            ? flagCurrentTest(reflectiveValue(Reflect.apply(target, thisArg, args)))
-            : target
-        },
-      })
-      : dispatcherExpect(real, createExpect),
-)
+export const guardedExpect = (real: object): object =>
+  new Proxy(real, {
+    apply(target, thisArg, args) {
+      return isExpectCall(target)
+        ? flagCurrentTest(reflectiveValue(Reflect.apply(target, thisArg, args)))
+        : target
+    },
+  })
+
+/**
+ * The same guard as {@link guardedExpect}, but backed by Vitest's `createExpect`
+ * factory so every assertion is tagged with the test it was created for.
+ * Data-last (`dispatchingExpect(createExpect)(real)`) and data-first
+ * (`dispatchingExpect(real, createExpect)`) both resolve to the dispatcher.
+ */
+export const dispatchingExpect: {
+  (createExpect: CreateExpect): (real: object) => object
+  (real: object, createExpect: CreateExpect): object
+} = dual(2, (real: object, createExpect: CreateExpect): object => dispatcherExpect(real, createExpect))
 
 export const guardedVi = (real: object): object => real

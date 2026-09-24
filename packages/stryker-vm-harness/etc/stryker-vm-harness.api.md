@@ -6,7 +6,7 @@
 
 // @public (undocumented)
 export namespace Assertions {
-    export { CreateExpect, guardedExpect, guardedVi };
+    export { CreateExpect, dispatchingExpect, guardedExpect, guardedVi };
 }
 
 // @public (undocumented)

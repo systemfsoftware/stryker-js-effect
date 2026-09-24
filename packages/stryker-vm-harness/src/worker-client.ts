@@ -92,7 +92,7 @@ const createVmWorkerClientWithHooks = (
   }
 
   const terminate = (): Promise<void> => {
-    waiting.clear()
+    rejectWaiting(waiting, new Error('the vm harness worker was terminated'))
     return worker.terminate().then(() => undefined)
   }
 

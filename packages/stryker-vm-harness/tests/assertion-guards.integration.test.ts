@@ -111,4 +111,39 @@ Feature('Assertion helpers handed to a suite that runs in memory')
         ),
       ),
     )
+
+    scenario(
+      'A dispatching assertion hands out the same matchers however it is called',
+      Gherkin.Do.pipe(
+        Given('a real assertion helper and the factory that builds one for a test')(
+          'suite',
+          () =>
+            Effect.sync(() => {
+              const real = { toBe: (): string => 'answered' }
+              const createExpect = (): object => real
+              return {
+                last: Assertions.dispatchingExpect(createExpect)(real),
+                first: Assertions.dispatchingExpect(real, createExpect),
+                real,
+              }
+            }),
+        ),
+        When('it reads the matcher from each handed-out assertion')(
+          'readable',
+          (s) =>
+            Effect.sync(() => ({
+              last: memberIsCallable(s.suite.last, 'toBe'),
+              first: memberIsCallable(s.suite.first, 'toBe'),
+            })),
+        ),
+        Then('both carry the matchers of the real assertion')((s) =>
+          Effect.sync(() => {
+            expect(s.readable.last).toBe(true)
+            expect(s.readable.first).toBe(true)
+            expect(handsThrough(s.suite.last, 'toBe', s.suite.real)).toBe(true)
+            expect(handsThrough(s.suite.first, 'toBe', s.suite.real)).toBe(true)
+          })
+        ),
+      ),
+    )
   })

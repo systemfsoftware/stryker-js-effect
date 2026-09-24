@@ -1689,6 +1689,6 @@ const formatEachNameDataFirst = (template: string, row: EachValue, options?: Eac
 }
 
 export const formatEachName: {
-  (template: string, row: EachValue, options?: EachNameOptions): string
-  (row: EachValue, options?: EachNameOptions): (template: string) => string
+  (template: string, row: EachValue, ...options: readonly [] | readonly [EachNameOptions]): string
+  (row: EachValue): (template: string) => string
 } = dual((args: IArguments): boolean => args.length >= 2, formatEachNameDataFirst)

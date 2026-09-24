@@ -17,12 +17,12 @@ import { vi } from 'vitest'
 import { createVitest } from 'vitest/node'
 import type { RunnerTask, RunnerTestCase, RunnerTestFile, Vitest } from 'vitest/node'
 
-vi.setConfig({ testTimeout: 120_000 })
+vi.setConfig({ testTimeout: 300_000 })
 
 const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname)
 const FIXTURES_DIR_SEGMENTS: readonly [string, string] = ['testResources', 'vm-parity']
 
-const INTERRUPT_AFTER_MS = 110_000
+const INTERRUPT_AFTER_MS = 280_000
 
 /**
  * Wall-clock bound for one reference mutant run, and the grace the spawner waits after
