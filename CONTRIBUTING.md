@@ -48,3 +48,11 @@ pnpm check:ci
 
 - We follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat(cli): ...`, `fix(core): ...`).
 - Ensure all CI gates (`pnpm check:ci`) pass locally before opening a pull request.
+
+## Extending Stryker
+
+Authoring guides ship with the repository under `skills/stryker-mutation-testing/references/`:
+
+- [Mutation Testing Decision Guide](skills/stryker-mutation-testing/references/decision-guide.md) — choose between the in-memory V8 VM, Vitest worker sandboxes, and the shell command runner.
+- [Authoring Custom Ignorers](skills/stryker-mutation-testing/references/authoring-ignorers.md) — write custom AST visitors with `@systemfsoftware/stryker-ignorer-kit`.
+- [Authoring Custom Test Runners](skills/stryker-mutation-testing/references/authoring-runners.md) — build test runner worker plugins with `@systemfsoftware/stryker-js-plugin-interface`.
