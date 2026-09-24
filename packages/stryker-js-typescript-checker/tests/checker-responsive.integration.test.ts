@@ -10,12 +10,10 @@ import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
-import type * as Scope from 'effect/Scope'
 import * as TestClock from 'effect/testing/TestClock'
 import * as NetAddress from 'effect/unstable/net/NetAddress'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
@@ -35,9 +33,22 @@ import {
 } from '../src/ts-compiler.handle.js'
 import type { TSCompiler } from '../src/ts-compiler.handle.js'
 
+interface FakeDiagnostic {
+  readonly category?: number
+  readonly code?: number
+  readonly fileName?: string
+  readonly text?: string
+}
+
+interface FakeSourceFile {
+  readonly statements: readonly []
+  readonly referencedFiles: readonly []
+  readonly typeReferenceDirectives: readonly []
+}
+
 interface TsApiControl {
   sourceFileNames: readonly string[]
-  semanticDiagnostics: () => Promise<readonly unknown[]>
+  semanticDiagnostics: () => Promise<readonly FakeDiagnostic[]>
   onSemanticDiagnostics?: (() => void) | undefined
 }
 
@@ -48,29 +59,29 @@ const tsApi = vi.hoisted((): TsApiControl => ({
 }))
 
 vi.mock('typescript/unstable/async', () => {
-  const sourceFile = {
+  const sourceFile: FakeSourceFile = {
     statements: [],
     referencedFiles: [],
     typeReferenceDirectives: [],
   }
   class FakeProgram {
     getSourceFileNames = (): Promise<readonly string[]> => Promise.resolve(tsApi.sourceFileNames)
-    getSourceFile = (_fileName: string): Promise<unknown> => Promise.resolve(sourceFile)
-    getConfigFileParsingDiagnostics = (): Promise<readonly unknown[]> => Promise.resolve([])
-    getSemanticDiagnostics = (): Promise<readonly unknown[]> => {
+    getSourceFile = (_fileName: string): Promise<FakeSourceFile | undefined> => Promise.resolve(sourceFile)
+    getConfigFileParsingDiagnostics = (): Promise<readonly FakeDiagnostic[]> => Promise.resolve([])
+    getSemanticDiagnostics = (): Promise<readonly FakeDiagnostic[]> => {
       tsApi.onSemanticDiagnostics?.()
       return tsApi.semanticDiagnostics()
     }
-    getProgramDiagnostics = (): Promise<readonly unknown[]> => Promise.resolve([])
+    getProgramDiagnostics = (): Promise<readonly FakeDiagnostic[]> => Promise.resolve([])
   }
   const program = new FakeProgram()
   const project = { program }
   class FakeSnapshot {
-    getProjects = (): unknown[] => [project]
+    getProjects = (): readonly { readonly program: FakeProgram }[] => [project]
     dispose = (): Promise<void> => Promise.resolve()
   }
   class FakeAPI {
-    updateSnapshot = (): Promise<unknown> => Promise.resolve(new FakeSnapshot())
+    updateSnapshot = (): Promise<FakeSnapshot> => Promise.resolve(new FakeSnapshot())
     close = (): Promise<void> => Promise.resolve()
   }
   return {
@@ -162,18 +173,15 @@ interface HeldTypeCheck {
 const armHeldTypeCheck = (control: TsApiControl): HeldTypeCheck => {
   const finish = Deferred.makeUnsafe<void, never>()
   const reached = Deferred.makeUnsafe<void, never>()
-  control.semanticDiagnostics = (): Promise<readonly unknown[]> =>
-    Effect.runPromise(Deferred.await(finish)).then(() => [])
+  control.semanticDiagnostics = (): Promise<readonly FakeDiagnostic[]> =>
+    Deferred.await(finish).pipe(Effect.runPromise).then(() => [])
   control.onSemanticDiagnostics = () => Effect.runSync(Deferred.succeed(reached, void 0))
   return {
     finish: () => Effect.runSync(Deferred.succeed(finish, void 0)),
     reached: Deferred.await(reached).pipe(Effect.runPromise),
   }
 }
-const writeProject = (
-  host: FileSystem.FileSystem,
-  pathService: Path.Path,
-): Effect.Effect<string, FileSystem.PlatformError, Scope.Scope> =>
+const writeProject = (host: FileSystem.FileSystem, pathService: Path.Path) =>
   Effect.gen(function*() {
     const directory = yield* host.makeTempDirectoryScoped({ prefix: 'checker-responsive-' })
     yield* host.writeFileString(pathService.join(directory, 'tsconfig.json'), '{"compilerOptions":{"strict":true}}')

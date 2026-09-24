@@ -553,8 +553,11 @@ const sourceFileOf = (
   Option.match(Arr.head(programs), {
     onNone: () => Effect.succeed(Option.none<SourceFile>()),
     onSome: (program) =>
-      Effect.flatMap(sourceFileIn(program, fileName), (found) =>
-        Option.isSome(found) ? Effect.succeed(found) : sourceFileOf(Arr.drop(programs, 1), fileName)),
+      Effect.filterOrElse(
+        sourceFileIn(program, fileName),
+        Option.isSome,
+        () => sourceFileOf(Arr.drop(programs, 1), fileName),
+      ),
   })
 
 const linkImport = (rt: TSCompilerRuntime, sourceFiles: SourceFiles, fileName: string, specifier: string) =>
@@ -906,8 +909,8 @@ export const close = (self: TSCompiler): Effect.Effect<void> => {
   const rt = self[RuntimeTypeId]
   return Effect.gen(function*() {
     const state = yield* Ref.get(rt.state)
-    yield* Effect.promise(() => state.snapshot?.dispose() ?? Promise.resolve())
-    yield* Effect.promise(() => state.api?.close() ?? Promise.resolve())
+    yield* Effect.promise(() => Promise.resolve(state.snapshot?.dispose()))
+    yield* Effect.promise(() => Promise.resolve(state.api?.close()))
     yield* Ref.update(rt.state, (prev) => ({ ...prev, snapshot: undefined, api: undefined }))
   })
 }
