@@ -12,10 +12,10 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { DiagnosticCategory } from 'typescript/unstable/sync'
 import type { Diagnostic } from 'typescript/unstable/sync'
+import { checkCell } from './Checker.cell.js'
 import { CheckMutantsCommand } from './Checker.schema.js'
 import { DryRunCompileErrors, type CompilerError, NodeNotInGraph } from './Compiler.schema.js'
 import type { CheckMutantsAnswer } from './check-mutants.workflow.js'
@@ -94,14 +94,12 @@ const makeChecker = (options: StrykerOptions, compiler: TSCompiler): Checker['Se
     Effect.map(Effect.forEach(errors, formatDiagnostic), (parts) => parts.join('\n'))
 
   const soloRound = (mutant: (typeof CheckerMutantWire)['Encoded']) =>
-    Result.match(S.decodeUnknownResult(CheckerMutantWire)(mutant), {
-      onFailure: () => Effect.fail(refuse({ mutantIds: [], cause: NodeNotInGraph.make({ fileName: '' }) })),
-      onSuccess: (decoded) =>
-        verify.run(CheckMutantsCommand.make({ mutants: [decoded] })).pipe(
-          Effect.withSpan('typescript-checker.soloRound', { attributes: { 'stryker.mutant.id': decoded.id } }),
-          Effect.map((decision) => decision.results),
-        ),
-    })
+    S.decodeEffect(CheckerMutantWire)(mutant).pipe(
+      Effect.orDie,
+      Effect.flatMap((decoded) => verify.run(CheckMutantsCommand.make({ mutants: [decoded] }))),
+      Effect.withSpan('typescript-checker.soloRound', { attributes: { 'stryker.mutant.id': mutant.id } }),
+      Effect.map((decision) => decision.results),
+    )
 
   const soloRounds = (decision: CheckMutantsAnswer) =>
     Match.value(decision).pipe(

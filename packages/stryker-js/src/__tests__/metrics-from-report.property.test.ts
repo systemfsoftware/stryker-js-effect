@@ -1,4 +1,6 @@
 import { describe, it } from '@effect/vitest'
+import * as Arr from 'effect/Array'
+import * as Option from 'effect/Option'
 import {
   FileResultDictionarySchema,
   type FileResult,
@@ -20,7 +22,12 @@ const partitionsCountsOverChildren = (tree: typeof MetricsResultSchema.Type): bo
 
 const everyLevelSorted = (tree: typeof MetricsResultSchema.Type): boolean => {
   const names = tree.childResults.map((child) => child.name)
-  return names.every((name, index) => index === 0 || names[index - 1].localeCompare(name) <= 0) &&
+  return names.every((name, index) =>
+    Option.match(Arr.get(names, index - 1), {
+      onNone: () => true,
+      onSome: (previous) => previous.localeCompare(name) <= 0,
+    })
+  ) &&
     tree.childResults.every(everyLevelSorted)
 }
 

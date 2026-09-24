@@ -23,10 +23,10 @@ const sameEntries = (left: DocumentRecord, right: DocumentRecord): boolean => {
     leftNames.every((name) => name in right && sameValue(left[name], right[name]))
 }
 
-const sameElements = (left: ReadonlyArray<unknown>, right: ReadonlyArray<unknown>): boolean =>
+const sameElements = <A = unknown>(left: ReadonlyArray<A>, right: ReadonlyArray<A>): boolean =>
   left.length === right.length && left.every((element, index) => sameValue(element, right[index]))
 
-const sameValue = (left: unknown, right: unknown): boolean =>
+const sameValue = <A = unknown>(left: A, right: A): boolean =>
   left === right ||
   (Arr.isArray(left) && Arr.isArray(right) && sameElements(left, right)) ||
   (isDocumentRecord(left) && isDocumentRecord(right) && sameEntries(left, right))
@@ -34,7 +34,7 @@ const sameValue = (left: unknown, right: unknown): boolean =>
 const statedKeys = (document: DocumentRecord): ReadonlyArray<string> =>
   Object.keys(document).filter((key) => key !== '__proto__' && document[key] !== undefined)
 
-const usableEntriesOnly = (document: typeof DocumentSchema.Type): typeof DocumentSchema.Type =>
+const usableEntriesOnly = <A = unknown>(document: DocumentRecord<A>): DocumentRecord<A> =>
   Object.fromEntries(Object.entries(document).filter(([key, value]) => key !== '__proto__' && value !== undefined))
 
 describe('mergeRecords', () => {

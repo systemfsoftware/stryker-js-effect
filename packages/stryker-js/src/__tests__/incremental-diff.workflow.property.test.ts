@@ -1,5 +1,11 @@
 import { describe, it } from '@effect/vitest'
-import { Mutant, PositionSchema } from '@systemfsoftware/stryker-js-instrumenter'
+import {
+  CanonicalFileName,
+  Mutant,
+  MutantId,
+  MutatorName,
+  PositionSchema,
+} from '@systemfsoftware/stryker-js-instrumenter'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -13,9 +19,9 @@ import { EphemeralStatusSchema, RememberedStatusSchema } from '../../tests/__fix
 
 const mutantOf = (id: string, line: number) =>
   Mutant.make({
-    id,
-    fileName: `src/mutant-${line}.ts`,
-    mutatorName: `${id}-mutator`,
+    id: MutantId.make(id),
+    fileName: CanonicalFileName.make(`src/mutant-${line}.ts`),
+    mutatorName: MutatorName.make(`${id}-mutator`),
     replacement: '',
     location: { start: { line, column: 0 }, end: { line, column: 1 } },
   })

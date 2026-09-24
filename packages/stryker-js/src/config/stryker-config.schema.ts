@@ -3,8 +3,6 @@ import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interfa
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
 import * as Record from 'effect/Record'
 import * as S from 'effect/Schema'
 
