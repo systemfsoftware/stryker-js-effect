@@ -4,6 +4,7 @@
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
 import type {
   ArrayExpression,
   ArrowFunctionExpression,
@@ -38,22 +39,22 @@ import type {
   UpdateExpression,
   WhileStatement,
 } from './Ast.js'
-import type { Location, Position } from './Location.schema.js'
+import { MutantNotApplied } from './Instrument.schema.js'
+import type { Location } from './Location.schema.js'
 import { Mutant as ApiMutant } from './Mutant.schema.js'
+import type { PlannedMutant } from './plan-mutants.workflow.js'
 
 import {
   arrayExpression,
   arrowFunctionExpression,
   blockStatement,
   booleanLiteral,
-  buildLineTable,
   callExpression,
   cloneNode,
   identifier,
   memberExpression,
   newExpression,
   nodeType,
-  positionFromLineTable,
   regExpLiteral,
   spanOf,
   stringLiteral,
@@ -64,7 +65,6 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.js'
-import { printNode } from './print/index.js'
 
 export type { Node }
 /**
@@ -94,8 +94,7 @@ export interface Mutant extends Mutable {
   readonly id: string
   readonly fileName: string
   readonly original: Node
-  readonly offset: Position
-  readonly lineTable: readonly number[]
+  readonly location: Location
   readonly replacementCode: string
 }
 function orDefault<T>(value: T | undefined, fallback: T): T {
@@ -103,32 +102,27 @@ function orDefault<T>(value: T | undefined, fallback: T): T {
 }
 
 export function createMutant(
-  id: string,
+  planned: PlannedMutant,
   fileName: string,
   original: Node,
-  specs: Mutable,
-  offset?: Position,
-  lineTable?: readonly number[],
+  replacement: Node,
 ): Mutant {
   return {
-    id,
+    id: planned.id,
     fileName,
     original,
-    offset: orDefault(offset, { column: 0, line: 0 }),
-    lineTable: orDefault(lineTable, buildLineTable('')),
-    replacement: specs.replacement,
-    mutatorName: specs.mutatorName,
-    ignoreReason: specs.ignoreReason,
-    replacementCode: printNode(specs.replacement),
+    location: planned.location,
+    replacement,
+    mutatorName: planned.mutatorName,
+    ignoreReason: planned.ignoreReason,
+    replacementCode: planned.replacementCode,
   }
 }
 export function toApiMutant(mutant: Mutant): ApiMutant {
-  const start = nodeOffset(mutant, 'start')
-  const end = nodeOffset(mutant, 'end')
   const baseFields = {
     fileName: mutant.fileName,
     id: mutant.id,
-    location: toApiLocation(start, end, mutant.lineTable, mutant.offset),
+    location: mutant.location,
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacementCode,
   }
@@ -142,28 +136,25 @@ export function toApiMutant(mutant: Mutant): ApiMutant {
   return ApiMutant.make(baseFields)
 }
 
-function nodeOffset(mutant: Mutant, edge: 'start' | 'end'): number {
-  const span = spanOf(mutant.original)
-  if (span === undefined) {
-    throw new Error(`Node without a ${edge} offset`)
-  }
-  return span[edge]
+export function applyMutant(mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> {
+  return Match.value(originalTree === mutant.original).pipe(
+    Match.when(true, () => Result.succeed(mutant.replacement)),
+    Match.when(false, () => cloneWithReplacement(mutant, originalTree)),
+    Match.exhaustive,
+  )
 }
 
-export function applyMutant(mutant: Mutant, originalTree: Node): Node {
-  if (originalTree === mutant.original) {
-    return mutant.replacement
-  }
-  return cloneWithReplacement(mutant, originalTree)
-}
-
-function cloneWithReplacement(mutant: Mutant, originalTree: Node): Node {
+function cloneWithReplacement(mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> {
   const mutatedAst = cloneNode(originalTree)
   const { original, replacement } = mutant
-  if (hasReplaced(mutatedAst, original, replacement) === false) {
-    throw new Error(`Could not apply mutant ${JSON.stringify(replacement)}.`)
-  }
-  return mutatedAst
+  return Match.value(hasReplaced(mutatedAst, original, replacement)).pipe(
+    Match.when(true, () => Result.succeed(mutatedAst)),
+    Match.when(
+      false,
+      () => Result.fail(new MutantNotApplied({ fileName: mutant.fileName, mutatorName: mutant.mutatorName })),
+    ),
+    Match.exhaustive,
+  )
 }
 
 function hasReplaced(root: Node, original: Node, replacement: Node): boolean {
@@ -186,29 +177,6 @@ function replaceFirstMatch(path: TraversePath, original: Node, replacement: Node
   }
   path.replaceWith(replacement)
   return true
-}
-
-/**
- * Converts a node span to the API location: offsets become positions via the
- * file's line table, then the embedded regions' offsets apply.
- */
-function toApiLocation(
-  startOffset: number,
-  endOffset: number,
-  lineTable: readonly number[],
-  offset: Position,
-): Location {
-  return {
-    start: toPosition(positionFromLineTable(startOffset, lineTable), offset),
-    end: toPosition(positionFromLineTable(endOffset, lineTable), offset),
-  }
-}
-function toPosition(source: Position, offset: Position): Position {
-  let columnOffset = 0
-  if (source.line === 1) {
-    columnOffset = offset.column
-  }
-  return { column: source.column + columnOffset, line: source.line + offset.line - 1 }
 }
 
 export interface MutatorContext {

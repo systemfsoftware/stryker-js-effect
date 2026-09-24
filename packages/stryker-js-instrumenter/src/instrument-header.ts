@@ -89,7 +89,6 @@ const loadHeader = Effect.map(
   parseWithOxc(INSTRUMENTATION_HEADER_SOURCE, 'instrumenter-header.js', 'js'),
   (parsed): readonly Statement[] => {
     instrumentationHeaderValue = parsed.root.body
-    deepFreeze(instrumentationHeaderValue)
     return parsed.root.body
   },
 )
@@ -129,49 +128,4 @@ function commentedHeader(leadingComments: readonly LocatedComment[], header: rea
   const cloned = cloneNode(firstHeader)
   Object.assign(cloned, { leadingComments })
   return cloned
-}
-
-function deepFreeze<A = unknown>(value: A): A {
-  return Option.match(frozenContainer(value), {
-    onNone: () => value,
-    onSome: (frozen) => frozen,
-  })
-}
-
-function frozenContainer<A = unknown>(value: A): Option.Option<A> {
-  return Option.map(Option.filter(Option.some(value), isObjectValue), (object) => {
-    freezableChildren(object).forEach((child) => {
-      deepFreeze(child)
-    })
-    Object.freeze(object)
-    return value
-  })
-}
-
-function freezableChildren(value: Record<string, object | null | undefined>): readonly (object | null | undefined)[] {
-  return [...mapEntries(value), ...setItems(value), ...Object.values(value)]
-}
-
-function mapEntries(value: object): readonly (object | null | undefined)[] {
-  return Option.getOrElse(
-    Option.map(Option.filter(Option.some(value), isMap), (map) => [...map.entries()].flat()),
-    () => NO_CHILDREN,
-  )
-}
-function setItems(value: object): readonly (object | null | undefined)[] {
-  return Option.getOrElse(Option.map(Option.filter(Option.some(value), isSet), (set) => [...set]), () => NO_CHILDREN)
-}
-
-const NO_CHILDREN: readonly (object | null | undefined)[] = Object.freeze([])
-
-function isObjectValue(value: unknown): value is Record<string, object | null | undefined> {
-  return value !== null && typeof value === 'object'
-}
-
-function isMap(value: object): value is Map<object | null | undefined, object | null | undefined> {
-  return value instanceof Map
-}
-
-function isSet(value: object): value is Set<object | null | undefined> {
-  return value instanceof Set
 }
