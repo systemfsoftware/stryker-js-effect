@@ -1,10 +1,29 @@
 import type * as Oxc from '@oxc-project/types'
+
+type Simplify<T> = { [K in keyof T]: T[K] } & {}
+
+type Built<T> = T extends null | undefined ? T
+  : T extends readonly unknown[] ? (number extends T['length'] ? Array<Built<T[number]>> : T)
+  : T extends Oxc.Span ?
+      & {
+        [K in keyof T as K extends keyof Oxc.Span ? never : K]: Child<T[K]>
+      }
+      & Partial<Pick<T, keyof Oxc.Span>>
+  : T
+
+type Child<T> = T extends null | undefined ? T
+  : T extends readonly unknown[] ? (number extends T['length'] ? Array<Child<T[number]>> : T)
+  : T extends Oxc.Span ? Built<T> | T
+  : T
+
+type PrintedNode = Simplify<Built<Oxc.Node>>
 import type {
   BindingPattern,
   BlockStatement,
   Expression,
   IdentifierName,
   IdentifierReference,
+  NodeEntry,
   Node,
   ParamPattern,
   Program,
@@ -94,7 +113,6 @@ const STATEMENT_KINDS: Readonly<Record<string, true>> = {
   IfStatement: true,
   ImportDeclaration: true,
   LabeledStatement: true,
-  ReturnStatement: true,
   SwitchStatement: true,
   ThrowStatement: true,
   TSExportAssignment: true,
@@ -112,7 +130,7 @@ export const spanOf = (node: Node): { start: number; end: number } | undefined =
     Option.map(Option.fromNullishOr(node.range), (range) => ({ start: range[0], end: range[1] })),
   )
 
-export const nodeType = <A = unknown>(node: A): string | undefined =>
+export const nodeType = (node: unknown): string | undefined =>
   Option.getOrUndefined(Option.map(Option.filter(Option.some(node), isAstNode), (ast) => ast.type))
 
 export function isExpressionKind(node: Node | undefined | null): node is Expression {
@@ -466,13 +484,13 @@ const pushComment = (map: Map<Node, SpannedComment[]>, node: Node, comment: Span
     onSome: (list) => list.push(comment),
   })
 
-const isProgram = (node: Program | Node): node is Program => nodeType(node) === 'Program'
-const walkableNode = (root: Program | Node): Oxc.Program | Oxc.Node =>
-  Boolean.match(isProgram(root), {
-    onTrue: () => root,
-    onFalse: () => absurdMember(root),
+const isProgramNode = (node: Program | PrintedNode): node is Program => nodeType(node) === 'Program'
+const walkableNode = (root: Program | PrintedNode): PrintedNode =>
+  Boolean.match(isProgramNode(root), {
+    onTrue: (program) => builtProgramOf(program),
+    onFalse: (node) => node,
   })
-const absurdMember = (root: Program | Node): Oxc.Node => root as Oxc.Node
+const builtProgramOf = (program: Program): PrintedNode => program
 const walker: Walker = (root, visitors) => {
   const ancestors: Oxc.Node[] = []
   walk(walkableNode(root), {

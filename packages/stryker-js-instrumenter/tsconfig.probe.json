@@ -8,6 +8,6 @@
     "emitDeclarationOnly": false,
     "incremental": false
   },
-  "files": ["src/print/zz-premise.tmp.ts"],
+  "files": ["src/print/index.ts"],
   "include": []
 }

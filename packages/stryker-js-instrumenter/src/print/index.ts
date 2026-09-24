@@ -350,14 +350,34 @@ const printNodePrec = (ctx: PrintContext, node: Node | null | undefined, prec: n
     onSome: (value) => dispatchNode(ctx, value, prec),
   })
 
-const isNode = <T extends Node['type']>(type: T) => (node: Node): node is Extract<Node, { type: T }> =>
+type Simplify<T> = { [K in keyof T]: T[K] } & {}
+
+type Built<T> = T extends null | undefined ? T
+  : T extends readonly unknown[] ? (number extends T['length'] ? Array<Built<T[number]>> : T)
+  : T extends Span ?
+      & {
+        [K in keyof T as K extends keyof Span ? never : K]: Child<T[K]>
+      }
+      & Partial<Pick<T, keyof Span>>
+  : T
+
+type Child<T> = T extends null | undefined ? T
+  : T extends readonly unknown[] ? (number extends T['length'] ? Array<Child<T[number]>> : T)
+  : T extends Span ? Built<T> | T
+  : T
+
+type PrintedNode = Simplify<Built<Oxc.Node>>
+
+type PrintedNodeOf<K extends PrintedNode['type']> = Extract<PrintedNode, { type: K }>
+
+const isNode = <T extends PrintedNode['type']>(type: T) => (node: PrintedNode): node is PrintedNodeOf<T> =>
   node.type === type
 
 const unknownNodeText = (type: string): string => `/* unknown:${type} */`
 
-type NodeRenderer<K extends Node['type']> = (context: PrintContext, node: Extract<Node, { type: K }>, precedence: number) => string
+type NodeRenderer<K extends PrintedNode['type']> = (context: PrintContext, node: PrintedNodeOf<K>, precedence: number) => string
 
-const NODE_TEXT: { readonly [K in Node['type']]: NodeRenderer<K> } = {
+const NODE_TEXT: { readonly [K in PrintedNode['type']]: NodeRenderer<K> } = {
   Literal: (_ctx, n, _prec) => literalText(n),
   Identifier: (_ctx, n, _prec) => n.name,
   PrivateIdentifier: (_ctx, n, _prec) => `#${n.name}`,
@@ -526,14 +546,14 @@ const NODE_TEXT: { readonly [K in Node['type']]: NodeRenderer<K> } = {
   TSQualifiedName: (_ctx, n, _prec) => unknownNodeText(n.type),
 }
 
-const typeTextOf = (ctx: PrintContext, node: Node): string =>
+const typeTextOf = (ctx: PrintContext, node: PrintedNode): string =>
   Option.match(Option.filter(Option.some(node), isTSType), {
     onSome: (typed) => printTSTypeToString(ctx, typed),
     onNone: () => unknownNodeText(node.type),
   })
 
-const dispatchNode = (ctx: PrintContext, node: Node, prec: number): string =>
-  (NODE_TEXT[node.type] as NodeRenderer<Node['type']>)(ctx, node, prec)
+const dispatchNode = <K extends PrintedNode['type']>(ctx: PrintContext, node: PrintedNodeOf<K>, prec: number): string =>
+  NODE_TEXT[node.type](ctx, node, prec)
 const statementKindText = (ctx: PrintContext, node: Statement): string =>
   Match.value(node).pipe(
     Match.when(isNode('BlockStatement'), (n) => blockStatementText(ctx, n)),
@@ -1429,12 +1449,11 @@ const TS_TYPE_TEXT: { readonly [K in TSType['type']]: TypeRenderer<K> } = {
   TSJSDocUnknownType: (_ctx, _n) => '?',
   TSRestType: (ctx, n) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`,
   TSOptionalType: (ctx, n) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`,
-  TSNamedTupleMember: (ctx, n) => printNamedTupleMember(ctx, n),
-  TSImportType: (ctx, n) => printTSTypeToString(ctx, n),
 }
 
-const printTSTypeToString = (ctx: PrintContext, node: TSType): string =>
-  (TS_TYPE_TEXT[node.type] as TypeRenderer<TSType['type']>)(ctx, node)
+const printTSTypeToString = <K extends TSType['type']>(ctx: PrintContext, node: Extract<TSType, { type: K }>): string =>
+  TS_TYPE_TEXT[node.type](ctx, node)
+
 const printTSTypeName = (ctx: PrintContext, name: TSTypeReference['typeName']): string =>
   Match.value(name).pipe(
     Match.when(isNode('TSQualifiedName'), (n) => `${printTSTypeName(ctx, n.left)}.${n.right.name}`),
