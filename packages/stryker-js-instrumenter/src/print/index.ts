@@ -4,7 +4,7 @@ import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import { isNodeArg, type PrintedNode } from '../Ast.handle.js'
+import { isNodeArg } from '../Ast.handle.js'
 import type {
   AccessorProperty,
   ArrayExpression,
@@ -354,10 +354,9 @@ const unknownNodeText = (type: string): string => `/* unknown:${type} */`
 
 type NodeText = (context: PrintContext, precedence: number) => string
 
-const nodeText = Match.type<PrintedNode>().pipe(
+const nodeText = Match.type<Node>().pipe(
   Match.discriminatorsExhaustive('type')({
     Literal: (n) => () => literalText(n),
-    Identifier: (n) => () => n.name,
     PrivateIdentifier: (n) => () => `#${n.name}`,
     ThisExpression: () => () => 'this',
     Super: () => () => 'super',
@@ -525,13 +524,12 @@ const nodeText = Match.type<PrintedNode>().pipe(
   }),
 )
 
-const typeTextOf = (ctx: PrintContext, node: PrintedNode): string =>
+const typeTextOf = (ctx: PrintContext, node: Node): string =>
   Option.match(Option.filter(Option.some(node), isTSType), {
     onSome: (typed) => printTSTypeToString(ctx, typed),
     onNone: () => unknownNodeText(node.type),
   })
 
-const dispatchNode = (ctx: PrintContext, node: PrintedNode, prec: number): string => nodeText(node)(ctx, prec)
 const statementKindText = (ctx: PrintContext, node: Statement): string =>
   Match.type<Statement>().pipe(
     Match.discriminators('type')({
@@ -1354,13 +1352,16 @@ const tsInterfaceBodyText = (ctx: PrintContext, node: TSInterfaceBody): string =
   })
 
 const printTSSignatureText = (ctx: PrintContext, sig: TSInterfaceBody['body'][number]): string =>
-  Match.value(sig).pipe(
-    Match.when(isNode('TSPropertySignature'), (n) => printTSPropertySignatureText(ctx, n)),
-    Match.when(isNode('TSIndexSignature'), (n) => printTSIndexSignatureText(ctx, n)),
-    Match.when(isNode('TSCallSignatureDeclaration'), (n) => printTSCallSignatureText(ctx, n)),
-    Match.when(isNode('TSConstructSignatureDeclaration'), (n) => printTSConstructSignatureText(ctx, n)),
-    Match.when(isNode('TSMethodSignature'), (n) => printTSMethodSignatureText(ctx, n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      TSPropertySignature: (n) => printTSPropertySignatureText(ctx, n),
+      TSIndexSignature: (n) => printTSIndexSignatureText(ctx, n),
+      TSCallSignatureDeclaration: (n) => printTSCallSignatureText(ctx, n),
+      TSConstructSignatureDeclaration: (n) => printTSConstructSignatureText(ctx, n),
+      TSMethodSignature: (n) => printTSMethodSignatureText(ctx, n),
+    }),
     Match.orElse(() => ''),
+    Match.exhaustive,
   )
 
 const printTSPropertySignatureText = (ctx: PrintContext, node: TSPropertySignature): string =>
@@ -1394,10 +1395,13 @@ const printEnumMemberText = (ctx: PrintContext, member: TSEnumDeclaration['body'
   `${identifierOrLiteralNameText(ctx, member.id)}${initializerText(ctx, member.initializer)},`
 
 const identifierOrLiteralNameText = (ctx: PrintContext, id: Node): string =>
-  Match.value(id).pipe(
-    Match.when(isNode('Identifier'), (n) => identifierNameText(n)),
-    Match.when(isNode('Literal'), (n) => literalText(n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      Identifier: (n) => identifierNameText(n),
+      Literal: (n) => literalText(n),
+    }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
+    Match.exhaustive,
   )
 
 const tsModuleDeclarationText = (ctx: PrintContext, node: Extract<Node, { type: 'TSModuleDeclaration' }>): string =>
@@ -1425,10 +1429,12 @@ const moduleReferenceText = (
   ctx: PrintContext,
   reference: TSImportEqualsDeclaration['moduleReference'],
 ): string =>
-  Match.value(reference).pipe(
-    Match.when(isNode('TSExternalModuleReference'), (n) => `require(${externalModuleArgumentText(n.expression.value)})`,
-    ),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      TSExternalModuleReference: (n) => `require(${externalModuleArgumentText(n.expression.value)})`,
+    }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
+    Match.exhaustive,
   )
 
 const tsTypeListText = (ctx: PrintContext, types: readonly TSType[], separator: string): string =>
@@ -1458,12 +1464,15 @@ const printTupleType = (ctx: PrintContext, elements: TSTupleType['elementTypes']
   `[${elements.map((element) => printTupleElement(ctx, element)).join(', ')}]`
 
 const printTupleElement = (ctx: PrintContext, element: TSTupleType['elementTypes'][number]): string =>
-  Match.value(element).pipe(
-    Match.when(isNode('TSRestType'), (n) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`),
-    Match.when(isNode('TSOptionalType'), (n) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`),
-    Match.when(isNode('TSNamedTupleMember'), (n) => printNamedTupleMember(ctx, n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      TSRestType: (n) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`,
+      TSOptionalType: (n) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`,
+      TSNamedTupleMember: (n) => printNamedTupleMember(ctx, n),
+    }),
     Match.when(isTSType, (n) => printTSTypeToString(ctx, n)),
     Match.orElse(() => ''),
+    Match.exhaustive,
   )
 
 const printNamedTupleMember = (ctx: PrintContext, member: TSNamedTupleMember): string =>
@@ -1476,17 +1485,23 @@ const printTypeClause = (ctx: PrintContext, keyword: string, type: TSType | null
   })
 
 const printTypeQueryName = (ctx: PrintContext, node: TSTypeQuery): string =>
-  Match.value(node.exprName).pipe(
-    Match.when(isNode('TSImportType'), (n) => printTSTypeToString(ctx, n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      TSImportType: (n) => printTSTypeToString(ctx, n),
+    }),
     Match.orElse((n) => printTSTypeName(ctx, n)),
+    Match.exhaustive,
   )
 
 const printTSTypeName = (ctx: PrintContext, name: TSTypeReference['typeName']): string =>
-  Match.value(name).pipe(
-    Match.when(isNode('TSQualifiedName'), (n) => `${printTSTypeName(ctx, n.left)}.${n.right.name}`),
-    Match.when(isNode('Identifier'), (n) => n.name),
-    Match.when(isNode('ThisExpression'), () => 'this'),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      TSQualifiedName: (n) => `${printTSTypeName(ctx, n.left)}.${n.right.name}`,
+      Identifier: (n) => n.name,
+      ThisExpression: () => 'this',
+    }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
+    Match.exhaustive,
   )
 
 const printTSImportTypeQualifier = (ctx: PrintContext, qualifier: TSImportType['qualifier']): string =>
@@ -1499,11 +1514,14 @@ const printTSImportTypeQualifierNode = (
   ctx: PrintContext,
   qualifier: NonNullable<TSImportType['qualifier']>,
 ): string =>
-  Match.value(qualifier).pipe(
-    Match.when(isNode('Identifier'), (n) => n.name),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      Identifier: (n) => n.name,
+    }),
     Match.orElse(
       (n) => `${printTSImportTypeQualifier(ctx, n.left)}.${n.right.name}`,
     ),
+    Match.exhaustive,
   )
 
 const printTSImportType = (ctx: PrintContext, node: TSImportType): string =>
@@ -1552,16 +1570,21 @@ const printPredicateAnnotation = (ctx: PrintContext, node: TSTypePredicate): str
   })
 
 const printTSLiteralType = (ctx: PrintContext, literal: TSLiteralType['literal']): string =>
-  Match.value(literal).pipe(
-    Match.when(isNode('Literal'), (n) => literalText(n)),
-    Match.when(isNode('TemplateLiteral'), (n) => templateLiteralText(ctx, n)),
-    Match.when(isNode('UnaryExpression'), (n) =>
-        `${n.operator}${Match.value(n.argument).pipe(
-          Match.when(isNode('Literal'), (argument) => literalText(argument)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      Literal: (n) => literalText(n),
+      TemplateLiteral: (n) => templateLiteralText(ctx, n),
+      UnaryExpression: (n) =>
+        `${n.operator}${Match.type<Node>().pipe(
+          Match.discriminators('type')({
+            Literal: (argument) => literalText(argument),
+          }),
           Match.orElse(() => ''),
-        )}`,
-    ),
+          Match.exhaustive,
+        )(n.argument)}`,
+    }),
     Match.orElse(() => ''),
+    Match.exhaustive,
   )
 
 const printJSDocPostfixModifier = (
@@ -1641,7 +1664,7 @@ const isFunctionNode = (node: Node): node is FunctionNode => FUNCTION_KINDS[node
 
 const isAssignmentPattern = (node: Node): node is AssignmentPattern => node.type === 'AssignmentPattern'
 
-const isIdentifierNode = (node: PrintedNode | null | undefined): node is PrintedNodeOf<'Identifier'> =>
+const isIdentifierNode = (node: Node | null | undefined): node is IdentifierReference =>
   node?.type === 'Identifier'
 
 const identifierName = (node: Node | null | undefined): string | undefined =>
@@ -1650,10 +1673,17 @@ const identifierName = (node: Node | null | undefined): string | undefined =>
 const identifierNameText = (node: Node | null | undefined): string => identifierName(node) ?? ''
 
 const privateIdentifierText = (node: Node | null | undefined): string =>
-  Match.value(node).pipe(
-    Match.when(isNode('PrivateIdentifier'), (n) => `#${n.name}`),
-    Match.orElse(() => ''),
-  )
+  Option.match(Option.fromNullishOr(node), {
+    onNone: () => '',
+    onSome: (value) =>
+      Match.type<Node>().pipe(
+        Match.discriminators('type')({
+          PrivateIdentifier: (n) => `#${n.name}`,
+        }),
+        Match.orElse(() => ''),
+        Match.exhaustive,
+      )(value),
+  })
 
 const precOf = Match.type<Node>().pipe(
   Match.discriminators('type')({
@@ -1713,9 +1743,12 @@ const ARRAY_ELEMENT_WRAPPED_KINDS: Readonly<Record<string, true>> = {
 }
 
 const jsxAttributeNameText = (name: JSXAttribute['name']): string =>
-  Match.value(name).pipe(
-    Match.when(isNode('JSXIdentifier'), (n) => n.name),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      JSXIdentifier: (n) => n.name,
+    }),
     Match.orElse((n) => `${n.namespace.name}:${n.name.name}`),
+    Match.exhaustive,
   )
 
 interface PropertyLike {
@@ -1881,9 +1914,12 @@ const importAttributeText = (attribute: ImportAttribute): string =>
   `${importAttrKeyText(attribute.key)}: ${JSON.stringify(attribute.value.value)}`
 
 const importAttrKeyText = (key: ImportAttribute['key']): string =>
-  Match.value(key).pipe(
-    Match.when(isNode('Identifier'), (n) => n.name),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      Identifier: (n) => n.name,
+    }),
     Match.orElse((n) => JSON.stringify(n.value)),
+    Match.exhaustive,
   )
 
 const bareArrowParamName = (node: ArrowFunctionExpression): string => {
@@ -1903,9 +1939,7 @@ const bareParameterName = (param: Option.Option<ParamPattern>): string =>
     onNone: () => '',
   })
 
-const isUnannotatedIdentifier = (
-  param: ParamPattern,
-): param is PrintedNodeOf<'Identifier'> =>
+const isUnannotatedIdentifier = (param: ParamPattern): param is IdentifierReference =>
   param.type === 'Identifier' && param.typeAnnotation == null
 
 const bareParameterNameOf = (param: ParamPattern): string =>
@@ -1980,10 +2014,13 @@ const isBareDefaultExport = (
 const typeParameterModifiersText = (node: TSTypeParameterDeclaration['params'][number]): string =>
   `${flagText(node.in, 'in ')}${flagText(node.out, 'out ')}${flagText(node.const, 'const ')}`
 
-const typePredicateParameterText = (parameterName: PrintedNode): string =>
-  Match.value(parameterName).pipe(
-    Match.when(isNode('TSThisType'), () => 'this'),
+const typePredicateParameterText = (parameterName: TSTypePredicate['parameterName']): string =>
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      TSThisType: () => 'this',
+    }),
     Match.orElse((n) => identifierNameText(n)),
+    Match.exhaustive,
   )
 
 const externalModuleArgumentText = (value: string): string =>

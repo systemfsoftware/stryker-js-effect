@@ -1,24 +1,3 @@
-import type * as Oxc from '@oxc-project/types'
-
-type Simplify<T> = { [K in keyof T]: T[K] } & {}
-
-type Built<T> = T extends null | undefined ? T
-  : T extends readonly unknown[] ? (number extends T['length'] ? Array<Built<T[number]>> : T)
-  : T extends Oxc.Span ?
-      & {
-        [K in keyof T as K extends keyof Oxc.Span ? never : K]: Child<T[K]>
-      }
-      & Partial<Pick<T, keyof Oxc.Span>>
-  : T
-
-type Child<T> = T extends null | undefined ? T
-  : T extends readonly unknown[] ? (number extends T['length'] ? Array<Child<T[number]>> : T)
-  : T extends Oxc.Span ? Built<T> | T
-  : T
-
-export type PrintedNode = Simplify<Built<Oxc.Node>>
-
-export type PrintedNodeOf<K extends PrintedNode['type']> = Extract<PrintedNode, { type: K }>
 import type {
   BindingPattern,
   BlockStatement,
@@ -416,57 +395,54 @@ export const attachComments: {
 )
 
 interface CommentGroups {
-  readonly leading: Map<PrintedNode, SpannedComment[]>
-  readonly trailing: Map<PrintedNode, SpannedComment[]>
+  readonly leading: Map<Node, SpannedComment[]>
+  readonly trailing: Map<Node, SpannedComment[]>
 }
 
 interface CommentHost {
   readonly field: keyof CommentGroups
-  readonly node: PrintedNode
+  readonly node: Node
 }
 
-const groupComments = (
-  nodes: ReadonlyArray<PrintedNodeEntry>,
-  comments: ReadonlyArray<SpannedComment>,
-): CommentGroups => {
+const groupComments = (nodes: ReadonlyArray<NodeEntry>, comments: ReadonlyArray<SpannedComment>): CommentGroups => {
   const groups: CommentGroups = { leading: new Map(), trailing: new Map() }
   comments.forEach((comment) => hostComment(nodes, comment, groups))
   return groups
 }
 
-const hostComment = (nodes: ReadonlyArray<PrintedNodeEntry>, comment: SpannedComment, groups: CommentGroups): void =>
+const hostComment = (nodes: ReadonlyArray<NodeEntry>, comment: SpannedComment, groups: CommentGroups): void =>
   Option.match(Option.fromNullishOr(commentHost(nodes, comment)), {
     onNone: () => undefined,
     onSome: (host) => pushComment(groups[host.field], host.node, comment),
   })
 
-const commentHost = (
-  nodes: ReadonlyArray<PrintedNodeEntry>,
-  comment: SpannedComment,
-): CommentHost | undefined => {
-  const hosts: ReadonlyArray<{ readonly field: keyof CommentGroups; readonly node: PrintedNode | undefined }> = [
+const commentHost = (nodes: ReadonlyArray<NodeEntry>, comment: SpannedComment): CommentHost | undefined => {
+  const hosts: ReadonlyArray<{ readonly field: keyof CommentGroups; readonly node: Node | undefined }> = [
     { field: 'leading', node: followingNode(nodes, comment) },
     { field: 'trailing', node: precedingStatement(nodes, comment) },
   ]
   return hosts.find((candidate): candidate is CommentHost => candidate.node !== undefined)
 }
 
-const followingNode = (nodes: ReadonlyArray<PrintedNodeEntry>, comment: SpannedComment): PrintedNode | undefined =>
-  Option.getOrUndefined(Option.map(Option.fromNullishOr(nodes.find((candidate) => candidate.start >= comment.end)), (entry) => entry.node))
-
-const precedingStatement = (nodes: ReadonlyArray<PrintedNodeEntry>, comment: SpannedComment): PrintedNode | undefined =>
+const followingNode = (nodes: ReadonlyArray<NodeEntry>, comment: SpannedComment): Node | undefined =>
   Option.getOrUndefined(
     Option.map(
-      Option.fromNullishOr(nodes.findLast((candidate) => candidate.end <= comment.start && isStatementKind(candidate.node))),
+      Option.fromNullishOr(nodes.find((candidate) => candidate.start >= comment.end)),
       (entry) => entry.node,
     ),
   )
 
-const assignComments = (
-  map: Map<PrintedNode, SpannedComment[]>,
-  lineTable: LineTable,
-  field: 'leadingComments' | 'trailingComments',
-): void =>
+const precedingStatement = (nodes: ReadonlyArray<NodeEntry>, comment: SpannedComment): Node | undefined =>
+  Option.getOrUndefined(
+    Option.map(
+      Option.fromNullishOr(
+        nodes.findLast((candidate) => candidate.end <= comment.start && isStatementKind(candidate.node)),
+      ),
+      (entry) => entry.node,
+    ),
+  )
+
+const assignComments = (map: Map<Node, SpannedComment[]>, lineTable: LineTable, field: 'leadingComments' | 'trailingComments'): void =>
   map.forEach((list, node) =>
     Object.assign(node, {
       [field]: list.map((comment) => ({
@@ -479,7 +455,7 @@ const assignComments = (
     }),
   )
 
-const pushComment = (map: Map<PrintedNode, SpannedComment[]>, node: PrintedNode, comment: SpannedComment): void => {
+const pushComment = (map: Map<Node, SpannedComment[]>, node: Node, comment: SpannedComment): void => {
   Option.match(Option.fromNullishOr(map.get(node)), {
     onNone: () => {
       map.set(node, [comment])
@@ -489,24 +465,17 @@ const pushComment = (map: Map<PrintedNode, SpannedComment[]>, node: PrintedNode,
     },
   })
 }
+const isProgramNode = (node: Program | Node): node is Program => nodeType(node) === 'Program'
+export type AstWalker = (root: Program | Node, visitors: WalkVisitors) => void
 
-const isProgramNode = (node: Program | PrintedNode): node is Program => nodeType(node) === 'Program'
-const walkableNode = (root: Program | PrintedNode): PrintedNode =>
-  Match.value(root).pipe(
-    Match.when(isProgramNode, builtProgramOf),
-    Match.orElse((node) => node),
-  )
-const builtProgramOf = (program: Program): PrintedNode => program
-export type PrintedAstWalker = (root: Program | PrintedNode, visitors: PrintedWalkVisitors) => void
-
-export interface PrintedWalkVisitors {
-  readonly enter?: (node: PrintedNode, ancestors: readonly PrintedNode[]) => void
-  readonly leave?: (node: PrintedNode, ancestors: readonly PrintedNode[]) => void
+export interface WalkVisitors {
+  readonly enter?: (node: Node, ancestors: readonly Node[]) => void
+  readonly leave?: (node: Node, ancestors: readonly Node[]) => void
 }
 
-const walker: PrintedAstWalker = (root, visitors) => {
-  const ancestors: PrintedNode[] = []
-  walk(walkableNode(root), {
+const walker: AstWalker = (root, visitors) => {
+  const ancestors: Node[] = []
+  walk(root, {
     enter(node, _parent, _context) {
       visitors.enter?.(node, [...ancestors])
       ancestors.push(node)
@@ -518,8 +487,8 @@ const walker: PrintedAstWalker = (root, visitors) => {
   })
 }
 
-const collectNodes = (root: Program | Node): PrintedNodeEntry[] => {
-  const out: PrintedNodeEntry[] = []
+const collectNodes = (root: Program | Node): NodeEntry[] => {
+  const out: NodeEntry[] = []
   walker(root, {
     enter(node) {
       appendEntry(node, out)
@@ -528,13 +497,13 @@ const collectNodes = (root: Program | Node): PrintedNodeEntry[] => {
   return out
 }
 
-export interface PrintedNodeEntry {
-  readonly node: PrintedNode
+export interface NodeEntry {
+  readonly node: Node
   readonly start: number
   readonly end: number
 }
 
-const appendEntry = (node: PrintedNode, out: PrintedNodeEntry[]): void => {
+const appendEntry = (node: Node, out: NodeEntry[]): void => {
   Option.match(Option.fromNullishOr(spanOf(node)), {
     onNone: () => undefined,
     onSome: (span) => {
@@ -556,17 +525,17 @@ export interface AstNodeRecord {
     | readonly AstNodeRecord[]
 }
 
-export function isAstNode(value: unknown): value is PrintedNode & AstNodeRecord {
+export function isAstNode(value: unknown): value is Node & AstNodeRecord {
   return Predicate.isObject(value) && typeof value['type'] === 'string'
 }
 
 export interface TraversePath {
-  readonly node: PrintedNode
+  readonly node: Node
   readonly parentPath: TraversePath | null
   skip(): void
   find(predicate: (path: TraversePath) => boolean): TraversePath | undefined
   getStatementParent(): TraversePath | undefined
-  replaceWith(node: PrintedNode): void
+  replaceWith(node: Node): void
   isExpression(): boolean
   isStatement(): boolean
 }
@@ -582,8 +551,8 @@ const COMMENT_KEYS: Readonly<Record<string, true>> = { leadingComments: true, tr
 
 const isCommentKey = <A = unknown>(key: A): boolean => typeof key === 'string' && COMMENT_KEYS[key] === true
 
-const walkTraverse = (root: Program | PrintedNode, stack: TraversePath[], visitors: TraverseVisitors): void => {
-  walk(walkableNode(root), {
+const walkTraverse = (root: Program | Node, stack: TraversePath[], visitors: TraverseVisitors): void => {
+  walk(root, {
     enter(node, _parent, context) {
       readPath(stack, node, this, context, visitors)
     },
@@ -603,7 +572,7 @@ export const traverse: {
 
 const readPath = (
   stack: TraversePath[],
-  node: PrintedNode,
+  node: Node,
   controls: WalkerThisContextEnter,
   context: WalkerCallbackContext,
   visitors: TraverseVisitors,
@@ -636,7 +605,7 @@ const keyOf = (context: WalkerCallbackContext): string | undefined =>
   Option.getOrUndefined(Option.filter(Option.some(context.key), Predicate.isString))
 
 const createPath = (
-  node: PrintedNode,
+  node: Node,
   parentPath: TraversePath | null,
   controls: WalkerThisContextEnter,
   context: WalkerCallbackContext,
@@ -686,24 +655,23 @@ const replaceInSlot = (
   parentPath: TraversePath | null,
   key: string | undefined,
   index: number | null,
-  replacement: PrintedNode,
+  replacement: Node,
 ): void =>
   Option.match(Option.fromNullishOr(parentPath), {
     onNone: () => undefined,
     onSome: (parent) => writeInto(parent.node, key, index, replacement),
   })
 
-const writeInto = <A = unknown, B = unknown>(parent: A, key: B, index: number | null, replacement: PrintedNode): void =>
+const writeInto = <A = unknown, B = unknown>(parent: A, key: B, index: number | null, replacement: Node): void =>
   Option.match(Option.filter(Option.some(parent), isAstNode), {
     onNone: () => undefined,
     onSome: (ast) => writeAtKey(ast, key, index, replacement),
   })
-
 const writeAtKey = <A = unknown>(
   parent: Record<string, AstNodeRecord[string]>,
   key: A,
   index: number | null,
-  replacement: PrintedNode,
+  replacement: Node,
 ): void =>
   Option.match(Option.filter(Option.some(key), Predicate.isString), {
     onNone: () => undefined,
@@ -714,20 +682,20 @@ const writeAtSlot = (
   parent: Record<string, AstNodeRecord[string]>,
   key: string,
   index: number | null,
-  replacement: PrintedNode,
+  replacement: Node,
 ): void =>
   Match.value(index).pipe(
     Match.when(Match.null, () => overwrite(parent, key, replacement)),
     Match.orElse((position) => writeElement(parent[key], position, replacement)),
   )
 
-const overwrite = (parent: Record<string, AstNodeRecord[string]>, key: string, replacement: PrintedNode): void => {
+const overwrite = (parent: Record<string, AstNodeRecord[string]>, key: string, replacement: Node): void => {
   parent[key] = replacement
 }
 
-const isPrintedNodeList = (value: unknown): value is Array<PrintedNode> => Array.isArray(value)
-const writeElement = <A = unknown>(container: A, index: number, replacement: PrintedNode): void =>
-  Option.match(Option.filter(Option.some(container), isPrintedNodeList), {
+const isNodeList = (value: unknown): value is Array<Node> => Array.isArray(value)
+const writeElement = <A = unknown>(container: A, index: number, replacement: Node): void =>
+  Option.match(Option.filter(Option.some(container), isNodeList), {
     onNone: () => undefined,
     onSome: (list) => {
       list[index] = replacement
