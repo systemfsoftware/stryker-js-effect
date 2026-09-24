@@ -53,7 +53,8 @@ import {
 } from './route-cli-request.workflow.js'
 import { mergeReportsCell } from './merge-reports.cell.js'
 import { MergeReportsFailed } from './merge-reports.schema.js'
-import { RunExit, RunOutcomeCommand, classifyRunOutcome, type RunOutcomeDecision, type RunOutcomeError } from './classify-run-outcome.workflow.js'
+import { RunExit, classifyRunOutcome, type RunOutcomeDecision, type RunOutcomeError } from './classify-run-outcome.workflow.js'
+import { runOutcomeCommandOf } from './run-outcome-of-exit.js'
 import { RunEventDrain, type RunEventStreamPort, type RunEventStream } from './run-event-stream.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { StrykerError } from './stryker-error.schema.js'
@@ -718,7 +719,7 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
               strykerCliCell.run({ argv: options.argv, environment }),
             ),
           )
-          const outcome = classifyRunOutcome(RunOutcomeCommand.fromExit({ exit, argv: options.argv }))
+          const outcome = classifyRunOutcome(runOutcomeCommandOf({ exit, argv: options.argv }))
           const code = RunExitCode.fromOutcome(
             Result.match(outcome, {
               onSuccess: (decision) => decision,
