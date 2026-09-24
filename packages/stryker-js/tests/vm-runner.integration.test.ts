@@ -328,7 +328,11 @@ const workerLifetime = (fixture: SuiteFixture): Effect.Effect<WorkerLifetime, ne
     const before = workerResourceNames()
     const live = yield* Effect.gen(function*() {
       const runner = yield* runnerFor(fixture)
-      const dryRun = yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false })
+      const dryRun = yield* runner.dryRun({
+        timeout: COMPLETION_BUDGET_MS,
+        coverageAnalysis: 'off',
+        disableBail: false,
+      })
       return { dryRun, during: workerResourceNames() }
     }).pipe(Effect.scoped)
     return { before, during: live.during, after: workerResourceNames(), dryRun: live.dryRun }
@@ -346,7 +350,9 @@ const suiteFailure = (
         new Error('the child-process runner was built for an in-memory run'),
       ),
     )
-    return yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }).pipe(Effect.exit)
+    return yield* runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }).pipe(
+      Effect.exit,
+    )
   }).pipe(
     Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer)),
     Effect.scoped,
@@ -467,7 +473,7 @@ Feature('Verifying mutants without spawning a child process')
           (s) =>
             Effect.flatMap(
               runnerFor(s.suite),
-              (runner) => runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }),
+              (runner) => runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }),
             ).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
         ),
         Then('every test is reported separately with its own outcome and hook history')((s) =>
@@ -549,7 +555,7 @@ Feature('Verifying mutants without spawning a child process')
           (s) =>
             Effect.flatMap(
               runnerFor(s.suite),
-              (runner) => runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }),
+              (runner) => runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }),
             ).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
         ),
         Then('the run reports the late failure even though its test passed')((s) =>
@@ -708,7 +714,11 @@ Feature('Verifying mutants without spawning a child process')
               const first = yield* runner.dryRun({ timeout: 300, coverageAnalysis: 'off', disableBail: false }).pipe(
                 Effect.exit,
               )
-              const second = yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false })
+              const second = yield* runner.dryRun({
+                timeout: COMPLETION_BUDGET_MS,
+                coverageAnalysis: 'off',
+                disableBail: false,
+              })
               return { first, second }
             }).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
         ),
@@ -736,10 +746,18 @@ Feature('Verifying mutants without spawning a child process')
           (s) =>
             Effect.gen(function*() {
               const runner = yield* runnerFor(s.suite)
-              const first = yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }).pipe(
+              const first = yield* runner.dryRun({
+                timeout: COMPLETION_BUDGET_MS,
+                coverageAnalysis: 'off',
+                disableBail: false,
+              }).pipe(
                 Effect.exit,
               )
-              const second = yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false })
+              const second = yield* runner.dryRun({
+                timeout: COMPLETION_BUDGET_MS,
+                coverageAnalysis: 'off',
+                disableBail: false,
+              })
               return { first, second }
             }).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
         ),
@@ -773,7 +791,8 @@ Feature('Verifying mutants without spawning a child process')
               const runners = yield* Effect.forEach(s.suites, (suite) => runnerFor(suite))
               const results = yield* Effect.forEach(
                 runners,
-                (runner) => runner.dryRun({ timeout: 10000, coverageAnalysis: 'off', disableBail: false }),
+                (runner) =>
+                  runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }),
                 { concurrency: 'unbounded' },
               )
               const stamps = yield* Effect.all([
@@ -817,7 +836,7 @@ Feature('Verifying mutants without spawning a child process')
           (s) =>
             Effect.flatMap(
               runnerFor(s.suites),
-              (runner) => runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }),
+              (runner) => runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }),
             ).pipe(Effect.ensuring(removeSuite(s.suites.directory))),
         ),
         Then('both files pass, so the hook stayed with the file that declared it')((s) =>
