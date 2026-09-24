@@ -59,8 +59,7 @@ const hasStackText = (value: unknown): value is { readonly stack: string } =>
 
 const stackOf = <A>(cause: A): string =>
   Option.match(Option.filter(Option.some(cause), hasStackText), {
-    onNone: () =>
-      Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
+    onNone: () => Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
     onSome: (thrown) => thrown.stack,
   })
 

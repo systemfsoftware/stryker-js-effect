@@ -30,7 +30,31 @@ const malformedHitLimit = (text: string) =>
 
 export const HitLimitReason = HitLimitReasonText.pipe(
   S.decodeTo(
-    S.Struct({ count: S.Finite, limit: S.Finite }),
+    S.Struct({ count: S.Natural, limit: S.Natural }),
     SchemaTransformation.makeTransformation({ decode: limitsOf, encode: textOf }),
   ),
 )
+
+if (import.meta.vitest !== void 0) {
+  // @effect/vitest is dev-only; a static import would put it in the library import graph of every consumer.
+  const { it } = await import('@effect/vitest')
+
+  it.prop('∀limits_HitLimitReason_rendersTheBaselineText', [HitLimitReason], ([limits]) =>
+    Result.match(S.encodeResult(HitLimitReason)(limits), {
+      onFailure: () => false,
+      onSuccess: (text) => text === `${HitLimitReasonPrefix.literal} (${limits.count}/${limits.limit})`,
+    }))
+
+  it.prop('∀limits_HitLimitReason_roundTripsThroughTheText', [HitLimitReason], ([limits]) =>
+    Result.match(S.encodeResult(HitLimitReason)(limits), {
+      onFailure: () => false,
+      onSuccess: (text) =>
+        Result.match(S.decodeResult(HitLimitReason)(text), {
+          onFailure: () => false,
+          onSuccess: (parsed) => parsed.count === limits.count && parsed.limit === limits.limit,
+        }),
+    }))
+
+  it.prop('∀text_HitLimitReason_decidesOnlyFullTallies', [S.String], ([text]) =>
+    Result.isSuccess(S.decodeResult(HitLimitReason)(text)) === HIT_LIMIT_REASON_SHAPE.test(text))
+}

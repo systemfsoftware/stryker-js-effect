@@ -9,10 +9,7 @@ export { RunEventWireLine } from './run-event-wire.schema.js'
 import * as EffectSchema from 'effect/Schema'
 export { EffectSchema as S }
 
-export {
-  calculateMetrics,
-  countMutants,
-} from './calculate-metrics.js'
+export { MetricsResultFromReport } from './reporting/metrics-from-report.schema.js'
 
 export {
   checkerDuration,

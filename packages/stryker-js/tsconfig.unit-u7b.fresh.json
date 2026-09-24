@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false
+  },
+  "include": [
+    "src/classify-exit.workflow.ts",
+    "src/classify-worker-exit.workflow.ts",
+    "src/drivers/node.ts",
+    "src/pooled-test-runner.handle.ts",
+    "src/spawned-socket-worker.handle.ts",
+    "src/Worker.schema.ts",
+    "src/mod.ts",
+    "src/__tests__/classify-exit.workflow.property.test.ts",
+    "src/__tests__/classify-worker-exit.workflow.property.test.ts",
+    "tests/worker-launcher.integration.test.ts"
+  ]
+}

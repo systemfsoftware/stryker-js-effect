@@ -1,4 +1,5 @@
 import * as api from '@opentelemetry/api'
+import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
@@ -15,18 +16,44 @@ import type { TraceContextParts } from '@systemfsoftware/stryker-js-plugin-inter
 import {
   PropagatedTrace,
   TraceContextMiddleware,
+  TraceContextPartsSchema,
   TraceContextReference,
   Traceparent,
   TraceparentHeader,
   TracestateHeader,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 
-import { TraceContextPartsFromEffectSpan, TraceContextPartsFromSpanContext } from './trace-parts.schema.js'
+import { TraceContextPartsFromEffectSpan } from './trace-parts.schema.js'
+
+const serializedTraceStateOf = (traceState: api.TraceState | undefined) =>
+  Option.filter(
+    Option.map(Option.fromUndefinedOr(traceState), (state) => state.serialize()),
+    (serialized) => serialized.length > 0,
+  )
+
+const traceStateFieldOf = (traceState: api.TraceState | undefined) =>
+  Option.match(serializedTraceStateOf(traceState), {
+    onNone: () => ({}),
+    onSome: (serialized) => ({ traceState: serialized }),
+  })
+
+const partsOfSpanContext = (context: api.SpanContext) =>
+  Option.flatMap(
+    Option.liftPredicate(context, (candidate) => api.trace.isSpanContextValid(candidate)),
+    (valid) =>
+      S.decodeOption(TraceContextPartsSchema)({
+        version: '00',
+        traceId: valid.traceId,
+        spanId: valid.spanId,
+        traceFlags: valid.traceFlags,
+        ...traceStateFieldOf(valid.traceState),
+      }),
+  )
 
 const partsOfSpan = (span: api.Span | undefined) =>
   Option.flatMap(
     Option.map(Option.fromUndefinedOr(span), (present) => present.spanContext()),
-    S.decodeOption(TraceContextPartsFromSpanContext),
+    partsOfSpanContext,
   )
 
 const remotePartsFromHeaders = (headers: Headers.Headers) =>
@@ -117,3 +144,139 @@ export const withLinkedSpan: {
       })
     }),
 )
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
+
+  const traceIdArbitrary = Arbitrary.filter(
+    Arbitrary.schema(S.String.check(S.isPattern(/^[0-9a-f]{32}$/))),
+    (id) => /^[1-9a-f][0-9a-f]*$/.test(id),
+  )
+  const spanIdArbitrary = Arbitrary.filter(
+    Arbitrary.schema(S.String.check(S.isPattern(/^[0-9a-f]{16}$/))),
+    (id) => /^[1-9a-f][0-9a-f]*$/.test(id),
+  )
+  const flagsArbitrary = Arbitrary.schema(S.Int)
+  const traceStateArbitrary = Arbitrary.map(
+    Arbitrary.schema(S.Literals(['absent', 'k=v', 'a=1,b=2', 'x=y,z=w'])),
+    (pick) =>
+      Boolean.match(pick === 'absent', {
+        onTrue: () => Option.none<string>(),
+        onFalse: () => Option.some(pick),
+      }),
+  )
+
+  const contextFixture = (traceId: string, spanId: string, traceFlags: number, traceState: Option.Option<string>) => ({
+    traceId,
+    spanId,
+    traceFlags,
+    ...Option.match(Option.map(traceState, (state) => api.createTraceState(state)), {
+      onNone: () => ({}),
+      onSome: (state) => ({ traceState: state }),
+    }),
+    isRemote: false,
+  })
+
+  const traceIdMatches = (traceId: string) => (parts: TraceContextParts) => parts.traceId === traceId
+
+  const spanIdMatches = (spanId: string) => (parts: TraceContextParts) => parts.spanId === spanId
+
+  const flagsMatch = (traceFlags: number) => (parts: TraceContextParts) => parts.traceFlags === traceFlags
+
+  const conservedIds =
+    (traceId: string, spanId: string, traceFlags: number) => (parts: TraceContextParts) =>
+      [traceIdMatches(traceId)(parts), spanIdMatches(spanId)(parts), flagsMatch(traceFlags)(parts)].every(
+        (holds) => holds,
+      )
+
+  it.prop(
+    '∀trace_span_flags_Identity_IdsConserved',
+    [traceIdArbitrary, spanIdArbitrary, flagsArbitrary],
+    ([traceId, spanId, traceFlags]) =>
+      Option.match(partsOfSpanContext(contextFixture(traceId, spanId, traceFlags, Option.none<string>())), {
+        onNone: () => false,
+        onSome: conservedIds(traceId, spanId, traceFlags),
+      }),
+  )
+
+  const fixtureEnvelope = (traceState: Option.Option<string>) =>
+    partsOfSpanContext(contextFixture('a'.repeat(32), 'b'.repeat(16), 1, traceState))
+
+  it.prop(
+    '∀trace_state_Envelope_VersionAndStateConserved',
+    [traceStateArbitrary],
+    ([traceState]) =>
+      Option.match(fixtureEnvelope(traceState), {
+        onNone: () => false,
+        onSome: (parts) =>
+          parts.version === '00' &&
+          parts.traceState === Option.getOrUndefined(Option.map(traceState, (state) => state)),
+      }),
+  )
+
+  const invalidTraceIdArbitrary = Arbitrary.schema(
+    S.Literals(['0'.repeat(32), 'a'.repeat(31), 'a'.repeat(33), `${'a'.repeat(31)}g`]),
+  )
+
+  const invalidSpanIdArbitrary = Arbitrary.schema(
+    S.Literals(['0'.repeat(16), 'a'.repeat(15), 'a'.repeat(17), `${'a'.repeat(15)}g`]),
+  )
+
+  const refusedFixture = (context: api.SpanContext, badTraceId: string, badSpanId: string) =>
+    [
+      Option.isNone(partsOfSpanContext({ ...context, traceId: badTraceId })),
+      Option.isNone(partsOfSpanContext({ ...context, spanId: badSpanId })),
+    ].every((refused) => refused)
+
+  it.prop(
+    '∀trace_span_flags_state_InvalidSpanContext_DecodeNone',
+    [traceIdArbitrary, spanIdArbitrary, flagsArbitrary, traceStateArbitrary, invalidTraceIdArbitrary, invalidSpanIdArbitrary],
+    ([traceId, spanId, traceFlags, traceState, badTraceId, badSpanId]) =>
+      refusedFixture(contextFixture(traceId, spanId, traceFlags, traceState), badTraceId, badSpanId),
+  )
+
+  // U4b THROWAWAY — DELETE AFTER RUN; dynamic because /tmp/refactor/baseline is outside the module graph.
+  const oracle = await import('/tmp/refactor/baseline/packages/stryker-js-plugin-runtime/dist/index.mjs')
+
+  const stateTextOf = (traceState: string | undefined) =>
+    Option.match(Option.fromUndefinedOr(traceState), {
+      onNone: () => '-',
+      onSome: (state) => state,
+    })
+
+  const wireTextOf = (parts: TraceContextParts | undefined) =>
+    Option.match(Option.fromUndefinedOr(parts), {
+      onNone: () => 'none',
+      onSome: (present) =>
+        [present.version, present.traceId, present.spanId, String(present.traceFlags), stateTextOf(present.traceState)].join(
+          '|',
+        ),
+    })
+
+  const agreesWithBaseline = (context: api.SpanContext) =>
+    wireTextOf(Option.getOrUndefined(oracle.tracePartsOf(context))) ===
+    wireTextOf(Option.getOrUndefined(partsOfSpanContext(context)))
+
+  const validGrid = ['a'.repeat(32), 'f0e1d2c3b4a5968778695a4b3c2d1e0f'].flatMap((traceId) =>
+    ['b'.repeat(16), '0123456789abcdef'].flatMap((spanId) =>
+      [0, 1].flatMap((traceFlags) =>
+        [Option.none<string>(), Option.some('k=v')].map((traceState) =>
+          contextFixture(traceId, spanId, traceFlags, traceState),
+        ),
+      ),
+    ),
+  )
+  const baselineCases = [
+    ...validGrid,
+    ...['0'.repeat(32), 'a'.repeat(31), 'a'.repeat(33), `${'a'.repeat(31)}g`].map((traceId) =>
+      contextFixture(traceId, 'b'.repeat(16), 1, Option.none<string>()),
+    ),
+  ]
+
+  it.prop(
+    'u4b THROWAWAY baseline tracePartsOf ≡ partsOfSpanContext valid×16+invalid×4 — DELETE AFTER RUN',
+    [Arbitrary.schema(S.Literals([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]))],
+    ([index]) => agreesWithBaseline(baselineCases[index]),
+  )
+}

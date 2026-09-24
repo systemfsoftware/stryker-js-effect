@@ -6,18 +6,14 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 export class ErrorText extends S.Class<ErrorText>('ErrorText')({ text: S.NonEmptyString }) {
-  static fromCause = <A>(cause: A) =>
-    Option.getOrUndefined(
-      Option.flatMap(nonEmptyOf(errorTextOf(cause)), (text) => ErrorText.makeOption({ text })),
-    )
+  static fromCause = <A>(cause: A): Option.Option<ErrorText> =>
+    Option.flatMap(nonEmptyOf(errorTextOf(cause)), (text) => ErrorText.makeOption({ text }))
 }
 export type ErrorTextValue = ErrorText
 
 export class CauseText extends S.Class<CauseText>('CauseText')({ text: S.NonEmptyString }) {
-  static fromCause = <A>(cause: A) =>
-    Option.getOrUndefined(
-      Option.flatMap(nonEmptyOf(causeChainTextOf(cause)), (text) => CauseText.makeOption({ text })),
-    )
+  static fromCause = <A>(cause: A): Option.Option<CauseText> =>
+    Option.flatMap(nonEmptyOf(causeChainTextOf(cause)), (text) => CauseText.makeOption({ text }))
 }
 export type CauseTextValue = CauseText
 
@@ -290,13 +286,13 @@ if (import.meta.vitest !== void 0) {
   }
 
   const decodesEmptyAndPresent = (parts: ReadonlyArray<string>) => {
-    const absent = [undefined, null, '', 0, false].every((empty) => ErrorText.fromCause(empty) === undefined)
-    return absent && ErrorText.fromCause(errorOf(parts)) !== undefined
+    const absent = [undefined, null, '', 0, false].every((empty) => Option.isNone(ErrorText.fromCause(empty)))
+    return absent && Option.isSome(ErrorText.fromCause(errorOf(parts)))
   }
 
   it.prop('∀cause_ErrorText_∋NameAndMessage', [WORDS], ([parts]) => {
     const error = errorOf(parts)
-    return Option.match(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(error)), (rendered) => rendered.text), {
+    return Option.match(Option.map(ErrorText.fromCause(error), (rendered) => rendered.text), {
       onNone: () => error.message.length === 0,
       onSome: (text) => text.includes(error.name) && text.includes(error.message),
     })
@@ -304,7 +300,7 @@ if (import.meta.vitest !== void 0) {
 
   it.prop('∀text_ErrorText_≡StringPassthrough', [WORDS], ([parts]) => {
     const source = parts.join(' ')
-    return Option.match(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(source)), (rendered) => rendered.text), {
+    return Option.match(Option.map(ErrorText.fromCause(source), (rendered) => rendered.text), {
       onNone: () => source.length === 0,
       onSome: (rendered) => rendered === source,
     })
@@ -314,7 +310,7 @@ if (import.meta.vitest !== void 0) {
 
   it.prop('∀cause_ErrorText_∋ErrnoCode', [WORDS], ([parts]) => {
     const error = errnoOf(parts)
-    return Option.match(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(error)), (rendered) => rendered.text), {
+    return Option.match(Option.map(ErrorText.fromCause(error), (rendered) => rendered.text), {
       onNone: () => false,
       onSome: (text) => text.startsWith(`${error.name}: ${error.code} (${error.syscall})`),
     })
@@ -323,7 +319,7 @@ if (import.meta.vitest !== void 0) {
   it.prop('∀cause_CauseText_∋NestedMessage', [WORDS], ([parts]) => {
     const error = nestedOf(parts)
     const inner = error.cause instanceof Error ? error.cause.message : ''
-    return Option.match(Option.map(Option.fromUndefinedOr(CauseText.fromCause(error)), (rendered) => rendered.text), {
+    return Option.match(Option.map(CauseText.fromCause(error), (rendered) => rendered.text), {
       onNone: () => error.message.length === 0 && inner.length === 0,
       onSome: (text) => mentionsAll(text, [error.message, inner]),
     })

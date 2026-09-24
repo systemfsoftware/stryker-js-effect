@@ -1,7 +1,7 @@
 import { describe, it } from '@effect/vitest'
-import { ExitClass, ExitCodeFromClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -17,7 +17,19 @@ import {
 } from '../classify-exit.workflow.js'
 
 const codeOf = (exitClass: ExitClass): number =>
-  Option.getOrElse(S.decodeOption(ExitCodeFromClass)(exitClass), () => -1)
+  Match.value(exitClass).pipe(
+    Match.when('VerdictFail', () => 1),
+    Match.when('ConfigError', () => 2),
+    Match.when('RuntimeError', () => 3),
+    Match.when('InternalError', () => 4),
+    Match.exhaustive,
+  )
+
+const worseOf = (first: ExitClass, second: ExitClass) =>
+  Boolean.match(codeOf(first) >= codeOf(second), {
+    onTrue: () => first,
+    onFalse: () => second,
+  })
 
 const decidedOf = (pending: ReadonlyArray<ExitClass>, score: number | null, breakingThreshold: number | null) =>
   classifyExit(new ClassifyExitCommand({ pending: [...pending], signal: null, score, breakingThreshold }))
@@ -33,7 +45,7 @@ const isMemberClass = (exitClass: ExitClass, decision: ClassifyExitDecision): bo
 
 describe('classifyExit', () => {
   it.prop('∀pair_Command_≡HighestSeverity', [ExitClass, ExitClass], ([first, second]) => {
-    const expected = codeOf(first) >= codeOf(second) ? first : second
+    const expected = worseOf(first, second)
     const result = decidedOf([first, second], null, null)
     return Result.match(result, {
       onFailure: () => false,

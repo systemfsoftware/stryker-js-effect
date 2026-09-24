@@ -1,4 +1,3 @@
-import * as Effect from 'effect/Effect'
 import { Boolean } from 'effect'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'

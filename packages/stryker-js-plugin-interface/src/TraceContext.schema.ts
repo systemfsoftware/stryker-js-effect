@@ -1,6 +1,7 @@
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { SchemaGetter, SchemaIssue, SchemaTransformation } from 'effect'
 export const TraceparentHeader = S.Literal('traceparent')
@@ -76,8 +77,8 @@ export const Traceparent = S.String.pipe(
 )
 
 if (import.meta.vitest !== void 0) {
+  // @effect/vitest is dev-only; a static import would put it in the library import graph of every consumer.
   const { it } = await import('@effect/vitest')
-  const Result = await import('effect/Result')
 
   const hexOf = (length: number) => S.String.pipe(S.check(S.isPattern(new RegExp(`^[0-9a-f]{${length}}$`))))
   const nonZeroHexOf = (length: number) =>
@@ -99,8 +100,8 @@ if (import.meta.vitest !== void 0) {
           onSuccess: (parsed) =>
             parsed.version === parts.version && parsed.traceId === parts.traceId &&
             parsed.spanId === parts.spanId && parsed.traceFlags === parts.traceFlags,
-        })),
-  )
+        }),
+    }))
 
   it.prop('∀parts_Traceparent_rendersTheBaselineHeader', [RoundTrippableParts], ([parts]) =>
     Result.match(S.encodeResult(Traceparent)(parts), {

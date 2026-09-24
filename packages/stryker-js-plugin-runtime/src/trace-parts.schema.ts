@@ -1,10 +1,6 @@
-import * as api from '@opentelemetry/api'
 import * as Boolean from 'effect/Boolean'
-import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
-import * as SchemaGetter from 'effect/SchemaGetter'
-import * as SchemaIssue from 'effect/SchemaIssue'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 import { TraceContextPartsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -20,60 +16,10 @@ const EffectSpanShape = S.Struct({
 })
 export type EffectSpanIdentity = S.Schema.Type<typeof EffectSpanShape>
 
-const SpanContextRecord = S.declare<api.SpanContext>(S.is(S.Struct({
-  traceId: S.String,
-  spanId: S.String,
-  traceFlags: S.Finite,
-})), {
-  message: 'expected an OpenTelemetry span context',
-})
-
-const isSpanContextRecord = (candidate: unknown): candidate is api.SpanContext => S.is(SpanContextRecord)(candidate)
-
-const SpanContext = S.declare<api.SpanContext>(isSpanContextRecord, {
-  message: 'expected an OpenTelemetry span context',
-})
-
-const serializedTraceStateOf = (traceState: api.TraceState | undefined): Option.Option<string> =>
-  Option.filter(
-    Option.map(Option.fromUndefinedOr(traceState), (state) => state.serialize()),
-    (serialized) => serialized.length > 0,
-  )
-
-const traceStateFieldOf = (traceState: api.TraceState | undefined): { readonly traceState?: string } =>
-  Option.match(serializedTraceStateOf(traceState), {
-    onNone: () => ({}),
-    onSome: (serialized) => ({ traceState: serialized }),
-  })
-
-const malformedSpanContext = (context: api.SpanContext) =>
-  new SchemaIssue.InvalidValue({ message: 'expected a valid W3C span context' }, context)
-
 const sampledFlagOf = (sampled: boolean) =>
   Boolean.match(sampled, { onTrue: () => SAMPLED_FLAG, onFalse: () => 0 })
 
 const sampledOf = (traceFlags: number) => (traceFlags & SAMPLED_FLAG) === SAMPLED_FLAG
-
-export const TraceContextPartsFromSpanContext: S.Codec<TraceContextParts, api.SpanContext> = SpanContext.pipe(
-  S.decodeTo(
-    TraceContextPartsSchema,
-    SchemaTransformation.makeTransformation({
-      decode: SchemaGetter.transformEffect((context: api.SpanContext) =>
-        Boolean.match(api.isValidTraceId(context.traceId) && api.isValidSpanId(context.spanId), {
-          onTrue: () =>
-            Effect.succeed({
-              version: CURRENT_VERSION,
-              traceId: context.traceId,
-              spanId: context.spanId,
-              traceFlags: context.traceFlags,
-              ...traceStateFieldOf(context.traceState),
-            }),
-          onFalse: () => Effect.fail(malformedSpanContext(context)),
-        })),
-      encode: SchemaGetter.forbiddenEncoding,
-    }),
-  ),
-)
 
 export const TraceContextPartsFromEffectSpan: S.Codec<TraceContextParts, EffectSpanIdentity> = EffectSpanShape.pipe(
   S.decodeTo(
@@ -106,7 +52,6 @@ if (import.meta.vitest !== void 0) {
     Arbitrary.schema(S.String.check(S.isPattern(/^[0-9a-f]{16}$/))),
     (id) => /^[1-9a-f][0-9a-f]*$/.test(id),
   )
-  const flagsArbitrary = Arbitrary.schema(S.Int)
   const sampledArbitrary = Arbitrary.schema(S.Boolean)
   const traceStateArbitrary = Arbitrary.map(
     Arbitrary.schema(S.Literals(['absent', 'k=v', 'a=1,b=2', 'x=y,z=w'])),
@@ -115,77 +60,6 @@ if (import.meta.vitest !== void 0) {
         onTrue: () => Option.none<string>(),
         onFalse: () => Option.some(pick),
       }),
-  )
-
-  const contextFixture = (traceId: string, spanId: string, traceFlags: number, traceState: Option.Option<string>) => ({
-    traceId,
-    spanId,
-    traceFlags,
-    ...Option.match(Option.map(traceState, (state) => api.createTraceState(state)), {
-      onNone: () => ({}),
-      onSome: (state) => ({ traceState: state }),
-    }),
-    isRemote: false,
-  })
-
-  const traceIdMatches = (traceId: string) => (parts: TraceContextParts) => parts.traceId === traceId
-
-  const spanIdMatches = (spanId: string) => (parts: TraceContextParts) => parts.spanId === spanId
-
-  const flagsMatch = (traceFlags: number) => (parts: TraceContextParts) => parts.traceFlags === traceFlags
-  const conservedIds =
-    (traceId: string, spanId: string, traceFlags: number) => (parts: TraceContextParts) =>
-      [traceIdMatches(traceId)(parts), spanIdMatches(spanId)(parts), flagsMatch(traceFlags)(parts)].every(
-        (holds) => holds,
-      )
-
-  it.prop(
-    '∀trace_span_flags_Identity_IdsConserved',
-    [traceIdArbitrary, spanIdArbitrary, flagsArbitrary],
-    ([traceId, spanId, traceFlags]) =>
-      Option.match(
-        S.decodeOption(TraceContextPartsFromSpanContext)({ traceId, spanId, traceFlags }),
-        {
-          onNone: () => false,
-          onSome: conservedIds(traceId, spanId, traceFlags),
-        },
-      ),
-  )
-
-  const fixtureEnvelope = (traceState: Option.Option<string>) =>
-    S.decodeOption(TraceContextPartsFromSpanContext)(contextFixture('a'.repeat(32), 'b'.repeat(16), 1, traceState))
-
-  it.prop(
-    '∀trace_state_Envelope_VersionAndStateConserved',
-    [traceStateArbitrary],
-    ([traceState]) =>
-      Option.match(fixtureEnvelope(traceState), {
-        onNone: () => false,
-        onSome: (parts) =>
-          parts.version === '00' &&
-          parts.traceState === Option.getOrUndefined(Option.map(traceState, (state) => state)),
-      }),
-  )
-
-  const invalidTraceIdArbitrary = Arbitrary.schema(
-    S.Literals(['0'.repeat(32), 'a'.repeat(31), 'a'.repeat(33), `${'a'.repeat(31)}g`]),
-  )
-
-  const invalidSpanIdArbitrary = Arbitrary.schema(
-    S.Literals(['0'.repeat(16), 'a'.repeat(15), 'a'.repeat(17), `${'a'.repeat(15)}g`]),
-  )
-
-  const refusedFixture = (context: api.SpanContext, badTraceId: string, badSpanId: string) =>
-    [
-      Option.isNone(S.decodeOption(TraceContextPartsFromSpanContext)({ ...context, traceId: badTraceId })),
-      Option.isNone(S.decodeOption(TraceContextPartsFromSpanContext)({ ...context, spanId: badSpanId })),
-    ].every((refused) => refused)
-
-  it.prop(
-    '∀trace_span_flags_state_InvalidSpanContext_DecodeNone',
-    [traceIdArbitrary, spanIdArbitrary, flagsArbitrary, traceStateArbitrary, invalidTraceIdArbitrary, invalidSpanIdArbitrary],
-    ([traceId, spanId, traceFlags, traceState, badTraceId, badSpanId]) =>
-      refusedFixture(contextFixture(traceId, spanId, traceFlags, traceState), badTraceId, badSpanId),
   )
 
   const decodeSpan = (traceId: string, spanId: string, sampled: boolean) =>

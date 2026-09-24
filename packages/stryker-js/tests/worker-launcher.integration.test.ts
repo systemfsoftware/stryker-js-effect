@@ -3,6 +3,7 @@ import {
   ChildProcessCrashedError,
   ClassifyWorkerExitCommand,
   classifyWorkerExit,
+  type ClassifyWorkerExitDecision,
   makeWorkerClient,
   OutOfMemoryError,
   StrykerOptionsSchema,
@@ -101,10 +102,11 @@ const memoryOf = (boot: BootOutcome): OutOfMemoryError => {
   throw new Error('the boot was expected to fail as an out-of-memory death', { cause: failure })
 }
 
-const readingOf = (error: ChildProcessCrashedError | OutOfMemoryError): string =>
-  Match.value(error).pipe(
-    Match.tag('OutOfMemoryError', (outOfMemory) => `memory exhaustion at exit ${outOfMemory.exitCode}`),
-    Match.orElse(() => 'a crash'),
+const readingOf = (decision: ClassifyWorkerExitDecision): string =>
+  Match.value(decision).pipe(
+    Match.tag('WorkerOutOfMemory', (outOfMemory) => `memory exhaustion at exit ${outOfMemory.exitCode}`),
+    Match.tag('WorkerCrashed', () => 'a crash'),
+    Match.exhaustive,
   )
 
 Feature('Running each plugin worker as its own process')

@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
@@ -7,8 +7,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { MutantTestPlanCommand } from './MutantTestPlanCommand.schema.js'
-import { MutantStatusSchema, PlannedMutantRunOptions } from './MutantTestPlan.schema.js'
-import { StageError } from './Run.schema.js'
+import { PlannedMutantRunOptions } from './MutantTestPlan.schema.js'
 
 const MutantPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutantPlan')
 type MutantPlanTypeId = typeof MutantPlanTypeId
@@ -285,6 +284,6 @@ const decide = (
 export const planMutantTests = Workflow.make({
   command: MutantTestPlanCommand,
   decision: S.Array(S.Union([PlannedRunMutant, PlannedEarlyResultMutant])),
-  error: StageError,
+  error: CoveredMutantHitCountMissing,
   decide,
 })

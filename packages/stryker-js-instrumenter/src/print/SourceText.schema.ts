@@ -106,24 +106,16 @@ import { spanOf } from '../Ast.handle.js'
 
 export class SourceText extends S.Class<SourceText>('SourceText')({ text: S.NonEmptyString }) {
   static fromValue = <A>(value: A): Option.Option<SourceText> =>
-    Option.flatMap(nonEmptyOf(sourceTextOf(value)), (text) => SourceText.makeOption({ text }))
+    Option.flatMap(printedTextOf(value), (text) => SourceText.makeOption({ text }))
 }
 export type SourceTextValue = typeof SourceText.Type
 
 const nonEmptyOf = (text: string): Option.Option<string> =>
   Option.filter(Option.some(text), (candidate) => candidate.length > 0)
 
-export const renderedText = (value: SourceText): string => value.text
-
-function sourceTextOf<A = unknown>(value: A): string {
-  return Option.match(
-    Option.filter(Option.fromNullishOr(value), isPrintableValue),
-    {
-      onNone: () => '',
-      onSome: (printable) => printableTextOf(printable),
-    },
-  )
-}
+const printedTextOf = <A = unknown>(value: A) =>
+  Option.flatMap(Option.filter(Option.fromNullishOr(value), isPrintableValue), (printable) =>
+    Option.flatMap(Result.getSuccess(printedResultOf(printable)), nonEmptyOf))
 
 const AST_SHAPE = ['format', 'root'] as const
 
@@ -143,16 +135,11 @@ const PRINTABLE_GUARDS = [isAst, isPrintableScript, isPrinterNode]
 const isPrintableValue = (candidate: unknown): candidate is Ast | ScriptAst | Node =>
   PRINTABLE_GUARDS.some((accepts) => accepts(candidate))
 
-const printableTextOf = (value: Ast | ScriptAst | Node) =>
+const printedResultOf = (value: Ast | ScriptAst | Node) =>
   Match.value(value).pipe(
-    Match.when(isPrintableAst, (ast) => Result.getOrElse(printedAstText(ast), () => '')),
-    Match.orElse((node) => scriptOrNodeTextOf(node)),
-  )
-
-const scriptOrNodeTextOf = (value: ScriptAst | Node) =>
-  Match.value(value).pipe(
-    Match.when(isPrintableScriptValue, (script) => Result.getOrElse(printedScript(script), () => '')),
-    Match.orElse((node) => printNode(node)),
+    Match.when(isPrintableAst, (ast) => printedAstText(ast)),
+    Match.when(isPrintableScriptValue, (script) => printedScript(script)),
+    Match.orElse((node) => Result.succeed(printNode(node))),
   )
 
 const isPrintableAst = (value: Ast | ScriptAst | Node): value is Ast => isAst(value)
@@ -2303,7 +2290,7 @@ if (import.meta.vitest !== void 0) {
     Option.getOrElse(
       Option.flatMap(
         Option.fromNullishOr(oxc.parseSync('law.ts', source, { lang, range: true }).program),
-        (program) => Option.map(SourceText.fromValue(program), renderedText),
+        (program) => Option.map(SourceText.fromValue(program), (rendered) => rendered.text),
       ),
       () => printedScriptOf(source, lang),
     )

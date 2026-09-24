@@ -1,7 +1,6 @@
 import { describe, it } from '@effect/vitest'
 import * as Effect from 'effect/Effect'
 import * as Path from 'effect/Path'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
@@ -31,24 +30,6 @@ const PROSE_TOKENS = [
   'core',
 ] as const
 
-const TOKEN_AT = [
-  '**',
-  '*',
-  '?',
-  '[a-z]',
-  '{a,b}',
-  'src',
-  '.hidden',
-  'spec',
-  '[!',
-  '{',
-  '/',
-] as const
-
-const patternTokenArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 10 }))).pipe(
-  Arbitrary.map((index) => TOKEN_AT[index] ?? '*'),
-)
-
 const proseArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 11 }))).pipe(
   Arbitrary.map((index) => PROSE_TOKENS[index] ?? 'a'),
 )
@@ -60,12 +41,6 @@ const strictSegmentArb = Arbitrary.array(proseArb, { minLength: 1, maxLength: 3 
 const pathArb = Arbitrary.array(visibleSegmentArb, { minLength: 1, maxLength: 6 }).pipe(
   Arbitrary.map((segments) => `/${segments.join('/')}`),
 )
-
-const patternArb = Arbitrary.array(patternTokenArb, { minLength: 1, maxLength: 5 }).pipe(
-  Arbitrary.map((tokens) => tokens.join('/')),
-)
-
-const fileNameArb = Arbitrary.schema(S.String)
 
 const basePathArb = Arbitrary.schema(S.String.check(S.isPattern(/^\/base(\/[a-z]{1,4}){0,2}$/)))
 
@@ -98,8 +73,8 @@ describe('FileMatcher', () => {
 
 describe('IgnoreRule', () => {
   it.prop('∀p_Rule_NegationFlipsOnlyTheFlag', [strictSegmentArb], ([segment]) => {
-    const include = Effect.runSync(IgnoreRule.decode(`**/${segment}.ts`))
-    const exclude = Effect.runSync(IgnoreRule.decode(`!**/${segment}.ts`))
+    const include = IgnoreRule.fromPattern(`**/${segment}.ts`)
+    const exclude = IgnoreRule.fromPattern(`!**/${segment}.ts`)
     return include.negate === false && exclude.negate === true &&
       include.matches(`/x/${segment}.ts`) === exclude.matches(`/x/${segment}.ts`)
   })
