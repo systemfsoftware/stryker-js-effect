@@ -1,115 +1,176 @@
-import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { DryRunCompleted, isCustomTestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
-import type {
-  CompleteDryRunResult,
-  DryRunResult,
-  TestResult,
-  TestRunnerCapabilities,
-} from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Clock from 'effect/Clock'
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Options, type Plugin, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Boolean from 'effect/Boolean'
 import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
-import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
+import * as MutableHashSet from 'effect/MutableHashSet'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import { PhaseEntered } from '../RunEvents.js'
-import { RunEvents } from '../RunEvents.js'
+import { RunEvents } from '../run-events.service.js'
 
-import { dryRun, DryRunCommand } from '../dry-run.workflow.js'
-import { testCoverageFrom } from '../Mutants.js'
-import type { TestCoverage } from '../Mutants.js'
-import { missingWorkerEntry, resolveConfiguredWorkerSpawn } from '../plugin-worker-entry.js'
-import { offerReporterEvent, withPhaseSpan } from '../ReporterStream.js'
+import { dryRun, DryRunCommand, DryRunError, DryRunFailed } from '../dry-run.workflow.js'
+import type { LoadedPlugins } from '../Plugins.schema.js'
+import { PluginNotFoundError } from '../PluginsError.schema.js'
+import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
 import { StageError } from '../Run.schema.js'
-import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.js'
-import { IdGenerator } from '../Worker.js'
-import { WorkerLauncher } from '../WorkerLauncher.js'
+import type { SandboxHandle } from '../Sandbox.handle.js'
+import type { TestCoverage } from '../test-coverage.schema.js'
+import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.resource.js'
+import { IdGenerator } from '../Worker.service.js'
 import type { InstrumentDone } from './instrument.cell.js'
-import { RunEnvironment } from './RunEnvironment.js'
+import {
+  ConfiguredPluginModulePath,
+  ConfiguredPluginName,
+  resolveConfiguredPlugin,
+  WorkerSpawnCommand,
+  type WorkerSpawnResolved,
+} from './resolve-configured-plugin.workflow.js'
+import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 
 export interface DryRunDone extends InstrumentDone {
-  readonly dryRunResult: CompleteDryRunResult
+  readonly dryRunResult: TestRunner.CompleteDryRunResult
   readonly testCoverage: TestCoverage
   readonly timeOverhead: EffectDuration.Duration
 }
 
-function buildDryRunFiles(prev: InstrumentDone): { files: string[]; testFiles: string[] | undefined } {
-  const files = [...MutableHashMap.keys(prev.project.filesToMutate)].map((name) => prev.sandbox.sandboxFileFor(name))
-  let testFiles: string[] | undefined
-  if (prev.project.testFiles.length > 0) {
-    testFiles = prev.project.testFiles.map((file) => prev.sandbox.sandboxFileFor(file))
-  }
-  return { files, testFiles }
-}
-export interface DryRunRaw {
+const sandboxPathsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
+  Result.all(fileNames.map((fileName) => sandbox.sandboxFileFor(fileName)))
+
+const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
+  Match.value(configured).pipe(
+    Match.when(Options.isCustomTestRunner, (custom) => ConfiguredPluginModulePath.make({ modulePath: custom.plugin })),
+    Match.orElse((name) => ConfiguredPluginName.make({ name })),
+  )
+
+const workerSpawnOf = (
+  stage: StageError['stage'],
+  loaded: Pick<LoadedPlugins, 'pluginSources'>,
+  kind: Plugin.WorkerPluginKind,
+  configured: ConfiguredPluginName | ConfiguredPluginModulePath,
+): Effect.Effect<WorkerSpawnResolved, StageError> =>
+  Effect.mapError(
+    Effect.fromResult(
+      resolveConfiguredPlugin(WorkerSpawnCommand.make({ sources: loaded.pluginSources, kind, configured })),
+    ),
+    (missing) =>
+      StageError.make({
+        stage,
+        reason: missing.reason,
+        cause: PluginNotFoundError.make({ descriptor: missing.descriptor }),
+      }),
+  )
+
+const optionalSandboxPathsOf = (command: InstrumentDone) =>
+  Boolean.match(command.project.testFiles.length === 0, {
+    onTrue: () => Result.succeed(undefined),
+    onFalse: () => sandboxPathsOf(command.sandbox, command.project.testFiles),
+  })
+
+const buildDryRunFiles = (command: InstrumentDone) =>
+  Result.flatMap(
+    sandboxPathsOf(command.sandbox, [...MutableHashMap.keys(command.project.filesToMutate)]),
+    (files) => Result.map(optionalSandboxPathsOf(command), (testFiles) => ({ files, testFiles })),
+  )
+
+const resolveDryRunFiles = (command: InstrumentDone) =>
+  Effect.fromResult(buildDryRunFiles(command)).pipe(
+    Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Failed to resolve sandbox file', cause })),
+  )
+type FailedDryRun = Extract<TestRunner.DryRunResult, { readonly status: 'error' }>
+type TimedOutDryRun = Extract<TestRunner.DryRunResult, { readonly status: 'timeout' }>
+
+type DryRunRaw = typeof DryRunCommand.Encoded & {
   readonly prev: InstrumentDone
-  readonly rawResult: DryRunResult
-  readonly capabilities: TestRunnerCapabilities
+  readonly rawResult: TestRunner.DryRunResult
+  readonly capabilities: TestRunner.TestRunnerCapabilities
   readonly gross: EffectDuration.Duration
 }
 
-type FailedDryRun = Extract<DryRunResult, { readonly status: 'error' }>
-type TimedOutDryRun = Extract<DryRunResult, { readonly status: 'timeout' }>
-
-const isCompleteDryRun = (result: DryRunResult): result is CompleteDryRunResult => result.status === 'complete'
-
-const isFailedDryRun = (result: DryRunResult): result is FailedDryRun => result.status === 'error'
-
-const decodeCompleteDryRun = (
-  result: CompleteDryRunResult,
+const commandEncodedComplete = (
+  complete: TestRunner.CompleteDryRunResult,
   allowEmpty: boolean,
-): Result.Result<DryRunCommand, StageError> =>
-  Result.succeed(
-    DryRunCommand.make({
-      status: 'Complete',
-      testCount: result.tests.length,
-      failedTestCount: result.tests.filter((test) => test.status === 'failed').length,
-      allowEmpty,
-    }),
+): typeof DryRunCommand.Encoded => ({
+  _tag: 'DryRunCommand',
+  status: 'Complete',
+  testCount: complete.tests.length,
+  failedTestCount: complete.tests.filter((test) => test.status === 'failed').length,
+  allowEmpty,
+})
+
+const commandEncodedFailed = (
+  failed: FailedDryRun,
+  allowEmpty: boolean,
+): typeof DryRunCommand.Encoded => ({
+  _tag: 'DryRunCommand',
+  status: 'Error',
+  testCount: 0,
+  failedTestCount: 0,
+  allowEmpty,
+  errorMessage: failed.errorMessage,
+})
+
+const commandEncodedTimedOut = (
+  timedOut: TimedOutDryRun,
+  allowEmpty: boolean,
+): typeof DryRunCommand.Encoded => ({
+  _tag: 'DryRunCommand',
+  status: 'Timeout',
+  testCount: 0,
+  failedTestCount: 0,
+  allowEmpty,
+  ...(Option.match(Option.fromNullishOr(timedOut.reason), {
+    onNone: () => ({}),
+    onSome: (reason) => ({ reason }),
+  })),
+})
+
+const dryRunRaw = (
+  prev: InstrumentDone,
+  rawResult: TestRunner.DryRunResult,
+  capabilities: TestRunner.TestRunnerCapabilities,
+  gross: EffectDuration.Duration,
+): DryRunRaw =>
+  Match.value(rawResult).pipe(
+    Match.when(isCompleteDryRun, (complete) => ({
+      ...commandEncodedComplete(complete, prev.options.allowEmpty),
+      prev,
+      rawResult,
+      capabilities,
+      gross,
+    })),
+    Match.when(isFailedDryRun, (failed) => ({
+      ...commandEncodedFailed(failed, prev.options.allowEmpty),
+      prev,
+      rawResult,
+      capabilities,
+      gross,
+    })),
+    Match.orElse((timedOut) => ({
+      ...commandEncodedTimedOut(timedOut, prev.options.allowEmpty),
+      prev,
+      rawResult,
+      capabilities,
+      gross,
+    })),
   )
 
-const decodeFailedDryRun = (
-  result: FailedDryRun,
-  allowEmpty: boolean,
-): Result.Result<DryRunCommand, StageError> =>
-  Result.succeed(
-    DryRunCommand.make({
-      status: 'Error',
-      testCount: 0,
-      failedTestCount: 0,
-      allowEmpty,
-      errorMessage: result.errorMessage,
-    }),
-  )
+const isCompleteDryRun = (result: TestRunner.DryRunResult): result is TestRunner.CompleteDryRunResult =>
+  result.status === 'complete'
 
-const decodeTimedOutDryRun = (
-  result: TimedOutDryRun,
-  allowEmpty: boolean,
-): Result.Result<DryRunCommand, StageError> =>
-  Result.succeed(
-    DryRunCommand.make({
-      status: 'Timeout',
-      testCount: 0,
-      failedTestCount: 0,
-      allowEmpty,
-      ...(result.reason !== undefined && { reason: result.reason }),
-    }),
-  )
+const isFailedDryRun = (result: TestRunner.DryRunResult): result is FailedDryRun => result.status === 'error'
 
-const totalTestTime = (tests: readonly TestResult[]): number =>
+const totalTestTime = (tests: readonly TestRunner.TestResult[]): number =>
   tests.reduce((total, test) => total + test.timeSpentMs, 0)
-
-const overheadMillisOf = (grossMillis: number, tests: readonly TestResult[]): number =>
+const overheadMillisOf = (grossMillis: number, tests: readonly TestRunner.TestResult[]): number =>
   Math.max(0, grossMillis - totalTestTime(tests))
 
-const withOriginalFileName = (test: TestResult, prev: InstrumentDone): TestResult =>
+const withOriginalFileName = (test: TestRunner.TestResult, prev: InstrumentDone): TestRunner.TestResult =>
   Match.value(test.fileName).pipe(
     Match.when(Predicate.isString, (fileName) => ({
       ...test,
@@ -118,11 +179,88 @@ const withOriginalFileName = (test: TestResult, prev: InstrumentDone): TestResul
     Match.orElse(() => test),
   )
 
-const withOriginalFileNames = (tests: readonly TestResult[], prev: InstrumentDone): readonly TestResult[] =>
-  tests.map((test) => withOriginalFileName(test, prev))
+const withOriginalFileNames = (
+  tests: readonly TestRunner.TestResult[],
+  prev: InstrumentDone,
+): readonly TestRunner.TestResult[] => tests.map((test) => withOriginalFileName(test, prev))
+
+const ZERO = 0
+
+const testsByIdOf = (result: Readonly<TestRunner.CompleteDryRunResult>) =>
+  MutableHashMap.fromIterable(result.tests.map((test) => [test.id, test] as const))
+
+const withTestForMutant = (
+  testsByMutantId: MutableHashMap.MutableHashMap<string, MutableHashSet.MutableHashSet<TestRunner.TestResult>>,
+  mutantId: string,
+  test: TestRunner.TestResult,
+) =>
+  MutableHashMap.set(
+    testsByMutantId,
+    mutantId,
+    MutableHashSet.add(
+      Option.getOrElse(MutableHashMap.get(testsByMutantId, mutantId), () =>
+        MutableHashSet.empty<TestRunner.TestResult>()),
+      test,
+    ),
+  )
+
+const coveredMutantIdsOf = (coverage: Mutant.CoverageData) =>
+  Object.entries(coverage).filter(([, count]) => count > ZERO).map(([mutantId]) => mutantId)
+
+const testsByMutantIdOf = (
+  mutantCoverage: Mutant.Coverage,
+  testsById: MutableHashMap.MutableHashMap<string, TestRunner.TestResult>,
+) =>
+  Object.entries(mutantCoverage.perTest).reduce(
+    (testsByMutantId, [testId, coverage]) =>
+      Option.match(MutableHashMap.get(testsById, testId), {
+        onNone: () => testsByMutantId,
+        onSome: (test) =>
+          coveredMutantIdsOf(coverage).reduce(
+            (acc, mutantId) => withTestForMutant(acc, mutantId, test),
+            testsByMutantId,
+          ),
+      }),
+    MutableHashMap.empty<string, MutableHashSet.MutableHashSet<TestRunner.TestResult>>(),
+  )
+
+const hitsByMutantIdOf = (mutantCoverage: Mutant.Coverage) =>
+  [mutantCoverage.static, ...Object.values(mutantCoverage.perTest)].reduce(
+    (hitsByMutantId, coverage) =>
+      Object.entries(coverage).reduce(
+        (acc, [mutantId, count]) =>
+          MutableHashMap.set(
+            acc,
+            mutantId,
+            Option.getOrElse(MutableHashMap.get(acc, mutantId), () => ZERO) + count,
+          ),
+        hitsByMutantId,
+      ),
+    MutableHashMap.empty<string, number>(),
+  )
+
+const testCoverageFrom = (result: Readonly<TestRunner.CompleteDryRunResult>) => {
+  const testsById = testsByIdOf(result)
+  const mutantCoverage = Option.fromNullishOr(result.mutantCoverage)
+  return {
+    testsByMutantId: Option.match(mutantCoverage, {
+      onNone: () => MutableHashMap.empty<string, MutableHashSet.MutableHashSet<TestRunner.TestResult>>(),
+      onSome: (coverage) => testsByMutantIdOf(coverage, testsById),
+    }),
+    testsById,
+    staticCoverage: Option.match(mutantCoverage, {
+      onNone: () => undefined,
+      onSome: (coverage) => coverage.static,
+    }),
+    hitsByMutantId: Option.match(mutantCoverage, {
+      onNone: () => MutableHashMap.empty<string, number>(),
+      onSome: (coverage) => hitsByMutantIdOf(coverage),
+    }),
+  }
+}
 
 const announceDryRunOutcome = (
-  tests: readonly TestResult[],
+  tests: readonly TestRunner.TestResult[],
   prev: InstrumentDone,
   gross: EffectDuration.Duration,
   overheadMillis: number,
@@ -145,21 +283,15 @@ const announceDryRunOutcome = (
     ),
   )
 
-const completeDryRunPassed = (raw: DryRunRaw): Effect.Effect<DryRunDone, StageError> =>
+const completeDryRunResultOf = (raw: DryRunRaw, rawResult: TestRunner.CompleteDryRunResult) =>
   Effect.gen(function*() {
-    const prevDone = raw.prev
-    const rawResult = raw.rawResult
-
-    if (rawResult.status !== 'complete') {
-      return yield* StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' })
-    }
-    const tests = withOriginalFileNames(rawResult.tests, prevDone)
-    const dryRunResult: CompleteDryRunResult = { ...rawResult, tests, status: 'complete' }
+    const tests = withOriginalFileNames(rawResult.tests, raw.prev)
+    const dryRunResult = { ...rawResult, tests, status: 'complete' } as const
     const overheadMillis = overheadMillisOf(EffectDuration.toMillis(raw.gross), tests)
 
     yield* offerReporterEvent(
-      prevDone.reporterStage,
-      DryRunCompleted.make({
+      raw.prev.reporterStage,
+      Reporter.DryRunCompleted.make({
         timing: { net: totalTestTime(tests), overhead: overheadMillis },
         capabilities: { reloadEnvironment: raw.capabilities.reloadEnvironment },
         testCount: tests.length,
@@ -167,22 +299,31 @@ const completeDryRunPassed = (raw: DryRunRaw): Effect.Effect<DryRunDone, StageEr
       }),
     ).pipe(Effect.ignoreCause)
 
-    yield* announceDryRunOutcome(tests, prevDone, raw.gross, overheadMillis)
+    yield* announceDryRunOutcome(tests, raw.prev, raw.gross, overheadMillis)
 
     return {
-      ...prevDone,
+      ...raw.prev,
       dryRunResult,
       testCoverage: testCoverageFrom(dryRunResult),
       timeOverhead: EffectDuration.millis(overheadMillis),
     }
   })
 
-export const dryRunCell = Sandwich.read((command: InstrumentDone) =>
+const completeDryRunPassed = (raw: DryRunRaw) =>
+  Match.value(raw.rawResult).pipe(
+    Match.when(isCompleteDryRun, (rawResult) => completeDryRunResultOf(raw, rawResult)),
+    Match.orElse(() =>
+      Effect.fail(StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' }))
+    ),
+  )
+export const isStageError = (candidate: unknown): candidate is StageError => S.is(StageError)(candidate)
+
+const readDryRun = (command: InstrumentDone) =>
   Effect.gen(function*() {
     yield* Scope.Scope
     const idGenerator = yield* IdGenerator
 
-    const { files, testFiles } = buildDryRunFiles(command)
+    const { files, testFiles } = yield* resolveDryRunFiles(command)
     const dryRunTimeout = command.options.dryRunTimeoutMinutes * 60 * 1000
 
     yield* Effect.logInfo('Starting dry run')
@@ -190,26 +331,18 @@ export const dryRunCell = Sandwich.read((command: InstrumentDone) =>
       Effect.gen(function*() {
         const childRunnerEffect = Effect.suspend(() => {
           const runnerConfigured = command.options.testRunner
-          const runnerLabel = Match.value(runnerConfigured).pipe(
-            Match.when(isCustomTestRunner, (runner) => runner.plugin),
-            Match.orElse((name) => name),
-          )
-          return resolveConfiguredWorkerSpawn({
-            loaded: command.loadedPlugins,
-            kind: 'TestRunner',
-            configured: runnerConfigured,
-          }).pipe(
-            Effect.mapError(missingWorkerEntry('dryRun', 'test runner', runnerLabel)),
-            Effect.flatMap(({ spawn }) =>
-              makeChildProcessTestRunner({
-                options: command.options,
-                fileDescriptions: command.project.fileDescriptions,
-                sandboxWorkingDirectory: command.sandbox.workingDirectory,
-                workerEntrypoint: spawn.entrypoint,
-                idGenerator,
-              })
-            ),
-          )
+          return workerSpawnOf('dryRun', command.loadedPlugins, 'TestRunner', configuredPluginOf(runnerConfigured))
+            .pipe(
+              Effect.flatMap((resolved) =>
+                makeChildProcessTestRunner({
+                  options: command.options,
+                  fileDescriptions: command.project.fileDescriptions,
+                  sandboxWorkingDirectory: command.sandbox.workingDirectory,
+                  workerEntrypoint: resolved.entrypoint,
+                  idGenerator,
+                })
+              ),
+            )
         })
 
         const runner = yield* buildTestRunner(
@@ -240,7 +373,7 @@ export const dryRunCell = Sandwich.read((command: InstrumentDone) =>
               Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Dry run failed', cause })),
             ),
         )
-        const gross: EffectDuration.Duration = timed[0]
+        const gross = timed[0]
         const rawResult = timed[1]
         const capabilities = yield* runner.capabilities.pipe(
           Effect.mapError((cause) =>
@@ -250,67 +383,57 @@ export const dryRunCell = Sandwich.read((command: InstrumentDone) =>
         return { rawResult, capabilities, gross }
       }),
     ).pipe(
-      Effect.mapError((cause) => {
-        if (S.is(StageError)(cause)) {
-          return cause
-        }
-        return StageError.make({ stage: 'dryRun', reason: 'Dry run failed to start test runner', cause })
-      }),
+      Effect.mapError((cause) =>
+        Match.value({ cause }).pipe(
+          Match.when({ cause: isStageError }, ({ cause }) => cause),
+          Match.orElse(({ cause }) =>
+            StageError.make({ stage: 'dryRun', reason: 'Dry run failed to start test runner', cause })
+          ),
+        )
+      ),
     )
 
-    const raw: DryRunRaw = {
-      prev: command,
-      rawResult,
-      capabilities,
-      gross,
-    }
-    return raw
+    return dryRunRaw(command, rawResult, capabilities, gross)
   })
-).decode(Sandwich.pure((raw: DryRunRaw): Result.Result<DryRunCommand, StageError> =>
-  Match.value(raw.rawResult).pipe(
-    Match.when(isCompleteDryRun, (complete) => decodeCompleteDryRun(complete, raw.prev.options.allowEmpty)),
-    Match.when(isFailedDryRun, (failed) => decodeFailedDryRun(failed, raw.prev.options.allowEmpty)),
-    Match.orElse((timedOut) => decodeTimedOutDryRun(timedOut, raw.prev.options.allowEmpty)),
-  )
-)).decide(dryRun).encode(Sandwich.pure((outcome) => Result.succeed(outcome))).write((outcome, raw) =>
+
+const writeDryRunPassed = (raw: DryRunRaw): Effect.Effect<
+  DryRunDone,
+  StageError,
+  RunEnvironment | RunEvents
+> =>
   withPhaseSpan(
     'dryRun',
     {},
     () =>
       Effect.gen(function*() {
-        const env = yield* RunEnvironment
-        const now = yield* Clock.currentTimeMillis
-        const queue = yield* RunEvents
-        yield* Queue.offer(queue, PhaseEntered.make({ phase: 'dry-run', elapsedMs: now - env.runStartedAt }))
-
-        const out = outcome
-        if (Result.isFailure(out)) {
-          const err = out.failure
-          return yield* StageError.make({ stage: err.stage, reason: err.reason, cause: err })
-        }
-        return yield* Match.value(out.success).pipe(
-          Match.tag('DryRunFailed', (decision) =>
-            Effect.fail(
-              StageError.make({
-                stage: 'dryRun',
-                reason: 'There were failed tests in the initial test run.',
-                cause: decision,
-              }),
-            )),
-          Match.tag('DryRunPassed', () => completeDryRunPassed(raw)),
-          Match.exhaustive,
-        )
+        yield* phaseEntered('dry-run')
+        return yield* completeDryRunPassed(raw)
       }),
   )
-) satisfies Cell.Cell<
-  InstrumentDone,
-  DryRunDone,
-  StageError,
-  | Scope.Scope
-  | RunEnvironment
-  | RunEvents
-  | IdGenerator
-  | ChildProcessSpawner.ChildProcessSpawner
-  | FileSystem.FileSystem
-  | WorkerLauncher
->
+
+const writeDryRunFailed = (
+  raw: DryRunRaw,
+  testCount: number,
+  failedTestCount: number,
+): Effect.Effect<DryRunDone, StageError, RunEnvironment | RunEvents> =>
+  withPhaseSpan(
+    'dryRun',
+    {},
+    () =>
+      Effect.gen(function*() {
+        yield* phaseEntered('dry-run')
+        return yield* StageError.make({
+          stage: 'dryRun',
+          reason: 'There were failed tests in the initial test run.',
+          cause: DryRunFailed.make({ testCount, failedTestCount }),
+        })
+      }),
+  )
+
+export const dryRunCell = Sandwich.named('stryker.dry_run')(readDryRun).decide(dryRun).write({
+  DryRunPassed: (_decision, raw) => writeDryRunPassed(raw),
+  DryRunFailed: ({ testCount, failedTestCount }, raw) => writeDryRunFailed(raw, testCount, failedTestCount),
+  DryRunError: ({ stage, reason }) =>
+    Effect.fail(StageError.make({ stage, reason, cause: DryRunError.make({ stage, reason }) })),
+  CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'dryRun', reason: issue })),
+})

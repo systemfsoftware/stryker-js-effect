@@ -1,14 +1,8 @@
 import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { spawnReporterWorker } from '@systemfsoftware/stryker-js'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  parseTraceparent,
-  TraceContextReference,
-  TRACEPARENT_HEADER,
-} from '@systemfsoftware/stryker-js-plugin-interface'
-import { partsOfEffectSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Options, Trace } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Trace as RuntimeTrace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
@@ -16,6 +10,7 @@ import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import * as Headers from 'effect/unstable/http/Headers'
 import { expect } from 'vitest'
+import { Plugin } from '../src/mod.js'
 
 import {
   makeTraceWorkerRecord,
@@ -57,8 +52,8 @@ const makeClient = (plan: TraceWorkerPlan) =>
   Effect.gen(function*() {
     const record = yield* makeTraceWorkerRecord
     const launcher = yield* traceServingLauncher(record)
-    const options = yield* S.decodeEffect(StrykerOptionsSchema)({})
-    const client = yield* spawnReporterWorker({
+    const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({})
+    const client = yield* Plugin.spawnReporterWorker({
       entrypoint: plan.entrypoint,
       projectBasePath: plan.projectBasePath,
       execArgv: [],
@@ -86,7 +81,10 @@ const runTracedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> => {
       const host = yield* Effect.useSpan('host.run', {}, (host) =>
         Effect.as(
           client.init({}).pipe(
-            Effect.provideService(TraceContextReference, Option.some(partsOfEffectSpan(host))),
+            Effect.provideService(
+              Trace.TraceContextReference,
+              S.decodeOption(RuntimeTrace.TraceContextPartsFromEffectSpan)(host),
+            ),
           ),
           host,
         ))
@@ -105,8 +103,8 @@ const runCarriedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> => {
   return Effect.scoped(
     Effect.gen(function*() {
       const { record, client } = yield* makeClient(plan)
-      const parts = Option.getOrThrow(parseTraceparent(FUTURE_TRACEPARENT))
-      yield* client.init({}, { headers: { [TRACEPARENT_HEADER]: FUTURE_TRACEPARENT } })
+      const parts = Option.getOrThrow(S.decodeOption(Trace.Traceparent)(FUTURE_TRACEPARENT))
+      yield* client.init({}, { headers: { [Trace.TraceparentHeader.literal]: FUTURE_TRACEPARENT } })
       return {
         hostTraceId: parts.traceId,
         hostSpanId: parts.spanId,
@@ -126,9 +124,9 @@ Feature('Linking a worker into the host run trace')
         Given('a reporter worker installed in the project being reported')('plan', () => Effect.succeed(PLAN)),
         When('the host reports the run inside a traced phase')('call', (s) => runTracedCall(s.plan)),
         Then('the boundary call carries the host span as a trace context header')((s) => {
-          const traceparent = Option.getOrUndefined(Headers.get(s.call.headers, TRACEPARENT_HEADER))
-          expect(Option.isSome(parseTraceparent(traceparent ?? ''))).toBe(true)
-          const parts = Option.getOrUndefined(parseTraceparent(traceparent ?? ''))
+          const traceparent = Option.getOrUndefined(Headers.get(s.call.headers, Trace.TraceparentHeader.literal))
+          expect(Option.isSome(S.decodeOption(Trace.Traceparent)(traceparent ?? ''))).toBe(true)
+          const parts = Option.getOrUndefined(S.decodeOption(Trace.Traceparent)(traceparent ?? ''))
           expect(parts?.traceId).toBe(s.call.hostTraceId)
           expect(parts?.spanId).toBe(s.call.hostSpanId)
         }),

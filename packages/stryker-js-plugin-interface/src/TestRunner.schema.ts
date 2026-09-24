@@ -1,6 +1,5 @@
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
-
-import { PositionSchema, RunOptionsFields } from '@systemfsoftware/stryker-js-instrumenter'
 
 export const DryRunStatus = S.Literals(['complete', 'error', 'timeout'])
 export type DryRunStatus = typeof DryRunStatus.Type
@@ -16,7 +15,7 @@ const TestResultBase = {
   name: S.String,
   timeSpentMs: S.Finite,
   fileName: S.optionalKey(S.String),
-  startPosition: S.optionalKey(PositionSchema),
+  startPosition: S.optionalKey(Mutant.PositionSchema),
 }
 
 export const TestResultSchema = S.Union([
@@ -55,10 +54,10 @@ export const MutantRunResultSchema = S.Union([
 export const CoverageAnalysisSchema = S.Literals(['off', 'all', 'perTest'])
 
 export const DryRunOptionsSchema = S.Struct({
-  ...RunOptionsFields,
+  ...Mutant.RunOptionsFields,
   coverageAnalysis: CoverageAnalysisSchema,
-  files: S.optionalKey(S.Array(S.String)),
-  testFiles: S.optionalKey(S.Array(S.String)),
+  files: S.String.pipe(S.Array, S.optionalKey),
+  testFiles: S.String.pipe(S.Array, S.optionalKey),
 })
 
 export const TestRunnerCapabilitiesSchema = S.Struct({
@@ -70,3 +69,84 @@ export class TestRunnerFailed extends S.TaggedError<TestRunnerFailed>()('TestRun
   phase: S.Literals(['capabilities', 'dispose', 'dryRun', 'init', 'mutantRun']),
   runnerName: S.String,
 }) {}
+
+export interface BaseTestResult {
+  readonly id: string
+  readonly name: string
+  readonly timeSpentMs: number
+  readonly fileName?: string
+  readonly startPosition?: Mutant.Position
+}
+
+export interface FailedTestResult extends BaseTestResult {
+  readonly status: 'failed'
+  readonly failureMessage: string
+}
+
+export interface SkippedTestResult extends BaseTestResult {
+  readonly status: 'skipped'
+}
+
+export interface SuccessTestResult extends BaseTestResult {
+  readonly status: 'success'
+}
+
+export type TestResult = FailedTestResult | SkippedTestResult | SuccessTestResult
+
+export interface CompleteDryRunResult {
+  readonly tests: readonly TestResult[]
+  readonly mutantCoverage?: Mutant.MutantCoverage
+  readonly status: 'complete'
+}
+
+export interface TimeoutDryRunResult {
+  readonly status: 'timeout'
+  readonly reason?: string
+}
+
+export interface ErrorDryRunResult {
+  readonly status: 'error'
+  readonly errorMessage: string
+}
+
+export type DryRunResult = CompleteDryRunResult | ErrorDryRunResult | TimeoutDryRunResult
+
+export interface TimeoutMutantRunResult {
+  readonly status: 'timeout'
+  readonly reason?: string
+}
+
+export interface KilledMutantRunResult {
+  readonly status: 'killed'
+  readonly killedBy: readonly string[]
+  readonly failureMessage: string
+  readonly nrOfTests: number
+}
+
+export interface SurvivedMutantRunResult {
+  readonly status: 'survived'
+  readonly nrOfTests: number
+}
+
+export interface ErrorMutantRunResult {
+  readonly status: 'error'
+  readonly errorMessage: string
+}
+
+export type MutantRunResult =
+  | ErrorMutantRunResult
+  | KilledMutantRunResult
+  | SurvivedMutantRunResult
+  | TimeoutMutantRunResult
+
+export type CoverageAnalysis = 'off' | 'all' | 'perTest'
+
+export interface DryRunOptions extends Mutant.RunOptions {
+  readonly coverageAnalysis: CoverageAnalysis
+  readonly files?: readonly string[]
+  readonly testFiles?: readonly string[]
+}
+
+export interface TestRunnerCapabilities {
+  readonly reloadEnvironment: boolean
+}

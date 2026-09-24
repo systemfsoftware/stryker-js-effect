@@ -18,7 +18,7 @@ tags:
 When engineers and autonomous coding agents attempt to set up mutation testing in modern TypeScript repositories, two structural failures occur:
 
 1. **Local Latency Penalty**: Running full test harnesses (such as Vitest worker sandboxes) across hundreds of mutant permutations introduces prohibitive latency ($T_{\text{run}} = N_{\text{mutants}} \times T_{\text{worker}}$), turning fast local feedback into a multi-minute pause.
-2. **ESM Plugin Resolution Breakage**: Stryker JS Effect v5 enforces standard ECMAScript module boundary isolation. Plugins must be provided as explicit `file:` URLs via `import.meta.resolve()`. Bare module specifiers (e.g. `plugins: ['@stryker-mutator/vitest-runner']`) throw fatal `PluginLoadFailedError` exceptions at startup.
+2. **Bare-Name Plugin Resolution**: every plugin field (`plugins`, `appendPlugins`, `ignorers`, `testRunner.plugin`, `checkers[].plugin`) takes the package's bare name, resolved from the project under test; a `file://` URL to a local build stays accepted.
 
 ## Architectural Invariants
 
@@ -32,14 +32,14 @@ $$\text{Runner}(E) = \begin{cases} \text{In-Process Worker-Thread `vm`}, & E \ne
 - **CI (`testRunner: 'vitest'`)**: Executes within isolated worker processes, capturing comprehensive per-test coverage analysis and supporting complete mock/DOM environments.
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig(({ isCi }) => ({
+export default StrykerConfig.define(({ isCi }) => ({
   testRunner: isCi ? 'vitest' : 'vm',
   checkers: ['typescript'],
   plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
-    import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+    '@systemfsoftware/stryker-js-vitest-runner',
+    '@systemfsoftware/stryker-js-typescript-checker',
   ],
   testFiles: ['test/**/*.test.ts', 'src/**/__tests__/**/*.test.ts'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/__tests__/**', '!src/**/*.d.ts'],
@@ -47,14 +47,13 @@ export default defineConfig(({ isCi }) => ({
 }))
 ```
 
-### 2. URL Plugin Resolution Law
+### 2. Bare-Name Plugin Resolution Law
 
-Bare module strings are prohibited in `plugins`. Every plugin specifier must be resolved to a canonical `file:` URL via `import.meta.resolve()` to survive ESM module boundary crossing:
+Installed packages take the bare name, resolved from the project under test. A `file://` URL to a local build stays accepted:
 
 ```ts
-// Invariant Law: Always resolve to file: URLs
 plugins: ;
-;[import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')]
+;['@systemfsoftware/stryker-js-vitest-runner']
 ```
 
 ### 3. Ignorer Registration Parity

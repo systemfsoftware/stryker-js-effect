@@ -1,5 +1,5 @@
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
-import { defineIgnorer } from '@systemfsoftware/stryker-ignorer-kit'
+import { defineIgnorer, type IgnorerVisitors } from '@systemfsoftware/stryker-ignorer-kit'
 import { type ScriptLang } from '@systemfsoftware/stryker-ignorer-kit/tester'
 import { expectTypeOf, test } from 'vitest'
 
@@ -25,12 +25,6 @@ test('a typed visitor gets a context narrowed to the kind it is keyed for', () =
   expectTypeOf(probe).toExtend<Ignorer>()
 })
 
-test('a visitor key that is not a node kind is refused', () => {
-  expectTypeOf(defineIgnorer({
-    name: 'bad-key-probe',
-    visitors: {
-      // @ts-expect-error a visitor key must be a Node['type'] member — a typo must not compile
-      LiteralX: () => 'R',
-    },
-  })).toExtend<Ignorer>()
+test('visitor keys are exactly the node kinds plus the onAnyNode escape hatch', () => {
+  expectTypeOf<keyof IgnorerVisitors>().toEqualTypeOf<Node['type'] | 'onAnyNode'>()
 })

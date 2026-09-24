@@ -1,14 +1,5 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import {
-  createVmSession,
-  definePlugin,
-  environmentPlugin,
-  globalsPlugin,
-  setupFilesPlugin,
-  type VmRunResponse,
-  type VmSession,
-  type VmSessionPlugin,
-} from '@systemfsoftware/stryker-vm-harness'
+import { Session } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -61,7 +52,7 @@ interface StubProjectConfig {
 export interface EnvironmentSandbox {
   readonly directory: string
   readonly files: ReadonlyArray<string>
-  readonly runSuite: Effect.Effect<VmRunResponse>
+  readonly runSuite: Effect.Effect<Session.VmRunResponse>
   readonly dispose: Effect.Effect<void>
 }
 
@@ -75,7 +66,7 @@ export interface SandboxOutcome {
   }>
 }
 
-export const outcomeOf = (response: VmRunResponse): SandboxOutcome => {
+export const outcomeOf = (response: Session.VmRunResponse): SandboxOutcome => {
   if (response.status !== 'complete') {
     return {
       status: response.status,
@@ -132,16 +123,22 @@ export const environmentSandboxOf = (
       }
     }
 
-    const stubConfigPlugin: VmSessionPlugin = {
+    const stubConfigPlugin: Session.VmSessionPlugin = {
       name: 'vitest-config-stub',
       init: (host) => {
         host.state.write(VM_VITEST_BAG_KEY, { projectFor: projectConfigFor })
       },
     }
 
-    const session: Promise<VmSession> = createVmSession(
+    const session: Promise<Session.VmSession> = Session.createVmSession(
       { sandboxWorkingDirectory: directory, testFiles },
-      [stubConfigPlugin, definePlugin, environmentPlugin, globalsPlugin, setupFilesPlugin],
+      [
+        stubConfigPlugin,
+        Session.definePlugin,
+        Session.environmentPlugin,
+        Session.globalsPlugin,
+        Session.setupFilesPlugin,
+      ],
     )
 
     return {

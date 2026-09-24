@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { createRegistry, DrainCompleted, type DrainOutcome, drainRegistry } from '@systemfsoftware/stryker-vm-harness'
+import { Drain, Registry } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as S from 'effect/Schema'
@@ -7,8 +7,8 @@ import { expect } from 'vitest'
 
 const Feature = makeFeature({ it, layer })
 
-const completedOf = (outcome: DrainOutcome): DrainCompleted => {
-  if (!S.is(DrainCompleted)(outcome)) throw new Error('expected a completed drain')
+const completedOf = (outcome: Drain.DrainOutcome): Drain.DrainCompleted => {
+  if (!S.is(Drain.DrainCompleted)(outcome)) throw new Error('expected a completed drain')
   return outcome
 }
 
@@ -23,14 +23,14 @@ Feature('Draining a registered suite into per-test outcomes')
           'registry',
           () =>
             Effect.sync(() => {
-              const registry = createRegistry()
+              const registry = Registry.createRegistry()
               registry.registerTest('t', [], 'run', false, () => {})
               return registry
             }),
         ),
         When('the suite is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.registry, undefined)),
         ),
         Then('the outcome lists just that test and invents no failure')((s) =>
           Effect.sync(() => {
@@ -49,7 +49,7 @@ Feature('Draining a registered suite into per-test outcomes')
           'registry',
           () =>
             Effect.sync(() => {
-              const registry = createRegistry()
+              const registry = Registry.createRegistry()
               registry.registerTest('t', [], 'run', false, () => {
                 void Promise.reject(new Error('boom'))
               })
@@ -58,7 +58,7 @@ Feature('Draining a registered suite into per-test outcomes')
         ),
         When('the suite is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.registry, undefined)),
         ),
         Then('the outcome lists that test plus one synthetic unhandled-rejection failure')((s) =>
           Effect.sync(() => {
@@ -82,14 +82,14 @@ Feature('Draining a registered suite into per-test outcomes')
           'registry',
           () =>
             Effect.sync(() => {
-              const registry = createRegistry()
+              const registry = Registry.createRegistry()
               registry.registerTest('flaky', [], 'run', true, () => {})
               return registry
             }),
         ),
         When('the suite is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.registry, undefined)),
         ),
         Then('the test is reported as a failure explaining that it should have failed')((s) =>
           Effect.sync(() => {

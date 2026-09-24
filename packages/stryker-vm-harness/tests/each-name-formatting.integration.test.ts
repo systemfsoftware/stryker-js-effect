@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { formatEachName } from '@systemfsoftware/stryker-vm-harness'
+import { Registry } from '@systemfsoftware/stryker-vm-harness'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
@@ -84,7 +84,7 @@ Feature('Naming each-runner tests from a table row exactly as Vitest does')
           ),
           When("the suite composes that test's name from the row")(
             'composed',
-            (s) => Effect.sync(() => formatEachName(s.input.pattern, s.input.tableRow)),
+            (s) => Effect.sync(() => Registry.formatEachName(s.input.pattern, s.input.tableRow)),
           ),
           Then('the name is the one Vitest gives the same row')((s) =>
             Effect.sync(() => {
@@ -103,7 +103,10 @@ Feature('Naming each-runner tests from a table row exactly as Vitest does')
         ),
         When('each row is named in table order')(
           'names',
-          (s) => Effect.sync(() => s.table.rows.map((row, index) => formatEachName(s.table.pattern, row, { index }))),
+          (s) =>
+            Effect.sync(() =>
+              s.table.rows.map((row, index) => Registry.formatEachName(s.table.pattern, row, { index }))
+            ),
         ),
         Then('the first row counts as the first and the second as the second')((s) =>
           Effect.sync(() => {
@@ -126,7 +129,7 @@ Feature('Naming each-runner tests from a table row exactly as Vitest does')
         ),
         Then('the title fails exactly as it does under Vitest')((s) =>
           Effect.sync(() => {
-            expect(() => formatEachName(s.composed.input.pattern, s.composed.input.tableRow)).toThrow(
+            expect(() => Registry.formatEachName(s.composed.input.pattern, s.composed.input.tableRow)).toThrow(
               'Cannot convert object to primitive value',
             )
           })

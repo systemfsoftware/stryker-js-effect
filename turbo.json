@@ -163,6 +163,7 @@
         "tsconfig.json",
         "tsconfig.*.json",
         "$TURBO_ROOT$/node_modules/@systemfsoftware/tsconfig/effect.json",
+        "$TURBO_ROOT$/node_modules/@systemfsoftware/tsconfig/effect-entrypoint.json",
         "!**/*.md"
       ],
       "outputs": [],

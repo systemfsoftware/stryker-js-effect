@@ -1,11 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  createVmSession,
-  type VmRunResponse,
-  type VmSession,
-  type VmSessionPlugin,
-} from '@systemfsoftware/stryker-vm-harness'
+import { Session } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -46,7 +41,7 @@ interface ToldEvent {
   readonly detail: string | undefined
 }
 
-const recorderPlugin = (told: Array<ToldEvent>): VmSessionPlugin => {
+const recorderPlugin = (told: Array<ToldEvent>): Session.VmSessionPlugin => {
   const note = (stage: string, detail?: string) => {
     told.push({ stage, detail })
   }
@@ -67,7 +62,7 @@ const recorderPlugin = (told: Array<ToldEvent>): VmSessionPlugin => {
 
 const stagesOf = (told: ReadonlyArray<ToldEvent>): readonly string[] => told.map((event) => event.stage)
 
-const dryRunOf = (session: VmSession): Promise<VmRunResponse> =>
+const dryRunOf = (session: Session.VmSession): Promise<Session.VmRunResponse> =>
   session.run({ kind: 'dry', timeoutMs: 5000, reloadEnvironment: true })
 
 Feature('Extending a harness session with plugins')
@@ -96,7 +91,7 @@ Feature('Extending a harness session with plugins')
             Effect.gen(function*() {
               const told: Array<ToldEvent> = []
               const session = yield* Effect.promise(() =>
-                createVmSession(
+                Session.createVmSession(
                   { sandboxWorkingDirectory: s.suite.directory, testFiles: s.suite.files },
                   [recorderPlugin(told)],
                 )
@@ -150,7 +145,7 @@ Feature('Extending a harness session with plugins')
                 Effect.gen(function*() {
                   const told: Array<ToldEvent> = []
                   const session = yield* Effect.promise(() =>
-                    createVmSession(
+                    Session.createVmSession(
                       { sandboxWorkingDirectory: written.directory, testFiles: written.files },
                       [recorderPlugin(told)],
                     )
@@ -198,7 +193,7 @@ Feature('Extending a harness session with plugins')
             Effect.gen(function*() {
               const told: Array<ToldEvent> = []
               const session = yield* Effect.promise(() =>
-                createVmSession(
+                Session.createVmSession(
                   { sandboxWorkingDirectory: s.suite.directory, testFiles: s.suite.files },
                   [recorderPlugin(told)],
                 )
@@ -257,7 +252,7 @@ Feature('Extending a harness session with plugins')
           (s) =>
             Effect.gen(function*() {
               const session = yield* Effect.promise(() =>
-                createVmSession({ sandboxWorkingDirectory: s.suite.directory, testFiles: s.suite.files }, [])
+                Session.createVmSession({ sandboxWorkingDirectory: s.suite.directory, testFiles: s.suite.files }, [])
               )
               const response = yield* Effect.promise(() => dryRunOf(session))
               yield* Effect.promise(() => session.dispose())
@@ -298,7 +293,7 @@ Feature('Extending a harness session with plugins')
           (s) =>
             Effect.gen(function*() {
               const session = yield* Effect.promise(() =>
-                createVmSession({ sandboxWorkingDirectory: s.suite.directory, testFiles: s.suite.files }, [])
+                Session.createVmSession({ sandboxWorkingDirectory: s.suite.directory, testFiles: s.suite.files }, [])
               )
               const response = yield* Effect.promise(() => dryRunOf(session))
               yield* Effect.promise(() => session.dispose())

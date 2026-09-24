@@ -1,11 +1,6 @@
 import { createRequire } from 'node:module'
 
-import {
-  createHarnessApi,
-  createRegistry,
-  executeDrainRegistry,
-  type TestRegistry,
-} from '@systemfsoftware/stryker-vm-harness'
+import { Drain, Registry } from '@systemfsoftware/stryker-vm-harness'
 
 type EachValue = null | undefined | string | number | boolean | bigint | symbol | object
 
@@ -215,9 +210,9 @@ const planRowSpecsOf = (seed: PlanSeedSpec, prepared: boolean): ReadonlyArray<Pl
     : []),
 ]
 
-const planRegistryOf = (seed: PlanSeedSpec, prepared: boolean): TestRegistry => {
-  const registry = createRegistry()
-  const api = createHarnessApi(registry)
+const planRegistryOf = (seed: PlanSeedSpec, prepared: boolean): Registry.TestRegistry => {
+  const registry = Registry.createRegistry()
+  const api = Registry.createHarnessApi(registry)
   seed.tests.forEach((spec: PlanTestSpec): void => {
     if (spec.suiteSize === 0) {
       if (spec.mode === 'todo') {
@@ -254,7 +249,7 @@ const planRegistryOf = (seed: PlanSeedSpec, prepared: boolean): TestRegistry => 
 
 export const planRowsOf = (seed: PlanSeedSpec): Promise<ReadonlyArray<PlanRow>> => {
   const specs = planRowSpecsOf(seed, seed.prepared)
-  return executeDrainRegistry(planRegistryOf(seed, seed.prepared), 5000).then((outcome) => {
+  return Drain.executeDrainRegistry(planRegistryOf(seed, seed.prepared), 5000).then((outcome) => {
     if (outcome.kind !== 'complete') {
       return specs.map((spec) => ({ key: spec.key, mode: spec.mode, status: 'timeout' }))
     }
@@ -336,9 +331,9 @@ export const drainTransform = (seed: DrainSeedSpec): DrainSeedSpec => {
   }
 }
 
-const drainRegistryOf = (seed: DrainSeedSpec): TestRegistry => {
-  const registry = createRegistry()
-  const api = createHarnessApi(registry)
+const drainRegistryOf = (seed: DrainSeedSpec): Registry.TestRegistry => {
+  const registry = Registry.createRegistry()
+  const api = Registry.createHarnessApi(registry)
   seed.files.forEach((file: DrainFileSpec): void => {
     registry.files.current = file.name
     api.describe(file.name, (suiteApi) => {
@@ -367,7 +362,7 @@ export const drainedRows = (seed: DrainSeedSpec): Promise<ReadonlyArray<DrainRow
   const seedRows: ReadonlyArray<DrainSeedRow> = seed.files.flatMap((file, fileIndex) =>
     file.tests.map((_test, testIndex) => ({ key: `d:${fileIndex}:${testIndex}` }))
   )
-  return executeDrainRegistry(drainRegistryOf(seed), 5000).then((outcome) => {
+  return Drain.executeDrainRegistry(drainRegistryOf(seed), 5000).then((outcome) => {
     if (outcome.kind !== 'complete') {
       return seedRows.map((row) => ({
         key: row.key,

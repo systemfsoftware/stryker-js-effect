@@ -1,10 +1,10 @@
 import { describe, it } from '@effect/vitest'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
-import * as mutants from '@systemfsoftware/stryker-js-instrumenter'
-import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Equivalence from 'effect/Equivalence'
-import * as Exit from 'effect/Exit'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
@@ -15,28 +15,45 @@ import {
   Admitted,
   NoSurvivors,
   PriorReportFacts,
-  SurvivorsAdmission,
   SurvivorsRejection,
 } from '../admit-survivors-run.workflow.js'
-import { SURVIVORS_RUN_FIRST_REMEDIATION } from '../Survivors.js'
-import { extractSurvivors, type HashContent, priorSourceHashes, sourceContentHash } from '../Survivors.js'
 const stringArrayEquivalence = Equivalence.Array(Equivalence.String)
 
-const sha256Hex: HashContent = (content) => bytesToHex(sha256(utf8ToBytes(content)))
+const SURVIVORS_RUN_FIRST_REMEDIATION = 'run a full `stryker run` first, then re-run with --survivors'
+
+const sha256Hex = (content: string) => bytesToHex(sha256(utf8ToBytes(content)))
 const absPath = (file: string): string => `/work/${file}`
+
+/**
+ * The test's own projection of a report's survivors, so the admission's
+ * coordinate conversion (report lines and columns are 1-based, mutant
+ * locations 0-based) is pinned against an independent oracle instead of
+ * mirroring the cell's private helper.
+ */
+const survivorsOf = (report: Report.MutationTestResult) =>
+  Object.entries(report.files).flatMap(([file, fileResult]) =>
+    fileResult.mutants
+      .filter((mutant) => mutant.status === 'Survived')
+      .map((mutant) => ({
+        id: Mutant.MutantId.make(mutant.id),
+        fileName: Mutant.CanonicalFileName.make(absPath(file)),
+        relativeFileName: file,
+        mutatorName: Mutant.MutatorName.make(mutant.mutatorName),
+        replacement: mutant.replacement ?? mutant.mutatorName,
+        location: {
+          start: { line: mutant.location.start.line - 1, column: mutant.location.start.column - 1 },
+          end: { line: mutant.location.end.line - 1, column: mutant.location.end.column - 1 },
+        },
+      }))
+  )
+
+const priorSourceHashesOf = (report: Report.MutationTestResult) =>
+  Object.fromEntries(Object.entries(report.files).map(([file, fileResult]) => [file, sha256Hex(fileResult.source)]))
 
 const intIn = (minimum: number, maximum: number) => Arbitrary.schema(S.Int.check(S.isBetween({ minimum, maximum })))
 
-const oneOf = <A = unknown>(...arbs: ReadonlyArray<Arbitrary.Arbitrary<A>>): Arbitrary.Arbitrary<A> =>
-  intIn(0, arbs.length - 1).pipe(
-    Arbitrary.flatMap((index) => {
-      const chosen = arbs[index]
-      if (chosen === undefined) {
-        throw new Error(`oneOf was asked for an arbitrary at index ${index}, which is unbound`)
-      }
-      return chosen
-    }),
-  )
+const oneOf2 = <A>(first: Arbitrary.Arbitrary<A>, second: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<A> =>
+  Arbitrary.schema(S.Boolean).pipe(Arbitrary.flatMap((pick) => (pick ? first : second)))
 
 const reportPositionArb = Arbitrary.all({
   line: intIn(1, 200),
@@ -45,16 +62,16 @@ const reportPositionArb = Arbitrary.all({
 
 const reportLocationArb = Arbitrary.all({ start: reportPositionArb, end: reportPositionArb })
 
-const nonSurvivedStatusArb: Arbitrary.Arbitrary<mutants.MutantStatus> = Arbitrary.schema(
+const nonSurvivedStatusArb: Arbitrary.Arbitrary<Mutant.MutantStatus> = Arbitrary.schema(
   S.Literals(['Killed', 'NoCoverage', 'Timeout', 'RuntimeError', 'CompileError', 'Ignored', 'Pending']),
 )
 
 const mutantResultArb = (
-  status: Arbitrary.Arbitrary<mutants.MutantStatus>,
-): Arbitrary.Arbitrary<schema.MutantResult> =>
+  status: Arbitrary.Arbitrary<Mutant.MutantStatus>,
+): Arbitrary.Arbitrary<Report.MutantResult> =>
   Arbitrary.all({
-    id: Arbitrary.schema(S.String.check(S.isMinLength(1), S.isMaxLength(8))),
-    mutatorName: Arbitrary.schema(S.String.check(S.isMinLength(1), S.isMaxLength(8))),
+    id: Arbitrary.schema(Mutant.MutantId),
+    mutatorName: Arbitrary.schema(Mutant.MutatorName),
     location: reportLocationArb,
     status,
     replacement: Arbitrary.schema(S.String.check(S.isMaxLength(8))),
@@ -71,15 +88,19 @@ const recordOf = <A>(value: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<Record<
 type CleanConfig = Record<string, string | number | boolean>
 
 const cleanConfigArb: Arbitrary.Arbitrary<CleanConfig> = recordOf(
-  oneOf<string | number | boolean>(shortKeyArb, Arbitrary.schema(S.Int), Arbitrary.schema(S.Boolean)),
+  Arbitrary.schema(S.Union([S.String, S.Int, S.Boolean])),
 )
 
 const sourceArb = Arbitrary.schema(S.String.check(S.isMaxLength(16), S.isPattern(/^[\x20-\x7E]*$/)))
 
-const survivingFilesArb: Arbitrary.Arbitrary<Record<string, schema.FileResult>> = Arbitrary.all([
-  Arbitrary.schema(S.String.check(S.isMinLength(1), S.isMaxLength(6))),
+const segmentKeyArb = Arbitrary.schema(
+  S.String.check(S.isMinLength(1), S.isMaxLength(6), S.isPattern(/^[\x21-\x5B\x5D-\x7E]+(\/[\x21-\x5B\x5D-\x7E]+)*$/)),
+)
+
+const survivingFilesArb: Arbitrary.Arbitrary<Record<string, Report.FileResult>> = Arbitrary.all([
+  segmentKeyArb,
   Arbitrary.array(mutantResultArb(nonSurvivedStatusArb), { maxLength: 3 }),
-  mutantResultArb(Arbitrary.Constant<mutants.MutantStatus>('Survived')),
+  mutantResultArb(Arbitrary.Constant<Mutant.MutantStatus>('Survived')),
   sourceArb,
 ]).pipe(
   Arbitrary.map(([file, others, survivor, source]) => ({
@@ -87,7 +108,7 @@ const survivingFilesArb: Arbitrary.Arbitrary<Record<string, schema.FileResult>> 
   })),
 )
 
-const nonSurvivingFilesArb: Arbitrary.Arbitrary<Record<string, schema.FileResult>> = recordOf(
+const nonSurvivingFilesArb: Arbitrary.Arbitrary<Record<string, Report.FileResult>> = recordOf(
   Arbitrary.all({
     language: Arbitrary.Constant('javascript'),
     source: sourceArb,
@@ -96,9 +117,9 @@ const nonSurvivingFilesArb: Arbitrary.Arbitrary<Record<string, schema.FileResult
 )
 
 const reportArb = (
-  files: Arbitrary.Arbitrary<Record<string, schema.FileResult>>,
+  files: Arbitrary.Arbitrary<Record<string, Report.FileResult>>,
   config: Arbitrary.Arbitrary<CleanConfig> = cleanConfigArb,
-): Arbitrary.Arbitrary<schema.MutationTestResult> =>
+): Arbitrary.Arbitrary<Report.MutationTestResult> =>
   Arbitrary.all({
     config,
     schemaVersion: Arbitrary.Constant('1'),
@@ -113,7 +134,7 @@ const reportArb = (
 const reportWithSurvivorsArb = reportArb(survivingFilesArb)
 const reportWithoutSurvivorsArb = reportArb(nonSurvivingFilesArb)
 
-const frameworklessReportArb: Arbitrary.Arbitrary<schema.MutationTestResult> = Arbitrary.all({
+const frameworklessReportArb: Arbitrary.Arbitrary<Report.MutationTestResult> = Arbitrary.all({
   config: cleanConfigArb,
   schemaVersion: Arbitrary.Constant('1'),
   thresholds: Arbitrary.all({ high: Arbitrary.schema(S.Int), low: Arbitrary.schema(S.Int) }),
@@ -141,7 +162,7 @@ const survivorsProducedReportArb = reportArb(
  * assignable — the suite would keep passing while no longer exercising a command. Spread
  * the data, construct once, and every variant is a real instance.
  */
-const matchingFields = (report: schema.MutationTestResult) => ({
+const matchingFields = (report: Report.MutationTestResult) => ({
   priorReport: PriorReportFacts.make({
     config: report.config ?? {},
     frameworkVersion: report.framework?.version,
@@ -151,25 +172,25 @@ const matchingFields = (report: schema.MutationTestResult) => ({
   sourceContentHashes: Object.fromEntries(
     Object.entries(report.files).map(([file, fileResult]) => [
       file,
-      sourceContentHash(fileResult.source, sha256Hex),
+      sha256Hex(fileResult.source),
     ]),
   ),
-  priorSourceHashes: priorSourceHashes(report, sha256Hex),
-  priorSurvivors: extractSurvivors(report, absPath),
+  priorSourceHashes: priorSourceHashesOf(report),
+  priorSurvivors: survivorsOf(report),
 })
 
-const matchingCommand = (report: schema.MutationTestResult): AdmitSurvivorsRunCommand =>
+const matchingCommand = (report: Report.MutationTestResult): AdmitSurvivorsRunCommand =>
   AdmitSurvivorsRunCommand.make(matchingFields(report))
 
 /** The same command with the framework version drifted, so the two sides disagree. */
-const driftedCommand = (report: schema.MutationTestResult): AdmitSurvivorsRunCommand =>
+const driftedCommand = (report: Report.MutationTestResult): AdmitSurvivorsRunCommand =>
   AdmitSurvivorsRunCommand.make({
     ...matchingFields(report),
     frameworkVersion: `${report.framework?.version ?? ''}-drifted`,
   })
 
 /** The same command with no prior report, so the admission has nothing to inspect. */
-const commandWithoutPriorReport = (report: schema.MutationTestResult): AdmitSurvivorsRunCommand =>
+const commandWithoutPriorReport = (report: Report.MutationTestResult): AdmitSurvivorsRunCommand =>
   AdmitSurvivorsRunCommand.make({
     ...matchingFields(report),
     priorReport: undefined,
@@ -270,12 +291,32 @@ describe('admitSurvivorsRun', () => {
       if (!S.is(Admitted)(admission.success)) {
         return false
       }
-      const expected = extractSurvivors(report, absPath)
+      const expected = survivorsOf(report)
       return expected.length > 0 &&
         stringArrayEquivalence(
           admission.success.survivors.map(fingerprint),
           expected.map(fingerprint),
         )
+    },
+  )
+
+  it.prop(
+    '∀r_Report_≡AdmittedMutateSpansRe-readFromReport',
+    [reportWithSurvivorsArb],
+    ([report]) => {
+      const admission = admitSurvivorsRun(matchingCommand(report))
+      if (!Result.isSuccess(admission)) {
+        return false
+      }
+      if (!S.is(Admitted)(admission.success)) {
+        return false
+      }
+      const expected = survivorsOf(report).map((survivor) =>
+        `${survivor.relativeFileName}:${survivor.location.start.line + 1}:${survivor.location.start.column}-${
+          survivor.location.end.line + 1
+        }:${survivor.location.end.column}`
+      )
+      return expected.length > 0 && stringArrayEquivalence(admission.success.mutateSpans, Arr.dedupe(expected))
     },
   )
 
@@ -313,7 +354,7 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀r_EveryRejection_≡EndsWithRunFirstRemediation',
-    [oneOf<schema.MutationTestResult>(reportWithSurvivorsArb, survivorsProducedReportArb)],
+    [oneOf2<Report.MutationTestResult>(reportWithSurvivorsArb, survivorsProducedReportArb)],
     ([report]) => {
       const rejections = [
         rejectionOf(admitSurvivorsRun(commandWithoutPriorReport(report))),
@@ -350,108 +391,6 @@ describe('admitSurvivorsRun', () => {
         }
         return S.is(SurvivorsRejection)(r)
       })(),
-  )
-
-  it.prop(
-    '∀m_MalformedSurvivor_≡RefusedByAdmissionDecode',
-    [Arbitrary.all({ id: Arbitrary.schema(S.String), fileName: Arbitrary.schema(S.String) })],
-    ([partial]) =>
-      Exit.isFailure(
-        S.decodeUnknownExit(SurvivorsAdmission)({ _tag: 'Admitted', survivors: [partial] }),
-      ),
-  )
-
-  it.prop(
-    '∀l_MalformedLocation_≡RefusedByAdmissionDecode',
-    [
-      oneOf(
-        Arbitrary.Constant({}),
-        Arbitrary.all({ start: Arbitrary.Constant({}), end: reportPositionArb }),
-        Arbitrary.all({ start: reportPositionArb, end: Arbitrary.Constant({}) }),
-      ),
-      Arbitrary.all({
-        id: Arbitrary.schema(S.String.check(S.isMinLength(1))),
-        fileName: Arbitrary.schema(S.String.check(S.isMinLength(1))),
-        mutatorName: Arbitrary.schema(S.String.check(S.isMinLength(1))),
-        replacement: Arbitrary.schema(S.String.check(S.isMinLength(1))),
-      }),
-    ],
-    ([location, fields]) =>
-      Exit.isFailure(
-        S.decodeUnknownExit(SurvivorsAdmission)({
-          _tag: 'Admitted',
-          survivors: [{ ...fields, location }],
-        }),
-      ),
-  )
-
-  it.prop(
-    '∀r_WellFormedSurvivors_≡AcceptedByAdmissionDecode',
-    [reportWithSurvivorsArb],
-    ([report]) =>
-      Exit.isSuccess(
-        S.decodeExit(SurvivorsAdmission)({
-          _tag: 'Admitted',
-          survivors: extractSurvivors(report, absPath),
-        }),
-      ),
-  )
-
-  it.prop(
-    '∀r_EveryVariant_≡BrandedWithTheRegistryScopedTypeId',
-    [reportWithSurvivorsArb],
-    ([report]) => {
-      const crossRealmBrand = Symbol.for('@systemfsoftware/stryker-js/SurvivorsAdmission')
-      const admitted = admitSurvivorsRun(matchingCommand(report))
-      const empty = admitSurvivorsRun(matchingCommand({ ...report, files: {} }))
-      const rejected = admitSurvivorsRun(commandWithoutPriorReport(report))
-      return Result.isSuccess(admitted) && Result.isSuccess(empty) && Result.isFailure(rejected) &&
-        crossRealmBrand in admitted.success &&
-        crossRealmBrand in empty.success &&
-        crossRealmBrand in rejected.failure
-    },
-  )
-})
-
-describe('sourceContentHash', () => {
-  it.prop(
-    '∀c_Empty_≡FipsVector',
-    [Arbitrary.Constant('')],
-    ([content]) =>
-      sourceContentHash(content, sha256Hex) === 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-  )
-
-  it.prop(
-    '∀c_Abc_≡FipsVector',
-    [Arbitrary.Constant('abc')],
-    ([content]) =>
-      sourceContentHash(content, sha256Hex) === 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
-  )
-
-  it.prop(
-    '∀c_NonAscii_≡Utf8Vector',
-    [Arbitrary.Constant('✓')],
-    ([content]) =>
-      sourceContentHash(content, sha256Hex) === '1dabba21cdad44541f6b15796f8d22978fc7ea10c46aeceeeeb66c23b3ac7604',
-  )
-
-  it.prop(
-    '∀c_Content_≡Deterministic',
-    [sourceArb],
-    ([content]) => sourceContentHash(content, sha256Hex) === sourceContentHash(content, sha256Hex),
-  )
-
-  it.prop(
-    '∀a,b_Content_≠Distinct',
-    [
-      Arbitrary.all([sourceArb, sourceArb]).pipe(
-        Arbitrary.map(([a, b]) => {
-          if (a === b) return [a, `${b}x`] as const
-          return [a, b] as const
-        }),
-      ),
-    ],
-    ([[a, b]]) => sourceContentHash(a, sha256Hex) !== sourceContentHash(b, sha256Hex),
   )
 })
 

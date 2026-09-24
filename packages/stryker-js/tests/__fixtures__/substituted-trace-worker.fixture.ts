@@ -1,6 +1,5 @@
-import { WorkerLauncher } from '@systemfsoftware/stryker-js'
-import { ReporterRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
-import { layerTraceContextServer, withLinkedSpan } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'
@@ -11,6 +10,7 @@ import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 import * as Socket from 'effect/unstable/socket/Socket'
 import * as SocketServer from 'effect/unstable/socket/SocketServer'
+import { Worker } from '../../src/mod.js'
 
 import { servingLauncher, singleConnection } from './substituted-worker.fixture.js'
 
@@ -27,11 +27,11 @@ export const makeTraceWorkerRecord: Effect.Effect<TraceWorkerRecord> = Effect.ge
 })
 
 const traceServer = (socket: Socket.Socket, record: TraceWorkerRecord): Layer.Layer<never> =>
-  RpcServer.layer(ReporterRpcs).pipe(
-    Layer.provide(ReporterRpcs.toLayer({
+  RpcServer.layer(Plugin.ReporterRpcs).pipe(
+    Layer.provide(Plugin.ReporterRpcs.toLayer({
       init: (_payload, options) =>
         Ref.set(record.headers, options.headers).pipe(
-          Effect.andThen(withLinkedSpan('worker.async', {}, Effect.void)),
+          Effect.andThen(Trace.withLinkedSpan('worker.async', {}, Effect.void)),
         ),
       onEventBatch: () => Effect.void,
       flush: () => Effect.void,
@@ -40,12 +40,12 @@ const traceServer = (socket: Socket.Socket, record: TraceWorkerRecord): Layer.La
     Layer.provide(RpcSerialization.layerNdjson),
     Layer.provide(Layer.succeed(Socket.Socket, socket)),
     Layer.provide(Layer.succeed(SocketServer.SocketServer, singleConnection(socket))),
-    Layer.provide(layerTraceContextServer),
+    Layer.provide(Trace.layerTraceContextServer),
   )
 
 export const traceServingLauncher = (
   record: TraceWorkerRecord,
-): Effect.Effect<Layer.Layer<WorkerLauncher>, never, Scope.Scope> =>
+): Effect.Effect<Layer.Layer<Worker.WorkerLauncher>, never, Scope.Scope> =>
   Effect.map(
     servingLauncher({
       pid: TRACE_WORKER_PID,

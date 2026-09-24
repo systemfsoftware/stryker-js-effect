@@ -24,14 +24,14 @@ pnpm add -D @systemfsoftware/stryker-js \
 Create `stryker.config.ts` in your project root:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'vitest',
   checkers: ['typescript'],
   plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
-    import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+    '@systemfsoftware/stryker-js-vitest-runner',
+    '@systemfsoftware/stryker-js-typescript-checker',
   ],
   mutate: [
     'src/**/*.ts',
@@ -64,9 +64,9 @@ Set `testFiles` explicitly, or pick one of the runners below, to take control.
 Execute any test suite without extra plugins:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'command',
   commandRunner: {
     command: 'npm test',
@@ -80,9 +80,9 @@ export default defineConfig({
 Runs Vitest suites in-process, in one worker thread per test runner, loading each test file as native ESM through Node's module hooks. No child process and no bundler step. Each file gets its own module state by default; your `vitest.config.*` (environment, setup files, globals, projects) is picked up through your project's `vitest` install. Vitest browser-mode suites are refused with an error naming `testRunner: 'vitest'`; pick the `vitest` runner for those.
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'vm',
   testFiles: ['test/**/*.test.ts'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
@@ -91,34 +91,34 @@ export default defineConfig({
 
 ## Configuration API (`@systemfsoftware/stryker-js/config`)
 
-The `./config` subpath exports lightweight, inert TypeScript configuration helpers:
+The `./config` subpath exports the typed configuration authoring surface:
 
 ```ts
-import { defineConfig, mergeConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 ```
 
-### `defineConfig(options | configFactory)`
+### `StrykerConfig.define(options | configFactory)`
 
 Identity function providing strict autocompletion and type checking without runtime dependencies. Can take a configuration object or a factory receiving `ConfigEnv`:
 
 ```ts
-export default defineConfig(({ isCi, command }) => ({
+export default StrykerConfig.define(({ isCi, command }) => ({
   testRunner: 'vitest',
-  plugins: [import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')],
+  plugins: ['@systemfsoftware/stryker-js-vitest-runner'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
   concurrency: isCi ? 2 : 4,
 }))
 ```
 
-### `mergeConfig(base, overrides)`
+### `StrykerConfig.merge(base, overrides)`
 
 Deeply merges configuration presets. Keys in records merge recursively; scalar values and arrays in `overrides` completely replace base values:
 
 ```ts
-import { mergeConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 import baseConfig from './stryker.base.config.ts'
 
-export default mergeConfig(baseConfig, {
+export default StrykerConfig.merge(baseConfig, {
   concurrency: 8,
   mutate: ['packages/core/src/**/*.ts'],
 })
@@ -152,12 +152,15 @@ pnpm exec stryker merge-reports --output reports/mutation/mutation.json "reports
 
 ```ts
 import { NodeRuntime } from '@effect/platform-node'
-import { strykerCell } from '@systemfsoftware/stryker-js'
+import { Engine } from '@systemfsoftware/stryker-js'
+import * as Effect from 'effect/Effect'
 
-NodeRuntime.runMain(strykerCell({
-  mutate: ['src/**/*.ts'],
-  testRunner: 'command',
-}))
+NodeRuntime.runMain(
+  Engine.strykerCell({
+    mutate: ['src/**/*.ts'],
+    testRunner: 'command',
+  }).pipe(Effect.provide(Engine.nodePlatformLayer)),
+)
 ```
 
 ### Vanilla Promise Interface (`./promises`)
@@ -180,7 +183,7 @@ console.log(`Mutation score: ${verdict.score}%`)
 | Subpath      | Description                                                        |
 | ------------ | ------------------------------------------------------------------ |
 | `.`          | Main entry point: `strykerCell`, runtime layers, and error schemas |
-| `./config`   | `defineConfig`, `mergeConfig`, and `StrykerConfig` typing          |
+| `./config`   | `StrykerConfig` authoring surface (`define`, `merge`)              |
 | `./promises` | `run()` wrapper returning standard JavaScript promises             |
 
 ## License

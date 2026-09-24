@@ -1,77 +1,82 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
-import { type ReporterFactory, type StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Format } from '@systemfsoftware/stryker-js-instrumenter'
+import { Options, type Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
+import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import { dual } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
+import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
-import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
-import * as Stdio from 'effect/Stdio'
-import { type RunEvent } from '../RunEvents.js'
-import { PhaseEntered } from '../RunEvents.js'
-import { RunEvents } from '../RunEvents.js'
 
-import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { makeBuiltinReporterFactories } from '../builtin-reporters.js'
-import { resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
-import { missingWorkerEntry } from '../plugin-worker-entry.js'
-import { loadPlugins, pluginUrlsFromOptions } from '../Plugins.js'
-import type { LoadedPlugins, PluginDescriptor } from '../Plugins.js'
-import { readProject } from '../Project.js'
-import type { Project } from '../Project.js'
-import { ansi } from '../Reporter.ansi.js'
+import { installedFrameworkClaimants } from '../framework-claimant.service.js'
+import { pluginLoadFailureEvents, reportPluginLoad } from '../plugin-load-report.service.js'
+import { loadPlugins, pluginUrlsFromOptions } from '../plugin-loader.service.js'
+import { type LoadedPlugins, type PluginDescriptor } from '../Plugins.schema.js'
+import type { Project } from '../Project.schema.js'
+import type { ReadProjectDone } from '../read-project.cell.js'
 import {
   attachReporterFactories,
-  type AttachReporterInput,
   currentReporterInit,
   type ReporterStage,
-  reporterWorkerFactory,
-  spawnReporterWorker,
   validateReporterNames,
   withPhaseSpan,
-} from '../ReporterStream.js'
+} from '../reporter-stream.service.js'
+import { type ReporterChoice, reporterInputsOf } from '../reporter-wiring.service.js'
+import { Reporter } from '../reporter.service.js'
+import { AnsiCode } from '../reporting/ansi.schema.js'
+import { type RunEvent } from '../run-events.service.js'
+import { PhaseEntered, RunEvents } from '../run-events.service.js'
 import { PrepareError, StageError } from '../Run.schema.js'
-import { TemporaryDirectory, TemporaryDirectoryLive } from '../Sandbox.js'
-import { selectReporters } from '../select-reporters.js'
-import { WorkerLauncher } from '../WorkerLauncher.js'
-import { forkCoreSchema, readConfig, validateOptions } from './load-config.cell.js'
+import { TemporaryDirectory } from '../Sandbox.service.js'
+import { WorkerLauncher } from '../WorkerLauncher.service.js'
+import type { FrameworkClaimant } from './explain-file-skip.workflow.js'
+import { forkCoreSchema, validateOptions } from './load-config.cell.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
-import { planPrepare, type PrepareDecision, PrepareDecoded } from './plan-prepare.workflow.js'
-import { RunEnvironment } from './RunEnvironment.js'
-import type { RunEnvironmentShape } from './RunEnvironment.js'
+import { planPrepare, PrepareDecoded } from './plan-prepare.workflow.js'
+import { RunEnvironment } from './RunEnvironment.service.js'
+import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 
 export interface PrepareDone {
   readonly project: Project
   readonly loadedPlugins: LoadedPlugins
   readonly ignorers: readonly Ignorer[]
-  readonly options: StrykerOptions
+  readonly formatRegistry: Format.FormatRegistry
+  readonly options: Options.StrykerOptions
   readonly temporaryDirectoryPath: string
   readonly reporterStage: ReporterStage
+  readonly frameworkClaimants: readonly FrameworkClaimant[]
 }
 
 export interface PrepareExecutorArgs {
-  cliOptions: PartialStrykerOptions
+  cliOptions: Options.PartialStrykerOptions
   targetMutatePatterns: string[] | undefined
 }
 
-interface PrepareRaw {
+type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly env: RunEnvironmentShape
   readonly queue: Queue.Queue<RunEvent, Cause.Done>
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly loaded: LoadedPlugins
   readonly project: Project
   readonly ignorers: readonly Ignorer[]
-  readonly builtinReporterFactories: Record<string, ReporterFactory>
+  readonly formatRegistry: Format.FormatRegistry
+  readonly builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory>
   readonly reporterChoicesByName: HashMap.HashMap<string, ReporterChoice>
+  readonly frameworkClaimants: readonly FrameworkClaimant[]
 }
+
+const NO_PLUGIN_DESCRIPTORS: readonly PluginDescriptor[] = []
 
 const schemaPropertiesOf = <A = unknown>(document: ValidationSchemaDocument<A>): Record<string, NonNullable<A>> =>
   Option.getOrElse(Option.fromNullishOr(document.properties), () => ({}))
@@ -79,143 +84,43 @@ const schemaPropertiesOf = <A = unknown>(document: ValidationSchemaDocument<A>):
 const buildMergedSchema = <A = unknown>(
   core: ValidationSchemaDocument,
   contributions: readonly Record<string, A>[],
-): ValidationSchemaDocument =>
-  Match.value(contributions.length === 0).pipe(
-    Match.when(true, (): ValidationSchemaDocument => core),
-    Match.orElse((): ValidationSchemaDocument => ({
+) =>
+  Boolean.match(contributions.length === 0, {
+    onTrue: () => core,
+    onFalse: () => ({
       ...core,
-      properties: Object.assign(
-        {},
+      properties: contributions.reduce(
+        (merged, contribution) => ({ ...merged, ...schemaPropertiesOf(contribution) }),
         schemaPropertiesOf(core),
-        ...contributions.map((contribution) => schemaPropertiesOf(contribution)),
       ),
-    })),
-  )
+    }),
+  })
 
-interface ReporterChoice {
-  readonly name: string
-  readonly builtinFactory: Option.Option<ReporterFactory>
-}
-
-const announceSummary = (env: RunEnvironmentShape, summary: string): Effect.Effect<void> =>
+const announceSummary = (env: RunEnvironmentShape, summary: string) =>
   Match.value(env.resolvedMode.mode).pipe(
     Match.when('human', () => announceHumanSummary(env.allowConsoleColors, summary)),
     Match.orElse(() => Effect.logInfo(summary)),
   )
 
-const announceHumanSummary = (allowConsoleColors: boolean, summary: string): Effect.Effect<void> =>
-  Match.value(allowConsoleColors).pipe(
-    Match.when(true, () => Console.log(ansi.green(summary))),
-    Match.orElse(() => Console.log(summary)),
-  )
-
-const NO_PLUGIN_DESCRIPTORS: readonly PluginDescriptor[] = []
-
-const spawnPluginReporterFactory = (
-  name: string,
-  loaded: LoadedPlugins,
-  projectBasePath: string,
-  options: StrykerOptions,
-): Effect.Effect<
-  ReporterFactory,
-  StageError,
-  Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
-> =>
-  Effect.gen(function*() {
-    const entry = yield* resolvePluginWorkerEntry({ loaded, kind: 'Reporter', name }).pipe(
-      Effect.mapError(missingWorkerEntry('prepare', 'reporter', name)),
-    )
-    const client = yield* spawnReporterWorker({
-      entrypoint: entry.entrypoint,
-      projectBasePath,
-      execArgv: [],
-      options,
-      tempDirPrefix: 'stryker-reporter-',
-    }).pipe(
-      Effect.mapError((cause) =>
-        StageError.make({ stage: 'prepare', reason: `Failed to start the reporter worker "${name}"`, cause })
-      ),
-    )
-    return reporterWorkerFactory(client)
+const announceHumanSummary = (allowConsoleColors: boolean, summary: string) =>
+  Boolean.match(allowConsoleColors, {
+    onTrue: () => Console.log(`${AnsiCode.fields.green.literal}${summary}${AnsiCode.fields.reset.literal}`),
+    onFalse: () => Console.log(summary),
   })
 
-const reporterInputsOf = (
-  names: readonly string[],
-  choicesByName: HashMap.HashMap<string, ReporterChoice>,
-  loaded: LoadedPlugins,
-  projectBasePath: string,
-  options: StrykerOptions,
-): Effect.Effect<
-  readonly AttachReporterInput[],
-  StageError,
-  Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
-> =>
-  Effect.forEach(
-    selectReporterChoices(names, choicesByName),
-    (choice) =>
-      Option.match(choice.builtinFactory, {
-        onSome: (builtin) => Effect.succeed<AttachReporterInput>({ name: choice.name, factory: builtin }),
-        onNone: () =>
-          Effect.map(
-            spawnPluginReporterFactory(choice.name, loaded, projectBasePath, options),
-            (factory): AttachReporterInput => ({ name: choice.name, factory }),
-          ),
-      }),
-    { concurrency: 1 },
-  )
-
-const selectReporter = (
-  chosen: Map<string, ReporterChoice>,
-  name: string,
-  choicesByName: HashMap.HashMap<string, ReporterChoice>,
-): void => {
-  const key = name.toLowerCase()
-  Option.match(HashMap.get(choicesByName, key), {
-    onNone: () => undefined,
-    onSome: (choice) => {
-      if (!chosen.has(key)) {
-        chosen.set(key, choice)
-      }
-    },
-  })
-}
-
-const selectReporterChoices = (
-  names: readonly string[],
-  choicesByName: HashMap.HashMap<string, ReporterChoice>,
-): readonly ReporterChoice[] => {
-  const chosen = new Map<string, ReporterChoice>()
-  names.forEach((name) => selectReporter(chosen, name, choicesByName))
-  return [...chosen.values()]
-}
-
-const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
+const readPrepare = (command: ReadProjectDone): Effect.Effect<
   PrepareRaw,
   StageError,
-  | Scope.Scope
-  | RunEnvironment
-  | RunEvents
-  | WorkerLauncher
-  | FileSystem.FileSystem
-  | Path.Path
-  | Stdio.Stdio
+  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
 > =>
   Effect.gen(function*() {
     yield* Scope.Scope
     const env = yield* RunEnvironment
     const queue = yield* RunEvents
     const coreSchema: ValidationSchemaDocument = forkCoreSchema
-    const configured = yield* readConfig(command.cliOptions, { command: 'run', mode: env.resolvedMode.mode }).pipe(
-      Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read config', cause })),
-      Effect.tapCause(() =>
-        Effect.gen(function*() {
-          const now = yield* Clock.currentTimeMillis
-          yield* Queue.offer(queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
-        }).pipe(Effect.ignore)
-      ),
-    )
+    const configured = command.options
     const resolvedReporters = selectReporters([...configured.reporters], env.resolvedMode.mode)
-    const options: StrykerOptions = {
+    const options: Options.StrykerOptions = {
       ...configured,
       reporters: resolvedReporters,
       allowConsoleColors: env.allowConsoleColors,
@@ -225,9 +130,21 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
       },
     }
     const descriptors: readonly string[] = pluginUrlsFromOptions(options)
-    const loaded = yield* loadPlugins(descriptors).pipe(
+    const loaded = yield* loadPlugins(descriptors, env.basePath).pipe(
+      Effect.tapError((error) =>
+        Effect.gen(function*() {
+          const failedAt = yield* Clock.currentTimeMillis
+          const events = yield* pluginLoadFailureEvents(error, failedAt - env.runStartedAt)
+          yield* Effect.forEach(events, (event) => Queue.offer(queue, event), { discard: true })
+        })
+      ),
       Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
     )
+    const registry = Format.registerEntries(
+      Format.coreFormatRegistry,
+      loaded.frameworks.map(({ moduleName, framework }) => Format.frameworkEntryOf(moduleName, framework)),
+    )
+    yield* reportPluginLoad(queue, loaded, registry)
     const mergedSchema = buildMergedSchema(coreSchema, loaded.schemaContributions)
     const record = { ...options }
     yield* validateOptions(record, mergedSchema).pipe(
@@ -240,17 +157,10 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
           }),
       ),
     )
-    const project = yield* readProject(options, command.targetMutatePatterns, env.basePath).pipe(
-      Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read project', cause })),
-    )
     const ignorers: readonly Ignorer[] = loaded.ignorers
 
-    const builtinReporterFactories: Record<string, ReporterFactory> = {
-      ...makeBuiltinReporterFactories({
-        fileSystem: yield* FileSystem.FileSystem,
-        path: yield* Path.Path,
-        stdio: yield* Stdio.Stdio,
-      }),
+    const builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory> = {
+      ...(yield* Reporter).builtin,
       ...env.builtinReporters,
     }
     const pluginReporterDescriptors = Option.getOrElse(
@@ -265,29 +175,31 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
         (descriptor) =>
           [
             descriptor.name.toLowerCase(),
-            { name: descriptor.name, builtinFactory: Option.none<ReporterFactory>() },
+            { name: descriptor.name, builtinFactory: Option.none<InterfaceReporter.ReporterFactory>() },
           ] as const,
       ),
     ])
-    return { env, queue, options, loaded, project, ignorers, builtinReporterFactories, reporterChoicesByName }
+    const frameworkClaimants = yield* installedFrameworkClaimants(env.basePath)
+    return {
+      mode: env.resolvedMode.mode,
+      reporters: [...options.reporters],
+      fileCount: MutableHashMap.size(command.project.files),
+      availableReporters: [...HashMap.values(reporterChoicesByName)].map((choice) => choice.name),
+      env,
+      queue,
+      options,
+      loaded,
+      project: command.project,
+      ignorers,
+      formatRegistry: registry,
+      builtinReporterFactories,
+      reporterChoicesByName,
+      frameworkClaimants,
+    }
   })
 
-const decodePrepare = (raw: PrepareRaw): Result.Result<PrepareDecoded, StageError> =>
-  Result.succeed(
-    PrepareDecoded.make({
-      mode: raw.env.resolvedMode.mode,
-      reporters: [...raw.options.reporters],
-      fileCount: MutableHashMap.size(raw.project.files),
-      availableReporters: [...HashMap.values(raw.reporterChoicesByName)].map((choice) => choice.name),
-    }),
-  )
-
-const encodePrepareDecision = (
-  outcome: Result.Result<PrepareDecision, StageError>,
-): Result.Result<PrepareDecision, StageError> => outcome
-
 const writePrepare = (
-  outcome: Result.Result<PrepareDecision, StageError>,
+  reporters: readonly string[],
   raw: PrepareRaw,
 ): Effect.Effect<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
   withPhaseSpan(
@@ -295,7 +207,6 @@ const writePrepare = (
     {},
     (span) =>
       Effect.gen(function*() {
-        const decision = yield* Effect.fromResult(outcome)
         const mutateCount = MutableHashMap.size(raw.project.filesToMutate)
         yield* announceSummary(
           raw.env,
@@ -307,35 +218,30 @@ const writePrepare = (
         ).pipe(
           Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: cause.message, cause })),
         )
-        yield* Match.value(MutableHashMap.size(raw.project.files)).pipe(
-          Match.when(0, () =>
-            Effect.fail(
-              StageError.make({
-                stage: 'prepare',
-                reason: 'No input files found.',
-                cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
-              }),
-            )),
-          Match.orElse(() => Effect.void),
-        )
-        const temporaryDirectoryPath = yield* Effect.gen(function*() {
-          const live = TemporaryDirectoryLive(raw.options)
-          const service = yield* Effect.service(TemporaryDirectory).pipe(Effect.provide(live))
-          return service.path
-        }).pipe(
+        const failOnEmptyProject = (fileCount: number): Effect.Effect<void, StageError> =>
+          Match.value(fileCount).pipe(
+            Match.when(0, () =>
+              Effect.fail(
+                StageError.make({
+                  stage: 'prepare',
+                  reason: 'No input files found.',
+                  cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
+                }),
+              )),
+            Match.orElse(() => Effect.void),
+          )
+
+        yield* failOnEmptyProject(raw.project.files.pipe(MutableHashMap.size))
+        const temporaryDirectoryPath = yield* Effect.map(
+          Layer.build(TemporaryDirectory.layer(raw.options)),
+          (temporaryDirectory) => Context.get(temporaryDirectory, TemporaryDirectory).path,
+        ).pipe(
           Effect.mapError((cause) =>
             StageError.make({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
           ),
         )
         const reporterInputs = yield* reporterInputsOf(
-          Option.getOrElse(
-            Match.value(decision).pipe(
-              Match.tag('HumanReporters', (human) => Option.some(human.reporters)),
-              Match.tag('MachineReporters', (machine) => Option.some(machine.reporters)),
-              Match.exhaustive,
-            ),
-            () => raw.options.reporters,
-          ),
+          reporters,
           raw.reporterChoicesByName,
           raw.loaded,
           raw.env.basePath,
@@ -349,20 +255,53 @@ const writePrepare = (
           project: raw.project,
           loadedPlugins: raw.loaded,
           ignorers: raw.ignorers,
+          formatRegistry: raw.formatRegistry,
           options: raw.options,
           temporaryDirectoryPath,
           reporterStage,
+          frameworkClaimants: raw.frameworkClaimants,
         }
       }),
   )
 
+const STREAM_REPORTER = 'progress-stream'
+const HUMAN_REPORTER = 'clear-text'
+
+const STDOUT_REPORTERS: Readonly<Record<string, true>> = { 'clear-text': true, 'progress': true }
+
+const asHumanReporter = (name: string): string => {
+  if (name === STREAM_REPORTER) {
+    return HUMAN_REPORTER
+  }
+  return name
+}
+
+const selectReporters: {
+  (configured: readonly string[], mode: 'human' | 'machine'): readonly string[]
+  (mode: 'human' | 'machine'): (configured: readonly string[]) => readonly string[]
+} = dual(2, (configured: readonly string[], mode: 'human' | 'machine'): readonly string[] =>
+  Match.value(mode).pipe(
+    Match.when('human', () => [...new Set(configured.map(asHumanReporter))]),
+    Match.when('machine', () => {
+      const permitted = configured.filter((name) => STDOUT_REPORTERS[name] !== true)
+      return Match.value(permitted.includes(STREAM_REPORTER)).pipe(
+        Match.when(true, () => permitted),
+        Match.when(false, () => [...permitted, STREAM_REPORTER]),
+        Match.exhaustive,
+      )
+    }),
+    Match.exhaustive,
+  ))
+
 export const prepareCell: Cell.Cell<
-  PrepareExecutorArgs,
+  ReadProjectDone,
   PrepareDone,
   StageError,
-  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Stdio.Stdio
-> = Sandwich.read(readPrepare)
-  .decode(Sandwich.pure(decodePrepare))
+  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
+> = Sandwich.named('stryker.prepare')(readPrepare)
   .decide(planPrepare)
-  .encode(Sandwich.pure((outcome) => Result.succeed(encodePrepareDecision(outcome))))
-  .write(writePrepare)
+  .write({
+    HumanReporters: ({ reporters }, raw) => writePrepare(reporters, raw),
+    MachineReporters: ({ reporters }, raw) => writePrepare(reporters, raw),
+    CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'prepare', reason: issue })),
+  })

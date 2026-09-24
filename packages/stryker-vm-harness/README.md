@@ -27,7 +27,7 @@ thread per test runner and drives it over a message protocol.
 
 Each `@systemfsoftware/stryker-js` `vm` test runner owns one
 `node:worker_threads` worker running a harness **session**
-(`src/shell/session.ts`): the host side spawns it lazily, posts run requests,
+(`src/session.ts`): the host side spawns it lazily, posts run requests,
 and awaits a response. On a wall-clock timeout the host terminates the worker
 and spawns a fresh one for the next run. Worker `stdout`/`stderr` are captured
 and discarded.
@@ -78,29 +78,26 @@ for browser-mode suites.
 ## API
 
 ```ts
-import {
-  createVmSession,
-  createVmWorkerClient,
-  type VmRunRequest,
-  type VmRunResponse,
-  type VmSessionOptions,
-} from '@systemfsoftware/stryker-vm-harness'
+import { Session } from '@systemfsoftware/stryker-vm-harness'
+
+const session = await Session.createVmSession(options)
+const client = Session.createVmWorkerClient(options)
 ```
 
-- `createVmSession(options, plugins = builtinPlugins)` — start a session
-  in the current thread (used by tests and the worker entry). `options`:
-  `sandboxWorkingDirectory`, `testFiles` (absolute paths; may be empty),
-  optional `isolate` (default `true`) and `configFile`.
-- `createVmWorkerClient(options)` — spawn the `dist/worker.mjs` worker thread
-  and drive it with `run(request)` / `terminate()`.
-- One run is one `VmRunRequest` (`kind: 'dry' | 'mutant'`, `timeoutMs`,
+- `Session.createVmSession(options, plugins = Session.builtinPlugins)` — start
+  a session in the current thread (used by tests and the worker entry).
+  `options`: `sandboxWorkingDirectory`, `testFiles` (absolute paths; may be
+  empty), optional `isolate` (default `true`) and `configFile`.
+- `Session.createVmWorkerClient(options)` — spawn the `dist/worker.mjs` worker
+  thread and drive it with `run(request)` / `terminate()`.
+- One run is one `Session.VmRunRequest` (`kind: 'dry' | 'mutant'`, `timeoutMs`,
   optional `activeMutantId`, `testFilter`, `hitLimit`, `reloadEnvironment`);
-  the answer is a `VmRunResponse` (`complete` with per-test results,
+  the answer is a `Session.VmRunResponse` (`complete` with per-test results,
   `timeout`, `error`, or `init-failed`). Test ids are
   `<file>#<suite names joined with ' > ' and the test name>`.
 
-Every Vitest feature is a plugin in `src/shell/plugins/`; sessions can pass
-their own plugin list instead of `builtinPlugins`.
+Every Vitest feature is a plugin in `src/plugins/`; sessions can pass
+their own plugin list instead of `Session.builtinPlugins`.
 
 ## License
 

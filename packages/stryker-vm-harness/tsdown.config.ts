@@ -7,9 +7,9 @@ const generated = sourceExports({ dtsExt: '.d.mts' })
 
 export default defineConfig({
   entry: {
-    index: './src/index.ts',
-    worker: './src/shell/worker-entry.ts',
-    'vitest-host-worker': './src/shell/vitest-host/host-thread.ts',
+    index: './src/mod.ts',
+    worker: './src/worker-entry.ts',
+    'vitest-host-worker': './src/vitest-host/host-thread.ts',
   },
   format: 'esm',
   dts: true,

@@ -1,9 +1,6 @@
-import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import { MutationTestReportReady } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface'
-import { MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import { Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
@@ -14,15 +11,12 @@ import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
-import { calculateMetrics } from './calculate-metrics.js'
 import type { MergeReportsRequest } from './Cli.schema.js'
 import {
   DuplicatePackageLabel,
-  MergedReports,
   mergeReportParts,
   MergeReportPartsCommand,
   MissingPackages,
-  NoMergedReports,
 } from './merge-report-parts.workflow.js'
 import {
   MergeReportsFailed,
@@ -30,6 +24,7 @@ import {
   type StreamMutantLine,
   StreamMutantLineSchema,
 } from './merge-reports.schema.js'
+import { MetricsResultFromReport } from './reporting/metrics-from-report.schema.js'
 
 const PART_MARKER = 'mutation-part.json'
 const PART_REPORT = 'mutation-report.json'
@@ -184,7 +179,7 @@ const decodedPart = (bytes: {
         const base = { label: meta.package, outcome: meta.outcome, incomplete: false }
         return Option.match(Option.fromNullishOr(bytes.reportText), {
           onSome: (text) =>
-            Option.match(S.decodeOption(S.fromJsonString(MutationTestResultSchema))(text), {
+            Option.match(S.decodeOption(S.fromJsonString(Report.MutationTestResultSchema))(text), {
               onNone: () => ({ part: Option.some(base), unreadable: true }),
               onSome: (report) => ({ part: Option.some({ ...base, report }), unreadable: false }),
             }),
@@ -202,7 +197,7 @@ const expectedPackages = (raw: string | undefined) =>
   Option.match(Option.filter(Option.fromNullishOr(raw), S.is(S.NonEmptyString)), {
     onNone: () => Result.succeed(undefined),
     onSome: (text) =>
-      Option.match(S.decodeOption(S.fromJsonString(S.Array(S.String)))(text), {
+      Option.match(S.decodeOption(S.String.pipe(S.Array, S.fromJsonString))(text), {
         onNone: () => Result.fail(refuse(`--packages is not a JSON array: ${text}`)),
         onSome: (packages) => Result.succeed(packages),
       }),
@@ -235,7 +230,10 @@ const decodeMerge = (raw: {
     }
   })
 
-const refusalText = (error: DuplicatePackageLabel | MissingPackages, partsDir: string) =>
+const refusalText = (
+  error: typeof DuplicatePackageLabel.Encoded | typeof MissingPackages.Encoded,
+  partsDir: string,
+) =>
   Match.value(error).pipe(
     Match.tag('DuplicatePackageLabel', (duplicate) => `duplicate package ${duplicate.label}`),
     Match.tag(
@@ -330,25 +328,29 @@ const encodeSummary = (
 }
 
 const encodeMerge = (
-  outcome: Result.Result<MergedReports | NoMergedReports, DuplicatePackageLabel | MissingPackages>,
   decoded: { readonly skipped: readonly string[]; readonly unreadable: readonly string[] },
-) =>
-  Result.map(outcome, (decision) =>
-    Match.value(decision).pipe(
-      Match.tag('MergedReports', (merged) => ({
-        summary: encodeSummary(merged.rows, merged.survivors, decoded.skipped, decoded.unreadable.length),
-        report: merged.report,
-        unreadable: decoded.unreadable,
-      })),
-      Match.tag('NoMergedReports', (absent) => ({
-        summary: encodeSummary(absent.rows, [], decoded.skipped, decoded.unreadable.length),
-        report: undefined,
-        unreadable: decoded.unreadable,
-      })),
-      Match.exhaustive,
-    ))
+  rows: readonly {
+    readonly label: string
+    readonly score: string
+    readonly cells: readonly string[]
+    readonly verdict: string
+  }[],
+  survivors: readonly {
+    readonly file: string
+    readonly line: number
+    readonly column: number
+    readonly status: string
+    readonly mutatorName: string
+    readonly replacement: string
+  }[],
+  report: typeof Report.MutationTestResultSchema.Type | undefined,
+): EncodedMerge => ({
+  summary: encodeSummary(rows, survivors, decoded.skipped, decoded.unreadable.length),
+  report,
+  unreadable: decoded.unreadable,
+})
 
-const encodeReport = (report: typeof MutationTestResultSchema.Type): Effect.Effect<string> =>
+const encodeReport = (report: typeof Report.MutationTestResultSchema.Type): Effect.Effect<string> =>
   S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(report).pipe(Effect.orDie)
 
 const putFile = (file: string, content: string, append: boolean) =>
@@ -363,77 +365,70 @@ const putFile = (file: string, content: string, append: boolean) =>
     Effect.catchCause(() => failReason(`cannot write ${file}`)),
   )
 
-const toStream = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> =>
+const toStream = (events: readonly Reporter.ReporterEvent[]): AsyncIterable<Reporter.ReporterEvent> =>
   Stream.toAsyncIterable(Stream.fromIterable([...events]))
 
-const writeHtml = (fileName: string, report: typeof MutationTestResultSchema.Type) =>
-  Option.match(S.decodeOption(StrykerOptionsSchema)({ htmlReporter: { fileName } }), {
+const writeHtml = (fileName: string, report: typeof Report.MutationTestResultSchema.Type) =>
+  Option.match(S.decodeOption(Options.StrykerOptionsSchema)({ htmlReporter: { fileName } }), {
     onNone: () => failReason(`cannot configure the html report at ${fileName}`),
     onSome: (options) =>
       Effect.gen(function*() {
-        const metrics = calculateMetrics(report.files)
-        yield* makeHtmlReporter(options, {})(
-          toStream([MutationTestReportReady.make({ report, metrics })]),
+        const metrics = MetricsResultFromReport.fromFiles(report.files)
+        yield* HtmlReporter.makeHtmlReporter(options, {})(
+          toStream([Reporter.MutationTestReportReady.make({ report, metrics })]),
         ).pipe(Effect.catchCause(() => failReason(`cannot write the html report at ${fileName}`)))
       }),
   })
 
 type EncodedMerge = {
   readonly summary: string
-  readonly report: typeof MutationTestResultSchema.Type | undefined
+  readonly report: typeof Report.MutationTestResultSchema.Type | undefined
   readonly unreadable: readonly string[]
 }
 
-type MergeOutcome = Result.Result<MergedReports | NoMergedReports, DuplicatePackageLabel | MissingPackages>
-
-const writeEncoded = (
-  document: Result.Result<EncodedMerge, DuplicatePackageLabel | MissingPackages>,
-  raw: MergeCommand,
-) =>
-  Result.match(document, {
-    onFailure: (error) => failReason(refusalText(error, raw.partsDir)),
-    onSuccess: (body) =>
-      Effect.gen(function*() {
-        const fs = yield* FileSystem.FileSystem
-        const path = yield* Path.Path
-        yield* fs.makeDirectory(raw.out, { recursive: true }).pipe(
-          Effect.catchCause(() => failReason(`cannot create ${raw.out}`)),
-        )
-        yield* Option.match(Option.fromNullishOr(body.report), {
-          onNone: () => Effect.void,
-          onSome: (report) =>
-            encodeReport(report).pipe(
-              Effect.flatMap((json) =>
-                putFile(path.join(raw.out, OUT_REPORT), json, false).pipe(
-                  Effect.andThen(writeHtml(path.join(raw.out, OUT_HTML), report)),
-                )
-              ),
-            ),
-        })
-        yield* putFile(path.join(raw.out, OUT_SUMMARY), body.summary, false)
-        const step = yield* Config.String(STEP_SUMMARY).pipe(Effect.option)
-        yield* Option.match(step, {
-          onNone: () => Effect.void,
-          onSome: (file) =>
-            Match.value(file.length > 0).pipe(
-              Match.when(true, () => putFile(file, body.summary, true)),
-              Match.when(false, () => Effect.void),
-              Match.exhaustive,
-            ),
-        })
-        yield* Console.log(body.summary)
-        yield* Match.value(body.unreadable.length > 0).pipe(
-          Match.when(true, () =>
-            failReason(`${body.unreadable.length} unreadable part(s): ${body.unreadable.join(', ')}`)),
-          Match.when(false, () =>
-            Effect.void),
+const writeEncoded = (body: EncodedMerge, raw: MergeCommand) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    yield* fs.makeDirectory(raw.out, { recursive: true }).pipe(
+      Effect.catchCause(() => failReason(`cannot create ${raw.out}`)),
+    )
+    yield* Option.match(Option.fromNullishOr(body.report), {
+      onNone: () => Effect.void,
+      onSome: (report) =>
+        encodeReport(report).pipe(
+          Effect.flatMap((json) =>
+            putFile(path.join(raw.out, OUT_REPORT), json, false).pipe(
+              Effect.andThen(writeHtml(path.join(raw.out, OUT_HTML), report)),
+            )
+          ),
+        ),
+    })
+    yield* putFile(path.join(raw.out, OUT_SUMMARY), body.summary, false)
+    const step = yield* Config.String(STEP_SUMMARY).pipe(Effect.option)
+    yield* Option.match(step, {
+      onNone: () => Effect.void,
+      onSome: (file) =>
+        Match.value(file.length > 0).pipe(
+          Match.when(true, () => putFile(file, body.summary, true)),
+          Match.when(false, () => Effect.void),
           Match.exhaustive,
-        )
-      }),
+        ),
+    })
+    yield* Console.log(body.summary)
+    yield* Match.value(body.unreadable.length > 0).pipe(
+      Match.when(true, () => failReason(`${body.unreadable.length} unreadable part(s): ${body.unreadable.join(', ')}`)),
+      Match.when(false, () => Effect.void),
+      Match.exhaustive,
+    )
   })
 
-export const mergeReportsCell = Sandwich.read(readMerge)
+export const mergeReportsCell = Sandwich.named('stryker.merge_reports')(readMerge)
   .decide(mergeReportParts)
-  .write((outcome: MergeOutcome, raw: MergeCommand) =>
-    writeEncoded(encodeMerge(outcome, raw), raw)
-  ) satisfies Cell.Cell<MergeReportsRequest, void, MergeReportsFailed, FileSystem.FileSystem | Path.Path>
+  .write({
+    MergedReports: (merged, raw) => writeEncoded(encodeMerge(raw, merged.rows, merged.survivors, merged.report), raw),
+    NoMergedReports: (absent, raw) => writeEncoded(encodeMerge(raw, absent.rows, [], undefined), raw),
+    DuplicatePackageLabel: (error, raw) => failReason(refusalText(error, raw.partsDir)),
+    MissingPackages: (error, raw) => failReason(refusalText(error, raw.partsDir)),
+    CommandRejected: ({ issue }, raw) => failReason(`invalid merge command under ${raw.partsDir}: ${issue}`),
+  })

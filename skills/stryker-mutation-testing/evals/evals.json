@@ -6,16 +6,13 @@
       "id": "eval-0",
       "eval_name": "vitest-plugin-url",
       "prompt": "How do I configure the Vitest test runner plugin in my stryker.config.ts? Show me the exact plugins array entry.",
-      "expected_output": "Uses import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner') in plugins array, explains that bare module specifiers fail with PluginLoadFailedError.",
+      "expected_output": "Lists the runner by its bare package name in the plugins array: plugins: ['@systemfsoftware/stryker-js-vitest-runner'], resolved from the project; no import.meta.resolve needed.",
       "assertions": [
-        {
-          "text": "import.meta.resolve"
-        },
         {
           "text": "@systemfsoftware/stryker-js-vitest-runner"
         },
         {
-          "text": "file:"
+          "text": "plugins"
         }
       ],
       "files": []
@@ -24,7 +21,7 @@
       "id": "eval-1",
       "eval_name": "local-v8-ci-vitest-dual-engine",
       "prompt": "Running mutation testing locally takes 6 minutes on my laptop because Vitest spins up workers. How can I speed up local mutation runs while keeping full Vitest checks in GitHub Actions CI?",
-      "expected_output": "Recommends dual-engine setup using isCi from defineConfig: testRunner: isCi ? 'vitest' : 'vm', with testFiles specified for the vm runner and incremental: !isCi.",
+      "expected_output": "Recommends dual-engine setup using isCi from StrykerConfig.define: testRunner: isCi ? 'vitest' : 'vm', with testFiles specified for the vm runner and incremental: !isCi.",
       "assertions": [
         {
           "text": "isCi"
@@ -81,13 +78,10 @@
       "id": "eval-4",
       "eval_name": "effect-schema-ignorer-pairing",
       "prompt": "We use Effect Schema and keep seeing surviving mutants on brand tags and schema titles. How do we ignore them in Stryker?",
-      "expected_output": "Installs @systemfsoftware/stryker-ignorer-effect-schema-declarations, resolves it with import.meta.resolve in plugins, and adds 'effect-schema-declarations' to ignorers.",
+      "expected_output": "Installs @systemfsoftware/stryker-ignorer-effect-schema-declarations and lists it by package name in ignorers.",
       "assertions": [
         {
           "text": "@systemfsoftware/stryker-ignorer-effect-schema-declarations"
-        },
-        {
-          "text": "import.meta.resolve"
         },
         {
           "text": "effect-schema-declarations"
@@ -148,7 +142,7 @@
           "text": "@systemfsoftware/stryker-js-vitest-runner"
         },
         {
-          "text": "defineConfig"
+          "text": "StrykerConfig.define"
         },
         {
           "text": "stryker run"

@@ -1,21 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  activateSandbox,
-  createHarnessApi,
-  createRegistry,
-  deactivateSandbox,
-  type HarnessModuleBuiltin,
-  harnessSourceFor,
-  harnessUrlForSpecifier,
-  installInterception,
-  type InterceptionRuntime,
-  makeEffectMethods,
-  nativeImport,
-  readGlobalState,
-  uninstallInterception,
-  type VmRunnerGlobalState,
-  writeGlobalState,
-} from '@systemfsoftware/stryker-vm-harness'
+import { EffectAdapter, Registry, Sandbox } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import { expect } from 'vitest'
@@ -31,14 +15,14 @@ const EXPECTED_SURFACE = ['describe', 'it', 'test', 'beforeEach', 'expect'] as c
 
 const nodeRegisterHooks = globalThis.process.getBuiltinModule('node:module').registerHooks
 
-const liveBuiltin: HarnessModuleBuiltin = {
+const liveBuiltin: Sandbox.HarnessModuleBuiltin = {
   registerHooks: (hooks) => {
     const registered = nodeRegisterHooks(hooks)
     return { deregister: () => registered.deregister() }
   },
 }
 
-const quietRuntime = (): InterceptionRuntime => ({
+const quietRuntime = (): Sandbox.InterceptionRuntime => ({
   host: {
     sandboxWorkingDirectory: decodeURIComponent(new URL('../', import.meta.url).pathname),
     options: { sandboxWorkingDirectory: decodeURIComponent(new URL('../', import.meta.url).pathname), testFiles: [] },
@@ -72,35 +56,40 @@ interface ServedModuleReport {
 }
 
 const releaseSandbox = Effect.sync(() => {
-  deactivateSandbox()
-  writeGlobalState(undefined)
-  uninstallInterception()
+  Sandbox.deactivateSandbox()
+  Sandbox.writeGlobalState(undefined)
+  Sandbox.uninstallInterception()
 })
 
 const loadServedModule = (packageName: string): Effect.Effect<ServedModuleReport> =>
   Effect.gen(function*() {
-    const address = harnessUrlForSpecifier(packageName)
+    const address = Sandbox.harnessUrlForSpecifier(packageName)
     if (address === undefined) {
       throw new Error(`no module is served for "${packageName}"`)
     }
-    const registry = createRegistry()
-    const api = createHarnessApi(registry)
-    const state: VmRunnerGlobalState = {
+    const registry = Registry.createRegistry()
+    const api = Registry.createHarnessApi(registry)
+    const state: Sandbox.VmRunnerGlobalState = {
       api,
       expect,
       vi: undefined,
       effectVitest: {
-        it: makeEffectMethods({ api: api.it, describe: api.describe, hooks: api.hooks, tests: registry.tests }),
+        it: EffectAdapter.makeEffectMethods({
+          api: api.it,
+          describe: api.describe,
+          hooks: api.hooks,
+          tests: registry.tests,
+        }),
       },
       projectConfig: undefined,
       provided: registry.provided.current,
     }
-    installInterception(liveBuiltin, quietRuntime())
-    activateSandbox(sandboxPrefix)
-    writeGlobalState(state)
+    Sandbox.installInterception(liveBuiltin, quietRuntime())
+    Sandbox.activateSandbox(sandboxPrefix)
+    Sandbox.writeGlobalState(state)
     try {
       const served = yield* Effect.promise(() =>
-        nativeImport<Partial<ServedRunnerModule>>(`${address}?salt=${encodeURIComponent(sandboxPrefix)}`)
+        Sandbox.nativeImport<Partial<ServedRunnerModule>>(`${address}?salt=${encodeURIComponent(sandboxPrefix)}`)
       )
       const surface: ServedSurfaceName[] = []
       for (const name of EXPECTED_SURFACE) {
@@ -115,7 +104,7 @@ const loadServedModule = (packageName: string): Effect.Effect<ServedModuleReport
       describeSurface('a served suite', () => {
         itSurface('a served test', () => undefined)
       })
-      const published = readGlobalState()
+      const published = Sandbox.readGlobalState()
       if (published !== state) {
         throw new Error(`loading "${packageName}" replaced the published harness state`)
       }
@@ -139,10 +128,10 @@ Feature('Resolving the harness modules a sandboxed test file loads')
           'addresses',
           (s) =>
             Effect.succeed({
-              vitest: harnessUrlForSpecifier(s.packages.served[0]),
-              effectVitest: harnessUrlForSpecifier(s.packages.served[1]),
-              gherkin: harnessUrlForSpecifier(s.packages.served[2]),
-              unserved: harnessUrlForSpecifier(s.packages.unserved),
+              vitest: Sandbox.harnessUrlForSpecifier(s.packages.served[0]),
+              effectVitest: Sandbox.harnessUrlForSpecifier(s.packages.served[1]),
+              gherkin: Sandbox.harnessUrlForSpecifier(s.packages.served[2]),
+              unserved: Sandbox.harnessUrlForSpecifier(s.packages.unserved),
             }),
         ),
         Then('the served packages map to their own harness addresses and the unserved one maps to nothing')((s) => {
@@ -169,7 +158,7 @@ Feature('Resolving the harness modules a sandboxed test file loads')
               for (const packageName of s.packages) {
                 loaded.push(yield* loadServedModule(packageName))
               }
-              return { loaded, unknown: harnessSourceFor('unknown-url') }
+              return { loaded, unknown: Sandbox.harnessSourceFor('unknown-url') }
             }),
         ),
         Then('every module carries the registration surface, registers its suite, and no unknown address serves')((

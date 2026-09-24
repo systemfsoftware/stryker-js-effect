@@ -1,20 +1,20 @@
 import { SchemaGetter, SchemaTransformation } from 'effect'
 import * as S from 'effect/Schema'
 
-import { LocationSchema, MutantStatusSchema, OpenEndLocationSchema } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { NonNegativeFinite, NonNegativeInt, Percentage } from './Metrics.schema.js'
 
 export const MutantResultSchema = S.Struct({
   id: S.String,
   mutatorName: S.String,
-  status: MutantStatusSchema,
-  location: LocationSchema,
+  status: Mutant.MutantStatusSchema,
+  location: Mutant.LocationSchema,
   replacement: S.optional(S.String),
   description: S.optional(S.String),
   statusReason: S.optional(S.String),
   static: S.optional(S.Boolean),
-  coveredBy: S.optional(S.Array(S.String)),
-  killedBy: S.optional(S.Array(S.String)),
+  coveredBy: S.String.pipe(S.Array, S.optional),
+  killedBy: S.String.pipe(S.Array, S.optional),
   testsCompleted: S.optional(NonNegativeInt),
   duration: S.optional(NonNegativeFinite),
 })
@@ -33,7 +33,7 @@ export type FileResultDictionary = typeof FileResultDictionarySchema.Type
 export const TestDefinitionSchema = S.Struct({
   id: S.String,
   name: S.String,
-  location: S.optional(OpenEndLocationSchema),
+  location: S.optional(Mutant.OpenEndLocationSchema),
 })
 export type TestDefinition = typeof TestDefinitionSchema.Type
 

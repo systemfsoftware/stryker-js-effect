@@ -17,18 +17,16 @@ pnpm add -D @systemfsoftware/stryker-ignorer-in-source-vitest-block
 
 ## Setup in `stryker.config.ts`
 
-Add the plugin URL to `ignorers`. Every ignorer the module exports is then active.
+Add the package name to `ignorers`. Every ignorer the module exports is then active.
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: {
-    plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
+    plugin: '@systemfsoftware/stryker-js-vitest-runner',
   },
-  ignorers: [
-    import.meta.resolve('@systemfsoftware/stryker-ignorer-in-source-vitest-block'),
-  ],
+  ignorers: ['@systemfsoftware/stryker-ignorer-in-source-vitest-block'],
 })
 ```
 

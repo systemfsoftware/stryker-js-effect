@@ -1,18 +1,9 @@
-import { NodeFileSystem, NodePath, NodeStdio } from '@effect/platform-node'
-import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
+import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { ScenarioFn } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  buildTestRunner,
-  createDefaultOptions,
-  type PooledTestRunner,
-  type PooledTestRunnerError,
-  strykerCell,
-  type TestRunnerBuildContext,
-  WorkerLauncher,
-} from '@systemfsoftware/stryker-js'
-import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
-import type { StrykerOptions, TestStatus } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Configuration, Engine, Plugin, Worker } from '@systemfsoftware/stryker-js'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -29,8 +20,8 @@ const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname)
 const FIXTURES_ROOT_SEGMENTS: readonly string[] = ['testResources', 'vm-parity']
 
 const workerCanary = Layer.succeed(
-  WorkerLauncher,
-  WorkerLauncher.of({
+  Worker.WorkerLauncher,
+  Worker.WorkerLauncher.of({
     spawn: () => Effect.die(new Error('a worker was launched for a vm-parity dry run')),
   }),
 )
@@ -44,19 +35,12 @@ const stubPortsLayer = Layer.merge(spawnerCanary, workerCanary)
 
 const sandboxFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
-const engineLayer = Layer.mergeAll(
-  NodeFileSystem.layer,
-  NodePath.layer,
-  NodeStdio.layer,
-  NodeChildProcessSpawner.layer.pipe(
-    Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)),
-  ),
-)
+const engineLayer = Engine.nodePlatformLayer
 
 interface CapturedTest {
   readonly file: string
   readonly fullName: string
-  readonly status: TestStatus
+  readonly status: TestRunner.TestStatus
 }
 
 interface Sandbox {
@@ -171,7 +155,7 @@ const VITEST_RUNNER_VERDICT_REFERENCES: Record<string, Record<string, string>> =
   },
 }
 
-const statusOf = (task: TaskLike): TestStatus => {
+const statusOf = (task: TaskLike): TestRunner.TestStatus => {
   if (task.mode === 'skip' || task.mode === 'todo' || task.result?.state === 'skip') {
     return 'skipped'
   }
@@ -184,7 +168,7 @@ const statusOf = (task: TaskLike): TestStatus => {
 interface RawCaptured {
   readonly filepath: string
   readonly fullName: string
-  readonly status: TestStatus
+  readonly status: TestRunner.TestStatus
 }
 
 const captureFile = (file: FileLike): ReadonlyArray<RawCaptured> => {
@@ -237,7 +221,7 @@ const removeSandbox = (sandbox: Sandbox) =>
     yield* fs.remove(sandbox.root, { recursive: true, force: true })
   }).pipe(Effect.provide(sandboxFileLayer), Effect.ignore)
 
-const contextFor = (defaults: StrykerOptions, directory: string): TestRunnerBuildContext => ({
+const contextFor = (defaults: Options.StrykerOptions, directory: string): Plugin.TestRunnerBuildContext => ({
   options: { ...defaults, testRunner: 'vm' },
   fileDescriptions: {},
   sandboxWorkingDirectory: directory,
@@ -246,7 +230,7 @@ const contextFor = (defaults: StrykerOptions, directory: string): TestRunnerBuil
   testFiles: [],
 })
 
-const describeFailure = (failure: PooledTestRunnerError): string =>
+const describeFailure = (failure: Plugin.PooledTestRunnerError): string =>
   Match.value(failure).pipe(
     Match.tag('TestRunnerFailed', (typed) => `${typed.phase}: ${typed.cause}`),
     Match.orElse((other) => String(other)),
@@ -254,19 +238,19 @@ const describeFailure = (failure: PooledTestRunnerError): string =>
 
 const withVmRunner = <A, E, R>(
   directory: string,
-  use: (runner: PooledTestRunner) => Effect.Effect<A, E, R>,
+  use: (runner: Plugin.PooledTestRunner) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
   Effect.gen(function*() {
-    const defaults = yield* createDefaultOptions
+    const defaults = yield* Configuration.StrykerConfig.createDefaultOptions
     const neverSpawned = Effect.die(new Error('the child-process runner was built for a vm-parity run'))
-    return yield* Effect.flatMap(buildTestRunner(contextFor(defaults, directory), neverSpawned), use)
+    return yield* Effect.flatMap(Plugin.buildTestRunner(contextFor(defaults, directory), neverSpawned), use)
   }).pipe(
     Effect.provide(Layer.mergeAll(sandboxFileLayer, stubPortsLayer)),
     Effect.scoped,
     Effect.orDie,
   )
 
-const asStatus = (status: string): TestStatus =>
+const asStatus = (status: string): TestRunner.TestStatus =>
   status === 'success' || status === 'failed' || status === 'skipped' ? status : 'skipped'
 
 const toCaptured = (
@@ -313,7 +297,7 @@ const diffLines = (
   return lines.sort()
 }
 
-const mutantKey = (file: string, mutant: RunMutantResult): string =>
+const mutantKey = (file: string, mutant: Mutant.RunMutantResult): string =>
   `${file}:${mutant.location.start.line}:${mutant.location.start.column}:${mutant.mutatorName}:${mutant.replacement}`
 
 const verdictDiff = (
@@ -365,7 +349,7 @@ const runMutationEngine = (sandboxRoot: string) =>
     () =>
       Effect.gen(function*() {
         const path = yield* Path.Path
-        const done = yield* strykerCell(MUTATION_RUN_OPTIONS)
+        const done = yield* Engine.strykerCell(MUTATION_RUN_OPTIONS)
         const verdicts: Record<string, string> = {}
         for (const result of done.results) {
           verdicts[mutantKey(path.relative(sandboxRoot, result.fileName), result)] = result.status

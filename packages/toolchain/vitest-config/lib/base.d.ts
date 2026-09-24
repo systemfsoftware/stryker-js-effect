@@ -6,3 +6,9 @@ declare const isCI: boolean
 
 export { isCI, sharedConfig }
 export type { ViteUserConfig }
+
+declare module 'vitest' {
+  interface ProvidedContext {
+    propertySeed: number
+  }
+}

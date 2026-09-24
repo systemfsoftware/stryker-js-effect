@@ -3,4 +3,4 @@ export {
   shouldIgnore,
   SIGNAL_QUERY_OPTIONS_MSG,
   strykerIgnorers,
-} from './AngularSignalIgnore.js'
+} from './angular-signals.js'

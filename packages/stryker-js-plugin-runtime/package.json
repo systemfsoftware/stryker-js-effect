@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-plugin-runtime",
-  "version": "5.0.3",
+  "version": "5.0.4",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -16,33 +16,31 @@
   "scripts": {
     "clean": "rimraf dist",
     "build": "tsdown",
-    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
+    "typecheck": "tsc -b",
     "test": "vitest run",
     "attw": "attw --pack .",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "api:check": "api-extractor run",
     "api:update": "api-extractor run --local",
-    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text}"
   },
   "license": "Apache-2.0",
   "engines": {
     "node": ">=22.18.0"
   },
   "dependencies": {
-    "@effect/opentelemetry": "catalog:",
-    "@effect/platform-node": "catalog:",
     "@opentelemetry/api": "catalog:",
-    "@opentelemetry/exporter-trace-otlp-http": "catalog:",
-    "@opentelemetry/sdk-trace-base": "catalog:",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
+    "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
-    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/effect-schema-vite": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
@@ -67,7 +65,7 @@
   },
   "exports": {
     ".": {
-      "@systemfsoftware/source": "./src/index.ts",
+      "@systemfsoftware/source": "./src/mod.ts",
       "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
     },

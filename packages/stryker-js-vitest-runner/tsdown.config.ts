@@ -7,6 +7,7 @@ const exports = { ...sourceExports({ dtsExt: '.d.mts' }), exclude: internalArtif
 const shared = {
   format: 'esm' as const,
   dts: true,
+  tsconfig: './tsconfig.build.json',
   exports,
   define: { 'import.meta.vitest': 'undefined' },
 }
@@ -15,8 +16,8 @@ export default defineConfig([
   {
     ...shared,
     entry: {
-      index: './src/index.ts',
-      'stryker-setup': './src/stryker-setup.ts',
+      index: './src/mod.ts',
+      'stryker-setup': './sandbox/stryker-setup.ts',
     },
     clean: true,
   },

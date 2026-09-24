@@ -1,11 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  createVmSession,
-  createVmVitestRuntime,
-  type VmRunResponse,
-  type VmTestResult,
-} from '@systemfsoftware/stryker-vm-harness'
+import { Session } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -50,9 +45,11 @@ const removeProject = (root: string): Effect.Effect<void, never, FileSystem.File
     yield* fs.remove(root, { recursive: true })
   }).pipe(Effect.orDie)
 
-const runSuite = (root: string, file: string): Effect.Effect<VmRunResponse, never, never> =>
+const runSuite = (root: string, file: string): Effect.Effect<Session.VmRunResponse, never, never> =>
   Effect.gen(function*() {
-    const session = yield* Effect.promise(() => createVmSession({ sandboxWorkingDirectory: root, testFiles: [file] }))
+    const session = yield* Effect.promise(() =>
+      Session.createVmSession({ sandboxWorkingDirectory: root, testFiles: [file] })
+    )
     return yield* Effect.promise(() => session.run({ kind: 'dry', timeoutMs: 30000, reloadEnvironment: true })).pipe(
       Effect.ensuring(Effect.promise(() => session.dispose())),
     )
@@ -60,13 +57,13 @@ const runSuite = (root: string, file: string): Effect.Effect<VmRunResponse, neve
 
 interface ReleasedRun {
   readonly root: string
-  readonly response: VmRunResponse
+  readonly response: Session.VmRunResponse
 }
 
 const runAndRelease = (root: string, file: string): Effect.Effect<ReleasedRun, never, never> =>
   Effect.map(runSuite(root, file), (response) => ({ root, response }))
 
-const testOf = (response: VmRunResponse, name: string): VmTestResult => {
+const testOf = (response: Session.VmRunResponse, name: string): Session.VmTestResult => {
   if (response.status !== 'complete') {
     throw new Error(`expected a completed run, saw ${response.status}`)
   }
@@ -278,7 +275,7 @@ Feature('Honouring the Vitest project configuration')
           (s) =>
             Effect.gen(function*() {
               const session = yield* Effect.promise(() =>
-                createVmSession({
+                Session.createVmSession({
                   sandboxWorkingDirectory: s.project,
                   testFiles: [`${s.project}/first.test.ts`, `${s.project}/second.test.ts`],
                 })
@@ -396,7 +393,7 @@ Feature('Honouring the Vitest project configuration')
           'handle',
           (s) =>
             Effect.sync(() =>
-              createVmVitestRuntime({
+              Session.createVmVitestRuntime({
                 sandboxWorkingDirectory: s.project,
                 configFile: `${s.project}/vitest.config.ts`,
               })
@@ -433,7 +430,9 @@ Feature('Honouring the Vitest project configuration')
         When('the session configuration is resolved')(
           'handle',
           (s) =>
-            Effect.sync(() => createVmVitestRuntime({ sandboxWorkingDirectory: s.project, configFile: undefined })),
+            Effect.sync(() =>
+              Session.createVmVitestRuntime({ sandboxWorkingDirectory: s.project, configFile: undefined })
+            ),
         ),
         Then('the project runs files in order with the default hook policy')((s) =>
           Effect.gen(function*() {

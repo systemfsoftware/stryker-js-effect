@@ -1,13 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  type ConfigFileInvalidError,
-  type ConfigFileNotFoundError,
-  type ConfigFileUnreadableError,
-  type ConfigFileUnsupportedError,
-  type ConfigInvocation,
-  readConfig,
-} from '@systemfsoftware/stryker-js'
-import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -19,6 +11,7 @@ import * as Path from 'effect/Path'
 import { systemError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 import { expect } from 'vitest'
+import { Configuration } from '../src/mod.js'
 
 const Feature = makeFeature({ it, layer })
 
@@ -79,27 +72,27 @@ const configReadLayer = Layer.mergeAll(
 )
 
 type ConfigFileReadError =
-  | ConfigFileNotFoundError
-  | ConfigFileUnreadableError
-  | ConfigFileInvalidError
-  | ConfigFileUnsupportedError
+  | Configuration.ConfigFileNotFoundError
+  | Configuration.ConfigFileUnreadableError
+  | Configuration.ConfigFileInvalidError
+  | Configuration.ConfigFileUnsupportedError
 
 interface ReadOutcome<E = ConfigFileReadError> {
-  readonly result: Result.Result<StrykerOptions, E>
+  readonly result: Result.Result<Options.StrykerOptions, E>
   readonly recorder: ReadRecorderShape
 }
 
 type ReadEffect<A> = Effect.Effect<A, never, ReadRecorder | FileSystem.FileSystem | Path.Path>
 
-const DEFAULT_INVOCATION: ConfigInvocation = { command: 'run', mode: 'human' }
+const DEFAULT_INVOCATION: Configuration.ConfigInvocation = { command: 'run', mode: 'human' }
 
 const outcomeOf = (
-  cliOptions: PartialStrykerOptions,
-  invocation: ConfigInvocation,
+  cliOptions: Options.PartialStrykerOptions,
+  invocation: Configuration.ConfigInvocation,
 ): ReadEffect<ReadOutcome> =>
   Effect.gen(function*() {
     const recorder = yield* ReadRecorder
-    const result = yield* Effect.result(readConfig(cliOptions, invocation))
+    const result = yield* Effect.result(Configuration.readConfig(cliOptions, invocation))
     return { result, recorder }
   })
 
@@ -119,7 +112,7 @@ const readDiscovered = (project: string): ReadEffect<ReadOutcome> =>
       }),
   )
 
-const optionsOrThrow = (outcome: ReadOutcome): StrykerOptions => {
+const optionsOrThrow = (outcome: ReadOutcome): Options.StrykerOptions => {
   if (Result.isFailure(outcome.result)) {
     throw new Error(`the config was expected to load, but it was refused: ${String(outcome.result.failure)}`)
   }
@@ -434,6 +427,40 @@ Feature('Configuring a Stryker run from a module config file')
         ),
         Then('every setting keeps its default value')((s) => {
           expect(s.seen.high).toBe(80)
+        }),
+      ),
+    )
+
+    scenario(
+      'An empty config module keeps the mutation settings empty',
+      Gherkin.Do.pipe(
+        Given('a config module with no settings')(
+          'read',
+          () => readExplicit(fixtureFile('empty-config', 'stryker.config.ts')),
+        ),
+        When('the run reads it')(
+          'seen',
+          (s) => Effect.sync(() => ({ mutations: optionsOrThrow(s.read).mutator })),
+        ),
+        Then('nothing is excluded from mutation and nothing extra is opted into')((s) => {
+          expect(s.seen.mutations).toStrictEqual({ excludedMutations: [], optInMutations: [] })
+        }),
+      ),
+    )
+
+    scenario(
+      'A config module that opts into extra mutations keeps them exactly as written',
+      Gherkin.Do.pipe(
+        Given('a config module opting into the extra mutations it names')(
+          'read',
+          () => readExplicit(fixtureFile('opt-in-mutators', 'stryker.config.ts')),
+        ),
+        When('the run reads its configuration')(
+          'seen',
+          (s) => Effect.sync(() => ({ optedInto: optionsOrThrow(s.read).mutator.optInMutations })),
+        ),
+        Then('the run opts into exactly the names the file listed, in order')((s) => {
+          expect(s.seen.optedInto).toStrictEqual(['FinalizerEscape'])
         }),
       ),
     )

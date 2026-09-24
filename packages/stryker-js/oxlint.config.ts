@@ -10,24 +10,4 @@ export default defineConfig({
     'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
   ignorePatterns: [...(recommended.ignorePatterns ?? []), '**/testResources/**'],
-  overrides: [
-    {
-      files: ['src/VmRunner.ts'],
-      rules: {
-        complexity: 'off',
-        'no-ternary': 'off',
-        'typescript/consistent-type-assertions': 'off',
-        'no-restricted-globals': 'off',
-        'no-restricted-imports': 'off',
-      },
-    },
-    {
-      files: ['tests/**/*', 'src/**/__tests__/**/*'],
-      rules: {
-        complexity: 'off',
-        'no-ternary': 'off',
-        'typescript/consistent-type-assertions': 'off',
-      },
-    },
-  ],
 })

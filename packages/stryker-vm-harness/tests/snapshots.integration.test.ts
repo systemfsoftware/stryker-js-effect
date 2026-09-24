@@ -1,11 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  createSnapshotSupport,
-  defaultSnapshotPath,
-  guardedExpect,
-  type SnapshotSupport,
-} from '@systemfsoftware/stryker-vm-harness'
+import { Assertions, Session } from '@systemfsoftware/stryker-vm-harness'
 import { FileSystem, Path, PlatformError } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -56,7 +51,7 @@ interface SuiteRun {
   readonly testFile: string
   readonly snapshotFile: string
   readonly handedOut: object
-  readonly support: SnapshotSupport
+  readonly support: Session.SnapshotSupport
 }
 
 const hostOf = (dir: string) => ({
@@ -77,12 +72,12 @@ const suiteRunOf = (
     const dir = yield* fileSystem.makeTempDirectory({ prefix: 'vm-snapshots-' })
     const testFile = path.join(dir, 'suite.test.ts')
     yield* fileSystem.writeFileString(testFile, '')
-    const support = yield* Effect.promise(() => createSnapshotSupport(hostOf(dir), { ci })).pipe(Effect.orDie)
+    const support = yield* Effect.promise(() => Session.createSnapshotSupport(hostOf(dir), { ci })).pipe(Effect.orDie)
     return {
       dir,
       testFile,
-      snapshotFile: defaultSnapshotPath(path, testFile),
-      handedOut: guardedExpect(expect),
+      snapshotFile: Session.defaultSnapshotPath(path, testFile),
+      handedOut: Assertions.guardedExpect(expect),
       support,
     }
   })

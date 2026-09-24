@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as HashMap from 'effect/HashMap'
 import * as Option from 'effect/Option'
@@ -27,7 +27,7 @@ export class DiagnosticInUnrelatedFileError extends S.TaggedError<DiagnosticInUn
   },
 ) {}
 
-type CheckMutantsError = DiagnosticWithoutFileError | DiagnosticInUnrelatedFileError
+export type CheckMutantsError = DiagnosticWithoutFileError | DiagnosticInUnrelatedFileError
 
 const CheckMutantsTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/CheckMutants')
 type CheckMutantsTypeId = typeof CheckMutantsTypeId
@@ -47,12 +47,14 @@ export class CheckFinished extends S.TaggedClass<CheckFinished>()('CheckFinished
 
 export class RetestRequired extends S.TaggedClass<RetestRequired>()('RetestRequired', {
   results: S.Record(S.String, MutantCheckStatusSchema),
-  needsRetest: S.Array(CheckerMutantWire),
+  needsRetest: S.Array(Checker.CheckerMutantWire),
 }) {
   readonly [CheckMutantsTypeId] = CheckMutantsTypeId
 }
 
 export type CheckMutantsDecision = CheckFinished | RetestRequired
+
+export type CheckMutantsAnswer = S.Codec.Encoded<typeof CheckFinished | typeof RetestRequired>
 
 const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
 
@@ -216,7 +218,7 @@ const withoutDisambiguation = (input: CheckMutantsInput): Option.Option<CheckMut
     onNone: () => Option.some(CheckFinished.make({ results: {} })),
     onSome: (first) =>
       Option.map(
-        Option.filter(Option.some(first), () => !Object.hasOwn(input.nodes, normalizeFileName(first.fileName))),
+        Option.liftPredicate(first, () => !Object.hasOwn(input.nodes, normalizeFileName(first.fileName))),
         () => CheckFinished.make({ results: Object.fromEntries(passedResults(input.mutants)) }),
       ),
   })
@@ -227,4 +229,9 @@ const verdict = (input: CheckMutantsInput): Result.Result<CheckMutantsDecision, 
     onSome: (decision) => Result.succeed(decision),
   })
 
-export const checkMutants = Workflow.make(CheckMutantsInput, verdict)
+export const checkMutants = Workflow.make({
+  command: CheckMutantsInput,
+  decision: S.Union([CheckFinished, RetestRequired]),
+  error: S.Union([DiagnosticWithoutFileError, DiagnosticInUnrelatedFileError]),
+  decide: verdict,
+})

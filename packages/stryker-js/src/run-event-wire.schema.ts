@@ -1,7 +1,7 @@
 import * as S from 'effect/Schema'
 import * as SchemaGetter from 'effect/SchemaGetter'
 
-import { RunEvent } from './RunEvent.schema.js'
+import { RunEvent } from './run-event.schema.js'
 
 export const RunEventWireLine = S.String.pipe(
   S.decodeTo(S.fromJsonString(RunEvent), {

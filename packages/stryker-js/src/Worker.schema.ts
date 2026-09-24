@@ -1,10 +1,3 @@
-/**
- * Worker — wire types and failure identities for the child-process pool.
- *
- * Holds the JSON IPC alphabet, the ways a spawned worker can fail before the
- * host can use it, and the crash discriminants the engine branches on.
- */
-
 import { Schema as S } from 'effect'
 
 // ---------------------------------------------------------------------------
@@ -25,18 +18,13 @@ export class WorkerMethodError extends S.TaggedError<WorkerMethodError>()('Worke
 // Process exit — crash discriminants
 // ---------------------------------------------------------------------------
 
-/**
- * A process identifier. `S.Int` rather than `S.Number` because the plain number
- * domain admits `NaN` and the infinities, and a pid is none of those.
- */
-const ProcessId = S.Int
+export const ProcessId = S.Int
 
-/**
- * How a child process ended.
- */
+export const ChildExitCode = S.Int
+
 const ChildExit = S.Union([
-  S.Struct({ _tag: S.Literals(['Code']), code: S.Int }),
-  S.Struct({ _tag: S.Literals(['Signal']), signal: S.String }),
+  S.Struct({ _tag: S.Literals(['Code']), code: ChildExitCode }),
+  S.Struct({ _tag: S.Literals(['Signal']), signal: S.NonEmptyString }),
 ])
 
 export type ChildExit = typeof ChildExit.Type
@@ -44,6 +32,9 @@ export type ChildExit = typeof ChildExit.Type
 /**
  * The child process hosting a worker ended when it was not supposed to.
  */
+const WorkerExitTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/WorkerExit')
+type WorkerExitTypeId = typeof WorkerExitTypeId
+
 export class ChildProcessCrashedError extends S.TaggedError<ChildProcessCrashedError>()(
   'ChildProcessCrashedError',
   {
@@ -52,15 +43,21 @@ export class ChildProcessCrashedError extends S.TaggedError<ChildProcessCrashedE
     cause: S.optional(S.String),
   },
 ) {
+  readonly [WorkerExitTypeId] = WorkerExitTypeId
   readonly exitClass = 'InternalError' as const
 }
 
 export class OutOfMemoryError extends S.TaggedError<OutOfMemoryError>()('OutOfMemoryError', {
   pid: ProcessId,
-  exitCode: S.Int,
+  exitCode: ChildExitCode,
 }) {
+  readonly [WorkerExitTypeId] = WorkerExitTypeId
   readonly exitClass = 'RuntimeError' as const
 }
+
+export type WorkerExit = ChildProcessCrashedError | OutOfMemoryError
+
+export type WorkerBootError = WorkerExit | WorkerBootTimeoutError
 
 export class WorkerBootTimeoutError extends S.TaggedError<WorkerBootTimeoutError>()(
   'WorkerBootTimeoutError',

@@ -1,5 +1,4 @@
-import type { MutantCoverage } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutantActivation } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 
 /**
  * Types the context `inject()` reads in `stryker-setup.ts` and the task metadata
@@ -10,12 +9,12 @@ declare module 'vitest' {
   interface ProvidedContext {
     globalNamespace: '__stryker__' | '__stryker2__'
     hitLimit: number | undefined
-    mutantActivation: MutantActivation
+    mutantActivation: Mutant.MutantActivation
     activeMutant: string | undefined
     mode: 'mutant' | 'dry-run'
   }
   interface TaskMeta {
     hitCount: number | undefined
-    mutantCoverage: MutantCoverage | undefined
+    mutantCoverage: Mutant.MutantCoverage | undefined
   }
 }

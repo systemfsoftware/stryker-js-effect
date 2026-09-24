@@ -4,200 +4,35 @@
 
 ```ts
 
-import * as Arbitrary from 'effect/unstable/arbitrary/Arbitrary';
-import * as Duration from 'effect/Duration';
-import * as Effect from 'effect/Effect';
-import * as Layer from 'effect/Layer';
-import { RegisterHooksOptions } from 'node:module';
-import * as Result from 'effect/Result';
-import * as S from 'effect/Schema';
-import * as Scope from 'effect/Scope';
-import { Workflow } from '@systemfsoftware/effect-cell-types';
-
 // @public (undocumented)
-export const activateSandbox: (prefix: string) => void;
-
-// Warning: (ae-forgotten-export) The symbol "HarnessApi" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export const createHarnessApi: (registry: TestRegistry) => HarnessApi;
-
-// @public (undocumented)
-export const createRegistry: () => TestRegistry;
-
-// @public (undocumented)
-export const deactivateSandbox: () => void;
-
-// Warning: (ae-forgotten-export) The symbol "DrainCompleted_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class DrainCompleted extends DrainCompleted_base {
-    // Warning: (ae-forgotten-export) The symbol "DrainTypeId" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    readonly [DrainTypeId]: symbol;
-    // (undocumented)
-    readonly kind: 'complete';
+export namespace Assertions {
+    export { CreateExpect, guardedExpect, guardedVi };
 }
 
 // @public (undocumented)
-export type DrainedStatus = 'success' | 'failed' | 'skipped';
-
-// @public (undocumented)
-export interface DrainedTest {
-    // (undocumented)
-    readonly failureMessage: string | undefined;
-    // (undocumented)
-    readonly file: string;
-    // (undocumented)
-    readonly fullName: string;
-    // (undocumented)
-    readonly status: DrainedStatus;
-    // (undocumented)
-    readonly timeSpentMs: number;
+export namespace Drain {
+    export { DrainCompleted, DrainOutcome, DrainRegistryCommand, DrainRunOptions, DrainTestOutcome, DrainTestRef, DrainTimedOut, DrainedStatus, DrainedTest, DrainedTestSchema, TestOutcome, TestOutcomeSchema, executeDrainRegistry as drainRegistry, executeDrainRegistry, drainRegistry as pureDrainRegistry };
 }
 
 // @public (undocumented)
-export const DrainedTestSchema: S.Struct<{
-    readonly fullName: S.String;
-    readonly file: S.String;
-    readonly status: S.Literals<readonly ["success", "failed", "skipped"]>;
-    readonly failureMessage: S.optional<S.String>;
-    readonly timeSpentMs: S.Finite;
-}>;
-
-// @public (undocumented)
-export type DrainOutcome = DrainCompleted | DrainTimedOut;
-
-// Warning: (ae-forgotten-export) The symbol "DrainRegistryCommand_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class DrainRegistryCommand extends DrainRegistryCommand_base {}
-
-// Warning: (ae-forgotten-export) The symbol "DrainTimedOut_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class DrainTimedOut extends DrainTimedOut_base {
-    // (undocumented)
-    readonly [DrainTypeId]: symbol;
-    // (undocumented)
-    readonly kind: 'timeout';
-}
-
-// Warning: (ae-forgotten-export) The symbol "DrainRunOptions" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-const executeDrainRegistry: (registry: TestRegistry, timeoutMs: number | undefined, runOptions?: DrainRunOptions) => Promise<DrainOutcome>;
-export { executeDrainRegistry as drainRegistry }
-export { executeDrainRegistry }
-
-// @public (undocumented)
-export const formatEachName: <A = unknown>(template: string, row: A) => string;
-
-// @public (undocumented)
-export const guardedExpect: (real: object) => object;
-
-// @public (undocumented)
-export const guardedVi: (real: object) => object;
-
-// @public (undocumented)
-export interface HarnessModuleBuiltin {
-    // Warning: (ae-forgotten-export) The symbol "RegisterHooksFn" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    readonly registerHooks: RegisterHooksFn;
+export namespace EffectAdapter {
+    export { makeEffectMethods };
 }
 
 // @public (undocumented)
-export const harnessSourceFor: (url: string) => string | undefined;
-
-// @public (undocumented)
-export const harnessUrlForSpecifier: (specifier: string) => string | undefined;
-
-// @public (undocumented)
-export const installInterception: (nodeModule: HarnessModuleBuiltin) => void;
-
-// Warning: (ae-forgotten-export) The symbol "EffectAdapterRegistration" needs to be exported by the entry point index.d.mts
-// Warning: (ae-forgotten-export) The symbol "EffectVitestIt" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export const makeEffectMethods: (context: EffectAdapterRegistration) => EffectVitestIt;
-
-// @public (undocumented)
-export const nativeImport: <A = unknown>(url: string) => Promise<A>;
-
-// @public (undocumented)
-export const pureDrainRegistry: ((command: DrainRegistryCommand) => Result.Result<DrainOutcome, never>) & Workflow.WorkflowBrand;
-
-// @public (undocumented)
-export const readGlobalState: () => VmRunnerGlobalState | undefined;
-
-// @public (undocumented)
-export type TestOutcome = S.Schema.Type<typeof TestOutcomeSchema>;
-
-// @public (undocumented)
-export const TestOutcomeSchema: S.Struct<{
-    readonly failureMessage: S.optional<S.String>;
-    readonly timeSpentMs: S.optional<S.Finite>;
-}>;
-
-// @public (undocumented)
-export interface TestRegistry {
-    // Warning: (ae-forgotten-export) The symbol "HarnessTestContext" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    currentTest: HarnessTestContext | undefined;
-    // (undocumented)
-    readonly files: {
-        current: string;
-    };
-    // (undocumented)
-    readonly frames: {
-        current: readonly number[];
-    };
-    // Warning: (ae-forgotten-export) The symbol "TestMode" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    registerSuite(name: string, parentIds: readonly number[], mode: TestMode): RegisteredSuite;
-    // Warning: (ae-forgotten-export) The symbol "HarnessTestFunction" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    registerTest(name: string, suiteIds: readonly number[], mode: TestMode, inverted: boolean, fn: HarnessTestFunction | undefined): RegisteredTest;
-    // Warning: (ae-forgotten-export) The symbol "HookSets" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    readonly rootHooks: HookSets;
-    // (undocumented)
-    readonly suiteHooks: Map<number, HookSets>;
-    // Warning: (ae-forgotten-export) The symbol "RegisteredSuite" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    readonly suites: Map<number, RegisteredSuite>;
-    // Warning: (ae-forgotten-export) The symbol "RegisteredTest" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    readonly tests: RegisteredTest[];
+export namespace Registry {
+    export { AroundHookFunction, AroundKind, AroundRegistration, AroundSets, BenchFactoryLike, BuilderExtendApi, BuilderFixtureOptions, BuilderOverrideApi, BuilderScopeName, BuilderScopedApi, ChainableVariantApi, DEFAULT_TITLE_VALUE_FORMAT_TRUNCATE, EachApi, EachFn$1 as EachFn, EachNameOptions, EachSuiteBody, EachValue, EachValueFormatter, ForApi, ForFn, ForSuiteBody, HarnessApi, HarnessHookFunction, HarnessTestContext, HarnessTestFunction, HookApi, HookCleanup, HookKind, HookSets, ParsedTestArguments, PlanRunOptions, PlannedTest, RegisteredHook, RegisteredSuite, RegisteredTest, RegistrySuiteApi, RegistryTaskInfo, RegistryTestApi, RetryOptions, RetryTestError, RunnerFile, RunnerSuite, RunnerTaskResult, RunnerTest, SuiteBody, SuiteEachApi, SuiteForApi, SuiteOptions, SuiteRegistration, SuiteVariants, TagDeclaration, TagPolicy, TaskAnnotation, TaskError, TaskMeta, TemplateRow, TestContext, TestFunctionWithTimeout, TestMode, TestOptions, TestRegistration, TestRegistry, VariantApi, VmExpectState, createDescribe, createHarnessApi, createIt, createRegistry, createVariantApi, defaultFormatValue, formatEachName, fullNameOf, hooksFor, planRun, suiteHooksFor, validateTagsForFile };
 }
 
 // @public (undocumented)
-export const uninstallInterception: () => void;
-
-// @public (undocumented)
-export interface VmRunnerGlobalState {
-    // (undocumented)
-    readonly api: HarnessApi;
-    // Warning: (ae-forgotten-export) The symbol "EffectVitestSurface" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    readonly effectVitest: EffectVitestSurface | undefined;
-    // (undocumented)
-    readonly expect: object | undefined;
-    // (undocumented)
-    readonly vi: object | undefined;
+export namespace Sandbox {
+    export { ActivateSandboxCommand, EffectVitestSurface, HarnessModuleBuiltin, InstallInterceptionCommand, InterceptionRuntime, ProvidedValue, RegisterHooksFn, VmRunnerGlobalState, activateSandbox, deactivateSandbox, expectStateOf, globalConfigOf, harnessSourceFor, harnessUrlForSpecifier, installInterception, installWorkerState, mockResetConfigOf, nativeImport, readGlobalState, resetExpectStateFor, restoreHostWorkerState, setWorkerCurrentTask, setWorkerTestPath, uninstallInterception, withRunnerTask, writeGlobalState };
 }
 
 // @public (undocumented)
-export const writeGlobalState: (state: VmRunnerGlobalState | undefined) => void;
+export namespace Session {
+    export { SNAPSHOT_DIRECTORY, SNAPSHOT_SUFFIX, SnapshotClientLike, SnapshotEnvironmentLike, SnapshotEnvironmentOptions, SnapshotStackFrame, SnapshotStateOptionsLike, SnapshotSummaryLike, SnapshotSupport, SnapshotTask, SnapshotTest, SnapshotUpdateMode, StrykerNamespace, VM_TEST_FILES_BAG_KEY, VM_VITEST_BAG_KEY, VitestModuleNamespace, VmAlias, VmAliasFind, VmAliasFindSchema, VmAliasSchema, VmDiscoveredTestFiles, VmExpectConfig, VmExpectConfigSchema, VmFileContext, VmGlobals, VmGlobalsStage, VmGraphContext, VmLoadStage, VmMutantCoverage, VmMutantCoverageSchema, VmPluginBag, VmPluginHost, VmProjectConfig, VmProjectConfigSchema, VmResolveStage, VmRunContext, VmRunKind, VmRunKindSchema, VmRunRequest, VmRunRequestSchema, VmRunResponse, VmRunResponseSchema, VmSession, VmSessionOptions, VmSessionOptionsSchema, VmSessionPlugin, VmStageArgs, VmStageName, VmTagDefinition, VmTagDefinitionSchema, VmTestContext, VmTestOutcome, VmTestResult, VmTestResultSchema, VmTestStatus, VmTestStatusSchema, VmTransformResult, VmVitestBridgeOptions, VmVitestConfig, VmVitestConfigSchema, VmVitestHostHandle, VmVitestRuntime, VmWorkerClient, VmWorkerClientHooks, VmWorkerRequest, VmWorkerRequestSchema, VmWorkerResponse, VmWorkerResponseSchema, armMutant, builtinPlugins, createMockingPlugin, createSnapshotEnvironment, createSnapshotSupport, createVitestConfigPlugin, createVmSession, createVmVitestRuntime, createVmWorkerClient, currentSnapshotTest, defaultSnapshotPath, definePlugin, ensureVitestWorkerState, environmentPlugin, globalsPlugin, hostStrykerNamespace, readArmedMutant, readMutantCoverage, resetMutantCoverage, runLoadStage, runResolveStage, runStage, runnerStatePlugin, setCurrentTestId, setSnapshotTest, setWorkerTestFile, setupFilesPlugin, snapshotClientOf, snapshotTaskOf, snapshotUpdateMode, snapshotsPlugin, transformPlugin, vitestConfigPlugin, writeArmedMutant };
+}
 
 // (No @packageDocumentation comment for this package)
 

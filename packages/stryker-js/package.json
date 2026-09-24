@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js",
-  "version": "10.1.1",
+  "version": "10.2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -21,14 +21,14 @@
   "scripts": {
     "clean": "rimraf dist",
     "build": "pnpm run typecheck && rimraf dist && tsdown --config tsdown.bin.config.ts && tsdown --config tsdown.config.ts",
-    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit",
+    "typecheck": "tsc -b",
     "test": "vitest run",
     "mutation": "stryker run",
     "attw": "attw --pack .",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "api:check": "api-extractor run",
     "api:update": "api-extractor run --local",
-    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text} && effect-tsgo diagnostics --project tsconfig.test.json --format ${TSGO_FORMAT:-text}"
   },
   "license": "Apache-2.0",
   "engines": {
@@ -62,6 +62,7 @@
     "@systemfsoftware/effect-schema-vite": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/stryker-config": "workspace:^",
+    "@systemfsoftware/stryker-framework-interface": "workspace:^",
     "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "catalog:stryker",
     "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "catalog:stryker",
     "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
@@ -115,22 +116,22 @@
   },
   "exports": {
     ".": {
-      "@systemfsoftware/source": "./src/index.ts",
+      "@systemfsoftware/source": "./src/mod.ts",
       "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
     },
     "./config": {
-      "@systemfsoftware/source": "./src/config/index.ts",
+      "@systemfsoftware/source": "./src/config/mod.ts",
       "types": "./dist/config.d.mts",
       "default": "./dist/config.mjs"
     },
     "./events": {
-      "@systemfsoftware/source": "./src/events/index.ts",
+      "@systemfsoftware/source": "./src/events/mod.ts",
       "types": "./dist/events.d.mts",
       "default": "./dist/events.mjs"
     },
     "./promises": {
-      "@systemfsoftware/source": "./src/promises/index.ts",
+      "@systemfsoftware/source": "./src/promises/mod.ts",
       "types": "./dist/promises.d.mts",
       "default": "./dist/promises.mjs"
     },
@@ -138,24 +139,7 @@
   },
   "inlinedDependencies": {
     "@eslint-community/regexpp": "4.12.2",
-    "@jridgewell/gen-mapping": "0.3.13",
-    "@jridgewell/remapping": "2.3.5",
-    "@jridgewell/resolve-uri": "3.1.2",
-    "@jridgewell/sourcemap-codec": "1.6.0",
-    "@jridgewell/trace-mapping": "0.3.31",
     "@jsr/std__jsonc": "1.0.2",
-    "@sveltejs/acorn-typescript": "1.0.13",
-    "acorn": "8.18.0",
-    "angular-html-parser": "10.12.0",
-    "aria-query": "5.3.1",
-    "axobject-query": "4.1.0",
-    "esrap": "2.3.7",
-    "is-reference": "3.0.3",
-    "locate-character": "3.0.0",
-    "magic-string": "0.30.21",
-    "oxc-parser": "0.150.0",
-    "oxc-walker": "1.1.1",
-    "svelte": "5.57.0",
-    "zimmerframe": "1.1.5"
+    "oxc-parser": "0.150.0"
   }
 }

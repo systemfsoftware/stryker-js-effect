@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { builtinPlugins, createVmSession, type VmRunResponse } from '@systemfsoftware/stryker-vm-harness'
+import { Session } from '@systemfsoftware/stryker-vm-harness'
 import { FileSystem, Path, PlatformError } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -26,7 +26,7 @@ interface SuiteOutcome {
   }>
 }
 
-const outcomeOf = (response: VmRunResponse): SuiteOutcome => {
+const outcomeOf = (response: Session.VmRunResponse): SuiteOutcome => {
   if (response.status !== 'complete') {
     return {
       status: response.status,
@@ -74,7 +74,10 @@ const replayOf = (
 ): Effect.Effect<SuiteOutcome, PlatformError.PlatformError, FileSystem.FileSystem | Path.Path> =>
   Effect.acquireUseRelease(
     Effect.promise(() =>
-      createVmSession({ sandboxWorkingDirectory: sandbox.root, testFiles: [sandbox.file] }, builtinPlugins)
+      Session.createVmSession(
+        { sandboxWorkingDirectory: sandbox.root, testFiles: [sandbox.file] },
+        Session.builtinPlugins,
+      )
     ),
     (session) =>
       Effect.promise(() => session.run({ kind: 'dry', timeoutMs: 60_000, reloadEnvironment: true })).pipe(

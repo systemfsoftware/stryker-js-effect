@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { builtinPlugins, createVmSession, type VmRunResponse } from '@systemfsoftware/stryker-vm-harness'
+import { Session } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -46,7 +46,7 @@ interface ObservedTest {
   readonly failureMessage: string | undefined
 }
 
-const observedOf = (response: VmRunResponse): ReadonlyArray<ObservedTest> => {
+const observedOf = (response: Session.VmRunResponse): ReadonlyArray<ObservedTest> => {
   if (response.status !== 'complete') {
     throw new Error(`expected a complete dry run but saw ${response.status}`)
   }
@@ -62,9 +62,9 @@ const dryRunOf = (
 ): Effect.Effect<ReadonlyArray<ObservedTest>> =>
   Effect.gen(function*() {
     const session = yield* Effect.promise(() =>
-      createVmSession(
+      Session.createVmSession(
         { sandboxWorkingDirectory: sandbox.directory, testFiles: [...sandbox.files] },
-        builtinPlugins,
+        Session.builtinPlugins,
       )
     )
     const response = yield* Effect.promise(() =>

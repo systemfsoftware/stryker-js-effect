@@ -1,26 +1,15 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as Runtime from 'effect/Runtime'
 import * as S from 'effect/Schema'
 
-export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOutcomeCommand', {
-  succeeded: S.Boolean,
-  interrupted: S.Boolean,
-  helpErrorCount: S.optional(S.Finite),
-  cliError: S.Boolean,
-  unrecognized: S.optional(S.String),
-  survivorsReason: S.optional(S.Literals(['no-report', 'mismatch'])),
-  survivorsDiagnostic: S.optional(S.String),
-  schemaError: S.Boolean,
-  successExitClass: S.optional(ExitClass),
-  highestExitClass: S.optional(ExitClass),
-  configDetail: S.optional(S.String),
-  diagnostic: S.optional(S.String),
-}) {}
-export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: S.Finite }) {
+import { ExitCode } from './exit-code.schema.js'
+import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
+
+export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: ExitCode }) {
   override get [Runtime.errorExitCode](): number {
     return this.code
   }
@@ -28,7 +17,7 @@ export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: S.Finit
 
 const CONFIG_CODE = 2
 
-const classCode = (exitClass: ExitClass): number =>
+const classCode = (exitClass: Plugin.ExitClass): number =>
   Match.value(exitClass).pipe(
     Match.when('VerdictFail', () => 1),
     Match.when('ConfigError', () => CONFIG_CODE),
@@ -47,7 +36,7 @@ export class RunOk extends S.TaggedClass<RunOk>()('RunOk', {
 }
 
 export class RunInterrupted extends S.TaggedError<RunInterrupted>()('RunInterrupted', {
-  code: S.Finite,
+  code: ExitCode,
 }) {
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId
 }
@@ -72,7 +61,7 @@ export class RunConfigFailed extends S.TaggedClass<RunConfigFailed>()('RunConfig
 }
 
 export class RunFailed extends S.TaggedClass<RunFailed>()('RunFailed', {
-  code: S.Finite,
+  code: ExitCode,
   diagnostic: S.optional(S.String),
 }) {
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId
@@ -92,7 +81,7 @@ export type FailedRunOutcome = Exclude<RunOutcomeDecision, RunOk> | RunOutcomeEr
 type SucceededCommand = RunOutcomeCommand & { readonly succeeded: true }
 type HelpCommand = RunOutcomeCommand & { readonly helpErrorCount: number }
 type SurvivorsCommand = RunOutcomeCommand & { readonly survivorsReason: 'no-report' | 'mismatch' }
-type ClassedCommand = RunOutcomeCommand & { readonly highestExitClass: ExitClass }
+type ClassedCommand = RunOutcomeCommand & { readonly highestExitClass: Plugin.ExitClass }
 
 const isSucceeded = (command: RunOutcomeCommand): command is SucceededCommand => command.succeeded
 const isHelpRun = (command: RunOutcomeCommand): command is HelpCommand => command.helpErrorCount !== undefined
@@ -147,9 +136,11 @@ function classify(command: RunOutcomeCommand): RunOutcomeDecision | RunOutcomeEr
   )
 }
 
-export const classifyRunOutcome = Workflow.make(
-  RunOutcomeCommand,
-  (command): Result.Result<RunOutcomeDecision, RunOutcomeError> =>
+export const classifyRunOutcome = Workflow.make({
+  command: RunOutcomeCommand,
+  decision: S.Union([RunOk, RunParseFailed, RunSurvivorsRejected, RunConfigFailed, RunFailed]),
+  error: RunInterrupted,
+  decide: (command): Result.Result<RunOutcomeDecision, RunOutcomeError> =>
     Match.value(classify(command)).pipe(
       Match.tag('RunInterrupted', (error) => Result.fail(error)),
       Match.when(
@@ -158,4 +149,4 @@ export const classifyRunOutcome = Workflow.make(
       ),
       Match.exhaustive,
     ),
-)
+})

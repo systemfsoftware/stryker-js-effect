@@ -1,61 +1,12 @@
 import * as S from 'effect/Schema'
 
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export const ConfigDocumentSchema = S.Record(S.String, S.Unknown)
 
 export const ImportedModuleSchema = S.Struct({
   default: S.optional(S.Unknown),
 })
-
-export class ConfigFileNotFoundError extends S.TaggedError<ConfigFileNotFoundError>()(
-  'ConfigFileNotFoundError',
-  {
-    file: S.String,
-  },
-) {
-  readonly exitClass = 'ConfigError' as const
-}
-
-export class ConfigFileUnsupportedError extends S.TaggedError<ConfigFileUnsupportedError>()(
-  'ConfigFileUnsupportedError',
-  {
-    file: S.String,
-    hint: S.String,
-  },
-) {
-  readonly exitClass = 'ConfigError' as const
-
-  override get message(): string {
-    return this.hint
-  }
-}
-
-export class ConfigFileUnreadableError extends S.TaggedError<ConfigFileUnreadableError>()(
-  'ConfigFileUnreadableError',
-  {
-    file: S.String,
-    cause: S.Unknown,
-  },
-) {
-  readonly exitClass = 'ConfigError' as const
-}
-
-export class ConfigFileInvalidError extends S.TaggedError<ConfigFileInvalidError>()(
-  'ConfigFileInvalidError',
-  {
-    file: S.String,
-    cause: S.Unknown,
-  },
-) {
-  readonly exitClass = 'ConfigError' as const
-}
-
-export class ConfigError extends S.TaggedError<ConfigError>()('ConfigError', {
-  message: S.String,
-}) {
-  readonly exitClass = 'ConfigError' as const
-}
 
 export class ReadConfigCommand extends S.TaggedClass<ReadConfigCommand>()('ReadConfigCommand', {
   cliOptions: S.Record(S.String, S.Unknown),
@@ -105,6 +56,7 @@ export class ExtendsStepRefused extends S.TaggedClass<ExtendsStepRefused>()('ref
 }) {}
 
 export type ExtendsStepDecision = ExtendsStepDone | ExtendsStepRead | ExtendsStepResolve | ExtendsStepRefused
+
 export const survivorsPriorReport = S.optionalKey(
   S.String.pipe(
     S.annotate({
@@ -124,7 +76,7 @@ export const extendsPropertySchema = S.optionalKey(
 )
 export const forkOptionsSchema = S.StructWithRest(
   S.Struct({
-    ...StrykerOptionsSchema.schema.fields,
+    ...Options.StrykerOptionsSchema.schema.fields,
     survivorsPriorReport,
     extends: extendsPropertySchema,
   }),

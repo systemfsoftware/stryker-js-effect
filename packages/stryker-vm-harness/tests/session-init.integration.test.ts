@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { createVmSession } from '@systemfsoftware/stryker-vm-harness'
+import { Session } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -61,7 +61,7 @@ Feature('Reporting a sandbox that cannot load vitest')
           (s) =>
             Effect.gen(function*() {
               const session = yield* Effect.promise(() =>
-                createVmSession({ sandboxWorkingDirectory: s.suite.directory, testFiles: [s.suite.file] }, [])
+                Session.createVmSession({ sandboxWorkingDirectory: s.suite.directory, testFiles: [s.suite.file] }, [])
               )
               return yield* Effect.promise(() => session.run({ kind: 'dry', timeoutMs: 5000, reloadEnvironment: true }))
                 .pipe(Effect.ensuring(Effect.promise(() => session.dispose())))

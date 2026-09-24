@@ -1,5 +1,5 @@
 import { Differential, Metamorphic } from '@systemfsoftware/differential-spec'
-import { formatEachName } from '@systemfsoftware/stryker-vm-harness'
+import { Registry } from '@systemfsoftware/stryker-vm-harness'
 import { Effect } from 'effect'
 
 import { eachNameSpecs } from './__fixtures__/arbitraries.js'
@@ -8,7 +8,7 @@ import { type EachNameSpec, formatEachNameReference } from './__fixtures__/diffe
 const referenceNameOf = (spec: EachNameSpec): Effect.Effect<string> => Effect.sync(() => formatEachNameReference(spec))
 
 const candidateNameOf = (spec: EachNameSpec): Effect.Effect<string> =>
-  Effect.sync(() => formatEachName(spec.template, spec.row))
+  Effect.sync(() => Registry.formatEachName(spec.template, spec.row))
 
 Differential.compare({ reference: referenceNameOf, candidate: candidateNameOf })
   .on(eachNameSpecs, { runBudget: 200 })

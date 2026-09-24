@@ -4,19 +4,7 @@ import { Effect, Layer } from 'effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
 
-import {
-  createVmSession,
-  createVmVitestRuntime,
-  definePlugin,
-  environmentPlugin,
-  globalsPlugin,
-  runnerStatePlugin,
-  transformPlugin,
-  vitestConfigPlugin,
-  type VmPluginHost,
-  type VmRunResponse,
-  type VmSessionPlugin,
-} from '@systemfsoftware/stryker-vm-harness'
+import { Session } from '@systemfsoftware/stryker-vm-harness'
 import { assert, expect } from 'vitest'
 
 const Feature = makeFeature({ it, layer })
@@ -56,7 +44,7 @@ const removeProject = (root: string): Effect.Effect<void, never, FileSystem.File
     yield* fs.remove(root, { recursive: true })
   }).pipe(Effect.orDie)
 
-const hostOver = (root: string): VmPluginHost => ({
+const hostOver = (root: string): Session.VmPluginHost => ({
   sandboxWorkingDirectory: root,
   options: { sandboxWorkingDirectory: root, testFiles: [] },
   state: {
@@ -208,11 +196,11 @@ test('the project plugin rewrote the module value', () => {
 const resolveInMemory = (
   root: string,
   testFile: string,
-  plugins: ReadonlyArray<VmSessionPlugin>,
-): Effect.Effect<VmRunResponse, never, never> =>
+  plugins: ReadonlyArray<Session.VmSessionPlugin>,
+): Effect.Effect<Session.VmRunResponse, never, never> =>
   Effect.gen(function*() {
     const session = yield* Effect.promise(() =>
-      createVmSession({ sandboxWorkingDirectory: root, testFiles: [testFile] }, plugins)
+      Session.createVmSession({ sandboxWorkingDirectory: root, testFiles: [testFile] }, plugins)
     )
     const response = yield* Effect.promise(() =>
       session.run({ kind: 'dry', timeoutMs: 30000, reloadEnvironment: true })
@@ -221,18 +209,18 @@ const resolveInMemory = (
     return response
   })
 
-const dumpFailures = (response: VmRunResponse): string =>
+const dumpFailures = (response: Session.VmRunResponse): string =>
   response.status === 'complete'
     ? response.tests.map((test) => `${test.id}: ${test.status} ${test.failureMessage ?? ''}`).join('\n')
     : response.status
-const assertSuitePassed = (response: Extract<VmRunResponse, { readonly status: 'complete' }>): void => {
+const assertSuitePassed = (response: Extract<Session.VmRunResponse, { readonly status: 'complete' }>): void => {
   const failures = dumpFailures(response)
   for (const test of response.tests) {
     assert(test.status === 'success', failures)
     assert(test.failureMessage === undefined, failures)
   }
 }
-const expectSuitePassed = (response: VmRunResponse, expectedTests: number): void => {
+const expectSuitePassed = (response: Session.VmRunResponse, expectedTests: number): void => {
   expect(response.status).toBe('complete')
   if (response.status !== 'complete') return
   expect(response.tests).toHaveLength(expectedTests)
@@ -256,7 +244,9 @@ Feature('Loading a Vitest project in memory')
         When('the project config is resolved in memory')(
           'handle',
           (s) =>
-            Effect.sync(() => createVmVitestRuntime({ sandboxWorkingDirectory: s.project, configFile: undefined })),
+            Effect.sync(() =>
+              Session.createVmVitestRuntime({ sandboxWorkingDirectory: s.project, configFile: undefined })
+            ),
         ),
         When('the test files are listed')(
           'listing',
@@ -310,7 +300,7 @@ Feature('Loading a Vitest project in memory')
           'handle',
           (s) =>
             Effect.sync(() =>
-              createVmVitestRuntime({ sandboxWorkingDirectory: s.project, configFile: configFileOf(s.project) })
+              Session.createVmVitestRuntime({ sandboxWorkingDirectory: s.project, configFile: configFileOf(s.project) })
             ),
         ),
         Then('both projects keep their names and environments')((s) =>
@@ -362,7 +352,7 @@ Feature('Loading a Vitest project in memory')
           'handle',
           (s) =>
             Effect.sync(() =>
-              createVmVitestRuntime({ sandboxWorkingDirectory: s.project, configFile: configFileOf(s.project) })
+              Session.createVmVitestRuntime({ sandboxWorkingDirectory: s.project, configFile: configFileOf(s.project) })
             ),
         ),
         When('the test files are listed')(
@@ -400,7 +390,11 @@ Feature('Loading a Vitest project in memory')
         ),
         When('the suite runs in memory')(
           'response',
-          (s) => resolveInMemory(s.project, `${s.project}/view.test.ts`, [vitestConfigPlugin, transformPlugin]),
+          (s) =>
+            resolveInMemory(s.project, `${s.project}/view.test.ts`, [
+              Session.vitestConfigPlugin,
+              Session.transformPlugin,
+            ]),
         ),
         Then('the component test passes against the transformed view')((s) =>
           Effect.sync(() => expectSuitePassed(s.response, 1))
@@ -425,7 +419,11 @@ Feature('Loading a Vitest project in memory')
           ),
           When('the suite runs in memory')(
             'response',
-            (s) => resolveInMemory(s.project, `${s.project}/data.test.ts`, [vitestConfigPlugin, transformPlugin]),
+            (s) =>
+              resolveInMemory(s.project, `${s.project}/data.test.ts`, [
+                Session.vitestConfigPlugin,
+                Session.transformPlugin,
+              ]),
           ),
           Then(`the suite passes with the value ${row.expected}`)((s) =>
             Effect.sync(() => expectSuitePassed(s.response, 1))
@@ -450,12 +448,12 @@ Feature('Loading a Vitest project in memory')
           'response',
           (s) =>
             resolveInMemory(s.project, `${s.project}/app.test.ts`, [
-              vitestConfigPlugin,
-              definePlugin,
-              environmentPlugin,
-              globalsPlugin,
-              transformPlugin,
-              runnerStatePlugin,
+              Session.vitestConfigPlugin,
+              Session.definePlugin,
+              Session.environmentPlugin,
+              Session.globalsPlugin,
+              Session.transformPlugin,
+              Session.runnerStatePlugin,
             ]),
         ),
         Then('both tests pass against the aliased helper and its environment')((s) =>
@@ -481,7 +479,11 @@ Feature('Loading a Vitest project in memory')
         ),
         When('the suite runs in memory')(
           'response',
-          (s) => resolveInMemory(s.project, `${s.project}/marker.test.ts`, [vitestConfigPlugin, transformPlugin]),
+          (s) =>
+            resolveInMemory(s.project, `${s.project}/marker.test.ts`, [
+              Session.vitestConfigPlugin,
+              Session.transformPlugin,
+            ]),
         ),
         Then('the rewritten value is what the test observed')((s) =>
           Effect.sync(() => expectSuitePassed(s.response, 1))
@@ -505,7 +507,7 @@ Feature('Loading a Vitest project in memory')
           'attempt',
           (s) =>
             Effect.promise(() =>
-              Promise.resolve(vitestConfigPlugin.init?.(s.prepared.host)).then(
+              Promise.resolve(Session.vitestConfigPlugin.init?.(s.prepared.host)).then(
                 () => ({ failed: false, message: '' }),
                 (reason: { message?: string }) => ({ failed: true, message: reason.message ?? '' }),
               )

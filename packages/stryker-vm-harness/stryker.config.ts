@@ -1,12 +1,14 @@
 import { sharedConfig } from '@systemfsoftware/stryker-config'
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+const config = {
   ...sharedConfig,
   mutate: [
-    'src/core/**/*.ts',
-    '!src/core/**/*.test.ts',
-    '!src/core/index.ts',
+    'src/drain-registry.workflow.ts',
+    'src/registry.handle.ts',
+    'src/harness-api.handle.ts',
+    'src/assertions.handle.ts',
+    'src/harness-sources.handle.ts',
   ],
   testRunner: {
     plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
@@ -25,4 +27,6 @@ export default defineConfig({
   plugins: [
     import.meta.resolve('@systemfsoftware/stryker-test-contribution'),
   ],
-})
+} satisfies PartialStrykerOptions
+
+export default config

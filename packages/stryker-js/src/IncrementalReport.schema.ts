@@ -1,5 +1,7 @@
 import * as S from 'effect/Schema'
 
+import { FormatIdentitySchema } from './IncrementalDiff.schema.js'
+
 const PositionSchema = S.Struct({
   line: S.Finite,
   column: S.Finite,
@@ -32,8 +34,8 @@ const MutantResultLikeSchema = S.Struct({
   replacement: S.String,
   location: LocationSchema,
   status: S.Literals(MUTANT_STATUSES),
-  killedBy: S.optional(S.Array(S.String)),
-  coveredBy: S.optional(S.Array(S.String)),
+  killedBy: S.String.pipe(S.Array, S.optional),
+  coveredBy: S.String.pipe(S.Array, S.optional),
   static: S.optional(S.Boolean),
   statusReason: S.optional(S.String),
   testsCompleted: S.optional(S.Finite),
@@ -45,6 +47,7 @@ const FileResultLikeSchema = S.Struct({
   language: S.String,
   source: S.String,
   mutants: S.Array(MutantResultLikeSchema),
+  formatIdentity: S.optional(FormatIdentitySchema),
 })
 
 const TestDefinitionLikeSchema = S.Struct({

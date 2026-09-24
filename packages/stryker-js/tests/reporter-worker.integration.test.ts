@@ -1,22 +1,13 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  calculateMetrics,
-  REPORTER_EVENT_BATCH_BOUND,
-  reporterWorkerFactory,
-  spawnReporterWorker,
-} from '@systemfsoftware/stryker-js'
-import type { WorkerSpawnParams } from '@systemfsoftware/stryker-js'
-import type { MutationTestResult, ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface'
-import { MutationTestReportReady, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import { DryRunCompleted, MutantTested, MutationTestingPlanReady } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ReporterInitOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { decodeWorkerOptions } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Options, type Plugin, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import { expect } from 'vitest'
+import { Plugin as StrykerPlugin, RunEvent, type Worker as StrykerWorker } from '../src/mod.js'
 
 import {
   makeReporterWorkerTrace,
@@ -31,11 +22,11 @@ const Feature = makeFeature({ it, layer })
 const PROJECT_BASE_PATH = '/project'
 const MARKER_FILE = 'src/marker.ts'
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'
-const LARGE_RUN = REPORTER_EVENT_BATCH_BOUND * 3 + 7
+const LARGE_RUN = StrykerPlugin.REPORTER_EVENT_BATCH_BOUND * 3 + 7
 
-const location = { start: { line: 1, column: 0 }, end: { line: 1, column: 8 } }
+const location = { start: { line: 1, column: 1 }, end: { line: 1, column: 8 } }
 
-const markerReport = (): MutationTestResult => ({
+const markerReport = (): Report.MutationTestResult => ({
   schemaVersion: '1.0',
   files: {
     [MARKER_FILE]: {
@@ -57,10 +48,10 @@ const markerReport = (): MutationTestResult => ({
   thresholds: { high: 80, low: 60 },
 })
 
-const metricsFixture = (report: MutationTestResult) => calculateMetrics(report.files)
+const metricsFixture = (report: Report.MutationTestResult) => RunEvent.MetricsResultFromReport.fromFiles(report.files)
 
-const killedMutant = (index: number, total: number): MutantTested =>
-  MutantTested.make({
+const killedMutant = (index: number, total: number): Reporter.MutantTested =>
+  Reporter.MutantTested.make({
     id: String(index),
     status: 'Killed',
     file: MARKER_FILE,
@@ -71,29 +62,29 @@ const killedMutant = (index: number, total: number): MutantTested =>
     total,
   })
 
-const completedRun = (): readonly ReporterEvent[] => {
+const completedRun = (): readonly Reporter.ReporterEvent[] => {
   const report = markerReport()
   return [
-    DryRunCompleted.make({
+    Reporter.DryRunCompleted.make({
       timing: { net: 1, overhead: 0 },
       capabilities: { reloadEnvironment: false },
       testCount: 1,
       tests: [],
     }),
-    MutationTestingPlanReady.make({
+    Reporter.MutationTestingPlanReady.make({
       total: 1,
       plans: [{ mutantId: '0', plan: 'Run', netTime: 1, reloadEnvironment: false }],
     }),
     killedMutant(1, 1),
-    MutationTestReportReady.make({ report, metrics: metricsFixture(report) }),
+    Reporter.MutationTestReportReady.make({ report, metrics: metricsFixture(report) }),
   ]
 }
 
-const largeRun = (gauge: ReporterWorkerGauge, total: number): AsyncIterable<ReporterEvent> => ({
+const largeRun = (gauge: ReporterWorkerGauge, total: number): AsyncIterable<Reporter.ReporterEvent> => ({
   [Symbol.asyncIterator]: () => {
     let index = 0
     return {
-      next: <A = unknown>(..._args: [] | [A]): Promise<IteratorResult<ReporterEvent>> => {
+      next: <A = unknown>(..._args: [] | [A]): Promise<IteratorResult<Reporter.ReporterEvent>> => {
         if (index >= total) return Promise.resolve({ done: true, value: undefined })
         Effect.runSync(
           Effect.gen(function*() {
@@ -110,11 +101,11 @@ const largeRun = (gauge: ReporterWorkerGauge, total: number): AsyncIterable<Repo
   },
 })
 
-function asStream(events: AsyncIterable<ReporterEvent>): AsyncIterable<ReporterEvent> {
+function asStream(events: AsyncIterable<Reporter.ReporterEvent>): AsyncIterable<Reporter.ReporterEvent> {
   return events
 }
 
-const ofEvents = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> => ({
+const ofEvents = (events: readonly Reporter.ReporterEvent[]): AsyncIterable<Reporter.ReporterEvent> => ({
   [Symbol.asyncIterator]: () => {
     const iterator = events[Symbol.iterator]()
     return {
@@ -123,7 +114,7 @@ const ofEvents = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent
   },
 })
 
-const spawnOf = (spawns: readonly WorkerSpawnParams[]): WorkerSpawnParams => {
+const spawnOf = (spawns: readonly StrykerWorker.WorkerSpawnParams[]): StrykerWorker.WorkerSpawnParams => {
   const first = spawns[0]
   if (first === undefined) {
     throw new Error('the reporter worker was never started')
@@ -131,7 +122,7 @@ const spawnOf = (spawns: readonly WorkerSpawnParams[]): WorkerSpawnParams => {
   return first
 }
 
-const tagOf = (event: ReporterEvent): string =>
+const tagOf = (event: Reporter.ReporterEvent): string =>
   Match.value(event).pipe(
     Match.tag('dryRunCompleted', () => 'dryRunCompleted'),
     Match.tag('mutationTestingPlanReady', () => 'mutationTestingPlanReady'),
@@ -140,14 +131,14 @@ const tagOf = (event: ReporterEvent): string =>
     Match.exhaustive,
   )
 
-const tagsOf = (events: readonly ReporterEvent[]): readonly string[] => events.map(tagOf)
+const tagsOf = (events: readonly Reporter.ReporterEvent[]): readonly string[] => events.map(tagOf)
 
 interface ObservedRun {
-  readonly delivered: readonly ReporterEvent[]
+  readonly delivered: readonly Reporter.ReporterEvent[]
   readonly deliverySizes: readonly number[]
-  readonly inits: readonly ReporterInitOptions[]
+  readonly inits: readonly Plugin.ReporterInitOptions[]
   readonly flushes: number
-  readonly spawns: readonly WorkerSpawnParams[]
+  readonly spawns: readonly StrykerWorker.WorkerSpawnParams[]
   readonly maxLag: number
   readonly yielded: number
 }
@@ -164,14 +155,14 @@ const REPORTER_PLUGIN: ReporterPluginTarget = {
 
 const driveReporterWorker = (
   target: ReporterPluginTarget,
-  produce: (gauge: ReporterWorkerGauge, trace: ReporterWorkerTrace) => AsyncIterable<ReporterEvent>,
+  produce: (gauge: ReporterWorkerGauge, trace: ReporterWorkerTrace) => AsyncIterable<Reporter.ReporterEvent>,
 ): Effect.Effect<ObservedRun> =>
   Effect.scoped(
     Effect.gen(function*() {
-      const options = yield* S.decodeEffect(StrykerOptionsSchema)({})
+      const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({})
       const trace = yield* makeReporterWorkerTrace
       const launcher = yield* reporterServingLauncher(trace)
-      const client = yield* spawnReporterWorker({
+      const client = yield* StrykerPlugin.spawnReporterWorker({
         entrypoint: target.entrypoint,
         projectBasePath: target.projectBasePath,
         execArgv: [],
@@ -179,7 +170,7 @@ const driveReporterWorker = (
         tempDirPrefix: 'stryker-reporter-',
       }).pipe(Effect.provide(launcher.layer))
 
-      yield* reporterWorkerFactory(client)(options, { traceparent: TRACEPARENT })(
+      yield* StrykerPlugin.reporterWorkerFactory(client)(options, { traceparent: TRACEPARENT })(
         asStream(produce(trace.gauge, trace)),
       )
 
@@ -220,7 +211,7 @@ Feature('Reporting a mutation run through a reporter plugin process')
             const spawn = spawnOf(s.driven.spawns)
             expect(spawn.workingDirectory).toBe(PROJECT_BASE_PATH)
             expect(spawn.entrypoint).toBe(REPORTER_WORKER_ENTRYPOINT)
-            const options = yield* decodeWorkerOptions(spawn.optionsJson)
+            const options = yield* S.decodeEffect(Worker.WorkerOptionsWire)(spawn.optionsJson)
             expect(options.htmlReporter.fileName).toBe('reports/mutation/mutation.html')
           })
         ),
@@ -244,15 +235,15 @@ Feature('Reporting a mutation run through a reporter plugin process')
           expect(s.driven.yielded).toBe(LARGE_RUN)
           expect(s.driven.delivered.length).toBe(LARGE_RUN)
           expect(s.driven.deliverySizes).toStrictEqual([
-            REPORTER_EVENT_BATCH_BOUND,
-            REPORTER_EVENT_BATCH_BOUND,
-            REPORTER_EVENT_BATCH_BOUND,
-            LARGE_RUN - 3 * REPORTER_EVENT_BATCH_BOUND,
+            StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
+            StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
+            StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
+            LARGE_RUN - 3 * StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
           ])
         }),
         Then('the producer stays at most one delivery ahead of the process')((s) => {
           expect(s.driven.maxLag).toBeGreaterThan(0)
-          expect(s.driven.maxLag).toBeLessThanOrEqual(REPORTER_EVENT_BATCH_BOUND)
+          expect(s.driven.maxLag).toBeLessThanOrEqual(StrykerPlugin.REPORTER_EVENT_BATCH_BOUND)
         }),
       ),
     )
