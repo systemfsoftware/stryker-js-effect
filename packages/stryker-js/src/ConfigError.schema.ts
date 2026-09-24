@@ -71,4 +71,3 @@ export type ConfigReadError =
   | ConfigFileInvalidError
   | ConfigFileUnsupportedError
   | ConfigError
-

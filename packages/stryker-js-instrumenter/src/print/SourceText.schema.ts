@@ -1,8 +1,3 @@
-import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
 import type {
   AccessorProperty,
   ArrayExpression,
@@ -28,8 +23,8 @@ import type {
   ForOfStatement,
   ForStatement,
   Function as FunctionNode,
-  IfStatement,
   IdentifierReference,
+  IfStatement,
   ImportAttribute,
   ImportDeclaration,
   ImportExpression,
@@ -98,11 +93,16 @@ import type {
   WithStatement,
   YieldExpression,
 } from '@systemfsoftware/stryker-ignorer-interface'
-import type { Ast, HtmlAst, JSAst, ScriptAst, SvelteAst, TSAst, TemplateScript, TsxAst } from '../Ast.schema.js'
+import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { PrintFailed } from './PrintFailed.schema.js'
 import { spanOf } from '../Ast.handle.js'
+import type { Ast, HtmlAst, JSAst, ScriptAst, SvelteAst, TemplateScript, TSAst, TsxAst } from '../Ast.schema.js'
+import { PrintFailed } from './PrintFailed.schema.js'
 
 export class SourceText extends S.Class<SourceText>('SourceText')({ text: S.NonEmptyString }) {
   static fromValue = <A>(value: A): Option.Option<SourceText> =>
@@ -114,21 +114,21 @@ const nonEmptyOf = (text: string): Option.Option<string> =>
   Option.filter(Option.some(text), (candidate) => candidate.length > 0)
 
 const printedTextOf = <A = unknown>(value: A) =>
-  Option.flatMap(Option.filter(Option.fromNullishOr(value), isPrintableValue), (printable) =>
-    Option.flatMap(Result.getSuccess(printedResultOf(printable)), nonEmptyOf))
+  Option.flatMap(
+    Option.filter(Option.fromNullishOr(value), isPrintableValue),
+    (printable) => Option.flatMap(Result.getSuccess(printedResultOf(printable)), nonEmptyOf),
+  )
 
 const AST_SHAPE = ['format', 'root'] as const
 
-const isAst = (value: unknown): value is Ast =>
-  Predicate.isObject(value) && AST_SHAPE.every((key) => key in value)
+const isAst = (value: unknown): value is Ast => Predicate.isObject(value) && AST_SHAPE.every((key) => key in value)
 
 const SCRIPT_SHAPE = ['format', 'root', 'rawContent'] as const
 
 const isPrintableScript = (value: unknown): value is ScriptAst =>
   Predicate.isObject(value) && SCRIPT_SHAPE.every((key) => key in value)
 
-const isPrinterNode = (value: unknown): value is Node =>
-  Predicate.isObject(value) && Predicate.isString(value['type'])
+const isPrinterNode = (value: unknown): value is Node => Predicate.isObject(value) && Predicate.isString(value['type'])
 
 const PRINTABLE_GUARDS = [isAst, isPrintableScript, isPrinterNode]
 
@@ -197,13 +197,15 @@ const printedHtml = (ast: HtmlAst): Result.Result<string, PrintFailed> =>
   Result.flatMap(spannedScriptsOf(ast.root.scripts), (spanned) => {
     const sorted = [...spanned].sort((a, b) => a.start - b.start)
     return Result.map(
-      Arr.reduce(sorted, seedOf<WrittenText>({ text: '', cursor: 0 }), (state, spannedScript) =>
-        Result.flatMap(state, (current) =>
-          Result.map(printedScript(spannedScript.script), (code) => ({
-            text: `${current.text}${ast.rawContent.substring(current.cursor, spannedScript.start)}\n${code}\n`,
-            cursor: spannedScript.end,
-          })),
-        ),
+      Arr.reduce(
+        sorted,
+        seedOf<WrittenText>({ text: '', cursor: 0 }),
+        (state, spannedScript) =>
+          Result.flatMap(state, (current) =>
+            Result.map(printedScript(spannedScript.script), (code) => ({
+              text: `${current.text}${ast.rawContent.substring(current.cursor, spannedScript.start)}\n${code}\n`,
+              cursor: spannedScript.end,
+            }))),
       ),
       (written) => `${written.text}${ast.rawContent.substring(written.cursor)}`,
     )
@@ -214,8 +216,10 @@ const printedSvelte = (ast: SvelteAst): Result.Result<string, PrintFailed> => {
     .filter(Predicate.isNotNullish)
     .sort((a, b) => a.range.start - b.range.start)
   return Result.map(
-    Arr.reduce(sortedScripts, seedOf<WrittenText>({ text: '', cursor: 0 }), (state, script) =>
-      Result.flatMap(state, (current) => appendPrintedScript(current, script, ast.rawContent)),
+    Arr.reduce(
+      sortedScripts,
+      seedOf<WrittenText>({ text: '', cursor: 0 }),
+      (state, script) => Result.flatMap(state, (current) => appendPrintedScript(current, script, ast.rawContent)),
     ),
     (written) => `${written.text}${ast.rawContent.substring(written.cursor)}`,
   )
@@ -236,8 +240,7 @@ const appendPrintedScript = (
         text: `${state.text}${rawContent.substring(state.cursor, script.range.start)}\n${code}\n`,
         cursor: script.range.end,
       }),
-    }),
-  )
+    }))
 
 interface Comment {
   readonly type: 'Line' | 'Block'
@@ -281,10 +284,12 @@ const spannedScriptOf = (script: HtmlAst['root']['scripts'][number]): Result.Res
 const spannedScriptsOf = (
   scripts: readonly HtmlAst['root']['scripts'][number][],
 ): Result.Result<ReadonlyArray<SpannedScript>, PrintFailed> =>
-  Arr.reduce(scripts, seedOf<ReadonlyArray<SpannedScript>>([]), (state, script) =>
-    Result.flatMap(state, (collected) =>
-      Result.map(spannedScriptOf(script), (spanned) => [...collected, spanned]),
-    ))
+  Arr.reduce(
+    scripts,
+    seedOf<ReadonlyArray<SpannedScript>>([]),
+    (state, script) =>
+      Result.flatMap(state, (collected) => Result.map(spannedScriptOf(script), (spanned) => [...collected, spanned])),
+  )
 
 const printProgram = (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program)
 
@@ -432,11 +437,13 @@ const hashbangPrefix = (hashbang: Hashbang | null): string =>
   })
 
 const statementText = (ctx: PrintContext, node: Statement): string =>
-  `${attachedCommentsText(ctx, node, 'leadingComments')}${statementKindText(ctx, node)}${attachedCommentsText(
-    ctx,
-    node,
-    'trailingComments',
-  )}`
+  `${attachedCommentsText(ctx, node, 'leadingComments')}${statementKindText(ctx, node)}${
+    attachedCommentsText(
+      ctx,
+      node,
+      'trailingComments',
+    )
+  }`
 
 const attachedCommentsText = (
   ctx: PrintContext,
@@ -504,7 +511,6 @@ const printNodePrec = (ctx: PrintContext, node: Node | null | undefined, prec: n
   })
 
 const unknownNodeText = (type: string): string => `/* unknown:${type} */`
-
 
 const nodeText: (node: Node) => (ctx: PrintContext, prec: number) => string = Match.type<Node>().pipe(
   Match.withReturnType<(ctx: PrintContext, prec: number) => string>(),
@@ -703,17 +709,28 @@ const tsTypeText: (node: TSType) => (ctx: PrintContext) => string = Match.type<T
     TSArrayType: (n) => (ctx) => `${arrayElementTypeText(ctx, n.elementType)}[]`,
     TSTypeLiteral: (n) => (ctx) => printTSTypeLiteral(ctx, n.members),
     TSTupleType: (n) => (ctx) => printTupleType(ctx, n.elementTypes),
-    TSConditionalType: (n) => (ctx) => `${printTSTypeToString(ctx, n.checkType)} extends ${printTSTypeToString(ctx, n.extendsType)} ? ${printTSTypeToString(ctx, n.trueType)} : ${printTSTypeToString(ctx, n.falseType)}`,
-    TSInferType: (n) => (ctx) => `infer ${n.typeParameter.name.name}${printTypeClause(ctx, ' extends ', n.typeParameter.constraint)}`,
+    TSConditionalType: (n) => (ctx) =>
+      `${printTSTypeToString(ctx, n.checkType)} extends ${printTSTypeToString(ctx, n.extendsType)} ? ${
+        printTSTypeToString(ctx, n.trueType)
+      } : ${printTSTypeToString(ctx, n.falseType)}`,
+    TSInferType: (n) => (ctx) =>
+      `infer ${n.typeParameter.name.name}${printTypeClause(ctx, ' extends ', n.typeParameter.constraint)}`,
     TSTypeQuery: (n) => (ctx) => `typeof ${printTypeQueryName(ctx, n)}${typeArgumentsText(ctx, n.typeArguments)}`,
     TSImportType: (n) => (ctx) => printTSImportType(ctx, n),
     TSTypeOperator: (n) => (ctx) => `${n.operator} ${printTSTypeToString(ctx, n.typeAnnotation)}`,
     TSMappedType: (n) => (ctx) => printMappedType(ctx, n),
     TSTemplateLiteralType: (n) => (ctx) => printTSTemplateLiteral(ctx, n),
-    TSFunctionType: (n) => (ctx) => `${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
-    TSConstructorType: (n) => (ctx) => `${flagText(n.abstract, 'abstract ')}new ${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
+    TSFunctionType: (n) => (ctx) =>
+      `${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${
+        printTSTypeToString(ctx, n.returnType.typeAnnotation)
+      }`,
+    TSConstructorType: (n) => (ctx) =>
+      `${flagText(n.abstract, 'abstract ')}new ${typeParametersText(ctx, n.typeParameters)}(${
+        paramsText(ctx, n.params)
+      }) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
     TSTypePredicate: (n) => (ctx) => printTSTypePredicate(ctx, n),
-    TSIndexedAccessType: (n) => (ctx) => `${printTSTypeToString(ctx, n.objectType)}[${printTSTypeToString(ctx, n.indexType)}]`,
+    TSIndexedAccessType: (n) => (ctx) =>
+      `${printTSTypeToString(ctx, n.objectType)}[${printTSTypeToString(ctx, n.indexType)}]`,
     TSNamedTupleMember: (n) => (ctx) => printNamedTupleMember(ctx, n),
     TSLiteralType: (n) => (ctx) => printTSLiteralType(ctx, n.literal),
     TSParenthesizedType: (n) => (ctx) => `(${printTSTypeToString(ctx, n.typeAnnotation)})`,
@@ -835,12 +852,23 @@ type PropertyForm = 'accessor' | 'method' | 'shorthand' | 'shorthandDefault' | '
 
 const propertyText = (ctx: PrintContext, node: PropertyLike): string =>
   Match.value(propertyFormOf(node)).pipe(
-    Match.when('accessor', () => `${node.kind} ${propertyKeyText(ctx, node.key, node.computed === true, PREC.Assignment)}${functionValueTailText(ctx, node.value)}`),
-    Match.when('method', () => `${propertyKeyText(ctx, node.key, node.computed === true, PREC.Assignment)}${functionValueTailText(ctx, node.value)}`),
-    Match.when('shorthand', () => identifierNameText(node.key)),
-    Match.when('shorthandDefault', () => shorthandDefaultPropertyText(ctx, node)),
+    Match.when('accessor', () =>
+      `${node.kind} ${propertyKeyText(ctx, node.key, node.computed === true, PREC.Assignment)}${
+        functionValueTailText(ctx, node.value)
+      }`),
+    Match.when('method', () =>
+      `${propertyKeyText(ctx, node.key, node.computed === true, PREC.Assignment)}${
+        functionValueTailText(ctx, node.value)
+      }`),
+    Match.when('shorthand', () =>
+      identifierNameText(node.key)),
+    Match.when('shorthandDefault', () =>
+      shorthandDefaultPropertyText(ctx, node)),
     Match.orElse(
-      () => `${propertyKeyText(ctx, node.key, node.computed === true, PREC.Assignment)}: ${printNodePrec(ctx, node.value, PREC.Assignment)}`,
+      () =>
+        `${propertyKeyText(ctx, node.key, node.computed === true, PREC.Assignment)}: ${
+          printNodePrec(ctx, node.value, PREC.Assignment)
+        }`,
     ),
   )
 
@@ -876,10 +904,12 @@ const plainPropertyKeyText = (ctx: PrintContext, key: Node): string =>
   )
 
 const functionTailText = (ctx: PrintContext, fn: FunctionNode): string =>
-  `${typeParametersText(ctx, fn.typeParameters)}(${paramsText(ctx, fn.params)})${typeAnnotationText(
-    ctx,
-    fn.returnType,
-  )}${functionBodyText(ctx, fn)}`
+  `${typeParametersText(ctx, fn.typeParameters)}(${paramsText(ctx, fn.params)})${
+    typeAnnotationText(
+      ctx,
+      fn.returnType,
+    )
+  }${functionBodyText(ctx, fn)}`
 
 const functionBodyText = (ctx: PrintContext, fn: FunctionNode): string =>
   Option.match(Option.fromNullishOr(fn.body), {
@@ -909,9 +939,11 @@ const typeAnnotationText = (ctx: PrintContext, annotation: TSTypeAnnotation | nu
   })
 
 const templateLiteralText = (ctx: PrintContext, node: TemplateLiteral): string =>
-  `\`${node.quasis
-    .map((quasi, index) => quasiText(ctx, quasi, node.expressions[index]))
-    .join('')}\``
+  `\`${
+    node.quasis
+      .map((quasi, index) => quasiText(ctx, quasi, node.expressions[index]))
+      .join('')
+  }\``
 
 const quasiText = (ctx: PrintContext, quasi: TemplateElement, expression: Expression | undefined): string =>
   Boolean.match(quasi.tail, {
@@ -920,16 +952,20 @@ const quasiText = (ctx: PrintContext, quasi: TemplateElement, expression: Expres
   })
 
 const taggedTemplateText = (ctx: PrintContext, node: TaggedTemplateExpression): string =>
-  `${printNodePrec(ctx, node.tag, PREC.Member)}${typeArgumentsText(ctx, node.typeArguments)}${templateLiteralText(
-    ctx,
-    node.quasi,
-  )}`
+  `${printNodePrec(ctx, node.tag, PREC.Member)}${typeArgumentsText(ctx, node.typeArguments)}${
+    templateLiteralText(
+      ctx,
+      node.quasi,
+    )
+  }`
 
 const memberExpressionText = (ctx: PrintContext, node: MemberExpression): string =>
-  `${wrappedExpressionText(ctx, node.object, PREC.Member, MEMBER_OBJECT_WRAPPED_KINDS)}${flagText(
-    node.optional,
-    '?.',
-  )}${memberSelectorText(ctx, node)}`
+  `${wrappedExpressionText(ctx, node.object, PREC.Member, MEMBER_OBJECT_WRAPPED_KINDS)}${
+    flagText(
+      node.optional,
+      '?.',
+    )
+  }${memberSelectorText(ctx, node)}`
 
 const memberSelectorText = (ctx: PrintContext, access: MemberExpression): string =>
   Boolean.match(access.computed, {
@@ -947,17 +983,21 @@ const memberPropertyText = (ctx: PrintContext, property: Node): string =>
   )
 
 const callExpressionText = (ctx: PrintContext, node: CallExpression): string =>
-  `${wrappedExpressionText(ctx, node.callee, PREC.Member, CALLEE_WRAPPED_KINDS)}${flagText(
-    node.optional,
-    '?.',
-  )}${typeArgumentsText(ctx, node.typeArguments)}(${nodeListText(ctx, node.arguments, PREC.Assignment)})`
+  `${wrappedExpressionText(ctx, node.callee, PREC.Member, CALLEE_WRAPPED_KINDS)}${
+    flagText(
+      node.optional,
+      '?.',
+    )
+  }${typeArgumentsText(ctx, node.typeArguments)}(${nodeListText(ctx, node.arguments, PREC.Assignment)})`
 
 const newExpressionText = (ctx: PrintContext, node: NewExpression): string =>
-  `new ${dispatchNode(ctx, node.callee, PREC.Member)}${typeArgumentsText(ctx, node.typeArguments)}(${nodeListText(
-    ctx,
-    node.arguments,
-    PREC.Assignment,
-  )})`
+  `new ${dispatchNode(ctx, node.callee, PREC.Member)}${typeArgumentsText(ctx, node.typeArguments)}(${
+    nodeListText(
+      ctx,
+      node.arguments,
+      PREC.Assignment,
+    )
+  })`
 
 const metaPropertyText = (node: MetaProperty): string => `${node.meta.name}.${node.property.name}`
 
@@ -967,10 +1007,12 @@ const v8IntrinsicText = (
 ): string => `%${node.name.name}(${nodeListText(ctx, node.arguments, PREC.Assignment)})`
 
 const importExpressionText = (ctx: PrintContext, node: ImportExpression): string =>
-  `import${flagText(node.phase, `.${node.phase}`)}(${assignmentNodeText(ctx, node.source)}${flagText(
-    node.options,
-    `, ${assignmentNodeText(ctx, node.options)}`,
-  )})`
+  `import${flagText(node.phase, `.${node.phase}`)}(${assignmentNodeText(ctx, node.source)}${
+    flagText(
+      node.options,
+      `, ${assignmentNodeText(ctx, node.options)}`,
+    )
+  })`
 
 const updateExpressionText = (ctx: PrintContext, node: UpdateExpression): string => {
   const operand = wrappedExpressionText(ctx, node.argument, PREC.Update, MEMBER_OBJECT_WRAPPED_KINDS)
@@ -981,12 +1023,14 @@ const updateExpressionText = (ctx: PrintContext, node: UpdateExpression): string
 }
 
 const unaryExpressionText = (ctx: PrintContext, node: UnaryExpression): string =>
-  `${node.operator}${flagText(UNARY_WORD_OPERATORS[node.operator] === true, ' ')}${wrappedExpressionText(
-    ctx,
-    node.argument,
-    PREC.Unary,
-    UNARY_OPERAND_WRAPPED_KINDS,
-  )}`
+  `${node.operator}${flagText(UNARY_WORD_OPERATORS[node.operator] === true, ' ')}${
+    wrappedExpressionText(
+      ctx,
+      node.argument,
+      PREC.Unary,
+      UNARY_OPERAND_WRAPPED_KINDS,
+    )
+  }`
 
 const binaryExpressionText = (ctx: PrintContext, node: BinaryLike, prec: number): string => {
   const myPrec = binaryPrec(node.operator)
@@ -1024,7 +1068,9 @@ const assignmentPatternText = (
 ): string =>
   parenthesizedIf(
     PREC.Assignment < prec,
-    `${dispatchNode(ctx, node.left, PREC.Assignment)}${typeAnnotationText(ctx, bindingTypeAnnotation(node.left))} = ${dispatchNode(ctx, node.right, PREC.Assignment)}`,
+    `${dispatchNode(ctx, node.left, PREC.Assignment)}${typeAnnotationText(ctx, bindingTypeAnnotation(node.left))} = ${
+      dispatchNode(ctx, node.right, PREC.Assignment)
+    }`,
   )
 
 const objectPatternText = (ctx: PrintContext, node: { readonly properties: readonly Node[] }): string =>
@@ -1043,18 +1089,22 @@ const sequenceExpressionText = (ctx: PrintContext, node: SequenceExpression, pre
   )
 
 const yieldExpressionText = (ctx: PrintContext, node: YieldExpression): string =>
-  `${Boolean.match(node.delegate, {
-    onTrue: () => 'yield*',
-    onFalse: () => 'yield',
-  })}${flagText(node.argument, ` ${assignmentNodeText(ctx, node.argument)}`)}`
+  `${
+    Boolean.match(node.delegate, {
+      onTrue: () => 'yield*',
+      onFalse: () => 'yield',
+    })
+  }${flagText(node.argument, ` ${assignmentNodeText(ctx, node.argument)}`)}`
 
 const arrowFunctionText = (ctx: PrintContext, node: ArrowFunctionExpression, prec: number): string =>
   parenthesizedIf(
     PREC.Assignment < prec,
-    `${flagText(node.async, 'async ')}${typeParametersText(ctx, node.typeParameters)}${arrowParamsText(
-      ctx,
-      node,
-    )}${typeAnnotationText(ctx, node.returnType)} => ${arrowBodyText(ctx, node)}`,
+    `${flagText(node.async, 'async ')}${typeParametersText(ctx, node.typeParameters)}${
+      arrowParamsText(
+        ctx,
+        node,
+      )
+    }${typeAnnotationText(ctx, node.returnType)} => ${arrowBodyText(ctx, node)}`,
   )
 
 const arrowParamsText = (ctx: PrintContext, node: ArrowFunctionExpression): string => {
@@ -1077,13 +1127,17 @@ const functionText = (ctx: PrintContext, node: FunctionNode): string =>
   `${functionHeaderText(node)}${functionTailText(ctx, node)}`
 
 const classText = (ctx: PrintContext, node: Class): string =>
-  `${decoratorsText(ctx, node.decorators)}${flagText(node.declare, 'declare ')}${flagText(
-    node.abstract,
-    'abstract ',
-  )}class${namedDeclarationText(node)}${typeParametersText(ctx, node.typeParameters)}${classHeritageText(
-    ctx,
-    node,
-  )}${classImplementsText(ctx, node)} ${classBodyText(ctx, node.body)}`
+  `${decoratorsText(ctx, node.decorators)}${flagText(node.declare, 'declare ')}${
+    flagText(
+      node.abstract,
+      'abstract ',
+    )
+  }class${namedDeclarationText(node)}${typeParametersText(ctx, node.typeParameters)}${
+    classHeritageText(
+      ctx,
+      node,
+    )
+  }${classImplementsText(ctx, node)} ${classBodyText(ctx, node.body)}`
 
 const classHeritageText = (ctx: PrintContext, node: Class): string =>
   Option.match(Option.fromNullishOr(node.superClass), {
@@ -1114,9 +1168,11 @@ const decoratorText = (ctx: PrintContext, decorator: Decorator): string =>
   `@${dispatchNode(ctx, decorator.expression, PREC.Member)}`
 
 const jsxElementText = (ctx: PrintContext, node: JSXElement): string =>
-  `${jsxOpeningElementText(ctx, node.openingElement)}${node.children
-    .map((child) => jsxChildText(ctx, child))
-    .join('')}${jsxClosingElementText(ctx, node)}`
+  `${jsxOpeningElementText(ctx, node.openingElement)}${
+    node.children
+      .map((child) => jsxChildText(ctx, child))
+      .join('')
+  }${jsxClosingElementText(ctx, node)}`
 
 const jsxClosingElementText = (ctx: PrintContext, node: JSXElement): string =>
   Option.match(Option.fromNullishOr(node.closingElement), {
@@ -1128,12 +1184,16 @@ const jsxFragmentText = (ctx: PrintContext, node: JSXFragment): string =>
   `<>${node.children.map((child) => jsxChildText(ctx, child)).join('')}</>`
 
 const jsxOpeningElementText = (ctx: PrintContext, node: JSXOpeningElement): string =>
-  `<${jsxElementNameText(ctx, node.name)}${typeArgumentsText(ctx, node.typeArguments)}${node.attributes
-    .map((attribute) => ` ${sequenceNodeText(ctx, attribute)}`)
-    .join('')}${Boolean.match(node.selfClosing, {
-    onTrue: () => ' />',
-    onFalse: () => '>',
-  })}`
+  `<${jsxElementNameText(ctx, node.name)}${typeArgumentsText(ctx, node.typeArguments)}${
+    node.attributes
+      .map((attribute) => ` ${sequenceNodeText(ctx, attribute)}`)
+      .join('')
+  }${
+    Boolean.match(node.selfClosing, {
+      onTrue: () => ' />',
+      onFalse: () => '>',
+    })
+  }`
 
 const jsxElementNameText = (ctx: PrintContext, name: JSXOpeningElement['name']): string =>
   Match.value(name).pipe(
@@ -1219,17 +1279,18 @@ const expressionStatementText = (ctx: PrintContext, node: ExpressionStatement): 
     onFalse: () => `${printNodePrec(ctx, node.expression, PREC.Sequence)};`,
   })
 
-const isDirective = (directive: string | null | undefined): boolean =>
-  directive != null && directive !== ''
+const isDirective = (directive: string | null | undefined): boolean => directive != null && directive !== ''
 
 const ifStatementText = (ctx: PrintContext, node: IfStatement): string =>
-  `if (${printNodePrec(ctx, node.test, PREC.Sequence)}) ${statementOrBlockText(ctx, node.consequent)}${Option.match(
-    Option.fromNullishOr(node.alternate),
-    {
-      onSome: (alternate) => ` else ${statementOrBlockText(ctx, alternate)}`,
-      onNone: () => '',
-    },
-  )}`
+  `if (${printNodePrec(ctx, node.test, PREC.Sequence)}) ${statementOrBlockText(ctx, node.consequent)}${
+    Option.match(
+      Option.fromNullishOr(node.alternate),
+      {
+        onSome: (alternate) => ` else ${statementOrBlockText(ctx, alternate)}`,
+        onNone: () => '',
+      },
+    )
+  }`
 
 const statementOrBlockText = (ctx: PrintContext, node: Statement): string =>
   Match.value(node).pipe(
@@ -1246,10 +1307,12 @@ const doWhileStatementText = (ctx: PrintContext, node: DoWhileStatement): string
   `do ${statementOrBlockText(ctx, node.body)} while (${printNodePrec(ctx, node.test, PREC.Sequence)});`
 
 const forStatementText = (ctx: PrintContext, node: ForStatement): string =>
-  `for (${declarationOrExpressionText(ctx, node.init)}; ${optionalSequenceText(ctx, node.test)}; ${optionalSequenceText(
-    ctx,
-    node.update,
-  )}) ${statementOrBlockText(ctx, node.body)}`
+  `for (${declarationOrExpressionText(ctx, node.init)}; ${optionalSequenceText(ctx, node.test)}; ${
+    optionalSequenceText(
+      ctx,
+      node.update,
+    )
+  }) ${statementOrBlockText(ctx, node.body)}`
 
 const declarationOrExpressionText = (ctx: PrintContext, node: Node | null | undefined): string =>
   Option.match(Option.fromNullishOr(node), {
@@ -1263,25 +1326,30 @@ const declarationOrExpressionText = (ctx: PrintContext, node: Node | null | unde
       ),
   })
 
-const optionalSequenceText = (ctx: PrintContext, node: Node | null | undefined): string =>
-  sequenceNodeText(ctx, node)
+const optionalSequenceText = (ctx: PrintContext, node: Node | null | undefined): string => sequenceNodeText(ctx, node)
 
 const forInStatementText = (ctx: PrintContext, node: ForInStatement): string =>
-  `for (${Match.value(node.left).pipe(
-    Match.discriminators('type')({
-      VariableDeclaration: (n) => variableDeclarationText(ctx, n),
-    }),
-    Match.orElse((n) => printNodePrec(ctx, n, PREC.Sequence)),
-  )} in ${printNodePrec(ctx, node.right, PREC.Sequence)}) ${statementOrBlockText(ctx, node.body)}`
+  `for (${
+    Match.value(node.left).pipe(
+      Match.discriminators('type')({
+        VariableDeclaration: (n) => variableDeclarationText(ctx, n),
+      }),
+      Match.orElse((n) => printNodePrec(ctx, n, PREC.Sequence)),
+    )
+  } in ${printNodePrec(ctx, node.right, PREC.Sequence)}) ${statementOrBlockText(ctx, node.body)}`
 
 const forOfStatementText = (ctx: PrintContext, node: ForOfStatement): string =>
-  `${Boolean.match(node.await, {
-    onTrue: () => 'for await (',
-    onFalse: () => 'for (',
-  })}${declarationOrExpressionText(ctx, node.left)} of ${sequenceNodeText(ctx, node.right)}) ${statementOrBlockText(
-    ctx,
-    node.body,
-  )}`
+  `${
+    Boolean.match(node.await, {
+      onTrue: () => 'for await (',
+      onFalse: () => 'for (',
+    })
+  }${declarationOrExpressionText(ctx, node.left)} of ${sequenceNodeText(ctx, node.right)}) ${
+    statementOrBlockText(
+      ctx,
+      node.body,
+    )
+  }`
 
 const returnStatementText = (ctx: PrintContext, node: ReturnStatement): string =>
   Option.match(Option.fromNullishOr(node.argument), {
@@ -1294,9 +1362,11 @@ const withStatementText = (ctx: PrintContext, node: WithStatement): string =>
 
 const switchStatementText = (ctx: PrintContext, node: SwitchStatement): string => {
   const inner: PrintContext = { indentLevel: ctx.indentLevel + 1 }
-  return `switch (${sequenceNodeText(ctx, node.discriminant)}) {\n${node.cases
-    .map((switchCase) => `${indent(inner)}${switchCaseText(inner, switchCase)}`)
-    .join('')}${indent(ctx)}}`
+  return `switch (${sequenceNodeText(ctx, node.discriminant)}) {\n${
+    node.cases
+      .map((switchCase) => `${indent(inner)}${switchCaseText(inner, switchCase)}`)
+      .join('')
+  }${indent(ctx)}}`
 }
 
 const switchCaseText = (ctx: PrintContext, node: SwitchCase): string =>
@@ -1312,7 +1382,9 @@ const labeledStatementText = (ctx: PrintContext, node: LabeledStatement): string
   `${node.label.name}: ${statementText(ctx, node.body)}`
 
 const tryStatementText = (ctx: PrintContext, node: TryStatement): string =>
-  `try ${blockStatementText(ctx, node.block)}${catchClauseText(ctx, node.handler)}${finallyClauseText(ctx, node.finalizer)}`
+  `try ${blockStatementText(ctx, node.block)}${catchClauseText(ctx, node.handler)}${
+    finallyClauseText(ctx, node.finalizer)
+  }`
 
 const catchClauseText = (ctx: PrintContext, handler: CatchClause | null | undefined): string =>
   Option.match(Option.fromNullishOr(handler), {
@@ -1341,15 +1413,19 @@ const finallyClauseText = (ctx: PrintContext, finalizer: BlockStatement | null |
   })
 
 const variableDeclarationText = (ctx: PrintContext, node: VariableDeclaration): string =>
-  `${flagText(node.declare, 'declare ')}${node.kind} ${node.declarations
-    .map((declaration) => variableDeclaratorText(ctx, declaration))
-    .join(', ')}`
+  `${flagText(node.declare, 'declare ')}${node.kind} ${
+    node.declarations
+      .map((declaration) => variableDeclaratorText(ctx, declaration))
+      .join(', ')
+  }`
 
 const variableDeclaratorText = (ctx: PrintContext, node: VariableDeclarator): string =>
-  `${bindingTargetText(ctx, node.id)}${flagText(node.definite, '!')}${typeAnnotationText(
-    ctx,
-    bindingTypeAnnotation(node.id),
-  )}${initializerText(ctx, node.init)}`
+  `${bindingTargetText(ctx, node.id)}${flagText(node.definite, '!')}${
+    typeAnnotationText(
+      ctx,
+      bindingTypeAnnotation(node.id),
+    )
+  }${initializerText(ctx, node.init)}`
 
 const bindingTargetText = (ctx: PrintContext, id: BindingPattern): string =>
   Match.value(id).pipe(
@@ -1378,17 +1454,18 @@ const paramText = (ctx: PrintContext, param: ParamPattern): string =>
 const restParamText = (
   ctx: PrintContext,
   param: Extract<ParamPattern, { readonly type: 'RestElement' }>,
-): string =>
-  `...${assignmentNodeText(ctx, param.argument)}${typeAnnotationText(ctx, param.typeAnnotation)}`
+): string => `...${assignmentNodeText(ctx, param.argument)}${typeAnnotationText(ctx, param.typeAnnotation)}`
 
 const parameterPropertyText = (
   ctx: PrintContext,
   param: Extract<ParamPattern, { readonly type: 'TSParameterProperty' }>,
 ): string =>
-  `${decoratorsText(ctx, param.decorators)}${parameterPropertyModifiers(param)}${parameterPropertyTargetText(
-    ctx,
-    param.parameter,
-  )}`
+  `${decoratorsText(ctx, param.decorators)}${parameterPropertyModifiers(param)}${
+    parameterPropertyTargetText(
+      ctx,
+      param.parameter,
+    )
+  }`
 
 const parameterPropertyTargetText = (ctx: PrintContext, parameter: BindingPattern): string =>
   Match.value(parameter).pipe(
@@ -1415,11 +1492,13 @@ const classBodyText = (ctx: PrintContext, node: ClassBody): string =>
   Boolean.match(node.body.length === 0, {
     onTrue: () => '{}',
     onFalse: () =>
-      `{\n${indentedBodyText(
-        ctx,
-        node.body,
-        (inner, element) => printNodePrec(inner, element, PREC.Sequence),
-      )}${indent(ctx)}}`,
+      `{\n${
+        indentedBodyText(
+          ctx,
+          node.body,
+          (inner, element) => printNodePrec(inner, element, PREC.Sequence),
+        )
+      }${indent(ctx)}}`,
   })
 
 const indentedBodyText = <T>(
@@ -1432,46 +1511,60 @@ const indentedBodyText = <T>(
 }
 
 const methodDefinitionText = (ctx: PrintContext, node: MethodDefinition): string =>
-  `${decoratorsText(ctx, node.decorators)}${methodDefinitionPrefix(node, node.value)}${propertyKeyText(
-    ctx,
-    node.key,
-    node.computed === true,
-    PREC.Sequence,
-  )}${flagText(node.optional, '?')}${functionTailText(ctx, node.value)}`
+  `${decoratorsText(ctx, node.decorators)}${methodDefinitionPrefix(node, node.value)}${
+    propertyKeyText(
+      ctx,
+      node.key,
+      node.computed === true,
+      PREC.Sequence,
+    )
+  }${flagText(node.optional, '?')}${functionTailText(ctx, node.value)}`
 
 const propertyDefinitionText = (ctx: PrintContext, node: PropertyDefinition): string =>
-  `${decoratorsText(ctx, node.decorators)}${propertyDefinitionModifiers(node)}${propertyKeyText(
-    ctx,
-    node.key,
-    node.computed === true,
-    PREC.Sequence,
-  )}${flagText(node.optional, '?')}${flagText(node.definite, '!')}${typeAnnotationText(
-    ctx,
-    node.typeAnnotation,
-  )}${initializerText(ctx, node.value)};`
+  `${decoratorsText(ctx, node.decorators)}${propertyDefinitionModifiers(node)}${
+    propertyKeyText(
+      ctx,
+      node.key,
+      node.computed === true,
+      PREC.Sequence,
+    )
+  }${flagText(node.optional, '?')}${flagText(node.definite, '!')}${
+    typeAnnotationText(
+      ctx,
+      node.typeAnnotation,
+    )
+  }${initializerText(ctx, node.value)};`
 
 const accessorPropertyText = (ctx: PrintContext, node: AccessorProperty): string =>
-  `${decoratorsText(ctx, node.decorators)}${flagText(node.accessibility, `${node.accessibility} `)}${flagText(
-    node.static,
-    'static ',
-  )}${flagText(node.override, 'override ')}accessor ${propertyKeyText(
-    ctx,
-    node.key,
-    node.computed === true,
-    PREC.Sequence,
-  )}${flagText(node.definite, '!')}${typeAnnotationText(ctx, node.typeAnnotation)}${initializerText(
-    ctx,
-    node.value,
-  )};`
+  `${decoratorsText(ctx, node.decorators)}${flagText(node.accessibility, `${node.accessibility} `)}${
+    flagText(
+      node.static,
+      'static ',
+    )
+  }${flagText(node.override, 'override ')}accessor ${
+    propertyKeyText(
+      ctx,
+      node.key,
+      node.computed === true,
+      PREC.Sequence,
+    )
+  }${flagText(node.definite, '!')}${typeAnnotationText(ctx, node.typeAnnotation)}${
+    initializerText(
+      ctx,
+      node.value,
+    )
+  };`
 
 const initializerText = (ctx: PrintContext, value: Node | null | undefined): string =>
   flagText(value, ` = ${assignmentNodeText(ctx, value)}`)
 
 const staticBlockText = (ctx: PrintContext, node: StaticBlock): string => {
   const inner: PrintContext = { indentLevel: ctx.indentLevel + 1 }
-  return `static {\n${node.body
-    .map((stmt) => `${indent(inner)}${statementText(inner, stmt)}\n`)
-    .join('')}${indent(ctx)}}`
+  return `static {\n${
+    node.body
+      .map((stmt) => `${indent(inner)}${statementText(inner, stmt)}\n`)
+      .join('')
+  }${indent(ctx)}}`
 }
 
 const importDeclarationText = (ctx: PrintContext, node: ImportDeclaration): string => {
@@ -1492,9 +1585,11 @@ const exportNamedDeclarationText = (ctx: PrintContext, node: ExportNamedDeclarat
   Option.match(Option.fromNullishOr(node.declaration), {
     onSome: (declaration) => `export ${statementText(ctx, declaration)}`,
     onNone: () =>
-      `export ${flagText(node.exportKind === 'type', 'type ')}{ ${node.specifiers
-        .map((specifier) => exportSpecifierText(specifier))
-        .join(', ')} }${exportSourceClauseText(node)};`,
+      `export ${flagText(node.exportKind === 'type', 'type ')}{ ${
+        node.specifiers
+          .map((specifier) => exportSpecifierText(specifier))
+          .join(', ')
+      } }${exportSourceClauseText(node)};`,
   })
 
 const exportSourceClauseText = (node: ExportNamedDeclaration): string =>
@@ -1504,22 +1599,30 @@ const exportSourceClauseText = (node: ExportNamedDeclaration): string =>
   })
 
 const exportDefaultDeclarationText = (ctx: PrintContext, node: ExportDefaultDeclaration): string =>
-  `export default ${Match.value(node.declaration).pipe(
-    Match.when(isBareDefaultExport, (declaration) => statementText(ctx, declaration)),
-    Match.orElse((declaration) => `${printNodePrec(ctx, declaration, PREC.Assignment)};`),
-  )}`
+  `export default ${
+    Match.value(node.declaration).pipe(
+      Match.when(isBareDefaultExport, (declaration) => statementText(ctx, declaration)),
+      Match.orElse((declaration) => `${printNodePrec(ctx, declaration, PREC.Assignment)};`),
+    )
+  }`
 
 const exportAllDeclarationText = (ctx: PrintContext, node: ExportAllDeclaration): string =>
-  `export ${flagText(node.exportKind === 'type', 'type ')}*${exportedNameClauseText(node.exported)} from ${JSON.stringify(node.source.value)}${importAttributesText(node.attributes)};`
+  `export ${flagText(node.exportKind === 'type', 'type ')}*${exportedNameClauseText(node.exported)} from ${
+    JSON.stringify(node.source.value)
+  }${importAttributesText(node.attributes)};`
 
 const tsTypeAliasDeclarationText = (ctx: PrintContext, node: TSTypeAliasDeclaration): string =>
-  `${flagText(node.declare, 'declare ')}type ${node.id.name}${typeParametersText(ctx, node.typeParameters)} = ${printTSTypeToString(ctx, node.typeAnnotation)};`
+  `${flagText(node.declare, 'declare ')}type ${node.id.name}${typeParametersText(ctx, node.typeParameters)} = ${
+    printTSTypeToString(ctx, node.typeAnnotation)
+  };`
 
 const tsInterfaceDeclarationText = (ctx: PrintContext, node: TSInterfaceDeclaration): string =>
-  `${flagText(node.declare, 'declare ')}interface ${node.id.name}${typeParametersText(
-    ctx,
-    node.typeParameters,
-  )}${interfaceExtendsText(ctx, node.extends)} ${tsInterfaceBodyText(ctx, node.body)}`
+  `${flagText(node.declare, 'declare ')}interface ${node.id.name}${
+    typeParametersText(
+      ctx,
+      node.typeParameters,
+    )
+  }${interfaceExtendsText(ctx, node.extends)} ${tsInterfaceBodyText(ctx, node.body)}`
 
 const interfaceExtendsText = (ctx: PrintContext, extensions: TSInterfaceDeclaration['extends']): string => {
   const rendered = extensions.map((heritage) => heritageText(ctx, heritage)).join(', ')
@@ -1545,31 +1648,45 @@ const printTSSignatureText = (ctx: PrintContext, sig: TSInterfaceBody['body'][nu
   )
 
 const printTSPropertySignatureText = (ctx: PrintContext, node: TSPropertySignature): string =>
-  `${flagText(node.readonly, 'readonly ')}${propertyKeyText(ctx, node.key, node.computed === true, PREC.Sequence)}${flagText(node.optional, '?')}${typeAnnotationText(ctx, node.typeAnnotation)};`
+  `${flagText(node.readonly, 'readonly ')}${propertyKeyText(ctx, node.key, node.computed === true, PREC.Sequence)}${
+    flagText(node.optional, '?')
+  }${typeAnnotationText(ctx, node.typeAnnotation)};`
 
 const printTSIndexSignatureText = (ctx: PrintContext, node: TSIndexSignature): string => {
   const parameters = node.parameters.map((parameter) => indexParameterText(ctx, parameter)).join(', ')
-  return `${flagText(node.readonly, 'readonly ')}${flagText(node.static, 'static ')}[${parameters}]${typeAnnotationText(ctx, node.typeAnnotation)};`
+  return `${flagText(node.readonly, 'readonly ')}${flagText(node.static, 'static ')}[${parameters}]${
+    typeAnnotationText(ctx, node.typeAnnotation)
+  };`
 }
 
 const indexParameterText = (ctx: PrintContext, parameter: TSIndexSignature['parameters'][number]): string =>
   `${parameter.name}: ${printTSTypeToString(ctx, parameter.typeAnnotation.typeAnnotation)}`
 
 const printTSCallSignatureText = (ctx: PrintContext, node: TSCallSignatureDeclaration): string =>
-  `${typeParametersText(ctx, node.typeParameters)}(${paramsText(ctx, node.params)})${typeAnnotationText(ctx, node.returnType)};`
+  `${typeParametersText(ctx, node.typeParameters)}(${paramsText(ctx, node.params)})${
+    typeAnnotationText(ctx, node.returnType)
+  };`
 
 const printTSConstructSignatureText = (ctx: PrintContext, node: TSConstructSignatureDeclaration): string =>
-  `new ${typeParametersText(ctx, node.typeParameters)}(${paramsText(ctx, node.params)})${typeAnnotationText(ctx, node.returnType)};`
+  `new ${typeParametersText(ctx, node.typeParameters)}(${paramsText(ctx, node.params)})${
+    typeAnnotationText(ctx, node.returnType)
+  };`
 
 const printTSMethodSignatureText = (ctx: PrintContext, node: TSMethodSignature): string =>
-  `${methodKindText(node.kind)}${propertyKeyText(ctx, node.key, node.computed === true, PREC.Sequence)}${flagText(node.optional, '?')}${typeParametersText(ctx, node.typeParameters)}(${paramsText(ctx, node.params)})${typeAnnotationText(ctx, node.returnType)};`
+  `${methodKindText(node.kind)}${propertyKeyText(ctx, node.key, node.computed === true, PREC.Sequence)}${
+    flagText(node.optional, '?')
+  }${typeParametersText(ctx, node.typeParameters)}(${paramsText(ctx, node.params)})${
+    typeAnnotationText(ctx, node.returnType)
+  };`
 
 const tsEnumDeclarationText = (ctx: PrintContext, node: TSEnumDeclaration): string =>
-  `${flagText(node.declare, 'declare ')}${flagText(node.const, 'const ')}enum ${node.id.name} {\n${indentedBodyText(
-    ctx,
-    node.body.members,
-    printEnumMemberText,
-  )}${indent(ctx)}}`
+  `${flagText(node.declare, 'declare ')}${flagText(node.const, 'const ')}enum ${node.id.name} {\n${
+    indentedBodyText(
+      ctx,
+      node.body.members,
+      printEnumMemberText,
+    )
+  }${indent(ctx)}}`
 
 const printEnumMemberText = (ctx: PrintContext, member: TSEnumDeclaration['body']['members'][number]): string =>
   `${identifierOrLiteralNameText(ctx, member.id)}${initializerText(ctx, member.initializer)},`
@@ -1602,7 +1719,9 @@ const tsModuleBlockText = (ctx: PrintContext, node: Extract<Node, { type: 'TSMod
   `{\n${indentedBodyText(ctx, node.body, statementText)}${indent(ctx)}}`
 
 const tsImportEqualsDeclarationText = (ctx: PrintContext, node: TSImportEqualsDeclaration): string =>
-  `import ${flagText(node.importKind === 'type', 'type ')}${node.id.name} = ${moduleReferenceText(ctx, node.moduleReference)};`
+  `import ${flagText(node.importKind === 'type', 'type ')}${node.id.name} = ${
+    moduleReferenceText(ctx, node.moduleReference)
+  };`
 
 const moduleReferenceText = (
   ctx: PrintContext,
@@ -1699,19 +1818,27 @@ const printTSImportTypeQualifierNode = (
   )
 
 const printTSImportType = (ctx: PrintContext, node: TSImportType): string =>
-  `import(${JSON.stringify(node.source.value)}${flagText(
-    node.options,
-    `, ${assignmentNodeText(ctx, node.options)}`,
-  )})${Option.match(Option.fromNullishOr(node.qualifier), {
-    onSome: (qualifier) => `.${printTSImportTypeQualifierNode(ctx, qualifier)}`,
-    onNone: () => '',
-  })}${typeArgumentsText(ctx, node.typeArguments)}`
+  `import(${JSON.stringify(node.source.value)}${
+    flagText(
+      node.options,
+      `, ${assignmentNodeText(ctx, node.options)}`,
+    )
+  })${
+    Option.match(Option.fromNullishOr(node.qualifier), {
+      onSome: (qualifier) => `.${printTSImportTypeQualifierNode(ctx, qualifier)}`,
+      onNone: () => '',
+    })
+  }${typeArgumentsText(ctx, node.typeArguments)}`
 
 const printMappedType = (ctx: PrintContext, node: TSMappedType): string =>
-  `{ ${printMappedTypeModifier(node.readonly, 'readonly ')}[${node.key.name} in ${printTSTypeToString(
-    ctx,
-    node.constraint,
-  )}${printTypeClause(ctx, ' as ', node.nameType)}]${printMappedTypeModifier(node.optional, '?')}${printTypeClause(ctx, ': ', node.typeAnnotation)} }`
+  `{ ${printMappedTypeModifier(node.readonly, 'readonly ')}[${node.key.name} in ${
+    printTSTypeToString(
+      ctx,
+      node.constraint,
+    )
+  }${printTypeClause(ctx, ' as ', node.nameType)}]${printMappedTypeModifier(node.optional, '?')}${
+    printTypeClause(ctx, ': ', node.typeAnnotation)
+  } }`
 
 const printMappedTypeModifier = (
   modifier: TSMappedType['readonly'] | TSMappedType['optional'],
@@ -1731,14 +1858,18 @@ const printTSTemplateLiteral = (ctx: PrintContext, node: TSTemplateLiteralType):
     node.types,
     (quasi, type) => `${quasi.value.raw}\${${printTSTypeToString(ctx, type)}}`,
   )
-  return `\`${Arr.join(segments, '')}${Option.match(tail, {
-    onSome: (quasi) => quasi.value.raw,
-    onNone: () => '',
-  })}\``
+  return `\`${Arr.join(segments, '')}${
+    Option.match(tail, {
+      onSome: (quasi) => quasi.value.raw,
+      onNone: () => '',
+    })
+  }\``
 }
 
 const printTSTypePredicate = (ctx: PrintContext, node: TSTypePredicate): string =>
-  `${flagText(node.asserts, 'asserts ')}${typePredicateParameterText(node.parameterName)}${printPredicateAnnotation(ctx, node)}`
+  `${flagText(node.asserts, 'asserts ')}${typePredicateParameterText(node.parameterName)}${
+    printPredicateAnnotation(ctx, node)
+  }`
 
 const printPredicateAnnotation = (ctx: PrintContext, node: TSTypePredicate): string =>
   Option.match(Option.fromNullishOr(node.typeAnnotation), {
@@ -1752,12 +1883,14 @@ const printTSLiteralType = (ctx: PrintContext, literal: TSLiteralType['literal']
       Literal: (n) => literalText(n),
       TemplateLiteral: (n) => templateLiteralText(ctx, n),
       UnaryExpression: (n) =>
-        `${n.operator}${Match.value(n.argument).pipe(
-          Match.discriminators('type')({
-            Literal: (argument) => literalText(argument),
-          }),
-          Match.orElse(() => ''),
-        )}`,
+        `${n.operator}${
+          Match.value(n.argument).pipe(
+            Match.discriminators('type')({
+              Literal: (argument) => literalText(argument),
+            }),
+            Match.orElse(() => ''),
+          )
+        }`,
     }),
     Match.orElse(() => ''),
   )
@@ -1782,7 +1915,9 @@ const printTSTypeParameterInstantiation = (ctx: PrintContext, node: TSTypeParame
   `<${node.params.map((param) => printTSTypeToString(ctx, param)).join(', ')}>`
 
 const printTSTypeParameter = (ctx: PrintContext, node: TSTypeParameterDeclaration['params'][number]): string =>
-  `${typeParameterModifiersText(node)}${node.name.name}${printTypeClause(ctx, ' extends ', node.constraint)}${printTypeClause(ctx, ' = ', node.default)}`
+  `${typeParameterModifiersText(node)}${node.name.name}${printTypeClause(ctx, ' extends ', node.constraint)}${
+    printTypeClause(ctx, ' = ', node.default)
+  }`
 
 const TS_TYPE_NODE_KINDS: Readonly<Record<string, true>> = {
   TSAnyKeyword: true,
@@ -1844,8 +1979,7 @@ const isClassNode = (node: Node): node is Class => CLASS_KINDS[node.type] === tr
 
 const isAssignmentPattern = (node: Node): node is AssignmentPattern => node.type === 'AssignmentPattern'
 
-const isIdentifierNode = (node: Node | null | undefined): node is IdentifierReference =>
-  node?.type === 'Identifier'
+const isIdentifierNode = (node: Node | null | undefined): node is IdentifierReference => node?.type === 'Identifier'
 
 const identifierName = (node: Node | null | undefined): string | undefined =>
   Option.getOrUndefined(Option.map(Option.filter(Option.fromNullishOr(node), isIdentifierNode), (n) => n.name))
@@ -2038,10 +2172,12 @@ const namedSpecifiersText = (specifiers: readonly ImportBinding[]): string => {
 }
 
 const namedSpecifierText = (specifier: ImportBinding): string =>
-  `${flagText(specifier.importKind === 'type', 'type ')}${exportAliasText(
-    importedNameText(specifier.imported),
-    specifier.local.name,
-  )}`
+  `${flagText(specifier.importKind === 'type', 'type ')}${
+    exportAliasText(
+      importedNameText(specifier.imported),
+      specifier.local.name,
+    )
+  }`
 
 const importLocalName = (specifier: ImportBinding | undefined): string =>
   Option.match(Option.fromUndefinedOr(specifier), {
@@ -2072,10 +2208,12 @@ const exportSpecifierText = (specifier: {
   readonly exported: ExportNameNode
   readonly exportKind?: string
 }): string =>
-  `${flagText(specifier.exportKind === 'type', 'type ')}${exportAliasText(
-    exportNameToString(specifier.local),
-    exportNameToString(specifier.exported),
-  )}`
+  `${flagText(specifier.exportKind === 'type', 'type ')}${
+    exportAliasText(
+      exportNameToString(specifier.local),
+      exportNameToString(specifier.exported),
+    )
+  }`
 
 const exportedNameClauseText = (exported: ExportNameNode | null | undefined): string =>
   Option.match(Option.fromNullishOr(exported), {
@@ -2126,10 +2264,12 @@ const bareParameterNameOf = (param: ParamPattern): string =>
   )
 
 const functionHeaderText = (node: FunctionNode): string =>
-  `${flagText(node.declare, 'declare ')}${flagText(node.async, 'async ')}function${flagText(
-    node.generator,
-    '*',
-  )}${namedDeclarationText(node)}`
+  `${flagText(node.declare, 'declare ')}${flagText(node.async, 'async ')}function${
+    flagText(
+      node.generator,
+      '*',
+    )
+  }${namedDeclarationText(node)}`
 
 const namedDeclarationText = (node: { readonly id?: { readonly name: string } | null }): string =>
   Option.match(Option.fromNullishOr(node.id), {
@@ -2140,10 +2280,12 @@ const namedDeclarationText = (node: { readonly id?: { readonly name: string } | 
 const parameterPropertyModifiers = (
   param: Extract<ParamPattern, { readonly type: 'TSParameterProperty' }>,
 ): string =>
-  `${flagText(param.accessibility, `${param.accessibility} `)}${flagText(param.readonly, 'readonly ')}${flagText(
-    param.override,
-    'override ',
-  )}${flagText(param.static, 'static ')}`
+  `${flagText(param.accessibility, `${param.accessibility} `)}${flagText(param.readonly, 'readonly ')}${
+    flagText(
+      param.override,
+      'override ',
+    )
+  }${flagText(param.static, 'static ')}`
 
 const commentText = (comment: AttachedComment): string =>
   Match.value(comment.type).pipe(
@@ -2152,10 +2294,12 @@ const commentText = (comment: AttachedComment): string =>
   )
 
 const methodDefinitionPrefix = (node: MethodDefinition, fn: FunctionNode): string =>
-  `${flagText(node.accessibility, `${node.accessibility} `)}${flagText(node.static, 'static ')}${flagText(
-    node.override,
-    'override ',
-  )}${flagText(fn.async, 'async ')}${flagText(fn.generator, '*')}${methodKindText(node.kind)}`
+  `${flagText(node.accessibility, `${node.accessibility} `)}${flagText(node.static, 'static ')}${
+    flagText(
+      node.override,
+      'override ',
+    )
+  }${flagText(fn.async, 'async ')}${flagText(fn.generator, '*')}${methodKindText(node.kind)}`
 
 const methodKindText = (kind: string): string =>
   Match.value(kind).pipe(
@@ -2165,10 +2309,12 @@ const methodKindText = (kind: string): string =>
   )
 
 const propertyDefinitionModifiers = (node: PropertyDefinition): string =>
-  `${flagText(node.declare, 'declare ')}${flagText(node.accessibility, `${node.accessibility} `)}${flagText(
-    node.static,
-    'static ',
-  )}${flagText(node.readonly, 'readonly ')}${flagText(node.override, 'override ')}`
+  `${flagText(node.declare, 'declare ')}${flagText(node.accessibility, `${node.accessibility} `)}${
+    flagText(
+      node.static,
+      'static ',
+    )
+  }${flagText(node.readonly, 'readonly ')}${flagText(node.override, 'override ')}`
 
 type LiteralSource = {
   readonly value: string | number | boolean | bigint | RegExp | null
@@ -2185,8 +2331,7 @@ const BARE_DEFAULT_EXPORT_KINDS: Readonly<Record<string, true>> = {
 
 const isBareDefaultExport = (
   node: ExportDefaultDeclaration['declaration'],
-): node is FunctionNode | Class | TSInterfaceDeclaration =>
-  BARE_DEFAULT_EXPORT_KINDS[node.type] === true
+): node is FunctionNode | Class | TSInterfaceDeclaration => BARE_DEFAULT_EXPORT_KINDS[node.type] === true
 
 const typeParameterModifiersText = (node: TSTypeParameterDeclaration['params'][number]): string =>
   `${flagText(node.in, 'in ')}${flagText(node.out, 'out ')}${flagText(node.const, 'const ')}`

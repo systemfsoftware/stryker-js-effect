@@ -27,4 +27,3 @@ export const TestFileContributionSchema = S.Struct({
 
 export type ContributionEntry = readonly [string, TestFileContribution]
 export type ReportView = Pick<pluginSchema.MutationTestResult, 'files' | 'testFiles'>
-

@@ -1,7 +1,7 @@
+import { SchemaGetter, SchemaIssue, SchemaTransformation } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
-import { SchemaGetter, SchemaIssue, SchemaTransformation } from 'effect'
 
 export const HitLimitReasonPrefix = S.Literal('Hit limit reached')
 
@@ -19,11 +19,12 @@ const limitsOf = SchemaGetter.transformEffect((text: string) =>
         count: Number.parseInt(String(matched[1]), 10),
         limit: Number.parseInt(String(matched[2]), 10),
       }),
-  }),
+  })
 )
 
 const textOf = SchemaGetter.transform((limits: { readonly count: number; readonly limit: number }): string =>
-  `${HitLimitReasonPrefix.literal} (${limits.count}/${limits.limit})`)
+  `${HitLimitReasonPrefix.literal} (${limits.count}/${limits.limit})`
+)
 
 const malformedHitLimit = (text: string) =>
   new SchemaIssue.InvalidValue({ message: 'expected "Hit limit reached (count/limit)"' }, text)
@@ -34,4 +35,3 @@ export const HitLimitReason = HitLimitReasonText.pipe(
     SchemaTransformation.makeTransformation({ decode: limitsOf, encode: textOf }),
   ),
 )
-

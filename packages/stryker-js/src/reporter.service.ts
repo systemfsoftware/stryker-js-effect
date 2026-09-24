@@ -31,8 +31,8 @@ const drainReporterFactory: ReporterFactory = () => (events) =>
 export class Reporter extends Context.Service<Reporter, ReporterShape>()(
   '@systemfsoftware/stryker-js/reporter.service/Reporter',
 ) {
-  static readonly layer: Layer.Layer<Reporter, never, ReporterOutput | FileSystem.FileSystem | Path.Path> =
-    Layer.effect(
+  static readonly layer: Layer.Layer<Reporter, never, ReporterOutput | FileSystem.FileSystem | Path.Path> = Layer
+    .effect(
       Reporter,
       Effect.map(Effect.all([ReporterOutput, FileSystem.FileSystem, Path.Path]), ([output, fs, path]) => {
         const context = Context.make(ReporterOutput, ReporterOutput.of({ write: output.write })).pipe(

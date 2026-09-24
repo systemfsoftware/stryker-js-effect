@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import * as NodeTerminal from '@effect/platform-node/NodeTerminal'
+import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
+import * as NodeTerminal from '@effect/platform-node/NodeTerminal'
 import { AggregationTemporalityPreference, OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics'
 import { BatchSpanProcessor, SimpleSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-base'
-import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
@@ -27,10 +27,10 @@ import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 
 import { strykerCliEffect } from '../Cli.cell.js'
 import { nodePlatformLayer } from '../drivers/node.js'
-import { MachineConsole } from '../reporting/machine-console.service.js'
-import { UnsupportedNodeVersion } from './main.schema.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
+import { MachineConsole } from '../reporting/machine-console.service.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
+import { UnsupportedNodeVersion } from './main.schema.js'
 
 globalThis.process.title = 'stryker'
 
@@ -165,7 +165,6 @@ const telemetryLayer: Layer.Layer<never> = Layer.unwrap(
     ),
   ),
 )
-
 
 const probeGroup = Layer.mergeAll(
   OutputModeProbeLive,

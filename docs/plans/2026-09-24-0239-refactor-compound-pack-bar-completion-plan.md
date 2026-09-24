@@ -33,20 +33,24 @@ The packages mixed procedural helpers, grab-bag modules and flat 90-name roots, 
 ### Requirements
 
 **Placement**
+
 - R1. Every `src/**/*.ts` in a non-ignorer package is exactly one role file: `*.schema.ts`, `*.workflow.ts`, `*.cell.ts`, `*.service.ts`, `*.resource.ts`, `*.handle.ts`, `mod.ts`, a program root `main.ts`, `src/drivers/<tech>.ts`, or a test.
 - R2. A pure helper lives, in order: private to its one user; a `Workflow.make` outcome when it decides between two or more outcomes; a schema transformation when it converts representations; an exported operation of the resource or handle whose data it acts on.
 - R3. A constant is private to its user, a schema literal, or a static of the schema class owning its meaning.
 - R4. Node-specific code lives only at a program root or `src/drivers/`; library programs leave platform services in `R` (pack: cell-architecture, composition-root).
 
 **Surface**
+
 - R5. Each published package root `src/mod.ts` is `export * as <Capability> from './<Capability>/mod.js'` namespaces; loader packages keep only the flat `strykerPlugins` / `strykerIgnorers` export.
 - R6. `exports["."]["@systemfsoftware/source"]` stays `./src/mod.ts` and tsdown keeps `index: './src/mod.ts'`, so published file names do not change.
 - R7. A changed public surface regenerates `etc/*.api.md` and carries a changeset.
 
 **Freeze**
+
 - R8. CLI stdout/stderr bytes, exit codes, the JSON report, run-event wire schemas, error messages and e2e oracle literals match commit `432b15ac3`.
 
 **Discipline**
+
 - R9. No suppressions of any kind, no casts across boundaries, no procedural control flow, typed failures only (local bar BAR-12, BAR-15, BAR-20).
 - R10. Tests are laws (`it.prop`) for workflows and private pure helpers; no mocks of internal glue (pack: boundary-testing, no-mocks-on-internal-glue).
 - R11. `repos/**`, `.github/workflows/`, `CONSTITUTION.md`, `commitlint.config.ts`, `subtrees.toml` are untouched; mutation dogfood stays on `catalog:stryker`.
@@ -111,22 +115,22 @@ flowchart TB
 
 ## Implementation Units
 
-| U-ID | Title | Key files | Depends on |
-|---|---|---|---|
-| U1 | stryker-js type errors to zero | `packages/stryker-js/src/run/*.cell.ts`, `src/Cli.cell.ts`, `src/Checker/*` | none |
-| U2 | Phase A close | workspace | U1 |
-| U3 | plugin-interface residue | `packages/stryker-js-plugin-interface/src/{TestRunner,TraceContext,mutant-timeout-reason,stryker-options}.ts` | none |
-| U4 | plugin-runtime residue | `packages/stryker-js-plugin-runtime/src/TraceContextRpc.ts` | none |
-| U5 | instrumenter residue | `packages/stryker-js-instrumenter/src/{Mutant,Printer,print/index}.ts` | none |
-| U6 | test-contribution residue | `packages/stryker-test-contribution/src/test-contribution.ts` | none |
-| U7 | exit and worker residue | `packages/stryker-js/src/{exit-classification,Worker,VmRunner,WorkerLauncher}.ts`, `packages/stryker-js-plugin-interface/src/ExitClass.ts` | none |
-| U8 | config residue | `packages/stryker-js/src/{config-defaults,stryker-package}.ts`, `src/config/*.ts` | none |
-| U9 | mutants and matching residue | `packages/stryker-js/src/{Mutants,mutant-result-mapping,file-matching,glob-match,IncrementalDiff.paths}.ts` | none |
-| U10 | reporting residue | `packages/stryker-js/src/{Envelope,verdict-envelope,Reporter.ansi,report-assembly,calculate-metrics,metrics,StreamVersion}.ts` | none |
-| U11 | run residue and host binding | `packages/stryker-js/src/Run.ts`, `test/e2e/scripts/blessed-baseline.ts` | U1 |
-| U12 | root cutover | `src/mod.ts` of instrumenter, html-reporter, test-contribution, stryker-js | U2-U11 |
-| U13 | changesets and api reports | `.changeset/*.md`, `packages/*/etc/*.api.md` | U12 |
-| U14 | prove | workspace | U13 |
+| U-ID | Title                          | Key files                                                                                                                                  | Depends on |
+| ---- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
+| U1   | stryker-js type errors to zero | `packages/stryker-js/src/run/*.cell.ts`, `src/Cli.cell.ts`, `src/Checker/*`                                                                | none       |
+| U2   | Phase A close                  | workspace                                                                                                                                  | U1         |
+| U3   | plugin-interface residue       | `packages/stryker-js-plugin-interface/src/{TestRunner,TraceContext,mutant-timeout-reason,stryker-options}.ts`                              | none       |
+| U4   | plugin-runtime residue         | `packages/stryker-js-plugin-runtime/src/TraceContextRpc.ts`                                                                                | none       |
+| U5   | instrumenter residue           | `packages/stryker-js-instrumenter/src/{Mutant,Printer,print/index}.ts`                                                                     | none       |
+| U6   | test-contribution residue      | `packages/stryker-test-contribution/src/test-contribution.ts`                                                                              | none       |
+| U7   | exit and worker residue        | `packages/stryker-js/src/{exit-classification,Worker,VmRunner,WorkerLauncher}.ts`, `packages/stryker-js-plugin-interface/src/ExitClass.ts` | none       |
+| U8   | config residue                 | `packages/stryker-js/src/{config-defaults,stryker-package}.ts`, `src/config/*.ts`                                                          | none       |
+| U9   | mutants and matching residue   | `packages/stryker-js/src/{Mutants,mutant-result-mapping,file-matching,glob-match,IncrementalDiff.paths}.ts`                                | none       |
+| U10  | reporting residue              | `packages/stryker-js/src/{Envelope,verdict-envelope,Reporter.ansi,report-assembly,calculate-metrics,metrics,StreamVersion}.ts`             | none       |
+| U11  | run residue and host binding   | `packages/stryker-js/src/Run.ts`, `test/e2e/scripts/blessed-baseline.ts`                                                                   | U1         |
+| U12  | root cutover                   | `src/mod.ts` of instrumenter, html-reporter, test-contribution, stryker-js                                                                 | U2-U11     |
+| U13  | changesets and api reports     | `.changeset/*.md`, `packages/*/etc/*.api.md`                                                                                               | U12        |
+| U14  | prove                          | workspace                                                                                                                                  | U13        |
 
 ### U1. stryker-js type errors to zero
 
@@ -284,21 +288,21 @@ flowchart TB
 
 ## Verification Contract
 
-| Gate | Command | Where |
-|---|---|---|
-| Format | `pnpm format:check` | root |
-| Typecheck | `pnpm typecheck`, plus a fresh non-incremental tsc per package (KTD4) | root, packages |
-| Lint | `pnpm lint` and `pnpm run lint:tsgo` where present | root, packages |
-| Tests | `pnpm test` | root |
-| Build and dist | `pnpm check:ci` | root |
-| PLUG-1 | `pnpm --filter @systemfsoftware/stryker-js-vitest-runner --filter @systemfsoftware/stryker-js-typescript-checker build` | root |
-| Oracle | `pnpm run test:oracle` and `pnpm run check:oracle-drift` | `test/e2e` |
-| CLI freeze | 17-case capture diff against `/tmp/refactor/baseline` | `packages/stryker-js` |
-| Printer freeze | corpus diff against the baseline | `packages/stryker-js-instrumenter` |
-| Changesets | `./scripts/check-changeset.ts $(git merge-base HEAD origin/main)` | root |
-| Dogfood | `git grep -F 'catalog:stryker' -- packages/stryker-js/package.json packages/stryker-js-vitest-runner/package.json packages/stryker-js-typescript-checker/package.json` | root |
-| Suffix gate | no non-role `src/**/*.ts` outside `packages/ignorers/` | root |
-| E2E | microVM journeys on CI | PR |
+| Gate           | Command                                                                                                                                                                | Where                              |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Format         | `pnpm format:check`                                                                                                                                                    | root                               |
+| Typecheck      | `pnpm typecheck`, plus a fresh non-incremental tsc per package (KTD4)                                                                                                  | root, packages                     |
+| Lint           | `pnpm lint` and `pnpm run lint:tsgo` where present                                                                                                                     | root, packages                     |
+| Tests          | `pnpm test`                                                                                                                                                            | root                               |
+| Build and dist | `pnpm check:ci`                                                                                                                                                        | root                               |
+| PLUG-1         | `pnpm --filter @systemfsoftware/stryker-js-vitest-runner --filter @systemfsoftware/stryker-js-typescript-checker build`                                                | root                               |
+| Oracle         | `pnpm run test:oracle` and `pnpm run check:oracle-drift`                                                                                                               | `test/e2e`                         |
+| CLI freeze     | 17-case capture diff against `/tmp/refactor/baseline`                                                                                                                  | `packages/stryker-js`              |
+| Printer freeze | corpus diff against the baseline                                                                                                                                       | `packages/stryker-js-instrumenter` |
+| Changesets     | `./scripts/check-changeset.ts $(git merge-base HEAD origin/main)`                                                                                                      | root                               |
+| Dogfood        | `git grep -F 'catalog:stryker' -- packages/stryker-js/package.json packages/stryker-js-vitest-runner/package.json packages/stryker-js-typescript-checker/package.json` | root                               |
+| Suffix gate    | no non-role `src/**/*.ts` outside `packages/ignorers/`                                                                                                                 | root                               |
+| E2E            | microVM journeys on CI                                                                                                                                                 | PR                                 |
 
 ## Definition of Done
 

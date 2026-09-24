@@ -16,8 +16,8 @@ import * as Socket from 'effect/unstable/socket/Socket'
 import * as SocketServer from 'effect/unstable/socket/SocketServer'
 import { expect } from 'vitest'
 
-import { memorySocketPair, singleConnection } from './__fixtures__/substituted-worker.fixture.js'
 import { make as makeSpawnedSocketWorker } from '../src/spawned-socket-worker.handle.js'
+import { memorySocketPair, singleConnection } from './__fixtures__/substituted-worker.fixture.js'
 
 const Feature = makeFeature({ it, layer })
 
@@ -132,5 +132,4 @@ Feature('Verifying mutants through an external checker worker')
         ),
       ),
     )
-
   })

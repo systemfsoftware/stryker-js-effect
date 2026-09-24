@@ -149,7 +149,7 @@ export const externalErrorText = (self: VitestRuntime): string =>
     onSome: (errorsSet) =>
       Predicate.isIterable(errorsSet)
         ? [...errorsSet].map((error) =>
-          Option.getOrElse(Option.map(ErrorText.fromCause(error), (rendered) => rendered.text), () => ''),
+          Option.getOrElse(Option.map(ErrorText.fromCause(error), (rendered) => rendered.text), () => '')
         ).join('\n')
         : '',
   })

@@ -1,3 +1,4 @@
+export type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 export { StrykerConfig } from './stryker-config.schema.js'
 export type {
   ConfigEnv,
@@ -7,4 +8,3 @@ export type {
   StrykerConfigExport,
   StrykerConfigFn,
 } from './stryker-config.schema.js'
-export type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'

@@ -167,7 +167,8 @@ const findSuiteErrorRaw = <A = unknown>(suite: A): string | undefined =>
                 Match.exhaustive,
               )))
           return Option.match(maybeError, {
-            onNone: (): string | undefined => findSuiteErrorRaw(rec['suite']),
+            onNone: (): string | undefined =>
+              findSuiteErrorRaw(rec['suite']),
             onSome: (msg): string | undefined => msg,
           })
         },
@@ -182,7 +183,8 @@ const extractResultState = <A = unknown>(result: Option.Option<A>): Option.Optio
       Option.match(recordOption(value), {
         onNone: (): Option.Option<TaskState> => Option.none(),
         onSome: (rec): Option.Option<TaskState> => Option.some(getState(rec['state'])),
-      })),
+      })
+    ),
   )
 
 const extractStatus = <A = unknown>(test: A): TestStatus =>
@@ -242,14 +244,17 @@ const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestResult =
       'failed',
       (): TestResult => ({ ...base, status: 'failed', failureMessage: extractFailureMessage(test) }),
     ),
-    Match.when('skipped', (): TestResult =>
-      Match.value(getSuite(test).pipe(Option.getOrUndefined, findSuiteErrorRaw)).pipe(
-        Match.when(
-          Match.defined,
-          (suiteError): TestResult => ({ ...base, status: 'failed', failureMessage: suiteError }),
+    Match.when(
+      'skipped',
+      (): TestResult =>
+        Match.value(getSuite(test).pipe(Option.getOrUndefined, findSuiteErrorRaw)).pipe(
+          Match.when(
+            Match.defined,
+            (suiteError): TestResult => ({ ...base, status: 'failed', failureMessage: suiteError }),
+          ),
+          Match.orElse((): TestResult => ({ ...base, status: 'skipped' })),
         ),
-        Match.orElse((): TestResult => ({ ...base, status: 'skipped' })),
-      )),
+    ),
     Match.orElse((): TestResult => ({ ...base, status: 'success' })),
   )
 }

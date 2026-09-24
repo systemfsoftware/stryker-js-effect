@@ -22,7 +22,11 @@ export class OracleSliceConfig extends Schema.Class<OracleSliceConfig>('OracleSl
       journey: 'test/e2e/tests/enterprise-mutation-lifecycle.e2e.test.ts',
       fixtureDir: OracleSliceConfig.FIXTURE_DIR,
       strykerConfig: 'stryker.config.ts',
-      mutateFiles: ['packages/*/src/**/*.ts', '!packages/*/src/**/*.test.ts', '!packages/services/src/nontermination.ts'],
+      mutateFiles: [
+        'packages/*/src/**/*.ts',
+        '!packages/*/src/**/*.test.ts',
+        '!packages/services/src/nontermination.ts',
+      ],
       excludedMutations: [],
       journeyUsesTally: true,
       survivedFloorBand: false,

@@ -2,10 +2,7 @@ import { describe, it } from '@effect/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
-import {
-  JudgeTestContribution,
-  judgeTestContribution,
-  } from '../judge-test-contribution.workflow.js'
+import { JudgeTestContribution, judgeTestContribution } from '../judge-test-contribution.workflow.js'
 
 const decidedOf = (command: JudgeTestContribution) => judgeTestContribution(command).pipe(Result.merge)
 
@@ -26,16 +23,18 @@ const verdictOfLaw = (command: JudgeTestContribution): boolean => {
         verdict.message.includes('Deleting these') &&
         decision.toothless.every((fileName) => verdict.message.includes(fileName)),
     ),
-    Match.tag('NotJointlyDeletable', (verdict) =>
-      verdict.message.includes('would not leave every mutant just as dead')),
+    Match.tag(
+      'NotJointlyDeletable',
+      (verdict) => verdict.message.includes('would not leave every mutant just as dead'),
+    ),
     Match.exhaustive,
   )
 }
 
 const ruleOrderOfLaw = (command: JudgeTestContribution): boolean => {
   const decision = decidedOf(command)
-  const inScopeCount = decision.contribution.filter(([fileName]) =>
-    command.suffixes.some((suffix) => fileName.endsWith(suffix))).length
+  const inScopeCount =
+    decision.contribution.filter(([fileName]) => command.suffixes.some((suffix) => fileName.endsWith(suffix))).length
   const everyKillerRecorded = command.everyKillerRecorded
   const credited = decision.contribution.some(([, entry]) => entry.totalKills > 0)
   const toothlessCount = decision.toothless.length
@@ -69,8 +68,7 @@ describe('judgeTestContribution', () => {
     const decision = decidedOf(command)
     const keys = contributionKeysOf(command)
     return decision.toothless.every(
-      (fileName) =>
-        keys.includes(fileName) && command.suffixes.some((suffix) => fileName.endsWith(suffix)),
+      (fileName) => keys.includes(fileName) && command.suffixes.some((suffix) => fileName.endsWith(suffix)),
     )
   })
   it.prop('∀c_Command_≡ContributionOrder', [JudgeTestContribution], ([command]) => {

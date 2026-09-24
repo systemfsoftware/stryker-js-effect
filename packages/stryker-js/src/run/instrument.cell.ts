@@ -13,12 +13,12 @@ import * as Scope from 'effect/Scope'
 import { PhaseEntered, RunEvents } from '../run-events.service.js'
 
 import { InstrumentCommand, InstrumentError, planInstrumentation } from '../plan-instrumentation.workflow.js'
-import type { Project, ProjectFile } from '../Project.schema.js'
 import { ProjectFiles } from '../project-files.service.js'
+import type { Project, ProjectFile } from '../Project.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
 import { StageError } from '../Run.schema.js'
-import { makeSandbox } from '../Sandbox.resource.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
+import { makeSandbox } from '../Sandbox.resource.js'
 import type { PrepareDone } from './prepare.cell.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 
@@ -95,9 +95,11 @@ const withInstrumentedFiles = (
       }),
   )
 
-export const instrumentCell = Sandwich.named('stryker.instrument')((command: PrepareDone & {
-  readonly concurrency: { readonly testRunners: number; readonly checkers: number }
-}) =>
+export const instrumentCell = Sandwich.named('stryker.instrument')((
+  command: PrepareDone & {
+    readonly concurrency: { readonly testRunners: number; readonly checkers: number }
+  },
+) =>
   Effect.gen(function*() {
     yield* Scope.Scope
     const env = yield* RunEnvironment
@@ -115,9 +117,9 @@ export const instrumentCell = Sandwich.named('stryker.instrument')((command: Pre
     const instrumentResult = yield* instrument(filesToMutate, {
       ignorers: [...command.ignorers],
       excludedMutations: [...command.options.mutator.excludedMutations],
-    }, env.basePath).pipe(Effect.mapError((cause) =>
-      StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })
-    ))
+    }, env.basePath).pipe(
+      Effect.mapError((cause) => StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })),
+    )
 
     const instrumentedProject = withInstrumentedFiles(command.project, instrumentResult.files)
 
@@ -186,7 +188,7 @@ const filesMatchReference = (
     Option.match(MutableHashMap.get(folded.files, file.name), {
       onNone: () => false,
       onSome: (after) => contentApplied(updates, file, after) && untouchedApartFromContent(updates, file, after),
-    }),
+    })
   )
 
 const filesToMutateMatchReference = (folded: Project, mutatable: readonly ProjectFile[]): boolean =>
@@ -199,7 +201,7 @@ const filesToMutateMatchReference = (folded: Project, mutatable: readonly Projec
           onNone: () => false,
           onSome: (inFiles) => after.content === inFiles.content,
         }),
-    }),
+    })
   )
 
 const referenceLawHolds = (

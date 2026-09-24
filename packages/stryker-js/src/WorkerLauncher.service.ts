@@ -1,8 +1,8 @@
-import type { ChildProcessCrashedError } from './Worker.schema.js'
-import { type SpawnedSocketWorker } from './spawned-socket-worker.handle.js'
 import * as Context from 'effect/Context'
 import type * as Effect from 'effect/Effect'
 import type * as Scope from 'effect/Scope'
+import { type SpawnedSocketWorker } from './spawned-socket-worker.handle.js'
+import type { ChildProcessCrashedError } from './Worker.schema.js'
 
 export interface WorkerSpawnParams {
   readonly entrypoint: string

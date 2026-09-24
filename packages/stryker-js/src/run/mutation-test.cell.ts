@@ -1,11 +1,7 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type {
-  MutantTestCoverage,
-  TestPlan as MutantTestPlan,
-} from '@systemfsoftware/stryker-js-instrumenter'
+import type { MutantTestCoverage, TestPlan as MutantTestPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantRunPlan, MutantStatus, RunMutantResult, RunPlan } from '@systemfsoftware/stryker-js-instrumenter'
-import type { TestCoverage } from '../test-coverage.schema.js'
 import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter'
 import {
   isCustomTestRunner,
@@ -25,8 +21,8 @@ import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Pool from 'effect/Pool'
 import * as Predicate from 'effect/Predicate'
-import * as Record from 'effect/Record'
 import * as Queue from 'effect/Queue'
+import * as Record from 'effect/Record'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -36,7 +32,9 @@ import * as Stream from 'effect/Stream'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { PhaseEntered } from '../run-events.service.js'
 import { RunEvents, RunMutantTested } from '../run-events.service.js'
+import type { TestCoverage } from '../test-coverage.schema.js'
 
+import { ReportLocationFromMutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type {
   CheckerFailed,
   CheckResult,
@@ -48,41 +46,39 @@ import type {
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import { HitLimitReasonText, WallClockTimeoutReason } from '@systemfsoftware/stryker-js-plugin-interface'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
-import { MutationTestCommand } from '../MutationTest.schema.js'
+import { checkerMutantsSkipped } from '../Checker/checker.metrics.js'
 import { CheckerMutantFromMutant } from '../Checker/mod.js'
 import type { CheckerContractBroken, CheckerCrash, CheckerResourceService } from '../Checker/mod.js'
 import { checkGroupedPlans, scoped } from '../Checker/mod.js'
-import { checkerMutantsSkipped } from '../Checker/checker.metrics.js'
-import { ReportLocationFromMutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { UnknownPlannedMutant } from '../MutantsError.schema.js'
-import { PluginNotFoundError } from '../PluginsError.schema.js'
-import { ProjectFiles } from '../project-files.service.js'
-import { MutationReporting } from '../mutation-reporting.service.js'
-import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
-import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
-import { RelativeNormalizedFileName } from '../matching.schema.js'
-import { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
-import { planMutantTests } from '../plan-mutant-tests.workflow.js'
 import {
-  IncrementalDiffCommand,
   incrementalDiff as incrementalDiffDecisions,
+  IncrementalDiffCommand,
   type IncrementalDiffDecision,
   type MutantRemembered,
 } from '../incremental-diff.workflow.js'
+import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
+import { RelativeNormalizedFileName } from '../matching.schema.js'
+import { UnknownPlannedMutant } from '../MutantsError.schema.js'
+import { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
+import { MutationReporting } from '../mutation-reporting.service.js'
+import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
+import { MutationTestCommand } from '../MutationTest.schema.js'
+import { planMutantTests } from '../plan-mutant-tests.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
-import type { Project } from '../Project.schema.js'
-import type { SandboxHandle } from '../Sandbox.handle.js'
-import { ReportFileName } from '../reporting/report-assembly.schema.js'
-import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
-import { StageError } from '../Run.schema.js'
-import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.resource.js'
+import { PluginNotFoundError } from '../PluginsError.schema.js'
 import { invalidatesRunnerPool, type PooledTestRunner } from '../pooled-test-runner.handle.js'
+import { ProjectFiles } from '../project-files.service.js'
+import type { Project } from '../Project.schema.js'
+import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
+import { ReportFileName } from '../reporting/report-assembly.schema.js'
+import { StageError } from '../Run.schema.js'
+import type { SandboxHandle } from '../Sandbox.handle.js'
+import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.resource.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
-import { IdGenerator } from '../Worker.service.js'
 import { ChildProcessCrashedError } from '../Worker.schema.js'
+import { IdGenerator } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import type { DryRunDone } from './dry-run.cell.js'
-import { RunEnvironment, type RunEnvironmentShape } from './RunEnvironment.service.js'
 import {
   ConfiguredPluginModulePath,
   ConfiguredPluginName,
@@ -90,6 +86,7 @@ import {
   WorkerSpawnCommand,
   type WorkerSpawnResolved,
 } from './resolve-configured-plugin.workflow.js'
+import { RunEnvironment, type RunEnvironmentShape } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 
 export interface MutationTestDone {
@@ -260,7 +257,11 @@ const workerSpawnOf = (
       resolveConfiguredPlugin(WorkerSpawnCommand.make({ sources: loaded.pluginSources, kind, configured })),
     ),
     (missing) =>
-      StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
+      StageError.make({
+        stage,
+        reason: missing.reason,
+        cause: PluginNotFoundError.make({ descriptor: missing.descriptor }),
+      }),
   )
 
 const calculateTotalTime = (testResults: Iterable<TestResult>) =>
@@ -268,8 +269,7 @@ const calculateTotalTime = (testResults: Iterable<TestResult>) =>
 
 const toTestIds = (testResults: Iterable<TestResult>) => [...testResults].map((test) => test.id)
 
-const hitsRecordOf = (testCoverage: TestCoverage) =>
-  Object.fromEntries(testCoverage.hitsByMutantId)
+const hitsRecordOf = (testCoverage: TestCoverage) => Object.fromEntries(testCoverage.hitsByMutantId)
 
 const testsByMutantIdRecordOf = (testCoverage: TestCoverage) =>
   Object.fromEntries(
@@ -380,55 +380,55 @@ const decidePlans = (
   )
   const byId = new Map(input.mutants.map((mutant) => [mutant.id, mutant] as const))
   return Result.match(planMutantTests(command), {
-      onFailure: (failure) =>
-        Effect.fail(
-          StageError.make({
-            stage: 'mutationTest',
-            reason: `covered mutant missing dry-run hit count: ${failure.missingIds.join(', ')}`,
-            cause: failure,
-          }),
-        ),
-      onSuccess: (decisions) =>
-        Effect.forEach(decisions, (plan) =>
-          Option.match(Option.fromUndefinedOr(byId.get(plan.mutantId)), {
-            onNone: () =>
-              Effect.die(UnknownPlannedMutant.make({
-                mutantId: plan.mutantId,
-                message: `planner returned an unknown mutant id: ${plan.mutantId}`,
-              })),
-            onSome: (mutant) =>
-              Match.value(plan).pipe(
-                Match.tag('PlannedRunMutant', (run) =>
-                  Effect.succeed({
-                    plan: 'Run' as const,
-                    mutant: materializeMutant(mutant, run),
-                    netTime: run.netTime,
-                    runOptions: {
-                      activeMutant: materializeMutant(mutant, run),
-                      mutantActivation: run.runOptions.mutantActivation,
-                      timeout: run.runOptions.timeout,
-                      sandboxFileName: run.runOptions.sandboxFileName,
-                      disableBail: run.runOptions.disableBail,
-                      reloadEnvironment: run.runOptions.reloadEnvironment,
-                      ...Option.match(Option.fromUndefinedOr(run.runOptions.testFilter), {
-                        onNone: () => ({}),
-                        onSome: (testFilter) => ({ testFilter }),
-                      }),
-                      ...Option.match(Option.fromUndefinedOr(run.runOptions.hitLimit), {
-                        onNone: () => ({}),
-                        onSome: (hitLimit) => ({ hitLimit }),
-                      }),
-                    },
-                  })),
-                Match.tag('PlannedEarlyResultMutant', (early) =>
-                  Effect.succeed({
-                    plan: 'EarlyResult' as const,
-                    mutant: materializeMutant(mutant, early),
-                  })),
-                Match.exhaustive,
-              ),
-          })),
-    })
+    onFailure: (failure) =>
+      Effect.fail(
+        StageError.make({
+          stage: 'mutationTest',
+          reason: `covered mutant missing dry-run hit count: ${failure.missingIds.join(', ')}`,
+          cause: failure,
+        }),
+      ),
+    onSuccess: (decisions) =>
+      Effect.forEach(decisions, (plan) =>
+        Option.match(Option.fromUndefinedOr(byId.get(plan.mutantId)), {
+          onNone: () =>
+            Effect.die(UnknownPlannedMutant.make({
+              mutantId: plan.mutantId,
+              message: `planner returned an unknown mutant id: ${plan.mutantId}`,
+            })),
+          onSome: (mutant) =>
+            Match.value(plan).pipe(
+              Match.tag('PlannedRunMutant', (run) =>
+                Effect.succeed({
+                  plan: 'Run' as const,
+                  mutant: materializeMutant(mutant, run),
+                  netTime: run.netTime,
+                  runOptions: {
+                    activeMutant: materializeMutant(mutant, run),
+                    mutantActivation: run.runOptions.mutantActivation,
+                    timeout: run.runOptions.timeout,
+                    sandboxFileName: run.runOptions.sandboxFileName,
+                    disableBail: run.runOptions.disableBail,
+                    reloadEnvironment: run.runOptions.reloadEnvironment,
+                    ...Option.match(Option.fromUndefinedOr(run.runOptions.testFilter), {
+                      onNone: () => ({}),
+                      onSome: (testFilter) => ({ testFilter }),
+                    }),
+                    ...Option.match(Option.fromUndefinedOr(run.runOptions.hitLimit), {
+                      onNone: () => ({}),
+                      onSome: (hitLimit) => ({ hitLimit }),
+                    }),
+                  },
+                })),
+              Match.tag('PlannedEarlyResultMutant', (early) =>
+                Effect.succeed({
+                  plan: 'EarlyResult' as const,
+                  mutant: materializeMutant(mutant, early),
+                })),
+              Match.exhaustive,
+            ),
+        })),
+  })
 }
 
 const isRunPlan = (plan: MutantTestPlan): plan is Extract<MutantTestPlan, { readonly plan: 'Run' }> =>
@@ -461,7 +461,10 @@ const sortRunPlans = (plans: readonly RunPlan[]) => [...plans].sort(byReloadEnvi
 
 const previousFilesOf = (report: MutationTestResult | undefined): S.Schema.Type<typeof PreviousFilesSchema> =>
   Option.getOrElse(
-    Option.flatMap(Option.fromUndefinedOr(report), (present) => S.decodeUnknownOption(PreviousFilesSchema)(present.files)),
+    Option.flatMap(
+      Option.fromUndefinedOr(report),
+      (present) => S.decodeUnknownOption(PreviousFilesSchema)(present.files),
+    ),
     (): S.Schema.Type<typeof PreviousFilesSchema> => ({}),
   )
 
@@ -491,13 +494,16 @@ const testIdsByRelativeFileOf = (testCoverage: TestCoverage, basePath: string) =
     {},
   )
 
-const coveredFilesOfTests = (tests: Iterable<LocatedTestResult>, basePath: string) =>
-  [...new Set([...tests].map((result) => relativeFileOfTest(result, basePath)))]
+const coveredFilesOfTests = (
+  tests: Iterable<LocatedTestResult>,
+  basePath: string,
+) => [...new Set([...tests].map((result) => relativeFileOfTest(result, basePath)))]
 
 const coveringTestFilesByMutantIdOf = (testCoverage: TestCoverage, basePath: string) =>
   Object.fromEntries(
     [...testCoverage.testsByMutantId].map(([mutantId, tests]) =>
-      [mutantId, coveredFilesOfTests([...tests].filter(hasTestFileName), basePath)] as const),
+      [mutantId, coveredFilesOfTests([...tests].filter(hasTestFileName), basePath)] as const
+    ),
   )
 
 const relativeFileByMutantIdOf = (mutants: readonly Mutant[], basePath: string) =>

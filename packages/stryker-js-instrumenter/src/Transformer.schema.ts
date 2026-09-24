@@ -15,25 +15,25 @@ export type TransformerFailure =
   | HeaderEmpty
   | MutantNotApplied
 
-export class MutantPlacementFailed
-  extends S.TaggedError<MutantPlacementFailed>('@systemfsoftware/stryker-js-instrumenter/Transformer.schema/MutantPlacementFailed')(
-    'MutantPlacementFailed',
-    {
-      fileName: S.String,
-      line: S.optional(S.Finite),
-      column: S.optional(S.Finite),
-      placerName: S.String,
-      mutatorNames: S.Array(S.String),
-      cause: S.Defect(),
-    },
-  )
-{
+export class MutantPlacementFailed extends S.TaggedError<MutantPlacementFailed>(
+  '@systemfsoftware/stryker-js-instrumenter/Transformer.schema/MutantPlacementFailed',
+)(
+  'MutantPlacementFailed',
+  {
+    fileName: S.String,
+    line: S.optional(S.Finite),
+    column: S.optional(S.Finite),
+    placerName: S.String,
+    mutatorNames: S.Array(S.String),
+    cause: S.Defect(),
+  },
+) {
   override get message(): string {
-    return `${
-      placementLocation(this)
-    } ${this.placerName} could not place mutants with type(s): "${
+    return `${placementLocation(this)} ${this.placerName} could not place mutants with type(s): "${
       PLACEMENT_LIST_FORMAT.format(this.mutatorNames)
-    }". Either remove this file from the list of files to be mutated, or exclude the mutator (using \`mutator.excludedMutations\`). Original error: ${stackOf(this.cause)}`
+    }". Either remove this file from the list of files to be mutated, or exclude the mutator (using \`mutator.excludedMutations\`). Original error: ${
+      stackOf(this.cause)
+    }`
   }
 }
 
@@ -63,16 +63,16 @@ const stackOf = <A>(cause: A): string =>
     onSome: (thrown) => thrown.stack,
   })
 
-export class NodeKindMismatch
-  extends S.TaggedError<NodeKindMismatch>('@systemfsoftware/stryker-js-instrumenter/Transformer.schema/NodeKindMismatch')(
-    'NodeKindMismatch',
-    {
-      expected: S.String,
-      actual: S.String,
-      mutantId: S.optional(S.String),
-    },
-  )
-{
+export class NodeKindMismatch extends S.TaggedError<NodeKindMismatch>(
+  '@systemfsoftware/stryker-js-instrumenter/Transformer.schema/NodeKindMismatch',
+)(
+  'NodeKindMismatch',
+  {
+    expected: S.String,
+    actual: S.String,
+    mutantId: S.optional(S.String),
+  },
+) {
   override get message(): string {
     return Option.match(Option.fromNullishOr(this.mutantId), {
       onNone: () => `Expected ${this.expected}, got ${this.actual}`,
@@ -81,23 +81,23 @@ export class NodeKindMismatch
   }
 }
 
-export class DirectiveIncomplete
-  extends S.TaggedError<DirectiveIncomplete>('@systemfsoftware/stryker-js-instrumenter/Transformer.schema/DirectiveIncomplete')(
-    'DirectiveIncomplete',
-    {},
-  )
-{
+export class DirectiveIncomplete extends S.TaggedError<DirectiveIncomplete>(
+  '@systemfsoftware/stryker-js-instrumenter/Transformer.schema/DirectiveIncomplete',
+)(
+  'DirectiveIncomplete',
+  {},
+) {
   override get message(): string {
     return 'Stryker directive without directive type or mutators'
   }
 }
 
-export class CommentLocationMissing
-  extends S.TaggedError<CommentLocationMissing>('@systemfsoftware/stryker-js-instrumenter/Transformer.schema/CommentLocationMissing')(
-    'CommentLocationMissing',
-    {},
-  )
-{
+export class CommentLocationMissing extends S.TaggedError<CommentLocationMissing>(
+  '@systemfsoftware/stryker-js-instrumenter/Transformer.schema/CommentLocationMissing',
+)(
+  'CommentLocationMissing',
+  {},
+) {
   override get message(): string {
     return 'Comment without location'
   }
@@ -114,12 +114,12 @@ export class MutantsUnplaced
   }
 }
 
-export class PlacementMissing
-  extends S.TaggedError<PlacementMissing>('@systemfsoftware/stryker-js-instrumenter/Transformer.schema/PlacementMissing')(
-    'PlacementMissing',
-    {},
-  )
-{
+export class PlacementMissing extends S.TaggedError<PlacementMissing>(
+  '@systemfsoftware/stryker-js-instrumenter/Transformer.schema/PlacementMissing',
+)(
+  'PlacementMissing',
+  {},
+) {
   override get message(): string {
     return 'Placement not found for node'
   }

@@ -1,8 +1,8 @@
+import type { JsonValue } from '@std/jsonc'
+import { parse } from '@std/jsonc'
 import { CanonicalFileName, disableTypeChecks, ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Predicate, Schema as S } from 'effect'
-import * as ChildProcess from 'effect/unstable/process/ChildProcess'
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -13,23 +13,23 @@ import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import { type Pipeable, Prototype } from 'effect/Pipeable'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
-import { Prototype, type Pipeable } from 'effect/Pipeable'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
-import type { JsonValue } from '@std/jsonc'
-import { parse } from '@std/jsonc'
+import * as ChildProcess from 'effect/unstable/process/ChildProcess'
+import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
-import { FileMatcher } from './matching.schema.js'
 import {
   ResolveWarningEnabledCommand,
-  warningEnabled,
   WarningDisabled,
   WarningEnabled,
+  warningEnabled,
 } from './config/warning-enabled.workflow.js'
-import type { Project, ProjectFile } from './Project.schema.js'
+import { FileMatcher } from './matching.schema.js'
 import { ProjectFiles } from './project-files.service.js'
+import type { Project, ProjectFile } from './Project.schema.js'
 import { make as makeHandle, type SandboxHandle } from './Sandbox.handle.js'
 import { ExtendsArraySchema, type TSConfig, TsConfigSchema } from './Sandbox.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
@@ -73,10 +73,13 @@ const mergeUpdatedInto = (project: Project) => (updated: ProjectFile | Option.Op
 }
 
 const preprocessorWarningsEnabled = (options: StrykerOptions): WarningEnabled | WarningDisabled =>
-  Result.match(warningEnabled(ResolveWarningEnabledCommand.make({ warning: 'preprocessorErrors', warnings: options.warnings })), {
-    onSuccess: (decision) => decision,
-    onFailure: () => WarningDisabled.make({}),
-  })
+  Result.match(
+    warningEnabled(ResolveWarningEnabledCommand.make({ warning: 'preprocessorErrors', warnings: options.warnings })),
+    {
+      onSuccess: (decision) => decision,
+      onFailure: () => WarningDisabled.make({}),
+    },
+  )
 
 const disableTypeChecksWarning = (name: string, options: StrykerOptions) =>
   Match.value(preprocessorWarningsEnabled(options)).pipe(
@@ -91,35 +94,35 @@ const disableTypeChecksWarning = (name: string, options: StrykerOptions) =>
     Match.exhaustive,
   )
 
-const makeDisableTypeChecksPreprocessor = (options: StrykerOptions, impl: typeof disableTypeChecks) => (project: Project) =>
-  Effect.gen(function*() {
-    const pathService = yield* Path.Path
-    const files = yield* ProjectFiles
-    const matcher = FileMatcher.make({ pattern: options.disableTypeChecks, allowHiddenFiles: true })
-    const matched = [...project.files].filter(([name]) => matcher.matches(pathService, pathService.resolve(name)))
-    const instrumented = yield* files.readAll(matched.map(([, file]) => file))
-    const updates = yield* Effect.forEach(
-      instrumented,
-      ([file, content]) =>
-        Effect.map(
-          impl({ content, mutate: file.mutate, name: file.name }).pipe(
-            Effect.map((instrumentedFile) => instrumentedFile.content),
-            Effect.mapError((cause) => StrykerError.make({ message: 'disableTypeChecks failed', cause })),
-            Effect.tapError(() => disableTypeChecksWarning(file.name, options)),
-            Effect.orElseSucceed(() => undefined),
+const makeDisableTypeChecksPreprocessor =
+  (options: StrykerOptions, impl: typeof disableTypeChecks) => (project: Project) =>
+    Effect.gen(function*() {
+      const pathService = yield* Path.Path
+      const files = yield* ProjectFiles
+      const matcher = FileMatcher.make({ pattern: options.disableTypeChecks, allowHiddenFiles: true })
+      const matched = [...project.files].filter(([name]) => matcher.matches(pathService, pathService.resolve(name)))
+      const instrumented = yield* files.readAll(matched.map(([, file]) => file))
+      const updates = yield* Effect.forEach(
+        instrumented,
+        ([file, content]) =>
+          Effect.map(
+            impl({ content, mutate: file.mutate, name: file.name }).pipe(
+              Effect.map((instrumentedFile) => instrumentedFile.content),
+              Effect.mapError((cause) => StrykerError.make({ message: 'disableTypeChecks failed', cause })),
+              Effect.tapError(() => disableTypeChecksWarning(file.name, options)),
+              Effect.orElseSucceed(() => undefined),
+            ),
+            (text) => Option.map(Option.fromUndefinedOr(text), (rewritten) => ({ ...file, content: rewritten })),
           ),
-          (text) => Option.map(Option.fromUndefinedOr(text), (rewritten) => ({ ...file, content: rewritten })),
-        ),
-      { concurrency: 'unbounded' },
-    )
-    updates.forEach(mergeUpdatedInto(project))
-  })
+        { concurrency: 'unbounded' },
+      )
+      updates.forEach(mergeUpdatedInto(project))
+    })
 
 const parseJsonText = (jsonText: string): Effect.Effect<JsonValue, string> =>
   Effect.try({
     try: () => parse(jsonText.replace(/^\uFEFF/, '')),
-    catch: (cause) =>
-      Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    catch: (cause) => Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
 const tsConfigShapeOf = (parsed: JsonValue): Option.Option<TSConfig> =>
@@ -212,7 +215,7 @@ const makeTSConfigPreprocessor = (options: StrykerOptions, basePath: string): Fi
           project,
           pathService.resolve(pathService.dirname(tsconfigFileName), extend),
           pathService,
-        ).pipe(Effect.as(extend)),
+        ).pipe(Effect.as(extend))
       ),
     )
 
@@ -235,8 +238,8 @@ const makeTSConfigPreprocessor = (options: StrykerOptions, basePath: string): Fi
     pathService: Path.Path,
     project: Project,
   ): Effect.Effect<void, PlatformError, ProjectFiles> =>
-    Effect.forEach(extendEntries, (entry) =>
-      rewriteExtendsEntry(config, entry, tsconfigFileName, pathService, project)).pipe(
+    Effect.forEach(extendEntries, (entry) => rewriteExtendsEntry(config, entry, tsconfigFileName, pathService, project))
+      .pipe(
         Effect.flatMap((rewritten) => {
           config.extends = rewritten
           return Effect.void
@@ -254,7 +257,9 @@ const makeTSConfigPreprocessor = (options: StrykerOptions, basePath: string): Fi
         rewriteSingleExtends(config, extend, tsconfigFileName, pathService, project)),
       Match.when(S.is(ExtendsArraySchema), (extendEntries) =>
         rewriteExtendsArray(config, extendEntries, tsconfigFileName, pathService, project)),
-      Match.orElse(() => Effect.void),
+      Match.orElse(() =>
+        Effect.void
+      ),
     )
 
   const referencedTsConfigPath = (referencePath: string) =>
@@ -315,7 +320,8 @@ const tryRewriteReference = (
   const fileName = pathService.resolve(pathService.dirname(originTSConfigFileName), reference)
   const relativeToSandbox = pathService.relative(basePath, fileName)
   return Boolean.match(relativeToSandbox.startsWith('..'), {
-    onTrue: () => ['..', '..', Option.getOrElse(S.decodeOption(CanonicalFileName)(reference), () => reference)].join('/'),
+    onTrue: () =>
+      ['..', '..', Option.getOrElse(S.decodeOption(CanonicalFileName)(reference), () => reference)].join('/'),
     onFalse: () => false as const,
   })
 }
@@ -455,7 +461,8 @@ const visitDirectory = (dir: string, walk: BaseWalk, state: WalkState): Effect.E
       Effect.map(childDirectoriesOf(dir, walk), (children) => ({
         queue: [...state.queue, ...children],
         found: state.found,
-      }))),
+      }))
+    ),
   )
 
 const walkQueue = (walk: BaseWalk, state: WalkState): Effect.Effect<readonly string[], PlatformError> => {
@@ -628,19 +635,22 @@ const linkFoundNodeModules = (
   basePath: string,
   pathService: Path.Path,
 ): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> =>
-  Effect.flatMap(findNodeModulesList(basePath, options.tempDirName), (nodeModulesList) =>
-    Boolean.match(nodeModulesList.length === 0, {
-      onTrue: () =>
-        Effect.logDebug(
-          `Could not find a node_modules folder to symlink into the sandbox directory. Search "${basePath}" and its parent directories`,
-        ),
-      onFalse: () =>
-        Effect.forEach(
-          nodeModulesList,
-          (nodeModules) => linkNodeModules(nodeModules, workingDirectory, basePath, pathService),
-          { concurrency: 1, discard: true },
-        ),
-    }))
+  Effect.flatMap(
+    findNodeModulesList(basePath, options.tempDirName),
+    (nodeModulesList) =>
+      Boolean.match(nodeModulesList.length === 0, {
+        onTrue: () =>
+          Effect.logDebug(
+            `Could not find a node_modules folder to symlink into the sandbox directory. Search "${basePath}" and its parent directories`,
+          ),
+        onFalse: () =>
+          Effect.forEach(
+            nodeModulesList,
+            (nodeModules) => linkNodeModules(nodeModules, workingDirectory, basePath, pathService),
+            { concurrency: 1, discard: true },
+          ),
+      }),
+  )
 
 const symlinkNodeModules = (
   options: StrykerOptions,

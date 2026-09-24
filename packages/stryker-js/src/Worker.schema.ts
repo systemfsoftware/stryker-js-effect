@@ -67,4 +67,3 @@ export class WorkerBootTimeoutError extends S.TaggedError<WorkerBootTimeoutError
 ) {
   readonly exitClass = 'InternalError' as const
 }
-

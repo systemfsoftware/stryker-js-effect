@@ -35,16 +35,16 @@ const survivorsOf = (report: schema.MutationTestResult) =>
     fileResult.mutants
       .filter((mutant) => mutant.status === 'Survived')
       .map((mutant) => ({
-        id: mutant.id,
-        fileName: absPath(file),
+        id: mutants.MutantId.make(mutant.id),
+        fileName: mutants.CanonicalFileName.make(absPath(file)),
         relativeFileName: file,
-        mutatorName: mutant.mutatorName,
+        mutatorName: mutants.MutatorName.make(mutant.mutatorName),
         replacement: mutant.replacement ?? mutant.mutatorName,
         location: {
           start: { line: mutant.location.start.line - 1, column: mutant.location.start.column - 1 },
           end: { line: mutant.location.end.line - 1, column: mutant.location.end.column - 1 },
         },
-      })),
+      }))
   )
 
 const priorSourceHashesOf = (report: schema.MutationTestResult) =>
@@ -392,7 +392,6 @@ describe('admitSurvivorsRun', () => {
         return S.is(SurvivorsRejection)(r)
       })(),
   )
-
 })
 
 describe('Survivors not-found', () => {

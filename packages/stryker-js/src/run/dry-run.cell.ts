@@ -24,16 +24,15 @@ import * as Scope from 'effect/Scope'
 import { PhaseEntered, RunEvents } from '../run-events.service.js'
 
 import { dryRun, DryRunCommand, DryRunError, DryRunFailed } from '../dry-run.workflow.js'
-import { PluginNotFoundError } from '../PluginsError.schema.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
-import type { TestCoverage } from '../test-coverage.schema.js'
+import { PluginNotFoundError } from '../PluginsError.schema.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
-import type { SandboxHandle } from '../Sandbox.handle.js'
 import { StageError } from '../Run.schema.js'
+import type { SandboxHandle } from '../Sandbox.handle.js'
+import type { TestCoverage } from '../test-coverage.schema.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.resource.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { InstrumentDone } from './instrument.cell.js'
-import { RunEnvironment } from './RunEnvironment.service.js'
 import {
   ConfiguredPluginModulePath,
   ConfiguredPluginName,
@@ -41,6 +40,7 @@ import {
   WorkerSpawnCommand,
   type WorkerSpawnResolved,
 } from './resolve-configured-plugin.workflow.js'
+import { RunEnvironment } from './RunEnvironment.service.js'
 
 export interface DryRunDone extends InstrumentDone {
   readonly dryRunResult: CompleteDryRunResult
@@ -68,7 +68,11 @@ const workerSpawnOf = (
       resolveConfiguredPlugin(WorkerSpawnCommand.make({ sources: loaded.pluginSources, kind, configured })),
     ),
     (missing) =>
-      StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
+      StageError.make({
+        stage,
+        reason: missing.reason,
+        cause: PluginNotFoundError.make({ descriptor: missing.descriptor }),
+      }),
   )
 
 const optionalSandboxPathsOf = (command: InstrumentDone) =>
@@ -314,7 +318,8 @@ const completeDryRunPassed = (raw: DryRunRaw) =>
   Match.value(raw.rawResult).pipe(
     Match.when(isCompleteDryRun, (rawResult) => completeDryRunResultOf(raw, rawResult)),
     Match.orElse(() =>
-      Effect.fail(StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' }))),
+      Effect.fail(StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' }))
+    ),
   )
 const isStageError = (candidate: unknown): candidate is StageError => S.is(StageError)(candidate)
 
@@ -331,17 +336,18 @@ const readDryRun = (command: InstrumentDone) =>
       Effect.gen(function*() {
         const childRunnerEffect = Effect.suspend(() => {
           const runnerConfigured = command.options.testRunner
-          return workerSpawnOf('dryRun', command.loadedPlugins, 'TestRunner', configuredPluginOf(runnerConfigured)).pipe(
-            Effect.flatMap((resolved) =>
-              makeChildProcessTestRunner({
-                options: command.options,
-                fileDescriptions: command.project.fileDescriptions,
-                sandboxWorkingDirectory: command.sandbox.workingDirectory,
-                workerEntrypoint: resolved.entrypoint,
-                idGenerator,
-              })
-            ),
-          )
+          return workerSpawnOf('dryRun', command.loadedPlugins, 'TestRunner', configuredPluginOf(runnerConfigured))
+            .pipe(
+              Effect.flatMap((resolved) =>
+                makeChildProcessTestRunner({
+                  options: command.options,
+                  fileDescriptions: command.project.fileDescriptions,
+                  sandboxWorkingDirectory: command.sandbox.workingDirectory,
+                  workerEntrypoint: resolved.entrypoint,
+                  idGenerator,
+                })
+              ),
+            )
         })
 
         const runner = yield* buildTestRunner(
@@ -386,7 +392,8 @@ const readDryRun = (command: InstrumentDone) =>
         Match.value({ cause }).pipe(
           Match.when({ cause: isStageError }, ({ cause }) => cause),
           Match.orElse(({ cause }) =>
-            StageError.make({ stage: 'dryRun', reason: 'Dry run failed to start test runner', cause })),
+            StageError.make({ stage: 'dryRun', reason: 'Dry run failed to start test runner', cause })
+          ),
         )
       ),
     )

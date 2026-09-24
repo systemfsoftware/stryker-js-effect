@@ -52,9 +52,10 @@ const hasFieldIn = <A = unknown>(value: object, key: string): value is Record<st
 
 const fieldOf = <A = unknown>(value: object, key: string): A | undefined =>
   Option.getOrUndefined(
-    Option.filter(Option.some(value), (candidate): candidate is Record<string, A> => hasFieldIn<A>(candidate, key)).pipe(
-      Option.map((record) => readFieldOf(record, key)),
-    ),
+    Option.filter(Option.some(value), (candidate): candidate is Record<string, A> => hasFieldIn<A>(candidate, key))
+      .pipe(
+        Option.map((record) => readFieldOf(record, key)),
+      ),
   )
 
 const hasStringCode = (error: Error): boolean =>
@@ -172,7 +173,6 @@ const errorText = (error: Error): string =>
     Match.when(isErrnoException, formatErrnoException),
     Match.orElse(() => formatError(error)),
   )
-
 
 const errorNameOf = (value: object): string | undefined =>
   Match.value(value).pipe(

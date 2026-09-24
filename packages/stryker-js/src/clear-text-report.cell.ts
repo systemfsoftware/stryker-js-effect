@@ -3,28 +3,28 @@ import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ReporterEvent, ReporterFactory, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Filter from 'effect/Filter'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Arr from 'effect/Array'
 import * as Result from 'effect/Result'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
-import { AnsiCode, type AnsiColor } from './reporting/ansi.schema.js'
 import {
+  type ClearTextRenderOptions,
   ClearTextReportCommand,
   renderClearTextReport,
-  type ClearTextRenderOptions,
   type ReportChunk,
   type ReportLine,
   type ReportSpan,
   type Tone,
 } from './render-clear-text-report.workflow.js'
 import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
+import { AnsiCode, type AnsiColor } from './reporting/ansi.schema.js'
 
 const failAsClearText = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
@@ -42,7 +42,8 @@ const terminalReportOf = Filter.make((event: ReporterEvent): Result.Result<Termi
   Match.value(event).pipe(
     Match.tag('mutationTestReportReady', (ready) => Result.succeed({ report: ready.report, metrics: ready.metrics })),
     Match.orElse(() => Result.fail('not-terminal' as const)),
-  ))
+  )
+)
 
 const renderOptionsOf = (options: StrykerOptions): ClearTextRenderOptions => ({
   allowColor: options.clearTextReporter.allowColor,
@@ -180,13 +181,14 @@ if (import.meta.vitest !== void 0) {
         computed: command.computed,
         render: { ...command.render, allowColor: false },
         rendered: command.rendered,
-      }),
+      })
     ),
   )
 
   const suppressedArb = renderArb.pipe(
     Arbitrary.map((render) =>
-      ClearTextReportCommand.make({ reported: undefined, computed: undefined, render, rendered: true })),
+      ClearTextReportCommand.make({ reported: undefined, computed: undefined, render, rendered: true })
+    ),
   )
 
   const outputBytesOf = (command: ClearTextReportCommand): readonly string[] =>
@@ -203,11 +205,13 @@ if (import.meta.vitest !== void 0) {
         ),
     })
 
-  it.prop('∀c_NoTerminalReport_≡NoOutputBytes', [suppressedArb], ([command]) =>
-    outputBytesOf(command).length === 0)
+  it.prop('∀c_NoTerminalReport_≡NoOutputBytes', [suppressedArb], ([command]) => outputBytesOf(command).length === 0)
 
-  it.prop('∀c_ColorOff_≡EscapeFreeBytes', [colorOffArb], ([command]) =>
-    outputBytesOf(command).every((bytes) => !bytes.includes(ANSI_ESCAPE)))
+  it.prop(
+    '∀c_ColorOff_≡EscapeFreeBytes',
+    [colorOffArb],
+    ([command]) => outputBytesOf(command).every((bytes) => !bytes.includes(ANSI_ESCAPE)),
+  )
 
   const spanToneArb = Arbitrary.schema(Schema.Literals([
     'plain',

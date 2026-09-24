@@ -1,10 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { DryRunResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import type {
-  FailedTestResult,
-  MutantRunResult,
-  TestResult,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import type { FailedTestResult, MutantRunResult, TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -98,7 +94,8 @@ const decide = (command: InterpretDryRunResultCommand) =>
       Result.succeed(MutantRunErrored.make({ errorMessage: errored.errorMessage }))),
     Match.discriminator('status')('timeout', (timedOut) =>
       Option.match(Option.fromUndefinedOr(timedOut.reason), {
-        onNone: () => Result.succeed(MutantRunTimedOut.make({})),
+        onNone: () =>
+          Result.succeed(MutantRunTimedOut.make({})),
         onSome: (reason) => Result.succeed(MutantRunTimedOut.make({ reason })),
       })),
     Match.exhaustive,

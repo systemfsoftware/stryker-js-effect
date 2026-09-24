@@ -19,9 +19,9 @@ import * as Boolean from 'effect/Boolean'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
 import type { Pipeable } from 'effect/Pipeable'
 import { Prototype } from 'effect/Pipeable'
+import * as Predicate from 'effect/Predicate'
 import type { SpannedComment } from './Ast.schema.js'
 import type { LineTable } from './Location.schema.js'
 
@@ -458,7 +458,7 @@ const assignComments = (
           end: lineTable.positionAt(comment.end),
         },
       })),
-    }),
+    })
   )
 
 const pushComment = (

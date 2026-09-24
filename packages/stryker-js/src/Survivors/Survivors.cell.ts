@@ -154,8 +154,7 @@ const currentSourceHashesFor = (files: readonly string[]) =>
   Effect.map(
     Effect.forEach(
       files,
-      (file) =>
-        Effect.map(readSourceFile(file), (content): readonly [string, string] => [file, hashContent(content)]),
+      (file) => Effect.map(readSourceFile(file), (content): readonly [string, string] => [file, hashContent(content)]),
       { concurrency: SOURCE_HASH_CONCURRENCY },
     ),
     (pairs): Record<string, string> => Object.fromEntries(pairs),
@@ -227,7 +226,6 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
   CommandRejected: ({ issue }) => Effect.fail(SurvivorsRejection.make({ reason: 'mismatch', remediation: issue })),
 })
 
-
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const { Schema } = await import('effect')
@@ -235,9 +233,11 @@ if (import.meta.vitest !== void 0) {
 
   const sourceArb = Arbitrary.schema(Schema.String.check(Schema.isMaxLength(64)))
 
-  it.prop('∀s_HashContent_∈Sha256Hex', [sourceArb], ([source]) =>
-    /^[0-9a-f]{64}$/.test(hashContent(source)))
+  it.prop('∀s_HashContent_∈Sha256Hex', [sourceArb], ([source]) => /^[0-9a-f]{64}$/.test(hashContent(source)))
 
-  it.prop('∀ab_HashContent_DistinctPerDraw', [sourceArb, sourceArb], ([a, b]) =>
-    a === b || hashContent(a) !== hashContent(b))
+  it.prop(
+    '∀ab_HashContent_DistinctPerDraw',
+    [sourceArb, sourceArb],
+    ([a, b]) => a === b || hashContent(a) !== hashContent(b),
+  )
 }

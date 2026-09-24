@@ -33,7 +33,6 @@ const arbitraryState = Arbitrary.schema(FramingState)
 const arbitraryNat = Arbitrary.schema(S.Int.check(S.isGreaterThanOrEqualTo(0)))
 
 describe('frameRunEvent', () => {
-
   it.prop(
     '∀e_Terminal_≡Suppressed',
     [arbitraryState, arbitraryTerminalEvent, arbitraryEvent],

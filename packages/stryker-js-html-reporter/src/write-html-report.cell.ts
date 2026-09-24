@@ -10,16 +10,17 @@ import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
-import * as Option from 'effect/Option'
 import * as Stream from 'effect/Stream'
 
 import { RenderHtmlReport, renderHtmlReport } from './render-html-report.workflow.js'
 
 const escapeHtmlTags = (json: string) => json.replace(/</g, '<"+"')
 
-const buildReportHtml = (report: MutationTestReportReady['report'], scriptContent: string) => `<!DOCTYPE html>
+const buildReportHtml = (report: MutationTestReportReady['report'], scriptContent: string) =>
+  `<!DOCTYPE html>
   <html>
   <head>
     <meta charset="utf-8">
@@ -129,8 +130,8 @@ export const makeHtmlReporter = dual<
 >(
   2,
   (options, _init) => (events) =>
-  Layer.build(nodeFsPathLayer).pipe(
-    Effect.flatMap((platform) =>
-      Effect.provideContext(drainEvents(options.htmlReporter.fileName, events), platform)),
-    Effect.scoped,
-  ))
+    Layer.build(nodeFsPathLayer).pipe(
+      Effect.flatMap((platform) => Effect.provideContext(drainEvents(options.htmlReporter.fileName, events), platform)),
+      Effect.scoped,
+    ),
+)

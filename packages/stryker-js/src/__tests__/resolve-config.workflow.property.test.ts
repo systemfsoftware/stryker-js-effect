@@ -4,11 +4,11 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
-  ConfigFromFile,
   ConfigFromDefaults,
+  ConfigFromFile,
   ConfigOptionsRefused,
-  type LoadConfigDecision,
   LoadConfigCommand,
+  type LoadConfigDecision,
   resolveConfig,
 } from '../run/resolve-config.workflow.js'
 
@@ -19,10 +19,13 @@ const variantIs = (fileFound: boolean) => (outcome: LoadConfigDecision) =>
   })
 
 describe('resolveConfig', () => {
-  it.prop('∀c_Command_≡VariantFollowsFileFound', [LoadConfigCommand], ([command]) =>
-    Result.match(resolveConfig(command), {
-      onFailure: (refusal) => S.is(ConfigOptionsRefused)(refusal),
-      onSuccess: variantIs(command.fileFound),
-    }),
+  it.prop(
+    '∀c_Command_≡VariantFollowsFileFound',
+    [LoadConfigCommand],
+    ([command]) =>
+      Result.match(resolveConfig(command), {
+        onFailure: (refusal) => S.is(ConfigOptionsRefused)(refusal),
+        onSuccess: variantIs(command.fileFound),
+      }),
   )
 })

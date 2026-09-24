@@ -151,7 +151,8 @@ export const withMaxReuse: {
               return policy(inner.mutantRun(runOptions))
             },
           }
-        })),
+        })
+      ),
     ),
 )
 

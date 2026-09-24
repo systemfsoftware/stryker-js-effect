@@ -12,13 +12,13 @@ import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as Stream from 'effect/Stream'
 
-import { ReporterOutput } from './reporter-output.service.js'
 import {
-  renderProgressReport,
   type ProgressBarState,
   type ProgressState,
   type ProgressTally,
+  renderProgressReport,
 } from './render-progress-report.workflow.js'
+import { ReporterOutput } from './reporter-output.service.js'
 
 const failAsProgress = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
@@ -229,8 +229,9 @@ const lineBreakOf = (complete: boolean): string =>
     onFalse: () => '',
   })
 
-const renderTick = (tick: { readonly bar: ProgressBarState; readonly tally: ProgressTally; readonly now: number }): string =>
-  `\r${formatBar(tick.bar, progressData(tick.tally, tick.now))}${lineBreakOf(isComplete(tick.bar))}`
+const renderTick = (
+  tick: { readonly bar: ProgressBarState; readonly tally: ProgressTally; readonly now: number },
+): string => `\r${formatBar(tick.bar, progressData(tick.tally, tick.now))}${lineBreakOf(isComplete(tick.bar))}`
 
 const writeChunk = (chunk: string) =>
   Effect.flatMap(ReporterOutput, (output) => Effect.ignore(output.write('stdout', [chunk])))
@@ -246,7 +247,9 @@ export const progressReportCell = Sandwich.named('stryker.report.progress')(read
 
 type ReporterCellServices<C> = C extends Cell.Cell<infer _I, infer _A, infer _E, infer S> ? S : never
 
-export const progressReporterFactory = (context: Context.Context<ReporterCellServices<typeof progressReportCell>>): ReporterFactory => {
+export const progressReporterFactory = (
+  context: Context.Context<ReporterCellServices<typeof progressReportCell>>,
+): ReporterFactory => {
   const step = Cell.provideContext(progressReportCell, context)
   return () => (events) =>
     Effect.gen(function*() {

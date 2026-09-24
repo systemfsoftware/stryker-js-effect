@@ -1,5 +1,5 @@
-import type { MutantStatus, Position } from '@systemfsoftware/stryker-js-instrumenter'
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import type { MutantStatus, Position } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   MetricsResultSchema,
@@ -74,7 +74,9 @@ export class ClearTextReportRendered extends S.TaggedClass<ClearTextReportRender
   readonly [ClearTextReportTypeId] = ClearTextReportTypeId
 }
 
-export class ClearTextReportSuppressed extends S.TaggedClass<ClearTextReportSuppressed>()('ClearTextReportSuppressed', {}) {
+export class ClearTextReportSuppressed
+  extends S.TaggedClass<ClearTextReportSuppressed>()('ClearTextReportSuppressed', {})
+{
   readonly [ClearTextReportTypeId] = ClearTextReportTypeId
 }
 
@@ -151,8 +153,7 @@ const emphasized = (allowColor: boolean, tone: Tone): Tone =>
     onFalse: () => 'plain',
   })
 
-const codePointOf = (char: string): number =>
-  Option.getOrElse(Option.fromNullishOr(char.codePointAt(0)), () => 0)
+const codePointOf = (char: string): number => Option.getOrElse(Option.fromNullishOr(char.codePointAt(0)), () => 0)
 
 const charWidth = (char: string): number =>
   Match.value(char).pipe(
@@ -161,14 +162,11 @@ const charWidth = (char: string): number =>
     Match.orElse(() => 1),
   )
 
-const stringWidth = (text: string): number =>
-  Arr.reduce(Array.from(text), 0, (width, char) => width + charWidth(char))
+const stringWidth = (text: string): number => Arr.reduce(Array.from(text), 0, (width, char) => width + charWidth(char))
 
-const spanWidth = (span: ReportSpan): number =>
-  span.leftPad + span.rightPad + stringWidth(span.text) * span.repeat
+const spanWidth = (span: ReportSpan): number => span.leftPad + span.rightPad + stringWidth(span.text) * span.repeat
 
-const lineWidth = (line: ReportLine): number =>
-  Arr.reduce(line, 0, (width, span) => width + spanWidth(span))
+const lineWidth = (line: ReportLine): number => Arr.reduce(line, 0, (width, span) => width + spanWidth(span))
 
 const widest = (values: readonly number[]): number =>
   Arr.reduce(values, 0, (present, candidate) => max(present, candidate))
@@ -285,13 +283,13 @@ const sourceLocation = (fileName: string, position: Position, allowColor: boolea
 
 const extractReportMutants = (report: reportApi.MutationTestResult): readonly ReportMutantEntry[] =>
   Object.entries(report.files).flatMap(([fileName, file]) =>
-    file.mutants.map((mutant) => ({ fileName, mutant: { ...mutant, fileName }, source: file.source })))
+    file.mutants.map((mutant) => ({ fileName, mutant: { ...mutant, fileName }, source: file.source }))
+  )
 
 const indexedLine = (lines: readonly string[], index: number): string =>
   Option.getOrElse(Option.fromNullishOr(lines[index]), () => '')
 
-const sourceLine = (source: string, position: Position): string =>
-  indexedLine(source.split('\n'), position.line - 1)
+const sourceLine = (source: string, position: Position): string => indexedLine(source.split('\n'), position.line - 1)
 
 const tailFromColumn = (raw: string, column: number): readonly string[] =>
   Boolean.match(raw.length === 0, {
@@ -497,7 +495,7 @@ const scoreTone = (
   thresholds: MutationScoreThresholds,
   scoreType: ScoreType,
   allowColor: boolean,
-): ((row: MetricsResult) => Tone) =>
+): (row: MetricsResult) => Tone =>
   Boolean.match(allowColor, {
     onTrue: () => (row) => thresholdTone(thresholds, mutationScoreOf(scoreType, row.metrics)),
     onFalse: () => (): Tone => 'plain',
@@ -533,7 +531,8 @@ const fileCell = (row: MetricsResult, ancestorCount: number): CellContent => ({
   indent: ancestorCount,
 })
 
-const fileColumn = (rows: MetricsResult): LeafColumn => leafColumn([plain('File')], 'file', fileCell, () => 'plain', rows)
+const fileColumn = (rows: MetricsResult): LeafColumn =>
+  leafColumn([plain('File')], 'file', fileCell, () => 'plain', rows)
 
 const scoreColumn = (
   rows: MetricsResult,
@@ -628,7 +627,9 @@ const fullRowVisible = (render: ClearTextRenderOptions, row: MetricsResult): boo
 const bodyRow = (columns: readonly GroupColumn[], row: MetricsResult, ancestorCount: number): ReportLine =>
   rowOfLines(
     columns.flatMap((column) =>
-      column.leaves.map((leaf) => [placedCell(leaf.cell(row, ancestorCount), leaf.style, leaf.netWidth, leaf.tone(row))]),
+      column.leaves.map((
+        leaf,
+      ) => [placedCell(leaf.cell(row, ancestorCount), leaf.style, leaf.netWidth, leaf.tone(row))])
     ),
   )
 

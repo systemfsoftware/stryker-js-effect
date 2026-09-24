@@ -80,7 +80,11 @@ const mutateScriptFile = (
 ): ScriptFile => {
   const start = offsetOf(file, mutant.location.start)
   const end = offsetOf(file, mutant.location.end)
-  return withContent(file, file.originalContent.slice(0, start) + mutant.replacement + file.originalContent.slice(end), now)
+  return withContent(
+    file,
+    file.originalContent.slice(0, start) + mutant.replacement + file.originalContent.slice(end),
+    now,
+  )
 }
 
 const resetScriptFile = (file: ScriptFile, now: DateTime.Utc): ScriptFile => ({
@@ -148,8 +152,7 @@ export const mutateFile: {
         onSome: (found) =>
           Ref.update(
             state.files,
-            (files) =>
-              setInPlace(files, normalizeFileName(fileName), Option.some(mutateScriptFile(found, mutant, at))),
+            (files) => setInPlace(files, normalizeFileName(fileName), Option.some(mutateScriptFile(found, mutant, at))),
           ),
       })
     }),
@@ -179,8 +182,11 @@ export const resetFile: {
 export const setOverrides: {
   (overrides: MutableHashMap.MutableHashMap<string, string>): (self: TSFiles) => Effect.Effect<void>
   (self: TSFiles, overrides: MutableHashMap.MutableHashMap<string, string>): Effect.Effect<void>
-} = dual(2, (self: TSFiles, overrides: MutableHashMap.MutableHashMap<string, string>): Effect.Effect<void> =>
-  Ref.set(self[StateTypeId].overrides, overrides))
+} = dual(
+  2,
+  (self: TSFiles, overrides: MutableHashMap.MutableHashMap<string, string>): Effect.Effect<void> =>
+    Ref.set(self[StateTypeId].overrides, overrides),
+)
 
 export const tsFileSystem = (self: TSFiles): TSFileSystem => {
   const state = self[StateTypeId]

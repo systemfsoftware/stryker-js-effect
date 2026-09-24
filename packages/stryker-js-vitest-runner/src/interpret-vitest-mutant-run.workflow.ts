@@ -1,8 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import {
-  type FailedTestResult,
-  TestResultSchema,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import { type FailedTestResult, TestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'

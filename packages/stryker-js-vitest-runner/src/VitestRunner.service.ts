@@ -1,14 +1,18 @@
-import type { MutantRunOptions, DryRunOptions, DryRunResult, TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
-import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
-import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import {
+  CanonicalFileName,
   type CoverageData,
   ErrorText,
   type MutantCoverage as DryRunMutantCoverage,
-  CanonicalFileName,
 } from '@systemfsoftware/stryker-js-instrumenter'
-import type { RunnerTestCase, RunnerTestFile, RunnerTestSuite, RunnerTask } from 'vitest'
+import type {
+  DryRunOptions,
+  DryRunResult,
+  MutantRunOptions,
+  TestResult,
+} from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
 import * as Crypto from 'effect/Crypto'
@@ -20,9 +24,18 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import type { RunnerTask, RunnerTestCase, RunnerTestFile, RunnerTestSuite } from 'vitest'
 
+import { interpretVitestDryRun } from './interpret-vitest-dry-run.workflow.js'
 import { makeMutantRunCell } from './MutantRun.cell.js'
-import { VitestSession, type VitestSessionInput } from './VitestSession.service.js'
+import { VitestDryRunCommand } from './vitest-run-command.schema.js'
+import {
+  CoverageDecodeFailed,
+  HitCountMetaSchema,
+  MutantCoverageMetaSchema,
+  MutantCoverageShapeSchema,
+  type TestRunnerPhase,
+} from './VitestRunner.schema.js'
 import {
   applyRunFilter,
   clearFiles,
@@ -35,15 +48,7 @@ import {
   reportAllKillersOf,
   start,
 } from './VitestRuntime.handle.js'
-import { interpretVitestDryRun } from './interpret-vitest-dry-run.workflow.js'
-import {
-  CoverageDecodeFailed,
-  HitCountMetaSchema,
-  MutantCoverageMetaSchema,
-  MutantCoverageShapeSchema,
-  type TestRunnerPhase,
-} from './VitestRunner.schema.js'
-import { VitestDryRunCommand } from './vitest-run-command.schema.js'
+import { VitestSession, type VitestSessionInput } from './VitestSession.service.js'
 
 const asRunnerFailure = (phase: TestRunnerPhase) => <E>(cause: E) =>
   Option.match(Option.liftPredicate(cause, S.is(TestRunnerFailed)), {
@@ -62,8 +67,7 @@ const fromTestId = (id: string) => {
   return { file, name: name.join('#') }
 }
 
-const canonicalOf = (path: string) =>
-  Option.getOrElse(S.decodeOption(CanonicalFileName)(path), () => path)
+const canonicalOf = (path: string) => Option.getOrElse(S.decodeOption(CanonicalFileName)(path), () => path)
 
 const normalizeTestId = (id: string, projectRoot: string, pathService: Path.Path) => {
   const { file, name } = fromTestId(id)
@@ -94,7 +98,8 @@ const collectTestsFromSuite = (suite: RunnerTestSuite): readonly RunnerTestCase[
     Option.match(Option.liftPredicate(task, isSuiteTask), {
       onNone: () => Option.toArray(Option.liftPredicate(task, isTestTask)),
       onSome: (nested) => collectTestsFromSuite(nested),
-    }))
+    })
+  )
 
 const VITEST_ERROR_CODES = Object.freeze({
   FILES_NOT_FOUND: 'VITEST_FILES_NOT_FOUND',
@@ -141,8 +146,7 @@ const runFilterPlan = (filter: RunFilter, projectRoot: string, pathService: Path
   return {
     testNamePattern: Option.getOrUndefined(Option.map(plan, (value) => value.testNamePattern)),
     testFiles: Option.match(plan, {
-      onNone: () =>
-        Option.getOrUndefined(Option.map(Option.fromNullishOr(filter.testFiles), (files) => [...files])),
+      onNone: () => Option.getOrUndefined(Option.map(Option.fromNullishOr(filter.testFiles), (files) => [...files])),
       onSome: (value) => value.testFiles,
     }),
   }
@@ -185,7 +189,9 @@ const makeRunner = (input: VitestSessionInput) =>
       const self = yield* runtime.pipe(Effect.mapError((cause) => new CoverageDecodeFailed({ cause })))
       const hitCounts = yield* Effect.forEach(files(self), (file) =>
         S.decodeUnknownEffect(HitCountMetaSchema)(metaOf(file)).pipe(
-          Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
+          Effect.mapError((cause) =>
+            new CoverageDecodeFailed({ cause })
+          ),
           Effect.orElseSucceed(() => ({ hitCount: undefined })),
           Effect.map((decoded) => Option.getOrElse(Option.fromNullishOr(decoded.hitCount), () => 0)),
         ))
@@ -270,7 +276,7 @@ const makeRunner = (input: VitestSessionInput) =>
             Option.getOrElse(
               Option.map(Option.liftPredicate(file, isRunnerTestSuite), collectTestsFromSuite),
               () => [],
-            ),
+            )
           )
           .filter((test) => test.result !== undefined)
         const externalError = hasExternalErrors(self)
@@ -345,8 +351,10 @@ const makeRunner = (input: VitestSessionInput) =>
             onFailure: (failure) => Effect.fail(failure),
             onSuccess: (outcome) =>
               Match.value(outcome).pipe(
-                Match.tag('Error', (error) => Effect.succeed({ status: 'error' as const, errorMessage: error.errorMessage })),
-                Match.tag('Complete', (complete) => completeDryRun(complete.tests)),
+                Match.tag('Error', (error) =>
+                  Effect.succeed({ status: 'error' as const, errorMessage: error.errorMessage })),
+                Match.tag('Complete', (complete) =>
+                  completeDryRun(complete.tests)),
                 Match.exhaustive,
               ),
           })

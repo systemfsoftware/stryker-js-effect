@@ -1,1 +1,179 @@
-{"numTotalTestSuites":3,"numPassedTestSuites":3,"numFailedTestSuites":0,"numPendingTestSuites":0,"numTotalTests":11,"numPassedTests":11,"numFailedTests":0,"numPendingTests":0,"numTodoTests":0,"snapshot":{"added":0,"failure":false,"filesAdded":0,"filesRemoved":0,"filesRemovedList":[],"filesUnmatched":0,"filesUpdated":0,"matched":0,"total":0,"unchecked":0,"uncheckedKeysByFile":[],"unmatched":0,"updated":0,"didUpdate":false},"startTime":1790224410518,"success":true,"testResults":[{"assertionResults":[{"ancestorTitles":[],"fullName":"∀x_WorkerOptionsWireEnc_=x","status":"passed","title":"∀x_WorkerOptionsWireEnc_=x","duration":99.84340699999996,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"∀x_WorkerOptionsWire_=x","status":"passed","title":"∀x_WorkerOptionsWire_=x","duration":55.468976,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"∀x_TracesUrlEnc_=x","status":"passed","title":"∀x_TracesUrlEnc_=x","duration":2.136557000000039,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"∀x_TracesUrl_=x","status":"passed","title":"∀x_TracesUrl_=x","duration":1.4051650000000109,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"∀x_WorkerTelemetryConfigEnc_=x","status":"passed","title":"∀x_WorkerTelemetryConfigEnc_=x","duration":3.506595999999945,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"∀x_WorkerTelemetryConfig_=x","status":"passed","title":"∀x_WorkerTelemetryConfig_=x","duration":1.8958320000000413,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]}],"startTime":1790224410972,"endTime":1790224411135.8958,"status":"passed","message":"","name":"/home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/packages/stryker-js-plugin-runtime/src/schema-laws.test.ts"},{"assertionResults":[{"ancestorTitles":[],"fullName":"∀trace_span_flags_Identity_IdsConserved","status":"passed","title":"∀trace_span_flags_Identity_IdsConserved","duration":15.82868000000002,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"∀trace_state_Envelope_VersionAndStateConserved","status":"passed","title":"∀trace_state_Envelope_VersionAndStateConserved","duration":2.872788000000014,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"∀trace_span_flags_state_InvalidSpanContext_DecodeNone","status":"passed","title":"∀trace_span_flags_state_InvalidSpanContext_DecodeNone","duration":9.68237700000003,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]}],"startTime":1790224410989,"endTime":1790224411017.6824,"status":"passed","message":"","name":"/home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/packages/stryker-js-plugin-runtime/src/trace-context-rpc.service.ts"},{"assertionResults":[{"ancestorTitles":[],"fullName":"∀trace_span_sampled_EffectSpan→Parts_VersionPinned∧SampledRoundtrips","status":"passed","title":"∀trace_span_sampled_EffectSpan→Parts_VersionPinned∧SampledRoundtrips","duration":15.319047000000012,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"∀id_flags_state_Parts→Span_IdentityConserved","status":"passed","title":"∀id_flags_state_Parts→Span_IdentityConserved","duration":8.430770999999993,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]}],"startTime":1790224410989,"endTime":1790224411012.4307,"status":"passed","message":"","name":"/home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/packages/stryker-js-plugin-runtime/src/trace-parts.schema.ts"}]}
+{
+  "numTotalTestSuites": 3,
+  "numPassedTestSuites": 3,
+  "numFailedTestSuites": 0,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 11,
+  "numPassedTests": 11,
+  "numFailedTests": 0,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1790224410518,
+  "success": true,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "∀x_WorkerOptionsWireEnc_=x",
+          "status": "passed",
+          "title": "∀x_WorkerOptionsWireEnc_=x",
+          "duration": 99.84340699999996,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "∀x_WorkerOptionsWire_=x",
+          "status": "passed",
+          "title": "∀x_WorkerOptionsWire_=x",
+          "duration": 55.468976,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "∀x_TracesUrlEnc_=x",
+          "status": "passed",
+          "title": "∀x_TracesUrlEnc_=x",
+          "duration": 2.136557000000039,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "∀x_TracesUrl_=x",
+          "status": "passed",
+          "title": "∀x_TracesUrl_=x",
+          "duration": 1.4051650000000109,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "∀x_WorkerTelemetryConfigEnc_=x",
+          "status": "passed",
+          "title": "∀x_WorkerTelemetryConfigEnc_=x",
+          "duration": 3.506595999999945,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "∀x_WorkerTelemetryConfig_=x",
+          "status": "passed",
+          "title": "∀x_WorkerTelemetryConfig_=x",
+          "duration": 1.8958320000000413,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1790224410972,
+      "endTime": 1790224411135.8958,
+      "status": "passed",
+      "message": "",
+      "name": "/home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/packages/stryker-js-plugin-runtime/src/schema-laws.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "∀trace_span_flags_Identity_IdsConserved",
+          "status": "passed",
+          "title": "∀trace_span_flags_Identity_IdsConserved",
+          "duration": 15.82868000000002,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "∀trace_state_Envelope_VersionAndStateConserved",
+          "status": "passed",
+          "title": "∀trace_state_Envelope_VersionAndStateConserved",
+          "duration": 2.872788000000014,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "∀trace_span_flags_state_InvalidSpanContext_DecodeNone",
+          "status": "passed",
+          "title": "∀trace_span_flags_state_InvalidSpanContext_DecodeNone",
+          "duration": 9.68237700000003,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1790224410989,
+      "endTime": 1790224411017.6824,
+      "status": "passed",
+      "message": "",
+      "name": "/home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/packages/stryker-js-plugin-runtime/src/trace-context-rpc.service.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "∀trace_span_sampled_EffectSpan→Parts_VersionPinned∧SampledRoundtrips",
+          "status": "passed",
+          "title": "∀trace_span_sampled_EffectSpan→Parts_VersionPinned∧SampledRoundtrips",
+          "duration": 15.319047000000012,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "∀id_flags_state_Parts→Span_IdentityConserved",
+          "status": "passed",
+          "title": "∀id_flags_state_Parts→Span_IdentityConserved",
+          "duration": 8.430770999999993,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1790224410989,
+      "endTime": 1790224411012.4307,
+      "status": "passed",
+      "message": "",
+      "name": "/home/ryan/Documents/projects/systemfsoftware/stryker-js-effect.worktrees/systemf-updates/packages/stryker-js-plugin-runtime/src/trace-parts.schema.ts"
+    }
+  ]
+}

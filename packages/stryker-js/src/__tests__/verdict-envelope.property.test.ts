@@ -1,5 +1,5 @@
 import { describe, it } from '@effect/vitest'
-import { MutationTestResultSchema, type MutationTestResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type MutationTestResult, MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Path from 'effect/Path'
@@ -45,7 +45,10 @@ describe('RunId.generate', () => {
 
   it.prop(
     '∀bd_RunIdTimePrefix_<ForLaterEpoch',
-    [S.Int.check(S.isBetween({ minimum: 0, maximum: 2 ** 40 - 2 ** 16 })), S.Int.check(S.isBetween({ minimum: 8, maximum: 2 ** 16 }))],
+    [
+      S.Int.check(S.isBetween({ minimum: 0, maximum: 2 ** 40 - 2 ** 16 })),
+      S.Int.check(S.isBetween({ minimum: 8, maximum: 2 ** 16 })),
+    ],
     ([base, delta]) =>
       RunId.generate(DateTime.makeUnsafe(base)).value.slice(0, 9) <
         RunId.generate(DateTime.makeUnsafe(base + delta)).value.slice(0, 9),

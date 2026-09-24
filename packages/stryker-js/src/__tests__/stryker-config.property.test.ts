@@ -3,8 +3,8 @@ import * as Arr from 'effect/Array'
 import * as Predicate from 'effect/Predicate'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
-import { type DocumentRecord, mergeRecords } from '../config/merge-records.js'
 import { DocumentSchema, NestedDocumentSchema } from '../../tests/__fixtures__/config-law.schema.js'
+import { type DocumentRecord, mergeRecords } from '../config/merge-records.js'
 
 const poisonedDocumentArb = Arbitrary.schema(DocumentSchema).pipe(
   Arbitrary.map((document) => ({
@@ -38,8 +38,11 @@ const usableEntriesOnly = <A = unknown>(document: DocumentRecord<A>): DocumentRe
   Object.fromEntries(Object.entries(document).filter(([key, value]) => key !== '__proto__' && value !== undefined))
 
 describe('mergeRecords', () => {
-  it.prop('∀d_Merge_empty_≡KeepsEveryEntryInOrder', [DocumentSchema], ([document]) =>
-    sameValue(mergeRecords(document, {}), usableEntriesOnly(document)))
+  it.prop(
+    '∀d_Merge_empty_≡KeepsEveryEntryInOrder',
+    [DocumentSchema],
+    ([document]) => sameValue(mergeRecords(document, {}), usableEntriesOnly(document)),
+  )
 
   it.prop('∀do_Merge_≡StatedKeyWins', [DocumentSchema, DocumentSchema], ([base, overrides]) => {
     const merged = mergeRecords(base, overrides)
@@ -64,26 +67,34 @@ describe('mergeRecords', () => {
       mergeRecords(base, overrides),
     ))
 
-  it.prop('∀do_Merge_≡NestedRecordsMergeRecursively', [NestedDocumentSchema, NestedDocumentSchema], ([base, overrides]) => {
-    const kept = usableEntriesOnly(base)
-    const merged = mergeRecords(base, overrides)
-    return statedKeys(overrides).every((key) => {
-      const override = overrides[key]
-      const mergedValue = merged[key]
-      if (isDocumentRecord(override) === false) {
-        return sameValue(mergedValue, override)
-      }
-      if (isDocumentRecord(mergedValue) === false) {
-        return false
-      }
-      return statedKeys(override).every((child) => sameValue(mergedValue[child], override[child]))
-    }) && statedKeys(kept).every((key) => key in merged)
-  })
+  it.prop(
+    '∀do_Merge_≡NestedRecordsMergeRecursively',
+    [NestedDocumentSchema, NestedDocumentSchema],
+    ([base, overrides]) => {
+      const kept = usableEntriesOnly(base)
+      const merged = mergeRecords(base, overrides)
+      return statedKeys(overrides).every((key) => {
+        const override = overrides[key]
+        const mergedValue = merged[key]
+        if (isDocumentRecord(override) === false) {
+          return sameValue(mergedValue, override)
+        }
+        if (isDocumentRecord(mergedValue) === false) {
+          return false
+        }
+        return statedKeys(override).every((child) => sameValue(mergedValue[child], override[child]))
+      }) && statedKeys(kept).every((key) => key in merged)
+    },
+  )
 
-  it.prop('∀do_Merge_∈DocumentKeysNeverReachThePrototype', [poisonedDocumentArb, poisonedDocumentArb], ([base, overrides]) => {
-    const merged = mergeRecords(base, overrides)
-    return Object.getOwnPropertyNames(merged).includes('__proto__') === false &&
-      Object.getPrototypeOf(merged) === Object.prototype &&
-      Object.getOwnPropertyNames(Object.prototype).includes('polluted') === false
-  })
+  it.prop(
+    '∀do_Merge_∈DocumentKeysNeverReachThePrototype',
+    [poisonedDocumentArb, poisonedDocumentArb],
+    ([base, overrides]) => {
+      const merged = mergeRecords(base, overrides)
+      return Object.getOwnPropertyNames(merged).includes('__proto__') === false &&
+        Object.getPrototypeOf(merged) === Object.prototype &&
+        Object.getOwnPropertyNames(Object.prototype).includes('polluted') === false
+    },
+  )
 })

@@ -16,7 +16,7 @@ import * as Result from 'effect/Result'
 import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import { InterpretDryRunResultCommand, interpretDryRunResult } from './interpret-dry-run-result.workflow.js'
+import { interpretDryRunResult, InterpretDryRunResultCommand } from './interpret-dry-run-result.workflow.js'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
 
 export const ALL_TESTS_ID = 'all'
@@ -111,7 +111,8 @@ const commandRunnerMutantRun = (
       Result.match(decided, {
         onFailure: (failure) => Effect.fail(failure),
         onSuccess: (decision) => Effect.succeed(decision.asResult),
-      })),
+      })
+    ),
   )
 
 export const commandRunner: {

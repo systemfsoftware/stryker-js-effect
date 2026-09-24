@@ -14,12 +14,12 @@ import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
-import type { ResolvedMode } from '../output-mode.schema.js'
-import type { RunEventStream } from '../run-event-stream.service.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
+import type { ResolvedMode } from '../output-mode.schema.js'
 import { ProjectFiles } from '../project-files.service.js'
-import { Reporter } from '../reporter.service.js'
 import { ReporterOutput } from '../reporter-output.service.js'
+import { Reporter } from '../reporter.service.js'
+import type { RunEventStream } from '../run-event-stream.service.js'
 import { RunEvent } from '../run-event.schema.js'
 import { RunEvents } from '../run-events.service.js'
 import { IdGenerator } from '../Worker.service.js'
@@ -52,8 +52,7 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
       events?: Queue.Queue<RunEvent, Cause.Done>,
     ): Layer.Layer<RunStageServices, never, EnginePorts> => {
       const eventsLayer: Layer.Layer<RunEvents> = Match.value(events).pipe(
-        Match.when(undefined, () =>
-          Layer.effect(RunEvents, Queue.bounded<RunEvent, Cause.Done>(RunEvent.QUEUE_BOUND))),
+        Match.when(undefined, () => Layer.effect(RunEvents, Queue.bounded<RunEvent, Cause.Done>(RunEvent.QUEUE_BOUND))),
         Match.orElse((queue) => Layer.succeed(RunEvents, queue)),
       )
       const stageLayer = Layer.mergeAll(

@@ -3,12 +3,7 @@ import type * as Effect from 'effect/Effect'
 
 import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
 
-import type {
-  DryRunOptions,
-  DryRunResult,
-  MutantRunResult,
-  TestRunnerCapabilities,
-} from './TestRunner.schema.js'
+import type { DryRunOptions, DryRunResult, MutantRunResult, TestRunnerCapabilities } from './TestRunner.schema.js'
 import { TestRunnerFailed } from './TestRunner.schema.js'
 
 export interface TestRunnerService {
@@ -19,6 +14,6 @@ export interface TestRunnerService {
   readonly dispose: Effect.Effect<void, TestRunnerFailed>
 }
 
-export class TestRunner
-  extends Context.Service<TestRunner, TestRunnerService>()('@systemfsoftware/stryker-js-plugin-interface/TestRunner.service/TestRunner')
-{}
+export class TestRunner extends Context.Service<TestRunner, TestRunnerService>()(
+  '@systemfsoftware/stryker-js-plugin-interface/TestRunner.service/TestRunner',
+) {}

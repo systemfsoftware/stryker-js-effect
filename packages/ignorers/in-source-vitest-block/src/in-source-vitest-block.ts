@@ -14,13 +14,11 @@ const isNonComputedMember = (node: Node): node is MemberExpression =>
 const isImportMeta = (node: MetaProperty) =>
   isIdentifierNamed(node.meta, 'import') && isIdentifierNamed(node.property, 'meta')
 
-const objectIsImportMeta = (node: MemberExpression) =>
-  node.object.type === 'MetaProperty' && isImportMeta(node.object)
+const objectIsImportMeta = (node: MemberExpression) => node.object.type === 'MetaProperty' && isImportMeta(node.object)
 
 const propertyIsVitest = (node: MemberExpression) => isIdentifierNamed(node.property, VITEST_META_PROPERTY)
 
-const isImportMetaVitestMemberShape = (node: MemberExpression) =>
-  objectIsImportMeta(node) && propertyIsVitest(node)
+const isImportMetaVitestMemberShape = (node: MemberExpression) => objectIsImportMeta(node) && propertyIsVitest(node)
 
 const isImportMetaVitestMember = (node: Node) => isNonComputedMember(node) && isImportMetaVitestMemberShape(node)
 

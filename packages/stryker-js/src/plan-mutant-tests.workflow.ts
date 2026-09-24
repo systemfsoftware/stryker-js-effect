@@ -8,8 +8,8 @@ import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { MutantTestPlanCommand } from './MutantTestPlanCommand.schema.js'
 import { PlannedMutantRunOptions } from './MutantTestPlan.schema.js'
+import { MutantTestPlanCommand } from './MutantTestPlanCommand.schema.js'
 
 const MutantPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutantPlan')
 type MutantPlanTypeId = typeof MutantPlanTypeId
@@ -100,10 +100,11 @@ const coveredByOfMutant = (mutant: Mutant) =>
 const reloadEnvironmentOf = (testFilter: readonly string[] | undefined, isStatic: boolean | undefined) =>
   Option.match(Option.fromUndefinedOr(testFilter), {
     onNone: () => true,
-    onSome: () => Option.match(Option.fromUndefinedOr(isStatic), {
-      onNone: () => true,
-      onSome: (flag) => flag,
-    }),
+    onSome: () =>
+      Option.match(Option.fromUndefinedOr(isStatic), {
+        onNone: () => true,
+        onSome: (flag) => flag,
+      }),
   })
 
 const toRunPlan = (
@@ -180,8 +181,7 @@ const planForUncoveredStatic = (
 ) =>
   Boolean.match(command.options.ignoreStatic, {
     onTrue: () => toEarlyResultPlan(mutant, isStatic, 'Ignored', IGNORED_STATIC_MUTANT_REASON, coveredBy),
-    onFalse: () =>
-      toRunPlan(mutant, command, command.timeSpentAllTests, command.globalTestFilter, isStatic, coveredBy),
+    onFalse: () => toRunPlan(mutant, command, command.timeSpentAllTests, command.globalTestFilter, isStatic, coveredBy),
   })
 
 const planForStaticallyCovered = (
@@ -236,7 +236,8 @@ const missingHitCountIds = (command: MutantTestPlanCommand) =>
     Boolean.match(hitCountRequiredAndAbsent(command, mutant), {
       onTrue: () => [mutant.id] as const,
       onFalse: () => [] as const,
-    }))
+    })
+  )
 
 const plannedMutantsOf = (command: MutantTestPlanCommand) =>
   command.mutants.map((mutant) => decidePlanForMutant(mutant, command))

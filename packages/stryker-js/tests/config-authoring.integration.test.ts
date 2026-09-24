@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { StrykerConfig, type ConfigEnv } from '@systemfsoftware/stryker-js/config'
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type ConfigEnv, StrykerConfig } from '@systemfsoftware/stryker-js/config'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import { expect } from 'vitest'

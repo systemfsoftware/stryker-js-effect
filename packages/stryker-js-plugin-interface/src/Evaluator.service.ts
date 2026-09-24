@@ -2,13 +2,13 @@ import * as Context from 'effect/Context'
 import type * as Effect from 'effect/Effect'
 import type * as schema from './Report.schema.js'
 
-import type { ExitClass } from './ExitClass.schema.js'
 import { EvaluatorFailed } from './Evaluator.schema.js'
+import type { ExitClass } from './ExitClass.schema.js'
 
 export interface EvaluatorService {
   readonly evaluate: (report: schema.MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed>
 }
 
-export class Evaluator
-  extends Context.Service<Evaluator, EvaluatorService>()('@systemfsoftware/stryker-js-plugin-interface/Evaluator.service/Evaluator')
-{}
+export class Evaluator extends Context.Service<Evaluator, EvaluatorService>()(
+  '@systemfsoftware/stryker-js-plugin-interface/Evaluator.service/Evaluator',
+) {}

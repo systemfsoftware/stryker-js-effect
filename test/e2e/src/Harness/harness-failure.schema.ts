@@ -17,11 +17,20 @@ export class GuestJobFailure extends Schema.TaggedError<GuestJobFailure>()('Gues
   override get message(): string {
     return Match.value(this.cause).pipe(
       Match.tag('VirtualizationUnsupportedError', (cause) => `${this.step}: ${cause._tag} — ${cause.remediation}`),
-      Match.tag('SandboxBootError', (cause) => `${this.step}: ${cause._tag} while booting sandbox ${cause.sandboxName}`),
-      Match.tag('WaitTimeoutError', (cause) => `${this.step}: ${cause._tag} waiting for ${cause.wait} within ${cause.timeoutMs}ms`),
+      Match.tag(
+        'SandboxBootError',
+        (cause) => `${this.step}: ${cause._tag} while booting sandbox ${cause.sandboxName}`,
+      ),
+      Match.tag(
+        'WaitTimeoutError',
+        (cause) => `${this.step}: ${cause._tag} waiting for ${cause.wait} within ${cause.timeoutMs}ms`,
+      ),
       Match.tag('ExecError', (cause) => `${this.step}: ${cause._tag} running ${cause.argv.join(' ')}`),
       Match.tag('PortAllocationError', (cause) => `${this.step}: ${cause._tag} for guest port ${cause.guestPort}`),
-      Match.tag('LoopbackViolationError', (cause) => `${this.step}: ${cause._tag} mapping guest port ${cause.guestPort} on ${cause.host}`),
+      Match.tag(
+        'LoopbackViolationError',
+        (cause) => `${this.step}: ${cause._tag} mapping guest port ${cause.guestPort} on ${cause.host}`,
+      ),
       Match.exhaustive,
     )
   }

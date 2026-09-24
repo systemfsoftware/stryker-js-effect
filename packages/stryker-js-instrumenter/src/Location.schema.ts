@@ -91,16 +91,17 @@ const lineStartsOf = (text: string): LineStarts => ({
   lineStarts: [0, ...[...text.matchAll(LINE_TERMINATOR)].map((match) => endOfMatch(match))],
 })
 
-const endOfMatch = (match: RegExpMatchArray): number =>
-  (match.index ?? 0) + match[0].length
+const endOfMatch = (match: RegExpMatchArray): number => (match.index ?? 0) + match[0].length
 
 const canonicalTextOf = (table: LineStarts): string =>
   Boolean.match(table.lineStarts.length === 1, {
     onTrue: () => '',
     onFalse: () =>
-      `${Arr.zip(table.lineStarts.slice(0, -1), table.lineStarts.slice(1))
-        .map(([start, next]) => ' '.repeat(next - start - 1))
-        .join('\n')}\n`,
+      `${
+        Arr.zip(table.lineStarts.slice(0, -1), table.lineStarts.slice(1))
+          .map(([start, next]) => ' '.repeat(next - start - 1))
+          .join('\n')
+      }\n`,
   })
 
 export const LineTableFromText = S.String.pipe(
@@ -156,8 +157,10 @@ if (import.meta.vitest !== void 0) {
       (draw) => ((draw % (text.length + 1)) + text.length + 1) % (text.length + 1),
     )
 
-  const textWithOffset = Arbitrary.flatMap(textArbitrary, (text) =>
-    Arbitrary.map(offsetIn(text), (offset) => ({ text, offset })))
+  const textWithOffset = Arbitrary.flatMap(
+    textArbitrary,
+    (text) => Arbitrary.map(offsetIn(text), (offset) => ({ text, offset })),
+  )
 
   const comparePositions = (a: Position, b: Position): number => {
     const lineDelta = a.line - b.line

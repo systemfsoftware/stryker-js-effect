@@ -3,10 +3,10 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
 import {
+  keepTempDir,
   KeepTempDirAlways,
   KeepTempDirCommand,
   KeepTempDirOnFailure,
-  keepTempDir,
   type KeepTempDirOutcome,
 } from '../keep-temp-dir.workflow.js'
 
@@ -18,7 +18,6 @@ const fateOf = (decision: KeepTempDirOutcome): 'kept' | 'removed' =>
   )
 
 describe('keepTempDir', () => {
-
   it.prop('∀a_Always_≡Removed', [KeepTempDirCommand], ([command]) => {
     const always = KeepTempDirCommand.make({ cleanTempDir: KeepTempDirAlways.make({}), failed: command.failed })
     return Result.match(keepTempDir(always), {

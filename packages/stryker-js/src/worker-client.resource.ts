@@ -3,8 +3,8 @@ import { layerTraceContextClient, WorkerOptionsWire } from '@systemfsoftware/str
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as S from 'effect/Schema'
 import * as Schedule from 'effect/Schedule'
+import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import type * as Rpc from 'effect/unstable/rpc/Rpc'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
@@ -12,9 +12,9 @@ import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
 
 import { clientLayer } from './spawned-socket-worker.handle.js'
-import { WorkerLauncher } from './WorkerLauncher.service.js'
 import type { WorkerBootError } from './Worker.schema.js'
 import { WorkerBootTimeoutError } from './Worker.schema.js'
+import { WorkerLauncher } from './WorkerLauncher.service.js'
 
 const connectRetry = Schedule.max([Schedule.spaced(50), Schedule.recurs(100)])
 

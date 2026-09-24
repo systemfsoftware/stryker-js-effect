@@ -487,7 +487,10 @@ Feature('Judging test contribution under the test-contribution gate')
           )),
         When('the verdict is judged with the workflow suffix')(
           'verdict',
-          (s) => Effect.sync(() => judgedWith(s.report, { suffixes: ['.workflow.property.test.ts'], everyKillerRecorded: false })),
+          (s) =>
+            Effect.sync(() =>
+              judgedWith(s.report, { suffixes: ['.workflow.property.test.ts'], everyKillerRecorded: false })
+            ),
         ),
         Then('the configuration error names the flag, not the files')((s) => {
           expect(s.verdict.message).not.toContain('sole.workflow.property.test.ts')
@@ -577,7 +580,10 @@ Feature('Judging test contribution under the test-contribution gate')
           )),
         When('the verdict is judged against both suffixes')(
           'verdict',
-          (s) => Effect.sync(() => judgedWith(s.report, { suffixes: ['.property.test.ts', '.law.test.ts'], everyKillerRecorded: true })),
+          (s) =>
+            Effect.sync(() =>
+              judgedWith(s.report, { suffixes: ['.property.test.ts', '.law.test.ts'], everyKillerRecorded: true })
+            ),
         ),
         Then('the matching file is judged in scope')((s) => {
           expect(s.verdict.failed).toBe(true)
@@ -598,7 +604,10 @@ Feature('Judging test contribution under the test-contribution gate')
           )),
         When('the verdict is judged against both suffixes')(
           'verdict',
-          (s) => Effect.sync(() => judgedWith(s.report, { suffixes: ['.property.test.ts', '.law.test.ts'], everyKillerRecorded: true })),
+          (s) =>
+            Effect.sync(() =>
+              judgedWith(s.report, { suffixes: ['.property.test.ts', '.law.test.ts'], everyKillerRecorded: true })
+            ),
         ),
         Then('the message names both suffixes')((s) => {
           expect(s.verdict.message).toContain('.property.test.ts, .law.test.ts')
@@ -710,7 +719,10 @@ Feature('Judging test contribution under the test-contribution gate')
           )),
         When('the verdict is judged with the schema suffix list')(
           'verdict',
-          (s) => Effect.sync(() => judgedWith(s.report, { suffixes: ['.schema.property.test.ts'], everyKillerRecorded: true })),
+          (s) =>
+            Effect.sync(() =>
+              judgedWith(s.report, { suffixes: ['.schema.property.test.ts'], everyKillerRecorded: true })
+            ),
         ),
         Then('the custom suffix list applies and fails the run')((s) => {
           expect(s.verdict.failed).toBe(true)

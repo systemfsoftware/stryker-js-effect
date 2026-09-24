@@ -48,8 +48,7 @@ const endTextOf = (specifier: DecodedSpecifier): string =>
     onSome: (column) => `${specifier.endLine}:${column}`,
   })
 
-const renderedRangeOf = (specifier: DecodedSpecifier): string =>
-  `${startTextOf(specifier)}-${endTextOf(specifier)}`
+const renderedRangeOf = (specifier: DecodedSpecifier): string => `${startTextOf(specifier)}-${endTextOf(specifier)}`
 
 const groupOf = (match: RegExpExecArray, index: number, fallback: string) => match[index] ?? fallback
 

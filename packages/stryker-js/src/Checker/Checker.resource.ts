@@ -6,16 +6,16 @@ import * as Metric from 'effect/Metric'
 import { type Pipeable, Prototype } from 'effect/Pipeable'
 import type * as Scope from 'effect/Scope'
 
-import { checkerProcessCrashes } from './checker.metrics.js'
 import { makeWorkerClient } from '../worker-client.resource.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import {
-  connectionCrashed,
-  makeCheckerHandle,
   type CheckerCrash,
   type CheckerHandle,
   type CheckerResourceService,
+  connectionCrashed,
+  makeCheckerHandle,
 } from './Checker.handle.js'
+import { checkerProcessCrashes } from './checker.metrics.js'
 
 export const TypeId = '@systemfsoftware/stryker-js/CheckerResource'
 export type TypeId = typeof TypeId
@@ -112,4 +112,3 @@ export const withWorkingDirectory: {
   (directory: string): (spec: CheckerSpec) => CheckerSpec
   (spec: CheckerSpec, directory: string): CheckerSpec
 } = dual(2, (spec: CheckerSpec, directory: string): CheckerSpec => ({ ...spec, workingDirectory: directory }))
-

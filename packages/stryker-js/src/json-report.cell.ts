@@ -6,18 +6,18 @@ import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
 import * as Filter from 'effect/Filter'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import * as FileSystem from 'effect/FileSystem'
-import * as Path from 'effect/Path'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
-import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
 import { renderJsonReport } from './render-json-report.workflow.js'
+import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
 
 const failAsJsonReporter = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
@@ -30,7 +30,8 @@ const reportOf = Filter.make((event: ReporterEvent): Result.Result<reportApi.Mut
   Match.value(event).pipe(
     Match.tag('mutationTestReportReady', (ready) => Result.succeed(ready.report)),
     Match.orElse(() => Result.fail('not-ready' as const)),
-  ))
+  )
+)
 
 const readJsonReport = (input: {
   readonly options: StrykerOptions

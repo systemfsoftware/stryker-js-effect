@@ -2,7 +2,7 @@ import * as Context from 'effect/Context'
 import type * as Effect from 'effect/Effect'
 import type * as HashMap from 'effect/HashMap'
 
-import type { CheckResult, CheckerMutantWire } from './Checker.schema.js'
+import type { CheckerMutantWire, CheckResult } from './Checker.schema.js'
 import { CheckerFailed } from './Checker.schema.js'
 
 export interface CheckerService {
@@ -15,6 +15,6 @@ export interface CheckerService {
   ) => Effect.Effect<readonly (readonly string[])[], CheckerFailed>
 }
 
-export class Checker
-  extends Context.Service<Checker, CheckerService>()('@systemfsoftware/stryker-js-plugin-interface/Checker.service/Checker')
-{}
+export class Checker extends Context.Service<Checker, CheckerService>()(
+  '@systemfsoftware/stryker-js-plugin-interface/Checker.service/Checker',
+) {}

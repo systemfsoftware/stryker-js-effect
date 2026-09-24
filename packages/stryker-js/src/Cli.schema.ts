@@ -51,4 +51,3 @@ export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteC
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
-

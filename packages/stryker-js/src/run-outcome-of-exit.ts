@@ -66,8 +66,10 @@ const findReachableValue = <A, B>(
     return Option.none()
   }
   seen.add(value)
-  return Option.orElse(read(value), () =>
-    Arr.findFirst(causeChildrenOf(value), (child) => findReachableValue(child, depth + 1, seen, read)))
+  return Option.orElse(
+    read(value),
+    () => Arr.findFirst(causeChildrenOf(value), (child) => findReachableValue(child, depth + 1, seen, read)),
+  )
 }
 
 const causePayloadOf = <E>(reason: Cause.Reason<E>): E | object | undefined =>
@@ -103,7 +105,8 @@ const collectExitClasses = <A, E>(exit: Exit.Exit<A, E>): Array<ExitClass> => {
   const out: Array<ExitClass> = []
   const seen = new WeakSet<object>()
   failurePayloads(exit).forEach((payload) =>
-    visitReachableValue(payload, 0, seen, (node) => appendExitClass(node, out)))
+    visitReachableValue(payload, 0, seen, (node) => appendExitClass(node, out))
+  )
   return out
 }
 
@@ -151,8 +154,7 @@ const PRIMITIVE_REFINEMENTS = [
 
 const isPrimitiveText = Predicate.some(PRIMITIVE_REFINEMENTS)
 
-const declaresReasonText = <A>(value: A): boolean =>
-  hasReason(value) && Option.isSome(nonEmptyText(value.reason))
+const declaresReasonText = <A>(value: A): boolean => hasReason(value) && Option.isSome(nonEmptyText(value.reason))
 
 const remediationTextOf = <A>(value: A): Option.Option<string> =>
   S.is(SurvivorsRejection)(value) ? Option.some(value.remediation) : Option.none()
@@ -181,7 +183,9 @@ const failureDescriptionOf = <A, E>(exit: Exit.Exit<A, E>): Option.Option<string
     failureValueOf,
     failureValueDescription,
     Option.orElse(() => exit.pipe(firstConfigErrorDetail, Option.fromNullishOr)),
-    Option.orElse(() => exit.pipe(failedExit, Option.flatMap((failure) => failure.cause.pipe(Cause.pretty, nonEmptyText)))),
+    Option.orElse(() =>
+      exit.pipe(failedExit, Option.flatMap((failure) => failure.cause.pipe(Cause.pretty, nonEmptyText)))
+    ),
   )
 
 const describeFailureOf = <A, E>(exit: Exit.Exit<A, E>): string =>
@@ -234,8 +238,7 @@ const survivorsReasonOf = (
   survivors: SurvivorsRejection | undefined,
 ): 'no-report' | 'mismatch' | undefined => survivors?.reason
 
-const survivorsDiagnosticOf = (survivors: SurvivorsRejection | undefined): string | undefined =>
-  survivors?.remediation
+const survivorsDiagnosticOf = (survivors: SurvivorsRejection | undefined): string | undefined => survivors?.remediation
 
 const omitUnknownFailure = (diagnostic: string): string | undefined =>
   diagnostic === UNKNOWN_FAILURE ? undefined : diagnostic
@@ -256,8 +259,10 @@ const verdictExitClassOf = <A>(value: A): ExitClass | undefined =>
 const successExitClassOf = <A, E>(exit: Exit.Exit<A, E>): ExitClass | undefined =>
   Exit.isSuccess(exit) ? verdictExitClassOf(exit.value) : undefined
 
-const bySeverity: Order.Order<ExitClass> = Order.mapInput(Order.Number, (exitClass: ExitClass) =>
-  ExitClass.literals.indexOf(exitClass))
+const bySeverity: Order.Order<ExitClass> = Order.mapInput(
+  Order.Number,
+  (exitClass: ExitClass) => ExitClass.literals.indexOf(exitClass),
+)
 
 const highestExitClassOf = (pending: ReadonlyArray<ExitClass>): ExitClass | undefined =>
   Option.getOrUndefined(Arr.last(Arr.sort(pending, bySeverity)))
@@ -285,36 +290,38 @@ export const runOutcomeCommandOf = <A, E>(
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
-  const { expect } = await import('vitest')
+  const Equal = await import('effect/Equal')
 
   const severityOf = (exitClass: ExitClass): number => ExitClass.literals.indexOf(exitClass)
 
   it.prop('∀text_runOutcomeCommandOf_PrimitiveFailureBecomesDiagnostic', [S.String], ([text]) => {
     const command = runOutcomeCommandOf({ exit: Exit.fail(text), argv: [] })
-    expect({
-      succeeded: command.succeeded,
-      interrupted: command.interrupted,
-      cliError: command.cliError,
-      helpErrorCount: command.helpErrorCount,
-      unrecognized: command.unrecognized,
-      highestExitClass: command.highestExitClass,
-      configDetail: command.configDetail,
-      diagnostic: command.diagnostic,
-    }).toStrictEqual({
-      succeeded: false,
-      interrupted: false,
-      cliError: false,
-      helpErrorCount: undefined,
-      unrecognized: undefined,
-      highestExitClass: undefined,
-      configDetail: undefined,
-      diagnostic: text === UNKNOWN_FAILURE ? undefined : text,
-    })
+    const observed = [
+      command.succeeded,
+      command.interrupted,
+      command.cliError,
+      command.helpErrorCount,
+      command.unrecognized,
+      command.highestExitClass,
+      command.configDetail,
+      command.diagnostic,
+    ]
+    const expected = [
+      false,
+      false,
+      false,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      text === UNKNOWN_FAILURE ? undefined : text,
+    ]
+    return observed.every((field, index) => field === expected[index])
   })
 
   it.prop('∀deeperList_runOutcomeCommandOf_FindsConfigDetail', [S.NonEmptyString], ([detail]) => {
     const exit = Exit.fail({ exitClass: 'ConfigError', reason: detail })
-    expect(runOutcomeCommandOf({ exit, argv: [] }).configDetail).toBe(detail)
+    return runOutcomeCommandOf({ exit, argv: [] }).configDetail === detail
   })
 
   it.prop(
@@ -323,7 +330,8 @@ if (import.meta.vitest !== void 0) {
     ([left, middle, right]) => {
       const exit = Exit.fail({ exitClass: left, cause: { exitClass: middle, cause: { exitClass: right } } })
       const command = runOutcomeCommandOf({ exit, argv: [] })
-      expect(Option.map(Option.fromUndefinedOr(command.highestExitClass), severityOf)).toStrictEqual(
+      return Equal.equals(
+        Option.map(Option.fromUndefinedOr(command.highestExitClass), severityOf),
         Option.some(Math.max(severityOf(left), severityOf(middle), severityOf(right))),
       )
     },

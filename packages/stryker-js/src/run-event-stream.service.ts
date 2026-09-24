@@ -1,5 +1,5 @@
-import type * as Cause from 'effect/Cause'
 import * as Boolean from 'effect/Boolean'
+import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
@@ -17,12 +17,9 @@ import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 
+import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
 import { StrykerConfig } from './config/stryker-config.schema.js'
-import { MachineConsole } from './reporting/machine-console.service.js'
-import { ErrorEnvelope } from './reporting/run-failure.schema.js'
-import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ResolvedMode } from './output-mode.schema.js'
 import {
   frameRunEvent,
   FrameRunEventCommand,
@@ -30,11 +27,14 @@ import {
   FramingState,
   type ResolvedModeInput,
 } from './frame-run-event.workflow.js'
+import type { ResolvedMode } from './output-mode.schema.js'
+import { MachineConsole } from './reporting/machine-console.service.js'
+import { ErrorEnvelope } from './reporting/run-failure.schema.js'
+import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
+import { RunId, VerdictEnvelope } from './reporting/verdict-envelope.schema.js'
 import { RunEventWireLine } from './run-event-wire.schema.js'
 import { Heartbeat, HelpRendered, RunEvent, RunFailed, RunStarted, VerdictReached } from './run-event.schema.js'
-import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
 import { StrykerPackage } from './stryker-package.schema.js'
-import { RunId, VerdictEnvelope } from './reporting/verdict-envelope.schema.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'
 
@@ -123,8 +123,10 @@ export class RunEventDrain extends Context.Service<RunEventDrain, RunEventDrainS
     Stdio.Stdio | FileSystem.FileSystem | Path.Path
   > = Layer.effect(
     RunEventDrain,
-    Effect.flatMap(Effect.all([Stdio.Stdio, FileSystem.FileSystem, Path.Path]), ([stdio, fs, path]) =>
-      drainFileOf(stdio, fs, path)),
+    Effect.flatMap(
+      Effect.all([Stdio.Stdio, FileSystem.FileSystem, Path.Path]),
+      ([stdio, fs, path]) => drainFileOf(stdio, fs, path),
+    ),
   )
 }
 
@@ -332,7 +334,6 @@ export interface RunEventStreamPort {
 export class RunEventStreamPortTag extends Context.Service<RunEventStreamPortTag, RunEventStreamPort>()(
   '@systemfsoftware/stryker-js/run-event-stream.service/RunEventStreamPortTag',
 ) {
-
   static readonly layer: Layer.Layer<RunEventStreamPortTag, never, never> = Layer.succeed(
     RunEventStreamPortTag,
     RunEventStreamPortTag.of({

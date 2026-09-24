@@ -98,7 +98,14 @@ export {
 export { CheckerAnsweredUnrequested, CheckerSkippedRequested } from './Checker/mod.js'
 export type { CheckerContractBroken, CheckerCrash, CheckerResourceService } from './Checker/mod.js'
 export { checkGroupedPlans } from './Checker/mod.js'
-export type { TestCoverage } from './test-coverage.schema.js'
+export {
+  keepTempDir,
+  KeepTempDirCommand,
+  type KeepTempDirOption,
+  type KeepTempDirOutcome,
+  TempDirKept,
+  TempDirRemoved,
+} from './keep-temp-dir.workflow.js'
 export type {
   AnyPluginDescriptor,
   AnyWorkerPluginDescriptor,
@@ -113,17 +120,6 @@ export type {
   WorkerPluginDescriptor,
   WorkerPluginSource,
 } from './Plugins.schema.js'
-export type { Project, ProjectFile } from './Project.schema.js'
-export type { ReporterStage } from './reporter-stream.service.js'
-export { StageError } from './Run.schema.js'
-export type { DryRunDone } from './run/dry-run.cell.js'
-export type { InstrumentDone } from './run/instrument.cell.js'
-export type { MutationTestDone } from './run/mutation-test.cell.js'
-export type { PrepareDone, PrepareExecutorArgs } from './run/prepare.cell.js'
-export type { RunEnvironmentShape } from './run/RunEnvironment.service.js'
-export { RunEnvironment } from './run/RunEnvironment.service.js'
-export type { EnginePorts, RunStageServices, StageServices, WiredRunLayer } from './run/StageServices.service.js'
-export type { SandboxHandle } from './Sandbox.handle.js'
 export type {
   isPooledTestRunner,
   PooledTestRunner,
@@ -136,14 +132,25 @@ export {
   withRetry,
   withTimeout,
 } from './pooled-test-runner.handle.js'
+export type { Project, ProjectFile } from './Project.schema.js'
+export type { ReporterStage } from './reporter-stream.service.js'
+export { StageError } from './Run.schema.js'
+export type { DryRunDone } from './run/dry-run.cell.js'
+export type { HostServices, StrykerRun } from './run/host.service.js'
+export type { InstrumentDone } from './run/instrument.cell.js'
+export type { MutationTestDone } from './run/mutation-test.cell.js'
+export type { PrepareDone, PrepareExecutorArgs } from './run/prepare.cell.js'
+export { mutationTestCell, strykerCell } from './run/run-stages.cell.js'
+export type { RunEnvironmentShape } from './run/RunEnvironment.service.js'
+export { RunEnvironment } from './run/RunEnvironment.service.js'
+export type { EnginePorts, RunStageServices, StageServices, WiredRunLayer } from './run/StageServices.service.js'
+export type { SandboxHandle } from './Sandbox.handle.js'
+export type { TestCoverage } from './test-coverage.schema.js'
 export type { TestRunnerBuildContext } from './TestRunner.resource.js'
 export type { PooledTestRunnerError } from './TestRunner.schema.js'
 export type { VmRequire } from './VmRunner.service.js'
 export type { IdGeneratorShape } from './Worker.service.js'
 export { IdGenerator } from './Worker.service.js'
-export { keepTempDir, KeepTempDirCommand, type KeepTempDirOption, type KeepTempDirOutcome, TempDirKept, TempDirRemoved } from './keep-temp-dir.workflow.js'
-export type { HostServices, StrykerRun } from './run/host.service.js'
-export { mutationTestCell, strykerCell } from './run/run-stages.cell.js'
 
 export {
   Heartbeat,
@@ -178,30 +185,14 @@ export {
   WorkerCrashed,
   WorkerOutOfMemory,
 } from './classify-worker-exit.workflow.js'
-export { buildTestRunner } from './TestRunner.resource.js'
 export { isCommandRunner } from './command-runner.resource.js'
+export { buildTestRunner } from './TestRunner.resource.js'
 export { isVmRunner, vmTestRunner } from './VmRunner.resource.js'
 export type { CompiledTests, VmTestRunnerConfig } from './VmRunner.resource.js'
 export { VmRunner } from './VmRunner.service.js'
 export type { VmModule, VmModuleBuiltin, VmPlatform, VmScript } from './VmRunner.service.js'
 
-export { StrykerConfig } from './config/stryker-config.schema.js'
-export type {
-  ConfigEnv,
-  Immutable,
-  ImmutablePrimitive,
-  Primitive,
-  StrykerConfigExport,
-  StrykerConfigFn,
-} from './config/stryker-config.schema.js'
 export { ConfigDocumentSchema } from './Config.schema.js'
-export {
-  ConfigError,
-  ConfigFileInvalidError,
-  ConfigFileNotFoundError,
-  ConfigFileUnreadableError,
-  ConfigFileUnsupportedError,
-} from './ConfigError.schema.js'
 export {
   extendsPropertySchema,
   ExtendsStepDocumentSchema,
@@ -223,7 +214,24 @@ export type {
   ExtendsStepDocument,
   ExtendsStepState,
 } from './Config.schema.js'
+export { StrykerConfig } from './config/stryker-config.schema.js'
+export type {
+  ConfigEnv,
+  Immutable,
+  ImmutablePrimitive,
+  Primitive,
+  StrykerConfigExport,
+  StrykerConfigFn,
+} from './config/stryker-config.schema.js'
+export {
+  ConfigError,
+  ConfigFileInvalidError,
+  ConfigFileNotFoundError,
+  ConfigFileUnreadableError,
+  ConfigFileUnsupportedError,
+} from './ConfigError.schema.js'
 export { createFileMatcher, matchesFile } from './file-matching.js'
+export type { ModeSignal, OutputMode, ResolvedMode } from './output-mode.schema.js'
 export {
   decideExtendsStep,
   describeErrors,
@@ -236,7 +244,6 @@ export {
   validateOptions,
 } from './run/load-config.cell.js'
 export type { ConfigInvocation, LoadedConfig, ValidationSchemaDocument } from './run/load-config.cell.js'
-export type { ModeSignal, OutputMode, ResolvedMode } from './output-mode.schema.js'
 
 export {
   ActionableStatus,
@@ -262,8 +269,6 @@ export {
   spawnReporterWorker,
   type SpawnReporterWorkerParams,
 } from './reporter-stream.service.js'
-export { WorkerLauncher } from './WorkerLauncher.service.js'
-export { makeWorkerClient } from './worker-client.resource.js'
 export {
   clientLayer as spawnedSocketWorkerClientLayer,
   isSpawnedSocketWorker,
@@ -271,5 +276,7 @@ export {
   TypeId as SpawnedSocketWorkerTypeId,
 } from './spawned-socket-worker.handle.js'
 export type { SpawnedSocketWorker } from './spawned-socket-worker.handle.js'
-export type { WorkerLauncherShape, WorkerSpawnParams } from './WorkerLauncher.service.js'
+export { makeWorkerClient } from './worker-client.resource.js'
 export type { WorkerClientParams } from './worker-client.resource.js'
+export { WorkerLauncher } from './WorkerLauncher.service.js'
+export type { WorkerLauncherShape, WorkerSpawnParams } from './WorkerLauncher.service.js'

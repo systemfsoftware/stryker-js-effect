@@ -1,8 +1,8 @@
 import {
   type FileResult,
+  Metrics,
   type MetricsResult,
   type MetricsResultEncoded,
-  Metrics,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'

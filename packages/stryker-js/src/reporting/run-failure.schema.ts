@@ -3,15 +3,15 @@ import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
 import {
+  type FailedRunOutcome,
   RunConfigFailed,
   RunFailed,
   RunInterrupted,
   RunOk,
-  RunParseFailed,
-  RunSurvivorsRejected,
-  type FailedRunOutcome,
   type RunOutcomeDecision,
   type RunOutcomeError,
+  RunParseFailed,
+  RunSurvivorsRejected,
 } from '../classify-run-outcome.workflow.js'
 import { StreamSchemaVersion } from './stream-version.schema.js'
 
@@ -61,7 +61,10 @@ const exitCodeOf = (outcome: RunOutcomeDecision | RunOutcomeError) =>
 const capturedOrUnknown = (captured: string) => Option.getOrElse(nonEmptyText(captured), () => UNKNOWN_FAILURE)
 
 const capturedThenRecorded = (captured: string, recorded: string | undefined) =>
-  Option.getOrElse(nonEmptyText(captured), () => Option.getOrElse(Option.fromNullishOr(recorded), () => UNKNOWN_FAILURE))
+  Option.getOrElse(
+    nonEmptyText(captured),
+    () => Option.getOrElse(Option.fromNullishOr(recorded), () => UNKNOWN_FAILURE),
+  )
 
 const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
 
@@ -74,7 +77,8 @@ const failureTextOf = (error: FailedRunOutcome, captured: string) =>
       )),
     Match.tag('RunSurvivorsRejected', (failed) =>
       Option.getOrElse(Option.fromNullishOr(failed.diagnostic), () => UNKNOWN_FAILURE)),
-    Match.tag('RunInterrupted', () => capturedOrUnknown(captured)),
+    Match.tag('RunInterrupted', () =>
+      capturedOrUnknown(captured)),
     Match.tag('RunConfigFailed', (failed) => capturedThenRecorded(captured, failed.detail)),
     Match.tag('RunFailed', (failed) => capturedThenRecorded(captured, failed.diagnostic)),
     Match.exhaustive,
@@ -88,7 +92,8 @@ const remediationTextOf = (error: FailedRunOutcome) =>
       Option.getOrElse(Option.fromNullishOr(failed.diagnostic), () => DEFAULT_REMEDIATION)),
     Match.tag('RunConfigFailed', (failed) =>
       Option.match(Option.fromNullishOr(failed.detail), {
-        onSome: (detail) => `check the config file: ${detail}`,
+        onSome: (detail) =>
+          `check the config file: ${detail}`,
         onNone: () => 'check the config file',
       })),
     Match.tag('RunFailed', () => DEFAULT_REMEDIATION),
@@ -109,11 +114,15 @@ if (import.meta.vitest !== void 0) {
 
   const codeOf = (outcome: RunOutcomeDecision | RunOutcomeError) => RunExitCode.fromOutcome(outcome).code
 
-  it.prop('∀outcome_RunExitCode.fromOutcome_CarriesFrozenCodes', [RunOutcomeSchema], ([outcome]) =>
-    Match.value(outcome).pipe(
-      Match.tag('RunOk', () => codeOf(outcome) === 0),
-      Match.tag('RunInterrupted', (interrupted) => codeOf(outcome) === interrupted.code),
-      Match.tag('RunFailed', (failed) => codeOf(outcome) === failed.code),
-      Match.orElse(() => codeOf(outcome) === CONFIG_CODE),
-    ))
+  it.prop(
+    '∀outcome_RunExitCode.fromOutcome_CarriesFrozenCodes',
+    [RunOutcomeSchema],
+    ([outcome]) =>
+      Match.value(outcome).pipe(
+        Match.tag('RunOk', () => codeOf(outcome) === 0),
+        Match.tag('RunInterrupted', (interrupted) => codeOf(outcome) === interrupted.code),
+        Match.tag('RunFailed', (failed) => codeOf(outcome) === failed.code),
+        Match.orElse(() => codeOf(outcome) === CONFIG_CODE),
+      ),
+  )
 }

@@ -4,11 +4,11 @@ import { CheckerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 
-import type { CompilerError } from './Compiler.schema.js'
-import { CheckMutantsCommand } from './Checker.schema.js'
-import { CheckMutantsInput } from './CheckMutants.schema.js'
 import type { CheckMutantsError } from './check-mutants.workflow.js'
 import { checkMutants, DiagnosticInUnrelatedFileError, DiagnosticWithoutFileError } from './check-mutants.workflow.js'
+import { CheckMutantsCommand } from './Checker.schema.js'
+import { CheckMutantsInput } from './CheckMutants.schema.js'
+import type { CompilerError } from './Compiler.schema.js'
 import { check, nodes } from './ts-compiler.handle.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
 
@@ -36,7 +36,7 @@ export const checkCell = Sandwich.named('stryker.typescript_checker.check_mutant
         }),
     )).pipe(
       Effect.mapError((cause) => refuse({ mutantIds: command.mutants.map((mutant) => mutant.id), cause })),
-    ),
+    )
 )
   .decide(checkMutants)
   .write({

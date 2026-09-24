@@ -8,9 +8,9 @@ import * as Result from 'effect/Result'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
+  ClearTextRenderOptions,
   ClearTextReportCommand,
   ClearTextReportRendered,
-  ClearTextRenderOptions,
   renderClearTextReport,
 } from '../render-clear-text-report.workflow.js'
 
@@ -25,7 +25,7 @@ const colorOffArb = commandArb.pipe(
       computed: command.computed,
       render: { ...command.render, allowColor: false },
       rendered: command.rendered,
-    }),
+    })
   ),
 )
 
@@ -47,26 +47,33 @@ const tableBodyRowsOf = (rendered: ClearTextReportRendered): number =>
   })
 
 describe('renderClearTextReport', () => {
-  it.prop('∀c_SuppressedIffNoTerminalReport', [commandArb], ([command]) =>
-    Result.match(renderClearTextReport(command), {
-      onFailure: () => false,
-      onSuccess: (value) =>
-        Match.value(value).pipe(
-          Match.tag('ClearTextReportSuppressed', () =>
-            command.reported === undefined || command.computed === undefined),
-          Match.tag('ClearTextReportRendered', () =>
-            command.reported !== undefined && command.computed !== undefined),
-          Match.exhaustive,
-        ),
-    }))
+  it.prop(
+    '∀c_SuppressedIffNoTerminalReport',
+    [commandArb],
+    ([command]) =>
+      Result.match(renderClearTextReport(command), {
+        onFailure: () => false,
+        onSuccess: (value) =>
+          Match.value(value).pipe(
+            Match.tag(
+              'ClearTextReportSuppressed',
+              () => command.reported === undefined || command.computed === undefined,
+            ),
+            Match.tag(
+              'ClearTextReportRendered',
+              () => command.reported !== undefined && command.computed !== undefined,
+            ),
+            Match.exhaustive,
+          ),
+      }),
+  )
 
   it.prop('∀c_ColorOff_≡PlainSpans', [colorOffArb], ([command]) =>
     Result.match(renderClearTextReport(command), {
       onFailure: () => false,
       onSuccess: (value) =>
         Match.value(value).pipe(
-          Match.tag('ClearTextReportRendered', (rendered) =>
-            spansOf(rendered).every((span) => span.tone === 'plain')),
+          Match.tag('ClearTextReportRendered', (rendered) => spansOf(rendered).every((span) => span.tone === 'plain')),
           Match.tag('ClearTextReportSuppressed', () => true),
           Match.exhaustive,
         ),

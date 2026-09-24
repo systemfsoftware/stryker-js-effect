@@ -28,7 +28,8 @@ const registerMutantRunHooks = () => {
     Match.orElse(() =>
       beforeAll(() => {
         ns.activeMutant = inject('activeMutant')
-      })),
+      })
+    ),
   )
 
   afterAll((_hookContext, suite: SuiteWithTaskMeta) => {

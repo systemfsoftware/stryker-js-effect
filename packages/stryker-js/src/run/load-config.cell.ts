@@ -2,21 +2,37 @@ import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { CauseText } from '@systemfsoftware/stryker-js-instrumenter'
 import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Config from 'effect/Config'
 import * as Boolean from 'effect/Boolean'
+import * as Clock from 'effect/Clock'
+import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import { isCommandRunner } from '../command-runner.resource.js'
+import {
+  ConfigDocumentSchema,
+  type ExtendsStepDecision,
+  type ExtendsStepDocument,
+  ExtendsStepDone,
+  ExtendsStepRead,
+  ExtendsStepRefused,
+  ExtendsStepResolve,
+  type ExtendsStepState,
+  forkOptionsSchema,
+  ImportedModuleSchema,
+} from '../Config.schema.js'
+import { type ConfigEnv, StrykerConfig } from '../config/stryker-config.schema.js'
 import {
   ResolveWarningEnabledCommand,
-  warningEnabled,
   WarningDisabled,
   WarningEnabled,
+  warningEnabled,
 } from '../config/warning-enabled.workflow.js'
 import {
   ConfigError,
@@ -27,31 +43,12 @@ import {
   ConfigFileUnsupportedError,
   ConfigModuleUnloadable,
 } from '../ConfigError.schema.js'
-import {
-  ConfigDocumentSchema,
-  ExtendsStepDone,
-  ExtendsStepRead,
-  ExtendsStepRefused,
-  ExtendsStepResolve,
-  forkOptionsSchema,
-  ImportedModuleSchema,
-  type ExtendsStepDecision,
-  type ExtendsStepDocument,
-  type ExtendsStepState,
-} from '../Config.schema.js'
-import { StrykerConfig, type ConfigEnv } from '../config/stryker-config.schema.js'
-import {
-  MutationRangeSpecifier,
-  MutationRangeSpecifierSchema,
-} from '../MutationRange.schema.js'
+import { MutationRangeSpecifier, MutationRangeSpecifierSchema } from '../MutationRange.schema.js'
 import type { OutputMode } from '../output-mode.schema.js'
+import { PhaseEntered, RunEvents } from '../run-events.service.js'
 import { StrykerError } from '../stryker-error.schema.js'
-import { isCommandRunner } from '../command-runner.resource.js'
 import { LoadConfigCommand, resolveConfig } from './resolve-config.workflow.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
-import * as Clock from 'effect/Clock'
-import * as Queue from 'effect/Queue'
-import { PhaseEntered, RunEvents } from '../run-events.service.js'
 const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 const combine = (
   prefixes: string[],
@@ -433,7 +430,8 @@ const stringCodeOf = (error: Error) =>
   Option.map(
     Option.liftPredicate(error, (value): value is Error & { readonly code: string } =>
       'code' in value && typeof value.code === 'string'),
-    (coded) => coded.code,
+    (coded) =>
+      coded.code,
   )
 
 const errorCodeOf = (cause: StrykerError['cause']): string | undefined =>
@@ -449,8 +447,7 @@ const unloadableConfigModule = (
   code: string,
   failure: StrykerError,
   message: string,
-): ConfigModuleUnloadable =>
-  ConfigModuleUnloadable.make({ code, file: configFile, message, cause: failure.cause })
+): ConfigModuleUnloadable => ConfigModuleUnloadable.make({ code, file: configFile, message, cause: failure.cause })
 
 const configImportCause = (configFile: string, failure: StrykerError) =>
   Match.value(errorCodeOf(failure.cause)).pipe(
@@ -625,12 +622,14 @@ function resolveExtends(
               ConfigFileInvalidError.make({
                 file: d.file,
                 cause: Match.value(d.reason).pipe(
-                  Match.when('cycle', () => `Config inheritance cycle detected at "${d.file}"`),
-                  Match.orElse(() => `Invalid config file "${d.file}". "extends" must be a string`),
+                  Match.when('cycle', () =>
+                    `Config inheritance cycle detected at "${d.file}"`),
+                  Match.orElse(() =>
+                    `Invalid config file "${d.file}". "extends" must be a string`
+                  ),
                 ),
               }),
-            ),
-          ),
+            )),
           Match.exhaustive,
         )
       })
@@ -699,7 +698,9 @@ const columnSuffixOf = (column: number | undefined): string =>
   })
 
 const rangeTextOf = (specifier: MutationRangeSpecifier): string =>
-  `${specifier.startLine}${columnSuffixOf(specifier.startColumn)}-${specifier.endLine}${columnSuffixOf(specifier.endColumn)}`
+  `${specifier.startLine}${columnSuffixOf(specifier.startColumn)}-${specifier.endLine}${
+    columnSuffixOf(specifier.endColumn)
+  }`
 
 const mutationRangeBoundErrors = (index: number, specifier: MutationRangeSpecifier): readonly string[] => [
   ...startLineErrors(index, rangeTextOf(specifier), specifier.startLine),
@@ -868,9 +869,7 @@ const logUnserializableWarnings = (
       ),
     { discard: true },
   ).pipe(
-    Effect.andThen(() =>
-      Effect.logWarning(`(disable ${'warnings.unserializableOptions'} to ignore this warning)`),
-    ),
+    Effect.andThen(() => Effect.logWarning(`(disable ${'warnings.unserializableOptions'} to ignore this warning)`)),
   )
 
 type UnserializableDescription = {
@@ -885,8 +884,7 @@ const NON_JSON_PRIMITIVE_TYPES: Record<string, true> = {
 }
 
 const scopedUnserializable =
-  (scope: string) =>
-  (description: UnserializableDescription): UnserializableDescription => ({
+  (scope: string) => (description: UnserializableDescription): UnserializableDescription => ({
     ...description,
     path: [scope, ...description.path],
   })
@@ -899,8 +897,7 @@ const describedChild = <A>(scope: string) => (child: A): UnserializableDescripti
 
 const describedEntries = <A>(
   entries: ReadonlyArray<readonly [string, A]>,
-): UnserializableDescription[] =>
-  entries.flatMap(([scope, child]) => describedChild(scope)(child))
+): UnserializableDescription[] => entries.flatMap(([scope, child]) => describedChild(scope)(child))
 
 const classNameOf = (value: object): string =>
   Match.value(value.constructor).pipe(
@@ -911,16 +908,17 @@ const classNameOf = (value: object): string =>
 const describeUnserializableInstance = (value: object): UnserializableDescription[] => [
   {
     path: [],
-    reason: `Value is an instance of "${classNameOf(
-      value,
-    )}", this detail will get lost in translation during serialization`,
+    reason: `Value is an instance of "${
+      classNameOf(
+        value,
+      )
+    }", this detail will get lost in translation during serialization`,
   },
 ]
 
 const isArrayValue = <A = unknown>(value: unknown): value is ReadonlyArray<A> => Array.isArray(value)
 
-const isPlainObjectValue = (value: object): boolean =>
-  Array.isArray(value) === false && value.constructor === Object
+const isPlainObjectValue = (value: object): boolean => Array.isArray(value) === false && value.constructor === Object
 
 const describedIndexedChildren = <A = unknown>(arrayed: ReadonlyArray<A>): UnserializableDescription[] =>
   describedEntries(arrayed.map((child, index) => [index.toString(), child] as const))
@@ -935,7 +933,8 @@ const describeUnserializableObject = (value: object): UnserializableDescription[
           onNone: () => describeUnserializableInstance(recorded),
           onSome: (plain) => describedEntries(Object.entries(plain)),
         },
-      )),
+      )
+    ),
   )
 
 const describeUnserializableNonNullish = <A>(value: A): UnserializableDescription[] =>
@@ -1074,7 +1073,7 @@ const firstExistingConfigFile = (
           Match.value(doesExist).pipe(
             Match.when(true, () => Effect.succeedSome(head)),
             Match.orElse(() => firstExistingConfigFile(fileNames.slice(1))),
-          ),
+          )
         ),
       ),
   })
@@ -1243,7 +1242,7 @@ const readLoadConfig = (input: {
         LoadConfigCommand.make({
           document: StrykerConfig.merge(Option.getOrElse(fileOptions, () => ({})), cliRecord),
           fileFound: Option.isSome(fileOptions),
-        }),
+        })
       ),
     )
   })
@@ -1278,8 +1277,7 @@ export const readConfig: {
   >
 } = dual(
   2,
-  (cliOptions: PartialStrykerOptions, invocation: ConfigInvocation) =>
-    loadConfig.run({ cliOptions, invocation }),
+  (cliOptions: PartialStrykerOptions, invocation: ConfigInvocation) => loadConfig.run({ cliOptions, invocation }),
 )
 
 export interface LoadedConfig {

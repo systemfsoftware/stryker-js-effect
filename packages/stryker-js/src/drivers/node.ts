@@ -7,17 +7,17 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import * as Result from 'effect/Result'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 
-import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
-import type { EnginePorts } from '../run/StageServices.service.js'
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
+import type { EnginePorts } from '../run/StageServices.service.js'
 import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
+import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 
@@ -80,7 +80,8 @@ const nodeWorkerLauncherLayer = Layer.effect(
                     Match.value(decision).pipe(
                       Match.tag(
                         'WorkerOutOfMemory',
-                        (outOfMemory) => Effect.fail(OutOfMemoryError.make({ pid: outOfMemory.pid, exitCode: outOfMemory.exitCode })),
+                        (outOfMemory) =>
+                          Effect.fail(OutOfMemoryError.make({ pid: outOfMemory.pid, exitCode: outOfMemory.exitCode })),
                       ),
                       Match.tag(
                         'WorkerCrashed',
@@ -96,7 +97,8 @@ const nodeWorkerLauncherLayer = Layer.effect(
                       Match.exhaustive,
                     ),
                 },
-              )),
+              )
+            ),
           )
 
           return makeSpawnedSocketWorker({ pid: Number(handle.pid), clientLayer, exited })

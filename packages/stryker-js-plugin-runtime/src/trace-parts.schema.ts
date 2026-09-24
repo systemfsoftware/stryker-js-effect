@@ -19,8 +19,7 @@ export type EffectSpanIdentity = {
   readonly sampled: boolean
 }
 
-const sampledFlagOf = (sampled: boolean) =>
-  Boolean.match(sampled, { onTrue: () => SAMPLED_FLAG, onFalse: () => 0 })
+const sampledFlagOf = (sampled: boolean) => Boolean.match(sampled, { onTrue: () => SAMPLED_FLAG, onFalse: () => 0 })
 
 const sampledOf = (traceFlags: number) => (traceFlags & SAMPLED_FLAG) === SAMPLED_FLAG
 
@@ -42,4 +41,3 @@ export const TraceContextPartsFromEffectSpan: S.Codec<TraceContextParts, EffectS
     }),
   ),
 )
-

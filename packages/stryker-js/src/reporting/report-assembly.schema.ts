@@ -25,7 +25,7 @@ export const ReportFileNames = ReportName.pipe(
     decode: SGetter.transform((relativeNames) =>
       Object.fromEntries(
         Object.entries(relativeNames).map(([fileName, relativePath]) => [fileName, normalizeSeparators(relativePath)]),
-      ),
+      )
     ),
     encode: SGetter.transform((canonical) => canonical),
   }),
@@ -60,7 +60,7 @@ if (import.meta.vitest !== void 0) {
       onFailure: () => false,
       onSuccess: (canonical) =>
         Object.entries(canonical).every(([, value]) =>
-          Result.isSuccess(S.decodeResult(CanonicalReportFileName)(value)),
+          Result.isSuccess(S.decodeResult(CanonicalReportFileName)(value))
         ) && Object.keys(canonical).length === Object.keys(names).length,
     })
   })

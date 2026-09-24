@@ -10,8 +10,7 @@ import { EvaluatorFailed } from '@systemfsoftware/stryker-js-plugin-interface';
 import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Layer from 'effect/Layer';
 import * as S from 'effect/Schema';
-import * as schema$1 from '@systemfsoftware/stryker-js-plugin-interface';
-import { schema } from '@systemfsoftware/stryker-js-plugin-interface';
+import * as schema from '@systemfsoftware/stryker-js-plugin-interface';
 import { Workflow } from '@systemfsoftware/effect-cell-types';
 
 // Warning: (ae-forgotten-export) The symbol "BailHidesKillers_base" needs to be exported by the entry point index.d.ts
@@ -51,7 +50,7 @@ export const judgeTestContribution: Workflow.MadeWorkflow<typeof JudgeTestContri
 export const makeTestContributionEvaluatorService: (options: {
     readonly disableBail: boolean;
 }) => {
-    readonly evaluate: (report: schema$1.MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed>;
+    readonly evaluate: (report: schema.MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed>;
 };
 
 // Warning: (ae-forgotten-export) The symbol "NoKillCredited_base" needs to be exported by the entry point index.d.ts

@@ -1,7 +1,7 @@
 /// <reference types="vitest/importMeta" />
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { FileDescriptions, MutateDescription } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutationTestResult, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Boolean, Schema as S } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Equivalence from 'effect/Equivalence'
@@ -17,9 +17,9 @@ import * as Result from 'effect/Result'
 
 import { admitIncrementalReport, AdmitIncrementalReportCommand } from './admit-incremental-report.workflow.js'
 import { StrykerConfig } from './config/stryker-config.schema.js'
-import { IgnoreRule } from './matching.schema.js'
 import { IncrementalReportSchema } from './IncrementalReport.schema.js'
-import { MutationRangeSpecifierSchema, type MutationRangeSpecifier } from './MutationRange.schema.js'
+import { IgnoreRule } from './matching.schema.js'
+import { type MutationRangeSpecifier, MutationRangeSpecifierSchema } from './MutationRange.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 
@@ -136,10 +136,12 @@ const resolveAgainstBase = (basePath: string, pattern: string) => {
   return Boolean.match(normalized.startsWith('/'), {
     onTrue: () => normalized,
     onFalse: () =>
-      `${base}/${Boolean.match(normalized.startsWith('./'), {
-        onTrue: () => normalized.slice(2),
-        onFalse: () => normalized,
-      })}`,
+      `${base}/${
+        Boolean.match(normalized.startsWith('./'), {
+          onTrue: () => normalized.slice(2),
+          onFalse: () => normalized,
+        })
+      }`,
   })
 }
 
@@ -158,7 +160,12 @@ const hasHiddenSegment = (fileName: string, base: string) => {
   return relative.split('/').some((segment) => segment.startsWith('.'))
 }
 
-const isExcludedHiddenFile = (normalizedFile: string, base: string, allowHiddenFiles: boolean, patternHasDot: boolean) =>
+const isExcludedHiddenFile = (
+  normalizedFile: string,
+  base: string,
+  allowHiddenFiles: boolean,
+  patternHasDot: boolean,
+) =>
   Boolean.match(allowHiddenFiles, {
     onTrue: () => false,
     onFalse: () =>
@@ -296,11 +303,15 @@ const applyMutatePattern = (
     },
     onFalse: () => {
       const matched = filterMutatePatternPure(inputFileNames, pattern, basePath)
-      return HashMap.reduce(matched, selected, (inner, description, fileName) =>
-        Option.match(HashMap.get(inner, fileName), {
-          onNone: () => HashMap.set(inner, fileName, unionDescription(description, undefined)),
-          onSome: (existing) => HashMap.set(inner, fileName, unionDescription(description, existing)),
-        }))
+      return HashMap.reduce(
+        matched,
+        selected,
+        (inner, description, fileName) =>
+          Option.match(HashMap.get(inner, fileName), {
+            onNone: () => HashMap.set(inner, fileName, unionDescription(description, undefined)),
+            onSome: (existing) => HashMap.set(inner, fileName, unionDescription(description, existing)),
+          }),
+      )
     },
   })
 }
@@ -312,15 +323,19 @@ const intersectTarget = (
   basePath: string,
 ) => {
   const matched = filterMutatePatternPure(HashMap.keys(afterMutate), pattern, basePath)
-  return HashMap.reduce(matched, seen, (innerSeen, description, fileName) =>
-    Option.match(HashMap.get(afterMutate, fileName), {
-      onNone: () => innerSeen,
-      onSome: (current) => {
-        const intersected = intersectFileDescriptions(current, description)
-        const alreadySeen = Option.getOrElse(HashMap.get(innerSeen, fileName), () => undefined)
-        return HashMap.set(innerSeen, fileName, unionDescription(intersected, alreadySeen))
-      },
-    }))
+  return HashMap.reduce(
+    matched,
+    seen,
+    (innerSeen, description, fileName) =>
+      Option.match(HashMap.get(afterMutate, fileName), {
+        onNone: () => innerSeen,
+        onSome: (current) => {
+          const intersected = intersectFileDescriptions(current, description)
+          const alreadySeen = Option.getOrElse(HashMap.get(innerSeen, fileName), () => undefined)
+          return HashMap.set(innerSeen, fileName, unionDescription(intersected, alreadySeen))
+        },
+      }),
+  )
 }
 
 const restrictToTargets = (
@@ -363,7 +378,11 @@ const resolveFileDescriptionsPure = (
   })
 }
 
-const resolveTestFilesPure = (inputFileNames: readonly string[], testFilePatterns: readonly string[], basePath: string) =>
+const resolveTestFilesPure = (
+  inputFileNames: readonly string[],
+  testFilePatterns: readonly string[],
+  basePath: string,
+) =>
   Boolean.match(testFilePatterns.length === 0, {
     onTrue: (): readonly string[] => [],
     onFalse: () =>
@@ -725,7 +744,8 @@ const rangeLawHolds = (startLine: number, endLine: number, column: number) => {
     mutate: [{ start: { line: startLine - 1, column: startColumn }, end: { line: endLine - 1, column: endColumn } }],
   })
   const caseHolds = (pattern: string, startColumn: number, endColumn: number) =>
-    JSON.stringify(Option.getOrUndefined(mutationRangeOf(pattern))) === JSON.stringify(expectedSpanOf(startColumn, endColumn))
+    JSON.stringify(Option.getOrUndefined(mutationRangeOf(pattern))) ===
+      JSON.stringify(expectedSpanOf(startColumn, endColumn))
   return ([
     [`src/a.ts:${startLine}:${column}-${endLine}:${column}`, column, column],
     [`src/a.ts:${startLine}:${column}-${endLine}`, column, Number.MAX_SAFE_INTEGER],
@@ -793,4 +813,3 @@ if (import.meta.vitest !== void 0) {
     },
   )
 }
-

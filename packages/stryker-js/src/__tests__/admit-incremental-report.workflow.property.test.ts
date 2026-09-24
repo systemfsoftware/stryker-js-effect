@@ -14,7 +14,6 @@ import { IncrementalReportSchema } from '../IncrementalReport.schema.js'
 const EXPECTED_VERSION = '8.0.0'
 
 describe('admitIncrementalReport', () => {
-
   it.prop('∀r_Report_≡Decision', [IncrementalReportSchema], ([report]) => {
     const result = admitIncrementalReport(
       AdmitIncrementalReportCommand.make({ report, expectedVersion: EXPECTED_VERSION }),

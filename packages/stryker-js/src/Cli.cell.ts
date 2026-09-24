@@ -1,6 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   PluginFileUrl,
   StrykerCoverageAnalysis,
@@ -8,10 +8,7 @@ import {
   StrykerLogLevel,
   StrykerTempDirName,
 } from '@systemfsoftware/stryker-js-plugin-interface'
-import type {
-  PartialStrykerOptions,
-  StrykerOptions,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Bool from 'effect/Boolean'
 import * as Config from 'effect/Config'
@@ -20,8 +17,8 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type { PlatformError } from 'effect/PlatformError'
 import * as Path from 'effect/Path'
+import type { PlatformError } from 'effect/PlatformError'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -32,34 +29,37 @@ import * as Command from 'effect/unstable/cli/Command'
 import * as Flag from 'effect/unstable/cli/Flag'
 
 import { Admitted } from './admit-survivors-run.workflow.js'
-import { survivorsAdmissionCell } from './Survivors/Survivors.cell.js'
-import type { SurvivorsAdmissionAnswer, SurvivorsAdmissionInput } from './Survivors/mod.js'
-import type { SurvivorsRejection } from './Survivors/mod.js'
-import { CliRouteCommand, type CliRequest, type MergeReportsRequest } from './Cli.schema.js'
+import {
+  classifyRunOutcome,
+  RunExit,
+  type RunOutcomeDecision,
+  type RunOutcomeError,
+} from './classify-run-outcome.workflow.js'
+import { type CliRequest, CliRouteCommand, type MergeReportsRequest } from './Cli.schema.js'
 import {
   type ConfigFileInvalidError,
   type ConfigFileNotFoundError,
   type ConfigFileUnreadableError,
   type ConfigFileUnsupportedError,
 } from './ConfigError.schema.js'
-import { MachineConsole } from './reporting/machine-console.service.js'
-import { ErrorEnvelope, RunExitCode } from './reporting/run-failure.schema.js'
-import { type HostServices, type StrykerRun } from './run/host.service.js'
-import { RunEnvironment } from './run/RunEnvironment.service.js'
-import type { EnginePorts } from './run/StageServices.service.js'
-import { mutationTestCell } from './run/run-stages.cell.js'
-import {
-  routeCliRequest,
-} from './route-cli-request.workflow.js'
 import { mergeReportsCell } from './merge-reports.cell.js'
 import { MergeReportsFailed } from './merge-reports.schema.js'
-import { RunExit, classifyRunOutcome, type RunOutcomeDecision, type RunOutcomeError } from './classify-run-outcome.workflow.js'
-import { runOutcomeCommandOf } from './run-outcome-of-exit.js'
-import { RunEventDrain, type RunEventStreamPort, type RunEventStream } from './run-event-stream.service.js'
-import type { MutationTestDone } from './run/mutation-test.cell.js'
-import { StrykerError } from './stryker-error.schema.js'
 import type { OutputModeProbe } from './output-mode-probe.service.js'
 import type { ResolvedMode } from './output-mode.schema.js'
+import { MachineConsole } from './reporting/machine-console.service.js'
+import { ErrorEnvelope, RunExitCode } from './reporting/run-failure.schema.js'
+import { routeCliRequest } from './route-cli-request.workflow.js'
+import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
+import { runOutcomeCommandOf } from './run-outcome-of-exit.js'
+import { type HostServices, type StrykerRun } from './run/host.service.js'
+import type { MutationTestDone } from './run/mutation-test.cell.js'
+import { mutationTestCell } from './run/run-stages.cell.js'
+import { RunEnvironment } from './run/RunEnvironment.service.js'
+import type { EnginePorts } from './run/StageServices.service.js'
+import { StrykerError } from './stryker-error.schema.js'
+import type { SurvivorsAdmissionAnswer, SurvivorsAdmissionInput } from './Survivors/mod.js'
+import type { SurvivorsRejection } from './Survivors/mod.js'
+import { survivorsAdmissionCell } from './Survivors/Survivors.cell.js'
 
 interface CliEnvironment {
   readonly mode: ResolvedMode
@@ -80,7 +80,6 @@ type CliRead = (typeof CliRouteCommand)['Encoded'] & {
   readonly environment: CliEnvironment
   readonly options: PartialStrykerOptions
 }
-
 
 type CliAnswer = void | MutationTestDone
 
@@ -150,7 +149,7 @@ const runOptions = {
   ),
   incremental: Flag.map(optional(Flag.Boolean('incremental')), absentWhenFalse).pipe(
     Flag.withDescription(
-      'Enable \'incremental mode\'. Stryker will store results in a file and use that file to speed up the next --incremental run',
+      "Enable 'incremental mode'. Stryker will store results in a file and use that file to speed up the next --incremental run",
     ),
   ),
   allowEmpty: Flag.map(optional(Flag.Boolean('allowEmpty')), absentWhenFalse).pipe(
@@ -186,7 +185,7 @@ const runOptions = {
     .pipe(
       Flag.withAlias('t'),
       Flag.withDescription(
-        'With `testFiles` you can limit which test files are executed during mutation testing. When specified, only tests from these files will be run. This allows you to verify that a module\'s dedicated unit tests can kill all its mutants independently.',
+        "With `testFiles` you can limit which test files are executed during mutation testing. When specified, only tests from these files will be run. This allows you to verify that a module's dedicated unit tests can kill all its mutants independently.",
       ),
       Flag.map(splitOnComma),
       optional,
@@ -195,7 +194,7 @@ const runOptions = {
     .pipe(
       Flag.withAlias('b'),
       Flag.withDescription(
-        'Configure a build command to run after mutating the code, but before mutants are tested. This is generally used to transpile your code before testing. Only configure this if your test runner doesn\'t take care of this already and you\'re not using just-in-time transpiler like `babel/register` or `ts-node`.',
+        "Configure a build command to run after mutating the code, but before mutants are tested. This is generally used to transpile your code before testing. Only configure this if your test runner doesn't take care of this already and you're not using just-in-time transpiler like `babel/register` or `ts-node`.",
       ),
       optional,
     ),
@@ -343,7 +342,7 @@ const runOptions = {
     ),
   survivors: Flag.map(optional(Flag.Boolean('survivors')), absentWhenFalse).pipe(
     Flag.withDescription(
-      'Re-run only the mutants that survived a previous run. Admits against the previous run\'s mutation report (the `survivorsPriorReport` config option, default `reports/mutation-report.json`) and re-tests exactly the survivor set. Exits 2 with a remediation naming a full run when the report is missing, drifted, or the configuration changed; exits 0 with a null score when the report has no survivors.',
+      "Re-run only the mutants that survived a previous run. Admits against the previous run's mutation report (the `survivorsPriorReport` config option, default `reports/mutation-report.json`) and re-tests exactly the survivor set. Exits 2 with a remediation naming a full run when the report is missing, drifted, or the configuration changed; exits 0 with a null score when the report has no survivors.",
     ),
   ),
 }
@@ -633,9 +632,7 @@ const admissionCellOf = (answer: SurvivorsAdmissionAnswer, channel: CliRead) =>
     Match.exhaustive,
   )
 
-
-const runCellOf = (channel: CliRead) =>
-  Cell.fromEffect(runEffectOf(channel.environment, channel.options))
+const runCellOf = (channel: CliRead) => Cell.fromEffect(runEffectOf(channel.environment, channel.options))
 
 export const strykerCliCell = Cell.flatMap(
   cliRouteCell,
@@ -648,15 +645,13 @@ export const strykerCliCell = Cell.flatMap(
           parts: merge.parts,
           out: merge.out,
           packages: merge.packages,
-        })),
-      ),
+        }))),
       Match.tag('CliRunRequested', () => runCellOf(action.channel)),
       Match.tag('CliSurvivorsRequested', () =>
         Cell.andThen(
           Cell.mapInput(survivorsAdmissionCell, () => survivorsInputOf(action.channel)),
           (answer) => admissionCellOf(answer, action.channel),
-        ),
-      ),
+        )),
       Match.exhaustive,
     ),
 )

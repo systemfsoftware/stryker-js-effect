@@ -1,13 +1,4 @@
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
-import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
-import * as Context from 'effect/Context'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
-import * as Layer from 'effect/Layer'
-import * as Predicate from 'effect/Predicate'
-import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 import type {
   ArrayExpression,
   ArrowFunctionExpression,
@@ -42,9 +33,15 @@ import type {
   UpdateExpression,
   WhileStatement,
 } from '@systemfsoftware/stryker-ignorer-interface'
-import type { Location, Position } from './Location.schema.js'
-import { LineTable } from './Location.schema.js'
-import { Mutant as ApiMutant, MutantNotApplied, MutantSpanMissing } from './Mutant.schema.js'
+import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
+import * as Context from 'effect/Context'
+import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import {
   arrayExpression,
   arrowFunctionExpression,
@@ -67,6 +64,9 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.handle.js'
+import type { Location, Position } from './Location.schema.js'
+import { LineTable } from './Location.schema.js'
+import { Mutant as ApiMutant, MutantNotApplied, MutantSpanMissing } from './Mutant.schema.js'
 import { PrintFailed } from './print/PrintFailed.schema.js'
 import { SourceText } from './print/SourceText.schema.js'
 
@@ -439,9 +439,10 @@ const hasPropertyIn = <B>(node: object, key: string): node is Record<string, B> 
 
 const readPropertyOf = <B>(node: object, key: string): B | undefined =>
   Option.getOrUndefined(
-    Option.filter(Option.some(node), (candidate): candidate is Record<string, B> => hasPropertyIn<B>(candidate, key)).pipe(
-      Option.map((record) => record[key]),
-    ),
+    Option.filter(Option.some(node), (candidate): candidate is Record<string, B> => hasPropertyIn<B>(candidate, key))
+      .pipe(
+        Option.map((record) => record[key]),
+      ),
   )
 
 const propertyOf = <A, B>(node: A, key: string): B | undefined =>
@@ -455,13 +456,15 @@ const isIdentifier = (node: unknown): node is IdentifierReference => nodeType(no
 
 const isCallExpression = (node: Node): node is CallExpression => node.type === 'CallExpression'
 
-const arithmeticOperatorReplacements = Object.freeze({
-  '+': '-',
-  '-': '+',
-  '*': '/',
-  '/': '*',
-  '%': '*',
-} as const)
+const arithmeticOperatorReplacements = Object.freeze(
+  {
+    '+': '-',
+    '-': '+',
+    '*': '/',
+    '/': '*',
+    '%': '*',
+  } as const,
+)
 
 const ARITHMETIC_OPERATOR_KEYS: readonly string[] = Object.keys(arithmeticOperatorReplacements)
 
@@ -551,20 +554,22 @@ const hasMutableArrowBody = (body: BlockStatement | Expression): boolean =>
 const isUndefinedExpression = (node: BlockStatement | Expression): node is IdentifierReference =>
   node.type === 'Identifier' && node.name === 'undefined'
 
-const assignmentOperatorReplacements = Object.freeze({
-  '+=': '-=',
-  '-=': '+=',
-  '*=': '/=',
-  '/=': '*=',
-  '%=': '*=',
-  '<<=': '>>=',
-  '>>=': '<<=',
-  '&=': '|=',
-  '|=': '&=',
-  '&&=': '||=',
-  '||=': '&&=',
-  '??=': '&&=',
-} as const)
+const assignmentOperatorReplacements = Object.freeze(
+  {
+    '+=': '-=',
+    '-=': '+=',
+    '*=': '/=',
+    '/=': '*=',
+    '%=': '*=',
+    '<<=': '>>=',
+    '>>=': '<<=',
+    '&=': '|=',
+    '|=': '&=',
+    '&&=': '||=',
+    '||=': '&&=',
+    '??=': '&&=',
+  } as const,
+)
 
 const isStringLike = (value: unknown): value is TemplateLiteral | StringLiteral =>
   isTemplateLiteral(value) || isStringLiteral(value)
@@ -632,8 +637,7 @@ const hasConstructorInitialization = (constructor: MethodDefinition, context: Mu
 
 type ParameterProperty = { readonly type: 'TSParameterProperty' }
 
-const isParameterProperty = (param: unknown): param is ParameterProperty =>
-  nodeType(param) === 'TSParameterProperty'
+const isParameterProperty = (param: unknown): param is ParameterProperty => nodeType(param) === 'TSParameterProperty'
 
 const hasInitializedProperties = (context: MutatorContext): boolean => {
   const classBody = context.grandParent
@@ -727,8 +731,7 @@ const withEmptyConsequent = (switchCase: SwitchCase): SwitchCase => {
   return replacement
 }
 
-const isEmptyTestForStatement = (node: Node): node is ForStatement =>
-  node.type === 'ForStatement' && node.test === null
+const isEmptyTestForStatement = (node: Node): node is ForStatement => node.type === 'ForStatement' && node.test === null
 
 const isNonEmptySwitchCase = (node: Node): node is SwitchCase =>
   node.type === 'SwitchCase' && node.consequent.length > 0
@@ -816,11 +819,13 @@ const isEqualityBinary = (node: Node): node is EqualityBinary =>
 const mutatedEqualityOperators = (binary: EqualityBinary): readonly Node[] =>
   operators[binary.operator].map((operator) => withOperator(binary, operator))
 
-const logicalOperatorReplacements = Object.freeze({
-  '&&': '||',
-  '||': '&&',
-  '??': '&&',
-} as const)
+const logicalOperatorReplacements = Object.freeze(
+  {
+    '&&': '||',
+    '||': '&&',
+    '??': '&&',
+  } as const,
+)
 
 const LOGICAL_OPERATOR_KEYS: readonly string[] = Object.keys(logicalOperatorReplacements)
 
@@ -894,8 +899,7 @@ const methodCallMutants = (call: CallExpression): readonly Node[] =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isMethodMutation = (mutation: MethodMutation | undefined): mutation is MethodMutation =>
-  mutation !== undefined
+const isMethodMutation = (mutation: MethodMutation | undefined): mutation is MethodMutation => mutation !== undefined
 
 const methodMutation = (call: CallExpression): MethodMutation | undefined => {
   const callee = namedMethodCallee(call)
@@ -926,8 +930,7 @@ const isNotSuperMember = (member: NamedMember): boolean => !isSuperType(member.o
 
 const methodExpressionReplacement = (mutation: MethodMutation): Expression =>
   Match.value(mutation.newName).pipe(
-    Match.when(null, () =>
-      callExpression(cloneNode(mutation.callee.object), [], mutation.callee.optional === true)),
+    Match.when(null, () => callExpression(cloneNode(mutation.callee.object), [], mutation.callee.optional === true)),
     Match.orElse((newName) => renamedMethodCall(mutation, newName)),
   )
 
@@ -943,8 +946,7 @@ const renamedMethodCall = (mutation: MethodMutation, newName: string): Expressio
 const spreadFreeArguments = (args: ReadonlyArray<Expression | SpreadElement>): Expression[] =>
   args.filter(isNotSpreadElement).map((argument) => cloneNode(argument))
 
-const isNotSpreadElement = (node: Expression | SpreadElement): node is Expression =>
-  node.type !== 'SpreadElement'
+const isNotSpreadElement = (node: Expression | SpreadElement): node is Expression => node.type !== 'SpreadElement'
 
 const objectLiteralMutator: Mutator = (node) =>
   Match.value(node).pipe(
@@ -1128,8 +1130,7 @@ const unaryOperatorMutator: Mutator = (node) =>
 const isSupportedUnaryExpression = (node: Node): node is SupportedUnaryExpression =>
   isPrefixUnaryExpression(node) && isSupportedUnaryOperator(node.operator)
 
-const isPrefixUnaryExpression = (node: Node): node is UnaryExpression =>
-  node.type === 'UnaryExpression' && node.prefix
+const isPrefixUnaryExpression = (node: Node): node is UnaryExpression => node.type === 'UnaryExpression' && node.prefix
 
 const unaryOperatorReplacement = (unary: SupportedUnaryExpression): Expression => {
   const mutatedOperator = UnaryOperator[unary.operator]
@@ -1166,9 +1167,9 @@ export interface MutatorsShape {
   readonly toApi: (mutant: Mutant) => Result.Result<ApiMutant, MutantSpanMissing | PrintFailed | S.SchemaError>
 }
 
-export class Mutators
-  extends Context.Service<Mutators, MutatorsShape>()('@systemfsoftware/stryker-js-instrumenter/Mutator.service/Mutators')
-{
+export class Mutators extends Context.Service<Mutators, MutatorsShape>()(
+  '@systemfsoftware/stryker-js-instrumenter/Mutator.service/Mutators',
+) {
   static readonly layer: Layer.Layer<Mutators> = Layer.succeed(Mutators, {
     mutators: Object.freeze({
       ArithmeticOperator: arithmeticOperatorMutator,

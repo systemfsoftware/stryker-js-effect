@@ -13,6 +13,7 @@ import * as Path from 'effect/Path'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 
+import { type StrykerNamespace, type VitestRunnerOptions, VitestRunnerOptionsSchema } from './VitestRunner.schema.js'
 import {
   close,
   type HarnessKey,
@@ -22,11 +23,6 @@ import {
   type VitestRuntime,
 } from './VitestRuntime.handle.js'
 import { create, resolveVitest, type VitestResolver } from './VitestRuntime.resource.js'
-import {
-  type StrykerNamespace,
-  type VitestRunnerOptions,
-  VitestRunnerOptionsSchema,
-} from './VitestRunner.schema.js'
 
 /** Everything one worker's run of the vitest runner is configured with. */
 export interface VitestSessionInput {
@@ -57,7 +53,12 @@ const decodeOptions = (options: StrykerOptions): Effect.Effect<VitestRunnerOptio
     ),
   ).pipe(
     Effect.mapError((cause) =>
-      new TestRunnerFailed({ runnerName: 'vitest', phase: 'init', cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => '') })),
+      new TestRunnerFailed({
+        runnerName: 'vitest',
+        phase: 'init',
+        cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+      })
+    ),
   )
 
 export class VitestSession extends Context.Service<VitestSession, VitestSessionShape>()(
@@ -98,13 +99,16 @@ const assembleShape = (
   close: closeCurrent.pipe(Effect.provideService(FileSystem.FileSystem, fs)),
 })
 const closeOnShutdown = (created: Ref.Ref<VitestRuntime | undefined>) =>
-  Effect.flatMap(Ref.get(created), (self) =>
-    Option.match(Option.fromNullishOr(self), { onNone: () => Effect.void, onSome: close }))
+  Effect.flatMap(
+    Ref.get(created),
+    (self) => Option.match(Option.fromNullishOr(self), { onNone: () => Effect.void, onSome: close }),
+  )
 const buildRuntime = (
   input: VitestSessionInput,
   created: Ref.Ref<VitestRuntime | undefined>,
   platform: { readonly crypto: Crypto.Crypto; readonly fileSystem: FileSystem.FileSystem; readonly path: Path.Path },
-) => (vitestOptions: VitestRunnerOptions): Effect.Effect<VitestRuntime, TestRunnerFailed> =>
+) =>
+(vitestOptions: VitestRunnerOptions): Effect.Effect<VitestRuntime, TestRunnerFailed> =>
   create({
     projectRoot: input.sandboxDirectory,
     namespace: namespaceOf(input),
@@ -119,5 +123,7 @@ const buildRuntime = (
 const bailOf = (input: VitestSessionInput): number =>
   Boolean.match(input.options.disableBail, { onTrue: () => 0, onFalse: () => 1 })
 const namespaceOf = (input: VitestSessionInput): StrykerNamespace =>
-  Option.getOrElse(Option.liftPredicate(input.globalNamespace, S.is(S.Literals(['__stryker__', '__stryker2__']))), () =>
-    InstrumenterContext.NAMESPACE)
+  Option.getOrElse(
+    Option.liftPredicate(input.globalNamespace, S.is(S.Literals(['__stryker__', '__stryker2__']))),
+    () => InstrumenterContext.NAMESPACE,
+  )

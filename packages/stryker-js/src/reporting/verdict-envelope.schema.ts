@@ -3,8 +3,8 @@ import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-
 import {
   Metrics,
   MetricsSchema,
-  Percentage,
   type MutationTestResult,
+  Percentage,
   type Thresholds,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'

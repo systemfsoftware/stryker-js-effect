@@ -70,7 +70,9 @@ const formatStep = <A>(progress: FormatProgress<A>, part: string): FormatProgres
   Match.value(part).pipe(
     Match.when((candidate: string) => PLACEHOLDER_PART.test(candidate), (placeholder) =>
       consumePlaceholder(progress, placeholder)),
-    Match.orElse((literal) => appendLiteral(progress, literal)),
+    Match.orElse((literal) =>
+      appendLiteral(progress, literal)
+    ),
   )
 
 const formatTemplate = <A = unknown>(template: string, args: ReadonlyArray<A>): string => {
@@ -154,8 +156,7 @@ const makeCapturingConsole = (clock: Clock.Clock, buffers: MachineConsoleBuffers
   count: (label) => recordCount(buffers, label),
   countReset: (label) => buffers.counts.delete(consoleLabel(label)),
   debug: <A = unknown>(...args: ReadonlyArray<A>) => buffers.chunks.push(formatArgs(args)),
-  dir: <A = unknown, B = unknown>(item: A, _options?: Record<string, B>) =>
-    buffers.chunks.push(Formatter.format(item)),
+  dir: <A = unknown, B = unknown>(item: A, _options?: Record<string, B>) => buffers.chunks.push(Formatter.format(item)),
   dirxml: (item) => buffers.chunks.push(Formatter.format(item)),
   error: <A = unknown>(...args: ReadonlyArray<A>) => buffers.chunks.push(formatArgs(args)),
   group: () => {},

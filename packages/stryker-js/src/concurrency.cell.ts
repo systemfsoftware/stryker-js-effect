@@ -4,8 +4,8 @@ import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 
-import type { PrepareDone } from './run/prepare.cell.js'
 import { ResolveConcurrency, resolveConcurrency } from './resolve-concurrency.workflow.js'
+import type { PrepareDone } from './run/prepare.cell.js'
 
 const ASSUMED_PARALLELISM = 4
 

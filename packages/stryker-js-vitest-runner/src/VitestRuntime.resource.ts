@@ -12,7 +12,6 @@ import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
 import { type RawVitestRecord } from './vitest-run-command.schema.js'
-import { make, type VitestRuntime } from './VitestRuntime.handle.js'
 import {
   type ExportEntry,
   PackageManifest,
@@ -20,6 +19,7 @@ import {
   type TestRunnerPhase,
   type VitestRunnerOptions,
 } from './VitestRunner.schema.js'
+import { make, type VitestRuntime } from './VitestRuntime.handle.js'
 
 const STRYKER_SETUP_URL = new URL('./stryker-setup.mjs', import.meta.url)
 
@@ -159,19 +159,36 @@ export const resolveVitest: VitestResolver = (_dir) => {
     const resolveSpecifier = (specifier: string): Effect.Effect<string, TestRunnerFailed> =>
       Effect.try<string, TestRunnerFailed>({
         try: () => import.meta.resolve(specifier),
-        catch: (cause) => resolutionFailure(specifier, Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => '')),
+        catch: (cause) =>
+          resolutionFailure(
+            specifier,
+            Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+          ),
       })
     const vitestNodeUrl = yield* resolveSpecifier('vitest/node')
     const imported = yield* Effect.tryPromise({
       try: (): Promise<object> => import(vitestNodeUrl),
-      catch: (cause) => resolutionFailure('vitest/node', Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => '')),
+      catch: (cause) =>
+        resolutionFailure(
+          'vitest/node',
+          Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+        ),
     })
-    return yield* Option.match(Option.liftPredicate(Option.getOrUndefined(S.decodeUnknownOption(
-      S.Record(S.String, S.Unknown),
-    )(imported)), isVitestNodeModule), {
-      onNone: () => Effect.fail(resolutionFailure('vitest/node', 'Missing createVitest export on vitest/node module')),
-      onSome: (module) => Effect.succeed({ createVitest: module.createVitest }),
-    })
+    return yield* Option.match(
+      Option.liftPredicate(
+        Option.getOrUndefined(
+          S.decodeUnknownOption(
+            S.Record(S.String, S.Unknown),
+          )(imported),
+        ),
+        isVitestNodeModule,
+      ),
+      {
+        onNone: () =>
+          Effect.fail(resolutionFailure('vitest/node', 'Missing createVitest export on vitest/node module')),
+        onSome: (module) => Effect.succeed({ createVitest: module.createVitest }),
+      },
+    )
   })
   return primary.pipe(Effect.catchCause(() => fallback), Effect.catchDefect(() => fallback), Effect.orDie)
 }

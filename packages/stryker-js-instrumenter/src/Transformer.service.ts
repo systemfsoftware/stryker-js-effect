@@ -46,29 +46,22 @@ import {
   variableDeclaration,
   variableDeclarator,
 } from './Ast.handle.js'
-import type {
-  Ast,
-  AstByFormat,
-  ScriptAst,
-  SourceLocationInFile,
-  SpannedComment,
-  TemplateScript,
-} from './Ast.schema.js'
-import { AstFormat } from './Syntax.schema.js'
+import type { Ast, AstByFormat, ScriptAst, SourceLocationInFile, SpannedComment, TemplateScript } from './Ast.schema.js'
 import { type MutateDescription } from './Instrument.schema.js'
 import { LineTable, LineTableFromText, type Position } from './Location.schema.js'
 import { InstrumenterContext as ID } from './Mutant.schema.js'
 import {
-  Mutators,
-  type Mutant,
-  type MutatorsShape,
   type Mutable,
+  type Mutant,
   type MutatorContext,
   type MutatorOptions,
+  Mutators,
+  type MutatorsShape,
 } from './Mutator.service.js'
+import { ParseFailed } from './Parser.schema.js'
 import { Parser } from './Parser.service.js'
 import type { ParserError, ParserShape } from './Parser.service.js'
-import { ParseFailed } from './Parser.schema.js'
+import { AstFormat } from './Syntax.schema.js'
 import {
   CommentLocationMissing,
   DirectiveIncomplete,
@@ -119,14 +112,21 @@ export interface TransformerShape {
   readonly transform: Transform
 }
 
-export class Transformer
-  extends Context.Service<Transformer, TransformerShape>()('@systemfsoftware/stryker-js-instrumenter/Transformer.service/Transformer')
-{
+export class Transformer extends Context.Service<Transformer, TransformerShape>()(
+  '@systemfsoftware/stryker-js-instrumenter/Transformer.service/Transformer',
+) {
   static readonly layer: Layer.Layer<Transformer, ParserError, Parser | Mutators> = Layer.effect(
     Transformer,
-    Effect.flatMap(Parser, (parser) =>
-      Effect.flatMap(Mutators, (mutators) =>
-        Effect.map(instrumentationHeaderOf(parser), (header) => Transformer.of({ transform: transformOf(header, mutators) })))),
+    Effect.flatMap(
+      Parser,
+      (parser) =>
+        Effect.flatMap(
+          Mutators,
+          (mutators) =>
+            Effect.map(instrumentationHeaderOf(parser), (header) =>
+              Transformer.of({ transform: transformOf(header, mutators) })),
+        ),
+    ),
   )
 }
 
@@ -170,8 +170,7 @@ const findIgnoreReason = (
   rule: Rule,
   mutatorName: string,
   line: number,
-): string | undefined =>
-  Option.getOrUndefined(ignoreReasonIn(rule, mutatorName.toLowerCase(), line))
+): string | undefined => Option.getOrUndefined(ignoreReasonIn(rule, mutatorName.toLowerCase(), line))
 
 const ignoreReasonIn = (
   rule: Rule,
@@ -242,7 +241,11 @@ const processStrykerDirectives = (
   node: Node,
   allMutatorNames: readonly string[],
   originFileName: string,
-): { rule: Rule; warnings: readonly string[]; failure: Option.Option<DirectiveIncomplete | CommentLocationMissing> } => {
+): {
+  rule: Rule
+  warnings: readonly string[]
+  failure: Option.Option<DirectiveIncomplete | CommentLocationMissing>
+} => {
   const outcomes = Arr.map(attachedComments(node), parseStrykerDirective)
   const parsed = Arr.getSomes(outcomes)
   const directives = Arr.filterMap(parsed, (result) => result)
@@ -274,15 +277,18 @@ const strykerDirective = (
   match: RegExpExecArray,
   loc: LocatedComment['loc'],
 ): Result.Result<StrykerDirective, DirectiveIncomplete | CommentLocationMissing> =>
-  Result.flatMap(matchGroup(match, 1), (type) =>
-    Result.flatMap(matchGroup(match, 3), (names) =>
-      Result.map(commentLocation(loc), (located) => ({
-        type,
-        scope: match[2],
-        mutatorNames: names.split(',').map((mutator) => mutator.trim()),
-        reason: (match[4] ?? DEFAULT_REASON).trim(),
-        loc: located,
-      }))))
+  Result.flatMap(
+    matchGroup(match, 1),
+    (type) =>
+      Result.flatMap(matchGroup(match, 3), (names) =>
+        Result.map(commentLocation(loc), (located) => ({
+          type,
+          scope: match[2],
+          mutatorNames: names.split(',').map((mutator) => mutator.trim()),
+          reason: (match[4] ?? DEFAULT_REASON).trim(),
+          loc: located,
+        }))),
+  )
 
 const matchGroup = (match: RegExpExecArray, group: number): Result.Result<string, DirectiveIncomplete> =>
   Result.fromOption(Option.fromNullishOr(match[group]), () => DirectiveIncomplete.make())
@@ -395,7 +401,10 @@ const mutationCoverageSequenceExpression = (
 ): Expression => {
   const mutantIds = [...mutants].map((mutant) => stringLiteral(mutant.id))
   return sequenceExpression(
-    Arr.appendAll([callExpression(identifier(COVER_MUTANT_HELPER), mutantIds)], Option.toArray(Option.fromUndefinedOr(targetExpression))),
+    Arr.appendAll(
+      [callExpression(identifier(COVER_MUTANT_HELPER), mutantIds)],
+      Option.toArray(Option.fromUndefinedOr(targetExpression)),
+    ),
   )
 }
 
@@ -442,7 +451,12 @@ const switchCaseOf = (node: Node): Result.Result<Node & SwitchCaseShape, NodeKin
 const fileNameWithin = (basePath: string | undefined, fileName: string): string =>
   Option.getOrElse(Option.map(Option.fromUndefinedOr(basePath), (base) => relativeTo(base, fileName)), () => fileName)
 
-const placementLocation = (node: Node, lineTable: LineTable, basePath: string | undefined, fileName: string): PlacementSite => {
+const placementLocation = (
+  node: Node,
+  lineTable: LineTable,
+  basePath: string | undefined,
+  fileName: string,
+): PlacementSite => {
   const relativeFile = fileNameWithin(basePath, fileName)
   return Option.match(Option.fromNullishOr(spanOf(node)), {
     onNone: () => ({ fileName: relativeFile, line: undefined, column: undefined }),
@@ -631,8 +645,7 @@ const isCalleeParent = (path: TraversePath, parent: TraversePath): boolean => {
 const isNotACallOnTheNode = (member: MemberExpression, node: Node): boolean =>
   !(member.computed && member.property === node)
 
-const unwrapParenthesizedExpression = (node: Node): Node =>
-  Option.getOrElse(innerExpression(node), () => node)
+const unwrapParenthesizedExpression = (node: Node): Node => Option.getOrElse(innerExpression(node), () => node)
 
 interface ParenthesizedWrapper {
   readonly expression?: Node | null
@@ -722,8 +735,7 @@ const switchCaseMutantPlacer: MutantPlacer = {
                 nodeOfKind(mutant, appliedMutant, isSwitchCaseNode, 'a switch case'),
                 (replacement) => Result.succeed(replacement.consequent),
               ),
-              (consequent) =>
-                ifStatement(mutantTestExpression(mutant.id), blockStatement(consequent), current),
+              (consequent) => ifStatement(mutantTestExpression(mutant.id), blockStatement(consequent), current),
             )),
         Result.succeed(
           blockStatement([
@@ -867,7 +879,9 @@ const frozenContainer = <A = unknown>(value: A): Option.Option<A> =>
     return value
   })
 
-const freezableChildren = (value: Record<string, object | null | undefined>): readonly (object | null | undefined)[] => [
+const freezableChildren = (
+  value: Record<string, object | null | undefined>,
+): readonly (object | null | undefined)[] => [
   ...mapEntries(value),
   ...setItems(value),
   ...Object.values(value),
@@ -1019,8 +1033,7 @@ type PlacementMap = Map<Node, MutantsPlacement>
 
 const emptyAppliedMutants = (): Map<Mutant, Node> => new Map()
 
-const isMutateRangeList = (value: MutateDescription): value is readonly SourceLocationInFile[] =>
-  Array.isArray(value)
+const isMutateRangeList = (value: MutateDescription): value is readonly SourceLocationInFile[] => Array.isArray(value)
 
 const transformScript = (
   { root, originFileName, rawContent, offset, comments }: ScriptAst,
@@ -1065,8 +1078,7 @@ const transformScript = (
             onSome: (location) => ranges.every((range) => !locationOverlaps(range, location)),
           }),
       )
-    const shouldMutate = (path: TraversePath): boolean =>
-      mutateDescription === true || isInsideMutateRanges(path)
+    const shouldMutate = (path: TraversePath): boolean => mutateDescription === true || isInsideMutateRanges(path)
     const isInsideMutateRanges = (path: TraversePath): boolean =>
       Option.exists(
         mutateRanges(),
@@ -1079,9 +1091,7 @@ const transformScript = (
     const ignoreMessageFor = (node: Node, ancestors: readonly Node[]): string | undefined =>
       ignorerReason(node, ancestors)
     const ignorerReason = (node: Node, ancestors: readonly Node[]): string | undefined =>
-      options.ignorers.map((ignorer) => ignorer.shouldIgnore(node, ancestors)).find((reason) =>
-        reason !== undefined
-      )
+      options.ignorers.map((ignorer) => ignorer.shouldIgnore(node, ancestors)).find((reason) => reason !== undefined)
     const collectMutants = (path: TraversePath): Mutant[] =>
       mutablesFor(path).map((mutable) => collect(mutable, path))
         .filter((mutant) => mutant.ignoreReason === undefined)
@@ -1137,7 +1147,6 @@ const transformScript = (
         onTrue: () => `Ignored because of excluded mutation "${mutatorName}"`,
         onFalse: () => undefined,
       })
-
 
     traverse(make(root), {
       enter(path) {
@@ -1241,8 +1250,7 @@ const transformScript = (
         onTrue: () => undefined,
         onFalse: () => {
           Option.match(Option.fromNullishOr(path.find((ancestor) => placementMap.has(ancestor.node))), {
-            onNone: () =>
-              recordFailure(MutantsUnplaced.make({ mutants: JSON.stringify(mutantsToPlace, null, 2) })),
+            onNone: () => recordFailure(MutantsUnplaced.make({ mutants: JSON.stringify(mutantsToPlace, null, 2) })),
             onSome: (placementPath) =>
               Option.match(Option.fromNullishOr(placementMap.get(placementPath.node)), {
                 onNone: () => recordFailure(PlacementMissing.make({})),
@@ -1253,7 +1261,8 @@ const transformScript = (
                         placement.appliedMutants.set(mutant, applied)
                       },
                       onFailure: recordFailure,
-                    }))
+                    })
+                  )
                 },
               }),
           })

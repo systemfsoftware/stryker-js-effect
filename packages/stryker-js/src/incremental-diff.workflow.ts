@@ -7,11 +7,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { PreviousFilesSchema, PreviousTestFilesSchema } from './IncrementalDiff.schema.js'
-import type {
-  PreviousFileRecord,
-  PreviousMutantRecord,
-  PreviousTestFileRecord,
-} from './IncrementalDiff.schema.js'
+import type { PreviousFileRecord, PreviousMutantRecord, PreviousTestFileRecord } from './IncrementalDiff.schema.js'
 
 const REMEMBERED_STATUS: ReadonlySet<string> = new Set(['Killed', 'Survived', 'Timeout', 'NoCoverage', 'Ignored'])
 

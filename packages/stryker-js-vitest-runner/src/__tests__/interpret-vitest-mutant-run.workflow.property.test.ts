@@ -76,8 +76,8 @@ describe('interpretVitestMutantRun', () => {
         return false
       }
       const reasonReached = result.success.reason === S.encodeSync(HitLimitReason)({ count: hitCount, limit: hitLimit })
-      const reasonPrefixed =
-        result.success.reason !== undefined && result.success.reason.startsWith(HitLimitReasonPrefix.literal)
+      const reasonPrefixed = result.success.reason !== undefined &&
+        result.success.reason.startsWith(HitLimitReasonPrefix.literal)
       return carriesFamilyBrand(result.success) && result.success.tests.length === 0 && reasonReached && reasonPrefixed
     },
   )

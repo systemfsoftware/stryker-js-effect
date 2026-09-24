@@ -8,7 +8,7 @@ import * as Path from 'effect/Path'
 import { type Pipeable, Prototype } from 'effect/Pipeable'
 import type * as Scope from 'effect/Scope'
 
-import { close, type TSCompiler, make as makeTSCompiler } from './ts-compiler.handle.js'
+import { close, make as makeTSCompiler, type TSCompiler } from './ts-compiler.handle.js'
 
 const TypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSCompilerResource')
 export type TypeId = typeof TypeId

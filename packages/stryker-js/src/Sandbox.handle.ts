@@ -1,8 +1,8 @@
 import { Boolean, Predicate } from 'effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
-import * as Result from 'effect/Result'
 import type * as Path from 'effect/Path'
+import * as Result from 'effect/Result'
 
 import { StrykerError } from './stryker-error.schema.js'
 

@@ -1,11 +1,11 @@
 import { describe, it } from '@effect/vitest'
-import * as Arr from 'effect/Array'
-import * as Option from 'effect/Option'
 import {
-  FileResultDictionarySchema,
   type FileResult,
+  FileResultDictionarySchema,
   MetricsResultSchema,
 } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
+import * as Option from 'effect/Option'
 
 import { MetricsResultFromReport } from '../reporting/metrics-from-report.schema.js'
 
@@ -37,9 +37,15 @@ describe('metrics-from-report', () => {
     return tree.metrics.totalMutants === inputMutantCountOf(files)
   })
 
-  it.prop('∀files_MetricsResultFromReport_PartitionsCountsOverChildren', [FileResultDictionarySchema], ([files]) =>
-    partitionsCountsOverChildren(MetricsResultFromReport.fromFiles(files)))
+  it.prop(
+    '∀files_MetricsResultFromReport_PartitionsCountsOverChildren',
+    [FileResultDictionarySchema],
+    ([files]) => partitionsCountsOverChildren(MetricsResultFromReport.fromFiles(files)),
+  )
 
-  it.prop('∀files_MetricsResultFromReport_SortsChildResultsByLocale', [FileResultDictionarySchema], ([files]) =>
-    everyLevelSorted(MetricsResultFromReport.fromFiles(files)))
+  it.prop(
+    '∀files_MetricsResultFromReport_SortsChildResultsByLocale',
+    [FileResultDictionarySchema],
+    ([files]) => everyLevelSorted(MetricsResultFromReport.fromFiles(files)),
+  )
 })

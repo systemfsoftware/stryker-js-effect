@@ -21,20 +21,25 @@ import * as S from 'effect/Schema'
 import type { Node, SourceFile } from 'typescript/unstable/ast'
 import { SyntaxKind } from 'typescript/unstable/ast'
 import type { FileSystem as TSFileSystem } from 'typescript/unstable/fs'
-import { API, DiagnosticCategory, type Diagnostic, type Program, type Snapshot } from 'typescript/unstable/sync'
+import { API, type Diagnostic, DiagnosticCategory, type Program, type Snapshot } from 'typescript/unstable/sync'
 
 import type { NodeDecodedShape } from './CheckMutants.schema.js'
-import { CompilerFailed, type CompilerError, NodeNotInGraph, UnsupportedTypeScriptVersionError } from './Compiler.schema.js'
-import { TsConfigNotFoundError, TsConfigParseError, TsConfigSchema, type TsConfig } from './Tsconfig.schema.js'
+import {
+  type CompilerError,
+  CompilerFailed,
+  NodeNotInGraph,
+  UnsupportedTypeScriptVersionError,
+} from './Compiler.schema.js'
 import {
   getFile,
   make as makeTSFiles,
   mutateFile,
   resetFile,
   setOverrides,
-  tsFileSystem,
   type TSFiles,
+  tsFileSystem,
 } from './ts-files.handle.js'
+import { type TsConfig, TsConfigNotFoundError, TsConfigParseError, TsConfigSchema } from './Tsconfig.schema.js'
 
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSCompiler')
 export type TypeId = typeof TypeId
@@ -505,8 +510,10 @@ const sourceMapSourcesOf = (rt: TSCompilerRuntime, content: string): Option.Opti
 
 const sourceMappedFileName = (rt: TSCompilerRuntime, declarationFileName: string): Option.Option<string> =>
   Option.flatMap(
-    Option.flatMap(readFileText(rt, declarationFileName), (content) =>
-      Option.liftPredicate(getSourceMappingURL(content), isNonEmptyString)),
+    Option.flatMap(
+      readFileText(rt, declarationFileName),
+      (content) => Option.liftPredicate(getSourceMappingURL(content), isNonEmptyString),
+    ),
     (reference) => {
       const sourceMapFileName = normalizeFileName(
         rt.pathService.resolve(rt.pathService.dirname(declarationFileName), reference),
@@ -558,15 +565,25 @@ const linkImport = (rt: TSCompilerRuntime, sourceFiles: SourceFiles, fileName: s
 
 const buildGraph = (rt: TSCompilerRuntime, programs: readonly Program[]) => {
   const state = Ref.getUnsafe(rt.state)
-  Arr.forEach(programs, (program) =>
-    Arr.forEach(program.getSourceFileNames(), (fileName) => registerGraphFile(state.sourceFiles, fileName)))
+  Arr.forEach(
+    programs,
+    (program) =>
+      Arr.forEach(program.getSourceFileNames(), (fileName) => registerGraphFile(state.sourceFiles, fileName)),
+  )
   Arr.forEach(Array.from(state.sourceFiles), ([fileName]) => {
-    Option.map(sourceFileOf(programs, fileName), (sourceFile) =>
-      Arr.forEach(importsOf(sourceFile), (specifier) => linkImport(rt, state.sourceFiles, fileName, specifier)))
+    Option.map(
+      sourceFileOf(programs, fileName),
+      (sourceFile) =>
+        Arr.forEach(importsOf(sourceFile), (specifier) => linkImport(rt, state.sourceFiles, fileName, specifier)),
+    )
   })
 }
 
-const fileNode = (fileName: string, children: ReadonlyArray<FileNode>): FileNode => ({ children, fileName, parents: [] })
+const fileNode = (fileName: string, children: ReadonlyArray<FileNode>): FileNode => ({
+  children,
+  fileName,
+  parents: [],
+})
 
 const graphNodesOf = (sourceFiles: SourceFiles): GraphNodes => {
   const entries = Arr.fromIterable(sourceFiles)
@@ -576,7 +593,10 @@ const graphNodesOf = (sourceFiles: SourceFiles): GraphNodes => {
   return HashMap.fromIterable(
     Arr.map(entries, ([fileName, file]): readonly [string, FileNode] => [
       fileName,
-      fileNode(fileName, Arr.filterMap(Arr.fromIterable(file.imports), (imported) => keepSome(HashMap.get(leaves, imported)))),
+      fileNode(
+        fileName,
+        Arr.filterMap(Arr.fromIterable(file.imports), (imported) => keepSome(HashMap.get(leaves, imported))),
+      ),
     ]),
   )
 }
@@ -595,7 +615,11 @@ const ancestorFileNamesOf = (node: FileNode, visited: HashSet.HashSet<string>): 
   Boolean.match(HashSet.has(visited, node.fileName), {
     onTrue: () => visited,
     onFalse: () =>
-      Arr.reduce(node.parents, HashSet.add(visited, node.fileName), (names, parent) => ancestorFileNamesOf(parent, names)),
+      Arr.reduce(
+        node.parents,
+        HashSet.add(visited, node.fileName),
+        (names, parent) => ancestorFileNamesOf(parent, names),
+      ),
   })
 
 const nodeOf = (fileName: string, nodes: GraphNodes): Result.Result<FileNode, NodeNotInGraph> =>
@@ -637,9 +661,15 @@ const takeRound = (
   remaining: ReadonlyArray<CheckerMutantWire>,
   nodes: GraphNodes,
 ): Result.Result<MutantRound, NodeNotInGraph> =>
-  Arr.reduce(remaining, Result.succeed(emptyRound), (round, mutant): Result.Result<MutantRound, NodeNotInGraph> =>
-    Result.flatMap(round, (current) =>
-      Result.map(nodeOf(mutant.fileName, nodes), (node) => joinRound(current, mutant, node))))
+  Arr.reduce(
+    remaining,
+    Result.succeed(emptyRound),
+    (round, mutant): Result.Result<MutantRound, NodeNotInGraph> =>
+      Result.flatMap(
+        round,
+        (current) => Result.map(nodeOf(mutant.fileName, nodes), (node) => joinRound(current, mutant, node)),
+      ),
+  )
 
 interface Grouping {
   readonly groups: ReadonlyArray<ReadonlyArray<string>>
@@ -661,8 +691,11 @@ const takeNextRound = (nodes: GraphNodes) => (grouping: Grouping) =>
 const roundsOf = (inside: ReadonlyArray<CheckerMutantWire>, nodes: GraphNodes) => {
   const pending = Arr.dedupe(inside)
   return Result.map(
-    Arr.reduce(pending, Result.succeed(emptyGrouping(pending)), (grouping, _mutant): Result.Result<Grouping, NodeNotInGraph> =>
-      Result.flatMap(grouping, takeNextRound(nodes))),
+    Arr.reduce(
+      pending,
+      Result.succeed(emptyGrouping(pending)),
+      (grouping, _mutant): Result.Result<Grouping, NodeNotInGraph> => Result.flatMap(grouping, takeNextRound(nodes)),
+    ),
     (grouping) => grouping.groups,
   )
 }
@@ -680,12 +713,18 @@ const groupMutants = (
       const outside = Arr.filter(mutants, (mutant) =>
         Option.isNone(HashMap.get(nodes, normalizeFileName(mutant.fileName))))
       return Boolean.match(inside.length === 0, {
-        onTrue: () => Result.succeed(Arr.map(mutants, (mutant) => [mutant.id])),
+        onTrue: () =>
+          Result.succeed(Arr.map(mutants, (mutant) => [mutant.id])),
         onFalse: () =>
           Result.map(roundsOf(inside, nodes), (created) =>
             Boolean.match(outside.length === 0, {
-              onTrue: () => created,
-              onFalse: () => [Arr.map(outside, (mutant) => mutant.id), ...created],
+              onTrue: () =>
+                created,
+              onFalse: () => [
+                Arr.map(outside, (mutant) =>
+                  mutant.id),
+                ...created,
+              ],
             })),
       })
     },
@@ -797,12 +836,17 @@ export const groups: {
     mutants: readonly CheckerMutantWire[],
     prioritizePerformanceOverAccuracy: boolean,
   ): Effect.Effect<ReadonlyArray<ReadonlyArray<string>>, CompilerError | NodeNotInGraph> =>
-    Effect.flatMap(nodes(self), (graphNodes) =>
-      Effect.fromResult(groupMutants(mutants, graphNodes, prioritizePerformanceOverAccuracy))),
+    Effect.flatMap(
+      nodes(self),
+      (graphNodes) => Effect.fromResult(groupMutants(mutants, graphNodes, prioritizePerformanceOverAccuracy)),
+    ),
 )
 
 export const getLineAndCharacterOfPosition: {
-  (fileName: string, position: number): (self: TSCompiler) => Effect.Effect<{ line: number; character: number } | undefined>
+  (
+    fileName: string,
+    position: number,
+  ): (self: TSCompiler) => Effect.Effect<{ line: number; character: number } | undefined>
   (
     self: TSCompiler,
     fileName: string,
@@ -820,7 +864,9 @@ export const getLineAndCharacterOfPosition: {
       (programs) =>
         Option.getOrUndefined(
           Option.map(
-            Arr.head(Arr.filterMap(programs, (program) => keepSome(Option.fromUndefinedOr(program.getSourceFile(fileName))))),
+            Arr.head(
+              Arr.filterMap(programs, (program) => keepSome(Option.fromUndefinedOr(program.getSourceFile(fileName)))),
+            ),
             (found) => found.getLineAndCharacterOfPosition(position),
           ),
         ),
@@ -849,7 +895,11 @@ if (import.meta.vitest !== void 0) {
   const MutantsSchema = S.Array(IndexSchema).check(S.isMaxLength(6))
 
   const fileNameOf = (index: number) => `src/file-${index}.ts`
-  const linkedNode = (fileName: string, parents: ReadonlyArray<FileNode>): FileNode => ({ children: [], fileName, parents })
+  const linkedNode = (fileName: string, parents: ReadonlyArray<FileNode>): FileNode => ({
+    children: [],
+    fileName,
+    parents,
+  })
 
   const graphOfEdges = (edges: ReadonlyArray<readonly [number, number]>): GraphNodes => {
     const size = 1 + Arr.reduce(edges, 0, (largest, [child, parent]) => Math.max(largest, child, parent))
@@ -903,19 +953,26 @@ if (import.meta.vitest !== void 0) {
     Boolean.match(prioritize, {
       onFalse: () => Arr.map(mutants, (mutant) => [mutant.id]),
       onTrue: () => {
-        const inside = Arr.filter(mutants, (mutant) =>
-          Option.isSome(HashMap.get(nodes, normalizeFileName(mutant.fileName))))
-        const outside = Arr.filter(mutants, (mutant) =>
-          Option.isNone(HashMap.get(nodes, normalizeFileName(mutant.fileName))))
+        const inside = Arr.filter(
+          mutants,
+          (mutant) => Option.isSome(HashMap.get(nodes, normalizeFileName(mutant.fileName))),
+        )
+        const outside = Arr.filter(
+          mutants,
+          (mutant) => Option.isNone(HashMap.get(nodes, normalizeFileName(mutant.fileName))),
+        )
         return Boolean.match(inside.length === 0, {
           onTrue: () => Arr.map(mutants, (mutant) => [mutant.id]),
           onFalse: () => {
             const assignments = Arr.reduce(
-              Arr.filterMap(inside, (mutant) =>
-                Result.map(keepSome(HashMap.get(nodes, normalizeFileName(mutant.fileName))), (node) => ({
-                  id: mutant.id,
-                  node,
-                }))),
+              Arr.filterMap(
+                inside,
+                (mutant) =>
+                  Result.map(keepSome(HashMap.get(nodes, normalizeFileName(mutant.fileName))), (node) => ({
+                    id: mutant.id,
+                    node,
+                  })),
+              ),
               noAssignments,
               (groups, candidate) =>
                 Option.match(
@@ -925,8 +982,12 @@ if (import.meta.vitest !== void 0) {
                     onSome: (index) =>
                       Arr.map(groups, (group, at) =>
                         Boolean.match(at === index, {
-                          onTrue: () => ({ ids: [...group.ids, candidate.id], members: [...group.members, candidate.node] }),
-                          onFalse: () => group,
+                          onTrue: () => ({
+                            ids: [...group.ids, candidate.id],
+                            members: [...group.members, candidate.node],
+                          }),
+                          onFalse: () =>
+                            group,
                         })),
                     onNone: () => [...groups, { ids: [candidate.id], members: [candidate.node] }],
                   },
@@ -937,19 +998,23 @@ if (import.meta.vitest !== void 0) {
               onTrue: () => ids,
               onFalse: () => [Arr.map(outside, (mutant) => mutant.id), ...ids],
             })
-          }
+          },
         })
       },
     })
 
-  it.prop('∀graph_Mutants_≡ReferenceFirstFit', [EdgesSchema, MutantsSchema, S.Boolean], ([edges, fileIndexes, prioritize]) => {
-    const nodes = graphOfEdges(edges)
-    const mutants = mutantsOf(fileIndexes)
-    return Result.match(groupMutants(mutants, nodes, prioritize), {
-      onFailure: () => false,
-      onSuccess: (grouped) => Equal.equals(grouped, firstFitGrouping(mutants, nodes, prioritize)),
-    })
-  })
+  it.prop(
+    '∀graph_Mutants_≡ReferenceFirstFit',
+    [EdgesSchema, MutantsSchema, S.Boolean],
+    ([edges, fileIndexes, prioritize]) => {
+      const nodes = graphOfEdges(edges)
+      const mutants = mutantsOf(fileIndexes)
+      return Result.match(groupMutants(mutants, nodes, prioritize), {
+        onFailure: () => false,
+        onSuccess: (grouped) => Equal.equals(grouped, firstFitGrouping(mutants, nodes, prioritize)),
+      })
+    },
+  )
 
   it.prop('∀graph_Mutants_≡Partition', [EdgesSchema, MutantsSchema, S.Boolean], ([edges, fileIndexes, prioritize]) => {
     const nodes = graphOfEdges(edges)
@@ -973,10 +1038,17 @@ if (import.meta.vitest !== void 0) {
       Arr.map(mutants, (mutant): readonly [string, CheckerMutantWire] => [mutant.id, mutant]),
     )
     const pairs = Arr.flatMap(groupedOf(mutants, nodes, true), (ids) => {
-      const members = Arr.filterMap(ids, (id) =>
-        keepSome(Option.flatMap(HashMap.get(byId, id), (mutant) => HashMap.get(nodes, normalizeFileName(mutant.fileName)))))
-      return Arr.flatMap(members, (left, index) =>
-        Arr.map(Arr.drop(members, index + 1), (right): readonly [FileNode, FileNode] => [left, right]))
+      const members = Arr.filterMap(
+        ids,
+        (id) =>
+          keepSome(
+            Option.flatMap(HashMap.get(byId, id), (mutant) => HashMap.get(nodes, normalizeFileName(mutant.fileName))),
+          ),
+      )
+      return Arr.flatMap(
+        members,
+        (left, index) => Arr.map(Arr.drop(members, index + 1), (right): readonly [FileNode, FileNode] => [left, right]),
+      )
     })
     return Arr.every(pairs, ([left, right]) => !relatedNodes(left, right))
   })

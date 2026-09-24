@@ -1,7 +1,7 @@
+import { SchemaGetter, SchemaIssue, SchemaTransformation } from 'effect'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as S from 'effect/Schema'
-import { SchemaGetter, SchemaIssue, SchemaTransformation } from 'effect'
 export const TraceparentHeader = S.Literal('traceparent')
 export const TracestateHeader = S.Literal('tracestate')
 export const TraceContextPartsSchema = S.Struct({
@@ -49,14 +49,12 @@ const TRACEPARENT_FIELD_COUNT = 4
 
 const fieldAt = (fields: readonly string[], index: number) => fields[index] ?? ''
 
-const isNonZeroHex = (pattern: RegExp, value: string) =>
-  pattern.test(value) && !ALL_ZERO.test(value)
+const isNonZeroHex = (pattern: RegExp, value: string) => pattern.test(value) && !ALL_ZERO.test(value)
 
 const acceptsFieldCount = (version: string, count: number) =>
   version !== CURRENT_VERSION || count === TRACEPARENT_FIELD_COUNT
 
-const isKnownVersion = (version: string) =>
-  HEX_VERSION.test(version) && version !== FORBIDDEN_VERSION
+const isKnownVersion = (version: string) => HEX_VERSION.test(version) && version !== FORBIDDEN_VERSION
 
 const isWellFormedTraceparent = (value: string) => {
   const fields = value.split('-')
@@ -79,8 +77,9 @@ const partsOf = (value: string) => {
   }
 }
 
-const formatOf = (parts: { readonly version: string; readonly traceId: string; readonly spanId: string; readonly traceFlags: number }) =>
-  `${parts.version}-${parts.traceId}-${parts.spanId}-${(parts.traceFlags & 0xff).toString(16).padStart(2, '0')}`
+const formatOf = (
+  parts: { readonly version: string; readonly traceId: string; readonly spanId: string; readonly traceFlags: number },
+) => `${parts.version}-${parts.traceId}-${parts.spanId}-${(parts.traceFlags & 0xff).toString(16).padStart(2, '0')}`
 
 const malformedTraceparent = (value: string) =>
   new SchemaIssue.InvalidValue({ message: 'expected a W3C traceparent: version-traceId-spanId-flags' }, value)
@@ -100,4 +99,3 @@ export const Traceparent = S.String.pipe(
     SchemaTransformation.makeTransformation({ decode: decodeParts, encode: encodeText }),
   ),
 )
-

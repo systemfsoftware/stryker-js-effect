@@ -5,15 +5,15 @@ import {
   type ReporterFactory,
   type StrykerOptions,
 } from '@systemfsoftware/stryker-js-plugin-interface'
-import type * as Cause from 'effect/Cause'
 import * as Array from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
-import { dual } from 'effect/Function'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import { dual } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
 import * as HashSet from 'effect/HashSet'
 import * as Layer from 'effect/Layer'
@@ -31,21 +31,19 @@ import { PhaseEntered } from '../run-events.service.js'
 import { RunEvents } from '../run-events.service.js'
 
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { PluginLoadFailedError, PluginNotFoundError } from '../PluginsError.schema.js'
 import {
   type EvaluatorPluginDescriptor,
   IgnorerModuleSchema,
-  PluginModuleSchema,
-  SchemaValidationContributionSchema,
   type LoadedPlugins,
   type PluginDescriptor,
   type PluginKind,
+  PluginModuleSchema,
   type PluginSource,
+  SchemaValidationContributionSchema,
 } from '../Plugins.schema.js'
-import type { ReadProjectDone } from '../read-project.cell.js'
+import { PluginLoadFailedError, PluginNotFoundError } from '../PluginsError.schema.js'
 import type { Project } from '../Project.schema.js'
-import { Reporter } from '../reporter.service.js'
-import { AnsiCode } from '../reporting/ansi.schema.js'
+import type { ReadProjectDone } from '../read-project.cell.js'
 import {
   attachReporterFactories,
   type AttachReporterInput,
@@ -56,15 +54,21 @@ import {
   validateReporterNames,
   withPhaseSpan,
 } from '../reporter-stream.service.js'
+import { Reporter } from '../reporter.service.js'
+import { AnsiCode } from '../reporting/ansi.schema.js'
 import { PrepareError, StageError } from '../Run.schema.js'
 import { TemporaryDirectory } from '../Sandbox.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { forkCoreSchema, importModule, validateOptions } from './load-config.cell.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
 import { planPrepare, PrepareDecoded } from './plan-prepare.workflow.js'
+import {
+  ConfiguredPluginName,
+  resolveConfiguredPlugin,
+  WorkerSpawnCommand,
+} from './resolve-configured-plugin.workflow.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
-import { ConfiguredPluginName, resolveConfiguredPlugin, WorkerSpawnCommand } from './resolve-configured-plugin.workflow.js'
 
 export interface PrepareDone {
   readonly project: Project
@@ -231,7 +235,9 @@ const moduleIgnorers = (module: object): Result.Result<readonly Ignorer[] | unde
     Match.orElse((): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> => Result.succeed(undefined)),
   )
 
-const hasValidationSchemaContribution = (module: object): module is S.Schema.Type<typeof SchemaValidationContributionSchema> =>
+const hasValidationSchemaContribution = (
+  module: object,
+): module is S.Schema.Type<typeof SchemaValidationContributionSchema> =>
   S.is(SchemaValidationContributionSchema)(module)
 
 const moduleSchemaContribution = (module: object): ValidationSchemaProperties | undefined =>
@@ -267,9 +273,7 @@ const describedContributionsOf = (
 ): Effect.Effect<Option.Option<PluginContributions>, PluginLoadFailedError> =>
   Match.value(hasContribution(contributions)).pipe(
     Match.when(true, () => Effect.succeed(Option.some(contributions))),
-    Match.orElse(() =>
-      Effect.as(warnUndescribedPluginModule(descriptor), Option.none<PluginContributions>()),
-    ),
+    Match.orElse(() => Effect.as(warnUndescribedPluginModule(descriptor), Option.none<PluginContributions>())),
   )
 
 const describeLoadedPlugin = (
@@ -277,8 +281,7 @@ const describeLoadedPlugin = (
   module: object,
 ): Effect.Effect<Option.Option<PluginContributions>, PluginLoadFailedError> =>
   Result.match(pluginContributionsOf(module), {
-    onFailure: (cause) =>
-      Effect.as(failPluginLoad(descriptor, cause), Option.none<PluginContributions>()),
+    onFailure: (cause) => Effect.as(failPluginLoad(descriptor, cause), Option.none<PluginContributions>()),
     onSuccess: (contributions) => describedContributionsOf(descriptor, contributions),
   })
 
@@ -319,7 +322,7 @@ const loadPlugins = (
             Option.match(plugin, {
               onNone: () => undefined,
               onSome: (contributions) => ({ ...contributions, moduleName: resolved.specifier }),
-            }),
+            })
           ),
         ),
       { concurrency: 'unbounded' },
@@ -431,7 +434,11 @@ const spawnPluginReporterFactory = (
         ),
       ),
       (missing) =>
-        StageError.make({ stage: 'prepare', reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
+        StageError.make({
+          stage: 'prepare',
+          reason: missing.reason,
+          cause: PluginNotFoundError.make({ descriptor: missing.descriptor }),
+        }),
     )
     const client = yield* spawnReporterWorker({
       entrypoint: entry.entrypoint,

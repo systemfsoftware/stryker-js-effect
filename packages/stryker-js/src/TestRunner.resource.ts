@@ -2,8 +2,8 @@ import { type FileDescriptions } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
-  isCustomTestRunner,
   type DryRunOptions,
+  isCustomTestRunner,
   TestRunnerFailed,
   TestRunnerRpcs,
 } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -28,10 +28,10 @@ import {
 import type { PooledTestRunnerError } from './TestRunner.schema.js'
 import { isVmRunner, vmTestRunner } from './VmRunner.resource.js'
 import { VmRunner } from './VmRunner.service.js'
-import type { IdGeneratorShape } from './Worker.service.js'
-import type { WorkerBootError } from './Worker.schema.js'
-import { WorkerLauncher } from './WorkerLauncher.service.js'
 import { makeWorkerClient } from './worker-client.resource.js'
+import type { WorkerBootError } from './Worker.schema.js'
+import type { IdGeneratorShape } from './Worker.service.js'
+import { WorkerLauncher } from './WorkerLauncher.service.js'
 
 export interface ChildProcessTestRunnerParams {
   readonly options: StrykerOptions
@@ -40,8 +40,6 @@ export interface ChildProcessTestRunnerParams {
   readonly workerEntrypoint: string
   readonly idGenerator: IdGeneratorShape
 }
-
-
 
 export interface TestRunnerBuildContext {
   readonly options: StrykerOptions
@@ -132,7 +130,6 @@ export const makeChildProcessTestRunner = (
     })
   })
 
-
 const commandRunnerEffect = (
   context: TestRunnerBuildContext,
 ): Effect.Effect<PooledTestRunner, PooledTestRunnerError, ChildProcessSpawner.ChildProcessSpawner> =>
@@ -143,7 +140,11 @@ const commandRunnerEffect = (
 const inProcessRunner = (
   context: TestRunnerBuildContext,
 ): Option.Option<
-  Effect.Effect<PooledTestRunner, PooledTestRunnerError, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | VmRunner>
+  Effect.Effect<
+    PooledTestRunner,
+    PooledTestRunnerError,
+    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | VmRunner
+  >
 > =>
   Match.value(context.options.testRunner).pipe(
     Match.when(isCommandRunner, () => Option.some(commandRunnerEffect(context))),
@@ -197,8 +198,13 @@ export const buildTestRunner: {
     ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | VmRunner | WorkerLauncher
   > =>
     Option.match(inProcessRunner(context), {
-      onSome: (inProcess: Effect.Effect<PooledTestRunner, PooledTestRunnerError, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | VmRunner>) =>
-        inProcess,
+      onSome: (
+        inProcess: Effect.Effect<
+          PooledTestRunner,
+          PooledTestRunnerError,
+          ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | VmRunner
+        >,
+      ) => inProcess,
       onNone: (): Effect.Effect<
         PooledTestRunner,
         PooledTestRunnerError | ChildRunnerError,

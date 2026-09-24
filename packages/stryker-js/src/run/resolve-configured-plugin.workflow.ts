@@ -93,8 +93,11 @@ const decide = (command: WorkerSpawnCommand): Result.Result<WorkerSpawnResolved,
         (worker) => worker.name.toLowerCase() === configured.name.toLowerCase(),
         configured.name,
       )),
-    Match.tag('ConfiguredPluginModulePath', (configured) =>
-      resolvedSpawnOf(command, (worker) => worker.modulePath === configured.modulePath, configured.modulePath)),
+    Match.tag(
+      'ConfiguredPluginModulePath',
+      (configured) =>
+        resolvedSpawnOf(command, (worker) => worker.modulePath === configured.modulePath, configured.modulePath),
+    ),
     Match.exhaustive,
   )
 

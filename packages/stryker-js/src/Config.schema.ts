@@ -8,7 +8,6 @@ export const ImportedModuleSchema = S.Struct({
   default: S.optional(S.Unknown),
 })
 
-
 export class ReadConfigCommand extends S.TaggedClass<ReadConfigCommand>()('ReadConfigCommand', {
   cliOptions: S.Record(S.String, S.Unknown),
   basePath: S.String,

@@ -10,7 +10,7 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import { spanOf } from './Ast.handle.js'
-import type { Ast, HtmlAst, ScriptAst, SvelteAst, SpannedComment } from './Ast.schema.js'
+import type { Ast, HtmlAst, ScriptAst, SpannedComment, SvelteAst } from './Ast.schema.js'
 import {
   type FileDescription,
   FileSchema,
@@ -26,7 +26,12 @@ import { Parser, type ParserError, type ParserShape } from './Parser.service.js'
 import { PrintFailed } from './print/PrintFailed.schema.js'
 import { SourceText } from './print/SourceText.schema.js'
 import { AstFormat } from './Syntax.schema.js'
-import { type MutantCollector, Transformer, type TransformerOptions, type TransformerShape } from './Transformer.service.js'
+import {
+  type MutantCollector,
+  Transformer,
+  type TransformerOptions,
+  type TransformerShape,
+} from './Transformer.service.js'
 
 export interface File extends FileDescription {
   name: string
@@ -58,10 +63,9 @@ export interface InstrumentShape {
   }
 }
 
-export class Instrument
-  extends Context.Service<Instrument, InstrumentShape>()(
-    '@systemfsoftware/stryker-js-instrumenter/Instrument.service/Instrument',
-  ) {
+export class Instrument extends Context.Service<Instrument, InstrumentShape>()(
+  '@systemfsoftware/stryker-js-instrumenter/Instrument.service/Instrument',
+) {
   static readonly layer: Layer.Layer<Instrument, ParserError, Parser | Transformer | Mutators> = Layer.effect(
     Instrument,
     Effect.gen(function*() {
@@ -116,7 +120,8 @@ export const disableTypeChecks = (file: File): Effect.Effect<File, InstrumentErr
         Effect.provide(
           Effect.flatMap(Instrument, (instrument) => instrument.disableTypeChecks(file)),
           context,
-        )),
+        )
+      ),
     ),
   )
 
@@ -136,11 +141,18 @@ const withDisabledTypeChecking = (file: File, ast: Ast): Effect.Effect<File> =>
   Match.value(ast).pipe(
     Match.when({ format: 'js' }, (script) => Effect.succeed({ ...file, content: disableTypeCheckingInScript(script) })),
     Match.when({ format: 'ts' }, (script) => Effect.succeed({ ...file, content: disableTypeCheckingInScript(script) })),
-    Match.when({ format: 'tsx' }, (script) => Effect.succeed({ ...file, content: disableTypeCheckingInScript(script) })),
-    Match.when({ format: 'html' }, (html) =>
-      Effect.map(disableTypeCheckingInHtml(html), (content) => ({ ...file, content }))),
-    Match.when({ format: 'svelte' }, (svelte) =>
-      Effect.map(disableTypeCheckingInSvelte(svelte), (content) => ({ ...file, content }))),
+    Match.when(
+      { format: 'tsx' },
+      (script) => Effect.succeed({ ...file, content: disableTypeCheckingInScript(script) }),
+    ),
+    Match.when(
+      { format: 'html' },
+      (html) => Effect.map(disableTypeCheckingInHtml(html), (content) => ({ ...file, content })),
+    ),
+    Match.when(
+      { format: 'svelte' },
+      (svelte) => Effect.map(disableTypeCheckingInSvelte(svelte), (content) => ({ ...file, content })),
+    ),
     Match.exhaustive,
   )
 
@@ -260,12 +272,15 @@ const removeRanges = (text: string, ranges: readonly DirectiveRange[]): string =
 }
 
 const tryParseTSDirective = (comment: SpannedComment) =>
-  Option.flatMap(Option.fromNullishOr(commentDirectiveRegEx.exec(comment.value)), (match) =>
-    Option.flatMap(Option.fromNullishOr(match[1]), (directivePrefix) =>
-      Option.map(Option.fromNullishOr(match[2]), (directiveName) => {
-        const startPos = comment.start + directivePrefix.length + 2
-        return { startPos, endPos: startPos + directiveName.length + 1 }
-      })))
+  Option.flatMap(
+    Option.fromNullishOr(commentDirectiveRegEx.exec(comment.value)),
+    (match) =>
+      Option.flatMap(Option.fromNullishOr(match[1]), (directivePrefix) =>
+        Option.map(Option.fromNullishOr(match[2]), (directiveName) => {
+          const startPos = comment.start + directivePrefix.length + 2
+          return { startPos, endPos: startPos + directiveName.length + 1 }
+        })),
+  )
 
 const toOneBasedLineNumber = (range: MutateDescription): MutateDescription =>
   Match.value(range).pipe(
@@ -274,7 +289,8 @@ const toOneBasedLineNumber = (range: MutateDescription): MutateDescription =>
       locations.map(({ start, end }) => ({
         start: { column: start.column, line: start.line + 1 },
         end: { column: end.column, line: end.line + 1 },
-      }))),
+      }))
+    ),
   )
 
 const isIgnorer = (value: unknown): value is Ignorer =>
@@ -291,8 +307,7 @@ const toTransformerOptions = (options: InstrumenterOptions): TransformerOptions 
 
 const AST_SHAPE = ['format', 'root'] as const
 
-const isAst = (value: unknown): value is Ast =>
-  Predicate.isObject(value) && AST_SHAPE.every((key) => key in value)
+const isAst = (value: unknown): value is Ast => Predicate.isObject(value) && AST_SHAPE.every((key) => key in value)
 
 type FileSchemaType = typeof FileSchema.Type
 
@@ -305,7 +320,6 @@ const printedFile = (file: FileSchemaType, ast: Ast): Result.Result<readonly Fil
         onSome: (rendered) => Result.succeed([{ name: file.name, mutate: file.mutate, content: rendered.text }]),
       }),
   })
-
 
 const instrumentWith = (
   files: readonly File[],
@@ -365,7 +379,8 @@ export const instrument: {
           Effect.provide(
             Effect.flatMap(Instrument, (instrument) => instrument.instrument(files, options, basePath)),
             context,
-          )),
+          )
+        ),
       ),
     ),
 )

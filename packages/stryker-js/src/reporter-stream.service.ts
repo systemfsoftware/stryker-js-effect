@@ -303,8 +303,7 @@ export const spawnReporterWorker = (
 const warnEventDropped = (attachment: ReporterAttachment): Effect.Effect<void> =>
   Boolean.match(attachment.latch.state === 'detached', {
     onTrue: () => Effect.void,
-    onFalse: () =>
-      Effect.logWarning(`Reporter "${attachment.name}" stream closed before an event could be delivered.`),
+    onFalse: () => Effect.logWarning(`Reporter "${attachment.name}" stream closed before an event could be delivered.`),
   })
 
 const REPORTER_STALL_TIMEOUT = Duration.seconds(30)
@@ -345,8 +344,11 @@ export const offerReporterEvent: {
 } = dual(
   2,
   (stage: ReporterStage, event: ReporterEvent): Effect.Effect<void, never> =>
-    Effect.flatMap(stageAttachments(stage), (attachments) =>
-      Effect.forEach(attachments, (attachment) => deliverReporterEvent(attachment, event), { discard: true })),
+    Effect.flatMap(
+      stageAttachments(stage),
+      (attachments) =>
+        Effect.forEach(attachments, (attachment) => deliverReporterEvent(attachment, event), { discard: true }),
+    ),
 )
 
 export const offerTerminalReport: {

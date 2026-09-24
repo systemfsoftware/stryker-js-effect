@@ -15,12 +15,12 @@ import {
   admitCheckerAnswer,
   CheckerAnsweredUnrequested,
   CheckerCommand,
-  CheckResultDecision,
-  CheckerSkippedRequested,
   type CheckerContractBroken,
+  CheckerSkippedRequested,
+  CheckResultDecision,
 } from '../admit-checker-answer.workflow.js'
-import { checkerMutantsSkipped } from './checker.metrics.js'
 import { type CheckerCrash, type CheckerResourceService } from './Checker.handle.js'
+import { checkerMutantsSkipped } from './checker.metrics.js'
 import { CheckerMutantFromMutant, UndescribableMutant } from './Checker.schema.js'
 
 interface GroupPartition {
@@ -218,8 +218,7 @@ const selectedFromLookup = (plans: readonly MutantRunPlan[], lookup: WireLookup)
             onSome: Result.fail,
             onNone: () => wireRecordOf(plan.mutant),
           }),
-      }),
-    ),
+      })),
   )
   return { wire, undescribable }
 }
@@ -355,7 +354,7 @@ const checkGroupedCell = groupCell.pipe(
     Cell.mapInput(
       Cell.collect(checkCell, (perGroup) => perGroup.flat()),
       (input: CheckerRequest) => groups.map((group) => ({ ...input, plans: group })),
-    ),
+    )
   ),
 )
 

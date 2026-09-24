@@ -34,10 +34,8 @@ const mergeNested = <A = unknown>(
     onSome: (overrideRecord) => mergeRecordsOf(base, overrideRecord),
   })
 
-const hasUsableMember =
-  (key: string) =>
-  <A>(merged: MergedConfigRecord<A>): boolean =>
-    merged.hasOwnProperty(key) && merged[key] !== undefined
+const hasUsableMember = (key: string) => <A>(merged: MergedConfigRecord<A>): boolean =>
+  merged.hasOwnProperty(key) && merged[key] !== undefined
 
 const ownValueOf = <A = unknown>(
   merged: MergedConfigRecord<A>,

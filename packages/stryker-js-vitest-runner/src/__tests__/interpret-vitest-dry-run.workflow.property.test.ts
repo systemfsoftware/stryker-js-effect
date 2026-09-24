@@ -2,15 +2,8 @@ import { describe, it } from '@effect/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import {
-  type FailedTestResult,
-  type TestResult,
-} from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  DryRunComplete,
-  DryRunExternalError,
-  interpretVitestDryRun,
-} from '../interpret-vitest-dry-run.workflow.js'
+import { type FailedTestResult, type TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import { DryRunComplete, DryRunExternalError, interpretVitestDryRun } from '../interpret-vitest-dry-run.workflow.js'
 import { VitestDryRunCommand } from '../vitest-run-command.schema.js'
 
 const VITEST_DRY_RUN_FAMILY = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestDryRun')
@@ -31,7 +24,6 @@ const withTests = (
   })
 
 describe('interpretVitestDryRun', () => {
-
   it.prop(
     '→t_FailedTest_=Complete',
     [

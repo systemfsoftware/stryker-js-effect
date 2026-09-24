@@ -50,8 +50,11 @@ describe('FileMatcher', () => {
     return matcher.matches(pathServiceOf(), literal)
   })
 
-  it.prop('∀p_Path_FalsePatternRefuses', [pathArb], ([fileName]) =>
-    FileMatcher.make({ pattern: false, allowHiddenFiles: true }).matches(pathServiceOf(), fileName) === false
+  it.prop(
+    '∀p_Path_FalsePatternRefuses',
+    [pathArb],
+    ([fileName]) =>
+      FileMatcher.make({ pattern: false, allowHiddenFiles: true }).matches(pathServiceOf(), fileName) === false,
   )
 
   it.prop('∀pe_Extension_TruePatternMatchesListedExtension', [strictSegmentArb, proseArb], ([segment, extension]) => {
@@ -60,14 +63,16 @@ describe('FileMatcher', () => {
     const extensionsOf = (path: string) => path.split('.').slice(1)
     return matcher.matches(pathService, `/x/y/${segment}.${extension}`) ===
       extensionsOf(`/x/y/${segment}.${extension}`).some((present) =>
-        ['js', 'ts', 'jsx', 'tsx', 'html', 'vue', 'mjs', 'mts', 'cts', 'cjs'].includes(present))
+        ['js', 'ts', 'jsx', 'tsx', 'html', 'vue', 'mjs', 'mts', 'cts', 'cjs'].includes(present)
+      )
   })
 
   it.prop('∀ps_Span_StarStarSpansSegmentsStarDoesNot', [strictSegmentArb], ([segment]) => {
     const pathService = pathServiceOf()
     const star = FileMatcher.make({ pattern: `/x/*/${segment}`, allowHiddenFiles: true })
     const starStar = FileMatcher.make({ pattern: `/x/**/${segment}`, allowHiddenFiles: true })
-    return starStar.matches(pathService, `/x/y/z/${segment}`) && star.matches(pathService, `/x/y/z/${segment}`) === false
+    return starStar.matches(pathService, `/x/y/z/${segment}`) &&
+      star.matches(pathService, `/x/y/z/${segment}`) === false
   })
 })
 

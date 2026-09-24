@@ -106,7 +106,7 @@ const testFilesOf = (report: schema.MutationTestResult): Record<string, schema.T
 
 const testFileById = (testFiles: Record<string, schema.TestFile>): TestFileById => {
   const entries = Object.entries(testFiles).flatMap(([fileName, testFile]): TestFileById =>
-    testFile.tests.map((test): readonly [string, string] => [test.id, fileName]),
+    testFile.tests.map((test): readonly [string, string] => [test.id, fileName])
   )
   return entries
 }
@@ -117,10 +117,8 @@ const idsOf = (testIds: readonly string[] | undefined): readonly string[] =>
 const fileNameOf = (fileById: TestFileById, testId: string): Option.Option<string> =>
   Option.map(Array.findLast(fileById, ([id]) => id === testId), ([, fileName]) => fileName)
 
-const keepReal =
-  (fileById: TestFileById) =>
-  (testId: string): ReadonlyArray<string> =>
-    Option.match(fileNameOf(fileById, testId), { onNone: () => [], onSome: (fileName) => [fileName] })
+const keepReal = (fileById: TestFileById) => (testId: string): ReadonlyArray<string> =>
+  Option.match(fileNameOf(fileById, testId), { onNone: () => [], onSome: (fileName) => [fileName] })
 
 const realFiles = (testIds: readonly string[], fileById: TestFileById): ReadonlyArray<string> =>
   Array.dedupe(testIds.flatMap(keepReal(fileById)))
@@ -282,7 +280,10 @@ const categoryOf = (entry: ContributionEntry): 'sole' | 'exempt' | 'unjudged' =>
   )
 
 const countsOf = (inScope: readonly ContributionEntry[]): readonly string[] => [
-  ...partOf(inScope.filter((entry) => categoryOf(entry) === 'sole').length, 'judged (kill a mutant nothing else kills)'),
+  ...partOf(
+    inScope.filter((entry) => categoryOf(entry) === 'sole').length,
+    'judged (kill a mutant nothing else kills)',
+  ),
   ...partOf(
     inScope.filter((entry) => categoryOf(entry) === 'exempt').length,
     'exempted (cover a kill attributed to no test file)',
@@ -396,7 +397,8 @@ const decisionOf = (judgement: Judgement): Result.Result<TestContributionDecisio
       Result.succeed(
         NoKillCredited.make({
           failed: true as const,
-          message: `This run credited no kill to any test file, so no test file's contribution to it can be measured. Until that is fixed the ${judgement.inScope.length} file(s) matching ${judgement.matches} are unjudged, not cleared.`,
+          message:
+            `This run credited no kill to any test file, so no test file's contribution to it can be measured. Until that is fixed the ${judgement.inScope.length} file(s) matching ${judgement.matches} are unjudged, not cleared.`,
           contribution: judgement.contribution,
           toothless: judgement.toothless,
         }),
@@ -406,7 +408,10 @@ const decisionOf = (judgement: Judgement): Result.Result<TestContributionDecisio
       Result.succeed(
         JointlyDeletable.make({
           failed: true as const,
-          message: `Deleting these ${judgement.toothless.length} test file(s) would leave every mutant just as dead (${PRECISION}):\n${bulletedFiles(judgement.toothless)}`,
+          message:
+            `Deleting these ${judgement.toothless.length} test file(s) would leave every mutant just as dead (${PRECISION}):\n${
+              bulletedFiles(judgement.toothless)
+            }`,
           contribution: judgement.contribution,
           toothless: judgement.toothless,
         }),
@@ -415,7 +420,10 @@ const decisionOf = (judgement: Judgement): Result.Result<TestContributionDecisio
       Result.succeed(
         NotJointlyDeletable.make({
           failed: true as const,
-          message: `Deleting these ${judgement.toothless.length} test file(s) together would not leave every mutant just as dead: some mutant only they kill would be resurrected (${PRECISION}). Each is individually redundant, but the joint claim is not made on this evidence:\n${bulletedFiles(judgement.toothless)}`,
+          message:
+            `Deleting these ${judgement.toothless.length} test file(s) together would not leave every mutant just as dead: some mutant only they kill would be resurrected (${PRECISION}). Each is individually redundant, but the joint claim is not made on this evidence:\n${
+              bulletedFiles(judgement.toothless)
+            }`,
           contribution: judgement.contribution,
           toothless: judgement.toothless,
         }),

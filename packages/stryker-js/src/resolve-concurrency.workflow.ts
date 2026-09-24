@@ -48,11 +48,11 @@ const { ceil, floor, max, round } = Math
 
 const percentageOf = (text: string) =>
   Option.map(
-    Option.flatMap(Option.fromNullishOr(PERCENTAGE_OPTION.exec(text)), (match) =>
-      Option.fromNullishOr(match[1])),
+    Option.flatMap(Option.fromNullishOr(PERCENTAGE_OPTION.exec(text)), (match) => Option.fromNullishOr(match[1])),
     (digits) => Number.parseInt(digits, 10),
   )
-const percentageTotal = (percentage: number, availableParallelism: number) => max(1, round((availableParallelism * percentage) / 100))
+const percentageTotal = (percentage: number, availableParallelism: number) =>
+  max(1, round((availableParallelism * percentage) / 100))
 
 const defaultedTotal = (availableParallelism: number) =>
   Boolean.match(availableParallelism > 4, {

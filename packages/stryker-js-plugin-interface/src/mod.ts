@@ -13,9 +13,9 @@ export type {
   RunOptions,
 } from '@systemfsoftware/stryker-js-instrumenter'
 export {
-  type CheckResult,
   CheckerFailed,
   CheckerMutantWire,
+  type CheckResult,
   CheckResultSchema,
   CheckStatus,
   type FailedCheckResult,
@@ -33,7 +33,6 @@ export {
   WallClockTimeoutReason,
 } from './mutant-timeout-reason.schema.js'
 
-export { CheckerRpcs, ReporterRpcs, TestRunnerRpcs } from './PluginRpcs.service.js'
 export {
   type BoundaryError,
   BoundaryErrorSchema,
@@ -53,6 +52,7 @@ export {
   type WorkerPluginSpawn,
   WorkerPluginSpawnSchema,
 } from './Plugin.schema.js'
+export { CheckerRpcs, ReporterRpcs, TestRunnerRpcs } from './PluginRpcs.service.js'
 export * from './Report.schema.js'
 export * from './ReporterEvent.schema.js'
 export {
@@ -91,12 +91,7 @@ export type {
 } from './stryker-options.schema.js'
 export * from './TestRunner.schema.js'
 export * from './TestRunner.service.js'
-export {
-  TraceContextPartsSchema,
-  Traceparent,
-  TraceparentHeader,
-  TracestateHeader,
-} from './TraceContext.schema.js'
+export { TraceContextPartsSchema, Traceparent, TraceparentHeader, TracestateHeader } from './TraceContext.schema.js'
 export type { TraceContextParts } from './TraceContext.schema.js'
 export { TraceContextReference } from './TraceContext.service.js'
 export { PropagatedTrace, TraceContextMiddleware, type TracedRpc } from './TraceContextRpc.service.js'

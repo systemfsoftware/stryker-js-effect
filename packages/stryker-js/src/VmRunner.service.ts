@@ -24,4 +24,6 @@ export interface VmPlatform {
   readonly vm: VmModule
 }
 
-export class VmRunner extends Context.Service<VmRunner, VmPlatform>()('@systemfsoftware/stryker-js/VmRunner.service/VmRunner') {}
+export class VmRunner
+  extends Context.Service<VmRunner, VmPlatform>()('@systemfsoftware/stryker-js/VmRunner.service/VmRunner')
+{}

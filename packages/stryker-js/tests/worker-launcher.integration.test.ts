@@ -1,8 +1,8 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import {
   ChildProcessCrashedError,
-  ClassifyWorkerExitCommand,
   classifyWorkerExit,
+  ClassifyWorkerExitCommand,
   type ClassifyWorkerExitDecision,
   makeWorkerClient,
   OutOfMemoryError,

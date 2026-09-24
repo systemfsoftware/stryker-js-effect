@@ -19,7 +19,7 @@ import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 
 import { ALL_TESTS_ID, ALL_TESTS_NAME } from './command-runner.resource.js'
-import { InterpretDryRunResultCommand, interpretDryRunResult } from './interpret-dry-run-result.workflow.js'
+import { interpretDryRunResult, InterpretDryRunResultCommand } from './interpret-dry-run-result.workflow.js'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
 import { VmRunner } from './VmRunner.service.js'
 import type { VmPlatform, VmScript } from './VmRunner.service.js'
@@ -118,7 +118,8 @@ const resultFromRun = (failureMessage: string | undefined, timeSpentMs: number):
 
 const isPlainObject = <A = unknown>(value: unknown): value is Record<string, A> => Predicate.isObject(value)
 
-const descriptorValue = <A>(descriptor: TypedPropertyDescriptor<A> | undefined) => Option.fromNullishOr(descriptor?.value)
+const descriptorValue = <A>(descriptor: TypedPropertyDescriptor<A> | undefined) =>
+  Option.fromNullishOr(descriptor?.value)
 const createHostNamespace = <A = unknown>(): Record<string, A> => {
   const created: Record<string, A> = {}
   Object.defineProperty(globalThis, InstrumenterContext.NAMESPACE, {
@@ -186,9 +187,12 @@ const runInFreshContext = (platform: VmPlatform, compiled: CompiledTests, active
 const elapsedSince = (startedAt: number) => Effect.map(Clock.currentTimeMillis, (now) => now - startedAt)
 
 const runOnce = (platform: VmPlatform, compiled: CompiledTests, activeMutantId: string | undefined) =>
-  Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
-    Effect.flatMap(runInFreshContext(platform, compiled, activeMutantId), (failure) =>
-      Effect.map(elapsedSince(startedAt), (elapsedMs) => resultFromRun(failure, elapsedMs))))
+  Effect.flatMap(
+    Clock.currentTimeMillis,
+    (startedAt) =>
+      Effect.flatMap(runInFreshContext(platform, compiled, activeMutantId), (failure) =>
+        Effect.map(elapsedSince(startedAt), (elapsedMs) => resultFromRun(failure, elapsedMs))),
+  )
 
 export const vmTestRunner = (
   config: VmTestRunnerConfig,
@@ -199,10 +203,14 @@ export const vmTestRunner = (
     const compiled = yield* Ref.make<Option.Option<CompiledTests>>(Option.none())
 
     const compiledTests = (testFiles: readonly string[]) =>
-      Effect.flatMap(Ref.get(compiled), Option.match({
-        onNone: () => Effect.tap(compileTests(platform, fs, testFiles), (tests) => Ref.set(compiled, Option.some(tests))),
-        onSome: Effect.succeed,
-      }))
+      Effect.flatMap(
+        Ref.get(compiled),
+        Option.match({
+          onNone: () =>
+            Effect.tap(compileTests(platform, fs, testFiles), (tests) => Ref.set(compiled, Option.some(tests))),
+          onSome: Effect.succeed,
+        }),
+      )
 
     const run = (testFiles: readonly string[], activeMutantId: string | undefined) =>
       Effect.flatMap(compiledTests(testFiles), (tests) => runOnce(platform, tests, activeMutantId))
@@ -224,9 +232,13 @@ export const vmTestRunner = (
             Result.match(decided, {
               onFailure: (failure) => Effect.fail(failure),
               onSuccess: (decision) => Effect.succeed(decision.asResult),
-            })),
-          Effect.catchTag('TestRunnerFailed', (failure): Effect.Effect<MutantRunResult> =>
-            Effect.succeed({ status: 'error', errorMessage: failure.cause })),
+            })
+          ),
+          Effect.catchTag(
+            'TestRunnerFailed',
+            (failure): Effect.Effect<MutantRunResult> =>
+              Effect.succeed({ status: 'error', errorMessage: failure.cause }),
+          ),
         ),
     })
   })

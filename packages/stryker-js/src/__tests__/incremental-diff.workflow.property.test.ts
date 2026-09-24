@@ -9,13 +9,8 @@ import {
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import {
-  incrementalDiff,
-  IncrementalDiffCommand,
-  MutantRemembered,
-  MutantToRun,
-} from '../incremental-diff.workflow.js'
 import { EphemeralStatusSchema, RememberedStatusSchema } from '../../tests/__fixtures__/incremental-diff-law.schema.js'
+import { incrementalDiff, IncrementalDiffCommand, MutantRemembered, MutantToRun } from '../incremental-diff.workflow.js'
 
 const mutantOf = (id: string, line: number) =>
   Mutant.make({
@@ -53,7 +48,6 @@ const forceCommandOf = (mutants: ReadonlyArray<Mutant>) =>
   })
 
 describe('incrementalDiff', () => {
-
   it.prop('∀ids_Force_AllToRunInInputOrder', [S.Array(S.NonEmptyString)], ([ids]) => {
     const mutants = ids.map((id, index) => mutantOf(id, index))
     const result = incrementalDiff(forceCommandOf(mutants))
@@ -66,7 +60,12 @@ describe('incrementalDiff', () => {
     )
   })
 
-  it.prop('∀ilt_StableFile_RememberedCarriesPreviousFields', [S.NonEmptyString, RememberedStatusSchema, S.Finite, PositionSchema.fields.line], ([
+  it.prop('∀ilt_StableFile_RememberedCarriesPreviousFields', [
+    S.NonEmptyString,
+    RememberedStatusSchema,
+    S.Finite,
+    PositionSchema.fields.line,
+  ], ([
     id,
     status,
     testsCompleted,
@@ -100,59 +99,71 @@ describe('incrementalDiff', () => {
     )
   })
 
-  it.prop('∀il_EphemeralStatus_ToRun', [S.NonEmptyString, EphemeralStatusSchema, PositionSchema.fields.line], ([id, status, line]) => {
-    const mutant = mutantOf(id, line)
-    const previous = previousMutantOf(mutant, status, line)
-    const result = incrementalDiff(
-      IncrementalDiffCommand.make({
-        currentMutants: [mutant],
-        relativeFileByMutantId: { [mutant.id]: mutant.fileName },
-        previousFiles: { [mutant.fileName]: { source: mutant.fileName, mutants: [previous] } },
-        previousTestFiles: {},
-        currentRelativeFiles: { [mutant.fileName]: mutant.fileName },
-        testIdsByRelativeFile: {},
-        coveringTestFilesByMutantId: {},
-        force: false,
-      }),
-    )
-    return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
-  })
+  it.prop(
+    '∀il_EphemeralStatus_ToRun',
+    [S.NonEmptyString, EphemeralStatusSchema, PositionSchema.fields.line],
+    ([id, status, line]) => {
+      const mutant = mutantOf(id, line)
+      const previous = previousMutantOf(mutant, status, line)
+      const result = incrementalDiff(
+        IncrementalDiffCommand.make({
+          currentMutants: [mutant],
+          relativeFileByMutantId: { [mutant.id]: mutant.fileName },
+          previousFiles: { [mutant.fileName]: { source: mutant.fileName, mutants: [previous] } },
+          previousTestFiles: {},
+          currentRelativeFiles: { [mutant.fileName]: mutant.fileName },
+          testIdsByRelativeFile: {},
+          coveringTestFilesByMutantId: {},
+          force: false,
+        }),
+      )
+      return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
+    },
+  )
 
-  it.prop('∀il_ChangedSourceFile_ToRun', [S.NonEmptyString, RememberedStatusSchema, PositionSchema.fields.line], ([id, status, line]) => {
-    const mutant = mutantOf(id, line)
-    const previous = previousMutantOf(mutant, status, line)
-    const result = incrementalDiff(
-      IncrementalDiffCommand.make({
-        currentMutants: [mutant],
-        relativeFileByMutantId: { [mutant.id]: mutant.fileName },
-        previousFiles: { [mutant.fileName]: { source: `${mutant.fileName}~previous`, mutants: [previous] } },
-        previousTestFiles: {},
-        currentRelativeFiles: { [mutant.fileName]: mutant.fileName },
-        testIdsByRelativeFile: {},
-        coveringTestFilesByMutantId: {},
-        force: false,
-      }),
-    )
-    return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
-  })
+  it.prop(
+    '∀il_ChangedSourceFile_ToRun',
+    [S.NonEmptyString, RememberedStatusSchema, PositionSchema.fields.line],
+    ([id, status, line]) => {
+      const mutant = mutantOf(id, line)
+      const previous = previousMutantOf(mutant, status, line)
+      const result = incrementalDiff(
+        IncrementalDiffCommand.make({
+          currentMutants: [mutant],
+          relativeFileByMutantId: { [mutant.id]: mutant.fileName },
+          previousFiles: { [mutant.fileName]: { source: `${mutant.fileName}~previous`, mutants: [previous] } },
+          previousTestFiles: {},
+          currentRelativeFiles: { [mutant.fileName]: mutant.fileName },
+          testIdsByRelativeFile: {},
+          coveringTestFilesByMutantId: {},
+          force: false,
+        }),
+      )
+      return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
+    },
+  )
 
-  it.prop('∀il_UnshiftedPreviousKey_ToRun', [S.NonEmptyString, RememberedStatusSchema, PositionSchema.fields.line], ([id, status, line]) => {
-    const mutant = mutantOf(id, line)
-    const previous = { ...previousMutantOf(mutant, status, line), location: mutant.location }
-    const result = incrementalDiff(
-      IncrementalDiffCommand.make({
-        currentMutants: [mutant],
-        relativeFileByMutantId: { [mutant.id]: mutant.fileName },
-        previousFiles: { [mutant.fileName]: { source: mutant.fileName, mutants: [previous] } },
-        previousTestFiles: {},
-        currentRelativeFiles: { [mutant.fileName]: mutant.fileName },
-        testIdsByRelativeFile: {},
-        coveringTestFilesByMutantId: {},
-        force: false,
-      }),
-    )
-    return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
-  })
+  it.prop(
+    '∀il_UnshiftedPreviousKey_ToRun',
+    [S.NonEmptyString, RememberedStatusSchema, PositionSchema.fields.line],
+    ([id, status, line]) => {
+      const mutant = mutantOf(id, line)
+      const previous = { ...previousMutantOf(mutant, status, line), location: mutant.location }
+      const result = incrementalDiff(
+        IncrementalDiffCommand.make({
+          currentMutants: [mutant],
+          relativeFileByMutantId: { [mutant.id]: mutant.fileName },
+          previousFiles: { [mutant.fileName]: { source: mutant.fileName, mutants: [previous] } },
+          previousTestFiles: {},
+          currentRelativeFiles: { [mutant.fileName]: mutant.fileName },
+          testIdsByRelativeFile: {},
+          coveringTestFilesByMutantId: {},
+          force: false,
+        }),
+      )
+      return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
+    },
+  )
 
   it.prop(
     '∀ilt_ChangedCoverage_ToRun',

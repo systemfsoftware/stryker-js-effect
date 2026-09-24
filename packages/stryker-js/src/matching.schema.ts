@@ -56,7 +56,8 @@ const globSegmentToRegex = (segment: string): string =>
           })
         }),
         Match.orElse(() => `${escapeRegex(segment[0] ?? '')}${globSegmentToRegex(segment.slice(1))}`),
-      )),
+      )
+    ),
   )
 
 const globToRegExp = (pattern: string, caseInsensitive: boolean) =>
