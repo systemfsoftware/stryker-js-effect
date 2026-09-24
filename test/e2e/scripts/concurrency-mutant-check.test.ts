@@ -16,7 +16,6 @@ import {
   type CheckerRuntimeShape,
 } from '../../../packages/stryker-js-typescript-checker/src/CheckerRuntime.service.js'
 import { nodes } from '../../../packages/stryker-js-typescript-checker/src/ts-compiler.handle.js'
-import { layer as compilerLayer } from '../../../packages/stryker-js-typescript-checker/src/ts-compiler.resource.js'
 import { TypeScriptCompiler } from '../../../packages/stryker-js-typescript-checker/src/ts-compiler.service.js'
 
 const LIVE_OPT_IN_MUTATIONS: readonly string[] = [
@@ -52,8 +51,7 @@ const fixtureLayout = Effect.gen(function*() {
     '..',
     'packages',
     'stryker-js-instrumenter',
-    'tests',
-    '__fixtures__',
+    'testResources',
     'effect-concurrency',
   )
   const moduleNames = yield* fs.readDirectory(definitionsDirectory)
@@ -108,8 +106,7 @@ const rigLayers = (
   layout: FixtureLayout,
 ): Layer.Layer<CheckerRuntime | TypeScriptCompiler, never, FileSystem.FileSystem | Path.Path> =>
   Layer.unwrap(
-    Effect.map(Effect.orDie(optionsFor(layout)), (options) =>
-      Layer.mergeAll(compilerLayer(TypeScriptCompiler, options), CheckerRuntime.layer(options))),
+    Effect.map(Effect.orDie(optionsFor(layout)), (options) => CheckerRuntime.layer(options)),
   )
 
 const checkerRig = (layout: FixtureLayout): Effect.Effect<CheckerRig, never, FileSystem.FileSystem | Path.Path> =>
@@ -137,32 +134,16 @@ const startComplaints = (start: Result.Result<void, Cause.Cause<Checker.CheckerF
     onSuccess: () => [],
   })
 
-const problemReports = (
+const faultReports = (
   wires: ReadonlyArray<Checker.CheckerMutantWire>,
   results: HashMap.HashMap<string, Checker.CheckResult>,
+  refused: (result: Checker.CheckResult) => result is Checker.FailedCheckResult,
 ): ReadonlyArray<string> =>
   wires.flatMap((wire) =>
     Option.match(HashMap.get(results, wire.id), {
       onNone: () => [`no verdict was reached for the fault at ${wire.fileName}:${wire.location.start.line + 1}`],
       onSome: (result) =>
-        result.status === 'passed'
-          ? []
-          : [
-            `the fault at ${wire.fileName}:${wire.location.start.line + 1} replacing with \`${wire.replacement}\`` +
-            ` was refused: ${result.reason}`,
-          ],
-    })
-  )
-
-const refusalReports = (
-  wires: ReadonlyArray<Checker.CheckerMutantWire>,
-  results: HashMap.HashMap<string, Checker.CheckResult>,
-): ReadonlyArray<string> =>
-  wires.flatMap((wire) =>
-    Option.match(HashMap.get(results, wire.id), {
-      onNone: () => [`no verdict was reached for the fault at ${wire.fileName}:${wire.location.start.line + 1}`],
-      onSome: (result) =>
-        result.status === 'compileError'
+        refused(result)
           ? [
             `the fault at ${wire.fileName}:${wire.location.start.line + 1} replacing with \`${wire.replacement}\`` +
             ` was refused: ${result.reason}`,
@@ -170,6 +151,21 @@ const refusalReports = (
           : [],
     })
   )
+
+const problemReports = (
+  wires: ReadonlyArray<Checker.CheckerMutantWire>,
+  results: HashMap.HashMap<string, Checker.CheckResult>,
+): ReadonlyArray<string> => faultReports(wires, results, notPassed)
+
+const refusalReports = (
+  wires: ReadonlyArray<Checker.CheckerMutantWire>,
+  results: HashMap.HashMap<string, Checker.CheckResult>,
+): ReadonlyArray<string> => faultReports(wires, results, compilationRefused)
+
+const notPassed = (result: Checker.CheckResult): result is Checker.FailedCheckResult => result.status !== 'passed'
+
+const compilationRefused = (result: Checker.CheckResult): result is Checker.FailedCheckResult =>
+  result.status === 'compileError'
 
 const illTypedControl = (wires: ReadonlyArray<Checker.CheckerMutantWire>): Option.Option<Checker.CheckerMutantWire> =>
   Option.map(
