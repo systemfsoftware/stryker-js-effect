@@ -267,11 +267,13 @@ if (import.meta.vitest !== void 0) {
   const errorOf = (parts: ReadonlyArray<string>) =>
     Object.assign(new Error(parts.slice(1).join(' ')), { name: parts[0] ?? 'Error' })
 
+  const partAt = (parts: ReadonlyArray<string>, index: number) => parts[index] ?? ''
+
   const errnoOf = (parts: ReadonlyArray<string>): Error & { readonly code: string; readonly syscall: string } =>
     Object.assign(new Error(parts.slice(2).join(' ')), {
       name: 'Error',
-      code: parts[0] ?? '',
-      syscall: parts[1] ?? '',
+      code: partAt(parts, 0),
+      syscall: partAt(parts, 1),
     })
 
   const nestedOf = (parts: ReadonlyArray<string>) =>

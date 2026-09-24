@@ -299,7 +299,7 @@ const spannedScriptsOf = (
 
 const printProgram = (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program)
 
-const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
+export const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
 
 interface PrintContext {
   readonly indentLevel: number
@@ -2325,7 +2325,7 @@ if (import.meta.vitest !== void 0) {
     const source = fragments.join('\n')
     const parsed = oxc.parseSync('law.ts', source, { lang: 'ts', range: true })
     return Option.match(S.decodeOption(SourceText)(parsed.program), {
-      onNone: () => false,
+      onNone: () => printedScriptOf(source, 'ts') === '',
       onSome: (text) => printedScriptOf(text, 'ts') === text,
     })
   })

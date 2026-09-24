@@ -103,17 +103,26 @@ const mergeNested = <A = unknown>(
     onSome: (overrideRecord) => mergeRecords(base, overrideRecord),
   })
 
+const ownValueOf = <A = unknown>(
+  merged: MergedConfigRecord<A>,
+  key: string,
+): Option.Option<A | MergedConfigRecord<A>> =>
+  Option.filter(
+    Option.fromUndefinedOr(merged[key]),
+    (candidate): candidate is A | MergedConfigRecord<A> => candidate !== undefined || merged.hasOwnProperty(key),
+  )
+
 const baseRecordOf = <A = unknown>(
-  base: MergedConfigRecord<A>,
-): Option.Option<MergedConfigRecord<A>> => Option.filter(Option.fromUndefinedOr(base), isConfigRecord)
+  ownValue: Option.Option<A | MergedConfigRecord<A>>,
+): Option.Option<MergedConfigRecord<A>> => Option.filter(ownValue, isConfigRecord)
 
 const mergeKeyInto = <A = unknown>(
   merged: MergedConfigRecord<A>,
-  key: string,
   override: A | MergedConfigRecord<A>,
+  key: string,
 ): MergedConfigRecord<A> => ({
   ...merged,
-  [key]: Option.match(baseRecordOf(merged[key]), {
+  [key]: Option.match(baseRecordOf(ownValueOf(merged, key)), {
     onNone: () => override,
     onSome: (baseRecord) => mergeNested(baseRecord, override),
   }),

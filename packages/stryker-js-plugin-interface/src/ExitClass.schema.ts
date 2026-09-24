@@ -12,12 +12,21 @@ const BASELINE_EXIT_CODES = {
   InternalError: 4,
 } as const
 
+const CLASS_BY_BASELINE_CODE = {
+  1: 'VerdictFail',
+  2: 'ConfigError',
+  3: 'RuntimeError',
+  4: 'InternalError',
+} as const
+
 const codeOfClass = (exitClass: ExitClass): number => BASELINE_EXIT_CODES[exitClass]
 
+const classOfCode = (code: 1 | 2 | 3 | 4): ExitClass => CLASS_BY_BASELINE_CODE[code]
+
 export const ExitCodeFromClass = S.decodeTo(
-  S.Int,
+  S.Literals([1, 2, 3, 4]),
   SchemaTransformation.transform({
     decode: codeOfClass,
-    encode: SchemaGetter.forbiddenEncoding,
+    encode: classOfCode,
   }),
 )(ExitClass)

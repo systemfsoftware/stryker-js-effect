@@ -9,28 +9,28 @@ export const WallClockTimeoutReason = S.Literal('wall-clock-timeout')
 
 export const HitLimitReasonText = S.String.check(S.isStartsWith(HitLimitReasonPrefix.literal))
 
-const limitsOf = SchemaGetter.transformEffect((text: HitLimitReasonText) =>
-  Option.match(
-    Option.flatMap(
-      Option.fromNullable(/^Hit limit reached \((\d+)\/(\d+)\)$/.exec(text)),
-      (matched) => Option.all([Option.fromNullable(matched[1]), Option.fromNullable(matched[2])]),
-    ),
-    {
-      onNone: () => Effect.fail(malformedHitLimit(text)),
-      onSome: ([count, limit]) =>
-        Effect.succeed({ count: Number.parseInt(count, 10), limit: Number.parseInt(limit, 10) }),
-    },
-  )
+const HIT_LIMIT_REASON_SHAPE = /^Hit limit reached \((\d+)\/(\d+)\)$/
+
+const limitsOf = SchemaGetter.transformEffect((text: string) =>
+  Option.match(Option.fromNullishOr(HIT_LIMIT_REASON_SHAPE.exec(text)), {
+    onNone: () => Effect.fail(malformedHitLimit(text)),
+    onSome: (matched) =>
+      Effect.succeed({
+        count: Number.parseInt(String(matched[1]), 10),
+        limit: Number.parseInt(String(matched[2]), 10),
+      }),
+  }),
 )
 
-const textOf = SchemaGetter.transform(
-  (limits: { readonly count: number; readonly limit: number }): string =>
-    `${HitLimitReasonPrefix.literal} (${limits.count}/${limits.limit})`,
-)
+const textOf = SchemaGetter.transform((limits: { readonly count: number; readonly limit: number }): string =>
+  `${HitLimitReasonPrefix.literal} (${limits.count}/${limits.limit})`)
 
 const malformedHitLimit = (text: string) =>
-  new SchemaIssue.InvalidValue({ message: `expected "Hit limit reached (count/limit)", got ${text}` }, text)
+  new SchemaIssue.InvalidValue({ message: 'expected "Hit limit reached (count/limit)"' }, text)
 
-export const HitLimitReason = S.Struct({ count: S.Finite, limit: S.Finite }).pipe(
-  S.decodeTo(HitLimitReasonText, SchemaTransformation.makeTransformation({ decode: limitsOf, encode: textOf })),
+export const HitLimitReason = HitLimitReasonText.pipe(
+  S.decodeTo(
+    S.Struct({ count: S.Finite, limit: S.Finite }),
+    SchemaTransformation.makeTransformation({ decode: limitsOf, encode: textOf }),
+  ),
 )

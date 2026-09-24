@@ -1,8 +1,14 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutantTestCoverage } from '@systemfsoftware/stryker-js-instrumenter'
+import type {
+  MutantEarlyResultPlan,
+  MutantTestCoverage,
+  RunPlan,
+  TestResult,
+} from '@systemfsoftware/stryker-js-instrumenter'
 import type { RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import type { RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
+import type { TestCoverage } from '../test-coverage.schema.js'
 import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter'
 import {
   isCustomTestRunner,
@@ -47,15 +53,23 @@ import { MutationTestCommand } from '../MutationTest.schema.js'
 import { CheckerMutantFromMutant } from '../Checker/mod.js'
 import type { CheckerContractBroken, CheckerCrash, CheckerResourceService } from '../Checker/mod.js'
 import { checkGroupedPlans, scoped } from '../Checker/mod.js'
-import { REMEMBERED_REASON, toRelativeNormalizedFileName } from '../IncrementalDiff.paths.js'
 import { checkerMutantsSkipped } from '../metrics.js'
-import { toSchemaLocation } from '../mutant-result-mapping.js'
-import { decidePlans, incrementalDiff, partitionRunPlans, sortRunPlans } from '../Mutants.js'
+import { ReportLocationFromMutant } from '../ReportLocation.schema.js'
+import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
-import { PluginNotFoundError } from '../PluginsError.schema.js'
-import type { LoadedPlugins } from '../Plugins.schema.js'
-import { ProjectFiles } from '../project-files.service.js'
+import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
+import { RelativeNormalizedFileName } from '../matching.schema.js'
+import {
+  MutantTestPlanCommand,
+  planMutantTests,
+  type MutantPlanDecision,
+} from '../plan-mutant-tests.workflow.js'
+import {
+  IncrementalDiffCommand,
+  incrementalDiff as incrementalDiffDecisions,
+  type IncrementalDiffDecision,
+} from '../incremental-diff.workflow.js'
 import type { Project } from '../Project.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { reportFileName } from '../report-assembly.js'
@@ -294,6 +308,9 @@ const planCommandOf = (
     }),
   })
 
+const firstDefined = <Value>(first: Value | undefined, second: Value | undefined) =>
+  Option.getOrElse(Option.fromNullishOr(first), () => second)
+
 const materializeMutant = (
   original: Mutant,
   decided: {
@@ -309,13 +326,29 @@ const materializeMutant = (
     mutatorName: original.mutatorName,
     replacement: original.replacement,
     location: original.location,
-    ...firstDefined({
-      status: firstDefined(decided.status, original.status),
-      statusReason: firstDefined(decided.statusReason, original.statusReason),
-      static: firstDefined(decided.static, original.static),
-      coveredBy: firstDefined(decided.coveredBy, original.coveredBy),
-      testsCompleted: original.testsCompleted,
-      description: original.description,
+    ...Option.match(Option.fromUndefinedOr(firstDefined(decided.status, original.status)), {
+      onNone: () => ({}),
+      onSome: (status) => ({ status }),
+    }),
+    ...Option.match(Option.fromUndefinedOr(firstDefined(decided.statusReason, original.statusReason)), {
+      onNone: () => ({}),
+      onSome: (statusReason) => ({ statusReason }),
+    }),
+    ...Option.match(Option.fromUndefinedOr(firstDefined(decided.static, original.static)), {
+      onNone: () => ({}),
+      onSome: (isStatic) => ({ static: isStatic }),
+    }),
+    ...Option.match(Option.fromUndefinedOr(firstDefined(decided.coveredBy, original.coveredBy)), {
+      onNone: () => ({}),
+      onSome: (coveredBy) => ({ coveredBy }),
+    }),
+    ...Option.match(Option.fromUndefinedOr(original.testsCompleted), {
+      onNone: () => ({}),
+      onSome: (testsCompleted) => ({ testsCompleted }),
+    }),
+    ...Option.match(Option.fromUndefinedOr(original.description), {
+      onNone: () => ({}),
+      onSome: (description) => ({ description }),
     }),
   })
 
@@ -389,7 +422,8 @@ const decidePlans = (
   )
 }
 
-const isRunPlan = (plan: MutantTestPlan): plan is RunPlan => plan.plan === 'Run'
+const isEarlyPlan = (plan: MutantTestPlan): plan is Extract<MutantTestPlan, { readonly plan: 'EarlyResult' }> =>
+  !isRunPlan(plan)
 
 const earlyResultOf = (plan: Extract<MutantTestPlan, { readonly plan: 'EarlyResult' }>) =>
   Effect.map(Effect.orDie(S.decodeEffect(ReportLocationFromMutant)(plan.mutant.location)), (location) =>
@@ -400,15 +434,16 @@ const earlyResultOf = (plan: Extract<MutantTestPlan, { readonly plan: 'EarlyResu
 
 const partitionRunPlans = (plans: readonly MutantTestPlan[]) => ({
   runPlans: plans.filter(isRunPlan),
-  earlyResults: plans.filter((plan): plan is Extract<MutantTestPlan, { readonly plan: 'EarlyResult' }> =>
-    !isRunPlan(plan)),
+  earlyPlans: plans.filter(isEarlyPlan),
 })
 
-const partitionRunPlansEffect = (plans: readonly MutantTestPlan[]) =>
-  Effect.map(
-    Effect.forEach(partitionRunPlans(plans).earlyResults, earlyResultOf),
-    (earlyResults) => ({ runPlans: partitionRunPlans(plans).runPlans, earlyResults }),
+const partitionRunPlansEffect = (plans: readonly MutantTestPlan[]) => {
+  const { runPlans, earlyPlans } = partitionRunPlans(plans)
+  return Effect.map(
+    Effect.forEach(earlyPlans, earlyResultOf),
+    (earlyResults) => ({ runPlans, earlyResults }),
   )
+}
 
 const byReloadEnvironment = (left: RunPlan, right: RunPlan) =>
   Number(left.runOptions.reloadEnvironment) - Number(right.runOptions.reloadEnvironment)
@@ -522,24 +557,31 @@ const incrementalDiff = (
     )
     const decisions = yield* Effect.fromResult(incrementalDiffDecisions(command))
     return {
-      mutants: decisions.flatMap((decision) =>
-        Match.tag(decision, {
-          MutantToRun: (run) => [run.mutant] as const,
-          MutantRemembered: () => [] as const,
-        })),
-      remembered: decisions.flatMap((decision) =>
-        Match.tag(decision, {
-          MutantToRun: () => [] as const,
-          MutantRemembered: (remembered) => [{
-            mutantId: remembered.mutantId,
-            status: remembered.status,
-            testsCompleted: remembered.testsCompleted,
-            coveredBy: remembered.coveredBy,
-            killedBy: remembered.killedBy,
-          }] as const,
-        })),
+      mutants: decisions.flatMap((decision) => mutantsOfDecision(decision)),
+      remembered: decisions.flatMap((decision) => rememberedOfDecision(decision)),
     }
   })
+
+const mutantsOfDecision = (decision: IncrementalDiffDecision) =>
+  Match.value(decision).pipe(
+    Match.tag('MutantToRun', (run) => [run.mutant] as const),
+    Match.tag('MutantRemembered', () => [] as const),
+    Match.exhaustive,
+  )
+
+const rememberedOfDecision = (decision: IncrementalDiffDecision) =>
+  Match.value(decision).pipe(
+    Match.tag('MutantToRun', () => [] as const),
+    Match.tag('MutantRemembered', (remembered) =>
+      [{
+        mutantId: remembered.mutantId,
+        status: remembered.status,
+        testsCompleted: remembered.testsCompleted,
+        coveredBy: remembered.coveredBy,
+        killedBy: remembered.killedBy,
+      }] as const),
+    Match.exhaustive,
+  )
 
 const makeCheckerPool = (
   prev: DryRunDone,
@@ -834,7 +876,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       yield* sandboxFilesOf(prev.sandbox, [...MutableHashMap.keys(prev.project.filesToMutate)]),
     )
     const currentRelativeFiles = yield* readCurrentRelativeFiles(prev.project, env.basePath)
-    const incremental = incrementalDiff({
+    const incremental = yield* incrementalDiff({
       currentMutants: plannableMutants,
       testCoverage: prev.testCoverage,
       incrementalReport: prev.project.incrementalReport,
@@ -842,14 +884,14 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       basePath: env.basePath,
       force: prev.options.force,
     })
-    const rememberedResults = rememberedResultsOf(plannableMutants, incremental.remembered)
+    const rememberedResults = yield* rememberedResultsOf(plannableMutants, incremental.remembered)
     yield* Effect.when(
       Effect.logInfo(
         `Incremental mode: reusing ${rememberedResults.length} mutant result(s), running ${incremental.mutants.length} mutant(s).`,
       ),
       Effect.succeed(rememberedResults.length > 0),
     )
-    const { runPlans, earlyResults: noCoverageResults } = partitionRunPlans(
+    const { runPlans, earlyResults: noCoverageResults } = yield* partitionRunPlansEffect(
       yield* decidePlans({
         mutants: incremental.mutants,
         testCoverage: prev.testCoverage,
@@ -878,34 +920,26 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
         })),
       }),
     ).pipe(Effect.ignoreCause)
-    yield* Effect.flatMap(
-      RunEvents,
-      (queue) => Queue.offer(queue, PlanKnown.make({ total: allPlansForReporter.length + noCoverageResults.length })),
-    )
-    const { passedPlans, checkerResults } = yield* checkPlansWithConfiguredCheckers(
-      checkerPool,
-      sortedPlans,
-      reporting,
-    )
-    const testRunnerStream = Stream.fromIterable(passedPlans)
-    const plannedTotal = allPlansForReporter.length + noCoverageResults.length + rememberedResults.length
-    const pathService = yield* Path.Path
-    const progressQueue = yield* RunEvents
     const completedRef = yield* Ref.make(0)
     interface PreparedStreamableMutant {
       readonly status: ValidMutantStatus
       readonly file: string
       readonly location: reportSchema.Location
     }
-    const preparedStreamableOf = (result: RunMutantResult) =>
-      Option.map(
-        Option.filter(Option.some(result.status), isMutantStatus),
-        (status) => ({
-          status,
-          file: reportFileName(pathService.relative(env.basePath, result.fileName)),
-          location: toSchemaLocation(result.location),
-        }),
-      )
+    const preparedStreamableOfEffect = (result: RunMutantResult) =>
+      Option.match(Option.filter(Option.some(result.status), isMutantStatus), {
+        onNone: () => Effect.succeed(Option.none<PreparedStreamableMutant>()),
+        onSome: (status) =>
+          Effect.map(
+            Effect.orDie(S.decodeEffect(ReportLocationFromMutant)(result.location)),
+            (location) =>
+              Option.some({
+                status,
+                file: reportFileName(pathService.relative(env.basePath, result.fileName)),
+                location,
+              }),
+          ),
+      })
     const toStreamEvent = (
       result: RunMutantResult,
       completed: number,
@@ -960,7 +994,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       })
     const announceSettledMutant = (result: RunMutantResult) =>
       Effect.gen(function*() {
-        const prepared = preparedStreamableOf(result)
+        const prepared = yield* preparedStreamableOfEffect(result)
         const completed = yield* offerFinished(result, prepared)
         yield* offerStreamTested(result, completed, prepared)
       })
@@ -1036,7 +1070,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
                   toReportedMutant(plan.mutant),
                   result,
                 )
-                const prepared = preparedStreamableOf(reported)
+                const prepared = yield* preparedStreamableOfEffect(reported)
                 const finished = yield* offerFinished(reported, prepared)
                 yield* offerStreamTested(reported, finished, prepared)
                 yield* persist(reported)

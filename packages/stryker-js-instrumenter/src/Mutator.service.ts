@@ -67,7 +67,7 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.handle.js'
-import { SourceText } from './print/SourceText.schema.js'
+import { printNode } from './print/SourceText.schema.js'
 
 export interface MutatorContext {
   readonly parent: Node | undefined
@@ -139,7 +139,7 @@ const createMutant = (params: CreateMutantOptions): Mutant => ({
   replacement: params.specs.replacement,
   mutatorName: params.specs.mutatorName,
   ignoreReason: params.specs.ignoreReason,
-  replacementCode: Option.getOrElse(S.decodeOption(SourceText)(params.specs.replacement), () => ''),
+  replacementCode: printNode(params.specs.replacement),
 })
 
 const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing> =>

@@ -63,9 +63,11 @@ const fromTestId = (id: string) => {
 }
 
 /** The same test id, relative to the project root. */
+const canonicalOf = (path: string) => S.decodeSync(CanonicalFileName)(path)
+
 const normalizeTestId = (id: string, projectRoot: string, pathService: Path.Path) => {
   const { file, name } = fromTestId(id)
-  return normalizeFileName(pathService.relative(projectRoot, file)) + '#' + name
+  return canonicalOf(pathService.relative(projectRoot, file)) + '#' + name
 }
 
 /** Coverage keyed by project-relative test ids, as the report expects it. */
@@ -117,7 +119,7 @@ const relatedFilesOf = <A>(relatedValue: A, relatedFiles: readonly string[] | un
   Boolean.match(relatedValue !== false, {
     onFalse: () => undefined,
     onTrue: () =>
-      Option.getOrUndefined(Option.map(Option.fromNullishOr(relatedFiles), (files) => files.map(normalizeFileName))),
+      Option.getOrUndefined(Option.map(Option.fromNullishOr(relatedFiles), (files) => files.map(canonicalOf))),
   })
 
 /** A run limited to specific test ids starts exactly those files under a name pattern. */

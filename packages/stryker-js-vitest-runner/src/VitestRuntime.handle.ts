@@ -1,7 +1,7 @@
 import type { RunnerTestFile, RunnerTestSuite } from 'vitest'
 import type { Vitest } from 'vitest/node'
 
-import { errorToString } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -11,6 +11,7 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import { type Pipeable, Prototype } from 'effect/Pipeable'
 import * as Predicate from 'effect/Predicate'
+import * as S from 'effect/Schema'
 
 import { type StrykerNamespace, type TestRunnerPhase } from './VitestRunner.schema.js'
 
@@ -37,8 +38,10 @@ export interface RunFilterInput {
   readonly testNamePattern: RegExp | undefined
 }
 
+const errorTextOf = <A>(cause: A) => Option.getOrElse(S.decodeUnknownOption(ErrorText)(cause), () => '')
+
 const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
-  new TestRunnerFailed({ runnerName: 'vitest', phase, cause: errorToString(cause) })
+  new TestRunnerFailed({ runnerName: 'vitest', phase, cause: errorTextOf(cause) })
 
 const disableScreenshotFailures = <A>(value: A) =>
   Option.map(Option.filter(Option.fromNullishOr(value), Predicate.isObject), (browser) => {
@@ -142,7 +145,7 @@ export const hasExternalErrors = (self: VitestRuntime): boolean =>
 export const externalErrorText = (self: VitestRuntime): string =>
   Option.match(errorsSetOf(self[DriverId]), {
     onNone: () => '',
-    onSome: (errorsSet) => Predicate.isIterable(errorsSet) ? [...errorsSet].map(errorToString).join('\n') : '',
+    onSome: (errorsSet) => Predicate.isIterable(errorsSet) ? [...errorsSet].map(errorTextOf).join('\n') : '',
   })
 
 export const metaOf = <A>(file: A) => Option.getOrUndefined(propertyOf(file, 'meta'))

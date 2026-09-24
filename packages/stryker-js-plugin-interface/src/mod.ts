@@ -81,6 +81,14 @@ export {
   type TestRunnerCustomConfig,
   TestRunnerCustomConfigSchema,
 } from './stryker-options.schema.js'
+export type {
+  CoverageAnalysisMode as CoverageAnalysisModeType,
+  LogLevel as LogLevelType,
+  PackageManager as PackageManagerType,
+  PartialStrykerOptions,
+  ReportType as ReportTypeType,
+  StrykerOptions,
+} from './stryker-options.schema.js'
 export * from './TestRunner.schema.js'
 export * from './TestRunner.service.js'
 export {

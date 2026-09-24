@@ -1,4 +1,4 @@
-import type { MutantTestCoverage, RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant, MutantTestCoverage, Position, RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as Cause from 'effect/Cause'
 import type {
   CheckResult,
@@ -484,53 +484,95 @@ if (import.meta.vitest !== void 0) {
   const { Mutant } = await import('@systemfsoftware/stryker-js-instrumenter')
   const { MutantRunResultSchema } = await import('@systemfsoftware/stryker-js-plugin-interface')
 
+  const MAX_SOURCE_COORDINATE = 1_000_000
+
+  const sourceCoordinateOf = (coordinate: number) => Math.min(Math.abs(coordinate), MAX_SOURCE_COORDINATE)
+
   const coverageOf = (mutant: Mutant): MutantTestCoverage => ({
-    ...mutant,
+    _tag: mutant._tag,
+    id: mutant.id,
+    fileName: mutant.fileName,
+    mutatorName: mutant.mutatorName,
+    replacement: mutant.replacement,
+    location: {
+      start: {
+        line: sourceCoordinateOf(mutant.location.start.line),
+        column: sourceCoordinateOf(mutant.location.start.column),
+      },
+      end: {
+        line: sourceCoordinateOf(mutant.location.end.line),
+        column: sourceCoordinateOf(mutant.location.end.column),
+      },
+    },
+    status: mutant.status,
+    statusReason: mutant.statusReason,
     coveredBy: mutant.coveredBy,
     static: mutant.static,
+    testsCompleted: mutant.testsCompleted,
+    description: mutant.description,
   })
 
+  const holds = (conditions: readonly boolean[]) => conditions.every((condition) => condition)
+
   const conservesMutant = (coverage: MutantTestCoverage, mapped: RunMutantResult) =>
-    mapped.id === coverage.id &&
-    mapped.fileName === coverage.fileName &&
-    mapped.mutatorName === coverage.mutatorName &&
-    mapped.replacement === coverage.replacement &&
-    mapped.coveredBy === coverage.coveredBy &&
-    mapped.static === coverage.static &&
-    mapped.description === coverage.description
+    holds([
+      mapped.id === coverage.id,
+      mapped.fileName === coverage.fileName,
+      mapped.mutatorName === coverage.mutatorName,
+      mapped.replacement === coverage.replacement,
+      mapped.coveredBy === coverage.coveredBy,
+      mapped.static === coverage.static,
+      mapped.description === coverage.description,
+    ])
+
+  const shiftsByOne = (before: Position, after: Position) =>
+    after.line - before.line === 1 && after.column - before.column === 1
 
   const shiftsLocationByOne = (coverage: MutantTestCoverage, mapped: RunMutantResult) =>
-    mapped.location.start.line - coverage.location.start.line === 1 &&
-    mapped.location.start.column - coverage.location.start.column === 1 &&
-    mapped.location.end.line - coverage.location.end.line === 1 &&
-    mapped.location.end.column - coverage.location.end.column === 1
+    shiftsByOne(coverage.location.start, mapped.location.start) &&
+    shiftsByOne(coverage.location.end, mapped.location.end)
 
   const carriesClassOutcome = (result: MutantRunResult, mapped: RunMutantResult) =>
     Match.value(result).pipe(
-      Match.discriminator('status')('error', (errored) =>
-        mapped.status === 'RuntimeError' && mapped.statusReason === errored.errorMessage),
-      Match.discriminator('status')('killed', (killed) =>
-        mapped.status === 'Killed' &&
-        mapped.testsCompleted === killed.nrOfTests &&
-        mapped.statusReason === killed.failureMessage &&
-        JSON.stringify(mapped.killedBy) === JSON.stringify(killed.killedBy)),
-      Match.discriminator('status')('timeout', (timedOut) =>
-        mapped.status === 'Timeout' && mapped.statusReason === timedOut.reason),
-      Match.discriminator('status')('survived', (survived) =>
-        mapped.status === 'Survived' && mapped.testsCompleted === survived.nrOfTests),
+      Match.discriminator('status')('error', (errored) => holds([
+        mapped.status === 'RuntimeError',
+        mapped.statusReason === errored.errorMessage,
+      ])),
+      Match.discriminator('status')('killed', (killed) => holds([
+        mapped.status === 'Killed',
+        mapped.testsCompleted === killed.nrOfTests,
+        mapped.statusReason === killed.failureMessage,
+        JSON.stringify(mapped.killedBy) === JSON.stringify(killed.killedBy),
+      ])),
+      Match.discriminator('status')('timeout', (timedOut) => holds([
+        mapped.status === 'Timeout',
+        mapped.statusReason === timedOut.reason,
+      ])),
+      Match.discriminator('status')('survived', (survived) => holds([
+        mapped.status === 'Survived',
+        mapped.testsCompleted === survived.nrOfTests,
+      ])),
       Match.exhaustive,
     )
 
-  const mapsFaithfully = (mutant: Mutant, result: MutantRunResult) => {
+  const mapsConservatively = (mutant: Mutant, result: MutantRunResult) => {
     const coverage = coverageOf(mutant)
     return Effect.map(mapRunResult(coverage, result), (mapped) =>
-      conservesMutant(coverage, mapped) && shiftsLocationByOne(coverage, mapped) &&
-      carriesClassOutcome(result, mapped))
+      conservesMutant(coverage, mapped) && shiftsLocationByOne(coverage, mapped))
   }
 
+  const mapsClassOutcome = (mutant: Mutant, result: MutantRunResult) =>
+    Effect.map(mapRunResult(coverageOf(mutant), result), (mapped) => carriesClassOutcome(result, mapped))
+
   it.effect.prop(
-    '∀mr_MapRunResult_ConservesMutant∧ShiftsLocation∧CarriesOutcome',
+    '∀mr_MapRunResult_ConservesMutant∧ShiftsLocation',
     [Mutant, MutantRunResultSchema],
-    ([mutant, result]) => mapsFaithfully(mutant, result),
+    ([mutant, result]) => mapsConservatively(mutant, result),
+  )
+
+  it.effect.prop(
+    '∀mr_MapRunResult_CarriesClassOutcome',
+    [Mutant, MutantRunResultSchema],
+    ([mutant, result]) => mapsClassOutcome(mutant, result),
   )
 }

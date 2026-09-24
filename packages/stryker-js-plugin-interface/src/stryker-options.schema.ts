@@ -160,7 +160,12 @@ export type TestRunnerCustomConfig = typeof TestRunnerCustomConfigSchema.Type
 export const TestRunnerConfigSchema = S.Union([S.String, TestRunnerCustomConfigSchema])
 export type TestRunnerConfig = typeof TestRunnerConfigSchema.Type
 
-export const isCustomTestRunner = S.is(TestRunnerCustomConfigSchema)
+const AnyNonStringTestRunner = S.declare<TestRunnerCustomConfig>(
+  (value): value is TestRunnerCustomConfig => typeof value !== 'string',
+  { message: 'expected a custom test runner config' },
+)
+
+export const isCustomTestRunner = S.is(AnyNonStringTestRunner)
 
 export const CheckerCustomConfigSchema = S.Struct({
   plugin: PluginFileUrl,

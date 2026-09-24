@@ -152,7 +152,7 @@ export type { PooledTestRunnerError } from './TestRunner.schema.js'
 export type { VmRequire } from './VmRunner.service.js'
 export type { IdGeneratorShape } from './Worker.service.js'
 export { IdGenerator } from './Worker.service.js'
-export { RUN_EVENTS_QUEUE_BOUND, shouldKeepTempDir } from './Run.js'
+export { keepTempDir, KeepTempDirCommand, type KeepTempDirOption, type KeepTempDirOutcome, TempDirKept, TempDirRemoved } from './keep-temp-dir.workflow.js'
 export type { HostServices, StrykerRun } from './run/host.service.js'
 export { mutationTestCell, strykerCell } from './run/run-stages.cell.js'
 

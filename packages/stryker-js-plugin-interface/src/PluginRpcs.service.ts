@@ -5,7 +5,7 @@ import { CheckerFailed } from './Checker.schema.js'
 import { ReporterFailed } from './ReporterEvent.schema.js'
 import {
   DryRunResultSchema,
-  MutantRunResultWireSchema,
+  MutantRunResultSchema,
   TestRunnerCapabilitiesSchema,
   TestRunnerFailed,
 } from './TestRunner.schema.js'
@@ -27,7 +27,7 @@ import { TraceContextMiddleware, type TracedRpc } from './TraceContextRpc.servic
 export const TestRunnerRpcs: RpcGroup.RpcGroup<
   | TracedRpc<'capabilities', Schema.Void, typeof TestRunnerCapabilitiesSchema, typeof TestRunnerFailed>
   | TracedRpc<'dryRun', typeof TestRunnerDryRunRequest, typeof DryRunResultSchema, typeof TestRunnerFailed>
-  | TracedRpc<'mutantRun', typeof TestRunnerMutantRunRequest, typeof MutantRunResultWireSchema, typeof TestRunnerFailed>
+  | TracedRpc<'mutantRun', typeof TestRunnerMutantRunRequest, typeof MutantRunResultSchema, typeof TestRunnerFailed>
 > = RpcGroup.make(
   Rpc.make('capabilities', {
     success: TestRunnerCapabilitiesSchema,
@@ -40,7 +40,7 @@ export const TestRunnerRpcs: RpcGroup.RpcGroup<
   }),
   Rpc.make('mutantRun', {
     payload: TestRunnerMutantRunRequest,
-    success: MutantRunResultWireSchema,
+    success: MutantRunResultSchema,
     error: TestRunnerFailed,
   }),
 ).middleware(TraceContextMiddleware)

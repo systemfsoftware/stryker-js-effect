@@ -50,7 +50,7 @@ export const DryRunResultSchema = S.Union([
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
 ])
 
-export const MutantRunResultWireSchema = S.Union([
+export const MutantRunResultSchema = S.Union([
   S.Struct({
     status: S.Literal('killed'),
     killedBy: S.Array(S.String),
@@ -150,14 +150,6 @@ export type MutantRunResult =
   | SurvivedMutantRunResult
   | TimeoutMutantRunResult
 
-const completeTestsOf = (dryRunResult: DryRunResult): readonly TestResult[] =>
-  Match.value(dryRunResult).pipe(
-    Match.discriminator('status')('complete', (complete) => complete.tests),
-    Match.discriminator('status')('error', () => [] as const),
-    Match.discriminator('status')('timeout', () => [] as const),
-    Match.exhaustive,
-  )
-
 const failedTestsOf = (tests: readonly TestResult[]) =>
   tests.filter((test): test is FailedTestResult => test.status === 'failed')
 
@@ -165,49 +157,42 @@ const countedTestsOf = (tests: readonly TestResult[]) => tests.filter((test) => 
 
 const firstFailedTestOf = (failed: readonly FailedTestResult[]) => Option.fromUndefinedOr(failed.at(0))
 
-const killersOf = (
-  failed: readonly FailedTestResult[],
-  firstFailed: FailedTestResult,
-  reportAllKillers: boolean,
-) =>
-  Match.value(reportAllKillers).pipe(
-    Match.when(true, () => failed.map((test) => test.id)),
-    Match.when(false, () => [firstFailed.id]),
+const mutantRunResultOf = (dryRunResult: DryRunResult): MutantRunResult =>
+  Match.value(dryRunResult).pipe(
+    Match.discriminator('status')('complete', (complete) => {
+      const failed = failedTestsOf(complete.tests)
+      const nrOfTests = countedTestsOf(complete.tests)
+      return Option.match(firstFailedTestOf(failed), {
+        onNone: (): MutantRunResult => ({ nrOfTests, status: 'survived' }),
+        onSome: (firstFailed): MutantRunResult => ({
+          failureMessage: firstFailed.failureMessage,
+          killedBy: failed.map((test) => test.id),
+          nrOfTests,
+          status: 'killed',
+        }),
+      })
+    }),
+    Match.discriminator('status')('error', (errored): MutantRunResult => ({
+      errorMessage: errored.errorMessage,
+      status: 'error',
+    })),
+    Match.discriminator('status')(
+      'timeout',
+      (timedOut): MutantRunResult =>
+        Option.match(Option.fromUndefinedOr(timedOut.reason), {
+          onNone: (): MutantRunResult => ({ status: 'timeout' }),
+          onSome: (reason): MutantRunResult => ({ reason, status: 'timeout' }),
+        }),
+    ),
     Match.exhaustive,
   )
 
-export const MutantRunResultSchema = {
-  decode: (options: { readonly reportAllKillers: boolean }) =>
-    SchemaGetter.transform((dryRunResult: DryRunResult): MutantRunResult => {
-      const failed = failedTestsOf(completeTestsOf(dryRunResult))
-      const nrOfTests = countedTestsOf(completeTestsOf(dryRunResult))
-      return Match.value(dryRunResult).pipe(
-        Match.discriminator('status')('complete', () =>
-          Option.match(firstFailedTestOf(failed), {
-            onNone: (): MutantRunResult => ({ nrOfTests, status: 'survived' }),
-            onSome: (firstFailed): MutantRunResult => ({
-              failureMessage: firstFailed.failureMessage,
-              killedBy: killersOf(failed, firstFailed, options.reportAllKillers),
-              nrOfTests,
-              status: 'killed',
-            }),
-          })),
-        Match.discriminator('status')('error', (errored): MutantRunResult => ({
-          errorMessage: errored.errorMessage,
-          status: 'error',
-        })),
-        Match.discriminator('status')(
-          'timeout',
-          (timedOut): MutantRunResult =>
-            Option.match(Option.fromUndefinedOr(timedOut.reason), {
-              onNone: (): MutantRunResult => ({ status: 'timeout' }),
-              onSome: (reason): MutantRunResult => ({ reason, status: 'timeout' }),
-            }),
-        ),
-        Match.exhaustive,
-      )
-    }),
-}
+export const MutantRunResultFromDryRun = DryRunResultSchema.pipe(
+  S.decodeTo(MutantRunResultSchema, {
+    decode: SchemaGetter.transform(mutantRunResultOf),
+    encode: SchemaGetter.forbiddenEncoding,
+  }),
+)
 
 export type CoverageAnalysis = 'off' | 'all' | 'perTest'
 

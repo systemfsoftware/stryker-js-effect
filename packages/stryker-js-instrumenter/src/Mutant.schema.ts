@@ -1,3 +1,4 @@
+import * as Effect from 'effect/Effect'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
@@ -157,4 +158,33 @@ export class MutantSpanMissing
   override get message(): string {
     return `Node without a ${this.edge} offset`
   }
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
+
+  const SEGMENTS = S.Literals(['src', 'a-b_c', '0', 'build', 'dist'])
+  const SEPARATORS = S.Literals(['/', '\\'])
+  const FILE_PATHS = Arbitrary.flatMap(
+    Arbitrary.array(Arbitrary.schema(SEGMENTS), { minLength: 1, maxLength: 5 }),
+    (segments) =>
+      Arbitrary.map(Arbitrary.schema(SEPARATORS), (separator) =>
+        segments.flatMap((segment, index) => (index === 0 ? [segment] : [separator, segment])).join(''),
+      ),
+  )
+  const canonicalOf = (path: string) =>
+    S.decodeEffect(CanonicalFileName)(path).pipe(Effect.map((canonical) => canonical === path.replace(/\\/g, '/')))
+
+  const idempotentOf = (path: string) =>
+    S.decodeEffect(CanonicalFileName)(path).pipe(
+      Effect.flatMap((once) => S.decodeEffect(CanonicalFileName)(once)),
+      Effect.map((twice) => twice === path.replace(/\\/g, '/')),
+    )
+
+  it.effect.prop('∀path_CanonicalFileName_≡BackslashToSlash', [FILE_PATHS], ([path]) =>
+    canonicalOf(path).pipe(Effect.orDie),
+  )
+
+  it.effect.prop('∀path_CanonicalFileName_∘Idempotent', [FILE_PATHS], ([path]) => idempotentOf(path).pipe(Effect.orDie))
 }

@@ -17,7 +17,7 @@ import { BakedFixtureCache } from '../src/Harness/fixture-cache.service.js'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { GuestJobs } from '../src/Harness/guest-job.service.js'
 import type { HarnessError } from '../src/Harness/harness-failure.schema.js'
-import { StrykerCliRunner } from '../src/Harness/stryker-cli-runner.service.js'
+import { BlessRefused } from '../src/Harness/harness-failure.schema.js'
 import {
   type BaselineCounts,
   BlessedBaseline,
@@ -152,105 +152,148 @@ const countsOf = (verdict: VerdictEvent): BaselineCounts => ({
   timeout: verdict.counts.timeout,
 })
 
-const decodeEvent = (line: string, slice: OracleSliceId): RunEvent =>
-  Result.match(Schema.decodeResult(RunEventWireLine)(line), {
-    onFailure: (issue) => {
-      throw new Error(
-        `Slice "${slice}" produced a malformed RunEvent line; refusing to bless garbage: ${issue.message}`,
-        { cause: issue },
-      )
-    },
-    onSuccess: (event) => event,
-  })
+const decodeEvent = (line: string, slice: OracleSliceId): Result.Result<RunEvent, BlessRefused> =>
+  Result.mapError(
+    Schema.decodeResult(RunEventWireLine)(line),
+    (issue) =>
+      BlessRefused.make({
+        reason: `Slice "${slice}" produced a malformed RunEvent line; refusing to bless garbage: ${issue.message}`,
+        cause: issue,
+      }),
+  )
 
 interface ParsedRun {
   readonly baseline: BlessedBaseline
 }
 
-const statusPairOf = (mutator: string, status: string): readonly [string, string] => [mutator, status]
+const parseEventLines = (
+  stdout: string,
+  slice: OracleSliceId,
+): Result.Result<ReadonlyArray<RunEvent>, BlessRefused> =>
+  Result.all(
+    stdout.split('\n').flatMap((rawLine) => {
+      const line = rawLine.trim()
+      return passedRunEventLine(line) ? [decodeEvent(line, slice)] : []
+    }),
+  )
 
-const mutatorStatusPairsOf = (events: ReadonlyArray<RunEvent>): ReadonlyArray<readonly [string, string]> =>
-  events.flatMap((event) =>
-    Match.value(event).pipe(
-      Match.tag('mutant', (mutant) => [statusPairOf(mutant.mutator, mutant.status)]),
-      Match.orElse(() => []),
-    ))
+const passedRunEventLine = (line: string): boolean =>
+  line.length > 0 && line.startsWith('{') && line.endsWith('}')
 
-function parseRunEvents(stdout: string, slice: OracleSliceId): ParsedRun {
-  const events = stdout.split('\n').flatMap((rawLine) => {
-    const line = rawLine.trim()
-    return Boolean.match(line.length > 0 && line.startsWith('{') && line.endsWith('}'), {
-      onFalse: () => [],
-      onTrue: () => [decodeEvent(line, slice)],
-    })
-  })
-  const mutatorStatusPairs = mutatorStatusPairsOf(events)
-  return Option.match(Option.fromNullishOr(events.at(-1)), {
-    onNone: () => {
-      throw new Error(`Slice "${slice}" produced no RunEvents on stdout; refusing to bless an empty stream.`)
-    },
-    onSome: (terminal) =>
-      Match.value(terminal).pipe(
-        Match.tag('verdict', (verdict) => ({
-          baseline: BlessedBaseline.make({
-            artifactContract: BlessedBaseline.ARTIFACT_CONTRACT,
-            slice,
-            strykerConfig: OracleSliceConfig.SLICES[slice].strykerConfig,
-            counts: countsOf(verdict),
-            mutatorStatusTally: sortTally(tallyMutatorStatuses(mutatorStatusPairs)),
-          }),
-        })),
-        Match.orElse((terminal) => {
-          throw new Error(
-            `Slice "${slice}" terminated with event _tag "${terminal._tag}", expected "verdict". Refusing to bless garbage.`,
-          )
+const baselineOfTerminal = (
+  terminal: RunEvent,
+  slice: OracleSliceId,
+  pairs: ReadonlyArray<readonly [string, string]>,
+): Result.Result<BlessedBaseline, BlessRefused> =>
+  Match.value(terminal).pipe(
+    Match.tag('verdict', (verdict) =>
+      Result.succeed(
+        BlessedBaseline.make({
+          artifactContract: BlessedBaseline.ARTIFACT_CONTRACT,
+          slice,
+          strykerConfig: OracleSliceConfig.SLICES[slice].strykerConfig,
+          counts: countsOf(verdict),
+          mutatorStatusTally: sortTally(tallyMutatorStatuses(pairs)),
         }),
-      ),
-  })
-}
+      )),
+    Match.orElse((other) =>
+      Result.fail(
+        BlessRefused.make({
+          reason:
+            `Slice "${slice}" terminated with event _tag "${other._tag}", expected "verdict". Refusing to bless garbage.`,
+        }),
+      )),
+  )
 
-async function runSliceOnce(
+const parseRunEvents = (stdout: string, slice: OracleSliceId): Result.Result<ParsedRun, BlessRefused> =>
+  Result.flatMap(parseEventLines(stdout, slice), (events) =>
+    Result.match(Option.fromNullishOr(events.at(-1)), {
+      onNone: () =>
+        Result.fail(
+          BlessRefused.make({
+            reason: `Slice "${slice}" produced no RunEvents on stdout; refusing to bless an empty stream.`,
+          }),
+        ),
+      onSome: (terminal) =>
+        Result.map(baselineOfTerminal(terminal, slice, mutatorStatusPairsOf(events)), (baseline) => ({ baseline })),
+    }))
+
+const runOutcomeOf = (
+  outcome: ExecResult,
+  slice: OracleSliceId,
+  attempt: number,
+): Result.Result<ExecResult, BlessRefused> =>
+  Match.value(outcome.exitCode).pipe(
+    Match.when(0, () => Result.succeed(outcome)),
+    Match.orElse((exitCode) =>
+      Result.fail(
+        BlessRefused.make({
+          reason:
+            `Slice "${slice}" (attempt ${attempt}) exited with code ${exitCode}; refusing to bless a failing run.\nstdout: ${
+              outcome.stdout.slice(-2000)
+            }\nstderr: ${outcome.stderr.slice(-2000)}`,
+        }),
+      )),
+  )
+
+const runSliceOnce = (
   runtime: HarnessRuntime,
   slice: OracleSliceId,
   attempt: number,
-): Promise<BlessedBaseline> {
+): Effect.Effect<BlessedBaseline, HarnessError> => {
   const config = OracleSliceConfig.SLICES[slice]
   const fixtureName = `oracle-${slice}`
-  const installedPath = await runtime.runPromise(
-    BakedFixtureCache.use((cache) => cache.install({ url: ENTERPRISE_FIXTURE_URL, name: fixtureName })),
-  )
   const args: string[] = ['run', config.strykerConfig]
-  const run: ExecResult = await runtime.runPromise(StrykerCliRunner.use((runner) => runner.run(args, installedPath)))
-  if (run.exitCode !== 0) {
-    throw new Error(
-      `Slice "${slice}" (attempt ${attempt}) exited with code ${run.exitCode}; refusing to bless a failing run.\nstdout: ${
-        run.stdout.slice(-2000)
-      }\nstderr: ${run.stderr.slice(-2000)}`,
-    )
-  }
-  return parseRunEvents(run.stdout, slice).baseline
+  return Effect.gen(function*() {
+    const installedPath = yield* BakedFixtureCache.use((cache) =>
+      cache.install({ url: ENTERPRISE_FIXTURE_URL, name: fixtureName }))
+    const outcome = yield* StrykerCliRunner.use((runner) => runner.run(args, installedPath))
+    const parsed = yield* runOutcomeOf(outcome, slice, attempt)
+    return (yield* parseRunEvents(parsed.stdout, slice)).baseline
+  })
 }
 
-async function writeBaselineFile(baseline: BlessedBaseline): Promise<string> {
+const writeBaselineFile = (baseline: BlessedBaseline): Effect.Effect<string, HarnessError> => {
   const outPath = join(BASELINE_OUTPUT_DIR, `${baseline.slice}.json`)
-  await mkdir(dirname(outPath), { recursive: true })
-  const encoded = Result.getOrThrow(Schema.encodeUnknownResult(BlessedBaseline)(baseline))
-  await writeFile(outPath, `${JSON.stringify(encoded, undefined, 2)}\n`, 'utf8')
-  return outPath
+  return Effect.gen(function*() {
+    const encoded = yield* Schema.encode(BlessedBaseline)(baseline)
+    yield* Effect.tryPromise({
+      try: () =>
+        mkdir(dirname(outPath), { recursive: true }).then(() =>
+          writeFile(outPath, `${JSON.stringify(encoded, undefined, 2)}\n`, 'utf8')),
+      catch: (cause) => BlessRefused.make({ reason: `Cannot write baseline file ${outPath}`, cause }),
+    })
+    return outPath
+  })
 }
 
-async function readExistingBaseline(slice: OracleSliceId): Promise<BlessedBaseline | undefined> {
-  const path = join(BASELINE_OUTPUT_DIR, `${slice}.json`)
-  try {
-    const text = await readFile(path, 'utf8')
-    return Result.getOrThrow(Schema.decodeUnknownResult(BlessedBaseline)(JSON.parse(text)))
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') {
-      return undefined
-    }
-    throw cause
-  }
-}
+const readExistingBaseline = (slice: OracleSliceId): Effect.Effect<BlessedBaseline | undefined, HarnessError> =>
+  Effect.catchIf(
+    Effect.tryPromise({
+      try: () => readFile(join(BASELINE_OUTPUT_DIR, `${slice}.json`), 'utf8'),
+      catch: (cause) => BlessRefused.make({ reason: `Cannot read existing baseline for slice "${slice}"`, cause }),
+    }).pipe(
+      Effect.flatMap((text) =>
+        Effect.matchEffect(Schema.decodeUnknown(BlessedBaseline)(JSON.parse(text)), {
+          onFailure: (issue) =>
+            Effect.fail(
+              BlessRefused.make({
+                reason: `Existing baseline for slice "${slice}" is malformed; refusing to bless onto garbage: ${
+                  issue.message
+                }`,
+                cause: issue,
+              }),
+            ),
+          onSuccess: (baseline) => Effect.succeed(baseline),
+        })
+      ),
+    ),
+    (refused) =>
+      Match.value(refused.cause).pipe(
+        Match.when({ _tag: 'SystemError', reason: 'NotFound' }, () => Effect.succeed(undefined)),
+        Match.orElse(() => Effect.fail(refused)),
+      ),
+  )
 
 function reportRun(slice: OracleSliceId, attempt: number, startedMs: number, finishedMs: number): void {
   console.log(`[${slice}] run ${attempt}: wall=${(finishedMs - startedMs) / 1000}s`)
@@ -316,59 +359,79 @@ const formatBaselineDiff = (diff: BaselineDiff): string =>
     ].join('\n'),
   })
 
-async function blessSlice(runtime: HarnessRuntime, slice: OracleSliceId, verify: boolean): Promise<void> {
+const blessSlice = (
+  runtime: HarnessRuntime,
+  slice: OracleSliceId,
+  verify: boolean,
+): Effect.Effect<void, HarnessError> => {
   const sliceConfig: OracleSliceConfig = OracleSliceConfig.SLICES[slice]
-  const existing = await readExistingBaseline(slice)
-  const wallStartMs = Date.now()
-  const firstStartMs = Date.now()
-  const first = await runSliceOnce(runtime, slice, 1)
-  const firstFinishedMs = Date.now()
-  reportRun(slice, 1, firstStartMs, firstFinishedMs)
+  return Effect.gen(function*() {
+    const existing = yield* readExistingBaseline(slice)
+    const wallStartMs = Date.now()
+    const firstStartMs = Date.now()
+    const first = yield* runSliceOnce(runtime, slice, 1)
+    const firstFinishedMs = Date.now()
+    yield* reportRunEffect(slice, 1, firstStartMs, firstFinishedMs)
 
-  if (verify) {
-    const secondStartMs = Date.now()
-    const second = await runSliceOnce(runtime, slice, 2)
-    const secondFinishedMs = Date.now()
-    reportRun(slice, 2, secondStartMs, secondFinishedMs)
-    const gateDiff = compareBaselines(foldForGate(first), foldForGate(second))
-    if (!gateDiff.isEmpty()) {
-      throw new Error(
-        `Slice "${slice}" is FLAKY across two consecutive runs on the normalized projection (R5 flake gate).\n${
-          formatBaselineDiff(gateDiff)
-        }`,
-      )
+    if (verify) {
+      const secondStartMs = Date.now()
+      const second = yield* runSliceOnce(runtime, slice, 2)
+      const secondFinishedMs = Date.now()
+      yield* reportRunEffect(slice, 2, secondStartMs, secondFinishedMs)
+      const gateDiff = compareBaselines(foldForGate(first), foldForGate(second))
+      if (!gateDiff.isEmpty()) {
+        return yield* Effect.fail(
+          BlessRefused.make({
+            reason:
+              `Slice "${slice}" is FLAKY across two consecutive runs on the normalized projection (R5 flake gate).\n${
+                formatBaselineDiff(gateDiff)
+              }`,
+          }),
+        )
+      }
+      const rawDiff = compareBaselines(first, second)
+      if (!rawDiff.isEmpty()) {
+        yield* Effect.sync(() =>
+          process.stdout.write(
+            `[${slice}] flake gate: raw K/T boundary moved but the folded projection agrees:\n${
+              formatBaselineDiff(rawDiff)
+            }\n`,
+          ))
+      } else {
+        yield* Effect.sync(() => process.stdout.write(`[${slice}] flake gate: 2/2 runs agree byte-for-byte\n`))
+      }
     }
-    const rawDiff = compareBaselines(first, second)
-    if (!rawDiff.isEmpty()) {
-      console.log(
-        `[${slice}] flake gate: raw K/T boundary moved but the folded projection agrees:\n${
-          formatBaselineDiff(rawDiff)
-        }`,
-      )
-    } else {
-      console.log(`[${slice}] flake gate: 2/2 runs agree byte-for-byte`)
-    }
-  }
 
-  if (existing !== undefined) {
-    const drift = compareBaselines(foldForGate(existing), foldForGate(first))
-    if (!drift.isEmpty()) {
-      console.log(
-        `[${slice}] note: existing baseline at ${
-          join(BASELINE_OUTPUT_DIR, `${slice}.json`)
-        } differs from fresh blessing on the normalized projection:\n${formatBaselineDiff(drift)}`,
-      )
-    } else {
-      console.log(`[${slice}] note: existing baseline matches fresh blessing on the normalized projection`)
+    if (existing !== undefined) {
+      const drift = compareBaselines(foldForGate(existing), foldForGate(first))
+      if (!drift.isEmpty()) {
+        yield* Effect.sync(() =>
+          process.stdout.write(
+            `[${slice}] note: existing baseline at ${
+              join(BASELINE_OUTPUT_DIR, `${slice}.json`)
+            } differs from fresh blessing on the normalized projection:\n${formatBaselineDiff(drift)}\n`,
+          ))
+      } else {
+        yield* Effect.sync(() =>
+          process.stdout.write(`[${slice}] note: existing baseline matches fresh blessing on the normalized projection\n`))
+      }
     }
-  }
 
-  const outPath = await writeBaselineFile(first)
-  console.log(
-    `[${slice}] blessed baseline written: ${outPath} (slice=${sliceConfig.id}, config=${sliceConfig.strykerConfig})`,
-  )
-  console.log(`[${slice}] total wall=${(Date.now() - wallStartMs) / 1000}s`)
+    const outPath = yield* writeBaselineFile(first)
+    yield* Effect.sync(() =>
+      process.stdout.write(
+        `[${slice}] blessed baseline written: ${outPath} (slice=${sliceConfig.id}, config=${sliceConfig.strykerConfig})\n`,
+      ))
+    yield* Effect.sync(() => process.stdout.write(`[${slice}] total wall=${(Date.now() - wallStartMs) / 1000}s\n`))
+  })
 }
+
+const reportRunEffect = (
+  slice: OracleSliceId,
+  attempt: number,
+  startedMs: number,
+  finishedMs: number,
+): Effect.Effect<void> => Effect.sync(() => reportRun(slice, attempt, startedMs, finishedMs))
 
 const selfBakingHarness = Layer.mergeAll(
   BakedFixtureCache.layer,
@@ -385,23 +448,41 @@ const selfBakingHarness = Layer.mergeAll(
   Layer.provideMerge(Layer.mergeAll(GuestJobs.layer, nodeServicesLayer, Readiness.NodeHostProber.layer)),
 )
 
-async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2))
-  if (args.verify && args.slices.length > 1) {
-    throw new Error('--verify runs two consecutive runs per slice; pass exactly one slice with --verify')
-  }
-  const runtime = ManagedRuntime.make(selfBakingHarness)
-  try {
-    for (const requested of args.slices) {
-      const known = ensureKnownSlice(requested)
-      await blessSlice(runtime, known, args.verify)
-    }
-  } finally {
-    await runtime.dispose()
-  }
-}
+const blessProgram = (argv: ReadonlyArray<string>): Effect.Effect<void, HarnessError, HarnessRuntime> =>
+  Effect.flatMap(Effect.fromResult(argsOf(argv)), (args) =>
+    Match.value(args.verify && args.slices.length > 1).pipe(
+      Match.when(true, () =>
+        Effect.fail(
+          BlessRefused.make({
+            reason: '--verify runs two consecutive runs per slice; pass exactly one slice with --verify',
+          }),
+        )),
+      Match.orElse(() =>
+        Effect.forEach(args.slices, (requested) =>
+          Effect.flatMap(
+            Effect.fromResult(knownSliceOf(requested)),
+            (known) => blessSliceEffect(known, args.verify),
+          ), { discard: true })),
+    ))
 
-main().catch((cause: unknown) => {
-  console.error((cause as Error).message)
-  process.exit(1)
-})
+const blessSliceEffect = (
+  slice: OracleSliceId,
+  verify: boolean,
+): Effect.Effect<void, HarnessError, HarnessRuntime> =>
+  Effect.flatMap(Effect.runtime<HarnessRuntime>(), (runtime) => blessSlice(runtime, slice, verify))
+
+const harnessMessageOf = (cause: unknown): string =>
+  Match.value(cause).pipe(
+    Match.when(S.is(BlessRefused), (refused) => refused.message),
+    Match.orElse(() => 'bless failed: refusing to bless onto an unrecognized failure'),
+  )
+
+const edge = ManagedRuntime.make(selfBakingHarness)
+
+edge.runPromise(blessProgram(process.argv.slice(2))).then(
+  () => edge.dispose().then(() => process.exit(0)),
+  (cause: HarnessError) => {
+    process.stderr.write(`${harnessMessageOf(cause)}\n`)
+    return edge.dispose().then(() => process.exit(1))
+  },
+)

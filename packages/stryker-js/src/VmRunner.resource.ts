@@ -4,7 +4,7 @@ import {
   type CompleteDryRunResult,
   type DryRunOptions,
   type MutantRunResult,
-  MutantRunResultSchema,
+  MutantRunResultFromDryRun,
   type TestRunnerCapabilities,
   type TestRunnerConfig,
   TestRunnerFailed,
@@ -17,7 +17,7 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Ref from 'effect/Ref'
-import { SchemaGetter } from 'effect'
+import * as S from 'effect/Schema'
 
 import { ALL_TESTS_ID, ALL_TESTS_NAME } from './command-runner.resource.js'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
@@ -135,6 +135,8 @@ const hostStrykerNamespace = <A = unknown>(): Record<string, A> =>
     descriptorValue<Record<string, A>>(
       Object.getOwnPropertyDescriptor(globalThis, InstrumenterContext.NAMESPACE),
     ),
+    {
+      onNone: () => createHostNamespace<A>(),
       onSome: (current) =>
         Boolean.match(isPlainObject<A>(current), {
           onTrue: (): Record<string, A> => current,
@@ -144,15 +146,15 @@ const hostStrykerNamespace = <A = unknown>(): Record<string, A> =>
   )
 
 const setActiveMutant = (activeMutantId: string | undefined) => {
-  hostStrykerNamespace<string | undefined>()[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
+  hostStrykerNamespace<string | undefined>()[InstrumenterContext.ACTIVE_MUTANT] = activeMutantId
 }
 
 const withActiveMutant = <A, E, R>(activeMutantId: string | undefined, run: Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
     Effect.sync(() => {
       const namespace = hostStrykerNamespace<string | undefined>()
-      const previous = namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT]
-      namespace[INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT] = activeMutantId
+      const previous = namespace[InstrumenterContext.ACTIVE_MUTANT]
+      namespace[InstrumenterContext.ACTIVE_MUTANT] = activeMutantId
       return previous
     }),
     () => run,
@@ -217,20 +219,15 @@ export const vmTestRunner = (
       dryRun: (options: DryRunOptions) => run(testFilesOf(options.testFiles), undefined),
       mutantRun: (options: MutantRunOptions) =>
         run(config.testFiles, options.activeMutant.id).pipe(
-          Effect.map((result) =>
-            SchemaGetter.run(MutantRunResultSchema.decode({ reportAllKillers: true }), Option.some(result), {})
-          ),
-          Effect.map((decoded) => Option.getOrThrow(decoded)),
+          Effect.flatMap(S.decodeEffect(MutantRunResultFromDryRun)),
+          Effect.catchTag('SchemaError', (cause) =>
+            Effect.fail(TestRunnerFailed.make({
+              runnerName: vmRunnerName,
+              phase: 'mutantRun',
+              cause: cause.message,
+            }))),
           Effect.catchTag('TestRunnerFailed', (failure): Effect.Effect<MutantRunResult> =>
-            Effect.succeed(
-              Option.getOrThrow(
-                SchemaGetter.run(
-                  MutantRunResultSchema.decode({ reportAllKillers: true }),
-                  Option.some({ status: 'error', errorMessage: failure.cause }),
-                  {},
-                ),
-              ),
-            )),
+            Effect.succeed({ status: 'error', errorMessage: failure.cause })),
         ),
     })
   })
