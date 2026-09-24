@@ -323,7 +323,8 @@ const pinnedRowOf = (row: MutantRow): PinnedRow => ({
   text: slicedText(SOURCES[row.file] ?? '', row.location),
 })
 
-const pinnedKey = (row: PinnedRow): string => [row.file, row.mutator, row.replacement].join('|')
+const pinnedKey = (row: PinnedRow): string =>
+  [row.file, row.location.start.line, row.location.start.column, row.mutator, row.replacement].join('|')
 
 const sortedPinned = (rows: readonly PinnedRow[]): readonly PinnedRow[] => rows.toSorted(compareBy(pinnedKey))
 
