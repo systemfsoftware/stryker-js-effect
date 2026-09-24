@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { formatEachName } from '@systemfsoftware/stryker-vm-harness'
+import { Registry } from '@systemfsoftware/stryker-vm-harness'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
@@ -17,7 +17,7 @@ Feature('Formatting each-runner test names')
         ),
         When('the name is formatted')(
           'name',
-          (s) => Effect.sync(() => formatEachName(s.input.template, s.input.row)),
+          (s) => Effect.sync(() => Registry.formatEachName(s.input.template, s.input.row)),
         ),
         Then('the name reads "value: 42"')((s) =>
           Effect.sync(() => {
@@ -43,7 +43,7 @@ Feature('Formatting each-runner test names')
         ),
         When('each template is formatted')(
           'names',
-          (s) => Effect.sync(() => s.cases.map((entry) => formatEachName(entry.template, entry.row))),
+          (s) => Effect.sync(() => s.cases.map((entry) => Registry.formatEachName(entry.template, entry.row))),
         ),
         Then('the values read 123, 123.45, NaN, 3.14159, and 3.14')((s) =>
           Effect.sync(() => {
@@ -73,7 +73,7 @@ Feature('Formatting each-runner test names')
         ),
         When('each template is formatted')(
           'names',
-          (s) => Effect.sync(() => s.cases.map((entry) => formatEachName(entry.template, entry.row))),
+          (s) => Effect.sync(() => s.cases.map((entry) => Registry.formatEachName(entry.template, entry.row))),
         ),
         Then('the names read as a JSON object, a JSON null, and a JSON string')((s) =>
           Effect.sync(() => {
@@ -92,7 +92,7 @@ Feature('Formatting each-runner test names')
         ),
         When('the name is formatted')(
           'name',
-          (s) => Effect.sync(() => formatEachName(s.input.template, s.input.row)),
+          (s) => Effect.sync(() => Registry.formatEachName(s.input.template, s.input.row)),
         ),
         Then('only the recognized token consumes the row and the rest stay literal')((s) =>
           Effect.sync(() => {
@@ -111,7 +111,7 @@ Feature('Formatting each-runner test names')
         ),
         When('the name is formatted')(
           'name',
-          (s) => Effect.sync(() => formatEachName(s.input.template, s.input.row)),
+          (s) => Effect.sync(() => Registry.formatEachName(s.input.template, s.input.row)),
         ),
         Then('the name reads "case 1"')((s) =>
           Effect.sync(() => {
@@ -130,7 +130,7 @@ Feature('Formatting each-runner test names')
         ),
         When('the name is formatted')(
           'name',
-          (s) => Effect.sync(() => formatEachName(s.input.template, s.input.row)),
+          (s) => Effect.sync(() => Registry.formatEachName(s.input.template, s.input.row)),
         ),
         Then('the name reads "100% done"')((s) =>
           Effect.sync(() => {
@@ -149,7 +149,7 @@ Feature('Formatting each-runner test names')
         ),
         When('the name is formatted')(
           'name',
-          (s) => Effect.sync(() => formatEachName(s.input.template, s.input.row)),
+          (s) => Effect.sync(() => Registry.formatEachName(s.input.template, s.input.row)),
         ),
         Then('the name reads "hello and world"')((s) =>
           Effect.sync(() => {
@@ -173,7 +173,7 @@ Feature('Formatting each-runner test names')
         ),
         When('each template is formatted')(
           'names',
-          (s) => Effect.sync(() => s.cases.map((entry) => formatEachName(entry.template, entry.row))),
+          (s) => Effect.sync(() => s.cases.map((entry) => Registry.formatEachName(entry.template, entry.row))),
         ),
         Then('the names read null and undefined in both text and JSON form')((s) =>
           Effect.sync(() => {
@@ -192,7 +192,7 @@ Feature('Formatting each-runner test names')
         ),
         When('the name is formatted')(
           'name',
-          (s) => Effect.sync(() => formatEachName(s.input.template, s.input.row)),
+          (s) => Effect.sync(() => Registry.formatEachName(s.input.template, s.input.row)),
         ),
         Then('the name reads "val: {"x":2}"')((s) =>
           Effect.sync(() => {
@@ -211,7 +211,7 @@ Feature('Formatting each-runner test names')
         ),
         When('the name is formatted')(
           'name',
-          (s) => Effect.sync(() => formatEachName(s.input.template, s.input.row)),
+          (s) => Effect.sync(() => Registry.formatEachName(s.input.template, s.input.row)),
         ),
         Then('the name reads "val: single"')((s) =>
           Effect.sync(() => {
@@ -230,7 +230,7 @@ Feature('Formatting each-runner test names')
         ),
         When('the name is formatted')(
           'name',
-          (s) => Effect.sync(() => formatEachName(s.input.template, s.input.row)),
+          (s) => Effect.sync(() => Registry.formatEachName(s.input.template, s.input.row)),
         ),
         Then('the name is empty')((s) =>
           Effect.sync(() => {

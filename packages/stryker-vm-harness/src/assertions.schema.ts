@@ -1,4 +1,7 @@
+import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
+
+type AnyDecoded<A = unknown> = A
 
 const unsupportedSnapshot = (): never => {
   throw new Error(
@@ -13,28 +16,29 @@ const unsupportedMocking = (name: string): never => {
 }
 
 const isSnapshotProp = (property: PropertyKey): boolean =>
-  property === 'toMatchSnapshot' || property === 'toMatchInlineSnapshot'
+  Boolean.or(property === 'toMatchSnapshot', property === 'toMatchInlineSnapshot')
 
-const isMockProp = (property: PropertyKey): boolean => property === 'mock' || property === 'hoisted'
+const isMockProp = (property: PropertyKey): boolean => Boolean.or(property === 'mock', property === 'hoisted')
+
+const memberOf = (target: object, property: PropertyKey, receiver: object): AnyDecoded => {
+  const value: AnyDecoded = Reflect.get(target, property, receiver)
+  return value
+}
 
 export const guardedExpect = (real: object): object =>
   new Proxy(real, {
-    get(target, property, receiver) {
-      return Match.value(isSnapshotProp(property)).pipe(
+    get: (target, property, receiver) =>
+      Match.value(isSnapshotProp(property)).pipe(
         Match.when(true, () => unsupportedSnapshot),
-        Match.when(false, () => Reflect.get(target, property, receiver)),
-        Match.exhaustive,
-      )
-    },
+        Match.orElse(() => memberOf(target, property, receiver)),
+      ),
   })
 
 export const guardedVi = (real: object): object =>
   new Proxy(real, {
-    get(target, property, receiver) {
-      return Match.value(isMockProp(property)).pipe(
+    get: (target, property, receiver) =>
+      Match.value(isMockProp(property)).pipe(
         Match.when(true, () => () => unsupportedMocking(String(property))),
-        Match.when(false, () => Reflect.get(target, property, receiver)),
-        Match.exhaustive,
-      )
-    },
+        Match.orElse(() => memberOf(target, property, receiver)),
+      ),
   })

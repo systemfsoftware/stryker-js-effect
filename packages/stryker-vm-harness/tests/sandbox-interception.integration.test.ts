@@ -1,19 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  activateSandbox,
-  createHarnessApi,
-  createRegistry,
-  deactivateSandbox,
-  harnessSourceFor,
-  harnessUrlForSpecifier,
-  installInterception,
-  makeEffectMethods,
-  nativeImport,
-  readGlobalState,
-  uninstallInterception,
-  type VmRunnerGlobalState,
-  writeGlobalState,
-} from '@systemfsoftware/stryker-vm-harness'
+import { EffectAdapter, Registry, Sandbox } from '@systemfsoftware/stryker-vm-harness'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'

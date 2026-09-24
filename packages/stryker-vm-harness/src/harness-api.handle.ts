@@ -1,4 +1,3 @@
-import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 
@@ -27,11 +26,6 @@ const isTestFunction = <A>(
   value: TestFunctionWithTimeout<A> | TestOptions | number | undefined,
 ): value is TestFunctionWithTimeout<A> => typeof value === 'function'
 
-const isEachFn = <A>(value: EachFn<A> | string | undefined): value is EachFn<A> => typeof value === 'function'
-
-const isSuiteBody = <A>(value: EachSuiteBody<A> | string | undefined): value is EachSuiteBody<A> =>
-  typeof value === 'function'
-
 const resolveFn = (
   fnOrOptions: TestFunctionWithTimeout | TestOptions | undefined,
   maybeFn: TestFunctionWithTimeout | number | undefined,
@@ -43,8 +37,10 @@ const resolveFn = (
     ),
   )
 
-const eachArgsOf = <A>(name: string | undefined, fn: EachFn<A> | undefined): Option.Option<readonly [string, EachFn<A>]> =>
-  Option.all([Option.fromNullishOr(name), Option.fromNullishOr(fn)])
+const eachArgsOf = <A>(
+  name: string | undefined,
+  fn: EachFn<A> | undefined,
+): Option.Option<readonly [string, EachFn<A>]> => Option.all([Option.fromNullishOr(name), Option.fromNullishOr(fn)])
 
 const suiteEachArgsOf = <A>(
   name: string | undefined,
@@ -165,5 +161,3 @@ export const createHarnessApi = (registry: TestRegistry): HarnessApi => {
     },
   }
 }
-
-export { isEachFn, isSuiteBody, Boolean }

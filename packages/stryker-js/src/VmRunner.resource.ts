@@ -1,22 +1,6 @@
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  activateSandbox,
-  createHarnessApi,
-  createRegistry,
-  deactivateSandbox,
-  type DrainCompleted,
-  drainRegistry,
-  type DrainOutcome,
-  guardedExpect,
-  guardedVi,
-  installInterception,
-  makeEffectMethods,
-  nativeImport,
-  uninstallInterception,
-  writeGlobalState,
-} from '@systemfsoftware/stryker-vm-harness'
-import type { VmRunnerGlobalState } from '@systemfsoftware/stryker-vm-harness'
+import { Assertions, Drain, EffectAdapter, Registry, Sandbox } from '@systemfsoftware/stryker-vm-harness'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -221,7 +205,7 @@ const elapsedOf = (tests: readonly DrainedTestView[]): number =>
   tests.reduce((total, test) => total + test.timeSpentMs, 0)
 
 const completedResult = (
-  drained: DrainCompleted,
+  drained: Drain.DrainCompleted,
   registeredTestCount: number,
   failures: readonly RunFailure[],
 ): TestRunner.DryRunResult =>
@@ -234,7 +218,7 @@ const completedResult = (
   )
 
 const outcomeOf = (
-  drained: DrainOutcome,
+  drained: Drain.DrainOutcome,
   registeredTestCount: number,
   failures: readonly RunFailure[],
 ): TestRunner.DryRunResult =>
@@ -245,9 +229,9 @@ const outcomeOf = (
   )
 
 const disarmSandbox = (): void => {
-  writeGlobalState(undefined)
-  deactivateSandbox()
-  uninstallInterception()
+  Sandbox.writeGlobalState(undefined)
+  Sandbox.deactivateSandbox()
+  Sandbox.uninstallInterception()
 }
 
 const loadVitest = () =>
@@ -271,7 +255,7 @@ const runOnce = (
   const namespace = hostStrykerNamespace<string | undefined>()
   const previousActive = namespace[Mutant.InstrumenterContext.ACTIVE_MUTANT]
   return Effect.gen(function*() {
-    const registry = createRegistry()
+    const registry = Registry.createRegistry()
     setActiveMutant(namespace, activeMutantId)
     const real = yield* loadVitest()
     const salt = saltCounter++
@@ -279,18 +263,18 @@ const runOnce = (
 
     const verified = yield* Effect.acquireUseRelease(
       Effect.sync(() => {
-        const api = createHarnessApi(registry)
-        const state: VmRunnerGlobalState = {
+        const api = Registry.createHarnessApi(registry)
+        const state: Sandbox.VmRunnerGlobalState = {
           api,
-          expect: guardedExpect(real.expect),
-          vi: guardedVi(real.vi),
+          expect: Assertions.guardedExpect(real.expect),
+          vi: Assertions.guardedVi(real.vi),
           effectVitest: {
-            it: makeEffectMethods({ api: api.it, describe: api.describe, hooks: api.hooks, tests: registry.tests }),
+            it: EffectAdapter.makeEffectMethods({ api: api.it, describe: api.describe, hooks: api.hooks, tests: registry.tests }),
           },
         }
-        installInterception(platform.moduleBuiltin)
-        activateSandbox(prefix)
-        writeGlobalState(state)
+        Sandbox.installInterception(platform.moduleBuiltin)
+        Sandbox.activateSandbox(prefix)
+        Sandbox.writeGlobalState(state)
       }),
       () =>
         Effect.gen(function*() {
@@ -299,7 +283,7 @@ const runOnce = (
               registry.files.current = file
               registry.frames.current = []
               const url = `${platform.pathToFileURL(file).href}?salt=${salt}`
-              return nativeImport(url).then(
+              return Sandbox.nativeImport(url).then(
                 () => Option.none<RunFailure>(),
                 <A = unknown>(cause: A) => Option.some(runFailureFor(file, cause)),
               )
@@ -307,7 +291,7 @@ const runOnce = (
           const failures = Arr.getSomes(loaded)
           const drained = yield* Option.match(initFailureOf(failures), {
             onSome: Effect.fail,
-            onNone: () => Effect.promise(() => drainRegistry(registry, timeoutMs)),
+            onNone: () => Effect.promise(() => Drain.drainRegistry(registry, timeoutMs)),
           })
           return { drained, failures }
         }),

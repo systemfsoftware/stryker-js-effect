@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { guardedExpect, guardedVi } from '@systemfsoftware/stryker-vm-harness'
+import { Assertions } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import { expect } from 'vitest'
@@ -51,7 +51,7 @@ Feature('Assertion helpers handed to a suite that runs in memory')
       Gherkin.Do.pipe(
         Given('a suite holding the assertion helpers the in-memory runner hands out')(
           'assertions',
-          () => Effect.succeed(guardedExpect({})),
+          () => Effect.succeed(Assertions.guardedExpect({})),
         ),
         When('it compares against a stored snapshot')(
           'refusal',
@@ -70,7 +70,7 @@ Feature('Assertion helpers handed to a suite that runs in memory')
       Gherkin.Do.pipe(
         Given('a suite holding the assertion helpers the in-memory runner hands out')(
           'assertions',
-          () => Effect.succeed(guardedExpect({})),
+          () => Effect.succeed(Assertions.guardedExpect({})),
         ),
         When('it writes an inline snapshot beside its expectation')(
           'refusal',
@@ -98,7 +98,7 @@ Feature('Assertion helpers handed to a suite that runs in memory')
                   return answerWas
                 },
               }
-              return { handedOut: guardedExpect(matchers), matchers, answer: () => answerWas }
+              return { handedOut: Assertions.guardedExpect(matchers), matchers, answer: () => answerWas }
             }),
         ),
         When('it applies an ordinary matcher')((s) => Effect.sync(() => handedAnswer(s.suite.handedOut, 'toBe'))),
@@ -116,7 +116,7 @@ Feature('Assertion helpers handed to a suite that runs in memory')
       Gherkin.Do.pipe(
         Given('a suite holding the mocking helpers the in-memory runner hands out')(
           'mocks',
-          () => Effect.succeed(guardedVi({})),
+          () => Effect.succeed(Assertions.guardedVi({})),
         ),
         When('it mocks a module')('refusal', (s) => Effect.sync(() => refusalOf(() => handedAnswer(s.mocks, 'mock')))),
         Then('it is pointed at the test runner that supports module mocking')((s) =>
@@ -132,7 +132,7 @@ Feature('Assertion helpers handed to a suite that runs in memory')
       Gherkin.Do.pipe(
         Given('a suite holding the mocking helpers the in-memory runner hands out')(
           'mocks',
-          () => Effect.succeed(guardedVi({})),
+          () => Effect.succeed(Assertions.guardedVi({})),
         ),
         When('it hoists a mock above its expectations')(
           'refusal',
@@ -160,7 +160,7 @@ Feature('Assertion helpers handed to a suite that runs in memory')
                   return 'mocked'
                 },
               }
-              return { handedOut: guardedVi(helpers), helpers, askedFor: () => askedFor }
+              return { handedOut: Assertions.guardedVi(helpers), helpers, askedFor: () => askedFor }
             }),
         ),
         When('it asks for its mock helper')((s) => Effect.sync(() => handedAnswer(s.suite.handedOut, 'fn'))),

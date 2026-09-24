@@ -1,4 +1,5 @@
 import { describe, it } from '@effect/vitest'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -8,7 +9,7 @@ import {
   RegistrySpecSchema,
   type RegistryTestSpec,
   type TestSpec,
-} from '../../../tests/__fixtures__/drain-pipeline.schema.js'
+} from '../../tests/__fixtures__/drain-pipeline.schema.js'
 import {
   DrainCompleted,
   type DrainOutcome,
@@ -18,7 +19,8 @@ import {
   PlannedTestView,
   type TestOutcome,
 } from '../drain-registry.workflow.js'
-import { createRegistry, planRun, type TestRegistry } from '../registry.js'
+import { createRegistry, planRun } from '../registry.handle.js'
+import type { TestRegistry } from '../registry.schema.js'
 
 const DrainTypeId = Symbol.for('@systemfsoftware/stryker-vm-harness/DrainDecision')
 
@@ -180,10 +182,13 @@ describe('planRun property tests', () => {
       [...registry.suites.values()].some((s) => s.mode === 'only')
 
     return plan.every((p) => {
-      const suite = p.test.suiteIds.length > 0 ? registry.suites.get(p.test.suiteIds[0]!) : undefined
+      const suiteMode = Option.flatMap(
+        Option.fromNullishOr(p.test.suiteIds[0]),
+        (id) => Option.map(Option.fromNullishOr(registry.suites.get(id)), (suite) => suite.mode),
+      ).pipe(Option.getOrUndefined)
       const isExplicitSkip = p.test.mode === 'skip' || p.test.mode === 'todo'
-      const isSuiteSkip = suite?.mode === 'skip' || suite?.mode === 'todo'
-      const isExplicitOnly = p.test.mode === 'only' || suite?.mode === 'only'
+      const isSuiteSkip = suiteMode === 'skip' || suiteMode === 'todo'
+      const isExplicitOnly = p.test.mode === 'only' || suiteMode === 'only'
 
       if (hasOnly) {
         if (isExplicitOnly) {
