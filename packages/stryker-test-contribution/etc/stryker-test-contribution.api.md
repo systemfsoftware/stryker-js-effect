@@ -9,29 +9,85 @@ import { Evaluator } from '@systemfsoftware/stryker-js-plugin-interface';
 import { EvaluatorFailed } from '@systemfsoftware/stryker-js-plugin-interface';
 import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface';
 import * as Layer from 'effect/Layer';
-import * as schema from '@systemfsoftware/stryker-js-plugin-interface';
+import * as S from 'effect/Schema';
+import * as schema$1 from '@systemfsoftware/stryker-js-plugin-interface';
+import { schema } from '@systemfsoftware/stryker-js-plugin-interface';
+import { Workflow } from '@systemfsoftware/effect-cell-types';
+
+// Warning: (ae-forgotten-export) The symbol "BailHidesKillers_base" needs to be exported by the entry point index.d.ts
+//
+// @public (undocumented)
+export class BailHidesKillers extends BailHidesKillers_base {
+    // Warning: (ae-forgotten-export) The symbol "VerdictTypeId" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    readonly [VerdictTypeId]: symbol;
+}
+
+// Warning: (ae-forgotten-export) The symbol "JointlyDeletable_base" needs to be exported by the entry point index.d.ts
+//
+// @public (undocumented)
+export class JointlyDeletable extends JointlyDeletable_base {
+    // (undocumented)
+    readonly [VerdictTypeId]: symbol;
+}
+
+// Warning: (ae-forgotten-export) The symbol "JudgeTestContribution_base" needs to be exported by the entry point index.d.ts
+//
+// @public (undocumented)
+export class JudgeTestContribution extends JudgeTestContribution_base {
+    // (undocumented)
+    static readonly [Workflow.InstrumentationBrand]: {
+        readonly everyKillerRecorded: 'stryker.test_contribution.every_killer_recorded';
+    };
+    // (undocumented)
+    static readonly defaultRequireTestContributionSuffixes: readonly ['.workflow.property.test.ts', '.policy.property.test.ts', '.kernel.property.test.ts'];
+}
 
 // @public (undocumented)
-export const contributionByTestFile: (report: ReportView) => ReadonlyMap<string, TestFileContribution>;
-
-// @public (undocumented)
-export const defaultRequireTestContributionSuffixes: readonly ['.workflow.property.test.ts', '.policy.property.test.ts', '.kernel.property.test.ts'];
-
-// @public (undocumented)
-export const judgeTestContribution: {
-    (report: ReportView, everyKillerRecorded: boolean, suffixes?: readonly string[]): TestContributionVerdict;
-    (everyKillerRecorded: boolean, suffixes?: readonly string[]): (report: ReportView) => TestContributionVerdict;
-};
+export const judgeTestContribution: Workflow.MadeWorkflow<typeof JudgeTestContribution, S.Union<readonly [typeof RunUnjudged, typeof BailHidesKillers, typeof NoKillCredited, typeof RunReviewed, typeof JointlyDeletable, typeof NotJointlyDeletable]>, S.Never>;
 
 // @public (undocumented)
 export const makeTestContributionEvaluatorService: (options: {
     readonly disableBail: boolean;
 }) => {
-    readonly evaluate: (report: schema.MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed>;
+    readonly evaluate: (report: schema$1.MutationTestResult) => Effect.Effect<ExitClass | null, EvaluatorFailed>;
 };
+
+// Warning: (ae-forgotten-export) The symbol "NoKillCredited_base" needs to be exported by the entry point index.d.ts
+//
+// @public (undocumented)
+export class NoKillCredited extends NoKillCredited_base {
+    // (undocumented)
+    readonly [VerdictTypeId]: symbol;
+}
+
+// Warning: (ae-forgotten-export) The symbol "NotJointlyDeletable_base" needs to be exported by the entry point index.d.ts
+//
+// @public (undocumented)
+export class NotJointlyDeletable extends NotJointlyDeletable_base {
+    // (undocumented)
+    readonly [VerdictTypeId]: symbol;
+}
 
 // @public (undocumented)
 export type ReportView = Pick<schema.MutationTestResult, 'files' | 'testFiles'>;
+
+// Warning: (ae-forgotten-export) The symbol "RunReviewed_base" needs to be exported by the entry point index.d.ts
+//
+// @public (undocumented)
+export class RunReviewed extends RunReviewed_base {
+    // (undocumented)
+    readonly [VerdictTypeId]: symbol;
+}
+
+// Warning: (ae-forgotten-export) The symbol "RunUnjudged_base" needs to be exported by the entry point index.d.ts
+//
+// @public (undocumented)
+export class RunUnjudged extends RunUnjudged_base {
+    // (undocumented)
+    readonly [VerdictTypeId]: symbol;
+}
 
 // @public (undocumented)
 export const strykerPlugins: readonly {
@@ -40,40 +96,26 @@ export const strykerPlugins: readonly {
 }[];
 
 // @public (undocumented)
+export const TestContributionDecision: S.Union<readonly [typeof RunUnjudged, typeof BailHidesKillers, typeof NoKillCredited, typeof RunReviewed, typeof JointlyDeletable, typeof NotJointlyDeletable]>;
+
+// @public (undocumented)
+export type TestContributionDecision = typeof TestContributionDecision.Type;
+
+// @public (undocumented)
 export const testContributionEvaluatorLayer: (options: {
     readonly disableBail: boolean;
 }) => Layer.Layer<Evaluator>;
 
 // @public (undocumented)
-export interface TestContributionInput {
-    readonly everyKillerRecorded: boolean;
-    // (undocumented)
-    readonly suffixes: readonly string[];
-}
-
-// @public (undocumented)
-export interface TestContributionVerdict {
-    // (undocumented)
-    readonly failed: boolean;
-    // (undocumented)
-    readonly message: string;
-}
-
-// @public (undocumented)
 export interface TestFileContribution {
     readonly coversUnattributedKill: boolean;
+    // (undocumented)
     readonly killableCovered: number;
     // (undocumented)
     readonly soleKills: number;
     // (undocumented)
     readonly totalKills: number;
 }
-
-// @public (undocumented)
-export const toothlessTestFiles: {
-    (contribution: ReadonlyMap<string, TestFileContribution>, input: TestContributionInput): readonly string[];
-    (input: TestContributionInput): (contribution: ReadonlyMap<string, TestFileContribution>) => readonly string[];
-};
 
 // (No @packageDocumentation comment for this package)
 

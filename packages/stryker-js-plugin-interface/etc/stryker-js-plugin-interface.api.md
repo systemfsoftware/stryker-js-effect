@@ -7,7 +7,6 @@
 import * as Context from 'effect/Context';
 import * as Effect$1 from 'effect/Effect';
 import * as HashMap from 'effect/HashMap';
-import { JsonSchema } from 'effect/JsonSchema';
 import { Location } from '@systemfsoftware/stryker-js-instrumenter';
 import { LocationSchema } from '@systemfsoftware/stryker-js-instrumenter';
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter';
@@ -90,8 +89,8 @@ export type CheckerCustomConfig = typeof CheckerCustomConfigSchema.Type;
 // @public (undocumented)
 export const CheckerCustomConfigSchema: S.Struct<{
     readonly plugin: S.String;
-    readonly nodeArgs: S.optional<S.$Array<S.String>>;
-    readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+    readonly nodeArgs: S.optionalKey<S.$Array<S.String>>;
+    readonly options: S.optionalKey<S.$Record<S.String, S.Unknown>>;
 }>;
 
 // @public (undocumented)
@@ -100,8 +99,8 @@ export type CheckerEntryConfig = typeof CheckerEntryConfigSchema.Type;
 // @public (undocumented)
 export const CheckerEntryConfigSchema: S.Struct<{
     readonly plugin: S.String;
-    readonly nodeArgs: S.optional<S.$Array<S.String>>;
-    readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+    readonly nodeArgs: S.optionalKey<S.$Array<S.String>>;
+    readonly options: S.optionalKey<S.$Record<S.String, S.Unknown>>;
 }>;
 
 // Warning: (ae-forgotten-export) The symbol "CheckerFailed_base" needs to be exported by the entry point index.d.mts
@@ -114,18 +113,18 @@ export const CheckerGroupResult: S.$Array<S.$Array<S.String>>;
 
 // @public (undocumented)
 export const CheckerMutantWire: S.Struct<{
-    readonly id: S.NonEmptyString;
-    readonly fileName: S.NonEmptyString;
-    readonly mutatorName: S.NonEmptyString;
+    readonly id: S.brand<S.NonEmptyString, "MutantId">;
+    readonly fileName: S.decodeTo<S.brand<S.String, "CanonicalFileName">, S.String, never, never>;
+    readonly mutatorName: S.brand<S.NonEmptyString, "MutatorName">;
     readonly replacement: S.String;
     readonly location: S.Struct<{
         readonly start: S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
+            readonly line: S.Int;
+            readonly column: S.Int;
         }>;
         readonly end: S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
+            readonly line: S.Int;
+            readonly column: S.Int;
         }>;
     }>;
 }>;
@@ -137,18 +136,18 @@ export type CheckerMutantWire = typeof CheckerMutantWire.Type;
 export const CheckerRequest: S.Struct<{
     readonly checkerName: S.String;
     readonly mutants: S.$Array<S.Struct<{
-        readonly id: S.NonEmptyString;
-        readonly fileName: S.NonEmptyString;
-        readonly mutatorName: S.NonEmptyString;
+        readonly id: S.brand<S.NonEmptyString, "MutantId">;
+        readonly fileName: S.decodeTo<S.brand<S.String, "CanonicalFileName">, S.String, never, never>;
+        readonly mutatorName: S.brand<S.NonEmptyString, "MutatorName">;
         readonly replacement: S.String;
         readonly location: S.Struct<{
             readonly start: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
+                readonly line: S.Int;
+                readonly column: S.Int;
             }>;
             readonly end: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
+                readonly line: S.Int;
+                readonly column: S.Int;
             }>;
         }>;
     }>>;
@@ -267,8 +266,8 @@ export const DryRunResultSchema: S.Union<readonly [S.Struct<{
         readonly timeSpentMs: S.Finite;
         readonly fileName: S.optionalKey<S.String>;
         readonly startPosition: S.optionalKey<S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
+            readonly line: S.Int;
+            readonly column: S.Int;
         }>>;
         readonly status: S.Literal<"failed">;
         readonly failureMessage: S.String;
@@ -278,8 +277,8 @@ export const DryRunResultSchema: S.Union<readonly [S.Struct<{
         readonly timeSpentMs: S.Finite;
         readonly fileName: S.optionalKey<S.String>;
         readonly startPosition: S.optionalKey<S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
+            readonly line: S.Int;
+            readonly column: S.Int;
         }>>;
         readonly status: S.Literal<"skipped">;
     }>, S.Struct<{
@@ -288,8 +287,8 @@ export const DryRunResultSchema: S.Union<readonly [S.Struct<{
         readonly timeSpentMs: S.Finite;
         readonly fileName: S.optionalKey<S.String>;
         readonly startPosition: S.optionalKey<S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
+            readonly line: S.Int;
+            readonly column: S.Int;
         }>>;
         readonly status: S.Literal<"success">;
     }>]>>;
@@ -344,13 +343,13 @@ export interface EvaluatorService {
 }
 
 // @public (undocumented)
-export const EXIT_CODE: Record<ExitClass, number>;
-
-// @public (undocumented)
 export const ExitClass: S.Literals<readonly ["VerdictFail", "ConfigError", "RuntimeError", "InternalError"]>;
 
 // @public (undocumented)
 export type ExitClass = typeof ExitClass.Type;
+
+// @public (undocumented)
+export const ExitCodeFromClass: S.decodeTo<S.Literals<readonly [1, 2, 3, 4]>, S.Literals<readonly ["VerdictFail", "ConfigError", "RuntimeError", "InternalError"]>, never, never>;
 
 // @public (undocumented)
 export interface FailedCheckResult {
@@ -384,12 +383,12 @@ export const FileResultDictionarySchema: S.$Record<S.String, S.Struct<{
         readonly status: S.Literals<readonly ["Killed", "Survived", "NoCoverage", "CompileError", "RuntimeError", "Timeout", "Ignored", "Pending"]>;
         readonly location: S.Struct<{
             readonly start: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
+                readonly line: S.Int;
+                readonly column: S.Int;
             }>;
             readonly end: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
+                readonly line: S.Int;
+                readonly column: S.Int;
             }>;
         }>;
         readonly replacement: S.optional<S.String>;
@@ -413,12 +412,12 @@ export const FileResultSchema: S.Struct<{
         readonly status: S.Literals<readonly ["Killed", "Survived", "NoCoverage", "CompileError", "RuntimeError", "Timeout", "Ignored", "Pending"]>;
         readonly location: S.Struct<{
             readonly start: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
+                readonly line: S.Int;
+                readonly column: S.Int;
             }>;
             readonly end: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
+                readonly line: S.Int;
+                readonly column: S.Int;
             }>;
         }>;
         readonly replacement: S.optional<S.String>;
@@ -431,9 +430,6 @@ export const FileResultSchema: S.Struct<{
         readonly duration: S.optional<S.Finite>;
     }>>;
 }>;
-
-// @public (undocumented)
-export const formatTraceparent: (parts: TraceContextParts) => Traceparent;
 
 // @public (undocumented)
 export type FrameworkInformation = typeof FrameworkInformationSchema.Type;
@@ -450,27 +446,27 @@ export const FrameworkInformationSchema: S.Struct<{
 }>;
 
 // @public (undocumented)
-export const HIT_LIMIT_REASON_PREFIX = "Hit limit reached";
+export const HitLimitReason: S.decodeTo<S.Struct<{
+    readonly count: S.Natural;
+    readonly limit: S.Natural;
+}>, S.String, never, never>;
 
 // @public (undocumented)
-export const hitLimitReachedReason: {
-    (count: number, limit: number): string;
-    (limit: number): (count: number) => string;
-};
+export const HitLimitReasonPrefix: S.Literal<"Hit limit reached">;
+
+// @public (undocumented)
+export const HitLimitReasonText: S.String;
 
 // @public (undocumented)
 export const InvalidStatus: S.Union<readonly [S.Literal<"CompileError">, S.Literal<"RuntimeError">]>;
 
 // @public (undocumented)
-export const isCustomTestRunner: (value: TestRunnerConfig) => value is TestRunnerCustomConfig;
-
-// @public (undocumented)
-export const isHitLimitReason: (reason: string | undefined) => boolean;
-
-// @public (undocumented)
-export const isNamedTrap: {
-    (activeMutantId: string, namedTrapId: string | undefined): boolean;
-    (namedTrapId: string | undefined): (activeMutantId: string) => boolean;
+export const isCustomTestRunner: <I>(input: I) => input is I & {
+    readonly plugin: string;
+    readonly nodeArgs?: readonly string[] | undefined;
+    readonly options?: {
+        readonly [x: string]: unknown;
+    } | undefined;
 };
 
 // @public (undocumented)
@@ -484,9 +480,6 @@ export interface KilledMutantRunResult {
     // (undocumented)
     readonly status: 'killed';
 }
-
-// @public
-export type KnownKeys<T> = keyof { [P in keyof T as string extends P ? never : number extends P ? never : P]: T[P]; };
 
 export { Location }
 
@@ -574,12 +567,12 @@ export const MutantResultSchema: S.Struct<{
     readonly status: S.Literals<readonly ["Killed", "Survived", "NoCoverage", "CompileError", "RuntimeError", "Timeout", "Ignored", "Pending"]>;
     readonly location: S.Struct<{
         readonly start: S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
+            readonly line: S.Int;
+            readonly column: S.Int;
         }>;
         readonly end: S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
+            readonly line: S.Int;
+            readonly column: S.Int;
         }>;
     }>;
     readonly replacement: S.optional<S.String>;
@@ -674,12 +667,12 @@ export const MutationTestResultSchema: S.Struct<{
             readonly status: S.Literals<readonly ["Killed", "Survived", "NoCoverage", "CompileError", "RuntimeError", "Timeout", "Ignored", "Pending"]>;
             readonly location: S.Struct<{
                 readonly start: S.Struct<{
-                    readonly line: S.Finite;
-                    readonly column: S.Finite;
+                    readonly line: S.Int;
+                    readonly column: S.Int;
                 }>;
                 readonly end: S.Struct<{
-                    readonly line: S.Finite;
-                    readonly column: S.Finite;
+                    readonly line: S.Int;
+                    readonly column: S.Int;
                 }>;
             }>;
             readonly replacement: S.optional<S.String>;
@@ -710,12 +703,12 @@ export const MutationTestResultSchema: S.Struct<{
             readonly name: S.String;
             readonly location: S.optional<S.Struct<{
                 readonly start: S.Struct<{
-                    readonly line: S.Finite;
-                    readonly column: S.Finite;
+                    readonly line: S.Int;
+                    readonly column: S.Int;
                 }>;
                 readonly end: S.optional<S.Struct<{
-                    readonly line: S.Finite;
-                    readonly column: S.Finite;
+                    readonly line: S.Int;
+                    readonly column: S.Int;
                 }>>;
             }>>;
         }>>;
@@ -738,9 +731,6 @@ export const NonNegativeFinite: S.Finite;
 // @public (undocumented)
 export const NonNegativeInt: S.Int;
 
-// @public (undocumented)
-export type OnlyObject<T> = Exclude<T, Primitive>;
-
 export { OpenEndLocation }
 
 export { OpenEndLocationSchema }
@@ -752,9 +742,6 @@ const PackageManager: S.Literals<readonly ["npm", "yarn", "pnpm"]>;
 type PackageManager = typeof PackageManager.Type;
 export { PackageManager }
 export { PackageManager as PackageManagerType }
-
-// @public (undocumented)
-export const parseTraceparent: (value: string) => Option.Option<TraceContextParts>;
 
 // @public
 export type PartialStrykerOptions = DeepOptional<StrykerOptions>;
@@ -775,34 +762,10 @@ export { Position }
 
 export { PositionSchema }
 
-// @public (undocumented)
-export type Primitive = boolean | number | string | null | undefined;
-
 // Warning: (ae-forgotten-export) The symbol "PropagatedTrace_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
 export class PropagatedTrace extends PropagatedTrace_base {}
-
-// @public
-export function propertyPath<T>(): PropertyPathOverloads<T>;
-
-// @public (undocumented)
-export interface PropertyPathOverloads<T> {
-    // (undocumented)
-    (key: KnownKeys<T>): string;
-    // (undocumented)
-    <TProp1 extends KnownKeys<T>>(key: TProp1, key2: KnownKeys<OnlyObject<T[TProp1]>>): string;
-    // (undocumented)
-    <TProp1 extends KnownKeys<T>, TProp2 extends KnownKeys<OnlyObject<T[TProp1]>>>(key: TProp1, key2: TProp2, key3: KnownKeys<OnlyObject<OnlyObject<T[TProp1]>[TProp2]>>): string;
-}
-
-// @public
-export const RENDERED_OPTION_DEFAULTS: {
-    readonly coverageAnalysis: 'perTest';
-    readonly fileLogLevel: 'off';
-    readonly logLevel: 'info';
-    readonly tempDirName: '.stryker-tmp';
-};
 
 // @public (undocumented)
 export const ReporterAck: S.Void;
@@ -898,8 +861,14 @@ export interface SkippedTestResult extends BaseTestResult {
     readonly status: 'skipped';
 }
 
-// @public
-export const strykerCoreSchema: JsonSchema;
+// @public (undocumented)
+export const StrykerCoverageAnalysis: S.Literal<"perTest">;
+
+// @public (undocumented)
+export const StrykerFileLogLevel: S.Literal<"off">;
+
+// @public (undocumented)
+export const StrykerLogLevel: S.Literal<"info">;
 
 // @public
 export type StrykerOptions = S.Schema.Type<typeof StrykerOptionsSchema>;
@@ -907,14 +876,14 @@ export type StrykerOptions = S.Schema.Type<typeof StrykerOptionsSchema>;
 // @public (undocumented)
 export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly allowConsoleColors: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly buildCommand: S.optional<S.String>;
+    readonly buildCommand: S.optionalKey<S.String>;
     readonly checkers: S.withDecodingDefaultKey<S.$Array<S.Struct<{
         readonly plugin: S.String;
-        readonly nodeArgs: S.optional<S.$Array<S.String>>;
-        readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+        readonly nodeArgs: S.optionalKey<S.$Array<S.String>>;
+        readonly options: S.optionalKey<S.$Record<S.String, S.Unknown>>;
     }>>, never>;
     readonly checkerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly concurrency: S.optional<S.Union<readonly [S.Finite, S.String]>>;
+    readonly concurrency: S.optionalKey<S.Union<readonly [S.Finite, S.String]>>;
     readonly commandRunner: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
         readonly command: S.withDecodingDefaultKey<S.String, never>;
     }>, readonly [S.$Record<S.String, S.Unknown>]>, never>;
@@ -945,7 +914,7 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly mutator: S.withDecodingDefaultKey<S.Struct<{
         readonly excludedMutations: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     }>, never>;
-    readonly packageManager: S.optional<S.Literals<readonly ["npm", "yarn", "pnpm"]>>;
+    readonly packageManager: S.optionalKey<S.Literals<readonly ["npm", "yarn", "pnpm"]>>;
     readonly plugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly appendPlugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly reporters: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
@@ -961,8 +930,8 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly cleanTempDir: S.withDecodingDefaultKey<S.Literals<readonly ["always", false, true]>, never>;
     readonly testRunner: S.withDecodingDefaultKey<S.Union<readonly [S.String, S.Struct<{
         readonly plugin: S.String;
-        readonly nodeArgs: S.optional<S.$Array<S.String>>;
-        readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+        readonly nodeArgs: S.optionalKey<S.$Array<S.String>>;
+        readonly options: S.optionalKey<S.$Record<S.String, S.Unknown>>;
     }>]>, never>;
     readonly testRunnerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly thresholds: S.withDecodingDefaultKey<S.decodeTo<S.declare<{
@@ -994,8 +963,8 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly testFiles: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
 }>, readonly [S.$Record<S.String, S.Unknown>]>;
 
-// @public
-export function strykerReportBugUrl(titleSuggestion: string): string;
+// @public (undocumented)
+export const StrykerTempDirName: S.Literal<".stryker-tmp">;
 
 // @public (undocumented)
 export interface SuccessTestResult extends BaseTestResult {
@@ -1020,12 +989,12 @@ export const TestDefinitionSchema: S.Struct<{
     readonly name: S.String;
     readonly location: S.optional<S.Struct<{
         readonly start: S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
+            readonly line: S.Int;
+            readonly column: S.Int;
         }>;
         readonly end: S.optional<S.Struct<{
-            readonly line: S.Finite;
-            readonly column: S.Finite;
+            readonly line: S.Int;
+            readonly column: S.Int;
         }>>;
     }>>;
 }>;
@@ -1044,12 +1013,12 @@ export const TestFileDefinitionDictionarySchema: S.$Record<S.String, S.Struct<{
         readonly name: S.String;
         readonly location: S.optional<S.Struct<{
             readonly start: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
+                readonly line: S.Int;
+                readonly column: S.Int;
             }>;
             readonly end: S.optional<S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
+                readonly line: S.Int;
+                readonly column: S.Int;
             }>>;
         }>>;
     }>>;
@@ -1063,21 +1032,16 @@ export const TestFileSchema: S.Struct<{
         readonly name: S.String;
         readonly location: S.optional<S.Struct<{
             readonly start: S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
+                readonly line: S.Int;
+                readonly column: S.Int;
             }>;
             readonly end: S.optional<S.Struct<{
-                readonly line: S.Finite;
-                readonly column: S.Finite;
+                readonly line: S.Int;
+                readonly column: S.Int;
             }>>;
         }>>;
     }>>;
 }>;
-
-// @public (undocumented)
-export function testFilesProvided(options: {
-    readonly testFiles?: readonly string[];
-}): boolean;
 
 // @public (undocumented)
 export type TestResult = FailedTestResult | SkippedTestResult | SuccessTestResult;
@@ -1089,8 +1053,8 @@ export const TestResultSchema: S.Union<readonly [S.Struct<{
     readonly timeSpentMs: S.Finite;
     readonly fileName: S.optionalKey<S.String>;
     readonly startPosition: S.optionalKey<S.Struct<{
-        readonly line: S.Finite;
-        readonly column: S.Finite;
+        readonly line: S.Int;
+        readonly column: S.Int;
     }>>;
     readonly status: S.Literal<"failed">;
     readonly failureMessage: S.String;
@@ -1100,8 +1064,8 @@ export const TestResultSchema: S.Union<readonly [S.Struct<{
     readonly timeSpentMs: S.Finite;
     readonly fileName: S.optionalKey<S.String>;
     readonly startPosition: S.optionalKey<S.Struct<{
-        readonly line: S.Finite;
-        readonly column: S.Finite;
+        readonly line: S.Int;
+        readonly column: S.Int;
     }>>;
     readonly status: S.Literal<"skipped">;
 }>, S.Struct<{
@@ -1110,8 +1074,8 @@ export const TestResultSchema: S.Union<readonly [S.Struct<{
     readonly timeSpentMs: S.Finite;
     readonly fileName: S.optionalKey<S.String>;
     readonly startPosition: S.optionalKey<S.Struct<{
-        readonly line: S.Finite;
-        readonly column: S.Finite;
+        readonly line: S.Int;
+        readonly column: S.Int;
     }>>;
     readonly status: S.Literal<"success">;
 }>]>;
@@ -1138,8 +1102,8 @@ export type TestRunnerConfig = typeof TestRunnerConfigSchema.Type;
 // @public (undocumented)
 export const TestRunnerConfigSchema: S.Union<readonly [S.String, S.Struct<{
     readonly plugin: S.String;
-    readonly nodeArgs: S.optional<S.$Array<S.String>>;
-    readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+    readonly nodeArgs: S.optionalKey<S.$Array<S.String>>;
+    readonly options: S.optionalKey<S.$Record<S.String, S.Unknown>>;
 }>]>;
 
 // @public (undocumented)
@@ -1148,8 +1112,8 @@ export type TestRunnerCustomConfig = typeof TestRunnerCustomConfigSchema.Type;
 // @public (undocumented)
 export const TestRunnerCustomConfigSchema: S.Struct<{
     readonly plugin: S.String;
-    readonly nodeArgs: S.optional<S.$Array<S.String>>;
-    readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+    readonly nodeArgs: S.optionalKey<S.$Array<S.String>>;
+    readonly options: S.optionalKey<S.$Record<S.String, S.Unknown>>;
 }>;
 
 // @public (undocumented)
@@ -1181,7 +1145,7 @@ export const TestRunnerMutantRunRequest: S.Struct<{
         readonly mutantActivation: S.Literals<readonly ["runtime", "static"]>;
         readonly reloadEnvironment: S.Boolean;
         readonly testFilter: S.optionalKey<S.$Array<S.String>>;
-        readonly hitLimit: S.optionalKey<S.Finite>;
+        readonly hitLimit: S.optionalKey<S.Int>;
     }>;
 }>;
 
@@ -1242,30 +1206,22 @@ export interface TimeoutMutantRunResult {
     readonly status: 'timeout';
 }
 
-// @public (undocumented)
-export const toMutantRunResult: {
-    (dryRunResult: DryRunResult, reportAllKillers: boolean): MutantRunResult;
-    (reportAllKillers: boolean): (dryRunResult: DryRunResult) => MutantRunResult;
-};
-
 // Warning: (ae-forgotten-export) The symbol "TraceContextMiddleware_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
 export class TraceContextMiddleware extends TraceContextMiddleware_base {}
 
 // @public (undocumented)
-export interface TraceContextParts {
-    // (undocumented)
-    readonly spanId: string;
-    // (undocumented)
-    readonly traceFlags: number;
-    // (undocumented)
-    readonly traceId: string;
-    // (undocumented)
-    readonly traceState?: string | undefined;
-    // (undocumented)
-    readonly version: string;
-}
+export type TraceContextParts = typeof TraceContextPartsSchema.Type;
+
+// @public (undocumented)
+export const TraceContextPartsSchema: S.Struct<{
+    readonly version: S.String;
+    readonly traceId: S.String;
+    readonly spanId: S.String;
+    readonly traceFlags: S.Int;
+    readonly traceState: S.optional<S.String>;
+}>;
 
 // @public (undocumented)
 export const TraceContextReference: Context.Reference<Option.Option<TraceContextParts>>;
@@ -1274,16 +1230,18 @@ export const TraceContextReference: Context.Reference<Option.Option<TraceContext
 export type TracedRpc<Tag extends string, Payload extends Schema.Top = Schema.Void, Success extends Schema.Top = Schema.Void, Error extends Schema.Top = Schema.Never> = Rpc.Rpc<Tag, Payload, Success, Error, typeof TraceContextMiddleware, RpcMiddleware.ApplyServices<typeof TraceContextMiddleware['Identifier'], never>>;
 
 // @public (undocumented)
-export const Traceparent: S.String;
+export const Traceparent: S.decodeTo<S.Struct<{
+    readonly version: S.String;
+    readonly traceId: S.String;
+    readonly spanId: S.String;
+    readonly traceFlags: S.Int;
+}>, S.String, never, never>;
 
 // @public (undocumented)
-export type Traceparent = typeof Traceparent.Type;
+export const TraceparentHeader: S.Literal<"traceparent">;
 
 // @public (undocumented)
-export const TRACEPARENT_HEADER = "traceparent";
-
-// @public (undocumented)
-export const TRACESTATE_HEADER = "tracestate";
+export const TracestateHeader: S.Literal<"tracestate">;
 
 // @public (undocumented)
 export const UndetectedStatus: S.Union<readonly [S.Literal<"Survived">, S.Literal<"NoCoverage">]>;
@@ -1292,13 +1250,7 @@ export const UndetectedStatus: S.Union<readonly [S.Literal<"Survived">, S.Litera
 export const UntestedStatus: S.Union<readonly [S.Literal<"Ignored">, S.Literal<"Pending">]>;
 
 // @public (undocumented)
-export const WALL_CLOCK_TIMEOUT_REASON = "wall-clock-timeout";
-
-// @public (undocumented)
-export const wallClockTimeoutStopsRun: {
-    (status: string, reason: string | undefined): boolean;
-    (reason: string | undefined): (status: string) => boolean;
-};
+export const WallClockTimeoutReason: S.Literal<"wall-clock-timeout">;
 
 // @public (undocumented)
 export const WorkerEntryUrl: S.String;
