@@ -1,4 +1,5 @@
 import { describe, it } from '@effect/vitest'
+import { CanonicalFileName, MutantId, MutatorName } from '@systemfsoftware/stryker-js-instrumenter'
 import { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Match } from 'effect'
 import * as Result from 'effect/Result'
@@ -36,29 +37,14 @@ const mutantIdArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maxim
   Arbitrary.map((n) => n.toString()),
 )
 
-const seedWire: CheckerMutantWire = Result.getOrElse(
-  S.decodeResult(CheckerMutantWire)({
-    id: 'mutant-seed',
-    fileName: 'src/mod-0.ts',
-    mutatorName: 'foo-mutator',
+const mutantInFile = (id: string, fileName: string): CheckerMutantWire =>
+  CheckerMutantWire.make({
+    id: MutantId.make(id),
+    fileName: CanonicalFileName.make(fileName),
+    mutatorName: MutatorName.make('foo-mutator'),
     replacement: 'x',
     location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
-  }),
-  () => {
-    throw new Error('seed CheckerMutantWire failed to decode')
-  },
-)
-
-const wireFieldsOf = (id: string, fileName: string) => ({
-  id,
-  fileName,
-  mutatorName: 'foo-mutator',
-  replacement: 'x',
-  location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
-})
-
-const mutantInFile = (id: string, fileName: string): CheckerMutantWire =>
-  Result.getOrElse(S.decodeResult(CheckerMutantWire)(wireFieldsOf(id, fileName)), () => seedWire)
+  })
 
 const nodeFor = (
   fileName: string,

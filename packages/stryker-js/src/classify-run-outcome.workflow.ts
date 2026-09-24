@@ -206,10 +206,10 @@ const hasReason = Predicate.hasProperty('reason')
 const hasMessageField = Predicate.hasProperty('message')
 
 const isUnseenObject = <A>(value: A, seen: WeakSet<object>): value is A & object =>
-  Predicate.isObjectOrArray(value) && !seen.has(value)
-
-const isReachableValue = <A>(value: A, depth: number, seen: WeakSet<object>): value is A & object =>
-  depth <= MAX_TRAVERSAL_DEPTH && isUnseenObject(value, seen)
+  Match.value(value).pipe(
+    Match.when(Predicate.isObjectOrArray, (v) => !seen.has(v)),
+    Match.orElse(() => false),
+  )
 
 const causeChildrenOf = (value: object): ReadonlyArray<object> => {
   const cause = hasCause(value) ? value.cause : undefined
