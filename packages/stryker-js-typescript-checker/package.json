@@ -112,7 +112,6 @@
     "locate-character": "3.0.0",
     "magic-string": "0.30.21",
     "oxc-parser": "0.150.0",
-    "oxc-walker": "1.1.1",
     "svelte": "5.57.0",
     "ws": "8.21.3",
     "zimmerframe": "1.1.5"

@@ -1,4 +1,3 @@
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'

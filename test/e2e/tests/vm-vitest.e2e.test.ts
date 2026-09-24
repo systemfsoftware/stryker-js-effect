@@ -1,6 +1,7 @@
-import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@systemfsoftware/stryker-js'
+import { RunEvent } from '@systemfsoftware/stryker-js'
+import * as S from 'effect/Schema'
 import type { ExpectStatic } from 'vitest'
-import type { ExecResult } from './__fixtures__/microvm-environment.js'
+import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
 import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
 
 const VM_VITEST_ORACLE = {
@@ -19,16 +20,16 @@ const VM_VITEST_ORACLE = {
 
 const VM_FIXTURE_URL = new URL('../testResources/vm-vitest-fixture', import.meta.url)
 
-const parseEventStream = async (stdout: string): Promise<ReadonlyArray<RunEvent>> =>
+const parseEventStream = async (stdout: string): Promise<ReadonlyArray<RunEvent.RunEvent>> =>
   Promise.all(
     stdout
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.startsWith('{') && line.endsWith('}'))
-      .map((line) => S.decodeUnknownPromise(RunEventWireLine)(line)),
+      .map((line) => S.decodeUnknownPromise(RunEvent.RunEventWireLine)(line)),
   )
 
-const lastEvent = (events: ReadonlyArray<RunEvent>): RunEvent => {
+const lastEvent = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.RunEvent => {
   const event = events.at(-1)
   if (event === undefined) {
     throw new Error('stdout carries no events')
@@ -45,7 +46,7 @@ const tallyOf = (
     {},
   )
 
-const stepVerifyCounts = (expect: ExpectStatic, verdict: VerdictReached): void => {
+const stepVerifyCounts = (expect: ExpectStatic, verdict: RunEvent.VerdictReached): void => {
   expect.soft({
     compileErrors: verdict.counts.compileErrors,
     ignored: verdict.counts.ignored,
@@ -67,9 +68,9 @@ const stepVerifyCounts = (expect: ExpectStatic, verdict: VerdictReached): void =
   })
 }
 
-const stepVerifyMutantTally = (expect: ExpectStatic, events: ReadonlyArray<RunEvent>): void => {
+const stepVerifyMutantTally = (expect: ExpectStatic, events: ReadonlyArray<RunEvent.RunEvent>): void => {
   const reported = events
-    .filter((event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
     .map((m) => `${m.mutator}:${m.status}`)
   expect.soft(reported).toHaveLength(11)
   expect.soft(tallyOf(Object.keys(VM_VITEST_ORACLE.mutantStatusTally), reported)).toEqual(
@@ -80,8 +81,8 @@ const stepVerifyMutantTally = (expect: ExpectStatic, events: ReadonlyArray<RunEv
 test('running a vitest-syntax suite through the in-memory runner', async ({ bdd, expect, prepareFixture }) => {
   let fixture: PreparedFixture
   let run: ExecResult
-  let events: ReadonlyArray<RunEvent>
-  let verdict: VerdictReached
+  let events: ReadonlyArray<RunEvent.RunEvent>
+  let verdict: RunEvent.VerdictReached
 
   await bdd.given('a fixture whose suite is written against vitest and verified in memory', async () => {
     fixture = await prepareFixture(VM_FIXTURE_URL, 'vm-vitest-fixture')

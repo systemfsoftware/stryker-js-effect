@@ -63,18 +63,27 @@ const errorText = <A = unknown>(error: A): string =>
     Match.orElse((value) => String(value)),
   )
 
-const errorCodeOf = (error: unknown): Option.Option<string> =>
+const errorCodeOf = <A = unknown>(error: A): Option.Option<string> =>
   Option.flatMap(
     Option.filter(Option.some(error), Predicate.isObject),
     (object) => Option.map(Option.fromNullishOr(object['code']), String),
   )
 
-const isInitFailure = <A = unknown>(error: A): boolean =>
-  [
-    (candidate: unknown): boolean => candidate instanceof SyntaxError,
-    (candidate: unknown): boolean => Option.exists(errorCodeOf(candidate), (code) => code === 'ERR_MODULE_NOT_FOUND'),
-    (candidate: unknown): boolean => candidate instanceof Error && candidate.message.includes('[PARSE_ERROR]'),
-  ].some((check) => check(error))
+const isModuleNotFound = <A = unknown>(error: A): boolean =>
+  Option.exists(errorCodeOf(error), (code) => code === 'ERR_MODULE_NOT_FOUND')
+
+const isSyntaxError = <A = unknown>(error: A): boolean => error instanceof SyntaxError
+
+const isParseError = <A = unknown>(error: A): boolean =>
+  error instanceof Error && error.message.includes('[PARSE_ERROR]')
+
+const initFailureChecks = <A>(): readonly ((error: A) => boolean)[] => [
+  isSyntaxError<A>,
+  isModuleNotFound<A>,
+  isParseError<A>,
+]
+
+const isInitFailure = <A = unknown>(error: A): boolean => initFailureChecks<A>().some((check) => check(error))
 
 const runFailureFor = <A = unknown>(file: string, cause: A): RunFailure => {
   const fatal = isInitFailure(cause)
@@ -263,45 +272,48 @@ const runOnce = (
   const previousActive = namespace[Mutant.InstrumenterContext.ACTIVE_MUTANT]
   return Effect.gen(function*() {
     const registry = createRegistry()
+    setActiveMutant(namespace, activeMutantId)
     const real = yield* loadVitest()
     const salt = saltCounter++
-    const loaded = yield* Effect.forEach(testFiles, (file) =>
-      Effect.promise(() => {
-        registry.files.current = file
-        registry.frames.current = []
-        const url = `${platform.pathToFileURL(file).href}?salt=${salt}`
-        return nativeImport(url).then(
-          () => Option.none<RunFailure>(),
-          <A = unknown>(cause: A) => Option.some(runFailureFor(file, cause)),
-        )
-      }))
-
-    const failures = Arr.getSomes(loaded)
     const prefix = sandboxPrefixOf(testFiles, platform, sandboxWorkingDirectory)
-    setActiveMutant(namespace, activeMutantId)
-    const drained = yield* Option.match(initFailureOf(failures), {
-      onSome: Effect.fail,
-      onNone: () =>
-        Effect.acquireUseRelease(
-          Effect.sync(() => {
-            const api = createHarnessApi(registry)
-            const state: VmRunnerGlobalState = {
-              api,
-              expect: guardedExpect(real.expect),
-              vi: guardedVi(real.vi),
-              effectVitest: {
-                it: makeEffectMethods({ api: api.it, describe: api.describe, hooks: api.hooks, tests: registry.tests }),
-              },
-            }
-            installInterception(platform.moduleBuiltin)
-            activateSandbox(prefix)
-            writeGlobalState(state)
-          }),
-          () => Effect.promise(() => drainRegistry(registry, timeoutMs)),
-          () => Effect.sync(disarmSandbox),
-        ),
-    })
-    return outcomeOf(drained, registry.tests.length, failures)
+
+    const verified = yield* Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const api = createHarnessApi(registry)
+        const state: VmRunnerGlobalState = {
+          api,
+          expect: guardedExpect(real.expect),
+          vi: guardedVi(real.vi),
+          effectVitest: {
+            it: makeEffectMethods({ api: api.it, describe: api.describe, hooks: api.hooks, tests: registry.tests }),
+          },
+        }
+        installInterception(platform.moduleBuiltin)
+        activateSandbox(prefix)
+        writeGlobalState(state)
+      }),
+      () =>
+        Effect.gen(function*() {
+          const loaded = yield* Effect.forEach(testFiles, (file) =>
+            Effect.promise(() => {
+              registry.files.current = file
+              registry.frames.current = []
+              const url = `${platform.pathToFileURL(file).href}?salt=${salt}`
+              return nativeImport(url).then(
+                () => Option.none<RunFailure>(),
+                <A = unknown>(cause: A) => Option.some(runFailureFor(file, cause)),
+              )
+            }))
+          const failures = Arr.getSomes(loaded)
+          const drained = yield* Option.match(initFailureOf(failures), {
+            onSome: Effect.fail,
+            onNone: () => Effect.promise(() => drainRegistry(registry, timeoutMs)),
+          })
+          return { drained, failures }
+        }),
+      () => Effect.sync(disarmSandbox),
+    )
+    return outcomeOf(verified.drained, registry.tests.length, verified.failures)
   }).pipe(Effect.ensuring(Effect.sync(() => setActiveMutant(namespace, previousActive))))
 }
 
