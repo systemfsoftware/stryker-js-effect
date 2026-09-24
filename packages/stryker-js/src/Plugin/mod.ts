@@ -1,3 +1,5 @@
+export type { Framework } from '@systemfsoftware/stryker-framework-interface'
+export type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 export { isCommandRunner } from '../command-runner.resource.js'
 export type {
   AnyPluginDescriptor,

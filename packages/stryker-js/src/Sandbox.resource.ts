@@ -1,6 +1,6 @@
 import type { JsonValue } from '@std/jsonc'
 import { parse } from '@std/jsonc'
-import { ErrorText, Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText, Format, Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Predicate, Schema as S } from 'effect'
 import * as Config from 'effect/Config'
@@ -15,18 +15,11 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import { type Pipeable, Prototype } from 'effect/Pipeable'
 import type { PlatformError } from 'effect/PlatformError'
-import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
-import {
-  ResolveWarningEnabledCommand,
-  WarningDisabled,
-  WarningEnabled,
-  warningEnabled,
-} from './config/warning-enabled.workflow.js'
 import { FileMatcher } from './matching.schema.js'
 import { ProjectFiles } from './project-files.service.js'
 import type { Project, ProjectFile } from './Project.schema.js'
@@ -40,11 +33,12 @@ export interface MakeSandboxInput {
   readonly workingDirectory: string
   readonly backupDirectory: string
   readonly basePath: string
+  readonly formatRegistry: Format.FormatRegistry
 }
 
 export type FilePreprocessor = (
   project: Project,
-) => Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path | ProjectFiles>
+) => Effect.Effect<void, PlatformError | StrykerError, FileSystem.FileSystem | Path.Path | ProjectFiles>
 
 const combinePreprocessors = (preprocessors: readonly FilePreprocessor[]) => (project: Project) =>
   Effect.forEach(preprocessors, (pre) => pre(project), { discard: true })
@@ -72,30 +66,9 @@ const mergeUpdatedInto = (project: Project) => (updated: ProjectFile | Option.Op
   })
 }
 
-const preprocessorWarningsEnabled = (options: Options.StrykerOptions): WarningEnabled | WarningDisabled =>
-  Result.match(
-    warningEnabled(ResolveWarningEnabledCommand.make({ warning: 'preprocessorErrors', warnings: options.warnings })),
-    {
-      onSuccess: (decision) => decision,
-      onFailure: () => WarningDisabled.make({}),
-    },
-  )
-
-const disableTypeChecksWarning = (name: string, options: Options.StrykerOptions) =>
-  Match.value(preprocessorWarningsEnabled(options)).pipe(
-    Match.tag(
-      'WarningEnabled',
-      () =>
-        Effect.logWarning(
-          `Unable to disable type checking for file "${name}". Shouldn't type checking be disabled for this file? Consider configuring a more restrictive "${'disableTypeChecks'}" settings (or turn it completely off with \`false\`)`,
-        ),
-    ),
-    Match.tag('WarningDisabled', () => Effect.void),
-    Match.exhaustive,
-  )
-
 const makeDisableTypeChecksPreprocessor =
-  (options: Options.StrykerOptions, impl: typeof Instrument.disableTypeChecks) => (project: Project) =>
+  (options: Options.StrykerOptions, registry: Format.FormatRegistry, impl: typeof Instrument.disableTypeChecks) =>
+  (project: Project) =>
     Effect.gen(function*() {
       const pathService = yield* Path.Path
       const files = yield* ProjectFiles
@@ -106,13 +79,11 @@ const makeDisableTypeChecksPreprocessor =
         instrumented,
         ([file, content]) =>
           Effect.map(
-            impl({ content, mutate: file.mutate, name: file.name }).pipe(
+            impl({ content, mutate: file.mutate, name: file.name }, registry).pipe(
               Effect.map((instrumentedFile) => instrumentedFile.content),
               Effect.mapError((cause) => StrykerError.make({ message: 'disableTypeChecks failed', cause })),
-              Effect.tapError(() => disableTypeChecksWarning(file.name, options)),
-              Effect.orElseSucceed(() => undefined),
             ),
-            (text) => Option.map(Option.fromUndefinedOr(text), (rewritten) => ({ ...file, content: rewritten })),
+            (text) => ({ ...file, content: text }),
           ),
         { concurrency: 'unbounded' },
       )
@@ -327,9 +298,13 @@ const tryRewriteReference = (
   })
 }
 
-const createPreprocessor = (options: Options.StrykerOptions, basePath: string): FilePreprocessor =>
+const createPreprocessor = (
+  options: Options.StrykerOptions,
+  basePath: string,
+  registry: Format.FormatRegistry,
+): FilePreprocessor =>
   combinePreprocessors([
-    makeDisableTypeChecksPreprocessor(options, Instrument.disableTypeChecks),
+    makeDisableTypeChecksPreprocessor(options, registry, Instrument.disableTypeChecks),
     makeTSConfigPreprocessor(options, basePath),
   ])
 
@@ -690,7 +665,7 @@ const acquireSandbox = (state: {
       Effect.succeed(hasBackupToRestore(options, backupDirectory)),
     )
     const preprocessor = combinePreprocessors([
-      createPreprocessor(options, basePath),
+      createPreprocessor(options, basePath, state.spec.formatRegistry),
       ...state.preprocessors,
     ])
     yield* preprocessor(project).pipe(

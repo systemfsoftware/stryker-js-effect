@@ -37,7 +37,7 @@
     "@eslint-community/regexpp": "catalog:",
     "@oxc-project/types": "catalog:",
     "@systemfsoftware/effect-cell-types": "catalog:",
-    "angular-html-parser": "catalog:",
+    "@systemfsoftware/stryker-framework-interface": "workspace:^",
     "effect": "catalog:",
     "oxc-parser": "catalog:",
     "oxc-walker": "catalog:"
@@ -57,10 +57,9 @@
     "@types/node": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
-    "svelte": "catalog:",
+    "vitest": "catalog:",
     "tsdown": "catalog:",
-    "typescript": "catalog:",
-    "vitest": "catalog:"
+    "typescript": "catalog:"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -73,14 +72,6 @@
         "default": "./dist/index.mjs"
       },
       "./package.json": "./package.json"
-    }
-  },
-  "peerDependencies": {
-    "svelte": ">=4.0.0"
-  },
-  "peerDependenciesMeta": {
-    "svelte": {
-      "optional": true
     }
   }
 }

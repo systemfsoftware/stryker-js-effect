@@ -1,4 +1,4 @@
-import { Mutant as InstrumenterMutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Format, Mutant as InstrumenterMutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Checker, Options, Plugin, Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -6,6 +6,7 @@ import type * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import { dual } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
@@ -18,6 +19,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
+import type { FormatIdentity } from './IncrementalDiff.schema.js'
 import { ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js'
@@ -32,6 +34,21 @@ import { RunEvents, VerdictReached } from './run-events.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 import type { TestCoverage } from './test-coverage.schema.js'
+
+export const identityOf = dual<
+  (
+    fileName: string,
+  ) => (registry: Format.FormatRegistry) => Option.Option<FormatIdentity>,
+  (fileName: string, registry: Format.FormatRegistry) => Option.Option<FormatIdentity>
+>(
+  2,
+  (fileName: string, registry: Format.FormatRegistry): Option.Option<FormatIdentity> =>
+    Option.map(registry.entryForExtension(Format.extensionOf(fileName)), (entry) => ({
+      formatId: entry.claim.formatId,
+      ownerModule: entry.owner,
+      ownerVersion: entry.ownerVersion,
+    })),
+)
 
 const STRYKER_FRAMEWORK: Readonly<Pick<Report.FrameworkInformation, 'branding' | 'name' | 'version'>> = Object
   .freeze({
@@ -76,6 +93,7 @@ export interface MutationReportingInput {
   readonly resolvedMode: ResolvedMode
   readonly basePath: string
   readonly reporterStage: ReporterStage
+  readonly formatRegistry: Format.FormatRegistry
 }
 
 export interface MutationReportingService {
@@ -213,24 +231,29 @@ const partitionByFile = (files: Project['files'], fileNames: readonly string[]) 
 const originalSourcesOf = (originals: readonly (readonly [ProjectFile, string])[]) =>
   HashMap.fromIterable(Arr.map(originals, ([file, content]) => [file.name, content] as const))
 
-const EXTENSION_LANGUAGES: Readonly<Record<string, string>> = {
-  '.ts': 'typescript',
-  '.tsx': 'typescript',
-  '.html': 'html',
-  '.vue': 'html',
-}
+const UNCLAIMED_LANGUAGE = 'javascript'
 
-const extensionOf = (fileName: string): string => {
-  const base = fileName.slice(fileName.lastIndexOf('/') + 1)
-  const dot = base.lastIndexOf('.')
-  return Match.value(dot).pipe(
-    Match.when((at) => at <= 0, () => ''),
-    Match.orElse((at) => base.slice(at).toLowerCase()),
+const determineLanguage = (fileName: string, registry: Format.FormatRegistry): string =>
+  Option.match(registry.entryForExtension(Format.extensionOf(fileName)), {
+    onNone: () => UNCLAIMED_LANGUAGE,
+    onSome: (entry) => entry.claim.language,
+  })
+
+type FileResultWithIdentity = Report.FileResult & { readonly formatIdentity?: FormatIdentity }
+
+const stampFileIdentities = (
+  files: Report.FileResultDictionary,
+  identities: HashMap.HashMap<string, Option.Option<FormatIdentity>>,
+): Record<string, FileResultWithIdentity> =>
+  Object.fromEntries(
+    Object.entries(files).map(([name, file]): readonly [string, FileResultWithIdentity] => [
+      name,
+      Option.match(Option.flatMap(HashMap.get(identities, name), (present) => present), {
+        onNone: () => file,
+        onSome: (identity) => ({ ...file, formatIdentity: identity }),
+      }),
+    ]),
   )
-}
-
-const determineLanguage = (fileName: string): string =>
-  Option.getOrElse(Option.fromNullishOr(EXTENSION_LANGUAGES[extensionOf(fileName)]), () => 'javascript')
 
 interface TestIdRemap {
   readonly testId: (id: string) => string
@@ -383,7 +406,7 @@ const readMutatedSources =
       const sources = originalSourcesOf(originals)
       return HashMap.fromIterable(Arr.map(fileNames, (fileName) => {
         const fileResult: Report.FileResult = {
-          language: determineLanguage(fileName),
+          language: determineLanguage(fileName, input.formatRegistry),
           mutants: [],
           source: Option.getOrElse(HashMap.get(sources, fileName), () => ''),
         }
@@ -432,9 +455,18 @@ const assembleReport =
         ),
       ).pipe(Effect.orDie)
       const reportNames = HashMap.fromIterable(Object.entries(relativeNames))
+      const identities = HashMap.fromIterable(
+        mutatedFileNames.flatMap((fileName) =>
+          Option.match(HashMap.get(reportNames, fileName), {
+            onNone: (): ReadonlyArray<readonly [string, Option.Option<FormatIdentity>]> => [],
+            onSome: (reportName) => [[reportName, identityOf(fileName, input.formatRegistry)] as const],
+          })
+        ),
+      )
       return {
         files: assembleFileResults({ sources, reportNames, mutants: results, remap }),
         testFiles: assembleTestFiles({ testSources, reportNames, tests, remap }),
+        identities,
       }
     })
 
@@ -472,16 +504,19 @@ const mutationTestReport =
   (deps: MutationReportingDeps, input: MutationReportingInput) =>
   (results: readonly InstrumenterMutant.RunMutantResult[]) =>
     Effect.gen(function*() {
-      const { files, testFiles } = yield* assembleReport(deps, input)(results)
+      const { files, testFiles, identities } = yield* assembleReport(deps, input)(results)
       const dependencies = yield* discoverDependencies(deps)
       return {
-        files,
-        schemaVersion: '1.0',
-        thresholds: input.options.thresholds,
-        testFiles,
-        projectRoot: input.basePath,
-        config: input.options,
-        framework: { ...STRYKER_FRAMEWORK, dependencies },
+        report: {
+          files,
+          schemaVersion: '1.0',
+          thresholds: input.options.thresholds,
+          testFiles,
+          projectRoot: input.basePath,
+          config: input.options,
+          framework: { ...STRYKER_FRAMEWORK, dependencies },
+        },
+        identities,
       }
     })
 
@@ -573,19 +608,21 @@ const writeIncrementalReport = (
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
   input: MutationReportingInput,
   report: Report.MutationTestResult,
+  identities: HashMap.HashMap<string, Option.Option<FormatIdentity>>,
 ) =>
   Effect.gen(function*() {
     yield* deps.fs.makeDirectory(deps.path.dirname(input.options.incrementalFile), { recursive: true })
     const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
       incrementalVersion: StrykerPackage.version,
       ...report,
+      files: stampFileIdentities(report.files, identities),
     }).pipe(Effect.orDie)
     yield* deps.fs.writeFileString(input.options.incrementalFile, json)
   })
 
 const reportAll = (deps: MutationReportingDeps, input: MutationReportingInput) =>
   Effect.gen(function*() {
-    const report = yield* mutationTestReport(deps, input)(input.results)
+    const { report, identities } = yield* mutationTestReport(deps, input)(input.results)
     const metrics = MetricsResultFromReport.fromFiles(report.files)
     yield* offerTerminalReport(input.reporterStage, report, metrics)
     const terminalDrain = terminalDrainClass(yield* closeReporterStage(input.reporterStage))
@@ -612,7 +649,7 @@ const reportAll = (deps: MutationReportingDeps, input: MutationReportingInput) =
     )
     yield* emitVerdict(deps, input)(report)
     yield* Boolean.match(input.options.incremental, {
-      onTrue: () => writeIncrementalReport(deps, input, report),
+      onTrue: () => writeIncrementalReport(deps, input, report, identities),
       onFalse: () => Effect.void,
     })
     return { results: input.results, verdict: finalVerdict } satisfies MutationTestDone
@@ -632,12 +669,12 @@ const slimIncrementalReport =
   (deps: MutationReportingDeps, input: MutationReportingInput) =>
   (results: readonly InstrumenterMutant.RunMutantResult[]) =>
     Effect.gen(function*() {
-      const { files, testFiles } = yield* assembleReport(deps, input)(results)
+      const { files, testFiles, identities } = yield* assembleReport(deps, input)(results)
       return {
         incrementalVersion: StrykerPackage.version,
         schemaVersion: '1.0',
         thresholds: input.options.thresholds,
-        files,
+        files: stampFileIdentities(files, identities),
         testFiles,
       }
     })

@@ -28,6 +28,13 @@ export const CanonicalFileName = S.String.pipe(
   }),
 )
 export type CanonicalFileName = typeof CanonicalFileName.Type
+
+/**
+ * A mutant's file location in the mutation-testing-report-schema contract:
+ * 1-based line and 1-based column, the same base the JSON report and the
+ * machine stream emit. Every producer on the instrument path (node spans,
+ * embedded-region shifts) targets this base; no downstream layer converts.
+ */
 export class Mutant extends S.TaggedClass<Mutant>()('Mutant', {
   id: MutantId,
   fileName: CanonicalFileName,
@@ -143,25 +150,3 @@ export type MutantRunPlan = RunPlan
 export type MutantEarlyResultPlan = EarlyResultPlan
 
 export type MutantTestPlan = TestPlan
-
-export class MutantNotApplied
-  extends S.TaggedError<MutantNotApplied>('@systemfsoftware/stryker-js-instrumenter/Mutant.schema/MutantNotApplied')(
-    'MutantNotApplied',
-    { replacement: S.String },
-  )
-{
-  override get message(): string {
-    return `Could not apply mutant ${this.replacement}.`
-  }
-}
-
-export class MutantSpanMissing
-  extends S.TaggedError<MutantSpanMissing>('@systemfsoftware/stryker-js-instrumenter/Mutant.schema/MutantSpanMissing')(
-    'MutantSpanMissing',
-    { edge: S.Literals(['start', 'end']) },
-  )
-{
-  override get message(): string {
-    return `Node without a ${this.edge} offset`
-  }
-}

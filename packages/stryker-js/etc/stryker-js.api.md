@@ -21,12 +21,12 @@ export namespace Engine {
 
 // @public (undocumented)
 export namespace Plugin {
-    export { AnyPluginDescriptor, AnyWorkerPluginDescriptor, AnyWorkerPluginSource, EvaluatorPluginDescriptor, EvaluatorPluginSource, LoadedPlugins, PluginDescriptor, PluginDescriptorOf, PluginKind, PluginSource, PooledTestRunner, PooledTestRunnerError, REPORTER_EVENT_BATCH_BOUND, ReporterStage, ReporterWorkerClient, SpawnReporterWorkerParams, TestRunnerBuildContext, VmFileUrl, VmPlatform, VmRunner, VmTestRunnerConfig, WorkerPluginDescriptor, WorkerPluginSource, buildTestRunner, isCommandRunner, isVmRunner, reporterWorkerFactory, spawnReporterWorker, vmTestRunner };
+    export { AnyPluginDescriptor, AnyWorkerPluginDescriptor, AnyWorkerPluginSource, EvaluatorPluginDescriptor, EvaluatorPluginSource, Framework, Ignorer, LoadedPlugins, Node_2 as Node, PluginDescriptor, PluginDescriptorOf, PluginKind, PluginSource, PooledTestRunner, PooledTestRunnerError, REPORTER_EVENT_BATCH_BOUND, ReporterStage, ReporterWorkerClient, SpawnReporterWorkerParams, TestRunnerBuildContext, VmFileUrl, VmPlatform, VmRunner, VmTestRunnerConfig, WorkerPluginDescriptor, WorkerPluginSource, buildTestRunner, isCommandRunner, isVmRunner, reporterWorkerFactory, spawnReporterWorker, vmTestRunner };
 }
 
 // @public (undocumented)
 export namespace RunEvent {
-    export { Heartbeat, HelpRendered, MetricsResultFromReport, ModeSignal$1 as ModeSignal, OutputMode$1 as OutputMode, PhaseEntered, PlanKnown, ResolvedMode, ResolvedModeInput, RunEvent, RunEventDrain, RunEventDrainLive, RunEventStream, RunEventWireLine, RunEvents, RunFailed, RunIdentity, RunIdentityShape, RunMutantTested, RunPhase, RunStarted, RunTerminalEvent, VerdictCounts, VerdictEnvelope, VerdictMutant, VerdictReached, VerdictThresholds, makeRunEventStream };
+    export { FormatClaimShadowingRow, FormatRegistryResolved, FormatRegistryRow, FrameworkContributionRow, FrameworkModuleRow, Heartbeat, HelpRendered, MetricsResultFromReport, ModeSignal$1 as ModeSignal, OutputMode$1 as OutputMode, PhaseEntered, PlanKnown, PluginFailureReason, PluginsReported, ResolvedMode, ResolvedModeInput, RunEvent, RunEventDrain, RunEventDrainLive, RunEventStream, RunEventWireLine, RunEvents, RunFailed, RunIdentity, RunIdentityShape, RunMutantTested, RunPhase, RunStarted, RunTerminalEvent, SkippedFileRow, SkippedReported, VerdictCounts, VerdictEnvelope, VerdictMutant, VerdictReached, VerdictThresholds, makeRunEventStream };
 }
 
 // @public (undocumented)

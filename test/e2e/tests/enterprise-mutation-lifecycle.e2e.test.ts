@@ -83,7 +83,16 @@ const LIFECYCLE_TOTAL = Object.values(LIFECYCLE_COUNTS).reduce((sum, n) => sum +
 
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
-const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutant', 'tick']
+const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = [
+  'stream',
+  'phase',
+  'plan',
+  'mutant',
+  'tick',
+  'plugins',
+  'formats',
+  'skipped',
+]
 const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutant', 'verdict']
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)
 

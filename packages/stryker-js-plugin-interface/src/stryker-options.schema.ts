@@ -149,7 +149,30 @@ const WarningOptions = openStruct({
 const ConcurrencyCount = S.Finite.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
 const ConcurrencyPercent = S.String.pipe(S.check(S.isPattern(/^(100|[1-9]?[0-9])%$/)))
 
-export const PluginFileUrl = S.String.pipe(S.check(S.isStartsWith('file://')))
+const PLUGIN_ARBITRARY_SPECIFIERS: readonly [string, ...string[]] = [
+  'file:///project/node_modules/@systemfsoftware/stryker-js-angular/index.mjs',
+  'file:///home/user/project/plugins/custom-plugin.mjs',
+  'effect',
+  '@systemfsoftware/stryker-js-angular',
+  '@systemfsoftware/stryker-js-svelte',
+  'my-plugin',
+  '@scope/my-plugin/sub/entry',
+  'my-plugin/sub',
+]
+
+const pluginSpecifierArbitrary = S.link<string>()(S.Literals(PLUGIN_ARBITRARY_SPECIFIERS), {
+  decode: SchemaGetter.transform((sample: string) => sample),
+  encode: SchemaGetter.transform((sample: string) => sample),
+})
+
+export const PluginFileUrl = S.declare<string>(
+  (value: unknown): value is string =>
+    typeof value === 'string' &&
+    /^(?:file:\/\/\/\S+|(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(?:\/(?!\.\.?\/)[^/\s]+)*)$/.test(value),
+  {
+    toCodecArbitrary: () => pluginSpecifierArbitrary,
+  },
+)
 
 export const TestRunnerCustomConfigSchema = S.Struct({
   plugin: PluginFileUrl,

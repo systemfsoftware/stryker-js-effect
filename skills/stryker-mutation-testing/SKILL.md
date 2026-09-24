@@ -13,7 +13,7 @@ Configure, execute, and verify Stryker mutation testing using `@systemfsoftware/
 - id: A1
   title: Activate on mutation testing setup or configuration
   do: trigger this skill when a project needs mutation testing, stryker.config.ts setup, runner configuration (Vitest, V8 in-memory, Command), or custom ignorer/runner development
-  dont: install legacy @stryker-mutator/core or configure bare module strings in plugins array
+  dont: install legacy @stryker-mutator/core or resolve installed plugin packages to file:// URLs with import.meta.resolve()
   check: the repository is a JavaScript or TypeScript project needing test efficacy verification
 - id: A2
   title: Do NOT activate on general unit test authoring
@@ -32,15 +32,15 @@ Configure, execute, and verify Stryker mutation testing using `@systemfsoftware/
   check: the selected runner is supported by the project's dependencies and execution environment
 ```
 
-| Project State                                  | Recommended Runner                                                          | Configuration                                                          | Reference                          |
-| ---------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------- |
-| Modern TS repo using Vitest                    | `@systemfsoftware/stryker-js-vitest-runner`                                 | `testRunner: 'vitest'` in CI, `testRunner: 'vm'` locally               | `references/decision-guide.md`     |
-| Jest, Mocha, or custom test script             | Built-in `command` runner (zero extra plugins)                              | `testRunner: 'command'`, `commandRunner: { command: 'pnpm test' }`     | `references/decision-guide.md`     |
-| Pure Node.js unit tests / zero child processes | Built-in `vm` runner (zero extra plugins)                                   | `testRunner: 'vm'`, `testFiles: ['test/**/*.test.ts']`                 | `references/decision-guide.md`     |
-| Custom AST mutant skipping needed              | Custom AST ignorer via `@systemfsoftware/stryker-ignorer-kit`               | `plugins: [import.meta.resolve('./ignorer.js')]`, `ignorers: ['name']` | `references/authoring-ignorers.md` |
-| Custom test runner harness needed              | Custom worker RPC plugin via `@systemfsoftware/stryker-js-plugin-interface` | `plugins: [import.meta.resolve('./runner.js')]`, `testRunner: 'name'`  | `references/authoring-runners.md`  |
+| Project State                                  | Recommended Runner                                                          | Configuration                                                      | Reference                          |
+| ---------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------- |
+| Modern TS repo using Vitest                    | `@systemfsoftware/stryker-js-vitest-runner`                                 | `testRunner: 'vitest'` in CI, `testRunner: 'vm'` locally           | `references/decision-guide.md`     |
+| Jest, Mocha, or custom test script             | Built-in `command` runner (zero extra plugins)                              | `testRunner: 'command'`, `commandRunner: { command: 'pnpm test' }` | `references/decision-guide.md`     |
+| Pure Node.js unit tests / zero child processes | Built-in `vm` runner (zero extra plugins)                                   | `testRunner: 'vm'`, `testFiles: ['test/**/*.test.ts']`             | `references/decision-guide.md`     |
+| Custom AST mutant skipping needed              | Custom AST ignorer via `@systemfsoftware/stryker-ignorer-kit`               | `plugins`, `ignorers: ['name']` (local file:URL)                   | `references/authoring-ignorers.md` |
+| Custom test runner harness needed              | Custom worker RPC plugin via `@systemfsoftware/stryker-js-plugin-interface` | `plugins`, `testRunner: 'name'` (local file:URL)                   | `references/authoring-runners.md`  |
 
-For deep comparison of execution models, read `references/decision-guide.md` (hash: `c52521`).
+For deep comparison of execution models, read `references/decision-guide.md` (hash: `0bf2a6`).
 
 ---
 
@@ -48,14 +48,14 @@ For deep comparison of execution models, read `references/decision-guide.md` (ha
 
 ```yaml
 - id: STRYK-R1
-  title: Plugins Must Be file:// URLs via import.meta.resolve()
-  do: resolve all plugin specifiers in the `plugins` array using `import.meta.resolve(...)`
-  dont: pass bare package strings (e.g. `plugins: ['@systemfsoftware/stryker-js-vitest-runner']`)
-  harm: bare specifier strings cannot be resolved across isolated ESM boundaries and throw fatal `PluginLoadFailedError` at startup
+  title: Plugins Take Bare Package Names Resolved From the Project
+  do: pass the package's bare name in every plugin field (`plugins`, `appendPlugins`, `ignorers`, `testRunner.plugin`, `checkers[].plugin`); use a `file://` URL only for an unpublished local build
+  dont: wrap installed package names in `import.meta.resolve(...)` or commit resolved `file:///…/node_modules/…` URLs to the config
+  harm: resolved absolute URLs pin the config to one machine's install layout, so the same config breaks on a teammate's checkout or CI
   check: pnpm exec stryker run --dryRunOnly succeeds without PluginLoadFailedError
 - id: STRYK-R2
   title: Dual-Engine Workflow (Fast Local V8, Isolated CI Vitest)
-  do: use the `isCi` parameter in `defineConfig(({ isCi }) => ...)` to set `testRunner: isCi ? 'vitest' : 'vm'`
+  do: use the `isCi` parameter in `StrykerConfig.define(({ isCi }) => ...)` to set `testRunner: isCi ? 'vitest' : 'vm'`
   dont: run heavy child-process test runners for fast local iteration when in-memory V8 is applicable
   harm: developers suffer 5-10x latency overhead locally, discouraging frequent mutation testing
   check: stryker.config.ts switches runner based on isCi
@@ -67,9 +67,9 @@ For deep comparison of execution models, read `references/decision-guide.md` (ha
   check: grep the mutation report for mutated test files; count must be zero
 - id: STRYK-R4
   title: Ignorer Registration Travels as a Pair
-  do: add the plugin URL to `plugins` AND add the ignorer's exact string identifier to `ignorers`
-  dont: specify `ignorers: ['effect-schema-declarations']` without resolving its companion plugin in `plugins`
-  harm: an ignorer name with no loaded plugin is silently skipped, leaving equivalent mutants in the score
+  do: name the ignorer's package in `plugins` AND add the ignorer's exact string identifier to `ignorers` (for example `plugins: ['@systemfsoftware/stryker-ignorer-effect-schema-declarations']` with `ignorers: ['effect-schema-declarations']`)
+  dont: specify `ignorers: ['effect-schema-declarations']` without naming its package in `plugins`
+  harm: the host discovers ignorers only through loaded plugin modules, so an ignorer name whose package never loads leaves equivalent mutants in the score
   check: mutation report shows expected mutants with status 'Ignored' and the declared reason
 ```
 
@@ -100,7 +100,7 @@ pnpm add -D @systemfsoftware/stryker-js \
 ```yaml
 - id: W3
   title: Author stryker.config.ts
-  do: generate configuration using StrykerConfig.define with negative mutate globs and import.meta.resolve()
+  do: generate configuration using StrykerConfig.define with bare plugin package names and negative mutate globs
   dont: hand-craft JSON configuration files or omit type checking
   check: test -f stryker.config.ts
 ```
@@ -112,8 +112,8 @@ export default StrykerConfig.define(({ isCi }) => ({
   testRunner: isCi ? 'vitest' : 'vm',
   checkers: ['typescript'],
   plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
-    import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+    '@systemfsoftware/stryker-js-vitest-runner',
+    '@systemfsoftware/stryker-js-typescript-checker',
   ],
   testFiles: ['test/**/*.test.ts', 'src/**/__tests__/**/*.test.ts'],
   mutate: [
@@ -166,11 +166,11 @@ pnpm exec stryker run --survivors
 
 ```yaml
 - id: G1
-  title: Bare Module Strings in Plugins Array
-  do: always wrap package specifiers in import.meta.resolve(...)
-  dont: use strings like plugins: ["@systemfsoftware/..."]
-    harm: Stryker v5 rejects bare module specifiers with fatal PluginLoadFailedError
-    check: pnpm exec stryker run --dryRunOnly exits cleanly
+  title: Resolved file:// URLs Committed to the Config
+  do: keep bare package names in every plugin field; resolve a `file://` URL only for an unpublished local build
+  dont: wrap installed packages in import.meta.resolve(...) or commit resolved file:///…/node_modules/… URLs
+    harm: absolute URLs pin the config to one machine's install layout and break the same checkout elsewhere
+    check: rg -n "file:///.*node_modules" stryker.config.ts exits without matches
 - id: G2
   title: Surviving Mutants on Schema and Brand Declarations
   do: install @systemfsoftware/stryker-ignorer-effect-schema-declarations and add 'effect-schema-declarations' to ignorers
@@ -191,9 +191,9 @@ pnpm exec stryker run --survivors
 
 | Reference                          | When to load (intent)                                                                         | Hash     |
 | ---------------------------------- | --------------------------------------------------------------------------------------------- | -------- |
-| `references/decision-guide.md`     | When choosing between in-memory V8, Vitest, and Command runners                               | `c52521` |
-| `references/authoring-ignorers.md` | When creating a custom AST ignorer with `@systemfsoftware/stryker-ignorer-kit`                | `c4237f` |
-| `references/authoring-runners.md`  | When building a custom test runner worker with `@systemfsoftware/stryker-js-plugin-interface` | `ce7f3c` |
+| `references/decision-guide.md`     | When choosing between in-memory V8, Vitest, and Command runners                               | `0bf2a6` |
+| `references/authoring-ignorers.md` | When creating a custom AST ignorer with `@systemfsoftware/stryker-ignorer-kit`                | `3d8b30` |
+| `references/authoring-runners.md`  | When building a custom test runner worker with `@systemfsoftware/stryker-js-plugin-interface` | `81b8c7` |
 
 ### Reference Integrity Gate
 
@@ -201,9 +201,9 @@ Before loading any reference, verify its content hash matches the table below. A
 
 | File                               | Hash     | Purpose  |
 | ---------------------------------- | -------- | -------- |
-| `references/authoring-ignorers.md` | `3781ed` | `c4237f` |
-| `references/authoring-runners.md`  | `8d23a1` | `ce7f3c` |
-| `references/decision-guide.md`     | `570282` | `c52521` |
+| `references/authoring-ignorers.md` | `3d8b30` | `3d8b30` |
+| `references/authoring-runners.md`  | `81b8c7` | `81b8c7` |
+| `references/decision-guide.md`     | `0bf2a6` | `0bf2a6` |
 
 ## Critical Rules at Document End (lost-in-middle mitigation)
 

@@ -1,5 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Format, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type Checker,
   Options,
@@ -46,10 +46,11 @@ import {
   type MutantRemembered,
 } from '../incremental-diff.workflow.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
+import type { FormatIdentity } from '../IncrementalDiff.schema.js'
 import { RelativeNormalizedFileName } from '../matching.schema.js'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
-import { MutationReporting } from '../mutation-reporting.service.js'
+import { identityOf, MutationReporting } from '../mutation-reporting.service.js'
 import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
 import { planMutantTests } from '../plan-mutant-tests.workflow.js'
@@ -112,6 +113,7 @@ const reportingInputOf = (
   resolvedMode: env.resolvedMode,
   basePath: env.basePath,
   reporterStage: prev.reporterStage,
+  formatRegistry: prev.formatRegistry,
 })
 
 const sandboxFilePairsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
@@ -478,6 +480,20 @@ const hasTestFileName = (result: TestRunner.TestResult): result is LocatedTestRe
 const relativeFileOfTest = (result: LocatedTestResult, basePath: string) =>
   RelativeNormalizedFileName.fromAbsolute(result.fileName, basePath).fileName
 
+const claimedIdentities = (
+  project: Project,
+  registry: Format.FormatRegistry,
+  basePath: string,
+): Record<string, FormatIdentity> =>
+  Object.fromEntries(
+    [...MutableHashMap.keys(project.filesToMutate)].flatMap((name) =>
+      Option.match(identityOf(name, registry), {
+        onNone: (): ReadonlyArray<readonly [string, FormatIdentity]> => [],
+        onSome: (identity) => [[relativeFileNameOf(name, basePath), identity] as const],
+      })
+    ),
+  )
+
 const testIdsByRelativeFileOf = (testCoverage: TestCoverage, basePath: string) =>
   [...MutableHashMap.values(testCoverage.testsById)].filter(hasTestFileName).reduce<Record<string, string[]>>(
     (accumulator, result) => {
@@ -512,6 +528,7 @@ const incrementalDiffCommandOf = (
   currentRelativeFiles: Record<string, string>,
   basePath: string,
   force: boolean,
+  identitiesByFile: Record<string, FormatIdentity>,
 ) =>
   IncrementalDiffCommand.make({
     currentMutants: [...currentMutants],
@@ -521,6 +538,7 @@ const incrementalDiffCommandOf = (
     currentRelativeFiles,
     testIdsByRelativeFile: testIdsByRelativeFileOf(testCoverage, basePath),
     coveringTestFilesByMutantId: coveringTestFilesByMutantIdOf(testCoverage, basePath),
+    identitiesByFile,
     force,
   })
 
@@ -532,6 +550,7 @@ const incrementalDiff = (
     currentRelativeFiles: Record<string, string>
     basePath: string
     force?: boolean
+    identitiesByFile: Record<string, FormatIdentity>
   }>,
 ) =>
   Effect.gen(function*() {
@@ -542,6 +561,7 @@ const incrementalDiff = (
       input.currentRelativeFiles,
       input.basePath,
       input.force ?? false,
+      input.identitiesByFile,
     )
     const decisions = yield* Effect.fromResult(incrementalDiffDecisions(command))
     return {
@@ -846,6 +866,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       currentRelativeFiles,
       basePath: env.basePath,
       force: prev.options.force,
+      identitiesByFile: claimedIdentities(prev.project, prev.formatRegistry, env.basePath),
     })
     const rememberedResults = yield* rememberedResultsOf(plannableMutants, incremental.remembered)
     yield* Effect.when(

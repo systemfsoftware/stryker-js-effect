@@ -72,6 +72,7 @@ const STEP_KEY = 'derive the bake cache key'
 
 const ENTRY_PACKAGES = [
   '@systemfsoftware/stryker-js',
+  '@systemfsoftware/stryker-js-svelte',
   '@systemfsoftware/stryker-js-vitest-runner',
   '@systemfsoftware/stryker-js-typescript-checker',
 ] as const

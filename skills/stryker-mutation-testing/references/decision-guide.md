@@ -1,7 +1,7 @@
 ---
 title: Mutation Testing Decision Guide
 description: How to choose test runners, checkers, and ignorers in Stryker JS Effect.
-content_hash: 570282
+content_hash: 0bf2a6
 ---
 
 # Mutation Testing Decision Guide
@@ -21,8 +21,8 @@ import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 export default StrykerConfig.define(({ isCi }) => ({
   testRunner: isCi ? 'vitest' : 'vm',
   plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
-    import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+    '@systemfsoftware/stryker-js-vitest-runner',
+    '@systemfsoftware/stryker-js-typescript-checker',
   ],
   testFiles: ['test/**/*.test.ts'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],

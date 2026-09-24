@@ -49,6 +49,7 @@ import type {
 } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Arr from 'effect/Array'
 import * as Bool from 'effect/Boolean'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -318,11 +319,16 @@ interface ModuleObject {
   readonly access: Expression
 }
 
-export const resolveEffectCall = (
+const resolveEffectCallDataFirst = (
   node: Node,
   context: MutatorContext,
 ): Option.Option<ResolvedEffectCall> =>
   Option.flatMap(programOf(context), (program) => resolveIn(node, context, importTableFor(program)))
+
+export const resolveEffectCall: {
+  (node: Node, context: MutatorContext): Option.Option<ResolvedEffectCall>
+  (context: MutatorContext): (node: Node) => Option.Option<ResolvedEffectCall>
+} = dual((args: IArguments): boolean => args.length >= 2, resolveEffectCallDataFirst)
 
 const programOf = (context: MutatorContext): Option.Option<Program> => Arr.findLast(context.ancestors, isProgram)
 
@@ -668,12 +674,6 @@ const moduleNamespaceAccess = (
     ([local]) => identifier(local),
   )
 
-export const operationAccess = (call: ResolvedEffectCall): Option.Option<Expression> =>
-  Option.map(
-    call.moduleAccess(call.module),
-    (moduleObject) => memberExpression(moduleObject, identifier(call.exportName), false),
-  )
-
 export const isMovableArgument = (node: Node): boolean =>
   nodesOutsideFunctions(node).every((candidate) => YIELD_OR_AWAIT_KINDS[nodeType(candidate) ?? ''] !== true)
 
@@ -708,7 +708,12 @@ const isCallFreeMemberChain = (member: MemberExpression): boolean =>
 export const identifiersIn = (node: Node): readonly string[] =>
   allNodesUnder(node).flatMap((candidate) => Option.toArray(identifierText(candidate)))
 
-export const freshIdentifier = (base: string, taken: ReadonlySet<string>): string => freeIdentifier(base, taken, 0)
+const freshIdentifierDataFirst = (base: string, taken: ReadonlySet<string>): string => freeIdentifier(base, taken, 0)
+
+export const freshIdentifier: {
+  (base: string, taken: ReadonlySet<string>): string
+  (taken: ReadonlySet<string>): (base: string) => string
+} = dual((args: IArguments): boolean => args.length >= 2, freshIdentifierDataFirst)
 
 const freeIdentifier = (base: string, taken: ReadonlySet<string>, suffix: number): string =>
   Match.value(taken.has(suffixedName(base, suffix))).pipe(
@@ -917,14 +922,24 @@ const pruneAtFunction = (path: TraversePath): void =>
     onSome: (atFunction) => atFunction.skip(),
   })
 
-export const moduleCall = (module: Expression, property: string, args: readonly Expression[]): Expression =>
+const moduleCallDataFirst = (module: Expression, property: string, args: readonly Expression[]): Expression =>
   callExpression(memberExpression(module, identifier(property), false), args)
 
-export const onlyWhen = <A>(holds: boolean, value: A): Option.Option<A> =>
+export const moduleCall: {
+  (module: Expression, property: string, args: readonly Expression[]): Expression
+  (property: string, args: readonly Expression[]): (module: Expression) => Expression
+} = dual((args: IArguments): boolean => args.length >= 3, moduleCallDataFirst)
+
+const onlyWhenDataFirst = <A>(holds: boolean, value: A): Option.Option<A> =>
   Match.value(holds).pipe(
     Match.when(true, () => Option.some(value)),
     Match.orElse(() => Option.none()),
   )
+
+export const onlyWhen: {
+  <A>(holds: boolean, value: A): Option.Option<A>
+  <A>(value: A): (holds: boolean) => Option.Option<A>
+} = dual((args: IArguments): boolean => args.length >= 2, onlyWhenDataFirst)
 
 const holdsAny = (conditions: readonly boolean[]): boolean => conditions.some((condition) => condition)
 

@@ -6,7 +6,7 @@ export interface FixtureFile {
   readonly content: string
 }
 
-const FIXTURES_DIRECTORY = new URL('./effect-concurrency/', import.meta.url).pathname
+const FIXTURES_DIRECTORY = new URL('../../testResources/effect-concurrency/', import.meta.url).pathname
 
 export const effectConcurrencyFixtureContent = (fileName: string) =>
   Effect.flatMap(FileSystem.FileSystem, (fileSystem) => fileSystem.readFileString(`${FIXTURES_DIRECTORY}${fileName}`))

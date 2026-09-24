@@ -253,6 +253,7 @@ const offerFailureEnvelope = (
       code: envelope.code,
       error: envelope.error,
       remediation: envelope.remediation,
+      reason: null,
     }),
   )
 }

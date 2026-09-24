@@ -263,8 +263,8 @@ const intersectFileDescriptions = (first: FileDescriptionLike, second: FileDescr
 const columnOf = (column: number | undefined, fallback: number) => column ?? fallback
 
 const spanOf = (specifier: MutationRangeSpecifier) => ({
-  start: { line: specifier.startLine - 1, column: columnOf(specifier.startColumn, 0) },
-  end: { line: specifier.endLine - 1, column: columnOf(specifier.endColumn, Number.MAX_SAFE_INTEGER) },
+  start: { line: specifier.startLine, column: columnOf(specifier.startColumn, 0) },
+  end: { line: specifier.endLine, column: columnOf(specifier.endColumn, Number.MAX_SAFE_INTEGER) },
 })
 
 const mutationRangeOf = (mutatePattern: string) =>
@@ -741,7 +741,7 @@ export const readProjectCell = Sandwich.named('stryker.project_read')(readProjec
 const rangeLawHolds = (startLine: number, endLine: number, column: number) => {
   const expectedSpanOf = (startColumn: number, endColumn: number) => ({
     pattern: 'src/a.ts',
-    mutate: [{ start: { line: startLine - 1, column: startColumn }, end: { line: endLine - 1, column: endColumn } }],
+    mutate: [{ start: { line: startLine, column: startColumn }, end: { line: endLine, column: endColumn } }],
   })
   const caseHolds = (pattern: string, startColumn: number, endColumn: number) =>
     JSON.stringify(Option.getOrUndefined(mutationRangeOf(pattern))) ===
@@ -789,7 +789,7 @@ if (import.meta.vitest !== void 0) {
   )
 
   it.prop(
-    '∀startLine_endLine_col_Range_≡ZeroBasedSpan',
+    '∀startLine_endLine_col_Range_≡OneBasedSpan',
     [LineSchema, LineSchema, ColumnSchema],
     ([startLine, endLine, column]) => rangeLawHolds(startLine, endLine, column),
   )

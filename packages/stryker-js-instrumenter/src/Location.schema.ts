@@ -6,6 +6,13 @@ import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
+/**
+ * File coordinates in the mutation-testing-report-schema contract: both line
+ * and column are 1-based. The first line of a file is line 1, and the first
+ * character of a line is column 1. Slicing a source line by one of these
+ * positions uses `line - 1` for the line index and `column - 1` for the
+ * character offset.
+ */
 export const PositionSchema = S.Struct({
   line: S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0))),
   column: S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0))),
@@ -24,44 +31,11 @@ export const OpenEndLocationSchema = S.Struct({
 })
 export type OpenEndLocation = typeof OpenEndLocationSchema.Type
 
-const ReportCoordinate = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
-
-const ReportPositionSchema = S.Struct({
-  column: ReportCoordinate,
-  line: ReportCoordinate,
-})
-
-const ReportLocationSchema = S.Struct({
-  start: ReportPositionSchema,
-  end: ReportPositionSchema,
-})
-
-const reportPositionOf = (position: Position) => ({
-  column: position.column + 1,
-  line: position.line + 1,
-})
-
-const reportLocationOf = (location: Location) => ({
-  start: reportPositionOf(location.start),
-  end: reportPositionOf(location.end),
-})
-
-const mutantPositionOf = (position: Position) => ({
-  column: position.column - 1,
-  line: position.line - 1,
-})
-
-const mutantLocationOf = (location: Location) => ({
-  start: mutantPositionOf(location.start),
-  end: mutantPositionOf(location.end),
-})
-
-export const ReportLocationFromMutant = LocationSchema.pipe(
-  S.decodeTo(ReportLocationSchema, {
-    decode: SGetter.transform(reportLocationOf),
-    encode: SGetter.transform(mutantLocationOf),
-  }),
-)
+/**
+ * A mutant's `location` already speaks the report contract (1-based line and
+ * column), so the report's location is that location unchanged.
+ */
+export const ReportLocationFromMutant = LocationSchema
 
 const NonNegativeInt = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
 
