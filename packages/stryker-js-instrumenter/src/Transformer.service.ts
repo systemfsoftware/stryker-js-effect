@@ -57,7 +57,7 @@ import type {
 import { AstFormat } from './Syntax.schema.js'
 import { type MutateDescription } from './Instrument.schema.js'
 import { LineTable, LineTableFromText, type Position } from './Location.schema.js'
-import { INSTRUMENTER_CONSTANTS as ID } from './Mutant.js'
+import { InstrumenterContext as ID } from './Mutant.schema.js'
 import {
   Mutators,
   type Mutant,

@@ -1,8 +1,7 @@
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import { PositionSchema, RunOptionsFields } from '@systemfsoftware/stryker-js-instrumenter'
-
 import * as S from 'effect/Schema'
+import { SchemaGetter } from 'effect'
 
 export const DryRunStatus = S.Literals(['complete', 'error', 'timeout'])
 export type DryRunStatus = typeof DryRunStatus.Type
@@ -141,8 +140,9 @@ export type MutantRunResult =
   | KilledMutantRunResult
   | SurvivedMutantRunResult
   | TimeoutMutantRunResult
-const firstFailedTestOf = (tests: readonly FailedTestResult[]) =>
-  Option.fromUndefinedOr(tests.at(0))
+
+const firstFailedTestOf = (tests: readonly TestResult[]) =>
+  Option.fromUndefinedOr(failedTestsOf(tests).at(0))
 
 const failedTestsOf = (tests: readonly TestResult[]) =>
   tests.filter((test): test is FailedTestResult => test.status === 'failed')
@@ -179,24 +179,27 @@ const reasonedTimeoutOf = (timedOut: TimeoutDryRunResult): TimeoutMutantRunResul
   })
 
 const completeResultOf = (complete: CompleteDryRunResult, reportAllKillers: boolean): MutantRunResult =>
-  Option.match(firstFailedTestOf(failedTestsOf(complete.tests)), {
+  Option.match(firstFailedTestOf(complete.tests), {
     onNone: (): MutantRunResult => ({ nrOfTests: countedTestsOf(complete.tests), status: 'survived' }),
     onSome: (firstFailed): MutantRunResult =>
       killedResultOf(complete, failedTestsOf(complete.tests), firstFailed, reportAllKillers),
   })
 
+const erroredResultOf = (errored: ErrorDryRunResult): MutantRunResult => ({
+  errorMessage: errored.errorMessage,
+  status: 'error',
+})
+
 export const decodeMutantRunResult = (options: { readonly reportAllKillers: boolean }) =>
   SchemaGetter.transform((dryRunResult: DryRunResult): MutantRunResult =>
     Match.value(dryRunResult).pipe(
       Match.discriminator('status')('complete', (complete) => completeResultOf(complete, options.reportAllKillers)),
-      Match.discriminator('status')('error', (errored): MutantRunResult => ({
-        errorMessage: errored.errorMessage,
-        status: 'error',
-      })),
+      Match.discriminator('status')('error', erroredResultOf),
       Match.discriminator('status')('timeout', reasonedTimeoutOf),
       Match.exhaustive,
     )
   )
+
 
 export type CoverageAnalysis = 'off' | 'all' | 'perTest'
 

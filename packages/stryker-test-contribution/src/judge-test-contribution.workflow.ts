@@ -1,32 +1,18 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import * as Array from 'effect/Array'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
+import { MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 
-import type { ContributionEntry, ReportView, TestFileContribution } from './test-contribution.schema.js'
+import type { ContributionEntry, TestFileContribution } from './test-contribution.schema.js'
 import { TestFileContributionSchema } from './test-contribution.schema.js'
 
 export class JudgeTestContribution extends S.TaggedClass<JudgeTestContribution>()('JudgeTestContribution', {
-  report: S.Struct({
-    files: S.Record(
-      S.String,
-      S.Struct({
-        language: S.String,
-        source: S.String,
-        mutants: S.Array(
-          S.Struct({
-            id: S.String,
-            status: S.Union([S.Literal('Killed'), S.Literal('Timeout'), S.Literal('Ignored')]),
-            killedBy: S.optional(S.Array(S.String)),
-            coveredBy: S.optional(S.Array(S.String)),
-          }),
-        ),
-      }),
-    ),
-    testFiles: S.optional(S.Record(S.String, S.Struct({ tests: S.Array(S.Struct({ id: S.String })) }))),
-  }),
+  report: MutationTestResultSchema,
   everyKillerRecorded: S.Boolean,
   suffixes: S.Array(S.String),
 }) {
@@ -107,75 +93,119 @@ export const TestContributionDecision = S.Union([
 ])
 export type TestContributionDecision = typeof TestContributionDecision.Type
 
-type TestFileById = ReadonlyMap<string, string>
+type TestFileById = ReadonlyArray<readonly [string, string]>
 
 const KILLING_STATUSES: Readonly<Record<string, true>> = { Killed: true, Timeout: true }
 
 const PRECISION = 'every killing test was recorded'
 
-const testFilesOf = (report: ReportView): Record<string, TestFileMapEntry> => report.testFiles ?? {}
+const noTestFiles: Record<string, schema.TestFile> = {}
 
-const isDefined = <T>(value: T | undefined): value is T => value !== undefined
+const testFilesOf = (report: schema.MutationTestResult): Record<string, schema.TestFile> =>
+  Option.getOrElse(Option.fromNullable(report.testFiles), () => noTestFiles)
 
-const testFileById = (testFiles: Record<string, TestFileMapEntry>): TestFileById =>
-  new Map(
-    Object.entries(testFiles).flatMap(([fileName, testFile]) =>
-      testFile.tests.map((test): readonly [string, string] => [test.id, fileName]),
-    ),
+const testFileById = (testFiles: Record<string, schema.TestFile>): TestFileById =>
+  Object.entries(testFiles).flatMap(([fileName, testFile]) =>
+    testFile.tests.map((test): readonly [string, string] => [test.id, fileName]),
   )
 
-const idsOf = (testIds: readonly string[] | undefined): readonly string[] => testIds ?? []
+const idsOf = (testIds: readonly string[] | undefined): readonly string[] =>
+  Option.getOrElse(Option.fromNullable(testIds), () => [])
 
-const realFiles = (testIds: readonly string[], fileById: TestFileById): ReadonlySet<string> =>
-  new Set(testIds.map((testId) => fileById.get(testId)).filter(isDefined))
+const fileNameOf = (fileById: TestFileById, testId: string): Option.Option<string> =>
+  Option.map(
+    Array.findLast(fileById, ([id]) => id === testId),
+    ([, fileName]) => fileName,
+  )
 
-const killersOf = (killedBy: readonly string[], fileById: TestFileById): ReadonlySet<string> =>
-  new Set(killedBy.map((testId) => fileById.get(testId) ?? testId))
+const realFiles = (testIds: readonly string[], fileById: TestFileById): ReadonlyArray<string> =>
+  Array.dedupe(Array.filterMap(testIds, (testId) => fileNameOf(fileById, testId)))
+
+const killersOf = (killedBy: readonly string[], fileById: TestFileById): ReadonlyArray<string> =>
+  Array.dedupe(
+    killedBy.map((testId) => Option.getOrElse(fileNameOf(fileById, testId), () => testId)),
+  )
 
 const isKillingMutant = (mutant: schema.MutantResult): boolean => KILLING_STATUSES[mutant.status] === true
 
 const isKillableMutant = (mutant: schema.MutantResult): boolean => mutant.status !== 'Ignored'
 
-const realKillersOf = (mutant: schema.MutantResult, fileById: TestFileById): ReadonlySet<string> =>
+const realKillersOf = (mutant: schema.MutantResult, fileById: TestFileById): ReadonlyArray<string> =>
   realFiles(idsOf(mutant.killedBy), fileById)
 
-const realCoverersOf = (mutant: schema.MutantResult, fileById: TestFileById): ReadonlySet<string> =>
+const realCoverersOf = (mutant: schema.MutantResult, fileById: TestFileById): ReadonlyArray<string> =>
   realFiles(idsOf(mutant.coveredBy), fileById)
 
-const countOf = (counts: ReadonlyMap<string, number>, fileName: string): number => counts.get(fileName) ?? 0
-
-const incrementCount = (counts: Map<string, number>, fileName: string): Map<string, number> => {
-  counts.set(fileName, countOf(counts, fileName) + 1)
-  return counts
+interface Kill {
+  readonly killers: ReadonlyArray<string>
+  readonly coverers: ReadonlyArray<string>
+  readonly claimedAlone: boolean
 }
 
-const countBy = (fileNames: Iterable<string>): ReadonlyMap<string, number> =>
-  [...fileNames].reduce(incrementCount, new Map<string, number>())
+const killOf = (mutant: schema.MutantResult, fileById: TestFileById): Kill => ({
+  killers: realKillersOf(mutant, fileById),
+  coverers: realCoverersOf(mutant, fileById),
+  claimedAlone: killersOf(idsOf(mutant.killedBy), fileById).length === 1,
+})
+
+const mutantsOf = (report: schema.MutationTestResult): readonly schema.MutantResult[] =>
+  Object.values(report.files).flatMap((file) => file.mutants)
+
+const killsOf = (mutants: readonly schema.MutantResult[], fileById: TestFileById): readonly Kill[] =>
+  mutants.filter(isKillingMutant).map((mutant) => killOf(mutant, fileById))
+
+const isUnattributedKill = (kill: Kill): boolean => kill.killers.length === 0
+
+const countOf = (counts: ReadonlyArray<readonly [string, number]>, fileName: string): number =>
+  Option.getOrElse(
+    Option.map(
+      Array.findLast(counts, ([name]) => name === fileName),
+      ([, count]) => count,
+    ),
+    () => 0,
+  )
+
+const countBy = (fileNames: ReadonlyArray<string>): ReadonlyArray<readonly [string, number]> =>
+  Array.map(
+    Array.dedupe(fileNames),
+    (fileName): readonly [string, number] => [
+      fileName,
+      fileNames.filter((candidate) => candidate === fileName).length,
+    ],
+  )
 
 interface ContributionTally {
-  readonly soleKills: ReadonlyMap<string, number>
-  readonly totalKills: ReadonlyMap<string, number>
-  readonly killableCovered: ReadonlyMap<string, number>
-  readonly unattributed: ReadonlySet<string>
+  readonly soleKills: ReadonlyArray<readonly [string, number]>
+  readonly totalKills: ReadonlyArray<readonly [string, number]>
+  readonly killableCovered: ReadonlyArray<readonly [string, number]>
+  readonly unattributed: ReadonlyArray<string>
 }
 
 const tallyOf = (mutants: readonly schema.MutantResult[], fileById: TestFileById): ContributionTally => {
   const kills = killsOf(mutants, fileById)
   return {
-    totalKills: countBy(kills.flatMap((kill) => [...kill.killers])),
+    soleKills: countBy(kills.filter((kill) => kill.claimedAlone).flatMap((kill) => kill.killers)),
+    totalKills: countBy(kills.flatMap((kill) => kill.killers)),
     killableCovered: countBy(
-      mutants.filter(isKillableMutant).flatMap((mutant) => [...realCoverersOf(mutant, fileById)]),
+      mutants.filter(isKillableMutant).flatMap((mutant) => realCoverersOf(mutant, fileById)),
     ),
-    unattributed: new Set(kills.filter(isUnattributedKill).flatMap((kill) => [...kill.coverers])),
+    unattributed: Array.dedupe(kills.filter(isUnattributedKill).flatMap((kill) => kill.coverers)),
   }
 }
-const contributionOf = (report: ReportView): ReadonlyMap<string, TestFileContribution> => {
+const fileContributionOf = (fileName: string, tally: ContributionTally): TestFileContribution => ({
+  soleKills: countOf(tally.soleKills, fileName),
+  totalKills: countOf(tally.totalKills, fileName),
+  killableCovered: countOf(tally.killableCovered, fileName),
+  coversUnattributedKill: tally.unattributed.includes(fileName),
+})
+
+const contributionOf = (report: schema.MutationTestResult): ReadonlyArray<ContributionEntry> => {
   const testFiles = testFilesOf(report)
-  const fileById = testFileById(testFiles)
-  const tally = tallyOf(mutantsOf(report), fileById)
-  return new Map(
-    Object.keys(testFiles).map((fileName): ContributionEntry => [fileName, fileContributionOf(fileName, tally)]),
-  )
+  const tally = tallyOf(mutantsOf(report), testFileById(testFiles))
+  return Object.keys(testFiles).map((fileName): ContributionEntry => [
+    fileName,
+    fileContributionOf(fileName, tally),
+  ])
 }
 
 const isInScope = (fileName: string, suffixes: readonly string[]): boolean =>
@@ -189,11 +219,11 @@ const defends = (entry: TestFileContribution, everyKillerRecorded: boolean): boo
   )
 
 const toothlessOf = (
-  contribution: ReadonlyMap<string, TestFileContribution>,
+  contribution: ReadonlyArray<ContributionEntry>,
   suffixes: readonly string[],
   everyKillerRecorded: boolean,
 ): readonly string[] =>
-  [...contribution]
+  contribution
     .filter(([fileName]) => isInScope(fileName, suffixes))
     .filter(([, entry]) => !defends(entry, everyKillerRecorded))
     .filter(([, entry]) => entry.killableCovered > 0)
@@ -216,10 +246,10 @@ const judgementOf = (command: JudgeTestContribution): Judgement => {
   return {
     matches: command.suffixes.join(', '),
     everyKillerRecorded: command.everyKillerRecorded,
-    contribution: [...contribution],
-    inScope: [...contribution].filter(([fileName]) => isInScope(fileName, command.suffixes)),
+    contribution,
+    inScope: contribution.filter(([fileName]) => isInScope(fileName, command.suffixes)),
     toothless: toothlessOf(contribution, command.suffixes, command.everyKillerRecorded),
-    kills: kills.map((kill) => ({ killers: [...kill.killers] })),
+    kills: kills.map((kill) => ({ killers: kill.killers })),
   }
 }
 

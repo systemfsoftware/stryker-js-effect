@@ -27,12 +27,10 @@ export * from './Evaluator.service.js'
 export * from './ExitClass.js'
 export * from './Metrics.schema.js'
 export {
-  HIT_LIMIT_REASON_PREFIX,
-  hitLimitReachedReason,
-  isHitLimitReason,
-  isNamedTrap,
-  WALL_CLOCK_TIMEOUT_REASON,
-  wallClockTimeoutStopsRun,
+  HitLimitReason,
+  HitLimitReasonPrefix,
+  HitLimitReasonText,
+  WallClockTimeoutReason,
 } from './mutant-timeout-reason.js'
 export { CheckerRpcs, ReporterRpcs, TestRunnerRpcs } from './PluginRpcs.service.js'
 export {
@@ -75,13 +73,12 @@ export {
 } from './stryker-options.schema.js'
 export * from './TestRunner.schema.js'
 export * from './TestRunner.service.js'
-export { testFilesProvided, toMutantRunResult } from './TestRunner.js'
 export {
-  formatTraceparent,
-  parseTraceparent,
-  TRACEPARENT_HEADER,
-  TRACESTATE_HEADER,
-} from './TraceContext.js'
-export type { TraceContextParts, Traceparent } from './TraceContext.schema.js'
+  TraceContextPartsSchema,
+  Traceparent,
+  TraceparentHeader,
+  TracestateHeader,
+} from './TraceContext.schema.js'
+export type { TraceContextParts } from './TraceContext.schema.js'
 export { TraceContextReference } from './TraceContext.service.js'
 export { PropagatedTrace, TraceContextMiddleware, type TracedRpc } from './TraceContextRpc.service.js'

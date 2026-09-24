@@ -7,6 +7,7 @@ import * as Option from 'effect/Option'
 import * as Layer from 'effect/Layer'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import type {
   ArrayExpression,
   ArrowFunctionExpression,
@@ -66,7 +67,7 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.handle.js'
-import { printNode } from './print/index.js'
+import { SourceText } from './print/SourceText.schema.js'
 
 export interface MutatorContext {
   readonly parent: Node | undefined
@@ -138,7 +139,7 @@ const createMutant = (params: CreateMutantOptions): Mutant => ({
   replacement: params.specs.replacement,
   mutatorName: params.specs.mutatorName,
   ignoreReason: params.specs.ignoreReason,
-  replacementCode: printNode(params.specs.replacement),
+  replacementCode: Option.getOrElse(S.decodeUnknownOption(SourceText)(params.specs.replacement), () => ''),
 })
 
 const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing> =>

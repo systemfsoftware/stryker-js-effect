@@ -27,7 +27,3 @@ export const TestFileContributionSchema = S.Struct({
 export type ContributionEntry = readonly [string, TestFileContribution]
 
 export type ReportView = Pick<schema.MutationTestResult, 'files' | 'testFiles'>
-
-export interface TestFileMapEntry {
-  readonly tests: ReadonlyArray<{ readonly id: string }>
-}

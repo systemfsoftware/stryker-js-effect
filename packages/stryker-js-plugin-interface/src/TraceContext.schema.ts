@@ -5,14 +5,14 @@ import * as S from 'effect/Schema'
 import { SchemaGetter, SchemaIssue, SchemaTransformation } from 'effect'
 export const TraceparentHeader = S.Literal('traceparent')
 export const TracestateHeader = S.Literal('tracestate')
-
-export interface TraceContextParts {
-  readonly version: string
-  readonly traceId: string
-  readonly spanId: string
-  readonly traceFlags: number
-  readonly traceState?: string | undefined
-}
+export const TraceContextPartsSchema = S.Struct({
+  version: S.String,
+  traceId: S.String,
+  spanId: S.String,
+  traceFlags: S.Finite,
+  traceState: S.optional(S.String),
+})
+export type TraceContextParts = typeof TraceContextPartsSchema.Type
 
 const HEX_VERSION = /^[0-9a-f]{2}$/
 const HEX_TRACE_ID = /^[0-9a-f]{32}$/
@@ -56,14 +56,13 @@ const partsOf = (value: string) => {
 const formatOf = (parts: TraceContextParts) =>
   `${parts.version}-${parts.traceId}-${parts.spanId}-${(parts.traceFlags & 0xff).toString(16).padStart(2, '0')}`
 
-const malformedTraceparent = new SchemaIssue.InvalidValue(
-  Option.some('expected a W3C traceparent: version-traceId-spanId-flags'),
-)
+const malformedTraceparent = (value: string) =>
+  new SchemaIssue.InvalidValue({ message: 'expected a W3C traceparent: version-traceId-spanId-flags' }, value)
 
 const decodeParts = SchemaGetter.transformEffect((value: string) =>
   Boolean.match(isWellFormedTraceparent(value), {
     onTrue: () => Effect.succeed(partsOf(value)),
-    onFalse: () => Effect.fail(malformedTraceparent),
+    onFalse: () => Effect.fail(malformedTraceparent(value)),
   })
 )
 
@@ -71,13 +70,7 @@ const encodeText = SchemaGetter.transform(formatOf)
 
 export const Traceparent = S.String.pipe(
   S.decodeTo(
-    S.Struct({
-      version: S.String,
-      traceId: S.String,
-      spanId: S.String,
-      traceFlags: S.Finite,
-      traceState: S.optional(S.String),
-    }),
+    TraceContextPartsSchema,
     SchemaTransformation.makeTransformation({ decode: decodeParts, encode: encodeText }),
   ),
 )
