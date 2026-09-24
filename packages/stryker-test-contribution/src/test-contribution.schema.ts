@@ -1,6 +1,6 @@
 import * as S from 'effect/Schema'
 
-import { NonNegativeFinite } from '@systemfsoftware/stryker-js-plugin-interface'
+import { NonNegativeFinite, type schema as pluginSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export interface TestFileContribution {
   readonly soleKills: number
@@ -25,5 +25,5 @@ export const TestFileContributionSchema = S.Struct({
 })
 
 export type ContributionEntry = readonly [string, TestFileContribution]
+export type ReportView = Pick<pluginSchema.MutationTestResult, 'files' | 'testFiles'>
 
-export type ReportView = Pick<schema.MutationTestResult, 'files' | 'testFiles'>

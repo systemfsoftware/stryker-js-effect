@@ -11,6 +11,7 @@ import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
+import * as S from 'effect/Schema'
 import * as Option from 'effect/Option'
 import * as Stream from 'effect/Stream'
 

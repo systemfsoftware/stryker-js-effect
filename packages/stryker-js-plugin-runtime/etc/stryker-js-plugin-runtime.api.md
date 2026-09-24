@@ -4,13 +4,11 @@
 
 ```ts
 
-import * as api from '@opentelemetry/api';
 import * as Config from 'effect/Config';
 import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Layer from 'effect/Layer';
-import * as Option from 'effect/Option';
 import * as Path from 'effect/Path';
 import { PlatformError } from 'effect/PlatformError';
 import * as Rpc from 'effect/unstable/rpc/Rpc';
@@ -24,20 +22,20 @@ import { TraceContextMiddleware } from '@systemfsoftware/stryker-js-plugin-inter
 import { TraceContextParts } from '@systemfsoftware/stryker-js-plugin-interface';
 
 // @public (undocumented)
+export type EffectSpanIdentity = {
+    readonly traceId: string;
+    readonly spanId: string;
+    readonly sampled: boolean;
+};
+
+// @public (undocumented)
 export const layerTraceContextClient: Layer.Layer<RpcMiddleware.ForClient<TraceContextMiddleware>, never, never>;
 
 // @public (undocumented)
 export const layerTraceContextServer: Layer.Layer<TraceContextMiddleware, never, never>;
 
 // @public (undocumented)
-export const partsOfEffectSpan: (span: {
-    readonly traceId: string;
-    readonly spanId: string;
-    readonly sampled: boolean;
-}) => TraceContextParts;
-
-// @public (undocumented)
-export const tracePartsOf: (context: api.SpanContext) => Option.Option<TraceContextParts>;
+export const TraceContextPartsFromEffectSpan: S.Codec<TraceContextParts, EffectSpanIdentity>;
 
 // @public (undocumented)
 export const withLinkedSpan: {
@@ -56,17 +54,14 @@ export class WorkerOptions extends WorkerOptions_base {
 // @public (undocumented)
 export const WorkerOptionsWire: S.fromJsonString<S.StructWithRest<S.Struct<{
     readonly allowConsoleColors: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly buildCommand: S.optional<S.String>;
+    readonly buildCommand: S.optionalKey<S.String>;
     readonly checkers: S.withDecodingDefaultKey<S.$Array<S.Struct<{
         readonly plugin: S.String;
-        readonly nodeArgs: S.optional<S.$Array<S.String>>;
-        readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+        readonly nodeArgs: S.optionalKey<S.$Array<S.String>>;
+        readonly options: S.optionalKey<S.$Record<S.String, S.Unknown>>;
     }>>, never>;
     readonly checkerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly concurrency: S.optional<S.Union<readonly [S.Finite, S.String]>>;
-    readonly commandRunner: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
-        readonly command: S.withDecodingDefaultKey<S.String, never>;
-    }>, readonly [S.$Record<S.String, S.Unknown>]>, never>;
+    readonly concurrency: S.optionalKey<S.Union<readonly [S.Finite, S.String]>>;
     readonly coverageAnalysis: S.withDecodingDefaultKey<S.Literals<readonly ["off", "all", "perTest"]>, never>;
     readonly clearTextReporter: S.withDecodingDefaultKey<S.StructWithRest<S.Struct<{
         readonly allowColor: S.withDecodingDefaultKey<S.Boolean, never>;
@@ -86,7 +81,6 @@ export const WorkerOptionsWire: S.fromJsonString<S.StructWithRest<S.Struct<{
     readonly progressStreamFile: S.withDecodingDefaultKey<S.String, never>;
     readonly force: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly fileLogLevel: S.withDecodingDefaultKey<S.Literals<readonly ["off", "fatal", "error", "warn", "info", "debug", "trace"]>, never>;
-    readonly inPlace: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly logLevel: S.withDecodingDefaultKey<S.Literals<readonly ["off", "fatal", "error", "warn", "info", "debug", "trace"]>, never>;
     readonly maxConcurrentTestRunners: S.withDecodingDefaultKey<S.Finite, never>;
     readonly maxTestRunnerReuse: S.withDecodingDefaultKey<S.Finite, never>;
@@ -94,7 +88,7 @@ export const WorkerOptionsWire: S.fromJsonString<S.StructWithRest<S.Struct<{
     readonly mutator: S.withDecodingDefaultKey<S.Struct<{
         readonly excludedMutations: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     }>, never>;
-    readonly packageManager: S.optional<S.Literals<readonly ["npm", "yarn", "pnpm"]>>;
+    readonly packageManager: S.optionalKey<S.Literals<readonly ["npm", "yarn", "pnpm"]>>;
     readonly plugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly appendPlugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly reporters: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
@@ -104,14 +98,12 @@ export const WorkerOptionsWire: S.fromJsonString<S.StructWithRest<S.Struct<{
     readonly jsonReporter: S.withDecodingDefaultKey<S.Struct<{
         readonly fileName: S.withDecodingDefaultKey<S.String, never>;
     }>, never>;
-    readonly disableTypeChecks: S.withDecodingDefaultKey<S.Union<readonly [S.Boolean, S.String]>, never>;
-    readonly symlinkNodeModules: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly tempDirName: S.withDecodingDefaultKey<S.String, never>;
     readonly cleanTempDir: S.withDecodingDefaultKey<S.Literals<readonly ["always", false, true]>, never>;
     readonly testRunner: S.withDecodingDefaultKey<S.Union<readonly [S.String, S.Struct<{
         readonly plugin: S.String;
-        readonly nodeArgs: S.optional<S.$Array<S.String>>;
-        readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
+        readonly nodeArgs: S.optionalKey<S.$Array<S.String>>;
+        readonly options: S.optionalKey<S.$Record<S.String, S.Unknown>>;
     }>]>, never>;
     readonly testRunnerNodeArgs: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly thresholds: S.withDecodingDefaultKey<S.decodeTo<S.declare<{

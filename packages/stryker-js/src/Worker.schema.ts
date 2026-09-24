@@ -18,18 +18,13 @@ export class WorkerMethodError extends S.TaggedError<WorkerMethodError>()('Worke
 // Process exit — crash discriminants
 // ---------------------------------------------------------------------------
 
-/**
- * A process identifier. `S.Int` rather than `S.Number` because the plain number
- * domain admits `NaN` and the infinities, and a pid is none of those.
- */
-const ProcessId = S.Int
+const ProcessId = S.NonNegativeInt
 
-/**
- * How a child process ended.
- */
+const ChildExitCode = S.NonNegativeInt
+
 const ChildExit = S.Union([
-  S.Struct({ _tag: S.Literals(['Code']), code: S.Int }),
-  S.Struct({ _tag: S.Literals(['Signal']), signal: S.String }),
+  S.Struct({ _tag: S.Literals(['Code']), code: ChildExitCode }),
+  S.Struct({ _tag: S.Literals(['Signal']), signal: S.NonEmptyString }),
 ])
 
 export type ChildExit = typeof ChildExit.Type
@@ -54,7 +49,7 @@ export class ChildProcessCrashedError extends S.TaggedError<ChildProcessCrashedE
 
 export class OutOfMemoryError extends S.TaggedError<OutOfMemoryError>()('OutOfMemoryError', {
   pid: ProcessId,
-  exitCode: S.Int,
+  exitCode: ChildExitCode,
 }) {
   readonly [WorkerExitTypeId] = WorkerExitTypeId
   readonly exitClass = 'RuntimeError' as const

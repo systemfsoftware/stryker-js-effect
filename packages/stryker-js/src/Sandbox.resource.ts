@@ -12,6 +12,7 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 import { Prototype, type Pipeable } from 'effect/Pipeable'
@@ -87,6 +88,7 @@ const disableTypeChecksWarning = (name: string, options: StrykerOptions) =>
         ),
     ),
     Match.tag('WarningDisabled', () => Effect.void),
+    Match.exhaustive,
   )
 
 const makeDisableTypeChecksPreprocessor = (options: StrykerOptions, impl: typeof disableTypeChecks) => (project: Project) =>

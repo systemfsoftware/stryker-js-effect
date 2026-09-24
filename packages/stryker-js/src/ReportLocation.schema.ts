@@ -1,13 +1,7 @@
+import { LocationSchema } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Location, Position } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
-
-const MutantCoordinate = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
-
-const MutantLocationSchema = S.Struct({
-  start: S.Struct({ line: MutantCoordinate, column: MutantCoordinate }),
-  end: S.Struct({ line: MutantCoordinate, column: MutantCoordinate }),
-})
 
 const ReportCoordinate = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
 
@@ -41,7 +35,7 @@ const mutantLocationOf = (location: Location) => ({
   end: mutantPositionOf(location.end),
 })
 
-export const ReportLocationFromMutant = MutantLocationSchema.pipe(
+export const ReportLocationFromMutant = LocationSchema.pipe(
   S.decodeTo(ReportLocationSchema, {
     decode: SGetter.transform(reportLocationOf),
     encode: SGetter.transform(mutantLocationOf),

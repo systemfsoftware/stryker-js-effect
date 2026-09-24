@@ -75,16 +75,11 @@ describe('StrykerConfig.merge', () => {
       mergedKeys.every((key) => key in expected)
   })
 
-  it.prop('∀do_Merge_≡Idempotent', [NestedDocumentSchema, NestedDocumentSchema], ([base, overrides]) => {
-    const once = StrykerConfig.merge(base, overrides)
-    const twice = StrykerConfig.merge(once, overrides)
-    return sameValue(Object.keys(twice), Object.keys(twice).filter((key) => key in once)) &&
-      Object.keys(overrides).every((key) =>
-        overrides[key] === undefined || key === '__proto__'
-          ? sameValue(usableEntriesOnly(twice)[key], usableEntriesOnly(once)[key])
-          : sameValue(twice[key], overrides[key])
-      )
-  })
+  it.prop('∀do_Merge_≡Idempotent', [DocumentSchema, DocumentSchema], ([base, overrides]) =>
+    sameValue(
+      StrykerConfig.merge(StrykerConfig.merge(base, overrides), overrides),
+      StrykerConfig.merge(base, overrides),
+    ))
 
   it.prop('∀do_Merge_≡NestedRecordsMergeRecursively', [NestedDocumentSchema, NestedDocumentSchema], ([base, overrides]) => {
     const merged = StrykerConfig.merge(base, overrides)

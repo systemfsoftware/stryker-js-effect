@@ -1,4 +1,5 @@
 export { TraceContextPartsFromEffectSpan } from './trace-parts.schema.js'
+export type { EffectSpanIdentity } from './trace-parts.schema.js'
 export { layerTraceContextClient, layerTraceContextServer, withLinkedSpan } from './trace-context-rpc.service.js'
 export { WorkerOptionsWire } from './worker-options.schema.js'
 export { WorkerOptions } from './worker-options.service.js'

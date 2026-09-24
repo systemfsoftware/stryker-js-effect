@@ -20,7 +20,11 @@ const EffectSpanShape = S.Struct({
   ),
   sampled: S.Boolean,
 })
-export type EffectSpanIdentity = S.Schema.Type<typeof EffectSpanShape>
+export type EffectSpanIdentity = {
+  readonly traceId: string
+  readonly spanId: string
+  readonly sampled: boolean
+}
 
 const sampledFlagOf = (sampled: boolean) =>
   Boolean.match(sampled, { onTrue: () => SAMPLED_FLAG, onFalse: () => 0 })

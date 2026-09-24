@@ -8,13 +8,16 @@ import {
   type MutantRunResult,
   type TestRunnerCapabilities,
   TestRunnerFailed,
+  TestRunnerRpcs,
   WallClockTimeoutReason,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
+import type * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
+import type * as Scope from 'effect/Scope'
+import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 
 import { commandRunner, isCommandRunner } from './command-runner.resource.js'

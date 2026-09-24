@@ -1,6 +1,5 @@
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
-import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { SchemaGetter, SchemaIssue, SchemaTransformation } from 'effect'
@@ -49,6 +48,8 @@ const FORBIDDEN_VERSION = 'ff'
 const CURRENT_VERSION = '00'
 const TRACEPARENT_FIELD_COUNT = 4
 
+const fieldAt = (fields: readonly string[], index: number) => fields[index] ?? ''
+
 const isNonZeroHex = (pattern: RegExp, value: string) =>
   pattern.test(value) && !ALL_ZERO.test(value)
 
@@ -61,21 +62,21 @@ const isKnownVersion = (version: string) =>
 const isWellFormedTraceparent = (value: string) => {
   const fields = value.split('-')
   return [
-    acceptsFieldCount(fields[0] ?? '', fields.length),
-    isKnownVersion(fields[0] ?? ''),
-    isNonZeroHex(HEX_TRACE_ID, fields[1] ?? ''),
-    isNonZeroHex(HEX_SPAN_ID, fields[2] ?? ''),
-    HEX_FLAGS.test(fields[3] ?? ''),
+    acceptsFieldCount(fieldAt(fields, 0), fields.length),
+    isKnownVersion(fieldAt(fields, 0)),
+    isNonZeroHex(HEX_TRACE_ID, fieldAt(fields, 1)),
+    isNonZeroHex(HEX_SPAN_ID, fieldAt(fields, 2)),
+    HEX_FLAGS.test(fieldAt(fields, 3)),
   ].every((check) => check)
 }
 
 const partsOf = (value: string) => {
-  const [version = '', traceId = '', spanId = '', flags = ''] = value.split('-')
+  const fields = value.split('-')
   return {
-    version,
-    traceId,
-    spanId,
-    traceFlags: Number.parseInt(flags, 16),
+    version: fieldAt(fields, 0),
+    traceId: fieldAt(fields, 1),
+    spanId: fieldAt(fields, 2),
+    traceFlags: Number.parseInt(fieldAt(fields, 3), 16),
   }
 }
 
@@ -113,9 +114,7 @@ if (import.meta.vitest !== void 0) {
       onSuccess: (header) =>
         Result.match(S.decodeResult(Traceparent)(header), {
           onFailure: () => false,
-          onSuccess: (parsed) =>
-            parsed.version === parts.version && parsed.traceId === parts.traceId &&
-            parsed.spanId === parts.spanId && parsed.traceFlags === parts.traceFlags,
+          onSuccess: (parsed) => JSON.stringify(parsed) === JSON.stringify(parts),
         }),
     }))
 

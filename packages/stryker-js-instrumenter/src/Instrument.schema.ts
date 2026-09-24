@@ -1,5 +1,6 @@
 import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
+import { LocationSchema, type Position } from './Location.schema.js'
 import { Mutant } from './Mutant.schema.js'
 
 export class InstrumentError
@@ -18,21 +19,9 @@ export class InstrumentError
     })
   }
 }
-
-const PositionSchema = S.Struct({
-  line: S.Finite,
-  column: S.Finite,
-})
-
-const RangeSchema = S.Struct({
-  start: PositionSchema,
-  end: PositionSchema,
-})
-
-export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(RangeSchema)])
+export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(LocationSchema)])
 
 export type MutateDescription = typeof MutateDescriptionSchema.Type
-export type Position = typeof PositionSchema.Type
 
 export interface MutationRange {
   readonly start: Position

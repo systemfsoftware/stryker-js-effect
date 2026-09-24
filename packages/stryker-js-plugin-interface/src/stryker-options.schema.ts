@@ -205,6 +205,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
     checkers: defaulted(S.Array(CheckerEntryConfigSchema), []),
     checkerNodeArgs: defaulted(S.Array(S.String), []),
     concurrency: S.optionalKey(S.Union([ConcurrencyCount, ConcurrencyPercent])),
+    commandRunner: defaulted(CommandRunnerOptionsSchema, { command: 'npm test' }),
     coverageAnalysis: defaulted(CoverageAnalysisMode, StrykerCoverageAnalysis.literal),
     clearTextReporter: defaulted(ClearTextReporterOptions, {
       allowColor: true,
@@ -223,6 +224,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
     incrementalFile: defaulted(S.String, 'reports/stryker-incremental.json'),
     progressStreamFile: defaulted(S.String, 'reports/mutation-stream.jsonl'),
     force: defaulted(S.Boolean, false),
+    inPlace: defaulted(S.Boolean, false),
     fileLogLevel: defaulted(LogLevel, StrykerFileLogLevel.literal),
     logLevel: defaulted(LogLevel, StrykerLogLevel.literal),
     maxConcurrentTestRunners: defaulted(S.Finite, 9007199254740991),

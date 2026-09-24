@@ -23,9 +23,9 @@ const DEFAULT_REMEDIATION = 'see --reportFile or the verdict envelope on stdout'
 
 export class ErrorEnvelope extends S.Class<ErrorEnvelope>('ErrorEnvelope')({
   schemaVersion: StreamSchemaVersion,
-  code: S.Int.pipe(S.isBetween({ minimum: 0, maximum: 255 })),
-  error: S.String.pipe(S.check(S.isMinLength(1))),
-  remediation: S.String.pipe(S.check(S.isMinLength(1))),
+  code: S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
+  error: S.NonEmptyString,
+  remediation: S.NonEmptyString,
 }) {
   get envelopeText(): string {
     return this.error
@@ -41,7 +41,7 @@ export class ErrorEnvelope extends S.Class<ErrorEnvelope>('ErrorEnvelope')({
 }
 
 export class RunExitCode extends S.Class<RunExitCode>('RunExitCode')({
-  code: S.Int.pipe(S.isBetween({ minimum: 0, maximum: 255 })),
+  code: S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
 }) {
   static readonly fromOutcome = (outcome: RunOutcomeDecision | RunOutcomeError) =>
     RunExitCode.make({ code: exitCodeOf(outcome) })

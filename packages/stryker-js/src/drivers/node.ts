@@ -15,6 +15,7 @@ import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 
 import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
+import type { EnginePorts } from '../run/StageServices.service.js'
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
 import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'

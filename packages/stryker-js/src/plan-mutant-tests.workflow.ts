@@ -92,10 +92,8 @@ const mutantActivationOf = (testFilter: readonly string[] | undefined) =>
     onSome: () => 'runtime' as const,
   })
 
-const coveredByOfMutant = (mutant: Mutant) => Option.map(Option.fromUndefinedOr(mutant.coveredBy), (c) => [...c])
-
-const testFilterOf = (globalFilter: readonly string[] | undefined) =>
-  Option.map(Option.fromUndefinedOr(globalFilter), (filter) => [...filter])
+const coveredByOfMutant = (mutant: Mutant) =>
+  Option.getOrUndefined(Option.map(Option.fromUndefinedOr(mutant.coveredBy), (coveredBy) => [...coveredBy]))
 
 const reloadEnvironmentOf = (testFilter: readonly string[] | undefined, isStatic: boolean | undefined) =>
   Option.match(Option.fromUndefinedOr(testFilter), {
@@ -178,45 +176,26 @@ const planForUncoveredStatic = (
   isStatic: boolean,
   coveredBy: readonly string[],
 ) =>
-  Option.match(Option.fromUndefinedOr(command.options.ignoreStatic), {
-    onNone: () =>
-      toRunPlan(
-        mutant,
-        command,
-        command.timeSpentAllTests,
-        testFilterOf(command.globalTestFilter),
-        isStatic,
-        coveredBy,
-      ),
-    onSome: (ignoreStatic) =>
-      Boolean.match(ignoreStatic, {
-        onTrue: () => toEarlyResultPlan(mutant, isStatic, 'Ignored', IGNORED_STATIC_MUTANT_REASON, coveredBy),
-        onFalse: () =>
-          toRunPlan(
-            mutant,
-            command,
-            command.timeSpentAllTests,
-            testFilterOf(command.globalTestFilter),
-            isStatic,
-            coveredBy,
-          ),
-      }),
+  Boolean.match(command.options.ignoreStatic, {
+    onTrue: () => toEarlyResultPlan(mutant, isStatic, 'Ignored', IGNORED_STATIC_MUTANT_REASON, coveredBy),
+    onFalse: () =>
+      toRunPlan(mutant, command, command.timeSpentAllTests, command.globalTestFilter, isStatic, coveredBy),
   })
 
 const planForStaticallyCovered = (
   mutant: Mutant,
   command: MutantTestPlanCommand,
   isStatic: boolean,
-): MutantPlanDecision => {
+) => {
   const tests = Option.getOrElse(Option.fromUndefinedOr(command.testsByMutantId[mutant.id]), () => [])
   const coveredBy = [...tests]
-  return Option.match(Option.fromUndefinedOr(isStatic && tests.length === 0), {
-    onNone: () => runWithCoveredTests(mutant, command, isStatic, tests, coveredBy),
-    onSome: (staticallyCovered) =>
-      Boolean.match(staticallyCovered, {
-        onTrue: () => planForUncoveredStatic(mutant, command, isStatic, coveredBy),
-        onFalse: () => runWithCoveredTests(mutant, command, isStatic, tests, coveredBy),
-      }),
+  const useCovered = Boolean.match(isStatic, {
+    onTrue: () => command.options.ignoreStatic && tests.length > 0,
+    onFalse: () => true,
+  })
+  return Boolean.match(useCovered, {
+    onTrue: () => runWithCoveredTests(mutant, command, isStatic, tests, coveredBy),
+    onFalse: () => planForUncoveredStatic(mutant, command, isStatic, coveredBy),
   })
 }
 

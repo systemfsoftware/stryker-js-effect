@@ -59,10 +59,8 @@ import { MutationReporting } from '../mutation-reporting.service.js'
 import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
 import { RelativeNormalizedFileName } from '../matching.schema.js'
-import {
-  MutantTestPlanCommand,
-  planMutantTests,
-} from '../plan-mutant-tests.workflow.js'
+import { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
+import { planMutantTests } from '../plan-mutant-tests.workflow.js'
 import {
   IncrementalDiffCommand,
   incrementalDiff as incrementalDiffDecisions,

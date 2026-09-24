@@ -472,7 +472,7 @@ const initFromPhaseSpan = (span: PhaseSpan | undefined): Effect.Effect<ReporterI
       Option.match(S.decodeUnknownOption(TraceContextPartsFromEffectSpan)(present), {
         onNone: () => Effect.succeed(undefined),
         onSome: (parts) =>
-          S.encode(Traceparent)(parts).pipe(
+          S.encodeEffect(Traceparent)(parts).pipe(
             Effect.orDie,
             Effect.map((traceparent): ReporterInit => ({
               traceparent,

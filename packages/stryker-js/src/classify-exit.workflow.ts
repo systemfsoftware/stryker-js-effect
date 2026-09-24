@@ -39,7 +39,7 @@ export class ExitInternalErrored extends S.TaggedClass<ExitInternalErrored>()('E
 }
 
 export class ExitSignalled extends S.TaggedClass<ExitSignalled>()('ExitSignalled', {
-  signal: S.Finite,
+  signal: S.NonNegativeInt,
 }) {
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }

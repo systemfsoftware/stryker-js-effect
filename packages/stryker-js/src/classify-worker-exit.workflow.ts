@@ -9,23 +9,23 @@ type WorkerExitTypeId = typeof WorkerExitTypeId
 export class ClassifyWorkerExitCommand extends S.TaggedClass<ClassifyWorkerExitCommand>()(
   'ClassifyWorkerExitCommand',
   {
-    pid: S.Int,
-    exitCode: S.Int,
+    pid: ProcessId,
+    exitCode: WorkerExitCode,
   },
 ) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 export class WorkerOutOfMemory extends S.TaggedClass<WorkerOutOfMemory>()('WorkerOutOfMemory', {
-  pid: S.Int,
-  exitCode: S.Int,
+  pid: ProcessId,
+  exitCode: WorkerExitCode,
 }) {
   readonly [WorkerExitTypeId] = WorkerExitTypeId
 }
 
 export class WorkerCrashed extends S.TaggedClass<WorkerCrashed>()('WorkerCrashed', {
-  pid: S.Int,
-  exitCode: S.Int,
+  pid: ProcessId,
+  exitCode: WorkerExitCode,
 }) {
   readonly [WorkerExitTypeId] = WorkerExitTypeId
 }
