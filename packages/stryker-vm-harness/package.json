@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-vm-harness",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -50,8 +50,8 @@
     "vm-harness"
   ],
   "dependencies": {
-    "@systemfsoftware/effect-cell-types": "catalog:",
-    "@effect/platform-node": "catalog:"
+    "@effect/platform-node": "catalog:",
+    "@systemfsoftware/effect-cell-types": "catalog:"
   },
   "peerDependencies": {
     "effect": "catalog:",
@@ -59,9 +59,9 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
-    "@systemfsoftware/differential-spec": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/differential-spec": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/stryker-config": "workspace:^",
