@@ -785,13 +785,7 @@ const ACQUIRE_DIVERGENCE_CASE: InterruptExpectations = {
   mutant: { exit: interrupted, state: { acquired: true, closed: false } },
 }
 
-interface LeaderLockCase {
-  readonly equivalenceSuccess: TwiceReport
-  readonly equivalenceFailure: TwiceReport
-  readonly interrupt: InterruptExpectations
-}
-
-const LEADER_LOCK_CASE: LeaderLockCase = {
+const LEADER_LOCK_CASE: FinalizerCase = {
   equivalenceSuccess: {
     first: succeeded({ acquired: true, result: RESULT }),
     second: succeeded({ acquired: true, result: RESULT }),
@@ -805,22 +799,10 @@ const LEADER_LOCK_CASE: LeaderLockCase = {
   },
 }
 
-interface LeaderLockDriver {
-  readonly case: LeaderLockCase
-  readonly build: (
-    modules: Instrumented,
-    tryAcquire: Effect.Effect<boolean>,
-    guarded: Effect.Effect<number>,
-    closed: Ref.Ref<boolean>,
-  ) => Effect.Effect<Outcome, Failure>
-}
-
-const LEADER_LOCK_DRIVERS: Readonly<Record<string, LeaderLockDriver>> = {
-  leaderLockScopeClose: {
-    case: LEADER_LOCK_CASE,
-    build: (m, tryAcquire, guarded, closed) =>
-      requireExport(m.finalizer.leaderLockScopeClose, 'leaderLockScopeClose')(tryAcquire, guarded, closed),
-  },
+const LEADER_LOCK_DRIVER: ClosedFinalizerDriver = {
+  case: LEADER_LOCK_CASE,
+  build: (m, guarded, closed) =>
+    requireExport(m.finalizer.leaderLockScopeClose, 'leaderLockScopeClose')(Effect.succeed(true), guarded, closed),
 }
 
 interface NestedCoveredCase {
@@ -1243,40 +1225,6 @@ const acquireUseReleaseSide: SideRunner = (entry, kind, modules, mutantId, withF
   )
 }
 
-const leaderLockSide: SideRunner = (entry, kind, modules, mutantId, withFault) => {
-  const driver = lookupOrThrow(LEADER_LOCK_DRIVERS, entry.exportName, 'behaviour driver')
-  if (kind === 'divergence-interrupt-finalizer') {
-    const interruptPrepare: Effect.Effect<InterruptPrepared> = Effect.gen(function*() {
-      const closed = yield* Ref.make(false)
-      const started = yield* Deferred.make<void>()
-      const gate = yield* Deferred.make<void>()
-      return {
-        region: driver.build(modules, Effect.succeed(true), suspendingInner(started, gate), closed),
-        startSignal: Deferred.await(started),
-        resume: Deferred.succeed(gate, undefined),
-        readState: () => Ref.get(closed),
-      }
-    })
-    return interruptSide(
-      interruptPrepare,
-      driver.case.interrupt[withFault ? 'mutant' : 'original'],
-      mutantId,
-      withFault,
-    )
-  }
-  const failing = kind === 'equivalence-failure'
-  const guarded: Effect.Effect<number> = failing ? Effect.die(FAILURE) : Effect.succeed(RESULT)
-  return equivalenceSide(
-    Effect.map(Ref.make(false), (closed): Prepared => ({
-      effect: driver.build(modules, Effect.succeed(true), guarded, closed),
-      readState: () => Ref.get(closed),
-    })),
-    failing ? driver.case.equivalenceFailure : driver.case.equivalenceSuccess,
-    mutantId,
-    withFault,
-  )
-}
-
 const nestedCoveredSide: SideRunner = (entry, kind, modules, mutantId, withFault) => {
   const driver = lookupOrThrow(NESTED_COVERED_DRIVERS, entry.exportName, 'behaviour driver')
   const failing = kind === 'equivalence-failure'
@@ -1293,7 +1241,7 @@ const nestedCoveredSide: SideRunner = (entry, kind, modules, mutantId, withFault
 }
 
 const SPECIAL_SIDE_RUNNERS: Readonly<Record<string, SideRunner>> = {
-  leaderLockScopeClose: leaderLockSide,
+  leaderLockScopeClose: closedFinalizerSideFor({ leaderLockScopeClose: LEADER_LOCK_DRIVER }),
   nestedCoveredCalls: nestedCoveredSide,
 }
 
@@ -1334,9 +1282,10 @@ const sideFor = (subject: Subject): ScenarioSides => {
     ? lookupOrThrow(SIDE_RUNNERS, `${entry.module}:${entry.operation}`, 'shape behaviour')
     : special
   const mutantIds = mutantIdsFor(entry)
+  const modules = harnessOf().modules
   return {
-    withoutFault: runner(entry, subject.kind, harnessOf().modules, mutantIds.at(0) ?? '', false),
-    withFault: mutantIds.map((mutantId) => runner(entry, subject.kind, harnessOf().modules, mutantId, true)),
+    withoutFault: runner(entry, subject.kind, modules, mutantIds.at(0) ?? '', false),
+    withFault: mutantIds.map((mutantId) => runner(entry, subject.kind, modules, mutantId, true)),
   }
 }
 
