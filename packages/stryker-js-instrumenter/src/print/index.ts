@@ -1614,7 +1614,7 @@ const isFunctionNode = (node: Node): node is FunctionNode => FUNCTION_KINDS[node
 
 const isAssignmentPattern = (node: Node): node is AssignmentPattern => node.type === 'AssignmentPattern'
 
-const isIdentifierNode = (node: Node | null | undefined): node is Extract<Node, { type: 'Identifier' }> =>
+const isIdentifierNode = (node: PrintedNode | null | undefined): node is PrintedNodeOf<'Identifier'> =>
   node?.type === 'Identifier'
 
 const identifierName = (node: Node | null | undefined): string | undefined =>
@@ -1878,7 +1878,7 @@ const bareParameterName = (param: Option.Option<ParamPattern>): string =>
 
 const isUnannotatedIdentifier = (
   param: ParamPattern,
-): param is Extract<ParamPattern, { readonly type: 'Identifier' }> =>
+): param is PrintedNodeOf<'Identifier'> =>
   param.type === 'Identifier' && param.typeAnnotation == null
 
 const bareParameterNameOf = (param: ParamPattern): string =>
@@ -1953,10 +1953,10 @@ const isBareDefaultExport = (
 const typeParameterModifiersText = (node: TSTypeParameterDeclaration['params'][number]): string =>
   `${flagText(node.in, 'in ')}${flagText(node.out, 'out ')}${flagText(node.const, 'const ')}`
 
-const typePredicateParameterText = (parameterName: TSTypePredicate['parameterName']): string =>
+const typePredicateParameterText = (parameterName: PrintedNode): string =>
   Match.value(parameterName).pipe(
     Match.when(isNode('TSThisType'), () => 'this'),
-    Match.orElse((n) => n.name),
+    Match.orElse((n) => identifierNameText(n)),
   )
 
 const externalModuleArgumentText = (value: string): string =>
