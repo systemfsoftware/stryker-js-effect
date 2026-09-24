@@ -288,6 +288,7 @@ const makeSnapshotSupport = (
   fileSystem: FileSystem.FileSystem,
   path: Path.Path,
 ): SnapshotSupport => {
+  recordedSerializers.length = 0
   const clients = new Map<string, SnapshotClientLike>()
   const clientFor = (file: string): SnapshotClientLike => {
     const existing = clients.get(file)

@@ -2,7 +2,7 @@ import { dual } from 'effect/Function'
 
 import type { EnvironmentDocblock } from './docblock.js'
 import { environmentDocblock } from './docblock.js'
-import { existsSync, fileURLToPath, readFileSync } from './node-builtins.js'
+import { fileURLToPath, readFileSync } from './node-builtins.js'
 
 const CACHE_LIMIT = 4096
 const DOCBLOCK_HEAD_CHARS = 4096
@@ -37,12 +37,10 @@ const parsedOnDisk = (file: string): EnvironmentDocblock => {
   }
 }
 
-const docblockOnDisk = (file: string): EnvironmentDocblock => existsSync(file) ? parsedOnDisk(file) : EMPTY
-
 export const docblockOf = (file: string): EnvironmentDocblock => {
   const known = heads.get(file)
   if (known !== undefined) return known
-  const parsed = docblockOnDisk(plainFileOf(file))
+  const parsed = parsedOnDisk(plainFileOf(file))
   remember(file, parsed)
   return parsed
 }

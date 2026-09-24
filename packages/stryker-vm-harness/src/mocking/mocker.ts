@@ -153,6 +153,21 @@ interface PendingMock {
   resolvedUrl: string | undefined
 }
 
+interface PendingBuckets {
+  readonly matched: Array<PendingMock>
+  readonly remaining: Array<PendingMock>
+}
+
+const pendingBuckets = (): PendingBuckets => ({ matched: [], remaining: [] })
+
+const bucketPending =
+  (isMatch: (item: PendingMock) => boolean): (buckets: PendingBuckets, item: PendingMock) => PendingBuckets =>
+  (buckets, item) => {
+    const target = isMatch(item) ? buckets.matched : buckets.remaining
+    target.push(item)
+    return buckets
+  }
+
 type ReflectiveValue = object | string | number | boolean | undefined
 
 const REFLECTIVE_TYPES: Record<string, true> = {
@@ -457,9 +472,9 @@ export const createMockRuntime = (options: MockRuntimeOptions): MockRuntime => {
     item.salt === salt && mockKeyOf(item.salt, resolvedUrlOf(item)) === key
 
   const extractMatchingPending = (salt: string, key: string): ReadonlyArray<PendingMock> => {
-    const matched = pending.filter((item) => matchesKey(item, salt, key))
-    pending.splice(0, pending.length, ...pending.filter((item) => !matchesKey(item, salt, key)))
-    return matched
+    const buckets = pending.reduce(bucketPending((item) => matchesKey(item, salt, key)), pendingBuckets())
+    pending.splice(0, pending.length, ...buckets.remaining)
+    return buckets.matched
   }
 
   const drainPending = (salt: string, incomingUrl: string): void => {
@@ -553,7 +568,7 @@ export const createMockRuntime = (options: MockRuntimeOptions): MockRuntime => {
       }
     })
 
-  const flushItemEffect = (item: PendingMock): Effect.Effect<void, Error> =>
+  const flushItem = (item: PendingMock): Effect.Effect<void, Error> =>
     Effect.gen(function*() {
       applyItem(item)
       yield* warmMockFactoryEffect(item)
@@ -563,7 +578,7 @@ export const createMockRuntime = (options: MockRuntimeOptions): MockRuntime => {
     Effect.gen(function*() {
       const queued = pending.splice(0, pending.length)
       for (const item of queued) {
-        yield* flushItemEffect(item)
+        yield* flushItem(item)
       }
     })
 

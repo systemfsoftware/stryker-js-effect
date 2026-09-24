@@ -153,26 +153,6 @@ export type BuilderFunction = (
   registrar: BuilderFunctionContext,
 ) => FixtureValue | Promise<FixtureValue> | void
 
-const EACH_VALUE_TYPEOF: Record<string, true> = {
-  undefined: true,
-  object: true,
-  boolean: true,
-  number: true,
-  bigint: true,
-  string: true,
-  symbol: true,
-  function: true,
-}
-
-const isEachValue = <A>(value: A): value is A & EachValue => EACH_VALUE_TYPEOF[typeof value] === true
-
-const eachValueOf = <A>(value: A): EachValue => {
-  if (isEachValue(value)) {
-    return value
-  }
-  return String(value)
-}
-
 const isFunctionValue = (value: EachValue | undefined): boolean => typeof value === 'function'
 
 interface TextCoercible {
@@ -279,10 +259,21 @@ const tagsOf = (tags: string | ReadonlyArray<string> | undefined): ReadonlyArray
 const copyTagsOf = (tags: ReadonlyArray<string> | undefined): ReadonlyArray<string> | undefined =>
   tags === undefined ? undefined : [...tags]
 
-const fixtureNamesOf = (fn: { readonly toString: () => string }): ReadonlySet<string> => {
+const fixtureNamesCache = new WeakMap<object, ReadonlySet<string>>()
+
+const parsedFixtureNamesOf = (fn: { readonly toString: () => string }): ReadonlySet<string> => {
   const parsed = usedFixtureProps(fn.toString(), 1)
   return Result.isSuccess(parsed) ? parsed.success : new Set<string>()
 }
+
+const rememberFixtureNames = (fn: { readonly toString: () => string }): ReadonlySet<string> => {
+  const names = parsedFixtureNamesOf(fn)
+  fixtureNamesCache.set(fn, names)
+  return names
+}
+
+const fixtureNamesOf = (fn: { readonly toString: () => string }): ReadonlySet<string> =>
+  fixtureNamesCache.get(fn) ?? rememberFixtureNames(fn)
 
 const argsOfRow = <A>(row: A): ReadonlyArray<A> => {
   const args: ReadonlyArray<A> = Array.isArray(row) ? row : [row]
@@ -495,7 +486,7 @@ const bindEachOf = (registry: TestRegistry, base: CollectorBase, flags: TestOpti
     (cases) => (name, fn) => {
       for (const [index, row] of cases.entries()) {
         registry.registerTest(
-          formatEachName(name, eachValueOf(row), { index }),
+          formatEachName(name, row, { index }),
           registry.frames.current,
           mode,
           base.inverted,
@@ -514,7 +505,7 @@ const bindForOf = (registry: TestRegistry, base: CollectorBase, flags: TestOptio
     (cases) => (name, fn) => {
       for (const [index, row] of cases.entries()) {
         registry.registerTest(
-          formatEachName(name, eachValueOf(row), { index }),
+          formatEachName(name, row, { index }),
           registry.frames.current,
           mode,
           base.inverted,
@@ -1014,7 +1005,7 @@ const suiteEachBinderOf = (
 (name, body) => {
   for (const [index, row] of cases.entries()) {
     open(
-      formatEachName(name, eachValueOf(row), { index }),
+      formatEachName(name, row, { index }),
       mode,
       { concurrent, shuffle },
       (_api) => body(...argsOfRow(row)),
@@ -1032,7 +1023,7 @@ const suiteForBinderOf = (
 (cases) =>
 (name, body) => {
   for (const [index, row] of cases.entries()) {
-    open(formatEachName(name, eachValueOf(row), { index }), mode, { concurrent, shuffle }, () => body(row))
+    open(formatEachName(name, row, { index }), mode, { concurrent, shuffle }, () => body(row))
   }
 }
 
@@ -1202,7 +1193,7 @@ const chainRowsBinderOf = (
   for (const [index, row] of cases.entries()) {
     const chain = suiteChainOf(registry)
     registry.registerTest(
-      formatEachName(name, eachValueOf(row), { index }),
+      formatEachName(name, row, { index }),
       registry.frames.current,
       mode,
       inverted,

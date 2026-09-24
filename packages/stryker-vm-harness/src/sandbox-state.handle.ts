@@ -280,7 +280,7 @@ interface EnclosingWorkerState {
 
 const isWorkerState = (value: AnyDecoded): value is EnclosingWorkerState => Predicate.isObject(value)
 
-const workerStateOf = (): EnclosingWorkerState | undefined =>
+export const workerStateOf = (): EnclosingWorkerState | undefined =>
   Option.getOrUndefined(Option.liftPredicate(isWorkerState)(Reflect.get(globalThis, '__vitest_worker__')))
 
 let hostWorkerState: EnclosingWorkerState | undefined

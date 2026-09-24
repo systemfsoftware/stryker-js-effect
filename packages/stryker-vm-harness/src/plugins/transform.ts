@@ -352,9 +352,9 @@ const loadableUrlOf = (url: string, context: LoadHookContext): Option.Option<str
   isDelegableUrl(url, context) ? Option.some(url) : Option.none()
 
 const buildLoadRequest = (runtime: VmVitestRuntime, url: string): LoadRequest => {
-  const queryAt = url.indexOf('?')
-  const path = fileURLToPath(queryAt === -1 ? url : url.slice(0, queryAt))
-  const params = new URL(url).searchParams
+  const parsed = new URL(url)
+  const params = parsed.searchParams
+  const path = fileURLToPath(parsed)
   const hasRaw = params.has('raw')
   const hasUrl = params.has('url')
   params.delete('salt')

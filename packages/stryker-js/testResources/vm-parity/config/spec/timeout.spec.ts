@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-test('the raised timeout budget covers a 50ms wait', async () => {
+test('the raised timeout budget lets the body await an in-flight promise', async () => {
   const startedAt = Date.now()
   const { promise, resolve } = Promise.withResolvers<void>()
   setTimeout(resolve, 50)

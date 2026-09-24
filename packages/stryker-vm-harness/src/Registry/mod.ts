@@ -2,7 +2,6 @@ export {
   createDescribe,
   createHarnessApi,
   createIt,
-  createVariantApi,
   DEFAULT_TITLE_VALUE_FORMAT_TRUNCATE,
   formatEachName,
 } from '../harness-api.handle.js'

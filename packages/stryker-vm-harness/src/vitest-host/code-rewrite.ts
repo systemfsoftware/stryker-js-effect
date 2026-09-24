@@ -48,10 +48,6 @@ const startsTokenAt = (code: string, token: string, index: number): boolean =>
 
 const NOT_FOUND = -1
 
-const pushRange = (code: string, from: number, to: number, out: Array<string>): void => {
-  for (let index = from; index < to; index += 1) out.push(code.charAt(index))
-}
-
 const lineEndIndex = (code: string, from: number): number => {
   const found = code.indexOf('\n', from)
   return found === NOT_FOUND ? code.length : found
@@ -59,14 +55,14 @@ const lineEndIndex = (code: string, from: number): number => {
 
 const copyLineComment = (code: string, from: number, out: Array<string>): number => {
   const end = lineEndIndex(code, from)
-  pushRange(code, from, end, out)
+  out.push(code.slice(from, end))
   return end
 }
 
 const copyBlockComment = (code: string, from: number, out: Array<string>): number => {
   const found = code.indexOf('*/', from)
   const stop = found === NOT_FOUND ? code.length : found
-  pushRange(code, from, stop, out)
+  out.push(code.slice(from, stop))
   out.push('*', '/')
   return stop + 2
 }
@@ -81,7 +77,7 @@ const copyQuoted = (code: string, from: number, out: Array<string>): number => {
   pattern.lastIndex = from
   const match = pattern.exec(code)
   if (match === null) {
-    pushRange(code, from, code.length, out)
+    out.push(code.slice(from))
     return code.length
   }
   const end = pattern.lastIndex

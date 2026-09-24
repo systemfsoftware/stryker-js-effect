@@ -13,6 +13,7 @@ import {
 import type { DrainOutcome } from './drain-registry.workflow.js'
 import { makeEffectMethods } from './effect-adapter.handle.js'
 import { ENVIRONMENT_KEYS_BAG_KEY } from './environments/environment-activation.js'
+import { sameDescriptor } from './environments/global-descriptors.js'
 import { createHarnessApi } from './harness-api.handle.js'
 import { STATE_KEY } from './harness-sources.handle.js'
 import { nativeImport } from './native-import.handle.js'
@@ -25,7 +26,7 @@ import {
   installInterception,
   uninstallInterception,
 } from './sandbox-interception.handle.js'
-import { readGlobalState, restoreHostWorkerState, writeGlobalState } from './sandbox-state.handle.js'
+import { readGlobalState, restoreHostWorkerState, workerStateOf, writeGlobalState } from './sandbox-state.handle.js'
 import type { VmRunnerGlobalState } from './sandbox.schema.js'
 import {
   runStage,
@@ -357,27 +358,6 @@ const PROTECTED_GLOBAL_SYMBOLS: ReadonlySet<symbol> = new Set([STATE_KEY])
 
 const EMPTY_EXCLUDED_KEYS: ReadonlySet<string> = new Set()
 
-const DESCRIPTOR_FIELDS: ReadonlyArray<'get' | 'set' | 'value' | 'writable' | 'enumerable' | 'configurable'> = [
-  'get',
-  'set',
-  'value',
-  'writable',
-  'enumerable',
-  'configurable',
-]
-
-const sameDescriptorField = (
-  before: PropertyDescriptor,
-  descriptor: PropertyDescriptor,
-  field: (typeof DESCRIPTOR_FIELDS)[number],
-): boolean => Object.is(reflectedOf(before, field), reflectedOf(descriptor, field))
-
-const sameDescriptorFields = (before: PropertyDescriptor, descriptor: PropertyDescriptor): boolean =>
-  DESCRIPTOR_FIELDS.every((field) => sameDescriptorField(before, descriptor, field))
-
-const matchesBaseline = (descriptor: PropertyDescriptor, before: PropertyDescriptor | undefined): boolean =>
-  before === undefined ? false : sameDescriptorFields(before, descriptor)
-
 const emptyOverlayEntries = (): OverlayEntries => ({ overlay: new Map(), restore: new Map() })
 
 const isProtectedKey = (key: string, excludedKeys: ReadonlySet<string>): boolean =>
@@ -388,7 +368,7 @@ const isUnchangedKey = (
   descriptor: PropertyDescriptor,
   baseline: ReadonlyMap<string, PropertyDescriptor>,
   excludedKeys: ReadonlySet<string>,
-): boolean => isProtectedKey(key, excludedKeys) || matchesBaseline(descriptor, baseline.get(key))
+): boolean => isProtectedKey(key, excludedKeys) || sameDescriptor(baseline.get(key), descriptor)
 
 const overlayKeyIfChanged = (
   key: string,
@@ -427,7 +407,7 @@ const isUnchangedSymbol = (
   symbol: symbol,
   descriptor: PropertyDescriptor,
   baselineSymbols: ReadonlyMap<symbol, PropertyDescriptor>,
-): boolean => PROTECTED_GLOBAL_SYMBOLS.has(symbol) || matchesBaseline(descriptor, baselineSymbols.get(symbol))
+): boolean => PROTECTED_GLOBAL_SYMBOLS.has(symbol) || sameDescriptor(baselineSymbols.get(symbol), descriptor)
 
 const overlaySymbolIfChanged = (
   symbol: symbol,
@@ -504,11 +484,6 @@ const restoreBaseline = (restore: GlobalBaseline): void => {
   for (const [key, original] of restore) {
     restoreGlobal(key, original)
   }
-}
-
-const workerStateOf = (): AnyDecoded => {
-  const state: AnyDecoded = reflectedOf(globalThis, '__vitest_worker__')
-  return isObjectValue(state) ? state : undefined
 }
 
 const workerFilepathOf = (): AnyDecoded =>
@@ -638,8 +613,13 @@ const createSession = (options: VmSessionOptions, plugins: readonly VmSessionPlu
   const pluginGlobalsOf = (plugin: VmSessionPlugin, file: string): VmGlobals =>
     Option.getOrElse(Option.fromNullishOr(plugin.globals?.(file, host)), () => ({}))
 
-  const globalsFor = (file: string): VmGlobals =>
-    plugins.reduce<VmGlobals>((merged, plugin) => ({ ...merged, ...pluginGlobalsOf(plugin, file) }), {})
+  const globalsFor = (file: string): VmGlobals => {
+    const merged: VmGlobals = {}
+    for (const plugin of plugins) {
+      Object.assign(merged, pluginGlobalsOf(plugin, file))
+    }
+    return merged
+  }
 
   const absoluteFilterOf = (request: VmRunRequest): readonly string[] | undefined =>
     request.testFilter?.map((testId) => absoluteTestIdOf(options.sandboxWorkingDirectory, testId))
@@ -875,13 +855,20 @@ const createSession = (options: VmSessionOptions, plugins: readonly VmSessionPlu
     }
   }
 
+  const fileSaltFor = (runSalt: string, index: number): string => isolate ? `${runSalt}-${index}` : runSalt
+
   const prepareFileSalts = (files: readonly string[]): (file: string) => string => {
     const runSalt = String(saltCounter += 1)
-    const fileSalts = files.map((_file, index) => (isolate ? `${runSalt}-${index}` : runSalt))
-    const saltOf = (file: string): string => fileSalts[files.indexOf(file)] ?? runSalt
+    const fileSalts = new Map<string, string>()
+    files.forEach((file, index) => {
+      if (!fileSalts.has(file)) {
+        fileSalts.set(file, fileSaltFor(runSalt, index))
+      }
+    })
+    const saltOf = (file: string): string => fileSalts.get(file) ?? runSalt
     saltOwners.clear()
-    files.forEach((file) => {
-      saltOwners.set(saltOf(file), file)
+    fileSalts.forEach((salt, file) => {
+      saltOwners.set(salt, file)
     })
     return saltOf
   }

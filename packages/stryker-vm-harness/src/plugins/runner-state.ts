@@ -1,29 +1,16 @@
 import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
 
 import {
   installWorkerState,
   readGlobalState,
   setWorkerTestPath,
   withRunnerTask,
+  workerStateOf,
   writeGlobalState,
 } from '../sandbox-state.handle.js'
 import type { VmFileContext, VmPluginHost, VmSessionPlugin } from '../session-plugin.js'
 import type { VmProjectConfig } from '../vitest-config.schema.js'
 import { VM_VITEST_BAG_KEY, type VmVitestRuntime } from '../vitest-host/runtime.js'
-
-type AnyDecoded<A = unknown> = A
-
-interface WorkerStateLike {
-  readonly current?: object | undefined
-}
-
-const isWorkerStateLike = (value: AnyDecoded): value is WorkerStateLike => Predicate.isObject(value)
-
-const workerStateOf = (): WorkerStateLike | undefined => {
-  const stored: AnyDecoded = Reflect.get(globalThis, '__vitest_worker__')
-  return Option.getOrUndefined(Option.liftPredicate(isWorkerStateLike)(stored))
-}
 
 const workerTaskReader = (): object | undefined => workerStateOf()?.current
 

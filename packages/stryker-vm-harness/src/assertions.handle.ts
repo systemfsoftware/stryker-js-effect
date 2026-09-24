@@ -1,37 +1,14 @@
 import { dual } from 'effect/Function'
 
+import { reflectiveValue } from './mocking/mocker.js'
+import { workerStateOf } from './sandbox-state.handle.js'
 import { currentSnapshotTest, type SnapshotTask, snapshotTaskOf, type SnapshotTest } from './snapshot-test.js'
 
 interface ExpectWithTest {
   readonly withTest: (test: SnapshotTask) => object
 }
 
-type ReflectedValue = object | string | number | boolean | symbol | bigint | null | undefined
-
-const REFLECTED_TYPEOF: Record<string, boolean> = {
-  undefined: true,
-  function: true,
-  object: true,
-  boolean: true,
-  number: true,
-  bigint: true,
-  string: true,
-  symbol: true,
-}
-
-const isReflectedValue = (value: unknown): value is ReflectedValue => REFLECTED_TYPEOF[typeof value] === true
-
-const asReflectedValue = <A = unknown>(value: A): ReflectedValue => (isReflectedValue(value) ? value : undefined)
-
-const memberOf = <A = unknown>(source: object, key: PropertyKey, receiver: A): ReflectedValue =>
-  asReflectedValue(Reflect.get(source, key, receiver))
-
 const isObjectLike = <A = unknown>(value: A): value is A & object => typeof value === 'object' && value !== null
-
-const isFunctionOrObject = (value: unknown): value is object =>
-  typeof value === 'object' ? value !== null : typeof value === 'function'
-
-const asReferenceValue = <A = unknown>(value: A): object | undefined => isFunctionOrObject(value) ? value : undefined
 
 const asNonNullObject = <A = unknown>(value: A): object | undefined => isObjectLike(value) ? value : undefined
 
@@ -65,13 +42,11 @@ const isExpectCall = (value: object): value is ExpectCall => typeof value === 'f
  */
 export type CreateExpect = (task: object) => object
 
-const workerStateOf = (): object | undefined => asReferenceValue(memberOf(globalThis, '__vitest_worker__', globalThis))
-
 const currentRunnerTask = (): object | undefined => {
   const workerState = workerStateOf()
   return workerState === undefined
     ? undefined
-    : asNonNullObject(memberOf(workerState, 'current', workerState))
+    : asNonNullObject(Reflect.get(workerState, 'current', workerState))
 }
 
 const builtExpectOf = (perTask: WeakMap<object, object>, createExpect: CreateExpect, task: object): object => {
@@ -94,11 +69,13 @@ const dispatcherExpect = (real: object, createExpect: CreateExpect): object => {
   return new Proxy(real, {
     apply(_target, thisArg, args) {
       const inner = expectFor()
-      return isExpectCall(inner) ? asReflectedValue(Reflect.apply(inner, thisArg, args)) : inner
+      return isExpectCall(inner) ? reflectiveValue(Reflect.apply(inner, thisArg, args)) : inner
     },
     get(target, key, receiver) {
       const inner = expectFor()
-      return key in inner ? memberOf(inner, key, inner) : memberOf(target, key, receiver)
+      return key in inner
+        ? reflectiveValue(Reflect.get(inner, key, inner))
+        : reflectiveValue(Reflect.get(target, key, receiver))
     },
   })
 }
@@ -113,7 +90,7 @@ export const guardedExpect: {
       ? new Proxy(real, {
         apply(target, thisArg, args) {
           return isExpectCall(target)
-            ? flagCurrentTest(asReflectedValue(Reflect.apply(target, thisArg, args)))
+            ? flagCurrentTest(reflectiveValue(Reflect.apply(target, thisArg, args)))
             : target
         },
       })

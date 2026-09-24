@@ -819,11 +819,10 @@ export const executeDrainRegistry: {
         fixture: FixtureDefinition,
         attempted: Result.Result<FixtureValue, string>,
       ): Effect.Effect<AttemptFailure | undefined> => {
-        const attemptedValue = attempted
-        return Result.isFailure(attemptedValue)
-          ? Effect.succeed(attemptFailureOf(attemptedValue.failure))
+        return Result.isFailure(attempted)
+          ? Effect.succeed(attemptFailureOf(attempted.failure))
           : Effect.sync(() => {
-            Reflect.set(task.context, fixture.name, attemptedValue.success)
+            Reflect.set(task.context, fixture.name, attempted.success)
             return undefined
           })
       }

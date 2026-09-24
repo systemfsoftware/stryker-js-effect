@@ -27,8 +27,10 @@ const DESCRIPTOR_FIELDS: ReadonlyArray<DescriptorField> = [
 const fieldMatches = (before: PropertyDescriptor, after: PropertyDescriptor, field: DescriptorField): boolean =>
   field === 'value' ? Object.is(before.value, after.value) : before[field] === after[field]
 
-const sameDescriptor = (before: PropertyDescriptor | undefined, after: PropertyDescriptor): boolean =>
-  before !== undefined && DESCRIPTOR_FIELDS.every((field) => fieldMatches(before, after, field))
+export const sameDescriptor = dual<
+  (after: PropertyDescriptor) => (before: PropertyDescriptor | undefined) => boolean,
+  (before: PropertyDescriptor | undefined, after: PropertyDescriptor) => boolean
+>(2, (before, after) => before !== undefined && DESCRIPTOR_FIELDS.every((field) => fieldMatches(before, after, field)))
 
 const differingEntries = (
   before: DescriptorMap,
