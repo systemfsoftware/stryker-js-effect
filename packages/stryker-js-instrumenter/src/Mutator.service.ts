@@ -64,11 +64,14 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.handle.js'
+import { atomicUpdateSplitMutator } from './AtomicUpdateSplit.handle.js'
+import { finalizerEscapeMutator } from './FinalizerEscape.handle.js'
 import type { Location, Position } from './Location.schema.js'
 import { LineTable } from './Location.schema.js'
 import { Mutant as ApiMutant, MutantNotApplied, MutantSpanMissing } from './Mutant.schema.js'
 import { PrintFailed } from './print/PrintFailed.schema.js'
 import { SourceText } from './print/SourceText.schema.js'
+import { synchronizationRemovalMutator } from './SynchronizationRemoval.handle.js'
 
 export interface MutatorContext {
   readonly parent: Node | undefined
@@ -88,6 +91,7 @@ export type Mutator = (node: Node, context: MutatorContext) => Iterable<Node>
 
 export interface MutatorOptions {
   excludedMutations: string[]
+  optInMutations: readonly string[]
   noHeader?: boolean
 }
 

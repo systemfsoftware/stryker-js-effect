@@ -51,9 +51,9 @@ import type {
   TSModuleBlock,
   TSModuleDeclaration,
   VariableDeclaration,
-} from './Ast.js'
-import { callExpression, identifier, memberExpression, nodeType, traverse, type TraversePath } from './Ast.js'
-import type { MutatorContext } from './Mutator.js'
+} from './Ast.handle.js'
+import { callExpression, identifier, memberExpression, nodeType, traverse, type TraversePath } from './Ast.handle.js'
+import type { MutatorContext } from './Mutator.service.js'
 
 export type EffectModuleName = 'Effect' | 'Ref' | 'Semaphore' | 'SynchronizedRef'
 

@@ -2,7 +2,7 @@ import * as Arr from 'effect/Array'
 import * as Bool from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type { ArrowFunctionExpression, Expression, FunctionExpression, Node, ParamPattern } from './Ast.js'
+import type { ArrowFunctionExpression, Expression, FunctionExpression, Node, ParamPattern } from './Ast.handle.js'
 import {
   arrowFunctionExpression,
   binaryExpression,
@@ -15,7 +15,7 @@ import {
   nodeType,
   stringLiteral,
   unaryExpression,
-} from './Ast.js'
+} from './Ast.handle.js'
 import {
   freshIdentifier,
   identifiersIn,
@@ -25,8 +25,8 @@ import {
   onlyWhen,
   type ResolvedEffectCall,
   resolveEffectCall,
-} from './EffectCall.js'
-import type { Mutator } from './Mutator.js'
+} from './EffectCall.handle.js'
+import type { Mutator } from './Mutator.service.js'
 
 const NO_MUTANTS: readonly Node[] = []
 

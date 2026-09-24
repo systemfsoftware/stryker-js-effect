@@ -30,30 +30,16 @@ A high mutation score guarantees test assertions catch regressions rather than j
 
 ## ⚡ Dual-Engine Workflow: In-Memory V8 vs Vitest Worker Sandbox
 
-Mutation testing feedback latency slows down local development when every mutant forks new child processes. Stryker JS Effect provides a dual execution architecture configured through `defineConfig`:
+Mutation testing feedback latency slows down local development when every mutant forks new child processes. Stryker JS Effect provides a dual execution architecture configured through `StrykerConfig.define`:
 
-<<<<<<< HEAD
-Stryker JS Effect provides a dual-engine workflow:
-
-1. **Locally (`testRunner: 'vm'`)**: Evaluates pure unit tests directly in Node's native V8 VM with zero process-forking overhead and native TypeScript stripping. Lightning fast for authoring and debugging test assertions.
-2. **In CI (`testRunner: 'vitest'`)**: Runs full integration tests in isolated Vitest worker sandboxes with per-test coverage analysis.
-
-Because `StrykerConfig.define` provides `{ isCi }`, you can configure this seamlessly in one `stryker.config.ts`:
-=======
 1. **Local Developer Loop (`testRunner: 'vm'`)**: Runs pure unit tests inside Node's native V8 VM with zero process-forking overhead and native TypeScript type stripping.
 2. **CI Regression Gate (`testRunner: 'vitest'`)**: Executes integration suites in isolated Vitest worker threads with per-test coverage analysis.
->>>>>>> origin/main
 
 ```ts
 import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-<<<<<<< HEAD
 export default StrykerConfig.define(({ isCi }) => ({
-  // Use ultra-fast in-memory V8 locally; full Vitest sandbox in CI
-=======
-export default defineConfig(({ isCi }) => ({
   // In-memory V8 locally for instant feedback; isolated Vitest workers in CI
->>>>>>> origin/main
   testRunner: isCi ? 'vitest' : 'vm',
   checkers: ['typescript'],
   plugins: [
@@ -193,20 +179,12 @@ export default StrykerConfig.define(({ isCi }) => ({
 
 ### Environment-Aware Configuration
 
-<<<<<<< HEAD
-`StrykerConfig.define` accepts a callback that receives `{ command, isDryRun, mode, isCi }`:
-=======
-`defineConfig` accepts a callback instead of a static object. It receives a `ConfigEnv` of `{ command, isDryRun, mode, isCi }`, where `command` is `'run'` or `'merge-reports'` and `mode` is the resolved output mode:
->>>>>>> origin/main
+`StrykerConfig.define` accepts a callback instead of a static object. It receives a `ConfigEnv` of `{ command, isDryRun, mode, isCi }`, where `command` is `'run'` or `'merge-reports'` and `mode` is the resolved output mode:
 
 ```ts
 import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-<<<<<<< HEAD
-export default StrykerConfig.define(({ isCi, isDryRun }) => ({
-=======
-export default defineConfig(({ command, isCi, isDryRun }) => ({
->>>>>>> origin/main
+export default StrykerConfig.define(({ command, isCi, isDryRun }) => ({
   testRunner: 'vitest',
   plugins: [import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
@@ -217,37 +195,6 @@ export default defineConfig(({ command, isCi, isDryRun }) => ({
 
 ---
 
-<<<<<<< HEAD
-## ⚠️ Breaking Architectural Changes vs Upstream StrykerJS
-
-`stryker-js-effect` is an intentional breaking fork, not a drop-in shim. Upstream patterns that do not work:
-
-1. **Plugins Are Resolved via `import.meta.resolve()`**: Bare string package names (`plugins: ['@stryker-mutator/...']`) are rejected. Plugins must be explicit `file:` URLs (`plugins: [import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')]`).
-2. **Single Flagship Package (`@systemfsoftware/stryker-js`)**: The separate CLI and engine packages are unified. The configuration authoring surface (`StrykerConfig.define`, `StrykerConfig.merge`) ships from `@systemfsoftware/stryker-js/config`.
-3. **In-Memory V8 Runner**: The built-in `testRunner: 'vm'` runs tests directly in Node's V8 context with native TS type stripping, eliminating worker-spawning overhead.
-4. **Deterministic Exit Codes & Real-Time NDJSON**: Streams newline-delimited JSON events to `stdout` with distinct exit codes (`0` ok, `1` threshold failed, `2` config error, `3` runtime error, `4` internal error).
-
----
-
-## 📖 Key Configuration Options Reference
-
-| Option                 | Type                            | Default                                                                                                      | Description                                                                                          |
-| ---------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `mutate`               | `string[]`                      | `['{src,lib}/**/!(*.+(s\|S)pec\|*.+(t\|T)est).+(cjs\|mjs\|js\|ts\|mts\|cts\|jsx\|tsx)', '!**/__tests__/**']` | Files to mutate. Prefix with `!` to exclude test files, fixtures, and declaration files.             |
-| `testRunner`           | `'command' \| 'vitest' \| 'vm'` | `'command'`                                                                                                  | Execution strategy for running tests against mutants.                                                |
-| `plugins`              | `string[]`                      | `[]`                                                                                                         | Explicit `file:` URLs to plugins, resolved with `import.meta.resolve('@systemfsoftware/...')`.       |
-| `checkers`             | `string[]`                      | `[]`                                                                                                         | Type checker plugins (e.g. `['typescript']`) that discard uncompilable mutants before running tests. |
-| `ignorers`             | `string[]`                      | `[]`                                                                                                         | Registered AST ignorer rules that skip equivalent or unobservable mutants.                           |
-| `concurrency`          | `number`                        | `CPU cores - 1`                                                                                              | Maximum parallel worker processes for checkers and test runners.                                     |
-| `reporters`            | `string[]`                      | `['progress', 'clear-text', 'html']`                                                                         | Output reporters. `html` writes an interactive report to `reports/mutation/`.                        |
-| `thresholds`           | `{ high, low, break }`          | `{ high: 80, low: 60, break: null }`                                                                         | Score thresholds. If final score is below `break`, the CLI exits with non-zero exit code `1`.        |
-| `incremental`          | `boolean`                       | `false`                                                                                                      | Cache results across runs in `reports/stryker-incremental.json` to skip re-testing unchanged code.   |
-| `survivorsPriorReport` | `string`                        | `'reports/mutation-report.json'`                                                                             | Path to prior report when running `--survivors` targeted re-testing.                                 |
-
----
-
-=======
->>>>>>> origin/main
 ## ⚡ Key Differentiators vs Upstream StrykerJS
 
 stryker-js-effect is an architectural fork built on Effect 4 primitives rather than a backwards-compatible wrapper:
@@ -296,21 +243,7 @@ Stryker returns distinct exit codes to allow CI pipelines and AI coding agents t
 
 ---
 
-<<<<<<< HEAD
-| Package                                                                                                       | Purpose                                                                                                           |
-| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [`@systemfsoftware/stryker-js`](packages/stryker-js)                                                          | Flagship CLI binary, run engine, and `./config` authoring surface (`StrykerConfig.define`, `StrykerConfig.merge`) |
-| [`@systemfsoftware/stryker-js-vitest-runner`](packages/stryker-js-vitest-runner)                              | High-performance Vitest test runner plugin with sandbox isolation                                                 |
-| [`@systemfsoftware/stryker-js-typescript-checker`](packages/stryker-js-typescript-checker)                    | Pre-execution TypeScript type checker plugin rejecting invalid mutants                                            |
-| [`@systemfsoftware/stryker-js-html-reporter`](packages/stryker-js-html-reporter)                              | Interactive HTML mutation report generator (`reports/mutation/index.html`)                                        |
-| [`@systemfsoftware/stryker-ignorer-kit`](packages/ignorers/kit)                                               | Authoring kit (`defineIgnorer`) and test harness (`testIgnorer`) for custom ignorers                              |
-| [`@systemfsoftware/stryker-ignorer-interface`](packages/ignorers/interface)                                   | AST node types and `Ignorer` contract                                                                             |
-| [`@systemfsoftware/stryker-ignorer-effect-schema-declarations`](packages/ignorers/effect-schema-declarations) | Ignorer filtering equivalent mutants on Effect Schema and Brand declarations                                      |
-| [`@systemfsoftware/stryker-ignorer-in-source-vitest-block`](packages/ignorers/in-source-vitest-block)         | Ignorer removing unreachable mutants inside `if (import.meta.vitest)` blocks                                      |
-| [`@systemfsoftware/stryker-test-contribution`](packages/stryker-test-contribution)                            | Test suite hygiene plugin enforcing unique mutant kills per test file                                             |
-=======
 ## 📡 Real-Time NDJSON Machine Output
->>>>>>> origin/main
 
 When executing under automated pipelines or agent environments (`STRYKER_MODE=machine`), Stryker streams newline-delimited JSON events to `stdout`:
 
@@ -330,7 +263,7 @@ $ STRYKER_MODE=machine pnpm exec stryker run
 
 | Package                                                                                                       | Purpose                                                                                           |
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [`@systemfsoftware/stryker-js`](packages/stryker-js)                                                          | Flagship CLI binary, run engine, and `./config` authoring surface (`defineConfig`, `mergeConfig`) |
+| [`@systemfsoftware/stryker-js`](packages/stryker-js)                                                          | Flagship CLI binary, run engine, and `./config` authoring surface (`StrykerConfig.define`, `StrykerConfig.merge`) |
 | [`@systemfsoftware/stryker-js-vitest-runner`](packages/stryker-js-vitest-runner)                              | Vitest test runner plugin with sandbox isolation and per-test coverage analysis                   |
 | [`@systemfsoftware/stryker-js-typescript-checker`](packages/stryker-js-typescript-checker)                    | TypeScript type checker plugin rejecting uncompilable mutants before running tests                |
 | [`@systemfsoftware/stryker-js-html-reporter`](packages/stryker-js-html-reporter)                              | Interactive HTML mutation report generator (`reports/mutation/index.html`)                        |

@@ -332,6 +332,37 @@ export const unaryExpression: {
   ): Expression => mark<Expression>({ type: 'UnaryExpression', operator, argument, prefix: true }, loc),
 )
 
+export const binaryExpression: {
+  (
+    operator: Extract<Oxc.BinaryOperator, '===' | '!=='>,
+    left: Expression,
+    right: Expression,
+    loc?: Loc,
+  ): Expression
+  (
+    left: Expression,
+    right: Expression,
+    loc?: Loc,
+  ): (operator: Extract<Oxc.BinaryOperator, '===' | '!=='>) => Expression
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 3),
+  (
+    operator: Extract<Oxc.BinaryOperator, '===' | '!=='>,
+    left: Expression,
+    right: Expression,
+    loc?: Loc,
+  ): Expression => mark<Expression>({ type: 'BinaryExpression', operator, left, right }, loc),
+)
+
+export const logicalExpression: {
+  (operator: Oxc.LogicalOperator, left: Expression, right: Expression, loc?: Loc): Expression
+  (left: Expression, right: Expression, loc?: Loc): (operator: Oxc.LogicalOperator) => Expression
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 3),
+  (operator: Oxc.LogicalOperator, left: Expression, right: Expression, loc?: Loc): Expression =>
+    mark<Expression>({ type: 'LogicalExpression', operator, left, right }, loc),
+)
+
 export const updateExpression: {
   (operator: '++' | '--', argument: SimpleAssignmentTarget, prefix: boolean, loc?: Loc): Expression
   (argument: SimpleAssignmentTarget, prefix: boolean, loc?: Loc): (operator: '++' | '--') => Expression

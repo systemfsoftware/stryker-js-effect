@@ -2,8 +2,8 @@ import * as Arr from 'effect/Array'
 import * as Bool from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type { Expression, Node } from './Ast.js'
-import { arrowFunctionExpression, cloneNode, identifier, memberExpression } from './Ast.js'
+import type { Expression, Node } from './Ast.handle.js'
+import { arrowFunctionExpression, cloneNode, identifier, memberExpression } from './Ast.handle.js'
 import {
   type EffectModuleName,
   freshIdentifier,
@@ -13,8 +13,8 @@ import {
   onlyWhen,
   type ResolvedEffectCall,
   resolveEffectCall,
-} from './EffectCall.js'
-import type { Mutator } from './Mutator.js'
+} from './EffectCall.handle.js'
+import type { Mutator } from './Mutator.service.js'
 
 const NO_MUTANTS: readonly Node[] = []
 

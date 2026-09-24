@@ -173,14 +173,10 @@ const removeSuite = (directory: string): Effect.Effect<void> =>
     Effect.orDie,
   )
 
-<<<<<<< HEAD
-const buildContextFor = (fixture: SuiteFixture): Effect.Effect<Plugin.TestRunnerBuildContext> =>
-=======
 const buildContextFor = (
   fixture: SuiteFixture,
   testFilesOverride?: readonly string[],
-): Effect.Effect<TestRunnerBuildContext> =>
->>>>>>> origin/main
+): Effect.Effect<Plugin.TestRunnerBuildContext> =>
   Effect.gen(function*() {
     const defaults = yield* Configuration.StrykerConfig.createDefaultOptions
     return {
@@ -234,31 +230,23 @@ const runSuite = (fixture: SuiteFixture): Effect.Effect<RunOutcome, never, never
 
 const suiteFailure = (
   fixture: SuiteFixture,
-<<<<<<< HEAD
-): Effect.Effect<Exit.Exit<TestRunner.DryRunResult, Plugin.PooledTestRunnerError>, never, never> =>
-=======
   testFiles?: readonly string[],
-): Effect.Effect<Exit.Exit<DryRunResult, PooledTestRunnerError>, never, never> =>
->>>>>>> origin/main
+): Effect.Effect<Exit.Exit<TestRunner.DryRunResult, Plugin.PooledTestRunnerError>, never, never> =>
   Effect.gen(function*() {
     const context = yield* buildContextFor(fixture, testFiles)
-    const runner = yield* buildTestRunner(
+    const runner = yield* Plugin.buildTestRunner(
       context,
       Effect.die(
         new Error('the child-process runner was built for an in-memory run'),
       ),
     )
     return yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }).pipe(Effect.exit)
-<<<<<<< HEAD
-  }).pipe(Effect.scoped, Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
-=======
   }).pipe(
-    Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer)),
+    Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer, vmPlatformLayer)),
     Effect.scoped,
     Effect.orDie,
     Effect.ensuring(removeSuite(fixture.directory)),
   )
->>>>>>> origin/main
 
 Feature('Verifying mutants without spawning a child process')
   .withLayer(Layer.empty)
