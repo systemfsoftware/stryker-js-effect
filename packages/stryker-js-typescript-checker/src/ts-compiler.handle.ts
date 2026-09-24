@@ -226,14 +226,9 @@ const parseTsConfig = (fileName: string, jsonText: string): Result.Result<TsConf
       Option.match(Option.liftPredicate(value, S.is(TsConfigSchema)), {
         onSome: (original) => Result.succeed(original),
         onNone: () =>
-          Result.fail(
-            TsConfigParseError.make({
-              file: fileName,
-              reason: Result.match(S.decodeUnknownResult(TsConfigSchema)(value), {
-                onFailure: (error) => error.message,
-                onSuccess: () => 'not a tsconfig object',
-              }),
-            }),
+          Result.mapError(
+            S.decodeUnknownResult(TsConfigSchema)(value),
+            (error) => TsConfigParseError.make({ file: fileName, reason: error.message }),
           ),
       }),
   )
