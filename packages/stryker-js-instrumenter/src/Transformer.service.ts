@@ -16,6 +16,7 @@ import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
+import * as HashSet from 'effect/HashSet'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -1054,20 +1055,19 @@ const transformScript = (
     const directives: { rule: Rule } = { rule: rootRule }
     const mutatorEntries = Object.entries(mutators.mutators)
     const allMutatorNames = mutatorEntries.map(([name]) => name.toLowerCase())
-    const excludedSet = new Set(options.excludedMutations)
+    const excludedSet = HashSet.fromIterable(options.excludedMutations)
 
     const warnings: string[] = []
 
+    const locationAt = (node: Node): Option.Option<SourceLocationInFile> =>
+      Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
+
     const locationCache = new WeakMap<Node, Option.Option<SourceLocationInFile>>()
-    const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> =>
-      Option.match(Option.fromNullishOr(locationCache.get(node)), {
-        onSome: (cached) => cached,
-        onNone: () => {
-          const location = Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
-          locationCache.set(node, location)
-          return location
-        },
-      })
+    const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> => {
+      const location = locationCache.get(node) ?? locationAt(node)
+      locationCache.set(node, location)
+      return location
+    }
     const shouldSkip = (path: TraversePath): boolean =>
       [
         isTypeNode(path),
@@ -1152,7 +1152,7 @@ const transformScript = (
     const directiveOrExclusion = (mutatorName: string, line: number): string | undefined =>
       findIgnoreReason(directives.rule, mutatorName, line) ?? findExcludedMutatorIgnoreReason(mutatorName)
     const findExcludedMutatorIgnoreReason = (mutatorName: string): string | undefined =>
-      Boolean.match(excludedSet.has(mutatorName), {
+      Boolean.match(HashSet.has(excludedSet, mutatorName), {
         onTrue: () => `Ignored because of excluded mutation "${mutatorName}"`,
         onFalse: () => undefined,
       })

@@ -1,9 +1,11 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Array from 'effect/Array'
 import * as HashMap from 'effect/HashMap'
+import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 
@@ -159,22 +161,18 @@ const killsOf = (mutants: readonly Report.MutantResult[], fileById: TestFileById
 
 const isUnattributedKill = (kill: Kill): boolean => kill.killers.length === 0
 
-const countOf = (counts: ReadonlyMap<string, number>, fileName: string): number =>
-  Option.getOrElse(Option.fromNullishOr(counts.get(fileName)), () => 0)
+const countOf = (counts: HashMap.HashMap<string, number>, fileName: string): number =>
+  Option.getOrElse(HashMap.get(counts, fileName), () => 0)
 
-const countBy = (fileNames: ReadonlyArray<string>): ReadonlyMap<string, number> =>
-  HashMap.reduce(
-    Array.reduce(fileNames, HashMap.empty<string, number>(), (counts, fileName) =>
-      HashMap.set(counts, fileName, 1 + HashMap.getOrElse(counts, fileName, () => 0))),
-    new Map<string, number>(),
-    (counts, count, fileName) => counts.set(fileName, count),
-  )
+const countBy = (fileNames: ReadonlyArray<string>): HashMap.HashMap<string, number> =>
+  Array.reduce(fileNames, HashMap.empty<string, number>(), (counts, fileName) =>
+    HashMap.set(counts, fileName, 1 + Option.getOrElse(HashMap.get(counts, fileName), () => 0)))
 
 interface ContributionTally {
-  readonly soleKills: ReadonlyMap<string, number>
-  readonly totalKills: ReadonlyMap<string, number>
-  readonly killableCovered: ReadonlyMap<string, number>
-  readonly unattributed: ReadonlySet<string>
+  readonly soleKills: HashMap.HashMap<string, number>
+  readonly totalKills: HashMap.HashMap<string, number>
+  readonly killableCovered: HashMap.HashMap<string, number>
+  readonly unattributed: HashSet.HashSet<string>
 }
 
 const tallyOf = (mutants: readonly Report.MutantResult[], fileById: TestFileById): ContributionTally => {
@@ -185,14 +183,14 @@ const tallyOf = (mutants: readonly Report.MutantResult[], fileById: TestFileById
     killableCovered: countBy(
       mutants.filter(isKillableMutant).flatMap((mutant) => realCoverersOf(mutant, fileById)),
     ),
-    unattributed: new Set(kills.filter(isUnattributedKill).flatMap((kill) => kill.coverers)),
+    unattributed: HashSet.fromIterable(kills.filter(isUnattributedKill).flatMap((kill) => kill.coverers)),
   }
 }
 const fileContributionOf = (fileName: string, tally: ContributionTally): TestFileContribution => ({
   soleKills: countOf(tally.soleKills, fileName),
   totalKills: countOf(tally.totalKills, fileName),
   killableCovered: countOf(tally.killableCovered, fileName),
-  coversUnattributedKill: tally.unattributed.has(fileName),
+  coversUnattributedKill: HashSet.has(tally.unattributed, fileName),
 })
 
 const contributionOf = (

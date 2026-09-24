@@ -135,7 +135,10 @@ export const isNodeArg = (value: unknown): value is { type: string } =>
   Predicate.isObjectOrArray(value) && 'type' in value
 
 const isSpanObject = (value: object): boolean =>
-  !isNodeArg(value) && Predicate.hasProperty('start')(value) && Predicate.hasProperty('end')(value)
+  !isNodeArg(value) && hasSpanBounds(value)
+
+const hasSpanBounds = (value: object): boolean =>
+  Predicate.hasProperty('start')(value) && Predicate.hasProperty('end')(value)
 
 const isLocArg = (value: unknown): value is Span => Predicate.isObjectOrArray(value) && isSpanObject(value)
 

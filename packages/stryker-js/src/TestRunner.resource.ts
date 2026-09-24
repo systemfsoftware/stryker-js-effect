@@ -72,13 +72,9 @@ const toRunnerFailure =
  * A test runner that runs in a child process.
  *
  * Spawning happens **once**, here, and the child's teardown is a finalizer on the
- * scope this Effect is acquired in — which is the scope `Pool.make` opens for one
- * worker. So a worker lives as long as its pool slot, and each `dryRun` or
- * `mutantRun` only sends a message to a process that is already up.
- *
- * The scope boundary is the whole correctness question. Putting it inside each
- * method type-checks identically and spawns a Node process per mutant, which
- * makes the pool hold nothing and pays worker startup thousands of times.
+ * scope this Effect is acquired in — the scope `Pool.make` opens for one worker —
+ * so a worker lives as long as its pool slot, and each `dryRun` or `mutantRun`
+ * only sends a message to a process that is already up.
  *
  * A failed spawn stays a typed failure rather than a defect, because
  * `Pool.invalidate` and the crash-retry combinator can only act on a failure they

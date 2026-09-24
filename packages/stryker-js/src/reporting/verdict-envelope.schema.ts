@@ -118,7 +118,7 @@ export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')
   >(
     (args) => args.length === 6,
     (report, mode, signal, runId, basePath, pathService) => {
-      const metrics = metricsOf(report.files)
+      const metrics = Report.Metrics.fromMutants(Arr.flatMap(Object.values(report.files), (file) => file.mutants))
       const { jsonReporterFileName } = embeddedConfig(report)
       return VerdictEnvelope.make({
         schemaVersion: VerdictEnvelopeSchemaVersion.literal,
@@ -140,7 +140,7 @@ export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')
         reportFile: Option.getOrNull(
           Option.map(
             Option.filter(Option.fromUndefinedOr(jsonReporterFileName), () => metrics.totalMutants > 0),
-            (fileName) => normalizeFileName(pathService.relative(basePath, fileName)),
+            (fileName) => pathService.relative(basePath, fileName).replaceAll('\\', '/'),
           ),
         ),
         mutants: actionableMutants(report.files),
@@ -148,11 +148,6 @@ export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')
     },
   )
 }
-
-const normalizeFileName = (fileName: string) => fileName.replaceAll('\\', '/')
-
-const metricsOf = (files: Report.MutationTestResult['files']): Report.Metrics =>
-  Report.Metrics.fromMutants(Arr.flatMap(Object.values(files), (file) => file.mutants))
 
 function embeddedConfig(report: Report.MutationTestResult) {
   const JsonReporterSchema = S.Struct({

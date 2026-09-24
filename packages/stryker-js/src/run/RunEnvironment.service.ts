@@ -1,5 +1,6 @@
 import type { Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
+import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -20,7 +21,7 @@ import { ProjectFiles } from '../project-files.service.js'
 import { ReporterOutput } from '../reporter-output.service.js'
 import { Reporter } from '../reporter.service.js'
 import type { RunEventStream } from '../run-event-stream.service.js'
-import { RunEvent } from '../run-event.schema.js'
+import { PhaseEntered, RunEvent } from '../run-event.schema.js'
 import { RunEvents } from '../run-events.service.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { EnginePorts, RunStageServices } from './StageServices.service.js'
@@ -117,3 +118,11 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
       ),
   )
 }
+
+export const phaseEntered = (phase: PhaseEntered['phase']): Effect.Effect<void, never, RunEnvironment | RunEvents> =>
+  Effect.gen(function*() {
+    const env = yield* RunEnvironment
+    const now = yield* Clock.currentTimeMillis
+    const queue = yield* RunEvents
+    yield* Queue.offer(queue, PhaseEntered.make({ phase, elapsedMs: now - env.runStartedAt }))
+  })

@@ -637,6 +637,8 @@ const isSuperCallExpression = <A>(node: A): boolean =>
 
 const containsSuperCall = <A>(node: A): boolean => Predicate.isObjectOrArray(node) && containsSuperIn(node)
 
+const containsSuperIn = (node: object): boolean => isSuperReference(node) || hasSuperInChildren(node)
+
 const isSuperReference = <A>(node: A): boolean => isSuperType(node) || isSuperCallExpression(node)
 
 const hasSuperInChildren = (node: object): boolean =>

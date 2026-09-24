@@ -44,13 +44,13 @@ export interface DryRunDone extends InstrumentDone {
 const sandboxPathsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
   Result.all(fileNames.map((fileName) => sandbox.sandboxFileFor(fileName)))
 
-const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
+export const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
   Match.value(configured).pipe(
     Match.when(Options.isCustomTestRunner, (custom) => ConfiguredPluginModulePath.make({ modulePath: custom.plugin })),
     Match.orElse((name) => ConfiguredPluginName.make({ name })),
   )
 
-const workerSpawnOf = (
+export const workerSpawnOf = (
   stage: StageError['stage'],
   loaded: Pick<LoadedPlugins, 'pluginSources'>,
   kind: Plugin.WorkerPluginKind,
@@ -318,7 +318,7 @@ const completeDryRunPassed = (raw: DryRunRaw) =>
       Effect.fail(StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' }))
     ),
   )
-const isStageError = (candidate: unknown): candidate is StageError => S.is(StageError)(candidate)
+export const isStageError = (candidate: unknown): candidate is StageError => S.is(StageError)(candidate)
 
 const readDryRun = (command: InstrumentDone) =>
   Effect.gen(function*() {
@@ -396,14 +396,6 @@ const readDryRun = (command: InstrumentDone) =>
     )
 
     return dryRunRaw(command, rawResult, capabilities, gross)
-  })
-
-const emitDryRunPhase = (): Effect.Effect<void, never, RunEnvironment | RunEvents> =>
-  Effect.gen(function*() {
-    const env = yield* RunEnvironment
-    const now = yield* Clock.currentTimeMillis
-    const queue = yield* RunEvents
-    yield* Queue.offer(queue, PhaseEntered.make({ phase: 'dry-run', elapsedMs: now - env.runStartedAt }))
   })
 
 const writeDryRunPassed = (raw: DryRunRaw): Effect.Effect<
