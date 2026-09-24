@@ -878,12 +878,20 @@ type KeyedMutant = {
 const currentMutantKey = (mutant: KeyedMutant): string =>
   mutantKeyOf(mutant.mutatorName, mutant.replacement, mutant.location.start, mutant.location.end)
 
+/**
+ * Reports written before the location-base fix stored correct 1-based lines
+ * but columns one too high, so a prior entry maps into the current key
+ * space by subtracting one from the columns only. New reports already
+ * persist the 1-based form and match through `currentMutantKey` directly;
+ * this fallback only ever reads, and drops out once the next full run
+ * rewrites the file.
+ */
 const previousMutantKey = (mutant: KeyedMutant): string =>
   mutantKeyOf(
     mutant.mutatorName,
     mutant.replacement,
-    { line: mutant.location.start.line - 1, column: mutant.location.start.column - 1 },
-    { line: mutant.location.end.line - 1, column: mutant.location.end.column - 1 },
+    { line: mutant.location.start.line, column: mutant.location.start.column - 1 },
+    { line: mutant.location.end.line, column: mutant.location.end.column - 1 },
   )
 
 const changedSourceFiles = (
@@ -914,7 +922,7 @@ const findRemembered = (
     Option.flatMap(Option.fromUndefinedOr(previousFiles[file]), (record) => Option.fromUndefinedOr(record.mutants)),
     () => NO_PREVIOUS_MUTANTS,
   )
-  return candidates.find((candidate) => previousMutantKey(candidate) === key)
+  return candidates.find((candidate) => previousMutantKey(candidate) === key || currentMutantKey(candidate) === key)
 }
 
 const hasChangedCoverage = (
@@ -1029,16 +1037,21 @@ const testStatisticsOf = (
   return statisticsOf(added, removed)
 }
 
+const matchesCurrentKeys = (candidate: PreviousMutantRecord, keys: readonly string[]): boolean =>
+  keys.includes(previousMutantKey(candidate)) || keys.includes(currentMutantKey(candidate))
+
 const removedMutantFiles = (
   input: IncrementalDiffInput,
   currentKeysByFile: Readonly<Record<string, readonly string[]>>,
 ): readonly string[] =>
   Object.entries(input.previousFiles).flatMap(([file, previous]) => {
     const keys = currentKeysByFile[file]
-    const removed = (previous.mutants ?? []).filter((candidate) => {
-      if (keys === undefined) return true
-      return !keys.includes(previousMutantKey(candidate))
-    })
+    const removed = (previous.mutants ?? []).filter((candidate) =>
+      Option.match(Option.fromUndefinedOr(keys), {
+        onNone: () => true,
+        onSome: (present) => !matchesCurrentKeys(candidate, present),
+      })
+    )
     return removed.map(() => file)
   })
 

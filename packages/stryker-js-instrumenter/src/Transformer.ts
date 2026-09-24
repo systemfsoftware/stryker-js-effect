@@ -878,7 +878,7 @@ export const transformScript: AstTransformer<ScriptAst> = (
         PlanMutantsCommand.make({
           fileName: originFileName,
           firstIndex: mutantCollector.nextIndex,
-          offset: offset ?? { line: 0, column: 0 },
+          offset: offset ?? { line: 1, column: 0 },
           line: getNodeLocation(path.node).start.line,
           mutatorNames: allMutatorNames,
           excludedMutations: options.excludedMutations,

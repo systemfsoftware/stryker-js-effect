@@ -47,7 +47,7 @@ Feature('Instrumenting files in formats a framework plugin teaches')
             const column = oneBased(fixtureDocument.indexOf('n + 1'))
             const arithmetic = result.mutants.filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
             expect(arithmetic.map((mutant) => [mutant.replacement, mutant.location])).toStrictEqual([
-              ['n - 1', { start: { line: 0, column }, end: { line: 0, column: column + 'n + 1'.length } }],
+              ['n - 1', { start: { line: 1, column }, end: { line: 1, column: column + 'n + 1'.length } }],
             ])
             expect(result.mutants.every((mutant) =>
               mutant.location.start.column >= regionFirst && mutant.location.end.column <= regionLast

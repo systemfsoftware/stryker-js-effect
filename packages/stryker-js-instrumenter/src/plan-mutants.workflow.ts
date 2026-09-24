@@ -162,6 +162,12 @@ const warningsOf = (command: PlanMutantsCommand): readonly string[] =>
   unusedDirectives(command.directives, command.mutatorNames)
     .map((unused) => unusedDirectiveWarning(unused, command.fileName))
 
+/**
+ * Both the node span (`source`) and the region origin (`offset`) are 1-based
+ * file coordinates: the region's first line carries its column origin, later
+ * lines start at column 1, so the shift adds `offset.line - 1` lines and —
+ * only when the node sits on the region's first line — `offset.column`.
+ */
 const columnOffsetOf = (source: Position, offset: Position): number =>
   Match.value(source.line === 1).pipe(
     Match.when(true, () => offset.column),

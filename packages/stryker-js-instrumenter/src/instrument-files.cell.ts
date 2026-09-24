@@ -69,13 +69,12 @@ const toTransformerOptions = (options: InstrumenterOptions): TransformerOptions 
   ...(options.noHeader !== undefined ? { noHeader: options.noHeader } : {}),
 })
 
-const toOneBasedLineNumber = (file: FileDescription): FileDescription['mutate'] =>
-  typeof file.mutate === 'boolean'
-    ? file.mutate
-    : file.mutate.map(({ start, end }) => ({
-      start: { column: start.column, line: start.line + 1 },
-      end: { column: end.column, line: end.line + 1 },
-    }))
+/**
+ * The `mutate` ranges on a file description already speak the 1-based file
+ * coordinates the transformer compares node spans against, so they pass
+ * through unchanged.
+ */
+const mutateDescriptionOf = (file: FileDescription): FileDescription['mutate'] => file.mutate
 
 const parsedOutcome = (
   registry: FormatRegistry,
@@ -131,7 +130,7 @@ const transformInto = (
 ): Effect.Effect<void, InstrumentError> =>
   transform(ast, collector, {
     options: toTransformerOptions(options),
-    mutateDescription: toOneBasedLineNumber(file),
+    mutateDescription: mutateDescriptionOf(file),
     registry,
   }).pipe(
     Effect.mapError((cause) => InstrumentError.make({ message: `Failed to transform ${file.name}`, cause })),

@@ -10,6 +10,7 @@ import { type Program, type Statement } from './Ast.js'
 import type { EmbeddedFormatEntry, FormatClaim } from './format-registry.js'
 import { instrumentationHeader } from './instrument-header.js'
 import { InstrumentError } from './Instrument.schema.js'
+import type { Position } from './Location.schema.js'
 import { errorToString } from './Mutant.js'
 import { loadOxc, type Oxc } from './Oxc.js'
 import { ParseFailed } from './Parser.schema.js'
@@ -22,6 +23,14 @@ import {
   positionFromOffset,
   type ScriptAst,
 } from './Syntax.js'
+
+/**
+ * Lift the 0-based region origin into the 1-based file coordinates the
+ * plan-mutants shift speaks: the region starts on 1-based line `line + 1`,
+ * and a region that opens mid-line carries its 0-based column as the shift
+ * added only to the region's first line.
+ */
+const toOneBasedOrigin = (origin: Position): Position => ({ line: origin.line + 1, column: origin.column })
 
 const EMBEDDED_SCRIPT_FILE = 'embedded-script.js'
 
@@ -76,7 +85,7 @@ const embeddedScriptsOf = (
       comments: [],
       rawContent: rawContent.slice(region.start, region.end),
       originFileName,
-      offset: positionFromOffset(lineStarts, region.start),
+      offset: toOneBasedOrigin(positionFromOffset(lineStarts, region.start)),
     }
     return [{ region: index, ast }]
   })

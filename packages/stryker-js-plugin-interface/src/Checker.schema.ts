@@ -1,11 +1,10 @@
 import * as S from 'effect/Schema'
 
-/** A position inside a file, in the coordinates the wire carries — 0-based line and column. */
+/** A position inside a file, in the coordinates the wire carries — 1-based line and 1-based column. */
 export const CheckerPositionWire = S.Struct({
   line: S.Finite,
   column: S.Finite,
 })
-export type CheckerPositionWire = typeof CheckerPositionWire.Type
 
 export const CheckerLocationWire = S.Struct({
   start: CheckerPositionWire,

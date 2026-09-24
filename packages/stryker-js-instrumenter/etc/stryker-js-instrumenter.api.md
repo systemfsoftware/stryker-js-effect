@@ -222,7 +222,7 @@ export const LocationSchema: S.Struct<{
 
 // Warning: (ae-forgotten-export) The symbol "Mutant_base" needs to be exported by the entry point index.d.mts
 //
-// @public (undocumented)
+// @public
 export class Mutant extends Mutant_base {}
 
 // @public (undocumented)
@@ -323,7 +323,7 @@ export interface ParserOptions {}
 // @public (undocumented)
 export type Position = typeof PositionSchema.Type;
 
-// @public (undocumented)
+// @public
 export const PositionSchema: S.Struct<{
     readonly line: S.Finite;
     readonly column: S.Finite;

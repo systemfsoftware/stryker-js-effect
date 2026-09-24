@@ -1319,7 +1319,7 @@ const operationCallSite = (
     throw new Error(`${entry.file} ${entry.exportName} has no ${entry.module}.${entry.operation} call`)
   }
   const line = lines.at(at) ?? ''
-  return { line: at, column: line.indexOf(marker) + 1 }
+  return { line: at + 1, column: line.indexOf(marker) + 1 }
 }
 
 const mutantsInside = (entry: ShapeEntry): readonly Mutant[] => {
@@ -1330,7 +1330,7 @@ const mutantsInside = (entry: ShapeEntry): readonly Mutant[] => {
   }
   const range = exportLineRange(source, entry.exportName)
   const inside = current.mutants.filter((mutant) => {
-    const sourceLine = mutant.location.start.line + 1
+    const sourceLine = mutant.location.start.line
     return mutant.mutatorName === entry.mutator &&
       mutant.fileName === entry.file &&
       range.firstLine <= sourceLine &&

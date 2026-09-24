@@ -907,7 +907,7 @@ export type ModeSignal = 'flag' | 'env' | 'tty' | 'agent' | 'tool';
 
 // Warning: (ae-forgotten-export) The symbol "Mutant_base" needs to be exported by the entry point index.d.mts
 //
-// @public (undocumented)
+// @public
 export class Mutant extends Mutant_base {}
 
 // @public (undocumented)
@@ -1170,7 +1170,7 @@ export type PooledTestRunnerError = TestRunnerFailed | ChildProcessCrashedError 
 // @public (undocumented)
 export type Position = typeof PositionSchema.Type;
 
-// @public (undocumented)
+// @public
 export const PositionSchema: S.Struct<{
     readonly line: S.Finite;
     readonly column: S.Finite;

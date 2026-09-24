@@ -118,7 +118,7 @@ function sourceLine(source: string, position: Position): string {
 
 function tailFromColumn(raw: string, column: number): string[] {
   if (raw.length === 0) return []
-  return [raw.slice(column)]
+  return [raw.slice(column - 1)]
 }
 
 function sliceSource(source: string | undefined, position: Position): string[] {
