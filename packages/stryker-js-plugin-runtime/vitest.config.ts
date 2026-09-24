@@ -1,7 +1,7 @@
 import { inlineSchemaTests } from '@systemfsoftware/effect-schema-vite'
 import { defineConfig, sharedConfig } from '@systemfsoftware/vitest-config'
 
-const seedAvoidingNodeIssue63785JsonParseKeyCorruption = 4
+const seedAvoidingNodeIssue63785JsonParseKeyCorruption = 1
 
 export default defineConfig({
   ...sharedConfig,
