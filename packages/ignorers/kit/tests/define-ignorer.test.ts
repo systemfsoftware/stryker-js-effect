@@ -1,6 +1,6 @@
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { defineIgnorer, type IgnorerContext, type IgnorerVisitors } from '@systemfsoftware/stryker-ignorer-kit'
-import { describe, expect, it } from 'vitest'
+import { assert, describe, expect, it } from 'vitest'
 
 import { callExpression, identifier, ifStatement, stringLiteral } from './fixtures/nodes.js'
 
@@ -67,7 +67,7 @@ function contextRecorder(): Recorder {
     },
   })
   const seen = (): IgnorerContext => {
-    if (captured === undefined) throw new Error('visitor never consulted')
+    assert(captured !== undefined, 'visitor never consulted')
     return captured
   }
   return { ignorer, seen }

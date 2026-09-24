@@ -1,27 +1,23 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
-import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import type * as Scope from 'effect/Scope'
 import { describe, expect, it } from 'vitest'
-import { StrykerOptionsSchema } from '../../../packages/stryker-js-plugin-interface/src/index.js'
-import type {
-  CheckerFailed,
-  CheckerMutantWire,
-  CheckResult,
-} from '../../../packages/stryker-js-plugin-interface/src/index.js'
-import { makeCheckerService } from '../../../packages/stryker-js-typescript-checker/src/Checker.js'
 import {
-  makeHybridFileSystem,
-  makeTypescriptCompiler,
-} from '../../../packages/stryker-js-typescript-checker/src/Compiler.js'
+  CheckerRuntime,
+  type CheckerRuntimeShape,
+} from '../../../packages/stryker-js-typescript-checker/src/CheckerRuntime.service.js'
+import { nodes } from '../../../packages/stryker-js-typescript-checker/src/ts-compiler.handle.js'
+import { TypeScriptCompiler } from '../../../packages/stryker-js-typescript-checker/src/ts-compiler.service.js'
 
 const LIVE_OPT_IN_MUTATIONS: readonly string[] = [
   'AtomicUpdateSplit',
@@ -56,8 +52,7 @@ const fixtureLayout = Effect.gen(function*() {
     '..',
     'packages',
     'stryker-js-instrumenter',
-    'tests',
-    '__fixtures__',
+    'testResources',
     'effect-concurrency',
   )
   const moduleNames = yield* fs.readDirectory(definitionsDirectory)
@@ -73,7 +68,7 @@ class MissingControlFault extends S.TaggedError<MissingControlFault>()('MissingC
   reason: S.String,
 }) {}
 
-const wireOf = (mutant: Mutant): CheckerMutantWire => ({
+const wireOf = (mutant: Mutant.Mutant): Checker.CheckerMutantWire => ({
   id: mutant.id,
   fileName: mutant.fileName,
   mutatorName: mutant.mutatorName,
@@ -86,7 +81,7 @@ const instrumentedWires = (layout: FixtureLayout) =>
     const fs = yield* FileSystem.FileSystem
     const files = yield* Effect.forEach(layout.definitionFiles, (fileName) =>
       Effect.map(fs.readFileString(fileName), (content) => ({ name: fileName, content, mutate: true })))
-    const instrumented = yield* instrument(files, {
+    const instrumented = yield* Instrument.instrument(files, {
       ignorers: [],
       excludedMutations: [],
       optInMutations: [...LIVE_OPT_IN_MUTATIONS],
@@ -98,56 +93,61 @@ const instrumentedWires = (layout: FixtureLayout) =>
       .map(wireOf)
   })
 
-const checkerRig = (layout: FixtureLayout) =>
-  Effect.gen(function*() {
-    const fsService = yield* FileSystem.FileSystem
-    const pathService = yield* Path.Path
-    const options = yield* S.decodeEffect(StrykerOptionsSchema)({ tsconfigFile: layout.projectTsConfig })
-    const fs = yield* makeHybridFileSystem(fsService)
-    const compiler = makeTypescriptCompiler(options, fs, fsService, pathService)
-    const checker = makeCheckerService({ options, compiler })
-    const start = yield* Effect.result(checker.init)
-    const nodes = yield* compiler.nodes
-    return {
-      checker,
-      layout,
-      projectFiles: Array.from(MutableHashMap.keys(nodes)),
-      start,
-    }
-  })
+interface CheckerRig {
+  readonly layout: FixtureLayout
+  readonly runtime: CheckerRuntimeShape
+  readonly start: Result.Result<void, Cause.Cause<Checker.CheckerFailed>>
+  readonly projectFiles: ReadonlyArray<string>
+}
 
-const startComplaints = (start: Result.Result<void, CheckerFailed>): ReadonlyArray<string> =>
+const optionsFor = (layout: FixtureLayout): Effect.Effect<Options.StrykerOptions, S.SchemaError> =>
+  S.decodeEffect(Options.StrykerOptionsSchema)({ tsconfigFile: layout.projectTsConfig })
+
+const rigLayers = (
+  layout: FixtureLayout,
+): Layer.Layer<CheckerRuntime | TypeScriptCompiler, never, FileSystem.FileSystem | Path.Path> =>
+  Layer.unwrap(
+    Effect.map(Effect.orDie(optionsFor(layout)), (options) => CheckerRuntime.layer(options)),
+  )
+
+const checkerRig = (
+  layout: FixtureLayout,
+): Effect.Effect<CheckerRig, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
+  Effect.flatMap(Layer.build(rigLayers(layout)), (context) =>
+    Effect.gen(function*() {
+      const runtime = yield* CheckerRuntime
+      const compiler = yield* TypeScriptCompiler
+      const service = yield* Effect.result(runtime.checker)
+      const graph = yield* nodes(compiler)
+      return {
+        layout,
+        runtime,
+        start: Result.map(service, () => undefined),
+        projectFiles: [...HashMap.keys(graph)],
+      }
+    }).pipe(Effect.provideContext(context))).pipe(Effect.orDie)
+
+const withChecker = <A, E, R>(
+  rig: CheckerRig,
+  use: (checker: Checker.Checker['Service']) => Effect.Effect<A, E, R>,
+): Effect.Effect<A, E | Cause.Cause<Checker.CheckerFailed>, R> => Effect.flatMap(rig.runtime.checker, use)
+
+const startComplaints = (start: Result.Result<void, Cause.Cause<Checker.CheckerFailed>>): ReadonlyArray<string> =>
   Result.match(start, {
-    onFailure: (failure) => [failure.cause],
+    onFailure: (cause) => [Cause.pretty(cause)],
     onSuccess: () => [],
   })
 
-const problemReports = (
-  wires: ReadonlyArray<CheckerMutantWire>,
-  results: HashMap.HashMap<string, CheckResult>,
+const faultReports = (
+  wires: ReadonlyArray<Checker.CheckerMutantWire>,
+  results: HashMap.HashMap<string, Checker.CheckResult>,
+  refused: (result: Checker.CheckResult) => result is Checker.FailedCheckResult,
 ): ReadonlyArray<string> =>
   wires.flatMap((wire) =>
     Option.match(HashMap.get(results, wire.id), {
       onNone: () => [`no verdict was reached for the fault at ${wire.fileName}:${wire.location.start.line + 1}`],
       onSome: (result) =>
-        result.status === 'passed'
-          ? []
-          : [
-            `the fault at ${wire.fileName}:${wire.location.start.line + 1} replacing with \`${wire.replacement}\`` +
-            ` was refused: ${result.reason}`,
-          ],
-    })
-  )
-
-const refusalReports = (
-  wires: ReadonlyArray<CheckerMutantWire>,
-  results: HashMap.HashMap<string, CheckResult>,
-): ReadonlyArray<string> =>
-  wires.flatMap((wire) =>
-    Option.match(HashMap.get(results, wire.id), {
-      onNone: () => [`no verdict was reached for the fault at ${wire.fileName}:${wire.location.start.line + 1}`],
-      onSome: (result) =>
-        result.status === 'compileError'
+        refused(result)
           ? [
             `the fault at ${wire.fileName}:${wire.location.start.line + 1} replacing with \`${wire.replacement}\`` +
             ` was refused: ${result.reason}`,
@@ -156,7 +156,22 @@ const refusalReports = (
     })
   )
 
-const illTypedControl = (wires: ReadonlyArray<CheckerMutantWire>): Option.Option<CheckerMutantWire> =>
+const problemReports = (
+  wires: ReadonlyArray<Checker.CheckerMutantWire>,
+  results: HashMap.HashMap<string, Checker.CheckResult>,
+): ReadonlyArray<string> => faultReports(wires, results, notPassed)
+
+const refusalReports = (
+  wires: ReadonlyArray<Checker.CheckerMutantWire>,
+  results: HashMap.HashMap<string, Checker.CheckResult>,
+): ReadonlyArray<string> => faultReports(wires, results, compilationRefused)
+
+const notPassed = (result: Checker.CheckResult): result is Checker.FailedCheckResult => result.status !== 'passed'
+
+const compilationRefused = (result: Checker.CheckResult): result is Checker.FailedCheckResult =>
+  result.status === 'compileError'
+
+const illTypedControl = (wires: ReadonlyArray<Checker.CheckerMutantWire>): Option.Option<Checker.CheckerMutantWire> =>
   Option.map(
     Option.fromUndefinedOr(wires.find((wire) => wire.fileName.endsWith('import-style-named.ts'))),
     (wire) => ({ ...wire, replacement: '1' }),
@@ -173,7 +188,7 @@ describe('The TypeScript checker accepting opted-in concurrency faults', () => {
           inspected[fileName] = true
         })
         expect(rig.layout.definitionFiles.filter((fileName) => inspected[fileName] !== true)).toEqual([])
-      }).pipe(Effect.provide(runLayer)),
+      }).pipe(Effect.scoped, Effect.provide(runLayer)),
     ))
 
   it('every proposed concurrency fault compiles like the code it replaces', () =>
@@ -181,10 +196,10 @@ describe('The TypeScript checker accepting opted-in concurrency faults', () => {
       Effect.gen(function*() {
         const rig = yield* Effect.flatMap(fixtureLayout, checkerRig)
         const wires = yield* instrumentedWires(rig.layout)
-        const results = yield* rig.checker.check(wires)
+        const results = yield* withChecker(rig, (checker) => checker.check(wires))
         expect(wires.length).toBe(expectedMutantCount())
         expect(problemReports(wires, results)).toEqual([])
-      }).pipe(Effect.provide(runLayer)),
+      }).pipe(Effect.scoped, Effect.provide(runLayer)),
     ))
 
   it('a fault that breaks the typing is refused as a compile problem', () =>
@@ -198,9 +213,10 @@ describe('The TypeScript checker accepting opted-in concurrency faults', () => {
               MissingControlFault.make({ reason: 'no fault on an effect-returning expression was proposed' }),
             ),
           onSome: (control) =>
-            Effect.map(rig.checker.check([control]), (results) => refusalReports([control], results)),
+            Effect.map(withChecker(rig, (checker) => checker.check([control])), (results) =>
+              refusalReports([control], results)),
         })
         expect(refusals).toHaveLength(1)
-      }).pipe(Effect.provide(runLayer)),
+      }).pipe(Effect.scoped, Effect.provide(runLayer)),
     ))
 })

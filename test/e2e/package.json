@@ -18,7 +18,7 @@
     "derive-oracle": "node --import tsx scripts/derive-oracle.ts",
     "bless-oracle": "tsx scripts/blessed-baseline.ts",
     "reconcile-oracle": "tsx scripts/reconcile-oracle.ts",
-    "typecheck": "tsc --noEmit --incremental && tsc -p tsconfig.node.json --noEmit"
+    "typecheck": "tsc -b"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
@@ -27,8 +27,10 @@
     "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@systemfsoftware/effect-microsandbox": "catalog:",
+    "@systemfsoftware/effect-readiness": "catalog:",
     "@systemfsoftware/stryker-js": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
     "@systemfsoftware/stryker-js-vitest-runner": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",

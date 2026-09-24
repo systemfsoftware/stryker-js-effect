@@ -1,9 +1,7 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
-
-import { instrument } from './__fixtures__/instrument.js'
 
 const WORKFLOW_BODY = `import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Match from 'effect/Match'
@@ -40,13 +38,13 @@ Feature('Parenthesized type predicates in make bodies')
         When('it is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/probe/predicate.workflow.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/probe/predicate.workflow.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),
         ),
         Then('instrumentation succeeds with a non-empty mutant population')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             expect(result.mutants.length).toBeGreaterThan(0)

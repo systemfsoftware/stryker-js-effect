@@ -20,8 +20,8 @@
     "lib"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit --incremental",
-    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
+    "typecheck": "tsc -b",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text}"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

@@ -23,12 +23,14 @@ function makeBaseline(overrides: Partial<BlessedBaseline> = {}): BlessedBaseline
 
 function makeStaticSlice(overrides: Partial<{
   familyTally: Readonly<Record<string, number>>
+  placementTally: Readonly<Record<string, number>>
   ignoredCount: number
   compileErrorCount: number
   compileErrorCodes: Readonly<Record<number, number>>
 }> = {}) {
   return {
     familyTally: {},
+    placementTally: {},
     ignoredCount: 0,
     compileErrorCount: 0,
     compileErrorCodes: {},

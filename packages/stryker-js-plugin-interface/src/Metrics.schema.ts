@@ -44,68 +44,29 @@ export class Metrics extends S.Class<Metrics>('Metrics')({
   }
 
   get mutationScore(): number {
-    if (this.totalValid === 0) {
-      return Number.NaN
-    }
     return Math.min(100, Math.max(0, (this.totalDetected / this.totalValid) * 100))
   }
 
   get mutationScoreBasedOnCoveredCode(): number {
-    if (this.totalCovered === 0) {
-      return Number.NaN
-    }
     return Math.min(100, Math.max(0, (this.totalDetected / this.totalCovered) * 100))
   }
 
   static fromMutants(mutants: readonly { readonly status: string }[]): Metrics {
-    const counts = emptyMetricCounts()
-    for (const mutant of mutants) {
-      incrementMetricStatus(counts, mutant.status)
-    }
-    return Metrics.make(counts)
+    return Metrics.make({
+      pending: metricCountOf(mutants, 'Pending'),
+      killed: metricCountOf(mutants, 'Killed'),
+      timeout: metricCountOf(mutants, 'Timeout'),
+      survived: metricCountOf(mutants, 'Survived'),
+      noCoverage: metricCountOf(mutants, 'NoCoverage'),
+      runtimeErrors: metricCountOf(mutants, 'RuntimeError'),
+      compileErrors: metricCountOf(mutants, 'CompileError'),
+      ignored: metricCountOf(mutants, 'Ignored'),
+    })
   }
 }
 
-interface MetricCounts {
-  pending: number
-  killed: number
-  timeout: number
-  survived: number
-  noCoverage: number
-  runtimeErrors: number
-  compileErrors: number
-  ignored: number
-}
-
-const emptyMetricCounts = (): MetricCounts => ({
-  pending: 0,
-  killed: 0,
-  timeout: 0,
-  survived: 0,
-  noCoverage: 0,
-  runtimeErrors: 0,
-  compileErrors: 0,
-  ignored: 0,
-})
-
-const METRIC_STATUS_KEYS: Partial<Record<string, keyof MetricCounts>> = {
-  Pending: 'pending',
-  Killed: 'killed',
-  Timeout: 'timeout',
-  Survived: 'survived',
-  NoCoverage: 'noCoverage',
-  RuntimeError: 'runtimeErrors',
-  CompileError: 'compileErrors',
-  Ignored: 'ignored',
-}
-
-const incrementMetricStatus = (counts: MetricCounts, status: string): void => {
-  const key = METRIC_STATUS_KEYS[status]
-  if (key === undefined) {
-    return
-  }
-  counts[key] += 1
-}
+const metricCountOf = (mutants: readonly { readonly status: string }[], status: string) =>
+  mutants.filter((mutant) => mutant.status === status).length
 
 export const MetricsSchema = Metrics
 

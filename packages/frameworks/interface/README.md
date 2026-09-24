@@ -105,7 +105,7 @@ This package is the tier both sides depend on and neither side owns:
 
 ## Contributing
 
-Development setup and workflow: [AGENTS.md](AGENTS.md).
+Development setup and workflow: [AGENTS.md](../AGENTS.md).
 
 ## License
 

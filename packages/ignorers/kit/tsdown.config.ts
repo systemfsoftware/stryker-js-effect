@@ -4,7 +4,7 @@ import { defineConfig } from 'tsdown'
 export default defineConfig({
   entry: {
     index: './src/mod.ts',
-    tester: './src/tester.ts',
+    tester: './src/tester/mod.ts',
   },
   format: 'esm',
   dts: true,

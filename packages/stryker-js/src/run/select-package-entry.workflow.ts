@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -12,7 +13,11 @@ export class SelectPackageEntryCommand extends S.TaggedClass<SelectPackageEntryC
     specifier: S.String,
     manifest: PackageManifestFields,
   },
-) {}
+) {
+  static readonly [Workflow.InstrumentationBrand] = {
+    specifier: 'stryker.package_entry.specifier',
+  } as const
+}
 
 const SelectPackageEntryTypeId = Symbol.for('@systemfsoftware/stryker-js/SelectPackageEntryDecision')
 type SelectPackageEntryTypeId = typeof SelectPackageEntryTypeId
@@ -48,10 +53,7 @@ type Selection = S.Schema.Type<typeof Selection>
 const isString = (value: PackageExportValue): value is string => typeof value === 'string'
 const isArray = (value: PackageExportValue): value is readonly PackageExportValue[] => Array.isArray(value)
 const isMapRecord = (value: PackageExportValue): value is { readonly [key: string]: PackageExportValue } =>
-  Match.value(value).pipe(
-    Match.when(Match.record, (): boolean => true),
-    Match.orElse((): boolean => false),
-  )
+  Predicate.isObject(value)
 
 const subpathOf = (specifier: string): string => {
   const segments = specifier.split('/')
@@ -181,9 +183,11 @@ const selectionOf = (command: SelectPackageEntryCommand): Selection =>
 const unresolvedOf = (specifier: string, reason: string): PackageEntryUnresolved =>
   PackageEntryUnresolved.make({ specifier, reason })
 
-export const selectPackageEntry = Workflow.total(
-  SelectPackageEntryCommand,
-  (command): Result.Result<PackageEntryDecision, never> =>
+export const selectPackageEntry = Workflow.make({
+  command: SelectPackageEntryCommand,
+  decision: PackageEntryDecision,
+  error: S.Never,
+  decide: (command): Result.Result<PackageEntryDecision, never> =>
     Match.value(selectionOf(command)).pipe(
       Match.tag('Selected', ({ target }) =>
         Result.succeed<PackageEntryDecision>(
@@ -214,4 +218,4 @@ export const selectPackageEntry = Workflow.total(
         )),
       Match.exhaustive,
     ),
-)
+})

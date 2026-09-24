@@ -1,24 +1,6 @@
 import { NodeFileSystem, NodePath, NodeStdio } from '@effect/platform-node'
 import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  type EnginePorts,
-  FormatRegistryResolved,
-  IncrementalReportSchema,
-  makeRunLayer,
-  mutationTestCell,
-  type MutationTestDone,
-  PhaseEntered,
-  PluginsReported,
-  RUN_EVENTS_QUEUE_BOUND,
-  type RunEnvironmentShape,
-  type RunEvent,
-  RunFailed,
-  RunMutantTested,
-  SkippedReported,
-  StageError,
-  VerdictReached,
-  WorkerLauncher,
-} from '@systemfsoftware/stryker-js'
+import { Engine, RunEvent, Worker } from '@systemfsoftware/stryker-js'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -29,6 +11,7 @@ import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { expect } from 'vitest'
+import { nodeVmPlatformLayer } from '../src/drivers/node.js'
 
 const Feature = makeFeature({ it, layer })
 
@@ -40,8 +23,8 @@ const pluginUrlOf = (moduleName: string): string =>
 const NEVER_SPAWN = 'a child process was spawned for an in-memory run'
 
 const workerCanary = Layer.succeed(
-  WorkerLauncher,
-  WorkerLauncher.of({
+  Worker.WorkerLauncher,
+  Worker.WorkerLauncher.of({
     spawn: () => Effect.die(new Error(NEVER_SPAWN)),
   }),
 )
@@ -53,11 +36,12 @@ const spawnerCanary = Layer.succeed(
 
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
-const neverSpawnPorts: Layer.Layer<EnginePorts> = Layer.mergeAll(
+const neverSpawnPorts: Layer.Layer<Engine.EnginePorts> = Layer.mergeAll(
   filePorts,
   NodeStdio.layer,
   workerCanary,
   spawnerCanary,
+  nodeVmPlatformLayer,
 )
 
 interface Workspace {
@@ -176,7 +160,7 @@ const removeWorkspace = (directory: string): Effect.Effect<void, never, FileSyst
     Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(directory, { recursive: true, force: true })),
   )
 
-const environmentFor = (directory: string): RunEnvironmentShape => ({
+const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
   runId: 'framework-run-integration',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
@@ -188,8 +172,8 @@ const environmentFor = (directory: string): RunEnvironmentShape => ({
 const incrementalFileOf = (directory: string): string => `${directory}/reports/stryker-incremental.json`
 
 interface RunObservation {
-  readonly exit: Exit.Exit<MutationTestDone, StageError>
-  readonly events: ReadonlyArray<RunEvent>
+  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
+  readonly events: ReadonlyArray<RunEvent.RunEvent>
   readonly incrementalState: string
 }
 
@@ -200,12 +184,12 @@ const incrementalStateOf = (directory: string): Effect.Effect<string, never, Fil
 
 const runOver = (workspace: Workspace): Effect.Effect<RunObservation, never, never> =>
   Effect.gen(function*() {
-    const queue = yield* Queue.bounded<RunEvent, Cause.Done>(RUN_EVENTS_QUEUE_BOUND)
+    const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const runLayer = Layer.merge(
-      Layer.provide(makeRunLayer(environmentFor(workspace.directory), queue), neverSpawnPorts),
+      Layer.provide(Engine.RunEnvironment.stage(environmentFor(workspace.directory), queue), neverSpawnPorts),
       neverSpawnPorts,
     )
-    const exit = yield* mutationTestCell
+    const exit = yield* Engine.mutationTestCell
       .run({
         cliOptions: {
           testRunner: 'vm',
@@ -259,20 +243,22 @@ Feature('Framework plugins joining a mutation run')
         Then('the run completes and reports a verdict')((s) => {
           expect(Exit.isSuccess(s.observation.exit)).toBe(true)
           expect(
-            s.observation.events.filter((event): event is VerdictReached => S.is(VerdictReached)(event)),
+            s.observation.events.filter((event): event is RunEvent.VerdictReached =>
+              S.is(RunEvent.VerdictReached)(event)
+            ),
           ).toHaveLength(1)
         }),
         And('the skipped-files report names the component and points to the missing framework and the plugins setting')(
           (s) => {
             const skipped = s.observation.events.find(
-              (event): event is SkippedReported => S.is(SkippedReported)(event),
+              (event): event is RunEvent.SkippedReported => S.is(RunEvent.SkippedReported)(event),
             )
             const row = skipped?.files.find((file) => file.file.endsWith('widget.svelte'))
             expect(row?.extension).toBe('.svelte')
             expect(row?.reason).toContain('@systemfsoftware/stryker-js-svelte')
             expect(row?.reason).toContain('Add @systemfsoftware/stryker-js-svelte to "plugins"')
             const verdict = s.observation.events.find(
-              (event): event is VerdictReached => S.is(VerdictReached)(event),
+              (event): event is RunEvent.VerdictReached => S.is(RunEvent.VerdictReached)(event),
             )
             expect(verdict?.mutants.some((mutant) => mutant.file.endsWith('.svelte'))).toBe(false)
           },
@@ -297,7 +283,9 @@ Feature('Framework plugins joining a mutation run')
         ),
         Then('the run refuses with a configuration exit code naming the missing peer')((s) => {
           expect(Exit.isFailure(s.observation.exit)).toBe(true)
-          const failure = s.observation.events.find((event): event is RunFailed => S.is(RunFailed)(event))
+          const failure = s.observation.events.find((event): event is RunEvent.RunFailed =>
+            S.is(RunEvent.RunFailed)(event)
+          )
           expect(failure?.reason).toBe('PeerMissing')
           expect(failure?.code).toBe(2)
           expect(failure?.error).toContain('peer-missing')
@@ -305,11 +293,11 @@ Feature('Framework plugins joining a mutation run')
         }),
         And('the run stopped while loading, with no verdict and no files examined')((s) => {
           const phases = s.observation.events
-            .filter((event): event is PhaseEntered => S.is(PhaseEntered)(event))
+            .filter((event): event is RunEvent.PhaseEntered => S.is(RunEvent.PhaseEntered)(event))
             .map((phase) => phase.phase)
           expect(phases).toEqual(['prepare'])
-          expect(s.observation.events.some((event) => S.is(VerdictReached)(event))).toBe(false)
-          expect(s.observation.events.some((event) => S.is(SkippedReported)(event))).toBe(false)
+          expect(s.observation.events.some((event) => S.is(RunEvent.VerdictReached)(event))).toBe(false)
+          expect(s.observation.events.some((event) => S.is(RunEvent.SkippedReported)(event))).toBe(false)
         }),
       ),
     )
@@ -342,7 +330,7 @@ Feature('Framework plugins joining a mutation run')
         ),
         Then('the resolved-formats report names the custom file type with the fixture module as its owner')((s) => {
           const formats = s.observation.events.find(
-            (event): event is FormatRegistryResolved => S.is(FormatRegistryResolved)(event),
+            (event): event is RunEvent.FormatRegistryResolved => S.is(RunEvent.FormatRegistryResolved)(event),
           )
           const row = formats?.rows.find((candidate) => candidate.extension === '.fixture')
           expect(row?.ownerModule).toBe(pluginUrlOf('valid-framework.fixture.mjs'))
@@ -352,7 +340,7 @@ Feature('Framework plugins joining a mutation run')
         And('a mutant from the claimed component is exercised and reported')((s) => {
           expect(Exit.isSuccess(s.observation.exit)).toBe(true)
           const tested = s.observation.events.filter(
-            (event): event is RunMutantTested => S.is(RunMutantTested)(event),
+            (event): event is RunEvent.RunMutantTested => S.is(RunEvent.RunMutantTested)(event),
           )
           const fromClaimed = tested.find((mutant) => mutant.file.endsWith('widget.fixture'))
           expect(fromClaimed).toBeDefined()
@@ -360,7 +348,7 @@ Feature('Framework plugins joining a mutation run')
         }),
         And('the remembered run state labels the component with its framework and records who claimed it')((s) =>
           Effect.gen(function*() {
-            const state = yield* S.decodeEffect(S.fromJsonString(IncrementalReportSchema))(
+            const state = yield* S.decodeEffect(S.fromJsonString(Engine.IncrementalReportSchema))(
               s.observation.incrementalState,
             )
             expect(state.files['src/widget.fixture']?.language).toBe('fixture')
@@ -398,7 +386,7 @@ Feature('Framework plugins joining a mutation run')
         ),
         Then('the resolved-formats report gives the shared file type to the first listed framework')((s) => {
           const formats = s.observation.events.find(
-            (event): event is FormatRegistryResolved => S.is(FormatRegistryResolved)(event),
+            (event): event is RunEvent.FormatRegistryResolved => S.is(RunEvent.FormatRegistryResolved)(event),
           )
           const row = formats?.rows.find((candidate) => candidate.extension === '.fixture')
           expect(row?.ownerModule).toBe(pluginUrlOf('rival-framework.fixture.mjs'))
@@ -408,7 +396,7 @@ Feature('Framework plugins joining a mutation run')
         }),
         And('the plugins report names the later framework and the rival script claim as shadowed')((s) => {
           const plugins = s.observation.events.find(
-            (event): event is PluginsReported => S.is(PluginsReported)(event),
+            (event): event is RunEvent.PluginsReported => S.is(RunEvent.PluginsReported)(event),
           )
           expect(plugins?.shadowings).toStrictEqual([
             {
@@ -443,7 +431,9 @@ Feature('Framework plugins joining a mutation run')
         ),
         Then('the run refuses with an internal-error exit code naming the failing module')((s) => {
           expect(Exit.isFailure(s.observation.exit)).toBe(true)
-          const failure = s.observation.events.find((event): event is RunFailed => S.is(RunFailed)(event))
+          const failure = s.observation.events.find((event): event is RunEvent.RunFailed =>
+            S.is(RunEvent.RunFailed)(event)
+          )
           expect(failure?.reason).toBe('ImportFailed')
           expect(failure?.code).toBe(4)
           expect(failure?.error).toContain('throws-on-import')
@@ -468,7 +458,9 @@ Feature('Framework plugins joining a mutation run')
         ),
         Then('the run refuses with a configuration exit code naming the plugin module')((s) => {
           expect(Exit.isFailure(s.observation.exit)).toBe(true)
-          const failure = s.observation.events.find((event): event is RunFailed => S.is(RunFailed)(event))
+          const failure = s.observation.events.find((event): event is RunEvent.RunFailed =>
+            S.is(RunEvent.RunFailed)(event)
+          )
           expect(failure?.reason).toBe('InvalidContribution')
           expect(failure?.code).toBe(2)
           expect(failure?.error).toContain('malformed')
@@ -493,7 +485,9 @@ Feature('Framework plugins joining a mutation run')
         ),
         Then('the run refuses with a configuration exit code naming the unrecognized peer')((s) => {
           expect(Exit.isFailure(s.observation.exit)).toBe(true)
-          const failure = s.observation.events.find((event): event is RunFailed => S.is(RunFailed)(event))
+          const failure = s.observation.events.find((event): event is RunEvent.RunFailed =>
+            S.is(RunEvent.RunFailed)(event)
+          )
           expect(failure?.reason).toBe('PeerUnrecognized')
           expect(failure?.code).toBe(2)
           expect(failure?.error).toContain('peer-unrecognized')
@@ -501,11 +495,11 @@ Feature('Framework plugins joining a mutation run')
         }),
         And('the run stopped while loading, with no verdict and no files examined')((s) => {
           const phases = s.observation.events
-            .filter((event): event is PhaseEntered => S.is(PhaseEntered)(event))
+            .filter((event): event is RunEvent.PhaseEntered => S.is(RunEvent.PhaseEntered)(event))
             .map((phase) => phase.phase)
           expect(phases).toEqual(['prepare'])
-          expect(s.observation.events.some((event) => S.is(VerdictReached)(event))).toBe(false)
-          expect(s.observation.events.some((event) => S.is(SkippedReported)(event))).toBe(false)
+          expect(s.observation.events.some((event) => S.is(RunEvent.VerdictReached)(event))).toBe(false)
+          expect(s.observation.events.some((event) => S.is(RunEvent.SkippedReported)(event))).toBe(false)
         }),
       ),
     )
@@ -533,7 +527,7 @@ Feature('Framework plugins joining a mutation run')
         ),
         Then('the resolved-formats report gives the component type to the named package')((s) => {
           const formats = s.observation.events.find(
-            (event): event is FormatRegistryResolved => S.is(FormatRegistryResolved)(event),
+            (event): event is RunEvent.FormatRegistryResolved => S.is(RunEvent.FormatRegistryResolved)(event),
           )
           const row = formats?.rows.find((candidate) => candidate.extension === '.fixture')
           expect(row?.formatId).toBe('fixture')
@@ -567,7 +561,7 @@ Feature('Framework plugins joining a mutation run')
         Then('the run completes and the skip report tells the reader which package to add')((s) => {
           expect(Exit.isFailure(s.observation.exit)).toBe(true)
           const skipped = s.observation.events.find(
-            (event): event is SkippedReported => S.is(SkippedReported)(event),
+            (event): event is RunEvent.SkippedReported => S.is(RunEvent.SkippedReported)(event),
           )
           const row = skipped?.files.find((file) => file.file.endsWith('widget.fixture'))
           expect(row?.extension).toBe('.fixture')

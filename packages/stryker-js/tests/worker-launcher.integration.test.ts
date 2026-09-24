@@ -1,19 +1,14 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  ChildProcessCrashedError,
-  classifyWorkerExit,
-  makeWorkerClient,
-  OutOfMemoryError,
-  WorkerBootTimeoutError,
-} from '@systemfsoftware/stryker-js'
-import type { WorkerSpawnParams } from '@systemfsoftware/stryker-js'
+import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { expect } from 'vitest'
+import { Worker } from '../src/mod.js'
 
 import {
   type ChildBehaviour,
@@ -27,34 +22,35 @@ const Feature = makeFeature({ it, layer })
 
 const WORKING_DIRECTORY = '/project/.stryker-tmp/sandbox-1'
 const EXEC_ARGV: readonly string[] = ['--enable-source-maps']
-const OPTIONS_JSON = '{"plugins":["@acme/stryker-runner"]}'
+const PLUGIN_OPTIONS = { plugins: ['file:///project/node_modules/@acme/stryker-runner/dist/worker.mjs'] }
 const TEMP_DIR_PREFIX = 'stryker-plugin-'
-
-const spawnParams = (): WorkerSpawnParams => ({
-  entrypoint: WORKER_ENTRYPOINT,
-  workingDirectory: WORKING_DIRECTORY,
-  execArgv: EXEC_ARGV,
-  optionsJson: OPTIONS_JSON,
-  tempDirPrefix: TEMP_DIR_PREFIX,
-  env: undefined,
-})
 
 interface BootOutcome<E = unknown> {
   readonly answer: Result.Result<string, E>
-  readonly spawns: readonly WorkerSpawnParams[]
+  readonly spawns: readonly Worker.WorkerSpawnParams[]
+  readonly options: Options.StrykerOptions
 }
 
 const bootPingWorker = (
   behaviour: ChildBehaviour,
 ): Effect.Effect<BootOutcome> =>
   Effect.gen(function*() {
+    const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)(PLUGIN_OPTIONS).pipe(Effect.orDie)
     const launcher = yield* substitutedLauncher(behaviour)
-    const answer = yield* makeWorkerClient({ rpcs: PingRpcs, ...spawnParams() }).pipe(
+    const answer = yield* Worker.makeWorkerClient({
+      rpcs: PingRpcs,
+      options,
+      entrypoint: WORKER_ENTRYPOINT,
+      workingDirectory: WORKING_DIRECTORY,
+      execArgv: EXEC_ARGV,
+      tempDirPrefix: TEMP_DIR_PREFIX,
+      env: undefined,
+    }).pipe(
       Effect.flatMap((client) => client.ping({ message: 'boot' })),
       Effect.provide(launcher.layer),
       Effect.result,
     )
-    return { answer, spawns: yield* Ref.get(launcher.spawns) }
+    return { answer, spawns: yield* Ref.get(launcher.spawns), options }
   }).pipe(Effect.scoped)
 
 const bootFailure = <E = unknown>(boot: BootOutcome<E>): E =>
@@ -73,34 +69,35 @@ const bootAnswer = (boot: BootOutcome): string =>
     onSuccess: (answer) => answer,
   })
 
-const timeoutOf = (boot: BootOutcome): WorkerBootTimeoutError => {
+const timeoutOf = (boot: BootOutcome): Worker.WorkerBootTimeoutError => {
   const failure = bootFailure(boot)
-  if (S.is(WorkerBootTimeoutError)(failure)) {
+  if (S.is(Worker.WorkerBootTimeoutError)(failure)) {
     return failure
   }
   throw new Error('the boot was expected to fail as a boot timeout', { cause: failure })
 }
 
-const crashOf = (boot: BootOutcome): ChildProcessCrashedError => {
+const crashOf = (boot: BootOutcome): Worker.ChildProcessCrashedError => {
   const failure = bootFailure(boot)
-  if (S.is(ChildProcessCrashedError)(failure)) {
+  if (S.is(Worker.ChildProcessCrashedError)(failure)) {
     return failure
   }
   throw new Error('the boot was expected to fail as a crash', { cause: failure })
 }
 
-const memoryOf = (boot: BootOutcome): OutOfMemoryError => {
+const memoryOf = (boot: BootOutcome): Worker.OutOfMemoryError => {
   const failure = bootFailure(boot)
-  if (S.is(OutOfMemoryError)(failure)) {
+  if (S.is(Worker.OutOfMemoryError)(failure)) {
     return failure
   }
   throw new Error('the boot was expected to fail as an out-of-memory death', { cause: failure })
 }
 
-const readingOf = (error: ChildProcessCrashedError | OutOfMemoryError): string =>
-  Match.value(error).pipe(
-    Match.tag('OutOfMemoryError', (outOfMemory) => `memory exhaustion at exit ${outOfMemory.exitCode}`),
-    Match.orElse(() => 'a crash'),
+const readingOf = (decision: Worker.ClassifyWorkerExitDecision): string =>
+  Match.value(decision).pipe(
+    Match.tag('WorkerOutOfMemory', (outOfMemory) => `memory exhaustion at exit ${outOfMemory.exitCode}`),
+    Match.tag('WorkerCrashed', () => 'a crash'),
+    Match.exhaustive,
   )
 
 Feature('Running each plugin worker as its own process')
@@ -119,9 +116,23 @@ Feature('Running each plugin worker as its own process')
           (s) => Effect.sync(() => ({ answer: bootAnswer(s.boot), spawns: s.boot.spawns })),
         ),
         Then('the worker answers over the connection, and the host started it by the entry the plugin resolved')((s) =>
-          Effect.sync(() => {
+          Effect.gen(function*() {
             expect(s.seen.answer).toBe('pong:boot')
-            expect(s.seen.spawns).toStrictEqual([spawnParams()])
+            expect(s.seen.spawns).toHaveLength(1)
+            const handedToWorker = yield* Option.match(Option.fromNullishOr(s.seen.spawns.at(0)), {
+              onNone: () => Effect.die('the host never started the substituted worker'),
+              onSome: (spawn) =>
+                Effect.map(
+                  S.decodeUnknownEffect(Options.StrykerOptionsSchema)(JSON.parse(spawn.optionsJson)),
+                  (options) => ({ spawn, options }),
+                ),
+            })
+            expect(handedToWorker.options).toStrictEqual(s.boot.options)
+            expect(handedToWorker.spawn.entrypoint).toBe(WORKER_ENTRYPOINT)
+            expect(handedToWorker.spawn.workingDirectory).toBe(WORKING_DIRECTORY)
+            expect(handedToWorker.spawn.execArgv).toStrictEqual(EXEC_ARGV)
+            expect(handedToWorker.spawn.tempDirPrefix).toBe(TEMP_DIR_PREFIX)
+            expect(handedToWorker.spawn.env).toBeUndefined()
           })
         ),
       ),
@@ -184,7 +195,18 @@ Feature('Running each plugin worker as its own process')
         Given('worker processes that ended with these codes')('codes', () => Effect.succeed([137, 134, 143, 0, 1])),
         When('each ending is read')(
           'readings',
-          (s) => Effect.sync(() => s.codes.map((code) => classifyWorkerExit(WORKER_PID, code))),
+          (s) =>
+            Effect.sync(() =>
+              s.codes.map((code) =>
+                Result.match(
+                  Worker.classifyWorkerExit(Worker.ClassifyWorkerExitCommand.make({ pid: WORKER_PID, exitCode: code })),
+                  {
+                    onFailure: (refused) => refused,
+                    onSuccess: (classified) => classified,
+                  },
+                )
+              )
+            ),
         ),
         Then('the memory signals are reported as memory exhaustion and the others as a crash')((s) =>
           Effect.sync(() => {

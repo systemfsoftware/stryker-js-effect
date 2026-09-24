@@ -10,10 +10,12 @@ This package owns:
 
 - the worker RPC server layer a plugin process launches — `workerServerLayer` and
   its `WorkerServerParams`;
-- the worker's OTel exporter as a layer — `workerTelemetryLayer`, merged inside
-  `workerServerLayer` and a no-op unless `OTEL_ENABLED=true`;
-- the worker-options wire codec — `encodeWorkerOptions`, `decodeWorkerOptions`,
-  `readWorkerOptionsFromEnv`;
+- the telemetry a worker process exports with — the `WorkerTelemetryConfig`
+  shape and the OTLP endpoint rule `TracesUrl` in
+  `worker-telemetry.schema.ts`, read through the `WorkerTelemetry` service a
+  worker's program root binds its own OTel SDK from;
+- the worker-options wire schema — `WorkerOptionsWire` — and the
+  `WorkerOptions` service a worker reads its `options.json` through;
 - the trace-context middleware implementations that carry W3C
   `traceparent`/`tracestate` across the process split — `layerTraceContextClient`,
   `layerTraceContextServer`, `withLinkedSpan`, `tracePartsOf`,
@@ -33,18 +35,21 @@ pnpm add @systemfsoftware/stryker-js-plugin-runtime
 
 ## The entry a plugin ships
 
-`workerServerLayer` builds the `RpcServer` for one kind's RPC group over a socket
-the host names in `STRYKER_SOCKET`, starts the worker's telemetry, and provides
-the Node file system, the Node path service, `nodeModuleLayer`, and the
-server-side trace-context middleware:
+`Worker.workerServerLayer` builds the `RpcServer` for one kind's RPC group over a socket,
+file system, and path the program root provides, restricts the socket file to
+its owner, and provides the server-side trace-context middleware:
 
 ```ts
-import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
-import { workerServerLayer } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 
 NodeRuntime.runMain(
   Layer.launch(
-    workerServerLayer({ rpcs: TestRunnerRpcs, handlers: testRunnerHandlers, schemaServices: Layer.empty }),
+    Worker.workerServerLayer({
+      rpcs: Plugin.TestRunnerRpcs,
+      handlers: testRunnerHandlers,
+      schemaServices: Layer.empty,
+    }),
   ).pipe(Effect.provideService(Logger.LogToStderr, true)),
 )
 ```
@@ -52,9 +57,9 @@ NodeRuntime.runMain(
 ## Worker options
 
 The host writes the run's options to `options.json` in the worker directory it
-creates; `readWorkerOptionsFromEnv` reads that file and decodes it into the same
-`StrykerOptions` a local `stryker` run uses, so a worker's handlers see the run's
-options without the host passing them over the wire.
+creates; `Worker.WorkerOptions`, read through `Worker.WorkerOptions.layer`, decodes that file
+into the same `StrykerOptions` a local `stryker` run uses, so a worker's
+handlers see the run's options without the host passing them over the wire.
 
 ## Trace context
 
@@ -62,7 +67,7 @@ A synchronous RPC call is the parent of the spans it invokes: the client
 middleware injects the active trace context into the request headers as W3C
 `traceparent`/`tracestate`, and the server middleware continues that trace for
 the handler. Asynchronous plugin work — anything that outlives its call — is
-linked instead of parented, through `withLinkedSpan`.
+linked instead of parented, through `Trace.withLinkedSpan`.
 
 ## License
 

@@ -25,7 +25,9 @@ export type StrykerComment = typeof StrykerCommentSchema.Type
 
 export class DecodeDirectiveCommand extends S.TaggedClass<DecodeDirectiveCommand>()('DecodeDirectiveCommand', {
   commentText: S.String,
-}) {}
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
 
 const DirectiveDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-instrumenter/DirectiveDecision')
 type DirectiveDecisionTypeId = typeof DirectiveDecisionTypeId
@@ -51,11 +53,10 @@ const actionOf = (action: string): Directive['action'] =>
   )
 
 const scopeOf = (nextLine: Option.Option<string>): Directive['scope'] =>
-  Match.value(Option.isSome(nextLine)).pipe(
-    Match.when(true, (): Directive['scope'] => NEXT_LINE),
-    Match.when(false, (): Directive['scope'] => 'block'),
-    Match.exhaustive,
-  )
+  Option.match(nextLine, {
+    onNone: (): Directive['scope'] => 'block',
+    onSome: (): Directive['scope'] => NEXT_LINE,
+  })
 
 const reasonOf = (reason: Option.Option<string>): string =>
   Option.getOrElse(
@@ -82,9 +83,11 @@ const decodedDirective = (match: RegExpExecArray): Option.Option<Directive> =>
         }),
     ))
 
-export const decodeDirective = Workflow.total(
-  DecodeDirectiveCommand,
-  (command: DecodeDirectiveCommand): Result.Result<DirectiveDecision, never> =>
+export const decodeDirective = Workflow.make({
+  command: DecodeDirectiveCommand,
+  decision: S.Union([DirectiveDecoded, DirectiveMalformed]),
+  error: S.Never,
+  decide: (command: DecodeDirectiveCommand): Result.Result<DirectiveDecision, never> =>
     Match.value(
       Option.flatMap(Option.fromNullishOr(DIRECTIVE_PATTERN.exec(command.commentText)), decodedDirective),
     ).pipe(
@@ -92,4 +95,4 @@ export const decodeDirective = Workflow.total(
       Match.when(Option.isNone, () => Result.succeed(DirectiveMalformed.make({ commentText: command.commentText }))),
       Match.exhaustive,
     ),
-)
+})

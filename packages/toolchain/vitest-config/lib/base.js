@@ -6,6 +6,8 @@ export { isCI }
 
 const sharedTestTimeout = isCI ? 30_000 : isAgent ? 15_000 : 8_000
 
+const modulesReachingTheBudgetedPropMock = ['@effect/vitest', '@systemfsoftware/effect-schema-law']
+
 /**
  * @type {import('vitest/config').ViteUserConfig}
  */
@@ -19,9 +21,7 @@ export const sharedConfig = {
     setupFiles: ['@systemfsoftware/vitest-config/setup'],
     server: {
       deps: {
-        // The setup file mocks this module to inject the property budget, which
-        // needs it in the Vite pipeline rather than loaded natively as an external.
-        inline: ['@effect/vitest'],
+        inline: modulesReachingTheBudgetedPropMock,
       },
     },
     testTimeout: sharedTestTimeout,

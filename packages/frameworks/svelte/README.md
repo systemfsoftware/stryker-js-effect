@@ -17,9 +17,9 @@ pnpm add -D @systemfsoftware/stryker-js-svelte
 Add the package name to `plugins` in your StrykerJS config:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'vitest',
   plugins: ['@systemfsoftware/stryker-js-svelte'],
   mutate: ['src/**/*.svelte'],
@@ -63,7 +63,7 @@ stops before instrumentation as a configuration error.
 
 ## Contributing
 
-Development setup and workflow: [AGENTS.md](AGENTS.md).
+Development setup and workflow: [AGENTS.md](../AGENTS.md).
 
 ## License
 

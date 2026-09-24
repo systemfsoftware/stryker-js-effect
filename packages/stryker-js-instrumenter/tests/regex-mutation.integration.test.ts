@@ -1,8 +1,7 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
-
-import { instrument } from './__fixtures__/instrument.js'
 
 /**
  * The Regex mutator's complete observable output, recorded from the shipped
@@ -165,7 +164,7 @@ Feature('Regex mutation characterization')
         When('it is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/regex-corpus.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/regex-corpus.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),

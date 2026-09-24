@@ -24,9 +24,9 @@ pnpm add -D @systemfsoftware/stryker-js \
 Create `stryker.config.ts` in your project root:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'vitest',
   checkers: ['typescript'],
   plugins: [
@@ -59,9 +59,9 @@ pnpm exec stryker run
 Execute any test suite without extra plugins:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'command',
   commandRunner: {
     command: 'npm test',
@@ -75,9 +75,9 @@ export default defineConfig({
 Run pure unit tests directly inside Node's native V8 VM with zero process spawning overhead:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'vm',
   testFiles: ['test/**/*.test.ts'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
@@ -86,18 +86,18 @@ export default defineConfig({
 
 ## Configuration API (`@systemfsoftware/stryker-js/config`)
 
-The `./config` subpath exports lightweight, inert TypeScript configuration helpers:
+The `./config` subpath exports the typed configuration authoring surface:
 
 ```ts
-import { defineConfig, mergeConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 ```
 
-### `defineConfig(options | configFactory)`
+### `StrykerConfig.define(options | configFactory)`
 
 Identity function providing strict autocompletion and type checking without runtime dependencies. Can take a configuration object or a factory receiving `ConfigEnv`:
 
 ```ts
-export default defineConfig(({ isCi, command }) => ({
+export default StrykerConfig.define(({ isCi, command }) => ({
   testRunner: 'vitest',
   plugins: ['@systemfsoftware/stryker-js-vitest-runner'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
@@ -105,15 +105,15 @@ export default defineConfig(({ isCi, command }) => ({
 }))
 ```
 
-### `mergeConfig(base, overrides)`
+### `StrykerConfig.merge(base, overrides)`
 
 Deeply merges configuration presets. Keys in records merge recursively; scalar values and arrays in `overrides` completely replace base values:
 
 ```ts
-import { mergeConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 import baseConfig from './stryker.base.config.ts'
 
-export default mergeConfig(baseConfig, {
+export default StrykerConfig.merge(baseConfig, {
   concurrency: 8,
   mutate: ['packages/core/src/**/*.ts'],
 })
@@ -147,12 +147,15 @@ pnpm exec stryker merge-reports --output reports/mutation/mutation.json "reports
 
 ```ts
 import { NodeRuntime } from '@effect/platform-node'
-import { strykerCell } from '@systemfsoftware/stryker-js'
+import { Engine } from '@systemfsoftware/stryker-js'
+import * as Effect from 'effect/Effect'
 
-NodeRuntime.runMain(strykerCell({
-  mutate: ['src/**/*.ts'],
-  testRunner: 'command',
-}))
+NodeRuntime.runMain(
+  Engine.strykerCell({
+    mutate: ['src/**/*.ts'],
+    testRunner: 'command',
+  }).pipe(Effect.provide(Engine.nodePlatformLayer)),
+)
 ```
 
 ### Vanilla Promise Interface (`./promises`)
@@ -175,7 +178,7 @@ console.log(`Mutation score: ${verdict.score}%`)
 | Subpath      | Description                                                        |
 | ------------ | ------------------------------------------------------------------ |
 | `.`          | Main entry point: `strykerCell`, runtime layers, and error schemas |
-| `./config`   | `defineConfig`, `mergeConfig`, and `StrykerConfig` typing          |
+| `./config`   | `StrykerConfig` authoring surface (`define`, `merge`)              |
 | `./promises` | `run()` wrapper returning standard JavaScript promises             |
 
 ## License

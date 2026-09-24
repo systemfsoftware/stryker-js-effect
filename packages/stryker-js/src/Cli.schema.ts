@@ -19,13 +19,13 @@
  * Declaring the resolved `StrykerOptions` described a value this type never
  * holds, which is why its `Type` had to be discarded and patched by hand.
  */
-import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Workflow } from '@systemfsoftware/effect-cell-types'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
-
 const RunRequestBase = S.TaggedStruct('run', { survivors: S.Boolean })
 
 export type RunRequest = S.Schema.Type<typeof RunRequestBase> & {
-  readonly options: PartialStrykerOptions
+  readonly options: Options.PartialStrykerOptions
 }
 
 const MergeReportsRequestBase = S.TaggedStruct('merge-reports', {
@@ -37,3 +37,17 @@ const MergeReportsRequestBase = S.TaggedStruct('merge-reports', {
 export type MergeReportsRequest = S.Schema.Type<typeof MergeReportsRequestBase>
 
 export type CliRequest = RunRequest | MergeReportsRequest
+
+export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteCommand', {
+  route: S.Union([
+    S.TaggedStruct('help', {}),
+    S.TaggedStruct('merge-reports', {
+      parts: S.String,
+      out: S.String,
+      packages: S.optional(S.String),
+    }),
+    S.TaggedStruct('run', { survivors: S.Boolean }),
+  ]),
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}

@@ -26,9 +26,9 @@ pnpm add -D @systemfsoftware/stryker-js-typescript-checker typescript
 ## Setup in `stryker.config.ts`
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   checkers: ['typescript'],
   plugins: ['@systemfsoftware/stryker-js-typescript-checker'],
   // Optional custom tsconfig path (defaults to tsconfig.json)

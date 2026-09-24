@@ -1,11 +1,11 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { NonNegativeInt } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { RunEvent } from './RunEvent.schema.js'
+import { RunEvent } from './run-event.schema.js'
 
 const FrameRunEventTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-js/FrameRunEventDecision',
@@ -17,8 +17,8 @@ export const FramingState = S.Struct({
   signal: S.Literals(['flag', 'env', 'tty', 'agent', 'tool']),
   headerWritten: S.Boolean,
   terminalSeen: S.Boolean,
-  completed: NonNegativeInt,
-  total: S.NullOr(NonNegativeInt),
+  completed: Report.NonNegativeInt,
+  total: S.NullOr(Report.NonNegativeInt),
 })
 export interface FramingState {
   readonly mode: 'machine' | 'human'
@@ -35,7 +35,9 @@ export class FrameRunEventCommand extends S.TaggedClass<FrameRunEventCommand>()(
     state: FramingState,
     event: RunEvent,
   },
-) {}
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
 
 export class EventFramed extends S.TaggedClass<EventFramed>()('EventFramed', {
   state: FramingState,
@@ -177,4 +179,9 @@ const decideFrame = (
   )
 }
 
-export const frameRunEvent = Workflow.total(FrameRunEventCommand, decideFrame)
+export const frameRunEvent = Workflow.make({
+  command: FrameRunEventCommand,
+  decision: S.Union([EventFramed, EventSuppressed]),
+  error: S.Never,
+  decide: decideFrame,
+})

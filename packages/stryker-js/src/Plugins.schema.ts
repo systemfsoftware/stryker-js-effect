@@ -1,16 +1,12 @@
-/**
- * Plugins capability — declarations for plugin module shapes and load failures.
- */
-
 import { Schema as S, SchemaGetter } from 'effect'
+import * as HashMap from 'effect/HashMap'
 
 import type { Framework } from '@systemfsoftware/stryker-framework-interface'
-import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
-import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
-import { WorkerEntryUrl, WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Ignorer as IgnorerDescriptor, Node } from '@systemfsoftware/stryker-ignorer-interface'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export const PluginDescriptorSchema = S.Union([
-  S.Struct({ kind: WorkerPluginKind, name: S.String, workerEntry: WorkerEntryUrl }),
+  S.Struct({ kind: Plugin.WorkerPluginKind, name: S.String, workerEntry: Plugin.WorkerEntryUrl }),
   S.Struct({ kind: S.Literals(['Evaluator']), name: S.String }),
 ])
 
@@ -41,48 +37,6 @@ export const IgnorerModuleSchema = S.Struct({
 export const SchemaValidationContributionSchema = S.Struct({
   strykerValidationSchema: S.Record(S.String, S.Unknown),
 })
-
-export const PluginLoadFailureReason = S.Union([
-  S.TaggedStruct('PeerMissing', { peer: S.String }),
-  S.TaggedStruct('PeerVersionUnsupported', { peer: S.String, detail: S.String }),
-  S.TaggedStruct('PeerUnrecognized', { peer: S.String }),
-  S.TaggedStruct('InvalidContribution', { detail: S.String }),
-  S.TaggedStruct('ImportFailed', { cause: S.Unknown }),
-])
-export type PluginLoadFailureReason = typeof PluginLoadFailureReason.Type
-
-export class PluginNotFoundError extends S.TaggedError<PluginNotFoundError>()(
-  'PluginNotFoundError',
-  {
-    descriptor: S.String,
-  },
-) {
-  readonly exitClass = 'ConfigError' as const
-}
-
-const FAILURE_EXIT_CLASS: Record<PluginLoadFailureReason['_tag'], ExitClass> = {
-  PeerMissing: 'ConfigError',
-  PeerVersionUnsupported: 'ConfigError',
-  PeerUnrecognized: 'ConfigError',
-  InvalidContribution: 'ConfigError',
-  ImportFailed: 'InternalError',
-}
-
-export class PluginLoadRefusedError extends S.TaggedError<PluginLoadRefusedError>()(
-  'PluginLoadRefusedError',
-  {
-    descriptor: S.String,
-    reason: PluginLoadFailureReason,
-  },
-) {
-  get exitClass(): ExitClass {
-    return FAILURE_EXIT_CLASS[this.reason._tag]
-  }
-
-  override get message(): string {
-    return `Failed to load plugin "${this.descriptor}" (${this.reason._tag})`
-  }
-}
 
 const NOOP_PARSE: Framework['parse'] = () => ({ kind: 'ParseFailed', message: 'no framework hook' })
 const NOOP_TRANSFORM: Framework['transform'] = (document) => document
@@ -170,3 +124,62 @@ export const ProjectDependencies = S.Struct({
   dependencies: S.optional(S.Record(S.String, S.Unknown)),
   devDependencies: S.optional(S.Record(S.String, S.Unknown)),
 })
+
+export const PluginSourceSchema = S.Union([
+  S.Struct({ kind: Plugin.WorkerPluginKind, name: S.String, modulePath: S.String, workerEntry: S.String }),
+  S.Struct({ kind: S.Literals(['Evaluator']), name: S.String, modulePath: S.String }),
+])
+
+export type PluginKind = Plugin.WorkerPluginKind | 'Evaluator'
+
+export interface WorkerPluginDescriptor<K extends Plugin.WorkerPluginKind = Plugin.WorkerPluginKind> {
+  readonly kind: K
+  readonly name: string
+  readonly workerEntry: string
+}
+
+export interface EvaluatorPluginDescriptor {
+  readonly kind: 'Evaluator'
+  readonly name: string
+}
+
+export type AnyWorkerPluginDescriptor = {
+  [K in Plugin.WorkerPluginKind]: WorkerPluginDescriptor<K>
+}[Plugin.WorkerPluginKind]
+
+export type AnyPluginDescriptor = AnyWorkerPluginDescriptor | EvaluatorPluginDescriptor
+
+export type PluginDescriptorOf<K extends PluginKind> = Extract<AnyPluginDescriptor, { readonly kind: K }>
+
+export type PluginDescriptor<K extends PluginKind = PluginKind> = PluginDescriptorOf<K>
+
+export interface WorkerPluginSource<K extends Plugin.WorkerPluginKind = Plugin.WorkerPluginKind> {
+  readonly kind: K
+  readonly name: string
+  readonly modulePath: string
+  readonly workerEntry: string
+}
+
+export interface EvaluatorPluginSource {
+  readonly kind: 'Evaluator'
+  readonly name: string
+  readonly modulePath: string
+}
+
+export type AnyWorkerPluginSource = {
+  [K in Plugin.WorkerPluginKind]: WorkerPluginSource<K>
+}[Plugin.WorkerPluginKind]
+
+export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource
+
+export interface LoadedPlugins<A = unknown> {
+  readonly schemaContributions: readonly Record<string, A>[]
+  readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>
+  readonly pluginModulePaths: readonly string[]
+  readonly pluginSources: readonly PluginSource[]
+  readonly ignorers: readonly IgnorerDescriptor[]
+  readonly frameworks: readonly {
+    readonly moduleName: string
+    readonly framework: Framework
+  }[]
+}

@@ -1,10 +1,8 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
-import type { InstrumentError, InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
-
-import { instrument } from './__fixtures__/instrument.js'
 
 const PROBE_SOURCE = `export function price(n) {
   if (n > 10) {
@@ -109,13 +107,13 @@ Feature('Instrumenter characterization')
         When('it is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/probe.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/probe.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),
         ),
         Then('the total and per-mutator counts match the baseline')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const active = result.mutants.filter(isActive)
@@ -147,13 +145,13 @@ Feature('Instrumenter characterization')
         When('the module is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/guard.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/guard.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),
         ),
         Then('the guard yields its mutants across all four families')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const active = result.mutants.filter(isActive)
@@ -181,13 +179,13 @@ Feature('Instrumenter characterization')
         When('the module is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/guard-optional.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/guard-optional.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),
         ),
         Then('the guard yields its mutants across all five families')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const active = result.mutants.filter(isActive)
@@ -215,13 +213,13 @@ Feature('Instrumenter characterization')
         When('the module is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/const-table.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/const-table.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),
         ),
         Then('the table yields mutants on itself and on every literal')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const active = result.mutants.filter(isActive)
@@ -229,6 +227,45 @@ Feature('Instrumenter characterization')
               ObjectLiteral: 1,
               StringLiteral: 3,
             })
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A switch whose first case falls through to the next is still instrumented',
+      Gherkin.Do.pipe(
+        Given('a formatter whose "js" case shares the "ts" case body')(
+          'source',
+          () =>
+            Effect.succeed(`export function extensionOf(format) {
+  switch (format) {
+    case 'js':
+    case 'ts':
+      return '.ts'
+    default:
+      return '.txt'
+  }
+}`),
+        ),
+        When('the module is instrumented')(
+          'result',
+          ({ source }: { source: string }) =>
+            Instrument.instrument([{ name: '/tmp/fall-through.ts', content: source, mutate: true }], {
+              ignorers: [],
+              excludedMutations: [],
+            }),
+        ),
+        Then('the file is instrumented with a mutant that removes the empty "js" case')((
+          { result }: { result: Instrument.InstrumentResult },
+        ) =>
+          Effect.sync(() => {
+            expect(result.files).toHaveLength(1)
+            expect(
+              result.mutants.filter(isActive).some((mutant) =>
+                mutant.mutatorName === 'ConditionalExpression' && mutant.replacement === ''
+              ),
+            ).toBe(true)
           })
         ),
       ),
@@ -248,16 +285,16 @@ export const b = 2 + 2
         When('it is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/next-line.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/next-line.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),
         ),
         Then('the plus under the directive is ignored with the reason, and the sibling stays live')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
-            const arithmetic = result.mutants.filter((m) => m.mutatorName === 'ArithmeticOperator')
+            const arithmetic = result.mutants.filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
             expect(arithmetic.length).toBe(2)
             const ignored = arithmetic.filter((mutant) => mutant.status === 'Ignored')
             expect(ignored.length).toBe(1)
@@ -269,6 +306,7 @@ export const b = 2 + 2
         ),
       ),
     )
+
     scenario(
       'Instrumented output carries a switch for every active mutant',
       Gherkin.Do.pipe(
@@ -282,13 +320,13 @@ export const b = 2 + 2
         When('it is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/probe.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/probe.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),
         ),
         Then('every active mutant id is tested in the emitted content')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const content = result.files[0]?.content ?? ''
@@ -311,7 +349,7 @@ export const b = 2 + 2
         When('it is instrumented without exclusions')(
           'baseline',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/probe.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/probe.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),
@@ -319,7 +357,7 @@ export const b = 2 + 2
         When('it is instrumented excluding ArithmeticOperator')(
           'excluded',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/probe.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/probe.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: ['ArithmeticOperator'],
             }),
@@ -328,8 +366,8 @@ export const b = 2 + 2
           'the excluded mutator yields Ignored mutants carrying the reason, and no other mutator moves',
         )((
           { baseline, excluded }: {
-            baseline: InstrumentResult
-            excluded: InstrumentResult
+            baseline: Instrument.InstrumentResult
+            excluded: Instrument.InstrumentResult
           },
         ) =>
           Effect.sync(() => {
@@ -374,7 +412,7 @@ export const b = 2 + 2
         When('it is instrumented with the inverted ignorer selected')(
           'selected',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/keep.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/keep.ts', content: source, mutate: true }], {
               ignorers: [invertedKeepIgnorer],
               excludedMutations: [],
             }),
@@ -382,15 +420,15 @@ export const b = 2 + 2
         When('it is instrumented with no ignorer selected')(
           'unselected',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/keep.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/keep.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),
         ),
         Then('the keep-argument plus is live and the sibling plus is ignored only when selected')((
           { selected, unselected }: {
-            selected: InstrumentResult
-            unselected: InstrumentResult
+            selected: Instrument.InstrumentResult
+            unselected: Instrument.InstrumentResult
           },
         ) =>
           Effect.sync(() => {
@@ -427,7 +465,7 @@ export function price(n) {
         When('it is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/commented.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/commented.ts', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),
@@ -452,13 +490,13 @@ export function price(n) {
         When('it is instrumented with the region ignorer selected')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/region.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/region.ts', content: source, mutate: true }], {
               ignorers: [regionFlagIgnorer],
               excludedMutations: [],
             }),
         ),
         Then('the plus inside the flag block is ignored and the sibling plus is live')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const arith = (replacement: string) =>
@@ -482,13 +520,13 @@ export function price(n) {
         When('it is instrumented with the inverted ignorer selected')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/probe.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/probe.ts', content: source, mutate: true }], {
               ignorers: [invertedKeepIgnorer],
               excludedMutations: [],
             }),
         ),
         Then('every mutant is ignored with the ignorer reason')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             expect(result.mutants.length).toBe(13)
@@ -508,13 +546,13 @@ export function price(n) {
         When('it is instrumented with the inverted ignorer before the region ignorer')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/region.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/region.ts', content: source, mutate: true }], {
               ignorers: [invertedKeepIgnorer, regionFlagIgnorer],
               excludedMutations: [],
             }),
         ),
         Then('the first ignorer reason wins even where both match')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             expect(result.mutants.length).toBeGreaterThan(0)
@@ -534,13 +572,13 @@ export function price(n) {
         When('it is instrumented with a rule that refuses to decide')(
           'error',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/failing-rule.ts', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/failing-rule.ts', content: source, mutate: true }], {
               ignorers: [failingRuleIgnorer],
               excludedMutations: [],
             }).pipe(Effect.flip),
         ),
         Then('the run stops naming the file and carrying the rule failure')((
-          { error }: { error: InstrumentError },
+          { error }: { error: Instrument.InstrumentError },
         ) =>
           Effect.sync(() => {
             expect(error.message).toContain('/tmp/failing-rule.ts')

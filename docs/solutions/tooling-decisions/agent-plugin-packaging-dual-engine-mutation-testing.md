@@ -32,9 +32,9 @@ $$\text{Runner}(E) = \begin{cases} \text{In-Memory V8 VM (`vm`)}, & E \neq \text
 - **CI (`testRunner: 'vitest'`)**: Executes within isolated worker processes, capturing comprehensive per-test coverage analysis and supporting complete mock/DOM environments.
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig(({ isCi }) => ({
+export default StrykerConfig.define(({ isCi }) => ({
   testRunner: isCi ? 'vitest' : 'vm',
   checkers: ['typescript'],
   plugins: [

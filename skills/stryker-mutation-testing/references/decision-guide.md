@@ -1,7 +1,7 @@
 ---
 title: Mutation Testing Decision Guide
 description: How to choose test runners, checkers, and ignorers in Stryker JS Effect.
-content_hash: b9476a
+content_hash: 0bf2a6
 ---
 
 # Mutation Testing Decision Guide
@@ -16,8 +16,9 @@ content_hash: b9476a
 ### Dynamic Switch via `isCi`
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
+export default StrykerConfig.define(({ isCi }) => ({
   testRunner: isCi ? 'vitest' : 'vm',
   plugins: [
     '@systemfsoftware/stryker-js-vitest-runner',

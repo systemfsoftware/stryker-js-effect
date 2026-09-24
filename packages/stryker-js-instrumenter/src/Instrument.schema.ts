@@ -1,4 +1,7 @@
+import { Workflow } from '@systemfsoftware/effect-cell-types'
+import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
+import { LocationSchema, type Position } from './Location.schema.js'
 import { Mutant } from './Mutant.schema.js'
 
 export class InstrumentError
@@ -11,27 +14,26 @@ export class InstrumentError
   )
 {
   override get message(): string {
-    if (this.message.length === 0) {
-      return 'Instrumenter failure'
-    }
-    return this.message
+    return Boolean.match(this.message.length === 0, {
+      onTrue: () => 'Instrumenter failure',
+      onFalse: () => this.message,
+    })
   }
 }
-
-const PositionSchema = S.Struct({
-  line: S.Finite,
-  column: S.Finite,
-})
-
-const RangeSchema = S.Struct({
-  start: PositionSchema,
-  end: PositionSchema,
-})
-
-export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(RangeSchema)])
+export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(LocationSchema)])
 
 export type MutateDescription = typeof MutateDescriptionSchema.Type
-export type Position = typeof PositionSchema.Type
+
+export interface MutationRange {
+  readonly start: Position
+  readonly end: Position
+}
+
+export interface FileDescription {
+  readonly mutate: MutateDescription
+}
+
+export type FileDescriptions = Record<string, FileDescription>
 
 export const SourceLineSchema = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
 export const SourceColumnSchema = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
@@ -52,9 +54,8 @@ export const InstrumenterOptionsSchema = S.Struct({
   excludedMutations: S.Array(S.String),
   ignorers: S.Array(IgnorerSchema),
   noHeader: S.optional(S.Boolean),
-  optInMutations: S.optional(S.Array(S.String)),
+  optInMutations: S.String.pipe(S.Array, S.optional),
 })
-
 export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
 
 export class InstrumentFileSkip extends S.TaggedClass<InstrumentFileSkip>()('InstrumentFileSkip', {
@@ -67,7 +68,10 @@ export class InstrumentFilesCommand extends S.TaggedClass<InstrumentFilesCommand
   fileCount: S.Finite,
   claimedCount: S.Finite,
   skipped: S.Array(InstrumentFileSkip),
-}) {}
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
 export class InstrumentResult extends S.TaggedClass<InstrumentResult>()('InstrumentResult', {
   files: S.Array(FileSchema),
   mutants: S.Array(Mutant),

@@ -18,7 +18,9 @@ export class FormatResolutionCommand extends S.TaggedClass<FormatResolutionComma
   extension: S.String,
   formatId: S.optional(S.String),
   claims: S.Array(FormatClaimSchema),
-}) {}
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
 
 const FormatResolutionTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-js-instrumenter/FormatResolutionDecision',
@@ -100,13 +102,15 @@ const selectionFor = (command: FormatResolutionCommand): ClaimSelection =>
     onSome: (claim): ClaimSelection => ClaimSelected.make({ claim }),
   })
 
-export const resolveFormat = Workflow.make(
-  FormatResolutionCommand,
-  (command): Result.Result<FormatResolutionDecision, FormatOverrideUnclaimed> =>
+export const resolveFormat = Workflow.make({
+  command: FormatResolutionCommand,
+  decision: S.Union([FormatAssigned, FormatSkipped]),
+  error: FormatOverrideUnclaimed,
+  decide: (command): Result.Result<FormatResolutionDecision, FormatOverrideUnclaimed> =>
     Match.value(selectionFor(command)).pipe(
       Match.tag('ClaimSelected', ({ claim }) => Result.succeed(assignedFrom(claim, command))),
       Match.tag('PinUnclaimed', ({ formatId }) => Result.fail(overrideUnclaimedFrom(command, formatId))),
       Match.tag('ExtensionUnclaimed', () => Result.succeed(skippedFrom(command))),
       Match.exhaustive,
     ),
-)
+})

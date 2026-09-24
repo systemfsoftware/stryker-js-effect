@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": [
+    "@systemfsoftware/tsconfig/bundler/dom/library-monorepo",
+    "@systemfsoftware/tsconfig/effect/entrypoint"
+  ],
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "tsBuildInfoFile": "node_modules/.cache/tsconfig.test.tsbuildinfo",
+    "outDir": "node_modules/.cache/tsc/test",
+    "customConditions": ["@systemfsoftware/source"],
+    "isolatedModules": true,
+    "types": ["node"]
+  },
+  "include": ["tests", "scripts", "src"],
+  "exclude": ["scripts/export-traces.ts", "scripts/import-traces.ts"],
+  "references": [
+    {
+      "path": "../../packages/stryker-js-instrumenter/tsconfig.app.json"
+    },
+    {
+      "path": "../../packages/stryker-js-typescript-checker/tsconfig.app.json"
+    }
+  ]
+}

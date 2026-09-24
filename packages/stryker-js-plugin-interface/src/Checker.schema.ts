@@ -1,23 +1,12 @@
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
-/** A position inside a file, in the coordinates the wire carries — 1-based line and 1-based column. */
-export const CheckerPositionWire = S.Struct({
-  line: S.Finite,
-  column: S.Finite,
-})
-
-export const CheckerLocationWire = S.Struct({
-  start: CheckerPositionWire,
-  end: CheckerPositionWire,
-})
-export type CheckerLocationWire = typeof CheckerLocationWire.Type
-
 export const CheckerMutantWire = S.Struct({
-  id: S.NonEmptyString,
-  fileName: S.NonEmptyString,
-  mutatorName: S.NonEmptyString,
+  id: Mutant.MutantId,
+  fileName: Mutant.CanonicalFileName,
+  mutatorName: Mutant.MutatorName,
   replacement: S.String,
-  location: CheckerLocationWire,
+  location: Mutant.LocationSchema,
 })
 export type CheckerMutantWire = typeof CheckerMutantWire.Type
 
@@ -34,3 +23,14 @@ export class CheckerFailed extends S.TaggedError<CheckerFailed>()('CheckerFailed
   checkerName: S.String,
   mutantIds: S.Array(S.String),
 }) {}
+
+export interface FailedCheckResult {
+  readonly reason: string
+  readonly status: 'compileError'
+}
+
+export interface PassedCheckResult {
+  readonly status: 'passed'
+}
+
+export type CheckResult = FailedCheckResult | PassedCheckResult

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { BaselineCounts } from './baseline.js'
+import type { BaselineCounts } from '../../src/Oracle/baseline.schema.js'
 import { normalizeCounts, normalizedTotal, normalizeTally, survivedFloor } from './normalize.js'
 
 const counts = (overrides: Partial<BaselineCounts>): BaselineCounts => ({

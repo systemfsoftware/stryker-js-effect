@@ -1,20 +1,13 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  createHarnessApi,
-  createRegistry,
-  DrainCompleted,
-  type DrainedStatus,
-  type DrainOutcome,
-  drainRegistry,
-} from '@systemfsoftware/stryker-vm-harness'
+import { Drain, Registry } from '@systemfsoftware/stryker-vm-harness'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
 const FINIALIZER_GUARD_MESSAGE = 'onTestFinished must be called while a test is running'
 
-type DrainedTests = DrainCompleted['tests']
+type DrainedTests = Drain.DrainCompleted['tests']
 
-const drainedTestsOf = (outcome: DrainOutcome): DrainedTests => {
+const drainedTestsOf = (outcome: Drain.DrainOutcome): DrainedTests => {
   if (outcome.kind !== 'complete') {
     throw new Error('the harness drain timed out before it could report outcomes')
   }
@@ -23,8 +16,8 @@ const drainedTestsOf = (outcome: DrainOutcome): DrainedTests => {
 
 const namesOf = (tests: DrainedTests): readonly string[] => tests.map((test) => test.fullName)
 
-const statusByName = (tests: DrainedTests): Readonly<Record<string, DrainedStatus>> => {
-  const statuses: Record<string, DrainedStatus> = {}
+const statusByName = (tests: DrainedTests): Readonly<Record<string, Drain.DrainedStatus>> => {
+  const statuses: Record<string, Drain.DrainedStatus> = {}
   for (const test of tests) {
     statuses[test.fullName] = test.status
   }
@@ -49,7 +42,7 @@ Feature('Planning a run from registered suites and tests')
       Gherkin.Do.pipe(
         Given('two suites and a test registered against a fresh registry')('fixture', () =>
           Effect.sync(() => {
-            const registry = createRegistry()
+            const registry = Registry.createRegistry()
             const firstSuite = registry.registerSuite('first suite', [], 'run')
             const secondSuite = registry.registerSuite('second suite', [], 'run')
             const registered = registry.registerTest('the only test', [], 'run', false, () => {})
@@ -57,7 +50,7 @@ Feature('Planning a run from registered suites and tests')
           })),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('the suites receive successive identifiers and the test carries an empty file')((s) => {
           const tests = drainedTestsOf(s.outcome)
@@ -79,8 +72,8 @@ Feature('Planning a run from registered suites and tests')
           () =>
             Effect.sync(() => {
               const hookLog: string[] = []
-              const registry = createRegistry()
-              const api = createHarnessApi(registry)
+              const registry = Registry.createRegistry()
+              const api = Registry.createHarnessApi(registry)
               api.hooks.beforeAll(() => {
                 hookLog.push('root before all')
               })
@@ -155,7 +148,7 @@ Feature('Planning a run from registered suites and tests')
         ),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('each declaration is planned under its expected name and status')((s) => {
           const tests = drainedTestsOf(s.outcome)
@@ -241,8 +234,8 @@ Feature('Planning a run from registered suites and tests')
         Given('a registry with three tests of the same name')('fixture', () =>
           Effect.sync(() => {
             const ran: string[] = []
-            const registry = createRegistry()
-            const api = createHarnessApi(registry)
+            const registry = Registry.createRegistry()
+            const api = Registry.createHarnessApi(registry)
             api.it('duplicate name', () => {
               ran.push('first')
             })
@@ -256,7 +249,7 @@ Feature('Planning a run from registered suites and tests')
           })),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('each occurrence keeps its turn and is reported apart from the others')((s) => {
           const tests = drainedTestsOf(s.outcome)
@@ -276,7 +269,7 @@ Feature('Planning a run from registered suites and tests')
       Gherkin.Do.pipe(
         Given('suites and tests carrying focus, skip and pending marks')('fixture', () =>
           Effect.sync(() => {
-            const registry = createRegistry()
+            const registry = Registry.createRegistry()
             const focusedSuite = registry.registerSuite('focused suite', [], 'only')
             const skippedSuite = registry.registerSuite('skipped suite', [], 'skip')
             const plainSuite = registry.registerSuite('plain suite', [], 'run')
@@ -293,7 +286,7 @@ Feature('Planning a run from registered suites and tests')
           })),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('only the focused declarations run and every other one is held out')((s) => {
           expect(statusByName(drainedTestsOf(s.outcome))).toEqual({
@@ -317,8 +310,8 @@ Feature('Planning a run from registered suites and tests')
         Given('two tests declared with a bare function and with options')('fixture', () =>
           Effect.sync(() => {
             const ran: string[] = []
-            const registry = createRegistry()
-            const api = createHarnessApi(registry)
+            const registry = Registry.createRegistry()
+            const api = Registry.createHarnessApi(registry)
             api.it('declared with a bare function', () => {
               ran.push('bare function body')
             })
@@ -329,7 +322,7 @@ Feature('Planning a run from registered suites and tests')
           })),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('each declaration runs exactly the body it was given')((s) => {
           const tests = drainedTestsOf(s.outcome)
@@ -350,8 +343,8 @@ Feature('Planning a run from registered suites and tests')
           Effect.sync(() => {
             const rows: number[] = []
             const argCounts: number[] = []
-            const registry = createRegistry()
-            const api = createHarnessApi(registry)
+            const registry = Registry.createRegistry()
+            const api = Registry.createHarnessApi(registry)
             api.it.each(
               [[1], [2]],
               'row %i',
@@ -365,7 +358,7 @@ Feature('Planning a run from registered suites and tests')
           })),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('every row renders its own name and reaches the body with a run context')((s) => {
           const tests = drainedTestsOf(s.outcome)
@@ -384,8 +377,8 @@ Feature('Planning a run from registered suites and tests')
           Effect.sync(() => {
             const rendered: string[] = []
             const argCounts: number[] = []
-            const registry = createRegistry()
-            const api = createHarnessApi(registry)
+            const registry = Registry.createRegistry()
+            const api = Registry.createHarnessApi(registry)
             api.it.each(
               [['a', 1], ['b', 2]],
               'n %s %i',
@@ -399,7 +392,7 @@ Feature('Planning a run from registered suites and tests')
           })),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('each row names itself from the table and spreads across the body arguments')((s) => {
           const tests = drainedTestsOf(s.outcome)
@@ -417,8 +410,8 @@ Feature('Planning a run from registered suites and tests')
           'fixture',
           () =>
             Effect.sync(() => {
-              const registry = createRegistry()
-              const api = createHarnessApi(registry)
+              const registry = Registry.createRegistry()
+              const api = Registry.createHarnessApi(registry)
               api.describe.only.each([[1]], 'only suite %i', () => {
                 api.it('inner', () => {})
               })
@@ -433,7 +426,7 @@ Feature('Planning a run from registered suites and tests')
         ),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('the focused suite runs and the skipped and unfocused ones are held out')((s) => {
           expect(statusByName(drainedTestsOf(s.outcome))).toEqual({
@@ -451,8 +444,8 @@ Feature('Planning a run from registered suites and tests')
         Given('one registry of plain, skipped, pending and inverted tests')('plainFixture', () =>
           Effect.sync(() => {
             const ran: string[] = []
-            const registry = createRegistry()
-            const api = createHarnessApi(registry)
+            const registry = Registry.createRegistry()
+            const api = Registry.createHarnessApi(registry)
             api.it('plain passing', () => {
               ran.push('plain passing ran')
             })
@@ -475,8 +468,8 @@ Feature('Planning a run from registered suites and tests')
           'focusedFixture',
           () =>
             Effect.sync(() => {
-              const registry = createRegistry()
-              const api = createHarnessApi(registry)
+              const registry = Registry.createRegistry()
+              const api = Registry.createHarnessApi(registry)
               api.it.only('focused', () => {})
               api.it('unfocused sibling', () => {})
               return { registry }
@@ -484,8 +477,8 @@ Feature('Planning a run from registered suites and tests')
         ),
         When('both registries are drained')('outcome', (s) =>
           Effect.all([
-            Effect.promise(() => drainRegistry(s.plainFixture.registry, undefined)),
-            Effect.promise(() => drainRegistry(s.focusedFixture.registry, undefined)),
+            Effect.promise(() => Drain.drainRegistry(s.plainFixture.registry, undefined)),
+            Effect.promise(() => Drain.drainRegistry(s.focusedFixture.registry, undefined)),
           ])),
         Then('plain tests run, held-out ones never start, and inverted ones judge in reverse')((s) => {
           const [plainOutcome, focusedOutcome] = s.outcome
@@ -518,8 +511,8 @@ Feature('Planning a run from registered suites and tests')
           () =>
             Effect.sync(() => {
               const hookLog: string[] = []
-              const registry = createRegistry()
-              const api = createHarnessApi(registry)
+              const registry = Registry.createRegistry()
+              const api = Registry.createHarnessApi(registry)
               api.describe('scoped suite', () => {
                 api.hooks.beforeEach(() => {
                   hookLog.push('suite before each')
@@ -541,7 +534,7 @@ Feature('Planning a run from registered suites and tests')
         ),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('the suite hooks surround only their own test')((s) => {
           expect(s.fixture.hookLog).toEqual([
@@ -560,8 +553,8 @@ Feature('Planning a run from registered suites and tests')
       Gherkin.Do.pipe(
         Given('a test declared inside a suite')('fixture', () =>
           Effect.sync(() => {
-            const registry = createRegistry()
-            const api = createHarnessApi(registry)
+            const registry = Registry.createRegistry()
+            const api = Registry.createHarnessApi(registry)
             api.describe('outer', (innerSuiteApi) => {
               innerSuiteApi('in', () => {})
             })
@@ -569,7 +562,7 @@ Feature('Planning a run from registered suites and tests')
           })),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('the report names the test through its suite')((s) => {
           const tests = drainedTestsOf(s.outcome)
@@ -584,8 +577,8 @@ Feature('Planning a run from registered suites and tests')
       Gherkin.Do.pipe(
         Given('a skipped suite, a focused suite and a pending suite')('fixture', () =>
           Effect.sync(() => {
-            const registry = createRegistry()
-            const api = createHarnessApi(registry)
+            const registry = Registry.createRegistry()
+            const api = Registry.createHarnessApi(registry)
             api.describe.skip('base skip suite', (innerSuiteApi) => {
               innerSuiteApi('t', () => {})
             })
@@ -597,7 +590,7 @@ Feature('Planning a run from registered suites and tests')
           })),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('the skipped suite holds its test out, the focused one runs it, and the pending suite plans nothing')(
           (s) => {
@@ -618,8 +611,8 @@ Feature('Planning a run from registered suites and tests')
         Given('a test that registers a finalizer for itself')('fixture', () =>
           Effect.sync(() => {
             let finalizerRan = false
-            const registry = createRegistry()
-            const api = createHarnessApi(registry)
+            const registry = Registry.createRegistry()
+            const api = Registry.createHarnessApi(registry)
             api.it('registers a finalizer', () => {
               api.hooks.onTestFinished(() => {
                 finalizerRan = true
@@ -630,7 +623,7 @@ Feature('Planning a run from registered suites and tests')
           })),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('the finalizer has run by the time the drain reports')((s) => {
           const tests = drainedTestsOf(s.outcome)
@@ -649,13 +642,13 @@ Feature('Planning a run from registered suites and tests')
       Gherkin.Do.pipe(
         Given('a test registered against a suite the registry does not know')('fixture', () =>
           Effect.sync(() => {
-            const registry = createRegistry()
+            const registry = Registry.createRegistry()
             registry.registerTest('orphan test', [999], 'run', false, () => {})
             return { registry }
           })),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('the report names the test after an empty suite')((s) => {
           const tests = drainedTestsOf(s.outcome)
@@ -671,7 +664,7 @@ Feature('Planning a run from registered suites and tests')
         Given('a plain test inside a pending suite')('fixture', () =>
           Effect.sync(() => {
             const ran: string[] = []
-            const registry = createRegistry()
+            const registry = Registry.createRegistry()
             const pendingSuite = registry.registerSuite('pending suite', [], 'todo')
             registry.registerTest('inside', [pendingSuite.id], 'run', false, () => {
               ran.push('inside ran')
@@ -680,7 +673,7 @@ Feature('Planning a run from registered suites and tests')
           })),
         When('the registry is drained')(
           'outcome',
-          (s) => Effect.promise(() => drainRegistry(s.fixture.registry, undefined)),
+          (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('the test is reported by its suite and held out of the run')((s) => {
           const tests = drainedTestsOf(s.outcome)

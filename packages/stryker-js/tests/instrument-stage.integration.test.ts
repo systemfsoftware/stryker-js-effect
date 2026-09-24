@@ -1,8 +1,6 @@
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { StageError, strykerCell } from '@systemfsoftware/stryker-js'
-import type { MutationTestDone } from '@systemfsoftware/stryker-js'
-import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Engine } from '@systemfsoftware/stryker-js'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -41,11 +39,11 @@ const removeProject = (root: string): Effect.Effect<void, never, FileSystem.File
 
 const runFromProject = (
   root: string,
-  options: PartialStrykerOptions,
+  options: Options.PartialStrykerOptions,
 ): Effect.Effect<
-  Result.Result<MutationTestDone, StageError | PlatformError>,
+  Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
   never,
-  FileSystem.FileSystem | Path.Path | Stdio.Stdio
+  Engine.EnginePorts
 > =>
   Effect.acquireUseRelease(
     Effect.sync(() => {
@@ -53,18 +51,20 @@ const runFromProject = (
       globalThis.process.chdir(root)
       return previous
     }),
-    () => Effect.result(strykerCell({ mutate: ['src/**/*.ts'], ...options })),
+    () => Effect.result(Engine.strykerCell({ mutate: ['src/**/*.ts'], ...options })),
     (previous) =>
       Effect.sync(() => {
         globalThis.process.chdir(previous)
       }),
   )
 
-const failureOf = (outcome: Result.Result<MutationTestDone, StageError | PlatformError>): StageError => {
+const failureOf = (
+  outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
+): Engine.StageError => {
   if (Result.isSuccess(outcome)) {
     throw new Error('the run was expected to be refused, but it completed')
   }
-  if (!S.is(StageError)(outcome.failure)) {
+  if (!S.is(Engine.StageError)(outcome.failure)) {
     throw new Error(`the run was expected to be refused as a stage, not a platform failure: ${String(outcome.failure)}`)
   }
   return outcome.failure
@@ -73,10 +73,10 @@ const failureOf = (outcome: Result.Result<MutationTestDone, StageError | Platfor
 const carriesMessage = (value: unknown): value is { readonly message: string } =>
   typeof value === 'object' && value !== null && 'message' in value && typeof value.message === 'string'
 
-const textOf = (cause: StageError['cause']): string =>
+const textOf = (cause: Engine.StageError['cause']): string =>
   carriesMessage(cause) ? cause.message : 'the refused cause carried no message'
 
-const runLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Stdio.layerTest({}))
+const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
 
 Feature('Opting a mutation run into extra mutations')
   .withLayer(runLayer)

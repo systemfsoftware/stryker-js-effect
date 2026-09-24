@@ -1,5 +1,5 @@
 ---
-content_hash: 374134
+content_hash: 3d8b30
 ---
 
 # Custom Ignorer Authoring Guide
@@ -114,9 +114,9 @@ await testIgnorer(strykerIgnorers[0], {
 In your `stryker.config.ts`, declare the plugin module in `plugins` and its `name` in `ignorers`. Published packages take the bare name (resolved from your project); a local build takes a `file://` URL:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   plugins: [
     import.meta.resolve('./packages/my-custom-ignorer/dist/index.js'),
   ],

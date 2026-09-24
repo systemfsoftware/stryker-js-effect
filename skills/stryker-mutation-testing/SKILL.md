@@ -40,13 +40,13 @@ Configure, execute, and verify Stryker mutation testing using `@systemfsoftware/
 | Custom AST mutant skipping needed              | Custom AST ignorer via `@systemfsoftware/stryker-ignorer-kit`               | `plugins`, `ignorers: ['name']` (local file:URL)                   | `references/authoring-ignorers.md` |
 | Custom test runner harness needed              | Custom worker RPC plugin via `@systemfsoftware/stryker-js-plugin-interface` | `plugins`, `testRunner: 'name'` (local file:URL)                   | `references/authoring-runners.md`  |
 
-For deep comparison of execution models, read `references/decision-guide.md` (hash: `b9476a`).
+For deep comparison of execution models, read `references/decision-guide.md` (hash: `0bf2a6`).
 
 ---
 
 ## Core Rules
 
-````yaml
+```yaml
 - id: STRYK-R1
   title: Plugins Take Bare Package Names Resolved From the Project
   do: pass the package's bare name in every plugin field (`plugins`, `appendPlugins`, `ignorers`, `testRunner.plugin`, `checkers[].plugin`); use a `file://` URL only for an unpublished local build
@@ -55,7 +55,7 @@ For deep comparison of execution models, read `references/decision-guide.md` (ha
   check: pnpm exec stryker run --dryRunOnly succeeds without PluginLoadFailedError
 - id: STRYK-R2
   title: Dual-Engine Workflow (Fast Local V8, Isolated CI Vitest)
-  do: use the `isCi` parameter in `defineConfig(({ isCi }) => ...)` to set `testRunner: isCi ? 'vitest' : 'vm'`
+  do: use the `isCi` parameter in `StrykerConfig.define(({ isCi }) => ...)` to set `testRunner: isCi ? 'vitest' : 'vm'`
   dont: run heavy child-process test runners for fast local iteration when in-memory V8 is applicable
   harm: developers suffer 5-10x latency overhead locally, discouraging frequent mutation testing
   check: stryker.config.ts switches runner based on isCi
@@ -71,6 +71,8 @@ For deep comparison of execution models, read `references/decision-guide.md` (ha
   dont: specify `ignorers: ['effect-schema-declarations']` without naming its package in `plugins`
   harm: the host discovers ignorers only through loaded plugin modules, so an ignorer name whose package never loads leaves equivalent mutants in the score
   check: mutation report shows expected mutants with status 'Ignored' and the declared reason
+```
+
 ---
 
 ## Workflow: Setup and Verification
@@ -86,7 +88,7 @@ For deep comparison of execution models, read `references/decision-guide.md` (ha
   do: install @systemfsoftware/stryker-js and required satellite plugins using the repository's package manager
   dont: install deprecated @stryker-mutator packages
   check: pnpm list (or npm/yarn equivalent) displays @systemfsoftware/stryker-js
-````
+```
 
 ```bash
 # Recommended Vitest + TS setup
@@ -98,15 +100,15 @@ pnpm add -D @systemfsoftware/stryker-js \
 ```yaml
 - id: W3
   title: Author stryker.config.ts
-  do: generate configuration using defineConfig with bare plugin package names and negative mutate globs
+  do: generate configuration using StrykerConfig.define with bare plugin package names and negative mutate globs
   dont: hand-craft JSON configuration files or omit type checking
   check: test -f stryker.config.ts
 ```
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig(({ isCi }) => ({
+export default StrykerConfig.define(({ isCi }) => ({
   testRunner: isCi ? 'vitest' : 'vm',
   checkers: ['typescript'],
   plugins: [
@@ -189,9 +191,9 @@ pnpm exec stryker run --survivors
 
 | Reference                          | When to load (intent)                                                                         | Hash     |
 | ---------------------------------- | --------------------------------------------------------------------------------------------- | -------- |
-| `references/decision-guide.md`     | When choosing between in-memory V8, Vitest, and Command runners                               | `b9476a` |
-| `references/authoring-ignorers.md` | When creating a custom AST ignorer with `@systemfsoftware/stryker-ignorer-kit`                | `374134` |
-| `references/authoring-runners.md`  | When building a custom test runner worker with `@systemfsoftware/stryker-js-plugin-interface` | `b781d3` |
+| `references/decision-guide.md`     | When choosing between in-memory V8, Vitest, and Command runners                               | `0bf2a6` |
+| `references/authoring-ignorers.md` | When creating a custom AST ignorer with `@systemfsoftware/stryker-ignorer-kit`                | `3d8b30` |
+| `references/authoring-runners.md`  | When building a custom test runner worker with `@systemfsoftware/stryker-js-plugin-interface` | `81b8c7` |
 
 ### Reference Integrity Gate
 
@@ -199,9 +201,9 @@ Before loading any reference, verify its content hash matches the table below. A
 
 | File                               | Hash     | Purpose  |
 | ---------------------------------- | -------- | -------- |
-| `references/authoring-ignorers.md` | `374134` | `374134` |
-| `references/authoring-runners.md`  | `b781d3` | `b781d3` |
-| `references/decision-guide.md`     | `b9476a` | `b9476a` |
+| `references/authoring-ignorers.md` | `3d8b30` | `3d8b30` |
+| `references/authoring-runners.md`  | `81b8c7` | `81b8c7` |
+| `references/decision-guide.md`     | `0bf2a6` | `0bf2a6` |
 
 ## Critical Rules at Document End (lost-in-middle mitigation)
 

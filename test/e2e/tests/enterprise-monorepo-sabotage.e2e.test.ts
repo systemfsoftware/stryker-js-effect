@@ -1,17 +1,18 @@
-import { type RunEvent, RunEventWireLine, S } from '@systemfsoftware/stryker-js'
-import type { ExecResult } from './__fixtures__/microvm-environment.js'
+import { RunEvent } from '@systemfsoftware/stryker-js'
+import * as S from 'effect/Schema'
+import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
 
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 
-const parseEventStream = (stdout: string): ReadonlyArray<RunEvent> =>
+const parseEventStream = (stdout: string): ReadonlyArray<RunEvent.RunEvent> =>
   stdout
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.startsWith('{') && line.endsWith('}'))
-    .map((line) => S.decodeUnknownSync(RunEventWireLine)(line))
+    .map((line) => S.decodeUnknownSync(RunEvent.RunEventWireLine)(line))
 
-const lastEvent = (events: ReadonlyArray<RunEvent>): RunEvent => {
+const lastEvent = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.RunEvent => {
   const event = events.at(-1)
   if (event === undefined) {
     throw new Error('stdout carries no events')
@@ -25,7 +26,7 @@ test(
   async ({ bdd, expect, prepareFixture }) => {
     let fixture: PreparedFixture
     let run: ExecResult
-    let events: ReadonlyArray<RunEvent>
+    let events: ReadonlyArray<RunEvent.RunEvent>
 
     await bdd.given('a packaged enterprise workspace in the container', async () => {
       fixture = await prepareFixture(ENTERPRISE_FIXTURE_URL, 'enterprise-monorepo-fixture')

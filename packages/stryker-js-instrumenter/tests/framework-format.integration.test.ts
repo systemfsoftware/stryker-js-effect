@@ -1,13 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  coreFormatRegistry,
-  disableTypeChecks,
-  type File,
-  frameworkEntryOf,
-  type InstrumentError,
-  type InstrumentResult,
-  registerEntries,
-} from '@systemfsoftware/stryker-js-instrumenter'
+import { Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
@@ -17,7 +9,7 @@ import { instrument } from './__fixtures__/instrument.js'
 const OPTIONS = { ignorers: [], excludedMutations: [] }
 
 const registryWith = (framework: typeof fixtureFramework) =>
-  registerEntries(coreFormatRegistry, [frameworkEntryOf('fixture-plugin', framework)])
+  Format.registerEntries(Format.coreFormatRegistry, [Format.frameworkEntryOf('fixture-plugin', framework)])
 
 const Feature = makeFeature({ it, layer })
 
@@ -38,7 +30,7 @@ Feature('Instrumenting files in formats a framework plugin teaches')
             ),
         ),
         Then('the addition inside the region is mutated at its place in the document')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const oneBased = (index: number): number => index + 1
@@ -71,11 +63,11 @@ Feature('Instrumenting files in formats a framework plugin teaches')
                 { name: '/tmp/add.js', content: 'export const add = (a, b) => a + b\n', mutate: true },
               ],
               OPTIONS,
-              coreFormatRegistry,
+              Format.coreFormatRegistry,
             ),
         ),
         Then('the mini document is reported as skipped and the script file still gets mutants')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             expect(result.skipped.map((skip) => [skip.file, skip.extension])).toStrictEqual([[
@@ -102,7 +94,9 @@ Feature('Instrumenting files in formats a framework plugin teaches')
               registryWith(failingFramework),
             ).pipe(Effect.flip),
         ),
-        Then('instrumentation fails naming the file and the plugin reason')(({ error }: { error: InstrumentError }) =>
+        Then('instrumentation fails naming the file and the plugin reason')(({ error }: {
+          error: Instrument.InstrumentError
+        }) =>
           Effect.sync(() => {
             expect(error.message).toContain('/tmp/page.mini')
             expect(error.message).toContain('fixture refuses this document')
@@ -122,18 +116,18 @@ Feature('Instrumenting files in formats a framework plugin teaches')
           'files',
           ({ sources }: { sources: { mini: string; unknown: string } }) =>
             Effect.all([
-              disableTypeChecks(
+              Instrument.disableTypeChecks(
                 { name: '/tmp/page.mini', content: sources.mini, mutate: true },
                 registryWith(fixtureFramework),
               ),
-              disableTypeChecks(
+              Instrument.disableTypeChecks(
                 { name: '/tmp/notes.unknown', content: sources.unknown, mutate: true },
                 registryWith(fixtureFramework),
               ),
             ]),
         ),
         Then('the mini document carries the marker before its region and the unknown file is unchanged')((
-          { files }: { files: readonly File[] },
+          { files }: { files: readonly Instrument.File[] },
         ) =>
           Effect.sync(() => {
             expect(files.map((file) => file.content)).toStrictEqual([

@@ -3,125 +3,98 @@ import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 
-import type { FormatEntry, FormatRegistry, ScriptFormatEntry } from './format-registry.js'
-import { parseWithEntry, resolutionCommandOf } from './format-registry.js'
+import type { Ast } from './Ast.schema.js'
+import { parseWithEntry, resolutionCommandOf } from './Format.handle.js'
+import type { FormatEntry, FormatRegistry, ScriptFormatEntry } from './Format.schema.js'
 import { type FileSchema, InstrumentError } from './Instrument.schema.js'
-import {
-  FormatAssigned,
-  type FormatOverrideUnclaimed,
-  type FormatResolutionCommand,
-  type FormatResolutionDecision,
-  resolveFormat,
-} from './resolve-format.workflow.js'
-import type { Ast } from './Syntax.js'
-import { prefixWithNoCheck, tsDirectiveLikeRegEx } from './type-check-disablers.js'
+import { FormatOverrideUnclaimed, type FormatResolutionCommand, resolveFormat } from './resolve-format.workflow.js'
+import { prefixWithNoCheck, tsDirectiveLikeRegEx } from './TypeCheckDisablers.handle.js'
 
 export interface DisableTypeChecksInput {
   readonly file: typeof FileSchema.Type
   readonly registry: FormatRegistry
 }
 
-interface DisableTypeChecksRaw {
+type DisableTypeChecksRaw = typeof FormatResolutionCommand.Encoded & {
+  readonly version: 'disable-type-checks'
   readonly file: typeof FileSchema.Type
   readonly registry: FormatRegistry
-  readonly command: FormatResolutionCommand
-  readonly ast: Ast | undefined
 }
 
 const isScriptEntry = (entry: FormatEntry): entry is ScriptFormatEntry => entry.claim.kind === 'script'
 
-const needsJsOrTsPrefix = (entry: ScriptFormatEntry): boolean => entry.scriptFormat !== 'tsx'
-
 const lacksTsDirective = (file: typeof FileSchema.Type): boolean => !tsDirectiveLikeRegEx.test(file.content)
 
 const prefixesWithoutParsing = (file: typeof FileSchema.Type, entry: FormatEntry): boolean =>
-  isScriptEntry(entry) && scriptEntryPrefixesWithoutParsing(file, entry)
+  Match.value(entry).pipe(
+    Match.when(isScriptEntry, (scriptEntry) => prefixesScriptWithoutParsing(file, scriptEntry)),
+    Match.orElse(() => false),
+  )
 
-const scriptEntryPrefixesWithoutParsing = (file: typeof FileSchema.Type, entry: ScriptFormatEntry): boolean =>
-  needsJsOrTsPrefix(entry) && lacksTsDirective(file)
+const prefixesScriptWithoutParsing = (file: typeof FileSchema.Type, entry: ScriptFormatEntry): boolean =>
+  entry.scriptFormat !== 'tsx' && lacksTsDirective(file)
 
-const parseAssignedFormat = (
-  input: DisableTypeChecksInput,
-  assigned: FormatAssigned,
-): Effect.Effect<Ast | undefined, InstrumentError> =>
-  Option.match(input.registry.entryForFormat(assigned.formatId), {
-    onNone: (): Effect.Effect<Ast | undefined, InstrumentError> => Effect.succeed(absentAst()),
-    onSome: (entry) => parseClaimedEntry(input, entry),
-  })
-
-const absentAst = (): Ast | undefined => undefined
-
-const parseClaimedEntry = (
-  input: DisableTypeChecksInput,
-  entry: FormatEntry,
-): Effect.Effect<Ast | undefined, InstrumentError> =>
-  prefixesWithoutParsing(input.file, entry)
-    ? Effect.succeed(absentAst())
-    : Effect.map(parseWithEntry(entry, input.file), (ast): Ast | undefined => ast)
-const readDisable = (input: DisableTypeChecksInput): Effect.Effect<DisableTypeChecksRaw, InstrumentError> =>
-  Effect.gen(function*() {
+const readDisable = (input: DisableTypeChecksInput): Effect.Effect<DisableTypeChecksRaw, never> =>
+  Effect.sync(() => {
     const command = resolutionCommandOf(input.registry, input.file.name)
-    const ast = yield* parseClaimed(input, command)
-    return { file: input.file, registry: input.registry, command, ast }
+    return {
+      _tag: 'FormatResolutionCommand',
+      fileName: command.fileName,
+      extension: command.extension,
+      formatId: command.formatId,
+      claims: command.claims,
+      version: 'disable-type-checks',
+      file: input.file,
+      registry: input.registry,
+    }
   })
 
-const parseClaimed = (
-  input: DisableTypeChecksInput,
-  command: FormatResolutionCommand,
-): Effect.Effect<Ast | undefined, InstrumentError> => {
-  const decision = Option.getOrUndefined(Result.getSuccess(resolveFormat(command)))
-  return isAssignedDecision(decision) ? parseAssignedFormat(input, decision) : Effect.succeed(absentAst())
-}
+const disabledFile = (
+  raw: DisableTypeChecksRaw,
+  entry: FormatEntry,
+  ast: Ast,
+): Effect.Effect<typeof FileSchema.Type, InstrumentError> =>
+  Effect.map(entry.disableTypeChecks(ast), (content): typeof FileSchema.Type => ({ ...raw.file, content }))
 
-const isAssignedDecision = (decision: FormatResolutionDecision | undefined): decision is FormatAssigned =>
-  decision !== undefined && S.is(FormatAssigned)(decision)
+const parsedEntry = (
+  raw: DisableTypeChecksRaw,
+  entry: FormatEntry,
+): Effect.Effect<typeof FileSchema.Type, InstrumentError> =>
+  Effect.flatMap(parseWithEntry(entry, raw.file), (ast) => disabledFile(raw, entry, ast))
+
 const spliceFile = (
   raw: DisableTypeChecksRaw,
   entry: FormatEntry,
 ): Effect.Effect<typeof FileSchema.Type, InstrumentError> =>
-  Match.value(raw.ast).pipe(
-    Match.when(Predicate.isNotNullish, (ast) =>
-      Effect.map(
-        entry.disableTypeChecks(ast),
-        (content): typeof FileSchema.Type => ({ ...raw.file, content }),
-      )),
-    Match.orElse(() =>
-      Effect.succeed<typeof FileSchema.Type>({ ...raw.file, content: prefixWithNoCheck(raw.file.content) })
-    ),
-  )
-const spliceOutcome = (
-  raw: DisableTypeChecksRaw,
-  decision: FormatResolutionDecision,
-): Effect.Effect<typeof FileSchema.Type, InstrumentError> =>
-  Match.value(decision).pipe(
-    Match.when(S.is(FormatAssigned), (assigned) =>
-      Option.match(raw.registry.entryForFormat(assigned.formatId), {
-        onNone: () => Effect.succeed(raw.file),
-        onSome: (entry) => spliceFile(raw, entry),
-      })),
-    Match.orElse(() => Effect.succeed(raw.file)),
-  )
+  Predicate.isTruthy(prefixesWithoutParsing(raw.file, entry))
+    ? Effect.succeed<typeof FileSchema.Type>({ ...raw.file, content: prefixWithNoCheck(raw.file.content) })
+    : parsedEntry(raw, entry)
 
-const writeDisable = (
-  output: Result.Result<FormatResolutionDecision, FormatOverrideUnclaimed>,
+const spliceAssigned = (
   raw: DisableTypeChecksRaw,
-): Effect.Effect<typeof FileSchema.Type, FormatOverrideUnclaimed | InstrumentError> =>
-  Result.isFailure(output) ? Effect.fail(output.failure) : spliceOutcome(raw, output.success)
+  assigned: { readonly formatId: string },
+): Effect.Effect<typeof FileSchema.Type, InstrumentError> =>
+  Option.match(raw.registry.entryForFormat(assigned.formatId), {
+    onNone: () => Effect.succeed(raw.file),
+    onSome: (entry) => spliceFile(raw, entry),
+  })
+
+const unchanged = (raw: DisableTypeChecksRaw): Effect.Effect<typeof FileSchema.Type, never> => Effect.succeed(raw.file)
 
 export const disableTypeChecksCell: Cell.Cell<
   DisableTypeChecksInput,
   typeof FileSchema.Type,
   InstrumentError | FormatOverrideUnclaimed,
   never
-> = Sandwich.read(readDisable)
-  .decode(
-    Sandwich.pure((raw: DisableTypeChecksRaw): Result.Result<FormatResolutionCommand, never> =>
-      Result.succeed(raw.command)
-    ),
-  )
+> = Sandwich.named('stryker.instrument.disableTypeChecks')(
+  (input: DisableTypeChecksInput) => readDisable(input),
+)
   .decide(resolveFormat)
-  .encode(Sandwich.pure((outcome) => Result.succeed(outcome)))
-  .write(writeDisable)
+  .write({
+    FormatAssigned: (assigned, raw): Effect.Effect<typeof FileSchema.Type, InstrumentError> =>
+      spliceAssigned(raw, assigned),
+    FormatSkipped: (_skipped, raw) => unchanged(raw),
+    FormatOverrideUnclaimed: (failure) => Effect.fail(FormatOverrideUnclaimed.make(failure)),
+    CommandRejected: ({ issue }) => Effect.fail(InstrumentError.make({ message: issue, cause: new Error(issue) })),
+  })

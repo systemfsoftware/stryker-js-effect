@@ -4,7 +4,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { type MutantNotApplied, MutantsUnapplied, type PlacerName, PlacerNameSchema } from './Instrument.schema.js'
+import { MutantNotApplied, MutantsUnapplied, type PlacerName, PlacerNameSchema } from './Instrument.schema.js'
 
 export const PlacementFactsSchema = S.Struct({
   isExpression: S.Boolean,
@@ -31,7 +31,9 @@ export class PlaceMutantsCommand extends S.TaggedClass<PlaceMutantsCommand>()('P
   fileName: S.String,
   facts: PlacementFactsSchema,
   mutants: S.Array(PlacedMutantSchema),
-}) {}
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
 
 const PlacementDecisionTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-js-instrumenter/PlacementDecision',
@@ -143,12 +145,14 @@ const siteOf = (command: PlaceMutantsCommand, placer: PlacerName): EditSite => {
   )
 }
 
-export const placeMutants = Workflow.make(
-  PlaceMutantsCommand,
-  (command: PlaceMutantsCommand): Result.Result<PlacementDecision, PlacementRefusal> =>
+export const placeMutants = Workflow.make({
+  command: PlaceMutantsCommand,
+  decision: S.Union([ExpressionSite, StatementSite, SwitchCaseSite]),
+  error: S.Union([MutantKindMismatch, NoPlacerClaimsNode, MutantsUnapplied, MutantNotApplied]),
+  decide: (command: PlaceMutantsCommand): Result.Result<PlacementDecision, PlacementRefusal> =>
     Result.gen(function*() {
       const placer = yield* placerOf(command)
       yield* placementRefusal(command, placer)
       return siteOf(command, placer)
     }),
-)
+})

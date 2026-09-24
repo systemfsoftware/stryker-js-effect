@@ -73,6 +73,7 @@ describe('composite per-package diagnostics', () => {
     )
 
     expect(result).toBeDefined()
+    if (result === undefined) return
     expect(result.compileError).toBeDefined()
     if (result.compileError === undefined) return
 
@@ -174,6 +175,8 @@ describe('composite per-package diagnostics', () => {
     }]
 
     const [result] = evaluateWithProjects(projects, '/proj/src/x.ts', code, [ignored])
+    expect(result).toBeDefined()
+    if (result === undefined) return
     expect(result.compileError).toBeUndefined()
   })
 })

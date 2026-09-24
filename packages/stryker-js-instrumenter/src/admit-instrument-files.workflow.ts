@@ -30,13 +30,15 @@ export type InstrumentFilesDecision = InstrumentFilesAdmitted | InstrumentFilesS
 
 const isZero = (count: number): boolean => count === 0
 
-export const admitInstrumentFiles = Workflow.total(
-  InstrumentFilesCommand,
-  (command): Result.Result<InstrumentFilesDecision, never> =>
+export const admitInstrumentFiles = Workflow.make({
+  command: InstrumentFilesCommand,
+  decision: S.Union([InstrumentFilesAdmitted, InstrumentFilesSkippedOnly]),
+  error: S.Never,
+  decide: (command): Result.Result<InstrumentFilesDecision, never> =>
     Match.value(isZero(command.claimedCount)).pipe(
       Match.when(true, () => Result.succeed(InstrumentFilesSkippedOnly.make({ skipped: command.skipped }))),
       Match.when(false, () =>
         Result.succeed(InstrumentFilesAdmitted.make({ fileCount: command.fileCount, skipped: command.skipped }))),
       Match.exhaustive,
     ),
-)
+})

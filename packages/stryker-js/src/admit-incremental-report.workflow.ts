@@ -12,7 +12,11 @@ export class AdmitIncrementalReportCommand extends S.TaggedClass<AdmitIncrementa
     report: S.optional(IncrementalReportSchema),
     expectedVersion: S.String,
   },
-) {}
+) {
+  static readonly [Workflow.InstrumentationBrand] = {
+    expectedVersion: 'stryker.incremental_report.expected_version',
+  } as const
+}
 
 const IncrementalReportDecisionTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-js/IncrementalReportDecision',
@@ -59,7 +63,9 @@ const decide = (command: AdmitIncrementalReportCommand) =>
       ),
   })
 
-export const admitIncrementalReport = Workflow.total(
-  AdmitIncrementalReportCommand,
-  (command) => Result.succeed(decide(command)),
-)
+export const admitIncrementalReport = Workflow.make({
+  command: AdmitIncrementalReportCommand,
+  decision: S.Union([IncrementalReportKeep, IncrementalReportDiscard]),
+  error: S.Never,
+  decide: (command): Result.Result<IncrementalReportDecision, never> => Result.succeed(decide(command)),
+})

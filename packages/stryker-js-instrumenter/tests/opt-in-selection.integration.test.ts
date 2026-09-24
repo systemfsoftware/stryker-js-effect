@@ -1,6 +1,6 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { InstrumentError, InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
@@ -65,24 +65,24 @@ const distinctSorted = (names: readonly string[]): readonly string[] => {
 const sameNames = (actual: readonly string[], expected: readonly string[]): boolean =>
   distinctSorted(actual).join('|') === distinctSorted(expected).join('|')
 
-const mutatorNamesIn = (result: InstrumentResult, keep: (name: string) => boolean): readonly string[] =>
+const mutatorNamesIn = (result: Instrument.InstrumentResult, keep: (name: string) => boolean): readonly string[] =>
   distinctSorted(result.mutants.filter((mutant) => keep(mutant.mutatorName)).map((mutant) => mutant.mutatorName))
 
-const concurrencyMutatorNamesIn = (result: InstrumentResult): readonly string[] =>
+const concurrencyMutatorNamesIn = (result: Instrument.InstrumentResult): readonly string[] =>
   mutatorNamesIn(result, (name) => CONCURRENCY_MUTATOR_NAMES.includes(name))
 
-const ordinaryMutatorNamesIn = (result: InstrumentResult): readonly string[] =>
+const ordinaryMutatorNamesIn = (result: Instrument.InstrumentResult): readonly string[] =>
   mutatorNamesIn(result, (name) => !CONCURRENCY_MUTATOR_NAMES.includes(name))
 
 const filesToInstrument = (fixtures: readonly FixtureFile[]) =>
   fixtures.map((fixture) => ({ name: fixture.name, content: fixture.content, mutate: true }))
 
-const concurrencyMutantsIn = (result: InstrumentResult): readonly string[] =>
+const concurrencyMutantsIn = (result: Instrument.InstrumentResult): readonly string[] =>
   result.mutants
     .filter((mutant) => CONCURRENCY_MUTATOR_NAMES.includes(mutant.mutatorName))
     .map((mutant) => `${mutant.fileName} ${mutant.mutatorName}`)
 
-const mutantLinesOf = (result: InstrumentResult): readonly string[] =>
+const mutantLinesOf = (result: Instrument.InstrumentResult): readonly string[] =>
   result.mutants.map((mutant) =>
     [
       mutant.fileName,
@@ -113,7 +113,7 @@ Feature('Choosing extra concurrency mutations by name')
             }).pipe(Effect.flip),
         ),
         Then('the run fails, and the message names the entry it does not have')((
-          { failure }: { failure: InstrumentError },
+          { failure }: { failure: Instrument.InstrumentError },
         ) =>
           Effect.sync(() => {
             expect(failure.message).toContain(UNKNOWN_MUTATOR_NAME)
@@ -144,7 +144,7 @@ Feature('Choosing extra concurrency mutations by name')
             }),
         ),
         Then('neither report holds a concurrency fault, and both hold the same ordinary mutants')((
-          { unlisted, emptyList }: { unlisted: InstrumentResult; emptyList: InstrumentResult },
+          { unlisted, emptyList }: { unlisted: Instrument.InstrumentResult; emptyList: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             expect(concurrencyMutantsIn(unlisted)).toStrictEqual([])
@@ -231,7 +231,7 @@ Feature('Choosing extra concurrency mutations by name')
             ]),
         ),
         Then('both runs propose the identical faults')((
-          { runs }: { runs: readonly [InstrumentResult, InstrumentResult] },
+          { runs }: { runs: readonly [Instrument.InstrumentResult, Instrument.InstrumentResult] },
         ) =>
           Effect.sync(() => {
             const [once, twice] = runs
@@ -257,7 +257,7 @@ Feature('Choosing extra concurrency mutations by name')
             }),
         ),
         Then('the run goes through, and none of the concurrency faults is proposed')((
-          { report }: { report: InstrumentResult },
+          { report }: { report: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             expect(concurrencyMutantsIn(report)).toStrictEqual([])

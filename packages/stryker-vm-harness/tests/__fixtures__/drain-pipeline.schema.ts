@@ -16,7 +16,7 @@ const NonEmptyStringSchema = S.String.check(S.isMinLength(1))
 export const DrainPropertySpec = S.Struct({
   timedOut: S.Boolean,
   test: TestSpecSchema,
-  lateRejections: S.optional(S.Array(NonEmptyStringSchema)),
+  lateRejections: S.optional(NonEmptyStringSchema.pipe(S.Array)),
 })
 export type DrainProperty = S.Schema.Type<typeof DrainPropertySpec>
 

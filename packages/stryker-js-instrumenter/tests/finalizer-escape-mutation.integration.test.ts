@@ -1,11 +1,11 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { InstrumentResult, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
+import { shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
-import { shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
 const FINALIZER_ESCAPE = 'FinalizerEscape'
@@ -196,10 +196,10 @@ const instrumentSource = (source: string) =>
     optInMutations: [FINALIZER_ESCAPE],
   })
 
-const finalizerCount = (result: InstrumentResult): number =>
+const finalizerCount = (result: Instrument.InstrumentResult): number =>
   result.mutants.filter((mutant) => mutant.mutatorName === FINALIZER_ESCAPE).length
 
-const finalizerMutantsOf = (result: InstrumentResult): readonly Mutant[] =>
+const finalizerMutantsOf = (result: Instrument.InstrumentResult): readonly Mutant.Mutant[] =>
   result.mutants.filter((mutant) => mutant.mutatorName === FINALIZER_ESCAPE)
 
 const Feature = makeFeature({ it, layer })
@@ -229,13 +229,13 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
         Then(
           'every table entry counts its mutants inside its own export, every file totals its table, and no replacement hides behind a cast or a suppression',
         )((
-          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: InstrumentResult },
+          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const contentByFile = new Map(
               fixtures.map((fixture) => [`effect-concurrency/${fixture.name}`, fixture.content]),
             )
-            const mutantsIn = (fileName: string): readonly Mutant[] =>
+            const mutantsIn = (fileName: string): readonly Mutant.Mutant[] =>
               report.mutants.filter(
                 (mutant) => mutant.mutatorName === FINALIZER_ESCAPE && mutant.fileName === fileName,
               )
@@ -284,7 +284,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
             ({ source }: { source: string }) => Effect.map(instrumentSource(source), finalizerMutantsOf),
           ),
           Then('the one proposed mutant spells the promised replacement word for word')(
-            ({ mutants }: { mutants: readonly Mutant[] }) =>
+            ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
               Effect.sync(() => {
                 expect(mutants.length).toBe(1)
                 expect(mutants[0]?.replacement).toBe(row.replacement)
@@ -321,7 +321,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), finalizerMutantsOf),
         ),
         Then('exactly one proposed replacement guards the error handler, and exactly one guards the final cleanup')(
-          ({ mutants }: { mutants: readonly Mutant[] }) =>
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
             Effect.sync(() => {
               expect(mutants.length).toBe(2)
               expect(mutants.filter((mutant) => mutant.replacement.includes('.onErrorIf(')).length).toBe(1)
@@ -343,7 +343,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), finalizerMutantsOf),
         ),
         Then('the single mutant is reported as ignored, carrying the comment reason')(
-          ({ mutants }: { mutants: readonly Mutant[] }) =>
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
             Effect.sync(() => {
               expect(mutants.length).toBe(1)
               expect(mutants[0]?.status).toBe('Ignored')

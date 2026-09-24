@@ -1,12 +1,16 @@
 import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
+import { assert } from 'vitest'
 
-function isTestNode(value: unknown): value is Node {
-  return typeof value === 'object' && value !== null && 'type' in value && typeof value.type === 'string'
+function assertTestNode(value: unknown, type: string): asserts value is Node {
+  assert(
+    typeof value === 'object' && value !== null && 'type' in value && typeof value.type === 'string',
+    `bad test node: ${type}`,
+  )
 }
 
 function node(type: string, extra: Record<string, unknown> = {}): Node {
   const candidate: unknown = { type, start: 0, end: 0, ...extra }
-  if (!isTestNode(candidate)) throw new Error(`bad test node: ${type}`)
+  assertTestNode(candidate, type)
   return candidate
 }
 

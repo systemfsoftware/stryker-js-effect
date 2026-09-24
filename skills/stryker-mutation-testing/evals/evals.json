@@ -21,7 +21,7 @@
       "id": "eval-1",
       "eval_name": "local-v8-ci-vitest-dual-engine",
       "prompt": "Running mutation testing locally takes 6 minutes on my laptop because Vitest spins up workers. How can I speed up local mutation runs while keeping full Vitest checks in GitHub Actions CI?",
-      "expected_output": "Recommends dual-engine setup using isCi from defineConfig: testRunner: isCi ? 'vitest' : 'vm', with testFiles specified for the vm runner and incremental: !isCi.",
+      "expected_output": "Recommends dual-engine setup using isCi from StrykerConfig.define: testRunner: isCi ? 'vitest' : 'vm', with testFiles specified for the vm runner and incremental: !isCi.",
       "assertions": [
         {
           "text": "isCi"
@@ -142,7 +142,7 @@
           "text": "@systemfsoftware/stryker-js-vitest-runner"
         },
         {
-          "text": "defineConfig"
+          "text": "StrykerConfig.define"
         },
         {
           "text": "stryker run"

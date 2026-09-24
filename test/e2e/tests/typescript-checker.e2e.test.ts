@@ -1,12 +1,8 @@
-import {
-  MutationTestResultSchema,
-  type RunEvent,
-  RunEventWireLine,
-  S,
-  type VerdictReached,
-} from '@systemfsoftware/stryker-js'
+import { RunEvent } from '@systemfsoftware/stryker-js'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as S from 'effect/Schema'
 import type { ExpectStatic } from 'vitest'
-import type { ExecResult } from './__fixtures__/microvm-environment.js'
+import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import './__fixtures__/custom-matchers.js'
 import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
 
@@ -39,13 +35,13 @@ const TYPESCRIPT_CHECKER_ARMS = [
   },
 ] as const
 
-const parseEventStream = (stdout: string): ReadonlyArray<RunEvent> =>
+const parseEventStream = (stdout: string): ReadonlyArray<RunEvent.RunEvent> =>
   stdout
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.startsWith('{') && line.endsWith('}'))
-    .map((line) => S.decodeUnknownSync(RunEventWireLine)(line))
-const lastEvent = (events: ReadonlyArray<RunEvent>): RunEvent => {
+    .map((line) => S.decodeUnknownSync(RunEvent.RunEventWireLine)(line))
+const lastEvent = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.RunEvent => {
   const event = events.at(-1)
   if (event === undefined) {
     throw new Error('stdout carries no events')
@@ -67,7 +63,7 @@ const kindsOutsideOf = (
 const stepProcessAndStreamIntegrity = (
   expect: ExpectStatic,
   run: ExecResult,
-  events: ReadonlyArray<RunEvent>,
+  events: ReadonlyArray<RunEvent.RunEvent>,
 ): void => {
   const kinds = events.map((e) => e._tag)
   expect.soft(run.exitCode).toBe(0)
@@ -82,7 +78,7 @@ const stepProcessAndStreamIntegrity = (
   expect.soft(kindsOutsideOf(kinds, RUN_EVENT_KINDS)).toEqual([])
 }
 
-const stepVerdictCountsAndScore = (expect: ExpectStatic, verdict: VerdictReached): void => {
+const stepVerdictCountsAndScore = (expect: ExpectStatic, verdict: RunEvent.VerdictReached): void => {
   expect(verdict.counts.compileErrors).toBe(4)
   expect(verdict.counts.pending).toBe(0)
   expect(verdict.counts.runtimeErrors).toBe(0)
@@ -90,11 +86,11 @@ const stepVerdictCountsAndScore = (expect: ExpectStatic, verdict: VerdictReached
 
 const stepMutantStreamAndActionables = (
   expect: ExpectStatic,
-  events: ReadonlyArray<RunEvent>,
-  verdict: VerdictReached,
+  events: ReadonlyArray<RunEvent.RunEvent>,
+  verdict: RunEvent.VerdictReached,
 ): void => {
   const reportedMutants = events
-    .filter((e): e is Extract<RunEvent, { _tag: 'mutant' }> => e._tag === 'mutant')
+    .filter((e): e is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => e._tag === 'mutant')
     .map((e) => `${e.mutator}:${e.status}`)
 
   expect.soft(reportedMutants).toEqual(
@@ -121,7 +117,7 @@ const stepMutantStreamAndActionables = (
   expect.soft(verdict.runId).toBe(runIds[0])
 }
 const stepStructuredDiskReport = (expect: ExpectStatic, reportText: string): void => {
-  const report = S.decodeUnknownSync(S.fromJsonString(MutationTestResultSchema))(reportText)
+  const report = S.decodeUnknownSync(S.fromJsonString(Report.MutationTestResultSchema))(reportText)
   expect(report).toMatchMutationReport({
     schemaVersion: '1.0',
     file: 'src/order.ts',
@@ -141,8 +137,8 @@ test.concurrent.for(TYPESCRIPT_CHECKER_ARMS)(
   async (arm, { bdd, expect, prepareFixture }) => {
     let fixture: PreparedFixture
     let run: ExecResult
-    let events: ReadonlyArray<RunEvent>
-    let verdict: VerdictReached
+    let events: ReadonlyArray<RunEvent.RunEvent>
+    let verdict: RunEvent.VerdictReached
 
     await bdd.given(`a ${arm.name} fixture installed in the container`, async () => {
       fixture = await prepareFixture(FIXTURE_URL, arm.fixture)
@@ -169,7 +165,7 @@ test.concurrent.for(TYPESCRIPT_CHECKER_ARMS)(
 test('failing checker emits structured StageError carrying the diagnostic cause, not an empty crash', async ({ bdd, expect, prepareFixture }) => {
   let fixture: PreparedFixture
   let run: ExecResult
-  let events: ReadonlyArray<RunEvent>
+  let events: ReadonlyArray<RunEvent.RunEvent>
 
   await bdd.given('a fixture configured with a non-existent tsconfig path', async () => {
     fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-broken-fixture')
@@ -217,8 +213,8 @@ test('persists structured json report artifact on container disk and matches con
 test('persists mutation-stream.jsonl on disk matching stdout events', async ({ bdd, expect, prepareFixture }) => {
   let fixture: PreparedFixture
   let run: ExecResult
-  let stdoutEvents: ReadonlyArray<RunEvent>
-  let diskEvents: ReadonlyArray<RunEvent>
+  let stdoutEvents: ReadonlyArray<RunEvent.RunEvent>
+  let diskEvents: ReadonlyArray<RunEvent.RunEvent>
 
   await bdd.given('a fixture configured for progress stream tracking', async () => {
     fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-stream-fixture')
@@ -240,8 +236,8 @@ test('persists mutation-stream.jsonl on disk matching stdout events', async ({ b
 test('exercises TypeScript composite project references in build mode', async ({ bdd, expect, prepareFixture }) => {
   let fixture: PreparedFixture
   let run: ExecResult
-  let events: ReadonlyArray<RunEvent>
-  let verdict: VerdictReached
+  let events: ReadonlyArray<RunEvent.RunEvent>
+  let verdict: RunEvent.VerdictReached
 
   await bdd.given('a fixture with composite project references', async () => {
     fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-references-fixture')

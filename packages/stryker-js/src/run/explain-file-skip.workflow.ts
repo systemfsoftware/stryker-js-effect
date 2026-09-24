@@ -16,7 +16,11 @@ export class ExplainFileSkipCommand extends S.TaggedClass<ExplainFileSkipCommand
     extension: S.String,
     claimants: S.Array(FrameworkClaimant),
   },
-) {}
+) {
+  static readonly [Workflow.InstrumentationBrand] = {
+    extension: 'stryker.file_skip.extension',
+  } as const
+}
 
 const ExplainFileSkipTypeId = Symbol.for('@systemfsoftware/stryker-js/ExplainFileSkipDecision')
 type ExplainFileSkipTypeId = typeof ExplainFileSkipTypeId
@@ -58,13 +62,14 @@ const claimedReasonOf = (extension: string, claimants: readonly string[]): strin
 const unclaimedReasonOf = (extension: string): string =>
   `No loaded framework claims "${extension}". No installed package declares it as a framework plugin: install the framework plugin that claims this file type and add it to "plugins" to instrument it.`
 
-const explainedOf = (command: ExplainFileSkipCommand): FileSkipExplained =>
-  Match.value(claimantsOf(command).length > 0).pipe(
+const explainedOf = (command: ExplainFileSkipCommand): FileSkipExplained => {
+  const claimants = claimantsOf(command)
+  return Match.value(claimants.length > 0).pipe(
     Match.when(true, () =>
       FileSkipExplained.make({
         extension: command.extension,
-        reason: claimedReasonOf(command.extension, claimantsOf(command)),
-        ownerPackage: Option.getOrNull(Option.fromUndefinedOr(claimantsOf(command).at(0))),
+        reason: claimedReasonOf(command.extension, claimants),
+        ownerPackage: Option.getOrNull(Option.fromUndefinedOr(claimants.at(0))),
       })),
     Match.orElse(() =>
       FileSkipExplained.make({
@@ -74,6 +79,7 @@ const explainedOf = (command: ExplainFileSkipCommand): FileSkipExplained =>
       })
     ),
   )
+}
 
 const skipKnownOrUnknownOf = (
   explained: FileSkipExplained,
@@ -88,12 +94,14 @@ const skipKnownOrUnknownOf = (
       }),
   })
 
-export const explainFileSkip = Workflow.total(
-  ExplainFileSkipCommand,
-  (command) =>
+export const explainFileSkip = Workflow.make({
+  command: ExplainFileSkipCommand,
+  decision: FileSkipDecision,
+  error: S.Never,
+  decide: (command): Result.Result<FileSkipDecision, never> =>
     Match.value(skipKnownOrUnknownOf(explainedOf(command))).pipe(
       Match.tag('SkipKnownExplained', (known) => Result.succeed(known)),
       Match.tag('SkipUnknownExplained', (unknown) => Result.succeed(unknown)),
       Match.exhaustive,
     ),
-)
+})

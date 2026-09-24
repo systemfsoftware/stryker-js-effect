@@ -61,7 +61,8 @@ const parsedDiscovery = (discovery: Discovery): FrameworkParseResult<Discovery> 
   value: discovery,
 })
 
-const failureMessageOf = (cause: unknown): string => messageText(cause instanceof Error ? cause.message : undefined)
+export const failureMessageOf = (cause: unknown): string =>
+  messageText(cause instanceof Error ? cause.message : undefined)
 
 const messageText = (message: string | undefined): string => message ?? NON_ERROR_FAILURE
 

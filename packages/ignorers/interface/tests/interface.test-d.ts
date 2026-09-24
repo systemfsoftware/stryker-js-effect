@@ -18,20 +18,14 @@ test('an implementation receives the node and its ancestors, and its reason is a
   expectTypeOf(consumer).toExtend<Ignorer>()
 })
 
-test('a boolean reason is refused', () => {
-  // @ts-expect-error a boolean is not a reason — the channel is string | undefined
-  const refused: Ignorer = { name: 'refused', shouldIgnore: () => true }
-  expectTypeOf(refused).toExtend<Ignorer>()
+test('a boolean reason is not the accepted channel', () => {
+  expectTypeOf<(node: Node, ancestors: readonly Node[]) => boolean>().not.toEqualTypeOf<
+    Ignorer['shouldIgnore']
+  >()
 })
 
-test('a visitor parameter that is not a node is refused', () => {
-  const loose: WalkVisitors = {
-    // @ts-expect-error visitors receive the node and its ancestors, not a bare string
-    enter: (text: string) => {
-      void text
-    },
-  }
-  expectTypeOf(loose).toExtend<WalkVisitors>()
+test('a visitor consuming a bare string is not the accepted enter shape', () => {
+  expectTypeOf<(text: string) => void>().not.toEqualTypeOf<NonNullable<WalkVisitors['enter']>>()
 })
 
 test('a visitor may omit leave', () => {

@@ -43,7 +43,9 @@ export class PlanMutantsCommand extends S.TaggedClass<PlanMutantsCommand>()('Pla
   rule: S.Array(LocatedDirectiveSchema),
   directives: S.Array(LocatedDirectiveSchema),
   candidates: S.Array(MutantCandidateSchema),
-}) {}
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
 
 const MutantPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-instrumenter/MutantPlan')
 type MutantPlanTypeId = typeof MutantPlanTypeId
@@ -92,9 +94,7 @@ const lastReachingDirective = (
   line: number,
 ): Option.Option<LocatedDirective> =>
   Option.fromNullishOr(
-    [...rule].reverse().find((located) =>
-      [reachedLine(located, line), namesMutator(located, lowerMutatorName)].every(Boolean)
-    ),
+    rule.findLast((located) => [reachedLine(located, line), namesMutator(located, lowerMutatorName)].every(Boolean)),
   )
 
 const directiveReason = (
@@ -238,11 +238,13 @@ const planOf = (command: PlanMutantsCommand, mutants: readonly PlannedMutant[]):
     Match.exhaustive,
   )
 
-export const planMutants = Workflow.make(
-  PlanMutantsCommand,
-  (command: PlanMutantsCommand): Result.Result<MutantPlan, PlanFailure> =>
+export const planMutants = Workflow.make({
+  command: PlanMutantsCommand,
+  decision: S.Union([MutantsPlanned, MutantsFullyIgnored]),
+  error: MutantWithoutLocation,
+  decide: (command: PlanMutantsCommand): Result.Result<MutantPlan, PlanFailure> =>
     Result.gen(function*() {
       const mutants = yield* plannedMutants(command)
       return planOf(command, mutants)
     }),
-)
+})

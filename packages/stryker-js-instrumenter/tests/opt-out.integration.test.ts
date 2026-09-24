@@ -1,11 +1,11 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
+import { type ShapeEntry, shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
-import { type ShapeEntry, shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
 const OPT_IN_MUTATOR_NAMES: readonly string[] = ['AtomicUpdateSplit', 'SynchronizationRemoval', 'FinalizerEscape']
@@ -64,7 +64,7 @@ Feature('Keeping the Effect concurrency faults off unless a run asks for them')
             ),
         ),
         Then('the report names no concurrency mutator, and no fixture came out empty')((
-          { fixtures, result }: { fixtures: readonly FixtureFile[]; result: InstrumentResult },
+          { fixtures, result }: { fixtures: readonly FixtureFile[]; result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const concurrencyMutants = result.mutants

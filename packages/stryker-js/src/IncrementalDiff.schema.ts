@@ -17,13 +17,13 @@ const PreviousMutantSchema = S.Struct({
   location: PreviousLocationSchema,
   status: S.String,
   testsCompleted: S.optional(S.Finite),
-  coveredBy: S.optional(S.Array(S.String)),
-  killedBy: S.optional(S.Array(S.String)),
+  coveredBy: S.String.pipe(S.Array, S.optional),
+  killedBy: S.String.pipe(S.Array, S.optional),
 })
 
 const PreviousFileSchema = S.Struct({
   source: S.optional(S.String),
-  mutants: S.optional(S.Array(PreviousMutantSchema)),
+  mutants: PreviousMutantSchema.pipe(S.Array, S.optional),
   formatIdentity: S.optional(FormatIdentitySchema),
 })
 

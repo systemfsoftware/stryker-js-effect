@@ -7,13 +7,10 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import {
-  admitInstrumentFiles,
-  type InstrumentFilesDecision,
-  InstrumentFilesSkippedOnly,
-} from './admit-instrument-files.workflow.js'
-import type { FormatRegistry } from './format-registry.js'
-import { parseWithEntry, resolveFile } from './format-registry.js'
+import { admitInstrumentFiles } from './admit-instrument-files.workflow.js'
+import type { Ast } from './Ast.schema.js'
+import { parseWithEntry, resolveFile } from './Format.handle.js'
+import type { FormatRegistry } from './Format.schema.js'
 import {
   type FileSchema,
   type InstrumenterOptions,
@@ -23,11 +20,15 @@ import {
   InstrumentResult,
 } from './Instrument.schema.js'
 import { Mutant as ApiMutant } from './Mutant.schema.js'
-import { toApiMutant } from './Mutator.js'
-import { print } from './Printer.js'
+import { toApiMutant } from './Mutator.service.js'
+import { print } from './Printer.handle.js'
 import { FormatAssigned, type FormatResolutionDecision, FormatSkipped } from './resolve-format.workflow.js'
-import type { Ast } from './Syntax.js'
-import { createMutantCollector, type MutantCollector, transform, type TransformerOptions } from './Transformer.js'
+import {
+  createMutantCollector,
+  type MutantCollector,
+  transform,
+  type TransformerOptions,
+} from './Transformer.service.js'
 
 type FileDescription = typeof FileSchema.Type
 
@@ -42,11 +43,11 @@ interface ParsedFile {
   readonly ast: Ast
 }
 
-interface InstrumentFilesRaw {
+type InstrumentFilesRaw = typeof InstrumentFilesCommand.Encoded & {
+  readonly version: 'instrument-files'
   readonly files: readonly FileDescription[]
   readonly registry: FormatRegistry
   readonly parsed: readonly ParsedFile[]
-  readonly skipped: readonly InstrumentFileSkip[]
   readonly mutants: readonly ApiMutant[]
 }
 
@@ -59,7 +60,7 @@ const isIgnorer = (value: unknown): value is Ignorer =>
 
 const NO_OPT_IN_MUTATIONS: readonly string[] = []
 
-const optInMutationsOf = (options: InstrumenterOptions): readonly string[] =>
+export const optInMutationsOf = (options: InstrumenterOptions): readonly string[] =>
   options.optInMutations ?? NO_OPT_IN_MUTATIONS
 
 const toTransformerOptions = (options: InstrumenterOptions): TransformerOptions => ({
@@ -69,11 +70,6 @@ const toTransformerOptions = (options: InstrumenterOptions): TransformerOptions 
   ...(options.noHeader !== undefined ? { noHeader: options.noHeader } : {}),
 })
 
-/**
- * The `mutate` ranges on a file description already speak the 1-based file
- * coordinates the transformer compares node spans against, so they pass
- * through unchanged.
- */
 const mutateDescriptionOf = (file: FileDescription): FileDescription['mutate'] => file.mutate
 
 const parsedOutcome = (
@@ -137,10 +133,13 @@ const transformInto = (
   )
 
 const collectMutants = (collector: MutantCollector): Effect.Effect<readonly ApiMutant[], InstrumentError> =>
-  Effect.try({
-    try: () => collector.map(toApiMutant),
-    catch: (cause) => InstrumentError.make({ message: 'Failed to instrument', cause }),
-  })
+  Effect.flatMap(
+    Effect.sync(() => Result.all(collector.map(toApiMutant))),
+    (collected) =>
+      Result.isSuccess(collected)
+        ? Effect.succeed(collected.success)
+        : Effect.fail(InstrumentError.make({ message: 'Failed to instrument', cause: collected.failure })),
+  )
 
 const isParsed = (outcome: FileOutcome): outcome is Extract<FileOutcome, { kind: 'parsed' }> =>
   outcome.kind === 'parsed'
@@ -159,23 +158,19 @@ const readInstrumentFiles = (input: InstrumentFilesInput): Effect.Effect<Instrum
       { concurrency: 1 },
     )
     const mutants = yield* collectMutants(collector)
+    const skipped = outcomes.flatMap(skipsOf)
     return {
+      _tag: 'InstrumentFilesCommand',
+      version: 'instrument-files',
+      fileCount: input.files.length,
+      claimedCount: parsed.length,
+      skipped,
       files: input.files,
       registry: input.registry,
       parsed,
-      skipped: outcomes.flatMap(skipsOf),
       mutants,
     }
   })
-
-const decodeInstrumentFiles = (raw: InstrumentFilesRaw): Result.Result<InstrumentFilesCommand, never> =>
-  Result.succeed(
-    InstrumentFilesCommand.make({
-      fileCount: raw.files.length,
-      claimedCount: raw.parsed.length,
-      skipped: [...raw.skipped],
-    }),
-  )
 
 const printedFile = (raw: InstrumentFilesRaw, { file, ast }: ParsedFile): FileDescription => ({
   name: file.name,
@@ -183,35 +178,23 @@ const printedFile = (raw: InstrumentFilesRaw, { file, ast }: ParsedFile): FileDe
   content: print(ast, raw.registry.entryForFormat),
 })
 
-const responseFor = (decision: InstrumentFilesDecision, raw: InstrumentFilesRaw): InstrumentResult =>
-  Match.value(decision).pipe(
-    Match.when(
-      S.is(InstrumentFilesSkippedOnly),
-      () => InstrumentResult.make({ files: [], mutants: [], skipped: [...raw.skipped] }),
-    ),
-    Match.orElse(() =>
-      InstrumentResult.make({
-        files: raw.parsed.map((parsed) => printedFile(raw, parsed)),
-        mutants: [...raw.mutants],
-        skipped: [...raw.skipped],
-      })
-    ),
-  )
-
-const writeInstrumentFiles = (
-  output: Result.Result<InstrumentFilesDecision, never>,
-  raw: InstrumentFilesRaw,
-): Effect.Effect<InstrumentResult, never> =>
-  Effect.gen(function*() {
-    if (Result.isFailure(output)) {
-      return yield* Effect.fail(output.failure)
-    }
-    return responseFor(output.success, raw)
+const instrumentedResult = (raw: InstrumentFilesRaw): InstrumentResult =>
+  InstrumentResult.make({
+    files: raw.parsed.map((parsed) => printedFile(raw, parsed)),
+    mutants: [...raw.mutants],
+    skipped: [...raw.skipped],
   })
 
+const skippedOnlyResult = (raw: InstrumentFilesRaw): InstrumentResult =>
+  InstrumentResult.make({ files: [], mutants: [], skipped: [...raw.skipped] })
+
 export const instrumentFilesCell: Cell.Cell<InstrumentFilesInput, InstrumentResult, InstrumentError, never> = Sandwich
-  .read(readInstrumentFiles)
-  .decode(Sandwich.pure(decodeInstrumentFiles))
+  .named('stryker.instrument.files')(
+    (input: InstrumentFilesInput) => readInstrumentFiles(input),
+  )
   .decide(admitInstrumentFiles)
-  .encode(Sandwich.pure((outcome) => Result.succeed(outcome)))
-  .write(writeInstrumentFiles)
+  .write({
+    InstrumentFilesAdmitted: (_admitted, raw) => Effect.succeed(instrumentedResult(raw)),
+    InstrumentFilesSkippedOnly: (_skipped, raw) => Effect.succeed(skippedOnlyResult(raw)),
+    CommandRejected: ({ issue }) => Effect.fail(InstrumentError.make({ message: issue, cause: new Error(issue) })),
+  })

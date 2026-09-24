@@ -13,7 +13,11 @@ export class AdmitFileIdentityCommand extends S.TaggedClass<AdmitFileIdentityCom
     recorded: S.optional(FormatIdentitySchema),
     claimed: S.optional(FormatIdentitySchema),
   },
-) {}
+) {
+  static readonly [Workflow.InstrumentationBrand] = {
+    file: 'stryker.file_identity.file',
+  } as const
+}
 
 const FileIdentityDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/FileIdentityDecision')
 type FileIdentityDecisionTypeId = typeof FileIdentityDecisionTypeId
@@ -30,7 +34,8 @@ export class FileIdentityRecompute extends S.TaggedClass<FileIdentityRecompute>(
   readonly [FileIdentityDecisionTypeId] = FileIdentityDecisionTypeId
 }
 
-export type FileIdentityDecision = FileIdentityReuse | FileIdentityRecompute
+export const FileIdentityDecisionSchema = S.Union([FileIdentityReuse, FileIdentityRecompute])
+export type FileIdentityDecision = typeof FileIdentityDecisionSchema.Type
 
 const sameIdentity = (left: FormatIdentity, right: FormatIdentity): boolean =>
   [
@@ -55,7 +60,9 @@ const decideFileIdentity = (command: AdmitFileIdentityCommand): FileIdentityDeci
     },
   )
 
-export const admitFileIdentity = Workflow.total(
-  AdmitFileIdentityCommand,
-  (command) => Result.succeed(decideFileIdentity(command)),
-)
+export const admitFileIdentity = Workflow.make({
+  command: AdmitFileIdentityCommand,
+  decision: FileIdentityDecisionSchema,
+  error: S.Never,
+  decide: (command): Result.Result<FileIdentityDecision, never> => Result.succeed(decideFileIdentity(command)),
+})

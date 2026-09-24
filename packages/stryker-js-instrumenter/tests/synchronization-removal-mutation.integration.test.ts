@@ -1,15 +1,15 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { InstrumentResult, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
+import { shapes } from '../testResources/effect-concurrency/shapes.js'
 import {
   effectConcurrencyFixtureContent,
   effectConcurrencyFixtureFiles,
   type FixtureFile,
 } from './__fixtures__/effect-concurrency-files.js'
-import { shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
 const SYNCHRONIZATION_REMOVAL = 'SynchronizationRemoval'
@@ -124,10 +124,10 @@ const instrumentSource = (source: string) =>
     optInMutations: [SYNCHRONIZATION_REMOVAL],
   })
 
-const removalCount = (result: InstrumentResult): number =>
+const removalCount = (result: Instrument.InstrumentResult): number =>
   result.mutants.filter((mutant) => mutant.mutatorName === SYNCHRONIZATION_REMOVAL).length
 
-const removalMutantsOf = (result: InstrumentResult): readonly Mutant[] =>
+const removalMutantsOf = (result: Instrument.InstrumentResult): readonly Mutant.Mutant[] =>
   result.mutants.filter((mutant) => mutant.mutatorName === SYNCHRONIZATION_REMOVAL)
 
 const Feature = makeFeature({ it, layer })
@@ -178,13 +178,13 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
         Then(
           'every promised guard sits inside its own exported block, every file totals its promises, and no replacement hides behind a cast or a suppression',
         )((
-          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: InstrumentResult },
+          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const contentByFile = new Map(
               fixtures.map((fixture) => [`effect-concurrency/${fixture.name}`, fixture.content]),
             )
-            const mutantsIn = (fileName: string): readonly Mutant[] =>
+            const mutantsIn = (fileName: string): readonly Mutant.Mutant[] =>
               report.mutants.filter(
                 (mutant) => mutant.mutatorName === SYNCHRONIZATION_REMOVAL && mutant.fileName === fileName,
               )
@@ -242,7 +242,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), removalMutantsOf),
         ),
         Then('the single mutant is the guarded effect, word for word')(
-          ({ mutants }: { mutants: readonly Mutant[] }) =>
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
             Effect.sync(() => {
               expect(mutants.length).toBe(1)
               expect(mutants[0]?.replacement).toBe(GUARDED_REPLACEMENT)
@@ -263,7 +263,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), removalMutantsOf),
         ),
         Then('the single mutant hands each piped effect straight back, word for word')(
-          ({ mutants }: { mutants: readonly Mutant[] }) =>
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
             Effect.sync(() => {
               expect(mutants.length).toBe(1)
               expect(mutants[0]?.replacement).toBe(FROZEN_PIPE_REPLACEMENT)
@@ -284,7 +284,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), removalMutantsOf),
         ),
         Then('the single mutant defers the callback and hands it an always-restoring region, word for word')(
-          ({ mutants }: { mutants: readonly Mutant[] }) =>
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
             Effect.sync(() => {
               expect(mutants.length).toBe(1)
               expect(mutants[0]?.replacement).toBe(MASKED_REPLACEMENT)
@@ -313,7 +313,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
             ),
         ),
         Then('the one proposed mutant sits on the mask inside the leader lock, word for word')((
-          { content, mutants }: { content: string; mutants: readonly Mutant[] },
+          { content, mutants }: { content: string; mutants: readonly Mutant.Mutant[] },
         ) =>
           Effect.sync(() => {
             expect(mutants.length).toBe(1)
@@ -339,7 +339,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           ({ source }: { source: string }) => instrumentSource(source),
         ),
         Then('the single mutant is reported as skipped, carrying the comment reason')(
-          ({ report }: { report: InstrumentResult }) =>
+          ({ report }: { report: Instrument.InstrumentResult }) =>
             Effect.sync(() => {
               const mutants = removalMutantsOf(report)
               expect(mutants.length).toBe(1)

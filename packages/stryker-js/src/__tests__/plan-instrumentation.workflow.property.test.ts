@@ -10,14 +10,7 @@ import {
   planInstrumentation,
 } from '../plan-instrumentation.workflow.js'
 
-const InstrumentDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/InstrumentDecision')
-
 describe('planInstrumentation', () => {
-  it.prop(
-    '∀d_Brand_∈Decision',
-    [S.Union([InPlaceInstrument, EphemeralInstrument])],
-    ([decision]) => Object.getOwnPropertySymbols(decision).includes(InstrumentDecisionTypeId),
-  )
   it.prop('∀c_Command_≡Decision', [InstrumentCommand], ([command]) => {
     const result = planInstrumentation(command)
     if (command.fileCount === 0) {

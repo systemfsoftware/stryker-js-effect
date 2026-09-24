@@ -1,1 +1,3 @@
-export { instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+
+export const instrument = Instrument.instrument

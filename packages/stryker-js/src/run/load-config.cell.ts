@@ -1,44 +1,52 @@
-import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
+import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Boolean from 'effect/Boolean'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { isGlob } from '../glob-match.js'
-
-import { findUnserializables, type UnserializableDescription } from '../config-defaults.js'
+import { isCommandRunner } from '../command-runner.resource.js'
 import {
   ConfigDocumentSchema,
-  ConfigError,
-  ConfigFileInvalidError,
-  ConfigFileNotFoundError,
-  ConfigFileUnreadableError,
-  ConfigFileUnsupportedError,
+  type ExtendsStepDecision,
+  type ExtendsStepDocument,
   ExtendsStepDone,
   ExtendsStepRead,
   ExtendsStepRefused,
   ExtendsStepResolve,
+  type ExtendsStepState,
   forkOptionsSchema,
   ImportedModuleSchema,
 } from '../Config.schema.js'
-import type { ExtendsStepDecision, ExtendsStepDocument, ExtendsStepState } from '../Config.schema.js'
-import { mergeConfig } from '../config/merge-config.js'
-import type { ConfigEnv } from '../config/stryker-config.js'
-import type { OutputMode } from '../output-mode.js'
-import { MUTATION_RANGE_REGEX } from '../Project.ignore.js'
+import { type ConfigEnv, StrykerConfig } from '../config/stryker-config.schema.js'
+import {
+  ResolveWarningEnabledCommand,
+  WarningDisabled,
+  WarningEnabled,
+  warningEnabled,
+} from '../config/warning-enabled.workflow.js'
+import {
+  ConfigError,
+  ConfigFactoryFailed,
+  ConfigFileInvalidError,
+  ConfigFileNotFoundError,
+  ConfigFileUnreadableError,
+  ConfigFileUnsupportedError,
+  ConfigModuleUnloadable,
+} from '../ConfigError.schema.js'
+import { MutationRangeSpecifier, MutationRangeSpecifierSchema } from '../MutationRange.schema.js'
+import type { OutputMode } from '../output-mode.schema.js'
 import { StrykerError } from '../stryker-error.schema.js'
-import { isCommandRunner } from '../TestRunner.js'
+import { LoadConfigCommand, resolveConfig } from './resolve-config.workflow.js'
+import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 
 const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
-
-const isRecordValue = <A = unknown>(value: unknown): value is Record<string, A> =>
-  isNonNullObject(value) && Array.isArray(value) === false
-
-export const optionsPath = (...path: string[]): string => path.join('.')
 
 const combine = (
   prefixes: string[],
@@ -61,7 +69,7 @@ const configFileNames = (extensions: readonly string[]): readonly string[] =>
     [...extensions],
   )
 
-export const SUPPORTED_CONFIG_FILE_NAMES = Object.freeze(configFileNames(SUPPORTED_CONFIG_FILE_EXTENSIONS))
+const DISCOVERABLE_CONFIG_FILE_NAMES = Object.freeze(configFileNames(SUPPORTED_CONFIG_FILE_EXTENSIONS))
 
 const LEGACY_CONFIG_FILE_NAMES = Object.freeze(configFileNames(LEGACY_CONFIG_FILE_EXTENSIONS))
 
@@ -80,75 +88,6 @@ const extendsChildHint = (file: string): string =>
 
 const shadowedLegacyWarning = (legacyFile: string, supportedFile: string): string =>
   `Ignoring the legacy config file "${legacyFile}": "${supportedFile}" is the config Stryker reads. Stryker no longer reads JSON or CommonJS config files; delete the legacy file.`
-
-export type Primitive = boolean | number | string | null | undefined
-
-export type ImmutablePrimitive = Primitive | ((...args: never[]) => void)
-
-export type Immutable<T> = T extends ImmutablePrimitive ? T
-  : T extends Array<infer U> ? ReadonlyArray<Immutable<U>>
-  : T extends Map<infer K, infer V> ? ReadonlyMap<Immutable<K>, Immutable<V>>
-  : T extends Set<infer M> ? ReadonlySet<Immutable<M>>
-  : T extends RegExp ? Readonly<RegExp>
-  : { readonly [K in keyof T]: Immutable<T[K]> }
-
-const isArrayValue = <A = unknown>(value: unknown): value is readonly A[] => Array.isArray(value)
-
-const isMapValue = <K = unknown, V = unknown>(value: unknown): value is Map<K, V> => value instanceof Map
-
-const isSetValue = <A = unknown>(value: unknown): value is Set<A> => value instanceof Set
-
-const freezeArrayValue = <A = unknown>(value: readonly A[]): ReadonlyArray<Immutable<A>> =>
-  Object.freeze(value.map((element) => deepFreeze(element)))
-
-const freezeMapEntry = <K = unknown, V = unknown>(
-  [entryKey, entryValue]: readonly [K, V],
-): readonly [Immutable<K>, Immutable<V>] => [deepFreeze(entryKey), deepFreeze(entryValue)]
-
-const freezeMapValue = <K = unknown, V = unknown>(value: Map<K, V>): ReadonlyMap<Immutable<K>, Immutable<V>> =>
-  Object.freeze(new Map([...value.entries()].map(freezeMapEntry)))
-
-const freezeSetValue = <A = unknown>(value: Set<A>): ReadonlySet<Immutable<A>> =>
-  Object.freeze(new Set([...value.values()].map((element) => deepFreeze(element))))
-
-const freezeRegExpValue = (value: RegExp): RegExp => Object.freeze(value)
-
-const freezeRecordValue = <A = unknown>(value: Record<string, A>): Record<string, Immutable<A>> =>
-  Object.freeze(
-    Object.entries(value).reduce<Record<string, Immutable<A>>>((frozen, [property, propertyValue]) => {
-      frozen[property] = deepFreeze(propertyValue)
-      return frozen
-    }, {}),
-  )
-
-export function deepFreeze<T>(target: T): Immutable<T>
-export function deepFreeze(target: object | Primitive): object | Primitive {
-  return Match.value(target).pipe(
-    Match.when(isArrayValue, freezeArrayValue),
-    Match.when(isMapValue, freezeMapValue),
-    Match.when((value: unknown): value is RegExp => value instanceof RegExp, freezeRegExpValue),
-    Match.when(isSetValue, freezeSetValue),
-    Match.when(isRecordValue, freezeRecordValue),
-    Match.orElse(() => target),
-  )
-}
-
-export type KnownKeys<T> = keyof {
-  [P in keyof T as string extends P ? never : number extends P ? never : P]: T[P]
-}
-
-export type WarningOptions = Exclude<StrykerOptions['warnings'], boolean>
-
-export function isWarningEnabled(
-  warningType: KnownKeys<WarningOptions>,
-  warningOptions: WarningOptions | boolean,
-): boolean {
-  if (typeof warningOptions === 'boolean') {
-    return warningOptions
-  } else {
-    return warningOptions[warningType] === true
-  }
-}
 
 const PATH_LINE = /^at\s+(\[.*\])$/
 const PATH_SEGMENT = /\["([^"]*)"\]|\[(\d+)\]/g
@@ -248,11 +187,15 @@ const errorMessageOrFallback = (messages: readonly string[], fallback: string): 
     Match.orElse(() => [fallback]),
   )
 
-export function describeErrors(error: S.SchemaError): string[] {
-  const state = error.message
+const describeMessageOf = (message: string): readonly string[] => {
+  const state = message
     .split('\n')
     .reduce(advanceErrorDescription, EMPTY_ERROR_DESCRIPTION_STATE)
-  return errorMessageOrFallback(completedErrorMessages(state), error.message)
+  return errorMessageOrFallback(completedErrorMessages(state), message)
+}
+
+export function describeErrors(error: S.SchemaError): readonly string[] {
+  return describeMessageOf(error.message)
 }
 
 export function importModule<A = unknown>(
@@ -263,8 +206,6 @@ export function importModule<A = unknown>(
     catch: (cause) => StrykerError.make({ message: `Failed to import module "${moduleName}"`, cause }),
   })
 }
-
-export type { ExtendsStepDecision, ExtendsStepDocument, ExtendsStepState } from '../Config.schema.js'
 
 export const initialExtendsStepState: ExtendsStepState = {
   visited: [],
@@ -307,14 +248,14 @@ const inheritNested = <A = unknown>(parentValue: A, childValue: A): A | Record<s
     onNone: () => childValue,
   })
 
-type ConfigOptionValue = PartialStrykerOptions extends Record<string, infer OptionValue> ? OptionValue : never
+type ConfigOptionValue = Options.PartialStrykerOptions extends Record<string, infer OptionValue> ? OptionValue : never
 
 const inheritEntry = (
-  out: PartialStrykerOptions,
+  out: Options.PartialStrykerOptions,
   key: string,
   parentValue: ConfigOptionValue,
   childValue: ConfigOptionValue,
-): PartialStrykerOptions =>
+): Options.PartialStrykerOptions =>
   Match.value(childValue).pipe(
     Match.when(null, () => {
       const next = { ...out }
@@ -335,15 +276,14 @@ const inheritEntry = (
     ),
   )
 
-export function mergeConfigs(
-  parent: PartialStrykerOptions,
-  child: PartialStrykerOptions,
-): PartialStrykerOptions {
-  return Object.entries(child).reduce(
+export const mergeConfigs = dual<
+  (child: Options.PartialStrykerOptions) => (parent: Options.PartialStrykerOptions) => Options.PartialStrykerOptions,
+  (parent: Options.PartialStrykerOptions, child: Options.PartialStrykerOptions) => Options.PartialStrykerOptions
+>(2, (parent, child) =>
+  Object.entries(child).reduce(
     (out, entry) => inheritEntry(out, entry[0], parent[entry[0]], entry[1]),
     { ...parent },
-  )
-}
+  ))
 
 const RELATIVE_SPECIFIER_PREFIXES: readonly string[] = ['./', '../', '/', '\\']
 
@@ -351,58 +291,68 @@ export function isModuleSpecifier(value: string): boolean {
   return RELATIVE_SPECIFIER_PREFIXES.every((prefix) => value.startsWith(prefix) === false)
 }
 
-const stripExtends = (document: PartialStrykerOptions): PartialStrykerOptions => {
+const stripExtends = (document: Options.PartialStrykerOptions): Options.PartialStrykerOptions => {
   const { extends: _ignored, ...rest } = document
   return rest
 }
 
-const mergeChainDocuments = (documents: readonly ExtendsStepDocument[]): PartialStrykerOptions =>
-  documents.reduceRight<PartialStrykerOptions>(
+const mergeChainDocuments = (documents: readonly ExtendsStepDocument[]): Options.PartialStrykerOptions =>
+  documents.reduceRight<Options.PartialStrykerOptions>(
     (merged, entry) => mergeConfigs(merged, stripExtends(entry.options)),
     {},
   )
 
-export const decideExtendsStep = (
-  state: ExtendsStepState,
-  document: PartialStrykerOptions,
-  file: string,
-  pathService: Path.Path,
-): ExtendsStepDecision => {
-  if (state.visited.includes(file)) {
-    return ExtendsStepRefused.make({ reason: 'cycle', file })
-  }
-  const nextState: ExtendsStepState = {
-    visited: [...state.visited, file],
-    documents: [...state.documents, { path: file, options: document }],
-  }
-  return Match.value(document['extends']).pipe(
-    Match.when(
-      undefined,
-      (): ExtendsStepDecision => ExtendsStepDone.make({ options: mergeChainDocuments(nextState.documents) }),
-    ),
-    Match.when(
-      null,
-      (): ExtendsStepDecision => ExtendsStepDone.make({ options: mergeChainDocuments(nextState.documents) }),
-    ),
-    Match.when(Match.string, (extendValue) =>
-      Match.value(isModuleSpecifier(extendValue)).pipe(
-        Match.when(true, (): ExtendsStepDecision =>
-          ExtendsStepResolve.make({ specifier: extendValue, state: nextState })),
-        Match.when(false, (): ExtendsStepDecision =>
-          ExtendsStepRead.make({
-            path: pathService.resolve(pathService.dirname(file), extendValue),
-            state: nextState,
-          })),
-        Match.exhaustive,
-      )),
-    Match.orElse((): ExtendsStepDecision => ExtendsStepRefused.make({ reason: 'non-string-extends', file })),
-  )
-}
+export const decideExtendsStep = dual<
+  (
+    document: Options.PartialStrykerOptions,
+    file: string,
+    pathService: Path.Path,
+  ) => (state: ExtendsStepState) => ExtendsStepDecision,
+  (
+    state: ExtendsStepState,
+    document: Options.PartialStrykerOptions,
+    file: string,
+    pathService: Path.Path,
+  ) => ExtendsStepDecision
+>(
+  4,
+  (state, document, file, pathService) => {
+    if (state.visited.includes(file)) {
+      return ExtendsStepRefused.make({ reason: 'cycle', file })
+    }
+    const nextState: ExtendsStepState = {
+      visited: [...state.visited, file],
+      documents: [...state.documents, { path: file, options: document }],
+    }
+    return Match.value(document['extends']).pipe(
+      Match.when(
+        undefined,
+        (): ExtendsStepDecision => ExtendsStepDone.make({ options: mergeChainDocuments(nextState.documents) }),
+      ),
+      Match.when(
+        null,
+        (): ExtendsStepDecision => ExtendsStepDone.make({ options: mergeChainDocuments(nextState.documents) }),
+      ),
+      Match.when(Match.string, (extendValue) =>
+        Match.value(isModuleSpecifier(extendValue)).pipe(
+          Match.when(true, (): ExtendsStepDecision =>
+            ExtendsStepResolve.make({ specifier: extendValue, state: nextState })),
+          Match.when(false, (): ExtendsStepDecision =>
+            ExtendsStepRead.make({
+              path: pathService.resolve(pathService.dirname(file), extendValue),
+              state: nextState,
+            })),
+          Match.exhaustive,
+        )),
+      Match.orElse((): ExtendsStepDecision => ExtendsStepRefused.make({ reason: 'non-string-extends', file })),
+    )
+  },
+)
 
 const decodeConfigDocument = <A = unknown>(
   configFile: string,
   document: A,
-): Effect.Effect<PartialStrykerOptions, ConfigFileInvalidError> =>
+): Effect.Effect<Options.PartialStrykerOptions, ConfigFileInvalidError> =>
   S.decodeUnknownEffect(ConfigDocumentSchema)(document).pipe(
     Effect.mapError((cause) => ConfigFileInvalidError.make({ file: configFile, cause })),
   )
@@ -414,36 +364,42 @@ const requireDefaultExport = <A = unknown>(
   configFile: string,
   defaultExport: A,
 ): Effect.Effect<object, ConfigFileInvalidError> =>
-  defaultExport === undefined
-    ? failInvalidConfig(configFile, 'Config file must have a default export!')
-    : settleObjectExport(configFile, defaultExport)
+  Match.value(defaultExport === undefined).pipe(
+    Match.when(true, () => failInvalidConfig(configFile, 'Config file must have a default export!')),
+    Match.orElse(() => settleObjectExport(configFile, defaultExport)),
+  )
 
 function settleObjectExport<A = unknown>(
   configFile: string,
   value: A,
 ): Effect.Effect<object, ConfigFileInvalidError> {
-  return isNonNullObject(value)
-    ? Effect.succeed(value)
-    : failInvalidConfig(configFile, 'Default export of config file must be an object!')
+  return Option.match(Option.liftPredicate(isNonNullObject)(value), {
+    onSome: (present) => Effect.succeed(present),
+    onNone: () => failInvalidConfig(configFile, 'Default export of config file must be an object!'),
+  })
 }
 
 type ConfigFactory<A = unknown> = (env: ConfigEnv) => A
 
 const isConfigFactory = (value: unknown): value is ConfigFactory => typeof value === 'function'
 
-function wrappedFactoryFailure(error: Error): Error {
-  return new Error(`Evaluating the config module's exported factory failed: ${error.message}`, { cause: error })
-}
+const FACTORY_FAILED = "Evaluating the config module's exported factory failed"
 
-const factoryFailureCause = <A = unknown>(cause: A): A | Error =>
-  cause instanceof Error ? wrappedFactoryFailure(cause) : cause
+const factoryFailureOf = <A>(cause: A): ConfigFactoryFailed =>
+  ConfigFactoryFailed.make({
+    cause,
+    message: Option.match(ErrorText.CauseText.fromCause(cause), {
+      onNone: () => FACTORY_FAILED,
+      onSome: (detail) => `${FACTORY_FAILED}: ${detail.text}`,
+    }),
+  })
 
 const applyConfigFactory = <A = unknown>(factory: ConfigFactory<A>, configEnv: ConfigEnv): A => factory(configEnv)
 
 /**
  * Settle a config module's default export into the object the document schema decodes.
  *
- * `./config` types `defineConfig` as accepting the config object, a promise of it,
+ * `./config` types `StrykerConfig.define` as accepting the config object, a promise of it,
  * or a factory receiving `ConfigEnv`, so the loader accepts all three. The factory
  * is invoked here because this is the only place that knows the invocation the
  * config is being read for; the promise is awaited here because a promise is a
@@ -459,61 +415,71 @@ const settleConfigDefault = <A = unknown>(
       Promise.resolve(defaultExport).then((exported) =>
         isConfigFactory(exported) ? applyConfigFactory(exported, configEnv) : exported
       ),
-    catch: (cause) => ConfigFileInvalidError.make({ file: configFile, cause: factoryFailureCause(cause) }),
+    catch: (cause) => ConfigFileInvalidError.make({ file: configFile, cause: factoryFailureOf(cause) }),
   }).pipe(Effect.flatMap((settled) => requireDefaultExport(configFile, settled)))
 
 const ERASABLE_SYNTAX_HELP =
   'Config modules may use only erasable TypeScript syntax: no enums, no namespaces with runtime code, no parameter properties, and no decorators.'
 
-const carriesCode = <A = unknown>(cause: unknown): cause is { readonly code: A } =>
-  cause instanceof Error && 'code' in cause
+const thrownErrorOf = (cause: StrykerError['cause']): Option.Option<Error> =>
+  Option.map(S.decodeUnknownOption(S.instanceOf(Error))(cause), (error) => error)
 
-function codeOf(coded: { readonly code: string }): string | undefined {
-  return typeof coded.code === 'string' ? coded.code : undefined
-}
+const stringCodeOf = (error: Error) =>
+  Option.map(
+    Option.liftPredicate(error, (value): value is Error & { readonly code: string } =>
+      'code' in value && typeof value.code === 'string'),
+    (coded) =>
+      coded.code,
+  )
 
-const errorCodeOf = <A = unknown>(cause: A): string | undefined =>
-  carriesCode<string>(cause) ? codeOf(cause) : undefined
+const errorCodeOf = (cause: StrykerError['cause']): string | undefined =>
+  Option.getOrUndefined(Option.flatMap(thrownErrorOf(cause), stringCodeOf))
 
-const errorMessageOf = <A = unknown>(cause: A): string | undefined =>
-  cause instanceof Error ? errorTextOf(cause) : undefined
-
-function errorTextOf(error: Error): string | undefined {
-  return typeof error.message === 'string' ? error.message : undefined
-}
+const errorMessageOf = (cause: StrykerError['cause']): string | undefined =>
+  Option.getOrUndefined(Option.map(thrownErrorOf(cause), (error) => error.message))
 
 const importFailureDetail = (failure: StrykerError): string => errorMessageOf(failure.cause) ?? failure.message
 
-const configImportCause = (configFile: string, failure: StrykerError): Error | StrykerError =>
+const unloadableConfigModule = (
+  configFile: string,
+  code: string,
+  failure: StrykerError,
+  message: string,
+): ConfigModuleUnloadable => ConfigModuleUnloadable.make({ code, file: configFile, message, cause: failure.cause })
+
+const configImportCause = (configFile: string, failure: StrykerError) =>
   Match.value(errorCodeOf(failure.cause)).pipe(
-    Match.when(
-      'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX',
-      () =>
-        new Error(
-          `The config file "${configFile}" uses TypeScript syntax Node cannot execute. ${ERASABLE_SYNTAX_HELP}`,
-          {
-            cause: failure.cause,
-          },
-        ),
-    ),
+    Match.when('ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX', () =>
+      unloadableConfigModule(
+        configFile,
+        'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX',
+        failure,
+        `The config file "${configFile}" uses TypeScript syntax Node cannot execute. ${ERASABLE_SYNTAX_HELP}`,
+      )),
     Match.when('ERR_UNKNOWN_FILE_EXTENSION', () =>
-      new Error(
+      unloadableConfigModule(
+        configFile,
+        'ERR_UNKNOWN_FILE_EXTENSION',
+        failure,
         `The config file "${configFile}" has an extension Node cannot load. Stryker reads config modules with ${SUPPORTED_CONFIG_FILE_EXTENSION_GUIDE}.`,
-        { cause: failure.cause },
       )),
     Match.when('ERR_MODULE_NOT_FOUND', () =>
-      new Error(
+      unloadableConfigModule(
+        configFile,
+        'ERR_MODULE_NOT_FOUND',
+        failure,
         `The config file "${configFile}" imports a module Node cannot find. The specifier is most likely not installed — install it as a dependency of the project, or remove the import. Node reported: ${
           importFailureDetail(failure)
         }`,
-        { cause: failure.cause },
       )),
     Match.when('ERR_PACKAGE_PATH_NOT_EXPORTED', () =>
-      new Error(
+      unloadableConfigModule(
+        configFile,
+        'ERR_PACKAGE_PATH_NOT_EXPORTED',
+        failure,
         `The config file "${configFile}" imports a path a package does not export. The package is installed but its "exports" map leaves this specifier out — import a path the package publishes. Node reported: ${
           importFailureDetail(failure)
         }`,
-        { cause: failure.cause },
       )),
     Match.orElse(() => failure),
   )
@@ -539,7 +505,7 @@ const readConfigModule = (
   configFile: string,
   configEnv: ConfigEnv,
 ): Effect.Effect<
-  PartialStrykerOptions,
+  Options.PartialStrykerOptions,
   ConfigFileUnreadableError | ConfigFileInvalidError,
   Path.Path
 > =>
@@ -570,7 +536,7 @@ const readExtendsChild = (
   configFile: string,
   configEnv: ConfigEnv,
 ): Effect.Effect<
-  PartialStrykerOptions,
+  Options.PartialStrykerOptions,
   ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   Path.Path
 > =>
@@ -615,10 +581,10 @@ function resolveExtendsSpecifier(
 
 function resolveExtends(
   configFile: string,
-  document: PartialStrykerOptions,
+  document: Options.PartialStrykerOptions,
   configEnv: ConfigEnv,
 ): Effect.Effect<
-  PartialStrykerOptions,
+  Options.PartialStrykerOptions,
   ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   Path.Path
 > {
@@ -627,9 +593,9 @@ function resolveExtends(
     const loop = (
       state: ExtendsStepState,
       file: string,
-      currentDocument: PartialStrykerOptions,
+      currentDocument: Options.PartialStrykerOptions,
     ): Effect.Effect<
-      PartialStrykerOptions,
+      Options.PartialStrykerOptions,
       ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
       Path.Path
     > =>
@@ -649,13 +615,19 @@ function resolveExtends(
                 ))
               ),
             )),
-          Match.tag('refused', (d) => {
-            let message = `Invalid config file "${d.file}". "extends" must be a string`
-            if (d.reason === 'cycle') {
-              message = `Config inheritance cycle detected at "${d.file}"`
-            }
-            return Effect.fail(ConfigFileInvalidError.make({ file: d.file, cause: message }))
-          }),
+          Match.tag('refused', (d) =>
+            Effect.fail(
+              ConfigFileInvalidError.make({
+                file: d.file,
+                cause: Match.value(d.reason).pipe(
+                  Match.when('cycle', () =>
+                    `Config inheritance cycle detected at "${d.file}"`),
+                  Match.orElse(() =>
+                    `Invalid config file "${d.file}". "extends" must be a string`
+                  ),
+                ),
+              }),
+            )),
           Match.exhaustive,
         )
       })
@@ -670,13 +642,13 @@ export type ValidationSchemaDocument<A = unknown> = {
 
 export const forkCoreSchema = S.toJsonSchemaDocument(forkOptionsSchema).schema
 
-const decodeOptions = S.decodeUnknownResult(StrykerOptionsSchema, { errors: 'all' })
+const decodeOptions = S.decodeUnknownResult(Options.StrykerOptionsSchema, { errors: 'all' })
 
 function recordOf<A = unknown>(value: object): Record<string, A> {
   return { ...value }
 }
 
-const thresholdErrors = (options: StrykerOptions): readonly string[] =>
+const thresholdErrors = (options: Options.StrykerOptions): readonly string[] =>
   Match.value(options.thresholds.high < options.thresholds.low).pipe(
     Match.when(true, (): readonly string[] => [
       'Config option "thresholds.high" should be higher than "thresholds.low".',
@@ -684,19 +656,13 @@ const thresholdErrors = (options: StrykerOptions): readonly string[] =>
     Match.orElse((): readonly string[] => []),
   )
 
-const ignoreStaticErrors = (options: StrykerOptions): readonly string[] =>
+const ignoreStaticErrors = (options: Options.StrykerOptions): readonly string[] =>
   Match.value(options.ignoreStatic && options.coverageAnalysis !== 'perTest').pipe(
     Match.when(true, (): readonly string[] => [
-      `Config option "${
-        optionsPath('ignoreStatic')
-      }" is not supported with coverage analysis "${options.coverageAnalysis}". Either turn off "${
-        optionsPath('ignoreStatic')
-      }", or configure "${optionsPath('coverageAnalysis')}" to be "perTest".`,
+      `Config option "${'ignoreStatic'}" is not supported with coverage analysis "${options.coverageAnalysis}". Either turn off "${'ignoreStatic'}", or configure "${'coverageAnalysis'}" to be "perTest".`,
     ]),
     Match.orElse((): readonly string[] => []),
   )
-
-const matchLineNumber = (match: RegExpExecArray, group: number): number => Number.parseInt(match[group] ?? '', 10)
 
 const startLineErrors = (
   index: number,
@@ -723,36 +689,43 @@ const lineOrderErrors = (
     Match.orElse((): readonly string[] => []),
   )
 
-const mutationRangeBoundErrors = (index: number, match: RegExpExecArray): readonly string[] => {
-  const mutationRange = match[2]
-  const start = matchLineNumber(match, 3)
-  const end = matchLineNumber(match, 5)
-  return [
-    ...startLineErrors(index, mutationRange, start),
-    ...lineOrderErrors(index, mutationRange, start, end),
-  ]
-}
+const columnSuffixOf = (column: number | undefined): string =>
+  Option.match(Option.fromUndefinedOr(column), {
+    onNone: () => '',
+    onSome: (present) => `:${present}`,
+  })
+
+const rangeTextOf = (specifier: MutationRangeSpecifier): string =>
+  `${specifier.startLine}${columnSuffixOf(specifier.startColumn)}-${specifier.endLine}${
+    columnSuffixOf(specifier.endColumn)
+  }`
+
+const mutationRangeBoundErrors = (index: number, specifier: MutationRangeSpecifier): readonly string[] => [
+  ...startLineErrors(index, rangeTextOf(specifier), specifier.startLine),
+  ...lineOrderErrors(index, rangeTextOf(specifier), specifier.startLine, specifier.endLine),
+]
+
+const GLOB_META = /[*?[{]/
+
+const isGlob = (value: string) => GLOB_META.test(value)
 
 const requireUnmagicalMutationRange = (
   mutateString: string,
   index: number,
-  match: RegExpExecArray,
+  specifier: MutationRangeSpecifier,
 ): readonly string[] =>
-  Match.value(isGlob(mutateString)).pipe(
-    Match.when(true, (): readonly string[] => [
+  Boolean.match(isGlob(mutateString), {
+    onTrue: (): readonly string[] => [
       `Config option "mutate[${index}]" is invalid. Cannot combine a glob expression with a mutation range in "${mutateString}".`,
-    ]),
-    Match.orElse(() => mutationRangeBoundErrors(index, match)),
-  )
+    ],
+    onFalse: () => mutationRangeBoundErrors(index, specifier),
+  })
 
 const mutationRangeErrors = (mutateString: string, index: number): readonly string[] =>
-  Match.value(MUTATION_RANGE_REGEX.exec(mutateString)).pipe(
-    Match.when(
-      (match: RegExpExecArray | null): match is RegExpExecArray => match !== null,
-      (match) => requireUnmagicalMutationRange(mutateString, index, match),
-    ),
-    Match.orElse((): readonly string[] => []),
-  )
+  Option.match(S.decodeOption(MutationRangeSpecifierSchema)(mutateString), {
+    onNone: (): readonly string[] => [],
+    onSome: (specifier) => requireUnmagicalMutationRange(mutateString, index, specifier),
+  })
 
 const warnOnIgnoredNodeArgs = (nodeArgs: readonly string[]): Effect.Effect<void> =>
   Match.value(nodeArgs.length > 0).pipe(
@@ -763,20 +736,20 @@ const warnOnIgnoredNodeArgs = (nodeArgs: readonly string[]): Effect.Effect<void>
     Match.orElse(() => Effect.void),
   )
 
-const warnOnCommandRunnerNodeArgs = (options: StrykerOptions): Effect.Effect<void> =>
+const warnOnCommandRunnerNodeArgs = (options: Options.StrykerOptions): Effect.Effect<void> =>
   Match.value(isCommandRunner(options.testRunner)).pipe(
     Match.when(true, () => warnOnIgnoredNodeArgs(options.testRunnerNodeArgs)),
     Match.orElse(() => Effect.void),
   )
 
-const customValidationErrors = (options: StrykerOptions): readonly string[] => [
+const customValidationErrors = (options: Options.StrykerOptions): readonly string[] => [
   ...thresholdErrors(options),
   ...ignoreStaticErrors(options),
   ...options.mutate.flatMap(mutationRangeErrors),
 ]
 
 function customValidation(
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
 ): Effect.Effect<void, ConfigError> {
   const additionalErrors = customValidationErrors(options)
   return warnOnCommandRunnerNodeArgs(options).pipe(
@@ -785,16 +758,11 @@ function customValidation(
   )
 }
 
-function schemaValidate<A = unknown>(
-  options: Record<string, A>,
-): Effect.Effect<StrykerOptions, ConfigError> {
-  const decoded = decodeOptions(options)
-  if (Result.isFailure(decoded)) {
-    return failWithConfigErrors(describeErrors(decoded.failure))
-  }
-  Object.assign(options, decoded.success)
-  return Effect.succeed(decoded.success)
-}
+const schemaValidate = <A = unknown>(options: Record<string, A>): Effect.Effect<Options.StrykerOptions, ConfigError> =>
+  Result.match(decodeOptions(options), {
+    onFailure: (failure) => failure.pipe(describeErrors, failWithConfigErrors),
+    onSuccess: (success) => Effect.as(Effect.sync(() => Object.assign(options, success)), success),
+  })
 
 const configErrorHeadline = (errors: readonly string[]): string =>
   Match.value(errors.length === 1).pipe(
@@ -805,21 +773,18 @@ const configErrorHeadline = (errors: readonly string[]): string =>
 const configErrorMessage = (errors: readonly string[]): string => `${configErrorHeadline(errors)} ${errors.join(' ')}`
 
 const logConfigErrors = (errors: readonly string[]): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    for (const error of errors) {
-      yield* Effect.logError(error)
-    }
-  })
+  Effect.forEach(errors, (error) => Effect.logError(error), { discard: true })
 
 const failWithConfigErrors = (errors: readonly string[]): Effect.Effect<never, ConfigError> =>
   logConfigErrors(errors).pipe(
     Effect.flatMap(() => Effect.fail(ConfigError.make({ message: configErrorMessage(errors) }))),
   )
 
-function throwErrorIfNeeded(errors: readonly string[]): Effect.Effect<void, ConfigError> {
-  if (errors.length === 0) return Effect.void
-  return Effect.fail(ConfigError.make({ message: configErrorMessage(errors) }))
-}
+const throwErrorIfNeeded = (errors: readonly string[]): Effect.Effect<void, ConfigError> =>
+  Boolean.match(errors.length === 0, {
+    onTrue: () => Effect.void,
+    onFalse: () => Effect.fail(ConfigError.make({ message: configErrorMessage(errors) })),
+  })
 
 const OPTIONS_ADDED_BY_STRYKER: readonly string[] = ['set', 'configFile', '$schema']
 
@@ -830,7 +795,7 @@ const schemaPropertyNames = (schema: ValidationSchemaDocument): readonly string[
   )
 
 const excessOptionNames = (
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
   schema: ValidationSchemaDocument,
 ): readonly string[] => {
   const schemaKeys = schemaPropertyNames(schema)
@@ -841,14 +806,14 @@ const excessOptionNames = (
 }
 
 const warnAboutUnknownOptions = (
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
   excessNames: readonly string[],
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
     for (const excessPropertyName of excessNames) {
       yield* Effect.logWarning(`Unknown stryker config option "${excessPropertyName}".`)
     }
-    const pluginsJson = yield* S.encodeEffect(S.fromJsonString(S.Array(S.String)))([...options.plugins]).pipe(
+    const pluginsJson = yield* S.encodeEffect(S.String.pipe(S.Array, S.fromJsonString))([...options.plugins]).pipe(
       Effect.orDie,
     )
     yield* Effect.logWarning(`Possible causes:
@@ -856,11 +821,11 @@ const warnAboutUnknownOptions = (
      * Did you only write this property as a comment? If so, please postfix it with "_comment".
      * You might be missing a plugin that is supposed to use it. Stryker loaded plugins from: ${pluginsJson}
      * The plugin that is using it did not contribute explicit validation. 
-      (disable "${optionsPath('warnings', 'unknownOptions')}" to ignore this warning)`)
+      (disable "${'warnings.unknownOptions'}" to ignore this warning)`)
   })
 
 const unknownOptionWarning = (
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
   schema: ValidationSchemaDocument,
 ): Effect.Effect<void> => {
   const excessNames = excessOptionNames(options, schema)
@@ -870,47 +835,174 @@ const unknownOptionWarning = (
   )
 }
 
-function markExcessOptions(
-  options: StrykerOptions,
-  schema: ValidationSchemaDocument,
-): Effect.Effect<void> {
-  return Effect.gen(function*() {
-    if (isWarningEnabled('unknownOptions', options.warnings)) {
-      yield* unknownOptionWarning(options, schema)
-    }
+const warningDecisionOf = (
+  warning: 'unknownOptions' | 'unserializableOptions',
+  warnings: Options.StrykerOptions['warnings'],
+): WarningEnabled | WarningDisabled =>
+  Result.match(warningEnabled(ResolveWarningEnabledCommand.make({ warning, warnings })), {
+    onSuccess: (decision) => decision,
+    onFailure: () => WarningDisabled.make({}),
   })
-}
+
+const markExcessOptions = (
+  options: Options.StrykerOptions,
+  schema: ValidationSchemaDocument,
+): Effect.Effect<void> =>
+  Match.value(warningDecisionOf('unknownOptions', options.warnings)).pipe(
+    Match.tag('WarningEnabled', () => unknownOptionWarning(options, schema)),
+    Match.tag('WarningDisabled', () => Effect.void),
+    Match.exhaustive,
+  )
 
 const logUnserializableWarnings = (
-  unserializables: readonly UnserializableDescription[],
+  unserializables: ReadonlyArray<UnserializableDescription>,
 ): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    for (const unserializable of unserializables) {
-      yield* Effect.logWarning(
+  Effect.forEach(
+    unserializables,
+    (unserializable) =>
+      Effect.logWarning(
         `Config option "${
           unserializable.path.join('.')
         }" is not (fully) serializable. ${unserializable.reason}. Any test runner or checker worker processes might not receive this value as intended.`,
-      )
-    }
-    yield* Effect.logWarning(`(disable ${optionsPath('warnings', 'unserializableOptions')} to ignore this warning)`)
-  })
-
-const warnAboutUnserializableOptions = (options: StrykerOptions): Effect.Effect<void> =>
-  Match.value(findUnserializables(options)).pipe(
-    Match.when(undefined, () => Effect.void),
-    Match.orElse((unserializables) => logUnserializableWarnings(unserializables)),
+      ),
+    { discard: true },
+  ).pipe(
+    Effect.andThen(() => Effect.logWarning(`(disable ${'warnings.unserializableOptions'} to ignore this warning)`)),
   )
 
-function markUnserializableOptions(options: StrykerOptions): Effect.Effect<void> {
-  return Effect.gen(function*() {
-    if (isWarningEnabled('unserializableOptions', options.warnings)) {
-      yield* warnAboutUnserializableOptions(options)
-    }
-  })
+type UnserializableDescription = {
+  readonly path: ReadonlyArray<string>
+  readonly reason: string
 }
 
+const NON_JSON_PRIMITIVE_TYPES: Record<string, true> = {
+  bigint: true,
+  function: true,
+  symbol: true,
+}
+
+const scopedUnserializable =
+  (scope: string) => (description: UnserializableDescription): UnserializableDescription => ({
+    ...description,
+    path: [scope, ...description.path],
+  })
+
+const describedChild = <A>(scope: string) => (child: A): UnserializableDescription[] =>
+  Option.match(Option.fromUndefinedOr(findUnserializables(child)), {
+    onNone: () => [],
+    onSome: (descriptions) => descriptions.map(scopedUnserializable(scope)),
+  })
+
+const describedEntries = <A>(
+  entries: ReadonlyArray<readonly [string, A]>,
+): UnserializableDescription[] => entries.flatMap(([scope, child]) => describedChild(scope)(child))
+
+const classNameOf = (value: object): string =>
+  Match.value(value.constructor).pipe(
+    Match.when(Match.defined, (constructor) => constructor.name),
+    Match.orElse(() => 'Object'),
+  )
+
+const describeUnserializableInstance = (value: object): UnserializableDescription[] => [
+  {
+    path: [],
+    reason: `Value is an instance of "${
+      classNameOf(
+        value,
+      )
+    }", this detail will get lost in translation during serialization`,
+  },
+]
+
+const isArrayValue = <A = unknown>(value: unknown): value is ReadonlyArray<A> => Array.isArray(value)
+
+const isPlainObjectValue = (value: object): boolean => Array.isArray(value) === false && value.constructor === Object
+
+const describedIndexedChildren = <A = unknown>(arrayed: ReadonlyArray<A>): UnserializableDescription[] =>
+  describedEntries(arrayed.map((child, index) => [index.toString(), child] as const))
+
+const describeUnserializableObject = (value: object): UnserializableDescription[] =>
+  Match.value(value).pipe(
+    Match.when(isArrayValue, describedIndexedChildren),
+    Match.orElse((recorded) =>
+      Option.match(
+        Option.liftPredicate(recorded, isPlainObjectValue),
+        {
+          onNone: () => describeUnserializableInstance(recorded),
+          onSome: (plain) => describedEntries(Object.entries(plain)),
+        },
+      )
+    ),
+  )
+
+const describeUnserializableNonNullish = <A>(value: A): UnserializableDescription[] =>
+  Option.match(Option.liftPredicate(value, isNonNullObject), {
+    onNone: () => [],
+    onSome: (present) => describeUnserializableObject(present),
+  })
+const isNumberValue = (value: unknown): value is number => typeof value === 'number'
+
+type JsonlessPrimitive = bigint | symbol | ((...args: never[]) => void)
+
+const isNonJsonPrimitive = (value: unknown): value is JsonlessPrimitive =>
+  NON_JSON_PRIMITIVE_TYPES[typeof value] === true
+
+const primitiveKindOf = (primitive: JsonlessPrimitive): string => typeof primitive
+
+const describeUnserializablePrimitive = (primitive: JsonlessPrimitive): UnserializableDescription[] => [
+  {
+    path: [],
+    reason: `Primitive type "${primitiveKindOf(primitive)}" has no JSON representation`,
+  },
+]
+
+const describeUnserializableUnknown = <A>(value: A): UnserializableDescription[] =>
+  Option.match(Option.liftPredicate(value, isNonJsonPrimitive), {
+    onNone: () => describeUnserializableNonNullish(value),
+    onSome: describeUnserializablePrimitive,
+  })
+
+const hasDescriptions = (found: UnserializableDescription[]): boolean => found.length > 0
+
+const describeUnserializableFiniteNumber = (value: number): UnserializableDescription[] =>
+  Boolean.match(Number.isFinite(value), {
+    onTrue: () => [],
+    onFalse: () => [
+      {
+        path: [],
+        reason: `Number value \`${value}\` has no JSON representation`,
+      },
+    ],
+  })
+
+const describeUnserializableValue = <A>(value: A): UnserializableDescription[] =>
+  Option.match(Option.liftPredicate(value, isNumberValue), {
+    onNone: () => describeUnserializableUnknown(value),
+    onSome: describeUnserializableFiniteNumber,
+  })
+const findUnserializables = <A>(thing: A): UnserializableDescription[] | undefined =>
+  Option.match(
+    Option.filter(Option.some(describeUnserializableValue(thing)), hasDescriptions),
+    {
+      onNone: () => undefined,
+      onSome: (found) => found,
+    },
+  )
+const warnAboutUnserializableOptions = (options: Options.StrykerOptions): Effect.Effect<void> =>
+  Option.match(Option.fromUndefinedOr(findUnserializables(options)), {
+    onNone: () => Effect.void,
+    onSome: (unserializables) => logUnserializableWarnings(unserializables),
+  })
+
+const markUnserializableOptions = (options: Options.StrykerOptions): Effect.Effect<void> =>
+  Match.value(warningDecisionOf('unserializableOptions', options.warnings)).pipe(
+    Match.tag('WarningEnabled', () => warnAboutUnserializableOptions(options)),
+    Match.tag('WarningDisabled', () => Effect.void),
+    Match.exhaustive,
+  )
+
 function markOptions(
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
   schema: ValidationSchemaDocument,
 ): Effect.Effect<void> {
   return Effect.gen(function*() {
@@ -919,39 +1011,24 @@ function markOptions(
   })
 }
 
-export function validateOptions<A = unknown>(
-  options: Record<string, A>,
-  schema: ValidationSchemaDocument,
-): Effect.Effect<StrykerOptions, ConfigError> {
-  return Effect.gen(function*() {
-    const typed = yield* schemaValidate(options)
-    yield* customValidation(typed)
-    yield* markOptions(typed, schema)
-    return typed
-  })
-}
-
-export const createDefaultOptions: Effect.Effect<StrykerOptions> = S.decodeEffect(StrykerOptionsSchema)({}).pipe(
-  Effect.orDie,
+export const validateOptions = dual<
+  <A = unknown>(
+    schema: ValidationSchemaDocument,
+  ) => (options: Record<string, A>) => Effect.Effect<Options.StrykerOptions, ConfigError>,
+  <A = unknown>(
+    options: Record<string, A>,
+    schema: ValidationSchemaDocument,
+  ) => Effect.Effect<Options.StrykerOptions, ConfigError>
+>(
+  2,
+  (options, schema) =>
+    Effect.gen(function*() {
+      const typed = yield* schemaValidate(options)
+      yield* customValidation(typed)
+      yield* markOptions(typed, schema)
+      return typed
+    }),
 )
-
-export const defaultOptions: Effect.Effect<Immutable<StrykerOptions>, never, never> = Effect.map(
-  createDefaultOptions,
-  (opts) => deepFreeze(opts),
-)
-
-export const CONFIG_SYNTAX_HELP = `
-Example of how a config file should look:
-/**
-  * @type {import('@systemfsoftware/stryker-js-plugin-interface').StrykerOptions}
-  */
-export default {
-  // Your options here!
-}
-
-A config file is a TypeScript or ESM JavaScript module: stryker.conf.ts, stryker.config.ts, or the same names with a .mts, .js, or .mjs extension.
-
-See https://stryker-mutator.io/docs/stryker-js/config-file for more information.`.trim()
 
 function exists(fileName: string): Effect.Effect<boolean, ConfigFileUnreadableError, FileSystem.FileSystem> {
   return Effect.gen(function*() {
@@ -990,12 +1067,12 @@ const firstExistingConfigFile = (
     onNone: () => Effect.succeedNone,
     onSome: (head) =>
       exists(head).pipe(
-        Effect.flatMap((doesExist) => {
-          if (doesExist) {
-            return Effect.succeedSome(head)
-          }
-          return firstExistingConfigFile(fileNames.slice(1))
-        }),
+        Effect.flatMap((doesExist) =>
+          Match.value(doesExist).pipe(
+            Match.when(true, () => Effect.succeedSome(head)),
+            Match.orElse(() => firstExistingConfigFile(fileNames.slice(1))),
+          )
+        ),
       ),
   })
 
@@ -1050,9 +1127,10 @@ const refuseLegacyOnlyProject = (): Effect.Effect<
       })
     ),
   )
+
 const warnShadowedLegacyConfig = (
   supportedFile: string,
-): Effect.Effect<string, ConfigFileUnreadableError, FileSystem.FileSystem> =>
+): Effect.Effect<string, ConfigFileUnreadableError | ConfigFileUnsupportedError, FileSystem.FileSystem> =>
   firstLegacyConfigFile().pipe(
     Effect.flatMap((legacyFile) =>
       Option.match(legacyFile, {
@@ -1067,7 +1145,7 @@ const discoverConfigFile = (): Effect.Effect<
   ConfigFileUnreadableError | ConfigFileUnsupportedError,
   FileSystem.FileSystem
 > =>
-  firstExistingConfigFile([...SUPPORTED_CONFIG_FILE_NAMES]).pipe(
+  firstExistingConfigFile([...DISCOVERABLE_CONFIG_FILE_NAMES]).pipe(
     Effect.flatMap((found) =>
       Option.match(found, {
         onNone: () => refuseLegacyOnlyProject().pipe(Effect.map((legacy) => Option.getOrUndefined(legacy))),
@@ -1083,18 +1161,28 @@ function findConfigFile<A = unknown>(
   ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileUnsupportedError,
   FileSystem.FileSystem | Path.Path
 > {
-  return typeof configFileName === 'string' ? configFileFor(configFileName) : discoverConfigFile()
+  return Option.match(
+    Option.liftPredicate((value: unknown): value is string => typeof value === 'string')(configFileName),
+    {
+      onSome: (found) => configFileFor(found),
+      onNone: () => discoverConfigFile(),
+    },
+  )
 }
 
 const resolveChildExtends = (
   configFile: string,
-  child: PartialStrykerOptions,
+  child: Options.PartialStrykerOptions,
   configEnv: ConfigEnv,
 ): Effect.Effect<
-  PartialStrykerOptions,
+  Options.PartialStrykerOptions,
   ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   Path.Path
-> => 'extends' in child ? resolveExtends(configFile, child, configEnv) : Effect.succeed(child)
+> =>
+  Match.value('extends' in child).pipe(
+    Match.when(true, () => resolveExtends(configFile, child, configEnv)),
+    Match.orElse(() => Effect.succeed(child)),
+  )
 
 export interface ConfigInvocation {
   readonly command: 'run' | 'merge-reports'
@@ -1114,54 +1202,162 @@ const isCiEnvironment: Effect.Effect<boolean> = Config.String('CI').pipe(
 )
 
 function loadOptionsFromConfigFile(
-  cliOptions: PartialStrykerOptions,
+  cliOptions: Options.PartialStrykerOptions,
   configEnv: ConfigEnv,
 ): Effect.Effect<
-  PartialStrykerOptions,
+  Option.Option<Options.PartialStrykerOptions>,
   ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
   FileSystem.FileSystem | Path.Path
 > {
   return findConfigFile(cliOptions['configFile']).pipe(
     Effect.flatMap((configFile) =>
       Match.value(configFile).pipe(
-        Match.when(undefined, () => Effect.succeed({})),
+        Match.when(undefined, () => Effect.succeedNone),
         Match.orElse((found) =>
           readConfigModule(found, configEnv).pipe(
             Effect.flatMap((child) => resolveChildExtends(found, child, configEnv)),
+            Effect.asSome,
           )
         ),
       )
     ),
   )
 }
-export function readConfig(
-  cliOptions: PartialStrykerOptions,
-  invocation: ConfigInvocation,
-): Effect.Effect<
-  StrykerOptions,
-  ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
-  FileSystem.FileSystem | Path.Path
-> {
-  return Effect.gen(function*() {
+const readLoadConfig = (input: {
+  readonly cliOptions: Options.PartialStrykerOptions
+  readonly invocation: ConfigInvocation
+}) =>
+  Effect.gen(function*() {
     const configEnv: ConfigEnv = {
-      command: invocation.command,
-      mode: invocation.mode,
-      isDryRun: cliOptions['dryRunOnly'] === true,
+      command: input.invocation.command,
+      mode: input.invocation.mode,
+      isDryRun: input.cliOptions['dryRunOnly'] === true,
       isCi: yield* isCiEnvironment,
     }
-    const cliRecord = yield* S.decodeEffect(ConfigDocumentSchema)(cliOptions).pipe(Effect.orDie)
-    const fileRecord = yield* loadOptionsFromConfigFile(cliRecord, configEnv)
-    const fileOptions = yield* Result.match(S.decodeResult(ConfigDocumentSchema)(fileRecord), {
-      onFailure: (cause) => Effect.fail(ConfigFileInvalidError.make({ file: 'config', cause })),
-      onSuccess: (options) => Effect.succeed(options),
-    })
-    const merged = mergeConfig(fileOptions, cliRecord)
-    const decoded = S.decodeUnknownResult(StrykerOptionsSchema)(merged)
-    if (Result.isFailure(decoded)) {
-      throw ConfigError.make({ message: configErrorMessage(describeErrors(decoded.failure)) })
-    }
-    return decoded.success
+    const cliRecord = yield* S.decodeEffect(ConfigDocumentSchema)(input.cliOptions).pipe(Effect.orDie)
+    return yield* loadOptionsFromConfigFile(cliRecord, configEnv).pipe(
+      Effect.map((fileOptions) =>
+        LoadConfigCommand.make({
+          document: StrykerConfig.merge(Option.getOrElse(fileOptions, () => ({})), cliRecord),
+          fileFound: Option.isSome(fileOptions),
+        })
+      ),
+    )
   })
+
+export const loadConfig = Sandwich.named('stryker.config_read')(readLoadConfig)
+  .decide(resolveConfig)
+  .write({
+    ConfigFromFile: ({ options }) => Effect.succeed(options),
+    ConfigFromDefaults: ({ options }) => Effect.succeed(options),
+    ConfigOptionsRefused: ({ message }) =>
+      Effect.fail(ConfigError.make({ message: configErrorMessage(describeMessageOf(message)) })),
+    CommandRejected: ({ issue }) => Effect.fail(ConfigError.make({ message: issue })),
+  })
+
+export const readConfig: {
+  (
+    invocation: ConfigInvocation,
+  ): (
+    cliOptions: Options.PartialStrykerOptions,
+  ) => Effect.Effect<
+    Options.StrykerOptions,
+    ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
+    FileSystem.FileSystem | Path.Path
+  >
+  (
+    cliOptions: Options.PartialStrykerOptions,
+    invocation: ConfigInvocation,
+  ): Effect.Effect<
+    Options.StrykerOptions,
+    ConfigFileNotFoundError | ConfigFileUnreadableError | ConfigFileInvalidError | ConfigFileUnsupportedError,
+    FileSystem.FileSystem | Path.Path
+  >
+} = dual(
+  2,
+  (cliOptions: Options.PartialStrykerOptions, invocation: ConfigInvocation) =>
+    loadConfig.run({ cliOptions, invocation }),
+)
+
+export interface LoadedConfig {
+  readonly options: Options.StrykerOptions
+  readonly basePath: string
 }
 
-export const loadConfigCell = readConfig
+const emitPreparePhaseEntered = phaseEntered('prepare')
+
+const failConfigWith = (message: string) =>
+  Effect.fail(ConfigError.make({ message })).pipe(Effect.tapCause(() => emitPreparePhaseEntered))
+
+const readRunConfig = (input: {
+  readonly cliOptions: Options.PartialStrykerOptions
+  readonly targetMutatePatterns: readonly string[] | undefined
+}) =>
+  Effect.gen(function*() {
+    const env = yield* RunEnvironment
+    const raw = yield* readLoadConfig({
+      cliOptions: input.cliOptions,
+      invocation: { command: 'run', mode: env.resolvedMode.mode },
+    }).pipe(Effect.tapCause(() => emitPreparePhaseEntered))
+    return Object.assign(
+      raw,
+      {
+        targetMutatePatterns: input.targetMutatePatterns,
+        basePath: env.basePath,
+      },
+    )
+  })
+
+export const loadConfigCell = Sandwich.named('stryker.load_config')(readRunConfig)
+  .decide(resolveConfig)
+  .write({
+    ConfigFromFile: ({ options }, raw) =>
+      Effect.succeed({
+        options,
+        targetMutatePatterns: raw.targetMutatePatterns,
+        basePath: raw.basePath,
+      }),
+    ConfigFromDefaults: ({ options }, raw) =>
+      Effect.succeed({
+        options,
+        targetMutatePatterns: raw.targetMutatePatterns,
+        basePath: raw.basePath,
+      }),
+    ConfigOptionsRefused: ({ message }) => failConfigWith(configErrorMessage(describeMessageOf(message))),
+    CommandRejected: ({ issue }) => failConfigWith(issue),
+  })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const Logger = await import('effect/Logger')
+
+  const JsonLeaf = S.Union([S.Finite, S.String, S.Boolean, S.Null])
+  const JsonSiblings = S.Record(S.String, S.Union([JsonLeaf, S.Array(JsonLeaf), S.Record(S.String, JsonLeaf)]))
+
+  const serializabilityWarningsOf = <A = unknown>(options: Record<string, A>) =>
+    Effect.gen(function*() {
+      const warnings: string[] = []
+      const recording = Logger.layer([
+        Logger.make((entry) => {
+          warnings.push([entry.message].flat().map(String).join(' '))
+        }),
+      ])
+      yield* validateOptions(options, forkCoreSchema).pipe(Effect.provide(recording))
+      return warnings.filter((warning) => warning.includes('is not (fully) serializable'))
+    })
+
+  it.effect.prop(
+    '∀siblings,key_ValidateOptions_WarnsOnlyForTheNonJsonLeaf',
+    [JsonSiblings, S.String, S.Boolean],
+    ([siblings, key, asFunction]) =>
+      Effect.map(
+        serializabilityWarningsOf({
+          custom: { nested: { ...structuredClone(siblings), [key]: asFunction ? () => key : 1n } },
+        }),
+        (warnings) => {
+          const expected = `Config option "custom.nested.${key}" is not`
+          return warnings.map((warning) => warning.slice(0, expected.length)).join('|') === expected
+        },
+      ),
+  )
+}

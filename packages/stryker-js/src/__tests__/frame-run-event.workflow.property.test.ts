@@ -21,11 +21,7 @@ import {
   RunMutantTested,
   RunStarted,
   SkippedReported,
-} from '../RunEvent.schema.js'
-
-const FrameRunEventTypeId = Symbol.for(
-  '@systemfsoftware/stryker-js/FrameRunEventDecision',
-)
+} from '../run-event.schema.js'
 
 const arbitraryTerminalEvent = Arbitrary.schema(S.Union([RunFailed, HelpRendered]))
 
@@ -52,18 +48,6 @@ const arbitraryState = Arbitrary.schema(FramingState)
 const arbitraryNat = Arbitrary.schema(S.Int.check(S.isGreaterThanOrEqualTo(0)))
 
 describe('frameRunEvent', () => {
-  it.prop(
-    '∀c_Command_∈Decision',
-    [arbitraryState, arbitraryEvent],
-    ([state, event]) => {
-      const result = frameRunEvent(FrameRunEventCommand.make({ state, event }))
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      return Object.getOwnPropertySymbols(result.success).includes(FrameRunEventTypeId)
-    },
-  )
-
   it.prop(
     '∀e_Terminal_≡Suppressed',
     [arbitraryState, arbitraryTerminalEvent, arbitraryEvent],

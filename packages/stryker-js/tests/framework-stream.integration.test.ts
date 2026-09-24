@@ -1,18 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  FormatRegistryResolved,
-  type FormatRegistryRow,
-  PluginsReported,
-  RunEventWireLine,
-  RunFailed,
-  SkippedReported,
-} from '@systemfsoftware/stryker-js'
-import type {
-  FormatRegistryResolved as FormatRegistryResolvedEvent,
-  PluginsReported as PluginsReportedEvent,
-  RunFailed as RunFailedEvent,
-  SkippedReported as SkippedReportedEvent,
-} from '@systemfsoftware/stryker-js'
+import { RunEvent } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as S from 'effect/Schema'
@@ -27,7 +14,7 @@ const frameworkModule = 'file:///project/node_modules/@acme/framework/index.mjs'
 const firstModule = 'file:///project/node_modules/@acme/first/index.mjs'
 const secondModule = 'file:///project/node_modules/@acme/second/index.mjs'
 
-const loadReport = PluginsReported.make({
+const loadReport = RunEvent.PluginsReported.make({
   modules: [
     {
       moduleName: frameworkModule,
@@ -37,26 +24,26 @@ const loadReport = PluginsReported.make({
   shadowings: [{ extension: '.html', winner: firstModule, loser: secondModule }],
 })
 
-const registryRows: ReadonlyArray<FormatRegistryRow> = [
+const registryRows: ReadonlyArray<RunEvent.FormatRegistryRow> = [
   { extension: '.ts', formatId: 'ts', ownerModule: CORE_OWNER, language: 'typescript' },
   { extension: '.fixture', formatId: 'fixture', ownerModule: frameworkModule, language: 'fixture' },
 ]
 
-const registryReport = FormatRegistryResolved.make({ rows: [...registryRows] })
+const registryReport = RunEvent.FormatRegistryResolved.make({ rows: [...registryRows] })
 
 const svelteReason =
   `No loaded framework claims ".svelte". Install ${SVELTE_MODULE} and add it to "plugins" to instrument it.`
 const genericReason =
   'No loaded framework claims ".txt". Install the framework plugin that claims this file type to instrument it.'
 
-const skippedReport = SkippedReported.make({
+const skippedReport = RunEvent.SkippedReported.make({
   files: [
     { file: 'src/component.svelte', extension: '.svelte', reason: svelteReason },
     { file: 'src/widget.txt', extension: '.txt', reason: genericReason },
   ],
 })
 
-const refusal = RunFailed.make({
+const refusal = RunEvent.RunFailed.make({
   schemaVersion: '1.1',
   code: 2,
   error: `Failed to load plugin "${frameworkModule}" (PeerMissing)`,
@@ -65,13 +52,13 @@ const refusal = RunFailed.make({
 })
 
 type ReportEvent =
-  | PluginsReportedEvent
-  | FormatRegistryResolvedEvent
-  | SkippedReportedEvent
-  | RunFailedEvent
+  | RunEvent.PluginsReported
+  | RunEvent.FormatRegistryResolved
+  | RunEvent.SkippedReported
+  | RunEvent.RunFailed
 
 const wireOf = (event: ReportEvent): Effect.Effect<string, never> =>
-  S.encodeEffect(RunEventWireLine)(event).pipe(
+  S.encodeEffect(RunEvent.RunEventWireLine)(event).pipe(
     Effect.map((encoded) => {
       if (typeof encoded !== 'string') {
         throw new Error('the wire line was expected to encode to a string')
@@ -84,10 +71,10 @@ const wireOf = (event: ReportEvent): Effect.Effect<string, never> =>
 const wireAll = (events: ReadonlyArray<ReportEvent>): Effect.Effect<ReadonlyArray<string>, S.SchemaError> =>
   Effect.forEach(events, wireOf)
 
-const decodedOf = (line: string): Effect.Effect<RunFailedEvent, S.SchemaError> =>
-  S.decodeEffect(RunEventWireLine)(line).pipe(
+const decodedOf = (line: string): Effect.Effect<RunEvent.RunFailed, S.SchemaError> =>
+  S.decodeEffect(RunEvent.RunEventWireLine)(line).pipe(
     Effect.filterOrElse(
-      (event): event is RunFailedEvent => S.is(RunFailed)(event),
+      (event): event is RunEvent.RunFailed => S.is(RunEvent.RunFailed)(event),
       () => Effect.die(new Error('the decoded line was expected to be a failure event')),
     ),
   )

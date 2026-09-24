@@ -4,10 +4,10 @@
 
 ```ts
 
-import { ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface';
-
 // @public (undocumented)
-export const makeHtmlReporter: ReporterFactory;
+export namespace HtmlReporter {
+    export { makeHtmlReporter };
+}
 
 // (No @packageDocumentation comment for this package)
 

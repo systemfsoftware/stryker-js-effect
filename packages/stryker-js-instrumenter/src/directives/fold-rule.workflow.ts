@@ -10,7 +10,9 @@ export type MutantRule = readonly LocatedDirective[]
 export class FoldRuleCommand extends S.TaggedClass<FoldRuleCommand>()('FoldRuleCommand', {
   rule: S.Array(LocatedDirectiveSchema),
   directive: LocatedDirectiveSchema,
-}) {}
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
 
 const RuleFoldTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-instrumenter/RuleFold')
 type RuleFoldTypeId = typeof RuleFoldTypeId
@@ -29,12 +31,14 @@ export class RestoreFolded extends S.TaggedClass<RestoreFolded>()('RestoreFolded
 
 export type FoldedRule = DisableFolded | RestoreFolded
 
-export const foldRule = Workflow.total(
-  FoldRuleCommand,
-  (command: FoldRuleCommand): Result.Result<FoldedRule, never> =>
+export const foldRule = Workflow.make({
+  command: FoldRuleCommand,
+  decision: S.Union([DisableFolded, RestoreFolded]),
+  error: S.Never,
+  decide: (command: FoldRuleCommand): Result.Result<FoldedRule, never> =>
     Match.value(command.directive.directive.action).pipe(
       Match.when('restore', () => Result.succeed(RestoreFolded.make({ rule: [...command.rule, command.directive] }))),
       Match.when('disable', () => Result.succeed(DisableFolded.make({ rule: [...command.rule, command.directive] }))),
       Match.exhaustive,
     ),
-)
+})

@@ -5,13 +5,7 @@ import type {
   FrameworkContext,
   FrameworkParseResult,
 } from '@systemfsoftware/stryker-framework-interface'
-import {
-  coreFormatRegistry,
-  frameworkEntryOf,
-  type InstrumentResult,
-  type Location,
-  registerEntries,
-} from '@systemfsoftware/stryker-js-instrumenter'
+import { Format, Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
@@ -40,16 +34,16 @@ const lineOf = (content: string, line: number): string => {
   return found
 }
 
-const slicedText = (content: string, location: Location): string =>
+const slicedText = (content: string, location: Mutant.Location): string =>
   lineOf(content, location.start.line).slice(location.start.column - 1, location.end.column - 1)
 
 interface LocatedMutant {
   readonly mutatorName: string
   readonly replacement: string
-  readonly location: Location
+  readonly location: Mutant.Location
 }
 
-const locatedOf = (result: InstrumentResult): readonly LocatedMutant[] =>
+const locatedOf = (result: Instrument.InstrumentResult): readonly LocatedMutant[] =>
   result.mutants.map((mutant) => ({
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacement,
@@ -121,9 +115,9 @@ const instrumentWith = (framework: Framework, name: string, content: string) =>
   instrument(
     [{ name, content, mutate: true }],
     { ignorers: [], excludedMutations: [] },
-    registerEntries(
-      coreFormatRegistry,
-      [frameworkEntryOf('span-fixture-plugin', framework)],
+    Format.registerEntries(
+      Format.coreFormatRegistry,
+      [Format.frameworkEntryOf('span-fixture-plugin', framework)],
     ),
   )
 

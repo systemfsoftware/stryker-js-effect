@@ -1,10 +1,10 @@
-import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Effect from 'effect/Effect'
 import * as fc from 'fast-check'
 import * as fs from 'node:fs'
 import { Project } from 'ts-morph'
 import { describe, expect, it } from 'vitest'
-import { defaultMutators } from '../../../packages/stryker-js-instrumenter/src/Mutator.js'
+import { defaultMutators } from '../../../packages/stryker-js-instrumenter/src/Mutator.service.js'
 import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
 import { determineCompileErrorsWithDiagnostics } from './oracle/diagnostics.js'
 import {
@@ -145,7 +145,7 @@ function alphaRename(sourceText: string, suffix: string): string {
 
 const instrumentOxc = (code: string) =>
   Effect.runPromise(
-    instrument([{ name: 'synthetic.ts', content: code, mutate: true }], {
+    Instrument.instrument([{ name: 'synthetic.ts', content: code, mutate: true }], {
       excludedMutations: [],
       ignorers: [],
     }),

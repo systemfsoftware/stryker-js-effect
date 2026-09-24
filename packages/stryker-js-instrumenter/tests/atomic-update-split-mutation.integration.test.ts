@@ -1,11 +1,11 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { InstrumentResult, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
+import { importStyles, shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
-import { importStyles, shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
 const ATOMIC_UPDATE_SPLIT = 'AtomicUpdateSplit'
@@ -195,10 +195,10 @@ const instrumentSource = (source: string) =>
     optInMutations: [ATOMIC_UPDATE_SPLIT],
   })
 
-const atomicCount = (result: InstrumentResult): number =>
+const atomicCount = (result: Instrument.InstrumentResult): number =>
   result.mutants.filter((mutant) => mutant.mutatorName === ATOMIC_UPDATE_SPLIT).length
 
-const atomicMutantsOf = (result: InstrumentResult): readonly Mutant[] =>
+const atomicMutantsOf = (result: Instrument.InstrumentResult): readonly Mutant.Mutant[] =>
   result.mutants.filter((mutant) => mutant.mutatorName === ATOMIC_UPDATE_SPLIT)
 
 const Feature = makeFeature({ it, layer })
@@ -249,13 +249,13 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
         Then(
           'every table entry counts its mutants inside its own export, every file totals its table, and no replacement hides behind a cast or a suppression',
         )((
-          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: InstrumentResult },
+          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const contentByFile = new Map(
               fixtures.map((fixture) => [`effect-concurrency/${fixture.name}`, fixture.content]),
             )
-            const mutantsIn = (fileName: string): readonly Mutant[] =>
+            const mutantsIn = (fileName: string): readonly Mutant.Mutant[] =>
               report.mutants.filter(
                 (mutant) => mutant.mutatorName === ATOMIC_UPDATE_SPLIT && mutant.fileName === fileName,
               )
@@ -364,7 +364,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), atomicMutantsOf),
         ),
         Then('the single mutant replaces the call with the snapshot split, word for word')(
-          ({ mutants }: { mutants: readonly Mutant[] }) =>
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
             Effect.sync(() => {
               expect(mutants.length).toBe(1)
               expect(mutants[0]?.replacement).toBe(DATA_FIRST_REPLACEMENT)
@@ -382,7 +382,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), atomicMutantsOf),
         ),
         Then('the single mutant replaces the call with the piped snapshot split, word for word')(
-          ({ mutants }: { mutants: readonly Mutant[] }) =>
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
             Effect.sync(() => {
               expect(mutants.length).toBe(1)
               expect(mutants[0]?.replacement).toBe(DATA_LAST_REPLACEMENT)
@@ -403,7 +403,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), atomicMutantsOf),
         ),
         Then('the replacement binds suffixed names and leaves the captured names untouched, word for word')(
-          ({ mutants }: { mutants: readonly Mutant[] }) =>
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
             Effect.sync(() => {
               expect(mutants.length).toBe(1)
               expect(mutants[0]?.replacement).toBe(BINDER_CAPTURE_REPLACEMENT)
@@ -424,7 +424,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           ({ source }: { source: string }) => instrumentSource(source),
         ),
         Then('the single mutant is reported as ignored, carrying the comment reason')(
-          ({ report }: { report: InstrumentResult }) =>
+          ({ report }: { report: Instrument.InstrumentResult }) =>
             Effect.sync(() => {
               const mutants = atomicMutantsOf(report)
               expect(mutants.length).toBe(1)
@@ -449,7 +449,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
             }),
         ),
         Then('the single mutant is reported as ignored for the exclusion')(
-          ({ report }: { report: InstrumentResult }) =>
+          ({ report }: { report: Instrument.InstrumentResult }) =>
             Effect.sync(() => {
               const mutants = atomicMutantsOf(report)
               expect(mutants.length).toBe(1)

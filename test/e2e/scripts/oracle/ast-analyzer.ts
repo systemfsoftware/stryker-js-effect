@@ -19,12 +19,11 @@ function parseDirectives(sourceText: string): readonly DirectiveRule[] {
       ? rawTargets.split(',').map((s) => s.trim().toLowerCase())
       : ['all']
 
-    rules.push({
-      type,
-      scope,
-      targetMutators,
-      line: lineNum,
-    })
+    rules.push(
+      scope === undefined
+        ? { type, targetMutators, line: lineNum }
+        : { type, scope, targetMutators, line: lineNum },
+    )
   })
 
   return rules

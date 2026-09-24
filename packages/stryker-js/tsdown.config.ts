@@ -3,13 +3,14 @@ import { defineConfig } from 'tsdown'
 
 export default defineConfig({
   entry: {
-    index: './src/index.ts',
-    config: './src/config/index.ts',
-    promises: './src/promises/index.ts',
-    events: './src/events/index.ts',
+    index: './src/mod.ts',
+    config: './src/config/mod.ts',
+    promises: './src/promises/mod.ts',
+    events: './src/events/mod.ts',
   },
   format: 'esm',
   dts: true,
+  tsconfig: './tsconfig.build.json',
   exports: sourceExports({ dtsExt: '.d.mts' }),
 
   deps: {

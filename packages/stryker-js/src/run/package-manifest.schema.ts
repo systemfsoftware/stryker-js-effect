@@ -8,11 +8,6 @@ export const PackageExport: S.Codec<S.Json> = S.Union([
 ]).annotate({ identifier: 'PackageExport' })
 export type PackageExportValue = S.Schema.Type<typeof PackageExport>
 
-export const PackageExportMap: S.Schema<{ readonly [key: string]: PackageExportValue }> = S.Record(
-  S.String,
-  S.suspend((): S.Schema<PackageExportValue> => PackageExport),
-).annotate({ identifier: 'PackageExportMap' })
-
 export const PackageManifestFields = S.Struct({
   exports: S.optional(PackageExport),
   module: S.optional(S.String),

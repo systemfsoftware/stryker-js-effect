@@ -1,21 +1,8 @@
 import { NodeFileSystem, NodePath, NodeStdio } from '@effect/platform-node'
 import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import {
-  type EnginePorts,
-  IncrementalReportSchema,
-  type Location,
-  makeRunLayer,
-  type MutantStatus,
-  mutationTestCell,
-  type MutationTestDone,
-  MutationTestResultSchema,
-  type RunEnvironmentShape,
-  type RunEvent,
-  RunMutantTested,
-  StageError,
-  VerdictReached,
-  WorkerLauncher,
-} from '@systemfsoftware/stryker-js'
+import { Engine, RunEvent, Worker } from '@systemfsoftware/stryker-js'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -27,6 +14,7 @@ import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { expect } from 'vitest'
+import { nodeVmPlatformLayer } from '../src/drivers/node.js'
 
 const Feature = makeFeature({ it, layer })
 
@@ -38,8 +26,8 @@ const pluginUrlOf = (moduleName: string): string =>
 const NEVER_SPAWN = 'a child process was spawned for an in-memory run'
 
 const workerCanary = Layer.succeed(
-  WorkerLauncher,
-  WorkerLauncher.of({
+  Worker.WorkerLauncher,
+  Worker.WorkerLauncher.of({
     spawn: () => Effect.die(new Error(NEVER_SPAWN)),
   }),
 )
@@ -51,11 +39,12 @@ const spawnerCanary = Layer.succeed(
 
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
-const neverSpawnPorts: Layer.Layer<EnginePorts> = Layer.mergeAll(
+const neverSpawnPorts: Layer.Layer<Engine.EnginePorts> = Layer.mergeAll(
   filePorts,
   NodeStdio.layer,
   workerCanary,
   spawnerCanary,
+  nodeVmPlatformLayer,
 )
 
 const MATH_FILE = 'src/lib/math.ts'
@@ -76,7 +65,7 @@ const TEST_SOURCE = 'globalThis.__strykerParityProbe = true\n'
 
 const PRE_FIX_COLUMN_DRIFT = 1
 
-const REUSE_ONLY_STATUS: MutantStatus = 'Timeout'
+const REUSE_ONLY_STATUS: Mutant.MutantStatus = 'Timeout'
 
 interface Workspace {
   readonly directory: string
@@ -114,7 +103,7 @@ const removeWorkspace = (directory: string): Effect.Effect<void, never, FileSyst
     Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(directory, { recursive: true, force: true })),
   )
 
-const environmentFor = (directory: string): RunEnvironmentShape => ({
+const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
   runId: 'mutant-location-parity',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
@@ -124,31 +113,31 @@ const environmentFor = (directory: string): RunEnvironmentShape => ({
 })
 
 interface ObservedRun {
-  readonly exit: Exit.Exit<MutationTestDone, StageError>
-  readonly events: ReadonlyArray<RunEvent>
-  readonly report: Option.Option<typeof MutationTestResultSchema.Type>
+  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
+  readonly events: ReadonlyArray<RunEvent.RunEvent>
+  readonly report: Option.Option<typeof Report.MutationTestResultSchema.Type>
 }
 
 const readReport = (
   directory: string,
-): Effect.Effect<typeof MutationTestResultSchema.Type, never, FileSystem.FileSystem> =>
+): Effect.Effect<typeof Report.MutationTestResultSchema.Type, never, FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const text = yield* fs.readFileString(reportFileOf(directory))
-    return yield* S.decodeEffect(S.fromJsonString(MutationTestResultSchema))(text)
+    return yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResultSchema))(text)
   }).pipe(Effect.orDie)
 
-const reportOf = (run: ObservedRun): typeof MutationTestResultSchema.Type =>
+const reportOf = (run: ObservedRun): typeof Report.MutationTestResultSchema.Type =>
   Option.getOrThrowWith(run.report, () => new Error('the run wrote no JSON report'))
 
 const executeRun = (workspace: Workspace): Effect.Effect<ObservedRun, never, FileSystem.FileSystem> =>
   Effect.gen(function*() {
-    const queue = yield* Queue.bounded<RunEvent, Cause.Done>(8192)
+    const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(8192)
     const runLayer = Layer.merge(
-      Layer.provide(makeRunLayer(environmentFor(workspace.directory), queue), neverSpawnPorts),
+      Layer.provide(Engine.RunEnvironment.stage(environmentFor(workspace.directory), queue), neverSpawnPorts),
       neverSpawnPorts,
     )
-    const exit = yield* mutationTestCell
+    const exit = yield* Engine.mutationTestCell
       .run({
         cliOptions: {
           testRunner: 'vm',
@@ -187,7 +176,7 @@ const writeIncrementalState = (directory: string, state: string): Effect.Effect<
 
 const asLegacyStateOf = (state: string): Effect.Effect<string, S.SchemaError> =>
   Effect.gen(function*() {
-    const report = yield* S.decodeEffect(S.fromJsonString(IncrementalReportSchema))(state)
+    const report = yield* S.decodeEffect(S.fromJsonString(Engine.IncrementalReportSchema))(state)
     const files = Object.fromEntries(
       Object.entries(report.files).map(([file, record]) => [
         file,
@@ -207,7 +196,7 @@ const asLegacyStateOf = (state: string): Effect.Effect<string, S.SchemaError> =>
         },
       ]),
     )
-    return yield* S.encodeEffect(S.fromJsonString(IncrementalReportSchema))({ ...report, files })
+    return yield* S.encodeEffect(S.fromJsonString(Engine.IncrementalReportSchema))({ ...report, files })
   })
 
 interface MutantRow {
@@ -215,12 +204,12 @@ interface MutantRow {
   readonly id: string
   readonly mutator: string
   readonly replacement: string | null
-  readonly status: MutantStatus
-  readonly location: Location
+  readonly status: Mutant.MutantStatus
+  readonly location: Mutant.Location
 }
 
-const streamRowsOf = (events: ReadonlyArray<RunEvent>): readonly MutantRow[] =>
-  events.filter(S.is(RunMutantTested)).map((mutant) => ({
+const streamRowsOf = (events: ReadonlyArray<RunEvent.RunEvent>): readonly MutantRow[] =>
+  events.filter(S.is(RunEvent.RunMutantTested)).map((mutant) => ({
     file: mutant.file,
     id: mutant.id,
     mutator: mutant.mutator,
@@ -229,7 +218,7 @@ const streamRowsOf = (events: ReadonlyArray<RunEvent>): readonly MutantRow[] =>
     location: mutant.location,
   }))
 
-const reportRowsOf = (report: typeof MutationTestResultSchema.Type): readonly MutantRow[] =>
+const reportRowsOf = (report: typeof Report.MutationTestResultSchema.Type): readonly MutantRow[] =>
   Object.entries(report.files).flatMap(([file, fileResult]) =>
     fileResult.mutants.map((mutant) => ({
       file,
@@ -256,14 +245,14 @@ const lineOf = (content: string, line: number): string => {
   return found
 }
 
-const slicedText = (content: string, location: Location): string =>
+const slicedText = (content: string, location: Mutant.Location): string =>
   lineOf(content, location.start.line).slice(location.start.column - 1, location.end.column - 1)
 
 interface PinnedMutant {
   readonly file: string
   readonly mutator: string
   readonly replacement: string
-  readonly location: Location
+  readonly location: Mutant.Location
   readonly text: string
 }
 
@@ -322,7 +311,7 @@ interface PinnedRow {
   readonly file: string
   readonly mutator: string
   readonly replacement: string | null
-  readonly location: Location
+  readonly location: Mutant.Location
   readonly text: string
 }
 
@@ -334,12 +323,13 @@ const pinnedRowOf = (row: MutantRow): PinnedRow => ({
   text: slicedText(SOURCES[row.file] ?? '', row.location),
 })
 
-const pinnedKey = (row: PinnedRow): string => [row.file, row.mutator, row.replacement].join('|')
+const pinnedKey = (row: PinnedRow): string =>
+  [row.file, row.location.start.line, row.location.start.column, row.mutator, row.replacement].join('|')
 
 const sortedPinned = (rows: readonly PinnedRow[]): readonly PinnedRow[] => rows.toSorted(compareBy(pinnedKey))
 
-const verdictOf = (events: ReadonlyArray<RunEvent>): VerdictReached => {
-  const found = events.find(S.is(VerdictReached))
+const verdictOf = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.VerdictReached => {
+  const found = events.find(S.is(RunEvent.VerdictReached))
   if (found === undefined) {
     throw new Error('the run streamed no verdict')
   }
