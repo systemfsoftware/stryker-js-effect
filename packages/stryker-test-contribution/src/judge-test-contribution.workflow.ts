@@ -117,8 +117,7 @@ const testFileById = (testFiles: Record<string, Report.TestFile>): TestFileById 
 const idsOf = (testIds: readonly string[] | undefined): readonly string[] =>
   Option.getOrElse(Option.fromUndefinedOr(testIds), () => [])
 
-const fileNameOf = (fileById: TestFileById, testId: string): Option.Option<string> =>
-  HashMap.get(fileById, testId)
+const fileNameOf = (fileById: TestFileById, testId: string): Option.Option<string> => HashMap.get(fileById, testId)
 
 const keepReal = (fileById: TestFileById) => (testId: string): ReadonlyArray<string> =>
   Option.match(fileNameOf(fileById, testId), { onNone: () => [], onSome: (fileName) => [fileName] })
@@ -165,8 +164,11 @@ const countOf = (counts: HashMap.HashMap<string, number>, fileName: string): num
   Option.getOrElse(HashMap.get(counts, fileName), () => 0)
 
 const countBy = (fileNames: ReadonlyArray<string>): HashMap.HashMap<string, number> =>
-  Array.reduce(fileNames, HashMap.empty<string, number>(), (counts, fileName) =>
-    HashMap.set(counts, fileName, 1 + Option.getOrElse(HashMap.get(counts, fileName), () => 0)))
+  Array.reduce(
+    fileNames,
+    HashMap.empty<string, number>(),
+    (counts, fileName) => HashMap.set(counts, fileName, 1 + Option.getOrElse(HashMap.get(counts, fileName), () => 0)),
+  )
 
 interface ContributionTally {
   readonly soleKills: HashMap.HashMap<string, number>

@@ -794,6 +794,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
     yield* phaseEntered('mutation-test')
     const idGenerator = yield* IdGenerator
     const env = yield* RunEnvironment
+    const checkerPool = yield* makeCheckerPool(prev, env.basePath)
     const testFiles = yield* Effect.map(
       sandboxFilesOf(prev.sandbox, prev.project.testFiles),
       (pairs) => pairs.map(([, sandboxFileName]) => sandboxFileName),

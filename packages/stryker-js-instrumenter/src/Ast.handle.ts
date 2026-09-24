@@ -134,8 +134,7 @@ type Span = { start: number; end: number }
 export const isNodeArg = (value: unknown): value is { type: string } =>
   Predicate.isObjectOrArray(value) && 'type' in value
 
-const isSpanObject = (value: object): boolean =>
-  !isNodeArg(value) && hasSpanBounds(value)
+const isSpanObject = (value: object): boolean => !isNodeArg(value) && hasSpanBounds(value)
 
 const hasSpanBounds = (value: object): boolean =>
   Predicate.hasProperty('start')(value) && Predicate.hasProperty('end')(value)
