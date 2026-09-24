@@ -8,6 +8,10 @@
   dir: packages/toolchain/oxlint-ignorer-config
   intents:
     - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-framework-interface@0.0.0":
+  dir: packages/frameworks/interface
+  intents:
+    - stryker-framework-interface-debut
 "@systemfsoftware/stryker-ignorer-angular@0.1.0":
   dir: packages/ignorers/angular
   intents:
@@ -55,6 +59,10 @@
   dir: packages/ignorers/kit
   intents:
     - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-js-angular@0.0.0":
+  dir: packages/frameworks/angular
+  intents:
+    - stryker-js-angular-debut
 "@systemfsoftware/stryker-js-cli@9.0.0":
   dir: apps/stryker-js-cli
   intents:
@@ -90,6 +98,13 @@
   dir: packages/stryker-js-html-reporter
   intents:
     - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js-html-reporter@5.0.0":
+  dir: packages/stryker-js-html-reporter
+  intents:
+    - cell-telemetry-spans
+    - html-reporter-logo-markup
+    - html-reporter-partial-call
+    - namespace-roots
 "@systemfsoftware/stryker-js-instrumenter@7.0.0":
   dir: packages/stryker-js-instrumenter
   intents:
@@ -120,6 +135,14 @@
   intents:
     - next-line-directive-applies
     - opt-in-effect-concurrency-mutators
+"@systemfsoftware/stryker-js-instrumenter@9.0.0":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - instrumenter-branded-mutants
+    - mutant-location-base-instrumenter
+    - namespace-roots
+    - stryker-js-instrumenter-core-format-removal
+    - stryker-js-instrumenter-framework-format-entry
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -155,6 +178,13 @@
   dir: packages/stryker-js-plugin-interface
   intents:
     - opt-in-effect-concurrency-mutators
+"@systemfsoftware/stryker-js-plugin-interface@8.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - mutant-location-base-plugin-interface
+    - namespace-roots
+    - plugin-interface-codecs
+    - stryker-js-plugin-interface-bare-package-specifiers
 "@systemfsoftware/stryker-js-plugin-runtime@5.0.0":
   dir: packages/stryker-js-plugin-runtime
   intents:
@@ -173,6 +203,15 @@
   dir: packages/stryker-js-plugin-runtime
   intents:
     - opt-in-effect-concurrency-mutators
+"@systemfsoftware/stryker-js-plugin-runtime@6.0.0":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - namespace-roots
+    - plugin-runtime-trace-codec
+"@systemfsoftware/stryker-js-svelte@0.0.0":
+  dir: packages/frameworks/svelte
+  intents:
+    - stryker-js-svelte-debut
 "@systemfsoftware/stryker-js-typescript-checker@6.0.0":
   dir: packages/stryker-js-typescript-checker
   intents:
@@ -199,6 +238,11 @@
   dir: packages/stryker-js-typescript-checker
   intents:
     - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js-typescript-checker@7.1.0":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - cell-telemetry-spans
+    - mutant-location-base-typescript-checker
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -228,6 +272,11 @@
   dir: packages/stryker-js-vitest-runner
   intents:
     - systemf-toolchain-unknown-discipline
+"@systemfsoftware/stryker-js-vitest-runner@7.2.0":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - cell-telemetry-spans
+    - stryker-js-vitest-runner-describe-kills
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
@@ -254,6 +303,20 @@
   dir: packages/stryker-js
   intents:
     - opt-in-effect-concurrency-mutators
+"@systemfsoftware/stryker-js@11.0.0":
+  dir: packages/stryker-js
+  intents:
+    - cell-telemetry-spans
+    - mutant-location-base-stryker-js
+    - namespace-roots
+    - stryker-js-config-and-exports
+    - stryker-js-file-matcher
+    - stryker-js-framework-plugins
+    - stryker-js-framework-refusals-and-skips
+    - stryker-js-framework-report-and-incremental
+    - stryker-js-framework-stream
+    - stryker-js-prototype-keys
+    - stryker-js-survivors-refusal
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
@@ -295,7 +358,15 @@
   dir: packages/stryker-test-contribution
   intents:
     - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-test-contribution@4.0.0":
+  dir: packages/stryker-test-contribution
+  intents:
+    - test-contribution-decision
 "@systemfsoftware/stryker-vm-harness@1.0.0":
   dir: packages/stryker-vm-harness
   intents:
     - stryker-vm-harness-package
+"@systemfsoftware/stryker-vm-harness@2.0.0":
+  dir: packages/stryker-vm-harness
+  intents:
+    - stryker-vm-harness-namespace-root

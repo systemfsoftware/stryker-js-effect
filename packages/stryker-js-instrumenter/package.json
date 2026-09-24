@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-instrumenter",
-  "version": "8.1.0",
+  "version": "9.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -57,9 +57,9 @@
     "@types/node": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
-    "vitest": "catalog:",
     "tsdown": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "engines": {
     "node": ">=20.0.0"
