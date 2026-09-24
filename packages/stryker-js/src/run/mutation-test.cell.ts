@@ -64,11 +64,9 @@ import { ReportFileName } from '../reporting/report-assembly.schema.js'
 import { StageError } from '../Run.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.resource.js'
-import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import { ChildProcessCrashedError } from '../Worker.schema.js'
 import { IdGenerator } from '../Worker.service.js'
-import { WorkerLauncher } from '../WorkerLauncher.service.js'
-import type { DryRunDone } from './dry-run.cell.js'
+import { configuredPluginOf, type DryRunDone, isStageError, workerSpawnOf } from './dry-run.cell.js'
 import {
   ConfiguredPluginModulePath,
   ConfiguredPluginName,
@@ -230,30 +228,6 @@ const isCheckerCrash = (error: StageError | CheckerCrash): boolean =>
   Match.value(error).pipe(
     Match.tag('ChildProcessCrashedError', 'OutOfMemoryError', () => true),
     Match.orElse(() => false),
-  )
-
-const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
-  Match.value(configured).pipe(
-    Match.when(Options.isCustomTestRunner, (custom) => ConfiguredPluginModulePath.make({ modulePath: custom.plugin })),
-    Match.orElse((name) => ConfiguredPluginName.make({ name })),
-  )
-
-const workerSpawnOf = (
-  stage: StageError['stage'],
-  loaded: Pick<LoadedPlugins, 'pluginSources'>,
-  kind: Plugin.WorkerPluginKind,
-  configured: ConfiguredPluginName | ConfiguredPluginModulePath,
-): Effect.Effect<WorkerSpawnResolved, StageError> =>
-  Effect.mapError(
-    Effect.fromResult(
-      resolveConfiguredPlugin(WorkerSpawnCommand.make({ sources: loaded.pluginSources, kind, configured })),
-    ),
-    (missing) =>
-      StageError.make({
-        stage,
-        reason: missing.reason,
-        cause: PluginNotFoundError.make({ descriptor: missing.descriptor }),
-      }),
   )
 
 const calculateTotalTime = (testResults: Iterable<TestRunner.TestResult>) =>
@@ -1141,7 +1115,6 @@ const mapMutationTestCause = (
 ): StageError =>
   Match.value({ cause }).pipe(
     Match.when({ cause: isStageError }, ({ cause }) => cause),
-    Match.orElse(({ cause }) => StageError.make({ stage: 'mutationTest', reason: 'Mutation testing failed', cause })),
   )
 
 if (import.meta.vitest !== void 0) {

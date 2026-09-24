@@ -2,14 +2,10 @@ import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Array from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
-import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
-import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
-import { PhaseEntered, RunEvents } from '../run-events.service.js'
-
 import { InstrumentCommand, InstrumentError, planInstrumentation } from '../plan-instrumentation.workflow.js'
 import { ProjectFiles } from '../project-files.service.js'
 import type { Project, ProjectFile } from '../Project.schema.js'
@@ -18,7 +14,7 @@ import { StageError } from '../Run.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { makeSandbox } from '../Sandbox.resource.js'
 import type { PrepareDone } from './prepare.cell.js'
-import { RunEnvironment } from './RunEnvironment.service.js'
+import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 
 export interface InstrumentDone extends PrepareDone {
   readonly mutants: readonly Mutant.Mutant[]
@@ -44,10 +40,7 @@ const enteringInstrumentPhase = <A, E, R>(raw: InstrumentRaw, body: Effect.Effec
     { fileCount: raw.filesToMutate.length },
     () =>
       Effect.gen(function*() {
-        const env = yield* RunEnvironment
-        const now = yield* Clock.currentTimeMillis
-        const queue = yield* RunEvents
-        yield* Queue.offer(queue, PhaseEntered.make({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
+        yield* phaseEntered('instrument')
         return yield* body
       }),
   )

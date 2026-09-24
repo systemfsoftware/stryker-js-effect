@@ -2,7 +2,6 @@ import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options, type Plugin, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
-import * as Clock from 'effect/Clock'
 import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -10,11 +9,10 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as MutableHashSet from 'effect/MutableHashSet'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
-import { PhaseEntered, RunEvents } from '../run-events.service.js'
+import { RunEvents } from '../run-events.service.js'
 
 import { dryRun, DryRunCommand, DryRunError, DryRunFailed } from '../dry-run.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
@@ -33,7 +31,7 @@ import {
   WorkerSpawnCommand,
   type WorkerSpawnResolved,
 } from './resolve-configured-plugin.workflow.js'
-import { RunEnvironment } from './RunEnvironment.service.js'
+import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 
 export interface DryRunDone extends InstrumentDone {
   readonly dryRunResult: TestRunner.CompleteDryRunResult
@@ -408,7 +406,7 @@ const writeDryRunPassed = (raw: DryRunRaw): Effect.Effect<
     {},
     () =>
       Effect.gen(function*() {
-        yield* emitDryRunPhase()
+        yield* phaseEntered('dry-run')
         return yield* completeDryRunPassed(raw)
       }),
   )
@@ -423,7 +421,7 @@ const writeDryRunFailed = (
     {},
     () =>
       Effect.gen(function*() {
-        yield* emitDryRunPhase()
+        yield* phaseEntered('dry-run')
         return yield* StageError.make({
           stage: 'dryRun',
           reason: 'There were failed tests in the initial test run.',

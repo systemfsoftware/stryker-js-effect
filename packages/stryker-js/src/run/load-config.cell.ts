@@ -2,15 +2,12 @@ import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
-import * as Clock from 'effect/Clock'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Path from 'effect/Path'
-import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { isCommandRunner } from '../command-runner.resource.js'
@@ -44,11 +41,9 @@ import {
 } from '../ConfigError.schema.js'
 import { MutationRangeSpecifier, MutationRangeSpecifierSchema } from '../MutationRange.schema.js'
 import type { OutputMode } from '../output-mode.schema.js'
-import { PhaseEntered, RunEvents } from '../run-events.service.js'
 import { StrykerError } from '../stryker-error.schema.js'
-import { LoadConfigCommand, resolveConfig } from './resolve-config.workflow.js'
-import { RunEnvironment } from './RunEnvironment.service.js'
-const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
+import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
+
 const combine = (
   prefixes: string[],
   suffixes: string[],
@@ -1286,15 +1281,7 @@ export interface LoadedConfig {
   readonly basePath: string
 }
 
-const emitPreparePhaseEntered = Effect.gen(function*() {
-  const queue = yield* RunEvents
-  const env = yield* RunEnvironment
-  const now = yield* Clock.currentTimeMillis
-  yield* Queue.offer(queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - env.runStartedAt }))
-}).pipe(Effect.ignore)
-
-const failConfigWith = (message: string) =>
-  Effect.fail(ConfigError.make({ message })).pipe(Effect.tapCause(() => emitPreparePhaseEntered))
+const emitPreparePhaseEntered = phaseEntered('prepare')
 
 const readRunConfig = (input: {
   readonly cliOptions: Options.PartialStrykerOptions
