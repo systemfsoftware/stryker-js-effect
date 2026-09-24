@@ -88,8 +88,8 @@ export const decodeDirective = Workflow.total(
     Match.value(
       Option.flatMap(Option.fromNullishOr(DIRECTIVE_PATTERN.exec(command.commentText)), decodedDirective),
     ).pipe(
-      Match.when(Option.isSome, (decoded) => Result.succeed(new DirectiveDecoded({ directive: decoded.value }))),
-      Match.when(Option.isNone, () => Result.succeed(new DirectiveMalformed({ commentText: command.commentText }))),
+      Match.when(Option.isSome, (decoded) => Result.succeed(DirectiveDecoded.make({ directive: decoded.value }))),
+      Match.when(Option.isNone, () => Result.succeed(DirectiveMalformed.make({ commentText: command.commentText }))),
       Match.exhaustive,
     ),
 )

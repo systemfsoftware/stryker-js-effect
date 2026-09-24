@@ -92,7 +92,7 @@ describe('planMutants', () => {
     LocatedDirectiveSchema,
   ], ([earlier, later]) => {
     const mutatorName = 'ArithmeticOperator'
-    const command = new PlanMutantsCommand({
+    const command = PlanMutantsCommand.make({
       fileName: 'probe.ts',
       firstIndex: 0,
       offset: { line: 0, column: 0 },

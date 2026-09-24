@@ -26,7 +26,7 @@ const coveringClaimOf = (command: FormatResolutionCommand): Claim | undefined =>
   command.claims.find((claim) => coversFile(command, claim))
 
 const reversedCommand = (command: FormatResolutionCommand): FormatResolutionCommand =>
-  new FormatResolutionCommand({
+  FormatResolutionCommand.make({
     fileName: command.fileName,
     extension: command.extension,
     formatId: command.formatId,

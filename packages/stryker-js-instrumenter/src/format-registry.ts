@@ -113,7 +113,7 @@ export const resolutionCommandOf = (
   fileName: string,
   formatIdOverride?: string,
 ): FormatResolutionCommand =>
-  new FormatResolutionCommand({
+  FormatResolutionCommand.make({
     fileName,
     extension: extensionOf(fileName),
     formatId: formatIdOverride,

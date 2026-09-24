@@ -100,7 +100,7 @@ export const createMutantCollector = (): MutantCollector => {
 }
 
 const decidedDirective = (commentText: string): Option.Option<Directive> =>
-  Match.value(decodeDirective(new DecodeDirectiveCommand({ commentText }))).pipe(
+  Match.value(decodeDirective(DecodeDirectiveCommand.make({ commentText }))).pipe(
     Match.when(Result.isSuccess, (decoded) =>
       Match.value(decoded.success).pipe(
         Match.tag('DirectiveDecoded', (decision) => Option.some(decision.directive)),
@@ -120,7 +120,7 @@ const directivesOf = (node: Node): readonly LocatedDirective[] =>
   attachedComments(node).flatMap((comment) => Option.toArray(locatedDirective(comment)))
 
 const foldInto = (rule: MutantRule, directive: LocatedDirective): MutantRule =>
-  Match.value(foldRule(new FoldRuleCommand({ rule, directive }))).pipe(
+  Match.value(foldRule(FoldRuleCommand.make({ rule, directive }))).pipe(
     Match.when(Result.isSuccess, (folded) => folded.success.rule),
     Match.orElse(() => rule),
   )
@@ -750,7 +750,7 @@ export const transformScript: AstTransformer<ScriptAst> = (
     }
     function addToPlacementMapIfPossible(path: TraversePath): void {
       const facts = placementFacts(path)
-      const claimed = placeMutants(new PlaceMutantsCommand({ fileName: originFileName, facts, mutants: [] }))
+      const claimed = placeMutants(PlaceMutantsCommand.make({ fileName: originFileName, facts, mutants: [] }))
       Match.value(claimed).pipe(
         Match.when(
           Result.isSuccess,
@@ -794,7 +794,7 @@ export const transformScript: AstTransformer<ScriptAst> = (
         path.skip()
       } catch (error) {
         raisePlacementRefusal(
-          new MutantsUnapplied({
+          MutantsUnapplied.make({
             fileName: originFileName,
             placer: placerNameOf(site),
             mutatorNames: [...placement.appliedMutants.keys()].map((mutant) => mutant.mutatorName),
@@ -807,7 +807,7 @@ export const transformScript: AstTransformer<ScriptAst> = (
     }
     function applyPlacement(path: TraversePath, placement: MutantsPlacement): void {
       const decision = placeMutants(
-        new PlaceMutantsCommand({
+        PlaceMutantsCommand.make({
           fileName: originFileName,
           facts: placement.facts,
           mutants: [...placement.appliedMutants].map(([mutant, applied]) => replacementRecord(mutant, applied)),
@@ -852,7 +852,7 @@ export const transformScript: AstTransformer<ScriptAst> = (
       directives: readonly LocatedDirective[],
     ): Option.Option<readonly Mutant[]> {
       const plan = planMutants(
-        new PlanMutantsCommand({
+        PlanMutantsCommand.make({
           fileName: originFileName,
           firstIndex: mutantCollector.nextIndex,
           offset: offset ?? { line: 0, column: 0 },

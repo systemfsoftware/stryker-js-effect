@@ -21,7 +21,7 @@ const acted = (located: LocatedDirective, action: 'disable' | 'restore'): Locate
 })
 
 const foldedOnto = (rule: readonly LocatedDirective[], directive: LocatedDirective): readonly LocatedDirective[] => {
-  const decided = foldRule(new FoldRuleCommand({ rule, directive }))
+  const decided = foldRule(FoldRuleCommand.make({ rule, directive }))
   return Result.isSuccess(decided) ? decided.success.rule : rule
 }
 
@@ -33,7 +33,7 @@ const silencingReason = (
   line: number,
 ): string | undefined => {
   const planned = planMutants(
-    new PlanMutantsCommand({
+    PlanMutantsCommand.make({
       fileName: 'probe.ts',
       firstIndex: 0,
       offset: { line: 0, column: 0 },

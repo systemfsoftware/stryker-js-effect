@@ -34,9 +34,9 @@ export const admitInstrumentFiles = Workflow.total(
   InstrumentFilesCommand,
   (command): Result.Result<InstrumentFilesDecision, never> =>
     Match.value(isZero(command.claimedCount)).pipe(
-      Match.when(true, () => Result.succeed(new InstrumentFilesSkippedOnly({ skipped: command.skipped }))),
+      Match.when(true, () => Result.succeed(InstrumentFilesSkippedOnly.make({ skipped: command.skipped }))),
       Match.when(false, () =>
-        Result.succeed(new InstrumentFilesAdmitted({ fileCount: command.fileCount, skipped: command.skipped }))),
+        Result.succeed(InstrumentFilesAdmitted.make({ fileCount: command.fileCount, skipped: command.skipped }))),
       Match.exhaustive,
     ),
 )

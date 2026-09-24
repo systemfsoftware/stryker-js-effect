@@ -90,7 +90,7 @@ const parsedOutcome = (
 
 const skippedOutcome = (file: FileDescription, skipped: FormatSkipped): FileOutcome => ({
   kind: 'skipped',
-  record: new InstrumentFileSkip({ file: file.name, extension: skipped.extension, reason: skipped.reason }),
+  record: InstrumentFileSkip.make({ file: file.name, extension: skipped.extension, reason: skipped.reason }),
 })
 
 const unclaimedOverride = (file: FileDescription): InstrumentError =>
@@ -165,7 +165,7 @@ const readInstrumentFiles = (input: InstrumentFilesInput): Effect.Effect<Instrum
 
 const decodeInstrumentFiles = (raw: InstrumentFilesRaw): Result.Result<InstrumentFilesCommand, never> =>
   Result.succeed(
-    new InstrumentFilesCommand({
+    InstrumentFilesCommand.make({
       fileCount: raw.files.length,
       claimedCount: raw.parsed.length,
       skipped: [...raw.skipped],

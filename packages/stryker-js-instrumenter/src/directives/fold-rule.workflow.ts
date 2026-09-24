@@ -33,8 +33,8 @@ export const foldRule = Workflow.total(
   FoldRuleCommand,
   (command: FoldRuleCommand): Result.Result<FoldedRule, never> =>
     Match.value(command.directive.directive.action).pipe(
-      Match.when('restore', () => Result.succeed(new RestoreFolded({ rule: [...command.rule, command.directive] }))),
-      Match.when('disable', () => Result.succeed(new DisableFolded({ rule: [...command.rule, command.directive] }))),
+      Match.when('restore', () => Result.succeed(RestoreFolded.make({ rule: [...command.rule, command.directive] }))),
+      Match.when('disable', () => Result.succeed(DisableFolded.make({ rule: [...command.rule, command.directive] }))),
       Match.exhaustive,
     ),
 )

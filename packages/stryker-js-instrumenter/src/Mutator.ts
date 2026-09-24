@@ -151,7 +151,7 @@ function cloneWithReplacement(mutant: Mutant, originalTree: Node): Result.Result
     Match.when(true, () => Result.succeed(mutatedAst)),
     Match.when(
       false,
-      () => Result.fail(new MutantNotApplied({ fileName: mutant.fileName, mutatorName: mutant.mutatorName })),
+      () => Result.fail(MutantNotApplied.make({ fileName: mutant.fileName, mutatorName: mutant.mutatorName })),
     ),
     Match.exhaustive,
   )

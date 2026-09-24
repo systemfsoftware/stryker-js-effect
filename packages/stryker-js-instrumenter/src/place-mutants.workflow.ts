@@ -90,7 +90,7 @@ const claimingPlacer = (facts: PlacementFacts): Option.Option<PlacerName> =>
 const placerOf = (command: PlaceMutantsCommand): Result.Result<PlacerName, NoPlacerClaimsNode> =>
   Match.value(claimingPlacer(command.facts)).pipe(
     Match.when(Option.isSome, (chosen) => Result.succeed(chosen.value)),
-    Match.when(Option.isNone, () => Result.fail(new NoPlacerClaimsNode({ fileName: command.fileName }))),
+    Match.when(Option.isNone, () => Result.fail(NoPlacerClaimsNode.make({ fileName: command.fileName }))),
     Match.exhaustive,
   )
 
@@ -114,7 +114,7 @@ const firstMismatch = (command: PlaceMutantsCommand, placer: PlacerName): Option
   Option.map(
     Option.fromNullishOr(command.mutants.find((mutant) => !matchesPlacer(placer, mutant.replacement))),
     (mutant) =>
-      new MutantKindMismatch({
+      MutantKindMismatch.make({
         fileName: command.fileName,
         placer,
         mutantId: mutant.id,
@@ -136,9 +136,9 @@ const placementRefusal = (
 const siteOf = (command: PlaceMutantsCommand, placer: PlacerName): EditSite => {
   const mutantIds = command.mutants.map((mutant) => mutant.id)
   return Match.value(placer).pipe(
-    Match.when('expression', () => new ExpressionSite({ fileName: command.fileName, mutantIds })),
-    Match.when('statement', () => new StatementSite({ fileName: command.fileName, mutantIds })),
-    Match.when('switch-case', () => new SwitchCaseSite({ fileName: command.fileName, mutantIds })),
+    Match.when('expression', () => ExpressionSite.make({ fileName: command.fileName, mutantIds })),
+    Match.when('statement', () => StatementSite.make({ fileName: command.fileName, mutantIds })),
+    Match.when('switch-case', () => SwitchCaseSite.make({ fileName: command.fileName, mutantIds })),
     Match.exhaustive,
   )
 }

@@ -32,7 +32,7 @@ const expectedNames = (comment: typeof StrykerCommentSchema.Type): readonly stri
     .filter((name) => name.length > 0)
 
 const decide = (text: string): Result.Result<DirectiveDecision, never> =>
-  decodeDirective(new DecodeDirectiveCommand({ commentText: text }))
+  decodeDirective(DecodeDirectiveCommand.make({ commentText: text }))
 
 const hasBrand = (decision: DirectiveDecision): boolean =>
   Object.getOwnPropertySymbols(decision).includes(DirectiveDecisionTypeId)

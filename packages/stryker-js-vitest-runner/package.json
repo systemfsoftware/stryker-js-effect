@@ -116,6 +116,7 @@
     "@systemfsoftware/effect-cell-types": "8.3.2",
     "effect": "4.0.0-rc.116",
     "oxc-parser": "0.150.0",
+    "oxc-walker": "1.1.1",
     "ws": "8.21.3"
   }
 }

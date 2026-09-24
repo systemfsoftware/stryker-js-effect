@@ -189,7 +189,7 @@ const plannedMutant = (
 ): Result.Result<PlannedMutant, MutantWithoutLocation> =>
   Option.match(Option.fromNullishOr(candidate.location), {
     onNone: () =>
-      Result.fail(new MutantWithoutLocation({ fileName: command.fileName, mutatorName: candidate.mutatorName })),
+      Result.fail(MutantWithoutLocation.make({ fileName: command.fileName, mutatorName: candidate.mutatorName })),
     onSome: (location) =>
       Result.succeed({
         id: `${command.firstIndex + index}`,
@@ -217,14 +217,14 @@ const withoutReason = (mutant: PlannedMutant): boolean => mutant.ignoreReason ==
 const planOf = (command: PlanMutantsCommand, mutants: readonly PlannedMutant[]): MutantPlan =>
   Match.value(mutants.some(withoutReason)).pipe(
     Match.when(true, () =>
-      new MutantsPlanned({
+      MutantsPlanned.make({
         mutants: [...mutants],
         placeable: mutants.filter(withoutReason),
         warnings: warningsOf(command),
         nextIndex: command.firstIndex + mutants.length,
       })),
     Match.when(false, () =>
-      new MutantsFullyIgnored({
+      MutantsFullyIgnored.make({
         mutants: [...mutants],
         warnings: warningsOf(command),
         nextIndex: command.firstIndex + mutants.length,

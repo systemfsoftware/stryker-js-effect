@@ -62,7 +62,7 @@ const claimFor = (command: FormatResolutionCommand): FormatClaimInput | undefine
   command.claims.find((claim) => matchesCommand(claim, command))
 
 const assignedFrom = (claim: FormatClaimInput, command: FormatResolutionCommand): FormatAssigned =>
-  new FormatAssigned({
+  FormatAssigned.make({
     fileName: command.fileName,
     formatId: claim.formatId,
     language: claim.language,
@@ -70,7 +70,7 @@ const assignedFrom = (claim: FormatClaimInput, command: FormatResolutionCommand)
   })
 
 const skippedFrom = (command: FormatResolutionCommand): FormatSkipped =>
-  new FormatSkipped({
+  FormatSkipped.make({
     fileName: command.fileName,
     extension: command.extension,
     reason:
@@ -78,7 +78,7 @@ const skippedFrom = (command: FormatResolutionCommand): FormatSkipped =>
   })
 
 const overrideUnclaimedFrom = (command: FormatResolutionCommand, formatId: string): FormatOverrideUnclaimed =>
-  new FormatOverrideUnclaimed({
+  FormatOverrideUnclaimed.make({
     fileName: command.fileName,
     formatId,
     reason: `No installed format carries the id "${formatId}" pinned for this file.`,
