@@ -111,47 +111,6 @@
     }
   },
   "exports": {
-    ".": {
-      "@systemfsoftware/source": "./src/mod.ts",
-      "types": "./dist/index.d.mts",
-      "default": "./dist/index.mjs"
-    },
-    "./config": {
-      "@systemfsoftware/source": "./src/config/mod.ts",
-      "types": "./dist/config.d.mts",
-      "default": "./dist/config.mjs"
-    },
-    "./events": {
-      "@systemfsoftware/source": "./src/events/mod.ts",
-      "types": "./dist/events.d.mts",
-      "default": "./dist/events.mjs"
-    },
-    "./promises": {
-      "@systemfsoftware/source": "./src/promises/mod.ts",
-      "types": "./dist/promises.d.mts",
-      "default": "./dist/promises.mjs"
-    },
     "./package.json": "./package.json"
-  },
-  "inlinedDependencies": {
-    "@eslint-community/regexpp": "4.12.2",
-    "@jridgewell/gen-mapping": "0.3.13",
-    "@jridgewell/remapping": "2.3.5",
-    "@jridgewell/resolve-uri": "3.1.2",
-    "@jridgewell/sourcemap-codec": "1.6.0",
-    "@jridgewell/trace-mapping": "0.3.31",
-    "@jsr/std__jsonc": "1.0.2",
-    "@sveltejs/acorn-typescript": "1.0.13",
-    "acorn": "8.18.0",
-    "angular-html-parser": "10.12.0",
-    "aria-query": "5.3.1",
-    "axobject-query": "4.1.0",
-    "esrap": "2.3.7",
-    "is-reference": "3.0.3",
-    "locate-character": "3.0.0",
-    "magic-string": "0.30.21",
-    "oxc-parser": "0.150.0",
-    "svelte": "5.57.0",
-    "zimmerframe": "1.1.5"
   }
 }

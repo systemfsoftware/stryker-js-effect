@@ -203,7 +203,9 @@ if (import.meta.vitest !== void 0) {
   const Arr = await import('effect/Array')
   const Equal = await import('effect/Equal')
   const { Arbitrary } = await import('effect/unstable/arbitrary')
-  const { DocumentSchema, NestedDocumentSchema } = await import('../../tests/__fixtures__/config-law.schema.js')
+  const OptionValueSchema = S.Union([S.String, S.Finite, S.Boolean, S.Null, S.Undefined])
+  const DocumentSchema = S.Record(S.String, OptionValueSchema)
+  const NestedDocumentSchema = S.Record(S.String, S.Union([OptionValueSchema, S.Record(S.String, OptionValueSchema)]))
 
   const poisonedDocumentArb = Arbitrary.schema(DocumentSchema).pipe(
     Arbitrary.map((document) => ({

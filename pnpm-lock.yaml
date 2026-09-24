@@ -1140,6 +1140,9 @@ importers:
       '@systemfsoftware/oxlint-config-recommended':
         specifier: 'catalog:'
         version: 2.0.2(effect@4.0.0-rc.117)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
+      '@systemfsoftware/stryker-js-instrumenter':
+        specifier: workspace:^
+        version: link:../stryker-js-instrumenter
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1
@@ -1269,6 +1272,9 @@ importers:
       '@systemfsoftware/stryker-js-instrumenter':
         specifier: workspace:^
         version: link:../../packages/stryker-js-instrumenter
+      '@systemfsoftware/stryker-js-plugin-interface':
+        specifier: workspace:^
+        version: link:../../packages/stryker-js-plugin-interface
       '@systemfsoftware/stryker-js-typescript-checker':
         specifier: workspace:^
         version: link:../../packages/stryker-js-typescript-checker

@@ -10,7 +10,11 @@ import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 import * as SocketServer from 'effect/unstable/socket/SocketServer'
 
+import type { Trace } from '@systemfsoftware/stryker-js-plugin-interface'
+
 import { layerTraceContextServer } from './trace-context-rpc.service.js'
+
+const traceContextServer: Layer.Layer<Trace.TraceContextMiddleware> = layerTraceContextServer
 
 const NAMED_PIPE_PREFIX = '\\\\.\\pipe\\'
 
@@ -40,7 +44,7 @@ export const workerServerLayer = <Rpcs extends Rpc.Any, HE, R>(params: WorkerSer
         Layer.provide(params.schemaServices),
         Layer.provide(RpcServer.layerProtocolSocketServer),
         Layer.provide(RpcSerialization.layerNdjson),
-        Layer.provide(layerTraceContextServer),
+        Layer.provide(traceContextServer),
       )
     }),
   )
