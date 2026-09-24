@@ -34,7 +34,6 @@ import type {
   ForOfStatement,
   ForStatement,
   Function,
-  FunctionExpression,
   IdentifierName,
   IdentifierReference,
   ImportDeclaration,

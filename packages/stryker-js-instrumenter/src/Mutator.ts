@@ -50,7 +50,6 @@ import {
   callExpression,
   cloneNode,
   identifier,
-  isExpressionKind,
   memberExpression,
   newExpression,
   nodeType,

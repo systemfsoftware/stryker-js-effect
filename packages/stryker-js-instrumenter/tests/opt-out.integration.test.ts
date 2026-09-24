@@ -1,9 +1,10 @@
+import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
-import { Effect, Layer } from 'effect'
-import { readdir, readFile } from 'node:fs/promises'
+import { Effect } from 'effect'
 import { expect } from 'vitest'
 
+import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
 import { type ShapeEntry, shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
@@ -40,39 +41,19 @@ const R8_PAIRS: Record<string, true> = {
   'Effect.acquireUseRelease': true,
 }
 
-interface FixtureFile {
-  readonly name: string
-  readonly content: string
-}
-
-const FIXTURES_URL = new URL('./__fixtures__/effect-concurrency/', import.meta.url)
-
-const loadFixtureFiles = async (): Promise<readonly FixtureFile[]> => {
-  const entries = await readdir(FIXTURES_URL, { recursive: true })
-  return Promise.all(
-    entries
-      .filter((entry) => entry.endsWith('.ts'))
-      .sort()
-      .map(async (entry) => ({
-        name: entry,
-        content: await readFile(new URL(entry, FIXTURES_URL), 'utf8'),
-      })),
-  )
-}
-
 const pairOf = (entry: ShapeEntry): string => `${entry.module}.${entry.operation}`
 
 const Feature = makeFeature({ it, layer })
 
 Feature('Keeping the Effect concurrency faults off unless a run asks for them')
-  .withLayer(Layer.empty)
+  .withLayer(NodeFileSystem.layer)
   .body(({ scenario }) => {
     scenario(
       'A run that names no concurrency mutator finds none of them, and every fixture still carries ordinary mutants',
       Gherkin.Do.pipe(
         Given('every concurrency fixture module has been read from disk')(
           'fixtures',
-          () => Effect.promise(() => loadFixtureFiles()),
+          () => effectConcurrencyFixtureFiles,
         ),
         When('the files are instrumented without naming any concurrency mutator')(
           'result',

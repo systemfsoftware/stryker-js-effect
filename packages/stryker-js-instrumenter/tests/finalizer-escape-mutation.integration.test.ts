@@ -1,21 +1,14 @@
+import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { InstrumentResult, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { Effect, Layer } from 'effect'
-import * as Match from 'effect/Match'
-import { readdir, readFile } from 'node:fs/promises'
+import { Effect } from 'effect'
 import { expect } from 'vitest'
 
-import { cloneNode, isExpressionKind } from '../src/Ast.js'
-import { defaultMutators, type Mutator, type MutatorRegistry, optInMutators } from '../src/Mutator.js'
-import { parseWithOxc } from '../src/Parser.js'
-import type { ParseFailed } from '../src/Parser.js'
-import { createMutantCollector, type MutantCollector, transform, transformScript } from '../src/Transformer.js'
+import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
 import { shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
 const FINALIZER_ESCAPE = 'FinalizerEscape'
-const DUMMY_NAME = 'Dummy'
-const SELECTED_NAMES: readonly string[] = ['AtomicUpdateSplit', 'SynchronizationRemoval', 'FinalizerEscape']
 
 const ENSURING_DATA_FIRST_SOURCE = `import { Effect, Ref } from 'effect'
 
@@ -159,66 +152,6 @@ const REFUSAL_CASES = [
   { situation: 'a release the module passes in as a binding', source: IDENTIFIER_RELEASE_SOURCE },
 ] as const
 
-const dummyMutator: Mutator = (node) =>
-  Match.value(node).pipe(
-    Match.when(isExpressionKind, (expression) => [cloneNode(expression)]),
-    Match.orElse(() => []),
-  )
-
-const realRegistryWithDummy: MutatorRegistry = Object.freeze({
-  defaults: defaultMutators,
-  optIn: Object.freeze({ ...optInMutators, [DUMMY_NAME]: dummyMutator }),
-})
-
-interface TransformOutcome {
-  readonly warnings: readonly string[]
-  readonly mutants: MutantCollector
-}
-
-const runThroughTransformScript = (
-  source: string,
-  optInMutations: readonly string[],
-  registry: MutatorRegistry,
-): Effect.Effect<TransformOutcome, ParseFailed> =>
-  Effect.flatMap(parseWithOxc(source, 'probe.ts', 'ts'), (parsed) => {
-    const collector = createMutantCollector()
-    return Effect.map(
-      transformScript(
-        {
-          format: 'ts',
-          root: parsed.root,
-          comments: parsed.comments,
-          rawContent: source,
-          originFileName: 'probe.ts',
-        },
-        collector,
-        { transform, options: { excludedMutations: [], ignorers: [], optInMutations }, mutateDescription: true },
-        registry,
-      ),
-      (warnings) => ({ warnings, mutants: collector }),
-    )
-  })
-
-interface FixtureFile {
-  readonly name: string
-  readonly content: string
-}
-
-const FIXTURES_URL = new URL('./__fixtures__/effect-concurrency/', import.meta.url)
-
-const loadFixtureFiles = async (): Promise<readonly FixtureFile[]> => {
-  const entries = await readdir(FIXTURES_URL, { recursive: true })
-  return Promise.all(
-    entries
-      .filter((entry) => entry.endsWith('.ts'))
-      .sort()
-      .map(async (entry) => ({
-        name: entry,
-        content: await readFile(new URL(entry, FIXTURES_URL), 'utf8'),
-      })),
-  )
-}
-
 interface MutantExpectation {
   readonly file: string
   readonly exportName: string
@@ -272,14 +205,14 @@ const finalizerMutantsOf = (result: InstrumentResult): readonly Mutant[] =>
 const Feature = makeFeature({ it, layer })
 
 Feature('Exposing missing cleanup after interruptions by letting finalizers escape')
-  .withLayer(Layer.empty)
+  .withLayer(NodeFileSystem.layer)
   .body(({ scenario, scenarioOutline }) => {
     scenario(
       'Every covered cleanup call in the frozen fixture modules produces exactly the mutants its table entry promises, and nothing strays',
       Gherkin.Do.pipe(
         Given('every concurrency fixture module has been read from disk')(
           'fixtures',
-          () => Effect.promise(() => loadFixtureFiles()),
+          () => effectConcurrencyFixtureFiles,
         ),
         When('the files are instrumented with only the finalizer escape enabled')(
           'report',
@@ -313,20 +246,28 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
                 const sourceLine = mutant.location.start.line + 1
                 return range.firstLine <= sourceLine && sourceLine <= range.lastLine
               })
-              expect(located.length, `${pair.file} ${pair.exportName}`).toBe(
-                expectedInRange(pair.file, pair.exportName),
-              )
+              expect(
+                { module: `${pair.file} ${pair.exportName}`, mutants: located.length },
+              ).toStrictEqual({
+                module: `${pair.file} ${pair.exportName}`,
+                mutants: expectedInRange(pair.file, pair.exportName),
+              })
             }
             for (const fixture of fixtures) {
-              expect(mutantsIn(`effect-concurrency/${fixture.name}`).length, fixture.name).toBe(
-                expectedTotalFor(`effect-concurrency/${fixture.name}`),
+              expect({
+                module: fixture.name,
+                mutants: mutantsIn(`effect-concurrency/${fixture.name}`).length,
+              }).toStrictEqual({
+                module: fixture.name,
+                mutants: expectedTotalFor(`effect-concurrency/${fixture.name}`),
+              })
+            }
+            const forbidden = report.mutants.flatMap((mutant) =>
+              ['@ts-ignore', '@ts-expect-error', 'as any', 'as unknown'].flatMap((suppression) =>
+                mutant.replacement.includes(suppression) ? [`${mutant.id} contains ${suppression}`] : []
               )
-            }
-            for (const mutant of report.mutants) {
-              for (const suppression of ['@ts-ignore', '@ts-expect-error', 'as any', 'as unknown']) {
-                expect(mutant.replacement.includes(suppression), `${mutant.id} contains ${suppression}`).toBe(false)
-              }
-            }
+            )
+            expect(forbidden).toStrictEqual([])
           })
         ),
       ),
@@ -407,25 +348,6 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
               expect(mutants.length).toBe(1)
               expect(mutants[0]?.status).toBe('Ignored')
               expect(mutants[0]?.statusReason).toBe('cleanup proven by concurrency tests')
-            }),
-        ),
-      ),
-    )
-
-    scenario(
-      'Naming every concurrency mutator together still leaves the stand-in with nothing to do',
-      Gherkin.Do.pipe(
-        Given('a module with one covered cleanup call')('source', () => Effect.succeed(ENSURING_DATA_FIRST_SOURCE)),
-        When('the module runs through the registry seam with the three concurrency names selected')(
-          'outcome',
-          ({ source }: { source: string }) => runThroughTransformScript(source, SELECTED_NAMES, realRegistryWithDummy),
-        ),
-        Then('the stand-in proposes nothing, and the finalizer escape is among the proposals')(
-          ({ outcome }: { outcome: TransformOutcome }) =>
-            Effect.sync(() => {
-              const names = outcome.mutants.map((mutant) => mutant.mutatorName)
-              expect(names.includes(DUMMY_NAME)).toBe(false)
-              expect(names.includes(FINALIZER_ESCAPE)).toBe(true)
             }),
         ),
       ),

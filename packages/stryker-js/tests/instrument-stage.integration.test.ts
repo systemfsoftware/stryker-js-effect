@@ -1,6 +1,7 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { StageError, strykerCell } from '@systemfsoftware/stryker-js'
+import type { MutationTestDone } from '@systemfsoftware/stryker-js'
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -42,7 +43,7 @@ const runFromProject = (
   root: string,
   options: PartialStrykerOptions,
 ): Effect.Effect<
-  Result.Result<unknown, StageError | PlatformError>,
+  Result.Result<MutationTestDone, StageError | PlatformError>,
   never,
   FileSystem.FileSystem | Path.Path | Stdio.Stdio
 > =>
@@ -59,7 +60,7 @@ const runFromProject = (
       }),
   )
 
-const failureOf = (outcome: Result.Result<unknown, StageError | PlatformError>): StageError => {
+const failureOf = (outcome: Result.Result<MutationTestDone, StageError | PlatformError>): StageError => {
   if (Result.isSuccess(outcome)) {
     throw new Error('the run was expected to be refused, but it completed')
   }
@@ -69,12 +70,11 @@ const failureOf = (outcome: Result.Result<unknown, StageError | PlatformError>):
   return outcome.failure
 }
 
-const textOf = (error: unknown): string => {
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    return String(error.message)
-  }
-  return String(error)
-}
+const carriesMessage = (value: unknown): value is { readonly message: string } =>
+  typeof value === 'object' && value !== null && 'message' in value && typeof value.message === 'string'
+
+const textOf = (cause: StageError['cause']): string =>
+  carriesMessage(cause) ? cause.message : 'the refused cause carried no message'
 
 const runLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Stdio.layerTest({}))
 

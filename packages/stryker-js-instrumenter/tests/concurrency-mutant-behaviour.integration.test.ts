@@ -1,11 +1,25 @@
+import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { InstrumentResult, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { INSTRUMENTER_CONSTANTS } from '@systemfsoftware/stryker-js-instrumenter'
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Ref, Result, Semaphore, SynchronizedRef } from 'effect'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  Cause,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  FileSystem,
+  Layer,
+  Option,
+  PlatformError,
+  Ref,
+  Result,
+  Semaphore,
+  SynchronizedRef,
+} from 'effect'
 import { afterAll, beforeAll, expect } from 'vitest'
 
-import { optInMutators } from '../src/Mutator.js'
+import { FixtureImportError } from './__fixtures__/concurrency-mutant-behaviour.schema.js'
 import type { Form, Module, ScenarioKind, ShapeEntry } from './__fixtures__/effect-concurrency/shapes.js'
 import { shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
@@ -14,10 +28,19 @@ const FIXTURE_URL = new URL('./__fixtures__/effect-concurrency/', import.meta.ur
 const SCRATCH_URL = new URL('../.scratch/concurrency-behaviour/', import.meta.url)
 const FIXTURE_MODULES = ['atomic-update-split.ts', 'synchronization-removal.ts', 'finalizer-escape.ts'] as const
 
-const LIVE = Object.keys(optInMutators)
+const LIVE = ['AtomicUpdateSplit', 'FinalizerEscape', 'SynchronizationRemoval'] as const
 const FAILURE = 'boom'
 const RESULT = 42
 const ACQUIRED = 5
+
+type Failure = typeof FAILURE
+
+interface AcquiredState {
+  readonly acquired: boolean
+  readonly closed: boolean
+}
+
+type Outcome = void | undefined | number | string | boolean | AcquiredState
 
 type AtomicModule = typeof import('./__fixtures__/effect-concurrency/atomic-update-split.js')
 type SynchronizationRemovalModule = typeof import('./__fixtures__/effect-concurrency/synchronization-removal.js')
@@ -35,6 +58,17 @@ interface Harness {
   readonly modules: Instrumented
 }
 
+const isAtomicModule = (u: unknown): u is AtomicModule =>
+  typeof u === 'object' && u !== null && 'refModifyDataFirst' in u
+
+const isSynchronizationRemovalModule = (u: unknown): u is SynchronizationRemovalModule =>
+  typeof u === 'object' && u !== null && 'withPermitsDataFirst' in u
+
+const isFinalizerEscapeModule = (u: unknown): u is FinalizerEscapeModule =>
+  typeof u === 'object' && u !== null && 'ensuringDataFirst' in u
+
+const filePathOf = (url: URL): string => url.pathname
+
 let harness: Harness | undefined
 
 const harnessOf = (): Harness => {
@@ -44,15 +78,17 @@ const harnessOf = (): Harness => {
   return harness
 }
 
-const hostNamespace = (): object => {
-  const existing: unknown = Reflect.get(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE)
-  if (typeof existing === 'object' && existing !== null) {
-    return existing
-  }
-  const created: Record<string, unknown> = {}
-  Reflect.set(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE, created)
-  return created
-}
+const isNamespaceRecord = (u: unknown): u is Record<string, string | undefined> => typeof u === 'object' && u !== null
+
+const hostNamespace = (): object =>
+  Option.getOrElse(
+    Option.liftPredicate(isNamespaceRecord)(Reflect.get(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE)),
+    () => {
+      const created: Record<string, string | undefined> = {}
+      Reflect.set(globalThis, INSTRUMENTER_CONSTANTS.NAMESPACE, created)
+      return created
+    },
+  )
 
 const setActiveMutant = (id: string | undefined): Effect.Effect<void> =>
   Effect.sync(() => Reflect.set(hostNamespace(), INSTRUMENTER_CONSTANTS.ACTIVE_MUTANT, id))
@@ -63,49 +99,56 @@ const withActiveMutant = <A, E>(id: string | undefined, effect: Effect.Effect<A,
 interface Observed {
   readonly succeeded: boolean
   readonly interrupted: boolean
-  readonly result: unknown
-  readonly defect: unknown
+  readonly result: Outcome
+  readonly defect: Outcome
 }
 
-const succeeded = (result: unknown): Observed => ({ succeeded: true, interrupted: false, result, defect: undefined })
-const failedWith = (result: unknown): Observed => ({ succeeded: false, interrupted: false, result, defect: undefined })
-const diedWith = (defect: unknown): Observed => ({ succeeded: false, interrupted: false, result: undefined, defect })
+const succeeded = (result: Outcome): Observed => ({ succeeded: true, interrupted: false, result, defect: undefined })
+const failedWith = (result: Outcome): Observed => ({ succeeded: false, interrupted: false, result, defect: undefined })
+const diedWith = (defect: Outcome): Observed => ({ succeeded: false, interrupted: false, result: undefined, defect })
 const interrupted: Observed = { succeeded: false, interrupted: true, result: undefined, defect: undefined }
 
-const observe = (exit: Exit.Exit<unknown, unknown>): Observed => {
+const firstDefect = (exit: Exit.Exit<Outcome, Failure>): Outcome =>
+  Option.match(Exit.getCause(exit), {
+    onNone: () => undefined,
+    onSome: (cause) => {
+      const defect = Result.getOrUndefined(Cause.findDefect(cause))
+      return typeof defect === 'string' ? defect : undefined
+    },
+  })
+
+const observe = (exit: Exit.Exit<Outcome, Failure>): Observed => {
   if (Exit.isSuccess(exit)) {
     return succeeded(exit.value)
   }
-  const die = Option.map(Exit.getCause(exit), (cause) => Result.getOrUndefined(Cause.findDie(cause)))
   return {
     succeeded: false,
     interrupted: Exit.hasInterrupts(exit),
     result: Option.getOrUndefined(Exit.findErrorOption(exit)),
-    defect: Option.getOrUndefined(die)?.defect,
+    defect: firstDefect(exit),
   }
 }
-
-const failingWith = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<never, E | string> =>
-  Effect.andThen(effect, Effect.fail(FAILURE))
+const failingWith = <A>(effect: Effect.Effect<A, Failure>): Effect.Effect<A, Failure> =>
+  Effect.andThen(effect, Effect.fail<Failure>(FAILURE))
 
 interface Prepared {
-  readonly effect: Effect.Effect<unknown, unknown>
-  readonly readState: () => Effect.Effect<unknown>
+  readonly effect: Effect.Effect<Outcome, Failure>
+  readonly readState: () => Effect.Effect<Outcome>
   readonly settle?: Effect.Effect<void>
 }
 
 interface InterruptPrepared {
-  readonly region: Effect.Effect<unknown, unknown>
+  readonly region: Effect.Effect<Outcome, Failure>
   readonly startSignal: Effect.Effect<void>
   readonly resume: Effect.Effect<void>
-  readonly readState: () => Effect.Effect<unknown>
+  readonly readState: () => Effect.Effect<Outcome>
 }
 
 interface TwiceReport {
   readonly first: Observed
-  readonly afterFirst: unknown
+  readonly afterFirst: Outcome
   readonly second: Observed
-  readonly afterSecond: unknown
+  readonly afterSecond: Outcome
 }
 
 interface TwiceObserved {
@@ -115,7 +158,7 @@ interface TwiceObserved {
 
 interface InterruptReport {
   readonly exit: Observed
-  readonly state: unknown
+  readonly state: Outcome
 }
 
 const twiceReport = (prepare: Effect.Effect<Prepared>): Effect.Effect<TwiceReport> =>
@@ -135,7 +178,7 @@ const twiceObserved = (prepare: Effect.Effect<Pick<Prepared, 'effect'>>): Effect
     return { first, second }
   })
 
-const raceReport = (prepare: Effect.Effect<Prepared>): Effect.Effect<unknown, unknown> =>
+const raceReport = (prepare: Effect.Effect<Prepared>): Effect.Effect<Outcome, Failure> =>
   Effect.gen(function*() {
     const prepared = yield* prepare
     const fibers = yield* Effect.all([Effect.forkChild(prepared.effect), Effect.forkChild(prepared.effect)])
@@ -187,7 +230,7 @@ const freePermits = (sem: Semaphore.Semaphore): Effect.Effect<number> => {
   const drain = (taken: number): Effect.Effect<number> =>
     Effect.flatMap(
       Semaphore.takeIfAvailable(sem, 1),
-      (tookOne) => tookOne ? Effect.flatMap(drain(taken + 1), (total) => Effect.succeed(total)) : Effect.succeed(taken),
+      (tookOne) => (tookOne ? drain(taken + 1) : Effect.succeed(taken)),
     )
   return Effect.flatMap(drain(0), (free) => Effect.as(Semaphore.release(sem, free), free))
 }
@@ -195,7 +238,7 @@ const freePermits = (sem: Semaphore.Semaphore): Effect.Effect<number> => {
 const suspendingInner = (started: Deferred.Deferred<void>, gate: Deferred.Deferred<void>): Effect.Effect<number> =>
   Effect.flatMap(
     Deferred.succeed(started, undefined),
-    () => Effect.flatMap(Deferred.await(gate), () => Effect.succeed(RESULT)),
+    () => Effect.map(Deferred.await(gate), () => RESULT),
   )
 
 interface RefCase {
@@ -255,18 +298,18 @@ const UPDATE_SOME_CASE: PartialCase = {
 }
 
 const matchedModify = (n: number): readonly [string, Option.Option<number>] => ['bumped', Option.some(n + 5)]
-const unmatchedModify = (n: number): readonly [string, Option.Option<number>] => ['skipped', Option.none()]
+const unmatchedModify = (_n: number): readonly [string, Option.Option<number>] => ['skipped', Option.none()]
 const matchedUpdate = (n: number): Option.Option<number> => Option.some(n + 5)
-const unmatchedUpdate = (n: number): Option.Option<number> => Option.none()
+const unmatchedUpdate = (_n: number): Option.Option<number> => Option.none()
 
 interface PlainDriver<State> {
   readonly case: RefCase
-  readonly build: (modules: Instrumented, state: State) => Effect.Effect<unknown, unknown>
+  readonly build: (modules: Instrumented, state: State) => Effect.Effect<Outcome, Failure>
 }
 
 interface PartialDriver<State, PartialFunction> {
   readonly case: PartialCase
-  readonly build: (modules: Instrumented, state: State, pf: PartialFunction) => Effect.Effect<unknown, unknown>
+  readonly build: (modules: Instrumented, state: State, pf: PartialFunction) => Effect.Effect<Outcome, Failure>
 }
 
 const REF_PLAIN_DRIVERS: Readonly<Record<string, PlainDriver<Ref.Ref<number>>>> = {
@@ -463,7 +506,7 @@ interface SemaphoreDriver {
     modules: Instrumented,
     sem: Semaphore.Semaphore,
     effect: Effect.Effect<number>,
-  ) => Effect.Effect<unknown, unknown>
+  ) => Effect.Effect<Outcome, Failure>
 }
 
 const SEMAPHORE_DRIVERS: Readonly<Record<string, SemaphoreDriver>> = {
@@ -516,8 +559,8 @@ const REGION_CASE: RegionCase = {
 
 interface RegionDriver {
   readonly case: RegionCase
-  readonly build: (modules: Instrumented, inner: Effect.Effect<number>) => Effect.Effect<unknown, unknown>
-  readonly interruptedBuild: (modules: Instrumented, inner: Effect.Effect<number>) => Effect.Effect<unknown, unknown>
+  readonly build: (modules: Instrumented, inner: Effect.Effect<number>) => Effect.Effect<Outcome, Failure>
+  readonly interruptedBuild: (modules: Instrumented, inner: Effect.Effect<number>) => Effect.Effect<Outcome, Failure>
 }
 
 const REGION_DRIVERS: Readonly<Record<string, RegionDriver>> = {
@@ -582,7 +625,7 @@ interface ClosedFinalizerDriver {
     modules: Instrumented,
     inner: Effect.Effect<number>,
     closed: Ref.Ref<boolean>,
-  ) => Effect.Effect<unknown, unknown>
+  ) => Effect.Effect<Outcome, Failure>
 }
 
 const ENSURING_DRIVERS: Readonly<Record<string, ClosedFinalizerDriver>> = {
@@ -658,7 +701,7 @@ const BRACKET_CASE: BracketCase = {
 
 interface AcquireReleaseDriver {
   readonly case: BracketCase
-  readonly build: (modules: Instrumented, closed: Ref.Ref<boolean>) => Effect.Effect<unknown, unknown>
+  readonly build: (modules: Instrumented, closed: Ref.Ref<boolean>) => Effect.Effect<Outcome, Failure>
 }
 
 const ACQUIRE_RELEASE_DRIVERS: Readonly<Record<string, AcquireReleaseDriver>> = {
@@ -705,7 +748,7 @@ interface AcquireUseReleaseDriver {
     modules: Instrumented,
     use: (acquired: number) => Effect.Effect<number>,
     closed: Ref.Ref<boolean>,
-  ) => Effect.Effect<unknown, unknown>
+  ) => Effect.Effect<Outcome, Failure>
 }
 
 const ACQUIRE_USE_RELEASE_DRIVERS: Readonly<Record<string, AcquireUseReleaseDriver>> = {
@@ -741,9 +784,11 @@ const lookupOrThrow = <V>(table: Readonly<Record<string, V>>, key: string, label
   return value
 }
 
+type ScenarioResult = Outcome | TwiceReport | TwiceObserved | InterruptReport
+
 interface ScenarioSide {
-  readonly run: Effect.Effect<unknown, unknown>
-  readonly expected: unknown
+  readonly run: Effect.Effect<ScenarioResult, Failure>
+  readonly expected: ScenarioResult
 }
 
 type SideRunner = (
@@ -756,7 +801,7 @@ type SideRunner = (
 
 const equivalenceSide = (
   prepare: Effect.Effect<Prepared>,
-  expected: unknown,
+  expected: ScenarioResult,
   mutantId: string,
   withFault: boolean,
 ): ScenarioSide => ({
@@ -765,8 +810,8 @@ const equivalenceSide = (
 })
 
 const observedSide = (
-  run: Effect.Effect<TwiceObserved, unknown>,
-  expected: unknown,
+  run: Effect.Effect<TwiceObserved, Failure>,
+  expected: ScenarioResult,
   mutantId: string,
   withFault: boolean,
 ): ScenarioSide => ({
@@ -796,7 +841,7 @@ const interruptSide = (
 
 const refPrepare = (
   modules: Instrumented,
-  build: (modules: Instrumented, state: Ref.Ref<number>) => Effect.Effect<unknown, unknown>,
+  build: (modules: Instrumented, state: Ref.Ref<number>) => Effect.Effect<Outcome, Failure>,
   composeFailure: boolean,
   start: number,
 ): Effect.Effect<Prepared> =>
@@ -807,7 +852,7 @@ const refPrepare = (
 
 const syncPrepare = (
   modules: Instrumented,
-  build: (modules: Instrumented, state: SynchronizedRef.SynchronizedRef<number>) => Effect.Effect<unknown, unknown>,
+  build: (modules: Instrumented, state: SynchronizedRef.SynchronizedRef<number>) => Effect.Effect<Outcome, Failure>,
   composeFailure: boolean,
   start: number,
 ): Effect.Effect<Prepared> =>
@@ -820,7 +865,7 @@ const plainSideFor = <State>(
   table: Readonly<Record<string, PlainDriver<State>>>,
   prepare: (
     modules: Instrumented,
-    build: (modules: Instrumented, state: State) => Effect.Effect<unknown, unknown>,
+    build: (modules: Instrumented, state: State) => Effect.Effect<Outcome, Failure>,
     composeFailure: boolean,
     start: number,
   ) => Effect.Effect<Prepared>,
@@ -851,7 +896,7 @@ const partialSideFor = <State, PartialFunction>(
   table: Readonly<Record<string, PartialDriver<State, PartialFunction>>>,
   prepare: (
     modules: Instrumented,
-    build: (modules: Instrumented, state: State, pf: PartialFunction) => Effect.Effect<unknown, unknown>,
+    build: (modules: Instrumented, state: State, pf: PartialFunction) => Effect.Effect<Outcome, Failure>,
     pf: PartialFunction,
     start: number,
   ) => Effect.Effect<Prepared>,
@@ -879,7 +924,7 @@ const partialSideFor = <State, PartialFunction>(
 
 const refPartialPrepare = <PartialFunction>(
   modules: Instrumented,
-  build: (modules: Instrumented, state: Ref.Ref<number>, pf: PartialFunction) => Effect.Effect<unknown, unknown>,
+  build: (modules: Instrumented, state: Ref.Ref<number>, pf: PartialFunction) => Effect.Effect<Outcome, Failure>,
   pf: PartialFunction,
   start: number,
 ): Effect.Effect<Prepared> =>
@@ -891,7 +936,7 @@ const syncPartialPrepare = <PartialFunction>(
     modules: Instrumented,
     state: SynchronizedRef.SynchronizedRef<number>,
     pf: PartialFunction,
-  ) => Effect.Effect<unknown, unknown>,
+  ) => Effect.Effect<Outcome, Failure>,
   pf: PartialFunction,
   start: number,
 ): Effect.Effect<Prepared> =>
@@ -1248,39 +1293,70 @@ const KIND_SUBJECT: Record<ScenarioKind, string> = {
 const subjectFor = (entry: ShapeEntry, kind: ScenarioKind): `${string} ${string}` =>
   `A ${MODULE_SUBJECT[entry.module]} ${entry.operation} in ${FORM_SUBJECT[entry.form]} ${KIND_SUBJECT[kind]}`
 
-const loadInstrumentedModules = async (): Promise<Instrumented> => ({
-  atomic: await import(new URL('effect-concurrency/atomic-update-split.ts', SCRATCH_URL).href),
-  synchronization: await import(new URL('effect-concurrency/synchronization-removal.ts', SCRATCH_URL).href),
-  finalizer: await import(new URL('effect-concurrency/finalizer-escape.ts', SCRATCH_URL).href),
+const loadModule = <A>(url: URL, isModule: (u: unknown) => u is A): Effect.Effect<A, FixtureImportError> =>
+  Effect.filterOrFail(
+    Effect.tryPromise({
+      try: () => import(url.href),
+      catch: () => FixtureImportError.make({ url: url.href }),
+    }),
+    isModule,
+    () => FixtureImportError.make({ url: url.href }),
+  )
+
+const loadInstrumentedModules: Effect.Effect<Instrumented, FixtureImportError> = Effect.gen(function*() {
+  const atomic = yield* loadModule(new URL('effect-concurrency/atomic-update-split.ts', SCRATCH_URL), isAtomicModule)
+  const synchronization = yield* loadModule(
+    new URL('effect-concurrency/synchronization-removal.ts', SCRATCH_URL),
+    isSynchronizationRemovalModule,
+  )
+  const finalizer = yield* loadModule(
+    new URL('effect-concurrency/finalizer-escape.ts', SCRATCH_URL),
+    isFinalizerEscapeModule,
+  )
+  return { atomic, synchronization, finalizer }
 })
 
-beforeAll(async () => {
-  hostNamespace()
-  const sources = await Promise.all(
-    FIXTURE_MODULES.map(async (name) => ({
-      name: `effect-concurrency/${name}`,
-      content: await readFile(new URL(name, FIXTURE_URL), 'utf8'),
-    })),
+const removeScratch: Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem> = Effect.flatMap(
+  FileSystem.FileSystem,
+  (fs) => fs.remove(filePathOf(SCRATCH_URL), { recursive: true, force: true }),
+)
+
+const buildHarness = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const sources = yield* Effect.forEach(
+    FIXTURE_MODULES,
+    (name) =>
+      Effect.map(fs.readFileString(filePathOf(new URL(name, FIXTURE_URL))), (content) => ({
+        name: `effect-concurrency/${name}`,
+        content,
+      })),
   )
-  const result: InstrumentResult = await Effect.runPromise(
-    instrument(
-      sources.map((source) => ({ ...source, mutate: true })),
-      { ignorers: [], excludedMutations: [], optInMutations: LIVE },
-    ),
+  const result: InstrumentResult = yield* instrument(
+    sources.map((source) => ({ ...source, mutate: true })),
+    { ignorers: [], excludedMutations: [], optInMutations: [...LIVE] },
   )
-  await rm(SCRATCH_URL, { recursive: true, force: true })
-  await mkdir(new URL('effect-concurrency/', SCRATCH_URL), { recursive: true })
-  await Promise.all(result.files.map((file) => writeFile(new URL(file.name, SCRATCH_URL), file.content)))
-  harness = {
-    mutants: result.mutants,
-    fixtureSources: Object.fromEntries(sources.map((source) => [source.name, source.content])),
-    modules: await loadInstrumentedModules(),
-  }
+  yield* fs.remove(filePathOf(SCRATCH_URL), { recursive: true, force: true })
+  yield* fs.makeDirectory(filePathOf(new URL('effect-concurrency/', SCRATCH_URL)), { recursive: true })
+  yield* Effect.forEach(
+    result.files,
+    (file) => fs.writeFileString(filePathOf(new URL(file.name, SCRATCH_URL)), file.content),
+  )
+  const modules = yield* loadInstrumentedModules
+  const fixtureSources = Object.fromEntries(
+    sources.map((source): readonly [string, string] => [source.name, source.content]),
+  )
+  return { mutants: result.mutants, fixtureSources, modules }
 })
 
-afterAll(async () => {
-  await rm(SCRATCH_URL, { recursive: true, force: true })
-})
+beforeAll(() =>
+  Effect.runPromise(
+    Effect.map(Effect.provide(buildHarness, NodeFileSystem.layer), (built) => {
+      harness = built
+    }),
+  )
+)
+
+afterAll(() => Effect.runPromise(Effect.provide(removeScratch, NodeFileSystem.layer)))
 
 const Feature = makeFeature({ it, layer })
 

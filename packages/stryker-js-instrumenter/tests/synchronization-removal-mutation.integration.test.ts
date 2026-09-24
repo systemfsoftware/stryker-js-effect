@@ -1,9 +1,14 @@
+import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { InstrumentResult, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { Effect, Layer } from 'effect'
-import { readdir, readFile } from 'node:fs/promises'
+import { Effect } from 'effect'
 import { expect } from 'vitest'
 
+import {
+  effectConcurrencyFixtureContent,
+  effectConcurrencyFixtureFiles,
+  type FixtureFile,
+} from './__fixtures__/effect-concurrency-files.js'
 import { shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
@@ -81,26 +86,6 @@ export const moduleNamespaceGuard = (sem: Semaphore.Semaphore, effect: Effect.Ef
   Semaphore.withPermits(sem, 1, effect)
 `
 
-interface FixtureFile {
-  readonly name: string
-  readonly content: string
-}
-
-const FIXTURES_URL = new URL('./__fixtures__/effect-concurrency/', import.meta.url)
-
-const loadFixtureFiles = async (): Promise<readonly FixtureFile[]> => {
-  const entries = await readdir(FIXTURES_URL, { recursive: true })
-  return Promise.all(
-    entries
-      .filter((entry) => entry.endsWith('.ts'))
-      .sort()
-      .map(async (entry) => ({
-        name: entry,
-        content: await readFile(new URL(entry, FIXTURES_URL), 'utf8'),
-      })),
-  )
-}
-
 interface MutantExpectation {
   readonly file: string
   readonly exportName: string
@@ -148,7 +133,7 @@ const removalMutantsOf = (result: InstrumentResult): readonly Mutant[] =>
 const Feature = makeFeature({ it, layer })
 
 Feature('Exposing unguarded concurrency by removing synchronization from effects')
-  .withLayer(Layer.empty)
+  .withLayer(NodeFileSystem.layer)
   .body(({ scenario }) => {
     const countsScenario = (
       title: `${string} ${string}`,
@@ -176,7 +161,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
       Gherkin.Do.pipe(
         Given('every concurrency fixture module has been read from disk')(
           'fixtures',
-          () => Effect.promise(() => loadFixtureFiles()),
+          () => effectConcurrencyFixtureFiles,
         ),
         When('the files are instrumented with only synchronization removal enabled')(
           'report',
@@ -210,18 +195,25 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
                 const sourceLine = mutant.location.start.line + 1
                 return range.firstLine <= sourceLine && sourceLine <= range.lastLine
               })
-              expect(located.length, `${entry.file} ${entry.exportName}`).toBe(entry.expectedMutants)
+              expect(
+                { module: `${entry.file} ${entry.exportName}`, mutants: located.length },
+              ).toStrictEqual({ module: `${entry.file} ${entry.exportName}`, mutants: entry.expectedMutants })
             }
             for (const fixture of fixtures) {
-              expect(mutantsIn(`effect-concurrency/${fixture.name}`).length, fixture.name).toBe(
-                expectedTotalFor(`effect-concurrency/${fixture.name}`),
+              expect({
+                module: fixture.name,
+                mutants: mutantsIn(`effect-concurrency/${fixture.name}`).length,
+              }).toStrictEqual({
+                module: fixture.name,
+                mutants: expectedTotalFor(`effect-concurrency/${fixture.name}`),
+              })
+            }
+            const forbidden = report.mutants.flatMap((mutant) =>
+              ['@ts-ignore', '@ts-expect-error', 'as any', 'as unknown'].flatMap((suppression) =>
+                mutant.replacement.includes(suppression) ? [`${mutant.id} contains ${suppression}`] : []
               )
-            }
-            for (const mutant of report.mutants) {
-              for (const suppression of ['@ts-ignore', '@ts-expect-error', 'as any', 'as unknown']) {
-                expect(mutant.replacement.includes(suppression), `${mutant.id} contains ${suppression}`).toBe(false)
-              }
-            }
+            )
+            expect(forbidden).toStrictEqual([])
           })
         ),
       ),
@@ -306,10 +298,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
       Gherkin.Do.pipe(
         Given('the leader lock module from the issue evidence, read from disk')(
           'content',
-          () =>
-            Effect.promise(() =>
-              readFile(new URL('./__fixtures__/effect-concurrency/finalizer-escape.ts', import.meta.url), 'utf8')
-            ),
+          () => effectConcurrencyFixtureContent('finalizer-escape.ts'),
         ),
         When('the file is instrumented with only synchronization removal enabled')(
           'mutants',
