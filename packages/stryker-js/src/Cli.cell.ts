@@ -532,20 +532,21 @@ const readCliRoute = (
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
     const command = makeStrykerCommand(requestRef)
     const parsed = yield* Effect.result(Command.runWith(command, { version: cliPkgJson.version })(invocation.argv))
-    globalThis.process.stderr.write(`TAP read: runWith ${parsed._tag}\n`)
     const request = yield* Ref.get(requestRef)
     const drain = yield* RunEventDrain
     yield* drain.setProgressStreamFile(progressStreamFileName(request))
     yield* invocation.environment.stream.open
-    globalThis.process.stderr.write('TAP read: stream open\n')
     return yield* Result.match(parsed, {
       onFailure: (failure) => Effect.fail(failure),
-      onSuccess: () =>
-        Effect.succeed({
-          ...routeOf(request),
+      onSuccess: () => {
+        const route = routeOf(request)
+        return Effect.succeed({
+          _tag: route._tag,
+          route: route.route,
           environment: invocation.environment,
           options: optionsOf(request),
-        }),
+        })
+      },
     })
   })
 
@@ -595,48 +596,40 @@ const admissionOf = (
 ) =>
   Match.value(answer.admission).pipe(
     Match.tag('NoSurvivors', () =>
-      Cell.fromEffect(
-        channel.environment.runEvents.emitNullScoreVerdict({
-          stream: channel.environment.stream,
-          mode: channel.environment.mode,
-          thresholds: answer.resolvedOptions.thresholds,
-          config: answer.resolvedOptions,
-          basePath: channel.environment.basePath,
-          pathService: channel.environment.pathService,
-        }),
-      )),
+      channel.environment.runEvents.emitNullScoreVerdict({
+        stream: channel.environment.stream,
+        mode: channel.environment.mode,
+        thresholds: answer.resolvedOptions.thresholds,
+        config: answer.resolvedOptions,
+        basePath: channel.environment.basePath,
+        pathService: channel.environment.pathService,
+      })),
     Match.tag('Admitted', (admitted) =>
-      Cell.fromEffect(
-        runEffectOf(channel.environment, restrictedOptionsOf(answer.resolvedOptions, answer.priorReportPath, admitted)),
-      )),
+      runEffectOf(channel.environment, restrictedOptionsOf(answer.resolvedOptions, answer.priorReportPath, admitted))),
     Match.exhaustive,
   )
+
 
 const cliRouteCell = Sandwich.named('stryker.cli')(readCliRoute)
   .decide(routeCliRequest)
   .write({
-    CliHelpRequested: () =>
-      Cell.fromEffect(
-        Effect.tap(
-          Effect.succeed<CliAnswer>(undefined),
-          () => globalThis.process.stderr.write('TAP write: help handler ran\n'),
-        ),
-      ),
+    CliHelpRequested: () => Effect.succeed<CliAnswer>(undefined),
     CliMergeReportsRequested: (merge) =>
-      Cell.succeed({ _tag: 'merge-reports', parts: merge.parts, out: merge.out, packages: merge.packages }).pipe(
-        Cell.andThen(mergeReportsCell),
-      ),
-    CliRunRequested: (_outcome, channel) =>
-      Cell.fromEffect(runEffectOf(channel.environment, channel.options)),
+      mergeReportsCell.run({ _tag: 'merge-reports', parts: merge.parts, out: merge.out, packages: merge.packages }),
+    CliRunRequested: (_outcome, channel) => runEffectOf(channel.environment, channel.options),
     CliSurvivorsRequested: (_outcome, channel) =>
-      Cell.succeed({ cliOptions: channel.options, mode: channel.environment.mode.mode, basePath: channel.environment.basePath })
-        .pipe(
-          Cell.andThen(survivorsAdmissionCell),
-          Cell.andThen((answer) => admissionOf(answer, channel)),
-        ),
+      Effect.flatMap(
+        survivorsAdmissionCell.run({
+          cliOptions: channel.options,
+          mode: channel.environment.mode.mode,
+          basePath: channel.environment.basePath,
+        }),
+        (answer) => admissionOf(answer, channel),
+      ),
     CommandRejected: ({ issue }) =>
-      Cell.fail(new StrykerError({ message: `the CLI read resolved a command the route schema rejects: ${issue}` })),
+      Effect.fail(new StrykerError({ message: `the CLI read resolved a command the route schema rejects: ${issue}` })),
   })
+
 
 export const strykerCliCell = cliRouteCell
 
@@ -695,20 +688,11 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
         Effect.gen(function*() {
           const exit = yield* Effect.exit(
             restore(
-              strykerCliCell.run({ argv: options.argv, environment }).pipe(
-                Effect.tapDefect((defect) =>
-                  Effect.sync(() => globalThis.process.stderr.write(`TAP cli: DEFECT ${defect}\n`))
-                ),
-                Effect.onInterrupt(() =>
-                  Effect.sync(() => globalThis.process.stderr.write('TAP cli: INTERRUPTED\n'))
-                ),
-              ),
+              strykerCliCell.run({ argv: options.argv, environment }),
             ),
           )
-          globalThis.process.stderr.write(`TAP cli: cell exit ${exit._tag}\n`)
           const outcome = classifyRunOutcome(exit, options.argv)
           const code = runOutcomeCode(outcome)
-          globalThis.process.stderr.write(`TAP cli: classified ${outcomeOf(outcome)} code ${code}\n`)
           yield* Effect.annotateCurrentSpan({
             'stryker.run.outcome': outcomeOf(outcome),
             'stryker.run.exit_code': code,
@@ -725,9 +709,7 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
               }),
             onFalse: () => Effect.void,
           })
-          globalThis.process.stderr.write('TAP cli: emitted machine output\n')
           yield* stream.closeAndDrain
-          globalThis.process.stderr.write('TAP cli: closed and drained\n')
           yield* Result.match(outcome, {
             onSuccess: (decision) =>
               Match.value(decision).pipe(
