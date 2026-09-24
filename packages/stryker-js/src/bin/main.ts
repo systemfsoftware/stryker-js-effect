@@ -214,4 +214,13 @@ const program = Effect.scoped(
     ),
   ),
 )
-NodeRuntime.runMain({ disableErrorReporting: true })(program)
+NodeRuntime.runMain({ disableErrorReporting: true })(program.pipe(
+  Effect.onExit((exit) =>
+    Effect.sync(() => {
+      globalThis.process.stderr.write(`TAPX root exit ${exit._tag}\n`)
+      if (Exit.isFailure(exit)) {
+        globalThis.process.stderr.write(`TAPX cause ${Cause.pretty(exit.cause)}\n`)
+      }
+    })
+  ),
+))

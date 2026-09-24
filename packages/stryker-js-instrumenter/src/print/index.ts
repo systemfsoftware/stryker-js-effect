@@ -11,6 +11,7 @@ import type {
   ArrowFunctionExpression,
   AssignmentExpression,
   AssignmentPattern,
+  BinaryExpression,
   BindingIdentifier,
   BindingPattern,
   BlockStatement,
@@ -461,45 +462,45 @@ const NODE_TEXT: { readonly [K in Node['type']]: NodeRenderer<K> } = {
   TSTypeParameterDeclaration: (ctx, n, _prec) => printTSTypeParameterDeclaration(ctx, n),
   TSTypeParameterInstantiation: (ctx, n, _prec) => printTSTypeParameterInstantiation(ctx, n),
   TSTypeParameter: (ctx, n, _prec) => printTSTypeParameter(ctx, n),
-  TSAnyKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSArrayType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSBigIntKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSBooleanKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSConditionalType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSConstructorType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSFunctionType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSImportType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSIndexedAccessType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSInferType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSIntersectionType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSIntrinsicKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSJSDocNonNullableType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSJSDocNullableType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSJSDocUnknownType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSLiteralType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSMappedType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSNamedTupleMember: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSNeverKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSNullKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSNumberKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSObjectKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSOptionalType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSParenthesizedType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSRestType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSStringKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSSymbolKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSTemplateLiteralType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSThisType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSTupleType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSTypeLiteral: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSTypeOperator: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSTypePredicate: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSTypeQuery: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSTypeReference: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSUndefinedKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSUnionType: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSUnknownKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
-  TSVoidKeyword: (ctx, n, prec) => printTSTypeToString(ctx, n),
+  TSAnyKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSArrayType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSBigIntKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSBooleanKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSConditionalType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSConstructorType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSFunctionType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSImportType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSIndexedAccessType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSInferType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSIntersectionType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSIntrinsicKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSJSDocNonNullableType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSJSDocNullableType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSJSDocUnknownType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSLiteralType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSMappedType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSNamedTupleMember: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSNeverKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSNullKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSNumberKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSObjectKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSOptionalType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSParenthesizedType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSRestType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSStringKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSSymbolKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSTemplateLiteralType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSThisType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSTupleType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSTypeLiteral: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSTypeOperator: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSTypePredicate: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSTypeQuery: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSTypeReference: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSUndefinedKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSUnionType: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSUnknownKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
+  TSVoidKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
   ExportSpecifier: (_ctx, n, _prec) => unknownNodeText(n.type),
   Hashbang: (_ctx, n, _prec) => unknownNodeText(n.type),
   ImportAttribute: (_ctx, n, _prec) => unknownNodeText(n.type),
@@ -524,6 +525,12 @@ const NODE_TEXT: { readonly [K in Node['type']]: NodeRenderer<K> } = {
   TSPropertySignature: (_ctx, n, _prec) => unknownNodeText(n.type),
   TSQualifiedName: (_ctx, n, _prec) => unknownNodeText(n.type),
 }
+
+const typeTextOf = (ctx: PrintContext, node: Node): string =>
+  Option.match(Option.filter(Option.some(node), isTSType), {
+    onSome: (typed) => printTSTypeToString(ctx, typed),
+    onNone: () => unknownNodeText(node.type),
+  })
 
 const dispatchNode = (ctx: PrintContext, node: Node, prec: number): string =>
   (NODE_TEXT[node.type] as NodeRenderer<Node['type']>)(ctx, node, prec)
@@ -1380,111 +1387,54 @@ const moduleReferenceText = (
     Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 
-const printTSTypeToString = (ctx: PrintContext, node: TSType): string =>
-  Match.value(node).pipe(
-    Match.when(isNode('TSAnyKeyword'), () => 'any'),
-    Match.when(isNode('TSStringKeyword'), () => 'string'),
-    Match.when(isNode('TSBooleanKeyword'), () => 'boolean'),
-    Match.when(isNode('TSNumberKeyword'), () => 'number'),
-    Match.when(isNode('TSBigIntKeyword'), () => 'bigint'),
-    Match.when(isNode('TSSymbolKeyword'), () => 'symbol'),
-    Match.when(isNode('TSVoidKeyword'), () => 'void'),
-    Match.when(isNode('TSUndefinedKeyword'), () => 'undefined'),
-    Match.when(isNode('TSNullKeyword'), () => 'null'),
-    Match.when(isNode('TSNeverKeyword'), () => 'never'),
-    Match.when(isNode('TSUnknownKeyword'), () => 'unknown'),
-    Match.when(isNode('TSObjectKeyword'), () => 'object'),
-    Match.when(isNode('TSIntrinsicKeyword'), () => 'intrinsic'),
-    Match.when(isNode('TSThisType'), () => 'this'),
-    Match.when(isNode('TSTypeReference'), (n) => `${printTSTypeName(ctx, n.typeName)}${typeArgumentsText(ctx, n.typeArguments)}`,
-    ),
-    Match.when(isNode('TSUnionType'), (n) => tsTypeListText(ctx, n.types, ' | ')),
-    Match.when(isNode('TSIntersectionType'), (n) => tsTypeListText(ctx, n.types, ' & ')),
-    Match.when(isNode('TSArrayType'), (n) => `${arrayElementTypeText(ctx, n.elementType)}[]`),
-    Match.when(isNode('TSTypeLiteral'), (n) => printTSTypeLiteral(ctx, n.members)),
-    Match.when(isNode('TSTupleType'), (n) => printTupleType(ctx, n.elementTypes)),
-    Match.when(isNode('TSConditionalType'), (n) =>
-        `${printTSTypeToString(ctx, n.checkType)} extends ${printTSTypeToString(ctx, n.extendsType)} ? ${printTSTypeToString(ctx, n.trueType)} : ${printTSTypeToString(ctx, n.falseType)}`,
-    ),
-  ).pipe(
-    Match.when(isNode('TSInferType'), (n) => `infer ${n.typeParameter.name.name}${printTypeClause(ctx, ' extends ', n.typeParameter.constraint)}`,
-    ),
-    Match.when(isNode('TSTypeQuery'), (n) => `typeof ${printTypeQueryName(ctx, n)}${typeArgumentsText(ctx, n.typeArguments)}`,
-    ),
-    Match.when(isNode('TSImportType'), (n) => printTSImportType(ctx, n)),
-    Match.when(isNode('TSTypeOperator'), (n) => `${n.operator} ${printTSTypeToString(ctx, n.typeAnnotation)}`,
-    ),
-    Match.when(isNode('TSMappedType'), (n) => printMappedType(ctx, n)),
-    Match.when(isNode('TSTemplateLiteralType'), (n) => printTSTemplateLiteral(ctx, n)),
-    Match.when(isNode('TSFunctionType'), (n) =>
-        `${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
-    ),
-    Match.when(isNode('TSConstructorType'), (n) =>
-        `${flagText(n.abstract, 'abstract ')}new ${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
-    ),
-    Match.when(isNode('TSTypePredicate'), (n) => printTSTypePredicate(ctx, n)),
-    Match.when(isNode('TSIndexedAccessType'), (n) => `${printTSTypeToString(ctx, n.objectType)}[${printTSTypeToString(ctx, n.indexType)}]`,
-    ),
-    Match.when(isNode('TSNamedTupleMember'), (n) => printNamedTupleMember(ctx, n)),
-    Match.when(isNode('TSLiteralType'), (n) => printTSLiteralType(ctx, n.literal)),
-    Match.when(isNode('TSParenthesizedType'), (n) => `(${printTSTypeToString(ctx, n.typeAnnotation)})`,
-    ),
-    Match.when(isNode('TSJSDocNullableType'), (n) => printJSDocPostfixModifier(ctx, n, '?')),
-    Match.when(isNode('TSJSDocNonNullableType'), (n) => printJSDocPostfixModifier(ctx, n, '!')),
-    Match.when(isNode('TSJSDocUnknownType'), () => '?'),
-    Match.orElse(() => ''),
-  )
+type TypeRenderer<K extends TSType['type']> = (context: PrintContext, node: Extract<TSType, { type: K }>) => string
 
-const tsTypeListText = (ctx: PrintContext, types: readonly TSType[], separator: string): string =>
-  types.map((type) => printTSTypeToString(ctx, type)).join(separator)
-
-const arrayElementTypeText = (ctx: PrintContext, type: TSType): string =>
-  parenthesizedIf(
-    ARRAY_ELEMENT_WRAPPED_KINDS[type.type] === true,
-    printTSTypeToString(ctx, type),
-  )
-
-const printTSTypeLiteral = (ctx: PrintContext, members: readonly TSInterfaceBody['body'][number][]): string =>
-  Boolean.match(members.length === 0, {
-    onTrue: () => '{}',
-    onFalse: () => `{ ${members.map((member) => signatureText(ctx, member)).join('; ')} }`,
-  })
-
-const signatureText = (ctx: PrintContext, member: TSInterfaceBody['body'][number]): string => {
-  const printed = printTSSignatureText(ctx, member)
-  return Boolean.match(printed.endsWith(';'), {
-    onTrue: () => printed.slice(0, -1),
-    onFalse: () => printed,
-  })
+const TS_TYPE_TEXT: { readonly [K in TSType['type']]: TypeRenderer<K> } = {
+  TSAnyKeyword: (_ctx, _n) => 'any',
+  TSStringKeyword: (_ctx, _n) => 'string',
+  TSBooleanKeyword: (_ctx, _n) => 'boolean',
+  TSNumberKeyword: (_ctx, _n) => 'number',
+  TSBigIntKeyword: (_ctx, _n) => 'bigint',
+  TSSymbolKeyword: (_ctx, _n) => 'symbol',
+  TSVoidKeyword: (_ctx, _n) => 'void',
+  TSUndefinedKeyword: (_ctx, _n) => 'undefined',
+  TSNullKeyword: (_ctx, _n) => 'null',
+  TSNeverKeyword: (_ctx, _n) => 'never',
+  TSUnknownKeyword: (_ctx, _n) => 'unknown',
+  TSObjectKeyword: (_ctx, _n) => 'object',
+  TSIntrinsicKeyword: (_ctx, _n) => 'intrinsic',
+  TSThisType: (_ctx, _n) => 'this',
+  TSTypeReference: (ctx, n) => `${printTSTypeName(ctx, n.typeName)}${typeArgumentsText(ctx, n.typeArguments)}`,
+  TSUnionType: (ctx, n) => tsTypeListText(ctx, n.types, ' | '),
+  TSIntersectionType: (ctx, n) => tsTypeListText(ctx, n.types, ' & '),
+  TSArrayType: (ctx, n) => `${arrayElementTypeText(ctx, n.elementType)}[]`,
+  TSTypeLiteral: (ctx, n) => printTSTypeLiteral(ctx, n.members),
+  TSTupleType: (ctx, n) => printTupleType(ctx, n.elementTypes),
+  TSConditionalType: (ctx, n) => `${printTSTypeToString(ctx, n.checkType)} extends ${printTSTypeToString(ctx, n.extendsType)} ? ${printTSTypeToString(ctx, n.trueType)} : ${printTSTypeToString(ctx, n.falseType)}`,
+  TSInferType: (ctx, n) => `infer ${n.typeParameter.name.name}${printTypeClause(ctx, ' extends ', n.typeParameter.constraint)}`,
+  TSTypeQuery: (ctx, n) => `typeof ${printTypeQueryName(ctx, n)}${typeArgumentsText(ctx, n.typeArguments)}`,
+  TSImportType: (ctx, n) => printTSImportType(ctx, n),
+  TSTypeOperator: (ctx, n) => `${n.operator} ${printTSTypeToString(ctx, n.typeAnnotation)}`,
+  TSMappedType: (ctx, n) => printMappedType(ctx, n),
+  TSTemplateLiteralType: (ctx, n) => printTSTemplateLiteral(ctx, n),
+  TSFunctionType: (ctx, n) => `${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
+  TSConstructorType: (ctx, n) => `${flagText(n.abstract, 'abstract ')}new ${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
+  TSTypePredicate: (ctx, n) => printTSTypePredicate(ctx, n),
+  TSIndexedAccessType: (ctx, n) => `${printTSTypeToString(ctx, n.objectType)}[${printTSTypeToString(ctx, n.indexType)}]`,
+  TSNamedTupleMember: (ctx, n) => printNamedTupleMember(ctx, n),
+  TSLiteralType: (ctx, n) => printTSLiteralType(ctx, n.literal),
+  TSParenthesizedType: (ctx, n) => `(${printTSTypeToString(ctx, n.typeAnnotation)})`,
+  TSJSDocNullableType: (ctx, n) => printJSDocPostfixModifier(ctx, n, '?'),
+  TSJSDocNonNullableType: (ctx, n) => printJSDocPostfixModifier(ctx, n, '!'),
+  TSJSDocUnknownType: (_ctx, _n) => '?',
+  TSRestType: (ctx, n) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`,
+  TSOptionalType: (ctx, n) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`,
+  TSNamedTupleMember: (ctx, n) => printNamedTupleMember(ctx, n),
+  TSImportType: (ctx, n) => printTSTypeToString(ctx, n),
 }
 
-const printTupleType = (ctx: PrintContext, elements: TSTupleType['elementTypes']): string =>
-  `[${elements.map((element) => printTupleElement(ctx, element)).join(', ')}]`
-
-const printTupleElement = (ctx: PrintContext, element: TSTupleType['elementTypes'][number]): string =>
-  Match.value(element).pipe(
-    Match.when(isNode('TSRestType'), (n) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`),
-    Match.when(isNode('TSOptionalType'), (n) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`),
-    Match.when(isNode('TSNamedTupleMember'), (n) => printNamedTupleMember(ctx, n)),
-    Match.when(isTSType, (n) => printTSTypeToString(ctx, n)),
-    Match.orElse(() => ''),
-  )
-
-const printNamedTupleMember = (ctx: PrintContext, member: TSNamedTupleMember): string =>
-  `${member.label.name}${flagText(member.optional, '?')}: ${printTupleElement(ctx, member.elementType)}`
-
-const printTypeClause = (ctx: PrintContext, keyword: string, type: TSType | null | undefined): string =>
-  Option.match(Option.fromNullishOr(type), {
-    onSome: (value) => `${keyword}${printTSTypeToString(ctx, value)}`,
-    onNone: () => '',
-  })
-
-const printTypeQueryName = (ctx: PrintContext, node: TSTypeQuery): string =>
-  Match.value(node.exprName).pipe(
-    Match.when(isNode('TSImportType'), (n) => printTSTypeToString(ctx, n)),
-    Match.orElse((n) => printTSTypeName(ctx, n)),
-  )
-
+const printTSTypeToString = (ctx: PrintContext, node: TSType): string =>
+  (TS_TYPE_TEXT[node.type] as TypeRenderer<TSType['type']>)(ctx, node)
 const printTSTypeName = (ctx: PrintContext, name: TSTypeReference['typeName']): string =>
   Match.value(name).pipe(
     Match.when(isNode('TSQualifiedName'), (n) => `${printTSTypeName(ctx, n.left)}.${n.right.name}`),
