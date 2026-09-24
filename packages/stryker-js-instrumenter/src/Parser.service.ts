@@ -50,7 +50,10 @@ export class Parser
 {
   static readonly layer: Layer.Layer<Parser> = Layer.effect(
     Parser,
-    Effect.map(Effect.promise(() => import('oxc-parser')), (oxc) => Parser.of(parserOf(oxc))),
+    Effect.map(
+      Effect.cached(Effect.map(Effect.promise(() => import('oxc-parser')), (oxc) => parserOf(oxc))),
+      (loadParser) => parserLoadedOnFirstParse(loadParser),
+    ),
   )
 }
 
@@ -150,6 +153,18 @@ const parserOf = (oxc: Oxc): ParserShape => {
   }
   const shape: ParserShape = { parse, formatOf }
   return shape
+}
+
+const parserLoadedOnFirstParse = (loadParser: Effect.Effect<ParserShape>): ParserShape => {
+  function parse<T extends AstFormat>(
+    code: string,
+    fileName: string,
+    formatOverride: T,
+  ): Effect.Effect<AstByFormat[T], ParserError>
+  function parse(code: string, fileName: string, formatOverride?: AstFormat): Effect.Effect<Ast, ParserError> {
+    return Effect.flatMap(loadParser, (parser) => parser.parse(code, fileName, formatOverride))
+  }
+  return { parse, formatOf: getFormat }
 }
 
 const FORMAT_BY_EXTENSION: Readonly<Record<string, AstFormat>> = {

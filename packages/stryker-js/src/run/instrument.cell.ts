@@ -38,7 +38,7 @@ type InstrumentRaw = typeof InstrumentCommand.Encoded & {
   readonly concurrency: { readonly testRunners: number; readonly checkers: number }
 }
 
-const writeInstrument = (raw: InstrumentRaw) =>
+const enteringInstrumentPhase = <A, E, R>(raw: InstrumentRaw, body: Effect.Effect<A, E, R>) =>
   withPhaseSpan(
     'instrument',
     { fileCount: raw.filesToMutate.length },
@@ -48,18 +48,23 @@ const writeInstrument = (raw: InstrumentRaw) =>
         const now = yield* Clock.currentTimeMillis
         const queue = yield* RunEvents
         yield* Queue.offer(queue, PhaseEntered.make({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
-
-        return {
-          ...raw.prev,
-          project: raw.instrumentedProject,
-          mutants: raw.instrumentResult.mutants,
-          sandbox: raw.sandbox,
-          concurrency: {
-            testRunners: raw.concurrency.testRunners,
-            checkers: raw.concurrency.checkers,
-          },
-        }
+        return yield* body
       }),
+  )
+
+const writeInstrument = (raw: InstrumentRaw) =>
+  enteringInstrumentPhase(
+    raw,
+    Effect.succeed({
+      ...raw.prev,
+      project: raw.instrumentedProject,
+      mutants: raw.instrumentResult.mutants,
+      sandbox: raw.sandbox,
+      concurrency: {
+        testRunners: raw.concurrency.testRunners,
+        checkers: raw.concurrency.checkers,
+      },
+    }),
   )
 
 const sandboxDirectoriesOf = (command: PrepareDone, basePath: string) =>
@@ -149,8 +154,11 @@ export const instrumentCell = Sandwich.named('stryker.instrument')((
 ).decide(planInstrumentation).write({
   InPlaceInstrument: (_decision, raw) => writeInstrument(raw),
   EphemeralInstrument: (_decision, raw) => writeInstrument(raw),
-  InstrumentError: ({ stage, reason }) =>
-    Effect.fail(StageError.make({ stage, reason, cause: InstrumentError.make({ stage, reason }) })),
+  InstrumentError: ({ stage, reason }, raw) =>
+    enteringInstrumentPhase(
+      raw,
+      Effect.fail(StageError.make({ stage, reason, cause: InstrumentError.make({ stage, reason }) })),
+    ),
   CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'instrument', reason: issue })),
 })
 

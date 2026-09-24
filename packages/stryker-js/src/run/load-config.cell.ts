@@ -1339,9 +1339,9 @@ if (import.meta.vitest !== void 0) {
   const Logger = await import('effect/Logger')
 
   const JsonLeaf = S.Union([S.Finite, S.String, S.Boolean, S.Null])
-  const PlainSiblings = S.Record(S.String, S.Union([JsonLeaf, S.Array(JsonLeaf), S.Record(S.String, JsonLeaf)]))
+  const JsonSiblings = S.Record(S.String, S.Union([JsonLeaf, S.Array(JsonLeaf), S.Record(S.String, JsonLeaf)]))
 
-  const serializabilityWarningsOf = (options: Record<string, unknown>) =>
+  const serializabilityWarningsOf = <A = unknown>(options: Record<string, A>) =>
     Effect.gen(function*() {
       const warnings: string[] = []
       const recording = Logger.layer([
@@ -1355,14 +1355,16 @@ if (import.meta.vitest !== void 0) {
 
   it.effect.prop(
     '∀siblings,key_ValidateOptions_WarnsOnlyForTheNonJsonLeaf',
-    [PlainSiblings, S.String, S.Boolean],
+    [JsonSiblings, S.String, S.Boolean],
     ([siblings, key, asFunction]) =>
       Effect.map(
         serializabilityWarningsOf({
-          custom: { nested: { ...siblings, [key]: asFunction ? () => key : 1n } },
+          custom: { nested: { ...structuredClone(siblings), [key]: asFunction ? () => key : 1n } },
         }),
-        (warnings) =>
-          warnings.length === 1 && warnings[0]?.startsWith(`Config option "custom.nested.${key}" is not`) === true,
+        (warnings) => {
+          const expected = `Config option "custom.nested.${key}" is not`
+          return warnings.map((warning) => warning.slice(0, expected.length)).join('|') === expected
+        },
       ),
   )
 }
