@@ -111,6 +111,9 @@ catalogs:
     concurrently:
       specifier: ^10
       version: 10.0.5
+    effect:
+      specifier: 4.0.0-rc.117
+      version: 4.0.0-rc.117
     fast-check:
       specifier: ^4
       version: 4.9.0
@@ -178,9 +181,6 @@ catalogs:
     mutation-testing-elements:
       specifier: 3.9.0
       version: 3.9.0
-
-overrides:
-  effect: 4.0.0-rc.117
 
 importers:
 
@@ -677,7 +677,7 @@ importers:
         specifier: workspace:^
         version: link:../stryker-vm-harness
       effect:
-        specifier: 4.0.0-rc.117
+        specifier: 'catalog:'
         version: 4.0.0-rc.117
     devDependencies:
       '@effect/tsgo':
@@ -838,7 +838,7 @@ importers:
         specifier: 'catalog:'
         version: 24.13.3
       effect:
-        specifier: 4.0.0-rc.117
+        specifier: 'catalog:'
         version: 4.0.0-rc.117
       oxlint:
         specifier: 'catalog:'
@@ -874,7 +874,7 @@ importers:
         specifier: workspace:^
         version: link:../frameworks/interface
       effect:
-        specifier: 4.0.0-rc.117
+        specifier: 'catalog:'
         version: 4.0.0-rc.117
       oxc-parser:
         specifier: 'catalog:'
@@ -941,7 +941,7 @@ importers:
         specifier: workspace:^
         version: link:../stryker-js-instrumenter
       effect:
-        specifier: 4.0.0-rc.117
+        specifier: 'catalog:'
         version: 4.0.0-rc.117
     devDependencies:
       '@effect/tsgo':
@@ -1005,7 +1005,7 @@ importers:
         specifier: workspace:^
         version: link:../stryker-js-plugin-interface
       effect:
-        specifier: 4.0.0-rc.117
+        specifier: 'catalog:'
         version: 4.0.0-rc.117
     devDependencies:
       '@effect/tsgo':
@@ -1087,7 +1087,7 @@ importers:
         specifier: workspace:^
         version: link:../stryker-js-plugin-runtime
       effect:
-        specifier: 4.0.0-rc.117
+        specifier: 'catalog:'
         version: 4.0.0-rc.117
       typescript:
         specifier: 'catalog:'
@@ -1257,7 +1257,7 @@ importers:
         specifier: 'catalog:'
         version: 10.0.5
       effect:
-        specifier: 4.0.0-rc.117
+        specifier: 'catalog:'
         version: 4.0.0-rc.117
       oxlint:
         specifier: 'catalog:'
@@ -1324,7 +1324,7 @@ importers:
         specifier: 'catalog:'
         version: 24.13.3
       effect:
-        specifier: 4.0.0-rc.117
+        specifier: 'catalog:'
         version: 4.0.0-rc.117
       oxlint:
         specifier: 'catalog:'
@@ -1400,7 +1400,7 @@ importers:
         specifier: 'catalog:'
         version: 24.13.3
       effect:
-        specifier: 4.0.0-rc.117
+        specifier: 'catalog:'
         version: 4.0.0-rc.117
       oxlint:
         specifier: 'catalog:'
@@ -1478,7 +1478,7 @@ importers:
         specifier: 'catalog:'
         version: 24.13.3
       effect:
-        specifier: 4.0.0-rc.117
+        specifier: 'catalog:'
         version: 4.0.0-rc.117
       fast-check:
         specifier: 'catalog:'
@@ -1532,7 +1532,7 @@ importers:
         specifier: 'catalog:'
         version: 24.13.3
       effect:
-        specifier: 4.0.0-rc.117
+        specifier: 'catalog:'
         version: 4.0.0-rc.117
       fast-check:
         specifier: 'catalog:'
@@ -1681,7 +1681,7 @@ packages:
       '@opentelemetry/sdk-trace-node': '>=2.0.0 <3.0.0'
       '@opentelemetry/sdk-trace-web': '>=2.0.0 <3.0.0'
       '@opentelemetry/semantic-conventions': '>=1.33.0 <2.0.0'
-      effect: 4.0.0-rc.117
+      effect: ^4.0.0-rc.116
     peerDependenciesMeta:
       '@opentelemetry/api':
         optional: true
@@ -1713,7 +1713,7 @@ packages:
       '@opentelemetry/sdk-trace-node': '>=2.0.0 <3.0.0'
       '@opentelemetry/sdk-trace-web': '>=2.0.0 <3.0.0'
       '@opentelemetry/semantic-conventions': '>=1.33.0 <2.0.0'
-      effect: 4.0.0-rc.117
+      effect: ^4.0.0-rc.117
     peerDependenciesMeta:
       '@opentelemetry/api':
         optional: true
@@ -1736,26 +1736,26 @@ packages:
     resolution: {integrity: sha512-4FB6UriGqArWFUaFqVchhfCRmmtOVzmD/k/bH6LErlKY8a9amt5dk6c3Arsi7AvUpChsdO+3jsG+P85HsxMkNA==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: 4.0.0-rc.117
+      effect: ^4.0.0-rc.116
 
   '@effect/platform-node-shared@4.0.0-rc.117':
     resolution: {integrity: sha512-GyRkEfLBG49MwJe+/XDPiXYcQ44RA9p2z0AurlsWhR1cd1PqOUMEZU1pORL+/R5hR8aH6ZuqoJYD8lAc6h+wlA==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: 4.0.0-rc.117
+      effect: ^4.0.0-rc.117
 
   '@effect/platform-node@4.0.0-rc.116':
     resolution: {integrity: sha512-uA66Nh998OcChBVX83tQDkBDvQQcVaMXodP9gNGWVeIwWWquy7bzIkAq/fMZGKs/BVFhFQ0XCp3VIqYjnXu5ng==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: 4.0.0-rc.117
+      effect: ^4.0.0-rc.116
       redis: '>=5.0.0 <7.0.0'
 
   '@effect/platform-node@4.0.0-rc.117':
     resolution: {integrity: sha512-WbPcvQDkqXFnCeG6LohJ9eVNapCDhZbCpezhYKxm0IsZEk7swakRh7RkC1t2CXzd3hGmszTv2k9e/pXyZuL+wQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: 4.0.0-rc.117
+      effect: ^4.0.0-rc.117
       redis: '>=5.0.0 <7.0.0'
 
   '@effect/tsgo-darwin-arm64@0.45.0':
@@ -1800,7 +1800,7 @@ packages:
   '@effect/vitest@4.0.0-rc.117':
     resolution: {integrity: sha512-jJg9M7T3OhTcvoD9Zi28S5+0H+axlSHAYjXM8TYeLJy/FVlPe0B/Vc3ZfaqUF0rwkfQ6ziyCdjiBS46+182H1Q==}
     peerDependencies:
-      effect: 4.0.0-rc.117
+      effect: ^4.0.0-rc.117
       vitest: '>=5.0.0 <6.0.0'
 
   '@emnapi/core@2.0.0-alpha.3':
@@ -2814,7 +2814,7 @@ packages:
   '@systemfsoftware/effect-cell-types@8.3.2':
     resolution: {integrity: sha512-C0svoe4OzaYsJbLqNOBZ3P356ynfQp1d76eRRHP8w6N0tMYwzy3SQjrrmhaHm6dQ33M6R50ksutsOOM+pLAgkg==}
     peerDependencies:
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
 
   '@systemfsoftware/effect-gherkin-spec@4.3.1':
     resolution: {integrity: sha512-XcPU9b3/OHp+b6ETK9ToBGM8SWxbFOyHRjkopNffRXhloLxu7r7PtkSDbHkD0slzCqUPC3qt+hYfvXOhk1QDAg==}
@@ -2967,7 +2967,7 @@ packages:
     resolution: {integrity: sha512-MwwBLN/8xM8UNJC0SlEuJ7e/GAzoBJbLbZzRyZr3S9RaiewmSToJ53PL46k8kZWru/MQo30hclo4TgJMR5I9og==}
     engines: {node: '>=22.18.0'}
     peerDependencies:
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
       vitest: '>=4.1.0'
 
   '@systemfsoftware/stryker-js@10.2.0':
@@ -2975,18 +2975,18 @@ packages:
     engines: {node: '>=24.13.1'}
     hasBin: true
     peerDependencies:
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
 
   '@systemfsoftware/stryker-test-contribution@3.0.3':
     resolution: {integrity: sha512-Gyae8ewQI/uEa0zKhIV+ysQU/exUj/1UZF9biKGC3iqGjPrMuSzKd3swS0rttLBsYWo+9mIQmdvMb4cnUowbMg==}
     peerDependencies:
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
 
   '@systemfsoftware/stryker-vm-harness@1.0.0':
     resolution: {integrity: sha512-vIn+VwKl2gIpeoUIpDBb/0uilCkPlJn5sOAFDW9Qce3YhrupspXIvjq6dZ8T6XgidVt9whH5PsQh1kn5KE6dPA==}
     engines: {node: '>=24.13.1'}
     peerDependencies:
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
       vitest: '>=4.1.0'
 
   '@systemfsoftware/tsconfig@2.0.1':
@@ -3548,6 +3548,9 @@ packages:
     peerDependenciesMeta:
       oxc-resolver:
         optional: true
+
+  effect@4.0.0-rc.116:
+    resolution: {integrity: sha512-nawqJHSjHV8XIBRZNZ+D7cLZpN3kkSjzy6aiT9ofKENsl7xAMFKEoDa0itN5JFl3GUQ1PIN1T1HNlva5+xyO/A==}
 
   effect@4.0.0-rc.117:
     resolution: {integrity: sha512-UUyi9QiOW4nySFIBM3KnYbNMd9EZliOdKfBcyLD0mPMPheO2fkuXS5y0opjWc9oqzlJxPQICEGm8gGw3kh9j/w==}
@@ -4527,6 +4530,19 @@ snapshots:
 
   '@conventional-changelog/template@1.4.0': {}
 
+  '@effect/opentelemetry@4.0.0-rc.116(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0-rc.116)':
+    dependencies:
+      '@opentelemetry/semantic-conventions': 1.43.0
+      effect: 4.0.0-rc.116
+    optionalDependencies:
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/api-logs': 0.222.0
+      '@opentelemetry/resources': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-logs': 0.222.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-metrics': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-node': 2.11.0(@opentelemetry/api@1.9.1)
+
   '@effect/opentelemetry@4.0.0-rc.116(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0-rc.117)':
     dependencies:
       '@opentelemetry/semantic-conventions': 1.43.0
@@ -4562,11 +4578,30 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
+  '@effect/platform-node-shared@4.0.0-rc.117(effect@4.0.0-rc.116)':
+    dependencies:
+      '@types/ws': 8.18.1
+      effect: 4.0.0-rc.116
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   '@effect/platform-node-shared@4.0.0-rc.117(effect@4.0.0-rc.117)':
     dependencies:
       '@types/ws': 8.18.1
       effect: 4.0.0-rc.117
       ws: 8.21.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@effect/platform-node@4.0.0-rc.116(effect@4.0.0-rc.116)(redis@6.2.1(@opentelemetry/api@1.9.1))':
+    dependencies:
+      '@effect/platform-node-shared': 4.0.0-rc.117(effect@4.0.0-rc.116)
+      effect: 4.0.0-rc.116
+      redis: 6.2.1(@opentelemetry/api@1.9.1)
+      undici: 8.10.2
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -5406,6 +5441,10 @@ snapshots:
     dependencies:
       effect: 4.0.0-rc.117
 
+  '@systemfsoftware/effect-cell-types@8.3.2(effect@4.0.0-rc.116)':
+    dependencies:
+      effect: 4.0.0-rc.116
+
   '@systemfsoftware/effect-cell-types@8.3.2(effect@4.0.0-rc.117)':
     dependencies:
       effect: 4.0.0-rc.117
@@ -5579,9 +5618,9 @@ snapshots:
     dependencies:
       '@eslint-community/regexpp': 4.12.2
       '@oxc-project/types': 0.150.0
-      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.117)
+      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.116)
       angular-html-parser: 10.12.0
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
       oxc-parser: 0.150.0
       oxc-walker: 1.1.1(@oxc-project/types@0.150.0)(oxc-parser@0.150.0)(rolldown@1.2.8)
     optionalDependencies:
@@ -5593,9 +5632,9 @@ snapshots:
     dependencies:
       '@eslint-community/regexpp': 4.12.2
       '@oxc-project/types': 0.150.0
-      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.117)
+      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.116)
       angular-html-parser: 10.12.0
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
       oxc-parser: 0.150.0
       oxc-walker: 1.1.1(@oxc-project/types@0.150.0)(oxc-parser@0.150.0)(rolldown@1.2.8)
     optionalDependencies:
@@ -5606,7 +5645,7 @@ snapshots:
   '@systemfsoftware/stryker-js-plugin-interface@7.2.0(rolldown@1.2.8)(svelte@5.57.0)':
     dependencies:
       '@systemfsoftware/stryker-js-instrumenter': 8.0.1(rolldown@1.2.8)(svelte@5.57.0)
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
     transitivePeerDependencies:
       - rolldown
       - svelte
@@ -5614,20 +5653,20 @@ snapshots:
   '@systemfsoftware/stryker-js-plugin-interface@7.2.1(rolldown@1.2.8)(svelte@5.57.0)':
     dependencies:
       '@systemfsoftware/stryker-js-instrumenter': 8.0.2(rolldown@1.2.8)(svelte@5.57.0)
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
     transitivePeerDependencies:
       - rolldown
       - svelte
 
   '@systemfsoftware/stryker-js-plugin-runtime@5.0.3(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(rolldown@1.2.8)(svelte@5.57.0)':
     dependencies:
-      '@effect/opentelemetry': 4.0.0-rc.116(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0-rc.117)
-      '@effect/platform-node': 4.0.0-rc.116(effect@4.0.0-rc.117)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/opentelemetry': 4.0.0-rc.116(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0-rc.116)
+      '@effect/platform-node': 4.0.0-rc.116(effect@4.0.0-rc.116)(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/exporter-trace-otlp-http': 0.208.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
       '@systemfsoftware/stryker-js-plugin-interface': 7.2.0(rolldown@1.2.8)(svelte@5.57.0)
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
     transitivePeerDependencies:
       - '@opentelemetry/api-logs'
       - '@opentelemetry/resources'
@@ -5647,11 +5686,11 @@ snapshots:
       '@opentelemetry/exporter-trace-otlp-http': 0.222.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-node': 0.222.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
-      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.117)
+      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.116)
       '@systemfsoftware/stryker-js-instrumenter': 8.0.2(rolldown@1.2.8)(svelte@5.57.0)
       '@systemfsoftware/stryker-js-plugin-interface': 7.2.1(rolldown@1.2.8)(svelte@5.57.0)
       '@systemfsoftware/stryker-js-plugin-runtime': 5.0.3(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(rolldown@1.2.8)(svelte@5.57.0)
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
       typescript: 7.0.2
     transitivePeerDependencies:
       - '@opentelemetry/api'
@@ -5674,11 +5713,11 @@ snapshots:
       '@opentelemetry/exporter-trace-otlp-http': 0.222.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-node': 0.222.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
-      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.117)
+      '@systemfsoftware/effect-cell-types': 8.3.2(effect@4.0.0-rc.116)
       '@systemfsoftware/stryker-js-instrumenter': 8.0.2(rolldown@1.2.8)(svelte@5.57.0)
       '@systemfsoftware/stryker-js-plugin-interface': 7.2.1(rolldown@1.2.8)(svelte@5.57.0)
       '@systemfsoftware/stryker-js-plugin-runtime': 5.0.3(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(rolldown@1.2.8)(svelte@5.57.0)
-      effect: 4.0.0-rc.117
+      effect: 4.0.0-rc.116
       typescript: 7.0.2
     transitivePeerDependencies:
       - '@opentelemetry/api'
@@ -6164,6 +6203,8 @@ snapshots:
   diff@8.0.4: {}
 
   dts-resolver@3.0.0: {}
+
+  effect@4.0.0-rc.116: {}
 
   effect@4.0.0-rc.117: {}
 

@@ -46,9 +46,6 @@
     "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^"
   },
-  "peerDependencies": {
-    "effect": "catalog:"
-  },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
     "@effect/vitest": "catalog:",
