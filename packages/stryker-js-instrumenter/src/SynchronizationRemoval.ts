@@ -23,12 +23,12 @@
  * a moved argument that can yield.
  */
 import * as Arr from 'effect/Array'
+import * as Bool from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type { Expression, Node } from './Ast.js'
 import { arrowFunctionExpression, callExpression, cloneNode, identifier, memberExpression } from './Ast.js'
 import {
-  bothHold,
   type EffectCallForm,
   freshIdentifier,
   identifiersIn,
@@ -59,16 +59,16 @@ const synchronizationRemovalReplacement = (call: ResolvedEffectCall): Option.Opt
   )
 
 const isWithPermits = (call: ResolvedEffectCall): boolean =>
-  bothHold(call.module === 'Semaphore', call.exportName === 'withPermits')
+  Bool.and(call.module === 'Semaphore', call.exportName === 'withPermits')
 
 const isWithPermit = (call: ResolvedEffectCall): boolean =>
-  bothHold(call.module === 'Semaphore', call.exportName === 'withPermit')
+  Bool.and(call.module === 'Semaphore', call.exportName === 'withPermit')
 
 const isUninterruptible = (call: ResolvedEffectCall): boolean =>
-  bothHold(call.module === 'Effect', call.exportName === 'uninterruptible')
+  Bool.and(call.module === 'Effect', call.exportName === 'uninterruptible')
 
 const isUninterruptibleMask = (call: ResolvedEffectCall): boolean =>
-  bothHold(call.module === 'Effect', call.exportName === 'uninterruptibleMask')
+  Bool.and(call.module === 'Effect', call.exportName === 'uninterruptibleMask')
 
 const isDataFirst = (form: EffectCallForm): boolean => form === 'data-first'
 

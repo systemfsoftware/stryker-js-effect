@@ -1,10 +1,10 @@
 import * as Arr from 'effect/Array'
+import * as Bool from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type { Expression, Node } from './Ast.js'
 import { arrowFunctionExpression, cloneNode, identifier, memberExpression } from './Ast.js'
 import {
-  bothHold,
   type EffectModuleName,
   freshIdentifier,
   identifiersIn,
@@ -72,7 +72,7 @@ const splitOperation = (call: ResolvedEffectCall): Option.Option<SplitOperation>
   )
 
 const isAtomicUpdateSplitOperation = (call: ResolvedEffectCall): boolean =>
-  bothHold(
+  Bool.and(
     included(ATOMIC_UPDATE_SPLIT_MODULES, call.module),
     included(ATOMIC_UPDATE_SPLIT_OPERATIONS, call.exportName),
   )
@@ -101,7 +101,7 @@ const dataFirstArguments = (call: ResolvedEffectCall): Option.Option<SplitArgume
     Arr.get(call.args, 0),
     (ref) =>
       Option.flatMap(Arr.get(call.args, 1), (f) =>
-        onlyWhen(bothHold(isMovableArgument(ref), isMovableArgument(f)), {
+        onlyWhen(Bool.and(isMovableArgument(ref), isMovableArgument(f)), {
           ref: Option.some(cloneNode(ref)),
           f: cloneNode(f),
         })),

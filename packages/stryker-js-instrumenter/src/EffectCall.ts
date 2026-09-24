@@ -15,6 +15,7 @@
  * asks for it and a file's imports never change mid-parse (KTD4).
  */
 import * as Arr from 'effect/Array'
+import * as Bool from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -572,14 +573,14 @@ const isEffectPipeCall = (parent: CallExpression, context: MutatorContext, table
   Match.value(parent.callee).pipe(
     Match.when(
       isIdentifier,
-      (reference) => bothHold(isVisible(reference.name, context), table.pipeBindings.has(reference.name)),
+      (reference) => Bool.and(isVisible(reference.name, context), table.pipeBindings.has(reference.name)),
     ),
     Match.when(
       isMemberExpression,
       (member) =>
         Option.exists(
           staticMemberName(member),
-          (name) => bothHold(name === 'pipe', isPipeNamespace(member.object, context, table)),
+          (name) => Bool.and(name === 'pipe', isPipeNamespace(member.object, context, table)),
         ),
     ),
     Match.orElse(() => false),
@@ -590,7 +591,7 @@ const isPipeNamespace = (expression: Expression, context: MutatorContext, table:
     Match.when(isIdentifier, (reference) =>
       Option.match(namespaceOf(expression, context, table), {
         onNone: () => false,
-        onSome: (binding) => bothHold(isPipeNamespaceBinding(binding), isVisible(reference.name, context)),
+        onSome: (binding) => Bool.and(isPipeNamespaceBinding(binding), isVisible(reference.name, context)),
       })),
     Match.orElse(() => false),
   )
@@ -628,7 +629,7 @@ const namedModuleAccess = (
 ): Option.Option<Expression> =>
   Option.map(
     Option.fromNullishOr(
-      [...table.moduleBindings].find(([local, bound]) => bothHold(bound === module, isVisible(local, context))),
+      [...table.moduleBindings].find(([local, bound]) => Bool.and(bound === module, isVisible(local, context))),
     ),
     ([local]) => identifier(local),
   )
@@ -640,7 +641,7 @@ const rootNamespaceAccess = (
 ): Option.Option<Expression> =>
   Option.map(
     Option.fromNullishOr(
-      [...table.namespaces].find(([local, binding]) => bothHold(binding.kind === 'root', isVisible(local, context))),
+      [...table.namespaces].find(([local, binding]) => Bool.and(binding.kind === 'root', isVisible(local, context))),
     ),
     ([local]) => memberExpression(identifier(local), identifier(module), false),
   )
@@ -653,7 +654,7 @@ const moduleNamespaceAccess = (
   Option.map(
     Option.fromNullishOr(
       [...table.namespaces].find(([local, binding]) =>
-        bothHold(Option.exists(moduleOf(binding), (bound) => bound === module), isVisible(local, context))
+        Bool.and(Option.exists(moduleOf(binding), (bound) => bound === module), isVisible(local, context))
       ),
     ),
     ([local]) => identifier(local),
@@ -759,7 +760,7 @@ const hoistedVarsDeclare = (block: BlockStatement, name: string): boolean =>
 const hoistedCandidateDeclares = (candidate: Node, name: string): boolean =>
   Match.value(candidate).pipe(
     Match.when(isVariableDeclaration, (declaration) =>
-      bothHold(declaration.kind === 'var', statementBindingsDeclare(declaration, name))),
+      Bool.and(declaration.kind === 'var', statementBindingsDeclare(declaration, name))),
     Match.orElse(() =>
       false
     ),
@@ -798,13 +799,13 @@ const variableDeclarationDeclaresOr = (node: Node | null | undefined, name: stri
   })
 
 const moduleDeclarationDeclares = (declaration: TSModuleDeclaration, name: string): boolean =>
-  bothHold(
+  Bool.and(
     declaration.body !== null,
     Option.exists(identifierText(declaration.id), (text) => text === name),
   )
 
 const importEqualsDeclares = (declaration: TSImportEqualsDeclaration, name: string): boolean =>
-  bothHold(declaration.importKind !== 'type', declaration.id.name === name)
+  Bool.and(declaration.importKind !== 'type', declaration.id.name === name)
 
 const declaresIdentifier = (id: Node | null | undefined, name: string): boolean =>
   Option.exists(identifierText(id), (text) => text === name)
@@ -916,9 +917,6 @@ export const onlyWhen = <A>(holds: boolean, value: A): Option.Option<A> =>
     Match.when(true, () => Option.some(value)),
     Match.orElse(() => Option.none()),
   )
-
-export const bothHold = (first: boolean, second: boolean): boolean =>
-  Match.value(first).pipe(Match.when(true, () => second), Match.orElse(() => false))
 
 const holdsAny = (conditions: readonly boolean[]): boolean => conditions.some((condition) => condition)
 

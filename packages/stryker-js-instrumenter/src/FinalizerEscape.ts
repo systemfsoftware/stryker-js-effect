@@ -1,4 +1,5 @@
 import * as Arr from 'effect/Array'
+import * as Bool from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type { ArrowFunctionExpression, Expression, FunctionExpression, Node, ParamPattern } from './Ast.js'
@@ -16,7 +17,6 @@ import {
   unaryExpression,
 } from './Ast.js'
 import {
-  bothHold,
   freshIdentifier,
   identifiersIn,
   isDroppableArgument,
@@ -149,7 +149,7 @@ const releaseShape = (rest: readonly Expression[]): Option.Option<EscapeShape> =
     Arr.get(rest, 0),
     (rel) =>
       Option.flatMap(droppableOptionAt(rest, 1), (optionsDroppable) =>
-        onlyWhen<EscapeShape>(bothHold(isMovableArgument(rel), optionsDroppable), { kind: 'acquireRelease', rel })),
+        onlyWhen<EscapeShape>(Bool.and(isMovableArgument(rel), optionsDroppable), { kind: 'acquireRelease', rel })),
   )
 
 const useReleaseShape = (rest: readonly Expression[]): Option.Option<EscapeShape> =>
@@ -238,7 +238,7 @@ const isInlineFunction = (candidate: Node): candidate is InlineFunction =>
 
 const plainParameterArity = (fn: InlineFunction): Option.Option<number> =>
   onlyWhen(
-    bothHold(fn.params.every(isPlainParameter), fn.params.length <= 2),
+    Bool.and(fn.params.every(isPlainParameter), fn.params.length <= 2),
     fn.params.length,
   )
 
