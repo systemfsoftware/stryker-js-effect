@@ -31,11 +31,6 @@ const RangeSchema = S.Struct({
 
 export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(RangeSchema)])
 
-export interface MutationRange {
-  readonly start: Position
-  readonly end: Position
-}
-
 export type MutateDescription = typeof MutateDescriptionSchema.Type
 export type Position = typeof PositionSchema.Type
 

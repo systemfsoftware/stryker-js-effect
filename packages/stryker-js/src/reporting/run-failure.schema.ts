@@ -136,16 +136,16 @@ const childrenOf = <A>(settled: A): ReadonlyArray<A> =>
     Match.orElse((single) => [single]),
   )
 
-const causeFieldOf = <A = unknown>(value: object): Option.Option<unknown> =>
+const causeFieldOf = (value: object): Option.Option<any> =>
   Match.value(value).pipe(
     Match.when(carriesCause, (carrier) => Option.fromNullishOr(carrier.cause)),
     Match.orElse(() => Option.none()),
   )
 
-const reachableChildrenOf = <A = unknown>(value: object): ReadonlyArray<A> =>
-  Option.match(causeFieldOf<A>(value), {
-    onNone: (): ReadonlyArray<A> => [],
-    onSome: (settled) => childrenOf<A>(settled),
+const reachableChildrenOf = (value: object): ReadonlyArray<any> =>
+  Option.match(causeFieldOf(value), {
+    onNone: (): ReadonlyArray<any> => [],
+    onSome: (settled) => childrenOf(settled),
   })
 
 const reachableOf = (value: unknown, depth: number): ReadonlyArray<object> =>
@@ -157,19 +157,13 @@ const reachableOf = (value: unknown, depth: number): ReadonlyArray<object> =>
     ],
   })
 
-const causePayloadOf = <E = unknown>(reason: Cause.Reason<E>): E | object | undefined =>
-  Match.value(reason).pipe(
-    Match.tag('Fail', (failed) => failed.error),
-    Match.tag('Die', (died) => Option.getOrUndefined(Option.filter(Option.some(died.defect), isNonNullObject))),
-    Match.tag('Interrupt', () => undefined),
-    Match.exhaustive,
-  )
+const failureExitOf = <A = unknown, E = unknown>(
+  exit: ExitTypes.Exit<A, E>,
+): Option.Option<ExitTypes.Failure<A, E>> => Option.filter(Option.some(exit), ExitRuntime.isFailure)
 
-const failureExitOf = <A = unknown, E = unknown>(exit: ExitTypes.Exit<A, E>): Option.Option<ExitTypes.Failure<A, E>> =>
-  Option.filter(Option.some(exit), ExitRuntime.isFailure)
-
-const findExitError = <A = unknown, E = unknown>(failure: ExitTypes.Failure<A, E>): Option.Option<E> =>
-  Cause.findErrorOption(failure.cause)
+const findExitError = <A = unknown, E = unknown>(
+  failure: ExitTypes.Failure<A, E>,
+): Option.Option<E> => Cause.findErrorOption(failure.cause)
 
 const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
 
@@ -187,13 +181,13 @@ function reasonOf(value: object): string | undefined {
   )
 }
 
-function causeTextOf(value: object): string | undefined {
-  const cause = Match.value(value).pipe(
+const unknownCauseOf = (value: object): unknown =>
+  Match.value(value).pipe(
     Match.when(carriesCause, (carrier) => carrier.cause),
     Match.orElse(() => undefined),
   )
-  return causeText(cause, 1)
-}
+
+const causeTextOf = (value: object): string | undefined => causeText(unknownCauseOf(value), 1)
 
 function firstConfiguredText(value: object): Option.Option<string> {
   const reason = Match.value(value).pipe(
@@ -262,7 +256,9 @@ const failureValueDescription = <A = unknown>(value: A): Option.Option<string> =
 const failureValue = <A = unknown, E = unknown>(exit: ExitTypes.Exit<A, E>): E | undefined =>
   Option.getOrUndefined(Option.flatMap(failureExitOf(exit), (failure) => findExitError(failure)))
 
-const failureDescriptionOf = <A = unknown, E = unknown>(exit: ExitTypes.Exit<A, E>): Option.Option<string> =>
+const failureDescriptionOf = <A = unknown, E = unknown>(
+  exit: ExitTypes.Exit<A, E>,
+): Option.Option<string> =>
   Option.orElse(
     Option.orElse(Option.some(failureValueDescription(failureValue(exit))), () =>
       Option.fromNullishOr(firstConfigErrorDetail(exit))),
@@ -362,7 +358,6 @@ function showHelpErrorCount(help: CliError.ShowHelp): number {
 
 const helpErrorCountOf = <A = unknown>(value: A): number | undefined =>
   S.is(CliError.ShowHelp)(value) ? showHelpErrorCount(value) : undefined
-
 function gatherRunOutcome<A = unknown, E = unknown>(
   exit: ExitTypes.Exit<A, E>,
   argv: readonly string[],
@@ -379,7 +374,6 @@ function gatherRunOutcome<A = unknown, E = unknown>(
     survivorsDiagnostic: survivorsDiagnosticOf(survivors),
     schemaError: carriesSchemaError(value),
     successExitClass: successExitClassOf(exit),
-    highestExitClass: presentOf(highestExitClass(collectExitClasses(exit))),
     configDetail: firstConfigErrorDetail(exit),
     diagnostic: omitUnknownFailure(describeFailure(exit)),
   })

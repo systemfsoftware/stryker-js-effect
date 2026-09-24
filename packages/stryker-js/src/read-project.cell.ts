@@ -17,7 +17,7 @@ import * as Result from 'effect/Result'
 
 import { admitIncrementalReport, AdmitIncrementalReportCommand } from './admit-incremental-report.workflow.js'
 import { defaultOptions } from './config-defaults.js'
-import { compileIgnoreRule, type IgnoreRule } from './glob-match.js'
+import { IgnoreRule } from './matching.schema.js'
 import { IncrementalReportSchema } from './IncrementalReport.schema.js'
 import { MutationRangeSpecifierSchema, type MutationRangeSpecifier } from './MutationRange.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
@@ -492,7 +492,7 @@ const resolveInputFileNames = (
   ignoreRules: readonly string[],
   basePath: string,
 ): Effect.Effect<string[], PlatformError, FileSystem.FileSystem | Path.Path> =>
-  crawlDir(ignoreRules.map(compileIgnoreRule), basePath, basePath)
+  crawlDir(ignoreRules.map(IgnoreRule.compile), basePath, basePath)
 
 const selectionOf = (
   inputFileNames: readonly string[],

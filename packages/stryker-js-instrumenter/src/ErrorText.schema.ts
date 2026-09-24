@@ -9,18 +9,18 @@ import * as SGetter from 'effect/SchemaGetter'
 export const ErrorText = S.Unknown.pipe(
   S.decodeTo(S.NonEmptyString, {
     decode: SGetter.transform(errorTextOf),
-    encode: SGetter.passthroughSubtype<unknown, string>(),
+    encode: SGetter.forbiddenEncoding(),
   }),
 )
-export type ErrorText = typeof ErrorText.Type
+export type ErrorTextValue = typeof ErrorText.Type
 
 export const CauseText = S.Unknown.pipe(
   S.decodeTo(S.NonEmptyString, {
     decode: SGetter.transform(causeChainTextOf),
-    encode: SGetter.passthroughSubtype<unknown, string>(),
+    encode: SGetter.forbiddenEncoding(),
   }),
 )
-export type CauseText = typeof CauseText.Type
+export type CauseTextValue = typeof CauseText.Type
 
 function errorTextOf<A = unknown>(error: A): string {
   return Match.value(error).pipe(

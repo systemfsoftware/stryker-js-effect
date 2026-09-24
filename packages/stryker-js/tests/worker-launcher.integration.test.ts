@@ -1,6 +1,7 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import {
   ChildProcessCrashedError,
+  ClassifyWorkerExitCommand,
   classifyWorkerExit,
   makeWorkerClient,
   OutOfMemoryError,
@@ -201,7 +202,18 @@ Feature('Running each plugin worker as its own process')
         Given('worker processes that ended with these codes')('codes', () => Effect.succeed([137, 134, 143, 0, 1])),
         When('each ending is read')(
           'readings',
-          (s) => Effect.sync(() => s.codes.map((code) => classifyWorkerExit(WORKER_PID, code))),
+          (s) =>
+            Effect.sync(() =>
+              s.codes.map((code) =>
+                Result.match(
+                  classifyWorkerExit(new ClassifyWorkerExitCommand({ pid: WORKER_PID, exitCode: code })),
+                  {
+                    onFailure: (refused) => refused,
+                    onSuccess: (classified) => classified,
+                  },
+                )
+              )
+            ),
         ),
         Then('the memory signals are reported as memory exhaustion and the others as a crash')((s) =>
           Effect.sync(() => {

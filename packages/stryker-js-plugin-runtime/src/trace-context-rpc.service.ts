@@ -13,13 +13,12 @@ import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware'
 
 import type { TraceContextParts } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
-  formatTraceparent,
-  parseTraceparent,
   PropagatedTrace,
   TraceContextMiddleware,
   TraceContextReference,
-  TRACEPARENT_HEADER,
-  TRACESTATE_HEADER,
+  Traceparent,
+  TraceparentHeader,
+  TracestateHeader,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import { TraceContextPartsFromEffectSpan, TraceContextPartsFromSpanContext } from './trace-parts.schema.js'
@@ -30,17 +29,25 @@ const partsOfSpan = (span: api.Span | undefined) =>
     S.decodeOption(TraceContextPartsFromSpanContext),
   )
 
-const remotePartsFromHeaders = (headers: Headers.Headers): Option.Option<TraceContextParts> =>
+const remotePartsFromHeaders = (headers: Headers.Headers) =>
   Option.map(
-    Option.flatMap(Headers.get(headers, TRACEPARENT_HEADER), parseTraceparent),
-    (parts) => ({ ...parts, traceState: Option.getOrUndefined(Headers.get(headers, TRACESTATE_HEADER)) }),
+    Option.flatMap(Headers.get(headers, TraceparentHeader.literal), S.decodeUnknownOption(Traceparent)),
+    (parts) => ({ ...parts, traceState: Option.getOrUndefined(Headers.get(headers, TracestateHeader.literal)) }),
   )
 
 const traceHeaders = (parts: TraceContextParts) =>
-  Option.match(Option.fromUndefinedOr(parts.traceState), {
-    onNone: () => Headers.set(Headers.empty, TRACEPARENT_HEADER, formatTraceparent(parts)),
-    onSome: (traceState) =>
-      Headers.set(Headers.set(Headers.empty, TRACEPARENT_HEADER, formatTraceparent(parts)), TRACESTATE_HEADER, traceState),
+  Option.match(S.encodeOption(Traceparent)(parts), {
+    onNone: () => Headers.empty,
+    onSome: (traceparent) =>
+      Option.match(Option.fromUndefinedOr(parts.traceState), {
+        onNone: () => Headers.set(Headers.empty, TraceparentHeader.literal, traceparent),
+        onSome: (traceState) =>
+          Headers.set(
+            Headers.set(Headers.empty, TraceparentHeader.literal, traceparent),
+            TracestateHeader.literal,
+            traceState,
+          ),
+      }),
   })
 
 const inject = <A extends Rpc.Any>(request: Request<A>, parts: TraceContextParts): Request<A> => ({

@@ -12,7 +12,6 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { isGlob } from '../glob-match.js'
 import {
   findUnserializables,
   isWarningEnabled,
@@ -710,6 +709,10 @@ const mutationRangeBoundErrors = (index: number, specifier: MutationRangeSpecifi
   ...startLineErrors(index, rangeTextOf(specifier), specifier.startLine),
   ...lineOrderErrors(index, rangeTextOf(specifier), specifier.startLine, specifier.endLine),
 ]
+
+const GLOB_META = /[*?[{]/
+
+const isGlob = (value: string) => GLOB_META.test(value)
 
 const requireUnmagicalMutationRange = (
   mutateString: string,

@@ -1,4 +1,9 @@
-import { ChildProcessCrashedError, OutOfMemoryError, WorkerLauncher } from '@systemfsoftware/stryker-js'
+import {
+  ChildProcessCrashedError,
+  makeSpawnedSocketWorker,
+  OutOfMemoryError,
+  WorkerLauncher,
+} from '@systemfsoftware/stryker-js'
 import type { SpawnedSocketWorker, WorkerExit, WorkerSpawnParams } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -135,7 +140,11 @@ export const servingLauncher = (
         if (params.server !== undefined) {
           yield* Effect.forkScoped(params.server(serverSocket).pipe(Layer.launch))
         }
-        return { pid: params.pid, clientLayer: params.clientLayer(clientSocket), exited: params.exited }
+        return makeSpawnedSocketWorker({
+          pid: params.pid,
+          clientLayer: params.clientLayer(clientSocket),
+          exited: params.exited,
+        })
       })
 
     return { spawns, layer: Layer.succeed(WorkerLauncher, { spawn }) }

@@ -9,6 +9,7 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import { spanOf } from './Ast.handle.js'
 import type { Ast, HtmlAst, ScriptAst, SvelteAst, SpannedComment } from './Ast.schema.js'
 import {
@@ -293,6 +294,9 @@ const AST_SHAPE = ['format', 'root'] as const
 
 const isAst = (value: unknown): value is Ast =>
   Predicate.isObject(value) && AST_SHAPE.every((key) => key in value)
+
+type FileSchemaType = typeof FileSchema.Type
+
 const printedFile = (file: FileSchemaType, ast: Ast): Result.Result<readonly FileSchemaType[], PrintFailed> =>
   Option.match(Option.filter(Option.some(ast), isAst), {
     onNone: () => Result.succeed([]),

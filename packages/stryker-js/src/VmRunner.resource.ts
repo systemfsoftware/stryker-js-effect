@@ -5,6 +5,7 @@ import {
   type DryRunOptions,
   type MutantRunResult,
   MutantRunResultSchema,
+  type TestRunnerCapabilities,
   type TestRunnerConfig,
   TestRunnerFailed,
 } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -19,10 +20,13 @@ import * as Ref from 'effect/Ref'
 import { SchemaGetter } from 'effect'
 
 import { ALL_TESTS_ID, ALL_TESTS_NAME } from './command-runner.resource.js'
-import type { PooledTestRunner } from './TestRunner.resource.js'
-import { vmRunnerCapabilities, vmRunnerName } from './VmRunner.js'
+import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
 import { VmRunner } from './VmRunner.service.js'
 import type { VmPlatform, VmScript } from './VmRunner.service.js'
+
+const vmRunnerName = 'vm'
+
+const vmRunnerCapabilities = { reloadEnvironment: true } as const satisfies TestRunnerCapabilities
 
 export const isVmRunner = (name: TestRunnerConfig): name is 'vm' =>
   typeof name === 'string' && name.toLowerCase() === vmRunnerName
@@ -210,7 +214,7 @@ export const vmTestRunner = (
         Match.orElse(() => override ?? []),
       )
 
-    return {
+    return makePooledTestRunner({
       capabilities: Effect.succeed(vmRunnerCapabilities),
       init: Effect.void,
       dryRun: (options: DryRunOptions) => run(testFilesOf(options.testFiles), undefined),
@@ -231,5 +235,5 @@ export const vmTestRunner = (
               ),
             )),
         ),
-    }
+    })
   })

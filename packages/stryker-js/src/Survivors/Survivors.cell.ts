@@ -20,7 +20,7 @@ import {
   SurvivorsRejection,
 } from '../admit-survivors-run.workflow.js'
 import { ConfigFileUnreadableError } from '../ConfigError.schema.js'
-import { toRelativeNormalizedFileName } from '../IncrementalDiff.paths.js'
+import { RelativeNormalizedFileName } from '../matching.schema.js'
 import type { OutputMode } from '../output-mode.schema.js'
 import { readConfig } from '../run/load-config.cell.js'
 import { strykerVersion } from '../stryker-package.js'
@@ -51,7 +51,7 @@ type HashContent = (content: string) => string
 
 type ResolveAbsolutePath = (file: string) => string
 
-type RelativizeFileName = (fileName: string) => string
+type RelativizeFileName = (fileName: string) => Effect.Effect<string, never, never>
 
 const hashContent: HashContent = (content) => bytesToHex(sha256(utf8ToBytes(content)))
 
@@ -63,12 +63,11 @@ const reportMutantToMutant = (
   mutant: PriorReportMutant,
   resolveAbsolutePath: ResolveAbsolutePath,
   relativize: RelativizeFileName,
-) => {
-  const fileName = resolveAbsolutePath(file)
-  return {
+) =>
+  Effect.map(relativize(resolveAbsolutePath(file)), (fileName) => ({
     id: mutant.id,
     fileName,
-    relativeFileName: relativize(fileName),
+    relativeFileName: fileName,
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacement ?? mutant.mutatorName,
     location: {
@@ -81,8 +80,7 @@ const reportMutantToMutant = (
         column: mutant.location.end.column - 1,
       },
     },
-  }
-}
+  }))
 
 const extractSurvivors = (
   priorReport: PriorReportDocument,
@@ -163,7 +161,8 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
     const resolvedOptions = yield* resolveSurvivorsRunOptions(input.cliOptions, input.mode)
     const priorReportPath = priorReportPathOf(resolvedOptions)
     const resolveAbsolutePath: ResolveAbsolutePath = (file) => pathService.resolve(file)
-    const relativize = toRelativeNormalizedFileName(input.basePath)
+    const relativize = (fileName: string | undefined) =>
+      Effect.orDie(S.decodeEffect(RelativeNormalizedFileName)({ fileName, basePath: input.basePath }))
     const read = yield* readPriorReport(priorReportPath)
     const sourceContentHashes = yield* currentSourceHashesFor(priorReportFileKeys(read.raw))
     return yield* Boolean.match(read.found, {

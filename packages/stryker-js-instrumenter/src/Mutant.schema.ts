@@ -1,4 +1,5 @@
 import * as S from 'effect/Schema'
+import * as SGetter from 'effect/SchemaGetter'
 
 import { LocationSchema } from './Location.schema.js'
 
@@ -26,10 +27,18 @@ export class Mutant extends S.TaggedClass<Mutant>()('Mutant', {
   static: S.optional(S.Boolean),
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
-}) {
-  static readonly is = (value: unknown): value is Mutant => S.is(Mutant)(value)
-  static readonly normalizeFileName = (fileName: string) => fileName.replace(/\\/g, '/')
-}
+}) {}
+
+export const CanonicalFileName = S.String.pipe(
+  S.decodeTo(S.String, {
+    decode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
+    encode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
+  }),
+)
+export type CanonicalFileName = typeof CanonicalFileName.Type
+
+export const MutantFromUnknown = S.Unknown.pipe(S.decodeTo(Mutant))
+export type MutantFromUnknown = typeof MutantFromUnknown.Type
 
 export const RunOptionsFields = {
   timeout: S.Finite,

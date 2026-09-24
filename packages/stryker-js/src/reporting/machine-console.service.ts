@@ -4,7 +4,7 @@ import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Formatter from 'effect/Formatter'
 import * as Layer from 'effect/Layer'
-import * as Match from 'effect/Match'
+import * as Predicate from 'effect/Predicate'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import { CircularJson } from './machine-console.schema.js'
@@ -18,8 +18,11 @@ const jsonArgumentText = <A = unknown>(argument: A): string =>
     () => '[Circular]',
   )
 
-const inspectValue = <A = unknown>(value: A): string =>
-  typeof value === 'string' ? value : Formatter.format(value)
+const inspectValue = (value: string | object): string =>
+  Match.value(value).pipe(
+    Match.when(Predicate.isString, (text) => text),
+    Match.orElse((item) => Formatter.format(item)),
+  )
 
 interface FormatProgress<A = unknown> {
   readonly args: ReadonlyArray<A>
@@ -156,9 +159,11 @@ const makeCapturingConsole = (clock: Clock.Clock, buffers: MachineConsoleBuffers
       onSome: (started) => {
         const elapsed = elapsedMs(started, clock.monotonicTimeNanosUnsafe())
         Match.value(args).pipe(
-          Match.when(
-            (values: ReadonlyArray<unknown>) => values.length === 0,
-            () => buffers.chunks.push(`${key}: ${elapsed}ms`),
+const inspectValue = (value: string | object): string =>
+  Match.value(value).pipe(
+    Match.when(Predicate.isString, (text) => text),
+    Match.orElse((item) => Formatter.format(item)),
+  )
           ),
           Match.orElse((values) => buffers.chunks.push(`${key}: ${elapsed}ms ${formatArgs(values)}`)),
         )

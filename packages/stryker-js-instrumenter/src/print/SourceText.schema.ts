@@ -98,7 +98,7 @@ import type {
   WithStatement,
   YieldExpression,
 } from '@systemfsoftware/stryker-ignorer-interface'
-import type { Ast, HtmlAst, JSAst, ScriptAst, SvelteAst, TemplateScript, TsxAst } from '../Ast.schema.js'
+import type { Ast, HtmlAst, JSAst, ScriptAst, SvelteAst, TSAst, TemplateScript, TsxAst } from '../Ast.schema.js'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
@@ -108,10 +108,10 @@ import { spanOf } from '../Ast.handle.js'
 export const SourceText = S.Unknown.pipe(
   S.decodeTo(S.NonEmptyString, {
     decode: SGetter.transform(sourceTextOf),
-    encode: SGetter.passthroughSubtype<unknown, string>(),
+    encode: SGetter.forbiddenEncoding(),
   }),
 )
-export type SourceText = typeof SourceText.Type
+export type SourceTextValue = typeof SourceText.Type
 
 function sourceTextOf(value: unknown): string {
   return Option.match(
@@ -262,6 +262,8 @@ interface PrintOptions {
 }
 
 interface PrintProgramOptions extends PrintOptions {}
+
+const seedOf = <A>(value: A): Result.Result<A, PrintFailed> => Result.succeed(value)
 
 interface WrittenText {
   readonly text: string

@@ -10,12 +10,13 @@ import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
+import * as Result from 'effect/Result'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 
-import type { EnginePorts } from '../run/StageServices.service.js'
 import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
-import { classifyWorkerExit } from '../Worker.js'
+import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
+import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
 import { ChildProcessCrashedError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 
@@ -69,10 +70,17 @@ const nodeWorkerLauncherLayer = Layer.effect(
 
           const exited = handle.exitCode.pipe(
             Effect.orDie,
-            Effect.flatMap((exitCode) => Effect.fail(classifyWorkerExit(Number(handle.pid), exitCode))),
+            Effect.flatMap((exitCode) =>
+              Result.match(
+                classifyWorkerExit(new ClassifyWorkerExitCommand({ pid: Number(handle.pid), exitCode })),
+                {
+                  onFailure: (refused) => Effect.fail(refused),
+                  onSuccess: Effect.fail,
+                },
+              )),
           )
 
-          return { pid: Number(handle.pid), clientLayer, exited }
+          return makeSpawnedSocketWorker({ pid: Number(handle.pid), clientLayer, exited })
         }).pipe(
           Effect.catchIf(S.is(ChildProcessCrashedError), (error) => Effect.fail(error), () =>
             Effect.fail(

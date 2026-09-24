@@ -6,32 +6,18 @@ import * as S from 'effect/Schema'
 import * as SchemaIssue from 'effect/SchemaIssue'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
+import { TraceContextPartsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { TraceContextParts } from '@systemfsoftware/stryker-js-plugin-interface'
 
 const CURRENT_VERSION = '00'
 const SAMPLED_FLAG = 0x01
-
-const PartsWire = S.Struct({
-  version: S.String,
-  traceId: S.String,
-  spanId: S.String,
-  traceFlags: S.Finite,
-  traceState: S.optional(S.String),
-})
-
-const isTraceContextParts = (candidate: unknown): candidate is TraceContextParts => S.is(PartsWire)(candidate)
-
-const Parts = S.declare<TraceContextParts>(isTraceContextParts, {
-  message: 'expected W3C trace context parts',
-})
-
-export type EffectSpanIdentity = S.Schema.Type<typeof EffectSpanShape>
 
 const EffectSpanShape = S.Struct({
   traceId: S.String,
   spanId: S.String,
   sampled: S.Boolean,
 })
+export type EffectSpanIdentity = S.Schema.Type<typeof EffectSpanShape>
 
 const SpanContextRecord = S.Struct({
   traceId: S.String,
@@ -80,7 +66,7 @@ const spanContextOf = (parts: TraceContextParts) => ({
 
 export const TraceContextPartsFromSpanContext: S.Codec<TraceContextParts, api.SpanContext> = SpanContext.pipe(
   S.decodeTo(
-    Parts,
+    TraceContextPartsSchema,
     SchemaTransformation.transformEffect({
       decode: (context, options) =>
         Boolean.match(api.isValidTraceId(context.traceId) && api.isValidSpanId(context.spanId), {
@@ -102,7 +88,7 @@ export const TraceContextPartsFromSpanContext: S.Codec<TraceContextParts, api.Sp
 
 export const TraceContextPartsFromEffectSpan: S.Codec<TraceContextParts, EffectSpanIdentity> = EffectSpanShape.pipe(
   S.decodeTo(
-    Parts,
+    TraceContextPartsSchema,
     SchemaTransformation.transform({
       decode: (span) => ({
         version: CURRENT_VERSION,
@@ -121,7 +107,7 @@ export const TraceContextPartsFromEffectSpan: S.Codec<TraceContextParts, EffectS
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
-  const { Arbitrary } = await import('effect/unstable/arbitrary/Arbitrary')
+  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
 
   const hexIdOf = (length: number) =>
     Arbitrary.map(Arbitrary.schema(S.Int), (draw) => Math.abs(draw % 0xfffff).toString(16).padStart(length, '0'))

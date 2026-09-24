@@ -13,8 +13,8 @@ import * as Exit from 'effect/Exit'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
-import { SchemaGetter } from 'effect'
+
+import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
 
 export const ALL_TESTS_ID = 'all'
 export const ALL_TESTS_NAME = 'All tests'
@@ -129,11 +129,11 @@ export const commandRunner: {
     }
     const provided = Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)
 
-    return {
+    return makePooledTestRunner({
       capabilities: Effect.succeed(commandRunnerCapabilities),
       init: Effect.void,
       dryRun: () => commandRunnerDryRun(config).pipe(provided),
       mutantRun: (options: MutantRunOptions) => commandRunnerMutantRun(config, options).pipe(provided),
-    }
+    })
   },
 )

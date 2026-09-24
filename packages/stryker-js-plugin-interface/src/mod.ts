@@ -24,7 +24,7 @@ export {
 export * from './Checker.service.js'
 export * from './Evaluator.schema.js'
 export * from './Evaluator.service.js'
-export * from './ExitClass.js'
+export * from './ExitClass.schema.js'
 export * from './Metrics.schema.js'
 export {
   HitLimitReason,

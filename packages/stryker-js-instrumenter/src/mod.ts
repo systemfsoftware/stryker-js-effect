@@ -5,7 +5,7 @@ export { InstrumenterOptionsSchema } from './Instrument.schema.js'
 export { LocationSchema, OpenEndLocationSchema, PositionSchema } from './Location.schema.js'
 export type { Location, OpenEndLocation, Position } from './Location.schema.js'
 export { CauseText, ErrorText } from './ErrorText.schema.js'
-export type { CauseText, ErrorText } from './ErrorText.schema.js'
+export type { CauseTextValue, ErrorTextValue } from './ErrorText.schema.js'
 export type { ErrnoException } from './ErrorText.schema.js'
 export type {
   Coverage,
@@ -29,10 +29,12 @@ export type {
   MutationRange,
 } from './Instrument.schema.js'
 export {
+  CanonicalFileName,
   InstrumenterContext,
   Mutant,
   MutantActivationSchema,
   MutantCoverageSchema,
+  MutantFromUnknown,
   MutantRunOptionsSchema,
   MutantStatusSchema,
   RunOptionsFields,

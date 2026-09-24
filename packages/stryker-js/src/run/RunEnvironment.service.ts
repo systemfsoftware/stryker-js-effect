@@ -23,7 +23,7 @@ import { ReporterOutput } from '../reporter-output.service.js'
 import { RUN_EVENTS_QUEUE_BOUND } from '../Run.js'
 import type { RunEvent } from '../run-event.schema.js'
 import { RunEvents } from '../run-events.service.js'
-import { layer as idGeneratorLayer } from '../Worker.service.js'
+import { IdGenerator } from '../Worker.service.js'
 import type { EnginePorts, RunStageServices } from './StageServices.service.js'
 
 export interface RunEnvironmentShape {
@@ -60,7 +60,7 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
       const stageLayer = Layer.mergeAll(
         Layer.succeed(RunEnvironment, env),
         eventsLayer,
-        idGeneratorLayer,
+        IdGenerator.layer,
         ProjectFiles.layer,
         Layer.effect(
           Scope.Scope,

@@ -135,7 +135,19 @@ export type { RunEnvironmentShape } from './run/RunEnvironment.service.js'
 export { RunEnvironment } from './run/RunEnvironment.service.js'
 export type { EnginePorts, RunStageServices, StageServices, WiredRunLayer } from './run/StageServices.service.js'
 export type { SandboxHandle } from './Sandbox.handle.js'
-export type { PooledTestRunner, TestRunnerBuildContext } from './TestRunner.resource.js'
+export type {
+  isPooledTestRunner,
+  PooledTestRunner,
+  TypeId as PooledTestRunnerTypeId,
+} from './pooled-test-runner.handle.js'
+export {
+  invalidatesRunnerPool,
+  withEnvironmentReload,
+  withMaxReuse,
+  withRetry,
+  withTimeout,
+} from './pooled-test-runner.handle.js'
+export type { TestRunnerBuildContext } from './TestRunner.resource.js'
 export type { PooledTestRunnerError } from './TestRunner.schema.js'
 export type { VmRequire } from './VmRunner.service.js'
 export type { IdGeneratorShape } from './Worker.service.js'
@@ -159,14 +171,23 @@ export {
 } from './run-events.service.js'
 export type { RunEvent, RunIdentityShape, RunTerminalEvent } from './run-events.service.js'
 
-export { EXIT_CODE, ExitClass, highestExitClass, resolveExitCode, verdictExitClass } from './exit-classification.js'
+export { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+export {
+  classifyExit,
+  ClassifyExitCommand,
+  ClassifyExitDecision,
+} from './classify-exit.workflow.js'
+export {
+  classifyWorkerExit,
+  ClassifyWorkerExitCommand,
+} from './classify-worker-exit.workflow.js'
+export { ExitCodeResolved, resolveExitCode, ResolveExitCodeCommand } from './resolve-exit-code.workflow.js'
 export { buildTestRunner } from './TestRunner.resource.js'
 export { isCommandRunner } from './command-runner.resource.js'
 export { isVmRunner, vmTestRunner } from './VmRunner.resource.js'
 export type { CompiledTests, VmTestRunnerConfig } from './VmRunner.resource.js'
 export { VmRunner } from './VmRunner.service.js'
 export type { VmModule, VmModuleBuiltin, VmPlatform, VmScript } from './VmRunner.service.js'
-export { vmRunnerCapabilities, vmRunnerName } from './VmRunner.js'
 
 export {
   CONFIG_SYNTAX_HELP,
@@ -245,7 +266,7 @@ export { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 export { IncrementalReportSchema } from './IncrementalReport.schema.js'
 
 export { StrykerError } from './stryker-error.schema.js'
-export { classifyWorkerExit } from './Worker.js'
+export type { WorkerBootError, WorkerExit } from './Worker.schema.js'
 export { ChildProcessCrashedError, OutOfMemoryError, WorkerBootTimeoutError } from './Worker.schema.js'
 
 export { strykerVersion } from './stryker-package.js'
@@ -257,14 +278,14 @@ export {
   spawnReporterWorker,
   type SpawnReporterWorkerParams,
 } from './reporter-stream.service.js'
-export { connectRetry } from './WorkerLauncher.js'
 export { WorkerLauncher } from './WorkerLauncher.service.js'
 export { makeWorkerClient } from './worker-client.resource.js'
-export type {
-  SpawnedSocketWorker,
-  WorkerBootError,
-  WorkerExit,
-  WorkerLauncherShape,
-  WorkerSpawnParams,
-} from './WorkerLauncher.service.js'
+export {
+  clientLayer as spawnedSocketWorkerClientLayer,
+  isSpawnedSocketWorker,
+  make as makeSpawnedSocketWorker,
+  TypeId as SpawnedSocketWorkerTypeId,
+} from './spawned-socket-worker.handle.js'
+export type { SpawnedSocketWorker } from './spawned-socket-worker.handle.js'
+export type { WorkerLauncherShape, WorkerSpawnParams } from './WorkerLauncher.service.js'
 export type { WorkerClientParams } from './worker-client.resource.js'

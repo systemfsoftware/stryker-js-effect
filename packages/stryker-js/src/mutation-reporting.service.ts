@@ -2,6 +2,7 @@ import type { MutantTestCoverage, RunMutantResult } from '@systemfsoftware/stryk
 import type * as Cause from 'effect/Cause'
 import type {
   CheckResult,
+  CheckStatus,
   ExitClass,
   MetricsResult,
   MutantRunResult,
@@ -26,8 +27,8 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { calculateMetrics } from './calculate-metrics.js'
-import { highestExitClass, verdictExitClass } from './exit-classification.js'
-import { checkStatusToMutantStatus, mapRunResult, toSchemaLocation } from './mutant-result-mapping.js'
+import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
+import { ReportLocationFromMutant } from './ReportLocation.schema.js'
 import { ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
@@ -121,8 +122,8 @@ export class MutationReporting extends Context.Service<MutationReporting, Mutati
       const projectFiles: ProjectFilesShape = yield* ProjectFiles
       const deps: MutationReportingDeps = { fs, path: pathService, events, projectFiles }
       return MutationReporting.of({
-        reportCheckFailure: (mutant, result) => Effect.succeed(reportCheckFailure(mutant, result)),
-        reportMutantRunResult: (mutant, result) => Effect.succeed(reportMutantRunResult(mutant, result)),
+        reportCheckFailure: (mutant, result) => reportCheckFailure(mutant, result),
+        reportMutantRunResult: (mutant, result) => mapRunResult(mutant, result),
         reportAll: (input) => reportAll(deps, input),
         checkpoint: (input) => checkpoint(deps, input),
       })
@@ -137,32 +138,66 @@ interface MutationReportingDeps {
   readonly projectFiles: ProjectFilesShape
 }
 
-const reportMutantStatus = (
+interface MutantOutcome {
+  readonly killedBy?: readonly string[] | undefined
+  readonly statusReason?: string | undefined
+  readonly testsCompleted?: number | undefined
+}
+
+const reportMutant = (
   mutant: MutantTestCoverage,
   status: RunMutantResult['status'],
-  statusReason?: string,
-): RunMutantResult => ({
-  _tag: 'Mutant',
-  id: mutant.id,
-  fileName: mutant.fileName,
-  mutatorName: mutant.mutatorName,
-  replacement: mutant.replacement,
-  location: toSchemaLocation(mutant.location),
-  status,
-  coveredBy: mutant.coveredBy,
-  static: mutant.static,
-  testsCompleted: mutant.testsCompleted,
-  description: mutant.description,
-  statusReason: statusReason ?? mutant.statusReason,
-})
+  outcome: MutantOutcome = {},
+) =>
+  Effect.map(S.decodeEffect(ReportLocationFromMutant)(mutant.location), (location): RunMutantResult => ({
+    _tag: 'Mutant',
+    id: mutant.id,
+    fileName: mutant.fileName,
+    mutatorName: mutant.mutatorName,
+    replacement: mutant.replacement,
+    location,
+    status,
+    coveredBy: mutant.coveredBy,
+    static: mutant.static,
+    testsCompleted: mutant.testsCompleted,
+    description: mutant.description,
+    ...outcome,
+  })).pipe(Effect.orDie)
 
-const reportCheckFailure = (
-  mutant: MutantTestCoverage,
-  result: Exclude<CheckResult, PassedCheckResult>,
-): RunMutantResult => reportMutantStatus(mutant, checkStatusToMutantStatus(result.status), result.reason)
+const checkStatusToMutantStatus = (_status: Exclude<CheckStatus, 'passed'>) => 'CompileError'
 
-const reportMutantRunResult = (mutant: MutantTestCoverage, result: MutantRunResult): RunMutantResult =>
-  mapRunResult(mutant, result)
+const reportMutantStatus = (mutant: MutantTestCoverage, status: RunMutantResult['status'], statusReason?: string) =>
+  reportMutant(mutant, status, { statusReason: statusReason ?? mutant.statusReason })
+
+const reportCheckFailure = (mutant: MutantTestCoverage, result: Exclude<CheckResult, PassedCheckResult>) =>
+  reportMutantStatus(mutant, checkStatusToMutantStatus(result.status), result.reason)
+
+const reasonedOutcomeOf = (reason: string | undefined) =>
+  Option.match(Option.fromNullishOr(reason), {
+    onNone: () => ({}),
+    onSome: (present) => ({ statusReason: present }),
+  })
+
+const mapRunResult = (mutant: MutantTestCoverage, result: MutantRunResult) =>
+  Match.value(result).pipe(
+    Match.discriminator('status')(
+      'error',
+      (errored) => reportMutant(mutant, 'RuntimeError', { statusReason: errored.errorMessage }),
+    ),
+    Match.discriminator('status')('killed', (killed) =>
+      reportMutant(mutant, 'Killed', {
+        testsCompleted: killed.nrOfTests,
+        killedBy: [...killed.killedBy],
+        statusReason: killed.failureMessage,
+      })),
+    Match.discriminator('status')('timeout', (timedOut) =>
+      reportMutant(mutant, 'Timeout', reasonedOutcomeOf(timedOut.reason))),
+    Match.discriminator('status')(
+      'survived',
+      (survived) => reportMutant(mutant, 'Survived', { testsCompleted: survived.nrOfTests }),
+    ),
+    Match.exhaustive,
+  )
 
 const uniqueNames = (names: readonly (string | undefined)[]): readonly string[] =>
   Arr.dedupe(Arr.filter(names, (name): name is string => name !== undefined))
@@ -294,39 +329,51 @@ const determineExitCode = (input: MutationReportingInput) => (metrics: MetricsRe
     const { mutationScore } = metrics.metrics
     const breaking = input.options.thresholds.break
     const formattedScore = mutationScore.toFixed(2)
-    return yield* Option.match(Option.fromNullishOr(verdictExitClass(mutationScore, breaking)), {
-      onNone: () =>
-        Effect.map(
-          Match.value(breaking).pipe(
-            Match.when(null, () =>
-              Effect.logDebug(
-                "No breaking threshold configured. Won't fail the build no matter how low your mutation score is. Set `thresholds.break` to change this behavior.",
-              )),
-            Match.orElse((threshold) =>
+    return yield* Option.match(
+      Option.fromNullishOr(
+        Result.match(
+          classifyExit(
+            new ClassifyExitCommand({ pending: [], signal: null, score: mutationScore, breakingThreshold: breaking }),
+          ),
+          {
+            onFailure: (refused) => refused,
+            onSuccess: (decision) => decision.verdictClass,
+          },
+        ),
+      ),
+      {
+        onNone: () =>
+          Effect.map(
+            Match.value(breaking).pipe(
+              Match.when(null, () =>
+                Effect.logDebug(
+                  "No breaking threshold configured. Won't fail the build no matter how low your mutation score is. Set `thresholds.break` to change this behavior.",
+                )),
+              Match.orElse((threshold) =>
+                Effect.logInfo(
+                  `Final mutation score of ${formattedScore} is greater than or equal to break threshold ${
+                    String(threshold)
+                  }`,
+                )
+              ),
+            ),
+            (): ExitClass | null => null,
+          ),
+        onSome: (failure) =>
+          Effect.map(
+            Effect.andThen(
+              Effect.logError(
+                `Final mutation score ${formattedScore} under breaking threshold ${
+                  String(breaking)
+                }, setting exit code to 1 (failure).`,
+              ),
               Effect.logInfo(
-                `Final mutation score of ${formattedScore} is greater than or equal to break threshold ${
-                  String(threshold)
-                }`,
-              )
+                '(improve mutation score or set `thresholds.break = null` to prevent this error in the future)',
+              ),
             ),
+            (): ExitClass | null => failure,
           ),
-          (): ExitClass | null => null,
-        ),
-      onSome: (failure) =>
-        Effect.map(
-          Effect.andThen(
-            Effect.logError(
-              `Final mutation score ${formattedScore} under breaking threshold ${
-                String(breaking)
-              }, setting exit code to 1 (failure).`,
-            ),
-            Effect.logInfo(
-              '(improve mutation score or set `thresholds.break = null` to prevent this error in the future)',
-            ),
-          ),
-          (): ExitClass | null => failure,
-        ),
-    })
+      })
   })
 
 const emitVerdict = (deps: MutationReportingDeps, input: MutationReportingInput) => (report: schema.MutationTestResult) =>
@@ -376,8 +423,19 @@ const reportAll = (deps: MutationReportingDeps, input: MutationReportingInput) =
     yield* offerTerminalReport(input.reporterStage, report, metrics)
     const terminalDrain = terminalDrainClass(yield* closeReporterStage(input.reporterStage))
     const verdict = yield* determineExitCode(input)(metrics)
-    const finalVerdict = highestExitClass(
-      [verdict, terminalDrain].filter((candidate): candidate is ExitClass => candidate !== null),
+    const finalVerdict = Result.match(
+      classifyExit(
+        new ClassifyExitCommand({
+          pending: [verdict, terminalDrain].filter((candidate): candidate is ExitClass => candidate !== null),
+          signal: null,
+          score: null,
+          breakingThreshold: null,
+        }),
+      ),
+      {
+        onFailure: (refused) => refused,
+        onSuccess: (decision) => decision.highestClass,
+      },
     )
     yield* emitVerdict(deps, input)(report)
     yield* Boolean.match(input.options.incremental, {
@@ -420,3 +478,59 @@ const checkpoint = (deps: MutationReportingDeps, input: MutationReportingInput) 
       }),
     onFalse: () => Effect.void,
   })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const { Mutant } = await import('@systemfsoftware/stryker-js-instrumenter')
+  const { MutantRunResultSchema } = await import('@systemfsoftware/stryker-js-plugin-interface')
+
+  const coverageOf = (mutant: Mutant): MutantTestCoverage => ({
+    ...mutant,
+    coveredBy: mutant.coveredBy,
+    static: mutant.static,
+  })
+
+  const conservesMutant = (coverage: MutantTestCoverage, mapped: RunMutantResult) =>
+    mapped.id === coverage.id &&
+    mapped.fileName === coverage.fileName &&
+    mapped.mutatorName === coverage.mutatorName &&
+    mapped.replacement === coverage.replacement &&
+    mapped.coveredBy === coverage.coveredBy &&
+    mapped.static === coverage.static &&
+    mapped.description === coverage.description
+
+  const shiftsLocationByOne = (coverage: MutantTestCoverage, mapped: RunMutantResult) =>
+    mapped.location.start.line - coverage.location.start.line === 1 &&
+    mapped.location.start.column - coverage.location.start.column === 1 &&
+    mapped.location.end.line - coverage.location.end.line === 1 &&
+    mapped.location.end.column - coverage.location.end.column === 1
+
+  const carriesClassOutcome = (result: MutantRunResult, mapped: RunMutantResult) =>
+    Match.value(result).pipe(
+      Match.discriminator('status')('error', (errored) =>
+        mapped.status === 'RuntimeError' && mapped.statusReason === errored.errorMessage),
+      Match.discriminator('status')('killed', (killed) =>
+        mapped.status === 'Killed' &&
+        mapped.testsCompleted === killed.nrOfTests &&
+        mapped.statusReason === killed.failureMessage &&
+        JSON.stringify(mapped.killedBy) === JSON.stringify(killed.killedBy)),
+      Match.discriminator('status')('timeout', (timedOut) =>
+        mapped.status === 'Timeout' && mapped.statusReason === timedOut.reason),
+      Match.discriminator('status')('survived', (survived) =>
+        mapped.status === 'Survived' && mapped.testsCompleted === survived.nrOfTests),
+      Match.exhaustive,
+    )
+
+  const mapsFaithfully = (mutant: Mutant, result: MutantRunResult) => {
+    const coverage = coverageOf(mutant)
+    return Effect.map(mapRunResult(coverage, result), (mapped) =>
+      conservesMutant(coverage, mapped) && shiftsLocationByOne(coverage, mapped) &&
+      carriesClassOutcome(result, mapped))
+  }
+
+  it.effect.prop(
+    '∀mr_MapRunResult_ConservesMutant∧ShiftsLocation∧CarriesOutcome',
+    [Mutant, MutantRunResultSchema],
+    ([mutant, result]) => mapsFaithfully(mutant, result),
+  )
+}

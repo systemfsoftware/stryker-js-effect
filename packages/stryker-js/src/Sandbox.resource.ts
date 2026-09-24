@@ -20,7 +20,7 @@ import * as Stream from 'effect/Stream'
 import type { JsonValue } from '@std/jsonc'
 import { parse } from '@std/jsonc'
 
-import { createFileMatcher } from './file-matching.js'
+import { FileMatcher } from './matching.schema.js'
 import { isWarningEnabled, optionsPath } from './config-defaults.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFiles } from './project-files.service.js'
@@ -80,8 +80,8 @@ const makeDisableTypeChecksPreprocessor = (options: StrykerOptions, impl: typeof
   Effect.gen(function*() {
     const pathService = yield* Path.Path
     const files = yield* ProjectFiles
-    const matches = createFileMatcher(options.disableTypeChecks, pathService)
-    const matched = [...project.files].filter(([name]) => matches(pathService.resolve(name)))
+    const matcher = FileMatcher.make({ pattern: options.disableTypeChecks, allowHiddenFiles: true })
+    const matched = [...project.files].filter(([name]) => matcher.matches(pathService, pathService.resolve(name)))
     const instrumented = yield* files.readAll(matched.map(([, file]) => file))
     const updates = yield* Effect.forEach(
       instrumented,
