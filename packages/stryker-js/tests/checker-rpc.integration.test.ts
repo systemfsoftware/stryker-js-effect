@@ -1,12 +1,12 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Mutant, type MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Checker, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'
-import * as S from 'effect/Schema'
+import * as Result from 'effect/Result'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
@@ -100,14 +100,37 @@ const serviceFrom = (
     client.group({ checkerName, mutants: [...mutants] }).pipe(Effect.mapError(crashedFrom)),
 })
 
-const identityFields = {
-  fileName: Mutant.CanonicalFileName.make('src/core.ts'),
-  mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
+interface DraftMutant {
+  readonly fileName: string
+  readonly mutatorName: string
+  readonly replacement: string
+  readonly location: {
+    readonly start: { readonly line: number; readonly column: number }
+    readonly end: { readonly line: number; readonly column: number }
+  }
+}
+
+const identityFields: DraftMutant = {
+  fileName: 'src/core.ts',
+  mutatorName: 'ArithmeticOperator',
   replacement: '-',
   location: { start: { line: 10, column: 5 }, end: { line: 10, column: 6 } },
-} as const
+}
 
-const planOf = (mutant: Mutant.Mutant): MutantRunPlan => ({
+const describedFields = { ...identityFields, _tag: 'Mutant', id: 'mutant-1' }
+
+const describedMutant = (): Mutant.Mutant =>
+  Effect.runSync(S.decodeEffect(Mutant.MutantFromUnknown)(describedFields).pipe(Effect.orDie))
+
+const undescribableFields: { readonly [field: string]: string | number | object } = { ...describedFields, id: '' }
+
+const undescribableMutant = (): Mutant.Mutant =>
+  Result.match(S.decodeUnknownResult(Mutant.MutantFromUnknown)(structuredClone(undescribableFields)), {
+    onFailure: () => describedMutant(),
+    onSuccess: () => Effect.dieSync(new Error('planned mutant was unexpectedly accepted')),
+  })
+
+const planOf = (mutant: Mutant.Mutant): Mutant.MutantRunPlan => ({
   plan: 'Run',
   mutant,
   runOptions: {
@@ -120,8 +143,6 @@ const planOf = (mutant: Mutant.Mutant): MutantRunPlan => ({
   },
   netTime: 1,
 })
-
-const undescribableMutant = (): Mutant.Mutant => ({ ...describedMutant(), id: '' }) as never as Mutant.Mutant
 
 Feature('Verifying mutants through an external checker worker')
   .withLayer(Layer.empty)
