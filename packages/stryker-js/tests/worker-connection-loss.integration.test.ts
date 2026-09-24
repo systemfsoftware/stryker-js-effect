@@ -9,6 +9,7 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as TestClock from 'effect/testing/TestClock'
 import type * as RpcClient from 'effect/unstable/rpc/RpcClient'
@@ -27,6 +28,8 @@ const Feature = makeFeature({ it, layer })
 
 const SILENCE_WINDOW = '20 seconds'
 const ORPHAN_GUARD = '30 seconds'
+const BOOT_REFUSALS = 2
+const BOOT_RETRY_WINDOW = '5 seconds'
 
 type CheckerRpcsUnion = typeof Plugin.CheckerRpcs extends RpcGroup.RpcGroup<infer Rpcs> ? Rpcs : never
 
@@ -63,7 +66,24 @@ const makeSilentCheckerServer = (
     Layer.provide(Trace.layerTraceContextServer),
   )
 
-const makeHarness = () =>
+const refusingFirstOpens = (refusals: number, socket: Socket.Socket): Socket.Socket => {
+  let attempts = 0
+  return Socket.make({
+    reader: Effect.suspend(() => {
+      attempts += 1
+      return attempts <= refusals
+        ? Effect.fail(
+          Socket.SocketError.make({
+            reason: Socket.SocketOpenError.make({ kind: 'Unknown', cause: 'the worker socket was not listening yet' }),
+          }),
+        )
+        : socket.reader
+    }),
+    writer: socket.writer,
+  })
+}
+
+const makeHarness = (bootRefusals = 0) =>
   Effect.gen(function*() {
     const gate = yield* Latch.make()
     const [clientSocket, serverSocket] = yield* memorySocketPair
@@ -76,7 +96,9 @@ const makeHarness = () =>
         Effect.succeed(
           Worker.makeSpawnedSocketWorker({
             pid: 4242,
-            clientLayer: Worker.layerWorkerProtocol(Layer.succeed(Socket.Socket, clientSocket)),
+            clientLayer: Worker.layerWorkerProtocol(
+              Layer.succeed(Socket.Socket, refusingFirstOpens(bootRefusals, clientSocket)),
+            ),
             exited: Effect.never,
           }),
         ),
@@ -175,6 +197,51 @@ Feature('Settling checker requests when a worker goes silent')
             expect(s.answer['mutant-2']?.status).toBe('passed')
             const received = yield* Ref.get(s.silent.received)
             expect(received.at(-1)?.id).toBe('mutant-2')
+          })
+        ),
+      ),
+    )
+  })
+
+Feature('Answering the first request to a worker that boots slowly')
+  .withLayer(Layer.empty)
+  .body(({ scenario }) => {
+    scenario(
+      'A request made while the worker refuses its connection is answered once it accepts',
+      Gherkin.Do.pipe(
+        Given('a checker request already waiting on a worker that refuses its connection while booting')(
+          'held',
+          () =>
+            Effect.gen(function*() {
+              const booting = yield* makeHarness(BOOT_REFUSALS).pipe(Effect.forkChild)
+              const outcome = yield* Effect.flatMap(
+                Fiber.join(booting),
+                (harness) => checkMutants(harness, 'mutant-boot'),
+              ).pipe(Effect.result, Effect.timeout(ORPHAN_GUARD), Effect.forkChild)
+              return { booting, outcome }
+            }),
+        ),
+        When('the worker finishes booting and accepts the connection')(
+          'booted',
+          (s) =>
+            Effect.gen(function*() {
+              yield* TestClock.adjust(BOOT_RETRY_WINDOW)
+              const harness = yield* Fiber.join(s.held.booting)
+              yield* Latch.open(harness.gate)
+              return harness
+            }),
+        ),
+        Then('the first request is answered by the booted worker')((s) =>
+          Effect.gen(function*() {
+            const outcome = yield* Fiber.join(s.held.outcome)
+            if (Result.isFailure(outcome)) {
+              throw new Error('the first request was expected to wait out the worker boot and be answered', {
+                cause: outcome.failure,
+              })
+            }
+            expect(outcome.success['mutant-boot']?.status).toBe('passed')
+            const received = yield* Ref.get(s.booted.received)
+            expect(received.at(-1)?.id).toBe('mutant-boot')
           })
         ),
       ),
