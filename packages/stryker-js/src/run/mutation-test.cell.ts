@@ -1,6 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import type {
-  CoveragePerTestId,
   MutantTestCoverage,
   TestPlan as MutantTestPlan,
 } from '@systemfsoftware/stryker-js-instrumenter'
@@ -45,9 +44,6 @@ import type {
   FailedCheckResult,
   MutationTestResult,
   TestResult,
-  MutantRunResult,
-  FailedTestResult,
-  TestRunnerFailed,
   WorkerPluginKind,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import { HitLimitReasonText, WallClockTimeoutReason } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -60,7 +56,6 @@ import { checkerMutantsSkipped } from '../metrics.js'
 import { ReportLocationFromMutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
-import type { PreviousMutantRecord } from '../IncrementalDiff.schema.js'
 import { ProjectFiles } from '../project-files.service.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
@@ -213,7 +208,7 @@ const rememberedResultsOf = (
     Effect.forEach(remembered, (entry) =>
       Option.match(Option.fromUndefinedOr(byId.get(entry.mutantId)), {
         onNone: () => Effect.succeed(Option.none<RunMutantResult>()),
-        onSome: (mutant) => Effect.map(rememberedOf(mutant, entry), Option.some),
+        onSome: (mutant) => Effect.asSome(rememberedOf(mutant, entry)),
       })),
     (located) => located.flatMap((entry) => Option.match(entry, { onNone: () => [], onSome: (result) => [result] })),
   )
@@ -274,7 +269,7 @@ const calculateTotalTime = (testResults: Iterable<TestResult>) =>
 const toTestIds = (testResults: Iterable<TestResult>) => [...testResults].map((test) => test.id)
 
 const hitsRecordOf = (testCoverage: TestCoverage) =>
-  Object.fromEntries([...testCoverage.hitsByMutantId])
+  Object.fromEntries(testCoverage.hitsByMutantId)
 
 const testsByMutantIdRecordOf = (testCoverage: TestCoverage) =>
   Object.fromEntries(
@@ -300,7 +295,7 @@ const planCommandOf = (
   MutantTestPlanCommand.make({
     mutants: [...mutants],
     timeOverheadMS,
-    timeSpentAllTests: calculateTotalTime(MutableHashMap.values(testCoverage.testsById)),
+    timeSpentAllTests: testCoverage.testsById.pipe(MutableHashMap.values, calculateTotalTime),
     hitsByMutantId: hitsRecordOf(testCoverage),
     testsByMutantId: testsByMutantIdRecordOf(testCoverage),
     testTimeById: testTimeRecordOf(testCoverage),
@@ -474,7 +469,7 @@ const previousTestFilesOf = (report: MutationTestResult | undefined): S.Schema.T
   Option.getOrElse(
     Option.flatMap(
       Option.flatMap(Option.fromUndefinedOr(report), (present) => Option.fromUndefinedOr(present.testFiles)),
-      (testFiles) => S.decodeUnknownOption(PreviousTestFilesSchema)(testFiles),
+      (testFiles) => S.decodeOption(PreviousTestFilesSchema)(testFiles),
     ),
     (): S.Schema.Type<typeof PreviousTestFilesSchema> => ({}),
   )

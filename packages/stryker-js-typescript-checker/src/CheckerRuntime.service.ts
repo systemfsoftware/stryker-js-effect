@@ -1,7 +1,7 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { Checker, CheckerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { CheckerMutantWire, CheckResult, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, CheckerFailed, CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { CheckResult, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
@@ -93,11 +93,15 @@ const makeChecker = (options: StrykerOptions, compiler: TSCompiler): Checker['Se
   const createErrorText = (errors: readonly Diagnostic[]) =>
     Effect.map(Effect.forEach(errors, formatDiagnostic), (parts) => parts.join('\n'))
 
-  const soloRound = (mutant: CheckerMutantWire) =>
-    verify.run(CheckMutantsCommand.make({ mutants: [mutant] })).pipe(
-      Effect.withSpan('typescript-checker.soloRound', { attributes: { 'stryker.mutant.id': mutant.id } }),
-      Effect.map((decision) => decision.results),
-    )
+const soloRound = (mutant: CheckerMutantWire['Encoded']) =>
+  Result.match(S.decodeUnknownResult(CheckerMutantWire)(mutant), {
+    onFailure: () => Effect.fail(refuse({ mutantIds: [], cause: NodeNotInGraph.make({ fileName: '' }) })),
+    onSuccess: (decoded) =>
+      verify.run(CheckMutantsCommand.make({ mutants: [decoded] })).pipe(
+        Effect.withSpan('typescript-checker.soloRound', { attributes: { 'stryker.mutant.id': decoded.id } }),
+        Effect.map((decision) => decision.results),
+      ),
+  })
 
   const soloRounds = (decision: CheckMutantsAnswer) =>
     Match.value(decision).pipe(

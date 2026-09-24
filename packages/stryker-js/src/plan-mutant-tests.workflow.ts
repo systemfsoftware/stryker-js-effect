@@ -3,6 +3,8 @@ import { Mutant, MutantId, MutantStatusSchema } from '@systemfsoftware/stryker-j
 import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
+import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -17,7 +19,7 @@ export class PlannedRunMutant extends S.TaggedClass<PlannedRunMutant>()('Planned
   netTime: S.Finite,
   runOptions: PlannedMutantRunOptions,
   static: S.optional(S.Boolean),
-  coveredBy: S.optional(S.Array(S.String)),
+  coveredBy: S.String.pipe(S.Array, S.optional),
 }) {
   readonly [MutantPlanTypeId] = MutantPlanTypeId
 }
@@ -27,7 +29,7 @@ export class PlannedEarlyResultMutant extends S.TaggedClass<PlannedEarlyResultMu
   status: MutantStatusSchema,
   statusReason: S.optional(S.String),
   static: S.optional(S.Boolean),
-  coveredBy: S.optional(S.Array(S.String)),
+  coveredBy: S.String.pipe(S.Array, S.optional),
 }) {
   readonly [MutantPlanTypeId] = MutantPlanTypeId
 }
@@ -62,7 +64,7 @@ const staticCoverageCountOf = (staticCoverage: Record<string, number> | undefine
   Option.getOrElse(
     Option.flatMap(
       Option.fromNullishOr(staticCoverage),
-      (countsByMutantId) => Option.fromUndefinedOr(countsByMutantId[mutantId]),
+      (countsByMutantId) => Record.get(countsByMutantId, mutantId),
     ),
     () => 0,
   )
@@ -78,13 +80,13 @@ const mutantIsStatic = (command: MutantTestPlanCommand, mutantId: string) =>
 
 const calculateTotalTimeForIds = (testIds: readonly string[], testTimeById: Record<string, number>) =>
   testIds.reduce(
-    (netTime, testId) => netTime + Option.getOrElse(Option.fromUndefinedOr(testTimeById[testId]), () => 0),
+    (netTime, testId) => netTime + Option.getOrElse(Record.get(testTimeById, testId), () => 0),
     0,
   )
 
 const hitLimitForCount = (hitCount: number) => hitCount * 100
 
-const hitLimitOf = (hitCount: number | undefined) => Option.map(Option.fromUndefinedOr(hitCount), hitLimitForCount)
+const hitLimitOf = (hitCount: Option.Option<number>) => Option.map(hitCount, hitLimitForCount)
 
 const mutantActivationOf = (testFilter: readonly string[] | undefined) =>
   Option.match(Option.fromUndefinedOr(testFilter), {
@@ -119,13 +121,13 @@ const toRunPlan = (
       mutantActivation: mutantActivationOf(testFilter),
       timeout: command.options.timeoutFactor * netTime + command.options.timeoutMS + command.timeOverheadMS,
       sandboxFileName: Option.getOrElse(
-        Option.fromUndefinedOr(command.sandboxFileByName[mutant.fileName]),
+        Record.get(command.sandboxFileByName, mutant.fileName),
         () => mutant.fileName,
       ),
       disableBail: command.options.disableBail,
       reloadEnvironment: reloadEnvironmentOf(testFilter, isStatic),
       ...testFilterField(testFilter),
-      ...Option.match(hitLimitOf(command.hitsByMutantId[mutant.id]), {
+      ...Option.match(hitLimitOf(Record.get(command.hitsByMutantId, mutant.id)), {
         onNone: () => ({} as const),
         onSome: (hitLimit) => ({ hitLimit } as const),
       }),
@@ -187,10 +189,10 @@ const planForStaticallyCovered = (
   command: MutantTestPlanCommand,
   isStatic: boolean,
 ) => {
-  const tests = Option.getOrElse(Option.fromUndefinedOr(command.testsByMutantId[mutant.id]), () => [])
+  const tests = Option.getOrElse(Record.get(command.testsByMutantId, mutant.id), (): readonly string[] => [])
   const coveredBy = [...tests]
   const useCovered = Boolean.match(isStatic, {
-    onTrue: () => command.options.ignoreStatic && tests.length > 0,
+    onTrue: () => Boolean.and(command.options.ignoreStatic, tests.length > 0),
     onFalse: () => true,
   })
   return Boolean.match(useCovered, {
@@ -200,9 +202,9 @@ const planForStaticallyCovered = (
 }
 
 const mutantIsCovered = (command: MutantTestPlanCommand, mutantId: string) =>
-  Option.match(Option.fromUndefinedOr(command.testsByMutantId[mutantId]), {
+  Option.match(Record.get(command.testsByMutantId, mutantId), {
     onNone: () => mutantIsStatic(command, mutantId),
-    onSome: (tests) => tests.length > 0 || mutantIsStatic(command, mutantId),
+    onSome: (tests) => Boolean.or(tests.length > 0, mutantIsStatic(command, mutantId)),
   })
 
 const decidePlanForMutant = (mutant: Mutant, command: MutantTestPlanCommand) => {
@@ -223,10 +225,11 @@ const isClosedMutant = (mutant: Mutant) => Option.isSome(Option.fromUndefinedOr(
 const openMutantsOf = (mutants: ReadonlyArray<Mutant>) => mutants.filter((mutant) => !isClosedMutant(mutant))
 
 const hitCountRequiredAndAbsent = (command: MutantTestPlanCommand, mutant: Mutant) =>
-  Option.isSome(Option.fromUndefinedOr(mutant.coveredBy)) &&
-  mutantIsCovered(command, mutant.id) &&
-  command.staticCoverage !== undefined &&
-  Option.isNone(Option.fromUndefinedOr(command.hitsByMutantId[mutant.id]))
+  Boolean.every([
+    mutantIsCovered(command, mutant.id),
+    Predicate.isNotUndefined(command.staticCoverage),
+    Option.isNone(Record.get(command.hitsByMutantId, mutant.id)),
+  ])
 
 const missingHitCountIds = (command: MutantTestPlanCommand) =>
   openMutantsOf(command.mutants).flatMap((mutant) =>
