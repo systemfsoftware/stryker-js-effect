@@ -42,6 +42,7 @@ import {
 import { MutationRangeSpecifier, MutationRangeSpecifierSchema } from '../MutationRange.schema.js'
 import type { OutputMode } from '../output-mode.schema.js'
 import { StrykerError } from '../stryker-error.schema.js'
+import { LoadConfigCommand, resolveConfig } from './resolve-config.workflow.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 
 const combine = (

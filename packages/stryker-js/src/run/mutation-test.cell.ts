@@ -30,7 +30,6 @@ import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import { PhaseEntered } from '../run-events.service.js'
 import { PlanKnown, RunEvents, RunMutantTested } from '../run-events.service.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 
@@ -66,7 +65,8 @@ import type { SandboxHandle } from '../Sandbox.handle.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.resource.js'
 import { ChildProcessCrashedError } from '../Worker.schema.js'
 import { IdGenerator } from '../Worker.service.js'
-import { configuredPluginOf, type DryRunDone, isStageError, workerSpawnOf } from './dry-run.cell.js'
+import { isStageError } from './dry-run.cell.js'
+import type { DryRunDone } from './dry-run.cell.js'
 import {
   ConfiguredPluginModulePath,
   ConfiguredPluginName,
@@ -74,7 +74,7 @@ import {
   WorkerSpawnCommand,
   type WorkerSpawnResolved,
 } from './resolve-configured-plugin.workflow.js'
-import { RunEnvironment, type RunEnvironmentShape } from './RunEnvironment.service.js'
+import { phaseEntered, RunEnvironment, type RunEnvironmentShape } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 
 export interface MutationTestDone {
@@ -228,6 +228,30 @@ const isCheckerCrash = (error: StageError | CheckerCrash): boolean =>
   Match.value(error).pipe(
     Match.tag('ChildProcessCrashedError', 'OutOfMemoryError', () => true),
     Match.orElse(() => false),
+  )
+
+const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
+  Match.value(configured).pipe(
+    Match.when(Options.isCustomTestRunner, (custom) => ConfiguredPluginModulePath.make({ modulePath: custom.plugin })),
+    Match.orElse((name) => ConfiguredPluginName.make({ name })),
+  )
+
+const workerSpawnOf = (
+  stage: StageError['stage'],
+  loaded: Pick<LoadedPlugins, 'pluginSources'>,
+  kind: Plugin.WorkerPluginKind,
+  configured: ConfiguredPluginName | ConfiguredPluginModulePath,
+): Effect.Effect<WorkerSpawnResolved, StageError> =>
+  Effect.mapError(
+    Effect.fromResult(
+      resolveConfiguredPlugin(WorkerSpawnCommand.make({ sources: loaded.pluginSources, kind, configured })),
+    ),
+    (missing) =>
+      StageError.make({
+        stage,
+        reason: missing.reason,
+        cause: PluginNotFoundError.make({ descriptor: missing.descriptor }),
+      }),
   )
 
 const calculateTotalTime = (testResults: Iterable<TestRunner.TestResult>) =>
@@ -744,40 +768,18 @@ type MutationTestRaw = typeof MutationTestCommand.Encoded & {
 const writeMutationTestNoTests = () =>
   Effect.gen(function*() {
     const env = yield* RunEnvironment
-    const queue = yield* RunEvents
     const now = yield* Clock.currentTimeMillis
     const elapsed = Duration.millis(now - env.runStartedAt)
     yield* Effect.logInfo(`Done in ${Duration.format(elapsed)}.`)
-    const nowEmit = yield* Clock.currentTimeMillis
-    yield* Queue.offer(
-      queue,
-      PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
-    )
+    yield* phaseEntered('mutation-test')
     return { results: [], verdict: null }
   })
 
 const writeMutationTestDryRunOnly = () =>
   Effect.gen(function*() {
-    const env = yield* RunEnvironment
-    const queue = yield* RunEvents
-    const nowEmit = yield* Clock.currentTimeMillis
-    yield* Queue.offer(
-      queue,
-      PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
-    )
+    yield* phaseEntered('mutation-test')
     yield* Effect.logInfo('The dry-run has been completed successfully. No mutations have been executed.')
     return { results: [], verdict: null }
-  })
-
-const emitMutationTestPhase = () =>
-  Effect.gen(function*() {
-    const env = yield* RunEnvironment
-    const queue = yield* RunEvents
-    const nowEmit = yield* Clock.currentTimeMillis
-    yield* Queue.offer(
-      queue,
-      PhaseEntered.make({ phase: 'mutation-test', elapsedMs: nowEmit - env.runStartedAt }),
-    )
   })
 
 const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
@@ -789,10 +791,9 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
     const prev = raw.prev
     const { dropped, plannable: plannableMutants } = partitionPlannable(prev.mutants)
     yield* reportDroppedMutants(dropped)
-    yield* emitMutationTestPhase()
-    const env = yield* RunEnvironment
+    yield* phaseEntered('mutation-test')
     const idGenerator = yield* IdGenerator
-    const checkerPool = yield* makeCheckerPool(prev, env.basePath)
+    const env = yield* RunEnvironment
     const testFiles = yield* Effect.map(
       sandboxFilesOf(prev.sandbox, prev.project.testFiles),
       (pairs) => pairs.map(([, sandboxFileName]) => sandboxFileName),
@@ -1107,8 +1108,6 @@ export const mutationTestCell = Sandwich.named(
     Effect.fail(StageError.make({ stage, reason, cause: MutationTestError.make({ stage, reason }) })),
   CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'mutationTest', reason: issue })),
 })
-
-const isStageError = (candidate: unknown): candidate is StageError => S.is(StageError)(candidate)
 
 const mapMutationTestCause = (
   cause: PooledTestRunnerError | PlatformError | StageError,

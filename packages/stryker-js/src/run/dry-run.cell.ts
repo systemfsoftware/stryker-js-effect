@@ -42,13 +42,13 @@ export interface DryRunDone extends InstrumentDone {
 const sandboxPathsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
   Result.all(fileNames.map((fileName) => sandbox.sandboxFileFor(fileName)))
 
-export const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
+const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
   Match.value(configured).pipe(
     Match.when(Options.isCustomTestRunner, (custom) => ConfiguredPluginModulePath.make({ modulePath: custom.plugin })),
     Match.orElse((name) => ConfiguredPluginName.make({ name })),
   )
 
-export const workerSpawnOf = (
+const workerSpawnOf = (
   stage: StageError['stage'],
   loaded: Pick<LoadedPlugins, 'pluginSources'>,
   kind: Plugin.WorkerPluginKind,
