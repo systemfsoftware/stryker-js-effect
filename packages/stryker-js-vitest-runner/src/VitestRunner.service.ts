@@ -45,16 +45,13 @@ import {
 } from './VitestRunner.schema.js'
 import { VitestDryRunCommand } from './vitest-run-command.schema.js'
 
-const errorTextOf = <A>(cause: A) =>
-  Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => '')
-
 const asRunnerFailure = (phase: TestRunnerPhase) => <E>(cause: E) =>
   Option.match(Option.liftPredicate(cause, S.is(TestRunnerFailed)), {
     onNone: () =>
       new TestRunnerFailed({
         runnerName: 'vitest',
         phase,
-        cause: errorTextOf(cause),
+        cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
       }),
     onSome: (failed) => failed,
   })
@@ -66,7 +63,7 @@ const fromTestId = (id: string) => {
 }
 
 const canonicalOf = (path: string) =>
-  Option.getOrElse(S.encodeOption(CanonicalFileName)(path), () => path.replace(/\\/g, '/'))
+  Option.getOrElse(S.decodeOption(CanonicalFileName)(path), () => path)
 
 const normalizeTestId = (id: string, projectRoot: string, pathService: Path.Path) => {
   const { file, name } = fromTestId(id)

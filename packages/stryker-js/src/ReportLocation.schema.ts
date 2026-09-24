@@ -44,24 +44,6 @@ export const ReportLocationFromMutant = MutantLocationSchema.pipe(
   }),
 )
 
-export class ReportLocation extends S.Class<ReportLocation>('ReportLocation')({
-  start: S.Struct({ line: S.Finite, column: S.Finite }),
-  end: S.Struct({ line: S.Finite, column: S.Finite }),
-}) {
-  static readonly fromMutant = (location: Location) =>
-    ReportLocation.make({
-      start: { line: location.start.line + 1, column: location.start.column + 1 },
-      end: { line: location.end.line + 1, column: location.end.column + 1 },
-    })
-
-  get location(): Location {
-    return {
-      start: { line: this.start.line, column: this.start.column },
-      end: { line: this.end.line, column: this.end.column },
-    }
-  }
-}
-
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const Result = await import('effect/Result')

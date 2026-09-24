@@ -3,6 +3,12 @@ import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
 import {
+  RunConfigFailed,
+  RunFailed,
+  RunInterrupted,
+  RunOk,
+  RunParseFailed,
+  RunSurvivorsRejected,
   type FailedRunOutcome,
   type RunOutcomeDecision,
   type RunOutcomeError,

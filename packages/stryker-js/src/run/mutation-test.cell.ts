@@ -4,7 +4,8 @@ import type {
   MutantTestCoverage,
   TestPlan as MutantTestPlan,
 } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Mutant, RunPlan } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { RunMutantResult, RunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter'
 import {
@@ -54,9 +55,6 @@ import { checkGroupedPlans, scoped } from '../Checker/mod.js'
 import { checkerMutantsSkipped } from '../metrics.js'
 import { ReportLocationFromMutant } from '../ReportLocation.schema.js'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
-import type { LoadedPlugins } from '../Plugins.schema.js'
-import { PluginNotFoundError } from '../PluginsError.schema.js'
-import { ProjectFiles } from '../project-files.service.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
@@ -70,6 +68,7 @@ import {
   incrementalDiff as incrementalDiffDecisions,
   type IncrementalDiffDecision,
 } from '../incremental-diff.workflow.js'
+import type { LoadedPlugins } from '../Plugins.schema.js'
 import type { Project } from '../Project.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { ReportFileName } from '../reporting/report-assembly.schema.js'
@@ -198,6 +197,7 @@ const rememberedOf = (mutant: Mutant, entry: RememberedMutantResult) =>
     Effect.orDie(S.decodeEffect(ReportLocationFromMutant)(mutant.location)),
     (reportLocation) => rememberedResultOf(mutant, entry, reportLocation),
   )
+
 const rememberedResultsOf = (
   mutants: readonly Mutant[],
   remembered: readonly RememberedMutantResult[],
@@ -224,7 +224,7 @@ const VALID_MUTANT_STATUSES = [
 ] as const
 type ValidMutantStatus = typeof VALID_MUTANT_STATUSES[number]
 const isMutantStatus = (candidate: string): candidate is ValidMutantStatus =>
-  Array.contains(VALID_MUTANT_STATUSES, candidate)
+  VALID_MUTANT_STATUSES.some((status) => status === candidate)
 
 const toReportedMutant = (mutant: Mutant): MutantTestCoverage =>
   Object.assign(mutant, { coveredBy: mutant.coveredBy, static: mutant.static })
@@ -268,15 +268,7 @@ const calculateTotalTime = (testResults: Iterable<TestResult>) =>
 const toTestIds = (testResults: Iterable<TestResult>) => [...testResults].map((test) => test.id)
 
 const hitsRecordOf = (testCoverage: TestCoverage) =>
-  Object.fromEntries([...testCoverage.hitsByMutantId])
-
-const testsByMutantIdRecordOf = (testCoverage: TestCoverage) =>
-  Object.fromEntries(
-    [...testCoverage.testsByMutantId].map(([mutantId, tests]) => [mutantId, toTestIds(tests)]),
-  )
-
-const testTimeRecordOf = (testCoverage: TestCoverage) =>
-  Object.fromEntries([...testCoverage.testsById].map(([id, result]) => [id, result.timeSpentMs]))
+  Object.fromEntries([...MutableHashMap.values(testCoverage.hitsByMutantId)].map(() => [] as const).flat())
 
 const planCommandOf = (
   mutants: readonly Mutant[],
@@ -697,7 +689,7 @@ const runConfiguredCheckers = (
       const slot = yield* Pool.get(pool)
       return yield* Effect.reduce(
         slot,
-        () => ({ passedPlans: plans, checkerResults: Array.empty<RunMutantResult>() }),
+        () => ({ passedPlans: plans, checkerResults: [] as readonly RunMutantResult[] }),
         (acc, { checkerName, checker }) =>
           Effect.map(stepOneChecker(pool, slot, checker, checkerName, acc.passedPlans, reporting), (split) => ({
             passedPlans: split.passed,
@@ -713,17 +705,13 @@ const checkPlansWithConfiguredCheckers = (
   reporting: MutationReportingService,
 ) =>
   Option.match(Option.fromNullishOr(checkerPool), {
-    onNone: () => Effect.succeed({ passedPlans: plans, checkerResults: Array.empty<RunMutantResult>() }),
+    onNone: () => Effect.succeed({ passedPlans: plans, checkerResults: [] as readonly RunMutantResult[] }),
     onSome: (pool) => runConfiguredCheckers(pool, plans, reporting),
   })
 
-const isPlannable = (mutant: Mutant): boolean => Result.isSuccess(S.decodeResult(CheckerMutantFromMutant)(mutant))
-
-const DROPPED_IDS_IN_WARNING = 5
-
 const partitionPlannable = (mutants: readonly Mutant[]) => ({
-  plannable: Array.filter(mutants, isPlannable),
-  dropped: Array.filter(mutants, (candidate) => !isPlannable(candidate)),
+  plannable: mutants.filter(isPlannable),
+  dropped: mutants.filter((candidate) => !isPlannable(candidate)),
 })
 
 const droppedIdsOf = (dropped: readonly Mutant[]): string =>
@@ -805,7 +793,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
     const checkerPool = yield* makeCheckerPool(prev, env.basePath)
     const testFiles = yield* Effect.map(
       sandboxFilesOf(prev.sandbox, prev.project.testFiles),
-      Array.map(([, sandboxFileName]) => sandboxFileName),
+      (pairs) => pairs.map(([, sandboxFileName]) => sandboxFileName),
     )
     const testRunnerPool: Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError> = yield* Pool
       .make({

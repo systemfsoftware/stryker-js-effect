@@ -117,7 +117,7 @@ const parseJsonText = (jsonText: string): Effect.Effect<JsonValue, string> =>
   Effect.try({
     try: () => parse(jsonText.replace(/^\uFEFF/, '')),
     catch: (cause) =>
-      Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
+      Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
 const tsConfigShapeOf = (parsed: JsonValue): Option.Option<TSConfig> =>
@@ -313,7 +313,7 @@ const tryRewriteReference = (
   const fileName = pathService.resolve(pathService.dirname(originTSConfigFileName), reference)
   const relativeToSandbox = pathService.relative(basePath, fileName)
   return Boolean.match(relativeToSandbox.startsWith('..'), {
-    onTrue: () => ['..', '..', Option.getOrElse(S.encodeOption(CanonicalFileName)(reference), () => reference)].join('/'),
+    onTrue: () => ['..', '..', Option.getOrElse(S.decodeOption(CanonicalFileName)(reference), () => reference)].join('/'),
     onFalse: () => false as const,
   })
 }

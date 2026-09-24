@@ -29,7 +29,7 @@ const refuse = (options: { readonly mutantIds: readonly string[]; readonly cause
   CheckerFailed.make({
     checkerName: 'typescript',
     mutantIds: options.mutantIds,
-    cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(options.cause)), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.fromCause(options.cause), (rendered) => rendered.text), () => ''),
   })
 
 export interface CheckerRuntimeShape {

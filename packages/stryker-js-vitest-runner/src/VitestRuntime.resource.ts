@@ -1,6 +1,6 @@
 import { createVitest as createVitestOriginal, type Vitest } from 'vitest/node'
 
-import { ErrorText, InstrumenterContext } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Crypto from 'effect/Crypto'
 import * as Effect from 'effect/Effect'
@@ -128,11 +128,12 @@ export interface ResolvedVitest {
 }
 
 export type VitestResolver = (dir: string) => Effect.Effect<ResolvedVitest>
-const errorTextOf = <A>(cause: A) =>
-  Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => '')
-
 const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
-  new TestRunnerFailed({ runnerName: 'vitest', phase, cause: errorTextOf(cause) })
+  new TestRunnerFailed({
+    runnerName: 'vitest',
+    phase,
+    cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+  })
 const vitestUnresolved = (specifier: string, base: string, detail: string): TestRunnerFailed =>
   new TestRunnerFailed({
     runnerName: 'vitest',
@@ -157,12 +158,12 @@ export const resolveVitest: VitestResolver = (_dir) => {
       vitestUnresolved(specifier, import.meta.url, detail)
     const resolveSpecifier = (specifier: string): Effect.Effect<string, TestRunnerFailed> =>
       Effect.try({
-        catch: (cause) => resolutionFailure(specifier, errorTextOf(cause)),
+        catch: (cause) => resolutionFailure(specifier, Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => '')),
       })
     const vitestNodeUrl = yield* resolveSpecifier('vitest/node')
     const imported = yield* Effect.tryPromise({
       try: (): Promise<object> => import(vitestNodeUrl),
-      catch: (cause) => resolutionFailure('vitest/node', errorTextOf(cause)),
+      catch: (cause) => resolutionFailure('vitest/node', Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => '')),
     })
     return yield* Option.match(Option.liftPredicate(Option.getOrUndefined(S.decodeUnknownOption(
       S.Record(S.String, S.Unknown),

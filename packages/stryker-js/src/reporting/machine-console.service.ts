@@ -79,13 +79,16 @@ const formatTemplate = <A = unknown>(template: string, args: ReadonlyArray<A>): 
   return progress.text + trailing.join('')
 }
 
-const formatArgs = <A = unknown>(args: ReadonlyArray<A>): string => {
-  const [first, ...rest] = args
-  return Boolean.match(typeof first === 'string', {
-    onTrue: () => formatTemplate(first, rest),
-    onFalse: () => args.map(inspectValue).join(' '),
-  })
-}
+const headOf = <A = unknown>(args: ReadonlyArray<A>) => Option.fromNullishOr(args[0])
+
+const formatArgs = <A = unknown>(args: ReadonlyArray<A>): string =>
+  Option.match(
+    Option.filter(headOf(args), Predicate.isString),
+    {
+      onSome: (first) => formatTemplate(first, args.slice(1)),
+      onNone: () => args.map(inspectValue).join(' '),
+    },
+  )
 
 const DEFAULT_CONSOLE_LABEL = 'default'
 
@@ -196,11 +199,7 @@ export class MachineConsole extends Context.Service<MachineConsole, MachineConso
     Clock.clockWith((clock) => Effect.succeed(MachineConsole.of(machineConsoleOf(clock)))),
   )
 
-  static readonly consoleLayer: Layer.Layer<Console.Console, never, MachineConsole> = Layer.effect(
-    Console.Console,
-    Effect.map(MachineConsole, (machine) => {
-      machine.reset()
-      return machine.console
-    }),
+  static readonly resetLayer: Layer.Layer<never, never, MachineConsole> = Layer.effectDiscard(
+    Effect.map(MachineConsole, (machine) => machine.reset()),
   )
 }

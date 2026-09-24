@@ -525,7 +525,7 @@ const readCliRoute = (
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
     const command = makeStrykerCommand(requestRef)
     const machineConsole = Bool.match(invocation.environment.mode.mode === 'machine', {
-      onTrue: () => MachineConsole.consoleLayer,
+      onTrue: () => MachineConsole.resetLayer,
       onFalse: () => Layer.empty,
     })
     const parsed = yield* Command.runWith(command, { version: cliPkgJson.version })(invocation.argv).pipe(

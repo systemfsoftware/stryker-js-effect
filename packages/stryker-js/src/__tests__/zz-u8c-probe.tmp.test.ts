@@ -1,15 +1,22 @@
-import { describe, expect } from 'vitest'
-import { it } from '@effect/vitest'
+import { describe, expect, test } from 'vitest'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 
-import { WarningNameSchema, WarningsSchema } from '../../tests/__fixtures__/config-law.schema.js'
-import { ResolveWarningEnabledCommand, warningEnabled } from '../config/warning-enabled.workflow.js'
+import { ResolveWarningEnabledCommand, warningEnabled } from '../config/warning-enabled.workflow.ts'
 
 describe('probe', () => {
-  it.prop('∀pr_Probe_≡WarningDisabled', [WarningNameSchema, S.Record(S.String, S.Boolean)], ([warning, configured]) => {
-    const outcome = warningEnabled(ResolveWarningEnabledCommand.make({ warning, warnings: configured }))
-    const tag = Result.isSuccess(outcome) ? outcome.success._tag : 'not-a-result-success'
-    expect([warning, configured, tag]).toStrictEqual([warning, configured, 'WarningDisabled'])
+  test('tag of empty-record outcome', () => {
+    const outcome = warningEnabled(
+      ResolveWarningEnabledCommand.make({ warning: 'unknownOptions', warnings: {} }),
+    )
+    const provided = Match.value(outcome).pipe(
+      Match.when(Result.isSuccess, (success) =>
+        Match.value(success.success).pipe(
+          Match.tag('WarningEnabled', () => 'WarningEnabled'),
+          Match.tag('WarningDisabled', () => 'WarningDisabled'),
+        )),
+      Match.orElse(() => 'WarningDisabled'),
+    )
+    expect(provided).toStrictEqual('sentinel')
   })
 })

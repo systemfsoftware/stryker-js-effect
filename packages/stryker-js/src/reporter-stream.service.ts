@@ -252,7 +252,7 @@ const workerStreamErrorOf = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'worker',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
 const reporterInitPayload = (init: ReporterInit): ReporterInitOptions => ({
@@ -273,7 +273,7 @@ export const reporterWorkerFactory = (client: ReporterWorkerClient): ReporterFac
       ReporterFailed.make({
         reporterName: 'worker',
         event: 'mutationTestReportReady',
-        cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
+        cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
       })
     ),
   )

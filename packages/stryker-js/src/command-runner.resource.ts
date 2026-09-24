@@ -4,9 +4,6 @@ import type { StrykerOptions, TestRunnerConfig } from '@systemfsoftware/stryker-
 import {
   type CompleteDryRunResult,
   type DryRunResult,
-  InterpretDryRunResultCommand,
-  interpretDryRunResult,
-  type MutantRunDecision,
   type MutantRunResult,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
@@ -20,6 +17,7 @@ import * as Result from 'effect/Result'
 import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
+import { InterpretDryRunResultCommand, type MutantRunDecision, interpretDryRunResult } from './interpret-dry-run-result.workflow.js'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
 
 export const ALL_TESTS_ID = 'all'

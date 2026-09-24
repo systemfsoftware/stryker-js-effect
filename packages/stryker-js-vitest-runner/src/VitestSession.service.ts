@@ -48,8 +48,6 @@ export interface VitestSessionShape {
   readonly provide: (key: HarnessKey, value: HarnessValue) => Effect.Effect<void, TestRunnerFailed>
   readonly close: Effect.Effect<void, TestRunnerFailed>
 }
-const errorTextOf = <A>(cause: A) =>
-  Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => '')
 
 const decodeOptions = (options: StrykerOptions): Effect.Effect<VitestRunnerOptions, TestRunnerFailed> =>
   S.decodeEffect(VitestRunnerOptionsSchema)(
@@ -59,7 +57,7 @@ const decodeOptions = (options: StrykerOptions): Effect.Effect<VitestRunnerOptio
     ),
   ).pipe(
     Effect.mapError((cause) =>
-      new TestRunnerFailed({ runnerName: 'vitest', phase: 'init', cause: errorTextOf(cause) })),
+      new TestRunnerFailed({ runnerName: 'vitest', phase: 'init', cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => '') })),
   )
 
 export class VitestSession extends Context.Service<VitestSession, VitestSessionShape>()(

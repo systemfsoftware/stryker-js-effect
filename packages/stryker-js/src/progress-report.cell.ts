@@ -24,7 +24,7 @@ const failAsProgress = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'progress',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
 const PROGRESS_BAR_FORMAT =

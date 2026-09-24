@@ -9,7 +9,7 @@ import {
 } from '../config/warning-enabled.workflow.js'
 import { WarningNameSchema, WarningsSchema } from '../../tests/__fixtures__/config-law.schema.js'
 
-const decidedTagOf = (warning: typeof WarningNameSchema.Type, warnings: typeof WarningsSchema.Type): string =>
+const decidedTagOf = (warning: typeof WarningNameSchema.Type, warnings: typeof WarningsSchema.Type) =>
   Match.value(warningEnabled(ResolveWarningEnabledCommand.make({ warning, warnings }))).pipe(
     Match.when(
       Result.isSuccess,
@@ -17,6 +17,7 @@ const decidedTagOf = (warning: typeof WarningNameSchema.Type, warnings: typeof W
         Match.value(success.success).pipe(
           Match.tag('WarningEnabled', () => 'WarningEnabled'),
           Match.tag('WarningDisabled', () => 'WarningDisabled'),
+          Match.exhaustive,
         ),
     ),
     Match.orElse(() => 'WarningDisabled'),

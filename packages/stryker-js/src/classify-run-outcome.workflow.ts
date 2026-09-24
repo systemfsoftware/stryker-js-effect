@@ -235,7 +235,8 @@ const verdictExitClassOf = (value: unknown) =>
 
 const successExitClassOf = (exit: unknown) =>
   Option.getOrUndefined(
-    Option.flatMap(Option.filter(asExit(exit), Exit.isSuccess), (success) => verdictExitClassOf(success.value)),
+    Option.flatMap(Option.filter(asExit(exit), Exit.isSuccess), (success) =>
+      Option.fromNullishOr(verdictExitClassOf(success.value))),
   )
 
 const declaredReasonOf = (value: object) =>
@@ -258,7 +259,7 @@ const unknownCauseOf = (value: object) =>
 
 const causeTextOf = (value: object) =>
   Option.getOrUndefined(
-    Option.map(S.decodeUnknownOption(CauseText)(unknownCauseOf(value)), (decoded) => decoded.text),
+    Option.map(CauseText.fromCause(unknownCauseOf(value)), (decoded) => decoded.text),
   )
 
 const reasonOf = (value: object) =>
@@ -451,24 +452,23 @@ const failureDescriptionOf = (exit: unknown) =>
   )
 
 const describeFailureOf = (exit: unknown) => Option.getOrElse(failureDescriptionOf(exit), () => UNKNOWN_FAILURE)
-
-const showHelpErrorsOf = (value: unknown) =>
+const showHelpErrorsOf = (value: unknown): Option.Option<ReadonlyArray<CliError.CliError>> =>
   Match.value(value).pipe(
     Match.when(isShowHelp, (help) => Option.some(help.errors)),
     Match.orElse(() => Option.none()),
   )
 
-const cliErrorListOf = (exit: unknown) => {
-  const value = failureValueOf(exit)
-  return Option.match(showHelpErrorsOf(value), {
+const singleCliErrorOf = (value: unknown): Option.Option<ReadonlyArray<CliError.CliError>> =>
+  Match.value(value).pipe(
+    Match.when(CliError.isCliError, (cliError) => Option.some([cliError])),
+    Match.orElse(() => Option.none()),
+  )
+
+const cliErrorListOf = (exit: unknown) =>
+  Option.match(showHelpErrorsOf(failureValueOf(exit)), {
     onSome: Option.some,
-    onNone: () =>
-      Match.value(value).pipe(
-        Match.when(CliError.isCliError, (cliError) => Option.some([cliError])),
-        Match.orElse(() => Option.none()),
-      ),
+    onNone: () => singleCliErrorOf(failureValueOf(exit)),
   })
-}
 
 const followingArgumentOf = (argv: readonly string[], option: string) =>
   Match.value(argv.indexOf(option)).pipe(

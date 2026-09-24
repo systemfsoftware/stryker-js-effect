@@ -3,9 +3,6 @@ import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type CompleteDryRunResult,
   type DryRunOptions,
-  InterpretDryRunResultCommand,
-  interpretDryRunResult,
-  type MutantRunDecision,
   type MutantRunResult,
   type TestRunnerCapabilities,
   type TestRunnerConfig,
@@ -22,6 +19,7 @@ import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 
 import { ALL_TESTS_ID, ALL_TESTS_NAME } from './command-runner.resource.js'
+import { InterpretDryRunResultCommand, type MutantRunDecision, interpretDryRunResult } from './interpret-dry-run-result.workflow.js'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
 import { VmRunner } from './VmRunner.service.js'
 import type { VmPlatform, VmScript } from './VmRunner.service.js'

@@ -30,7 +30,7 @@ const failAsClearText = <E = unknown>(cause: E): ReporterFailed =>
   ReporterFailed.make({
     reporterName: 'clear-text',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
 interface TerminalReport {

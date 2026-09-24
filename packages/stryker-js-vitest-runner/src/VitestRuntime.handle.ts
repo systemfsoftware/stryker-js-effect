@@ -11,7 +11,6 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import { type Pipeable, Prototype } from 'effect/Pipeable'
 import * as Predicate from 'effect/Predicate'
-import * as S from 'effect/Schema'
 
 import { type StrykerNamespace, type TestRunnerPhase } from './VitestRunner.schema.js'
 
@@ -42,7 +41,7 @@ const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
   new TestRunnerFailed({
     runnerName: 'vitest',
     phase,
-    cause: Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(cause)), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
 const disableScreenshotFailures = <A>(value: A) =>
@@ -150,7 +149,7 @@ export const externalErrorText = (self: VitestRuntime): string =>
     onSome: (errorsSet) =>
       Predicate.isIterable(errorsSet)
         ? [...errorsSet].map((error) =>
-          Option.getOrElse(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(error)), (rendered) => rendered.text), () => ''),
+          Option.getOrElse(Option.map(ErrorText.fromCause(error), (rendered) => rendered.text), () => ''),
         ).join('\n')
         : '',
   })
