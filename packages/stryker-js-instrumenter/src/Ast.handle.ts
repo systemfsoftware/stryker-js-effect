@@ -1,3 +1,4 @@
+import type * as Oxc from '@oxc-project/types'
 import type {
   BindingPattern,
   BlockStatement,
@@ -393,15 +394,14 @@ export const attachComments: {
       },
     }),
 )
-
 interface CommentGroups {
-  readonly leading: Map<Node, SpannedComment[]>
-  readonly trailing: Map<Node, SpannedComment[]>
+  readonly leading: Map<Program | Node, SpannedComment[]>
+  readonly trailing: Map<Program | Node, SpannedComment[]>
 }
 
 interface CommentHost {
   readonly field: keyof CommentGroups
-  readonly node: Node
+  readonly node: Program | Node
 }
 
 const groupComments = (nodes: ReadonlyArray<NodeEntry>, comments: ReadonlyArray<SpannedComment>): CommentGroups => {
@@ -417,14 +417,14 @@ const hostComment = (nodes: ReadonlyArray<NodeEntry>, comment: SpannedComment, g
   })
 
 const commentHost = (nodes: ReadonlyArray<NodeEntry>, comment: SpannedComment): CommentHost | undefined => {
-  const hosts: ReadonlyArray<{ readonly field: keyof CommentGroups; readonly node: Node | undefined }> = [
+  const hosts: ReadonlyArray<{ readonly field: keyof CommentGroups; readonly node: Program | Node | undefined }> = [
     { field: 'leading', node: followingNode(nodes, comment) },
     { field: 'trailing', node: precedingStatement(nodes, comment) },
   ]
   return hosts.find((candidate): candidate is CommentHost => candidate.node !== undefined)
 }
 
-const followingNode = (nodes: ReadonlyArray<NodeEntry>, comment: SpannedComment): Node | undefined =>
+const followingNode = (nodes: ReadonlyArray<NodeEntry>, comment: SpannedComment): Program | Node | undefined =>
   Option.getOrUndefined(
     Option.map(
       Option.fromNullishOr(nodes.find((candidate) => candidate.start >= comment.end)),
@@ -432,7 +432,10 @@ const followingNode = (nodes: ReadonlyArray<NodeEntry>, comment: SpannedComment)
     ),
   )
 
-const precedingStatement = (nodes: ReadonlyArray<NodeEntry>, comment: SpannedComment): Node | undefined =>
+const precedingStatement = (
+  nodes: ReadonlyArray<NodeEntry>,
+  comment: SpannedComment,
+): Program | Node | undefined =>
   Option.getOrUndefined(
     Option.map(
       Option.fromNullishOr(
@@ -442,7 +445,11 @@ const precedingStatement = (nodes: ReadonlyArray<NodeEntry>, comment: SpannedCom
     ),
   )
 
-const assignComments = (map: Map<Node, SpannedComment[]>, lineTable: LineTable, field: 'leadingComments' | 'trailingComments'): void =>
+const assignComments = (
+  map: Map<Program | Node, SpannedComment[]>,
+  lineTable: LineTable,
+  field: 'leadingComments' | 'trailingComments',
+): void =>
   map.forEach((list, node) =>
     Object.assign(node, {
       [field]: list.map((comment) => ({
@@ -455,7 +462,11 @@ const assignComments = (map: Map<Node, SpannedComment[]>, lineTable: LineTable, 
     }),
   )
 
-const pushComment = (map: Map<Node, SpannedComment[]>, node: Node, comment: SpannedComment): void => {
+const pushComment = (
+  map: Map<Program | Node, SpannedComment[]>,
+  node: Program | Node,
+  comment: SpannedComment,
+): void => {
   Option.match(Option.fromNullishOr(map.get(node)), {
     onNone: () => {
       map.set(node, [comment])
@@ -465,16 +476,17 @@ const pushComment = (map: Map<Node, SpannedComment[]>, node: Node, comment: Span
     },
   })
 }
+
 const isProgramNode = (node: Program | Node): node is Program => nodeType(node) === 'Program'
 export type AstWalker = (root: Program | Node, visitors: WalkVisitors) => void
 
 export interface WalkVisitors {
-  readonly enter?: (node: Node, ancestors: readonly Node[]) => void
-  readonly leave?: (node: Node, ancestors: readonly Node[]) => void
+  readonly enter?: (node: Program | Node, ancestors: readonly (Program | Node)[]) => void
+  readonly leave?: (node: Program | Node, ancestors: readonly (Program | Node)[]) => void
 }
 
 const walker: AstWalker = (root, visitors) => {
-  const ancestors: Node[] = []
+  const ancestors: Array<Program | Node> = []
   walk(root, {
     enter(node, _parent, _context) {
       visitors.enter?.(node, [...ancestors])
@@ -498,12 +510,12 @@ const collectNodes = (root: Program | Node): NodeEntry[] => {
 }
 
 export interface NodeEntry {
-  readonly node: Node
+  readonly node: Program | Node
   readonly start: number
   readonly end: number
 }
 
-const appendEntry = (node: Node, out: NodeEntry[]): void => {
+const appendEntry = (node: Program | Node, out: NodeEntry[]): void => {
   Option.match(Option.fromNullishOr(spanOf(node)), {
     onNone: () => undefined,
     onSome: (span) => {

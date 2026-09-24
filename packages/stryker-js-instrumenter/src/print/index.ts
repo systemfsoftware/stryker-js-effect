@@ -354,6 +354,7 @@ const unknownNodeText = (type: string): string => `/* unknown:${type} */`
 
 
 const nodeText = Match.type<Node>().pipe(
+  Match.withReturnType<(ctx: PrintContext, prec: number) => string>(),
   Match.discriminatorsExhaustive('type')({
     Literal: (n) => () => literalText(n),
     Identifier: (n) => () => n.name,
@@ -481,9 +482,9 @@ const nodeText = Match.type<Node>().pipe(
     TSNullKeyword: (n) => (ctx) => typeTextOf(ctx, n),
     TSNumberKeyword: (n) => (ctx) => typeTextOf(ctx, n),
     TSObjectKeyword: (n) => (ctx) => typeTextOf(ctx, n),
-    TSOptionalType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSOptionalType: (n) => (ctx) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`,
     TSParenthesizedType: (n) => (ctx) => typeTextOf(ctx, n),
-    TSRestType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSRestType: (n) => (ctx) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`,
     TSStringKeyword: (n) => (ctx) => typeTextOf(ctx, n),
     TSSymbolKeyword: (n) => (ctx) => typeTextOf(ctx, n),
     TSTemplateLiteralType: (n) => (ctx) => typeTextOf(ctx, n),
@@ -526,7 +527,8 @@ const nodeText = Match.type<Node>().pipe(
 
 const dispatchNode = (ctx: PrintContext, node: Node, prec: number): string => nodeText(node)(ctx, prec)
 
-const printTSTypeToString = Match.type<TSType>().pipe(
+const tsTypeText = Match.type<TSType>().pipe(
+  Match.withReturnType<(ctx: PrintContext) => string>(),
   Match.discriminatorsExhaustive('type')({
     TSAnyKeyword: () => () => 'any',
     TSStringKeyword: () => () => 'string',
@@ -565,10 +567,10 @@ const printTSTypeToString = Match.type<TSType>().pipe(
     TSJSDocNullableType: (n) => (ctx) => printJSDocPostfixModifier(ctx, n, '?'),
     TSJSDocNonNullableType: (n) => (ctx) => printJSDocPostfixModifier(ctx, n, '!'),
     TSJSDocUnknownType: () => () => '?',
-    TSRestType: (n) => (ctx) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`,
-    TSOptionalType: (n) => (ctx) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`,
   }),
 )
+
+const printTSTypeToString = (ctx: PrintContext, node: TSType): string => tsTypeText(node)(ctx)
 
 const typeTextOf = (ctx: PrintContext, node: Node): string =>
   Option.match(Option.filter(Option.some(node), isTSType), {
@@ -577,7 +579,7 @@ const typeTextOf = (ctx: PrintContext, node: Node): string =>
   })
 
 const statementKindText = (ctx: PrintContext, node: Statement): string =>
-  Match.type<Statement>().pipe(
+  Match.value(node).pipe(
     Match.discriminators('type')({
       BlockStatement: (n) => blockStatementText(ctx, n),
       VariableDeclaration: (n) => `${variableDeclarationText(ctx, n)};`,
@@ -617,7 +619,6 @@ const statementKindText = (ctx: PrintContext, node: Statement): string =>
       TSNamespaceExportDeclaration: (n) => printNodePrec(ctx, n, PREC.Sequence),
     }),
     Match.orElse(() => ''),
-    Match.exhaustive,
   )
 
 const literalText = (node: LiteralSource): string => node.raw ?? literalWithoutRaw(node)
@@ -716,14 +717,13 @@ const propertyKeyText = (ctx: PrintContext, key: Node, computed: boolean, comput
   })
 
 const plainPropertyKeyText = (ctx: PrintContext, key: Node): string =>
-  Match.type<Node>().pipe(
+  Match.value(key).pipe(
     Match.discriminators('type')({
       Identifier: (n) => identifierNameText(n),
       PrivateIdentifier: (n) => privateIdentifierText(n),
       Literal: (n) => literalText(n),
     }),
     Match.orElse((n) => dispatchNode(ctx, n, PREC.Assignment)),
-    Match.exhaustive,
   )
 
 const functionTailText = (ctx: PrintContext, fn: FunctionNode): string =>
@@ -789,13 +789,12 @@ const memberSelectorText = (ctx: PrintContext, access: MemberExpression): string
   })
 
 const memberPropertyText = (ctx: PrintContext, property: Node): string =>
-  Match.type<Node>().pipe(
+  Match.value(property).pipe(
     Match.discriminators('type')({
       Identifier: (n) => identifierNameText(n),
       PrivateIdentifier: (n) => privateIdentifierText(n),
     }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
-    Match.exhaustive,
   )
 
 const callExpressionText = (ctx: PrintContext, node: CallExpression): string =>
@@ -918,12 +917,11 @@ const arrowParamsText = (ctx: PrintContext, node: ArrowFunctionExpression): stri
 }
 
 const arrowBodyText = (ctx: PrintContext, node: ArrowFunctionExpression): string =>
-  Match.type<Node>().pipe(
+  Match.value(node.body).pipe(
     Match.discriminators('type')({
       BlockStatement: (body) => blockStatementText(ctx, body),
     }),
     Match.orElse((body) => assignmentNodeText(ctx, body)),
-    Match.exhaustive,
   )
 
 const functionText = (ctx: PrintContext, node: FunctionNode): string =>
@@ -989,23 +987,21 @@ const jsxOpeningElementText = (ctx: PrintContext, node: JSXOpeningElement): stri
   })}`
 
 const jsxElementNameText = (ctx: PrintContext, name: JSXOpeningElement['name']): string =>
-  Match.type<Node>().pipe(
+  Match.value(name).pipe(
     Match.discriminators('type')({
       JSXIdentifier: (n) => n.name,
       JSXNamespacedName: (n) => `${n.namespace.name}:${n.name.name}`,
       JSXMemberExpression: (n) => jsxMemberExpressionText(n),
     }),
     Match.orElse(() => ''),
-    Match.exhaustive,
   )
 
 const jsxMemberExpressionText = (node: JSXMemberExpression): string =>
-  Match.type<Node>().pipe(
+  Match.value(node.object).pipe(
     Match.discriminators('type')({
       JSXIdentifier: (obj) => `${obj.name}.${node.property.name}`,
     }),
     Match.orElse((obj) => `${jsxMemberExpressionText(obj)}.${node.property.name}`),
-    Match.exhaustive,
   )
 
 const jsxAttributeText = (ctx: PrintContext, node: JSXAttribute): string =>
@@ -1018,7 +1014,7 @@ const jsxAttributeValueClauseText = (ctx: PrintContext, value: JSXAttribute['val
   })
 
 const jsxAttributeValueText = (ctx: PrintContext, value: NonNullable<JSXAttribute['value']>): string =>
-  Match.type<Node>().pipe(
+  Match.value(value).pipe(
     Match.discriminators('type')({
       Literal: (n) => literalText(n),
       JSXExpressionContainer: (n) => `{${sequenceNodeText(ctx, n.expression)}}`,
@@ -1026,11 +1022,10 @@ const jsxAttributeValueText = (ctx: PrintContext, value: NonNullable<JSXAttribut
       JSXFragment: (n) => sequenceNodeText(ctx, n),
     }),
     Match.orElse(() => ''),
-    Match.exhaustive,
   )
 
 const jsxChildText = (ctx: PrintContext, child: JSXElement['children'][number]): string =>
-  Match.type<Node>().pipe(
+  Match.value(child).pipe(
     Match.discriminators('type')({
       JSXText: (n) => n.value,
       JSXElement: (n) => jsxElementText(ctx, n),
@@ -1039,7 +1034,6 @@ const jsxChildText = (ctx: PrintContext, child: JSXElement['children'][number]):
       JSXSpreadChild: (n) => `{...${printNodePrec(ctx, n.expression, PREC.Assignment)}}`,
     }),
     Match.orElse(() => ''),
-    Match.exhaustive,
   )
 
 const tsAsExpressionText = (ctx: PrintContext, node: TSAsExpression, prec: number): string => {
@@ -1089,12 +1083,11 @@ const ifStatementText = (ctx: PrintContext, node: IfStatement): string =>
   )}`
 
 const statementOrBlockText = (ctx: PrintContext, node: Statement): string =>
-  Match.type<Node>().pipe(
+  Match.value(node).pipe(
     Match.discriminators('type')({
       BlockStatement: (n) => blockStatementText(ctx, n),
     }),
     Match.orElse((n) => statementText(ctx, n)),
-    Match.exhaustive,
   )
 
 const whileStatementText = (ctx: PrintContext, node: WhileStatement): string =>
@@ -1113,12 +1106,11 @@ const declarationOrExpressionText = (ctx: PrintContext, node: Node | null | unde
   Option.match(Option.fromNullishOr(node), {
     onNone: () => '',
     onSome: (value) =>
-      Match.type<Node>().pipe(
+      Match.value(value).pipe(
         Match.discriminators('type')({
           VariableDeclaration: (n) => variableDeclarationText(ctx, n),
         }),
         Match.orElse((n) => printNodePrec(ctx, n, PREC.Sequence)),
-        Match.exhaustive,
       ),
   })
 
@@ -1126,13 +1118,12 @@ const optionalSequenceText = (ctx: PrintContext, node: Node | null | undefined):
   sequenceNodeText(ctx, node)
 
 const forInStatementText = (ctx: PrintContext, node: ForInStatement): string =>
-  `for (${Match.type<Node>().pipe(
+  `for (${Match.value(node.left).pipe(
     Match.discriminators('type')({
       VariableDeclaration: (n) => variableDeclarationText(ctx, n),
     }),
     Match.orElse((n) => printNodePrec(ctx, n, PREC.Sequence)),
-    Match.exhaustive,
-  )(node.left)} in ${printNodePrec(ctx, node.right, PREC.Sequence)}) ${statementOrBlockText(ctx, node.body)}`
+  )} in ${printNodePrec(ctx, node.right, PREC.Sequence)}) ${statementOrBlockText(ctx, node.body)}`
 
 const forOfStatementText = (ctx: PrintContext, node: ForOfStatement): string =>
   `${Boolean.match(node.await, {
@@ -1187,12 +1178,11 @@ const catchParamText = (ctx: PrintContext, param: BindingPattern | null | undefi
   })
 
 const catchParamBodyText = (ctx: PrintContext, param: BindingPattern): string =>
-  Match.type<Node>().pipe(
+  Match.value(param).pipe(
     Match.discriminators('type')({
       Identifier: (n) => identifierWithOptionalText(ctx, n),
     }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
-    Match.exhaustive,
   )
 
 const finallyClauseText = (ctx: PrintContext, finalizer: BlockStatement | null | undefined): string =>
@@ -1213,19 +1203,18 @@ const variableDeclaratorText = (ctx: PrintContext, node: VariableDeclarator): st
   )}${initializerText(ctx, node.init)}`
 
 const bindingTargetText = (ctx: PrintContext, id: BindingPattern): string =>
-  Match.type<Node>().pipe(
+  Match.value(id).pipe(
     Match.discriminators('type')({
       Identifier: (n) => `${bindingNameText(n)}${flagText(n.optional, '?')}`,
     }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
-    Match.exhaustive,
   )
 
 const identifierWithOptionalText = (ctx: PrintContext, node: BindingIdentifier): string =>
   `${bindingNameText(node)}${flagText(node.optional, '?')}${typeAnnotationText(ctx, node.typeAnnotation)}`
 
 const paramText = (ctx: PrintContext, param: ParamPattern): string =>
-  Match.type<Node>().pipe(
+  Match.value(param).pipe(
     Match.discriminators('type')({
       RestElement: (n) => restParamText(ctx, n),
       TSParameterProperty: (n) => parameterPropertyText(ctx, n),
@@ -1235,7 +1224,6 @@ const paramText = (ctx: PrintContext, param: ParamPattern): string =>
       AssignmentPattern: (n) => formalParameterText(ctx, n),
     }),
     Match.orElse(() => ''),
-    Match.exhaustive,
   )
 
 const restParamText = (
@@ -1254,26 +1242,24 @@ const parameterPropertyText = (
   )}`
 
 const parameterPropertyTargetText = (ctx: PrintContext, parameter: BindingPattern): string =>
-  Match.type<Node>().pipe(
+  Match.value(parameter).pipe(
     Match.discriminators('type')({
       Identifier: (n) => identifierWithOptionalText(ctx, n),
     }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
-    Match.exhaustive,
   )
 
 const formalParameterText = (ctx: PrintContext, param: BindingPattern): string =>
   `${decoratorsText(ctx, param.decorators)}${formalParameterBodyText(ctx, param)}`
 
 const formalParameterBodyText = (ctx: PrintContext, param: BindingPattern): string =>
-  Match.type<Node>().pipe(
+  Match.value(param).pipe(
     Match.discriminators('type')({
       Identifier: (n) => identifierWithOptionalText(ctx, n),
     }),
     Match.orElse(
       (n) => `${assignmentNodeText(ctx, n)}${typeAnnotationText(ctx, bindingTypeAnnotation(n))}`,
     ),
-    Match.exhaustive,
   )
 
 const classBodyText = (ctx: PrintContext, node: ClassBody): string =>
@@ -1398,7 +1384,7 @@ const tsInterfaceBodyText = (ctx: PrintContext, node: TSInterfaceBody): string =
   })
 
 const printTSSignatureText = (ctx: PrintContext, sig: TSInterfaceBody['body'][number]): string =>
-  Match.type<Node>().pipe(
+  Match.value(sig).pipe(
     Match.discriminators('type')({
       TSPropertySignature: (n) => printTSPropertySignatureText(ctx, n),
       TSIndexSignature: (n) => printTSIndexSignatureText(ctx, n),
@@ -1407,7 +1393,6 @@ const printTSSignatureText = (ctx: PrintContext, sig: TSInterfaceBody['body'][nu
       TSMethodSignature: (n) => printTSMethodSignatureText(ctx, n),
     }),
     Match.orElse(() => ''),
-    Match.exhaustive,
   )
 
 const printTSPropertySignatureText = (ctx: PrintContext, node: TSPropertySignature): string =>
@@ -1441,13 +1426,12 @@ const printEnumMemberText = (ctx: PrintContext, member: TSEnumDeclaration['body'
   `${identifierOrLiteralNameText(ctx, member.id)}${initializerText(ctx, member.initializer)},`
 
 const identifierOrLiteralNameText = (ctx: PrintContext, id: Node): string =>
-  Match.type<Node>().pipe(
+  Match.value(id).pipe(
     Match.discriminators('type')({
       Identifier: (n) => identifierNameText(n),
       Literal: (n) => literalText(n),
     }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
-    Match.exhaustive,
   )
 
 const tsModuleDeclarationText = (ctx: PrintContext, node: Extract<Node, { type: 'TSModuleDeclaration' }>): string =>
@@ -1475,12 +1459,11 @@ const moduleReferenceText = (
   ctx: PrintContext,
   reference: TSImportEqualsDeclaration['moduleReference'],
 ): string =>
-  Match.type<Node>().pipe(
+  Match.value(reference).pipe(
     Match.discriminators('type')({
       TSExternalModuleReference: (n) => `require(${externalModuleArgumentText(n.expression.value)})`,
     }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
-    Match.exhaustive,
   )
 
 const tsTypeListText = (ctx: PrintContext, types: readonly TSType[], separator: string): string =>
@@ -1510,7 +1493,7 @@ const printTupleType = (ctx: PrintContext, elements: TSTupleType['elementTypes']
   `[${elements.map((element) => printTupleElement(ctx, element)).join(', ')}]`
 
 const printTupleElement = (ctx: PrintContext, element: TSTupleType['elementTypes'][number]): string =>
-  Match.type<Node>().pipe(
+  Match.value(element).pipe(
     Match.discriminators('type')({
       TSRestType: (n) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`,
       TSOptionalType: (n) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`,
@@ -1518,7 +1501,6 @@ const printTupleElement = (ctx: PrintContext, element: TSTupleType['elementTypes
     }),
     Match.when(isTSType, (n) => printTSTypeToString(ctx, n)),
     Match.orElse(() => ''),
-    Match.exhaustive,
   )
 
 const printNamedTupleMember = (ctx: PrintContext, member: TSNamedTupleMember): string =>
@@ -1531,23 +1513,21 @@ const printTypeClause = (ctx: PrintContext, keyword: string, type: TSType | null
   })
 
 const printTypeQueryName = (ctx: PrintContext, node: TSTypeQuery): string =>
-  Match.type<Node>().pipe(
+  Match.value(node.exprName).pipe(
     Match.discriminators('type')({
       TSImportType: (n) => printTSTypeToString(ctx, n),
     }),
     Match.orElse((n) => printTSTypeName(ctx, n)),
-    Match.exhaustive,
   )
 
 const printTSTypeName = (ctx: PrintContext, name: TSTypeReference['typeName']): string =>
-  Match.type<Node>().pipe(
+  Match.value(name).pipe(
     Match.discriminators('type')({
       TSQualifiedName: (n) => `${printTSTypeName(ctx, n.left)}.${n.right.name}`,
       Identifier: (n) => n.name,
       ThisExpression: () => 'this',
     }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
-    Match.exhaustive,
   )
 
 const printTSImportTypeQualifier = (ctx: PrintContext, qualifier: TSImportType['qualifier']): string =>
@@ -1560,14 +1540,13 @@ const printTSImportTypeQualifierNode = (
   ctx: PrintContext,
   qualifier: NonNullable<TSImportType['qualifier']>,
 ): string =>
-  Match.type<Node>().pipe(
+  Match.value(qualifier).pipe(
     Match.discriminators('type')({
       Identifier: (n) => n.name,
     }),
     Match.orElse(
       (n) => `${printTSImportTypeQualifier(ctx, n.left)}.${n.right.name}`,
     ),
-    Match.exhaustive,
   )
 
 const printTSImportType = (ctx: PrintContext, node: TSImportType): string =>
@@ -1616,21 +1595,19 @@ const printPredicateAnnotation = (ctx: PrintContext, node: TSTypePredicate): str
   })
 
 const printTSLiteralType = (ctx: PrintContext, literal: TSLiteralType['literal']): string =>
-  Match.type<Node>().pipe(
+  Match.value(literal).pipe(
     Match.discriminators('type')({
       Literal: (n) => literalText(n),
       TemplateLiteral: (n) => templateLiteralText(ctx, n),
       UnaryExpression: (n) =>
-        `${n.operator}${Match.type<Node>().pipe(
+        `${n.operator}${Match.value(n.argument).pipe(
           Match.discriminators('type')({
             Literal: (argument) => literalText(argument),
           }),
           Match.orElse(() => ''),
-          Match.exhaustive,
-        )(n.argument)}`,
+        )}`,
     }),
     Match.orElse(() => ''),
-    Match.exhaustive,
   )
 
 const printJSDocPostfixModifier = (
@@ -1677,8 +1654,6 @@ const TS_TYPE_NODE_KINDS: Readonly<Record<string, true>> = {
   TSTypeLiteral: true,
   TSTupleType: true,
   TSNamedTupleMember: true,
-  TSOptionalType: true,
-  TSRestType: true,
   TSConditionalType: true,
   TSInferType: true,
   TSTypeQuery: true,
@@ -1722,13 +1697,12 @@ const privateIdentifierText = (node: Node | null | undefined): string =>
   Option.match(Option.fromNullishOr(node), {
     onNone: () => '',
     onSome: (value) =>
-      Match.type<Node>().pipe(
+      Match.value(value).pipe(
         Match.discriminators('type')({
           PrivateIdentifier: (n) => `#${n.name}`,
         }),
         Match.orElse(() => ''),
-        Match.exhaustive,
-      )(value),
+      ),
   })
 
 const precOf = Match.type<Node>().pipe(
@@ -1750,7 +1724,6 @@ const precOf = Match.type<Node>().pipe(
     ChainExpression: () => PREC.Member,
   }),
   Match.orElse(() => PREC.Primary),
-  Match.exhaustive,
 )
 
 const MEMBER_OBJECT_WRAPPED_KINDS: Readonly<Record<string, true>> = {
@@ -1789,12 +1762,11 @@ const ARRAY_ELEMENT_WRAPPED_KINDS: Readonly<Record<string, true>> = {
 }
 
 const jsxAttributeNameText = (name: JSXAttribute['name']): string =>
-  Match.type<Node>().pipe(
+  Match.value(name).pipe(
     Match.discriminators('type')({
       JSXIdentifier: (n) => n.name,
     }),
     Match.orElse((n) => `${n.namespace.name}:${n.name.name}`),
-    Match.exhaustive,
   )
 
 interface PropertyLike {
@@ -1960,12 +1932,11 @@ const importAttributeText = (attribute: ImportAttribute): string =>
   `${importAttrKeyText(attribute.key)}: ${JSON.stringify(attribute.value.value)}`
 
 const importAttrKeyText = (key: ImportAttribute['key']): string =>
-  Match.type<Node>().pipe(
+  Match.value(key).pipe(
     Match.discriminators('type')({
       Identifier: (n) => n.name,
     }),
     Match.orElse((n) => JSON.stringify(n.value)),
-    Match.exhaustive,
   )
 
 const bareArrowParamName = (node: ArrowFunctionExpression): string => {
@@ -2061,12 +2032,11 @@ const typeParameterModifiersText = (node: TSTypeParameterDeclaration['params'][n
   `${flagText(node.in, 'in ')}${flagText(node.out, 'out ')}${flagText(node.const, 'const ')}`
 
 const typePredicateParameterText = (parameterName: TSTypePredicate['parameterName']): string =>
-  Match.type<Node>().pipe(
+  Match.value(parameterName).pipe(
     Match.discriminators('type')({
       TSThisType: () => 'this',
     }),
     Match.orElse((n) => identifierNameText(n)),
-    Match.exhaustive,
   )
 
 const externalModuleArgumentText = (value: string): string =>
