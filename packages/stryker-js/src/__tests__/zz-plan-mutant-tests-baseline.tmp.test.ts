@@ -4,8 +4,8 @@ import { pathToFileURL } from 'node:url'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 import type { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
 import {
   PlannedEarlyResultMutant,

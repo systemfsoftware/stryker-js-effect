@@ -5,7 +5,7 @@ import type {
   TestPlan as MutantTestPlan,
 } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutantRunPlan, RunMutantResult, RunPlan } from '@systemfsoftware/stryker-js-instrumenter'
+import type { MutantRunPlan, MutantStatus, RunMutantResult, RunPlan } from '@systemfsoftware/stryker-js-instrumenter'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import type * as reportSchema from '@systemfsoftware/stryker-js-instrumenter'
 import {
@@ -44,9 +44,12 @@ import type {
   FailedCheckResult,
   MutationTestResult,
   TestResult,
+  MutantRunResult,
+  FailedTestResult,
   TestRunnerFailed,
   WorkerPluginKind,
 } from '@systemfsoftware/stryker-js-plugin-interface'
+import { HitLimitReasonText, WallClockTimeoutReason } from '@systemfsoftware/stryker-js-plugin-interface'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
 import { CheckerMutantFromMutant } from '../Checker/mod.js'
@@ -56,7 +59,7 @@ import { checkerMutantsSkipped } from '../metrics.js'
 import { ReportLocationFromMutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
-import { ProjectFiles } from '../project-files.service.js'
+import type { PreviousMutantRecord } from '../IncrementalDiff.schema.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
@@ -143,13 +146,10 @@ const sandboxFilesOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
     ),
   )
 
-interface RememberedMutantResult {
-  readonly mutantId: string
-  readonly status: string
-  readonly testsCompleted?: number | undefined
-  readonly coveredBy?: readonly string[] | undefined
-  readonly killedBy?: readonly string[] | undefined
-}
+type RememberedMutantResult = Pick<
+  PreviousMutantRecord,
+  'mutantId' | 'status' | 'testsCompleted' | 'coveredBy' | 'killedBy'
+>
 
 const rememberedCoveredBy = (entry: RememberedMutantResult): { readonly coveredBy?: readonly string[] } =>
   Option.match(Option.fromNullishOr(entry.coveredBy), {
@@ -192,9 +192,11 @@ const rememberedResultOf = (
 
 const mutantsByIdOf = (mutants: readonly Mutant[]) => new Map(mutants.map((mutant) => [mutant.id, mutant] as const))
 
-const mutantRunFailureResultOf = (failure: TestRunnerFailed): RunMutantResult => ({
-  status: 'error' as const,
-  errorMessage: `Test runner "${failure.runnerName}" crashed during mutant run: ${failure.cause}`
+const mutantRunFailureResultOf = (
+  failure: TestRunnerFailed,
+): Extract<MutantRunResult, { readonly status: 'error' }> => ({
+  status: 'error',
+  errorMessage: `Test runner "${failure.runnerName}" crashed during mutant run: ${failure.cause}`,
 })
 
  const rememberedOf = (mutant: Mutant, entry: RememberedMutantResult) =>
@@ -497,8 +499,8 @@ const previousTestFilesOf = <A>(report: A) =>
     () => emptyPreviousTestFiles,
   )
 
-const hasTestFileName = (result: TestResult): result is TestResult & { readonly fileName: string } =>
-  S.is(S.Struct({ fileName: S.String }))(result)
+const hasTestFileName = (result: TestResult): result is FailedTestResult & { readonly fileName: string } =>
+  result.status === 'failed' && S.is(S.Struct({ fileName: S.String }))(result)
 
 const relativeFileOfTest = (result: TestResult & { readonly fileName: string }, basePath: string) =>
   RelativeNormalizedFileName.fromAbsolute(result.fileName, basePath).fileName
@@ -1067,7 +1069,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
               Effect.gen(function*() {
                 const pool = testRunnerPool
                 const runner = yield* Pool.get(pool)
-                const candidate = yield* runner.mutantRun(plan.runOptions).pipe(
+                const candidate = yield* Effect.flip(runner.mutantRun(plan.runOptions)).pipe(
                   Effect.withSpan('stryker.testRunner.mutantRun', {
                     attributes: {
                       'stryker.mutant.id': plan.mutant.id,
@@ -1080,13 +1082,12 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
                       'stryker.mutant.status': runResult.status,
                     })
                   ),
-                  Effect.flip,
                   Effect.catchTags({
                     ChildProcessCrashedError: (error) => invalidateSlot(pool, runner, error),
                     OutOfMemoryError: (error) => invalidateSlot(pool, runner, error),
                   }),
                 )
-                const result = yield* Match.value(candidate).pipe(
+                const result: RunMutantResult = yield* Match.value(candidate).pipe(
                   Match.tag('TestRunnerFailed', (failure) =>
                     Match.value(failure.phase).pipe(
                       Match.when('mutantRun', () => Effect.succeed(mutantRunFailureResultOf(failure))),

@@ -7,6 +7,7 @@ import * as Option from 'effect/Option'
 import * as Layer from 'effect/Layer'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import type {
   ArrayExpression,
   ArrowFunctionExpression,
@@ -146,27 +147,25 @@ const replacementTextOf = (mutant: Mutant): Result.Result<string, PrintFailed> =
     onSome: (rendered) => Result.succeed(rendered.text),
   })
 
-const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing | PrintFailed> =>
+const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing | PrintFailed | S.SchemaError> =>
   Option.match(Option.fromNullishOr(spanOf(mutant.original)), {
     onNone: () => Result.fail(MutantSpanMissing.make({ edge: 'start' })),
     onSome: (span) =>
-      Result.map(replacementTextOf(mutant), (replacement) => {
+      Result.flatMap(replacementTextOf(mutant), (replacement) => {
         const baseFields = {
+          _tag: 'Mutant' as const,
           fileName: mutant.fileName,
           id: mutant.id,
           location: toApiLocation(span.start, span.end, mutant.lineTable, mutant.offset),
           mutatorName: mutant.mutatorName,
           replacement,
         }
-        return Option.match(Option.fromNullishOr(mutant.ignoreReason), {
-          onNone: () => ApiMutant.make(baseFields),
-          onSome: (ignoreReason) =>
-            ApiMutant.make({
-              ...baseFields,
-              statusReason: ignoreReason,
-              status: 'Ignored' as const,
-            }),
-        })
+        return S.decodeResult(ApiMutant)(
+          Option.match(Option.fromNullishOr(mutant.ignoreReason), {
+            onNone: () => baseFields,
+            onSome: (ignoreReason) => ({ ...baseFields, statusReason: ignoreReason, status: 'Ignored' as const }),
+          }),
+        )
       }),
   })
 
@@ -1164,7 +1163,7 @@ export interface MutatorsShape {
   readonly mutators: Readonly<Record<string, Mutator>>
   readonly create: (options: CreateMutantOptions) => Mutant
   readonly apply: (mutant: Mutant, originalTree: Node) => Result.Result<Node, MutantNotApplied>
-  readonly toApi: (mutant: Mutant) => Result.Result<ApiMutant, MutantSpanMissing | PrintFailed>
+  readonly toApi: (mutant: Mutant) => Result.Result<ApiMutant, MutantSpanMissing | PrintFailed | S.SchemaError>
 }
 
 export class Mutators

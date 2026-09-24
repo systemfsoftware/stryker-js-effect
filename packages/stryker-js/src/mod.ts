@@ -256,8 +256,6 @@ export {
 } from './reporting/verdict-envelope.schema.js'
 export type { VerdictCounts } from './reporting/verdict-envelope.schema.js'
 
-export { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
-
 export { IncrementalReportSchema } from './IncrementalReport.schema.js'
 
 export { StrykerError } from './stryker-error.schema.js'

@@ -8,6 +8,7 @@ import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interfac
 import {
   type ReporterInitOptions,
   ReporterRpcs,
+  TraceContextPartsSchema,
   TraceContextReference,
   Traceparent,
 } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -39,6 +40,47 @@ import type { WorkerBootError } from './Worker.schema.js'
 import type { WorkerLauncher } from './WorkerLauncher.service.js'
 
 export const REPORTER_STREAM_QUEUE_BOUND = 256
+
+export class TraceInitIssue extends S.TaggedError<TraceInitIssue>()('TraceInitIssue', {
+  phase: S.Literals(['decode', 'encode']),
+  reason: S.String,
+  cause: S.optional(S.Defect()),
+}) {}
+
+export class ReporterStreamInvariantBroken extends S.TaggedError<ReporterStreamInvariantBroken>()(
+  'ReporterStreamInvariantBroken',
+  { detail: S.String, span: S.Unknown },
+) {}
+
+export class ReporterTraceInit extends S.TaggedClass<ReporterTraceInit>()('ReporterTraceInit', {
+  traceSource: S.Literal('span'),
+  parts: S.optional(TraceContextPartsSchema),
+  traceparent: S.optional(S.String),
+  tracestate: S.optional(S.String),
+}) {
+  static readonly fromSpan = (span: PhaseSpan | undefined): Effect.Effect<ReporterInit | undefined, TraceInitIssue> =>
+    Option.match(Option.fromNullishOr(span), {
+      onNone: () => Effect.succeed<ReporterInit | undefined>(undefined),
+      onSome: () =>
+        Option.match(tracePartsSpan(span), {
+          onNone: () =>
+            Effect.fail(
+              new TraceInitIssue({ phase: 'decode', reason: 'span refused by TraceContextPartsFromEffectSpan' }),
+            ),
+          onSome: (parts) =>
+            S.encodeEffect(Traceparent)(parts).pipe(
+              Effect.mapError(
+                (cause) => new TraceInitIssue({ phase: 'encode', reason: 'parts refused by Traceparent', cause }),
+              ),
+              Effect.map((traceparent): ReporterInit => ({
+                traceparent,
+                ...tracestateInit(parts.traceState),
+              })),
+            ),
+        }),
+    })
+}
+
 
 type ReporterStreamState = 'streaming' | 'terminal' | 'detached'
 
@@ -466,22 +508,16 @@ const hasTraceFields = (init: ReporterInit): boolean =>
   Option.isSome(Option.fromUndefinedOr(init.traceparent)) ||
   Option.isSome(Option.fromUndefinedOr(init.tracestate))
 
+const tracePartsSpan = (span: PhaseSpan | undefined) =>
+  Option.flatMap(Option.fromNullishOr(span), (present) => S.decodeOption(TraceContextPartsFromEffectSpan)(present))
+
 const initFromPhaseSpan = (span: PhaseSpan | undefined): Effect.Effect<ReporterInit | undefined> =>
-  Option.match(Option.fromNullishOr(span), {
-    onNone: () => Effect.void,
-    onSome: (present) =>
-      Option.match(S.decodeOption(TraceContextPartsFromEffectSpan)(present), {
-        onNone: () => Effect.void,
-        onSome: (parts) =>
-          S.encodeEffect(Traceparent)(parts).pipe(
-            Effect.orDie,
-            Effect.map((traceparent): ReporterInit => ({
-              traceparent,
-              ...tracestateInit(parts.traceState),
-            })),
-          ),
-      }),
-  })
+  ReporterTraceInit.fromSpan(span).pipe(
+    Effect.catchTag('TraceInitIssue', (issue) =>
+      span === undefined
+        ? Effect.succeed<ReporterInit | undefined>(undefined)
+        : Effect.die(ReporterStreamInvariantBroken.make({ detail: `span ${issue.phase}: ${issue.reason}`, span }))),
+  )
 
 export interface PhaseSpan {
   readonly traceId: string

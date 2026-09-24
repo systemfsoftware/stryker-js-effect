@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect, Layer } from 'effect'
 import * as Result from 'effect/Result'
 import { expect } from 'vitest'
@@ -7,9 +6,8 @@ import { expect } from 'vitest'
 import {
   JudgeTestContribution,
   judgeTestContribution,
+  type TestContributionDecision,
 } from '@systemfsoftware/stryker-test-contribution'
-
-import type { ReportView } from '@systemfsoftware/stryker-test-contribution'
 
 import { optionalRunnerFields } from './__fixtures__/optional-runner-fields.js'
 
@@ -53,7 +51,7 @@ const commandOf = (
   report: ReportView,
   suffixes: readonly string[],
   everyKillerRecorded: boolean,
-) =>
+): JudgeTestContribution =>
   JudgeTestContribution.make({
     report: {
       schemaVersion: '2',
@@ -68,7 +66,7 @@ const commandOf = (
 const judgedWith = (
   report: ReportView,
   input: { readonly suffixes: readonly string[]; readonly everyKillerRecorded: boolean },
-) =>
+): TestContributionDecision =>
   judgeTestContribution(
     commandOf(report, input.suffixes, input.everyKillerRecorded),
   ).pipe(Result.merge)

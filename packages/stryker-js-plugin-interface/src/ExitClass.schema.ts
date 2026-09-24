@@ -23,8 +23,10 @@ const codeOfClass = (exitClass: ExitClass): 1 | 2 | 3 | 4 => BASELINE_EXIT_CODES
 
 const classOfCode = (code: 1 | 2 | 3 | 4): ExitClass => CLASS_BY_BASELINE_CODE[code]
 
-export const ExitCodeFromClass = S.decodeTo(
-  S.Literals([1, 2, 3, 4]),
+const BaselineExitCode = S.Literals([1, 2, 3, 4])
+
+export const ExitCodeFromClass = S.decodeTo<typeof BaselineExitCode, typeof ExitClass, never, never>(
+  BaselineExitCode,
   SchemaTransformation.transform({
     decode: codeOfClass,
     encode: classOfCode,

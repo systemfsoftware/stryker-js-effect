@@ -3,30 +3,21 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
 import {
+  JudgeTestContribution,
   judgeTestContribution,
   TestContributionDecision,
 } from '../judge-test-contribution.workflow.js'
-import type { ReportView } from '../test-contribution.schema.js'
-import { LawsCommand, type LawsCommand as LawsCommandType } from '../../tests/__fixtures__/laws-command.schema.js'
 
 const JudgeVerdictTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-test-contribution/TestContributionVerdict',
 )
-const judgeLawsCommand = (command: LawsCommandType) => ({
-  report: {
-    schemaVersion: '2',
-    files: command.report.files,
-    thresholds: { high: 80, low: 60, break: null },
-    testFiles: command.report.testFiles,
-  },
-  suffixes: command.suffixes,
-  everyKillerRecorded: command.everyKillerRecorded,
-})
 
-const decidedOf = (command: LawsCommandType) =>
-  judgeTestContribution(judgeLawsCommand(command) as JudgeTestContribution).pipe(Result.merge)
+const decidedOf = (command: JudgeTestContribution) => judgeTestContribution(command).pipe(Result.merge)
 
-const contributionKeysOf = (report: ReportView): readonly string[] =>
+const contributionKeysOf = (command: JudgeTestContribution): readonly string[] =>
+  Object.keys(command.report.testFiles ?? {})
+
+const verdictOfLaw = (command: JudgeTestContribution): boolean => {
   const decision = decidedOf(command)
   const suffixes = command.suffixes.join(', ')
   return Match.value(decision).pipe(
@@ -46,7 +37,7 @@ const contributionKeysOf = (report: ReportView): readonly string[] =>
   )
 }
 
-const ruleOrderOfLaw = (command: LawsCommandType): boolean => {
+const ruleOrderOfLaw = (command: JudgeTestContribution): boolean => {
   const decision = decidedOf(command)
   const inScopeCount = decision.contribution.filter(([fileName]) =>
     command.suffixes.some((suffix) => fileName.endsWith(suffix))).length
@@ -74,25 +65,25 @@ describe('judgeTestContribution', () => {
     [TestContributionDecision],
     ([decision]) => Object.getOwnPropertySymbols(decision).includes(JudgeVerdictTypeId),
   )
-  it.prop('∀c_Command_≡NeverThrows', [LawsCommand], ([command]) => {
+  it.prop('∀c_Command_≡NeverThrows', [JudgeTestContribution], ([command]) => {
     const decision = decidedOf(command)
     return typeof decision.failed === 'boolean' && typeof decision.message === 'string'
   })
-  it.prop('∀c_Command_≡ContributionKeys', [LawsCommand], ([command]) => {
+  it.prop('∀c_Command_≡ContributionKeys', [JudgeTestContribution], ([command]) => {
     const decision = decidedOf(command)
-    const keys = contributionKeysOf(command.report)
+    const keys = contributionKeysOf(command)
     return decision.contribution.length === keys.length &&
       decision.contribution.every(([fileName]) => keys.includes(fileName))
   })
-  it.prop('∀c_Command_≡ToothlessInScope', [LawsCommand], ([command]) => {
+  it.prop('∀c_Command_≡ToothlessInScope', [JudgeTestContribution], ([command]) => {
     const decision = decidedOf(command)
-    const keys = contributionKeysOf(command.report)
+    const keys = contributionKeysOf(command)
     return decision.toothless.every(
       (fileName) =>
         keys.includes(fileName) && command.suffixes.some((suffix) => fileName.endsWith(suffix)),
     )
   })
-  it.prop('∀c_Command_≡ContributionOrder', [LawsCommand], ([command]) => {
+  it.prop('∀c_Command_≡ContributionOrder', [JudgeTestContribution], ([command]) => {
     const decision = decidedOf(command)
     return decision.contribution.every(
       ([, entry]) =>
@@ -100,6 +91,6 @@ describe('judgeTestContribution', () => {
         (!entry.coversUnattributedKill || entry.killableCovered > 0),
     )
   })
-  it.prop('∀c_Command_≡Verdict', [LawsCommand], ([command]) => verdictOfLaw(command))
-  it.prop('∀c_Command_≡RuleOrder', [LawsCommand], ([command]) => ruleOrderOfLaw(command))
+  it.prop('∀c_Command_≡Verdict', [JudgeTestContribution], ([command]) => verdictOfLaw(command))
+  it.prop('∀c_Command_≡RuleOrder', [JudgeTestContribution], ([command]) => ruleOrderOfLaw(command))
 })

@@ -225,6 +225,11 @@ type CauseNode = string | number | boolean | bigint | symbol | Error | CauseCarr
 
 type FailurePayload = CauseNode | ExitClassCarrier | VerdictCarrier | SurvivorsRejection
 
+const failureOf = <A, E>(exit: Exit.Exit<A, E>) =>
+  Option.map(Option.filter(Option.some(exit), Exit.isFailure), (failure) => failure)
+
+const causeReasonsOf = (failure: Exit.Failure<unknown, unknown>) => failure.cause.reasons
+
 const exitClassFieldOf = (carrier: ExitClassCarrier) => Option.getOrUndefined(asExitClass(carrier.exitClass))
 
 const exitClassOf = (value: ExitClassCarrier | object): ExitClass | undefined =>
@@ -252,15 +257,16 @@ const messageFieldOf = (value: MessageCarrier | object): Option.Option<string> =
     nonEmptyText(carrier.message))
 
 const causeFieldOf = (value: CauseCarrier | object): Option.Option<CauseNode> =>
-  Option.flatMap(Option.filter(Option.some(value), hasCause), (carrier) =>
-    Option.filter(Option.some(carrier.cause), isCauseNode))
+  Option.flatMap(
+    Option.filter(Option.some(value), hasCause),
+    (carrier) => Option.filter(Option.some(carrier.cause), isCauseNode),
+  )
 
 const isCauseNode = (value: CauseNode | object): value is CauseNode =>
   Predicate.isString(value) || Predicate.isNumber(value) || Predicate.isBoolean(value) ||
     Predicate.isBigInt(value) || Predicate.isSymbol(value) || Predicate.isError(value) ||
     hasCause(value) || hasExitClass(value) || hasVerdict(value) || hasReason(value) ||
     hasMessageField(value) || CliError.isCliError(value) || isSurvivorsRejection(value)
-
 
 const causeTextOf = (value: CauseCarrier | object): Option.Option<string> =>
   Option.map(CauseText.fromCause(causeFieldOf(value)), (decoded) => decoded.text)
@@ -346,24 +352,24 @@ const collectExitClassesOf = (exit: Exit.Exit<object, FailurePayload>): Readonly
     onSome: (payloads) => payloads.flatMap((payload) => collectExitClassesFrom(payload, 0, new WeakSet())),
   })
 
-const dieDefectOf = (reason: Cause.Reason<unknown>) =>
+const dieDefectOf = (reason: Cause.Reason<FailurePayload>) =>
   Match.value(reason).pipe(
     Match.when(Cause.isDieReason, (die) => Option.some(die.defect)),
     Match.orElse(() => Option.none()),
   )
 
-const objectPayloadOf = (reason: Cause.Reason<unknown>) =>
+const objectPayloadOf = (reason: Cause.Reason<FailurePayload>) =>
   Option.getOrUndefined(Option.filter(dieDefectOf(reason), Predicate.isObject))
 
-const causePayloadOf = (reason: Cause.Reason<unknown>) =>
+const causePayloadOf = (reason: Cause.Reason<FailurePayload>): FailurePayload | object | undefined =>
   Match.value(reason).pipe(
     Match.when(Cause.isFailReason, (fail) => fail.error),
     Match.orElse(objectPayloadOf),
   )
 
 const failurePayloadsOf = (exit: Exit.Exit<object, FailurePayload>) =>
-  Option.map(Option.filter(Option.some(exit), Exit.isFailure), (failure) =>
-    failure.cause.reasons.map(causePayloadOf))
+  Option.flatMap(failureOf(exit), (failure) =>
+    Option.some(causeReasonsOf(failure).map(causePayloadOf)))
 
 const firstConfigErrorDetailOf = (exit: Exit.Exit<object, FailurePayload>): string | undefined =>
   Option.getOrUndefined(
@@ -373,8 +379,7 @@ const firstConfigErrorDetailOf = (exit: Exit.Exit<object, FailurePayload>): stri
 
 const failureValueOf = (exit: Exit.Exit<object, FailurePayload>): FailurePayload | undefined =>
   Option.getOrUndefined(
-    Option.flatMap(Option.filter(Option.some(exit), Exit.isFailure), (failure) =>
-      Cause.findErrorOption(failure.cause)),
+    Option.flatMap(failureOf(exit), (failure) => Cause.findErrorOption(failure.cause)),
   )
 
 const messageErrorTextOf = (value: FailurePayload | object): Option.Option<string> =>
@@ -414,6 +419,8 @@ const survivorsRemediationOptionOf = (value: FailurePayload | object): Option.Op
 
 const reasonTextOptionOf = (value: FailurePayload | object): Option.Option<string> =>
   Option.flatMap(Option.some(value), reasonTextOf)
+
+const declaresReasonText = (value: ReasonCarrier | object) => Option.isSome(reasonFieldOf(value))
 
 const reasonTextOf = (value: TraceCarrier | object): Option.Option<string> =>
   Boolean.match(declaresReasonText(value), {

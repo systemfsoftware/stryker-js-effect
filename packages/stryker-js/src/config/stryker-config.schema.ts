@@ -159,23 +159,16 @@ export default {
 };
 See https://stryker-mutator.io/docs/stryker-js/config-file for more information.`.trim()
 
-export function defineStrykerConfig(config: PartialStrykerOptions): PartialStrykerOptions
-export function defineStrykerConfig(config: Promise<PartialStrykerOptions>): Promise<PartialStrykerOptions>
-export function defineStrykerConfig(config: StrykerConfigFn): StrykerConfigFn
-export function defineStrykerConfig(config: StrykerConfigExport): StrykerConfigExport
-export function defineStrykerConfig(config: StrykerConfigExport): StrykerConfigExport {
-  return config
-}
-
 export class StrykerConfig extends S.Class<StrykerConfig>('StrykerConfig')({
   entries: S.Record(S.String, S.Unknown),
 }) {
-  static readonly define: {
-    (config: PartialStrykerOptions): PartialStrykerOptions
-    (config: Promise<PartialStrykerOptions>): Promise<PartialStrykerOptions>
-    (config: StrykerConfigFn): StrykerConfigFn
-    (config: StrykerConfigExport): StrykerConfigExport
-  } = defineStrykerConfig
+  static define(config: PartialStrykerOptions): PartialStrykerOptions
+  static define(config: Promise<PartialStrykerOptions>): Promise<PartialStrykerOptions>
+  static define(config: StrykerConfigFn): StrykerConfigFn
+  static define(config: StrykerConfigExport): StrykerConfigExport
+  static define(config: StrykerConfigExport): StrykerConfigExport {
+    return config
+  }
 
   static readonly merge: {
     <A>(overrides: MergedConfigRecord<A>): (defaults: MergedConfigRecord<A>) => MergedConfigRecord<A>
@@ -198,4 +191,20 @@ export class StrykerConfig extends S.Class<StrykerConfig>('StrykerConfig')({
   static readonly supportedFileNames: readonly string[] = CONFIG_FILE_NAMES
 
   static readonly syntaxHelp: string = CONFIG_SYNTAX_HELP
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+
+  const factoryEnvOf = (env: ConfigEnv): PartialStrykerOptions => ({ concurrency: env.isCi ? 4 : 1 })
+
+  const definedOf = (env: ConfigEnv): boolean =>
+    StrykerConfig.define({ mutate: ['src/**/*.ts'] }).mutate !== undefined &&
+    factoryEnvOf(env).concurrency !== undefined
+
+  const promisedOf = (): boolean =>
+    StrykerConfig.define(Promise.resolve({ mutate: ['src/**/*.ts'] })) instanceof Promise
+
+  it.prop('∀cfg_Define_≡IdentityOverHeadCallForms', [ConfigEnvSchema], ([env]) =>
+    definedOf(env) && promisedOf())
 }
