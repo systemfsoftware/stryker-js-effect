@@ -4,7 +4,7 @@ import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import { isNodeArg, type PrintedNode, type PrintedNodeOf } from '../Ast.handle.js'
+import { isNodeArg, type PrintedNode } from '../Ast.handle.js'
 import type {
   AccessorProperty,
   ArrayExpression,
@@ -350,181 +350,180 @@ const printNodePrec = (ctx: PrintContext, node: Node | null | undefined, prec: n
     onSome: (value) => dispatchNode(ctx, value, prec),
   })
 
-const isNode = <T extends PrintedNode['type']>(type: T) => (node: PrintedNode): node is PrintedNodeOf<T> =>
-  node.type === type
-
 const unknownNodeText = (type: string): string => `/* unknown:${type} */`
 
-type NodeRenderer<K extends PrintedNode['type']> = (context: PrintContext, node: PrintedNodeOf<K>, precedence: number) => string
+type NodeText = (context: PrintContext, precedence: number) => string
 
-const NODE_TEXT: { readonly [K in PrintedNode['type']]: NodeRenderer<K> } = {
-  Literal: (_ctx, n, _prec) => literalText(n),
-  Identifier: (_ctx, n, _prec) => n.name,
-  PrivateIdentifier: (_ctx, n, _prec) => `#${n.name}`,
-  ThisExpression: (_ctx, _n, _prec) => 'this',
-  Super: (_ctx, _n, _prec) => 'super',
-  ArrayExpression: (ctx, n, _prec) => arrayExpressionText(ctx, n),
-  ObjectExpression: (ctx, n, _prec) => objectExpressionText(ctx, n),
-  Property: (ctx, n, _prec) => propertyText(ctx, n),
-  TemplateLiteral: (ctx, n, _prec) => templateLiteralText(ctx, n),
-  TemplateElement: (_ctx, n, _prec) => n.value.raw,
-  TaggedTemplateExpression: (ctx, n, _prec) => taggedTemplateText(ctx, n),
-  MemberExpression: (ctx, n, _prec) => memberExpressionText(ctx, n),
-  CallExpression: (ctx, n, _prec) => callExpressionText(ctx, n),
-  NewExpression: (ctx, n, _prec) => newExpressionText(ctx, n),
-  MetaProperty: (_ctx, n, _prec) => metaPropertyText(n),
-  SpreadElement: (ctx, n, _prec) => `...${printNodePrec(ctx, n.argument, PREC.Assignment)}`,
-  RestElement: (ctx, n, _prec) => `...${printNodePrec(ctx, n.argument, PREC.Assignment)}`,
-  UpdateExpression: (ctx, n, _prec) => updateExpressionText(ctx, n),
-  UnaryExpression: (ctx, n, _prec) => unaryExpressionText(ctx, n),
-  BinaryExpression: (ctx, n, prec) => binaryExpressionText(ctx, n, prec),
-  LogicalExpression: (ctx, n, prec) => logicalExpressionText(ctx, n, prec),
-  ConditionalExpression: (ctx, n, prec) => conditionalExpressionText(ctx, n, prec),
-  AssignmentExpression: (ctx, n, prec) => assignmentExpressionText(ctx, n, prec),
-  AssignmentPattern: (ctx, n, prec) => assignmentPatternText(ctx, n, prec),
-  ObjectPattern: (ctx, n, _prec) => objectPatternText(ctx, n),
-  ArrayPattern: (ctx, n, _prec) => arrayPatternText(ctx, n),
-  SequenceExpression: (ctx, n, prec) => sequenceExpressionText(ctx, n, prec),
-  AwaitExpression: (ctx, n, _prec) => `await ${printNodePrec(ctx, n.argument, PREC.Unary)}`,
-  YieldExpression: (ctx, n, _prec) => yieldExpressionText(ctx, n),
-  ChainExpression: (ctx, n, prec) => printNodePrec(ctx, n.expression, prec),
-  ParenthesizedExpression: (ctx, n, _prec) => `(${printNodePrec(ctx, n.expression, PREC.Sequence)})`,
-  ImportExpression: (ctx, n, _prec) => importExpressionText(ctx, n),
-  ArrowFunctionExpression: (ctx, n, prec) => arrowFunctionText(ctx, n, prec),
-  FunctionDeclaration: (ctx, n, _prec) => functionText(ctx, n),
-  FunctionExpression: (ctx, n, _prec) => functionText(ctx, n),
-  TSDeclareFunction: (ctx, n, _prec) => functionText(ctx, n),
-  TSEmptyBodyFunctionExpression: (ctx, n, _prec) => functionText(ctx, n),
-  ClassDeclaration: (ctx, n, _prec) => classText(ctx, n),
-  ClassExpression: (ctx, n, _prec) => classText(ctx, n),
-  JSXElement: (ctx, n, _prec) => jsxElementText(ctx, n),
-  JSXFragment: (ctx, n, _prec) => jsxFragmentText(ctx, n),
-  JSXOpeningElement: (ctx, n, _prec) => jsxOpeningElementText(ctx, n),
-  JSXClosingElement: (_ctx, _n, _prec) => '',
-  JSXIdentifier: (_ctx, n, _prec) => n.name,
-  JSXNamespacedName: (_ctx, n, _prec) => `${n.namespace.name}:${n.name.name}`,
-  JSXMemberExpression: (_ctx, n, _prec) => jsxMemberExpressionText(n),
-  JSXAttribute: (ctx, n, _prec) => jsxAttributeText(ctx, n),
-  JSXSpreadAttribute: (ctx, n, _prec) => `{...${printNodePrec(ctx, n.argument, PREC.Assignment)}}`,
-  JSXExpressionContainer: (ctx, n, _prec) => `{${printNodePrec(ctx, n.expression, PREC.Sequence)}}`,
-  JSXEmptyExpression: (_ctx, _n, _prec) => '',
-  JSXText: (_ctx, n, _prec) => n.value,
-  JSXSpreadChild: (ctx, n, _prec) => `{...${printNodePrec(ctx, n.expression, PREC.Assignment)}}`,
-  TSAsExpression: (ctx, n, prec) => tsAsExpressionText(ctx, n, prec),
-  TSSatisfiesExpression: (ctx, n, prec) => tsSatisfiesExpressionText(ctx, n, prec),
-  TSTypeAssertion: (ctx, n, _prec) => tsTypeAssertionText(ctx, n),
-  TSNonNullExpression: (ctx, n, _prec) => `${printNodePrec(ctx, n.expression, PREC.Member)}!`,
-  TSInstantiationExpression: (ctx, n, _prec) => tsInstantiationExpressionText(ctx, n),
-  BlockStatement: (ctx, n, _prec) => blockStatementText(ctx, n),
-  EmptyStatement: (_ctx, _n, _prec) => ';',
-  ExpressionStatement: (ctx, n, _prec) => expressionStatementText(ctx, n),
-  IfStatement: (ctx, n, _prec) => ifStatementText(ctx, n),
-  DoWhileStatement: (ctx, n, _prec) => doWhileStatementText(ctx, n),
-  WhileStatement: (ctx, n, _prec) => whileStatementText(ctx, n),
-  ForStatement: (ctx, n, _prec) => forStatementText(ctx, n),
-  ForInStatement: (ctx, n, _prec) => forInStatementText(ctx, n),
-  ForOfStatement: (ctx, n, _prec) => forOfStatementText(ctx, n),
-  ContinueStatement: (_ctx, n, _prec) => jumpStatementText('continue', n.label),
-  BreakStatement: (_ctx, n, _prec) => jumpStatementText('break', n.label),
-  ReturnStatement: (ctx, n, _prec) => returnStatementText(ctx, n),
-  WithStatement: (ctx, n, _prec) => withStatementText(ctx, n),
-  SwitchStatement: (ctx, n, _prec) => switchStatementText(ctx, n),
-  SwitchCase: (_ctx, _n, _prec) => '',
-  LabeledStatement: (ctx, n, _prec) => labeledStatementText(ctx, n),
-  ThrowStatement: (ctx, n, _prec) => `throw ${printNodePrec(ctx, n.argument, PREC.Sequence)};`,
-  TryStatement: (ctx, n, _prec) => tryStatementText(ctx, n),
-  CatchClause: (_ctx, _n, _prec) => '',
-  DebuggerStatement: (_ctx, _n, _prec) => 'debugger;',
-  V8IntrinsicExpression: (ctx, n, _prec) => v8IntrinsicText(ctx, n),
-  VariableDeclaration: (ctx, n, _prec) => variableDeclarationText(ctx, n),
-  VariableDeclarator: (ctx, n, _prec) => variableDeclaratorText(ctx, n),
-  ClassBody: (ctx, n, _prec) => classBodyText(ctx, n),
-  MethodDefinition: (ctx, n, _prec) => methodDefinitionText(ctx, n),
-  TSAbstractMethodDefinition: (ctx, n, _prec) => methodDefinitionText(ctx, n),
-  PropertyDefinition: (ctx, n, _prec) => propertyDefinitionText(ctx, n),
-  TSAbstractPropertyDefinition: (ctx, n, _prec) => propertyDefinitionText(ctx, n),
-  AccessorProperty: (ctx, n, _prec) => accessorPropertyText(ctx, n),
-  TSAbstractAccessorProperty: (ctx, n, _prec) => accessorPropertyText(ctx, n),
-  StaticBlock: (ctx, n, _prec) => staticBlockText(ctx, n),
-  ImportDeclaration: (ctx, n, _prec) => importDeclarationText(ctx, n),
-  ExportNamedDeclaration: (ctx, n, _prec) => exportNamedDeclarationText(ctx, n),
-  ExportDefaultDeclaration: (ctx, n, _prec) => exportDefaultDeclarationText(ctx, n),
-  ExportAllDeclaration: (ctx, n, _prec) => exportAllDeclarationText(ctx, n),
-  Decorator: (ctx, n, _prec) => `@${printNodePrec(ctx, n.expression, PREC.Member)}`,
-  TSTypeAliasDeclaration: (ctx, n, _prec) => tsTypeAliasDeclarationText(ctx, n),
-  TSInterfaceDeclaration: (ctx, n, _prec) => tsInterfaceDeclarationText(ctx, n),
-  TSEnumDeclaration: (ctx, n, _prec) => tsEnumDeclarationText(ctx, n),
-  TSModuleDeclaration: (ctx, n, _prec) => tsModuleDeclarationText(ctx, n),
-  TSImportEqualsDeclaration: (ctx, n, _prec) => tsImportEqualsDeclarationText(ctx, n),
-  TSExportAssignment: (ctx, n, _prec) => `export = ${printNodePrec(ctx, n.expression, PREC.Sequence)};`,
-  TSNamespaceExportDeclaration: (_ctx, n, _prec) => `export as namespace ${n.id.name};`,
-  TSTypeAnnotation: (ctx, n, _prec) => `: ${printTSTypeToString(ctx, n.typeAnnotation)}`,
-  TSTypeParameterDeclaration: (ctx, n, _prec) => printTSTypeParameterDeclaration(ctx, n),
-  TSTypeParameterInstantiation: (ctx, n, _prec) => printTSTypeParameterInstantiation(ctx, n),
-  TSTypeParameter: (ctx, n, _prec) => printTSTypeParameter(ctx, n),
-  TSAnyKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSArrayType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSBigIntKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSBooleanKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSConditionalType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSConstructorType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSFunctionType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSImportType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSIndexedAccessType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSInferType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSIntersectionType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSIntrinsicKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSJSDocNonNullableType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSJSDocNullableType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSJSDocUnknownType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSLiteralType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSMappedType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSNamedTupleMember: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSNeverKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSNullKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSNumberKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSObjectKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSOptionalType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSParenthesizedType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSRestType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSStringKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSSymbolKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSTemplateLiteralType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSThisType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSTupleType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSTypeLiteral: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSTypeOperator: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSTypePredicate: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSTypeQuery: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSTypeReference: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSUndefinedKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSUnionType: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSUnknownKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  TSVoidKeyword: (ctx, n, _prec) => typeTextOf(ctx, n),
-  ExportSpecifier: (_ctx, n, _prec) => unknownNodeText(n.type),
-  Hashbang: (_ctx, n, _prec) => unknownNodeText(n.type),
-  ImportAttribute: (_ctx, n, _prec) => unknownNodeText(n.type),
-  ImportDefaultSpecifier: (_ctx, n, _prec) => unknownNodeText(n.type),
-  ImportNamespaceSpecifier: (_ctx, n, _prec) => unknownNodeText(n.type),
-  ImportSpecifier: (_ctx, n, _prec) => unknownNodeText(n.type),
-  JSXClosingFragment: (_ctx, n, _prec) => unknownNodeText(n.type),
-  JSXOpeningFragment: (_ctx, n, _prec) => unknownNodeText(n.type),
-  Program: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSCallSignatureDeclaration: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSClassImplements: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSConstructSignatureDeclaration: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSEnumBody: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSEnumMember: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSExternalModuleReference: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSIndexSignature: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSInterfaceBody: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSInterfaceHeritage: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSMethodSignature: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSModuleBlock: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSParameterProperty: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSPropertySignature: (_ctx, n, _prec) => unknownNodeText(n.type),
-  TSQualifiedName: (_ctx, n, _prec) => unknownNodeText(n.type),
-}
+const nodeText = Match.type<PrintedNode>().pipe(
+  Match.discriminatorsExhaustive('type')({
+    Literal: (n) => () => literalText(n),
+    Identifier: (n) => () => n.name,
+    PrivateIdentifier: (n) => () => `#${n.name}`,
+    ThisExpression: () => () => 'this',
+    Super: () => () => 'super',
+    ArrayExpression: (n) => (ctx) => arrayExpressionText(ctx, n),
+    ObjectExpression: (n) => (ctx) => objectExpressionText(ctx, n),
+    Property: (n) => (ctx) => propertyText(ctx, n),
+    TemplateLiteral: (n) => (ctx) => templateLiteralText(ctx, n),
+    TemplateElement: (n) => () => n.value.raw,
+    TaggedTemplateExpression: (n) => (ctx) => taggedTemplateText(ctx, n),
+    MemberExpression: (n) => (ctx) => memberExpressionText(ctx, n),
+    CallExpression: (n) => (ctx) => callExpressionText(ctx, n),
+    NewExpression: (n) => (ctx) => newExpressionText(ctx, n),
+    MetaProperty: (n) => () => metaPropertyText(n),
+    SpreadElement: (n) => (ctx) => `...${printNodePrec(ctx, n.argument, PREC.Assignment)}`,
+    RestElement: (n) => (ctx) => `...${printNodePrec(ctx, n.argument, PREC.Assignment)}`,
+    UpdateExpression: (n) => (ctx) => updateExpressionText(ctx, n),
+    UnaryExpression: (n) => (ctx) => unaryExpressionText(ctx, n),
+    BinaryExpression: (n) => (ctx, prec) => binaryExpressionText(ctx, n, prec),
+    LogicalExpression: (n) => (ctx, prec) => logicalExpressionText(ctx, n, prec),
+    ConditionalExpression: (n) => (ctx, prec) => conditionalExpressionText(ctx, n, prec),
+    AssignmentExpression: (n) => (ctx, prec) => assignmentExpressionText(ctx, n, prec),
+    AssignmentPattern: (n) => (ctx, prec) => assignmentPatternText(ctx, n, prec),
+    ObjectPattern: (n) => (ctx) => objectPatternText(ctx, n),
+    ArrayPattern: (n) => (ctx) => arrayPatternText(ctx, n),
+    SequenceExpression: (n) => (ctx, prec) => sequenceExpressionText(ctx, n, prec),
+    AwaitExpression: (n) => (ctx) => `await ${printNodePrec(ctx, n.argument, PREC.Unary)}`,
+    YieldExpression: (n) => (ctx) => yieldExpressionText(ctx, n),
+    ChainExpression: (n) => (ctx, prec) => printNodePrec(ctx, n.expression, prec),
+    ParenthesizedExpression: (n) => (ctx) => `(${printNodePrec(ctx, n.expression, PREC.Sequence)})`,
+    ImportExpression: (n) => (ctx) => importExpressionText(ctx, n),
+    ArrowFunctionExpression: (n) => (ctx, prec) => arrowFunctionText(ctx, n, prec),
+    FunctionDeclaration: (n) => (ctx) => functionText(ctx, n),
+    FunctionExpression: (n) => (ctx) => functionText(ctx, n),
+    TSDeclareFunction: (n) => (ctx) => functionText(ctx, n),
+    TSEmptyBodyFunctionExpression: (n) => (ctx) => functionText(ctx, n),
+    ClassDeclaration: (n) => (ctx) => classText(ctx, n),
+    ClassExpression: (n) => (ctx) => classText(ctx, n),
+    JSXElement: (n) => (ctx) => jsxElementText(ctx, n),
+    JSXFragment: (n) => (ctx) => jsxFragmentText(ctx, n),
+    JSXOpeningElement: (n) => (ctx) => jsxOpeningElementText(ctx, n),
+    JSXClosingElement: () => () => '',
+    JSXIdentifier: (n) => () => n.name,
+    JSXNamespacedName: (n) => () => `${n.namespace.name}:${n.name.name}`,
+    JSXMemberExpression: (n) => () => jsxMemberExpressionText(n),
+    JSXAttribute: (n) => (ctx) => jsxAttributeText(ctx, n),
+    JSXSpreadAttribute: (n) => (ctx) => `{...${printNodePrec(ctx, n.argument, PREC.Assignment)}}`,
+    JSXExpressionContainer: (n) => (ctx) => `{${printNodePrec(ctx, n.expression, PREC.Sequence)}}`,
+    JSXEmptyExpression: () => () => '',
+    JSXText: (n) => () => n.value,
+    JSXSpreadChild: (n) => (ctx) => `{...${printNodePrec(ctx, n.expression, PREC.Assignment)}}`,
+    TSAsExpression: (n) => (ctx, prec) => tsAsExpressionText(ctx, n, prec),
+    TSSatisfiesExpression: (n) => (ctx, prec) => tsSatisfiesExpressionText(ctx, n, prec),
+    TSTypeAssertion: (n) => (ctx) => tsTypeAssertionText(ctx, n),
+    TSNonNullExpression: (n) => (ctx) => `${printNodePrec(ctx, n.expression, PREC.Member)}!`,
+    TSInstantiationExpression: (n) => (ctx) => tsInstantiationExpressionText(ctx, n),
+    BlockStatement: (n) => (ctx) => blockStatementText(ctx, n),
+    EmptyStatement: () => () => ';',
+    ExpressionStatement: (n) => (ctx) => expressionStatementText(ctx, n),
+    IfStatement: (n) => (ctx) => ifStatementText(ctx, n),
+    DoWhileStatement: (n) => (ctx) => doWhileStatementText(ctx, n),
+    WhileStatement: (n) => (ctx) => whileStatementText(ctx, n),
+    ForStatement: (n) => (ctx) => forStatementText(ctx, n),
+    ForInStatement: (n) => (ctx) => forInStatementText(ctx, n),
+    ForOfStatement: (n) => (ctx) => forOfStatementText(ctx, n),
+    ContinueStatement: (n) => () => jumpStatementText('continue', n.label),
+    BreakStatement: (n) => () => jumpStatementText('break', n.label),
+    ReturnStatement: (n) => (ctx) => returnStatementText(ctx, n),
+    WithStatement: (n) => (ctx) => withStatementText(ctx, n),
+    SwitchStatement: (n) => (ctx) => switchStatementText(ctx, n),
+    SwitchCase: () => () => '',
+    LabeledStatement: (n) => (ctx) => labeledStatementText(ctx, n),
+    ThrowStatement: (n) => (ctx) => `throw ${printNodePrec(ctx, n.argument, PREC.Sequence)};`,
+    TryStatement: (n) => (ctx) => tryStatementText(ctx, n),
+    CatchClause: () => () => '',
+    DebuggerStatement: () => () => 'debugger;',
+    V8IntrinsicExpression: (n) => (ctx) => v8IntrinsicText(ctx, n),
+    VariableDeclaration: (n) => (ctx) => variableDeclarationText(ctx, n),
+    VariableDeclarator: (n) => (ctx) => variableDeclaratorText(ctx, n),
+    ClassBody: (n) => (ctx) => classBodyText(ctx, n),
+    MethodDefinition: (n) => (ctx) => methodDefinitionText(ctx, n),
+    TSAbstractMethodDefinition: (n) => (ctx) => methodDefinitionText(ctx, n),
+    PropertyDefinition: (n) => (ctx) => propertyDefinitionText(ctx, n),
+    TSAbstractPropertyDefinition: (n) => (ctx) => propertyDefinitionText(ctx, n),
+    AccessorProperty: (n) => (ctx) => accessorPropertyText(ctx, n),
+    TSAbstractAccessorProperty: (n) => (ctx) => accessorPropertyText(ctx, n),
+    StaticBlock: (n) => (ctx) => staticBlockText(ctx, n),
+    ImportDeclaration: (n) => (ctx) => importDeclarationText(ctx, n),
+    ExportNamedDeclaration: (n) => (ctx) => exportNamedDeclarationText(ctx, n),
+    ExportDefaultDeclaration: (n) => (ctx) => exportDefaultDeclarationText(ctx, n),
+    ExportAllDeclaration: (n) => (ctx) => exportAllDeclarationText(ctx, n),
+    Decorator: (n) => (ctx) => `@${printNodePrec(ctx, n.expression, PREC.Member)}`,
+    TSTypeAliasDeclaration: (n) => (ctx) => tsTypeAliasDeclarationText(ctx, n),
+    TSInterfaceDeclaration: (n) => (ctx) => tsInterfaceDeclarationText(ctx, n),
+    TSEnumDeclaration: (n) => (ctx) => tsEnumDeclarationText(ctx, n),
+    TSModuleDeclaration: (n) => (ctx) => tsModuleDeclarationText(ctx, n),
+    TSImportEqualsDeclaration: (n) => (ctx) => tsImportEqualsDeclarationText(ctx, n),
+    TSExportAssignment: (n) => (ctx) => `export = ${printNodePrec(ctx, n.expression, PREC.Sequence)};`,
+    TSNamespaceExportDeclaration: (n) => () => `export as namespace ${n.id.name};`,
+    TSTypeAnnotation: (n) => (ctx) => `: ${printTSTypeToString(ctx, n.typeAnnotation)}`,
+    TSTypeParameterDeclaration: (n) => (ctx) => printTSTypeParameterDeclaration(ctx, n),
+    TSTypeParameterInstantiation: (n) => (ctx) => printTSTypeParameterInstantiation(ctx, n),
+    TSTypeParameter: (n) => (ctx) => printTSTypeParameter(ctx, n),
+    TSAnyKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSArrayType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSBigIntKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSBooleanKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSConditionalType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSConstructorType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSFunctionType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSImportType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSIndexedAccessType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSInferType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSIntersectionType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSIntrinsicKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSJSDocNonNullableType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSJSDocNullableType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSJSDocUnknownType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSLiteralType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSMappedType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSNamedTupleMember: (n) => (ctx) => typeTextOf(ctx, n),
+    TSNeverKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSNullKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSNumberKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSObjectKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSOptionalType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSParenthesizedType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSRestType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSStringKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSSymbolKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSTemplateLiteralType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSThisType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSTupleType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSTypeLiteral: (n) => (ctx) => typeTextOf(ctx, n),
+    TSTypeOperator: (n) => (ctx) => typeTextOf(ctx, n),
+    TSTypePredicate: (n) => (ctx) => typeTextOf(ctx, n),
+    TSTypeQuery: (n) => (ctx) => typeTextOf(ctx, n),
+    TSTypeReference: (n) => (ctx) => typeTextOf(ctx, n),
+    TSUndefinedKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSUnionType: (n) => (ctx) => typeTextOf(ctx, n),
+    TSUnknownKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    TSVoidKeyword: (n) => (ctx) => typeTextOf(ctx, n),
+    ExportSpecifier: (n) => () => unknownNodeText(n.type),
+    Hashbang: (n) => () => unknownNodeText(n.type),
+    ImportAttribute: (n) => () => unknownNodeText(n.type),
+    ImportDefaultSpecifier: (n) => () => unknownNodeText(n.type),
+    ImportNamespaceSpecifier: (n) => () => unknownNodeText(n.type),
+    ImportSpecifier: (n) => () => unknownNodeText(n.type),
+    JSXClosingFragment: (n) => () => unknownNodeText(n.type),
+    JSXOpeningFragment: (n) => () => unknownNodeText(n.type),
+    Program: (n) => () => unknownNodeText(n.type),
+    TSCallSignatureDeclaration: (n) => () => unknownNodeText(n.type),
+    TSClassImplements: (n) => () => unknownNodeText(n.type),
+    TSConstructSignatureDeclaration: (n) => () => unknownNodeText(n.type),
+    TSEnumBody: (n) => () => unknownNodeText(n.type),
+    TSEnumMember: (n) => () => unknownNodeText(n.type),
+    TSExternalModuleReference: (n) => () => unknownNodeText(n.type),
+    TSIndexSignature: (n) => () => unknownNodeText(n.type),
+    TSInterfaceBody: (n) => () => unknownNodeText(n.type),
+    TSInterfaceHeritage: (n) => () => unknownNodeText(n.type),
+    TSMethodSignature: (n) => () => unknownNodeText(n.type),
+    TSModuleBlock: (n) => () => unknownNodeText(n.type),
+    TSParameterProperty: (n) => () => unknownNodeText(n.type),
+    TSPropertySignature: (n) => () => unknownNodeText(n.type),
+    TSQualifiedName: (n) => () => unknownNodeText(n.type),
+  }),
+)
 
 const typeTextOf = (ctx: PrintContext, node: PrintedNode): string =>
   Option.match(Option.filter(Option.some(node), isTSType), {
@@ -532,48 +531,49 @@ const typeTextOf = (ctx: PrintContext, node: PrintedNode): string =>
     onNone: () => unknownNodeText(node.type),
   })
 
-const dispatchNode = <K extends PrintedNode['type']>(ctx: PrintContext, node: PrintedNodeOf<K>, prec: number): string =>
-  NODE_TEXT[node.type](ctx, node, prec)
+const dispatchNode = (ctx: PrintContext, node: PrintedNode, prec: number): string => nodeText(node)(ctx, prec)
 const statementKindText = (ctx: PrintContext, node: Statement): string =>
-  Match.value(node).pipe(
-    Match.when(isNode('BlockStatement'), (n) => blockStatementText(ctx, n)),
-    Match.when(isNode('VariableDeclaration'), (n) => `${variableDeclarationText(ctx, n)};`),
-    Match.when(isNode('FunctionDeclaration'), (n) => functionText(ctx, n)),
-    Match.when(isNode('FunctionExpression'), (n) => functionText(ctx, n)),
-    Match.when(isNode('TSDeclareFunction'), (n) => functionText(ctx, n)),
-    Match.when(isNode('TSEmptyBodyFunctionExpression'), (n) => functionText(ctx, n)),
-    Match.when(isNode('ClassDeclaration'), (n) => classText(ctx, n)),
-    Match.when(isNode('ClassExpression'), (n) => classText(ctx, n)),
-    Match.when(isNode('ExpressionStatement'), (n) => expressionStatementText(ctx, n)),
-    Match.when(isNode('IfStatement'), (n) => ifStatementText(ctx, n)),
-    Match.when(isNode('ForStatement'), (n) => forStatementText(ctx, n)),
-    Match.when(isNode('ForInStatement'), (n) => forInStatementText(ctx, n)),
-    Match.when(isNode('ForOfStatement'), (n) => forOfStatementText(ctx, n)),
-    Match.when(isNode('WhileStatement'), (n) => whileStatementText(ctx, n)),
-    Match.when(isNode('DoWhileStatement'), (n) => doWhileStatementText(ctx, n)),
-    Match.when(isNode('ReturnStatement'), (n) => returnStatementText(ctx, n)),
-    Match.when(isNode('ThrowStatement'), (n) => `throw ${printNodePrec(ctx, n.argument, PREC.Sequence)};`),
-    Match.when(isNode('TryStatement'), (n) => tryStatementText(ctx, n)),
-  ).pipe(
-    Match.when(isNode('SwitchStatement'), (n) => switchStatementText(ctx, n)),
-    Match.when(isNode('LabeledStatement'), (n) => labeledStatementText(ctx, n)),
-    Match.when(isNode('BreakStatement'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
-    Match.when(isNode('ContinueStatement'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
-    Match.when(isNode('DebuggerStatement'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
-    Match.when(isNode('EmptyStatement'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
-    Match.when(isNode('WithStatement'), (n) => withStatementText(ctx, n)),
-    Match.when(isNode('ImportDeclaration'), (n) => importDeclarationText(ctx, n)),
-    Match.when(isNode('ExportNamedDeclaration'), (n) => exportNamedDeclarationText(ctx, n)),
-    Match.when(isNode('ExportDefaultDeclaration'), (n) => exportDefaultDeclarationText(ctx, n)),
-    Match.when(isNode('ExportAllDeclaration'), (n) => exportAllDeclarationText(ctx, n)),
-    Match.when(isNode('TSTypeAliasDeclaration'), (n) => tsTypeAliasDeclarationText(ctx, n)),
-    Match.when(isNode('TSInterfaceDeclaration'), (n) => tsInterfaceDeclarationText(ctx, n)),
-    Match.when(isNode('TSEnumDeclaration'), (n) => tsEnumDeclarationText(ctx, n)),
-    Match.when(isNode('TSModuleDeclaration'), (n) => tsModuleDeclarationText(ctx, n)),
-    Match.when(isNode('TSImportEqualsDeclaration'), (n) => tsImportEqualsDeclarationText(ctx, n)),
-    Match.when(isNode('TSExportAssignment'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
-    Match.when(isNode('TSNamespaceExportDeclaration'), (n) => printNodePrec(ctx, n, PREC.Sequence)),
+  Match.type<Statement>().pipe(
+    Match.discriminators('type')({
+      BlockStatement: (n) => blockStatementText(ctx, n),
+      VariableDeclaration: (n) => `${variableDeclarationText(ctx, n)};`,
+      FunctionDeclaration: (n) => functionText(ctx, n),
+      FunctionExpression: (n) => functionText(ctx, n),
+      TSDeclareFunction: (n) => functionText(ctx, n),
+      TSEmptyBodyFunctionExpression: (n) => functionText(ctx, n),
+      ClassDeclaration: (n) => classText(ctx, n),
+      ClassExpression: (n) => classText(ctx, n),
+      ExpressionStatement: (n) => expressionStatementText(ctx, n),
+      IfStatement: (n) => ifStatementText(ctx, n),
+      ForStatement: (n) => forStatementText(ctx, n),
+      ForInStatement: (n) => forInStatementText(ctx, n),
+      ForOfStatement: (n) => forOfStatementText(ctx, n),
+      WhileStatement: (n) => whileStatementText(ctx, n),
+      DoWhileStatement: (n) => doWhileStatementText(ctx, n),
+      ReturnStatement: (n) => returnStatementText(ctx, n),
+      ThrowStatement: (n) => `throw ${printNodePrec(ctx, n.argument, PREC.Sequence)};`,
+      TryStatement: (n) => tryStatementText(ctx, n),
+      SwitchStatement: (n) => switchStatementText(ctx, n),
+      LabeledStatement: (n) => labeledStatementText(ctx, n),
+      BreakStatement: (n) => printNodePrec(ctx, n, PREC.Sequence),
+      ContinueStatement: (n) => printNodePrec(ctx, n, PREC.Sequence),
+      DebuggerStatement: (n) => printNodePrec(ctx, n, PREC.Sequence),
+      EmptyStatement: (n) => printNodePrec(ctx, n, PREC.Sequence),
+      WithStatement: (n) => withStatementText(ctx, n),
+      ImportDeclaration: (n) => importDeclarationText(ctx, n),
+      ExportNamedDeclaration: (n) => exportNamedDeclarationText(ctx, n),
+      ExportDefaultDeclaration: (n) => exportDefaultDeclarationText(ctx, n),
+      ExportAllDeclaration: (n) => exportAllDeclarationText(ctx, n),
+      TSTypeAliasDeclaration: (n) => tsTypeAliasDeclarationText(ctx, n),
+      TSInterfaceDeclaration: (n) => tsInterfaceDeclarationText(ctx, n),
+      TSEnumDeclaration: (n) => tsEnumDeclarationText(ctx, n),
+      TSModuleDeclaration: (n) => tsModuleDeclarationText(ctx, n),
+      TSImportEqualsDeclaration: (n) => tsImportEqualsDeclarationText(ctx, n),
+      TSExportAssignment: (n) => printNodePrec(ctx, n, PREC.Sequence),
+      TSNamespaceExportDeclaration: (n) => printNodePrec(ctx, n, PREC.Sequence),
+    }),
     Match.orElse(() => ''),
+    Match.exhaustive,
   )
 
 const literalText = (node: LiteralSource): string => node.raw ?? literalWithoutRaw(node)
@@ -672,11 +672,14 @@ const propertyKeyText = (ctx: PrintContext, key: Node, computed: boolean, comput
   })
 
 const plainPropertyKeyText = (ctx: PrintContext, key: Node): string =>
-  Match.value(key).pipe(
-    Match.when(isNode('Identifier'), (n) => identifierNameText(n)),
-    Match.when(isNode('PrivateIdentifier'), (n) => privateIdentifierText(n)),
-    Match.when(isNode('Literal'), (n) => literalText(n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      Identifier: (n) => identifierNameText(n),
+      PrivateIdentifier: (n) => privateIdentifierText(n),
+      Literal: (n) => literalText(n),
+    }),
     Match.orElse((n) => dispatchNode(ctx, n, PREC.Assignment)),
+    Match.exhaustive,
   )
 
 const functionTailText = (ctx: PrintContext, fn: FunctionNode): string =>
@@ -742,10 +745,13 @@ const memberSelectorText = (ctx: PrintContext, access: MemberExpression): string
   })
 
 const memberPropertyText = (ctx: PrintContext, property: Node): string =>
-  Match.value(property).pipe(
-    Match.when(isNode('Identifier'), (n) => identifierNameText(n)),
-    Match.when(isNode('PrivateIdentifier'), (n) => privateIdentifierText(n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      Identifier: (n) => identifierNameText(n),
+      PrivateIdentifier: (n) => privateIdentifierText(n),
+    }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
+    Match.exhaustive,
   )
 
 const callExpressionText = (ctx: PrintContext, node: CallExpression): string =>
@@ -868,9 +874,12 @@ const arrowParamsText = (ctx: PrintContext, node: ArrowFunctionExpression): stri
 }
 
 const arrowBodyText = (ctx: PrintContext, node: ArrowFunctionExpression): string =>
-  Match.value(node.body).pipe(
-    Match.when(isNode('BlockStatement'), (body) => blockStatementText(ctx, body)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      BlockStatement: (body) => blockStatementText(ctx, body),
+    }),
     Match.orElse((body) => assignmentNodeText(ctx, body)),
+    Match.exhaustive,
   )
 
 const functionText = (ctx: PrintContext, node: FunctionNode): string =>
@@ -936,17 +945,23 @@ const jsxOpeningElementText = (ctx: PrintContext, node: JSXOpeningElement): stri
   })}`
 
 const jsxElementNameText = (ctx: PrintContext, name: JSXOpeningElement['name']): string =>
-  Match.value(name).pipe(
-    Match.when(isNode('JSXIdentifier'), (n) => n.name),
-    Match.when(isNode('JSXNamespacedName'), (n) => `${n.namespace.name}:${n.name.name}`),
-    Match.when(isNode('JSXMemberExpression'), (n) => jsxMemberExpressionText(n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      JSXIdentifier: (n) => n.name,
+      JSXNamespacedName: (n) => `${n.namespace.name}:${n.name.name}`,
+      JSXMemberExpression: (n) => jsxMemberExpressionText(n),
+    }),
     Match.orElse(() => ''),
+    Match.exhaustive,
   )
 
 const jsxMemberExpressionText = (node: JSXMemberExpression): string =>
-  Match.value(node.object).pipe(
-    Match.when(isNode('JSXIdentifier'), (obj) => `${obj.name}.${node.property.name}`),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      JSXIdentifier: (obj) => `${obj.name}.${node.property.name}`,
+    }),
     Match.orElse((obj) => `${jsxMemberExpressionText(obj)}.${node.property.name}`),
+    Match.exhaustive,
   )
 
 const jsxAttributeText = (ctx: PrintContext, node: JSXAttribute): string =>
@@ -959,23 +974,28 @@ const jsxAttributeValueClauseText = (ctx: PrintContext, value: JSXAttribute['val
   })
 
 const jsxAttributeValueText = (ctx: PrintContext, value: NonNullable<JSXAttribute['value']>): string =>
-  Match.value(value).pipe(
-    Match.when(isNode('Literal'), (n) => literalText(n)),
-    Match.when(isNode('JSXExpressionContainer'), (n) => `{${sequenceNodeText(ctx, n.expression)}}`),
-    Match.when(isNode('JSXElement'), (n) => sequenceNodeText(ctx, n)),
-    Match.when(isNode('JSXFragment'), (n) => sequenceNodeText(ctx, n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      Literal: (n) => literalText(n),
+      JSXExpressionContainer: (n) => `{${sequenceNodeText(ctx, n.expression)}}`,
+      JSXElement: (n) => sequenceNodeText(ctx, n),
+      JSXFragment: (n) => sequenceNodeText(ctx, n),
+    }),
     Match.orElse(() => ''),
+    Match.exhaustive,
   )
 
 const jsxChildText = (ctx: PrintContext, child: JSXElement['children'][number]): string =>
-  Match.value(child).pipe(
-    Match.when(isNode('JSXText'), (n) => n.value),
-    Match.when(isNode('JSXElement'), (n) => jsxElementText(ctx, n)),
-    Match.when(isNode('JSXFragment'), (n) => jsxFragmentText(ctx, n)),
-    Match.when(isNode('JSXExpressionContainer'), (n) => `{${printNodePrec(ctx, n.expression, PREC.Sequence)}}`,
-    ),
-    Match.when(isNode('JSXSpreadChild'), (n) => `{...${printNodePrec(ctx, n.expression, PREC.Assignment)}}`),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      JSXText: (n) => n.value,
+      JSXElement: (n) => jsxElementText(ctx, n),
+      JSXFragment: (n) => jsxFragmentText(ctx, n),
+      JSXExpressionContainer: (n) => `{${printNodePrec(ctx, n.expression, PREC.Sequence)}}`,
+      JSXSpreadChild: (n) => `{...${printNodePrec(ctx, n.expression, PREC.Assignment)}}`,
+    }),
     Match.orElse(() => ''),
+    Match.exhaustive,
   )
 
 const tsAsExpressionText = (ctx: PrintContext, node: TSAsExpression, prec: number): string => {
@@ -1025,9 +1045,12 @@ const ifStatementText = (ctx: PrintContext, node: IfStatement): string =>
   )}`
 
 const statementOrBlockText = (ctx: PrintContext, node: Statement): string =>
-  Match.value(node).pipe(
-    Match.when(isNode('BlockStatement'), (n) => blockStatementText(ctx, n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      BlockStatement: (n) => blockStatementText(ctx, n),
+    }),
     Match.orElse((n) => statementText(ctx, n)),
+    Match.exhaustive,
   )
 
 const whileStatementText = (ctx: PrintContext, node: WhileStatement): string =>
@@ -1046,9 +1069,12 @@ const declarationOrExpressionText = (ctx: PrintContext, node: Node | null | unde
   Option.match(Option.fromNullishOr(node), {
     onNone: () => '',
     onSome: (value) =>
-      Match.value(value).pipe(
-        Match.when(isNode('VariableDeclaration'), (n) => variableDeclarationText(ctx, n)),
+      Match.type<Node>().pipe(
+        Match.discriminators('type')({
+          VariableDeclaration: (n) => variableDeclarationText(ctx, n),
+        }),
         Match.orElse((n) => printNodePrec(ctx, n, PREC.Sequence)),
+        Match.exhaustive,
       ),
   })
 
@@ -1056,10 +1082,13 @@ const optionalSequenceText = (ctx: PrintContext, node: Node | null | undefined):
   sequenceNodeText(ctx, node)
 
 const forInStatementText = (ctx: PrintContext, node: ForInStatement): string =>
-  `for (${Match.value(node.left).pipe(
-    Match.when(isNode('VariableDeclaration'), (n) => variableDeclarationText(ctx, n)),
+  `for (${Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      VariableDeclaration: (n) => variableDeclarationText(ctx, n),
+    }),
     Match.orElse((n) => printNodePrec(ctx, n, PREC.Sequence)),
-  )} in ${printNodePrec(ctx, node.right, PREC.Sequence)}) ${statementOrBlockText(ctx, node.body)}`
+    Match.exhaustive,
+  )(node.left)} in ${printNodePrec(ctx, node.right, PREC.Sequence)}) ${statementOrBlockText(ctx, node.body)}`
 
 const forOfStatementText = (ctx: PrintContext, node: ForOfStatement): string =>
   `${Boolean.match(node.await, {
@@ -1114,9 +1143,12 @@ const catchParamText = (ctx: PrintContext, param: BindingPattern | null | undefi
   })
 
 const catchParamBodyText = (ctx: PrintContext, param: BindingPattern): string =>
-  Match.value(param).pipe(
-    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(ctx, n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      Identifier: (n) => identifierWithOptionalText(ctx, n),
+    }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
+    Match.exhaustive,
   )
 
 const finallyClauseText = (ctx: PrintContext, finalizer: BlockStatement | null | undefined): string =>
@@ -1137,23 +1169,29 @@ const variableDeclaratorText = (ctx: PrintContext, node: VariableDeclarator): st
   )}${initializerText(ctx, node.init)}`
 
 const bindingTargetText = (ctx: PrintContext, id: BindingPattern): string =>
-  Match.value(id).pipe(
-    Match.when(isNode('Identifier'), (n) => `${bindingNameText(n)}${flagText(n.optional, '?')}`),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      Identifier: (n) => `${bindingNameText(n)}${flagText(n.optional, '?')}`,
+    }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
+    Match.exhaustive,
   )
 
 const identifierWithOptionalText = (ctx: PrintContext, node: BindingIdentifier): string =>
   `${bindingNameText(node)}${flagText(node.optional, '?')}${typeAnnotationText(ctx, node.typeAnnotation)}`
 
 const paramText = (ctx: PrintContext, param: ParamPattern): string =>
-  Match.value(param).pipe(
-    Match.when(isNode('RestElement'), (n) => restParamText(ctx, n)),
-    Match.when(isNode('TSParameterProperty'), (n) => parameterPropertyText(ctx, n)),
-    Match.when(isNode('Identifier'), (n) => formalParameterText(ctx, n)),
-    Match.when(isNode('ObjectPattern'), (n) => formalParameterText(ctx, n)),
-    Match.when(isNode('ArrayPattern'), (n) => formalParameterText(ctx, n)),
-    Match.when(isNode('AssignmentPattern'), (n) => formalParameterText(ctx, n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      RestElement: (n) => restParamText(ctx, n),
+      TSParameterProperty: (n) => parameterPropertyText(ctx, n),
+      Identifier: (n) => formalParameterText(ctx, n),
+      ObjectPattern: (n) => formalParameterText(ctx, n),
+      ArrayPattern: (n) => formalParameterText(ctx, n),
+      AssignmentPattern: (n) => formalParameterText(ctx, n),
+    }),
     Match.orElse(() => ''),
+    Match.exhaustive,
   )
 
 const restParamText = (
@@ -1172,20 +1210,26 @@ const parameterPropertyText = (
   )}`
 
 const parameterPropertyTargetText = (ctx: PrintContext, parameter: BindingPattern): string =>
-  Match.value(parameter).pipe(
-    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(ctx, n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      Identifier: (n) => identifierWithOptionalText(ctx, n),
+    }),
     Match.orElse((n) => sequenceNodeText(ctx, n)),
+    Match.exhaustive,
   )
 
 const formalParameterText = (ctx: PrintContext, param: BindingPattern): string =>
   `${decoratorsText(ctx, param.decorators)}${formalParameterBodyText(ctx, param)}`
 
 const formalParameterBodyText = (ctx: PrintContext, param: BindingPattern): string =>
-  Match.value(param).pipe(
-    Match.when(isNode('Identifier'), (n) => identifierWithOptionalText(ctx, n)),
+  Match.type<Node>().pipe(
+    Match.discriminators('type')({
+      Identifier: (n) => identifierWithOptionalText(ctx, n),
+    }),
     Match.orElse(
       (n) => `${assignmentNodeText(ctx, n)}${typeAnnotationText(ctx, bindingTypeAnnotation(n))}`,
     ),
+    Match.exhaustive,
   )
 
 const classBodyText = (ctx: PrintContext, node: ClassBody): string =>
@@ -1387,8 +1431,6 @@ const moduleReferenceText = (
     Match.orElse((n) => sequenceNodeText(ctx, n)),
   )
 
-type TypeRenderer<K extends TSType['type']> = (context: PrintContext, node: Extract<TSType, { type: K }>) => string
-
 const tsTypeListText = (ctx: PrintContext, types: readonly TSType[], separator: string): string =>
   types.map((type) => printTSTypeToString(ctx, type)).join(separator)
 
@@ -1438,51 +1480,6 @@ const printTypeQueryName = (ctx: PrintContext, node: TSTypeQuery): string =>
     Match.when(isNode('TSImportType'), (n) => printTSTypeToString(ctx, n)),
     Match.orElse((n) => printTSTypeName(ctx, n)),
   )
-
-const TS_TYPE_TEXT: { readonly [K in TSType['type']]: TypeRenderer<K> } = {
-  TSAnyKeyword: (_ctx, _n) => 'any',
-  TSStringKeyword: (_ctx, _n) => 'string',
-  TSBooleanKeyword: (_ctx, _n) => 'boolean',
-  TSNumberKeyword: (_ctx, _n) => 'number',
-  TSBigIntKeyword: (_ctx, _n) => 'bigint',
-  TSSymbolKeyword: (_ctx, _n) => 'symbol',
-  TSVoidKeyword: (_ctx, _n) => 'void',
-  TSUndefinedKeyword: (_ctx, _n) => 'undefined',
-  TSNullKeyword: (_ctx, _n) => 'null',
-  TSNeverKeyword: (_ctx, _n) => 'never',
-  TSUnknownKeyword: (_ctx, _n) => 'unknown',
-  TSObjectKeyword: (_ctx, _n) => 'object',
-  TSIntrinsicKeyword: (_ctx, _n) => 'intrinsic',
-  TSThisType: (_ctx, _n) => 'this',
-  TSTypeReference: (ctx, n) => `${printTSTypeName(ctx, n.typeName)}${typeArgumentsText(ctx, n.typeArguments)}`,
-  TSUnionType: (ctx, n) => tsTypeListText(ctx, n.types, ' | '),
-  TSIntersectionType: (ctx, n) => tsTypeListText(ctx, n.types, ' & '),
-  TSArrayType: (ctx, n) => `${arrayElementTypeText(ctx, n.elementType)}[]`,
-  TSTypeLiteral: (ctx, n) => printTSTypeLiteral(ctx, n.members),
-  TSTupleType: (ctx, n) => printTupleType(ctx, n.elementTypes),
-  TSConditionalType: (ctx, n) => `${printTSTypeToString(ctx, n.checkType)} extends ${printTSTypeToString(ctx, n.extendsType)} ? ${printTSTypeToString(ctx, n.trueType)} : ${printTSTypeToString(ctx, n.falseType)}`,
-  TSInferType: (ctx, n) => `infer ${n.typeParameter.name.name}${printTypeClause(ctx, ' extends ', n.typeParameter.constraint)}`,
-  TSTypeQuery: (ctx, n) => `typeof ${printTypeQueryName(ctx, n)}${typeArgumentsText(ctx, n.typeArguments)}`,
-  TSImportType: (ctx, n) => printTSImportType(ctx, n),
-  TSTypeOperator: (ctx, n) => `${n.operator} ${printTSTypeToString(ctx, n.typeAnnotation)}`,
-  TSMappedType: (ctx, n) => printMappedType(ctx, n),
-  TSTemplateLiteralType: (ctx, n) => printTSTemplateLiteral(ctx, n),
-  TSFunctionType: (ctx, n) => `${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
-  TSConstructorType: (ctx, n) => `${flagText(n.abstract, 'abstract ')}new ${typeParametersText(ctx, n.typeParameters)}(${paramsText(ctx, n.params)}) => ${printTSTypeToString(ctx, n.returnType.typeAnnotation)}`,
-  TSTypePredicate: (ctx, n) => printTSTypePredicate(ctx, n),
-  TSIndexedAccessType: (ctx, n) => `${printTSTypeToString(ctx, n.objectType)}[${printTSTypeToString(ctx, n.indexType)}]`,
-  TSNamedTupleMember: (ctx, n) => printNamedTupleMember(ctx, n),
-  TSLiteralType: (ctx, n) => printTSLiteralType(ctx, n.literal),
-  TSParenthesizedType: (ctx, n) => `(${printTSTypeToString(ctx, n.typeAnnotation)})`,
-  TSJSDocNullableType: (ctx, n) => printJSDocPostfixModifier(ctx, n, '?'),
-  TSJSDocNonNullableType: (ctx, n) => printJSDocPostfixModifier(ctx, n, '!'),
-  TSJSDocUnknownType: (_ctx, _n) => '?',
-  TSRestType: (ctx, n) => `...${printTSTypeToString(ctx, n.typeAnnotation)}`,
-  TSOptionalType: (ctx, n) => `${printTSTypeToString(ctx, n.typeAnnotation)}?`,
-}
-
-const printTSTypeToString = <K extends TSType['type']>(ctx: PrintContext, node: Extract<TSType, { type: K }>): string =>
-  TS_TYPE_TEXT[node.type](ctx, node)
 
 const printTSTypeName = (ctx: PrintContext, name: TSTypeReference['typeName']): string =>
   Match.value(name).pipe(
@@ -1658,27 +1655,27 @@ const privateIdentifierText = (node: Node | null | undefined): string =>
     Match.orElse(() => ''),
   )
 
-const precOf = (node: Node): number =>
-  Match.value(node).pipe(
-    Match.when(isNode('SequenceExpression'), () => PREC.Sequence),
-    Match.when(isNode('AssignmentExpression'), () => PREC.Assignment),
-    Match.when(isNode('ConditionalExpression'), () => PREC.Conditional),
-    Match.when(isNode('LogicalExpression'), (n) => logicalPrec(n.operator),
-    ),
-    Match.when(isNode('BinaryExpression'), (n) => binaryPrec(n.operator),
-    ),
-    Match.when(isNode('UnaryExpression'), () => PREC.Unary),
-    Match.when(isNode('AwaitExpression'), () => PREC.Unary),
-    Match.when(isNode('YieldExpression'), () => PREC.Unary),
-    Match.when(isNode('UpdateExpression'), () => PREC.Update),
-    Match.when(isNode('CallExpression'), () => PREC.Call),
-    Match.when(isNode('NewExpression'), () => PREC.Call),
-    Match.when(isNode('TaggedTemplateExpression'), () => PREC.Call),
-    Match.when(isNode('ImportExpression'), () => PREC.Call),
-    Match.when(isNode('MemberExpression'), () => PREC.Member),
-    Match.when(isNode('ChainExpression'), () => PREC.Member),
-    Match.orElse(() => PREC.Primary),
-  )
+const precOf = Match.type<Node>().pipe(
+  Match.discriminators('type')({
+    SequenceExpression: () => PREC.Sequence,
+    AssignmentExpression: () => PREC.Assignment,
+    ConditionalExpression: () => PREC.Conditional,
+    LogicalExpression: (n) => logicalPrec(n.operator),
+    BinaryExpression: (n) => binaryPrec(n.operator),
+    UnaryExpression: () => PREC.Unary,
+    AwaitExpression: () => PREC.Unary,
+    YieldExpression: () => PREC.Unary,
+    UpdateExpression: () => PREC.Update,
+    CallExpression: () => PREC.Call,
+    NewExpression: () => PREC.Call,
+    TaggedTemplateExpression: () => PREC.Call,
+    ImportExpression: () => PREC.Call,
+    MemberExpression: () => PREC.Member,
+    ChainExpression: () => PREC.Member,
+  }),
+  Match.orElse(() => PREC.Primary),
+  Match.exhaustive,
+)
 
 const MEMBER_OBJECT_WRAPPED_KINDS: Readonly<Record<string, true>> = {
   SequenceExpression: true,
