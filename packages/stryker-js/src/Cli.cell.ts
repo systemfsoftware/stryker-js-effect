@@ -37,12 +37,9 @@ import {
   type ConfigFileUnsupportedError,
 } from './ConfigError.schema.js'
 import {
-  type RunOutcomeDecision,
-  type RunOutcomeError,
-} from './classify-run-outcome.workflow.js'
-import {
   classifyRunOutcome,
   errorText,
+  machineConsoleLayer,
   readCapturedConsole,
   runOutcomeCode,
 } from './Envelope.js'
@@ -532,7 +529,10 @@ const readCliRoute = (
   Effect.gen(function*() {
     const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
     const command = makeStrykerCommand(requestRef)
-    const parsed = yield* Effect.result(Command.runWith(command, { version: cliPkgJson.version })(invocation.argv))
+    const machineConsole = invocation.environment.mode.mode === 'machine' ? machineConsoleLayer : Layer.empty
+    const parsed = yield* Effect.result(
+      Command.runWith(command, { version: cliPkgJson.version })(invocation.argv),
+    ).pipe(Effect.provide(machineConsole))
     const request = yield* Ref.get(requestRef)
     const drain = yield* RunEventDrain
     yield* drain.setProgressStreamFile(progressStreamFileName(request))
@@ -621,6 +621,27 @@ const survivorsInputOf = (channel: CliRead): SurvivorsAdmissionInput => ({
   basePath: channel.environment.basePath,
 })
 
+const admissionCellOf = (answer: SurvivorsAdmissionAnswer, channel: CliRead) =>
+  Match.value(answer.admission).pipe(
+    Match.tag('NoSurvivors', () =>
+      Cell.fromEffect<CliAnswer>(
+        channel.environment.runEvents.emitNullScoreVerdict({
+          stream: channel.environment.stream,
+          mode: channel.environment.mode,
+          thresholds: answer.resolvedOptions.thresholds,
+          config: answer.resolvedOptions,
+          basePath: channel.environment.basePath,
+          pathService: channel.environment.pathService,
+        }),
+      )),
+    Match.tag('Admitted', (admitted) =>
+      runCellOf({
+        ...channel,
+        options: restrictedOptionsOf(answer.resolvedOptions, answer.priorReportPath, admitted),
+      })),
+    Match.exhaustive,
+  )
+
 
 const runCellOf = (channel: CliRead) =>
   Cell.fromEffect<CliAnswer>(runEffectOf(channel.environment, channel.options))
@@ -628,37 +649,18 @@ const runCellOf = (channel: CliRead) =>
 export const strykerCliCell = Cell.flatMap(
   cliRouteCell,
   (action) =>
-    Match.valueTags(action)({
-      CliHelpRequested: () => Cell.succeed<CliAnswer>(undefined),
-      CliMergeReportsRequested: (merge) => Cell.mapInput(mergeReportsCell, () => merge.request),
-      CliRunRequested: (run) => runCellOf(run.channel),
-      CliSurvivorsRequested: (survivors) =>
+    Match.value(action).pipe(
+      Match.tag('CliHelpRequested', () => Cell.succeed<CliAnswer>(undefined)),
+      Match.tag('CliMergeReportsRequested', (merge) => Cell.mapInput(mergeReportsCell, () => merge.request)),
+      Match.tag('CliRunRequested', (run) => runCellOf(run.channel)),
+      Match.tag('CliSurvivorsRequested', (survivors) =>
         Cell.andThen(
           Cell.mapInput(survivorsAdmissionCell, () => survivorsInputOf(survivors.channel)),
-          (answer: SurvivorsAdmissionAnswer) =>
-            Match.value(answer.admission).pipe(
-              Match.tag('NoSurvivors', () =>
-                Cell.fromEffect<CliAnswer>(
-                  survivors.channel.environment.runEvents.emitNullScoreVerdict({
-                    stream: survivors.channel.environment.stream,
-                    mode: survivors.channel.environment.mode,
-                    thresholds: answer.resolvedOptions.thresholds,
-                    config: answer.resolvedOptions,
-                    basePath: survivors.channel.environment.basePath,
-                    pathService: survivors.channel.environment.pathService,
-                  }),
-                )),
-              Match.tag('Admitted', (admitted) =>
-                runCellOf({
-                  ...survivors.channel,
-                  options: restrictedOptionsOf(answer.resolvedOptions, answer.priorReportPath, admitted),
-                })),
-              Match.exhaustive,
-            ),
-        ),
-    }),
+          (answer) => admissionCellOf(answer, survivors.channel),
+        )),
+      Match.exhaustive,
+    ),
 )
-
 export interface StrykerCliEffectOptions {
   readonly argv: readonly string[]
   readonly runMutationTest: StrykerRun | undefined

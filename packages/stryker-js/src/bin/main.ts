@@ -25,8 +25,8 @@ import * as CliConfig from 'effect/unstable/cli/CliConfig'
 import * as Flag from 'effect/unstable/cli/Flag'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 
+import { strykerCliEffect } from '../Cli.cell.js'
 import { nodePlatformLayer } from '../drivers/node.js'
-import { machineConsoleLayer } from '../Envelope.js'
 import { UnsupportedNodeVersion } from './main.schema.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
@@ -165,16 +165,6 @@ const telemetryLayer: Layer.Layer<never> = Layer.unwrap(
   ),
 )
 
-const machineConsoleByModeLayer = Layer.unwrap(
-  Effect.map(
-    Effect.flatMap(OutputModeProbe, (probe) => probe.detectMode),
-    (mode) =>
-      Match.value(mode.mode).pipe(
-        Match.when('machine', () => machineConsoleLayer),
-        Match.orElse(() => Layer.empty),
-      ),
-  ),
-)
 
 const probeGroup = Layer.mergeAll(
   OutputModeProbeLive,
@@ -184,7 +174,6 @@ const probeGroup = Layer.mergeAll(
 
 const cliLayer = Layer.mergeAll(
   probeGroup,
-  machineConsoleByModeLayer.pipe(Layer.provide(probeGroup)),
   telemetryLayer,
   CliConfig.layer({
     builtIns: [

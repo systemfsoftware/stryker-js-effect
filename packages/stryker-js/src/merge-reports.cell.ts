@@ -44,7 +44,7 @@ const refuse = (reason: string) => MergeReportsFailed.make({ reason })
 
 const failReason = (reason: string): Effect.Effect<never, MergeReportsFailed> =>
   Effect.gen(function*() {
-    yield* Console.log(`stryker merge-reports: ${reason}`)
+    yield* Console.error(`stryker merge-reports: ${reason}`)
     return yield* MergeReportsFailed.make({ reason })
   })
 

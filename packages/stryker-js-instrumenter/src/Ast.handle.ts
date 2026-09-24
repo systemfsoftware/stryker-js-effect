@@ -33,7 +33,6 @@ import type {
   SwitchCase,
   TemplateElement,
   VariableDeclarator,
-  Walker,
 } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -132,7 +131,7 @@ export const spanOf = (node: Node): { start: number; end: number } | undefined =
     Option.map(Option.fromNullishOr(node.range), (range) => ({ start: range[0], end: range[1] })),
   )
 
-export const nodeType = (node: unknown): string | undefined =>
+export const nodeType = <A = unknown>(node: A): string | undefined =>
   Option.getOrUndefined(Option.map(Option.filter(Option.some(node), isAstNode), (ast) => ast.type))
 
 export function isExpressionKind(node: Node | undefined | null): node is Expression {
@@ -493,10 +492,10 @@ const pushComment = (map: Map<PrintedNode, SpannedComment[]>, node: PrintedNode,
 
 const isProgramNode = (node: Program | PrintedNode): node is Program => nodeType(node) === 'Program'
 const walkableNode = (root: Program | PrintedNode): PrintedNode =>
-  Boolean.match(isProgramNode(root), {
-    onTrue: (program) => builtProgramOf(program),
-    onFalse: (node) => node,
-  })
+  Match.value(root).pipe(
+    Match.when(isProgramNode, builtProgramOf),
+    Match.orElse((node) => node),
+  )
 const builtProgramOf = (program: Program): PrintedNode => program
 export type PrintedAstWalker = (root: Program | PrintedNode, visitors: PrintedWalkVisitors) => void
 
