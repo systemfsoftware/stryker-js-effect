@@ -58,6 +58,22 @@ const reportWithToothlessKernelFile = (
   },
 })
 
+const reportWithToothlessDifferentialSpec = (): Report.MutationTestResult => ({
+  schemaVersion: '2',
+  thresholds: { high: 80, low: 60 },
+  files: {
+    'src/subject.ts': {
+      language: 'typescript',
+      source: 'export const a = 1\n',
+      mutants: [kernelMutant('m1', ['t1', 't2'], ['t1', 't2']), kernelMutant('m2', ['t2'], ['t2'])],
+    },
+  },
+  testFiles: {
+    'tests/feat.differential.test.ts': { tests: [{ id: 't1', name: 'test t1' }] },
+    'tests/feat.workflow.property.test.ts': { tests: [{ id: 't2', name: 'test t2' }] },
+  },
+})
+
 const evaluatorServiceWith = (options: Options.PartialStrykerOptions) =>
   Effect.map(Schema.decodeUnknownEffect(Options.StrykerOptionsSchema)(options), makeTestContributionEvaluatorService)
 
@@ -210,6 +226,23 @@ Feature('test-contribution evaluator plugin')
           expect(Exit.isFailure(s.exit)).toBe(true)
           const cause = causeOfExit(s.exit)
           expect(cause).not.toBeNull()
+        }),
+      ),
+    )
+
+    scenario(
+      'A differential spec that kills nothing of its own fails the run through the evaluator service',
+      Gherkin.Do.pipe(
+        Given('an evaluator service with disableBail true')(
+          'evaluator',
+          () => evaluatorServiceWith({ disableBail: true }),
+        ),
+        When('a report whose differential spec kills nothing of its own is evaluated')(
+          'exit',
+          (s) => exitOf(s.evaluator, reportWithToothlessDifferentialSpec()),
+        ),
+        Then('the evaluation succeeds with the VerdictFail exit class')((s) => {
+          expectVerdictFail(s.exit)
         }),
       ),
     )

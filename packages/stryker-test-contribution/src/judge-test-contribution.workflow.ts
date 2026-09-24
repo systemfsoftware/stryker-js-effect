@@ -21,6 +21,9 @@ export class JudgeTestContribution extends S.TaggedClass<JudgeTestContribution>(
     '.workflow.property.test.ts',
     '.policy.property.test.ts',
     '.kernel.property.test.ts',
+    '.differential.test.ts',
+    '.conformance.test.ts',
+    '.trace.test.ts',
   ] as const
 
   static readonly [Workflow.InstrumentationBrand] = {

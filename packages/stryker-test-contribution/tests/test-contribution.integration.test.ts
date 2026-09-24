@@ -946,4 +946,117 @@ Feature('Judging test contribution under the test-contribution gate')
         }),
       ),
     )
+
+    scenario(
+      'A differential spec that kills nothing of its own fails the run by name',
+      Gherkin.Do.pipe(
+        Given('a mutation report where a differential spec only kills mutants another file also kills')(
+          'report',
+          () =>
+            Effect.succeed(
+              reportOf(
+                [
+                  mutantOf('m1', 'Killed', ['t1', 't2'], ['t1', 't2']),
+                  mutantOf('m2', 'Killed', ['t2'], ['t2']),
+                ],
+                {
+                  'tests/feat.differential.test.ts': ['t1'],
+                  'tests/feat.workflow.property.test.ts': ['t2'],
+                },
+              ),
+            ),
+        ),
+        When('the report is judged with the plugin default suffix list')(
+          'verdict',
+          (s) => Effect.sync(() => judgedWith(s.report, { suffixes: defaultSuffixes, everyKillerRecorded: true })),
+        ),
+        Then('the run fails, accusing the differential spec alone')((s) => {
+          expect(s.verdict.failed).toBe(true)
+          expect(s.verdict.toothless).toEqual(['tests/feat.differential.test.ts'])
+          expect(s.verdict.message).toContain('  - tests/feat.differential.test.ts')
+          expect(s.verdict.message).not.toContain('tests/feat.workflow.property.test.ts')
+        }),
+      ),
+    )
+
+    scenario(
+      'A conformance spec that kills nothing of its own fails the run by name',
+      Gherkin.Do.pipe(
+        Given('a mutation report where a conformance spec only kills mutants another file also kills')(
+          'report',
+          () =>
+            Effect.succeed(
+              reportOf(
+                [
+                  mutantOf('m1', 'Killed', ['t1', 't2'], ['t1', 't2']),
+                  mutantOf('m2', 'Killed', ['t2'], ['t2']),
+                ],
+                {
+                  'tests/feat.conformance.test.ts': ['t1'],
+                  'tests/earns.workflow.property.test.ts': ['t2'],
+                },
+              ),
+            ),
+        ),
+        When('the report is judged with the plugin default suffix list')(
+          'verdict',
+          (s) => Effect.sync(() => judgedWith(s.report, { suffixes: defaultSuffixes, everyKillerRecorded: true })),
+        ),
+        Then('the run fails, accusing the conformance spec alone')((s) => {
+          expect(s.verdict.failed).toBe(true)
+          expect(s.verdict.toothless).toEqual(['tests/feat.conformance.test.ts'])
+          expect(s.verdict.message).toContain('  - tests/feat.conformance.test.ts')
+        }),
+      ),
+    )
+
+    scenario(
+      'A trace spec whose kill no other file makes passes the run',
+      Gherkin.Do.pipe(
+        Given('a mutation report where a trace spec kills a mutant no other file kills')('report', () =>
+          Effect.succeed(
+            reportOf([mutantOf('m1', 'Killed', ['t1'], ['t1'])], {
+              'tests/feat.trace.test.ts': ['t1'],
+            }),
+          )),
+        When('the report is judged with the plugin default suffix list')(
+          'verdict',
+          (s) => Effect.sync(() => judgedWith(s.report, { suffixes: defaultSuffixes, everyKillerRecorded: true })),
+        ),
+        Then('the run passes, crediting the trace spec with its unique kill')((s) => {
+          expect(s.verdict.failed).toBe(false)
+          expect(s.verdict.message).toContain('kills a mutant nothing else kills')
+        }),
+      ),
+    )
+
+    scenario(
+      'A workflow property spec that kills nothing of its own is still accused under the default suffix list',
+      Gherkin.Do.pipe(
+        Given('a mutation report where a workflow property spec kills nothing another file does not kill')(
+          'report',
+          () =>
+            Effect.succeed(
+              reportOf(
+                [
+                  mutantOf('m1', 'Killed', ['t1', 't2'], ['t1', 't2']),
+                  mutantOf('m2', 'Killed', ['t1'], ['t1']),
+                ],
+                {
+                  'tests/earns.workflow.property.test.ts': ['t1'],
+                  'tests/idle.workflow.property.test.ts': ['t2'],
+                },
+              ),
+            ),
+        ),
+        When('the report is judged with the plugin default suffix list')(
+          'verdict',
+          (s) => Effect.sync(() => judgedWith(s.report, { suffixes: defaultSuffixes, everyKillerRecorded: true })),
+        ),
+        Then('the idle workflow property spec is still accused and the run still fails')((s) => {
+          expect(s.verdict.failed).toBe(true)
+          expect(s.verdict.toothless).toEqual(['tests/idle.workflow.property.test.ts'])
+        }),
+      ),
+    )
   })

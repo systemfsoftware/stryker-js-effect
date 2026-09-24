@@ -18,4 +18,4 @@ pnpm add -D @systemfsoftware/stryker-test-contribution
 }
 ```
 
-The gate polices `.workflow.property.test.ts`, `.policy.property.test.ts`, and `.kernel.property.test.ts` files. To turn the check off, remove the plugin from `plugins`.
+The gate polices `.workflow.property.test.ts`, `.policy.property.test.ts`, `.kernel.property.test.ts`, `.differential.test.ts`, `.conformance.test.ts`, and `.trace.test.ts` files. A differential, conformance, or trace spec earns its place the same way a property file does: it must kill a mutant no other test file kills. To turn the check off, remove the plugin from `plugins`.
