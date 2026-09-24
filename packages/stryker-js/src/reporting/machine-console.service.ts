@@ -109,8 +109,9 @@ const nextCount = (buffers: MachineConsoleBuffers, key: string): number =>
 
 const recordCount = (buffers: MachineConsoleBuffers, label: string | undefined): void => {
   const key = consoleLabel(label)
-  buffers.counts.set(key, nextCount(buffers, key))
-  buffers.chunks.push(`${key}: ${nextCount(buffers, key)}`)
+  const next = nextCount(buffers, key)
+  buffers.counts.set(key, next)
+  buffers.chunks.push(`${key}: ${next}`)
 }
 
 const recordTimeEnd = (buffers: MachineConsoleBuffers, label: string | undefined, nowNanos: bigint): void => {
@@ -203,5 +204,21 @@ export class MachineConsole extends Context.Service<MachineConsole, MachineConso
       machine.reset()
       return machine.console
     }),
+  )
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@effect/vitest')
+  const { Schema } = await import('effect')
+
+  it.prop(
+    '∀label,n_Count_PrintsOneThroughN',
+    [Schema.String, Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 8 }))],
+    ([label, times]) => {
+      const machine = machineConsoleOf(Clock.clockWith(Effect.succeed).pipe(Effect.runSync))
+      Array.from({ length: times }, () => machine.console.count(label))
+      const expected = Array.from({ length: times }, (_, index) => `${label}: ${index + 1}`)
+      return machine.read() === expected.join('\n')
+    },
   )
 }
