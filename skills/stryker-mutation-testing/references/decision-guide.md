@@ -6,12 +6,12 @@ content_hash: 0bf2a6
 
 # Mutation Testing Decision Guide
 
-## 1. Dual-Engine Architecture: Local V8 (`vm`) vs CI (`vitest`)
+## 1. Dual-Engine Architecture: Local In-Process `vm` vs CI `vitest`
 
-| Environment           | Runner                                     | Rationale & Tradeoffs                                                                                                                                           |
-| --------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Local Development** | In-memory `vm` runner (`testRunner: 'vm'`) | Evaluates pure tests directly in Node's V8 context with TypeScript type stripping. Eliminates process spawning latency; instant feedback loop for test writing. |
-| **CI Pipeline**       | Vitest runner (`testRunner: 'vitest'`)     | Full isolation with sandboxed worker processes. Provides accurate per-test coverage analysis and supports complex Vitest features (`vi.mock`, timers, DOM).     |
+| Environment           | Runner                                      | Rationale & Tradeoffs                                                                                                                                                                                                                                                                                                      |
+| --------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Local Development** | In-process `vm` runner (`testRunner: 'vm'`) | Runs Vitest suites in-process in a worker thread per runner, loading each test file as native ESM through Node's module hooks. No child process and no bundler step; your `vitest` install supplies the matchers, mocks, and snapshots. Use `testRunner: 'vitest'` for browser-mode suites, which the `vm` runner refuses. |
+| **CI Pipeline**       | Vitest runner (`testRunner: 'vitest'`)      | Full isolation with sandboxed worker processes. Provides accurate per-test coverage analysis and supports complex Vitest features (`vi.mock`, timers, DOM).                                                                                                                                                                |
 
 ### Dynamic Switch via `isCi`
 

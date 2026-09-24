@@ -30,6 +30,8 @@ import {
   TurboDryRun,
   UnreadableVersion,
 } from './bake-key.schema.js'
+import type { WorkspaceCatalogs } from './catalog-resolution.js'
+import { parseFixtureManifest, parseWorkspaceCatalogs, resolveCatalogSpecs } from './catalog-resolution.js'
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
@@ -148,6 +150,63 @@ const readTreeBytes = (root: string) =>
     )
   })
 
+const WORKSPACE_CATALOGS_FILE = 'pnpm-workspace.yaml'
+const MANIFEST_FILE_NAME = 'package.json'
+const MANIFEST_JSON_INDENT = 2
+
+const isManifestPath = (relativePath: string): boolean => relativePath.split('/').pop() === MANIFEST_FILE_NAME
+
+const loadWorkspaceCatalogs = (environment: BakeEnvironment) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const text = yield* fs.readFileString(path.join(environment.repoRoot, WORKSPACE_CATALOGS_FILE))
+    return parseWorkspaceCatalogs(text)
+  })
+
+const resolveManifestBytes = (manifest: string, bytes: Uint8Array, catalogs: WorkspaceCatalogs) =>
+  Effect.gen(function*() {
+    const parsed = yield* Effect.fromResult(parseFixtureManifest(manifest, bytes))
+    const resolved = yield* Effect.fromResult(resolveCatalogSpecs(manifest, parsed, catalogs))
+    return new TextEncoder().encode(`${JSON.stringify(resolved, null, MANIFEST_JSON_INDENT)}\n`)
+  })
+
+const resolveTreeManifests = (label: string, files: ReadonlyArray<FileBytes>, catalogs: WorkspaceCatalogs) =>
+  Effect.forEach(
+    files,
+    (file) =>
+      Boolean.match(isManifestPath(file.relativePath), {
+        onTrue: () =>
+          Effect.map(
+            resolveManifestBytes(`${label}/${file.relativePath}`, file.bytes, catalogs),
+            (bytes): FileBytes => ({
+              relativePath: file.relativePath,
+              bytes,
+            }),
+          ),
+        onFalse: () => Effect.succeed(file),
+      }),
+    { concurrency: 1 },
+  )
+
+const rewriteStagedManifests = (label: string, fixtureDir: string, catalogs: WorkspaceCatalogs) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const entries = yield* listTree(fixtureDir)
+    yield* Effect.forEach(
+      Array.filter(entries, (entry) => entry.kind === 'file' && isManifestPath(entry.relativePath)),
+      (entry) =>
+        Effect.gen(function*() {
+          const manifestPath = path.join(fixtureDir, entry.relativePath)
+          const bytes = yield* fs.readFile(manifestPath)
+          const resolved = yield* resolveManifestBytes(`${label}/${entry.relativePath}`, bytes, catalogs)
+          yield* fs.writeFile(manifestPath, resolved)
+        }),
+      { discard: true, concurrency: 1 },
+    )
+  })
+
 const listFixtureIds = (environment: BakeEnvironment) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -156,7 +215,7 @@ const listFixtureIds = (environment: BakeEnvironment) =>
     const kept = yield* Effect.forEach(
       entries,
       (entry) =>
-        Effect.map(fs.exists(path.join(environment.resourcesDir, entry, 'package.json')), (exists) =>
+        Effect.map(fs.exists(path.join(environment.resourcesDir, entry, MANIFEST_FILE_NAME)), (exists) =>
           Boolean.match(exists, {
             onTrue: () => [entry],
             onFalse: () => [],
@@ -166,7 +225,12 @@ const listFixtureIds = (environment: BakeEnvironment) =>
     return kept.flat().sort()
   })
 
-const stageFixtures = (environment: BakeEnvironment, stagingDir: string, fixtureIds: ReadonlyArray<string>) =>
+const stageFixtures = (
+  environment: BakeEnvironment,
+  stagingDir: string,
+  fixtureIds: ReadonlyArray<string>,
+  catalogs: WorkspaceCatalogs,
+) =>
   Effect.forEach(
     fixtureIds,
     (fixtureId) =>
@@ -176,6 +240,7 @@ const stageFixtures = (environment: BakeEnvironment, stagingDir: string, fixture
         const destination = path.join(stagingDir, fixtureId)
         yield* fs.copy(path.join(environment.resourcesDir, fixtureId), destination)
         yield* fs.remove(path.join(destination, 'node_modules'), { recursive: true, force: true })
+        yield* rewriteStagedManifests(fixtureId, destination, catalogs)
       }),
     { discard: true, concurrency: 1 },
   )
@@ -227,7 +292,7 @@ const canonicalJson = (value: unknown): unknown =>
   )
 
 const canonicalBytes = (relativePath: string, bytes: Uint8Array): Uint8Array =>
-  Boolean.match(relativePath.split('/').pop() === 'package.json', {
+  Boolean.match(isManifestPath(relativePath), {
     onTrue: () => new TextEncoder().encode(JSON.stringify(canonicalJson(JSON.parse(new TextDecoder().decode(bytes))))),
     onFalse: () => bytes,
   })
@@ -393,6 +458,7 @@ const deriveBakeCacheKey = (
   packs: ReadonlyArray<PackedPackage>,
   fixtureIds: ReadonlyArray<string>,
   scratch: string,
+  catalogs: WorkspaceCatalogs,
 ): Effect.Effect<string, ExitFailure | PlatformError | HarnessError, BakePlatform> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -413,10 +479,10 @@ const deriveBakeCacheKey = (
     const fixtureTrees = yield* Effect.forEach(
       fixtureIds,
       (fixtureId) =>
-        Effect.map(readTreeBytes(path.join(environment.resourcesDir, fixtureId)), (files) => ({
-          fixtureId,
-          files,
-        })),
+        Effect.gen(function*() {
+          const files = yield* readTreeBytes(path.join(environment.resourcesDir, fixtureId))
+          return { fixtureId, files: yield* resolveTreeManifests(fixtureId, files, catalogs) }
+        }),
       { concurrency: 1 },
     )
     return yield* bakeCacheKey(crypto, {
@@ -439,7 +505,8 @@ const bake = (environment: BakeEnvironment) =>
       yield* fs.makeDirectory(packsDir)
       const packs = yield* packWorkspaceClosure(environment, packsDir)
       const fixtureIds = yield* listFixtureIds(environment)
-      const key = yield* deriveBakeCacheKey(environment, packs, fixtureIds, scratch)
+      const catalogs = yield* loadWorkspaceCatalogs(environment)
+      const key = yield* deriveBakeCacheKey(environment, packs, fixtureIds, scratch, catalogs)
       const entryDir = path.join(environment.bakedCacheRoot, key)
       const entryExists = yield* fs.exists(entryDir)
       return yield* Boolean.match(entryExists, {
@@ -450,7 +517,7 @@ const bake = (environment: BakeEnvironment) =>
             yield* Effect.gen(function*() {
               yield* fs.remove(stagingDir, { recursive: true, force: true })
               yield* fs.makeDirectory(stagingDir, { recursive: true })
-              yield* stageFixtures(environment, stagingDir, fixtureIds)
+              yield* stageFixtures(environment, stagingDir, fixtureIds, catalogs)
               const bakeScript = yield* fs.readFileString(environment.bakeScriptPath)
               yield* jobs.requireCleanExit(
                 STEP_BAKE,

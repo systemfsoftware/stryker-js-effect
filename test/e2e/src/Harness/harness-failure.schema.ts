@@ -81,12 +81,36 @@ export class BlessRefused extends Schema.TaggedError<BlessRefused>()('BlessRefus
   }
 }
 
+export class MalformedFixtureManifest extends Schema.TaggedError<MalformedFixtureManifest>()(
+  'MalformedFixtureManifest',
+  {
+    manifest: Schema.String,
+    detail: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `${this.manifest}: ${this.detail}`
+  }
+}
+
+export class UnresolvedCatalogSpec extends Schema.TaggedError<UnresolvedCatalogSpec>()('UnresolvedCatalogSpec', {
+  manifest: Schema.String,
+  packageName: Schema.String,
+  catalog: Schema.String,
+}) {
+  override get message(): string {
+    return `${this.manifest}: "${this.packageName}" is missing from the ${this.catalog} catalog in pnpm-workspace.yaml`
+  }
+}
+
 export type HarnessFailure =
   | BlessRefused
   | ExitFailure
   | FixtureMissingFailure
   | GuestJobFailure
   | GuestSignaledFailure
+  | MalformedFixtureManifest
   | PackFailure
+  | UnresolvedCatalogSpec
 
 export type HarnessError = Config.ConfigError | HarnessFailure | PlatformError

@@ -21,7 +21,7 @@ export namespace Engine {
 
 // @public (undocumented)
 export namespace Plugin {
-    export { AnyPluginDescriptor, AnyWorkerPluginDescriptor, AnyWorkerPluginSource, EvaluatorPluginDescriptor, EvaluatorPluginSource, Framework, Ignorer, LoadedPlugins, Node_2 as Node, PluginDescriptor, PluginDescriptorOf, PluginKind, PluginSource, PooledTestRunner, PooledTestRunnerError, REPORTER_EVENT_BATCH_BOUND, ReporterStage, ReporterWorkerClient, SpawnReporterWorkerParams, TestRunnerBuildContext, VmFileUrl, VmPlatform, VmRunner, VmTestRunnerConfig, WorkerPluginDescriptor, WorkerPluginSource, buildTestRunner, isCommandRunner, isVmRunner, reporterWorkerFactory, spawnReporterWorker, vmTestRunner };
+    export { AnyPluginDescriptor, AnyWorkerPluginDescriptor, AnyWorkerPluginSource, EvaluatorPluginDescriptor, EvaluatorPluginSource, Framework, Ignorer, LoadedPlugins, Node_2 as Node, PluginDescriptor, PluginDescriptorOf, PluginKind, PluginSource, PooledTestRunner, PooledTestRunnerError, REPORTER_EVENT_BATCH_BOUND, ReporterStage, ReporterWorkerClient, SpawnReporterWorkerParams, TestRunnerBuildContext, VmTestRunnerConfig, WorkerPluginDescriptor, WorkerPluginSource, buildTestRunner, isCommandRunner, isVmRunner, reporterWorkerFactory, spawnReporterWorker, vmTestRunner };
 }
 
 // @public (undocumented)

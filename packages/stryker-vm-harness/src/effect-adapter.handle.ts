@@ -31,7 +31,7 @@ import type {
   PropBinder,
   PropertyTimeout,
 } from './effect-adapter.schema.js'
-import type { HarnessTestContext, RegistryTaskInfo, RegistryTestApi } from './registry.schema.js'
+import type { HarnessTestContext, RegistrySuiteApi, RegistryTestApi, RunnerTest } from './registry.schema.js'
 
 type AnyDecoded<A = unknown> = A
 
@@ -231,7 +231,9 @@ const flakyTest = <A, E, R2>(
     Effect.orDie,
   )
 
-type LayeredOverrides<R> = Omit<LayeredVitestIt<R>, keyof RegistryTestApi>
+type LayeredOverrides<R> = Omit<LayeredVitestIt<R>, keyof RegistryTestApi> & {
+  readonly describe: RegistrySuiteApi
+}
 
 const makeLayered = <R>(base: RegistryTestApi, overrides: LayeredOverrides<R>): LayeredVitestIt<R> => {
   const forwarding = (...args: ReadonlyArray<AnyDecoded>): AnyDecoded => {
@@ -316,7 +318,7 @@ interface LayerScopeHandle {
 }
 
 const beforeBlockHook = (
-  blockTaskSet: ReadonlySet<RegistryTaskInfo>,
+  blockTaskSet: ReadonlySet<RunnerTest>,
   remaining: { value: number },
   opened: LayerScopeHandle,
   ctx: HarnessTestContext,
@@ -338,7 +340,7 @@ const runBlock = <R>(
 ): void => {
   const firstNewTest = context.tests.length
   body(makeIt(context.api))
-  const blockTaskSet = new Set<RegistryTaskInfo>(context.tests.slice(firstNewTest))
+  const blockTaskSet = new Set(context.tests.slice(firstNewTest).map((test) => test.task))
   const remaining = { value: blockTaskSet.size }
   context.hooks.beforeEach((ctx) => beforeBlockHook(blockTaskSet, remaining, opened, ctx))
   context.hooks.afterAll(() => opened.close())

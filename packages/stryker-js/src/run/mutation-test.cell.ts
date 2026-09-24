@@ -740,6 +740,11 @@ const isPlannable = (mutant: Mutant.Mutant) => Result.isSuccess(S.decodeResult(C
 
 const DROPPED_IDS_IN_WARNING = 5
 
+const configuredTestFilesOf = (run: {
+  readonly options: { readonly testFiles: readonly string[] }
+  readonly project: { readonly testFiles: readonly string[] }
+}): readonly string[] => run.options.testFiles.length === 0 ? [] : run.project.testFiles
+
 const partitionPlannable = (mutants: readonly Mutant.Mutant[]) => ({
   plannable: mutants.filter(isPlannable),
   dropped: mutants.filter((candidate) => !isPlannable(candidate)),
@@ -818,7 +823,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
     const env = yield* RunEnvironment
     const checkerPool = yield* makeCheckerPool(prev, env.basePath)
     const testFiles = yield* Effect.map(
-      sandboxFilesOf(prev.sandbox, prev.project.testFiles),
+      sandboxFilesOf(prev.sandbox, configuredTestFilesOf(prev)),
       (pairs) => pairs.map(([, sandboxFileName]) => sandboxFileName),
     )
     const testRunnerPool: Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError> = yield* Pool

@@ -20,7 +20,6 @@ import {
 } from './pooled-test-runner.handle.js'
 import type { PooledTestRunnerError } from './TestRunner.schema.js'
 import { isVmRunner, vmTestRunner } from './VmRunner.resource.js'
-import { VmRunner } from './VmRunner.service.js'
 import { makeWorkerClient } from './worker-client.resource.js'
 import type { WorkerBootError } from './Worker.schema.js'
 import type { IdGeneratorShape } from './Worker.service.js'
@@ -126,22 +125,18 @@ const commandRunnerEffect = (
     Effect.map((spawner) => commandRunner(context, spawner).pipe(withTimeout, withRetry)),
   )
 
-const inProcessRunner = (
-  context: TestRunnerBuildContext,
-): Option.Option<
-  Effect.Effect<
-    PooledTestRunner,
-    PooledTestRunnerError,
-    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | VmRunner
-  >
-> =>
+type InProcessRunnerEffects = Effect.Effect<
+  PooledTestRunner,
+  PooledTestRunnerError,
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope
+>
+
+const inProcessRunner = (context: TestRunnerBuildContext): Option.Option<InProcessRunnerEffects> =>
   Match.value(context.options.testRunner).pipe(
     Match.when(isCommandRunner, () => Option.some(commandRunnerEffect(context))),
     Match.when(
       isVmRunner,
-      (): Option.Option<
-        Effect.Effect<PooledTestRunner, PooledTestRunnerError, VmRunner>
-      > =>
+      () =>
         Option.some(
           vmTestRunner({
             testFiles: context.testFiles,
@@ -163,7 +158,7 @@ export const buildTestRunner: {
   ): Effect.Effect<
     PooledTestRunner,
     PooledTestRunnerError | ChildRunnerError,
-    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | VmRunner | WorkerLauncher
+    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | WorkerLauncher
   >
   <ChildRunnerError>(
     childProcessRunner: Effect.Effect<
@@ -176,7 +171,7 @@ export const buildTestRunner: {
   ) => Effect.Effect<
     PooledTestRunner,
     PooledTestRunnerError | ChildRunnerError,
-    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | VmRunner | WorkerLauncher
+    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | WorkerLauncher
   >
 } = dual(
   2,
@@ -190,16 +185,10 @@ export const buildTestRunner: {
   ): Effect.Effect<
     PooledTestRunner,
     PooledTestRunnerError | ChildRunnerError,
-    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | VmRunner | WorkerLauncher
+    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope | WorkerLauncher
   > =>
     Option.match(inProcessRunner(context), {
-      onSome: (
-        inProcess: Effect.Effect<
-          PooledTestRunner,
-          PooledTestRunnerError,
-          ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | VmRunner
-        >,
-      ) => inProcess,
+      onSome: (inProcess: InProcessRunnerEffects) => inProcess,
       onNone: (): Effect.Effect<
         PooledTestRunner,
         PooledTestRunnerError | ChildRunnerError,

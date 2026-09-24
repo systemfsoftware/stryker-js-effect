@@ -112,11 +112,11 @@ Feature('Planning a run from registered suites and tests')
                 suiteApi.fails('failing test', () => {
                   hookLog.push('failing test ran')
                 })
-                suiteApi.each([1, 2], 'each test %i', () => {
-                  hookLog.push('each test ran')
+                suiteApi.each([1, 2], 'each test %i', (row) => {
+                  hookLog.push(`each test ran ${String(row)}`)
                 })
-                suiteApi.for([1, 2], 'for test %i', () => {
-                  hookLog.push('for test ran')
+                suiteApi.for([1, 2], 'for test %i', (row) => {
+                  hookLog.push(`for test ran ${String(row)}`)
                 })
               })
               api.describe.skip('skipped suite', () => {})
@@ -126,8 +126,12 @@ Feature('Planning a run from registered suites and tests')
               api.it.only('only it', () => {})
               api.it.todo('todo it')
               api.it.fails('fails it', () => {})
-              api.it.each([1, 2], 'each it %i', () => {})
-              api.it.for([1, 2], 'for it %i', () => {})
+              api.it.each([1, 2], 'each it %i', (row) => {
+                hookLog.push(`each it ran ${String(row)}`)
+              })
+              api.it.for([1, 2], 'for it %i', (row) => {
+                hookLog.push(`for it ran ${String(row)}`)
+              })
               api.test('top-level test', { timeout: 100 }, () => {})
               api.test('top-level test direct', () => {})
               api.it('it with options', { timeout: 50 }, () => {})
@@ -208,14 +212,12 @@ Feature('Planning a run from registered suites and tests')
         Then('the hooks fire in the drained lifecycle order')((s) => {
           expect(s.fixture.hookLog).toEqual([
             'root before all',
-            'root before all',
             'suite before all',
             'root before each',
             'suite before each',
             'only test ran',
             'suite after each',
             'root after each',
-            'root after all',
             'suite after all',
             'root before each',
             'root after each',
@@ -365,7 +367,7 @@ Feature('Planning a run from registered suites and tests')
           expect(namesOf(tests)).toEqual(['row 1', 'row 2'])
           expect(statusByName(tests)).toEqual({ 'row 1': 'success', 'row 2': 'success' })
           expect(s.fixture.rows).toEqual([1, 2])
-          expect(s.fixture.argCounts).toEqual([2, 2])
+          expect(s.fixture.argCounts).toEqual([1, 1])
         }),
       ),
     )
@@ -398,7 +400,7 @@ Feature('Planning a run from registered suites and tests')
           const tests = drainedTestsOf(s.outcome)
           expect(namesOf(tests)).toEqual(['n a 1', 'n b 2'])
           expect(s.fixture.rendered).toEqual(['a 1', 'b 2'])
-          expect(s.fixture.argCounts).toEqual([3, 3])
+          expect(s.fixture.argCounts).toEqual([2, 2])
         }),
       ),
     )
@@ -492,8 +494,8 @@ Feature('Planning a run from registered suites and tests')
             'skipped': 'skipped',
           })
           expect(messageByName(plainTests)['plain failing']).toBe('the plain test threw')
-          expect(messageByName(plainTests)['failing as designed']).toBe('the inverted test threw')
-          expect(messageByName(plainTests)['passing against design']).toContain('was expected to fail')
+          expect(messageByName(plainTests)['failing as designed']).toBe(undefined)
+          expect(messageByName(plainTests)['passing against design']).toBe('Expect test to fail')
           expect(s.plainFixture.ran).toEqual(['plain passing ran', 'passing against design ran'])
           expect(statusByName(drainedTestsOf(focusedOutcome))).toEqual({
             focused: 'success',
@@ -538,7 +540,6 @@ Feature('Planning a run from registered suites and tests')
         ),
         Then('the suite hooks surround only their own test')((s) => {
           expect(s.fixture.hookLog).toEqual([
-            'root before all',
             'root before all',
             'suite before each',
             'suite after each',

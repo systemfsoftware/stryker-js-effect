@@ -6,12 +6,12 @@
 
 // @public (undocumented)
 export namespace Assertions {
-    export { guardedExpect, guardedVi };
+    export { CreateExpect, dispatchingExpect, guardedExpect, guardedVi };
 }
 
 // @public (undocumented)
 export namespace Drain {
-    export { DrainCompleted, DrainOutcome, DrainRegistryCommand, DrainTimedOut, DrainedStatus, DrainedTest, DrainedTestSchema, TestOutcome, TestOutcomeSchema, executeDrainRegistry as drainRegistry, drainRegistry as pureDrainRegistry };
+    export { DrainCompleted, DrainOutcome, DrainRegistryCommand, DrainRunOptions, DrainTestOutcome, DrainTestRef, DrainTimedOut, DrainedStatus, DrainedTest, DrainedTestSchema, TestOutcome, TestOutcomeSchema, executeDrainRegistry as drainRegistry, executeDrainRegistry, drainRegistry as pureDrainRegistry };
 }
 
 // @public (undocumented)
@@ -21,12 +21,17 @@ export namespace EffectAdapter {
 
 // @public (undocumented)
 export namespace Registry {
-    export { createHarnessApi, createRegistry, formatEachName };
+    export { AroundHookFunction, AroundKind, AroundRegistration, AroundSets, BenchFactoryLike, BuilderExtendApi, BuilderFixtureOptions, BuilderOverrideApi, BuilderScopeName, BuilderScopedApi, ChainableVariantApi, DEFAULT_TITLE_VALUE_FORMAT_TRUNCATE, EachApi, EachFn$1 as EachFn, EachNameOptions, EachSuiteBody, EachValue, EachValueFormatter, ForApi, ForFn, ForSuiteBody, HarnessApi, HarnessHookFunction, HarnessTestContext, HarnessTestFunction, HookApi, HookCleanup, HookKind, HookSets, ParsedTestArguments, PlanRunOptions, PlannedTest, RegisteredHook, RegisteredSuite, RegisteredTest, RegistrySuiteApi, RegistryTaskInfo, RegistryTestApi, RetryOptions, RetryTestError, RunnerFile, RunnerSuite, RunnerTaskResult, RunnerTest, SuiteBody, SuiteEachApi, SuiteForApi, SuiteOptions, SuiteRegistration, SuiteVariants, TagDeclaration, TagPolicy, TaskAnnotation, TaskError, TaskMeta, TemplateRow, TestContext, TestFunctionWithTimeout, TestMode, TestOptions, TestRegistration, TestRegistry, VariantApi, VmExpectState, createDescribe, createHarnessApi, createIt, createRegistry, formatEachName, fullNameOf, hooksFor, planRun, suiteHooksFor, validateTagsForFile };
 }
 
 // @public (undocumented)
 export namespace Sandbox {
-    export { HarnessModuleBuiltin, VmRunnerGlobalState, activateSandbox, deactivateSandbox, harnessSourceFor, harnessUrlForSpecifier, installInterception, nativeImport, readGlobalState, uninstallInterception, writeGlobalState };
+    export { ActivateSandboxCommand, EffectVitestSurface, HarnessModuleBuiltin, InstallInterceptionCommand, InterceptionRuntime, ProvidedValue, RegisterHooksFn, VmRunnerGlobalState, activateSandbox, deactivateSandbox, expectStateOf, globalConfigOf, harnessSourceFor, harnessUrlForSpecifier, installInterception, installWorkerState, mockResetConfigOf, nativeImport, readGlobalState, resetExpectStateFor, restoreHostWorkerState, setWorkerCurrentTask, setWorkerTestPath, uninstallInterception, withRunnerTask, writeGlobalState };
+}
+
+// @public (undocumented)
+export namespace Session {
+    export { SNAPSHOT_DIRECTORY, SNAPSHOT_SUFFIX, SnapshotClientLike, SnapshotEnvironmentLike, SnapshotEnvironmentOptions, SnapshotStackFrame, SnapshotStateOptionsLike, SnapshotSummaryLike, SnapshotSupport, SnapshotTask, SnapshotTest, SnapshotUpdateMode, StrykerNamespace, VM_TEST_FILES_BAG_KEY, VM_VITEST_BAG_KEY, VitestModuleNamespace, VmAlias, VmAliasFind, VmAliasFindSchema, VmAliasSchema, VmDiscoveredTestFiles, VmExpectConfig, VmExpectConfigSchema, VmFileContext, VmGlobals, VmGlobalsStage, VmGraphContext, VmLoadStage, VmMutantCoverage, VmMutantCoverageSchema, VmPluginBag, VmPluginHost, VmProjectConfig, VmProjectConfigSchema, VmResolveStage, VmRunContext, VmRunKind, VmRunKindSchema, VmRunRequest, VmRunRequestSchema, VmRunResponse, VmRunResponseSchema, VmSession, VmSessionOptions, VmSessionOptionsSchema, VmSessionPlugin, VmStageArgs, VmStageName, VmTagDefinition, VmTagDefinitionSchema, VmTestContext, VmTestOutcome, VmTestResult, VmTestResultSchema, VmTestStatus, VmTestStatusSchema, VmTransformResult, VmVitestBridgeOptions, VmVitestConfig, VmVitestConfigSchema, VmVitestHostHandle, VmVitestRuntime, VmWorkerClient, VmWorkerClientHooks, VmWorkerRequest, VmWorkerRequestSchema, VmWorkerResponse, VmWorkerResponseSchema, armMutant, builtinPlugins, createMockingPlugin, createSnapshotEnvironment, createSnapshotSupport, createVitestConfigPlugin, createVmSession, createVmVitestRuntime, createVmWorkerClient, currentSnapshotTest, defaultSnapshotPath, definePlugin, ensureVitestWorkerState, environmentPlugin, globalsPlugin, hostStrykerNamespace, readArmedMutant, readMutantCoverage, resetMutantCoverage, runLoadStage, runResolveStage, runStage, runnerStatePlugin, setCurrentTestId, setSnapshotTest, setWorkerTestFile, setupFilesPlugin, snapshotClientOf, snapshotTaskOf, snapshotUpdateMode, snapshotsPlugin, transformPlugin, vitestConfigPlugin, writeArmedMutant };
 }
 
 // (No @packageDocumentation comment for this package)

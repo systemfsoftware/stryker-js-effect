@@ -1,0 +1,1 @@
+globalThis['projectMarker'] = 'dom-setup'

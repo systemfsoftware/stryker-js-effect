@@ -1,44 +1,103 @@
-import * as Boolean from 'effect/Boolean'
-import * as Match from 'effect/Match'
+import { dual } from 'effect/Function'
 
-type AnyDecoded<A = unknown> = A
+import { reflectiveValue } from './mocking/mocker.js'
+import { workerStateOf } from './sandbox-state.handle.js'
+import { currentSnapshotTest, type SnapshotTask, snapshotTaskOf, type SnapshotTest } from './snapshot-test.js'
 
-const unsupportedSnapshot = (): never => {
-  throw new Error(
-    "Snapshot assertions (toMatchSnapshot, toMatchInlineSnapshot) are not supported by the in-memory 'vm' runner. Use testRunner: 'vitest' for suites that need snapshots.",
-  )
+interface ExpectWithTest {
+  readonly withTest: (test: SnapshotTask) => object
 }
 
-const unsupportedMocking = (name: string): never => {
-  throw new Error(
-    `vi.${name} is not supported by the in-memory 'vm' runner. Use testRunner: 'vitest' for suites that need module mocking.`,
-  )
+const isObjectLike = <A = unknown>(value: A): value is A & object => typeof value === 'object' && value !== null
+
+const asNonNullObject = <A = unknown>(value: A): object | undefined => isObjectLike(value) ? value : undefined
+
+const hasTestTag = (value: object): boolean => typeof Reflect.get(value, 'withTest') === 'function'
+
+const isExpectWithTest = <A = unknown>(value: A): value is A & ExpectWithTest =>
+  isObjectLike(value) && hasTestTag(value)
+
+const taggedAssertion = (assertion: ExpectWithTest, test: SnapshotTest): object =>
+  assertion.withTest(snapshotTaskOf(test))
+
+const withCurrentTest = <A = unknown>(assertion: A, test: SnapshotTest): A | object =>
+  isExpectWithTest(assertion) ? taggedAssertion(assertion, test) : assertion
+
+const flagCurrentTest = <A = unknown>(assertion: A): A | object => {
+  const test = currentSnapshotTest()
+  return test === undefined ? assertion : withCurrentTest(assertion, test)
 }
 
-const isSnapshotProp = (property: PropertyKey): boolean =>
-  Boolean.or(property === 'toMatchSnapshot', property === 'toMatchInlineSnapshot')
+interface ExpectCall {
+  (value: object, message?: string): object
+}
 
-const isMockProp = (property: PropertyKey): boolean => Boolean.or(property === 'mock', property === 'hoisted')
+const isExpectCall = (value: object): value is ExpectCall => typeof value === 'function'
 
-const memberOf = (target: object, property: PropertyKey, receiver: AnyDecoded): AnyDecoded => {
-  const value: AnyDecoded = Reflect.get(target, property, receiver)
-  return value
+/**
+ * Vitest's own `expect` factory (`createExpect(test)`): a fresh `expect` whose
+ * every assertion is tagged with the test it was created for. The vm runner
+ * needs it because `expect.soft`, `expect.poll`, and `expect(...).resolves`
+ * resolve their test from that tag, and the global `expect` has none.
+ */
+export type CreateExpect = (task: object) => object
+
+const currentRunnerTask = (): object | undefined => {
+  const workerState = workerStateOf()
+  return workerState === undefined
+    ? undefined
+    : asNonNullObject(Reflect.get(workerState, 'current', workerState))
+}
+
+const builtExpectOf = (perTask: WeakMap<object, object>, createExpect: CreateExpect, task: object): object => {
+  const built = createExpect(task)
+  perTask.set(task, built)
+  return built
+}
+
+const expectForTask = (perTask: WeakMap<object, object>, createExpect: CreateExpect, task: object): object => {
+  const cached = perTask.get(task)
+  return cached === undefined ? builtExpectOf(perTask, createExpect, task) : cached
+}
+
+const dispatcherExpect = (real: object, createExpect: CreateExpect): object => {
+  const perTask = new WeakMap<object, object>()
+  const expectFor = (): object => {
+    const task = currentRunnerTask()
+    return task === undefined ? real : expectForTask(perTask, createExpect, task)
+  }
+  return new Proxy(real, {
+    apply(_target, thisArg, args) {
+      const inner = expectFor()
+      return isExpectCall(inner) ? reflectiveValue(Reflect.apply(inner, thisArg, args)) : inner
+    },
+    get(target, key, receiver) {
+      const inner = expectFor()
+      return key in inner
+        ? reflectiveValue(Reflect.get(inner, key, inner))
+        : reflectiveValue(Reflect.get(target, key, receiver))
+    },
+  })
 }
 
 export const guardedExpect = (real: object): object =>
   new Proxy(real, {
-    get: (target, property, receiver) =>
-      Match.value(isSnapshotProp(property)).pipe(
-        Match.when(true, () => unsupportedSnapshot),
-        Match.orElse(() => memberOf(target, property, receiver)),
-      ),
+    apply(target, thisArg, args) {
+      return isExpectCall(target)
+        ? flagCurrentTest(reflectiveValue(Reflect.apply(target, thisArg, args)))
+        : target
+    },
   })
 
-export const guardedVi = (real: object): object =>
-  new Proxy(real, {
-    get: (target, property, receiver) =>
-      Match.value(isMockProp(property)).pipe(
-        Match.when(true, () => () => unsupportedMocking(String(property))),
-        Match.orElse(() => memberOf(target, property, receiver)),
-      ),
-  })
+/**
+ * The same guard as {@link guardedExpect}, but backed by Vitest's `createExpect`
+ * factory so every assertion is tagged with the test it was created for.
+ * Data-last (`dispatchingExpect(createExpect)(real)`) and data-first
+ * (`dispatchingExpect(real, createExpect)`) both resolve to the dispatcher.
+ */
+export const dispatchingExpect: {
+  (createExpect: CreateExpect): (real: object) => object
+  (real: object, createExpect: CreateExpect): object
+} = dual(2, (real: object, createExpect: CreateExpect): object => dispatcherExpect(real, createExpect))
+
+export const guardedVi = (real: object): object => real

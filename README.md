@@ -4,7 +4,7 @@
 [![Effect: 4.x](https://img.shields.io/badge/Effect-4.0_RC-purple.svg)](https://effect.website)
 [![CI](https://github.com/systemfsoftware/stryker-js-effect/actions/workflows/release.yml/badge.svg)](https://github.com/systemfsoftware/stryker-js-effect/actions)
 
-> 🔬 **stryker-js-effect** is an Effect 4 mutation testing framework for TypeScript and JavaScript that replaces slow process-forking runners with in-memory V8 execution, standard ESM plugin resolution, and real-time NDJSON event streams.
+> 🔬 **stryker-js-effect** is an Effect 4 mutation testing framework for TypeScript and JavaScript that replaces slow process-forking runners with in-process worker-thread execution, standard ESM plugin resolution, and real-time NDJSON event streams.
 
 Stryker introduces synthetic bugs (mutants) into source code to verify whether test suites catch behavioral regressions or merely pad line coverage metrics.
 
@@ -12,6 +12,8 @@ Stryker introduces synthetic bugs (mutants) into source code to verify whether t
 pnpm add -D @systemfsoftware/stryker-js
 pnpm exec stryker run
 ```
+
+The default `vm` runner loads your suites through your project's `vitest`, so `vitest` must be installed next to your tests.
 
 ---
 
@@ -28,18 +30,18 @@ A high mutation score guarantees test assertions catch regressions rather than j
 
 ---
 
-## ⚡ Dual-Engine Workflow: In-Memory V8 vs Vitest Worker Sandbox
+## ⚡ Dual-Engine Workflow: In-Process `vm` vs Vitest Worker Sandbox
 
 Mutation testing feedback latency slows down local development when every mutant forks new child processes. Stryker JS Effect provides a dual execution architecture configured through `StrykerConfig.define`:
 
-1. **Local Developer Loop (`testRunner: 'vm'`)**: Runs pure unit tests inside Node's native V8 VM with zero process-forking overhead and native TypeScript type stripping.
+1. **Local Developer Loop (`testRunner: 'vm'`)**: The default runner. Runs your Vitest suites in-process in a worker thread per test runner, loading each test file as native ESM through Node's module hooks. No child process and no bundler step; the matchers, mocks, and snapshots come from the `vitest` installed in your project.
 2. **CI Regression Gate (`testRunner: 'vitest'`)**: Executes integration suites in isolated Vitest worker threads with per-test coverage analysis.
 
 ```ts
 import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
 export default StrykerConfig.define(({ isCi }) => ({
-  // In-memory V8 locally for instant feedback; isolated Vitest workers in CI
+  // In-process vm locally for instant feedback; isolated Vitest workers in CI
   testRunner: isCi ? 'vitest' : 'vm',
   checkers: ['typescript'],
   plugins: [
@@ -92,9 +94,9 @@ export default StrykerConfig.define({
 })
 ```
 
-### Scenario B: In-Memory V8 VM Runner (Instant Local Feedback)
+### Scenario B: In-Process `vm` Runner (Instant Local Feedback)
 
-Recommended for algorithmic domains and pure business logic. Tests execute directly in Node's V8 context without child process management:
+Runs Vitest suites in-process in a worker thread, with no child process and no bundler step. It needs `vitest` installed in your project and reads your `vitest.config.*` through that install. With no `testFiles` set, it discovers `**/*.{test,spec}.*` files next to your mutated code:
 
 ```bash
 pnpm add -D @systemfsoftware/stryker-js @systemfsoftware/stryker-js-typescript-checker
@@ -236,32 +238,32 @@ export default StrykerConfig.define(({ command, isCi, isDryRun }) => ({
 
 stryker-js-effect is an architectural fork built on Effect 4 primitives rather than a backwards-compatible wrapper:
 
-| Capability               | Upstream StrykerJS (`@stryker-mutator/core`) | stryker-js-effect (`@systemfsoftware/stryker-js`)                       |
-| ------------------------ | -------------------------------------------- | ----------------------------------------------------------------------- |
-| **Plugin Resolution**    | Dynamic string paths in `node_modules`       | Standard ESM resolution from the project: package names or `file:` URLs |
-| **Output Protocol**      | Terminal string formatting & TUI progress    | Machine-readable real-time NDJSON event stream on `stdout`              |
-| **Aborted Runs**         | Signal cancellation loses partial data       | Emits partial reports containing every settled mutant up to interrupt   |
-| **Incremental State**    | Invalidation prone on unexpected exits       | Schema-validated cache files surviving process termination              |
-| **Parser Engine**        | Legacy Babel parser pipeline                 | OXC parser AST mutation with TypeScript 7 native syntax                 |
-| **Execution Model**      | Persistent worker process pools              | Native in-memory V8 VM execution option with zero IPC                   |
-| **Runtime Architecture** | Imperative event callbacks                   | Pure functional Effect 4 runtime with typed defect channels             |
+| Capability               | Upstream StrykerJS (`@stryker-mutator/core`) | stryker-js-effect (`@systemfsoftware/stryker-js`)                            |
+| ------------------------ | -------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Plugin Resolution**    | Dynamic string paths in `node_modules`       | Standard ESM resolution from the project: package names or `file:` URLs      |
+| **Output Protocol**      | Terminal string formatting & TUI progress    | Machine-readable real-time NDJSON event stream on `stdout`                   |
+| **Aborted Runs**         | Signal cancellation loses partial data       | Emits partial reports containing every settled mutant up to interrupt        |
+| **Incremental State**    | Invalidation prone on unexpected exits       | Schema-validated cache files surviving process termination                   |
+| **Parser Engine**        | Legacy Babel parser pipeline                 | OXC parser AST mutation with TypeScript 7 native syntax                      |
+| **Execution Model**      | Persistent worker process pools              | In-process worker-thread `vm` runner loading native ESM suites with zero IPC |
+| **Runtime Architecture** | Imperative event callbacks                   | Pure functional Effect 4 runtime with typed defect channels                  |
 
 ---
 
 ## 📖 Configuration Reference
 
-| Option                 | Type                            | Default                                                                                                      | Description                                                                                                 |
-| ---------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `mutate`               | `string[]`                      | `['{src,lib}/**/!(*.+(s\|S)pec\|*.+(t\|T)est).+(cjs\|mjs\|js\|ts\|mts\|cts\|jsx\|tsx)', '!**/__tests__/**']` | Target source files for mutation testing. Prefix with `!` to exclude test suites or declaration files.      |
-| `testRunner`           | `'command' \| 'vitest' \| 'vm'` | `'command'`                                                                                                  | Test execution engine. Use `'vm'` for instant local feedback and `'vitest'` for full test runner isolation. |
-| `plugins`              | `string[]`                      | `[]`                                                                                                         | Plugin packages to load: bare package names resolved from the project, or explicit `file:` URLs.            |
-| `checkers`             | `string[]`                      | `[]`                                                                                                         | Pre-test type checking plugins (`['typescript']`) that discard uncompilable mutants before running tests.   |
-| `ignorers`             | `string[]`                      | `[]`                                                                                                         | Registered AST ignorer rules that skip equivalent or unobservable mutants.                                  |
-| `concurrency`          | `number`                        | `CPU cores - 1`                                                                                              | Maximum parallel worker threads or child processes.                                                         |
-| `reporters`            | `string[]`                      | `['progress', 'clear-text', 'html']`                                                                         | Output formatters. The `html` reporter writes an interactive web report to `reports/mutation/`.             |
-| `thresholds`           | `{ high, low, break }`          | `{ high: 80, low: 60, break: null }`                                                                         | Minimum mutation score gates. Exits with non-zero exit code `1` if the final score falls below `break`.     |
-| `incremental`          | `boolean`                       | `false`                                                                                                      | Caches test results in `reports/stryker-incremental.json` to skip re-evaluating unchanged files.            |
-| `survivorsPriorReport` | `string`                        | `'reports/mutation-report.json'`                                                                             | Path to prior report when running targeted survivor re-runs.                                                |
+| Option                 | Type                            | Default                                                                                                      | Description                                                                                                                                |
+| ---------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mutate`               | `string[]`                      | `['{src,lib}/**/!(*.+(s\|S)pec\|*.+(t\|T)est).+(cjs\|mjs\|js\|ts\|mts\|cts\|jsx\|tsx)', '!**/__tests__/**']` | Target source files for mutation testing. Prefix with `!` to exclude test suites or declaration files.                                     |
+| `testRunner`           | `'command' \| 'vitest' \| 'vm'` | `'vm'`                                                                                                       | Test execution engine. `vm` (the default) runs Vitest suites in-process in a worker thread; use `'vitest'` for full test runner isolation. |
+| `plugins`              | `string[]`                      | `[]`                                                                                                         | Plugin packages to load: bare package names resolved from the project, or explicit `file:` URLs.                                           |
+| `checkers`             | `string[]`                      | `[]`                                                                                                         | Pre-test type checking plugins (`['typescript']`) that discard uncompilable mutants before running tests.                                  |
+| `ignorers`             | `string[]`                      | `[]`                                                                                                         | Registered AST ignorer rules that skip equivalent or unobservable mutants.                                                                 |
+| `concurrency`          | `number`                        | `CPU cores - 1`                                                                                              | Maximum parallel worker threads or child processes.                                                                                        |
+| `reporters`            | `string[]`                      | `['progress', 'clear-text', 'html']`                                                                         | Output formatters. The `html` reporter writes an interactive web report to `reports/mutation/`.                                            |
+| `thresholds`           | `{ high, low, break }`          | `{ high: 80, low: 60, break: null }`                                                                         | Minimum mutation score gates. Exits with non-zero exit code `1` if the final score falls below `break`.                                    |
+| `incremental`          | `boolean`                       | `false`                                                                                                      | Caches test results in `reports/stryker-incremental.json` to skip re-evaluating unchanged files.                                           |
+| `survivorsPriorReport` | `string`                        | `'reports/mutation-report.json'`                                                                             | Path to prior report when running targeted survivor re-runs.                                                                               |
 
 ---
 
@@ -332,9 +334,9 @@ Enable incremental mutation caching by setting `incremental: true` in `stryker.c
 </details>
 
 <details>
-<summary>Why choose in-memory V8 (`testRunner: 'vm'`) over Vitest?</summary>
+<summary>Why choose the in-process `vm` runner (`testRunner: 'vm'`) over Vitest?</summary>
 
-The in-memory V8 runner executes pure TypeScript and JavaScript test suites directly in Node's VM context without spawning external processes. For algorithmic libraries, it cuts mutation test suite durations from minutes to seconds.
+The in-process `vm` runner executes your Vitest suites in one worker thread per test runner, loading each test file as native ESM without spawning a child process or running a bundler. It reads your `vitest.config.*` through your project's `vitest` install and, with no `testFiles` set, discovers `**/*.{test,spec}.*` files itself. Use `testRunner: 'vitest'` for Vitest browser-mode suites, which the `vm` runner refuses.
 
 </details>
 

@@ -15,33 +15,76 @@ export const GHERKIN_HARNESS_URL = 'vmrunner-harness:@systemfsoftware/effect-ghe
 
 const vitestHarnessSource = `
 const state = globalThis[${STATE_EXPR}]
-const { describe, suite, it, test, hooks } = state.api
-export { describe, suite, it, test }
-export const beforeAll = hooks.beforeAll
-export const afterAll = hooks.afterAll
-export const beforeEach = hooks.beforeEach
-export const afterEach = hooks.afterEach
-export const onTestFinished = (finalizer) => hooks.onTestFinished(finalizer)
+const api = state.api
+export const describe = api.describe
+export const suite = api.suite
+export const it = api.it
+export const test = api.it
+export const beforeAll = api.beforeAll
+export const afterAll = api.afterAll
+export const beforeEach = api.beforeEach
+export const afterEach = api.afterEach
+export const aroundAll = api.aroundAll
+export const aroundEach = api.aroundEach
+export const onTestFailed = api.onTestFailed
+export const onTestFinished = api.onTestFinished
+export const inject = api.inject
 export const expect = state.expect
 export const vi = state.vi
-export const assert = state.expect
+export const vitest = state.vi
+const runnerRecordArtifact = (task, artifact) => {
+  if (typeof artifact !== 'object' || artifact === null || typeof artifact.type !== 'string') {
+    throw new TypeError('Test artifact requires "type" to be set.')
+  }
+  if (Array.isArray(artifact.attachments)) {
+    for (const attachment of artifact.attachments) {
+      if (attachment.body == null && attachment.path == null) {
+        throw new TypeError('Test attachment requires "body" or "path" to be set. Both are missing.')
+      }
+      if (attachment.body != null && attachment.path != null) {
+        throw new TypeError('Test attachment requires only one of "body" or "path" to be set. Both are specified.')
+      }
+      if (attachment.path != null && attachment.bodyEncoding != null) {
+        throw new TypeError('Test attachment with "path" should not have "bodyEncoding" specified.')
+      }
+    }
+  }
+  if (artifact.type === 'internal:annotation') {
+    return artifact
+  }
+  const stored = Array.isArray(task.artifacts) ? task.artifacts : []
+  task.artifacts = [...stored, artifact]
+  return artifact
+}
+export const recordArtifact = runnerRecordArtifact
+export * from 'vitest'
 `
 
 const effectVitestHarnessSource = `
 const state = globalThis[${STATE_EXPR}]
-export const it = state.effectVitest.it
-export const layer = state.effectVitest.layer
+const effectIt = state.effectVitest.it
+export const it = effectIt
+export const layer = effectIt.layer
+export const effect = effectIt.effect
+export const live = effectIt.live
+export const prop = effectIt.prop
+export const flakyTest = effectIt.flakyTest
 export const describe = state.api.describe
 export const expect = state.expect
 export const vi = state.vi
+export const vitest = state.vi
+export * from '@effect/vitest'
 `
 
 const gherkinHarnessSource = `
-export * from '@systemfsoftware/effect-gherkin-spec'
 const state = globalThis[${STATE_EXPR}]
-export const it = state.effectVitest.it
-export const layer = state.effectVitest.layer
+const effectIt = state.effectVitest.it
+export const it = effectIt
+export const layer = effectIt.layer
 export const describe = state.api.describe
+export const expect = state.expect
+export const vi = state.vi
+export * from '@systemfsoftware/effect-gherkin-spec'
 `
 
 const HARNESS_SOURCES: Record<string, string> = {

@@ -31,7 +31,7 @@ cd test/e2e && pnpm exec vitest run <path-to-test>
 
 ### Fixture cache
 
-Global setup keys the baked fixtures on the base image, `tests/__fixtures__/bake-fixtures.sh`, the unpacked contents of every packed tarball, and every fixture source file. A hit reuses `node_modules/.cache/stryker-e2e/baked/<key>`; a miss re-bakes and prunes older keys. Editing a workspace package therefore re-bakes on the next run with no manual invalidation.
+Global setup keys the baked fixtures on the base image, `tests/__fixtures__/bake-fixtures.sh`, the unpacked contents of every packed tarball, and every fixture source file, with each fixture manifest keyed after its `catalog:` specs are resolved against the catalogs in the repo-root `pnpm-workspace.yaml`. A hit reuses `node_modules/.cache/stryker-e2e/baked/<key>`; a miss re-bakes and prunes older keys. Editing a workspace package or a catalog entry therefore re-bakes on the next run with no manual invalidation.
 
 ## Tracing and telemetry
 

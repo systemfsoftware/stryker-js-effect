@@ -6,5 +6,26 @@ export {
   installInterception,
   uninstallInterception,
 } from '../sandbox-interception.handle.js'
-export { readGlobalState, writeGlobalState } from '../sandbox-state.handle.js'
-export type { HarnessModuleBuiltin, VmRunnerGlobalState } from '../sandbox.schema.js'
+export {
+  expectStateOf,
+  globalConfigOf,
+  installWorkerState,
+  mockResetConfigOf,
+  readGlobalState,
+  resetExpectStateFor,
+  restoreHostWorkerState,
+  setWorkerCurrentTask,
+  setWorkerTestPath,
+  withRunnerTask,
+  writeGlobalState,
+} from '../sandbox-state.handle.js'
+export type { ProvidedValue } from '../sandbox-state.handle.js'
+export type {
+  ActivateSandboxCommand,
+  EffectVitestSurface,
+  HarnessModuleBuiltin,
+  InstallInterceptionCommand,
+  InterceptionRuntime,
+  RegisterHooksFn,
+  VmRunnerGlobalState,
+} from '../sandbox.schema.js'

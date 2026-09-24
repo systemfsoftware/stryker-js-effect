@@ -42,6 +42,7 @@ export type DrainOutcome = DrainCompleted | DrainTimedOut
 export const TestOutcomeSchema = S.Struct({
   failureMessage: S.optional(S.String),
   timeSpentMs: S.optional(S.Finite),
+  skipped: S.optional(S.Boolean),
 })
 export type TestOutcome = S.Schema.Type<typeof TestOutcomeSchema>
 
@@ -51,6 +52,7 @@ export class PlannedTestView extends S.Class<PlannedTestView>('PlannedTestView')
   seq: S.Finite,
   inverted: S.Boolean,
   skipped: S.Boolean,
+  refusedOnly: S.optional(S.Boolean),
 }) {}
 
 export class DrainRegistryCommand extends S.TaggedClass<DrainRegistryCommand>()('DrainRegistryCommand', {
@@ -63,6 +65,17 @@ export class DrainRegistryCommand extends S.TaggedClass<DrainRegistryCommand>()(
 }
 
 const LATE_REJECTION_NAME = 'unhandled rejection'
+
+const VITEST_ONLY_REFUSAL =
+  '[Vitest] Unexpected .only modifier. Remove it or pass --allowOnly argument to bypass this error'
+
+const drainedRefusedOnly = (planned: PlannedTestView): DrainedTest => ({
+  fullName: planned.fullName,
+  file: planned.file,
+  status: 'failed',
+  failureMessage: VITEST_ONLY_REFUSAL,
+  timeSpentMs: 0,
+})
 
 const drainedSkipped = (planned: PlannedTestView): DrainedTest => ({
   fullName: planned.fullName,
@@ -98,39 +111,70 @@ const invertedFailureMessage = (planned: PlannedTestView): string | undefined =>
     Match.exhaustive,
   )
 
-const drainedRan = (
-  planned: PlannedTestView,
-  outcomes: Record<string, TestOutcome> | undefined,
-): DrainedTest => {
-  const outcome = outcomeOf(outcomes, planned.seq)
-  const failureMessage = failureMessageOf(outcome)
-  const threw = failureMessage !== undefined
-  const status: DrainedStatus = Match.value(threw === planned.inverted).pipe(
+const skippedOutcome = (outcome: TestOutcome | undefined): boolean =>
+  Option.getOrElse(
+    Option.map(Option.fromNullishOr(outcome), (present) => present.skipped === true),
+    () => false,
+  )
+
+const ranStatusOf = (threw: boolean, inverted: boolean): DrainedStatus =>
+  Match.value(threw === inverted).pipe(
     Match.when(true, (): DrainedStatus => 'success'),
     Match.when(false, (): DrainedStatus => 'failed'),
     Match.exhaustive,
   )
-  const message = Match.value(threw).pipe(
+
+const ranMessageOf = (
+  threw: boolean,
+  failureMessage: string | undefined,
+  planned: PlannedTestView,
+): string | undefined =>
+  Match.value(threw).pipe(
     Match.when(true, () => failureMessage),
     Match.when(false, () => invertedFailureMessage(planned)),
     Match.exhaustive,
   )
+
+const skippedDrainedOf = (planned: PlannedTestView, outcome: TestOutcome | undefined): DrainedTest => ({
+  fullName: planned.fullName,
+  file: planned.file,
+  status: 'skipped',
+  failureMessage: undefined,
+  timeSpentMs: timeSpentOf(outcome),
+})
+
+const ranDrainedOf = (planned: PlannedTestView, outcome: TestOutcome | undefined): DrainedTest => {
+  const failureMessage = failureMessageOf(outcome)
+  const threw = failureMessage !== undefined
   return {
     fullName: planned.fullName,
     file: planned.file,
-    status,
-    failureMessage: message,
+    status: ranStatusOf(threw, planned.inverted),
+    failureMessage: ranMessageOf(threw, failureMessage, planned),
     timeSpentMs: timeSpentOf(outcome),
   }
 }
 
-const drainSingleTest = (
-  planned: PlannedTestView,
-  outcomes: Record<string, TestOutcome> | undefined,
-): DrainedTest =>
+const drainedRan = (planned: PlannedTestView, outcomes: Record<string, TestOutcome> | undefined): DrainedTest => {
+  const outcome = outcomeOf(outcomes, planned.seq)
+  return Match.value(skippedOutcome(outcome)).pipe(
+    Match.when(true, () => skippedDrainedOf(planned, outcome)),
+    Match.when(false, () => ranDrainedOf(planned, outcome)),
+    Match.exhaustive,
+  )
+}
+
+const skippedOrRan = (planned: PlannedTestView, outcomes: Record<string, TestOutcome> | undefined): DrainedTest =>
   Match.value(planned.skipped).pipe(
     Match.when(true, () => drainedSkipped(planned)),
     Match.when(false, () => drainedRan(planned, outcomes)),
+    Match.exhaustive,
+  )
+
+const drainSingleTest = (planned: PlannedTestView, outcomes: Record<string, TestOutcome> | undefined): DrainedTest =>
+  Match.value(planned.refusedOnly === true).pipe(
+    Match.when(true, () => drainedRefusedOnly(planned)),
+    Match.when(false, () => skippedOrRan(planned, outcomes)),
     Match.exhaustive,
   )
 
