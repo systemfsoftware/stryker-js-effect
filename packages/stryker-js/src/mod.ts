@@ -192,7 +192,7 @@ export {
   ConfigFileUnreadableError,
   ConfigFileUnsupportedError,
 } from './ConfigError.schema.js'
-export { createFileMatcher, matchesFile } from './file-matching.js'
+export { FileMatcher } from './matching.schema.js'
 export type { ModeSignal, OutputMode, ResolvedMode } from './output-mode.schema.js'
 export {
   decideExtendsStep,

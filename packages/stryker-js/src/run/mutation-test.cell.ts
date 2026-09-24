@@ -47,9 +47,11 @@ import type {
 import { HitLimitReasonText, WallClockTimeoutReason } from '@systemfsoftware/stryker-js-plugin-interface'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import { checkerMutantsSkipped } from '../Checker/checker.metrics.js'
-import { CheckerMutantFromMutant } from '../Checker/mod.js'
-import type { CheckerContractBroken, CheckerCrash, CheckerResourceService } from '../Checker/mod.js'
-import { checkGroupedPlans, scoped } from '../Checker/mod.js'
+import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
+import { checkGroupedPlans } from '../Checker/Checker.cell.js'
+import type { CheckerCrash, CheckerResourceService } from '../Checker/Checker.handle.js'
+import { scoped } from '../Checker/Checker.resource.js'
+import { CheckerMutantFromMutant } from '../Checker/Checker.schema.js'
 import {
   incrementalDiff as incrementalDiffDecisions,
   IncrementalDiffCommand,
