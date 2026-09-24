@@ -946,17 +946,12 @@ export const getLineAndCharacterOfPosition: {
 export const close = (self: TSCompiler): Effect.Effect<void> => {
   const rt = self[RuntimeTypeId]
   return Effect.gen(function*() {
-    const state = yield* Ref.get(rt.state)
-    yield* Option.match(Option.fromUndefinedOr(state.snapshot), {
-      onNone: () => Effect.void,
-      onSome: (snapshot) => Effect.promise(() => snapshot.dispose()),
-    })
+    const state = yield* Ref.getAndUpdate(rt.state, (prev) => ({ ...prev, snapshot: undefined, api: undefined }))
     yield* Option.match(Option.fromUndefinedOr(state.api), {
       onNone: () => Effect.void,
-      onSome: (api) => Effect.promise(() => api.close()),
+      onSome: (api) => Effect.forkDetach(Effect.promise(() => api.close())),
     })
-    yield* Ref.update(rt.state, (prev) => ({ ...prev, snapshot: undefined, api: undefined }))
-  })
+  }).pipe(Effect.withSpan('typescript-checker.compiler.close'))
 }
 
 if (import.meta.vitest !== void 0) {
@@ -1314,4 +1309,29 @@ if (import.meta.vitest !== void 0) {
       'a document with only preserved keys still parses',
     ).toBe(true)
   })
+
+  const { NodeFileSystem, NodePath } = await import('@effect/platform-node')
+  const { Options: StrykerOptions } = await import('@systemfsoftware/stryker-js-plugin-interface')
+  const FileSystemService = await import('effect/FileSystem')
+  const PathService = await import('effect/Path')
+  const Layer = await import('effect/Layer')
+
+  const serverThatNeverAnswers = (): API => {
+    const api = new API({})
+    api.close = () => Effect.runPromise(Effect.never)
+    return api
+  }
+
+  it.effect('closing the compiler finishes when the TypeScript server has stopped answering', () =>
+    Effect.gen(function*() {
+      const host = yield* FileSystemService.FileSystem
+      const pathService = yield* PathService.Path
+      const options = yield* S.decodeEffect(StrykerOptions.StrykerOptionsSchema)({}).pipe(Effect.orDie)
+      const compiler = make(options, { host, pathService })
+      const api = serverThatNeverAnswers()
+      yield* Ref.update(compiler[RuntimeTypeId].state, (prev) => ({ ...prev, api }))
+      yield* close(compiler)
+      const after = yield* Ref.get(compiler[RuntimeTypeId].state)
+      expect(after.api).toBeUndefined()
+    }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))))
 }
