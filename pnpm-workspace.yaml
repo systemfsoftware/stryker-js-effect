@@ -72,8 +72,6 @@ catalogs:
     mutation-testing-elements: 3.9.0
 minimumReleaseAgeExclude:
   - "@systemfsoftware/*"
-overrides:
-  effect: 4.0.0-rc.117
 packages:
   - test/*
   - packages/*

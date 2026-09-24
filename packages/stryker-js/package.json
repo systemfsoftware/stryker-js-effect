@@ -50,6 +50,11 @@
   "peerDependencies": {
     "effect": "catalog:"
   },
+  "peerDependenciesMeta": {
+    "effect": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
     "@effect/vitest": "catalog:",
