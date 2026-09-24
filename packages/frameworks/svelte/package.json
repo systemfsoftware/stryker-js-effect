@@ -72,7 +72,7 @@
     "vitest": "catalog:"
   },
   "peerDependencies": {
-    "svelte": "catalog:"
+    "svelte": "^5.0.0"
   },
   "peerDependenciesMeta": {
     "svelte": {
