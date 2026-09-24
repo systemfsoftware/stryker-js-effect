@@ -1,4 +1,8 @@
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
+import * as Match from 'effect/Match'
+import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import type {
   ArrayExpression,
   ArrowFunctionExpression,
@@ -32,16 +36,13 @@ import type {
   UnaryExpression,
   UpdateExpression,
   WhileStatement,
-} from '@systemfsoftware/stryker-ignorer-interface'
-import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
-import * as Context from 'effect/Context'
-import * as Layer from 'effect/Layer'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
-import * as Predicate from 'effect/Predicate'
-import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
+} from './Ast.handle.js'
+import { MutantNotApplied } from './Instrument.schema.js'
+import type { Location } from './Location.schema.js'
+import { Mutant as ApiMutant } from './Mutant.schema.js'
+import type { PlannedMutant } from './plan-mutants.workflow.js'
+
+import { dual } from 'effect/Function'
 import {
   arrayExpression,
   arrowFunctionExpression,
@@ -66,12 +67,126 @@ import {
 } from './Ast.handle.js'
 import { atomicUpdateSplitMutator } from './AtomicUpdateSplit.handle.js'
 import { finalizerEscapeMutator } from './FinalizerEscape.handle.js'
-import type { Location, Position } from './Location.schema.js'
-import { LineTable } from './Location.schema.js'
-import { Mutant as ApiMutant, MutantNotApplied, MutantSpanMissing } from './Mutant.schema.js'
-import { PrintFailed } from './print/PrintFailed.schema.js'
-import { SourceText } from './print/SourceText.schema.js'
 import { synchronizationRemovalMutator } from './SynchronizationRemoval.handle.js'
+
+export type { Node }
+/**
+ * Node identity: same kind, same span. oxc nodes always carry a range
+ * (parsed with `range: true`), which is a stronger identity than the old
+ * line/column loc.
+ */
+function eqNode(a: Node, b: Node): boolean {
+  const identity = nodeIdentity(a)
+  return identity !== undefined && identity === nodeIdentity(b)
+}
+
+function nodeIdentity(node: Node): string | undefined {
+  const span = spanOf(node)
+  if (span === undefined) {
+    return undefined
+  }
+  return `${node.type}:${span.start}:${span.end}`
+}
+
+export interface Mutable {
+  mutatorName: string
+  ignoreReason?: string | undefined
+  replacement: Node
+}
+export interface Mutant extends Mutable {
+  readonly id: string
+  readonly fileName: string
+  readonly original: Node
+  readonly location: Location
+  readonly replacementCode: string
+}
+function orDefault<T>(value: T | undefined, fallback: T): T {
+  return value ?? fallback
+}
+
+function createMutantDataFirst(
+  planned: PlannedMutant,
+  fileName: string,
+  original: Node,
+  replacement: Node,
+): Mutant {
+  return {
+    id: planned.id,
+    fileName,
+    original,
+    location: planned.location,
+    replacement,
+    mutatorName: planned.mutatorName,
+    ignoreReason: planned.ignoreReason,
+    replacementCode: planned.replacementCode,
+  }
+}
+
+export const createMutant: {
+  (planned: PlannedMutant, fileName: string, original: Node, replacement: Node): Mutant
+  (fileName: string, original: Node, replacement: Node): (planned: PlannedMutant) => Mutant
+} = dual((args: IArguments): boolean => args.length >= 4, createMutantDataFirst)
+export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant, S.SchemaError> {
+  const baseFields = {
+    _tag: 'Mutant' as const,
+    fileName: mutant.fileName,
+    id: mutant.id,
+    location: mutant.location,
+    mutatorName: mutant.mutatorName,
+    replacement: mutant.replacementCode,
+  }
+  return S.decodeResult(ApiMutant)(
+    mutant.ignoreReason === undefined
+      ? baseFields
+      : { ...baseFields, statusReason: mutant.ignoreReason, status: 'Ignored' },
+  )
+}
+
+function applyMutantDataFirst(mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> {
+  return Match.value(originalTree === mutant.original).pipe(
+    Match.when(true, () => Result.succeed(mutant.replacement)),
+    Match.when(false, () => cloneWithReplacement(mutant, originalTree)),
+    Match.exhaustive,
+  )
+}
+
+export const applyMutant: {
+  (mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied>
+  (originalTree: Node): (mutant: Mutant) => Result.Result<Node, MutantNotApplied>
+} = dual((args: IArguments): boolean => args.length >= 2, applyMutantDataFirst)
+
+function cloneWithReplacement(mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> {
+  const mutatedAst = cloneNode(originalTree)
+  const { original, replacement } = mutant
+  return Match.value(hasReplaced(mutatedAst, original, replacement)).pipe(
+    Match.when(true, () => Result.succeed(mutatedAst)),
+    Match.when(
+      false,
+      () => Result.fail(MutantNotApplied.make({ fileName: mutant.fileName, mutatorName: mutant.mutatorName })),
+    ),
+    Match.exhaustive,
+  )
+}
+
+function hasReplaced(root: Node, original: Node, replacement: Node): boolean {
+  let applied = false
+  traverse(make(root), {
+    enter(path) {
+      if (!applied) {
+        applied = replaceFirstMatch(path, original, replacement)
+      }
+    },
+  })
+  return applied
+}
+
+function replaceFirstMatch(path: TraversePath, original: Node, replacement: Node): boolean {
+  if (eqNode(path.node, original) === false) {
+    return false
+  }
+  path.replaceWith(replacement)
+  return true
+}
 
 export interface MutatorContext {
   readonly parent: Node | undefined
@@ -95,169 +210,48 @@ export interface MutatorOptions {
   noHeader?: boolean
 }
 
-export interface Mutable {
-  mutatorName: string
-  ignoreReason?: string | undefined
-  replacement: Node
-}
-
-export interface Mutant extends Mutable {
-  readonly id: string
-  readonly fileName: string
-  readonly original: Node
-  readonly offset: Position
-  readonly lineTable: Arr.NonEmptyReadonlyArray<number>
-  readonly replacementCode: Result.Result<string, PrintFailed>
-}
-
-export interface CreateMutantOptions {
-  readonly id: string
-  readonly fileName: string
-  readonly original: Node
-  readonly specs: Mutable
-  readonly offset?: Position | undefined
-  readonly lineTable?: Arr.NonEmptyReadonlyArray<number> | undefined
-}
-
-const eqNode = (a: Node, b: Node): boolean => {
-  const identity = nodeIdentity(a)
-  return identity !== undefined && identity === nodeIdentity(b)
-}
-
-const nodeIdentity = (node: Node): string | undefined =>
-  Option.map(Option.fromNullishOr(spanOf(node)), (span) => `${node.type}:${span.start}:${span.end}`).pipe(
-    Option.getOrUndefined,
-  )
-
-const orDefault = <T>(value: T | undefined, fallback: T): T => value ?? fallback
-
-const EMPTY_LINE_STARTS: Arr.NonEmptyReadonlyArray<number> = [0]
-
-const NO_LINE_OFFSET: Position = { column: 0, line: 0 }
-
-const createMutant = (params: CreateMutantOptions): Mutant => ({
-  id: params.id,
-  fileName: params.fileName,
-  original: params.original,
-  offset: orDefault(params.offset, NO_LINE_OFFSET),
-  lineTable: orDefault(params.lineTable, EMPTY_LINE_STARTS),
-  replacement: params.specs.replacement,
-  mutatorName: params.specs.mutatorName,
-  ignoreReason: params.specs.ignoreReason,
-  replacementCode: printedReplacement(params.id, params.specs.replacement),
-})
-
-const printedReplacement = (id: string, replacement: Node): Result.Result<string, PrintFailed> =>
-  Option.match(SourceText.printedOrEmpty(replacement), {
-    onNone: () => Result.fail(PrintFailed.make({ message: `Mutant ${id} replacement is not printable` })),
-    onSome: Result.succeed,
-  })
-
-const toApiMutant = (mutant: Mutant): Result.Result<ApiMutant, MutantSpanMissing | PrintFailed | S.SchemaError> =>
-  Option.match(Option.fromNullishOr(spanOf(mutant.original)), {
-    onNone: () => Result.fail(MutantSpanMissing.make({ edge: 'start' })),
-    onSome: (span) =>
-      Result.flatMap(mutant.replacementCode, (replacement) => {
-        const baseFields = {
-          _tag: 'Mutant' as const,
-          fileName: mutant.fileName,
-          id: mutant.id,
-          location: toApiLocation(span.start, span.end, mutant.lineTable, mutant.offset),
-          mutatorName: mutant.mutatorName,
-          replacement,
-        }
-        return S.decodeResult(ApiMutant)(
-          Option.match(Option.fromNullishOr(mutant.ignoreReason), {
-            onNone: () => baseFields,
-            onSome: (ignoreReason) => ({ ...baseFields, statusReason: ignoreReason, status: 'Ignored' as const }),
-          }),
-        )
-      }),
-  })
-
-const toApiLocation = (
-  startOffset: number,
-  endOffset: number,
-  lineTable: Arr.NonEmptyReadonlyArray<number>,
-  offset: Position,
-): Location => {
-  const table = LineTable.make({ lineStarts: lineTable })
-  const shifted = (position: Position): Position => ({
-    column: position.column + offset.column,
-    line: position.line + offset.line - 1,
-  })
-  return {
-    start: shifted(table.positionAt(startOffset)),
-    end: shifted(table.positionAt(endOffset)),
-  }
-}
-
-const applyMutant = (mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> =>
-  Boolean.match(originalTree === mutant.original, {
-    onTrue: () => Result.succeed(mutant.replacement),
-    onFalse: () => cloneWithReplacement(mutant, originalTree),
-  })
-
-const cloneWithReplacement = (mutant: Mutant, originalTree: Node): Result.Result<Node, MutantNotApplied> => {
-  const mutatedAst = cloneNode(originalTree)
-  return Boolean.match(hasReplaced(mutatedAst, mutant.original, mutant.replacement), {
-    onTrue: () => Result.succeed(mutatedAst),
-    onFalse: () => Result.fail(MutantNotApplied.make({ replacement: JSON.stringify(mutant.replacement) })),
-  })
-}
-
-const hasReplaced = (root: Node, original: Node, replacement: Node): boolean => {
-  const applied = { current: false }
-  traverse(make(root), {
-    enter(path) {
-      Boolean.match(applied.current, {
-        onTrue: () => undefined,
-        onFalse: () => {
-          applied.current = replaceFirstMatch(path, original, replacement)
-        },
-      })
-    },
-  })
-  return applied.current
-}
-
-const replaceFirstMatch = (path: TraversePath, original: Node, replacement: Node): boolean =>
-  Boolean.match(eqNode(path.node, original), {
-    onTrue: () => {
-      path.replaceWith(replacement)
-      return true
-    },
-    onFalse: () => false,
-  })
-
 /**
- * The mutations of a regular expression pattern: a pattern and its flags in,
- * replacement patterns out. A pattern this cannot parse yields no mutants.
+ * The mutations of a regular expression pattern.
+ *
+ * Pure: a pattern and its flags in, replacement patterns out. No I/O, no clock,
+ * no throwing — a pattern this cannot parse yields no mutants, which is the
+ * honest answer for a literal whose syntax the engine does not model.
+ *
+ * The transformation set is fixed and small, and each member changes exactly
+ * one thing about the pattern:
+ *
+ * | family                  | example                  |
+ * | ----------------------- | ------------------------ |
+ * | anchor removal          | `^abc$` -> `abc$`, `^abc` |
+ * | character class negation| `[abc]` <-> `[^abc]`      |
+ * | predefined class negation| `\d` <-> `\D`, `\p{L}` <-> `\P{L}` |
+ * | quantifier removal      | `a+`, `a*`, `a{2,3}` -> `a` |
+ * | lookaround negation     | `(?=a)` <-> `(?!a)`, `(?<=a)` <-> `(?<!a)` |
+ *
+ * Alternation and grouping are deliberately untouched: swapping a branch or
+ * dropping a group produces mutants that survive for reasons unrelated to the
+ * test suite's strength, which inflates a score rather than measuring one.
  *
  * The order is part of the contract, because a mutant's identity in a report is
  * its position: anchors first, then each remaining position left to right with
  * quantifier removal ahead of class negation.
  */
-const mutateRegexPattern = (pattern: string, flags: string | undefined): readonly string[] =>
-  Boolean.match(pattern.length === 0, {
-    onTrue: () => [],
-    onFalse: () => parseRegexMutants(pattern, orDefault(flags, '')),
-  })
+function mutateRegexPattern(pattern: string, flags: string | undefined): readonly string[] {
+  if (pattern.length === 0) {
+    return []
+  }
+  return parseRegexMutants(pattern, orDefault(flags, ''))
+}
 
-const NO_SPLICES: readonly string[] = []
-
-const parseRegexMutants = (pattern: string, flags: string): readonly string[] =>
-  Result.getOrElse(
-    Result.try({
-      try: () => {
-        const groups = collectSplices(pattern, flags)
-        groups.rest.sort((a, b) => a.start - b.start || a.priority - b.priority)
-        return [...groups.bol, ...groups.eol, ...groups.rest].map((splice) => spliceText(pattern, splice))
-      },
-      catch: () => NO_SPLICES,
-    }),
-    () => NO_SPLICES,
-  )
+function parseRegexMutants(pattern: string, flags: string): readonly string[] {
+  try {
+    const groups = collectSplices(pattern, flags)
+    groups.rest.sort((a, b) => a.start - b.start || a.priority - b.priority)
+    return [...groups.bol, ...groups.eol, ...groups.rest].map((splice) => spliceText(pattern, splice))
+  } catch {
+    return []
+  }
+}
 
 interface Splice {
   readonly start: number
@@ -275,7 +269,7 @@ interface SpliceGroups {
   readonly rest: PrioritizedSplice[]
 }
 
-const collectSplices = (pattern: string, flags: string): SpliceGroups => {
+function collectSplices(pattern: string, flags: string): SpliceGroups {
   const groups: SpliceGroups = { bol: [], eol: [], rest: [] }
   const parser = new RegExpParser()
   const ast = parser.parsePattern(pattern, undefined, undefined, {
@@ -299,65 +293,75 @@ const collectSplices = (pattern: string, flags: string): SpliceGroups => {
   return groups
 }
 
-const collectAssertion = (assertion: AST.Assertion, pattern: string, groups: SpliceGroups): void =>
+function collectAssertion(assertion: AST.Assertion, pattern: string, groups: SpliceGroups): void {
   Match.value(assertion).pipe(
     Match.when(isEdgeAssertion, (edge) => pushAnchor(edge, pattern, groups)),
-    Match.when(isLookaround, (lookaround) => pushWhen(groups.rest, lookaroundNegation(lookaround))),
+    Match.when(isLookaround, (lookaround) => groups.rest.push(lookaroundNegation(lookaround))),
     Match.orElse(() => undefined),
-  )
-
-const isEdgeAssertion = (assertion: AST.Assertion): assertion is AST.EdgeAssertion =>
-  assertion.kind === 'start' || assertion.kind === 'end'
-
-const isLookaround = (assertion: AST.Assertion): assertion is AST.LookaroundAssertion =>
-  assertion.kind === 'lookahead' || assertion.kind === 'lookbehind'
-
-const pushAnchor = (edge: AST.EdgeAssertion, pattern: string, groups: SpliceGroups): void =>
-  pushWhen(anchorGroup(edge, groups), anchorRemoval(edge, pattern))
-
-const anchorGroup = (edge: AST.EdgeAssertion, groups: SpliceGroups): Splice[] =>
-  Match.value(edge.kind).pipe(
-    Match.when('start', () => groups.bol),
-    Match.orElse(() => groups.eol),
-  )
-
-const lookaroundNegation = (lookaround: AST.LookaroundAssertion): PrioritizedSplice =>
-  Match.value(lookaround.kind).pipe(
-    Match.when('lookahead', () => lookaroundSplice(lookaround, 2)),
-    Match.orElse(() => lookaroundSplice(lookaround, 3)),
-  )
-
-const lookaroundSplice = (lookaround: AST.LookaroundAssertion, markerWidth: number): PrioritizedSplice => ({
-  start: lookaround.start + markerWidth,
-  end: lookaround.start + markerWidth + 1,
-  text: negationMarker(lookaround.negate),
-  priority: 1,
-})
-
-const negationMarker = (negate: boolean): string =>
-  Match.value(negate).pipe(
-    Match.when(true, () => '='),
-    Match.orElse(() => '!'),
-  )
-
-const collectCharacterClass = (characterClass: AST.CharacterClass, groups: SpliceGroups): void => {
-  const pos = characterClass.start + 1
-  groups.rest.push(
-    Boolean.match(characterClass.negate, {
-      onTrue: () => ({ start: pos, end: pos + 1, text: '', priority: 1 }),
-      onFalse: () => ({ start: pos, end: pos, text: '^', priority: 1 }),
-    }),
   )
 }
 
-const collectCharacterSet = (characterSet: AST.CharacterSet, groups: SpliceGroups): void =>
-  pushWhen(groups.rest, characterSetSplice(characterSet))
+function isEdgeAssertion(assertion: AST.Assertion): assertion is AST.EdgeAssertion {
+  return assertion.kind === 'start' || assertion.kind === 'end'
+}
 
-const characterSetSplice = (characterSet: AST.CharacterSet): PrioritizedSplice | undefined =>
-  Match.value(characterSet.kind).pipe(
+function isLookaround(assertion: AST.Assertion): assertion is AST.LookaroundAssertion {
+  return assertion.kind === 'lookahead' || assertion.kind === 'lookbehind'
+}
+
+function pushAnchor(edge: AST.EdgeAssertion, pattern: string, groups: SpliceGroups): void {
+  pushWhen(anchorGroup(edge, groups), anchorRemoval(edge, pattern))
+}
+
+function anchorGroup(edge: AST.EdgeAssertion, groups: SpliceGroups): Splice[] {
+  return Match.value(edge.kind).pipe(
+    Match.when('start', () => groups.bol),
+    Match.orElse(() => groups.eol),
+  )
+}
+
+function lookaroundNegation(lookaround: AST.LookaroundAssertion): PrioritizedSplice {
+  return Match.value(lookaround.kind).pipe(
+    Match.when('lookahead', () => lookaroundSplice(lookaround, 2)),
+    Match.orElse(() => lookaroundSplice(lookaround, 3)),
+  )
+}
+
+function lookaroundSplice(lookaround: AST.LookaroundAssertion, markerWidth: number): PrioritizedSplice {
+  return {
+    start: lookaround.start + markerWidth,
+    end: lookaround.start + markerWidth + 1,
+    text: negationMarker(lookaround.negate),
+    priority: 1,
+  }
+}
+
+function negationMarker(negate: boolean): string {
+  return Match.value(negate).pipe(
+    Match.when(true, () => '='),
+    Match.orElse(() => '!'),
+  )
+}
+
+function collectCharacterClass(characterClass: AST.CharacterClass, groups: SpliceGroups): void {
+  const pos = characterClass.start + 1
+  if (characterClass.negate) {
+    groups.rest.push({ start: pos, end: pos + 1, text: '', priority: 1 })
+  } else {
+    groups.rest.push({ start: pos, end: pos, text: '^', priority: 1 })
+  }
+}
+
+function collectCharacterSet(characterSet: AST.CharacterSet, groups: SpliceGroups): void {
+  pushWhen(groups.rest, characterSetSplice(characterSet))
+}
+
+function characterSetSplice(characterSet: AST.CharacterSet): PrioritizedSplice | undefined {
+  return Match.value(characterSet.kind).pipe(
     Match.when((kind) => NEGATABLE_CHARACTER_SETS[kind] === true, () => classSplice(characterSet)),
     Match.orElse(() => undefined),
   )
+}
 
 const NEGATABLE_CHARACTER_SETS: Readonly<Record<string, true>> = {
   digit: true,
@@ -368,79 +372,86 @@ const NEGATABLE_CHARACTER_SETS: Readonly<Record<string, true>> = {
 
 const PROPERTY_MARKERS: Readonly<Partial<Record<string, string>>> = { p: 'P', P: 'p' }
 
-const classSplice = (characterSet: AST.CharacterSet): PrioritizedSplice => {
+function classSplice(characterSet: AST.CharacterSet): PrioritizedSplice {
   const pos = characterSet.start + 1
   return { start: pos, end: pos + 1, text: invertedMarker(orDefault(characterSet.raw[1], '')), priority: 2 }
 }
 
-const invertedMarker = (marker: string): string =>
-  Option.match(Option.fromNullishOr(PROPERTY_MARKERS[marker]), {
-    onSome: (propertyMarker) => propertyMarker,
-    onNone: () => invertLetterCase(marker),
-  })
+/** `\d`-style sets invert by letter case, `\p{}` by `p`/`P`. */
+function invertedMarker(marker: string): string {
+  const propertyMarker = PROPERTY_MARKERS[marker]
+  if (propertyMarker !== undefined) {
+    return propertyMarker
+  }
+  return invertLetterCase(marker)
+}
 
-const invertLetterCase = (letter: string): string =>
-  Boolean.match(letter === letter.toUpperCase(), {
-    onTrue: () => letter.toLowerCase(),
-    onFalse: () => letter.toUpperCase(),
-  })
+function invertLetterCase(letter: string): string {
+  if (letter === letter.toUpperCase()) {
+    return letter.toLowerCase()
+  }
+  return letter.toUpperCase()
+}
 
-const collectQuantifier = (quantifier: AST.Quantifier, groups: SpliceGroups): void => {
+function collectQuantifier(quantifier: AST.Quantifier, groups: SpliceGroups): void {
   groups.rest.push({ start: quantifier.start, end: quantifier.end, text: quantifier.element.raw, priority: 0 })
 }
 
-const anchorRemoval = (assertion: AST.Assertion, pattern: string): Splice | undefined => {
+function anchorRemoval(assertion: AST.Assertion, pattern: string): Splice | undefined {
   const splice = { start: assertion.start, end: assertion.end, text: '' }
-  return Option.getOrUndefined(
-    Option.filter(Option.some(splice), (candidate) => spliceText(pattern, candidate).length > 0),
-  )
+  if (spliceText(pattern, splice).length === 0) {
+    return undefined
+  }
+  return splice
 }
 
-const pushWhen = <T>(list: T[], splice: T | undefined): void =>
-  Option.match(Option.fromNullishOr(splice), {
-    onNone: () => undefined,
-    onSome: (present) => {
-      list.push(present)
-    },
-  })
+function pushWhen<T>(list: T[], splice: T | undefined): void {
+  if (splice !== undefined) {
+    list.push(splice)
+  }
+}
 
-const spliceText = (pattern: string, splice: Splice): string =>
-  pattern.slice(0, splice.start) + splice.text + pattern.slice(splice.end)
+function spliceText(pattern: string, splice: Splice): string {
+  return pattern.slice(0, splice.start) + splice.text + pattern.slice(splice.end)
+}
 
 const NO_MUTANTS: readonly Node[] = []
 
-const withOperator = <T extends Node & { operator: string }>(node: T, operator: T['operator']): T => {
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined
+}
+
+/** A copy of the node carrying a different operator. */
+function withOperator<T extends Node & { operator: string }>(node: T, operator: T['operator']): T {
   const replacement = cloneNode(node)
   replacement.operator = operator
   return replacement
 }
 
-const mutantsWhen = (holds: boolean, build: () => readonly Node[]): readonly Node[] =>
-  Match.value(holds).pipe(
+/** The mutants a condition selects, built only when it holds. */
+function mutantsWhen(holds: boolean, build: () => readonly Node[]): readonly Node[] {
+  return Match.value(holds).pipe(
     Match.when(true, build),
     Match.orElse(() => NO_MUTANTS),
   )
+}
 
-const readPropertyOf = <B>(node: object, key: string): B | undefined =>
-  Option.getOrUndefined(
-    Option.filter(
-      Option.some(node),
-      (candidate): candidate is Record<string, B> => Predicate.hasProperty(key)(candidate),
-    )
-      .pipe(
-        Option.map((record) => record[key]),
-      ),
-  )
-const propertyOf = <A, B>(node: A, key: string): B | undefined =>
-  Option.getOrUndefined(
-    Option.filter(Option.some(node), Predicate.isObject).pipe(
-      Option.map((object) => readPropertyOf<B>(object, key)),
-    ),
-  )
+const hasPropertyIn = <B = unknown>(node: object, key: string): node is Record<string, B> => key in node
 
-const isIdentifier = (node: unknown): node is IdentifierReference => nodeType(node) === 'Identifier'
+const readPropertyOf = <B = unknown>(node: object, key: string): B | undefined =>
+  hasPropertyIn<B>(node, key) ? node[key] : undefined
 
-const isCallExpression = (node: Node): node is CallExpression => node.type === 'CallExpression'
+function propertyOf<A = unknown, B = unknown>(node: A, key: string): B | undefined {
+  return Predicate.isObject(node) ? readPropertyOf<B>(node, key) : undefined
+}
+
+function isIdentifier(node: unknown): node is IdentifierReference {
+  return nodeType(node) === 'Identifier'
+}
+
+function isCallExpression(node: Node): node is CallExpression {
+  return node.type === 'CallExpression'
+}
 
 const arithmeticOperatorReplacements = Object.freeze(
   {
@@ -462,26 +473,34 @@ const arithmeticOperatorMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isArithmeticBinary = (node: Node): node is ArithmeticBinary =>
-  isBinaryExpression(node) && isSupportedArithmeticOperator(node.operator, node)
+function isArithmeticBinary(node: Node): node is ArithmeticBinary {
+  return isBinaryExpression(node) && isSupportedArithmeticOperator(node.operator, node)
+}
 
-const isBinaryExpression = (node: Node): node is BinaryExpression =>
-  node.type === 'BinaryExpression' && !isPrivateInExpression(node)
+function isBinaryExpression(node: Node): node is BinaryExpression {
+  return node.type === 'BinaryExpression' && !isPrivateInExpression(node)
+}
 
-const isPrivateInExpression = (node: BinaryExpression | PrivateInExpression): node is PrivateInExpression =>
-  node.left.type === 'PrivateIdentifier'
+function isPrivateInExpression(node: BinaryExpression | PrivateInExpression): node is PrivateInExpression {
+  return node.left.type === 'PrivateIdentifier'
+}
 
-const isSupportedArithmeticOperator = (operator: string, node: BinaryExpression): boolean =>
-  ARITHMETIC_OPERATOR_KEYS.includes(operator) && !isStringConcatenation(node)
+function isSupportedArithmeticOperator(operator: string, node: BinaryExpression): boolean {
+  return ARITHMETIC_OPERATOR_KEYS.includes(operator) && !isStringConcatenation(node)
+}
 
-const isStringConcatenation = (node: BinaryExpression): boolean =>
-  isStringLike(node.right) || isStringLike(outerLeftOperand(node))
+/** `1 + x` is arithmetic; `"a" + x` concatenates, and there is nothing to mutate. */
+function isStringConcatenation(node: BinaryExpression): boolean {
+  return isStringLike(node.right) || isStringLike(outerLeftOperand(node))
+}
 
-const outerLeftOperand = (node: BinaryExpression): Node =>
-  Match.value(node.left).pipe(
-    Match.when(isBinaryExpression, (left) => left.right),
-    Match.orElse((left) => left),
-  )
+/** A chained `a + b + c` carries its value on the innermost left operand's right side. */
+function outerLeftOperand(node: BinaryExpression): Node {
+  if (node.left.type === 'BinaryExpression') {
+    return node.left.right
+  }
+  return node.left
+}
 
 type ArrayConstructorCall = (CallExpression | NewExpression) & {
   callee: IdentifierReference & { name: 'Array' }
@@ -494,36 +513,43 @@ const arrayDeclarationMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isArrayExpression = (node: Node): node is ArrayExpression => node.type === 'ArrayExpression'
-
-const arrayDeclarationReplacement = (array: ArrayExpression): Expression =>
-  Boolean.match(array.elements.length > 0, {
-    onTrue: () => arrayExpression([]),
-    onFalse: () => arrayExpression([stringLiteral('Stryker was here')]),
-  })
-
-const isArrayConstructorCall = (node: Node): node is ArrayConstructorCall =>
-  isCallOrNewExpression(node) && isArrayIdentifier(node.callee)
-
-const isCallOrNewExpression = (node: Node): node is CallExpression | NewExpression =>
-  node.type === 'CallExpression' || node.type === 'NewExpression'
-
-const isArrayIdentifier = (node: Node): node is IdentifierReference & { name: 'Array' } =>
-  node.type === 'Identifier' && node.name === 'Array'
-
-const arrayConstructorReplacement = (construct: ArrayConstructorCall): Expression => {
-  const mutatedCallArgs = constructorArguments(construct.arguments)
-  return Boolean.match(construct.type === 'NewExpression', {
-    onTrue: () => newExpression(cloneNode(construct.callee), mutatedCallArgs),
-    onFalse: () => callExpression(cloneNode(construct.callee), mutatedCallArgs),
-  })
+function isArrayExpression(node: Node): node is ArrayExpression {
+  return node.type === 'ArrayExpression'
 }
 
-const constructorArguments = (args: ReadonlyArray<Expression | SpreadElement>): Expression[] =>
-  Boolean.match(args.length > 0, {
-    onTrue: () => [],
-    onFalse: () => [arrayExpression([])],
-  })
+function arrayDeclarationReplacement(array: ArrayExpression): Expression {
+  if (array.elements.length > 0) {
+    return arrayExpression([])
+  }
+  return arrayExpression([stringLiteral('Stryker was here')])
+}
+
+function isArrayConstructorCall(node: Node): node is ArrayConstructorCall {
+  return isCallOrNewExpression(node) && isArrayIdentifier(node.callee)
+}
+
+function isCallOrNewExpression(node: Node): node is CallExpression | NewExpression {
+  return node.type === 'CallExpression' || node.type === 'NewExpression'
+}
+
+function isArrayIdentifier(node: Node): node is IdentifierReference & { name: 'Array' } {
+  return node.type === 'Identifier' && node.name === 'Array'
+}
+
+function arrayConstructorReplacement(construct: ArrayConstructorCall): Expression {
+  const mutatedCallArgs = constructorArguments(construct.arguments)
+  if (construct.type === 'NewExpression') {
+    return newExpression(cloneNode(construct.callee), mutatedCallArgs)
+  }
+  return callExpression(cloneNode(construct.callee), mutatedCallArgs)
+}
+
+function constructorArguments(args: ReadonlyArray<Expression | SpreadElement>): Expression[] {
+  if (args.length > 0) {
+    return []
+  }
+  return [arrayExpression([])]
+}
 
 const arrowFunctionMutator: Mutator = (node) =>
   Match.value(node).pipe(
@@ -531,14 +557,17 @@ const arrowFunctionMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isExpressionBodiedArrow = (node: Node): node is ArrowFunctionExpression =>
-  node.type === 'ArrowFunctionExpression' && hasMutableArrowBody(node.body)
+function isExpressionBodiedArrow(node: Node): node is ArrowFunctionExpression {
+  return node.type === 'ArrowFunctionExpression' && hasMutableArrowBody(node.body)
+}
 
-const hasMutableArrowBody = (body: BlockStatement | Expression): boolean =>
-  body.type !== 'BlockStatement' && !isUndefinedExpression(body)
+function hasMutableArrowBody(body: BlockStatement | Expression): boolean {
+  return body.type !== 'BlockStatement' && !isUndefinedExpression(body)
+}
 
-const isUndefinedExpression = (node: BlockStatement | Expression): node is IdentifierReference =>
-  node.type === 'Identifier' && node.name === 'undefined'
+function isUndefinedExpression(node: BlockStatement | Expression): node is IdentifierReference {
+  return node.type === 'Identifier' && node.name === 'undefined'
+}
 
 const assignmentOperatorReplacements = Object.freeze(
   {
@@ -557,16 +586,24 @@ const assignmentOperatorReplacements = Object.freeze(
   } as const,
 )
 
-const isStringLike = (value: unknown): value is TemplateLiteral | StringLiteral =>
-  isTemplateLiteral(value) || isStringLiteral(value)
+function isStringLike(value: unknown): value is TemplateLiteral | StringLiteral {
+  return isTemplateLiteral(value) || isStringLiteral(value)
+}
 
-const isTemplateLiteral = (value: unknown): value is TemplateLiteral => nodeType(value) === 'TemplateLiteral'
+function isTemplateLiteral(value: unknown): value is TemplateLiteral {
+  return nodeType(value) === 'TemplateLiteral'
+}
 
-const isStringLiteral = (value: unknown): value is StringLiteral =>
-  nodeType(value) === 'Literal' && hasStringValue(value)
+function isStringLiteral(value: unknown): value is StringLiteral {
+  return nodeType(value) === 'Literal' && hasStringValue(value)
+}
 
-const hasStringValue = <A>(value: A): boolean =>
-  Predicate.hasProperty(value, 'value') && typeof value['value'] === 'string'
+function hasStringValue<A = unknown>(value: A): boolean {
+  if (!Predicate.hasProperty(value, 'value')) {
+    return false
+  }
+  return typeof value['value'] === 'string'
+}
 
 const stringAssignmentTypes = Object.freeze(['&&=', '||=', '??='])
 
@@ -582,81 +619,117 @@ const assignmentOperatorMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isMutatableAssignment = (node: Node): node is AssignmentBinary =>
-  node.type === 'AssignmentExpression' && isSupportedAssignment(node)
+function isMutatableAssignment(node: Node): node is AssignmentBinary {
+  return node.type === 'AssignmentExpression' && isSupportedAssignment(node)
+}
 
-const isSupportedAssignment = (node: AssignmentExpression): boolean =>
-  ASSIGNMENT_OPERATOR_KEYS.includes(node.operator) && isSupportedAssignmentExpression(node)
+function isSupportedAssignment(node: AssignmentExpression): boolean {
+  return ASSIGNMENT_OPERATOR_KEYS.includes(node.operator) && isSupportedAssignmentExpression(node)
+}
 
-const isSupportedAssignmentExpression = (node: AssignmentExpression): boolean =>
-  !isStringLike(node.right) || stringAssignmentTypes.includes(node.operator)
+function isSupportedAssignmentExpression(node: AssignmentExpression): boolean {
+  return !isStringLike(node.right) || stringAssignmentTypes.includes(node.operator)
+}
 
 const blockStatementMutator: Mutator = (node, context) =>
   mutantsWhen(isMutableBlock(node, context), () => [blockStatement([])])
 
-const isMutableBlock = (node: Node, context: MutatorContext): boolean =>
-  node.type === 'BlockStatement' && isValid(node, context)
+function isMutableBlock(node: Node, context: MutatorContext): boolean {
+  return node.type === 'BlockStatement' && isValid(node, context)
+}
 
-const isValid = (node: BlockStatement, context: MutatorContext): boolean =>
-  !isEmpty(node) && !isInvalidConstructorBody(node, context)
+function isValid(node: BlockStatement, context: MutatorContext): boolean {
+  return !isEmpty(node) && !isInvalidConstructorBody(node, context)
+}
 
-const isEmpty = (node: BlockStatement): boolean => node.body.length === 0
+function isEmpty(node: BlockStatement): boolean {
+  return node.body.length === 0
+}
 
-const isInvalidConstructorBody = (block: BlockStatement, context: MutatorContext): boolean => {
+function isInvalidConstructorBody(block: BlockStatement, context: MutatorContext): boolean {
   const parent = context.parent
+  // oxc: the constructor is a MethodDefinition whose `value` is the function
   return isConstructorMethod(parent) && constructorBodyMatters(block, parent, context)
 }
 
-const isConstructorMethod = (node: Node | undefined): node is MethodDefinition =>
-  isMethodDefinition(node) && node.kind === 'constructor'
+function isConstructorMethod(node: Node | undefined): node is MethodDefinition {
+  return isMethodDefinition(node) && node.kind === 'constructor'
+}
 
-const isMethodDefinition = (node: Node | undefined): node is MethodDefinition => node?.type === 'MethodDefinition'
+function isMethodDefinition(node: Node | undefined): node is MethodDefinition {
+  return node?.type === 'MethodDefinition'
+}
 
-const constructorBodyMatters = (
+function constructorBodyMatters(
   block: BlockStatement,
   constructor: MethodDefinition,
   context: MutatorContext,
-): boolean => containsSuperCall(block) && hasConstructorInitialization(constructor, context)
+): boolean {
+  return containsSuperCall(block) && hasConstructorInitialization(constructor, context)
+}
 
-const hasConstructorInitialization = (constructor: MethodDefinition, context: MutatorContext): boolean =>
-  [constructor.value.params.some(isParameterProperty), hasInitializedProperties(context)].some((flag) => flag === true)
+/** A derived constructor's body is load-bearing: it runs `super()` and seeds parameter properties. */
+function hasConstructorInitialization(constructor: MethodDefinition, context: MutatorContext): boolean {
+  return [constructor.value.params.some(isParameterProperty), hasInitializedProperties(context)].some(Boolean)
+}
 
 type ParameterProperty = { readonly type: 'TSParameterProperty' }
 
-const isParameterProperty = (param: unknown): param is ParameterProperty => nodeType(param) === 'TSParameterProperty'
+function isParameterProperty(param: unknown): param is ParameterProperty {
+  return nodeType(param) === 'TSParameterProperty'
+}
 
-const hasInitializedProperties = (context: MutatorContext): boolean => {
+function hasInitializedProperties(context: MutatorContext): boolean {
   const classBody = context.grandParent
   return isClassBody(classBody) && classBody.body.some(isInitializedField)
 }
 
-const isClassBody = (node: Node | undefined): node is ClassBody => node?.type === 'ClassBody'
-const isInitializedField = (member: Node): boolean =>
-  isPropertyDefinition(member) && Predicate.isNotNullish(member.value)
+function isClassBody(node: Node | undefined): node is ClassBody {
+  return node?.type === 'ClassBody'
+}
 
-const isPropertyDefinition = (node: Node): node is PropertyDefinition => node.type === 'PropertyDefinition'
+function isInitializedField(member: Node): boolean {
+  return isPropertyDefinition(member) && isPresent(member.value)
+}
 
-const isSuperType = <A>(node: A): boolean => Predicate.hasProperty(node, 'type') && node['type'] === 'Super'
+function isPropertyDefinition(node: Node): node is PropertyDefinition {
+  return node.type === 'PropertyDefinition'
+}
 
-const isSuperCallExpression = <A>(node: A): boolean =>
-  nodeType(node) === 'CallExpression' && isSuperType(propertyOf(node, 'callee'))
+function isSuperType<A = unknown>(node: A): boolean {
+  return Predicate.hasProperty(node, 'type') && node['type'] === 'Super'
+}
 
-const containsSuperCall = <A>(node: A): boolean => Predicate.isObjectOrArray(node) && containsSuperIn(node)
+function isSuperCallExpression<A = unknown>(node: A): boolean {
+  return nodeType(node) === 'CallExpression' && isSuperType(propertyOf(node, 'callee'))
+}
 
-const containsSuperIn = (node: object): boolean => isSuperReference(node) || hasSuperInChildren(node)
+function containsSuperCall<A = unknown>(node: A): boolean {
+  return isObjectLike(node) && containsSuperIn(node)
+}
 
-const isSuperReference = <A>(node: A): boolean => isSuperType(node) || isSuperCallExpression(node)
+function isObjectLike(value: unknown): value is object {
+  return typeof value === 'object' && value !== null
+}
 
-const hasSuperInChildren = (node: object): boolean =>
-  Object.keys(node).some((key) => containsSuperInValue(propertyOf(node, key)))
+function containsSuperIn(node: object): boolean {
+  return isSuperReference(node) || hasSuperInChildren(node)
+}
 
-const isObjectArray = (value: unknown): value is ReadonlyArray<object> => Array.isArray(value)
+function isSuperReference<A = unknown>(node: A): boolean {
+  return isSuperType(node) || isSuperCallExpression(node)
+}
 
-const containsSuperInValue = <A = unknown>(value: A): boolean =>
-  Option.match(Option.filter(Option.some(value), isObjectArray), {
-    onSome: (items) => items.some(containsSuperCall),
-    onNone: () => containsSuperCall(value),
-  })
+function hasSuperInChildren(node: object): boolean {
+  return Object.keys(node).some((key) => containsSuperInValue(propertyOf(node, key)))
+}
+
+function containsSuperInValue<A = unknown>(value: A): boolean {
+  if (Array.isArray(value)) {
+    return value.some(containsSuperCall)
+  }
+  return containsSuperCall(value)
+}
 
 const booleanLiteralMutator: Mutator = (node) =>
   Match.value(node).pipe(
@@ -665,16 +738,23 @@ const booleanLiteralMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isBooleanLiteral = (node: Node): node is BooleanLiteral =>
-  node.type === 'Literal' && typeof node.value === 'boolean'
+function isBooleanLiteral(node: Node): node is BooleanLiteral {
+  return node.type === 'Literal' && typeof node.value === 'boolean'
+}
 
-const isNegatedPrefix = (node: Node): node is UnaryExpression => isUnaryExpression(node) && isNegation(node)
+function isNegatedPrefix(node: Node): node is UnaryExpression {
+  return isUnaryExpression(node) && isNegation(node)
+}
 
-const isUnaryExpression = (node: Node): node is UnaryExpression => node.type === 'UnaryExpression'
+function isUnaryExpression(node: Node): node is UnaryExpression {
+  return node.type === 'UnaryExpression'
+}
 
 type NegatedPrefix = UnaryExpression & { operator: '!' }
 
-const isNegation = (unary: UnaryExpression): unary is NegatedPrefix => unary.operator === '!' && unary.prefix
+function isNegation(unary: UnaryExpression): unary is NegatedPrefix {
+  return unary.operator === '!' && unary.prefix
+}
 
 const booleanOperators = Object.freeze(['!=', '!==', '&&', '<', '<=', '==', '===', '>', '>=', '||'])
 
@@ -684,67 +764,83 @@ const conditionalExpressionMutator: Mutator = (node, context) =>
     Match.orElse(() => conditionTestMutants(node, context)),
   )
 
-const conditionTestMutants = (node: Node, context: MutatorContext): readonly Node[] =>
-  Match.value(isTestOfCondition(node, context)).pipe(
+function conditionTestMutants(node: Node, context: MutatorContext): readonly Node[] {
+  return Match.value(isTestOfCondition(node, context)).pipe(
     Match.when(true, () => [booleanLiteral(true), booleanLiteral(false)]),
     Match.orElse(() => booleanExpressionMutants(node, context)),
   )
+}
 
-const booleanExpressionMutants = (node: Node, context: MutatorContext): readonly Node[] =>
-  Match.value(isBooleanExpression(node)).pipe(
+function booleanExpressionMutants(node: Node, context: MutatorContext): readonly Node[] {
+  return Match.value(isBooleanExpression(node)).pipe(
     Match.when(true, () => booleanExpressionReplacements(context)),
     Match.orElse(() => statementMutants(node)),
   )
+}
 
-const statementMutants = (node: Node): readonly Node[] =>
-  Match.value(node).pipe(
+function statementMutants(node: Node): readonly Node[] {
+  return Match.value(node).pipe(
     Match.when(isEmptyTestForStatement, (loop) => [withEmptyTest(loop)]),
     Match.when(isNonEmptySwitchCase, (switchCase) => [withEmptyConsequent(switchCase)]),
     Match.orElse(() => NO_MUTANTS),
   )
+}
 
-const withEmptyTest = (loop: ForStatement): ForStatement => {
+function withEmptyTest(loop: ForStatement): ForStatement {
   const replacement = cloneNode(loop)
   replacement.test = booleanLiteral(false)
   return replacement
 }
 
-const withEmptyConsequent = (switchCase: SwitchCase): SwitchCase => {
+function withEmptyConsequent(switchCase: SwitchCase): SwitchCase {
   const replacement = cloneNode(switchCase)
   replacement.consequent = []
   return replacement
 }
 
-const isEmptyTestForStatement = (node: Node): node is ForStatement => node.type === 'ForStatement' && node.test === null
+function isEmptyTestForStatement(node: Node): node is ForStatement {
+  return node.type === 'ForStatement' && node.test === null
+}
 
-const isNonEmptySwitchCase = (node: Node): node is SwitchCase =>
-  node.type === 'SwitchCase' && node.consequent.length > 0
+function isNonEmptySwitchCase(node: Node): node is SwitchCase {
+  return node.type === 'SwitchCase' && node.consequent.length > 0
+}
 
-const booleanExpressionReplacements = (context: MutatorContext): readonly Node[] =>
-  Match.value(logicalParentOperator(context.parent)).pipe(
+/** A `true` test only matters in `a && b` and a `false` one in `a || b`; any other parent takes both. */
+function booleanExpressionReplacements(context: MutatorContext): readonly Node[] {
+  return Match.value(logicalParentOperator(context.parent)).pipe(
     Match.when('&&', () => [booleanLiteral(true)]),
     Match.when('||', () => [booleanLiteral(false)]),
     Match.orElse(() => [booleanLiteral(true), booleanLiteral(false)]),
   )
+}
 
-const logicalParentOperator = (parent: Node | undefined): string | undefined =>
-  Match.value(parent).pipe(
+function logicalParentOperator(parent: Node | undefined): string | undefined {
+  return Match.value(parent).pipe(
     Match.when(isLogicalExpression, (logical) => logical.operator),
     Match.orElse(() => undefined),
   )
+}
 
-const isLogicalExpression = (node: Node | undefined): node is LogicalExpression => node?.type === 'LogicalExpression'
+function isLogicalExpression(node: Node | undefined): node is LogicalExpression {
+  return node?.type === 'LogicalExpression'
+}
 
-const isTestOfLoop = (node: Node, context: MutatorContext): boolean =>
-  isLoopStatement(context.parent) && testOfStatement(context.parent) === node
+function isTestOfLoop(node: Node, context: MutatorContext): boolean {
+  return isLoopStatement(context.parent) && testOfStatement(context.parent) === node
+}
 
-const isTestOfCondition = (node: Node, context: MutatorContext): boolean =>
-  isIfStatement(context.parent) && testOfStatement(context.parent) === node
+function isTestOfCondition(node: Node, context: MutatorContext): boolean {
+  return isIfStatement(context.parent) && testOfStatement(context.parent) === node
+}
 
-const isLoopStatement = (node: Node | undefined): boolean =>
-  isTestBearingStatement(node) && LOOP_STATEMENT_KINDS[node.type] === true
+function isLoopStatement(node: Node | undefined): boolean {
+  return isTestBearingStatement(node) && LOOP_STATEMENT_KINDS[node.type] === true
+}
 
-const isIfStatement = (node: Node | undefined): node is IfStatement => node?.type === 'IfStatement'
+function isIfStatement(node: Node | undefined): node is IfStatement {
+  return node?.type === 'IfStatement'
+}
 
 const LOOP_STATEMENT_KINDS: Readonly<Record<string, true>> = {
   ForStatement: true,
@@ -761,20 +857,24 @@ const TEST_BEARING_KINDS: Readonly<Record<string, true>> = {
 
 type TestBearingStatement = IfStatement | WhileStatement | DoWhileStatement | ForStatement
 
-const isTestBearingStatement = (node: Node | undefined): node is TestBearingStatement =>
-  node !== undefined && TEST_BEARING_KINDS[node.type] === true
+function isTestBearingStatement(node: Node | undefined): node is TestBearingStatement {
+  return node !== undefined && TEST_BEARING_KINDS[node.type] === true
+}
 
-const testOfStatement = (node: Node | undefined): Node | undefined =>
-  Match.value(node).pipe(
+function testOfStatement(node: Node | undefined): Node | undefined {
+  return Match.value(node).pipe(
     Match.when(isTestBearingStatement, (statement) => statement.test ?? undefined),
     Match.orElse(() => undefined),
   )
+}
 
-const isBooleanExpression = (node: Node): node is BinaryExpression | LogicalExpression =>
-  isOperatorExpression(node) && booleanOperators.includes(node.operator)
+function isBooleanExpression(node: Node): node is BinaryExpression | LogicalExpression {
+  return isOperatorExpression(node) && booleanOperators.includes(node.operator)
+}
 
-const isOperatorExpression = (node: Node): node is BinaryExpression | LogicalExpression =>
-  node.type === 'BinaryExpression' || node.type === 'LogicalExpression'
+function isOperatorExpression(node: Node): node is BinaryExpression | LogicalExpression {
+  return node.type === 'BinaryExpression' || node.type === 'LogicalExpression'
+}
 
 const operators = {
   '<': ['<=', '>='],
@@ -797,11 +897,13 @@ const equalityOperatorMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isEqualityBinary = (node: Node): node is EqualityBinary =>
-  node.type === 'BinaryExpression' && EQUALITY_OPERATOR_KEYS.includes(node.operator)
+function isEqualityBinary(node: Node): node is EqualityBinary {
+  return node.type === 'BinaryExpression' && EQUALITY_OPERATOR_KEYS.includes(node.operator)
+}
 
-const mutatedEqualityOperators = (binary: EqualityBinary): readonly Node[] =>
-  operators[binary.operator].map((operator) => withOperator(binary, operator))
+function mutatedEqualityOperators(binary: EqualityBinary): readonly Node[] {
+  return operators[binary.operator].map((operator) => withOperator(binary, operator))
+}
 
 const logicalOperatorReplacements = Object.freeze(
   {
@@ -823,8 +925,9 @@ const logicalOperatorMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isSupportedLogicalOperator = (node: Node): node is LogicalBinary =>
-  node.type === 'LogicalExpression' && LOGICAL_OPERATOR_KEYS.includes(node.operator)
+function isSupportedLogicalOperator(node: Node): node is LogicalBinary {
+  return node.type === 'LogicalExpression' && LOGICAL_OPERATOR_KEYS.includes(node.operator)
+}
 
 const baseReplacements: Record<string, string | null> = {
   charAt: null,
@@ -853,12 +956,12 @@ const baseReplacements: Record<string, string | null> = {
 
 const noReverseReplacements = ['getUTCDate', 'setUTCDate']
 
-const replacements = new Map<string, string | null>([
-  ...Object.entries(baseReplacements),
-  ...Object.entries(baseReplacements)
-    .filter((entry): entry is [string, string] => entry[1] !== null && !noReverseReplacements.includes(entry[0]))
-    .map(([key, value]) => [value, key] as const),
-])
+const replacements = new Map<string, string | null>(Object.entries(baseReplacements))
+for (const [key, value] of Object.entries(baseReplacements)) {
+  if (value !== null && !noReverseReplacements.includes(key)) {
+    replacements.set(value, key)
+  }
+}
 
 interface NamedMember extends StaticMemberExpression {
   readonly property: IdentifierReference
@@ -877,15 +980,19 @@ const methodExpressionMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const methodCallMutants = (call: CallExpression): readonly Node[] =>
-  Match.value(methodMutation(call)).pipe(
+function methodCallMutants(call: CallExpression): readonly Node[] {
+  return Match.value(methodMutation(call)).pipe(
     Match.when(isMethodMutation, (mutation) => [methodExpressionReplacement(mutation)]),
     Match.orElse(() => NO_MUTANTS),
   )
+}
 
-const isMethodMutation = (mutation: MethodMutation | undefined): mutation is MethodMutation => mutation !== undefined
+function isMethodMutation(mutation: MethodMutation | undefined): mutation is MethodMutation {
+  return mutation !== undefined
+}
 
-const methodMutation = (call: CallExpression): MethodMutation | undefined => {
+/** The method this call replaces, or `undefined` when the call is not one this operator knows. */
+function methodMutation(call: CallExpression): MethodMutation | undefined {
   const callee = namedMethodCallee(call)
   return Match.value(callee).pipe(
     Match.when(undefined, () => undefined),
@@ -893,32 +1000,40 @@ const methodMutation = (call: CallExpression): MethodMutation | undefined => {
   )
 }
 
-const mutationFor = (call: CallExpression, callee: NamedMember): MethodMutation | undefined =>
-  Match.value(replacements.get(callee.property.name)).pipe(
+function mutationFor(call: CallExpression, callee: NamedMember): MethodMutation | undefined {
+  return Match.value(replacements.get(callee.property.name)).pipe(
     Match.when(undefined, () => undefined),
     Match.orElse((newName) => ({ call, callee, newName })),
   )
+}
 
-const namedMethodCallee = (call: CallExpression): NamedMember | undefined =>
-  Match.value(call.callee).pipe(
+function namedMethodCallee(call: CallExpression): NamedMember | undefined {
+  return Match.value(call.callee).pipe(
     Match.when(isNamedMember, (member) => member),
     Match.orElse(() => undefined),
   )
+}
 
-const isNamedMember = (node: unknown): node is NamedMember => isMemberProperty(node) && isNotSuperMember(node)
+function isNamedMember(node: unknown): node is NamedMember {
+  return isMemberProperty(node) && isNotSuperMember(node)
+}
 
-const isMemberProperty = (node: unknown): node is NamedMember =>
-  nodeType(node) === 'MemberExpression' && isIdentifier(propertyOf(node, 'property'))
+function isMemberProperty(node: unknown): node is NamedMember {
+  return nodeType(node) === 'MemberExpression' && isIdentifier(propertyOf(node, 'property'))
+}
 
-const isNotSuperMember = (member: NamedMember): boolean => !isSuperType(member.object)
+function isNotSuperMember(member: NamedMember): boolean {
+  return !isSuperType(member.object)
+}
 
-const methodExpressionReplacement = (mutation: MethodMutation): Expression =>
-  Match.value(mutation.newName).pipe(
+function methodExpressionReplacement(mutation: MethodMutation): Expression {
+  return Match.value(mutation.newName).pipe(
     Match.when(null, () => callExpression(cloneNode(mutation.callee.object), [], mutation.callee.optional === true)),
     Match.orElse((newName) => renamedMethodCall(mutation, newName)),
   )
+}
 
-const renamedMethodCall = (mutation: MethodMutation, newName: string): Expression => {
+function renamedMethodCall(mutation: MethodMutation, newName: string): Expression {
   const mutatedCallee = memberExpression(
     cloneNode(mutation.callee.object),
     identifier(newName),
@@ -927,10 +1042,13 @@ const renamedMethodCall = (mutation: MethodMutation, newName: string): Expressio
   return callExpression(mutatedCallee, spreadFreeArguments(mutation.call.arguments), mutation.call.optional === true)
 }
 
-const spreadFreeArguments = (args: ReadonlyArray<Expression | SpreadElement>): Expression[] =>
-  args.filter(isNotSpreadElement).map((argument) => cloneNode(argument))
+function spreadFreeArguments(args: ReadonlyArray<Expression | SpreadElement>): Expression[] {
+  return args.filter(isNotSpreadElement).map((argument) => cloneNode(argument))
+}
 
-const isNotSpreadElement = (node: Expression | SpreadElement): node is Expression => node.type !== 'SpreadElement'
+function isNotSpreadElement(node: Expression | SpreadElement): node is Expression {
+  return node.type !== 'SpreadElement'
+}
 
 const objectLiteralMutator: Mutator = (node) =>
   Match.value(node).pipe(
@@ -938,8 +1056,9 @@ const objectLiteralMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isNonEmptyObjectLiteral = (node: Node): node is ObjectExpression =>
-  node.type === 'ObjectExpression' && node.properties.length > 0
+function isNonEmptyObjectLiteral(node: Node): node is ObjectExpression {
+  return node.type === 'ObjectExpression' && node.properties.length > 0
+}
 
 const optionalChainingMutator: Mutator = (node) =>
   Match.value(node).pipe(
@@ -948,12 +1067,15 @@ const optionalChainingMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isOptionalMember = (node: Node): node is MemberExpression =>
-  node.type === 'MemberExpression' && node.optional === true
+function isOptionalMember(node: Node): node is MemberExpression {
+  return node.type === 'MemberExpression' && node.optional === true
+}
 
-const isOptionalCall = (node: Node): node is CallExpression => node.type === 'CallExpression' && node.optional === true
+function isOptionalCall(node: Node): node is CallExpression {
+  return node.type === 'CallExpression' && node.optional === true
+}
 
-const withoutOptional = <T extends Node & { optional?: boolean }>(node: T): T => {
+function withoutOptional<T extends Node & { optional?: boolean }>(node: T): T {
   const replacement = cloneNode(node)
   replacement.optional = false
   return replacement
@@ -971,42 +1093,50 @@ const regexMutator: Mutator = (node, context) =>
     ),
   )
 
-const isRegexLiteral = (node: Node): node is RegexLiteral =>
-  nodeType(node) === 'Literal' && Predicate.isNotNullish(propertyOf(node, 'regex'))
+function isRegexLiteral(node: Node): node is RegexLiteral {
+  return nodeType(node) === 'Literal' && isPresent(propertyOf(node, 'regex'))
+}
 
-const regexLiteralMutants = (literal: RegexLiteral): readonly Node[] =>
-  mutateRegexPattern(literal.regex.pattern, literal.regex.flags).map((pattern) =>
+function regexLiteralMutants(literal: RegexLiteral): readonly Node[] {
+  return mutateRegexPattern(literal.regex.pattern, literal.regex.flags).map((pattern) =>
     regExpLiteral(pattern, literal.regex.flags)
   )
+}
 
-const regexConstructorMutants = (literal: StringLiteral, context: MutatorContext): readonly Node[] =>
-  mutateRegexPattern(literal.value, regexFlags(context.parent)).map((pattern) => stringLiteral(pattern))
+function regexConstructorMutants(literal: StringLiteral, context: MutatorContext): readonly Node[] {
+  return mutateRegexPattern(literal.value, regexFlags(context.parent)).map((pattern) => stringLiteral(pattern))
+}
 
 /** A string passed as the first argument of `new RegExp(...)`. */
-const isObviousRegexString = (node: Node, context: MutatorContext): boolean =>
-  isRegExpConstructor(context.parent) && newExpressionArgument(context.parent, 0) === node
+function isObviousRegexString(node: Node, context: MutatorContext): boolean {
+  return isRegExpConstructor(context.parent) && newExpressionArgument(context.parent, 0) === node
+}
 
-const isRegExpConstructor = (parent: Node | undefined): boolean =>
-  isNewExpression(parent) && isRegExpIdentifier(parent.callee)
+function isRegExpConstructor(parent: Node | undefined): boolean {
+  return isNewExpression(parent) && isRegExpIdentifier(parent.callee)
+}
 
-const isNewExpression = (node: Node | undefined): node is NewExpression => node?.type === 'NewExpression'
+function isNewExpression(node: Node | undefined): node is NewExpression {
+  return node?.type === 'NewExpression'
+}
 
-const isRegExpIdentifier = (node: Node): boolean => node.type === 'Identifier' && node.name === RegExp.name
+function isRegExpIdentifier(node: Node): boolean {
+  return node.type === 'Identifier' && node.name === RegExp.name
+}
 
-const newExpressionArgument = (
-  parent: Node | undefined,
-  index: number,
-): Expression | SpreadElement | undefined =>
-  Match.value(parent).pipe(
+function newExpressionArgument(parent: Node | undefined, index: number): Expression | SpreadElement | undefined {
+  return Match.value(parent).pipe(
     Match.when(isNewExpression, (call) => call.arguments[index]),
     Match.orElse(() => undefined),
   )
+}
 
-const regexFlags = (parent: Node | undefined): string | undefined =>
-  Match.value(newExpressionArgument(parent, 1)).pipe(
+function regexFlags(parent: Node | undefined): string | undefined {
+  return Match.value(newExpressionArgument(parent, 1)).pipe(
     Match.when(isStringLiteral, (literal) => literal.value),
     Match.orElse(() => undefined),
   )
+}
 
 const PLACEHOLDER = 'Stryker was here!'
 
@@ -1020,35 +1150,39 @@ const stringLiteralMutator: Mutator = (node, context) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const templateMutants = (template: TemplateLiteral): readonly Node[] =>
-  Option.match(Option.fromNullishOr(template.quasis[0]), {
-    onNone: () => NO_MUTANTS,
-    onSome: (first) => [emptyOrPlaceholderTemplate(template, first)],
-  })
+function templateMutants(template: TemplateLiteral): readonly Node[] {
+  const first = template.quasis[0]
+  if (first === undefined) {
+    return NO_MUTANTS
+  }
+  return [emptyOrPlaceholderTemplate(template, first)]
+}
 
-const emptyOrPlaceholderTemplate = (template: TemplateLiteral, first: TemplateElement): Node => {
-  const isEmptyTemplate = [template.quasis.length === 1, first.value.raw.length === 0].every((flag) => flag === true)
+function emptyOrPlaceholderTemplate(template: TemplateLiteral, first: TemplateElement): Node {
+  const isEmptyTemplate = [template.quasis.length === 1, first.value.raw.length === 0].every(Boolean)
   return templateLiteral([templateElement(replacementText(isEmptyTemplate))], [])
 }
 
-const replacementText = (isEmpty: boolean): string =>
-  Boolean.match(isEmpty, {
-    onTrue: () => PLACEHOLDER,
-    onFalse: () => '',
-  })
+function replacementText(isEmpty: boolean): string {
+  if (isEmpty) {
+    return PLACEHOLDER
+  }
+  return ''
+}
 
-const isValidParent = (child: Node, context: MutatorContext): boolean => {
+function isValidParent(child: Node, context: MutatorContext): boolean {
   const parent = context.parent
   return parent === undefined || !isDisallowedParent(parent, child)
 }
 
-const isDisallowedParent = (parent: Node, child: Node): boolean =>
-  [
+function isDisallowedParent(parent: Node, child: Node): boolean {
+  return [
     isImportExportRelated(parent),
     isJsxOrExpressionRelated(parent),
     isObjectOrClassPropertyKey(parent, child),
     isDisallowedCallExpression(parent),
-  ].some((flag) => flag === true)
+  ].some(Boolean)
+}
 
 const MODULE_KINDS: Readonly<Record<string, true>> = {
   ImportDeclaration: true,
@@ -1058,7 +1192,9 @@ const MODULE_KINDS: Readonly<Record<string, true>> = {
   TSExternalModuleReference: true,
 }
 
-const isImportExportRelated = (parent: Node): boolean => MODULE_KINDS[parent.type] === true
+function isImportExportRelated(parent: Node): boolean {
+  return MODULE_KINDS[parent.type] === true
+}
 
 const JSX_KINDS: Readonly<Record<string, true>> = {
   JSXAttribute: true,
@@ -1066,34 +1202,45 @@ const JSX_KINDS: Readonly<Record<string, true>> = {
   TSLiteralType: true,
 }
 
-const isJsxOrExpressionRelated = (parent: Node): boolean => JSX_KINDS[parent.type] === true || isObjectMethod(parent)
+function isJsxOrExpressionRelated(parent: Node): boolean {
+  return JSX_KINDS[parent.type] === true || isObjectMethod(parent)
+}
 
-const isObjectMethod = (node: Node): node is ObjectProperty => node.type === 'Property' && node.method === true
+function isObjectMethod(node: Node): node is ObjectProperty {
+  return node.type === 'Property' && node.method === true
+}
 
-const isObjectOrClassPropertyKey = (parent: Node, child: Node): boolean =>
-  isPropertyHost(parent) && isKeyOf(parent, child)
+function isObjectOrClassPropertyKey(parent: Node, child: Node): boolean {
+  return isPropertyHost(parent) && isKeyOf(parent, child)
+}
 
-const isPropertyHost = (node: Node): node is ObjectProperty | PropertyDefinition =>
-  node.type === 'Property' || node.type === 'PropertyDefinition'
+function isPropertyHost(node: Node): node is ObjectProperty | PropertyDefinition {
+  return node.type === 'Property' || node.type === 'PropertyDefinition'
+}
 
-const isKeyOf = (host: ObjectProperty | PropertyDefinition, child: Node): boolean =>
-  nodeType(host.key) !== undefined && host.key === child
+function isKeyOf(host: ObjectProperty | PropertyDefinition, child: Node): boolean {
+  return nodeType(host.key) !== undefined && host.key === child
+}
 
 const DISALLOWED_CALLEES: Readonly<Record<string, true>> = { require: true, Symbol: true, import: true }
 
-const isDisallowedCallExpression = (parent: Node): boolean =>
-  isCallExpression(parent) && DISALLOWED_CALLEES[calleeName(parent)] === true
+function isDisallowedCallExpression(parent: Node): boolean {
+  return isCallExpression(parent) && DISALLOWED_CALLEES[calleeName(parent)] === true
+}
 
-const calleeName = (parent: CallExpression): string =>
-  Match.value(parent.callee).pipe(
+function calleeName(parent: CallExpression): string {
+  return Match.value(parent.callee).pipe(
     Match.when(isIdentifier, (identifier) => identifier.name),
     Match.when(isImportCallee, () => 'import'),
     Match.orElse(() => ''),
   )
+}
 
 type ImportCallee = { readonly type: 'Import' }
 
-const isImportCallee = (callee: unknown): callee is ImportCallee => nodeType(callee) === 'Import'
+function isImportCallee(callee: unknown): callee is ImportCallee {
+  return nodeType(callee) === 'Import'
+}
 
 const UnaryOperator = {
   '+': '-',
@@ -1111,12 +1258,16 @@ const unaryOperatorMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isSupportedUnaryExpression = (node: Node): node is SupportedUnaryExpression =>
-  isPrefixUnaryExpression(node) && isSupportedUnaryOperator(node.operator)
+function isSupportedUnaryExpression(node: Node): node is SupportedUnaryExpression {
+  return isPrefixUnaryExpression(node) && isSupportedUnaryOperator(node.operator)
+}
 
-const isPrefixUnaryExpression = (node: Node): node is UnaryExpression => node.type === 'UnaryExpression' && node.prefix
+function isPrefixUnaryExpression(node: Node): node is UnaryExpression {
+  return node.type === 'UnaryExpression' && node.prefix
+}
 
-const unaryOperatorReplacement = (unary: SupportedUnaryExpression): Expression => {
+/** The sign-flipping unary becomes a flipped unary; `~x` loses its operator entirely. */
+function unaryOperatorReplacement(unary: SupportedUnaryExpression): Expression {
   const mutatedOperator = UnaryOperator[unary.operator]
   return Match.value(mutatedOperator).pipe(
     Match.when(isPlusOrMinus, (operator) => unaryExpression(operator, cloneNode(unary.argument))),
@@ -1124,10 +1275,13 @@ const unaryOperatorReplacement = (unary: SupportedUnaryExpression): Expression =
   )
 }
 
-const isSupportedUnaryOperator = (operator: string): operator is keyof typeof UnaryOperator =>
-  UNARY_OPERATOR_KEYS.includes(operator)
+function isSupportedUnaryOperator(operator: string): operator is keyof typeof UnaryOperator {
+  return UNARY_OPERATOR_KEYS.includes(operator)
+}
 
-const isPlusOrMinus = (operator: string): operator is '-' | '+' => operator === '-' || operator === '+'
+function isPlusOrMinus(operator: string): operator is '-' | '+' {
+  return operator === '-' || operator === '+'
+}
 
 const UpdateOperators = {
   '++': '--',
@@ -1142,7 +1296,47 @@ const updateOperatorMutator: Mutator = (node) =>
     Match.orElse(() => NO_MUTANTS),
   )
 
-const isUpdateExpression = (node: Node): node is UpdateExpression => node.type === 'UpdateExpression'
+function isUpdateExpression(node: Node): node is UpdateExpression {
+  return node.type === 'UpdateExpression'
+}
+
+/**
+ * Every mutator this instrumenter can apply, named explicitly.
+ *
+ * This list is deliberately hand-written rather than self-registering. A
+ * registry populated by import side effects — each mutator module calling
+ * `registerMutator(self)` at module scope — makes the mutant population depend
+ * on which imports were evaluated: import order decides the order, a bundler
+ * that judges a side-effect-only import unused drops a mutator entirely, and
+ * anything reading the array before the last import finished sees a short list.
+ * Every one of those failures REMOVES mutants, which RAISES the mutation score,
+ * so the tool reports a better number for doing less work and nothing anywhere
+ * says so.
+ *
+ * Naming each mutator here costs one line when a mutator is added and makes
+ * that line a compile-checked import instead of a runtime effect.
+ *
+ * `optInMutators` below follows the same hand-written rule, for the same
+ * reason: a mutator exists for a run only when a human named it here.
+ */
+export const defaultMutators: Readonly<Record<string, Mutator>> = Object.freeze({
+  ArithmeticOperator: arithmeticOperatorMutator,
+  ArrayDeclaration: arrayDeclarationMutator,
+  ArrowFunction: arrowFunctionMutator,
+  AssignmentOperator: assignmentOperatorMutator,
+  BlockStatement: blockStatementMutator,
+  BooleanLiteral: booleanLiteralMutator,
+  ConditionalExpression: conditionalExpressionMutator,
+  EqualityOperator: equalityOperatorMutator,
+  LogicalOperator: logicalOperatorMutator,
+  MethodExpression: methodExpressionMutator,
+  ObjectLiteral: objectLiteralMutator,
+  OptionalChaining: optionalChainingMutator,
+  Regex: regexMutator,
+  StringLiteral: stringLiteralMutator,
+  UnaryOperator: unaryOperatorMutator,
+  UpdateOperator: updateOperatorMutator,
+})
 
 export const optInMutators: Readonly<Record<string, Mutator>> = Object.freeze({
   AtomicUpdateSplit: atomicUpdateSplitMutator,
@@ -1158,7 +1352,9 @@ export interface MutatorRegistry {
 }
 
 export interface MutatorSelection {
+  /** Every default, then each opt-in the run named, in the registry's declared order. */
   readonly active: readonly MutatorEntry[]
+  /** Every name a `Stryker disable` directive may reference, selected or not. */
   readonly known: readonly string[]
 }
 
@@ -1175,7 +1371,7 @@ export interface MutatorSelection {
  *
  * Pure: a registry and a run's names in, entries and names out.
  */
-export const selectMutators = (
+const selectMutatorsDataFirst = (
   registry: MutatorRegistry,
   optInMutations: readonly string[],
 ): MutatorSelection => ({
@@ -1186,39 +1382,7 @@ export const selectMutators = (
   known: [...Object.keys(registry.defaults), ...Object.keys(registry.optIn)],
 })
 
-export interface MutatorsShape {
-  readonly mutators: Readonly<Record<string, Mutator>>
-  readonly optInMutators: Readonly<Record<string, Mutator>>
-  readonly create: (options: CreateMutantOptions) => Mutant
-  readonly apply: (mutant: Mutant, originalTree: Node) => Result.Result<Node, MutantNotApplied>
-  readonly toApi: (mutant: Mutant) => Result.Result<ApiMutant, MutantSpanMissing | PrintFailed | S.SchemaError>
-}
-
-export class Mutators extends Context.Service<Mutators, MutatorsShape>()(
-  '@systemfsoftware/stryker-js-instrumenter/Mutator.service/Mutators',
-) {
-  static readonly layer: Layer.Layer<Mutators> = Layer.succeed(Mutators, {
-    mutators: Object.freeze({
-      ArithmeticOperator: arithmeticOperatorMutator,
-      ArrayDeclaration: arrayDeclarationMutator,
-      ArrowFunction: arrowFunctionMutator,
-      AssignmentOperator: assignmentOperatorMutator,
-      BlockStatement: blockStatementMutator,
-      BooleanLiteral: booleanLiteralMutator,
-      ConditionalExpression: conditionalExpressionMutator,
-      EqualityOperator: equalityOperatorMutator,
-      LogicalOperator: logicalOperatorMutator,
-      MethodExpression: methodExpressionMutator,
-      ObjectLiteral: objectLiteralMutator,
-      OptionalChaining: optionalChainingMutator,
-      Regex: regexMutator,
-      StringLiteral: stringLiteralMutator,
-      UnaryOperator: unaryOperatorMutator,
-      UpdateOperator: updateOperatorMutator,
-    }),
-    optInMutators,
-    create: createMutant,
-    apply: applyMutant,
-    toApi: toApiMutant,
-  })
-}
+export const selectMutators: {
+  (registry: MutatorRegistry, optInMutations: readonly string[]): MutatorSelection
+  (optInMutations: readonly string[]): (registry: MutatorRegistry) => MutatorSelection
+} = dual((args: IArguments): boolean => args.length >= 2, selectMutatorsDataFirst)

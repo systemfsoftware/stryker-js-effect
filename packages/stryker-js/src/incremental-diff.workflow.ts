@@ -6,8 +6,13 @@ import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { PreviousFilesSchema, PreviousTestFilesSchema } from './IncrementalDiff.schema.js'
-import type { PreviousFileRecord, PreviousMutantRecord, PreviousTestFileRecord } from './IncrementalDiff.schema.js'
+import { FormatIdentitySchema, PreviousFilesSchema, PreviousTestFilesSchema } from './IncrementalDiff.schema.js'
+import type {
+  FormatIdentity,
+  PreviousFileRecord,
+  PreviousMutantRecord,
+  PreviousTestFileRecord,
+} from './IncrementalDiff.schema.js'
 
 const REMEMBERED_STATUS: ReadonlySet<string> = new Set(['Killed', 'Survived', 'Timeout', 'NoCoverage', 'Ignored'])
 
@@ -24,6 +29,7 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
   currentRelativeFiles: S.Record(S.String, S.String),
   testIdsByRelativeFile: S.Record(S.String, S.Array(S.String)),
   coveringTestFilesByMutantId: S.Record(S.String, S.Array(S.String)),
+  identitiesByFile: S.Record(S.String, FormatIdentitySchema),
   force: S.Boolean,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
@@ -63,12 +69,20 @@ type KeyedMutant = {
 const currentMutantKey = (mutant: KeyedMutant) =>
   mutantKeyOf(mutant.mutatorName, mutant.replacement, mutant.location.start, mutant.location.end)
 
+/**
+ * Reports written before the location-base fix stored correct 1-based lines
+ * but columns one too high, so a prior entry maps into the current key
+ * space by subtracting one from the columns only. New reports already
+ * persist the 1-based form and match through `currentMutantKey` directly;
+ * this fallback only ever reads, and drops out once the next full run
+ * rewrites the file.
+ */
 const previousMutantKey = (mutant: KeyedMutant) =>
   mutantKeyOf(
     mutant.mutatorName,
     mutant.replacement,
-    { line: mutant.location.start.line - 1, column: mutant.location.start.column - 1 },
-    { line: mutant.location.end.line - 1, column: mutant.location.end.column - 1 },
+    { line: mutant.location.start.line, column: mutant.location.start.column - 1 },
+    { line: mutant.location.end.line, column: mutant.location.end.column - 1 },
   )
 
 const changedSourceFiles = (
@@ -102,7 +116,7 @@ const findRemembered = (
       (record) => Option.fromUndefinedOr(record.mutants),
     ),
     () => NO_PREVIOUS_MUTANTS,
-  ).find((candidate) => previousMutantKey(candidate) === key)
+  ).find((candidate) => [previousMutantKey(candidate), currentMutantKey(candidate)].includes(key))
 
 const hasChangedCoverage = (
   mutantId: string,
@@ -112,6 +126,29 @@ const hasChangedCoverage = (
   Option.getOrElse(Record.get(coveringTestFilesByMutantId, mutantId), () => []).some((file) =>
     changedTests.includes(file)
   )
+
+const sameIdentity = (left: FormatIdentity, right: FormatIdentity): boolean =>
+  [
+    left.formatId === right.formatId,
+    left.ownerModule === right.ownerModule,
+    left.ownerVersion === right.ownerVersion,
+  ].every((same) => same)
+
+const fileIdentityReuses = (command: IncrementalDiffCommand, file: string): boolean =>
+  Option.match(Record.get(command.previousFiles, file), {
+    onNone: () => false,
+    onSome: (previous) =>
+      Option.match(
+        Option.all({
+          recorded: Option.fromUndefinedOr(previous.formatIdentity),
+          claimed: Record.get(command.identitiesByFile, file),
+        }),
+        {
+          onNone: () => false,
+          onSome: ({ recorded, claimed }) => sameIdentity(recorded, claimed),
+        },
+      ),
+  })
 
 const isRememberable = (
   previous: PreviousMutantRecord,
@@ -123,9 +160,13 @@ const isRememberable = (
 ) =>
   Boolean.match(REMEMBERED_STATUS.has(previous.status), {
     onTrue: () =>
-      Boolean.match(changedFiles.includes(file), {
-        onTrue: () => false,
-        onFalse: () => !hasChangedCoverage(mutant.id, input.coveringTestFilesByMutantId, changedTests),
+      Boolean.match(fileIdentityReuses(input, file), {
+        onTrue: () =>
+          Boolean.match(changedFiles.includes(file), {
+            onTrue: () => false,
+            onFalse: () => !hasChangedCoverage(mutant.id, input.coveringTestFilesByMutantId, changedTests),
+          }),
+        onFalse: () => false,
       }),
     onFalse: () => false,
   })

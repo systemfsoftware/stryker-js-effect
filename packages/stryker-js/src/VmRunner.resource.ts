@@ -6,8 +6,8 @@ import {
   createRegistry,
   deactivateSandbox,
   type DrainCompleted,
-  drainRegistry,
   type DrainOutcome,
+  drainRegistry,
   guardedExpect,
   guardedVi,
   installInterception,
@@ -171,7 +171,10 @@ const commonPrefixOf = (files: readonly string[], pathToFileURL: (path: string) 
     onSome: (first) =>
       files
         .slice(1)
-        .reduce((prefix, file) => shrinkPrefixTo(prefix, prefixOf(file, pathToFileURL)), prefixOf(first, pathToFileURL)),
+        .reduce(
+          (prefix, file) => shrinkPrefixTo(prefix, prefixOf(file, pathToFileURL)),
+          prefixOf(first, pathToFileURL),
+        ),
   })
 
 const sandboxPrefixOf = (
@@ -208,8 +211,10 @@ const loadErrorResult = (runFailure: RunFailure): TestRunner.TestResult => ({
 })
 
 const initFailureOf = (failures: readonly RunFailure[]): Option.Option<TestRunner.TestRunnerFailed> =>
-  Option.map(Arr.findFirst(failures, (failure) => failure.fatal), (failure) =>
-    TestRunner.TestRunnerFailed.make({ runnerName: vmRunnerName, phase: 'init', cause: failure.message }))
+  Option.map(
+    Arr.findFirst(failures, (failure) => failure.fatal),
+    (failure) => TestRunner.TestRunnerFailed.make({ runnerName: vmRunnerName, phase: 'init', cause: failure.message }),
+  )
 
 const loadErrorsOf = (failures: readonly RunFailure[]): readonly TestRunner.TestResult[] =>
   Option.toArray(Option.map(Arr.head(failures), loadErrorResult))

@@ -1,8 +1,9 @@
+import type { Expression, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Arr from 'effect/Array'
 import * as Bool from 'effect/Boolean'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type { Expression, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { arrowFunctionExpression, cloneNode, identifier, memberExpression } from './Ast.handle.js'
 import {
   type EffectModuleName,
@@ -29,11 +30,16 @@ const ATOMIC_UPDATE_SPLIT_OPERATIONS: readonly string[] = [
   'getAndUpdate',
 ]
 
-export const atomicUpdateSplitMutator: Mutator = (node, context) =>
+const atomicUpdateSplitMutatorDataFirst: Mutator = (node, context) =>
   Option.match(resolveEffectCall(node, context), {
     onNone: () => NO_MUTANTS,
     onSome: (call) => Option.toArray(atomicUpdateSplitReplacement(call)),
   })
+
+export const atomicUpdateSplitMutator: {
+  (node: Parameters<Mutator>[0], context: Parameters<Mutator>[1]): ReturnType<Mutator>
+  (context: Parameters<Mutator>[1]): (node: Parameters<Mutator>[0]) => ReturnType<Mutator>
+} = dual((args: IArguments): boolean => args.length >= 2, atomicUpdateSplitMutatorDataFirst)
 
 interface SplitOperation {
   readonly effectModule: Expression

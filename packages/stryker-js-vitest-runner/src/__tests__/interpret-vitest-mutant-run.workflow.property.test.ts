@@ -1,6 +1,7 @@
 import { describe, it } from '@effect/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
@@ -256,6 +257,68 @@ describe('interpretVitestMutantRun', () => {
       }
       const tests = testsIn(result.success.tests)
       return tests.ids.length === 1 && tests.failed.length === 0
+    },
+  )
+
+  const SUITE_NAME = S.String.check(S.isMinLength(1), S.isMaxLength(12), S.isPattern(/^[^#]+$/))
+  interface SuiteLink {
+    readonly name: string
+    readonly suite?: SuiteLink
+  }
+  const nestedTaskArb = Arbitrary.all({
+    suites: Arbitrary.array(Arbitrary.schema(SUITE_NAME), { minLength: 1, maxLength: 2 }),
+    name: Arbitrary.schema(SUITE_NAME),
+    fullTestName: Arbitrary.schema(SUITE_NAME),
+  })
+
+  const PROJECT_ROOT = '/project'
+
+  const runCommandPayload = (
+    input: VitestMutantRunCommand,
+    task: { readonly name: string; readonly fullTestName: string; readonly suite: SuiteLink | undefined },
+  ) => ({
+    _tag: 'VitestMutantRunCommand' as const,
+    tests: {
+      projectRoot: PROJECT_ROOT,
+      records: [{
+        ...task,
+        result: { state: 'fail', duration: 5, errors: [{ message: 'boom' }] },
+        file: { filepath: `${PROJECT_ROOT}/tests/a.spec.ts` },
+      }],
+    },
+    hasExternalError: false,
+    externalErrorText: input.externalErrorText,
+    hitCount: undefined,
+    hitLimit: undefined,
+    reportAllKillers: input.reportAllKillers,
+    activeMutantId: input.activeMutantId,
+    namedTrapId: input.namedTrapId,
+  })
+
+  it.prop(
+    '→t_KillerId_≡vitestFullTestName',
+    [VitestMutantRunCommand, nestedTaskArb],
+    ([input, { suites, name, fullTestName }]) => {
+      const suiteChain = suites.reduceRight<SuiteLink | undefined>(
+        (child, suiteName) => ({ name: suiteName, suite: child }),
+        undefined,
+      )
+      return Result.match(
+        S.decodeResult(VitestMutantRunCommand)(runCommandPayload(input, { name, fullTestName, suite: suiteChain })),
+        {
+          onFailure: () => false,
+          onSuccess: (command) => {
+            const result = interpretVitestMutantRun(command)
+            if (!Result.isSuccess(result) || !S.is(MutantKilled)(result.success)) {
+              return false
+            }
+            const killerIds = result.success.killerIds
+            return killerIds !== undefined &&
+              killerIds.length === 1 &&
+              killerIds[0] === `tests/a.spec.ts#${fullTestName}`
+          },
+        },
+      )
     },
   )
 })

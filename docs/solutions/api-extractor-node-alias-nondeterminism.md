@@ -6,6 +6,7 @@ component: api-extractor / tsdown
 tags: [api-extractor, api-report, tsdown, chunk-hashing, ci-divergence]
 severity: medium
 date: 2026-09-22
+last_updated: 2026-09-24
 ---
 
 ## Symptoms
@@ -25,10 +26,13 @@ The Ignorer node type is inlined into the bundle without being exported, so api-
 
 ## Resolution
 
-- Treat `Node` vs `Node_2` in `etc/*.api.md` as **build noise**: when a regeneration diff contains only that alias flip and no signature change, revert the file (`git checkout -- <api.md>`) and keep the alias CI produces (`Node_2` on this repo's CI as of 2026-09).
-- Do not chase it by renaming or exporting the ignorer type as part of an unrelated change; exporting it is an API-surface decision of its own.
-- A local `api:check` warning after a regen that flips only this alias is expected and pre-existing; the gate that decides mergeability is CI's.
+The alias only exists because the report walks a type the entry point does not export. Exporting that type under its own name removes the invented alias. PR #24 exports `Node` beside `Ignorer` from `@systemfsoftware/stryker-js`, together with the `Framework` type the framework plugins implement. `shouldIgnore(node: Node, ...)` then renders the same way in every build, and the host changeset lists the new exports. The report stayed byte-identical over five forced `turbo run test api:check --force` runs.
+
+Before PR #24 the advice was to revert alias-only flips and keep CI's alias. That still applies to a package that has not exported the type. It stopped working for the host once a second bundled interface (the framework interface re-exports the ignorer AST types) reached the same `Node`. After that the alias rotated between `Node$2` and `Node_2$1` inside a single local turbo run, so there was no stable rendering to keep.
+
+A forgotten export can also name a chunk file: `// dist/<chunk>-<hash>.d.mts:<line>:<col> - (ae-forgotten-export) The symbol "Framework" ...`. The hash changes with any edit to that chunk, so the report breaks on unrelated source changes. Treat it as the same defect and export the named type.
 
 ## Prevention
 
-When regenerating api reports, diff them before committing and split "alias flip" hunks from "real signature" hunks. Only the signature hunks belong in the commit.
+- When an `etc/*.api.md` diff contains a `$N`/`_N`-suffixed forgotten symbol or a hashed `dist/*-<hash>.d.mts` path, export the type the public signature reaches. Do not regenerate the report and hope for a stable alias.
+- The oxc `Node` that the exported `Node` alias wraps is still a forgotten export (`Node$1$1`). It has stayed stable so far. If it starts to rotate, the same fix applies.

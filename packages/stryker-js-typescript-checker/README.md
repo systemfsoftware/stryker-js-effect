@@ -30,9 +30,7 @@ import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
 export default StrykerConfig.define({
   checkers: ['typescript'],
-  plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
-  ],
+  plugins: ['@systemfsoftware/stryker-js-typescript-checker'],
   // Optional custom tsconfig path (defaults to tsconfig.json)
   // tsConfigFile: 'tsconfig.build.json',
 })

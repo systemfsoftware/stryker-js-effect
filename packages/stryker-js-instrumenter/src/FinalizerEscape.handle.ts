@@ -1,7 +1,3 @@
-import * as Arr from 'effect/Array'
-import * as Bool from 'effect/Boolean'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import type {
   ArrowFunctionExpression,
   Expression,
@@ -9,6 +5,11 @@ import type {
   Node,
   ParamPattern,
 } from '@systemfsoftware/stryker-ignorer-interface'
+import * as Arr from 'effect/Array'
+import * as Bool from 'effect/Boolean'
+import { dual } from 'effect/Function'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import {
   arrowFunctionExpression,
   binaryExpression,
@@ -42,11 +43,16 @@ const TAG = '_tag'
 const SUCCESS_TAG = 'Success'
 const INTERRUPT_TAG = 'Interrupt'
 
-export const finalizerEscapeMutator: Mutator = (node, context) =>
+const finalizerEscapeMutatorDataFirst: Mutator = (node, context) =>
   Option.match(resolveEffectCall(node, context), {
     onNone: () => NO_MUTANTS,
     onSome: (call) => Option.toArray(replacementOf(call)),
   })
+
+export const finalizerEscapeMutator: {
+  (node: Parameters<Mutator>[0], context: Parameters<Mutator>[1]): ReturnType<Mutator>
+  (context: Parameters<Mutator>[1]): (node: Parameters<Mutator>[0]) => ReturnType<Mutator>
+} = dual((args: IArguments): boolean => args.length >= 2, finalizerEscapeMutatorDataFirst)
 
 type CoveredForm = 'data-first' | 'data-last'
 

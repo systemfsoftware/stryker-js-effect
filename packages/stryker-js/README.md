@@ -30,8 +30,8 @@ export default StrykerConfig.define({
   testRunner: 'vitest',
   checkers: ['typescript'],
   plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
-    import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+    '@systemfsoftware/stryker-js-vitest-runner',
+    '@systemfsoftware/stryker-js-typescript-checker',
   ],
   mutate: [
     'src/**/*.ts',
@@ -99,7 +99,7 @@ Identity function providing strict autocompletion and type checking without runt
 ```ts
 export default StrykerConfig.define(({ isCi, command }) => ({
   testRunner: 'vitest',
-  plugins: [import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')],
+  plugins: ['@systemfsoftware/stryker-js-vitest-runner'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
   concurrency: isCi ? 2 : 4,
 }))

@@ -1,5 +1,5 @@
 ---
-content_hash: 8d23a1
+content_hash: 81b8c7
 ---
 
 # Custom Test Runner Authoring Guide
@@ -134,8 +134,6 @@ import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
 export default StrykerConfig.define({
   testRunner: 'my-custom-runner',
-  plugins: [
-    import.meta.resolve('./packages/my-custom-runner/dist/index.js'),
-  ],
+  plugins: [import.meta.resolve('./packages/my-custom-runner/dist/index.js')],
 })
 ```

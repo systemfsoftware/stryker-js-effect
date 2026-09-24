@@ -104,7 +104,16 @@ const collectSuiteNames = <A = unknown>(suite: A): readonly string[] =>
   })
 
 const collectTestNameRaw = <A = unknown>(test: A): string =>
-  [...collectSuiteNames(getSuite(test).pipe(Option.getOrUndefined)), getName(test)].join(' ').trim()
+  Option.match(Option.flatMap(recordOption(test), (rec) => getStringField(rec, 'fullTestName')), {
+    onSome: (fullTestName) => fullTestName,
+    onNone: (): string => {
+      const name = getName(test)
+      const suite = Option.getOrUndefined(getSuite(test))
+      const suiteNames = collectSuiteNames(suite)
+      const parts = [...suiteNames, name]
+      return parts.join(' > ').trim()
+    },
+  })
 
 const toRawTestIdRaw = <A = unknown>(test: A): string => {
   const filepath = Option.match(getFile(test), {

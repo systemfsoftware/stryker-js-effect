@@ -95,155 +95,10 @@ import type {
 } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
-import { spanOf } from '../Ast.handle.js'
-import type { Ast, HtmlAst, JSAst, ScriptAst, SvelteAst, TemplateScript, TSAst, TsxAst } from '../Ast.schema.js'
-import { PrintFailed } from './PrintFailed.schema.js'
-
-export class SourceText extends S.Class<SourceText>('SourceText')({ text: S.NonEmptyString }) {
-  static fromValue = <A>(value: A): Option.Option<SourceText> =>
-    Option.flatMap(printedTextOf(value), (text) => SourceText.makeOption({ text }))
-
-  static printedOrEmpty = <A>(value: A): Option.Option<string> => printedOrEmptyOf(value)
-}
-export type SourceTextValue = SourceText
-
-const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
-
-const printedOrEmptyOf = <A = unknown>(value: A): Option.Option<string> =>
-  Option.flatMap(
-    Option.filter(Option.fromNullishOr(value), isPrintableValue),
-    (printable) => Result.getSuccess(printedResultOf(printable)),
-  )
-
-const printedTextOf = <A = unknown>(value: A) => Option.flatMap(printedOrEmptyOf(value), nonEmptyText)
-
-const AST_SHAPE = ['format', 'root'] as const
-
-const isAst = (value: unknown): value is Ast => Predicate.isObject(value) && AST_SHAPE.every((key) => key in value)
-
-const SCRIPT_SHAPE = ['format', 'root', 'rawContent'] as const
-
-const isPrintableScript = (value: unknown): value is ScriptAst =>
-  Predicate.isObject(value) && SCRIPT_SHAPE.every((key) => key in value)
-
-const isPrinterNode = (value: unknown): value is Node => Predicate.isObject(value) && Predicate.isString(value['type'])
-
-const PRINTABLE_GUARDS = [isAst, isPrintableScript, isPrinterNode]
-
-const isPrintableValue = (candidate: unknown): candidate is Ast | ScriptAst | Node =>
-  PRINTABLE_GUARDS.some((accepts) => accepts(candidate))
-
-const printedResultOf = (value: Ast | ScriptAst | Node) =>
-  Match.value(value).pipe(
-    Match.when(isPrintableAst, (ast) => printedAstText(ast)),
-    Match.when(isPrintableScriptValue, (script) => printedScript(script)),
-    Match.orElse((node) => Result.succeed(printNode(node))),
-  )
-
-const isPrintableAst = (value: Ast | ScriptAst | Node): value is Ast => isAst(value)
-
-const isPrintableScriptValue = (value: Ast | ScriptAst | Node): value is ScriptAst => isPrintableScript(value)
-
-const printedAstText = (ast: Ast): Result.Result<string, PrintFailed> =>
-  Match.value(ast).pipe(
-    Match.when({ format: 'js' }, (script) => printedScript(script)),
-    Match.when({ format: 'ts' }, (script) => printedScript(script)),
-    Match.when({ format: 'tsx' }, (script) => printedScript(script)),
-    Match.when({ format: 'html' }, (htmlAst) => printedScripts(htmlAst)),
-    Match.when({ format: 'svelte' }, (svelteAst) => printedScripts(svelteAst)),
-    Match.exhaustive,
-  )
-
-const printedScript = (script: JSAst | TSAst | TsxAst) =>
-  Result.succeed(printProgram(script.root, { hashbang: scriptHashbangOf(script.root) }))
-
-const scriptHashbangOf = (root: Ast['root']): Hashbang | null =>
-  Option.match(
-    Option.map(Option.filter(Option.some(root), hasHashbangField), (value) => toHashbang(value.hashbang)),
-    {
-      onNone: () => null,
-      onSome: (hashbang) => hashbang,
-    },
-  )
-
-const hasHashbangField = (root: Ast['root']): root is Ast['root'] & { readonly hashbang?: Hashbang | null } =>
-  'hashbang' in root
-
-const toHashbang = <A = unknown>(hashbang: A): Hashbang | null =>
-  Option.match(Option.filter(Option.fromNullishOr(hashbang), isHashbang), {
-    onSome: (value) => value,
-    onNone: () => null,
-  })
-
-const HASHBANG_FIELDS: Readonly<Record<string, <A = unknown>(field: A) => boolean>> = {
-  type: (field) => field === 'Hashbang',
-  value: (field) => typeof field === 'string',
-  start: (field) => typeof field === 'number',
-}
-
-const isHashbang = (value: unknown): value is Hashbang =>
-  Predicate.isObject(value) && Object.entries(HASHBANG_FIELDS).every(([key, accepts]) => accepts(value[key]))
-
-const printedScripts = (ast: HtmlAst | SvelteAst): Result.Result<string, PrintFailed> =>
-  Match.value(ast).pipe(
-    Match.when({ format: 'html' }, (htmlAst) => printedHtml(htmlAst)),
-    Match.when({ format: 'svelte' }, (svelteAst) => printedSvelte(svelteAst)),
-    Match.exhaustive,
-  )
-
-const printedHtml = (ast: HtmlAst): Result.Result<string, PrintFailed> =>
-  Result.flatMap(spannedScriptsOf(ast.root.scripts), (spanned) => {
-    const sorted = [...spanned].sort((a, b) => a.start - b.start)
-    return Result.map(
-      Arr.reduce(
-        sorted,
-        seedOf<WrittenText>({ text: '', cursor: 0 }),
-        (state, spannedScript) =>
-          Result.flatMap(state, (current) =>
-            Result.map(printedScript(spannedScript.script), (code) => ({
-              text: `${current.text}${ast.rawContent.substring(current.cursor, spannedScript.start)}\n${code}\n`,
-              cursor: spannedScript.end,
-            }))),
-      ),
-      (written) => `${written.text}${ast.rawContent.substring(written.cursor)}`,
-    )
-  })
-
-const printedSvelte = (ast: SvelteAst): Result.Result<string, PrintFailed> => {
-  const sortedScripts = [ast.root.moduleScript, ...ast.root.additionalScripts]
-    .filter(Predicate.isNotNullish)
-    .sort((a, b) => a.range.start - b.range.start)
-  return Result.map(
-    Arr.reduce(
-      sortedScripts,
-      seedOf<WrittenText>({ text: '', cursor: 0 }),
-      (state, script) => Result.flatMap(state, (current) => appendPrintedScript(current, script, ast.rawContent)),
-    ),
-    (written) => `${written.text}${ast.rawContent.substring(written.cursor)}`,
-  )
-}
-
-const appendPrintedScript = (
-  state: WrittenText,
-  script: TemplateScript,
-  rawContent: string,
-): Result.Result<WrittenText, PrintFailed> =>
-  Result.map(printedScript(script.ast), (code) =>
-    Boolean.match(script.isExpression, {
-      onTrue: () => ({
-        text: `${state.text}${rawContent.substring(state.cursor, script.range.start)}${code.slice(0, -1)}`,
-        cursor: script.range.end,
-      }),
-      onFalse: () => ({
-        text: `${state.text}${rawContent.substring(state.cursor, script.range.start)}\n${code}\n`,
-        cursor: script.range.end,
-      }),
-    }))
 
 interface Comment {
   readonly type: 'Line' | 'Block'
@@ -252,7 +107,7 @@ interface Comment {
   readonly end: number
 }
 
-interface Hashbang {
+export interface Hashbang {
   readonly type: 'Hashbang'
   readonly value: string
   readonly start: number
@@ -265,38 +120,14 @@ interface PrintOptions {
 
 interface PrintProgramOptions extends PrintOptions {}
 
-const seedOf = <A>(value: A): Result.Result<A, PrintFailed> => Result.succeed(value)
+const printProgramDataFirst = (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program)
 
-interface WrittenText {
-  readonly text: string
-  readonly cursor: number
-}
+export const printProgram: {
+  (program: Program, opts?: PrintProgramOptions): string
+  (opts?: PrintProgramOptions): (program: Program) => string
+} = dual((args: IArguments): boolean => Predicate.hasProperty(args[0], 'type'), printProgramDataFirst)
 
-interface SpannedScript {
-  readonly script: HtmlAst['root']['scripts'][number]
-  readonly start: number
-  readonly end: number
-}
-
-const spannedScriptOf = (script: HtmlAst['root']['scripts'][number]): Result.Result<SpannedScript, PrintFailed> =>
-  Option.match(Option.fromUndefinedOr(spanOf(script.root)), {
-    onNone: () => Result.fail(PrintFailed.make({ message: 'Script AST root without start' })),
-    onSome: (span) => Result.succeed({ script, start: span.start, end: span.end }),
-  })
-
-const spannedScriptsOf = (
-  scripts: readonly HtmlAst['root']['scripts'][number][],
-): Result.Result<ReadonlyArray<SpannedScript>, PrintFailed> =>
-  Arr.reduce(
-    scripts,
-    seedOf<ReadonlyArray<SpannedScript>>([]),
-    (state, script) =>
-      Result.flatMap(state, (collected) => Result.map(spannedScriptOf(script), (spanned) => [...collected, spanned])),
-  )
-
-const printProgram = (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program)
-
-const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
+export const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
 
 interface PrintContext {
   readonly indentLevel: number
@@ -2429,19 +2260,10 @@ if (import.meta.vitest !== void 0) {
     ]),
   )
 
-  const printedScriptOf = (source: string, lang: 'ts' | 'tsx'): string => {
+  const printed = (source: string, lang: 'ts' | 'tsx'): string => {
     const parsed = oxc.parseSync('law.ts', source, { lang, range: true })
     return printProgram(parsed.program, { comments: parsed.comments, hashbang: null })
   }
-
-  const printed = (source: string, lang: 'ts' | 'tsx'): string =>
-    Option.getOrElse(
-      Option.flatMap(
-        Option.fromNullishOr(oxc.parseSync('law.ts', source, { lang, range: true }).program),
-        (program) => Option.map(SourceText.fromValue(program), (rendered) => rendered.text),
-      ),
-      () => printedScriptOf(source, lang),
-    )
 
   it.prop('∀src_TemplateTypePrint_≡Reparse', [TEMPLATE_TYPE_FRAGMENTS], ([fragments]) => {
     const once = printed(fragments.join('\n'), 'ts')
@@ -2456,11 +2278,5 @@ if (import.meta.vitest !== void 0) {
   it.prop('∀src_TsxProgramPrint_≡Reparse', [TSX_FRAGMENTS], ([fragments]) => {
     const once = printed(fragments.join('\n'), 'tsx')
     return printed(once, 'tsx') === once
-  })
-
-  it.prop('∀ast_SourceText_∋NodeText≡PrintedProgram', [TS_FRAGMENTS], ([fragments]) => {
-    const source = fragments.join('\n')
-    const parsed = oxc.parseSync('law.ts', source, { lang: 'ts', range: true })
-    return Option.isSome(SourceText.fromValue(parsed.program))
   })
 }

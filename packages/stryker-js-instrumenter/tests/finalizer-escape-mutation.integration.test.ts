@@ -4,8 +4,8 @@ import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
+import { shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
-import { shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
 const FINALIZER_ESCAPE = 'FinalizerEscape'
@@ -243,7 +243,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
               const content = contentByFile.get(pair.file) ?? ''
               const range = exportLineRange(content, pair.exportName)
               const located = mutantsIn(pair.file).filter((mutant) => {
-                const sourceLine = mutant.location.start.line + 1
+                const sourceLine = mutant.location.start.line
                 return range.firstLine <= sourceLine && sourceLine <= range.lastLine
               })
               expect(

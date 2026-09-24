@@ -22,11 +22,12 @@
  * no mutant whenever the replacement would evaluate an argument twice or lean on
  * a moved argument that can yield.
  */
+import type { Expression, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import * as Arr from 'effect/Array'
 import * as Bool from 'effect/Boolean'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type { Expression, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { arrowFunctionExpression, callExpression, cloneNode, identifier, memberExpression } from './Ast.handle.js'
 import {
   type EffectCallForm,
@@ -43,11 +44,16 @@ import type { Mutator } from './Mutator.service.js'
 
 const NO_MUTANTS: readonly Node[] = []
 
-export const synchronizationRemovalMutator: Mutator = (node, context) =>
+const synchronizationRemovalMutatorDataFirst: Mutator = (node, context) =>
   Option.match(resolveEffectCall(node, context), {
     onNone: () => NO_MUTANTS,
     onSome: (call) => Option.toArray(synchronizationRemovalReplacement(call)),
   })
+
+export const synchronizationRemovalMutator: {
+  (node: Parameters<Mutator>[0], context: Parameters<Mutator>[1]): ReturnType<Mutator>
+  (context: Parameters<Mutator>[1]): (node: Parameters<Mutator>[0]) => ReturnType<Mutator>
+} = dual((args: IArguments): boolean => args.length >= 2, synchronizationRemovalMutatorDataFirst)
 
 const synchronizationRemovalReplacement = (call: ResolvedEffectCall): Option.Option<Expression> =>
   Match.value(call).pipe(

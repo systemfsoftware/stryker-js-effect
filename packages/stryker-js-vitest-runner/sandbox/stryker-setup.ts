@@ -1,8 +1,7 @@
 import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import type * as Types from 'effect/Types'
-import { afterAll, afterEach, beforeAll, beforeEach, inject, RunnerTestCase, RunnerTestSuite } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, inject, RunnerTestCase } from 'vitest'
 
 const globalNamespace = inject('globalNamespace') as '__stryker__' | '__stryker2__'
 const mutantActivation = inject('mutantActivation') as 'runtime' | 'static' | undefined
@@ -55,15 +54,6 @@ const registerDryRunHooks = () => {
 
 Match.value(mode).pipe(Match.when('mutant', registerMutantRunHooks), Match.orElse(registerDryRunHooks))
 
-const suiteNames = (suite: RunnerTestSuite | undefined): readonly string[] =>
-  Option.match(Option.fromNullishOr(suite), {
-    onNone: () => [],
-    onSome: (current) => [...suiteNames(current.suite), current.name],
-  })
-
-const collectTestName = ({ name, suite }: { readonly name: string; readonly suite?: RunnerTestSuite }): string =>
-  [...suiteNames(suite), name].join(' ').trim()
-
 function toRawTestId(test: RunnerTestCase): string {
-  return `${test.file.filepath}#${collectTestName(test)}`
+  return `${test.file.filepath}#${test.fullTestName}`
 }

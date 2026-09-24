@@ -24,7 +24,7 @@ const MARKER_FILE = 'src/marker.ts'
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'
 const LARGE_RUN = StrykerPlugin.REPORTER_EVENT_BATCH_BOUND * 3 + 7
 
-const location = { start: { line: 1, column: 0 }, end: { line: 1, column: 8 } }
+const location = { start: { line: 1, column: 1 }, end: { line: 1, column: 8 } }
 
 const markerReport = (): Report.MutationTestResult => ({
   schemaVersion: '1.0',

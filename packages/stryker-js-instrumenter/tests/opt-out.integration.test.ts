@@ -4,8 +4,8 @@ import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
+import { type ShapeEntry, shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
-import { type ShapeEntry, shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
 const OPT_IN_MUTATOR_NAMES: readonly string[] = ['AtomicUpdateSplit', 'SynchronizationRemoval', 'FinalizerEscape']

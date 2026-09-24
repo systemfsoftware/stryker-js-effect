@@ -97,7 +97,7 @@ const asPluginFileUrls = (specifiers: readonly string[]): Option.Option<readonly
 
 const rejectNonFileUrlPlugin = (flagName: string) => (specifiers: readonly string[]): string => {
   const rejected = specifiers.filter((specifier) => Option.isNone(decodePluginFileUrl(specifier)))
-  return `--${flagName} takes plugin entrypoints as file URLs. Resolve each one with import.meta.resolve in your config. Not a file URL: ${
+  return `--${flagName} takes plugin entrypoints as file URLs or bare package names. Not a plugin specifier: ${
     rejected.join(', ')
   }`
 }
@@ -235,7 +235,7 @@ const runOptions = {
   plugins: Flag.String('plugins')
     .pipe(
       Flag.withDescription(
-        'A comma separated list of plugin entrypoints, each a file URL resolved with `import.meta.resolve` in your config.',
+        'A comma separated list of plugin entrypoints, each a file URL or a bare package name resolved from your project.',
       ),
       Flag.map(splitOnComma),
       Flag.filterMap(asPluginFileUrls, rejectNonFileUrlPlugin('plugins')),
@@ -244,7 +244,7 @@ const runOptions = {
   appendPlugins: Flag.String('appendPlugins')
     .pipe(
       Flag.withDescription(
-        'A comma separated list of additional plugin entrypoints, each a file URL resolved with `import.meta.resolve` in your config, loaded without overwriting the (default) `plugins`.',
+        'A comma separated list of additional plugin entrypoints, each a file URL or a bare package name, loaded without overwriting the (default) `plugins`.',
       ),
       Flag.map(splitOnComma),
       Flag.filterMap(asPluginFileUrls, rejectNonFileUrlPlugin('appendPlugins')),

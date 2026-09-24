@@ -4,8 +4,8 @@ import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import { expect } from 'vitest'
 
+import { importStyles, shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
-import { importStyles, shapes } from './__fixtures__/effect-concurrency/shapes.js'
 import { instrument } from './__fixtures__/instrument.js'
 
 const ATOMIC_UPDATE_SPLIT = 'AtomicUpdateSplit'
@@ -264,7 +264,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
               const range = exportLineRange(content, entry.exportName)
               const located = mutantsIn(entry.file).filter(
                 (mutant) => {
-                  const sourceLine = mutant.location.start.line + 1
+                  const sourceLine = mutant.location.start.line
                   return range.firstLine <= sourceLine && sourceLine <= range.lastLine
                 },
               )

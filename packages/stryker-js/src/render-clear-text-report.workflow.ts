@@ -289,7 +289,7 @@ const sourceLine = (source: string, position: Mutant.Position): string =>
 const tailFromColumn = (raw: string, column: number): readonly string[] =>
   Boolean.match(raw.length === 0, {
     onTrue: () => [],
-    onFalse: () => [raw.slice(column)],
+    onFalse: () => [raw.slice(column - 1)],
   })
 
 const sliceSource = (source: string | undefined, position: Mutant.Position): readonly string[] =>

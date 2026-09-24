@@ -93,6 +93,9 @@ catalogs:
     '@systemfsoftware/tsconfig':
       specifier: ^2.0.1
       version: 2.0.1
+    '@types/estree':
+      specifier: ^1.0.5
+      version: 1.0.8
     '@types/node':
       specifier: ^24
       version: 24.13.3
@@ -222,6 +225,165 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+
+  packages/frameworks/angular:
+    dependencies:
+      '@systemfsoftware/stryker-framework-interface':
+        specifier: workspace:^
+        version: link:../interface
+      angular-html-parser:
+        specifier: 'catalog:'
+        version: 10.12.0
+    devDependencies:
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.45.0
+      '@microsoft/api-extractor':
+        specifier: 'catalog:'
+        version: 7.59.1(@types/node@24.13.3)
+      '@systemfsoftware/arethetypeswrong-cli':
+        specifier: 'catalog:'
+        version: 4.2.0
+      '@systemfsoftware/oxlint-ignorer-config':
+        specifier: workspace:^
+        version: link:../../toolchain/oxlint-ignorer-config
+      '@systemfsoftware/tsconfig':
+        specifier: 'catalog:'
+        version: 2.0.1
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../../toolchain/tsdown-config
+      '@systemfsoftware/vitest-config':
+        specifier: workspace:^
+        version: link:../../toolchain/vitest-config
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      '@vitest/coverage-v8':
+        specifier: 'catalog:'
+        version: 5.0.1(@vitest/browser@5.0.1)(vitest@5.0.1)
+      oxc-parser:
+        specifier: 'catalog:'
+        version: 0.150.0
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.82.0(oxlint-tsgolint@7.0.2001)
+      rimraf:
+        specifier: 'catalog:'
+        version: 6.1.3
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.23.0(tsx@4.23.15)(typescript@7.0.2)
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/frameworks/interface:
+    dependencies:
+      '@systemfsoftware/stryker-ignorer-interface':
+        specifier: workspace:^
+        version: link:../../ignorers/interface
+    devDependencies:
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.45.0
+      '@microsoft/api-extractor':
+        specifier: 'catalog:'
+        version: 7.59.1(@types/node@24.13.3)
+      '@systemfsoftware/arethetypeswrong-cli':
+        specifier: 'catalog:'
+        version: 4.2.0
+      '@systemfsoftware/oxlint-ignorer-config':
+        specifier: workspace:^
+        version: link:../../toolchain/oxlint-ignorer-config
+      '@systemfsoftware/tsconfig':
+        specifier: 'catalog:'
+        version: 2.0.1
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../../toolchain/tsdown-config
+      '@systemfsoftware/vitest-config':
+        specifier: workspace:^
+        version: link:../../toolchain/vitest-config
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.82.0(oxlint-tsgolint@7.0.2001)
+      rimraf:
+        specifier: 'catalog:'
+        version: 6.1.3
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.23.0(tsx@4.23.15)(typescript@7.0.2)
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/frameworks/svelte:
+    dependencies:
+      '@systemfsoftware/stryker-framework-interface':
+        specifier: workspace:^
+        version: link:../interface
+    devDependencies:
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.45.0
+      '@microsoft/api-extractor':
+        specifier: 'catalog:'
+        version: 7.59.1(@types/node@24.13.3)
+      '@systemfsoftware/arethetypeswrong-cli':
+        specifier: 'catalog:'
+        version: 4.2.0
+      '@systemfsoftware/oxlint-ignorer-config':
+        specifier: workspace:^
+        version: link:../../toolchain/oxlint-ignorer-config
+      '@systemfsoftware/tsconfig':
+        specifier: 'catalog:'
+        version: 2.0.1
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../../toolchain/tsdown-config
+      '@systemfsoftware/vitest-config':
+        specifier: workspace:^
+        version: link:../../toolchain/vitest-config
+      '@types/estree':
+        specifier: 'catalog:'
+        version: 1.0.8
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      '@vitest/coverage-v8':
+        specifier: 'catalog:'
+        version: 5.0.1(@vitest/browser@5.0.1)(vitest@5.0.1)
+      oxc-parser:
+        specifier: 'catalog:'
+        version: 0.150.0
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.82.0(oxlint-tsgolint@7.0.2001)
+      rimraf:
+        specifier: 'catalog:'
+        version: 6.1.3
+      svelte:
+        specifier: 'catalog:'
+        version: 5.57.0
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.23.0(tsx@4.23.15)(typescript@7.0.2)
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/ignorers/angular:
     dependencies:
@@ -551,6 +713,9 @@ importers:
       '@systemfsoftware/stryker-config':
         specifier: workspace:^
         version: link:../toolchain/stryker-config
+      '@systemfsoftware/stryker-framework-interface':
+        specifier: workspace:^
+        version: link:../frameworks/interface
       '@systemfsoftware/stryker-ignorer-effect-schema-declarations':
         specifier: catalog:stryker
         version: 0.1.1(rolldown@1.2.8)
@@ -705,9 +870,9 @@ importers:
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
         version: 10.1.1(effect@4.0.0-rc.117)
-      angular-html-parser:
-        specifier: 'catalog:'
-        version: 10.12.0
+      '@systemfsoftware/stryker-framework-interface':
+        specifier: workspace:^
+        version: link:../frameworks/interface
       effect:
         specifier: 4.0.0-rc.117
         version: 4.0.0-rc.117
@@ -760,9 +925,6 @@ importers:
       rimraf:
         specifier: 'catalog:'
         version: 6.1.3
-      svelte:
-        specifier: 'catalog:'
-        version: 5.57.0
       tsdown:
         specifier: 'catalog:'
         version: 0.23.0(tsx@4.23.15)(typescript@7.0.2)
