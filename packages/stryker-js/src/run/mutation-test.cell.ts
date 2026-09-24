@@ -53,7 +53,7 @@ import { CheckerMutantFromMutant } from '../Checker/mod.js'
 import type { CheckerContractBroken, CheckerCrash, CheckerResourceService } from '../Checker/mod.js'
 import { checkGroupedPlans, scoped } from '../Checker/mod.js'
 import { checkerMutantsSkipped } from '../metrics.js'
-import { ReportLocationFromMutant } from '../ReportLocation.schema.js'
+import { ReportLocation } from '../ReportLocation.schema.js'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
@@ -189,22 +189,17 @@ const rememberedResultOf = (
 const mutantsByIdOf = (mutants: readonly Mutant[]) => new Map(mutants.map((mutant) => [mutant.id, mutant] as const))
 
 const rememberedOf = (mutant: Mutant, entry: RememberedMutantResult) =>
-  Effect.map(Effect.orDie(S.decodeEffect(ReportLocationFromMutant)(mutant.location)), (reportLocation) =>
-    rememberedResultOf(mutant, entry, reportLocation))
+  rememberedResultOf(mutant, entry, ReportLocation.fromMutant(mutant.location).location)
 const rememberedResultsOf = (
   mutants: readonly Mutant[],
   remembered: readonly RememberedMutantResult[],
 ) => {
   const byId = mutantsByIdOf(mutants)
-  return Effect.forEach(
-    remembered.flatMap((entry) =>
-      Option.match(Option.fromUndefinedOr(byId.get(entry.mutantId)), {
-        onNone: (): readonly [Mutant, RememberedMutantResult][] => [],
-        onSome: (mutant) => [[mutant, entry] as const],
-      })),
-    ([mutant, entry]) => rememberedOf(mutant, entry),
-    { concurrency: 'inherit' },
-  )
+  return remembered.flatMap((entry) =>
+    Option.match(Option.fromUndefinedOr(byId.get(entry.mutantId)), {
+      onNone: (): ReadonlyArray<RunMutantResult> => [],
+      onSome: (mutant) => [rememberedOf(mutant, entry)],
+    }))
 }
 const VALID_MUTANT_STATUSES = [
   'Killed',
@@ -251,6 +246,16 @@ const workerSpawnOf = (
   Effect.mapError(
     Effect.fromResult(
       resolveConfiguredPlugin(WorkerSpawnCommand.make({ sources: loaded.pluginSources, kind, configured })),
+    ),
+    (missing) =>
+      StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
+  )
+
+const calculateTotalTime = (testResults: Iterable<TestResult>) =>
+  [...testResults].reduce((acc, test) => acc + test.timeSpentMs, 0)
+
+const toTestIds = (testResults: Iterable<TestResult>) => [...testResults].map((test) => test.id)
+
 const hitsRecordOf = (testCoverage: TestCoverage) =>
   Object.fromEntries([...testCoverage.hitsByMutantId])
 
@@ -412,24 +417,21 @@ const isEarlyPlan = (plan: MutantTestPlan): plan is Extract<MutantTestPlan, { re
   !isRunPlan(plan)
 
 const earlyResultOf = (plan: Extract<MutantTestPlan, { readonly plan: 'EarlyResult' }>) =>
-  Effect.map(Effect.orDie(S.decodeEffect(ReportLocationFromMutant)(plan.mutant.location)), (location) =>
-    Object.assign({}, plan.mutant, {
-      location,
-      status: plan.mutant.status ?? 'Ignored',
-    }))
+  Object.assign({}, plan.mutant, {
+    location: ReportLocation.fromMutant(plan.mutant.location).location,
+    status: plan.mutant.status ?? 'Ignored',
+  })
 
 const partitionRunPlans = (plans: readonly MutantTestPlan[]) => ({
   runPlans: plans.filter(isRunPlan),
   earlyPlans: plans.filter(isEarlyPlan),
 })
 
-const partitionRunPlansEffect = (plans: readonly MutantTestPlan[]) => {
-  const { runPlans, earlyPlans } = partitionRunPlans(plans)
-  return Effect.map(
-    Effect.forEach(earlyPlans, earlyResultOf),
-    (earlyResults) => ({ runPlans, earlyResults }),
-  )
-}
+const earlyResultOf = (plan: Extract<MutantTestPlan, { readonly plan: 'EarlyResult' }>) =>
+  Object.assign({}, plan.mutant, {
+    location: ReportLocation.fromMutant(plan.mutant.location).location,
+    status: plan.mutant.status ?? 'Ignored',
+  })
 
 const byReloadEnvironment = (left: RunPlan, right: RunPlan) =>
   Number(left.runOptions.reloadEnvironment) - Number(right.runOptions.reloadEnvironment)
@@ -461,18 +463,26 @@ const previousTestFilesOf = (rawReport: unknown) =>
 const relativeFileOfTest = (result: TestResult & { readonly fileName: string }) =>
   RelativeNormalizedFileName.fromAbsolute(result.fileName, '').fileName
 
-const testIdsByRelativeFileOf = (testCoverage: TestCoverage) => {
-  const located = [...testCoverage.testsById].flatMap(([, result]) =>
-    Option.match(Option.filter(Option.some(result), hasTestFileName), {
-      onNone: () => [] as const,
-      onSome: (located) => [[relativeFileOfTest(located), located.id] as const],
-    }))
-  return located.reduce(withFileEntry, {} as Record<string, string[]>)
-}
+const coveredFilesOfTests = (tests: Iterable<TestResult>) =>
+  [...new Set(
+    [...tests].flatMap((result) =>
+      Option.match(Option.filter(Option.some(result), hasTestFileName), {
+        onNone: () => [] as const,
+        onSome: (located) => [relativeFileOfTest(located)] as const,
+      })),
+  )]
 
-const hasTestByIdFileName = (
-  entry: readonly [string, TestResult],
-): entry is readonly [string, TestResult & { readonly fileName: string }] => entry[1].fileName !== undefined
+const coveringTestFilesByMutantIdOf = (testCoverage: TestCoverage) =>
+  Object.fromEntries(
+    [...testCoverage.testsByMutantId].map(([mutantId, tests]) => [mutantId, coveredFilesOfTests(tests)] as const),
+  )
+
+
+const relativeFileByMutantIdOf = (currentMutants: readonly Mutant[], basePath: string) =>
+  Object.fromEntries(
+    currentMutants.map((mutant) =>
+      [mutant.id, RelativeNormalizedFileName.fromAbsolute(mutant.fileName, basePath).fileName] as const),
+  )
 
 const incrementalDiffCommandOf = (
   currentMutants: readonly Mutant[],
@@ -482,20 +492,15 @@ const incrementalDiffCommandOf = (
   basePath: string,
   force: boolean,
 ) =>
-  Effect.gen(function*() {
-    const relativeFileByMutantId = yield* relativeFileByMutantIdOf(currentMutants, basePath)
-    const testIdsByRelativeFile = yield* testIdsByRelativeFileOf(testCoverage)
-    const coveringTestFilesByMutantId = yield* coveringTestFilesByMutantIdOf(testCoverage)
-    return IncrementalDiffCommand.make({
-      currentMutants: [...currentMutants],
-      relativeFileByMutantId,
-      previousFiles: previousFilesOf(incrementalReport),
-      previousTestFiles: previousTestFilesOf(incrementalReport),
-      currentRelativeFiles,
-      testIdsByRelativeFile,
-      coveringTestFilesByMutantId,
-      force,
-    })
+  IncrementalDiffCommand.make({
+    currentMutants: [...currentMutants],
+    relativeFileByMutantId: relativeFileByMutantIdOf(currentMutants, basePath),
+    previousFiles: previousFilesOf(incrementalReport),
+    previousTestFiles: previousTestFilesOf(incrementalReport),
+    currentRelativeFiles,
+    testIdsByRelativeFile: testIdsByRelativeFileOf(testCoverage),
+    coveringTestFilesByMutantId: coveringTestFilesByMutantIdOf(testCoverage),
+    force,
   })
 
 const incrementalDiff = (
@@ -509,7 +514,7 @@ const incrementalDiff = (
   }>,
 ) =>
   Effect.gen(function*() {
-    const command = yield* incrementalDiffCommandOf(
+    const command = incrementalDiffCommandOf(
       input.currentMutants,
       input.testCoverage,
       input.incrementalReport,
@@ -895,7 +900,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       readonly file: string
       readonly location: reportSchema.Location
     }
-    const preparedStreamableOfEffect = (result: RunMutantResult) =>
+    const preparedStreamableOf = (result: RunMutantResult) =>
       Option.match(Option.filter(Option.some(result.status), isMutantStatus), {
         onNone: () => Effect.succeed(Option.none<PreparedStreamableMutant>()),
         onSome: (status) =>
@@ -942,7 +947,6 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
                 completed,
                 total: plannedTotal,
               }),
-            )
             return Option.some(completed)
           }),
       })
@@ -963,7 +967,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       })
     const announceSettledMutant = (result: RunMutantResult) =>
       Effect.gen(function*() {
-        const prepared = yield* preparedStreamableOfEffect(result)
+        const prepared = yield* preparedStreamableOf(result)
         const completed = yield* offerFinished(result, prepared)
         yield* offerStreamTested(result, completed, prepared)
       })
@@ -979,9 +983,6 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
     ])
     const checkpointGate = yield* Semaphore.make(1)
     yield* reporting.checkpoint(reportingInputOf(prev, env, yield* Ref.get(completedMutants))).pipe(
-      Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
-      Effect.ignoreCause,
-    )
     const persist = (result: RunMutantResult) =>
       checkpointGate.withPermits(1)(
         Effect.gen(function*() {
@@ -1039,7 +1040,7 @@ const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
                   toReportedMutant(plan.mutant),
                   result,
                 )
-                const prepared = yield* preparedStreamableOfEffect(reported)
+                const prepared = preparedStreamableOf(reported)
                 const finished = yield* offerFinished(reported, prepared)
                 yield* offerStreamTested(reported, finished, prepared)
                 yield* persist(reported)

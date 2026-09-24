@@ -3,8 +3,10 @@ import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type CompleteDryRunResult,
   type DryRunOptions,
+  InterpretDryRunResultCommand,
+  interpretDryRunResult,
+  type MutantRunDecision,
   type MutantRunResult,
-  MutantRunResultFromDryRun,
   type TestRunnerCapabilities,
   type TestRunnerConfig,
   TestRunnerFailed,
@@ -17,7 +19,7 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Ref from 'effect/Ref'
-import * as S from 'effect/Schema'
+import * as Result from 'effect/Result'
 
 import { ALL_TESTS_ID, ALL_TESTS_NAME } from './command-runner.resource.js'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
@@ -41,6 +43,24 @@ export interface CompiledTests {
 }
 
 const FALLBACK_FILE_NAME = 'stryker-vm-tests.js'
+
+const wireResultOf = (decision: MutantRunDecision) =>
+  Match.value(decision).pipe(
+    Match.tag('Killed', (killed): MutantRunResult => ({
+      failureMessage: killed.failureMessage,
+      killedBy: killed.killedBy,
+      nrOfTests: killed.nrOfTests,
+      status: 'killed',
+    })),
+    Match.tag('Survived', (survived): MutantRunResult => ({ nrOfTests: survived.nrOfTests, status: 'survived' })),
+    Match.tag('Timeout', (timedOut): MutantRunResult =>
+      Option.match(Option.fromUndefinedOr(timedOut.reason), {
+        onNone: (): MutantRunResult => ({ status: 'timeout' }),
+        onSome: (reason): MutantRunResult => ({ reason, status: 'timeout' }),
+      })),
+    Match.tag('Error', (errored): MutantRunResult => ({ errorMessage: errored.errorMessage, status: 'error' })),
+    Match.exhaustive,
+  )
 
 const errorText = <A = unknown>(error: A): string =>
   Match.value(error).pipe(
@@ -219,13 +239,12 @@ export const vmTestRunner = (
       dryRun: (options: DryRunOptions) => run(testFilesOf(options.testFiles), undefined),
       mutantRun: (options: MutantRunOptions) =>
         run(config.testFiles, options.activeMutant.id).pipe(
-          Effect.flatMap(S.decodeEffect(MutantRunResultFromDryRun)),
-          Effect.catchTag('SchemaError', (cause) =>
-            Effect.fail(TestRunnerFailed.make({
-              runnerName: vmRunnerName,
-              phase: 'mutantRun',
-              cause: cause.message,
-            }))),
+          Effect.map((dryRunResult) => interpretDryRunResult(InterpretDryRunResultCommand.make({ dryRunResult }))),
+          Effect.flatMap((decided) =>
+            Result.match(decided, {
+              onFailure: (failure) => Effect.fail(failure),
+              onSuccess: (decision) => Effect.succeed(wireResultOf(decision)),
+            })),
           Effect.catchTag('TestRunnerFailed', (failure): Effect.Effect<MutantRunResult> =>
             Effect.succeed({ status: 'error', errorMessage: failure.cause })),
         ),

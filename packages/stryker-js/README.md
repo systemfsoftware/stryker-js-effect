@@ -86,18 +86,18 @@ export default StrykerConfig.define({
 
 ## Configuration API (`@systemfsoftware/stryker-js/config`)
 
-The `./config` subpath exports lightweight, inert TypeScript configuration helpers:
+The `./config` subpath exports the typed configuration authoring surface:
 
 ```ts
-import { defineConfig, mergeConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 ```
 
-### `defineConfig(options | configFactory)`
+### `StrykerConfig.define(options | configFactory)`
 
 Identity function providing strict autocompletion and type checking without runtime dependencies. Can take a configuration object or a factory receiving `ConfigEnv`:
 
 ```ts
-export default defineConfig(({ isCi, command }) => ({
+export default StrykerConfig.define(({ isCi, command }) => ({
   testRunner: 'vitest',
   plugins: [import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
@@ -105,15 +105,15 @@ export default defineConfig(({ isCi, command }) => ({
 }))
 ```
 
-### `mergeConfig(base, overrides)`
+### `StrykerConfig.merge(base, overrides)`
 
 Deeply merges configuration presets. Keys in records merge recursively; scalar values and arrays in `overrides` completely replace base values:
 
 ```ts
-import { mergeConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 import baseConfig from './stryker.base.config.ts'
 
-export default mergeConfig(baseConfig, {
+export default StrykerConfig.merge(baseConfig, {
   concurrency: 8,
   mutate: ['packages/core/src/**/*.ts'],
 })
@@ -175,7 +175,7 @@ console.log(`Mutation score: ${verdict.score}%`)
 | Subpath      | Description                                                        |
 | ------------ | ------------------------------------------------------------------ |
 | `.`          | Main entry point: `strykerCell`, runtime layers, and error schemas |
-| `./config`   | `defineConfig`, `mergeConfig`, and `StrykerConfig` typing          |
+| `./config`   | `StrykerConfig` authoring surface (`define`, `merge`)              |
 | `./promises` | `run()` wrapper returning standard JavaScript promises             |
 
 ## License

@@ -22,9 +22,9 @@ pnpm add -D @systemfsoftware/stryker-js-vitest-runner vitest
 Plugins in Stryker 5.0 are resolved as `file:` URLs via `import.meta.resolve()`:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'vitest',
   plugins: [
     import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
@@ -44,7 +44,7 @@ export default defineConfig({
 3. **Vitest Config**: By default, Stryker automatically discovers your `vitest.config.ts` or `vite.config.ts`. If your configuration is located elsewhere, specify it in your config:
 
 ```ts
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'vitest',
   plugins: [import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner')],
   vitest: {
@@ -62,7 +62,7 @@ pnpm add -D @systemfsoftware/stryker-ignorer-in-source-vitest-block
 ```
 
 ```ts
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: {
     plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
   },

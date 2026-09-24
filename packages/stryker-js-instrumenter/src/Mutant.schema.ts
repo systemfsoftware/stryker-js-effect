@@ -1,4 +1,3 @@
-import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'

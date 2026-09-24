@@ -1,6 +1,14 @@
-import { InstrumenterContext } from '@systemfsoftware/stryker-js-instrumenter'
+import { InstrumenterContext, MutantRunOptionsSchema } from '@systemfsoftware/stryker-js-instrumenter'
 import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
-import { MutantRunOptionsSchema } from '@systemfsoftware/stryker-js-instrumenter'
+import type { StrykerOptions, TestRunnerConfig } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  type CompleteDryRunResult,
+  type DryRunResult,
+  InterpretDryRunResultCommand,
+  interpretDryRunResult,
+  type MutantRunDecision,
+  type MutantRunResult,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -8,8 +16,8 @@ import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
 import * as Stream from 'effect/Stream'
-import { SchemaGetter } from 'effect'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
@@ -26,6 +34,24 @@ interface CommandTestRunnerConfig {
 }
 
 const commandRunnerCapabilities = { reloadEnvironment: true } as const
+
+const wireResultOf = (decision: MutantRunDecision) =>
+  Match.value(decision).pipe(
+    Match.tag('Killed', (killed): MutantRunResult => ({
+      failureMessage: killed.failureMessage,
+      killedBy: killed.killedBy,
+      nrOfTests: killed.nrOfTests,
+      status: 'killed',
+    })),
+    Match.tag('Survived', (survived): MutantRunResult => ({ nrOfTests: survived.nrOfTests, status: 'survived' })),
+    Match.tag('Timeout', (timedOut): MutantRunResult =>
+      Option.match(Option.fromUndefinedOr(timedOut.reason), {
+        onNone: (): MutantRunResult => ({ status: 'timeout' }),
+        onSome: (reason): MutantRunResult => ({ reason, status: 'timeout' }),
+      })),
+    Match.tag('Error', (errored): MutantRunResult => ({ errorMessage: errored.errorMessage, status: 'error' })),
+    Match.exhaustive,
+  )
 
 const resultFromExit = (exitCode: number, output: string, timeSpentMs: number): CompleteDryRunResult =>
   Match.value(exitCode).pipe(
@@ -101,10 +127,12 @@ const commandRunnerMutantRun = (
   mutantPick: Pick<MutantRunOptions, 'activeMutant'>,
 ): Effect.Effect<MutantRunResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
   runCommand(config, mutantPick.activeMutant.id).pipe(
-    Effect.map((result) =>
-      SchemaGetter.run(MutantRunResultSchema.decode({ reportAllKillers: true }), Option.some(result), {})
-    ),
-    Effect.map((decoded) => Option.getOrThrow(decoded)),
+    Effect.map((dryRunResult) => interpretDryRunResult(InterpretDryRunResultCommand.make({ dryRunResult }))),
+    Effect.flatMap((decided) =>
+      Result.match(decided, {
+        onFailure: (failure) => Effect.fail(failure),
+        onSuccess: (decision) => Effect.succeed(wireResultOf(decision)),
+      })),
   )
 
 export const commandRunner: {

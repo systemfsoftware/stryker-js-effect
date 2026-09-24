@@ -2,7 +2,7 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import {
   buildTestRunner,
-  createDefaultOptions,
+  StrykerConfig,
   type PooledTestRunner,
   type PooledTestRunnerError,
   type TestRunnerBuildContext,
@@ -89,7 +89,7 @@ const removeSuite = (directory: string): Effect.Effect<void> =>
 
 const buildContextFor = (fixture: SuiteFixture): Effect.Effect<TestRunnerBuildContext> =>
   Effect.gen(function*() {
-    const defaults = yield* createDefaultOptions
+    const defaults = yield* StrykerConfig.createDefaultOptions
     return {
       options: { ...defaults, testRunner: 'vm' },
       fileDescriptions: {},

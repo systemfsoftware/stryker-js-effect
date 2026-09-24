@@ -7,6 +7,7 @@ import type {
   MetricsResult,
   MutantRunResult,
   PassedCheckResult,
+  TestResult,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
 import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -26,7 +27,6 @@ import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { calculateMetrics } from './calculate-metrics.js'
 import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
 import { ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
 import { ReportLocationFromMutant } from './ReportLocation.schema.js'
@@ -35,13 +35,8 @@ import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js'
 import type { RunEvent } from './run-event.schema.js'
 import { RunEvents, VerdictReached } from './run-events.service.js'
-import {
-  assembleFileResults,
-  assembleTestFiles,
-  determineLanguage,
-  reportFileName,
-  testIdRemap,
-} from './report-assembly.js'
+import { MetricsResultFromReport } from './reporting/metrics-from-report.schema.js'
+import { ReportFileNames } from './reporting/report-assembly.schema.js'
 import type { ReporterStage } from './reporter-stream.service.js'
 import { closeReporterStage, offerTerminalReport, terminalDrainClass } from './reporter-stream.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
@@ -215,6 +210,157 @@ const partitionByFile = (files: Project['files'], fileNames: readonly string[]) 
 const originalSourcesOf = (originals: readonly (readonly [ProjectFile, string])[]) =>
   HashMap.fromIterable(Arr.map(originals, ([file, content]) => [file.name, content] as const))
 
+const EXTENSION_LANGUAGES: Readonly<Record<string, string>> = {
+  '.ts': 'typescript',
+  '.tsx': 'typescript',
+  '.html': 'html',
+  '.vue': 'html',
+}
+
+const extensionOf = (fileName: string): string => {
+  const base = fileName.slice(fileName.lastIndexOf('/') + 1)
+  const dot = base.lastIndexOf('.')
+  return Match.value(dot).pipe(
+    Match.when((at) => at <= 0, () => ''),
+    Match.orElse((at) => base.slice(at).toLowerCase()),
+  )
+}
+
+const determineLanguage = (fileName: string): string =>
+  Option.getOrElse(Option.fromNullishOr(EXTENSION_LANGUAGES[extensionOf(fileName)]), () => 'javascript')
+
+interface TestIdRemap {
+  readonly testId: (id: string) => string
+  readonly testIds: (ids: readonly string[] | undefined) => readonly string[] | undefined
+}
+
+const testIdRemap = (testIds: readonly string[]): TestIdRemap => {
+  const positions = HashMap.fromIterable(
+    Arr.map(testIds, (id, position): readonly [string, string] => [id, position.toString()]),
+  )
+  const remapId = (id: string): string => Option.getOrElse(HashMap.get(positions, id), () => id)
+  return {
+    testId: remapId,
+    testIds: (ids) =>
+      Option.match(Option.fromUndefinedOr(ids), {
+        onNone: () => undefined,
+        onSome: (present) => Arr.map(present, remapId),
+      }),
+  }
+}
+
+interface MutantGroup {
+  readonly sourceFileName: string
+  readonly mutants: readonly schema.MutantResult[]
+}
+
+interface TestGroup {
+  readonly sourceFileName: string
+  readonly tests: readonly schema.TestDefinition[]
+}
+
+interface FileResultsInput {
+  readonly sources: HashMap.HashMap<string, schema.FileResult>
+  readonly reportNames: HashMap.HashMap<string, string>
+  readonly mutants: readonly RunMutantResult[]
+  readonly remap: TestIdRemap
+}
+
+interface TestFilesInput {
+  readonly testSources: HashMap.HashMap<string, schema.TestFile>
+  readonly reportNames: HashMap.HashMap<string, string>
+  readonly tests: readonly TestResult[]
+  readonly remap: TestIdRemap
+}
+
+const reportMutantOf = (mutant: RunMutantResult, remap: TestIdRemap): schema.MutantResult => ({
+  id: mutant.id,
+  mutatorName: mutant.mutatorName,
+  replacement: mutant.replacement,
+  status: mutant.status,
+  location: mutant.location,
+  statusReason: mutant.statusReason,
+  testsCompleted: mutant.testsCompleted,
+  description: mutant.description,
+  static: mutant.static,
+  killedBy: remap.testIds(mutant.killedBy),
+  coveredBy: remap.testIds(mutant.coveredBy),
+})
+
+const reportTestOf = (test: TestResult, remap: TestIdRemap) =>
+  Option.match(Option.fromUndefinedOr(test.startPosition), {
+    onNone: () => ({ id: remap.testId(test.id), name: test.name }),
+    onSome: (start) => ({ id: remap.testId(test.id), name: test.name, location: { start } }),
+  })
+
+const groupMutants = (input: FileResultsInput): HashMap.HashMap<string, MutantGroup> =>
+  Arr.reduce(
+    input.mutants,
+    HashMap.empty<string, MutantGroup>(),
+    (accumulator, mutant) =>
+      Option.match(HashMap.get(input.reportNames, mutant.fileName), {
+        onNone: () => accumulator,
+        onSome: (reportName) => {
+          const mapped = reportMutantOf(mutant, input.remap)
+          return Option.match(HashMap.get(accumulator, reportName), {
+            onNone: () => HashMap.set(accumulator, reportName, { sourceFileName: mutant.fileName, mutants: [mapped] }),
+            onSome: (existing) =>
+              HashMap.set(accumulator, reportName, {
+                sourceFileName: existing.sourceFileName,
+                mutants: [...existing.mutants, mapped],
+              }),
+          })
+        },
+      }),
+  )
+
+const groupTests = (input: TestFilesInput): HashMap.HashMap<string, TestGroup> =>
+  Arr.reduce(
+    input.tests,
+    HashMap.empty<string, TestGroup>(),
+    (accumulator, test) =>
+      Option.match(Option.fromUndefinedOr(test.fileName), {
+        onNone: () => accumulator,
+        onSome: (testFileName) =>
+          Option.match(HashMap.get(input.reportNames, testFileName), {
+            onNone: () => accumulator,
+            onSome: (reportName) => {
+              const mapped = reportTestOf(test, input.remap)
+              return Option.match(HashMap.get(accumulator, reportName), {
+                onNone: () => HashMap.set(accumulator, reportName, { sourceFileName: testFileName, tests: [mapped] }),
+                onSome: (existing) =>
+                  HashMap.set(accumulator, reportName, {
+                    sourceFileName: existing.sourceFileName,
+                    tests: [...existing.tests, mapped],
+                  }),
+              })
+            },
+          }),
+      }),
+  )
+
+const assembleFileResults = (input: FileResultsInput): schema.FileResultDictionary =>
+  Object.fromEntries(
+    Arr.flatMap([...groupMutants(input)], ([reportName, group]) =>
+      Option.match(HashMap.get(input.sources, group.sourceFileName), {
+        onNone: (): ReadonlyArray<readonly [string, schema.FileResult]> => [],
+        onSome: (source): ReadonlyArray<readonly [string, schema.FileResult]> => [
+          [reportName, { ...source, mutants: group.mutants }],
+        ],
+      })),
+  )
+
+const assembleTestFiles = (input: TestFilesInput): schema.TestFileDefinitionDictionary =>
+  Object.fromEntries(
+    Arr.flatMap([...groupTests(input)], ([reportName, group]) =>
+      Option.match(HashMap.get(input.testSources, group.sourceFileName), {
+        onNone: (): ReadonlyArray<readonly [string, schema.TestFile]> => [],
+        onSome: (source): ReadonlyArray<readonly [string, schema.TestFile]> => [
+          [reportName, { ...source, tests: group.tests }],
+        ],
+      })),
+  )
+
 const readMutatedSources =
   (deps: MutationReportingDeps, input: MutationReportingInput) => (fileNames: readonly string[]) =>
     Effect.gen(function*() {
@@ -267,12 +413,15 @@ const assembleReport = (deps: MutationReportingDeps, input: MutationReportingInp
     const testFileNames = uniqueNames(Arr.map(tests, (test) => test.fileName))
     const sources = yield* readMutatedSources(deps, input)(mutatedFileNames)
     const testSources = yield* readTestSources(deps, input)(testFileNames)
-    const reportNames = HashMap.fromIterable(
-      Arr.map([...mutatedFileNames, ...testFileNames], (fileName) => [
-        fileName,
-        reportFileName(deps.path.relative(input.basePath, fileName)),
-      ] as const),
-    )
+    const relativeNames = yield* S.decodeEffect(ReportFileNames)(
+      Object.fromEntries(
+        Arr.map([...mutatedFileNames, ...testFileNames], (fileName) => [
+          fileName,
+          deps.path.relative(input.basePath, fileName),
+        ] as const),
+      ),
+    ).pipe(Effect.orDie)
+    const reportNames = HashMap.fromIterable(Object.entries(relativeNames))
     return {
       files: assembleFileResults({ sources, reportNames, mutants: results, remap }),
       testFiles: assembleTestFiles({ testSources, reportNames, tests, remap }),
@@ -424,7 +573,7 @@ const writeIncrementalReport = (
 const reportAll = (deps: MutationReportingDeps, input: MutationReportingInput) =>
   Effect.gen(function*() {
     const report = yield* mutationTestReport(deps, input)(input.results)
-    const metrics = calculateMetrics(report.files)
+    const metrics = MetricsResultFromReport.fromFiles(report.files)
     yield* offerTerminalReport(input.reporterStage, report, metrics)
     const terminalDrain = terminalDrainClass(yield* closeReporterStage(input.reporterStage))
     const verdict = yield* determineExitCode(input)(metrics)

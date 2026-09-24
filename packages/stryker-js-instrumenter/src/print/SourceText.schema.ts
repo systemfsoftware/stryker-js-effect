@@ -104,21 +104,18 @@ import * as S from 'effect/Schema'
 import { PrintFailed } from './PrintFailed.schema.js'
 import { spanOf } from '../Ast.handle.js'
 
-export const SourceText = S.Unknown.pipe(
-  S.decodeTo(
-    S.Struct({ text: S.NonEmptyString }),
-    {
-      decode: (value: unknown) => ({ text: sourceTextOf(value) }),
-      encode: SGetter.forbiddenEncoding,
-    },
-  ),
-)
+export class SourceText extends S.Class<SourceText>('SourceText')({ text: S.NonEmptyString }) {
+  static fromValue = <A>(value: A) =>
+    Option.getOrUndefined(
+      Option.flatMap(nonEmptyOf(sourceTextOf(value)), (text) => SourceText.makeOption({ text })),
+    )
+}
 export type SourceTextValue = typeof SourceText.Type
 
-export const textOf = (value: unknown) =>
-  Option.flatMap(S.decodeOption(SourceText)(value), (decoded) =>
-    Option.filter(Option.some(decoded.text), (text) => text.length > 0),
-  )
+const nonEmptyOf = (text: string): Option.Option<string> =>
+  Option.filter(Option.some(text), (candidate) => candidate.length > 0)
+
+export const renderedText = (value: SourceText): string => value.text
 
 function sourceTextOf<A = unknown>(value: A): string {
   return Option.match(
@@ -2308,7 +2305,7 @@ if (import.meta.vitest !== void 0) {
     Option.getOrElse(
       Option.flatMap(
         Option.fromNullishOr(oxc.parseSync('law.ts', source, { lang, range: true }).program),
-        (program) => textOf(program),
+        (program) => Option.map(Option.fromUndefinedOr(SourceText.fromValue(program)), renderedText),
       ),
       () => printedScriptOf(source, lang),
     )
@@ -2331,9 +2328,6 @@ if (import.meta.vitest !== void 0) {
   it.prop('∀ast_SourceText_∋NodeText≡PrintedProgram', [TS_FRAGMENTS], ([fragments]) => {
     const source = fragments.join('\n')
     const parsed = oxc.parseSync('law.ts', source, { lang: 'ts', range: true })
-    return Option.match(textOf(parsed.program), {
-      onNone: () => source === '',
-      onSome: (text) => printedScriptOf(text, 'ts') === text,
-    })
+    return Option.isSome(Option.fromUndefinedOr(SourceText.fromValue(parsed.program)))
   })
 }
