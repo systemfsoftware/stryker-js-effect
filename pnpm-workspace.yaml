@@ -11,10 +11,10 @@ catalog:
   "@commitlint/config-conventional": ^21
   "@commitlint/types": ^21
   "@effect/tsgo": ^0.45.0
-  "@effect/platform-node": 4.0.0-rc.116
-  "@effect/platform-node-shared": 4.0.0-rc.116
-  "@effect/vitest": 4.0.0-rc.116
-  "@effect/opentelemetry": 4.0.0-rc.116
+  "@effect/platform-node": 4.0.0-rc.117
+  "@effect/platform-node-shared": 4.0.0-rc.117
+  "@effect/vitest": 4.0.0-rc.117
+  "@effect/opentelemetry": 4.0.0-rc.117
   "@eslint-community/regexpp": ^4.12.2
   angular-html-parser: ~10.12.0
   "@microsoft/api-extractor": ^7
@@ -24,13 +24,14 @@ catalog:
   "@std/jsonc": jsr:^1
   svelte: ^5
   "@systemfsoftware/arethetypeswrong-cli": ^4.2.0
-  "@systemfsoftware/effect-cell-types": ^10.1.0
-  "@systemfsoftware/effect-microsandbox": ^1.0.0
-  "@systemfsoftware/effect-gherkin-spec": ^4.3.0
-  "@systemfsoftware/effect-schema-law": ^2.3.0
-  "@systemfsoftware/effect-schema-vite": ^2.2.2
-  "@systemfsoftware/oxlint-config-recommended": ^2.0.0
-  "@systemfsoftware/tsconfig": ^2.0.0
+  "@systemfsoftware/effect-cell-types": ^10.1.1
+  "@systemfsoftware/effect-microsandbox": ^2.0.1
+  "@systemfsoftware/effect-readiness": ^0.2.1
+  "@systemfsoftware/effect-gherkin-spec": ^4.3.1
+  "@systemfsoftware/effect-schema-law": ^2.3.1
+  "@systemfsoftware/effect-schema-vite": ^2.2.3
+  "@systemfsoftware/oxlint-config-recommended": ^2.0.2
+  "@systemfsoftware/tsconfig": ^2.0.1
   "@types/node": ^24
   "@opentelemetry/api": ^1.9.0
   "@opentelemetry/exporter-metrics-otlp-http": ^0.222.0
@@ -41,7 +42,7 @@ catalog:
   "@vitest/browser-playwright": ^5
   "@vitest/coverage-v8": ^5
   fast-check: ^4
-  effect: 4.0.0-rc.116
+  effect: 4.0.0-rc.117
   husky: ^9
   lint-staged: ^17
   oxc-parser: ^0.150.0
@@ -70,7 +71,7 @@ catalogs:
 minimumReleaseAgeExclude:
   - "@systemfsoftware/*"
 overrides:
-  effect: 4.0.0-rc.116
+  effect: 4.0.0-rc.117
 packages:
   - test/*
   - packages/*

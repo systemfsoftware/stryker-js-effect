@@ -50,8 +50,11 @@ interface LineStarts {
 }
 
 const lineStartsOf = (text: string): LineStarts => ({
-  lineStarts: [0, ...[...text.matchAll(LINE_TERMINATOR)].map((match) => match.index + match[0].length)],
+  lineStarts: [0, ...[...text.matchAll(LINE_TERMINATOR)].map((match) => endOfMatch(match))],
 })
+
+const endOfMatch = (match: RegExpMatchArray): number =>
+  (match.index ?? 0) + match[0].length
 
 const canonicalTextOf = (table: LineStarts): string =>
   Boolean.match(table.lineStarts.length === 1, {
@@ -75,18 +78,19 @@ const zeroBasedPositionOf = (lineStarts: Arr.NonEmptyReadonlyArray<number>, offs
   const search = (low: number, high: number, start: number): Position =>
     Boolean.match(low > high, {
       onTrue: () => ({ line: low - 1, column: offset - start }),
-      onFalse: () => {
-        const middle = middleIndex(low, high)
-        const found = lineStarts[middle]
-        return Boolean.match(found === offset, {
-          onTrue: () => ({ line: middle, column: offset - found }),
-          onFalse: () =>
-            Boolean.match(found < offset, {
-              onTrue: () => search(middle + 1, high, found),
-              onFalse: () => search(low, middle - 1, start),
+      onFalse: () =>
+        Option.match(Arr.get(lineStarts, middleIndex(low, high)), {
+          onNone: () => ({ line: low - 1, column: offset - start }),
+          onSome: (found) =>
+            Boolean.match(found === offset, {
+              onTrue: () => ({ line: middleIndex(low, high), column: offset - found }),
+              onFalse: () =>
+                Boolean.match(found < offset, {
+                  onTrue: () => search(middleIndex(low, high) + 1, high, found),
+                  onFalse: () => search(low, middleIndex(low, high) - 1, start),
+                }),
             }),
-        })
-      },
+        }),
     })
   return search(0, lineStarts.length - 1, 0)
 }
@@ -124,14 +128,13 @@ if (import.meta.vitest !== void 0) {
       onFalse: () => a.column - b.column,
     })
   }
-
   const positionStartsItsLine = (table: LineTable, position: Position, offset: number): boolean =>
     Arr.get(table.lineStarts, position.line - 1).pipe(
       Option.exists((start) => start + position.column - 1 === offset),
     )
 
   const terminatorEndsAtOrBefore = (text: string, offset: number): number =>
-    [...text.matchAll(LINE_TERMINATOR)].filter((match) => match.index + match[0].length <= offset).length
+    [...text.matchAll(LINE_TERMINATOR)].filter((match) => endOfMatch(match) <= offset).length
 
   const conservedAt = (text: string, offset: number) =>
     Effect.map(
@@ -170,10 +173,9 @@ if (import.meta.vitest !== void 0) {
     Effect.map(
       S.decodeEffect(LineTableFromText)(text),
       (table) =>
-        table.lineStarts[0] === 0 &&
+        Option.getOrElse(Arr.head(table.lineStarts), () => -1) === 0 &&
         table.lineStarts.every((start, index) => index === 0 || start > positionLineStartAt(table, index)),
     )
-
   const positionLineStartAt = (table: LineTable, index: number): number =>
     Option.getOrElse(Arr.get(table.lineStarts, index), () => 0)
 

@@ -1,4 +1,5 @@
 import { MicroVM } from '@systemfsoftware/effect-microsandbox'
+import type { Readiness } from '@systemfsoftware/effect-readiness'
 import { Boolean, Context, Effect, Layer, Match } from 'effect'
 import * as Crypto from 'effect/Crypto'
 import * as FileSystem from 'effect/FileSystem'
@@ -13,7 +14,7 @@ export interface GuestJobsShape {
   readonly runGuestJob: (
     step: string,
     job: MicroVM.JobResource,
-  ) => Effect.Effect<MicroVM.JobCompletion, GuestJobFailure, Crypto.Crypto | FileSystem.FileSystem>
+  ) => Effect.Effect<MicroVM.JobCompletion, GuestJobFailure, Crypto.Crypto | FileSystem.FileSystem | Readiness.HostProber>
   readonly requireExited: (
     step: string,
     completion: MicroVM.JobCompletion,
@@ -21,7 +22,7 @@ export interface GuestJobsShape {
   readonly requireCleanExit: (
     step: string,
     job: MicroVM.JobResource,
-  ) => Effect.Effect<void, ExitFailure | GuestJobFailure | GuestSignaledFailure, Crypto.Crypto | FileSystem.FileSystem>
+  ) => Effect.Effect<void, ExitFailure | GuestJobFailure | GuestSignaledFailure, Crypto.Crypto | FileSystem.FileSystem | Readiness.HostProber>
 }
 
 export class GuestJobs extends Context.Service<GuestJobs, GuestJobsShape>()('@systemfsoftware/stryker-e2e/Harness/GuestJobs') {

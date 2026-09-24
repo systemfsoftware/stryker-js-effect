@@ -34,7 +34,7 @@ import { RunEvents } from '../run-events.service.js'
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import { PluginLoadFailedError, PluginNotFoundError } from '../PluginsError.schema.js'
 import {
-  EvaluatorPluginDescriptor,
+  type EvaluatorPluginDescriptor,
   IgnorerModuleSchema,
   PluginModuleSchema,
   SchemaValidationContributionSchema,

@@ -27,8 +27,9 @@ import * as Flag from 'effect/unstable/cli/Flag'
 
 import { Admitted, NoSurvivors } from './admit-survivors-run.workflow.js'
 import { survivorsAdmissionCell } from './Survivors/Survivors.cell.js'
+import type { SurvivorsAdmissionAnswer, SurvivorsAdmissionInput } from './Survivors/mod.js'
 import type { SurvivorsRejection } from './Survivors/mod.js'
-import { CliRouteCommand, type CliRequest } from './Cli.schema.js'
+import { CliRouteCommand, type CliRequest, type MergeReportsRequest } from './Cli.schema.js'
 import {
   type ConfigFileInvalidError,
   type ConfigFileNotFoundError,
@@ -590,48 +591,73 @@ const restrictedOptionsOf = (
   }
 }
 
-const admissionOf = (
-  answer: { readonly admission: Admitted | NoSurvivors; readonly resolvedOptions: StrykerOptions; readonly priorReportPath: string },
-  channel: CliRead,
-) =>
-  Match.value(answer.admission).pipe(
-    Match.tag('NoSurvivors', () =>
-      channel.environment.runEvents.emitNullScoreVerdict({
-        stream: channel.environment.stream,
-        mode: channel.environment.mode,
-        thresholds: answer.resolvedOptions.thresholds,
-        config: answer.resolvedOptions,
-        basePath: channel.environment.basePath,
-        pathService: channel.environment.pathService,
-      })),
-    Match.tag('Admitted', (admitted) =>
-      runEffectOf(channel.environment, restrictedOptionsOf(answer.resolvedOptions, answer.priorReportPath, admitted))),
-    Match.exhaustive,
-  )
 
+type CliRoutedAction =
+  | { readonly _tag: 'CliHelpRequested'; readonly channel: CliRead }
+  | { readonly _tag: 'CliMergeReportsRequested'; readonly request: MergeReportsRequest; readonly channel: CliRead }
+  | { readonly _tag: 'CliRunRequested'; readonly channel: CliRead }
+  | { readonly _tag: 'CliSurvivorsRequested'; readonly channel: CliRead }
 
 const cliRouteCell = Sandwich.named('stryker.cli')(readCliRoute)
   .decide(routeCliRequest)
   .write({
-    CliHelpRequested: () => Effect.succeed<CliAnswer>(undefined),
-    CliMergeReportsRequested: (merge) =>
-      mergeReportsCell.run({ _tag: 'merge-reports', parts: merge.parts, out: merge.out, packages: merge.packages }),
-    CliRunRequested: (_outcome, channel) => runEffectOf(channel.environment, channel.options),
+    CliHelpRequested: (_outcome, channel) => Effect.succeed<CliRoutedAction>({ _tag: 'CliHelpRequested', channel }),
+    CliMergeReportsRequested: (merge, channel) =>
+      Effect.succeed<CliRoutedAction>({
+        _tag: 'CliMergeReportsRequested',
+        request: { _tag: 'merge-reports', parts: merge.parts, out: merge.out, packages: merge.packages },
+        channel,
+      }),
+    CliRunRequested: (_outcome, channel) => Effect.succeed<CliRoutedAction>({ _tag: 'CliRunRequested', channel }),
     CliSurvivorsRequested: (_outcome, channel) =>
-      Effect.flatMap(
-        survivorsAdmissionCell.run({
-          cliOptions: channel.options,
-          mode: channel.environment.mode.mode,
-          basePath: channel.environment.basePath,
-        }),
-        (answer) => admissionOf(answer, channel),
-      ),
+      Effect.succeed<CliRoutedAction>({ _tag: 'CliSurvivorsRequested', channel }),
     CommandRejected: ({ issue }) =>
       Effect.fail(new StrykerError({ message: `the CLI read resolved a command the route schema rejects: ${issue}` })),
   })
 
+const survivorsInputOf = (channel: CliRead): SurvivorsAdmissionInput => ({
+  cliOptions: channel.options,
+  mode: channel.environment.mode.mode,
+  basePath: channel.environment.basePath,
+})
 
-export const strykerCliCell = cliRouteCell
+
+const runCellOf = (channel: CliRead) =>
+  Cell.fromEffect<CliAnswer>(runEffectOf(channel.environment, channel.options))
+
+export const strykerCliCell = Cell.flatMap(
+  cliRouteCell,
+  (action) =>
+    Match.valueTags(action)({
+      CliHelpRequested: () => Cell.succeed<CliAnswer>(undefined),
+      CliMergeReportsRequested: (merge) => Cell.mapInput(mergeReportsCell, () => merge.request),
+      CliRunRequested: (run) => runCellOf(run.channel),
+      CliSurvivorsRequested: (survivors) =>
+        Cell.andThen(
+          Cell.mapInput(survivorsAdmissionCell, () => survivorsInputOf(survivors.channel)),
+          (answer: SurvivorsAdmissionAnswer) =>
+            Match.value(answer.admission).pipe(
+              Match.tag('NoSurvivors', () =>
+                Cell.fromEffect<CliAnswer>(
+                  survivors.channel.environment.runEvents.emitNullScoreVerdict({
+                    stream: survivors.channel.environment.stream,
+                    mode: survivors.channel.environment.mode,
+                    thresholds: answer.resolvedOptions.thresholds,
+                    config: answer.resolvedOptions,
+                    basePath: survivors.channel.environment.basePath,
+                    pathService: survivors.channel.environment.pathService,
+                  }),
+                )),
+              Match.tag('Admitted', (admitted) =>
+                runCellOf({
+                  ...survivors.channel,
+                  options: restrictedOptionsOf(answer.resolvedOptions, answer.priorReportPath, admitted),
+                })),
+              Match.exhaustive,
+            ),
+        ),
+    }),
+)
 
 export interface StrykerCliEffectOptions {
   readonly argv: readonly string[]

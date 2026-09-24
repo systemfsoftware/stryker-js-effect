@@ -27,6 +27,7 @@
     "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@systemfsoftware/effect-microsandbox": "catalog:",
+    "@systemfsoftware/effect-readiness": "catalog:",
     "@systemfsoftware/stryker-js": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",

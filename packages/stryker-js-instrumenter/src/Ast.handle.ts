@@ -16,7 +16,9 @@ type Child<T> = T extends null | undefined ? T
   : T extends Oxc.Span ? Built<T> | T
   : T
 
-type PrintedNode = Simplify<Built<Oxc.Node>>
+export type PrintedNode = Simplify<Built<Oxc.Node>>
+
+export type PrintedNodeOf<K extends PrintedNode['type']> = Extract<PrintedNode, { type: K }>
 import type {
   BindingPattern,
   BlockStatement,
@@ -478,11 +480,16 @@ const assignComments = (
     }),
   )
 
-const pushComment = (map: Map<PrintedNode, SpannedComment[]>, node: PrintedNode, comment: SpannedComment): void =>
+const pushComment = (map: Map<PrintedNode, SpannedComment[]>, node: PrintedNode, comment: SpannedComment): void => {
   Option.match(Option.fromNullishOr(map.get(node)), {
-    onNone: () => map.set(node, [comment]),
-    onSome: (list) => list.push(comment),
+    onNone: () => {
+      map.set(node, [comment])
+    },
+    onSome: (list) => {
+      list.push(comment)
+    },
   })
+}
 
 const isProgramNode = (node: Program | PrintedNode): node is Program => nodeType(node) === 'Program'
 const walkableNode = (root: Program | PrintedNode): PrintedNode =>
@@ -528,11 +535,14 @@ export interface PrintedNodeEntry {
   readonly end: number
 }
 
-const appendEntry = (node: PrintedNode, out: PrintedNodeEntry[]): void =>
+const appendEntry = (node: PrintedNode, out: PrintedNodeEntry[]): void => {
   Option.match(Option.fromNullishOr(spanOf(node)), {
     onNone: () => undefined,
-    onSome: (span) => out.push({ node, start: span.start, end: span.end }),
+    onSome: (span) => {
+      out.push({ node, start: span.start, end: span.end })
+    },
   })
+}
 
 export interface AstNodeRecord {
   readonly [k: string]:
@@ -598,15 +608,16 @@ const readPath = (
   controls: WalkerThisContextEnter,
   context: WalkerCallbackContext,
   visitors: TraverseVisitors,
-): void =>
+): void => {
   Boolean.match(isCommentKey(context.key), {
     onTrue: () => undefined,
     onFalse: () => {
-      const path = createPath(node, parentOf(stack), controls, context)
-      stack.push(path)
-      notify(visitors.enter, path)
+      const current = createPath(node, parentOf(stack), controls, context)
+      stack.push(current)
+      notify(visitors.enter, current)
     },
   })
+}
 
 const closePath = (stack: TraversePath[], context: WalkerCallbackContext, visitors: TraverseVisitors): void =>
   Boolean.match(isCommentKey(context.key), {

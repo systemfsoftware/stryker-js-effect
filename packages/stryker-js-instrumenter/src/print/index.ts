@@ -4,7 +4,7 @@ import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import { isNodeArg } from '../Ast.handle.js'
+import { isNodeArg, type PrintedNode, type PrintedNodeOf } from '../Ast.handle.js'
 import type {
   AccessorProperty,
   ArrayExpression,
@@ -349,26 +349,6 @@ const printNodePrec = (ctx: PrintContext, node: Node | null | undefined, prec: n
     onNone: () => '',
     onSome: (value) => dispatchNode(ctx, value, prec),
   })
-
-type Simplify<T> = { [K in keyof T]: T[K] } & {}
-
-type Built<T> = T extends null | undefined ? T
-  : T extends readonly unknown[] ? (number extends T['length'] ? Array<Built<T[number]>> : T)
-  : T extends Span ?
-      & {
-        [K in keyof T as K extends keyof Span ? never : K]: Child<T[K]>
-      }
-      & Partial<Pick<T, keyof Span>>
-  : T
-
-type Child<T> = T extends null | undefined ? T
-  : T extends readonly unknown[] ? (number extends T['length'] ? Array<Child<T[number]>> : T)
-  : T extends Span ? Built<T> | T
-  : T
-
-type PrintedNode = Simplify<Built<Oxc.Node>>
-
-type PrintedNodeOf<K extends PrintedNode['type']> = Extract<PrintedNode, { type: K }>
 
 const isNode = <T extends PrintedNode['type']>(type: T) => (node: PrintedNode): node is PrintedNodeOf<T> =>
   node.type === type

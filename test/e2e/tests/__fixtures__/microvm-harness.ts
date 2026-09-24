@@ -1,6 +1,7 @@
 import { Layer, ManagedRuntime } from 'effect'
 
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
+import { Readiness } from '@systemfsoftware/effect-readiness'
 
 import { test as baseTest } from 'vitest'
 
@@ -13,7 +14,7 @@ const HarnessLive = Layer.mergeAll(
   BakedFixtureCache.layer,
   StrykerCliRunner.layer,
   GuestJobs.layer,
-).pipe(Layer.provideMerge(nodeServicesLayer))
+).pipe(Layer.provideMerge(Layer.mergeAll(nodeServicesLayer, Readiness.NodeHostProber.layer)))
 
 export interface MicroVMHarness {
   readonly install: (fixtureUrl: URL, name: string) => Promise<string>
