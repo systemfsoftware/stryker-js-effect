@@ -101,7 +101,6 @@ import type {
 import type { Ast, HtmlAst, JSAst, ScriptAst, SvelteAst, TSAst, TemplateScript, TsxAst } from '../Ast.schema.js'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import * as SGetter from 'effect/SchemaGetter'
 import { PrintFailed } from './PrintFailed.schema.js'
 import { spanOf } from '../Ast.handle.js'
 
@@ -307,7 +306,7 @@ const spannedScriptsOf = (
 
 const printProgram = (program: Program, opts: PrintProgramOptions = {}): string => programText(opts, program)
 
-const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
+export const printNode = (node: Node): string => dispatchNode({ indentLevel: 0 }, node, PREC.Sequence)
 
 interface PrintContext {
   readonly indentLevel: number

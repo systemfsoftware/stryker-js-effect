@@ -303,7 +303,7 @@ if (import.meta.vitest !== void 0) {
 
   it.prop('∀cause_ErrorText_∋NameAndMessage', [WORDS], ([parts]) => {
     const error = errorOf(parts)
-    return Option.match(textOf(ErrorText)(error), {
+    return Option.match(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(error)), renderedText), {
       onNone: () => error.message.length === 0,
       onSome: (text) => text.includes(error.name) && text.includes(error.message),
     })
@@ -311,7 +311,7 @@ if (import.meta.vitest !== void 0) {
 
   it.prop('∀text_ErrorText_≡StringPassthrough', [WORDS], ([parts]) => {
     const source = parts.join(' ')
-    return Option.match(textOf(ErrorText)(source), {
+    return Option.match(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(source)), renderedText), {
       onNone: () => source.length === 0,
       onSome: (rendered) => rendered === source,
     })
@@ -321,7 +321,7 @@ if (import.meta.vitest !== void 0) {
 
   it.prop('∀cause_ErrorText_∋ErrnoCode', [WORDS], ([parts]) => {
     const error = errnoOf(parts)
-    return Option.match(textOf(ErrorText)(error), {
+    return Option.match(Option.map(Option.fromUndefinedOr(ErrorText.fromCause(error)), renderedText), {
       onNone: () => false,
       onSome: (text) => text.startsWith(`${error.name}: ${error.code} (${error.syscall})`),
     })
@@ -330,7 +330,7 @@ if (import.meta.vitest !== void 0) {
   it.prop('∀cause_CauseText_∋NestedMessage', [WORDS], ([parts]) => {
     const error = nestedOf(parts)
     const inner = error.cause instanceof Error ? error.cause.message : ''
-    return Option.match(textOf(CauseText)(error), {
+    return Option.match(Option.map(Option.fromUndefinedOr(CauseText.fromCause(error)), renderedText), {
       onNone: () => error.message.length === 0 && inner.length === 0,
       onSome: (text) => mentionsAll(text, [error.message, inner]),
     })

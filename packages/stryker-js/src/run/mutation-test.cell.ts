@@ -458,25 +458,17 @@ const previousTestFilesOf = (rawReport: unknown) =>
     ? previousTestFilesFieldOf(rawReport)
     : {}
 
-const hasTestFileName = (result: TestResult): result is TestResult & { readonly fileName: string } =>
-  result.fileName !== undefined
+const relativeFileOfTest = (result: TestResult & { readonly fileName: string }) =>
+  RelativeNormalizedFileName.fromAbsolute(result.fileName, '').fileName
 
-const withFileEntry = (
-  byFile: Record<string, string[]>,
-  file: string,
-  id: string,
-) => ({
-  ...byFile,
-  [file]: [...(byFile[file] ?? []), id] as string[],
-})
-
-const testIdsByRelativeFileOf = (testCoverage: TestCoverage) =>
-  Effect.forEach([...testCoverage.testsById].filter(hasTestByIdFileName), (entry) =>
-    Effect.orDie(
-      S.decodeEffect(RelativeNormalizedFileName)({ fileName: entry[1].fileName, basePath: '' }),
-    ).pipe(Effect.map((file) => [file, entry[1].id] as const))).pipe(
-    Effect.map((pairs) => pairs.reduce(withFileEntry, {} as Record<string, string[]>)),
-  )
+const testIdsByRelativeFileOf = (testCoverage: TestCoverage) => {
+  const located = [...testCoverage.testsById].flatMap(([, result]) =>
+    Option.match(Option.filter(Option.some(result), hasTestFileName), {
+      onNone: () => [] as const,
+      onSome: (located) => [[relativeFileOfTest(located), located.id] as const],
+    }))
+  return located.reduce(withFileEntry, {} as Record<string, string[]>)
+}
 
 const hasTestByIdFileName = (
   entry: readonly [string, TestResult],

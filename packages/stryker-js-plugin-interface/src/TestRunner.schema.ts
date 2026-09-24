@@ -150,50 +150,6 @@ export type MutantRunResult =
   | SurvivedMutantRunResult
   | TimeoutMutantRunResult
 
-const failedTestsOf = (tests: readonly TestResult[]) =>
-  tests.filter((test): test is FailedTestResult => test.status === 'failed')
-
-const countedTestsOf = (tests: readonly TestResult[]) => tests.filter((test) => test.status !== 'skipped').length
-
-const firstFailedTestOf = (failed: readonly FailedTestResult[]) => Option.fromUndefinedOr(failed.at(0))
-
-const mutantRunResultOf = (dryRunResult: DryRunResult): MutantRunResult =>
-  Match.value(dryRunResult).pipe(
-    Match.discriminator('status')('complete', (complete) => {
-      const failed = failedTestsOf(complete.tests)
-      const nrOfTests = countedTestsOf(complete.tests)
-      return Option.match(firstFailedTestOf(failed), {
-        onNone: (): MutantRunResult => ({ nrOfTests, status: 'survived' }),
-        onSome: (firstFailed): MutantRunResult => ({
-          failureMessage: firstFailed.failureMessage,
-          killedBy: failed.map((test) => test.id),
-          nrOfTests,
-          status: 'killed',
-        }),
-      })
-    }),
-    Match.discriminator('status')('error', (errored): MutantRunResult => ({
-      errorMessage: errored.errorMessage,
-      status: 'error',
-    })),
-    Match.discriminator('status')(
-      'timeout',
-      (timedOut): MutantRunResult =>
-        Option.match(Option.fromUndefinedOr(timedOut.reason), {
-          onNone: (): MutantRunResult => ({ status: 'timeout' }),
-          onSome: (reason): MutantRunResult => ({ reason, status: 'timeout' }),
-        }),
-    ),
-    Match.exhaustive,
-  )
-
-export const MutantRunResultFromDryRun = DryRunResultSchema.pipe(
-  S.decodeTo(MutantRunResultSchema, {
-    decode: SchemaGetter.transform(mutantRunResultOf),
-    encode: SchemaGetter.forbiddenEncoding,
-  }),
-)
-
 export type CoverageAnalysis = 'off' | 'all' | 'perTest'
 
 export interface DryRunOptions extends RunOptions {

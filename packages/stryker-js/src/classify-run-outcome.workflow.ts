@@ -40,8 +40,10 @@ export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOu
     highestExitClass: 'stryker.run_outcome.highest_exit_class',
   } as const
 
-  static readonly fromExit = (input: { readonly exit: unknown; readonly argv: readonly string[] }) =>
-    gatherRunOutcomeOf(input)
+  static readonly fromExit = (input: {
+    readonly exit: Exit.Exit<unknown, unknown>
+    readonly argv: readonly string[]
+  }) => gatherRunOutcomeOf(input)
 }
 export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: S.Finite }) {
   override get [Runtime.errorExitCode](): number {
@@ -254,7 +256,10 @@ const unknownCauseOf = (value: object) =>
     Match.orElse(() => undefined),
   )
 
-const causeTextOf = (value: object) => Option.getOrUndefined(S.decodeUnknownOption(CauseText)(unknownCauseOf(value)))
+const causeTextOf = (value: object) =>
+  Option.getOrUndefined(
+    Option.map(S.decodeUnknownOption(CauseText)(unknownCauseOf(value)), (decoded) => decoded.text),
+  )
 
 const reasonOf = (value: object) =>
   Option.getOrUndefined(
@@ -530,7 +535,10 @@ const highestExitClassOf = (pending: ReadonlyArray<ExitClass>) =>
     null,
   )
 
-const gatherRunOutcomeOf = (input: { readonly exit: unknown; readonly argv: readonly string[] }) => {
+const gatherRunOutcomeOf = (input: {
+  readonly exit: Exit.Exit<unknown, unknown>
+  readonly argv: readonly string[]
+}) => {
   const { exit, argv } = input
   const value = failureValueOf(exit)
   return RunOutcomeCommand.make({

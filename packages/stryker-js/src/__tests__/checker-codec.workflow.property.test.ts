@@ -16,7 +16,7 @@ const wireFieldsOf = (mutant: Mutant) => ({
 describe('CheckerMutantFromMutant', () => {
   it.prop('∀w_Wire_≡DecodeEncodeIdentity', [Mutant], ([mutant]) =>
     Result.match(S.decodeResult(CheckerMutantFromMutant)(mutant), {
-      onFailure: () => false,
+      onFailure: () => S.is(CheckerMutantWire)({ ...wireFieldsOf(mutant) }),
       onSuccess: (wire) =>
         Result.match(S.encodeResult(CheckerMutantFromMutant)(wire), {
           onFailure: () => false,

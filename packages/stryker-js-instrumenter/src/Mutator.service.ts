@@ -7,7 +7,6 @@ import * as Option from 'effect/Option'
 import * as Layer from 'effect/Layer'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 import type {
   ArrayExpression,
   ArrowFunctionExpression,

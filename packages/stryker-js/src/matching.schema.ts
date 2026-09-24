@@ -90,30 +90,21 @@ export class FileMatcher extends S.Class<FileMatcher>('FileMatcher')({
 }
 export class IgnoreRule extends S.Class<IgnoreRule>('IgnoreRule')({
   negate: S.Boolean,
-  expression: S.instanceOf(RegExp),
-  prefixExpression: S.instanceOf(RegExp),
+  pattern: S.String,
 }) {
-  static readonly fromPattern = (pattern: string) => {
-    const negate = pattern.startsWith('!')
-    const expression = globToRegExp(
-      Boolean.match(negate, { onTrue: () => pattern.slice(1), onFalse: () => pattern }),
-      true,
-    )
-    return IgnoreRule.make({
-      negate,
-      expression,
-      prefixExpression: new RegExp(expression.source.replace(/\$$/, ''), expression.flags),
+  static readonly fromPattern = (pattern: string) =>
+    Boolean.match(pattern.startsWith('!'), {
+      onTrue: () => IgnoreRule.make({ negate: true, pattern: pattern.slice(1) }),
+      onFalse: () => IgnoreRule.make({ negate: false, pattern }),
     })
-  }
-
-  static readonly decode = (pattern: string) => Effect.succeed(IgnoreRule.fromPattern(pattern))
 
   matches(candidate: string): boolean {
-    return this.expression.test(candidate)
+    return globToRegExp(this.pattern, true).test(candidate)
   }
 
   matchesPrefix(candidate: string): boolean {
-    return this.prefixExpression.test(candidate)
+    const expression = globToRegExp(this.pattern, true)
+    return new RegExp(expression.source.replace(/\$$/, ''), expression.flags).test(candidate)
   }
 }
 

@@ -12,10 +12,6 @@ const pathService = Effect.runSync(Effect.provide(Path.Path, Path.layer))
 
 const CROCKFORD_RUN_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/
 
-const epochMillis = S.Int.check(S.isBetween({ minimum: 0, maximum: 2 ** 40 }))
-const epochBase = S.Int.check(S.isBetween({ minimum: 0, maximum: 2 ** 40 - 2 ** 16 }))
-const epochDelta = S.Int.check(S.isBetween({ minimum: 8, maximum: 2 ** 16 }))
-
 const buildOf = (report: MutationTestResult, mode: OutputMode, signal: ModeSignal) =>
   VerdictEnvelope.build(report, mode, signal, RunId.generate(DateTime.makeUnsafe(0)).value, '/base', pathService)
 
@@ -40,15 +36,26 @@ describe('VerdictEnvelope.build', () => {
 })
 
 describe('RunId.generate', () => {
-  it.prop('∀t_RunId_∈Crockford26', [epochMillis], ([millis]) =>
-    CROCKFORD_RUN_ID.test(RunId.generate(DateTime.makeUnsafe(millis)).value))
+  it.prop(
+    '∀t_RunId_∈Crockford26',
+    [S.Int.check(S.isBetween({ minimum: 0, maximum: 2 ** 40 }))],
+    ([millis]) => CROCKFORD_RUN_ID.test(RunId.generate(DateTime.makeUnsafe(millis)).value),
+  )
 
-  it.prop('∀t_RunIdTimePrefix_≡Deterministic', [epochMillis], ([millis]) => {
-    const now = DateTime.makeUnsafe(millis)
-    return RunId.generate(now).value.slice(0, 9) === RunId.generate(now).value.slice(0, 9)
-  })
+  it.prop(
+    '∀t_RunIdTimePrefix_≡Deterministic',
+    [S.Int.check(S.isBetween({ minimum: 0, maximum: 2 ** 40 }))],
+    ([millis]) => {
+      const now = DateTime.makeUnsafe(millis)
+      return RunId.generate(now).value.slice(0, 9) === RunId.generate(now).value.slice(0, 9)
+    },
+  )
 
-  it.prop('∀bd_RunIdTimePrefix_<ForLaterEpoch', [epochBase, epochDelta], ([base, delta]) =>
-    RunId.generate(DateTime.makeUnsafe(base)).value.slice(0, 9) <
-      RunId.generate(DateTime.makeUnsafe(base + delta)).value.slice(0, 9))
+  it.prop(
+    '∀bd_RunIdTimePrefix_<ForLaterEpoch',
+    [S.Int.check(S.isBetween({ minimum: 0, maximum: 2 ** 40 - 2 ** 16 })), S.Int.check(S.isBetween({ minimum: 8, maximum: 2 ** 16 }))],
+    ([base, delta]) =>
+      RunId.generate(DateTime.makeUnsafe(base)).value.slice(0, 9) <
+        RunId.generate(DateTime.makeUnsafe(base + delta)).value.slice(0, 9),
+  )
 })

@@ -24,9 +24,9 @@ pnpm add -D @systemfsoftware/stryker-js \
 Create `stryker.config.ts` in your project root:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'vitest',
   checkers: ['typescript'],
   plugins: [
@@ -59,9 +59,9 @@ pnpm exec stryker run
 Execute any test suite without extra plugins:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'command',
   commandRunner: {
     command: 'npm test',
@@ -75,9 +75,9 @@ export default defineConfig({
 Run pure unit tests directly inside Node's native V8 VM with zero process spawning overhead:
 
 ```ts
-import { defineConfig } from '@systemfsoftware/stryker-js/config'
+import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
-export default defineConfig({
+export default StrykerConfig.define({
   testRunner: 'vm',
   testFiles: ['test/**/*.test.ts'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],

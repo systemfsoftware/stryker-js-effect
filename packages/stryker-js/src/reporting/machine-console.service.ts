@@ -68,7 +68,8 @@ const consumePlaceholder = <A>(progress: FormatProgress<A>, placeholder: string)
 
 const formatStep = <A>(progress: FormatProgress<A>, part: string): FormatProgress<A> =>
   Match.value(part).pipe(
-    Match.when(PLACEHOLDER_PART.test, (placeholder) => consumePlaceholder(progress, placeholder)),
+    Match.when((candidate: string) => PLACEHOLDER_PART.test(candidate), (placeholder) =>
+      consumePlaceholder(progress, placeholder)),
     Match.orElse((literal) => appendLiteral(progress, literal)),
   )
 

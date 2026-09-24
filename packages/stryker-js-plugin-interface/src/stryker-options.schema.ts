@@ -152,8 +152,8 @@ export const PluginFileUrl = S.String.pipe(S.check(S.isStartsWith('file://')))
 
 export const TestRunnerCustomConfigSchema = S.Struct({
   plugin: PluginFileUrl,
-  nodeArgs: S.String.pipe(S.Array, S.optional),
-  options: S.optional(S.Record(S.String, S.Unknown)),
+  nodeArgs: S.String.pipe(S.Array, S.optionalKey),
+  options: S.optionalKey(S.Record(S.String, S.Unknown)),
 })
 export type TestRunnerCustomConfig = typeof TestRunnerCustomConfigSchema.Type
 
@@ -169,8 +169,8 @@ export const isCustomTestRunner = S.is(AnyNonStringTestRunner)
 
 export const CheckerCustomConfigSchema = S.Struct({
   plugin: PluginFileUrl,
-  nodeArgs: S.String.pipe(S.Array, S.optional),
-  options: S.optional(S.Record(S.String, S.Unknown)),
+  nodeArgs: S.String.pipe(S.Array, S.optionalKey),
+  options: S.optionalKey(S.Record(S.String, S.Unknown)),
 })
 export type CheckerCustomConfig = typeof CheckerCustomConfigSchema.Type
 
@@ -184,10 +184,10 @@ export type CheckerEntryConfig = typeof CheckerEntryConfigSchema.Type
 export const StrykerOptionsSchema = S.StructWithRest(
   S.Struct({
     allowConsoleColors: defaulted(S.Boolean, true),
-    buildCommand: S.optional(S.String),
+    buildCommand: S.optionalKey(S.String),
     checkers: defaulted(S.Array(CheckerEntryConfigSchema), []),
     checkerNodeArgs: defaulted(S.Array(S.String), []),
-    concurrency: S.optional(S.Union([ConcurrencyCount, ConcurrencyPercent])),
+    concurrency: S.optionalKey(S.Union([ConcurrencyCount, ConcurrencyPercent])),
     coverageAnalysis: defaulted(CoverageAnalysisMode, StrykerCoverageAnalysis.literal),
     clearTextReporter: defaulted(ClearTextReporterOptions, {
       allowColor: true,
@@ -215,7 +215,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
       '!{src,lib}/**/__tests__/**/*.+(cjs|mjs|js|ts|mts|cts|jsx|tsx|html|vue|svelte)',
     ]),
     mutator: defaulted(MutatorDescriptor, { excludedMutations: [] }),
-    packageManager: S.optional(PackageManager),
+    packageManager: S.optionalKey(PackageManager),
     plugins: defaulted(S.Array(PluginFileUrl), []),
     appendPlugins: defaulted(S.Array(PluginFileUrl), []),
     reporters: defaulted(S.Array(S.String), ['clear-text', 'progress', 'html']),

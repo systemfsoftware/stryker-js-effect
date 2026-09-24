@@ -498,7 +498,7 @@ const blessSliceEffect = (
 
 const harnessMessageOf = (cause: unknown): string =>
   Match.value(cause).pipe(
-    Match.when(S.is(BlessRefused), (refused) => refused.message),
+    Match.when(Schema.is(BlessRefused), (refused) => refused.message),
     Match.orElse(() => 'bless failed: refusing to bless onto an unrecognized failure'),
   )
 

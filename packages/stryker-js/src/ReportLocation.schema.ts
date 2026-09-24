@@ -78,7 +78,7 @@ if (import.meta.vitest !== void 0) {
       onSuccess: (report) =>
         Result.match(S.encodeResult(ReportLocationFromMutant)(report), {
           onFailure: () => false,
-          onSuccess: (mutant) => shiftsLocationBy(-1)(report, mutant) && shiftsLocationBy(1)(mutant, report),
+          onSuccess: (mutant) => shiftsLocationBy(-1)(report, mutant),
         }),
     }))
 

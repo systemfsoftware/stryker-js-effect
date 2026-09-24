@@ -56,7 +56,7 @@ const baselineDefinedReportArb = Arbitrary.schema(MutationTestResultSchema).pipe
     ...report,
     files: Object.fromEntries(
       Object.entries(report.files).map(([fileName, file]) => [
-        fileName in Object.prototype ? `src/${fileName}` : fileName,
+        fileName.split('/').map((segment) => (segment in Object.prototype ? `${segment}_` : segment)).join('/'),
         file,
       ]),
     ),
