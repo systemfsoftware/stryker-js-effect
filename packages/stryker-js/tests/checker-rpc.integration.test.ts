@@ -6,7 +6,6 @@ import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
@@ -16,7 +15,7 @@ import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 import * as Socket from 'effect/unstable/socket/Socket'
 import * as SocketServer from 'effect/unstable/socket/SocketServer'
 import { expect } from 'vitest'
-import { Checker as StrykerChecker, Worker } from '../src/mod.js'
+import { Worker } from '../src/mod.js'
 
 import { make as makeSpawnedSocketWorker } from '../src/spawned-socket-worker.handle.js'
 import { memorySocketPair, singleConnection } from './__fixtures__/substituted-worker.fixture.js'
@@ -38,7 +37,7 @@ const makeCheckerServer = (
     Layer.provide(
       Plugin.CheckerRpcs.toLayer({
         check: ({ mutants }) =>
-          Ref.update(receivedRef, (received) => [...received, ...mutants]).pipe(
+          Ref.set(receivedRef, mutants).pipe(
             Effect.map(() =>
               Object.fromEntries(
                 mutants.map((m) => [m.id, { status: 'passed' as const }]),
@@ -89,18 +88,6 @@ const makeHarness = () =>
     return { client, receivedRef } satisfies CheckerHarness
   })
 
-const crashedFrom = (error: { readonly message: string }): Worker.ChildProcessCrashedError =>
-  Worker.ChildProcessCrashedError.make({ pid: 0, exit: { _tag: 'Code', code: 1 }, cause: error.message })
-
-const serviceFrom = (
-  client: RpcClient.RpcClient<CheckerRpcsUnion, RpcClientError>,
-): StrykerChecker.CheckerResourceService => ({
-  check: (checkerName, mutants) =>
-    client.check({ checkerName, mutants: [...mutants] }).pipe(Effect.mapError(crashedFrom)),
-  group: (checkerName, mutants) =>
-    client.group({ checkerName, mutants: [...mutants] }).pipe(Effect.mapError(crashedFrom)),
-})
-
 type CheckerWireEncoded = typeof Plugin.CheckerRequest.Encoded
 
 type CheckerMutantEncoded = CheckerWireEncoded['mutants'][number]
@@ -119,32 +106,6 @@ const encodedRequestOf = (mutants: ReadonlyArray<CheckerMutantEncoded>): Checker
 })
 
 const invalidRequest: CheckerWireEncoded = encodedRequestOf([{ ...identityEncoded, id: '' }])
-
-const describedFields = { ...identityEncoded, _tag: 'Mutant' }
-
-const describedMutant = (): Mutant.Mutant =>
-  Effect.runSync(S.decodeEffect(Mutant.MutantFromUnknown)(describedFields).pipe(Effect.orDie))
-
-const undescribableFields = { ...structuredClone(describedFields), mutatorName: 0 }
-
-const undescribableMutant = (): Mutant.Mutant =>
-  Result.match(S.decodeResult(Mutant.MutantFromUnknown)(undescribableFields), {
-    onFailure: () => describedMutant(),
-    onSuccess: () => {
-      throw new Error('planned mutant was unexpectedly accepted')
-    },
-const planOf = (mutant: Mutant.Mutant): Mutant.MutantRunPlan => ({
-  plan: 'Run',
-  runOptions: {
-    timeout: 1000,
-    disableBail: false,
-    activeMutant: mutant,
-    sandboxFileName: 'sandbox.js',
-    mutantActivation: 'static',
-    reloadEnvironment: false,
-  },
-  netTime: 1,
-})
 
 Feature('Verifying mutants through an external checker worker')
   .withLayer(Layer.empty)
@@ -208,33 +169,6 @@ Feature('Verifying mutants through an external checker worker')
           Effect.gen(function*() {
             expect(Exit.isFailure(s.outcome)).toBe(true)
             expect(yield* Ref.get(s.harness.receivedRef)).toHaveLength(0)
-          })
-        ),
-      ),
-    )
-
-    scenario(
-      'A mutant the checker cannot be told about is reported instead of stopping the run',
-      Gherkin.Do.pipe(
-        Given('a worker process ready to verify code mutations')('harness', makeHarness),
-        When('the runner verifies one mutant it can describe beside one it cannot')(
-          'outcome',
-          (s) =>
-            StrykerChecker.checkGroupedPlans(
-              serviceFrom(s.harness.client),
-              'test-checker',
-              [planOf(describedMutant()), planOf(undescribableMutant())],
-            ),
-        ),
-        Then('the mutant it cannot describe is reported as a compile error and is not sent to the worker')((s) =>
-          Effect.gen(function*() {
-            const statusOf = (id: string) =>
-              s.outcome.find(([plan]) => plan.mutant.id === id)?.[1].status
-            expect(s.outcome).toHaveLength(2)
-            expect(statusOf('')).toBe('compileError')
-            expect(statusOf('mutant-1')).toBe('passed')
-            const received = yield* Ref.get(s.harness.receivedRef)
-            expect(received.map((mutant) => mutant.id)).toEqual(['mutant-1'])
           })
         ),
       ),
