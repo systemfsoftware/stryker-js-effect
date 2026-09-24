@@ -4,7 +4,7 @@
 [![Effect: 4.x](https://img.shields.io/badge/Effect-4.0_RC-purple.svg)](https://effect.website)
 [![CI](https://github.com/systemfsoftware/stryker-js-effect/actions/workflows/release.yml/badge.svg)](https://github.com/systemfsoftware/stryker-js-effect/actions)
 
-> stryker-js-effect is an Effect 4 mutation testing framework for TypeScript and JavaScript that replaces slow process-forking runners with in-memory V8 execution, standard ESM plugin resolution, and real-time NDJSON event streams.
+> 🔬 **stryker-js-effect** is an Effect 4 mutation testing framework for TypeScript and JavaScript that replaces slow process-forking runners with in-memory V8 execution, standard ESM plugin resolution, and real-time NDJSON event streams.
 
 Stryker introduces synthetic bugs (mutants) into source code to verify whether test suites catch behavioral regressions or merely pad line coverage metrics.
 
@@ -15,20 +15,20 @@ pnpm exec stryker run
 
 ---
 
-## What is Mutation Testing?
+## 🎯 What is Mutation Testing?
 
 Code coverage measures which lines execute during tests, but cannot prove test assertions detect broken logic. Mutation testing validates test suite efficacy by injecting targeted faults:
 
-- **Killed**: A test fails when a mutant activates. The test suite successfully verified behavior.
-- **Survived**: Tests pass despite corrupted logic. An untested boundary or dead code path exists.
-- **Timeout**: The mutant caused an infinite loop or resource deadlock.
-- **No Coverage**: No test touched the mutated statement during the initial dry-run baseline.
+- 💀 **Killed**: A test fails when a mutant activates. The test suite successfully verified behavior.
+- 🧟 **Survived**: Tests pass despite corrupted logic. An untested boundary or dead code path exists.
+- ⏳ **Timeout**: The mutant caused an infinite loop or resource deadlock.
+- 🚫 **No Coverage**: No test touched the mutated statement during the initial dry-run baseline.
 
 A high mutation score guarantees test assertions catch regressions rather than just walking code paths.
 
 ---
 
-## Dual-Engine Workflow: In-Memory V8 vs Vitest Worker Sandbox
+## ⚡ Dual-Engine Workflow: In-Memory V8 vs Vitest Worker Sandbox
 
 Mutation testing feedback latency slows down local development when every mutant forks new child processes. Stryker JS Effect provides a dual execution architecture configured through `defineConfig`:
 
@@ -64,7 +64,7 @@ export default defineConfig(({ isCi }) => ({
 
 ---
 
-## Installation & Setup
+## 🚀 Installation & Setup
 
 Install the core CLI engine alongside the runner and checker plugins required for your environment:
 
@@ -132,7 +132,7 @@ export default defineConfig({
 
 ---
 
-## Configuration Recipes
+## 🛠️ Configuration Recipes
 
 ### Monorepo Quality Gate with Effect Schema AST Ignorers
 
@@ -195,7 +195,7 @@ export default defineConfig(({ command, isCi, isDryRun }) => ({
 
 ---
 
-## Architectural Comparison with Upstream StrykerJS
+## ⚡ Key Differentiators vs Upstream StrykerJS
 
 stryker-js-effect is an architectural fork built on Effect 4 primitives rather than a backwards-compatible wrapper:
 
@@ -211,7 +211,7 @@ stryker-js-effect is an architectural fork built on Effect 4 primitives rather t
 
 ---
 
-## Configuration Reference
+## 📖 Configuration Reference
 
 | Option                 | Type                            | Default                                                                                                      | Description                                                                                                 |
 | ---------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
@@ -228,7 +228,7 @@ stryker-js-effect is an architectural fork built on Effect 4 primitives rather t
 
 ---
 
-## Classified CLI Exit Codes
+## 🚦 Classified CLI Exit Codes
 
 Stryker returns distinct exit codes to allow CI pipelines and AI coding agents to branch deterministically:
 
@@ -243,7 +243,7 @@ Stryker returns distinct exit codes to allow CI pipelines and AI coding agents t
 
 ---
 
-## Real-Time NDJSON Machine Output
+## 📡 Real-Time NDJSON Machine Output
 
 When executing under automated pipelines or agent environments (`STRYKER_MODE=machine`), Stryker streams newline-delimited JSON events to `stdout`:
 
@@ -259,7 +259,7 @@ $ STRYKER_MODE=machine pnpm exec stryker run
 
 ---
 
-## Workspace Packages
+## 📦 Workspace Packages
 
 | Package                                                                                                       | Purpose                                                                                           |
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -275,7 +275,7 @@ $ STRYKER_MODE=machine pnpm exec stryker run
 
 ---
 
-## Frequently Asked Questions
+## ❓ Frequently Asked Questions
 
 <details>
 <summary>Why does Stryker fail with an unhandled plugin error when I pass package names?</summary>
@@ -307,12 +307,12 @@ Set `STRYKER_MODE=machine`, or run with one of the agent tool variables (`CLAUDE
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 Development setup, verification gates, and pull request guidelines are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## License
+## 📄 License
 
 Licensed under the [Apache-2.0 License](LICENSE).
