@@ -89,7 +89,7 @@ export type CheckerCustomConfig = typeof CheckerCustomConfigSchema.Type;
 
 // @public (undocumented)
 export const CheckerCustomConfigSchema: S.Struct<{
-    readonly plugin: S.String;
+    readonly plugin: S.declare<string, string>;
     readonly nodeArgs: S.optional<S.$Array<S.String>>;
     readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
 }>;
@@ -99,7 +99,7 @@ export type CheckerEntryConfig = typeof CheckerEntryConfigSchema.Type;
 
 // @public (undocumented)
 export const CheckerEntryConfigSchema: S.Struct<{
-    readonly plugin: S.String;
+    readonly plugin: S.declare<string, string>;
     readonly nodeArgs: S.optional<S.$Array<S.String>>;
     readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
 }>;
@@ -763,7 +763,7 @@ export interface PassedCheckResult {
 export const Percentage: S.Finite;
 
 // @public (undocumented)
-export const PluginFileUrl: S.String;
+export const PluginFileUrl: S.declare<string, string>;
 
 export { Position }
 
@@ -903,7 +903,7 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly allowConsoleColors: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly buildCommand: S.optional<S.String>;
     readonly checkers: S.withDecodingDefaultKey<S.$Array<S.Struct<{
-        readonly plugin: S.String;
+        readonly plugin: S.declare<string, string>;
         readonly nodeArgs: S.optional<S.$Array<S.String>>;
         readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
     }>>, never>;
@@ -941,8 +941,8 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
         readonly optInMutations: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     }>, never>;
     readonly packageManager: S.optional<S.Literals<readonly ["npm", "yarn", "pnpm"]>>;
-    readonly plugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
-    readonly appendPlugins: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly plugins: S.withDecodingDefaultKey<S.$Array<S.declare<string, string>>, never>;
+    readonly appendPlugins: S.withDecodingDefaultKey<S.$Array<S.declare<string, string>>, never>;
     readonly reporters: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
     readonly htmlReporter: S.withDecodingDefaultKey<S.Struct<{
         readonly fileName: S.withDecodingDefaultKey<S.String, never>;
@@ -955,7 +955,7 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly tempDirName: S.withDecodingDefaultKey<S.String, never>;
     readonly cleanTempDir: S.withDecodingDefaultKey<S.Literals<readonly ["always", false, true]>, never>;
     readonly testRunner: S.withDecodingDefaultKey<S.Union<readonly [S.String, S.Struct<{
-        readonly plugin: S.String;
+        readonly plugin: S.declare<string, string>;
         readonly nodeArgs: S.optional<S.$Array<S.String>>;
         readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
     }>]>, never>;
@@ -985,7 +985,7 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     }>, readonly [S.$Record<S.String, S.Unknown>]>]>, never>;
     readonly disableBail: S.withDecodingDefaultKey<S.Boolean, never>;
     readonly allowEmpty: S.withDecodingDefaultKey<S.Boolean, never>;
-    readonly ignorers: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
+    readonly ignorers: S.withDecodingDefaultKey<S.$Array<S.declare<string, string>>, never>;
     readonly testFiles: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
 }>, readonly [S.$Record<S.String, S.Unknown>]>;
 
@@ -1132,7 +1132,7 @@ export type TestRunnerConfig = typeof TestRunnerConfigSchema.Type;
 
 // @public (undocumented)
 export const TestRunnerConfigSchema: S.Union<readonly [S.String, S.Struct<{
-    readonly plugin: S.String;
+    readonly plugin: S.declare<string, string>;
     readonly nodeArgs: S.optional<S.$Array<S.String>>;
     readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
 }>]>;
@@ -1142,7 +1142,7 @@ export type TestRunnerCustomConfig = typeof TestRunnerCustomConfigSchema.Type;
 
 // @public (undocumented)
 export const TestRunnerCustomConfigSchema: S.Struct<{
-    readonly plugin: S.String;
+    readonly plugin: S.declare<string, string>;
     readonly nodeArgs: S.optional<S.$Array<S.String>>;
     readonly options: S.optional<S.$Record<S.String, S.Unknown>>;
 }>;

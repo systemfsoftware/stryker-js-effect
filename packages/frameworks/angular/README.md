@@ -15,16 +15,14 @@ Installing the package and listing it in `plugins` is the whole setup.
 pnpm add -D @systemfsoftware/stryker-js-angular
 ```
 
-Add the module to `plugins` in your StrykerJS config:
+Add the package name to `plugins` in your StrykerJS config:
 
 ```ts
 import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
 export default defineConfig({
   testRunner: 'vitest',
-  plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-js-angular'),
-  ],
+  plugins: ['@systemfsoftware/stryker-js-angular'],
   mutate: [
     'src/**/*.html',
     'src/**/*.vue',
@@ -52,9 +50,7 @@ Angular compiler. This plugin does not suppress them. Pair it with the ignorer
 package:
 
 ```ts
-ignorers: [
-  import.meta.resolve('@systemfsoftware/stryker-ignorer-angular'),
-],
+ignorers: ['@systemfsoftware/stryker-ignorer-angular'],
 ```
 
 ## Boundaries
@@ -62,6 +58,9 @@ ignorers: [
 - The exported surface is `strykerFrameworks`: one plain `Framework` object
   claiming the `html` format for `.html`, `.htm`, and `.vue`, typed against
   [`@systemfsoftware/stryker-framework-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-framework-interface).
+- The `package.json` declares `"strykerFramework": { "extensions": [".html",
+  ".htm", ".vue"] }`: the host reads that field from installed packages to name
+  this package in a skip reason without importing the module.
 - `angular-html-parser` is a hard dependency, resolved when the module loads —
   there is no peer to install and no version to reconcile.
 - There is no bundled ignorer: signal-configuration suppression lives in

@@ -45,6 +45,7 @@ export const SchemaValidationContributionSchema = S.Struct({
 export const PluginLoadFailureReason = S.Union([
   S.TaggedStruct('PeerMissing', { peer: S.String }),
   S.TaggedStruct('PeerVersionUnsupported', { peer: S.String, detail: S.String }),
+  S.TaggedStruct('PeerUnrecognized', { peer: S.String }),
   S.TaggedStruct('InvalidContribution', { detail: S.String }),
   S.TaggedStruct('ImportFailed', { cause: S.Unknown }),
 ])
@@ -62,6 +63,7 @@ export class PluginNotFoundError extends S.TaggedError<PluginNotFoundError>()(
 const FAILURE_EXIT_CLASS: Record<PluginLoadFailureReason['_tag'], ExitClass> = {
   PeerMissing: 'ConfigError',
   PeerVersionUnsupported: 'ConfigError',
+  PeerUnrecognized: 'ConfigError',
   InvalidContribution: 'ConfigError',
   ImportFailed: 'InternalError',
 }
@@ -147,7 +149,7 @@ export const FrameworkSchema = S.Struct({
 export const FrameworkRefusalSchema = S.Struct({
   kind: S.Literal('FrameworkRefusal'),
   name: S.String,
-  reason: S.Literals(['PeerMissing', 'PeerVersionUnsupported']),
+  reason: S.Literals(['PeerMissing', 'PeerVersionUnsupported', 'PeerUnrecognized']),
   peer: S.String,
   detail: S.String,
 })
@@ -159,3 +161,12 @@ export const FrameworkModuleSchema = S.Struct({
 })
 
 export type FrameworkModuleContributions = typeof FrameworkModuleSchema.Type['strykerFrameworks']
+
+export const FrameworkManifestSchema = S.Struct({
+  strykerFramework: S.Struct({ extensions: S.Array(S.String) }),
+})
+
+export const ProjectDependencies = S.Struct({
+  dependencies: S.optional(S.Record(S.String, S.Unknown)),
+  devDependencies: S.optional(S.Record(S.String, S.Unknown)),
+})

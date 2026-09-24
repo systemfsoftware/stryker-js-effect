@@ -7,6 +7,7 @@ import {
   frameworkEntryOf,
   registerEntries,
 } from '@systemfsoftware/stryker-js-instrumenter'
+import * as Array from 'effect/Array'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
@@ -19,11 +20,13 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
 import { type RunEvent } from '../RunEvents.js'
 import { FormatRegistryResolved, PhaseEntered, PluginsReported, RunFailed } from '../RunEvents.js'
 import { RunEvents } from '../RunEvents.js'
+import { type FrameworkClaimant } from './explain-file-skip.workflow.js'
 
 import type {
   PartialStrykerOptions,
@@ -32,11 +35,15 @@ import type {
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import { makeBuiltinReporterFactories } from '../builtin-reporters.js'
 import { EXIT_CODE } from '../exit-classification.js'
-import { resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
-import { missingWorkerEntry } from '../plugin-worker-entry.js'
+import { missingWorkerEntry, resolvePluginWorkerEntry } from '../plugin-worker-entry.js'
 import { loadPlugins, pluginUrlsFromOptions } from '../Plugins.js'
 import type { LoadedPlugins, PluginDescriptor } from '../Plugins.js'
-import { type PluginLoadFailureReason, PluginLoadRefusedError } from '../Plugins.schema.js'
+import {
+  FrameworkManifestSchema,
+  type PluginLoadFailureReason,
+  PluginLoadRefusedError,
+  ProjectDependencies,
+} from '../Plugins.schema.js'
 import { readProject } from '../Project.js'
 import type { Project } from '../Project.js'
 import { ansi } from '../Reporter.ansi.js'
@@ -75,6 +82,7 @@ export interface PrepareDone {
   readonly options: StrykerOptions
   readonly temporaryDirectoryPath: string
   readonly reporterStage: ReporterStage
+  readonly frameworkClaimants: readonly FrameworkClaimant[]
 }
 
 export interface PrepareExecutorArgs {
@@ -82,7 +90,54 @@ export interface PrepareExecutorArgs {
   targetMutatePatterns: string[] | undefined
 }
 
+const dependencyNamesOf = (
+  dependencies: S.Schema.Type<typeof ProjectDependencies>['dependencies'],
+): readonly string[] => Object.keys(dependencies ?? {})
+
+const installedClaimantOf =
+  (fs: FileSystem.FileSystem, path: Path.Path, basePath: string) =>
+  (name: string): Effect.Effect<Option.Option<FrameworkClaimant>, never> =>
+    Effect.gen(function*() {
+      const text = yield* fs
+        .readFileString(path.join(basePath, 'node_modules', name, 'package.json'))
+        .pipe(Effect.orElseSucceed(() => ''))
+      return Option.map(
+        Option.filter(
+          Result.match(S.decodeResult(S.fromJsonString(FrameworkManifestSchema))(text), {
+            onFailure: () => Option.none<readonly string[]>(),
+            onSuccess: (manifest) => Option.some([...manifest.strykerFramework.extensions]),
+          }),
+          (extensions) => extensions.length > 0,
+        ),
+        (extensions): FrameworkClaimant => ({ package: name, extensions }),
+      )
+    })
+
+const installedFrameworkClaimants = (
+  basePath: string,
+): Effect.Effect<readonly FrameworkClaimant[], never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const text = yield* fs.readFileString(path.join(basePath, 'package.json')).pipe(Effect.orElseSucceed(() => ''))
+    const names = yield* Result.match(S.decodeResult(S.fromJsonString(ProjectDependencies))(text), {
+      onFailure: () => Effect.succeed<readonly string[]>([]),
+      onSuccess: (manifest) =>
+        Effect.succeed(
+          Array.dedupe([
+            ...dependencyNamesOf(manifest.dependencies),
+            ...dependencyNamesOf(manifest.devDependencies),
+          ]),
+        ),
+    })
+    const found = yield* Effect.forEach(names, installedClaimantOf(fs, path, basePath), {
+      concurrency: 'unbounded',
+    })
+    return Array.getSomes(found)
+  })
+
 interface PrepareRaw {
+  readonly frameworkClaimants: readonly FrameworkClaimant[]
   readonly env: RunEnvironmentShape
   readonly queue: Queue.Queue<RunEvent, Cause.Done>
   readonly options: StrykerOptions
@@ -97,6 +152,7 @@ interface PrepareRaw {
 const PLUGIN_FAILURE_REMEDIATION: Record<PluginLoadFailureReason['_tag'], string> = {
   PeerMissing: 'install the peer dependency the plugin needs',
   PeerVersionUnsupported: 'install a supported version of the peer dependency',
+  PeerUnrecognized: 'install a peer version the plugin recognizes, or a matching plugin version',
   InvalidContribution: 'fix the contribution the plugin declares',
   ImportFailed: 'fix the plugin so that it imports cleanly',
 }
@@ -348,7 +404,7 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
       },
     }
     const descriptors: readonly string[] = pluginUrlsFromOptions(options)
-    const loaded = yield* loadPlugins(descriptors).pipe(
+    const loaded = yield* loadPlugins(descriptors, env.basePath).pipe(
       Effect.tapError((error) =>
         Effect.gen(function*() {
           const failedAt = yield* Clock.currentTimeMillis
@@ -407,6 +463,7 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
           ] as const,
       ),
     ])
+    const frameworkClaimants = yield* installedFrameworkClaimants(env.basePath)
     return {
       env,
       queue,
@@ -417,6 +474,7 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
       formatRegistry: registry,
       builtinReporterFactories,
       reporterChoicesByName,
+      frameworkClaimants,
     }
   })
 
@@ -501,6 +559,7 @@ const writePrepare = (
           options: raw.options,
           temporaryDirectoryPath,
           reporterStage,
+          frameworkClaimants: raw.frameworkClaimants,
         }
       }),
   )

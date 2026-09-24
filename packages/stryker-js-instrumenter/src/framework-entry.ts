@@ -4,10 +4,8 @@ import type {
   FrameworkContext,
   FrameworkParseResult,
   ScriptFormat,
-  ScriptRegion,
 } from '@systemfsoftware/stryker-framework-interface'
 import * as Effect from 'effect/Effect'
-import * as Predicate from 'effect/Predicate'
 import { type Program, type Statement } from './Ast.js'
 import type { EmbeddedFormatEntry, FormatClaim } from './format-registry.js'
 import { instrumentationHeader } from './instrument-header.js'
@@ -59,25 +57,11 @@ const parseScriptProgram = (
   return result.program
 }
 
-const applyInstrumentationHeader = (header: readonly Statement[]) => (script: Program): Program => {
-  script.body.unshift(...header)
-  return script
-}
-
 const frameworkContextOf = (toolkit: FrameworkToolkit): FrameworkContext => ({
   parseScript: toolkit.parseScript,
-  transformScript: applyInstrumentationHeader(toolkit.header),
   printScript: (script) => printProgram(script, { hashbang: null }),
   instrumentationHeader: () => toolkit.header,
 })
-const isProgramLike = (value: ScriptRegion['scriptAst']): value is Program => isProgramValue(value)
-
-const isProgramValue = (value: ScriptRegion['scriptAst']): value is Program =>
-  Predicate.isObject(value) && hasProgramBody(value)
-
-const hasProgramBody = (value: object): boolean => Array.isArray(Reflect.get(value, 'body'))
-
-const programOf = (value: ScriptRegion['scriptAst']): Program | undefined => isProgramLike(value) ? value : undefined
 
 const embeddedScriptsOf = (
   document: EmbeddedDocument,
@@ -86,13 +70,9 @@ const embeddedScriptsOf = (
 ): readonly EmbeddedScript[] => {
   const lineStarts = computeLineStarts(rawContent)
   return document.regions.flatMap((region, index) => {
-    const program = programOf(region.scriptAst)
-    if (program === undefined) {
-      return []
-    }
     const ast: ScriptAst = {
       format: 'js',
-      root: program,
+      root: region.scriptAst,
       comments: [],
       rawContent: rawContent.slice(region.start, region.end),
       originFileName,

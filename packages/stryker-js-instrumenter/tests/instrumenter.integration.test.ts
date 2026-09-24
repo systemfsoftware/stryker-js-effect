@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
-import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
+import type { InstrumentError, InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
@@ -77,6 +77,12 @@ const regionFlagIgnorer: Ignorer = {
       return INSIDE_FLAG
     }
     return undefined
+  },
+}
+const failingRuleIgnorer: Ignorer = {
+  name: 'failing-rule',
+  shouldIgnore: () => {
+    throw new Error('the rule refuses to decide')
   },
 }
 const countByMutator = (mutants: readonly Mutant[]): Record<string, number> => {
@@ -517,6 +523,28 @@ export function price(n) {
               expect(mutant.statusReason).toBe(OUTSIDE_KEEP)
               expect(mutant.statusReason).not.toBe(INSIDE_FLAG)
             }
+          })
+        ),
+      ),
+    )
+    scenario(
+      'A rule that cannot decide stops the run with the rule failure as the reason',
+      Gherkin.Do.pipe(
+        Given('a source with a mutable addition')('source', () => Effect.succeed('export const a = 1 + 1\n')),
+        When('it is instrumented with a rule that refuses to decide')(
+          'error',
+          ({ source }: { source: string }) =>
+            instrument([{ name: '/tmp/failing-rule.ts', content: source, mutate: true }], {
+              ignorers: [failingRuleIgnorer],
+              excludedMutations: [],
+            }).pipe(Effect.flip),
+        ),
+        Then('the run stops naming the file and carrying the rule failure')((
+          { error }: { error: InstrumentError },
+        ) =>
+          Effect.sync(() => {
+            expect(error.message).toContain('/tmp/failing-rule.ts')
+            expect(error.cause instanceof Error ? error.cause.message : '').toContain('the rule refuses to decide')
           })
         ),
       ),

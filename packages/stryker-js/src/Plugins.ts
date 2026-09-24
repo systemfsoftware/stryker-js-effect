@@ -15,7 +15,10 @@ import {
   type WorkerPluginKind,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
+import * as FileSystem from 'effect/FileSystem'
 import { importModule } from './run/load-config.cell.js'
+import { PackageManifestFields } from './run/package-manifest.schema.js'
+import { selectPackageEntry, SelectPackageEntryCommand } from './run/select-package-entry.workflow.js'
 
 import {
   type FrameworkModuleContributions,
@@ -305,12 +308,19 @@ const moduleFrameworkRefusalError = (descriptor: string, refusal: FrameworkRefus
       'PeerMissing',
       () => PluginLoadRefusedError.make({ descriptor, reason: { _tag: 'PeerMissing', peer: refusal.peer } }),
     ),
-    Match.orElse(() =>
-      PluginLoadRefusedError.make({
-        descriptor,
-        reason: { _tag: 'PeerVersionUnsupported', peer: refusal.peer, detail: refusal.detail },
-      })
+    Match.when(
+      'PeerVersionUnsupported',
+      () =>
+        PluginLoadRefusedError.make({
+          descriptor,
+          reason: { _tag: 'PeerVersionUnsupported', peer: refusal.peer, detail: refusal.detail },
+        }),
     ),
+    Match.when(
+      'PeerUnrecognized',
+      () => PluginLoadRefusedError.make({ descriptor, reason: { _tag: 'PeerUnrecognized', peer: refusal.peer } }),
+    ),
+    Match.exhaustive,
   )
 
 const frameworkRefusalsOf = (
@@ -369,31 +379,148 @@ interface PluginLoaderRawEntry<A = unknown> {
   readonly plugins: readonly PluginDescriptor[] | undefined
   readonly schemaContribution: Record<string, A> | undefined
 }
+const fileUrlOf = (specifier: string): Option.Option<URL> => {
+  try {
+    const url = new URL(specifier)
+    return Option.filter(Option.some(url), (parsed) => parsed.protocol === 'file:')
+  } catch {
+    return Option.none()
+  }
+}
+
+const manifestRefusalOf = (specifier: string): PluginLoadRefusedError =>
+  importFailure(specifier, {
+    cause: new Error(`the package.json of "${specifier}" is not a manifest`),
+  })
+
+const parseAndDecodeManifest = S.decodeUnknownResult(S.fromJsonString(PackageManifestFields))
+
+const parsedManifestOf = (
+  specifier: string,
+  text: string,
+): Effect.Effect<string, PluginLoadRefusedError> =>
+  Result.match(parseAndDecodeManifest(text), {
+    onFailure: () => Effect.fail(manifestRefusalOf(specifier)),
+    onSuccess: (fields) => selectManifestFields(specifier, fields),
+  })
+
+const selectManifestFields = (
+  specifier: string,
+  fields: PackageManifestFields,
+): Effect.Effect<string, PluginLoadRefusedError> =>
+  Effect.flatMap(
+    Effect.fromResult(selectPackageEntry(SelectPackageEntryCommand.make({ specifier, manifest: fields }))),
+    (
+      decision,
+    ) =>
+      Match.value(decision).pipe(
+        Match.tag('PackageEntrySelected', (selected) => Effect.succeed(selected.entry)),
+        Match.tag(
+          'PackageEntryUnresolved',
+          (unresolved) => Effect.fail(importFailure(specifier, { cause: new Error(unresolved.reason) })),
+        ),
+        Match.exhaustive,
+      ),
+  )
+
+const manifestOf = (
+  specifier: string,
+  manifestPath: string,
+): Effect.Effect<string, PluginLoadRefusedError, FileSystem.FileSystem> =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) =>
+    Effect.flatMap(
+      fs.readFileString(manifestPath).pipe(
+        Effect.mapError((cause) =>
+          importFailure(specifier, {
+            cause: new Error(`the package.json of "${specifier}" is not readable`, { cause }),
+          })
+        ),
+      ),
+      (text) => parsedManifestOf(specifier, text),
+    ))
+
+const packageAnchorOf = (
+  specifier: string,
+  basePath: string,
+): Effect.Effect<URL, PluginLoadRefusedError, Path.Path> =>
+  Effect.flatMap(
+    Path.Path,
+    (path) =>
+      Effect.mapError(path.toFileUrl(path.join(basePath, 'package.json')), (cause) =>
+        importFailure(specifier, { cause })),
+  )
+
+const foundManifestPathOf = (
+  specifier: string,
+  basePath: string,
+): Effect.Effect<string, PluginLoadRefusedError, Path.Path> =>
+  Effect.flatMap(packageAnchorOf(specifier, basePath), (anchor) =>
+    Effect.flatMap(
+      Effect.try({
+        try: () =>
+          Option.fromUndefinedOr(
+            globalThis.process.getBuiltinModule('node:module').findPackageJSON(specifier, anchor.href),
+          ),
+        catch: () => Option.none<string>(),
+      }),
+      (found) =>
+        Effect.fromOption(found, () =>
+          importFailure(specifier, { cause: new Error(`the package "${specifier}" is not installed`) })),
+    ).pipe(Effect.mapError((cause) =>
+      importFailure(specifier, { cause })
+    )))
+
+const resolveBareSpecifierOf = (
+  specifier: string,
+  basePath: string,
+): Effect.Effect<string, PluginLoadRefusedError, Path.Path> =>
+  Effect.flatMap(packageAnchorOf(specifier, basePath), (anchor) =>
+    Effect.mapError(
+      Effect.try({
+        try: () => globalThis.process.getBuiltinModule('node:module').createRequire(anchor.href).resolve(specifier),
+        catch: (): PluginLoadRefusedError =>
+          importFailure(specifier, { cause: new Error(`the package "${specifier}" did not resolve`) }),
+      }),
+      (cause) => cause,
+    ))
+
+const packageEntrypointOf = (
+  specifier: string,
+  basePath: string,
+): Effect.Effect<URL, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    const manifestPath = yield* foundManifestPathOf(specifier, basePath)
+    const resolved = yield* resolveBareSpecifierOf(specifier, basePath)
+    const entry = yield* manifestOf(specifier, manifestPath)
+    const joined = path.join(path.dirname(manifestPath), entry)
+    const selected = resolved.endsWith(entry) ? resolved : joined
+    return yield* Effect.mapError(path.toFileUrl(selected), (cause) => importFailure(specifier, { cause }))
+  })
+
+const entrypointOf = (
+  specifier: string,
+  basePath: string,
+): Effect.Effect<URL, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> =>
+  Option.match(fileUrlOf(specifier), {
+    onSome: (url) => Effect.succeed(url),
+    onNone: () => packageEntrypointOf(specifier, basePath),
+  })
+
 export function loadPlugins(
   pluginDescriptors: readonly string[],
-): Effect.Effect<LoadedPlugins, PluginLoadRefusedError, Path.Path> {
+  basePath: string,
+): Effect.Effect<LoadedPlugins, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function*() {
-    const path = yield* Path.Path
     const entrypoints = yield* Effect.forEach(
       Array.dedupe(pluginDescriptors),
-      (specifier) =>
-        Effect.flatMap(
-          Effect.try({
-            try: () => new URL(specifier),
-            catch: (cause) => importFailure(specifier, { cause }),
-          }),
-          (url) =>
-            Effect.mapError(
-              path.fromFileUrl(url),
-              (cause) => importFailure(specifier, { cause }),
-            ),
-        ).pipe(Effect.map((entrypoint) => ({ specifier, entrypoint }))),
+      (specifier) => Effect.map(entrypointOf(specifier, basePath), (entrypoint) => ({ specifier, entrypoint })),
       { concurrency: 'unbounded' },
     )
     const loaded = yield* Effect.forEach(
       entrypoints,
       (resolved) =>
-        loadPlugin(resolved.specifier, resolved.entrypoint).pipe(
+        loadPlugin(resolved.specifier, resolved.entrypoint.href).pipe(
           Effect.map((plugin) => {
             if (plugin === undefined) {
               return undefined

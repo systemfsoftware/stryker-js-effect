@@ -9,4 +9,5 @@ embedded document, and the AST union gains the embedded-document variant those
 entries parse to.
 
 A registry entry you build yourself must now declare the `owner` module of its
-format and a `transform` hook; an entry without them no longer type-checks.
+format, the `ownerVersion` incremental state keys on, and a `transform` hook; an
+entry without them no longer type-checks.

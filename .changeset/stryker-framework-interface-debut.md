@@ -2,14 +2,16 @@
 "@systemfsoftware/stryker-framework-interface": minor
 ---
 
-First release. This is the contract a framework plugin is written against: the
-format it claims (`formatId`, `extensions`, `language`, `ownerVersion`,
-`contractVersion`), the embedded document and script regions its parse produces,
-and the `FrameworkContext` toolkit its hooks receive — `parseScript`,
-`transformScript`, `printScript`, `instrumentationHeader`.
+First release. A framework plugin claims a format (`formatId`, `extensions`,
+`language`, `ownerVersion`, `contractVersion`), parses files into embedded
+documents, and receives a `FrameworkContext` of `parseScript`, `printScript`,
+and `instrumentationHeader`. Every script region carries the `Program` the core
+parsed for it, so a hook never re-parses or re-checks one.
 
-`ownerVersion` is the framework runtime the plugin resolved; the host stamps it
-into incremental state, so upgrading that runtime invalidates remembered mutant
-results. `contractVersion` is the interface version the plugin targets. The AST
-types are the ones the ignorer interface exports. The package ships types only
-and depends on no runtime.
+A plugin whose peer is missing, outside its supported range, or not exporting
+what the plugin needs exports a `FrameworkRefusal` in place of its framework,
+with the reason `PeerMissing`, `PeerVersionUnsupported`, or `PeerUnrecognized`.
+
+`FrameworkPackageManifest` types a plugin package's top-level `strykerFramework`
+field naming the extensions its framework claims, which the host reads to name
+that package in a skip reason without importing it.

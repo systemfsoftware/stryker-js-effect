@@ -17,7 +17,7 @@ export const asPluginFileUrls = (specifiers: readonly string[]): Option.Option<r
 
 export const rejectNonFileUrlPlugin = (flagName: string) => (specifiers: readonly string[]): string => {
   const rejected = specifiers.filter((specifier) => Option.isNone(decodePluginFileUrl(specifier)))
-  return `--${flagName} takes plugin entrypoints as file URLs. Resolve each one with import.meta.resolve in your config. Not a file URL: ${
+  return `--${flagName} takes plugin entrypoints as file URLs or bare package names. Not a plugin specifier: ${
     rejected.join(', ')
   }`
 }

@@ -4,10 +4,17 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+export const FrameworkClaimant = S.Struct({
+  package: S.String,
+  extensions: S.Array(S.String),
+})
+export type FrameworkClaimant = S.Schema.Type<typeof FrameworkClaimant>
+
 export class ExplainFileSkipCommand extends S.TaggedClass<ExplainFileSkipCommand>()(
   'ExplainFileSkipCommand',
   {
     extension: S.String,
+    claimants: S.Array(FrameworkClaimant),
   },
 ) {}
 
@@ -40,39 +47,33 @@ export class SkipUnknownExplained extends S.TaggedClass<SkipUnknownExplained>()(
 export const FileSkipDecision = S.Union([SkipKnownExplained, SkipUnknownExplained])
 export type FileSkipDecision = typeof FileSkipDecision.Type
 
-const ANGULAR_MODULE = '@systemfsoftware/stryker-js-angular'
-const SVELTE_MODULE = '@systemfsoftware/stryker-js-svelte'
+const claimantsOf = (command: ExplainFileSkipCommand): readonly string[] =>
+  command.claimants
+    .filter((claimant) => claimant.extensions.includes(command.extension))
+    .map((claimant) => claimant.package)
 
-const ownerOf = (extension: string): string | null =>
-  Match.value(extension).pipe(
-    Match.when('.svelte', () => SVELTE_MODULE),
-    Match.when('.html', () => ANGULAR_MODULE),
-    Match.when('.htm', () => ANGULAR_MODULE),
-    Match.when('.vue', () => ANGULAR_MODULE),
-    Match.orElse(() => null),
-  )
+const claimedReasonOf = (extension: string, claimants: readonly string[]): string =>
+  `No loaded framework claims "${extension}". Add ${claimants.join(', ')} to "plugins" to instrument it.`
 
-const reasonText = (extension: string, owner: string | null): string =>
-  Match.value(owner).pipe(
-    Match.when(
-      null,
-      () =>
-        `No loaded framework claims "${extension}". Install the framework plugin that claims this file type to instrument it.`,
+const unclaimedReasonOf = (extension: string): string =>
+  `No loaded framework claims "${extension}". No installed package declares it as a framework plugin: install the framework plugin that claims this file type and add it to "plugins" to instrument it.`
+
+const explainedOf = (command: ExplainFileSkipCommand): FileSkipExplained =>
+  Match.value(claimantsOf(command).length > 0).pipe(
+    Match.when(true, () =>
+      FileSkipExplained.make({
+        extension: command.extension,
+        reason: claimedReasonOf(command.extension, claimantsOf(command)),
+        ownerPackage: Option.getOrNull(Option.fromUndefinedOr(claimantsOf(command).at(0))),
+      })),
+    Match.orElse(() =>
+      FileSkipExplained.make({
+        extension: command.extension,
+        reason: unclaimedReasonOf(command.extension),
+        ownerPackage: null,
+      })
     ),
-    Match.orElse(
-      (moduleName) =>
-        `No loaded framework claims "${extension}". Install ${moduleName} and add it to "plugins" to instrument it.`,
-    ),
   )
-
-const skipExplainedOf = (command: ExplainFileSkipCommand): FileSkipExplained => {
-  const owner = ownerOf(command.extension)
-  return FileSkipExplained.make({
-    extension: command.extension,
-    reason: reasonText(command.extension, owner),
-    ownerPackage: owner,
-  })
-}
 
 const skipKnownOrUnknownOf = (
   explained: FileSkipExplained,
@@ -90,7 +91,7 @@ const skipKnownOrUnknownOf = (
 export const explainFileSkip = Workflow.total(
   ExplainFileSkipCommand,
   (command) =>
-    Match.value(skipKnownOrUnknownOf(skipExplainedOf(command))).pipe(
+    Match.value(skipKnownOrUnknownOf(explainedOf(command))).pipe(
       Match.tag('SkipKnownExplained', (known) => Result.succeed(known)),
       Match.tag('SkipUnknownExplained', (unknown) => Result.succeed(unknown)),
       Match.exhaustive,

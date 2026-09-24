@@ -5,9 +5,7 @@ import type {
   FrameworkClaim,
   FrameworkContext,
   FrameworkParseResult,
-  Program,
   ScriptFormat,
-  ScriptRegion,
 } from '@systemfsoftware/stryker-framework-interface'
 import { type Ast as NGAst, parse, type ParseTreeResult, visitAll } from 'angular-html-parser'
 import parserManifest from 'angular-html-parser/package.json' with { type: 'json' }
@@ -214,27 +212,12 @@ const unchangedDocument = (document: EmbeddedDocument): EmbeddedDocument => docu
 const byStart = (left: { readonly start: number }, right: { readonly start: number }): number =>
   left.start - right.start
 
-const isProgramAst = (value: unknown): value is Program =>
-  value instanceof Object && Array.isArray(Reflect.get(value, 'body'))
-
-function assertIsProgram(value: unknown): asserts value is Program {
-  if (!isProgramAst(value)) {
-    throw new Error('a script region reached print without its parsed program')
-  }
-}
-
-const programOf = (region: ScriptRegion): Program => {
-  const candidate: unknown = region.scriptAst
-  assertIsProgram(candidate)
-  return candidate
-}
-
 const printedDocument = (document: EmbeddedDocument, context: FrameworkContext): string => {
   let printed = ''
   let cursor = 0
   for (const region of document.regions.toSorted(byStart)) {
     printed += document.rawContent.substring(cursor, region.start)
-    printed += context.printScript(programOf(region))
+    printed += context.printScript(region.scriptAst)
     cursor = region.end
   }
   return printed + document.rawContent.substring(cursor)

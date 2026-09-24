@@ -154,6 +154,7 @@ export class SkippedReported extends S.TaggedClass<SkippedReported>()('skipped',
 export const PluginFailureReason = S.Literals([
   'PeerMissing',
   'PeerVersionUnsupported',
+  'PeerUnrecognized',
   'InvalidContribution',
   'ImportFailed',
 ])

@@ -6,7 +6,6 @@ import type {
   Program,
   ScriptFormat,
 } from '@systemfsoftware/stryker-framework-interface'
-import parserManifest from 'angular-html-parser/package.json' with { type: 'json' }
 import { parseSync } from 'oxc-parser'
 import { describe, expect, it } from 'vitest'
 
@@ -90,7 +89,6 @@ const toolkit = (): FrameworkContext => {
       sources.set(parsed.program, source)
       return parsed.program
     },
-    transformScript: (script) => script,
     printScript: (script) => sources.get(script) ?? '',
     instrumentationHeader: () => [],
   }
@@ -163,13 +161,7 @@ const firstRegion = (document: EmbeddedDocument) => {
   return region
 }
 
-const documentWithRegion = (scriptAst: unknown): EmbeddedDocument => ({
-  formatId: 'html',
-  rawContent: SINGLE_SCRIPT_HTML,
-  regions: [{ start: 8, end: 23, isExpression: false, scriptAst }],
-})
-
-const installedParserVersion = (): string => parserManifest.version
+const installedParserVersion = '10.12.0'
 
 describe('the Angular framework plugin', () => {
   it('publishes one Framework contribution claiming the html template format', () => {
@@ -181,7 +173,7 @@ describe('the Angular framework plugin', () => {
       formatId: 'html',
       extensions: ['.html', '.htm', '.vue'],
       language: 'html',
-      ownerVersion: installedParserVersion(),
+      ownerVersion: installedParserVersion,
       contractVersion: '1',
     })
   })
@@ -262,15 +254,5 @@ describe('the Angular framework plugin', () => {
   it('contains a toolkit that crashes with a non-Error as a parse failure', () => {
     const message = failedParse(SINGLE_SCRIPT_HTML, crashingToolkit('the toolkit exploded'))
     expect(message).toBe('the Angular parser reported a failure that is not an Error')
-  })
-
-  it.each([
-    ['a number', 42],
-    ['null', null],
-    ['a plain object', {}],
-  ])('refuses to print a region whose parsed program was replaced by %s', (_label, scriptAst) => {
-    expect(() => angular().print(documentWithRegion(scriptAst), toolkit())).toThrow(
-      'a script region reached print without its parsed program',
-    )
   })
 })

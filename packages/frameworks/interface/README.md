@@ -18,20 +18,21 @@ development: the declaration re-exports the AST vocabulary from
 so the emitted declaration keeps one physical copy of the recursive `Node`), and
 the lint preset bans Effect imports outright.
 
-| Export                     | What it is                                                                                                                                                                                                      |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Framework`                | The object a plugin exports: `{ kind: 'Framework', name, claim, parse, transform, print, disableTypeChecks }` — every hook synchronous                                                                          |
-| `FrameworkRefusal`         | What a plugin exports instead when the peer it needs cannot serve: `{ kind: 'FrameworkRefusal', name, reason, peer, detail }` with `reason` `PeerMissing` or `PeerVersionUnsupported`; the host refuses the run |
-| `FrameworkContribution`    | `Framework \| FrameworkRefusal` — the element type of `strykerFrameworks`                                                                                                                                       |
-| `FrameworkClaim`           | `{ formatId, extensions, language, ownerVersion, contractVersion }` — the extensions the plugin owns, the report language its files carry, the framework runtime it resolved, and the contract it targets       |
-| `FrameworkContractVersion` | The contract version this package describes (`'1'`); the host refuses a claim that names any other                                                                                                              |
-| `FrameworkParseResult<A>`  | `{ kind: 'Parsed', value } \| { kind: 'ParseFailed', message }` — how `parse` and `disableTypeChecks` report a claimed file that does not parse                                                                 |
-| `FormatId`                 | The claimed format's identity — a plain string the plugin picks once, where it declares the claim                                                                                                               |
-| `ScriptFormat`             | The script vocabulary an embedded region may carry — `js`, `ts`, or `tsx`                                                                                                                                       |
-| `EmbeddedDocument`         | A parsed framework file: `{ formatId, rawContent, regions }` — the untouched document plus the script regions the core instruments                                                                              |
-| `ScriptRegion`             | One located script inside that document: `{ start, end, isExpression, scriptAst? }`, offsets into the document, never the slice                                                                                 |
-| `FrameworkContext`         | The toolkit the core hands a hook: `parseScript`, `transformScript`, `printScript`, `instrumentationHeader` — the core constructs it at hook invocation, the plugin only calls it                               |
-| vocabulary                 | the AST vocabulary, re-exported from [`@systemfsoftware/stryker-ignorer-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-ignorer-interface) — `Node`, `Program`, `Statement`, and every node  |
+| Export                     | What it is                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Framework`                | The object a plugin exports: `{ kind: 'Framework', name, claim, parse, transform, print, disableTypeChecks }` — every hook synchronous                                                                                                                                                                                                                       |
+| `FrameworkRefusal`         | What a plugin exports instead when the peer it needs cannot serve: `{ kind: 'FrameworkRefusal', name, reason, peer, detail }` with `reason` `PeerMissing` (the peer is not installed), `PeerVersionUnsupported` (it is outside the supported range), or `PeerUnrecognized` (it resolved but does not export what the plugin needs); the host refuses the run |
+| `FrameworkContribution`    | `Framework \| FrameworkRefusal` — the element type of `strykerFrameworks`                                                                                                                                                                                                                                                                                    |
+| `FrameworkClaim`           | `{ formatId, extensions, language, ownerVersion, contractVersion }` — the extensions the plugin owns, the report language its files carry, the framework runtime it resolved, and the contract it targets                                                                                                                                                    |
+| `FrameworkContractVersion` | The contract version this package describes (`'1'`); the host refuses a claim that names any other                                                                                                                                                                                                                                                           |
+| `FrameworkParseResult<A>`  | `{ kind: 'Parsed', value } \| { kind: 'ParseFailed', message }` — how `parse` and `disableTypeChecks` report a claimed file that does not parse                                                                                                                                                                                                              |
+| `FormatId`                 | The claimed format's identity — a plain string the plugin picks once, where it declares the claim                                                                                                                                                                                                                                                            |
+| `ScriptFormat`             | The script vocabulary an embedded region may carry — `js`, `ts`, or `tsx`                                                                                                                                                                                                                                                                                    |
+| `EmbeddedDocument`         | A parsed framework file: `{ formatId, rawContent, regions }` — the untouched document plus the script regions the core instruments                                                                                                                                                                                                                           |
+| `ScriptRegion`             | One located script inside that document: `{ start, end, isExpression, scriptAst }`, offsets into the document, never the slice — `scriptAst` is the region's slice parsed to a `Program`, handed over by the core, so a hook never re-parses or re-checks it                                                                                                 |
+| `FrameworkContext`         | The toolkit the core hands a hook: `parseScript`, `printScript`, `instrumentationHeader` — the core constructs it at hook invocation, the plugin only calls it                                                                                                                                                                                               |
+| `FrameworkPackageManifest` | The `package.json` shape of a plugin package: a top-level `"strykerFramework": { "extensions": [...] }` naming the extensions the plugin's framework claims. The host reads it from installed packages to name a plugin in a skip reason without importing the module                                                                                        |
+| vocabulary                 | the AST vocabulary, re-exported from [`@systemfsoftware/stryker-ignorer-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-ignorer-interface) — `Node`, `Program`, `Statement`, and every node                                                                                                                                               |
 
 Everything the package publishes is a type.
 
@@ -68,15 +69,21 @@ const html: Framework = {
 export const strykerFrameworks: readonly FrameworkContribution[] = [html]
 ```
 
-Users add the plugin package to `plugins` in their StrykerJS config; there is no
-discovery by name.
+Users add the plugin package to `plugins` in their StrykerJS config — as a bare
+package name resolved from the project (`'@systemfsoftware/stryker-js-angular'`)
+or as an explicit `file:` URL. Plugins are never auto-discovered.
+
+Declare the same extensions in the package's `package.json` under a top-level
+`"strykerFramework": { "extensions": [...] }` field: the host reads that
+manifest from installed packages to name the package in a skip reason without
+importing the module.
 
 A plugin that needs a peer resolves it when its module is evaluated (top-level
-`await import(...)`). When the peer is absent or too old it exports a
-`FrameworkRefusal` in place of its framework, and the host refuses the run with
-that reason before instrumenting anything. Any other failure while importing
-the peer is left to propagate: the host reports it as a plugin that crashed on
-import.
+`await import(...)`). When the peer is absent, outside the supported range, or
+does not export what the plugin needs, it exports a `FrameworkRefusal` in place
+of its framework, and the host refuses the run with that reason before
+instrumenting anything. Any other failure while importing the peer is left to
+propagate: the host reports it as a plugin that crashed on import.
 
 `FormatId` is a plain string: a plugin picks its own id once, where it declares
 the claim, and keeps it stable across releases — incremental state keys a file's

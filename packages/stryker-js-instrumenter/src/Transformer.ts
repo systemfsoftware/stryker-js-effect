@@ -45,6 +45,7 @@ import type { FormatRegistry } from './format-registry.js'
 import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './instrument-header.js'
 import { MutantsUnapplied, type MutateDescription, type PlacerName } from './Instrument.schema.js'
 import { InstrumentError } from './Instrument.schema.js'
+import { errorToString } from './Mutant.js'
 import { type MutatorContext, type MutatorOptions } from './Mutator.js'
 import {
   applyMutant,
@@ -81,8 +82,6 @@ import {
   type ScriptAst,
   type SourceLocationInFile,
 } from './Syntax.js'
-import { PlacementFailed, TransformFailed } from './Transformer.schema.js'
-export { PlacementFailed, TransformFailed }
 
 export interface TransformerOptions extends MutatorOptions {
   ignorers: readonly Ignorer[]
@@ -698,6 +697,12 @@ type PlacementMap = Map<Node, MutantsPlacement>
 
 const emptyAppliedMutants = (): Map<Mutant, Node> => new Map()
 
+const traversalFailure = <A = unknown>(cause: A): InstrumentError =>
+  InstrumentError.make({
+    message: cause instanceof Error ? cause.message : errorToString(cause),
+    cause,
+  })
+
 function isMutateRangeList(value: MutateDescription): value is readonly SourceLocationInFile[] {
   return Array.isArray(value)
 }
@@ -720,18 +725,22 @@ export const transformScript: AstTransformer<ScriptAst> = (
 
     const warnings: string[] = []
 
-    traverse(root, {
-      enter(path) {
-        const directives = directivesOf(path.node, (node) => getNodeLocation(node).start.line)
-        directiveRule = directives.reduce(foldInto, directiveRule)
-        visitNode(path, directives)
-      },
-      exit(path) {
-        const placement = placementMap.get(path.node)
-        if (hasAppliedMutants(placement)) {
-          applyPlacement(path, placement)
-        }
-      },
+    yield* Effect.try({
+      try: () =>
+        traverse(root, {
+          enter(path) {
+            const directives = directivesOf(path.node, (node) => getNodeLocation(node).start.line)
+            directiveRule = directives.reduce(foldInto, directiveRule)
+            visitNode(path, directives)
+          },
+          exit(path) {
+            const placement = placementMap.get(path.node)
+            if (hasAppliedMutants(placement)) {
+              applyPlacement(path, placement)
+            }
+          },
+        }),
+      catch: traversalFailure,
     })
 
     yield* placeHeaderIfNeeded(hasLiveMutants, options, root)

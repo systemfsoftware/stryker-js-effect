@@ -81,6 +81,75 @@ const TEST_SOURCE = [
 ].join('\n')
 const SVELTE_SOURCE = '<template><p id="greeting">hello</p></template>\n'
 const FIXTURE_SOURCE = '<script>\nfunction add(a, b) {\n  return a + b;\n}\n</script>\n'
+const INSTALLED_WORKSPACE_PACKAGE = [
+  '{',
+  '  "type": "commonjs",',
+  '  "dependencies": {',
+  '    "@systemfsoftware/stryker-js-svelte": "0.0.0",',
+  '    "fixture-framework": "1.0.0"',
+  '  }',
+  '}',
+  '',
+].join('\n')
+const INSTALLED_SVELTE_MANIFEST = [
+  '{',
+  '  "name": "@systemfsoftware/stryker-js-svelte",',
+  '  "version": "0.0.0",',
+  '  "strykerFramework": { "extensions": [".svelte"] }',
+  '}',
+  '',
+].join('\n')
+const INSTALLED_FIXTURE_MANIFEST = [
+  '{',
+  '  "name": "fixture-framework",',
+  '  "version": "1.0.0",',
+  '  "type": "module",',
+  '  "exports": { ".": "./index.mjs" },',
+  '  "strykerFramework": { "extensions": [".fixture"] }',
+  '}',
+  '',
+].join('\n')
+const INSTALLED_FIXTURE_ENTRY = [
+  'const parseFixture = (rawContent, context) => {',
+  '  const open = rawContent.indexOf("<script>")',
+  '  const close = rawContent.indexOf("</script>")',
+  '  const start = open + "<script>".length',
+  '  return {',
+  '    kind: "Parsed",',
+  '    value: {',
+  '      formatId: "fixture",',
+  '      rawContent,',
+  '      regions: [',
+  '        {',
+  '          start,',
+  '          end: close,',
+  '          isExpression: false,',
+  "          scriptAst: context.parseScript(rawContent.slice(start, close), 'js'),",
+  '        },',
+  '      ],',
+  '    },',
+  '  }',
+  '}',
+  '',
+  'export const strykerFrameworks = [',
+  '  {',
+  '    kind: "Framework",',
+  '    name: "fixture-format",',
+  '    claim: {',
+  '      formatId: "fixture",',
+  '      extensions: [".fixture"],',
+  '      language: "fixture",',
+  '      ownerVersion: "1.0.0",',
+  '      contractVersion: "1",',
+  '    },',
+  '    parse: parseFixture,',
+  '    transform: (document) => document,',
+  '    print: (document) => document.rawContent,',
+  '    disableTypeChecks: (rawContent) => ({ kind: "Parsed", value: rawContent }),',
+  '  },',
+  ']',
+  '',
+].join('\n')
 
 const writeWorkspace = (
   files: ReadonlyArray<readonly [string, string]>,
@@ -171,10 +240,13 @@ Feature('Framework plugins joining a mutation run')
           'workspace',
           () =>
             writeWorkspace([
-              ['package.json', PACKAGE_SOURCE],
+              ['package.json', INSTALLED_WORKSPACE_PACKAGE],
               ['src/math.js', MATH_SOURCE],
               ['src/widget.svelte', SVELTE_SOURCE],
               ['test/sample.test.mjs', TEST_SOURCE],
+              ['node_modules/@systemfsoftware/stryker-js-svelte/package.json', INSTALLED_SVELTE_MANIFEST],
+              ['node_modules/fixture-framework/package.json', INSTALLED_FIXTURE_MANIFEST],
+              ['node_modules/fixture-framework/index.mjs', INSTALLED_FIXTURE_ENTRY],
             ]).pipe(
               Effect.map((directory) => workspaceOf(directory, [], ['src/**/*.js', 'src/**/*.svelte'])),
               Effect.provide(filePorts),
@@ -198,7 +270,7 @@ Feature('Framework plugins joining a mutation run')
             const row = skipped?.files.find((file) => file.file.endsWith('widget.svelte'))
             expect(row?.extension).toBe('.svelte')
             expect(row?.reason).toContain('@systemfsoftware/stryker-js-svelte')
-            expect(row?.reason).toContain('add it to "plugins"')
+            expect(row?.reason).toContain('Add @systemfsoftware/stryker-js-svelte to "plugins"')
             const verdict = s.observation.events.find(
               (event): event is VerdictReached => S.is(VerdictReached)(event),
             )
@@ -400,6 +472,108 @@ Feature('Framework plugins joining a mutation run')
           expect(failure?.reason).toBe('InvalidContribution')
           expect(failure?.code).toBe(2)
           expect(failure?.error).toContain('malformed')
+        }),
+      ),
+    )
+
+    scenario(
+      'A framework whose peer is present but unrecognized refuses the run before any file is touched',
+      Gherkin.Do.pipe(
+        Given('a workspace configured with a framework whose peer package is not what it needs')(
+          'workspace',
+          () =>
+            writeWorkspace([]).pipe(
+              Effect.map((directory) => workspaceOf(directory, [pluginUrlOf('peer-unrecognized.fixture.mjs')], [])),
+              Effect.provide(filePorts),
+            ),
+        ),
+        When('a mutation run executes over the workspace')(
+          'observation',
+          (s) => runOver(s.workspace),
+        ),
+        Then('the run refuses with a configuration exit code naming the unrecognized peer')((s) => {
+          expect(Exit.isFailure(s.observation.exit)).toBe(true)
+          const failure = s.observation.events.find((event): event is RunFailed => S.is(RunFailed)(event))
+          expect(failure?.reason).toBe('PeerUnrecognized')
+          expect(failure?.code).toBe(2)
+          expect(failure?.error).toContain('peer-unrecognized')
+          expect(failure?.remediation).toContain('recognizes')
+        }),
+        And('the run stopped while loading, with no verdict and no files examined')((s) => {
+          const phases = s.observation.events
+            .filter((event): event is PhaseEntered => S.is(PhaseEntered)(event))
+            .map((phase) => phase.phase)
+          expect(phases).toEqual(['prepare'])
+          expect(s.observation.events.some((event) => S.is(VerdictReached)(event))).toBe(false)
+          expect(s.observation.events.some((event) => S.is(SkippedReported)(event))).toBe(false)
+        }),
+      ),
+    )
+
+    scenario(
+      'A framework named by its package joins the run from the workspace install',
+      Gherkin.Do.pipe(
+        Given('a workspace whose component framework is installed under its package name')(
+          'workspace',
+          () =>
+            writeWorkspace([
+              ['package.json', INSTALLED_WORKSPACE_PACKAGE],
+              ['src/widget.fixture', FIXTURE_SOURCE],
+              ['test/sample.test.mjs', TEST_SOURCE],
+              ['node_modules/fixture-framework/package.json', INSTALLED_FIXTURE_MANIFEST],
+              ['node_modules/fixture-framework/index.mjs', INSTALLED_FIXTURE_ENTRY],
+            ]).pipe(
+              Effect.map((directory) => workspaceOf(directory, ['fixture-framework'], ['src/**/*.fixture'])),
+              Effect.provide(filePorts),
+            ),
+        ),
+        When('a mutation run executes over the workspace')(
+          'observation',
+          (s) => runOver(s.workspace),
+        ),
+        Then('the resolved-formats report gives the component type to the named package')((s) => {
+          const formats = s.observation.events.find(
+            (event): event is FormatRegistryResolved => S.is(FormatRegistryResolved)(event),
+          )
+          const row = formats?.rows.find((candidate) => candidate.extension === '.fixture')
+          expect(row?.formatId).toBe('fixture')
+          expect(row?.language).toBe('fixture')
+          expect(row?.ownerModule).toBe('fixture-framework')
+        }),
+      ),
+    )
+
+    scenario(
+      'An installed framework that is not configured is named by the skip report',
+      Gherkin.Do.pipe(
+        Given('a workspace whose component framework is installed but left out of the plugin list')(
+          'workspace',
+          () =>
+            writeWorkspace([
+              ['package.json', INSTALLED_WORKSPACE_PACKAGE],
+              ['src/widget.fixture', FIXTURE_SOURCE],
+              ['test/sample.test.mjs', TEST_SOURCE],
+              ['node_modules/fixture-framework/package.json', INSTALLED_FIXTURE_MANIFEST],
+              ['node_modules/fixture-framework/index.mjs', INSTALLED_FIXTURE_ENTRY],
+            ]).pipe(
+              Effect.map((directory) => workspaceOf(directory, [], ['src/**/*.fixture'])),
+              Effect.provide(filePorts),
+            ),
+        ),
+        When('a mutation run executes over the workspace')(
+          'observation',
+          (s) => runOver(s.workspace),
+        ),
+        Then('the run completes and the skip report tells the reader which package to add')((s) => {
+          expect(Exit.isFailure(s.observation.exit)).toBe(true)
+          const skipped = s.observation.events.find(
+            (event): event is SkippedReported => S.is(SkippedReported)(event),
+          )
+          const row = skipped?.files.find((file) => file.file.endsWith('widget.fixture'))
+          expect(row?.extension).toBe('.fixture')
+          expect(row?.reason).toBe(
+            'No loaded framework claims ".fixture". Add fixture-framework to "plugins" to instrument it.',
+          )
         }),
       ),
     )

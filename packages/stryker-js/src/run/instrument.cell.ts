@@ -21,10 +21,9 @@ import { StageError } from '../Run.schema.js'
 import type { SkippedFileRow } from '../RunEvent.schema.js'
 import { type RunEvent } from '../RunEvents.js'
 import { PhaseEntered, RunEvents, SkippedReported } from '../RunEvents.js'
-import { makeSandbox } from '../Sandbox.js'
-import type { SandboxHandle } from '../Sandbox.js'
+import { makeSandbox, type SandboxHandle } from '../Sandbox.js'
 import { makeConcurrency } from '../Worker.js'
-import { explainFileSkip, ExplainFileSkipCommand } from './explain-file-skip.workflow.js'
+import { explainFileSkip, ExplainFileSkipCommand, type FrameworkClaimant } from './explain-file-skip.workflow.js'
 import type { PrepareDone } from './prepare.cell.js'
 import { RunEnvironment } from './RunEnvironment.js'
 
@@ -49,16 +48,20 @@ interface InstrumentRaw {
 const offerSkipsIfAny = (
   queue: Queue.Queue<RunEvent, Cause.Done>,
   skipped: readonly InstrumentFileSkip[],
+  claimants: readonly FrameworkClaimant[],
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
     if (skipped.length === 0) {
       return
     }
     const files = skipped.map((skip) =>
-      Result.match(explainFileSkip(ExplainFileSkipCommand.make({ extension: skip.extension })), {
-        onFailure: absurd<SkippedFileRow>,
-        onSuccess: (explained) => ({ file: skip.file, extension: skip.extension, reason: explained.reason }),
-      })
+      Result.match(
+        explainFileSkip(ExplainFileSkipCommand.make({ extension: skip.extension, claimants: [...claimants] })),
+        {
+          onFailure: absurd<SkippedFileRow>,
+          onSuccess: (explained) => ({ file: skip.file, extension: skip.extension, reason: explained.reason }),
+        },
+      )
     )
     yield* Queue.offer(queue, SkippedReported.make({ files }))
   })
@@ -140,8 +143,7 @@ export const instrumentCell = Sandwich.read((command: PrepareDone) =>
         const now = yield* Clock.currentTimeMillis
         const queue = yield* RunEvents
         yield* Queue.offer(queue, PhaseEntered.make({ phase: 'instrument', elapsedMs: now - env.runStartedAt }))
-        yield* offerSkipsIfAny(queue, raw.instrumentResult.skipped)
-
+        yield* offerSkipsIfAny(queue, raw.instrumentResult.skipped, raw.prev.frameworkClaimants)
         const out = output
         if (Result.isFailure(out)) {
           const err = out.failure

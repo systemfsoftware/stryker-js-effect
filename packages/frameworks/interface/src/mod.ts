@@ -20,7 +20,7 @@ export interface ScriptRegion {
   readonly start: number
   readonly end: number
   readonly isExpression: boolean
-  readonly scriptAst?: unknown
+  readonly scriptAst: Program
 }
 
 export interface EmbeddedDocument {
@@ -31,7 +31,6 @@ export interface EmbeddedDocument {
 
 export interface FrameworkContext {
   readonly parseScript: (source: string, scriptFormat: ScriptFormat) => Program
-  readonly transformScript: (script: Program) => Program
   readonly printScript: (script: Program) => string
   readonly instrumentationHeader: () => readonly Statement[]
 }
@@ -50,7 +49,7 @@ export interface Framework {
   readonly disableTypeChecks: (rawContent: string) => FrameworkParseResult<string>
 }
 
-export type FrameworkRefusalReason = 'PeerMissing' | 'PeerVersionUnsupported'
+export type FrameworkRefusalReason = 'PeerMissing' | 'PeerVersionUnsupported' | 'PeerUnrecognized'
 
 export interface FrameworkRefusal {
   readonly kind: 'FrameworkRefusal'
@@ -61,3 +60,9 @@ export interface FrameworkRefusal {
 }
 
 export type FrameworkContribution = Framework | FrameworkRefusal
+
+export interface FrameworkPackageManifest {
+  readonly strykerFramework: {
+    readonly extensions: readonly string[]
+  }
+}

@@ -60,8 +60,6 @@ export interface FrameworkContext {
     readonly parseScript: (source: string, scriptFormat: ScriptFormat) => Program;
     // (undocumented)
     readonly printScript: (script: Program) => string;
-    // (undocumented)
-    readonly transformScript: (script: Program) => Program;
 }
 
 // @public (undocumented)
@@ -69,6 +67,14 @@ export type FrameworkContractVersion = '1';
 
 // @public (undocumented)
 export type FrameworkContribution = Framework | FrameworkRefusal;
+
+// @public (undocumented)
+export interface FrameworkPackageManifest {
+    // (undocumented)
+    readonly strykerFramework: {
+        readonly extensions: readonly string[];
+    };
+}
 
 // @public (undocumented)
 export type FrameworkParseResult<A> = {
@@ -94,7 +100,7 @@ export interface FrameworkRefusal {
 }
 
 // @public (undocumented)
-export type FrameworkRefusalReason = 'PeerMissing' | 'PeerVersionUnsupported';
+export type FrameworkRefusalReason = 'PeerMissing' | 'PeerVersionUnsupported' | 'PeerUnrecognized';
 
 // @public (undocumented)
 export type ScriptFormat = 'js' | 'ts' | 'tsx';
@@ -106,7 +112,7 @@ export interface ScriptRegion {
     // (undocumented)
     readonly isExpression: boolean;
     // (undocumented)
-    readonly scriptAst?: unknown;
+    readonly scriptAst: Program;
     // (undocumented)
     readonly start: number;
 }
