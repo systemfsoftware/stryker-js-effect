@@ -7,6 +7,7 @@ import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
@@ -122,12 +123,18 @@ const describedFields = { ...identityFields, _tag: 'Mutant', id: 'mutant-1' }
 const describedMutant = (): Mutant.Mutant =>
   Effect.runSync(S.decodeEffect(Mutant.MutantFromUnknown)(describedFields).pipe(Effect.orDie))
 
-const undescribableFields: { readonly [field: string]: string | number | object } = { ...describedFields, id: '' }
+const invalidRequest: { readonly checkerName: string; readonly mutants: ReadonlyArray<Record<string, unknown>> } = {
+  checkerName: 'test-checker',
+  mutants: [{ ...identityFields, id: '' }],
+}
+
 
 const undescribableMutant = (): Mutant.Mutant =>
-  Result.match(S.decodeUnknownResult(Mutant.MutantFromUnknown)(structuredClone(undescribableFields)), {
+  Result.match(S.decodeResult(Mutant.MutantFromUnknown)(undescribableTyped), {
     onFailure: () => describedMutant(),
-    onSuccess: () => Effect.dieSync(new Error('planned mutant was unexpectedly accepted')),
+    onSuccess: () => {
+      throw new Error('planned mutant was unexpectedly accepted')
+    },
   })
 
 const planOf = (mutant: Mutant.Mutant): Mutant.MutantRunPlan => ({
