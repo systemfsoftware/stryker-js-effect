@@ -31,7 +31,7 @@ const registerMutantRunHooks = () => {
     ),
   )
 
-  afterAll((_hookContext, suite: SuiteWithTaskMeta) => {
+  afterAll(({}, suite: SuiteWithTaskMeta) => {
     suite.meta.hitCount = ns.hitCount
   })
 }
@@ -47,7 +47,7 @@ const registerDryRunHooks = () => {
     ns.currentTestId = undefined
   })
 
-  afterAll((_hookContext, suite: SuiteWithTaskMeta) => {
+  afterAll(({}, suite: SuiteWithTaskMeta) => {
     suite.meta.mutantCoverage = ns.mutantCoverage
   })
 }
