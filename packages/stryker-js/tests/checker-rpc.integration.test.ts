@@ -121,8 +121,7 @@ const planOf = (mutant: Mutant.Mutant): MutantRunPlan => ({
   netTime: 1,
 })
 
-const describedMutant = (): Mutant.Mutant => Mutant.Mutant.make({ ...identityFields, id: Mutant.MutantId.make('mutant-1') })
-const undescribableMutant = (): Mutant.Mutant => ({ ...identityFields, _tag: 'Mutant', id: '' }) as Mutant.Mutant
+const undescribableMutant = (): Mutant.Mutant => ({ ...describedMutant(), id: '' }) as never as Mutant.Mutant
 
 Feature('Verifying mutants through an external checker worker')
   .withLayer(Layer.empty)
@@ -178,21 +177,25 @@ Feature('Verifying mutants through an external checker worker')
           'outcome',
           (s) =>
             s.harness.client
-              .check({
-                checkerName: 'test-checker',
-                mutants: [
-                  {
-                    id: '' as Mutant.MutantIdValue,
-                    fileName: Mutant.CanonicalFileName.make('src/core.ts'),
-                    mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
-                    replacement: '-',
-                    location: {
-                      start: { line: 10, column: 5 },
-                      end: { line: 10, column: 6 },
-                    },
-                  },
-                ],
-              })
+              .check(
+                JSON.parse(
+                  JSON.stringify({
+                    checkerName: 'test-checker',
+                    mutants: [
+                      {
+                        id: '',
+                        fileName: 'src/core.ts',
+                        mutatorName: 'ArithmeticOperator',
+                        replacement: '-',
+                        location: {
+                          start: { line: 10, column: 5 },
+                          end: { line: 10, column: 6 },
+                        },
+                      },
+                    ],
+                  }),
+                ),
+              )
               .pipe(Effect.exit),
         ),
         Then('the request is refused and the worker is never asked')((s) =>
