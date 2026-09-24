@@ -153,7 +153,8 @@ const atArityWithoutLoc = (args: IArguments, arity: number): boolean =>
 const isDataFirstArity = (args: IArguments, arity: number): boolean =>
   args.length > arity || atArityWithoutLoc(args, arity)
 
-const isStatementArg = (value: unknown): boolean => isNodeArg(value) && /(?:Statement|Declaration)$/.test(value.type)
+const isStatementArg = (value: unknown): value is Statement =>
+  isNodeArg(value) && /(?:Statement|Declaration)$/.test(value.type)
 
 const isNodeOrNullArg = (value: unknown): value is Expression | null => value === null || isNodeArg(value)
 
