@@ -147,7 +147,6 @@ export type { EnginePorts, RunStageServices, StageServices, WiredRunLayer } from
 export type { SandboxHandle } from './Sandbox.js'
 export type { StrykerRun } from './StrykerRun.js'
 export type { PooledTestRunner, PooledTestRunnerError, TestRunnerBuildContext } from './TestRunner.js'
-export type { VmRequire } from './VmRunner.js'
 export type { IdGeneratorShape } from './Worker.js'
 export { IdGenerator } from './Worker.js'
 export { makeRunLayer, mutationTestCell, RUN_EVENTS_QUEUE_BOUND, shouldKeepTempDir }
@@ -181,7 +180,7 @@ export { calculateMetrics, countMutants } from './calculate-metrics.js'
 export { EXIT_CODE, ExitClass, highestExitClass, resolveExitCode, verdictExitClass } from './exit-classification.js'
 export { buildTestRunner, isCommandRunner } from './TestRunner.js'
 export { isVmRunner, VmRunner, vmRunnerCapabilities, vmRunnerName, vmTestRunner } from './VmRunner.js'
-export type { CompiledTests, VmModule, VmModuleBuiltin, VmPlatform, VmScript, VmTestRunnerConfig } from './VmRunner.js'
+export type { VmPlatform, VmTestRunnerConfig } from './VmRunner.js'
 
 export {
   CONFIG_SYNTAX_HELP,

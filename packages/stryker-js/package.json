@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js",
-  "version": "10.1.1",
+  "version": "10.1.2",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -32,7 +32,7 @@
   },
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=24.13.1"
   },
   "dependencies": {
     "@effect/opentelemetry": "catalog:",
@@ -44,7 +44,8 @@
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
     "@opentelemetry/sdk-metrics": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
-    "@systemfsoftware/effect-cell-types": "catalog:"
+    "@systemfsoftware/effect-cell-types": "catalog:",
+    "@systemfsoftware/stryker-vm-harness": "workspace:^"
   },
   "peerDependencies": {
     "effect": "catalog:"
@@ -136,8 +137,15 @@
   },
   "inlinedDependencies": {
     "@eslint-community/regexpp": "4.12.2",
+    "@jridgewell/sourcemap-codec": "1.6.0",
     "@jsr/std__jsonc": "1.0.2",
+    "chai": "6.2.2",
+    "expect-type": "1.4.0",
+    "magic-string": "1.4.1",
     "oxc-parser": "0.150.0",
-    "oxc-walker": "1.1.1"
+    "oxc-walker": "1.1.1",
+    "tinybench": "6.1.4",
+    "vite": "8.2.2",
+    "vitest": "5.0.1"
   }
 }

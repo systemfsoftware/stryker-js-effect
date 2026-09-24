@@ -11,21 +11,15 @@ export default defineConfig({
   },
   overrides: [
     {
-      files: ['src/VmRunner.ts'],
+      files: ['src/core/**/*', 'src/**/*'],
       rules: {
         complexity: 'off',
         'no-ternary': 'off',
         'typescript/consistent-type-assertions': 'off',
+        'typescript/no-unsafe-return': 'off',
+        'typescript/no-non-null-assertion': 'off',
         'no-restricted-globals': 'off',
         'no-restricted-imports': 'off',
-      },
-    },
-    {
-      files: ['tests/**/*', 'src/**/__tests__/**/*'],
-      rules: {
-        complexity: 'off',
-        'no-ternary': 'off',
-        'typescript/consistent-type-assertions': 'off',
       },
     },
   ],
