@@ -3,25 +3,40 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import type { TestFileContribution } from './test-contribution.schema.js'
+import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
+
+import type { ContributionEntry, ReportView, TestFileContribution } from './test-contribution.schema.js'
 import { TestFileContributionSchema } from './test-contribution.schema.js'
 
-/**
- * The evidence one judging pass saw, gathered before the rules run: the matched
- * suffixes as they name the gate, the contribution table keyed by file name, the
- * in-scope entries, the accused (toothless) files, whether every killing test was
- * recorded, and every kill's credited killers.
- */
 export class JudgeTestContribution extends S.TaggedClass<JudgeTestContribution>()('JudgeTestContribution', {
-  matches: S.String,
+  report: S.Struct({
+    files: S.Record(
+      S.String,
+      S.Struct({
+        language: S.String,
+        source: S.String,
+        mutants: S.Array(
+          S.Struct({
+            id: S.String,
+            status: S.Union([S.Literal('Killed'), S.Literal('Timeout'), S.Literal('Ignored')]),
+            killedBy: S.optional(S.Array(S.String)),
+            coveredBy: S.optional(S.Array(S.String)),
+          }),
+        ),
+      }),
+    ),
+    testFiles: S.optional(S.Record(S.String, S.Struct({ tests: S.Array(S.Struct({ id: S.String })) }))),
+  }),
   everyKillerRecorded: S.Boolean,
-  contribution: S.Array(S.Tuple([S.String, TestFileContributionSchema])),
-  inScope: S.Array(S.Tuple([S.String, TestFileContributionSchema])),
-  toothless: S.Array(S.String),
-  kills: S.Array(S.Struct({ killers: S.Array(S.String) })),
+  suffixes: S.Array(S.String),
 }) {
+  static readonly defaultRequireTestContributionSuffixes = [
+    '.workflow.property.test.ts',
+    '.policy.property.test.ts',
+    '.kernel.property.test.ts',
+  ] as const
+
   static readonly [Workflow.InstrumentationBrand] = {
-    matches: 'stryker.test_contribution.matches',
     everyKillerRecorded: 'stryker.test_contribution.every_killer_recorded',
   } as const
 }
@@ -29,9 +44,15 @@ export class JudgeTestContribution extends S.TaggedClass<JudgeTestContribution>(
 const VerdictTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-test-contribution/TestContributionVerdict')
 type VerdictTypeId = typeof VerdictTypeId
 
+const verdictFields = {
+  contribution: S.Array(S.Tuple([S.String, TestFileContributionSchema])),
+  toothless: S.Array(S.String),
+}
+
 export class RunUnjudged extends S.TaggedClass<RunUnjudged>()('RunUnjudged', {
   failed: S.Literal(false),
   message: S.String,
+  ...verdictFields,
 }) {
   readonly [VerdictTypeId] = VerdictTypeId
 }
@@ -39,6 +60,7 @@ export class RunUnjudged extends S.TaggedClass<RunUnjudged>()('RunUnjudged', {
 export class BailHidesKillers extends S.TaggedClass<BailHidesKillers>()('BailHidesKillers', {
   failed: S.Literal(true),
   message: S.String,
+  ...verdictFields,
 }) {
   readonly [VerdictTypeId] = VerdictTypeId
 }
@@ -46,6 +68,7 @@ export class BailHidesKillers extends S.TaggedClass<BailHidesKillers>()('BailHid
 export class NoKillCredited extends S.TaggedClass<NoKillCredited>()('NoKillCredited', {
   failed: S.Literal(true),
   message: S.String,
+  ...verdictFields,
 }) {
   readonly [VerdictTypeId] = VerdictTypeId
 }
@@ -53,6 +76,7 @@ export class NoKillCredited extends S.TaggedClass<NoKillCredited>()('NoKillCredi
 export class RunReviewed extends S.TaggedClass<RunReviewed>()('RunReviewed', {
   failed: S.Literal(false),
   message: S.String,
+  ...verdictFields,
 }) {
   readonly [VerdictTypeId] = VerdictTypeId
 }
@@ -60,6 +84,7 @@ export class RunReviewed extends S.TaggedClass<RunReviewed>()('RunReviewed', {
 export class JointlyDeletable extends S.TaggedClass<JointlyDeletable>()('JointlyDeletable', {
   failed: S.Literal(true),
   message: S.String,
+  ...verdictFields,
 }) {
   readonly [VerdictTypeId] = VerdictTypeId
 }
@@ -67,6 +92,7 @@ export class JointlyDeletable extends S.TaggedClass<JointlyDeletable>()('Jointly
 export class NotJointlyDeletable extends S.TaggedClass<NotJointlyDeletable>()('NotJointlyDeletable', {
   failed: S.Literal(true),
   message: S.String,
+  ...verdictFields,
 }) {
   readonly [VerdictTypeId] = VerdictTypeId
 }
@@ -81,7 +107,139 @@ export const TestContributionDecision = S.Union([
 ])
 export type TestContributionDecision = typeof TestContributionDecision.Type
 
-type ContributionEntry = readonly [string, TestFileContribution]
+type TestFileById = ReadonlyMap<string, string>
+
+const KILLING_STATUSES: Readonly<Record<string, true>> = { Killed: true, Timeout: true }
+
+const PRECISION = 'every killing test was recorded'
+
+const testFilesOf = (report: ReportView): Record<string, { readonly tests: ReadonlyArray<{ readonly id: string }> }> =>
+  report.testFiles ?? {}
+
+const isDefined = <T>(value: T | undefined): value is T => value !== undefined
+
+const testFileById = (
+  testFiles: Record<string, { readonly tests: ReadonlyArray<{ readonly id: string }> }>,
+): TestFileById =>
+  new Map(
+    Object.entries(testFiles).flatMap(([fileName, testFile]) =>
+      testFile.tests.map((test): readonly [string, string] => [test.id, fileName]),
+    ),
+  )
+
+const idsOf = (testIds: readonly string[] | undefined): readonly string[] => testIds ?? []
+
+const realFiles = (testIds: readonly string[], fileById: TestFileById): ReadonlySet<string> =>
+  new Set(testIds.map((testId) => fileById.get(testId)).filter(isDefined))
+
+const killersOf = (killedBy: readonly string[], fileById: TestFileById): ReadonlySet<string> =>
+  new Set(killedBy.map((testId) => fileById.get(testId) ?? testId))
+
+type JudgeMutant = {
+  readonly status: 'Killed' | 'Timeout' | 'Ignored'
+  readonly killedBy: readonly string[] | undefined
+  readonly coveredBy: readonly string[] | undefined
+}
+
+const isKillingMutant = (mutant: JudgeMutant): boolean => KILLING_STATUSES[mutant.status] === true
+
+const isKillableMutant = (mutant: JudgeMutant): boolean => mutant.status !== 'Ignored'
+
+const realKillersOf = (mutant: JudgeMutant, fileById: TestFileById): ReadonlySet<string> =>
+  realFiles(idsOf(mutant.killedBy), fileById)
+
+const realCoverersOf = (mutant: JudgeMutant, fileById: TestFileById): ReadonlySet<string> =>
+  realFiles(idsOf(mutant.coveredBy), fileById)
+
+interface Kill {
+  readonly killers: ReadonlySet<string>
+  readonly coverers: ReadonlySet<string>
+  readonly claimedAlone: boolean
+}
+
+const killOf = (mutant: JudgeMutant, fileById: TestFileById): Kill => ({
+  killers: realKillersOf(mutant, fileById),
+  coverers: realCoverersOf(mutant, fileById),
+  claimedAlone: killersOf(idsOf(mutant.killedBy), fileById).size === 1,
+})
+
+const mutantsOf = (report: ReportView): readonly JudgeMutant[] =>
+  Object.values(report.files).flatMap((file) => file.mutants)
+
+const killsOf = (mutants: readonly JudgeMutant[], fileById: TestFileById): readonly Kill[] =>
+  mutants.filter(isKillingMutant).map((mutant) => killOf(mutant, fileById))
+
+const isUnattributedKill = (kill: Kill): boolean => kill.killers.size === 0
+
+const countOf = (counts: ReadonlyMap<string, number>, fileName: string): number => counts.get(fileName) ?? 0
+
+const incrementCount = (counts: Map<string, number>, fileName: string): Map<string, number> => {
+  counts.set(fileName, countOf(counts, fileName) + 1)
+  return counts
+}
+
+const countBy = (fileNames: Iterable<string>): ReadonlyMap<string, number> =>
+  [...fileNames].reduce(incrementCount, new Map<string, number>())
+
+interface ContributionTally {
+  readonly soleKills: ReadonlyMap<string, number>
+  readonly totalKills: ReadonlyMap<string, number>
+  readonly killableCovered: ReadonlyMap<string, number>
+  readonly unattributed: ReadonlySet<string>
+}
+
+const tallyOf = (mutants: readonly JudgeMutant[], fileById: TestFileById): ContributionTally => {
+  const kills = killsOf(mutants, fileById)
+  return {
+    soleKills: countBy(kills.filter((kill) => kill.claimedAlone).flatMap((kill) => [...kill.killers])),
+    totalKills: countBy(kills.flatMap((kill) => [...kill.killers])),
+    killableCovered: countBy(
+      mutants.filter(isKillableMutant).flatMap((mutant) => [...realCoverersOf(mutant, fileById)]),
+    ),
+    unattributed: new Set(
+      kills.filter(isUnattributedKill).flatMap((kill) => [...kill.coverers]),
+    ),
+  }
+}
+
+const fileContributionOf = (fileName: string, tally: ContributionTally): TestFileContribution => ({
+  soleKills: countOf(tally.soleKills, fileName),
+  totalKills: countOf(tally.totalKills, fileName),
+  killableCovered: countOf(tally.killableCovered, fileName),
+  coversUnattributedKill: tally.unattributed.has(fileName),
+})
+
+const contributionOf = (report: ReportView): ReadonlyMap<string, TestFileContribution> => {
+  const testFiles = testFilesOf(report)
+  const fileById = testFileById(testFiles)
+  const tally = tallyOf(mutantsOf(report), fileById)
+  return new Map(
+    Object.keys(testFiles).map((fileName): ContributionEntry => [fileName, fileContributionOf(fileName, tally)]),
+  )
+}
+
+const isInScope = (fileName: string, suffixes: readonly string[]): boolean =>
+  suffixes.some((suffix) => fileName.endsWith(suffix))
+
+const defends = (entry: TestFileContribution, everyKillerRecorded: boolean): boolean =>
+  Match.value(everyKillerRecorded).pipe(
+    Match.when(true, () => entry.soleKills > 0),
+    Match.when(false, () => entry.totalKills > 0),
+    Match.exhaustive,
+  )
+
+const toothlessOf = (
+  contribution: ReadonlyMap<string, TestFileContribution>,
+  suffixes: readonly string[],
+  everyKillerRecorded: boolean,
+): readonly string[] =>
+  [...contribution]
+    .filter(([fileName]) => isInScope(fileName, suffixes))
+    .filter(([, entry]) => !defends(entry, everyKillerRecorded))
+    .filter(([, entry]) => entry.killableCovered > 0)
+    .filter(([, entry]) => !entry.coversUnattributedKill)
+    .map(([fileName]) => fileName)
+    .sort()
 
 interface Judgement {
   readonly matches: string
@@ -92,7 +250,18 @@ interface Judgement {
   readonly kills: readonly { readonly killers: readonly string[] }[]
 }
 
-const PRECISION = 'every killing test was recorded'
+const judgementOf = (command: JudgeTestContribution): Judgement => {
+  const contribution = contributionOf(command.report)
+  const kills = killsOf(mutantsOf(command.report), testFileById(testFilesOf(command.report)))
+  return {
+    matches: command.suffixes.join(', '),
+    everyKillerRecorded: command.everyKillerRecorded,
+    contribution: [...contribution],
+    inScope: [...contribution].filter(([fileName]) => isInScope(fileName, command.suffixes)),
+    toothless: toothlessOf(contribution, command.suffixes, command.everyKillerRecorded),
+    kills: kills.map((kill) => ({ killers: [...kill.killers] })),
+  }
+}
 
 const bulletedFiles = (fileNames: readonly string[]): string =>
   fileNames.map((fileName) => `  - ${fileName}`).join('\n')
@@ -151,6 +320,8 @@ const reviewedOf = (judgement: Judgement): Result.Result<TestContributionDecisio
         RunReviewed.make({
           failed: false as const,
           message: `Every test file matching ${judgement.matches} kills a mutant nothing else kills (${PRECISION}).`,
+          contribution: judgement.contribution,
+          toothless: judgement.toothless,
         }),
       )),
     Match.when(false, () =>
@@ -158,6 +329,8 @@ const reviewedOf = (judgement: Judgement): Result.Result<TestContributionDecisio
         RunReviewed.make({
           failed: false as const,
           message: `Every file matching ${judgement.matches} was reviewed: ${countsOf(judgement.inScope).join('; ')}.`,
+          contribution: judgement.contribution,
+          toothless: judgement.toothless,
         }),
       )),
     Match.exhaustive,
@@ -179,8 +352,8 @@ const JudgingRule = S.Union([
   NotJointlyDeletableRule,
 ])
 type JudgingRule = S.Schema.Type<typeof JudgingRule>
-const ruleOf = (command: JudgeTestContribution): JudgingRule =>
-  Match.value(command).pipe(
+const ruleOf = (judgement: Judgement): JudgingRule =>
+  Match.value(judgement).pipe(
     Match.when(
       (self) => self.inScope.length === 0,
       () => RunUnjudgedRule.make({}),
@@ -204,13 +377,15 @@ const ruleOf = (command: JudgeTestContribution): JudgingRule =>
     Match.orElse(() => NotJointlyDeletableRule.make({})),
   )
 
-const decisionOf = (command: JudgeTestContribution): Result.Result<TestContributionDecision, never> =>
-  Match.value(ruleOf(command)).pipe(
+const decisionOf = (judgement: Judgement): Result.Result<TestContributionDecision, never> =>
+  Match.value(ruleOf(judgement)).pipe(
     Match.tag('runUnjudged', () =>
       Result.succeed(
         RunUnjudged.make({
           failed: false as const,
-          message: `No test file matching ${command.matches} ran, so none was judged.`,
+          message: `No test file matching ${judgement.matches} ran, so none was judged.`,
+          contribution: judgement.contribution,
+          toothless: judgement.toothless,
         }),
       )),
     Match.tag('bailHidesKillers', () =>
@@ -219,43 +394,47 @@ const decisionOf = (command: JudgeTestContribution): Result.Result<TestContribut
           failed: true as const,
           message:
             `This run used Stryker's bail mode, which stops each mutant at its first killing test. A test file's contribution therefore cannot be measured on this evidence. Set \`disableBail: true\` to record every killing test, or remove the test-contribution plugin from \`plugins\` to turn the check off for this run.`,
+          contribution: judgement.contribution,
+          toothless: judgement.toothless,
         }),
       )),
     Match.tag('noKillCredited', () =>
       Result.succeed(
         NoKillCredited.make({
           failed: true as const,
-          message: `This run credited no kill to any test file, so no test file's contribution to it can be measured. Until that is fixed the ${command.inScope.length} file(s) matching ${command.matches} are unjudged, not cleared.`,
+          message: `This run credited no kill to any test file, so no test file's contribution to it can be measured. Until that is fixed the ${judgement.inScope.length} file(s) matching ${judgement.matches} are unjudged, not cleared.`,
+          contribution: judgement.contribution,
+          toothless: judgement.toothless,
         }),
       )),
-    Match.tag('runReviewed', () => reviewedOf(command)),
+    Match.tag('runReviewed', () => reviewedOf(judgement)),
     Match.tag('jointlyDeletable', () =>
       Result.succeed(
         JointlyDeletable.make({
           failed: true as const,
-          message: `Deleting these ${command.toothless.length} test file(s) would leave every mutant just as dead (${PRECISION}):\n${bulletedFiles(command.toothless)}`,
+          message: `Deleting these ${judgement.toothless.length} test file(s) would leave every mutant just as dead (${PRECISION}):\n${bulletedFiles(judgement.toothless)}`,
+          contribution: judgement.contribution,
+          toothless: judgement.toothless,
         }),
       )),
     Match.tag('notJointlyDeletable', () =>
       Result.succeed(
         NotJointlyDeletable.make({
           failed: true as const,
-          message: `Deleting these ${command.toothless.length} test file(s) together would not leave every mutant just as dead: some mutant only they kill would be resurrected (${PRECISION}). Each is individually redundant, but the joint claim is not made on this evidence:\n${bulletedFiles(command.toothless)}`,
+          message: `Deleting these ${judgement.toothless.length} test file(s) together would not leave every mutant just as dead: some mutant only they kill would be resurrected (${PRECISION}). Each is individually redundant, but the joint claim is not made on this evidence:\n${bulletedFiles(judgement.toothless)}`,
+          contribution: judgement.contribution,
+          toothless: judgement.toothless,
         }),
       )),
     Match.exhaustive,
   )
 
+const decide = (command: JudgeTestContribution): Result.Result<TestContributionDecision, never> =>
+  decisionOf(judgementOf(command))
+
 export const judgeTestContribution = Workflow.make({
   command: JudgeTestContribution,
-  decision: S.Union([
-    RunUnjudged,
-    BailHidesKillers,
-    NoKillCredited,
-    RunReviewed,
-    JointlyDeletable,
-    NotJointlyDeletable,
-  ]),
+  decision: TestContributionDecision,
   error: S.Never,
-  decide: decisionOf,
+  decide,
 })
