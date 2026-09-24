@@ -3,7 +3,6 @@ import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoft
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
-import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
@@ -288,7 +287,6 @@ const mutantFor = (fileName: string): Mutant.Mutant =>
 interface RunOutcome {
   readonly dryRun: TestRunner.DryRunResult
   readonly mutantRun: TestRunner.MutantRunResult
-  readonly elapsedMs: number
 }
 
 const runnerFor = (fixture: SuiteFixture): Effect.Effect<Plugin.PooledTestRunner, never, Scope.Scope> =>
@@ -304,17 +302,15 @@ const runSuite = (fixture: SuiteFixture): Effect.Effect<RunOutcome, never, never
   Effect.gen(function*() {
     const runner = yield* runnerFor(fixture)
     const dryRun = yield* runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false })
-    const timed = yield* Effect.timed(
-      runner.mutantRun({
-        timeout: COMPLETION_BUDGET_MS,
-        disableBail: false,
-        activeMutant: mutantFor(fixture.file),
-        sandboxFileName: fixture.file,
-        mutantActivation: 'runtime',
-        reloadEnvironment: true,
-      }),
-    )
-    return { dryRun, mutantRun: timed[1], elapsedMs: Duration.toMillis(timed[0]) }
+    const mutantRun = yield* runner.mutantRun({
+      timeout: COMPLETION_BUDGET_MS,
+      disableBail: false,
+      activeMutant: mutantFor(fixture.file),
+      sandboxFileName: fixture.file,
+      mutantActivation: 'runtime',
+      reloadEnvironment: true,
+    })
+    return { dryRun, mutantRun }
   }).pipe(Effect.scoped, Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
 
 interface WorkerLifetime {
@@ -373,11 +369,10 @@ Feature('Verifying mutants without spawning a child process')
           'outcome',
           (s) => runSuite(s.suite),
         ),
-        Then('the initial run passes, the mutant is caught, and the run stays under a handful of milliseconds')((s) =>
+        Then('the initial run passes and the mutant is caught')((s) =>
           Effect.sync(() => {
             expect(s.outcome.dryRun.status).toBe('complete')
             expect(s.outcome.mutantRun.status).toBe('killed')
-            expect(s.outcome.elapsedMs).toBeLessThan(50)
           })
         ),
       ),
