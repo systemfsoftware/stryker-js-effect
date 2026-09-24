@@ -8,7 +8,6 @@ import * as Cause from 'effect/Cause';
 import { Cell } from '@systemfsoftware/effect-cell-types';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import * as Context from 'effect/Context';
-import * as DateTime from 'effect/DateTime';
 import * as Effect from 'effect/Effect';
 import * as EffectDuration from 'effect/Duration';
 import * as FileSystem from 'effect/FileSystem';
@@ -37,12 +36,6 @@ import * as Stdio from 'effect/Stdio';
 import * as Stream from 'effect/Stream';
 import { Workflow } from '@systemfsoftware/effect-cell-types';
 import { YieldableError } from 'effect/Cause';
-
-// @public (undocumented)
-export const ActionableStatus: S.Literals<readonly ["Survived", "NoCoverage", "Timeout", "RuntimeError"]>;
-
-// @public (undocumented)
-export type ActionableStatus = typeof ActionableStatus.Type;
 
 // @public (undocumented)
 export type AnyPluginDescriptor = AnyWorkerPluginDescriptor | EvaluatorPluginDescriptor;
@@ -182,23 +175,9 @@ export class ChildProcessCrashedError extends ChildProcessCrashedError_base {
     readonly exitClass: 'InternalError';
 }
 
-// @public (undocumented)
-export const classifyExit: Workflow.MadeWorkflow<typeof ClassifyExitCommand, S.Union<readonly [typeof ExitPassed, typeof ExitVerdictFailed, typeof ExitConfigErrored, typeof ExitRuntimeErrored, typeof ExitInternalErrored]>, S.Never>;
-
-// Warning: (ae-forgotten-export) The symbol "ClassifyExitCommand_base" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "WorkerOutOfMemory" needs to be exported by the entry point index.d.mts
+// Warning: (ae-forgotten-export) The symbol "WorkerCrashed" needs to be exported by the entry point index.d.mts
 //
-// @public (undocumented)
-export class ClassifyExitCommand extends ClassifyExitCommand_base {
-    // (undocumented)
-    static readonly [Workflow.InstrumentationBrand]: {};
-}
-
-// @public (undocumented)
-export const ClassifyExitDecision: S.Union<readonly [typeof ExitPassed, typeof ExitVerdictFailed, typeof ExitConfigErrored, typeof ExitRuntimeErrored, typeof ExitInternalErrored]>;
-
-// @public (undocumented)
-export type ClassifyExitDecision = typeof ClassifyExitDecision.Type;
-
 // @public (undocumented)
 export const classifyWorkerExit: Workflow.MadeWorkflow<typeof ClassifyWorkerExitCommand, S.Union<readonly [typeof WorkerOutOfMemory, typeof WorkerCrashed]>, S.Never>;
 
@@ -236,11 +215,6 @@ export interface CompleteDryRunResult {
 
 // @public (undocumented)
 export const ConfigDocumentSchema: S.$Record<S.String, S.Unknown>;
-
-// Warning: (ae-forgotten-export) The symbol "ConfigEnvSchema" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export type ConfigEnv = typeof ConfigEnvSchema.Type;
 
 // Warning: (ae-forgotten-export) The symbol "ConfigError_base" needs to be exported by the entry point index.d.mts
 //
@@ -380,51 +354,6 @@ export const ExitClass: S.Literals<readonly ["VerdictFail", "ConfigError", "Runt
 
 // @public (undocumented)
 export type ExitClass = typeof ExitClass.Type;
-
-// @public (undocumented)
-export const ExitCodeFromClass: S.decodeTo<S.Literals<readonly [1, 2, 3, 4]>, S.Literals<readonly ["VerdictFail", "ConfigError", "RuntimeError", "InternalError"]>, never, never>;
-
-// Warning: (ae-forgotten-export) The symbol "ExitConfigErrored_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class ExitConfigErrored extends ExitConfigErrored_base {
-    // Warning: (ae-forgotten-export) The symbol "ExitDecisionTypeId" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    readonly [ExitDecisionTypeId]: symbol;
-}
-
-// Warning: (ae-forgotten-export) The symbol "ExitInternalErrored_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class ExitInternalErrored extends ExitInternalErrored_base {
-    // (undocumented)
-    readonly [ExitDecisionTypeId]: symbol;
-}
-
-// Warning: (ae-forgotten-export) The symbol "ExitPassed_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class ExitPassed extends ExitPassed_base {
-    // (undocumented)
-    readonly [ExitDecisionTypeId]: symbol;
-}
-
-// Warning: (ae-forgotten-export) The symbol "ExitRuntimeErrored_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class ExitRuntimeErrored extends ExitRuntimeErrored_base {
-    // (undocumented)
-    readonly [ExitDecisionTypeId]: symbol;
-}
-
-// Warning: (ae-forgotten-export) The symbol "ExitVerdictFailed_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class ExitVerdictFailed extends ExitVerdictFailed_base {
-    // (undocumented)
-    readonly [ExitDecisionTypeId]: symbol;
-}
 
 // @public (undocumented)
 export const extendsPropertySchema: S.optionalKey<S.String>;
@@ -638,14 +567,6 @@ export class Heartbeat extends Heartbeat_base {}
 // @public (undocumented)
 export class HelpRendered extends HelpRendered_base {}
 
-// @public (undocumented)
-export interface HostServices {
-    // (undocumented)
-    readonly env: RunEnvironmentShape;
-    // (undocumented)
-    readonly events: Queue.Queue<RunEvent, Cause.Done>;
-}
-
 // Warning: (ae-forgotten-export) The symbol "IdGenerator_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
@@ -755,45 +676,10 @@ export interface InstrumentDone extends PrepareDone {
 }
 
 // @public (undocumented)
-export const invalidatesRunnerPool: {
-    (status: string, reason: string | undefined): boolean;
-    (reason: string | undefined): (status: string) => boolean;
-};
-
-// @public (undocumented)
 export const isCommandRunner: (name: TestRunnerConfig) => name is 'command';
 
 // @public (undocumented)
-export const isPooledTestRunner: (u: unknown) => u is PooledTestRunner;
-
-// @public (undocumented)
-export const isSpawnedSocketWorker: (u: unknown) => u is SpawnedSocketWorker;
-
-// @public (undocumented)
 export const isVmRunner: (name: TestRunnerConfig) => name is 'vm';
-
-// @public (undocumented)
-export const keepTempDir: Workflow.MadeWorkflow<typeof KeepTempDirCommand, S.Union<readonly [typeof TempDirKept, typeof TempDirRemoved]>, S.Never>;
-
-// Warning: (ae-forgotten-export) The symbol "KeepTempDirCommand_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class KeepTempDirCommand extends KeepTempDirCommand_base {
-    // (undocumented)
-    static readonly [Workflow.InstrumentationBrand]: {};
-}
-
-// Warning: (ae-forgotten-export) The symbol "KeepTempDirAlways" needs to be exported by the entry point index.d.mts
-// Warning: (ae-forgotten-export) The symbol "KeepTempDirOnFailure" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export const KeepTempDirOption: S.Union<readonly [typeof KeepTempDirAlways, typeof KeepTempDirOnFailure]>;
-
-// @public (undocumented)
-export type KeepTempDirOption = typeof KeepTempDirOption.Type;
-
-// @public (undocumented)
-export type KeepTempDirOutcome = TempDirKept | TempDirRemoved;
 
 // @public (undocumented)
 export interface KilledMutantRunResult {
@@ -1193,16 +1079,6 @@ export const loadConfigCell: Sandwich.WrittenFrom<{
 }>;
 
 // @public (undocumented)
-export interface LoadedConfig {
-    // (undocumented)
-    readonly basePath: string;
-    // (undocumented)
-    readonly options: StrykerOptions;
-    // (undocumented)
-    readonly targetMutatePatterns: readonly string[] | undefined;
-}
-
-// @public (undocumented)
 export interface LoadedPlugins<A = unknown> {
     // (undocumented)
     readonly ignorers: readonly Ignorer[];
@@ -1549,8 +1425,10 @@ export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource;
 
 // @public (undocumented)
 export interface PooledTestRunner extends Pipeable {
+    // Warning: (ae-forgotten-export) The symbol "TypeId_3" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
-    readonly [PooledTestRunnerTypeId]: typeof PooledTestRunnerTypeId;
+    readonly [TypeId_3]: typeof TypeId_3;
     // (undocumented)
     readonly capabilities: Effect.Effect<TestRunnerCapabilities, PooledTestRunnerError>;
     // (undocumented)
@@ -1563,12 +1441,6 @@ export interface PooledTestRunner extends Pipeable {
 
 // @public (undocumented)
 export type PooledTestRunnerError = TestRunnerFailed | ChildProcessCrashedError | OutOfMemoryError;
-
-// @public (undocumented)
-export const PooledTestRunnerTypeId: unique symbol;
-
-// @public (undocumented)
-export type PooledTestRunnerTypeId = typeof PooledTestRunnerTypeId;
 
 // @public (undocumented)
 export type Position = typeof PositionSchema.Type;
@@ -1816,14 +1688,6 @@ export type RunEventWireLine = typeof RunEventWireLine.Type;
 // @public (undocumented)
 export class RunFailed extends RunFailed_base {}
 
-// Warning: (ae-forgotten-export) The symbol "RunId_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class RunId extends RunId_base {
-    // (undocumented)
-    static readonly generate: (now: DateTime.Utc) => RunId;
-}
-
 // Warning: (ae-forgotten-export) The symbol "RunIdentity_base" needs to be exported by the entry point index.d.mts
 //
 // @public (undocumented)
@@ -1915,22 +1779,15 @@ export interface SkippedTestResult extends BaseTestResult {
 export interface SpawnedSocketWorker extends Pipeable {
     // (undocumented)
     readonly [ClientLayerTypeId]: Layer.Layer<RpcClient.Protocol, Socket.SocketError>;
+    // Warning: (ae-forgotten-export) The symbol "TypeId_2" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
-    readonly [SpawnedSocketWorkerTypeId]: typeof SpawnedSocketWorkerTypeId;
+    readonly [TypeId_2]: typeof TypeId_2;
     // (undocumented)
     readonly exited: Effect.Effect<never, WorkerExit>;
     // (undocumented)
     readonly pid: number;
 }
-
-// @public (undocumented)
-export const spawnedSocketWorkerClientLayer: (self: SpawnedSocketWorker) => Layer.Layer<RpcClient.Protocol, Socket.SocketError, never>;
-
-// @public (undocumented)
-export const SpawnedSocketWorkerTypeId: unique symbol;
-
-// @public (undocumented)
-export type SpawnedSocketWorkerTypeId = typeof SpawnedSocketWorkerTypeId;
 
 // @public (undocumented)
 export const spawnReporterWorker: (params: SpawnReporterWorkerParams) => Effect.Effect<ReporterWorkerClient, WorkerBootError, Scope.Scope | WorkerLauncher>;
@@ -1984,8 +1841,12 @@ export class StrykerConfig extends StrykerConfig_base {
     static define(config: PartialStrykerOptions): PartialStrykerOptions;
     // (undocumented)
     static define(config: Promise<PartialStrykerOptions>): Promise<PartialStrykerOptions>;
+    // Warning: (ae-forgotten-export) The symbol "StrykerConfigFn" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
     static define(config: StrykerConfigFn): StrykerConfigFn;
+    // Warning: (ae-forgotten-export) The symbol "StrykerConfigExport" needs to be exported by the entry point index.d.mts
+    //
     // (undocumented)
     static define(config: StrykerConfigExport): StrykerConfigExport;
     // (undocumented)
@@ -1998,12 +1859,6 @@ export class StrykerConfig extends StrykerConfig_base {
     // (undocumented)
     static readonly syntaxHelp: string;
 }
-
-// @public (undocumented)
-export type StrykerConfigExport = PartialStrykerOptions | Promise<PartialStrykerOptions> | StrykerConfigFn;
-
-// @public (undocumented)
-export type StrykerConfigFn = (env: ConfigEnv) => PartialStrykerOptions | Promise<PartialStrykerOptions>;
 
 // Warning: (ae-forgotten-export) The symbol "StrykerError_base" needs to be exported by the entry point index.d.mts
 //
@@ -2103,14 +1958,6 @@ export const StrykerOptionsSchema: S.StructWithRest<S.Struct<{
     readonly testFiles: S.withDecodingDefaultKey<S.$Array<S.String>, never>;
 }>, readonly [S.$Record<S.String, S.Unknown>]>;
 
-// Warning: (ae-forgotten-export) The symbol "StrykerPackage_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class StrykerPackage extends StrykerPackage_base {
-    // (undocumented)
-    static readonly version: string;
-}
-
 // @public (undocumented)
 export type StrykerRun = (options: PartialStrykerOptions, targetMutatePatterns?: string[]) => Effect.Effect<MutationTestDone, StageError, never>;
 
@@ -2130,24 +1977,6 @@ export interface SurvivedMutantRunResult {
 
 // @public (undocumented)
 export const survivorsPriorReport: S.optionalKey<S.String>;
-
-// Warning: (ae-forgotten-export) The symbol "TempDirKept_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class TempDirKept extends TempDirKept_base {
-    // Warning: (ae-forgotten-export) The symbol "KeepTempDirTypeId" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    readonly [KeepTempDirTypeId]: symbol;
-}
-
-// Warning: (ae-forgotten-export) The symbol "TempDirRemoved_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class TempDirRemoved extends TempDirRemoved_base {
-    // (undocumented)
-    readonly [KeepTempDirTypeId]: symbol;
-}
 
 // @public (undocumented)
 export interface TestCoverage {
@@ -2340,28 +2169,6 @@ export interface VmTestRunnerConfig {
 export type WiredRunLayer = Layer.Layer<RunStageServices | EnginePorts, never, never>;
 
 // @public (undocumented)
-export const withEnvironmentReload: {
-    (retire: Effect.Effect<void>): (inner: PooledTestRunner) => Effect.Effect<PooledTestRunner>;
-    (inner: PooledTestRunner): (retire: Effect.Effect<void>) => Effect.Effect<PooledTestRunner>;
-};
-
-// @public (undocumented)
-export const withMaxReuse: {
-    (options: Pick<StrykerOptions, 'maxTestRunnerReuse'>, retire: Effect.Effect<void>): (inner: PooledTestRunner) => Effect.Effect<PooledTestRunner>;
-    (retire: Effect.Effect<void>): (options: Pick<StrykerOptions, 'maxTestRunnerReuse'>) => (inner: PooledTestRunner) => Effect.Effect<PooledTestRunner>;
-};
-
-// @public (undocumented)
-export const withRetry: {
-    (inner: PooledTestRunner): PooledTestRunner;
-};
-
-// @public (undocumented)
-export const withTimeout: {
-    (inner: PooledTestRunner): PooledTestRunner;
-};
-
-// @public (undocumented)
 export type WorkerBootError = WorkerExit | WorkerBootTimeoutError;
 
 // Warning: (ae-forgotten-export) The symbol "WorkerBootTimeoutError_base" needs to be exported by the entry point index.d.mts
@@ -2390,16 +2197,6 @@ export interface WorkerClientParams<Rpcs extends Rpc.Any> {
     readonly workingDirectory: string;
 }
 
-// Warning: (ae-forgotten-export) The symbol "WorkerCrashed_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class WorkerCrashed extends WorkerCrashed_base {
-    // Warning: (ae-forgotten-export) The symbol "WorkerExitTypeId_2" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    readonly [WorkerExitTypeId_2]: symbol;
-}
-
 // @public (undocumented)
 export type WorkerExit = ChildProcessCrashedError | OutOfMemoryError;
 
@@ -2412,14 +2209,6 @@ export class WorkerLauncher extends WorkerLauncher_base {}
 export interface WorkerLauncherShape {
     // (undocumented)
     readonly spawn: (params: WorkerSpawnParams) => Effect.Effect<SpawnedSocketWorker, ChildProcessCrashedError, Scope.Scope>;
-}
-
-// Warning: (ae-forgotten-export) The symbol "WorkerOutOfMemory_base" needs to be exported by the entry point index.d.mts
-//
-// @public (undocumented)
-export class WorkerOutOfMemory extends WorkerOutOfMemory_base {
-    // (undocumented)
-    readonly [WorkerExitTypeId_2]: symbol;
 }
 
 // @public (undocumented)
@@ -2468,7 +2257,7 @@ export interface WorkerSpawnParams {
 
 // Warnings were encountered during analysis:
 //
-// dist/index.d.mts:1652:5 - (ae-forgotten-export) The symbol "LoadConfigCommand" needs to be exported by the entry point index.d.mts
+// dist/index.d.mts:540:3 - (ae-forgotten-export) The symbol "LoadConfigCommand" needs to be exported by the entry point index.d.mts
 
 // (No @packageDocumentation comment for this package)
 

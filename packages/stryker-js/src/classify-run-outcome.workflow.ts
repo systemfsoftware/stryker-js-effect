@@ -6,6 +6,8 @@ import * as Result from 'effect/Result'
 import * as Runtime from 'effect/Runtime'
 import * as S from 'effect/Schema'
 
+import { ExitCode } from './exit-code.schema.js'
+
 export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOutcomeCommand', {
   succeeded: S.Boolean,
   interrupted: S.Boolean,
@@ -31,7 +33,7 @@ export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOu
     highestExitClass: 'stryker.run_outcome.highest_exit_class',
   } as const
 }
-export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: S.Finite }) {
+export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: ExitCode }) {
   override get [Runtime.errorExitCode](): number {
     return this.code
   }
@@ -58,7 +60,7 @@ export class RunOk extends S.TaggedClass<RunOk>()('RunOk', {
 }
 
 export class RunInterrupted extends S.TaggedError<RunInterrupted>()('RunInterrupted', {
-  code: S.Finite,
+  code: ExitCode,
 }) {
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId
 }
@@ -83,7 +85,7 @@ export class RunConfigFailed extends S.TaggedClass<RunConfigFailed>()('RunConfig
 }
 
 export class RunFailed extends S.TaggedClass<RunFailed>()('RunFailed', {
-  code: S.Finite,
+  code: ExitCode,
   diagnostic: S.optional(S.String),
 }) {
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId

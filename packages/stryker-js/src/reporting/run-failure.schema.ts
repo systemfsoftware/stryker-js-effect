@@ -13,6 +13,7 @@ import {
   RunParseFailed,
   RunSurvivorsRejected,
 } from '../classify-run-outcome.workflow.js'
+import { ExitCode } from '../exit-code.schema.js'
 import { StreamSchemaVersion } from './stream-version.schema.js'
 
 const CONFIG_CODE = 2
@@ -23,7 +24,7 @@ const DEFAULT_REMEDIATION = 'see --reportFile or the verdict envelope on stdout'
 
 export class ErrorEnvelope extends S.Class<ErrorEnvelope>('ErrorEnvelope')({
   schemaVersion: StreamSchemaVersion,
-  code: S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
+  code: ExitCode,
   error: S.NonEmptyString,
   remediation: S.NonEmptyString,
 }) {
@@ -41,7 +42,7 @@ export class ErrorEnvelope extends S.Class<ErrorEnvelope>('ErrorEnvelope')({
 }
 
 export class RunExitCode extends S.Class<RunExitCode>('RunExitCode')({
-  code: S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
+  code: ExitCode,
 }) {
   static readonly fromOutcome = (outcome: RunOutcomeDecision | RunOutcomeError) =>
     RunExitCode.make({ code: exitCodeOf(outcome) })

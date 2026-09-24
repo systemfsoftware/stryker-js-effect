@@ -98,14 +98,6 @@ export {
 export { CheckerAnsweredUnrequested, CheckerSkippedRequested } from './Checker/mod.js'
 export type { CheckerContractBroken, CheckerCrash, CheckerResourceService } from './Checker/mod.js'
 export { checkGroupedPlans } from './Checker/mod.js'
-export {
-  keepTempDir,
-  KeepTempDirCommand,
-  type KeepTempDirOption,
-  type KeepTempDirOutcome,
-  TempDirKept,
-  TempDirRemoved,
-} from './keep-temp-dir.workflow.js'
 export type {
   AnyPluginDescriptor,
   AnyWorkerPluginDescriptor,
@@ -120,23 +112,12 @@ export type {
   WorkerPluginDescriptor,
   WorkerPluginSource,
 } from './Plugins.schema.js'
-export type {
-  isPooledTestRunner,
-  PooledTestRunner,
-  TypeId as PooledTestRunnerTypeId,
-} from './pooled-test-runner.handle.js'
-export {
-  invalidatesRunnerPool,
-  withEnvironmentReload,
-  withMaxReuse,
-  withRetry,
-  withTimeout,
-} from './pooled-test-runner.handle.js'
+export type { PooledTestRunner } from './pooled-test-runner.handle.js'
 export type { Project, ProjectFile } from './Project.schema.js'
 export type { ReporterStage } from './reporter-stream.service.js'
 export { StageError } from './Run.schema.js'
 export type { DryRunDone } from './run/dry-run.cell.js'
-export type { HostServices, StrykerRun } from './run/host.service.js'
+export type { StrykerRun } from './run/host.service.js'
 export type { InstrumentDone } from './run/instrument.cell.js'
 export type { MutationTestDone } from './run/mutation-test.cell.js'
 export type { PrepareDone, PrepareExecutorArgs } from './run/prepare.cell.js'
@@ -167,23 +148,11 @@ export {
 } from './run-events.service.js'
 export type { RunEvent, RunIdentityShape, RunTerminalEvent } from './run-events.service.js'
 
-export { ExitClass, ExitCodeFromClass } from '@systemfsoftware/stryker-js-plugin-interface'
-export {
-  classifyExit,
-  ClassifyExitCommand,
-  ClassifyExitDecision,
-  ExitConfigErrored,
-  ExitInternalErrored,
-  ExitPassed,
-  ExitRuntimeErrored,
-  ExitVerdictFailed,
-} from './classify-exit.workflow.js'
+export { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 export {
   classifyWorkerExit,
   ClassifyWorkerExitCommand,
   ClassifyWorkerExitDecision,
-  WorkerCrashed,
-  WorkerOutOfMemory,
 } from './classify-worker-exit.workflow.js'
 export { isCommandRunner } from './command-runner.resource.js'
 export { buildTestRunner } from './TestRunner.resource.js'
@@ -215,14 +184,7 @@ export type {
   ExtendsStepState,
 } from './Config.schema.js'
 export { StrykerConfig } from './config/stryker-config.schema.js'
-export type {
-  ConfigEnv,
-  Immutable,
-  ImmutablePrimitive,
-  Primitive,
-  StrykerConfigExport,
-  StrykerConfigFn,
-} from './config/stryker-config.schema.js'
+export type { Immutable, ImmutablePrimitive, Primitive } from './config/stryker-config.schema.js'
 export {
   ConfigError,
   ConfigFileInvalidError,
@@ -243,15 +205,9 @@ export {
   readConfig,
   validateOptions,
 } from './run/load-config.cell.js'
-export type { ConfigInvocation, LoadedConfig, ValidationSchemaDocument } from './run/load-config.cell.js'
+export type { ConfigInvocation, ValidationSchemaDocument } from './run/load-config.cell.js'
 
-export {
-  ActionableStatus,
-  RunId,
-  VerdictEnvelope,
-  VerdictMutant,
-  VerdictThresholds,
-} from './reporting/verdict-envelope.schema.js'
+export { VerdictEnvelope, VerdictMutant, VerdictThresholds } from './reporting/verdict-envelope.schema.js'
 export type { VerdictCounts } from './reporting/verdict-envelope.schema.js'
 
 export { IncrementalReportSchema } from './IncrementalReport.schema.js'
@@ -260,8 +216,6 @@ export { StrykerError } from './stryker-error.schema.js'
 export type { WorkerBootError, WorkerExit } from './Worker.schema.js'
 export { ChildProcessCrashedError, OutOfMemoryError, WorkerBootTimeoutError } from './Worker.schema.js'
 
-export { StrykerPackage } from './stryker-package.schema.js'
-
 export {
   REPORTER_EVENT_BATCH_BOUND,
   type ReporterWorkerClient,
@@ -269,12 +223,7 @@ export {
   spawnReporterWorker,
   type SpawnReporterWorkerParams,
 } from './reporter-stream.service.js'
-export {
-  clientLayer as spawnedSocketWorkerClientLayer,
-  isSpawnedSocketWorker,
-  make as makeSpawnedSocketWorker,
-  TypeId as SpawnedSocketWorkerTypeId,
-} from './spawned-socket-worker.handle.js'
+export { make as makeSpawnedSocketWorker } from './spawned-socket-worker.handle.js'
 export type { SpawnedSocketWorker } from './spawned-socket-worker.handle.js'
 export { makeWorkerClient } from './worker-client.resource.js'
 export type { WorkerClientParams } from './worker-client.resource.js'
