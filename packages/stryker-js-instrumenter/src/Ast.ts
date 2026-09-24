@@ -270,6 +270,24 @@ export function unaryExpression(
   return mark<Expression>({ type: 'UnaryExpression', operator, argument, prefix: true }, loc)
 }
 
+export function binaryExpression(
+  operator: Extract<Oxc.BinaryOperator, '===' | '!=='>,
+  left: Expression,
+  right: Expression,
+  loc?: Loc,
+): Expression {
+  return mark<Expression>({ type: 'BinaryExpression', operator, left, right }, loc)
+}
+
+export function logicalExpression(
+  operator: Oxc.LogicalOperator,
+  left: Expression,
+  right: Expression,
+  loc?: Loc,
+): Expression {
+  return mark<Expression>({ type: 'LogicalExpression', operator, left, right }, loc)
+}
+
 export function updateExpression(
   operator: '++' | '--',
   argument: SimpleAssignmentTarget,

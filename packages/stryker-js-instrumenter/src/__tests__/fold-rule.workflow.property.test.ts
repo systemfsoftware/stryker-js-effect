@@ -16,8 +16,8 @@ const RuleFoldTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-in
 const hasBrand = (folded: FoldedRule): boolean => Object.getOwnPropertySymbols(folded).includes(RuleFoldTypeId)
 
 const acted = (located: LocatedDirective, action: 'disable' | 'restore'): LocatedDirective => ({
+  ...located,
   directive: { ...located.directive, action },
-  at: located.at,
 })
 
 const foldedOnto = (rule: readonly LocatedDirective[], directive: LocatedDirective): readonly LocatedDirective[] => {
@@ -62,14 +62,14 @@ describe('foldRule', () => {
   it.prop('∀d_Restore_≡FoldedOntoTheEmptyRuleSilencesNoNameItNames', [LocatedDirectiveSchema], ([drawn]) => {
     const restore = acted(drawn, 'restore')
     const name = reachedNameOf(restore)
-    return name !== undefined && silencingReason(foldedOnto([], restore), name, restore.at.line) === undefined
+    return name !== undefined && silencingReason(foldedOnto([], restore), name, restore.governedLine) === undefined
   })
 
   it.prop('∀d_Disable_≡FoldedOntoTheEmptyRuleSilencesItsNamesWithItsOwnReason', [LocatedDirectiveSchema], ([drawn]) => {
     const disable = acted(drawn, 'disable')
     const name = reachedNameOf(disable)
     return name !== undefined &&
-      silencingReason(foldedOnto([], disable), name, disable.at.line) === disable.directive.reason
+      silencingReason(foldedOnto([], disable), name, disable.governedLine) === disable.directive.reason
   })
 
   it.prop('∀dd_Directives_≡FoldedInOrderTheLaterReachingDirectiveIsInForce', [
@@ -80,10 +80,18 @@ describe('foldRule', () => {
     if (name === undefined) {
       return false
     }
-    const at = earlier.at
-    const first: LocatedDirective = { directive: { ...earlier.directive, scope: 'block', mutatorNames: [name] }, at }
-    const second: LocatedDirective = { directive: { ...later.directive, scope: 'block', mutatorNames: [name] }, at }
+    const { at, governedLine } = earlier
+    const first: LocatedDirective = {
+      directive: { ...earlier.directive, scope: 'block', mutatorNames: [name] },
+      at,
+      governedLine,
+    }
+    const second: LocatedDirective = {
+      directive: { ...later.directive, scope: 'block', mutatorNames: [name] },
+      at,
+      governedLine,
+    }
     const expected = second.directive.action === 'disable' ? second.directive.reason : undefined
-    return silencingReason(foldedOnto(foldedOnto([], first), second), name, at.line) === expected
+    return silencingReason(foldedOnto(foldedOnto([], first), second), name, governedLine) === expected
   })
 })

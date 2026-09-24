@@ -57,8 +57,14 @@ type FileOutcome =
 const isIgnorer = (value: unknown): value is Ignorer =>
   Predicate.isObject(value) && typeof value['shouldIgnore'] === 'function'
 
+const NO_OPT_IN_MUTATIONS: readonly string[] = []
+
+const optInMutationsOf = (options: InstrumenterOptions): readonly string[] =>
+  options.optInMutations ?? NO_OPT_IN_MUTATIONS
+
 const toTransformerOptions = (options: InstrumenterOptions): TransformerOptions => ({
   excludedMutations: [...options.excludedMutations],
+  optInMutations: [...optInMutationsOf(options)],
   ignorers: options.ignorers.filter(isIgnorer),
   ...(options.noHeader !== undefined ? { noHeader: options.noHeader } : {}),
 })

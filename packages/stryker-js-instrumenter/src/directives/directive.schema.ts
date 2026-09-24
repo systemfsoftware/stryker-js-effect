@@ -21,6 +21,7 @@ export const LocatedPositionSchema = S.Struct({
 export const LocatedDirectiveSchema = S.Struct({
   directive: DirectiveSchema,
   at: LocatedPositionSchema,
+  governedLine: SourceLineSchema,
 })
 export type LocatedDirective = typeof LocatedDirectiveSchema.Type
 

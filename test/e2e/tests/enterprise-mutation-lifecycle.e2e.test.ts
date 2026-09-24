@@ -37,8 +37,8 @@ const LIFECYCLE_COUNTS: {
   readonly survived: number
 } = {
   compileErrors: 98,
-  ignored: 0,
-  killedOrTimeout: 195,
+  ignored: 2,
+  killedOrTimeout: 193,
   noCoverage: 0,
   pending: 0,
   runtimeErrors: 0,
@@ -58,7 +58,8 @@ const LIFECYCLE_MUTATOR_TALLY: Readonly<Record<string, number>> = {
   'BooleanLiteral:CompileError': 2,
   'BooleanLiteral:KilledOrTimeout': 12,
   'ConditionalExpression:CompileError': 11,
-  'ConditionalExpression:KilledOrTimeout': 60,
+  'ConditionalExpression:Ignored': 2,
+  'ConditionalExpression:KilledOrTimeout': 58,
   'ConditionalExpression:Survived': 9,
   'EqualityOperator:CompileError': 6,
   'EqualityOperator:KilledOrTimeout': 30,
@@ -179,7 +180,9 @@ const stepVerifyMutatorTallies = (
     verdict.counts.compileErrors +
     verdict.counts.runtimeErrors +
     verdict.counts.timeout +
-    verdict.counts.noCoverage
+    verdict.counts.noCoverage +
+    verdict.counts.ignored +
+    verdict.counts.pending
   expect.soft(countsSum).toBe(LIFECYCLE_TOTAL)
 }
 

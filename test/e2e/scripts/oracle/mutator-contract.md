@@ -1,6 +1,6 @@
 # Mutator Semantics Contract
 
-This document is the human authority specifying the placement and replacement rules for all 16 mutator families registered in `allMutators` (`packages/stryker-js-instrumenter/src/Mutator.ts`).
+This document is the human authority specifying the placement and replacement rules for all 16 mutator families registered in `defaultMutators` (`packages/stryker-js-instrumenter/src/Mutator.ts`).
 Each family defines exact AST matching criteria, explicit exclusions, emitted replacements, and visitor code citations.
 
 ---

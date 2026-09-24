@@ -19,7 +19,7 @@ const hasBrand = (plan: MutantPlan): boolean => Object.getOwnPropertySymbols(pla
 const reasonFromRule = (rule: readonly LocatedDirective[], mutatorName: string, line: number): string | undefined => {
   const lower = mutatorName.toLowerCase()
   const reaching = rule.filter((located) =>
-    (located.directive.scope !== 'next-line' || located.at.line === line) &&
+    (located.directive.scope !== 'next-line' || located.governedLine === line) &&
     located.directive.mutatorNames.some((name) => name === 'all' || name.toLowerCase() === lower)
   )
   const last = reaching.at(-1)
@@ -96,16 +96,23 @@ describe('planMutants', () => {
       fileName: 'probe.ts',
       firstIndex: 0,
       offset: { line: 0, column: 0 },
-      line: later.at.line,
+      line: later.governedLine,
       mutatorNames: [mutatorName],
       excludedMutations: [],
       rule: [
-        { directive: { ...earlier.directive, action: 'disable', mutatorNames: [mutatorName] }, at: earlier.at },
-        { directive: { ...later.directive, action: 'restore', mutatorNames: [mutatorName] }, at: later.at },
+        { ...earlier, directive: { ...earlier.directive, action: 'disable', mutatorNames: [mutatorName] } },
+        { ...later, directive: { ...later.directive, action: 'restore', mutatorNames: [mutatorName] } },
       ],
       directives: [],
       candidates: [
-        { mutatorName, replacementCode: 'n - 1', location: { start: later.at, end: later.at } },
+        {
+          mutatorName,
+          replacementCode: 'n - 1',
+          location: {
+            start: { ...later.at, line: later.governedLine },
+            end: { ...later.at, line: later.governedLine },
+          },
+        },
       ],
     })
     const planned = planMutants(command)

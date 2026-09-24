@@ -76,7 +76,7 @@ export type PlanFailure = MutantWithoutLocation
 
 const reachedLine = (located: LocatedDirective, line: number): boolean =>
   Match.value(located.directive.scope).pipe(
-    Match.when(NEXT_LINE, () => located.at.line === line),
+    Match.when(NEXT_LINE, () => located.governedLine === line),
     Match.when('block', () => true),
     Match.exhaustive,
   )

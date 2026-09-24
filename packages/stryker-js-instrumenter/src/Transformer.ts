@@ -46,7 +46,15 @@ import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } fro
 import { MutantsUnapplied, type MutateDescription, type PlacerName } from './Instrument.schema.js'
 import { InstrumentError } from './Instrument.schema.js'
 import { type MutatorContext, type MutatorOptions } from './Mutator.js'
-import { allMutators, applyMutant, createMutant, type Mutant } from './Mutator.js'
+import {
+  applyMutant,
+  createMutant,
+  defaultMutators,
+  type Mutant,
+  type MutatorRegistry,
+  optInMutators,
+  selectMutators,
+} from './Mutator.js'
 import { type ParseFailed } from './Parser.js'
 import {
   type EditSite,
@@ -80,6 +88,8 @@ export interface TransformerOptions extends MutatorOptions {
   ignorers: readonly Ignorer[]
 }
 
+const DEFAULT_MUTATOR_REGISTRY: MutatorRegistry = { defaults: defaultMutators, optIn: optInMutators }
+
 export interface MutantCollector {
   readonly nextIndex: number
   readonly append: (mutants: readonly Mutant[]) => void
@@ -109,15 +119,18 @@ const decidedDirective = (commentText: string): Option.Option<Directive> =>
     Match.orElse(() => Option.none<Directive>()),
   )
 
-const locatedDirective = (comment: LocatedComment): Option.Option<LocatedDirective> =>
+const locatedDirective = (comment: LocatedComment, governedLine: number): Option.Option<LocatedDirective> =>
   Option.flatMap(
     Option.fromNullishOr(comment.loc),
     (loc) =>
-      Option.map(decidedDirective(comment.value), (directive): LocatedDirective => ({ directive, at: loc.start })),
+      Option.map(
+        decidedDirective(comment.value),
+        (directive): LocatedDirective => ({ directive, at: loc.start, governedLine }),
+      ),
   )
 
-const directivesOf = (node: Node): readonly LocatedDirective[] =>
-  attachedComments(node).flatMap((comment) => Option.toArray(locatedDirective(comment)))
+const directivesOf = (node: Node, governedLineOf: (node: Node) => number): readonly LocatedDirective[] =>
+  attachedComments(node).flatMap((comment) => Option.toArray(locatedDirective(comment, governedLineOf(node))))
 
 const foldInto = (rule: MutantRule, directive: LocatedDirective): MutantRule =>
   Match.value(foldRule(FoldRuleCommand.make({ rule, directive }))).pipe(
@@ -701,14 +714,15 @@ export const transformScript: AstTransformer<ScriptAst> = (
     attachComments(root, comments, lineTable)
     let directiveRule: MutantRule = []
     let hasLiveMutants = false
-    const mutatorEntries = Object.entries(allMutators)
-    const allMutatorNames = mutatorEntries.map(([name]) => name.toLowerCase())
+    const selection = selectMutators(DEFAULT_MUTATOR_REGISTRY, options.optInMutations)
+    const mutatorEntries = selection.active
+    const allMutatorNames = selection.known.map((name) => name.toLowerCase())
 
     const warnings: string[] = []
 
     traverse(root, {
       enter(path) {
-        const directives = directivesOf(path.node)
+        const directives = directivesOf(path.node, (node) => getNodeLocation(node).start.line)
         directiveRule = directives.reduce(foldInto, directiveRule)
         visitNode(path, directives)
       },

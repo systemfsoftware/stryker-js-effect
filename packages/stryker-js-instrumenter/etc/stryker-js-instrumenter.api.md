@@ -173,6 +173,7 @@ export const InstrumenterOptionsSchema: S.Struct<{
     readonly excludedMutations: S.$Array<S.String>;
     readonly ignorers: S.$Array<S.Unknown>;
     readonly noHeader: S.optional<S.Boolean>;
+    readonly optInMutations: S.optional<S.$Array<S.String>>;
 }>;
 
 // Warning: (ae-forgotten-export) The symbol "InstrumentError_base" needs to be exported by the entry point index.d.mts
