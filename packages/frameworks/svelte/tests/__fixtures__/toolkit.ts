@@ -10,6 +10,7 @@ export interface RecordedScript {
 export interface ToolkitState {
   readonly recorded: RecordedScript[]
   readonly toolkit: FrameworkContext
+  readonly printed: Program[]
 }
 
 export const recordingToolkit = (
@@ -17,9 +18,11 @@ export const recordingToolkit = (
   print: (source: string) => string = (source) => source,
 ): ToolkitState => {
   const recorded: RecordedScript[] = []
-  const sources = new Map<Program, string>()
+  const printed: Program[] = []
+  const sources = new WeakMap<Program, string>()
   return {
     recorded,
+    printed,
     toolkit: {
       parseScript: (source, scriptFormat) => {
         const program = parseSync('region.js', source, { lang: scriptFormat }).program
@@ -27,9 +30,24 @@ export const recordingToolkit = (
         recorded.push({ source, scriptFormat, program })
         return program
       },
-      transformScript: (script) => script,
-      printScript: (script) => print(sources.get(script) ?? ''),
+      printScript: (script) => {
+        printed.push(script)
+        return print(sources.get(script) ?? printedStatementsOf(script))
+      },
       instrumentationHeader: () => header,
     },
   }
+}
+
+const printedStatementsOf = (program: Program): string =>
+  program.body.map((statement) => printedStatementOf(statement)).join('\n')
+
+const printedStatementOf = (statement: Statement): string => {
+  if (
+    statement.type === 'ExpressionStatement' &&
+    statement.expression.type === 'Identifier'
+  ) {
+    return `${statement.expression.name};`
+  }
+  return '/* unprintable */'
 }

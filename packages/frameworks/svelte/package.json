@@ -41,19 +41,26 @@
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "attw": "attw --pack .",
     "api:check": "api-extractor run",
-    "api:update": "api-extractor run --local"
+    "api:update": "api-extractor run --local",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.json --format ${TSGO_FORMAT:-text}"
+  },
+  "strykerFramework": {
+    "extensions": [
+      ".svelte"
+    ]
   },
   "dependencies": {
-    "@systemfsoftware/stryker-framework-interface": "workspace:^",
-    "oxc-walker": "catalog:"
+    "@systemfsoftware/stryker-framework-interface": "workspace:^"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest-config": "workspace:^",
+    "@types/estree": "catalog:",
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "oxc-parser": "catalog:",
@@ -65,7 +72,7 @@
     "vitest": "catalog:"
   },
   "peerDependencies": {
-    "svelte": ">=3.30"
+    "svelte": "^5.0.0"
   },
   "peerDependenciesMeta": {
     "svelte": {
