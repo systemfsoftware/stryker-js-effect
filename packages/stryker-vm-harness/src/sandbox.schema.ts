@@ -1,11 +1,13 @@
-import type { RegisterHooksOptions } from 'node:module'
-
 import type { HarnessApi } from './registry.schema.js'
 import type { VmPluginHost, VmSessionPlugin } from './session-plugin.js'
 import type { VmProjectConfig } from './vitest-config.schema.js'
 
+const nodeModuleBuiltin = globalThis.process.getBuiltinModule('node:module')
+
+type NodeModuleBuiltin = typeof nodeModuleBuiltin
+
 export type RegisterHooksFn = (
-  hooks: RegisterHooksOptions,
+  hooks: Parameters<NodeModuleBuiltin['registerHooks']>[0],
 ) => { readonly deregister: () => void } | undefined
 
 export interface HarnessModuleBuiltin {

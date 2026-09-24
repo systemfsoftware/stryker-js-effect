@@ -2,6 +2,7 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 
@@ -92,10 +93,17 @@ export const globalString = (key: string): string | undefined => {
 
 export const hasGlobal = (key: string): boolean => Object.getOwnPropertyDescriptor(globalThis, key) !== undefined
 
-export const environmentSandboxOf = (
-  files: readonly SandboxFileSpec[],
-  projectForFile: (file: string) => SandboxProject,
-): Effect.Effect<EnvironmentSandbox, never, FileSystem.FileSystem | Path.Path> =>
+export const environmentSandboxOf = dual<
+  (
+    projectForFile: (file: string) => SandboxProject,
+  ) => (
+    files: readonly SandboxFileSpec[],
+  ) => Effect.Effect<EnvironmentSandbox, never, FileSystem.FileSystem | Path.Path>,
+  (
+    files: readonly SandboxFileSpec[],
+    projectForFile: (file: string) => SandboxProject,
+  ) => Effect.Effect<EnvironmentSandbox, never, FileSystem.FileSystem | Path.Path>
+>(2, (files, projectForFile) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -149,6 +157,6 @@ export const environmentSandboxOf = (
       ),
       dispose: Effect.promise(() => session.then((started) => started.dispose())),
     }
-  }).pipe(Effect.orDie)
+  }).pipe(Effect.orDie))
 
 export const suiteFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)

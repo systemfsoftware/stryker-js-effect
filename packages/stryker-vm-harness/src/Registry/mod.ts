@@ -4,7 +4,6 @@ export {
   createIt,
   createVariantApi,
   DEFAULT_TITLE_VALUE_FORMAT_TRUNCATE,
-  defaultFormatValue,
   formatEachName,
 } from '../harness-api.handle.js'
 export {

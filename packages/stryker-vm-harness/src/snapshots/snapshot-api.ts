@@ -113,13 +113,19 @@ interface VitestWorkerStateLike {
 
 const WORKER_STATE_KEY = '__vitest_worker__'
 
+type AnyDecoded<A = unknown> = A
+
 const isTestRunnerConstructor = (value: unknown): value is TestRunnerConstructorLike => typeof value === 'function'
 
+const isObjectLike = (value: unknown): value is object => typeof value === 'object' && value !== null
+
+const hasWorkerStateKeys = (value: object): boolean => 'ctx' in value && 'environment' in value
+
 const isWorkerState = (value: unknown): value is VitestWorkerStateLike =>
-  typeof value === 'object' && value !== null && 'ctx' in value && 'environment' in value
+  isObjectLike(value) && hasWorkerStateKeys(value)
 
 const workerState = (): VitestWorkerStateLike | undefined => {
-  const candidate = Reflect.get(globalThis, WORKER_STATE_KEY) as object | undefined
+  const candidate: AnyDecoded = Reflect.get(globalThis, WORKER_STATE_KEY)
   return isWorkerState(candidate) ? candidate : undefined
 }
 

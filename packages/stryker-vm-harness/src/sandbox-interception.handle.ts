@@ -1,11 +1,11 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
+import { dual } from 'effect/Function'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as Semaphore from 'effect/Semaphore'
-import type { LoadHookSync, ResolveFnOutput, ResolveHookContext, ResolveHookSync } from 'node:module'
-import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { harnessSourceFor, harnessUrlForSpecifier } from './harness-sources.handle.js'
 import type {
@@ -14,14 +14,30 @@ import type {
   InstallInterceptionCommand,
   InterceptionRuntime,
 } from './sandbox.schema.js'
-import { runLoadStage, runResolveStage, type VmLoadTerminal, type VmResolveTerminal } from './session-plugin.js'
+import {
+  type LoadFnOutput,
+  type LoadHookContext,
+  type LoadHookSync,
+  type ResolveFnOutput,
+  type ResolveHookContext,
+  type ResolveHookSync,
+  runLoadStage,
+  runResolveStage,
+  type VmLoadTerminal,
+  type VmResolveTerminal,
+} from './session-plugin.js'
 import { VM_VITEST_BAG_KEY } from './vitest-host/runtime.js'
 
 type AnyDecoded<A = unknown> = A
 
+const nodeFileSystem = globalThis.process.getBuiltinModule('node:fs')
+const nodeUrl = globalThis.process.getBuiltinModule('node:url')
+
 const HARNESS_PREFIX = 'vmrunner-harness:'
 const FS_PREFIX = '/@fs/'
 const SALT_QUERY = /[?&]salt=([^&#]*)/
+const NODE_MODULES_DIRECTORY = 'node_modules'
+const SCOPED_PACKAGE_PREFIX = '@'
 
 const SERVED_SPECIFIERS: ReadonlyArray<string> = ['vitest', '@effect/vitest', '@systemfsoftware/effect-gherkin-spec']
 
@@ -113,20 +129,60 @@ const splitQueryOf = (specifier: string): { readonly bare: string; readonly quer
   })
 }
 
-const projectRootFor = (parent: string): string | undefined => {
-  const runtime = interceptionState.runtime?.host.state.read<
-    { readonly projectFor: (file: string) => { readonly root?: string | undefined } }
-  >(VM_VITEST_BAG_KEY)
-  const projectFor = runtime?.projectFor
-  if (projectFor === undefined) {
-    return undefined
-  }
-  return Result.match(
+interface ProjectForBag {
+  readonly projectFor: (file: string) => { readonly root?: string | undefined }
+}
+
+const projectBag = (): ProjectForBag | undefined =>
+  interceptionState.runtime?.host.state.read<ProjectForBag>(VM_VITEST_BAG_KEY)
+
+const rootFromProject = (projectFor: ProjectForBag['projectFor'], parent: string): string | undefined =>
+  Result.match(
     Result.try({
-      try: () => projectFor(fileURLToPath(stripSaltQuery(parent))).root,
+      try: () => projectFor(nodeUrl.fileURLToPath(stripSaltQuery(parent))).root,
       catch: () => undefined,
     }),
     { onFailure: () => undefined, onSuccess: (root) => root },
+  )
+
+const projectRootFor = (parent: string): string | undefined =>
+  Match.value(projectBag()).pipe(
+    Match.when(Match.undefined, () => undefined),
+    Match.orElse((bag) => rootFromProject(bag.projectFor, parent)),
+  )
+
+const activeSandboxOf = (sandbox: ActiveSandbox | undefined, parent: string): ActiveSandbox | undefined =>
+  Option.getOrUndefined(Option.filter(Option.fromNullishOr(sandbox), (active) => withinSandbox(active, parent)))
+
+const isRootedPath = (bare: string): boolean => bare.startsWith('/') && !bare.startsWith('//')
+
+const rootForViteFile = (parent: string, sandbox: ActiveSandbox): string =>
+  projectRootFor(parent) ?? nodeUrl.fileURLToPath(sandbox.prefix)
+
+const servedViteFileUrl = (bare: string, query: string, parent: string, sandbox: ActiveSandbox): string =>
+  Match.value(nodeFileSystem.existsSync(bare)).pipe(
+    Match.when(true, () => `${nodeUrl.pathToFileURL(bare).href}${query}`),
+    Match.when(
+      false,
+      () =>
+        `${nodeUrl.pathToFileURL(rootForViteFile(parent, sandbox)).href.replace(/\/?$/, '/')}${bare.slice(1)}${query}`,
+    ),
+    Match.exhaustive,
+  )
+
+const rootedViteFileUrl = (bare: string, query: string, parent: string, sandbox: ActiveSandbox): string | undefined =>
+  Match.value(isRootedPath(bare)).pipe(
+    Match.when(true, () => servedViteFileUrl(bare, query, parent, sandbox)),
+    Match.when(false, () => undefined),
+    Match.exhaustive,
+  )
+
+const sandboxedViteUrl = (specifier: string, parent: string, sandbox: ActiveSandbox): string | undefined => {
+  const { bare, query } = splitQueryOf(specifier)
+  return Match.value(bare.startsWith(FS_PREFIX)).pipe(
+    Match.when(true, () => `${nodeUrl.pathToFileURL(`/${bare.slice(FS_PREFIX.length)}`).href}${query}`),
+    Match.when(false, () => rootedViteFileUrl(bare, query, parent, sandbox)),
+    Match.exhaustive,
   )
 }
 
@@ -134,71 +190,73 @@ const viteFileUrlOf = (
   specifier: string,
   parent: string,
   sandbox: ActiveSandbox | undefined,
-): string | undefined => {
-  if (!withinSandbox(sandbox, parent) || sandbox === undefined) {
-    return undefined
-  }
-  const { bare, query } = splitQueryOf(specifier)
-  if (bare.startsWith(FS_PREFIX)) {
-    return `${pathToFileURL(`/${bare.slice(FS_PREFIX.length)}`).href}${query}`
-  }
-  if (bare.startsWith('/') && !bare.startsWith('//')) {
-    if (process.getBuiltinModule('node:fs').existsSync(bare)) {
-      return `${pathToFileURL(bare).href}${query}`
-    }
-    const root = projectRootFor(parent) ?? fileURLToPath(sandbox.prefix)
-    return `${pathToFileURL(root).href.replace(/\/?$/, '/')}${bare.slice(1)}${query}`
-  }
-  return undefined
+): string | undefined =>
+  Match.value(activeSandboxOf(sandbox, parent)).pipe(
+    Match.when(Match.undefined, () => undefined),
+    Match.orElse((active) => sandboxedViteUrl(specifier, parent, active)),
+  )
+
+const scopedPackageNameOf = (specifier: string): string | undefined => {
+  const [scope, name] = specifier.split('/')
+  return Option.getOrUndefined(
+    Option.flatMap(
+      Option.fromUndefinedOr(scope),
+      (presentScope) => Option.map(Option.fromUndefinedOr(name), (presentName) => `${presentScope}/${presentName}`),
+    ),
+  )
 }
 
-const packageNameOfSpecifier = (specifier: string): string | undefined => {
-  if (specifier.startsWith('@')) {
-    const [scope, name] = specifier.split('/')
-    return scope === undefined || name === undefined ? undefined : `${scope}/${name}`
-  }
-  const [name] = specifier.split('/')
-  return name
-}
+const packageNameOfSpecifier = (specifier: string): string | undefined =>
+  Match.value(specifier.startsWith(SCOPED_PACKAGE_PREFIX)).pipe(
+    Match.when(true, () => scopedPackageNameOf(specifier)),
+    Match.when(false, () => specifier.split('/')[0]),
+    Match.exhaustive,
+  )
 
 const realpathOrUndefined = (path: string): string | undefined =>
   Result.match(
     Result.try({
-      try: () => process.getBuiltinModule('node:fs').realpathSync(path),
+      try: () => nodeFileSystem.realpathSync(path),
       catch: () => undefined,
     }),
     { onFailure: () => undefined, onSuccess: (real) => real },
   )
 
+const packageNameWithScope = (name: string, scopeChild: string | undefined): Option.Option<string> =>
+  Match.value(name.startsWith(SCOPED_PACKAGE_PREFIX)).pipe(
+    Match.when(true, () => Option.map(Option.fromUndefinedOr(scopeChild), (child) => `${name}/${child}`)),
+    Match.when(false, () => Option.some(name)),
+    Match.exhaustive,
+  )
+
+const packageNameUnderOwner = (segments: ReadonlyArray<string>, owner: number): string | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(
+      Option.fromUndefinedOr(segments[owner + 1]),
+      (name) => packageNameWithScope(name, segments[owner + 2]),
+    ),
+  )
+
+const packageNameInSegments = (segments: ReadonlyArray<string>): string | undefined =>
+  Match.value(segments.lastIndexOf(NODE_MODULES_DIRECTORY)).pipe(
+    Match.when(-1, () => undefined),
+    Match.orElse((owner) => packageNameUnderOwner(segments, owner)),
+  )
+
 const packageNameOfFileUrl = (fileUrl: string): string | undefined => {
-  const real = realpathOrUndefined(fileURLToPath(splitQueryOf(fileUrl).bare))
-  if (real === undefined) {
-    return undefined
-  }
-  const segments = real.split('/')
-  const owner = segments.lastIndexOf('node_modules')
-  if (owner === -1) {
-    return undefined
-  }
-  const name = segments[owner + 1]
-  if (name === undefined) {
-    return undefined
-  }
-  if (name.startsWith('@')) {
-    const scopeChild = segments[owner + 2]
-    return scopeChild === undefined ? undefined : `${name}/${scopeChild}`
-  }
-  return name
+  const real = realpathOrUndefined(nodeUrl.fileURLToPath(splitQueryOf(fileUrl).bare))
+  return real === undefined ? undefined : packageNameInSegments(real.split('/'))
 }
 
-const harnessUrlForResolvedFile = (fileUrl: string): string | undefined => {
-  const candidate = packageNameOfFileUrl(fileUrl)
-  if (candidate === undefined) {
-    return undefined
-  }
-  const served = SERVED_SPECIFIERS.find((specifier) => packageNameOfSpecifier(specifier) === candidate)
-  return served === undefined ? undefined : harnessUrlForSpecifier(served)
-}
+const servedSpecifierOf = (packageName: string): string | undefined =>
+  SERVED_SPECIFIERS.find((specifier) => packageNameOfSpecifier(specifier) === packageName)
+
+const harnessUrlForResolvedFile = (fileUrl: string): string | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(Option.fromUndefinedOr(packageNameOfFileUrl(fileUrl)), (candidate) =>
+      Option.map(Option.fromUndefinedOr(servedSpecifierOf(candidate)), (served) =>
+        harnessUrlForSpecifier(served))),
+  )
 
 const tryResolve = (
   specifier: string,
@@ -237,6 +295,37 @@ const resolveThroughPlugins = (
     : runResolveStage(runtime.plugins, runtime.host, specifier, context, nativeResolve)
 }
 
+const relativeSpecifier = (specifier: string): boolean => specifier.startsWith('.') || specifier.startsWith('/')
+
+const hostResolvedOutput = (
+  specifier: string,
+  scoped: Partial<ResolveHookContext>,
+  cause: AnyDecoded,
+  nextResolve: VmResolveTerminal,
+  sandbox: ActiveSandbox,
+): ResolveFnOutput =>
+  Match.value(interceptionState.runtime?.host).pipe(
+    Match.when(Match.undefined, () => {
+      throw cause
+    }),
+    Match.orElse((host) => nextResolve(new URL(host.resolveVitestModule(specifier), sandbox.prefix).href, scoped)),
+  )
+
+const harnessResolutionOf = (
+  specifier: string,
+  scoped: Partial<ResolveHookContext>,
+  cause: AnyDecoded,
+  nextResolve: VmResolveTerminal,
+  sandbox: ActiveSandbox,
+): ResolveFnOutput =>
+  Match.value(relativeSpecifier(specifier)).pipe(
+    Match.when(true, () => {
+      throw cause
+    }),
+    Match.when(false, () => hostResolvedOutput(specifier, scoped, cause, nextResolve, sandbox)),
+    Match.exhaustive,
+  )
+
 const resolveFromHarness = (
   specifier: string,
   context: ResolveHookContext,
@@ -249,16 +338,7 @@ const resolveFromHarness = (
   const scoped: Partial<ResolveHookContext> = { ...context, parentURL: sandbox.prefix }
   return Result.match(tryResolve(specifier, scoped, nextResolve), {
     onSuccess: (resolved) => resolved,
-    onFailure: (cause) => {
-      if (specifier.startsWith('.') || specifier.startsWith('/')) {
-        throw cause
-      }
-      const host = interceptionState.runtime?.host
-      if (host === undefined) {
-        throw cause
-      }
-      return nextResolve(new URL(host.resolveVitestModule(specifier), sandbox.prefix).href, scoped)
-    },
+    onFailure: (cause) => harnessResolutionOf(specifier, scoped, cause, nextResolve, sandbox),
   })
 }
 
@@ -276,6 +356,23 @@ const scopedHarnessUrl = (
       ),
   )
 
+const resolveMappedFile = (
+  mapped: string,
+  context: ResolveHookContext,
+  parent: string,
+  nativeResolve: VmResolveTerminal,
+  sandbox: ActiveSandbox | undefined,
+): ResolveFnOutput =>
+  Option.match(Option.fromNullishOr(harnessUrlForResolvedFile(mapped)), {
+    onNone: () =>
+      parentSaltScoped(
+        resolveThroughPlugins(splitQueryOf(mapped).bare, { ...context, parentURL: parent }, nativeResolve),
+        parent,
+        sandbox,
+      ),
+    onSome: (served) => ({ url: withSalt(served, saltOf(parent)), shortCircuit: true }),
+  })
+
 const resolveDelegated = (
   specifier: string,
   context: ResolveHookContext,
@@ -284,35 +381,37 @@ const resolveDelegated = (
 ): ResolveFnOutput => {
   const parent = parentUrlOf(context)
   const nativeResolve = nativeResolveOf(sandbox, nextResolve)
-  const mapped = viteFileUrlOf(specifier, parent, sandbox)
-  if (mapped === undefined) {
-    return parentSaltScoped(resolveThroughPlugins(specifier, context, nativeResolve), parent, sandbox)
-  }
-  const served = harnessUrlForResolvedFile(mapped)
-  if (served !== undefined) {
-    return { url: withSalt(served, saltOf(parent)), shortCircuit: true }
-  }
-  const servable = splitQueryOf(mapped).bare
-  return parentSaltScoped(
-    resolveThroughPlugins(servable, { ...context, parentURL: parent }, nativeResolve),
-    parent,
-    sandbox,
-  )
+  return Option.match(Option.fromNullishOr(viteFileUrlOf(specifier, parent, sandbox)), {
+    onNone: () => parentSaltScoped(resolveThroughPlugins(specifier, context, nativeResolve), parent, sandbox),
+    onSome: (mapped) => resolveMappedFile(mapped, context, parent, nativeResolve, sandbox),
+  })
 }
+
+const resolveHarnessSpecifier = (
+  specifier: string,
+  context: ResolveHookContext,
+  nextResolve: VmResolveTerminal,
+  sandbox: ActiveSandbox | undefined,
+  parent: string,
+): ResolveFnOutput =>
+  Match.value(specifier.startsWith(HARNESS_PREFIX)).pipe(
+    Match.when(true, () => ({ url: specifier, shortCircuit: true })),
+    Match.when(false, () =>
+      Option.match(scopedHarnessUrl(specifier, parent, sandbox), {
+        onNone: () => resolveDelegated(specifier, context, nextResolve, sandbox),
+        onSome: (url) => ({ url, shortCircuit: true }),
+      })),
+    Match.exhaustive,
+  )
 
 const resolveWithin: ResolveHookSync = (specifier, context, nextResolve) => {
   const parent = parentUrlOf(context)
   const sandbox = activeSandbox()
-  if (parent.startsWith(HARNESS_PREFIX)) {
-    return resolveFromHarness(specifier, context, nextResolve, sandbox)
-  }
-  if (specifier.startsWith(HARNESS_PREFIX)) {
-    return { url: specifier, shortCircuit: true }
-  }
-  return Option.match(scopedHarnessUrl(specifier, parent, sandbox), {
-    onNone: () => resolveDelegated(specifier, context, nextResolve, sandbox),
-    onSome: (url) => ({ url, shortCircuit: true }),
-  })
+  return Match.value(parent.startsWith(HARNESS_PREFIX)).pipe(
+    Match.when(true, () => resolveFromHarness(specifier, context, nextResolve, sandbox)),
+    Match.when(false, () => resolveHarnessSpecifier(specifier, context, nextResolve, sandbox, parent)),
+    Match.exhaustive,
+  )
 }
 
 const harnessModuleSource = (url: string): string | undefined => {
@@ -326,28 +425,54 @@ const harnessModuleSource = (url: string): string | undefined => {
   })
 }
 
+type SaltedModuleLoad = LoadFnOutput & {
+  readonly format: string
+  readonly source: NonNullable<LoadFnOutput['source']>
+}
+
+const formatTextOf = (format: LoadFnOutput['format']): string | undefined =>
+  typeof format === 'string' ? format : undefined
+
+const moduleFormatOf = (format: LoadFnOutput['format']): Option.Option<string> =>
+  Option.filter(Option.fromUndefinedOr(formatTextOf(format)), (text) => text.startsWith('module'))
+
+const moduleLoadOptionsOf = (
+  loaded: LoadFnOutput,
+): Option.Option<{ readonly format: string; readonly source: NonNullable<LoadFnOutput['source']> }> =>
+  Option.flatMap(
+    moduleFormatOf(loaded.format),
+    (format) => Option.map(Option.fromUndefinedOr(loaded.source), (source) => ({ format, source })),
+  )
+
+const isSaltedModuleLoad = (loaded: LoadFnOutput): loaded is SaltedModuleLoad =>
+  Option.isSome(moduleLoadOptionsOf(loaded))
+
+const moduleLoadOf = (loaded: LoadFnOutput): LoadFnOutput =>
+  isSaltedModuleLoad(loaded) ? { format: loaded.format, source: loaded.source, shortCircuit: true } : loaded
+
 const saltedLoadTerminalOf = (nextLoad: VmLoadTerminal): VmLoadTerminal => (url, context) =>
   Boolean.match(url.startsWith('file:') && saltOf(url) !== null, {
-    onTrue: () => {
-      const loaded = nextLoad(stripSaltQuery(url), context)
-      if (loaded.source === undefined || typeof loaded.format !== 'string' || !loaded.format.startsWith('module')) {
-        return loaded
-      }
-      return { format: loaded.format, source: loaded.source, shortCircuit: true }
-    },
+    onTrue: () => moduleLoadOf(nextLoad(stripSaltQuery(url), context)),
     onFalse: () => nextLoad(url, context),
   })
 
-const loadWithin: LoadHookSync = (url, context, nextLoad) => {
-  const source = harnessModuleSource(url)
-  if (source !== undefined) {
-    return { format: 'module', source, shortCircuit: true }
-  }
-  const runtime = interceptionState.runtime
-  return runtime === undefined
-    ? nextLoad(url, context)
-    : runLoadStage(runtime.plugins, runtime.host, url, context, saltedLoadTerminalOf(nextLoad))
-}
+const loadThroughPlugins = (
+  url: string,
+  context: LoadHookContext,
+  nextLoad: VmLoadTerminal,
+): LoadFnOutput =>
+  Match.value(interceptionState.runtime).pipe(
+    Match.when(Match.undefined, () => nextLoad(url, context)),
+    Match.orElse((runtime) =>
+      runLoadStage(runtime.plugins, runtime.host, url, context, saltedLoadTerminalOf(nextLoad))
+    ),
+  )
+
+const loadWithin: LoadHookSync = (url, context, nextLoad) =>
+  Match.value(harnessModuleSource(url)).pipe(
+    Match.when(Match.undefined, () => loadThroughPlugins(url, context, nextLoad)),
+    Match.orElse((source) => ({ format: 'module', source, shortCircuit: true })),
+  )
 
 const sandboxGate = Semaphore.makeUnsafe(1)
 
@@ -389,9 +514,12 @@ const deactivateSandboxCell: Cell.Cell<void, void> = Cell.fromEffect(
   }),
 )
 
-export const installInterception = (nodeModule: HarnessModuleBuiltin, runtime: InterceptionRuntime): void => {
+export const installInterception = dual<
+  (runtime: InterceptionRuntime) => (nodeModule: HarnessModuleBuiltin) => void,
+  (nodeModule: HarnessModuleBuiltin, runtime: InterceptionRuntime) => void
+>(2, (nodeModule, runtime) => {
   Effect.runSync(installInterceptionCell.run({ nodeModule, runtime }))
-}
+})
 
 export const uninstallInterception = (): void => {
   Effect.runSync(uninstallInterceptionCell.run(undefined))

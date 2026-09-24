@@ -104,50 +104,119 @@ interface ImportExpressionNode {
   readonly [key: string]: ImportExpressionChild
 }
 
-const collectImportExpressions = (root: object, visit: (node: ImportExpressionNode) => void): void => {
+interface ImportSite {
+  readonly start: number
+  readonly sourceStart: number
+  readonly end: number
+}
+
+const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
+
+const isNonArrayObject = (value: ImportExpressionChild): value is ImportExpressionSource | ImportExpressionNode =>
+  isNonNullObject(value) && !Array.isArray(value)
+
+const isImportExpressionNode = (value: ImportExpressionChild): value is ImportExpressionNode =>
+  isNonArrayObject(value) && 'type' in value
+
+const visitNode = (
+  node: ImportExpressionNode,
+  visit: (node: ImportExpressionNode) => void,
+  visitRecord: (record: Record<string, ImportExpressionChild>) => void,
+): void => {
+  if (node['type'] === 'ImportExpression') {
+    visitImportExpression(node, visit)
+    return
+  }
+  visitRecord(node)
+}
+
+const visitImportExpression = (
+  node: ImportExpressionNode,
+  visit: (node: ImportExpressionNode) => void,
+): void => {
+  if (node.source !== undefined) {
+    visit(node)
+  }
+}
+
+const isChildArray = (value: ImportExpressionChild): value is ReadonlyArray<ImportExpressionChild> =>
+  Array.isArray(value)
+
+const visitChildren = (
+  values: ReadonlyArray<ImportExpressionChild>,
+  visit: (node: ImportExpressionNode) => void,
+  visitRecord: (record: Record<string, ImportExpressionChild>) => void,
+): void => {
+  for (const item of values) {
+    visitChild(item, visit, visitRecord)
+  }
+}
+
+const visitChild = (
+  value: ImportExpressionChild,
+  visit: (node: ImportExpressionNode) => void,
+  visitRecord: (record: Record<string, ImportExpressionChild>) => void,
+): void => {
+  if (isChildArray(value)) {
+    visitChildren(value, visit, visitRecord)
+    return
+  }
+  visitSingleChild(value, visit, visitRecord)
+}
+
+const visitSingleChild = (
+  value: ImportExpressionChild,
+  visit: (node: ImportExpressionNode) => void,
+  visitRecord: (record: Record<string, ImportExpressionChild>) => void,
+): void => {
+  if (isImportExpressionNode(value)) {
+    visitNode(value, visit, visitRecord)
+  }
+}
+
+const collectImportExpressions = (root: ImportExpressionNode, visit: (node: ImportExpressionNode) => void): void => {
   const visitRecord = (record: Record<string, ImportExpressionChild>): void => {
     for (const key of Object.keys(record)) {
-      visitChild(record[key])
+      visitChild(record[key], visit, visitRecord)
     }
   }
-  const visitChild = (value: ImportExpressionChild): void => {
-    if (Array.isArray(value)) {
-      for (const item of value as ReadonlyArray<ImportExpressionChild>) {
-        visitChild(item)
-      }
-      return
-    }
-    if (typeof value !== 'object' || value === null || !('type' in value)) {
-      return
-    }
-    const node = value as ImportExpressionNode & { readonly type: string }
-    if (node.type === 'ImportExpression') {
-      if (node.source !== undefined) {
-        visit(node)
-      }
-      return
-    }
-    visitRecord(node)
+  visitNode(root, visit, visitRecord)
+}
+
+const isImportExpressionNodeObject = (value: object): value is ImportExpressionNode =>
+  'start' in value && 'end' in value
+
+const asImportExpressionNode = (value: object): ImportExpressionNode | undefined =>
+  isImportExpressionNodeObject(value) ? value : undefined
+
+const parsedRootOf = (parse: MockParse, code: string): ImportExpressionNode | undefined => {
+  try {
+    return asImportExpressionNode(parse(code))
+  } catch {
+    return undefined
   }
-  visitChild(root as ImportExpressionChild)
 }
 
 const injectDynamicImportWraps = (
   code: string,
-  id: string,
   parse: MockParse,
   options: HoistMocksOptions,
+): string | undefined => shouldInject(code) ? injectedSource(parsedRootOf(parse, code), code, options) : undefined
+
+const shouldInject = (code: string): boolean => hasDynamicImport(code) && !code.includes(WRAP_GUARD)
+
+const injectedSource = (
+  root: ImportExpressionNode | undefined,
+  code: string,
+  options: HoistMocksOptions,
+): string | undefined => (root === undefined ? undefined : rewrittenWithWraps(root, code, options))
+
+const rewrittenWithWraps = (
+  root: ImportExpressionNode,
+  code: string,
+  options: HoistMocksOptions,
 ): string | undefined => {
-  if (!hasDynamicImport(code) || code.includes(WRAP_GUARD)) {
-    return undefined
-  }
-  let root: object
-  try {
-    root = parse(code)
-  } catch {
-    return undefined
-  }
-  const sites: Array<{ readonly start: number; readonly sourceStart: number; readonly end: number }> = []
+  const sites: ImportSite[] = []
   collectImportExpressions(root, (node) => {
     if (node.source !== undefined) {
       sites.push({ start: node.start, sourceStart: node.source.start, end: node.end })
@@ -156,31 +225,46 @@ const injectDynamicImportWraps = (
   if (sites.length === 0) {
     return undefined
   }
+  return rewriteSites(sites, code, options)
+}
+
+const rewriteSites = (sites: ReadonlyArray<ImportSite>, code: string, options: HoistMocksOptions): string => {
   const accessor = options.globalThisAccessor ?? JSON.stringify(MOCK_GLOBAL_KEY)
   const ordered = [...sites].sort((left, right) => right.start - left.start)
-  let rewritten = code
-  for (const site of ordered) {
-    rewritten = `${rewritten.slice(0, site.start)}globalThis[${accessor}].wrapDynamicImport(async () => import(${
-      rewritten.slice(site.sourceStart, site.end - 1)
-    }))${rewritten.slice(site.end)}`
-  }
-  return rewritten
+  return ordered.reduce((rewritten, site) => wrapSite(rewritten, site, accessor), code)
+}
+
+const wrapSite = (rewritten: string, site: ImportSite, accessor: string): string =>
+  `${rewritten.slice(0, site.start)}globalThis[${accessor}].wrapDynamicImport(async () => import(${
+    rewritten.slice(site.sourceStart, site.end - 1)
+  }))${rewritten.slice(site.end)}`
+
+const hoistedSourceOf = (hoisted: MockMagicString | undefined, code: string): string =>
+  hoisted === undefined ? code : hoisted.toString()
+
+const generateMapOf = (hoisted: MockMagicString | undefined): (options: object) => object =>
+  hoisted === undefined ? (): object => ({}) : (mapOptions: object): object => hoisted.generateMap(mapOptions)
+
+const wrappedMagicString = (wrapped: string, hoisted: MockMagicString | undefined): MockMagicString => ({
+  toString: (): string => wrapped,
+  generateMap: generateMapOf(hoisted),
+})
+
+const injectedHoistMocks = (
+  transforms: MockerTransforms,
+  code: string,
+  id: string,
+  parse: MockParse,
+  options: HoistMocksOptions,
+): MockMagicString | undefined => {
+  const hoisted = transforms.hoistMocks(code, id, parse, options)
+  const wrapped = injectDynamicImportWraps(hoistedSourceOf(hoisted, code), parse, options)
+  return wrapped === undefined ? hoisted : wrappedMagicString(wrapped, hoisted)
 }
 
 const withDynamicImportInjection = (transforms: MockerTransforms): MockerTransforms => ({
   ...transforms,
-  hoistMocksWithDynamicImports: (code, id, parse, options) => {
-    const hoisted = transforms.hoistMocks(code, id, parse, options)
-    const base = hoisted === undefined ? code : hoisted.toString()
-    const wrapped = injectDynamicImportWraps(base, id, parse, options)
-    if (wrapped === undefined) {
-      return hoisted
-    }
-    const generateMap = hoisted === undefined
-      ? (_mapOptions: object): object => ({})
-      : (mapOptions: object): object => hoisted.generateMap(mapOptions)
-    return { toString: (): string => wrapped, generateMap }
-  },
+  hoistMocksWithDynamicImports: (code, id, parse, options) => injectedHoistMocks(transforms, code, id, parse, options),
 })
 
 const moduleCache = new Map<string, Promise<VitestMockerModules>>()

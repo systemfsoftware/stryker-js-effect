@@ -5,6 +5,7 @@ import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
+import * as Scope from 'effect/Scope'
 
 import { interpretDryRunResult, InterpretDryRunResultCommand } from './interpret-dry-run-result.workflow.js'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
@@ -66,7 +67,7 @@ const respond = (
     Match.exhaustive,
   )
 
-const pooledVmRunner = (config: VmTestRunnerConfig): PooledTestRunner => {
+const pooledVmRunner = (config: VmTestRunnerConfig, scope: Scope.Scope): PooledTestRunner => {
   let client: Session.VmWorkerClient | undefined
   let sessionTestFiles: readonly string[] = config.testFiles
 
@@ -105,7 +106,9 @@ const pooledVmRunner = (config: VmTestRunnerConfig): PooledTestRunner => {
   ): Effect.Effect<TestRunner.DryRunResult, TestRunner.TestRunnerFailed> =>
     Effect.gen(function*() {
       if (client === undefined) {
-        client = yield* spawnClient
+        const spawned = yield* spawnClient
+        yield* Scope.addFinalizer(scope, Effect.promise(() => spawned.terminate()))
+        client = spawned
       }
       const current = client
       const answer = yield* Effect.tryPromise({
@@ -121,24 +124,37 @@ const pooledVmRunner = (config: VmTestRunnerConfig): PooledTestRunner => {
       return yield* respond(answer)
     }).pipe(Effect.onInterrupt(() => dropClient))
 
+  const shouldAdoptTestFiles = (): boolean => config.testFiles.length === 0 && client === undefined
+
+  const adoptedTestFiles = (testFiles: readonly string[] | undefined): readonly string[] => testFiles ?? []
+
+  const testFilterFieldOf = (
+    testFilter: readonly string[] | undefined,
+  ): { readonly testFilter?: readonly string[] } => testFilter === undefined ? {} : { testFilter: [...testFilter] }
+
+  const hitLimitFieldOf = (hitLimit: number | undefined): { readonly hitLimit?: number } =>
+    hitLimit === undefined ? {} : { hitLimit }
+
+  const mutantRequestOf = (options: Mutant.MutantRunOptions): Session.VmRunRequest => ({
+    kind: 'mutant',
+    timeoutMs: options.timeout,
+    activeMutantId: String(options.activeMutant.id),
+    ...testFilterFieldOf(options.testFilter),
+    ...hitLimitFieldOf(options.hitLimit),
+    reloadEnvironment: options.reloadEnvironment,
+  })
+
   return makePooledTestRunner({
     capabilities: Effect.succeed(vmRunnerCapabilities),
     init: Effect.void,
     dryRun: (options: TestRunner.DryRunOptions) => {
-      if (config.testFiles.length === 0 && client === undefined) {
-        sessionTestFiles = options.testFiles ?? []
+      if (shouldAdoptTestFiles()) {
+        sessionTestFiles = adoptedTestFiles(options.testFiles)
       }
       return run({ kind: 'dry', timeoutMs: options.timeout, reloadEnvironment: true })
     },
     mutantRun: (options: Mutant.MutantRunOptions) =>
-      run({
-        kind: 'mutant',
-        timeoutMs: options.timeout,
-        activeMutantId: String(options.activeMutant.id),
-        ...(options.testFilter !== undefined ? { testFilter: [...options.testFilter] } : {}),
-        ...(options.hitLimit !== undefined ? { hitLimit: options.hitLimit } : {}),
-        reloadEnvironment: options.reloadEnvironment,
-      }).pipe(
+      run(mutantRequestOf(options)).pipe(
         Effect.map((dryRunResult) => interpretDryRunResult(InterpretDryRunResultCommand.make({ dryRunResult }))),
         Effect.flatMap((decided) =>
           Result.match(decided, {
@@ -157,4 +173,8 @@ const pooledVmRunner = (config: VmTestRunnerConfig): PooledTestRunner => {
 
 export const vmTestRunner = (
   config: VmTestRunnerConfig,
-): Effect.Effect<PooledTestRunner, TestRunner.TestRunnerFailed> => Effect.succeed(pooledVmRunner(config))
+): Effect.Effect<PooledTestRunner, TestRunner.TestRunnerFailed, Scope.Scope> =>
+  Effect.gen(function*() {
+    const scope = yield* Effect.scope
+    return pooledVmRunner(config, scope)
+  })

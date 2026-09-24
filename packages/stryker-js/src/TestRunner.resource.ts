@@ -128,7 +128,7 @@ const commandRunnerEffect = (
 type InProcessRunnerEffects = Effect.Effect<
   PooledTestRunner,
   PooledTestRunnerError,
-  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Scope.Scope
 >
 
 const inProcessRunner = (context: TestRunnerBuildContext): Option.Option<InProcessRunnerEffects> =>

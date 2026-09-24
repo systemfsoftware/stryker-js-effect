@@ -33,7 +33,7 @@ const oracleOf = (command: FixtureCommand): OracleSplit => {
 }
 
 const splitOf = (command: FixtureCommand): string =>
-  Match.value(Result.getOrThrow(planDefine(PlanDefineCommand.make(command)))).pipe(
+  Match.value(planDefine(PlanDefineCommand.make(command)).pipe(Result.getOrThrow)).pipe(
     Match.tag('NoDefineInjections', () => 'empty'),
     Match.tag('DefineInjections', (injections) =>
       JSON.stringify({

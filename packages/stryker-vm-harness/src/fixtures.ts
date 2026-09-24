@@ -1,4 +1,7 @@
 import * as Effect from 'effect/Effect'
+import { dual } from 'effect/Function'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 
 import { usedFixtureProps } from './fixture-props.js'
@@ -79,169 +82,366 @@ export const createFixtureRegistry = (): FixtureRegistry => ({
 
 const scopeRankOf = (scope: FixtureScope): number => FIXTURE_SCOPES.indexOf(scope)
 
-const depsOf = (value: FixtureValue): Result.Result<ReadonlySet<string>, FixturePropsRejectionShape> => {
-  if (!isFixtureFunction(value)) {
-    return Result.succeed(new Set<string>())
-  }
-  return usedFixtureProps(value.toString())
-}
+const depsOf = (value: FixtureValue): Result.Result<ReadonlySet<string>, string> =>
+  isFixtureFunction(value)
+    ? Result.mapError(usedFixtureProps(value.toString()), (rejection) => rejection.reason)
+    : Result.succeed(new Set<string>())
 
-interface FixturePropsRejectionShape {
-  readonly reason: string
+const scopeProvided = (options: FixtureOptions | undefined): boolean =>
+  Option.isSome(Option.flatMap(Option.fromNullishOr(options), (present) => Option.fromNullishOr(present.scope)))
+
+const parentScopeProvided = (parent: FixtureDefinition | undefined): boolean =>
+  Option.isSome(Option.map(Option.fromNullishOr(parent), (present) => present.scope))
+
+const inheritedFromBase = (rawOptions: FixtureOptions | undefined, parent: FixtureDefinition | undefined): boolean =>
+  !scopeProvided(rawOptions) && parentScopeProvided(parent)
+
+const inheritedSuffix = (rawOptions: FixtureOptions | undefined, parent: FixtureDefinition | undefined): string =>
+  inheritedFromBase(rawOptions, parent) ? ' (inherited from the base fixture)' : ''
+
+const parentScopeOf = (parent: FixtureDefinition | undefined): FixtureScope =>
+  Option.getOrElse(Option.map(Option.fromNullishOr(parent), (present) => present.scope), () => 'test')
+
+const parentAutoOf = (parent: FixtureDefinition | undefined): boolean =>
+  Option.getOrElse(Option.map(Option.fromNullishOr(parent), (present) => present.auto), () => false)
+
+const parentInjectedOf = (parent: FixtureDefinition | undefined): boolean =>
+  Option.getOrElse(Option.map(Option.fromNullishOr(parent), (present) => present.injected), () => false)
+
+const mergedScope = (raw: FixtureOptions, parent: FixtureDefinition | undefined): FixtureScope =>
+  Option.getOrElse(Option.fromNullishOr(raw.scope), () => parentScopeOf(parent))
+
+const mergedAuto = (raw: FixtureOptions, parent: FixtureDefinition | undefined): boolean =>
+  Option.getOrElse(Option.fromNullishOr(raw.auto), () => parentAutoOf(parent))
+
+const mergedInjected = (raw: FixtureOptions, parent: FixtureDefinition | undefined): boolean =>
+  Option.getOrElse(Option.fromNullishOr(raw.injected), () => parentInjectedOf(parent))
+
+const scopeMismatch = (parent: FixtureDefinition, scope: FixtureScope): Result.Result<void, string> =>
+  parent.scope === scope
+    ? Result.succeed(undefined)
+    : Result.fail(`The "${parent.name}" fixture was already registered with a "${scope}" scope.`)
+
+const autoMismatch = (parent: FixtureDefinition, auto: boolean): Result.Result<void, string> =>
+  parent.auto === auto
+    ? Result.succeed(undefined)
+    : Result.fail(`The "${parent.name}" fixture was already registered as { auto: ${String(auto)} }.`)
+
+const parentMismatch = (
+  parent: FixtureDefinition | undefined,
+  scope: FixtureScope,
+  auto: boolean,
+): Result.Result<void, string> =>
+  Option.match(Option.fromNullishOr(parent), {
+    onNone: () => Result.succeed(undefined),
+    onSome: (present) => Result.flatMap(scopeMismatch(present, scope), () => autoMismatch(present, auto)),
+  })
+
+const DEFAULT_OPTIONS: NormalizedFixtureOptions = { auto: false, injected: false, scope: 'test' }
+
+const inheritedOptions = (parent: FixtureDefinition): NormalizedFixtureOptions => ({
+  auto: parent.auto,
+  injected: parent.injected,
+  scope: parent.scope,
+})
+
+const mergeOptions = (
+  raw: FixtureOptions,
+  parent: FixtureDefinition | undefined,
+): Result.Result<NormalizedFixtureOptions, string> => {
+  const scope = mergedScope(raw, parent)
+  const auto = mergedAuto(raw, parent)
+  return Result.map(parentMismatch(parent, scope, auto), () => ({
+    auto,
+    injected: mergedInjected(raw, parent),
+    scope,
+  }))
 }
 
 const normalizeOptions = (
   raw: FixtureOptions | undefined,
   parent: FixtureDefinition | undefined,
-): Result.Result<NormalizedFixtureOptions, string> => {
-  if (raw === undefined) {
-    if (parent !== undefined) {
-      return Result.succeed({ auto: parent.auto, injected: parent.injected, scope: parent.scope })
-    }
-    return Result.succeed({ auto: false, injected: false, scope: 'test' })
-  }
-  const scope = raw.scope ?? parent?.scope ?? 'test'
-  const auto = raw.auto ?? parent?.auto ?? false
-  if (parent !== undefined) {
-    if (parent.scope !== scope) {
-      return Result.fail(`The "${parent.name}" fixture was already registered with a "${scope}" scope.`)
-    }
-    if (parent.auto !== auto) {
-      return Result.fail(`The "${parent.name}" fixture was already registered as { auto: ${String(auto)} }.`)
-    }
-  }
-  return Result.succeed({ auto, injected: raw.injected ?? parent?.injected ?? false, scope })
-}
+): Result.Result<NormalizedFixtureOptions, string> =>
+  Option.match(Option.fromNullishOr(raw), {
+    onNone: () =>
+      Option.match(Option.fromNullishOr(parent), {
+        onNone: () => Result.succeed(DEFAULT_OPTIONS),
+        onSome: (present) => Result.succeed(inheritedOptions(present)),
+      }),
+    onSome: (present) => mergeOptions(present, parent),
+  })
+
+const scopeKnown = (name: string, scope: FixtureScope): Result.Result<void, string> =>
+  FIXTURE_SCOPES.includes(scope)
+    ? Result.succeed(undefined)
+    : Result.fail(`The "${name}" fixture has unknown scope "${String(scope)}".`)
+
+const scopePlacementAllowed = (normalized: NormalizedFixtureOptions, isTopLevel: boolean): boolean =>
+  isTopLevel || normalized.scope === 'test'
+
+const scopePlacement = (
+  name: string,
+  normalized: NormalizedFixtureOptions,
+  rawOptions: FixtureOptions | undefined,
+  parent: FixtureDefinition | undefined,
+  isTopLevel: boolean,
+): Result.Result<void, string> =>
+  scopePlacementAllowed(normalized, isTopLevel)
+    ? Result.succeed(undefined)
+    : Result.fail(
+      `The "${name}" fixture cannot be defined with a ${normalized.scope} scope${
+        inheritedSuffix(rawOptions, parent)
+      } inside the describe block. Define it at the top level of the file instead.`,
+    )
+
+const checkedOptions = (
+  name: string,
+  rawOptions: FixtureOptions | undefined,
+  parent: FixtureDefinition | undefined,
+  isTopLevel: boolean,
+): Result.Result<NormalizedFixtureOptions, string> =>
+  Result.flatMap(
+    normalizeOptions(rawOptions, parent),
+    (normalized) =>
+      Result.flatMap(scopeKnown(name, normalized.scope), () =>
+        Result.map(scopePlacement(name, normalized, rawOptions, parent, isTopLevel), () => normalized)),
+  )
 
 const entryValueOf = (entry: FixtureTableValue): FixtureValue => isFixtureEntry(entry) ? entry[0] : entry
 
 const entryOptionsOf = (entry: FixtureTableValue): FixtureOptions | undefined =>
   isFixtureEntry(entry) ? entry[1] : undefined
 
-export interface ParsedFixtures {
+const definitionOf = (
+  name: string,
+  entry: FixtureTableValue,
+  base: ReadonlyMap<string, FixtureDefinition>,
+  isTopLevel: boolean,
+): Result.Result<FixtureDefinition, string> => {
+  const rawOptions = entryOptionsOf(entry)
+  const value = entryValueOf(entry)
+  const parent = base.get(name)
+  return Result.flatMap(
+    checkedOptions(name, rawOptions, parent, isTopLevel),
+    (normalized) =>
+      Result.map(depsOf(value), (deps): FixtureDefinition => ({
+        name,
+        value,
+        auto: normalized.auto,
+        injected: normalized.injected,
+        scope: normalized.scope,
+        deps,
+        parent,
+      })),
+  )
+}
+
+interface ParsedFixtures {
   readonly definitions: Map<string, FixtureDefinition>
   readonly rejections: ReadonlyArray<string>
 }
 
-export const parseFixtureTable = (
+interface ParseState {
+  readonly definitions: Map<string, FixtureDefinition>
+  readonly rejections: Array<string>
+}
+
+const parseEntryInto = (
+  state: ParseState,
+  name: string,
+  entry: FixtureTableValue,
+  base: ReadonlyMap<string, FixtureDefinition>,
+  isTopLevel: boolean,
+): void =>
+  Result.match(definitionOf(name, entry, base, isTopLevel), {
+    onFailure: (rejection) => {
+      state.rejections.push(rejection)
+    },
+    onSuccess: (definition) => {
+      state.definitions.set(name, definition)
+    },
+  })
+
+const parseEntries = (
+  table: FixtureTable,
+  base: ReadonlyMap<string, FixtureDefinition>,
+  isTopLevel: boolean,
+): ParseState => {
+  const state: ParseState = { definitions: new Map(base), rejections: [] }
+  for (const [name, entry] of Object.entries(table)) {
+    parseEntryInto(state, name, entry, base, isTopLevel)
+  }
+  return state
+}
+
+const selfDependency = (fixture: FixtureDefinition, dep: FixtureDefinition): string | undefined =>
+  Match.value(dep.name === fixture.name && fixture.parent === undefined).pipe(
+    Match.when(true, () => `The "${fixture.name}" fixture depends on itself, but does not have a base implementation.`),
+    Match.when(false, () => undefined),
+    Match.exhaustive,
+  )
+
+const scopeDependency = (fixture: FixtureDefinition, dep: FixtureDefinition): string | undefined =>
+  Match.value(scopeRankOf(fixture.scope) > scopeRankOf(dep.scope)).pipe(
+    Match.when(
+      true,
+      () => `The ${fixture.scope} "${fixture.name}" fixture cannot depend on a ${dep.scope} fixture "${dep.name}".`,
+    ),
+    Match.when(false, () => undefined),
+    Match.exhaustive,
+  )
+
+const dependencyRejection = (
+  fixture: FixtureDefinition,
+  depName: string,
+  definitions: ReadonlyMap<string, FixtureDefinition>,
+): string | undefined =>
+  Option.match(Option.fromNullishOr(definitions.get(depName)), {
+    onNone: () => `The "${fixture.name}" fixture depends on unknown fixture "${depName}".`,
+    onSome: (dep) => selfDependency(fixture, dep) ?? scopeDependency(fixture, dep),
+  })
+
+const asArray = (value: string | undefined): ReadonlyArray<string> =>
+  Option.match(Option.fromNullishOr(value), {
+    onNone: (): ReadonlyArray<string> => [],
+    onSome: (present) => [present],
+  })
+
+const dependencyRejections = (definitions: ReadonlyMap<string, FixtureDefinition>): ReadonlyArray<string> =>
+  [...definitions.values()].flatMap((fixture) =>
+    [...fixture.deps]
+      .filter((depName) => !BUILTIN_FIXTURES.includes(depName))
+      .flatMap((depName) => asArray(dependencyRejection(fixture, depName, definitions)))
+  )
+
+const parseFixtureTable = (
   table: FixtureTable,
   base: ReadonlyMap<string, FixtureDefinition>,
   isTopLevel: boolean,
 ): ParsedFixtures => {
-  const definitions = new Map(base)
-  const rejections: string[] = []
-  for (const [name, entry] of Object.entries(table)) {
-    const rawOptions = entryOptionsOf(entry)
-    const value = entryValueOf(entry)
-    const parent = base.get(name)
-    const options = normalizeOptions(rawOptions, parent)
-    if (Result.isFailure(options)) {
-      rejections.push(options.failure)
-      continue
-    }
-    const normalized = options.success
-    if (!FIXTURE_SCOPES.includes(normalized.scope)) {
-      rejections.push(`The "${name}" fixture has unknown scope "${String(normalized.scope)}".`)
-      continue
-    }
-    if (!isTopLevel && normalized.scope !== 'test') {
-      const inherited = rawOptions?.scope === undefined && parent?.scope !== undefined
-      rejections.push(
-        `The "${name}" fixture cannot be defined with a ${normalized.scope} scope${
-          inherited ? ' (inherited from the base fixture)' : ''
-        } inside the describe block. Define it at the top level of the file instead.`,
-      )
-      continue
-    }
-    const deps = depsOf(value)
-    if (Result.isFailure(deps)) {
-      rejections.push(deps.failure.reason)
-      continue
-    }
-    definitions.set(name, {
-      name,
-      value,
-      auto: normalized.auto,
-      injected: normalized.injected,
-      scope: normalized.scope,
-      deps: deps.success,
-      parent,
-    })
+  const parsed = parseEntries(table, base, isTopLevel)
+  return {
+    definitions: parsed.definitions,
+    rejections: [...parsed.rejections, ...dependencyRejections(parsed.definitions)],
   }
-  for (const fixture of definitions.values()) {
-    for (const depName of fixture.deps) {
-      if (BUILTIN_FIXTURES.includes(depName)) {
-        continue
-      }
-      const dep = definitions.get(depName)
-      if (dep === undefined) {
-        rejections.push(`The "${fixture.name}" fixture depends on unknown fixture "${depName}".`)
-        continue
-      }
-      if (depName === fixture.name && fixture.parent === undefined) {
-        rejections.push(`The "${fixture.name}" fixture depends on itself, but does not have a base implementation.`)
-        continue
-      }
-      if (scopeRankOf(fixture.scope) > scopeRankOf(dep.scope)) {
-        rejections.push(
-          `The ${fixture.scope} "${fixture.name}" fixture cannot depend on a ${dep.scope} fixture "${dep.name}".`,
-        )
-      }
-    }
-  }
-  return { definitions, rejections }
 }
 
-export const definitionsFor = (
+const overrideFor = (
+  registry: FixtureRegistry,
+  host: FixtureHost | undefined,
+): ReadonlyMap<string, FixtureDefinition> | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(
+      Option.fromNullishOr(host),
+      (present) => Option.fromNullishOr(registry.overrides.get(present)),
+    ),
+  )
+
+const isSelfReferential = (current: FixtureHost): boolean => current.file === current
+
+const nextHostOf = (current: FixtureHost): FixtureHost | undefined =>
+  isSelfReferential(current)
+    ? undefined
+    : Option.getOrElse(Option.fromNullishOr(current.suite), () => current.file)
+
+const definitionsForImpl = (
   registry: FixtureRegistry,
   host: FixtureHost | undefined,
 ): ReadonlyMap<string, FixtureDefinition> => {
-  let current: FixtureHost | undefined = host
-  while (current !== undefined) {
-    const overridden = registry.overrides.get(current)
-    if (overridden !== undefined) {
-      return overridden
-    }
-    if (current.file !== undefined && current.file === current) {
-      break
-    }
-    current = current.suite ?? current.file
+  const overridden = overrideFor(registry, host)
+  if (overridden !== undefined) {
+    return overridden
   }
-  return registry.definitions
+  return Option.match(Option.fromNullishOr(host), {
+    onNone: () => registry.definitions,
+    onSome: (present) => definitionsForImpl(registry, nextHostOf(present)),
+  })
 }
 
-export const extendFixtures = (
-  registry: FixtureRegistry,
-  table: FixtureTable,
-  isTopLevel: boolean,
-): Result.Result<FixtureRegistry, ReadonlyArray<string>> => {
+export const definitionsFor = dual<
+  (host: FixtureHost | undefined) => (registry: FixtureRegistry) => ReadonlyMap<string, FixtureDefinition>,
+  (registry: FixtureRegistry, host: FixtureHost | undefined) => ReadonlyMap<string, FixtureDefinition>
+>(
+  2,
+  (registry: FixtureRegistry, host: FixtureHost | undefined): ReadonlyMap<string, FixtureDefinition> =>
+    definitionsForImpl(registry, host),
+)
+
+const rejectionResultOf = <A>(
+  rejections: ReadonlyArray<string>,
+  value: A,
+): Result.Result<A, ReadonlyArray<string>> => rejections.length > 0 ? Result.fail(rejections) : Result.succeed(value)
+
+export const extendFixtures = dual<
+  (
+    table: FixtureTable,
+    isTopLevel: boolean,
+  ) => (registry: FixtureRegistry) => Result.Result<FixtureRegistry, ReadonlyArray<string>>,
+  (
+    registry: FixtureRegistry,
+    table: FixtureTable,
+    isTopLevel: boolean,
+  ) => Result.Result<FixtureRegistry, ReadonlyArray<string>>
+>(3, (registry: FixtureRegistry, table: FixtureTable, isTopLevel: boolean): Result.Result<
+  FixtureRegistry,
+  ReadonlyArray<string>
+> => {
   const parsed = parseFixtureTable(table, registry.definitions, isTopLevel)
-  return parsed.rejections.length > 0
-    ? Result.fail(parsed.rejections)
-    : Result.succeed({ definitions: parsed.definitions, overrides: new Map() })
+  return rejectionResultOf(parsed.rejections, { definitions: parsed.definitions, overrides: new Map() })
+})
+
+const baseDefinitionsFor = (
+  registry: FixtureRegistry,
+  host: FixtureHost | undefined,
+): ReadonlyMap<string, FixtureDefinition> => host === undefined ? registry.definitions : definitionsFor(registry, host)
+
+const replaceDefinitions = (registry: FixtureRegistry, definitions: Map<string, FixtureDefinition>): void => {
+  registry.definitions.clear()
+  for (const [name, definition] of definitions) {
+    registry.definitions.set(name, definition)
+  }
 }
 
-export const overrideFixtures = (
+const applyOverride = (
+  registry: FixtureRegistry,
+  host: FixtureHost | undefined,
+  definitions: Map<string, FixtureDefinition>,
+): Result.Result<void, ReadonlyArray<string>> =>
+  Option.match(Option.fromNullishOr(host), {
+    onNone: () => {
+      replaceDefinitions(registry, definitions)
+      return Result.succeed(undefined)
+    },
+    onSome: (present) => {
+      registry.overrides.set(present, definitions)
+      return Result.succeed(undefined)
+    },
+  })
+
+export const overrideFixtures = dual<
+  (
+    host: FixtureHost | undefined,
+    table: FixtureTable,
+    isTopLevel: boolean,
+  ) => (registry: FixtureRegistry) => Result.Result<void, ReadonlyArray<string>>,
+  (
+    registry: FixtureRegistry,
+    host: FixtureHost | undefined,
+    table: FixtureTable,
+    isTopLevel: boolean,
+  ) => Result.Result<void, ReadonlyArray<string>>
+>(4, (
   registry: FixtureRegistry,
   host: FixtureHost | undefined,
   table: FixtureTable,
   isTopLevel: boolean,
 ): Result.Result<void, ReadonlyArray<string>> => {
-  const base = host === undefined ? registry.definitions : definitionsFor(registry, host)
-  const parsed = parseFixtureTable(table, new Map(base), isTopLevel)
-  if (parsed.rejections.length > 0) {
-    return Result.fail(parsed.rejections)
-  }
-  if (host === undefined) {
-    registry.definitions.clear()
-    for (const [name, definition] of parsed.definitions) {
-      registry.definitions.set(name, definition)
-    }
-    return Result.succeed(undefined)
-  }
-  registry.overrides.set(host, parsed.definitions)
-  return Result.succeed(undefined)
-}
+  const parsed = parseFixtureTable(table, new Map(baseDefinitionsFor(registry, host)), isTopLevel)
+  return Result.flatMap(
+    rejectionResultOf(parsed.rejections, undefined),
+    () => applyOverride(registry, host, parsed.definitions),
+  )
+})
 
 const cleanups = new WeakMap<object, Array<() => Promise<void>>>()
 
@@ -255,21 +455,42 @@ export const cleanupArrayOf = (context: object): Array<() => Promise<void>> => {
   return created
 }
 
-export const cleanupCountOf = (context: object): number => cleanups.get(context)?.length ?? 0
+export const cleanupCountOf = (context: object): number =>
+  Option.getOrElse(
+    Option.map(Option.fromNullishOr(cleanups.get(context)), (present) => present.length),
+    () => 0,
+  )
 
 const runCleanup = (cleanup: () => Promise<void>): Effect.Effect<void> =>
   Effect.promise(() => Promise.resolve().then(cleanup))
 
-export const cleanupFrom = (context: object, fromIndex: number): Effect.Effect<void> =>
-  Effect.suspend(() => {
-    const array = cleanups.get(context)
-    if (array === undefined || array.length <= fromIndex) {
-      return Effect.void
-    }
-    const pending = array.slice(fromIndex).reverse()
-    array.length = fromIndex
-    return Effect.forEach(pending, runCleanup, { discard: true })
+const trimAndRun = (array: Array<() => Promise<void>>, fromIndex: number): Effect.Effect<void> => {
+  const pending = array.slice(fromIndex).reverse()
+  array.length = fromIndex
+  return Effect.forEach(pending, runCleanup, { discard: true })
+}
+
+const pendingCleanups = (array: Array<() => Promise<void>>, fromIndex: number): Effect.Effect<void> =>
+  Match.value(array.length <= fromIndex).pipe(
+    Match.when(true, () => Effect.void),
+    Match.when(false, () => trimAndRun(array, fromIndex)),
+    Match.exhaustive,
+  )
+
+const cleanupFromEffect = (context: object, fromIndex: number): Effect.Effect<void> =>
+  Option.match(Option.fromNullishOr(cleanups.get(context)), {
+    onNone: () => Effect.void,
+    onSome: (array) => pendingCleanups(array, fromIndex),
   })
+
+export const cleanupFrom = dual<
+  (fromIndex: number) => (context: object) => Effect.Effect<void>,
+  (context: object, fromIndex: number) => Effect.Effect<void>
+>(
+  2,
+  (context: object, fromIndex: number): Effect.Effect<void> =>
+    Effect.suspend(() => cleanupFromEffect(context, fromIndex)),
+)
 
 export const cleanupAll = (context: object): Effect.Effect<void> =>
   Effect.suspend(() => {
@@ -328,14 +549,23 @@ const resolveFixtureFunction = (
       <A3 = unknown>(cause: A3) => resume(Effect.fail(messageOf(cause))),
     )
   })
-export const resolveFixtureValue = (
-  fixture: FixtureDefinition,
-  context: object,
-  clean: Array<() => Promise<void>>,
-): Effect.Effect<FixtureValue, string> => {
-  if (!isFixtureFunction(fixture.value)) {
-    return Effect.succeed(fixture.value)
-  }
-  const fixtureFn = fixture.value
-  return Effect.suspend(() => resolveFixtureFunction(fixtureFn, fixture.name, context, clean))
-}
+
+export const resolveFixtureValue = dual<
+  (
+    context: object,
+    clean: Array<() => Promise<void>>,
+  ) => (fixture: FixtureDefinition) => Effect.Effect<FixtureValue, string>,
+  (
+    fixture: FixtureDefinition,
+    context: object,
+    clean: Array<() => Promise<void>>,
+  ) => Effect.Effect<FixtureValue, string>
+>(3, (fixture: FixtureDefinition, context: object, clean: Array<() => Promise<void>>): Effect.Effect<
+  FixtureValue,
+  string
+> => {
+  const value = fixture.value
+  return isFixtureFunction(value)
+    ? Effect.suspend(() => resolveFixtureFunction(value, fixture.name, context, clean))
+    : Effect.succeed(value)
+})

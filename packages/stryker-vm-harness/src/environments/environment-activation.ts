@@ -22,6 +22,8 @@ import type { EnvironmentSpec, FileEnvironment, PackageEnvironment } from './res
 import type { EnvironmentReturn, VitestEnvironment } from './vitest-runtime-modules.js'
 import type { VmJson } from './vm-json.js'
 
+type AnyDecoded<A = unknown> = A
+
 export interface EnvironmentModuleSource {
   readonly builtin: (name: string) => Promise<VitestEnvironment | undefined>
   readonly module: (spec: FileEnvironment | PackageEnvironment) => Promise<VitestEnvironment>
@@ -45,6 +47,7 @@ export interface EnvironmentActivation {
   readonly dispose: Effect.Effect<void, EnvironmentSetupFailure>
   readonly installedKeys: () => ReadonlySet<string>
 }
+
 const isNodeEnvironment = (spec: EnvironmentSpec): boolean =>
   Match.value(spec).pipe(
     Match.tag('NodeEnvironment', () => true),
@@ -85,6 +88,24 @@ const environmentPromiseFor = (source: EnvironmentModuleSource, spec: Environmen
     Match.exhaustive,
   )
 
+const runTeardown = (
+  teardown: (target: GlobalTarget) => void | Promise<void>,
+  target: GlobalTarget,
+): Effect.Effect<void, EnvironmentSetupFailure> =>
+  Effect.tryPromise({
+    try: () => Promise.resolve().then(() => teardown(target)).then(() => undefined),
+    catch: (cause) => new EnvironmentSetupFailure({ message: 'the test environment could not be torn down', cause }),
+  })
+
+const teardownOf = (
+  outcome: EnvironmentReturn | undefined,
+  target: GlobalTarget,
+): Effect.Effect<void, EnvironmentSetupFailure> =>
+  Match.value(outcome?.teardown).pipe(
+    Match.when(Match.undefined, () => Effect.void),
+    Match.orElse((teardown) => runTeardown(teardown, target)),
+  )
+
 const instanceOf = (
   before: DescriptorMap,
   outcome: EnvironmentReturn | undefined,
@@ -92,19 +113,15 @@ const instanceOf = (
 ): EnvironmentInstance => {
   const after = captureDescriptors(target)
   const installed = installedDescriptors(before, after)
-  const teardown = outcome?.teardown
   return {
     installed,
     originals: priorDescriptors(before, installed),
-    teardown: teardown === undefined
-      ? Effect.void
-      : Effect.tryPromise({
-        try: () => Promise.resolve().then(() => teardown(target)).then(() => undefined),
-        catch: (cause) =>
-          new EnvironmentSetupFailure({ message: 'the test environment could not be torn down', cause }),
-      }),
+    teardown: teardownOf(outcome, target),
   }
 }
+
+const environmentSetupFailure = (message: string, caught: AnyDecoded): EnvironmentSetupFailure =>
+  new EnvironmentSetupFailure({ message, cause: caught })
 
 const createInstance = (
   source: EnvironmentModuleSource,
@@ -118,11 +135,19 @@ const createInstance = (
         return environment.setup(source.target, options).then((outcome) => instanceOf(before, outcome, source.target))
       }),
     catch: (caught) => {
-      const dependency = environmentDependency(spec)
-      if (dependency !== undefined && isMissingEnvironmentModule(caught, dependency)) {
-        return new EnvironmentSetupFailure({ message: missingEnvironmentDependencyMessage(dependency), cause: caught })
-      }
-      return new EnvironmentSetupFailure({ message: 'the test environment could not be set up', cause: caught })
+      const dependency = Option.fromUndefinedOr(environmentDependency(spec))
+      return Match.value(Option.exists(dependency, (present) => isMissingEnvironmentModule(caught, present))).pipe(
+        Match.when(true, () =>
+          environmentSetupFailure(
+            Option.match(dependency, {
+              onNone: () => 'the test environment could not be set up',
+              onSome: missingEnvironmentDependencyMessage,
+            }),
+            caught,
+          )),
+        Match.when(false, () => environmentSetupFailure('the test environment could not be set up', caught)),
+        Match.exhaustive,
+      )
     },
   })
 
@@ -130,31 +155,68 @@ export const createEnvironmentActivation = (source: EnvironmentModuleSource): En
   const instances = new Map<string, EnvironmentInstance>()
   let activeKey: string | undefined
 
+  const activeInstance = (): EnvironmentInstance | undefined =>
+    Option.getOrUndefined(
+      Option.flatMap(Option.fromUndefinedOr(activeKey), (key) => Option.fromUndefinedOr(instances.get(key))),
+    )
+
   const restoreActive = (): void => {
-    if (activeKey === undefined) return
-    const active = instances.get(activeKey)
+    const active = activeInstance()
     if (active !== undefined) restoreDescriptors(source.target, active.originals)
     activeKey = undefined
   }
+
+  const instanceFor = (
+    key: string,
+    spec: EnvironmentSpec,
+    options: Record<string, VmJson>,
+  ): Effect.Effect<EnvironmentInstance, EnvironmentSetupFailure> =>
+    Match.value(instances.get(key)).pipe(
+      Match.when(Match.undefined, () => createInstance(source, spec, options)),
+      Match.orElse((existing) => Effect.succeed(existing)),
+    )
+
+  const activateResolved = (
+    key: string,
+    spec: EnvironmentSpec,
+    options: Record<string, VmJson>,
+  ): Effect.Effect<void, EnvironmentSetupFailure> =>
+    Effect.map(instanceFor(key, spec, options), (created) => {
+      instances.set(key, created)
+      installDescriptors(source.target, created.installed)
+      activeKey = key
+    })
+
+  const activateKey = (
+    key: string,
+    spec: EnvironmentSpec,
+    options: Record<string, VmJson>,
+  ): Effect.Effect<void, EnvironmentSetupFailure> =>
+    Match.value(isNodeEnvironment(spec)).pipe(
+      Match.when(true, () => Effect.void),
+      Match.when(false, () => activateResolved(key, spec, options)),
+      Match.exhaustive,
+    )
+
+  const activate = (
+    spec: EnvironmentSpec,
+    options: Record<string, VmJson>,
+  ): Effect.Effect<void, EnvironmentSetupFailure> => {
+    const key = instanceKeyOf(spec, options)
+    if (activeKey === key) return Effect.void
+    restoreActive()
+    return activateKey(key, spec, options)
+  }
+
+  const installedKeys = (): ReadonlySet<string> => {
+    const active = activeInstance()
+    return new Set(active === undefined ? [] : active.installed.keys())
+  }
+
   return {
-    activate: (spec, options) => {
-      const key = instanceKeyOf(spec, options)
-      if (activeKey === key) return Effect.void
-      if (activeKey !== undefined) restoreActive()
-      if (isNodeEnvironment(spec)) return Effect.void
-      const existing = instances.get(key)
-      const instance = existing !== undefined ? Effect.succeed(existing) : createInstance(source, spec, options)
-      return Effect.map(instance, (created) => {
-        if (existing === undefined) instances.set(key, created)
-        installDescriptors(source.target, created.installed)
-        activeKey = key
-      })
-    },
+    activate,
     deactivate: () => restoreActive(),
-    installedKeys: () => {
-      const active = activeKey === undefined ? undefined : instances.get(activeKey)
-      return new Set(active === undefined ? [] : active.installed.keys())
-    },
+    installedKeys,
     dispose: Effect.sync(() => {
       restoreActive()
       return [...instances.values()]

@@ -1,3 +1,4 @@
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 
 import type { EnvironmentSpec } from './resolve-environment.workflow.js'
@@ -14,20 +15,37 @@ export const environmentDependency = (spec: EnvironmentSpec): string | undefined
 export const missingEnvironmentDependencyMessage = (dependency: string): string =>
   `MISSING DEPENDENCY Cannot find dependency '${dependency}'. Install it with \`npm i -D ${dependency}\`.`
 
-const MISSING_MODULE_CODES: ReadonlySet<string> = new Set(['ERR_MODULE_NOT_FOUND', 'MODULE_NOT_FOUND'])
+const MISSING_MODULE_CODES: Readonly<Record<string, true>> = {
+  ERR_MODULE_NOT_FOUND: true,
+  MODULE_NOT_FOUND: true,
+}
 
 export interface MissingEnvironmentModule {
   readonly dependency: string
 }
 
-const ownStringProperty = (source: object, name: string): string | undefined => {
-  const descriptor = Object.getOwnPropertyDescriptor(source, name)
-  return typeof descriptor?.value === 'string' ? descriptor.value : undefined
-}
+const ownStringProperty = (source: object, name: string): string | undefined =>
+  Match.value(Object.getOwnPropertyDescriptor(source, name)).pipe(
+    Match.when(Match.undefined, (): string | undefined => undefined),
+    Match.orElse((descriptor) => typeof descriptor.value === 'string' ? descriptor.value : undefined),
+  )
 
-export const isMissingEnvironmentModule = (caught: unknown, dependency: string): caught is MissingEnvironmentModule => {
-  if (typeof caught !== 'object' || caught === null) return false
-  const code = ownStringProperty(caught, 'code')
-  const message = ownStringProperty(caught, 'message') ?? ''
-  return MISSING_MODULE_CODES.has(code ?? '') && message.includes(dependency)
-}
+const isObjectValue = (candidate: unknown): candidate is object => typeof candidate === 'object' && candidate !== null
+
+const failureCodeMatches = (caught: object): boolean =>
+  Object.hasOwn(MISSING_MODULE_CODES, ownStringProperty(caught, 'code') ?? '')
+
+const failureMessageNames = (caught: object, dependency: string): boolean =>
+  (ownStringProperty(caught, 'message') ?? '').includes(dependency)
+
+const isMissingModuleFailure = (caught: object, dependency: string): boolean =>
+  failureCodeMatches(caught) && failureMessageNames(caught, dependency)
+
+export const isMissingEnvironmentModule = dual<
+  (dependency: string) => (caught: unknown) => caught is MissingEnvironmentModule,
+  (caught: unknown, dependency: string) => caught is MissingEnvironmentModule
+>(
+  2,
+  (caught, dependency): caught is MissingEnvironmentModule =>
+    isObjectValue(caught) && isMissingModuleFailure(caught, dependency),
+)

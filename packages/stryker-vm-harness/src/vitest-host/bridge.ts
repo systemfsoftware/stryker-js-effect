@@ -1,14 +1,26 @@
-import { createRequire } from 'node:module'
-
-import { pathToFileURL } from 'node:url'
-import { MessageChannel, type MessagePort, receiveMessageOnPort, Worker } from 'node:worker_threads'
-import { basename, dirname, existsSync, globSync, join, resolve } from './node-builtins.js'
+import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 
 import type { VmProjectConfig, VmVitestConfig } from '../vitest-config.schema.js'
 import { defaultProjectConfig, defaultVitestConfig } from './defaults.js'
 import { docblockOf } from './docblock-cache.js'
+import type { EnvironmentDocblock } from './docblock.js'
 import type { VmHostAnnouncement, VmHostInitMessage, VmHostReply, VmHostRequest } from './host-thread.js'
+import { basename, dirname, existsSync, globSync, join, resolve } from './node-builtins.js'
 import type { VmTransformResult, VmVitestRuntime } from './runtime.js'
+
+const moduleBuiltin = globalThis.process.getBuiltinModule('node:module')
+const urlBuiltin = globalThis.process.getBuiltinModule('node:url')
+const workerThreads = globalThis.process.getBuiltinModule('node:worker_threads')
+
+const { createRequire } = moduleBuiltin
+const { pathToFileURL } = urlBuiltin
+const { MessageChannel, Worker, receiveMessageOnPort } = workerThreads
+
+type MessagePort = InstanceType<typeof workerThreads.MessagePort>
+type VmWorker = InstanceType<typeof workerThreads.Worker>
+
+type AnyDecoded<A = unknown> = A
 
 const digestHashOf = (input: string): string => {
   const raw = new TextEncoder().encode(input)
@@ -41,6 +53,14 @@ type HostState = 'unspawned' | 'ready' | 'failed' | 'closed'
 
 const CACHE_LIMIT = 4096
 const DEAD_THREAD_POLL_MS = 50
+const NO_ANNOUNCEMENT_MESSAGE = 'Vitest transform host produced no announcement'
+const NO_CHANNEL_MESSAGE = 'Vitest transform host has no message channel'
+const NO_FLAGS_MESSAGE = 'Vitest transform host has no synchronization buffer'
+const NO_REPLY_MESSAGE = 'Vitest transform host produced no reply'
+const OUT_OF_ORDER_MESSAGE = 'Vitest transform host replied out of order'
+const EXITED_MESSAGE = 'Vitest transform host thread exited unexpectedly'
+const START_FAILED_MESSAGE = 'Vitest transform host failed to start'
+const CLOSED_MESSAGE = 'Vitest transform host was closed'
 
 const cleanIdOf = (id: string): string => id.split('?')[0] ?? id
 
@@ -59,10 +79,12 @@ const patternToRegExp = (pattern: string): RegExp => {
   return new RegExp(`^${body}$`)
 }
 
+const globCandidate = (pattern: string, root: string): string =>
+  pattern.startsWith('/') ? pattern : `${root}/${pattern}`
+
 const matchesGlob = (file: string, pattern: string, root: string): boolean => {
-  const candidate = pattern.startsWith('/') ? pattern : `${root}/${pattern}`
   try {
-    return patternToRegExp(candidate).test(file)
+    return patternToRegExp(globCandidate(pattern, root)).test(file)
   } catch {
     return false
   }
@@ -71,8 +93,9 @@ const matchesGlob = (file: string, pattern: string, root: string): boolean => {
 const matchesFile = (project: VmProjectConfig, file: string): boolean =>
   project.include.some((pattern) => matchesGlob(file, pattern, project.root))
 
-const ignoredByDefault = (entry: string): boolean =>
-  entry === 'node_modules' || entry.startsWith('node_modules/') || entry === '.git' || entry.startsWith('.git/')
+const DEFAULT_IGNORED = /^(?:node_modules|\.git)(?:\/|$)/
+
+const ignoredByDefault = (entry: string): boolean => DEFAULT_IGNORED.test(entry)
 
 const inThreadTestFiles = (sandboxWorkingDirectory: string): ReadonlyArray<string> => {
   const defaultConfig = defaultProjectConfig(sandboxWorkingDirectory)
@@ -84,7 +107,7 @@ const inThreadTestFiles = (sandboxWorkingDirectory: string): ReadonlyArray<strin
 }
 
 const workerEntry = (): { readonly url: URL; readonly execArgv: ReadonlyArray<string> } => {
-  const requireFromCwd = createRequire(join(process.cwd(), 'noop.js'))
+  const requireFromCwd = createRequire(join(globalThis.process.cwd(), 'noop.js'))
   const packageJsonPath = requireFromCwd.resolve('@systemfsoftware/stryker-vm-harness/package.json')
   const packageRoot = dirname(packageJsonPath)
   const distEntry = join(packageRoot, 'dist', 'vitest-host-worker.mjs')
@@ -98,13 +121,121 @@ const workerEntry = (): { readonly url: URL; readonly execArgv: ReadonlyArray<st
   }
 }
 
-const cached = <K, V>(store: Map<K, V>, key: K, compute: () => V): V => {
-  const hit = store.get(key)
-  if (hit !== undefined) return hit
+const storeValue = <K, V>(store: Map<K, V>, key: K, compute: () => V): V => {
   if (store.size >= CACHE_LIMIT) store.clear()
   const value = compute()
   store.set(key, value)
   return value
+}
+
+const cached = <K, V>(store: Map<K, V>, key: K, compute: () => V): V => {
+  const hit = store.get(key)
+  if (hit !== undefined) return hit
+  return storeValue(store, key, compute)
+}
+
+const optionalConfigField = (configFile: string | undefined): { readonly configFile?: string } =>
+  configFile === undefined ? {} : { configFile }
+
+const initMessageOf = (
+  sandboxWorkingDirectory: string,
+  configFile: string | undefined,
+  port: MessagePort,
+  sharedBuffer: SharedArrayBuffer,
+): VmHostInitMessage => ({
+  sandboxWorkingDirectory,
+  ...optionalConfigField(configFile),
+  port,
+  sharedBuffer,
+})
+
+const requireFlags = (flags: Int32Array | undefined): Int32Array => {
+  if (flags === undefined) throw new Error(NO_FLAGS_MESSAGE)
+  return flags
+}
+
+const requirePort = (port: MessagePort | undefined): MessagePort => {
+  if (port === undefined) throw new Error(NO_CHANNEL_MESSAGE)
+  return port
+}
+
+const messageOr = (error: AnyDecoded, fallback: string): string => error instanceof Error ? error.message : fallback
+
+const pollSignal = (flags: Int32Array): boolean => {
+  const outcome = Atomics.wait(flags, 0, 0, DEAD_THREAD_POLL_MS)
+  return outcome === 'ok' || outcome === 'not-equal'
+}
+
+const ensureAlive = (hasExited: () => boolean): void => {
+  if (hasExited()) throw new Error(EXITED_MESSAGE)
+}
+
+const awaitSignal = (flags: Int32Array, hasExited: () => boolean): void => {
+  while (!pollSignal(flags)) ensureAlive(hasExited)
+}
+
+const kindOf = (value: object): string => String(Reflect.get(value, 'kind'))
+
+const isKnownAnnouncementKind = (value: object): boolean => kindOf(value) === 'ready' || kindOf(value) === 'init-failed'
+
+const isHostAnnouncement = (value: unknown): value is VmHostAnnouncement =>
+  Predicate.isObject(value) && isKnownAnnouncementKind(value)
+
+const HOST_REPLY_KINDS: ReadonlySet<string> = new Set([
+  'transform',
+  'resolveId',
+  'snapshotPath',
+  'files',
+  'projects',
+  'error',
+])
+
+const isKnownReplyKind = (value: object): boolean => HOST_REPLY_KINDS.has(kindOf(value))
+
+const isHostReply = (value: unknown): value is VmHostReply => Predicate.isObject(value) && isKnownReplyKind(value)
+
+const announcementOf = (hostPort: MessagePort): VmHostAnnouncement | undefined =>
+  Option.getOrUndefined(Option.liftPredicate(isHostAnnouncement)(receiveMessageOnPort(hostPort)?.message))
+
+const replyAt = (hostPort: MessagePort): VmHostReply | undefined =>
+  Option.getOrUndefined(Option.liftPredicate(isHostReply)(receiveMessageOnPort(hostPort)?.message))
+
+type TransformReply = Extract<VmHostReply, { readonly kind: 'transform' }> & { readonly code: string }
+
+interface HostProjectFiles {
+  readonly name: string
+  readonly files: ReadonlyArray<string>
+}
+
+const isTransformReply = (reply: VmHostReply): reply is TransformReply =>
+  reply.kind === 'transform' && typeof reply.code === 'string'
+
+const transformCodeOf = (reply: VmHostReply): VmTransformResult | undefined =>
+  isTransformReply(reply) ? { code: reply.code } : undefined
+
+const resolvedIdOf = (reply: VmHostReply): string | undefined => reply.kind === 'resolveId' ? reply.resolved : undefined
+
+const snapshotPathOf = (reply: VmHostReply): string | undefined =>
+  reply.kind === 'snapshotPath' ? reply.path : undefined
+
+const filesOf = (reply: VmHostReply): ReadonlyArray<string> => reply.kind === 'files' ? [...reply.files] : []
+
+const drainPort = (hostPort: MessagePort): void => {
+  while (receiveMessageOnPort(hostPort) !== undefined) {}
+}
+
+const hasDocblockOverride = (docblock: EnvironmentDocblock): boolean =>
+  docblock.environment !== undefined || docblock.environmentOptions !== undefined
+
+const overriddenProject = (base: VmProjectConfig, docblock: EnvironmentDocblock): VmProjectConfig => ({
+  ...base,
+  environment: docblock.environment ?? base.environment,
+  environmentOptions: { ...base.environmentOptions, ...docblock.environmentOptions },
+})
+
+const withDocblockOverride = (base: VmProjectConfig, testFile: string): VmProjectConfig => {
+  const docblock = docblockOf(testFile)
+  return hasDocblockOverride(docblock) ? overriddenProject(base, docblock) : base
 }
 
 export const createVmVitestRuntime = (options: VmVitestBridgeOptions): VmVitestHostHandle => {
@@ -112,7 +243,7 @@ export const createVmVitestRuntime = (options: VmVitestBridgeOptions): VmVitestH
   const sandboxRoot = resolve(sandboxWorkingDirectory)
 
   let state: HostState = 'unspawned'
-  let worker: Worker | undefined
+  let worker: VmWorker | undefined
   let port: MessagePort | undefined
   let flags: Int32Array | undefined
   let exited = false
@@ -127,14 +258,38 @@ export const createVmVitestRuntime = (options: VmVitestBridgeOptions): VmVitestH
 
   const configOf = (): VmVitestConfig => hostConfig ?? defaultVitestConfig(sandboxRoot)
 
-  const waitForSignal = (): void => {
-    const sharedFlags = flags
-    if (sharedFlags === undefined) throw new Error('Vitest transform host has no synchronization buffer')
-    for (;;) {
-      const outcome = Atomics.wait(sharedFlags, 0, 0, DEAD_THREAD_POLL_MS)
-      if (outcome === 'ok' || outcome === 'not-equal') return
-      if (exited) throw new Error('Vitest transform host thread exited unexpectedly')
+  const failSpawn = (spawned: VmWorker, message: string): never => {
+    state = 'failed'
+    failureMessage = message
+    void spawned.terminate()
+    throw new Error(message)
+  }
+
+  const requireAnnouncement = (
+    spawned: VmWorker,
+    announcement: VmHostAnnouncement | undefined,
+  ): VmHostAnnouncement => announcement === undefined ? failSpawn(spawned, NO_ANNOUNCEMENT_MESSAGE) : announcement
+
+  const requireReadyAnnouncement = (
+    spawned: VmWorker,
+    announcement: VmHostAnnouncement,
+  ): Extract<VmHostAnnouncement, { readonly kind: 'ready' }> =>
+    announcement.kind === 'init-failed' ? failSpawn(spawned, announcement.message) : announcement
+
+  const applyAnnouncement = (spawned: VmWorker, hostPort: MessagePort): void => {
+    const ready = requireReadyAnnouncement(spawned, requireAnnouncement(spawned, announcementOf(hostPort)))
+    hostConfig = ready.config
+    hostHasTransformPlugins = ready.hasTransformPlugins
+    state = 'ready'
+  }
+
+  const startSpawned = (spawned: VmWorker): void => {
+    try {
+      awaitSignal(requireFlags(flags), () => exited)
+    } catch (error) {
+      failSpawn(spawned, messageOr(error, START_FAILED_MESSAGE))
     }
+    applyAnnouncement(spawned, requirePort(port))
   }
 
   const spawnHost = (): void => {
@@ -149,135 +304,164 @@ export const createVmVitestRuntime = (options: VmVitestBridgeOptions): VmVitestH
       exited = true
     })
     worker = spawned
-    const init: VmHostInitMessage = {
-      sandboxWorkingDirectory: sandboxRoot,
-      ...(configFile === undefined ? {} : { configFile }),
-      port: channel.port2,
-      sharedBuffer,
-    }
-    spawned.postMessage(init, [channel.port2])
-    try {
-      waitForSignal()
-    } catch (error) {
-      state = 'failed'
-      failureMessage = error instanceof Error ? error.message : 'Vitest transform host failed to start'
-      void spawned.terminate()
-      throw error
-    }
-    const announcement = receiveMessageOnPort(port)?.message as VmHostAnnouncement | undefined
-    if (announcement === undefined || announcement.kind === 'init-failed') {
-      state = 'failed'
-      failureMessage = announcement?.message ?? 'Vitest transform host produced no announcement'
-      void spawned.terminate()
-      throw new Error(failureMessage)
-    }
-    hostConfig = announcement.config
-    hostHasTransformPlugins = announcement.hasTransformPlugins
-    state = 'ready'
+    spawned.postMessage(initMessageOf(sandboxRoot, configFile, channel.port2, sharedBuffer), [channel.port2])
+    startSpawned(spawned)
+  }
+
+  const hostUnavailableMessage = (): string => state === 'failed' ? failureMessage : CLOSED_MESSAGE
+
+  const ensureSpawnedState = (): void => {
+    if (state === 'ready') return
+    throw new Error(hostUnavailableMessage())
   }
 
   const ensureHost = (): void => {
-    if (state === 'ready') return
-    if (state === 'failed') throw new Error(failureMessage)
-    if (state === 'closed') throw new Error('Vitest transform host was closed')
-    spawnHost()
+    if (state === 'unspawned') {
+      spawnHost()
+      return
+    }
+    ensureSpawnedState()
+  }
+
+  const requireReply = (hostPort: MessagePort): VmHostReply => {
+    const reply = replyAt(hostPort)
+    if (reply === undefined) throw new Error(NO_REPLY_MESSAGE)
+    return reply
+  }
+
+  const assertReplyKind = (reply: VmHostReply): void => {
+    if (reply.kind === 'error') throw new Error(reply.message)
+  }
+
+  const assertReplyOrder = (reply: VmHostReply, seq: number): void => {
+    if (reply.seq !== seq) throw new Error(OUT_OF_ORDER_MESSAGE)
+  }
+
+  const checkReply = (hostPort: MessagePort, seq: number): VmHostReply => {
+    const reply = requireReply(hostPort)
+    assertReplyKind(reply)
+    assertReplyOrder(reply, seq)
+    return reply
   }
 
   const request = (payload: VmHostRequest): VmHostReply => {
     ensureHost()
-    const activePort = port
-    const sharedFlags = flags
-    if (activePort === undefined || sharedFlags === undefined) {
-      throw new Error('Vitest transform host has no message channel')
-    }
-    while (receiveMessageOnPort(activePort) !== undefined) {}
+    const activePort = requirePort(port)
+    const sharedFlags = requireFlags(flags)
+    drainPort(activePort)
     Atomics.store(sharedFlags, 0, 0)
     nextSeq += 1
     const seq = nextSeq
     activePort.postMessage({ ...payload, seq })
-    waitForSignal()
-    const reply = receiveMessageOnPort(activePort)?.message as VmHostReply | undefined
-    if (reply === undefined) throw new Error('Vitest transform host produced no reply')
-    if (reply.kind === 'error') throw new Error(reply.message)
-    if (reply.seq !== seq) throw new Error('Vitest transform host replied out of order')
-    return reply
+    awaitSignal(sharedFlags, () => exited)
+    return checkReply(activePort, seq)
   }
 
+  const projectConfigByName = (name: string): VmProjectConfig | undefined =>
+    configOf().projects.find((candidate) => candidate.name === name)
+
+  const recordProjectFilesOf = (files: ReadonlyArray<string>, config: VmProjectConfig): void => {
+    for (const file of files) projectFilesByPath.set(file, config)
+  }
+
+  const recordProject = (project: HostProjectFiles): void => {
+    const config = projectConfigByName(project.name)
+    if (config !== undefined) recordProjectFilesOf(project.files, config)
+  }
+
+  const forEachProject = (projects: ReadonlyArray<HostProjectFiles>): void => {
+    for (const project of projects) recordProject(project)
+  }
+
+  const recordProjects = (reply: VmHostReply): void => {
+    if (reply.kind === 'projects') forEachProject(reply.projects)
+  }
+
+  const projectFilesNeeded = (): boolean => hostConfig !== undefined && !projectFilesResolved
+
   const resolveProjectFiles = (): void => {
-    if (hostConfig === undefined || projectFilesResolved) return
+    if (!projectFilesNeeded()) return
     projectFilesResolved = true
-    const reply = request({ kind: 'projectFiles', seq: 0 })
-    if (reply.kind !== 'projects') return
-    for (const project of reply.projects) {
-      const config = configOf().projects.find((candidate) => candidate.name === project.name)
-      if (config === undefined) continue
-      for (const file of project.files) {
-        projectFilesByPath.set(file, config)
-      }
+    recordProjects(request({ kind: 'projectFiles', seq: 0 }))
+  }
+
+  const projectFilesEntryOf = (testFile: string): VmProjectConfig | undefined => projectFilesByPath.get(testFile)
+
+  const matchingProjectOf = (
+    projects: ReadonlyArray<VmProjectConfig>,
+    testFile: string,
+  ): VmProjectConfig | undefined => projects.find((project) => matchesFile(project, testFile))
+
+  const firstProjectOr = (projects: ReadonlyArray<VmProjectConfig>): VmProjectConfig =>
+    projects[0] ?? defaultProjectConfig(sandboxRoot)
+
+  const projectFallbackOf = (
+    projects: ReadonlyArray<VmProjectConfig>,
+    testFile: string,
+  ): VmProjectConfig => matchingProjectOf(projects, testFile) ?? firstProjectOr(projects)
+
+  const baseProjectFor = (testFile: string): VmProjectConfig => {
+    resolveProjectFiles()
+    const projects = configOf().projects
+    return projectFilesEntryOf(testFile) ?? projectFallbackOf(projects, testFile)
+  }
+
+  const transformableId = (cleanId: string): boolean => cleanId.startsWith(sandboxRoot) && configFile !== undefined
+
+  const transformKeyOf = (cleanId: string, code: string): string => `${cleanId}#${digestHashOf(code)}`
+
+  const transformResultOf = (code: string, id: string): VmTransformResult | undefined => {
+    try {
+      return transformCodeOf(request({ kind: 'transform', code, moduleId: id, seq: 0 }))
+    } catch {
+      return undefined
     }
   }
+
+  const loadFileOf = (cleanId: string): VmTransformResult | undefined => {
+    try {
+      return transformCodeOf(request({ kind: 'transformRequest', moduleId: cleanId, seq: 0 }))
+    } catch (error) {
+      throw new Error(`Vitest transform host failed for '${cleanId}'`, { cause: error })
+    }
+  }
+
+  const snapshotPathFromHost = (testPath: string): string | undefined => {
+    try {
+      return snapshotPathOf(request({ kind: 'snapshotPath', testPath, seq: 0 }))
+    } catch {
+      return undefined
+    }
+  }
+
+  const snapshotPathOrDefault = (testPath: string): string =>
+    snapshotPathFromHost(testPath) ?? defaultSnapshotPath(testPath)
 
   const runtime: VmVitestRuntime = {
     get config(): VmVitestConfig {
       return configOf()
     },
     projectFor: (testFile: string): VmProjectConfig =>
-      cached(projectForCache, testFile, () => {
-        resolveProjectFiles()
-        const projects = configOf().projects
-        const base = projectFilesByPath.get(testFile) ?? projects.find((project) => matchesFile(project, testFile)) ??
-          projects[0] ?? defaultProjectConfig(sandboxRoot)
-        const docblock = docblockOf(testFile)
-        if (docblock.environment === undefined && docblock.environmentOptions === undefined) return base
-        return {
-          ...base,
-          environment: docblock.environment ?? base.environment,
-          environmentOptions: { ...base.environmentOptions, ...docblock.environmentOptions },
-        }
-      }),
+      cached(projectForCache, testFile, () => withDocblockOverride(baseProjectFor(testFile), testFile)),
     transformSync: (code: string, id: string): VmTransformResult | undefined => {
       const cleanId = cleanIdOf(id)
-      if (!cleanId.startsWith(sandboxRoot) || configFile === undefined) return undefined
-      const hash = digestHashOf(code)
-      return cached(transformCache, `${cleanId}#${hash}`, () => {
-        try {
-          const reply = request({ kind: 'transform', code, moduleId: id, seq: 0 })
-          return reply.kind === 'transform' && typeof reply.code === 'string' ? { code: reply.code } : undefined
-        } catch {
-          return undefined
-        }
-      })
+      if (!transformableId(cleanId)) return undefined
+      return cached(transformCache, transformKeyOf(cleanId, code), () => transformResultOf(code, id))
     },
     loadFileSync: (id: string): VmTransformResult | undefined => {
       const cleanId = cleanIdOf(id)
       if (!cleanId.startsWith(sandboxRoot)) return undefined
-      try {
-        const reply = request({ kind: 'transformRequest', moduleId: cleanId, seq: 0 })
-        if (reply.kind === 'transform' && typeof reply.code === 'string') return { code: reply.code }
-      } catch (error) {
-        throw new Error(`Vitest transform host failed for '${cleanId}'`, { cause: error })
-      }
-      return undefined
+      return loadFileOf(cleanId)
     },
     resolveIdSync: (specifier: string, importer: string): string | undefined => {
       try {
-        const reply = request({ kind: 'resolveId', specifier, importer, seq: 0 })
-        return reply.kind === 'resolveId' ? reply.resolved : undefined
+        return resolvedIdOf(request({ kind: 'resolveId', specifier, importer, seq: 0 }))
       } catch {
         return undefined
       }
     },
-    resolveSnapshotPathSync: (testPath: string): string => {
-      if (state === 'ready') {
-        try {
-          const reply = request({ kind: 'snapshotPath', testPath, seq: 0 })
-          if (reply.kind === 'snapshotPath') return reply.path
-        } catch {
-          return defaultSnapshotPath(testPath)
-        }
-      }
-      return defaultSnapshotPath(testPath)
-    },
+    resolveSnapshotPathSync: (testPath: string): string =>
+      state !== 'ready' ? defaultSnapshotPath(testPath) : snapshotPathOrDefault(testPath),
     close: (): Promise<void> => {
       const activeWorker = worker
       if (activeWorker === undefined) return Promise.resolve()
@@ -294,8 +478,7 @@ export const createVmVitestRuntime = (options: VmVitestBridgeOptions): VmVitestH
     hasTransformPlugins: hostHasTransformPlugins,
     listTestFiles: (): Promise<ReadonlyArray<string>> => {
       if (hostConfig === undefined) return Promise.resolve(inThreadTestFiles(sandboxRoot))
-      const reply = request({ kind: 'listTestFiles', seq: 0 })
-      return Promise.resolve(reply.kind === 'files' ? [...reply.files] : [])
+      return Promise.resolve(filesOf(request({ kind: 'listTestFiles', seq: 0 })))
     },
     close: runtime.close,
   }

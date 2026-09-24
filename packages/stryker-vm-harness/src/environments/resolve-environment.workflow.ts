@@ -58,12 +58,31 @@ export const EnvironmentSpecSchema = S.Union([
   PackageEnvironment,
 ])
 
-const isAbsoluteLike = (name: string): boolean => name.startsWith('/') || /^[A-Za-z]:[/\\]/.test(name)
+const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:[/\\]/
 
-const joinModulePath = (root: string, name: string): string => (isAbsoluteLike(name) ? name : `${root}/${name}`)
+const isAbsoluteLike = (name: string): boolean =>
+  Match.value(name.startsWith('/')).pipe(
+    Match.when(true, () => true),
+    Match.when(false, () => WINDOWS_ABSOLUTE_PATH.test(name)),
+    Match.exhaustive,
+  )
+
+const isPathSpec = (name: string): boolean =>
+  Match.value(isAbsoluteLike(name)).pipe(
+    Match.when(true, () => true),
+    Match.when(false, () => name.startsWith('.')),
+    Match.exhaustive,
+  )
+
+const joinModulePath = (root: string, name: string): string =>
+  Match.value(isAbsoluteLike(name)).pipe(
+    Match.when(true, () => name),
+    Match.when(false, () => `${root}/${name}`),
+    Match.exhaustive,
+  )
 
 const pathOrPackageSpec = (name: string, root: string): EnvironmentSpec =>
-  Match.value(isAbsoluteLike(name) || name.startsWith('.')).pipe(
+  Match.value(isPathSpec(name)).pipe(
     Match.when(true, () => FileEnvironment.make({ name, path: joinModulePath(root, name) })),
     Match.when(
       false,
@@ -72,14 +91,18 @@ const pathOrPackageSpec = (name: string, root: string): EnvironmentSpec =>
     Match.exhaustive,
   )
 
-const builtinOrOtherSpec = (name: string, root: string): EnvironmentSpec => {
-  const dependency = isBuiltinEnvironmentName(name) ? BUILTIN_ENVIRONMENT_DEPENDENCIES[name] : undefined
-  return Match.value(dependency === undefined).pipe(
-    Match.when(true, () => pathOrPackageSpec(name, root)),
-    Match.when(false, () => BuiltinEnvironment.make({ name, dependency: dependency ?? '' })),
+const builtinDependencyOf = (name: string): string | undefined =>
+  Match.value(isBuiltinEnvironmentName(name)).pipe(
+    Match.when(true, () => BUILTIN_ENVIRONMENT_DEPENDENCIES[name]),
+    Match.when(false, () => undefined),
     Match.exhaustive,
   )
-}
+
+const builtinOrOtherSpec = (name: string, root: string): EnvironmentSpec =>
+  Match.value(builtinDependencyOf(name)).pipe(
+    Match.when(Match.undefined, () => pathOrPackageSpec(name, root)),
+    Match.orElse((dependency) => BuiltinEnvironment.make({ name, dependency })),
+  )
 
 const specOf = (name: string, root: string): EnvironmentSpec =>
   Match.value(name === 'node').pipe(

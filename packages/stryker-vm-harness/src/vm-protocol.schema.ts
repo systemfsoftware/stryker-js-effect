@@ -18,6 +18,8 @@ export const VmSessionOptionsSchema = S.Struct({
 
 export type VmSessionOptions = typeof VmSessionOptionsSchema.Type
 
+export const isVmSessionOptions = S.is(VmSessionOptionsSchema)
+
 export const VmRunKindSchema = S.Literals(['dry', 'mutant'])
 
 export type VmRunKind = typeof VmRunKindSchema.Type

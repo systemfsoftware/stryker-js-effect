@@ -1,4 +1,4 @@
-import * as Match from 'effect/Match'
+import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
 
 import { STATE_KEY } from './harness-sources.handle.js'
@@ -6,6 +6,7 @@ import type {
   AroundKind,
   AroundRegistration,
   AroundSets,
+  BenchFactoryLike,
   BenchOptionsInput,
   BenchRegistrationLike,
   HarnessTestContext,
@@ -25,6 +26,8 @@ import type {
   TagDeclaration,
   TagPolicy,
   TestContext,
+  TestMode,
+  TestRegistration,
   TestRegistry,
   VmExpectState,
 } from './registry.schema.js'
@@ -57,8 +60,9 @@ export const pendingErrorOf = (note: string | undefined): Error => {
   return error
 }
 
-export const isPendingError = <A = unknown>(cause: A): boolean =>
-  typeof cause === 'object' && cause !== null && PENDING_TAG in cause
+const isObjectLike = <A = unknown>(value: A): value is A & object => typeof value === 'object' && value !== null
+
+export const isPendingError = <A = unknown>(cause: A): boolean => isObjectLike(cause) && PENDING_TAG in cause
 
 const controllers = new WeakMap<object, AbortController>()
 
@@ -72,6 +76,129 @@ export const controllerOf = (context: object): AbortController => {
   return created
 }
 
+type ExpectFactory = NonNullable<VmExpectState['expect']>
+
+const isVmExpectState = (value: unknown): value is VmExpectState =>
+  typeof value === 'object' ? value !== null : typeof value === 'function'
+
+const asVmExpectState = <A = unknown>(value: A): VmExpectState | undefined => isVmExpectState(value) ? value : undefined
+
+const vmExpectStateOf = (): VmExpectState | undefined => asVmExpectState(Reflect.get(globalThis, STATE_KEY))
+
+const expectFactoryIn = (state: VmExpectState | undefined): VmExpectState['expect'] => state?.expect
+
+const benchFactoryIn = (state: VmExpectState | undefined): BenchFactoryLike | undefined => state?.bench
+
+const missingExpect = (): never => {
+  throw new Error('context.expect is unavailable outside a running vm session')
+}
+
+const missingBench = (): never => {
+  throw new Error('context.bench is unavailable outside a running vm session')
+}
+
+const requireExpectFactory = (): ExpectFactory => {
+  const factory = expectFactoryIn(vmExpectStateOf())
+  return typeof factory === 'function' ? factory : missingExpect()
+}
+
+const requireBenchFactory = (): BenchFactoryLike => {
+  const factory = benchFactoryIn(vmExpectStateOf())
+  return typeof factory === 'function' ? factory : missingBench()
+}
+
+const benchWithFunction = (
+  state: BenchFactoryLike,
+  name: string | Function,
+  fn: (...args: ReadonlyArray<never>) => void | Promise<void>,
+  timeout: (() => void | Promise<void>) | undefined,
+): BenchRegistrationLike<string> => timeout === undefined ? state(name, fn) : state(name, {}, fn)
+
+const benchWithOptions = (
+  state: BenchFactoryLike,
+  name: string | Function,
+  options: Record<string, string | number | boolean | null | undefined>,
+  fn: (() => void | Promise<void>) | undefined,
+): BenchRegistrationLike<string> => state(name, options, fn ?? (() => undefined))
+
+const joinedName = (prefix: string | undefined, name: string): string =>
+  [prefix, name].filter((part) => part !== undefined).join(' > ')
+
+const suiteViewOf = (suites: Map<number, RegisteredSuite>, parentIds: readonly number[]): RunnerSuite | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(Option.fromNullishOr(parentIds.at(-1)), (id) => Option.fromNullishOr(suites.get(id)?.view)),
+  )
+
+const suiteNamesOf = (
+  parentSuite: RunnerSuite | undefined,
+  name: string,
+): { readonly fullName: string; readonly fullTestName: string } =>
+  parentSuite === undefined
+    ? { fullName: name, fullTestName: name }
+    : {
+      fullName: joinedName(parentSuite.fullName, name),
+      fullTestName: joinedName(parentSuite.fullTestName, name),
+    }
+
+const testFullNameOf = (suiteView: RunnerSuite | undefined, name: string): string =>
+  joinedName(suiteView?.fullTestName, name)
+
+const attachSuiteView = (file: RunnerFile, parentSuite: RunnerSuite | undefined, view: RunnerSuite): void => {
+  if (parentSuite === undefined) {
+    file.tasks.push(view)
+  }
+}
+
+const attachTestTask = (suiteView: RunnerSuite | undefined, fileView: RunnerFile, task: RunnerTest): void => {
+  if (suiteView !== undefined) {
+    suiteView.tasks.push(task)
+  }
+  fileView.tasks.push(task)
+}
+
+const draftFileViewOf = (file: string): Omit<RunnerFile, 'file'> => ({
+  type: 'suite',
+  id: `file:${file}`,
+  name: file,
+  fullName: file,
+  filepath: file,
+  mode: 'run',
+  tasks: [],
+  result: undefined,
+})
+
+const missingSelfFile = (): never => {
+  throw new Error('a runner file view must reference its own file')
+}
+
+const isSelfFileView = (view: Omit<RunnerFile, 'file'>): view is RunnerFile => 'file' in view
+
+const selfFileViewOf = (draft: Omit<RunnerFile, 'file'>): RunnerFile => {
+  Reflect.set(draft, 'file', draft)
+  return isSelfFileView(draft) ? draft : missingSelfFile()
+}
+
+const EMPTY_TEST_REGISTRATION: TestRegistration = {
+  timeout: undefined,
+  retry: undefined,
+  repeats: undefined,
+  concurrent: false,
+  each: false,
+  tags: undefined,
+  fixtures: undefined,
+}
+
+interface RunnerTestDraft extends Omit<RunnerTest, 'context'> {
+  context?: HarnessTestContext | undefined
+}
+
+function assertCompleteTask(_draft: RunnerTestDraft): asserts _draft is RunnerTest {}
+
+const completeTaskOf = (draft: RunnerTestDraft): RunnerTest => {
+  assertCompleteTask(draft)
+  return draft
+}
+
 export const createRegistry = (): TestRegistry => {
   const suites = new Map<number, RegisteredSuite>()
   const tests: RegisteredTest[] = []
@@ -80,9 +207,9 @@ export const createRegistry = (): TestRegistry => {
   const rootAround = new Map<string, AroundSets>()
   const suiteAround = new Map<number, AroundSets>()
   const fileViews = new Map<string, RunnerFile>()
-  const frames = { current: [] as readonly number[] }
+  const frames: { current: readonly number[] } = { current: [] }
   const files = { current: '' }
-  const provided = { current: {} as Record<string, object | string | number | boolean | null | undefined> }
+  const provided: { current: Record<string, object | string | number | boolean | null | undefined> } = { current: {} }
   let currentTest: HarnessTestContext | undefined
   let seq = 0
   let suiteSeq = 0
@@ -92,20 +219,9 @@ export const createRegistry = (): TestRegistry => {
     if (existing !== undefined) {
       return existing
     }
-    const created: RunnerFile = {
-      type: 'suite',
-      id: `file:${file}`,
-      name: file,
-      fullName: file,
-      filepath: file,
-      mode: 'run',
-      tasks: [],
-      result: undefined,
-      file: undefined as never,
-    }
-    created.file = created
-    fileViews.set(file, created)
-    return created
+    const view = selfFileViewOf(draftFileViewOf(file))
+    fileViews.set(file, view)
+    return view
   }
 
   return {
@@ -146,33 +262,29 @@ export const createRegistry = (): TestRegistry => {
     },
     registerSuite(name, parentIds, mode, registration: SuiteRegistration = {}) {
       suiteSeq += 1
-      const parent = parentIds.at(-1)
-      const parentSuite = parent === undefined ? undefined : suites.get(parent)?.view
+      const parentSuite = suiteViewOf(suites, parentIds)
       const file = fileViewFor(files.current)
-      const fullName = [parentSuite?.fullName, name].filter((part) => part !== undefined).join(' > ')
-      const fullTestName = [parentSuite?.fullTestName, name].filter((part) => part !== undefined).join(' > ')
+      const names = suiteNamesOf(parentSuite, name)
       const view: RunnerSuite = {
         type: 'suite',
         id: `suite:${suiteSeq}`,
         name,
-        fullName,
-        fullTestName,
+        fullName: names.fullName,
+        fullTestName: names.fullTestName,
         suite: parentSuite,
         file,
         mode,
         tasks: [],
         result: undefined,
       }
-      if (parentSuite === undefined) {
-        file.tasks.push(view)
-      }
+      attachSuiteView(file, parentSuite, view)
       const suite: RegisteredSuite = {
         id: suiteSeq,
         order: orderSeq += 1,
         name,
         parentIds,
         mode,
-        concurrent: registration.concurrent ?? false,
+        concurrent: registration.concurrent === true,
         shuffle: registration.shuffle,
         timeout: registration.timeout,
         retry: registration.retry,
@@ -189,10 +301,10 @@ export const createRegistry = (): TestRegistry => {
       seq += 1
       const file = files.current
       const fileView = fileViewFor(file)
-      const innermost = suiteIds.at(-1)
-      const suiteView = innermost === undefined ? undefined : suites.get(innermost)?.view
-      const fullName = [suiteView?.fullTestName, name].filter((part) => part !== undefined).join(' > ')
-      const task: RunnerTest = {
+      const suiteView = suiteViewOf(suites, suiteIds)
+      const options = registration ?? EMPTY_TEST_REGISTRATION
+      const fullName = testFullNameOf(suiteView, name)
+      const task = completeTaskOf({
         type: 'test',
         id: `${file}#${fullName}`,
         name,
@@ -201,27 +313,24 @@ export const createRegistry = (): TestRegistry => {
         suite: suiteView,
         file: fileView,
         mode,
-        each: registration?.each ?? false,
+        each: options.each === true,
         fails: inverted,
-        concurrent: registration?.concurrent ?? false,
-        shuffle: registration?.shuffle,
-        timeout: registration?.timeout,
-        retry: registration?.retry,
-        repeats: registration?.repeats,
-        tags: registration?.tags,
+        concurrent: options.concurrent === true,
+        shuffle: options.shuffle,
+        timeout: options.timeout,
+        retry: options.retry,
+        repeats: options.repeats,
+        tags: options.tags,
         result: undefined,
-        context: undefined as never,
+        context: undefined,
         onFailed: undefined,
         onFinished: undefined,
         annotations: [],
         meta: {},
         promises: undefined,
-      }
+      })
       task.context = createTestContext(task)
-      if (suiteView !== undefined) {
-        suiteView.tasks.push(task)
-      }
-      fileView.tasks.push(task)
+      attachTestTask(suiteView, fileView, task)
       const registered: RegisteredTest = {
         type: 'test',
         seq,
@@ -232,14 +341,14 @@ export const createRegistry = (): TestRegistry => {
         mode,
         inverted,
         fn,
-        timeout: registration?.timeout,
-        retry: registration?.retry,
-        repeats: registration?.repeats,
-        concurrent: registration?.concurrent ?? false,
-        each: registration?.each ?? false,
-        tags: registration?.tags,
-        fixtures: registration?.fixtures,
-        fixtureNames: registration?.fixtureNames,
+        timeout: options.timeout,
+        retry: options.retry,
+        repeats: options.repeats,
+        concurrent: options.concurrent === true,
+        each: options.each === true,
+        tags: options.tags,
+        fixtures: options.fixtures,
+        fixtureNames: options.fixtureNames,
         task,
       }
       tests.push(registered)
@@ -247,44 +356,43 @@ export const createRegistry = (): TestRegistry => {
     },
   }
 }
+
 export const createTestContext = (task: RunnerTest): TestContext => {
   const callable = (): never => {
     throw new Error('done() callback is deprecated, use promise instead')
+  }
+  const markSkipped = (): void => {
+    const result = task.result ?? runnerResultOf()
+    result.pending = true
+    task.result = result
+  }
+  const skipNoteOf = (condition: boolean | string | undefined, note: string | undefined): string | undefined =>
+    typeof condition === 'string' ? condition : note
+  const skippedErrorOf = (condition: boolean | string | undefined, note: string | undefined): Error => {
+    markSkipped()
+    return pendingErrorOf(skipNoteOf(condition, note))
   }
   return Object.assign(callable, {
     get signal(): AbortSignal {
       return controllerOf(callable).signal
     },
     task,
-    expect: <T = unknown>(value: T, message?: string): object => {
-      const state = (globalThis as Record<symbol, VmExpectState | undefined>)[STATE_KEY]?.expect
-      if (state === undefined || typeof state !== 'function') {
-        throw new Error('context.expect is unavailable outside a running vm session')
-      }
-      return state(value, message)
-    },
+    expect: <T = unknown>(value: T, message?: string): object => requireExpectFactory()(value, message),
     bench: (
       name: string | Function,
       fnOrOptions: BenchOptionsInput,
       fn?: () => void | Promise<void>,
     ): BenchRegistrationLike<string> => {
-      const state = (globalThis as Record<symbol, VmExpectState | undefined>)[STATE_KEY]?.bench
-      if (state === undefined || typeof state !== 'function') {
-        throw new Error('context.bench is unavailable outside a running vm session')
-      }
-      if (typeof fnOrOptions === 'function') {
-        return fn === undefined ? state(name, fnOrOptions) : state(name, {}, fnOrOptions)
-      }
-      return state(name, fnOrOptions, fn ?? (() => undefined))
+      const state = requireBenchFactory()
+      return typeof fnOrOptions === 'function'
+        ? benchWithFunction(state, name, fnOrOptions, fn)
+        : benchWithOptions(state, name, fnOrOptions, fn)
     },
     skip: (condition?: boolean | string, note?: string): void => {
       if (condition === false) {
         return
       }
-      const result = task.result ?? runnerResultOf()
-      result.pending = true
-      task.result = result
-      throw pendingErrorOf(typeof condition === 'string' ? condition : note)
+      throw skippedErrorOf(condition, note)
     },
     onTestFailed: (handler: HarnessTestFunction, timeout?: number): void => {
       task.onFailed = [...(task.onFailed ?? []), { fn: handler, timeout }]
@@ -299,20 +407,35 @@ export const createTestContext = (task: RunnerTest): TestContext => {
   })
 }
 
-export const tagsForChain = (
-  registry: TestRegistry,
-  chain: ReadonlyArray<number>,
+const orEmpty = <A>(values: ReadonlyArray<A> | undefined): ReadonlyArray<A> => values ?? []
+
+const suiteTagsOf = (registry: TestRegistry, chain: ReadonlyArray<number>): ReadonlyArray<string> =>
+  chain.flatMap((id) => orEmpty(registry.suites.get(id)?.tags))
+
+const mergedTagsOf = (
+  inherited: ReadonlyArray<string>,
   own: ReadonlyArray<string> | undefined,
 ): ReadonlyArray<string> | undefined => {
-  const inherited = chain.flatMap((id) => registry.suites.get(id)?.tags ?? [])
-  const merged = [...inherited, ...(own ?? [])]
+  const merged = [...inherited, ...orEmpty(own)]
   return merged.length === 0 ? undefined : merged
 }
 
-export const undeclaredTagMessage = (
-  tag: string,
-  declared: ReadonlyArray<TagDeclaration>,
-): string => {
+export const tagsForChain = dual<
+  (
+    chain: ReadonlyArray<number>,
+    own: ReadonlyArray<string> | undefined,
+  ) => (registry: TestRegistry) => ReadonlyArray<string> | undefined,
+  (
+    registry: TestRegistry,
+    chain: ReadonlyArray<number>,
+    own: ReadonlyArray<string> | undefined,
+  ) => ReadonlyArray<string> | undefined
+>(3, (registry, chain, own) => mergedTagsOf(suiteTagsOf(registry, chain), own))
+
+export const undeclaredTagMessage = dual<
+  (declared: ReadonlyArray<TagDeclaration>) => (tag: string) => string,
+  (tag: string, declared: ReadonlyArray<TagDeclaration>) => string
+>(2, (tag, declared) => {
   if (declared.length === 0) {
     return `The Vitest config doesn't define any "tags", cannot apply "${tag}" tag for this test. See: https://vitest.dev/guide/test-tags`
   }
@@ -324,45 +447,78 @@ export const undeclaredTagMessage = (
     )
     .join('\n')
   return `The tag "${tag}" is not defined in the configuration. Available tags are:\n${bullets}`
-}
-export const validateTagsForFile = (
-  registry: TestRegistry,
-  file: string,
-  policy: TagPolicy,
+})
+
+const declaredTagsOf = (policy: TagPolicy): ReadonlyArray<TagDeclaration> => policy.tags ?? []
+
+const testsForFile = (registry: TestRegistry, file: string): ReadonlyArray<RegisteredTest> =>
+  registry.tests.filter((test) => test.file === file)
+
+const suitesForFile = (registry: TestRegistry, file: string): ReadonlyArray<RegisteredSuite> =>
+  [...registry.suites.values()].filter((suite) => suite.view.file.filepath === file)
+
+const tagListsForFile = (registry: TestRegistry, file: string): ReadonlyArray<ReadonlyArray<string> | undefined> => [
+  ...testsForFile(registry, file).map((test) => test.tags),
+  ...suitesForFile(registry, file).map((suite) => suite.tags),
+]
+
+const firstUndeclaredTag = (
+  tags: ReadonlyArray<string> | undefined,
+  declaredNames: ReadonlySet<string>,
+): string | undefined => tags?.find((tag) => !declaredNames.has(tag))
+
+const checkTagsOf = (
+  tags: ReadonlyArray<string> | undefined,
+  declaredNames: ReadonlySet<string>,
+  declared: ReadonlyArray<TagDeclaration>,
 ): void => {
-  if (policy.strictTags === false) {
-    return
-  }
-  const declared = policy.tags ?? []
-  const declaredNames = new Set(declared.map((definition) => definition.name))
-  const check = (tags: ReadonlyArray<string> | undefined): void => {
-    for (const tag of tags ?? []) {
-      if (!declaredNames.has(tag)) {
-        throw new Error(undeclaredTagMessage(tag, declared))
-      }
-    }
-  }
-  try {
-    for (const test of registry.tests) {
-      if (test.file === file) {
-        check(test.tags)
-      }
-    }
-    for (const suite of registry.suites.values()) {
-      if (suite.view.file.filepath === file) {
-        check(suite.tags)
-      }
-    }
-  } catch (error) {
-    const message = error instanceof Error
-      ? error.message
-      : new Error('tag validation failed', { cause: error }).message
-    registry.collectFailures.set(file, message)
+  const offending = firstUndeclaredTag(tags, declaredNames)
+  if (offending !== undefined) {
+    throw new Error(undeclaredTagMessage(offending, declared))
   }
 }
 
-export const fullNameOf = (registry: TestRegistry, test: RegisteredTest): string =>
-  [...test.suiteIds.map((id) => registry.suites.get(id)?.name ?? ''), test.name].join(' > ')
+const validateTagLists = (
+  tagLists: ReadonlyArray<ReadonlyArray<string> | undefined>,
+  declaredNames: ReadonlySet<string>,
+  declared: ReadonlyArray<TagDeclaration>,
+): void => {
+  for (const tags of tagLists) {
+    checkTagsOf(tags, declaredNames, declared)
+  }
+}
+
+const failureMessageOf = <A>(cause: A): string =>
+  cause instanceof Error ? cause.message : new Error('tag validation failed', { cause }).message
+
+const validateDeclaredTags = (registry: TestRegistry, file: string, policy: TagPolicy): void => {
+  const declared = declaredTagsOf(policy)
+  const declaredNames = new Set(declared.map((definition) => definition.name))
+  try {
+    validateTagLists(tagListsForFile(registry, file), declaredNames, declared)
+  } catch (error) {
+    registry.collectFailures.set(file, failureMessageOf(error))
+  }
+}
+
+export const validateTagsForFile = dual<
+  (file: string, policy: TagPolicy) => (registry: TestRegistry) => void,
+  (registry: TestRegistry, file: string, policy: TagPolicy) => void
+>(3, (registry, file, policy) => {
+  if (policy.strictTags === false) {
+    return
+  }
+  validateDeclaredTags(registry, file, policy)
+})
+
+const textOrEmpty = (value: string | undefined): string => value ?? ''
+
+const suiteNameAt = (registry: TestRegistry, id: number): string => textOrEmpty(registry.suites.get(id)?.name)
+
+export const fullNameOf = dual<
+  (test: RegisteredTest) => (registry: TestRegistry) => string,
+  (registry: TestRegistry, test: RegisteredTest) => string
+>(2, (registry, test) => [...test.suiteIds.map((id) => suiteNameAt(registry, id)), test.name].join(' > '))
 
 const containsOnlyInFile = (registry: TestRegistry, file: string): boolean =>
   registry.tests.some((test) => test.file === file && test.mode === 'only') ||
@@ -372,89 +528,172 @@ export const ONLY_REFUSAL_MESSAGE =
   '[Vitest] Unexpected .only modifier. Remove it or pass --allowOnly argument to bypass this error'
 
 const isOnlyMarked = (registry: TestRegistry, test: RegisteredTest): boolean =>
-  test.mode === 'only' || test.suiteIds.some((id) => registry.suites.get(id)?.mode === 'only')
+  test.mode === 'only' || test.suiteIds.some((id) => suiteModeOf(registry, id) === 'only')
+
+const suiteModeOf = (registry: TestRegistry, id: number): TestMode | undefined => registry.suites.get(id)?.mode
+
+const isPendingMode = (mode: TestMode | undefined): boolean => mode === 'skip' || mode === 'todo'
+
+const isExplicitlySkipped = (test: RegisteredTest): boolean => isPendingMode(test.mode)
+
+const isSuiteSkipped = (registry: TestRegistry, test: RegisteredTest): boolean =>
+  test.suiteIds.some((id) => isPendingMode(suiteModeOf(registry, id)))
+
+const isModeSkipped = (registry: TestRegistry, test: RegisteredTest): boolean =>
+  isExplicitlySkipped(test) || isSuiteSkipped(registry, test)
+
+const onlySkippedOf = (registry: TestRegistry, test: RegisteredTest, allowOnly: boolean): boolean =>
+  allowOnly ? !isOnlyMarked(registry, test) : true
+
+const skippedWhenOnly = (
+  registry: TestRegistry,
+  test: RegisteredTest,
+  onlyPresent: boolean,
+  allowOnly: boolean,
+): boolean => (onlyPresent ? onlySkippedOf(registry, test, allowOnly) : false)
 
 const isSkipped = (
   registry: TestRegistry,
   test: RegisteredTest,
   onlyPresent: boolean,
   allowOnly: boolean,
-): boolean => {
-  const isExplicitSkip = test.mode === 'skip' || test.mode === 'todo'
-  const isSuiteSkip = test.suiteIds.some((id) => {
-    const mode = registry.suites.get(id)?.mode
-    return mode === 'skip' || mode === 'todo'
-  })
-  if (isExplicitSkip || isSuiteSkip) return true
-  if (!onlyPresent) return false
-  if (!allowOnly) return true
-  return !isOnlyMarked(registry, test)
+): boolean => isModeSkipped(registry, test) || skippedWhenOnly(registry, test, onlyPresent, allowOnly)
+
+const allowOnlyForOf = (options: PlanRunOptions | undefined): PlanRunOptions['allowOnlyFor'] => options?.allowOnlyFor
+
+const allowOnlyForFileOf = (options: PlanRunOptions | undefined, file: string): boolean | undefined =>
+  allowOnlyForOf(options)?.(file)
+
+const allowOnlyDefaultOf = (options: PlanRunOptions | undefined): boolean | undefined => options?.allowOnly
+
+const firstDefinedOf = <A>(first: A | undefined, second: A | undefined): A | undefined => first ?? second
+
+const allowOnlyOf = (options: PlanRunOptions | undefined, file: string): boolean =>
+  firstDefinedOf(allowOnlyForFileOf(options, file), allowOnlyDefaultOf(options)) ?? true
+
+const onlyRefused = (onlyPresent: boolean, allowOnly: boolean): boolean => onlyPresent && !allowOnly
+
+const refusedOnlyOf = (onlyPresent: boolean, allowOnly: boolean, mode: TestMode): boolean =>
+  onlyRefused(onlyPresent, allowOnly) && mode === 'only'
+
+const distinctNameOf = (nameCounts: Map<string, number>, fullName: string): string => {
+  const seen = Option.getOrElse(Option.fromNullishOr(nameCounts.get(fullName)), () => 0)
+  nameCounts.set(fullName, seen + 1)
+  return seen === 0 ? fullName : `${fullName} [${seen}]`
 }
 
-export const planRun = (registry: TestRegistry, options?: PlanRunOptions): ReadonlyArray<PlannedTest> => {
-  const nameCounts = new Map<string, number>()
-  return registry.tests.flatMap((test, index) => {
-    if (registry.collectFailures.has(test.file)) {
-      return []
-    }
-    const onlyPresent = containsOnlyInFile(registry, test.file)
-    const allowOnly = options?.allowOnlyFor?.(test.file) ?? options?.allowOnly ?? true
-    const fullName = fullNameOf(registry, test)
-    const seen = Option.getOrElse(Option.fromNullishOr(nameCounts.get(fullName)), () => 0)
-    nameCounts.set(fullName, seen + 1)
-    const distinctName = Match.value(seen === 0).pipe(
-      Match.when(true, () => fullName),
-      Match.when(false, () => `${fullName} [${seen}]`),
-      Match.exhaustive,
-    )
-    const refused = onlyPresent && !allowOnly && test.mode === 'only'
-    return [{
-      test,
-      fullName: distinctName,
-      chain: test.suiteIds,
-      skipped: refused ? false : isSkipped(registry, test, onlyPresent, allowOnly),
-      refusedOnly: refused,
-      index,
-    }]
-  })
-}
-
-export const suiteHooksFor = (
+const planEntryOf = (
   registry: TestRegistry,
+  options: PlanRunOptions | undefined,
+  nameCounts: Map<string, number>,
+  test: RegisteredTest,
+  index: number,
+): PlannedTest => {
+  const onlyPresent = containsOnlyInFile(registry, test.file)
+  const allowOnly = allowOnlyOf(options, test.file)
+  const refused = refusedOnlyOf(onlyPresent, allowOnly, test.mode)
+  return {
+    test,
+    fullName: distinctNameOf(nameCounts, fullNameOf(registry, test)),
+    chain: test.suiteIds,
+    skipped: refused ? false : isSkipped(registry, test, onlyPresent, allowOnly),
+    refusedOnly: refused,
+    index,
+  }
+}
+
+const planOf = (registry: TestRegistry, options: PlanRunOptions | undefined): ReadonlyArray<PlannedTest> => {
+  const nameCounts = new Map<string, number>()
+  return registry.tests.flatMap((test, index): ReadonlyArray<PlannedTest> =>
+    registry.collectFailures.has(test.file) ? [] : [planEntryOf(registry, options, nameCounts, test, index)]
+  )
+}
+
+const isTestRegistryLike = <A = unknown>(value: A): boolean => isObjectLike(value) && 'registerTest' in value
+
+const isDataFirstPlanRun = (args: IArguments): boolean => isTestRegistryLike(args[0])
+
+export const planRun = dual<
+  (options: PlanRunOptions | undefined) => (registry: TestRegistry) => ReadonlyArray<PlannedTest>,
+  (registry: TestRegistry, options?: PlanRunOptions) => ReadonlyArray<PlannedTest>
+>(isDataFirstPlanRun, planOf)
+
+const hookSetOf = (sets: HookSets | undefined, kind: HookKind): Array<RegisteredHook> | undefined => sets?.[kind]
+
+const hooksAt = (sets: HookSets | undefined, kind: HookKind): ReadonlyArray<RegisteredHook> =>
+  hookSetOf(sets, kind) ?? []
+
+const chainHooksOf = (
+  byId: ReadonlyMap<number, HookSets>,
   kind: HookKind,
   chain: readonly number[],
-): ReadonlyArray<RegisteredHook> => chain.flatMap((id) => registry.suiteHooks.get(id)?.[kind] ?? [])
+): ReadonlyArray<RegisteredHook> => chain.flatMap((id) => hooksAt(byId.get(id), kind))
 
-export const suiteAroundFor = (
-  registry: TestRegistry,
+const aroundSetOf = (sets: AroundSets | undefined, kind: AroundKind): Array<AroundRegistration> | undefined =>
+  sets?.[kind]
+
+const aroundsAt = (sets: AroundSets | undefined, kind: AroundKind): ReadonlyArray<AroundRegistration> =>
+  aroundSetOf(sets, kind) ?? []
+
+const chainAroundsOf = (
+  byId: ReadonlyMap<number, AroundSets>,
   kind: AroundKind,
   chain: readonly number[],
-): ReadonlyArray<AroundRegistration> => chain.flatMap((id) => registry.suiteAround.get(id)?.[kind] ?? [])
+): ReadonlyArray<AroundRegistration> => chain.flatMap((id) => aroundsAt(byId.get(id), kind))
 
-export const hooksFor = (
-  registry: TestRegistry,
-  kind: HookKind,
-  chain: readonly number[],
-  file: string,
-): ReadonlyArray<RegisteredHook> => [
-  ...(registry.rootHooks.get(file)?.[kind] ?? []),
+export const suiteHooksFor = dual<
+  (kind: HookKind, chain: readonly number[]) => (registry: TestRegistry) => ReadonlyArray<RegisteredHook>,
+  (registry: TestRegistry, kind: HookKind, chain: readonly number[]) => ReadonlyArray<RegisteredHook>
+>(3, (registry, kind, chain) => chainHooksOf(registry.suiteHooks, kind, chain))
+
+export const suiteAroundFor = dual<
+  (kind: AroundKind, chain: readonly number[]) => (registry: TestRegistry) => ReadonlyArray<AroundRegistration>,
+  (registry: TestRegistry, kind: AroundKind, chain: readonly number[]) => ReadonlyArray<AroundRegistration>
+>(3, (registry, kind, chain) => chainAroundsOf(registry.suiteAround, kind, chain))
+
+export const hooksFor = dual<
+  (
+    kind: HookKind,
+    chain: readonly number[],
+    file: string,
+  ) => (registry: TestRegistry) => ReadonlyArray<RegisteredHook>,
+  (
+    registry: TestRegistry,
+    kind: HookKind,
+    chain: readonly number[],
+    file: string,
+  ) => ReadonlyArray<RegisteredHook>
+>(4, (registry, kind, chain, file) => [
+  ...hooksAt(registry.rootHooks.get(file), kind),
   ...suiteHooksFor(registry, kind, chain),
-]
+])
 
-export const aroundEachHooksFor = (
-  registry: TestRegistry,
-  chain: readonly number[],
-  file: string,
-): ReadonlyArray<AroundRegistration> => [
+export const aroundEachHooksFor = dual<
+  (
+    chain: readonly number[],
+    file: string,
+  ) => (registry: TestRegistry) => ReadonlyArray<AroundRegistration>,
+  (
+    registry: TestRegistry,
+    chain: readonly number[],
+    file: string,
+  ) => ReadonlyArray<AroundRegistration>
+>(3, (registry, chain, file) => [
   ...suiteAroundFor(registry, 'aroundEach', chain),
-  ...(registry.rootAround.get(file)?.aroundEach ?? []),
-]
+  ...aroundsAt(registry.rootAround.get(file), 'aroundEach'),
+])
 
-export const aroundAllHooksFor = (
-  registry: TestRegistry,
-  chain: readonly number[],
-  file: string,
-): ReadonlyArray<AroundRegistration> => [
+export const aroundAllHooksFor = dual<
+  (
+    chain: readonly number[],
+    file: string,
+  ) => (registry: TestRegistry) => ReadonlyArray<AroundRegistration>,
+  (
+    registry: TestRegistry,
+    chain: readonly number[],
+    file: string,
+  ) => ReadonlyArray<AroundRegistration>
+>(3, (registry, chain, file) => [
   ...suiteAroundFor(registry, 'aroundAll', chain),
-  ...(registry.rootAround.get(file)?.aroundAll ?? []),
-]
+  ...aroundsAt(registry.rootAround.get(file), 'aroundAll'),
+])

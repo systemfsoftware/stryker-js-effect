@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module'
 
 import { Drain, Registry } from '@systemfsoftware/stryker-vm-harness'
+import { dual } from 'effect/Function'
 
 type EachValue = null | undefined | string | number | boolean | bigint | symbol | object
 
@@ -279,7 +280,10 @@ const planHolds = (rows: ReadonlyArray<PlanRow>): boolean => {
   return rows.every((row) => row.status === planStatusFor(row, onlyPresent))
 }
 
-export const planRelation = (baseline: ReadonlyArray<PlanRow>, followUp: ReadonlyArray<PlanRow>): boolean => {
+export const planRelation = dual<
+  (followUp: ReadonlyArray<PlanRow>) => (baseline: ReadonlyArray<PlanRow>) => boolean,
+  (baseline: ReadonlyArray<PlanRow>, followUp: ReadonlyArray<PlanRow>) => boolean
+>(2, (baseline, followUp) => {
   if (followUp.length !== baseline.length + 2) {
     return false
   }
@@ -293,7 +297,7 @@ export const planRelation = (baseline: ReadonlyArray<PlanRow>, followUp: Readonl
     return false
   }
   return planHolds(baseline) && planHolds(followUp)
-}
+})
 
 export type DrainModeSpec = 'run' | 'skip' | 'todo' | 'fails'
 
@@ -385,7 +389,10 @@ export const drainedRows = (seed: DrainSeedSpec): Promise<ReadonlyArray<DrainRow
   })
 }
 
-export const drainRelation = (baseline: ReadonlyArray<DrainRow>, followUp: ReadonlyArray<DrainRow>): boolean => {
+export const drainRelation = dual<
+  (followUp: ReadonlyArray<DrainRow>) => (baseline: ReadonlyArray<DrainRow>) => boolean,
+  (baseline: ReadonlyArray<DrainRow>, followUp: ReadonlyArray<DrainRow>) => boolean
+>(2, (baseline, followUp) => {
   if (baseline.length !== followUp.length) {
     return false
   }
@@ -420,4 +427,4 @@ export const drainRelation = (baseline: ReadonlyArray<DrainRow>, followUp: Reado
       : source.failureMessage.split(source.fullName).join(expectedFullName)
     return row.failureMessage === expectedMessage
   })
-}
+})

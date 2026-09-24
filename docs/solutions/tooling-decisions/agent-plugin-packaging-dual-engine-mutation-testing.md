@@ -52,15 +52,16 @@ export default StrykerConfig.define(({ isCi }) => ({
 Installed packages take the bare name, resolved from the project under test. A `file://` URL to a local build stays accepted:
 
 ```ts
-plugins: ;
-;['@systemfsoftware/stryker-js-vitest-runner']
+export default StrykerConfig.define({
+  plugins: ['@systemfsoftware/stryker-js-vitest-runner'],
+})
 ```
 
 ### 3. Ignorer Registration Parity
 
 AST ignorer plugins require paired declarations:
 
-1. The plugin module `file:` URL in `plugins`.
+1. The ignorer plugin package's bare name in `plugins` (or a `file://` URL for a local build).
 2. The ignorer's exact string identifier in `ignorers`.
 
 Declaring an ignorer name without the underlying plugin fails silent-green; declaring the plugin without the ignorer name leaves equivalent mutants active.

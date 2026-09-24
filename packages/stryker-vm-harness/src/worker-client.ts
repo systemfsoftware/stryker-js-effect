@@ -1,8 +1,16 @@
 import * as Effect from 'effect/Effect'
-import { createRequire } from 'node:module'
-import { Worker } from 'node:worker_threads'
+import { dual } from 'effect/Function'
 
 import type { VmRunRequest, VmRunResponse, VmSessionOptions, VmWorkerResponse } from './vm-protocol.schema.js'
+import { isVmSessionOptions } from './vm-protocol.schema.js'
+
+const startsWithSessionOptions = (args: IArguments): boolean => isVmSessionOptions(args[0])
+
+const moduleBuiltin = globalThis.process.getBuiltinModule('node:module')
+const workerThreads = globalThis.process.getBuiltinModule('node:worker_threads')
+
+const { createRequire } = moduleBuiltin
+const { Worker } = workerThreads
 
 export interface VmWorkerClient {
   readonly run: (request: VmRunRequest) => Promise<VmRunResponse>
@@ -26,7 +34,17 @@ const keepRejectionObserved = <A = unknown>(promise: Promise<A>): Promise<A> => 
   return promise
 }
 
-export const createVmWorkerClient = (options: VmSessionOptions, hooks: VmWorkerClientHooks = {}): VmWorkerClient => {
+const rejectWaiting = (waiting: Map<number, Waiting>, cause: Error): void => {
+  for (const entry of waiting.values()) {
+    entry.reject(cause)
+  }
+  waiting.clear()
+}
+
+const createVmWorkerClientWithHooks = (
+  options: VmSessionOptions,
+  hooks: VmWorkerClientHooks = {},
+): VmWorkerClient => {
   const worker = new Worker(workerEntryUrl(), {
     workerData: options,
     stdout: true,
@@ -40,10 +58,7 @@ export const createVmWorkerClient = (options: VmSessionOptions, hooks: VmWorkerC
   let nextId = 0
 
   const failAll = (cause: Error): void => {
-    for (const entry of waiting.values()) {
-      entry.reject(cause)
-    }
-    waiting.clear()
+    rejectWaiting(waiting, cause)
     hooks.onExit?.()
   }
 
@@ -83,3 +98,8 @@ export const createVmWorkerClient = (options: VmSessionOptions, hooks: VmWorkerC
 
   return { run, terminate }
 }
+
+export const createVmWorkerClient: {
+  (hooks?: VmWorkerClientHooks): (options: VmSessionOptions) => VmWorkerClient
+  (options: VmSessionOptions, hooks?: VmWorkerClientHooks): VmWorkerClient
+} = dual(startsWithSessionOptions, createVmWorkerClientWithHooks)

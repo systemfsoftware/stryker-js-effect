@@ -1,11 +1,15 @@
-import { createRequire } from 'node:module'
-import { pathToFileURL } from 'node:url'
-
 import * as Effect from 'effect/Effect'
+import { dual } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
 import * as Option from 'effect/Option'
+
 import { guardedExpect, guardedVi } from './assertions.handle.js'
-import { type DrainTestOutcome, type DrainTestRef, executeDrainRegistry } from './drain-executor.cell.js'
+import {
+  type DrainRunOptions,
+  type DrainTestOutcome,
+  type DrainTestRef,
+  executeDrainRegistry,
+} from './drain-executor.cell.js'
 import type { DrainOutcome } from './drain-registry.workflow.js'
 import { makeEffectMethods } from './effect-adapter.handle.js'
 import { ENVIRONMENT_KEYS_BAG_KEY } from './environments/environment-activation.js'
@@ -56,9 +60,26 @@ import type {
   VmSessionOptions,
   VmTestResult,
 } from './vm-protocol.schema.js'
+import { isVmSessionOptions } from './vm-protocol.schema.js'
+
+const startsWithSessionOptions = (args: IArguments): boolean => isVmSessionOptions(args[0])
+
+const moduleBuiltin = globalThis.process.getBuiltinModule('node:module')
+const urlBuiltin = globalThis.process.getBuiltinModule('node:url')
+
+const { createRequire } = moduleBuiltin
+const { pathToFileURL } = urlBuiltin
 
 const ZERO_TESTS_MESSAGE =
   'The "vm" test runner ran zero tests. Set the "testFiles" option so it knows which files to load, or use testRunner "vitest" or "command".'
+
+const MISSING_VITEST_SPECIFIER = "Cannot find package 'vitest"
+
+const MODULE_NOT_FOUND_CODE = 'ERR_MODULE_NOT_FOUND'
+
+const PARSE_ERROR_MARKER = '[PARSE_ERROR]'
+
+type AnyDecoded<A = unknown> = A
 
 interface RunFailure {
   readonly file: string
@@ -66,34 +87,143 @@ interface RunFailure {
   readonly fatal: boolean
 }
 
-const messageOf = <A>(value: A): string | undefined =>
-  typeof value === 'object' && value !== null && 'message' in value && typeof value.message === 'string'
-    ? value.message
-    : undefined
-
-const errorText = <A = unknown>(error: A): string => {
-  if (error instanceof Error) {
-    return error.message
-  }
-  const carried = messageOf(error)
-  if (carried !== undefined) {
-    return carried
-  }
-  return new Error('in-memory runner failure', { cause: error }).message
+interface TestIdParts {
+  readonly file: string
+  readonly name: string
 }
 
-const isInitFailure = <A = unknown>(error: A): boolean => {
-  if (error instanceof SyntaxError) {
-    return true
-  }
-  if (typeof error !== 'object' || error === null) {
-    return false
-  }
-  if ('code' in error && error.code === 'ERR_MODULE_NOT_FOUND') {
-    return true
-  }
-  return error instanceof Error && error.message.includes('[PARSE_ERROR]')
+interface OverlayEntries {
+  readonly overlay: Map<string | symbol, PropertyDescriptor>
+  readonly restore: Map<string | symbol, PropertyDescriptor | undefined>
 }
+
+interface OverlayBaselines {
+  readonly globals: ReadonlyMap<string, PropertyDescriptor>
+  readonly symbols: ReadonlyMap<symbol, PropertyDescriptor>
+}
+
+type GlobalOverlay = ReadonlyMap<string | symbol, PropertyDescriptor>
+type GlobalBaseline = ReadonlyMap<string | symbol, PropertyDescriptor | undefined>
+
+interface LoadedGraph {
+  readonly registry: TestRegistry
+  readonly files: readonly string[]
+  readonly saltOf: (file: string) => string
+}
+
+export interface LoadedGraphBuild {
+  readonly graph: LoadedGraph
+  readonly failure: RunFailure | undefined
+}
+
+export interface RefusedGraphBuild {
+  readonly refusal: string
+}
+
+export interface VmSession {
+  readonly run: (request: VmRunRequest) => Promise<VmRunResponse>
+  readonly dispose: () => Promise<void>
+}
+
+type DrainedCompletion = Extract<DrainOutcome, { readonly kind: 'complete' }>
+type TimedOutDrain = Extract<DrainOutcome, { readonly kind: 'timeout' }>
+type DrainedTest = DrainedCompletion['tests'][number]
+
+type ImportOutcome = { readonly cause: AnyDecoded } | undefined
+
+interface ImportFailureReport {
+  readonly refusal: string | undefined
+  readonly failure: RunFailure | undefined
+}
+
+interface FileLoad {
+  refusal: string | undefined
+  failure: RunFailure | undefined
+}
+
+interface LoadState {
+  refusal: string | undefined
+  readonly loads: FileLoad[]
+}
+
+interface GraphLoadDeps {
+  readonly registry: TestRegistry
+  readonly base: VmRunnerGlobalState
+  readonly runtime: VmVitestRuntime | undefined
+}
+
+interface FileLoadDeps extends GraphLoadDeps {
+  readonly saltOf: (file: string) => string
+}
+
+type VitestResolution = { readonly vitest: VitestModuleNamespace } | RefusedGraphBuild
+
+interface RunReady {
+  readonly kind: 'ready'
+  readonly loaded: LoadedGraph
+  readonly failure: RunFailure | undefined
+}
+
+interface RunRefused {
+  readonly kind: 'refused'
+  readonly response: VmRunResponse
+}
+
+type RunPreparation = RunReady | RunRefused
+
+interface ResponseContext {
+  readonly sandboxWorkingDirectory: string
+  readonly loaded: LoadedGraph
+  readonly failure: RunFailure | undefined
+  readonly request: VmRunRequest
+  readonly namespace: StrykerNamespace
+}
+
+const isObjectValue = (value: AnyDecoded): value is object => typeof value === 'object' && value !== null
+
+const isStringValue = (value: AnyDecoded): value is string => typeof value === 'string'
+
+const isNonEmptyStringValue = (value: AnyDecoded): value is string => typeof value === 'string' && value.length > 0
+
+const isErrorValue = (value: AnyDecoded): value is Error => value instanceof Error
+
+const isRequestedBagValue = <A extends object>(value: AnyDecoded): value is A => isObjectValue(value)
+
+const objectOf = <A = unknown>(value: A): Option.Option<object> => Option.liftPredicate(isObjectValue)(value)
+
+const reflectedOf = (target: object, key: string): AnyDecoded => {
+  const reflected: AnyDecoded = Reflect.get(target, key)
+  return reflected
+}
+
+const hasMember = (target: object, key: string): boolean => Reflect.has(target, key)
+
+const carriedMemberOf = (target: object, key: string): AnyDecoded =>
+  hasMember(target, key) ? reflectedOf(target, key) : undefined
+
+const stringMemberOf = (target: object, key: string): string | undefined =>
+  Option.getOrUndefined(Option.liftPredicate(isStringValue)(carriedMemberOf(target, key)))
+
+const messageOf = <A = unknown>(value: A): string | undefined =>
+  Option.getOrUndefined(Option.map(objectOf(value), (held) => stringMemberOf(held, 'message')))
+
+const errorMessageOf = <A = unknown>(error: A): string | undefined =>
+  Option.getOrUndefined(Option.map(Option.liftPredicate(isErrorValue)(error), (held) => held.message))
+
+const carriedTextOf = <A = unknown>(error: A): string | undefined => errorMessageOf(error) ?? messageOf(error)
+
+const errorText = <A = unknown>(error: A): string =>
+  carriedTextOf(error) ?? new Error('in-memory runner failure', { cause: error }).message
+
+const isModuleNotFoundError = <A = unknown>(error: A): boolean =>
+  isObjectValue(error) && carriedMemberOf(error, 'code') === MODULE_NOT_FOUND_CODE
+
+const isParseError = <A = unknown>(error: A): boolean => errorMessageOf(error)?.includes(PARSE_ERROR_MARKER) === true
+
+const isUnresolvableImport = <A = unknown>(error: A): boolean => isModuleNotFoundError(error) || isParseError(error)
+
+const isInitFailure = <A = unknown>(error: A): boolean =>
+  error instanceof SyntaxError ? true : isUnresolvableImport(error)
 
 const runFailureFor = <A = unknown>(file: string, cause: A): RunFailure => {
   const fatal = isInitFailure(cause)
@@ -106,14 +236,15 @@ const runFailureFor = <A = unknown>(file: string, cause: A): RunFailure => {
 const vitestMissingMessage = (sandbox: string): string =>
   `Could not resolve the vitest package from the sandbox working directory "${sandbox}". A sandbox must be able to load vitest: install it there, or link a node_modules directory that has it.`
 
-const vitestUnresolvedRefusalFor = <A = unknown>(sandbox: string, cause: A): string | undefined => {
-  if (typeof cause !== 'object' || cause === null) {
-    return undefined
-  }
-  if (!('code' in cause) || cause.code !== 'ERR_MODULE_NOT_FOUND') {
-    return undefined
-  }
-  return errorText(cause).includes("Cannot find package 'vitest") ? vitestMissingMessage(sandbox) : undefined
+const unresolvedVitestRefusal = (sandbox: string, cause: AnyDecoded): string | undefined =>
+  errorText(cause).includes(MISSING_VITEST_SPECIFIER) ? vitestMissingMessage(sandbox) : undefined
+
+const vitestUnresolvedRefusalFor = <A = unknown>(sandbox: string, cause: A): string | undefined =>
+  isModuleNotFoundError(cause) ? unresolvedVitestRefusal(sandbox, cause) : undefined
+
+const testIdPartsOf = (testId: string): TestIdParts | undefined => {
+  const at = testId.indexOf('#')
+  return at === -1 ? undefined : { file: testId.slice(0, at), name: testId.slice(at + 1) }
 }
 
 const fileOfTestId = (testId: string): string | undefined => {
@@ -121,192 +252,284 @@ const fileOfTestId = (testId: string): string | undefined => {
   return at === -1 ? undefined : testId.slice(0, at)
 }
 
-const testIdFor = (sandboxWorkingDirectory: string, file: string, name: string): string => {
-  const base = sandboxWorkingDirectory.endsWith('/') ? sandboxWorkingDirectory : `${sandboxWorkingDirectory}/`
-  const relative = file.startsWith(base) ? file.slice(base.length).replace(/^\/+/, '') : file
-  return `${relative.replaceAll('\\', '/')}#${name}`
-}
+const directoryBaseOf = (directory: string): string => directory.endsWith('/') ? directory : `${directory}/`
+
+const relativePathOf = (file: string, base: string): string =>
+  file.startsWith(base) ? file.slice(base.length).replace(/^\/+/, '') : file
+
+const portablePathOf = (file: string): string => file.replaceAll('\\', '/')
+
+const testIdFor = (sandboxWorkingDirectory: string, file: string, name: string): string =>
+  `${portablePathOf(relativePathOf(file, directoryBaseOf(sandboxWorkingDirectory)))}#${name}`
+
+const isAbsoluteFile = (file: string): boolean => file.startsWith('/') || /^[A-Za-z]:[\\/]/.test(file)
+
+const absolutePartsOf = (sandboxWorkingDirectory: string, parts: TestIdParts): string =>
+  isAbsoluteFile(parts.file)
+    ? `${parts.file}#${parts.name}`
+    : `${directoryBaseOf(sandboxWorkingDirectory)}${parts.file.replace(/^\/+/, '')}#${parts.name}`
+
 const absoluteTestIdOf = (sandboxWorkingDirectory: string, testId: string): string => {
-  const at = testId.indexOf('#')
-  if (at === -1) {
-    return testId
-  }
-  const file = testId.slice(0, at)
-  const rest = testId.slice(at + 1)
-  if (file.startsWith('/') || /^[A-Za-z]:[\\/]/.test(file)) {
-    return testId
-  }
-  const base = sandboxWorkingDirectory.endsWith('/') ? sandboxWorkingDirectory : `${sandboxWorkingDirectory}/`
-  return `${base}${file.replace(/^\/+/, '')}#${rest}`
+  const parts = testIdPartsOf(testId)
+  return parts === undefined ? testId : absolutePartsOf(sandboxWorkingDirectory, parts)
 }
 
 const relativeTestIdOf = (sandboxWorkingDirectory: string, testId: string): string => {
-  const at = testId.indexOf('#')
-  if (at === -1) {
-    return testId
-  }
-  const base = sandboxWorkingDirectory.endsWith('/') ? sandboxWorkingDirectory : `${sandboxWorkingDirectory}/`
-  const file = testId.slice(0, at)
-  const relative = file.startsWith(base) ? file.slice(base.length).replace(/^\/+/, '') : file
-  return `${relative.replaceAll('\\', '/')}#${testId.slice(at + 1)}`
+  const parts = testIdPartsOf(testId)
+  return parts === undefined
+    ? testId
+    : `${portablePathOf(relativePathOf(parts.file, directoryBaseOf(sandboxWorkingDirectory)))}#${parts.name}`
 }
 
-const graphCoversFilter = (files: readonly string[], testFilter: readonly string[] | undefined): boolean => {
-  if (testFilter === undefined || testFilter.length === 0) {
-    return true
-  }
-  const loaded = new Set(files)
-  return testFilter.every((testId) => {
-    const file = fileOfTestId(testId)
-    return file !== undefined && loaded.has(file)
+const isFilterActive = (testFilter: readonly string[] | undefined): boolean =>
+  testFilter !== undefined && testFilter.length > 0
+
+const activeFilterOf = (testFilter: readonly string[] | undefined): readonly string[] | undefined =>
+  isFilterActive(testFilter) ? testFilter : undefined
+
+const isLoadedTestId = (loaded: ReadonlySet<string>, testId: string): boolean =>
+  Option.exists(Option.fromNullishOr(fileOfTestId(testId)), (file) => loaded.has(file))
+
+const coversFilter = (loaded: ReadonlySet<string>, testFilter: readonly string[]): boolean =>
+  testFilter.every((testId) => isLoadedTestId(loaded, testId))
+
+const graphCoversFilter = (files: readonly string[], testFilter: readonly string[] | undefined): boolean =>
+  Option.match(Option.fromNullishOr(activeFilterOf(testFilter)), {
+    onNone: () => true,
+    onSome: (tests) => coversFilter(new Set(files), tests),
   })
+
+const addFileOwner = (owners: Set<string>, testId: string): void => {
+  const file = fileOfTestId(testId)
+  if (file !== undefined) {
+    owners.add(file)
+  }
 }
 
-const ownedFilesOf = (
-  testFiles: readonly string[],
-  testFilter: readonly string[] | undefined,
-): readonly string[] => {
-  if (testFilter === undefined || testFilter.length === 0) {
-    return testFiles
-  }
+const ownersOf = (testFilter: readonly string[]): ReadonlySet<string> => {
   const owners = new Set<string>()
   for (const testId of testFilter) {
-    const file = fileOfTestId(testId)
-    if (file !== undefined) {
-      owners.add(file)
-    }
+    addFileOwner(owners, testId)
   }
+  return owners
+}
+
+const ownedAmong = (testFiles: readonly string[], owners: ReadonlySet<string>): readonly string[] => {
   const owned = testFiles.filter((file) => owners.has(file))
   return owned.length > 0 ? owned : testFiles
 }
 
-const runnableFilesOf = (declared: readonly string[], discovered: readonly string[] | undefined): readonly string[] => {
-  if (discovered === undefined) {
-    return declared
-  }
-  if (declared.length === 0) {
-    return discovered
-  }
-  const runnable = new Set(discovered)
-  return declared.filter((file) => runnable.has(file))
-}
-interface LoadedGraph {
-  readonly registry: TestRegistry
-  readonly files: readonly string[]
-  readonly saltOf: (file: string) => string
+const ownedFilesOf = (testFiles: readonly string[], testFilter: readonly string[] | undefined): readonly string[] =>
+  Option.match(Option.fromNullishOr(activeFilterOf(testFilter)), {
+    onNone: () => testFiles,
+    onSome: (tests) => ownedAmong(testFiles, ownersOf(tests)),
+  })
+
+const filterToDiscovered = (declared: readonly string[], runnable: ReadonlySet<string>): readonly string[] =>
+  declared.filter((file) => runnable.has(file))
+
+const runnableAmong = (declared: readonly string[], discovered: readonly string[]): readonly string[] =>
+  declared.length === 0 ? discovered : filterToDiscovered(declared, new Set(discovered))
+
+const runnableFilesOf = (declared: readonly string[], discovered: readonly string[] | undefined): readonly string[] =>
+  Option.match(Option.fromNullishOr(discovered), {
+    onNone: () => declared,
+    onSome: (files) => runnableAmong(declared, files),
+  })
+
+const snapshotGlobals = (): ReadonlyMap<string, PropertyDescriptor> =>
+  new Map(Object.entries(Object.getOwnPropertyDescriptors(globalThis)))
+
+const descriptorEntryOf = (symbol: symbol): ReadonlyArray<readonly [symbol, PropertyDescriptor]> => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, symbol)
+  return descriptor === undefined ? [] : [[symbol, descriptor]]
 }
 
-type GlobalOverlay = ReadonlyMap<string | symbol, PropertyDescriptor>
-type GlobalBaseline = ReadonlyMap<string | symbol, PropertyDescriptor | undefined>
+const snapshotGlobalSymbols = (): ReadonlyMap<symbol, PropertyDescriptor> =>
+  new Map(Object.getOwnPropertySymbols(globalThis).flatMap(descriptorEntryOf))
 
 const PROTECTED_GLOBAL_KEYS: Record<string, true> = {
   __stryker__: true,
   __vitest_worker__: true,
 }
 
-const PROTECTED_GLOBAL_SYMBOLS: ReadonlyArray<symbol> = [STATE_KEY]
-
-const snapshotGlobals = (): ReadonlyMap<string, PropertyDescriptor> =>
-  new Map(Object.entries(Object.getOwnPropertyDescriptors(globalThis)))
-
-const snapshotGlobalSymbols = (): ReadonlyMap<symbol, PropertyDescriptor> =>
-  new Map(
-    Object.getOwnPropertySymbols(globalThis).map((symbol) => [
-      symbol,
-      Object.getOwnPropertyDescriptor(globalThis, symbol) as PropertyDescriptor,
-    ]),
-  )
+const PROTECTED_GLOBAL_SYMBOLS: ReadonlySet<symbol> = new Set([STATE_KEY])
 
 const EMPTY_EXCLUDED_KEYS: ReadonlySet<string> = new Set()
+
+const DESCRIPTOR_FIELDS: ReadonlyArray<'get' | 'set' | 'value' | 'writable' | 'enumerable' | 'configurable'> = [
+  'get',
+  'set',
+  'value',
+  'writable',
+  'enumerable',
+  'configurable',
+]
+
+const sameDescriptorField = (
+  before: PropertyDescriptor,
+  descriptor: PropertyDescriptor,
+  field: (typeof DESCRIPTOR_FIELDS)[number],
+): boolean => Object.is(reflectedOf(before, field), reflectedOf(descriptor, field))
+
+const sameDescriptorFields = (before: PropertyDescriptor, descriptor: PropertyDescriptor): boolean =>
+  DESCRIPTOR_FIELDS.every((field) => sameDescriptorField(before, descriptor, field))
+
+const matchesBaseline = (descriptor: PropertyDescriptor, before: PropertyDescriptor | undefined): boolean =>
+  before === undefined ? false : sameDescriptorFields(before, descriptor)
+
+const emptyOverlayEntries = (): OverlayEntries => ({ overlay: new Map(), restore: new Map() })
+
+const isProtectedKey = (key: string, excludedKeys: ReadonlySet<string>): boolean =>
+  PROTECTED_GLOBAL_KEYS[key] === true || excludedKeys.has(key)
+
+const isUnchangedKey = (
+  key: string,
+  descriptor: PropertyDescriptor,
+  baseline: ReadonlyMap<string, PropertyDescriptor>,
+  excludedKeys: ReadonlySet<string>,
+): boolean => isProtectedKey(key, excludedKeys) || matchesBaseline(descriptor, baseline.get(key))
+
+const overlayKeyIfChanged = (
+  key: string,
+  descriptor: PropertyDescriptor,
+  baseline: ReadonlyMap<string, PropertyDescriptor>,
+  excludedKeys: ReadonlySet<string>,
+  entries: OverlayEntries,
+): void => {
+  if (!isUnchangedKey(key, descriptor, baseline, excludedKeys)) {
+    entries.overlay.set(key, descriptor)
+    entries.restore.set(key, baseline.get(key))
+  }
+}
+
+const isUntouchedKey = (key: string, current: ReadonlyMap<string, PropertyDescriptor>): boolean =>
+  current.has(key) || PROTECTED_GLOBAL_KEYS[key] === true
+
+const needsRestoreEntry = (
+  key: string,
+  current: ReadonlyMap<string, PropertyDescriptor>,
+  restore: ReadonlyMap<string | symbol, PropertyDescriptor | undefined>,
+): boolean => !isUntouchedKey(key, current) && !restore.has(key)
+
+const restoreDroppedKeyIfNeeded = (
+  key: string,
+  baseline: ReadonlyMap<string, PropertyDescriptor>,
+  current: ReadonlyMap<string, PropertyDescriptor>,
+  entries: OverlayEntries,
+): void => {
+  if (needsRestoreEntry(key, current, entries.restore)) {
+    entries.restore.set(key, baseline.get(key))
+  }
+}
+
+const isUnchangedSymbol = (
+  symbol: symbol,
+  descriptor: PropertyDescriptor,
+  baselineSymbols: ReadonlyMap<symbol, PropertyDescriptor>,
+): boolean => PROTECTED_GLOBAL_SYMBOLS.has(symbol) || matchesBaseline(descriptor, baselineSymbols.get(symbol))
+
+const overlaySymbolIfChanged = (
+  symbol: symbol,
+  descriptor: PropertyDescriptor,
+  baselineSymbols: ReadonlyMap<symbol, PropertyDescriptor>,
+  entries: OverlayEntries,
+): void => {
+  if (!isUnchangedSymbol(symbol, descriptor, baselineSymbols)) {
+    entries.overlay.set(symbol, descriptor)
+    entries.restore.set(symbol, baselineSymbols.get(symbol))
+  }
+}
+
+const collectKeyOverlays = (
+  current: ReadonlyMap<string, PropertyDescriptor>,
+  baseline: ReadonlyMap<string, PropertyDescriptor>,
+  excludedKeys: ReadonlySet<string>,
+  entries: OverlayEntries,
+): void => {
+  for (const [key, descriptor] of current) {
+    overlayKeyIfChanged(key, descriptor, baseline, excludedKeys, entries)
+  }
+}
+
+const collectMissingBaselineKeys = (
+  baseline: ReadonlyMap<string, PropertyDescriptor>,
+  current: ReadonlyMap<string, PropertyDescriptor>,
+  entries: OverlayEntries,
+): void => {
+  for (const key of baseline.keys()) {
+    restoreDroppedKeyIfNeeded(key, baseline, current, entries)
+  }
+}
+
+const collectSymbolOverlays = (
+  currentSymbols: ReadonlyMap<symbol, PropertyDescriptor>,
+  baselineSymbols: ReadonlyMap<symbol, PropertyDescriptor>,
+  entries: OverlayEntries,
+): void => {
+  for (const [symbol, descriptor] of currentSymbols) {
+    overlaySymbolIfChanged(symbol, descriptor, baselineSymbols, entries)
+  }
+}
 
 const overlayEntriesOf = (
   baseline: ReadonlyMap<string, PropertyDescriptor>,
   baselineSymbols: ReadonlyMap<symbol, PropertyDescriptor>,
   excludedKeys: ReadonlySet<string>,
-): { readonly overlay: GlobalOverlay; readonly restore: GlobalBaseline } => {
+): OverlayEntries => {
   const current = snapshotGlobals()
   const currentSymbols = snapshotGlobalSymbols()
-  const overlay = new Map<string | symbol, PropertyDescriptor>()
-  const restore = new Map<string | symbol, PropertyDescriptor | undefined>()
-  for (const [key, descriptor] of current) {
-    if (PROTECTED_GLOBAL_KEYS[key] === true || excludedKeys.has(key)) {
-      continue
-    }
-    const before = baseline.get(key)
-    if (
-      before !== undefined && before.get === descriptor.get && before.set === descriptor.set &&
-      Object.is(before.value, descriptor.value) && before.writable === descriptor.writable &&
-      before.enumerable === descriptor.enumerable && before.configurable === descriptor.configurable
-    ) {
-      continue
-    }
-    overlay.set(key, descriptor)
-    restore.set(key, before)
-  }
-  for (const key of baseline.keys()) {
-    if (current.has(key) || PROTECTED_GLOBAL_KEYS[key] === true || restore.has(key)) {
-      continue
-    }
-    restore.set(key, baseline.get(key))
-  }
-  for (const [symbol, descriptor] of currentSymbols) {
-    if (PROTECTED_GLOBAL_SYMBOLS.includes(symbol)) {
-      continue
-    }
-    const before = baselineSymbols.get(symbol)
-    if (
-      before !== undefined && before.get === descriptor.get && before.set === descriptor.set &&
-      Object.is(before.value, descriptor.value) && before.writable === descriptor.writable &&
-      before.enumerable === descriptor.enumerable && before.configurable === descriptor.configurable
-    ) {
-      continue
-    }
-    overlay.set(symbol, descriptor)
-    restore.set(symbol, before)
-  }
-  return { overlay, restore }
+  const entries = emptyOverlayEntries()
+  collectKeyOverlays(current, baseline, excludedKeys, entries)
+  collectMissingBaselineKeys(baseline, current, entries)
+  collectSymbolOverlays(currentSymbols, baselineSymbols, entries)
+  return entries
 }
+
 const applyOverlay = (overlay: GlobalOverlay): void => {
   for (const [key, descriptor] of overlay) {
     Object.defineProperty(globalThis, key, descriptor)
   }
 }
 
+const restoreGlobal = (key: string | symbol, original: PropertyDescriptor | undefined): void => {
+  if (original === undefined) {
+    Reflect.deleteProperty(globalThis, key)
+    return
+  }
+  Object.defineProperty(globalThis, key, original)
+}
+
 const restoreBaseline = (restore: GlobalBaseline): void => {
   for (const [key, original] of restore) {
-    if (original === undefined) {
-      Reflect.deleteProperty(globalThis, key)
-    } else {
-      Object.defineProperty(globalThis, key, original)
-    }
+    restoreGlobal(key, original)
   }
 }
 
-export interface VmSession {
-  readonly run: (request: VmRunRequest) => Promise<VmRunResponse>
-  readonly dispose: () => Promise<void>
+const workerStateOf = (): AnyDecoded => {
+  const state: AnyDecoded = reflectedOf(globalThis, '__vitest_worker__')
+  return isObjectValue(state) ? state : undefined
 }
 
-export interface LoadedGraphBuild {
-  readonly graph: LoadedGraph
-  readonly failure: RunFailure | undefined
-}
+const workerFilepathOf = (): AnyDecoded =>
+  Option.getOrUndefined(
+    Option.map(Option.fromNullishOr(workerStateOf()), (state) => reflectedOf(state, 'filepath')),
+  )
 
-export interface RefusedGraphBuild {
-  readonly refusal: string
-}
-let saltCounter = 0
+const exitFilepathOf = (sandboxWorkingDirectory: string): string =>
+  Option.getOrElse(
+    Option.liftPredicate(isNonEmptyStringValue)(workerFilepathOf()),
+    () => sandboxWorkingDirectory,
+  )
+
+const exitGuardMessage = (code: number | undefined, sandboxWorkingDirectory: string): string =>
+  `process.exit unexpectedly called with "${String(code)}" (test file: ${exitFilepathOf(sandboxWorkingDirectory)})`
+
 const installExitGuard = (sandboxWorkingDirectory: string): () => void => {
   const runner = globalThis.process
   const original = runner.exit.bind(runner)
   const guarded: typeof runner.exit = (code?: number): never => {
-    const workerState = Reflect.get(globalThis, '__vitest_worker__') as
-      | { readonly filepath?: string | undefined }
-      | undefined
-    const filepath = typeof workerState?.filepath === 'string' && workerState.filepath.length > 0
-      ? workerState.filepath
-      : sandboxWorkingDirectory
-    throw new Error(`process.exit unexpectedly called with "${String(code)}" (test file: ${filepath})`)
+    throw new Error(exitGuardMessage(code, sandboxWorkingDirectory))
   }
   runner.exit = guarded
   return () => {
@@ -316,16 +539,16 @@ const installExitGuard = (sandboxWorkingDirectory: string): () => void => {
   }
 }
 
-export const createVmSession = (
-  options: VmSessionOptions,
-  plugins: readonly VmSessionPlugin[] = builtinPlugins,
-): Promise<VmSession> => {
+let saltCounter = 0
+
+const createSession = (options: VmSessionOptions, plugins: readonly VmSessionPlugin[]): Promise<VmSession> => {
   const prefix = pathToFileURL(options.sandboxWorkingDirectory).href.replace(/\/?$/, '/')
   const isolate = options.isolate ?? true
   const saltOwners = new Map<string, string>()
-  const ownerOfSalt = (salt: string): string | undefined => saltOwners.get(salt)
+  const fileOverlays = new Map<string, OverlayEntries>()
+  const environmentInstalledKeys = new Set<string>()
+  const sandboxBase = new URL('noop.js', `${prefix}`)
   let graph: LoadedGraph | undefined
-  let activeFiles: readonly string[] = []
   let installedApi: HarnessApi | undefined
   let restoreExit: (() => void) | undefined
   let disposed = false
@@ -333,11 +556,15 @@ export const createVmSession = (
   let activeRegistry: TestRegistry | undefined
   let baselineGlobals: ReadonlyMap<string, PropertyDescriptor> | undefined
   let baselineGlobalSymbols: ReadonlyMap<symbol, PropertyDescriptor> | undefined
-  const fileOverlays = new Map<string, { readonly overlay: GlobalOverlay; readonly restore: GlobalBaseline }>()
   let entryRefusal: string | undefined
-  const sandboxBase = new URL('noop.js', `${prefix}`)
+  let vitestNamespace: VitestModuleNamespace | undefined
+  let bagStore = HashMap.empty<string, AnyDecoded>()
 
   const fileUrlFor = (file: string, salt: string): string => `${pathToFileURL(file).href}?salt=${salt}`
+
+  const vitestPackageJsonPath = (): string => createRequire(sandboxBase).resolve('vitest/package.json')
+
+  const vitestEntry = (): string => import.meta.resolve('vitest', pathToFileURL(vitestPackageJsonPath()).href)
 
   const resolveSandboxEntry = (): string | undefined => {
     try {
@@ -347,36 +574,49 @@ export const createVmSession = (
     }
   }
 
-  let bagStore = HashMap.empty<string, object>()
   const bag: VmPluginBag = {
-    read: <A extends object>(key: string) => Option.getOrUndefined(HashMap.get(bagStore, key)) as A | undefined,
-    write: <A extends object>(key: string, value: A) => {
+    read: <A extends object>(key: string): A | undefined =>
+      Option.getOrUndefined(
+        Option.flatMap(
+          HashMap.get(bagStore, key),
+          (held) => Option.liftPredicate(isRequestedBagValue<A>)(held),
+        ),
+      ),
+    write: <A extends object>(key: string, value: A): void => {
       bagStore = HashMap.set(bagStore, key, value)
     },
   }
 
-  const environmentInstalledKeys = new Set<string>()
-  const absorbEnvironmentKeys = (): void => {
-    const published = bag.read<{ readonly keys: ReadonlySet<string> }>(ENVIRONMENT_KEYS_BAG_KEY)
-    if (published === undefined) {
-      return
-    }
-    for (const key of published.keys) {
-      environmentInstalledKeys.add(key)
-    }
-  }
-
-  const vitestPackageJsonPath = (): string => createRequire(sandboxBase).resolve('vitest/package.json')
-
-  const vitestEntry = (): string => import.meta.resolve('vitest', pathToFileURL(vitestPackageJsonPath()).href)
-
-  let vitestNamespace: VitestModuleNamespace | undefined
   const resolveVitest = (): VitestModuleNamespace => {
     const cached = vitestNamespace
     if (cached !== undefined) {
       return cached
     }
     throw new Error('the vitest module namespace was not preloaded before the session ran')
+  }
+
+  const vitestRuntimeOf = (): VmVitestRuntime | undefined => bag.read<VmVitestRuntime>(VM_VITEST_BAG_KEY)
+
+  const environmentKeysOf = (): { readonly keys: ReadonlySet<string> } | undefined =>
+    bag.read<{ readonly keys: ReadonlySet<string> }>(ENVIRONMENT_KEYS_BAG_KEY)
+
+  const discoveredFiles = (): readonly string[] | undefined =>
+    bag.read<VmDiscoveredTestFiles>(VM_TEST_FILES_BAG_KEY)?.files
+
+  const absorbEnvironmentKeys = (): void => {
+    environmentKeysOf()?.keys.forEach((key) => {
+      environmentInstalledKeys.add(key)
+    })
+  }
+
+  const ownerOfSalt = (salt: string): string | undefined => saltOwners.get(salt)
+
+  const ownerFileOf = (salt: string, file: string): string => ownerOfSalt(salt) ?? file
+
+  const setActiveRegistryFile = (file: string): void => {
+    if (activeRegistry !== undefined) {
+      activeRegistry.files.current = file
+    }
   }
 
   const host: VmPluginHost = {
@@ -386,9 +626,7 @@ export const createVmSession = (
     resolveVitest,
     resolveVitestModule: (specifier: string): string => createRequire(sandboxBase).resolve(specifier),
     importFile: (file: string, salt: string) => {
-      if (activeRegistry !== undefined) {
-        activeRegistry.files.current = ownerOfSalt(salt) ?? file
-      }
+      setActiveRegistryFile(ownerFileOf(salt, file))
       saltOwners.set(salt, file)
       return nativeImport(fileUrlFor(file, salt)).then(() => undefined)
     },
@@ -397,19 +635,14 @@ export const createVmSession = (
   const stage = <K extends VmStageName>(name: K, ...args: VmStageArgs[K]): Effect.Effect<void> =>
     Effect.promise(() => runStage(plugins, name, ...args))
 
-  const globalsFor = (file: string): VmGlobals => {
-    let merged: VmGlobals = {}
-    for (const plugin of plugins) {
-      const values = plugin.globals?.(file, host)
-      if (values !== undefined) {
-        merged = { ...merged, ...values }
-      }
-    }
-    return merged
-  }
+  const pluginGlobalsOf = (plugin: VmSessionPlugin, file: string): VmGlobals =>
+    Option.getOrElse(Option.fromNullishOr(plugin.globals?.(file, host)), () => ({}))
 
-  const discoveredFiles = (): readonly string[] | undefined =>
-    bag.read<VmDiscoveredTestFiles>(VM_TEST_FILES_BAG_KEY)?.files
+  const globalsFor = (file: string): VmGlobals =>
+    plugins.reduce<VmGlobals>((merged, plugin) => ({ ...merged, ...pluginGlobalsOf(plugin, file) }), {})
+
+  const absoluteFilterOf = (request: VmRunRequest): readonly string[] | undefined =>
+    request.testFilter?.map((testId) => absoluteTestIdOf(options.sandboxWorkingDirectory, testId))
 
   const fileContextFor = (file: string, saltOf: (file: string) => string): VmFileContext => {
     const salt = saltOf(file)
@@ -428,126 +661,300 @@ export const createVmSession = (
     runKind,
   })
 
-  const buildGraph = (files: readonly string[]): Effect.Effect<LoadedGraphBuild | RefusedGraphBuild> => {
-    if (entryRefusal !== undefined) {
-      return Effect.succeed({ refusal: entryRefusal })
+  const providedGlobalsFor = (runtime: VmVitestRuntime | undefined, file: string): VmRunnerGlobalState['provided'] => ({
+    ...runtime?.projectFor(file).provide,
+  })
+
+  const startFileLoad = (deps: GraphLoadDeps, file: string): void => {
+    deps.registry.files.current = file
+    deps.registry.frames.current = []
+    const provided = providedGlobalsFor(deps.runtime, file)
+    deps.registry.provided.current = provided
+    writeGlobalState({ ...deps.base, provided, ...globalsFor(file) })
+  }
+
+  const preImportRefusalFor = (context: VmFileContext): Effect.Effect<string | undefined> =>
+    Effect.promise(() =>
+      runStage(plugins, 'beforeFileImport', context, host).then(
+        () => {
+          absorbEnvironmentKeys()
+          return undefined
+        },
+        <A = unknown>(cause: A) => errorText(cause),
+      )
+    )
+
+  const importOutcomeFor = (context: VmFileContext): Effect.Effect<ImportOutcome> =>
+    Effect.promise(() =>
+      nativeImport(context.url).then(
+        () => undefined,
+        <A = unknown>(cause: A) => ({ cause }),
+      )
+    )
+
+  const isTerminalImportFailure = (vitestRefusal: string | undefined, reported: RunFailure): boolean =>
+    vitestRefusal !== undefined || reported.fatal
+
+  const terminalRefusalOf = (vitestRefusal: string | undefined, reported: RunFailure): string =>
+    vitestRefusal ?? reported.message
+
+  const reportForImportCause = (
+    sandboxWorkingDirectory: string,
+    file: string,
+    cause: AnyDecoded,
+  ): ImportFailureReport => {
+    const reported = runFailureFor(file, cause)
+    const vitestRefusal = vitestUnresolvedRefusalFor(sandboxWorkingDirectory, cause)
+    return isTerminalImportFailure(vitestRefusal, reported)
+      ? { refusal: terminalRefusalOf(vitestRefusal, reported), failure: undefined }
+      : { refusal: undefined, failure: reported }
+  }
+
+  const emptyImportReport = (): ImportFailureReport => ({ refusal: undefined, failure: undefined })
+
+  const importReportOf = (
+    sandboxWorkingDirectory: string,
+    file: string,
+    imported: ImportOutcome,
+  ): ImportFailureReport =>
+    imported === undefined
+      ? emptyImportReport()
+      : reportForImportCause(sandboxWorkingDirectory, file, imported.cause)
+
+  const afterImportReportFor = (file: string, cause: AnyDecoded): ImportFailureReport => {
+    const reported = runFailureFor(file, cause)
+    return reported.fatal
+      ? { refusal: reported.message, failure: undefined }
+      : { refusal: undefined, failure: reported }
+  }
+
+  const afterImportReport = (file: string, context: VmFileContext): Effect.Effect<ImportFailureReport> =>
+    Effect.promise(() =>
+      runStage(plugins, 'afterFileImport', context, host).then(
+        emptyImportReport,
+        <A = unknown>(cause: A) => afterImportReportFor(file, cause),
+      )
+    )
+
+  const mergeFailure = (current: RunFailure | undefined, next: RunFailure | undefined): RunFailure | undefined =>
+    current ?? next
+
+  const collectFailureFor = (registry: TestRegistry, file: string): RunFailure | undefined => {
+    const message = registry.collectFailures.get(file)
+    return message === undefined ? undefined : { file, message, fatal: false }
+  }
+
+  const adoptOverlay = (file: string, overlay: OverlayEntries | undefined): void => {
+    if (overlay !== undefined) {
+      fileOverlays.set(file, overlay)
+      restoreBaseline(overlay.restore)
     }
+  }
+
+  const applyCapturedOverlay = (captured: OverlayEntries | undefined): void => {
+    if (captured !== undefined) {
+      restoreBaseline(captured.restore)
+      applyOverlay(captured.overlay)
+    }
+  }
+
+  const applyFileOverlay = (file: string): void => {
+    if (isolate) {
+      applyCapturedOverlay(fileOverlays.get(file))
+    }
+  }
+
+  const withSymbolBaselines = (globals: ReadonlyMap<string, PropertyDescriptor>): OverlayBaselines | undefined =>
+    Option.match(Option.fromNullishOr(baselineGlobalSymbols), {
+      onNone: () => undefined,
+      onSome: (symbols) => ({ globals, symbols }),
+    })
+
+  const currentBaselines = (): OverlayBaselines | undefined =>
+    Option.match(Option.fromNullishOr(baselineGlobals), {
+      onNone: () => undefined,
+      onSome: (globals) => withSymbolBaselines(globals),
+    })
+
+  const isolatedBaselines = (): OverlayBaselines | undefined => isolate ? currentBaselines() : undefined
+
+  const capturedOverlay = (excludedKeys: ReadonlySet<string>): OverlayEntries | undefined => {
+    const baselines = isolatedBaselines()
+    return baselines === undefined
+      ? undefined
+      : overlayEntriesOf(baselines.globals, baselines.symbols, excludedKeys)
+  }
+
+  const recaptureFileOverlay = (file: string): void => {
+    adoptOverlay(file, capturedOverlay(environmentInstalledKeys))
+  }
+
+  const applyImportReport = (load: FileLoad, report: ImportFailureReport): void => {
+    load.refusal = report.refusal
+    load.failure = mergeFailure(load.failure, report.failure)
+  }
+
+  const runPreImportStep = (load: FileLoad, context: VmFileContext): Effect.Effect<void> =>
+    Effect.gen(function*() {
+      load.refusal = yield* preImportRefusalFor(context)
+    })
+
+  const runImportStep = (load: FileLoad, file: string, context: VmFileContext): Effect.Effect<void> =>
+    Effect.gen(function*() {
+      const imported = yield* importOutcomeFor(context)
+      applyImportReport(load, importReportOf(options.sandboxWorkingDirectory, file, imported))
+    })
+
+  const runAfterImportStep = (load: FileLoad, file: string, context: VmFileContext): Effect.Effect<void> =>
+    Effect.gen(function*() {
+      applyImportReport(load, yield* afterImportReport(file, context))
+    })
+
+  const applyCollectFailure = (deps: GraphLoadDeps, file: string, load: FileLoad): void => {
+    load.failure = mergeFailure(load.failure, collectFailureFor(deps.registry, file))
+  }
+
+  const unlessRefused = (load: FileLoad, step: Effect.Effect<void>): Effect.Effect<void> =>
+    load.refusal === undefined ? step : Effect.void
+
+  const loadOneFile = (deps: FileLoadDeps, file: string): Effect.Effect<FileLoad> =>
+    Effect.gen(function*() {
+      const load: FileLoad = { refusal: undefined, failure: undefined }
+      const context = fileContextFor(file, deps.saltOf)
+      startFileLoad(deps, file)
+      yield* unlessRefused(load, runPreImportStep(load, context))
+      yield* unlessRefused(load, runImportStep(load, file, context))
+      const overlay = capturedOverlay(EMPTY_EXCLUDED_KEYS)
+      yield* unlessRefused(load, runAfterImportStep(load, file, context))
+      yield* unlessRefused(load, Effect.sync(() => adoptOverlay(file, overlay)))
+      yield* unlessRefused(load, Effect.sync(() => applyCollectFailure(deps, file, load)))
+      return load
+    })
+
+  const isRefusedGraph = (loaded: readonly FileLoad[] | RefusedGraphBuild): loaded is RefusedGraphBuild =>
+    'refusal' in loaded
+
+  const recordLoad = (state: LoadState, load: FileLoad): void => {
+    if (load.refusal === undefined) {
+      state.loads.push(load)
+      return
+    }
+    state.refusal = load.refusal
+  }
+
+  const loadFileStep = (deps: FileLoadDeps, file: string, state: LoadState): Effect.Effect<void> =>
+    state.refusal === undefined
+      ? Effect.map(loadOneFile(deps, file), (load) => {
+        recordLoad(state, load)
+      })
+      : Effect.void
+
+  const refusedOrLoads = (state: LoadState): readonly FileLoad[] | RefusedGraphBuild =>
+    state.refusal === undefined ? state.loads : { refusal: state.refusal }
+
+  const loadFiles = (
+    deps: FileLoadDeps,
+    files: readonly string[],
+  ): Effect.Effect<readonly FileLoad[] | RefusedGraphBuild> =>
+    Effect.gen(function*() {
+      const state: LoadState = { refusal: undefined, loads: [] }
+      for (const file of files) {
+        yield* loadFileStep(deps, file, state)
+      }
+      return refusedOrLoads(state)
+    })
+
+  const firstFailureOf = (loads: readonly FileLoad[]): RunFailure | undefined =>
+    loads.reduce<RunFailure | undefined>((found, load) => mergeFailure(found, load.failure), undefined)
+
+  const prepareGraphIsolation = (): void => {
+    if (isolate) {
+      baselineGlobals = snapshotGlobals()
+      baselineGlobalSymbols = snapshotGlobalSymbols()
+      fileOverlays.clear()
+    }
+  }
+
+  const prepareFileSalts = (files: readonly string[]): (file: string) => string => {
+    const runSalt = String(saltCounter += 1)
+    const fileSalts = files.map((_file, index) => (isolate ? `${runSalt}-${index}` : runSalt))
+    const saltOf = (file: string): string => fileSalts[files.indexOf(file)] ?? runSalt
+    saltOwners.clear()
+    files.forEach((file) => {
+      saltOwners.set(saltOf(file), file)
+    })
+    return saltOf
+  }
+
+  const graphLoadOf = (
+    deps: GraphLoadDeps,
+    files: readonly string[],
+  ): Effect.Effect<LoadedGraphBuild | RefusedGraphBuild> =>
+    Effect.gen(function*() {
+      yield* stage('beforeGraphLoad', { registry: deps.registry, files }, host)
+      prepareGraphIsolation()
+      const saltOf = prepareFileSalts(files)
+      const loads = yield* loadFiles({ ...deps, saltOf }, files)
+      if (isRefusedGraph(loads)) {
+        return loads
+      }
+      return { graph: { registry: deps.registry, files, saltOf }, failure: firstFailureOf(loads) }
+    })
+
+  const resolveVitestOrRefusal = (): VitestResolution => {
+    try {
+      return { vitest: host.resolveVitest() }
+    } catch (cause) {
+      return { refusal: errorText(cause) }
+    }
+  }
+
+  const isVitestRefusal = (resolved: VitestResolution): resolved is RefusedGraphBuild => 'refusal' in resolved
+
+  const guardedExpectFor = (vitest: VitestModuleNamespace): object | undefined =>
+    vitest.createExpect === undefined
+      ? guardedExpect(vitest.expect)
+      : guardedExpect(vitest.expect, vitest.createExpect)
+
+  const guardedViOf = (vitest: VitestModuleNamespace): object | undefined =>
+    vitest.vi === undefined ? undefined : guardedVi(vitest.vi)
+
+  const runnerGlobalStateFor = (
+    api: HarnessApi,
+    registry: TestRegistry,
+    vitest: VitestModuleNamespace,
+  ): VmRunnerGlobalState => ({
+    api,
+    expect: guardedExpectFor(vitest),
+    vi: guardedViOf(vitest),
+    effectVitest: {
+      it: makeEffectMethods({
+        api: api.it,
+        describe: api.describe,
+        hooks: api.hooks,
+        tests: registry.tests,
+      }),
+    },
+    projectConfig: undefined,
+    provided: {},
+  })
+
+  const graphLoadFor = (files: readonly string[]): Effect.Effect<LoadedGraphBuild | RefusedGraphBuild> => {
     const registry = createRegistry()
     activeRegistry = registry
     const api = createHarnessApi(registry)
     installedApi = api
-    let vitest: VitestModuleNamespace
-    try {
-      vitest = host.resolveVitest()
-    } catch (cause) {
-      return Effect.succeed({ refusal: errorText(cause) })
+    const resolved = resolveVitestOrRefusal()
+    if (isVitestRefusal(resolved)) {
+      return Effect.succeed(resolved)
     }
-    const runtime = host.state.read<VmVitestRuntime>(VM_VITEST_BAG_KEY)
-    const base: VmRunnerGlobalState = {
-      api,
-      expect: vitest.createExpect === undefined
-        ? guardedExpect(vitest.expect)
-        : guardedExpect(vitest.expect, vitest.createExpect),
-      vi: vitest.vi === undefined ? undefined : guardedVi(vitest.vi),
-      effectVitest: {
-        it: makeEffectMethods({
-          api: api.it,
-          describe: api.describe,
-          hooks: api.hooks,
-          tests: registry.tests,
-        }),
-      },
-      projectConfig: undefined,
-      provided: {},
-    }
-
-    return Effect.gen(function*() {
-      yield* stage('beforeGraphLoad', { registry, files }, host)
-      if (isolate) {
-        baselineGlobals = snapshotGlobals()
-        baselineGlobalSymbols = snapshotGlobalSymbols()
-        fileOverlays.clear()
-      }
-
-      const runSalt = String(saltCounter += 1)
-      const fileSalts: string[] = []
-      for (const [index] of files.entries()) {
-        fileSalts.push(isolate ? `${runSalt}-${index}` : runSalt)
-      }
-      const saltOf = (file: string): string => fileSalts[files.indexOf(file)] ?? runSalt
-      saltOwners.clear()
-      for (const file of files) {
-        saltOwners.set(saltOf(file), file)
-      }
-      let failure: RunFailure | undefined
-      for (const file of files) {
-        const context = fileContextFor(file, saltOf)
-        registry.files.current = file
-        registry.frames.current = []
-        const provided: VmRunnerGlobalState['provided'] = { ...runtime?.projectFor(file).provide }
-        registry.provided.current = provided
-        writeGlobalState({ ...base, provided, ...globalsFor(file) })
-        const importable: true | RefusedGraphBuild = yield* Effect.tryPromise({
-          try: () =>
-            runStage(plugins, 'beforeFileImport', context, host).then(() => {
-              absorbEnvironmentKeys()
-              return true as const
-            }),
-          catch: (caught) => ({ thrown: caught instanceof Error ? caught : new Error(errorText(caught)) }),
-        }).pipe(
-          Effect.catch((stageFailure: { readonly thrown: Error }) => {
-            const thrown: Error = stageFailure.thrown
-            return Effect.succeed({ refusal: errorText(thrown) } satisfies RefusedGraphBuild)
-          }),
-        )
-        if (importable !== true) {
-          return importable satisfies RefusedGraphBuild
-        }
-        const outcome = yield* Effect.promise(() =>
-          nativeImport(context.url).then(
-            () => undefined,
-            <A = unknown>(cause: A) => ({ cause }),
-          )
-        )
-        if (outcome !== undefined) {
-          const reported = runFailureFor(file, outcome.cause)
-          const vitestRefusal = vitestUnresolvedRefusalFor(options.sandboxWorkingDirectory, outcome.cause)
-          if (vitestRefusal !== undefined || reported.fatal) {
-            return { refusal: vitestRefusal ?? reported.message } satisfies RefusedGraphBuild
-          }
-          failure ??= reported
-        }
-        const preDeactivateOverlay = isolate && baselineGlobals !== undefined && baselineGlobalSymbols !== undefined
-          ? overlayEntriesOf(baselineGlobals, baselineGlobalSymbols, EMPTY_EXCLUDED_KEYS)
-          : undefined
-        const afterImport: true | RefusedGraphBuild = yield* Effect.promise(() =>
-          runStage(plugins, 'afterFileImport', context, host).then(
-            () => true as const,
-            (cause: Error) => {
-              const reported = runFailureFor(file, cause)
-              if (reported.fatal) {
-                return { refusal: reported.message } satisfies RefusedGraphBuild
-              }
-              failure ??= reported
-              return true as const
-            },
-          )
-        )
-        if (afterImport !== true) {
-          return afterImport satisfies RefusedGraphBuild
-        }
-        if (preDeactivateOverlay !== undefined) {
-          fileOverlays.set(file, preDeactivateOverlay)
-          restoreBaseline(preDeactivateOverlay.restore)
-        }
-        const collectFailure = registry.collectFailures.get(file)
-        if (collectFailure !== undefined && failure === undefined) {
-          failure = { file, message: collectFailure, fatal: false }
-        }
-      }
-      return { graph: { registry, files, saltOf }, failure }
-    })
+    const runtime = vitestRuntimeOf()
+    const base = runnerGlobalStateFor(api, registry, resolved.vitest)
+    return graphLoadOf({ registry, base, runtime }, files)
   }
+
+  const buildGraph = (files: readonly string[]): Effect.Effect<LoadedGraphBuild | RefusedGraphBuild> =>
+    entryRefusal === undefined ? graphLoadFor(files) : Effect.succeed({ refusal: entryRefusal })
 
   const loadErrorTest = (failure: RunFailure, timeSpentMs: number): VmTestResult => ({
     id: testIdFor(options.sandboxWorkingDirectory, failure.file, 'load error'),
@@ -557,144 +964,265 @@ export const createVmSession = (
     timeSpentMs,
   })
 
-  const respondWith = (
-    loaded: LoadedGraph,
-    drained: DrainOutcome,
-    failure: RunFailure | undefined,
-    request: VmRunRequest,
-    namespace: StrykerNamespace,
-  ): VmRunResponse => {
-    if (drained.kind === 'timeout') {
-      return { status: 'timeout' }
+  const emptySuiteTestOf = (file: string): VmTestResult => ({
+    id: testIdFor(options.sandboxWorkingDirectory, file, 'no test suite'),
+    name: `${file} (no test suite)`,
+    status: 'failed',
+    failureMessage: `No test suite found in file ${file}`,
+    timeSpentMs: 0,
+  })
+
+  const isUnpopulatedDiscovered = (
+    file: string,
+    discovered: ReadonlySet<string>,
+    populated: ReadonlySet<string>,
+  ): boolean => discovered.has(file) && !populated.has(file)
+
+  const isEmptySuiteCandidate = (
+    file: string,
+    discovered: ReadonlySet<string>,
+    populated: ReadonlySet<string>,
+    loadFailureFile: string | undefined,
+  ): boolean => file !== loadFailureFile && isUnpopulatedDiscovered(file, discovered, populated)
+
+  const emptySuiteTests = (loaded: LoadedGraph, loadFailureFile: string | undefined): VmTestResult[] => {
+    const discovered = new Set(discoveredFiles() ?? [])
+    const populated = new Set(loaded.registry.tests.map((test) => test.file))
+    return loaded.files
+      .filter((file) => isEmptySuiteCandidate(file, discovered, populated, loadFailureFile))
+      .map(emptySuiteTestOf)
+  }
+
+  const isTimedOutDrain = (drained: DrainOutcome): drained is TimedOutDrain => drained.kind === 'timeout'
+
+  const elapsedOf = (drained: DrainedCompletion): number =>
+    drained.tests.reduce((total, test) => total + test.timeSpentMs, 0)
+
+  const failureMessageFor = (test: DrainedTest): string => test.failureMessage ?? ''
+
+  const testResultFor = (test: DrainedTest): VmTestResult => {
+    const base: VmTestResult = {
+      id: testIdFor(options.sandboxWorkingDirectory, test.file, test.fullName),
+      name: test.fullName,
+      status: test.status,
+      timeSpentMs: test.timeSpentMs,
     }
-    const drainedElapsed = drained.tests.reduce((total, test) => total + test.timeSpentMs, 0)
-    if (loaded.registry.tests.length === 0) {
-      if (failure === undefined) {
-        return { status: 'init-failed', message: ZERO_TESTS_MESSAGE }
-      }
-      return { status: 'complete', tests: [loadErrorTest(failure, drainedElapsed)] }
-    }
-    const tests: VmTestResult[] = drained.tests.map((test) => {
-      const base: VmTestResult = {
-        id: testIdFor(options.sandboxWorkingDirectory, test.file, test.fullName),
-        name: test.fullName,
-        status: test.status,
-        timeSpentMs: test.timeSpentMs,
-      }
-      return test.status === 'failed' ? { ...base, failureMessage: test.failureMessage ?? '' } : base
-    })
-    if (failure !== undefined) {
-      tests.push(loadErrorTest(failure, 0))
-    }
-    const rawCoverage: VmMutantCoverage | undefined = request.kind === 'dry' ? readMutantCoverage(namespace) : undefined
-    const mutantCoverage: VmMutantCoverage | undefined = rawCoverage === undefined
-      ? undefined
-      : {
-        static: rawCoverage.static,
-        perTest: Object.fromEntries(
-          Object.entries(rawCoverage.perTest).map(([testId, hits]) => [
-            relativeTestIdOf(options.sandboxWorkingDirectory, testId),
-            hits,
-          ]),
-        ),
-      }
+    return test.status === 'failed' ? { ...base, failureMessage: failureMessageFor(test) } : base
+  }
+
+  const drainedTestsOf = (drained: DrainedCompletion): VmTestResult[] =>
+    drained.tests.map((test) => testResultFor(test))
+
+  const loadFailureTests = (failure: RunFailure | undefined): VmTestResult[] =>
+    failure === undefined ? [] : [loadErrorTest(failure, 0)]
+
+  const loadFailureFileOf = (failure: RunFailure | undefined): string | undefined => failure?.file
+
+  const relativePerTestOf = (
+    perTest: VmMutantCoverage['perTest'],
+  ): VmMutantCoverage['perTest'] =>
+    Object.fromEntries(
+      Object.entries(perTest).map(([testId, hits]) => [
+        relativeTestIdOf(options.sandboxWorkingDirectory, testId),
+        hits,
+      ]),
+    )
+
+  const relativeCoverageOf = (raw: VmMutantCoverage | undefined): VmMutantCoverage | undefined =>
+    raw === undefined ? undefined : { static: raw.static, perTest: relativePerTestOf(raw.perTest) }
+
+  const rawCoverageOf = (context: ResponseContext): VmMutantCoverage | undefined =>
+    context.request.kind === 'dry' ? readMutantCoverage(context.namespace) : undefined
+
+  const mutantCoverageOf = (context: ResponseContext): VmMutantCoverage | undefined =>
+    relativeCoverageOf(rawCoverageOf(context))
+
+  const emptyRegistryResponse = (context: ResponseContext, drained: DrainedCompletion): VmRunResponse =>
+    context.failure === undefined
+      ? { status: 'init-failed', message: ZERO_TESTS_MESSAGE }
+      : { status: 'complete', tests: [loadErrorTest(context.failure, elapsedOf(drained))] }
+
+  const completeResponse = (context: ResponseContext, drained: DrainedCompletion): VmRunResponse => {
+    const tests = drainedTestsOf(drained)
+    tests.push(...loadFailureTests(context.failure))
+    tests.push(...emptySuiteTests(context.loaded, loadFailureFileOf(context.failure)))
+    const mutantCoverage = mutantCoverageOf(context)
     return mutantCoverage === undefined
       ? { status: 'complete', tests }
       : { status: 'complete', tests, mutantCoverage }
   }
+
+  const completedResponse = (context: ResponseContext, drained: DrainedCompletion): VmRunResponse =>
+    context.loaded.registry.tests.length === 0
+      ? emptyRegistryResponse(context, drained)
+      : completeResponse(context, drained)
+
+  const respondWith = (context: ResponseContext, drained: DrainOutcome): VmRunResponse =>
+    isTimedOutDrain(drained) ? { status: 'timeout' } : completedResponse(context, drained)
+
+  const armedMutantIdOf = (request: VmRunRequest): string | undefined =>
+    request.kind === 'mutant' ? request.activeMutantId : undefined
+
+  const resetCoverageIfDry = (request: VmRunRequest, namespace: StrykerNamespace): void => {
+    if (request.kind === 'dry') {
+      resetMutantCoverage(namespace)
+    }
+  }
+
+  const isReusableRequest = (request: VmRunRequest): boolean =>
+    request.kind !== 'mutant' && request.reloadEnvironment === false
+
+  const isCachedGraphReusable = (
+    request: VmRunRequest,
+    absoluteFilter: readonly string[] | undefined,
+    cached: LoadedGraph,
+  ): boolean => isReusableRequest(request) && graphCoversFilter(cached.files, absoluteFilter)
+
+  const reusableGraph = (
+    request: VmRunRequest,
+    absoluteFilter: readonly string[] | undefined,
+  ): LoadedGraph | undefined =>
+    Option.getOrUndefined(
+      Option.filter(
+        Option.fromNullishOr(graph),
+        (cached) => isCachedGraphReusable(request, absoluteFilter, cached),
+      ),
+    )
+
+  const filesToLoad = (absoluteFilter: readonly string[] | undefined): readonly string[] =>
+    ownedFilesOf(runnableFilesOf(options.testFiles, discoveredFiles()), absoluteFilter)
+
+  const readyPreparation = (loaded: LoadedGraph, failure: RunFailure | undefined): RunReady => ({
+    kind: 'ready',
+    loaded,
+    failure,
+  })
+
+  const refusedPreparation = (response: VmRunResponse): RunRefused => ({ kind: 'refused', response })
+
+  const isRefusedBuild = (built: LoadedGraphBuild | RefusedGraphBuild): built is RefusedGraphBuild => 'refusal' in built
+
+  const adoptBuild = (built: LoadedGraphBuild | RefusedGraphBuild): RunPreparation => {
+    if (isRefusedBuild(built)) {
+      return refusedPreparation({ status: 'init-failed', message: built.refusal })
+    }
+    graph = built.graph
+    return readyPreparation(built.graph, built.failure)
+  }
+
+  const freshGraphOf = (files: readonly string[]): Effect.Effect<RunPreparation> =>
+    Effect.gen(function*() {
+      const previous = graph
+      graph = undefined
+      if (previous !== undefined) {
+        yield* stage('disposeGraph', graphContextFor(previous), host)
+      }
+      const built = yield* buildGraph(files)
+      return adoptBuild(built)
+    })
+
+  const freshPreparation = (absoluteFilter: readonly string[] | undefined): Effect.Effect<RunPreparation> =>
+    Effect.gen(function*() {
+      const files = filesToLoad(absoluteFilter)
+      if (files.length === 0) {
+        return refusedPreparation({ status: 'init-failed', message: ZERO_TESTS_MESSAGE })
+      }
+      return yield* freshGraphOf(files)
+    })
+
+  const preparedRun = (
+    request: VmRunRequest,
+    absoluteFilter: readonly string[] | undefined,
+  ): Effect.Effect<RunPreparation> =>
+    Effect.gen(function*() {
+      const cached = reusableGraph(request, absoluteFilter)
+      if (cached === undefined) {
+        return yield* freshPreparation(absoluteFilter)
+      }
+      return readyPreparation(cached, undefined)
+    })
+
+  const allowOnlyFlagOf = (runtime: VmVitestRuntime | undefined, file: string): boolean | undefined =>
+    runtime?.projectFor(file).allowOnly
+
+  const allowOnlyFor = (runtime: VmVitestRuntime | undefined, file: string): boolean =>
+    allowOnlyFlagOf(runtime, file) ?? false
+
+  const beforeFileRunStage = (file: string, saltOf: (file: string) => string): Promise<void> => {
+    applyFileOverlay(file)
+    return runStage(plugins, 'beforeFileRun', fileContextFor(file, saltOf), host).then(() => {
+      absorbEnvironmentKeys()
+    })
+  }
+
+  const afterFileRunStage = (file: string, saltOf: (file: string) => string): Promise<void> => {
+    const done = runStage(plugins, 'afterFileRun', fileContextFor(file, saltOf), host)
+    return Promise.resolve(done).then(() => {
+      recaptureFileOverlay(file)
+    })
+  }
+
+  const drainOptionsFor = (
+    request: VmRunRequest,
+    absoluteFilter: readonly string[] | undefined,
+    saltOf: (file: string) => string,
+    runtime: VmVitestRuntime | undefined,
+  ): DrainRunOptions => ({
+    testFilter: absoluteFilter,
+    allowOnlyFor: (file: string) => allowOnlyFor(runtime, file),
+    configFor: (file: string) => runtime?.projectFor(file),
+    beforeFileRun: (file: string) => beforeFileRunStage(file, saltOf),
+    afterFileRun: (file: string) => afterFileRunStage(file, saltOf),
+    beforeTest: (ref: DrainTestRef) => runStage(plugins, 'beforeTest', testContextFor(ref, request.kind), host),
+    afterTest: (ref: DrainTestRef, outcome: DrainTestOutcome) =>
+      runStage(plugins, 'afterTest', testContextFor(ref, request.kind), outcome, host),
+  })
+
+  const drainAndRespond = (
+    prepared: RunReady,
+    request: VmRunRequest,
+    absoluteFilter: readonly string[] | undefined,
+    namespace: StrykerNamespace,
+  ): Effect.Effect<VmRunResponse> =>
+    Effect.gen(function*() {
+      const runtime = vitestRuntimeOf()
+      const drained = yield* Effect.promise(() =>
+        executeDrainRegistry(
+          prepared.loaded.registry,
+          request.timeoutMs,
+          drainOptionsFor(request, absoluteFilter, prepared.loaded.saltOf, runtime),
+        )
+      )
+      const response = respondWith({
+        sandboxWorkingDirectory: options.sandboxWorkingDirectory,
+        loaded: prepared.loaded,
+        failure: prepared.failure,
+        request,
+        namespace,
+      }, drained)
+      const afterRun: VmRunContext = { request, graph: graphContextFor(prepared.loaded), response }
+      yield* stage('afterRun', afterRun, host)
+      return response
+    })
+
+  const coveredRun = (request: VmRunRequest, namespace: StrykerNamespace): Effect.Effect<VmRunResponse> =>
+    Effect.gen(function*() {
+      armMutant(namespace, armedMutantIdOf(request), request.hitLimit)
+      resetCoverageIfDry(request, namespace)
+      const absoluteFilter = absoluteFilterOf(request)
+      const prepared = yield* preparedRun(request, absoluteFilter)
+      if (prepared.kind === 'refused') {
+        return prepared.response
+      }
+      return yield* drainAndRespond(prepared, request, absoluteFilter, namespace)
+    })
 
   const executeRun = (request: VmRunRequest): Effect.Effect<VmRunResponse> =>
     Effect.gen(function*() {
       const namespace = hostStrykerNamespace()
       const previousArmed = readArmedMutant(namespace)
       const restoreArmed = Effect.sync(() => writeArmedMutant(namespace, previousArmed))
-
-      return yield* Effect.gen(function*() {
-        armMutant(namespace, request.kind === 'mutant' ? request.activeMutantId : undefined, request.hitLimit)
-        if (request.kind === 'dry') {
-          resetMutantCoverage(namespace)
-        }
-        const absoluteFilter = request.testFilter?.map((testId) =>
-          absoluteTestIdOf(options.sandboxWorkingDirectory, testId)
-        )
-
-        const reusable = request.kind !== 'mutant' &&
-            request.reloadEnvironment === false &&
-            graph !== undefined &&
-            graphCoversFilter(graph.files, absoluteFilter)
-          ? graph
-          : undefined
-        let loaded = reusable
-        let failure: RunFailure | undefined
-        if (loaded === undefined) {
-          const declared = options.testFiles.length > 0 ? options.testFiles : activeFiles
-          const candidates = runnableFilesOf(declared, discoveredFiles())
-          const files = ownedFilesOf(candidates, absoluteFilter)
-          if (files.length === 0) {
-            return { status: 'init-failed', message: ZERO_TESTS_MESSAGE } satisfies VmRunResponse
-          }
-          const previous = graph
-          const built = yield* buildGraph(files)
-          if ('refusal' in built) {
-            return { status: 'init-failed', message: built.refusal } satisfies VmRunResponse
-          }
-          graph = built.graph
-          activeFiles = files
-          loaded = built.graph
-          failure = built.failure
-          if (previous !== undefined) {
-            yield* stage('disposeGraph', graphContextFor(previous), host)
-          }
-        }
-
-        const saltOf = loaded.saltOf
-        const applyFileOverlay = (file: string): void => {
-          if (!isolate) {
-            return
-          }
-          const captured = fileOverlays.get(file)
-          if (captured !== undefined) {
-            restoreBaseline(captured.restore)
-            applyOverlay(captured.overlay)
-          }
-        }
-        const recaptureFileOverlay = (file: string): void => {
-          if (!isolate || baselineGlobals === undefined || baselineGlobalSymbols === undefined) {
-            return
-          }
-          const captured = overlayEntriesOf(baselineGlobals, baselineGlobalSymbols, environmentInstalledKeys)
-          fileOverlays.set(file, captured)
-          restoreBaseline(captured.restore)
-        }
-        const runtime = host.state.read<VmVitestRuntime>(VM_VITEST_BAG_KEY)
-        const drained = yield* Effect.promise(() =>
-          executeDrainRegistry(loaded.registry, request.timeoutMs, {
-            testFilter: absoluteFilter,
-            allowOnlyFor: (file) => runtime?.projectFor(file).allowOnly ?? false,
-            configFor: (file) => runtime?.projectFor(file),
-            beforeFileRun: (file) => {
-              applyFileOverlay(file)
-              return runStage(plugins, 'beforeFileRun', fileContextFor(file, saltOf), host).then(() => {
-                absorbEnvironmentKeys()
-              })
-            },
-            afterFileRun: (file) => {
-              const done = runStage(plugins, 'afterFileRun', fileContextFor(file, saltOf), host)
-              return Promise.resolve(done).then(() => {
-                recaptureFileOverlay(file)
-              })
-            },
-            beforeTest: (ref) => runStage(plugins, 'beforeTest', testContextFor(ref, request.kind), host),
-            afterTest: (ref, outcome: DrainTestOutcome) =>
-              runStage(plugins, 'afterTest', testContextFor(ref, request.kind), outcome, host),
-          })
-        )
-
-        const response = respondWith(loaded, drained, failure, request, namespace)
-        const afterRun: VmRunContext = { request, graph: graphContextFor(loaded), response }
-        yield* stage('afterRun', afterRun, host)
-        return response
-      }).pipe(Effect.ensuring(restoreArmed))
+      return yield* coveredRun(request, namespace).pipe(Effect.ensuring(restoreArmed))
     })
 
   const run = (request: VmRunRequest): Promise<VmRunResponse> => {
@@ -709,6 +1237,39 @@ export const createVmSession = (
     return next
   }
 
+  const disposePlugin = (plugin: VmSessionPlugin): Effect.Effect<void> =>
+    Effect.promise(() => Promise.resolve(plugin.dispose?.(host)))
+
+  const disposePlugins = (): Effect.Effect<void> =>
+    Effect.gen(function*() {
+      for (const plugin of [...plugins].reverse()) {
+        yield* disposePlugin(plugin)
+      }
+    })
+
+  const disposeGraphOnce = (): Effect.Effect<void> => {
+    const loaded = graph
+    graph = undefined
+    return loaded === undefined ? Effect.void : stage('disposeGraph', graphContextFor(loaded), host)
+  }
+
+  const isOwnedGlobalState = (installed: VmRunnerGlobalState | undefined): boolean =>
+    installed === undefined || installed.api === installedApi
+
+  const releaseInstalledState = (): void => {
+    if (isOwnedGlobalState(readGlobalState())) {
+      writeGlobalState(undefined)
+    }
+  }
+
+  const releaseSessionGlobals = (): void => {
+    restoreExit?.()
+    restoreHostWorkerState()
+    releaseInstalledState()
+    deactivateSandbox()
+    uninstallInterception()
+  }
+
   const dispose = (): Promise<void> =>
     Effect.runPromise(
       Effect.gen(function*() {
@@ -716,50 +1277,50 @@ export const createVmSession = (
           return
         }
         disposed = true
-        if (graph !== undefined) {
-          yield* stage('disposeGraph', graphContextFor(graph), host)
-          graph = undefined
-        }
-        for (const plugin of [...plugins].reverse()) {
-          yield* Effect.promise(() => Promise.resolve(plugin.dispose?.(host)))
-        }
-        restoreExit?.()
-        restoreHostWorkerState()
-        const installed = readGlobalState()
-        if (installed === undefined || installed.api === installedApi) {
-          writeGlobalState(undefined)
-        }
-        deactivateSandbox()
-        uninstallInterception()
+        yield* disposeGraphOnce()
+        yield* disposePlugins()
+        releaseSessionGlobals()
       }),
     )
 
-  return Effect.runPromise(
+  const recordEntryRefusal = (entry: string | undefined): void => {
+    if (entry === undefined) {
+      entryRefusal = vitestMissingMessage(options.sandboxWorkingDirectory)
+    }
+  }
+
+  const vitestNamespaceOf = (entry: string): Effect.Effect<VitestModuleNamespace> =>
+    Effect.promise(() =>
+      nativeImport<VitestModuleNamespace>(entry).catch(<A = unknown>(cause: A) => {
+        throw new Error(`the vitest module could not be loaded for the session: ${errorText(cause)}`)
+      })
+    )
+
+  const initStageIfNeeded = (): Effect.Effect<void> => entryRefusal === undefined ? stage('init', host) : Effect.void
+
+  const bootSession = (): Effect.Effect<VmSession> =>
     Effect.gen(function*() {
       const entry = resolveSandboxEntry()
-      if (entry === undefined) {
-        entryRefusal = vitestMissingMessage(options.sandboxWorkingDirectory)
-      }
+      recordEntryRefusal(entry)
       restoreExit = installExitGuard(options.sandboxWorkingDirectory)
-      installInterception(globalThis.process.getBuiltinModule('node:module'), {
-        host,
-        plugins,
-      })
+      installInterception(moduleBuiltin, { host, plugins })
       activateSandbox(prefix)
       if (entry !== undefined) {
-        vitestNamespace = yield* Effect.promise(() =>
-          nativeImport(entry).then(
-            (namespace) => namespace as VitestModuleNamespace,
-            <A = unknown>(cause: A) => {
-              throw new Error(`the vitest module could not be loaded for the session: ${errorText(cause)}`)
-            },
-          )
-        )
+        vitestNamespace = yield* vitestNamespaceOf(entry)
       }
-      if (entryRefusal === undefined) {
-        yield* stage('init', host)
-      }
+      yield* initStageIfNeeded()
       return { run, dispose }
-    }),
-  )
+    })
+
+  return Effect.runPromise(bootSession())
 }
+
+const createSessionWithPlugins = (
+  options: VmSessionOptions,
+  plugins?: readonly VmSessionPlugin[],
+): Promise<VmSession> => createSession(options, plugins ?? builtinPlugins)
+
+export const createVmSession: {
+  (plugins?: readonly VmSessionPlugin[]): (options: VmSessionOptions) => Promise<VmSession>
+  (options: VmSessionOptions, plugins?: readonly VmSessionPlugin[]): Promise<VmSession>
+} = dual(startsWithSessionOptions, createSessionWithPlugins)

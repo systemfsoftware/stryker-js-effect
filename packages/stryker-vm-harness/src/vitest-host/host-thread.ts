@@ -1,7 +1,9 @@
-import { type MessagePort, parentPort } from 'node:worker_threads'
-
 import type { VmVitestConfig } from '../vitest-config.schema.js'
 import { createVitestHost, type VmVitestHost } from './host-core.js'
+
+const workerThreads = globalThis.process.getBuiltinModule('node:worker_threads')
+const { parentPort } = workerThreads
+type MessagePort = InstanceType<typeof workerThreads.MessagePort>
 
 export interface VmHostInitMessage {
   readonly sandboxWorkingDirectory: string
@@ -103,13 +105,13 @@ parentPort?.once('message', (init: VmHostInitMessage) => {
       hostPort.on('message', (request: VmHostRequest) => {
         serve(host, hostPort, signal, request)
       })
-      parentPort?.on('close', () => {
+      parentPort.on('close', () => {
         host.close().then(
           () => {
-            process.exit(0)
+            globalThis.process.exit(0)
           },
           () => {
-            process.exit(1)
+            globalThis.process.exit(1)
           },
         )
       })

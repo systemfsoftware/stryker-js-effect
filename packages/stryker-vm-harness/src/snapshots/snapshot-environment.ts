@@ -1,6 +1,6 @@
 import { FileSystem, Path } from 'effect'
 import * as Effect from 'effect/Effect'
-import { fileURLToPath } from 'node:url'
+import * as Match from 'effect/Match'
 
 import { defaultSnapshotPath, SNAPSHOT_SUFFIX } from '../snapshot-paths.js'
 import type { SnapshotEnvironmentLike } from './snapshot-api.js'
@@ -11,9 +11,11 @@ export interface SnapshotEnvironmentOptions {
   readonly snapshotPathFor?: ((testFile: string) => string) | undefined
 }
 
+const nodeUrl = globalThis.process.getBuiltinModule('node:url')
+
 const rawFileOfStack = (file: string): string => {
   const withoutQuery = file.replace(/[?#][\s\S]*$/, '')
-  return withoutQuery.startsWith('file://') ? fileURLToPath(withoutQuery) : withoutQuery
+  return withoutQuery.startsWith('file://') ? nodeUrl.fileURLToPath(withoutQuery) : withoutQuery
 }
 
 export const createSnapshotEnvironment = (options: SnapshotEnvironmentOptions): SnapshotEnvironmentLike => {
@@ -24,11 +26,15 @@ export const createSnapshotEnvironment = (options: SnapshotEnvironmentOptions): 
   const snapshotPathFor = (testFile: string): string =>
     options.snapshotPathFor === undefined ? defaultSnapshotPath(path, testFile) : options.snapshotPathFor(testFile)
 
-  const readSnapshotFile = (filepath: string): Promise<string | null> => {
-    if (filepath.endsWith(SNAPSHOT_SUFFIX) && contents.has(filepath)) {
-      return Promise.resolve(contents.get(filepath) ?? null)
-    }
-    return Effect.runPromise(
+  const cachedSnapshotOf = (filepath: string): string | null | undefined =>
+    Match.value(filepath.endsWith(SNAPSHOT_SUFFIX)).pipe(
+      Match.when(true, () => contents.get(filepath)),
+      Match.when(false, () => undefined),
+      Match.exhaustive,
+    )
+
+  const readFromDisk = (filepath: string): Promise<string | null> =>
+    Effect.runPromise(
       Effect.flatMap(
         fileSystem.exists(filepath),
         (exists) => exists ? fileSystem.readFileString(filepath) : Effect.succeed(null),
@@ -41,6 +47,10 @@ export const createSnapshotEnvironment = (options: SnapshotEnvironmentOptions): 
         }),
       ),
     )
+
+  const readSnapshotFile = (filepath: string): Promise<string | null> => {
+    const cached = cachedSnapshotOf(filepath)
+    return cached === undefined ? readFromDisk(filepath) : Promise.resolve(cached)
   }
 
   const saveSnapshotFile = (filepath: string, snapshot: string): Promise<void> =>

@@ -1,9 +1,10 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { MockRequestKindSchema } from './mock-registry.schema.js'
+import { type MockRequestKind, MockRequestKindSchema } from './mock-registry.schema.js'
 
 const MockTargetTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-vm-harness/MockTargetDecision')
 type MockTargetTypeId = typeof MockTargetTypeId
@@ -45,13 +46,24 @@ export class MockTargetCommand extends S.TaggedClass<MockTargetCommand>()('MockT
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-const decideWithoutFactory = (command: MockTargetCommand): MockTargetDecision => {
-  const redirectPath = command.redirectPath
-  if (redirectPath === undefined) {
-    return MockTargetAutomocked.make({ kind: command.kind === 'manual' ? 'automock' : command.kind })
-  }
-  return MockTargetRedirected.make({ redirectPath })
+const AUTOMOCK_KIND: Record<MockRequestKind, 'automock' | 'autospy'> = {
+  manual: 'automock',
+  automock: 'automock',
+  autospy: 'autospy',
 }
+
+const automockKindOf = (kind: MockRequestKind): 'automock' | 'autospy' => AUTOMOCK_KIND[kind]
+
+const automockDecisionOf = (command: MockTargetCommand): MockTargetDecision =>
+  MockTargetAutomocked.make({ kind: automockKindOf(command.kind) })
+
+const redirectDecisionOf = (redirectPath: string): MockTargetDecision => MockTargetRedirected.make({ redirectPath })
+
+const decideWithoutFactory = (command: MockTargetCommand): MockTargetDecision =>
+  Option.fromNullishOr(command.redirectPath).pipe(
+    Option.map(redirectDecisionOf),
+    Option.getOrElse(() => automockDecisionOf(command)),
+  )
 
 const decideTarget = (command: MockTargetCommand): MockTargetDecision =>
   Match.value(command.kind).pipe(

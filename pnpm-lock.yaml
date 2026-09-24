@@ -707,6 +707,9 @@ importers:
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
+      '@systemfsoftware/differential-spec':
+        specifier: 'catalog:'
+        version: 0.3.0(vitest@5.0.1)
       '@systemfsoftware/effect-gherkin-spec':
         specifier: 'catalog:'
         version: 4.3.1(@effect/vitest@4.0.0-rc.117(effect@4.0.0-rc.117)(vitest@5.0.1))(effect@4.0.0-rc.117)(vitest@5.0.1)
@@ -776,6 +779,9 @@ importers:
       concurrently:
         specifier: 'catalog:'
         version: 10.0.5
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.9.0
       happy-dom:
         specifier: 'catalog:'
         version: 20.14.5
@@ -6640,7 +6646,7 @@ snapshots:
       decimal.js: 10.6.0
       html-encoding-sniffer: 7.0.0(@noble/hashes@2.4.0)
       is-potential-custom-element-name: 1.0.1
-      lru-cache: 11.5.2
+      lru-cache: 11.5.3
       parse5: 8.0.1
       saxes: 6.0.0
       tough-cookie: 6.0.2

@@ -1,13 +1,15 @@
 import * as Effect from 'effect/Effect'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
-import { createRequire } from 'node:module'
 
 import { nativeImport } from '../native-import.handle.js'
 import type { GlobalTarget } from './global-descriptors.js'
 import type { VitestNamespaceSurface } from './harness-globals.js'
 import type { FileEnvironment, PackageEnvironment } from './resolve-environment.workflow.js'
 import type { VmJson } from './vm-json.js'
+
+const nodeModule = globalThis.process.getBuiltinModule('node:module')
 
 export interface EnvironmentReturn {
   readonly teardown: ((target: GlobalTarget) => void | Promise<void>) | undefined
@@ -26,31 +28,30 @@ interface EnvironmentModuleCandidate {
   readonly default?: object
 }
 
-export const loadVitestRuntimeModules = (
-  vitestPackageJsonPath: string,
-  path: Path.Path,
-): Promise<VitestRuntimeModules> => {
-  const runtimeEntry = createRequire(vitestPackageJsonPath).resolve('vitest/runtime')
+export const loadVitestRuntimeModules = dual<
+  (path: Path.Path) => (vitestPackageJsonPath: string) => Promise<VitestRuntimeModules>,
+  (vitestPackageJsonPath: string, path: Path.Path) => Promise<VitestRuntimeModules>
+>(2, (vitestPackageJsonPath, path) => {
+  const runtimeEntry = nodeModule.createRequire(vitestPackageJsonPath).resolve('vitest/runtime')
   const parentUrl = Effect.runSync(path.toFileUrl(runtimeEntry)).href
   return nativeImport<VitestRuntimeModules>(import.meta.resolve(runtimeEntry, parentUrl))
-}
+})
 
-export const loadVitestNamespace = (
-  vitestPackageJsonPath: string,
-  path: Path.Path,
-): Promise<VitestNamespaceSurface> => {
+export const loadVitestNamespace = dual<
+  (path: Path.Path) => (vitestPackageJsonPath: string) => Promise<VitestNamespaceSurface>,
+  (vitestPackageJsonPath: string, path: Path.Path) => Promise<VitestNamespaceSurface>
+>(2, (vitestPackageJsonPath, path) => {
   const parentUrl = Effect.runSync(path.toFileUrl(vitestPackageJsonPath)).href
   return nativeImport<VitestNamespaceSurface>(import.meta.resolve('vitest', parentUrl))
-}
+})
 
 export const isVitestEnvironment = (candidate: object | undefined): candidate is VitestEnvironment =>
   candidate !== undefined && typeof Reflect.get(candidate, 'setup') === 'function'
 
-export const loadModuleEnvironment = (
-  spec: FileEnvironment | PackageEnvironment,
-  root: string,
-  path: Path.Path,
-): Promise<VitestEnvironment> => {
+export const loadModuleEnvironment = dual<
+  (root: string, path: Path.Path) => (spec: FileEnvironment | PackageEnvironment) => Promise<VitestEnvironment>,
+  (spec: FileEnvironment | PackageEnvironment, root: string, path: Path.Path) => Promise<VitestEnvironment>
+>(3, (spec, root, path) => {
   const url = Match.value(spec).pipe(
     Match.tag('FileEnvironment', (file) => Effect.runSync(path.toFileUrl(file.path)).href),
     Match.tag(
@@ -68,4 +69,4 @@ export const loadModuleEnvironment = (
     }
     return declared
   })
-}
+})

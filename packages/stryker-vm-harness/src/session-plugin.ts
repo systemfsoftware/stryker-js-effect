@@ -1,14 +1,19 @@
-import type {
-  LoadFnOutput,
-  LoadHookContext,
-  LoadHookSync,
-  ResolveFnOutput,
-  ResolveHookContext,
-  ResolveHookSync,
-} from 'node:module'
+import { dual } from 'effect/Function'
 
 import type { TestRegistry } from './registry.schema.js'
 import type { VmRunKind, VmRunRequest, VmRunResponse, VmSessionOptions } from './vm-protocol.schema.js'
+
+const moduleBuiltin = globalThis.process.getBuiltinModule('node:module')
+
+type ModuleBuiltin = typeof moduleBuiltin
+type RegisterHooksOptions = Parameters<ModuleBuiltin['registerHooks']>[0]
+
+export type ResolveHookSync = NonNullable<RegisterHooksOptions['resolve']>
+export type LoadHookSync = NonNullable<RegisterHooksOptions['load']>
+export type ResolveFnOutput = ReturnType<ResolveHookSync>
+export type LoadFnOutput = ReturnType<LoadHookSync>
+export type ResolveHookContext = Parameters<ResolveHookSync>[1]
+export type LoadHookContext = Parameters<LoadHookSync>[1]
 
 export interface VitestModuleNamespace {
   readonly createExpect?: (task: object) => object
@@ -117,57 +122,138 @@ export interface VmSessionPlugin {
   readonly globals?: VmGlobalsStage
 }
 
+type StageInvoker<K extends VmStageName> = (
+  plugin: VmSessionPlugin,
+  args: VmStageArgs[K],
+) => void | Promise<void> | undefined
+
+const STAGE_INVOKERS: { readonly [K in VmStageName]: StageInvoker<K> } = {
+  init: (plugin, args) => plugin.init?.(...args),
+  beforeGraphLoad: (plugin, args) => plugin.beforeGraphLoad?.(...args),
+  disposeGraph: (plugin, args) => plugin.disposeGraph?.(...args),
+  beforeFileImport: (plugin, args) => plugin.beforeFileImport?.(...args),
+  afterFileImport: (plugin, args) => plugin.afterFileImport?.(...args),
+  beforeFileRun: (plugin, args) => plugin.beforeFileRun?.(...args),
+  afterFileRun: (plugin, args) => plugin.afterFileRun?.(...args),
+  beforeTest: (plugin, args) => plugin.beforeTest?.(...args),
+  afterTest: (plugin, args) => plugin.afterTest?.(...args),
+  afterRun: (plugin, args) => plugin.afterRun?.(...args),
+  dispose: (plugin, args) => plugin.dispose?.(...args),
+}
+
 export const runStage = <K extends VmStageName>(
   plugins: readonly VmSessionPlugin[],
   stage: K,
   ...args: VmStageArgs[K]
 ): Promise<void> => {
-  const steps: Array<() => void | Promise<void>> = []
-  for (const plugin of plugins) {
-    const hook = plugin[stage] as ((...hookArgs: VmStageArgs[K]) => void | Promise<void>) | undefined
-    if (hook !== undefined) {
-      steps.push(() => hook(...args))
-    }
-  }
-  return steps.reduce<Promise<void>>((pending, step) => pending.then(() => step()), Promise.resolve())
+  const invoke = STAGE_INVOKERS[stage]
+  return plugins.reduce<Promise<void>>((pending, plugin) => pending.then(() => invoke(plugin, args)), Promise.resolve())
 }
 
 export type VmResolveTerminal = (specifier: string, context?: Partial<ResolveHookContext>) => ResolveFnOutput
 
 export type VmLoadTerminal = (url: string, context?: Partial<LoadHookContext>) => LoadFnOutput
 
-export const runResolveStage = (
+const resolveHookOutputOf = (
+  plugin: VmSessionPlugin,
+  specifier: string,
+  context: ResolveHookContext,
+  rest: ResolveHookSync,
+  host: VmPluginHost,
+): ResolveFnOutput | undefined => plugin.resolve?.(specifier, context, rest, host)
+
+const resolveThroughPlugin = (
+  plugin: VmSessionPlugin,
+  specifier: string,
+  context: ResolveHookContext,
+  rest: ResolveHookSync,
+  host: VmPluginHost,
+  terminal: VmResolveTerminal,
+): ResolveFnOutput => resolveHookOutputOf(plugin, specifier, context, rest, host) ?? rest(specifier, context, terminal)
+
+const resolveStepAt = (
   plugins: readonly VmSessionPlugin[],
   host: VmPluginHost,
-  specifier: string,
-  context: Parameters<ResolveHookSync>[1],
   terminal: VmResolveTerminal,
+  restOf: (index: number) => ResolveHookSync,
+  index: number,
+  specifier: string,
+  context: ResolveHookContext,
 ): ResolveFnOutput => {
-  const from = (index: number): ResolveHookSync => (nextSpecifier, nextContext) => {
-    const plugin = plugins[index]
-    if (plugin === undefined) {
-      return terminal(nextSpecifier, nextContext)
-    }
-    const rest = from(index + 1)
-    return plugin.resolve?.(nextSpecifier, nextContext, rest, host) ?? rest(nextSpecifier, nextContext, terminal)
-  }
-  return from(0)(specifier, context, terminal)
+  const plugin = plugins[index]
+  return plugin === undefined
+    ? terminal(specifier, context)
+    : resolveThroughPlugin(plugin, specifier, context, restOf(index + 1), host, terminal)
 }
 
-export const runLoadStage = (
+export const runResolveStage = dual<
+  (
+    host: VmPluginHost,
+    specifier: string,
+    context: ResolveHookContext,
+    terminal: VmResolveTerminal,
+  ) => (plugins: readonly VmSessionPlugin[]) => ResolveFnOutput,
+  (
+    plugins: readonly VmSessionPlugin[],
+    host: VmPluginHost,
+    specifier: string,
+    context: ResolveHookContext,
+    terminal: VmResolveTerminal,
+  ) => ResolveFnOutput
+>(5, (plugins, host, specifier, context, terminal): ResolveFnOutput => {
+  const restOf = (index: number): ResolveHookSync => (nextSpecifier, nextContext) =>
+    resolveStepAt(plugins, host, terminal, restOf, index, nextSpecifier, nextContext)
+  return restOf(0)(specifier, context, terminal)
+})
+
+const loadHookOutputOf = (
+  plugin: VmSessionPlugin,
+  url: string,
+  context: LoadHookContext,
+  rest: LoadHookSync,
+  host: VmPluginHost,
+): LoadFnOutput | undefined => plugin.load?.(url, context, rest, host)
+
+const loadThroughPlugin = (
+  plugin: VmSessionPlugin,
+  url: string,
+  context: LoadHookContext,
+  rest: LoadHookSync,
+  host: VmPluginHost,
+  terminal: VmLoadTerminal,
+): LoadFnOutput => loadHookOutputOf(plugin, url, context, rest, host) ?? rest(url, context, terminal)
+
+const loadStepAt = (
   plugins: readonly VmSessionPlugin[],
   host: VmPluginHost,
-  url: string,
-  context: Parameters<LoadHookSync>[1],
   terminal: VmLoadTerminal,
+  restOf: (index: number) => LoadHookSync,
+  index: number,
+  url: string,
+  context: LoadHookContext,
 ): LoadFnOutput => {
-  const from = (index: number): LoadHookSync => (nextUrl, nextContext) => {
-    const plugin = plugins[index]
-    if (plugin === undefined) {
-      return terminal(nextUrl, nextContext)
-    }
-    const rest = from(index + 1)
-    return plugin.load?.(nextUrl, nextContext, rest, host) ?? rest(nextUrl, nextContext, terminal)
-  }
-  return from(0)(url, context, terminal)
+  const plugin = plugins[index]
+  return plugin === undefined
+    ? terminal(url, context)
+    : loadThroughPlugin(plugin, url, context, restOf(index + 1), host, terminal)
 }
+
+export const runLoadStage = dual<
+  (
+    host: VmPluginHost,
+    url: string,
+    context: LoadHookContext,
+    terminal: VmLoadTerminal,
+  ) => (plugins: readonly VmSessionPlugin[]) => LoadFnOutput,
+  (
+    plugins: readonly VmSessionPlugin[],
+    host: VmPluginHost,
+    url: string,
+    context: LoadHookContext,
+    terminal: VmLoadTerminal,
+  ) => LoadFnOutput
+>(5, (plugins, host, url, context, terminal): LoadFnOutput => {
+  const restOf = (index: number): LoadHookSync => (nextUrl, nextContext) =>
+    loadStepAt(plugins, host, terminal, restOf, index, nextUrl, nextContext)
+  return restOf(0)(url, context, terminal)
+})

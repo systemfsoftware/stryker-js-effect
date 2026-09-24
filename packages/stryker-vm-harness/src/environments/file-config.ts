@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import { dual } from 'effect/Function'
 import * as Path from 'effect/Path'
 
 import type { VmPluginHost } from '../session-plugin.js'
@@ -14,8 +15,10 @@ export const vitestRuntimeOf = (host: VmPluginHost): VmVitestRuntime => {
   return runtime
 }
 
-export const projectForFile = (host: VmPluginHost, file: string): VmProjectConfig =>
-  vitestRuntimeOf(host).projectFor(file)
+export const projectForFile = dual<
+  (file: string) => (host: VmPluginHost) => VmProjectConfig,
+  (host: VmPluginHost, file: string) => VmProjectConfig
+>(2, (host, file) => vitestRuntimeOf(host).projectFor(file))
 
 const pathServices = new WeakMap<VmPluginHost, Path.Path>()
 

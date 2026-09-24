@@ -1,19 +1,20 @@
-import { createRequire } from 'node:module'
-import { pathToFileURL } from 'node:url'
-
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Config, Effect, FileSystem, Layer, Option, Path } from 'effect'
+import { dual } from 'effect/Function'
+import * as Match from 'effect/Match'
 
 import type { TestRegistry } from '../registry.schema.js'
 import type { VmPluginHost } from '../session-plugin.js'
-import { defaultSnapshotPath, snapshotUpdateMode } from '../snapshot-paths.js'
+import { defaultSnapshotPath, type SnapshotUpdateMode, snapshotUpdateMode } from '../snapshot-paths.js'
 import { currentSnapshotTest, setSnapshotTest, type SnapshotTest } from '../snapshot-test.js'
-import { VM_VITEST_BAG_KEY, type VmVitestRuntime } from '../vitest-host/runtime.js'
+import { VM_VITEST_BAG_KEY, type VmProjectConfig, type VmVitestRuntime } from '../vitest-host/runtime.js'
 import type { VmRunKind } from '../vm-protocol.schema.js'
 import {
   type FormatConfig,
   type PluginPrinter,
+  type PrintSerializer,
   type SerializerPlugin,
+  type SerializeSerializer,
   setWorkerTestFile,
   type SnapshotClientLike,
   snapshotClientOf,
@@ -37,6 +38,7 @@ export interface SnapshotSupportOptions {
 interface ExpectWithSerializers {
   addSnapshotSerializer?: (serializer: SerializerPlugin) => void
 }
+
 interface SerializerModule {
   readonly default?: SerializerPlugin
   readonly test?: (value: object) => boolean
@@ -55,23 +57,60 @@ interface SerializerModule {
   ) => string
 }
 
+type SerializerCandidate = object | SerializerModule
+
+const nodeModule = globalThis.process.getBuiltinModule('node:module')
+const nodeUrl = globalThis.process.getBuiltinModule('node:url')
+
+const SERIALIZER_MODULE_ERROR = 'the snapshot serializer module exports neither a default nor test/serialize'
+
+const isSerializerTest = (value: unknown): value is SerializerPlugin['test'] => typeof value === 'function'
+
+const isSerializerSerialize = (value: unknown): value is SerializeSerializer['serialize'] => typeof value === 'function'
+
+const isSerializerPrint = (value: unknown): value is PrintSerializer['print'] => typeof value === 'function'
+
+const testFunctionOf = (candidate: SerializerCandidate): SerializerPlugin['test'] | undefined =>
+  Option.getOrUndefined(Option.liftPredicate(isSerializerTest)(Reflect.get(candidate, 'test')))
+
+const serializeFunctionOf = (candidate: SerializerCandidate): SerializeSerializer['serialize'] | undefined =>
+  Option.getOrUndefined(Option.liftPredicate(isSerializerSerialize)(Reflect.get(candidate, 'serialize')))
+
+const printFunctionOf = (candidate: SerializerCandidate): PrintSerializer['print'] | undefined =>
+  Option.getOrUndefined(Option.liftPredicate(isSerializerPrint)(Reflect.get(candidate, 'print')))
+
+const printPluginOf = (
+  test: SerializerPlugin['test'],
+  print: PrintSerializer['print'] | undefined,
+): SerializerPlugin =>
+  Match.value(print).pipe(
+    Match.when(Match.undefined, () => {
+      throw new Error(SERIALIZER_MODULE_ERROR)
+    }),
+    Match.orElse((presentPrint) => ({ test, print: presentPrint })),
+  )
+
+const serializePluginOf = (
+  test: SerializerPlugin['test'],
+  serialize: SerializeSerializer['serialize'] | undefined,
+  print: PrintSerializer['print'] | undefined,
+): SerializerPlugin =>
+  Match.value(serialize).pipe(
+    Match.when(Match.undefined, () => printPluginOf(test, print)),
+    Match.orElse((presentSerialize) => ({ test, serialize: presentSerialize })),
+  )
+
 const moduleAsPlugin = (module: SerializerModule): SerializerPlugin => {
   const candidate = module.default ?? module
-  const test = 'test' in candidate && typeof candidate.test === 'function' ? candidate.test : undefined
-  const serialize = 'serialize' in candidate && typeof candidate.serialize === 'function'
-    ? candidate.serialize
-    : undefined
-  const print = 'print' in candidate && typeof candidate.print === 'function' ? candidate.print : undefined
-  if (test === undefined || (serialize === undefined && print === undefined)) {
-    throw new Error('the snapshot serializer module exports neither a default nor test/serialize')
-  }
-  if (serialize !== undefined) {
-    return { test, serialize }
-  }
-  if (print !== undefined) {
-    return { test, print }
-  }
-  throw new Error('the snapshot serializer module exports neither a default nor test/serialize')
+  const test = testFunctionOf(candidate)
+  const serialize = serializeFunctionOf(candidate)
+  const print = printFunctionOf(candidate)
+  return Match.value(test).pipe(
+    Match.when(Match.undefined, () => {
+      throw new Error(SERIALIZER_MODULE_ERROR)
+    }),
+    Match.orElse((presentTest) => serializePluginOf(presentTest, serialize, print)),
+  )
 }
 
 interface RecordedSerializer {
@@ -111,26 +150,36 @@ export const setSnapshotRegistry = (registry: TestRegistry): void => {
   activeRegistry = registry
 }
 
-const attributedFileOf = (): string | undefined => {
-  if (drainWindowFile !== undefined) return drainWindowFile
-  const current = activeRegistry?.files.current
-  return typeof current === 'string' && current.length > 0 ? current : undefined
-}
+const currentRegistryFile = (): string | undefined =>
+  Option.getOrUndefined(
+    Option.filter(Option.fromUndefinedOr(activeRegistry?.files.current), (file) => file.length > 0),
+  )
+
+const attributedFileOf = (): string | undefined =>
+  Match.value(drainWindowFile).pipe(
+    Match.when(Match.undefined, () => currentRegistryFile()),
+    Match.orElse((file) => file),
+  )
+
+const isCurrentTestFile = (file: string | undefined): boolean => currentSnapshotTest()?.file === file
+
+const isSerializePlugin = (plugin: SerializerPlugin): plugin is SerializeSerializer =>
+  'serialize' in plugin && typeof plugin.serialize === 'function'
 
 const gatedSerializerOf = (plugin: SerializerPlugin, record: RecordedSerializer): SerializerPlugin => {
-  const test = (value: object): boolean => {
-    if (currentSnapshotTest()?.file !== record.file) return false
-    return plugin.test(value)
-  }
-  return 'serialize' in plugin && typeof plugin.serialize === 'function'
-    ? { test, serialize: plugin.serialize }
-    : { test, print: plugin.print }
+  const test = (value: object): boolean => isCurrentTestFile(record.file) ? plugin.test(value) : false
+  return isSerializePlugin(plugin) ? { test, serialize: plugin.serialize } : { test, print: plugin.print }
 }
 
-const hijackExpect = (expectApi: ExpectWithSerializers): void => {
-  if (hijackedExpects.has(expectApi)) return
+type HijackableExpect = ExpectWithSerializers & {
+  addSnapshotSerializer: (serializer: SerializerPlugin) => void
+}
+
+const isHijackableExpect = (expectApi: ExpectWithSerializers): expectApi is HijackableExpect =>
+  !hijackedExpects.has(expectApi) && typeof expectApi.addSnapshotSerializer === 'function'
+
+const installExpectHijack = (expectApi: HijackableExpect): void => {
   const realmAdd = expectApi.addSnapshotSerializer
-  if (typeof realmAdd !== 'function') return
   hijackedExpects.add(expectApi)
   expectApi.addSnapshotSerializer = (plugin: SerializerPlugin): void => {
     const record: RecordedSerializer = { plugin, file: attributedFileOf() }
@@ -139,20 +188,46 @@ const hijackExpect = (expectApi: ExpectWithSerializers): void => {
   }
 }
 
+const hijackExpect = (expectApi: ExpectWithSerializers): void => {
+  if (!isHijackableExpect(expectApi)) return
+  installExpectHijack(expectApi)
+}
+
 const ensureSerializerScope = (host: VmPluginHost): void => {
   const realmExpect = realmExpectOf(host)
   if (realmExpect !== undefined) hijackExpect(realmExpect)
 }
 
+const flushedFileOf = (file: string | undefined, testFile: string): string => file ?? testFile
+
 const flushPendingSerializers = (testFile: string): void => {
   for (const record of recordedSerializers) {
-    if (record.file === undefined) record.file = testFile
+    record.file = flushedFileOf(record.file, testFile)
   }
 }
 
 const projectSerializerSerializersOf = (
   project: VmProjectConfigLike | undefined,
-): ReadonlyArray<SerializerPlugin> => (project === undefined ? [] : projectSerializerCache.get(project.name) ?? [])
+): ReadonlyArray<SerializerPlugin> =>
+  Option.getOrElse(
+    Option.flatMap(Option.fromUndefinedOr(project), (present) =>
+      Option.fromUndefinedOr(projectSerializerCache.get(present.name))),
+    () => [],
+  )
+
+type SnapshotPlugins = Exclude<SnapshotFormatLike[string], undefined>
+
+const declaredPluginsOf = (project: VmProjectConfigLike | undefined): SnapshotPlugins | undefined =>
+  project?.snapshotFormat['plugins']
+
+const scopePluginsOf = (
+  declared: SnapshotPlugins | undefined,
+  fromProject: ReadonlyArray<SerializerPlugin>,
+): SnapshotPlugins =>
+  Option.getOrElse(
+    Option.filter(Option.fromUndefinedOr(declared), (present) => Array.isArray(present) && present.length > 0),
+    () => fromProject,
+  )
 
 const serializerScopeFor = (
   testFile: string,
@@ -160,12 +235,14 @@ const serializerScopeFor = (
 ): SnapshotFormatLike | undefined => {
   const fromProject = projectSerializerSerializersOf(project)
   void testFile
-  if (fromProject.length === 0) return undefined
-  const declared = project?.snapshotFormat['plugins']
-  return {
-    ...project?.snapshotFormat,
-    plugins: Array.isArray(declared) && declared.length > 0 ? declared : fromProject,
-  }
+  return Match.value(fromProject.length === 0).pipe(
+    Match.when(true, () => undefined),
+    Match.when(false, () => ({
+      ...project?.snapshotFormat,
+      plugins: scopePluginsOf(declaredPluginsOf(project), fromProject),
+    })),
+    Match.exhaustive,
+  )
 }
 
 const serializerEntryOf = (
@@ -174,13 +251,36 @@ const serializerEntryOf = (
   specifier: string,
   testFile: string,
   path: Path.Path,
-): string => {
-  const fromVite = runtime?.resolveIdSync(specifier, testFile)
-  if (fromVite !== undefined) {
-    return fromVite
-  }
-  return createRequire(path.join(host.sandboxWorkingDirectory, 'package.json')).resolve(specifier)
-}
+): string =>
+  Option.getOrElse(
+    Option.fromUndefinedOr(runtime?.resolveIdSync(specifier, testFile)),
+    () => nodeModule.createRequire(path.join(host.sandboxWorkingDirectory, 'package.json')).resolve(specifier),
+  )
+
+const projectViewOf = (project: VmProjectConfig | undefined): VmProjectConfigLike | undefined =>
+  Match.value(project).pipe(
+    Match.when(Match.undefined, () => undefined),
+    Match.orElse((present) => ({
+      name: present.name,
+      snapshotFormat: present.snapshotFormat,
+      snapshotSerializers: present.snapshotSerializers,
+    })),
+  )
+
+const updateModeOf = (options: SnapshotSupportOptions | undefined): SnapshotUpdateMode =>
+  snapshotUpdateMode(Option.getOrElse(Option.fromUndefinedOr(options?.ci), ciOf))
+
+const snapshotFormatFor = (testFile: string, project: VmProjectConfigLike | undefined): SnapshotFormatLike =>
+  Option.getOrElse(
+    Option.fromUndefinedOr(serializerScopeFor(testFile, project)),
+    () => Option.getOrElse(Option.fromUndefinedOr(project?.snapshotFormat), (): SnapshotFormatLike => ({})),
+  )
+
+const scopeEqual = (first: SnapshotStateOptionsLike, second: SnapshotStateOptionsLike): boolean =>
+  first.snapshotEnvironment === second.snapshotEnvironment && first.snapshotFormat === second.snapshotFormat
+
+const optionsEqual = (first: SnapshotStateOptionsLike, second: SnapshotStateOptionsLike): boolean =>
+  first.updateSnapshot === second.updateSnapshot && scopeEqual(first, second)
 
 const makeSnapshotSupport = (
   host: VmPluginHost,
@@ -196,47 +296,35 @@ const makeSnapshotSupport = (
     clients.set(file, created)
     return created
   }
-  const environment = createSnapshotEnvironment({
-    fileSystem,
-    path,
-    snapshotPathFor: (testFile) =>
-      host.state.read<VmVitestRuntime>(VM_VITEST_BAG_KEY)?.resolveSnapshotPathSync(testFile) ??
-        defaultSnapshotPath(path, testFile),
-  })
+  const snapshotPathFor = (testFile: string): string =>
+    Option.getOrElse(
+      Option.fromUndefinedOr(host.state.read<VmVitestRuntime>(VM_VITEST_BAG_KEY)?.resolveSnapshotPathSync(testFile)),
+      () => defaultSnapshotPath(path, testFile),
+    )
+  const environment = createSnapshotEnvironment({ fileSystem, path, snapshotPathFor })
   const openFiles = new Set<string>()
   let runKind: VmRunKind = 'mutant'
   ensureSerializerScope(host)
 
-  const projectFor = (testFile: string): VmProjectConfigLike | undefined => {
-    const project = host.state.read<VmVitestRuntime>(VM_VITEST_BAG_KEY)?.projectFor(testFile)
-    return project === undefined
-      ? undefined
-      : {
-        name: project.name,
-        snapshotFormat: project.snapshotFormat,
-        snapshotSerializers: project.snapshotSerializers,
-      }
-  }
+  const projectFor = (testFile: string): VmProjectConfigLike | undefined =>
+    projectViewOf(host.state.read<VmVitestRuntime>(VM_VITEST_BAG_KEY)?.projectFor(testFile))
 
   const optionsFor = (testFile: string): SnapshotStateOptionsLike => {
     const project = projectFor(testFile)
     return {
-      updateSnapshot: snapshotUpdateMode(options?.ci ?? ciOf()),
+      updateSnapshot: updateModeOf(options),
       snapshotEnvironment: environment,
-      snapshotFormat: serializerScopeFor(testFile, project) ?? project?.snapshotFormat ?? {},
+      snapshotFormat: snapshotFormatFor(testFile, project),
     }
   }
 
-  const ensureSerializers = (testFile: string): Promise<void> => {
-    const project = projectFor(testFile)
-    if (project === undefined || projectSerializerCache.has(project.name)) {
-      return Promise.resolve()
-    }
+  const ensureProjectSerializers = (testFile: string, project: VmProjectConfigLike): Promise<void> => {
+    if (projectSerializerCache.has(project.name)) return Promise.resolve()
     const runtime = host.state.read<VmVitestRuntime>(VM_VITEST_BAG_KEY)
     return project.snapshotSerializers.reduce<Promise<ReadonlyArray<SerializerPlugin>>>(
       (loaded, specifier) =>
         loaded.then((plugins) =>
-          import(pathToFileURL(serializerEntryOf(host, runtime, specifier, testFile, path)).href).then(
+          import(nodeUrl.pathToFileURL(serializerEntryOf(host, runtime, specifier, testFile, path)).href).then(
             (serializerModule: SerializerModule): ReadonlyArray<SerializerPlugin> => [
               ...plugins,
               moduleAsPlugin(serializerModule),
@@ -248,21 +336,20 @@ const makeSnapshotSupport = (
       projectSerializerCache.set(project.name, plugins)
     })
   }
+
+  const ensureSerializers = (testFile: string): Promise<void> =>
+    Option.getOrElse(
+      Option.map(
+        Option.fromUndefinedOr(projectFor(testFile)),
+        (project) => ensureProjectSerializers(testFile, project),
+      ),
+      () => Promise.resolve(),
+    )
+
   const fileSetups = new Map<string, Promise<void>>()
   const openStates = new Map<string, SnapshotStateOptionsLike>()
 
-  const optionsEqual = (first: SnapshotStateOptionsLike, second: SnapshotStateOptionsLike): boolean =>
-    first.updateSnapshot === second.updateSnapshot &&
-    first.snapshotEnvironment === second.snapshotEnvironment &&
-    first.snapshotFormat === second.snapshotFormat
-
-  const openFile = (file: string): Promise<void> => {
-    const settled = openStates.get(file)
-    if (settled !== undefined && optionsEqual(settled, optionsFor(file)) && openFiles.has(file)) {
-      return Promise.resolve()
-    }
-    const inFlight = fileSetups.get(file)
-    if (inFlight !== undefined) return inFlight
+  const startSetup = (file: string): Promise<void> => {
     const created = Promise.resolve()
       .then(() => {
         ensureSerializerScope(host)
@@ -281,6 +368,26 @@ const makeSnapshotSupport = (
     return created
   }
 
+  const pendingSetup = (file: string): Promise<void> => {
+    const inFlight = fileSetups.get(file)
+    return inFlight === undefined ? startSetup(file) : inFlight
+  }
+
+  const settledMatches = (
+    settled: SnapshotStateOptionsLike,
+    current: SnapshotStateOptionsLike,
+    open: boolean,
+  ): boolean => optionsEqual(settled, current) && open
+
+  const settledSession = (settled: SnapshotStateOptionsLike, file: string): Promise<void> =>
+    settledMatches(settled, optionsFor(file), openFiles.has(file)) ? Promise.resolve() : pendingSetup(file)
+
+  const openFile = (file: string): Promise<void> =>
+    Match.value(openStates.get(file)).pipe(
+      Match.when(Match.undefined, () => pendingSetup(file)),
+      Match.orElse((settled) => settledSession(settled, file)),
+    )
+
   const beginTest = (test: SnapshotTest, kind: VmRunKind): void => {
     runKind = kind
     clientFor(test.file).clearTest(test.file, test.id)
@@ -292,16 +399,21 @@ const makeSnapshotSupport = (
     setSnapshotTest(undefined)
   }
 
+  const finishOpenFile = (file: string): Promise<void> => {
+    openFiles.delete(file)
+    return Match.value(runKind).pipe(
+      Match.when('dry', () => clientFor(file).finish(file).then(() => undefined)),
+      Match.orElse(() => Promise.resolve()),
+    )
+  }
+
   const closeFile = (file: string): Promise<void> => {
     fileSetups.delete(file)
-    if (!openFiles.has(file)) {
-      return Promise.resolve()
-    }
-    openFiles.delete(file)
-    if (runKind === 'dry') {
-      return clientFor(file).finish(file).then(() => undefined)
-    }
-    return Promise.resolve()
+    return Match.value(openFiles.has(file)).pipe(
+      Match.when(false, () => Promise.resolve()),
+      Match.when(true, () => finishOpenFile(file)),
+      Match.exhaustive,
+    )
   }
 
   const closeAll = (): Promise<void> => {
@@ -312,13 +424,13 @@ const makeSnapshotSupport = (
   return { openFile, beginTest, endTest, closeFile, closeAll }
 }
 
-export const createSnapshotSupport = (
-  host: VmPluginHost,
-  options?: SnapshotSupportOptions,
-): Promise<SnapshotSupport> =>
+export const createSnapshotSupport = dual<
+  (options: SnapshotSupportOptions | undefined) => (host: VmPluginHost) => Promise<SnapshotSupport>,
+  (host: VmPluginHost, options?: SnapshotSupportOptions) => Promise<SnapshotSupport>
+>((args) => args.length >= 1, (host, options) =>
   Effect.runPromise(
     Effect.map(
       Effect.all([FileSystem.FileSystem, Path.Path]),
       ([fileSystem, path]) => makeSnapshotSupport(host, options, fileSystem, path),
     ).pipe(Effect.provide(platformLayers)),
-  )
+  ))

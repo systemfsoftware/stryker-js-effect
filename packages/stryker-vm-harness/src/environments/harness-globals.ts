@@ -82,15 +82,24 @@ const hookEntriesOf = (hooks: HookApi): ReadonlyArray<readonly [VitestGlobalName
   ['onTestFinished', hooks.onTestFinished],
 ]
 
+const prefer = (declared: object | undefined, fallback: object | undefined): object | undefined => declared ?? fallback
+
+const boundOf = (sources: HarnessGlobalSources): Partial<Record<VitestGlobalName, object | undefined>> => ({
+  expect: prefer(sources.expect, sources.vitest.expect),
+  assert: prefer(sources.expect, sources.vitest.assert),
+  vi: prefer(sources.vi, sources.vitest.vi),
+})
+
+const bindEntries = (
+  bound: Partial<Record<VitestGlobalName, object | undefined>>,
+  entries: ReadonlyArray<readonly [VitestGlobalName, object | undefined]>,
+): void => {
+  for (const [name, entry] of entries) bound[name] = entry
+}
+
 const harnessBound = (sources: HarnessGlobalSources): Partial<Record<VitestGlobalName, object | undefined>> => {
-  const bound: Partial<Record<VitestGlobalName, object | undefined>> = {
-    expect: sources.expect ?? sources.vitest.expect,
-    assert: sources.expect ?? sources.vitest.assert,
-    vi: sources.vi ?? sources.vitest.vi,
-  }
-  for (const [name, entry] of [...suiteEntriesOf(sources.api), ...hookEntriesOf(sources.api.hooks)]) {
-    bound[name] = entry
-  }
+  const bound = boundOf(sources)
+  bindEntries(bound, [...suiteEntriesOf(sources.api), ...hookEntriesOf(sources.api.hooks)])
   return bound
 }
 

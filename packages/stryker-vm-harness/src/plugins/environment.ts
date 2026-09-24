@@ -1,7 +1,6 @@
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import type * as Path from 'effect/Path'
-import { createRequire } from 'node:module'
 
 import * as Result from 'effect/Result'
 import {
@@ -26,6 +25,8 @@ import type { VmProjectConfig } from '../vitest-host/runtime.js'
 
 const PLUGIN_NAME = 'environment'
 
+const moduleBuiltin = globalThis.process.getBuiltinModule('node:module')
+
 interface SessionState {
   readonly path: Path.Path
   readonly runtimeModules: () => Promise<VitestRuntimeModules>
@@ -43,7 +44,7 @@ const stateFor = (host: VmPluginHost): SessionState => {
     path,
     runtimeModules: () => {
       modules ??= loadVitestRuntimeModules(
-        createRequire(host.resolveVitestModule('vitest/package.json')).resolve('vitest/runtime'),
+        moduleBuiltin.createRequire(host.resolveVitestModule('vitest/package.json')).resolve('vitest/runtime'),
         path,
       )
       return modules

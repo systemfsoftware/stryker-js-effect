@@ -1,3 +1,5 @@
+import * as Match from 'effect/Match'
+
 export interface HostEnvironment {
   readonly read: (name: string) => string | undefined
   readonly write: (name: string, value: string) => void
@@ -7,14 +9,22 @@ export interface HostEnvironment {
 const isEnvironmentObject = (candidate: unknown): candidate is Record<string, string | undefined> =>
   typeof candidate === 'object' && candidate !== null
 
+const environmentObjectOf = (descriptor: PropertyDescriptor | undefined): Record<string, string | undefined> =>
+  Match.value(descriptor).pipe(
+    Match.when(Match.undefined, (): Record<string, string | undefined> => ({})),
+    Match.orElse((present) => isEnvironmentObject(present.value) ? present.value : {}),
+  )
+
+const stringPropertyOf = (descriptor: PropertyDescriptor | undefined): string | undefined =>
+  Match.value(descriptor).pipe(
+    Match.when(Match.undefined, (): string | undefined => undefined),
+    Match.orElse((present) => typeof present.value === 'string' ? present.value : undefined),
+  )
+
 export const hostEnvironmentOf = (): HostEnvironment => {
-  const descriptor = Object.getOwnPropertyDescriptor(globalThis.process, 'env')
-  const environment = descriptor !== undefined && isEnvironmentObject(descriptor.value) ? descriptor.value : {}
+  const environment = environmentObjectOf(Object.getOwnPropertyDescriptor(globalThis.process, 'env'))
   return {
-    read: (name) => {
-      const value = Object.getOwnPropertyDescriptor(environment, name)
-      return typeof value?.value === 'string' ? value.value : undefined
-    },
+    read: (name) => stringPropertyOf(Object.getOwnPropertyDescriptor(environment, name)),
     write: (name, value) => {
       Reflect.set(environment, name, value)
     },

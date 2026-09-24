@@ -67,7 +67,7 @@ const workerSpawnOf = (
   )
 
 const optionalSandboxPathsOf = (command: InstrumentDone) =>
-  Boolean.match(command.project.testFiles.length === 0, {
+  Boolean.match(command.options.testFiles.length === 0, {
     onTrue: () => Result.succeed(undefined),
     onFalse: () => sandboxPathsOf(command.sandbox, command.project.testFiles),
   })

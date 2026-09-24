@@ -772,10 +772,13 @@ Feature('Verifying mutants without spawning a child process')
         Then('both checks pass and the two test bodies ran at the same time')((s) =>
           Effect.sync(() => {
             expect(s.checked.results.every((result) => result.status === 'complete')).toBe(true)
-            const moments = s.checked.stamps.map((lines) => lines.map((line) => Number(line.split(' ')[1])))
+            const moments: ReadonlyArray<readonly number[]> = s.checked.stamps.map((lines) =>
+              lines.map((line) => Number(line.split(' ')[1]))
+            )
             expect(moments.map((times) => times.length)).toEqual([2, 2])
-            const [first, second] = moments as [[number, number], [number, number]]
-            expect(Math.max(first[0], second[0])).toBeLessThan(Math.min(first[1], second[1]))
+            const first = moments[0] ?? []
+            const second = moments[1] ?? []
+            expect(Math.max(first[0] ?? 0, second[0] ?? 0)).toBeLessThan(Math.min(first[1] ?? 0, second[1] ?? 0))
           })
         ),
       ),
