@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -10,7 +10,7 @@ const ExitDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-j
 type ExitDecisionTypeId = typeof ExitDecisionTypeId
 
 export class ClassifyExitCommand extends S.TaggedClass<ClassifyExitCommand>()('ClassifyExitCommand', {
-  pending: S.Array(ExitClass),
+  pending: S.Array(Plugin.ExitClass),
   score: S.NullOr(S.Finite),
   breakingThreshold: S.NullOr(S.Finite),
 }) {
@@ -47,13 +47,13 @@ export const ClassifyExitDecision = S.Union([
 export type ClassifyExitDecision = typeof ClassifyExitDecision.Type
 
 const PRECEDENCE = ['InternalError', 'RuntimeError', 'ConfigError', 'VerdictFail'] as const satisfies ReadonlyArray<
-  ExitClass
+  Plugin.ExitClass
 >
 
-const precedenceOf = (pending: ReadonlyArray<ExitClass>) =>
+const precedenceOf = (pending: ReadonlyArray<Plugin.ExitClass>) =>
   Arr.findFirst(PRECEDENCE, (candidate) => pending.includes(candidate))
 
-const decisionOf = (exitClass: ExitClass) =>
+const decisionOf = (exitClass: Plugin.ExitClass) =>
   Match.value(exitClass).pipe(
     Match.when('VerdictFail', () => ExitVerdictFailed.make({})),
     Match.when('ConfigError', () => ExitConfigErrored.make({})),
@@ -69,8 +69,8 @@ const verdictExitClass = (score: number | null, breakingThreshold: number | null
       onNone: () => null,
       onSome: ([actual, threshold]) =>
         Match.value(actual < threshold).pipe(
-          Match.when(true, (): ExitClass => 'VerdictFail'),
-          Match.when(false, (): ExitClass | null => null),
+          Match.when(true, (): Plugin.ExitClass => 'VerdictFail'),
+          Match.when(false, (): Plugin.ExitClass | null => null),
           Match.exhaustive,
         ),
     },

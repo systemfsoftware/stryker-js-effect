@@ -1,7 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -26,19 +26,19 @@ import { StrykerPackage } from '../stryker-package.schema.js'
 import { PriorReportDocument, type PriorReportMutant } from './Survivors.schema.js'
 
 export interface SurvivorsAdmissionInput {
-  readonly cliOptions: PartialStrykerOptions
+  readonly cliOptions: Options.PartialStrykerOptions
   readonly mode: OutputMode
   readonly basePath: string
 }
 
 export interface SurvivorsAdmissionAnswer {
   readonly admission: Admitted | NoSurvivors
-  readonly resolvedOptions: StrykerOptions
+  readonly resolvedOptions: Options.StrykerOptions
   readonly priorReportPath: string
 }
 
 type SurvivorsRaw = typeof AdmitSurvivorsRunCommand.Encoded & {
-  readonly resolvedOptions: StrykerOptions
+  readonly resolvedOptions: Options.StrykerOptions
   readonly priorReportPath: string
 }
 
@@ -99,10 +99,10 @@ const extractSurvivors = (
 
 const resolveAbsolutePathOf = (basePath: string): ResolveAbsolutePath => (file) => `${basePath}/${file}`
 
-const resolveSurvivorsRunOptions = (cliOptions: PartialStrykerOptions, mode: OutputMode) =>
+const resolveSurvivorsRunOptions = (cliOptions: Options.PartialStrykerOptions, mode: OutputMode) =>
   readConfig(cliOptions, { command: 'run', mode })
 
-const priorReportPathOf = (resolved: StrykerOptions) =>
+const priorReportPathOf = (resolved: Options.StrykerOptions) =>
   Option.getOrElse(
     Option.filter(Option.fromUndefinedOr(resolved['survivorsPriorReport']), Predicate.isString),
     () => DEFAULT_SURVIVORS_PRIOR_REPORT,

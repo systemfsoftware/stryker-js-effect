@@ -1,12 +1,12 @@
-import { CanonicalFileName, LocationSchema, MutantId, MutatorName } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
 export const CheckerMutantWire = S.Struct({
-  id: MutantId,
-  fileName: CanonicalFileName,
-  mutatorName: MutatorName,
+  id: Mutant.MutantId,
+  fileName: Mutant.CanonicalFileName,
+  mutatorName: Mutant.MutatorName,
   replacement: S.String,
-  location: LocationSchema,
+  location: Mutant.LocationSchema,
 })
 export type CheckerMutantWire = typeof CheckerMutantWire.Type
 

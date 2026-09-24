@@ -1,6 +1,6 @@
 import { describe, it } from '@effect/vitest'
-import { CanonicalFileName, MutantId, MutatorName } from '@systemfsoftware/stryker-js-instrumenter'
-import { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Match } from 'effect'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -37,11 +37,11 @@ const mutantIdArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maxim
   Arbitrary.map((n) => n.toString()),
 )
 
-const mutantInFile = (id: string, fileName: string): CheckerMutantWire =>
-  CheckerMutantWire.make({
-    id: MutantId.make(id),
-    fileName: CanonicalFileName.make(fileName),
-    mutatorName: MutatorName.make('foo-mutator'),
+const mutantInFile = (id: string, fileName: string): Checker.CheckerMutantWire =>
+  Checker.CheckerMutantWire.make({
+    id: Mutant.MutantId.make(id),
+    fileName: Mutant.CanonicalFileName.make(fileName),
+    mutatorName: Mutant.MutatorName.make('foo-mutator'),
     replacement: 'x',
     location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
   })

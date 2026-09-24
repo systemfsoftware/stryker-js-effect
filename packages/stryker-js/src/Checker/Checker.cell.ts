@@ -1,6 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { Mutant, RunPlan as MutantRunPlan } from '@systemfsoftware/stryker-js-instrumenter'
-import { CheckerFailed, CheckerMutantWire, type CheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
@@ -23,21 +23,24 @@ import { type CheckerCrash, type CheckerResourceService } from './Checker.handle
 import { CheckerMutantFromMutant, UndescribableMutant } from './Checker.schema.js'
 
 interface GroupPartition {
-  readonly groups: readonly (readonly MutantRunPlan[])[]
+  readonly groups: readonly (readonly Mutant.RunPlan[])[]
   readonly grouped: ReadonlySet<string>
   readonly unrequested: readonly string[]
 }
 
-const plansById = (plans: readonly MutantRunPlan[]) =>
-  new Map(plans.map((plan): readonly [string, MutantRunPlan] => [plan.mutant.id, plan]))
+const plansById = (plans: readonly Mutant.RunPlan[]) =>
+  new Map(plans.map((plan): readonly [string, Mutant.RunPlan] => [plan.mutant.id, plan]))
 
-const missingPlanIds = (plans: readonly MutantRunPlan[], present: ReadonlySet<string>) =>
+const missingPlanIds = (plans: readonly Mutant.RunPlan[], present: ReadonlySet<string>) =>
   plans.map((plan) => plan.mutant.id).filter((id) => !present.has(id))
 
-const answeredPlanIds = (paired: readonly (readonly [MutantRunPlan, CheckResult])[]) =>
+const answeredPlanIds = (paired: readonly (readonly [Mutant.RunPlan, Checker.CheckResult])[]) =>
   new Set(paired.map(([plan]) => plan.mutant.id))
 
-const partitionAnswers = (byId: ReadonlyMap<string, MutantRunPlan>, answers: Readonly<Record<string, CheckResult>>) => {
+const partitionAnswers = (
+  byId: ReadonlyMap<string, Mutant.RunPlan>,
+  answers: Readonly<Record<string, Checker.CheckResult>>,
+) => {
   const entries = Object.entries(answers).map(([id, answer]) => ({
     id,
     answer,
@@ -61,8 +64,8 @@ const partitionAnswers = (byId: ReadonlyMap<string, MutantRunPlan>, answers: Rea
 
 const admitAnsweredPlans = (
   checkerName: string,
-  plans: readonly MutantRunPlan[],
-  paired: readonly (readonly [MutantRunPlan, CheckResult])[],
+  plans: readonly Mutant.RunPlan[],
+  paired: readonly (readonly [Mutant.RunPlan, Checker.CheckResult])[],
 ) =>
   Match.value(missingPlanIds(plans, answeredPlanIds(paired))).pipe(
     Match.when(
@@ -74,8 +77,8 @@ const admitAnsweredPlans = (
 
 const pairCheckResults = (
   checkerName: string,
-  plans: readonly MutantRunPlan[],
-  answers: Readonly<Record<string, CheckResult>>,
+  plans: readonly Mutant.RunPlan[],
+  answers: Readonly<Record<string, Checker.CheckResult>>,
 ) =>
   Match.value(partitionAnswers(plansById(plans), answers)).pipe(
     Match.when(
@@ -93,7 +96,7 @@ const pairCheckResults = (
     Match.orElse((partition) => admitAnsweredPlans(checkerName, plans, partition.paired)),
   )
 
-const partitionGroupIds = (byId: ReadonlyMap<string, MutantRunPlan>, idGroup: readonly string[]) => {
+const partitionGroupIds = (byId: ReadonlyMap<string, Mutant.RunPlan>, idGroup: readonly string[]) => {
   const entries = idGroup.map((id) => ({ id, plan: Option.fromUndefinedOr(byId.get(id)) }))
   return {
     plans: entries.flatMap((entry) =>
@@ -112,7 +115,7 @@ const partitionGroupIds = (byId: ReadonlyMap<string, MutantRunPlan>, idGroup: re
   }
 }
 
-const partitionGroups = (byId: ReadonlyMap<string, MutantRunPlan>, idGroups: readonly (readonly string[])[]) => {
+const partitionGroups = (byId: ReadonlyMap<string, Mutant.RunPlan>, idGroups: readonly (readonly string[])[]) => {
   const parts = idGroups.map((idGroup) => partitionGroupIds(byId, idGroup))
   return {
     groups: parts.map((part) => part.plans),
@@ -121,7 +124,7 @@ const partitionGroups = (byId: ReadonlyMap<string, MutantRunPlan>, idGroups: rea
   }
 }
 
-const admitGroupedPlans = (checkerName: string, plans: readonly MutantRunPlan[], partition: GroupPartition) =>
+const admitGroupedPlans = (checkerName: string, plans: readonly Mutant.RunPlan[], partition: GroupPartition) =>
   Match.value(missingPlanIds(plans, partition.grouped)).pipe(
     Match.when(
       (missing) => missing.length > 0,
@@ -130,7 +133,7 @@ const admitGroupedPlans = (checkerName: string, plans: readonly MutantRunPlan[],
     Match.orElse(() => Result.succeed(partition.groups)),
   )
 
-const pairGroups = (checkerName: string, plans: readonly MutantRunPlan[], idGroups: readonly (readonly string[])[]) =>
+const pairGroups = (checkerName: string, plans: readonly Mutant.RunPlan[], idGroups: readonly (readonly string[])[]) =>
   Match.value(partitionGroups(plansById(plans), idGroups)).pipe(
     Match.when(
       (partition) => partition.unrequested.length > 0,
@@ -150,7 +153,7 @@ const pairGroups = (checkerName: string, plans: readonly MutantRunPlan[], idGrou
 type DecidedAnswer = CheckResultDecision['pairs'][number]
 
 const writeDecidedAnswers = (
-  plans: readonly MutantRunPlan[],
+  plans: readonly Mutant.RunPlan[],
   checkerName: string,
   answers: readonly DecidedAnswer[],
 ) =>
@@ -158,35 +161,35 @@ const writeDecidedAnswers = (
     pairCheckResults(
       checkerName,
       plans,
-      Object.fromEntries(answers.map((answer): readonly [string, CheckResult] => [answer.id, answer.result])),
+      Object.fromEntries(answers.map((answer): readonly [string, Checker.CheckResult] => [answer.id, answer.result])),
     ),
   )
 
 const writeDecidedGroups = (
-  plans: readonly MutantRunPlan[],
+  plans: readonly Mutant.RunPlan[],
   checkerName: string,
   idGroups: readonly (readonly string[])[],
 ) => Effect.fromResult(pairGroups(checkerName, plans, idGroups))
 
 interface PartitionedMutants {
-  readonly wire: readonly CheckerMutantWire[]
+  readonly wire: readonly Checker.CheckerMutantWire[]
   readonly undescribable: readonly UndescribableMutant[]
 }
 
-const wireRecordOf = (mutant: Mutant) =>
+const wireRecordOf = (mutant: Mutant.Mutant) =>
   Result.mapError(
     S.decodeResult(CheckerMutantFromMutant)(mutant),
     (error) => UndescribableMutant.make({ id: mutant.id, fileName: mutant.fileName, reason: error.message }),
   )
 
-const partitionMutantsForWire = (plans: readonly MutantRunPlan[]): PartitionedMutants => {
+const partitionMutantsForWire = (plans: readonly Mutant.RunPlan[]): PartitionedMutants => {
   const [undescribable, wire] = Array.separate(Array.map(plans, (plan) => wireRecordOf(plan.mutant)))
   return { wire, undescribable }
 }
 
 const compileErrorAnswersOf = (undescribable: readonly UndescribableMutant[]) =>
   Object.fromEntries(
-    undescribable.map((mutant): readonly [string, CheckResult] => [
+    undescribable.map((mutant): readonly [string, Checker.CheckResult] => [
       mutant.id,
       { status: 'compileError', reason: mutant.reason },
     ]),
@@ -198,7 +201,7 @@ const undescribableIdsOf = (undescribable: readonly UndescribableMutant[]) =>
   new Set(undescribable.map((mutant) => mutant.id))
 
 interface WireLookup {
-  readonly wireById: ReadonlyMap<string, CheckerMutantWire>
+  readonly wireById: ReadonlyMap<string, Checker.CheckerMutantWire>
   readonly undescribableById: ReadonlyMap<string, UndescribableMutant>
 }
 
@@ -207,7 +210,7 @@ const lookupOf = (partitioned: PartitionedMutants): WireLookup => ({
   undescribableById: new Map(partitioned.undescribable.map((mutant) => [mutant.id, mutant])),
 })
 
-const selectedFromLookup = (plans: readonly MutantRunPlan[], lookup: WireLookup): PartitionedMutants => {
+const selectedFromLookup = (plans: readonly Mutant.RunPlan[], lookup: WireLookup): PartitionedMutants => {
   const [undescribable, wire] = Array.separate(
     Array.map(plans, (plan) =>
       Option.match(Option.fromUndefinedOr(lookup.wireById.get(plan.mutant.id)), {
@@ -259,13 +262,13 @@ const recordSkipped = (skipped: number) =>
 interface CheckerRequest {
   readonly checker: CheckerResourceService
   readonly checkerName: string
-  readonly plans: readonly MutantRunPlan[]
+  readonly plans: readonly Mutant.RunPlan[]
   readonly lookup: WireLookup | undefined
 }
 
 type CheckRaw = typeof CheckerCommand.Encoded & {
   readonly checker: CheckerResourceService
-  readonly plans: readonly MutantRunPlan[]
+  readonly plans: readonly Mutant.RunPlan[]
   readonly lookup: WireLookup | undefined
 }
 
@@ -320,7 +323,7 @@ const readGroupCommand = (input: CheckerRequest) =>
   })
 
 const commandFailed = (issue: string, input: CheckRaw) =>
-  CheckerFailed.make({
+  Checker.CheckerFailed.make({
     cause: issue,
     checkerName: input.checkerName,
     mutantIds: input.plans.map((plan) => plan.mutant.id),
@@ -361,23 +364,23 @@ export const checkGroupedPlans: {
   (
     checker: CheckerResourceService,
     checkerName: string,
-    plans: readonly MutantRunPlan[],
+    plans: readonly Mutant.RunPlan[],
   ): Effect.Effect<
-    readonly (readonly [MutantRunPlan, CheckResult])[],
-    CheckerCrash | CheckerFailed | CheckerContractBroken
+    readonly (readonly [Mutant.RunPlan, Checker.CheckResult])[],
+    CheckerCrash | Checker.CheckerFailed | CheckerContractBroken
   >
   (
     checkerName: string,
-    plans: readonly MutantRunPlan[],
+    plans: readonly Mutant.RunPlan[],
   ): (
     checker: CheckerResourceService,
   ) => Effect.Effect<
-    readonly (readonly [MutantRunPlan, CheckResult])[],
-    CheckerCrash | CheckerFailed | CheckerContractBroken
+    readonly (readonly [Mutant.RunPlan, Checker.CheckResult])[],
+    CheckerCrash | Checker.CheckerFailed | CheckerContractBroken
   >
 } = dual(
   3,
-  (checker: CheckerResourceService, checkerName: string, plans: readonly MutantRunPlan[]) =>
+  (checker: CheckerResourceService, checkerName: string, plans: readonly Mutant.RunPlan[]) =>
     checkGroupedCell.run({
       checker,
       checkerName,

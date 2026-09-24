@@ -6,10 +6,10 @@ import { Schema as S, SchemaGetter } from 'effect'
 import * as HashMap from 'effect/HashMap'
 
 import type { Ignorer as IgnorerDescriptor, Node } from '@systemfsoftware/stryker-ignorer-interface'
-import { WorkerEntryUrl, WorkerPluginKind } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export const PluginDescriptorSchema = S.Union([
-  S.Struct({ kind: WorkerPluginKind, name: S.String, workerEntry: WorkerEntryUrl }),
+  S.Struct({ kind: Plugin.WorkerPluginKind, name: S.String, workerEntry: Plugin.WorkerEntryUrl }),
   S.Struct({ kind: S.Literals(['Evaluator']), name: S.String }),
 ])
 
@@ -42,13 +42,13 @@ export const SchemaValidationContributionSchema = S.Struct({
 })
 
 export const PluginSourceSchema = S.Union([
-  S.Struct({ kind: WorkerPluginKind, name: S.String, modulePath: S.String, workerEntry: S.String }),
+  S.Struct({ kind: Plugin.WorkerPluginKind, name: S.String, modulePath: S.String, workerEntry: S.String }),
   S.Struct({ kind: S.Literals(['Evaluator']), name: S.String, modulePath: S.String }),
 ])
 
-export type PluginKind = WorkerPluginKind | 'Evaluator'
+export type PluginKind = Plugin.WorkerPluginKind | 'Evaluator'
 
-export interface WorkerPluginDescriptor<K extends WorkerPluginKind = WorkerPluginKind> {
+export interface WorkerPluginDescriptor<K extends Plugin.WorkerPluginKind = Plugin.WorkerPluginKind> {
   readonly kind: K
   readonly name: string
   readonly workerEntry: string
@@ -60,8 +60,8 @@ export interface EvaluatorPluginDescriptor {
 }
 
 export type AnyWorkerPluginDescriptor = {
-  [K in WorkerPluginKind]: WorkerPluginDescriptor<K>
-}[WorkerPluginKind]
+  [K in Plugin.WorkerPluginKind]: WorkerPluginDescriptor<K>
+}[Plugin.WorkerPluginKind]
 
 export type AnyPluginDescriptor = AnyWorkerPluginDescriptor | EvaluatorPluginDescriptor
 
@@ -69,7 +69,7 @@ export type PluginDescriptorOf<K extends PluginKind> = Extract<AnyPluginDescript
 
 export type PluginDescriptor<K extends PluginKind = PluginKind> = PluginDescriptorOf<K>
 
-export interface WorkerPluginSource<K extends WorkerPluginKind = WorkerPluginKind> {
+export interface WorkerPluginSource<K extends Plugin.WorkerPluginKind = Plugin.WorkerPluginKind> {
   readonly kind: K
   readonly name: string
   readonly modulePath: string
@@ -83,8 +83,8 @@ export interface EvaluatorPluginSource {
 }
 
 export type AnyWorkerPluginSource = {
-  [K in WorkerPluginKind]: WorkerPluginSource<K>
-}[WorkerPluginKind]
+  [K in Plugin.WorkerPluginKind]: WorkerPluginSource<K>
+}[Plugin.WorkerPluginKind]
 
 export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource
 

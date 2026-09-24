@@ -1,5 +1,6 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { type MutantRunOptions, TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import type { RunnerTestCase } from 'vitest'
@@ -19,12 +20,12 @@ export interface MutantRunCellDeps {
       readonly hasExternalError: boolean
       readonly externalErrorText: string
     },
-    TestRunnerFailed
+    TestRunner.TestRunnerFailed
   >
   readonly hitCount: Effect.Effect<number | undefined>
   readonly reportAllKillers: boolean
   readonly projectRoot: string
-  readonly vitestOptions: Effect.Effect<VitestRunnerOptions, TestRunnerFailed>
+  readonly vitestOptions: Effect.Effect<VitestRunnerOptions, TestRunner.TestRunnerFailed>
 }
 
 const trapIdMatches = (mutantId: string, trapId: string | undefined): boolean => {
@@ -81,7 +82,7 @@ const namedTrapIdOf = (
   idFromTrapId(mutant.id, options.timeoutTrapMutantId) ?? idFromTrapFile(mutant, options.timeoutTrapFile)
 
 export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
-  Sandwich.named('stryker.vitest.mutant_run')((command: MutantRunOptions) =>
+  Sandwich.named('stryker.vitest.mutant_run')((command: Mutant.MutantRunOptions) =>
     Effect.gen(function*() {
       const session = yield* VitestSession
       yield* session.setMode('mutant')
@@ -133,5 +134,5 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
         ),
       Error: (error) => Effect.succeed({ status: 'error' as const, errorMessage: error.errorMessage ?? 'unknown' }),
       CommandRejected: ({ issue }) =>
-        Effect.fail(new TestRunnerFailed({ runnerName: 'vitest', phase: 'mutantRun', cause: issue })),
+        Effect.fail(new TestRunner.TestRunnerFailed({ runnerName: 'vitest', phase: 'mutantRun', cause: issue })),
     })

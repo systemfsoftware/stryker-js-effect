@@ -1,4 +1,4 @@
-import { CheckerRpcs, type StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Metric from 'effect/Metric'
@@ -14,7 +14,7 @@ import {
 } from './Checker.handle.js'
 
 export interface CheckerSpec {
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly workerEntrypoint: string
   readonly workingDirectory: string
 }
@@ -26,7 +26,7 @@ const checkerProcessCrashes = Metric.counter('stryker.checker.process_crashes', 
 
 const TEMP_DIR_PREFIX = 'stryker-checker-'
 
-const nodeArgsOf = (options: StrykerOptions) =>
+const nodeArgsOf = (options: Options.StrykerOptions) =>
   Match.value(options.checkers[0]?.nodeArgs).pipe(
     Match.when(Match.undefined, () => options.checkerNodeArgs),
     Match.orElse((args) => args),
@@ -35,7 +35,7 @@ const nodeArgsOf = (options: StrykerOptions) =>
 const acquire = (spec: CheckerSpec) =>
   Effect.gen(function*() {
     const client = yield* makeWorkerClient({
-      rpcs: CheckerRpcs,
+      rpcs: Plugin.CheckerRpcs,
       options: spec.options,
       entrypoint: spec.workerEntrypoint,
       workingDirectory: spec.workingDirectory,

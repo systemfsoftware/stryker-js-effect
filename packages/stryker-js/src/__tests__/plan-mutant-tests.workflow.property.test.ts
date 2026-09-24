@@ -32,7 +32,7 @@ const hitsOf = (command: MutantTestPlanCommand, id: string) =>
   Option.getOrUndefined(Record.get(command.hitsByMutantId, id))
 
 const scenarioArb: Arbitrary.Arbitrary<MutantTestPlanCommand> = Arbitrary.schema(
-  S.Array(Mutant).check(S.isMinLength(1)),
+  S.Array(Mutant.Mutant).check(S.isMinLength(1)),
 ).pipe(
   Arbitrary.filter((mutants) => new Set(mutants.map((mutant) => mutant.id)).size === mutants.length),
   Arbitrary.flatMap((mutants) =>

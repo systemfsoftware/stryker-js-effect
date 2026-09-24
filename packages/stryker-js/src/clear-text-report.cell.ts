@@ -1,8 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ReporterEvent, ReporterFactory, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import type * as Context from 'effect/Context'
@@ -26,26 +24,26 @@ import {
 import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
 import { AnsiCode, type AnsiColor } from './reporting/ansi.schema.js'
 
-const failAsClearText = <E = unknown>(cause: E): ReporterFailed =>
-  ReporterFailed.make({
+const failAsClearText = <E = unknown>(cause: E): Reporter.ReporterFailed =>
+  Reporter.ReporterFailed.make({
     reporterName: 'clear-text',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
 interface TerminalReport {
-  readonly report: reportApi.MutationTestResult
-  readonly metrics: reportApi.MetricsResult
+  readonly report: Report.MutationTestResult
+  readonly metrics: Report.MetricsResult
 }
 
-const terminalReportOf = Filter.make((event: ReporterEvent): Result.Result<TerminalReport, 'not-terminal'> =>
+const terminalReportOf = Filter.make((event: Reporter.ReporterEvent): Result.Result<TerminalReport, 'not-terminal'> =>
   Match.value(event).pipe(
     Match.tag('mutationTestReportReady', (ready) => Result.succeed({ report: ready.report, metrics: ready.metrics })),
     Match.orElse(() => Result.fail('not-terminal' as const)),
   )
 )
 
-const renderOptionsOf = (options: StrykerOptions): ClearTextRenderOptions => ({
+const renderOptionsOf = (options: Options.StrykerOptions): ClearTextRenderOptions => ({
   allowColor: options.clearTextReporter.allowColor,
   allowEmojis: options.clearTextReporter.allowEmojis,
   logTests: options.clearTextReporter.logTests,
@@ -58,8 +56,8 @@ const renderOptionsOf = (options: StrykerOptions): ClearTextRenderOptions => ({
 })
 
 const readClearTextReport = (input: {
-  readonly options: StrykerOptions
-  readonly events: AsyncIterable<ReporterEvent>
+  readonly options: Options.StrykerOptions
+  readonly events: AsyncIterable<Reporter.ReporterEvent>
 }) =>
   Effect.map(
     Stream.fromAsyncIterable(input.events, failAsClearText).pipe(
@@ -131,7 +129,7 @@ const writeChunks = (
   output: ReporterOutputShape,
   channel: 'stdout' | 'stderr',
   chunks: readonly ReportChunk[],
-): Effect.Effect<void, ReporterFailed> =>
+): Effect.Effect<void, Reporter.ReporterFailed> =>
   output.write(channel, chunks.map((chunk) => `${renderChunk(chunk)}\n`)).pipe(
     Effect.mapError(failAsClearText),
     Effect.asVoid,
@@ -157,7 +155,7 @@ type ReporterCellServices<C> = C extends Cell.Cell<infer _I, infer _A, infer _E,
 
 export const clearTextReporterFactory = (
   context: Context.Context<ReporterCellServices<typeof clearTextReportCell>>,
-): ReporterFactory => {
+): Reporter.ReporterFactory => {
   const report = Cell.provideContext(clearTextReportCell, context)
   return (options) => (events) => Effect.asVoid(report.run({ options, events }))
 }

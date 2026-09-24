@@ -1,16 +1,16 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import * as schema from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Result from 'effect/Result'
 import { expect } from 'vitest'
-
 import {
   JudgeTestContribution,
   judgeTestContribution,
-  type ReportView,
   type TestContributionDecision,
-} from '@systemfsoftware/stryker-test-contribution'
+} from '../src/judge-test-contribution.workflow.js'
+import type { ReportView } from '../src/test-contribution.schema.js'
 
 import { optionalRunnerFields } from './__fixtures__/optional-runner-fields.js'
 
@@ -20,10 +20,10 @@ const LOCATION = { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } }
 
 const mutantOf = (
   id: string,
-  status: schema.MutantStatus,
+  status: Mutant.MutantStatus,
   killedBy?: string[],
   coveredBy?: string[],
-): schema.MutantResult => ({
+): Report.MutantResult => ({
   id,
   status,
   mutatorName: 'BooleanLiteral',
@@ -32,9 +32,9 @@ const mutantOf = (
 })
 
 const reportOf = (
-  mutants: schema.MutantResult[],
+  mutants: Report.MutantResult[],
   testFiles: Record<string, string[]>,
-): Pick<schema.MutationTestResult, 'files' | 'testFiles'> => ({
+): Pick<Report.MutationTestResult, 'files' | 'testFiles'> => ({
   files: {
     'src/subject.ts': { language: 'typescript', source: 'export const a = 1\n', mutants },
   },
@@ -79,7 +79,7 @@ const contributionByTestFile = (report: ReportView) => new Map(judgedWith(report
 const defaultSuffixes: readonly string[] = JudgeTestContribution.defaultRequireTestContributionSuffixes
 // The canonical "earns vs idle" report: one file claims a sole kill, the other kills nothing another
 // does not also kill. Used by every scenario that distinguishes auditable from redundant files.
-const earnsAndIdleReport = (): Pick<schema.MutationTestResult, 'files' | 'testFiles'> =>
+const earnsAndIdleReport = (): Pick<Report.MutationTestResult, 'files' | 'testFiles'> =>
   reportOf(
     [
       mutantOf('m1', 'Killed', ['t1', 't2'], ['t1', 't2']),

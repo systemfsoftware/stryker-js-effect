@@ -2,8 +2,7 @@ import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
-import { TraceContextPartsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { TraceContextParts } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 
 const CURRENT_VERSION = '00'
 const SAMPLED_FLAG = 0x01
@@ -23,21 +22,22 @@ const sampledFlagOf = (sampled: boolean) => Boolean.match(sampled, { onTrue: () 
 
 const sampledOf = (traceFlags: number) => (traceFlags & SAMPLED_FLAG) === SAMPLED_FLAG
 
-export const TraceContextPartsFromEffectSpan: S.Codec<TraceContextParts, EffectSpanIdentity> = EffectSpanShape.pipe(
-  S.decodeTo(
-    TraceContextPartsSchema,
-    SchemaTransformation.transform({
-      decode: (span) => ({
-        version: CURRENT_VERSION,
-        traceId: span.traceId,
-        spanId: span.spanId,
-        traceFlags: sampledFlagOf(span.sampled),
+export const TraceContextPartsFromEffectSpan: S.Codec<Trace.TraceContextParts, EffectSpanIdentity> = EffectSpanShape
+  .pipe(
+    S.decodeTo(
+      Trace.TraceContextPartsSchema,
+      SchemaTransformation.transform({
+        decode: (span) => ({
+          version: CURRENT_VERSION,
+          traceId: span.traceId,
+          spanId: span.spanId,
+          traceFlags: sampledFlagOf(span.sampled),
+        }),
+        encode: (parts) => ({
+          traceId: parts.traceId,
+          spanId: parts.spanId,
+          sampled: sampledOf(parts.traceFlags),
+        }),
       }),
-      encode: (parts) => ({
-        traceId: parts.traceId,
-        spanId: parts.spanId,
-        sampled: sampledOf(parts.traceFlags),
-      }),
-    }),
-  ),
-)
+    ),
+  )

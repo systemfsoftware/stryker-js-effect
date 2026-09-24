@@ -1,10 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
-import {
-  isCustomTestRunner,
-  type ReporterFactory,
-  type StrykerOptions,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import { Options, type Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
@@ -30,7 +26,6 @@ import { type RunEvent } from '../run-events.service.js'
 import { PhaseEntered } from '../run-events.service.js'
 import { RunEvents } from '../run-events.service.js'
 
-import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   type EvaluatorPluginDescriptor,
   IgnorerModuleSchema,
@@ -74,13 +69,13 @@ export interface PrepareDone {
   readonly project: Project
   readonly loadedPlugins: LoadedPlugins
   readonly ignorers: readonly Ignorer[]
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly temporaryDirectoryPath: string
   readonly reporterStage: ReporterStage
 }
 
 export interface PrepareExecutorArgs {
-  cliOptions: PartialStrykerOptions
+  cliOptions: Options.PartialStrykerOptions
   targetMutatePatterns: string[] | undefined
 }
 
@@ -352,12 +347,12 @@ const loadPlugins = (
     return result
   })
 
-const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[] => [
+const pluginUrlsFromOptions = (options: Options.StrykerOptions): readonly string[] => [
   ...options.plugins,
   ...options.appendPlugins,
   ...options.ignorers,
   ...Match.value(options.testRunner).pipe(
-    Match.when(isCustomTestRunner, (runner) => [runner.plugin]),
+    Match.when(Options.isCustomTestRunner, (runner) => [runner.plugin]),
     Match.orElse(() => []),
   ),
   ...options.checkers.map((checker) => checker.plugin),
@@ -366,11 +361,11 @@ const pluginUrlsFromOptions = (options: StrykerOptions): readonly string[] => [
 type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly env: RunEnvironmentShape
   readonly queue: Queue.Queue<RunEvent, Cause.Done>
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly loaded: LoadedPlugins
   readonly project: Project
   readonly ignorers: readonly Ignorer[]
-  readonly builtinReporterFactories: Record<string, ReporterFactory>
+  readonly builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory>
   readonly reporterChoicesByName: HashMap.HashMap<string, ReporterChoice>
 }
 
@@ -394,7 +389,7 @@ const buildMergedSchema = <A = unknown>(
 
 interface ReporterChoice {
   readonly name: string
-  readonly builtinFactory: Option.Option<ReporterFactory>
+  readonly builtinFactory: Option.Option<InterfaceReporter.ReporterFactory>
 }
 
 const announceSummary = (env: RunEnvironmentShape, summary: string) =>
@@ -415,9 +410,9 @@ const spawnPluginReporterFactory = (
   name: string,
   loaded: LoadedPlugins,
   projectBasePath: string,
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
 ): Effect.Effect<
-  ReporterFactory,
+  InterfaceReporter.ReporterFactory,
   StageError,
   Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
 > =>
@@ -458,7 +453,7 @@ const reporterInputsOf = (
   choicesByName: HashMap.HashMap<string, ReporterChoice>,
   loaded: LoadedPlugins,
   projectBasePath: string,
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
 ): Effect.Effect<
   readonly AttachReporterInput[],
   StageError,
@@ -508,7 +503,7 @@ const readPrepare = (command: ReadProjectDone): Effect.Effect<
     const coreSchema: ValidationSchemaDocument = forkCoreSchema
     const configured = command.options
     const resolvedReporters = selectReporters([...configured.reporters], env.resolvedMode.mode)
-    const options: StrykerOptions = {
+    const options: Options.StrykerOptions = {
       ...configured,
       reporters: resolvedReporters,
       allowConsoleColors: env.allowConsoleColors,
@@ -535,7 +530,7 @@ const readPrepare = (command: ReadProjectDone): Effect.Effect<
     )
     const ignorers: readonly Ignorer[] = loaded.ignorers
 
-    const builtinReporterFactories: Record<string, ReporterFactory> = {
+    const builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory> = {
       ...(yield* Reporter).builtin,
       ...env.builtinReporters,
     }
@@ -551,7 +546,7 @@ const readPrepare = (command: ReadProjectDone): Effect.Effect<
         (descriptor) =>
           [
             descriptor.name.toLowerCase(),
-            { name: descriptor.name, builtinFactory: Option.none<ReporterFactory>() },
+            { name: descriptor.name, builtinFactory: Option.none<InterfaceReporter.ReporterFactory>() },
           ] as const,
       ),
     ])

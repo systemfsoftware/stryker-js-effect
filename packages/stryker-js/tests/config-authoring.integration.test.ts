@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { type ConfigEnv, StrykerConfig } from '@systemfsoftware/stryker-js/config'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -17,7 +17,7 @@ Feature('Authoring a Stryker configuration with the published helper')
       Gherkin.Do.pipe(
         Given('a configuration raising the high threshold to 90')(
           'written',
-          () => Effect.succeed({ thresholds: { high: 90 } } satisfies PartialStrykerOptions),
+          () => Effect.succeed({ thresholds: { high: 90 } } satisfies Options.PartialStrykerOptions),
         ),
         When('the author hands it to the helper')(
           'received',
@@ -38,7 +38,7 @@ Feature('Authoring a Stryker configuration with the published helper')
             Effect.sync(() => {
               const calls: string[] = []
               const highByMode: Record<string, number> = { machine: 91 }
-              const factory = (env: ConfigEnv): PartialStrykerOptions => {
+              const factory = (env: ConfigEnv): Options.PartialStrykerOptions => {
                 calls.push(env.mode)
                 return { thresholds: { high: highByMode[env.mode] ?? 92 } }
               }
@@ -62,7 +62,10 @@ Feature('Authoring a Stryker configuration with the published helper')
       Gherkin.Do.pipe(
         Given('a preset raising the low threshold to 50 and naming one plugin')(
           'preset',
-          () => Effect.succeed({ plugins: ['@acme/preset'], thresholds: { low: 50 } } satisfies PartialStrykerOptions),
+          () =>
+            Effect.succeed(
+              { plugins: ['@acme/preset'], thresholds: { low: 50 } } satisfies Options.PartialStrykerOptions,
+            ),
         ),
         When('an override naming another plugin and a higher threshold is composed onto the preset')(
           'composed',

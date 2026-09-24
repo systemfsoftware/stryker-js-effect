@@ -1,18 +1,6 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import {
-  CanonicalFileName,
-  type CoverageData,
-  ErrorText,
-  type MutantCoverage as DryRunMutantCoverage,
-} from '@systemfsoftware/stryker-js-instrumenter'
-import type {
-  DryRunOptions,
-  DryRunResult,
-  MutantRunOptions,
-  TestResult,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
-import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
 import * as Crypto from 'effect/Crypto'
@@ -51,12 +39,15 @@ import {
 import { VitestSession, type VitestSessionInput } from './VitestSession.service.js'
 
 const asRunnerFailure = (phase: TestRunnerPhase) => <E>(cause: E) =>
-  Option.match(Option.liftPredicate(cause, S.is(TestRunnerFailed)), {
+  Option.match(Option.liftPredicate(cause, S.is(TestRunner.TestRunnerFailed)), {
     onNone: () =>
-      new TestRunnerFailed({
+      new TestRunner.TestRunnerFailed({
         runnerName: 'vitest',
         phase,
-        cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+        cause: Option.getOrElse(
+          Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text),
+          () => '',
+        ),
       }),
     onSome: (failed) => failed,
   })
@@ -67,7 +58,7 @@ const fromTestId = (id: string) => {
   return { file, name: name.join('#') }
 }
 
-const canonicalOf = (path: string) => Option.getOrElse(S.decodeOption(CanonicalFileName)(path), () => path)
+const canonicalOf = (path: string) => Option.getOrElse(S.decodeOption(Mutant.CanonicalFileName)(path), () => path)
 
 const normalizeTestId = (id: string, projectRoot: string, pathService: Path.Path) => {
   const { file, name } = fromTestId(id)
@@ -76,10 +67,10 @@ const normalizeTestId = (id: string, projectRoot: string, pathService: Path.Path
 
 /** Coverage keyed by project-relative test ids, as the report expects it. */
 const normalizeCoverage = (
-  rawCoverage: DryRunMutantCoverage,
+  rawCoverage: Mutant.MutantCoverage,
   projectRoot: string,
   pathService: Path.Path,
-): DryRunMutantCoverage => ({
+): Mutant.MutantCoverage => ({
   perTest: Object.fromEntries(
     Object.entries(rawCoverage.perTest).map(([rawTestId, coverageData]) => [
       normalizeTestId(rawTestId, projectRoot, pathService),
@@ -155,7 +146,7 @@ const runFilterPlan = (filter: RunFilter, projectRoot: string, pathService: Path
 const isMissingTestFilesCause = <E>(cause: E): boolean =>
   isErrorCodeError(cause) && cause.code.includes(VITEST_ERROR_CODES.FILES_NOT_FOUND)
 
-const mergeHitCount = (to: CoverageData, mutantId: string, hitCount: number) =>
+const mergeHitCount = (to: Mutant.CoverageData, mutantId: string, hitCount: number) =>
   Option.match(Option.fromNullishOr(to[mutantId]), {
     onNone: () => {
       to[mutantId] = hitCount
@@ -165,15 +156,15 @@ const mergeHitCount = (to: CoverageData, mutantId: string, hitCount: number) =>
     },
   })
 
-const mergeCoverage = (to: CoverageData, from: CoverageData) => {
+const mergeCoverage = (to: Mutant.CoverageData, from: Mutant.CoverageData) => {
   Object.entries(from).forEach(([mutantId, hitCount]) => mergeHitCount(to, mutantId, hitCount))
 }
 
 /** The TestRunner this package serves: vitest in a sandbox, one session per worker. */
 export const layer = (
   input: VitestSessionInput,
-): Layer.Layer<TestRunner, never, Crypto.Crypto | FileSystem.FileSystem | Path.Path> =>
-  Layer.effect(TestRunner, makeRunner(input)).pipe(Layer.provide(VitestSession.layer(input)))
+): Layer.Layer<TestRunner.TestRunner, never, Crypto.Crypto | FileSystem.FileSystem | Path.Path> =>
+  Layer.effect(TestRunner.TestRunner, makeRunner(input)).pipe(Layer.provide(VitestSession.layer(input)))
 
 const makeRunner = (input: VitestSessionInput) =>
   Effect.gen(function*() {
@@ -198,7 +189,7 @@ const makeRunner = (input: VitestSessionInput) =>
       return hitCounts.reduce((total, count) => total + count, 0)
     })
 
-    const validateCoverage = (coverage: DryRunMutantCoverage) => {
+    const validateCoverage = (coverage: Mutant.MutantCoverage) => {
       const normalized = normalizeCoverage(coverage, projectRoot, pathService)
       return S.decodeEffect(MutantCoverageShapeSchema)(normalized).pipe(
         Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
@@ -218,7 +209,11 @@ const makeRunner = (input: VitestSessionInput) =>
         })
       })
 
-    const mergeTestCoverage = (perTest: Record<string, CoverageData>, testId: string, coverage: CoverageData) =>
+    const mergeTestCoverage = (
+      perTest: Record<string, Mutant.CoverageData>,
+      testId: string,
+      coverage: Mutant.CoverageData,
+    ) =>
       Option.match(Option.fromNullishOr(perTest[testId]), {
         onNone: () => {
           perTest[testId] = coverage
@@ -228,7 +223,7 @@ const makeRunner = (input: VitestSessionInput) =>
         },
       })
 
-    const mergeProjectCoverage = (into: DryRunMutantCoverage, coverage: DryRunMutantCoverage) => {
+    const mergeProjectCoverage = (into: Mutant.MutantCoverage, coverage: Mutant.MutantCoverage) => {
       Object.entries(coverage.perTest).forEach(([testId, perTest]) => mergeTestCoverage(into.perTest, testId, perTest))
       mergeCoverage(into.static, coverage.static)
       return into
@@ -256,11 +251,11 @@ const makeRunner = (input: VitestSessionInput) =>
         yield* applyRunFilter(self, { related, testNamePattern: plan.testNamePattern })
         yield* start(self, plan.testFiles).pipe(
           Effect.catchIf(
-            (error: TestRunnerFailed) => isMissingTestFilesCause(error.cause),
+            (error: TestRunner.TestRunnerFailed) => isMissingTestFilesCause(error.cause),
             () => Effect.annotateCurrentSpan({ 'stryker.vitest.start_missing_files': true }).pipe(Effect.asVoid),
           ),
           Effect.catchIf(
-            (error: TestRunnerFailed) => !isMissingTestFilesCause(error.cause),
+            (error: TestRunner.TestRunnerFailed) => !isMissingTestFilesCause(error.cause),
             (error) =>
               Effect.annotateCurrentSpan({ 'stryker.vitest.start_errored': true }).pipe(
                 Effect.flatMap(() => Effect.fail(error)),
@@ -303,7 +298,7 @@ const makeRunner = (input: VitestSessionInput) =>
       Context.make(VitestSession, session),
     )
 
-    const dryRunFilter = (options: DryRunOptions): RunFilter => {
+    const dryRunFilter = (options: TestRunner.DryRunOptions): RunFilter => {
       const relatedFiles = Option.getOrUndefined(
         Option.map(Option.fromNullishOr(options.files), (files) => [...files]),
       )
@@ -319,7 +314,7 @@ const makeRunner = (input: VitestSessionInput) =>
       })
     }
 
-    const completeDryRun = (tests: readonly TestResult[]) =>
+    const completeDryRun = (tests: readonly TestRunner.TestResult[]) =>
       Effect.gen(function*() {
         const mutantCoverage = yield* readMutantCoverage.pipe(Effect.mapError(asRunnerFailure('dryRun')))
         yield* Effect.annotateCurrentSpan({
@@ -327,12 +322,12 @@ const makeRunner = (input: VitestSessionInput) =>
           'stryker.vitest.has_mutant_coverage': mutantCoverage !== undefined,
         })
         return Option.match(Option.fromNullishOr(mutantCoverage), {
-          onNone: (): DryRunResult => ({ status: 'complete', tests }),
-          onSome: (coverage): DryRunResult => ({ status: 'complete', tests, mutantCoverage: coverage }),
+          onNone: (): TestRunner.DryRunResult => ({ status: 'complete', tests }),
+          onSome: (coverage): TestRunner.DryRunResult => ({ status: 'complete', tests, mutantCoverage: coverage }),
         })
       })
 
-    const dryRun = (options: DryRunOptions) =>
+    const dryRun = (options: TestRunner.DryRunOptions) =>
       session.setMode('dry-run').pipe(
         Effect.andThen(Effect.gen(function*() {
           const { rawTests, hasExternalError, externalErrorText: errorText } = yield* collectRaw(
@@ -362,13 +357,13 @@ const makeRunner = (input: VitestSessionInput) =>
         Effect.mapError(asRunnerFailure('dryRun')),
       )
 
-    const mutantRun = (options: MutantRunOptions) =>
+    const mutantRun = (options: Mutant.MutantRunOptions) =>
       mutantRunCell.run(options).pipe(Effect.mapError(asRunnerFailure('mutantRun')))
 
     const capabilities = Effect.succeed({ reloadEnvironment: true })
     const initialized = runtime.pipe(Effect.asVoid)
 
-    return TestRunner.of({
+    return TestRunner.TestRunner.of({
       capabilities: initialized.pipe(Effect.andThen(capabilities)),
       init: initialized,
       dryRun: (options) => initialized.pipe(Effect.andThen(dryRun(options))),

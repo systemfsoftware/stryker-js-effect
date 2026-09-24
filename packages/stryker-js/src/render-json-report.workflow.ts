@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -8,14 +8,14 @@ const JsonReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/
 type JsonReportTypeId = typeof JsonReportTypeId
 
 export class JsonReportCommand extends S.TaggedClass<JsonReportCommand>()('JsonReportCommand', {
-  reported: S.optional(MutationTestResultSchema),
+  reported: S.optional(Report.MutationTestResultSchema),
   rendered: S.Boolean,
 }) {
   static readonly [Workflow.InstrumentationBrand] = { rendered: 'stryker.report.render' } as const
 }
 
 export class JsonReportRendered extends S.TaggedClass<JsonReportRendered>()('JsonReportRendered', {
-  report: MutationTestResultSchema,
+  report: Report.MutationTestResultSchema,
 }) {
   readonly [JsonReportTypeId] = JsonReportTypeId
 }

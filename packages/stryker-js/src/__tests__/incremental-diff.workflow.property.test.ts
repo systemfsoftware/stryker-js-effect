@@ -1,11 +1,5 @@
 import { describe, it } from '@effect/vitest'
-import {
-  CanonicalFileName,
-  Mutant,
-  MutantId,
-  MutatorName,
-  PositionSchema,
-} from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -13,20 +7,20 @@ import { EphemeralStatusSchema, RememberedStatusSchema } from '../../tests/__fix
 import { incrementalDiff, IncrementalDiffCommand, MutantRemembered, MutantToRun } from '../incremental-diff.workflow.js'
 
 const mutantOf = (id: string, line: number) =>
-  Mutant.make({
-    id: MutantId.make(id),
-    fileName: CanonicalFileName.make(`src/mutant-${line}.ts`),
-    mutatorName: MutatorName.make(`${id}-mutator`),
+  Mutant.Mutant.make({
+    id: Mutant.MutantId.make(id),
+    fileName: Mutant.CanonicalFileName.make(`src/mutant-${line}.ts`),
+    mutatorName: Mutant.MutatorName.make(`${id}-mutator`),
     replacement: '',
     location: { start: { line, column: 0 }, end: { line, column: 1 } },
   })
 
-const shiftedLocationOf = (mutant: Mutant) => ({
+const shiftedLocationOf = (mutant: Mutant.Mutant) => ({
   start: { line: mutant.location.start.line + 1, column: mutant.location.start.column + 1 },
   end: { line: mutant.location.end.line + 1, column: mutant.location.end.column + 1 },
 })
 
-const previousMutantOf = (mutant: Mutant, status: string, testsCompleted: number) => ({
+const previousMutantOf = (mutant: Mutant.Mutant, status: string, testsCompleted: number) => ({
   mutatorName: mutant.mutatorName,
   replacement: mutant.replacement,
   location: shiftedLocationOf(mutant),
@@ -35,7 +29,7 @@ const previousMutantOf = (mutant: Mutant, status: string, testsCompleted: number
   coveredBy: [mutant.id],
   killedBy: [mutant.id],
 })
-const forceCommandOf = (mutants: ReadonlyArray<Mutant>) =>
+const forceCommandOf = (mutants: ReadonlyArray<Mutant.Mutant>) =>
   IncrementalDiffCommand.make({
     currentMutants: [...mutants],
     relativeFileByMutantId: Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant.fileName])),
@@ -64,7 +58,7 @@ describe('incrementalDiff', () => {
     S.NonEmptyString,
     RememberedStatusSchema,
     S.Finite,
-    PositionSchema.fields.line,
+    Mutant.PositionSchema.fields.line,
   ], ([
     id,
     status,
@@ -101,7 +95,7 @@ describe('incrementalDiff', () => {
 
   it.prop(
     '∀il_EphemeralStatus_ToRun',
-    [S.NonEmptyString, EphemeralStatusSchema, PositionSchema.fields.line],
+    [S.NonEmptyString, EphemeralStatusSchema, Mutant.PositionSchema.fields.line],
     ([id, status, line]) => {
       const mutant = mutantOf(id, line)
       const previous = previousMutantOf(mutant, status, line)
@@ -123,7 +117,7 @@ describe('incrementalDiff', () => {
 
   it.prop(
     '∀il_ChangedSourceFile_ToRun',
-    [S.NonEmptyString, RememberedStatusSchema, PositionSchema.fields.line],
+    [S.NonEmptyString, RememberedStatusSchema, Mutant.PositionSchema.fields.line],
     ([id, status, line]) => {
       const mutant = mutantOf(id, line)
       const previous = previousMutantOf(mutant, status, line)
@@ -145,7 +139,7 @@ describe('incrementalDiff', () => {
 
   it.prop(
     '∀il_UnshiftedPreviousKey_ToRun',
-    [S.NonEmptyString, RememberedStatusSchema, PositionSchema.fields.line],
+    [S.NonEmptyString, RememberedStatusSchema, Mutant.PositionSchema.fields.line],
     ([id, status, line]) => {
       const mutant = mutantOf(id, line)
       const previous = { ...previousMutantOf(mutant, status, line), location: mutant.location }
@@ -167,7 +161,7 @@ describe('incrementalDiff', () => {
 
   it.prop(
     '∀ilt_ChangedCoverage_ToRun',
-    [S.NonEmptyString, RememberedStatusSchema, PositionSchema.fields.line, S.NonEmptyString],
+    [S.NonEmptyString, RememberedStatusSchema, Mutant.PositionSchema.fields.line, S.NonEmptyString],
     ([id, status, line, testFile]) => {
       const mutant = mutantOf(id, line)
       const previous = previousMutantOf(mutant, status, line)

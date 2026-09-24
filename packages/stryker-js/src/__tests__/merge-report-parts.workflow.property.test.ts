@@ -1,6 +1,6 @@
 import { describe, it } from '@effect/vitest'
-import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutationTestResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
@@ -20,7 +20,7 @@ const LOCATION = {
   end: { line: 1, column: 10 },
 }
 
-const STATUS_ARB: Arbitrary.Arbitrary<MutantStatus> = Arbitrary.schema(
+const STATUS_ARB: Arbitrary.Arbitrary<Mutant.MutantStatus> = Arbitrary.schema(
   S.Literals(['Killed', 'Survived', 'NoCoverage', 'CompileError', 'RuntimeError', 'Timeout', 'Ignored', 'Pending']),
 )
 
@@ -29,7 +29,7 @@ interface ModuleSpec {
   readonly testIds: readonly string[]
   readonly mutants: readonly {
     readonly id: string
-    readonly status: MutantStatus
+    readonly status: Mutant.MutantStatus
     readonly killingIds: readonly string[]
   }[]
 }
@@ -63,7 +63,7 @@ const MODULE_ARB: Arbitrary.Arbitrary<ModuleSpec> = Arbitrary.all({
 
 const MODULES_ARB = Arbitrary.array(MODULE_ARB, { minLength: 1, maxLength: 3 })
 
-const reportOf = (spec: ModuleSpec): MutationTestResult => ({
+const reportOf = (spec: ModuleSpec): Report.MutationTestResult => ({
   schemaVersion: '1.0',
   thresholds: { high: 80, low: 60 },
   files: {

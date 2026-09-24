@@ -1,5 +1,4 @@
-import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
@@ -7,7 +6,6 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Record from 'effect/Record'
 import * as S from 'effect/Schema'
-
 
 type DocumentRecord<A = unknown> = { readonly [key: string]: A }
 
@@ -90,9 +88,12 @@ export const ConfigEnvSchema = S.Struct({
 })
 export type ConfigEnv = typeof ConfigEnvSchema.Type
 
-export type StrykerConfigFn = (env: ConfigEnv) => PartialStrykerOptions | Promise<PartialStrykerOptions>
+export type StrykerConfigFn = (env: ConfigEnv) => Options.PartialStrykerOptions | Promise<Options.PartialStrykerOptions>
 
-export type StrykerConfigExport = PartialStrykerOptions | Promise<PartialStrykerOptions> | StrykerConfigFn
+export type StrykerConfigExport =
+  | Options.PartialStrykerOptions
+  | Promise<Options.PartialStrykerOptions>
+  | StrykerConfigFn
 
 const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 
@@ -160,8 +161,8 @@ See https://stryker-mutator.io/docs/stryker-js/config-file for more information.
 export class StrykerConfig extends S.Class<StrykerConfig>('StrykerConfig')({
   entries: S.Record(S.String, S.Unknown),
 }) {
-  static define(config: PartialStrykerOptions): PartialStrykerOptions
-  static define(config: Promise<PartialStrykerOptions>): Promise<PartialStrykerOptions>
+  static define(config: Options.PartialStrykerOptions): Options.PartialStrykerOptions
+  static define(config: Promise<Options.PartialStrykerOptions>): Promise<Options.PartialStrykerOptions>
   static define(config: StrykerConfigFn): StrykerConfigFn
   static define(config: StrykerConfigExport): StrykerConfigExport
   static define(config: StrykerConfigExport): StrykerConfigExport {
@@ -169,19 +170,25 @@ export class StrykerConfig extends S.Class<StrykerConfig>('StrykerConfig')({
   }
 
   static readonly merge: {
-    (overrides: PartialStrykerOptions): (defaults: PartialStrykerOptions) => PartialStrykerOptions
-    (defaults: PartialStrykerOptions, overrides: PartialStrykerOptions): PartialStrykerOptions
+    (
+      overrides: Options.PartialStrykerOptions,
+    ): (defaults: Options.PartialStrykerOptions) => Options.PartialStrykerOptions
+    (defaults: Options.PartialStrykerOptions, overrides: Options.PartialStrykerOptions): Options.PartialStrykerOptions
   } = dual(
     2,
-    (defaults: PartialStrykerOptions, overrides: PartialStrykerOptions): PartialStrykerOptions =>
-      mergeRecords(defaults, overrides),
+    (
+      defaults: Options.PartialStrykerOptions,
+      overrides: Options.PartialStrykerOptions,
+    ): Options.PartialStrykerOptions => mergeRecords(defaults, overrides),
   )
 
-  static readonly createDefaultOptions: Effect.Effect<StrykerOptions> = S.decodeEffect(StrykerOptionsSchema)({}).pipe(
+  static readonly createDefaultOptions: Effect.Effect<Options.StrykerOptions> = S.decodeEffect(
+    Options.StrykerOptionsSchema,
+  )({}).pipe(
     Effect.orDie,
   )
 
-  static readonly defaultOptions: Effect.Effect<Immutable<StrykerOptions>, never, never> = Effect.map(
+  static readonly defaultOptions: Effect.Effect<Immutable<Options.StrykerOptions>, never, never> = Effect.map(
     StrykerConfig.createDefaultOptions,
     (options) => deepFreeze(options),
   )
@@ -260,7 +267,9 @@ if (import.meta.vitest !== void 0) {
       ([base, overrides]) => {
         const kept = usableEntriesOnly(base)
         const merged = mergeRecords(base, overrides)
-        return statedKeys(overrides).every((key) => Equal.equals(merged[key], expectedNestedOf(kept[key], overrides[key]))) &&
+        return statedKeys(overrides).every((key) =>
+          Equal.equals(merged[key], expectedNestedOf(kept[key], overrides[key]))
+        ) &&
           statedKeys(kept).every((key) => key in merged)
       },
     )

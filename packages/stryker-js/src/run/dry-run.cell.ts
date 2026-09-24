@@ -1,13 +1,6 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { Coverage, CoverageData } from '@systemfsoftware/stryker-js-instrumenter'
-import { DryRunCompleted, isCustomTestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
-import type {
-  CompleteDryRunResult,
-  DryRunResult,
-  TestResult,
-  TestRunnerCapabilities,
-  WorkerPluginKind,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Options, type Plugin, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as EffectDuration from 'effect/Duration'
@@ -43,7 +36,7 @@ import {
 import { RunEnvironment } from './RunEnvironment.service.js'
 
 export interface DryRunDone extends InstrumentDone {
-  readonly dryRunResult: CompleteDryRunResult
+  readonly dryRunResult: TestRunner.CompleteDryRunResult
   readonly testCoverage: TestCoverage
   readonly timeOverhead: EffectDuration.Duration
 }
@@ -53,14 +46,14 @@ const sandboxPathsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
 
 const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
   Match.value(configured).pipe(
-    Match.when(isCustomTestRunner, (custom) => ConfiguredPluginModulePath.make({ modulePath: custom.plugin })),
+    Match.when(Options.isCustomTestRunner, (custom) => ConfiguredPluginModulePath.make({ modulePath: custom.plugin })),
     Match.orElse((name) => ConfiguredPluginName.make({ name })),
   )
 
 const workerSpawnOf = (
   stage: StageError['stage'],
   loaded: Pick<LoadedPlugins, 'pluginSources'>,
-  kind: WorkerPluginKind,
+  kind: Plugin.WorkerPluginKind,
   configured: ConfiguredPluginName | ConfiguredPluginModulePath,
 ): Effect.Effect<WorkerSpawnResolved, StageError> =>
   Effect.mapError(
@@ -91,18 +84,18 @@ const resolveDryRunFiles = (command: InstrumentDone) =>
   Effect.fromResult(buildDryRunFiles(command)).pipe(
     Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Failed to resolve sandbox file', cause })),
   )
-type FailedDryRun = Extract<DryRunResult, { readonly status: 'error' }>
-type TimedOutDryRun = Extract<DryRunResult, { readonly status: 'timeout' }>
+type FailedDryRun = Extract<TestRunner.DryRunResult, { readonly status: 'error' }>
+type TimedOutDryRun = Extract<TestRunner.DryRunResult, { readonly status: 'timeout' }>
 
 type DryRunRaw = typeof DryRunCommand.Encoded & {
   readonly prev: InstrumentDone
-  readonly rawResult: DryRunResult
-  readonly capabilities: TestRunnerCapabilities
+  readonly rawResult: TestRunner.DryRunResult
+  readonly capabilities: TestRunner.TestRunnerCapabilities
   readonly gross: EffectDuration.Duration
 }
 
 const commandEncodedComplete = (
-  complete: CompleteDryRunResult,
+  complete: TestRunner.CompleteDryRunResult,
   allowEmpty: boolean,
 ): typeof DryRunCommand.Encoded => ({
   _tag: 'DryRunCommand',
@@ -141,8 +134,8 @@ const commandEncodedTimedOut = (
 
 const dryRunRaw = (
   prev: InstrumentDone,
-  rawResult: DryRunResult,
-  capabilities: TestRunnerCapabilities,
+  rawResult: TestRunner.DryRunResult,
+  capabilities: TestRunner.TestRunnerCapabilities,
   gross: EffectDuration.Duration,
 ): DryRunRaw =>
   Match.value(rawResult).pipe(
@@ -169,16 +162,17 @@ const dryRunRaw = (
     })),
   )
 
-const isCompleteDryRun = (result: DryRunResult): result is CompleteDryRunResult => result.status === 'complete'
+const isCompleteDryRun = (result: TestRunner.DryRunResult): result is TestRunner.CompleteDryRunResult =>
+  result.status === 'complete'
 
-const isFailedDryRun = (result: DryRunResult): result is FailedDryRun => result.status === 'error'
+const isFailedDryRun = (result: TestRunner.DryRunResult): result is FailedDryRun => result.status === 'error'
 
-const totalTestTime = (tests: readonly TestResult[]): number =>
+const totalTestTime = (tests: readonly TestRunner.TestResult[]): number =>
   tests.reduce((total, test) => total + test.timeSpentMs, 0)
-const overheadMillisOf = (grossMillis: number, tests: readonly TestResult[]): number =>
+const overheadMillisOf = (grossMillis: number, tests: readonly TestRunner.TestResult[]): number =>
   Math.max(0, grossMillis - totalTestTime(tests))
 
-const withOriginalFileName = (test: TestResult, prev: InstrumentDone): TestResult =>
+const withOriginalFileName = (test: TestRunner.TestResult, prev: InstrumentDone): TestRunner.TestResult =>
   Match.value(test.fileName).pipe(
     Match.when(Predicate.isString, (fileName) => ({
       ...test,
@@ -187,34 +181,37 @@ const withOriginalFileName = (test: TestResult, prev: InstrumentDone): TestResul
     Match.orElse(() => test),
   )
 
-const withOriginalFileNames = (tests: readonly TestResult[], prev: InstrumentDone): readonly TestResult[] =>
-  tests.map((test) => withOriginalFileName(test, prev))
+const withOriginalFileNames = (
+  tests: readonly TestRunner.TestResult[],
+  prev: InstrumentDone,
+): readonly TestRunner.TestResult[] => tests.map((test) => withOriginalFileName(test, prev))
 
 const ZERO = 0
 
-const testsByIdOf = (result: Readonly<CompleteDryRunResult>) =>
+const testsByIdOf = (result: Readonly<TestRunner.CompleteDryRunResult>) =>
   MutableHashMap.fromIterable(result.tests.map((test) => [test.id, test] as const))
 
 const withTestForMutant = (
-  testsByMutantId: MutableHashMap.MutableHashMap<string, MutableHashSet.MutableHashSet<TestResult>>,
+  testsByMutantId: MutableHashMap.MutableHashMap<string, MutableHashSet.MutableHashSet<TestRunner.TestResult>>,
   mutantId: string,
-  test: TestResult,
+  test: TestRunner.TestResult,
 ) =>
   MutableHashMap.set(
     testsByMutantId,
     mutantId,
     MutableHashSet.add(
-      Option.getOrElse(MutableHashMap.get(testsByMutantId, mutantId), () => MutableHashSet.empty<TestResult>()),
+      Option.getOrElse(MutableHashMap.get(testsByMutantId, mutantId), () =>
+        MutableHashSet.empty<TestRunner.TestResult>()),
       test,
     ),
   )
 
-const coveredMutantIdsOf = (coverage: CoverageData) =>
+const coveredMutantIdsOf = (coverage: Mutant.CoverageData) =>
   Object.entries(coverage).filter(([, count]) => count > ZERO).map(([mutantId]) => mutantId)
 
 const testsByMutantIdOf = (
-  mutantCoverage: Coverage,
-  testsById: MutableHashMap.MutableHashMap<string, TestResult>,
+  mutantCoverage: Mutant.Coverage,
+  testsById: MutableHashMap.MutableHashMap<string, TestRunner.TestResult>,
 ) =>
   Object.entries(mutantCoverage.perTest).reduce(
     (testsByMutantId, [testId, coverage]) =>
@@ -226,10 +223,10 @@ const testsByMutantIdOf = (
             testsByMutantId,
           ),
       }),
-    MutableHashMap.empty<string, MutableHashSet.MutableHashSet<TestResult>>(),
+    MutableHashMap.empty<string, MutableHashSet.MutableHashSet<TestRunner.TestResult>>(),
   )
 
-const hitsByMutantIdOf = (mutantCoverage: Coverage) =>
+const hitsByMutantIdOf = (mutantCoverage: Mutant.Coverage) =>
   [mutantCoverage.static, ...Object.values(mutantCoverage.perTest)].reduce(
     (hitsByMutantId, coverage) =>
       Object.entries(coverage).reduce(
@@ -244,12 +241,12 @@ const hitsByMutantIdOf = (mutantCoverage: Coverage) =>
     MutableHashMap.empty<string, number>(),
   )
 
-const testCoverageFrom = (result: Readonly<CompleteDryRunResult>) => {
+const testCoverageFrom = (result: Readonly<TestRunner.CompleteDryRunResult>) => {
   const testsById = testsByIdOf(result)
   const mutantCoverage = Option.fromNullishOr(result.mutantCoverage)
   return {
     testsByMutantId: Option.match(mutantCoverage, {
-      onNone: () => MutableHashMap.empty<string, MutableHashSet.MutableHashSet<TestResult>>(),
+      onNone: () => MutableHashMap.empty<string, MutableHashSet.MutableHashSet<TestRunner.TestResult>>(),
       onSome: (coverage) => testsByMutantIdOf(coverage, testsById),
     }),
     testsById,
@@ -265,7 +262,7 @@ const testCoverageFrom = (result: Readonly<CompleteDryRunResult>) => {
 }
 
 const announceDryRunOutcome = (
-  tests: readonly TestResult[],
+  tests: readonly TestRunner.TestResult[],
   prev: InstrumentDone,
   gross: EffectDuration.Duration,
   overheadMillis: number,
@@ -288,7 +285,7 @@ const announceDryRunOutcome = (
     ),
   )
 
-const completeDryRunResultOf = (raw: DryRunRaw, rawResult: CompleteDryRunResult) =>
+const completeDryRunResultOf = (raw: DryRunRaw, rawResult: TestRunner.CompleteDryRunResult) =>
   Effect.gen(function*() {
     const tests = withOriginalFileNames(rawResult.tests, raw.prev)
     const dryRunResult = { ...rawResult, tests, status: 'complete' } as const
@@ -296,7 +293,7 @@ const completeDryRunResultOf = (raw: DryRunRaw, rawResult: CompleteDryRunResult)
 
     yield* offerReporterEvent(
       raw.prev.reporterStage,
-      DryRunCompleted.make({
+      Reporter.DryRunCompleted.make({
         timing: { net: totalTestTime(tests), overhead: overheadMillis },
         capabilities: { reloadEnvironment: raw.capabilities.reloadEnvironment },
         testCount: tests.length,

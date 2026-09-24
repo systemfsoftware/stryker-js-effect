@@ -3,8 +3,8 @@ import { NodeFileSystem, NodePath, NodeSocketServer } from '@effect/platform-nod
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
-import { CheckerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
-import { WorkerOptions, workerServerLayer, WorkerTelemetry } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Boolean from 'effect/Boolean'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
@@ -16,7 +16,7 @@ import { checkerHandlers } from './CheckerWorker.service.js'
 
 const workerPlatformLayer = Layer.unwrap(
   Effect.gen(function*() {
-    const telemetry = yield* WorkerTelemetry
+    const telemetry = yield* Worker.WorkerTelemetry
     const socketPath = yield* Config.String('STRYKER_SOCKET')
     return Layer.mergeAll(
       NodeSocketServer.layer({ path: socketPath }),
@@ -36,20 +36,20 @@ const workerPlatformLayer = Layer.unwrap(
 
 const checkerRuntimeLayer = Layer.unwrap(
   Effect.gen(function*() {
-    const options = yield* WorkerOptions
+    const options = yield* Worker.WorkerOptions
     return CheckerRuntime.layer(options)
   }),
 )
 
-const servedPlatformLayer = workerPlatformLayer.pipe(Layer.provide(WorkerTelemetry.layer))
+const servedPlatformLayer = workerPlatformLayer.pipe(Layer.provide(Worker.WorkerTelemetry.layer))
 
 const workerRootLayer = checkerRuntimeLayer.pipe(
-  Layer.provideMerge(WorkerOptions.layer.pipe(Layer.provideMerge(servedPlatformLayer))),
+  Layer.provideMerge(Worker.WorkerOptions.layer.pipe(Layer.provideMerge(servedPlatformLayer))),
 )
 
 NodeRuntime.runMain(
-  workerServerLayer({
-    rpcs: CheckerRpcs,
+  Worker.workerServerLayer({
+    rpcs: Plugin.CheckerRpcs,
     handlers: checkerHandlers,
     schemaServices: Layer.empty,
   }).pipe(

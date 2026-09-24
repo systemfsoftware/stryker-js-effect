@@ -1,5 +1,5 @@
 import { describe, it } from '@effect/vitest'
-import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
@@ -16,7 +16,7 @@ import {
   ExitVerdictFailed,
 } from '../classify-exit.workflow.js'
 
-const codeOf = (exitClass: ExitClass): number =>
+const codeOf = (exitClass: Plugin.ExitClass): number =>
   Match.value(exitClass).pipe(
     Match.when('VerdictFail', () => 1),
     Match.when('ConfigError', () => 2),
@@ -25,16 +25,16 @@ const codeOf = (exitClass: ExitClass): number =>
     Match.exhaustive,
   )
 
-const worseOf = (first: ExitClass, second: ExitClass) =>
+const worseOf = (first: Plugin.ExitClass, second: Plugin.ExitClass) =>
   Boolean.match(codeOf(first) >= codeOf(second), {
     onTrue: () => first,
     onFalse: () => second,
   })
 
-const decidedOf = (pending: ReadonlyArray<ExitClass>, score: number | null, breakingThreshold: number | null) =>
+const decidedOf = (pending: ReadonlyArray<Plugin.ExitClass>, score: number | null, breakingThreshold: number | null) =>
   classifyExit(ClassifyExitCommand.make({ pending: [...pending], score, breakingThreshold }))
 
-const isMemberClass = (exitClass: ExitClass, decision: ClassifyExitDecision): boolean =>
+const isMemberClass = (exitClass: Plugin.ExitClass, decision: ClassifyExitDecision): boolean =>
   Match.value(exitClass).pipe(
     Match.when('VerdictFail', () => S.is(ExitVerdictFailed)(decision)),
     Match.when('ConfigError', () => S.is(ExitConfigErrored)(decision)),
@@ -44,7 +44,7 @@ const isMemberClass = (exitClass: ExitClass, decision: ClassifyExitDecision): bo
   )
 
 describe('classifyExit', () => {
-  it.prop('∀pair_Command_≡HighestSeverity', [ExitClass, ExitClass], ([first, second]) => {
+  it.prop('∀pair_Command_≡HighestSeverity', [Plugin.ExitClass, Plugin.ExitClass], ([first, second]) => {
     const expected = worseOf(first, second)
     const result = decidedOf([first, second], null, null)
     return Result.match(result, {
@@ -53,7 +53,7 @@ describe('classifyExit', () => {
     })
   })
 
-  it.prop('∀single_Command_≡MemberClass', [ExitClass], ([only]) => {
+  it.prop('∀single_Command_≡MemberClass', [Plugin.ExitClass], ([only]) => {
     const result = decidedOf([only], null, null)
     return Result.match(result, {
       onFailure: () => false,

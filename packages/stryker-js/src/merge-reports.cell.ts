@@ -1,9 +1,6 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import { MutationTestReportReady } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface'
-import { MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import { StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import { Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
@@ -182,7 +179,7 @@ const decodedPart = (bytes: {
         const base = { label: meta.package, outcome: meta.outcome, incomplete: false }
         return Option.match(Option.fromNullishOr(bytes.reportText), {
           onSome: (text) =>
-            Option.match(S.decodeOption(S.fromJsonString(MutationTestResultSchema))(text), {
+            Option.match(S.decodeOption(S.fromJsonString(Report.MutationTestResultSchema))(text), {
               onNone: () => ({ part: Option.some(base), unreadable: true }),
               onSome: (report) => ({ part: Option.some({ ...base, report }), unreadable: false }),
             }),
@@ -346,14 +343,14 @@ const encodeMerge = (
     readonly mutatorName: string
     readonly replacement: string
   }[],
-  report: typeof MutationTestResultSchema.Type | undefined,
+  report: typeof Report.MutationTestResultSchema.Type | undefined,
 ): EncodedMerge => ({
   summary: encodeSummary(rows, survivors, decoded.skipped, decoded.unreadable.length),
   report,
   unreadable: decoded.unreadable,
 })
 
-const encodeReport = (report: typeof MutationTestResultSchema.Type): Effect.Effect<string> =>
+const encodeReport = (report: typeof Report.MutationTestResultSchema.Type): Effect.Effect<string> =>
   S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(report).pipe(Effect.orDie)
 
 const putFile = (file: string, content: string, append: boolean) =>
@@ -368,24 +365,24 @@ const putFile = (file: string, content: string, append: boolean) =>
     Effect.catchCause(() => failReason(`cannot write ${file}`)),
   )
 
-const toStream = (events: readonly ReporterEvent[]): AsyncIterable<ReporterEvent> =>
+const toStream = (events: readonly Reporter.ReporterEvent[]): AsyncIterable<Reporter.ReporterEvent> =>
   Stream.toAsyncIterable(Stream.fromIterable([...events]))
 
-const writeHtml = (fileName: string, report: typeof MutationTestResultSchema.Type) =>
-  Option.match(S.decodeOption(StrykerOptionsSchema)({ htmlReporter: { fileName } }), {
+const writeHtml = (fileName: string, report: typeof Report.MutationTestResultSchema.Type) =>
+  Option.match(S.decodeOption(Options.StrykerOptionsSchema)({ htmlReporter: { fileName } }), {
     onNone: () => failReason(`cannot configure the html report at ${fileName}`),
     onSome: (options) =>
       Effect.gen(function*() {
         const metrics = MetricsResultFromReport.fromFiles(report.files)
-        yield* makeHtmlReporter(options, {})(
-          toStream([MutationTestReportReady.make({ report, metrics })]),
+        yield* HtmlReporter.makeHtmlReporter(options, {})(
+          toStream([Reporter.MutationTestReportReady.make({ report, metrics })]),
         ).pipe(Effect.catchCause(() => failReason(`cannot write the html report at ${fileName}`)))
       }),
   })
 
 type EncodedMerge = {
   readonly summary: string
-  readonly report: typeof MutationTestResultSchema.Type | undefined
+  readonly report: typeof Report.MutationTestResultSchema.Type | undefined
   readonly unreadable: readonly string[]
 }
 

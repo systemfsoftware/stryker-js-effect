@@ -1,6 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant, MutantId, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutantStatus } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -15,7 +14,7 @@ const MutantPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/
 type MutantPlanTypeId = typeof MutantPlanTypeId
 
 export class PlannedRunMutant extends S.TaggedClass<PlannedRunMutant>()('PlannedRunMutant', {
-  mutantId: MutantId,
+  mutantId: Mutant.MutantId,
   netTime: S.Finite,
   runOptions: PlannedMutantRunOptions,
   static: S.optional(S.Boolean),
@@ -25,8 +24,8 @@ export class PlannedRunMutant extends S.TaggedClass<PlannedRunMutant>()('Planned
 }
 
 export class PlannedEarlyResultMutant extends S.TaggedClass<PlannedEarlyResultMutant>()('PlannedEarlyResultMutant', {
-  mutantId: MutantId,
-  status: MutantStatusSchema,
+  mutantId: Mutant.MutantId,
+  status: Mutant.MutantStatusSchema,
   statusReason: S.optional(S.String),
   static: S.optional(S.Boolean),
   coveredBy: S.String.pipe(S.Array, S.optional),
@@ -94,7 +93,7 @@ const mutantActivationOf = (testFilter: readonly string[] | undefined) =>
     onSome: () => 'runtime' as const,
   })
 
-const coveredByOfMutant = (mutant: Mutant) =>
+const coveredByOfMutant = (mutant: Mutant.Mutant) =>
   Option.getOrUndefined(Option.map(Option.fromUndefinedOr(mutant.coveredBy), (coveredBy) => [...coveredBy]))
 
 const reloadEnvironmentOf = (testFilter: readonly string[] | undefined, isStatic: boolean | undefined) =>
@@ -108,7 +107,7 @@ const reloadEnvironmentOf = (testFilter: readonly string[] | undefined, isStatic
   })
 
 const toRunPlan = (
-  mutant: Mutant,
+  mutant: Mutant.Mutant,
   command: MutantTestPlanCommand,
   netTime: number,
   testFilter: readonly string[] | undefined,
@@ -138,9 +137,9 @@ const toRunPlan = (
   })
 
 const toEarlyResultPlan = (
-  mutant: Mutant,
+  mutant: Mutant.Mutant,
   isStatic: boolean | undefined,
-  status: MutantStatus,
+  status: Mutant.MutantStatus,
   statusReason: string | undefined,
   coveredBy: readonly string[] | undefined,
 ) =>
@@ -158,7 +157,7 @@ const toEarlyResultPlan = (
 const IGNORED_STATIC_MUTANT_REASON = 'Static mutant (and "ignoreStatic" was enabled)' as const
 
 const runWithCoveredTests = (
-  mutant: Mutant,
+  mutant: Mutant.Mutant,
   command: MutantTestPlanCommand,
   isStatic: boolean,
   tests: readonly string[],
@@ -174,7 +173,7 @@ const runWithCoveredTests = (
   )
 
 const planForUncoveredStatic = (
-  mutant: Mutant,
+  mutant: Mutant.Mutant,
   command: MutantTestPlanCommand,
   isStatic: boolean,
   coveredBy: readonly string[],
@@ -185,7 +184,7 @@ const planForUncoveredStatic = (
   })
 
 const planForStaticallyCovered = (
-  mutant: Mutant,
+  mutant: Mutant.Mutant,
   command: MutantTestPlanCommand,
   isStatic: boolean,
 ) => {
@@ -207,7 +206,7 @@ const mutantIsCovered = (command: MutantTestPlanCommand, mutantId: string) =>
     onSome: (tests) => Boolean.or(tests.length > 0, mutantIsStatic(command, mutantId)),
   })
 
-const decidePlanForMutant = (mutant: Mutant, command: MutantTestPlanCommand) => {
+const decidePlanForMutant = (mutant: Mutant.Mutant, command: MutantTestPlanCommand) => {
   const isStatic = mutantIsStatic(command, mutant.id)
   return Option.match(Option.fromUndefinedOr(mutant.status), {
     onSome: (status) => toEarlyResultPlan(mutant, isStatic, status, mutant.statusReason, coveredByOfMutant(mutant)),
@@ -220,11 +219,11 @@ const decidePlanForMutant = (mutant: Mutant, command: MutantTestPlanCommand) => 
   })
 }
 
-const isClosedMutant = (mutant: Mutant) => Option.isSome(Option.fromUndefinedOr(mutant.status))
+const isClosedMutant = (mutant: Mutant.Mutant) => Option.isSome(Option.fromUndefinedOr(mutant.status))
 
-const openMutantsOf = (mutants: ReadonlyArray<Mutant>) => mutants.filter((mutant) => !isClosedMutant(mutant))
+const openMutantsOf = (mutants: ReadonlyArray<Mutant.Mutant>) => mutants.filter((mutant) => !isClosedMutant(mutant))
 
-const hitCountRequiredAndAbsent = (command: MutantTestPlanCommand, mutant: Mutant) =>
+const hitCountRequiredAndAbsent = (command: MutantTestPlanCommand, mutant: Mutant.Mutant) =>
   Boolean.every([
     mutantIsCovered(command, mutant.id),
     Predicate.isNotUndefined(command.staticCoverage),

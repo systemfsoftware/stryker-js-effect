@@ -2,7 +2,7 @@ import { describe, it } from '@effect/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { type FailedTestResult, type TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { DryRunComplete, DryRunExternalError, interpretVitestDryRun } from '../interpret-vitest-dry-run.workflow.js'
 import { VitestDryRunCommand } from '../vitest-run-command.schema.js'
 
@@ -13,7 +13,7 @@ const carriesFamilyBrand = (decision: object): boolean =>
 
 const withTests = (
   input: VitestDryRunCommand,
-  tests: readonly TestResult[],
+  tests: readonly TestRunner.TestResult[],
   externalError: boolean,
 ): VitestDryRunCommand =>
   VitestDryRunCommand.make({
@@ -32,7 +32,7 @@ describe('interpretVitestDryRun', () => {
       S.String.check(S.isMaxLength(32)),
     ],
     ([input, name, message]) => {
-      const failed: FailedTestResult = {
+      const failed: TestRunner.FailedTestResult = {
         id: `tests/a.spec.ts#${name}`,
         name,
         timeSpentMs: 5,

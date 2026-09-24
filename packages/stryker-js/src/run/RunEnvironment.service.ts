@@ -1,4 +1,4 @@
-import type { ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -30,7 +30,7 @@ export interface RunEnvironmentShape {
   readonly resolvedMode: ResolvedMode
   readonly runStartedAt: number
   readonly basePath: string
-  readonly builtinReporters: Readonly<Record<string, ReporterFactory>>
+  readonly builtinReporters: Readonly<Record<string, InterfaceReporter.ReporterFactory>>
   readonly allowConsoleColors: boolean
 }
 
@@ -83,14 +83,14 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
       stream: RunEventStream,
       host: {
         readonly noColor?: string | undefined
-        readonly builtinReporters: Readonly<Record<string, ReporterFactory>>
+        readonly builtinReporters: Readonly<Record<string, InterfaceReporter.ReporterFactory>>
       },
     ): Effect.Effect<RunEnvironmentShape, PlatformError, FileSystem.FileSystem>
     (
       stream: RunEventStream,
       host: {
         readonly noColor?: string | undefined
-        readonly builtinReporters: Readonly<Record<string, ReporterFactory>>
+        readonly builtinReporters: Readonly<Record<string, InterfaceReporter.ReporterFactory>>
       },
     ): (mode: ResolvedMode) => Effect.Effect<RunEnvironmentShape, PlatformError, FileSystem.FileSystem>
   } = dual(
@@ -100,7 +100,7 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
       stream: RunEventStream,
       host: {
         readonly noColor?: string | undefined
-        readonly builtinReporters: Readonly<Record<string, ReporterFactory>>
+        readonly builtinReporters: Readonly<Record<string, InterfaceReporter.ReporterFactory>>
       },
     ): Effect.Effect<RunEnvironmentShape, PlatformError, FileSystem.FileSystem> =>
       Effect.map(

@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant, MutantId } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
@@ -17,7 +17,7 @@ const IncrementalDiffTypeId: unique symbol = Symbol.for('@systemfsoftware/stryke
 type IncrementalDiffTypeId = typeof IncrementalDiffTypeId
 
 export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand>()('IncrementalDiffCommand', {
-  currentMutants: S.Array(Mutant),
+  currentMutants: S.Array(Mutant.Mutant),
   relativeFileByMutantId: S.Record(S.String, S.String),
   previousFiles: PreviousFilesSchema,
   previousTestFiles: PreviousTestFilesSchema,
@@ -32,7 +32,7 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
 }
 
 export class MutantRemembered extends S.TaggedClass<MutantRemembered>()('MutantRemembered', {
-  mutantId: MutantId,
+  mutantId: Mutant.MutantId,
   status: S.String,
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
@@ -42,7 +42,7 @@ export class MutantRemembered extends S.TaggedClass<MutantRemembered>()('MutantR
 }
 
 export class MutantToRun extends S.TaggedClass<MutantToRun>()('MutantToRun', {
-  mutant: Mutant,
+  mutant: Mutant.Mutant,
 }) {
   readonly [IncrementalDiffTypeId] = IncrementalDiffTypeId
 }
@@ -115,7 +115,7 @@ const hasChangedCoverage = (
 
 const isRememberable = (
   previous: PreviousMutantRecord,
-  mutant: Mutant,
+  mutant: Mutant.Mutant,
   input: IncrementalDiffCommand,
   file: string,
   changedFiles: readonly string[],
@@ -130,7 +130,7 @@ const isRememberable = (
     onFalse: () => false,
   })
 
-const rememberedOf = (mutant: Mutant, previous: PreviousMutantRecord) =>
+const rememberedOf = (mutant: Mutant.Mutant, previous: PreviousMutantRecord) =>
   MutantRemembered.make({
     mutantId: mutant.id,
     status: previous.status,
@@ -149,7 +149,7 @@ const rememberedOf = (mutant: Mutant, previous: PreviousMutantRecord) =>
   })
 
 const decideForMutant = (
-  mutant: Mutant,
+  mutant: Mutant.Mutant,
   input: IncrementalDiffCommand,
   changedFiles: readonly string[],
   changedTests: readonly string[],

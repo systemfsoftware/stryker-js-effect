@@ -1,12 +1,5 @@
-import { type FileDescriptions } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutantRunOptions } from '@systemfsoftware/stryker-js-instrumenter'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  type DryRunOptions,
-  isCustomTestRunner,
-  TestRunnerFailed,
-  TestRunnerRpcs,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Options, Plugin, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import type * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
@@ -34,16 +27,16 @@ import type { IdGeneratorShape } from './Worker.service.js'
 import { WorkerLauncher } from './WorkerLauncher.service.js'
 
 export interface ChildProcessTestRunnerParams {
-  readonly options: StrykerOptions
-  readonly fileDescriptions: FileDescriptions
+  readonly options: Options.StrykerOptions
+  readonly fileDescriptions: Instrument.FileDescriptions
   readonly sandboxWorkingDirectory: string
   readonly workerEntrypoint: string
   readonly idGenerator: IdGeneratorShape
 }
 
 export interface TestRunnerBuildContext {
-  readonly options: StrykerOptions
-  readonly fileDescriptions: FileDescriptions
+  readonly options: Options.StrykerOptions
+  readonly fileDescriptions: Instrument.FileDescriptions
   readonly sandboxWorkingDirectory: string
   readonly idGenerator: IdGeneratorShape
   readonly retire: Effect.Effect<void>
@@ -55,7 +48,7 @@ const toRunnerBootFailure = (runnerName: string) => (error: WorkerBootError): Po
     Match.tag(
       'WorkerBootTimeoutError',
       (timeout): PooledTestRunnerError =>
-        TestRunnerFailed.make({
+        TestRunner.TestRunnerFailed.make({
           runnerName,
           phase: 'init',
           cause:
@@ -69,10 +62,10 @@ const toRunnerBootFailure = (runnerName: string) => (error: WorkerBootError): Po
 
 const toRunnerFailure =
   (runnerName: string, phase: 'capabilities' | 'init' | 'dryRun' | 'mutantRun' | 'dispose') =>
-  (error: RpcClientError | TestRunnerFailed): PooledTestRunnerError =>
+  (error: RpcClientError | TestRunner.TestRunnerFailed): PooledTestRunnerError =>
     Match.value(error).pipe(
       Match.tag('TestRunnerFailed', (e): PooledTestRunnerError => e),
-      Match.orElse((e) => TestRunnerFailed.make({ runnerName, phase, cause: e.message })),
+      Match.orElse((e) => TestRunner.TestRunnerFailed.make({ runnerName, phase, cause: e.message })),
     )
 
 /**
@@ -96,11 +89,11 @@ export const makeChildProcessTestRunner = (
 ): Effect.Effect<PooledTestRunner, PooledTestRunnerError, Scope.Scope | WorkerLauncher> =>
   Effect.gen(function*() {
     const runnerName = Match.value(params.options.testRunner).pipe(
-      Match.when(isCustomTestRunner, (runner) => runner.plugin),
+      Match.when(Options.isCustomTestRunner, (runner) => runner.plugin),
       Match.orElse((name) => name),
     )
     const execArgv = Match.value(params.options.testRunner).pipe(
-      Match.when(isCustomTestRunner, (runner) =>
+      Match.when(Options.isCustomTestRunner, (runner) =>
         Match.value(runner.nodeArgs).pipe(
           Match.when(Match.undefined, () => params.options.testRunnerNodeArgs),
           Match.orElse((args) => args),
@@ -108,7 +101,7 @@ export const makeChildProcessTestRunner = (
       Match.orElse(() => params.options.testRunnerNodeArgs),
     )
     const client = yield* makeWorkerClient({
-      rpcs: TestRunnerRpcs,
+      rpcs: Plugin.TestRunnerRpcs,
       options: params.options,
       entrypoint: params.workerEntrypoint,
       workingDirectory: params.sandboxWorkingDirectory,
@@ -123,9 +116,9 @@ export const makeChildProcessTestRunner = (
     return makePooledTestRunner({
       capabilities: client.capabilities().pipe(Effect.mapError(toRunnerFailure(runnerName, 'capabilities'))),
       init: Effect.void,
-      dryRun: (options: DryRunOptions) =>
+      dryRun: (options: TestRunner.DryRunOptions) =>
         client.dryRun({ options }).pipe(Effect.mapError(toRunnerFailure(runnerName, 'dryRun'))),
-      mutantRun: (options: MutantRunOptions) =>
+      mutantRun: (options: Mutant.MutantRunOptions) =>
         client.mutantRun({ options }).pipe(Effect.mapError(toRunnerFailure(runnerName, 'mutantRun'))),
     })
   })

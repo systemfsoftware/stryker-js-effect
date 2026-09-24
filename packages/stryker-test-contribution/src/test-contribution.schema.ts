@@ -1,7 +1,6 @@
 import * as S from 'effect/Schema'
 
-import type * as pluginSchema from '@systemfsoftware/stryker-js-plugin-interface'
-import { NonNegativeInt } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export interface TestFileContribution {
   readonly soleKills: number
@@ -19,11 +18,11 @@ export interface TestFileContribution {
 }
 
 export const TestFileContributionSchema = S.Struct({
-  soleKills: NonNegativeInt,
-  totalKills: NonNegativeInt,
-  killableCovered: NonNegativeInt,
+  soleKills: Report.NonNegativeInt,
+  totalKills: Report.NonNegativeInt,
+  killableCovered: Report.NonNegativeInt,
   coversUnattributedKill: S.Boolean,
 })
 
 export type ContributionEntry = readonly [string, TestFileContribution]
-export type ReportView = Pick<pluginSchema.MutationTestResult, 'files' | 'testFiles'>
+export type ReportView = Pick<Report.MutationTestResult, 'files' | 'testFiles'>

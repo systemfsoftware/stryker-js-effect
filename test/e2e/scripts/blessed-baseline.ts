@@ -11,7 +11,7 @@ import { ChildProcessSpawner } from 'effect/unstable/process'
 
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import { Readiness } from '@systemfsoftware/effect-readiness'
-import { type RunEvent, RunEventWireLine } from '@systemfsoftware/stryker-js'
+import { RunEvent } from '@systemfsoftware/stryker-js'
 
 import { BakedFixtureCache } from '../src/Harness/fixture-cache.service.js'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
@@ -99,7 +99,7 @@ function ensureKnownSlice(id: string): OracleSliceId {
   })
 }
 
-type VerdictEvent = Extract<RunEvent, { _tag: 'verdict' }>
+type VerdictEvent = Extract<RunEvent.RunEvent, { _tag: 'verdict' }>
 
 const BASELINE_COUNT_KEYS = [
   'compileErrors',
@@ -142,8 +142,8 @@ const countsOf = (verdict: VerdictEvent): BaselineCounts => ({
   timeout: verdict.counts.timeout,
 })
 
-const decodeEvent = (line: string, slice: OracleSliceId): RunEvent =>
-  Result.match(Schema.decodeResult(RunEventWireLine)(line), {
+const decodeEvent = (line: string, slice: OracleSliceId): RunEvent.RunEvent =>
+  Result.match(Schema.decodeResult(RunEvent.RunEventWireLine)(line), {
     onFailure: (issue) => {
       throw new Error(
         `Slice "${slice}" produced a malformed RunEvent line; refusing to bless garbage: ${issue.message}`,
@@ -159,7 +159,7 @@ interface ParsedRun {
 
 const statusPairOf = (mutator: string, status: string): readonly [string, string] => [mutator, status]
 
-const mutatorStatusPairsOf = (events: ReadonlyArray<RunEvent>): ReadonlyArray<readonly [string, string]> =>
+const mutatorStatusPairsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<readonly [string, string]> =>
   events.flatMap((event) =>
     Match.value(event).pipe(
       Match.tag('mutant', (mutant) => [statusPairOf(mutant.mutator, mutant.status)]),

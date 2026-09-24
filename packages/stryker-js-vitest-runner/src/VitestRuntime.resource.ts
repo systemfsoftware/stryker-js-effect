@@ -1,7 +1,7 @@
 import { createVitest as createVitestOriginal, type Vitest } from 'vitest/node'
 
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Crypto from 'effect/Crypto'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -129,13 +129,13 @@ export interface ResolvedVitest {
 
 export type VitestResolver = (dir: string) => Effect.Effect<ResolvedVitest>
 const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
-  new TestRunnerFailed({
+  new TestRunner.TestRunnerFailed({
     runnerName: 'vitest',
     phase,
-    cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
-const vitestUnresolved = (specifier: string, base: string, detail: string): TestRunnerFailed =>
-  new TestRunnerFailed({
+const vitestUnresolved = (specifier: string, base: string, detail: string): TestRunner.TestRunnerFailed =>
+  new TestRunner.TestRunnerFailed({
     runnerName: 'vitest',
     phase: 'init',
     cause: `Cannot resolve "${specifier}" from "${base}": ${detail}`,
@@ -154,15 +154,15 @@ const isVitestNodeModule = (
 export const resolveVitest: VitestResolver = (_dir) => {
   const fallback = Effect.succeed({ createVitest: createVitestOriginal })
   const primary = Effect.gen(function*() {
-    const resolutionFailure = (specifier: string, detail: string): TestRunnerFailed =>
+    const resolutionFailure = (specifier: string, detail: string): TestRunner.TestRunnerFailed =>
       vitestUnresolved(specifier, import.meta.url, detail)
-    const resolveSpecifier = (specifier: string): Effect.Effect<string, TestRunnerFailed> =>
-      Effect.try<string, TestRunnerFailed>({
+    const resolveSpecifier = (specifier: string): Effect.Effect<string, TestRunner.TestRunnerFailed> =>
+      Effect.try<string, TestRunner.TestRunnerFailed>({
         try: () => import.meta.resolve(specifier),
         catch: (cause) =>
           resolutionFailure(
             specifier,
-            Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+            Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
           ),
       })
     const vitestNodeUrl = yield* resolveSpecifier('vitest/node')
@@ -171,7 +171,7 @@ export const resolveVitest: VitestResolver = (_dir) => {
       catch: (cause) =>
         resolutionFailure(
           'vitest/node',
-          Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+          Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
         ),
     })
     return yield* Option.match(
@@ -222,7 +222,7 @@ const createVitestConfig = (input: VitestRuntimeInput) => ({
   reporters: [{ onInit(_vitest: Vitest) {} }],
 })
 
-export const create = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRunnerFailed> =>
+export const create = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
   Effect.gen(function*() {
     const { crypto, fileSystem: fs, path } = input
     const suffix = yield* crypto.randomUUIDv4.pipe(Effect.mapError(failRuntime('init')))

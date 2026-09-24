@@ -1,12 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import type { MutantStatus, Position } from '@systemfsoftware/stryker-js-instrumenter'
-import type * as reportApi from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  MetricsResultSchema,
-  MutationScoreThresholdsSchema,
-  MutationTestResultSchema,
-} from '@systemfsoftware/stryker-js-plugin-interface'
-import type { MetricsResult, MutationScoreThresholds } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { NonEmptyReadonlyArray } from 'effect/Array'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -54,13 +48,13 @@ export const ClearTextRenderOptions = S.Struct({
   reportScoreTable: S.Boolean,
   skipFull: S.Boolean,
   debug: S.Boolean,
-  thresholds: MutationScoreThresholdsSchema,
+  thresholds: Options.MutationScoreThresholdsSchema,
 })
 export type ClearTextRenderOptions = typeof ClearTextRenderOptions.Type
 
 export class ClearTextReportCommand extends S.TaggedClass<ClearTextReportCommand>()('ClearTextReportCommand', {
-  reported: S.optional(MutationTestResultSchema),
-  computed: S.optional(MetricsResultSchema),
+  reported: S.optional(Report.MutationTestResultSchema),
+  computed: S.optional(Report.MetricsResultSchema),
   render: ClearTextRenderOptions,
   rendered: S.Boolean,
 }) {
@@ -83,7 +77,7 @@ export class ClearTextReportSuppressed
 export const ClearTextReportDecision = S.Union([ClearTextReportRendered, ClearTextReportSuppressed])
 export type ClearTextReportDecision = typeof ClearTextReportDecision.Type
 
-type ReportMutant = reportApi.MutantResult & { fileName: string }
+type ReportMutant = Report.MutantResult & { fileName: string }
 
 interface ReportMutantEntry {
   readonly fileName: string
@@ -93,7 +87,7 @@ interface ReportMutantEntry {
 
 type ReportChannel = 'stdout' | 'diagnostic' | 'none'
 
-const CHANNEL_BY_STATUS: Record<MutantStatus, ReportChannel> = {
+const CHANNEL_BY_STATUS: Record<Mutant.MutantStatus, ReportChannel> = {
   Killed: 'diagnostic',
   Timeout: 'diagnostic',
   RuntimeError: 'diagnostic',
@@ -104,7 +98,7 @@ const CHANNEL_BY_STATUS: Record<MutantStatus, ReportChannel> = {
   Pending: 'none',
 }
 
-const EMOJI_BY_STATUS: Record<MutantStatus, string> = {
+const EMOJI_BY_STATUS: Record<Mutant.MutantStatus, string> = {
   'Killed': '✅',
   'NoCoverage': '🙈',
   'Ignored': '🤥',
@@ -176,7 +170,7 @@ interface CellContent {
   readonly indent: number
 }
 
-type CellFactory = (row: MetricsResult, ancestorCount: number) => CellContent
+type CellFactory = (row: Report.MetricsResult, ancestorCount: number) => CellContent
 
 type PadStyle = 'file' | 'first' | 'inner'
 
@@ -208,7 +202,7 @@ interface Column {
 
 interface LeafColumn extends Column {
   readonly cell: CellFactory
-  readonly tone: (row: MetricsResult) => Tone
+  readonly tone: (row: Report.MetricsResult) => Tone
 }
 
 interface GroupColumn extends Column {
@@ -260,20 +254,20 @@ const EMPTY_LINE: ReportLine = []
 
 const chunkOf = (line: ReportLine): ReportChunk => [line]
 
-const statusLabel = (status: MutantStatus, allowEmojis: boolean): ReportLine =>
+const statusLabel = (status: Mutant.MutantStatus, allowEmojis: boolean): ReportLine =>
   Boolean.match(allowEmojis, {
     onTrue: () => [plain(EMOJI_BY_STATUS[status]), plain(' '), plain(status)],
     onFalse: () => [plain(status)],
   })
 
-const mutantHeader = (status: MutantStatus, mutatorName: string, allowEmojis: boolean): ReportLine => [
+const mutantHeader = (status: Mutant.MutantStatus, mutatorName: string, allowEmojis: boolean): ReportLine => [
   plain('['),
   ...statusLabel(status, allowEmojis),
   plain('] '),
   plain(mutatorName),
 ]
 
-const sourceLocation = (fileName: string, position: Position, allowColor: boolean): ReportLine => [
+const sourceLocation = (fileName: string, position: Mutant.Position, allowColor: boolean): ReportLine => [
   spanOf(fileName, emphasized(allowColor, 'identifier')),
   plain(':'),
   spanOf(String(position.line), emphasized(allowColor, 'emphasis')),
@@ -281,7 +275,7 @@ const sourceLocation = (fileName: string, position: Position, allowColor: boolea
   spanOf(String(position.column), emphasized(allowColor, 'emphasis')),
 ]
 
-const extractReportMutants = (report: reportApi.MutationTestResult): readonly ReportMutantEntry[] =>
+const extractReportMutants = (report: Report.MutationTestResult): readonly ReportMutantEntry[] =>
   Object.entries(report.files).flatMap(([fileName, file]) =>
     file.mutants.map((mutant) => ({ fileName, mutant: { ...mutant, fileName }, source: file.source }))
   )
@@ -289,7 +283,8 @@ const extractReportMutants = (report: reportApi.MutationTestResult): readonly Re
 const indexedLine = (lines: readonly string[], index: number): string =>
   Option.getOrElse(Option.fromNullishOr(lines[index]), () => '')
 
-const sourceLine = (source: string, position: Position): string => indexedLine(source.split('\n'), position.line - 1)
+const sourceLine = (source: string, position: Mutant.Position): string =>
+  indexedLine(source.split('\n'), position.line - 1)
 
 const tailFromColumn = (raw: string, column: number): readonly string[] =>
   Boolean.match(raw.length === 0, {
@@ -297,13 +292,17 @@ const tailFromColumn = (raw: string, column: number): readonly string[] =>
     onFalse: () => [raw.slice(column)],
   })
 
-const sliceSource = (source: string | undefined, position: Position): readonly string[] =>
+const sliceSource = (source: string | undefined, position: Mutant.Position): readonly string[] =>
   Option.match(Option.fromUndefinedOr(source), {
     onNone: () => [],
     onSome: (text) => tailFromColumn(sourceLine(text, position), position.column),
   })
 
-const originalLines = (source: string | undefined, position: Position, allowColor: boolean): readonly ReportLine[] => {
+const originalLines = (
+  source: string | undefined,
+  position: Mutant.Position,
+  allowColor: boolean,
+): readonly ReportLine[] => {
   const tone = emphasized(allowColor, 'negative')
   return sliceSource(source, position).map((line) => [spanOf('-   ', tone), spanOf(line, tone)])
 }
@@ -411,7 +410,7 @@ interface ReportBlocks {
   readonly totalTests: number
 }
 
-const collectMutants = (report: reportApi.MutationTestResult, render: ClearTextRenderOptions): ReportBlocks => {
+const collectMutants = (report: Report.MutationTestResult, render: ClearTextRenderOptions): ReportBlocks => {
   const entries = extractReportMutants(report)
   return {
     stdout: chunkListFor(entries, 'stdout', render),
@@ -420,7 +419,7 @@ const collectMutants = (report: reportApi.MutationTestResult, render: ClearTextR
   }
 }
 
-const testsPerMutant = (metrics: MetricsResult, totalTests: number): string => {
+const testsPerMutant = (metrics: Report.MetricsResult, totalTests: number): string => {
   const total = metrics.metrics.totalMutants
   return Boolean.match(total === 0, {
     onTrue: () => '0.00',
@@ -428,15 +427,15 @@ const testsPerMutant = (metrics: MetricsResult, totalTests: number): string => {
   })
 }
 
-const testsPerMutantLine = (metrics: MetricsResult, totalTests: number): ReportLine => [
+const testsPerMutantLine = (metrics: Report.MetricsResult, totalTests: number): ReportLine => [
   plain('Ran '),
   plain(testsPerMutant(metrics, totalTests)),
   plain(' tests per mutant on average.'),
 ]
 
 const mutantReportSection = (
-  report: reportApi.MutationTestResult,
-  metrics: MetricsResult,
+  report: Report.MutationTestResult,
+  metrics: Report.MetricsResult,
   render: ClearTextRenderOptions,
 ): ReportSections =>
   Boolean.match(render.reportMutants, {
@@ -454,13 +453,13 @@ const mutantReportSection = (
     onFalse: () => EMPTY_SECTIONS,
   })
 
-const partialScoresVisible = (metrics: MetricsResult, render: ClearTextRenderOptions): boolean =>
+const partialScoresVisible = (metrics: Report.MetricsResult, render: ClearTextRenderOptions): boolean =>
   Boolean.match(render.skipFull, {
     onTrue: () => metrics.childResults.some((child) => child.metrics.mutationScore !== 100),
     onFalse: () => true,
   })
 
-const drawsScoreTable = (metrics: MetricsResult, render: ClearTextRenderOptions): boolean =>
+const drawsScoreTable = (metrics: Report.MetricsResult, render: ClearTextRenderOptions): boolean =>
   Boolean.match(render.reportScoreTable, {
     onTrue: () => partialScoresVisible(metrics, render),
     onFalse: () => false,
@@ -468,14 +467,14 @@ const drawsScoreTable = (metrics: MetricsResult, render: ClearTextRenderOptions)
 
 type ScoreType = 'total' | 'covered'
 
-const mutationScoreOf = (scoreType: ScoreType, metrics: MetricsResult['metrics']): number =>
+const mutationScoreOf = (scoreType: ScoreType, metrics: Report.MetricsResult['metrics']): number =>
   Match.value(scoreType).pipe(
     Match.when('total', () => metrics.mutationScore),
     Match.when('covered', () => metrics.mutationScoreBasedOnCoveredCode),
     Match.exhaustive,
   )
 
-const scoreText = (scoreType: ScoreType, row: MetricsResult): string => {
+const scoreText = (scoreType: ScoreType, row: Report.MetricsResult): string => {
   const score = mutationScoreOf(scoreType, row.metrics)
   return Boolean.match(Number.isNaN(score), {
     onTrue: () => 'n/a',
@@ -483,7 +482,7 @@ const scoreText = (scoreType: ScoreType, row: MetricsResult): string => {
   })
 }
 
-const thresholdTone = (thresholds: MutationScoreThresholds, score: number): Tone =>
+const thresholdTone = (thresholds: Options.MutationScoreThresholds, score: number): Tone =>
   Match.value(score).pipe(
     Match.when((present: number) => Number.isNaN(present), (): Tone => 'muted'),
     Match.when((present) => present >= thresholds.high, (): Tone => 'positive'),
@@ -492,10 +491,10 @@ const thresholdTone = (thresholds: MutationScoreThresholds, score: number): Tone
   )
 
 const scoreTone = (
-  thresholds: MutationScoreThresholds,
+  thresholds: Options.MutationScoreThresholds,
   scoreType: ScoreType,
   allowColor: boolean,
-): (row: MetricsResult) => Tone =>
+): (row: Report.MetricsResult) => Tone =>
   Boolean.match(allowColor, {
     onTrue: () => (row) => thresholdTone(thresholds, mutationScoreOf(scoreType, row.metrics)),
     onFalse: () => (): Tone => 'plain',
@@ -503,7 +502,7 @@ const scoreTone = (
 
 const contentWidth = (content: CellContent): number => content.indent + content.text.length
 
-const determineContentWidth = (row: MetricsResult, cell: CellFactory, ancestorCount: number): number =>
+const determineContentWidth = (row: Report.MetricsResult, cell: CellFactory, ancestorCount: number): number =>
   widest([
     contentWidth(cell(row, ancestorCount)),
     ...row.childResults.map((child) => determineContentWidth(child, cell, ancestorCount + 1)),
@@ -513,8 +512,8 @@ const leafColumn = (
   header: ReportLine,
   style: PadStyle,
   cell: CellFactory,
-  tone: (row: MetricsResult) => Tone,
-  rows: MetricsResult,
+  tone: (row: Report.MetricsResult) => Tone,
+  rows: Report.MetricsResult,
 ): LeafColumn => ({
   header,
   style,
@@ -523,7 +522,7 @@ const leafColumn = (
   netWidth: widest([determineContentWidth(rows, cell, 0), lineWidth(header)]),
 })
 
-const fileCell = (row: MetricsResult, ancestorCount: number): CellContent => ({
+const fileCell = (row: Report.MetricsResult, ancestorCount: number): CellContent => ({
   text: Boolean.match(ancestorCount === 0, {
     onTrue: () => FILES_ROOT_NAME,
     onFalse: () => row.name,
@@ -531,12 +530,12 @@ const fileCell = (row: MetricsResult, ancestorCount: number): CellContent => ({
   indent: ancestorCount,
 })
 
-const fileColumn = (rows: MetricsResult): LeafColumn =>
+const fileColumn = (rows: Report.MetricsResult): LeafColumn =>
   leafColumn([plain('File')], 'file', fileCell, () => 'plain', rows)
 
 const scoreColumn = (
-  rows: MetricsResult,
-  thresholds: MutationScoreThresholds,
+  rows: Report.MetricsResult,
+  thresholds: Options.MutationScoreThresholds,
   scoreType: ScoreType,
   allowColor: boolean,
 ): LeafColumn =>
@@ -551,7 +550,7 @@ const scoreColumn = (
 interface StatusColumnSpec {
   readonly emoji: string
   readonly label: string
-  readonly count: (metrics: MetricsResult['metrics']) => number
+  readonly count: (metrics: Report.MetricsResult['metrics']) => number
 }
 
 const STATUS_COLUMNS: readonly StatusColumnSpec[] = [
@@ -568,7 +567,7 @@ const statusHeader = (allowEmojis: boolean, emoji: string, label: string): Repor
     onFalse: () => [plain('# '), plain(label)],
   })
 
-const statusColumn = (spec: StatusColumnSpec, allowEmojis: boolean, rows: MetricsResult): LeafColumn =>
+const statusColumn = (spec: StatusColumnSpec, allowEmojis: boolean, rows: Report.MetricsResult): LeafColumn =>
   leafColumn(
     statusHeader(allowEmojis, spec.emoji, spec.label),
     'inner',
@@ -601,7 +600,7 @@ const groupColumn = (header: ReportLine, style: PadStyle, leaves: NonEmptyReadon
   return { header, style, netWidth, leaves: widenFirst(leaves, columnsWidth, netWidth) }
 }
 
-const createColumns = (metricsResult: MetricsResult, render: ClearTextRenderOptions): readonly GroupColumn[] => [
+const createColumns = (metricsResult: Report.MetricsResult, render: ClearTextRenderOptions): readonly GroupColumn[] => [
   groupColumn([plain('')], 'first', [fileColumn(metricsResult)]),
   groupColumn([plain('% Mutation score')], 'inner', [
     scoreColumn(metricsResult, render.thresholds, 'total', render.allowColor),
@@ -618,13 +617,13 @@ const leafRules = (columns: readonly GroupColumn[]): readonly ReportLine[] =>
 const leafHeaders = (columns: readonly GroupColumn[]): readonly ReportLine[] =>
   columns.flatMap((column) => column.leaves.map((leaf) => placedLine(leaf.header, leaf.style, leaf.netWidth)))
 
-const fullRowVisible = (render: ClearTextRenderOptions, row: MetricsResult): boolean =>
+const fullRowVisible = (render: ClearTextRenderOptions, row: Report.MetricsResult): boolean =>
   Boolean.match(render.skipFull, {
     onTrue: () => row.metrics.mutationScore !== 100,
     onFalse: () => true,
   })
 
-const bodyRow = (columns: readonly GroupColumn[], row: MetricsResult, ancestorCount: number): ReportLine =>
+const bodyRow = (columns: readonly GroupColumn[], row: Report.MetricsResult, ancestorCount: number): ReportLine =>
   rowOfLines(
     columns.flatMap((column) =>
       column.leaves.map((
@@ -636,7 +635,7 @@ const bodyRow = (columns: readonly GroupColumn[], row: MetricsResult, ancestorCo
 const ownRow = (
   columns: readonly GroupColumn[],
   render: ClearTextRenderOptions,
-  row: MetricsResult,
+  row: Report.MetricsResult,
   ancestorCount: number,
 ) =>
   Boolean.match(fullRowVisible(render, row), {
@@ -647,14 +646,14 @@ const ownRow = (
 const bodyRows = (
   columns: readonly GroupColumn[],
   render: ClearTextRenderOptions,
-  current: MetricsResult,
+  current: Report.MetricsResult,
   ancestorCount: number,
 ): readonly ReportLine[] => [
   ...ownRow(columns, render, current, ancestorCount),
   ...current.childResults.flatMap((child) => bodyRows(columns, render, child, ancestorCount + 1)),
 ]
 
-const scoreTable = (metricsResult: MetricsResult, render: ClearTextRenderOptions): ReportChunk => {
+const scoreTable = (metricsResult: Report.MetricsResult, render: ClearTextRenderOptions): ReportChunk => {
   const columns = createColumns(metricsResult, render)
   return [
     rowOfLines(columns.map((column) => [rule('-', slotWidthOf(column))])),
@@ -666,15 +665,15 @@ const scoreTable = (metricsResult: MetricsResult, render: ClearTextRenderOptions
   ]
 }
 
-const scoreTableOf = (metrics: MetricsResult, render: ClearTextRenderOptions): Option.Option<ReportChunk> =>
+const scoreTableOf = (metrics: Report.MetricsResult, render: ClearTextRenderOptions): Option.Option<ReportChunk> =>
   Boolean.match(drawsScoreTable(metrics, render), {
     onTrue: () => Option.some(scoreTable(metrics, render)),
     onFalse: () => Option.none(),
   })
 
 const renderClearText = (
-  report: reportApi.MutationTestResult,
-  metrics: MetricsResult,
+  report: Report.MutationTestResult,
+  metrics: Report.MetricsResult,
   render: ClearTextRenderOptions,
 ): ReportSections => {
   const section = mutantReportSection(report, metrics, render)

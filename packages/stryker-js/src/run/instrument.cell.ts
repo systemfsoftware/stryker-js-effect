@@ -1,7 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import type { File as InstrumenterFile, InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Array from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
@@ -23,7 +21,7 @@ import type { PrepareDone } from './prepare.cell.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 
 export interface InstrumentDone extends PrepareDone {
-  readonly mutants: readonly Mutant[]
+  readonly mutants: readonly Mutant.Mutant[]
   readonly sandbox: SandboxHandle
   readonly concurrency: {
     readonly testRunners: number
@@ -33,8 +31,8 @@ export interface InstrumentDone extends PrepareDone {
 
 type InstrumentRaw = typeof InstrumentCommand.Encoded & {
   readonly prev: PrepareDone
-  readonly filesToMutate: readonly InstrumenterFile[]
-  readonly instrumentResult: InstrumentResult
+  readonly filesToMutate: readonly Instrument.File[]
+  readonly instrumentResult: Instrument.InstrumentResult
   readonly instrumentedProject: Project
   readonly sandbox: SandboxHandle
   readonly concurrency: { readonly testRunners: number; readonly checkers: number }
@@ -114,7 +112,7 @@ export const instrumentCell = Sandwich.named('stryker.instrument')((
       ),
     )
 
-    const instrumentResult = yield* instrument(filesToMutate, {
+    const instrumentResult = yield* Instrument.instrument(filesToMutate, {
       ignorers: [...command.ignorers],
       excludedMutations: [...command.options.mutator.excludedMutations],
     }, env.basePath).pipe(

@@ -1,4 +1,5 @@
-import { type RunEvent, RunEventWireLine, S, type VerdictReached } from '@systemfsoftware/stryker-js'
+import { RunEvent } from '@systemfsoftware/stryker-js'
+import * as S from 'effect/Schema'
 import type { ExpectStatic } from 'vitest'
 import { normalizeCounts, normalizeTally, withoutClockStatuses } from '../scripts/oracle/normalize.js'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
@@ -85,14 +86,14 @@ const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan'
 const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutant', 'verdict']
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)
 
-const parseEventStream = (stdout: string): ReadonlyArray<RunEvent> =>
+const parseEventStream = (stdout: string): ReadonlyArray<RunEvent.RunEvent> =>
   stdout
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.startsWith('{') && line.endsWith('}'))
-    .map((line) => S.decodeUnknownSync(RunEventWireLine)(line))
+    .map((line) => S.decodeUnknownSync(RunEvent.RunEventWireLine)(line))
 
-const lastEvent = (events: ReadonlyArray<RunEvent>): RunEvent => {
+const lastEvent = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.RunEvent => {
   const event = events.at(-1)
   if (event === undefined) {
     throw new Error('stdout carries no events')
@@ -120,7 +121,7 @@ const tallySumOf = (tally: Readonly<Record<string, number>>): number =>
 const stepVerifyStreamAndExit = (
   expect: ExpectStatic,
   run: ExecResult,
-  events: ReadonlyArray<RunEvent>,
+  events: ReadonlyArray<RunEvent.RunEvent>,
 ): void => {
   const kinds = events.map((e) => e._tag)
   const preceding = kinds.slice(0, -1)
@@ -134,7 +135,7 @@ const stepVerifyStreamAndExit = (
   expect.soft(kinds).toEqual(expect.arrayContaining([...REQUIRED_EVENT_KINDS]))
 }
 
-const stepVerifyOracleCounts = (expect: ExpectStatic, verdict: VerdictReached): void => {
+const stepVerifyOracleCounts = (expect: ExpectStatic, verdict: RunEvent.VerdictReached): void => {
   expect.soft(verdict.thresholds.break).toBeNull()
   const { survived: _survived, killedOrTimeout: _killedOrTimeout, ...observedExact } = normalizeCounts(verdict.counts)
   const { survived: _expectedSurvived, killedOrTimeout: _expectedKilled, ...expectedExact } = LIFECYCLE_COUNTS
@@ -143,11 +144,11 @@ const stepVerifyOracleCounts = (expect: ExpectStatic, verdict: VerdictReached): 
 
 const stepVerifyMutatorTallies = (
   expect: ExpectStatic,
-  events: ReadonlyArray<RunEvent>,
-  verdict: VerdictReached,
+  events: ReadonlyArray<RunEvent.RunEvent>,
+  verdict: RunEvent.VerdictReached,
 ): void => {
   const reported = events
-    .filter((event): event is Extract<RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
     .map((m) => `${m.mutator}:${m.status}`)
 
   expect.soft(reported).toHaveLength(LIFECYCLE_TOTAL)
@@ -176,8 +177,8 @@ const stepVerifyMutatorTallies = (
 
 const stepVerifyRunIdConsistency = (
   expect: ExpectStatic,
-  events: ReadonlyArray<RunEvent>,
-  verdict: VerdictReached,
+  events: ReadonlyArray<RunEvent.RunEvent>,
+  verdict: RunEvent.VerdictReached,
 ): void => {
   const runIds = events
     .map((event) => ('runId' in event && typeof event.runId === 'string' ? event.runId : undefined))
@@ -191,7 +192,7 @@ const stepVerifyRunIdConsistency = (
 const stepVerifyPersistedReport = async (
   expect: ExpectStatic,
   fixture: PreparedFixture,
-  verdict: VerdictReached,
+  verdict: RunEvent.VerdictReached,
 ): Promise<void> => {
   const reportText = await fixture.readFile('reports/mutation/mutation.json')
   const report = JSON.parse(reportText) as {
@@ -237,8 +238,8 @@ test(
   async ({ bdd, expect, prepareFixture }) => {
     let fixture: PreparedFixture
     let run: ExecResult
-    let events: ReadonlyArray<RunEvent>
-    let verdict: VerdictReached
+    let events: ReadonlyArray<RunEvent.RunEvent>
+    let verdict: RunEvent.VerdictReached
     let startedSeconds: number
 
     await bdd.given('an enterprise fixture in an isolated lifecycle container directory', async () => {

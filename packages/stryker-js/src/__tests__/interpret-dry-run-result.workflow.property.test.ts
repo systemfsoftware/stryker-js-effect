@@ -1,5 +1,5 @@
 import { it } from '@effect/vitest'
-import { DryRunResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -14,7 +14,7 @@ import {
 
 it.prop(
   '∀dryRun_InterpretDryRunResult_CountsTestsAndReportsKillers',
-  [DryRunResultSchema],
+  [TestRunner.DryRunResultSchema],
   ([dryRunResult]) =>
     Result.match(
       interpretDryRunResult(InterpretDryRunResultCommand.make({ dryRunResult })),

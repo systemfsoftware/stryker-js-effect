@@ -2,7 +2,7 @@ import type { RunnerTestFile, RunnerTestSuite } from 'vitest'
 import type { Vitest } from 'vitest/node'
 
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -38,10 +38,10 @@ export interface RunFilterInput {
 }
 
 const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
-  new TestRunnerFailed({
+  new TestRunner.TestRunnerFailed({
     runnerName: 'vitest',
     phase,
-    cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
 const disableScreenshotFailures = <A>(value: A) =>
@@ -124,8 +124,8 @@ export const applyRunFilter: {
   }))
 
 export const start: {
-  (testFiles: string[] | undefined): (self: VitestRuntime) => Effect.Effect<void, TestRunnerFailed>
-  (self: VitestRuntime, testFiles: string[] | undefined): Effect.Effect<void, TestRunnerFailed>
+  (testFiles: string[] | undefined): (self: VitestRuntime) => Effect.Effect<void, TestRunner.TestRunnerFailed>
+  (self: VitestRuntime, testFiles: string[] | undefined): Effect.Effect<void, TestRunner.TestRunnerFailed>
 } = dual(2, (self: VitestRuntime, testFiles: string[] | undefined) =>
   Effect.tryPromise({
     try: () => self[DriverId].start(testFiles),
@@ -149,7 +149,7 @@ export const externalErrorText = (self: VitestRuntime): string =>
     onSome: (errorsSet) =>
       Predicate.isIterable(errorsSet)
         ? [...errorsSet].map((error) =>
-          Option.getOrElse(Option.map(ErrorText.fromCause(error), (rendered) => rendered.text), () => '')
+          Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(error), (rendered) => rendered.text), () => '')
         ).join('\n')
         : '',
   })
@@ -166,7 +166,7 @@ export const reportAllKillersOf = (options: { readonly disableBail?: boolean }) 
 
 export const close = (
   self: VitestRuntime,
-): Effect.Effect<void, TestRunnerFailed, FileSystem.FileSystem> =>
+): Effect.Effect<void, TestRunner.TestRunnerFailed, FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const cleanup = Context.make(FileSystem.FileSystem, fs)

@@ -1,7 +1,7 @@
 /// <reference types="vitest/importMeta" />
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { FileDescriptions, MutateDescription } from '@systemfsoftware/stryker-js-instrumenter'
-import type { MutationTestResult, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Schema as S } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Equivalence from 'effect/Equivalence'
@@ -404,12 +404,12 @@ const selectFiles = (input: FileSelectionInput): SelectedFiles => ({
 const stringArrayEquivalence = Equivalence.Array(Equivalence.String)
 
 type ReadProjectInput = {
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
   readonly basePath: string
 }
 
-const ignoreRulesOf = (options: StrykerOptions) => [
+const ignoreRulesOf = (options: Options.StrykerOptions) => [
   ...ALWAYS_IGNORE,
   options.tempDirName,
   options.incrementalFile,
@@ -585,7 +585,7 @@ const reportOf = (contents: string | undefined) =>
 
 const incrementalContentsOf = (
   fs: FileSystem.FileSystem,
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
 ): Effect.Effect<Option.Option<string>, PlatformError> =>
   Boolean.match(options.incremental, {
     onFalse: () => Effect.succeedNone,
@@ -610,7 +610,7 @@ const incrementalContentsOf = (
   })
 
 type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
   readonly basePath: string
   readonly incremental: boolean
@@ -624,7 +624,7 @@ const addProjectFile = (
   files: MutableHashMap.MutableHashMap<string, ProjectFile>,
   filesToMutate: MutableHashMap.MutableHashMap<string, ProjectFile>,
   name: string,
-  desc: { readonly mutate: MutateDescription },
+  desc: { readonly mutate: Instrument.MutateDescription },
 ): void => {
   const file: ProjectFile = { name, mutate: desc.mutate, content: undefined, originalContent: undefined }
   MutableHashMap.set(files, name, file)
@@ -635,8 +635,8 @@ const addProjectFile = (
 }
 
 const makeProject = (
-  fileDescriptions: FileDescriptions,
-  incrementalReport?: MutationTestResult,
+  fileDescriptions: Instrument.FileDescriptions,
+  incrementalReport?: Report.MutationTestResult,
   testFiles: readonly string[] = [],
 ): Project => {
   const files: MutableHashMap.MutableHashMap<string, ProjectFile> = MutableHashMap.empty<string, ProjectFile>()
@@ -715,13 +715,13 @@ const discardLogOf = (
   })
 
 export interface ReadProjectDone {
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
   readonly basePath: string
   readonly project: Project
 }
 
-const projectOf = (command: ReadProjectCommand, report: MutationTestResult | undefined): ReadProjectDone => ({
+const projectOf = (command: ReadProjectCommand, report: Report.MutationTestResult | undefined): ReadProjectDone => ({
   options: command.options,
   targetMutatePatterns: command.targetMutatePatterns,
   basePath: command.basePath,

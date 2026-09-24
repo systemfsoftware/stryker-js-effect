@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { NonNegativeInt } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -17,8 +17,8 @@ export const FramingState = S.Struct({
   signal: S.Literals(['flag', 'env', 'tty', 'agent', 'tool']),
   headerWritten: S.Boolean,
   terminalSeen: S.Boolean,
-  completed: NonNegativeInt,
-  total: S.NullOr(NonNegativeInt),
+  completed: Report.NonNegativeInt,
+  total: S.NullOr(Report.NonNegativeInt),
 })
 export interface FramingState {
   readonly mode: 'machine' | 'human'

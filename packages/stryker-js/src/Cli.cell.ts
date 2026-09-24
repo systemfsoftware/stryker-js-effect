@@ -1,14 +1,7 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import {
-  PluginFileUrl,
-  StrykerCoverageAnalysis,
-  StrykerFileLogLevel,
-  StrykerLogLevel,
-  StrykerTempDirName,
-} from '@systemfsoftware/stryker-js-plugin-interface'
-import type { PartialStrykerOptions, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Bool from 'effect/Boolean'
 import * as Config from 'effect/Config'
@@ -50,12 +43,12 @@ import { MachineConsole } from './reporting/machine-console.service.js'
 import { ErrorEnvelope, RunExitCode } from './reporting/run-failure.schema.js'
 import { routeCliRequest } from './route-cli-request.workflow.js'
 import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
-import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
 import { type HostServices, type StrykerRun } from './run/host.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import type { EnginePorts } from './run/StageServices.service.js'
+import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
 import type { SurvivorsAdmissionAnswer, SurvivorsAdmissionInput } from './Survivors/mod.js'
 import type { SurvivorsRejection } from './Survivors/mod.js'
@@ -78,7 +71,7 @@ interface StrykerCliInvocation {
 
 type CliRead = (typeof CliRouteCommand)['Encoded'] & {
   readonly environment: CliEnvironment
-  readonly options: PartialStrykerOptions
+  readonly options: Options.PartialStrykerOptions
 }
 
 type CliAnswer = void | MutationTestDone
@@ -97,7 +90,7 @@ const createSplitter = (separator: string) => (value: string) => value.split(sep
 const splitOnComma = createSplitter(',')
 const splitOnSpace = createSplitter(' ')
 
-const decodePluginFileUrl = S.decodeOption(PluginFileUrl)
+const decodePluginFileUrl = S.decodeOption(Options.PluginFileUrl)
 
 const asPluginFileUrls = (specifiers: readonly string[]): Option.Option<readonly string[]> =>
   Option.all(specifiers.map((specifier) => decodePluginFileUrl(specifier)))
@@ -214,7 +207,7 @@ const runOptions = {
   coverageAnalysis: Flag.Literals('coverageAnalysis', ['perTest', 'all', 'off'])
     .pipe(
       Flag.withDescription(
-        `The coverage analysis strategy you want to use. Default value: "${StrykerCoverageAnalysis.literal}"`,
+        `The coverage analysis strategy you want to use. Default value: "${Options.StrykerCoverageAnalysis.literal}"`,
       ),
       optional,
     ),
@@ -309,14 +302,14 @@ const runOptions = {
   logLevel: Flag.Literals('logLevel', ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'off'] as const)
     .pipe(
       Flag.withDescription(
-        `Set the log level for the console. Possible values: fatal, error, warn, info, debug, trace and off. Default is "${StrykerLogLevel.literal}"`,
+        `Set the log level for the console. Possible values: fatal, error, warn, info, debug, trace and off. Default is "${Options.StrykerLogLevel.literal}"`,
       ),
       optional,
     ),
   fileLogLevel: Flag.Literals('fileLogLevel', ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'off'] as const)
     .pipe(
       Flag.withDescription(
-        `Set the log level for the "stryker.log" file. Possible values: fatal, error, warn, info, debug, trace and off. Default is "${StrykerFileLogLevel.literal}"`,
+        `Set the log level for the "stryker.log" file. Possible values: fatal, error, warn, info, debug, trace and off. Default is "${Options.StrykerFileLogLevel.literal}"`,
       ),
       optional,
     ),
@@ -335,7 +328,7 @@ const runOptions = {
   cleanTempDir: Flag.String('cleanTempDir')
     .pipe(
       Flag.withDescription(
-        `Choose whether or not to clean the temp dir (which is "${StrykerTempDirName.literal}" inside the current working directory by default) after a run.\n- false: Never delete the temp dir;\n- true: Delete the tmp dir after a successful run;\n- always: Always delete the temp dir, regardless of whether the run was successful.`,
+        `Choose whether or not to clean the temp dir (which is "${Options.StrykerTempDirName.literal}" inside the current working directory by default) after a run.\n- false: Never delete the temp dir;\n- true: Delete the tmp dir after a successful run;\n- always: Always delete the temp dir, regardless of whether the run was successful.`,
       ),
       Flag.map(parseCleanDirOption),
       optional,
@@ -401,13 +394,16 @@ const makeStrykerCommand = (requestRef: Ref.Ref<Option.Option<CliRequest>>) => {
     readonly [Key in keyof typeof runConfig]: ParsedConfigValue<(typeof runConfig)[Key]>
   }
 
-  const readStrykerOptions = (config: RunParsedConfig): PartialStrykerOptions => {
-    const entryOf = <K extends keyof StrykerOptions>(key: K, value: Option.Option<StrykerOptions[K]>) =>
+  const readStrykerOptions = (config: RunParsedConfig): Options.PartialStrykerOptions => {
+    const entryOf = <K extends keyof Options.StrykerOptions>(key: K, value: Option.Option<Options.StrykerOptions[K]>) =>
       Option.match(value, {
         onNone: () => ({}),
         onSome: (present) => ({ [key]: present }),
       })
-    const trueEntryOf = <K extends keyof StrykerOptions>(key: K, value: StrykerOptions[K] | undefined) =>
+    const trueEntryOf = <K extends keyof Options.StrykerOptions>(
+      key: K,
+      value: Options.StrykerOptions[K] | undefined,
+    ) =>
       Bool.match(value === true, {
         onTrue: () => ({ [key]: true }),
         onFalse: () => ({}),
@@ -478,7 +474,7 @@ const makeStrykerCommand = (requestRef: Ref.Ref<Option.Option<CliRequest>>) => {
   return strykerCommand
 }
 
-const EMPTY_OPTIONS: PartialStrykerOptions = {}
+const EMPTY_OPTIONS: Options.PartialStrykerOptions = {}
 
 const routeOf = (request: Option.Option<CliRequest>): CliRouteCommand =>
   Option.match(request, {
@@ -494,7 +490,7 @@ const routeOf = (request: Option.Option<CliRequest>): CliRouteCommand =>
       ),
   })
 
-const optionsOf = (request: Option.Option<CliRequest>): PartialStrykerOptions =>
+const optionsOf = (request: Option.Option<CliRequest>): Options.PartialStrykerOptions =>
   Option.match(request, {
     onNone: () => EMPTY_OPTIONS,
     onSome: (cliRequest) =>
@@ -556,7 +552,7 @@ const readCliRoute = (
     })
   })
 
-const stageRunOf = (environment: CliEnvironment, options: PartialStrykerOptions) =>
+const stageRunOf = (environment: CliEnvironment, options: Options.PartialStrykerOptions) =>
   Layer.build(RunEnvironment.stage(environment.host.env, environment.host.events)).pipe(
     Effect.flatMap((context) =>
       Cell.provideContext(mutationTestCell, context).run({
@@ -567,7 +563,7 @@ const stageRunOf = (environment: CliEnvironment, options: PartialStrykerOptions)
     Effect.scoped,
   )
 
-const runEffectOf = (environment: CliEnvironment, options: PartialStrykerOptions) =>
+const runEffectOf = (environment: CliEnvironment, options: Options.PartialStrykerOptions) =>
   Effect.orDie(
     Option.match(Option.fromUndefinedOr(environment.runMutationTest), {
       onSome: (run) => run(options, undefined),
@@ -576,11 +572,11 @@ const runEffectOf = (environment: CliEnvironment, options: PartialStrykerOptions
   )
 
 const restrictedOptionsOf = (
-  resolvedOptions: StrykerOptions,
+  resolvedOptions: Options.StrykerOptions,
   priorReportPath: string,
   admitted: Admitted,
-): PartialStrykerOptions & {
-  readonly survivors?: ReadonlyArray<Mutant>
+): Options.PartialStrykerOptions & {
+  readonly survivors?: ReadonlyArray<Mutant.Mutant>
   readonly survivorsPriorReport?: string
   readonly mutate?: string[]
   readonly incremental?: boolean
@@ -692,7 +688,7 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
     const noColor = yield* Config.String('NO_COLOR').pipe(Effect.option)
     const hostOptions = yield* RunEnvironment.forStream(mode, stream, {
       noColor: Option.getOrUndefined(noColor),
-      builtinReporters: { html: makeHtmlReporter },
+      builtinReporters: { html: HtmlReporter.makeHtmlReporter },
     })
     const pathService = yield* Path.Path
     const environment: CliEnvironment = {

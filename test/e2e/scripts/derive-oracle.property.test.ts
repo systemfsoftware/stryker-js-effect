@@ -1,4 +1,4 @@
-import { instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -151,7 +151,7 @@ function alphaRename(sourceText: string, suffix: string): string {
 
 const instrumentOxc = (code: string) =>
   Effect.runPromise(
-    instrument([{ name: 'synthetic.ts', content: code, mutate: true }], {
+    Instrument.instrument([{ name: 'synthetic.ts', content: code, mutate: true }], {
       excludedMutations: [],
       ignorers: [],
     }),

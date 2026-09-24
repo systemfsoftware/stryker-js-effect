@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { TestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -10,13 +10,13 @@ const VitestDryRunTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-j
 type VitestDryRunTypeId = typeof VitestDryRunTypeId
 
 export class DryRunComplete extends S.TaggedClass<DryRunComplete>()('Complete', {
-  tests: S.Array(TestResultSchema),
+  tests: S.Array(TestRunner.TestResultSchema),
 }) {
   readonly [VitestDryRunTypeId] = VitestDryRunTypeId
 }
 
 export class DryRunExternalError extends S.TaggedClass<DryRunExternalError>()('Error', {
-  tests: S.Array(TestResultSchema),
+  tests: S.Array(TestRunner.TestResultSchema),
   errorMessage: S.String,
 }) {
   readonly [VitestDryRunTypeId] = VitestDryRunTypeId

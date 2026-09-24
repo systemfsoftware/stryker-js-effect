@@ -1,7 +1,6 @@
-import type { WorkerLauncher, WorkerSpawnParams } from '@systemfsoftware/stryker-js'
-import type { ReporterEvent } from '@systemfsoftware/stryker-js-plugin-interface'
-import { type ReporterInitOptions, ReporterRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
-import { layerTraceContextServer } from '@systemfsoftware/stryker-js-plugin-runtime'
+import type { Worker } from '@systemfsoftware/stryker-js'
+import { Plugin, type Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'
@@ -25,16 +24,16 @@ export interface ReporterWorkerGauge {
 }
 
 export interface ReporterWorkerTrace {
-  readonly inits: Ref.Ref<readonly ReporterInitOptions[]>
-  readonly batches: Ref.Ref<readonly (readonly ReporterEvent[])[]>
+  readonly inits: Ref.Ref<readonly Plugin.ReporterInitOptions[]>
+  readonly batches: Ref.Ref<readonly (readonly Reporter.ReporterEvent[])[]>
   readonly flushes: Ref.Ref<number>
   readonly gauge: ReporterWorkerGauge
 }
 
 export const makeReporterWorkerTrace: Effect.Effect<ReporterWorkerTrace> = Effect.gen(function*() {
   return {
-    inits: yield* Ref.make<readonly ReporterInitOptions[]>([]),
-    batches: yield* Ref.make<readonly (readonly ReporterEvent[])[]>([]),
+    inits: yield* Ref.make<readonly Plugin.ReporterInitOptions[]>([]),
+    batches: yield* Ref.make<readonly (readonly Reporter.ReporterEvent[])[]>([]),
     flushes: yield* Ref.make(0),
     gauge: {
       yielded: yield* Ref.make(0),
@@ -46,29 +45,29 @@ export const makeReporterWorkerTrace: Effect.Effect<ReporterWorkerTrace> = Effec
 
 const recordBatch = (
   trace: ReporterWorkerTrace,
-  batch: readonly ReporterEvent[],
+  batch: readonly Reporter.ReporterEvent[],
 ): Effect.Effect<void> =>
   Ref.update(trace.batches, (seen) => [...seen, batch]).pipe(
     Effect.andThen(Ref.update(trace.gauge.delivered, (delivered) => delivered + batch.length)),
   )
 
 const reporterServer = (socket: Socket.Socket, trace: ReporterWorkerTrace): Layer.Layer<never> =>
-  RpcServer.layer(ReporterRpcs).pipe(
-    Layer.provide(ReporterRpcs.toLayer({
+  RpcServer.layer(Plugin.ReporterRpcs).pipe(
+    Layer.provide(Plugin.ReporterRpcs.toLayer({
       init: (payload) => Ref.update(trace.inits, (seen) => [...seen, payload]),
-      onEventBatch: (batch: readonly ReporterEvent[]) => recordBatch(trace, batch),
+      onEventBatch: (batch: readonly Reporter.ReporterEvent[]) => recordBatch(trace, batch),
       flush: () => Ref.update(trace.flushes, (flushed) => flushed + 1),
     })),
     Layer.provide(RpcServer.layerProtocolSocketServer),
     Layer.provide(RpcSerialization.layerNdjson),
     Layer.provide(Layer.succeed(Socket.Socket, socket)),
     Layer.provide(Layer.succeed(SocketServer.SocketServer, singleConnection(socket))),
-    Layer.provide(layerTraceContextServer),
+    Layer.provide(Trace.layerTraceContextServer),
   )
 
 export interface ReporterServingLauncher {
-  readonly spawns: Ref.Ref<readonly WorkerSpawnParams[]>
-  readonly layer: Layer.Layer<WorkerLauncher>
+  readonly spawns: Ref.Ref<readonly Worker.WorkerSpawnParams[]>
+  readonly layer: Layer.Layer<Worker.WorkerLauncher>
 }
 
 export const reporterServingLauncher = (

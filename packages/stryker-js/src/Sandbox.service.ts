@@ -1,4 +1,4 @@
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean } from 'effect'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -44,7 +44,7 @@ const removeTempDirectory = (
   })
 
 const makeTemporaryDirectory = (
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
 ): Effect.Effect<TemporaryDirectoryShape, PlatformError, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -75,7 +75,7 @@ export class TemporaryDirectory extends Context.Service<TemporaryDirectory, Temp
   '@systemfsoftware/stryker-js/Sandbox.service/TemporaryDirectory',
 ) {
   static layer(
-    options: StrykerOptions,
+    options: Options.StrykerOptions,
   ): Layer.Layer<TemporaryDirectory, PlatformError, FileSystem.FileSystem | Path.Path> {
     return Layer.effect(TemporaryDirectory, makeTemporaryDirectory(options))
   }

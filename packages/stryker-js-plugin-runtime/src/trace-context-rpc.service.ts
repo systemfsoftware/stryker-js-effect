@@ -11,16 +11,7 @@ import type * as Rpc from 'effect/unstable/rpc/Rpc'
 import type { Request } from 'effect/unstable/rpc/RpcMessage'
 import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware'
 
-import type { TraceContextParts } from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  PropagatedTrace,
-  TraceContextMiddleware,
-  TraceContextPartsSchema,
-  TraceContextReference,
-  Traceparent,
-  TraceparentHeader,
-  TracestateHeader,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import { Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import { TraceContextPartsFromEffectSpan } from './trace-parts.schema.js'
 
@@ -40,7 +31,7 @@ const partsOfSpanContext = (context: api.SpanContext) =>
   Option.flatMap(
     Option.liftPredicate(context, (candidate) => api.trace.isSpanContextValid(candidate)),
     (valid) =>
-      S.decodeOption(TraceContextPartsSchema)({
+      S.decodeOption(Trace.TraceContextPartsSchema)({
         version: '00',
         traceId: valid.traceId,
         spanId: valid.spanId,
@@ -57,35 +48,35 @@ const partsOfSpan = (span: api.Span | undefined) =>
 
 const remotePartsFromHeaders = (headers: Headers.Headers) =>
   Option.map(
-    Option.flatMap(Headers.get(headers, TraceparentHeader.literal), S.decodeUnknownOption(Traceparent)),
-    (parts) => ({ ...parts, traceState: Option.getOrUndefined(Headers.get(headers, TracestateHeader.literal)) }),
+    Option.flatMap(Headers.get(headers, Trace.TraceparentHeader.literal), S.decodeUnknownOption(Trace.Traceparent)),
+    (parts) => ({ ...parts, traceState: Option.getOrUndefined(Headers.get(headers, Trace.TracestateHeader.literal)) }),
   )
 
-const traceHeaders = (parts: TraceContextParts) =>
-  Option.match(S.encodeOption(Traceparent)(parts), {
+const traceHeaders = (parts: Trace.TraceContextParts) =>
+  Option.match(S.encodeOption(Trace.Traceparent)(parts), {
     onNone: () => Headers.empty,
     onSome: (traceparent) =>
       Option.match(Option.fromUndefinedOr(parts.traceState), {
-        onNone: () => Headers.set(Headers.empty, TraceparentHeader.literal, traceparent),
+        onNone: () => Headers.set(Headers.empty, Trace.TraceparentHeader.literal, traceparent),
         onSome: (traceState) =>
           Headers.set(
-            Headers.set(Headers.empty, TraceparentHeader.literal, traceparent),
-            TracestateHeader.literal,
+            Headers.set(Headers.empty, Trace.TraceparentHeader.literal, traceparent),
+            Trace.TracestateHeader.literal,
             traceState,
           ),
       }),
   })
 
-const inject = <A extends Rpc.Any>(request: Request<A>, parts: TraceContextParts): Request<A> => ({
+const inject = <A extends Rpc.Any>(request: Request<A>, parts: Trace.TraceContextParts): Request<A> => ({
   ...request,
   headers: Headers.merge(request.headers, traceHeaders(parts)),
 })
 
-const hostParts: Effect.Effect<Option.Option<TraceContextParts>> = Effect.map(
+const hostParts: Effect.Effect<Option.Option<Trace.TraceContextParts>> = Effect.map(
   Effect.context<never>(),
   (context) =>
     Option.orElse(
-      Context.get(context, TraceContextReference),
+      Context.get(context, Trace.TraceContextReference),
       () => partsOfSpan(api.trace.getSpan(api.context.active())),
     ),
 )
@@ -100,22 +91,22 @@ const clientMiddleware: RpcMiddleware.RpcMiddlewareClient<never, never, never> =
     ),
   )
 
-export const layerTraceContextClient = RpcMiddleware.layerClient(TraceContextMiddleware, clientMiddleware)
+export const layerTraceContextClient = RpcMiddleware.layerClient(Trace.TraceContextMiddleware, clientMiddleware)
 
-const externalSpanOf = (parts: TraceContextParts) =>
+const externalSpanOf = (parts: Trace.TraceContextParts) =>
   Option.map(S.encodeOption(TraceContextPartsFromEffectSpan)(parts), (span) => Tracer.externalSpan(span))
 
-const serverMiddleware: RpcMiddleware.RpcMiddleware<typeof PropagatedTrace, never, never> = (effect, options) => {
+const serverMiddleware: RpcMiddleware.RpcMiddleware<typeof Trace.PropagatedTrace, never, never> = (effect, options) => {
   const remote = remotePartsFromHeaders(options.headers)
   const attributes = { 'rpc.method': options.rpc._tag }
   const spanned = Option.match(Option.flatMap(remote, externalSpanOf), {
     onNone: () => Effect.useSpan(`rpc.${options.rpc._tag}`, { attributes }, () => effect),
     onSome: (parent) => Effect.useSpan(`rpc.${options.rpc._tag}`, { attributes, parent }, () => effect),
   })
-  return spanned.pipe(Effect.provideService(PropagatedTrace, remote))
+  return spanned.pipe(Effect.provideService(Trace.PropagatedTrace, remote))
 }
 
-export const layerTraceContextServer = Layer.succeed(TraceContextMiddleware, serverMiddleware)
+export const layerTraceContextServer = Layer.succeed(Trace.TraceContextMiddleware, serverMiddleware)
 
 export const withLinkedSpan: {
   <A, E, R>(
@@ -135,7 +126,7 @@ export const withLinkedSpan: {
     effect: Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E, R> =>
     Effect.flatMap(Effect.context<never>(), (context) => {
-      const remote = Option.flatten(Context.getOption(context, PropagatedTrace))
+      const remote = Option.flatten(Context.getOption(context, Trace.PropagatedTrace))
       return Option.match(Option.flatMap(remote, externalSpanOf), {
         onNone: () => Effect.useSpan(spanName, { attributes }, () => effect),
         onSome: (linked) =>

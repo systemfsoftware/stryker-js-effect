@@ -1,6 +1,5 @@
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import type { ReporterFactory } from '@systemfsoftware/stryker-js-plugin-interface'
-import { ReporterFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -15,17 +14,17 @@ import { progressReporterFactory } from './progress-report.cell.js'
 import { ReporterOutput } from './reporter-output.service.js'
 
 export interface ReporterShape {
-  readonly builtin: Readonly<Record<string, ReporterFactory>>
+  readonly builtin: Readonly<Record<string, InterfaceReporter.ReporterFactory>>
 }
 
-const failAsStreamDrain = <E = unknown>(cause: E): ReporterFailed =>
-  ReporterFailed.make({
+const failAsStreamDrain = <E = unknown>(cause: E): InterfaceReporter.ReporterFailed =>
+  InterfaceReporter.ReporterFailed.make({
     reporterName: 'progress',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
-const drainReporterFactory: ReporterFactory = () => (events) =>
+const drainReporterFactory: InterfaceReporter.ReporterFactory = () => (events) =>
   Stream.runDrain(Stream.fromAsyncIterable(events, failAsStreamDrain))
 
 export class Reporter extends Context.Service<Reporter, ReporterShape>()(

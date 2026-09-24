@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -17,7 +17,7 @@ export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: ExitCod
 
 const CONFIG_CODE = 2
 
-const classCode = (exitClass: ExitClass): number =>
+const classCode = (exitClass: Plugin.ExitClass): number =>
   Match.value(exitClass).pipe(
     Match.when('VerdictFail', () => 1),
     Match.when('ConfigError', () => CONFIG_CODE),
@@ -81,7 +81,7 @@ export type FailedRunOutcome = Exclude<RunOutcomeDecision, RunOk> | RunOutcomeEr
 type SucceededCommand = RunOutcomeCommand & { readonly succeeded: true }
 type HelpCommand = RunOutcomeCommand & { readonly helpErrorCount: number }
 type SurvivorsCommand = RunOutcomeCommand & { readonly survivorsReason: 'no-report' | 'mismatch' }
-type ClassedCommand = RunOutcomeCommand & { readonly highestExitClass: ExitClass }
+type ClassedCommand = RunOutcomeCommand & { readonly highestExitClass: Plugin.ExitClass }
 
 const isSucceeded = (command: RunOutcomeCommand): command is SucceededCommand => command.succeeded
 const isHelpRun = (command: RunOutcomeCommand): command is HelpCommand => command.helpErrorCount !== undefined

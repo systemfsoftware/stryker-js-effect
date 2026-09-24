@@ -3,7 +3,7 @@ import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
 export class MutantTestPlanCommand extends S.TaggedClass<MutantTestPlanCommand>()('MutantTestPlanCommand', {
-  mutants: S.Array(Mutant),
+  mutants: S.Array(Mutant.Mutant),
   timeOverheadMS: S.Finite,
   timeSpentAllTests: S.Finite,
   globalTestFilter: S.String.pipe(S.Array, S.optional),

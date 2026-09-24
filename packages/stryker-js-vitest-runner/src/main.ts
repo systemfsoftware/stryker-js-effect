@@ -4,8 +4,8 @@ import { layer as NodeCryptoLayer } from '@effect/platform-node/NodeCrypto'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
-import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
-import { WorkerOptions, workerServerLayer, WorkerTelemetry } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Boolean from 'effect/Boolean'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
@@ -23,7 +23,7 @@ const otlpTelemetryLayer = (serviceName: string, endpoint: string) =>
 
 const workerPlatformLayer = Layer.unwrap(
   Effect.gen(function*() {
-    const telemetry = yield* WorkerTelemetry
+    const telemetry = yield* Worker.WorkerTelemetry
     const socketPath = yield* Config.String('STRYKER_SOCKET')
     return Layer.mergeAll(
       NodeSocketServer.layer({ path: socketPath }),
@@ -39,21 +39,21 @@ const workerPlatformLayer = Layer.unwrap(
 
 const vitestRunnerLayer = Layer.unwrap(
   Effect.gen(function*() {
-    const options = yield* WorkerOptions
+    const options = yield* Worker.WorkerOptions
     const sandboxDirectory = yield* Config.String('STRYKER_SANDBOX_DIR')
     return vitestRunner({ options, sandboxDirectory })
   }),
 )
 
-const servedPlatformLayer = workerPlatformLayer.pipe(Layer.provide(WorkerTelemetry.layer))
+const servedPlatformLayer = workerPlatformLayer.pipe(Layer.provide(Worker.WorkerTelemetry.layer))
 
 const workerRootLayer = vitestRunnerLayer.pipe(
-  Layer.provideMerge(WorkerOptions.layer.pipe(Layer.provideMerge(servedPlatformLayer))),
+  Layer.provideMerge(Worker.WorkerOptions.layer.pipe(Layer.provideMerge(servedPlatformLayer))),
 )
 
 NodeRuntime.runMain(
-  workerServerLayer({
-    rpcs: TestRunnerRpcs,
+  Worker.workerServerLayer({
+    rpcs: Plugin.TestRunnerRpcs,
     handlers: testRunnerHandlers,
     schemaServices: Layer.empty,
   }).pipe(

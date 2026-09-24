@@ -1,4 +1,4 @@
-import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as S from 'effect/Schema'
 
@@ -12,7 +12,7 @@ export class StageError extends S.TaggedError<StageError>(TypeId)('StageError', 
 }) {
   readonly [TypeId] = TypeId
 
-  get exitClass(): ExitClass {
+  get exitClass(): Plugin.ExitClass {
     return STAGE_PRESENTATION[this.stage].exitClass
   }
 
@@ -25,7 +25,10 @@ export class StageError extends S.TaggedError<StageError>(TypeId)('StageError', 
   }
 }
 
-const STAGE_PRESENTATION: Record<StageError['stage'], { readonly label: string; readonly exitClass: ExitClass }> = {
+const STAGE_PRESENTATION: Record<
+  StageError['stage'],
+  { readonly label: string; readonly exitClass: Plugin.ExitClass }
+> = {
   prepare: { label: 'Prepare', exitClass: 'ConfigError' },
   instrument: { label: 'Instrument', exitClass: 'RuntimeError' },
   dryRun: { label: 'Dry run', exitClass: 'RuntimeError' },

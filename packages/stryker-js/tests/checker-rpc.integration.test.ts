@@ -1,8 +1,8 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { CheckerRpcs, makeWorkerClient, WorkerLauncher } from '@systemfsoftware/stryker-js'
-import { CanonicalFileName, MutantId, MutatorName } from '@systemfsoftware/stryker-js-instrumenter'
-import { type CheckerMutantWire, StrykerOptionsSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import { layerTraceContextServer } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Worker } from '@systemfsoftware/stryker-js'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { type Checker, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'
@@ -21,20 +21,20 @@ import { memorySocketPair, singleConnection } from './__fixtures__/substituted-w
 
 const Feature = makeFeature({ it, layer })
 
-type CheckerRpcsUnion = typeof CheckerRpcs extends RpcGroup.RpcGroup<infer Rpcs> ? Rpcs : never
+type CheckerRpcsUnion = typeof Plugin.CheckerRpcs extends RpcGroup.RpcGroup<infer Rpcs> ? Rpcs : never
 
 interface CheckerHarness {
   readonly client: RpcClient.RpcClient<CheckerRpcsUnion, RpcClientError>
-  readonly receivedRef: Ref.Ref<readonly CheckerMutantWire[]>
+  readonly receivedRef: Ref.Ref<readonly Checker.CheckerMutantWire[]>
 }
 
 const makeCheckerServer = (
   socket: Socket.Socket,
-  receivedRef: Ref.Ref<readonly CheckerMutantWire[]>,
+  receivedRef: Ref.Ref<readonly Checker.CheckerMutantWire[]>,
 ): Layer.Layer<never> =>
-  RpcServer.layer(CheckerRpcs).pipe(
+  RpcServer.layer(Plugin.CheckerRpcs).pipe(
     Layer.provide(
-      CheckerRpcs.toLayer({
+      Plugin.CheckerRpcs.toLayer({
         check: ({ mutants }) =>
           Ref.set(receivedRef, mutants).pipe(
             Effect.map(() =>
@@ -50,17 +50,17 @@ const makeCheckerServer = (
     Layer.provide(RpcSerialization.layerNdjson),
     Layer.provide(Layer.succeed(Socket.Socket, socket)),
     Layer.provide(Layer.succeed(SocketServer.SocketServer, singleConnection(socket))),
-    Layer.provide(layerTraceContextServer),
+    Layer.provide(Trace.layerTraceContextServer),
   )
 
 const makeHarness = () =>
   Effect.gen(function*() {
     const [clientSocket, serverSocket] = yield* memorySocketPair
-    const receivedRef = yield* Ref.make<readonly CheckerMutantWire[]>([])
+    const receivedRef = yield* Ref.make<readonly Checker.CheckerMutantWire[]>([])
 
     yield* Effect.forkScoped(makeCheckerServer(serverSocket, receivedRef).pipe(Layer.launch))
 
-    const launcherLayer = Layer.succeed(WorkerLauncher, {
+    const launcherLayer = Layer.succeed(Worker.WorkerLauncher, {
       spawn: () =>
         Effect.succeed(
           makeSpawnedSocketWorker({
@@ -74,12 +74,12 @@ const makeHarness = () =>
         ),
     })
 
-    const options = yield* S.decodeEffect(StrykerOptionsSchema)({}).pipe(Effect.orDie)
-    const client = yield* makeWorkerClient({
+    const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({}).pipe(Effect.orDie)
+    const client = yield* Worker.makeWorkerClient({
       entrypoint: '/project/checker.mjs',
       execArgv: [],
       options,
-      rpcs: CheckerRpcs,
+      rpcs: Plugin.CheckerRpcs,
       tempDirPrefix: 'checker-',
       workingDirectory: '/project',
     }).pipe(Effect.provide(launcherLayer))
@@ -97,10 +97,10 @@ Feature('Verifying mutants through an external checker worker')
         When('the runner submits a mutation with line coordinates for verification')(
           'response',
           (s) => {
-            const mutant: CheckerMutantWire = {
-              id: MutantId.make('mutant-1'),
-              fileName: CanonicalFileName.make('src/core.ts'),
-              mutatorName: MutatorName.make('ArithmeticOperator'),
+            const mutant: Checker.CheckerMutantWire = {
+              id: Mutant.MutantId.make('mutant-1'),
+              fileName: Mutant.CanonicalFileName.make('src/core.ts'),
+              mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
               replacement: '-',
               location: {
                 start: { line: 10, column: 5 },

@@ -1,7 +1,7 @@
 import type { JsonValue } from '@std/jsonc'
 import { parse } from '@std/jsonc'
-import { CanonicalFileName, disableTypeChecks, ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Predicate, Schema as S } from 'effect'
 import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
@@ -35,7 +35,7 @@ import { ExtendsArraySchema, type TSConfig, TsConfigSchema } from './Sandbox.sch
 import { StrykerError } from './stryker-error.schema.js'
 
 export interface MakeSandboxInput {
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly project: Project
   readonly workingDirectory: string
   readonly backupDirectory: string
@@ -72,7 +72,7 @@ const mergeUpdatedInto = (project: Project) => (updated: ProjectFile | Option.Op
   })
 }
 
-const preprocessorWarningsEnabled = (options: StrykerOptions): WarningEnabled | WarningDisabled =>
+const preprocessorWarningsEnabled = (options: Options.StrykerOptions): WarningEnabled | WarningDisabled =>
   Result.match(
     warningEnabled(ResolveWarningEnabledCommand.make({ warning: 'preprocessorErrors', warnings: options.warnings })),
     {
@@ -81,7 +81,7 @@ const preprocessorWarningsEnabled = (options: StrykerOptions): WarningEnabled | 
     },
   )
 
-const disableTypeChecksWarning = (name: string, options: StrykerOptions) =>
+const disableTypeChecksWarning = (name: string, options: Options.StrykerOptions) =>
   Match.value(preprocessorWarningsEnabled(options)).pipe(
     Match.tag(
       'WarningEnabled',
@@ -95,7 +95,7 @@ const disableTypeChecksWarning = (name: string, options: StrykerOptions) =>
   )
 
 const makeDisableTypeChecksPreprocessor =
-  (options: StrykerOptions, impl: typeof disableTypeChecks) => (project: Project) =>
+  (options: Options.StrykerOptions, impl: typeof Instrument.disableTypeChecks) => (project: Project) =>
     Effect.gen(function*() {
       const pathService = yield* Path.Path
       const files = yield* ProjectFiles
@@ -122,7 +122,8 @@ const makeDisableTypeChecksPreprocessor =
 const parseJsonText = (jsonText: string): Effect.Effect<JsonValue, string> =>
   Effect.try({
     try: () => parse(jsonText.replace(/^\uFEFF/, '')),
-    catch: (cause) => Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    catch: (cause) =>
+      Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
   })
 
 const tsConfigShapeOf = (parsed: JsonValue): Option.Option<TSConfig> =>
@@ -135,7 +136,7 @@ const parseTsConfig = (fileName: string, jsonText: string): Effect.Effect<TSConf
       () => `parsed to ${JSON.stringify(parsed)}, which does not match the tsconfig shape this package consumes`,
     ))
 
-const makeTSConfigPreprocessor = (options: StrykerOptions, basePath: string): FilePreprocessor => {
+const makeTSConfigPreprocessor = (options: Options.StrykerOptions, basePath: string): FilePreprocessor => {
   const rewriteReferenceOrKeep = (reference: string, tsconfigFileName: string, pathService: Path.Path) =>
     Match.value(tryRewriteReference(reference, tsconfigFileName, pathService, basePath)).pipe(
       Match.when(Predicate.isString, (rewritten) => rewritten),
@@ -321,14 +322,14 @@ const tryRewriteReference = (
   const relativeToSandbox = pathService.relative(basePath, fileName)
   return Boolean.match(relativeToSandbox.startsWith('..'), {
     onTrue: () =>
-      ['..', '..', Option.getOrElse(S.decodeOption(CanonicalFileName)(reference), () => reference)].join('/'),
+      ['..', '..', Option.getOrElse(S.decodeOption(Mutant.CanonicalFileName)(reference), () => reference)].join('/'),
     onFalse: () => false as const,
   })
 }
 
-const createPreprocessor = (options: StrykerOptions, basePath: string): FilePreprocessor =>
+const createPreprocessor = (options: Options.StrykerOptions, basePath: string): FilePreprocessor =>
   combinePreprocessors([
-    makeDisableTypeChecksPreprocessor(options, disableTypeChecks),
+    makeDisableTypeChecksPreprocessor(options, Instrument.disableTypeChecks),
     makeTSConfigPreprocessor(options, basePath),
   ])
 
@@ -544,7 +545,7 @@ const moveDirectoryRecursive = (
   })
 
 const announceSandbox = (
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
   workingDirectory: string,
   backupDirectory: string,
   basePath: string,
@@ -560,7 +561,7 @@ const announceSandbox = (
     onFalse: () => Effect.logDebug(`Creating a sandbox for files in ${workingDirectory}`),
   })
 
-const hasBackupToRestore = (options: StrykerOptions, backupDirectory: string) =>
+const hasBackupToRestore = (options: Options.StrykerOptions, backupDirectory: string) =>
   Boolean.match(options.inPlace, {
     onTrue: () => backupDirectory !== '',
     onFalse: () => false,
@@ -589,7 +590,7 @@ const restoreOriginalFiles = (
 const isNonEmptyString = (value: string | undefined): value is string => value !== undefined && value !== ''
 
 const runConfiguredBuild = (
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
   workingDirectory: string,
 ): Effect.Effect<void, StrykerError, Path.Path | ChildProcessSpawner.ChildProcessSpawner> =>
   Match.value(options.buildCommand).pipe(
@@ -603,7 +604,7 @@ const runConfiguredBuild = (
     Match.orElse(() => Effect.void),
   )
 
-const linksNodeModules = (options: StrykerOptions) =>
+const linksNodeModules = (options: Options.StrykerOptions) =>
   Boolean.match(options.symlinkNodeModules, {
     onTrue: () => !options.inPlace,
     onFalse: () => false,
@@ -630,7 +631,7 @@ const linkNodeModules = (
   })
 
 const linkFoundNodeModules = (
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
   workingDirectory: string,
   basePath: string,
   pathService: Path.Path,
@@ -653,7 +654,7 @@ const linkFoundNodeModules = (
   )
 
 const symlinkNodeModules = (
-  options: StrykerOptions,
+  options: Options.StrykerOptions,
   workingDirectory: string,
   basePath: string,
   pathService: Path.Path,

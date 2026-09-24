@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { type TestResult, TestResultSchema, type TestStatus } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -139,15 +139,15 @@ const normalizeTestIdRaw = (id: string, projectRoot: string): string => {
   )
 }
 
-const toTestStatus = (taskState: TaskState, mode: string): TestStatus =>
+const toTestStatus = (taskState: TaskState, mode: string): TestRunner.TestStatus =>
   Match.value(mode === 'skip').pipe(
-    Match.when(true, (): TestStatus => 'skipped'),
-    Match.when(false, (): TestStatus =>
+    Match.when(true, (): TestRunner.TestStatus => 'skipped'),
+    Match.when(false, (): TestRunner.TestStatus =>
       Match.value(taskState).pipe(
-        Match.when('pass', (): TestStatus => 'success'),
-        Match.when('skip', (): TestStatus => 'skipped'),
-        Match.when('todo', (): TestStatus => 'skipped'),
-        Match.orElse((): TestStatus => 'failed'),
+        Match.when('pass', (): TestRunner.TestStatus => 'success'),
+        Match.when('skip', (): TestRunner.TestStatus => 'skipped'),
+        Match.when('todo', (): TestRunner.TestStatus => 'skipped'),
+        Match.orElse((): TestRunner.TestStatus => 'failed'),
       )),
     Match.exhaustive,
   )
@@ -187,7 +187,7 @@ const extractResultState = <A = unknown>(result: Option.Option<A>): Option.Optio
     ),
   )
 
-const extractStatus = <A = unknown>(test: A): TestStatus =>
+const extractStatus = <A = unknown>(test: A): TestRunner.TestStatus =>
   toTestStatus(extractResultState(getResult(test)).pipe(Option.getOrUndefined), getMode(test))
 
 const extractDuration = <A = unknown>(test: A): number =>
@@ -226,7 +226,7 @@ const extractFailureMessage = <A = unknown>(test: A): string =>
       }),
   })
 
-const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestResult => {
+const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestRunner.TestResult => {
   const status = extractStatus(test)
   const fileNameField = Match.value(extractFileName(test)).pipe(
     Match.when(undefined, () => ({})),
@@ -242,20 +242,20 @@ const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestResult =
   return Match.value(status).pipe(
     Match.when(
       'failed',
-      (): TestResult => ({ ...base, status: 'failed', failureMessage: extractFailureMessage(test) }),
+      (): TestRunner.TestResult => ({ ...base, status: 'failed', failureMessage: extractFailureMessage(test) }),
     ),
     Match.when(
       'skipped',
-      (): TestResult =>
+      (): TestRunner.TestResult =>
         Match.value(getSuite(test).pipe(Option.getOrUndefined, findSuiteErrorRaw)).pipe(
           Match.when(
             Match.defined,
-            (suiteError): TestResult => ({ ...base, status: 'failed', failureMessage: suiteError }),
+            (suiteError): TestRunner.TestResult => ({ ...base, status: 'failed', failureMessage: suiteError }),
           ),
-          Match.orElse((): TestResult => ({ ...base, status: 'skipped' })),
+          Match.orElse((): TestRunner.TestResult => ({ ...base, status: 'skipped' })),
         ),
     ),
-    Match.orElse((): TestResult => ({ ...base, status: 'success' })),
+    Match.orElse((): TestRunner.TestResult => ({ ...base, status: 'success' })),
   )
 }
 
@@ -266,12 +266,12 @@ export interface RawVitestRun {
 
 export const VitestTestRun = S.Unknown.pipe(
   S.decodeTo(
-    S.Array(TestResultSchema),
+    S.Array(TestRunner.TestResultSchema),
     SchemaTransformation.transform({
       decode: (payload) =>
         Option.match(recordOption(payload), {
-          onNone: (): readonly TestResult[] => [],
-          onSome: (run): readonly TestResult[] => {
+          onNone: (): readonly TestRunner.TestResult[] => [],
+          onSome: (run): readonly TestRunner.TestResult[] => {
             const projectRoot = Option.getOrElse(getStringField(run, 'projectRoot'), () => '')
             const records = Option.getOrElse(asArrayOption(run['records']), (): readonly RawVitestRecord[] => [])
             return records.map((record) => convertTestRaw(record, projectRoot))

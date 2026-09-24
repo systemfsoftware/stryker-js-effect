@@ -1,5 +1,5 @@
 import { describe, it } from '@effect/vitest'
-import { type MutationTestResult, MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Path from 'effect/Path'
@@ -10,16 +10,16 @@ import { ModeSignal, OutputMode } from '../run-event.schema.js'
 
 const pathService = Effect.runSync(Effect.provide(Path.Path, Path.layer))
 
-const buildOf = (report: MutationTestResult, mode: OutputMode, signal: ModeSignal) =>
+const buildOf = (report: Report.MutationTestResult, mode: OutputMode, signal: ModeSignal) =>
   VerdictEnvelope.build(report, mode, signal, RunId.generate(DateTime.makeUnsafe(0)).value, '/base', pathService)
 
-const mutantTotalOf = (report: MutationTestResult) =>
+const mutantTotalOf = (report: Report.MutationTestResult) =>
   Object.values(report.files).reduce((total, file) => total + file.mutants.length, 0)
 
 describe('VerdictEnvelope.build', () => {
   it.prop(
     '∀rms_Score_≡NullIffEmptyOrNonFinite',
-    [MutationTestResultSchema, OutputMode, ModeSignal],
+    [Report.MutationTestResultSchema, OutputMode, ModeSignal],
     ([report, mode, signal]) => {
       const { counts, score } = buildOf(report, mode, signal)
       const scoreDefined = counts.totalMutants > 0 && Number.isFinite(counts.mutationScore)
@@ -27,7 +27,7 @@ describe('VerdictEnvelope.build', () => {
     },
   )
 
-  it.prop('∀r_Metrics_∋EveryMutantOnce', [MutationTestResultSchema], ([report]) => {
+  it.prop('∀r_Metrics_∋EveryMutantOnce', [Report.MutationTestResultSchema], ([report]) => {
     const { counts } = buildOf(report, 'machine', 'flag')
     return counts.totalMutants === mutantTotalOf(report)
   })

@@ -1,5 +1,5 @@
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { layerTraceContextClient, WorkerOptionsWire } from '@systemfsoftware/stryker-js-plugin-runtime'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Trace, Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -20,7 +20,7 @@ const connectRetry = Schedule.max([Schedule.spaced(50), Schedule.recurs(100)])
 
 export interface WorkerClientParams<Rpcs extends Rpc.Any> {
   readonly rpcs: RpcGroup.RpcGroup<Rpcs>
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly entrypoint: string
   readonly workingDirectory: string
   readonly execArgv: readonly string[]
@@ -37,7 +37,7 @@ export const makeWorkerClient = <Rpcs extends Rpc.Any>(
 > =>
   Effect.gen(function*() {
     const launcher = yield* WorkerLauncher
-    const optionsJson = yield* S.encodeEffect(WorkerOptionsWire)(params.options).pipe(Effect.orDie)
+    const optionsJson = yield* S.encodeEffect(Worker.WorkerOptionsWire)(params.options).pipe(Effect.orDie)
     const worker = yield* launcher.spawn({
       entrypoint: params.entrypoint,
       workingDirectory: params.workingDirectory,
@@ -54,7 +54,7 @@ export const makeWorkerClient = <Rpcs extends Rpc.Any>(
       Effect.raceFirst(worker.exited),
       Effect.catchTag('SocketError', () => Effect.fail(WorkerBootTimeoutError.make({ pid: worker.pid }))),
     )
-    const traceContext = yield* Layer.build(layerTraceContextClient)
+    const traceContext = yield* Layer.build(Trace.layerTraceContextClient)
 
     return yield* RpcClient.make(params.rpcs).pipe(
       Effect.provideContext(Context.merge(protocol, traceContext)),

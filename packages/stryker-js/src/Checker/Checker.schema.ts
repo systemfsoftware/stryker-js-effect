@@ -1,5 +1,5 @@
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Metric from 'effect/Metric'
 import * as S from 'effect/Schema'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
@@ -14,9 +14,9 @@ export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('U
   })
 }
 
-const CheckerMutant = S.toType(CheckerMutantWire)
+const CheckerMutant = S.toType(Checker.CheckerMutantWire)
 
-export const CheckerMutantFromMutant = S.decodeTo<typeof CheckerMutant, typeof Mutant>(
+export const CheckerMutantFromMutant = S.decodeTo<typeof CheckerMutant, typeof Mutant.Mutant>(
   CheckerMutant,
   SchemaTransformation.transform({
     decode: (mutant) => ({
@@ -27,7 +27,7 @@ export const CheckerMutantFromMutant = S.decodeTo<typeof CheckerMutant, typeof M
       location: mutant.location,
     }),
     encode: (wire) =>
-      Mutant.make({
+      Mutant.Mutant.make({
         id: wire.id,
         fileName: wire.fileName,
         mutatorName: wire.mutatorName,
@@ -35,4 +35,4 @@ export const CheckerMutantFromMutant = S.decodeTo<typeof CheckerMutant, typeof M
         location: wire.location,
       }),
   }),
-)(Mutant)
+)(Mutant.Mutant)

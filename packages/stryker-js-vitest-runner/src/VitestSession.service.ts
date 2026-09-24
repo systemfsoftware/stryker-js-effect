@@ -1,6 +1,5 @@
-import { ErrorText, InstrumenterContext } from '@systemfsoftware/stryker-js-instrumenter'
-import type { StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
-import { isCustomTestRunner, TestRunnerFailed } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
 import * as Crypto from 'effect/Crypto'
@@ -26,7 +25,7 @@ import { create, resolveVitest, type VitestResolver } from './VitestRuntime.reso
 
 /** Everything one worker's run of the vitest runner is configured with. */
 export interface VitestSessionInput {
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly sandboxDirectory: string
   readonly globalNamespace?: StrykerNamespace
   readonly resolveVitestFor?: VitestResolver
@@ -38,25 +37,32 @@ export interface VitestSessionInput {
  * with, and the two writes a run makes before it collects.
  */
 export interface VitestSessionShape {
-  readonly options: Effect.Effect<VitestRunnerOptions, TestRunnerFailed>
-  readonly runtime: Effect.Effect<VitestRuntime, TestRunnerFailed>
-  readonly setMode: (mode: 'dry-run' | 'mutant') => Effect.Effect<void, TestRunnerFailed>
-  readonly provide: (key: HarnessKey, value: HarnessValue) => Effect.Effect<void, TestRunnerFailed>
-  readonly close: Effect.Effect<void, TestRunnerFailed>
+  readonly options: Effect.Effect<VitestRunnerOptions, TestRunner.TestRunnerFailed>
+  readonly runtime: Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed>
+  readonly setMode: (mode: 'dry-run' | 'mutant') => Effect.Effect<void, TestRunner.TestRunnerFailed>
+  readonly provide: (key: HarnessKey, value: HarnessValue) => Effect.Effect<void, TestRunner.TestRunnerFailed>
+  readonly close: Effect.Effect<void, TestRunner.TestRunnerFailed>
 }
 
-const decodeOptions = (options: StrykerOptions): Effect.Effect<VitestRunnerOptions, TestRunnerFailed> =>
+const decodeOptions = (
+  options: Options.StrykerOptions,
+): Effect.Effect<VitestRunnerOptions, TestRunner.TestRunnerFailed> =>
   S.decodeEffect(VitestRunnerOptionsSchema)(
     Match.value(options.testRunner).pipe(
-      Match.when(isCustomTestRunner, (runner) => Option.getOrElse(Option.fromNullishOr(runner.options), () => ({}))),
+      Match.when(Options.isCustomTestRunner, (runner) =>
+        Option.getOrElse(Option.fromNullishOr(runner.options), () => ({}))),
       Match.orElse(() => ({})),
     ),
   ).pipe(
     Effect.mapError((cause) =>
-      new TestRunnerFailed({
+      new TestRunner.TestRunnerFailed({
         runnerName: 'vitest',
         phase: 'init',
-        cause: Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+        cause: Option.getOrElse(
+          Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) =>
+            rendered.text),
+          () => '',
+        ),
       })
     ),
   )
@@ -86,10 +92,10 @@ export class VitestSession extends Context.Service<VitestSession, VitestSessionS
     )
 }
 const assembleShape = (
-  options: Effect.Effect<VitestRunnerOptions, TestRunnerFailed>,
-  runtime: Effect.Effect<VitestRuntime, TestRunnerFailed>,
-  write: <A>(f: (self: VitestRuntime) => A) => Effect.Effect<A, TestRunnerFailed>,
-  closeCurrent: Effect.Effect<void, TestRunnerFailed, FileSystem.FileSystem>,
+  options: Effect.Effect<VitestRunnerOptions, TestRunner.TestRunnerFailed>,
+  runtime: Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed>,
+  write: <A>(f: (self: VitestRuntime) => A) => Effect.Effect<A, TestRunner.TestRunnerFailed>,
+  closeCurrent: Effect.Effect<void, TestRunner.TestRunnerFailed, FileSystem.FileSystem>,
   fs: FileSystem.FileSystem,
 ): VitestSessionShape => ({
   options,
@@ -108,7 +114,7 @@ const buildRuntime = (
   created: Ref.Ref<VitestRuntime | undefined>,
   platform: { readonly crypto: Crypto.Crypto; readonly fileSystem: FileSystem.FileSystem; readonly path: Path.Path },
 ) =>
-(vitestOptions: VitestRunnerOptions): Effect.Effect<VitestRuntime, TestRunnerFailed> =>
+(vitestOptions: VitestRunnerOptions): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
   create({
     projectRoot: input.sandboxDirectory,
     namespace: namespaceOf(input),
@@ -125,5 +131,5 @@ const bailOf = (input: VitestSessionInput): number =>
 const namespaceOf = (input: VitestSessionInput): StrykerNamespace =>
   Option.getOrElse(
     Option.liftPredicate(input.globalNamespace, S.is(S.Literals(['__stryker__', '__stryker2__']))),
-    () => InstrumenterContext.NAMESPACE,
+    () => Mutant.InstrumenterContext.NAMESPACE,
   )

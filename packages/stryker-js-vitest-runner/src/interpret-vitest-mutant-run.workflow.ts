@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { type FailedTestResult, TestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -19,7 +19,7 @@ const VitestMutantRunTypeId: unique symbol = Symbol.for('@systemfsoftware/stryke
 type VitestMutantRunTypeId = typeof VitestMutantRunTypeId
 
 export class MutantKilled extends S.TaggedClass<MutantKilled>()('Killed', {
-  tests: S.Array(TestResultSchema),
+  tests: S.Array(TestRunner.TestResultSchema),
   killerIds: S.String.pipe(S.Array, S.optional),
   failureMessage: S.optional(S.String),
 }) {
@@ -27,20 +27,20 @@ export class MutantKilled extends S.TaggedClass<MutantKilled>()('Killed', {
 }
 
 export class MutantSurvived extends S.TaggedClass<MutantSurvived>()('Survived', {
-  tests: S.Array(TestResultSchema),
+  tests: S.Array(TestRunner.TestResultSchema),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
 }
 
 export class MutantTimeout extends S.TaggedClass<MutantTimeout>()('Timeout', {
-  tests: S.Array(TestResultSchema),
+  tests: S.Array(TestRunner.TestResultSchema),
   reason: S.optional(S.String),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
 }
 
 export class MutantDryError extends S.TaggedClass<MutantDryError>()('Error', {
-  tests: S.Array(TestResultSchema),
+  tests: S.Array(TestRunner.TestResultSchema),
   errorMessage: S.optional(S.String),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
@@ -59,7 +59,10 @@ const hitLimitReason = (hitCount: number | undefined, hitLimit: number | undefin
         })),
   )
 
-const killedFrom = (command: VitestMutantRunCommand, killed: readonly FailedTestResult[]): VitestMutantRunOutput => {
+const killedFrom = (
+  command: VitestMutantRunCommand,
+  killed: readonly TestRunner.FailedTestResult[],
+): VitestMutantRunOutput => {
   const firstKiller = Option.fromUndefinedOr(killed[0])
   const failureMessage = Option.getOrUndefined(Option.map(firstKiller, (killer) => killer.failureMessage))
   return Boolean.match(command.reportAllKillers, {

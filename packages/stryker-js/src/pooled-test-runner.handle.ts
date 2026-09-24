@@ -1,12 +1,5 @@
-import {
-  type DryRunOptions,
-  type DryRunResult,
-  type MutantRunOptions,
-  type MutantRunResult,
-  type StrykerOptions,
-  type TestRunnerCapabilities,
-  WallClockTimeoutReason,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
 import * as Duration from 'effect/Duration'
@@ -25,19 +18,23 @@ export type TypeId = typeof TypeId
 
 export interface PooledTestRunner extends Pipeable {
   readonly [TypeId]: typeof TypeId
-  readonly capabilities: Effect.Effect<TestRunnerCapabilities, PooledTestRunnerError>
+  readonly capabilities: Effect.Effect<TestRunner.TestRunnerCapabilities, PooledTestRunnerError>
   readonly init: Effect.Effect<void, PooledTestRunnerError>
-  readonly dryRun: (options: DryRunOptions) => Effect.Effect<DryRunResult, PooledTestRunnerError>
-  readonly mutantRun: (options: MutantRunOptions) => Effect.Effect<MutantRunResult, PooledTestRunnerError>
+  readonly dryRun: (options: TestRunner.DryRunOptions) => Effect.Effect<TestRunner.DryRunResult, PooledTestRunnerError>
+  readonly mutantRun: (
+    options: Mutant.MutantRunOptions,
+  ) => Effect.Effect<TestRunner.MutantRunResult, PooledTestRunnerError>
 }
 
 export const isPooledTestRunner = (u: unknown): u is PooledTestRunner => Predicate.hasProperty(u, TypeId)
 
 export const make = (runner: {
-  readonly capabilities: Effect.Effect<TestRunnerCapabilities, PooledTestRunnerError>
+  readonly capabilities: Effect.Effect<TestRunner.TestRunnerCapabilities, PooledTestRunnerError>
   readonly init: Effect.Effect<void, PooledTestRunnerError>
-  readonly dryRun: (options: DryRunOptions) => Effect.Effect<DryRunResult, PooledTestRunnerError>
-  readonly mutantRun: (options: MutantRunOptions) => Effect.Effect<MutantRunResult, PooledTestRunnerError>
+  readonly dryRun: (options: TestRunner.DryRunOptions) => Effect.Effect<TestRunner.DryRunResult, PooledTestRunnerError>
+  readonly mutantRun: (
+    options: Mutant.MutantRunOptions,
+  ) => Effect.Effect<TestRunner.MutantRunResult, PooledTestRunnerError>
 }): PooledTestRunner => ({
   [TypeId]: TypeId,
   ...Prototype,
@@ -54,16 +51,16 @@ export const withTimeout: {
     inner.dryRun(options).pipe(
       Effect.timeoutOrElse({
         duration: Duration.millis(options.timeout),
-        orElse: (): Effect.Effect<DryRunResult> =>
-          Effect.succeed({ status: 'timeout', reason: WallClockTimeoutReason.literal }),
+        orElse: (): Effect.Effect<TestRunner.DryRunResult> =>
+          Effect.succeed({ status: 'timeout', reason: TestRunner.WallClockTimeoutReason.literal }),
       }),
     ),
   mutantRun: (options) =>
     inner.mutantRun(options).pipe(
       Effect.timeoutOrElse({
         duration: Duration.millis(options.timeout),
-        orElse: (): Effect.Effect<MutantRunResult> =>
-          Effect.succeed({ status: 'timeout', reason: WallClockTimeoutReason.literal }),
+        orElse: (): Effect.Effect<TestRunner.MutantRunResult> =>
+          Effect.succeed({ status: 'timeout', reason: TestRunner.WallClockTimeoutReason.literal }),
       }),
     ),
 })
@@ -74,7 +71,7 @@ export const invalidatesRunnerPool: {
 } = dual(
   2,
   (status: string, reason: string | undefined): boolean =>
-    status === 'timeout' && reason === WallClockTimeoutReason.literal,
+    status === 'timeout' && reason === TestRunner.WallClockTimeoutReason.literal,
 )
 const maxRetries = 2
 
@@ -117,16 +114,16 @@ export const withRetry: {
 }
 
 export const withMaxReuse: {
-  (options: Pick<StrykerOptions, 'maxTestRunnerReuse'>, retire: Effect.Effect<void>): (
+  (options: Pick<Options.StrykerOptions, 'maxTestRunnerReuse'>, retire: Effect.Effect<void>): (
     inner: PooledTestRunner,
   ) => Effect.Effect<PooledTestRunner>
   (retire: Effect.Effect<void>): (
-    options: Pick<StrykerOptions, 'maxTestRunnerReuse'>,
+    options: Pick<Options.StrykerOptions, 'maxTestRunnerReuse'>,
   ) => (inner: PooledTestRunner) => Effect.Effect<PooledTestRunner>
 } = dual(
   2,
   (
-    options: Pick<StrykerOptions, 'maxTestRunnerReuse'>,
+    options: Pick<Options.StrykerOptions, 'maxTestRunnerReuse'>,
     retire: Effect.Effect<void>,
   ): (inner: PooledTestRunner) => Effect.Effect<PooledTestRunner> =>
   (inner) =>
@@ -138,8 +135,8 @@ export const withMaxReuse: {
 
           return {
             ...inner,
-            mutantRun: (runOptions: MutantRunOptions) => {
-              const policy: RunPolicy<MutantRunResult, PooledTestRunnerError> = (self) =>
+            mutantRun: (runOptions: Mutant.MutantRunOptions) => {
+              const policy: RunPolicy<TestRunner.MutantRunResult, PooledTestRunnerError> = (self) =>
                 Effect.gen(function*() {
                   const count = yield* Ref.updateAndGet(runs, (n) => n + 1)
                   yield* Boolean.match(count > restartAfter, {
@@ -165,7 +162,7 @@ const nextEnvironmentState = (requested: boolean): EnvironmentState =>
   })
 
 const reloadEnvironmentDecision = (
-  requested: MutantRunOptions['reloadEnvironment'],
+  requested: Mutant.MutantRunOptions['reloadEnvironment'],
   current: EnvironmentState,
   canReload: boolean,
 ) => canReload && stateNeedsReload(requested, current)
@@ -180,7 +177,7 @@ const retireDecision = (current: EnvironmentState, canReload: boolean) =>
   !canReload && current === 'loaded-static-mutant'
 
 const reloadPlanOf = (
-  requested: MutantRunOptions['reloadEnvironment'],
+  requested: Mutant.MutantRunOptions['reloadEnvironment'],
   current: EnvironmentState,
   canReload: boolean,
 ) => ({
@@ -202,7 +199,7 @@ export const withEnvironmentReload: {
         ...inner,
 
         dryRun: (options) => {
-          const policy: RunPolicy<DryRunResult, PooledTestRunnerError> = (self) =>
+          const policy: RunPolicy<TestRunner.DryRunResult, PooledTestRunnerError> = (self) =>
             Ref.set(state, 'loaded').pipe(Effect.andThen(self))
           return policy(inner.dryRun(options))
         },
@@ -217,7 +214,7 @@ export const withEnvironmentReload: {
               onTrue: () => retire,
               onFalse: () => Effect.void,
             })
-            const policy: RunPolicy<MutantRunResult, PooledTestRunnerError> = (self) =>
+            const policy: RunPolicy<TestRunner.MutantRunResult, PooledTestRunnerError> = (self) =>
               Effect.gen(function*() {
                 const result = yield* self
                 yield* Ref.set(state, plan.nextState)

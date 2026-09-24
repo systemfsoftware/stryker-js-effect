@@ -17,7 +17,7 @@ import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 
-import type * as schema from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
 import { StrykerConfig } from './config/stryker-config.schema.js'
 import {
@@ -193,7 +193,7 @@ export interface RunEventStream {
 export interface EmitNullScoreVerdictOptions<Config = unknown> {
   readonly stream: RunEventStream
   readonly mode: ResolvedMode
-  readonly thresholds: schema.Thresholds
+  readonly thresholds: Report.Thresholds
   readonly config: Readonly<Record<string, Config>>
   readonly basePath: string
   readonly pathService: Path.Path
@@ -209,7 +209,7 @@ export interface EmitMachineModeOutputOptions {
 
 const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOptions<Config>): Effect.Effect<void> => {
   const { stream, mode, thresholds, basePath, pathService } = params
-  const report: schema.MutationTestResult = {
+  const report: Report.MutationTestResult = {
     schemaVersion: '1.0',
     files: {},
     thresholds,

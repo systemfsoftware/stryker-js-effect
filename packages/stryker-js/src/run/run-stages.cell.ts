@@ -1,6 +1,6 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
@@ -51,7 +51,7 @@ const HEADLESS_MODE: ResolvedMode = { mode: 'machine', signal: 'flag', stdoutIsT
 const strykerRunLayer = makeRunEventStream(HEADLESS_MODE).pipe(
   Effect.flatMap((stream) =>
     Effect.map(
-      RunEnvironment.forStream(HEADLESS_MODE, stream, { builtinReporters: { html: makeHtmlReporter } }),
+      RunEnvironment.forStream(HEADLESS_MODE, stream, { builtinReporters: { html: HtmlReporter.makeHtmlReporter } }),
       (env) => RunEnvironment.stage(env, stream.queue),
     )
   ),
@@ -61,17 +61,17 @@ const strykerRunLayer = makeRunEventStream(HEADLESS_MODE).pipe(
 
 export const strykerCell: {
   (
-    options: PartialStrykerOptions,
+    options: Options.PartialStrykerOptions,
     targetMutatePatterns?: readonly string[],
   ): Effect.Effect<MutationTestDone, StageError | PlatformError, EnginePorts>
   (
     targetMutatePatterns?: readonly string[],
   ): (
-    options: PartialStrykerOptions,
+    options: Options.PartialStrykerOptions,
   ) => Effect.Effect<MutationTestDone, StageError | PlatformError, EnginePorts>
 } = dual(
   (args) => Predicate.isObject(args[0]),
-  (options: PartialStrykerOptions, targetMutatePatterns?: readonly string[]) =>
+  (options: Options.PartialStrykerOptions, targetMutatePatterns?: readonly string[]) =>
     strykerRunLayer.pipe(
       Layer.build,
       Effect.flatMap((context) =>

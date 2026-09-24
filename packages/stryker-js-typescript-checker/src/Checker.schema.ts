@@ -4,7 +4,7 @@
  * Houses the wire types and error variants shared by the capability and its
  * workflow. Decoded at the checker boundary; no I/O.
  */
-import { CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 export const TypescriptCheckerOptionsSchema = S.Struct({
@@ -20,6 +20,6 @@ export const TypescriptCheckerOptionsSchema = S.Struct({
 export class CheckMutantsCommand extends S.TaggedClass<CheckMutantsCommand>()(
   'CheckMutantsCommand',
   {
-    mutants: S.Array(CheckerMutantWire),
+    mutants: S.Array(Checker.CheckerMutantWire),
   },
 ) {}

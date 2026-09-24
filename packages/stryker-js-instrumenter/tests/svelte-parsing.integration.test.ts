@@ -1,9 +1,7 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { InstrumentResult } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
-
-import { instrument } from './__fixtures__/instrument.js'
 
 const COMPONENT = `<script>
   export let n = 1
@@ -31,13 +29,13 @@ Feature('Svelte component instrumentation')
         When('it is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/component.svelte', content: source, mutate: true }], {
+            Instrument.instrument([{ name: '/tmp/component.svelte', content: source, mutate: true }], {
               ignorers: [],
               excludedMutations: [],
             }),
         ),
         Then('the script block yields mutants from the expected families')((
-          { result }: { result: InstrumentResult },
+          { result }: { result: Instrument.InstrumentResult },
         ) =>
           Effect.sync(() => {
             const families = [...new Set(result.mutants.map((mutant) => mutant.mutatorName))].sort()

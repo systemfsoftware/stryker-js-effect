@@ -7,7 +7,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 export const AdmittedSurvivorShape = S.Struct({
-  ...Mutant.fields,
+  ...Mutant.Mutant.fields,
   relativeFileName: S.String,
 })
 const SurvivorsAdmissionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/SurvivorsAdmission')
@@ -31,7 +31,7 @@ export class AdmitSurvivorsRunCommand extends S.Class<AdmitSurvivorsRunCommand>(
 }
 
 export class Admitted extends S.TaggedClass<Admitted>()('Admitted', {
-  survivors: S.Array(Mutant),
+  survivors: S.Array(Mutant.Mutant),
   mutateSpans: S.Array(S.String),
 }) {
   readonly [SurvivorsAdmissionTypeId] = SurvivorsAdmissionTypeId

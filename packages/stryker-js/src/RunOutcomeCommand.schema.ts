@@ -1,6 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { CauseText } from '@systemfsoftware/stryker-js-instrumenter'
-import { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
 import * as Exit from 'effect/Exit'
@@ -16,7 +16,7 @@ import { SurvivorsRejection } from './Survivors/mod.js'
 const UNKNOWN_FAILURE = 'Unknown failure'
 const MAX_TRAVERSAL_DEPTH = 10
 
-const asExitClass = Option.liftPredicate(S.is(ExitClass))
+const asExitClass = Option.liftPredicate(S.is(Plugin.ExitClass))
 
 const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
 
@@ -87,22 +87,22 @@ const failurePayloads = <A, E>(exit: Exit.Exit<A, E>): ReadonlyArray<E | object 
     (): ReadonlyArray<E | object | undefined> => [],
   )
 
-const exitClassOf = <A>(value: A): ExitClass | undefined => {
+const exitClassOf = <A>(value: A): Plugin.ExitClass | undefined => {
   if (!hasExitClass(value)) {
     return undefined
   }
   return Option.getOrUndefined(asExitClass(value.exitClass))
 }
 
-const appendExitClass = (value: object, out: Array<ExitClass>): void => {
+const appendExitClass = (value: object, out: Array<Plugin.ExitClass>): void => {
   const declared = exitClassOf(value)
   if (declared !== undefined) {
     out.push(declared)
   }
 }
 
-const collectExitClasses = <A, E>(exit: Exit.Exit<A, E>): Array<ExitClass> => {
-  const out: Array<ExitClass> = []
+const collectExitClasses = <A, E>(exit: Exit.Exit<A, E>): Array<Plugin.ExitClass> => {
+  const out: Array<Plugin.ExitClass> = []
   const seen = new WeakSet<object>()
   failurePayloads(exit).forEach((payload) =>
     visitReachableValue(payload, 0, seen, (node) => appendExitClass(node, out))
@@ -111,7 +111,7 @@ const collectExitClasses = <A, E>(exit: Exit.Exit<A, E>): Array<ExitClass> => {
 }
 
 const causeTextOf = <A>(value: A): Option.Option<string> =>
-  Option.map(CauseText.fromCause(hasCause(value) ? value.cause : undefined), (decoded) => decoded.text)
+  Option.map(ErrorText.CauseText.fromCause(hasCause(value) ? value.cause : undefined), (decoded) => decoded.text)
 
 const reasonOf = <A>(value: A): string | undefined => {
   const declared = hasReason(value) ? value.reason : undefined
@@ -253,18 +253,18 @@ const carriesSchemaError = <A>(value: A): boolean => value !== undefined && S.is
 const helpErrorCountOf = <A>(value: A): number | undefined =>
   S.is(CliError.ShowHelp)(value) ? value.errors.length : undefined
 
-const verdictExitClassOf = <A>(value: A): ExitClass | undefined =>
+const verdictExitClassOf = <A>(value: A): Plugin.ExitClass | undefined =>
   hasVerdict(value) ? Option.getOrUndefined(asExitClass(value.verdict)) : undefined
 
-const successExitClassOf = <A, E>(exit: Exit.Exit<A, E>): ExitClass | undefined =>
+const successExitClassOf = <A, E>(exit: Exit.Exit<A, E>): Plugin.ExitClass | undefined =>
   Exit.isSuccess(exit) ? verdictExitClassOf(exit.value) : undefined
 
-const bySeverity: Order.Order<ExitClass> = Order.mapInput(
+const bySeverity: Order.Order<Plugin.ExitClass> = Order.mapInput(
   Order.Number,
-  (exitClass: ExitClass) => ExitClass.literals.indexOf(exitClass),
+  (exitClass: Plugin.ExitClass) => Plugin.ExitClass.literals.indexOf(exitClass),
 )
 
-const highestExitClassOf = (pending: ReadonlyArray<ExitClass>): ExitClass | undefined =>
+const highestExitClassOf = (pending: ReadonlyArray<Plugin.ExitClass>): Plugin.ExitClass | undefined =>
   Option.getOrUndefined(Arr.last(Arr.sort(pending, bySeverity)))
 
 const runOutcomeCommandOf = <A, E>(
@@ -297,8 +297,8 @@ export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOu
   survivorsReason: S.optional(S.Literals(['no-report', 'mismatch'])),
   survivorsDiagnostic: S.optional(S.String),
   schemaError: S.Boolean,
-  successExitClass: S.optional(ExitClass),
-  highestExitClass: S.optional(ExitClass),
+  successExitClass: S.optional(Plugin.ExitClass),
+  highestExitClass: S.optional(Plugin.ExitClass),
   configDetail: S.optional(S.String),
   diagnostic: S.optional(S.String),
 }) {
@@ -320,7 +320,7 @@ if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const Equal = await import('effect/Equal')
 
-  const severityOf = (exitClass: ExitClass): number => ExitClass.literals.indexOf(exitClass)
+  const severityOf = (exitClass: Plugin.ExitClass): number => Plugin.ExitClass.literals.indexOf(exitClass)
 
   it.prop('∀text_runOutcomeCommandOf_PrimitiveFailureBecomesDiagnostic', [S.String], ([text]) => {
     const command = RunOutcomeCommand.fromExit({ exit: Exit.fail(text), argv: [] })
@@ -354,7 +354,7 @@ if (import.meta.vitest !== void 0) {
 
   it.prop(
     '∀leftMiddleRight_runOutcomeCommandOf_KeepsHighestExitClass',
-    [ExitClass, ExitClass, ExitClass],
+    [Plugin.ExitClass, Plugin.ExitClass, Plugin.ExitClass],
     ([left, middle, right]) => {
       const exit = Exit.fail({ exitClass: left, cause: { exitClass: middle, cause: { exitClass: right } } })
       const command = RunOutcomeCommand.fromExit({ exit, argv: [] })

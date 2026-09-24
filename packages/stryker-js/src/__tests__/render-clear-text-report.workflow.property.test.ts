@@ -1,6 +1,5 @@
 import { describe, it } from '@effect/vitest'
-import { MetricsResultSchema, MutationTestResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -30,12 +29,12 @@ const colorOffArb = commandArb.pipe(
 )
 
 const coherentArb = Arbitrary.all({
-  report: Arbitrary.schema(MutationTestResultSchema),
-  computed: Arbitrary.schema(MetricsResultSchema),
+  report: Arbitrary.schema(Report.MutationTestResultSchema),
+  computed: Arbitrary.schema(Report.MetricsResultSchema),
   render: Arbitrary.schema(ClearTextRenderOptions),
 })
 
-const fileRowsOf = (metrics: MetricsResult): number =>
+const fileRowsOf = (metrics: Report.MetricsResult): number =>
   1 + Arr.reduce(metrics.childResults, 0, (rows, child) => rows + fileRowsOf(child))
 
 const TABLE_CHROME_ROWS = 5

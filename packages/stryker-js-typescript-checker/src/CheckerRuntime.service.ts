@@ -1,7 +1,6 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { Checker, CheckerFailed, CheckerMutantWire } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { CheckResult, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
@@ -30,18 +29,19 @@ const refuse = (
     readonly mutantIds: readonly string[]
     readonly cause: CompilerError | DryRunCompileErrors | NodeNotInGraph
   },
-): CheckerFailed =>
-  CheckerFailed.make({
+): Checker.CheckerFailed =>
+  Checker.CheckerFailed.make({
     checkerName: 'typescript',
     mutantIds: options.mutantIds,
-    cause: Option.getOrElse(Option.map(ErrorText.fromCause(options.cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(options.cause), (rendered) => rendered.text), () =>
+      ''),
   })
 
 export interface CheckerRuntimeShape {
-  readonly checker: Effect.Effect<Checker['Service'], Cause.Cause<CheckerFailed>>
+  readonly checker: Effect.Effect<Checker.Checker['Service'], Cause.Cause<Checker.CheckerFailed>>
 }
 
-const getPrioritize = (options: StrykerOptions) =>
+const getPrioritize = (options: Options.StrykerOptions) =>
   Match.value(options.checkers[0]).pipe(
     Match.when(Match.undefined, () => false),
     Match.orElse((first) =>
@@ -74,10 +74,10 @@ const mergeAnswers = (runs: ReadonlyArray<RunAnswers>) =>
   runs.reduce(
     (merged, answers) =>
       Object.entries(answers).reduce((into, [id, answer]) => HashMap.set(into, id, toCheckResult(answer)), merged),
-    HashMap.empty<string, CheckResult>(),
+    HashMap.empty<string, Checker.CheckResult>(),
   )
 
-const makeChecker = (options: StrykerOptions, compiler: TSCompiler): Checker['Service'] => {
+const makeChecker = (options: Options.StrykerOptions, compiler: TSCompiler): Checker.Checker['Service'] => {
   const verify = Cell.provideContext(checkCell, Context.make(TypeScriptCompiler, compiler))
 
   const positionOf = (error: Diagnostic) =>
@@ -103,8 +103,8 @@ const makeChecker = (options: StrykerOptions, compiler: TSCompiler): Checker['Se
   const createErrorText = (errors: readonly Diagnostic[]) =>
     Effect.map(Effect.forEach(errors, formatDiagnostic), (parts) => parts.join('\n'))
 
-  const soloRound = (mutant: (typeof CheckerMutantWire)['Encoded']) =>
-    S.decodeEffect(CheckerMutantWire)(mutant).pipe(
+  const soloRound = (mutant: (typeof Checker.CheckerMutantWire)['Encoded']) =>
+    S.decodeEffect(Checker.CheckerMutantWire)(mutant).pipe(
       Effect.orDie,
       Effect.flatMap((decoded) => verify.run(CheckMutantsCommand.make({ mutants: [decoded] }))),
       Effect.withSpan('typescript-checker.soloRound', { attributes: { 'stryker.mutant.id': mutant.id } }),
@@ -158,7 +158,7 @@ export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRunti
   '@systemfsoftware/stryker-js-typescript-checker/CheckerRuntime.service/CheckerRuntime',
 ) {
   static readonly layer = (
-    options: StrykerOptions,
+    options: Options.StrykerOptions,
   ): Layer.Layer<CheckerRuntime, never, FileSystem.FileSystem | Path.Path> =>
     Layer.effect(
       CheckerRuntime,

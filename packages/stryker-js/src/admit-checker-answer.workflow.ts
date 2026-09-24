@@ -1,6 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import type { CheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
-import { CheckResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -33,7 +32,7 @@ export class CheckerCommand extends S.TaggedClass<CheckerCommand>()('CheckerComm
   requestedIds: S.Array(S.String),
   phase: S.Literals(['check', 'group']),
   idGroups: S.String.pipe(S.Array, S.Array, S.optional),
-  answers: S.optional(S.Record(S.String, CheckResultSchema)),
+  answers: S.optional(S.Record(S.String, Checker.CheckResultSchema)),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     checkerName: 'stryker.checker.name',
@@ -50,7 +49,7 @@ export class CheckGroupDecision extends S.TaggedClass<CheckGroupDecision>()('Che
 }
 
 export class CheckResultDecision extends S.TaggedClass<CheckResultDecision>()('CheckResultDecision', {
-  pairs: S.Array(S.Struct({ id: S.String, result: CheckResultSchema })),
+  pairs: S.Array(S.Struct({ id: S.String, result: Checker.CheckResultSchema })),
 }) {
   readonly [CheckerDecisionTypeId] = CheckerDecisionTypeId
 }
@@ -119,7 +118,7 @@ const idGroupsOf = (command: CheckerCommand) =>
   Option.getOrElse((): readonly (readonly string[])[] => [])(Option.fromUndefinedOr(command.idGroups))
 
 const answersOf = (command: CheckerCommand) =>
-  Option.getOrElse((): Record<string, CheckResult> => ({}))(Option.fromUndefinedOr(command.answers))
+  Option.getOrElse((): Record<string, Checker.CheckResult> => ({}))(Option.fromUndefinedOr(command.answers))
 
 const evaluateGroup = (command: CheckerCommand) => {
   const idGroups = idGroupsOf(command)

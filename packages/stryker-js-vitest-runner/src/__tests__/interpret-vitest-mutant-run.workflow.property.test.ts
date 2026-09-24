@@ -2,12 +2,7 @@ import { describe, it } from '@effect/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import {
-  type FailedTestResult,
-  HitLimitReason,
-  HitLimitReasonPrefix,
-  type TestResult,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   interpretVitestMutantRun,
   MutantDryError,
@@ -25,7 +20,7 @@ const carriesFamilyBrand = (decision: object): boolean =>
 const commandWith = (
   input: VitestMutantRunCommand,
   override: {
-    readonly tests?: readonly TestResult[]
+    readonly tests?: readonly TestRunner.TestResult[]
     readonly hasExternalError?: boolean
     readonly externalErrorText?: string
     readonly hitCount: number | undefined
@@ -47,7 +42,7 @@ const commandWith = (
   })
 
 const testsIn = (
-  tests: readonly TestResult[],
+  tests: readonly TestRunner.TestResult[],
 ): { readonly ids: readonly string[]; readonly failed: readonly string[] } => ({
   ids: tests.map((test) => test.id),
   failed: tests.filter((test) => test.status === 'failed').map((test) => test.id),
@@ -76,12 +71,15 @@ describe('interpretVitestMutantRun', () => {
         return false
       }
       const timeout = result.success
-      const reasonReached = Result.match(S.encodeResult(HitLimitReason)({ count: hitCount, limit: hitLimit }), {
-        onFailure: () => false,
-        onSuccess: (reason) => timeout.reason === reason,
-      })
+      const reasonReached = Result.match(
+        S.encodeResult(TestRunner.HitLimitReason)({ count: hitCount, limit: hitLimit }),
+        {
+          onFailure: () => false,
+          onSuccess: (reason) => timeout.reason === reason,
+        },
+      )
       const reasonPrefixed = result.success.reason !== undefined &&
-        result.success.reason.startsWith(HitLimitReasonPrefix.literal)
+        result.success.reason.startsWith(TestRunner.HitLimitReasonPrefix.literal)
       return carriesFamilyBrand(result.success) && result.success.tests.length === 0 && reasonReached && reasonPrefixed
     },
   )
@@ -136,7 +134,7 @@ describe('interpretVitestMutantRun', () => {
       S.Int.check(S.isBetween({ minimum: 1, maximum: 100 })),
     ],
     ([input, hitLimit, extra]) => {
-      const failed: FailedTestResult = {
+      const failed: TestRunner.FailedTestResult = {
         id: 'a.ts#fails',
         name: 'fails',
         timeSpentMs: 1,
@@ -191,7 +189,7 @@ describe('interpretVitestMutantRun', () => {
       S.String.check(S.isMaxLength(32)),
     ],
     ([input, name, message]) => {
-      const failed: FailedTestResult = {
+      const failed: TestRunner.FailedTestResult = {
         id: `tests/a.spec.ts#${name}`,
         name,
         timeSpentMs: 5,
@@ -232,7 +230,7 @@ describe('interpretVitestMutantRun', () => {
     '→t_PassedTest_=Survived',
     [VitestMutantRunCommand, S.String.check(S.isMinLength(1), S.isMaxLength(24))],
     ([input, name]) => {
-      const passed: TestResult = {
+      const passed: TestRunner.TestResult = {
         id: `tests/a.spec.ts#${name}`,
         name,
         timeSpentMs: 3,

@@ -1,6 +1,6 @@
 /// <reference types="vitest/importMeta" />
 import { parse } from '@std/jsonc'
-import { CheckerMutantWire, type StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
@@ -76,14 +76,14 @@ interface CompilerState {
   snapshot: Snapshot | undefined
   sourceFiles: SourceFiles
   nodes: GraphNodes
-  lastMutants: CheckerMutantWire[]
+  lastMutants: Checker.CheckerMutantWire[]
   lastMutatedFileNames: string[]
   allTSConfigFiles: MutableHashSet.MutableHashSet<string>
   tsconfigFile: string
 }
 
 interface TSCompilerRuntime {
-  readonly options: StrykerOptions
+  readonly options: Options.StrykerOptions
   readonly host: FileSystem.FileSystem
   readonly pathService: Path.Path
   readonly files: TSFiles
@@ -100,16 +100,16 @@ export const isTSCompiler = (u: unknown): u is TSCompiler => Predicate.hasProper
 
 export const make: {
   (
-    options: StrykerOptions,
+    options: Options.StrykerOptions,
     services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
   ): TSCompiler
   (
     services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
-  ): (options: StrykerOptions) => TSCompiler
+  ): (options: Options.StrykerOptions) => TSCompiler
 } = dual(
   2,
   (
-    options: StrykerOptions,
+    options: Options.StrykerOptions,
     services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
   ): TSCompiler => {
     const files = makeTSFiles(services.host)
@@ -348,7 +348,7 @@ const programsOf = (rt: TSCompilerRuntime): Effect.Effect<ReadonlyArray<Program>
 
 const resolveFileName = (rt: TSCompilerRuntime, fileName: string) => normalizeFileName(rt.pathService.resolve(fileName))
 
-const applyMutant = (rt: TSCompilerRuntime, mutant: CheckerMutantWire): Effect.Effect<void, CompilerFailed> =>
+const applyMutant = (rt: TSCompilerRuntime, mutant: Checker.CheckerMutantWire): Effect.Effect<void, CompilerFailed> =>
   Effect.flatMap(getFile(rt.files, resolveFileName(rt, mutant.fileName)), (file) =>
     Effect.flatMap(
       Effect.fromOption(file, () => CompilerFailed.make({ reason: 'file-not-in-project', subject: mutant.fileName })),
@@ -359,10 +359,10 @@ const applyMutant = (rt: TSCompilerRuntime, mutant: CheckerMutantWire): Effect.E
         ),
     ))
 
-const applyMutants = (rt: TSCompilerRuntime, mutants: readonly CheckerMutantWire[]) =>
+const applyMutants = (rt: TSCompilerRuntime, mutants: readonly Checker.CheckerMutantWire[]) =>
   Effect.forEach(mutants, (mutant) => applyMutant(rt, mutant), { discard: true })
 
-const resetMutatedFiles = (rt: TSCompilerRuntime, mutants: readonly CheckerMutantWire[]) =>
+const resetMutatedFiles = (rt: TSCompilerRuntime, mutants: readonly Checker.CheckerMutantWire[]) =>
   Effect.forEach(mutants, (mutant) => resetFile(rt.files, resolveFileName(rt, mutant.fileName)), { discard: true })
 
 interface InitializedCompilerState extends CompilerState {
@@ -632,7 +632,7 @@ interface MutantRound {
   readonly ids: ReadonlyArray<string>
   readonly members: HashSet.HashSet<string>
   readonly ignored: HashSet.HashSet<string>
-  readonly taken: HashSet.HashSet<CheckerMutantWire>
+  readonly taken: HashSet.HashSet<Checker.CheckerMutantWire>
 }
 
 const emptyRound: MutantRound = {
@@ -646,7 +646,7 @@ const sharesDependencyPath = (node: FileNode, round: MutantRound): boolean =>
   HashSet.has(round.ignored, node.fileName) ||
   Arr.some(Arr.fromIterable(ancestorFileNamesOf(node, HashSet.empty())), (name) => HashSet.has(round.members, name))
 
-const joinRound = (round: MutantRound, mutant: CheckerMutantWire, node: FileNode): MutantRound =>
+const joinRound = (round: MutantRound, mutant: Checker.CheckerMutantWire, node: FileNode): MutantRound =>
   Boolean.match(sharesDependencyPath(node, round), {
     onFalse: () => ({
       ids: [...round.ids, mutant.id],
@@ -658,7 +658,7 @@ const joinRound = (round: MutantRound, mutant: CheckerMutantWire, node: FileNode
   })
 
 const takeRound = (
-  remaining: ReadonlyArray<CheckerMutantWire>,
+  remaining: ReadonlyArray<Checker.CheckerMutantWire>,
   nodes: GraphNodes,
 ): Result.Result<MutantRound, NodeNotInGraph> =>
   Arr.reduce(
@@ -673,10 +673,10 @@ const takeRound = (
 
 interface Grouping {
   readonly groups: ReadonlyArray<ReadonlyArray<string>>
-  readonly remaining: ReadonlyArray<CheckerMutantWire>
+  readonly remaining: ReadonlyArray<Checker.CheckerMutantWire>
 }
 
-const emptyGrouping = (remaining: ReadonlyArray<CheckerMutantWire>): Grouping => ({ groups: [], remaining })
+const emptyGrouping = (remaining: ReadonlyArray<Checker.CheckerMutantWire>): Grouping => ({ groups: [], remaining })
 
 const takeNextRound = (nodes: GraphNodes) => (grouping: Grouping) =>
   Boolean.match(grouping.remaining.length === 0, {
@@ -688,7 +688,7 @@ const takeNextRound = (nodes: GraphNodes) => (grouping: Grouping) =>
       })),
   })
 
-const roundsOf = (inside: ReadonlyArray<CheckerMutantWire>, nodes: GraphNodes) => {
+const roundsOf = (inside: ReadonlyArray<Checker.CheckerMutantWire>, nodes: GraphNodes) => {
   const pending = Arr.dedupe(inside)
   return Result.map(
     Arr.reduce(
@@ -701,7 +701,7 @@ const roundsOf = (inside: ReadonlyArray<CheckerMutantWire>, nodes: GraphNodes) =
 }
 
 const groupMutants = (
-  mutants: readonly CheckerMutantWire[],
+  mutants: readonly Checker.CheckerMutantWire[],
   nodes: GraphNodes,
   prioritizePerformanceOverAccuracy: boolean,
 ) =>
@@ -772,11 +772,16 @@ export const init = (self: TSCompiler): Effect.Effect<readonly Diagnostic[], Com
 }
 
 export const check: {
-  (mutants: readonly CheckerMutantWire[]): (self: TSCompiler) => Effect.Effect<readonly Diagnostic[], CompilerError>
-  (self: TSCompiler, mutants: readonly CheckerMutantWire[]): Effect.Effect<readonly Diagnostic[], CompilerError>
+  (
+    mutants: readonly Checker.CheckerMutantWire[],
+  ): (self: TSCompiler) => Effect.Effect<readonly Diagnostic[], CompilerError>
+  (self: TSCompiler, mutants: readonly Checker.CheckerMutantWire[]): Effect.Effect<readonly Diagnostic[], CompilerError>
 } = dual(
   2,
-  (self: TSCompiler, mutants: readonly CheckerMutantWire[]): Effect.Effect<readonly Diagnostic[], CompilerError> => {
+  (
+    self: TSCompiler,
+    mutants: readonly Checker.CheckerMutantWire[],
+  ): Effect.Effect<readonly Diagnostic[], CompilerError> => {
     const rt = self[RuntimeTypeId]
     return Effect.gen(function*() {
       const state = yield* Ref.get(rt.state)
@@ -821,19 +826,19 @@ export const nodes = (self: TSCompiler) => nodesOf(self[RuntimeTypeId])
 
 export const groups: {
   (
-    mutants: readonly CheckerMutantWire[],
+    mutants: readonly Checker.CheckerMutantWire[],
     prioritizePerformanceOverAccuracy: boolean,
   ): (self: TSCompiler) => Effect.Effect<ReadonlyArray<ReadonlyArray<string>>, CompilerError | NodeNotInGraph>
   (
     self: TSCompiler,
-    mutants: readonly CheckerMutantWire[],
+    mutants: readonly Checker.CheckerMutantWire[],
     prioritizePerformanceOverAccuracy: boolean,
   ): Effect.Effect<ReadonlyArray<ReadonlyArray<string>>, CompilerError | NodeNotInGraph>
 } = dual(
   3,
   (
     self: TSCompiler,
-    mutants: readonly CheckerMutantWire[],
+    mutants: readonly Checker.CheckerMutantWire[],
     prioritizePerformanceOverAccuracy: boolean,
   ): Effect.Effect<ReadonlyArray<ReadonlyArray<string>>, CompilerError | NodeNotInGraph> =>
     Effect.flatMap(
@@ -886,7 +891,9 @@ export const close = (self: TSCompiler): Effect.Effect<void> => {
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const Equal = await import('effect/Equal')
-  const { CanonicalFileName, MutantId, MutatorName } = await import('@systemfsoftware/stryker-js-instrumenter')
+  const { Mutant: { CanonicalFileName, MutantId, MutatorName } } = await import(
+    '@systemfsoftware/stryker-js-instrumenter'
+  )
 
   const FILE_INDEX_LIMIT = 4
 
@@ -923,8 +930,8 @@ if (import.meta.vitest !== void 0) {
     )
   }
 
-  const mutantWireOf = (id: string, fileName: string): CheckerMutantWire =>
-    CheckerMutantWire.make({
+  const mutantWireOf = (id: string, fileName: string): Checker.CheckerMutantWire =>
+    Checker.CheckerMutantWire.make({
       id: MutantId.make(id),
       fileName: CanonicalFileName.make(fileName),
       mutatorName: MutatorName.make('foo-mutator'),
@@ -935,7 +942,7 @@ if (import.meta.vitest !== void 0) {
   const mutantsOf = (fileIndexes: readonly number[]) =>
     Arr.map(fileIndexes, (index, position) => mutantWireOf(`mutant-${position}`, fileNameOf(index)))
 
-  const groupedOf = (mutants: ReadonlyArray<CheckerMutantWire>, nodes: GraphNodes, prioritize: boolean) =>
+  const groupedOf = (mutants: ReadonlyArray<Checker.CheckerMutantWire>, nodes: GraphNodes, prioritize: boolean) =>
     Result.getOrElse(groupMutants(mutants, nodes, prioritize), () => [])
 
   const relatedNodes = (left: FileNode, right: FileNode): boolean =>
@@ -949,7 +956,11 @@ if (import.meta.vitest !== void 0) {
 
   const noAssignments: ReadonlyArray<Assignment> = []
 
-  const firstFitGrouping = (mutants: ReadonlyArray<CheckerMutantWire>, nodes: GraphNodes, prioritize: boolean) =>
+  const firstFitGrouping = (
+    mutants: ReadonlyArray<Checker.CheckerMutantWire>,
+    nodes: GraphNodes,
+    prioritize: boolean,
+  ) =>
     Boolean.match(prioritize, {
       onFalse: () => Arr.map(mutants, (mutant) => [mutant.id]),
       onTrue: () => {
@@ -976,8 +987,10 @@ if (import.meta.vitest !== void 0) {
               noAssignments,
               (groups, candidate) =>
                 Option.match(
-                  Arr.findFirstIndex(groups, (group) =>
-                    !Arr.some(group.members, (member) => relatedNodes(member, candidate.node))),
+                  Arr.findFirstIndex(
+                    groups,
+                    (group) => !Arr.some(group.members, (member) => relatedNodes(member, candidate.node)),
+                  ),
                   {
                     onSome: (index) =>
                       Arr.map(groups, (group, at) =>
@@ -986,8 +999,7 @@ if (import.meta.vitest !== void 0) {
                             ids: [...group.ids, candidate.id],
                             members: [...group.members, candidate.node],
                           }),
-                          onFalse: () =>
-                            group,
+                          onFalse: () => group,
                         })),
                     onNone: () => [...groups, { ids: [candidate.id], members: [candidate.node] }],
                   },
@@ -1035,7 +1047,7 @@ if (import.meta.vitest !== void 0) {
     const nodes = graphOfEdges(edges)
     const mutants = mutantsOf(fileIndexes)
     const byId = HashMap.fromIterable(
-      Arr.map(mutants, (mutant): readonly [string, CheckerMutantWire] => [mutant.id, mutant]),
+      Arr.map(mutants, (mutant): readonly [string, Checker.CheckerMutantWire] => [mutant.id, mutant]),
     )
     const pairs = Arr.flatMap(groupedOf(mutants, nodes, true), (ids) => {
       const members = Arr.filterMap(

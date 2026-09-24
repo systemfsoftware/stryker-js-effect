@@ -1,8 +1,8 @@
-import { MutantActivationSchema } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
 export const PlannedMutantRunOptions = S.Struct({
-  mutantActivation: MutantActivationSchema,
+  mutantActivation: Mutant.MutantActivationSchema,
   timeout: S.Finite,
   sandboxFileName: S.String,
   disableBail: S.Boolean,

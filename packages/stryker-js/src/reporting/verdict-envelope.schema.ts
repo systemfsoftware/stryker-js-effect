@@ -1,12 +1,6 @@
 import { randomBytes } from '@noble/hashes/utils.js'
-import { LocationSchema, MutantStatusSchema } from '@systemfsoftware/stryker-js-instrumenter'
-import {
-  Metrics,
-  MetricsSchema,
-  type MutationTestResult,
-  Percentage,
-  type Thresholds,
-} from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as DateTime from 'effect/DateTime'
 import { dual } from 'effect/Function'
@@ -78,30 +72,30 @@ export class RunId extends S.Class<RunId>('RunId')({ value: RunIdText }) {
 export const VerdictMutant = S.Struct({
   id: S.String,
   file: S.String,
-  location: LocationSchema,
+  location: Mutant.LocationSchema,
   mutator: S.String,
   replacement: S.NullOr(S.String),
-  status: MutantStatusSchema,
+  status: Mutant.MutantStatusSchema,
 })
 export type VerdictMutant = typeof VerdictMutant.Type
 
 export const VerdictThresholds = S.Struct({
-  high: Percentage,
-  low: Percentage,
-  break: S.NullOr(Percentage),
+  high: Report.Percentage,
+  low: Report.Percentage,
+  break: S.NullOr(Report.Percentage),
 })
 export type VerdictThresholds = typeof VerdictThresholds.Type
 
-export type VerdictCounts = typeof MetricsSchema.Type
+export type VerdictCounts = typeof Report.MetricsSchema.Type
 
 export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')({
   schemaVersion: S.String,
   runId: S.String,
   mode: OutputMode,
   signal: ModeSignal,
-  score: S.NullOr(Percentage),
+  score: S.NullOr(Report.Percentage),
   thresholds: VerdictThresholds,
-  counts: MetricsSchema,
+  counts: Report.MetricsSchema,
   reportFile: S.NullOr(S.String),
   mutants: S.Array(VerdictMutant),
 }) {
@@ -112,9 +106,9 @@ export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')
       runId: string,
       basePath: string,
       pathService: Path.Path,
-    ) => (report: MutationTestResult) => VerdictEnvelope,
+    ) => (report: Report.MutationTestResult) => VerdictEnvelope,
     (
-      report: MutationTestResult,
+      report: Report.MutationTestResult,
       mode: OutputMode,
       signal: ModeSignal,
       runId: string,
@@ -157,10 +151,10 @@ export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')
 
 const normalizeFileName = (fileName: string) => fileName.replaceAll('\\', '/')
 
-const metricsOf = (files: MutationTestResult['files']): Metrics =>
-  Metrics.fromMutants(Arr.flatMap(Object.values(files), (file) => file.mutants))
+const metricsOf = (files: Report.MutationTestResult['files']): Report.Metrics =>
+  Report.Metrics.fromMutants(Arr.flatMap(Object.values(files), (file) => file.mutants))
 
-function embeddedConfig(report: MutationTestResult) {
+function embeddedConfig(report: Report.MutationTestResult) {
   const JsonReporterSchema = S.Struct({
     fileName: S.String,
   })
@@ -177,7 +171,7 @@ function embeddedConfig(report: MutationTestResult) {
   }
 }
 
-function breakThreshold(thresholds: Thresholds) {
+function breakThreshold(thresholds: Report.Thresholds) {
   const ThresholdsBreakSchema = S.StructWithRest(
     S.Struct({
       break: S.optional(S.Union([S.Finite, S.Null])),
@@ -188,7 +182,7 @@ function breakThreshold(thresholds: Thresholds) {
   return Option.getOrNull(Option.flatMap(decoded, (value) => Option.fromNullishOr(value.break)))
 }
 
-const actionableMutants = (files: MutationTestResult['files']): ReadonlyArray<VerdictMutant> =>
+const actionableMutants = (files: Report.MutationTestResult['files']): ReadonlyArray<VerdictMutant> =>
   Arr.flatMap(Object.entries(files), ([file, fileResult]) =>
     Arr.map(
       Arr.filter(fileResult.mutants, (mutant) => isActionableStatus(mutant.status)),

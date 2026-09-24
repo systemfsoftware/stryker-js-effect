@@ -1,6 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { DryRunResultSchema } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { FailedTestResult, MutantRunResult, TestResult } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -14,7 +13,7 @@ export class MutantRunErrored extends S.TaggedClass<MutantRunErrored>()('Error',
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
 
-  get asResult(): MutantRunResult {
+  get asResult(): TestRunner.MutantRunResult {
     return { errorMessage: this.errorMessage, status: 'error' }
   }
 }
@@ -26,7 +25,7 @@ export class MutantRunKilled extends S.TaggedClass<MutantRunKilled>()('Killed', 
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
 
-  get asResult(): MutantRunResult {
+  get asResult(): TestRunner.MutantRunResult {
     return {
       failureMessage: this.failureMessage,
       killedBy: this.killedBy,
@@ -41,7 +40,7 @@ export class MutantRunSurvived extends S.TaggedClass<MutantRunSurvived>()('Survi
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
 
-  get asResult(): MutantRunResult {
+  get asResult(): TestRunner.MutantRunResult {
     return { nrOfTests: this.nrOfTests, status: 'survived' }
   }
 }
@@ -51,10 +50,10 @@ export class MutantRunTimedOut extends S.TaggedClass<MutantRunTimedOut>()('Timeo
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
 
-  get asResult(): MutantRunResult {
+  get asResult(): TestRunner.MutantRunResult {
     return Option.match(Option.fromUndefinedOr(this.reason), {
-      onNone: (): MutantRunResult => ({ status: 'timeout' }),
-      onSome: (reason): MutantRunResult => ({ reason, status: 'timeout' }),
+      onNone: (): TestRunner.MutantRunResult => ({ status: 'timeout' }),
+      onSome: (reason): TestRunner.MutantRunResult => ({ reason, status: 'timeout' }),
     })
   }
 }
@@ -63,17 +62,18 @@ export type MutantRunDecision = MutantRunErrored | MutantRunKilled | MutantRunSu
 
 export class InterpretDryRunResultCommand extends S.TaggedClass<InterpretDryRunResultCommand>()(
   'InterpretDryRunResultCommand',
-  { dryRunResult: DryRunResultSchema },
+  { dryRunResult: TestRunner.DryRunResultSchema },
 ) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-const failedTestsOf = (tests: readonly TestResult[]) =>
-  tests.filter((test): test is FailedTestResult => test.status === 'failed')
+const failedTestsOf = (tests: readonly TestRunner.TestResult[]) =>
+  tests.filter((test): test is TestRunner.FailedTestResult => test.status === 'failed')
 
-const countedTestsOf = (tests: readonly TestResult[]) => tests.filter((test) => test.status !== 'skipped').length
+const countedTestsOf = (tests: readonly TestRunner.TestResult[]) =>
+  tests.filter((test) => test.status !== 'skipped').length
 
-const firstFailedTestOf = (failed: readonly FailedTestResult[]) => Option.fromUndefinedOr(failed.at(0))
+const firstFailedTestOf = (failed: readonly TestRunner.FailedTestResult[]) => Option.fromUndefinedOr(failed.at(0))
 
 const decide = (command: InterpretDryRunResultCommand) =>
   Match.value(command.dryRunResult).pipe(
