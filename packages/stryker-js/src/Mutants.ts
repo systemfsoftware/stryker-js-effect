@@ -15,13 +15,20 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as MutableHashSet from 'effect/MutableHashSet'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { StageError } from './Run.schema.js'
 
+import { admitFileIdentity, AdmitFileIdentityCommand, FileIdentityReuse } from './admit-file-identity.workflow.js'
 import { toRelativeNormalizedFileName } from './IncrementalDiff.paths.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from './IncrementalDiff.schema.js'
-import type { PreviousFileRecord, PreviousMutantRecord, PreviousTestFileRecord } from './IncrementalDiff.schema.js'
+import type {
+  FormatIdentity,
+  PreviousFileRecord,
+  PreviousMutantRecord,
+  PreviousTestFileRecord,
+} from './IncrementalDiff.schema.js'
 import { toSchemaLocation } from './mutant-result-mapping.js'
 
 export const HIT_LIMIT_FACTOR = 100
@@ -830,6 +837,7 @@ export interface IncrementalDiffInput {
   readonly currentRelativeFiles: Record<string, string>
   readonly testIdsByRelativeFile: Record<string, readonly string[]>
   readonly coveringTestFilesByMutantId: Record<string, readonly string[]>
+  readonly identitiesByFile: Record<string, FormatIdentity>
   readonly force: boolean
 }
 
@@ -915,6 +923,25 @@ const hasChangedCoverage = (
   changedTests: readonly string[],
 ): boolean => (coveringTestFilesByMutantId[mutantId] ?? []).some((file) => changedTests.includes(file))
 
+const fileIdentityReuses = (input: IncrementalDiffInput, file: string): boolean =>
+  Option.match(Option.fromUndefinedOr(input.previousFiles[file]), {
+    onNone: () => false,
+    onSome: (previous) =>
+      Result.match(
+        admitFileIdentity(
+          AdmitFileIdentityCommand.make({
+            file,
+            recorded: previous.formatIdentity,
+            claimed: input.identitiesByFile[file],
+          }),
+        ),
+        {
+          onFailure: () => false,
+          onSuccess: (decision) => S.is(FileIdentityReuse)(decision),
+        },
+      ),
+  })
+
 type MutantDecision =
   | { readonly kind: 'run' }
   | { readonly kind: 'remembered'; readonly previous: PreviousMutantRecord }
@@ -930,9 +957,14 @@ const isRememberable = (
   Match.value(REMEMBERED_STATUS.has(previous.status)).pipe(
     Match.when(false, () => false),
     Match.orElse(() =>
-      Match.value(changedFiles.includes(file)).pipe(
-        Match.when(true, () => false),
-        Match.orElse(() => !hasChangedCoverage(mutant.id, input.coveringTestFilesByMutantId, changedTests)),
+      Match.value(fileIdentityReuses(input, file)).pipe(
+        Match.when(false, () => false),
+        Match.orElse(() =>
+          Match.value(changedFiles.includes(file)).pipe(
+            Match.when(true, () => false),
+            Match.orElse(() => !hasChangedCoverage(mutant.id, input.coveringTestFilesByMutantId, changedTests)),
+          )
+        ),
       )
     ),
   )
@@ -1164,6 +1196,7 @@ export const incrementalDiff = <Report = unknown>(
     currentRelativeFiles: Record<string, string>
     basePath: string
     force?: boolean
+    identitiesByFile: Record<string, FormatIdentity>
   }>,
 ): IncrementalDiffResult => {
   const output = computeIncrementalDiff({
@@ -1174,6 +1207,7 @@ export const incrementalDiff = <Report = unknown>(
     currentRelativeFiles: input.currentRelativeFiles,
     testIdsByRelativeFile: testIdsByRelativeFile(input.testCoverage, input.basePath),
     coveringTestFilesByMutantId: coveringTestFilesByMutantId(input.testCoverage, input.basePath),
+    identitiesByFile: input.identitiesByFile,
     force: input.force ?? false,
   })
   return {
@@ -1192,4 +1226,119 @@ export const incrementalDiff = <Report = unknown>(
       total: output.testStatistics.total,
     },
   }
+}
+
+if (import.meta.vitest !== undefined) {
+  const { it } = await import('@effect/vitest')
+  const { FormatIdentitySchema } = await import('./IncrementalDiff.schema.js')
+
+  const BASE_PATH = '/proj'
+  const SOURCE = 'const answer = 42'
+
+  const mutantOf = (id: string): Mutant =>
+    Mutant.make({
+      id,
+      fileName: `${BASE_PATH}/src/a.ts`,
+      mutatorName: 'EqualityOperator',
+      replacement: '!==',
+      location: { start: { line: 0, column: 5 }, end: { line: 0, column: 8 } },
+    })
+
+  const previousMutant: PreviousMutantRecord = {
+    mutatorName: 'EqualityOperator',
+    replacement: '!==',
+    location: { start: { line: 1, column: 6 }, end: { line: 1, column: 9 } },
+    status: 'Survived',
+  }
+
+  const fileRecord = (formatIdentity: FormatIdentity | undefined): PreviousFileRecord => ({
+    source: SOURCE,
+    mutants: [previousMutant],
+    ...(formatIdentity === undefined ? {} : { formatIdentity }),
+  })
+
+  const reportOf = (
+    formatIdentity: FormatIdentity | undefined,
+    extraFiles: Record<string, PreviousFileRecord> = {},
+  ) => ({
+    files: { 'src/a.ts': fileRecord(formatIdentity), ...extraFiles },
+  })
+
+  const identityById = (identities: readonly (readonly [string, FormatIdentity])[]): Record<string, FormatIdentity> =>
+    Object.fromEntries(identities)
+
+  const diffWith = (report: object, identities: Record<string, FormatIdentity>, currentMutants: readonly Mutant[]) =>
+    incrementalDiffOfChanges({
+      basePath: BASE_PATH,
+      currentMutants,
+      previousFiles: previousFilesOf(report),
+      previousTestFiles: {},
+      currentRelativeFiles: { 'src/a.ts': SOURCE },
+      testIdsByRelativeFile: {},
+      coveringTestFilesByMutantId: {},
+      identitiesByFile: identities,
+      force: false,
+    })
+
+  const firstRemembered = (diff: IncrementalDiffOutput): RememberedMutant | undefined => diff.remembered[0]
+
+  const rememberedField = <Field>(
+    diff: IncrementalDiffOutput,
+    pick: (entry: RememberedMutant) => Field,
+  ): Field | undefined => {
+    const entry = firstRemembered(diff)
+    return entry === undefined ? undefined : pick(entry)
+  }
+
+  it.prop('∀i_MatchingIdentity_≡Remembered', [FormatIdentitySchema], ([identity]) => {
+    const diff = diffWith(reportOf(identity), identityById([['src/a.ts', identity]]), [mutantOf('m1')])
+    return [
+      [diff.mutants.length, 0],
+      [diff.remembered.length, 1],
+      [rememberedField(diff, (entry) => entry.mutantId), 'm1'],
+      [rememberedField(diff, (entry) => entry.status), 'Survived'],
+      [diff.mutantStatistics.total.added, 0],
+      [diff.mutantStatistics.total.removed, 0],
+    ].every(([actual, expected]) => actual === expected)
+  })
+
+  it.prop('∀i_OwnerVersionDrift_→Recompute', [FormatIdentitySchema], ([identity]) => {
+    const drifted: FormatIdentity = { ...identity, ownerVersion: `${identity.ownerVersion}-next` }
+    const diff = diffWith(reportOf(identity), identityById([['src/a.ts', drifted]]), [mutantOf('m1')])
+    return [
+      [diff.mutants.length, 1],
+      [diff.mutants[0]?.id, 'm1'],
+      [diff.remembered.length, 0],
+      [diff.mutantStatistics.total.added, 1],
+    ].every(([actual, expected]) => actual === expected)
+  })
+
+  it.prop('∀i_FormatIdDrift_→Recompute', [FormatIdentitySchema], ([identity]) => {
+    const drifted: FormatIdentity = { ...identity, formatId: `${identity.formatId}-next` }
+    const diff = diffWith(reportOf(identity), identityById([['src/a.ts', drifted]]), [mutantOf('m1')])
+    return [
+      [diff.mutants.length, 1],
+      [diff.remembered.length, 0],
+      [diff.mutantStatistics.total.added, 1],
+    ].every(([actual, expected]) => actual === expected)
+  })
+
+  it.prop('∀i_MissingRecordedIdentity_→Recompute', [FormatIdentitySchema], ([identity]) => {
+    const diff = diffWith(reportOf(undefined), identityById([['src/a.ts', identity]]), [mutantOf('m1')])
+    return [
+      [diff.mutants.length, 1],
+      [diff.remembered.length, 0],
+      [diff.mutantStatistics.total.added, 1],
+    ].every(([actual, expected]) => actual === expected)
+  })
+
+  it.prop('∀i_UnclaimedPriorFile_∈Removed', [FormatIdentitySchema], ([identity]) => {
+    const report = reportOf(identity, { 'src/skipped.svelte': fileRecord(identity) })
+    const diff = diffWith(report, identityById([['src/a.ts', identity]]), [mutantOf('m1')])
+    return [
+      [diff.remembered.length, 1],
+      [rememberedField(diff, (entry) => entry.mutantId), 'm1'],
+      [diff.mutantStatistics.changesByFile['src/skipped.svelte']?.removed, 1],
+    ].every(([actual, expected]) => actual === expected)
+  })
 }

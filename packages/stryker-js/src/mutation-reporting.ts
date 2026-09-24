@@ -1,4 +1,5 @@
 import type { MutantTestCoverage, RunMutantResult } from '@systemfsoftware/stryker-js-instrumenter'
+import type { FormatRegistry } from '@systemfsoftware/stryker-js-instrumenter'
 import { type CheckResult, type PassedCheckResult } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { ExitClass } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { MetricsResult } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -21,6 +22,7 @@ import { calculateMetrics } from './calculate-metrics.js'
 import { highestExitClass, verdictExitClass } from './exit-classification.js'
 import { RunEvents, VerdictReached } from './RunEvents.js'
 
+import type { FormatIdentity } from './IncrementalDiff.schema.js'
 import { checkStatusToMutantStatus, mapRunResult, toSchemaLocation } from './mutant-result-mapping.js'
 import type { TestCoverage } from './Mutants.js'
 import type { ResolvedMode } from './output-mode.js'
@@ -30,7 +32,9 @@ import {
   assembleFileResults,
   assembleTestFiles,
   determineLanguage,
+  identityOf,
   reportFileName,
+  stampFileIdentities,
   testIdRemap,
 } from './report-assembly.js'
 import type { ReporterStage } from './ReporterStream.js'
@@ -78,6 +82,7 @@ export interface MakeMutationReportingInput {
   readonly resolvedMode: ResolvedMode
   readonly sandboxDirectory: string
   readonly basePath: string
+  readonly formatRegistry: FormatRegistry
 }
 
 export const makeMutationReportingService = (input: MakeMutationReportingInput): MutationReportingService => {
@@ -121,7 +126,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
         fileNames,
         (fileName) =>
           Effect.gen(function*() {
-            const language = determineLanguage(fileName)
+            const language = determineLanguage(fileName, input.formatRegistry)
             const file = MutableHashMap.get(input.project.files, fileName)
             if (Option.isNone(file)) {
               yield* Effect.logWarning(
@@ -174,26 +179,45 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
           (fileName) => [fileName, reportFileName(pathService.relative(input.basePath, fileName))] as const,
         ),
       )
+      const identities = HashMap.fromIterable(
+        mutatedFileNames.flatMap((fileName) =>
+          Option.match(HashMap.get(reportNames, fileName), {
+            onNone: (): ReadonlyArray<readonly [string, Option.Option<FormatIdentity>]> => [],
+            onSome: (reportName) => [[reportName, identityOf(fileName, input.formatRegistry)] as const],
+          })
+        ),
+      )
       return {
         files: assembleFileResults({ sources, reportNames, mutants: results, remap }),
         testFiles: assembleTestFiles({ testSources, reportNames, tests, remap }),
+        identities,
       }
     })
 
   const mutationTestReport = (
     results: readonly RunMutantResult[],
-  ): Effect.Effect<schema.MutationTestResult, PlatformError, FileSystem.FileSystem | Path.Path> =>
+  ): Effect.Effect<
+    {
+      readonly report: schema.MutationTestResult
+      readonly identities: HashMap.HashMap<string, Option.Option<FormatIdentity>>
+    },
+    PlatformError,
+    FileSystem.FileSystem | Path.Path
+  > =>
     Effect.gen(function*() {
-      const { files, testFiles } = yield* assembleReport(results)
+      const { files, testFiles, identities } = yield* assembleReport(results)
       const dependencies = yield* discoverDependencies()
       return {
-        files,
-        schemaVersion: '1.0',
-        thresholds: input.options.thresholds,
-        testFiles,
-        projectRoot: input.basePath,
-        config: input.options,
-        framework: { ...STRYKER_FRAMEWORK, dependencies },
+        report: {
+          files,
+          schemaVersion: '1.0',
+          thresholds: input.options.thresholds,
+          testFiles,
+          projectRoot: input.basePath,
+          config: input.options,
+          framework: { ...STRYKER_FRAMEWORK, dependencies },
+        },
+        identities,
       }
     })
 
@@ -329,7 +353,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
   const reportAll: MutationReportingService['reportAll'] = (results) =>
     Effect.gen(function*() {
       const pathService = yield* Path.Path
-      const report = yield* mutationTestReport(results)
+      const { report, identities } = yield* mutationTestReport(results)
       const metrics = calculateMetrics(report.files)
       yield* offerTerminalReport(input.reporterStage, report, metrics)
       const terminalDrain = terminalDrainClass(yield* closeReporterStage(input.reporterStage))
@@ -345,6 +369,7 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
         const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
           incrementalVersion: strykerVersion,
           ...report,
+          files: stampFileIdentities(report.files, identities),
         }).pipe(Effect.orDie)
         yield* fs.writeFileString(input.options.incrementalFile, json)
       }
@@ -364,12 +389,12 @@ export const makeMutationReportingService = (input: MakeMutationReportingInput):
 
   const slimIncrementalReport = (results: readonly RunMutantResult[]) =>
     Effect.gen(function*() {
-      const { files, testFiles } = yield* assembleReport(results)
+      const { files, testFiles, identities } = yield* assembleReport(results)
       return {
         incrementalVersion: strykerVersion,
         schemaVersion: '1.0',
         thresholds: input.options.thresholds,
-        files,
+        files: stampFileIdentities(files, identities),
         testFiles,
       }
     })

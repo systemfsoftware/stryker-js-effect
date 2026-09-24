@@ -2,6 +2,7 @@ import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import {
   coreFormatRegistry,
+  type FormatEntry,
   type FormatRegistry,
   frameworkEntryOf,
   registerEntries,
@@ -18,7 +19,6 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
 import { type RunEvent } from '../RunEvents.js'
@@ -51,12 +51,16 @@ import {
   withPhaseSpan,
 } from '../ReporterStream.js'
 import { PrepareError, StageError } from '../Run.schema.js'
-import type { FrameworkContributionRow, FrameworkModuleRow } from '../RunEvent.schema.js'
+import type {
+  FormatClaimShadowingRow,
+  FormatRegistryRow,
+  FrameworkContributionRow,
+  FrameworkModuleRow,
+} from '../RunEvent.schema.js'
 import { TemporaryDirectory, TemporaryDirectoryLive } from '../Sandbox.js'
 import { selectReporters } from '../select-reporters.js'
 import { STREAM_SCHEMA_VERSION } from '../StreamVersion.js'
 import { WorkerLauncher } from '../WorkerLauncher.js'
-import { foldFormatClaims, FoldFormatClaimsCommand, FormatClaimsFolded } from './fold-format-claims.workflow.js'
 import { forkCoreSchema, readConfig, validateOptions } from './load-config.cell.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
 import { planPrepare, type PrepareDecision, PrepareDecoded } from './plan-prepare.workflow.js'
@@ -68,7 +72,6 @@ export interface PrepareDone {
   readonly loadedPlugins: LoadedPlugins
   readonly ignorers: readonly Ignorer[]
   readonly formatRegistry: FormatRegistry
-  readonly formatReport: FormatClaimsFolded
   readonly options: StrykerOptions
   readonly temporaryDirectoryPath: string
   readonly reporterStage: ReporterStage
@@ -87,7 +90,6 @@ interface PrepareRaw {
   readonly project: Project
   readonly ignorers: readonly Ignorer[]
   readonly formatRegistry: FormatRegistry
-  readonly formatReport: FormatClaimsFolded
   readonly builtinReporterFactories: Record<string, ReporterFactory>
   readonly reporterChoicesByName: HashMap.HashMap<string, ReporterChoice>
 }
@@ -146,22 +148,51 @@ const appendModuleRow = (
 
 const moduleRowsOf = (loaded: LoadedPlugins): readonly FrameworkModuleRow[] =>
   loaded.frameworks.reduce(appendModuleRow, emptyModuleRows()).modules
+interface FormatReportRows {
+  readonly rows: readonly FormatRegistryRow[]
+  readonly shadowings: readonly FormatClaimShadowingRow[]
+}
+
+const formatReportOf = (registry: FormatRegistry): FormatReportRows => {
+  const winners = new Map<string, FormatEntry>()
+  const rows: FormatRegistryRow[] = []
+  const shadowings: FormatClaimShadowingRow[] = []
+  registry.entries.forEach((entry) =>
+    entry.claim.extensions.forEach((extension) => {
+      const winner = winners.get(extension)
+      if (winner !== undefined) {
+        shadowings.push({ extension, winner: winner.owner, loser: entry.owner })
+        return
+      }
+      winners.set(extension, entry)
+      rows.push({
+        extension,
+        formatId: entry.claim.formatId,
+        ownerModule: entry.owner,
+        language: entry.claim.language,
+      })
+    })
+  )
+  return { rows, shadowings }
+}
+
 const reportPluginLoad = (
   queue: Queue.Queue<RunEvent, Cause.Done>,
   loaded: LoadedPlugins,
-  formatReport: FormatClaimsFolded,
+  registry: FormatRegistry,
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
+    const report = formatReportOf(registry)
     yield* Queue.offer(
       queue,
       PluginsReported.make({
         modules: [...moduleRowsOf(loaded)],
-        shadowings: [...formatReport.shadowings],
+        shadowings: [...report.shadowings],
       }),
     )
     yield* Queue.offer(
       queue,
-      FormatRegistryResolved.make({ rows: [...formatReport.rows] }),
+      FormatRegistryResolved.make({ rows: [...report.rows] }),
     )
   })
 
@@ -334,29 +365,7 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
       coreFormatRegistry,
       loaded.frameworks.map(({ moduleName, framework }) => frameworkEntryOf(moduleName, framework)),
     )
-    const folded = Result.getOrThrow(
-      foldFormatClaims(
-        FoldFormatClaimsCommand.make({
-          coreClaims: coreFormatRegistry.entries.map((entry) => ({
-            ownerModule: entry.owner,
-            formatId: entry.claim.formatId,
-            language: entry.claim.language,
-            extensions: [...entry.claim.extensions],
-          })),
-          frameworkClaims: loaded.frameworks.map(({ moduleName, framework }) => ({
-            ownerModule: moduleName,
-            formatId: framework.claim.formatId,
-            language: framework.claim.language,
-            extensions: [...framework.claim.extensions],
-          })),
-        }),
-      ),
-    )
-    if (!S.is(FormatClaimsFolded)(folded)) {
-      throw new Error('the total claim fold was expected to fold the claims')
-    }
-    const formatReport = folded
-    yield* reportPluginLoad(queue, loaded, formatReport)
+    yield* reportPluginLoad(queue, loaded, registry)
     const mergedSchema = buildMergedSchema(coreSchema, loaded.schemaContributions)
     const record = { ...options }
     yield* validateOptions(record, mergedSchema).pipe(
@@ -406,7 +415,6 @@ const readPrepare = (command: PrepareExecutorArgs): Effect.Effect<
       project,
       ignorers,
       formatRegistry: registry,
-      formatReport,
       builtinReporterFactories,
       reporterChoicesByName,
     }
@@ -490,7 +498,6 @@ const writePrepare = (
           loadedPlugins: raw.loaded,
           ignorers: raw.ignorers,
           formatRegistry: raw.formatRegistry,
-          formatReport: raw.formatReport,
           options: raw.options,
           temporaryDirectoryPath,
           reporterStage,

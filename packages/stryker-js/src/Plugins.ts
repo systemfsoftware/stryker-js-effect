@@ -207,11 +207,8 @@ interface PluginContributions<A = unknown> {
   readonly schemaContribution: Record<string, A> | undefined
 }
 
-const NOOP_FRAMEWORK_HOOKS: Pick<Framework, 'parse' | 'transform' | 'print' | 'disableTypeChecks'> = {
-  parse: () => ({ kind: 'ParseFailed', message: 'no framework hook' }),
-  transform: (document) => document,
-  print: () => '',
-  disableTypeChecks: (rawContent) => ({ kind: 'Parsed', value: rawContent }),
+interface LoadedContribution extends Omit<PluginContributions, 'frameworks'> {
+  readonly frameworks: readonly Framework[]
 }
 
 const messageOf = (cause: S.SchemaError): string => cause.message
@@ -222,7 +219,7 @@ const invalidContribution = (descriptor: string, cause: S.SchemaError): PluginLo
     reason: { _tag: 'InvalidContribution', detail: messageOf(cause) },
   })
 
-const importFailure = (descriptor: string, crash: { readonly cause: Error }): PluginLoadRefusedError =>
+const importFailure = <A = unknown>(descriptor: string, crash: { readonly cause: A }): PluginLoadRefusedError =>
   PluginLoadRefusedError.make({ descriptor, reason: { _tag: 'ImportFailed', cause: crash.cause } })
 
 const failPluginLoad = (
@@ -317,26 +314,6 @@ const moduleFrameworkRefusalError = (descriptor: string, refusal: FrameworkRefus
     ),
   )
 
-const frameworkFrameworkOf = (
-  contribution: FrameworkModuleContributions[number],
-): Framework =>
-  Match.value(contribution).pipe(
-    Match.when({ kind: 'FrameworkRefusal' }, (refusal): Framework => ({
-      kind: 'Framework',
-      name: refusal.name,
-      claim: {
-        formatId: '',
-        extensions: [],
-        language: '',
-        ownerVersion: '',
-        contractVersion: '1' as const,
-      },
-      ...NOOP_FRAMEWORK_HOOKS,
-    })),
-    Match.when({ kind: 'Framework' }, (framework): Framework => framework),
-    Match.exhaustive,
-  )
-
 const frameworkRefusalsOf = (
   descriptor: string,
   contributions: FrameworkModuleContributions,
@@ -358,14 +335,14 @@ const warnUndescribedPluginModule = (descriptor: string): Effect.Effect<undefine
 const describeLoadedPlugin = <A = unknown>(
   descriptor: string,
   module: A,
-): Effect.Effect<PluginContributions | undefined, PluginLoadRefusedError> =>
+): Effect.Effect<LoadedContribution | undefined, PluginLoadRefusedError> =>
   Result.match(pluginContributionsOf(module), {
     onFailure: (cause) => failPluginLoad(descriptor, invalidContribution(descriptor, cause)),
     onSuccess: (contributions) =>
       Match.value(hasContribution(contributions)).pipe(
         Match.when(true, () =>
           frameworkRefusalsOf(descriptor, contributions.frameworks ?? []).pipe(
-            Effect.map((frameworks): PluginContributions => ({ ...contributions, frameworks })),
+            Effect.map((frameworks): LoadedContribution => ({ ...contributions, frameworks })),
           )),
         Match.orElse(() => warnUndescribedPluginModule(descriptor)),
       ),
@@ -374,7 +351,7 @@ const describeLoadedPlugin = <A = unknown>(
 function loadPlugin(
   descriptor: string,
   entrypoint: string,
-): Effect.Effect<PluginContributions | undefined, PluginLoadRefusedError> {
+): Effect.Effect<LoadedContribution | undefined, PluginLoadRefusedError> {
   return Effect.gen(function*() {
     yield* Effect.logDebug(`Loading plugin ${descriptor}`)
     const maybeModule = yield* importModule(entrypoint).pipe(
@@ -401,10 +378,17 @@ export function loadPlugins(
     const entrypoints = yield* Effect.forEach(
       Array.fromIterable(HashSet.fromIterable(pluginDescriptors)),
       (specifier) =>
-        path.fromFileUrl(new URL(specifier)).pipe(
-          Effect.map((entrypoint) => ({ specifier, entrypoint })),
-          Effect.mapError((cause) => importFailure(specifier, { cause })),
-        ),
+        Effect.flatMap(
+          Effect.try({
+            try: () => new URL(specifier),
+            catch: (cause) => importFailure(specifier, { cause }),
+          }),
+          (url) =>
+            Effect.mapError(
+              path.fromFileUrl(url),
+              (cause) => importFailure(specifier, { cause }),
+            ),
+        ).pipe(Effect.map((entrypoint) => ({ specifier, entrypoint }))),
       { concurrency: 'unbounded' },
     )
     const loaded = yield* Effect.forEach(
@@ -442,9 +426,9 @@ export function loadPlugins(
       pluginSources: plan_.pluginSources,
       ignorers,
       frameworks: loaded.flatMap((entry) =>
-        (entry.frameworks ?? []).map((framework) => ({
+        entry.frameworks.map((framework) => ({
           moduleName: entry.moduleName,
-          framework: frameworkFrameworkOf(framework),
+          framework,
         }))
       ),
     }

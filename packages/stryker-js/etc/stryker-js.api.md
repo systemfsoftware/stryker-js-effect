@@ -738,6 +738,11 @@ export const IncrementalReportSchema: S.StructWithRest<S.Struct<{
             readonly description: S.optional<S.String>;
             readonly duration: S.optional<S.Finite>;
         }>>;
+        readonly formatIdentity: S.optional<S.Struct<{
+            readonly formatId: S.String;
+            readonly ownerModule: S.String;
+            readonly ownerVersion: S.String;
+        }>>;
     }>>;
     readonly testFiles: S.optional<S.$Record<S.String, S.Struct<{
         readonly source: S.optional<S.String>;
@@ -1178,10 +1183,6 @@ export interface PrepareDone {
     //
     // (undocumented)
     readonly formatRegistry: FormatRegistry;
-    // Warning: (ae-forgotten-export) The symbol "FormatClaimsFolded" needs to be exported by the entry point index.d.mts
-    //
-    // (undocumented)
-    readonly formatReport: FormatClaimsFolded;
     // (undocumented)
     readonly ignorers: readonly Ignorer[];
     // (undocumented)

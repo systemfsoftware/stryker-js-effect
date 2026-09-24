@@ -6,11 +6,11 @@ import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import { absurd } from 'effect/Function'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { InstrumentCommand, planInstrumentation } from '../plan-instrumentation.workflow.js'
@@ -18,12 +18,13 @@ import { FILE_CONCURRENCY, toInstrumenterFile, withInstrumentedFiles } from '../
 import type { Project } from '../Project.js'
 import { withPhaseSpan } from '../ReporterStream.js'
 import { StageError } from '../Run.schema.js'
+import type { SkippedFileRow } from '../RunEvent.schema.js'
 import { type RunEvent } from '../RunEvents.js'
 import { PhaseEntered, RunEvents, SkippedReported } from '../RunEvents.js'
 import { makeSandbox } from '../Sandbox.js'
 import type { SandboxHandle } from '../Sandbox.js'
 import { makeConcurrency } from '../Worker.js'
-import { explainFileSkip, ExplainFileSkipCommand, FileSkipDecision } from './explain-file-skip.workflow.js'
+import { explainFileSkip, ExplainFileSkipCommand } from './explain-file-skip.workflow.js'
 import type { PrepareDone } from './prepare.cell.js'
 import { RunEnvironment } from './RunEnvironment.js'
 
@@ -53,15 +54,12 @@ const offerSkipsIfAny = (
     if (skipped.length === 0) {
       return
     }
-    const files = skipped.map((skip) => {
-      const explained = Result.getOrThrow(
-        explainFileSkip(ExplainFileSkipCommand.make({ extension: skip.extension })),
-      )
-      if (!S.is(FileSkipDecision)(explained)) {
-        throw new Error('the total skip explanation was expected to explain the file')
-      }
-      return { file: skip.file, extension: skip.extension, reason: explained.reason }
-    })
+    const files = skipped.map((skip) =>
+      Result.match(explainFileSkip(ExplainFileSkipCommand.make({ extension: skip.extension })), {
+        onFailure: absurd<SkippedFileRow>,
+        onSuccess: (explained) => ({ file: skip.file, extension: skip.extension, reason: explained.reason }),
+      })
+    )
     yield* Queue.offer(queue, SkippedReported.make({ files }))
   })
 
