@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "noEmit": true
+  },
+  "files": [
+    "src/Survivors/Survivors.cell.ts",
+    "src/Cli.cell.ts",
+    "src/admit-survivors-run.workflow.ts"
+  ]
+}
