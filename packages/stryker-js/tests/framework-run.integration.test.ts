@@ -11,7 +11,6 @@ import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { expect } from 'vitest'
-import { nodeVmPlatformLayer } from '../src/drivers/node.js'
 
 const Feature = makeFeature({ it, layer })
 
@@ -41,7 +40,6 @@ const neverSpawnPorts: Layer.Layer<Engine.EnginePorts> = Layer.mergeAll(
   NodeStdio.layer,
   workerCanary,
   spawnerCanary,
-  nodeVmPlatformLayer,
 )
 
 interface Workspace {
@@ -59,9 +57,11 @@ const workspaceOf = (
 const PACKAGE_SOURCE = '{ "type": "commonjs" }\n'
 const MATH_SOURCE = 'function add(a, b) {\n  return a + b;\n}\n\nmodule.exports = { add };\n'
 const TEST_SOURCE = [
-  'const assert = require("node:assert");',
-  'const { add } = require("../src/math.js");',
-  'assert.strictEqual(add(1, 2), 3);',
+  "import { test } from 'vitest'",
+  '',
+  "test('the workspace test suite runs', () => {",
+  '  globalThis.__strykerProbe = true',
+  '})',
 ].join('\n')
 const SVELTE_SOURCE = '<template><p id="greeting">hello</p></template>\n'
 const FIXTURE_SOURCE = '<script>\nfunction add(a, b) {\n  return a + b;\n}\n</script>\n'

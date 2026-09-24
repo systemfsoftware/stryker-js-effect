@@ -1,6 +1,7 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Sandbox } from '@systemfsoftware/stryker-vm-harness'
-import { Effect, Layer } from 'effect'
+import { EffectAdapter, Registry, Sandbox } from '@systemfsoftware/stryker-vm-harness'
+import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import { expect } from 'vitest'
 
 const Feature = makeFeature({ it, layer })
@@ -10,11 +11,108 @@ const FIRST_PARTY_PACKAGES = [
   '@effect/vitest',
   '@systemfsoftware/effect-gherkin-spec',
 ] as const
+const EXPECTED_SURFACE = ['describe', 'it', 'test', 'beforeEach', 'expect'] as const
 
-const moduleForPackage = (packageName: string): string | undefined => {
-  const address = Sandbox.harnessUrlForSpecifier(packageName)
-  return address === undefined ? undefined : Sandbox.harnessSourceFor(address)
+const nodeRegisterHooks = globalThis.process.getBuiltinModule('node:module').registerHooks
+
+const liveBuiltin: Sandbox.HarnessModuleBuiltin = {
+  registerHooks: (hooks) => {
+    const registered = nodeRegisterHooks(hooks)
+    return { deregister: () => registered.deregister() }
+  },
 }
+
+const quietRuntime = (): Sandbox.InterceptionRuntime => ({
+  host: {
+    sandboxWorkingDirectory: decodeURIComponent(new URL('../', import.meta.url).pathname),
+    options: { sandboxWorkingDirectory: decodeURIComponent(new URL('../', import.meta.url).pathname), testFiles: [] },
+    state: {
+      read: () => undefined,
+      write: () => undefined,
+    },
+    resolveVitest: () => ({ expect: {}, vi: undefined }),
+    resolveVitestModule: (specifier: string): string => import.meta.resolve(specifier),
+    importFile: () => Promise.resolve(undefined),
+  },
+  plugins: [],
+})
+
+const sandboxPrefix = new URL('./', import.meta.url).href
+
+interface ServedRunnerModule {
+  readonly describe: (name: string, body: () => void) => void
+  readonly it: (name: string, body: () => void) => void
+  readonly test: (name: string, body: () => void) => void
+  readonly beforeEach: (hook: () => void) => void
+  readonly expect: object
+}
+
+type ServedSurfaceName = 'describe' | 'it' | 'test' | 'beforeEach' | 'expect'
+
+interface ServedModuleReport {
+  readonly address: string
+  readonly surface: ReadonlyArray<string>
+  readonly registered: ReadonlyArray<string>
+}
+
+const releaseSandbox = Effect.sync(() => {
+  Sandbox.deactivateSandbox()
+  Sandbox.writeGlobalState(undefined)
+  Sandbox.uninstallInterception()
+})
+
+const loadServedModule = (packageName: string): Effect.Effect<ServedModuleReport> =>
+  Effect.gen(function*() {
+    const address = Sandbox.harnessUrlForSpecifier(packageName)
+    if (address === undefined) {
+      throw new Error(`no module is served for "${packageName}"`)
+    }
+    const registry = Registry.createRegistry()
+    const api = Registry.createHarnessApi(registry)
+    const state: Sandbox.VmRunnerGlobalState = {
+      api,
+      expect,
+      vi: undefined,
+      effectVitest: {
+        it: EffectAdapter.makeEffectMethods({
+          api: api.it,
+          describe: api.describe,
+          hooks: api.hooks,
+          tests: registry.tests,
+        }),
+      },
+      projectConfig: undefined,
+      provided: registry.provided.current,
+    }
+    Sandbox.installInterception(liveBuiltin, quietRuntime())
+    Sandbox.activateSandbox(sandboxPrefix)
+    Sandbox.writeGlobalState(state)
+    try {
+      const served = yield* Effect.promise(() =>
+        Sandbox.nativeImport<Partial<ServedRunnerModule>>(`${address}?salt=${encodeURIComponent(sandboxPrefix)}`)
+      )
+      const surface: ServedSurfaceName[] = []
+      for (const name of EXPECTED_SURFACE) {
+        if (served[name] !== undefined) {
+          surface.push(name)
+        }
+      }
+      const { describe: describeSurface, it: itSurface } = served
+      if (describeSurface === undefined || itSurface === undefined) {
+        throw new Error(`loading "${packageName}" exposed no registration surface`)
+      }
+      describeSurface('a served suite', () => {
+        itSurface('a served test', () => undefined)
+      })
+      const published = Sandbox.readGlobalState()
+      if (published !== state) {
+        throw new Error(`loading "${packageName}" replaced the published harness state`)
+      }
+      return { address, surface, registered: registry.tests.map((registered) => registered.name) }
+    } finally {
+      yield* releaseSandbox
+    }
+  }).pipe(Effect.ensuring(releaseSandbox))
 
 Feature('Resolving the harness modules a sandboxed test file loads')
   .withLayer(Layer.empty)
@@ -46,35 +144,36 @@ Feature('Resolving the harness modules a sandboxed test file loads')
     )
 
     scenario(
-      'Each harness module exposes the registration surface its runner package expects',
+      'Each served harness module exposes its registration surface and registers a suite',
       Gherkin.Do.pipe(
-        Given('a sandbox about to load the harness modules its first-party runner packages resolve to')(
+        Given('the first-party runner packages a sandboxed test file may import')(
           'packages',
           () => Effect.succeed(FIRST_PARTY_PACKAGES),
         ),
-        When('the sandbox looks up the module served for each package')(
-          'sources',
+        When('the sandbox loads each package through its served module')(
+          'served',
           (s) =>
-            Effect.succeed({
-              vitest: moduleForPackage(s.packages[0]),
-              effectVitest: moduleForPackage(s.packages[1]),
-              gherkin: moduleForPackage(s.packages[2]),
-              unknown: Sandbox.harnessSourceFor('unknown-url'),
+            Effect.gen(function*() {
+              const loaded: ServedModuleReport[] = []
+              for (const packageName of s.packages) {
+                loaded.push(yield* loadServedModule(packageName))
+              }
+              return { loaded, unknown: Sandbox.harnessSourceFor('unknown-url') }
             }),
         ),
-        Then('each module carries its registration surface and an unknown address serves nothing')((s) => {
-          expect(s.sources.vitest).toBeDefined()
-          expect(s.sources.vitest).toContain('@systemfsoftware/stryker-js/vm-runner')
-          expect(s.sources.vitest).toContain('export { describe, suite, it, test }')
-          expect(s.sources.vitest).toContain('export const expect = state.expect')
-
-          expect(s.sources.effectVitest).toBeDefined()
-          expect(s.sources.effectVitest).toContain('export const it = state.effectVitest.it')
-
-          expect(s.sources.gherkin).toBeDefined()
-          expect(s.sources.gherkin).toContain("export * from '@systemfsoftware/effect-gherkin-spec'")
-
-          expect(s.sources.unknown).toBeUndefined()
+        Then('every module carries the registration surface, registers its suite, and no unknown address serves')((
+          s,
+        ) => {
+          expect(s.served.loaded.map((entry) => entry.address)).toEqual([
+            'vmrunner-harness:vitest',
+            'vmrunner-harness:@effect/vitest',
+            'vmrunner-harness:@systemfsoftware/effect-gherkin-spec',
+          ])
+          for (const entry of s.served.loaded) {
+            expect(entry.surface).toEqual([...EXPECTED_SURFACE])
+            expect(entry.registered).toEqual(['a served test'])
+          }
+          expect(s.served.unknown).toBeUndefined()
         }),
       ),
     )

@@ -22,6 +22,7 @@ import { IgnoreRule } from './matching.schema.js'
 import { type MutationRangeSpecifier, MutationRangeSpecifierSchema } from './MutationRange.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { StrykerPackage } from './stryker-package.schema.js'
+import { isVmRunner } from './VmRunner.resource.js'
 
 const ALWAYS_IGNORE = Object.freeze([
   'node_modules',
@@ -37,6 +38,32 @@ const IGNORE_PATTERN_CHARACTER = '!'
 
 const DEFAULT_GLOB = '**/*.{js,ts,jsx,tsx,html,vue,mjs,mts,cts,cjs}'
 
+const VITEST_DEFAULT_TEST_FILE_PATTERNS: readonly string[] = [
+  '**/*.{test,spec}.{js,jsx,ts,tsx,cjs,cjsx,cts,ctsx,mjs,mjsx,mts,mtsx}',
+]
+
+const defaultTestFileIgnores = (tempDirName: string): readonly string[] => [
+  '**/node_modules/**',
+  '**/dist/**',
+  '**/.{idea,git,cache,output,temp}/**',
+  `**/${tempDirName}/**`,
+]
+
+const shouldDiscoverTestFiles = (
+  options: Pick<Options.StrykerOptions, 'testFiles' | 'testRunner'>,
+): boolean => options.testFiles.length === 0 && isVmRunner(options.testRunner)
+
+const testFileSelectionOf = (
+  options: Pick<Options.StrykerOptions, 'tempDirName' | 'testFiles' | 'testRunner'>,
+): { readonly testFilePatterns: readonly string[]; readonly testFileIgnores: readonly string[] } =>
+  Boolean.match(shouldDiscoverTestFiles(options), {
+    onTrue: () => ({
+      testFilePatterns: VITEST_DEFAULT_TEST_FILE_PATTERNS,
+      testFileIgnores: defaultTestFileIgnores(options.tempDirName),
+    }),
+    onFalse: () => ({ testFilePatterns: options.testFiles, testFileIgnores: [] }),
+  })
+
 type Location = {
   readonly start: { readonly line: number; readonly column: number }
   readonly end: { readonly line: number; readonly column: number }
@@ -51,6 +78,7 @@ interface FileSelectionInput {
   readonly mutatePatterns: readonly string[]
   readonly targetMutatePatterns?: readonly string[]
   readonly testFilePatterns: readonly string[]
+  readonly testFileIgnores?: readonly string[]
   readonly basePath: string
 }
 
@@ -382,13 +410,19 @@ const resolveTestFilesPure = (
   inputFileNames: readonly string[],
   testFilePatterns: readonly string[],
   basePath: string,
+  testFileIgnores: readonly string[],
 ) =>
   Boolean.match(testFilePatterns.length === 0, {
     onTrue: (): readonly string[] => [],
-    onFalse: () =>
-      Array.from(HashSet.fromIterable(testFilePatterns.flatMap((pattern) =>
-        Array.from(inputFileNames).filter(createPureMatcher(pattern, false, basePath))
-      ))),
+    onFalse: () => {
+      const ignoredBy = testFileIgnores.map((pattern) => createPureMatcher(pattern, false, basePath))
+      return Array.from(HashSet.fromIterable(testFilePatterns.flatMap((pattern) => {
+        const matches = createPureMatcher(pattern, false, basePath)
+        return Array.from(inputFileNames).filter((fileName) =>
+          matches(fileName) && !ignoredBy.some((ignores) => ignores(fileName))
+        )
+      })))
+    },
   })
 
 const selectFiles = (input: FileSelectionInput): SelectedFiles => ({
@@ -398,7 +432,12 @@ const selectFiles = (input: FileSelectionInput): SelectedFiles => ({
     input.targetMutatePatterns,
     input.basePath,
   ),
-  testFiles: resolveTestFilesPure(input.inputFileNames, input.testFilePatterns, input.basePath),
+  testFiles: resolveTestFilesPure(
+    input.inputFileNames,
+    input.testFilePatterns,
+    input.basePath,
+    input.testFileIgnores ?? [],
+  ),
 })
 
 const stringArrayEquivalence = Equivalence.Array(Equivalence.String)
@@ -517,15 +556,17 @@ const selectionOf = (
   inputFileNames: readonly string[],
   mutatePatterns: readonly string[],
   testFilePatterns: readonly string[],
+  testFileIgnores: readonly string[],
   basePath: string,
   targetMutatePatterns: readonly string[] | undefined,
 ): FileSelectionInput =>
   Option.match(Option.fromUndefinedOr(targetMutatePatterns), {
-    onNone: () => ({ inputFileNames, mutatePatterns, testFilePatterns, basePath }),
+    onNone: () => ({ inputFileNames, mutatePatterns, testFilePatterns, testFileIgnores, basePath }),
     onSome: (targets) => ({
       inputFileNames,
       mutatePatterns,
       testFilePatterns,
+      testFileIgnores,
       basePath,
       targetMutatePatterns: targets,
     }),
@@ -654,11 +695,18 @@ const makeProject = (
 const readProjectCommand = (input: ReadProjectInput) =>
   Effect.gen(function*() {
     const mutatePatterns: readonly string[] = input.options.mutate
-    const testFilePatterns: readonly string[] = input.options.testFiles
+    const { testFileIgnores, testFilePatterns } = testFileSelectionOf(input.options)
     const inputFileNames = yield* resolveInputFileNames(ignoreRulesOf(input.options), input.basePath)
     const defaults = yield* StrykerConfig.defaultOptions
     const decision = selectFiles(
-      selectionOf(inputFileNames, mutatePatterns, testFilePatterns, input.basePath, input.targetMutatePatterns),
+      selectionOf(
+        inputFileNames,
+        mutatePatterns,
+        testFilePatterns,
+        testFileIgnores,
+        input.basePath,
+        input.targetMutatePatterns,
+      ),
     )
     yield* Boolean.match(stringArrayEquivalence(mutatePatterns, defaults.mutate), {
       onTrue: () => Effect.void,
@@ -773,6 +821,20 @@ const exclusionLawHolds = (files: readonly string[], include: string, exclude: s
   })
 }
 
+const targetLawHolds = (files: readonly string[], target: string) => {
+  const selected = selectFiles({
+    inputFileNames: files,
+    mutatePatterns: ['**/*'],
+    targetMutatePatterns: [target],
+    testFilePatterns: [],
+    basePath: '/',
+  })
+  const mutateMatcher = createPureMatcher('**/*', false, '/')
+  const targetMatcher = createPureMatcher(target, false, '/')
+  const expectedOf = (fileName: string) => mutateMatcher(fileName) && targetMatcher(fileName)
+  return files.every((fileName) => selected.fileDescriptions[fileName]?.mutate === expectedOf(fileName))
+}
+
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const { Schema } = await import('effect')
@@ -797,19 +859,73 @@ if (import.meta.vitest !== void 0) {
   it.prop(
     '∀files_P_Target_≡IntersectedSelection',
     [FileBatchSchema, GlobSchema],
-    ([files, target]) => {
-      const selected = selectFiles({
-        inputFileNames: files,
-        mutatePatterns: ['**/*'],
-        targetMutatePatterns: [target],
-        testFilePatterns: [],
-        basePath: '/',
-      })
-      const matcher = createPureMatcher(target, false, '/')
-      return files.every((fileName) => {
-        const description = selected.fileDescriptions[fileName]
-        return description === undefined || description.mutate === matcher(fileName)
-      })
+    ([files, target]) => targetLawHolds(files, target),
+  )
+
+  const FileNameSchema = Schema.Struct({
+    dir: Schema.Literals(['src', 'lib', 'docs', 'node_modules', 'dist', '.stryker-tmp', '.cache', '.git']),
+    stem: Schema.Literals(['calc', 'util', 'index']),
+    middle: Schema.Literals(['test', 'spec', 'util', 'index', 'readme']),
+    ext: Schema.Literals(['ts', 'tsx', 'js', 'mjs', 'cts', 'md']),
+  })
+  type FileName = S.Schema.Type<typeof FileNameSchema>
+
+  const DISCOVERY_BASE = '/project'
+  const DISCOVERY_IGNORES = defaultTestFileIgnores('.stryker-tmp')
+  const EXCLUDED_DIRS: readonly string[] = ['node_modules', 'dist', '.stryker-tmp', '.cache', '.git']
+
+  const isTestShaped = (file: FileName): boolean =>
+    Match.value(`${file.middle}.${file.ext}`).pipe(
+      Match.when('test.ts', () => true),
+      Match.when('test.tsx', () => true),
+      Match.when('test.js', () => true),
+      Match.when('test.mjs', () => true),
+      Match.when('test.cts', () => true),
+      Match.when('spec.ts', () => true),
+      Match.when('spec.tsx', () => true),
+      Match.when('spec.js', () => true),
+      Match.when('spec.mjs', () => true),
+      Match.when('spec.cts', () => true),
+      Match.orElse(() => false),
+    )
+
+  const expectedDiscovery = (file: FileName, path: string): readonly string[] =>
+    Boolean.match(isTestShaped(file) && !EXCLUDED_DIRS.includes(file.dir), {
+      onTrue: () => [path],
+      onFalse: () => [],
+    })
+
+  const discoveredPath = (file: FileName): string =>
+    `${DISCOVERY_BASE}/${file.dir}/${file.stem}.${file.middle}.${file.ext}`
+
+  it.prop(
+    '∀f_Discovery_≡TestShapedOutsideExcluded',
+    [FileNameSchema],
+    ([file]) => {
+      const path = discoveredPath(file)
+      const selected = resolveTestFilesPure(
+        [path],
+        VITEST_DEFAULT_TEST_FILE_PATTERNS,
+        DISCOVERY_BASE,
+        DISCOVERY_IGNORES,
+      )
+      return selected.join('\n') === expectedDiscovery(file, path).join('\n')
+    },
+  )
+
+  it.prop(
+    '∀f_Discovery_=DiscoveryOfItsOwnResult',
+    [Schema.Array(FileNameSchema)],
+    ([files]) => {
+      const input = files.map(discoveredPath)
+      const once = resolveTestFilesPure(input, VITEST_DEFAULT_TEST_FILE_PATTERNS, DISCOVERY_BASE, DISCOVERY_IGNORES)
+      const again = resolveTestFilesPure(
+        [...input, ...once],
+        VITEST_DEFAULT_TEST_FILE_PATTERNS,
+        DISCOVERY_BASE,
+        DISCOVERY_IGNORES,
+      )
+      return [...once].sort().join('\n') === [...again].sort().join('\n')
     },
   )
 }

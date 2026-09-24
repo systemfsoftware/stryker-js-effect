@@ -9,7 +9,6 @@ import { MutationReporting } from '../mutation-reporting.service.js'
 import { ProjectFiles } from '../project-files.service.js'
 import { Reporter } from '../reporter.service.js'
 import { RunEvents } from '../run-events.service.js'
-import { VmRunner } from '../VmRunner.service.js'
 import { IdGenerator } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
@@ -26,7 +25,6 @@ export type StageServices =
   | RunEvents
   | Scope.Scope
   | Stdio.Stdio
-  | VmRunner
   | WorkerLauncher
 
 export type EnginePorts =
@@ -34,7 +32,6 @@ export type EnginePorts =
   | FileSystem.FileSystem
   | Path.Path
   | Stdio.Stdio
-  | VmRunner
   | WorkerLauncher
 export type RunStageServices =
   | ProjectFiles

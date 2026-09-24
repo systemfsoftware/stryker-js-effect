@@ -14,7 +14,6 @@ import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { expect } from 'vitest'
-import { nodeVmPlatformLayer } from '../src/drivers/node.js'
 
 const Feature = makeFeature({ it, layer })
 
@@ -44,7 +43,6 @@ const neverSpawnPorts: Layer.Layer<Engine.EnginePorts> = Layer.mergeAll(
   NodeStdio.layer,
   workerCanary,
   spawnerCanary,
-  nodeVmPlatformLayer,
 )
 
 const MATH_FILE = 'src/lib/math.ts'
@@ -61,7 +59,13 @@ const SOURCES: Readonly<Record<string, string>> = {
 }
 
 const PACKAGE_SOURCE = '{ "type": "commonjs" }\n'
-const TEST_SOURCE = 'globalThis.__strykerParityProbe = true\n'
+const TEST_SOURCE = [
+  "import { test } from 'vitest'",
+  '',
+  "test('the workspace test suite runs', () => {",
+  '  globalThis.__strykerParityProbe = true',
+  '})',
+].join('\n')
 
 const PRE_FIX_COLUMN_DRIFT = 1
 

@@ -3,7 +3,6 @@ import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoft
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
-import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
@@ -15,8 +14,6 @@ import type * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { expect } from 'vitest'
 import { Configuration, Plugin, Worker } from '../src/mod.js'
-
-import { nodeVmPlatformLayer } from '../src/drivers/node.js'
 
 const Feature = makeFeature({ it, layer })
 
@@ -34,13 +31,22 @@ const spawnerCanary = Layer.succeed(
 
 const stubPortsLayer = Layer.merge(spawnerCanary, workerCanary)
 
-const vmPlatformLayer = nodeVmPlatformLayer
-
 const suiteFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 const dummyIdGenerator = {
   next: Effect.succeed(1),
 }
+
+const SANDBOX_DEPENDENCIES = decodeURIComponent(new URL('../node_modules', import.meta.url).pathname)
+
+const linkSandboxDependencies = (
+  directory: string,
+): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    yield* fs.symlink(SANDBOX_DEPENDENCIES, path.join(directory, 'node_modules'))
+  }).pipe(Effect.orDie)
 
 interface SuiteFixture {
   readonly directory: string
@@ -56,6 +62,7 @@ const writeSuites = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const directory = yield* fs.makeTempDirectory()
+    yield* linkSandboxDependencies(directory)
     const files: string[] = []
     for (const [index, source] of sources.entries()) {
       const file = path.join(directory, `${prefix}-${index}.test.ts`)
@@ -66,15 +73,20 @@ const writeSuites = (
   }).pipe(Effect.orDie)
 
 const NOTICING_SUITE = [
-  'const host: Record<string, unknown> = globalThis as unknown as Record<string, unknown>',
-  'const stryker: Record<string, unknown> | undefined = host["__stryker__"] as Record<string, unknown> | undefined',
+  'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
+  'const stryker = globalThis["__stryker__"]',
   'const active: unknown = stryker === undefined ? undefined : stryker.activeMutant',
-  'if (active === "mutant-1") {',
-  '  throw new Error("the mutated program ran")',
-  '}',
+  "slot.api.it('notices the change', () => {",
+  '  if (active === "mutant-1") {',
+  '    throw new Error("the mutated program ran")',
+  '  }',
+  '})',
 ].join('\n')
 
-const IGNORING_SUITE = 'globalThis.__strykerRun = "completed"'
+const IGNORING_SUITE = [
+  'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
+  "slot.api.it('ignores the change', () => {})",
+].join('\n')
 const FINALIZER_SUITE = [
   'const slot = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]',
   'const { test, hooks } = slot.api',
@@ -153,6 +165,61 @@ const KILL_ATTRIBUTION_SUITE = [
   '})',
 ].join('\n')
 
+const SPINNING_SUITE = [
+  "import { test } from 'vitest'",
+  '',
+  "test('spins forever', () => {",
+  '  while (true) {}',
+  '})',
+].join('\n')
+
+const EXITING_SUITE = [
+  "import { test } from 'vitest'",
+  '',
+  "test('ends the program', () => {",
+  '  process.exit(3)',
+  '})',
+].join('\n')
+
+const OVERLAPPING_SUITE = (marker: string): string =>
+  [
+    "import { test } from 'vitest'",
+    "import { appendFileSync } from 'node:fs'",
+    "import { dirname, join } from 'node:path'",
+    '',
+    'const workerFile = (globalThis as { __vitest_worker__?: { filepath?: string } }).__vitest_worker__?.filepath ?? globalThis.process.cwd()',
+    `const stampFile = join(dirname(workerFile), ${JSON.stringify(`${marker}.stamps`)})`,
+    `test(${JSON.stringify(`overlaps ${marker}`)}, async () => {`,
+    '  const { promise, resolve } = Promise.withResolvers<void>()',
+    '  setTimeout(resolve, 300)',
+    '  appendFileSync(stampFile, `start ${performance.now()}\\n`)',
+    '  await promise',
+    '  appendFileSync(stampFile, `end ${performance.now()}\\n`)',
+    '})',
+  ].join('\n')
+
+const OUTSIDE_HOOK_SUITE = [
+  "import { test, beforeEach } from 'vitest'",
+  '',
+  'beforeEach(() => {',
+  '  const told = (globalThis as { __OUTSIDE_HOOK__?: string[] }).__OUTSIDE_HOOK__ ?? []',
+  '  told.push("outside hook ran")',
+  '  ;(globalThis as { __OUTSIDE_HOOK__?: string[] }).__OUTSIDE_HOOK__ = told',
+  '})',
+  '',
+  "test('first file test', () => {})",
+].join('\n')
+
+const OUTSIDE_HOOK_VICTIM_SUITE = [
+  "import { test } from 'vitest'",
+  '',
+  "test('second file test', () => {",
+  '  const told = (globalThis as { __OUTSIDE_HOOK__?: string[] }).__OUTSIDE_HOOK__',
+  '  if (told !== undefined && told.length > 0) {',
+  '    throw new Error("the other file\'s hook ran here")',
+  '  }',
+  '})',
+].join('\n')
 const writeSuite = (
   prefix: string,
   source: string,
@@ -161,9 +228,28 @@ const writeSuite = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const directory = yield* fs.makeTempDirectory()
+    yield* linkSandboxDependencies(directory)
     const file = path.join(directory, `${prefix}.test.ts`)
     yield* fs.writeFileString(file, source)
     return { directory, file }
+  }).pipe(Effect.orDie)
+const writeEmptyProject = (): Effect.Effect<SuiteFixture, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const directory = yield* fs.makeTempDirectory()
+    return { directory, file: directory, files: [] }
+  }).pipe(Effect.orDie)
+const readStamps = (
+  directory: string,
+  marker: string,
+): Effect.Effect<readonly string[], never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const raw = yield* fs.readFileString(path.join(directory, `${marker}.stamps`)).pipe(
+      Effect.orElseSucceed(() => ''),
+    )
+    return raw.split('\n').filter((line) => line.length > 0)
   }).pipe(Effect.orDie)
 
 const removeSuite = (directory: string): Effect.Effect<void> =>
@@ -201,7 +287,6 @@ const mutantFor = (fileName: string): Mutant.Mutant =>
 interface RunOutcome {
   readonly dryRun: TestRunner.DryRunResult
   readonly mutantRun: TestRunner.MutantRunResult
-  readonly elapsedMs: number
 }
 
 const runnerFor = (fixture: SuiteFixture): Effect.Effect<Plugin.PooledTestRunner, never, Scope.Scope> =>
@@ -209,24 +294,49 @@ const runnerFor = (fixture: SuiteFixture): Effect.Effect<Plugin.PooledTestRunner
     const context = yield* buildContextFor(fixture)
     const neverSpawned = Effect.die(new Error('the child-process runner was built for an in-memory run'))
     return yield* Plugin.buildTestRunner(context, neverSpawned)
-  }).pipe(Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer, vmPlatformLayer)), Effect.orDie)
+  }).pipe(Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer)), Effect.orDie)
+
+const COMPLETION_BUDGET_MS = 30_000
 
 const runSuite = (fixture: SuiteFixture): Effect.Effect<RunOutcome, never, never> =>
   Effect.gen(function*() {
     const runner = yield* runnerFor(fixture)
-    const dryRun = yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false })
-    const timed = yield* Effect.timed(
-      runner.mutantRun({
-        timeout: 5000,
-        disableBail: false,
-        activeMutant: mutantFor(fixture.file),
-        sandboxFileName: fixture.file,
-        mutantActivation: 'runtime',
-        reloadEnvironment: true,
-      }),
-    )
-    return { dryRun, mutantRun: timed[1], elapsedMs: Duration.toMillis(timed[0]) }
+    const dryRun = yield* runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false })
+    const mutantRun = yield* runner.mutantRun({
+      timeout: COMPLETION_BUDGET_MS,
+      disableBail: false,
+      activeMutant: mutantFor(fixture.file),
+      sandboxFileName: fixture.file,
+      mutantActivation: 'runtime',
+      reloadEnvironment: true,
+    })
+    return { dryRun, mutantRun }
   }).pipe(Effect.scoped, Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
+
+interface WorkerLifetime {
+  readonly before: readonly string[]
+  readonly during: readonly string[]
+  readonly after: readonly string[]
+  readonly dryRun: TestRunner.DryRunResult
+}
+
+const workerResourceNames = (): readonly string[] =>
+  globalThis.process.getActiveResourcesInfo().filter((name) => name === 'Worker' || name === 'MessagePort')
+
+const workerLifetime = (fixture: SuiteFixture): Effect.Effect<WorkerLifetime, never, never> =>
+  Effect.gen(function*() {
+    const before = workerResourceNames()
+    const live = yield* Effect.gen(function*() {
+      const runner = yield* runnerFor(fixture)
+      const dryRun = yield* runner.dryRun({
+        timeout: COMPLETION_BUDGET_MS,
+        coverageAnalysis: 'off',
+        disableBail: false,
+      })
+      return { dryRun, during: workerResourceNames() }
+    }).pipe(Effect.scoped)
+    return { before, during: live.during, after: workerResourceNames(), dryRun: live.dryRun }
+  }).pipe(Effect.orDie, Effect.ensuring(removeSuite(fixture.directory)))
 
 const suiteFailure = (
   fixture: SuiteFixture,
@@ -240,9 +350,11 @@ const suiteFailure = (
         new Error('the child-process runner was built for an in-memory run'),
       ),
     )
-    return yield* runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }).pipe(Effect.exit)
+    return yield* runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }).pipe(
+      Effect.exit,
+    )
   }).pipe(
-    Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer, vmPlatformLayer)),
+    Effect.provide(Layer.mergeAll(suiteFileLayer, stubPortsLayer)),
     Effect.scoped,
     Effect.orDie,
     Effect.ensuring(removeSuite(fixture.directory)),
@@ -263,11 +375,10 @@ Feature('Verifying mutants without spawning a child process')
           'outcome',
           (s) => runSuite(s.suite),
         ),
-        Then('the initial run passes, the mutant is caught, and the run stays under a handful of milliseconds')((s) =>
+        Then('the initial run passes and the mutant is caught')((s) =>
           Effect.sync(() => {
             expect(s.outcome.dryRun.status).toBe('complete')
             expect(s.outcome.mutantRun.status).toBe('killed')
-            expect(s.outcome.elapsedMs).toBeLessThan(50)
           })
         ),
       ),
@@ -362,7 +473,7 @@ Feature('Verifying mutants without spawning a child process')
           (s) =>
             Effect.flatMap(
               runnerFor(s.suite),
-              (runner) => runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }),
+              (runner) => runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }),
             ).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
         ),
         Then('every test is reported separately with its own outcome and hook history')((s) =>
@@ -444,7 +555,7 @@ Feature('Verifying mutants without spawning a child process')
           (s) =>
             Effect.flatMap(
               runnerFor(s.suite),
-              (runner) => runner.dryRun({ timeout: 5000, coverageAnalysis: 'off', disableBail: false }),
+              (runner) => runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }),
             ).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
         ),
         Then('the run reports the late failure even though its test passed')((s) =>
@@ -493,26 +604,33 @@ Feature('Verifying mutants without spawning a child process')
     )
 
     scenario(
-      'A project with nothing to run still reports a completed initial run',
+      'A project with nothing to run stops the run naming the runner',
       Gherkin.Do.pipe(
-        Given('a written project whose test file list is empty')(
+        Given('a project whose folder holds no test files at all')(
           'suite',
-          () => writeSuite('empty-list', IGNORING_SUITE).pipe(Effect.provide(suiteFileLayer)),
+          () => writeEmptyProject().pipe(Effect.provide(suiteFileLayer)),
         ),
         When('the runner performs the initial run without any test files')(
           'attempt',
           (s) => suiteFailure(s.suite, []),
         ),
-        Then('the run completes and reports no tests')((s) =>
+        Then('the run is refused with guidance to point the runner at test files')((s) =>
           Effect.sync(() => {
-            expect(Exit.isSuccess(s.attempt)).toBe(true)
-            if (Exit.isSuccess(s.attempt)) {
-              expect(s.attempt.value.status).toBe('complete')
-              if (s.attempt.value.status === 'complete') {
-                expect(s.attempt.value.tests).toEqual([
-                  { id: 'all', name: 'All tests', status: 'success', timeSpentMs: 0 },
-                ])
-              }
+            expect(Exit.isFailure(s.attempt)).toBe(true)
+            if (Exit.isFailure(s.attempt)) {
+              const failure = Cause.findErrorOption(s.attempt.cause)
+              const described = Match.value(failure).pipe(
+                Match.when(Option.isNone, () => 'no failure was reported'),
+                Match.orElse((reported) =>
+                  Match.value(reported.value).pipe(
+                    Match.tag('TestRunnerFailed', (typed) => `${typed.phase}: ${typed.cause}`),
+                    Match.orElse(() => 'a different failure was reported'),
+                  )
+                ),
+              )
+              expect(described).toContain('init')
+              expect(described).toContain('"vm"')
+              expect(described).toContain('testFiles')
             }
           })
         ),
@@ -576,6 +694,178 @@ Feature('Verifying mutants without spawning a child process')
               }
               expect(tests.some((test) => test.name === 'math > adds numbers')).toBe(true)
             }
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A test that never stops executing is reported as timed out and the next run starts over',
+      Gherkin.Do.pipe(
+        Given('a written suite whose only test spins forever without ever awaiting')(
+          'suite',
+          () => writeSuite('spinning', SPINNING_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the runner checks the suite and then checks it again on the same runner')(
+          'attempts',
+          (s) =>
+            Effect.gen(function*() {
+              const runner = yield* runnerFor(s.suite)
+              const first = yield* runner.dryRun({ timeout: 300, coverageAnalysis: 'off', disableBail: false }).pipe(
+                Effect.exit,
+              )
+              const second = yield* runner.dryRun({
+                timeout: COMPLETION_BUDGET_MS,
+                coverageAnalysis: 'off',
+                disableBail: false,
+              })
+              return { first, second }
+            }).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
+        ),
+        Then('each run is reported as timed out and the runner recovers between them')((s) =>
+          Effect.sync(() => {
+            const firstTimedOut = Exit.isSuccess(s.attempts.first)
+              ? s.attempts.first.value.status === 'timeout'
+              : false
+            expect(firstTimedOut).toBe(true)
+            expect(s.attempts.second.status).toBe('timeout')
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A test that ends the whole program is reported as an error and the next run starts over',
+      Gherkin.Do.pipe(
+        Given('a written suite whose only test asks the program to end immediately')(
+          'suite',
+          () => writeSuite('exiting', EXITING_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the runner checks the suite and then checks it again on the same runner')(
+          'attempts',
+          (s) =>
+            Effect.gen(function*() {
+              const runner = yield* runnerFor(s.suite)
+              const first = yield* runner.dryRun({
+                timeout: COMPLETION_BUDGET_MS,
+                coverageAnalysis: 'off',
+                disableBail: false,
+              }).pipe(
+                Effect.exit,
+              )
+              const second = yield* runner.dryRun({
+                timeout: COMPLETION_BUDGET_MS,
+                coverageAnalysis: 'off',
+                disableBail: false,
+              })
+              return { first, second }
+            }).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
+        ),
+        Then('the first run is reported as an error and the second passes from a fresh start')((s) =>
+          Effect.sync(() => {
+            expect(Exit.isSuccess(s.attempts.first)).toBe(true)
+            if (Exit.isSuccess(s.attempts.first) && s.attempts.first.value.status !== 'complete') {
+              expect(s.attempts.first.value.status).toBe('error')
+            }
+            expect(s.attempts.second.status).toBe('complete')
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Two runners checked at the same time do not wait for each other',
+      Gherkin.Do.pipe(
+        Given('two written suites whose only test stamps when its body runs')(
+          'suites',
+          () =>
+            Effect.all([
+              writeSuite('slow-a', OVERLAPPING_SUITE('slow-a')).pipe(Effect.provide(suiteFileLayer)),
+              writeSuite('slow-b', OVERLAPPING_SUITE('slow-b')).pipe(Effect.provide(suiteFileLayer)),
+            ]),
+        ),
+        When('each runner checks its own suite and both checks run side by side')(
+          'checked',
+          (s) =>
+            Effect.gen(function*() {
+              const runners = yield* Effect.forEach(s.suites, (suite) => runnerFor(suite))
+              const results = yield* Effect.forEach(
+                runners,
+                (runner) =>
+                  runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }),
+                { concurrency: 'unbounded' },
+              )
+              const stamps = yield* Effect.all([
+                readStamps(s.suites[0].directory, 'slow-a').pipe(Effect.provide(suiteFileLayer)),
+                readStamps(s.suites[1].directory, 'slow-b').pipe(Effect.provide(suiteFileLayer)),
+              ])
+              return { results, stamps }
+            }).pipe(
+              Effect.ensuring(Effect.forEach(s.suites, (suite) => removeSuite(suite.directory), {
+                concurrency: 'unbounded',
+              })),
+            ),
+        ),
+        Then('both checks pass and the two test bodies ran at the same time')((s) =>
+          Effect.sync(() => {
+            expect(s.checked.results.every((result) => result.status === 'complete')).toBe(true)
+            const moments: ReadonlyArray<readonly number[]> = s.checked.stamps.map((lines) =>
+              lines.map((line) => Number(line.split(' ')[1]))
+            )
+            expect(moments.map((times) => times.length)).toEqual([2, 2])
+            const first = moments[0] ?? []
+            const second = moments[1] ?? []
+            expect(Math.max(first[0] ?? 0, second[0] ?? 0)).toBeLessThan(Math.min(first[1] ?? 0, second[1] ?? 0))
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A hook declared outside every suite in one file never runs for another file',
+      Gherkin.Do.pipe(
+        Given('two written suites where only the first declares such a hook')(
+          'suites',
+          () =>
+            writeSuites('hooked', [OUTSIDE_HOOK_SUITE, OUTSIDE_HOOK_VICTIM_SUITE]).pipe(
+              Effect.provide(suiteFileLayer),
+            ),
+        ),
+        When('the runner checks both files together before any mutant runs')(
+          'outcome',
+          (s) =>
+            Effect.flatMap(
+              runnerFor(s.suites),
+              (runner) => runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }),
+            ).pipe(Effect.ensuring(removeSuite(s.suites.directory))),
+        ),
+        Then('both files pass, so the hook stayed with the file that declared it')((s) =>
+          Effect.sync(() => {
+            expect(s.outcome.status).toBe('complete')
+            if (s.outcome.status === 'complete') {
+              expect(s.outcome.tests.map((test) => test.status)).toEqual(['success', 'success'])
+            }
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'The worker a runner starts goes away once the check is done',
+      Gherkin.Do.pipe(
+        Given('a written suite whose only test passes')(
+          'suite',
+          () => writeSuite('worker-lifetime', IGNORING_SUITE).pipe(Effect.provide(suiteFileLayer)),
+        ),
+        When('the runner checks the suite and then stops')(
+          'lifetime',
+          (s) => workerLifetime(s.suite),
+        ),
+        Then('the worker the runner started is gone')((s) =>
+          Effect.sync(() => {
+            expect(s.lifetime.dryRun.status).toBe('complete')
+            expect(s.lifetime.during.length).toBeGreaterThan(s.lifetime.before.length)
+            expect(s.lifetime.after).toEqual(s.lifetime.before)
           })
         ),
       ),

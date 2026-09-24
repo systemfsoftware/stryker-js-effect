@@ -1,11 +1,26 @@
+import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { EffectAdapter, Registry, Sandbox } from '@systemfsoftware/stryker-vm-harness'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
 import { expect } from 'vitest'
-
+const nodeRegisterHooks = globalThis.process.getBuiltinModule('node:module').registerHooks
+const trackedBuiltin = (events: string[]): Sandbox.HarnessModuleBuiltin => ({
+  registerHooks: (hooks) => {
+    events.push('register')
+    const registered = nodeRegisterHooks(hooks)
+    return {
+      deregister: () => {
+        events.push('deregister')
+        registered.deregister()
+      },
+    }
+  },
+})
 const Feature = makeFeature({ it, layer })
 
 const VITEST_PACKAGE = 'vitest'
@@ -25,11 +40,7 @@ const harnessSource = (address: string): string => {
 }
 
 const servedModuleFor = (address: string, salt: string): Effect.Effect<ServedModule> =>
-  Effect.promise(() =>
-    Sandbox.nativeImport<ServedModule>(
-      `data:text/javascript;charset=utf-8,${encodeURIComponent(`${harnessSource(address)}\n// salt: ${salt}`)}`,
-    )
-  )
+  Effect.promise(() => Sandbox.nativeImport<ServedModule>(`${address}?salt=${encodeURIComponent(salt)}`))
 
 interface DeclaredTest {
   readonly name: string
@@ -39,8 +50,38 @@ interface SandboxRegistry {
   readonly suites: ReadonlyMap<number, { readonly name: string }>
   readonly tests: readonly DeclaredTest[]
 }
+const suiteFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+
+const noopSandboxOf = (): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const directory = yield* fs.makeTempDirectory()
+    yield* fs.writeFileString(path.join(directory, 'noop.js'), '')
+    yield* fs.symlink(
+      decodeURIComponent(new URL('../node_modules', import.meta.url).pathname),
+      path.join(directory, 'node_modules'),
+    )
+    return directory
+  }).pipe(Effect.orDie)
+
+const noPluginRuntime = (directory: string): Sandbox.InterceptionRuntime => ({
+  host: {
+    sandboxWorkingDirectory: directory,
+    options: { sandboxWorkingDirectory: directory, testFiles: [] },
+    state: {
+      read: () => undefined,
+      write: () => undefined,
+    },
+    resolveVitest: () => ({ expect: {}, vi: undefined }),
+    resolveVitestModule: (): string => `file://${directory}/noop.js`,
+    importFile: () => Promise.resolve(undefined),
+  },
+  plugins: [],
+})
 
 interface SandboxRun {
+  readonly directory: string
   readonly prefix: string
   readonly registry: SandboxRegistry
   readonly state: Sandbox.VmRunnerGlobalState
@@ -48,15 +89,17 @@ interface SandboxRun {
   readonly testName: string
 }
 
-const sandboxRunFor = (prefix: string, suiteName: string, testName: string): SandboxRun => {
+const sandboxRunFor = (prefix: string, suiteName: string, testName: string, directory: string): SandboxRun => {
   const registry = Registry.createRegistry()
   const state: Sandbox.VmRunnerGlobalState = {
     api: Registry.createHarnessApi(registry),
     expect,
     vi: undefined,
     effectVitest: undefined,
+    projectConfig: undefined,
+    provided: registry.provided.current,
   }
-  return { prefix, registry, state, suiteName, testName }
+  return { directory, prefix, registry, state, suiteName, testName }
 }
 
 const sandboxSignal = new AbortController().signal
@@ -78,16 +121,7 @@ interface SessionOutcome {
 const runSandboxSession = (run: SandboxRun): Effect.Effect<SessionOutcome> =>
   Effect.gen(function*() {
     const hookEvents: string[] = []
-    Sandbox.installInterception({
-      registerHooks: () => {
-        hookEvents.push('register')
-        return {
-          deregister: () => {
-            hookEvents.push('deregister')
-          },
-        }
-      },
-    })
+    Sandbox.installInterception(trackedBuiltin(hookEvents), noPluginRuntime(run.directory))
     Sandbox.activateSandbox(run.prefix)
     Sandbox.writeGlobalState(run.state)
     const published = Sandbox.readGlobalState()
@@ -102,7 +136,7 @@ const runSandboxSession = (run: SandboxRun): Effect.Effect<SessionOutcome> =>
   }).pipe(Effect.ensuring(releaseSandbox))
 
 Feature('Intercepting module resolution for an in-memory sandbox')
-  .withLayer(Layer.empty)
+  .withScenarioLayer(suiteFileLayer)
   .liveClock()
   .body(({ scenario }) => {
     scenario(
@@ -110,7 +144,11 @@ Feature('Intercepting module resolution for an in-memory sandbox')
       Gherkin.Do.pipe(
         Given('a sandbox run whose registry has recorded nothing yet')(
           'run',
-          () => Effect.succeed(sandboxRunFor('file:///tmp/vm-sandbox/', 'a declared suite', 'a declared test')),
+          () =>
+            Effect.map(
+              noopSandboxOf(),
+              (directory) => sandboxRunFor(`file://${directory}/`, 'a declared suite', 'a declared test', directory),
+            ),
         ),
         When(
           'interception is installed, the sandbox is activated, and the module served for the vitest package declares a suite',
@@ -118,13 +156,9 @@ Feature('Intercepting module resolution for an in-memory sandbox')
           'visited',
           (s) =>
             Effect.gen(function*() {
-              let hooksRegistered = false
-              Sandbox.installInterception({
-                registerHooks: () => {
-                  hooksRegistered = true
-                  return undefined
-                },
-              })
+              const hookEvents: string[] = []
+              Sandbox.installInterception(trackedBuiltin(hookEvents), noPluginRuntime(s.run.directory))
+              const hooksRegistered = hookEvents.includes('register')
               Sandbox.activateSandbox(s.run.prefix)
               Sandbox.writeGlobalState(s.run.state)
               const published = Sandbox.readGlobalState()
@@ -167,22 +201,13 @@ Feature('Intercepting module resolution for an in-memory sandbox')
         Given('a sandbox run whose hooks can be deregistered')(
           'release',
           () =>
-            Effect.sync(() => {
+            Effect.gen(function*() {
               const events: string[] = []
-              const builtin = {
-                registerHooks: () => {
-                  events.push('register')
-                  return {
-                    deregister: () => {
-                      events.push('deregister')
-                    },
-                  }
-                },
-              }
+              const directory = yield* noopSandboxOf()
               return {
-                run: sandboxRunFor('file:///tmp/vm-sandbox-release/', 'a released suite', 'a released test'),
+                run: sandboxRunFor(`file://${directory}/`, 'a released suite', 'a released test', directory),
                 events,
-                builtin,
+                builtin: trackedBuiltin(events),
               }
             }),
         ),
@@ -190,7 +215,7 @@ Feature('Intercepting module resolution for an in-memory sandbox')
           'outcome',
           (s) =>
             Effect.sync(() => {
-              Sandbox.installInterception(s.release.builtin)
+              Sandbox.installInterception(s.release.builtin, noPluginRuntime(s.release.run.directory))
               Sandbox.activateSandbox(s.release.run.prefix)
               Sandbox.writeGlobalState(s.release.run.state)
               const whileActive = Sandbox.readGlobalState()
@@ -216,10 +241,19 @@ Feature('Intercepting module resolution for an in-memory sandbox')
         Given('two sandbox runs, each with its own prefix, registry, and published state')(
           'runs',
           () =>
-            Effect.sync(() => ({
-              first: sandboxRunFor('file:///tmp/vm-sandbox-first/', 'the first suite', 'the first test'),
-              second: sandboxRunFor('file:///tmp/vm-sandbox-second/', 'the second suite', 'the second test'),
-            })),
+            Effect.gen(function*() {
+              const firstDirectory = yield* noopSandboxOf()
+              const secondDirectory = yield* noopSandboxOf()
+              return {
+                first: sandboxRunFor(`file://${firstDirectory}/`, 'the first suite', 'the first test', firstDirectory),
+                second: sandboxRunFor(
+                  `file://${secondDirectory}/`,
+                  'the second suite',
+                  'the second test',
+                  secondDirectory,
+                ),
+              }
+            }),
         ),
         When('each session is installed, activated, loaded, and released in turn')(
           'sessions',
@@ -275,10 +309,12 @@ Feature('Intercepting module resolution for an in-memory sandbox')
           'reported',
           (s) =>
             Effect.gen(function*() {
-              const context = {
-                signal: sandboxSignal,
-                task: { type: 'test' as const, name: 'a passing effect test' },
-                onTestFinished: () => undefined,
+              const contextOf = (name: string): Registry.HarnessTestContext => {
+                const registered = s.harness.registry.tests.find((candidate) => candidate.name === name)
+                if (registered === undefined) {
+                  throw new Error(`no registered test named "${name}"`)
+                }
+                return { signal: sandboxSignal, task: registered.task, onTestFinished: () => undefined }
               }
               let passed = false
               s.harness.methods.effect('a passing effect test', () =>
@@ -287,13 +323,15 @@ Feature('Intercepting module resolution for an in-memory sandbox')
                 }))
               const declaredAfterPass = s.harness.registry.tests.length
               const passName = s.harness.registry.tests[0]?.name
-              yield* Effect.promise(() => Promise.resolve(s.harness.registry.tests[0]?.fn?.(context)))
+              yield* Effect.promise(() =>
+                Promise.resolve(s.harness.registry.tests[0]?.fn?.(contextOf('a passing effect test')))
+              )
               s.harness.methods.effect('a failing effect test', () =>
                 Effect.fail({ _tag: 'IntentionalFailure', message: 'intentional failure' }))
               const declaredAfterFailure = s.harness.registry.tests.length
               const failure = s.harness.registry.tests[1]
               yield* Effect.promise(() =>
-                expect(failure?.fn?.(context)).rejects.toThrow('intentional failure')
+                expect(failure?.fn?.(contextOf('a failing effect test'))).rejects.toThrow('intentional failure')
               )
 
               class GreetingService
@@ -305,7 +343,8 @@ Feature('Intercepting module resolution for an in-memory sandbox')
               const GreetingLive = Layer.succeed(
                 GreetingService,
                 GreetingService.of({
-                  greet: (name: string) => `Hello, ${name}!`,
+                  greet: (name: string) =>
+                    `Hello, ${name}!`,
                 }),
               )
               let greeted = false
@@ -320,19 +359,27 @@ Feature('Intercepting module resolution for an in-memory sandbox')
               const layered = s.harness.registry.tests.find((registered) =>
                 registered.name === 'greets through the provided service'
               )
-              yield* Effect.promise(() => Promise.resolve(layered?.fn?.(context)))
+              yield* Effect.promise(() =>
+                Promise.resolve(layered?.fn?.(contextOf('greets through the provided service')))
+              )
 
               s.harness.methods.prop('every sampled number is non-negative', S.Finite, (n: number) => n >= 0)
               const falsified = s.harness.registry.tests.find((registered) =>
                 registered.name === 'every sampled number is non-negative'
               )
-              yield* Effect.promise(() => expect(falsified?.fn?.(context)).rejects.toThrow('Property falsified'))
+              yield* Effect.promise(() =>
+                expect(falsified?.fn?.(contextOf('every sampled number is non-negative'))).rejects.toThrow(
+                  'Property falsified',
+                )
+              )
 
               s.harness.methods.prop('every sampled number equals itself', S.Finite, (n: number) => n === n)
               const sound = s.harness.registry.tests.find((registered) =>
                 registered.name === 'every sampled number equals itself'
               )
-              yield* Effect.promise(() => expect(sound?.fn?.(context)).resolves.toBeUndefined())
+              yield* Effect.promise(() =>
+                expect(sound?.fn?.(contextOf('every sampled number equals itself'))).resolves.toBeUndefined()
+              )
 
               return {
                 passed,

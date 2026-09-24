@@ -8,6 +8,7 @@ export default defineConfig({
     ...sharedConfig.test,
     include: [
       'tests/**/*.integration.test.ts',
+      'tests/**/*.differential.test.ts',
       'src/**/__tests__/*.test.ts',
       'src/**/*.test.ts',
     ],

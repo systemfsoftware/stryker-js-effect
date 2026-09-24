@@ -1,0 +1,11 @@
+{
+  "name": "vm-parity-config",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#impl": {
+      "custom": "./src/impl-custom.ts",
+      "default": "./src/impl-default.ts"
+    }
+  }
+}

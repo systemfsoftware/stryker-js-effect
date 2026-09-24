@@ -68,11 +68,8 @@ const staticCoverageCountOf = (staticCoverage: Record<string, number> | undefine
     () => 0,
   )
 
-const hasCoverageForPlan = (staticCoverage: Record<string, number> | undefined) =>
-  Option.match(Option.fromUndefinedOr(staticCoverage), {
-    onNone: () => false,
-    onSome: (coverage) => Object.keys(coverage).length > 0,
-  })
+const hasCoverageForPlan = (staticCoverage: Record<string, number> | undefined): boolean =>
+  Option.isSome(Option.fromUndefinedOr(staticCoverage))
 
 const mutantIsStatic = (command: MutantTestPlanCommand, mutantId: string) =>
   staticCoverageCountOf(command.staticCoverage, mutantId) > 0

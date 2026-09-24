@@ -1,0 +1,2 @@
+rendered output
+line two

@@ -15,7 +15,6 @@ import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawne
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
-import { type VmPlatform, VmRunner } from '../VmRunner.service.js'
 import { layerWorkerProtocol } from '../worker-protocol.resource.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
@@ -118,20 +117,7 @@ const nodeSpawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(nodeFs
 
 const nodeBase = Layer.mergeAll(nodeFsPathLayer, nodeSpawnerLayer, NodeStdio.layer)
 
-const nodeVmPlatformLayer = Layer.effect(
-  VmRunner,
-  Effect.sync(
-    (): VmPlatform => ({
-      moduleBuiltin: globalThis.process.getBuiltinModule('node:module'),
-      pathToFileURL: (path) => globalThis.process.getBuiltinModule('node:url').pathToFileURL(path),
-    }),
-  ),
-)
-
-export { nodeVmPlatformLayer }
-
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = Layer.mergeAll(
   nodeWorkerLauncherLayer.pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
   nodeBase,
-  nodeVmPlatformLayer,
 )
