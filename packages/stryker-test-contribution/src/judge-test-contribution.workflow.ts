@@ -1,9 +1,9 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Array from 'effect/Array'
+import * as HashMap from 'effect/HashMap'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 
@@ -92,7 +92,7 @@ export const TestContributionDecision = S.Union([
 ])
 export type TestContributionDecision = typeof TestContributionDecision.Type
 
-type TestFileById = ReadonlyArray<readonly [string, string]>
+type TestFileById = HashMap.HashMap<string, string>
 
 const KILLING_STATUSES: Readonly<Record<string, true>> = { Killed: true, Timeout: true }
 
@@ -103,18 +103,20 @@ const noTestFiles: Record<string, Report.TestFile> = {}
 const testFilesOf = (report: Report.MutationTestResult): Record<string, Report.TestFile> =>
   Option.getOrElse(Option.fromUndefinedOr(report.testFiles), () => noTestFiles)
 
-const testFileById = (testFiles: Record<string, Report.TestFile>): TestFileById => {
-  const entries = Object.entries(testFiles).flatMap(([fileName, testFile]): TestFileById =>
-    testFile.tests.map((test): readonly [string, string] => [test.id, fileName])
+const testFileById = (testFiles: Record<string, Report.TestFile>): TestFileById =>
+  Array.reduce(
+    Object.entries(testFiles).flatMap(([fileName, testFile]): ReadonlyArray<readonly [string, string]> =>
+      testFile.tests.map((test): readonly [string, string] => [test.id, fileName])
+    ),
+    HashMap.empty<string, string>(),
+    (byId, [testId, fileName]) => HashMap.set(byId, testId, fileName),
   )
-  return entries
-}
 
 const idsOf = (testIds: readonly string[] | undefined): readonly string[] =>
   Option.getOrElse(Option.fromUndefinedOr(testIds), () => [])
 
 const fileNameOf = (fileById: TestFileById, testId: string): Option.Option<string> =>
-  Option.map(Array.findLast(fileById, ([id]) => id === testId), ([, fileName]) => fileName)
+  HashMap.get(fileById, testId)
 
 const keepReal = (fileById: TestFileById) => (testId: string): ReadonlyArray<string> =>
   Option.match(fileNameOf(fileById, testId), { onNone: () => [], onSome: (fileName) => [fileName] })
@@ -157,29 +159,22 @@ const killsOf = (mutants: readonly Report.MutantResult[], fileById: TestFileById
 
 const isUnattributedKill = (kill: Kill): boolean => kill.killers.length === 0
 
-const countOf = (counts: ReadonlyArray<readonly [string, number]>, fileName: string): number =>
-  Option.getOrElse(
-    Option.map(
-      Array.findLast(counts, ([name]) => name === fileName),
-      ([, count]) => count,
-    ),
-    () => 0,
-  )
+const countOf = (counts: ReadonlyMap<string, number>, fileName: string): number =>
+  Option.getOrElse(Option.fromNullishOr(counts.get(fileName)), () => 0)
 
-const countBy = (fileNames: ReadonlyArray<string>): ReadonlyArray<readonly [string, number]> =>
-  Array.map(
-    Array.dedupe(fileNames),
-    (fileName): readonly [string, number] => [
-      fileName,
-      fileNames.filter((candidate) => candidate === fileName).length,
-    ],
+const countBy = (fileNames: ReadonlyArray<string>): ReadonlyMap<string, number> =>
+  HashMap.reduce(
+    Array.reduce(fileNames, HashMap.empty<string, number>(), (counts, fileName) =>
+      HashMap.set(counts, fileName, 1 + HashMap.getOrElse(counts, fileName, () => 0))),
+    new Map<string, number>(),
+    (counts, count, fileName) => counts.set(fileName, count),
   )
 
 interface ContributionTally {
-  readonly soleKills: ReadonlyArray<readonly [string, number]>
-  readonly totalKills: ReadonlyArray<readonly [string, number]>
-  readonly killableCovered: ReadonlyArray<readonly [string, number]>
-  readonly unattributed: ReadonlyArray<string>
+  readonly soleKills: ReadonlyMap<string, number>
+  readonly totalKills: ReadonlyMap<string, number>
+  readonly killableCovered: ReadonlyMap<string, number>
+  readonly unattributed: ReadonlySet<string>
 }
 
 const tallyOf = (mutants: readonly Report.MutantResult[], fileById: TestFileById): ContributionTally => {
@@ -190,19 +185,22 @@ const tallyOf = (mutants: readonly Report.MutantResult[], fileById: TestFileById
     killableCovered: countBy(
       mutants.filter(isKillableMutant).flatMap((mutant) => realCoverersOf(mutant, fileById)),
     ),
-    unattributed: Array.dedupe(kills.filter(isUnattributedKill).flatMap((kill) => kill.coverers)),
+    unattributed: new Set(kills.filter(isUnattributedKill).flatMap((kill) => kill.coverers)),
   }
 }
 const fileContributionOf = (fileName: string, tally: ContributionTally): TestFileContribution => ({
   soleKills: countOf(tally.soleKills, fileName),
   totalKills: countOf(tally.totalKills, fileName),
   killableCovered: countOf(tally.killableCovered, fileName),
-  coversUnattributedKill: tally.unattributed.includes(fileName),
+  coversUnattributedKill: tally.unattributed.has(fileName),
 })
 
-const contributionOf = (report: Report.MutationTestResult): ReadonlyArray<ContributionEntry> => {
+const contributionOf = (
+  report: Report.MutationTestResult,
+  fileById: TestFileById,
+): ReadonlyArray<ContributionEntry> => {
   const testFiles = testFilesOf(report)
-  const tally = tallyOf(mutantsOf(report), testFileById(testFiles))
+  const tally = tallyOf(mutantsOf(report), fileById)
   return Object.keys(testFiles).map((fileName): ContributionEntry => [
     fileName,
     fileContributionOf(fileName, tally),
@@ -242,8 +240,9 @@ interface Judgement {
 }
 
 const judgementOf = (command: JudgeTestContribution): Judgement => {
-  const contribution = contributionOf(command.report)
-  const kills = killsOf(mutantsOf(command.report), testFileById(testFilesOf(command.report)))
+  const fileById = testFileById(testFilesOf(command.report))
+  const contribution = contributionOf(command.report, fileById)
+  const kills = killsOf(mutantsOf(command.report), fileById)
   return {
     matches: command.suffixes.join(', '),
     everyKillerRecorded: command.everyKillerRecorded,

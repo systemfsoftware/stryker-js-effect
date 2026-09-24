@@ -39,7 +39,7 @@ export class MutantPlacementFailed extends S.TaggedError<MutantPlacementFailed>(
 
 const PLACEMENT_LIST_FORMAT = new Intl.ListFormat('en')
 
-interface PlacementSite {
+export interface PlacementSite {
   readonly fileName: string
   readonly line?: number | undefined
   readonly column?: number | undefined

@@ -14,12 +14,10 @@ import * as Predicate from 'effect/Predicate'
 
 import { type StrykerNamespace, type TestRunnerPhase } from './VitestRunner.schema.js'
 
-export const TypeId = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestRuntime')
-export type TypeId = typeof TypeId
+const TypeId = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestRuntime')
+type TypeId = typeof TypeId
 
 const DriverId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestRuntime/driver')
-
-export const isVitestRuntime = (u: unknown): u is VitestRuntime => Predicate.hasProperty(u, TypeId)
 
 export interface VitestRuntime extends Pipeable {
   readonly [TypeId]: typeof TypeId
@@ -32,7 +30,7 @@ export type HarnessKey = 'hitLimit' | 'mutantActivation' | 'activeMutant'
 
 export type HarnessValue = number | string | undefined
 
-export interface RunFilterInput {
+interface RunFilterInput {
   readonly related: string[] | undefined
   readonly testNamePattern: RegExp | undefined
 }

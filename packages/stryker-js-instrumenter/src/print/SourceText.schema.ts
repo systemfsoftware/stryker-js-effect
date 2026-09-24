@@ -112,8 +112,7 @@ export class SourceText extends S.Class<SourceText>('SourceText')({ text: S.NonE
 }
 export type SourceTextValue = SourceText
 
-const nonEmptyOf = (text: string): Option.Option<string> =>
-  Option.filter(Option.some(text), (candidate) => candidate.length > 0)
+const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
 
 const printedOrEmptyOf = <A = unknown>(value: A): Option.Option<string> =>
   Option.flatMap(
@@ -121,7 +120,7 @@ const printedOrEmptyOf = <A = unknown>(value: A): Option.Option<string> =>
     (printable) => Result.getSuccess(printedResultOf(printable)),
   )
 
-const printedTextOf = <A = unknown>(value: A) => Option.flatMap(printedOrEmptyOf(value), nonEmptyOf)
+const printedTextOf = <A = unknown>(value: A) => Option.flatMap(printedOrEmptyOf(value), nonEmptyText)
 
 const AST_SHAPE = ['format', 'root'] as const
 

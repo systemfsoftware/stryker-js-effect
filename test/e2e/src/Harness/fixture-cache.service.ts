@@ -7,6 +7,7 @@ import {
   Context,
   Crypto,
   Effect,
+  Encoding,
   FileSystem,
   Layer,
   Match,
@@ -20,8 +21,14 @@ import {
 import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/unstable/process'
 
-import type { BakedInput, FileBytes, PackedPackage, PackedPackageLookup, TurboDryClosure } from './bake-key.schema.js'
-import { TurboDryRun } from './bake-key.schema.js'
+import {
+  FoundPackage,
+  MalformedClosure,
+  MissingTarball,
+  TurboClosure,
+  TurboDryRun,
+  UnreadableVersion,
+} from './bake-key.schema.js'
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
@@ -259,11 +266,8 @@ const keyBytes = (input: BakedInput): Uint8Array => {
   return bytes
 }
 
-const hexOf = (digest: Uint8Array): string =>
-  Array.fromIterable(digest).map((byte) => byte.toString(16).padStart(2, '0')).join('')
-
 const bakeCacheKey = (crypto: Crypto.Crypto, input: BakedInput) =>
-  Effect.map(crypto.digest('SHA-256', keyBytes(input)), hexOf)
+  Effect.map(crypto.digest('SHA-256', keyBytes(input)), Encoding.encodeHex)
 
 const packageNameOf = (task: typeof TurboDryRun.Type.tasks[number]): ReadonlyArray<string> =>
   Option.match(
@@ -277,14 +281,12 @@ const packageNameOf = (task: typeof TurboDryRun.Type.tasks[number]): ReadonlyArr
 const resolveTurboDryClosure = (stdout: string): TurboDryClosure => {
   const jsonStart = stdout.indexOf('{')
   return Option.match(Option.filter(Option.some(jsonStart), (start) => start >= 0), {
-    onNone: (): TurboDryClosure => ({ _tag: 'Malformed' }),
+    onNone: (): TurboDryClosure => MalformedClosure.make({}),
     onSome: (start): TurboDryClosure =>
       Result.match(Schema.decodeResult(Schema.fromJsonString(TurboDryRun))(stdout.slice(start)), {
-        onFailure: (): TurboDryClosure => ({ _tag: 'Malformed' }),
-        onSuccess: (dryRun): TurboDryClosure => ({
-          _tag: 'Closure',
-          packages: [...Array.dedupe(dryRun.tasks.flatMap(packageNameOf))].sort(),
-        }),
+        onFailure: (): TurboDryClosure => MalformedClosure.make({}),
+        onSuccess: (dryRun): TurboDryClosure =>
+          TurboClosure.make({ packages: [...Array.dedupe(dryRun.tasks.flatMap(packageNameOf))].sort() }),
       }),
   })
 }
@@ -297,14 +299,14 @@ const lookupOf = (
   return Option.match(
     Array.findFirst(fileNames, (candidate) => candidate.startsWith(prefix) && candidate.endsWith('.tgz')),
     {
-      onNone: (): PackedPackageLookup => ({ _tag: 'MissingTarball', prefix, directory }),
+      onNone: (): PackedPackageLookup => MissingTarball.make({ prefix, directory }),
       onSome: (fileName): PackedPackageLookup =>
         Option.match(Option.fromNullishOr(PACKED_TARBALL_VERSION.exec(fileName)?.[1]), {
-          onNone: (): PackedPackageLookup => ({ _tag: 'UnreadableVersion', fileName }),
-          onSome: (version): PackedPackageLookup => ({
-            _tag: 'Found',
-            pack: { name: packageName, version, fileName, tarballPath: `${directory}/${fileName}` },
-          }),
+          onNone: (): PackedPackageLookup => UnreadableVersion.make({ fileName }),
+          onSome: (version): PackedPackageLookup =>
+            FoundPackage.make({
+              pack: { name: packageName, version, fileName, tarballPath: `${directory}/${fileName}` },
+            }),
         }),
     },
   )

@@ -7,18 +7,17 @@ import * as S from 'effect/Schema'
 
 export class ErrorText extends S.Class<ErrorText>('ErrorText')({ text: S.NonEmptyString }) {
   static fromCause = <A>(cause: A): Option.Option<ErrorText> =>
-    Option.flatMap(nonEmptyOf(errorTextOf(cause)), (text) => ErrorText.makeOption({ text }))
+    Option.flatMap(nonEmptyText(errorTextOf(cause)), (text) => ErrorText.makeOption({ text }))
 }
 export type ErrorTextValue = ErrorText
 
 export class CauseText extends S.Class<CauseText>('CauseText')({ text: S.NonEmptyString }) {
   static fromCause = <A>(cause: A): Option.Option<CauseText> =>
-    Option.flatMap(nonEmptyOf(causeChainTextOf(cause)), (text) => CauseText.makeOption({ text }))
+    Option.flatMap(nonEmptyText(causeChainTextOf(cause)), (text) => CauseText.makeOption({ text }))
 }
 export type CauseTextValue = CauseText
 
-const nonEmptyOf = (text: string): Option.Option<string> =>
-  Option.filter(Option.some(text), (candidate) => candidate.length > 0)
+const nonEmptyText = Option.liftPredicate(S.is(S.NonEmptyString))
 
 function errorTextOf<A = unknown>(error: A): string {
   return Match.value(error).pipe(
@@ -48,11 +47,12 @@ function readFieldOf<A = unknown>(record: Record<string, A>, key: string): A | u
   return record[key]
 }
 
-const hasFieldIn = <A = unknown>(value: object, key: string): value is Record<string, A> => key in value
-
 const fieldOf = <A = unknown>(value: object, key: string): A | undefined =>
   Option.getOrUndefined(
-    Option.filter(Option.some(value), (candidate): candidate is Record<string, A> => hasFieldIn<A>(candidate, key))
+    Option.filter(
+      Option.some(value),
+      (candidate): candidate is Record<string, A> => Predicate.hasProperty(key)(candidate),
+    )
       .pipe(
         Option.map((record) => readFieldOf(record, key)),
       ),
@@ -142,11 +142,8 @@ const objectToStringText = (value: object): string =>
     Match.orElse(() => ''),
   )
 
-const isObjectType = (cause: unknown): cause is object => typeof cause === 'object'
-
-const isNonNullObjectType = <A = unknown>(error: A): error is A & object => error !== null && isObjectType(error)
-
-const toStringText = <A = unknown>(error: A): string => (isNonNullObjectType(error) ? objectToStringText(error) : '')
+const toStringText = <A = unknown>(error: A): string =>
+  Predicate.isObjectOrArray(error) ? objectToStringText(error) : ''
 
 const stringifyRest = <A = unknown>(error: A): string =>
   Option.match(Option.filter(Option.fromUndefinedOr(jsonText(error)), hasText), {
@@ -250,7 +247,7 @@ function causeTextOfValue<A = unknown>(cause: A, depth: number): string | undefi
 function objectCauseTextOf<A = unknown>(cause: A, depth: number): string | undefined {
   return Option.getOrUndefined(
     Option.map(
-      Option.filter(Option.some(cause), isObjectType),
+      Option.filter(Option.some(cause), Predicate.isObjectOrArray),
       (object) => textWithNested(ownCauseText(object), causeText(fieldOf(object, 'cause'), depth + 1)),
     ),
   )

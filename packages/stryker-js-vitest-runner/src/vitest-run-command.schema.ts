@@ -17,13 +17,9 @@ const isRecordValue = <A = unknown>(value: unknown): value is RawVitestRecord<A>
 const recordOption = <A = unknown>(value: A): Option.Option<RawVitestRecord<A>> =>
   Option.liftPredicate(value, isRecordValue<A>)
 
-const asString = (value: unknown): value is string => typeof value === 'string'
+const asStringOption = <A = unknown>(value: A): Option.Option<string> => Option.liftPredicate(value, Predicate.isString)
 
-const asNumber = (value: unknown): value is number => typeof value === 'number'
-
-const asStringOption = <A = unknown>(value: A): Option.Option<string> => Option.liftPredicate(value, asString)
-
-const asNumberOption = <A = unknown>(value: A): Option.Option<number> => Option.liftPredicate(value, asNumber)
+const asNumberOption = <A = unknown>(value: A): Option.Option<number> => Option.liftPredicate(value, Predicate.isNumber)
 
 const asArrayOption = <A = unknown>(value: A): Option.Option<readonly A[]> => Option.liftPredicate(value, Array.isArray)
 
@@ -257,11 +253,6 @@ const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestRunner.T
     ),
     Match.orElse((): TestRunner.TestResult => ({ ...base, status: 'success' })),
   )
-}
-
-export interface RawVitestRun {
-  readonly projectRoot: string
-  readonly records: readonly RawVitestRecord[]
 }
 
 export const VitestTestRun = S.Unknown.pipe(

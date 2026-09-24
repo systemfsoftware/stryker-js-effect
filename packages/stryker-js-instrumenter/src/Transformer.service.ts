@@ -70,6 +70,7 @@ import {
   MutantsUnplaced,
   NodeKindMismatch,
   PlacementMissing,
+  type PlacementSite,
   type TransformerFailure,
 } from './Transformer.schema.js'
 
@@ -465,12 +466,6 @@ const placementLocation = (
       return { fileName: relativeFile, line: at.line, column: at.column }
     },
   })
-}
-
-interface PlacementSite {
-  readonly fileName: string
-  readonly line: number | undefined
-  readonly column: number | undefined
 }
 
 type AnonymousFunctionOrClass = FunctionExpression | ClassExpression
@@ -902,12 +897,12 @@ const setItems = (value: object): readonly (object | null | undefined)[] =>
   Option.getOrElse(Option.map(Option.filter(Option.some(value), isSet), (set) => [...set]), () => NO_CHILDREN)
 
 const isObjectValue = (value: unknown): value is Record<string, object | null | undefined> =>
-  value !== null && typeof value === 'object'
+  Predicate.isObjectOrArray(value)
 
 const isMap = (value: object): value is Map<object | null | undefined, object | null | undefined> =>
-  value instanceof Map
+  Predicate.isMap(value)
 
-const isSet = (value: object): value is Set<object | null | undefined> => value instanceof Set
+const isSet = (value: object): value is Set<object | null | undefined> => Predicate.isSet(value)
 
 const transformOf = (header: InstrumentationHeader, mutators: MutatorsShape): Transform => {
   const transform: Transform = dual(
@@ -1059,11 +1054,20 @@ const transformScript = (
     const directives: { rule: Rule } = { rule: rootRule }
     const mutatorEntries = Object.entries(mutators.mutators)
     const allMutatorNames = mutatorEntries.map(([name]) => name.toLowerCase())
+    const excludedSet = new Set(options.excludedMutations)
 
     const warnings: string[] = []
 
+    const locationCache = new WeakMap<Node, Option.Option<SourceLocationInFile>>()
     const nodeLocationOf = (node: Node): Option.Option<SourceLocationInFile> =>
-      Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
+      Option.match(Option.fromNullishOr(locationCache.get(node)), {
+        onSome: (cached) => cached,
+        onNone: () => {
+          const location = Option.map(Option.fromNullishOr(spanOf(node)), (span) => lineTable.locationAt(span))
+          locationCache.set(node, location)
+          return location
+        },
+      })
     const shouldSkip = (path: TraversePath): boolean =>
       [
         isTypeNode(path),
@@ -1148,7 +1152,7 @@ const transformScript = (
     const directiveOrExclusion = (mutatorName: string, line: number): string | undefined =>
       findIgnoreReason(directives.rule, mutatorName, line) ?? findExcludedMutatorIgnoreReason(mutatorName)
     const findExcludedMutatorIgnoreReason = (mutatorName: string): string | undefined =>
-      Boolean.match(options.excludedMutations.includes(mutatorName), {
+      Boolean.match(excludedSet.has(mutatorName), {
         onTrue: () => `Ignored because of excluded mutation "${mutatorName}"`,
         onFalse: () => undefined,
       })

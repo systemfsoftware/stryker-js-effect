@@ -225,26 +225,8 @@ const replaceFirstMatch = (path: TraversePath, original: Node, replacement: Node
   })
 
 /**
- * The mutations of a regular expression pattern.
- *
- * Pure: a pattern and its flags in, replacement patterns out. No I/O, no clock,
- * no throwing — a pattern this cannot parse yields no mutants, which is the
- * honest answer for a literal whose syntax the engine does not model.
- *
- * The transformation set is fixed and small, and each member changes exactly
- * one thing about the pattern:
- *
- * | family                  | example                  |
- * | ----------------------- | ------------------------ |
- * | anchor removal          | `^abc$` -> `abc$`, `^abc` |
- * | character class negation| `[abc]` <-> `[^abc]`      |
- * | predefined class negation| `\d` <-> `\D`, `\p{L}` <-> `\P{L}` |
- * | quantifier removal      | `a+`, `a*`, `a{2,3}` -> `a` |
- * | lookaround negation     | `(?=a)` <-> `(?!a)`, `(?<=a)` <-> `(?<!a)` |
- *
- * Alternation and grouping are deliberately untouched: swapping a branch or
- * dropping a group produces mutants that survive for reasons unrelated to the
- * test suite's strength, which inflates a score rather than measuring one.
+ * The mutations of a regular expression pattern: a pattern and its flags in,
+ * replacement patterns out. A pattern this cannot parse yields no mutants.
  *
  * The order is part of the contract, because a mutant's identity in a report is
  * its position: anchors first, then each remaining position left to right with
@@ -421,8 +403,6 @@ const spliceText = (pattern: string, splice: Splice): string =>
 
 const NO_MUTANTS: readonly Node[] = []
 
-const isPresent = <T>(value: T | null | undefined): value is T => value !== null && value !== undefined
-
 const withOperator = <T extends Node & { operator: string }>(node: T, operator: T['operator']): T => {
   const replacement = cloneNode(node)
   replacement.operator = operator
@@ -435,16 +415,16 @@ const mutantsWhen = (holds: boolean, build: () => readonly Node[]): readonly Nod
     Match.orElse(() => NO_MUTANTS),
   )
 
-const hasPropertyIn = <B>(node: object, key: string): node is Record<string, B> => key in node
-
 const readPropertyOf = <B>(node: object, key: string): B | undefined =>
   Option.getOrUndefined(
-    Option.filter(Option.some(node), (candidate): candidate is Record<string, B> => hasPropertyIn<B>(candidate, key))
+    Option.filter(
+      Option.some(node),
+      (candidate): candidate is Record<string, B> => Predicate.hasProperty(key)(candidate),
+    )
       .pipe(
         Option.map((record) => record[key]),
       ),
   )
-
 const propertyOf = <A, B>(node: A, key: string): B | undefined =>
   Option.getOrUndefined(
     Option.filter(Option.some(node), Predicate.isObject).pipe(
@@ -645,8 +625,8 @@ const hasInitializedProperties = (context: MutatorContext): boolean => {
 }
 
 const isClassBody = (node: Node | undefined): node is ClassBody => node?.type === 'ClassBody'
-
-const isInitializedField = (member: Node): boolean => isPropertyDefinition(member) && isPresent(member.value)
+const isInitializedField = (member: Node): boolean =>
+  isPropertyDefinition(member) && Predicate.isNotNullish(member.value)
 
 const isPropertyDefinition = (node: Node): node is PropertyDefinition => node.type === 'PropertyDefinition'
 
@@ -655,11 +635,7 @@ const isSuperType = <A>(node: A): boolean => Predicate.hasProperty(node, 'type')
 const isSuperCallExpression = <A>(node: A): boolean =>
   nodeType(node) === 'CallExpression' && isSuperType(propertyOf(node, 'callee'))
 
-const containsSuperCall = <A>(node: A): boolean => isObjectLike(node) && containsSuperIn(node)
-
-const isObjectLike = (value: unknown): value is object => typeof value === 'object' && value !== null
-
-const containsSuperIn = (node: object): boolean => isSuperReference(node) || hasSuperInChildren(node)
+const containsSuperCall = <A>(node: A): boolean => Predicate.isObjectOrArray(node) && containsSuperIn(node)
 
 const isSuperReference = <A>(node: A): boolean => isSuperType(node) || isSuperCallExpression(node)
 
@@ -988,7 +964,7 @@ const regexMutator: Mutator = (node, context) =>
   )
 
 const isRegexLiteral = (node: Node): node is RegexLiteral =>
-  nodeType(node) === 'Literal' && isPresent(propertyOf(node, 'regex'))
+  nodeType(node) === 'Literal' && Predicate.isNotNullish(propertyOf(node, 'regex'))
 
 const regexLiteralMutants = (literal: RegexLiteral): readonly Node[] =>
   mutateRegexPattern(literal.regex.pattern, literal.regex.flags).map((pattern) =>

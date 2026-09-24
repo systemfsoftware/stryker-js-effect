@@ -218,7 +218,7 @@ const withoutDisambiguation = (input: CheckMutantsInput): Option.Option<CheckMut
     onNone: () => Option.some(CheckFinished.make({ results: {} })),
     onSome: (first) =>
       Option.map(
-        Option.filter(Option.some(first), () => !Object.hasOwn(input.nodes, normalizeFileName(first.fileName))),
+        Option.liftPredicate(first, () => !Object.hasOwn(input.nodes, normalizeFileName(first.fileName))),
         () => CheckFinished.make({ results: Object.fromEntries(passedResults(input.mutants)) }),
       ),
   })

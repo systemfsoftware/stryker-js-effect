@@ -63,8 +63,7 @@ interface PlainRecord<A = unknown> {
   readonly [k: string]: A
 }
 
-const isPlainRecord = <A = unknown>(value: unknown): value is PlainRecord<A> =>
-  typeof value === 'object' && value !== null
+const isPlainRecord = <A = unknown>(value: unknown): value is PlainRecord<A> => Predicate.isObjectOrArray(value)
 
 const isTagged = (value: unknown, type: string): value is PlainRecord => isPlainRecord(value) && value['type'] === type
 

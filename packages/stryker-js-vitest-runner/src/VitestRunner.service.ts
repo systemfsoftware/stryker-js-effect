@@ -105,11 +105,6 @@ export interface RunFilter {
   testFiles?: string[]
 }
 
-interface RunFilterPlan {
-  readonly testNamePattern: RegExp | undefined
-  readonly testFiles: string[] | undefined
-}
-
 /** Vitest starts every file when the run is not related to a changed file. */
 const relatedFilesOf = <A>(relatedValue: A, relatedFiles: readonly string[] | undefined) =>
   Boolean.match(relatedValue !== false, {
@@ -126,13 +121,13 @@ const testIdPlan = (
 ) =>
   Option.map(
     Option.filter(Option.fromNullishOr(testIds), (ids) => ids.length > 0),
-    (ids): RunFilterPlan => ({
+    (ids) => ({
       testNamePattern: new RegExp(ids.map((id) => RegExp.escape(fromTestId(id).name)).join('|')),
       testFiles: ids.map((id) => pathService.resolve(projectRoot, fromTestId(id).file)),
     }),
   )
 
-const runFilterPlan = (filter: RunFilter, projectRoot: string, pathService: Path.Path): RunFilterPlan => {
+const runFilterPlan = (filter: RunFilter, projectRoot: string, pathService: Path.Path) => {
   const plan = testIdPlan(filter.testIds, projectRoot, pathService)
   return {
     testNamePattern: Option.getOrUndefined(Option.map(plan, (value) => value.testNamePattern)),

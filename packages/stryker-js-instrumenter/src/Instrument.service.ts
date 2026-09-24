@@ -339,9 +339,10 @@ const instrumentWith = (
         (ast) => ({ file, ast }),
       ))
     const collector: MutantCollector = []
+    const transformerOptions = toTransformerOptions(options)
     yield* Effect.forEach(parsed, ({ file, ast }) =>
       transformer.transform(ast, collector, {
-        options: toTransformerOptions(options),
+        options: transformerOptions,
         mutateDescription: toOneBasedLineNumber(file.mutate),
         basePath,
       }).pipe(
