@@ -153,6 +153,8 @@ const atArityWithoutLoc = (args: IArguments, arity: number): boolean =>
 const isDataFirstArity = (args: IArguments, arity: number): boolean =>
   args.length > arity || atArityWithoutLoc(args, arity)
 
+const isStatementArg = (value: unknown): boolean => isNodeArg(value) && /(?:Statement|Declaration)$/.test(value.type)
+
 const isNodeOrNullArg = (value: unknown): value is Expression | null => value === null || isNodeArg(value)
 
 const isElementsArg = (value: unknown): value is ReadonlyArray<Expression | null> | undefined =>
@@ -271,7 +273,7 @@ export const ifStatement: {
   (test: Expression, consequent: Statement, alternate?: Statement | null, loc?: Loc): Statement
   (consequent: Statement, alternate?: Statement | null, loc?: Loc): (test: Expression) => Statement
 } = dual(
-  (args: IArguments): boolean => isDataFirstArity(args, 2),
+  (args: IArguments): boolean => !isStatementArg(args[0]),
   (test: Expression, consequent: Statement, alternate?: Statement | null, loc?: Loc): Statement =>
     mark<Statement>({ type: 'IfStatement', test, consequent, alternate: alternate ?? null }, loc),
 )
