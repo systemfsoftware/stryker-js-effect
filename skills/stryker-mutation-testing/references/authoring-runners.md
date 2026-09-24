@@ -57,25 +57,19 @@ Implement the `TestRunnerRpcs` interface:
 | `mutantRun`    | `{ options: MutantRunOptions }` | `MutantRunResult`        | Runs tests with a specific mutant active; reports whether any test failed.                      |
 
 ```ts
-import {
-  type DryRunOptions,
-  type DryRunResult,
-  type MutantRunOptions,
-  type MutantRunResult,
-  TestRunnerFailed,
-  TestRunnerRpcs,
-} from '@systemfsoftware/stryker-js-plugin-interface'
-import { readWorkerOptionsFromEnv } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Plugin, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 
-export const testRunnerHandlers = TestRunnerRpcs.toLayer(
+export const testRunnerHandlers = Plugin.TestRunnerRpcs.toLayer(
   Effect.gen(function*() {
-    const options = yield* readWorkerOptionsFromEnv
+    const strykerOptions = yield* Worker.WorkerOptions
 
     return {
       capabilities: () => Effect.succeed({ reloadEnvironment: true }),
 
-      dryRun: ({ options }: { readonly options: DryRunOptions }) =>
+      dryRun: ({ options }: { readonly options: TestRunner.DryRunOptions }) =>
         Effect.tryPromise({
           try: async () => {
             // Execute your test suite
@@ -83,10 +77,10 @@ export const testRunnerHandlers = TestRunnerRpcs.toLayer(
             return { status: 'complete', tests: [] }
           },
           catch: (cause) =>
-            new TestRunnerFailed({ phase: 'dryRun', runnerName: 'my-custom-runner', cause: String(cause) }),
+            new TestRunner.TestRunnerFailed({ phase: 'dryRun', runnerName: 'my-custom-runner', cause: String(cause) }),
         }),
 
-      mutantRun: ({ options }: { readonly options: MutantRunOptions }) =>
+      mutantRun: ({ options }: { readonly options: Mutant.MutantRunOptions }) =>
         Effect.tryPromise({
           try: async () => {
             // Mutants are activated via process.env.__STRYKER_ACTIVE_MUTANT__ = options.activeMutant.id
@@ -95,7 +89,11 @@ export const testRunnerHandlers = TestRunnerRpcs.toLayer(
             return { status: 'survived', nrOfTests: 0, timeSpentMs: 0 }
           },
           catch: (cause) =>
-            new TestRunnerFailed({ phase: 'mutantRun', runnerName: 'my-custom-runner', cause: String(cause) }),
+            new TestRunner.TestRunnerFailed({
+              phase: 'mutantRun',
+              runnerName: 'my-custom-runner',
+              cause: String(cause),
+            }),
         }),
     }
   }),
@@ -110,16 +108,16 @@ Launch the worker server with `@effect/platform-node`:
 
 ```ts
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
-import { TestRunnerRpcs } from '@systemfsoftware/stryker-js-plugin-interface'
-import { workerServerLayer } from '@systemfsoftware/stryker-js-plugin-runtime'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Layer from 'effect/Layer'
 
 import { testRunnerHandlers } from './worker-handlers.js'
 
 NodeRuntime.runMain(
   Layer.launch(
-    workerServerLayer({
-      rpcs: TestRunnerRpcs,
+    Worker.workerServerLayer({
+      rpcs: Plugin.TestRunnerRpcs,
       handlers: testRunnerHandlers,
       schemaServices: Layer.empty,
     }),

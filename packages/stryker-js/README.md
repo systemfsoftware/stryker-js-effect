@@ -147,12 +147,15 @@ pnpm exec stryker merge-reports --output reports/mutation/mutation.json "reports
 
 ```ts
 import { NodeRuntime } from '@effect/platform-node'
-import { strykerCell } from '@systemfsoftware/stryker-js'
+import { Engine } from '@systemfsoftware/stryker-js'
+import * as Effect from 'effect/Effect'
 
-NodeRuntime.runMain(strykerCell({
-  mutate: ['src/**/*.ts'],
-  testRunner: 'command',
-}))
+NodeRuntime.runMain(
+  Engine.strykerCell({
+    mutate: ['src/**/*.ts'],
+    testRunner: 'command',
+  }).pipe(Effect.provide(Engine.nodePlatformLayer)),
+)
 ```
 
 ### Vanilla Promise Interface (`./promises`)

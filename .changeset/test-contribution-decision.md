@@ -2,7 +2,6 @@
 "@systemfsoftware/stryker-test-contribution": major
 ---
 
-`judgeTestContribution` now takes a `JudgeTestContribution` command and returns a `TestContributionDecision`.
+The package entry point now exports only `strykerPlugins`, the list the engine loads the test-contribution evaluator from.
 
-- Match on the decision variants, such as `RunReviewed`, `RunUnjudged` and `JointlyDeletable`, instead of the removed `TestContributionVerdict`.
-- Remove imports of `contributionByTestFile`, `toothlessTestFiles`, `defaultRequireTestContributionSuffixes` and `TestContributionInput`. They have no public replacement.
+- Remove imports of `judgeTestContribution`, its decision types, `makeTestContributionEvaluatorService`, `testContributionEvaluatorLayer` and the helpers removed alongside them. They have no public replacement.

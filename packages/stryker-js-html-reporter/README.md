@@ -12,12 +12,14 @@ in-process reporter. The reporter exists so a programmatic consumer can assemble
 its own host:
 
 ```ts
-import { makeHtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+
+HtmlReporter.makeHtmlReporter
 ```
 
 ## Related
 
-- [`@systemfsoftware/stryker-js`][engine] — the run engine that emits the events this reporter presents, and the binary that binds `makeHtmlReporter` as a built-in reporter
+- [`@systemfsoftware/stryker-js`][engine] — the run engine that emits the events this reporter presents, and the binary that binds `HtmlReporter.makeHtmlReporter` as a built-in reporter
 
 ## License
 

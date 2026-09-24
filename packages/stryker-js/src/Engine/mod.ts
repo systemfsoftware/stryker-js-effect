@@ -1,3 +1,4 @@
+export { nodePlatformLayer } from '../drivers/node.js'
 export { IncrementalReportSchema } from '../IncrementalReport.schema.js'
 export type { Project, ProjectFile } from '../Project.schema.js'
 export { StageError } from '../Run.schema.js'
