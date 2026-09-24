@@ -34,7 +34,7 @@ const validateSync = <T = unknown>(input: T): Validation => {
 const encodeFixture = <Schema_ extends S.Constraint>(
   schema: Schema_,
   value: Schema_["Type"],
-): Effect.Effect<Schema_["Encoded"], SchemaError, Schema_["EncodingServices"]> => S.encodeEffect(schema)(value)
+): Effect.Effect<Schema_["Encoded"], S.SchemaError, Schema_["EncodingServices"]> => S.encodeEffect(schema)(value)
 
 const reencoded = (run: Effect.Effect<ReporterEvent>) =>
   Effect.map(Effect.flatMap(run, (value) => encodeFixture(ReporterEventUnion, value)), (encoded) =>
