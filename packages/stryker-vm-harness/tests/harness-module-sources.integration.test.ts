@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { harnessSourceFor, harnessUrlForSpecifier } from '@systemfsoftware/stryker-vm-harness'
+import { Sandbox } from '@systemfsoftware/stryker-vm-harness'
 import { Effect, Layer } from 'effect'
 import { expect } from 'vitest'
 
@@ -12,8 +12,8 @@ const FIRST_PARTY_PACKAGES = [
 ] as const
 
 const moduleForPackage = (packageName: string): string | undefined => {
-  const address = harnessUrlForSpecifier(packageName)
-  return address === undefined ? undefined : harnessSourceFor(address)
+  const address = Sandbox.harnessUrlForSpecifier(packageName)
+  return address === undefined ? undefined : Sandbox.harnessSourceFor(address)
 }
 
 Feature('Resolving the harness modules a sandboxed test file loads')
@@ -30,10 +30,10 @@ Feature('Resolving the harness modules a sandboxed test file loads')
           'addresses',
           (s) =>
             Effect.succeed({
-              vitest: harnessUrlForSpecifier(s.packages.served[0]),
-              effectVitest: harnessUrlForSpecifier(s.packages.served[1]),
-              gherkin: harnessUrlForSpecifier(s.packages.served[2]),
-              unserved: harnessUrlForSpecifier(s.packages.unserved),
+              vitest: Sandbox.harnessUrlForSpecifier(s.packages.served[0]),
+              effectVitest: Sandbox.harnessUrlForSpecifier(s.packages.served[1]),
+              gherkin: Sandbox.harnessUrlForSpecifier(s.packages.served[2]),
+              unserved: Sandbox.harnessUrlForSpecifier(s.packages.unserved),
             }),
         ),
         Then('the served packages map to their own harness addresses and the unserved one maps to nothing')((s) => {
@@ -59,7 +59,7 @@ Feature('Resolving the harness modules a sandboxed test file loads')
               vitest: moduleForPackage(s.packages[0]),
               effectVitest: moduleForPackage(s.packages[1]),
               gherkin: moduleForPackage(s.packages[2]),
-              unknown: harnessSourceFor('unknown-url'),
+              unknown: Sandbox.harnessSourceFor('unknown-url'),
             }),
         ),
         Then('each module carries its registration surface and an unknown address serves nothing')((s) => {

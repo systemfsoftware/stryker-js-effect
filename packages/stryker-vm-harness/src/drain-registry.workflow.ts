@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -56,7 +57,7 @@ export class DrainRegistryCommand extends S.TaggedClass<DrainRegistryCommand>()(
   plan: S.Array(PlannedTestView),
   timedOut: S.optional(S.Boolean),
   outcomes: S.optional(S.Record(S.String, TestOutcomeSchema)),
-  lateRejections: S.optional(S.Array(S.String)),
+  lateRejections: S.optional(S.String.pipe(S.Array)),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -71,12 +72,38 @@ const drainedSkipped = (planned: PlannedTestView): DrainedTest => ({
   timeSpentMs: 0,
 })
 
+const outcomeOf = (outcomes: Record<string, TestOutcome> | undefined, seq: number): TestOutcome | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(
+      Option.fromNullishOr(outcomes),
+      (present) => Option.fromNullishOr(present[String(seq)]),
+    ),
+  )
+
+const failureMessageOf = (outcome: TestOutcome | undefined): string | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(Option.fromNullishOr(outcome), (present) => Option.fromNullishOr(present.failureMessage)),
+  )
+
+const timeSpentOf = (outcome: TestOutcome | undefined): number =>
+  Option.getOrElse(
+    Option.flatMap(Option.fromNullishOr(outcome), (present) => Option.fromNullishOr(present.timeSpentMs)),
+    () => 0,
+  )
+
+const invertedFailureMessage = (planned: PlannedTestView): string | undefined =>
+  Match.value(planned.inverted).pipe(
+    Match.when(true, () => `${planned.fullName} was expected to fail, but passed`),
+    Match.when(false, () => undefined),
+    Match.exhaustive,
+  )
+
 const drainedRan = (
   planned: PlannedTestView,
   outcomes: Record<string, TestOutcome> | undefined,
 ): DrainedTest => {
-  const outcome = outcomes?.[String(planned.seq)]
-  const failureMessage = outcome?.failureMessage
+  const outcome = outcomeOf(outcomes, planned.seq)
+  const failureMessage = failureMessageOf(outcome)
   const threw = failureMessage !== undefined
   const status: DrainedStatus = Match.value(threw === planned.inverted).pipe(
     Match.when(true, (): DrainedStatus => 'success'),
@@ -85,12 +112,7 @@ const drainedRan = (
   )
   const message = Match.value(threw).pipe(
     Match.when(true, () => failureMessage),
-    Match.when(false, () =>
-      Match.value(planned.inverted).pipe(
-        Match.when(true, () => `${planned.fullName} was expected to fail, but passed`),
-        Match.when(false, () => undefined),
-        Match.exhaustive,
-      )),
+    Match.when(false, () => invertedFailureMessage(planned)),
     Match.exhaustive,
   )
   return {
@@ -98,7 +120,7 @@ const drainedRan = (
     file: planned.file,
     status,
     failureMessage: message,
-    timeSpentMs: outcome?.timeSpentMs ?? 0,
+    timeSpentMs: timeSpentOf(outcome),
   }
 }
 
@@ -112,16 +134,27 @@ const drainSingleTest = (
     Match.exhaustive,
   )
 
+const lateRejectionsOf = (lateRejections: readonly string[] | undefined): ReadonlyArray<string> =>
+  Option.getOrElse(Option.fromNullishOr(lateRejections), () => [])
+
+const isEmptyLateRejections = (lateRejections: readonly string[] | undefined): boolean =>
+  Option.match(Option.fromNullishOr(lateRejections), {
+    onNone: () => true,
+    onSome: (present) => present.length === 0,
+  })
+
+const lateRejectionTest = (lateRejections: readonly string[] | undefined): DrainedTest => ({
+  fullName: LATE_REJECTION_NAME,
+  file: '',
+  status: 'failed',
+  failureMessage: lateRejectionsOf(lateRejections).join('\n'),
+  timeSpentMs: 0,
+})
+
 const lateRejectionTests = (lateRejections: readonly string[] | undefined): ReadonlyArray<DrainedTest> =>
-  Match.value(lateRejections === undefined || lateRejections.length === 0).pipe(
+  Match.value(isEmptyLateRejections(lateRejections)).pipe(
     Match.when(true, (): ReadonlyArray<DrainedTest> => []),
-    Match.when(false, (): ReadonlyArray<DrainedTest> => [{
-      fullName: LATE_REJECTION_NAME,
-      file: '',
-      status: 'failed',
-      failureMessage: (lateRejections ?? []).join('\n'),
-      timeSpentMs: 0,
-    }]),
+    Match.when(false, () => [lateRejectionTest(lateRejections)]),
     Match.exhaustive,
   )
 

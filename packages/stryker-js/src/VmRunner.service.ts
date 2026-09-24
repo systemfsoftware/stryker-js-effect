@@ -1,4 +1,4 @@
-import type { HarnessModuleBuiltin } from '@systemfsoftware/stryker-vm-harness'
+import type { Sandbox } from '@systemfsoftware/stryker-vm-harness'
 import * as Context from 'effect/Context'
 
 export interface VmFileUrl {
@@ -6,7 +6,7 @@ export interface VmFileUrl {
 }
 
 export interface VmPlatform {
-  readonly moduleBuiltin: HarnessModuleBuiltin
+  readonly moduleBuiltin: Sandbox.HarnessModuleBuiltin
   readonly pathToFileURL: (path: string) => VmFileUrl
 }
 

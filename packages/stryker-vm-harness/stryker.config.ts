@@ -4,9 +4,11 @@ import { defineConfig } from '@systemfsoftware/stryker-js/config'
 export default defineConfig({
   ...sharedConfig,
   mutate: [
-    'src/core/**/*.ts',
-    '!src/core/**/*.test.ts',
-    '!src/core/index.ts',
+    'src/drain-registry.workflow.ts',
+    'src/registry.handle.ts',
+    'src/harness-api.handle.ts',
+    'src/assertions.handle.ts',
+    'src/harness-sources.handle.ts',
   ],
   testRunner: {
     plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
