@@ -207,8 +207,8 @@ const hasMessageField = Predicate.hasProperty('message')
 
 const isUnseenObject = <A>(value: A, seen: WeakSet<object>): value is A & object =>
   Predicate.isObjectOrArray(value) && !seen.has(value)
+  // Test change
 
-const isReachableValue = <A>(value: A, depth: number, seen: WeakSet<object>): value is A & object =>
   depth <= MAX_TRAVERSAL_DEPTH && isUnseenObject(value, seen)
 
 const causeChildrenOf = (value: object): ReadonlyArray<object> => {

@@ -1,7 +1,9 @@
 import { describe, it } from '@effect/vitest'
+import * as Arr from 'effect/Array'
+import * as Predicate from 'effect/Predicate'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
-import { type DocumentRecord, StrykerConfig } from '../config/stryker-config.schema.js'
+import { type DocumentRecord, mergeRecords } from '../config/merge-records.js'
 import { DocumentSchema, NestedDocumentSchema } from '../../tests/__fixtures__/config-law.schema.js'
 
 const poisonedDocumentArb = Arbitrary.schema(DocumentSchema).pipe(
@@ -11,14 +13,8 @@ const poisonedDocumentArb = Arbitrary.schema(DocumentSchema).pipe(
   })),
 )
 
-const isOptionRecord = (
-  value: typeof DocumentSchema.Type | typeof NestedDocumentSchema.Type[keyof typeof NestedDocumentSchema.Type],
-): value is DocumentRecord => typeof value === 'object' && value !== null && Array.isArray(value) === false
-
-const sameArrayElements = (
-  left: ReadonlyArray<typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type]>,
-  right: ReadonlyArray<typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type]>,
-): boolean => left.length === right.length && left.every((element, index) => sameElement(element, right[index]))
+const isDocumentRecord = (value: unknown): value is DocumentRecord =>
+  Predicate.isObject(value) && Arr.isArray(value) === false
 
 const sameEntries = (left: DocumentRecord, right: DocumentRecord): boolean => {
   const leftNames = Object.keys(left).filter((name) => left[name] !== undefined)
@@ -27,26 +23,13 @@ const sameEntries = (left: DocumentRecord, right: DocumentRecord): boolean => {
     leftNames.every((name) => name in right && sameValue(left[name], right[name]))
 }
 
-const sameElement = (
-  left: typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type],
-  right: typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type],
-): boolean =>
-  left === right ||
-  (isOptionRecord(left) && isOptionRecord(right) && sameEntries(left, right))
+const sameElements = (left: ReadonlyArray<unknown>, right: ReadonlyArray<unknown>): boolean =>
+  left.length === right.length && left.every((element, index) => sameValue(element, right[index]))
 
-const sameValue = (
-  left:
-    | typeof DocumentSchema.Type
-    | typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type]
-    | typeof NestedDocumentSchema.Type[keyof typeof NestedDocumentSchema.Type],
-  right:
-    | typeof DocumentSchema.Type
-    | typeof DocumentSchema.Type[keyof typeof DocumentSchema.Type]
-    | typeof NestedDocumentSchema.Type[keyof typeof NestedDocumentSchema.Type],
-): boolean =>
+const sameValue = (left: unknown, right: unknown): boolean =>
   left === right ||
-  (Array.isArray(left) && Array.isArray(right) && sameArrayElements(left, right)) ||
-  (isOptionRecord(left) && isOptionRecord(right) && sameEntries(left, right))
+  (Arr.isArray(left) && Arr.isArray(right) && sameElements(left, right)) ||
+  (isDocumentRecord(left) && isDocumentRecord(right) && sameEntries(left, right))
 
 const statedKeys = (document: DocumentRecord): ReadonlyArray<string> =>
   Object.keys(document).filter((key) => key !== '__proto__' && document[key] !== undefined)
@@ -54,12 +37,12 @@ const statedKeys = (document: DocumentRecord): ReadonlyArray<string> =>
 const usableEntriesOnly = (document: typeof DocumentSchema.Type): typeof DocumentSchema.Type =>
   Object.fromEntries(Object.entries(document).filter(([key, value]) => key !== '__proto__' && value !== undefined))
 
-describe('StrykerConfig.merge', () => {
+describe('mergeRecords', () => {
   it.prop('∀d_Merge_empty_≡KeepsEveryEntryInOrder', [DocumentSchema], ([document]) =>
-    sameValue(StrykerConfig.merge(document, {}), usableEntriesOnly(document)))
+    sameValue(mergeRecords(document, {}), usableEntriesOnly(document)))
 
   it.prop('∀do_Merge_≡StatedKeyWins', [DocumentSchema, DocumentSchema], ([base, overrides]) => {
-    const merged = StrykerConfig.merge(base, overrides)
+    const merged = mergeRecords(base, overrides)
     return Object.keys(overrides).every((key) =>
       overrides[key] === undefined || key === '__proto__'
         ? sameValue(merged[key], usableEntriesOnly(base)[key])
@@ -70,27 +53,27 @@ describe('StrykerConfig.merge', () => {
   it.prop('∀do_Merge_≡BaseKeysFirstThenNewOverrideKeys', [DocumentSchema, DocumentSchema], ([base, overrides]) => {
     const kept = usableEntriesOnly(base)
     const expected = { ...usableEntriesOnly(overrides), ...kept }
-    const mergedKeys = Object.keys(StrykerConfig.merge(base, overrides))
+    const mergedKeys = Object.keys(mergeRecords(base, overrides))
     return mergedKeys.length === Object.keys(expected).length &&
       mergedKeys.every((key) => key in expected)
   })
 
   it.prop('∀do_Merge_≡Idempotent', [DocumentSchema, DocumentSchema], ([base, overrides]) =>
     sameValue(
-      StrykerConfig.merge(StrykerConfig.merge(base, overrides), overrides),
-      StrykerConfig.merge(base, overrides),
+      mergeRecords(mergeRecords(base, overrides), overrides),
+      mergeRecords(base, overrides),
     ))
 
   it.prop('∀do_Merge_≡NestedRecordsMergeRecursively', [NestedDocumentSchema, NestedDocumentSchema], ([base, overrides]) => {
     const kept = usableEntriesOnly(base)
-    const merged = StrykerConfig.merge(base, overrides)
+    const merged = mergeRecords(base, overrides)
     return statedKeys(overrides).every((key) => {
       const override = overrides[key]
       const mergedValue = merged[key]
-      if (isOptionRecord(override) === false) {
+      if (isDocumentRecord(override) === false) {
         return sameValue(mergedValue, override)
       }
-      if (isOptionRecord(mergedValue) === false) {
+      if (isDocumentRecord(mergedValue) === false) {
         return false
       }
       return statedKeys(override).every((child) => sameValue(mergedValue[child], override[child]))
@@ -98,7 +81,7 @@ describe('StrykerConfig.merge', () => {
   })
 
   it.prop('∀do_Merge_∈DocumentKeysNeverReachThePrototype', [poisonedDocumentArb, poisonedDocumentArb], ([base, overrides]) => {
-    const merged = StrykerConfig.merge(base, overrides)
+    const merged = mergeRecords(base, overrides)
     return Object.getOwnPropertyNames(merged).includes('__proto__') === false &&
       Object.getPrototypeOf(merged) === Object.prototype &&
       Object.getOwnPropertyNames(Object.prototype).includes('polluted') === false

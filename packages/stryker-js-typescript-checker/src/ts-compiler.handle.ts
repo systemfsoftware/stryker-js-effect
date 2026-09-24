@@ -1,6 +1,6 @@
 /// <reference types="vitest/importMeta" />
 import { parse } from '@std/jsonc'
-import type { CheckerMutantWire, StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
+import { CheckerMutantWire, type StrykerOptions } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
@@ -872,13 +872,33 @@ if (import.meta.vitest !== void 0) {
     )
   }
 
-  const mutantWireOf = (id: string, fileName: string): CheckerMutantWire => ({
-    id,
-    fileName,
-    mutatorName: 'foo-mutator',
-    replacement: 'x',
-    location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
-  })
+  const mutantWireOf = (id: string, fileName: string): CheckerMutantWire =>
+    Result.getOrElse(
+      Result.flatMap(
+        S.decodeUnknownResult(MutantId)(id),
+        (decodedId) =>
+          Result.map(
+            S.decodeUnknownResult(CanonicalFileName)(fileName),
+            (decodedFileName): CheckerMutantWire => ({
+              id: decodedId,
+              fileName: decodedFileName,
+              mutatorName: Result.getOrElse(
+                S.decodeUnknownResult(MutatorName)('foo-mutator'),
+                (fallback): MutatorName => fallback,
+              ),
+              replacement: 'x',
+              location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
+            }),
+          ),
+      ),
+      (): CheckerMutantWire => ({
+        id: 'mutant-fallback' as MutantId,
+        fileName: 'src/file-0.ts' as CanonicalFileName,
+        mutatorName: 'foo-mutator' as MutatorName,
+        replacement: 'x',
+        location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
+      }),
+    )
 
   const mutantsOf = (fileIndexes: readonly number[]) =>
     Arr.map(fileIndexes, (index, position) => mutantWireOf(`mutant-${position}`, fileNameOf(index)))

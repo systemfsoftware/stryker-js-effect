@@ -196,7 +196,6 @@ export type { VmModule, VmModuleBuiltin, VmPlatform, VmScript } from './VmRunner
 export { StrykerConfig } from './config/stryker-config.schema.js'
 export type {
   ConfigEnv,
-  DocumentRecord,
   Immutable,
   ImmutablePrimitive,
   Primitive,

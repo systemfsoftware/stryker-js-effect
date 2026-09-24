@@ -8,6 +8,8 @@ import * as Predicate from 'effect/Predicate'
 import * as Record from 'effect/Record'
 import * as S from 'effect/Schema'
 
+import { mergeRecords } from './merge-records.js'
+
 export type Primitive = boolean | number | string | null | undefined
 
 export type ImmutablePrimitive = Primitive | ((...args: never[]) => void)
@@ -27,13 +29,9 @@ export const ConfigEnvSchema = S.Struct({
 })
 export type ConfigEnv = typeof ConfigEnvSchema.Type
 
-export type DocumentRecord<A = unknown> = { readonly [key: string]: A }
-
 export type StrykerConfigFn = (env: ConfigEnv) => PartialStrykerOptions | Promise<PartialStrykerOptions>
 
 export type StrykerConfigExport = PartialStrykerOptions | Promise<PartialStrykerOptions> | StrykerConfigFn
-
-export interface MergedConfigRecord<A = unknown> extends Record<string, A | MergedConfigRecord<A>> {}
 
 const isNonNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
 
@@ -78,67 +76,6 @@ function deepFreeze(target: object | Primitive): object | Primitive {
   )
 }
 
-/**
- * Whether an entry takes part in a merge: a key literally named `__proto__` never does — the
- * merged record must not gain a document-decided prototype — and an explicitly `undefined`
- * value states that the author left the key unset, not that they want it set to nothing.
- */
-const usable = <A = unknown>(value: A, key: string): boolean => key !== '__proto__' && value !== undefined
-
-const usableEntries = <A = unknown>(source: MergedConfigRecord<A>): MergedConfigRecord<A> =>
-  Record.filter(source, usable)
-
-const isConfigRecord = <A = unknown>(
-  value: A | MergedConfigRecord<A> | undefined,
-): value is MergedConfigRecord<A> => Predicate.isObject(value)
-
-const asConfigRecord = <A = unknown>(
-  value: A | MergedConfigRecord<A> | undefined,
-): Option.Option<MergedConfigRecord<A>> => Option.filter(Option.fromUndefinedOr(value), isConfigRecord)
-
-const mergeNested = <A = unknown>(
-  base: MergedConfigRecord<A>,
-  override: A | MergedConfigRecord<A>,
-): A | MergedConfigRecord<A> =>
-  Option.match(asConfigRecord(override), {
-    onNone: () => override,
-    onSome: (overrideRecord) => mergeRecords(base, overrideRecord),
-  })
-
-const ownValueOf = <A = unknown>(
-  merged: MergedConfigRecord<A>,
-  key: string,
-): Option.Option<A | MergedConfigRecord<A> | undefined> =>
-  Option.map(Option.liftPredicate(merged, hasUsableMember(key)), (present) => present[key])
-
-const hasUsableMember =
-  (key: string) =>
-  <A>(merged: MergedConfigRecord<A>): boolean =>
-    merged.hasOwnProperty(key) && merged[key] !== undefined
-
-const baseRecordOf = <A = unknown>(
-  ownValue: Option.Option<A | MergedConfigRecord<A> | undefined>,
-): Option.Option<MergedConfigRecord<A>> =>
-  Option.filter(Option.flatMap(ownValue, Option.fromUndefinedOr), isConfigRecord)
-
-const mergeKeyInto = <A = unknown>(
-  merged: MergedConfigRecord<A>,
-  override: A | MergedConfigRecord<A>,
-  key: string,
-): MergedConfigRecord<A> => ({
-  ...merged,
-  [key]: Option.match(baseRecordOf(ownValueOf(merged, key)), {
-    onNone: () => override,
-    onSome: (baseRecord) => mergeNested(baseRecord, override),
-  }),
-})
-
-const mergeRecords = <A = unknown>(
-  base: MergedConfigRecord<A>,
-  overrides: MergedConfigRecord<A>,
-): MergedConfigRecord<A> =>
-  Record.reduce(usableEntries(overrides), usableEntries(base), mergeKeyInto)
-
 const configFileNames = (extensions: readonly string[]): readonly string[] =>
   extensions.map((extension) => `stryker.config${extension}`)
 
@@ -171,11 +108,11 @@ export class StrykerConfig extends S.Class<StrykerConfig>('StrykerConfig')({
   }
 
   static readonly merge: {
-    <A>(overrides: MergedConfigRecord<A>): (defaults: MergedConfigRecord<A>) => MergedConfigRecord<A>
-    <A>(defaults: MergedConfigRecord<A>, overrides: MergedConfigRecord<A>): MergedConfigRecord<A>
+    (overrides: PartialStrykerOptions): (defaults: PartialStrykerOptions) => PartialStrykerOptions
+    (defaults: PartialStrykerOptions, overrides: PartialStrykerOptions): PartialStrykerOptions
   } = dual(
     2,
-    <A>(defaults: MergedConfigRecord<A>, overrides: MergedConfigRecord<A>): MergedConfigRecord<A> =>
+    (defaults: PartialStrykerOptions, overrides: PartialStrykerOptions): PartialStrykerOptions =>
       mergeRecords(defaults, overrides),
   )
 
