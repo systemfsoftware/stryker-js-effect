@@ -648,7 +648,7 @@ const runCellOf = (channel: CliRead) =>
 
 export const strykerCliCell = Cell.flatMap(
   cliRouteCell,
-  (action) =>
+  (action): Cell.Cell<StrykerCliInvocation, CliAnswer, CliFailure, EnginePorts> =>
     Match.value(action).pipe(
       Match.tag('CliHelpRequested', () => Cell.succeed<CliAnswer>(undefined)),
       Match.tag('CliMergeReportsRequested', (merge) => Cell.mapInput(mergeReportsCell, () => merge.request)),

@@ -22,7 +22,6 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import type { Pipeable } from 'effect/Pipeable'
 import { Prototype } from 'effect/Pipeable'
-import { walk, type WalkerCallbackContext, type WalkerThisContextEnter } from 'oxc-walker'
 import type { SpannedComment } from './Ast.schema.js'
 import type { LineTable } from './Location.schema.js'
 
@@ -477,8 +476,68 @@ const pushComment = (
   })
 }
 
-const isProgramNode = (node: Program | Node): node is Program => nodeType(node) === 'Program'
 export type AstWalker = (root: Program | Node, visitors: WalkVisitors) => void
+
+interface WalkContext {
+  readonly key: string | null
+  readonly index: number | null
+}
+
+interface WalkControls {
+  readonly skip: () => void
+}
+
+type WalkedNode = Node & AstNodeRecord
+
+type NodeField = AstNodeRecord[string]
+
+type NodeList = readonly Node[] | readonly AstNodeRecord[]
+
+interface NodeWalkVisitors {
+  readonly enter: (node: WalkedNode, context: WalkContext, controls: WalkControls) => void
+  readonly leave: (node: WalkedNode, context: WalkContext) => void
+}
+
+const WALK_SKIPPED_KEYS: Readonly<Record<string, true>> = { type: true, start: true, end: true }
+
+const walkNodes = (root: Program | Node, visitors: NodeWalkVisitors): void =>
+  visitIfNode(root, { key: null, index: null }, visitors)
+
+const visitNode = (node: WalkedNode, context: WalkContext, visitors: NodeWalkVisitors): void => {
+  const state = { skipped: false }
+  visitors.enter(node, context, {
+    skip: () => {
+      state.skipped = true
+    },
+  })
+  Boolean.match(state.skipped, {
+    onTrue: () => undefined,
+    onFalse: () => visitChildren(node, visitors),
+  })
+  visitors.leave(node, context)
+}
+
+const visitChildren = (node: WalkedNode, visitors: NodeWalkVisitors): void =>
+  Object.keys(node).forEach((key) =>
+    Boolean.match(WALK_SKIPPED_KEYS[key] === true, {
+      onTrue: () => undefined,
+      onFalse: () => visitSlot(node[key], key, visitors),
+    })
+  )
+
+const isChildList = (value: NodeField): value is NodeList => Array.isArray(value)
+
+const visitSlot = (value: NodeField, key: string, visitors: NodeWalkVisitors): void =>
+  Option.match(Option.filter(Option.some(value), isChildList), {
+    onSome: (items) => items.forEach((item, index) => visitIfNode(item, { key, index }, visitors)),
+    onNone: () => visitIfNode(value, { key, index: null }, visitors),
+  })
+
+const visitIfNode = <A = unknown>(value: A, context: WalkContext, visitors: NodeWalkVisitors): void =>
+  Option.match(Option.filter(Option.some(value), isAstNode), {
+    onNone: () => undefined,
+    onSome: (child) => visitNode(child, context, visitors),
+  })
 
 export interface WalkVisitors {
   readonly enter?: (node: Program | Node, ancestors: readonly (Program | Node)[]) => void
@@ -487,12 +546,12 @@ export interface WalkVisitors {
 
 const walker: AstWalker = (root, visitors) => {
   const ancestors: Array<Program | Node> = []
-  walk(root, {
-    enter(node, _parent, _context) {
+  walkNodes(root, {
+    enter(node) {
       visitors.enter?.(node, [...ancestors])
       ancestors.push(node)
     },
-    leave(node, _parent, _context) {
+    leave(node) {
       ancestors.pop()
       visitors.leave?.(node, [...ancestors])
     },
@@ -564,11 +623,11 @@ const COMMENT_KEYS: Readonly<Record<string, true>> = { leadingComments: true, tr
 const isCommentKey = <A = unknown>(key: A): boolean => typeof key === 'string' && COMMENT_KEYS[key] === true
 
 const walkTraverse = (root: Program | Node, stack: TraversePath[], visitors: TraverseVisitors): void => {
-  walk(root, {
-    enter(node, _parent, context) {
-      readPath(stack, node, this, context, visitors)
+  walkNodes(root, {
+    enter(node, context, controls) {
+      readPath(stack, node, controls, context, visitors)
     },
-    leave(_node, _parent, context) {
+    leave(_node, context) {
       closePath(stack, context, visitors)
     },
   })
@@ -585,8 +644,8 @@ export const traverse: {
 const readPath = (
   stack: TraversePath[],
   node: Node,
-  controls: WalkerThisContextEnter,
-  context: WalkerCallbackContext,
+  controls: WalkControls,
+  context: WalkContext,
   visitors: TraverseVisitors,
 ): void => {
   Boolean.match(isCommentKey(context.key), {
@@ -599,7 +658,7 @@ const readPath = (
   })
 }
 
-const closePath = (stack: TraversePath[], context: WalkerCallbackContext, visitors: TraverseVisitors): void =>
+const closePath = (stack: TraversePath[], context: WalkContext, visitors: TraverseVisitors): void =>
   Boolean.match(isCommentKey(context.key), {
     onTrue: () => undefined,
     onFalse: () => notify(visitors.exit, stack.pop()),
@@ -613,14 +672,14 @@ const notify = (visitor: TraverseVisitor | undefined, path: TraversePath | undef
     onSome: ({ visitor: visit, path: target }) => visit(target),
   })
 
-const keyOf = (context: WalkerCallbackContext): string | undefined =>
+const keyOf = (context: WalkContext): string | undefined =>
   Option.getOrUndefined(Option.filter(Option.some(context.key), Predicate.isString))
 
 const createPath = (
   node: Node,
   parentPath: TraversePath | null,
-  controls: WalkerThisContextEnter,
-  context: WalkerCallbackContext,
+  controls: WalkControls,
+  context: WalkContext,
 ): TraversePath => {
   const key = keyOf(context)
   const path: TraversePath = {

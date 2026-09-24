@@ -661,11 +661,11 @@ const hasSuperInChildren = (node: object): boolean =>
 
 const isObjectArray = (value: unknown): value is ReadonlyArray<object> => Array.isArray(value)
 
-const containsSuperInValue = (value: unknown): boolean =>
-  Match.value(value).pipe(
-    Match.when(isObjectArray, (items) => items.some(containsSuperCall)),
-    Match.orElse(containsSuperCall),
-  )
+const containsSuperInValue = <A = unknown>(value: A): boolean =>
+  Option.match(Option.filter(Option.some(value), isObjectArray), {
+    onSome: (items) => items.some(containsSuperCall),
+    onNone: () => containsSuperCall(value),
+  })
 
 const booleanLiteralMutator: Mutator = (node) =>
   Match.value(node).pipe(

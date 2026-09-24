@@ -487,10 +487,10 @@ const scoreText = (scoreType: ScoreType, row: MetricsResult): string => {
 
 const thresholdTone = (thresholds: MutationScoreThresholds, score: number): Tone =>
   Match.value(score).pipe(
-    Match.when((present: number) => Number.isNaN(present), () => 'muted'),
-    Match.when((present) => present >= thresholds.high, () => 'positive'),
-    Match.when((present) => present >= thresholds.low, () => 'warning'),
-    Match.orElse(() => 'negative'),
+    Match.when((present: number) => Number.isNaN(present), (): Tone => 'muted'),
+    Match.when((present) => present >= thresholds.high, (): Tone => 'positive'),
+    Match.when((present) => present >= thresholds.low, (): Tone => 'warning'),
+    Match.orElse((): Tone => 'negative'),
   )
 
 const scoreTone = (

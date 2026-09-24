@@ -11,7 +11,6 @@ import type {
   ArrowFunctionExpression,
   AssignmentExpression,
   AssignmentPattern,
-  BinaryExpression,
   BindingIdentifier,
   BindingPattern,
   BlockStatement,
@@ -354,7 +353,7 @@ const printNodePrec = (ctx: PrintContext, node: Node | null | undefined, prec: n
 const unknownNodeText = (type: string): string => `/* unknown:${type} */`
 
 
-const nodeText = Match.type<Node>().pipe(
+const nodeText: (node: Node) => (ctx: PrintContext, prec: number) => string = Match.type<Node>().pipe(
   Match.withReturnType<(ctx: PrintContext, prec: number) => string>(),
   Match.discriminatorsExhaustive('type')({
     Literal: (n) => () => literalText(n),
@@ -528,7 +527,7 @@ const nodeText = Match.type<Node>().pipe(
 
 const dispatchNode = (ctx: PrintContext, node: Node, prec: number): string => nodeText(node)(ctx, prec)
 
-const tsTypeText = Match.type<TSType>().pipe(
+const tsTypeText: (node: TSType) => (ctx: PrintContext) => string = Match.type<TSType>().pipe(
   Match.withReturnType<(ctx: PrintContext) => string>(),
   Match.discriminatorsExhaustive('type')({
     TSAnyKeyword: () => () => 'any',
@@ -581,6 +580,7 @@ const typeTextOf = (ctx: PrintContext, node: Node): string =>
 
 const statementKindText = (ctx: PrintContext, node: Statement): string =>
   Match.value(node).pipe(
+    Match.withReturnType<string>(),
     Match.discriminators('type')({
       BlockStatement: (n) => blockStatementText(ctx, n),
       VariableDeclaration: (n) => `${variableDeclarationText(ctx, n)};`,
@@ -656,7 +656,7 @@ const booleanOrBigintText = <A = unknown>(value: A): string =>
 
 const bigintText = <A = unknown>(value: A): string =>
   Match.value(value).pipe(
-    Match.when((candidate: unknown): candidate is bigint => typeof candidate === 'bigint', (v) => `${v}n`),
+    Match.when((candidate: unknown): candidate is bigint => typeof candidate === 'bigint', (v) => `${String(v)}n`),
     Match.orElse(() => 'null'),
   )
 
@@ -1523,6 +1523,7 @@ const printTypeQueryName = (ctx: PrintContext, node: TSTypeQuery): string =>
 
 const printTSTypeName = (ctx: PrintContext, name: TSTypeReference['typeName']): string =>
   Match.value(name).pipe(
+    Match.withReturnType<string>(),
     Match.discriminators('type')({
       TSQualifiedName: (n) => `${printTSTypeName(ctx, n.left)}.${n.right.name}`,
       Identifier: (n) => n.name,
@@ -2016,7 +2017,7 @@ const propertyDefinitionModifiers = (node: PropertyDefinition): string =>
   )}${flagText(node.readonly, 'readonly ')}${flagText(node.override, 'override ')}`
 
 type LiteralSource = {
-  readonly value: unknown
+  readonly value: string | number | boolean | bigint | RegExp | null
   readonly raw: string | null
   readonly bigint?: string
   readonly regex?: { readonly pattern: string; readonly flags: string }
