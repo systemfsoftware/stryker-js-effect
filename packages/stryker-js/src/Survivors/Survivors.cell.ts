@@ -229,15 +229,14 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@effect/vitest')
   const { Schema } = await import('effect')
-  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
 
-  const sourceArb = Arbitrary.schema(Schema.String.check(Schema.isMaxLength(64)))
+  const SourceText = Schema.String.check(Schema.isPattern(/^\P{Surrogate}*$/u), Schema.isMaxLength(64))
 
-  it.prop('∀s_HashContent_∈Sha256Hex', [sourceArb], ([source]) => /^[0-9a-f]{64}$/.test(hashContent(source)))
+  it.prop('∀s_HashContent_∈Sha256Hex', [SourceText], ([source]) => /^[0-9a-f]{64}$/.test(hashContent(source)))
 
   it.prop(
     '∀ab_HashContent_DistinctPerDraw',
-    [sourceArb, sourceArb],
+    [SourceText, SourceText],
     ([a, b]) => a === b || hashContent(a) !== hashContent(b),
   )
 }
