@@ -56,7 +56,7 @@ import type {
 } from './Ast.schema.js'
 import { AstFormat } from './Syntax.schema.js'
 import { type MutateDescription } from './Instrument.schema.js'
-import { LineTable, LineTableFromText } from './Location.schema.js'
+import { LineTable, LineTableFromText, type Position } from './Location.schema.js'
 import { INSTRUMENTER_CONSTANTS as ID } from './Mutant.js'
 import {
   Mutators,
@@ -81,6 +81,20 @@ import {
 } from './Transformer.schema.js'
 
 const STRYKER_NAMESPACE_HELPER = 'stryNS_9fa48'
+const comparePositions = (a: Position, b: Position): number => {
+  const lineDelta = a.line - b.line
+  return Boolean.match(lineDelta !== 0, {
+    onTrue: () => lineDelta,
+    onFalse: () => a.column - b.column,
+  })
+}
+
+const locationIncluded = (haystack: SourceLocationInFile, needle: SourceLocationInFile): boolean =>
+  comparePositions(haystack.start, needle.start) <= 0 && comparePositions(haystack.end, needle.end) >= 0
+
+const locationOverlaps = (a: SourceLocationInFile, b: SourceLocationInFile): boolean =>
+  comparePositions(a.start, b.end) <= 0 && comparePositions(a.end, b.start) >= 0
+
 const COVER_MUTANT_HELPER = 'stryCov_9fa48'
 const IS_MUTANT_ACTIVE_HELPER = 'stryMutAct_9fa48'
 
@@ -230,8 +244,9 @@ const processStrykerDirectives = (
   originFileName: string,
 ): { rule: Rule; warnings: readonly string[]; failure: Option.Option<DirectiveIncomplete | CommentLocationMissing> } => {
   const outcomes = Arr.map(attachedComments(node), parseStrykerDirective)
-  const directives = Arr.filterMap(outcomes, (outcome) => Option.flatMap(outcome, Result.getSuccess))
-  const failure = Arr.head(Arr.filterMap(outcomes, (outcome) => Option.flatMap(outcome, Result.getFailure)))
+  const parsed = Arr.getSomes(outcomes)
+  const directives = Arr.filterMap(parsed, (result) => result)
+  const failure = Arr.head(Arr.filterMap(parsed, Result.flip))
   const warnings = directives.flatMap((directive) => mutatorWarnings(directive, allMutatorNames, originFileName))
   return { rule: directives.reduce(applyStrykerDirective, rule), warnings, failure }
 }

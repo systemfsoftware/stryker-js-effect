@@ -38,6 +38,8 @@ import {
   ConfiguredPluginModulePath,
   ConfiguredPluginName,
   resolveConfiguredPlugin,
+  WorkerSpawnCommand,
+  type WorkerSpawnResolved,
 } from './resolve-configured-plugin.workflow.js'
 
 export interface DryRunDone extends InstrumentDone {
@@ -60,14 +62,14 @@ const workerSpawnOf = (
   loaded: Pick<LoadedPlugins, 'pluginSources'>,
   kind: WorkerPluginKind,
   configured: ConfiguredPluginName | ConfiguredPluginModulePath,
-) =>
-  Result.match(resolveConfiguredPlugin({ sources: loaded.pluginSources, kind, configured }), {
-    onSuccess: Effect.succeed,
-    onFailure: (missing) =>
-      Effect.fail(
-        StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
-      ),
-  })
+): Effect.Effect<WorkerSpawnResolved, StageError> =>
+  Effect.mapError(
+    Effect.fromResult(
+      resolveConfiguredPlugin(WorkerSpawnCommand.make({ sources: loaded.pluginSources, kind, configured })),
+    ),
+    (missing) =>
+      StageError.make({ stage, reason: missing.reason, cause: PluginNotFoundError.make({ descriptor: missing.descriptor }) }),
+  )
 
 const optionalSandboxPathsOf = (command: InstrumentDone) =>
   Boolean.match(command.project.testFiles.length === 0, {

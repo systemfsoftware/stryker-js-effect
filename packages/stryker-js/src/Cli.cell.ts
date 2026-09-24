@@ -52,7 +52,7 @@ import {
 } from './route-cli-request.workflow.js'
 import { mergeReportsCell } from './merge-reports.cell.js'
 import { MergeReportsFailed } from './merge-reports.schema.js'
-import { RunExit } from './classify-run-outcome.workflow.js'
+import { RunExit, type RunOutcomeDecision, type RunOutcomeError } from './classify-run-outcome.workflow.js'
 import { RunEventDrain, type RunEventStreamPort, type RunEventStream } from './run-event-stream.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { StrykerError } from './stryker-error.schema.js'
@@ -624,7 +624,7 @@ const survivorsInputOf = (channel: CliRead): SurvivorsAdmissionInput => ({
 const admissionCellOf = (answer: SurvivorsAdmissionAnswer, channel: CliRead) =>
   Match.value(answer.admission).pipe(
     Match.tag('NoSurvivors', () =>
-      Cell.fromEffect<CliAnswer>(
+      Cell.fromEffect(
         channel.environment.runEvents.emitNullScoreVerdict({
           stream: channel.environment.stream,
           mode: channel.environment.mode,
@@ -644,7 +644,7 @@ const admissionCellOf = (answer: SurvivorsAdmissionAnswer, channel: CliRead) =>
 
 
 const runCellOf = (channel: CliRead) =>
-  Cell.fromEffect<CliAnswer>(runEffectOf(channel.environment, channel.options))
+  Cell.fromEffect(runEffectOf(channel.environment, channel.options))
 
 export const strykerCliCell = Cell.flatMap(
   cliRouteCell,

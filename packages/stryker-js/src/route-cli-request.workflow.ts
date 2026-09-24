@@ -6,7 +6,12 @@ import * as S from 'effect/Schema'
 
 import { CliRouteCommand } from './Cli.schema.js'
 
-export class CliHelpRequested extends S.TaggedClass<CliHelpRequested>()('CliHelpRequested', {}) {}
+const CliRouteDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CliRouteDecision')
+type CliRouteDecisionTypeId = typeof CliRouteDecisionTypeId
+
+export class CliHelpRequested extends S.TaggedClass<CliHelpRequested>()('CliHelpRequested', {}) {
+  readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
+}
 
 export class CliMergeReportsRequested extends S.TaggedClass<CliMergeReportsRequested>()(
   'CliMergeReportsRequested',
@@ -15,11 +20,17 @@ export class CliMergeReportsRequested extends S.TaggedClass<CliMergeReportsReque
     out: S.String,
     packages: S.optional(S.String),
   },
-) {}
+) {
+  readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
+}
 
-export class CliRunRequested extends S.TaggedClass<CliRunRequested>()('CliRunRequested', {}) {}
+export class CliRunRequested extends S.TaggedClass<CliRunRequested>()('CliRunRequested', {}) {
+  readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
+}
 
-export class CliSurvivorsRequested extends S.TaggedClass<CliSurvivorsRequested>()('CliSurvivorsRequested', {}) {}
+export class CliSurvivorsRequested extends S.TaggedClass<CliSurvivorsRequested>()('CliSurvivorsRequested', {}) {
+  readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
+}
 
 export type CliRouteDecision =
   | CliHelpRequested

@@ -500,7 +500,7 @@ const scoreTone = (
 ): ((row: MetricsResult) => Tone) =>
   Boolean.match(allowColor, {
     onTrue: () => (row) => thresholdTone(thresholds, mutationScoreOf(scoreType, row.metrics)),
-    onFalse: () => () => 'plain',
+    onFalse: () => (): Tone => 'plain',
   })
 
 const contentWidth = (content: CellContent): number => content.indent + content.text.length

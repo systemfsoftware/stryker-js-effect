@@ -3,6 +3,7 @@ import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
 import { errorToString } from './Mutant.js'
+import type { MutantNotApplied } from './Mutant.schema.js'
 
 export type TransformerFailure =
   | MutantPlacementFailed
@@ -12,6 +13,7 @@ export type TransformerFailure =
   | MutantsUnplaced
   | PlacementMissing
   | HeaderEmpty
+  | MutantNotApplied
 
 export class MutantPlacementFailed
   extends S.TaggedError<MutantPlacementFailed>('@systemfsoftware/stryker-js-instrumenter/Transformer.schema/MutantPlacementFailed')(
@@ -39,12 +41,15 @@ const PLACEMENT_LIST_FORMAT = new Intl.ListFormat('en')
 
 interface PlacementSite {
   readonly fileName: string
-  readonly line: number | undefined
-  readonly column: number | undefined
+  readonly line?: number | undefined
+  readonly column?: number | undefined
 }
 
 const placementSiteText = (value: number | undefined): string =>
-  Option.getOrElse(Option.fromUndefinedOr(value), () => 'undefined')
+  Option.match(Option.fromUndefinedOr(value), {
+    onNone: () => 'undefined',
+    onSome: (present) => String(present),
+  })
 
 const placementLocation = (site: PlacementSite): string =>
   `${site.fileName}:${placementSiteText(site.line)}:${placementSiteText(site.column)}`

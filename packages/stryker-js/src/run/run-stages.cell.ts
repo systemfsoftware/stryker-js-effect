@@ -35,7 +35,7 @@ const prepareStageCell = Cell.andThen(
   ),
   Cell.andThen(
     Cell.andThen(concurrencyCell, instrumentCell),
-    Cell.andThen(Cell.andThen(dryRunCell, mutationTestStageCell)),
+    Cell.andThen(dryRunCell, mutationTestStageCell),
   ),
 )
 

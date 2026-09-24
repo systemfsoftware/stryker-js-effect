@@ -650,17 +650,18 @@ interface RangeRemap {
 const remapScriptLocations = (
   code: string,
   scriptMap: Map<string, ScriptTag>,
-  moduleScriptRange: TemplateRange | undefined,
+  moduleScriptRange: Option.Option<TemplateRange>,
   templateRanges: Array<TemplateRange>,
 ) => {
-  const ordered = Arr.appendAll(Option.toArray(Option.fromUndefinedOr(moduleScriptRange)), templateRanges).sort((
-    left,
-    right,
-  ) => left.start - right.start)
+  const ordered = Arr.appendAll(Option.toArray(moduleScriptRange), templateRanges).sort((left, right) =>
+    left.start - right.start
+  )
   const remapped = remapInOrder(ordered, code, scriptMap)
   const remappedModuleScriptRange = Option.getOrUndefined(
     Option.map(
-      Arr.findFirst(remapped, (script) => script.range === moduleScriptRange && script.hadScript),
+      Arr.findFirst(remapped, (script) =>
+        Option.exists(moduleScriptRange, (range) => script.range === range && script.hadScript)
+      ),
       (script) => script.scriptRange,
     ),
   )
