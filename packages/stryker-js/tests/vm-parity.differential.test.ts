@@ -1,16 +1,18 @@
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Differential } from '@systemfsoftware/differential-spec'
 import { Configuration, Engine, Plugin, Worker } from '@systemfsoftware/stryker-js'
-import type { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { strykerPlugins as vmRunnerPlugins } from '@systemfsoftware/stryker-js-vm-runner'
 import * as TestTelemetry from '@systemfsoftware/vitest-config/telemetry'
+import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
-import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
@@ -33,21 +35,6 @@ const INTERRUPT_AFTER_MS = 280_000
 const MUTANT_RUN_BOUND_MS = 5_000
 const MUTANT_KILL_GRACE = Duration.seconds(1)
 const BASELINE_RUN_BOUND_MS = 60_000
-
-const workerCanary = Layer.succeed(
-  Worker.WorkerLauncher,
-  Worker.WorkerLauncher.of({
-    spawn: () => Effect.die(new Error('a worker was launched for a vm-parity dry run')),
-  }),
-)
-
-const spawnerCanary = Layer.succeed(
-  ChildProcessSpawner.ChildProcessSpawner,
-  ChildProcessSpawner.make(() => Effect.die(new Error('a child process was spawned for a vm-parity dry run'))),
-)
-
-const stubPortsLayer = Layer.merge(spawnerCanary, workerCanary)
-const sandboxFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 interface Location {
   readonly line: number
@@ -159,12 +146,15 @@ const statusOf = (task: RunnerTestCase): TestRunner.TestStatus => {
   return task.result?.state === 'pass' ? 'success' : 'skipped'
 }
 
+const FILE_FAILED_WITHOUT_FAILING_TEST = '<the file failed with no failing test>'
+
 const captureFile = (
   file: RunnerTestFile,
   path: Path.Path,
   directory: string,
 ): readonly (readonly [string, string])[] => {
   const captured: Array<readonly [string, string]> = []
+  const relativeFile = path.relative(directory, file.filepath)
   const visit = (task: RunnerTask, ancestors: readonly string[]): void => {
     if (task.type === 'suite') {
       const nested = [...ancestors, task.name]
@@ -173,13 +163,13 @@ const captureFile = (
       }
       return
     }
-    captured.push([
-      `${path.relative(directory, file.filepath)}#${[...ancestors, task.name].join(' > ')}`,
-      statusOf(task),
-    ])
+    captured.push([`${relativeFile}#${[...ancestors, task.name].join(' > ')}`, statusOf(task)])
   }
   for (const task of file.tasks) {
     visit(task, [])
+  }
+  if (file.result?.state === 'fail' && !captured.some(([, status]) => status === 'failed')) {
+    captured.push([`${relativeFile}#${FILE_FAILED_WITHOUT_FAILING_TEST}`, 'failed'])
   }
   return captured
 }
@@ -224,7 +214,7 @@ const realTestOutcomes = (
   })
 
 const contextFor = (defaults: Options.StrykerOptions, directory: string): Plugin.TestRunnerBuildContext => ({
-  options: { ...defaults, testRunner: 'vm' },
+  options: { ...defaults, testRunner: 'vm', disableBail: true },
   fileDescriptions: {},
   sandboxWorkingDirectory: directory,
   idGenerator: { next: Effect.succeed(1) },
@@ -232,16 +222,32 @@ const contextFor = (defaults: Options.StrykerOptions, directory: string): Plugin
   testFiles: [],
 })
 
+const vmChildRunner = (
+  context: Plugin.TestRunnerBuildContext,
+): Effect.Effect<Plugin.PooledTestRunner, Plugin.PooledTestRunnerError, Scope.Scope | Worker.WorkerLauncher> =>
+  Arr.head(vmRunnerPlugins).pipe(
+    Option.map((runner) =>
+      Plugin.makeChildProcessTestRunner({
+        options: context.options,
+        fileDescriptions: context.fileDescriptions,
+        sandboxWorkingDirectory: context.sandboxWorkingDirectory,
+        workerEntrypoint: runner.workerEntry,
+        idGenerator: context.idGenerator,
+      })
+    ),
+    Option.getOrElse(() => Effect.die(new Error('the vm runner plugin descriptor is missing'))),
+  )
+
 const withVmRunner = <A, R>(
   directory: string,
   use: (runner: Plugin.PooledTestRunner) => Effect.Effect<A, never, R>,
 ): Effect.Effect<A, never, R> =>
   Effect.gen(function*() {
     const defaults = yield* Configuration.createDefaultOptions
-    const neverSpawned = Effect.die(new Error('the child-process runner was built for a vm-parity dry run'))
-    return yield* Effect.flatMap(Plugin.buildTestRunner(contextFor(defaults, directory), neverSpawned), use)
+    const context = contextFor(defaults, directory)
+    return yield* Effect.flatMap(Plugin.buildTestRunner(context, vmChildRunner(context)), use)
   }).pipe(
-    Effect.provide(Layer.mergeAll(sandboxFileLayer, stubPortsLayer)),
+    Effect.provide(Engine.nodePlatformLayer),
     Effect.scoped,
     Effect.orDie,
   )
@@ -256,11 +262,12 @@ const vmTestOutcomes = (
 ): Effect.Effect<Outcomes> =>
   Effect.forEach(
     subroots,
-    (subroot) =>
-      serialized(
-        withVmRunner(subroot === '.' ? root : path.join(root, subroot), (runner) =>
+    (subroot) => {
+      const directory = subroot === '.' ? root : path.join(root, subroot)
+      return serialized(
+        withVmRunner(directory, (runner) =>
           Effect.gen(function*() {
-            const dry = yield* runner.dryRun({ timeout: 180_000, coverageAnalysis: 'off', disableBail: false }).pipe(
+            const dry = yield* runner.dryRun({ timeout: 180_000, coverageAnalysis: 'off', disableBail: true }).pipe(
               Effect.orDie,
             )
             if (dry.status !== 'complete') {
@@ -269,10 +276,12 @@ const vmTestOutcomes = (
             return dry.tests.map((test): readonly [string, string] => {
               const hash = test.id.lastIndexOf('#')
               const file = hash === -1 ? '' : test.id.slice(0, hash)
-              return [subroot === '.' ? `${file}#${test.name}` : `${subroot}/${file}#${test.name}`, test.status]
+              const name = test.name === path.join(directory, file) ? FILE_FAILED_WITHOUT_FAILING_TEST : test.name
+              return [subroot === '.' ? `${file}#${name}` : `${subroot}/${file}#${name}`, test.status]
             })
           })),
-      ),
+      )
+    },
     { concurrency: 1 },
   ).pipe(Effect.map((rows) => recordOf(rows.flat())))
 
@@ -495,7 +504,7 @@ const realMutantVerdicts = (fixture: Fixture): Effect.Effect<Outcomes> =>
   )
 
 const RUNAWAY_VERDICT = 'Killed/runaway'
-const RUNAWAY_REASON_PREFIX = 'Stryker: Hit count limit reached'
+const RUNAWAY_REASON_PREFIX = TestRunner.HitLimitReasonPrefix.literal
 
 const candidateVerdictOf = (mutant: MutantRecord): string =>
   mutant.status === 'Killed' && (mutant.statusReason?.startsWith(RUNAWAY_REASON_PREFIX) ?? false)

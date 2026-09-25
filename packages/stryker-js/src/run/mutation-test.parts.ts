@@ -63,6 +63,7 @@ import { StageError } from '../Run.schema.js'
 import { sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.blueprint.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
+import { testRunnerConfigOf } from '../vm-runner.js'
 import { ChildProcessCrashedError } from '../Worker.schema.js'
 import { IdGenerator } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
@@ -233,7 +234,7 @@ const isCheckerCrash = (error: StageError | CheckerCrash): boolean =>
   )
 
 const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
-  Match.value(configured).pipe(
+  Match.value(testRunnerConfigOf(configured)).pipe(
     Match.when(Options.isCustomTestRunner, (custom) => ConfiguredPluginModulePath.make({ modulePath: custom.plugin })),
     Match.orElse((name) => ConfiguredPluginName.make({ name })),
   )

@@ -25,7 +25,6 @@ export {
   type SpawnReporterWorkerParams,
 } from '../reporter-stream.service.js'
 export type { TestRunnerBuildContext } from '../TestRunner.blueprint.js'
-export { buildTestRunner } from '../TestRunner.blueprint.js'
+export { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.blueprint.js'
 export type { PooledTestRunnerError } from '../TestRunner.schema.js'
-export { isVmRunner, vmTestRunner } from '../VmRunner.blueprint.js'
-export type { VmTestRunnerConfig } from '../VmRunner.blueprint.js'
+export { isVmRunner, testRunnerConfigOf, vmRunnerPluginUrl, vmTestRunnerConfig } from '../vm-runner.js'

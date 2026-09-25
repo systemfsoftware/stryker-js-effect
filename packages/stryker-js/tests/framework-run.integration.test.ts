@@ -1,6 +1,6 @@
-import { NodeFileSystem, NodePath, NodeStdio } from '@effect/platform-node'
+import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine, RunEvent, Worker } from '@systemfsoftware/stryker-js'
+import { Engine, RunEvent } from '@systemfsoftware/stryker-js'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -9,7 +9,6 @@ import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
 const Feature = makeFeature({ it })
 
@@ -18,28 +17,9 @@ const FRAMEWORK_FIXTURES = `${globalThis.process.cwd()}/tests/__fixtures__/frame
 const pluginUrlOf = (moduleName: string): string =>
   globalThis.process.getBuiltinModule('node:url').pathToFileURL(`${FRAMEWORK_FIXTURES}/${moduleName}`).href
 
-const NEVER_SPAWN = 'a child process was spawned for an in-memory run'
-
-const workerCanary = Layer.succeed(
-  Worker.WorkerLauncher,
-  Worker.WorkerLauncher.of({
-    spawn: () => Effect.die(new Error(NEVER_SPAWN)),
-  }),
-)
-
-const spawnerCanary = Layer.succeed(
-  ChildProcessSpawner.ChildProcessSpawner,
-  ChildProcessSpawner.make(() => Effect.die(new Error(NEVER_SPAWN))),
-)
-
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
-const neverSpawnPorts: Layer.Layer<Engine.EnginePorts> = Layer.mergeAll(
-  filePorts,
-  NodeStdio.layer,
-  workerCanary,
-  spawnerCanary,
-)
+const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')
 
 interface Workspace {
   readonly directory: string
@@ -60,6 +40,14 @@ const TEST_SOURCE = [
   '',
   "test('the workspace test suite runs', () => {",
   '  globalThis.__strykerProbe = true',
+  '})',
+].join('\n')
+const MATH_TEST_SOURCE = [
+  "import { expect, test } from 'vitest'",
+  "import math from '../src/math.js'",
+  '',
+  "test('adds two numbers', () => {",
+  '  expect(math.add(1, 2)).toBe(3)',
   '})',
 ].join('\n')
 const SVELTE_SOURCE = '<template><p id="greeting">hello</p></template>\n'
@@ -151,6 +139,21 @@ const writeWorkspace = (
         }),
       { discard: true },
     )
+    yield* fs.makeDirectory(path.join(directory, 'node_modules'), { recursive: true })
+    const installed = yield* fs.readDirectory(path.join(PACKAGE_ROOT, 'node_modules'))
+    yield* Effect.forEach(
+      installed,
+      (entry) =>
+        Effect.gen(function*() {
+          const target = path.join(directory, 'node_modules', entry)
+          const present = yield* fs.exists(target)
+          yield* Effect.when(
+            fs.symlink(path.join(PACKAGE_ROOT, 'node_modules', entry), target),
+            Effect.succeed(!present),
+          )
+        }),
+      { discard: true },
+    )
     return directory
   }).pipe(Effect.orDie)
 
@@ -185,8 +188,8 @@ const runOver = (workspace: Workspace): Effect.Effect<RunObservation, never, nev
   Effect.gen(function*() {
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const runLayer = Layer.merge(
-      Layer.provide(Engine.RunEnvironment.stage(environmentFor(workspace.directory), queue), neverSpawnPorts),
-      neverSpawnPorts,
+      Layer.provide(Engine.RunEnvironment.stage(environmentFor(workspace.directory), queue), Engine.nodePlatformLayer),
+      Engine.nodePlatformLayer,
     )
     const exit = yield* Engine.mutationTestCell
       .run({
@@ -226,7 +229,7 @@ Feature('Framework plugins joining a mutation run')
               ['package.json', INSTALLED_WORKSPACE_PACKAGE],
               ['src/math.js', MATH_SOURCE],
               ['src/widget.svelte', SVELTE_SOURCE],
-              ['test/sample.test.mjs', TEST_SOURCE],
+              ['test/sample.test.mjs', MATH_TEST_SOURCE],
               ['node_modules/@systemfsoftware/stryker-js-svelte/package.json', INSTALLED_SVELTE_MANIFEST],
               ['node_modules/fixture-framework/package.json', INSTALLED_FIXTURE_MANIFEST],
               ['node_modules/fixture-framework/index.mjs', INSTALLED_FIXTURE_ENTRY],
@@ -328,7 +331,7 @@ Feature('Framework plugins joining a mutation run')
               ['package.json', PACKAGE_SOURCE],
               ['src/math.js', MATH_SOURCE],
               ['src/widget.fixture', FIXTURE_SOURCE],
-              ['test/sample.test.mjs', TEST_SOURCE],
+              ['test/sample.test.mjs', MATH_TEST_SOURCE],
             ]).pipe(
               Effect.map((directory) =>
                 workspaceOf(

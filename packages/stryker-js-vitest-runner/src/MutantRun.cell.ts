@@ -17,6 +17,7 @@ export interface MutantRunCellDeps {
   ) => Effect.Effect<
     {
       readonly rawTests: readonly RunnerTestCase[]
+      readonly fileFailures: readonly { readonly fileName: string; readonly message: string }[]
       readonly hasExternalError: boolean
       readonly externalErrorText: string
     },
@@ -36,7 +37,7 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
       yield* session.provide('hitLimit', command.hitLimit)
       yield* session.provide('mutantActivation', command.mutantActivation)
       yield* session.provide('activeMutant', command.activeMutant.id)
-      const { rawTests, hasExternalError, externalErrorText } = yield* deps.collectRaw({
+      const { rawTests, fileFailures, hasExternalError, externalErrorText } = yield* deps.collectRaw({
         testIds: Option.getOrUndefined(
           Option.map(Option.fromNullishOr(command.testFilter), (ids) => [...ids]),
         ),
@@ -47,7 +48,7 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
       const vitestOptions = yield* deps.vitestOptions
       return {
         _tag: 'VitestMutantRunCommand' as const,
-        tests: { projectRoot: deps.projectRoot, records: rawTests },
+        tests: { projectRoot: deps.projectRoot, records: rawTests, fileFailures },
         hasExternalError,
         externalErrorText,
         hitCount,

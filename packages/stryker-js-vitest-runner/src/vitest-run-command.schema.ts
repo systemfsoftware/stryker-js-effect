@@ -145,7 +145,7 @@ const normalizeTestIdRaw = (id: string, projectRoot: string): string => {
 }
 
 const toTestStatus = (taskState: TaskState, mode: string): TestRunner.TestStatus =>
-  Match.value(mode === 'skip').pipe(
+  Match.value(mode === 'skip' || mode === 'todo').pipe(
     Match.when(true, (): TestRunner.TestStatus => 'skipped'),
     Match.when(false, (): TestRunner.TestStatus =>
       Match.value(taskState).pipe(
@@ -264,6 +264,21 @@ const convertTestRaw = <A = unknown>(test: A, projectRoot: string): TestRunner.T
   )
 }
 
+export const VitestFileFailure = S.Struct({
+  fileName: S.String,
+  message: S.String,
+})
+export type VitestFileFailure = S.Schema.Type<typeof VitestFileFailure>
+
+const fileFailureTest = (failure: VitestFileFailure, projectRoot: string): TestRunner.TestResult => ({
+  id: normalizeTestIdRaw(`${failure.fileName}#${failure.fileName}`, projectRoot),
+  name: failure.fileName,
+  timeSpentMs: 0,
+  status: 'failed',
+  failureMessage: failure.message,
+  fileName: failure.fileName,
+})
+
 export const VitestTestRun = S.Unknown.pipe(
   S.decodeTo(
     S.Array(TestRunner.TestResultSchema),
@@ -274,7 +289,16 @@ export const VitestTestRun = S.Unknown.pipe(
           onSome: (run): readonly TestRunner.TestResult[] => {
             const projectRoot = Option.getOrElse(getStringField(run, 'projectRoot'), () => '')
             const records = Option.getOrElse(asArrayOption(run['records']), (): readonly RawVitestRecord[] => [])
-            return records.map((record) => convertTestRaw(record, projectRoot))
+            const fileFailures = Option.getOrElse(
+              asArrayOption(run['fileFailures']),
+              (): readonly RawVitestRecord[] => [],
+            ).flatMap((value) =>
+              Option.match(S.decodeUnknownOption(VitestFileFailure)(value), {
+                onNone: (): readonly TestRunner.TestResult[] => [],
+                onSome: (failure): readonly TestRunner.TestResult[] => [fileFailureTest(failure, projectRoot)],
+              })
+            )
+            return [...records.map((record) => convertTestRaw(record, projectRoot)), ...fileFailures]
           },
         }),
       encode: (tests) => tests,

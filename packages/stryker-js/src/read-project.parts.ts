@@ -21,7 +21,6 @@ import { IgnoreRule } from './matching.schema.js'
 import { type MutationRangeSpecifier, MutationRangeSpecifierSchema } from './MutationRange.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { StrykerPackage } from './stryker-package.schema.js'
-import { isVmRunner } from './VmRunner.blueprint.js'
 
 const ALWAYS_IGNORE = Object.freeze([
   'node_modules',
@@ -48,20 +47,12 @@ const defaultTestFileIgnores = (tempDirName: string): readonly string[] => [
   `**/${tempDirName}/**`,
 ]
 
-const shouldDiscoverTestFiles = (
-  options: Pick<Options.StrykerOptions, 'testFiles' | 'testRunner'>,
-): boolean => options.testFiles.length === 0 && isVmRunner(options.testRunner)
-
 const testFileSelectionOf = (
-  options: Pick<Options.StrykerOptions, 'tempDirName' | 'testFiles' | 'testRunner'>,
-): { readonly testFilePatterns: readonly string[]; readonly testFileIgnores: readonly string[] } =>
-  Boolean.match(shouldDiscoverTestFiles(options), {
-    onTrue: () => ({
-      testFilePatterns: VITEST_DEFAULT_TEST_FILE_PATTERNS,
-      testFileIgnores: defaultTestFileIgnores(options.tempDirName),
-    }),
-    onFalse: () => ({ testFilePatterns: options.testFiles, testFileIgnores: [] }),
-  })
+  options: Pick<Options.StrykerOptions, 'testFiles'>,
+): { readonly testFilePatterns: readonly string[]; readonly testFileIgnores: readonly string[] } => ({
+  testFilePatterns: options.testFiles,
+  testFileIgnores: [],
+})
 
 type Location = {
   readonly start: { readonly line: number; readonly column: number }

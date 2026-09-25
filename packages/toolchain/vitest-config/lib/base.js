@@ -58,10 +58,6 @@ const guardExemptions = {
   '@systemfsoftware/stryker-ignorer-angular': ignorerTester,
   '@systemfsoftware/stryker-ignorer-effect-schema-declarations': ignorerTester,
   '@systemfsoftware/stryker-ignorer-in-source-vitest-block': ignorerTester,
-  '@systemfsoftware/stryker-vm-harness': {
-    projects: '*',
-    registrar: "the vm harness runs user-project sandbox suites in-process on the host's vitest it and expect",
-  },
 }
 
 /**
@@ -203,7 +199,6 @@ export const sharedConfig = {
     testTimeout: sharedTestTimeout,
     silent: isAgent ? 'passed-only' : false,
     provide: { '@systemfsoftware/vitest:property-check': { runs: propertyRuns } },
-    ...(isAgent ? { bail: 1 } : {}),
     coverage: {
       enabled: isCI || process.env['COVERAGE'] === 'true',
       provider: 'v8',

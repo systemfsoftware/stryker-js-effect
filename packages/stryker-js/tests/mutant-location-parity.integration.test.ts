@@ -1,6 +1,6 @@
-import { NodeFileSystem, NodePath, NodeStdio } from '@effect/platform-node'
+import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine, RunEvent, Worker } from '@systemfsoftware/stryker-js'
+import { Engine, RunEvent } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
@@ -12,7 +12,6 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
 const Feature = makeFeature({ it })
 
@@ -21,28 +20,7 @@ const FRAMEWORK_FIXTURES = `${globalThis.process.cwd()}/tests/__fixtures__/frame
 const pluginUrlOf = (moduleName: string): string =>
   globalThis.process.getBuiltinModule('node:url').pathToFileURL(`${FRAMEWORK_FIXTURES}/${moduleName}`).href
 
-const NEVER_SPAWN = 'a child process was spawned for an in-memory run'
-
-const workerCanary = Layer.succeed(
-  Worker.WorkerLauncher,
-  Worker.WorkerLauncher.of({
-    spawn: () => Effect.die(new Error(NEVER_SPAWN)),
-  }),
-)
-
-const spawnerCanary = Layer.succeed(
-  ChildProcessSpawner.ChildProcessSpawner,
-  ChildProcessSpawner.make(() => Effect.die(new Error(NEVER_SPAWN))),
-)
-
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
-
-const neverSpawnPorts: Layer.Layer<Engine.EnginePorts> = Layer.mergeAll(
-  filePorts,
-  NodeStdio.layer,
-  workerCanary,
-  spawnerCanary,
-)
 
 const MATH_FILE = 'src/lib/math.ts'
 const FIXTURE_FILE = 'src/widget.fixture'
@@ -59,14 +37,17 @@ const SOURCES: Readonly<Record<string, string>> = {
 
 const PACKAGE_SOURCE = '{ "type": "commonjs" }\n'
 const TEST_SOURCE = [
-  "import { test } from 'vitest'",
+  "import { expect, test } from 'vitest'",
+  "import { incrementBy, toggleValue } from '../src/lib/math.ts'",
   '',
-  "test('the workspace test suite runs', () => {",
-  '  globalThis.__strykerParityProbe = true',
+  "test('the workspace test suite exercises the mutated module', () => {",
+  '  expect({ sum: incrementBy(1, 2), flipped: toggleValue(true) }).toEqual({ sum: 3, flipped: false })',
   '})',
 ].join('\n')
 
 const PRE_FIX_COLUMN_DRIFT = 1
+
+const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')
 
 const REUSE_ONLY_STATUS: Mutant.MutantStatus = 'Timeout'
 
@@ -98,6 +79,7 @@ const writeWorkspace = (): Effect.Effect<Workspace, never, FileSystem.FileSystem
         }),
       { discard: true },
     )
+    yield* fs.symlink(path.join(PACKAGE_ROOT, 'node_modules'), path.join(directory, 'node_modules'))
     return { directory }
   }).pipe(Effect.orDie)
 
@@ -137,8 +119,8 @@ const executeRun = (workspace: Workspace): Effect.Effect<ObservedRun, never, Fil
   Effect.gen(function*() {
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(8192)
     const runLayer = Layer.merge(
-      Layer.provide(Engine.RunEnvironment.stage(environmentFor(workspace.directory), queue), neverSpawnPorts),
-      neverSpawnPorts,
+      Layer.provide(Engine.RunEnvironment.stage(environmentFor(workspace.directory), queue), Engine.nodePlatformLayer),
+      Engine.nodePlatformLayer,
     )
     const exit = yield* Engine.mutationTestCell
       .run({

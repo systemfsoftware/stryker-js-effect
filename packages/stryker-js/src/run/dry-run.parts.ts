@@ -20,6 +20,7 @@ import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js
 import { StageError } from '../Run.schema.js'
 import { originalFileFor, sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.blueprint.js'
+import { testRunnerConfigOf } from '../vm-runner.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { DryRunDone, DryRunRaw } from './dry-run.cell.js'
 import type { InstrumentDone } from './instrument.cell.js'
@@ -36,7 +37,7 @@ const sandboxPathsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
   Result.all(fileNames.map((fileName) => sandboxFileFor(sandbox, fileName)))
 
 const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
-  Match.value(configured).pipe(
+  Match.value(testRunnerConfigOf(configured)).pipe(
     Match.when(Options.isCustomTestRunner, (custom) => ConfiguredPluginModulePath.make({ modulePath: custom.plugin })),
     Match.orElse((name) => ConfiguredPluginName.make({ name })),
   )
@@ -65,9 +66,14 @@ const optionalSandboxPathsOf = (command: InstrumentDone) =>
     onFalse: () => sandboxPathsOf(command.sandbox, command.project.testFiles),
   })
 
+const mutatedFileNamesOf = (command: InstrumentDone): readonly string[] => {
+  const mutated = MutableHashSet.fromIterable(command.mutants.map((mutant) => mutant.fileName))
+  return [...MutableHashMap.keys(command.project.filesToMutate)].filter((name) => MutableHashSet.has(mutated, name))
+}
+
 const buildDryRunFiles = (command: InstrumentDone) =>
   Result.flatMap(
-    sandboxPathsOf(command.sandbox, [...MutableHashMap.keys(command.project.filesToMutate)]),
+    sandboxPathsOf(command.sandbox, mutatedFileNamesOf(command)),
     (files) => Result.map(optionalSandboxPathsOf(command), (testFiles) => ({ files, testFiles })),
   )
 

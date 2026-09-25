@@ -84,7 +84,11 @@ const formatArgs = <A = unknown>(args: ReadonlyArray<A>): string =>
   Option.match(
     Option.filter(headOf(args), Predicate.isString),
     {
-      onSome: (first) => formatTemplate(first, args.slice(1)),
+      onSome: (first) =>
+        Boolean.match(args.length === 1, {
+          onTrue: () => first,
+          onFalse: () => formatTemplate(first, args.slice(1)),
+        }),
       onNone: () => args.map(inspectValue).join(' '),
     },
   )
