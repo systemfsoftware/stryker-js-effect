@@ -27,17 +27,18 @@ const SOURCE_CONTENT = 'export const add = (left: number, right: number): number
 const TEST_FILE = 'test/math.test.mjs'
 const TEST_CONTENT = [
   "import { expect, test } from 'vitest'",
+  "import { add } from '../src/math.ts'",
   '',
   `test('${PASSING_TEST}', () => {`,
-  '  expect(1 + 1).toBe(2)',
+  '  expect(add(1, 1)).toBe(2)',
   '})',
   '',
   `test('${FIRST_FAILING_TEST}', () => {`,
-  '  expect(1 + 1).toBe(3)',
+  '  expect(add(1, 1)).toBe(3)',
   '})',
   '',
   `test('${SECOND_FAILING_TEST}', () => {`,
-  '  expect(2 + 2).toBe(5)',
+  '  expect(add(2, 2)).toBe(5)',
   '})',
 ].join('\n')
 

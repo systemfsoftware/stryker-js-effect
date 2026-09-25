@@ -18,7 +18,7 @@ export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/Vite
 export type TypeId = typeof TypeId
 
 const VitestRuntime = Handle.make<
-  { readonly projectRoot: string; readonly localSetupFile: string },
+  { readonly projectRoot: string; readonly localSetupFile: string; readonly mutantBail: number },
   Vitest
 >()(TypeId)
 
@@ -82,19 +82,32 @@ export const make = (options: {
   readonly projectRoot: string
   readonly localSetupFile: string
   readonly namespace: StrykerNamespace
+  readonly mutantBail: number
 }): VitestRuntime =>
   withApplicationSetup(
     VitestRuntime.make(
-      { projectRoot: options.projectRoot, localSetupFile: options.localSetupFile },
+      { projectRoot: options.projectRoot, localSetupFile: options.localSetupFile, mutantBail: options.mutantBail },
       options.driver,
     ),
     options.namespace,
   )
 
+const DRY_RUN_REPORTS_EVERY_FAILURE = 0
+
+const workerBailFor = (self: VitestRuntime, mode: 'dry-run' | 'mutant'): number =>
+  mode === 'dry-run' ? DRY_RUN_REPORTS_EVERY_FAILURE : self.mutantBail
+
 export const setMode: {
-  (mode: 'dry-run' | 'mutant'): (self: VitestRuntime) => Vitest
-  (self: VitestRuntime, mode: 'dry-run' | 'mutant'): Vitest
-} = dual(2, (self: VitestRuntime, mode: 'dry-run' | 'mutant') => driverOf(self).provide('mode', mode))
+  (mode: 'dry-run' | 'mutant'): (self: VitestRuntime) => void
+  (self: VitestRuntime, mode: 'dry-run' | 'mutant'): void
+} = dual(2, (self: VitestRuntime, mode: 'dry-run' | 'mutant'): void => {
+  const driver = driverOf(self)
+  const bail = workerBailFor(self, mode)
+  driver.projects.forEach((project) => {
+    project.config.bail = bail
+  })
+  driver.provide('mode', mode)
+})
 
 export const provideValue: {
   (key: HarnessKey, value: HarnessValue): (self: VitestRuntime) => void

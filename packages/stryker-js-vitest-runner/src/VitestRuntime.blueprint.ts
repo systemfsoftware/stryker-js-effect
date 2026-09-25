@@ -266,7 +266,13 @@ const acquire = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRu
       onNone: () => Effect.void,
       onSome: (reason) => Effect.fail(failRuntime('init')(reason)),
     })
-    return make({ driver, projectRoot: input.projectRoot, localSetupFile, namespace: input.namespace })
+    return make({
+      driver,
+      projectRoot: input.projectRoot,
+      localSetupFile,
+      namespace: input.namespace,
+      mutantBail: input.bail,
+    })
   })
 
 const VitestRuntimeBlueprint = Blueprint.make<VitestRuntimeInput>()(TypeId).steps({
