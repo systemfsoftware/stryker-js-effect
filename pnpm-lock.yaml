@@ -198,7 +198,7 @@ catalogs:
       version: 3.9.0
 
 patchedDependencies:
-  '@systemfsoftware/differential-spec@0.5.0': 73e9b02c0394197e722d635e36cbcfff5e021a799db0207b7f1e6bacdef1ccae
+  '@systemfsoftware/differential-spec@0.5.0': c881657ddbcd3ab8354e0af5c4400c384f12cba2840d478d0e5d2fb3685859db
 
 importers:
 
@@ -739,7 +739,7 @@ importers:
         version: 4.2.0
       '@systemfsoftware/differential-spec':
         specifier: 'catalog:'
-        version: 0.5.0(patch_hash=73e9b02c0394197e722d635e36cbcfff5e021a799db0207b7f1e6bacdef1ccae)(vitest@5.0.1)
+        version: 0.5.0(patch_hash=c881657ddbcd3ab8354e0af5c4400c384f12cba2840d478d0e5d2fb3685859db)(vitest@5.0.1)
       '@systemfsoftware/effect-gherkin-spec':
         specifier: 'catalog:'
         version: 5.0.0(@systemfsoftware/vitest@0.1.0(effect@4.0.0-rc.117)(vitest@5.0.1))(effect@4.0.0-rc.117)(vitest@5.0.1)
@@ -1422,7 +1422,7 @@ importers:
         version: 4.2.0
       '@systemfsoftware/differential-spec':
         specifier: 'catalog:'
-        version: 0.5.0(patch_hash=73e9b02c0394197e722d635e36cbcfff5e021a799db0207b7f1e6bacdef1ccae)(vitest@5.0.1)
+        version: 0.5.0(patch_hash=c881657ddbcd3ab8354e0af5c4400c384f12cba2840d478d0e5d2fb3685859db)(vitest@5.0.1)
       '@systemfsoftware/effect-gherkin-spec':
         specifier: 'catalog:'
         version: 5.0.0(@systemfsoftware/vitest@0.1.0(effect@4.0.0-rc.117)(vitest@5.0.1))(effect@4.0.0-rc.117)(vitest@5.0.1)
@@ -5512,7 +5512,7 @@ snapshots:
 
   '@systemfsoftware/arethetypeswrong-cli@4.2.0': {}
 
-  '@systemfsoftware/differential-spec@0.5.0(patch_hash=73e9b02c0394197e722d635e36cbcfff5e021a799db0207b7f1e6bacdef1ccae)(vitest@5.0.1)':
+  '@systemfsoftware/differential-spec@0.5.0(patch_hash=c881657ddbcd3ab8354e0af5c4400c384f12cba2840d478d0e5d2fb3685859db)(vitest@5.0.1)':
     dependencies:
       '@systemfsoftware/effect-sim-kernel': 0.1.1(effect@4.0.0-rc.117)
       '@systemfsoftware/vitest': 0.1.0(effect@4.0.0-rc.117)(vitest@5.0.1)
