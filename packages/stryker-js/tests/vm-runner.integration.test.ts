@@ -69,6 +69,18 @@ const vmDryRunOutcome = (root: string): Effect.Effect<string, never, Engine.Engi
     })
   })
 
+const setupFilesLeftIn = (root: string): Effect.Effect<readonly string[], never, FileSystem.FileSystem> =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readDirectory(root)).pipe(
+    Effect.map((entries) => entries.filter((entry) => entry.startsWith('stryker-setup-'))),
+    Effect.orDie,
+  )
+
+const refusedDryRun = (root: string) =>
+  Effect.gen(function*() {
+    const text = yield* vmDryRunOutcome(root)
+    return { text, setupFilesLeft: yield* setupFilesLeftIn(root) }
+  })
+
 Feature('Running mutation tests with the vm test runner')
   .withLayer(Engine.nodePlatformLayer)
   .live('each scenario reads the real install layout or starts a real vitest runner worker')
@@ -123,10 +135,16 @@ Feature('Running mutation tests with the vm test runner')
       Gherkin.Do.pipe(
         When('a vm dry run starts on a project whose Vitest config enables browser mode')(
           'outcome',
-          () => withBrowserProject(vmDryRunOutcome),
+          () => withBrowserProject(refusedDryRun),
         ),
-        Then('the run fails before any test runs, naming the vitest runner')((s, expect) =>
-          expect(s.outcome).toContain("testRunner: 'vitest'")
+        Then('the run fails before any test runs, naming the vitest runner, and leaves no setup file in the project')((
+          s,
+          expect,
+        ) =>
+          expect({
+            namesVitestRunner: s.outcome.text.includes("testRunner: 'vitest'"),
+            setupFilesLeft: s.outcome.setupFilesLeft,
+          }).toEqual({ namesVitestRunner: true, setupFilesLeft: [] })
         ),
       ),
     )

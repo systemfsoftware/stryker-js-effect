@@ -26,7 +26,7 @@ import {
   type TestRunnerPhase,
   type VitestRunnerOptions,
 } from './VitestRunner.schema.js'
-import { make, type VitestRuntime } from './VitestRuntime.handle.js'
+import { close, make, type VitestRuntime } from './VitestRuntime.handle.js'
 
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntimeBlueprint')
 export type TypeId = typeof TypeId
@@ -245,16 +245,28 @@ const browserRefusalOf = (driver: Vitest): Option.Option<string> =>
     (enabled) => enabled,
   ).pipe(Option.as(BROWSER_REFUSAL))
 
-const acquire = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
+const closeAfterFailure = (runtime: VitestRuntime, fs: FileSystem.FileSystem): Effect.Effect<void> =>
+  close(runtime).pipe(
+    Effect.provideService(FileSystem.FileSystem, fs),
+    Effect.orElseSucceed(() => undefined),
+    Effect.catchDefect(() => Effect.void),
+  )
+
+const refuseBrowser = (
+  input: VitestRuntimeInput,
+  driver: Vitest,
+): Effect.Effect<void, TestRunner.TestRunnerFailed> =>
+  Option.match(input.vitestOptions.pool === undefined ? Option.none<string>() : browserRefusalOf(driver), {
+    onNone: () => Effect.void,
+    onSome: (reason) => Effect.fail(failRuntime('init')(reason)),
+  })
+
+const openRuntime = (
+  input: VitestRuntimeInput,
+  localSetupFile: string,
+): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
   Effect.gen(function*() {
-    const { crypto, fileSystem: fs, path } = input
-    const suffix = yield* crypto.randomUUIDv4.pipe(Effect.mapError(failRuntime('init')))
-    const localSetupFile = path.resolve(input.projectRoot, 'stryker-setup-' + suffix + '.js')
-    const setupFilePath = yield* Option.match(Option.fromNullishOr(input.setupFilePath), {
-      onNone: () => path.fromFileUrl(STRYKER_SETUP_URL).pipe(Effect.mapError(failRuntime('init'))),
-      onSome: Effect.succeed,
-    })
-    yield* fs.copyFile(setupFilePath, localSetupFile).pipe(Effect.mapError(failRuntime('init')))
+    const { fileSystem: fs, path } = input
     const aliases = yield* readSandboxSelfAliases(input.projectRoot, fs, path)
     const { createVitest } = yield* input.resolver(input.projectRoot).pipe(
       Effect.catchDefect((cause) => Effect.fail(failRuntime('init')(cause))),
@@ -269,18 +281,32 @@ const acquire = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRu
       catch: (cause) => failRuntime('init')(cause),
     })
     driver.onClose(() => disposeStandbyThreads(standbyThreads))
-    const refusal = input.vitestOptions.pool === undefined ? Option.none<string>() : browserRefusalOf(driver)
-    yield* Option.match(refusal, {
-      onNone: () => Effect.void,
-      onSome: (reason) => Effect.fail(failRuntime('init')(reason)),
-    })
-    return make({
+    const runtime = make({
       driver,
       projectRoot: input.projectRoot,
       localSetupFile,
       namespace: input.namespace,
       mutantBail: input.bail,
     })
+    yield* refuseBrowser(input, driver).pipe(Effect.onError(() => closeAfterFailure(runtime, fs)))
+    return runtime
+  })
+
+const acquire = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
+  Effect.gen(function*() {
+    const { crypto, fileSystem: fs, path } = input
+    const suffix = yield* crypto.randomUUIDv4.pipe(Effect.mapError(failRuntime('init')))
+    const localSetupFile = path.resolve(input.projectRoot, 'stryker-setup-' + suffix + '.js')
+    const setupFilePath = yield* Option.match(Option.fromNullishOr(input.setupFilePath), {
+      onNone: () => path.fromFileUrl(STRYKER_SETUP_URL).pipe(Effect.mapError(failRuntime('init'))),
+      onSome: Effect.succeed,
+    })
+    yield* fs.copyFile(setupFilePath, localSetupFile).pipe(Effect.mapError(failRuntime('init')))
+    return yield* openRuntime(input, localSetupFile).pipe(
+      Effect.onError(() =>
+        fs.remove(localSetupFile, { recursive: true, force: true }).pipe(Effect.orElseSucceed(() => undefined))
+      ),
+    )
   })
 
 const VitestRuntimeBlueprint = Blueprint.make<VitestRuntimeInput>()(TypeId).steps({
