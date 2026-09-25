@@ -27,15 +27,16 @@ catalog:
   "@testing-library/svelte": ^5.4.2
   vite: ^8.3.0
   "@systemfsoftware/arethetypeswrong-cli": ^4.2.0
-  "@systemfsoftware/differential-spec": ^0.3.0
-  "@systemfsoftware/effect-cell-types": ^10.1.1
-  "@systemfsoftware/effect-microsandbox": ^2.0.1
-  "@systemfsoftware/effect-readiness": ^0.2.1
-  "@systemfsoftware/effect-gherkin-spec": ^4.3.1
-  "@systemfsoftware/effect-schema-law": ^2.3.1
-  "@systemfsoftware/effect-schema-vite": ^2.2.3
-  "@systemfsoftware/oxlint-config-recommended": ^2.0.2
+  "@systemfsoftware/differential-spec": ^0.5.0
+  "@systemfsoftware/effect-cell-types": ^10.2.0
+  "@systemfsoftware/effect-microsandbox": ^3.1.0
+  "@systemfsoftware/effect-readiness": ^0.3.1
+  "@systemfsoftware/effect-gherkin-spec": ^5.0.0
+  "@systemfsoftware/effect-schema-law": ^3.0.0
+  "@systemfsoftware/effect-schema-vite": ^2.2.5
+  "@systemfsoftware/oxlint-config-recommended": ^3.1.0
   "@systemfsoftware/tsconfig": ^2.0.1
+  "@systemfsoftware/vitest": ^0.1.0
   "@types/estree": ^1.0.5
   "@types/node": ^24
   happy-dom: ^20

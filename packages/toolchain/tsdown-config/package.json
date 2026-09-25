@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/vitest": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "fast-check": "catalog:",
