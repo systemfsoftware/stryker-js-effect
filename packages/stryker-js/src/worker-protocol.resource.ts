@@ -15,8 +15,8 @@ import * as Socket from 'effect/unstable/socket/Socket'
 type RequestId = string | number
 type ResponseHandler = (data: FromServerEncoded) => Effect.Effect<void>
 
-const droppedConnection = new RpcClientError({
-  reason: new Socket.SocketReadError({ cause: new Error('worker connection dropped with the request in flight') }),
+const droppedConnection = RpcClientError.make({
+  reason: Socket.SocketReadError.make({ cause: new Error('worker connection dropped with the request in flight') }),
 })
 
 export const layerWorkerProtocol = (
