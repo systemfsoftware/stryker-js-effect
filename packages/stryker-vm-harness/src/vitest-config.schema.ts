@@ -93,6 +93,7 @@ export const VmProjectConfigSchema = S.Struct({
     setupFiles: S.Union([S.Literal('list'), S.Literal('parallel')]),
   }),
   allowOnly: S.optionalKey(S.Boolean),
+  passWithNoTests: S.optionalKey(S.Boolean),
   provide: S.optionalKey(JsonRecord),
 })
 

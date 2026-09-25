@@ -64,6 +64,7 @@ export interface VitestProjectConfigView {
     readonly setupFiles?: string
   }
   readonly allowOnly?: boolean
+  readonly passWithNoTests?: boolean
 }
 
 export interface VitestProjectView {
@@ -254,6 +255,13 @@ const namePatternSpreadOf = (
 const allowOnlySpreadOf = (view: VitestProjectConfigView): { readonly allowOnly: boolean } | Record<never, never> =>
   view.allowOnly === undefined ? {} : { allowOnly: view.allowOnly }
 
+const passWithNoTestsSpreadOf = (
+  view: VitestProjectConfigView,
+  base: VmProjectConfig,
+): { readonly passWithNoTests: boolean } => ({
+  passWithNoTests: withDefault(view.passWithNoTests, base.passWithNoTests ?? false),
+})
+
 const provideSpreadOf = (
   project: ArbitraryRecord | undefined,
   root: ArbitraryRecord | undefined,
@@ -305,6 +313,7 @@ const extractProjectConfig = (
     tags: listOf(view.tags).map(tagOf),
     strictTags: withDefault(view.strictTags, true),
     ...allowOnlySpreadOf(view),
+    ...passWithNoTestsSpreadOf(view, base),
     sequence: {
       concurrent: concurrentOf(view),
       shuffle: shuffleOf(view),
