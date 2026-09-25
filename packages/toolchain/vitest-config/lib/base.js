@@ -199,7 +199,6 @@ export const sharedConfig = {
     testTimeout: sharedTestTimeout,
     silent: isAgent ? 'passed-only' : false,
     provide: { '@systemfsoftware/vitest:property-check': { runs: propertyRuns } },
-    ...(isAgent ? { bail: 1 } : {}),
     coverage: {
       enabled: isCI || process.env['COVERAGE'] === 'true',
       provider: 'v8',
