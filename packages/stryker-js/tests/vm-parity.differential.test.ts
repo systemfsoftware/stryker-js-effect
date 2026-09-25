@@ -102,25 +102,38 @@ const dieOnFailure = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A,
 const labelled = <A>(label: string) => (effect: Effect.Effect<A>): Effect.Effect<A> =>
   Effect.catchCause(effect, (cause) => Effect.die(new Error(`${label}: ${Cause.pretty(cause)}`)))
 
-const prepareSandbox = (fixture: string): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+const prepareSandboxFrom = (
+  source: string,
+  prefix: string,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const root = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: `vm-parity-${fixture}-` }))
-    yield* fs.copy(path.join(PACKAGE_ROOT, ...FIXTURES_DIR_SEGMENTS, fixture), root, { overwrite: true })
+    const root = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: `vm-parity-${prefix}-` }))
+    yield* fs.copy(source, root, { overwrite: true })
     yield* fs.remove(path.join(root, 'node_modules'), { recursive: true, force: true })
     yield* fs.symlink(path.join(PACKAGE_ROOT, 'node_modules'), path.join(root, 'node_modules'))
     return root
   }).pipe(Effect.orDie)
 
+const fixtureSource = (fixture: string): Effect.Effect<string, never, Path.Path> =>
+  Effect.map(Path.Path, (path) => path.join(PACKAGE_ROOT, ...FIXTURES_DIR_SEGMENTS, fixture))
+
 const removeSandbox = (root: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true })).pipe(Effect.orDie)
+
+const withSandboxFrom = <A, E, R>(
+  source: string,
+  prefix: string,
+  use: (root: string) => Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R | FileSystem.FileSystem | Path.Path> =>
+  Effect.acquireUseRelease(prepareSandboxFrom(source, prefix), use, (root) => removeSandbox(root))
 
 const withSandbox = <A, E, R>(
   fixture: string,
   use: (root: string) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R | FileSystem.FileSystem | Path.Path> =>
-  Effect.acquireUseRelease(prepareSandbox(fixture), use, (root) => removeSandbox(root))
+  Effect.flatMap(fixtureSource(fixture), (source) => withSandboxFrom(source, fixture, use))
 
 const prepareGeneratedSandbox = (): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
@@ -318,7 +331,7 @@ const mutationEngineEffect = (root: string): Effect.Effect<readonly MutantRecord
       }),
   ).pipe(Effect.provide(Engine.nodePlatformLayer), dieOnFailure)
 
-const mutantReportOf = (fixture: Fixture): Effect.Effect<readonly MutantRecord[]> =>
+const engineReportOf = (fixture: Fixture): Effect.Effect<readonly MutantRecord[]> =>
   withSandbox(
     fixture.name,
     (root) => serialized(Effect.andThen(recordUnmutatedSnapshots(fixture, root), mutationEngineEffect(root))),
@@ -327,6 +340,15 @@ const mutantReportOf = (fixture: Fixture): Effect.Effect<readonly MutantRecord[]
       Effect.provide(Engine.nodePlatformLayer),
       dieOnFailure,
     )
+
+const engineReports = new Map<string, Effect.Effect<readonly MutantRecord[]>>()
+
+const mutantReportOf = (fixture: Fixture): Effect.Effect<readonly MutantRecord[]> =>
+  Effect.suspend(() => {
+    const report = engineReports.get(fixture.name) ?? engineReportOf(fixture).pipe(Effect.cached, Effect.runSync)
+    engineReports.set(fixture.name, report)
+    return report
+  })
 
 const offsetOf = (lines: readonly string[], line: number, column: number): number => {
   let offset = 0
@@ -434,12 +456,12 @@ const recordUnmutatedSnapshots = (
 
 const realVerdictForMutant = (
   fixture: Fixture,
+  baselined: string,
   mutant: MutantRecord,
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner> =>
-  withSandbox(fixture.name, (root) =>
+  withSandboxFrom(baselined, fixture.name, (root) =>
     serialized(
       Effect.gen(function*() {
-        yield* recordUnmutatedSnapshots(fixture, root)
         yield* applyMutant(root, mutant)
         return yield* runBoundedVitestProcess(root, MUTANT_RUN_BOUND_MS, ['run', '--bail=1'])
       }),
@@ -458,9 +480,13 @@ const realMutantVerdicts = (fixture: Fixture): Effect.Effect<Outcomes> =>
   Effect.gen(function*() {
     const mutants = yield* mutantReportOf(fixture)
     const rows: Array<readonly [string, string]> = []
-    for (const mutant of mutants) {
-      rows.push([mutantKey(mutant), yield* realVerdictForMutant(fixture, mutant)])
-    }
+    yield* withSandbox(fixture.name, (baselined) =>
+      Effect.gen(function*() {
+        yield* serialized(recordUnmutatedSnapshots(fixture, baselined))
+        for (const mutant of mutants) {
+          rows.push([mutantKey(mutant), yield* realVerdictForMutant(fixture, baselined, mutant)])
+        }
+      }))
     return recordOf(rows)
   }).pipe(
     Effect.provide(Engine.nodePlatformLayer),
