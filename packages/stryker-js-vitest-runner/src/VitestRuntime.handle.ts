@@ -1,6 +1,7 @@
 import type { RunnerTestFile, RunnerTestSuite } from 'vitest'
 import type { Vitest } from 'vitest/node'
 
+import { Handle } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
@@ -9,22 +10,23 @@ import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import { type Pipeable, Prototype } from 'effect/Pipeable'
 import * as Predicate from 'effect/Predicate'
 
 import { type StrykerNamespace, type TestRunnerPhase } from './VitestRunner.schema.js'
 
-const TypeId = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestRuntime')
-type TypeId = typeof TypeId
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntime')
+export type TypeId = typeof TypeId
 
-const DriverId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestRuntime/driver')
+const VitestRuntime = Handle.make<
+  { readonly projectRoot: string; readonly localSetupFile: string },
+  Vitest
+>()(TypeId)
 
-export interface VitestRuntime extends Pipeable {
-  readonly [TypeId]: typeof TypeId
-  readonly [DriverId]: Vitest
-  readonly projectRoot: string
-  readonly localSetupFile: string
-}
+export type VitestRuntime = Handle.Of<typeof VitestRuntime>
+
+export const isVitestRuntime = VitestRuntime.is
+
+const driverOf = (self: VitestRuntime): Vitest => VitestRuntime.slot(self)
 
 export type HarnessKey = 'hitLimit' | 'mutantActivation' | 'activeMutant'
 
@@ -54,9 +56,9 @@ const setupFilePathsOf = <A>(value: A) =>
   )
 
 const withApplicationSetup = (self: VitestRuntime, namespace: StrykerNamespace): VitestRuntime => {
-  self[DriverId].provide('globalNamespace', namespace)
-  disableScreenshotFailures(Reflect.get(self[DriverId].config, 'browser'))
-  self[DriverId].projects.forEach((project) => {
+  driverOf(self).provide('globalNamespace', namespace)
+  disableScreenshotFailures(Reflect.get(driverOf(self).config, 'browser'))
+  driverOf(self).projects.forEach((project) => {
     const setupFiles = setupFilePathsOf(Reflect.get(project.config, 'setupFiles'))
     Reflect.set(project.config, 'setupFiles', [self.localSetupFile, ...setupFiles])
     disableScreenshotFailures(Reflect.get(project.config, 'browser'))
@@ -71,20 +73,17 @@ export const make = (options: {
   readonly namespace: StrykerNamespace
 }): VitestRuntime =>
   withApplicationSetup(
-    {
-      [TypeId]: TypeId,
-      [DriverId]: options.driver,
-      projectRoot: options.projectRoot,
-      localSetupFile: options.localSetupFile,
-      ...Prototype,
-    },
+    VitestRuntime.make(
+      { projectRoot: options.projectRoot, localSetupFile: options.localSetupFile },
+      options.driver,
+    ),
     options.namespace,
   )
 
 export const setMode: {
   (mode: 'dry-run' | 'mutant'): (self: VitestRuntime) => Vitest
   (self: VitestRuntime, mode: 'dry-run' | 'mutant'): Vitest
-} = dual(2, (self: VitestRuntime, mode: 'dry-run' | 'mutant') => self[DriverId].provide('mode', mode))
+} = dual(2, (self: VitestRuntime, mode: 'dry-run' | 'mutant') => driverOf(self).provide('mode', mode))
 
 export const provideValue: {
   (key: HarnessKey, value: HarnessValue): (self: VitestRuntime) => void
@@ -92,7 +91,7 @@ export const provideValue: {
 } = dual(3, (self: VitestRuntime, key: HarnessKey, value: HarnessValue): void =>
   Match.value(key).pipe(
     Match.when('hitLimit', () => {
-      self[DriverId].provide(
+      driverOf(self).provide(
         'hitLimit',
         Option.getOrUndefined(Option.filter(Option.fromNullishOr(value), Predicate.isNumber)),
       )
@@ -102,11 +101,11 @@ export const provideValue: {
         value,
         (candidate): candidate is 'runtime' | 'static' => candidate === 'runtime' || candidate === 'static',
       )
-      Option.map(activation, (candidate) => self[DriverId].provide('mutantActivation', candidate))
+      Option.map(activation, (candidate) => driverOf(self).provide('mutantActivation', candidate))
     }),
     Match.orElse(() => {
       Option.map(Option.liftPredicate(value, Predicate.isString), (candidate) =>
-        self[DriverId].provide('activeMutant', candidate))
+        driverOf(self).provide('activeMutant', candidate))
     }),
   ))
 
@@ -115,8 +114,8 @@ export const applyRunFilter: {
   (self: VitestRuntime, filter: RunFilterInput): Effect.Effect<void>
 } = dual(2, (self: VitestRuntime, filter: RunFilterInput): Effect.Effect<void> =>
   Effect.sync(() => {
-    self[DriverId].config.related = filter.related
-    self[DriverId].projects.forEach((project) => {
+    driverOf(self).config.related = filter.related
+    driverOf(self).projects.forEach((project) => {
       project.config.testNamePattern = filter.testNamePattern
     })
   }))
@@ -126,23 +125,28 @@ export const start: {
   (self: VitestRuntime, testFiles: string[] | undefined): Effect.Effect<void, TestRunner.TestRunnerFailed>
 } = dual(2, (self: VitestRuntime, testFiles: string[] | undefined) =>
   Effect.tryPromise({
-    try: () => self[DriverId].start(testFiles),
+    try: () => driverOf(self).start(testFiles),
     catch: (cause) => failRuntime('dryRun')(cause),
   }))
 
-export const files = (self: VitestRuntime): readonly RunnerTestFile[] => self[DriverId].state.getFiles()
+export const files = (self: VitestRuntime): readonly RunnerTestFile[] => driverOf(self).state.getFiles()
 
-export const clearFiles = (self: VitestRuntime): void =>
-  Option.match(
-    Option.flatMap(propertyOf(self[DriverId], 'state'), (state) => propertyOf(state, 'filesMap')),
-    { onNone: () => undefined, onSome: (filesMap) => clearFilesMap(filesMap) },
+export const clearFiles = (self: VitestRuntime): void => {
+  const driver = driverOf(self)
+  propertyOf(driver, 'state').pipe(
+    Option.flatMap((state) => propertyOf(state, 'filesMap')),
+    Option.match({ onNone: () => undefined, onSome: (filesMap) => clearFilesMap(filesMap) }),
   )
+}
 
-export const hasExternalErrors = (self: VitestRuntime): boolean =>
-  Option.exists(Option.flatMap(errorsSetOf(self[DriverId]), entryCountOf), (count) => count > 0)
+export const hasExternalErrors = (self: VitestRuntime): boolean => {
+  const driver = driverOf(self)
+  return errorsSetOf(driver).pipe(Option.flatMap(entryCountOf), Option.exists((count) => count > 0))
+}
 
-export const externalErrorText = (self: VitestRuntime): string =>
-  Option.match(errorsSetOf(self[DriverId]), {
+export const externalErrorText = (self: VitestRuntime): string => {
+  const driver = driverOf(self)
+  return Option.match(errorsSetOf(driver), {
     onNone: () => '',
     onSome: (errorsSet) =>
       Predicate.isIterable(errorsSet)
@@ -151,6 +155,7 @@ export const externalErrorText = (self: VitestRuntime): string =>
         ).join('\n')
         : '',
   })
+}
 
 export const metaOf = <A>(file: A) => Option.getOrUndefined(propertyOf(file, 'meta'))
 
@@ -168,13 +173,13 @@ export const close = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const cleanup = Context.make(FileSystem.FileSystem, fs)
-    self[DriverId].onClose(() =>
+    driverOf(self).onClose(() =>
       Effect.runPromiseWith(cleanup)(
         fs.remove(self.localSetupFile, { recursive: true, force: true }).pipe(Effect.orElseSucceed(() => undefined)),
       )
     )
     yield* Effect.tryPromise({
-      try: () => self[DriverId].close(),
+      try: () => driverOf(self).close(),
       catch: (cause) => failRuntime('dispose')(cause),
     })
   })

@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -23,15 +23,18 @@ const withTests = (
     externalErrorText: input.externalErrorText,
   })
 
-describe('interpretVitestDryRun', () => {
+describe('interpretVitestDryRun', (it) => {
   it.prop(
     '→t_FailedTest_=Complete',
-    [
-      VitestDryRunCommand,
-      S.String.check(S.isMinLength(1), S.isMaxLength(24)),
-      S.String.check(S.isMaxLength(32)),
-    ],
-    ([input, name, message]) => {
+    {
+      of: [
+        VitestDryRunCommand,
+        S.String.check(S.isMinLength(1), S.isMaxLength(24)),
+        S.String.check(S.isMaxLength(32)),
+      ],
+      subject: interpretVitestDryRun,
+    },
+    (subject, [input, name, message]) => {
       const failed: TestRunner.FailedTestResult = {
         id: `tests/a.spec.ts#${name}`,
         name,
@@ -40,7 +43,7 @@ describe('interpretVitestDryRun', () => {
         failureMessage: message,
         fileName: 'tests/a.spec.ts',
       }
-      const result = interpretVitestDryRun(withTests(input, [...input.tests, failed], true))
+      const result = subject(withTests(input, [...input.tests, failed], true))
       if (!Result.isSuccess(result)) {
         return false
       }
@@ -53,9 +56,9 @@ describe('interpretVitestDryRun', () => {
 
   it.prop(
     '→e_ExternalErrorWithoutFailure_=Error',
-    [VitestDryRunCommand],
-    ([input]) => {
-      const result = interpretVitestDryRun(
+    { of: [VitestDryRunCommand], subject: interpretVitestDryRun },
+    (subject, [input]) => {
+      const result = subject(
         withTests(
           input,
           input.tests.filter((test) => test.status !== 'failed'),

@@ -1,6 +1,6 @@
-import { describe, it } from '@effect/vitest'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
+import { describe } from '@systemfsoftware/vitest'
 import { Match } from 'effect'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -82,12 +82,12 @@ const ambiguousGroupInputArb: Arbitrary.Arbitrary<CheckMutantsInput> = Arbitrary
   ),
 )
 
-describe('checkMutants', () => {
+describe('checkMutants', (it) => {
   it.prop(
     '∀i_Decision_≡PartitionedAndBranded',
-    [CheckMutantsInput],
-    ([input]) => {
-      const result = checkMutants(input)
+    { of: [CheckMutantsInput], subject: checkMutants },
+    (subject, [input]) => {
+      const result = subject(input)
       if (Result.isFailure(result)) {
         return (
           S.is(DiagnosticWithoutFileError)(result.failure) ||
@@ -115,8 +115,11 @@ describe('checkMutants', () => {
     },
   )
 
-  it.prop('∀i_NoDiagnostics_≡CheckFinishedPassed', [emptyDiagnosticsInputArb], ([input]) => {
-    const result = checkMutants(input)
+  it.prop('∀i_NoDiagnostics_≡CheckFinishedPassed', {
+    of: [emptyDiagnosticsInputArb],
+    subject: checkMutants,
+  }, (subject, [input]) => {
+    const result = subject(input)
     if (!Result.isSuccess(result)) {
       return false
     }
@@ -133,8 +136,11 @@ describe('checkMutants', () => {
     )
   })
 
-  it.prop('∀i_AmbiguousGroup_≡RetestRequired', [ambiguousGroupInputArb], ([input]) => {
-    const result = checkMutants(input)
+  it.prop('∀i_AmbiguousGroup_≡RetestRequired', {
+    of: [ambiguousGroupInputArb],
+    subject: checkMutants,
+  }, (subject, [input]) => {
+    const result = subject(input)
     if (!Result.isSuccess(result)) {
       return false
     }

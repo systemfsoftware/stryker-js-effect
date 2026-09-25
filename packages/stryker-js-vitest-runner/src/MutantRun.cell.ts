@@ -10,7 +10,7 @@ import type { VitestRunnerOptions } from './VitestRunner.schema.js'
 import type { RunFilter } from './VitestRunner.service.js'
 import { VitestSession } from './VitestSession.service.js'
 
-/** What one mutant run needs from the runner: raw collection, hit harvesting and the trap decision. */
+/** What one mutant run needs from the runner: raw collection, hit harvesting and the trap options. */
 export interface MutantRunCellDeps {
   readonly collectRaw: (
     filter: RunFilter,
@@ -27,59 +27,6 @@ export interface MutantRunCellDeps {
   readonly projectRoot: string
   readonly vitestOptions: Effect.Effect<VitestRunnerOptions, TestRunner.TestRunnerFailed>
 }
-
-const trapIdMatches = (mutantId: string, trapId: string | undefined): boolean => {
-  if (trapId === undefined) {
-    return false
-  }
-  return trapId === mutantId
-}
-
-const trapFilePresent = (trapFile: string | undefined): trapFile is string => {
-  if (trapFile === undefined) {
-    return false
-  }
-  return trapFile.length > 0
-}
-
-const fileEndsWithTrap = (fileName: string, needle: string): boolean => {
-  if (fileName === needle) {
-    return true
-  }
-  return fileName.endsWith(`/${needle}`)
-}
-
-const trapFileMatches = (fileName: string, trapFile: string | undefined): boolean => {
-  if (!trapFilePresent(trapFile)) {
-    return false
-  }
-  const normalizedFile = fileName.replaceAll('\\', '/')
-  const needle = trapFile.replaceAll('\\', '/')
-  return fileEndsWithTrap(normalizedFile, needle)
-}
-
-const idFromTrapId = (mutantId: string, trapId: string | undefined): string | undefined => {
-  if (!trapIdMatches(mutantId, trapId)) {
-    return undefined
-  }
-  return mutantId
-}
-
-const idFromTrapFile = (
-  mutant: { readonly id: string; readonly fileName: string },
-  trapFile: string | undefined,
-): string | undefined => {
-  if (!trapFileMatches(mutant.fileName, trapFile)) {
-    return undefined
-  }
-  return mutant.id
-}
-
-const namedTrapIdOf = (
-  mutant: { readonly id: string; readonly fileName: string },
-  options: { readonly timeoutTrapFile?: string | undefined; readonly timeoutTrapMutantId?: string | undefined },
-): string | undefined =>
-  idFromTrapId(mutant.id, options.timeoutTrapMutantId) ?? idFromTrapFile(mutant, options.timeoutTrapFile)
 
 export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
   Sandwich.named('stryker.vitest.mutant_run')((command: Mutant.MutantRunOptions) =>
@@ -98,7 +45,6 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
       const hitCount = yield* deps.hitCount
       const reportAllKillers = deps.reportAllKillers
       const vitestOptions = yield* deps.vitestOptions
-      const namedTrapId = namedTrapIdOf(command.activeMutant, vitestOptions)
       return {
         _tag: 'VitestMutantRunCommand' as const,
         tests: { projectRoot: deps.projectRoot, records: rawTests },
@@ -108,7 +54,9 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
         hitLimit: command.hitLimit,
         reportAllKillers,
         activeMutantId: command.activeMutant.id,
-        namedTrapId,
+        activeMutantFileName: command.activeMutant.fileName,
+        timeoutTrapFile: vitestOptions.timeoutTrapFile,
+        timeoutTrapMutantId: vitestOptions.timeoutTrapMutantId,
       }
     })
   )
@@ -126,12 +74,13 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
         }),
       Survived: (survived) => Effect.succeed({ status: 'survived' as const, nrOfTests: survived.tests.length }),
       Timeout: (timeout) =>
-        Effect.succeed(
-          Option.match(Option.fromNullishOr(timeout.reason), {
-            onNone: () => ({ status: 'timeout' as const }),
-            onSome: (reason) => ({ status: 'timeout' as const, reason }),
-          }),
-        ),
+        Effect.succeed({
+          status: 'timeout' as const,
+          ...Option.getOrElse(
+            Option.map(Option.fromNullishOr(timeout.reason), (reason) => ({ reason })),
+            () => ({}),
+          ),
+        }),
       Error: (error) => Effect.succeed({ status: 'error' as const, errorMessage: error.errorMessage ?? 'unknown' }),
       CommandRejected: ({ issue }) =>
         Effect.fail(new TestRunner.TestRunnerFailed({ runnerName: 'vitest', phase: 'mutantRun', cause: issue })),

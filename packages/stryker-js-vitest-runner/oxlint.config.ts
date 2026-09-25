@@ -1,6 +1,8 @@
 import recommended from '@systemfsoftware/oxlint-config-recommended'
 import { defineConfig } from 'oxlint'
 
+const userProjectSetupFile = 'sandbox/stryker-setup.ts'
+
 export default defineConfig({
   extends: [recommended],
   rules: {
@@ -11,8 +13,11 @@ export default defineConfig({
   },
   overrides: [
     {
-      files: ['sandbox/stryker-setup.ts'],
-      rules: { 'no-empty-pattern': ['error', { allowObjectPatternsAsParameters: true }] },
+      files: [userProjectSetupFile],
+      rules: {
+        '@systemfsoftware/oxlint-plugin-test-discipline/vitest-from-systemfsoftware-vitest': 'off',
+        'no-empty-pattern': ['error', { allowObjectPatternsAsParameters: true }],
+      },
     },
   ],
   ignorePatterns: [...(recommended.ignorePatterns ?? []), '**/testResources/**'],

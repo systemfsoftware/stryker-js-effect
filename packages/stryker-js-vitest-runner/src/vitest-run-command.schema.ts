@@ -301,7 +301,9 @@ export class VitestMutantRunCommand extends S.TaggedClass<VitestMutantRunCommand
   hitLimit: S.optional(S.Finite),
   reportAllKillers: S.Boolean,
   activeMutantId: S.String,
-  namedTrapId: S.optional(S.String),
+  activeMutantFileName: S.String,
+  timeoutTrapFile: S.optional(S.String),
+  timeoutTrapMutantId: S.optional(S.String),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     activeMutantId: 'stryker.vitest.active_mutant_id',

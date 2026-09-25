@@ -1,3 +1,4 @@
+import { Handle } from '@systemfsoftware/effect-cell-types'
 import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
@@ -8,8 +9,6 @@ import type * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
-import { type Pipeable, Prototype } from 'effect/Pipeable'
-import * as Predicate from 'effect/Predicate'
 import * as Ref from 'effect/Ref'
 import type { FileSystem as TSFileSystem, FileSystemEntries } from 'typescript/unstable/fs'
 
@@ -17,8 +16,6 @@ import { HybridFileNotFoundError } from './Compiler.schema.js'
 
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSFiles')
 export type TypeId = typeof TypeId
-
-const StateTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSFiles/state')
 
 const normalizeFileName = (fileName: string) => fileName.replace(/\\/g, '/')
 
@@ -37,22 +34,20 @@ interface TSFilesState {
   readonly overrides: Ref.Ref<MutableHashMap.MutableHashMap<string, string>>
 }
 
-export interface TSFiles extends Pipeable {
-  readonly [TypeId]: TypeId
-  readonly [StateTypeId]: TSFilesState
-}
+const TSFiles = Handle.make<object, TSFilesState>()(TypeId)
 
-export const isTSFiles = (u: unknown): u is TSFiles => Predicate.hasProperty(u, TypeId)
+export type TSFiles = Handle.Of<typeof TSFiles>
 
-export const make = (host: FileSystem.FileSystem): TSFiles => ({
-  [TypeId]: TypeId,
-  [StateTypeId]: {
+export const isTSFiles = TSFiles.is
+
+const stateOf = (self: TSFiles): TSFilesState => TSFiles.slot(self)
+
+export const make = (host: FileSystem.FileSystem): TSFiles =>
+  TSFiles.make({}, {
     host,
     files: Ref.makeUnsafe(MutableHashMap.empty<string, Option.Option<ScriptFile>>()),
     overrides: Ref.makeUnsafe(MutableHashMap.empty<string, string>()),
-  },
-  ...Prototype,
-})
+  })
 
 const makeScriptFile = (content: string, fileName: string, now: DateTime.Utc): ScriptFile => ({
   content,
@@ -117,7 +112,7 @@ export const getFile: {
 } = dual(
   2,
   (self: TSFiles, fileName: string): Effect.Effect<Option.Option<ScriptFile>> => {
-    const state = self[StateTypeId]
+    const state = stateOf(self)
     const normalized = normalizeFileName(fileName)
     return Option.match(MutableHashMap.get(Ref.getUnsafe(state.files), normalized), {
       onNone: () => readFromDisk(state, normalized),
@@ -144,7 +139,7 @@ export const mutateFile: {
     mutant: Pick<Checker.CheckerMutantWire, 'location' | 'replacement'>,
   ): Effect.Effect<void, HybridFileNotFoundError> =>
     Effect.gen(function*() {
-      const state = self[StateTypeId]
+      const state = stateOf(self)
       const at = yield* now
       const file = yield* getFile(self, fileName)
       yield* Option.match(file, {
@@ -165,7 +160,7 @@ export const resetFile: {
   2,
   (self: TSFiles, fileName: string): Effect.Effect<void> =>
     Effect.gen(function*() {
-      const state = self[StateTypeId]
+      const state = stateOf(self)
       const at = yield* now
       const normalized = normalizeFileName(fileName)
       yield* Option.match(MutableHashMap.get(Ref.getUnsafe(state.files), normalized), {
@@ -185,11 +180,11 @@ export const setOverrides: {
 } = dual(
   2,
   (self: TSFiles, overrides: MutableHashMap.MutableHashMap<string, string>): Effect.Effect<void> =>
-    Ref.set(self[StateTypeId].overrides, overrides),
+    Ref.set(stateOf(self).overrides, overrides),
 )
 
 export const tsFileSystem = (self: TSFiles): TSFileSystem => {
-  const state = self[StateTypeId]
+  const state = stateOf(self)
   const contentFromSources = (fileName: string): string | null | undefined =>
     Option.match(MutableHashMap.get(Ref.getUnsafe(state.overrides), fileName), {
       onSome: (override) => override,

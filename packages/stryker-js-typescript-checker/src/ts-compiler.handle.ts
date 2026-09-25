@@ -1,5 +1,6 @@
 /// <reference types="vitest/importMeta" />
 import { parse } from '@std/jsonc'
+import { Handle } from '@systemfsoftware/effect-cell-types'
 import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -13,8 +14,6 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as MutableHashSet from 'effect/MutableHashSet'
 import * as Option from 'effect/Option'
 import type * as Path from 'effect/Path'
-import { type Pipeable, Prototype } from 'effect/Pipeable'
-import * as Predicate from 'effect/Predicate'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -43,8 +42,6 @@ import { type TsConfig, TsConfigNotFoundError, TsConfigParseError, TsConfigSchem
 
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSCompiler')
 export type TypeId = typeof TypeId
-
-const RuntimeTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSCompiler/runtime')
 
 const normalizeFileName = (fileName: string) => fileName.replace(/\\/g, '/')
 
@@ -91,12 +88,13 @@ interface TSCompilerRuntime {
   readonly state: Ref.Ref<CompilerState>
 }
 
-export interface TSCompiler extends Pipeable {
-  readonly [TypeId]: TypeId
-  readonly [RuntimeTypeId]: TSCompilerRuntime
-}
+const TSCompiler = Handle.make<object, TSCompilerRuntime>()(TypeId)
 
-export const isTSCompiler = (u: unknown): u is TSCompiler => Predicate.hasProperty(u, TypeId)
+export type TSCompiler = Handle.Of<typeof TSCompiler>
+
+export const isTSCompiler = TSCompiler.is
+
+const runtimeOf = (self: TSCompiler): TSCompilerRuntime => TSCompiler.slot(self)
 
 export const make: {
   (
@@ -124,18 +122,14 @@ export const make: {
       allTSConfigFiles: MutableHashSet.fromIterable([tsconfigFile]),
       tsconfigFile,
     }
-    return {
-      [TypeId]: TypeId,
-      [RuntimeTypeId]: {
-        options,
-        host: services.host,
-        pathService: services.pathService,
-        files,
-        sourceFileSystem: tsFileSystem(files),
-        state: Ref.makeUnsafe(initialState),
-      },
-      ...Prototype,
-    }
+    return TSCompiler.make({}, {
+      options,
+      host: services.host,
+      pathService: services.pathService,
+      files,
+      sourceFileSystem: tsFileSystem(files),
+      state: Ref.makeUnsafe(initialState),
+    })
   },
 )
 
@@ -792,7 +786,7 @@ const groupMutants = (
   })
 
 export const init = (self: TSCompiler): Effect.Effect<readonly Diagnostic[], CompilerError> => {
-  const rt = self[RuntimeTypeId]
+  const rt = runtimeOf(self)
   return Effect.gen(function*() {
     yield* guardTypescriptVersion(rt)
     const tsconfigFile = normalizeFileName(rt.pathService.resolve(rt.options.tsconfigFile))
@@ -852,7 +846,7 @@ export const check: {
     self: TSCompiler,
     mutants: readonly Checker.CheckerMutantWire[],
   ): Effect.Effect<readonly Diagnostic[], CompilerError> => {
-    const rt = self[RuntimeTypeId]
+    const rt = runtimeOf(self)
     return Effect.gen(function*() {
       const state = yield* Ref.get(rt.state)
       yield* resetMutatedFiles(rt, state.lastMutants)
@@ -888,7 +882,7 @@ export const check: {
   },
 )
 
-export const nodes = (self: TSCompiler) => nodesOf(self[RuntimeTypeId])
+export const nodes = (self: TSCompiler) => self.pipe(runtimeOf, nodesOf)
 
 export const groups: {
   (
@@ -929,9 +923,10 @@ export const getLineAndCharacterOfPosition: {
     self: TSCompiler,
     fileName: string,
     position: number,
-  ): Effect.Effect<{ line: number; character: number } | undefined> =>
-    Effect.flatMap(
-      Effect.orElseSucceed(programsOf(self[RuntimeTypeId]), (): ReadonlyArray<Program> => []),
+  ): Effect.Effect<{ line: number; character: number } | undefined> => {
+    const rt = runtimeOf(self)
+    return Effect.flatMap(
+      Effect.orElseSucceed(programsOf(rt), (): ReadonlyArray<Program> => []),
       (programs) =>
         Effect.map(
           sourceFileOf(programs, fileName),
@@ -940,13 +935,14 @@ export const getLineAndCharacterOfPosition: {
               Option.map(found, (sourceFile) => sourceFile.getLineAndCharacterOfPosition(position)),
             ),
         ),
-    ),
+    )
+  },
 )
 
 const CLOSE_GRACE = '1 second'
 
 export const close = (self: TSCompiler): Effect.Effect<void> => {
-  const rt = self[RuntimeTypeId]
+  const rt = runtimeOf(self)
   return Effect.gen(function*() {
     const state = yield* Ref.getAndUpdate(rt.state, (prev) => ({ ...prev, snapshot: undefined, api: undefined }))
     const released = yield* Option.match(Option.fromUndefinedOr(state.api), {
@@ -963,7 +959,7 @@ export const close = (self: TSCompiler): Effect.Effect<void> => {
 }
 
 if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
+  const { it } = await import('@systemfsoftware/vitest')
   const Equal = await import('effect/Equal')
   const { Mutant: { CanonicalFileName, MutantId, MutatorName } } = await import(
     '@systemfsoftware/stryker-js-instrumenter'
@@ -1016,8 +1012,12 @@ if (import.meta.vitest !== void 0) {
   const mutantsOf = (fileIndexes: readonly number[]) =>
     Arr.map(fileIndexes, (index, position) => mutantWireOf(`mutant-${position}`, fileNameOf(index)))
 
-  const groupedOf = (mutants: ReadonlyArray<Checker.CheckerMutantWire>, nodes: GraphNodes, prioritize: boolean) =>
-    Result.getOrElse(groupMutants(mutants, nodes, prioritize), () => [])
+  const groupedFor = (
+    edges: ReadonlyArray<readonly [number, number]>,
+    fileIndexes: readonly number[],
+    prioritize: boolean,
+  ): Result.Result<ReadonlyArray<ReadonlyArray<string>>, NodeNotInGraph> =>
+    groupMutants(mutantsOf(fileIndexes), graphOfEdges(edges), prioritize)
 
   const relatedNodes = (left: FileNode, right: FileNode): boolean =>
     HashSet.has(ancestorFileNamesOf(left, HashSet.empty()), right.fileName) ||
@@ -1091,53 +1091,72 @@ if (import.meta.vitest !== void 0) {
 
   it.prop(
     '∀graph_Mutants_≡ReferenceFirstFit',
-    [EdgesSchema, MutantsSchema, S.Boolean],
-    ([edges, fileIndexes, prioritize]) => {
+    { of: [EdgesSchema, MutantsSchema, S.Boolean], subject: groupedFor },
+    (subject, [edges, fileIndexes, prioritize]) => {
       const nodes = graphOfEdges(edges)
       const mutants = mutantsOf(fileIndexes)
-      return Result.match(groupMutants(mutants, nodes, prioritize), {
+      return Result.match(subject(edges, fileIndexes, prioritize), {
         onFailure: () => false,
         onSuccess: (grouped) => Equal.equals(grouped, firstFitGrouping(mutants, nodes, prioritize)),
       })
     },
   )
 
-  it.prop('∀graph_Mutants_≡Partition', [EdgesSchema, MutantsSchema, S.Boolean], ([edges, fileIndexes, prioritize]) => {
-    const nodes = graphOfEdges(edges)
-    const mutants = mutantsOf(fileIndexes)
-    const placed = Arr.flatten(groupedOf(mutants, nodes, prioritize))
-    const expected = Arr.map(mutants, (mutant) => mutant.id)
-    return Arr.every(
-      [
-        placed.length === mutants.length,
-        HashSet.size(HashSet.fromIterable(placed)) === mutants.length,
-        HashSet.size(HashSet.fromIterable([...placed, ...expected])) === mutants.length,
-      ],
-      (holds) => holds,
-    )
-  })
+  it.prop(
+    '∀graph_Mutants_≡Partition',
+    { of: [EdgesSchema, MutantsSchema, S.Boolean], subject: groupedFor },
+    (subject, [edges, fileIndexes, prioritize]) => {
+      const mutants = mutantsOf(fileIndexes)
+      return Result.match(subject(edges, fileIndexes, prioritize), {
+        onFailure: () => false,
+        onSuccess: (groups) => {
+          const placed = Arr.flatten(groups)
+          const expected = Arr.map(mutants, (mutant) => mutant.id)
+          return Arr.every(
+            [
+              placed.length === mutants.length,
+              HashSet.size(HashSet.fromIterable(placed)) === mutants.length,
+              HashSet.size(HashSet.fromIterable([...placed, ...expected])) === mutants.length,
+            ],
+            (holds) => holds,
+          )
+        },
+      })
+    },
+  )
 
-  it.prop('∀graph_Group_≈Independent', [EdgesSchema, MutantsSchema], ([edges, fileIndexes]) => {
-    const nodes = graphOfEdges(edges)
-    const mutants = mutantsOf(fileIndexes)
-    const byId = HashMap.fromIterable(
-      Arr.map(mutants, (mutant): readonly [string, Checker.CheckerMutantWire] => [mutant.id, mutant]),
-    )
-    const pairs = Arr.flatMap(groupedOf(mutants, nodes, true), (ids) => {
-      const members = Arr.filterMap(
-        ids,
-        (id) =>
-          keepSome(
-            Option.flatMap(HashMap.get(byId, id), (mutant) => HashMap.get(nodes, normalizeFileName(mutant.fileName))),
-          ),
+  it.prop(
+    '∀graph_Group_⊆Independent',
+    { of: [EdgesSchema, MutantsSchema], subject: groupedFor },
+    (subject, [edges, fileIndexes]) => {
+      const nodes = graphOfEdges(edges)
+      const mutants = mutantsOf(fileIndexes)
+      const byId = HashMap.fromIterable(
+        Arr.map(mutants, (mutant): readonly [string, Checker.CheckerMutantWire] => [mutant.id, mutant]),
       )
-      return Arr.flatMap(
-        members,
-        (left, index) => Arr.map(Arr.drop(members, index + 1), (right): readonly [FileNode, FileNode] => [left, right]),
-      )
-    })
-    return Arr.every(pairs, ([left, right]) => !relatedNodes(left, right))
-  })
+      return Result.match(subject(edges, fileIndexes, true), {
+        onFailure: () => true,
+        onSuccess: (groups) => {
+          const pairs = Arr.flatMap(groups, (ids) => {
+            const members = Arr.filterMap(
+              ids,
+              (id) =>
+                keepSome(
+                  Option.flatMap(HashMap.get(byId, id), (mutant) =>
+                    HashMap.get(nodes, normalizeFileName(mutant.fileName))),
+                ),
+            )
+            return Arr.flatMap(
+              members,
+              (left, index) =>
+                Arr.map(Arr.drop(members, index + 1), (right): readonly [FileNode, FileNode] => [left, right]),
+            )
+          })
+          return Arr.every(pairs, ([left, right]) => !relatedNodes(left, right))
+        },
+      })
+    },
+  )
 
   const { Arbitrary } = await import('effect/unstable/arbitrary')
 
@@ -1248,49 +1267,59 @@ if (import.meta.vitest !== void 0) {
   const parsedOverrideOf = (text: string): Option.Option<JsonTsConfig> =>
     Option.liftPredicate(JSON.parse(text), isJsonObject)
 
+  const definedConfigOf = (document: JsonTsConfig): JsonTsConfig =>
+    Object.fromEntries(Object.entries(document).filter(([, value]) => value !== undefined))
+
+  const overridesOf = (
+    original: JsonTsConfig,
+  ): Result.Result<{ readonly build: string; readonly single: string }, TsConfigParseError> =>
+    Result.map(parseTsConfig('tsconfig.json', JSON.stringify(original)), (config) => ({
+      build: overrideOptions(config, true),
+      single: overrideOptions(config, false),
+    }))
+
   it.prop(
     '∀tsconfig_Override_≡OriginalExceptDeliberateCompilerOverrides',
-    [TsConfigLike],
-    ([original]) =>
-      Result.match(parseTsConfig('tsconfig.json', JSON.stringify(original)), {
+    { of: [TsConfigLike], subject: overridesOf },
+    (subject, [original]) =>
+      Result.match(subject(original), {
         onFailure: () => false,
-        onSuccess: (config) =>
-          Option.match(
-            Option.all([
-              parsedOverrideOf(overrideOptions(config, true)),
-              parsedOverrideOf(overrideOptions(config, false)),
-            ]),
-            {
-              onNone: () => false,
-              onSome: ([build, single]) =>
-                Arr.every(
-                  [
-                    Equal.equals(omitCompilerOptions(build), omitCompilerOptions(original)),
-                    Equal.equals(omitCompilerOptions(single), omitReferences(omitCompilerOptions(original))),
-                    untouchedCompilerOptionsPreserved(
-                      compilerOptionsOf(original),
-                      compilerOptionsOf(build),
-                      buildTouchedOptions,
-                    ),
-                    untouchedCompilerOptionsPreserved(
-                      compilerOptionsOf(original),
-                      compilerOptionsOf(single),
-                      singleTouchedOptions,
-                    ),
-                    overriddenOptionOf(build, 'emitDeclarationOnly') === true,
-                    overriddenOptionOf(build, 'noEmit') === false,
-                    overriddenOptionOf(single, 'noEmit') === true,
-                    overriddenOptionOf(single, 'incremental') === false,
-                  ],
-                  (holds) => holds,
-                ),
-            },
-          ),
+        onSuccess: ({ build, single }) =>
+          Option.match(Option.all([parsedOverrideOf(build), parsedOverrideOf(single)]), {
+            onNone: () => false,
+            onSome: ([buildConfig, singleConfig]) =>
+              Arr.every(
+                [
+                  Equal.equals(omitCompilerOptions(buildConfig), omitCompilerOptions(original)),
+                  Equal.equals(omitCompilerOptions(singleConfig), omitReferences(omitCompilerOptions(original))),
+                  untouchedCompilerOptionsPreserved(
+                    compilerOptionsOf(original),
+                    compilerOptionsOf(buildConfig),
+                    buildTouchedOptions,
+                  ),
+                  untouchedCompilerOptionsPreserved(
+                    compilerOptionsOf(original),
+                    compilerOptionsOf(singleConfig),
+                    singleTouchedOptions,
+                  ),
+                  overriddenOptionOf(buildConfig, 'emitDeclarationOnly') === true,
+                  overriddenOptionOf(buildConfig, 'noEmit') === false,
+                  overriddenOptionOf(singleConfig, 'noEmit') === true,
+                  overriddenOptionOf(singleConfig, 'incremental') === false,
+                ],
+                (holds) => holds,
+              ),
+          }),
       }),
   )
 
-  const refusedAsParseError = (jsonText: string): boolean =>
-    Result.match(parseTsConfig('tsconfig.json', jsonText), {
+  const parseText = (jsonText: string): Result.Result<TsConfig, TsConfigParseError> =>
+    parseTsConfig('tsconfig.json', jsonText)
+
+  const refusedAsParseError = (
+    result: Result.Result<TsConfig, TsConfigParseError>,
+  ): boolean =>
+    Result.match(result, {
       onFailure: (error) => S.is(TsConfigParseError)(error),
       onSuccess: () => false,
     })
@@ -1324,32 +1353,36 @@ if (import.meta.vitest !== void 0) {
   })
 
   it.prop(
-    '∀nonObjectRoot_∉TsConfig_⇒ParseError',
-    [Arbitrary.schema(NonObjectRoot)],
-    ([root]) => refusedAsParseError(JSON.stringify(root)),
+    '∀root_NonObjectRoot_⊥TsConfig',
+    { of: [Arbitrary.schema(NonObjectRoot)], subject: parseText },
+    (subject, [root]) => refusedAsParseError(subject(JSON.stringify(root))),
   )
 
   it.prop(
-    '∀referencesNotPathArray_∉TsConfig_⇒ParseError',
-    [Arbitrary.schema(MalformedReferences)],
-    ([document]) => refusedAsParseError(JSON.stringify(document)),
+    '∀doc_MalformedReferences_⊥TsConfig',
+    { of: [Arbitrary.schema(MalformedReferences)], subject: parseText },
+    (subject, [document]) => refusedAsParseError(subject(JSON.stringify(document))),
   )
 
   it.prop(
-    '∀compilerOptionsNotObject_∉TsConfig_⇒ParseError',
-    [Arbitrary.schema(MalformedCompilerOptions)],
-    ([document]) => refusedAsParseError(JSON.stringify(document)),
+    '∀doc_MalformedCompilerOptions_⊥TsConfig',
+    { of: [Arbitrary.schema(MalformedCompilerOptions)], subject: parseText },
+    (subject, [document]) => refusedAsParseError(subject(JSON.stringify(document))),
   )
 
   it.prop(
-    '∀unparseableJson_⇒ParseError',
-    [Arbitrary.schema(UnparseableJson)],
-    ([jsonText]) => refusedAsParseError(jsonText),
+    '∀text_UnparseableJson_⊥TsConfig',
+    { of: [Arbitrary.schema(UnparseableJson)], subject: parseText },
+    (subject, [jsonText]) => refusedAsParseError(subject(jsonText)),
   )
 
   it.prop(
-    '∀preservedKeysDocument_∈TsConfig',
-    [Arbitrary.schema(PreservedTsConfig)],
-    ([document]) => Result.isSuccess(parseTsConfig('tsconfig.json', JSON.stringify(document))),
+    '∀doc_PreservedTsConfig_≡Input',
+    { of: [Arbitrary.schema(PreservedTsConfig)], subject: parseText },
+    (subject, [document]) =>
+      Result.match(subject(JSON.stringify(document)), {
+        onFailure: () => false,
+        onSuccess: (config) => Equal.equals(config, definedConfigOf(document)),
+      }),
   )
 }

@@ -1,5 +1,6 @@
 import { createVitest as createVitestOriginal, type Vitest } from 'vitest/node'
 
+import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Crypto from 'effect/Crypto'
@@ -20,6 +21,9 @@ import {
   type VitestRunnerOptions,
 } from './VitestRunner.schema.js'
 import { make, type VitestRuntime } from './VitestRuntime.handle.js'
+
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntimeBlueprint')
+export type TypeId = typeof TypeId
 
 const STRYKER_SETUP_URL = new URL('./stryker-setup.mjs', import.meta.url)
 
@@ -222,7 +226,7 @@ const createVitestConfig = (input: VitestRuntimeInput) => ({
   reporters: [{ onInit(_vitest: Vitest) {} }],
 })
 
-export const create = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
+const acquire = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
   Effect.gen(function*() {
     const { crypto, fileSystem: fs, path } = input
     const suffix = yield* crypto.randomUUIDv4.pipe(Effect.mapError(failRuntime('init')))
@@ -246,3 +250,15 @@ export const create = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, 
     })
     return make({ driver, projectRoot: input.projectRoot, localSetupFile, namespace: input.namespace })
   })
+
+const VitestRuntimeBlueprint = Blueprint.make<VitestRuntimeInput>()(TypeId).steps({
+  steps: {},
+  targets: { create: acquire },
+})
+
+export type VitestRuntimeBlueprint = Blueprint.Of<typeof VitestRuntimeBlueprint>
+
+export const of = VitestRuntimeBlueprint.of
+
+export const create = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
+  of(input).create
