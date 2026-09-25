@@ -1,12 +1,14 @@
 import { installedPlugin, shardMutate } from '@systemfsoftware/stryker-config'
 import { afterAll, describe, it } from '@systemfsoftware/vitest'
 import { Schema as S } from 'effect'
-import { globSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { globSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const root = mkdtempSync(join(tmpdir(), 'stryker-config-'))
+const realTempDir = (prefix: string): string => realpathSync(mkdtempSync(join(tmpdir(), prefix)))
+
+const root = realTempDir('stryker-config-')
 afterAll(() => rmSync(root, { force: true, recursive: true }))
 
 const filesDir = join(root, 'files')
@@ -107,7 +109,7 @@ describe('shardMutate', () => {
   })
 
   it('names the missing package.json and the cause it hit', function*({ expect }) {
-    const empty = mkdtempSync(join(tmpdir(), 'stryker-config-empty-'))
+    const empty = realTempDir('stryker-config-empty-')
     const previousCwd = process.cwd()
     const previousShard = process.env['STRYKER_SHARD']
     let message = ''
@@ -131,7 +133,7 @@ describe('shardMutate', () => {
   })
 
   it('names an unparsable package.json and the parse cause', function*({ expect }) {
-    const broken = mkdtempSync(join(tmpdir(), 'stryker-config-broken-'))
+    const broken = realTempDir('stryker-config-broken-')
     writeFileSync(join(broken, 'package.json'), '{ not json')
     const expectedPrefix = `shardMutate needs package.json next to the Stryker config at ${
       join(broken, 'package.json')
