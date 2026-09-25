@@ -12,6 +12,18 @@ const FIRST_PARTY_PACKAGES = [
 ] as const
 const EXPECTED_SURFACE = ['describe', 'it', 'test', 'beforeEach', 'expect'] as const
 
+type ServedSurfaceName = (typeof EXPECTED_SURFACE)[number]
+
+type FirstPartyPackage = (typeof FIRST_PARTY_PACKAGES)[number]
+
+const EXPECTED_SURFACES: Readonly<
+  Record<FirstPartyPackage, ReadonlyArray<ServedSurfaceName>>
+> = {
+  'vitest': EXPECTED_SURFACE,
+  '@effect/vitest': EXPECTED_SURFACE,
+  '@systemfsoftware/effect-gherkin-spec': ['describe', 'it', 'expect'],
+}
+
 const nodeRegisterHooks = globalThis.process.getBuiltinModule('node:module').registerHooks
 
 const liveBuiltin: Sandbox.HarnessModuleBuiltin = {
@@ -38,6 +50,13 @@ const quietRuntime = (): Sandbox.InterceptionRuntime => ({
 
 const sandboxPrefix = new URL('./', import.meta.url).href
 
+let servedSandboxSeq = 0
+
+const freshSandboxPrefix = (): string => {
+  servedSandboxSeq += 1
+  return `${sandboxPrefix}?served=${String(servedSandboxSeq)}`
+}
+
 interface ServedRunnerModule {
   readonly describe: (name: string, body: () => void) => void
   readonly it: (name: string, body: () => void) => void
@@ -45,8 +64,6 @@ interface ServedRunnerModule {
   readonly beforeEach: (hook: () => void) => void
   readonly expect: object
 }
-
-type ServedSurfaceName = 'describe' | 'it' | 'test' | 'beforeEach' | 'expect'
 
 interface ServedModuleReport {
   readonly address: string
@@ -62,7 +79,7 @@ const releaseSandbox = Effect.sync(() => {
 
 const quietExpect = (value: object): object => value
 
-const loadServedModule = (packageName: string): Effect.Effect<ServedModuleReport> =>
+const loadServedModule = (packageName: FirstPartyPackage): Effect.Effect<ServedModuleReport> =>
   Effect.gen(function*() {
     const address = Sandbox.harnessUrlForSpecifier(packageName)
     if (address === undefined) {
@@ -85,15 +102,16 @@ const loadServedModule = (packageName: string): Effect.Effect<ServedModuleReport
       projectConfig: undefined,
       provided: registry.provided.current,
     }
+    const prefix = freshSandboxPrefix()
     Sandbox.installInterception(liveBuiltin, quietRuntime())
-    Sandbox.activateSandbox(sandboxPrefix)
+    Sandbox.activateSandbox(prefix)
     Sandbox.writeGlobalState(state)
     try {
       const served = yield* Effect.promise(() =>
-        Sandbox.nativeImport<Partial<ServedRunnerModule>>(`${address}?salt=${encodeURIComponent(sandboxPrefix)}`)
+        Sandbox.nativeImport<Partial<ServedRunnerModule>>(`${address}?salt=${encodeURIComponent(prefix)}`)
       )
       const surface: ServedSurfaceName[] = []
-      for (const name of EXPECTED_SURFACE) {
+      for (const name of EXPECTED_SURFACES[packageName]) {
         if (served[name] !== undefined) {
           surface.push(name)
         }
@@ -180,9 +198,9 @@ Feature('Resolving the harness modules a sandboxed test file loads')
                 'vmrunner-harness:@systemfsoftware/effect-gherkin-spec',
               ],
               surfaces: [
-                [...EXPECTED_SURFACE],
-                [...EXPECTED_SURFACE],
-                [...EXPECTED_SURFACE],
+                ['describe', 'it', 'test', 'beforeEach', 'expect'],
+                ['describe', 'it', 'test', 'beforeEach', 'expect'],
+                ['describe', 'it', 'expect'],
               ],
               registered: [['a served test'], ['a served test'], ['a served test']],
               unknown: undefined,
