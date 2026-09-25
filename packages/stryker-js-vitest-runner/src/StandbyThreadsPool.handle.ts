@@ -173,7 +173,7 @@ const failedStopOf = (
   slots: readonly StandbySlot[],
   results: readonly PromiseSettledResult<void>[],
 ): Option.Option<StandbySlot> =>
-  Option.fromNullishOr(slots.filter((_slot, index) => results[index].status === 'rejected')[0])
+  Option.fromNullishOr(slots.find((_slot, index) => results[index].status === 'rejected'))
 
 export const dispose = (self: StandbyThreadsPool): Promise<void> => {
   const slots = [...StandbyThreadsPool.slot(self).slots]
