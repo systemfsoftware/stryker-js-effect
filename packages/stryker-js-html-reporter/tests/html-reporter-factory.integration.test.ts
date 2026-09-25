@@ -2,7 +2,7 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import { Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -96,24 +96,7 @@ const reportFixture = (): Report.MutationTestResult => ({
 
 const metricsFixture = (): Report.MetricsResult => ({
   name: 'All files',
-  metrics: {
-    pending: 0,
-    killed: 1,
-    timeout: 0,
-    survived: 0,
-    noCoverage: 0,
-    runtimeErrors: 0,
-    compileErrors: 0,
-    ignored: 0,
-    totalDetected: 1,
-    totalUndetected: 0,
-    totalInvalid: 0,
-    totalValid: 1,
-    totalMutants: 1,
-    totalCovered: 1,
-    mutationScore: 100,
-    mutationScoreBasedOnCoveredCode: 100,
-  },
+  metrics: Report.Metrics.fromMutants([{ status: 'Killed' }]),
   childResults: [],
 })
 

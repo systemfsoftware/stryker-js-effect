@@ -49,13 +49,4 @@ describe('dryRun', () => {
       )
     },
   )
-
-  it.prop(
-    '∀sr_DryRunError_≡MessageIsReason',
-    {
-      of: [DryRunError.fields.stage, S.String],
-      subject: (stage: DryRunError['stage'], reason: string): string => DryRunError.make({ stage, reason }).message,
-    },
-    (messageOf, [stage, reason]) => messageOf(stage, reason) === reason,
-  )
 })

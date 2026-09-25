@@ -25,6 +25,13 @@ const STATUS_ARB: Arbitrary.Arbitrary<Mutant.MutantStatus> = Arbitrary.schema(
   S.Literals(['Killed', 'Survived', 'NoCoverage', 'CompileError', 'RuntimeError', 'Timeout', 'Ignored', 'Pending']),
 )
 
+const SCORED_STATUSES: Readonly<Record<string, true>> = {
+  Killed: true,
+  Timeout: true,
+  Survived: true,
+  NoCoverage: true,
+}
+
 interface ModuleSpec {
   readonly label: string
   readonly testIds: readonly string[]
@@ -186,6 +193,21 @@ describe('mergeReportParts', () => {
         return false
       }
       return result.success.rows.some((row) => row.label === absent && row.score === 'no report')
+    },
+  )
+
+  it.prop(
+    '∀cs_Modules_≡UnscoredRowIffNoMutantCountsTowardTheScore',
+    { of: [DISTINCT_MODULES_ARB], subject: mergeReportParts },
+    (subject, [specs]) => {
+      const result = subject(commandOf(specs))
+      return Result.isSuccess(result) &&
+        specs.every((spec) =>
+          result.success.rows.some((row) =>
+            row.label === spec.label &&
+            (row.score === 'n/a') === spec.mutants.every((mutant) => SCORED_STATUSES[mutant.status] !== true)
+          )
+        )
     },
   )
 })

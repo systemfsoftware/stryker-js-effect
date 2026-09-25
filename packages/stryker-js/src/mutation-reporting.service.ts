@@ -1,5 +1,11 @@
 import { Format, Mutant as InstrumenterMutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Checker, Options, Plugin, Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  type Checker,
+  type Options,
+  type Plugin,
+  Report,
+  type TestRunner,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
@@ -521,65 +527,75 @@ const mutationTestReport =
     })
 
 const determineExitCode = (input: MutationReportingInput) => (metrics: Report.MetricsResult) =>
-  Effect.gen(function*() {
-    const { mutationScore } = metrics.metrics
-    const breaking = input.options.thresholds.break
-    const formattedScore = mutationScore.toFixed(2)
-    return yield* Option.match(
-      Option.fromNullishOr(
-        Result.match(
-          classifyExit(
-            ClassifyExitCommand.make({
-              pending: [],
-              score: Option.getOrNull(Option.filter(Option.some(mutationScore), Number.isFinite)),
-              breakingThreshold: breaking,
-            }),
-          ),
-          {
-            onFailure: (refused) => refused,
-            onSuccess: (decision) =>
-              Match.value(decision).pipe(
-                Match.tag('ExitVerdictFailed', (): Plugin.ExitClass => 'VerdictFail'),
-                Match.orElse((): Plugin.ExitClass | null => null),
-              ),
-          },
-        ),
-      ),
-      {
-        onNone: () =>
-          Effect.map(
-            Match.value(breaking).pipe(
-              Match.when(null, () =>
-                Effect.logDebug(
-                  "No breaking threshold configured. Won't fail the build no matter how low your mutation score is. Set `thresholds.break` to change this behavior.",
-                )),
-              Match.orElse((threshold) =>
-                Effect.logInfo(
-                  `Final mutation score of ${formattedScore} is greater than or equal to break threshold ${
-                    String(threshold)
-                  }`,
-                )
-              ),
-            ),
-            (): Plugin.ExitClass | null => null,
-          ),
-        onSome: (failure) =>
-          Effect.map(
-            Effect.andThen(
-              Effect.logError(
-                `Final mutation score ${formattedScore} under breaking threshold ${
-                  String(breaking)
-                }, setting exit code to 1 (failure).`,
-              ),
-              Effect.logInfo(
-                '(improve mutation score or set `thresholds.break = null` to prevent this error in the future)',
-              ),
-            ),
-            (): Plugin.ExitClass | null => failure,
-          ),
-      },
-    )
+  Report.MutationScore.match(metrics.metrics.mutationScore, {
+    Unscored: () => unscoredExitCode(input.options.thresholds.break),
+    Scored: (score) => scoredExitCode(input.options.thresholds.break, score),
   })
+
+const unscoredExitCode = (breaking: number | null) =>
+  Effect.as(
+    Match.value(breaking).pipe(
+      Match.when(null, () => Effect.void),
+      Match.orElse((threshold) =>
+        Effect.logInfo(
+          `No valid mutant was tested, so there is no mutation score to hold against break threshold ${
+            String(threshold)
+          }`,
+        )
+      ),
+    ),
+    null,
+  )
+
+const scoredExitCode = (breaking: number | null, score: typeof Report.MutationScore.cases.Scored.Type) =>
+  Option.match(
+    Option.fromNullishOr(
+      Result.match(
+        classifyExit(ClassifyExitCommand.make({ pending: [], score, breakingThreshold: breaking })),
+        {
+          onFailure: (refused) => refused,
+          onSuccess: (decision) =>
+            Match.value(decision).pipe(
+              Match.tag('ExitVerdictFailed', (): Plugin.ExitClass => 'VerdictFail'),
+              Match.orElse((): Plugin.ExitClass | null => null),
+            ),
+        },
+      ),
+    ),
+    {
+      onNone: () =>
+        Effect.as(
+          Match.value(breaking).pipe(
+            Match.when(null, () =>
+              Effect.logDebug(
+                "No breaking threshold configured. Won't fail the build no matter how low your mutation score is. Set `thresholds.break` to change this behavior.",
+              )),
+            Match.orElse((threshold) =>
+              Effect.logInfo(
+                `Final mutation score of ${score.percentage.toFixed(2)} is greater than or equal to break threshold ${
+                  String(threshold)
+                }`,
+              )
+            ),
+          ),
+          null,
+        ),
+      onSome: (failure) =>
+        Effect.as(
+          Effect.andThen(
+            Effect.logError(
+              `Final mutation score ${score.percentage.toFixed(2)} under breaking threshold ${
+                String(breaking)
+              }, setting exit code to 1 (failure).`,
+            ),
+            Effect.logInfo(
+              '(improve mutation score or set `thresholds.break = null` to prevent this error in the future)',
+            ),
+          ),
+          failure,
+        ),
+    },
+  )
 
 const emitVerdict =
   (deps: MutationReportingDeps, input: MutationReportingInput) => (report: Report.MutationTestResult) =>
@@ -635,7 +651,7 @@ const reportAll = (deps: MutationReportingDeps, input: MutationReportingInput) =
       classifyExit(
         ClassifyExitCommand.make({
           pending: [verdict, terminalDrain].filter((candidate): candidate is Plugin.ExitClass => candidate !== null),
-          score: null,
+          score: Report.MutationScore.cases.Unscored.make({}),
           breakingThreshold: null,
         }),
       ),

@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -11,7 +11,7 @@ type ExitDecisionTypeId = typeof ExitDecisionTypeId
 
 export class ClassifyExitCommand extends S.TaggedClass<ClassifyExitCommand>()('ClassifyExitCommand', {
   pending: S.Array(Plugin.ExitClass),
-  score: S.NullOr(S.Finite),
+  score: Report.MutationScore,
   breakingThreshold: S.NullOr(S.Finite),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -62,19 +62,20 @@ const decisionOf = (exitClass: Plugin.ExitClass) =>
     Match.exhaustive,
   )
 
-const verdictExitClass = (score: number | null, breakingThreshold: number | null) =>
-  Option.match(
-    Option.all([Option.fromNullishOr(score), Option.fromNullishOr(breakingThreshold)]),
-    {
-      onNone: () => null,
-      onSome: ([actual, threshold]) =>
-        Match.value(actual < threshold).pipe(
-          Match.when(true, (): Plugin.ExitClass => 'VerdictFail'),
-          Match.when(false, (): Plugin.ExitClass | null => null),
-          Match.exhaustive,
-        ),
-    },
-  )
+const verdictExitClass = (score: Report.MutationScore, breakingThreshold: number | null) =>
+  Match.valueTags(score, {
+    Unscored: () => null,
+    Scored: ({ percentage }) =>
+      Option.match(Option.fromNullishOr(breakingThreshold), {
+        onNone: () => null,
+        onSome: (threshold) =>
+          Match.value(percentage < threshold).pipe(
+            Match.when(true, (): Plugin.ExitClass => 'VerdictFail'),
+            Match.when(false, (): Plugin.ExitClass | null => null),
+            Match.exhaustive,
+          ),
+      }),
+  })
 
 const decide = (command: ClassifyExitCommand): Result.Result<ClassifyExitDecision, never> =>
   Option.match(Option.fromNullishOr(verdictExitClass(command.score, command.breakingThreshold)), {

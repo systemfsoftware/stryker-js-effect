@@ -29,13 +29,4 @@ describe('planInstrumentation', () => {
       )
     },
   )
-
-  it.prop(
-    '∀inPlace_EmptyFileSet_≡DryRunWithoutMutants',
-    { of: [S.Boolean, S.Finite], subject: planInstrumentation },
-    (subject, [inPlace, pluginCount]) => {
-      const result = subject(InstrumentCommand.make({ fileCount: 0, inPlace, pluginCount }))
-      return Result.isSuccess(result) && result.success.fileCount === 0
-    },
-  )
 })

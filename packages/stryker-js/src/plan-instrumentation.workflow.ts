@@ -3,10 +3,12 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+const Count = S.Int.check(S.isGreaterThanOrEqualTo(0))
+
 export class InstrumentCommand extends S.TaggedClass<InstrumentCommand>()('InstrumentCommand', {
-  fileCount: S.Finite,
+  fileCount: Count,
   inPlace: S.Boolean,
-  pluginCount: S.Finite,
+  pluginCount: Count,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     fileCount: 'stryker.instrument.file_count',
@@ -20,14 +22,14 @@ type InstrumentDecisionTypeId = typeof InstrumentDecisionTypeId
 export class InPlaceInstrument extends S.TaggedClass<InPlaceInstrument>()('InPlaceInstrument', {
   workingDirectoryHint: S.String,
   backupDirectoryHint: S.String,
-  fileCount: S.Finite,
+  fileCount: Count,
 }) {
   readonly [InstrumentDecisionTypeId] = InstrumentDecisionTypeId
 }
 
 export class EphemeralInstrument extends S.TaggedClass<EphemeralInstrument>()('EphemeralInstrument', {
   workingDirectoryHint: S.String,
-  fileCount: S.Finite,
+  fileCount: Count,
 }) {
   readonly [InstrumentDecisionTypeId] = InstrumentDecisionTypeId
 }

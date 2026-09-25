@@ -125,12 +125,10 @@ export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')
         runId,
         mode,
         signal,
-        score: Option.getOrNull(
-          Option.filter(
-            Option.some(metrics.mutationScore),
-            (score) => metrics.totalMutants > 0 && Number.isFinite(score),
-          ),
-        ),
+        score: Report.MutationScore.match(metrics.mutationScore, {
+          Scored: ({ percentage }) => percentage,
+          Unscored: () => null,
+        }),
         thresholds: {
           high: report.thresholds.high,
           low: report.thresholds.low,
@@ -202,21 +200,20 @@ if (import.meta.vitest !== void 0) {
   const mutantTotalOf = (report: Report.MutationTestResult) =>
     Object.values(report.files).reduce((total, file) => total + file.mutants.length, 0)
 
-  const scoreIsDefined = (counts: Report.Metrics): boolean =>
-    counts.totalMutants > 0 && Number.isFinite(counts.mutationScore)
-
   const expectedScoreOf = (counts: Report.Metrics): number | null =>
-    scoreIsDefined(counts) ? counts.mutationScore : null
-
-  const scoreMatchesCounts = (counts: Report.Metrics, score: number | null): boolean =>
-    score === expectedScoreOf(counts)
+    Option.getOrNull(
+      Option.map(
+        Option.liftPredicate(counts.totalValid, (valid) => valid > 0),
+        (valid) => (counts.totalDetected / valid) * 100,
+      ),
+    )
 
   it.prop(
-    '∀rms_Score_≡NullIffEmptyOrNonFinite',
+    '∀rms_Score_≡NullIffNoValidMutant',
     { of: [Report.MutationTestResultSchema, OutputMode, ModeSignal], subject: VerdictEnvelope.build },
     (subject, [report, mode, signal]) => {
       const { counts, score } = subject(report, mode, signal, fixedRunId, '/base', pathService)
-      return scoreMatchesCounts(counts, score)
+      return score === expectedScoreOf(counts)
     },
   )
 

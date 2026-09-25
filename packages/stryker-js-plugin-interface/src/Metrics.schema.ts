@@ -1,3 +1,4 @@
+import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
 
 export const DetectedStatus = S.Union([S.Literal('Killed'), S.Literal('Timeout')])
@@ -8,6 +9,12 @@ export const UntestedStatus = S.Union([S.Literal('Ignored'), S.Literal('Pending'
 export const NonNegativeInt = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
 export const NonNegativeFinite = S.Finite.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
 export const Percentage = S.Finite.pipe(S.check(S.isBetween({ minimum: 0, maximum: 100 })))
+
+export const MutationScore = S.TaggedUnion({
+  Scored: { percentage: Percentage },
+  Unscored: {},
+})
+export type MutationScore = typeof MutationScore.Type
 
 export class Metrics extends S.Class<Metrics>('Metrics')({
   pending: NonNegativeInt,
@@ -43,12 +50,12 @@ export class Metrics extends S.Class<Metrics>('Metrics')({
     return this.totalValid + this.totalInvalid + this.ignored + this.pending
   }
 
-  get mutationScore(): number {
-    return Math.min(100, Math.max(0, (this.totalDetected / this.totalValid) * 100))
+  get mutationScore(): MutationScore {
+    return scoreOf(this.totalDetected, this.totalValid)
   }
 
-  get mutationScoreBasedOnCoveredCode(): number {
-    return Math.min(100, Math.max(0, (this.totalDetected / this.totalCovered) * 100))
+  get mutationScoreBasedOnCoveredCode(): MutationScore {
+    return scoreOf(this.totalDetected, this.totalCovered)
   }
 
   static fromMutants(mutants: readonly { readonly status: string }[]): Metrics {
@@ -67,6 +74,13 @@ export class Metrics extends S.Class<Metrics>('Metrics')({
 
 const metricCountOf = (mutants: readonly { readonly status: string }[], status: string) =>
   mutants.filter((mutant) => mutant.status === status).length
+
+const scoreOf = (detected: number, counted: number): MutationScore =>
+  Boolean.match(counted > 0, {
+    onTrue: () =>
+      MutationScore.cases.Scored.make({ percentage: Math.min(100, Math.max(0, (detected / counted) * 100)) }),
+    onFalse: () => MutationScore.cases.Unscored.make({}),
+  })
 
 export const MetricsSchema = Metrics
 
@@ -87,3 +101,20 @@ export const MetricsResultSchema: S.Codec<MetricsResult, MetricsResultEncoded> =
   metrics: Metrics,
   childResults: S.Array(S.suspend((): S.Codec<MetricsResult, MetricsResultEncoded> => MetricsResultSchema)),
 }).annotate({ identifier: 'MetricsResult' })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  it.prop(
+    '∀dc_MutationScore_≡UnscoredIffNothingCounted',
+    { of: [NonNegativeInt, NonNegativeInt], subject: scoreOf },
+    (subject, [first, second]) => {
+      const detected = Math.min(first, second)
+      const counted = Math.max(first, second)
+      return MutationScore.match(subject(detected, counted), {
+        Unscored: () => counted === 0,
+        Scored: ({ percentage }) => counted > 0 && percentage === (detected / counted) * 100,
+      })
+    },
+  )
+}
