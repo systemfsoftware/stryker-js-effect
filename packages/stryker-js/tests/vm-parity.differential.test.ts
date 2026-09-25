@@ -13,11 +13,8 @@ import * as Semaphore from 'effect/Semaphore'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import * as fc from 'fast-check'
-import { vi } from 'vitest'
 import { createVitest } from 'vitest/node'
 import type { RunnerTask, RunnerTestCase, RunnerTestFile, Vitest } from 'vitest/node'
-
-vi.setConfig({ testTimeout: 300_000 })
 
 const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname)
 const FIXTURES_DIR_SEGMENTS: readonly [string, string] = ['testResources', 'vm-parity']
@@ -603,33 +600,37 @@ const vmFixtureOutcomes = (fixture: Fixture): Effect.Effect<Outcomes> =>
       labelled('the vm runner failed'),
     )
 
-const COMPARE_OPTIONS = { runBudget: 1, interruptAfterTimeLimit: INTERRUPT_AFTER_MS } as const
+const HOST_BOUND = {
+  timeout: INTERRUPT_AFTER_MS,
+  reason: 'each side runs a real vitest instance or the vm worker over the host filesystem and child processes',
+} as const
 
-describe('vm parity: fixture test outcomes match real vitest', () => {
-  for (const fixture of FIXTURES) {
-    describe(`fixture ${fixture.name}`, () => {
-      Differential.compare({ reference: realFixtureOutcomes, candidate: vmFixtureOutcomes })
-        .on(fc.constant(fixture), COMPARE_OPTIONS)
-        .assert(sameOutcomes)
-    })
-  }
-})
+const COMPARE_OPTIONS = { runBudget: 1, hostBound: HOST_BOUND } as const
 
-describe('vm parity: fixture mutant verdicts match real vitest', () => {
-  for (const fixture of FIXTURES.filter((entry) => entry.mutants)) {
-    describe(`fixture ${fixture.name}`, () => {
-      Differential.compare({
-        reference: realMutantVerdicts,
-        candidate: mutationEngineVerdicts,
-      })
-        .on(fc.constant(fixture), COMPARE_OPTIONS)
-        .assert(verdictsAgree)
-    })
-  }
-})
-
-describe('vm parity: generated suite outcomes match real vitest', () => {
-  Differential.compare({ reference: generatedRealOutcomes, candidate: generatedVmOutcomes })
-    .on(generatedSuites, { runBudget: 12, interruptAfterTimeLimit: INTERRUPT_AFTER_MS })
+for (const fixture of FIXTURES) {
+  Differential.compare({
+    name: `vm parity: fixture ${fixture.name} test outcomes match real vitest`,
+    reference: realFixtureOutcomes,
+    candidate: vmFixtureOutcomes,
+  })
+    .on(fc.constant(fixture), COMPARE_OPTIONS)
     .assert(sameOutcomes)
+}
+
+for (const fixture of FIXTURES.filter((entry) => entry.mutants)) {
+  Differential.compare({
+    name: `vm parity: fixture ${fixture.name} mutant verdicts match real vitest`,
+    reference: realMutantVerdicts,
+    candidate: mutationEngineVerdicts,
+  })
+    .on(fc.constant(fixture), COMPARE_OPTIONS)
+    .assert(verdictsAgree)
+}
+
+Differential.compare({
+  name: 'vm parity: generated suite outcomes match real vitest',
+  reference: generatedRealOutcomes,
+  candidate: generatedVmOutcomes,
 })
+  .on(generatedSuites, { runBudget: 12, hostBound: HOST_BOUND })
+  .assert(sameOutcomes)
