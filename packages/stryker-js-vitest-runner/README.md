@@ -51,6 +51,19 @@ export default defineConfig({
 })
 ```
 
+### Worker pool
+
+The runner uses the pool your Vitest config selects. Set `pool: 'threads'` in the runner's options to run every test file on Vitest's isolated `threads` pool instead, with no child processes. This is what `testRunner: 'vm'` in `@systemfsoftware/stryker-js` does. With `pool` set, a Vitest config that enables browser mode for any project is refused at startup; leave `pool` unset to run browser-mode suites.
+
+```ts
+export default defineConfig({
+  testRunner: {
+    plugin: '@systemfsoftware/stryker-js-vitest-runner',
+    options: { pool: 'threads' },
+  },
+})
+```
+
 ## In-Source Tests (`import.meta.vitest`)
 
 If your project uses in-source testing with `if (import.meta.vitest)` blocks, add the companion ignorer plugin so unreachable test mutants are excluded from your score:
