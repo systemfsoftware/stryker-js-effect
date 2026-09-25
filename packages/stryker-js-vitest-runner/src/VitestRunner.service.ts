@@ -105,12 +105,22 @@ export interface RunFilter {
   testFiles?: string[]
 }
 
-/** Vitest starts every file when the run is not related to a changed file. */
-const relatedFilesOf = <A>(relatedValue: A, relatedFiles: readonly string[] | undefined) =>
+/** Vitest matches related files against absolute module ids, and only resolves them when the config is first built. */
+const relatedFilesOf = <A>(
+  relatedValue: A,
+  relatedFiles: readonly string[] | undefined,
+  projectRoot: string,
+  pathService: Path.Path,
+) =>
   Boolean.match(relatedValue !== false, {
     onFalse: () => undefined,
     onTrue: () =>
-      Option.getOrUndefined(Option.map(Option.fromNullishOr(relatedFiles), (files) => files.map(canonicalOf))),
+      Option.getOrUndefined(
+        Option.map(
+          Option.fromNullishOr(relatedFiles),
+          (files) => files.map((file) => canonicalOf(pathService.resolve(projectRoot, file))),
+        ),
+      ),
   })
 
 /** A run limited to specific test ids starts exactly those files under a name pattern. */
@@ -241,7 +251,7 @@ const makeRunner = (input: VitestSessionInput) =>
         const self = yield* runtime
         const options = yield* vitestOptions
         yield* resetContext
-        const related = relatedFilesOf(options.related, filter.relatedFiles)
+        const related = relatedFilesOf(options.related, filter.relatedFiles, projectRoot, pathService)
         const plan = runFilterPlan(filter, projectRoot, pathService)
         yield* applyRunFilter(self, { related, testNamePattern: plan.testNamePattern })
         yield* start(self, plan.testFiles).pipe(

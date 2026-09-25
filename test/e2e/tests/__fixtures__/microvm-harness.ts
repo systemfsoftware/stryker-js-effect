@@ -8,13 +8,18 @@ import { test as baseTest } from 'vitest'
 import { BakedFixtureCache } from '../../src/Harness/fixture-cache.service.js'
 import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
 import { GuestJobs } from '../../src/Harness/guest-job.service.js'
+import { layer as harnessTelemetryLayer, underActiveParentSpan } from '../../src/Harness/harness-telemetry.service.js'
 import { StrykerCliRunner } from '../../src/Harness/stryker-cli-runner.service.js'
 
 const HarnessLive = Layer.mergeAll(
   BakedFixtureCache.layer,
   StrykerCliRunner.layer,
   GuestJobs.layer,
-).pipe(Layer.provideMerge(Layer.mergeAll(nodeServicesLayer, Readiness.NodeHostProber.layer)))
+).pipe(
+  Layer.provideMerge(
+    Layer.mergeAll(nodeServicesLayer, Readiness.NodeHostProber.layer, harnessTelemetryLayer),
+  ),
+)
 
 export interface MicroVMHarness {
   readonly install: (fixtureUrl: URL, name: string) => Promise<string>
@@ -52,10 +57,12 @@ export const test = baseTest
           await use(
             {
               install: (fixtureUrl: URL, name: string) =>
-                runtime.runPromise(BakedFixtureCache.use((cache) => cache.install({ url: fixtureUrl, name }))),
+                runtime.runPromise(
+                  underActiveParentSpan(BakedFixtureCache.use((cache) => cache.install({ url: fixtureUrl, name }))),
+                ),
               run: (args, opts) =>
                 runtime.runPromise(
-                  StrykerCliRunner.use((runner) => runner.run(args, opts.cwd)),
+                  underActiveParentSpan(StrykerCliRunner.use((runner) => runner.run(args, opts.cwd))),
                   { signal: opts.signal },
                 ),
               readFile: (path: string) => runtime.runPromise(BakedFixtureCache.use((cache) => cache.readFile(path))),

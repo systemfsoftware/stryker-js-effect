@@ -46,7 +46,6 @@ export const makeWorkerClient = <Rpcs extends Rpc.Any>(
       tempDirPrefix: params.tempDirPrefix,
       env: params.env,
     })
-
     const protocol = yield* worker.pipe(
       clientLayer,
       Layer.build,

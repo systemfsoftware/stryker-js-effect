@@ -49,11 +49,29 @@ export const TurboDryClosure = Schema.Union([TurboClosure, MalformedClosure])
 
 export type TurboDryClosure = typeof TurboDryClosure.Type
 
-export const BakedInput = Schema.Struct({
+export const PackInput = Schema.Struct({
   baseImage: Schema.String,
   bakeScript: Schema.Uint8Array,
   packs: Schema.Array(Schema.Struct({ fileName: Schema.String, files: Schema.Array(FileBytes) })),
-  fixtures: Schema.Array(Schema.Struct({ fixtureId: Schema.String, files: Schema.Array(FileBytes) })),
 })
 
-export type BakedInput = typeof BakedInput.Type
+export type PackInput = typeof PackInput.Type
+
+export const FixtureInput = Schema.Struct({
+  fixtureId: Schema.String,
+  files: Schema.Array(FileBytes),
+})
+
+export type FixtureInput = typeof FixtureInput.Type
+
+export const FixtureKeys = Schema.Record(Schema.String, Schema.String)
+
+export type FixtureKeys = typeof FixtureKeys.Type
+
+export const BakeOutcome = Schema.Struct({
+  root: Schema.String,
+  keys: FixtureKeys,
+  lease: Schema.String,
+})
+
+export type BakeOutcome = typeof BakeOutcome.Type

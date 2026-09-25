@@ -20,8 +20,8 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type { Node, SourceFile } from 'typescript/unstable/ast'
 import { SyntaxKind } from 'typescript/unstable/ast'
+import { API, type Diagnostic, DiagnosticCategory, type Program, type Snapshot } from 'typescript/unstable/async'
 import type { FileSystem as TSFileSystem } from 'typescript/unstable/fs'
-import { API, type Diagnostic, DiagnosticCategory, type Program, type Snapshot } from 'typescript/unstable/sync'
 
 import type { NodeDecodedShape } from './CheckMutants.schema.js'
 import {
@@ -223,10 +223,14 @@ const parseTsConfig = (fileName: string, jsonText: string): Result.Result<TsConf
       catch: (cause) => TsConfigParseError.make({ file: fileName, reason: reasonOfThrown(cause) }),
     }),
     (value) =>
-      Result.mapError(
-        S.decodeUnknownResult(TsConfigSchema)(value),
-        (error) => TsConfigParseError.make({ file: fileName, reason: error.message }),
-      ),
+      Option.match(Option.liftPredicate(value, S.is(TsConfigSchema)), {
+        onSome: (original) => Result.succeed(original),
+        onNone: () =>
+          Result.mapError(
+            S.decodeUnknownResult(TsConfigSchema)(value),
+            (error) => TsConfigParseError.make({ file: fileName, reason: error.message }),
+          ),
+      }),
   )
 
 const tsconfigDeclaresReferences = (fileName: string, jsonText: string) =>
@@ -306,30 +310,38 @@ const recordTsConfig = (
     }),
   })
 
+const enqueueUnseen = (walk: TsConfigWalk, pending: ReadonlyArray<string>): ReadonlyArray<string> =>
+  Arr.reduce(
+    Arr.fromIterable(walk.files),
+    pending,
+    (queued, fileName) =>
+      Boolean.match(
+        MutableHashSet.has(walk.processed, fileName) || queued.includes(fileName),
+        { onTrue: () => queued, onFalse: () => [...queued, fileName] },
+      ),
+  )
+
 const walkTsConfigs = (
   rt: TSCompilerRuntime,
   buildMode: boolean,
   walk: TsConfigWalk,
   pending: ReadonlyArray<string>,
 ): Effect.Effect<TsConfigWalk, CompilerError> =>
-  Option.match(Option.filter(Arr.last(pending), (fileName) => !MutableHashSet.has(walk.processed, fileName)), {
+  Option.match(Option.filter(Arr.head(pending), (fileName) => !MutableHashSet.has(walk.processed, fileName)), {
     onNone: () => Effect.succeed(walk),
     onSome: (fileName) =>
       Effect.flatMap(
         rt.host.readFileString(fileName).pipe(Effect.mapError(() => TsConfigNotFoundError.make({ file: fileName }))),
-        (jsonText) =>
-          walkTsConfigs(
+        (jsonText) => {
+          const recorded = recordTsConfig(
             rt,
             buildMode,
-            recordTsConfig(
-              rt,
-              buildMode,
-              { ...walk, processed: MutableHashSet.add(walk.processed, fileName) },
-              fileName,
-              jsonText,
-            ),
-            pending.slice(1),
-          ),
+            { ...walk, processed: MutableHashSet.add(walk.processed, fileName) },
+            fileName,
+            jsonText,
+          )
+          return walkTsConfigs(rt, buildMode, recorded, enqueueUnseen(recorded, pending.slice(1)))
+        },
       ),
   })
 
@@ -379,11 +391,13 @@ const updateSnapshot = (
   changedFiles: ReadonlyArray<string>,
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
-    const next = initialized.api.updateSnapshot({
-      openProjects: Array.from(initialized.allTSConfigFiles),
-      fileChanges: { changed: [...changedFiles] },
-    })
-    yield* Effect.sync(() => initialized.snapshot.dispose())
+    const next = yield* Effect.promise(() =>
+      initialized.api.updateSnapshot({
+        openProjects: Array.from(initialized.allTSConfigFiles),
+        fileChanges: { changed: [...changedFiles] },
+      })
+    )
+    yield* Effect.promise(() => initialized.snapshot.dispose())
     yield* Ref.update(rt.state, (prev) => ({ ...prev, snapshot: next }))
   })
 
@@ -541,11 +555,22 @@ const registerGraphFile = (sourceFiles: SourceFiles, fileName: string) =>
     },
   })
 
-const sourceFileOf = (programs: readonly Program[], fileName: string): Option.Option<SourceFile> =>
-  Option.flatMap(
-    Arr.findFirst(programs, (program) => program.getSourceFile(fileName) !== undefined),
-    (program) => Option.fromUndefinedOr(program.getSourceFile(fileName)),
-  )
+const sourceFileIn = (program: Program, fileName: string): Effect.Effect<Option.Option<SourceFile>> =>
+  Effect.map(Effect.promise(() => program.getSourceFile(fileName)), (found) => Option.fromUndefinedOr(found))
+
+const sourceFileOf = (
+  programs: readonly Program[],
+  fileName: string,
+): Effect.Effect<Option.Option<SourceFile>> =>
+  Option.match(Arr.head(programs), {
+    onNone: () => Effect.succeed(Option.none<SourceFile>()),
+    onSome: (program) =>
+      Effect.filterOrElse(
+        sourceFileIn(program, fileName),
+        Option.isSome,
+        () => sourceFileOf(Arr.drop(programs, 1), fileName),
+      ),
+  })
 
 const linkImport = (rt: TSCompilerRuntime, sourceFiles: SourceFiles, fileName: string, specifier: string) =>
   Option.map(
@@ -563,21 +588,57 @@ const linkImport = (rt: TSCompilerRuntime, sourceFiles: SourceFiles, fileName: s
     },
   )
 
-const buildGraph = (rt: TSCompilerRuntime, programs: readonly Program[]) => {
-  const state = Ref.getUnsafe(rt.state)
-  Arr.forEach(
-    programs,
-    (program) =>
-      Arr.forEach(program.getSourceFileNames(), (fileName) => registerGraphFile(state.sourceFiles, fileName)),
-  )
-  Arr.forEach(Array.from(state.sourceFiles), ([fileName]) => {
-    Option.map(
-      sourceFileOf(programs, fileName),
-      (sourceFile) =>
-        Arr.forEach(importsOf(sourceFile), (specifier) => linkImport(rt, state.sourceFiles, fileName, specifier)),
-    )
+const recordOwner = (owners: MutableHashMap.MutableHashMap<string, Program>, program: Program, fileName: string) => {
+  const normalized = normalizeFileName(fileName)
+  Boolean.match(MutableHashMap.has(owners, normalized), {
+    onTrue: () => undefined,
+    onFalse: () => {
+      MutableHashMap.set(owners, normalized, program)
+    },
   })
 }
+
+const ownedSourceFileOf = (
+  owners: MutableHashMap.MutableHashMap<string, Program>,
+  programs: readonly Program[],
+  fileName: string,
+): Effect.Effect<Option.Option<SourceFile>> =>
+  Option.match(MutableHashMap.get(owners, fileName), {
+    onNone: () => sourceFileOf(programs, fileName),
+    onSome: (owner) =>
+      Effect.filterOrElse(sourceFileIn(owner, fileName), Option.isSome, () => sourceFileOf(programs, fileName)),
+  })
+
+const buildGraph = (rt: TSCompilerRuntime, programs: readonly Program[]): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const state = Ref.getUnsafe(rt.state)
+    const owners = MutableHashMap.empty<string, Program>()
+    yield* Effect.forEach(
+      programs,
+      (program) =>
+        Effect.map(
+          Effect.promise(() => program.getSourceFileNames()),
+          (fileNames) =>
+            Arr.forEach(fileNames, (fileName) => {
+              registerGraphFile(state.sourceFiles, fileName)
+              recordOwner(owners, program, fileName)
+            }),
+        ),
+      { discard: true },
+    )
+    yield* Effect.forEach(
+      Array.from(state.sourceFiles),
+      ([fileName]) =>
+        Effect.map(
+          ownedSourceFileOf(owners, programs, fileName),
+          (found) =>
+            Option.map(found, (sourceFile) =>
+              Arr.forEach(importsOf(sourceFile), (specifier) =>
+                linkImport(rt, state.sourceFiles, fileName, specifier))),
+        ),
+      { discard: true },
+    )
+  })
 
 const fileNode = (fileName: string, children: ReadonlyArray<FileNode>): FileNode => ({
   children,
@@ -764,12 +825,21 @@ export const init = (self: TSCompiler): Effect.Effect<readonly Diagnostic[], Com
     yield* setOverrides(rt.files, walk.overrides)
     yield* Ref.update(rt.state, (prev) => ({ ...prev, allTSConfigFiles: walk.files }))
     const api = new API({ fs: rt.sourceFileSystem })
-    const snapshot = api.updateSnapshot({ openProjects: Array.from(walk.files) })
+    const snapshot = yield* Effect.promise(() => api.updateSnapshot({ openProjects: Array.from(walk.files) }))
     yield* Ref.update(rt.state, (prev) => ({ ...prev, api, snapshot }))
-    buildGraph(rt, yield* programsOf(rt))
+    yield* buildGraph(rt, yield* programsOf(rt))
     return yield* check(self, [])
   })
 }
+
+const diagnosticsOf = (program: Program): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.promise(() =>
+    Promise.all([
+      program.getConfigFileParsingDiagnostics(),
+      program.getSemanticDiagnostics(),
+      program.getProgramDiagnostics(),
+    ]).then(([config, semantic, programWide]) => [...config, ...semantic, ...programWide])
+  )
 
 export const check: {
   (
@@ -801,11 +871,7 @@ export const check: {
       }))
       const programs = yield* programsOf(rt)
       const diagnostics = Arr.filter(
-        Arr.flatMap(programs, (program) => [
-          ...program.getConfigFileParsingDiagnostics(),
-          ...program.getSemanticDiagnostics(),
-          ...program.getProgramDiagnostics(),
-        ]),
+        Arr.flatten(yield* Effect.forEach(programs, (program) => diagnosticsOf(program))),
         (diagnostic) => diagnostic.category === DiagnosticCategory.Error,
       )
       yield* Effect.annotateCurrentSpan({ 'typescript.diagnostics.count': diagnostics.length })
@@ -864,28 +930,36 @@ export const getLineAndCharacterOfPosition: {
     fileName: string,
     position: number,
   ): Effect.Effect<{ line: number; character: number } | undefined> =>
-    Effect.map(
+    Effect.flatMap(
       Effect.orElseSucceed(programsOf(self[RuntimeTypeId]), (): ReadonlyArray<Program> => []),
       (programs) =>
-        Option.getOrUndefined(
-          Option.map(
-            Arr.head(
-              Arr.filterMap(programs, (program) => keepSome(Option.fromUndefinedOr(program.getSourceFile(fileName)))),
+        Effect.map(
+          sourceFileOf(programs, fileName),
+          (found) =>
+            Option.getOrUndefined(
+              Option.map(found, (sourceFile) => sourceFile.getLineAndCharacterOfPosition(position)),
             ),
-            (found) => found.getLineAndCharacterOfPosition(position),
-          ),
         ),
     ),
 )
 
+const CLOSE_GRACE = '1 second'
+
 export const close = (self: TSCompiler): Effect.Effect<void> => {
   const rt = self[RuntimeTypeId]
   return Effect.gen(function*() {
-    const state = yield* Ref.get(rt.state)
-    yield* Effect.sync(() => state.snapshot?.dispose())
-    yield* Effect.sync(() => state.api?.close())
-    yield* Ref.update(rt.state, (prev) => ({ ...prev, snapshot: undefined, api: undefined }))
-  })
+    const state = yield* Ref.getAndUpdate(rt.state, (prev) => ({ ...prev, snapshot: undefined, api: undefined }))
+    const released = yield* Option.match(Option.fromUndefinedOr(state.api), {
+      onNone: () => Effect.succeed(true),
+      onSome: (api) =>
+        Effect.tryPromise(() => api.close()).pipe(
+          Effect.timeoutOption(CLOSE_GRACE),
+          Effect.tapError((error) => Effect.annotateCurrentSpan('typescript.server.close_error', error.message)),
+          Effect.match({ onFailure: () => false, onSuccess: Option.isSome }),
+        ),
+    })
+    yield* Effect.annotateCurrentSpan('typescript.server.released', released)
+  }).pipe(Effect.withSpan('typescript-checker.compiler.close'))
 }
 
 if (import.meta.vitest !== void 0) {
@@ -1064,4 +1138,218 @@ if (import.meta.vitest !== void 0) {
     })
     return Arr.every(pairs, ([left, right]) => !relatedNodes(left, right))
   })
+
+  const { Arbitrary } = await import('effect/unstable/arbitrary')
+
+  type JsonValue = string | boolean | number | null | ReadonlyArray<JsonValue> | { readonly [key: string]: JsonValue }
+  type JsonTsConfig = { readonly [key: string]: JsonValue | undefined }
+
+  const SafeKey = S.String.check(S.isPattern(/^[A-Za-z$_][A-Za-z0-9$_-]*$/))
+
+  const JsonValueSchema: S.Schema<JsonValue> = S.Union([
+    S.String,
+    S.Boolean,
+    S.Null,
+    S.Int,
+    S.Array(S.suspend((): S.Schema<JsonValue> => JsonValueSchema)),
+    S.Record(SafeKey, S.suspend((): S.Schema<JsonValue> => JsonValueSchema)),
+  ])
+
+  const JsonRecordSchema = S.Record(SafeKey, JsonValueSchema)
+
+  const KnownTsConfigFields = S.Struct({
+    extends: S.optional(S.Union([S.String, S.Array(S.String)])),
+    include: S.Array(S.String).pipe(S.optional),
+    files: S.Array(S.String).pipe(S.optional),
+    exclude: S.Array(S.String).pipe(S.optional),
+    watchOptions: S.optional(JsonRecordSchema),
+    typeAcquisition: S.optional(JsonRecordSchema),
+    references: S.Struct({ path: S.String }).pipe(S.Array, S.optional),
+    compilerOptions: S.optional(JsonRecordSchema),
+  })
+
+  const knownTsConfigKeys = [
+    'extends',
+    'include',
+    'exclude',
+    'files',
+    'watchOptions',
+    'typeAcquisition',
+    'references',
+    'compilerOptions',
+  ]
+
+  const TsConfigLike = Arbitrary.all([
+    Arbitrary.schema(KnownTsConfigFields),
+    Arbitrary.schema(JsonRecordSchema),
+  ]).pipe(
+    Arbitrary.map(([known, extra]): JsonTsConfig => ({
+      ...Object.fromEntries(Object.entries(known).filter(([, value]) => value !== undefined)),
+      ...Object.fromEntries(Object.entries(extra).filter(([key]) => !knownTsConfigKeys.includes(key))),
+    })),
+  )
+
+  const omitCompilerOptions = (value: JsonTsConfig): JsonTsConfig => {
+    const { compilerOptions: _dropped, ...rest } = value
+    return rest
+  }
+
+  const omitReferences = (value: JsonTsConfig): JsonTsConfig => {
+    const { references: _dropped, ...rest } = value
+    return rest
+  }
+
+  const buildTouchedOptions = [
+    ...Object.keys(COMPILER_OPTIONS_OVERRIDES),
+    ...Object.keys(LOW_EMIT_OPTIONS_FOR_PROJECT_REFERENCES),
+    'inlineSourceMap',
+    'inlineSources',
+    'mapRoute',
+    'sourceRoot',
+    'outFile',
+  ]
+
+  const singleTouchedOptions = [
+    ...Object.keys(COMPILER_OPTIONS_OVERRIDES),
+    ...Object.keys(NO_EMIT_OPTIONS_FOR_SINGLE_PROJECT),
+    'declarationDir',
+  ]
+
+  const isNotNullObject = (value: unknown): value is object => typeof value === 'object' && value !== null
+
+  const isJsonObject = (value: unknown): value is JsonTsConfig => isNotNullObject(value) && !Array.isArray(value)
+
+  const compilerOptionsOf = (config: JsonTsConfig): JsonTsConfig | undefined => {
+    const compilerOptions = config['compilerOptions']
+    return isJsonObject(compilerOptions) ? compilerOptions : undefined
+  }
+
+  const entryUntouched = (
+    output: JsonTsConfig,
+    touched: ReadonlyArray<string>,
+    entry: readonly [string, JsonValue | undefined],
+  ): boolean => touched.includes(entry[0]) || Equal.equals(output[entry[0]], entry[1])
+
+  const sourceEntriesOf = (source: JsonTsConfig | undefined): ReadonlyArray<readonly [string, JsonValue | undefined]> =>
+    Object.entries(source ?? {})
+
+  const untouchedCompilerOptionsPreserved = (
+    source: JsonTsConfig | undefined,
+    output: JsonTsConfig | undefined,
+    touched: ReadonlyArray<string>,
+  ): boolean => {
+    const target: JsonTsConfig = output ?? {}
+    return sourceEntriesOf(source).every((entry) => entryUntouched(target, touched, entry))
+  }
+
+  const overriddenOptionOf = (config: JsonTsConfig, key: string): JsonValue | undefined =>
+    compilerOptionsOf(config)?.[key]
+
+  const parsedOverrideOf = (text: string): Option.Option<JsonTsConfig> =>
+    Option.liftPredicate(JSON.parse(text), isJsonObject)
+
+  it.prop(
+    '∀tsconfig_Override_≡OriginalExceptDeliberateCompilerOverrides',
+    [TsConfigLike],
+    ([original]) =>
+      Result.match(parseTsConfig('tsconfig.json', JSON.stringify(original)), {
+        onFailure: () => false,
+        onSuccess: (config) =>
+          Option.match(
+            Option.all([
+              parsedOverrideOf(overrideOptions(config, true)),
+              parsedOverrideOf(overrideOptions(config, false)),
+            ]),
+            {
+              onNone: () => false,
+              onSome: ([build, single]) =>
+                Arr.every(
+                  [
+                    Equal.equals(omitCompilerOptions(build), omitCompilerOptions(original)),
+                    Equal.equals(omitCompilerOptions(single), omitReferences(omitCompilerOptions(original))),
+                    untouchedCompilerOptionsPreserved(
+                      compilerOptionsOf(original),
+                      compilerOptionsOf(build),
+                      buildTouchedOptions,
+                    ),
+                    untouchedCompilerOptionsPreserved(
+                      compilerOptionsOf(original),
+                      compilerOptionsOf(single),
+                      singleTouchedOptions,
+                    ),
+                    overriddenOptionOf(build, 'emitDeclarationOnly') === true,
+                    overriddenOptionOf(build, 'noEmit') === false,
+                    overriddenOptionOf(single, 'noEmit') === true,
+                    overriddenOptionOf(single, 'incremental') === false,
+                  ],
+                  (holds) => holds,
+                ),
+            },
+          ),
+      }),
+  )
+
+  const refusedAsParseError = (jsonText: string): boolean =>
+    Result.match(parseTsConfig('tsconfig.json', jsonText), {
+      onFailure: (error) => S.is(TsConfigParseError)(error),
+      onSuccess: () => false,
+    })
+
+  const NonObjectRoot = S.Union([S.String, S.Boolean, S.Null, S.Int, S.Array(JsonValueSchema)])
+
+  const MalformedReferences = S.Struct({
+    references: S.Union([
+      S.String,
+      S.Int,
+      S.Boolean,
+      S.Null,
+      S.NonEmptyArray(S.String),
+      S.NonEmptyArray(S.Struct({ path: S.Boolean })),
+    ]),
+  })
+
+  const MalformedCompilerOptions = S.Struct({
+    compilerOptions: S.Union([S.String, S.Int, S.Boolean, S.Null, S.Array(S.String)]),
+  })
+
+  const UnparseableJson = S.Literals(['{', '[', '"unterminated', '{"references":}'])
+
+  const PreservedTsConfig = S.Struct({
+    extends: S.Union([S.String, S.Array(S.String)]).pipe(S.optional),
+    include: S.Array(S.String).pipe(S.optional),
+    exclude: S.Array(S.String).pipe(S.optional),
+    files: S.Array(S.String).pipe(S.optional),
+    references: S.Struct({ path: S.String }).pipe(S.Array, S.optional),
+    compilerOptions: S.optional(JsonRecordSchema),
+  })
+
+  it.prop(
+    '∀nonObjectRoot_∉TsConfig_⇒ParseError',
+    [Arbitrary.schema(NonObjectRoot)],
+    ([root]) => refusedAsParseError(JSON.stringify(root)),
+  )
+
+  it.prop(
+    '∀referencesNotPathArray_∉TsConfig_⇒ParseError',
+    [Arbitrary.schema(MalformedReferences)],
+    ([document]) => refusedAsParseError(JSON.stringify(document)),
+  )
+
+  it.prop(
+    '∀compilerOptionsNotObject_∉TsConfig_⇒ParseError',
+    [Arbitrary.schema(MalformedCompilerOptions)],
+    ([document]) => refusedAsParseError(JSON.stringify(document)),
+  )
+
+  it.prop(
+    '∀unparseableJson_⇒ParseError',
+    [Arbitrary.schema(UnparseableJson)],
+    ([jsonText]) => refusedAsParseError(jsonText),
+  )
+
+  it.prop(
+    '∀preservedKeysDocument_∈TsConfig',
+    [Arbitrary.schema(PreservedTsConfig)],
+    ([document]) => Result.isSuccess(parseTsConfig('tsconfig.json', JSON.stringify(document))),
+  )
 }

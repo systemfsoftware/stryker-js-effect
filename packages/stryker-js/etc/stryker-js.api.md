@@ -31,7 +31,7 @@ export namespace RunEvent {
 
 // @public (undocumented)
 export namespace Worker {
-    export { ChildProcessCrashedError, ClassifyWorkerExitCommand, ClassifyWorkerExitDecision, OutOfMemoryError, SpawnedSocketWorker, WorkerBootError, WorkerBootTimeoutError, WorkerClientParams, WorkerExit, WorkerLauncher, WorkerLauncherShape, WorkerSpawnParams, classifyWorkerExit, make as makeSpawnedSocketWorker, makeWorkerClient };
+    export { ChildProcessCrashedError, ClassifyWorkerExitCommand, ClassifyWorkerExitDecision, OutOfMemoryError, SpawnedSocketWorker, WorkerBootError, WorkerBootTimeoutError, WorkerClientParams, WorkerExit, WorkerLauncher, WorkerLauncherShape, WorkerSpawnParams, classifyWorkerExit, layerWorkerProtocol, make as makeSpawnedSocketWorker, makeWorkerClient };
 }
 
 // (No @packageDocumentation comment for this package)

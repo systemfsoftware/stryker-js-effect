@@ -1,6 +1,5 @@
 export default {
-  testRunner: {
-    plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
-  },
+  testRunner: 'vm',
+  testFiles: ['src/**/*.test.ts'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
 }
