@@ -1,0 +1,5 @@
+{
+  "name": "vm-browser",
+  "private": true,
+  "type": "module"
+}

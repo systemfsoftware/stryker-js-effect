@@ -1,69 +1,83 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Configuration, Engine, Plugin } from '@systemfsoftware/stryker-js'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { strykerPlugins as vmRunnerPlugins } from '@systemfsoftware/stryker-js-vm-runner'
+import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
-import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 
 const Feature = makeFeature({ it })
 
-const CHILD_RUNNER_USED = 'the child-process test runner was built'
+const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname)
+const BROWSER_FIXTURE_SEGMENTS: readonly [string, string] = ['testResources', 'vm-browser']
 
-const childRunnerProbe = Effect.suspend(() => Effect.die(new Error(CHILD_RUNNER_USED)))
+const withBrowserProject = <A, E, R>(
+  use: (root: string) => Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R | FileSystem.FileSystem | Path.Path> =>
+  Effect.acquireUseRelease(
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const root = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: 'vm-browser-' }))
+      yield* fs.copy(path.join(PACKAGE_ROOT, ...BROWSER_FIXTURE_SEGMENTS), root, { overwrite: true })
+      yield* fs.symlink(path.join(PACKAGE_ROOT, 'node_modules'), path.join(root, 'node_modules'))
+      return root
+    }).pipe(Effect.orDie),
+    use,
+    (root) =>
+      Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true })).pipe(
+        Effect.orDie,
+      ),
+  )
 
-const contextWith = (
-  options: Options.StrykerOptions,
-): {
-  readonly options: Options.StrykerOptions
-  readonly fileDescriptions: Record<string, never>
-  readonly sandboxWorkingDirectory: string
-  readonly idGenerator: { readonly next: Effect.Effect<number> }
-  readonly retire: Effect.Effect<void>
-  readonly testFiles: readonly string[]
-} => ({
-  options,
+const contextFor = (options: Options.StrykerOptions, root: string): Plugin.TestRunnerBuildContext => ({
+  options: { ...options, testRunner: 'vm' },
   fileDescriptions: {},
-  sandboxWorkingDirectory: '/project',
+  sandboxWorkingDirectory: root,
   idGenerator: { next: Effect.succeed(1) },
   retire: Effect.void,
   testFiles: [],
 })
 
-const buildVmRunner = (options: Options.StrykerOptions): Effect.Effect<string, never, Engine.EnginePorts> =>
+const vmDryRunOutcome = (root: string): Effect.Effect<string, never, Engine.EnginePorts> =>
   Effect.gen(function*() {
-    const exit = yield* Plugin.buildTestRunner(contextWith(options), childRunnerProbe).pipe(Effect.exit, Effect.scoped)
-    return Match.value(exit).pipe(
-      Match.when(Exit.isFailure, (failure) => Cause.pretty(failure.cause)),
-      Match.orElse(() => 'the child-process runner was never built'),
+    const context = contextFor(yield* Configuration.createDefaultOptions, root)
+    const childRunner = Arr.head(vmRunnerPlugins).pipe(
+      Option.map((runner) =>
+        Plugin.makeChildProcessTestRunner({
+          options: context.options,
+          fileDescriptions: context.fileDescriptions,
+          sandboxWorkingDirectory: context.sandboxWorkingDirectory,
+          workerEntrypoint: runner.workerEntry,
+          idGenerator: context.idGenerator,
+        })
+      ),
+      Option.getOrElse(() => Effect.die(new Error('the vm runner plugin descriptor is missing'))),
     )
+    const exit = yield* Plugin.buildTestRunner(context, childRunner).pipe(
+      Effect.flatMap((runner) => runner.dryRun({ timeout: 60_000, coverageAnalysis: 'off', disableBail: true })),
+      Effect.scoped,
+      Effect.exit,
+    )
+    return Exit.match(exit, {
+      onFailure: (cause) => Cause.pretty(cause),
+      onSuccess: (result) => JSON.stringify(result),
+    })
   })
 
 Feature('Running mutation tests with the vm test runner')
   .withLayer(Engine.nodePlatformLayer)
-  .live('each scenario reads the real install layout and builds the real child-process runner path')
+  .live('each scenario reads the real install layout or starts a real vitest runner worker')
   .body(({ scenario }) => {
     scenario(
       'A config that names no test runner runs the vm runner',
       Gherkin.Do.pipe(
         Given('Stryker configured without a test runner')('options', () => Configuration.createDefaultOptions),
         Then('the run selects the vm runner')((s, expect) => expect(s.options.testRunner).toBe('vm')),
-      ),
-    )
-
-    scenario(
-      'The vm runner is the vitest runner on the isolated threads pool',
-      Gherkin.Do.pipe(
-        Given('Stryker configured without a test runner')('options', () => Configuration.createDefaultOptions),
-        When('the engine resolves the runner to build')(
-          'resolved',
-          (s) => Effect.sync(() => Plugin.testRunnerConfigOf(s.options.testRunner)),
-        ),
-        Then('the resolved runner is the vitest runner pinned to the threads pool')((s, expect) =>
-          expect(s.resolved).toEqual({ plugin: Plugin.vmRunnerPluginUrl(), options: { pool: 'threads' } })
-        ),
       ),
     )
 
@@ -105,11 +119,15 @@ Feature('Running mutation tests with the vm test runner')
     )
 
     scenario(
-      'A vm run builds a child-process runner rather than an in-process one',
+      'A browser-mode project is refused by the vm runner and pointed at the vitest runner',
       Gherkin.Do.pipe(
-        Given('Stryker configured without a test runner')('options', () => Configuration.createDefaultOptions),
-        When('the engine builds the runner for a vm run')('outcome', (s) => buildVmRunner(s.options)),
-        Then('the child-process runner is built')((s, expect) => expect(s.outcome).toContain(CHILD_RUNNER_USED)),
+        When('a vm dry run starts on a project whose Vitest config enables browser mode')(
+          'outcome',
+          () => withBrowserProject(vmDryRunOutcome),
+        ),
+        Then('the run fails before any test runs, naming the vitest runner')((s, expect) =>
+          expect(s.outcome).toContain("testRunner: 'vitest'")
+        ),
       ),
     )
   })
