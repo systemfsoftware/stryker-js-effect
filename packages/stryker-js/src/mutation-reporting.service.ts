@@ -529,66 +529,60 @@ const mutationTestReport =
 const determineExitCode = (input: MutationReportingInput) => (metrics: Report.MetricsResult) => {
   const breaking = input.options.thresholds.break
   const score = metrics.metrics.mutationScore
-  return Option.match(
-    Option.fromNullishOr(
-      Result.match(
-        classifyExit(ClassifyExitCommand.make({ pending: [], score, breakingThreshold: breaking })),
-        {
-          onFailure: (refused) => refused,
-          onSuccess: (decision) =>
-            Match.value(decision).pipe(
-              Match.tag('ExitVerdictFailed', (): Plugin.ExitClass => 'VerdictFail'),
-              Match.orElse((): Plugin.ExitClass | null => null),
-            ),
-        },
-      ),
+  const failure = Option.fromNullishOr(
+    Result.match(
+      classifyExit(ClassifyExitCommand.make({ pending: [], score, breakingThreshold: breaking })),
+      {
+        onFailure: (refused) => refused,
+        onSuccess: (decision) =>
+          Match.value(decision).pipe(
+            Match.tag('ExitVerdictFailed', (): Plugin.ExitClass => 'VerdictFail'),
+            Match.orElse((): Plugin.ExitClass | null => null),
+          ),
+      },
     ),
-    {
-      onNone: () => Effect.as(logPassed(breaking, score), null),
-      onSome: (failure) => Effect.as(logBroken(breaking, score), failure),
-    },
   )
+  return Report.MutationScore.match(score, {
+    Scored: ({ percentage }) =>
+      Option.match(failure, {
+        onNone: () => Effect.as(logScoredPass(breaking, percentage), null),
+        onSome: (exitClass) => Effect.as(logBroken(breaking, percentage), exitClass),
+      }),
+    Unscored: () => Effect.as(logUnscored(breaking), Option.getOrNull(failure)),
+  })
 }
 
-const renderedScore = (score: Report.MutationScore): string =>
-  Report.MutationScore.match(score, {
-    Scored: ({ percentage }) => percentage.toFixed(2),
-    Unscored: () => 'n/a',
-  })
+const logScoredPass = (breaking: number | null, percentage: number) =>
+  Match.value(breaking).pipe(
+    Match.when(null, () =>
+      Effect.logDebug(
+        "No breaking threshold configured. Won't fail the build no matter how low your mutation score is. Set `thresholds.break` to change this behavior.",
+      )),
+    Match.orElse((threshold) =>
+      Effect.logInfo(
+        `Final mutation score of ${percentage.toFixed(2)} is greater than or equal to break threshold ${
+          String(threshold)
+        }`,
+      )
+    ),
+  )
 
-const logPassed = (breaking: number | null, score: Report.MutationScore) =>
-  Report.MutationScore.match(score, {
-    Scored: ({ percentage }) =>
-      Match.value(breaking).pipe(
-        Match.when(null, () =>
-          Effect.logDebug(
-            "No breaking threshold configured. Won't fail the build no matter how low your mutation score is. Set `thresholds.break` to change this behavior.",
-          )),
-        Match.orElse((threshold) =>
-          Effect.logInfo(
-            `Final mutation score of ${percentage.toFixed(2)} is greater than or equal to break threshold ${
-              String(threshold)
-            }`,
-          )
-        ),
-      ),
-    Unscored: () =>
-      Match.value(breaking).pipe(
-        Match.when(null, () => Effect.void),
-        Match.orElse((threshold) =>
-          Effect.logInfo(
-            `No valid mutant was tested, so there is no mutation score to hold against break threshold ${
-              String(threshold)
-            }`,
-          )
-        ),
-      ),
-  })
+const logUnscored = (breaking: number | null) =>
+  Match.value(breaking).pipe(
+    Match.when(null, () => Effect.void),
+    Match.orElse((threshold) =>
+      Effect.logInfo(
+        `No valid mutant was tested, so there is no mutation score to hold against break threshold ${
+          String(threshold)
+        }`,
+      )
+    ),
+  )
 
-const logBroken = (breaking: number | null, score: Report.MutationScore) =>
+const logBroken = (breaking: number | null, percentage: number) =>
   Effect.andThen(
     Effect.logError(
-      `Final mutation score ${renderedScore(score)} under breaking threshold ${
+      `Final mutation score ${percentage.toFixed(2)} under breaking threshold ${
         String(breaking)
       }, setting exit code to 1 (failure).`,
     ),
