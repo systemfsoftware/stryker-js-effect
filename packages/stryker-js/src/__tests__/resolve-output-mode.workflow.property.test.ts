@@ -69,14 +69,6 @@ describe('resolveOutputMode', () => {
           result.success.stdoutIsTTY === command.stdoutIsTTY
         )
       }
-      if (!command.stdoutIsTTY) {
-        return (
-          Result.isSuccess(result) &&
-          S.is(MachineOutput)(result.success) &&
-          result.success.signal === 'tty' &&
-          result.success.stdoutIsTTY === false
-        )
-      }
       if (agentSet(command)) {
         return (
           Result.isSuccess(result) &&
@@ -97,7 +89,27 @@ describe('resolveOutputMode', () => {
         Result.isSuccess(result) &&
         S.is(HumanOutput)(result.success) &&
         result.success.signal === 'tty' &&
-        result.success.stdoutIsTTY === true
+        result.success.stdoutIsTTY === command.stdoutIsTTY
+      )
+    },
+  )
+
+  it.prop(
+    '∀c_NonTTYWithoutOptIn_≡HumanOutput',
+    { of: [ResolveModeCommand], subject: resolveOutputMode },
+    (subject, [command]) => {
+      if (
+        command.stdoutIsTTY || command.text === true || command.json === true || envSet(command) ||
+        agentSet(command) || hasNonemptyTool(command)
+      ) {
+        return true
+      }
+      const result = subject(command)
+      return (
+        Result.isSuccess(result) &&
+        S.is(HumanOutput)(result.success) &&
+        result.success.signal === 'tty' &&
+        result.success.stdoutIsTTY === false
       )
     },
   )

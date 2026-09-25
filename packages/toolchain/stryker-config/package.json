@@ -19,12 +19,17 @@
     "lib"
   ],
   "scripts": {
+    "test": "vitest run",
     "typecheck": "tsc -b",
-    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text}"
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text} && effect-tsgo diagnostics --project tsconfig.test.json --format ${TSGO_FORMAT:-text}"
   },
   "devDependencies": {
     "@systemfsoftware/tsconfig": "catalog:",
-    "@types/node": "catalog:"
+    "@systemfsoftware/vitest": "catalog:",
+    "@systemfsoftware/vitest-config": "workspace:^",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "vitest": "catalog:"
   },
   "repository": {
     "type": "git",

@@ -31,11 +31,13 @@ because `CheckerFailed.message` is empty; the cause lives on `.cause`.
 Rationale: the mutation-test stage must fail with the checker's reason, not a
 blank child-process crash.
 
-**INV-3: Empty mutation scores are NaN, not 0.** `Metrics.mutationScore` and
-`Metrics.mutationScoreBasedOnCoveredCode` return `Number.NaN` when the
-denominator is 0. Downstream `Number.isNaN` branches render `n/a` and skip
-break-threshold fail. Rationale: 0 is a real score and trips `VerdictFail`
-whenever `thresholds.break > 0`.
+**INV-3: An empty mutation score is `Unscored`, never NaN or 0.**
+`Metrics.mutationScore` and `Metrics.mutationScoreBasedOnCoveredCode` return
+`Report.MutationScore`: `Scored { percentage }` or `Unscored` when no mutant
+counts toward the denominator. Consumers match on the tag: `Unscored` renders
+`n/a`, passes any `thresholds.break`, and encodes as `null` on the wire.
+Rationale: 0 is a real score and trips `VerdictFail` whenever
+`thresholds.break > 0`; NaN is a number no schema should admit.
 
 ## Code smells
 

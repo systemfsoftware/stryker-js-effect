@@ -12,12 +12,9 @@ import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 import type { MergeReportsRequest } from './Cli.schema.js'
 import { DuplicatePackageLabel, MergeReportPartsCommand, MissingPackages } from './merge-report-parts.workflow.js'
-import {
-  MergeReportsFailed,
-  PartMetaSchema,
-  type StreamMutantLine,
-  StreamMutantLineSchema,
-} from './merge-reports.schema.js'
+import { MergeReportsFailed, PartMetaSchema } from './merge-reports.schema.js'
+import type { OutputMode } from './output-mode.schema.js'
+import { reportFromStream } from './report-from-stream.steps.js'
 import { MetricsResultFromReport } from './reporting/metrics-from-report.schema.js'
 
 const PART_MARKER = 'mutation-part.json'
@@ -26,7 +23,6 @@ const PART_STREAM = 'mutation-stream.jsonl'
 const OUT_REPORT = 'mutation-report.json'
 const OUT_HTML = 'mutation-report.html'
 const OUT_SUMMARY = 'summary.md'
-const STREAM_THRESHOLDS = { high: 100, low: 80 }
 const SURVIVOR_CAP = 100
 const ALL_PACKAGES = '**all**'
 const STEP_SUMMARY = 'GITHUB_STEP_SUMMARY'
@@ -94,10 +90,13 @@ type MergeCommand = MergeReportPartsCommand & {
   readonly partsDir: string
   readonly skipped: readonly string[]
   readonly unreadable: readonly string[]
+  readonly mode: OutputMode
 }
 
+export type MergeReportsInvocation = MergeReportsRequest & { readonly mode: OutputMode }
+
 export const readMerge = (
-  request: MergeReportsRequest,
+  request: MergeReportsInvocation,
 ): Effect.Effect<MergeCommand, MergeReportsFailed, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -113,51 +112,16 @@ export const readMerge = (
       onFailure: (error) => Effect.fail(error),
       onSuccess: ({ command, skipped, unreadable }) =>
         Effect.succeed(
-          Object.assign(command, { out: request.out, partsDir: request.parts, skipped, unreadable }),
+          Object.assign(command, {
+            out: request.out,
+            partsDir: request.parts,
+            skipped,
+            unreadable,
+            mode: request.mode,
+          }),
         ),
     })
   })
-
-const mutantFromStream = (line: StreamMutantLine) => {
-  const mutant = {
-    id: line.id,
-    mutatorName: line.mutator,
-    status: line.status,
-    location: line.location,
-  }
-  return Option.match(
-    Option.liftPredicate(line.replacement, (value) => typeof value === 'string'),
-    {
-      onNone: () => mutant,
-      onSome: (replacement) => ({ ...mutant, replacement }),
-    },
-  )
-}
-
-const streamLines = (text: string) => {
-  const decodeLine = S.decodeOption(S.fromJsonString(StreamMutantLineSchema))
-  return text.split('\n').flatMap((raw) => Option.toArray(decodeLine(raw.trim())))
-}
-
-const reportFromStream = (text: string) => {
-  const grouped = streamLines(text).reduce(
-    (groups: Record<string, ReturnType<typeof mutantFromStream>[]>, line) => {
-      const mutants = [...(groups[line.file] ?? []), mutantFromStream(line)]
-      return { ...groups, [line.file]: mutants }
-    },
-    {},
-  )
-  return Option.map(
-    Option.liftPredicate(grouped, (files) => Object.keys(files).length > 0),
-    (files) => ({
-      schemaVersion: '1.0',
-      thresholds: STREAM_THRESHOLDS,
-      files: Object.fromEntries(
-        Object.entries(files).map(([file, mutants]) => [file, { language: 'javascript', source: '', mutants }]),
-      ),
-    }),
-  )
-}
 
 const decodedPart = (bytes: {
   readonly dir: string
@@ -197,7 +161,7 @@ const expectedPackages = (raw: string | undefined) =>
       }),
   })
 
-const decodeMerge = (raw: {
+export const decodeMerge = (raw: {
   readonly packagesRaw: string | undefined
   readonly bytes: readonly {
     readonly dir: string
@@ -417,7 +381,11 @@ export const writeEncoded = ({ body, raw }: { readonly body: EncodedMerge; reado
           Match.exhaustive,
         ),
     })
-    yield* Console.log(body.summary)
+    yield* Match.value(raw.mode).pipe(
+      Match.when('human', () => Console.log(body.summary)),
+      Match.when('machine', () => Effect.void),
+      Match.exhaustive,
+    )
     yield* Match.value(body.unreadable.length > 0).pipe(
       Match.when(true, () => failReason(`${body.unreadable.length} unreadable part(s): ${body.unreadable.join(', ')}`)),
       Match.when(false, () => Effect.void),

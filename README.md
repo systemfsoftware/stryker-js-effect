@@ -284,17 +284,18 @@ Stryker returns distinct exit codes to allow CI pipelines and AI coding agents t
 
 ## 📡 Real-Time NDJSON Machine Output
 
-When executing under automated pipelines or agent environments (`STRYKER_MODE=machine`), Stryker streams newline-delimited JSON events to `stdout`:
+A piped `stdout` is human output, exactly like a terminal. Machine consumers ask for the stream explicitly with `--json` (or `STRYKER_MODE=machine`):
 
 ```console
-$ STRYKER_MODE=machine pnpm exec stryker run
-{"kind":"stream","schemaVersion":"1.0","runId":"06FY3DSBM7TYC2RZQ0F3EGVZ88","mode":"machine","signal":"tty"}
-{"kind":"phase","phase":"instrument","elapsedMs":102}
-{"kind":"phase","phase":"dry-run","elapsedMs":6658}
-{"kind":"plan","total":42}
-{"kind":"tick","elapsedMs":8200,"completed":1,"total":42}
-{"kind":"verdict","schemaVersion":"1.0","score":100,"thresholds":{"high":100,"low":80,"break":80},"counts":{"killed":42,"survived":0,"timeout":0,"noCoverage":0},"reportFile":"reports/mutation/mutation.json"}
+$ pnpm exec stryker run --json
+{"_tag":"stream","schemaVersion":"1.1","runId":"06GDK68202ZB44HJQQ270G8WQ4","mode":"machine","signal":"flag"}
+{"_tag":"phase","phase":"prepare","elapsedMs":115}
+{"_tag":"plan","total":7}
+{"_tag":"mutant","id":"1","status":"Killed","file":"src/calc.ts","location":{"start":{"line":1,"column":61},"end":{"line":1,"column":73}},"mutator":"ArithmeticOperator","replacement":"left - right","completed":1,"total":7}
+{"_tag":"verdict","schemaVersion":"1.1","runId":"06GDK68202ZB44HJQQ270G8WQ4","mode":"machine","signal":"flag","score":85.71428571428571,"thresholds":{"high":100,"low":80,"break":null},"reportFile":"reports/mutation/mutation.json","counts":{"pending":0,"killed":6,"timeout":0,"survived":1,"noCoverage":0,"runtimeErrors":0,"compileErrors":0,"ignored":0},"mutants":[{"id":"5","file":"src/calc.ts","location":{"start":{"line":3,"column":55},"end":{"line":3,"column":64}},"mutator":"EqualityOperator","replacement":"value >= 0","status":"Survived"}]}
 ```
+
+Under `--json`, `stdout` carries wire records and nothing else — progress status lines and log output stay on `stderr`. In both modes the same records are also written to `reports/mutation-stream.jsonl` (`--progressStreamFile`), the artifact `stryker merge-reports` rebuilds partial reports from.
 
 ---
 
@@ -343,7 +344,7 @@ The in-process `vm` runner executes your Vitest suites in one worker thread per 
 <details>
 <summary>How can CI jobs parse real-time mutation progress?</summary>
 
-Set `STRYKER_MODE=machine`, or run with one of the agent tool variables (`CLAUDECODE`, `CODEX_SANDBOX`, `AGENT`) set. Stryker streams typed NDJSON events to `stdout` including phase transitions, progress ticks, and the final verdict payload.
+Set `--json`, or `STRYKER_MODE=machine`, or run with one of the agent tool variables (`CLAUDECODE`, `CODEX_SANDBOX`, `AGENT`) set. Stryker streams typed NDJSON events to `stdout` including phase transitions, progress ticks, and the final verdict payload; every mode also writes the same records to `reports/mutation-stream.jsonl`.
 
 </details>
 

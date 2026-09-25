@@ -4,7 +4,7 @@ import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import {
   DuplicatePackageLabel,
@@ -186,6 +186,24 @@ describe('mergeReportParts', () => {
         return false
       }
       return result.success.rows.some((row) => row.label === absent && row.score === 'no report')
+    },
+  )
+
+  it.prop(
+    '∀cs_Modules_≡RowScoreIsTheReportMetricsScore',
+    { of: [DISTINCT_MODULES_ARB], subject: mergeReportParts },
+    (subject, [specs]) => {
+      const result = subject(commandOf(specs))
+      return Result.isSuccess(result) &&
+        specs.every((spec) =>
+          result.success.rows.some((row) =>
+            row.label === spec.label &&
+            row.score === Report.MutationScore.match(Report.Metrics.fromMutants(spec.mutants).mutationScore, {
+                Scored: ({ percentage }) => percentage.toFixed(2),
+                Unscored: () => 'n/a',
+              })
+          )
+        )
     },
   )
 })

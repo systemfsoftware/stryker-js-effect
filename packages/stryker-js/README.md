@@ -154,8 +154,19 @@ pnpm exec stryker run --incremental
 pnpm exec stryker run --concurrency 4
 
 # Merge partial mutation reports from parallel CI shards
-pnpm exec stryker merge-reports --output reports/mutation/mutation.json "reports/shards/*.json"
+pnpm exec stryker merge-reports --parts reports/shards --out reports/mutation
 ```
+
+## Output Modes
+
+Human output is the default, whether or not `stdout` is a terminal. A machine consumer opts into the NDJSON event stream explicitly:
+
+```bash
+pnpm exec stryker run --json                # wire records on stdout, diagnostics on stderr
+STRYKER_MODE=machine pnpm exec stryker run  # the same, named by environment
+```
+
+`--format text` names the human format explicitly; `--json` together with `--format text` is a usage error (exit 2). Under `--json`, `stdout` carries wire records and nothing else — progress lines and log output stay on `stderr`. Every run also writes the same records to `reports/mutation-stream.jsonl` (`--progressStreamFile`) in both modes, which is the artifact `stryker merge-reports` rebuilds a shard's partial report from.
 
 ## Programmatic API
 

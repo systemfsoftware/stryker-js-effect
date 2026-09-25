@@ -152,8 +152,8 @@ it.live('running one mutation run through the packed runner', function*({ expect
   )
   const run = yield* bddStep(
     'When',
-    'the CLI is executed with default configuration',
-    Effect.promise(() => fixture.run(['run'])),
+    'the CLI is executed in machine mode with default configuration',
+    Effect.promise(() => fixture.run(['run', '--json'])),
   )
   const events = parseEventStream(run.stdout)
   const terminal = lastEvent(events)

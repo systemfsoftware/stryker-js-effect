@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -139,18 +140,12 @@ const formatStderrEvent = (event: RunEvent): string | null =>
   )
 
 const stderrLineFor = (state: FramingState, event: RunEvent): string | null =>
-  Match.value(state.terminalSeen).pipe(
-    Match.when(true, () => null),
-    Match.when(false, () => formatStderrEvent(event)),
-    Match.exhaustive,
-  )
+  Boolean.match(Boolean.and(state.mode === 'human', !state.terminalSeen), {
+    onTrue: () => formatStderrEvent(event),
+    onFalse: () => null,
+  })
 
-const shouldFrame = (state: FramingState): boolean =>
-  Match.value(state.mode).pipe(
-    Match.when('machine', () => !state.terminalSeen),
-    Match.when('human', () => false),
-    Match.exhaustive,
-  )
+const shouldFrame = (state: FramingState): boolean => !state.terminalSeen
 
 const decideFrame = (
   command: FrameRunEventCommand,

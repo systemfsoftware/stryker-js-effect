@@ -3,15 +3,12 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-export class InstrumentError extends S.TaggedError<InstrumentError>()('InstrumentError', {
-  stage: S.Literal('instrument'),
-  reason: S.String,
-}) {}
+const Count = S.Int.check(S.isGreaterThanOrEqualTo(0))
 
 export class InstrumentCommand extends S.TaggedClass<InstrumentCommand>()('InstrumentCommand', {
-  fileCount: S.Finite,
+  fileCount: Count,
   inPlace: S.Boolean,
-  pluginCount: S.Finite,
+  pluginCount: Count,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     fileCount: 'stryker.instrument.file_count',
@@ -25,41 +22,23 @@ type InstrumentDecisionTypeId = typeof InstrumentDecisionTypeId
 export class InPlaceInstrument extends S.TaggedClass<InPlaceInstrument>()('InPlaceInstrument', {
   workingDirectoryHint: S.String,
   backupDirectoryHint: S.String,
-  fileCount: S.Finite,
+  fileCount: Count,
 }) {
   readonly [InstrumentDecisionTypeId] = InstrumentDecisionTypeId
 }
 
 export class EphemeralInstrument extends S.TaggedClass<EphemeralInstrument>()('EphemeralInstrument', {
   workingDirectoryHint: S.String,
-  fileCount: S.Finite,
+  fileCount: Count,
 }) {
   readonly [InstrumentDecisionTypeId] = InstrumentDecisionTypeId
 }
 
 export type InstrumentDecision = InPlaceInstrument | EphemeralInstrument
 
-type InstrumentShape = 'empty' | 'inPlace' | 'ephemeral'
-
-const commandShape = (command: InstrumentCommand): InstrumentShape =>
-  Match.value(command.fileCount === 0).pipe(
-    Match.when(true, (): InstrumentShape => 'empty'),
-    Match.when(false, (): InstrumentShape =>
-      Match.value(command.inPlace).pipe(
-        Match.when(true, (): InstrumentShape => 'inPlace'),
-        Match.when(false, (): InstrumentShape => 'ephemeral'),
-        Match.exhaustive,
-      )),
-    Match.exhaustive,
-  )
-
-const decide = (command: InstrumentCommand): Result.Result<InstrumentDecision, InstrumentError> =>
-  Match.value(commandShape(command)).pipe(
-    Match.when(
-      'empty',
-      () => Result.fail(InstrumentError.make({ stage: 'instrument', reason: 'No files to instrument.' })),
-    ),
-    Match.when('inPlace', () =>
+const decide = (command: InstrumentCommand): Result.Result<InstrumentDecision, never> =>
+  Match.value(command.inPlace).pipe(
+    Match.when(true, () =>
       Result.succeed(
         InPlaceInstrument.make({
           workingDirectoryHint: 'inPlace',
@@ -67,7 +46,7 @@ const decide = (command: InstrumentCommand): Result.Result<InstrumentDecision, I
           fileCount: command.fileCount,
         }),
       )),
-    Match.when('ephemeral', () =>
+    Match.when(false, () =>
       Result.succeed(
         EphemeralInstrument.make({
           workingDirectoryHint: 'temp',
@@ -80,6 +59,6 @@ const decide = (command: InstrumentCommand): Result.Result<InstrumentDecision, I
 export const planInstrumentation = Workflow.make({
   command: InstrumentCommand,
   decision: S.Union([InPlaceInstrument, EphemeralInstrument]),
-  error: InstrumentError,
+  error: S.Never,
   decide,
 })

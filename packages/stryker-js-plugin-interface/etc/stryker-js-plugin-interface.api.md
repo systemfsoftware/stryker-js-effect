@@ -26,7 +26,7 @@ export namespace Plugin {
 
 // @public (undocumented)
 export namespace Report {
-    export { BrandingInformation, BrandingInformationSchema, Dependencies, DependenciesSchema, DetectedStatus, FileResult, FileResultDictionary, FileResultDictionarySchema, FileResultSchema, FrameworkInformation, FrameworkInformationSchema, InvalidStatus, Metrics, MetricsResult, MetricsResultEncoded, MetricsResultSchema, MetricsSchema, MutantResult, MutantResultSchema, MutationTestResult, MutationTestResultSchema, NonNegativeFinite, NonNegativeInt, Percentage, TestDefinition, TestDefinitionSchema, TestFile, TestFileDefinitionDictionary, TestFileDefinitionDictionarySchema, TestFileSchema, Thresholds, ThresholdsSchema, UndetectedStatus, UntestedStatus };
+    export { BrandingInformation, BrandingInformationSchema, Dependencies, DependenciesSchema, DetectedStatus, FileResult, FileResultDictionary, FileResultDictionarySchema, FileResultSchema, FrameworkInformation, FrameworkInformationSchema, InvalidStatus, Metrics, MetricsResult, MetricsResultEncoded, MetricsResultSchema, MetricsSchema, MutantResult, MutantResultSchema, MutationScore, MutationTestResult, MutationTestResultSchema, NonNegativeFinite, NonNegativeInt, Percentage, TestDefinition, TestDefinitionSchema, TestFile, TestFileDefinitionDictionary, TestFileDefinitionDictionarySchema, TestFileSchema, Thresholds, ThresholdsSchema, UndetectedStatus, UntestedStatus };
 }
 
 // @public (undocumented)
