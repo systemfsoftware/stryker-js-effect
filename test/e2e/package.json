@@ -37,6 +37,7 @@
     "@types/node": "catalog:",
     "effect": "catalog:",
     "fast-check": "catalog:",
+    "microsandbox": "catalog:",
     "oxlint": "catalog:",
     "ts-morph": "catalog:",
     "tsx": "catalog:",

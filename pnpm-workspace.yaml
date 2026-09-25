@@ -52,6 +52,7 @@ catalog:
   effect: 4.0.0-rc.117
   husky: ^9
   lint-staged: ^17
+  microsandbox: 0.7.2
   oxc-parser: ^0.150.0
   oxc-walker: ^1
   oxlint: ^1

@@ -1,9 +1,10 @@
 # AGENTS.md — `@systemfsoftware/stryker-e2e`
 
 Private E2E lane for the shipped `stryker` artifact: it packs the workspace closure, bakes every fixture's
-`npm install` in a preparation microVM into a content-addressed host cache, and runs each engine invocation
-as a one-shot `@systemfsoftware/effect-microsandbox` job microVM on the digest-pinned `node:24-alpine` image
-against a fresh host-side workspace mounted at `/work`. Publishes no artifact. Parent: `test/AGENTS.md`.
+`npm install` in a preparation microVM into a content-addressed host cache, boots one warm
+`@systemfsoftware/effect-microsandbox` microVM per test file and fixture on the digest-pinned `node:24-alpine` image,
+copies the baked fixture onto its disk at `/work`, snapshots it, and runs each engine invocation in a fresh
+copy-on-write fork of that snapshot. Publishes no artifact. Parent: `test/AGENTS.md`.
 
 ## Run
 
@@ -46,12 +47,12 @@ Read by the harness services in `src/Harness/`; the `test:e2e` turbo task passes
 | -------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `OTEL_ENABLED`                   | `true` starts the CLI's, its workers' and the test process's SDKs | The lifecycle journey grades the run's trace; the CI `e2e` job sets it                        |
 | `OTEL_SERVICE_NAME`              | default `stryker-e2e`                                             | One service name across the CLI, its workers and the test process — what the journey searches |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`    | default `http://127.0.0.1:4318`                                   | The host collector the job microVM exports to                                                 |
-| `STRYKER_E2E_BAKED_ROOT`         | set by global setup                                               | The baked cache entry for the packed closure every worker copies its fixture workspaces from  |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`    | default `http://127.0.0.1:4318`                                   | The host collector each forked microVM exports to                                             |
+| `STRYKER_E2E_BAKED_ROOT`         | set by global setup                                               | The baked cache entry every warm microVM copies its fixture from                              |
 | `STRYKER_E2E_BAKED_FIXTURE_KEYS` | set by global setup                                               | The per-fixture bake keys, so a worker resolves `<fixtureId>.<key>` inside that entry         |
 
-`StrykerCliRunner` passes the OTEL variables into every job microVM, so a spawned worker inherits them.
-Each job opts into host access, and the endpoint's loopback host is rewritten to `host.microsandbox.internal`,
+`StrykerCliRunner` passes the OTEL variables into every forked run, so a spawned worker inherits them.
+Each fork is restored with host access, and the endpoint's loopback host is rewritten to `host.microsandbox.internal`,
 so the collector must publish 4318 beyond loopback (`process-compose.yaml` does).
 The harness exports its own seam spans (setup, pack, keys, bake, fixture install, guest job, CLI run) to the
 same collector under `OTEL_ENABLED`.

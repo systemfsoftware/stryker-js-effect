@@ -1,4 +1,4 @@
-import { Layer, ManagedRuntime } from 'effect'
+import { Exit, Layer, ManagedRuntime, Scope } from 'effect'
 
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import { Readiness } from '@systemfsoftware/effect-readiness'
@@ -9,7 +9,8 @@ import { BakedFixtureCache } from '../../src/Harness/fixture-cache.service.js'
 import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
 import { GuestJobs } from '../../src/Harness/guest-job.service.js'
 import { layer as harnessTelemetryLayer, underActiveParentSpan } from '../../src/Harness/harness-telemetry.service.js'
-import { StrykerCliRunner } from '../../src/Harness/stryker-cli-runner.service.js'
+import { type ForkedRun, StrykerCliRunner } from '../../src/Harness/stryker-cli-runner.service.js'
+import * as Warm from '../../src/Harness/warm-sandbox.handle.js'
 
 const HarnessLive = Layer.mergeAll(
   BakedFixtureCache.layer,
@@ -22,15 +23,17 @@ const HarnessLive = Layer.mergeAll(
 )
 
 export interface MicroVMHarness {
-  readonly install: (fixtureUrl: URL, name: string) => Promise<string>
+  readonly warm: (fixtureUrl: URL) => Promise<Warm.WarmSandbox>
+  readonly openScope: () => Promise<Scope.Closeable>
+  readonly closeScope: (scope: Scope.Closeable) => Promise<void>
   readonly run: (
+    warm: Warm.WarmSandbox,
     args: readonly string[],
-    opts: { readonly cwd: string; readonly signal?: AbortSignal },
-  ) => Promise<ExecResult>
-  readonly readFile: (path: string) => Promise<string>
+    opts: { readonly label: string; readonly scope: Scope.Closeable; readonly signal?: AbortSignal },
+  ) => Promise<ForkedRun>
+  readonly readFile: (fork: Warm.SandboxFork, relativePath: string) => Promise<string>
 }
 export interface PreparedFixture {
-  readonly path: string
   readonly run: (args: readonly string[]) => Promise<ExecResult>
   readonly readFile: (relativePath: string) => Promise<string>
 }
@@ -56,16 +59,20 @@ export const test = baseTest
         try {
           await use(
             {
-              install: (fixtureUrl: URL, name: string) =>
+              warm: (fixtureUrl: URL) =>
+                runtime.runPromise(underActiveParentSpan(BakedFixtureCache.use((cache) => cache.warm(fixtureUrl)))),
+              openScope: () => runtime.runPromise(Scope.make()),
+              closeScope: (scope) => runtime.runPromise(Scope.close(scope, Exit.void)),
+              run: (warm, args, opts) =>
                 runtime.runPromise(
-                  underActiveParentSpan(BakedFixtureCache.use((cache) => cache.install({ url: fixtureUrl, name }))),
-                ),
-              run: (args, opts) =>
-                runtime.runPromise(
-                  underActiveParentSpan(StrykerCliRunner.use((runner) => runner.run(args, opts.cwd))),
+                  underActiveParentSpan(
+                    StrykerCliRunner.use((runner) => runner.run(args, warm, opts.label)).pipe(
+                      Scope.provide(opts.scope),
+                    ),
+                  ),
                   { signal: opts.signal },
                 ),
-              readFile: (path: string) => runtime.runPromise(BakedFixtureCache.use((cache) => cache.readFile(path))),
+              readFile: (fork, relativePath) => runtime.runPromise(Warm.readFile(fork, relativePath)),
             } satisfies MicroVMHarness,
           )
         } finally {
@@ -77,13 +84,28 @@ export const test = baseTest
   })
   .extend<Pick<ExtendedTestContext, 'prepareFixture' | 'bdd'>>({
     prepareFixture: async ({ microvmHarness, signal }, use) => {
-      await use((fixtureUrl: URL, name: string): Promise<PreparedFixture> =>
-        microvmHarness.install(fixtureUrl, name).then((path) => ({
-          path,
-          run: (args: readonly string[]) => microvmHarness.run(args, { cwd: path, signal }),
-          readFile: (relativePath: string) => microvmHarness.readFile(`${path}/${relativePath}`),
-        }))
-      )
+      const scope = await microvmHarness.openScope()
+      try {
+        await use(async (fixtureUrl: URL, name: string): Promise<PreparedFixture> => {
+          const warm = await microvmHarness.warm(fixtureUrl)
+          const forks: Array<Warm.SandboxFork> = []
+          return {
+            run: async (args: readonly string[]) => {
+              const run = await microvmHarness.run(warm, args, { label: name, scope, signal })
+              forks.push(run.fork)
+              return run.result
+            },
+            readFile: (relativePath: string) => {
+              const latest = forks.at(-1)
+              return latest === undefined
+                ? Promise.reject(new Error(`${name}: read ${relativePath} before any run forked the fixture`))
+                : microvmHarness.readFile(latest, relativePath)
+            },
+          }
+        })
+      } finally {
+        await microvmHarness.closeScope(scope)
+      }
     },
     bdd: async ({ annotate }, use) => {
       await use(
