@@ -77,8 +77,7 @@ const metricCountOf = (mutants: readonly { readonly status: string }[], status: 
 
 const scoreOf = (detected: number, counted: number): MutationScore =>
   Boolean.match(counted > 0, {
-    onTrue: () =>
-      MutationScore.cases.Scored.make({ percentage: Math.min(100, Math.max(0, (detected / counted) * 100)) }),
+    onTrue: () => MutationScore.cases.Scored.make({ percentage: (detected / counted) * 100 }),
     onFalse: () => MutationScore.cases.Unscored.make({}),
   })
 
