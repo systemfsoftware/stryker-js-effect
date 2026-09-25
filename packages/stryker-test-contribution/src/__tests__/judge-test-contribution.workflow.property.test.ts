@@ -2,11 +2,55 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
+import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+
+import {
+  type CommandSpec,
+  CommandSpecSchema,
+  type TestFileSpec,
+} from '../../tests/__fixtures__/judge-test-contribution.schema.js'
 import {
   JudgeTestContribution,
   judgeTestContribution,
   type TestContributionDecision,
 } from '../judge-test-contribution.workflow.js'
+
+const LOCATION = { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } }
+
+const testFileNameOf = (file: TestFileSpec, index: number, suffixes: readonly string[]): string =>
+  file.inScope && suffixes.length > 0
+    ? `src/file${index}${suffixes[index % suffixes.length]}`
+    : `src/file${index}.test.ts`
+
+const commandOf = (spec: CommandSpec): JudgeTestContribution =>
+  JudgeTestContribution.make({
+    report: {
+      schemaVersion: '2',
+      files: {
+        'src/subject.ts': {
+          language: 'typescript',
+          source: 'export const a = 1\n',
+          mutants: spec.mutants.map((mutant, index): Report.MutantResult => ({
+            id: `m${index}`,
+            status: mutant.status,
+            mutatorName: 'BooleanLiteral',
+            location: LOCATION,
+            killedBy: [...mutant.killedBy],
+            coveredBy: [...mutant.coveredBy],
+          })),
+        },
+      },
+      thresholds: { high: 80, low: 60 },
+      testFiles: Object.fromEntries(
+        spec.testFiles.map((file, index) => [
+          testFileNameOf(file, index, spec.suffixes),
+          { tests: file.tests.map((id) => ({ id, name: `test ${id}` })) },
+        ]),
+      ),
+    },
+    everyKillerRecorded: spec.everyKillerRecorded,
+    suffixes: [...spec.suffixes],
+  })
 
 const contributionKeysOf = (command: JudgeTestContribution): readonly string[] =>
   Object.keys(command.report.testFiles ?? {})
@@ -59,16 +103,17 @@ const ruleOrderOfLaw = (decision: TestContributionDecision, command: JudgeTestCo
 describe('judgeTestContribution', () => {
   it.prop(
     '∀c_Command_≡NeverThrows',
-    { of: [JudgeTestContribution], subject: judgeTestContribution },
-    (subject, [command]) => {
-      const decision = decisionOf(subject(command))
+    { of: [CommandSpecSchema], subject: judgeTestContribution },
+    (subject, [spec]) => {
+      const decision = decisionOf(subject(commandOf(spec)))
       return typeof decision.failed === 'boolean' && typeof decision.message === 'string'
     },
   )
   it.prop(
     '∀c_Command_≡ContributionKeys',
-    { of: [JudgeTestContribution], subject: judgeTestContribution },
-    (subject, [command]) => {
+    { of: [CommandSpecSchema], subject: judgeTestContribution },
+    (subject, [spec]) => {
+      const command = commandOf(spec)
       const decision = decisionOf(subject(command))
       const keys = contributionKeysOf(command)
       return decision.contribution.length === keys.length &&
@@ -77,8 +122,9 @@ describe('judgeTestContribution', () => {
   )
   it.prop(
     '∀c_Command_≡ToothlessInScope',
-    { of: [JudgeTestContribution], subject: judgeTestContribution },
-    (subject, [command]) => {
+    { of: [CommandSpecSchema], subject: judgeTestContribution },
+    (subject, [spec]) => {
+      const command = commandOf(spec)
       const decision = decisionOf(subject(command))
       const keys = contributionKeysOf(command)
       return decision.toothless.every(
@@ -88,9 +134,9 @@ describe('judgeTestContribution', () => {
   )
   it.prop(
     '∀c_Command_≡ContributionOrder',
-    { of: [JudgeTestContribution], subject: judgeTestContribution },
-    (subject, [command]) => {
-      const decision = decisionOf(subject(command))
+    { of: [CommandSpecSchema], subject: judgeTestContribution },
+    (subject, [spec]) => {
+      const decision = decisionOf(subject(commandOf(spec)))
       return decision.contribution.every(
         ([, entry]) =>
           entry.soleKills <= entry.totalKills &&
@@ -100,12 +146,18 @@ describe('judgeTestContribution', () => {
   )
   it.prop(
     '∀c_Command_≡Verdict',
-    { of: [JudgeTestContribution], subject: judgeTestContribution },
-    (subject, [command]) => verdictOfLaw(decisionOf(subject(command)), command),
+    { of: [CommandSpecSchema], subject: judgeTestContribution },
+    (subject, [spec]) => {
+      const command = commandOf(spec)
+      return verdictOfLaw(decisionOf(subject(command)), command)
+    },
   )
   it.prop(
     '∀c_Command_≡RuleOrder',
-    { of: [JudgeTestContribution], subject: judgeTestContribution },
-    (subject, [command]) => ruleOrderOfLaw(decisionOf(subject(command)), command),
+    { of: [CommandSpecSchema], subject: judgeTestContribution },
+    (subject, [spec]) => {
+      const command = commandOf(spec)
+      return ruleOrderOfLaw(decisionOf(subject(command)), command)
+    },
   )
 })
