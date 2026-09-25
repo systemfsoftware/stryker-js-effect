@@ -13,8 +13,7 @@
         "types": "./lib/base.d.ts",
         "default": "./lib/base.js"
       }
-    },
-    "./setup": "./lib/setup.js"
+    }
   },
   "files": [
     "lib"
@@ -28,7 +27,6 @@
     "@systemfsoftware/vitest": "catalog:",
     "@types/node": "catalog:",
     "effect": "catalog:",
-    "fast-check": "catalog:",
     "vitest": "catalog:"
   },
   "repository": {

@@ -35,6 +35,7 @@
     "@systemfsoftware/stryker-js-vitest-runner": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/vitest": "catalog:",
+    "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "effect": "catalog:",
     "fast-check": "catalog:",

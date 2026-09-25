@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from '@systemfsoftware/vitest-config'
 
 const SETUP_TIMEOUT_MS = 600_000
 const TEST_TIMEOUT_MS = 120_000
@@ -8,7 +8,7 @@ const otelSdkPath = new URL('./otel.ts', import.meta.url).pathname
 export default defineConfig({
   test: {
     environment: 'node',
-    globals: true,
+    globals: false,
     globalSetup: ['./tests/__fixtures__/global-setup.ts'],
     include: ['tests/**/*.test.ts'],
     passWithNoTests: false,
