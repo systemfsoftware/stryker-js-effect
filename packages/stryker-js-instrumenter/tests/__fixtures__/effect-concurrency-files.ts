@@ -24,3 +24,19 @@ export const effectConcurrencyFixtureFiles = Effect.flatMap(
           })),
       )),
 )
+
+const CONCURRENCY_SELECTION_FIXTURE_NAMES: readonly string[] = [
+  'import-style-named.ts',
+  'import-style-aliased.ts',
+  'import-style-effect-namespace.ts',
+  'import-style-module-namespace.ts',
+  'import-style-bare-function.ts',
+  'import-style-bare-function-no-binding.ts',
+  'synchronization-removal.ts',
+  'refusals.ts',
+]
+
+export const effectConcurrencySelectionFixtureFiles = Effect.forEach(
+  CONCURRENCY_SELECTION_FIXTURE_NAMES,
+  (name) => Effect.map(effectConcurrencyFixtureContent(name), (content) => ({ name, content })),
+)
