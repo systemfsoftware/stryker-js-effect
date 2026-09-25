@@ -2,7 +2,7 @@ import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defineConfig as defineVitestConfig } from 'vitest/config'
 
-import { isAgent, isCI } from './env.js'
+import { isAgent, isCI, isOpenTelemetryEnabled } from './env.js'
 import { exists, firstExisting, readJson } from './files.js'
 import { propertyRuns } from './property-runs.js'
 
@@ -173,6 +173,11 @@ export const defineConfig = async (config) => {
   return defineVitestConfig({ ...config, test })
 }
 
+export const openTelemetry = {
+  enabled: isOpenTelemetryEnabled,
+  sdkPath: new URL('./otel.js', import.meta.url).pathname,
+}
+
 const sharedTestTimeout = isCI ? 30_000 : isAgent ? 15_000 : 8_000
 
 /**
@@ -204,5 +209,6 @@ export const sharedConfig = {
       provider: 'v8',
       reporter: ['json', 'html', 'lcov'],
     },
+    experimental: { openTelemetry },
   },
 }

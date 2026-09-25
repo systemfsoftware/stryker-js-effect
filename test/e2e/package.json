@@ -22,10 +22,6 @@
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
-    "@opentelemetry/api": "catalog:",
-    "@opentelemetry/exporter-trace-otlp-http": "catalog:",
-    "@opentelemetry/sdk-node": "catalog:",
-    "@opentelemetry/sdk-trace-base": "catalog:",
     "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/effect-microsandbox": "catalog:",
     "@systemfsoftware/effect-readiness": "catalog:",

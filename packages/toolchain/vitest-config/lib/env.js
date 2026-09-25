@@ -12,3 +12,5 @@ const env = typeof process === 'undefined' ? {} : process.env
 export const isAgent = env['AGENT'] !== undefined
 
 export const isCI = !isAgent && typeof env['CI'] === 'string' && env['CI'].length > 0
+
+export const isOpenTelemetryEnabled = env['OTEL_ENABLED'] === 'true'

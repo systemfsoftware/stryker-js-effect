@@ -3,6 +3,7 @@ import { Effect, Exit, Layer, ManagedRuntime, Scope } from 'effect'
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import { Readiness } from '@systemfsoftware/effect-readiness'
 import { VitestTestContext } from '@systemfsoftware/vitest'
+import { underActiveTestSpan } from '@systemfsoftware/vitest-config/telemetry'
 import { step } from '@systemfsoftware/vitest/integration'
 
 import type { Asserted } from '@systemfsoftware/vitest'
@@ -10,7 +11,7 @@ import type { Asserted } from '@systemfsoftware/vitest'
 import { BakedFixtureCache } from '../../src/Harness/fixture-cache.service.js'
 import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
 import { GuestJobs } from '../../src/Harness/guest-job.service.js'
-import { layer as harnessTelemetryLayer, underActiveParentSpan } from '../../src/Harness/harness-telemetry.service.js'
+import { layer as harnessTelemetryLayer } from '../../src/Harness/harness-telemetry.service.js'
 import { type ForkedRun, StrykerCliRunner } from '../../src/Harness/stryker-cli-runner.service.js'
 import * as Warm from '../../src/Harness/warm-sandbox.handle.js'
 
@@ -67,7 +68,7 @@ export const harness: Effect.Effect<MicroVMHarness, never, Scope.Scope> = Effect
     opts: { readonly label: string; readonly scope: Scope.Closeable; readonly signal?: AbortSignal },
   ): Promise<ForkedRun> =>
     runtime.runPromise(
-      underActiveParentSpan(
+      underActiveTestSpan(
         StrykerCliRunner.use((runner) => runner.run(args, warm, opts.label)).pipe(
           Scope.provide(opts.scope),
         ),
@@ -76,7 +77,7 @@ export const harness: Effect.Effect<MicroVMHarness, never, Scope.Scope> = Effect
     )
   return {
     warm: (fixtureUrl: URL) =>
-      runtime.runPromise(underActiveParentSpan(BakedFixtureCache.use((cache) => cache.warm(fixtureUrl)))),
+      runtime.runPromise(underActiveTestSpan(BakedFixtureCache.use((cache) => cache.warm(fixtureUrl)))),
     openScope: () => runtime.runPromise(Scope.make()),
     closeScope: (scope) => runtime.runPromise(Scope.close(scope, Exit.void)),
     run,
