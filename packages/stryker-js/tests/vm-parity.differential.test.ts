@@ -2,14 +2,17 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Differential } from '@systemfsoftware/differential-spec'
 import { Configuration, Engine, Plugin, Worker } from '@systemfsoftware/stryker-js'
 import type { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as TestTelemetry from '@systemfsoftware/vitest-config/telemetry'
 import * as Cause from 'effect/Cause'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Semaphore from 'effect/Semaphore'
+import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import * as fc from 'fast-check'
@@ -348,6 +351,14 @@ const applyMutant = (
     yield* fs.writeFileString(target, source.slice(0, start) + mutant.replacement + source.slice(end))
   }).pipe(Effect.orDie)
 
+const OUTPUT_TAIL_CHARS = 4_000
+
+const verdictOf = (outcome: Option.Option<ChildProcessSpawner.ExitCode>): string =>
+  Option.match(outcome, {
+    onNone: () => 'Timeout',
+    onSome: (code) => (code === 0 ? 'Survived' : 'Killed'),
+  })
+
 const runBoundedVitestProcess = (
   root: string,
   boundMs: number,
@@ -357,22 +368,41 @@ const runBoundedVitestProcess = (
     Effect.gen(function*() {
       const path = yield* Path.Path
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      yield* Effect.annotateCurrentSpan({ 'vm_parity.host_cwd': path.resolve('.') })
       const handle = yield* spawner.spawn(
         ChildProcess.make(path.join(root, 'node_modules', '.bin', 'vitest'), [...args], {
           cwd: root,
           stdin: 'ignore',
-          stdout: 'ignore',
-          stderr: 'ignore',
+          stdout: 'pipe',
+          stderr: 'pipe',
           forceKillAfter: MUTANT_KILL_GRACE,
         }),
       )
+      const output = yield* Effect.forkScoped(handle.all.pipe(Stream.decodeText, Stream.mkString))
       const outcome = yield* Effect.timeoutOption(handle.exitCode, boundMs)
-      return Option.match(outcome, {
-        onNone: () => 'Timeout',
-        onSome: (code) => (Number(code) === 0 ? 'Survived' : 'Killed'),
+      const verdict = verdictOf(outcome)
+      yield* Effect.annotateCurrentSpan({
+        'vm_parity.verdict': verdict,
+        'process.exit_code': Option.match(outcome, { onNone: () => -1, onSome: Number }),
       })
+      yield* Effect.when(
+        Fiber.join(output).pipe(
+          Effect.flatMap((text) =>
+            Effect.logWarning('vm_parity.vitest_process.failed').pipe(
+              Effect.annotateLogs({ 'vm_parity.root': root, 'vm_parity.output_tail': text.slice(-OUTPUT_TAIL_CHARS) }),
+            )
+          ),
+        ),
+        Effect.succeed(verdict === 'Killed'),
+      )
+      return verdict
     }),
-  ).pipe(dieOnFailure)
+  ).pipe(
+    Effect.withSpan('vm_parity.vitest_process', {
+      attributes: { 'vm_parity.root': root, 'vm_parity.args': args.join(' '), 'vm_parity.bound_ms': boundMs },
+    }),
+    dieOnFailure,
+  )
 
 const recordUnmutatedSnapshots = (
   fixture: Fixture,
@@ -607,11 +637,19 @@ const HOST_BOUND = {
 
 const COMPARE_OPTIONS = { runBudget: 1, hostBound: HOST_BOUND } as const
 
+const traced = (side: string) => <I, A>(run: (input: I) => Effect.Effect<A>) => (input: I): Effect.Effect<A> =>
+  TestTelemetry.underActiveTestSpan(run(input).pipe(Effect.withSpan(`vm_parity.${side}`))).pipe(
+    Effect.provide(TestTelemetry.layer({ 'vm_parity.component': 'differential' })),
+  )
+
+const reference = traced('reference')
+const candidate = traced('candidate')
+
 for (const fixture of FIXTURES) {
   Differential.compare({
     name: `vm parity: fixture ${fixture.name} test outcomes match real vitest`,
-    reference: realFixtureOutcomes,
-    candidate: vmFixtureOutcomes,
+    reference: reference(realFixtureOutcomes),
+    candidate: candidate(vmFixtureOutcomes),
   })
     .on(fc.constant(fixture), COMPARE_OPTIONS)
     .assert(sameOutcomes)
@@ -620,8 +658,8 @@ for (const fixture of FIXTURES) {
 for (const fixture of FIXTURES.filter((entry) => entry.mutants)) {
   Differential.compare({
     name: `vm parity: fixture ${fixture.name} mutant verdicts match real vitest`,
-    reference: realMutantVerdicts,
-    candidate: mutationEngineVerdicts,
+    reference: reference(realMutantVerdicts),
+    candidate: candidate(mutationEngineVerdicts),
   })
     .on(fc.constant(fixture), COMPARE_OPTIONS)
     .assert(verdictsAgree)
@@ -629,8 +667,8 @@ for (const fixture of FIXTURES.filter((entry) => entry.mutants)) {
 
 Differential.compare({
   name: 'vm parity: generated suite outcomes match real vitest',
-  reference: generatedRealOutcomes,
-  candidate: generatedVmOutcomes,
+  reference: reference(generatedRealOutcomes),
+  candidate: candidate(generatedVmOutcomes),
 })
   .on(generatedSuites, { runBudget: 12, hostBound: HOST_BOUND })
   .assert(sameOutcomes)
