@@ -1,3 +1,4 @@
+import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -12,6 +13,13 @@ import type { FromClientEncoded, FromServerEncoded } from 'effect/unstable/rpc/R
 import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import * as Socket from 'effect/unstable/socket/Socket'
 
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js/WorkerProtocol')
+export type TypeId = typeof TypeId
+
+export interface WorkerProtocolSpec {
+  readonly socket: Layer.Layer<Socket.Socket, Socket.SocketError>
+}
+
 type RequestId = string | number
 type ResponseHandler = (data: FromServerEncoded) => Effect.Effect<void>
 
@@ -19,7 +27,7 @@ const droppedConnection = RpcClientError.make({
   reason: Socket.SocketReadError.make({ cause: new Error('worker connection dropped with the request in flight') }),
 })
 
-export const layerWorkerProtocol = (
+const layerOf = (
   socket: Layer.Layer<Socket.Socket, Socket.SocketError>,
 ): Layer.Layer<RpcClient.Protocol, Socket.SocketError> =>
   Layer.effect(
@@ -94,3 +102,14 @@ export const layerWorkerProtocol = (
       })
     }),
   )
+
+const WorkerProtocol = Blueprint.make<WorkerProtocolSpec>()(TypeId).steps({
+  steps: {},
+  targets: { layer: (spec: WorkerProtocolSpec) => layerOf(spec.socket) },
+})
+
+export type WorkerProtocolBlueprint = Blueprint.Of<typeof WorkerProtocol>
+
+export const layerWorkerProtocol = (
+  socket: Layer.Layer<Socket.Socket, Socket.SocketError>,
+): Layer.Layer<RpcClient.Protocol, Socket.SocketError> => WorkerProtocol.of({ socket }).layer

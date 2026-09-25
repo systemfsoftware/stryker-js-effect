@@ -1,3 +1,4 @@
+import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import type { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options, Plugin, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
@@ -9,7 +10,7 @@ import type * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 
-import { commandRunner, isCommandRunner } from './command-runner.resource.js'
+import { commandRunner, isCommandRunner } from './command-runner.blueprint.js'
 import {
   make as makePooledTestRunner,
   type PooledTestRunner,
@@ -19,11 +20,14 @@ import {
   withTimeout,
 } from './pooled-test-runner.handle.js'
 import type { PooledTestRunnerError } from './TestRunner.schema.js'
-import { isVmRunner, vmTestRunner } from './VmRunner.resource.js'
-import { makeWorkerClient } from './worker-client.resource.js'
+import { isVmRunner, vmTestRunner } from './VmRunner.blueprint.js'
+import { makeWorkerClient } from './worker-client.blueprint.js'
 import type { WorkerBootError } from './Worker.schema.js'
 import type { IdGeneratorShape } from './Worker.service.js'
 import { WorkerLauncher } from './WorkerLauncher.service.js'
+
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js/TestRunner')
+export type TypeId = typeof TypeId
 
 export interface ChildProcessTestRunnerParams {
   readonly options: Options.StrykerOptions
@@ -79,7 +83,7 @@ const toRunnerFailure =
  * `Pool.invalidate` and the crash-retry combinator can only act on a failure they
  * can see.
  */
-export const makeChildProcessTestRunner = (
+const scopedOf = (
   params: ChildProcessTestRunnerParams,
 ): Effect.Effect<PooledTestRunner, PooledTestRunnerError, Scope.Scope | WorkerLauncher> =>
   Effect.gen(function*() {
@@ -117,6 +121,17 @@ export const makeChildProcessTestRunner = (
         client.mutantRun({ options }).pipe(Effect.mapError(toRunnerFailure(runnerName, 'mutantRun'))),
     })
   })
+
+const TestRunners = Blueprint.make<ChildProcessTestRunnerParams>()(TypeId).steps({
+  steps: {},
+  targets: { scoped: scopedOf },
+})
+
+export type TestRunnerBlueprint = Blueprint.Of<typeof TestRunners>
+
+export const makeChildProcessTestRunner = (
+  params: ChildProcessTestRunnerParams,
+): Effect.Effect<PooledTestRunner, PooledTestRunnerError, Scope.Scope | WorkerLauncher> => TestRunners.of(params).scoped
 
 const commandRunnerEffect = (
   context: TestRunnerBuildContext,

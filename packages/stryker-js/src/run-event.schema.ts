@@ -1,6 +1,7 @@
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { SchemaGetter, SchemaTransformation } from 'effect'
+import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
 export const RunPhase = S.Literals(['prepare', 'instrument', 'dry-run', 'mutation-test'])
@@ -214,6 +215,37 @@ export class RunReadError extends S.TaggedError<RunReadError>()('RunReadError', 
 export class RunWriteError extends S.TaggedError<RunWriteError>()('RunWriteError', {
   message: S.String,
 }) {}
+
+const machineAlphabetOf = (event: Reporter.MutantTested): Option.Option<RunMutantTested> =>
+  Option.flatMap(
+    S.encodeOption(Reporter.MutantTested)(event),
+    (encoded) => S.decodeOption(RunMutantTested)({ ...encoded, _tag: 'mutant' }),
+  )
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  const machineFieldsOf = (event: {
+    readonly id: string
+    readonly file: string
+    readonly status: string
+    readonly mutator: string
+    readonly replacement: string | null
+    readonly completed: number
+    readonly total: number
+  }): string =>
+    JSON.stringify([event.id, event.file, event.status, event.mutator, event.replacement, event.completed, event.total])
+
+  it.prop(
+    '∀m_Tested_≡MachineAlphabet',
+    { of: [Reporter.MutantTested], subject: machineAlphabetOf },
+    (subject, [event]) =>
+      Option.match(subject(event), {
+        onNone: () => false,
+        onSome: (runEvent) => machineFieldsOf(runEvent) === machineFieldsOf(event),
+      }),
+  )
+}
 
 export class PlanMutationRunCommand extends S.TaggedClass<PlanMutationRunCommand>()('PlanMutationRunCommand', {
   configMutatePatterns: S.Array(S.String),

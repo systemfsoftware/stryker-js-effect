@@ -1,8 +1,8 @@
-import { it } from '@effect/vitest'
-import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   interpretDryRunResult,
   InterpretDryRunResultCommand,
@@ -13,11 +13,11 @@ import {
 } from '../interpret-dry-run-result.workflow.js'
 
 it.prop(
-  '∀dryRun_InterpretDryRunResult_CountsTestsAndReportsKillers',
-  [TestRunner.DryRunResultSchema],
-  ([dryRunResult]) =>
+  '∀dryRun_InterpretDryRunResult_≡CountsTestsAndReportsKillers',
+  { of: [TestRunner.DryRunResultSchema], subject: interpretDryRunResult },
+  (subject, [dryRunResult]) =>
     Result.match(
-      interpretDryRunResult(InterpretDryRunResultCommand.make({ dryRunResult })),
+      subject(InterpretDryRunResultCommand.make({ dryRunResult })),
       {
         onFailure: () => false,
         onSuccess: (decision) => {

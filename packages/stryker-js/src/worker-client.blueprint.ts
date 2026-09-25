@@ -1,3 +1,4 @@
+import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace, Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Context from 'effect/Context'
@@ -16,6 +17,9 @@ import type { WorkerBootError } from './Worker.schema.js'
 import { WorkerBootTimeoutError } from './Worker.schema.js'
 import { WorkerLauncher } from './WorkerLauncher.service.js'
 
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js/WorkerClient')
+export type TypeId = typeof TypeId
+
 const connectRetry = Schedule.max([Schedule.spaced(50), Schedule.recurs(100)])
 
 export interface WorkerClientParams<Rpcs extends Rpc.Any> {
@@ -28,7 +32,7 @@ export interface WorkerClientParams<Rpcs extends Rpc.Any> {
   readonly env?: Readonly<Record<string, string>> | undefined
 }
 
-export const makeWorkerClient = <Rpcs extends Rpc.Any>(
+const scopedOf = <Rpcs extends Rpc.Any>(
   params: WorkerClientParams<Rpcs>,
 ): Effect.Effect<
   RpcClient.RpcClient<Rpcs, RpcClientError>,
@@ -59,3 +63,17 @@ export const makeWorkerClient = <Rpcs extends Rpc.Any>(
       Effect.provideContext(Context.merge(protocol, traceContext)),
     )
   })
+
+const WorkerClients = <Rpcs extends Rpc.Any>() =>
+  Blueprint.make<WorkerClientParams<Rpcs>>()(TypeId).steps({
+    steps: {},
+    targets: { scoped: scopedOf<Rpcs> },
+  })
+
+export const makeWorkerClient = <Rpcs extends Rpc.Any>(
+  params: WorkerClientParams<Rpcs>,
+): Effect.Effect<
+  RpcClient.RpcClient<Rpcs, RpcClientError>,
+  WorkerBootError,
+  Scope.Scope | WorkerLauncher
+> => WorkerClients<Rpcs>().of(params).scoped

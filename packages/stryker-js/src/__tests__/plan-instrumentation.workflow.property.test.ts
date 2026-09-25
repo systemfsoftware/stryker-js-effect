@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -11,22 +11,26 @@ import {
 } from '../plan-instrumentation.workflow.js'
 
 describe('planInstrumentation', () => {
-  it.prop('∀c_Command_≡Decision', [InstrumentCommand], ([command]) => {
-    const result = planInstrumentation(command)
-    if (command.fileCount === 0) {
-      return Result.isFailure(result) && S.is(InstrumentError)(result.failure)
-    }
-    if (command.inPlace) {
+  it.prop(
+    '∀c_Command_≡Decision',
+    { of: [InstrumentCommand], subject: planInstrumentation },
+    (subject, [command]) => {
+      const result = subject(command)
+      if (command.fileCount === 0) {
+        return Result.isFailure(result) && S.is(InstrumentError)(result.failure)
+      }
+      if (command.inPlace) {
+        return (
+          Result.isSuccess(result) &&
+          S.is(InPlaceInstrument)(result.success) &&
+          result.success.fileCount === command.fileCount
+        )
+      }
       return (
         Result.isSuccess(result) &&
-        S.is(InPlaceInstrument)(result.success) &&
+        S.is(EphemeralInstrument)(result.success) &&
         result.success.fileCount === command.fileCount
       )
-    }
-    return (
-      Result.isSuccess(result) &&
-      S.is(EphemeralInstrument)(result.success) &&
-      result.success.fileCount === command.fileCount
-    )
-  })
+    },
+  )
 })

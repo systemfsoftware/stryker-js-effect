@@ -15,7 +15,7 @@ import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawne
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
-import { layerWorkerProtocol } from '../worker-protocol.resource.js'
+import { layerWorkerProtocol } from '../worker-protocol.blueprint.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 

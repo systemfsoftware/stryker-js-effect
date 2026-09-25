@@ -1,6 +1,6 @@
 export type { Framework } from '@systemfsoftware/stryker-framework-interface'
 export type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
-export { isCommandRunner } from '../command-runner.resource.js'
+export { isCommandRunner } from '../command-runner.blueprint.js'
 export type {
   AnyPluginDescriptor,
   AnyWorkerPluginDescriptor,
@@ -24,8 +24,8 @@ export {
   spawnReporterWorker,
   type SpawnReporterWorkerParams,
 } from '../reporter-stream.service.js'
-export type { TestRunnerBuildContext } from '../TestRunner.resource.js'
-export { buildTestRunner } from '../TestRunner.resource.js'
+export type { TestRunnerBuildContext } from '../TestRunner.blueprint.js'
+export { buildTestRunner } from '../TestRunner.blueprint.js'
 export type { PooledTestRunnerError } from '../TestRunner.schema.js'
-export { isVmRunner, vmTestRunner } from '../VmRunner.resource.js'
-export type { VmTestRunnerConfig } from '../VmRunner.resource.js'
+export { isVmRunner, vmTestRunner } from '../VmRunner.blueprint.js'
+export type { VmTestRunnerConfig } from '../VmRunner.blueprint.js'

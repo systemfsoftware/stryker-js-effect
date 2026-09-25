@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -24,77 +24,81 @@ const envSet = (command: ResolveModeCommand): boolean => command.envMode !== und
 const agentSet = (command: ResolveModeCommand): boolean => command.agent !== undefined && command.agent.length > 0
 
 describe('resolveOutputMode', () => {
-  it.prop('∀c_Command_≡R4Mode', [ResolveModeCommand], ([command]) => {
-    const result = resolveOutputMode(command)
-    if (command.text === true && command.json === true) {
-      return (
-        Result.isFailure(result) &&
-        result.failure.option === 'json' &&
-        result.failure.value === 'text' &&
-        result.failure.expected === CONFLICT_EXPECTED
-      )
-    }
-    if (command.text === true) {
-      return (
-        Result.isSuccess(result) &&
-        S.is(HumanOutput)(result.success) &&
-        result.success.signal === 'flag' &&
-        result.success.stdoutIsTTY === command.stdoutIsTTY
-      )
-    }
-    if (command.json === true) {
-      return (
-        Result.isSuccess(result) &&
-        S.is(MachineOutput)(result.success) &&
-        result.success.signal === 'flag' &&
-        result.success.stdoutIsTTY === command.stdoutIsTTY
-      )
-    }
-    if (envSet(command)) {
-      if (command.envMode === 'machine') {
+  it.prop(
+    '∀c_Command_≡R4Mode',
+    { of: [ResolveModeCommand], subject: resolveOutputMode },
+    (subject, [command]) => {
+      const result = subject(command)
+      if (command.text === true && command.json === true) {
+        return (
+          Result.isFailure(result) &&
+          result.failure.option === 'json' &&
+          result.failure.value === 'text' &&
+          result.failure.expected === CONFLICT_EXPECTED
+        )
+      }
+      if (command.text === true) {
+        return (
+          Result.isSuccess(result) &&
+          S.is(HumanOutput)(result.success) &&
+          result.success.signal === 'flag' &&
+          result.success.stdoutIsTTY === command.stdoutIsTTY
+        )
+      }
+      if (command.json === true) {
         return (
           Result.isSuccess(result) &&
           S.is(MachineOutput)(result.success) &&
+          result.success.signal === 'flag' &&
+          result.success.stdoutIsTTY === command.stdoutIsTTY
+        )
+      }
+      if (envSet(command)) {
+        if (command.envMode === 'machine') {
+          return (
+            Result.isSuccess(result) &&
+            S.is(MachineOutput)(result.success) &&
+            result.success.signal === 'env' &&
+            result.success.stdoutIsTTY === command.stdoutIsTTY
+          )
+        }
+        return (
+          Result.isSuccess(result) &&
+          S.is(HumanOutput)(result.success) &&
           result.success.signal === 'env' &&
           result.success.stdoutIsTTY === command.stdoutIsTTY
+        )
+      }
+      if (!command.stdoutIsTTY) {
+        return (
+          Result.isSuccess(result) &&
+          S.is(MachineOutput)(result.success) &&
+          result.success.signal === 'tty' &&
+          result.success.stdoutIsTTY === false
+        )
+      }
+      if (agentSet(command)) {
+        return (
+          Result.isSuccess(result) &&
+          S.is(MachineOutput)(result.success) &&
+          result.success.signal === 'agent' &&
+          result.success.stdoutIsTTY === true
+        )
+      }
+      if (hasNonemptyTool(command)) {
+        return (
+          Result.isSuccess(result) &&
+          S.is(MachineOutput)(result.success) &&
+          result.success.signal === 'tool' &&
+          result.success.stdoutIsTTY === true
         )
       }
       return (
         Result.isSuccess(result) &&
         S.is(HumanOutput)(result.success) &&
-        result.success.signal === 'env' &&
-        result.success.stdoutIsTTY === command.stdoutIsTTY
-      )
-    }
-    if (!command.stdoutIsTTY) {
-      return (
-        Result.isSuccess(result) &&
-        S.is(MachineOutput)(result.success) &&
         result.success.signal === 'tty' &&
-        result.success.stdoutIsTTY === false
-      )
-    }
-    if (agentSet(command)) {
-      return (
-        Result.isSuccess(result) &&
-        S.is(MachineOutput)(result.success) &&
-        result.success.signal === 'agent' &&
         result.success.stdoutIsTTY === true
       )
-    }
-    if (hasNonemptyTool(command)) {
-      return (
-        Result.isSuccess(result) &&
-        S.is(MachineOutput)(result.success) &&
-        result.success.signal === 'tool' &&
-        result.success.stdoutIsTTY === true
-      )
-    }
-    return (
-      Result.isSuccess(result) &&
-      S.is(HumanOutput)(result.success) &&
-      result.success.signal === 'tty' &&
-      result.success.stdoutIsTTY === true
-    )
-  })
+    },
+  )
 })

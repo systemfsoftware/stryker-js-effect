@@ -1,5 +1,5 @@
-import { describe, it } from '@effect/vitest'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -47,10 +47,10 @@ const tableBodyRowsOf = (rendered: ClearTextReportRendered): number =>
 
 describe('renderClearTextReport', () => {
   it.prop(
-    '∀c_SuppressedIffNoTerminalReport',
-    [commandArb],
-    ([command]) =>
-      Result.match(renderClearTextReport(command), {
+    '∀c_Command_≡SuppressedIffNoTerminalReport',
+    { of: [commandArb], subject: renderClearTextReport },
+    (subject, [command]) =>
+      Result.match(subject(command), {
         onFailure: () => false,
         onSuccess: (value) =>
           Match.value(value).pipe(
@@ -67,35 +67,46 @@ describe('renderClearTextReport', () => {
       }),
   )
 
-  it.prop('∀c_ColorOff_≡PlainSpans', [colorOffArb], ([command]) =>
-    Result.match(renderClearTextReport(command), {
-      onFailure: () => false,
-      onSuccess: (value) =>
-        Match.value(value).pipe(
-          Match.tag('ClearTextReportRendered', (rendered) => spansOf(rendered).every((span) => span.tone === 'plain')),
-          Match.tag('ClearTextReportSuppressed', () => true),
-          Match.exhaustive,
-        ),
-    }))
-
-  it.prop('∀rcs_Metrics_≡OneTableRowPerFile', [coherentArb], ([{ report, computed, render }]) =>
-    Result.match(
-      renderClearTextReport(
-        ClearTextReportCommand.make({
-          reported: report,
-          computed,
-          render: { ...render, reportScoreTable: true, skipFull: false },
-          rendered: true,
-        }),
-      ),
-      {
+  it.prop(
+    '∀c_ColorOff_≡PlainSpans',
+    { of: [colorOffArb], subject: renderClearTextReport },
+    (subject, [command]) =>
+      Result.match(subject(command), {
         onFailure: () => false,
         onSuccess: (value) =>
           Match.value(value).pipe(
-            Match.tag('ClearTextReportRendered', (rendered) => tableBodyRowsOf(rendered) === fileRowsOf(computed)),
-            Match.tag('ClearTextReportSuppressed', () => false),
+            Match.tag(
+              'ClearTextReportRendered',
+              (rendered) => spansOf(rendered).every((span) => span.tone === 'plain'),
+            ),
+            Match.tag('ClearTextReportSuppressed', () => true),
             Match.exhaustive,
           ),
-      },
-    ))
+      }),
+  )
+
+  it.prop(
+    '∀rcs_Metrics_≡OneTableRowPerFile',
+    { of: [coherentArb], subject: renderClearTextReport },
+    (subject, [{ report, computed, render }]) =>
+      Result.match(
+        subject(
+          ClearTextReportCommand.make({
+            reported: report,
+            computed,
+            render: { ...render, reportScoreTable: true, skipFull: false },
+            rendered: true,
+          }),
+        ),
+        {
+          onFailure: () => false,
+          onSuccess: (value) =>
+            Match.value(value).pipe(
+              Match.tag('ClearTextReportRendered', (rendered) => tableBodyRowsOf(rendered) === fileRowsOf(computed)),
+              Match.tag('ClearTextReportSuppressed', () => false),
+              Match.exhaustive,
+            ),
+        },
+      ),
+  )
 })

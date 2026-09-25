@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -14,8 +14,8 @@ const matchesRoute = (command: CliRouteCommand, tag: string): boolean =>
     Match.exhaustive,
   )
 
-const decides = (command: CliRouteCommand): string | undefined =>
-  Result.match(routeCliRequest(command), {
+const decides = (subject: typeof routeCliRequest, command: CliRouteCommand): string | undefined =>
+  Result.match(subject(command), {
     onFailure: () => undefined,
     onSuccess: (decision) =>
       Match.value(decision).pipe(
@@ -30,22 +30,22 @@ const decides = (command: CliRouteCommand): string | undefined =>
 describe('routeCliRequest', () => {
   it.prop(
     '∀r_Request_≡RouteFollowsSubcommand',
-    [CliRouteCommand],
-    ([command]) => {
-      const decided = decides(command)
+    { of: [CliRouteCommand], subject: routeCliRequest },
+    (subject, [command]) => {
+      const decided = decides(subject, command)
       return decided !== undefined && matchesRoute(command, decided)
     },
   )
 
   it.prop(
     '∀m_MergeRoute_≡MergePayloadRoundtrips',
-    [CliRouteCommand],
-    ([command]) =>
+    { of: [CliRouteCommand], subject: routeCliRequest },
+    (subject, [command]) =>
       Match.value(command.route).pipe(
         Match.tag('help', () => true),
         Match.tag('run', () => true),
         Match.tag('merge-reports', (route) =>
-          Result.match(routeCliRequest(command), {
+          Result.match(subject(command), {
             onFailure: () => false,
             onSuccess: (decision) =>
               S.is(CliMergeReportsRequested)(decision) &&

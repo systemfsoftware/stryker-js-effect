@@ -1,5 +1,6 @@
 import type { JsonValue } from '@std/jsonc'
 import { parse } from '@std/jsonc'
+import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { ErrorText, Format, Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Predicate, Schema as S } from 'effect'
@@ -7,13 +8,11 @@ import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import { type Pipeable, Prototype } from 'effect/Pipeable'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
@@ -642,10 +641,11 @@ const symlinkNodeModules = (
     })
   })
 
-const acquireSandbox = (state: {
-  readonly spec: MakeSandboxInput
+export interface SandboxSpec extends MakeSandboxInput {
   readonly preprocessors: readonly FilePreprocessor[]
-}): Effect.Effect<
+}
+
+const acquireSandbox = (spec: SandboxSpec): Effect.Effect<
   SandboxHandle,
   PlatformError | StrykerError,
   | FileSystem.FileSystem
@@ -655,7 +655,7 @@ const acquireSandbox = (state: {
   | Scope.Scope
 > =>
   Effect.gen(function*() {
-    const { options, project, workingDirectory, backupDirectory, basePath } = state.spec
+    const { options, project, workingDirectory, backupDirectory, basePath } = spec
     yield* Scope.Scope
     const pathService = yield* Path.Path
 
@@ -665,8 +665,8 @@ const acquireSandbox = (state: {
       Effect.succeed(hasBackupToRestore(options, backupDirectory)),
     )
     const preprocessor = combinePreprocessors([
-      createPreprocessor(options, basePath, state.spec.formatRegistry),
-      ...state.preprocessors,
+      createPreprocessor(options, basePath, spec.formatRegistry),
+      ...spec.preprocessors,
     ])
     yield* preprocessor(project).pipe(
       Effect.mapError((cause) => StrykerError.make({ message: 'Sandbox preprocessor failed', cause })),
@@ -683,70 +683,45 @@ const acquireSandbox = (state: {
     return makeHandle({ fileMap, workingDirectory, basePath, pathService })
   })
 
-export const TypeId = Symbol.for('@systemfsoftware/stryker-js/Sandbox')
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js/Sandbox')
 export type TypeId = typeof TypeId
 
-export interface SandboxResource extends Pipeable {
-  readonly [TypeId]: typeof TypeId
-  readonly spec: MakeSandboxInput
-  withPreprocessor(preprocessor: FilePreprocessor): SandboxResource
-  readonly scoped: Effect.Effect<
-    SandboxHandle,
-    PlatformError | StrykerError,
-    | FileSystem.FileSystem
-    | Path.Path
-    | ProjectFiles
-    | ChildProcessSpawner.ChildProcessSpawner
-    | Scope.Scope
-  >
-  layer<Id>(
-    service: Context.Key<Id, SandboxHandle>,
-  ): Layer.Layer<
-    Id,
-    PlatformError | StrykerError,
-    | FileSystem.FileSystem
-    | Path.Path
-    | ProjectFiles
-    | ChildProcessSpawner.ChildProcessSpawner
-  >
-}
-
-const makeProto = (state: {
-  readonly spec: MakeSandboxInput
-  readonly preprocessors: readonly FilePreprocessor[]
-}): SandboxResource => {
-  const self: SandboxResource = {
-    [TypeId]: TypeId,
-    spec: state.spec,
-    ...Prototype,
-    withPreprocessor(preprocessor: FilePreprocessor): SandboxResource {
-      return makeProto({ spec: state.spec, preprocessors: [...state.preprocessors, preprocessor] })
-    },
-    get scoped() {
-      return acquireSandbox(state)
-    },
-    layer<Id>(
-      service: Context.Key<Id, SandboxHandle>,
-    ): Layer.Layer<
+export const Sandboxes = Blueprint.make<SandboxSpec>()(TypeId).steps({
+  steps: {
+    withPreprocessor: (spec: SandboxSpec, preprocessor: FilePreprocessor): SandboxSpec => ({
+      ...spec,
+      preprocessors: [...spec.preprocessors, preprocessor],
+    }),
+  },
+  targets: {
+    scoped: (spec: SandboxSpec): Effect.Effect<
+      SandboxHandle,
+      PlatformError | StrykerError,
+      | FileSystem.FileSystem
+      | Path.Path
+      | ProjectFiles
+      | ChildProcessSpawner.ChildProcessSpawner
+      | Scope.Scope
+    > => acquireSandbox(spec),
+    layer: (
+      spec: SandboxSpec,
+    ): <Id>(service: Context.Key<Id, SandboxHandle>) => Layer.Layer<
       Id,
       PlatformError | StrykerError,
       | FileSystem.FileSystem
       | Path.Path
       | ProjectFiles
       | ChildProcessSpawner.ChildProcessSpawner
-    > {
-      return Layer.effect(service)(acquireSandbox(state))
-    },
-  }
-  return self
-}
+    > =>
+    <Id>(service: Context.Key<Id, SandboxHandle>) => Layer.effect(service)(acquireSandbox(spec)),
+  },
+})
 
-export const make = (spec: MakeSandboxInput): SandboxResource => makeProto({ spec, preprocessors: [] })
+export type SandboxResource = Blueprint.Of<typeof Sandboxes>
 
-export const withPreprocessor: {
-  (preprocessor: FilePreprocessor): (self: SandboxResource) => SandboxResource
-  (self: SandboxResource, preprocessor: FilePreprocessor): SandboxResource
-} = dual(2, (self: SandboxResource, preprocessor: FilePreprocessor) => self.withPreprocessor(preprocessor))
+export const make = (spec: MakeSandboxInput): SandboxResource => Sandboxes.of({ ...spec, preprocessors: [] })
+
+export const withPreprocessor = Sandboxes.operations.withPreprocessor
 
 export const makeSandbox = (
   input: MakeSandboxInput,

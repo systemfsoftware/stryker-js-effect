@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -21,8 +21,12 @@ const SelectPackageEntryTypeId = Symbol.for('@systemfsoftware/stryker-js/SelectP
 const hasBrand = (decision: PackageEntryDecision): boolean =>
   Object.getOwnPropertySymbols(decision).includes(SelectPackageEntryTypeId)
 
-const refused = (target: string | null | ReadonlyArray<string | null>, reason: string): boolean => {
-  const result = selectPackageEntry(
+const refused = (
+  subject: typeof selectPackageEntry,
+  target: string | null | ReadonlyArray<string | null>,
+  reason: string,
+): boolean => {
+  const result = subject(
     SelectPackageEntryCommand.make({ specifier: 'pkg', manifest: { exports: { '.': target } } }),
   )
   if (Result.isFailure(result)) {
@@ -36,14 +40,18 @@ const refused = (target: string | null | ReadonlyArray<string | null>, reason: s
 }
 
 describe('selectPackageEntry', () => {
-  it.prop('∀d_Brand_∈Decision', [PackageEntryDecision], ([decision]) => hasBrand(decision))
+  it.prop(
+    '∀d_Brand_∈Decision',
+    { of: [PackageEntryDecision], subject: selectPackageEntry },
+    (_subject, [decision]) => hasBrand(decision),
+  )
 
-  it.prop('∀k_ExportKey_=Literal', [KeyCase], ([input]) => {
+  it.prop('∀k_ExportKey_=Literal', { of: [KeyCase], subject: selectPackageEntry }, (subject, [input]) => {
     const exportsValue = {
       ...(input.root === undefined ? {} : { '.': input.root }),
       ...(input.feature === undefined ? {} : { './feature': input.feature }),
     }
-    const result = selectPackageEntry(
+    const result = subject(
       SelectPackageEntryCommand.make({ specifier: input.specifier, manifest: { exports: exportsValue } }),
     )
     if (Result.isFailure(result)) {
@@ -74,13 +82,13 @@ describe('selectPackageEntry', () => {
     )
   })
 
-  it.prop('∀c_Condition_≡Order', [ConditionCase], ([input]) => {
+  it.prop('∀c_Condition_≡Order', { of: [ConditionCase], subject: selectPackageEntry }, (subject, [input]) => {
     const exportsValue = {
       ...(input.node === undefined ? {} : { node: input.node }),
       ...(input.import === undefined ? {} : { import: input.import }),
       ...(input.default === undefined ? {} : { default: input.default }),
     }
-    const result = selectPackageEntry(
+    const result = subject(
       SelectPackageEntryCommand.make({ specifier: 'pkg', manifest: { exports: exportsValue } }),
     )
     if (Result.isFailure(result)) {
@@ -119,13 +127,13 @@ describe('selectPackageEntry', () => {
     )
   })
 
-  it.prop('∀m_Fallback_=Entry', [FallbackCase], ([input]) => {
+  it.prop('∀m_Fallback_=Entry', { of: [FallbackCase], subject: selectPackageEntry }, (subject, [input]) => {
     const manifest: PackageManifestFields = {
       ...(input.exports === undefined ? {} : { exports: input.exports }),
       ...(input.module === undefined ? {} : { module: input.module }),
       ...(input.main === undefined ? {} : { main: input.main }),
     }
-    const result = selectPackageEntry(SelectPackageEntryCommand.make({ specifier: input.specifier, manifest }))
+    const result = subject(SelectPackageEntryCommand.make({ specifier: input.specifier, manifest }))
     if (Result.isFailure(result)) {
       return false
     }
@@ -161,22 +169,22 @@ describe('selectPackageEntry', () => {
     return unresolved('the package declares no "exports", "module", or "main" entry')
   })
 
-  it.prop('∀r_Refusal_≡Reason', [TargetCase], ([input]) => {
+  it.prop('∀r_Refusal_≡Reason', { of: [TargetCase], subject: selectPackageEntry }, (subject, [input]) => {
     if (input.kind === 'wildcard') {
-      return refused('./lib/*.mjs', 'the package declares a wildcard export, which this host does not resolve')
+      return refused(subject, './lib/*.mjs', 'the package declares a wildcard export, which this host does not resolve')
     }
     if (input.kind === 'bare') {
-      return refused('dist/index.mjs', 'the package export "dist/index.mjs" is not a relative path')
+      return refused(subject, 'dist/index.mjs', 'the package export "dist/index.mjs" is not a relative path')
     }
     if (input.kind === 'absolute') {
-      return refused('/abs/index.mjs', 'the package export "/abs/index.mjs" is not a relative path')
+      return refused(subject, '/abs/index.mjs', 'the package export "/abs/index.mjs" is not a relative path')
     }
     if (input.kind === 'null') {
-      return refused(null, 'the matching package export resolves to null')
+      return refused(subject, null, 'the matching package export resolves to null')
     }
     if (input.kind === 'arrayBare') {
-      return refused(['index.mjs', './second.mjs'], 'the package export "index.mjs" is not a relative path')
+      return refused(subject, ['index.mjs', './second.mjs'], 'the package export "index.mjs" is not a relative path')
     }
-    return refused([null, './second.mjs'], 'the matching package export resolves to null')
+    return refused(subject, [null, './second.mjs'], 'the matching package export resolves to null')
   })
 })

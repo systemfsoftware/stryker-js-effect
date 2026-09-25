@@ -1,5 +1,4 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -33,15 +32,6 @@ const readConcurrency = (record: PrepareDone): Effect.Effect<ConcurrencyRead> =>
     record,
   }))
 
-const announcePercentage = (command: ConcurrencyRaw, total: number, isPercentage: boolean) =>
-  Boolean.match(isPercentage, {
-    onTrue: () =>
-      Effect.logDebug(
-        `Computed concurrency ${total} from "${command.concurrency}" based on ${command.availableParallelism} available parallelism.`,
-      ),
-    onFalse: () => Effect.void,
-  })
-
 export const concurrencyCell: Cell.Cell<
   PrepareDone,
   PrepareDone & { readonly concurrency: { readonly testRunners: number; readonly checkers: number } },
@@ -53,7 +43,11 @@ export const concurrencyCell: Cell.Cell<
     TestRunnersAndCheckers: (split, command) =>
       Effect.as(
         Effect.andThen(
-          announcePercentage(command, split.total, split.isPercentage),
+          Effect.forEach(
+            Option.toArray(split.announcement),
+            (line) => Effect.logDebug(line),
+            { discard: true },
+          ),
           Effect.logInfo(
             `Creating ${split.checkers} checker process(es) and ${split.testRunners} test runner process(es).`,
           ),
@@ -63,7 +57,11 @@ export const concurrencyCell: Cell.Cell<
     TestRunnersOnly: (split, command) =>
       Effect.as(
         Effect.andThen(
-          announcePercentage(command, split.total, split.isPercentage),
+          Effect.forEach(
+            Option.toArray(split.announcement),
+            (line) => Effect.logDebug(line),
+            { discard: true },
+          ),
           Effect.logInfo(`Creating ${split.testRunners} test runner process(es).`),
         ),
         { ...command.record, concurrency: { testRunners: split.testRunners, checkers: 0 } },

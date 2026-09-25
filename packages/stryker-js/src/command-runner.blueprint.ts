@@ -1,3 +1,4 @@
+import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
@@ -13,6 +14,9 @@ import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawne
 import { interpretDryRunResult, InterpretDryRunResultCommand } from './interpret-dry-run-result.workflow.js'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
 
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js/CommandRunner')
+export type TypeId = typeof TypeId
+
 export const ALL_TESTS_ID = 'all'
 export const ALL_TESTS_NAME = 'All tests'
 
@@ -20,6 +24,11 @@ export const isCommandRunner = (name: Options.TestRunnerConfig): name is 'comman
   typeof name === 'string' && name.toLowerCase() === 'command'
 
 interface CommandTestRunnerConfig {
+  readonly workingDir: string
+  readonly options: Options.StrykerOptions
+}
+
+export interface CommandRunnerSpec {
   readonly workingDir: string
   readonly options: Options.StrykerOptions
 }
@@ -113,6 +122,33 @@ const commandRunnerMutantRun = (
     ),
   )
 
+const pooledRunnerOf = (
+  config: CommandTestRunnerConfig,
+  spawner: ChildProcessSpawner.ChildProcessSpawner['Service'],
+): PooledTestRunner => {
+  const provided = Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)
+
+  return makePooledTestRunner({
+    capabilities: Effect.succeed(commandRunnerCapabilities),
+    init: Effect.void,
+    dryRun: () => commandRunnerDryRun(config).pipe(provided),
+    mutantRun: (options: Mutant.MutantRunOptions) => commandRunnerMutantRun(config, options).pipe(provided),
+  })
+}
+
+const CommandRunners = Blueprint.make<CommandRunnerSpec>()(TypeId).steps({
+  steps: {},
+  targets: {
+    runner: (
+      spec: CommandRunnerSpec,
+    ): (spawner: ChildProcessSpawner.ChildProcessSpawner['Service']) => PooledTestRunner =>
+    (spawner: ChildProcessSpawner.ChildProcessSpawner['Service']) =>
+      pooledRunnerOf({ workingDir: spec.workingDir, options: spec.options }, spawner),
+  },
+})
+
+export type CommandRunnerBlueprint = Blueprint.Of<typeof CommandRunners>
+
 export const commandRunner: {
   (
     context: { readonly sandboxWorkingDirectory: string; readonly options: Options.StrykerOptions },
@@ -128,18 +164,6 @@ export const commandRunner: {
   (
     context: { readonly sandboxWorkingDirectory: string; readonly options: Options.StrykerOptions },
     spawner: ChildProcessSpawner.ChildProcessSpawner['Service'],
-  ): PooledTestRunner => {
-    const config = {
-      workingDir: context.sandboxWorkingDirectory,
-      options: context.options,
-    }
-    const provided = Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)
-
-    return makePooledTestRunner({
-      capabilities: Effect.succeed(commandRunnerCapabilities),
-      init: Effect.void,
-      dryRun: () => commandRunnerDryRun(config).pipe(provided),
-      mutantRun: (options: Mutant.MutantRunOptions) => commandRunnerMutantRun(config, options).pipe(provided),
-    })
-  },
+  ): PooledTestRunner =>
+    CommandRunners.of({ workingDir: context.sandboxWorkingDirectory, options: context.options }).runner(spawner),
 )

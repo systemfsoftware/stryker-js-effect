@@ -208,14 +208,17 @@ export class MachineConsole extends Context.Service<MachineConsole, MachineConso
 }
 
 if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
+  const { it } = await import('@systemfsoftware/vitest')
   const { Schema } = await import('effect')
 
   it.prop(
-    '∀label,n_Count_PrintsOneThroughN',
-    [Schema.String, Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 8 }))],
-    ([label, times]) => {
-      const machine = machineConsoleOf(Clock.clockWith(Effect.succeed).pipe(Effect.runSync))
+    '∀label,n_Count_≡PrintsOneThroughN',
+    {
+      of: [Schema.String, Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 8 }))],
+      subject: machineConsoleOf,
+    },
+    (subject, [label, times]) => {
+      const machine = subject(Clock.clockWith(Effect.succeed).pipe(Effect.runSync))
       Array.from({ length: times }, () => machine.console.count(label))
       const expected = Array.from({ length: times }, (_, index) => `${label}: ${index + 1}`)
       return machine.read() === expected.join('\n')

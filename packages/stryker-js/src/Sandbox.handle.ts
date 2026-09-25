@@ -1,20 +1,28 @@
-import { Boolean, Predicate } from 'effect'
+import { Handle } from '@systemfsoftware/effect-cell-types'
+import * as Boolean from 'effect/Boolean'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import type * as Path from 'effect/Path'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 
 import { StrykerError } from './stryker-error.schema.js'
 
-export interface SandboxHandle {
-  readonly workingDirectory: string
-  readonly sandboxFileFor: (fileName: string) => Result.Result<string, StrykerError>
-  readonly originalFileFor: (sandboxFileName: string) => string
-}
-
-export const TypeId = Symbol.for('@systemfsoftware/stryker-js/SandboxHandle')
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js/Sandbox')
 export type TypeId = typeof TypeId
 
-export const isSandboxHandle = (u: unknown): u is SandboxHandle => Predicate.hasProperty(u, TypeId)
+const SandboxHandle = Handle.make<
+  { readonly workingDirectory: string },
+  {
+    readonly fileMap: Map<string, string>
+    readonly basePath: string
+    readonly pathService: Path.Path
+  }
+>()(TypeId)
+
+export type SandboxHandle = Handle.Of<typeof SandboxHandle>
+
+export const isSandboxHandle = SandboxHandle.is
 
 const sandboxFileNameOf = (fileMap: Map<string, string>, fileName: string) =>
   Match.value(fileMap.get(fileName)).pipe(
@@ -55,12 +63,25 @@ export const make = (options: {
   readonly workingDirectory: string
   readonly basePath: string
   readonly pathService: Path.Path
-}): SandboxHandle => {
-  const handle: SandboxHandle = {
-    workingDirectory: options.workingDirectory,
-    sandboxFileFor: (fileName) => sandboxFileNameOf(options.fileMap, fileName),
-    originalFileFor: (sandboxFileName) =>
-      originalFileNameOf(sandboxFileName, options.workingDirectory, options.basePath, options.pathService),
-  }
-  return Object.assign(handle, { [TypeId]: TypeId })
-}
+}): SandboxHandle =>
+  SandboxHandle.make(
+    { workingDirectory: options.workingDirectory },
+    { fileMap: options.fileMap, basePath: options.basePath, pathService: options.pathService },
+  )
+
+export const sandboxFileFor: {
+  (fileName: string): (self: SandboxHandle) => Result.Result<string, StrykerError>
+  (self: SandboxHandle, fileName: string): Result.Result<string, StrykerError>
+} = dual(
+  2,
+  (self: SandboxHandle, fileName: string): Result.Result<string, StrykerError> =>
+    sandboxFileNameOf(SandboxHandle.slot(self).fileMap, fileName),
+)
+
+export const originalFileFor: {
+  (sandboxFileName: string): (self: SandboxHandle) => string
+  (self: SandboxHandle, sandboxFileName: string): string
+} = dual(2, (self: SandboxHandle, sandboxFileName: string): string => {
+  const slot = SandboxHandle.slot(self)
+  return originalFileNameOf(sandboxFileName, self.workingDirectory, slot.basePath, slot.pathService)
+})

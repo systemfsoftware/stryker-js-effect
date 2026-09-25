@@ -1,8 +1,8 @@
-import { describe, it } from '@effect/vitest'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
 import * as Equivalence from 'effect/Equivalence'
 import * as Result from 'effect/Result'
@@ -84,7 +84,6 @@ const recordOf = <A>(value: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<Record<
     Arbitrary.map((entries) => Object.fromEntries(entries)),
   )
 
-/** Keys are short enough that `survivorsPriorReport` can never be generated. */
 type CleanConfig = Record<string, string | number | boolean>
 
 const cleanConfigArb: Arbitrary.Arbitrary<CleanConfig> = recordOf(
@@ -148,20 +147,6 @@ const survivorsProducedReportArb = reportArb(
   ),
 )
 
-/**
- * The fields of a command whose prior and current sides agree, as plain data. The report
- * the arbitraries build is the shape the codec accepts, so it stands in for a decoded
- * document here — the decode itself is the executor's edge, not this suite's subject.
- *
- * The two precomputed fields are built with the same helpers the edge uses, so a change to
- * either helper moves both sides of the comparison together rather than silently making
- * every admission mismatch.
- *
- * This is a record and not a command on purpose: the variants below override one field
- * each, and spreading a class instance drops its prototype while staying structurally
- * assignable — the suite would keep passing while no longer exercising a command. Spread
- * the data, construct once, and every variant is a real instance.
- */
 const matchingFields = (report: Report.MutationTestResult) => ({
   priorReport: PriorReportFacts.make({
     config: report.config ?? {},
@@ -182,14 +167,12 @@ const matchingFields = (report: Report.MutationTestResult) => ({
 const matchingCommand = (report: Report.MutationTestResult): AdmitSurvivorsRunCommand =>
   AdmitSurvivorsRunCommand.make(matchingFields(report))
 
-/** The same command with the framework version drifted, so the two sides disagree. */
 const driftedCommand = (report: Report.MutationTestResult): AdmitSurvivorsRunCommand =>
   AdmitSurvivorsRunCommand.make({
     ...matchingFields(report),
     frameworkVersion: `${report.framework?.version ?? ''}-drifted`,
   })
 
-/** The same command with no prior report, so the admission has nothing to inspect. */
 const commandWithoutPriorReport = (report: Report.MutationTestResult): AdmitSurvivorsRunCommand =>
   AdmitSurvivorsRunCommand.make({
     ...matchingFields(report),
@@ -229,11 +212,9 @@ const rejectionOf = <A = unknown>(result: Result.Result<A, SurvivorsRejection>):
 describe('admitSurvivorsRun', () => {
   it.prop(
     '∀i_NoPriorReport_≡NoReportRejection',
-    [reportWithSurvivorsArb],
-    ([report]) => {
-      const rejection = rejectionOf(
-        admitSurvivorsRun(commandWithoutPriorReport(report)),
-      )
+    { of: [reportWithSurvivorsArb], subject: admitSurvivorsRun },
+    (subject, [report]) => {
+      const rejection = rejectionOf(subject(commandWithoutPriorReport(report)))
       if (rejection === undefined) {
         return false
       }
@@ -244,9 +225,9 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀r_SurvivorsProducedReport_≡RejectedAsUnusableSource',
-    [survivorsProducedReportArb],
-    ([report]) => {
-      const rejection = rejectionOf(admitSurvivorsRun(matchingCommand(report)))
+    { of: [survivorsProducedReportArb], subject: admitSurvivorsRun },
+    (subject, [report]) => {
+      const rejection = rejectionOf(subject(matchingCommand(report)))
       if (rejection === undefined) {
         return false
       }
@@ -257,9 +238,9 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀r_NoSurvivors_≡AdmittedEmptyEvenWhenHashesDrift',
-    [reportWithoutSurvivorsArb],
-    ([report]) => {
-      const drifted = admitSurvivorsRun(driftedCommand(report))
+    { of: [reportWithoutSurvivorsArb], subject: admitSurvivorsRun },
+    (subject, [report]) => {
+      const drifted = subject(driftedCommand(report))
       if (!Result.isSuccess(drifted)) {
         return false
       }
@@ -269,9 +250,9 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀r_SurvivorsWithDriftedHashes_≡MismatchRejection',
-    [reportWithSurvivorsArb],
-    ([report]) => {
-      const rejection = rejectionOf(admitSurvivorsRun(driftedCommand(report)))
+    { of: [reportWithSurvivorsArb], subject: admitSurvivorsRun },
+    (subject, [report]) => {
+      const rejection = rejectionOf(subject(driftedCommand(report)))
       if (rejection === undefined) {
         return false
       }
@@ -282,9 +263,9 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀r_SurvivorsWithMatchingHashes_≡AdmittedWithExactSurvivors',
-    [reportWithSurvivorsArb],
-    ([report]) => {
-      const admission = admitSurvivorsRun(matchingCommand(report))
+    { of: [reportWithSurvivorsArb], subject: admitSurvivorsRun },
+    (subject, [report]) => {
+      const admission = subject(matchingCommand(report))
       if (!Result.isSuccess(admission)) {
         return false
       }
@@ -302,9 +283,9 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀r_Report_≡AdmittedMutateSpansRe-readFromReport',
-    [reportWithSurvivorsArb],
-    ([report]) => {
-      const admission = admitSurvivorsRun(matchingCommand(report))
+    { of: [reportWithSurvivorsArb], subject: admitSurvivorsRun },
+    (subject, [report]) => {
+      const admission = subject(matchingCommand(report))
       if (!Result.isSuccess(admission)) {
         return false
       }
@@ -322,28 +303,28 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀r_NestedConfigOrder_≡Admitted',
-    [reportWithSurvivorsArb, cleanConfigArb, shortKeyArb],
-    ([report, config, key]) => {
+    { of: [reportWithSurvivorsArb, cleanConfigArb, shortKeyArb], subject: admitSurvivorsRun },
+    (subject, [report, config, key]) => {
       const prior = { ...report, config: { ...config, [key]: { alpha: 1, beta: 2 } } }
       const command = AdmitSurvivorsRunCommand.make({
         ...matchingFields(prior),
         currentConfig: { ...config, [key]: { beta: 2, alpha: 1 } },
       })
-      const admission = admitSurvivorsRun(command)
+      const admission = subject(command)
       return Result.isSuccess(admission) && S.is(Admitted)(admission.success)
     },
   )
 
   it.prop(
     '∀r_NullVsAbsentOption_≡MismatchRejection',
-    [reportWithSurvivorsArb, cleanConfigArb, shortKeyArb],
-    ([report, config, key]) => {
+    { of: [reportWithSurvivorsArb, cleanConfigArb, shortKeyArb], subject: admitSurvivorsRun },
+    (subject, [report, config, key]) => {
       const prior = { ...report, config: { ...config, [key]: null } }
       const command = AdmitSurvivorsRunCommand.make({
         ...matchingFields(prior),
         currentConfig: { ...config },
       })
-      const rejection = rejectionOf(admitSurvivorsRun(command))
+      const rejection = rejectionOf(subject(command))
       if (rejection === undefined) {
         return false
       }
@@ -354,11 +335,14 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀r_EveryRejection_≡EndsWithRunFirstRemediation',
-    [oneOf2<Report.MutationTestResult>(reportWithSurvivorsArb, survivorsProducedReportArb)],
-    ([report]) => {
+    {
+      of: [oneOf2<Report.MutationTestResult>(reportWithSurvivorsArb, survivorsProducedReportArb)],
+      subject: admitSurvivorsRun,
+    },
+    (subject, [report]) => {
       const rejections = [
-        rejectionOf(admitSurvivorsRun(commandWithoutPriorReport(report))),
-        rejectionOf(admitSurvivorsRun(driftedCommand(report))),
+        rejectionOf(subject(commandWithoutPriorReport(report))),
+        rejectionOf(subject(driftedCommand(report))),
       ].filter((rejection): rejection is SurvivorsRejection => rejection !== undefined)
       return rejections.length === 2 &&
         rejections.every((rejection) =>
@@ -370,9 +354,9 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀r_ReportWithoutFramework_≡DecidesWithoutThrowing',
-    [frameworklessReportArb],
-    ([report]) => {
-      const rejection = rejectionOf(admitSurvivorsRun(matchingCommand(report)))
+    { of: [frameworklessReportArb], subject: admitSurvivorsRun },
+    (subject, [report]) => {
+      const rejection = rejectionOf(subject(matchingCommand(report)))
       if (rejection === undefined) {
         return false
       }
@@ -382,10 +366,10 @@ describe('admitSurvivorsRun', () => {
 
   it.prop(
     '∀i_EveryRejection_≡CarriesTheRejectionTag',
-    [reportWithSurvivorsArb],
-    ([report]) =>
+    { of: [reportWithSurvivorsArb], subject: admitSurvivorsRun },
+    (subject, [report]) =>
       (() => {
-        const r = rejectionOf(admitSurvivorsRun(commandWithoutPriorReport(report)))
+        const r = rejectionOf(subject(commandWithoutPriorReport(report)))
         if (r === undefined) {
           return false
         }
@@ -395,21 +379,25 @@ describe('admitSurvivorsRun', () => {
 })
 
 describe('Survivors not-found', () => {
-  it.prop('∀c_NotFound_≡Rejection', [Arbitrary.Constant(null)], () =>
-    Result.match(
-      admitSurvivorsRun(
-        AdmitSurvivorsRunCommand.make({
-          priorReport: undefined,
-          currentConfig: {},
-          frameworkVersion: '1.0.0',
-          sourceContentHashes: {},
-          priorSourceHashes: {},
-          priorSurvivors: [],
-        }),
+  it.prop(
+    '∀c_NotFound_≡Rejection',
+    { of: [Arbitrary.Constant(null)], subject: admitSurvivorsRun },
+    (subject) =>
+      Result.match(
+        subject(
+          AdmitSurvivorsRunCommand.make({
+            priorReport: undefined,
+            currentConfig: {},
+            frameworkVersion: '1.0.0',
+            sourceContentHashes: {},
+            priorSourceHashes: {},
+            priorSurvivors: [],
+          }),
+        ),
+        {
+          onSuccess: () => false,
+          onFailure: (rejection) => S.is(SurvivorsRejection)(rejection),
+        },
       ),
-      {
-        onSuccess: () => false,
-        onFailure: (rejection) => S.is(SurvivorsRejection)(rejection),
-      },
-    ))
+  )
 })

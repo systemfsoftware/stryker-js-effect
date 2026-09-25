@@ -1,3 +1,4 @@
+import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
@@ -9,6 +10,9 @@ import * as Scope from 'effect/Scope'
 
 import { interpretDryRunResult, InterpretDryRunResultCommand } from './interpret-dry-run-result.workflow.js'
 import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-test-runner.handle.js'
+
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js/VmTestRunner')
+export type TypeId = typeof TypeId
 
 export const vmRunnerName = 'vm'
 
@@ -171,10 +175,21 @@ const pooledVmRunner = (config: VmTestRunnerConfig, scope: Scope.Scope): PooledT
   })
 }
 
-export const vmTestRunner = (
+const scopedOf = (
   config: VmTestRunnerConfig,
 ): Effect.Effect<PooledTestRunner, TestRunner.TestRunnerFailed, Scope.Scope> =>
   Effect.gen(function*() {
     const scope = yield* Effect.scope
     return pooledVmRunner(config, scope)
   })
+
+const VmRunners = Blueprint.make<VmTestRunnerConfig>()(TypeId).steps({
+  steps: {},
+  targets: { scoped: scopedOf },
+})
+
+export type VmTestRunnerBlueprint = Blueprint.Of<typeof VmRunners>
+
+export const vmTestRunner = (
+  config: VmTestRunnerConfig,
+): Effect.Effect<PooledTestRunner, TestRunner.TestRunnerFailed, Scope.Scope> => VmRunners.of(config).scoped

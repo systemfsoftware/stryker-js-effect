@@ -2,17 +2,14 @@ import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options, type Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
-import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import { dual } from 'effect/Function'
+import { pipe } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
-import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -34,16 +31,16 @@ import {
 } from '../reporter-stream.service.js'
 import { type ReporterChoice, reporterInputsOf } from '../reporter-wiring.service.js'
 import { Reporter } from '../reporter.service.js'
-import { AnsiCode } from '../reporting/ansi.schema.js'
 import { type RunEvent } from '../run-events.service.js'
 import { PhaseEntered, RunEvents } from '../run-events.service.js'
-import { PrepareError, StageError } from '../Run.schema.js'
+import { StageError } from '../Run.schema.js'
 import { TemporaryDirectory } from '../Sandbox.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import type { FrameworkClaimant } from './explain-file-skip.workflow.js'
 import { forkCoreSchema, validateOptions } from './load-config.cell.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
 import { planPrepare, PrepareDecoded } from './plan-prepare.workflow.js'
+import { announceSummary, failOnEmptyProject, selectReporters } from './prepare.parts.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 
@@ -64,6 +61,7 @@ export interface PrepareExecutorArgs {
 }
 
 type PrepareRaw = typeof PrepareDecoded.Encoded & {
+  readonly now: number
   readonly env: RunEnvironmentShape
   readonly queue: Queue.Queue<RunEvent, Cause.Done>
   readonly options: Options.StrykerOptions
@@ -84,29 +82,14 @@ const schemaPropertiesOf = <A = unknown>(document: ValidationSchemaDocument<A>):
 const buildMergedSchema = <A = unknown>(
   core: ValidationSchemaDocument,
   contributions: readonly Record<string, A>[],
-) =>
-  Boolean.match(contributions.length === 0, {
-    onTrue: () => core,
-    onFalse: () => ({
-      ...core,
-      properties: contributions.reduce(
-        (merged, contribution) => ({ ...merged, ...schemaPropertiesOf(contribution) }),
-        schemaPropertiesOf(core),
-      ),
+): ValidationSchemaDocument =>
+  contributions.reduce(
+    (merged, contribution) => ({
+      ...merged,
+      properties: { ...schemaPropertiesOf(merged), ...schemaPropertiesOf(contribution) },
     }),
-  })
-
-const announceSummary = (env: RunEnvironmentShape, summary: string) =>
-  Match.value(env.resolvedMode.mode).pipe(
-    Match.when('human', () => announceHumanSummary(env.allowConsoleColors, summary)),
-    Match.orElse(() => Effect.logInfo(summary)),
+    core,
   )
-
-const announceHumanSummary = (allowConsoleColors: boolean, summary: string) =>
-  Boolean.match(allowConsoleColors, {
-    onTrue: () => Console.log(`${AnsiCode.fields.green.literal}${summary}${AnsiCode.fields.reset.literal}`),
-    onFalse: () => Console.log(summary),
-  })
 
 const readPrepare = (command: ReadProjectDone): Effect.Effect<
   PrepareRaw,
@@ -180,10 +163,12 @@ const readPrepare = (command: ReadProjectDone): Effect.Effect<
       ),
     ])
     const frameworkClaimants = yield* installedFrameworkClaimants(env.basePath)
+    const now = yield* Clock.currentTimeMillis
     return {
+      now,
       mode: env.resolvedMode.mode,
       reporters: [...options.reporters],
-      fileCount: MutableHashMap.size(command.project.files),
+      fileCount: pipe(command.project.files, MutableHashMap.size),
       availableReporters: [...HashMap.values(reporterChoicesByName)].map((choice) => choice.name),
       env,
       queue,
@@ -207,31 +192,18 @@ const writePrepare = (
     {},
     (span) =>
       Effect.gen(function*() {
-        const mutateCount = MutableHashMap.size(raw.project.filesToMutate)
-        yield* announceSummary(
-          raw.env,
-          `Found ${mutateCount} of ${MutableHashMap.size(raw.project.files)} file(s) to be mutated.`,
-        )
+        const mutateCount = pipe(raw.project.filesToMutate, MutableHashMap.size)
+        yield* announceSummary({
+          env: raw.env,
+          summary: `Found ${mutateCount} of ${pipe(raw.project.files, MutableHashMap.size)} file(s) to be mutated.`,
+        })
         yield* validateReporterNames(
           raw.options.reporters,
           [...HashMap.values(raw.reporterChoicesByName)].map((choice) => choice.name),
         ).pipe(
           Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: cause.message, cause })),
         )
-        const failOnEmptyProject = (fileCount: number): Effect.Effect<void, StageError> =>
-          Match.value(fileCount).pipe(
-            Match.when(0, () =>
-              Effect.fail(
-                StageError.make({
-                  stage: 'prepare',
-                  reason: 'No input files found.',
-                  cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
-                }),
-              )),
-            Match.orElse(() => Effect.void),
-          )
-
-        yield* failOnEmptyProject(raw.project.files.pipe(MutableHashMap.size))
+        yield* failOnEmptyProject(pipe(raw.project.files, MutableHashMap.size))
         const temporaryDirectoryPath = yield* Effect.map(
           Layer.build(TemporaryDirectory.layer(raw.options)),
           (temporaryDirectory) => Context.get(temporaryDirectory, TemporaryDirectory).path,
@@ -249,7 +221,7 @@ const writePrepare = (
         )
         const reporterInit = yield* currentReporterInit(span)
         const reporterStage = yield* attachReporterFactories(reporterInputs, raw.options, reporterInit)
-        const now = yield* Clock.currentTimeMillis
+        const { now } = raw
         yield* Queue.offer(raw.queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - raw.env.runStartedAt }))
         return {
           project: raw.project,
@@ -263,35 +235,6 @@ const writePrepare = (
         }
       }),
   )
-
-const STREAM_REPORTER = 'progress-stream'
-const HUMAN_REPORTER = 'clear-text'
-
-const STDOUT_REPORTERS: Readonly<Record<string, true>> = { 'clear-text': true, 'progress': true }
-
-const asHumanReporter = (name: string): string => {
-  if (name === STREAM_REPORTER) {
-    return HUMAN_REPORTER
-  }
-  return name
-}
-
-const selectReporters: {
-  (configured: readonly string[], mode: 'human' | 'machine'): readonly string[]
-  (mode: 'human' | 'machine'): (configured: readonly string[]) => readonly string[]
-} = dual(2, (configured: readonly string[], mode: 'human' | 'machine'): readonly string[] =>
-  Match.value(mode).pipe(
-    Match.when('human', () => [...new Set(configured.map(asHumanReporter))]),
-    Match.when('machine', () => {
-      const permitted = configured.filter((name) => STDOUT_REPORTERS[name] !== true)
-      return Match.value(permitted.includes(STREAM_REPORTER)).pipe(
-        Match.when(true, () => permitted),
-        Match.when(false, () => [...permitted, STREAM_REPORTER]),
-        Match.exhaustive,
-      )
-    }),
-    Match.exhaustive,
-  ))
 
 export const prepareCell: Cell.Cell<
   ReadProjectDone,

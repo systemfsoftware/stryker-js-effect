@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -6,8 +6,12 @@ import * as S from 'effect/Schema'
 import { WarningNameSchema, WarningsSchema } from '../../tests/__fixtures__/config-law.schema.js'
 import { ResolveWarningEnabledCommand, warningEnabled } from '../config/warning-enabled.workflow.js'
 
-const decidedTagOf = (warning: typeof WarningNameSchema.Type, warnings: typeof WarningsSchema.Type) =>
-  Match.value(warningEnabled(ResolveWarningEnabledCommand.make({ warning, warnings }))).pipe(
+const decidedTagOf = (
+  subject: typeof warningEnabled,
+  warning: typeof WarningNameSchema.Type,
+  warnings: typeof WarningsSchema.Type,
+) =>
+  Match.value(subject(ResolveWarningEnabledCommand.make({ warning, warnings }))).pipe(
     Match.when(
       Result.isSuccess,
       (success) =>
@@ -23,14 +27,16 @@ const decidedTagOf = (warning: typeof WarningNameSchema.Type, warnings: typeof W
 describe('warningEnabled', () => {
   it.prop(
     '∀wr_Warning_≡RecordFlag',
-    [WarningNameSchema, S.Record(S.String, S.Boolean)],
-    ([warning, configured]) =>
-      decidedTagOf(warning, configured) === (configured[warning] === true ? 'WarningEnabled' : 'WarningDisabled'),
+    { of: [WarningNameSchema, S.Record(S.String, S.Boolean)], subject: warningEnabled },
+    (subject, [warning, configured]) =>
+      decidedTagOf(subject, warning, configured) ===
+        (configured[warning] === true ? 'WarningEnabled' : 'WarningDisabled'),
   )
 
   it.prop(
     '∀wb_Warning_≡GlobalFlag',
-    [WarningNameSchema, S.Boolean],
-    ([warning, global]) => decidedTagOf(warning, global) === (global === true ? 'WarningEnabled' : 'WarningDisabled'),
+    { of: [WarningNameSchema, S.Boolean], subject: warningEnabled },
+    (subject, [warning, global]) =>
+      decidedTagOf(subject, warning, global) === (global === true ? 'WarningEnabled' : 'WarningDisabled'),
   )
 })

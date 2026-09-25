@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Boolean from 'effect/Boolean'
@@ -88,10 +88,10 @@ const IgnoredStaticReason = 'Static mutant (and "ignoreStatic" was enabled)'
 
 describe('planMutantTests', () => {
   it.prop(
-    'forall_m_Command_ordersOutcomesByMutantOrder',
-    [scenarioArb],
-    ([command]) =>
-      Result.match(planMutantTests(command), {
+    '∀m_Command_≡OrdersOutcomesByMutantOrder',
+    { of: [scenarioArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
         onFailure: () => true,
         onSuccess: (decisions) =>
           decisions.length === command.mutants.length &&
@@ -105,10 +105,10 @@ describe('planMutantTests', () => {
   )
 
   it.prop(
-    'forall_c_ClosedMutant_decidesEarlyResult',
-    [scenarioArb],
-    ([command]) =>
-      Result.match(planMutantTests(command), {
+    '∀c_ClosedMutant_≡DecidesEarlyResult',
+    { of: [scenarioArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
         onFailure: () => true,
         onSuccess: (decisions) =>
           decisions.every((decision) =>
@@ -123,33 +123,37 @@ describe('planMutantTests', () => {
       }),
   )
 
-  it.prop('forall_s_StaticMutantWithoutCoveringTests_decidesIgnored', [scenarioArb], ([command]) => {
-    const mutated = MutantTestPlanCommand.make(
-      Struct.evolve(command, { options: (options) => ({ ...options, ignoreStatic: true }) }),
-    )
-    return Result.match(planMutantTests(mutated), {
-      onFailure: () => true,
-      onSuccess: (decisions) =>
-        decisions.every((decision) => {
-          const mutant = mutated.mutants.find((candidate) => candidate.id === decision.mutantId)
-          const tests = testsOf(mutated, decision.mutantId)
-          const isStatic = staticCountOf(mutated, decision.mutantId) > 0
-          return Boolean.match(isStatic && tests.length === 0 && mutant?.status === undefined, {
-            onTrue: () =>
-              S.is(PlannedEarlyResultMutant)(decision) &&
-              decision.status === 'Ignored' &&
-              decision.statusReason === IgnoredStaticReason,
-            onFalse: () => true,
-          })
-        }),
-    })
-  })
+  it.prop(
+    '∀s_StaticMutantWithoutCoveringTests_≡DecidesIgnored',
+    { of: [scenarioArb], subject: planMutantTests },
+    (subject, [command]) => {
+      const mutated = MutantTestPlanCommand.make(
+        Struct.evolve(command, { options: (options) => ({ ...options, ignoreStatic: true }) }),
+      )
+      return Result.match(subject(mutated), {
+        onFailure: () => true,
+        onSuccess: (decisions) =>
+          decisions.every((decision) => {
+            const mutant = mutated.mutants.find((candidate) => candidate.id === decision.mutantId)
+            const tests = testsOf(mutated, decision.mutantId)
+            const isStatic = staticCountOf(mutated, decision.mutantId) > 0
+            return Boolean.match(isStatic && tests.length === 0 && mutant?.status === undefined, {
+              onTrue: () =>
+                S.is(PlannedEarlyResultMutant)(decision) &&
+                decision.status === 'Ignored' &&
+                decision.statusReason === IgnoredStaticReason,
+              onFalse: () => true,
+            })
+          }),
+      })
+    },
+  )
 
   it.prop(
-    'forall_t_CoveredTestTime_conservesNetTime',
-    [scenarioArb],
-    ([command]) =>
-      Result.match(planMutantTests(command), {
+    '∀t_CoveredTestTime_≡ConservesNetTime',
+    { of: [scenarioArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
         onFailure: () => true,
         onSuccess: (decisions) =>
           decisions.every((decision) => {
@@ -172,10 +176,10 @@ describe('planMutantTests', () => {
   )
 
   it.prop(
-    'forall_h_HitLimit_conservesHundredfold',
-    [scenarioArb],
-    ([command]) =>
-      Result.match(planMutantTests(command), {
+    '∀h_HitLimit_≡ConservesHundredfold',
+    { of: [scenarioArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
         onFailure: () => true,
         onSuccess: (decisions) =>
           decisions.every((decision) =>
@@ -191,10 +195,10 @@ describe('planMutantTests', () => {
   )
 
   it.prop(
-    'forall_f_MissingHitCount_refusesCoveredMutant',
-    [scenarioArb],
-    ([command]) =>
-      Result.match(planMutantTests(command), {
+    '∀f_MissingHitCount_≡RefusesCoveredMutant',
+    { of: [scenarioArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
         onFailure: (failure) => S.is(CoveredMutantHitCountMissing)(failure) && failure.missingIds.length > 0,
         onSuccess: (decisions) =>
           decisions.every((decision) => {
@@ -213,10 +217,10 @@ describe('planMutantTests', () => {
 
 describe('planMutantTests materialization fields', () => {
   it.prop(
-    'forall_u_EarlyOutcomes_carryStaticAndCoveredBy',
-    [scenarioArb],
-    ([command]) =>
-      Result.match(planMutantTests(command), {
+    '∀u_EarlyOutcomes_≡CarryStaticAndCoveredBy',
+    { of: [scenarioArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
         onFailure: () => true,
         onSuccess: (decisions) =>
           decisions.every((decision) =>
@@ -240,10 +244,10 @@ describe('planMutantTests materialization fields', () => {
   )
 
   it.prop(
-    'forall_r_RunOutcomes_carryMaterializationFields',
-    [scenarioArb],
-    ([command]) =>
-      Result.match(planMutantTests(command), {
+    '∀r_RunOutcomes_≡CarryMaterializationFields',
+    { of: [scenarioArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
         onFailure: () => true,
         onSuccess: (decisions) =>
           decisions.every((decision) => {

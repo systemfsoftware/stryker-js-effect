@@ -691,7 +691,7 @@ const checkpoint = (deps: MutationReportingDeps, input: MutationReportingInput) 
   })
 
 if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
+  const { it } = await import('@systemfsoftware/vitest')
   const { Mutant: { Mutant } } = await import('@systemfsoftware/stryker-js-instrumenter')
   const { TestRunner: { MutantRunResultSchema } } = await import('@systemfsoftware/stryker-js-plugin-interface')
 
@@ -752,12 +752,12 @@ if (import.meta.vitest !== void 0) {
       Match.exhaustive,
     )
 
-  const mapsClassOutcome = (mutant: InstrumenterMutant.Mutant, result: TestRunner.MutantRunResult) =>
-    Effect.map(mapRunResult(coverageOf(mutant), result), (mapped) => carriesClassOutcome(result, mapped))
+  const mapForLaw = (mutant: InstrumenterMutant.Mutant, result: TestRunner.MutantRunResult) =>
+    mapRunResult(coverageOf(mutant), result)
 
   it.effect.prop(
-    '∀mr_MapRunResult_CarriesClassOutcome',
-    [Mutant, MutantRunResultSchema],
-    ([mutant, result]) => mapsClassOutcome(mutant, result),
+    '∀mr_MapRunResult_≡CarriesClassOutcome',
+    { of: [Mutant, MutantRunResultSchema], subject: mapForLaw },
+    (subject, [mutant, result]) => Effect.map(subject(mutant, result), (mapped) => carriesClassOutcome(result, mapped)),
   )
 }

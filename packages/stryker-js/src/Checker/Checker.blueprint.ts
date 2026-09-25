@@ -1,17 +1,24 @@
+import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { type Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Metric from 'effect/Metric'
 import type * as Scope from 'effect/Scope'
 
-import { makeWorkerClient } from '../worker-client.resource.js'
+import { makeWorkerClient } from '../worker-client.blueprint.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import {
+  check,
   type CheckerCrash,
+  type CheckerHandle,
   type CheckerResourceService,
   connectionCrashed,
+  group,
   makeCheckerHandle,
 } from './Checker.handle.js'
+
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js/CheckerBlueprint')
+export type TypeId = typeof TypeId
 
 export interface CheckerSpec {
   readonly options: Options.StrykerOptions
@@ -31,6 +38,11 @@ const nodeArgsOf = (options: Options.StrykerOptions) =>
     Match.when(Match.undefined, () => options.checkerNodeArgs),
     Match.orElse((args) => args),
   )
+
+const serviceOf = (handle: CheckerHandle): CheckerResourceService => ({
+  check: (checkerName, mutants) => check(handle, checkerName, mutants),
+  group: (checkerName, mutants) => group(handle, checkerName, mutants),
+})
 
 const acquire = (spec: CheckerSpec) =>
   Effect.gen(function*() {
@@ -57,9 +69,16 @@ const acquire = (spec: CheckerSpec) =>
       ),
       Effect.tapError(() => Metric.update(checkerProcessCrashes, 1)),
     )
-    return makeCheckerHandle(client)
+    return serviceOf(makeCheckerHandle(client))
   })
+
+const Checkers = Blueprint.make<CheckerSpec>()(TypeId).steps({
+  steps: {},
+  targets: { scoped: acquire },
+})
+
+export type CheckerBlueprint = Blueprint.Of<typeof Checkers>
 
 export const scoped = (
   spec: CheckerSpec,
-): Effect.Effect<CheckerResourceService, CheckerCrash, Scope.Scope | WorkerLauncher> => acquire(spec)
+): Effect.Effect<CheckerResourceService, CheckerCrash, Scope.Scope | WorkerLauncher> => Checkers.of(spec).scoped
