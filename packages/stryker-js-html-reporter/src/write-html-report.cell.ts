@@ -82,7 +82,7 @@ export type RenderHtmlReportRead = (typeof RenderHtmlReport)['Encoded'] & {
 const readRenderCommand = (input: {
   readonly fileName: string
   readonly report: Reporter.MutationTestReportReady['report']
-  readonly inlinedBundle?: string
+  readonly inlinedBundle: string | undefined
 }): Effect.Effect<RenderHtmlReportRead> =>
   Effect.succeed({
     _tag: 'RenderHtmlReport',

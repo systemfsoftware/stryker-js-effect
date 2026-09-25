@@ -1,4 +1,5 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Worker } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Checker, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
@@ -14,13 +15,10 @@ import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 import * as Socket from 'effect/unstable/socket/Socket'
 import * as SocketServer from 'effect/unstable/socket/SocketServer'
-import { expect } from 'vitest'
-import { Worker } from '../src/mod.js'
 
-import { make as makeSpawnedSocketWorker } from '../src/spawned-socket-worker.handle.js'
 import { memorySocketPair, singleConnection } from './__fixtures__/substituted-worker.fixture.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 type CheckerRpcsUnion = typeof Plugin.CheckerRpcs extends RpcGroup.RpcGroup<infer Rpcs> ? Rpcs : never
 
@@ -64,7 +62,7 @@ const makeHarness = () =>
     const launcherLayer = Layer.succeed(Worker.WorkerLauncher, {
       spawn: () =>
         Effect.succeed(
-          makeSpawnedSocketWorker({
+          Worker.makeSpawnedSocketWorker({
             pid: 4242,
             clientLayer: Worker.layerWorkerProtocol(Layer.succeed(Socket.Socket, clientSocket)),
             exited: Effect.never,
@@ -131,21 +129,35 @@ Feature('Verifying mutants through an external checker worker')
             })
           },
         ),
-        Then('the checker passes the mutant without schema or communication errors')((s) => {
-          expect(s.response['mutant-1']?.status).toBe('passed')
-        }),
-        Then('the worker receives the exact mutation coordinates and text')((s) =>
+        Then(
+          'the checker passes the mutant without schema or communication errors, and the worker receives the exact mutation coordinates and text',
+        )((s, expect) =>
           Effect.gen(function*() {
             const received = yield* Ref.get(s.harness.receivedRef)
-            expect(received).toHaveLength(1)
-            expect(received[0]?.id).toBe('mutant-1')
-            expect(received[0]?.fileName).toBe('src/core.ts')
-            expect(received[0]?.replacement).toBe('-')
-            expect(received[0]?.location).toEqual({
-              start: { line: 10, column: 5 },
-              end: { line: 10, column: 6 },
+            return {
+              status: s.response['mutant-1']?.status,
+              receivedCount: received.length,
+              received: received.map((mutant) => ({
+                id: mutant.id,
+                fileName: mutant.fileName,
+                replacement: mutant.replacement,
+                location: mutant.location,
+              })),
+            }
+          }).pipe(Effect.map((facts) =>
+            expect(facts).toEqual({
+              status: 'passed',
+              receivedCount: 1,
+              received: [
+                {
+                  id: 'mutant-1',
+                  fileName: 'src/core.ts',
+                  replacement: '-',
+                  location: { start: { line: 10, column: 5 }, end: { line: 10, column: 6 } },
+                },
+              ],
             })
-          })
+          ))
         ),
       ),
     )
@@ -162,11 +174,11 @@ Feature('Verifying mutants through an external checker worker')
               Effect.exit,
             ),
         ),
-        Then('the request is refused and the worker is never asked')((s) =>
+        Then('the request is refused and the worker is never asked')((s, expect) =>
           Effect.gen(function*() {
-            expect(Exit.isFailure(s.outcome)).toBe(true)
-            expect(yield* Ref.get(s.harness.receivedRef)).toHaveLength(0)
-          })
+            const received = yield* Ref.get(s.harness.receivedRef)
+            return { refused: Exit.isFailure(s.outcome), receivedCount: received.length }
+          }).pipe(Effect.map((facts) => expect(facts).toEqual({ refused: true, receivedCount: 0 })))
         ),
       ),
     )

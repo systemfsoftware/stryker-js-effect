@@ -1,4 +1,5 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Worker } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Checker, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
@@ -17,12 +18,10 @@ import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
 import * as RpcServer from 'effect/unstable/rpc/RpcServer'
 import * as Socket from 'effect/unstable/socket/Socket'
 import * as SocketServer from 'effect/unstable/socket/SocketServer'
-import { expect } from 'vitest'
 
-import { Worker } from '../src/mod.js'
 import { memorySocketPair, singleConnection } from './__fixtures__/substituted-worker.fixture.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const SILENCE_WINDOW = '20 seconds'
 const ORPHAN_GUARD = '30 seconds'
@@ -126,7 +125,7 @@ const mutantWith = (id: string): Checker.CheckerMutantWire => ({
 const checkMutants = (harness: SilentWorkerHarness, id: string) =>
   harness.client.check({ checkerName: 'test-checker', mutants: [mutantWith(id)] })
 
-Feature('Settling checker requests when a worker goes silent')
+Feature('Settling checker requests against a worker that goes silent or boots slowly')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
@@ -147,11 +146,14 @@ Feature('Settling checker requests when a worker goes silent')
           'elapsed',
           () => TestClock.adjust(SILENCE_WINDOW),
         ),
-        Then('the waiting request is failed with the lost connection rather than left waiting forever')((s) =>
+        Then('the waiting request is failed with the lost connection rather than left waiting forever')((s, expect) =>
           Effect.gen(function*() {
             yield* TestClock.adjust(ORPHAN_GUARD)
-            const failure = yield* Fiber.join(s.held.outcome)
-            expect(S.is(RpcClientError)(failure), 'the request fails with a typed RPC client error').toBe(true)
+            const outcome = yield* Fiber.join(s.held.outcome).pipe(Effect.result)
+            return yield* expect(outcome).toSatisfy(
+              (result) => Result.isSuccess(result) && S.is(RpcClientError)(result.success),
+              'the request fails with a typed RPC client error, not a timeout',
+            )
           })
         ),
       ),
@@ -178,20 +180,14 @@ Feature('Settling checker requests when a worker goes silent')
             Effect.andThen(s.silent.gate.open, TestClock.adjust('2 seconds')),
             checkMutants(s.silent, 'mutant-2'),
           )),
-        Then('the new request is answered by the recovered worker')((s) =>
+        Then('the new request is answered by the recovered worker')((s, expect) =>
           Effect.gen(function*() {
-            expect(s.answer['mutant-2']?.status).toBe('passed')
             const received = yield* Ref.get(s.silent.received)
-            expect(received.at(-1)?.id).toBe('mutant-2')
-          })
+            return { status: s.answer['mutant-2']?.status, lastReceivedId: received.at(-1)?.id }
+          }).pipe(Effect.map((facts) => expect(facts).toEqual({ status: 'passed', lastReceivedId: 'mutant-2' })))
         ),
       ),
     )
-  })
-
-Feature('Answering the first request to a worker that boots slowly')
-  .withLayer(Layer.empty)
-  .body(({ scenario }) => {
     scenario(
       'A request made while the worker refuses its connection is answered once it accepts',
       Gherkin.Do.pipe(
@@ -217,7 +213,7 @@ Feature('Answering the first request to a worker that boots slowly')
               return harness
             }),
         ),
-        Then('the first request is answered by the booted worker')((s) =>
+        Then('the first request is answered by the booted worker')((s, expect) =>
           Effect.gen(function*() {
             const outcome = yield* Fiber.join(s.held.outcome)
             if (Result.isFailure(outcome)) {
@@ -225,10 +221,9 @@ Feature('Answering the first request to a worker that boots slowly')
                 cause: outcome.failure,
               })
             }
-            expect(outcome.success['mutant-boot']?.status).toBe('passed')
             const received = yield* Ref.get(s.booted.received)
-            expect(received.at(-1)?.id).toBe('mutant-boot')
-          })
+            return { status: outcome.success['mutant-boot']?.status, lastReceivedId: received.at(-1)?.id }
+          }).pipe(Effect.map((facts) => expect(facts).toEqual({ status: 'passed', lastReceivedId: 'mutant-boot' })))
         ),
       ),
     )

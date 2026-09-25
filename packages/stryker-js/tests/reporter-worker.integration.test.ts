@@ -1,4 +1,5 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Plugin as StrykerPlugin, RunEvent, type Worker as StrykerWorker } from '@systemfsoftware/stryker-js'
 import { Options, type Plugin, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
@@ -6,8 +7,6 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
-import { expect } from 'vitest'
-import { Plugin as StrykerPlugin, RunEvent, type Worker as StrykerWorker } from '../src/mod.js'
 
 import {
   makeReporterWorkerTrace,
@@ -17,7 +16,7 @@ import {
   type ReporterWorkerTrace,
 } from './__fixtures__/substituted-reporter-worker.fixture.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const PROJECT_BASE_PATH = '/project'
 const MARKER_FILE = 'src/marker.ts'
@@ -189,6 +188,9 @@ const driveReporterWorker = (
 
 Feature('Reporting a mutation run through a reporter plugin process')
   .withLayer(Layer.empty)
+  .live(
+    'the reporter drain consumes a JavaScript async iterable while the plugin process answers, and those awaits resolve outside the controlled schedule',
+  )
   .body(({ scenario }) => {
     scenario(
       'A completed run reaches the reporter process and is drained',
@@ -198,22 +200,32 @@ Feature('Reporting a mutation run through a reporter plugin process')
           'driven',
           (s) => driveReporterWorker(s.plugin, () => ofEvents(completedRun())),
         ),
-        Then('the process receives the whole run in order')((s) => {
-          expect(tagsOf(s.driven.delivered)).toStrictEqual(tagsOf(completedRun()))
-          expect(s.driven.deliverySizes).toStrictEqual([completedRun().length])
-        }),
-        Then('the process is initialised with the run trace and drained once')((s) => {
-          expect(s.driven.inits).toStrictEqual([{ traceparent: TRACEPARENT }])
-          expect(s.driven.flushes).toBe(1)
-        }),
-        Then('the process is started in the project being reported')((s) =>
+        Then(
+          'the process receives the whole run in order, initialised with its trace, drained once, and started in the project being reported',
+        )((s, expect) =>
           Effect.gen(function*() {
             const spawn = spawnOf(s.driven.spawns)
-            expect(spawn.workingDirectory).toBe(PROJECT_BASE_PATH)
-            expect(spawn.entrypoint).toBe(REPORTER_WORKER_ENTRYPOINT)
             const options = yield* S.decodeEffect(Worker.WorkerOptionsWire)(spawn.optionsJson)
-            expect(options.htmlReporter.fileName).toBe('reports/mutation/mutation.html')
-          })
+            return {
+              tags: tagsOf(s.driven.delivered),
+              deliverySizes: s.driven.deliverySizes,
+              inits: s.driven.inits,
+              flushes: s.driven.flushes,
+              workingDirectory: spawn.workingDirectory,
+              entrypoint: spawn.entrypoint,
+              htmlReportFileName: options.htmlReporter.fileName,
+            }
+          }).pipe(Effect.map((facts) =>
+            expect(facts).toEqual({
+              tags: tagsOf(completedRun()),
+              deliverySizes: [completedRun().length],
+              inits: [{ traceparent: TRACEPARENT }],
+              flushes: 1,
+              workingDirectory: PROJECT_BASE_PATH,
+              entrypoint: REPORTER_WORKER_ENTRYPOINT,
+              htmlReportFileName: 'reports/mutation/mutation.html',
+            })
+          ))
         ),
       ),
     )
@@ -231,20 +243,26 @@ Feature('Reporting a mutation run through a reporter plugin process')
           'driven',
           (s) => driveReporterWorker(s.plan.target, (gauge) => largeRun(gauge, s.plan.total)),
         ),
-        Then('every event of the run arrives')((s) => {
-          expect(s.driven.yielded).toBe(LARGE_RUN)
-          expect(s.driven.delivered.length).toBe(LARGE_RUN)
-          expect(s.driven.deliverySizes).toStrictEqual([
-            StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
-            StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
-            StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
-            LARGE_RUN - 3 * StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
-          ])
-        }),
-        Then('the producer stays at most one delivery ahead of the process')((s) => {
-          expect(s.driven.maxLag).toBeGreaterThan(0)
-          expect(s.driven.maxLag).toBeLessThanOrEqual(StrykerPlugin.REPORTER_EVENT_BATCH_BOUND)
-        }),
+        Then(
+          'every event of the run arrives, and the producer stays at most one delivery ahead of the process without idling',
+        )((s, expect) =>
+          expect({
+            yielded: s.driven.yielded,
+            delivered: s.driven.delivered.length,
+            deliverySizes: s.driven.deliverySizes,
+            maxLagWithinOneDelivery: s.driven.maxLag > 0 && s.driven.maxLag <= StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
+          }).toEqual({
+            yielded: LARGE_RUN,
+            delivered: LARGE_RUN,
+            deliverySizes: [
+              StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
+              StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
+              StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
+              LARGE_RUN - 3 * StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
+            ],
+            maxLagWithinOneDelivery: true,
+          })
+        ),
       ),
     )
   })

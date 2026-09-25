@@ -1,4 +1,4 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
@@ -9,9 +9,8 @@ import type { PlatformError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const UNKNOWN_NAME = 'TurnItUpToEleven'
 
@@ -80,6 +79,7 @@ const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
 
 Feature('Opting a mutation run into extra mutations')
   .withLayer(runLayer)
+  .live('the scenario writes and removes a real project directory, so the run waits on real filesystem I/O')
   .body(({ scenario }) => {
     scenario(
       'A run asked for an extra mutation nobody provides refuses to start',
@@ -92,14 +92,19 @@ Feature('Opting a mutation run into extra mutations')
               Effect.ensuring(removeProject(s.project.root)),
             ),
         ),
-        Then('the run stops before any mutant exists, blaming the unknown name')((s) => {
-          const failure = failureOf(s.outcome)
-          expect(failure.stage).toBe('instrument')
-          expect(textOf(failure.cause)).toContain(`Unknown opt-in mutations: '${UNKNOWN_NAME}'`)
-        }),
-        Then('the refusal also names the extra mutations that do exist')((s) => {
-          expect(textOf(failureOf(s.outcome).cause)).toContain('Known opt-in mutations:')
-        }),
+        Then(
+          'the run stops before any mutant exists, blaming the unknown name and naming the extra mutations that do exist',
+        )(
+          (s, expect) => {
+            const failure = failureOf(s.outcome)
+            const cause = textOf(failure.cause)
+            return expect({
+              stage: failure.stage,
+              unknownOptInNamed: cause.includes(`Unknown opt-in mutations: '${UNKNOWN_NAME}'`),
+              knownOptInNamed: cause.includes('Known opt-in mutations:'),
+            }).toEqual({ stage: 'instrument', unknownOptInNamed: true, knownOptInNamed: true })
+          },
+        ),
       ),
     )
   })

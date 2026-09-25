@@ -1,11 +1,10 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type ConfigEnv, StrykerConfig } from '@systemfsoftware/stryker-js/config'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
-import { type ConfigEnv, StrykerConfig } from '../src/config/mod.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const RUN_ENV: ConfigEnv = { command: 'run', isDryRun: false, mode: 'human', isCi: false }
 
@@ -23,9 +22,9 @@ Feature('Authoring a Stryker configuration with the published helper')
           'received',
           (s) => Effect.succeed(StrykerConfig.define(s.written)),
         ),
-        Then('the run receives exactly the configuration that was written')((s) => {
+        Then('the run receives exactly the configuration that was written')((s, expect) =>
           expect(s.received).toBe(s.written)
-        }),
+        ),
       ),
     )
 
@@ -49,11 +48,17 @@ Feature('Authoring a Stryker configuration with the published helper')
           'received',
           (s) => Effect.succeed(StrykerConfig.define(s.derived.factory)),
         ),
-        Then('the run receives that same configuration, still uncalled')((s) => {
-          expect(s.received).toBe(s.derived.factory)
-          expect(s.derived.calls).toStrictEqual([])
-          expect(s.received(RUN_ENV)).toStrictEqual({ thresholds: { high: 92 } })
-        }),
+        Then('the run receives that same configuration, still uncalled, and it resolves the run it is given')(
+          (s, expect) => {
+            const uncalled = [...s.derived.calls]
+            const resolved = s.received(RUN_ENV)
+            return expect({ received: s.received, calls: uncalled, resolved }).toEqual({
+              received: s.derived.factory,
+              calls: [],
+              resolved: { thresholds: { high: 92 } },
+            })
+          },
+        ),
       ),
     )
 
@@ -71,10 +76,12 @@ Feature('Authoring a Stryker configuration with the published helper')
           'composed',
           (s) => Effect.succeed(StrykerConfig.merge(s.preset, { plugins: ['@acme/mine'], thresholds: { high: 70 } })),
         ),
-        Then('the thresholds are merged and the plugin list is the override’s own')((s) => {
-          expect(s.composed.thresholds).toStrictEqual({ low: 50, high: 70 })
-          expect(s.composed.plugins).toStrictEqual(['@acme/mine'])
-        }),
+        Then('the thresholds are merged and the plugin list is the override’s own')((s, expect) =>
+          expect({ thresholds: s.composed.thresholds, plugins: s.composed.plugins }).toEqual({
+            thresholds: { low: 50, high: 70 },
+            plugins: ['@acme/mine'],
+          })
+        ),
       ),
     )
   })
