@@ -105,6 +105,10 @@
     - html-reporter-logo-markup
     - html-reporter-partial-call
     - namespace-roots
+"@systemfsoftware/stryker-js-html-reporter@5.0.1":
+  dir: packages/stryker-js-html-reporter
+  intents:
+    - systemfsoftware-latest-packages
 "@systemfsoftware/stryker-js-instrumenter@7.0.0":
   dir: packages/stryker-js-instrumenter
   intents:
@@ -143,6 +147,10 @@
     - namespace-roots
     - stryker-js-instrumenter-core-format-removal
     - stryker-js-instrumenter-framework-format-entry
+"@systemfsoftware/stryker-js-instrumenter@9.0.1":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - systemfsoftware-latest-packages
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -209,6 +217,10 @@
   intents:
     - namespace-roots
     - plugin-runtime-trace-codec
+"@systemfsoftware/stryker-js-plugin-runtime@6.0.1":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - systemfsoftware-latest-packages
 "@systemfsoftware/stryker-js-svelte@0.0.0":
   dir: packages/frameworks/svelte
   intents:
@@ -246,6 +258,10 @@
     - checker-async-typescript-api
     - mutant-location-base-typescript-checker
     - tsconfig-rewrite-preserves-fields
+"@systemfsoftware/stryker-js-typescript-checker@7.1.1":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - systemfsoftware-latest-packages
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -283,6 +299,10 @@
     - stryker-js-vitest-runner-describe-kills
     - stryker-js-vitest-runner-related-file-resolution
     - vitest-5-peer-floor
+"@systemfsoftware/stryker-js-vitest-runner@7.2.1":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - systemfsoftware-latest-packages
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
@@ -329,6 +349,13 @@
     - vm-runner-speed
     - vm-runner-vitest-features
     - worker-rpc-settles-dropped-connection
+"@systemfsoftware/stryker-js@12.0.0":
+  dir: packages/stryker-js
+  intents:
+    - dry-run-failure-names-tests
+    - restore-config-authoring-helpers
+    - stryker-js-effect-required-peer
+    - systemfsoftware-latest-packages
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
@@ -375,6 +402,10 @@
   intents:
     - rationalize-effect-peer-dependencies
     - test-contribution-decision
+"@systemfsoftware/stryker-test-contribution@4.1.0":
+  dir: packages/stryker-test-contribution
+  intents:
+    - systemfsoftware-latest-packages
 "@systemfsoftware/stryker-vm-harness@1.0.0":
   dir: packages/stryker-vm-harness
   intents:
@@ -391,3 +422,11 @@
     - vm-harness-session-surface
     - vm-harness-symlinked-project
     - vm-runner-speed
+"@systemfsoftware/stryker-vm-harness@3.0.1":
+  dir: packages/stryker-vm-harness
+  intents:
+    - systemfsoftware-latest-packages
+    - vm-harness-pass-with-no-tests
+    - vm-harness-resolves-itself
+    - vm-runner-marker-text-preserved
+    - vm-runner-serves-vitest-outside-root
