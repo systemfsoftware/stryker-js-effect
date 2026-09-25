@@ -229,6 +229,8 @@ type CheckerSlot = {
 
 const CHECKER_ACQUIRE_RETRIES = 2
 
+const TEST_RUNNER_POOL_IDLE_TIME_TO_LIVE = Duration.minutes(1)
+
 const isCheckerCrash = (error: StageError | CheckerCrash): boolean =>
   Match.value(error).pipe(
     Match.tag('ChildProcessCrashedError', 'OutOfMemoryError', () => true),
@@ -837,6 +839,7 @@ export const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
 > =>
   Effect.gen(function*() {
     const prev = raw.prev
+    const testRunnerCapacity = prev.concurrency.testRunners + prev.concurrency.checkers
     const { dropped, plannable: plannableMutants } = partitionPlannable(prev.mutants)
     yield* reportDroppedMutants(dropped)
     yield* phaseEntered('mutation-test')
@@ -850,7 +853,7 @@ export const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       (pairs) => pairs.map(([, sandboxFileName]) => sandboxFileName),
     )
     const testRunnerPool: Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError> = yield* Pool
-      .make({
+      .makeWithTTL({
         acquire: buildTestRunner(
           {
             options: prev.options,
@@ -880,7 +883,9 @@ export const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
             )
           }),
         ),
-        size: prev.concurrency.testRunners,
+        min: prev.concurrency.testRunners,
+        max: testRunnerCapacity,
+        timeToLive: TEST_RUNNER_POOL_IDLE_TIME_TO_LIVE,
       })
     const reporting = yield* MutationReporting
     const sandboxFileByName: Record<string, string> = Object.fromEntries(
@@ -1110,7 +1115,7 @@ export const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
                 return reported
               }),
             ),
-          { concurrency: Math.max(1, prev.concurrency.testRunners) },
+          { concurrency: Math.max(1, testRunnerCapacity) },
         ).pipe(Stream.runCollect, Effect.map((chunk) => [...chunk])),
     )
     const allResults = [
