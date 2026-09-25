@@ -21,9 +21,11 @@ if [ -z "$(git status --porcelain)" ]; then
   exit 0
 fi
 
-if [ -z "$(git diff --name-only "origin/$BASE" -- 'packages/**/package.json')" ]; then
-  echo "no package.json version bumps against origin/$BASE — not opening a release PR"
-  close_if_open "No package version bumps against $BASE."
+git add --intent-to-add -- .changeset/changelogs
+bumped_or_folded_into_unpublished=$(git diff --diff-filter=AM --name-only "origin/$BASE" -- 'packages/**/package.json' '.changeset/changelogs/')
+if [ -z "$bumped_or_folded_into_unpublished" ]; then
+  echo "no version bump or consumed intent against origin/$BASE — not opening a release PR"
+  close_if_open "No package version bumps or consumed intents against $BASE."
   exit 0
 fi
 
