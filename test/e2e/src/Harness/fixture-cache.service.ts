@@ -45,6 +45,7 @@ import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
 import { seamSpan, SpanNames, withSeamSpan } from './harness-telemetry.service.js'
+import * as Warm from './warm-sandbox.handle.js'
 
 export type BakePlatform =
   | GuestJobs
@@ -54,16 +55,10 @@ export type BakePlatform =
   | Path.Path
   | Readiness.HostProber
 
-export interface FixtureRequest {
-  readonly url: URL
-  readonly name: string
-}
-
 interface BakedFixture {
   readonly fixtureId: string
   readonly key: string
 }
-
 interface CommandOutcome {
   readonly exitCode: number
   readonly stdout: string
@@ -674,14 +669,14 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
     }).pipe(Effect.ensuring(fs.remove(scratch, { recursive: true, force: true }).pipe(Effect.orDie)))
   })
 
-const installFixtureInto = (
+const warmFixtureInto = (
   scope: Scope.Scope,
-  request: FixtureRequest,
-): Effect.Effect<string, HarnessError, BakePlatform> =>
+  fixtureUrl: URL,
+): Effect.Effect<Warm.WarmSandbox, HarnessError, BakePlatform> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const hostFixtureDir = yield* path.fromFileUrl(request.url).pipe(Effect.orDie)
+    const hostFixtureDir = yield* path.fromFileUrl(fixtureUrl).pipe(Effect.orDie)
     const fixtureId = path.basename(hostFixtureDir)
     const stat = yield* Effect.option(fs.stat(hostFixtureDir))
     yield* Boolean.match(Option.exists(stat, (info) => info.type === 'Directory'), {
@@ -700,21 +695,8 @@ const installFixtureInto = (
       onTrue: () => Effect.void,
       onFalse: () => Effect.fail(new FixtureMissingFailure({ directory: entryDir })),
     })
-    const dir = yield* fs.makeTempDirectory({ prefix: `stryker-e2e-${request.name}-` })
-    yield* Scope.addFinalizer(scope, fs.remove(dir, { recursive: true, force: true }).pipe(Effect.orDie))
-    yield* runChecked(
-      `copy the baked ${fixtureId} fixture into the ${request.name} workspace`,
-      ['cp', '-a', `${entryDir}/.`, dir],
-    )
-    return dir
-  }).pipe(seamSpan(SpanNames.install, { 'e2e.fixture': request.name }))
-
-const cacheKeyOf = (request: FixtureRequest): string => `${request.name}\u0000${request.url.href}`
-
-const requestOfCacheKey = (key: string): FixtureRequest => {
-  const separator = key.indexOf('\u0000')
-  return { name: key.slice(0, separator), url: new URL(key.slice(separator + 1)) }
-}
+    return yield* Warm.boot(entryDir, fixtureId).pipe(Scope.provide(scope))
+  }).pipe(seamSpan(SpanNames.install, { 'e2e.fixture': fixtureUrl.href }))
 
 const bakeEnvironment = Effect.gen(function*() {
   const path = yield* Path.Path
@@ -730,8 +712,7 @@ const bakeEnvironment = Effect.gen(function*() {
 
 export interface BakedFixtureCacheShape {
   readonly root: Effect.Effect<string, HarnessError>
-  readonly install: (request: FixtureRequest) => Effect.Effect<string, HarnessError, BakePlatform>
-  readonly readFile: (filePath: string) => Effect.Effect<string, PlatformError, FileSystem.FileSystem>
+  readonly warm: (fixtureUrl: URL) => Effect.Effect<Warm.WarmSandbox, HarnessError, BakePlatform>
 }
 
 export class BakedFixtureCache extends Context.Service<BakedFixtureCache, BakedFixtureCacheShape>()(
@@ -765,15 +746,14 @@ export class BakedFixtureCache extends Context.Service<BakedFixtureCache, BakedF
     Effect.gen(function*() {
       const scope = yield* Effect.scope
       const root = yield* Effect.cached(resolveBakedRoot)
-      const installed = yield* Cache.make({
+      const warmed = yield* Cache.make({
         capacity: 16,
-        lookup: (key: string) => installFixtureInto(scope, requestOfCacheKey(key)),
+        lookup: (fixtureHref: string) => warmFixtureInto(scope, new URL(fixtureHref)),
         requireServicesAt: 'lookup',
       })
       return {
         root,
-        install: (request: FixtureRequest) => Cache.get(installed, cacheKeyOf(request)),
-        readFile: (filePath: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(filePath)),
+        warm: (fixtureUrl: URL) => Cache.get(warmed, fixtureUrl.href),
       }
     }),
   )

@@ -73,6 +73,16 @@ export class PackFailure extends Schema.TaggedError<PackFailure>()('PackFailure'
   }
 }
 
+export class SandboxForkFailure extends Schema.TaggedError<SandboxForkFailure>()('SandboxForkFailure', {
+  step: Schema.String,
+  sandboxName: Schema.String,
+  detail: Schema.String,
+}) {
+  override get message(): string {
+    return `${this.step} in fork ${this.sandboxName}: ${this.detail}`
+  }
+}
+
 export class BlessRefused extends Schema.TaggedError<BlessRefused>()('BlessRefused', {
   reason: Schema.String,
 }) {
@@ -111,6 +121,7 @@ export type HarnessFailure =
   | GuestSignaledFailure
   | MalformedFixtureManifest
   | PackFailure
+  | SandboxForkFailure
   | UnresolvedCatalogSpec
 
 export type HarnessError = Config.ConfigError | HarnessFailure | PlatformError

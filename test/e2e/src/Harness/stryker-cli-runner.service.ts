@@ -1,14 +1,10 @@
-import type { Readiness } from '@systemfsoftware/effect-readiness'
-import { Config, Context, Effect, Layer, Option } from 'effect'
-import * as Crypto from 'effect/Crypto'
-import * as FileSystem from 'effect/FileSystem'
+import { Config, Context, Crypto, Effect, Layer, Option } from 'effect'
+import type { Scope } from 'effect'
 
 import type { ExecResult } from './guest-job.schema.js'
-import { GuestJobs } from './guest-job.service.js'
-import type { HarnessError } from './harness-failure.schema.js'
+import type { SandboxForkFailure } from './harness-failure.schema.js'
 import { seamSpan, SpanNames } from './harness-telemetry.service.js'
-
-const RUN_CLI_STEP = 'run the stryker CLI in its microVM'
+import * as Warm from './warm-sandbox.handle.js'
 
 const guestTelemetryEnvironment = (env: {
   readonly OTEL_ENABLED?: string | undefined
@@ -22,36 +18,36 @@ const guestTelemetryEnvironment = (env: {
     .replace('localhost', 'host.microsandbox.internal'),
 })
 
-const runStrykerCli = (args: ReadonlyArray<string>, cwd: string) =>
+export interface ForkedRun {
+  readonly result: ExecResult
+  readonly fork: Warm.SandboxFork
+}
+
+const runStrykerCli = (args: ReadonlyArray<string>, warm: Warm.WarmSandbox, label: string) =>
   Effect.gen(function*() {
-    const jobs = yield* GuestJobs
     const enabled = yield* Config.option(Config.String('OTEL_ENABLED'))
     const service = yield* Config.option(Config.String('OTEL_SERVICE_NAME'))
     const endpoint = yield* Config.option(Config.String('OTEL_EXPORTER_OTLP_ENDPOINT'))
-    const completion = yield* jobs.runGuestJob(
-      RUN_CLI_STEP,
-      jobs.job(['npx', '--no-install', 'stryker', ...args], [{ host: cwd, guest: GuestJobs.GUEST_WORKROOT }])
-        .withWorkdir(GuestJobs.GUEST_WORKROOT)
-        .withEnv(guestTelemetryEnvironment({
-          OTEL_ENABLED: Option.getOrUndefined(enabled),
-          OTEL_SERVICE_NAME: Option.getOrUndefined(service),
-          OTEL_EXPORTER_OTLP_ENDPOINT: Option.getOrUndefined(endpoint),
-        }))
-        .withHostAccess(true),
+    const fork = yield* Warm.fork(warm, label)
+    const result = yield* Warm.exec(
+      fork,
+      ['npx', '--no-install', 'stryker', ...args],
+      guestTelemetryEnvironment({
+        OTEL_ENABLED: Option.getOrUndefined(enabled),
+        OTEL_SERVICE_NAME: Option.getOrUndefined(service),
+        OTEL_EXPORTER_OTLP_ENDPOINT: Option.getOrUndefined(endpoint),
+      }),
     )
-    const exitCode = yield* jobs.requireExited(RUN_CLI_STEP, completion)
-    return {
-      exitCode,
-      stdout: new TextDecoder().decode(completion.stdout),
-      stderr: new TextDecoder().decode(completion.stderr),
-    }
+    const run: ForkedRun = { result, fork }
+    return run
   }).pipe(seamSpan(SpanNames.cliRun, { 'e2e.cli.args': args.join(' ') }))
 
 export interface StrykerCliRunnerShape {
   readonly run: (
     args: ReadonlyArray<string>,
-    cwd: string,
-  ) => Effect.Effect<ExecResult, HarnessError, GuestJobs | Crypto.Crypto | FileSystem.FileSystem | Readiness.HostProber>
+    warm: Warm.WarmSandbox,
+    label: string,
+  ) => Effect.Effect<ForkedRun, Config.ConfigError | SandboxForkFailure, Crypto.Crypto | Scope.Scope>
 }
 
 export class StrykerCliRunner extends Context.Service<StrykerCliRunner, StrykerCliRunnerShape>()(
@@ -60,7 +56,7 @@ export class StrykerCliRunner extends Context.Service<StrykerCliRunner, StrykerC
   static readonly layer = Layer.effect(
     StrykerCliRunner,
     Effect.sync(() => ({
-      run: (args: ReadonlyArray<string>, cwd: string) => runStrykerCli(args, cwd),
+      run: (args: ReadonlyArray<string>, warm: Warm.WarmSandbox, label: string) => runStrykerCli(args, warm, label),
     })),
   )
 }

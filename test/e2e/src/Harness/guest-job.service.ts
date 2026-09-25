@@ -12,18 +12,6 @@ export interface GuestJobsShape {
     cmd: readonly [string, ...Array<string>],
     mounts: ReadonlyArray<MicroVM.Mount>,
   ) => MicroVM.JobResource
-  readonly runGuestJob: (
-    step: string,
-    job: MicroVM.JobResource,
-  ) => Effect.Effect<
-    MicroVM.JobCompletion,
-    GuestJobFailure,
-    Crypto.Crypto | FileSystem.FileSystem | Readiness.HostProber
-  >
-  readonly requireExited: (
-    step: string,
-    completion: MicroVM.JobCompletion,
-  ) => Effect.Effect<number, GuestSignaledFailure>
   readonly requireCleanExit: (
     step: string,
     job: MicroVM.JobResource,
@@ -87,7 +75,7 @@ export class GuestJobs
               })),
         )
 
-      return { job, runGuestJob, requireExited, requireCleanExit }
+      return { job, requireCleanExit }
     }),
   )
 }

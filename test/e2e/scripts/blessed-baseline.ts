@@ -209,11 +209,13 @@ async function runSliceOnce(
 ): Promise<BlessedBaseline> {
   const config = OracleSliceConfig.SLICES[slice]
   const fixtureName = `oracle-${slice}`
-  const installedPath = await runtime.runPromise(
-    BakedFixtureCache.use((cache) => cache.install({ url: ENTERPRISE_FIXTURE_URL, name: fixtureName })),
-  )
+  const warm = await runtime.runPromise(BakedFixtureCache.use((cache) => cache.warm(ENTERPRISE_FIXTURE_URL)))
   const args: string[] = ['run', config.strykerConfig]
-  const run: ExecResult = await runtime.runPromise(StrykerCliRunner.use((runner) => runner.run(args, installedPath)))
+  const run: ExecResult = await runtime.runPromise(
+    Effect.scoped(StrykerCliRunner.use((runner) => runner.run(args, warm, fixtureName))).pipe(
+      Effect.map((forked) => forked.result),
+    ),
+  )
   if (run.exitCode !== 0) {
     throw new Error(
       `Slice "${slice}" (attempt ${attempt}) exited with code ${run.exitCode}; refusing to bless a failing run.\nstdout: ${
