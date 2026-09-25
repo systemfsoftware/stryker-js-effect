@@ -22,8 +22,6 @@ const pluginUrlOf = (moduleName: string): string =>
 
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
-const spawnPorts: Layer.Layer<Engine.EnginePorts> = Engine.nodePlatformLayer
-
 const MATH_FILE = 'src/lib/math.ts'
 const FIXTURE_FILE = 'src/widget.fixture'
 
@@ -39,10 +37,11 @@ const SOURCES: Readonly<Record<string, string>> = {
 
 const PACKAGE_SOURCE = '{ "type": "commonjs" }\n'
 const TEST_SOURCE = [
-  "import { test } from 'vitest'",
+  "import { expect, test } from 'vitest'",
+  "import { incrementBy, toggleValue } from '../src/lib/math.ts'",
   '',
-  "test('the workspace test suite runs', () => {",
-  '  globalThis.__strykerParityProbe = true',
+  "test('the workspace test suite exercises the mutated module', () => {",
+  '  expect({ sum: incrementBy(1, 2), flipped: toggleValue(true) }).toEqual({ sum: 3, flipped: false })',
   '})',
 ].join('\n')
 
@@ -120,8 +119,8 @@ const executeRun = (workspace: Workspace): Effect.Effect<ObservedRun, never, Fil
   Effect.gen(function*() {
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(8192)
     const runLayer = Layer.merge(
-      Layer.provide(Engine.RunEnvironment.stage(environmentFor(workspace.directory), queue), spawnPorts),
-      spawnPorts,
+      Layer.provide(Engine.RunEnvironment.stage(environmentFor(workspace.directory), queue), Engine.nodePlatformLayer),
+      Engine.nodePlatformLayer,
     )
     const exit = yield* Engine.mutationTestCell
       .run({
