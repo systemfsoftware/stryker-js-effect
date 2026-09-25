@@ -4,7 +4,7 @@ import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import {
   DuplicatePackageLabel,
@@ -24,13 +24,6 @@ const LOCATION = {
 const STATUS_ARB: Arbitrary.Arbitrary<Mutant.MutantStatus> = Arbitrary.schema(
   S.Literals(['Killed', 'Survived', 'NoCoverage', 'CompileError', 'RuntimeError', 'Timeout', 'Ignored', 'Pending']),
 )
-
-const SCORED_STATUSES: Readonly<Record<string, true>> = {
-  Killed: true,
-  Timeout: true,
-  Survived: true,
-  NoCoverage: true,
-}
 
 interface ModuleSpec {
   readonly label: string
@@ -205,7 +198,7 @@ describe('mergeReportParts', () => {
         specs.every((spec) =>
           result.success.rows.some((row) =>
             row.label === spec.label &&
-            (row.score === 'n/a') === spec.mutants.every((mutant) => SCORED_STATUSES[mutant.status] !== true)
+            (row.score === 'n/a') === (Report.Metrics.fromMutants(spec.mutants).totalValid === 0)
           )
         )
     },
