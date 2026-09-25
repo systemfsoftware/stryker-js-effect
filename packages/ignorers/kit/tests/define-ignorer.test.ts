@@ -1,6 +1,6 @@
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { defineIgnorer, type IgnorerContext, type IgnorerVisitors } from '@systemfsoftware/stryker-ignorer-kit'
-import { assert, describe, expect, it } from 'vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 
 import { callExpression, identifier, ifStatement, stringLiteral } from './fixtures/nodes.js'
 
@@ -67,43 +67,55 @@ function contextRecorder(): Recorder {
     },
   })
   const seen = (): IgnorerContext => {
-    assert(captured !== undefined, 'visitor never consulted')
+    if (captured === undefined) {
+      throw new Error('visitor never consulted')
+    }
     return captured
   }
   return { ignorer, seen }
 }
 
 describe('defineIgnorer', () => {
-  it.each(dispatchRows)('$name', (row) => {
+  it.each(dispatchRows)('$name', function*(row, { expect }) {
     const ignorer = defineIgnorer({ name: 't', visitors: row.visitors })
-    expect(ignorer.shouldIgnore(row.node, [])).toBe(row.expected)
+    yield* expect(ignorer.shouldIgnore(row.node, [])).toBe(row.expected)
   })
 
-  it('context accessors narrow the parent, search the chain, and expose it by reference', () => {
+  it('context accessors narrow the parent, search the chain, and expose it by reference', function*({ expect }) {
     const call = callExpression(identifier('f'), [])
     const guard = ifStatement(call, identifier('body'))
     const chain: Node[] = [call, guard]
     const { ignorer, seen } = contextRecorder()
     ignorer.shouldIgnore(stringLiteral('x'), chain)
     const ctx = seen()
-    expect(ctx.parentIf('CallExpression')).toBe(call)
-    expect(ctx.parentIf('IfStatement')).toBeUndefined()
-    expect(ctx.ancestorIf('IfStatement')).toBe(guard)
-    expect(ctx.ancestorIf('Program')).toBeUndefined()
-    expect(ctx.ancestors).toBe(chain)
+    yield* expect({
+      parentCall: ctx.parentIf('CallExpression'),
+      parentStatement: ctx.parentIf('IfStatement'),
+      ancestorIf: ctx.ancestorIf('IfStatement'),
+      ancestorProgram: ctx.ancestorIf('Program'),
+      ancestors: ctx.ancestors,
+    }).toEqual({
+      parentCall: call,
+      parentStatement: undefined,
+      ancestorIf: guard,
+      ancestorProgram: undefined,
+      ancestors: chain,
+    })
   })
 
-  it('ancestorIf returns the nearest matching chain member', () => {
+  it('ancestorIf returns the nearest matching chain member', function*({ expect }) {
     const near = callExpression(identifier('near'), [])
     const far = callExpression(identifier('far'), [])
     const { ignorer, seen } = contextRecorder()
     ignorer.shouldIgnore(stringLiteral('x'), [near, far])
-    expect(seen().ancestorIf('CallExpression')).toBe(near)
+    yield* expect(seen().ancestorIf('CallExpression')).toBe(near)
   })
 
-  it('compiles to the wire shape', () => {
+  it('compiles to the wire shape', function*({ expect }) {
     const ignorer = defineIgnorer({ name: 't', visitors: { Literal: () => 'R' } })
-    expect(ignorer.name).toBe('t')
-    expect(ignorer.shouldIgnore(stringLiteral('x'), [])).toBe('R')
+    yield* expect({ name: ignorer.name, reason: ignorer.shouldIgnore(stringLiteral('x'), []) }).toEqual({
+      name: 't',
+      reason: 'R',
+    })
   })
 })

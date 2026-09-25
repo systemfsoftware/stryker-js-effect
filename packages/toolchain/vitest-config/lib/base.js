@@ -37,15 +37,28 @@ const sourceCondition = '@systemfsoftware/source'
 
 const forkPackage = '@systemfsoftware/vitest'
 
+/** @typedef {{ readonly projects: readonly string[] | '*', readonly registrar: string }} GuardExemption */
+
+/** @type {GuardExemption} */
+const ignorerTester = {
+  projects: '*',
+  registrar: "the @systemfsoftware/stryker-ignorer-kit tester registers every case with the runner's global it",
+}
+
 /**
  * The one table that takes a package's tests out from under the guard. A package is exempt only by being
  * listed here, together with the runner that registers its tests: vitest's own `it` is what the guard
  * refuses, so every test another runner registers must not load it. `projects` is `'*'` when the whole
  * package is exempt, otherwise the names of the exempt inline test projects.
  *
- * @type {Readonly<Record<string, { readonly projects: readonly string[] | '*', readonly registrar: string }>>}
+ * @type {Readonly<Record<string, GuardExemption>>}
  */
-const guardExemptions = {}
+const guardExemptions = {
+  '@systemfsoftware/stryker-ignorer-kit': ignorerTester,
+  '@systemfsoftware/stryker-ignorer-angular': ignorerTester,
+  '@systemfsoftware/stryker-ignorer-effect-schema-declarations': ignorerTester,
+  '@systemfsoftware/stryker-ignorer-in-source-vitest-block': ignorerTester,
+}
 
 /**
  * The setup file that installs the guard, as an absolute path. The fork is looked up only where pnpm

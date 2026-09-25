@@ -1,5 +1,5 @@
 import type { Framework, FrameworkContribution, FrameworkRefusal } from '@systemfsoftware/stryker-framework-interface'
-import { describe, expect, it } from 'vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 
 import manifest from '../package.json' with { type: 'json' }
 import { strykerFrameworks } from '../src/mod.js'
@@ -28,33 +28,46 @@ const frameworkOf = (contribution: FrameworkContribution): Framework => {
   return contribution
 }
 
+const rejectionOf = <A>(promise: Promise<A>): Promise<unknown> =>
+  promise.then(() => undefined, (error: unknown) => error)
+
+const installedPeer = await loadPeer(COMPILER_SPECIFIER)
+const missingPeer = await loadPeer(MISSING_SPECIFIER)
+const bareValueRejection = await rejectionOf(loadPeer('../tests/__fixtures__/peer-rejecting-value.mjs'))
+const codedRejection = await rejectionOf(
+  contributionOf(() => loadPeer('../tests/__fixtures__/peer-rejecting-error.mjs')),
+)
+const missingRefusal = await contributionOf(() => loadPeer(MISSING_SPECIFIER))
+const fiveContribution = await contributionOf(loaded(five))
+const fourContribution = await contributionOf(loaded(four))
+const sixContribution = await contributionOf(loaded(six))
+const shapelessContribution = await contributionOf(loaded(shapeless))
+const strangerContribution = await contributionOf(loaded(stranger))
+const nonFunctionParseContribution = await contributionOf(loaded({ VERSION: '5.0.0', parse: 'nope' }))
+
 describe('svelte peer loading', () => {
-  it('loads the peer the package names through a dynamic import', async () => {
-    const loadedPeer = await loadPeer(COMPILER_SPECIFIER)
-    if (loadedPeer.kind !== 'Loaded') {
+  it('loads the peer the package names through a dynamic import', function*({ expect }) {
+    if (installedPeer.kind !== 'Loaded') {
       throw new Error('the installed svelte compiler must load')
     }
-    expect(typeof Reflect.get(loadedPeer.module as object, 'VERSION')).toBe('string')
+    yield* expect(typeof Reflect.get(installedPeer.module as object, 'VERSION')).toBe('string')
   })
 
-  it('answers Missing for a specifier that does not resolve', async () => {
-    expect(await loadPeer(MISSING_SPECIFIER)).toStrictEqual({ kind: 'Missing' })
+  it('answers Missing for a specifier that does not resolve', function*({ expect }) {
+    yield* expect(missingPeer).toStrictEqual({ kind: 'Missing' })
   })
 
-  it('propagates an import failure that carries no error code', async () => {
-    await expect(loadPeer('../tests/__fixtures__/peer-rejecting-value.mjs')).rejects.toBe(
-      'the peer module rejected with a bare value',
-    )
+  it('propagates an import failure that carries no error code', function*({ expect }) {
+    yield* expect(bareValueRejection).toBe('the peer module rejected with a bare value')
   })
 
-  it('propagates an import failure with an unrelated error code', async () => {
-    await expect(contributionOf(() => loadPeer('../tests/__fixtures__/peer-rejecting-error.mjs'))).rejects.toThrow(
-      'the peer module failed while evaluating',
-    )
+  it('propagates an import failure with an unrelated error code', function*({ expect }) {
+    const message = codedRejection instanceof Error ? codedRejection.message : String(codedRejection)
+    yield* expect(message).toContain('the peer module failed while evaluating')
   })
 
-  it('reports an unresolved peer through the shared contribution decision', async () => {
-    expect(refusalOf(await contributionOf(() => loadPeer(MISSING_SPECIFIER)))).toStrictEqual({
+  it('reports an unresolved peer through the shared contribution decision', function*({ expect }) {
+    yield* expect(refusalOf(missingRefusal)).toStrictEqual({
       kind: 'FrameworkRefusal',
       name: 'svelte',
       reason: 'PeerMissing',
@@ -65,19 +78,23 @@ describe('svelte peer loading', () => {
 })
 
 describe('svelte peer decisions', () => {
-  it('declares the same range the manifest peers on', () => {
-    expect(SUPPORTED_RANGE).toBe(manifest.peerDependencies.svelte)
-    expect(SUPPORTED_RANGE).toBe('^5.0.0')
+  it('declares the same range the manifest peers on', function*({ expect }) {
+    yield* expect({ supported: SUPPORTED_RANGE, manifest: manifest.peerDependencies.svelte }).toEqual({
+      supported: '^5.0.0',
+      manifest: '^5.0.0',
+    })
   })
 
-  it('serves a framework for the 5.x fixture compiler', async () => {
-    const framework = frameworkOf(await contributionOf(loaded(five)))
-    expect(framework.name).toBe('svelte')
-    expect(framework.claim.ownerVersion).toBe('5.0.0')
+  it('serves a framework for the 5.x fixture compiler', function*({ expect }) {
+    const framework = frameworkOf(fiveContribution)
+    yield* expect({ name: framework.name, ownerVersion: framework.claim.ownerVersion }).toEqual({
+      name: 'svelte',
+      ownerVersion: '5.0.0',
+    })
   })
 
-  it('refuses the 4.x fixture compiler with the installed version and the supported range', async () => {
-    expect(refusalOf(await contributionOf(loaded(four)))).toStrictEqual({
+  it('refuses the 4.x fixture compiler with the installed version and the supported range', function*({ expect }) {
+    yield* expect(refusalOf(fourContribution)).toStrictEqual({
       kind: 'FrameworkRefusal',
       name: 'svelte',
       reason: 'PeerVersionUnsupported',
@@ -86,8 +103,8 @@ describe('svelte peer decisions', () => {
     })
   })
 
-  it('refuses the 6.x fixture compiler with the installed version and the supported range', async () => {
-    expect(refusalOf(await contributionOf(loaded(six)))).toStrictEqual({
+  it('refuses the 6.x fixture compiler with the installed version and the supported range', function*({ expect }) {
+    yield* expect(refusalOf(sixContribution)).toStrictEqual({
       kind: 'FrameworkRefusal',
       name: 'svelte',
       reason: 'PeerVersionUnsupported',
@@ -96,8 +113,8 @@ describe('svelte peer decisions', () => {
     })
   })
 
-  it('refuses a module that exports no compiler surface as unrecognized', async () => {
-    expect(refusalOf(await contributionOf(loaded(shapeless)))).toStrictEqual({
+  it('refuses a module that exports no compiler surface as unrecognized', function*({ expect }) {
+    yield* expect(refusalOf(shapelessContribution)).toStrictEqual({
       kind: 'FrameworkRefusal',
       name: 'svelte',
       reason: 'PeerUnrecognized',
@@ -106,30 +123,30 @@ describe('svelte peer decisions', () => {
     })
   })
 
-  it('refuses a version that is not a string and a parse that is not a function as unrecognized', async () => {
-    expect(refusalOf(await contributionOf(loaded(stranger))).reason).toBe('PeerUnrecognized')
-  })
+  it(
+    'refuses a version that is not a string and a parse that is not a function as unrecognized',
+    function*({ expect }) {
+      yield* expect(refusalOf(strangerContribution).reason).toBe('PeerUnrecognized')
+    },
+  )
 
-  it('refuses a version string with a non-function parse as unrecognized', async () => {
-    expect(refusalOf(await contributionOf(loaded({ VERSION: '5.0.0', parse: 'nope' }))).reason).toBe(
-      'PeerUnrecognized',
-    )
+  it('refuses a version string with a non-function parse as unrecognized', function*({ expect }) {
+    yield* expect(refusalOf(nonFunctionParseContribution).reason).toBe('PeerUnrecognized')
   })
 })
 
 describe('svelte plugin entry', () => {
-  it('exports exactly one contribution', () => {
-    expect(strykerFrameworks).toHaveLength(1)
+  it('exports exactly one contribution', function*({ expect }) {
+    yield* expect(strykerFrameworks.map((one) => one.kind)).toEqual(['Framework'])
   })
 
-  it('exports the framework with the installed compiler version', async () => {
+  it('exports the framework with the installed compiler version', function*({ expect }) {
     const framework = frameworkOf(strykerFrameworks[0] as FrameworkContribution)
-    const loadedPeer = await loadPeer(COMPILER_SPECIFIER)
-    if (loadedPeer.kind !== 'Loaded') {
+    if (installedPeer.kind !== 'Loaded') {
       throw new Error('the installed svelte compiler must load')
     }
-    const installed = loadedPeer.module as { readonly VERSION: string }
-    expect(framework.claim).toStrictEqual({
+    const installed = installedPeer.module as { readonly VERSION: string }
+    yield* expect(framework.claim).toStrictEqual({
       formatId: 'svelte',
       extensions: ['.svelte'],
       language: 'svelte',
