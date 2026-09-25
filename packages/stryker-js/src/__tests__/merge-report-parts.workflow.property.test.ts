@@ -190,7 +190,7 @@ describe('mergeReportParts', () => {
   )
 
   it.prop(
-    '∀cs_Modules_≡UnscoredRowIffNoMutantCountsTowardTheScore',
+    '∀cs_Modules_≡RowScoreIsTheReportMetricsScore',
     { of: [DISTINCT_MODULES_ARB], subject: mergeReportParts },
     (subject, [specs]) => {
       const result = subject(commandOf(specs))
@@ -198,7 +198,10 @@ describe('mergeReportParts', () => {
         specs.every((spec) =>
           result.success.rows.some((row) =>
             row.label === spec.label &&
-            (row.score === 'n/a') === (Report.Metrics.fromMutants(spec.mutants).totalValid === 0)
+            row.score === Report.MutationScore.match(Report.Metrics.fromMutants(spec.mutants).mutationScore, {
+                Scored: ({ percentage }) => percentage.toFixed(2),
+                Unscored: () => 'n/a',
+              })
           )
         )
     },
