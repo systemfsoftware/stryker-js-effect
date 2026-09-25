@@ -359,11 +359,22 @@ const verdictOf = (outcome: Option.Option<ChildProcessSpawner.ExitCode>): string
     onSome: (code) => (code === 0 ? 'Survived' : 'Killed'),
   })
 
+const nodeModulesLinkOf = (root: string): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const nodeModules = path.join(root, 'node_modules')
+    return yield* fs.readLink(nodeModules).pipe(
+      Effect.catch(() => fs.stat(nodeModules).pipe(Effect.map((info) => `not a link: ${info.type}`))),
+      Effect.orElseSucceed(() => 'missing'),
+    )
+  })
+
 const runBoundedVitestProcess = (
   root: string,
   boundMs: number,
   args: ReadonlyArray<string>,
-): Effect.Effect<string, never, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
+): Effect.Effect<string, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path> =>
   Effect.scoped(
     Effect.gen(function*() {
       const path = yield* Path.Path
@@ -386,10 +397,15 @@ const runBoundedVitestProcess = (
         'process.exit_code': Option.match(outcome, { onNone: () => -1, onSome: Number }),
       })
       yield* Effect.when(
-        Fiber.join(output).pipe(
-          Effect.flatMap((text) =>
+        Effect.all([Fiber.join(output), nodeModulesLinkOf(root)]).pipe(
+          Effect.flatMap(([text, nodeModulesLink]) =>
             Effect.logWarning('vm_parity.vitest_process.failed').pipe(
-              Effect.annotateLogs({ 'vm_parity.root': root, 'vm_parity.output_tail': text.slice(-OUTPUT_TAIL_CHARS) }),
+              Effect.annotateLogs({
+                'vm_parity.root': root,
+                'vm_parity.host_cwd': path.resolve('.'),
+                'vm_parity.node_modules_link': nodeModulesLink,
+                'vm_parity.output_tail': text.slice(-OUTPUT_TAIL_CHARS),
+              }),
             )
           ),
         ),
@@ -407,7 +423,7 @@ const runBoundedVitestProcess = (
 const recordUnmutatedSnapshots = (
   fixture: Fixture,
   root: string,
-): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
+): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path> =>
   Effect.flatMap(
     runBoundedVitestProcess(root, BASELINE_RUN_BOUND_MS, ['run', '--update']),
     (baseline) =>
