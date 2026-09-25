@@ -145,7 +145,7 @@ const normalizeTestIdRaw = (id: string, projectRoot: string): string => {
 }
 
 const toTestStatus = (taskState: TaskState, mode: string): TestRunner.TestStatus =>
-  Match.value(mode === 'skip').pipe(
+  Match.value(mode === 'skip' || mode === 'todo').pipe(
     Match.when(true, (): TestRunner.TestStatus => 'skipped'),
     Match.when(false, (): TestRunner.TestStatus =>
       Match.value(taskState).pipe(
