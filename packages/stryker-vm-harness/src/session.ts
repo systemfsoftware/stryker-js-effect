@@ -3,7 +3,7 @@ import { dual } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
 import * as Option from 'effect/Option'
 
-import { dispatchingExpect, guardedExpect, guardedVi } from './assertions.handle.js'
+import { dispatchingExpect, guardedExpect, guardedVi } from './assertions.js'
 import {
   type DrainRunOptions,
   type DrainTestOutcome,
@@ -14,11 +14,11 @@ import type { DrainOutcome } from './drain-registry.workflow.js'
 import { makeEffectMethods } from './effect-adapter.handle.js'
 import { ENVIRONMENT_KEYS_BAG_KEY } from './environments/environment-activation.js'
 import { sameDescriptor } from './environments/global-descriptors.js'
-import { createHarnessApi } from './harness-api.handle.js'
-import { STATE_KEY } from './harness-sources.handle.js'
-import { nativeImport } from './native-import.handle.js'
+import { createHarnessApi } from './harness-api.js'
+import { STATE_KEY } from './harness-sources.js'
+import { nativeImport } from './native-import.js'
 import { builtinPlugins } from './plugins/index.js'
-import { createRegistry } from './registry.handle.js'
+import { createRegistry } from './registry.js'
 import type { HarnessApi, TestRegistry } from './registry.schema.js'
 import {
   activateSandbox,

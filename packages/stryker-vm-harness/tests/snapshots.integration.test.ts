@@ -1,11 +1,22 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Assertions, Session } from '@systemfsoftware/stryker-vm-harness'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Assertions, Sandbox, Session } from '@systemfsoftware/stryker-vm-harness'
 import { FileSystem, Path, PlatformError } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
-const Feature = makeFeature({ it, layer })
+
+const Feature = makeFeature({ it })
+
+interface HandedOutExpect {
+  readonly any: (constructor: object) => object
+  readonly addSnapshotSerializer: (...args: readonly object[]) => void
+}
+
+interface VitestExpectModule {
+  readonly expect: HandedOutExpect
+}
+
+const { expect: vitestExpect } = await Sandbox.nativeImport<VitestExpectModule>('vitest')
 
 const ACCEPTED = 'accepted'
 const VITEST_HEADER = '// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html'
@@ -37,7 +48,7 @@ interface MatcherHost {
   readonly any: (constructor: object) => object
 }
 
-const matcherHost: MatcherHost = expect
+const matcherHost: MatcherHost = vitestExpect
 
 interface SuiteSerializer {
   readonly test: (value: object) => boolean
@@ -58,7 +69,7 @@ const hostOf = (dir: string) => ({
   sandboxWorkingDirectory: dir,
   options: { sandboxWorkingDirectory: dir, testFiles: [] },
   state: { read: () => undefined, write: () => undefined },
-  resolveVitest: () => ({ expect, vi: undefined }),
+  resolveVitest: () => ({ expect: vitestExpect, vi: undefined }),
   resolveVitestModule: (specifier: string) => import.meta.resolve(specifier),
   importFile: () => Promise.resolve(),
 })
@@ -77,25 +88,24 @@ const suiteRunOf = (
       dir,
       testFile,
       snapshotFile: Session.defaultSnapshotPath(path, testFile),
-      handedOut: Assertions.guardedExpect(expect),
+      handedOut: Assertions.guardedExpect(vitestExpect),
       support,
     }
   })
 
 const outcomeOf = (attempt: () => void | object): Promise<string> => {
-  let attempted: void | object
   try {
-    attempted = attempt()
+    const attempted = attempt()
+    if (attempted === undefined) {
+      return Promise.resolve(ACCEPTED)
+    }
+    return Promise.resolve(attempted).then(
+      () => ACCEPTED,
+      (thrown: object) => (thrown instanceof Error ? thrown.message : 'a non-error was thrown'),
+    )
   } catch (error) {
     return Promise.resolve(error instanceof Error ? error.message : 'a non-error was thrown')
   }
-  if (attempted === undefined) {
-    return Promise.resolve(ACCEPTED)
-  }
-  return Promise.resolve(attempted).then(
-    () => ACCEPTED,
-    (thrown: object) => (thrown instanceof Error ? thrown.message : 'a non-error was thrown'),
-  )
 }
 
 const comparedOn = (
@@ -141,6 +151,7 @@ const releaseSuiteRun = (
 
 Feature('Snapshot records kept by a suite that runs in memory')
   .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
+  .live('the snapshot support writes real files under a temporary sandbox directory')
   .body(({ scenario }) => {
     scenario(
       'A snapshot the suite has never kept is recorded by the dry run exactly as Vitest writes it',
@@ -158,15 +169,20 @@ Feature('Snapshot records kept by a suite that runs in memory')
               })
             ),
         ),
-        Then('the kept record is byte for byte the one Vitest itself writes')((s) =>
+        Then('the kept record is byte for byte the one Vitest itself writes')((s, expect) =>
           Effect.gen(function*() {
             const fileSystem = yield* FileSystem.FileSystem
-            expect(s.outcome).toBe(ACCEPTED)
-            expect(yield* fileSystem.readFileString(s.run.snapshotFile)).toBe(
-              storedFormOf([['only test 1', OBJECT_RECORD]]),
-            )
-            yield* releaseSuiteRun(s.run)
-          })
+            const stored = yield* fileSystem.readFileString(s.run.snapshotFile)
+            return { stored }
+          }).pipe(
+            Effect.map(({ stored }) =>
+              expect({ outcome: s.outcome, stored }).toEqual({
+                outcome: ACCEPTED,
+                stored: storedFormOf([['only test 1', OBJECT_RECORD]]),
+              })
+            ),
+            Effect.ensuring(releaseSuiteRun(s.run).pipe(Effect.orDie)),
+          )
         ),
       ),
     )
@@ -190,12 +206,19 @@ Feature('Snapshot records kept by a suite that runs in memory')
               )
             }),
         ),
-        Then('it still matches and the stored record is untouched')((s) =>
+        Then('it still matches and the stored record is untouched')((s, expect) =>
           Effect.gen(function*() {
-            expect(s.compared.outcome).toBe(ACCEPTED)
-            expect(yield* s.compared.stored).toBe(storedFormOf([['only test 1', OBJECT_RECORD]]))
-            yield* releaseSuiteRun(s.run)
-          })
+            const stored = yield* s.compared.stored
+            return { stored }
+          }).pipe(
+            Effect.map(({ stored }) =>
+              expect({ outcome: s.compared.outcome, stored }).toEqual({
+                outcome: ACCEPTED,
+                stored: storedFormOf([['only test 1', OBJECT_RECORD]]),
+              })
+            ),
+            Effect.ensuring(releaseSuiteRun(s.run).pipe(Effect.orDie)),
+          )
         ),
       ),
     )
@@ -219,12 +242,19 @@ Feature('Snapshot records kept by a suite that runs in memory')
               )
             }),
         ),
-        Then('the test refuses with a mismatch that names the record and keeps it stored')((s) =>
+        Then('the test refuses with a mismatch that names the record and keeps it stored')((s, expect) =>
           Effect.gen(function*() {
-            expect(s.compared.outcome).toBe('Snapshot `only test 1` mismatched')
-            expect(yield* s.compared.stored).toBe(storedFormOf([['only test 1', OBJECT_RECORD]]))
-            yield* releaseSuiteRun(s.run)
-          })
+            const stored = yield* s.compared.stored
+            return { stored }
+          }).pipe(
+            Effect.map(({ stored }) =>
+              expect({ outcome: s.compared.outcome, stored }).toEqual({
+                outcome: 'Snapshot `only test 1` mismatched',
+                stored: storedFormOf([['only test 1', OBJECT_RECORD]]),
+              })
+            ),
+            Effect.ensuring(releaseSuiteRun(s.run).pipe(Effect.orDie)),
+          )
         ),
       ),
     )
@@ -245,13 +275,17 @@ Feature('Snapshot records kept by a suite that runs in memory')
               })
             ),
         ),
-        Then('the comparison passes and nothing was written beside the run')((s) =>
+        Then('the comparison passes and nothing was written beside the run')((s, expect) =>
           Effect.gen(function*() {
             const fileSystem = yield* FileSystem.FileSystem
-            expect(s.outcome).toBe(ACCEPTED)
-            expect(yield* fileSystem.exists(s.run.snapshotFile)).toBe(false)
-            yield* releaseSuiteRun(s.run)
-          })
+            const stored = yield* fileSystem.exists(s.run.snapshotFile)
+            return { stored }
+          }).pipe(
+            Effect.map(({ stored }) =>
+              expect({ outcome: s.outcome, stored }).toEqual({ outcome: ACCEPTED, stored: false })
+            ),
+            Effect.ensuring(releaseSuiteRun(s.run).pipe(Effect.orDie)),
+          )
         ),
       ),
     )
@@ -272,13 +306,20 @@ Feature('Snapshot records kept by a suite that runs in memory')
               })
             ),
         ),
-        Then('the test refuses with a mismatch that names the record')((s) =>
+        Then('the test refuses with a mismatch that names the record')((s, expect) =>
           Effect.gen(function*() {
             const fileSystem = yield* FileSystem.FileSystem
-            expect(s.outcome).toBe('Snapshot `only test 1` mismatched')
-            expect(yield* fileSystem.exists(s.run.snapshotFile)).toBe(false)
-            yield* releaseSuiteRun(s.run)
-          })
+            const stored = yield* fileSystem.exists(s.run.snapshotFile)
+            return { stored }
+          }).pipe(
+            Effect.map(({ stored }) =>
+              expect({ outcome: s.outcome, stored }).toEqual({
+                outcome: 'Snapshot `only test 1` mismatched',
+                stored: false,
+              })
+            ),
+            Effect.ensuring(releaseSuiteRun(s.run).pipe(Effect.orDie)),
+          )
         ),
       ),
     )
@@ -299,15 +340,20 @@ Feature('Snapshot records kept by a suite that runs in memory')
               })
             ),
         ),
-        Then('the kept record shows the pinned part beside the matching value')((s) =>
+        Then('the kept record shows the pinned part beside the matching value')((s, expect) =>
           Effect.gen(function*() {
             const fileSystem = yield* FileSystem.FileSystem
-            expect(s.outcome).toBe(ACCEPTED)
-            expect(yield* fileSystem.readFileString(s.run.snapshotFile)).toBe(
-              storedFormOf([['pinned test 1', PINNED_RECORD]]),
-            )
-            yield* releaseSuiteRun(s.run)
-          })
+            const stored = yield* fileSystem.readFileString(s.run.snapshotFile)
+            return { stored }
+          }).pipe(
+            Effect.map(({ stored }) =>
+              expect({ outcome: s.outcome, stored }).toEqual({
+                outcome: ACCEPTED,
+                stored: storedFormOf([['pinned test 1', PINNED_RECORD]]),
+              })
+            ),
+            Effect.ensuring(releaseSuiteRun(s.run).pipe(Effect.orDie)),
+          )
         ),
       ),
     )
@@ -328,13 +374,17 @@ Feature('Snapshot records kept by a suite that runs in memory')
               })
             ),
         ),
-        Then('it matches and nothing extra was stored beside the run')((s) =>
+        Then('it matches and nothing extra was stored beside the run')((s, expect) =>
           Effect.gen(function*() {
             const fileSystem = yield* FileSystem.FileSystem
-            expect(s.outcome).toBe(ACCEPTED)
-            expect(yield* fileSystem.exists(s.run.snapshotFile)).toBe(false)
-            yield* releaseSuiteRun(s.run)
-          })
+            const stored = yield* fileSystem.exists(s.run.snapshotFile)
+            return { stored }
+          }).pipe(
+            Effect.map(({ stored }) =>
+              expect({ outcome: s.outcome, stored }).toEqual({ outcome: ACCEPTED, stored: false })
+            ),
+            Effect.ensuring(releaseSuiteRun(s.run).pipe(Effect.orDie)),
+          )
         ),
       ),
     )
@@ -355,11 +405,10 @@ Feature('Snapshot records kept by a suite that runs in memory')
               })
             ),
         ),
-        Then('the test refuses with a mismatch that names the record')((s) =>
-          Effect.gen(function*() {
-            expect(s.outcome).toBe('Snapshot `inline test 1` mismatched')
-            yield* releaseSuiteRun(s.run)
-          })
+        Then('the test refuses with a mismatch that names the record')((s, expect) =>
+          Effect.sync(() => expect(s.outcome).toEqual('Snapshot `inline test 1` mismatched')).pipe(
+            Effect.ensuring(releaseSuiteRun(s.run).pipe(Effect.orDie)),
+          )
         ),
       ),
     )
@@ -382,11 +431,10 @@ Feature('Snapshot records kept by a suite that runs in memory')
               })
             ),
         ),
-        Then('the thrown message matches')((s) =>
-          Effect.gen(function*() {
-            expect(s.outcome).toBe(ACCEPTED)
-            yield* releaseSuiteRun(s.run)
-          })
+        Then('the thrown message matches')((s, expect) =>
+          Effect.sync(() => expect(s.outcome).toEqual(ACCEPTED)).pipe(
+            Effect.ensuring(releaseSuiteRun(s.run).pipe(Effect.orDie)),
+          )
         ),
       ),
     )
@@ -418,11 +466,10 @@ Feature('Snapshot records kept by a suite that runs in memory')
               )
             ),
         ),
-        Then('the output matches the kept file')((s) =>
-          Effect.gen(function*() {
-            expect(s.outcome).toBe(ACCEPTED)
-            yield* releaseSuiteRun(s.run)
-          })
+        Then('the output matches the kept file')((s, expect) =>
+          Effect.sync(() => expect(s.outcome).toEqual(ACCEPTED)).pipe(
+            Effect.ensuring(releaseSuiteRun(s.run).pipe(Effect.orDie)),
+          )
         ),
       ),
     )
@@ -434,7 +481,7 @@ Feature('Snapshot records kept by a suite that runs in memory')
           'run',
           () =>
             Effect.map(suiteRunOf('false'), (run) => {
-              Reflect.apply(expect.addSnapshotSerializer, expect, [
+              Reflect.apply(vitestExpect.addSnapshotSerializer, vitestExpect, [
                 {
                   test: matchesSealKind,
                   print: (value: object) => `Widget(${String(Reflect.get(value, 'kind'))})`,
@@ -452,15 +499,20 @@ Feature('Snapshot records kept by a suite that runs in memory')
               })
             ),
         ),
-        Then('the kept record is written the way the suite prints it')((s) =>
+        Then('the kept record is written the way the suite prints it')((s, expect) =>
           Effect.gen(function*() {
             const fileSystem = yield* FileSystem.FileSystem
-            expect(s.outcome).toBe(ACCEPTED)
-            expect(yield* fileSystem.readFileString(s.run.snapshotFile)).toBe(
-              storedFormOf([['serialized test 1', 'Widget(gear)']]),
-            )
-            yield* releaseSuiteRun(s.run)
-          })
+            const stored = yield* fileSystem.readFileString(s.run.snapshotFile)
+            return { stored }
+          }).pipe(
+            Effect.map(({ stored }) =>
+              expect({ outcome: s.outcome, stored }).toEqual({
+                outcome: ACCEPTED,
+                stored: storedFormOf([['serialized test 1', 'Widget(gear)']]),
+              })
+            ),
+            Effect.ensuring(releaseSuiteRun(s.run).pipe(Effect.orDie)),
+          )
         ),
       ),
     )

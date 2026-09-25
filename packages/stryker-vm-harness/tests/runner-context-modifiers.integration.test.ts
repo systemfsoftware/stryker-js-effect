@@ -1,12 +1,12 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
+import type { Expect } from '@systemfsoftware/vitest'
 import { FileSystem, Path, PlatformError } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const PACKAGES_ROOT = decodeURIComponent(new URL('../../', import.meta.url).pathname).replace(/\/$/, '')
 const SANDBOX_DEPENDENCIES = `${PACKAGES_ROOT}/stryker-js/node_modules`
@@ -58,17 +58,24 @@ const outcomeOf = (response: Session.VmRunResponse): SuiteOutcome => {
   }
 }
 
-const assertMatchesVitest = (outcome: SuiteOutcome, expected: ReadonlyArray<ExpectedTest>): void => {
+const checkMatchesVitest = (
+  expect: Expect,
+  outcome: SuiteOutcome,
+  expected: ReadonlyArray<ExpectedTest>,
+) => {
   if (outcome.status !== 'complete') {
     throw new Error(`the replay ended in ${outcome.status}: ${outcome.message ?? 'without a message'}`)
   }
-  expect(outcome.tests.map((test) => test.name)).toEqual(expected.map((test) => test.name))
-  expect(outcome.tests.map((test) => test.status)).toEqual(expected.map((test) => test.status))
-  for (const [index, test] of expected.entries()) {
-    if (test.failureMessage !== undefined) {
-      expect(outcome.tests[index]?.failureMessage).toBe(test.failureMessage)
-    }
-  }
+  const failureAt = (index: number): string | undefined => outcome.tests[index]?.failureMessage
+  return expect({
+    names: outcome.tests.map((test) => test.name),
+    statuses: outcome.tests.map((test) => test.status),
+    failures: expected.flatMap((test, index) => (test.failureMessage === undefined ? [] : [failureAt(index)])),
+  }).toEqual({
+    names: expected.map((test) => test.name),
+    statuses: expected.map((test) => test.status),
+    failures: expected.flatMap((test) => (test.failureMessage === undefined ? [] : [test.failureMessage])),
+  })
 }
 
 const sandboxOf = (
@@ -240,7 +247,7 @@ test('extend-free fields', (context) => {
 
 Feature('Test modifiers and the running test context behave under the in-memory runner exactly as under Vitest')
   .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
-  .liveClock()
+  .live('the sandbox writes real suite files and spawns the in-memory runner over them')
   .body(({ scenario, scenarioOutline }) => {
     scenario(
       'A suite of skipped, conditional and to-do tests reports one outcome for each',
@@ -253,8 +260,8 @@ Feature('Test modifiers and the running test context behave under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox),
         ),
-        Then('every test keeps the name and outcome Vitest gives it')((s) => {
-          assertMatchesVitest(s.outcome, [
+        Then('every test keeps the name and outcome Vitest gives it')((s, expect) => {
+          return checkMatchesVitest(expect, s.outcome, [
             { name: 'suite > normal', status: 'success' },
             { name: 'suite > skipped', status: 'skipped' },
             { name: 'suite > skipIf true', status: 'skipped' },
@@ -281,8 +288,8 @@ Feature('Test modifiers and the running test context behave under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox),
         ),
-        Then('the skipped test is reported skipped and the missing member is a plain failure')((s) => {
-          assertMatchesVitest(s.outcome, [
+        Then('the skipped test is reported skipped and the missing member is a plain failure')((s, expect) => {
+          return checkMatchesVitest(expect, s.outcome, [
             { name: 'calls context.skip at runtime', status: 'skipped' },
             {
               name: 'context.skipIf skips',
@@ -310,8 +317,8 @@ Feature('Test modifiers and the running test context behave under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox),
         ),
-        Then('the exclusive test fails with the refusal Vitest raises and the rest stay unrun')((s) => {
-          assertMatchesVitest(s.outcome, [
+        Then('the exclusive test fails with the refusal Vitest raises and the rest stay unrun')((s, expect) => {
+          return checkMatchesVitest(expect, s.outcome, [
             { name: 'suite > normal', status: 'skipped' },
             {
               name: 'suite > only one',
@@ -337,8 +344,8 @@ Feature('Test modifiers and the running test context behave under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox),
         ),
-        Then('no test runs, exactly as Vitest leaves them')((s) => {
-          assertMatchesVitest(s.outcome, [
+        Then('no test runs, exactly as Vitest leaves them')((s, expect) => {
+          return checkMatchesVitest(expect, s.outcome, [
             { name: 'suite > normal', status: 'skipped' },
             { name: 'only suite > in only suite', status: 'skipped' },
           ])
@@ -357,8 +364,8 @@ Feature('Test modifiers and the running test context behave under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox),
         ),
-        Then('the exclusive test and nested suite run while everything else stays unrun')((s) => {
-          assertMatchesVitest(s.outcome, [
+        Then('the exclusive test and nested suite run while everything else stays unrun')((s, expect) => {
+          return checkMatchesVitest(expect, s.outcome, [
             { name: 'suite > normal', status: 'skipped' },
             { name: 'suite > only one', status: 'success' },
             { name: 'outside', status: 'skipped' },
@@ -379,8 +386,8 @@ Feature('Test modifiers and the running test context behave under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox),
         ),
-        Then('every generated test carries the interpolated name Vitest builds')((s) => {
-          assertMatchesVitest(s.outcome, [
+        Then('every generated test carries the interpolated name Vitest builds')((s, expect) => {
+          return checkMatchesVitest(expect, s.outcome, [
             { name: 'each 1', status: 'success' },
             { name: 'each 2', status: 'success' },
             { name: 'for 1', status: 'success' },
@@ -409,8 +416,8 @@ Feature('Test modifiers and the running test context behave under the in-memory 
             'outcome',
             (s) => replayOf(s.sandbox),
           ),
-          Then('the test is reported as passing, as it passes under Vitest')((s) => {
-            assertMatchesVitest(s.outcome, [
+          Then('the test is reported as passing, as it passes under Vitest')((s, expect) => {
+            return checkMatchesVitest(expect, s.outcome, [
               { name: row.suite.match(/test\('([^']+)'/u)?.[1] ?? '', status: 'success' },
             ])
           }),
@@ -428,8 +435,8 @@ Feature('Test modifiers and the running test context behave under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox),
         ),
-        Then('the test is reported as a failure explaining the callback is not supported')((s) => {
-          assertMatchesVitest(s.outcome, [
+        Then('the test is reported as a failure explaining the callback is not supported')((s, expect) => {
+          return checkMatchesVitest(expect, s.outcome, [
             {
               name: 'done style',
               status: 'failed',

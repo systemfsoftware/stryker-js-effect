@@ -1,13 +1,12 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const suiteFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
@@ -67,7 +66,7 @@ const dryRunOf = (session: Session.VmSession): Promise<Session.VmRunResponse> =>
 
 Feature('Extending a harness session with plugins')
   .withScenarioLayer(suiteFileLayer)
-  .liveClock()
+  .live('the sandbox writes real suite files and spawns the in-memory runner over them')
   .body(({ scenario }) => {
     scenario(
       'A plugin is told about each step of a run in the order it happened',
@@ -101,35 +100,45 @@ Feature('Extending a harness session with plugins')
               return { told, response }
             }),
         ),
-        Then('the plugin heard about loading, running, and finishing, in that order')((s) => {
-          expect(s.heard.response).toMatchObject({
+        Then(
+          'the plugin heard loading, running, and finishing in order, and which files and tests each step was about',
+        )((
+          s,
+          expect,
+        ) => {
+          const aboutFiles = s.heard.told.filter((event) => event.stage === 'heard a file is about to load')
+          const aboutTests = s.heard.told.filter((event) => event.stage === 'heard a test is about to run')
+          return expect({
+            status: s.heard.response.status,
+            tests: s.heard.response.status === 'complete'
+              ? s.heard.response.tests.map((test) => ({ name: test.name, status: test.status }))
+              : [],
+            stages: stagesOf(s.heard.told),
+            aboutFiles: aboutFiles.map((event) => event.detail?.endsWith('suite-0.test.ts')),
+            aboutTests: aboutTests.map((event) => event.detail),
+          }).toEqual({
             status: 'complete',
             tests: [
               { name: 'adds numbers', status: 'success' },
               { name: 'subtracts numbers', status: 'success' },
             ],
+            stages: [
+              'was set up',
+              'heard the suite is about to load',
+              'heard a file is about to load',
+              'heard a file finished loading',
+              'heard a file is about to run',
+              'heard a test is about to run',
+              'heard a test finished',
+              'heard a test is about to run',
+              'heard a test finished',
+              'heard a file finished running',
+              'heard the run finished',
+              'heard the loaded suite is being let go',
+            ],
+            aboutFiles: [true],
+            aboutTests: ['adds numbers', 'subtracts numbers'],
           })
-          expect(stagesOf(s.heard.told)).toEqual([
-            'was set up',
-            'heard the suite is about to load',
-            'heard a file is about to load',
-            'heard a file finished loading',
-            'heard a file is about to run',
-            'heard a test is about to run',
-            'heard a test finished',
-            'heard a test is about to run',
-            'heard a test finished',
-            'heard a file finished running',
-            'heard the run finished',
-            'heard the loaded suite is being let go',
-          ])
-          expect(s.heard.response.status).toBe('complete')
-        }),
-        Then('the plugin heard which files and tests each step was about')((s) => {
-          const aboutFiles = s.heard.told.filter((event) => event.stage === 'heard a file is about to load')
-          expect(aboutFiles.map((event) => event.detail?.endsWith('suite-0.test.ts'))).toEqual([true])
-          const aboutTests = s.heard.told.filter((event) => event.stage === 'heard a test is about to run')
-          expect(aboutTests.map((event) => event.detail)).toEqual(['adds numbers', 'subtracts numbers'])
         }),
       ),
     )
@@ -161,10 +170,9 @@ Feature('Extending a harness session with plugins')
           'heard',
           (s) => Effect.promise(() => s.checked.session.dispose()).pipe(Effect.as(s.checked.told)),
         ),
-        Then('the plugin heard that the loaded suite is being let go')((s) => {
-          const stages = stagesOf(s.heard)
-          expect(stages.at(-1)).toBe('heard the loaded suite is being let go')
-        }),
+        Then('the plugin heard that the loaded suite is being let go')((s, expect) =>
+          expect(stagesOf(s.heard).at(-1)).toBe('heard the loaded suite is being let go')
+        ),
       ),
     )
 
@@ -210,11 +218,13 @@ Feature('Extending a harness session with plugins')
               return { told, response }
             }),
         ),
-        Then('the plugin heard the test ended badly and the change was caught')((s) => {
-          expect(s.heard.response.status).toBe('complete')
+        Then('the plugin heard the test ended badly and the change was caught')((s, expect) => {
           const finished = s.heard.told.filter((event) => event.stage === 'heard a test finished')
-          expect(finished).toHaveLength(1)
-          expect(s.heard.response.status === 'complete' && s.heard.response.tests[0]?.status).toBe('failed')
+          return expect({
+            status: s.heard.response.status,
+            finishedCount: finished.length,
+            firstTestStatus: s.heard.response.status === 'complete' ? s.heard.response.tests[0]?.status : undefined,
+          }).toEqual({ status: 'complete', finishedCount: 1, firstTestStatus: 'failed' })
         }),
       ),
     )
@@ -259,12 +269,12 @@ Feature('Extending a harness session with plugins')
               return response
             }),
         ),
-        Then('both files pass and the hook stayed with its own file')((s) => {
-          expect(s.response.status).toBe('complete')
-          if (s.response.status === 'complete') {
-            expect(s.response.tests.map((test) => test.status)).toEqual(['success', 'success'])
-          }
-        }),
+        Then('both files pass and the hook stayed with its own file')((s, expect) =>
+          expect({
+            status: s.response.status,
+            testStatuses: s.response.status === 'complete' ? s.response.tests.map((test) => test.status) : [],
+          }).toEqual({ status: 'complete', testStatuses: ['success', 'success'] })
+        ),
       ),
     )
 
@@ -300,12 +310,12 @@ Feature('Extending a harness session with plugins')
               return response
             }),
         ),
-        Then('both files saw their own fresh counter')((s) => {
-          expect(s.response.status).toBe('complete')
-          if (s.response.status === 'complete') {
-            expect(s.response.tests.map((test) => test.status)).toEqual(['success', 'success'])
-          }
-        }),
+        Then('both files saw their own fresh counter')((s, expect) =>
+          expect({
+            status: s.response.status,
+            testStatuses: s.response.status === 'complete' ? s.response.tests.map((test) => test.status) : [],
+          }).toEqual({ status: 'complete', testStatuses: ['success', 'success'] })
+        ),
       ),
     )
   })

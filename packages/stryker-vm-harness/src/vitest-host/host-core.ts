@@ -1,7 +1,7 @@
 import type { VmProjectConfig, VmVitestConfig } from '../vitest-config.schema.js'
 import { isAbsolute, join, resolve } from './node-builtins.js'
 
-import { nativeImport } from '../native-import.handle.js'
+import { nativeImport } from '../native-import.js'
 import type { ArbitraryRecord, VitestProjectConfigView, VitestProjectView, VitestRootView } from './extract-config.js'
 import { extractVitestConfig } from './extract-config.js'
 import type { VmTransformResult } from './runtime.js'

@@ -1,7 +1,7 @@
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 
-import { guardedVi } from '../assertions.handle.js'
+import { guardedVi } from '../assertions.js'
 import { cleanModuleUrl, MOCK_GLOBAL_KEY } from '../mock-module.js'
 import { createMockRuntime, loadVitestMockerModules, mockAwareVi, type MockRuntime } from '../mocking/index.js'
 import type { MockFileScope } from '../mocking/mocker.js'

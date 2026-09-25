@@ -1,12 +1,11 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import { FileSystem, Path, PlatformError } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const PACKAGES_ROOT = decodeURIComponent(new URL('../../', import.meta.url).pathname).replace(/\/$/, '')
 const SANDBOX_DEPENDENCIES = `${PACKAGES_ROOT}/stryker-js/node_modules`
@@ -374,6 +373,7 @@ const SHUFFLE_VARIANT_FILE: SandboxFileSpec = {
 
 Feature('Running concurrent suites in memory exactly as Vitest runs them')
   .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
+  .live('the sandbox writes real suite files and spawns the in-memory runner over them')
   .body(({ scenario }) => {
     scenario(
       'Two overlapping tests rendezvous through a shared signal instead of running one after another',
@@ -383,11 +383,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([GATE_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['gate.test.ts'])),
-        Then('both tests pass in declaration order')((s) => {
+        Then('both tests pass in declaration order')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual(passingNames([
+          return expect(s.outcome.results).toEqual(passingNames([
             'the waiter only proceeds once the opener runs',
             'the opener runs while the waiter waits',
           ]))
@@ -403,11 +403,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([MIXED_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['mixed.test.ts'])),
-        Then('every test passes with its block-qualified name')((s) => {
+        Then('every test passes with its block-qualified name')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual(passingNames([
+          return expect(s.outcome.results).toEqual(passingNames([
             'c1 slow',
             'c2 fast',
             'block > d1 slow',
@@ -426,11 +426,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([NESTED_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['nested.test.ts'])),
-        Then('all four tests pass in declaration order')((s) => {
+        Then('all four tests pass in declaration order')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual(passingNames([
+          return expect(s.outcome.results).toEqual(passingNames([
             'outer > c-slow',
             'outer > inner > s1',
             'outer > inner > s2',
@@ -448,11 +448,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([PEAK_DEFAULT_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['peak.test.ts'])),
-        Then('the peak reaches five and every worker passes')((s) => {
+        Then('the peak reaches five and every worker passes')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual(
+          return expect(s.outcome.results).toEqual(
             passingNames(['w1', 'w2', 'w3', 'w4', 'w5', 'the peak stays within the ceiling']),
           )
         }),
@@ -467,11 +467,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([CEILING_CONFIG, PEAK_CEILING_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['peak.test.ts'])),
-        Then('the peak stays at one and every worker passes')((s) => {
+        Then('the peak stays at one and every worker passes')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual(
+          return expect(s.outcome.results).toEqual(
             passingNames(['w1', 'w2', 'w3', 'w4', 'w5', 'the peak stays within the ceiling']),
           )
         }),
@@ -486,11 +486,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([ORDER_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['order.test.ts'])),
-        Then('every test passes in declaration order')((s) => {
+        Then('every test passes in declaration order')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual(passingNames(['zebra', 'apple', 'mango']))
+          return expect(s.outcome.results).toEqual(passingNames(['zebra', 'apple', 'mango']))
         }),
       ),
     )
@@ -503,11 +503,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([STACK_HOOKS_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['hooks.test.ts'])),
-        Then('both tests pass against the default order')((s) => {
+        Then('both tests pass against the default order')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual(passingNames(['first', 'second']))
+          return expect(s.outcome.results).toEqual(passingNames(['first', 'second']))
         }),
       ),
     )
@@ -520,11 +520,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([hooksConfig('list'), LIST_HOOKS_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['hooks.test.ts'])),
-        Then('both tests pass against the listed order')((s) => {
+        Then('both tests pass against the listed order')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual(passingNames(['first', 'second']))
+          return expect(s.outcome.results).toEqual(passingNames(['first', 'second']))
         }),
       ),
     )
@@ -537,11 +537,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([hooksConfig('parallel'), PARALLEL_HOOKS_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['hooks.test.ts'])),
-        Then('both tests pass and ten hook witnesses ran before the check')((s) => {
+        Then('both tests pass and ten hook witnesses ran before the check')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual(passingNames(['first', 'second']))
+          return expect(s.outcome.results).toEqual(passingNames(['first', 'second']))
         }),
       ),
     )
@@ -554,11 +554,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([CONTEXT_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['context.test.ts'])),
-        Then('the passing tests succeed and the failing one carries the assertion message')((s) => {
+        Then('the passing tests succeed and the failing one carries the assertion message')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual([
+          return expect(s.outcome.results).toEqual([
             { name: 'ctx passes', status: 'success', failureMessage: undefined },
             {
               name: 'ctx fails',
@@ -579,11 +579,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([IT_VARIANT_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['variants.test.ts'])),
-        Then('all three tests pass in declaration order')((s) => {
+        Then('all three tests pass in declaration order')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual(passingNames(['ic1', 'ic2', 'plain']))
+          return expect(s.outcome.results).toEqual(passingNames(['ic1', 'ic2', 'plain']))
         }),
       ),
     )
@@ -596,11 +596,11 @@ Feature('Running concurrent suites in memory exactly as Vitest runs them')
           () => withSandbox([SHUFFLE_VARIANT_FILE]),
         ),
         When('the runner replays the suite')('outcome', (s) => replayOf(s.sandbox, ['shuffle.test.ts'])),
-        Then('both tests pass')((s) => {
+        Then('both tests pass')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual(passingNames(['shuffled > a', 'shuffled > b']))
+          return expect(s.outcome.results).toEqual(passingNames(['shuffled > a', 'shuffled > b']))
         }),
       ),
     )

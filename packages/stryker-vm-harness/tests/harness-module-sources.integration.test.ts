@@ -1,10 +1,9 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { EffectAdapter, Registry, Sandbox } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const FIRST_PARTY_PACKAGES = [
   'vitest',
@@ -61,6 +60,8 @@ const releaseSandbox = Effect.sync(() => {
   Sandbox.uninstallInterception()
 })
 
+const quietExpect = (value: object): object => value
+
 const loadServedModule = (packageName: string): Effect.Effect<ServedModuleReport> =>
   Effect.gen(function*() {
     const address = Sandbox.harnessUrlForSpecifier(packageName)
@@ -71,7 +72,7 @@ const loadServedModule = (packageName: string): Effect.Effect<ServedModuleReport
     const api = Registry.createHarnessApi(registry)
     const state: Sandbox.VmRunnerGlobalState = {
       api,
-      expect,
+      expect: quietExpect,
       vi: undefined,
       effectVitest: {
         it: EffectAdapter.makeEffectMethods({
@@ -116,6 +117,7 @@ const loadServedModule = (packageName: string): Effect.Effect<ServedModuleReport
 
 Feature('Resolving the harness modules a sandboxed test file loads')
   .withLayer(Layer.empty)
+  .live('the served modules are loaded through real node loader hooks installed and deregistered per scenario')
   .body(({ scenario }) => {
     scenario(
       'A test file importing a first-party runner package is pointed at its harness module',
@@ -134,12 +136,15 @@ Feature('Resolving the harness modules a sandboxed test file loads')
               unserved: Sandbox.harnessUrlForSpecifier(s.packages.unserved),
             }),
         ),
-        Then('the served packages map to their own harness addresses and the unserved one maps to nothing')((s) => {
-          expect(s.addresses.vitest).toBe('vmrunner-harness:vitest')
-          expect(s.addresses.effectVitest).toBe('vmrunner-harness:@effect/vitest')
-          expect(s.addresses.gherkin).toBe('vmrunner-harness:@systemfsoftware/effect-gherkin-spec')
-          expect(s.addresses.unserved).toBeUndefined()
-        }),
+        Then('the served packages map to their own harness addresses and the unserved one maps to nothing')(
+          (s, expect) =>
+            expect(s.addresses).toEqual({
+              vitest: 'vmrunner-harness:vitest',
+              effectVitest: 'vmrunner-harness:@effect/vitest',
+              gherkin: 'vmrunner-harness:@systemfsoftware/effect-gherkin-spec',
+              unserved: undefined,
+            }),
+        ),
       ),
     )
 
@@ -161,20 +166,28 @@ Feature('Resolving the harness modules a sandboxed test file loads')
               return { loaded, unknown: Sandbox.harnessSourceFor('unknown-url') }
             }),
         ),
-        Then('every module carries the registration surface, registers its suite, and no unknown address serves')((
-          s,
-        ) => {
-          expect(s.served.loaded.map((entry) => entry.address)).toEqual([
-            'vmrunner-harness:vitest',
-            'vmrunner-harness:@effect/vitest',
-            'vmrunner-harness:@systemfsoftware/effect-gherkin-spec',
-          ])
-          for (const entry of s.served.loaded) {
-            expect(entry.surface).toEqual([...EXPECTED_SURFACE])
-            expect(entry.registered).toEqual(['a served test'])
-          }
-          expect(s.served.unknown).toBeUndefined()
-        }),
+        Then('every module carries the registration surface, registers its suite, and no unknown address serves')(
+          (s, expect) =>
+            expect({
+              addresses: s.served.loaded.map((entry) => entry.address),
+              surfaces: s.served.loaded.map((entry) => entry.surface),
+              registered: s.served.loaded.map((entry) => entry.registered),
+              unknown: s.served.unknown,
+            }).toEqual({
+              addresses: [
+                'vmrunner-harness:vitest',
+                'vmrunner-harness:@effect/vitest',
+                'vmrunner-harness:@systemfsoftware/effect-gherkin-spec',
+              ],
+              surfaces: [
+                [...EXPECTED_SURFACE],
+                [...EXPECTED_SURFACE],
+                [...EXPECTED_SURFACE],
+              ],
+              registered: [['a served test'], ['a served test'], ['a served test']],
+              unknown: undefined,
+            }),
+        ),
       ),
     )
   })

@@ -12,7 +12,7 @@ import {
   stripTypeScriptTypes,
 } from './node-builtins.js'
 
-import { harnessUrlForSpecifier } from '../harness-sources.handle.js'
+import { harnessUrlForSpecifier } from '../harness-sources.js'
 import {
   actualUrlOf,
   cleanModuleUrl,
@@ -42,7 +42,7 @@ import {
   withMockGenerationQuery,
   withSaltQuery,
 } from '../mock-module.js'
-import { nativeImport } from '../native-import.handle.js'
+import { nativeImport } from '../native-import.js'
 import { MockTargetCommand, resolveMockTarget } from '../resolve-mock-target.workflow.js'
 import type {
   LoadFnOutput,

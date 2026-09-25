@@ -1,12 +1,11 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import { FileSystem, Path, type PlatformError } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const PACKAGES_ROOT = decodeURIComponent(new URL('../../', import.meta.url).pathname).replace(/\/$/, '')
 const SANDBOX_DEPENDENCIES = `${PACKAGES_ROOT}/stryker-js/node_modules`
@@ -288,7 +287,7 @@ test('how many repeats ran', () => {
 
 Feature('Reporting retried, repeated and expected-failure tests exactly as Vitest does')
   .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
-  .liveClock()
+  .live('the sandbox writes real suite files and spawns the in-memory runner over them')
   .body(({ scenario }) => {
     scenario(
       'A test that only passes on a later attempt is reported as passing',
@@ -298,8 +297,11 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: retryOnceThenPass }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the test is reported as passing')((s) => {
-          expect(reportedAs(s.outcome)).toEqual([{ name: 'a test that needs three attempts', status: 'success' }])
+        Then('the test is reported as passing')((s, expect) => {
+          return expect(reportedAs(s.outcome)).toEqual([{
+            name: 'a test that needs three attempts',
+            status: 'success',
+          }])
         }),
       ),
     )
@@ -312,8 +314,8 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: retryNeverPasses }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the test is reported as failing')((s) => {
-          expect(reportedAs(s.outcome)).toEqual([{ name: 'a test that never passes', status: 'failed' }])
+        Then('the test is reported as failing')((s, expect) => {
+          return expect(reportedAs(s.outcome)).toEqual([{ name: 'a test that never passes', status: 'failed' }])
         }),
       ),
     )
@@ -326,8 +328,11 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: configRetrySuite, config: configRetry }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the test is reported as passing')((s) => {
-          expect(reportedAs(s.outcome)).toEqual([{ name: 'a test that leans on the project retry', status: 'success' }])
+        Then('the test is reported as passing')((s, expect) => {
+          return expect(reportedAs(s.outcome)).toEqual([{
+            name: 'a test that leans on the project retry',
+            status: 'success',
+          }])
         }),
       ),
     )
@@ -342,8 +347,8 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: configRetryOverrideSuite, config: configRetry }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the test is reported as failing')((s) => {
-          expect(reportedAs(s.outcome)).toEqual([{
+        Then('the test is reported as failing')((s, expect) => {
+          return expect(reportedAs(s.outcome)).toEqual([{
             name: 'a test that opts out of the project retry',
             status: 'failed',
           }])
@@ -359,8 +364,8 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: groupRetrySuite }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the test is reported as passing')((s) => {
-          expect(reportedAs(s.outcome)).toEqual([
+        Then('the test is reported as passing')((s, expect) => {
+          return expect(reportedAs(s.outcome)).toEqual([
             { name: 'a group with its own retry > inherits the group retry', status: 'success' },
           ])
         }),
@@ -375,8 +380,8 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: repeatsSuite }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('both tests are reported as passing')((s) => {
-          expect(reportedAs(s.outcome)).toEqual([
+        Then('both tests are reported as passing')((s, expect) => {
+          return expect(reportedAs(s.outcome)).toEqual([
             { name: 'a repeated test', status: 'success' },
             { name: 'the repetition count is observable afterwards', status: 'success' },
           ])
@@ -392,8 +397,8 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: expectedFailureThrows }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the test is reported as passing')((s) => {
-          expect(reportedAs(s.outcome)).toEqual([{ name: 'an expected failure that throws', status: 'success' }])
+        Then('the test is reported as passing')((s, expect) => {
+          return expect(reportedAs(s.outcome)).toEqual([{ name: 'an expected failure that throws', status: 'success' }])
         }),
       ),
     )
@@ -406,8 +411,8 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: expectedFailurePasses }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the test is reported as failing, naming the unmet expectation')((s) => {
-          expect(completed(s.outcome)).toEqual([
+        Then('the test is reported as failing, naming the unmet expectation')((s, expect) => {
+          return expect(completed(s.outcome)).toEqual([
             { name: 'an expected failure that passes', status: 'failed', failureMessage: 'Expect test to fail' },
           ])
         }),
@@ -422,8 +427,8 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: expectedFailureSoftThrows }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the test is reported as passing')((s) => {
-          expect(reportedAs(s.outcome)).toEqual([
+        Then('the test is reported as passing')((s, expect) => {
+          return expect(reportedAs(s.outcome)).toEqual([
             { name: 'an expected failure with a soft assertion', status: 'success' },
           ])
         }),
@@ -438,8 +443,8 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: expectedFailureSoftPasses }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the test is reported as failing, naming the unmet expectation')((s) => {
-          expect(completed(s.outcome)).toEqual([
+        Then('the test is reported as failing, naming the unmet expectation')((s, expect) => {
+          return expect(completed(s.outcome)).toEqual([
             {
               name: 'an expected failure without a failing assertion',
               status: 'failed',
@@ -458,8 +463,8 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: failureHookSuite }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('both tests are reported as passing')((s) => {
-          expect(reportedAs(s.outcome)).toEqual([
+        Then('both tests are reported as passing')((s, expect) => {
+          return expect(reportedAs(s.outcome)).toEqual([
             { name: 'a test that fails twice before passing', status: 'success' },
             { name: 'the recorded failed attempts', status: 'success' },
           ])
@@ -475,8 +480,8 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: attemptNumberSuite }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the test is reported as passing')((s) => {
-          expect(reportedAs(s.outcome)).toEqual([{
+        Then('the test is reported as passing')((s, expect) => {
+          return expect(reportedAs(s.outcome)).toEqual([{
             name: 'a test that inspects its attempt number',
             status: 'success',
           }])
@@ -492,8 +497,8 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: configRepeatsCollectSuite, config: configRepeats }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the test is reported as failing, naming the first failing repetition')((s) => {
-          expect(completed(s.outcome)).toEqual([
+        Then('the test is reported as failing, naming the first failing repetition')((s, expect) => {
+          return expect(completed(s.outcome)).toEqual([
             {
               name: 'the body repeats for the configured count',
               status: 'failed',
@@ -512,16 +517,18 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: configRepeatsAlwaysFailsSuite, config: configRepeats }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the failing body keeps its first failing repetition while the witness sees all three runs')((s) => {
-          expect(completed(s.outcome)).toEqual([
-            {
-              name: 'the body repeats for the configured count',
-              status: 'failed',
-              failureMessage: 'expected [ +0 ] to deeply equal [ +0, 1, 2 ]',
-            },
-            { name: 'the witness counts every repetition', status: 'success', failureMessage: undefined },
-          ])
-        }),
+        Then('the failing body keeps its first failing repetition while the witness sees all three runs')(
+          (s, expect) => {
+            return expect(completed(s.outcome)).toEqual([
+              {
+                name: 'the body repeats for the configured count',
+                status: 'failed',
+                failureMessage: 'expected [ +0 ] to deeply equal [ +0, 1, 2 ]',
+              },
+              { name: 'the witness counts every repetition', status: 'success', failureMessage: undefined },
+            ])
+          },
+        ),
       ),
     )
 
@@ -533,15 +540,23 @@ Feature('Reporting retried, repeated and expected-failure tests exactly as Vites
           () => Effect.succeed<SuiteSpec>({ source: configRepeatsFirstFailSuite, config: configRepeats }),
         ),
         When('the in-memory runner replays the suite')('outcome', (s) => runSuite(s.suite)),
-        Then('the failing test is reported first and the counting test as passing')((s) => {
-          expect(reportedAs(s.outcome)).toEqual([
-            { name: 'fails on the first repeat only', status: 'failed' },
-            { name: 'how many repeats ran', status: 'success' },
-          ])
-        }),
-        And('the failure names the first failing repetition')((s) => {
-          expect(completed(s.outcome)[0]?.failureMessage).toBe('expected 1 to be greater than 1')
-        }),
+        Then(
+          'the failing test is reported first, the counting test as passing, and the failure names the first failing repetition',
+        )((
+          s,
+          expect,
+        ) =>
+          expect({
+            reported: reportedAs(s.outcome),
+            firstFailureMessage: completed(s.outcome)[0]?.failureMessage,
+          }).toEqual({
+            reported: [
+              { name: 'fails on the first repeat only', status: 'failed' },
+              { name: 'how many repeats ran', status: 'success' },
+            ],
+            firstFailureMessage: 'expected 1 to be greater than 1',
+          })
+        ),
       ),
     )
   })

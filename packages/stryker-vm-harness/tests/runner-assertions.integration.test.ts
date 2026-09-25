@@ -1,12 +1,11 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import { FileSystem, Path, PlatformError } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const PACKAGES_ROOT = decodeURIComponent(new URL('../../', import.meta.url).pathname).replace(/\/$/, '')
 const SANDBOX_DEPENDENCIES = `${PACKAGES_ROOT}/stryker-js/node_modules`
@@ -616,7 +615,7 @@ const REQUIRE_OUTCOMES: ReadonlyArray<OutcomeTest> = [
 
 Feature('Assertion surfaces behave under the in-memory runner exactly as they do under Vitest')
   .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
-  .liveClock()
+  .live('the sandbox writes real suite files and spawns the in-memory runner over them')
   .body(({ scenario }) => {
     scenario(
       'Soft failures fail the test without stopping its body',
@@ -629,10 +628,8 @@ Feature('Assertion surfaces behave under the in-memory runner exactly as they do
           'outcome',
           (s) => replayOf(s.sandbox, SOFT_SUITE.suites),
         ),
-        Then('every test carries the status and failure Vitest reports')((s) =>
-          Effect.sync(() => {
-            expect(outcomesOf(s.outcome)).toEqual(SOFT_OUTCOMES)
-          })
+        Then('every test carries the status and failure Vitest reports')((s, expect) =>
+          expect(outcomesOf(s.outcome)).toEqual(SOFT_OUTCOMES)
         ),
       ),
     )
@@ -648,10 +645,8 @@ Feature('Assertion surfaces behave under the in-memory runner exactly as they do
           'outcome',
           (s) => replayOf(s.sandbox, ASSERTION_COUNT_SUITE.suites),
         ),
-        Then('every test carries the status and failure Vitest reports')((s) =>
-          Effect.sync(() => {
-            expect(outcomesOf(s.outcome)).toEqual(ASSERTION_COUNT_OUTCOMES)
-          })
+        Then('every test carries the status and failure Vitest reports')((s, expect) =>
+          expect(outcomesOf(s.outcome)).toEqual(ASSERTION_COUNT_OUTCOMES)
         ),
       ),
     )
@@ -667,10 +662,8 @@ Feature('Assertion surfaces behave under the in-memory runner exactly as they do
           'outcome',
           (s) => replayOf(s.sandbox, MATCHER_SUITE.suites),
         ),
-        Then('every test carries the status and failure Vitest reports')((s) =>
-          Effect.sync(() => {
-            expect(outcomesOf(s.outcome)).toEqual(MATCHER_OUTCOMES)
-          })
+        Then('every test carries the status and failure Vitest reports')((s, expect) =>
+          expect(outcomesOf(s.outcome)).toEqual(MATCHER_OUTCOMES)
         ),
       ),
     )
@@ -686,10 +679,8 @@ Feature('Assertion surfaces behave under the in-memory runner exactly as they do
           'outcome',
           (s) => replayOf(s.sandbox, THROW_SUITE.suites),
         ),
-        Then('every test carries the status and failure Vitest reports')((s) =>
-          Effect.sync(() => {
-            expect(outcomesOf(s.outcome)).toEqual(THROW_OUTCOMES)
-          })
+        Then('every test carries the status and failure Vitest reports')((s, expect) =>
+          expect(outcomesOf(s.outcome)).toEqual(THROW_OUTCOMES)
         ),
       ),
     )
@@ -705,10 +696,8 @@ Feature('Assertion surfaces behave under the in-memory runner exactly as they do
           'outcome',
           (s) => replayOf(s.sandbox, CHAI_SUITE.suites),
         ),
-        Then('every test carries the status and failure Vitest reports')((s) =>
-          Effect.sync(() => {
-            expect(outcomesOf(s.outcome)).toEqual(CHAI_OUTCOMES)
-          })
+        Then('every test carries the status and failure Vitest reports')((s, expect) =>
+          expect(outcomesOf(s.outcome)).toEqual(CHAI_OUTCOMES)
         ),
       ),
     )
@@ -724,10 +713,8 @@ Feature('Assertion surfaces behave under the in-memory runner exactly as they do
           'outcome',
           (s) => replayOf(s.sandbox, REQUIRE_SUITE.suites),
         ),
-        Then('every test carries the status and failure Vitest reports')((s) =>
-          Effect.sync(() => {
-            expect(outcomesOf(s.outcome)).toEqual(REQUIRE_OUTCOMES)
-          })
+        Then('every test carries the status and failure Vitest reports')((s, expect) =>
+          expect(outcomesOf(s.outcome)).toEqual(REQUIRE_OUTCOMES)
         ),
       ),
     )

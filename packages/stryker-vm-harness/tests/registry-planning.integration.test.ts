@@ -1,7 +1,6 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Drain, Registry } from '@systemfsoftware/stryker-vm-harness'
 import { Effect, Layer } from 'effect'
-import { expect } from 'vitest'
 
 const FINIALIZER_GUARD_MESSAGE = 'onTestFinished must be called while a test is running'
 
@@ -32,10 +31,20 @@ const messageByName = (tests: DrainedTests): Readonly<Record<string, string | un
   return messages
 }
 
-const Feature = makeFeature({ it, layer })
+const messageThrownBy = (operation: () => void): string | undefined => {
+  try {
+    operation()
+  } catch (error) {
+    return error instanceof Error ? error.message : 'the operation threw a value that is not an Error'
+  }
+  return undefined
+}
+
+const Feature = makeFeature({ it })
 
 Feature('Planning a run from registered suites and tests')
   .withLayer(Layer.empty)
+  .live('the drain runs registered test bodies and catches late promise rejections on the host clock')
   .body(({ scenario }) => {
     scenario(
       'A registration records an empty file and successive identifiers',
@@ -52,14 +61,23 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('the suites receive successive identifiers and the test carries an empty file')((s) => {
+        Then('the suites receive successive identifiers and the test carries an empty file')((s, expect) => {
           const tests = drainedTestsOf(s.outcome)
-          expect(s.fixture.firstSuite.id).toBe(1)
-          expect(s.fixture.secondSuite.id).toBe(2)
-          expect(s.fixture.registered.seq).toBe(1)
-          expect(s.fixture.registered.file).toBe('')
-          expect(tests[0]?.file).toBe('')
-          expect(statusByName(tests)['the only test']).toBe('success')
+          return expect({
+            firstSuiteId: s.fixture.firstSuite.id,
+            secondSuiteId: s.fixture.secondSuite.id,
+            registeredSeq: s.fixture.registered.seq,
+            registeredFile: s.fixture.registered.file,
+            drainedFile: tests[0]?.file,
+            onlyTestStatus: statusByName(tests)['the only test'],
+          }).toEqual({
+            firstSuiteId: 1,
+            secondSuiteId: 2,
+            registeredSeq: 1,
+            registeredFile: '',
+            drainedFile: '',
+            onlyTestStatus: 'success',
+          })
         }),
       ),
     )
@@ -154,79 +172,84 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('each declaration is planned under its expected name and status')((s) => {
-          const tests = drainedTestsOf(s.outcome)
-          expect(namesOf(tests)).toEqual([
-            'chosen suite > inner test',
-            'chosen suite > skipped test',
-            'chosen suite > only test',
-            'chosen suite > todo test',
-            'chosen suite > failing test',
-            'chosen suite > each test 1',
-            'chosen suite > each test 2',
-            'chosen suite > for test 1',
-            'chosen suite > for test 2',
-            'skipped it',
-            'only it',
-            'todo it',
-            'fails it',
-            'each it 1',
-            'each it 2',
-            'for it 1',
-            'for it 2',
-            'top-level test',
-            'top-level test direct',
-            'it with options',
-            'it without options',
-            'top-level suite > suite test',
-            'top-level suite > inner suite > inner test',
-            ' > t-unnamed',
-          ])
-          expect(statusByName(tests)).toEqual({
-            ' > t-unnamed': 'skipped',
-            'chosen suite > each test 1': 'skipped',
-            'chosen suite > each test 2': 'skipped',
-            'chosen suite > failing test': 'skipped',
-            'chosen suite > for test 1': 'skipped',
-            'chosen suite > for test 2': 'skipped',
-            'chosen suite > inner test': 'skipped',
-            'chosen suite > only test': 'success',
-            'chosen suite > skipped test': 'skipped',
-            'chosen suite > todo test': 'skipped',
-            'each it 1': 'skipped',
-            'each it 2': 'skipped',
-            'fails it': 'skipped',
-            'for it 1': 'skipped',
-            'for it 2': 'skipped',
-            'it with options': 'skipped',
-            'it without options': 'skipped',
-            'only it': 'success',
-            'skipped it': 'skipped',
-            'todo it': 'skipped',
-            'top-level suite > inner suite > inner test': 'skipped',
-            'top-level suite > suite test': 'skipped',
-            'top-level test': 'skipped',
-            'top-level test direct': 'skipped',
-          })
-        }),
-        Then('the hooks fire in the drained lifecycle order')((s) => {
-          expect(s.fixture.hookLog).toEqual([
-            'root before all',
-            'suite before all',
-            'root before each',
-            'suite before each',
-            'only test ran',
-            'suite after each',
-            'root after each',
-            'suite after all',
-            'root before each',
-            'root after each',
-            'root after all',
-          ])
-        }),
-        Then('a finalizer may not be registered outside a running test')((s) => {
-          expect(() => s.fixture.api.hooks.onTestFinished(() => {})).toThrow(FINIALIZER_GUARD_MESSAGE)
-        }),
+        Then('every declaration is planned, the hooks fire in order, and a finalizer needs a running test')(
+          (s, expect) => {
+            const tests = drainedTestsOf(s.outcome)
+            return expect({
+              names: namesOf(tests),
+              statuses: statusByName(tests),
+              hooks: s.fixture.hookLog,
+              finalizerOutsideTest: messageThrownBy(() => s.fixture.api.hooks.onTestFinished(() => {})),
+            }).toEqual({
+              names: [
+                'chosen suite > inner test',
+                'chosen suite > skipped test',
+                'chosen suite > only test',
+                'chosen suite > todo test',
+                'chosen suite > failing test',
+                'chosen suite > each test 1',
+                'chosen suite > each test 2',
+                'chosen suite > for test 1',
+                'chosen suite > for test 2',
+                'skipped it',
+                'only it',
+                'todo it',
+                'fails it',
+                'each it 1',
+                'each it 2',
+                'for it 1',
+                'for it 2',
+                'top-level test',
+                'top-level test direct',
+                'it with options',
+                'it without options',
+                'top-level suite > suite test',
+                'top-level suite > inner suite > inner test',
+                ' > t-unnamed',
+              ],
+              statuses: {
+                ' > t-unnamed': 'skipped',
+                'chosen suite > each test 1': 'skipped',
+                'chosen suite > each test 2': 'skipped',
+                'chosen suite > failing test': 'skipped',
+                'chosen suite > for test 1': 'skipped',
+                'chosen suite > for test 2': 'skipped',
+                'chosen suite > inner test': 'skipped',
+                'chosen suite > only test': 'success',
+                'chosen suite > skipped test': 'skipped',
+                'chosen suite > todo test': 'skipped',
+                'each it 1': 'skipped',
+                'each it 2': 'skipped',
+                'fails it': 'skipped',
+                'for it 1': 'skipped',
+                'for it 2': 'skipped',
+                'it with options': 'skipped',
+                'it without options': 'skipped',
+                'only it': 'success',
+                'skipped it': 'skipped',
+                'todo it': 'skipped',
+                'top-level suite > inner suite > inner test': 'skipped',
+                'top-level suite > suite test': 'skipped',
+                'top-level test': 'skipped',
+                'top-level test direct': 'skipped',
+              },
+              hooks: [
+                'root before all',
+                'suite before all',
+                'root before each',
+                'suite before each',
+                'only test ran',
+                'suite after each',
+                'root after each',
+                'suite after all',
+                'root before each',
+                'root after each',
+                'root after all',
+              ],
+              finalizerOutsideTest: FINIALIZER_GUARD_MESSAGE,
+            })
+          },
+        ),
       ),
     )
 
@@ -253,15 +276,21 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('each occurrence keeps its turn and is reported apart from the others')((s) => {
+        Then('each occurrence keeps its turn and is reported apart from the others')((s, expect) => {
           const tests = drainedTestsOf(s.outcome)
-          expect(namesOf(tests)).toEqual(['duplicate name', 'duplicate name [1]', 'duplicate name [2]'])
-          expect(statusByName(tests)).toEqual({
-            'duplicate name': 'success',
-            'duplicate name [1]': 'success',
-            'duplicate name [2]': 'success',
+          return expect({
+            names: namesOf(tests),
+            statuses: statusByName(tests),
+            ran: s.fixture.ran,
+          }).toEqual({
+            names: ['duplicate name', 'duplicate name [1]', 'duplicate name [2]'],
+            statuses: {
+              'duplicate name': 'success',
+              'duplicate name [1]': 'success',
+              'duplicate name [2]': 'success',
+            },
+            ran: ['first', 'second', 'third'],
           })
-          expect(s.fixture.ran).toEqual(['first', 'second', 'third'])
         }),
       ),
     )
@@ -290,7 +319,7 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('only the focused declarations run and every other one is held out')((s) => {
+        Then('only the focused declarations run and every other one is held out')((s, expect) =>
           expect(statusByName(drainedTestsOf(s.outcome))).toEqual({
             'focused at the top': 'success',
             'focused suite > inside the focused suite': 'success',
@@ -302,7 +331,7 @@ Feature('Planning a run from registered suites and tests')
             'skipped suite > focused inside the skipped suite': 'skipped',
             'skipped suite > inside the skipped suite': 'skipped',
           })
-        }),
+        ),
       ),
     )
 
@@ -326,14 +355,20 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('each declaration runs exactly the body it was given')((s) => {
+        Then('each declaration runs exactly the body it was given')((s, expect) => {
           const tests = drainedTestsOf(s.outcome)
-          expect(namesOf(tests)).toEqual(['declared with a bare function', 'declared with options'])
-          expect(statusByName(tests)).toEqual({
-            'declared with a bare function': 'success',
-            'declared with options': 'success',
+          return expect({
+            names: namesOf(tests),
+            statuses: statusByName(tests),
+            ran: s.fixture.ran,
+          }).toEqual({
+            names: ['declared with a bare function', 'declared with options'],
+            statuses: {
+              'declared with a bare function': 'success',
+              'declared with options': 'success',
+            },
+            ran: ['bare function body', 'options body'],
           })
-          expect(s.fixture.ran).toEqual(['bare function body', 'options body'])
         }),
       ),
     )
@@ -362,12 +397,19 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('every row renders its own name and reaches the body with a run context')((s) => {
+        Then('every row renders its own name and reaches the body with a run context')((s, expect) => {
           const tests = drainedTestsOf(s.outcome)
-          expect(namesOf(tests)).toEqual(['row 1', 'row 2'])
-          expect(statusByName(tests)).toEqual({ 'row 1': 'success', 'row 2': 'success' })
-          expect(s.fixture.rows).toEqual([1, 2])
-          expect(s.fixture.argCounts).toEqual([1, 1])
+          return expect({
+            names: namesOf(tests),
+            statuses: statusByName(tests),
+            rows: s.fixture.rows,
+            argCounts: s.fixture.argCounts,
+          }).toEqual({
+            names: ['row 1', 'row 2'],
+            statuses: { 'row 1': 'success', 'row 2': 'success' },
+            rows: [1, 2],
+            argCounts: [1, 1],
+          })
         }),
       ),
     )
@@ -396,11 +438,17 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('each row names itself from the table and spreads across the body arguments')((s) => {
+        Then('each row names itself from the table and spreads across the body arguments')((s, expect) => {
           const tests = drainedTestsOf(s.outcome)
-          expect(namesOf(tests)).toEqual(['n a 1', 'n b 2'])
-          expect(s.fixture.rendered).toEqual(['a 1', 'b 2'])
-          expect(s.fixture.argCounts).toEqual([2, 2])
+          return expect({
+            names: namesOf(tests),
+            rendered: s.fixture.rendered,
+            argCounts: s.fixture.argCounts,
+          }).toEqual({
+            names: ['n a 1', 'n b 2'],
+            rendered: ['a 1', 'b 2'],
+            argCounts: [2, 2],
+          })
         }),
       ),
     )
@@ -430,13 +478,13 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('the focused suite runs and the skipped and unfocused ones are held out')((s) => {
+        Then('the focused suite runs and the skipped and unfocused ones are held out')((s, expect) =>
           expect(statusByName(drainedTestsOf(s.outcome))).toEqual({
             'only suite 1 > inner': 'success',
             'run suite 3 > inner': 'skipped',
             'skip suite 2 > inner': 'skipped',
           })
-        }),
+        ),
       ),
     )
 
@@ -482,24 +530,34 @@ Feature('Planning a run from registered suites and tests')
             Effect.promise(() => Drain.drainRegistry(s.plainFixture.registry, undefined)),
             Effect.promise(() => Drain.drainRegistry(s.focusedFixture.registry, undefined)),
           ])),
-        Then('plain tests run, held-out ones never start, and inverted ones judge in reverse')((s) => {
+        Then('plain tests run, held-out ones never start, and inverted ones judge in reverse')((s, expect) => {
           const [plainOutcome, focusedOutcome] = s.outcome
           const plainTests = drainedTestsOf(plainOutcome)
-          expect(statusByName(plainTests)).toEqual({
-            'failing as designed': 'success',
-            'passing against design': 'failed',
-            'plain failing': 'failed',
-            'plain passing': 'success',
-            'pending': 'skipped',
-            'skipped': 'skipped',
-          })
-          expect(messageByName(plainTests)['plain failing']).toBe('the plain test threw')
-          expect(messageByName(plainTests)['failing as designed']).toBe(undefined)
-          expect(messageByName(plainTests)['passing against design']).toBe('Expect test to fail')
-          expect(s.plainFixture.ran).toEqual(['plain passing ran', 'passing against design ran'])
-          expect(statusByName(drainedTestsOf(focusedOutcome))).toEqual({
-            focused: 'success',
-            'unfocused sibling': 'skipped',
+          const messages = messageByName(plainTests)
+          return expect({
+            statuses: statusByName(plainTests),
+            plainFailingMessage: messages['plain failing'],
+            failingAsDesignedMessage: messages['failing as designed'],
+            passingAgainstDesignMessage: messages['passing against design'],
+            ran: s.plainFixture.ran,
+            focusedStatuses: statusByName(drainedTestsOf(focusedOutcome)),
+          }).toEqual({
+            statuses: {
+              'failing as designed': 'success',
+              'passing against design': 'failed',
+              'plain failing': 'failed',
+              'plain passing': 'success',
+              'pending': 'skipped',
+              'skipped': 'skipped',
+            },
+            plainFailingMessage: 'the plain test threw',
+            failingAsDesignedMessage: undefined,
+            passingAgainstDesignMessage: 'Expect test to fail',
+            ran: ['plain passing ran', 'passing against design ran'],
+            focusedStatuses: {
+              focused: 'success',
+              'unfocused sibling': 'skipped',
+            },
           })
         }),
       ),
@@ -538,14 +596,14 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('the suite hooks surround only their own test')((s) => {
+        Then('the suite hooks surround only their own test')((s, expect) =>
           expect(s.fixture.hookLog).toEqual([
             'root before all',
             'suite before each',
             'suite after each',
             'suite after all',
           ])
-        }),
+        ),
       ),
     )
 
@@ -565,10 +623,12 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('the report names the test through its suite')((s) => {
+        Then('the report names the test through its suite')((s, expect) => {
           const tests = drainedTestsOf(s.outcome)
-          expect(namesOf(tests)).toEqual(['outer > in'])
-          expect(statusByName(tests)).toEqual({ 'outer > in': 'success' })
+          return expect({ names: namesOf(tests), statuses: statusByName(tests) }).toEqual({
+            names: ['outer > in'],
+            statuses: { 'outer > in': 'success' },
+          })
         }),
       ),
     )
@@ -594,12 +654,14 @@ Feature('Planning a run from registered suites and tests')
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
         Then('the skipped suite holds its test out, the focused one runs it, and the pending suite plans nothing')(
-          (s) => {
+          (s, expect) => {
             const tests = drainedTestsOf(s.outcome)
-            expect(namesOf(tests)).toEqual(['base skip suite > t', 'base only suite > t'])
-            expect(statusByName(tests)).toEqual({
-              'base only suite > t': 'success',
-              'base skip suite > t': 'skipped',
+            return expect({ names: namesOf(tests), statuses: statusByName(tests) }).toEqual({
+              names: ['base skip suite > t', 'base only suite > t'],
+              statuses: {
+                'base only suite > t': 'success',
+                'base skip suite > t': 'skipped',
+              },
             })
           },
         ),
@@ -626,14 +688,20 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('the finalizer has run by the time the drain reports')((s) => {
+        Then('the finalizer has run by the time the drain reports')((s, expect) => {
           const tests = drainedTestsOf(s.outcome)
-          expect(statusByName(tests)).toEqual({
-            'registers a finalizer': 'success',
-            'runs after it': 'success',
+          return expect({
+            statuses: statusByName(tests),
+            sawFinalizer: s.fixture.sawFinalizer(),
+            finalizerOutsideTest: messageThrownBy(() => s.fixture.api.hooks.onTestFinished(() => {})),
+          }).toEqual({
+            statuses: {
+              'registers a finalizer': 'success',
+              'runs after it': 'success',
+            },
+            sawFinalizer: true,
+            finalizerOutsideTest: FINIALIZER_GUARD_MESSAGE,
           })
-          expect(s.fixture.sawFinalizer()).toBe(true)
-          expect(() => s.fixture.api.hooks.onTestFinished(() => {})).toThrow(FINIALIZER_GUARD_MESSAGE)
         }),
       ),
     )
@@ -651,10 +719,12 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('the report names the test after an empty suite')((s) => {
+        Then('the report names the test after an empty suite')((s, expect) => {
           const tests = drainedTestsOf(s.outcome)
-          expect(namesOf(tests)).toEqual([' > orphan test'])
-          expect(statusByName(tests)).toEqual({ ' > orphan test': 'success' })
+          return expect({ names: namesOf(tests), statuses: statusByName(tests) }).toEqual({
+            names: [' > orphan test'],
+            statuses: { ' > orphan test': 'success' },
+          })
         }),
       ),
     )
@@ -676,11 +746,13 @@ Feature('Planning a run from registered suites and tests')
           'outcome',
           (s) => Effect.promise(() => Drain.drainRegistry(s.fixture.registry, undefined)),
         ),
-        Then('the test is reported by its suite and held out of the run')((s) => {
+        Then('the test is reported by its suite and held out of the run')((s, expect) => {
           const tests = drainedTestsOf(s.outcome)
-          expect(namesOf(tests)).toEqual(['pending suite > inside'])
-          expect(statusByName(tests)).toEqual({ 'pending suite > inside': 'skipped' })
-          expect(s.fixture.ran).toEqual([])
+          return expect({ names: namesOf(tests), statuses: statusByName(tests), ran: s.fixture.ran }).toEqual({
+            names: ['pending suite > inside'],
+            statuses: { 'pending suite > inside': 'skipped' },
+            ran: [],
+          })
         }),
       ),
     )

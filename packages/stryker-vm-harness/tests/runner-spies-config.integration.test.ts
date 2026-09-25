@@ -1,12 +1,12 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
+import type { Expect } from '@systemfsoftware/vitest'
 import { FileSystem, Path } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const PACKAGES_ROOT = decodeURIComponent(new URL('../../', import.meta.url).pathname).replace(/\/$/, '')
 const SANDBOX_DEPENDENCIES = `${PACKAGES_ROOT}/stryker-js/node_modules`
@@ -92,14 +92,24 @@ const completeOutcome = (outcome: SuiteOutcome): SuiteOutcome => {
   return outcome
 }
 
-const expectOutcome = (
+const viewOf = (
+  outcome: SuiteOutcome,
+): {
+  readonly results: ReadonlyArray<{ readonly name: string; readonly status: string }>
+  readonly failureCount: number
+} => {
+  const complete = completeOutcome(outcome)
+  return {
+    results: complete.results.map((test) => ({ name: test.name, status: test.status })),
+    failureCount: complete.results.filter((test) => test.failureMessage !== undefined).length,
+  }
+}
+
+const checkOutcome = (
+  expect: Expect,
   outcome: SuiteOutcome,
   expected: ReadonlyArray<{ readonly name: string; readonly status: string }>,
-): void => {
-  const complete = completeOutcome(outcome)
-  expect(complete.results.map((test) => ({ name: test.name, status: test.status }))).toStrictEqual(expected)
-  expect(complete.results.filter((test) => test.failureMessage !== undefined)).toStrictEqual([])
-}
+) => expect(viewOf(outcome)).toEqual({ results: expected, failureCount: 0 })
 
 const FN_SUITE = `import { expect, test, vi } from 'vitest'
 
@@ -313,7 +323,7 @@ const RESET_ROWS: ReadonlyArray<ResetRow> = [
 
 Feature("Replaying a project's test doubles in memory exactly as Vitest replays them")
   .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
-  .liveClock()
+  .live('the sandbox writes real suite files and spawns the in-memory runner over them')
   .body(({ scenario, scenarioOutline }) => {
     scenario(
       'A mock function records its calls and answers with the value the test asks for',
@@ -326,12 +336,10 @@ Feature("Replaying a project's test doubles in memory exactly as Vitest replays 
           'outcome',
           (s) => replayOf(s.sandbox, 'fn.test.ts').pipe(Effect.ensuring(releaseSandbox(s.sandbox))),
         ),
-        Then('the test passes with the name Vitest reports')((s) =>
-          Effect.sync(() =>
-            expectOutcome(s.outcome, [
-              { name: 'vi.fn records calls and returns configured values', status: 'success' },
-            ])
-          )
+        Then('the test passes with the name Vitest reports')((s, expect) =>
+          checkOutcome(expect, s.outcome, [
+            { name: 'vi.fn records calls and returns configured values', status: 'success' },
+          ])
         ),
       ),
     )
@@ -347,15 +355,13 @@ Feature("Replaying a project's test doubles in memory exactly as Vitest replays 
           'outcome',
           (s) => replayOf(s.sandbox, 'spy-on.test.ts').pipe(Effect.ensuring(releaseSandbox(s.sandbox))),
         ),
-        Then('the test passes with the name Vitest reports')((s) =>
-          Effect.sync(() =>
-            expectOutcome(s.outcome, [
-              {
-                name: 'vi.spyOn wraps a method and observes calls while still calling through',
-                status: 'success',
-              },
-            ])
-          )
+        Then('the test passes with the name Vitest reports')((s, expect) =>
+          checkOutcome(expect, s.outcome, [
+            {
+              name: 'vi.spyOn wraps a method and observes calls while still calling through',
+              status: 'success',
+            },
+          ])
         ),
       ),
     )
@@ -371,12 +377,10 @@ Feature("Replaying a project's test doubles in memory exactly as Vitest replays 
           'outcome',
           (s) => replayOf(s.sandbox, 'implementation-once.test.ts').pipe(Effect.ensuring(releaseSandbox(s.sandbox))),
         ),
-        Then('the test passes with the name Vitest reports')((s) =>
-          Effect.sync(() =>
-            expectOutcome(s.outcome, [
-              { name: 'mockImplementationOnce applies once then falls back', status: 'success' },
-            ])
-          )
+        Then('the test passes with the name Vitest reports')((s, expect) =>
+          checkOutcome(expect, s.outcome, [
+            { name: 'mockImplementationOnce applies once then falls back', status: 'success' },
+          ])
         ),
       ),
     )
@@ -392,10 +396,10 @@ Feature("Replaying a project's test doubles in memory exactly as Vitest replays 
           'outcome',
           (s) => replayOf(s.sandbox, 'resolved-value.test.ts').pipe(Effect.ensuring(releaseSandbox(s.sandbox))),
         ),
-        Then('the test passes with the name Vitest reports')((s) =>
-          Effect.sync(() =>
-            expectOutcome(s.outcome, [{ name: 'mockResolvedValue resolves with the given value', status: 'success' }])
-          )
+        Then('the test passes with the name Vitest reports')((s, expect) =>
+          checkOutcome(expect, s.outcome, [
+            { name: 'mockResolvedValue resolves with the given value', status: 'success' },
+          ])
         ),
       ),
     )
@@ -411,12 +415,10 @@ Feature("Replaying a project's test doubles in memory exactly as Vitest replays 
           'outcome',
           (s) => replayOf(s.sandbox, 'is-mock-function.test.ts').pipe(Effect.ensuring(releaseSandbox(s.sandbox))),
         ),
-        Then('the test passes with the name Vitest reports')((s) =>
-          Effect.sync(() =>
-            expectOutcome(s.outcome, [
-              { name: 'vi.isMockFunction distinguishes mocks from plain functions', status: 'success' },
-            ])
-          )
+        Then('the test passes with the name Vitest reports')((s, expect) =>
+          checkOutcome(expect, s.outcome, [
+            { name: 'vi.isMockFunction distinguishes mocks from plain functions', status: 'success' },
+          ])
         ),
       ),
     )
@@ -432,10 +434,10 @@ Feature("Replaying a project's test doubles in memory exactly as Vitest replays 
           'outcome',
           (s) => replayOf(s.sandbox, 'mocked.test.ts').pipe(Effect.ensuring(releaseSandbox(s.sandbox))),
         ),
-        Then('the test passes with the name Vitest reports')((s) =>
-          Effect.sync(() =>
-            expectOutcome(s.outcome, [{ name: 'vi.mocked returns the same mock instance', status: 'success' }])
-          )
+        Then('the test passes with the name Vitest reports')((s, expect) =>
+          checkOutcome(expect, s.outcome, [
+            { name: 'vi.mocked returns the same mock instance', status: 'success' },
+          ])
         ),
       ),
     )
@@ -451,12 +453,10 @@ Feature("Replaying a project's test doubles in memory exactly as Vitest replays 
           'outcome',
           (s) => replayOf(s.sandbox, 'stub-global.test.ts').pipe(Effect.ensuring(releaseSandbox(s.sandbox))),
         ),
-        Then('the test passes with the name Vitest reports')((s) =>
-          Effect.sync(() =>
-            expectOutcome(s.outcome, [
-              { name: 'vi.stubGlobal replaces a global until unstubbed', status: 'success' },
-            ])
-          )
+        Then('the test passes with the name Vitest reports')((s, expect) =>
+          checkOutcome(expect, s.outcome, [
+            { name: 'vi.stubGlobal replaces a global until unstubbed', status: 'success' },
+          ])
         ),
       ),
     )
@@ -472,12 +472,10 @@ Feature("Replaying a project's test doubles in memory exactly as Vitest replays 
           'outcome',
           (s) => replayOf(s.sandbox, 'stub-env.test.ts').pipe(Effect.ensuring(releaseSandbox(s.sandbox))),
         ),
-        Then('the test passes with the name Vitest reports')((s) =>
-          Effect.sync(() =>
-            expectOutcome(s.outcome, [
-              { name: 'vi.stubEnv replaces an env value until unstubbed', status: 'success' },
-            ])
-          )
+        Then('the test passes with the name Vitest reports')((s, expect) =>
+          checkOutcome(expect, s.outcome, [
+            { name: 'vi.stubEnv replaces an env value until unstubbed', status: 'success' },
+          ])
         ),
       ),
     )
@@ -495,14 +493,8 @@ Feature("Replaying a project's test doubles in memory exactly as Vitest replays 
             'outcome',
             (s) => replayOf(s.sandbox, row.file).pipe(Effect.ensuring(releaseSandbox(s.sandbox))),
           ),
-          Then('both tests pass with the names Vitest reports')((s) =>
-            Effect.sync(() => expectOutcome(s.outcome, row.expected))
-          ),
-          And('neither test reports a failure message')((s) =>
-            Effect.sync(() => {
-              completeOutcome(s.outcome)
-              expect(s.outcome.results.every((test) => test.failureMessage === undefined)).toBe(true)
-            })
+          Then('both tests pass with the names Vitest reports and no failure message')((s, expect) =>
+            checkOutcome(expect, s.outcome, row.expected)
           ),
         ),
     )

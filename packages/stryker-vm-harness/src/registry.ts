@@ -1,7 +1,7 @@
 import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
 
-import { STATE_KEY } from './harness-sources.handle.js'
+import { STATE_KEY } from './harness-sources.js'
 import type {
   AroundKind,
   AroundRegistration,
@@ -52,7 +52,7 @@ const emptyHookSets = (): HookSets => ({
 
 const emptyAroundSets = (): AroundSets => ({ aroundEach: [], aroundAll: [] })
 
-export const PENDING_TAG = Symbol.for('@systemfsoftware/stryker-vm-harness/PendingError')
+const PENDING_TAG = Symbol.for('@systemfsoftware/stryker-vm-harness/PendingError')
 
 export const pendingErrorOf = (note: string | undefined): Error => {
   const error = new Error(note ?? 'test is skipped; abort execution')

@@ -1,13 +1,12 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Effect, Layer } from 'effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
 
 import { Session } from '@systemfsoftware/stryker-vm-harness'
-import { assert, expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const stripViteFilePrefix = (pathname: string): string =>
   pathname.startsWith('/@fs/') ? pathname.slice('/@fs'.length) : pathname
@@ -209,27 +208,32 @@ const resolveInMemory = (
     return response
   })
 
-const dumpFailures = (response: Session.VmRunResponse): string =>
+interface RunSummary {
+  readonly status: string
+  readonly testCount: number
+  readonly failures: ReadonlyArray<{
+    readonly name: string
+    readonly status: string
+    readonly failureMessage: string | undefined
+  }>
+}
+
+const summarizeRun = (response: Session.VmRunResponse): RunSummary =>
   response.status === 'complete'
-    ? response.tests.map((test) => `${test.id}: ${test.status} ${test.failureMessage ?? ''}`).join('\n')
-    : response.status
-const assertSuitePassed = (response: Extract<Session.VmRunResponse, { readonly status: 'complete' }>): void => {
-  const failures = dumpFailures(response)
-  for (const test of response.tests) {
-    assert(test.status === 'success', failures)
-    assert(test.failureMessage === undefined, failures)
-  }
-}
-const expectSuitePassed = (response: Session.VmRunResponse, expectedTests: number): void => {
-  expect(response.status).toBe('complete')
-  if (response.status !== 'complete') return
-  expect(response.tests).toHaveLength(expectedTests)
-  assertSuitePassed(response)
-}
+    ? {
+      status: 'complete',
+      testCount: response.tests.length,
+      failures: response.tests
+        .filter((test) => test.status !== 'success' || test.failureMessage !== undefined)
+        .map((test) => ({ name: test.name, status: test.status, failureMessage: test.failureMessage })),
+    }
+    : { status: response.status, testCount: 0, failures: [] }
+
+const passingRun = { status: 'complete', testCount: 1, failures: [] }
 
 Feature('Loading a Vitest project in memory')
   .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
-  .liveClock()
+  .live('the sandbox writes real project files and loads them through a real Vitest runtime')
   .body(({ scenario, scenarioOutline }) => {
     scenario(
       'A project without a config file uses the Vitest defaults',
@@ -252,34 +256,38 @@ Feature('Loading a Vitest project in memory')
           'listing',
           (s) => Effect.promise(() => s.handle.listTestFiles().then((files) => ({ files }))),
         ),
-        Then('the defaults describe a single node project with the standard test glob')((s) =>
-          Effect.sync(() => {
-            expect(s.handle.runtime.config.projects).toHaveLength(1)
-            const project = s.handle.runtime.config.projects[0]
-            expect(project?.include).toEqual(['**/*.{test,spec}.?(c|m)[jt]s?(x)'])
-            expect(project?.environment).toBe('node')
-            expect(project?.isolate).toBe(true)
-            expect(project?.testTimeout).toBe(5000)
-            expect(project?.hookTimeout).toBe(10000)
-            expect(project?.globals).toBe(false)
+        Then('the defaults describe a single node project and the listed file resolves beside it')((s, expect) => {
+          const projects = s.handle.runtime.config.projects
+          const project = projects[0]
+          const testPath = `${s.project}/src/mathy.test.ts`
+          const check = expect({
+            projectCount: projects.length,
+            include: project?.include,
+            environment: project?.environment,
+            isolate: project?.isolate,
+            testTimeout: project?.testTimeout,
+            hookTimeout: project?.hookTimeout,
+            globals: project?.globals,
+            files: s.listing.files,
+            snapshotPath: s.handle.runtime.resolveSnapshotPathSync(testPath),
+            transform: s.handle.runtime.transformSync('export const a = 1', testPath),
+          }).toEqual({
+            projectCount: 1,
+            include: ['**/*.{test,spec}.?(c|m)[jt]s?(x)'],
+            environment: 'node',
+            isolate: true,
+            testTimeout: 5000,
+            hookTimeout: 10000,
+            globals: false,
+            files: [`${s.project}/src/mathy.test.ts`],
+            snapshotPath: `${s.project}/src/__snapshots__/mathy.test.ts.snap`,
+            transform: undefined,
           })
-        ),
-        Then('the listed file is the standard test file and snapshots resolve beside it')((s) =>
-          Effect.sync(() => {
-            expect(s.listing.files).toEqual([`${s.project}/src/mathy.test.ts`])
-            const testPath = `${s.project}/src/mathy.test.ts`
-            expect(s.handle.runtime.resolveSnapshotPathSync(testPath)).toBe(
-              `${s.project}/src/__snapshots__/mathy.test.ts.snap`,
-            )
-            expect(s.handle.runtime.transformSync('export const a = 1', testPath)).toBeUndefined()
-          })
-        ),
-        Then('the runtime shuts down and the temporary project is removed')((s) =>
-          Effect.gen(function*() {
-            yield* Effect.promise(() => s.handle.close())
-            yield* removeProject(s.project)
-          })
-        ),
+          return Effect.promise(() => s.handle.close()).pipe(
+            Effect.andThen(removeProject(s.project)),
+            Effect.as(check),
+          )
+        }),
       ),
     )
 
@@ -303,33 +311,35 @@ Feature('Loading a Vitest project in memory')
               Session.createVmVitestRuntime({ sandboxWorkingDirectory: s.project, configFile: configFileOf(s.project) })
             ),
         ),
-        Then('both projects keep their names and environments')((s) =>
-          Effect.sync(() => {
-            const projects = s.handle.runtime.config.projects
-            expect(projects).toHaveLength(2)
-            expect(projects[0]?.name).toBe('unit')
-            expect(projects[0]?.environment).toBe('node')
-            expect(projects[1]?.name).toBe('dom')
-            expect(projects[1]?.environment).toBe('jsdom')
-            expect(projects[1]?.include).toEqual(['dom/**/*.test.ts'])
+        Then('both projects keep their names, environments, aliases, defines, env values and timeouts')((s, expect) => {
+          const projects = s.handle.runtime.config.projects
+          const dom = projects[1]
+          const check = expect({
+            projectCount: projects.length,
+            names: projects.map((project) => project.name),
+            environments: projects.map((project) => project.environment),
+            domInclude: dom?.include,
+            domAlias: dom?.alias,
+            domDefine: dom?.define['import.meta.env.VITE_API'],
+            domEnv: dom?.env['VITE_FLAG'],
+            domTestTimeout: dom?.testTimeout,
+            domSetupFiles: dom?.setupFiles,
+          }).toEqual({
+            projectCount: 2,
+            names: ['unit', 'dom'],
+            environments: ['node', 'jsdom'],
+            domInclude: ['dom/**/*.test.ts'],
+            domAlias: [{ find: '@lib', replacement: `${s.project}/src` }],
+            domDefine: '"https://api.example"',
+            domEnv: 'on',
+            domTestTimeout: 7777,
+            domSetupFiles: [`${s.project}/setup.ts`],
           })
-        ),
-        Then('each project inherits the aliases, dotted defines, env values and timeouts')((s) =>
-          Effect.sync(() => {
-            const dom = s.handle.runtime.config.projects[1]
-            expect(dom?.alias).toEqual([{ find: '@lib', replacement: `${s.project}/src` }])
-            expect(dom?.define['import.meta.env.VITE_API']).toBe('"https://api.example"')
-            expect(dom?.env['VITE_FLAG']).toBe('on')
-            expect(dom?.testTimeout).toBe(7777)
-            expect(dom?.setupFiles).toEqual([`${s.project}/setup.ts`])
-          })
-        ),
-        Then('the runtime shuts down and the temporary project is removed')((s) =>
-          Effect.gen(function*() {
-            yield* Effect.promise(() => s.handle.close())
-            yield* removeProject(s.project)
-          })
-        ),
+          return Effect.promise(() => s.handle.close()).pipe(
+            Effect.andThen(removeProject(s.project)),
+            Effect.as(check),
+          )
+        }),
       ),
     )
 
@@ -359,20 +369,24 @@ Feature('Loading a Vitest project in memory')
           'listing',
           (s) => Effect.promise(() => s.handle.listTestFiles().then((files) => ({ files }))),
         ),
-        Then('the listing keeps matched and in-source files and drops the ignored one')((s) =>
-          Effect.sync(() => {
-            expect(s.listing.files).toContain(`${s.project}/custom/alpha.check.ts`)
-            expect(s.listing.files).toContain(`${s.project}/src/in-source.ts`)
-            expect(s.listing.files).not.toContain(`${s.project}/skipme/beta.check.ts`)
-            expect(s.handle.runtime.config.projects[0]?.setupFiles).toEqual([`${s.project}/setup.ts`])
+        Then('the listing keeps matched and in-source files and drops the ignored one')((s, expect) => {
+          const files = s.listing.files
+          const check = expect({
+            keepsMatched: files.includes(`${s.project}/custom/alpha.check.ts`),
+            keepsInSource: files.includes(`${s.project}/src/in-source.ts`),
+            dropsIgnored: files.includes(`${s.project}/skipme/beta.check.ts`),
+            setupFiles: s.handle.runtime.config.projects[0]?.setupFiles,
+          }).toEqual({
+            keepsMatched: true,
+            keepsInSource: true,
+            dropsIgnored: false,
+            setupFiles: [`${s.project}/setup.ts`],
           })
-        ),
-        Then('the runtime shuts down and the temporary project is removed')((s) =>
-          Effect.gen(function*() {
-            yield* Effect.promise(() => s.handle.close())
-            yield* removeProject(s.project)
-          })
-        ),
+          return Effect.promise(() => s.handle.close()).pipe(
+            Effect.andThen(removeProject(s.project)),
+            Effect.as(check),
+          )
+        }),
       ),
     )
 
@@ -396,10 +410,10 @@ Feature('Loading a Vitest project in memory')
               Session.transformPlugin,
             ]),
         ),
-        Then('the component test passes against the transformed view')((s) =>
-          Effect.sync(() => expectSuitePassed(s.response, 1))
-        ),
-        Then('the temporary project is removed')((s) => removeProject(s.project)),
+        Then('the component test passes against the transformed view')((s, expect) => {
+          const check = expect(summarizeRun(s.response)).toEqual(passingRun)
+          return removeProject(s.project).pipe(Effect.as(check))
+        }),
       ),
     )
 
@@ -425,10 +439,10 @@ Feature('Loading a Vitest project in memory')
                 Session.transformPlugin,
               ]),
           ),
-          Then(`the suite passes with the value ${row.expected}`)((s) =>
-            Effect.sync(() => expectSuitePassed(s.response, 1))
-          ),
-          And('the temporary project is removed')((s) => removeProject(s.project)),
+          Then(`the suite passes with the value ${row.expected}`)((s, expect) => {
+            const check = expect(summarizeRun(s.response)).toEqual(passingRun)
+            return removeProject(s.project).pipe(Effect.as(check))
+          }),
         ),
     )
 
@@ -456,12 +470,10 @@ Feature('Loading a Vitest project in memory')
               Session.runnerStatePlugin,
             ]),
         ),
-        Then('both tests pass against the aliased helper and its environment')((s) =>
-          Effect.sync(() => {
-            expectSuitePassed(s.response, 2)
-          })
-        ),
-        Then('the temporary project is removed')((s) => removeProject(s.project)),
+        Then('both tests pass against the aliased helper and its environment')((s, expect) => {
+          const check = expect(summarizeRun(s.response)).toEqual({ status: 'complete', testCount: 2, failures: [] })
+          return removeProject(s.project).pipe(Effect.as(check))
+        }),
       ),
     )
 
@@ -485,10 +497,10 @@ Feature('Loading a Vitest project in memory')
               Session.transformPlugin,
             ]),
         ),
-        Then('the rewritten value is what the test observed')((s) =>
-          Effect.sync(() => expectSuitePassed(s.response, 1))
-        ),
-        Then('the temporary project is removed')((s) => removeProject(s.project)),
+        Then('the rewritten value is what the test observed')((s, expect) => {
+          const check = expect(summarizeRun(s.response)).toEqual(passingRun)
+          return removeProject(s.project).pipe(Effect.as(check))
+        }),
       ),
     )
 
@@ -513,13 +525,13 @@ Feature('Loading a Vitest project in memory')
               )
             ),
         ),
-        Then('startup fails naming the vitest runner for browser suites')((s) =>
-          Effect.sync(() => {
-            expect(s.attempt.failed).toBe(true)
-            expect(s.attempt.message).toContain("testRunner: 'vitest'")
-          })
-        ),
-        Then('the temporary project is removed')((s) => removeProject(s.prepared.root)),
+        Then('startup fails naming the vitest runner for browser suites')((s, expect) => {
+          const check = expect({
+            failed: s.attempt.failed,
+            namesVitestRunner: s.attempt.message.includes("testRunner: 'vitest'"),
+          }).toEqual({ failed: true, namesVitestRunner: true })
+          return removeProject(s.prepared.root).pipe(Effect.as(check))
+        }),
       ),
     )
   })

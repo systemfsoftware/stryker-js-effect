@@ -14,7 +14,7 @@ import type {
   FixtureUse,
   FixtureValue,
 } from './fixtures.js'
-import { tagsForChain } from './registry.handle.js'
+import { tagsForChain } from './registry.js'
 import type {
   AroundHookFunction,
   AroundKind,

@@ -1,2 +1,2 @@
-export { dispatchingExpect, guardedExpect, guardedVi } from '../assertions.handle.js'
-export type { CreateExpect } from '../assertions.handle.js'
+export { dispatchingExpect, guardedExpect, guardedVi } from '../assertions.js'
+export type { CreateExpect } from '../assertions.js'

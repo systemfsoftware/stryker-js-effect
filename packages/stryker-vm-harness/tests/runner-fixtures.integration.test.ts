@@ -1,12 +1,11 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import { FileSystem, Path, PlatformError } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const PACKAGES_ROOT = decodeURIComponent(new URL('../../', import.meta.url).pathname).replace(/\/$/, '')
 const SANDBOX_DEPENDENCIES = `${PACKAGES_ROOT}/stryker-js/node_modules`
@@ -338,7 +337,7 @@ const FIXTURE_CASES = [
 
 Feature('Replaying Vitest fixture suites in memory with the same outcomes')
   .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
-  .liveClock()
+  .live('the sandbox writes real suite files and spawns the in-memory runner over them')
   .body(({ scenarioOutline }) => {
     scenarioOutline(
       'A suite in which <behaviour> replays with the same outcomes Vitest gives',
@@ -350,13 +349,13 @@ Feature('Replaying Vitest fixture suites in memory with the same outcomes')
             () => sandboxOf(row.source),
           ),
           When('the in-memory runner replays the suite')('outcome', (s) => replayOf(s.sandbox)),
-          Then('every test reports the outcome real Vitest gives')((s) => {
+          Then('every test reports the outcome real Vitest gives')((s, expect) => {
             if (s.outcome.status !== 'complete') {
               throw new Error(
                 `the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`,
               )
             }
-            expect(s.outcome.results).toEqual(row.expected)
+            return expect(s.outcome.results).toMatchObject(row.expected)
           }),
         ),
     )

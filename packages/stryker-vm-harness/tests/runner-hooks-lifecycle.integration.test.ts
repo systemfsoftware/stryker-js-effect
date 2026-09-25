@@ -1,13 +1,12 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const suiteFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
@@ -362,7 +361,7 @@ const hookFailureSource = fileSource([
 
 Feature('Running the hook lifecycle exactly the way Vitest does')
   .withLayer(suiteFileLayer)
-  .liveClock()
+  .live('the sandbox writes real suite files and spawns the in-memory runner over them')
   .body(({ scenario }) => {
     scenario(
       'Nested suites run before and after hooks from the outside in and tear down from the inside out',
@@ -372,8 +371,8 @@ Feature('Running the hook lifecycle exactly the way Vitest does')
           () => writeSandbox({ 'src/order.test.ts': orderingSource }),
         ),
         When('the session checks the suite')('observed', (s) => dryRunOf(s.sandbox)),
-        Then('both tests pass with the full hook order Vitest reports')((s) => {
-          expect(s.observed).toEqual([
+        Then('both tests pass with the full hook order Vitest reports')((s, expect) => {
+          return expect(s.observed).toEqual([
             {
               name: 'outer > inner > first sees beforeAll then outer then inner beforeEach',
               status: 'success',
@@ -397,8 +396,8 @@ Feature('Running the hook lifecycle exactly the way Vitest does')
           () => writeSandbox({ 'src/cleanups.test.ts': cleanupSource }),
         ),
         When('the session checks the suite')('observed', (s) => dryRunOf(s.sandbox)),
-        Then('every test passes with the cleanup order Vitest reports')((s) => {
-          expect(s.observed).toEqual([
+        Then('every test passes with the cleanup order Vitest reports')((s, expect) => {
+          return expect(s.observed).toEqual([
             {
               name: 'beforeEach cleanups > inner > first test leaves both setups recorded',
               status: 'success',
@@ -433,8 +432,8 @@ Feature('Running the hook lifecycle exactly the way Vitest does')
           () => writeSandbox({ 'src/around.test.ts': aroundSource }),
         ),
         When('the session checks the suite')('observed', (s) => dryRunOf(s.sandbox)),
-        Then('each test passes with the wrapper order Vitest reports')((s) => {
-          expect(s.observed).toEqual([
+        Then('each test passes with the wrapper order Vitest reports')((s, expect) => {
+          return expect(s.observed).toEqual([
             {
               name: 'root suite wraps everything > aroundEach pins each test > first wrapped test',
               status: 'success',
@@ -465,8 +464,8 @@ Feature('Running the hook lifecycle exactly the way Vitest does')
         ),
         When('the session checks the suite')('observed', (s) => dryRunOf(s.sandbox)),
         Then('the passing test passes, the failing test fails with boom, and the teardown traffic matches Vitest')(
-          (s) => {
-            expect(s.observed).toEqual([
+          (s, expect) => {
+            return expect(s.observed).toEqual([
               {
                 name: 'finished hooks > a passing test leaves only the finished mark',
                 status: 'success',
@@ -501,8 +500,8 @@ Feature('Running the hook lifecycle exactly the way Vitest does')
           () => writeSandbox({ 'src/after-failure.test.ts': failureTearDownSource }),
         ),
         When('the session checks the suite')('observed', (s) => dryRunOf(s.sandbox)),
-        Then('the failure fails with boom while the other tests pass with the teardown Vitest reports')((s) => {
-          expect(s.observed).toEqual([
+        Then('the failure fails with boom while the other tests pass with the teardown Vitest reports')((s, expect) => {
+          return expect(s.observed).toEqual([
             {
               name: 'a suite with a failure still tears down > the failing test',
               status: 'failed',
@@ -536,8 +535,8 @@ Feature('Running the hook lifecycle exactly the way Vitest does')
             }),
         ),
         When('the session checks both files together')('observed', (s) => dryRunOf(s.sandbox)),
-        Then('both tests pass because no hook leaked across files')((s) => {
-          expect(s.observed).toEqual([
+        Then('both tests pass because no hook leaked across files')((s, expect) => {
+          return expect(s.observed).toEqual([
             {
               name: 'first file runs its own root hook once',
               status: 'success',
@@ -561,8 +560,8 @@ Feature('Running the hook lifecycle exactly the way Vitest does')
           () => writeSandbox({ 'src/hook-failure.test.ts': hookFailureSource }),
         ),
         When('the session checks the suite')('observed', (s) => dryRunOf(s.sandbox)),
-        Then('every outcome matches the status and message Vitest reports')((s) => {
-          expect(s.observed).toEqual([
+        Then('every outcome matches the status and message Vitest reports')((s, expect) => {
+          return expect(s.observed).toEqual([
             {
               name: 'a throwing beforeEach > the first test fails with the hook message',
               status: 'failed',

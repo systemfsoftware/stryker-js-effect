@@ -4,15 +4,8 @@ export {
   createIt,
   DEFAULT_TITLE_VALUE_FORMAT_TRUNCATE,
   formatEachName,
-} from '../harness-api.handle.js'
-export {
-  createRegistry,
-  fullNameOf,
-  hooksFor,
-  planRun,
-  suiteHooksFor,
-  validateTagsForFile,
-} from '../registry.handle.js'
+} from '../harness-api.js'
+export { createRegistry, fullNameOf, hooksFor, planRun, suiteHooksFor, validateTagsForFile } from '../registry.js'
 export type {
   AroundHookFunction,
   AroundKind,

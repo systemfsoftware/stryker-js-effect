@@ -1,7 +1,7 @@
 import * as Effect from 'effect/Effect'
 
 import { projectForFile } from '../environments/file-config.js'
-import { nativeImport } from '../native-import.handle.js'
+import { nativeImport } from '../native-import.js'
 import { type ProvidedValue, readGlobalState } from '../sandbox-state.handle.js'
 import type { VmRunnerGlobalState } from '../sandbox.schema.js'
 import type { VmGraphContext, VmPluginHost, VmSessionPlugin } from '../session-plugin.js'

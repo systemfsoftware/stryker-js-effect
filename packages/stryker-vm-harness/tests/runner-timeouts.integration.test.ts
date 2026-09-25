@@ -1,12 +1,11 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import { FileSystem, Path, PlatformError } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const PACKAGES_ROOT = decodeURIComponent(new URL('../../', import.meta.url).pathname).replace(/\/$/, '')
 const SANDBOX_DEPENDENCIES = `${PACKAGES_ROOT}/stryker-js/node_modules`
@@ -258,7 +257,7 @@ const hookTimeoutMessageOf = (timeout: number): string => `Hook timed out in ${t
 
 Feature('The in-memory runner reports timeouts exactly as Vitest does')
   .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
-  .liveClock()
+  .live('the sandbox writes real suite files and spawns the in-memory runner over them')
   .body(({ scenario, scenarioOutline }) => {
     scenarioOutline(
       'A test that overruns a timeout declared on the test itself fails with the timeout message',
@@ -288,11 +287,11 @@ Feature('The in-memory runner reports timeouts exactly as Vitest does')
             'outcome',
             (s) => replayOf(s.sandbox, [`src/${row.file}`]),
           ),
-          Then('the slow test fails with the exact timeout message and a later test still passes')((s) => {
+          Then('the slow test fails with the exact timeout message and a later test still passes')((s, expect) => {
             if (s.outcome.status !== 'complete') {
               throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
             }
-            expect(s.outcome.results).toEqual([
+            return expect(s.outcome.results).toEqual([
               {
                 name: row.timedOut,
                 status: 'failed',
@@ -319,11 +318,11 @@ Feature('The in-memory runner reports timeouts exactly as Vitest does')
           'outcome',
           (s) => replayOf(s.sandbox, ['src/describe-timeout.test.ts']),
         ),
-        Then('the slow child fails with the exact timeout message and a later sibling still passes')((s) => {
+        Then('the slow child fails with the exact timeout message and a later sibling still passes')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual([
+          return expect(s.outcome.results).toEqual([
             {
               name: 'a describe block with a timeout > a child inherits the timeout',
               status: 'failed',
@@ -350,11 +349,11 @@ Feature('The in-memory runner reports timeouts exactly as Vitest does')
           'outcome',
           (s) => replayOf(s.sandbox, ['src/guard-hook.test.ts']),
         ),
-        Then('both guarded tests fail with the exact hook message')((s) => {
+        Then('both guarded tests fail with the exact hook message')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual([
+          return expect(s.outcome.results).toEqual([
             {
               name: 'the first test the hook guards',
               status: 'failed',
@@ -381,11 +380,11 @@ Feature('The in-memory runner reports timeouts exactly as Vitest does')
           'outcome',
           (s) => replayOf(s.sandbox, ['src/setup-hook.test.ts']),
         ),
-        Then('the tests that never started are reported as skipped')((s) => {
+        Then('the tests that never started are reported as skipped')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual([
+          return expect(s.outcome.results).toEqual([
             { name: 'a test that never starts', status: 'skipped', failureMessage: undefined },
             { name: 'another test that never starts', status: 'skipped', failureMessage: undefined },
           ])
@@ -404,11 +403,11 @@ Feature('The in-memory runner reports timeouts exactly as Vitest does')
           'outcome',
           (s) => replayOf(s.sandbox, ['src/cancel-signal.test.ts']),
         ),
-        Then('the waiting test fails with the exact timeout message and nothing else fails')((s) => {
+        Then('the waiting test fails with the exact timeout message and nothing else fails')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expect(s.outcome.results).toEqual([{
+          return expect(s.outcome.results).toEqual([{
             name: 'a test that waits on its cancellation signal',
             status: 'failed',
             failureMessage: testTimeoutMessageOf(SIGNAL_TIMEOUT),
@@ -447,11 +446,11 @@ Feature('The in-memory runner reports timeouts exactly as Vitest does')
             'outcome',
             (s) => replayOf(s.sandbox, [`src/${row.file}`]),
           ),
-          Then('the run fails with the exact configured timeout message')((s) => {
+          Then('the run fails with the exact configured timeout message')((s, expect) => {
             if (s.outcome.status !== 'complete') {
               throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
             }
-            expect(s.outcome.results).toEqual([{
+            return expect(s.outcome.results).toEqual([{
               name: row.name,
               status: 'failed',
               failureMessage: row.failureMessage,

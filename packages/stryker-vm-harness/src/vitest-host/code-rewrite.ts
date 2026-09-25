@@ -257,3 +257,75 @@ export const replaceCodeToken: {
     return { code: state.out.join(''), replaced: state.replaced }
   },
 )
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const { Schema } = await import('effect')
+
+  const TOKEN = 'import.meta.env'
+  const VIEW = 'Object.assign(globalThis.__vitest_worker__?.metaEnv ?? import.meta.env)'
+
+  const ASSIGN_OPERATORS = Schema.Literals([
+    '=',
+    '+=',
+    '-=',
+    '*=',
+    '/=',
+    '%=',
+    '**=',
+    '<<=',
+    '>>=',
+    '>>>=',
+    '&=',
+    '|=',
+    '^=',
+    '&&=',
+    '||=',
+    '??=',
+  ])
+  const BINARY_OPERATORS = Schema.Literals(['==', '===', '!=', '!==', '+', '&&', '||'])
+  const ATOMS = Schema.Array(Schema.Literals(['a', 'b', 'c', '1', ' ', '+', '-']))
+  const NAMES = Schema.NonEmptyArray(Schema.Literals(['a', 'b', 'c']))
+
+  const textOf = (atoms: ReadonlyArray<string>): string => atoms.join('')
+
+  it.prop(
+    '∀rhs_AssignmentTarget_=src',
+    { of: [ASSIGN_OPERATORS, ATOMS], subject: replaceCodeToken },
+    (replace, [operator, atoms]) => {
+      const source = `${TOKEN} ${operator} ${textOf(atoms)}`
+      const result = replace(source, TOKEN, VIEW)
+      return result.code === source && result.replaced === false
+    },
+  )
+
+  it.prop(
+    '∀rhs_TokenReference_=Model',
+    { of: [BINARY_OPERATORS, ATOMS], subject: replaceCodeToken },
+    (replace, [operator, atoms]) => {
+      const source = `${TOKEN} ${operator} ${textOf(atoms)}`
+      const result = replace(source, TOKEN, VIEW)
+      return result.code === `${VIEW} ${operator} ${textOf(atoms)}` && result.replaced === true
+    },
+  )
+
+  it.prop(
+    '∀rhs_MemberAssignment_=Model',
+    { of: [ASSIGN_OPERATORS, ATOMS], subject: replaceCodeToken },
+    (replace, [operator, atoms]) => {
+      const source = `${TOKEN}.X ${operator} ${textOf(atoms)}`
+      const result = replace(source, TOKEN, VIEW)
+      return result.code === `${VIEW}.X ${operator} ${textOf(atoms)}` && result.replaced === true
+    },
+  )
+
+  it.prop(
+    '∀name_MemberRead_=Model',
+    { of: [NAMES], subject: replaceCodeToken },
+    (replace, [name]) => {
+      const source = `const x = ${TOKEN}.${textOf(name)}`
+      const result = replace(source, TOKEN, VIEW)
+      return result.code === `const x = ${VIEW}.${textOf(name)}` && result.replaced === true
+    },
+  )
+}

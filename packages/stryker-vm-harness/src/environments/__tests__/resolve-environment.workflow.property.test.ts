@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
@@ -44,19 +44,27 @@ const actualOf = (spec: EnvironmentSpec): string =>
   )
 
 describe('resolveEnvironment', () => {
-  it.prop('∀name_EnvironmentSpec_≡VitestOracle', [ResolveEnvironmentFixtureSchema], ([{ name, root }]) => {
-    const decision = Result.getOrThrow(resolveEnvironment(ResolveEnvironmentCommand.make({ name, root })))
-    return actualOf(decision) === oracleOf(name, root)
-  })
+  it.prop(
+    '∀name_EnvironmentSpec_≡VitestOracle',
+    { of: [ResolveEnvironmentFixtureSchema], subject: resolveEnvironment },
+    (resolve, [{ name, root }]) => {
+      const decision = Result.getOrThrow(resolve(ResolveEnvironmentCommand.make({ name, root })))
+      return actualOf(decision) === oracleOf(name, root)
+    },
+  )
 
-  it.prop('∀name_EnvironmentSpec_→Dependency', [ResolveEnvironmentFixtureSchema], ([{ name }]) => {
-    const decision = Result.getOrThrow(resolveEnvironment(ResolveEnvironmentCommand.make({ name, root: '/sandbox' })))
-    return Match.value(decision).pipe(
-      Match.tag('NodeEnvironment', () => true),
-      Match.tag('FileEnvironment', () => true),
-      Match.tag('BuiltinEnvironment', (builtin) => BUILTIN_DEPENDENCIES[builtin.name] === builtin.dependency),
-      Match.tag('PackageEnvironment', (custom) => custom.dependency === `vitest-environment-${custom.name}`),
-      Match.exhaustive,
-    )
-  })
+  it.prop(
+    '∀name_EnvironmentSpec_→Dependency',
+    { of: [ResolveEnvironmentFixtureSchema], subject: resolveEnvironment },
+    (resolve, [{ name }]) => {
+      const decision = Result.getOrThrow(resolve(ResolveEnvironmentCommand.make({ name, root: '/sandbox' })))
+      return Match.value(decision).pipe(
+        Match.tag('NodeEnvironment', () => true),
+        Match.tag('FileEnvironment', () => true),
+        Match.tag('BuiltinEnvironment', (builtin) => BUILTIN_DEPENDENCIES[builtin.name] === builtin.dependency),
+        Match.tag('PackageEnvironment', (custom) => custom.dependency === `vitest-environment-${custom.name}`),
+        Match.exhaustive,
+      )
+    },
+  )
 })

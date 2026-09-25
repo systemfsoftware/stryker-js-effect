@@ -1,7 +1,6 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Registry } from '@systemfsoftware/stryker-vm-harness'
 import { Effect, Layer } from 'effect'
-import { expect } from 'vitest'
 
 const TITLES_VITEST_GIVES = [
   { pattern: '%s', tableRow: ['plain'], expected: 'plain' },
@@ -67,7 +66,7 @@ const TITLES_VITEST_GIVES = [
   { pattern: '%d then %s', tableRow: [3.5, 'yy'], expected: '3.5 then yy' },
 ]
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Naming each-runner tests from a table row exactly as Vitest does')
   .withLayer(Layer.empty)
@@ -85,11 +84,7 @@ Feature('Naming each-runner tests from a table row exactly as Vitest does')
             'composed',
             (s) => Effect.sync(() => Registry.formatEachName(s.input.pattern, s.input.tableRow)),
           ),
-          Then('the name is the one Vitest gives the same row')((s) =>
-            Effect.sync(() => {
-              expect(s.composed).toBe(row.expected)
-            })
-          ),
+          Then('the name is the one Vitest gives the same row')((s, expect) => expect(s.composed).toBe(row.expected)),
         ),
     )
 
@@ -107,10 +102,8 @@ Feature('Naming each-runner tests from a table row exactly as Vitest does')
               s.table.rows.map((row, index) => Registry.formatEachName(s.table.pattern, row, { index }))
             ),
         ),
-        Then('the first row counts as the first and the second as the second')((s) =>
-          Effect.sync(() => {
-            expect(s.names).toStrictEqual(['row 0 / 1 / x', 'row 1 / 2 / y'])
-          })
+        Then('the first row counts as the first and the second as the second')(
+          (s, expect) => expect(s.names).toStrictEqual(['row 0 / 1 / x', 'row 1 / 2 / y']),
         ),
       ),
     )
@@ -126,12 +119,10 @@ Feature('Naming each-runner tests from a table row exactly as Vitest does')
           'composed',
           (s) => Effect.succeed({ input: s.input }),
         ),
-        Then('the title fails exactly as it does under Vitest')((s) =>
-          Effect.sync(() => {
-            expect(() => Registry.formatEachName(s.composed.input.pattern, s.composed.input.tableRow)).toThrow(
-              'Cannot convert object to primitive value',
-            )
-          })
+        Then('the title fails exactly as it does under Vitest')((s, expect) =>
+          expect(() => Registry.formatEachName(s.composed.input.pattern, s.composed.input.tableRow)).toThrow(
+            'Cannot convert object to primitive value',
+          )
         ),
       ),
     )
