@@ -3,31 +3,64 @@ name: Mutation
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
   group: mutation-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
+env:
+  TIMINGS: deno run --config=scripts/deno.json --allow-read --allow-write --allow-env scripts/mutation-timings.ts
+  MUTATION_JOB: deno run --config=scripts/deno.json --allow-read --allow-write --allow-env --allow-run=timeout scripts/mutation-job.ts
+  TARGET_SECONDS: 900
+
 jobs:
-  mutation:
+  plan:
+    name: plan · mutation jobs from recorded timings
     if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      jobs: ${{ steps.plan.outputs.jobs }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+      - name: Latest timing record from main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .timings/previous
+          id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=mutation-timings&per_page=100" \
+            --jq '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == "main")][0].id // empty') || id=
+          if [ -n "$id" ] && gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > .timings/previous.zip; then
+            unzip -o -q .timings/previous.zip -d .timings/previous || true
+          fi
+          ls .timings/previous
+      - id: plan
+        run: $TIMINGS plan --target "$TARGET_SECONDS" --max-jobs 20 --unknown-seconds "$TARGET_SECONDS" --record .timings/previous/mutation-timings.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mutation-timings-previous
+          path: .timings/previous/
+          if-no-files-found: ignore
+          retention-days: 1
+
+  mutation:
+    name: mutation · ${{ matrix.job.name }}
+    needs: plan
+    if: ${{ needs.plan.result == 'success' && needs.plan.outputs.jobs != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
-        package:
-          - packages/stryker-js
-          - packages/stryker-js-vitest-runner
-          - packages/stryker-js-typescript-checker
-    name: Mutation (${{ matrix.package }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      CI: "true"
+        job: ${{ fromJSON(needs.plan.outputs.jobs) }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -36,66 +69,82 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: denoland/setup-deno@v2
+      - name: Build
+        run: pnpm exec turbo run build --output-logs=errors-only --log-order=stream ${{ matrix.job.filters }}
 
       - uses: actions/cache/restore@v6
         with:
-          path: ${{ matrix.package }}/reports/stryker-incremental.json
-          key: ${{ runner.os }}-stryker-${{ matrix.package }}-main
+          path: .stryker-incremental
+          key: stryker-incremental-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-stryker-${{ matrix.package }}-
+            stryker-incremental-
+      - name: Place incremental files
+        run: if [ -d .stryker-incremental ]; then cp -a .stryker-incremental/. .; fi
 
       - name: Mutation
-        id: mutation
-        continue-on-error: true
-        timeout-minutes: 30
-        run: pnpm turbo mutation --filter=./${{ matrix.package }} --log-order=stream --output-logs=errors-only
-
-      - name: Record part metadata
-        if: always()
-        run: |
-          mkdir -p '${{ matrix.package }}/reports'
-          printf '{"package":"%s","outcome":"%s"}\n' \
-            '${{ matrix.package }}' '${{ steps.mutation.outcome }}' \
-            > '${{ matrix.package }}/reports/mutation-part.json'
-
-      - name: Require a mutation part
-        if: ${{ !cancelled() }}
-        run: |
-          test -f '${{ matrix.package }}/reports/mutation-part.json'
-          test -f '${{ matrix.package }}/reports/mutation-report.json' \
-            || test -f '${{ matrix.package }}/reports/mutation-stream.jsonl'
-
-      - uses: actions/cache/save@v6
-        if: ${{ always() && hashFiles(format('{0}/reports/stryker-incremental.json', matrix.package)) != '' }}
-        with:
-          path: ${{ matrix.package }}/reports/stryker-incremental.json
-          key: ${{ runner.os }}-stryker-${{ matrix.package }}-${{ github.run_id }}
-
-      - name: Sanitize artifact name
-        id: sanitize
-        if: always()
-        run: echo "name=$(echo '${{ matrix.package }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+        env:
+          JOB: ${{ toJSON(matrix.job) }}
+        run: $MUTATION_JOB run --cap-seconds "$((TARGET_SECONDS * 2))" --budget-seconds "$((TARGET_SECONDS * 4))"
 
       - uses: actions/upload-artifact@v7
         if: always()
-        continue-on-error: true
         with:
-          name: mutation-part-${{ steps.sanitize.outputs.name }}
-          path: |
-            ${{ matrix.package }}/reports/mutation-part.json
-            ${{ matrix.package }}/reports/mutation-report.json
-            ${{ matrix.package }}/reports/mutation-stream.jsonl
+          name: mutation-timings-part-${{ matrix.job.id }}
+          path: .timings/${{ matrix.job.id }}.json
+          if-no-files-found: ignore
+          retention-days: 1
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mutation-incremental-${{ matrix.job.id }}
+          path: incremental/
+          if-no-files-found: ignore
+          retention-days: 1
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mutation-part-${{ matrix.job.id }}
+          path: mutation-parts/
           if-no-files-found: ignore
           retention-days: 1
 
+  timings:
+    name: record mutation timings
+    needs: [plan, mutation]
+    if: ${{ always() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: mutation-timings-part-*
+          path: .timings/parts
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: mutation-timings-previous
+          path: .timings/previous
+      - name: Merge this run into the record
+        run: $TIMINGS merge --target "$TARGET_SECONDS" --previous .timings/previous/mutation-timings.json --parts .timings/parts --out .timings/mutation-timings.json --sha "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mutation-timings
+          path: .timings/mutation-timings.json
+          retention-days: 30
+
   report:
     name: Mutation report
-    needs: [mutation]
-    if: ${{ !cancelled() && needs.mutation.result != 'skipped' }}
+    needs: [plan, mutation]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.jobs != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
       contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -104,24 +153,53 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: denoland/setup-deno@v2
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: .stryker-incremental
+          key: stryker-incremental-${{ github.run_id }}
+          restore-keys: |
+            stryker-incremental-
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: mutation-incremental-*
+          path: .stryker-incremental
+          merge-multiple: true
+      - uses: actions/cache/save@v6
+        if: ${{ hashFiles('.stryker-incremental/**') != '' }}
+        with:
+          path: .stryker-incremental
+          key: stryker-incremental-${{ github.run_id }}
 
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           path: mutation-parts
           pattern: mutation-part-*
-
-      - name: Merge
+      - name: Fold shard parts into one part per package
         env:
-          PACKAGES: '["packages/stryker-js","packages/stryker-js-vitest-runner","packages/stryker-js-typescript-checker"]'
+          JOBS: ${{ needs.plan.outputs.jobs }}
+        run: $MUTATION_JOB combine --parts mutation-parts --out mutation-combined
+      - name: Merge
         run: |
           pnpm --filter @systemfsoftware/stryker-js exec stryker merge-reports \
-            --parts "$GITHUB_WORKSPACE/mutation-parts" \
+            --parts "$GITHUB_WORKSPACE/mutation-combined" \
             --out "$GITHUB_WORKSPACE/mutation-merged" \
             --packages "$PACKAGES"
-
       - uses: actions/upload-artifact@v7
         with:
           name: mutation-report-${{ github.run_number }}
           path: mutation-merged/*
           retention-days: 14
+
+      - name: Delete per-job artifacts
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
+            --jq '.artifacts[] | select(.name | startswith("mutation-part-") or startswith("mutation-incremental-")) | .id' \
+          | while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"; done

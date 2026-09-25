@@ -6,11 +6,12 @@ import type { SandboxForkFailure } from './harness-failure.schema.js'
 import { seamSpan, SpanNames } from './harness-telemetry.service.js'
 import * as Warm from './warm-sandbox.handle.js'
 
-const guestTelemetryEnvironment = (env: {
+const guestEnvironment = (env: {
   readonly OTEL_ENABLED?: string | undefined
   readonly OTEL_SERVICE_NAME?: string | undefined
   readonly OTEL_EXPORTER_OTLP_ENDPOINT?: string | undefined
 }) => ({
+  STRYKER_MODE: 'machine',
   OTEL_ENABLED: env['OTEL_ENABLED'] ?? 'false',
   OTEL_SERVICE_NAME: env['OTEL_SERVICE_NAME'] ?? 'stryker-e2e',
   OTEL_EXPORTER_OTLP_ENDPOINT: (env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? 'http://127.0.0.1:4318')
@@ -32,7 +33,7 @@ const runStrykerCli = (args: ReadonlyArray<string>, warm: Warm.WarmSandbox, labe
     const result = yield* Warm.exec(
       fork,
       ['npx', '--no-install', 'stryker', ...args],
-      guestTelemetryEnvironment({
+      guestEnvironment({
         OTEL_ENABLED: Option.getOrUndefined(enabled),
         OTEL_SERVICE_NAME: Option.getOrUndefined(service),
         OTEL_EXPORTER_OTLP_ENDPOINT: Option.getOrUndefined(endpoint),

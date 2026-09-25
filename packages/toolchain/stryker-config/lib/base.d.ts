@@ -11,8 +11,11 @@ export interface SharedConfig {
   disableBail: boolean
   cleanTempDir: 'always'
   thresholds: { high: number; low: number; break: number }
-  mutate: string[]
-  concurrency: string
+  concurrency?: string
 }
 
 export const sharedConfig: SharedConfig
+
+export function shardMutate(patterns: readonly string[]): string[]
+
+export function installedPlugin(specifier: string, configUrl: string | URL): string

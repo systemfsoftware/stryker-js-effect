@@ -1,4 +1,3 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
 export class MergeReportsFailed extends S.TaggedError<MergeReportsFailed>()('MergeReportsFailed', {
@@ -6,15 +5,3 @@ export class MergeReportsFailed extends S.TaggedError<MergeReportsFailed>()('Mer
 }) {}
 
 export const PartMetaSchema = S.Struct({ package: S.String, outcome: S.String })
-
-export const StreamMutantLineSchema = S.Struct({
-  kind: S.Literal('mutant'),
-  id: S.String,
-  status: Mutant.MutantStatusSchema,
-  file: S.String,
-  location: Mutant.LocationSchema,
-  mutator: S.String,
-  replacement: S.NullOr(S.String),
-})
-
-export type StreamMutantLine = S.Schema.Type<typeof StreamMutantLineSchema>

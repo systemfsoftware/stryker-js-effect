@@ -17,6 +17,7 @@
     "jsr:@std/toml@^1.0.3": "1.0.11",
     "jsr:@std/yaml@1": "1.2.0",
     "jsr:@std/yaml@^1.0.5": "1.2.0",
+    "npm:effect@4.0.0-rc.117": "4.0.0-rc.117",
     "npm:octokit@4": "4.1.4"
   },
   "jsr": {
@@ -273,6 +274,9 @@
     "bottleneck@2.19.5": {
       "integrity": "sha512-VHiNCbI1lKdl44tGrhNfU3lup0Tj/ZBMJB5/2ZbNXRCPuRCO7ed2mgcK4r17y+KB2EfuYuRaVlwNbAeaWGSpbw=="
     },
+    "effect@4.0.0-rc.117": {
+      "integrity": "sha512-UUyi9QiOW4nySFIBM3KnYbNMd9EZliOdKfBcyLD0mPMPheO2fkuXS5y0opjWc9oqzlJxPQICEGm8gGw3kh9j/w=="
+    },
     "fast-content-type-parse@2.0.1": {
       "integrity": "sha512-nGqtvLrj5w0naR6tDPfB4cUmYCqouzyQiz6C5y/LtcDllJdrcc6WaWW6iXyIIOErTa/XRybj28aasdn4LkVk6Q=="
     },
@@ -313,6 +317,7 @@
       "jsr:@std/fs@1",
       "jsr:@std/path@1",
       "jsr:@std/yaml@1",
+      "npm:effect@4.0.0-rc.117",
       "npm:octokit@4"
     ]
   }

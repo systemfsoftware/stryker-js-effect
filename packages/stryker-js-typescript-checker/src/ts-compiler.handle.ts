@@ -38,7 +38,13 @@ import {
   type TSFiles,
   tsFileSystem,
 } from './ts-files.handle.js'
-import { type TsConfig, TsConfigNotFoundError, TsConfigParseError, TsConfigSchema } from './Tsconfig.schema.js'
+import {
+  PathAliasesSchema,
+  type TsConfig,
+  TsConfigNotFoundError,
+  TsConfigParseError,
+  TsConfigSchema,
+} from './Tsconfig.schema.js'
 
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSCompiler')
 export type TypeId = typeof TypeId
@@ -76,6 +82,7 @@ interface CompilerState {
   lastMutants: Checker.CheckerMutantWire[]
   lastMutatedFileNames: string[]
   allTSConfigFiles: MutableHashSet.MutableHashSet<string>
+  aliases: ReadonlyArray<PathAlias>
   tsconfigFile: string
 }
 
@@ -119,6 +126,7 @@ export const make: {
       nodes: HashMap.empty(),
       lastMutants: [],
       lastMutatedFileNames: [],
+      aliases: [],
       allTSConfigFiles: MutableHashSet.fromIterable([tsconfigFile]),
       tsconfigFile,
     }
@@ -282,7 +290,26 @@ interface TsConfigWalk {
   readonly overrides: MutableHashMap.MutableHashMap<string, string>
   readonly files: MutableHashSet.MutableHashSet<string>
   readonly processed: MutableHashSet.MutableHashSet<string>
+  readonly aliases: ReadonlyArray<PathAlias>
 }
+
+const aliasEntriesOf = (
+  compilerOptions: TsConfig['compilerOptions'],
+): ReadonlyArray<readonly [string, ReadonlyArray<string>]> =>
+  Object.entries(
+    Option.getOrElse(
+      Option.flatMap(Option.fromUndefinedOr(compilerOptions), (options) =>
+        S.decodeUnknownOption(PathAliasesSchema)(options['paths'])),
+      (): S.Schema.Type<typeof PathAliasesSchema> => ({}),
+    ),
+  )
+
+const pathAliasesOf = (pathService: Path.Path, fileName: string, config: TsConfig): ReadonlyArray<PathAlias> =>
+  aliasEntriesOf(config.compilerOptions ?? {}).map(([pattern, targets]): PathAlias => ({
+    pattern,
+    targets,
+    baseDir: pathService.dirname(fileName),
+  }))
 
 const recordTsConfig = (
   rt: TSCompilerRuntime,
@@ -295,6 +322,7 @@ const recordTsConfig = (
     onFailure: () => ({ ...walk, overrides: MutableHashMap.set(walk.overrides, fileName, jsonText) }),
     onSuccess: (config) => ({
       overrides: MutableHashMap.set(walk.overrides, fileName, overrideOptions(config, buildMode)),
+      aliases: [...walk.aliases, ...pathAliasesOf(rt.pathService, fileName, config)],
       files: Arr.reduce(
         referencedProjectsOf(rt, config, rt.pathService.dirname(fileName)),
         walk.files,
@@ -416,13 +444,15 @@ const annotateDiagnosticSample = (diagnostics: readonly Diagnostic[]): Effect.Ef
       }),
   })
 
-const importSpecifierOf = (
+const carriesModuleSpecifier = (statement: SourceFile['statements'][number]): boolean =>
+  statement.kind === SyntaxKind.ImportDeclaration || statement.kind === SyntaxKind.ExportDeclaration
+
+const moduleSpecifierOf = (
   statement: SourceFile['statements'][number],
   sourceFile: SourceFile,
 ): Option.Option<string> =>
-  Boolean.match(statement.kind !== SyntaxKind.ImportDeclaration, {
-    onTrue: () => Option.none<string>(),
-    onFalse: () => {
+  Boolean.match(carriesModuleSpecifier(statement), {
+    onTrue: () => {
       const children: Array<Node> = []
       statement.forEachChild((child) => {
         children.push(child)
@@ -432,6 +462,7 @@ const importSpecifierOf = (
         (literal) => literal.getText(sourceFile),
       )
     },
+    onFalse: () => Option.none<string>(),
   })
 
 const keepSome = <A>(option: Option.Option<A>): Result.Result<A, void> =>
@@ -441,7 +472,7 @@ const keepSome = <A>(option: Option.Option<A>): Result.Result<A, void> =>
   })
 
 const importsOf = (sourceFile: SourceFile): ReadonlyArray<string> => [
-  ...Arr.filterMap(sourceFile.statements, (statement) => keepSome(importSpecifierOf(statement, sourceFile))),
+  ...Arr.filterMap(sourceFile.statements, (statement) => keepSome(moduleSpecifierOf(statement, sourceFile))),
   ...Arr.map(sourceFile.referencedFiles, (reference) => reference.fileName),
   ...Arr.map(sourceFile.typeReferenceDirectives, (reference) => reference.fileName),
 ]
@@ -482,6 +513,66 @@ const resolutionCandidates = (rt: TSCompilerRuntime, resolved: string): Readonly
   })
 }
 
+interface PathAlias {
+  readonly pattern: string
+  readonly targets: ReadonlyArray<string>
+  readonly baseDir: string
+}
+
+const prefixOf = (pattern: string): string => pattern.slice(0, Math.max(0, pattern.indexOf('*')))
+
+const suffixOf = (pattern: string): string => pattern.slice(pattern.indexOf('*') + 1)
+
+const stripPrefix = (specifier: string, prefix: string): Option.Option<string> =>
+  Option.map(
+    Option.liftPredicate(specifier, (candidate) => candidate.startsWith(prefix)),
+    (candidate) => candidate.slice(prefix.length),
+  )
+
+const stripSuffix = (specifier: string, suffix: string): Option.Option<string> =>
+  Option.map(
+    Option.liftPredicate(specifier, (candidate) => candidate.endsWith(suffix)),
+    (candidate) => candidate.slice(0, candidate.length - suffix.length),
+  )
+
+const exactCaptureOf = (alias: PathAlias, specifier: string): Option.Option<string> =>
+  Option.map(Option.liftPredicate(specifier, (candidate) => candidate === alias.pattern), () => '')
+
+const wildcardCaptureOf = (alias: PathAlias, specifier: string): Option.Option<string> =>
+  Option.flatMap(stripPrefix(specifier, prefixOf(alias.pattern)), (rest) => stripSuffix(rest, suffixOf(alias.pattern)))
+
+const captureOf = (alias: PathAlias, specifier: string): Option.Option<string> =>
+  Boolean.match(alias.pattern.includes('*'), {
+    onTrue: () => wildcardCaptureOf(alias, specifier),
+    onFalse: () => exactCaptureOf(alias, specifier),
+  })
+
+const aliasTargetPaths = (
+  rt: TSCompilerRuntime,
+  aliases: ReadonlyArray<PathAlias>,
+  specifier: string,
+): ReadonlyArray<string> =>
+  Arr.flatMap(aliases, (alias) =>
+    Option.match(captureOf(alias, specifier), {
+      onNone: () => [],
+      onSome: (capture) =>
+        Arr.map(
+          alias.targets,
+          (target) => normalizeFileName(rt.pathService.resolve(alias.baseDir, target.replace('*', capture))),
+        ),
+    }))
+
+const resolveAliasedSpecifier = (
+  rt: TSCompilerRuntime,
+  sourceFiles: SourceFiles,
+  specifier: string,
+): Option.Option<string> =>
+  Option.firstSomeOf(
+    Arr.map(aliasTargetPaths(rt, Ref.getUnsafe(rt.state).aliases, specifier), (target) =>
+      Arr.findFirst(resolutionCandidates(rt, target), (candidate) =>
+        MutableHashMap.has(sourceFiles, candidate))),
+  )
+
 const resolveSpecifier = (
   rt: TSCompilerRuntime,
   sourceFiles: SourceFiles,
@@ -490,7 +581,7 @@ const resolveSpecifier = (
 ): Option.Option<string> => {
   const cleaned = specifier.replace(CLEAN_SPECIFIER_PATTERN, '')
   return Boolean.match(relativeSpecifierPattern.test(cleaned), {
-    onFalse: () => Option.none<string>(),
+    onFalse: () => resolveAliasedSpecifier(rt, sourceFiles, cleaned),
     onTrue: () => {
       const resolved = normalizeFileName(rt.pathService.resolve(rt.pathService.dirname(fileName), cleaned))
       return Option.filter(
@@ -813,27 +904,122 @@ export const init = (self: TSCompiler): Effect.Effect<readonly Diagnostic[], Com
         files: MutableHashSet.fromIterable([tsconfigFile]),
         overrides: MutableHashMap.empty(),
         processed: MutableHashSet.empty(),
+        aliases: [],
       },
       [tsconfigFile],
     )
     yield* setOverrides(rt.files, walk.overrides)
-    yield* Ref.update(rt.state, (prev) => ({ ...prev, allTSConfigFiles: walk.files }))
+    yield* Ref.update(rt.state, (prev) => ({ ...prev, allTSConfigFiles: walk.files, aliases: walk.aliases }))
     const api = new API({ fs: rt.sourceFileSystem })
     const snapshot = yield* Effect.promise(() => api.updateSnapshot({ openProjects: Array.from(walk.files) }))
     yield* Ref.update(rt.state, (prev) => ({ ...prev, api, snapshot }))
-    yield* buildGraph(rt, yield* programsOf(rt))
-    return yield* check(self, [])
+    const programs = yield* programsOf(rt)
+    yield* buildGraph(rt, programs)
+    return yield* dryRunDiagnostics(programs)
   })
 }
 
-const diagnosticsOf = (program: Program): Effect.Effect<readonly Diagnostic[]> =>
-  Effect.promise(() =>
-    Promise.all([
-      program.getConfigFileParsingDiagnostics(),
-      program.getSemanticDiagnostics(),
-      program.getProgramDiagnostics(),
-    ]).then(([config, semantic, programWide]) => [...config, ...semantic, ...programWide])
+const DIAGNOSTIC_BATCH_SIZE = 64
+
+type Dependents = MutableHashMap.MutableHashMap<string, MutableHashSet.MutableHashSet<string>>
+
+const dependentsSetOf = (dependents: Dependents, imported: string): MutableHashSet.MutableHashSet<string> =>
+  Option.getOrElse(MutableHashMap.get(dependents, imported), () => {
+    const created = MutableHashSet.empty<string>()
+    MutableHashMap.set(dependents, imported, created)
+    return created
+  })
+
+const recordDependent = (dependents: Dependents, imported: string, fileName: string): void => {
+  MutableHashSet.add(dependentsSetOf(dependents, imported), fileName)
+}
+
+const dependentsOf = (sourceFiles: SourceFiles): Dependents => {
+  const dependents: Dependents = MutableHashMap.empty()
+  Arr.forEach(
+    Arr.fromIterable(sourceFiles),
+    ([fileName, file]) =>
+      Arr.forEach(Arr.fromIterable(file.imports), (imported) => recordDependent(dependents, imported, fileName)),
   )
+  return dependents
+}
+
+const dependentsOfFile = (dependents: Dependents, fileName: string): ReadonlyArray<string> =>
+  Arr.fromIterable(Option.getOrElse(MutableHashMap.get(dependents, fileName), MutableHashSet.empty<string>))
+
+const closeOverDependents = (dependents: Dependents, affected: ReadonlySet<string>): ReadonlySet<string> => {
+  const grown = new Set([
+    ...affected,
+    ...Arr.flatMap([...affected], (fileName) => dependentsOfFile(dependents, fileName)),
+  ])
+  return Boolean.match(grown.size === affected.size, {
+    onTrue: () => grown,
+    onFalse: () => closeOverDependents(dependents, grown),
+  })
+}
+
+const affectedFileNames = (sourceFiles: SourceFiles, mutatedFileNames: readonly string[]): ReadonlySet<string> =>
+  closeOverDependents(dependentsOf(sourceFiles), new Set(mutatedFileNames))
+
+const requestedFileNames = (
+  fileNames: ReadonlySet<string>,
+  presentFileNames: readonly string[],
+): ReadonlyArray<string> => Arr.filter(presentFileNames, (fileName) => fileNames.has(fileName))
+
+const diagnosticBatchesOf = (fileNames: ReadonlyArray<string>): ReadonlyArray<ReadonlyArray<string>> =>
+  Arr.chunksOf(fileNames, DIAGNOSTIC_BATCH_SIZE)
+
+const semanticDiagnosticsOf = (
+  program: Program,
+  fileNames: ReadonlySet<string>,
+): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.gen(function*() {
+    const presentFileNames = yield* Effect.promise(() => program.getSourceFileNames())
+    const perBatch = yield* Effect.forEach(
+      diagnosticBatchesOf(requestedFileNames(fileNames, presentFileNames)),
+      (batch) =>
+        Effect.map(
+          Effect.promise(() => Promise.all(Arr.map(batch, (fileName) => program.getSemanticDiagnostics(fileName)))),
+          (perFile) => Arr.flatten(perFile),
+        ),
+      { concurrency: 1 },
+    )
+    return [...perBatch].flat()
+  })
+
+const programWideDiagnosticsOf = (program: Program): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.promise(() =>
+    Promise.all([program.getConfigFileParsingDiagnostics(), program.getProgramDiagnostics()]).then(
+      ([config, programWide]) => [...config, ...programWide],
+    )
+  )
+
+const affectedDiagnosticsOf = (
+  program: Program,
+  fileNames: ReadonlySet<string>,
+): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.all([programWideDiagnosticsOf(program), semanticDiagnosticsOf(program, fileNames)], { concurrency: 2 }).pipe(
+    Effect.map(([programWide, semantic]) => [...semantic, ...programWide]),
+  )
+
+const wholeProgramDiagnosticsOf = (program: Program): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.all(
+    [programWideDiagnosticsOf(program), Effect.promise(() => program.getSemanticDiagnostics())],
+    { concurrency: 2 },
+  ).pipe(Effect.map(([programWide, semantic]) => [...semantic, ...programWide]))
+
+const dryRunDiagnostics = (programs: ReadonlyArray<Program>): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.map(
+    Effect.forEach(programs, (program) => wholeProgramDiagnosticsOf(program)),
+    (perProgram) => errorDiagnosticsOf(Arr.flatten(perProgram)),
+  ).pipe(
+    Effect.withSpan('typescript-checker.compiler.dryRun', {
+      attributes: { 'typescript.projects.count': programs.length },
+    }),
+  )
+
+const errorDiagnosticsOf = (diagnostics: readonly Diagnostic[]): readonly Diagnostic[] =>
+  Arr.filter(diagnostics, (diagnostic) => diagnostic.category === DiagnosticCategory.Error)
 
 export const check: {
   (
@@ -863,12 +1049,15 @@ export const check: {
         lastMutants: [...mutants],
         lastMutatedFileNames: mutatedFileNames,
       }))
+      const affected = affectedFileNames(state.sourceFiles, mutatedFileNames)
       const programs = yield* programsOf(rt)
-      const diagnostics = Arr.filter(
-        Arr.flatten(yield* Effect.forEach(programs, (program) => diagnosticsOf(program))),
-        (diagnostic) => diagnostic.category === DiagnosticCategory.Error,
+      const diagnostics = errorDiagnosticsOf(
+        Arr.flatten(yield* Effect.forEach(programs, (program) => affectedDiagnosticsOf(program, affected))),
       )
-      yield* Effect.annotateCurrentSpan({ 'typescript.diagnostics.count': diagnostics.length })
+      yield* Effect.annotateCurrentSpan({
+        'typescript.diagnostics.count': diagnostics.length,
+        'typescript.files.count': affected.size,
+      })
       yield* annotateDiagnosticSample(diagnostics)
       return diagnostics
     }).pipe(
@@ -1156,6 +1345,149 @@ if (import.meta.vitest !== void 0) {
         },
       })
     },
+  )
+
+  const sourceFilesOfEdges = (edges: ReadonlyArray<readonly [number, number]>): SourceFiles => {
+    const size = 1 + Arr.reduce(edges, 0, (largest, [child, parent]) => Math.max(largest, child, parent))
+    return MutableHashMap.fromIterable(
+      Arr.map(
+        Arr.range(0, size - 1),
+        (
+          index,
+        ): readonly [
+          string,
+          { readonly fileName: string; readonly imports: MutableHashSet.MutableHashSet<string> },
+        ] => [
+          fileNameOf(index),
+          {
+            fileName: fileNameOf(index),
+            imports: MutableHashSet.fromIterable(
+              Arr.map(Arr.filter(edges, ([, parent]) => parent === index), ([child]) => fileNameOf(child)),
+            ),
+          },
+        ],
+      ),
+    )
+  }
+
+  const propagateDependents = (
+    affected: ReadonlySet<string>,
+    [child, parent]: readonly [number, number],
+  ): ReadonlySet<string> =>
+    Boolean.match(affected.has(fileNameOf(child)), {
+      onTrue: () => new Set([...affected, fileNameOf(parent)]),
+      onFalse: () => affected,
+    })
+
+  const expectedAffected = (
+    edges: ReadonlyArray<readonly [number, number]>,
+    mutatedFileNames: ReadonlyArray<string>,
+  ): ReadonlyArray<string> => {
+    const seed: ReadonlySet<string> = new Set(mutatedFileNames)
+    return [
+      ...Arr.reduce(
+        Arr.range(0, edges.length + 1),
+        seed,
+        (affected) => Arr.reduce(edges, affected, propagateDependents),
+      ),
+    ].sort()
+  }
+
+  const affectedFor = (edges: ReadonlyArray<readonly [number, number]>, fileIndexes: readonly number[]) =>
+    affectedFileNames(sourceFilesOfEdges(edges), Arr.map(fileIndexes, fileNameOf))
+
+  it.prop(
+    '∀graph_Mutants_≡AffectedDependents',
+    { of: [EdgesSchema, MutantsSchema], subject: affectedFor },
+    (subject, [edges, fileIndexes]) =>
+      Equal.equals([...subject(edges, fileIndexes)].sort(), expectedAffected(edges, Arr.map(fileIndexes, fileNameOf))),
+  )
+
+  it.prop(
+    '∀graph_Mutants_⊆Affected',
+    { of: [EdgesSchema, MutantsSchema], subject: affectedFor },
+    (subject, [edges, fileIndexes]) => {
+      const affected = subject(edges, fileIndexes)
+      return Arr.every(Arr.map(fileIndexes, fileNameOf), (fileName) => affected.has(fileName))
+    },
+  )
+
+  it.prop(
+    '∀graph_Mutants_⊆Files∪Mutants',
+    { of: [EdgesSchema, MutantsSchema], subject: affectedFor },
+    (subject, [edges, fileIndexes]) => {
+      const known = new Set([
+        ...Arr.map(Arr.range(0, FILE_INDEX_LIMIT), fileNameOf),
+        ...Arr.map(fileIndexes, fileNameOf),
+      ])
+      return Arr.every([...subject(edges, fileIndexes)], (fileName) => known.has(fileName))
+    },
+  )
+
+  const requestedFor = (presentFileNames: ReadonlyArray<string>, fileNames: ReadonlyArray<string>) =>
+    requestedFileNames(new Set(fileNames), presentFileNames)
+
+  it.prop(
+    '∀files_Requested_⊆Present∩Affected',
+    { of: [S.Array(S.String), S.Array(S.String)], subject: requestedFor },
+    (subject, [presentFileNames, fileNames]) =>
+      Arr.every(
+        subject(presentFileNames, fileNames),
+        (fileName) => presentFileNames.includes(fileName) && fileNames.includes(fileName),
+      ),
+  )
+
+  it.prop(
+    '∀files_Requested_⊇DistinctAffected',
+    { of: [S.Array(S.String), S.Array(S.String)], subject: requestedFor },
+    (subject, [presentFileNames, fileNames]) => {
+      const requested = subject(presentFileNames, fileNames)
+      return Arr.every(
+        Arr.dedupe(Arr.filter(presentFileNames, (fileName) => fileNames.includes(fileName))),
+        (fileName) => requested.includes(fileName),
+      )
+    },
+  )
+
+  const batchesFor = (fileNames: ReadonlyArray<string>) =>
+    Arr.map(diagnosticBatchesOf(fileNames), (batch) => [...batch])
+
+  it.prop(
+    '∀files_Batches_≡PartitionWithinBatchSize',
+    { of: [S.Array(S.String).check(S.isMaxLength(200))], subject: batchesFor },
+    (subject, [fileNames]) => {
+      const batches = subject(fileNames)
+      return Arr.every(
+        [
+          Equal.equals(Arr.flatten(batches), fileNames),
+          Arr.every(batches, (batch) => batch.length > 0 && batch.length <= DIAGNOSTIC_BATCH_SIZE),
+          batches.length === Math.ceil(fileNames.length / DIAGNOSTIC_BATCH_SIZE),
+        ],
+        (holds) => holds,
+      )
+    },
+  )
+
+  const aliasFor = (pattern: string): PathAlias => ({ pattern, targets: [], baseDir: '/project' })
+
+  const exactCaptureFor = (pattern: string, specifier: string): string | undefined =>
+    Option.getOrUndefined(captureOf(aliasFor(pattern), specifier))
+
+  const ExactAliasPattern = S.String.check(S.isPattern(/^[^*]*$/))
+
+  it.prop(
+    '∀alias_ExactSpecifier_≡EmptyOrNone',
+    { of: [ExactAliasPattern, S.String], subject: exactCaptureFor },
+    (subject, [pattern, specifier]) => subject(pattern, specifier) === (specifier === pattern ? '' : undefined),
+  )
+
+  const wildcardCaptureFor = (prefix: string, suffix: string, middle: string): string | undefined =>
+    Option.getOrUndefined(captureOf(aliasFor(prefix + '*' + suffix), prefix + middle + suffix))
+
+  it.prop(
+    '∀alias_WildcardSpecifier_≡MiddleSegment',
+    { of: [ExactAliasPattern, S.String.check(S.isMinLength(1)), S.String], subject: wildcardCaptureFor },
+    (subject, [prefix, suffix, middle]) => subject(prefix, suffix, middle) === middle,
   )
 
   const { Arbitrary } = await import('effect/unstable/arbitrary')

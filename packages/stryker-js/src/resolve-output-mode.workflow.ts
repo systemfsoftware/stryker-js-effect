@@ -67,7 +67,7 @@ const modeFromAgent = (command: ResolveModeCommand): ResolveModeDecision =>
 const modeFromTools = (command: ResolveModeCommand): ResolveModeDecision =>
   Match.value(anyToolVariableSet(command.toolVars)).pipe(
     Match.when(true, () => MachineOutput.make({ signal: 'tool', stdoutIsTTY: true })),
-    Match.orElse(() => HumanOutput.make({ signal: 'tty', stdoutIsTTY: true })),
+    Match.orElse(() => HumanOutput.make({ signal: 'tty', stdoutIsTTY: command.stdoutIsTTY })),
   )
 
 const anyToolVariableSet = (toolVars: Readonly<Record<string, string>> | undefined): boolean =>
@@ -76,15 +76,9 @@ const anyToolVariableSet = (toolVars: Readonly<Record<string, string>> | undefin
     onSome: (named) => TOOL_VARIABLES.some((variable) => Option.isSome(configured(named[variable]))),
   })
 
-const modeBelowEnv = (command: ResolveModeCommand): ResolveModeDecision =>
-  Match.value(command.stdoutIsTTY).pipe(
-    Match.when(false, () => MachineOutput.make({ signal: 'tty', stdoutIsTTY: false })),
-    Match.orElse(() => modeFromAgent(command)),
-  )
-
 const modeFromEnvironment = (command: ResolveModeCommand): ResolveModeDecision =>
   Option.match(configured(command.envMode), {
-    onNone: () => modeBelowEnv(command),
+    onNone: () => modeFromAgent(command),
     onSome: (envMode) => modeFromEnv(envMode, command.stdoutIsTTY),
   })
 

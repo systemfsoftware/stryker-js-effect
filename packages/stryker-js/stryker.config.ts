@@ -1,15 +1,15 @@
-import { sharedConfig } from '@systemfsoftware/stryker-config'
+import { installedPlugin, shardMutate, sharedConfig } from '@systemfsoftware/stryker-config'
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js/config'
 
 const config = {
   ...sharedConfig,
   testRunner: {
-    plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
-    options: { configFile: 'vitest.config.ts', dir: '.', related: true },
+    plugin: installedPlugin('@systemfsoftware/stryker-js-vitest-runner', import.meta.url),
+    options: { configFile: 'vitest.mutation.config.ts', dir: '.', related: true },
   },
   checkers: [
     {
-      plugin: import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+      plugin: installedPlugin('@systemfsoftware/stryker-js-typescript-checker', import.meta.url),
       options: { prioritizePerformanceOverAccuracy: true },
     },
   ],
@@ -20,6 +20,14 @@ const config = {
   plugins: [
     import.meta.resolve('@systemfsoftware/stryker-test-contribution'),
   ],
+  mutate: shardMutate([
+    'src/**/*.workflow.ts',
+    '!src/**/*.test.ts',
+    '!src/**/*.property.test.ts',
+    '!src/**/*.d.ts',
+    '!src/**/__tests__/**',
+  ]),
+  dryRunTimeoutMinutes: 10,
 } satisfies PartialStrykerOptions
 
 export default config

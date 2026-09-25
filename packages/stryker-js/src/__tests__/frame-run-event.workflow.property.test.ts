@@ -76,30 +76,16 @@ describe('frameRunEvent', () => {
   )
 
   it.prop(
-    '∀e_MachineOpen_≡Framed',
+    '∀e_NonTerminal_≡FramedWhateverTheMode',
     { of: [arbitraryState, arbitraryNonTerminalEvent], subject: frameRunEvent },
     (subject, [state, event]) => {
-      const openMachineState: FramingState = {
+      const openState: FramingState = {
         ...state,
-        mode: 'machine',
         terminalSeen: false,
         headerWritten: true,
       }
-      const result = subject(FrameRunEventCommand.make({ state: openMachineState, event }))
+      const result = subject(FrameRunEventCommand.make({ state: openState, event }))
       return Result.isSuccess(result) && S.is(EventFramed)(result.success) && result.success.event === event
-    },
-  )
-
-  it.prop(
-    '∀e_Human_≡Suppressed',
-    { of: [arbitraryState, arbitraryEvent], subject: frameRunEvent },
-    (subject, [state, event]) => {
-      const humanState: FramingState = {
-        ...state,
-        mode: 'human',
-      }
-      const result = subject(FrameRunEventCommand.make({ state: humanState, event }))
-      return Result.isSuccess(result) && S.is(EventSuppressed)(result.success)
     },
   )
 

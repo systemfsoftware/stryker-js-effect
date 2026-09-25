@@ -1,16 +1,10 @@
 {
+  "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "@systemfsoftware/tsconfig/node",
   "compilerOptions": {
     "composite": true,
     "noEmit": true,
     "tsBuildInfoFile": "node_modules/.cache/tsconfig.node.tsbuildinfo"
   },
-  "include": [
-    "oxlint.config.ts",
-    "stryker.config.ts",
-    "tsdown.config.ts",
-    "tsdown.bin.config.ts",
-    "vitest.config.ts",
-    "vitest.mutation.config.ts"
-  ]
+  "include": ["vitest.config.ts"]
 }

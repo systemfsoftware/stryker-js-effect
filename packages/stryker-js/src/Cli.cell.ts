@@ -2,6 +2,7 @@ import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import * as Bool from 'effect/Boolean'
 import * as Config from 'effect/Config'
+import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -15,6 +16,7 @@ import {
   RunExit,
   type RunOutcomeDecision,
   type RunOutcomeError,
+  RunParseFailed,
 } from './classify-run-outcome.workflow.js'
 import {
   type CliAnswer,
@@ -26,8 +28,8 @@ import {
   runEffectOf,
   type StrykerCliInvocation,
 } from './Cli.parts.js'
-import { type MergeReportsRequest } from './Cli.schema.js'
 import { mergeReportsCell } from './merge-reports.cell.js'
+import { type MergeReportsInvocation } from './merge-reports.parts.js'
 import { OutputModeProbe } from './output-mode-probe.service.js'
 import { MachineConsole } from './reporting/machine-console.service.js'
 import { ErrorEnvelope, RunExitCode } from './reporting/run-failure.schema.js'
@@ -92,11 +94,12 @@ export const strykerCliCell = Cell.flatMap(
     Match.value(action.decision).pipe(
       Match.tag('CliHelpRequested', () => Cell.succeed<CliAnswer>(undefined)),
       Match.tag('CliMergeReportsRequested', (merge) =>
-        Cell.mapInput(mergeReportsCell, (): MergeReportsRequest => ({
+        Cell.mapInput(mergeReportsCell, (): MergeReportsInvocation => ({
           _tag: 'merge-reports',
           parts: merge.parts,
           out: merge.out,
           packages: merge.packages,
+          mode: action.channel.environment.mode.mode,
         }))),
       Match.tag('CliRunRequested', () => runCellOf(action.channel)),
       Match.tag('CliSurvivorsRequested', () =>
@@ -122,6 +125,8 @@ const outcomeOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>): 
 
 const EXPORTABLE_SPAN_ERROR_LIMIT = 1024
 
+const USAGE_EXIT_CODE = RunExitCode.fromOutcome(RunParseFailed.make({})).code
+
 const errorTextOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>, captured: string) =>
   Result.match(result, {
     onSuccess: () => '',
@@ -141,7 +146,12 @@ export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effec
 > =>
   Effect.gen(function*() {
     const machineConsole = yield* MachineConsole
-    const mode = yield* options.detectMode
+    const detectedMode = yield* Effect.result(options.detectMode)
+    if (Result.isFailure(detectedMode)) {
+      yield* Console.error(detectedMode.failure.message)
+      return yield* RunExit.make({ code: USAGE_EXIT_CODE })
+    }
+    const mode = detectedMode.success
     const stream = yield* options.runEvents.createRunEventStream(mode)
     const noColor = yield* Config.String('NO_COLOR').pipe(Effect.option)
     const hostOptions = yield* RunEnvironment.forStream(mode, stream, {
