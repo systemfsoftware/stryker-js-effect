@@ -1,7 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Boolean from 'effect/Boolean'
 import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -15,7 +14,7 @@ import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
 import { renderJsonReport } from './render-json-report.workflow.js'
-import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
+import { ReporterOutput } from './reporter-output.service.js'
 
 const failAsJsonReporter = <E = unknown>(cause: E): Reporter.ReporterFailed =>
   Reporter.ReporterFailed.make({
@@ -46,6 +45,8 @@ const readJsonReport = (input: {
       _tag: 'JsonReportCommand' as const,
       reported: Option.getOrUndefined(last),
       rendered: true,
+      debug: input.options.logLevel === 'debug',
+      fileName: input.options.jsonReporter.fileName,
       options: input.options,
     }),
   )
@@ -54,19 +55,6 @@ const jsonBytesOf = (report: Report.MutationTestResult): Effect.Effect<string, R
   S.encodeEffect(S.fromJsonString(S.Unknown, { space: 0 }))(report).pipe(
     Effect.mapError(failAsJsonReporter),
   )
-
-const announceRelativePath = (
-  output: ReporterOutputShape,
-  options: Options.StrykerOptions,
-  path: Path.Path,
-): Effect.Effect<void> =>
-  Boolean.match(options.logLevel === 'debug', {
-    onTrue: () =>
-      Effect.ignore(
-        output.write('stderr', [`Using relative path ${path.normalize(options.jsonReporter.fileName)}\n`]),
-      ),
-    onFalse: () => Effect.void,
-  })
 
 export const jsonReportCell = Sandwich.named('stryker.report.json')(readJsonReport)
   .decide(renderJsonReport)
@@ -78,7 +66,11 @@ export const jsonReportCell = Sandwich.named('stryker.report.json')(readJsonRepo
         const path = yield* Path.Path
         const json = yield* jsonBytesOf(rendered.report)
         const fileName = path.resolve(raw.options.jsonReporter.fileName)
-        yield* announceRelativePath(output, raw.options, path)
+        yield* Effect.forEach(
+          Option.toArray(rendered.announceFileName),
+          (name) => Effect.ignore(output.write('stderr', [`Using relative path ${path.normalize(name)}\n`])),
+          { discard: true },
+        )
         yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(Effect.mapError(failAsJsonReporter))
         yield* fs.writeFileString(fileName, json).pipe(Effect.mapError(failAsJsonReporter))
         const url = yield* path.toFileUrl(fileName).pipe(Effect.mapError(failAsJsonReporter))

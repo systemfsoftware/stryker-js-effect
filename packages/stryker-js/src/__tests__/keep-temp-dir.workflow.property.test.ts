@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
@@ -18,22 +18,30 @@ const fateOf = (decision: KeepTempDirOutcome): 'kept' | 'removed' =>
   )
 
 describe('keepTempDir', () => {
-  it.prop('∀a_Always_≡Removed', [KeepTempDirCommand], ([command]) => {
-    const always = KeepTempDirCommand.make({ cleanTempDir: KeepTempDirAlways.make({}), failed: command.failed })
-    return Result.match(keepTempDir(always), {
-      onFailure: () => false,
-      onSuccess: (decision) => fateOf(decision) === 'removed',
-    })
-  })
+  it.prop(
+    '∀a_Always_≡Removed',
+    { of: [KeepTempDirCommand], subject: keepTempDir },
+    (subject, [command]) => {
+      const always = KeepTempDirCommand.make({ cleanTempDir: KeepTempDirAlways.make({}), failed: command.failed })
+      return Result.match(subject(always), {
+        onFailure: () => false,
+        onSuccess: (decision) => fateOf(decision) === 'removed',
+      })
+    },
+  )
 
-  it.prop('∀f_OnFailure_≡KeptIffFailed', [KeepTempDirCommand], ([command]) => {
-    const onFailure = KeepTempDirCommand.make({
-      cleanTempDir: KeepTempDirOnFailure.make({ failed: command.failed }),
-      failed: command.failed,
-    })
-    return Result.match(keepTempDir(onFailure), {
-      onFailure: () => false,
-      onSuccess: (decision) => (command.failed ? fateOf(decision) === 'kept' : fateOf(decision) === 'removed'),
-    })
-  })
+  it.prop(
+    '∀f_OnFailure_≡KeptIffFailed',
+    { of: [KeepTempDirCommand], subject: keepTempDir },
+    (subject, [command]) => {
+      const onFailure = KeepTempDirCommand.make({
+        cleanTempDir: KeepTempDirOnFailure.make({ failed: command.failed }),
+        failed: command.failed,
+      })
+      return Result.match(subject(onFailure), {
+        onFailure: () => false,
+        onSuccess: (decision) => (command.failed ? fateOf(decision) === 'kept' : fateOf(decision) === 'removed'),
+      })
+    },
+  )
 })

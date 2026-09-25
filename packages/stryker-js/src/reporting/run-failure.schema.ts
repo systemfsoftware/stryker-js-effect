@@ -102,7 +102,7 @@ const remediationTextOf = (error: FailedRunOutcome) =>
   )
 
 if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
+  const { it } = await import('@systemfsoftware/vitest')
 
   const RunOutcomeSchema = S.Union([
     RunOk,
@@ -116,14 +116,14 @@ if (import.meta.vitest !== void 0) {
   const codeOf = (outcome: RunOutcomeDecision | RunOutcomeError) => RunExitCode.fromOutcome(outcome).code
 
   it.prop(
-    '∀outcome_RunExitCode.fromOutcome_CarriesFrozenCodes',
-    [RunOutcomeSchema],
-    ([outcome]) =>
+    '∀outcome_RunExitCode_≡FrozenCodes',
+    { of: [RunOutcomeSchema], subject: codeOf },
+    (subject, [outcome]) =>
       Match.value(outcome).pipe(
-        Match.tag('RunOk', () => codeOf(outcome) === 0),
-        Match.tag('RunInterrupted', (interrupted) => codeOf(outcome) === interrupted.code),
-        Match.tag('RunFailed', (failed) => codeOf(outcome) === failed.code),
-        Match.orElse(() => codeOf(outcome) === CONFIG_CODE),
+        Match.tag('RunOk', () => subject(outcome) === 0),
+        Match.tag('RunInterrupted', (interrupted) => subject(outcome) === interrupted.code),
+        Match.tag('RunFailed', (failed) => subject(outcome) === failed.code),
+        Match.orElse(() => subject(outcome) === CONFIG_CODE),
       ),
   )
 }

@@ -1,4 +1,4 @@
-export { coreFormatRegistry, extensionOf, registerEntries } from '../Format.handle.js'
+export { coreFormatRegistry, extensionOf, registerEntries } from '../Format.js'
 export type {
   EmbeddedFormatEntry,
   FormatClaim,
@@ -8,4 +8,4 @@ export type {
   FormatRegistry,
   ScriptFormatEntry,
 } from '../Format.schema.js'
-export { frameworkEntryOf } from '../FrameworkEntry.handle.js'
+export { frameworkEntryOf } from '../FrameworkEntry.js'

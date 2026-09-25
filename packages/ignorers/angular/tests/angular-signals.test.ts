@@ -1,6 +1,6 @@
 import type { Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { testIgnorer } from '@systemfsoftware/stryker-ignorer-kit/tester'
-import { assert, describe, expect, it } from 'vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 
 import {
   INPUT_MODEL_OUTPUT_CONFIG_MSG,
@@ -10,7 +10,9 @@ import {
 } from '@systemfsoftware/stryker-ignorer-angular'
 
 const descriptor = strykerIgnorers[0]
-assert(descriptor !== undefined, 'the package publishes one ignorer descriptor')
+if (descriptor === undefined) {
+  throw new Error('the package publishes one ignorer descriptor')
+}
 
 const INLINE_CLASS = 'class C {\n  foo = input.required({ required: true })\n}\n'
 const VALUE_CLASS = 'class C {\n  foo = input(0, { value: 1 })\n}\n'
@@ -32,46 +34,49 @@ const call = (callee: Node, args: readonly Node[]): Node =>
 const arrayOf = (elements: readonly Node[]): Node => ({ type: 'ArrayExpression', elements }) as unknown as Node
 
 describe('angular-signals', () => {
-  it('Should_Register_The_Descriptor', () => {
-    expect(descriptor.name).toBe('angular-signals')
+  it('Should_Register_The_Descriptor', function*({ expect }) {
+    yield* expect(descriptor.name).toBe('angular-signals')
   })
 
-  it('Should_Ignore_Nothing_Without_An_Ancestor_Call', () => {
-    expect(shouldIgnore(object(), [])).toBeUndefined()
-    expect(shouldIgnore(object(), [arrayOf([])])).toBeUndefined()
-    expect(shouldIgnore(object(), [call(identifier('compute'), [object()])])).toBeUndefined()
+  it('Should_Ignore_Nothing_Without_An_Ancestor_Call', function*({ expect }) {
+    yield* expect([
+      shouldIgnore(object(), []),
+      shouldIgnore(object(), [arrayOf([])]),
+      shouldIgnore(object(), [call(identifier('compute'), [object()])]),
+    ]).toEqual([undefined, undefined, undefined])
   })
 
-  it('Should_Ignore_Nothing_When_The_Owner_Is_Absent', () => {
-    expect(shouldIgnore(object(), [call(identifier('input'), [object()])])).toBeUndefined()
+  it('Should_Ignore_Nothing_When_The_Owner_Is_Absent', function*({ expect }) {
+    yield* expect(shouldIgnore(object(), [call(identifier('input'), [object()])])).toBe(undefined)
   })
 
-  it('Should_Ignore_Nothing_For_A_Non_Object_Node', () => {
-    expect(shouldIgnore(identifier('input'), [call(identifier('input'), [])])).toBeUndefined()
+  it('Should_Ignore_Nothing_For_A_Non_Object_Node', function*({ expect }) {
+    yield* expect(shouldIgnore(identifier('input'), [call(identifier('input'), [])])).toBe(undefined)
   })
 
-  it('Should_Ignore_Nothing_For_A_Computed_Signal_Member', () => {
+  it('Should_Ignore_Nothing_For_A_Computed_Signal_Member', function*({ expect }) {
     const callee = member(identifier('input'), identifier('required'), true)
-    expect(shouldIgnore(object(), [call(callee, [object()])])).toBeUndefined()
+    yield* expect(shouldIgnore(object(), [call(callee, [object()])])).toBe(undefined)
   })
 
-  it('Should_Ignore_Nothing_When_The_Callee_Object_Is_Not_A_Signal_Function', () => {
+  it('Should_Ignore_Nothing_When_The_Callee_Object_Is_Not_A_Signal_Function', function*({ expect }) {
     const callee = member(member(identifier('obj'), identifier('input')), identifier('required'))
-    expect(shouldIgnore(object(), [call(callee, [object()])])).toBeUndefined()
+    yield* expect(shouldIgnore(object(), [call(callee, [object()])])).toBe(undefined)
   })
 
-  it('Should_Ignore_Nothing_When_The_Member_Name_Is_Not_Required', () => {
+  it('Should_Ignore_Nothing_When_The_Member_Name_Is_Not_Required', function*({ expect }) {
     const callee = member(identifier('viewChild'), identifier('optional'))
-    expect(shouldIgnore(object(), [call(callee, [object()])])).toBeUndefined()
+    yield* expect(shouldIgnore(object(), [call(callee, [object()])])).toBe(undefined)
   })
 
-  it('Should_Ignore_Nothing_When_The_Query_Options_Are_Not_The_Second_Argument', () => {
-    expect(shouldIgnore(object(), [call(identifier('viewChild'), [object()])])).toBeUndefined()
+  it('Should_Ignore_Nothing_When_The_Query_Options_Are_Not_The_Second_Argument', function*({ expect }) {
+    yield* expect(shouldIgnore(object(), [call(identifier('viewChild'), [object()])])).toBe(undefined)
   })
 
-  it('Should_Ignore_Nothing_When_The_Io_Options_Are_Not_At_The_Expected_Index', () => {
-    expect(shouldIgnore(object(), [call(member(identifier('input'), identifier('required')), [identifier('x')])]))
-      .toBeUndefined()
+  it('Should_Ignore_Nothing_When_The_Io_Options_Are_Not_At_The_Expected_Index', function*({ expect }) {
+    yield* expect(
+      shouldIgnore(object(), [call(member(identifier('input'), identifier('required')), [identifier('x')])]),
+    ).toBe(undefined)
   })
 })
 

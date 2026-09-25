@@ -9,11 +9,32 @@ import { VitestMutantRunCommand } from './vitest-run-command.schema.js'
 
 const HIT_LIMIT_REASON_PREFIX = 'Hit limit reached'
 const hitLimitReachedReason = (count: number, limit: number): string => `${HIT_LIMIT_REASON_PREFIX} (${count}/${limit})`
-const isNamedTrap = (activeMutantId: string, namedTrapId: string | undefined): boolean =>
-  Option.match(Option.fromNullishOr(namedTrapId), {
-    onNone: () => false,
-    onSome: (id) => id === activeMutantId,
+
+const normalizedPath = (path: string): string => path.replaceAll('\\', '/')
+
+const fileTrapMatches = (command: VitestMutantRunCommand, trapFile: string): boolean => {
+  const normalizedFile = normalizedPath(command.activeMutantFileName)
+  const needle = normalizedPath(trapFile)
+  return Boolean.match(normalizedFile === needle, {
+    onTrue: () => true,
+    onFalse: () => normalizedFile.endsWith(`/${needle}`),
   })
+}
+
+const isNamedTrap = (command: VitestMutantRunCommand): boolean =>
+  Option.isSome(
+    Option.orElse(
+      Option.filter(
+        Option.fromNullishOr(command.timeoutTrapMutantId),
+        (trapId) => trapId === command.activeMutantId,
+      ),
+      () =>
+        Option.flatMap(
+          Option.filter(Option.fromNullishOr(command.timeoutTrapFile), (trapFile) => trapFile.length > 0),
+          (trapFile) => Option.liftPredicate(command.activeMutantId, () => fileTrapMatches(command, trapFile)),
+        ),
+    ),
+  )
 
 const VitestMutantRunTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestMutantRun')
 type VitestMutantRunTypeId = typeof VitestMutantRunTypeId
@@ -99,7 +120,7 @@ const decideFromTests = (command: VitestMutantRunCommand): VitestMutantRunOutput
 const decideVitestMutantRun = (command: VitestMutantRunCommand) =>
   Option.match(hitLimitReason(command.hitCount, command.hitLimit), {
     onSome: (hit) =>
-      Boolean.match(isNamedTrap(command.activeMutantId, command.namedTrapId), {
+      Boolean.match(isNamedTrap(command), {
         onTrue: (): Result.Result<VitestMutantRunOutput, never> =>
           Result.succeed(MutantTimeout.make({ tests: [], reason: hit })),
         onFalse: (): Result.Result<VitestMutantRunOutput, never> =>

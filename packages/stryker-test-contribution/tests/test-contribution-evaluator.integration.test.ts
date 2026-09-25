@@ -10,9 +10,9 @@
  * evaluate) would make the Then assertions fail (no VerdictFail where expected,
  * or no EvaluatorFailed where breaking expected).
  */
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Evaluator, Options, type Plugin, type Report } from '@systemfsoftware/stryker-js-plugin-interface'
-import { strykerPlugins } from '@systemfsoftware/stryker-test-contribution'
+import { strykerPlugins, TestContributionEvaluator } from '@systemfsoftware/stryker-test-contribution'
 import * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -20,15 +20,9 @@ import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Schema from 'effect/Schema'
-import { expect } from 'vitest'
-import {
-  makeTestContributionEvaluatorService,
-  testContributionEvaluatorLayer,
-} from '../src/test-contribution-evaluator.service.js'
-
 import { optionalRunnerFields } from './__fixtures__/optional-runner-fields.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const LOCATION = { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } }
 
@@ -59,12 +53,15 @@ const reportWithToothlessKernelFile = (
 })
 
 const evaluatorServiceWith = (options: Options.PartialStrykerOptions) =>
-  Effect.map(Schema.decodeUnknownEffect(Options.StrykerOptionsSchema)(options), makeTestContributionEvaluatorService)
+  Effect.map(
+    Schema.decodeUnknownEffect(Options.StrykerOptionsSchema)(options),
+    TestContributionEvaluator.makeTestContributionEvaluatorService,
+  )
 
 const evaluatorViaLayerWith = (options: Options.PartialStrykerOptions) =>
   Effect.gen(function*() {
     const decoded = yield* Schema.decodeUnknownEffect(Options.StrykerOptionsSchema)(options)
-    const context = yield* Layer.build(testContributionEvaluatorLayer(decoded))
+    const context = yield* Layer.build(TestContributionEvaluator.testContributionEvaluatorLayer(decoded))
     return Context.get(context, Evaluator.Evaluator)
   })
 interface EvaluatorServiceShape {
@@ -91,13 +88,14 @@ const causeOfExit = (exit: Exit.Exit<Plugin.ExitClass | null, Evaluator.Evaluato
   }
   return Cause.pretty(exit.cause)
 }
-// A VerdictFail on a success exit is the evaluator's non-error failure signal; assert it once here.
-const expectVerdictFail = (exit: Exit.Exit<Plugin.ExitClass | null, Evaluator.EvaluatorFailed>): void => {
-  expect(Exit.isSuccess(exit)).toBe(true)
-  if (Exit.isSuccess(exit)) {
-    expect(exit.value).toBe('VerdictFail')
-  }
-}
+const verdictOfExit = (exit: Exit.Exit<Plugin.ExitClass | null, Evaluator.EvaluatorFailed>) => ({
+  success: Exit.isSuccess(exit),
+  value: Exit.isSuccess(exit) ? exit.value : undefined,
+})
+const failedWithCause = (exit: Exit.Exit<Plugin.ExitClass | null, Evaluator.EvaluatorFailed>) => ({
+  failed: Exit.isFailure(exit),
+  hasCause: causeOfExit(exit) !== null,
+})
 
 Feature('test-contribution evaluator plugin')
   .withLayer(Layer.empty)
@@ -106,11 +104,13 @@ Feature('test-contribution evaluator plugin')
       'The published plugin list declares one evaluator named test-contribution',
       Gherkin.Do.pipe(
         Given('the published plugin list')('plugins', () => Effect.succeed(strykerPlugins)),
-        Then('it contains one Evaluator named test-contribution')((s) => {
-          expect(s.plugins).toHaveLength(1)
-          expect(s.plugins[0]?.kind).toBe('Evaluator')
-          expect(s.plugins[0]?.name).toBe('test-contribution')
-        }),
+        Then('it contains one Evaluator named test-contribution')((s, expect) =>
+          expect({
+            length: s.plugins.length,
+            kind: s.plugins[0]?.kind,
+            name: s.plugins[0]?.name,
+          }).toEqual({ length: 1, kind: 'Evaluator', name: 'test-contribution' })
+        ),
       ),
     )
 
@@ -125,9 +125,9 @@ Feature('test-contribution evaluator plugin')
           'exit',
           (s) => exitOf(s.evaluator, reportWithToothlessKernelFile()),
         ),
-        Then('the evaluation succeeds with the VerdictFail exit class')((s) => {
-          expectVerdictFail(s.exit)
-        }),
+        Then('the evaluation succeeds with the VerdictFail exit class')((s, expect) =>
+          expect(verdictOfExit(s.exit)).toEqual({ success: true, value: 'VerdictFail' })
+        ),
       ),
     )
 
@@ -142,9 +142,9 @@ Feature('test-contribution evaluator plugin')
           'exit',
           (s) => exitOf(s.evaluator, reportWithToothlessKernelFile()),
         ),
-        Then('the evaluation succeeds with the VerdictFail exit class for the bail case')((s) => {
-          expectVerdictFail(s.exit)
-        }),
+        Then('the evaluation succeeds with the VerdictFail exit class for the bail case')((s, expect) =>
+          expect(verdictOfExit(s.exit)).toEqual({ success: true, value: 'VerdictFail' })
+        ),
       ),
     )
 
@@ -163,12 +163,9 @@ Feature('test-contribution evaluator plugin')
               reportWithToothlessKernelFile([kernelMutant('m1', ['t1']), kernelMutant('m2', ['t2'])]),
             ),
         ),
-        Then('the evaluation succeeds with null')((s) => {
-          expect(Exit.isSuccess(s.exit)).toBe(true)
-          if (Exit.isSuccess(s.exit)) {
-            expect(s.exit.value).toBeNull()
-          }
-        }),
+        Then('the evaluation succeeds with null')((s, expect) =>
+          expect(verdictOfExit(s.exit)).toEqual({ success: true, value: null })
+        ),
       ),
     )
 
@@ -184,9 +181,9 @@ Feature('test-contribution evaluator plugin')
             const evaluator = yield* evaluatorViaLayerWith(s.options)
             return yield* exitOf(evaluator, reportWithToothlessKernelFile())
           })),
-        Then('the layer-provided evaluator also succeeds with the VerdictFail exit class')((s) => {
-          expectVerdictFail(s.exit)
-        }),
+        Then('the layer-provided evaluator also succeeds with the VerdictFail exit class')((s, expect) =>
+          expect(verdictOfExit(s.exit)).toEqual({ success: true, value: 'VerdictFail' })
+        ),
       ),
     )
 
@@ -206,11 +203,9 @@ Feature('test-contribution evaluator plugin')
           })
           return exitOf(s.evaluator, brokenReport)
         }),
-        Then('the evaluation fails with EvaluatorFailed')((s) => {
-          expect(Exit.isFailure(s.exit)).toBe(true)
-          const cause = causeOfExit(s.exit)
-          expect(cause).not.toBeNull()
-        }),
+        Then('the evaluation fails with EvaluatorFailed')((s, expect) =>
+          expect(failedWithCause(s.exit)).toEqual({ failed: true, hasCause: true })
+        ),
       ),
     )
   })

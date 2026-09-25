@@ -6,8 +6,8 @@ import type {
   Program,
   ScriptFormat,
 } from '@systemfsoftware/stryker-framework-interface'
+import { describe, it } from '@systemfsoftware/vitest'
 import { parseSync } from 'oxc-parser'
-import { describe, expect, it } from 'vitest'
 
 import { strykerFrameworks } from '../src/mod.js'
 
@@ -153,106 +153,112 @@ const failedTypeCheckFree = (content: string): string => {
   return result.message
 }
 
-const firstRegion = (document: EmbeddedDocument) => {
-  const region = document.regions.at(0)
-  if (region === undefined) {
-    throw new Error('the document gave up no script region')
-  }
-  return region
-}
+const slicesOf = (document: EmbeddedDocument): readonly string[] =>
+  document.regions.map((region) => document.rawContent.slice(region.start, region.end))
 
 const installedParserVersion = '10.12.0'
 
 describe('the Angular framework plugin', () => {
-  it('publishes one Framework contribution claiming the html template format', () => {
-    expect(strykerFrameworks).toHaveLength(1)
+  it('publishes one Framework contribution claiming the html template format', function*({ expect }) {
     const framework = angular()
-    expect(framework.kind).toBe('Framework')
-    expect(framework.name).toBe('angular')
-    expect(framework.claim).toStrictEqual({
-      formatId: 'html',
-      extensions: ['.html', '.htm', '.vue'],
-      language: 'html',
-      ownerVersion: installedParserVersion,
-      contractVersion: '1',
+    yield* expect({
+      count: strykerFrameworks.length,
+      kind: framework.kind,
+      name: framework.name,
+      claim: framework.claim,
+    }).toEqual({
+      count: 1,
+      kind: 'Framework',
+      name: 'angular',
+      claim: {
+        formatId: 'html',
+        extensions: ['.html', '.htm', '.vue'],
+        language: 'html',
+        ownerVersion: installedParserVersion,
+        contractVersion: '1',
+      },
     })
   })
 
-  it('yields one region per script with offsets into the original document', () => {
+  it('yields one region per script with offsets into the original document', function*({ expect }) {
     const document = parsedDocument(TWO_SCRIPT_HTML, toolkit())
-    expect(document.formatId).toBe('html')
-    expect(document.rawContent).toBe(TWO_SCRIPT_HTML)
-    expect(document.regions).toHaveLength(2)
-    expect(document.regions.map((region) => document.rawContent.slice(region.start, region.end))).toStrictEqual([
-      FIRST_SCRIPT_BODY,
-      SECOND_SCRIPT_BODY,
-    ])
-    expect(document.regions.map((region) => region.isExpression)).toStrictEqual([false, false])
+    yield* expect({
+      formatId: document.formatId,
+      rawContent: document.rawContent,
+      slices: slicesOf(document),
+      expressionFlags: document.regions.map((region) => region.isExpression),
+    }).toEqual({
+      formatId: 'html',
+      rawContent: TWO_SCRIPT_HTML,
+      slices: [FIRST_SCRIPT_BODY, SECOND_SCRIPT_BODY],
+      expressionFlags: [false, false],
+    })
   })
 
-  it('yields only the script region of a Vue component, parsed as TypeScript', () => {
+  it('yields only the script region of a Vue component, parsed as TypeScript', function*({ expect }) {
     const recorded = recordingToolkit()
     const document = parsedDocument(VUE_COMPONENT, recorded.context)
-    expect(document.regions).toHaveLength(1)
-    expect(document.rawContent.slice(firstRegion(document).start, firstRegion(document).end)).toBe(VUE_SCRIPT_BODY)
-    expect(recorded.formats).toStrictEqual(['ts'])
-    expect(recorded.sources).toStrictEqual([VUE_SCRIPT_BODY])
+    yield* expect({
+      slices: slicesOf(document),
+      formats: recorded.formats,
+      sources: recorded.sources,
+    }).toEqual({ slices: [VUE_SCRIPT_BODY], formats: ['ts'], sources: [VUE_SCRIPT_BODY] })
   })
 
-  it('hands the transform through unchanged', () => {
+  it('hands the transform through unchanged', function*({ expect }) {
     const context = toolkit()
     const document = parsedDocument(TWO_SCRIPT_HTML, context)
-    expect(angular().transform(document, context)).toStrictEqual(document)
+    yield* expect(angular().transform(document, context)).toStrictEqual(document)
   })
 
-  it('prints an untransformed document byte-for-byte', () => {
+  it('prints an untransformed document byte-for-byte', function*({ expect }) {
     const context = toolkit()
     const document = parsedDocument(TWO_SCRIPT_HTML, context)
-    expect(angular().print(document, context)).toBe(TWO_SCRIPT_HTML)
+    yield* expect(angular().print(document, context)).toBe(TWO_SCRIPT_HTML)
   })
 
-  it('starts each script region type-check free', () => {
-    expect(typeCheckFree(TWO_SCRIPT_HTML)).toBe(TWO_SCRIPT_HTML_NO_CHECK)
+  it('starts each script region type-check free', function*({ expect }) {
+    yield* expect(typeCheckFree(TWO_SCRIPT_HTML)).toBe(TWO_SCRIPT_HTML_NO_CHECK)
   })
 
-  it('keeps the @ts-nocheck comment after a leading hashbang', () => {
-    expect(typeCheckFree(HASHBANG_HTML)).toBe(HASHBANG_HTML_NO_CHECK)
+  it('keeps the @ts-nocheck comment after a leading hashbang', function*({ expect }) {
+    yield* expect(typeCheckFree(HASHBANG_HTML)).toBe(HASHBANG_HTML_NO_CHECK)
   })
 
-  it('leaves a hashbang without a newline alone', () => {
-    expect(typeCheckFree(HASHBANG_WITHOUT_NEWLINE_HTML)).toBe(HASHBANG_WITHOUT_NEWLINE_HTML)
+  it('leaves a hashbang without a newline alone', function*({ expect }) {
+    yield* expect(typeCheckFree(HASHBANG_WITHOUT_NEWLINE_HTML)).toBe(HASHBANG_WITHOUT_NEWLINE_HTML)
   })
 
-  it('keeps the @ts-nocheck comment after a leading block comment', () => {
-    expect(typeCheckFree(LEADING_COMMENT_HTML)).toBe(LEADING_COMMENT_HTML_NO_CHECK)
+  it('keeps the @ts-nocheck comment after a leading block comment', function*({ expect }) {
+    yield* expect(typeCheckFree(LEADING_COMMENT_HTML)).toBe(LEADING_COMMENT_HTML_NO_CHECK)
   })
 
-  it('refuses a script tag that never closes instead of passing it through', () => {
-    expect(failedParse(UNCLOSED_SCRIPT_HTML, toolkit())).toContain('EOF')
+  it('refuses a script tag that never closes instead of passing it through', function*({ expect }) {
+    yield* expect(failedParse(UNCLOSED_SCRIPT_HTML, toolkit())).toContain('EOF')
   })
 
-  it('refuses type-check disabling for a script tag that never closes', () => {
-    expect(failedTypeCheckFree(UNCLOSED_SCRIPT_HTML)).toContain('EOF')
+  it('refuses type-check disabling for a script tag that never closes', function*({ expect }) {
+    yield* expect(failedTypeCheckFree(UNCLOSED_SCRIPT_HTML)).toContain('EOF')
   })
 
-  it('ignores script tags with a src attribute and scripts with an unknown type', () => {
+  it('ignores script tags with a src attribute and scripts with an unknown type', function*({ expect }) {
     const document = parsedDocument(FILTERED_HTML, toolkit())
-    expect(document.regions).toHaveLength(0)
+    yield* expect(slicesOf(document)).toEqual([])
   })
 
-  it('prefers the type attribute over the lang attribute for the script vocabulary', () => {
+  it('prefers the type attribute over the lang attribute for the script vocabulary', function*({ expect }) {
     const recorded = recordingToolkit()
     parsedDocument(TYPE_PRECEDENCE_HTML, recorded.context)
-    expect(recorded.formats).toStrictEqual(['ts'])
+    yield* expect(recorded.formats).toStrictEqual(['ts'])
   })
 
-  it('contains a toolkit that crashes with an Error as a parse failure', () => {
+  it('contains a toolkit that crashes with an Error as a parse failure', function*({ expect }) {
     const message = failedParse(SINGLE_SCRIPT_HTML, crashingToolkit(new Error('the toolkit refused the script')))
-    expect(message).toBe('the toolkit refused the script')
+    yield* expect(message).toBe('the toolkit refused the script')
   })
 
-  it('contains a toolkit that crashes with a non-Error as a parse failure', () => {
+  it('contains a toolkit that crashes with a non-Error as a parse failure', function*({ expect }) {
     const message = failedParse(SINGLE_SCRIPT_HTML, crashingToolkit('the toolkit exploded'))
-    expect(message).toBe('the Angular parser reported a failure that is not an Error')
+    yield* expect(message).toBe('the Angular parser reported a failure that is not an Error')
   })
 })

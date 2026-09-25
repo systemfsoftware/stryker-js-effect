@@ -4,6 +4,7 @@ export default defineConfig({
   ...sharedConfig,
   test: {
     ...sharedConfig.test,
+    globals: true,
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
     coverage: {
       ...sharedConfig.test?.coverage,

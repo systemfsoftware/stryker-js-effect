@@ -18,8 +18,8 @@ import type { CheckMutantsAnswer } from './check-mutants.workflow.js'
 import { checkCell } from './Checker.cell.js'
 import { CheckMutantsCommand } from './Checker.schema.js'
 import { type CompilerError, DryRunCompileErrors, NodeNotInGraph } from './Compiler.schema.js'
+import { make as makeCompilerBlueprint } from './ts-compiler.blueprint.js'
 import { getLineAndCharacterOfPosition, groups, init, type TSCompiler } from './ts-compiler.handle.js'
-import { layer as compilerLayer } from './ts-compiler.resource.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
 
 type RunAnswers = CheckMutantsAnswer['results']
@@ -174,5 +174,5 @@ export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRunti
         )
         return CheckerRuntime.of({ checker })
       }),
-    ).pipe(Layer.provideMerge(compilerLayer(TypeScriptCompiler, options)))
+    ).pipe(Layer.provideMerge(makeCompilerBlueprint(options).layer(TypeScriptCompiler)))
 }

@@ -1,13 +1,12 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const suiteFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
@@ -55,13 +54,11 @@ const runSuite = (root: string, file: string): Effect.Effect<Session.VmRunRespon
     )
   })
 
-interface ReleasedRun {
-  readonly root: string
-  readonly response: Session.VmRunResponse
-}
-
-const runAndRelease = (root: string, file: string): Effect.Effect<ReleasedRun, never, never> =>
-  Effect.map(runSuite(root, file), (response) => ({ root, response }))
+const runSuiteAndRelease = (
+  root: string,
+  file: string,
+): Effect.Effect<Session.VmRunResponse, never, FileSystem.FileSystem> =>
+  runSuite(root, file).pipe(Effect.ensuring(removeProject(root)))
 
 const testOf = (response: Session.VmRunResponse, name: string): Session.VmTestResult => {
   if (response.status !== 'complete') {
@@ -73,6 +70,13 @@ const testOf = (response: Session.VmRunResponse, name: string): Session.VmTestRe
   }
   return found
 }
+
+const resultOf = (
+  test: Session.VmTestResult,
+): { readonly status: string; readonly failureMessage: string | undefined } => ({
+  status: test.status,
+  failureMessage: test.failureMessage,
+})
 
 const REPEATS_CONFIG = `import { defineConfig } from 'vitest/config'
 
@@ -205,7 +209,7 @@ export default defineConfig({
 
 Feature('Honouring the Vitest project configuration')
   .withLayer(suiteFileLayer)
-  .liveClock()
+  .live('the sandbox writes real project files and runs a real Vitest session over them')
   .body(({ scenario }) => {
     scenario(
       'A configured repeat count reruns the body for every scheduled pass',
@@ -218,17 +222,23 @@ Feature('Honouring the Vitest project configuration')
               'repeats.test.ts': REPEATS_TEST,
             }),
         ),
-        When('the suite runs')('run', (s) => runAndRelease(s.project, `${s.project}/repeats.test.ts`)),
-        Then('both bodies pass and the second saw all three passes')((s) => {
-          expect(s.run.response.status).toBe('complete')
-          const first = testOf(s.run.response, 'first body records each run')
-          expect(first.status).toBe('success')
-          expect(first.failureMessage).toBeUndefined()
-          const second = testOf(s.run.response, 'second body sees three runs from the first')
-          expect(second.status).toBe('success')
-          expect(second.failureMessage).toBeUndefined()
+        When('the suite runs and the project is released')(
+          'response',
+          (s) => runSuiteAndRelease(s.project, `${s.project}/repeats.test.ts`),
+        ),
+        Then('both bodies pass and the second saw all three passes')((s, expect) => {
+          const first = testOf(s.response, 'first body records each run')
+          const second = testOf(s.response, 'second body sees three runs from the first')
+          return expect({
+            status: s.response.status,
+            first: resultOf(first),
+            second: resultOf(second),
+          }).toEqual({
+            status: 'complete',
+            first: { status: 'success', failureMessage: undefined },
+            second: { status: 'success', failureMessage: undefined },
+          })
         }),
-        And('the temporary project is removed')((s) => Effect.as(removeProject(s.run.root), undefined)),
       ),
     )
 
@@ -243,17 +253,23 @@ Feature('Honouring the Vitest project configuration')
               'pattern.test.ts': PATTERN_TEST,
             }),
         ),
-        When('the suite runs')('run', (s) => runAndRelease(s.project, `${s.project}/pattern.test.ts`)),
-        Then('the matching test passed and the other was skipped')((s) => {
-          expect(s.run.response.status).toBe('complete')
-          const kept = testOf(s.run.response, 'keeps this one')
-          expect(kept.status).toBe('success')
-          expect(kept.failureMessage).toBeUndefined()
-          const dropped = testOf(s.run.response, 'drops this one')
-          expect(dropped.status).toBe('skipped')
-          expect(dropped.failureMessage).toBeUndefined()
+        When('the suite runs and the project is released')(
+          'response',
+          (s) => runSuiteAndRelease(s.project, `${s.project}/pattern.test.ts`),
+        ),
+        Then('the matching test passed and the other was skipped')((s, expect) => {
+          const kept = testOf(s.response, 'keeps this one')
+          const dropped = testOf(s.response, 'drops this one')
+          return expect({
+            status: s.response.status,
+            kept: resultOf(kept),
+            dropped: resultOf(dropped),
+          }).toEqual({
+            status: 'complete',
+            kept: { status: 'success', failureMessage: undefined },
+            dropped: { status: 'skipped', failureMessage: undefined },
+          })
         }),
-        And('the temporary project is removed')((s) => Effect.as(removeProject(s.run.root), undefined)),
       ),
     )
 
@@ -286,25 +302,31 @@ Feature('Honouring the Vitest project configuration')
               return { root: s.project, response }
             }),
         ),
-        Then('both files read the provided value after the single setup')((s) => {
-          expect(s.run.response.status).toBe('complete')
+        Then('both files read the provided value after the single setup')((s, expect) => {
           const first = testOf(s.run.response, 'the first file reads the provided value after setup')
-          expect(first.status).toBe('success')
-          expect(first.failureMessage).toBeUndefined()
           const second = testOf(s.run.response, 'the second file sees the same single setup')
-          expect(second.status).toBe('success')
-          expect(second.failureMessage).toBeUndefined()
+          return expect({
+            status: s.run.response.status,
+            first: resultOf(first),
+            second: resultOf(second),
+          }).toEqual({
+            status: 'complete',
+            first: { status: 'success', failureMessage: undefined },
+            second: { status: 'success', failureMessage: undefined },
+          })
         }),
-        And('teardown ran after the last file')(
+        When('the teardown log is read after the last file')(
+          'teardown',
           (s) =>
             Effect.gen(function*() {
               const fs = yield* FileSystem.FileSystem
               const path = yield* Path.Path
               const log = yield* fs.readFileString(path.join(s.run.root, 'order.log'))
-              expect(log).toBe('setup\nteardown\n')
               yield* removeProject(s.run.root)
+              return { log }
             }),
         ),
+        Then('teardown ran after the last file')((s, expect) => expect(s.teardown.log).toBe('setup\nteardown\n')),
       ),
     )
 
@@ -318,14 +340,17 @@ Feature('Honouring the Vitest project configuration')
               'cjs-globals.test.ts': CJS_GLOBALS_TEST,
             }),
         ),
-        When('the suite runs')('run', (s) => runAndRelease(s.project, `${s.project}/cjs-globals.test.ts`)),
-        Then('every CommonJS global is present in the module')((s) => {
-          expect(s.run.response.status).toBe('complete')
-          const outcome = testOf(s.run.response, 'the CommonJS globals are injected into the module')
-          expect(outcome.status).toBe('success')
-          expect(outcome.failureMessage).toBeUndefined()
+        When('the suite runs and the project is released')(
+          'response',
+          (s) => runSuiteAndRelease(s.project, `${s.project}/cjs-globals.test.ts`),
+        ),
+        Then('every CommonJS global is present in the module')((s, expect) => {
+          const outcome = testOf(s.response, 'the CommonJS globals are injected into the module')
+          return expect({ status: s.response.status, outcome: resultOf(outcome) }).toEqual({
+            status: 'complete',
+            outcome: { status: 'success', failureMessage: undefined },
+          })
         }),
-        And('the temporary project is removed')((s) => Effect.as(removeProject(s.run.root), undefined)),
       ),
     )
 
@@ -340,19 +365,24 @@ Feature('Honouring the Vitest project configuration')
               'tags.test.ts': UNDECLARED_TAG_TEST,
             }),
         ),
-        When('the suite runs')('run', (s) => runAndRelease(s.project, `${s.project}/tags.test.ts`)),
-        Then('nothing ran and the collection names the tag')((s) => {
-          expect(s.run.response.status).toBe('complete')
-          if (s.run.response.status !== 'complete') return
-          expect(s.run.response.tests).toHaveLength(1)
-          const outcome = s.run.response.tests[0]
-          if (outcome === undefined) throw new Error('expected the collection failure row')
-          expect(outcome.status).toBe('failed')
-          expect(outcome.failureMessage).toBe(
-            'The tag "nope" is not defined in the configuration. Available tags are:\n- known',
-          )
-        }),
-        And('the temporary project is removed')((s) => Effect.as(removeProject(s.run.root), undefined)),
+        When('the suite runs and the project is released')(
+          'response',
+          (s) => runSuiteAndRelease(s.project, `${s.project}/tags.test.ts`),
+        ),
+        Then('nothing ran and the collection names the tag')((s, expect) =>
+          expect({
+            status: s.response.status,
+            tests: s.response.status === 'complete' ? s.response.tests.map(resultOf) : undefined,
+          }).toEqual({
+            status: 'complete',
+            tests: [
+              {
+                status: 'failed',
+                failureMessage: 'The tag "nope" is not defined in the configuration. Available tags are:\n- known',
+              },
+            ],
+          })
+        ),
       ),
     )
 
@@ -367,14 +397,17 @@ Feature('Honouring the Vitest project configuration')
               'tags.test.ts': UNDECLARED_TAG_TEST,
             }),
         ),
-        When('the suite runs')('run', (s) => runAndRelease(s.project, `${s.project}/tags.test.ts`)),
-        Then('the tagged test runs and passes')((s) => {
-          expect(s.run.response.status).toBe('complete')
-          const outcome = testOf(s.run.response, 'tagged with an undeclared tag')
-          expect(outcome.status).toBe('success')
-          expect(outcome.failureMessage).toBeUndefined()
+        When('the suite runs and the project is released')(
+          'response',
+          (s) => runSuiteAndRelease(s.project, `${s.project}/tags.test.ts`),
+        ),
+        Then('the tagged test runs and passes')((s, expect) => {
+          const outcome = testOf(s.response, 'tagged with an undeclared tag')
+          return expect({ status: s.response.status, outcome: resultOf(outcome) }).toEqual({
+            status: 'complete',
+            outcome: { status: 'success', failureMessage: undefined },
+          })
         }),
-        And('the temporary project is removed')((s) => Effect.as(removeProject(s.run.root), undefined)),
       ),
     )
 
@@ -399,21 +432,26 @@ Feature('Honouring the Vitest project configuration')
               })
             ),
         ),
-        Then('the project carries every sequencing option')((s) =>
-          Effect.gen(function*() {
-            expect(s.handle.runtime.config.projects).toHaveLength(1)
-            const project = s.handle.runtime.config.projects[0]
-            expect(project?.sequence).toEqual({
+        Then('the project carries every sequencing option')((s, expect) => {
+          const projects = s.handle.runtime.config.projects
+          const check = expect({
+            projectCount: projects.length,
+            sequence: projects[0]?.sequence,
+          }).toEqual({
+            projectCount: 1,
+            sequence: {
               concurrent: false,
               shuffle: true,
               seed: 42,
               hooks: 'list',
               setupFiles: 'parallel',
-            })
-            yield* Effect.promise(() => s.handle.close())
-            yield* removeProject(s.project)
+            },
           })
-        ),
+          return Effect.promise(() => s.handle.close()).pipe(
+            Effect.andThen(removeProject(s.project)),
+            Effect.as(check),
+          )
+        }),
       ),
     )
 
@@ -434,18 +472,27 @@ Feature('Honouring the Vitest project configuration')
               Session.createVmVitestRuntime({ sandboxWorkingDirectory: s.project, configFile: undefined })
             ),
         ),
-        Then('the project runs files in order with the default hook policy')((s) =>
-          Effect.gen(function*() {
-            expect(s.handle.runtime.config.projects).toHaveLength(1)
-            const project = s.handle.runtime.config.projects[0]
-            expect(project?.sequence.concurrent).toBe(false)
-            expect(project?.sequence.shuffle).toBe(false)
-            expect(project?.sequence.hooks).toBe('stack')
-            expect(project?.sequence.setupFiles).toBe('parallel')
-            yield* Effect.promise(() => s.handle.close())
-            yield* removeProject(s.project)
+        Then('the project runs files in order with the default hook policy')((s, expect) => {
+          const projects = s.handle.runtime.config.projects
+          const project = projects[0]
+          const check = expect({
+            projectCount: projects.length,
+            concurrent: project?.sequence.concurrent,
+            shuffle: project?.sequence.shuffle,
+            hooks: project?.sequence.hooks,
+            setupFiles: project?.sequence.setupFiles,
+          }).toEqual({
+            projectCount: 1,
+            concurrent: false,
+            shuffle: false,
+            hooks: 'stack',
+            setupFiles: 'parallel',
           })
-        ),
+          return Effect.promise(() => s.handle.close()).pipe(
+            Effect.andThen(removeProject(s.project)),
+            Effect.as(check),
+          )
+        }),
       ),
     )
   })

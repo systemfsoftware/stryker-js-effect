@@ -1,7 +1,8 @@
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { defineIgnorer, type IgnorerVisitors } from '@systemfsoftware/stryker-ignorer-kit'
 import { type ScriptLang } from '@systemfsoftware/stryker-ignorer-kit/tester'
-import { expectTypeOf, test } from 'vitest'
+import { expectTypeOf } from '@systemfsoftware/vitest'
+import { test } from 'vitest'
 
 test('a script language is one of the four the parser is driven with', () => {
   expectTypeOf<ScriptLang>().toEqualTypeOf<'js' | 'jsx' | 'ts' | 'tsx'>()

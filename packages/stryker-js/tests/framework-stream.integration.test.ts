@@ -1,11 +1,10 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { RunEvent } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as S from 'effect/Schema'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const CORE_OWNER = '@systemfsoftware/stryker-js-instrumenter'
 const SVELTE_MODULE = '@systemfsoftware/stryker-js-svelte'
@@ -93,20 +92,13 @@ Feature('Reporting framework plugins on the machine wire')
           'seen',
           (s) => Effect.succeed(s.lines),
         ),
-        Then('each line carries its tag, its rows, and a trailing newline')((s) => {
-          s.seen.forEach((line) => {
-            expect(line.endsWith('\n')).toBe(true)
-          })
-          expect(s.seen[0]).toBe(
+        Then('each line carries its tag, its rows, and a trailing newline')((s, expect) =>
+          expect(s.seen).toEqual([
             `{"_tag":"plugins","modules":[{"moduleName":"${frameworkModule}","contributions":[{"name":"fixture-format","formatId":"fixture","extensions":[".fixture"]}]}],"shadowings":[{"extension":".html","winner":"${firstModule}","loser":"${secondModule}"}]}\n`,
-          )
-          expect(s.seen[1]).toBe(
             `{"_tag":"formats","rows":[{"extension":".ts","formatId":"ts","ownerModule":"${CORE_OWNER}","language":"typescript"},{"extension":".fixture","formatId":"fixture","ownerModule":"${frameworkModule}","language":"fixture"}]}\n`,
-          )
-          expect(s.seen[2]).toBe(
             `{"_tag":"skipped","files":[{"file":"src/component.svelte","extension":".svelte","reason":"No loaded framework claims \\".svelte\\". Install ${SVELTE_MODULE} and add it to \\"plugins\\" to instrument it."},{"file":"src/widget.txt","extension":".txt","reason":"No loaded framework claims \\".txt\\". Install the framework plugin that claims this file type to instrument it."}]}\n`,
-          )
-        }),
+          ])
+        ),
       ),
     )
 
@@ -121,11 +113,13 @@ Feature('Reporting framework plugins on the machine wire')
           'seen',
           (s) => decodedOf(s.line),
         ),
-        Then('the failure names the reason, the configuration code, and the remedy')((s) => {
-          expect(s.seen.reason).toBe('PeerMissing' as const)
-          expect(s.seen.code).toBe(2)
-          expect(s.seen.remediation).toContain('peer dependency')
-        }),
+        Then('the failure names the reason, the configuration code, and the remedy')((s, expect) =>
+          expect({ reason: s.seen.reason, code: s.seen.code, remediation: s.seen.remediation }).toEqual({
+            reason: 'PeerMissing',
+            code: 2,
+            remediation: 'install the peer dependency the plugin needs',
+          })
+        ),
       ),
     )
 
@@ -140,13 +134,9 @@ Feature('Reporting framework plugins on the machine wire')
           'seen',
           (s) => Effect.succeed({ known: s.files[0]?.reason ?? '', unknown: s.files[1]?.reason ?? '' }),
         ),
-        Then('the known extension names its package and the unknown one stays generic')((s) => {
-          expect(s.seen.known).toBe(svelteReason)
-          expect(s.seen.known).toContain(SVELTE_MODULE)
-          expect(s.seen.known).toContain('add it to "plugins"')
-          expect(s.seen.unknown).toBe(genericReason)
-          expect(s.seen.unknown).not.toContain('@systemfsoftware/')
-        }),
+        Then('the known extension names its package and the unknown one stays generic')((s, expect) =>
+          expect(s.seen).toEqual({ known: svelteReason, unknown: genericReason })
+        ),
       ),
     )
   })

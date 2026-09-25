@@ -66,14 +66,8 @@ const readClearTextReport = (input: {
     ),
     (terminal) => ({
       _tag: 'ClearTextReportCommand' as const,
-      reported: Option.match(terminal, {
-        onNone: () => undefined,
-        onSome: (ready) => ready.report,
-      }),
-      computed: Option.match(terminal, {
-        onNone: () => undefined,
-        onSome: (ready) => ready.metrics,
-      }),
+      reported: Option.getOrUndefined(Option.map(terminal, (ready) => ready.report)),
+      computed: Option.getOrUndefined(Option.map(terminal, (ready) => ready.metrics)),
       render: renderOptionsOf(input.options),
       rendered: true,
     }),
@@ -138,14 +132,15 @@ const writeChunks = (
 export const clearTextReportCell = Sandwich.named('stryker.report.clearText')(readClearTextReport)
   .decide(renderClearTextReport)
   .write({
-    ClearTextReportRendered: (rendered, raw) =>
+    ClearTextReportRendered: (rendered, _raw) =>
       Effect.gen(function*() {
         const output = yield* ReporterOutput
         yield* writeChunks(output, 'stdout', rendered.stdout)
-        yield* Boolean.match(raw.render.debug, {
-          onTrue: () => writeChunks(output, 'stderr', rendered.diagnostics),
-          onFalse: () => Effect.void,
-        })
+        yield* Effect.forEach(
+          rendered.stderr,
+          (chunk) => writeChunks(output, 'stderr', [chunk]),
+          { discard: true },
+        )
       }),
     ClearTextReportSuppressed: () => Effect.void,
     CommandRejected: ({ issue }) => Effect.fail(failAsClearText(issue)),
@@ -161,7 +156,7 @@ export const clearTextReporterFactory = (
 }
 
 if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
+  const { it } = await import('@systemfsoftware/vitest')
   const Schema = await import('effect/Schema')
   const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
   const { ClearTextRenderOptions } = await import('./render-clear-text-report.workflow.js')
@@ -189,8 +184,11 @@ if (import.meta.vitest !== void 0) {
     ),
   )
 
-  const outputBytesOf = (command: ClearTextReportCommand): readonly string[] =>
-    Result.match(renderClearTextReport(command), {
+  const outputBytesOf = (
+    render: typeof renderClearTextReport,
+    command: ClearTextReportCommand,
+  ): readonly string[] =>
+    Result.match(render(command), {
       onFailure: () => [],
       onSuccess: (value) =>
         Match.value(value).pipe(
@@ -203,12 +201,16 @@ if (import.meta.vitest !== void 0) {
         ),
     })
 
-  it.prop('∀c_NoTerminalReport_≡NoOutputBytes', [suppressedArb], ([command]) => outputBytesOf(command).length === 0)
+  it.prop(
+    '∀c_NoTerminalReport_≡NoOutputBytes',
+    { of: [suppressedArb], subject: renderClearTextReport },
+    (subject, [command]) => outputBytesOf(subject, command).length === 0,
+  )
 
   it.prop(
     '∀c_ColorOff_≡EscapeFreeBytes',
-    [colorOffArb],
-    ([command]) => outputBytesOf(command).every((bytes) => !bytes.includes(ANSI_ESCAPE)),
+    { of: [colorOffArb], subject: renderClearTextReport },
+    (subject, [command]) => outputBytesOf(subject, command).every((bytes) => !bytes.includes(ANSI_ESCAPE)),
   )
 
   const spanToneArb = Arbitrary.schema(Schema.Literals([
@@ -223,15 +225,34 @@ if (import.meta.vitest !== void 0) {
 
   const spanTextArb = Arbitrary.schema(Schema.String.check(Schema.isMaxLength(8)))
 
-  it.prop('∀ab_MergedSpans_≡SplitBytes', [spanTextArb, spanTextArb, spanToneArb], ([a, b, tone]) => {
-    const span = (text: string): ReportSpan => ({
-      _tag: 'ReportSpan',
-      text,
-      tone,
-      leftPad: 0,
-      rightPad: 0,
-      repeat: 1,
-    })
-    return renderChunk([[span(`${a}${b}`)]]) === renderChunk([[span(a), span(b)]])
-  })
+  it.prop(
+    '∀a_RenderChunk_=PlainText',
+    { of: [spanTextArb], subject: renderChunk },
+    (subject, [a]) =>
+      subject([[{ _tag: 'ReportSpan', text: a, tone: 'plain', leftPad: 0, rightPad: 0, repeat: 1 }]]) === a,
+  )
+
+  it.prop(
+    '∀c_Suppression_≡NoOutputBytes',
+    { of: [commandArb], subject: renderClearTextReport },
+    (subject, [command]) =>
+      (outputBytesOf(subject, command).length === 0) ===
+        (command.reported === undefined || command.computed === undefined),
+  )
+
+  it.prop(
+    '∀ab_MergedSpans_≡SplitBytes',
+    { of: [spanTextArb, spanTextArb, spanToneArb], subject: renderChunk },
+    (subject, [a, b, tone]) => {
+      const span = (text: string): ReportSpan => ({
+        _tag: 'ReportSpan',
+        text,
+        tone,
+        leftPad: 0,
+        rightPad: 0,
+        repeat: 1,
+      })
+      return subject([[span(`${a}${b}`)]]) === subject([[span(a), span(b)]])
+    },
+  )
 }

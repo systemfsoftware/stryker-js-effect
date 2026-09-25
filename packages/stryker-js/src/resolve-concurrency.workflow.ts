@@ -15,6 +15,7 @@ export class TestRunnersOnly extends S.TaggedClass<TestRunnersOnly>()('TestRunne
   testRunners: S.Finite,
   total: S.Finite,
   isPercentage: S.Boolean,
+  announcement: S.Option(S.String),
 }) {
   readonly [ConcurrencyDecisionTypeId] = ConcurrencyDecisionTypeId
 }
@@ -26,6 +27,7 @@ export class TestRunnersAndCheckers extends S.TaggedClass<TestRunnersAndCheckers
     checkers: S.Finite,
     total: S.Finite,
     isPercentage: S.Boolean,
+    announcement: S.Option(S.String),
   },
 ) {
   readonly [ConcurrencyDecisionTypeId] = ConcurrencyDecisionTypeId
@@ -65,19 +67,36 @@ const percentageDetails = (text: string, availableParallelism: number) =>
     onSome: (percentage) => ({
       total: percentageTotal(percentage, availableParallelism),
       isPercentage: true,
+      announcement: Option.some(
+        `Computed concurrency ${
+          percentageTotal(percentage, availableParallelism)
+        } from "${text}" based on ${availableParallelism} available parallelism.`,
+      ),
     }),
-    onNone: () => ({ total: defaultedTotal(availableParallelism), isPercentage: false }),
+    onNone: () => ({
+      total: defaultedTotal(availableParallelism),
+      isPercentage: false,
+      announcement: Option.none<string>(),
+    }),
   })
 
 const detailsOf = (concurrency: number | string | undefined, availableParallelism: number) =>
   Match.value(concurrency).pipe(
     Match.when(Predicate.isString, (text) => percentageDetails(text, availableParallelism)),
-    Match.when(Predicate.isNumber, (total) => ({ total, isPercentage: false })),
-    Match.orElse(() => ({ total: defaultedTotal(availableParallelism), isPercentage: false })),
+    Match.when(Predicate.isNumber, (total) => ({
+      total,
+      isPercentage: false,
+      announcement: Option.none<string>(),
+    })),
+    Match.orElse(() => ({
+      total: defaultedTotal(availableParallelism),
+      isPercentage: false,
+      announcement: Option.none<string>(),
+    })),
   )
 
 const splitOf = (
-  details: { readonly total: number; readonly isPercentage: boolean },
+  details: { readonly total: number; readonly isPercentage: boolean; readonly announcement: Option.Option<string> },
   checkerCount: number,
 ): ConcurrencySplit =>
   Boolean.match(checkerCount > 0, {
@@ -87,12 +106,14 @@ const splitOf = (
         checkers: max(ceil(details.total / 2), 1),
         total: details.total,
         isPercentage: details.isPercentage,
+        announcement: details.announcement,
       }),
     onFalse: () =>
       TestRunnersOnly.make({
         testRunners: details.total,
         total: details.total,
         isPercentage: details.isPercentage,
+        announcement: details.announcement,
       }),
   })
 

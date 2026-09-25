@@ -1,5 +1,5 @@
-import { describe, it } from '@effect/vitest'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
@@ -31,8 +31,12 @@ const worseOf = (first: Plugin.ExitClass, second: Plugin.ExitClass) =>
     onFalse: () => second,
   })
 
-const decidedOf = (pending: ReadonlyArray<Plugin.ExitClass>, score: number | null, breakingThreshold: number | null) =>
-  classifyExit(ClassifyExitCommand.make({ pending: [...pending], score, breakingThreshold }))
+const decidedOf = (
+  subject: typeof classifyExit,
+  pending: ReadonlyArray<Plugin.ExitClass>,
+  score: number | null,
+  breakingThreshold: number | null,
+) => subject(ClassifyExitCommand.make({ pending: [...pending], score, breakingThreshold }))
 
 const isMemberClass = (exitClass: Plugin.ExitClass, decision: ClassifyExitDecision): boolean =>
   Match.value(exitClass).pipe(
@@ -44,48 +48,69 @@ const isMemberClass = (exitClass: Plugin.ExitClass, decision: ClassifyExitDecisi
   )
 
 describe('classifyExit', () => {
-  it.prop('∀pair_Command_≡HighestSeverity', [Plugin.ExitClass, Plugin.ExitClass], ([first, second]) => {
-    const expected = worseOf(first, second)
-    const result = decidedOf([first, second], null, null)
-    return Result.match(result, {
-      onFailure: () => false,
-      onSuccess: (decision) => isMemberClass(expected, decision),
-    })
-  })
+  it.prop(
+    '∀pair_Command_≡HighestSeverity',
+    { of: [Plugin.ExitClass, Plugin.ExitClass], subject: classifyExit },
+    (subject, [first, second]) => {
+      const expected = worseOf(first, second)
+      const result = decidedOf(subject, [first, second], null, null)
+      return Result.match(result, {
+        onFailure: () => false,
+        onSuccess: (decision) => isMemberClass(expected, decision),
+      })
+    },
+  )
 
-  it.prop('∀single_Command_≡MemberClass', [Plugin.ExitClass], ([only]) => {
-    const result = decidedOf([only], null, null)
-    return Result.match(result, {
-      onFailure: () => false,
-      onSuccess: (decision) => isMemberClass(only, decision),
-    })
-  })
+  it.prop(
+    '∀single_Command_≡MemberClass',
+    { of: [Plugin.ExitClass], subject: classifyExit },
+    (subject, [only]) => {
+      const result = decidedOf(subject, [only], null, null)
+      return Result.match(result, {
+        onFailure: () => false,
+        onSuccess: (decision) => isMemberClass(only, decision),
+      })
+    },
+  )
 
-  it.prop('∀below_Command_≡VerdictFailed', [S.Int, S.Int], ([score, threshold]) => {
-    const result = decidedOf([], score, threshold)
-    return Match.value(score < threshold).pipe(
-      Match.when(true, () => Result.isSuccess(result) && S.is(ExitVerdictFailed)(result.success)),
-      Match.orElse(() => true),
-    )
-  })
+  it.prop(
+    '∀below_Command_≡VerdictFailed',
+    { of: [S.Int, S.Int], subject: classifyExit },
+    (subject, [score, threshold]) => {
+      const result = decidedOf(subject, [], score, threshold)
+      return Match.value(score < threshold).pipe(
+        Match.when(true, () => Result.isSuccess(result) && S.is(ExitVerdictFailed)(result.success)),
+        Match.orElse(() => true),
+      )
+    },
+  )
 
-  it.prop('∀above_Command_≡Passed', [S.Int, S.Int], ([score, threshold]) => {
-    const result = decidedOf([], score, threshold)
-    return Match.value(score < threshold).pipe(
-      Match.when(true, () => true),
-      Match.orElse(() => Result.isSuccess(result) && S.is(ExitPassed)(result.success)),
-    )
-  })
-  it.prop('∀empty_Command_≡Passed', [S.Int], ([threshold]) => {
-    const result = decidedOf([], 10, threshold)
-    return Result.match(result, {
-      onFailure: () => false,
-      onSuccess: (decision) =>
-        Match.value(decision).pipe(
-          Match.tag('ExitPassed', () => true),
-          Match.tag('ExitVerdictFailed', () => 10 < threshold),
-          Match.orElse(() => false),
-        ),
-    })
-  })
+  it.prop(
+    '∀above_Command_≡Passed',
+    { of: [S.Int, S.Int], subject: classifyExit },
+    (subject, [score, threshold]) => {
+      const result = decidedOf(subject, [], score, threshold)
+      return Match.value(score < threshold).pipe(
+        Match.when(true, () => true),
+        Match.orElse(() => Result.isSuccess(result) && S.is(ExitPassed)(result.success)),
+      )
+    },
+  )
+
+  it.prop(
+    '∀empty_Command_≡Passed',
+    { of: [S.Int], subject: classifyExit },
+    (subject, [threshold]) => {
+      const result = decidedOf(subject, [], 10, threshold)
+      return Result.match(result, {
+        onFailure: () => false,
+        onSuccess: (decision) =>
+          Match.value(decision).pipe(
+            Match.tag('ExitPassed', () => true),
+            Match.tag('ExitVerdictFailed', () => 10 < threshold),
+            Match.orElse(() => false),
+          ),
+      })
+    },
+  )
 })

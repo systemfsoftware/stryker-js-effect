@@ -1,4 +1,4 @@
-import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -6,7 +6,6 @@ import { type LocatedDirective, LocatedDirectiveSchema } from '../directives/dir
 import {
   type MutantPlan,
   MutantsFullyIgnored,
-  MutantsPlanned,
   MutantWithoutLocation,
   planMutants,
   PlanMutantsCommand,
@@ -42,37 +41,44 @@ const silencingReason = (command: PlanMutantsCommand, mutatorName: string): stri
 
 describe('planMutants', () => {
   it.prop(
-    '∀d_Brand_∈Plan',
-    [MutantsPlanned, MutantsFullyIgnored],
-    ([planned, fullyIgnored]) => hasBrand(planned) && hasBrand(fullyIgnored),
+    '∀c_Command_∈BrandedPlan',
+    { of: [PlanMutantsCommand], subject: planMutants },
+    (subject, [command]) => {
+      const planned = subject(command)
+      return Result.isSuccess(planned) ? hasBrand(planned.success) : S.is(MutantWithoutLocation)(planned.failure)
+    },
   )
 
-  it.prop('∀c_Command_≡IdsRunFromTheFoldState', [PlanMutantsCommand], ([command]) => {
-    const planned = planMutants(command)
-    const withoutLocation = command.candidates.find((candidate) => candidate.location === undefined)
-    if (withoutLocation !== undefined) {
-      return Result.isFailure(planned) && S.is(MutantWithoutLocation)(planned.failure) &&
-        planned.failure.mutatorName === withoutLocation.mutatorName
-    }
-    if (Result.isFailure(planned)) {
-      return false
-    }
-    const plan = planned.success
-    const firstMutant = plan.mutants.at(0)
-    const lastMutant = plan.mutants.at(-1)
-    const lastIndex = command.firstIndex + command.candidates.length - 1
-    return plan.mutants.length === command.candidates.length &&
-      plan.nextIndex === command.firstIndex + command.candidates.length &&
-      (firstMutant === undefined || firstMutant.id === `${command.firstIndex}`) &&
-      (lastMutant === undefined || lastMutant.id === `${lastIndex}`) &&
-      (S.is(MutantsFullyIgnored)(plan) ? plan.mutants.every((mutant) => mutant.ignoreReason !== undefined) : true)
-  })
+  it.prop(
+    '∀c_Command_≡IdsRunFromTheFoldState',
+    { of: [PlanMutantsCommand], subject: planMutants },
+    (subject, [command]) => {
+      const planned = subject(command)
+      const withoutLocation = command.candidates.find((candidate) => candidate.location === undefined)
+      if (withoutLocation !== undefined) {
+        return Result.isFailure(planned) && S.is(MutantWithoutLocation)(planned.failure) &&
+          planned.failure.mutatorName === withoutLocation.mutatorName
+      }
+      if (Result.isFailure(planned)) {
+        return false
+      }
+      const plan = planned.success
+      const firstMutant = plan.mutants.at(0)
+      const lastMutant = plan.mutants.at(-1)
+      const lastIndex = command.firstIndex + command.candidates.length - 1
+      return plan.mutants.length === command.candidates.length &&
+        plan.nextIndex === command.firstIndex + command.candidates.length &&
+        (firstMutant === undefined || firstMutant.id === `${command.firstIndex}`) &&
+        (lastMutant === undefined || lastMutant.id === `${lastIndex}`) &&
+        (S.is(MutantsFullyIgnored)(plan) ? plan.mutants.every((mutant) => mutant.ignoreReason !== undefined) : true)
+    },
+  )
 
   it.prop(
     '∀c_Command_≡TheLastReachingDirectiveSuppliesTheReason',
-    [PlanMutantsCommand],
-    ([command]) => {
-      const planned = planMutants(command)
+    { of: [PlanMutantsCommand], subject: planMutants },
+    (subject, [command]) => {
+      const planned = subject(command)
       const candidate = command.candidates.at(0)
       if (candidate === undefined) {
         return Result.isSuccess(planned) && planned.success.mutants.length === 0
@@ -87,35 +93,36 @@ describe('planMutants', () => {
     },
   )
 
-  it.prop('∀d_DirectivePair_≡TheLaterDirectiveInTheRuleSuppliesTheReason', [
-    LocatedDirectiveSchema,
-    LocatedDirectiveSchema,
-  ], ([earlier, later]) => {
-    const mutatorName = 'ArithmeticOperator'
-    const command = PlanMutantsCommand.make({
-      fileName: 'probe.ts',
-      firstIndex: 0,
-      offset: { line: 0, column: 0 },
-      line: later.governedLine,
-      mutatorNames: [mutatorName],
-      excludedMutations: [],
-      rule: [
-        { ...earlier, directive: { ...earlier.directive, action: 'disable', mutatorNames: [mutatorName] } },
-        { ...later, directive: { ...later.directive, action: 'restore', mutatorNames: [mutatorName] } },
-      ],
-      directives: [],
-      candidates: [
-        {
-          mutatorName,
-          replacementCode: 'n - 1',
-          location: {
-            start: { ...later.at, line: later.governedLine },
-            end: { ...later.at, line: later.governedLine },
+  it.prop(
+    '∀dd_DirectivePair_≡TheLaterDirectiveInTheRuleSuppliesTheReason',
+    { of: [LocatedDirectiveSchema, LocatedDirectiveSchema], subject: planMutants },
+    (subject, [earlier, later]) => {
+      const mutatorName = 'ArithmeticOperator'
+      const command = PlanMutantsCommand.make({
+        fileName: 'probe.ts',
+        firstIndex: 0,
+        offset: { line: 0, column: 0 },
+        line: later.governedLine,
+        mutatorNames: [mutatorName],
+        excludedMutations: [],
+        rule: [
+          { ...earlier, directive: { ...earlier.directive, action: 'disable', mutatorNames: [mutatorName] } },
+          { ...later, directive: { ...later.directive, action: 'restore', mutatorNames: [mutatorName] } },
+        ],
+        directives: [],
+        candidates: [
+          {
+            mutatorName,
+            replacementCode: 'n - 1',
+            location: {
+              start: { ...later.at, line: later.governedLine },
+              end: { ...later.at, line: later.governedLine },
+            },
           },
-        },
-      ],
-    })
-    const planned = planMutants(command)
-    return Result.isSuccess(planned) && planned.success.mutants.at(0)?.ignoreReason === undefined
-  })
+        ],
+      })
+      const planned = subject(command)
+      return Result.isSuccess(planned) && planned.success.mutants.at(0)?.ignoreReason === undefined
+    },
+  )
 })

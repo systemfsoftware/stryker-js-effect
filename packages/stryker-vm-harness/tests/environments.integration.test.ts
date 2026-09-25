@@ -1,12 +1,11 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
-import { expect } from 'vitest'
 
 import { environmentSandboxOf, outcomeOf, sandboxProject, suiteFileLayer } from './__fixtures__/environment-sandbox.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const provideSuite = <A, E>(
   effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>,
@@ -34,6 +33,7 @@ const captureFile = {
 
 Feature('Giving each test file the environment its project asks for')
   .withLayer(suiteFileLayer)
+  .live('the sandbox writes real files and loads real environment packages for the project')
   .body(({ scenario }) => {
     scenario(
       'A file in a browser-like project finds the document and honours the configured page address',
@@ -51,21 +51,23 @@ Feature('Giving each test file the environment its project asks for')
             )),
         ),
         When('the file runs')('outcome', (s) => Effect.map(s.sandbox.runSuite, outcomeOf)),
-        Then('the file passes with the document present and the page address honoured')((s) => {
-          expect(s.outcome.status).toBe('complete')
-          expect(s.outcome.results).toEqual([
-            {
-              name: 'a reference captured while loading still points at the live document',
-              status: 'success',
-              failureMessage: undefined,
-            },
-            {
-              name: 'a page element can be built and the page address matches the project setting',
-              status: 'success',
-              failureMessage: undefined,
-            },
-          ])
-        }),
+        Then('the file passes with the document present and the page address honoured')((s, expect) =>
+          expect({ status: s.outcome.status, results: s.outcome.results }).toEqual({
+            status: 'complete',
+            results: [
+              {
+                name: 'a reference captured while loading still points at the live document',
+                status: 'success',
+                failureMessage: undefined,
+              },
+              {
+                name: 'a page element can be built and the page address matches the project setting',
+                status: 'success',
+                failureMessage: undefined,
+              },
+            ],
+          })
+        ),
       ),
     )
 
@@ -112,21 +114,23 @@ Feature('Giving each test file the environment its project asks for')
           'outcome',
           (s) => Effect.map(s.sandbox.runSuite, outcomeOf),
         ),
-        Then('the jsdom file saw its page and the node file saw no document at all')((s) => {
-          expect(s.outcome.status).toBe('complete')
-          expect(s.outcome.results).toEqual([
-            {
-              name: 'the file that asked for jsdom sees its page',
-              status: 'success',
-              failureMessage: undefined,
-            },
-            {
-              name: 'the neighbouring node file sees no document',
-              status: 'success',
-              failureMessage: undefined,
-            },
-          ])
-        }),
+        Then('the jsdom file saw its page and the node file saw no document at all')((s, expect) =>
+          expect({ status: s.outcome.status, results: s.outcome.results }).toEqual({
+            status: 'complete',
+            results: [
+              {
+                name: 'the file that asked for jsdom sees its page',
+                status: 'success',
+                failureMessage: undefined,
+              },
+              {
+                name: 'the neighbouring node file sees no document',
+                status: 'success',
+                failureMessage: undefined,
+              },
+            ],
+          })
+        ),
       ),
     )
 
@@ -149,11 +153,15 @@ Feature('Giving each test file the environment its project asks for')
             )),
         ),
         When('the run is attempted')('outcome', (s) => Effect.map(s.sandbox.runSuite, outcomeOf)),
-        Then('the run never starts and the failure names the missing package with the install hint')((s) => {
-          expect(s.outcome.status).toBe('init-failed')
-          expect(s.outcome.message).toContain("Cannot find dependency 'vitest-environment-does-not-exist'")
-          expect(s.outcome.message).toContain('npm i -D vitest-environment-does-not-exist')
-        }),
+        Then('the run never starts and the failure names the missing package with the install hint')((s, expect) =>
+          expect({
+            status: s.outcome.status,
+            namesPackage: (s.outcome.message ?? '').includes(
+              "Cannot find dependency 'vitest-environment-does-not-exist'",
+            ),
+            givesInstallHint: (s.outcome.message ?? '').includes('npm i -D vitest-environment-does-not-exist'),
+          }).toEqual({ status: 'init-failed', namesPackage: true, givesInstallHint: true })
+        ),
       ),
     )
   })

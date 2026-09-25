@@ -1,3 +1,4 @@
+import { Handle } from '@systemfsoftware/effect-cell-types'
 import { MicroVM } from '@systemfsoftware/effect-microsandbox'
 import { Boolean, Effect } from 'effect'
 import * as Crypto from 'effect/Crypto'
@@ -8,15 +9,43 @@ import type { ExecResult } from './guest-job.schema.js'
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, GuestJobFailure, SandboxForkFailure } from './harness-failure.schema.js'
 
-export interface WarmSandbox {
-  readonly fixtureId: string
-  readonly snapshot: { readonly reference: string; readonly referenceKind: 'id' | 'path' }
+export interface WarmSandboxSnapshot {
+  readonly reference: string
+  readonly referenceKind: 'id' | 'path'
 }
 
-export interface SandboxFork {
+interface WarmSandboxData {
+  readonly fixtureId: string
+  readonly snapshot: WarmSandboxSnapshot
+}
+
+export const TypeId = Symbol.for('~systemfsoftware/stryker-e2e/WarmSandbox')
+export type TypeId = typeof TypeId
+
+const WarmSandboxDef = Handle.make<WarmSandboxData>()(TypeId)
+
+export type WarmSandbox = Handle.Of<typeof WarmSandboxDef>
+
+export const isWarmSandbox = WarmSandboxDef.is
+
+interface SandboxForkData {
   readonly name: string
+}
+
+interface SandboxForkSlot {
   readonly sandbox: Sandbox
 }
+
+export const ForkTypeId = Symbol.for('~systemfsoftware/stryker-e2e/SandboxFork')
+export type ForkTypeId = typeof ForkTypeId
+
+const SandboxForkDef = Handle.make<SandboxForkData, SandboxForkSlot>()(ForkTypeId)
+
+export type SandboxFork = Handle.Of<typeof SandboxForkDef>
+
+export const isSandboxFork = SandboxForkDef.is
+
+const sandboxOf = (forked: SandboxFork): Sandbox => SandboxForkDef.slot(forked).sandbox
 
 const IDLE_WORKLOAD = ['tail', '-f', '/dev/null'] as const
 const HOST_ACCESS_PROFILES = ['public', 'host'] as const
@@ -60,7 +89,7 @@ const bootAndCapture = (bakedFixtureDir: string, fixtureId: string, snapshotName
       vm,
       (sandbox) => Snapshot.builder(snapshotName).fromSandbox(sandbox.name).full().guestFlush('required').create(),
     ).pipe(
-      Effect.map((snapshot): WarmSandbox['snapshot'] => ({
+      Effect.map((snapshot): WarmSandboxSnapshot => ({
         reference: snapshot.reference,
         referenceKind: snapshot.referenceKind,
       })),
@@ -85,8 +114,7 @@ export const boot = (bakedFixtureDir: string, fixtureId: string) =>
           Effect.uninterruptible,
         ),
     )
-    const warm: WarmSandbox = { fixtureId, snapshot }
-    return warm
+    return WarmSandboxDef.make({ fixtureId, snapshot })
   })
 
 const teardown = (sandbox: Sandbox) =>
@@ -120,8 +148,8 @@ export const fork = (
             sandboxName: name,
             detail: describe(cause),
           }),
-      }).pipe(Effect.map((sandbox): SandboxFork => ({ name, sandbox }))),
-      (forked) => teardown(forked.sandbox),
+      }).pipe(Effect.map((sandbox): SandboxFork => SandboxForkDef.make({ name }, { sandbox }))),
+      (forked) => teardown(sandboxOf(forked)),
     )
   })
 
@@ -132,7 +160,7 @@ export const exec = (
 ): Effect.Effect<ExecResult, SandboxForkFailure> => {
   const [cmd, ...args] = argv
   return Effect.tryPromise({
-    try: () => forked.sandbox.execWith(cmd, (options) => options.args(args).cwd(GuestJobs.GUEST_WORKROOT).envs(env)),
+    try: () => sandboxOf(forked).execWith(cmd, (options) => options.args(args).cwd(GuestJobs.GUEST_WORKROOT).envs(env)),
     catch: (cause) =>
       new SandboxForkFailure({ step: `run ${argv.join(' ')}`, sandboxName: forked.name, detail: describe(cause) }),
   }).pipe(Effect.map((output) => ({ exitCode: output.code, stdout: output.stdout(), stderr: output.stderr() })))
@@ -140,7 +168,7 @@ export const exec = (
 
 export const readFile = (forked: SandboxFork, relativePath: string): Effect.Effect<string, SandboxForkFailure> =>
   Effect.tryPromise({
-    try: () => forked.sandbox.fs().readToString(`${GuestJobs.GUEST_WORKROOT}/${relativePath}`),
+    try: () => sandboxOf(forked).fs().readToString(`${GuestJobs.GUEST_WORKROOT}/${relativePath}`),
     catch: (cause) =>
       new SandboxForkFailure({ step: `read ${relativePath}`, sandboxName: forked.name, detail: describe(cause) }),
   })

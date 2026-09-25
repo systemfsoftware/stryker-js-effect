@@ -1,8 +1,10 @@
 import { RunEvent } from '@systemfsoftware/stryker-js'
+import { it } from '@systemfsoftware/vitest'
+import type { Check, Expect } from '@systemfsoftware/vitest'
+import { Effect } from 'effect'
 import * as S from 'effect/Schema'
-import type { ExpectStatic } from 'vitest'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
+import { bddStep, prepareFixture } from './__fixtures__/microvm-harness.js'
 
 const FIXTURE_URL = new URL('../testResources/vitest-nested-describe-fixture', import.meta.url)
 
@@ -55,9 +57,9 @@ const mutantsOf = (report: MutationReport, fileSuffix: string): ReadonlyArray<Mu
   return entry[1].mutants
 }
 
-const stepVerifyVerdict = (expect: ExpectStatic, run: ExecResult, verdict: RunEvent.VerdictReached): void => {
-  expect.soft(run.exitCode).toBe(0)
-  expect.soft({
+const verifyVerdict = (expect: Expect, run: ExecResult, verdict: RunEvent.VerdictReached): Check =>
+  expect({
+    exitCode: run.exitCode,
     compileErrors: verdict.counts.compileErrors,
     ignored: verdict.counts.ignored,
     killed: verdict.counts.killed,
@@ -66,64 +68,53 @@ const stepVerifyVerdict = (expect: ExpectStatic, run: ExecResult, verdict: RunEv
     runtimeErrors: verdict.counts.runtimeErrors,
     survived: verdict.counts.survived,
     timeout: verdict.counts.timeout,
-  }).toEqual(MUTATION_ORACLE)
-}
+  }).toStrictEqual({ exitCode: 0, ...MUTATION_ORACLE })
 
-const stepVerifyNestedCoveredMutantIsKilled = (
-  expect: ExpectStatic,
-  report: MutationReport,
-): void => {
-  const nestedMutants = mutantsOf(report, NESTED_FILE_SUFFIX)
-  expect.soft(nestedMutants).toHaveLength(2)
-  for (const mutant of nestedMutants) {
-    expect.soft(mutant.status).toBe('Killed')
-    expect.soft(mutant.killedBy?.length ?? 0).toBeGreaterThan(0)
-  }
-}
+const verifyMutantsOf = (expect: Expect, report: MutationReport, fileSuffix: string): Check => {
+  const mutants = mutantsOf(report, fileSuffix)
 
-const stepVerifyTopLevelMutantKeepsItsVerdict = (
-  expect: ExpectStatic,
-  report: MutationReport,
-): void => {
-  const topMutants = mutantsOf(report, TOP_FILE_SUFFIX)
-  expect.soft(topMutants).toHaveLength(2)
-  for (const mutant of topMutants) {
-    expect.soft(mutant.status).toBe('Killed')
-    expect.soft(mutant.killedBy?.length ?? 0).toBeGreaterThan(0)
-  }
-}
-
-test('the vitest runner kills the mutants whose only covering tests sit inside describe blocks', async ({ bdd, expect, prepareFixture }) => {
-  let fixture: PreparedFixture
-  let run: ExecResult
-  let events: ReadonlyArray<RunEvent.RunEvent>
-  let verdict: RunEvent.VerdictReached
-  let report: MutationReport
-
-  await bdd.given('a vitest fixture whose nested-covered source is installed in the container', async () => {
-    fixture = await prepareFixture(FIXTURE_URL, 'vitest-nested-describe')
+  return expect({
+    mutantCount: mutants.length,
+    distinctStatuses: [...new Set(mutants.map((mutant) => mutant.status))],
+    everyMutantNamesAKiller: mutants.every((mutant) => (mutant.killedBy?.length ?? 0) > 0),
+  }).toStrictEqual({
+    mutantCount: 2,
+    distinctStatuses: ['Killed'],
+    everyMutantNamesAKiller: true,
   })
+}
 
-  await bdd.when('Stryker CLI runs with per-test coverage analysis', async () => {
-    run = await fixture.run(['run'])
-    events = await parseEventStream(run.stdout)
+it.live(
+  'the vitest runner kills the mutants whose only covering tests sit inside describe blocks',
+  function*({ expect }) {
+    const fixture = yield* bddStep(
+      'Given',
+      'a vitest fixture whose nested-covered source is installed in the container',
+      prepareFixture(FIXTURE_URL, 'vitest-nested-describe'),
+    )
+    const run = yield* bddStep(
+      'When',
+      'Stryker CLI runs with per-test coverage analysis',
+      Effect.promise(() => fixture.run(['run'])),
+    )
+    const events = yield* Effect.promise(() => parseEventStream(run.stdout))
     const terminal = lastEvent(events)
     if (terminal._tag !== 'verdict') {
       throw new Error(`Expected verdict event, received: ${terminal._tag}`)
     }
-    verdict = terminal
-    report = JSON.parse(await fixture.readFile('reports/mutation/mutation.json')) as MutationReport
-  })
+    const reportText = yield* Effect.promise(() => fixture.readFile('reports/mutation/mutation.json'))
+    const report = JSON.parse(reportText) as MutationReport
 
-  await bdd.thenAssert('the run reaches a verdict killing every mutant', () => {
-    stepVerifyVerdict(expect, run, verdict)
-  })
-
-  await bdd.and('the mutants covered only by the nested suites are Killed', () => {
-    stepVerifyNestedCoveredMutantIsKilled(expect, report)
-  })
-
-  await bdd.and('the mutants covered only by the top-level test keep their verdict', () => {
-    stepVerifyTopLevelMutantKeepsItsVerdict(expect, report)
-  })
-})
+    yield* bddStep('Then', 'the run reaches a verdict killing every mutant', verifyVerdict(expect, run, terminal))
+    yield* bddStep(
+      'And',
+      'the mutants covered only by the nested suites are Killed',
+      verifyMutantsOf(expect, report, NESTED_FILE_SUFFIX),
+    )
+    yield* bddStep(
+      'And',
+      'the mutants covered only by the top-level test keep their verdict',
+      verifyMutantsOf(expect, report, TOP_FILE_SUFFIX),
+    )
+  },
+)

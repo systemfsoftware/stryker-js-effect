@@ -1,14 +1,16 @@
-import { assert, describe, expect, it } from 'vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 
 import { IN_SOURCE_TEST_IGNORED, strykerIgnorers } from '@systemfsoftware/stryker-ignorer-in-source-vitest-block'
 import { testIgnorer } from '@systemfsoftware/stryker-ignorer-kit/tester'
 
 const ignorer = strykerIgnorers[0]
-assert(ignorer !== undefined, '@systemfsoftware/stryker-ignorer-in-source-vitest-block exports no ignorer')
+if (ignorer === undefined) {
+  throw new Error('@systemfsoftware/stryker-ignorer-in-source-vitest-block exports no ignorer')
+}
 
 describe('in-source-vitest-block', () => {
-  it('Should_Register_The_Descriptor', () => {
-    expect(ignorer.name).toBe('in-source-vitest-block')
+  it('Should_Register_The_Descriptor', function*({ expect }) {
+    yield* expect(ignorer.name).toBe('in-source-vitest-block')
   })
 })
 

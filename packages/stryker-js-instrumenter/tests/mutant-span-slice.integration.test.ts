@@ -1,4 +1,4 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type {
   EmbeddedDocument,
   Framework,
@@ -7,11 +7,10 @@ import type {
 } from '@systemfsoftware/stryker-framework-interface'
 import { Format, Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
-import { expect } from 'vitest'
 
 import { instrument } from './__fixtures__/instrument.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const MATH_SOURCE = 'export const incrementBy = (value: number, step: number): number => value + step\n' +
   '\nexport const toggleValue = (value: boolean): boolean => !value\n'
@@ -122,6 +121,7 @@ const instrumentWith = (framework: Framework, name: string, content: string) =>
   )
 
 Feature('Mutants point at the text they change')
+  .live('parses real source with the oxc parser loaded at run time')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
@@ -136,30 +136,36 @@ Feature('Mutants point at the text they change')
               excludedMutations: [],
             }),
         ),
-        Then('every reported span slices exactly the changed text')((s) =>
-          Effect.sync(() => {
-            const located = locatedOf(s.result)
-            expect(located.length).toBeGreaterThan(0)
-            expect(located).toContainEqual({
-              mutatorName: 'ArrowFunction',
-              replacement: '() => undefined',
-              location: { start: { line: 1, column: 28 }, end: { line: 1, column: 81 } },
-            })
-            expect(located).toContainEqual({
-              mutatorName: 'ArithmeticOperator',
-              replacement: 'value - step',
-              location: { start: { line: 1, column: 69 }, end: { line: 1, column: 81 } },
-            })
-            expect(located).toContainEqual({
-              mutatorName: 'BooleanLiteral',
-              replacement: 'value',
-              location: { start: { line: 3, column: 57 }, end: { line: 3, column: 63 } },
-            })
-            expect(textsOf('/tmp/math.ts', located)).toContain('(value: number, step: number): number => value + step')
-            expect(textsOf('/tmp/math.ts', located)).toContain('value + step')
-            expect(textsOf('/tmp/math.ts', located)).toContain('!value')
+        Then('every reported span slices exactly the changed text')((s, expect) => {
+          const located = locatedOf(s.result)
+          return expect({
+            located,
+            texts: textsOf('/tmp/math.ts', located),
+          }).toMatchObject({
+            located: expect.arrayContaining([
+              {
+                mutatorName: 'ArrowFunction',
+                replacement: '() => undefined',
+                location: { start: { line: 1, column: 28 }, end: { line: 1, column: 81 } },
+              },
+              {
+                mutatorName: 'ArithmeticOperator',
+                replacement: 'value - step',
+                location: { start: { line: 1, column: 69 }, end: { line: 1, column: 81 } },
+              },
+              {
+                mutatorName: 'BooleanLiteral',
+                replacement: 'value',
+                location: { start: { line: 3, column: 57 }, end: { line: 3, column: 63 } },
+              },
+            ]),
+            texts: expect.arrayContaining([
+              '(value: number, step: number): number => value + step',
+              'value + step',
+              '!value',
+            ]),
           })
-        ),
+        }),
       ),
     )
 
@@ -174,20 +180,17 @@ Feature('Mutants point at the text they change')
           'result',
           (s) => instrumentWith(spanFixture(scriptTagSpans), '/tmp/page.span', s.document),
         ),
-        Then('the reported span slices the addition inside the region')((s) =>
-          Effect.sync(() => {
-            const arithmetic = locatedOf(s.result).filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
-            expect(arithmetic.map((mutant) => mutant.location)).toStrictEqual([
-              { start: { line: 3, column: 11 }, end: { line: 3, column: 16 } },
-            ])
-            const first = arithmetic.at(0)
-            if (first !== undefined) {
-              expect(slicedText(s.document, first.location)).toBe('1 + 2')
-            } else {
-              expect.unreachable('the region addition produced no arithmetic mutant')
-            }
+        Then('the reported span slices the addition inside the region')((s, expect) => {
+          const arithmetic = locatedOf(s.result).filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
+          const first = arithmetic.at(0)
+          return expect({
+            locations: arithmetic.map((mutant) => mutant.location),
+            text: first === undefined ? null : slicedText(s.document, first.location),
+          }).toEqual({
+            locations: [{ start: { line: 3, column: 11 }, end: { line: 3, column: 16 } }],
+            text: '1 + 2',
           })
-        ),
+        }),
       ),
     )
 
@@ -202,19 +205,19 @@ Feature('Mutants point at the text they change')
           'result',
           (s) => instrumentWith(spanFixture(twoLineSpans), '/tmp/two.span', s.document),
         ),
-        Then('each reported span slices its own region text on its own line')((s) =>
-          Effect.sync(() => {
-            const arithmetic = locatedOf(s.result).filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
-            expect(arithmetic.map((mutant) => mutant.location)).toStrictEqual([
+        Then('each reported span slices its own region text on its own line')((s, expect) => {
+          const arithmetic = locatedOf(s.result).filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
+          return expect({
+            locations: arithmetic.map((mutant) => mutant.location),
+            texts: arithmetic.map((mutant) => slicedText(s.document, mutant.location)),
+          }).toEqual({
+            locations: [
               { start: { line: 1, column: 11 }, end: { line: 1, column: 16 } },
               { start: { line: 2, column: 11 }, end: { line: 2, column: 16 } },
-            ])
-            expect(arithmetic.map((mutant) => slicedText(s.document, mutant.location))).toStrictEqual([
-              'n + 1',
-              'm + 2',
-            ])
+            ],
+            texts: ['n + 1', 'm + 2'],
           })
-        ),
+        }),
       ),
     )
   })

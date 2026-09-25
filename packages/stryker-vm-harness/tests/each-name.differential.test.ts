@@ -10,7 +10,11 @@ const referenceNameOf = (spec: EachNameSpec): Effect.Effect<string> => Effect.sy
 const candidateNameOf = (spec: EachNameSpec): Effect.Effect<string> =>
   Effect.sync(() => Registry.formatEachName(spec.template, spec.row))
 
-Differential.compare({ reference: referenceNameOf, candidate: candidateNameOf })
+Differential.compare({
+  name: 'the formatted each-name matches the vitest reference',
+  reference: referenceNameOf,
+  candidate: candidateNameOf,
+})
   .on(eachNameSpecs, { runBudget: 200 })
   .assert((referenceName, candidateName) => referenceName === candidateName)
 
@@ -19,7 +23,7 @@ const withTailTitle = (spec: EachNameSpec): EachNameSpec => ({
   row: spec.row,
 })
 
-Metamorphic.on(candidateNameOf)
+Metamorphic.on({ name: 'a tail title appends to the formatted name', system: candidateNameOf })
   .relation({
     transformInput: withTailTitle,
     assertOutput: (baseline: string, followUp: string): boolean => followUp === `${baseline} Tail`,

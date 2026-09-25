@@ -64,6 +64,7 @@ export class ClearTextReportCommand extends S.TaggedClass<ClearTextReportCommand
 export class ClearTextReportRendered extends S.TaggedClass<ClearTextReportRendered>()('ClearTextReportRendered', {
   stdout: S.Array(ReportChunkSchema),
   diagnostics: S.Array(ReportChunkSchema),
+  stderr: S.Array(ReportChunkSchema),
 }) {
   readonly [ClearTextReportTypeId] = ClearTextReportTypeId
 }
@@ -695,7 +696,14 @@ export const renderClearTextReport = Workflow.make({
         onSome: ([report, metrics]) => {
           const sections = renderClearText(report, metrics, command.render)
           return Result.succeed(
-            ClearTextReportRendered.make({ stdout: [...sections.stdout], diagnostics: [...sections.diagnostics] }),
+            ClearTextReportRendered.make({
+              stdout: [...sections.stdout],
+              diagnostics: [...sections.diagnostics],
+              stderr: Boolean.match(command.render.debug, {
+                onTrue: () => [...sections.diagnostics],
+                onFalse: () => [],
+              }),
+            }),
           )
         },
       },

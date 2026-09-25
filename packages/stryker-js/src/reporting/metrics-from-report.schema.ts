@@ -57,3 +57,70 @@ const metricsResultOf = (entries: Entries) =>
     metrics: metricsOf(entries),
     childResults: childResultsOf(entries),
   })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  const inputMutantCountOf = (files: Files) =>
+    Object.values(files).reduce((total, file) => total + file.mutants.length, 0)
+
+  const childTotalOf = (tree: Report.MetricsResult): number =>
+    tree.childResults.reduce((total, child) => total + child.metrics.totalMutants, 0)
+
+  const countsArePartitioned = (tree: Report.MetricsResult): boolean =>
+    tree.childResults.length === 0 || tree.metrics.totalMutants === childTotalOf(tree)
+
+  const everyChildPartitions = (tree: Report.MetricsResult): boolean =>
+    tree.childResults.every(partitionsCountsOverChildren)
+
+  const partitionsCountsOverChildren = (tree: Report.MetricsResult): boolean =>
+    countsArePartitioned(tree) && everyChildPartitions(tree)
+
+  const previousNameOf = (names: ReadonlyArray<string>, index: number): string => names[index - 1] ?? ''
+
+  const nameAt = (names: ReadonlyArray<string>, index: number): string => names[index] ?? ''
+
+  const isOrderedPair = (previous: string, name: string): boolean => previous.localeCompare(name) <= 0
+
+  const isOrderedFrom = (names: ReadonlyArray<string>, index: number): boolean =>
+    index === 0 || isOrderedPair(previousNameOf(names, index), nameAt(names, index))
+
+  const namesAreSorted = (names: ReadonlyArray<string>): boolean =>
+    names.every((_, index) => isOrderedFrom(names, index))
+
+  const childrenAreSorted = (tree: Report.MetricsResult): boolean => tree.childResults.every(everyLevelSorted)
+
+  const everyLevelSorted = (tree: Report.MetricsResult): boolean =>
+    namesAreSorted(tree.childResults.map((child) => child.name)) && childrenAreSorted(tree)
+
+  const topSegmentsOf = (files: Files): ReadonlySet<string> => new Set(Object.keys(files).map(segmentOf))
+
+  const childNamesAreTopSegments = (tree: Report.MetricsResult, files: Files): boolean => {
+    const segments = topSegmentsOf(files)
+    return tree.childResults.every((child) => segments.has(segmentOf(child.name)))
+  }
+
+  it.prop(
+    '∀files_MetricsResultFromReport_≡ConservesMutantCountAtRoot',
+    { of: [Report.FileResultDictionarySchema], subject: MetricsResultFromReport.fromFiles },
+    (subject, [files]) => subject(files).metrics.totalMutants === inputMutantCountOf(files),
+  )
+
+  it.prop(
+    '∀files_MetricsResultFromReport_≡PartitionsCountsOverChildren',
+    { of: [Report.FileResultDictionarySchema], subject: MetricsResultFromReport.fromFiles },
+    (subject, [files]) => partitionsCountsOverChildren(subject(files)),
+  )
+
+  it.prop(
+    '∀files_MetricsResultFromReport_≡SortsChildResultsByLocale',
+    { of: [Report.FileResultDictionarySchema], subject: MetricsResultFromReport.fromFiles },
+    (subject, [files]) => everyLevelSorted(subject(files)),
+  )
+
+  it.prop(
+    '∀files_Children_≡TopSegmentsOfTheInput',
+    { of: [Report.FileResultDictionarySchema], subject: MetricsResultFromReport.fromFiles },
+    (subject, [files]) => childNamesAreTopSegments(subject(files), files),
+  )
+}

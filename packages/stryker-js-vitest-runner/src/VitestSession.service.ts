@@ -13,6 +13,7 @@ import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 
 import { type StrykerNamespace, type VitestRunnerOptions, VitestRunnerOptionsSchema } from './VitestRunner.schema.js'
+import { create, resolveVitest, type VitestResolver } from './VitestRuntime.blueprint.js'
 import {
   close,
   type HarnessKey,
@@ -21,7 +22,6 @@ import {
   setMode,
   type VitestRuntime,
 } from './VitestRuntime.handle.js'
-import { create, resolveVitest, type VitestResolver } from './VitestRuntime.resource.js'
 
 /** Everything one worker's run of the vitest runner is configured with. */
 export interface VitestSessionInput {

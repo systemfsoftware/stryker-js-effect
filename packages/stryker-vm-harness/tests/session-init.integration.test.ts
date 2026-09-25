@@ -1,19 +1,19 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const suiteFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 interface SuiteOnDisk {
   readonly directory: string
   readonly file: string
+  readonly stubInstalled: boolean
 }
 
 const writeBareSuite = (): Effect.Effect<SuiteOnDisk, never, FileSystem.FileSystem | Path.Path> =>
@@ -31,31 +31,18 @@ const writeBareSuite = (): Effect.Effect<SuiteOnDisk, never, FileSystem.FileSyst
     )
     const file = path.join(directory, 'suite-0.test.ts')
     yield* fs.writeFileString(file, "import { test } from 'vitest'\n\ntest('adds numbers', () => {})\n")
-    return { directory, file }
+    const stubInstalled = yield* fs.exists(path.join(stubDir, 'package.json'))
+    return { directory, file, stubInstalled }
   }).pipe(Effect.orDie)
+
 Feature('Reporting a sandbox that cannot load vitest')
   .withScenarioLayer(suiteFileLayer)
-  .liveClock()
+  .live('the session boots a real sandbox directory and resolves the sandbox install from disk')
   .body(({ scenario }) => {
     scenario(
       'A sandbox whose vitest install cannot be loaded is refused with a message naming the sandbox',
       Gherkin.Do.pipe(
-        Given('a written suite whose sandbox vitest cannot be loaded from')(
-          'suite',
-          () =>
-            writeBareSuite().pipe(
-              Effect.tap((suite) =>
-                Effect.gen(function*() {
-                  const fs = yield* FileSystem.FileSystem
-                  const path = yield* Path.Path
-                  const stubInstalled = yield* fs.exists(
-                    path.join(suite.directory, 'node_modules', 'vitest', 'package.json'),
-                  )
-                  expect(stubInstalled).toBe(true)
-                })
-              ),
-            ),
-        ),
+        Given('a written suite whose sandbox vitest cannot be loaded from')('suite', () => writeBareSuite()),
         When('the session checks the suite')(
           'response',
           (s) =>
@@ -67,16 +54,14 @@ Feature('Reporting a sandbox that cannot load vitest')
                 .pipe(Effect.ensuring(Effect.promise(() => session.dispose())))
             }),
         ),
-        Then('the run is refused before any test runs')((s) => {
-          expect(s.response.status).toBe('init-failed')
-        }),
-        And('the refusal says vitest could not be resolved and names the sandbox')((s) => {
-          if (s.response.status === 'init-failed') {
-            expect(s.response.message).toContain('vitest')
-            expect(s.response.message).toContain(s.suite.directory)
-            return
-          }
-          throw new Error('the sandbox unexpectedly resolved vitest without linked dependencies')
+        Then('the run is refused before any test runs, naming vitest and the sandbox')((s, expect) => {
+          const message = s.response.status === 'init-failed' ? s.response.message : ''
+          return expect({
+            stubInstalled: s.suite.stubInstalled,
+            status: s.response.status,
+            namesVitest: message.includes('vitest'),
+            namesSandbox: message.includes(s.suite.directory),
+          }).toEqual({ stubInstalled: true, status: 'init-failed', namesVitest: true, namesSandbox: true })
         }),
       ),
     )

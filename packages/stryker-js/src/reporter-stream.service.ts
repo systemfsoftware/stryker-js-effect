@@ -23,7 +23,7 @@ import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
 
 import { ConfigError } from './ConfigError.schema.js'
 import { ReporterFactoryThrew, ReporterStageForged } from './stryker-error.schema.js'
-import { makeWorkerClient } from './worker-client.resource.js'
+import { makeWorkerClient } from './worker-client.blueprint.js'
 import type { WorkerBootError } from './Worker.schema.js'
 import type { WorkerLauncher } from './WorkerLauncher.service.js'
 

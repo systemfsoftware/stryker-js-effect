@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import type * as S from 'effect/Schema'
@@ -32,8 +32,8 @@ const oracleOf = (command: FixtureCommand): OracleSplit => {
   return { globals, processEnvironment }
 }
 
-const splitOf = (command: FixtureCommand): string =>
-  Match.value(planDefine(PlanDefineCommand.make(command)).pipe(Result.getOrThrow)).pipe(
+const splitOf = (plan: typeof planDefine, command: FixtureCommand): string =>
+  Match.value(plan(PlanDefineCommand.make(command)).pipe(Result.getOrThrow)).pipe(
     Match.tag('NoDefineInjections', () => 'empty'),
     Match.tag('DefineInjections', (injections) =>
       JSON.stringify({
@@ -47,14 +47,18 @@ const splitOf = (command: FixtureCommand): string =>
   )
 
 describe('planDefine', () => {
-  it.prop('∀cmd_DefineInjections_≡VitestDefineSplit', [PlanDefineFixtureSchema], ([command]) => {
-    const expected = oracleOf(command)
-    if (expected.globals.length === 0 && expected.processEnvironment.length === 0) {
-      return splitOf(command) === 'empty'
-    }
-    return splitOf(command) === JSON.stringify({
-      globals: expected.globals,
-      processEnvironment: expected.processEnvironment,
-    })
-  })
+  it.prop(
+    '∀cmd_DefineInjections_≡VitestDefineSplit',
+    { of: [PlanDefineFixtureSchema], subject: planDefine },
+    (plan, [command]) => {
+      const expected = oracleOf(command)
+      if (expected.globals.length === 0 && expected.processEnvironment.length === 0) {
+        return splitOf(plan, command) === 'empty'
+      }
+      return splitOf(plan, command) === JSON.stringify({
+        globals: expected.globals,
+        processEnvironment: expected.processEnvironment,
+      })
+    },
+  )
 })

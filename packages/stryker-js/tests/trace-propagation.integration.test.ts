@@ -1,6 +1,7 @@
 import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Plugin } from '@systemfsoftware/stryker-js'
 import { Options, Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace as RuntimeTrace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
@@ -9,8 +10,6 @@ import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import * as Headers from 'effect/unstable/http/Headers'
-import { expect } from 'vitest'
-import { Plugin } from '../src/mod.js'
 
 import {
   makeTraceWorkerRecord,
@@ -18,7 +17,7 @@ import {
   traceServingLauncher,
 } from './__fixtures__/substituted-trace-worker.fixture.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const telemetryFor = () => {
   const exporter = new InMemorySpanExporter()
@@ -117,28 +116,39 @@ const runCarriedCall = (plan: TraceWorkerPlan): Effect.Effect<TracedCall> => {
 
 Feature('Linking a worker into the host run trace')
   .withLayer(Layer.empty)
+  .live(
+    'the OpenTelemetry span exporter schedules its export on a real setTimeout timer, which leaves the controlled schedule',
+  )
   .body(({ scenario }) => {
     scenario(
       'A worker call carries the host trace, parents its span, and links the work it starts',
       Gherkin.Do.pipe(
         Given('a reporter worker installed in the project being reported')('plan', () => Effect.succeed(PLAN)),
         When('the host reports the run inside a traced phase')('call', (s) => runTracedCall(s.plan)),
-        Then('the boundary call carries the host span as a trace context header')((s) => {
+        Then(
+          'the boundary call carries the host span as a trace context header, the worker span is a child of the host span, and the work the worker starts is connected by a span link rather than a parent',
+        )((s, expect) => {
           const traceparent = Option.getOrUndefined(Headers.get(s.call.headers, Trace.TraceparentHeader.literal))
-          expect(Option.isSome(S.decodeOption(Trace.Traceparent)(traceparent ?? ''))).toBe(true)
           const parts = Option.getOrUndefined(S.decodeOption(Trace.Traceparent)(traceparent ?? ''))
-          expect(parts?.traceId).toBe(s.call.hostTraceId)
-          expect(parts?.spanId).toBe(s.call.hostSpanId)
-        }),
-        Then('the worker span is a child of the host span')((s) => {
           const workerSpan = spanNamed(s.call.spans, 'rpc.init')
-          expect(workerSpan?.spanContext().traceId).toBe(s.call.hostTraceId)
-          expect(workerSpan?.parentSpanContext?.spanId).toBe(s.call.hostSpanId)
-        }),
-        Then('the work the worker starts is connected by a span link, not a parent')((s) => {
           const linked = spanNamed(s.call.spans, 'worker.async')
-          expect(linked?.parentSpanContext).toBeUndefined()
-          expect(linked?.links.map((link) => link.context.spanId)).toStrictEqual([s.call.hostSpanId])
+          return expect({
+            headerDecoded: Option.isSome(S.decodeOption(Trace.Traceparent)(traceparent ?? '')),
+            headerTraceId: parts?.traceId,
+            headerSpanId: parts?.spanId,
+            workerTraceId: workerSpan?.spanContext().traceId,
+            workerParentSpanId: workerSpan?.parentSpanContext?.spanId,
+            linkedParentPresent: linked?.parentSpanContext !== undefined,
+            linkedSpanIds: linked?.links.map((link) => link.context.spanId),
+          }).toEqual({
+            headerDecoded: true,
+            headerTraceId: s.call.hostTraceId,
+            headerSpanId: s.call.hostSpanId,
+            workerTraceId: s.call.hostTraceId,
+            workerParentSpanId: s.call.hostSpanId,
+            linkedParentPresent: false,
+            linkedSpanIds: [s.call.hostSpanId],
+          })
         }),
       ),
     )
@@ -151,10 +161,12 @@ Feature('Linking a worker into the host run trace')
           'call',
           (s) => runCarriedCall(s.plan),
         ),
-        Then('the worker span continues the trace that version named')((s) => {
+        Then('the worker span continues the trace that version named')((s, expect) => {
           const workerSpan = spanNamed(s.call.spans, 'rpc.init')
-          expect(workerSpan?.spanContext().traceId).toBe(s.call.hostTraceId)
-          expect(workerSpan?.parentSpanContext?.spanId).toBe(s.call.hostSpanId)
+          return expect({
+            workerTraceId: workerSpan?.spanContext().traceId,
+            workerParentSpanId: workerSpan?.parentSpanContext?.spanId,
+          }).toEqual({ workerTraceId: s.call.hostTraceId, workerParentSpanId: s.call.hostSpanId })
         }),
       ),
     )

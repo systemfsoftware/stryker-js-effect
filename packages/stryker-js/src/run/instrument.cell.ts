@@ -1,27 +1,22 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Array from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import { absurd } from 'effect/Function'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as Queue from 'effect/Queue'
-import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { InstrumentCommand, InstrumentError, planInstrumentation } from '../plan-instrumentation.workflow.js'
 import { ProjectFiles } from '../project-files.service.js'
 import type { Project, ProjectFile } from '../Project.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
-import type { SkippedFileRow } from '../run-event.schema.js'
-import { RunEvents, SkippedReported } from '../run-events.service.js'
+import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
+import { makeSandbox } from '../Sandbox.blueprint.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
-import { makeSandbox } from '../Sandbox.resource.js'
-import { explainFileSkip, ExplainFileSkipCommand, type FrameworkClaimant } from './explain-file-skip.workflow.js'
+import { mergeInstrumentedFile, offerSkipsIfAny, sandboxDirectoriesOf } from './instrument.parts.js'
 import type { PrepareDone } from './prepare.cell.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 
@@ -43,32 +38,6 @@ type InstrumentRaw = typeof InstrumentCommand.Encoded & {
   readonly concurrency: { readonly testRunners: number; readonly checkers: number }
 }
 
-const offerSkipsIfAny = (
-  skipped: readonly Instrument.InstrumentFileSkip[],
-  claimants: readonly FrameworkClaimant[],
-) =>
-  Boolean.match(skipped.length === 0, {
-    onTrue: () => Effect.void,
-    onFalse: () =>
-      Effect.gen(function*() {
-        const files = skipped.map((skip) =>
-          Result.match(
-            explainFileSkip(ExplainFileSkipCommand.make({ extension: skip.extension, claimants: [...claimants] })),
-            {
-              onFailure: absurd<SkippedFileRow>,
-              onSuccess: (explained): SkippedFileRow => ({
-                file: skip.file,
-                extension: skip.extension,
-                reason: explained.reason,
-              }),
-            },
-          )
-        )
-        const queue = yield* RunEvents
-        yield* Queue.offer(queue, SkippedReported.make({ files }))
-      }),
-  })
-
 const enteringInstrumentPhase = <A, E, R>(raw: InstrumentRaw, body: Effect.Effect<A, E, R>) =>
   withPhaseSpan(
     'instrument',
@@ -84,7 +53,7 @@ const writeInstrument = (raw: InstrumentRaw) =>
   enteringInstrumentPhase(
     raw,
     Effect.as(
-      offerSkipsIfAny(raw.instrumentResult.skipped, raw.prev.frameworkClaimants),
+      offerSkipsIfAny({ skipped: raw.instrumentResult.skipped, claimants: raw.prev.frameworkClaimants }),
       {
         ...raw.prev,
         project: raw.instrumentedProject,
@@ -98,23 +67,6 @@ const writeInstrument = (raw: InstrumentRaw) =>
     ),
   )
 
-const sandboxDirectoriesOf = (command: PrepareDone, basePath: string) =>
-  Boolean.match(command.options.inPlace, {
-    onTrue: () => ({ workingDirectory: basePath, backupDirectory: command.temporaryDirectoryPath }),
-    onFalse: () => ({ workingDirectory: command.temporaryDirectoryPath, backupDirectory: '' }),
-  })
-
-const mergeInstrumentedFile = (project: Project, file: ProjectFile): Project => {
-  const files = MutableHashMap.fromIterable(project.files)
-  MutableHashMap.set(files, file.name, file)
-  const filesToMutate = MutableHashMap.fromIterable(project.filesToMutate)
-  Boolean.match(file.mutate !== false, {
-    onTrue: () => MutableHashMap.set(filesToMutate, file.name, file),
-    onFalse: () => MutableHashMap.remove(filesToMutate, file.name),
-  })
-  return { ...project, files, filesToMutate }
-}
-
 const withInstrumentedFiles = (
   project: Project,
   instrumented: Iterable<{ readonly name: string; readonly content: string }>,
@@ -123,10 +75,13 @@ const withInstrumentedFiles = (
     [...instrumented],
     project,
     (current, { name, content }) =>
-      Option.match(MutableHashMap.get(current.files, name), {
-        onNone: () => current,
-        onSome: (existing) => mergeInstrumentedFile(current, { ...existing, content }),
-      }),
+      Option.getOrElse(
+        Option.map(
+          MutableHashMap.get(current.files, name),
+          (existing) => mergeInstrumentedFile({ project: current, file: { ...existing, content } }),
+        ),
+        () => current,
+      ),
   )
 
 export const instrumentCell: Cell.Cell<
@@ -169,7 +124,7 @@ export const instrumentCell: Cell.Cell<
 
     const instrumentedProject = withInstrumentedFiles(command.project, instrumentResult.files)
 
-    const directories = sandboxDirectoriesOf(command, env.basePath)
+    const directories = sandboxDirectoriesOf({ command, basePath: env.basePath })
     const sandbox = yield* makeSandbox({
       options: command.options,
       project: instrumentedProject,
@@ -255,11 +210,12 @@ const filesToMutateMatchReference = (folded: Project, mutatable: readonly Projec
   )
 
 const referenceLawHolds = (
+  fold: typeof withInstrumentedFiles,
   seeds: readonly ProjectFile[],
   instrumented: readonly { readonly name: string; readonly content: string }[],
 ): boolean => {
   const project = projectOf(seeds)
-  const folded = withInstrumentedFiles(project, instrumented)
+  const folded = fold(project, instrumented)
   const updates = new Map(instrumented.map(({ name, content }) => [name, content]))
   const initial = [...MutableHashMap.values(project.files)]
   const mutatable = initial.filter((file) => file.mutate !== false)
@@ -267,7 +223,7 @@ const referenceLawHolds = (
 }
 
 if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
+  const { it } = await import('@systemfsoftware/vitest')
   const { Schema } = await import('effect')
 
   const ProjectSeedSchema = Schema.Struct({
@@ -293,8 +249,8 @@ if (import.meta.vitest !== void 0) {
   ).pipe(Schema.check(Schema.isMaxLength(64)))
 
   it.prop(
-    '∀files_P_Instrumented_≡LastContentWins',
-    [ProjectSeedsSchema, InstrumentedBatchSchema],
-    ([seeds, instrumented]) => referenceLawHolds(seeds, instrumented),
+    '∀files_Instrumentation_≡LastContentWins',
+    { of: [ProjectSeedsSchema, InstrumentedBatchSchema], subject: withInstrumentedFiles },
+    (subject, [seeds, instrumented]) => referenceLawHolds(subject, seeds, instrumented),
   )
 }

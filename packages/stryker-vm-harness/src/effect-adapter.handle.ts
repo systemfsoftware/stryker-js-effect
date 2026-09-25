@@ -1,3 +1,4 @@
+import { Handle } from '@systemfsoftware/effect-cell-types'
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
 import type * as Context from 'effect/Context'
@@ -36,6 +37,23 @@ import type { HarnessTestContext, RegistrySuiteApi, RegistryTestApi, RunnerTest 
 type AnyDecoded<A = unknown> = A
 
 const TestEnv = Layer.mergeAll(TestConsole.layer, TestClock.layer())
+
+export const TypeId = Symbol.for('~systemfsoftware/stryker-vm-harness/EffectAdapter')
+export type TypeId = typeof TypeId
+
+interface EffectAdapterSlot {
+  readonly openLayerScopes: Set<() => Promise<void>>
+}
+
+const EffectAdapter = Handle.make<Record<string, never>, EffectAdapterSlot>()(TypeId)
+
+export type EffectAdapter = Handle.Of<typeof EffectAdapter>
+
+export const isEffectAdapter = EffectAdapter.is
+
+const effectAdapter = EffectAdapter.make({}, { openLayerScopes: new Set<() => Promise<void>>() })
+
+const openScopesOf = (): Set<() => Promise<void>> => EffectAdapter.slot(effectAdapter).openLayerScopes
 
 const failureErrorOf = (cause: Cause.Cause<AnyDecoded>): Error =>
   Option.getOrElse(
@@ -256,11 +274,9 @@ const buildIntoScope = <ROut, E>(
   scope: Scope.Scope,
 ): Context.Context<ROut> => Effect.runSync(Layer.buildWithMemoMap(layer, memoMap, scope).pipe(Effect.orDie))
 
-const openLayerScopes = new Set<() => Promise<void>>()
-
 export const closeOpenLayerScopes = (): Promise<void> => {
-  const closers = [...openLayerScopes]
-  openLayerScopes.clear()
+  const closers = [...openScopesOf()]
+  openScopesOf().clear()
   return Promise.all(closers.map((close) => close().catch(() => undefined))).then(() => undefined)
 }
 
@@ -283,10 +299,10 @@ const openLayerScope = <ROut, E>(
       return Promise.resolve()
     }
     closed.value = true
-    openLayerScopes.delete(close)
+    openScopesOf().delete(close)
     return runToPromise(Scope.close(scope, Exit.void))
   }
-  openLayerScopes.add(close)
+  openScopesOf().add(close)
   return { built, close, memoMap }
 }
 

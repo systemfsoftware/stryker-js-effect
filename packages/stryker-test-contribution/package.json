@@ -44,11 +44,11 @@
   },
   "dependencies": {
     "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^"
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
-    "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
@@ -58,9 +58,9 @@
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
+    "@systemfsoftware/vitest": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
-    "effect": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",

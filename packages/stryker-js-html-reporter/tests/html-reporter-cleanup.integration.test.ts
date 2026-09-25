@@ -1,6 +1,6 @@
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
@@ -8,9 +8,8 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const MARKER = 'html-cleanup-pin-4b1e'
 
@@ -143,6 +142,7 @@ function toStream(events: readonly Reporter.ReporterEvent[]): AsyncIterable<Repo
 Feature('Keeping the report when a run is interrupted').withLayer(nodeFsPathLayer).body(({ scenario }) => {
   scenario(
     'An interrupted run leaves no report behind',
+    { live: 'the scenario creates a real temporary directory and reads real files' },
     Gherkin.Do.pipe(
       Given('an output directory')('output', () =>
         Effect.gen(function*() {
@@ -167,17 +167,15 @@ Feature('Keeping the report when a run is interrupted').withLayer(nodeFsPathLaye
             }
           }),
       ),
-      Then('the interrupted run writes no report')((s) => {
-        expect(s.outcome.earlyWritten).toBe(false)
-      }),
-      Then('the completed run writes the report')((s) => {
-        expect(s.outcome.html).toContain(MARKER)
-      }),
+      Then('the interrupted run writes no report and the completed run writes it')((s, expect) =>
+        expect(s.outcome).toMatchObject({ earlyWritten: false, html: expect.stringMatching(MARKER) })
+      ),
     ),
   )
 
   scenario(
     'A run that fails after writing its report leaves the report on disk',
+    { live: 'the scenario creates a real temporary directory and reads real files' },
     Gherkin.Do.pipe(
       Given('an output directory')('output', () =>
         Effect.gen(function*() {
@@ -220,15 +218,16 @@ Feature('Keeping the report when a run is interrupted').withLayer(nodeFsPathLaye
             }
           }),
       ),
-      Then('the failure reaches the caller')((s) => {
-        expect(s.outcome.failure).toContain('stream broke')
-      }),
-      Then('the written report survives the failure')((s) => {
-        expect(s.outcome.html).toContain(MARKER)
-      }),
-      Then('the following run writes its report')((s) => {
-        expect(s.outcome.rerun).toContain(MARKER)
-      }),
+      Then('the failure reaches the caller, the written report survives, and the following run writes its report')((
+        s,
+        expect,
+      ) =>
+        expect(s.outcome).toMatchObject({
+          failure: expect.stringMatching('stream broke'),
+          html: expect.stringMatching(MARKER),
+          rerun: expect.stringMatching(MARKER),
+        })
+      ),
     ),
   )
 })

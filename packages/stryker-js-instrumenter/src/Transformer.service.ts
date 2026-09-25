@@ -47,7 +47,7 @@ import { ErrorText } from './ErrorText.schema.js'
 import type { FormatRegistry } from './Format.schema.js'
 import { MutantsUnapplied, type MutateDescription, type PlacerName } from './Instrument.schema.js'
 import { InstrumentError } from './Instrument.schema.js'
-import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './InstrumentHeader.handle.js'
+import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './InstrumentHeader.js'
 import { type LineTable, LineTableFromText, type Position } from './Location.schema.js'
 import { type MutatorContext, type MutatorOptions } from './Mutator.service.js'
 import {
@@ -76,7 +76,7 @@ import {
   PlanMutantsCommand,
   type PlannedMutant,
 } from './plan-mutants.workflow.js'
-import { printNode } from './print/SourceText.handle.js'
+import { printNode } from './print/SourceText.js'
 
 const comparePositions = (a: Position, b: Position): number => {
   const lineDelta = a.line - b.line

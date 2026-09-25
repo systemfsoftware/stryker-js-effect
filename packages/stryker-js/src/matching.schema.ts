@@ -130,3 +130,128 @@ export class RelativeNormalizedFileName extends S.Class<RelativeNormalizedFileNa
     })
   }
 }
+
+const matcherOf = (pattern: boolean | string): FileMatcher => FileMatcher.make({ pattern, allowHiddenFiles: true })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const { Arbitrary } = await import('effect/unstable/arbitrary')
+  const Effect = await import('effect/Effect')
+
+  const pathServiceOf = (): Path.Path => Effect.runSync(Effect.provide(Path.Path, Path.layer))
+
+  const plainSegmentArb = Arbitrary.schema(S.String.check(S.isPattern(/^[a-z][a-z0-9._-]{0,7}$/)))
+
+  const hiddenSegmentArb = plainSegmentArb.pipe(Arbitrary.map((segment) => `.${segment}`))
+
+  const visibleSegmentArb = Arbitrary.schema(S.Boolean).pipe(
+    Arbitrary.flatMap((hidden) => (hidden ? hiddenSegmentArb : plainSegmentArb)),
+  )
+
+  const PROSE_TOKENS = [
+    'a',
+    'src',
+    'spec',
+    'file',
+    'test',
+    'x',
+    'index',
+    'main',
+    'util',
+    'data',
+    'core',
+  ] as const
+
+  const proseArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 11 }))).pipe(
+    Arbitrary.map((index) => PROSE_TOKENS[index] ?? 'a'),
+  )
+
+  const strictSegmentArb = Arbitrary.array(proseArb, { minLength: 1, maxLength: 3 }).pipe(
+    Arbitrary.map((tokens) => tokens.join('')),
+  )
+
+  const pathArb = Arbitrary.array(visibleSegmentArb, { minLength: 1, maxLength: 6 }).pipe(
+    Arbitrary.map((segments) => `/${segments.join('/')}`),
+  )
+
+  const basePathArb = Arbitrary.schema(S.String.check(S.isPattern(/^\/base(\/[a-z]{1,4}){0,2}$/)))
+
+  it.prop(
+    '∀p_File_≡LiteralMatchesItself',
+    { of: [proseArb], subject: matcherOf },
+    (subject, [literal]) => subject(literal).matches(pathServiceOf(), literal),
+  )
+
+  it.prop(
+    '∀p_Path_≡FalsePatternRefuses',
+    { of: [pathArb], subject: matcherOf },
+    (subject, [fileName]) => subject(false).matches(pathServiceOf(), fileName) === false,
+  )
+
+  it.prop(
+    '∀pe_Extension_≡TruePatternMatchesListedExtension',
+    { of: [strictSegmentArb, proseArb], subject: matcherOf },
+    (subject, [segment, extension]) => {
+      const matcher = subject(true)
+      const pathService = pathServiceOf()
+      const extensionsOf = (path: string) => path.split('.').slice(1)
+      return matcher.matches(pathService, `/x/y/${segment}.${extension}`) ===
+        extensionsOf(`/x/y/${segment}.${extension}`).some((present) =>
+          ['js', 'ts', 'jsx', 'tsx', 'html', 'vue', 'mjs', 'mts', 'cts', 'cjs'].includes(present)
+        )
+    },
+  )
+
+  it.prop(
+    '∀ps_Span_≡StarStarSpansSegmentsStarDoesNot',
+    { of: [strictSegmentArb], subject: matcherOf },
+    (subject, [segment]) => {
+      const pathService = pathServiceOf()
+      const star = subject(`/x/*/${segment}`)
+      const starStar = subject(`/x/**/${segment}`)
+      return starStar.matches(pathService, `/x/y/z/${segment}`) &&
+        star.matches(pathService, `/x/y/z/${segment}`) === false
+    },
+  )
+
+  const flagsFlipAsNegated = (include: IgnoreRule, exclude: IgnoreRule): boolean =>
+    include.negate === false && exclude.negate === true
+
+  const matchesAgree = (include: IgnoreRule, exclude: IgnoreRule, candidate: string): boolean =>
+    include.matches(candidate) === exclude.matches(candidate)
+
+  it.prop(
+    '∀p_Rule_≡NegationFlipsOnlyTheFlag',
+    { of: [strictSegmentArb], subject: IgnoreRule.fromPattern },
+    (subject, [segment]) => {
+      const include = subject(`**/${segment}.ts`)
+      const exclude = subject(`!**/${segment}.ts`)
+      return flagsFlipAsNegated(include, exclude) && matchesAgree(include, exclude, `/x/${segment}.ts`)
+    },
+  )
+
+  it.prop(
+    '∀fb_Strip_=IsIdempotent',
+    { of: [pathArb, basePathArb], subject: RelativeNormalizedFileName.fromAbsolute },
+    (subject, [fileName, basePath]) => {
+      const first = subject(fileName, basePath).fileName
+      const second = subject(first, basePath).fileName
+      return first === second
+    },
+  )
+
+  it.prop(
+    '∀fb_Strip_=RemovesBasePrefixAndLeadingSlashes',
+    { of: [strictSegmentArb, basePathArb], subject: RelativeNormalizedFileName.fromAbsolute },
+    (subject, [segment, basePath]) => subject(`${basePath}//${segment}.ts`, basePath).fileName === `${segment}.ts`,
+  )
+
+  it.prop(
+    '∀fb_ForeignPath_=SurvivesUnchanged',
+    { of: [strictSegmentArb, basePathArb], subject: RelativeNormalizedFileName.fromAbsolute },
+    (subject, [segment, basePath]) => {
+      const foreign = `/elsewhere/${segment}.ts`
+      return subject(foreign, basePath).fileName === foreign
+    },
+  )
+}

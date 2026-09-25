@@ -1,7 +1,6 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
-import { expect } from 'vitest'
 
 /**
  * The Regex mutator's complete observable output, recorded from the shipped
@@ -152,9 +151,10 @@ const replacementsByLine = (mutants: readonly RegexMutant[]): readonly (readonly
   return CORPUS.map((_row, index) => byLine.get(index + 1) ?? [])
 }
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Regex mutation characterization')
+  .live('parses real source with the oxc parser loaded at run time')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
@@ -171,15 +171,12 @@ Feature('Regex mutation characterization')
         ),
         Then('every pattern yields exactly its recorded replacements')((
           { result }: { result: { mutants: readonly RegexMutant[] } },
-        ) =>
-          Effect.sync(() => {
-            const actual = replacementsByLine(result.mutants)
-            const recorded = CORPUS.map(([, , replacements]) => [...replacements])
-            // Compared as one value so a diff names every pattern that moved,
-            // not just the first.
-            expect(actual.map((r) => [...r])).toStrictEqual(recorded)
-          })
-        ),
+          expect,
+        ) => {
+          const actual = replacementsByLine(result.mutants)
+          const recorded = CORPUS.map(([, , replacements]) => [...replacements])
+          return expect(actual.map((r) => [...r])).toStrictEqual(recorded)
+        }),
       ),
     )
 
@@ -187,22 +184,20 @@ Feature('Regex mutation characterization')
       'Every recorded replacement compiles as a regular expression',
       Gherkin.Do.pipe(
         Given('the recorded replacements')('rows', () => Effect.succeed(CORPUS)),
-        Then('each one compiles as a regular expression')(({ rows }: { rows: typeof CORPUS }) =>
-          Effect.sync(() => {
-            const uncompilable = rows.flatMap(([pattern, flags, replacements]) =>
-              replacements.filter((replacement) => {
-                const body = replacement.slice(1, replacement.lastIndexOf('/'))
-                try {
-                  new RegExp(body, flags)
-                  return false
-                } catch {
-                  return true
-                }
-              }).map((replacement) => `/${pattern}/${flags} -> ${replacement}`)
-            )
-            expect(uncompilable).toStrictEqual([])
-          })
-        ),
+        Then('each one compiles as a regular expression')(({ rows }: { rows: typeof CORPUS }, expect) => {
+          const uncompilable = rows.flatMap(([pattern, flags, replacements]) =>
+            replacements.filter((replacement) => {
+              const body = replacement.slice(1, replacement.lastIndexOf('/'))
+              try {
+                new RegExp(body, flags)
+                return false
+              } catch {
+                return true
+              }
+            }).map((replacement) => `/${pattern}/${flags} -> ${replacement}`)
+          )
+          return expect(uncompilable).toStrictEqual([])
+        }),
       ),
     )
 
@@ -210,14 +205,12 @@ Feature('Regex mutation characterization')
       'No replacement repeats its original pattern',
       Gherkin.Do.pipe(
         Given('the recorded replacements')('rows', () => Effect.succeed(CORPUS)),
-        Then('no replacement equals the literal it came from')(({ rows }: { rows: typeof CORPUS }) =>
-          Effect.sync(() => {
-            const identities = rows
-              .filter(([pattern, flags, replacements]) => replacements.includes(`/${pattern}/${flags}`))
-              .map(([pattern]) => pattern)
-            expect(identities).toStrictEqual([])
-          })
-        ),
+        Then('no replacement equals the literal it came from')(({ rows }: { rows: typeof CORPUS }, expect) => {
+          const identities = rows
+            .filter(([pattern, flags, replacements]) => replacements.includes(`/${pattern}/${flags}`))
+            .map(([pattern]) => pattern)
+          return expect(identities).toStrictEqual([])
+        }),
       ),
     )
   })

@@ -1,7 +1,7 @@
 import * as Effect from 'effect/Effect'
 
 import { hasDynamicImport, MOCK_GLOBAL_KEY } from '../mock-module.js'
-import { nativeImport } from '../native-import.handle.js'
+import { nativeImport } from '../native-import.js'
 import { createRequire, pathToFileURL } from './node-builtins.js'
 
 export interface MockMagicString {

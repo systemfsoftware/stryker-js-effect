@@ -1,12 +1,12 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
+import type { Expect } from '@systemfsoftware/vitest'
 import { FileSystem, Path, PlatformError } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const stripViteFilePrefix = (pathname: string): string =>
   pathname.startsWith('/@fs/') ? pathname.slice('/@fs'.length) : pathname
@@ -280,9 +280,8 @@ test('b advances real time normally', async () => {
 })
 `
 
-const expectOutcomeOf = (outcome: SuiteOutcome, expected: SuiteOutcome): void => {
+const checkOutcomeOf = (expect: Expect, outcome: SuiteOutcome, expected: SuiteOutcome) =>
   expect(outcome).toEqual(expected)
-}
 
 const failureWith = (name: string, message: string): SuiteOutcome['results'][number] => ({
   name,
@@ -298,7 +297,7 @@ const successWith = (name: string): SuiteOutcome['results'][number] => ({
 
 Feature('Timer fakes and polling wait for the same outcomes under the in-memory runner')
   .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
-  .liveClock()
+  .live('the sandbox writes real suite files and spawns the in-memory runner over them')
   .body(({ scenario }) => {
     scenario(
       'Scheduled callbacks advance only as the clock moves',
@@ -311,11 +310,11 @@ Feature('Timer fakes and polling wait for the same outcomes under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox, ['timers.test.ts']),
         ),
-        Then('the in-memory report names the same passing tests as Vitest')((s) => {
+        Then('the in-memory report names the same passing tests as Vitest')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expectOutcomeOf(s.outcome, {
+          return checkOutcomeOf(expect, s.outcome, {
             status: 'complete',
             message: undefined,
             results: [
@@ -340,11 +339,11 @@ Feature('Timer fakes and polling wait for the same outcomes under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox, ['time.test.ts']),
         ),
-        Then('the in-memory report names the same passing tests as Vitest')((s) => {
+        Then('the in-memory report names the same passing tests as Vitest')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expectOutcomeOf(s.outcome, {
+          return checkOutcomeOf(expect, s.outcome, {
             status: 'complete',
             message: undefined,
             results: [
@@ -367,11 +366,11 @@ Feature('Timer fakes and polling wait for the same outcomes under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox, ['time.test.ts']),
         ),
-        Then('the in-memory report names the same passing test as Vitest')((s) => {
+        Then('the in-memory report names the same passing test as Vitest')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expectOutcomeOf(s.outcome, {
+          return checkOutcomeOf(expect, s.outcome, {
             status: 'complete',
             message: undefined,
             results: [successWith('setSystemTime pins the clock')],
@@ -391,11 +390,11 @@ Feature('Timer fakes and polling wait for the same outcomes under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox, ['wait.test.ts']),
         ),
-        Then('the in-memory report carries the same names, statuses, and failure wording as Vitest')((s) => {
+        Then('the in-memory report carries the same names, statuses, and failure wording as Vitest')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expectOutcomeOf(s.outcome, {
+          return checkOutcomeOf(expect, s.outcome, {
             status: 'complete',
             message: undefined,
             results: [
@@ -423,11 +422,11 @@ Feature('Timer fakes and polling wait for the same outcomes under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox, ['polling.test.ts']),
         ),
-        Then('the in-memory report carries the same names, statuses, and failure wording as Vitest')((s) => {
+        Then('the in-memory report carries the same names, statuses, and failure wording as Vitest')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expectOutcomeOf(s.outcome, {
+          return checkOutcomeOf(expect, s.outcome, {
             status: 'complete',
             message: undefined,
             results: [
@@ -453,11 +452,11 @@ Feature('Timer fakes and polling wait for the same outcomes under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox, ['defaults.test.ts']),
         ),
-        Then('the in-memory report carries the same name, status, and failure wording as Vitest')((s) => {
+        Then('the in-memory report carries the same name, status, and failure wording as Vitest')((s, expect) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expectOutcomeOf(s.outcome, {
+          return checkOutcomeOf(expect, s.outcome, {
             status: 'complete',
             message: undefined,
             results: [
@@ -486,22 +485,28 @@ Feature('Timer fakes and polling wait for the same outcomes under the in-memory 
           'outcome',
           (s) => replayOf(s.sandbox, ['fake-a.test.ts', 'real-b.test.ts']),
         ),
-        Then('the later suite still runs on the real clock and reports the Vitest outcomes')((s) => {
+        Then('the later suite still runs on the real clock, reports the Vitest outcomes, and never saw a fake clock')((
+          s,
+          expect,
+        ) => {
           if (s.outcome.status !== 'complete') {
             throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
           }
-          expectOutcomeOf(s.outcome, {
-            status: 'complete',
-            message: undefined,
-            results: [
-              successWith('a enables fake timers and never restores the clock'),
-              successWith('b starts with the real timers restored'),
-              successWith('b advances real time normally'),
-            ],
+          return expect({
+            report: s.outcome,
+            sawNonSuccessB: s.outcome.results.some((test) => test.name.startsWith('b ') && test.status !== 'success'),
+          }).toEqual({
+            report: {
+              status: 'complete',
+              message: undefined,
+              results: [
+                successWith('a enables fake timers and never restores the clock'),
+                successWith('b starts with the real timers restored'),
+                successWith('b advances real time normally'),
+              ],
+            },
+            sawNonSuccessB: false,
           })
-        }),
-        And('the second suite never saw a fake clock')((s) => {
-          expect(s.outcome.results.some((test) => test.name.startsWith('b ') && test.status !== 'success')).toBe(false)
         }),
       ),
     )

@@ -1,5 +1,5 @@
 import { NodeFileSystem, NodePath, NodeStdio } from '@effect/platform-node'
-import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine, RunEvent, Worker } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -13,9 +13,8 @@ import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const FRAMEWORK_FIXTURES = `${globalThis.process.cwd()}/tests/__fixtures__/frameworks`
 
@@ -342,7 +341,7 @@ const verdictOf = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.VerdictRe
 
 Feature('Mutant coordinates reaching every host output')
   .withLayer(Layer.empty)
-  .liveClock()
+  .live('the run spawns the vm worker and the real vitest oracle and writes reports to the host filesystem')
   .body(({ scenario }) => {
     scenario(
       'A finished run reports the same mutant span to the stream and to the report',
@@ -352,19 +351,23 @@ Feature('Mutant coordinates reaching every host output')
           () => writeWorkspace().pipe(Effect.provide(filePorts)),
         ),
         When('a mutation run executes over the workspace')('observation', (s) => runAndClean(s.workspace)),
-        Then('the run reaches a verdict instead of a run failure')((s) => {
-          expect(Exit.isSuccess(s.observation.exit)).toBe(true)
-        }),
-        And('the stream and the report name the same mutant at the same coordinates')((s) => {
-          expect(sortedRows(streamRowsOf(s.observation.events))).toStrictEqual(
-            sortedRows(reportRowsOf(reportOf(s.observation))),
-          )
-        }),
-        And('every mutant lands on the node it changes in the authored source')((s) => {
-          expect(sortedPinned(streamRowsOf(s.observation.events).map(pinnedRowOf))).toStrictEqual(
-            sortedPinned(PINNED_MUTANTS),
-          )
-        }),
+        Then(
+          'the run reaches a verdict, and the stream and report name the same mutant at the same authored coordinates',
+        )(
+          (s, expect) => {
+            const stream = sortedRows(streamRowsOf(s.observation.events))
+            const report = sortedRows(reportRowsOf(reportOf(s.observation)))
+            return expect({
+              verdictReached: Exit.isSuccess(s.observation.exit),
+              streamMatchesReport: stream,
+              pinnedNodes: sortedPinned(streamRowsOf(s.observation.events).map(pinnedRowOf)),
+            }).toEqual({
+              verdictReached: true,
+              streamMatchesReport: report,
+              pinnedNodes: sortedPinned(PINNED_MUTANTS),
+            })
+          },
+        ),
       ),
     )
 
@@ -372,36 +375,41 @@ Feature('Mutant coordinates reaching every host output')
       'A remembered mutant from an earlier run keeps its place and its result',
       Gherkin.Do.pipe(
         Given('a workspace whose remembered state carries the earlier column base for mutants a finished run recorded')(
-          'workspace',
+          'seeded',
           () =>
             Effect.gen(function*() {
               const workspace = yield* writeWorkspace().pipe(Effect.provide(filePorts))
               const first = yield* executeRun(workspace)
-              expect(Exit.isSuccess(first.exit)).toBe(true)
               const legacy = yield* asLegacyStateOf(yield* readIncrementalState(workspace.directory))
               yield* writeIncrementalState(workspace.directory, legacy)
-              return workspace
+              return { workspace, first }
             }).pipe(Effect.provide(filePorts), Effect.orDie),
         ),
-        When('a mutation run executes over the workspace')('observation', (s) => runAndClean(s.workspace)),
-        Then('the run reaches a verdict instead of a run failure')((s) => {
-          expect(Exit.isSuccess(s.observation.exit)).toBe(true)
-        }),
-        And('every mutant is reused from the remembered state instead of being run again')((s) => {
-          expect(streamRowsOf(s.observation.events).map((row) => row.status)).toStrictEqual(
-            PINNED_MUTANTS.map(() => REUSE_ONLY_STATUS),
-          )
-          expect(verdictOf(s.observation.events).counts.timeout).toBe(PINNED_MUTANTS.length)
-          expect(verdictOf(s.observation.events).counts.noCoverage).toBe(0)
-        }),
-        And('the stream and the report still agree and still slice the changed node')((s) => {
-          expect(sortedRows(streamRowsOf(s.observation.events))).toStrictEqual(
-            sortedRows(reportRowsOf(reportOf(s.observation))),
-          )
-          expect(sortedPinned(streamRowsOf(s.observation.events).map(pinnedRowOf))).toStrictEqual(
-            sortedPinned(PINNED_MUTANTS),
-          )
-        }),
+        When('a mutation run executes over the workspace')('observation', (s) => runAndClean(s.seeded.workspace)),
+        Then('every recorded mutant is reused, the run still reaches a verdict, and both outputs still agree')(
+          (s, expect) => {
+            const stream = sortedRows(streamRowsOf(s.observation.events))
+            const report = sortedRows(reportRowsOf(reportOf(s.observation)))
+            const verdict = verdictOf(s.observation.events)
+            return expect({
+              firstRunSucceeded: Exit.isSuccess(s.seeded.first.exit),
+              secondRunSucceeded: Exit.isSuccess(s.observation.exit),
+              reused: streamRowsOf(s.observation.events).map((row) => row.status),
+              timeoutCount: verdict.counts.timeout,
+              noCoverageCount: verdict.counts.noCoverage,
+              streamMatchesReport: stream,
+              pinnedNodes: sortedPinned(streamRowsOf(s.observation.events).map(pinnedRowOf)),
+            }).toEqual({
+              firstRunSucceeded: true,
+              secondRunSucceeded: true,
+              reused: PINNED_MUTANTS.map(() => REUSE_ONLY_STATUS),
+              timeoutCount: PINNED_MUTANTS.length,
+              noCoverageCount: 0,
+              streamMatchesReport: report,
+              pinnedNodes: sortedPinned(PINNED_MUTANTS),
+            })
+          },
+        ),
       ),
     )
   })

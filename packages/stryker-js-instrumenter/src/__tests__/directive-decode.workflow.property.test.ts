@@ -1,4 +1,4 @@
-import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -31,37 +31,47 @@ const expectedNames = (comment: typeof StrykerCommentSchema.Type): readonly stri
     .map((name) => name.trim().replace(/\s+/g, ' '))
     .filter((name) => name.length > 0)
 
-const decide = (text: string): Result.Result<DirectiveDecision, never> =>
-  decodeDirective(DecodeDirectiveCommand.make({ commentText: text }))
+const commandOf = (text: string): DecodeDirectiveCommand => DecodeDirectiveCommand.make({ commentText: text })
 
 const hasBrand = (decision: DirectiveDecision): boolean =>
   Object.getOwnPropertySymbols(decision).includes(DirectiveDecisionTypeId)
 
 describe('decodeDirective', () => {
   it.prop(
-    '∀d_Brand_∈Decision',
-    [DirectiveDecoded, DirectiveMalformed],
-    ([decoded, malformed]) => hasBrand(decoded) && hasBrand(malformed),
+    '∀c_Comment_∈BrandedDecision',
+    { of: [StrykerCommentSchema], subject: decodeDirective },
+    (subject, [comment]) => {
+      const decided = subject(commandOf(commentText(comment)))
+      return Result.isSuccess(decided) ? hasBrand(decided.success) : false
+    },
   )
 
-  it.prop('∀c_StrykerComment_≡DecodedAsWrittenOrMalformed', [StrykerCommentSchema], ([comment]) => {
-    const decided = decide(commentText(comment))
-    if (!Result.isSuccess(decided)) {
-      return false
-    }
-    const decision = decided.success
-    const names = expectedNames(comment)
-    if (!isDirectiveClause(comment.clause) || names.length === 0) {
-      return S.is(DirectiveMalformed)(decision)
-    }
-    return S.is(DirectiveDecoded)(decision) &&
-      decision.directive.action === expectedAction(comment.clause) &&
-      decision.directive.scope === expectedScope(comment.clause) &&
-      decision.directive.mutatorNames.join(',') === names.join(',')
-  })
+  it.prop(
+    '∀c_StrykerComment_≡DecodedAsWrittenOrMalformed',
+    { of: [StrykerCommentSchema], subject: decodeDirective },
+    (subject, [comment]) => {
+      const decided = subject(commandOf(commentText(comment)))
+      if (!Result.isSuccess(decided)) {
+        return false
+      }
+      const decision = decided.success
+      const names = expectedNames(comment)
+      if (!isDirectiveClause(comment.clause) || names.length === 0) {
+        return S.is(DirectiveMalformed)(decision)
+      }
+      return S.is(DirectiveDecoded)(decision) &&
+        decision.directive.action === expectedAction(comment.clause) &&
+        decision.directive.scope === expectedScope(comment.clause) &&
+        decision.directive.mutatorNames.join(',') === names.join(',')
+    },
+  )
 
-  it.prop('∀t_Text_≡MalformedWithoutTheDirectiveVerb', [S.String], ([text]) => {
-    const decided = decide(text.replaceAll('Stryker', 'Other'))
-    return Result.isSuccess(decided) && S.is(DirectiveMalformed)(decided.success)
-  })
+  it.prop(
+    '∀t_Text_≡MalformedWithoutTheDirectiveVerb',
+    { of: [S.String], subject: decodeDirective },
+    (subject, [text]) => {
+      const decided = subject(commandOf(text.replaceAll('Stryker', 'Other')))
+      return Result.isSuccess(decided) && S.is(DirectiveMalformed)(decided.success)
+    },
+  )
 })

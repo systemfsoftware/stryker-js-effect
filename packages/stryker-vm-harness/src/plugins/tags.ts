@@ -1,5 +1,5 @@
 import { projectForFile } from '../environments/file-config.js'
-import { validateTagsForFile } from '../registry.handle.js'
+import { validateTagsForFile } from '../registry.js'
 import type { TestRegistry } from '../registry.schema.js'
 import type { VmGraphContext, VmSessionPlugin } from '../session-plugin.js'
 

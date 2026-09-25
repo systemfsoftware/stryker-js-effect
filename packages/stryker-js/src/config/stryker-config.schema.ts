@@ -199,7 +199,7 @@ export class StrykerConfig extends S.Class<StrykerConfig>('StrykerConfig')({
 }
 
 if (import.meta.vitest !== void 0) {
-  const { describe, it } = await import('@effect/vitest')
+  const { it } = await import('@systemfsoftware/vitest')
   const Arr = await import('effect/Array')
   const Equal = await import('effect/Equal')
   const { Arbitrary } = await import('effect/unstable/arbitrary')
@@ -237,59 +237,60 @@ if (import.meta.vitest !== void 0) {
       },
     )
 
-  describe('mergeRecords', () => {
-    it.prop(
-      '∀d_Merge_empty_≡KeepsEveryEntryInOrder',
-      [DocumentSchema],
-      ([document]) => Equal.equals(mergeRecords(document, {}), usableEntriesOnly(document)),
-    )
+  it.prop(
+    '∀d_Merge_≡KeepsEveryEntryInOrder',
+    { of: [DocumentSchema], subject: mergeRecords },
+    (subject, [document]) => Equal.equals(subject(document, {}), usableEntriesOnly(document)),
+  )
 
-    it.prop(
-      '∀do_Merge_≡StatedKeyWins',
-      [DocumentSchema, DocumentSchema],
-      ([base, overrides]) => Equal.equals(mergeRecords(base, overrides), overlaid(base, overrides)),
-    )
+  it.prop(
+    '∀do_Merge_≡StatedKeyWins',
+    { of: [DocumentSchema, DocumentSchema], subject: mergeRecords },
+    (subject, [base, overrides]) => Equal.equals(subject(base, overrides), overlaid(base, overrides)),
+  )
 
-    it.prop(
-      '∀do_Merge_≡BaseKeysFirstThenNewOverrideKeys',
-      [DocumentSchema, DocumentSchema],
-      ([base, overrides]) =>
-        Equal.equals(Object.keys(mergeRecords(base, overrides)), Object.keys(overlaid(base, overrides))),
-    )
+  it.prop(
+    '∀do_Merge_≡BaseKeysFirstThenNewOverrideKeys',
+    { of: [DocumentSchema, DocumentSchema], subject: mergeRecords },
+    (subject, [base, overrides]) =>
+      Equal.equals(Object.keys(subject(base, overrides)), Object.keys(overlaid(base, overrides))),
+  )
 
-    it.prop('∀do_Merge_≡Idempotent', [DocumentSchema, DocumentSchema], ([base, overrides]) =>
+  it.prop(
+    '∀do_Merge_≡Idempotent',
+    { of: [DocumentSchema, DocumentSchema], subject: mergeRecords },
+    (subject, [base, overrides]) =>
       Equal.equals(
-        mergeRecords(mergeRecords(base, overrides), overrides),
-        mergeRecords(base, overrides),
-      ))
+        subject(subject(base, overrides), overrides),
+        subject(base, overrides),
+      ),
+  )
 
-    it.prop(
-      '∀do_Merge_≡NestedRecordsMergeRecursively',
-      [NestedDocumentSchema, NestedDocumentSchema],
-      ([base, overrides]) => {
-        const kept = usableEntriesOnly(base)
-        const merged = mergeRecords(base, overrides)
-        return statedKeys(overrides).every((key) =>
-          Equal.equals(merged[key], expectedNestedOf(kept[key], overrides[key]))
-        ) &&
-          statedKeys(kept).every((key) => key in merged)
-      },
-    )
+  it.prop(
+    '∀do_Merge_≡NestedRecordsMergeRecursively',
+    { of: [NestedDocumentSchema, NestedDocumentSchema], subject: mergeRecords },
+    (subject, [base, overrides]) => {
+      const kept = usableEntriesOnly(base)
+      const merged = subject(base, overrides)
+      const nestedOf = expectedNestedOf
+      return statedKeys(overrides).every((key) => Equal.equals(merged[key], nestedOf(kept[key], overrides[key]))) &&
+        statedKeys(kept).every((key) => key in merged)
+    },
+  )
 
-    it.prop(
-      '∀do_Merge_∈DocumentKeysNeverReachThePrototype',
-      [poisonedDocumentArb, poisonedDocumentArb],
-      ([base, overrides]) => {
-        const merged = mergeRecords(base, overrides)
-        return Equal.equals(
-          [
-            Object.getOwnPropertyNames(merged).includes('__proto__'),
-            Object.getPrototypeOf(merged) === Object.prototype,
-            Object.getOwnPropertyNames(Object.prototype).includes('polluted'),
-          ],
-          [false, true, false],
-        )
-      },
-    )
-  })
+  it.prop(
+    '∀do_Merge_∈DocumentKeysNeverReachThePrototype',
+    { of: [poisonedDocumentArb, poisonedDocumentArb], subject: mergeRecords },
+    (subject, [base, overrides]) => {
+      const merged = subject(base, overrides)
+      return Equal.equals(
+        [
+          Object.hasOwn(merged, '__proto__'),
+          Object.getPrototypeOf(merged) === Object.prototype,
+          Object.hasOwn(Object.prototype, 'polluted'),
+        ],
+        [false, true, false],
+      )
+    },
+  )
 }

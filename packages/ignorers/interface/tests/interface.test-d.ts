@@ -1,5 +1,6 @@
 import type { Ignorer, Node, WalkVisitors } from '@systemfsoftware/stryker-ignorer-interface'
-import { expectTypeOf, test } from 'vitest'
+import { expectTypeOf } from '@systemfsoftware/vitest'
+import { test } from 'vitest'
 
 test('the reason channel is exactly a string or undefined', () => {
   expectTypeOf<Ignorer['shouldIgnore']>().toEqualTypeOf<

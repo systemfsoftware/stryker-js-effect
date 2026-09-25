@@ -1,10 +1,9 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const TERMINATED_MESSAGE = 'the vm harness worker was terminated'
 
@@ -13,6 +12,7 @@ const outcomeOf = (pending: Promise<Session.VmRunResponse>): Promise<string> =>
 
 Feature('Stopping a runner worker while a check is still waiting')
   .withLayer(Layer.empty)
+  .live('the worker is a real child process, refused mid-flight and terminated')
   .body(({ scenario }) => {
     scenario(
       'A check that is still waiting fails once the worker is stopped',
@@ -33,10 +33,8 @@ Feature('Stopping a runner worker while a check is still waiting')
               return Promise.all([outcomeOf(pending), stopped]).then(([outcome]) => outcome)
             }),
         ),
-        Then('the check fails with the worker-stopped notice rather than waiting forever')((s) =>
-          Effect.sync(() => {
-            expect(s.outcome).toBe(TERMINATED_MESSAGE)
-          })
+        Then('the check fails with the worker-stopped notice rather than waiting forever')(
+          (s, expect) => expect(s.outcome).toBe(TERMINATED_MESSAGE),
         ),
       ),
     )

@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from 'vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 
 import {
   ANNOTATION_OBJECT_IGNORED,
@@ -14,7 +14,9 @@ import {
 import { testIgnorer } from '@systemfsoftware/stryker-ignorer-kit/tester'
 
 const descriptor = strykerIgnorers[0]
-assert(descriptor !== undefined, 'the package publishes one ignorer descriptor')
+if (descriptor === undefined) {
+  throw new Error('the package publishes one ignorer descriptor')
+}
 
 const annotations = (object: string): string => `S.annotations(${object})`
 
@@ -36,8 +38,8 @@ const displacedCall = 'S.annotations("other", { title: "Hex Bytes" })'
 const secondArgumentCall = 'S.annotations("other", { identifier: "x" })'
 
 describe('effect-schema-declarations', () => {
-  it('Should_Register_The_Descriptor', () => {
-    expect(descriptor.name).toBe('effect-schema-declarations')
+  it('Should_Register_The_Descriptor', function*({ expect }) {
+    yield* expect(descriptor.name).toBe('effect-schema-declarations')
   })
 })
 

@@ -1,20 +1,14 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Judge, TestContribution } from '@systemfsoftware/stryker-test-contribution'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Result from 'effect/Result'
-import { expect } from 'vitest'
-import {
-  JudgeTestContribution,
-  judgeTestContribution,
-  type TestContributionDecision,
-} from '../src/judge-test-contribution.workflow.js'
-import type { ReportView } from '../src/test-contribution.schema.js'
 
 import { optionalRunnerFields } from './__fixtures__/optional-runner-fields.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const LOCATION = { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } }
 
@@ -51,11 +45,11 @@ const EXACT = { suffixes: PROPERTY, everyKillerRecorded: true }
 const BAILED = { suffixes: PROPERTY, everyKillerRecorded: false }
 
 const commandOf = (
-  report: ReportView,
+  report: TestContribution.ReportView,
   suffixes: readonly string[],
   everyKillerRecorded: boolean,
-): JudgeTestContribution =>
-  JudgeTestContribution.make({
+): Judge.JudgeTestContribution =>
+  Judge.JudgeTestContribution.make({
     report: {
       schemaVersion: '2',
       files: report.files,
@@ -67,18 +61,16 @@ const commandOf = (
   })
 
 const judgedWith = (
-  report: ReportView,
+  report: TestContribution.ReportView,
   input: { readonly suffixes: readonly string[]; readonly everyKillerRecorded: boolean },
-): TestContributionDecision =>
-  judgeTestContribution(
+): Judge.TestContributionDecision =>
+  Judge.judgeTestContribution(
     commandOf(report, input.suffixes, input.everyKillerRecorded),
   ).pipe(Result.merge)
 
-const contributionByTestFile = (report: ReportView) => new Map(judgedWith(report, EXACT).contribution)
+const contributionByTestFile = (report: TestContribution.ReportView) => new Map(judgedWith(report, EXACT).contribution)
 
-const defaultSuffixes: readonly string[] = JudgeTestContribution.defaultRequireTestContributionSuffixes
-// The canonical "earns vs idle" report: one file claims a sole kill, the other kills nothing another
-// does not also kill. Used by every scenario that distinguishes auditable from redundant files.
+const defaultSuffixes: readonly string[] = Judge.JudgeTestContribution.defaultRequireTestContributionSuffixes
 const earnsAndIdleReport = (): Pick<Report.MutationTestResult, 'files' | 'testFiles'> =>
   reportOf(
     [
@@ -105,12 +97,12 @@ Feature('Judging test contribution under the test-contribution gate')
           'contribution',
           (s) => Effect.sync(() => Object.fromEntries(contributionByTestFile(s.report))),
         ),
-        Then('the sole killer earns the sole kill and the other file earns nothing')((s) => {
+        Then('the sole killer earns the sole kill and the other file earns nothing')((s, expect) =>
           expect(s.contribution).toEqual({
             'a.property.test.ts': { soleKills: 1, totalKills: 1, killableCovered: 0, coversUnattributedKill: false },
             'b.property.test.ts': { soleKills: 0, totalKills: 0, killableCovered: 0, coversUnattributedKill: false },
           })
-        }),
+        ),
       ),
     )
 
@@ -128,12 +120,12 @@ Feature('Judging test contribution under the test-contribution gate')
           'contribution',
           (s) => Effect.sync(() => Object.fromEntries(contributionByTestFile(s.report))),
         ),
-        Then('both files count the kill but neither claims it alone')((s) => {
+        Then('both files count the kill but neither claims it alone')((s, expect) =>
           expect(s.contribution).toEqual({
             'a.property.test.ts': { soleKills: 0, totalKills: 1, killableCovered: 0, coversUnattributedKill: false },
             'b.property.test.ts': { soleKills: 0, totalKills: 1, killableCovered: 0, coversUnattributedKill: false },
           })
-        }),
+        ),
       ),
     )
 
@@ -148,11 +140,11 @@ Feature('Judging test contribution under the test-contribution gate')
           'contribution',
           (s) => Effect.sync(() => Object.fromEntries(contributionByTestFile(s.report))),
         ),
-        Then('the placed file gets the kill but no sole credit')((s) => {
+        Then('the placed file gets the kill but no sole credit')((s, expect) =>
           expect(s.contribution).toEqual({
             'a.property.test.ts': { soleKills: 0, totalKills: 1, killableCovered: 0, coversUnattributedKill: false },
           })
-        }),
+        ),
       ),
     )
 
@@ -167,11 +159,11 @@ Feature('Judging test contribution under the test-contribution gate')
           'contribution',
           (s) => Effect.sync(() => Object.fromEntries(contributionByTestFile(s.report))),
         ),
-        Then('the timeout counts as a sole kill')((s) => {
+        Then('the timeout counts as a sole kill')((s, expect) =>
           expect(s.contribution).toEqual({
             'a.property.test.ts': { soleKills: 1, totalKills: 1, killableCovered: 0, coversUnattributedKill: false },
           })
-        }),
+        ),
       ),
     )
 
@@ -186,11 +178,11 @@ Feature('Judging test contribution under the test-contribution gate')
           'contribution',
           (s) => Effect.sync(() => Object.fromEntries(contributionByTestFile(s.report))),
         ),
-        Then('no file earns a kill')((s) => {
+        Then('no file earns a kill')((s, expect) =>
           expect(s.contribution).toEqual({
             'a.property.test.ts': { soleKills: 0, totalKills: 0, killableCovered: 0, coversUnattributedKill: false },
           })
-        }),
+        ),
       ),
     )
 
@@ -205,11 +197,11 @@ Feature('Judging test contribution under the test-contribution gate')
           'contribution',
           (s) => Effect.sync(() => Object.fromEntries(contributionByTestFile(s.report))),
         ),
-        Then('no file is credited for it')((s) => {
+        Then('no file is credited for it')((s, expect) =>
           expect(s.contribution).toEqual({
             'a.property.test.ts': { soleKills: 0, totalKills: 0, killableCovered: 0, coversUnattributedKill: false },
           })
-        }),
+        ),
       ),
     )
 
@@ -226,9 +218,7 @@ Feature('Judging test contribution under the test-contribution gate')
           'accused',
           (s) => Effect.sync(() => judgedWith(s.report, EXACT).toothless),
         ),
-        Then('the redundant file is accused')((s) => {
-          expect(s.accused).toEqual(['idle.property.test.ts'])
-        }),
+        Then('the redundant file is accused')((s, expect) => expect(s.accused).toEqual(['idle.property.test.ts'])),
       ),
     )
 
@@ -245,9 +235,9 @@ Feature('Judging test contribution under the test-contribution gate')
           'accused',
           (s) => Effect.sync(() => judgedWith(s.report, BAILED).toothless),
         ),
-        Then('the redundant file is spared because a second killer may be unrecorded')((s) => {
+        Then('the redundant file is spared because a second killer may be unrecorded')((s, expect) =>
           expect(s.accused).toEqual([])
-        }),
+        ),
       ),
     )
 
@@ -267,9 +257,9 @@ Feature('Judging test contribution under the test-contribution gate')
           'accused',
           (s) => Effect.sync(() => judgedWith(s.report, BAILED).toothless),
         ),
-        Then('the kill-nothing file is still accused')((s) => {
+        Then('the kill-nothing file is still accused')((s, expect) =>
           expect(s.accused).toEqual(['idle.property.test.ts'])
-        }),
+        ),
       ),
     )
 
@@ -289,9 +279,7 @@ Feature('Judging test contribution under the test-contribution gate')
           'accused',
           (s) => Effect.sync(() => judgedWith(s.report, EXACT).toothless),
         ),
-        Then('the coverer of the unattributed kill is spared')((s) => {
-          expect(s.accused).toEqual([])
-        }),
+        Then('the coverer of the unattributed kill is spared')((s, expect) => expect(s.accused).toEqual([])),
       ),
     )
 
@@ -315,9 +303,9 @@ Feature('Judging test contribution under the test-contribution gate')
           'accused',
           (s) => Effect.sync(() => judgedWith(s.report, EXACT).toothless),
         ),
-        Then('the file that covers nothing is accused')((s) => {
+        Then('the file that covers nothing is accused')((s, expect) =>
           expect(s.accused).toEqual(['idle.property.test.ts'])
-        }),
+        ),
       ),
     )
 
@@ -337,9 +325,9 @@ Feature('Judging test contribution under the test-contribution gate')
           'accused',
           (s) => Effect.sync(() => judgedWith(s.report, EXACT).toothless),
         ),
-        Then('the coverer is spared the same way as with an explicit empty list')((s) => {
+        Then('the coverer is spared the same way as with an explicit empty list')((s, expect) =>
           expect(s.accused).toEqual([])
-        }),
+        ),
       ),
     )
 
@@ -357,9 +345,7 @@ Feature('Judging test contribution under the test-contribution gate')
           'accused',
           (s) => Effect.sync(() => judgedWith(s.report, EXACT).toothless),
         ),
-        Then('the out-of-suffix file is never accused')((s) => {
-          expect(s.accused).toEqual([])
-        }),
+        Then('the out-of-suffix file is never accused')((s, expect) => expect(s.accused).toEqual([])),
       ),
     )
 
@@ -378,9 +364,9 @@ Feature('Judging test contribution under the test-contribution gate')
           'accused',
           (s) => Effect.sync(() => judgedWith(s.report, EXACT).toothless),
         ),
-        Then('they are sorted alphabetically')((s) => {
+        Then('they are sorted alphabetically')((s, expect) =>
           expect(s.accused).toEqual(['alpha.property.test.ts', 'zebra.property.test.ts'])
-        }),
+        ),
       ),
     )
 
@@ -395,12 +381,14 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: true })),
         ),
-        Then('the run fails, names the idle file, and carries no bail text')((s) => {
-          expect(s.verdict.failed).toBe(true)
-          expect(s.verdict.message).toContain('idle.property.test.ts')
-          expect(s.verdict.message).toContain('just as dead')
-          expect(s.verdict.message).not.toContain('disableBail: true')
-        }),
+        Then('the run fails, names the idle file, and carries no bail text')((s, expect) =>
+          expect({
+            failed: s.verdict.failed,
+            namesIdleFile: s.verdict.message.includes('idle.property.test.ts'),
+            claimsJustAsDead: s.verdict.message.includes('just as dead'),
+            carriesBailText: s.verdict.message.includes('disableBail: true'),
+          }).toEqual({ failed: true, namesIdleFile: true, claimsJustAsDead: true, carriesBailText: false })
+        ),
       ),
     )
 
@@ -424,10 +412,12 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: true })),
         ),
-        Then('the run passes')((s) => {
-          expect(s.verdict.failed).toBe(false)
-          expect(s.verdict.message).toContain('kills a mutant nothing else kills')
-        }),
+        Then('the run passes')((s, expect) =>
+          expect({
+            failed: s.verdict.failed,
+            claimsUniqueKill: s.verdict.message.includes('kills a mutant nothing else kills'),
+          }).toEqual({ failed: false, claimsUniqueKill: true })
+        ),
       ),
     )
 
@@ -442,11 +432,13 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: false })),
         ),
-        Then('the run fails citing the bail configuration')((s) => {
-          expect(s.verdict.failed).toBe(true)
-          expect(s.verdict.message).toContain('bail')
-          expect(s.verdict.message).toContain('disableBail: true')
-        }),
+        Then('the run fails citing the bail configuration')((s, expect) =>
+          expect({
+            failed: s.verdict.failed,
+            mentionsBail: s.verdict.message.includes('bail'),
+            mentionsFlag: s.verdict.message.includes('disableBail: true'),
+          }).toEqual({ failed: true, mentionsBail: true, mentionsFlag: true })
+        ),
       ),
     )
 
@@ -464,11 +456,13 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: false })),
         ),
-        Then('the run stays silent')((s) => {
-          expect(s.verdict.failed).toBe(false)
-          expect(s.verdict.message).toContain('so none was judged')
-          expect(s.verdict.message).not.toContain('disableBail: true')
-        }),
+        Then('the run stays silent')((s, expect) =>
+          expect({
+            failed: s.verdict.failed,
+            noneJudged: s.verdict.message.includes('so none was judged'),
+            mentionsFlag: s.verdict.message.includes('disableBail: true'),
+          }).toEqual({ failed: false, noneJudged: true, mentionsFlag: false })
+        ),
       ),
     )
 
@@ -492,11 +486,13 @@ Feature('Judging test contribution under the test-contribution gate')
               judgedWith(s.report, { suffixes: ['.workflow.property.test.ts'], everyKillerRecorded: false })
             ),
         ),
-        Then('the configuration error names the flag, not the files')((s) => {
-          expect(s.verdict.message).not.toContain('sole.workflow.property.test.ts')
-          expect(s.verdict.message).not.toContain('idle.workflow.property.test.ts')
-          expect(s.verdict.message).toContain('disableBail: true')
-        }),
+        Then('the configuration error names the flag, not the files')((s, expect) =>
+          expect({
+            namesSoleFile: s.verdict.message.includes('sole.workflow.property.test.ts'),
+            namesIdleFile: s.verdict.message.includes('idle.workflow.property.test.ts'),
+            mentionsFlag: s.verdict.message.includes('disableBail: true'),
+          }).toEqual({ namesSoleFile: false, namesIdleFile: false, mentionsFlag: true })
+        ),
       ),
     )
 
@@ -514,11 +510,13 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: true })),
         ),
-        Then('the run is blamed and the files are not')((s) => {
-          expect(s.verdict.failed).toBe(true)
-          expect(s.verdict.message).toContain('credited no kill to any test file')
-          expect(s.verdict.message).not.toContain('unjudged.property.test.ts')
-        }),
+        Then('the run is blamed and the files are not')((s, expect) =>
+          expect({
+            failed: s.verdict.failed,
+            blamesRun: s.verdict.message.includes('credited no kill to any test file'),
+            namesFile: s.verdict.message.includes('unjudged.property.test.ts'),
+          }).toEqual({ failed: true, blamesRun: true, namesFile: false })
+        ),
       ),
     )
 
@@ -536,10 +534,12 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: true })),
         ),
-        Then('the run passes and nothing was judged')((s) => {
-          expect(s.verdict.failed).toBe(false)
-          expect(s.verdict.message).toContain('so none was judged')
-        }),
+        Then('the run passes and nothing was judged')((s, expect) =>
+          expect({
+            failed: s.verdict.failed,
+            noneJudged: s.verdict.message.includes('so none was judged'),
+          }).toEqual({ failed: false, noneJudged: true })
+        ),
       ),
     )
 
@@ -557,11 +557,11 @@ Feature('Judging test contribution under the test-contribution gate')
           'contribution',
           (s) => Effect.sync(() => Object.fromEntries(contributionByTestFile(s.report))),
         ),
-        Then('both kills are counted for the file')((s) => {
+        Then('both kills are counted for the file')((s, expect) =>
           expect(s.contribution).toEqual({
             'busy.property.test.ts': { soleKills: 2, totalKills: 2, killableCovered: 0, coversUnattributedKill: false },
           })
-        }),
+        ),
       ),
     )
 
@@ -585,10 +585,12 @@ Feature('Judging test contribution under the test-contribution gate')
               judgedWith(s.report, { suffixes: ['.property.test.ts', '.law.test.ts'], everyKillerRecorded: true })
             ),
         ),
-        Then('the matching file is judged in scope')((s) => {
-          expect(s.verdict.failed).toBe(true)
-          expect(s.verdict.message).toContain('idle.law.test.ts')
-        }),
+        Then('the matching file is judged in scope')((s, expect) =>
+          expect({
+            failed: s.verdict.failed,
+            namesIdleLaw: s.verdict.message.includes('idle.law.test.ts'),
+          }).toEqual({ failed: true, namesIdleLaw: true })
+        ),
       ),
     )
 
@@ -609,9 +611,9 @@ Feature('Judging test contribution under the test-contribution gate')
               judgedWith(s.report, { suffixes: ['.property.test.ts', '.law.test.ts'], everyKillerRecorded: true })
             ),
         ),
-        Then('the message names both suffixes')((s) => {
+        Then('the message names both suffixes')((s, expect) =>
           expect(s.verdict.message).toContain('.property.test.ts, .law.test.ts')
-        }),
+        ),
       ),
     )
 
@@ -626,9 +628,9 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: true })),
         ),
-        Then('the message claims exact killer recording')((s) => {
+        Then('the message claims exact killer recording')((s, expect) =>
           expect(s.verdict.message).toContain('every killing test was recorded')
-        }),
+        ),
       ),
     )
 
@@ -650,11 +652,11 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: true })),
         ),
-        Then('each accused file is listed on its own bullet line')((s) => {
+        Then('each accused file is listed on its own bullet line')((s, expect) =>
           expect(s.verdict.message).toContain(
             '  - alpha.property.test.ts\n  - beta.property.test.ts',
           )
-        }),
+        ),
       ),
     )
 
@@ -675,9 +677,7 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: defaultSuffixes, everyKillerRecorded: true })),
         ),
-        Then('there is no judgement')((s) => {
-          expect(s.verdict.message).toContain('so none was judged')
-        }),
+        Then('there is no judgement')((s, expect) => expect(s.verdict.message).toContain('so none was judged')),
       ),
     )
 
@@ -698,9 +698,9 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: defaultSuffixes, everyKillerRecorded: true })),
         ),
-        Then('the gate applies and the run fails')((s) => {
-          expect(s.verdict.failed).toBe(true)
-        }),
+        Then('the gate applies and the run fails')((s, expect) =>
+          expect({ failed: s.verdict.failed }).toEqual({ failed: true })
+        ),
       ),
     )
 
@@ -724,9 +724,9 @@ Feature('Judging test contribution under the test-contribution gate')
               judgedWith(s.report, { suffixes: ['.schema.property.test.ts'], everyKillerRecorded: true })
             ),
         ),
-        Then('the custom suffix list applies and fails the run')((s) => {
-          expect(s.verdict.failed).toBe(true)
-        }),
+        Then('the custom suffix list applies and fails the run')((s, expect) =>
+          expect({ failed: s.verdict.failed }).toEqual({ failed: true })
+        ),
       ),
     )
 
@@ -747,13 +747,18 @@ Feature('Judging test contribution under the test-contribution gate')
           'contribution',
           (s) => Effect.sync(() => Object.fromEntries(contributionByTestFile(s.report))),
         ),
-        Then('no real file is credited and the coverer is marked as covering an unattributed kill')((s) => {
-          expect(s.contribution).toEqual({
-            'a.property.test.ts': { soleKills: 0, totalKills: 0, killableCovered: 1, coversUnattributedKill: true },
-            'b.property.test.ts': { soleKills: 0, totalKills: 0, killableCovered: 0, coversUnattributedKill: false },
+        Then('no real file is credited and the coverer is marked as covering an unattributed kill')((s, expect) =>
+          expect({
+            contribution: s.contribution,
+            ghostCredited: Object.keys(s.contribution).includes('ghost'),
+          }).toEqual({
+            contribution: {
+              'a.property.test.ts': { soleKills: 0, totalKills: 0, killableCovered: 1, coversUnattributedKill: true },
+              'b.property.test.ts': { soleKills: 0, totalKills: 0, killableCovered: 0, coversUnattributedKill: false },
+            },
+            ghostCredited: false,
           })
-          expect(Object.keys(s.contribution)).not.toContain('ghost')
-        }),
+        ),
       ),
     )
 
@@ -780,12 +785,14 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: true })),
         ),
-        Then('the run passes with judged and exempt counts and never claims every file kills uniquely')((s) => {
-          expect(s.verdict.failed).toBe(false)
-          expect(s.verdict.message).toContain('1 judged')
-          expect(s.verdict.message).toContain('1 exempted')
-          expect(s.verdict.message).not.toContain('kills a mutant nothing else kills')
-        }),
+        Then('the run passes with judged and exempt counts and never claims every file kills uniquely')((s, expect) =>
+          expect({
+            failed: s.verdict.failed,
+            judged: s.verdict.message.includes('1 judged'),
+            exempted: s.verdict.message.includes('1 exempted'),
+            claimsUniqueKill: s.verdict.message.includes('kills a mutant nothing else kills'),
+          }).toEqual({ failed: false, judged: true, exempted: true, claimsUniqueKill: false })
+        ),
       ),
     )
 
@@ -809,13 +816,21 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: true })),
         ),
-        Then('the run fails but does not claim deleting them leaves every mutant just as dead')((s) => {
-          expect(s.verdict.failed).toBe(true)
-          expect(s.verdict.message).not.toContain('would leave every mutant just as dead')
-          expect(s.verdict.message).toContain('would not leave every mutant just as dead')
-          expect(s.verdict.message).toContain('a.property.test.ts')
-          expect(s.verdict.message).toContain('b.property.test.ts')
-        }),
+        Then('the run fails but does not claim deleting them leaves every mutant just as dead')((s, expect) =>
+          expect({
+            failed: s.verdict.failed,
+            claimsJustAsDead: s.verdict.message.includes('would leave every mutant just as dead'),
+            claimsNotJustAsDead: s.verdict.message.includes('would not leave every mutant just as dead'),
+            namesA: s.verdict.message.includes('a.property.test.ts'),
+            namesB: s.verdict.message.includes('b.property.test.ts'),
+          }).toEqual({
+            failed: true,
+            claimsJustAsDead: false,
+            claimsNotJustAsDead: true,
+            namesA: true,
+            namesB: true,
+          })
+        ),
       ),
     )
 
@@ -844,13 +859,21 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: true })),
         ),
-        Then('the run fails claiming the whole accused set is jointly deletable')((s) => {
-          expect(s.verdict.failed).toBe(true)
-          expect(s.verdict.message).toContain('would leave every mutant just as dead')
-          expect(s.verdict.message).toContain('a.property.test.ts')
-          expect(s.verdict.message).toContain('b.property.test.ts')
-          expect(s.verdict.message).not.toContain('c.property.test.ts')
-        }),
+        Then('the run fails claiming the whole accused set is jointly deletable')((s, expect) =>
+          expect({
+            failed: s.verdict.failed,
+            claimsJustAsDead: s.verdict.message.includes('would leave every mutant just as dead'),
+            namesA: s.verdict.message.includes('a.property.test.ts'),
+            namesB: s.verdict.message.includes('b.property.test.ts'),
+            namesC: s.verdict.message.includes('c.property.test.ts'),
+          }).toEqual({
+            failed: true,
+            claimsJustAsDead: true,
+            namesA: true,
+            namesB: true,
+            namesC: false,
+          })
+        ),
       ),
     )
 
@@ -879,11 +902,17 @@ Feature('Judging test contribution under the test-contribution gate')
               }
             }),
         ),
-        Then('only the auditable file is accused and the unauditable file is spared')((s) => {
-          expect(s.result.accused).toEqual(['auditable.property.test.ts'])
-          expect(s.result.contribution['auditable.property.test.ts']?.killableCovered).toBe(1)
-          expect(s.result.contribution['unauditable.property.test.ts']?.killableCovered).toBe(0)
-        }),
+        Then('only the auditable file is accused and the unauditable file is spared')((s, expect) =>
+          expect({
+            accused: s.result.accused,
+            auditableCovered: s.result.contribution['auditable.property.test.ts']?.killableCovered,
+            unauditableCovered: s.result.contribution['unauditable.property.test.ts']?.killableCovered,
+          }).toEqual({
+            accused: ['auditable.property.test.ts'],
+            auditableCovered: 1,
+            unauditableCovered: 0,
+          })
+        ),
       ),
     )
 
@@ -907,12 +936,14 @@ Feature('Judging test contribution under the test-contribution gate')
           'verdict',
           (s) => Effect.sync(() => judgedWith(s.report, { suffixes: PROPERTY, everyKillerRecorded: true })),
         ),
-        Then('the run passes reporting the bare file unjudged, never the unique-kill sentence')((s) => {
-          expect(s.verdict.failed).toBe(false)
-          expect(s.verdict.message).toContain('1 judged')
-          expect(s.verdict.message).toContain('1 unjudged')
-          expect(s.verdict.message).not.toContain('kills a mutant nothing else kills')
-        }),
+        Then('the run passes reporting the bare file unjudged, never the unique-kill sentence')((s, expect) =>
+          expect({
+            failed: s.verdict.failed,
+            judged: s.verdict.message.includes('1 judged'),
+            unjudged: s.verdict.message.includes('1 unjudged'),
+            claimsUniqueKill: s.verdict.message.includes('kills a mutant nothing else kills'),
+          }).toEqual({ failed: false, judged: true, unjudged: true, claimsUniqueKill: false })
+        ),
       ),
     )
 
@@ -940,10 +971,12 @@ Feature('Judging test contribution under the test-contribution gate')
               }
             }),
         ),
-        Then('the Ignored-only file is not accused and not counted as coverable')((s) => {
-          expect(s.result.accused).toEqual([])
-          expect(s.result.contribution['ignored-cover.property.test.ts']?.killableCovered).toBe(0)
-        }),
+        Then('the Ignored-only file is not accused and not counted as coverable')((s, expect) =>
+          expect({
+            accused: s.result.accused,
+            ignoredCovered: s.result.contribution['ignored-cover.property.test.ts']?.killableCovered,
+          }).toEqual({ accused: [], ignoredCovered: 0 })
+        ),
       ),
     )
   })

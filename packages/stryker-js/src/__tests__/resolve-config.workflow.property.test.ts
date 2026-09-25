@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Boolean from 'effect/Boolean'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -21,9 +21,9 @@ const variantIs = (fileFound: boolean) => (outcome: LoadConfigDecision) =>
 describe('resolveConfig', () => {
   it.prop(
     '∀c_Command_≡VariantFollowsFileFound',
-    [LoadConfigCommand],
-    ([command]) =>
-      Result.match(resolveConfig(command), {
+    { of: [LoadConfigCommand], subject: resolveConfig },
+    (subject, [command]) =>
+      Result.match(subject(command), {
         onFailure: (refusal) => S.is(ConfigOptionsRefused)(refusal),
         onSuccess: variantIs(command.fileFound),
       }),

@@ -1,3 +1,4 @@
+import { Handle } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
@@ -6,27 +7,26 @@ import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
-import { type Pipeable, Prototype } from 'effect/Pipeable'
-import * as Predicate from 'effect/Predicate'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import type { PooledTestRunnerError } from './TestRunner.schema.js'
 import { OutOfMemoryError } from './Worker.schema.js'
 
-export const TypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/PooledTestRunner')
+export const TypeId: unique symbol = Symbol.for('~systemfsoftware/stryker-js/PooledTestRunner')
 export type TypeId = typeof TypeId
 
-export interface PooledTestRunner extends Pipeable {
-  readonly [TypeId]: typeof TypeId
+const PooledTestRunner = Handle.make<{
   readonly capabilities: Effect.Effect<TestRunner.TestRunnerCapabilities, PooledTestRunnerError>
   readonly init: Effect.Effect<void, PooledTestRunnerError>
   readonly dryRun: (options: TestRunner.DryRunOptions) => Effect.Effect<TestRunner.DryRunResult, PooledTestRunnerError>
   readonly mutantRun: (
     options: Mutant.MutantRunOptions,
   ) => Effect.Effect<TestRunner.MutantRunResult, PooledTestRunnerError>
-}
+}>()(TypeId)
 
-export const isPooledTestRunner = (u: unknown): u is PooledTestRunner => Predicate.hasProperty(u, TypeId)
+export type PooledTestRunner = Handle.Of<typeof PooledTestRunner>
+
+export const isPooledTestRunner = PooledTestRunner.is
 
 export const make = (runner: {
   readonly capabilities: Effect.Effect<TestRunner.TestRunnerCapabilities, PooledTestRunnerError>
@@ -35,35 +35,38 @@ export const make = (runner: {
   readonly mutantRun: (
     options: Mutant.MutantRunOptions,
   ) => Effect.Effect<TestRunner.MutantRunResult, PooledTestRunnerError>
-}): PooledTestRunner => ({
-  [TypeId]: TypeId,
-  ...Prototype,
-  ...runner,
-})
+}): PooledTestRunner =>
+  PooledTestRunner.make({
+    capabilities: runner.capabilities,
+    init: runner.init,
+    dryRun: runner.dryRun,
+    mutantRun: runner.mutantRun,
+  })
 
 type RunPolicy<A, E> = (self: Effect.Effect<A, E, never>) => Effect.Effect<A, E, never>
 
 export const withTimeout: {
   (inner: PooledTestRunner): PooledTestRunner
-} = (inner) => ({
-  ...inner,
-  dryRun: (options) =>
-    inner.dryRun(options).pipe(
-      Effect.timeoutOrElse({
-        duration: Duration.millis(options.timeout),
-        orElse: (): Effect.Effect<TestRunner.DryRunResult> =>
-          Effect.succeed({ status: 'timeout', reason: TestRunner.WallClockTimeoutReason.literal }),
-      }),
-    ),
-  mutantRun: (options) =>
-    inner.mutantRun(options).pipe(
-      Effect.timeoutOrElse({
-        duration: Duration.millis(options.timeout),
-        orElse: (): Effect.Effect<TestRunner.MutantRunResult> =>
-          Effect.succeed({ status: 'timeout', reason: TestRunner.WallClockTimeoutReason.literal }),
-      }),
-    ),
-})
+} = (inner) =>
+  make({
+    ...inner,
+    dryRun: (options) =>
+      inner.dryRun(options).pipe(
+        Effect.timeoutOrElse({
+          duration: Duration.millis(options.timeout),
+          orElse: (): Effect.Effect<TestRunner.DryRunResult> =>
+            Effect.succeed({ status: 'timeout', reason: TestRunner.WallClockTimeoutReason.literal }),
+        }),
+      ),
+    mutantRun: (options) =>
+      inner.mutantRun(options).pipe(
+        Effect.timeoutOrElse({
+          duration: Duration.millis(options.timeout),
+          orElse: (): Effect.Effect<TestRunner.MutantRunResult> =>
+            Effect.succeed({ status: 'timeout', reason: TestRunner.WallClockTimeoutReason.literal }),
+        }),
+      ),
+  })
 
 export const invalidatesRunnerPool: {
   (status: string, reason: string | undefined): boolean
@@ -98,7 +101,7 @@ export const withRetry: {
       Effect.retry({ times: maxRetries }),
       Effect.catchCause((cause) => Effect.succeed(onExhausted(exhaustedMessage(cause)))),
     )
-  return {
+  return make({
     ...inner,
     dryRun: (options) =>
       attempt(inner.dryRun(options), (errorMessage) => ({
@@ -110,7 +113,7 @@ export const withRetry: {
         status: 'error',
         errorMessage,
       })),
-  }
+  })
 }
 
 export const withMaxReuse: {
@@ -133,7 +136,7 @@ export const withMaxReuse: {
         Effect.gen(function*() {
           const runs = yield* Ref.make(0)
 
-          return {
+          return make({
             ...inner,
             mutantRun: (runOptions: Mutant.MutantRunOptions) => {
               const policy: RunPolicy<TestRunner.MutantRunResult, PooledTestRunnerError> = (self) =>
@@ -147,7 +150,7 @@ export const withMaxReuse: {
                 })
               return policy(inner.mutantRun(runOptions))
             },
-          }
+          })
         })
       ),
     ),
@@ -195,7 +198,7 @@ export const withEnvironmentReload: {
     Effect.gen(function*() {
       const state = yield* Ref.make<EnvironmentState>('pristine')
 
-      return {
+      return make({
         ...inner,
 
         dryRun: (options) => {
@@ -223,12 +226,12 @@ export const withEnvironmentReload: {
 
             return yield* policy(inner.mutantRun({ ...options, reloadEnvironment: plan.reloadEnvironment }))
           }),
-      }
+      })
     }),
 )
 
 if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
+  const { it } = await import('@systemfsoftware/vitest')
 
   const answeringWith = (errorMessage: string): PooledTestRunner =>
     make({
@@ -241,19 +244,23 @@ if (import.meta.vitest !== void 0) {
   const answeredBy = (errorMessage: string) => (result: TestRunner.DryRunResult): boolean =>
     result.status === 'error' && result.errorMessage === errorMessage
 
-  const decoratedDryRunsWrapped = (options: TestRunner.DryRunOptions, errorMessage: string) =>
+  const decoratedDryRunsWrapped = (
+    reload: typeof withEnvironmentReload,
+    options: TestRunner.DryRunOptions,
+    errorMessage: string,
+  ) =>
     Effect.gen(function*() {
       const wrapped = answeringWith(errorMessage)
-      const curried = yield* withEnvironmentReload(Effect.void)(wrapped)
-      const dataFirst = yield* withEnvironmentReload(wrapped, Effect.void)
+      const curried = yield* reload(Effect.void)(wrapped)
+      const dataFirst = yield* reload(wrapped, Effect.void)
       const answers = [yield* curried.dryRun(options), yield* dataFirst.dryRun(options)]
       return answers.every(answeredBy(errorMessage))
     })
 
   it.effect.prop(
-    '∀om_EnvironmentReload_DryRun≡Wrapped',
-    [TestRunner.DryRunOptionsSchema, S.String],
-    ([options, errorMessage]) => decoratedDryRunsWrapped(options, errorMessage).pipe(Effect.orDie),
+    '∀om_EnvironmentReload_≡WrappedDryRun',
+    { of: [TestRunner.DryRunOptionsSchema, S.String], subject: withEnvironmentReload },
+    (subject, [options, errorMessage]) => decoratedDryRunsWrapped(subject, options, errorMessage).pipe(Effect.orDie),
   )
 
   const recordingRunner = (canReload: boolean, log: Ref.Ref<ReadonlyArray<string>>): PooledTestRunner =>
@@ -289,6 +296,7 @@ if (import.meta.vitest !== void 0) {
     })
 
   const mutantRunsFollowReloadContract = (
+    reload: typeof withEnvironmentReload,
     options: Mutant.MutantRunOptions,
     requests: ReadonlyArray<boolean>,
     canReload: boolean,
@@ -297,7 +305,7 @@ if (import.meta.vitest !== void 0) {
     Effect.gen(function*() {
       const log = yield* Ref.make<ReadonlyArray<string>>([])
       const retire = Ref.update(log, (events) => [...events, 'retire'])
-      const decorated = yield* withEnvironmentReload(recordingRunner(canReload, log), retire)
+      const decorated = yield* reload(recordingRunner(canReload, log), retire)
       yield* Effect.when(
         decorated.dryRun({ timeout: 1000, disableBail: false, coverageAnalysis: 'off' }),
         Effect.succeed(dryRunFirst),
@@ -310,9 +318,12 @@ if (import.meta.vitest !== void 0) {
     })
 
   it.effect.prop(
-    '∀om_EnvironmentReload_MutantRun≡ReloadOrRetireAfterStaticMutant',
-    [Mutant.MutantRunOptionsSchema, S.Array(S.Boolean), S.Boolean, S.Boolean],
-    ([options, requests, canReload, dryRunFirst]) =>
-      mutantRunsFollowReloadContract(options, requests, canReload, dryRunFirst).pipe(Effect.orDie),
+    '∀om_EnvironmentReload_≡ReloadOrRetire',
+    {
+      of: [Mutant.MutantRunOptionsSchema, S.Array(S.Boolean), S.Boolean, S.Boolean],
+      subject: withEnvironmentReload,
+    },
+    (subject, [options, requests, canReload, dryRunFirst]) =>
+      mutantRunsFollowReloadContract(subject, options, requests, canReload, dryRunFirst).pipe(Effect.orDie),
   )
 }

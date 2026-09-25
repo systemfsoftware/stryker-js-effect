@@ -1,10 +1,10 @@
+import { Handle } from '@systemfsoftware/effect-cell-types'
 import { Checker, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Metric from 'effect/Metric'
-import { type Pipeable, Prototype } from 'effect/Pipeable'
-import * as Predicate from 'effect/Predicate'
 import type * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
@@ -13,7 +13,7 @@ import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 
 export type CheckerCrash = ChildProcessCrashedError | OutOfMemoryError
 
-export const TypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CheckerHandle')
+export const TypeId: unique symbol = Symbol.for('~systemfsoftware/stryker-js/Checker')
 export type TypeId = typeof TypeId
 
 const checkerDuration = Metric.timer('stryker.checker.duration', {
@@ -29,10 +29,14 @@ const checkerRpcFailures = Metric.counter('stryker.checker.rpc_failures', {
   incremental: true,
 })
 
-const ClientTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CheckerHandle/client')
-
 type CheckerRpcsUnion = typeof Plugin.CheckerRpcs extends RpcGroup.RpcGroup<infer Rpcs> ? Rpcs : never
 type CheckerClient = RpcClient.RpcClient<CheckerRpcsUnion, RpcClientError>
+
+const CheckerHandle = Handle.make<Record<never, never>, CheckerClient>()(TypeId)
+
+export type CheckerHandle = Handle.Of<typeof CheckerHandle>
+
+export const isCheckerHandle = CheckerHandle.is
 
 /**
  * A checker held by the pool.
@@ -52,13 +56,6 @@ export interface CheckerResourceService {
     mutants: readonly Checker.CheckerMutantWire[],
   ) => Effect.Effect<readonly (readonly string[])[], CheckerCrash | Checker.CheckerFailed>
 }
-
-export interface CheckerHandle extends CheckerResourceService, Pipeable {
-  readonly [TypeId]: TypeId
-  readonly [ClientTypeId]: CheckerClient
-}
-
-export const isCheckerHandle = (u: unknown): u is CheckerHandle => Predicate.hasProperty(u, TypeId)
 
 export const connectionCrashed = (cause: string): ChildProcessCrashedError =>
   ChildProcessCrashedError.make({ pid: 0, exit: { _tag: 'Code', code: 1 }, cause })
@@ -105,7 +102,7 @@ const checkOf = (self: CheckerHandle, checkerName: string, mutants: readonly Che
     'stryker.checker.check',
     checkerName,
     mutants,
-    self[ClientTypeId].check({ checkerName, mutants: [...mutants] }),
+    CheckerHandle.slot(self).check({ checkerName, mutants: [...mutants] }),
   )
 
 const groupOf = (self: CheckerHandle, checkerName: string, mutants: readonly Checker.CheckerMutantWire[]) =>
@@ -113,16 +110,39 @@ const groupOf = (self: CheckerHandle, checkerName: string, mutants: readonly Che
     'stryker.checker.group',
     checkerName,
     mutants,
-    self[ClientTypeId].group({ checkerName, mutants: [...mutants] }),
+    CheckerHandle.slot(self).group({ checkerName, mutants: [...mutants] }),
   )
 
-export const makeCheckerHandle = (client: CheckerClient): CheckerHandle => {
-  const self: CheckerHandle = {
-    [TypeId]: TypeId,
-    [ClientTypeId]: client,
-    ...Prototype,
-    check: (checkerName, mutants) => checkOf(self, checkerName, mutants),
-    group: (checkerName, mutants) => groupOf(self, checkerName, mutants),
-  }
-  return self
-}
+export const check: {
+  (
+    checkerName: string,
+    mutants: readonly Checker.CheckerMutantWire[],
+  ): (self: CheckerHandle) => Effect.Effect<Record<string, Checker.CheckResult>, CheckerCrash | Checker.CheckerFailed>
+  (
+    self: CheckerHandle,
+    checkerName: string,
+    mutants: readonly Checker.CheckerMutantWire[],
+  ): Effect.Effect<Record<string, Checker.CheckResult>, CheckerCrash | Checker.CheckerFailed>
+} = dual(
+  (args) => isCheckerHandle(args[0]),
+  (self: CheckerHandle, checkerName: string, mutants: readonly Checker.CheckerMutantWire[]) =>
+    checkOf(self, checkerName, mutants),
+)
+
+export const group: {
+  (
+    checkerName: string,
+    mutants: readonly Checker.CheckerMutantWire[],
+  ): (self: CheckerHandle) => Effect.Effect<readonly (readonly string[])[], CheckerCrash | Checker.CheckerFailed>
+  (
+    self: CheckerHandle,
+    checkerName: string,
+    mutants: readonly Checker.CheckerMutantWire[],
+  ): Effect.Effect<readonly (readonly string[])[], CheckerCrash | Checker.CheckerFailed>
+} = dual(
+  (args) => isCheckerHandle(args[0]),
+  (self: CheckerHandle, checkerName: string, mutants: readonly Checker.CheckerMutantWire[]) =>
+    groupOf(self, checkerName, mutants),
+)
+
+export const makeCheckerHandle = (client: CheckerClient): CheckerHandle => CheckerHandle.make({}, client)

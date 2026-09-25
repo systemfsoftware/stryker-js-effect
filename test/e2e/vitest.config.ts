@@ -1,14 +1,12 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig, openTelemetry } from '@systemfsoftware/vitest-config'
 
 const SETUP_TIMEOUT_MS = 600_000
 const TEST_TIMEOUT_MS = 120_000
 
-const otelSdkPath = new URL('./otel.ts', import.meta.url).pathname
-
 export default defineConfig({
   test: {
     environment: 'node',
-    globals: true,
+    globals: false,
     globalSetup: ['./tests/__fixtures__/global-setup.ts'],
     include: ['tests/**/*.test.ts'],
     passWithNoTests: false,
@@ -16,11 +14,6 @@ export default defineConfig({
     hookTimeout: SETUP_TIMEOUT_MS,
     teardownTimeout: 30_000,
     coverage: { enabled: false },
-    experimental: {
-      openTelemetry: {
-        enabled: process.env['OTEL_ENABLED'] === 'true',
-        sdkPath: otelSdkPath,
-      },
-    },
+    experimental: { openTelemetry },
   },
 })

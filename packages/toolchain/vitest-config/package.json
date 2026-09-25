@@ -14,7 +14,12 @@
         "default": "./lib/base.js"
       }
     },
-    "./setup": "./lib/setup.js"
+    "./telemetry": {
+      "import": {
+        "types": "./lib/telemetry.d.ts",
+        "default": "./lib/telemetry.js"
+      }
+    }
   },
   "files": [
     "lib"
@@ -24,11 +29,14 @@
     "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text}"
   },
   "devDependencies": {
-    "@effect/vitest": "catalog:",
+    "@opentelemetry/api": "catalog:",
+    "@opentelemetry/exporter-trace-otlp-http": "catalog:",
+    "@opentelemetry/sdk-node": "catalog:",
+    "@opentelemetry/sdk-trace-base": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/vitest": "catalog:",
     "@types/node": "catalog:",
     "effect": "catalog:",
-    "fast-check": "catalog:",
     "vitest": "catalog:"
   },
   "repository": {

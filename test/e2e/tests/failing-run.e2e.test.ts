@@ -1,8 +1,10 @@
 import { RunEvent } from '@systemfsoftware/stryker-js'
+import { it } from '@systemfsoftware/vitest'
+import type { Check, Expect } from '@systemfsoftware/vitest'
+import { Effect } from 'effect'
 import * as S from 'effect/Schema'
-import type { ExpectStatic } from 'vitest'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
+import { bddStep, prepareFixture } from './__fixtures__/microvm-harness.js'
 
 const FAILING_DRY_RUN_RUNTIME_ERROR_CODE = 3
 const FAILING_FIXTURE_URL = new URL('../testResources/failing-fixture', import.meta.url)
@@ -13,6 +15,7 @@ const parseEventStream = (stdout: string): ReadonlyArray<RunEvent.RunEvent> =>
     .map((line) => line.trim())
     .filter((line) => line.startsWith('{') && line.endsWith('}'))
     .map((line) => S.decodeUnknownSync(RunEvent.RunEventWireLine)(line))
+
 const lastEvent = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.RunEvent => {
   const event = events.at(-1)
   if (event === undefined) {
@@ -21,53 +24,55 @@ const lastEvent = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.RunEvent 
   return event
 }
 
-const stepVerifyFailingDryRunExit = (expect: ExpectStatic, run: ExecResult): void => {
-  expect.soft(run.exitCode).toBe(FAILING_DRY_RUN_RUNTIME_ERROR_CODE)
-}
+const verifyFailingDryRunExit = (expect: Expect, run: ExecResult): Check =>
+  expect(run.exitCode).toBe(FAILING_DRY_RUN_RUNTIME_ERROR_CODE)
 
-const stepVerifyTypedErrorDocument = (
-  expect: ExpectStatic,
-  events: ReadonlyArray<RunEvent.RunEvent>,
-): void => {
+const verifyTypedErrorDocument = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check => {
   const terminal = lastEvent(events)
+  const errorDocument: RunEvent.RunFailed | undefined = terminal._tag === 'error' ? terminal : undefined
   const tags = events.map((event) => event._tag)
 
-  expect.soft(terminal._tag).toBe('error')
-  if (terminal._tag === 'error') {
-    const errorDoc: RunEvent.RunFailed = terminal
-    expect.soft(errorDoc.schemaVersion).toBe('1.1')
-    expect.soft(errorDoc.code).toBe(FAILING_DRY_RUN_RUNTIME_ERROR_CODE)
-    expect.soft(typeof errorDoc.error).toBe('string')
-    expect.soft(errorDoc.remediation).toMatch(/\S/)
-  }
-  expect.soft(tags).not.toContain('verdict')
+  return expect({
+    terminalTag: terminal._tag,
+    schemaVersion: errorDocument?.schemaVersion,
+    code: errorDocument?.code,
+    errorIsString: typeof errorDocument?.error === 'string',
+    remediationHasContent: /\S/.test(errorDocument?.remediation ?? ''),
+    carriesVerdict: tags.includes('verdict'),
+  }).toStrictEqual({
+    terminalTag: 'error',
+    schemaVersion: '1.1',
+    code: FAILING_DRY_RUN_RUNTIME_ERROR_CODE,
+    errorIsString: true,
+    remediationHasContent: true,
+    carriesVerdict: false,
+  })
 }
 
-const stepVerifyStreamCleanliness = (
-  expect: ExpectStatic,
-  events: ReadonlyArray<RunEvent.RunEvent>,
-): void => {
-  expect.soft(events.length).toBeGreaterThan(0)
-  expect.soft(events.every((e) => typeof e._tag === 'string')).toBe(true)
-}
+const verifyStreamCleanliness = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check =>
+  expect({
+    hasEvents: events.length > 0,
+    everyTagIsAString: events.every((event) => typeof event._tag === 'string'),
+  }).toStrictEqual({ hasEvents: true, everyTagIsAString: true })
 
-test('failing a run at the process boundary', async ({ bdd, expect, prepareFixture }) => {
-  let fixture: PreparedFixture
-  let run: ExecResult
-  let events: ReadonlyArray<RunEvent.RunEvent>
+it.live('failing a run at the process boundary', function*({ expect }) {
+  const fixture = yield* bddStep(
+    'Given',
+    'a fixture configured to fail during dry run',
+    prepareFixture(FAILING_FIXTURE_URL, 'failing-fixture'),
+  )
+  const run = yield* bddStep(
+    'When',
+    'the CLI is executed in machine mode',
+    Effect.promise(() => fixture.run(['run'])),
+  )
+  const events = parseEventStream(run.stdout)
 
-  await bdd.given('a fixture configured to fail during dry run', async () => {
-    fixture = await prepareFixture(FAILING_FIXTURE_URL, 'failing-fixture')
-  })
-
-  await bdd.when('the CLI is executed in machine mode', async () => {
-    run = await fixture.run(['run'])
-    events = parseEventStream(run.stdout)
-  })
-
-  await bdd.thenAssert('the process exits with runtime error code and emits a structured error document', () => {
-    stepVerifyFailingDryRunExit(expect, run)
-    stepVerifyTypedErrorDocument(expect, events)
-    stepVerifyStreamCleanliness(expect, events)
-  })
+  yield* bddStep('Then', 'the process exits with the failing dry run code', verifyFailingDryRunExit(expect, run))
+  yield* bddStep(
+    'And',
+    'the run emits a structured error document and no verdict',
+    verifyTypedErrorDocument(expect, events),
+  )
+  yield* bddStep('And', 'every machine event is a tagged record', verifyStreamCleanliness(expect, events))
 })

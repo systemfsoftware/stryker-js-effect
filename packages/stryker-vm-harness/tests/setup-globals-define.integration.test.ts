@@ -1,8 +1,7 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
-import { expect } from 'vitest'
 
 import {
   environmentSandboxOf,
@@ -12,7 +11,7 @@ import {
   suiteFileLayer,
 } from './__fixtures__/environment-sandbox.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const provideSuite = <A, E>(
   effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>,
@@ -79,6 +78,7 @@ const DEFINE_PROJECT = sandboxProject({
 
 Feature('Preparing each test file with globals, setup files, and injected constants')
   .withLayer(suiteFileLayer)
+  .live('the sandbox writes real project files and injects constants into the loaded graph')
   .body(({ scenario }) => {
     scenario(
       'A suite that never imports the test api still runs',
@@ -92,14 +92,16 @@ Feature('Preparing each test file with globals, setup files, and injected consta
             )),
         ),
         When('the file runs')('outcome', (s) => Effect.map(s.sandbox.runSuite, outcomeOf)),
-        Then('the file passes without ever importing the test api')((s) => {
-          expect(s.outcome.status).toBe('complete')
-          expect(s.outcome.results).toEqual([{
-            name: 'globals mode > the suite runs without importing the test api',
-            status: 'success',
-            failureMessage: undefined,
-          }])
-        }),
+        Then('the file passes without ever importing the test api')((s, expect) =>
+          expect({ status: s.outcome.status, results: s.outcome.results }).toEqual({
+            status: 'complete',
+            results: [{
+              name: 'globals mode > the suite runs without importing the test api',
+              status: 'success',
+              failureMessage: undefined,
+            }],
+          })
+        ),
       ),
     )
 
@@ -122,18 +124,20 @@ Feature('Preparing each test file with globals, setup files, and injected consta
             )),
         ),
         When('both suites run in order')('outcome', (s) => Effect.map(s.sandbox.runSuite, outcomeOf)),
-        Then('each suite saw the setup hook fire for it alone, in file order')((s) => {
-          expect(s.outcome.status).toBe('complete')
-          expect(s.outcome.results).toEqual([
-            { name: 'the setup left its mark before the first test', status: 'success', failureMessage: undefined },
-            { name: 'the setup hook ran before this test too', status: 'success', failureMessage: undefined },
-            {
-              name: 'a second file sees the setup freshly evaluated for it alone',
-              status: 'success',
-              failureMessage: undefined,
-            },
-          ])
-        }),
+        Then('each suite saw the setup hook fire for it alone, in file order')((s, expect) =>
+          expect({ status: s.outcome.status, results: s.outcome.results }).toEqual({
+            status: 'complete',
+            results: [
+              { name: 'the setup left its mark before the first test', status: 'success', failureMessage: undefined },
+              { name: 'the setup hook ran before this test too', status: 'success', failureMessage: undefined },
+              {
+                name: 'a second file sees the setup freshly evaluated for it alone',
+                status: 'success',
+                failureMessage: undefined,
+              },
+            ],
+          })
+        ),
       ),
     )
 
@@ -151,17 +155,21 @@ Feature('Preparing each test file with globals, setup files, and injected consta
           'outcome',
           (s) => Effect.map(s.sandbox.runSuite.pipe(Effect.ensuring(s.sandbox.dispose)), outcomeOf),
         ),
-        Then('the file saw every injected value and nothing of it remains')((s) => {
-          expect(s.outcome.status).toBe('complete')
-          expect(s.outcome.results).toEqual([{
-            name: 'the project hands the file its injected constants and environment entries',
-            status: 'success',
-            failureMessage: undefined,
-          }])
-          expect(globalString('__APP_VERSION__')).toBeUndefined()
-          expect(globalString('app')).toBeUndefined()
-          expect(globalString('VM_PARITY_ENV')).toBeUndefined()
-        }),
+        Then('the file saw every injected value and nothing of it remains')((s, expect) =>
+          expect({
+            status: s.outcome.status,
+            results: s.outcome.results,
+            cleared: [globalString('__APP_VERSION__'), globalString('app'), globalString('VM_PARITY_ENV')],
+          }).toEqual({
+            status: 'complete',
+            results: [{
+              name: 'the project hands the file its injected constants and environment entries',
+              status: 'success',
+              failureMessage: undefined,
+            }],
+            cleared: [undefined, undefined, undefined],
+          })
+        ),
       ),
     )
   })

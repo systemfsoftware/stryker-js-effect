@@ -30,7 +30,8 @@ import {
   type FixtureValue,
   resolveFixtureValue,
 } from './fixtures.js'
-import { aroundEachHooksFor, controllerOf, hooksFor, isPendingError, planRun } from './registry.handle.js'
+import { hostImmediate, hostNowMillis } from './host-time.js'
+import { aroundEachHooksFor, controllerOf, hooksFor, isPendingError, planRun } from './registry.js'
 import type {
   AroundRegistration,
   HarnessTestContext,
@@ -1265,7 +1266,7 @@ export const executeDrainRegistry: {
         Effect.gen(function*() {
           task.result = {
             state: 'run',
-            startTime: performance.now(),
+            startTime: hostNowMillis(),
             duration: undefined,
             retryCount: retryIndex,
             repeatCount: repeatIndex,
@@ -1467,14 +1468,14 @@ export const executeDrainRegistry: {
             return
           }
           const task = planned.test.task
-          const startedAt = performance.now()
+          const startedAt = hostNowMillis()
           setWorkerCurrentTask(task)
           registry.currentTest = task.context
           const ref: DrainTestRef = { id: testIdOf(planned), name: planned.fullName, file: planned.test.file }
           yield* fireStage(options.beforeTest, ref)
 
           const failure = yield* runAttemptCycle(planned, fileContext)
-          const timeSpentMs = performance.now() - startedAt
+          const timeSpentMs = hostNowMillis() - startedAt
           const status: DrainedStatus = decideTestStatus(testStatusInputOf(failure, timeSpentMs), {
             inverted: planned.test.inverted,
             fullName: planned.fullName,
@@ -1833,7 +1834,7 @@ export const executeDrainRegistry: {
       const completedOutcome = (collected: Record<string, TestOutcome>): Effect.Effect<DrainOutcome> =>
         Effect.map(
           Effect.callback<void>((resume) => {
-            setImmediate(() => resume(Effect.void))
+            hostImmediate(() => resume(Effect.void))
           }),
           () => decideFor(collected),
         )

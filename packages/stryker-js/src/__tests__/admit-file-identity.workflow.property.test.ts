@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
@@ -40,12 +40,12 @@ const driftField = (identity: FormatIdentity, field: (typeof IDENTITY_FIELDS)[nu
 describe('admitFileIdentity', () => {
   it.prop(
     '∀d_Brand_∈FileIdentityDecision',
-    [FormatIdentitySchema, constantFrom(...IDENTITY_FIELDS)],
-    ([identity, field]) => {
-      const matching = admitFileIdentity(
+    { of: [FormatIdentitySchema, constantFrom(...IDENTITY_FIELDS)], subject: admitFileIdentity },
+    (subject, [identity, field]) => {
+      const matching = subject(
         AdmitFileIdentityCommand.make({ file: FILE, recorded: identity, claimed: identity }),
       )
-      const drifted = admitFileIdentity(
+      const drifted = subject(
         AdmitFileIdentityCommand.make({ file: FILE, recorded: identity, claimed: driftField(identity, field) }),
       )
       if (!Result.isSuccess(matching) || !Result.isSuccess(drifted)) {
@@ -58,55 +58,73 @@ describe('admitFileIdentity', () => {
     },
   )
 
-  it.prop('∀ci_Command_∈TwoVariants', [FormatIdentitySchema, constantFrom(0, 1, 2, 3)], ([identity, shape]) => {
-    const command = AdmitFileIdentityCommand.make({
-      file: FILE,
-      recorded: shape === 0 || shape === 1 || shape === 3 ? identity : undefined,
-      claimed: shape === 0 || shape === 2 || shape === 3 ? identity : undefined,
-    })
-    const result = admitFileIdentity(command)
-    if (!Result.isSuccess(result)) {
-      return false
-    }
-    return (
-      S.is(FileIdentityReuse)(result.success) ||
-      S.is(FileIdentityRecompute)(result.success)
-    )
-  })
+  it.prop(
+    '∀ci_Command_∈TwoVariants',
+    { of: [FormatIdentitySchema, constantFrom(0, 1, 2, 3)], subject: admitFileIdentity },
+    (subject, [identity, shape]) => {
+      const command = AdmitFileIdentityCommand.make({
+        file: FILE,
+        recorded: shape === 0 || shape === 1 || shape === 3 ? identity : undefined,
+        claimed: shape === 0 || shape === 2 || shape === 3 ? identity : undefined,
+      })
+      const result = subject(command)
+      if (!Result.isSuccess(result)) {
+        return false
+      }
+      return S.is(FileIdentityReuse)(result.success) || S.is(FileIdentityRecompute)(result.success)
+    },
+  )
 
-  it.prop('∀i_MatchingIdentity_≡Reuse', [FormatIdentitySchema], ([identity]) => {
-    const result = admitFileIdentity(
-      AdmitFileIdentityCommand.make({ file: FILE, recorded: identity, claimed: identity }),
-    )
-    return (
-      Result.isSuccess(result) &&
-      S.is(FileIdentityReuse)(result.success) &&
-      result.success.file === FILE
-    )
-  })
+  it.prop(
+    '∀i_MatchingIdentity_≡Reuse',
+    { of: [FormatIdentitySchema], subject: admitFileIdentity },
+    (subject, [identity]) => {
+      const result = subject(AdmitFileIdentityCommand.make({ file: FILE, recorded: identity, claimed: identity }))
+      return Result.isSuccess(result) && S.is(FileIdentityReuse)(result.success) && result.success.file === FILE
+    },
+  )
 
   it.prop(
     '∀if_AnyFieldDrift_≡Recompute',
-    [FormatIdentitySchema, constantFrom(...IDENTITY_FIELDS)],
-    ([identity, field]) => {
-      const result = admitFileIdentity(
+    { of: [FormatIdentitySchema, constantFrom(...IDENTITY_FIELDS)], subject: admitFileIdentity },
+    (subject, [identity, field]) => {
+      const result = subject(
         AdmitFileIdentityCommand.make({ file: FILE, recorded: identity, claimed: driftField(identity, field) }),
       )
       return Result.isSuccess(result) && S.is(FileIdentityRecompute)(result.success) && result.success.file === FILE
     },
   )
 
-  it.prop('∀i_MissingRecorded_≡Recompute', [FormatIdentitySchema], ([identity]) => {
-    const result = admitFileIdentity(
-      AdmitFileIdentityCommand.make({ file: FILE, recorded: undefined, claimed: identity }),
-    )
-    return Result.isSuccess(result) && S.is(FileIdentityRecompute)(result.success) && result.success.file === FILE
-  })
+  it.prop(
+    '∀i_MissingRecorded_≡Recompute',
+    { of: [FormatIdentitySchema], subject: admitFileIdentity },
+    (subject, [identity]) => {
+      const result = subject(
+        AdmitFileIdentityCommand.make({ file: FILE, recorded: undefined, claimed: identity }),
+      )
+      return Result.isSuccess(result) && S.is(FileIdentityRecompute)(result.success) && result.success.file === FILE
+    },
+  )
 
-  it.prop('∀i_MissingClaim_≡Recompute', [FormatIdentitySchema], ([identity]) => {
-    const result = admitFileIdentity(
-      AdmitFileIdentityCommand.make({ file: FILE, recorded: identity, claimed: undefined }),
-    )
-    return Result.isSuccess(result) && S.is(FileIdentityRecompute)(result.success) && result.success.file === FILE
-  })
+  it.prop(
+    '∀i_MissingClaim_≡Recompute',
+    { of: [FormatIdentitySchema], subject: admitFileIdentity },
+    (subject, [identity]) => {
+      const result = subject(AdmitFileIdentityCommand.make({ file: FILE, recorded: identity, claimed: undefined }))
+      return Result.isSuccess(result) && S.is(FileIdentityRecompute)(result.success) && result.success.file === FILE
+    },
+  )
+
+  it.prop(
+    '∀i_Command_≡ReuseIffIdentitiesAgree',
+    { of: [FormatIdentitySchema, constantFrom(0, 1)], subject: admitFileIdentity },
+    (subject, [identity, drift]) => {
+      const claimed = drift === 0 ? identity : driftField(identity, 'formatId')
+      const result = subject(AdmitFileIdentityCommand.make({ file: FILE, recorded: identity, claimed }))
+      if (!Result.isSuccess(result)) {
+        return false
+      }
+      return S.is(FileIdentityReuse)(result.success) === (drift === 0)
+    },
+  )
 })

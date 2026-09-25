@@ -191,3 +191,75 @@ const actionableMutants = (files: Report.MutationTestResult['files']): ReadonlyA
           status: mutant.status,
         }),
     ))
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Effect = await import('effect/Effect')
+  const Path = await import('effect/Path')
+
+  const pathService = Effect.runSync(Effect.provide(Path.Path, Path.layer))
+  const fixedRunId = RunId.generate(DateTime.makeUnsafe(0)).value
+  const mutantTotalOf = (report: Report.MutationTestResult) =>
+    Object.values(report.files).reduce((total, file) => total + file.mutants.length, 0)
+
+  const scoreIsDefined = (counts: Report.Metrics): boolean =>
+    counts.totalMutants > 0 && Number.isFinite(counts.mutationScore)
+
+  const expectedScoreOf = (counts: Report.Metrics): number | null =>
+    scoreIsDefined(counts) ? counts.mutationScore : null
+
+  const scoreMatchesCounts = (counts: Report.Metrics, score: number | null): boolean =>
+    score === expectedScoreOf(counts)
+
+  it.prop(
+    '∀rms_Score_≡NullIffEmptyOrNonFinite',
+    { of: [Report.MutationTestResultSchema, OutputMode, ModeSignal], subject: VerdictEnvelope.build },
+    (subject, [report, mode, signal]) => {
+      const { counts, score } = subject(report, mode, signal, fixedRunId, '/base', pathService)
+      return scoreMatchesCounts(counts, score)
+    },
+  )
+
+  it.prop(
+    '∀r_Metrics_∈EveryMutantOnce',
+    { of: [Report.MutationTestResultSchema], subject: VerdictEnvelope.build },
+    (subject, [report]) => {
+      const { counts } = subject(report, 'machine', 'flag', fixedRunId, '/base', pathService)
+      return counts.totalMutants === mutantTotalOf(report)
+    },
+  )
+
+  it.prop(
+    '∀r_Mutants_≡ActionableOnly',
+    { of: [Report.MutationTestResultSchema], subject: VerdictEnvelope.build },
+    (subject, [report]) => {
+      const isActionable = isActionableStatus
+      const { mutants } = subject(report, 'machine', 'flag', fixedRunId, '/base', pathService)
+      return mutants.every((mutant) => isActionable(mutant.status)) &&
+        mutants.length === actionableMutants(report.files).length
+    },
+  )
+
+  it.prop(
+    '∀t_RunIdTimePrefix_≡Deterministic',
+    { of: [S.Int.check(S.isBetween({ minimum: 0, maximum: 2 ** 40 }))], subject: RunId.generate },
+    (subject, [millis]) => {
+      const now = DateTime.makeUnsafe(millis)
+      return subject(now).value.slice(0, 9) === subject(now).value.slice(0, 9)
+    },
+  )
+
+  it.prop(
+    '∀bd_RunIdTimePrefix_≤ForLaterEpoch',
+    {
+      of: [
+        S.Int.check(S.isBetween({ minimum: 0, maximum: 2 ** 40 - 2 ** 16 })),
+        S.Int.check(S.isBetween({ minimum: 8, maximum: 2 ** 16 })),
+      ],
+      subject: RunId.generate,
+    },
+    (subject, [base, delta]) =>
+      subject(DateTime.makeUnsafe(base)).value.slice(0, 9) <
+        subject(DateTime.makeUnsafe(base + delta)).value.slice(0, 9),
+  )
+}

@@ -1,10 +1,9 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Assertions } from '@systemfsoftware/stryker-vm-harness'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const isCallable = (value: unknown): value is (() => void) | undefined =>
   value === undefined || typeof value === 'function'
@@ -46,11 +45,11 @@ Feature('Assertion helpers handed to a suite that runs in memory')
             }),
         ),
         When('it applies an ordinary matcher')((s) => Effect.sync(() => handedAnswer(s.suite.handedOut, 'toBe'))),
-        Then('the matcher answers on its own and is the one the suite defined')((s) =>
-          Effect.sync(() => {
-            expect(s.suite.answer()).toBe(42)
-            expect(handsThrough(s.suite.handedOut, 'toBe', s.suite.matchers)).toBe(true)
-          })
+        Then('the matcher answers on its own and is the one the suite defined')((s, expect) =>
+          expect({
+            answer: s.suite.answer(),
+            shared: handsThrough(s.suite.handedOut, 'toBe', s.suite.matchers),
+          }).toEqual({ answer: 42, shared: true })
         ),
       ),
     )
@@ -74,13 +73,13 @@ Feature('Assertion helpers handed to a suite that runs in memory')
               hoisted: memberIsCallable(s.suite.handedOut, 'hoisted'),
             })),
         ),
-        Then('both helpers are callable and are the ones the suite was handed')((s) =>
-          Effect.sync(() => {
-            expect(s.readable.mock).toBe(true)
-            expect(s.readable.hoisted).toBe(true)
-            expect(handsThrough(s.suite.handedOut, 'mock', s.suite.real)).toBe(true)
-            expect(handsThrough(s.suite.handedOut, 'hoisted', s.suite.real)).toBe(true)
-          })
+        Then('both helpers are callable and are the ones the suite was handed')((s, expect) =>
+          expect({
+            mock: s.readable.mock,
+            hoisted: s.readable.hoisted,
+            mockShared: handsThrough(s.suite.handedOut, 'mock', s.suite.real),
+            hoistedShared: handsThrough(s.suite.handedOut, 'hoisted', s.suite.real),
+          }).toEqual({ mock: true, hoisted: true, mockShared: true, hoistedShared: true })
         ),
       ),
     )
@@ -103,11 +102,11 @@ Feature('Assertion helpers handed to a suite that runs in memory')
             }),
         ),
         When('it asks for its mock helper')((s) => Effect.sync(() => handedAnswer(s.suite.handedOut, 'fn'))),
-        Then('the helper receives the call and is the one the suite defined')((s) =>
-          Effect.sync(() => {
-            expect(s.suite.askedFor()).toBe(true)
-            expect(handsThrough(s.suite.handedOut, 'fn', s.suite.helpers)).toBe(true)
-          })
+        Then('the helper receives the call and is the one the suite defined')((s, expect) =>
+          expect({
+            asked: s.suite.askedFor(),
+            shared: handsThrough(s.suite.handedOut, 'fn', s.suite.helpers),
+          }).toEqual({ asked: true, shared: true })
         ),
       ),
     )
@@ -136,13 +135,13 @@ Feature('Assertion helpers handed to a suite that runs in memory')
               first: memberIsCallable(s.suite.first, 'toBe'),
             })),
         ),
-        Then('both carry the matchers of the real assertion')((s) =>
-          Effect.sync(() => {
-            expect(s.readable.last).toBe(true)
-            expect(s.readable.first).toBe(true)
-            expect(handsThrough(s.suite.last, 'toBe', s.suite.real)).toBe(true)
-            expect(handsThrough(s.suite.first, 'toBe', s.suite.real)).toBe(true)
-          })
+        Then('both carry the matchers of the real assertion')((s, expect) =>
+          expect({
+            last: s.readable.last,
+            first: s.readable.first,
+            lastShared: handsThrough(s.suite.last, 'toBe', s.suite.real),
+            firstShared: handsThrough(s.suite.first, 'toBe', s.suite.real),
+          }).toEqual({ last: true, first: true, lastShared: true, firstShared: true })
         ),
       ),
     )

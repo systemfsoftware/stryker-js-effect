@@ -1,4 +1,5 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { RunEvent } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
@@ -9,10 +10,8 @@ import * as S from 'effect/Schema'
 import * as Sink from 'effect/Sink'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
-import { expect } from 'vitest'
-import { RunEvent } from '../src/mod.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const PLAN_KNOWN = RunEvent.PlanKnown.make({ total: 4 })
 const PHASE_ENTERED = RunEvent.PhaseEntered.make({ phase: 'dry-run', elapsedMs: 1 })
@@ -76,13 +75,11 @@ const parseLinesAsEvents = (lines: ReadonlyArray<string>): ReadonlyArray<RunEven
   throw new Error(`Failed to decode JSONL event stream:\n${lines.join('\n')}`)
 }
 
-const expectTags = (lines: ReadonlyArray<string>, expectedTags: ReadonlyArray<string>): void => {
-  const events = parseLinesAsEvents(lines)
-  expect(events.map(tagOf)).toEqual(expectedTags)
-}
-
 Feature('Streaming a run to machine readers')
   .withLayer(Layer.empty)
+  .live(
+    'the stream heartbeat is a real-time Stream.tick at a 10-second interval; a virtual clock would fire it instantly and frame heartbeats the run never emitted',
+  )
   .body(({ scenario }) => {
     scenario(
       'A machine run reports its opening header and sequential lifecycle events ended by newlines',
@@ -101,22 +98,27 @@ Feature('Streaming a run to machine readers')
               return yield* rawLinesOf(s.fixture)
             }),
         ),
-        Then('the consumer receives all framed lines in chronological sequence')((s) => {
-          expectTags(s.lines, ['stream', 'plan', 'phase', 'tick', 'help'])
-        }),
-        Then('every framed line terminates with a newline character')((s) => {
-          expect(s.lines.every((line) => line.endsWith('\n'))).toBe(true)
-        }),
-        Then('the opening event identifies the session with machine mode metadata')((s) => {
+        Then(
+          'the consumer receives all framed lines in chronological sequence, each newline-terminated, opening with machine session metadata',
+        )((s, expect) => {
           const opening = Option.filter(decodedEventAt(s.lines, 0), S.is(RunEvent.RunStarted))
-          expect(Option.isSome(opening)).toBe(true)
-          if (Option.isSome(opening)) {
-            expect(opening.value.mode).toBe('machine')
-            expect(opening.value.signal).toBe('tty')
-            expect(opening.value.schemaVersion).toBe('1.1')
-            expect(typeof opening.value.runId).toBe('string')
-            expect(opening.value.runId.length).toBeGreaterThan(0)
-          }
+          return expect({
+            tags: parseLinesAsEvents(s.lines).map(tagOf),
+            newlineTerminated: s.lines.every((line) => line.endsWith('\n')),
+            opening: Option.match(opening, {
+              onNone: () => null,
+              onSome: (started) => ({
+                mode: started.mode,
+                signal: started.signal,
+                schemaVersion: started.schemaVersion,
+                runIdIsNonEmpty: String(started.runId).length > 0,
+              }),
+            }),
+          }).toEqual({
+            tags: ['stream', 'plan', 'phase', 'tick', 'help'],
+            newlineTerminated: true,
+            opening: { mode: 'machine', signal: 'tty', schemaVersion: '1.1', runIdIsNonEmpty: true },
+          })
         }),
       ),
     )
@@ -137,10 +139,9 @@ Feature('Streaming a run to machine readers')
               return { lines, open }
             }),
         ),
-        Then('the reader receives no lines and the stream is closed')((s) => {
-          expect(s.result.lines).toEqual([])
-          expect(s.result.open).toBe(false)
-        }),
+        Then('the reader receives no lines and the stream is closed')((s, expect) =>
+          expect({ lines: s.result.lines, open: s.result.open }).toEqual({ lines: [], open: false })
+        ),
       ),
     )
 
@@ -160,21 +161,27 @@ Feature('Streaming a run to machine readers')
               return { lines, open }
             }),
         ),
-        Then('the consumer receives only the opening header and the error document')((s) => {
-          expectTags(s.result.lines, ['stream', 'error'])
-        }),
-        Then('the error document carries the failure code, error message, and remediation guidance')((s) => {
+        Then(
+          'the consumer receives only the opening header and the error document, which carries the failure code, error message, and remediation guidance, and the stream is permanently closed',
+        )((s, expect) => {
           const failure = Option.filter(decodedEventAt(s.result.lines, 1), S.is(RunEvent.RunFailed))
-          expect(Option.isSome(failure)).toBe(true)
-          if (Option.isSome(failure)) {
-            expect(failure.value.code).toBe(3)
-            expect(failure.value.error).toBe('x')
-            expect(failure.value.remediation).toBe('y')
-            expect(failure.value.schemaVersion).toBe('1.1')
-          }
-        }),
-        Then('the stream is permanently closed')((s) => {
-          expect(s.result.open).toBe(false)
+          return expect({
+            tags: parseLinesAsEvents(s.result.lines).map(tagOf),
+            failure: Option.match(failure, {
+              onNone: () => null,
+              onSome: (failed) => ({
+                code: failed.code,
+                error: failed.error,
+                remediation: failed.remediation,
+                schemaVersion: failed.schemaVersion,
+              }),
+            }),
+            open: s.result.open,
+          }).toEqual({
+            tags: ['stream', 'error'],
+            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '1.1' },
+            open: false,
+          })
         }),
       ),
     )
@@ -210,10 +217,12 @@ Feature('Streaming a run to machine readers')
               return { lines, messages: s.fixture.messages }
             }).pipe(Effect.provide(s.fixture.logging)),
         ),
-        Then('the stream failure is logged without aborting or crashing the run')((s) => {
-          expect(s.result.messages.join('\n')).toContain('stryker.output.drain_failed')
-          expect(s.result.lines).toEqual([])
-        }),
+        Then('the stream failure is logged without aborting or crashing the run')((s, expect) =>
+          expect({
+            drainFailureLogged: s.result.messages.join('\n').includes('stryker.output.drain_failed'),
+            lines: s.result.lines,
+          }).toEqual({ drainFailureLogged: true, lines: [] })
+        ),
       ),
     )
   })

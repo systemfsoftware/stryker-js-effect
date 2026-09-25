@@ -18,7 +18,7 @@ export default defineConfig({
     server: {
       deps: {
         inline: sharedConfig.test?.server?.deps?.inline ?? [],
-        external: [...(sharedConfig.test?.server?.deps?.external ?? []), /\/src\/native-import\.handle\.ts$/],
+        external: [...(sharedConfig.test?.server?.deps?.external ?? []), /\/src\/native-import\.ts$/],
       },
     },
   },

@@ -1,4 +1,5 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Configuration } from '@systemfsoftware/stryker-js'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Context from 'effect/Context'
@@ -10,10 +11,8 @@ import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
 import { systemError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
-import { expect } from 'vitest'
-import { Configuration } from '../src/mod.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const CONFIG_FIXTURES = `${globalThis.process.cwd()}/tests/__fixtures__/config-file`
 
@@ -148,6 +147,9 @@ const causeTextOf = (failure: ConfigFileReadError): string => {
 
 Feature('Configuring a Stryker run from a module config file')
   .withScenarioLayer(configReadLayer)
+  .live(
+    'the run loads config modules off the real filesystem through the module loader, which the kernel cannot settle',
+  )
   .body(({ scenario, scenarioOutline }) => {
     scenarioOutline(
       'A <format> config file configures the run',
@@ -173,9 +175,7 @@ Feature('Configuring a Stryker run from a module config file')
             'seen',
             (s) => Effect.sync(() => ({ high: optionsOrThrow(s.read).thresholds.high })),
           ),
-          Then('the run takes its settings from that module')((s) => {
-            expect(s.seen.high).toBe(row.high)
-          }),
+          Then('the run takes its settings from that module')((s, expect) => expect(s.seen.high).toEqual(row.high)),
         ),
     )
 
@@ -194,11 +194,15 @@ Feature('Configuring a Stryker run from a module config file')
               warnings: s.read.recorder.warnings,
             })),
         ),
-        Then('the module config is used and the leftover file is reported as ignored')((s) => {
-          expect(s.seen.high).toBe(96)
-          expect(s.seen.warnings).toHaveLength(1)
-          expect(s.seen.warnings[0]).toContain('stryker.conf.json')
-          expect(s.seen.warnings[0]).toContain('stryker.config.ts')
+        Then('the module config is used and the leftover file is reported as ignored')((s, expect) => {
+          const ignoredFileWarned = s.seen.warnings.some(
+            (warning) => warning.includes('stryker.conf.json') && warning.includes('stryker.config.ts'),
+          )
+          return expect({
+            high: s.seen.high,
+            warningCount: s.seen.warnings.length,
+            ignoredFileWarned,
+          }).toEqual({ high: 96, warningCount: 1, ignoredFileWarned: true })
         }),
       ),
     )
@@ -219,16 +223,24 @@ Feature('Configuring a Stryker run from a module config file')
             'seen',
             (s) => Effect.sync(() => ({ failure: failureOrThrow(s.read) })),
           ),
-          Then('the run stops, names the abandoned file, and names the module formats to migrate to')((s) => {
-            expect(s.seen.failure['_tag']).toBe('ConfigFileUnsupportedError')
-            expect(s.seen.failure['exitClass']).toBe('ConfigError')
-            expect(fileOf(s.seen.failure).endsWith(row.file)).toBe(true)
-            expect(hintOf(s.seen.failure)).toContain('JSON or CommonJS')
-            expect(hintOf(s.seen.failure)).toContain('.ts')
-            expect(hintOf(s.seen.failure)).toContain('.mts')
-            expect(hintOf(s.seen.failure)).toContain('.js')
-            expect(hintOf(s.seen.failure)).toContain('.mjs')
-            expect(hintOf(s.seen.failure)).toContain('export default')
+          Then('the run stops, names the abandoned file, and names the module formats to migrate to')((s, expect) => {
+            const failure = s.seen.failure
+            const hint = hintOf(failure)
+            return expect({
+              tag: failure['_tag'],
+              exitClass: failure['exitClass'],
+              namesTheAbandonedFile: fileOf(failure).endsWith(row.file),
+              hintNamesLegacyFormats: hint.includes('JSON or CommonJS'),
+              hintNamesEveryModuleFormat: ['.ts', '.mts', '.js', '.mjs'].every((extension) => hint.includes(extension)),
+              hintNamesModuleDefaultExport: hint.includes('export default'),
+            }).toEqual({
+              tag: 'ConfigFileUnsupportedError',
+              exitClass: 'ConfigError',
+              namesTheAbandonedFile: true,
+              hintNamesLegacyFormats: true,
+              hintNamesEveryModuleFormat: true,
+              hintNamesModuleDefaultExport: true,
+            })
           }),
         ),
     )
@@ -244,11 +256,20 @@ Feature('Configuring a Stryker run from a module config file')
           'seen',
           (s) => Effect.sync(() => ({ failure: failureOrThrow(s.read) })),
         ),
-        Then('the run stops before reading it, naming the file and the module formats to migrate to')((s) => {
-          expect(s.seen.failure['_tag']).toBe('ConfigFileUnsupportedError')
-          expect(fileOf(s.seen.failure).endsWith('stryker.config.json')).toBe(true)
-          expect(hintOf(s.seen.failure)).toContain('JSON or CommonJS')
-          expect(hintOf(s.seen.failure)).toContain('export default')
+        Then('the run stops before reading it, naming the file and the module formats to migrate to')((s, expect) => {
+          const failure = s.seen.failure
+          const hint = hintOf(failure)
+          return expect({
+            tag: failure['_tag'],
+            namesTheLegacyFile: fileOf(failure).endsWith('stryker.config.json'),
+            hintNamesLegacyFormats: hint.includes('JSON or CommonJS'),
+            hintNamesModuleDefaultExport: hint.includes('export default'),
+          }).toEqual({
+            tag: 'ConfigFileUnsupportedError',
+            namesTheLegacyFile: true,
+            hintNamesLegacyFormats: true,
+            hintNamesModuleDefaultExport: true,
+          })
         }),
       ),
     )
@@ -269,14 +290,20 @@ Feature('Configuring a Stryker run from a module config file')
             'seen',
             (s) => Effect.sync(() => ({ failure: failureOrThrow(s.read) })),
           ),
-          Then('the run stops with the formats that work, not with the migration text')((s) => {
-            expect(s.seen.failure['_tag']).toBe('ConfigFileUnsupportedError')
-            expect(fileOf(s.seen.failure).endsWith(row.file)).toBe(true)
-            expect(hintOf(s.seen.failure)).toContain('.ts')
-            expect(hintOf(s.seen.failure)).toContain('.mts')
-            expect(hintOf(s.seen.failure)).toContain('.js')
-            expect(hintOf(s.seen.failure)).toContain('.mjs')
-            expect(hintOf(s.seen.failure)).not.toContain('JSON or CommonJS')
+          Then('the run stops with the formats that work, not with the migration text')((s, expect) => {
+            const failure = s.seen.failure
+            const hint = hintOf(failure)
+            return expect({
+              tag: failure['_tag'],
+              namesTheUnreadableFile: fileOf(failure).endsWith(row.file),
+              hintNamesEveryModuleFormat: ['.ts', '.mts', '.js', '.mjs'].every((extension) => hint.includes(extension)),
+              hintNamesLegacyFormats: hint.includes('JSON or CommonJS'),
+            }).toEqual({
+              tag: 'ConfigFileUnsupportedError',
+              namesTheUnreadableFile: true,
+              hintNamesEveryModuleFormat: true,
+              hintNamesLegacyFormats: false,
+            })
           }),
         ),
     )
@@ -292,11 +319,20 @@ Feature('Configuring a Stryker run from a module config file')
           'seen',
           (s) => Effect.sync(() => ({ failure: failureOrThrow(s.read) })),
         ),
-        Then('the run stops, names the inherited file, and names the module formats to migrate to')((s) => {
-          expect(s.seen.failure['_tag']).toBe('ConfigFileUnsupportedError')
-          expect(fileOf(s.seen.failure).endsWith('base.json')).toBe(true)
-          expect(hintOf(s.seen.failure)).toContain('extends')
-          expect(hintOf(s.seen.failure)).toContain('.mjs')
+        Then('the run stops, names the inherited file, and names the module formats to migrate to')((s, expect) => {
+          const failure = s.seen.failure
+          const hint = hintOf(failure)
+          return expect({
+            tag: failure['_tag'],
+            namesTheInheritedFile: fileOf(failure).endsWith('base.json'),
+            hintNamesExtends: hint.includes('extends'),
+            hintNamesMjs: hint.includes('.mjs'),
+          }).toEqual({
+            tag: 'ConfigFileUnsupportedError',
+            namesTheInheritedFile: true,
+            hintNamesExtends: true,
+            hintNamesMjs: true,
+          })
         }),
       ),
     )
@@ -316,9 +352,9 @@ Feature('Configuring a Stryker run from a module config file')
               return { high: thresholds.high, low: thresholds.low, break: thresholds.break }
             }),
         ),
-        Then('the inherited settings fill in below the settings of the inheriting file')((s) => {
-          expect(s.seen).toStrictEqual({ high: 71, low: 41, break: 31 })
-        }),
+        Then('the inherited settings fill in below the settings of the inheriting file')((s, expect) =>
+          expect(s.seen).toEqual({ high: 71, low: 41, break: 31 })
+        ),
       ),
     )
 
@@ -333,9 +369,9 @@ Feature('Configuring a Stryker run from a module config file')
           'seen',
           (s) => Effect.sync(() => ({ plugins: optionsOrThrow(s.read).plugins })),
         ),
-        Then('the run uses the inherited plugins followed by the ones the file names itself')((s) => {
-          expect(s.seen.plugins).toStrictEqual(['file:///acme/inherited/index.mjs', 'file:///acme/explicit/index.mjs'])
-        }),
+        Then('the run uses the inherited plugins followed by the ones the file names itself')((s, expect) =>
+          expect(s.seen.plugins).toEqual(['file:///acme/inherited/index.mjs', 'file:///acme/explicit/index.mjs'])
+        ),
       ),
     )
 
@@ -350,10 +386,13 @@ Feature('Configuring a Stryker run from a module config file')
           'seen',
           (s) => Effect.sync(() => ({ failure: failureOrThrow(s.read) })),
         ),
-        Then('the run stops, naming the package it could not find')((s) => {
-          expect(s.seen.failure['_tag']).toBe('ConfigFileUnreadableError')
-          expect(fileOf(s.seen.failure)).toBe(MISSING_PACKAGE)
-          expect(causeTextOf(s.seen.failure)).toContain(MISSING_PACKAGE)
+        Then('the run stops, naming the package it could not find')((s, expect) => {
+          const failure = s.seen.failure
+          return expect({
+            tag: failure['_tag'],
+            namesThePackage: fileOf(failure),
+            causeNamesThePackage: causeTextOf(failure).includes(MISSING_PACKAGE),
+          }).toEqual({ tag: 'ConfigFileUnreadableError', namesThePackage: MISSING_PACKAGE, causeNamesThePackage: true })
         }),
       ),
     )
@@ -369,10 +408,17 @@ Feature('Configuring a Stryker run from a module config file')
           'seen',
           (s) => Effect.sync(() => ({ failure: failureOrThrow(s.read) })),
         ),
-        Then('the run stops, naming the config file it could not load')((s) => {
-          expect(s.seen.failure['_tag']).toBe('ConfigFileUnreadableError')
-          expect(fileOf(s.seen.failure).endsWith('stryker.config.ts')).toBe(true)
-          expect(causeTextOf(s.seen.failure)).toContain('stryker.config.ts')
+        Then('the run stops, naming the config file it could not load')((s, expect) => {
+          const failure = s.seen.failure
+          return expect({
+            tag: failure['_tag'],
+            namesTheConfigFile: fileOf(failure).endsWith('stryker.config.ts'),
+            causeNamesTheConfigFile: causeTextOf(failure).includes('stryker.config.ts'),
+          }).toEqual({
+            tag: 'ConfigFileUnreadableError',
+            namesTheConfigFile: true,
+            causeNamesTheConfigFile: true,
+          })
         }),
       ),
     )
@@ -388,10 +434,17 @@ Feature('Configuring a Stryker run from a module config file')
           'seen',
           (s) => Effect.sync(() => ({ failure: failureOrThrow(s.read) })),
         ),
-        Then('the run reports an invalid configuration')((s) => {
-          expect(s.seen.failure['_tag']).toBe('ConfigFileInvalidError')
-          expect(fileOf(s.seen.failure).endsWith('stryker.config.ts')).toBe(true)
-          expect(causeTextOf(s.seen.failure).toLowerCase()).toContain('default export')
+        Then('the run reports an invalid configuration')((s, expect) => {
+          const failure = s.seen.failure
+          return expect({
+            tag: failure['_tag'],
+            namesTheConfigFile: fileOf(failure).endsWith('stryker.config.ts'),
+            causeNamesTheDefaultExport: causeTextOf(failure).toLowerCase().includes('default export'),
+          }).toEqual({
+            tag: 'ConfigFileInvalidError',
+            namesTheConfigFile: true,
+            causeNamesTheDefaultExport: true,
+          })
         }),
       ),
     )
@@ -407,9 +460,12 @@ Feature('Configuring a Stryker run from a module config file')
           'seen',
           (s) => Effect.sync(() => ({ failure: failureOrThrow(s.read) })),
         ),
-        Then('the run reports the file as not found')((s) => {
-          expect(s.seen.failure['_tag']).toBe('ConfigFileNotFoundError')
-          expect(fileOf(s.seen.failure).endsWith('stryker.config.missing.ts')).toBe(true)
+        Then('the run reports the file as not found')((s, expect) => {
+          const failure = s.seen.failure
+          return expect({
+            tag: failure['_tag'],
+            namesTheMissingFile: fileOf(failure).endsWith('stryker.config.missing.ts'),
+          }).toEqual({ tag: 'ConfigFileNotFoundError', namesTheMissingFile: true })
         }),
       ),
     )
@@ -425,9 +481,7 @@ Feature('Configuring a Stryker run from a module config file')
           'seen',
           (s) => Effect.sync(() => ({ high: optionsOrThrow(s.read).thresholds.high })),
         ),
-        Then('every setting keeps its default value')((s) => {
-          expect(s.seen.high).toBe(80)
-        }),
+        Then('every setting keeps its default value')((s, expect) => expect(s.seen.high).toEqual(80)),
       ),
     )
 
@@ -442,9 +496,9 @@ Feature('Configuring a Stryker run from a module config file')
           'seen',
           (s) => Effect.sync(() => ({ mutations: optionsOrThrow(s.read).mutator })),
         ),
-        Then('nothing is excluded from mutation and nothing extra is opted into')((s) => {
-          expect(s.seen.mutations).toStrictEqual({ excludedMutations: [], optInMutations: [] })
-        }),
+        Then('nothing is excluded from mutation and nothing extra is opted into')((s, expect) =>
+          expect(s.seen.mutations).toEqual({ excludedMutations: [], optInMutations: [] })
+        ),
       ),
     )
 
@@ -459,9 +513,9 @@ Feature('Configuring a Stryker run from a module config file')
           'seen',
           (s) => Effect.sync(() => ({ optedInto: optionsOrThrow(s.read).mutator.optInMutations })),
         ),
-        Then('the run opts into exactly the names the file listed, in order')((s) => {
-          expect(s.seen.optedInto).toStrictEqual(['FinalizerEscape'])
-        }),
+        Then('the run opts into exactly the names the file listed, in order')((s, expect) =>
+          expect(s.seen.optedInto).toEqual(['FinalizerEscape'])
+        ),
       ),
     )
 
@@ -484,10 +538,9 @@ Feature('Configuring a Stryker run from a module config file')
               return { high: options.thresholds.high, low: options.thresholds.low }
             }),
         ),
-        Then('the run uses the settings that module derived for this invocation')((s) => {
-          expect(s.seen.high).toBe(97)
-          expect(s.seen.low).toBe(10)
-        }),
+        Then('the run uses the settings that module derived for this invocation')((s, expect) =>
+          expect(s.seen).toEqual({ high: 97, low: 10 })
+        ),
       ),
     )
 
@@ -502,9 +555,7 @@ Feature('Configuring a Stryker run from a module config file')
           'seen',
           (s) => Effect.sync(() => ({ high: optionsOrThrow(s.read).thresholds.high })),
         ),
-        Then('the run uses the settings that module supplied')((s) => {
-          expect(s.seen.high).toBe(95)
-        }),
+        Then('the run uses the settings that module supplied')((s, expect) => expect(s.seen.high).toEqual(95)),
       ),
     )
   })

@@ -1,8 +1,7 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
-import { expect } from 'vitest'
 
 import {
   outcomeOf,
@@ -11,7 +10,7 @@ import {
   symlinkedEnvironmentSandboxOf,
 } from './__fixtures__/environment-sandbox.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const provideSuite = <A, E>(
   effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>,
@@ -34,6 +33,7 @@ const linkedFile = {
 
 Feature('Running a test suite from a project directory reached through a link')
   .withLayer(suiteFileLayer)
+  .live('the sandbox project directory is a real symlink resolved from the filesystem')
   .body(({ scenario }) => {
     scenario(
       'A file in a project reached through a linked directory loads and passes',
@@ -43,21 +43,23 @@ Feature('Running a test suite from a project directory reached through a link')
           () => provideSuite(symlinkedEnvironmentSandboxOf([linkedFile], () => sandboxProject({}))),
         ),
         When('the file runs')('outcome', (s) => Effect.map(s.sandbox.runSuite, outcomeOf)),
-        Then('the file passes with both of its tests collected')((s) => {
-          expect(s.outcome.status).toBe('complete')
-          expect(s.outcome.results).toEqual([
-            {
-              name: 'a test file reached through the link loads and runs',
-              status: 'success',
-              failureMessage: undefined,
-            },
-            {
-              name: 'a second test in the same file runs too',
-              status: 'success',
-              failureMessage: undefined,
-            },
-          ])
-        }),
+        Then('the file passes with both of its tests collected')((s, expect) =>
+          expect({ status: s.outcome.status, results: s.outcome.results }).toEqual({
+            status: 'complete',
+            results: [
+              {
+                name: 'a test file reached through the link loads and runs',
+                status: 'success',
+                failureMessage: undefined,
+              },
+              {
+                name: 'a second test in the same file runs too',
+                status: 'success',
+                failureMessage: undefined,
+              },
+            ],
+          })
+        ),
       ),
     )
   })

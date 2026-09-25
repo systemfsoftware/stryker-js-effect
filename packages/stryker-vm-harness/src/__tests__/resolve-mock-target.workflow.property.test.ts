@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -22,49 +22,62 @@ const commandFrom = (
   redirectPath?: string,
 ): MockTargetCommand => MockTargetCommand.make({ ...fields, kind, redirectPath })
 
-const decisionOf = (command: MockTargetCommand): MockTargetDecision | undefined => {
-  const decided = resolveMockTarget(command)
+const decisionOf = (
+  resolve: typeof resolveMockTarget,
+  command: MockTargetCommand,
+): MockTargetDecision | undefined => {
+  const decided = resolve(command)
   return Result.isSuccess(decided) ? decided.success : undefined
 }
 
 describe('resolveMockTarget property tests', () => {
-  it.prop('∀f_Manual_≡Synthetic', [BaseCommandFieldsSchema], ([fields]) => {
-    const decision = decisionOf(commandFrom(fields, 'manual'))
-    return S.is(MockTargetSynthetic)(decision)
-  })
+  it.prop(
+    '∀f_Manual_≡Synthetic',
+    { of: [BaseCommandFieldsSchema], subject: resolveMockTarget },
+    (resolve, [fields]) => S.is(MockTargetSynthetic)(decisionOf(resolve, commandFrom(fields, 'manual'))),
+  )
 
-  it.prop('∀f_Redirect_≡MockFileWins', [RedirectedCommandFieldsSchema], ([fields]) => {
-    const automocked = decisionOf(commandFrom(fields, 'automock', fields.redirectPath))
-    const autospied = decisionOf(commandFrom(fields, 'autospy', fields.redirectPath))
-    return S.is(MockTargetRedirected)(automocked) &&
-      automocked.redirectPath === fields.redirectPath &&
-      S.is(MockTargetRedirected)(autospied) &&
-      autospied.redirectPath === fields.redirectPath
-  })
+  it.prop(
+    '∀f_Redirect_≡MockFileWins',
+    { of: [RedirectedCommandFieldsSchema], subject: resolveMockTarget },
+    (resolve, [fields]) => {
+      const automocked = decisionOf(resolve, commandFrom(fields, 'automock', fields.redirectPath))
+      const autospied = decisionOf(resolve, commandFrom(fields, 'autospy', fields.redirectPath))
+      return S.is(MockTargetRedirected)(automocked) &&
+        automocked.redirectPath === fields.redirectPath &&
+        S.is(MockTargetRedirected)(autospied) &&
+        autospied.redirectPath === fields.redirectPath
+    },
+  )
 
-  it.prop('∀f_Automock_≡WithoutMockFile', [BaseCommandFieldsSchema], ([fields]) => {
-    const automocked = decisionOf(commandFrom(fields, 'automock'))
-    const autospied = decisionOf(commandFrom(fields, 'autospy'))
-    return S.is(MockTargetAutomocked)(automocked) &&
-      automocked.kind === 'automock' &&
-      S.is(MockTargetAutomocked)(autospied) &&
-      autospied.kind === 'autospy'
-  })
+  it.prop(
+    '∀f_Automock_≡WithoutMockFile',
+    { of: [BaseCommandFieldsSchema], subject: resolveMockTarget },
+    (resolve, [fields]) => {
+      const automocked = decisionOf(resolve, commandFrom(fields, 'automock'))
+      const autospied = decisionOf(resolve, commandFrom(fields, 'autospy'))
+      return S.is(MockTargetAutomocked)(automocked) &&
+        automocked.kind === 'automock' &&
+        S.is(MockTargetAutomocked)(autospied) &&
+        autospied.kind === 'autospy'
+    },
+  )
 
-  it.prop('∀f_Decision_∈VariantFamily', [BaseCommandFieldsSchema, RedirectedCommandFieldsSchema], ([
-    bare,
-    redirected,
-  ]) => {
-    const decisions = [
-      decisionOf(commandFrom(bare, 'manual')),
-      decisionOf(commandFrom(bare, 'automock')),
-      decisionOf(commandFrom(redirected, 'automock', redirected.redirectPath)),
-    ]
-    return decisions.every(
-      (decision) =>
-        S.is(MockTargetSynthetic)(decision) ||
-        S.is(MockTargetRedirected)(decision) ||
-        S.is(MockTargetAutomocked)(decision),
-    )
-  })
+  it.prop(
+    '∀f_Decision_∈VariantFamily',
+    { of: [BaseCommandFieldsSchema, RedirectedCommandFieldsSchema], subject: resolveMockTarget },
+    (resolve, [bare, redirected]) => {
+      const decisions = [
+        decisionOf(resolve, commandFrom(bare, 'manual')),
+        decisionOf(resolve, commandFrom(bare, 'automock')),
+        decisionOf(resolve, commandFrom(redirected, 'automock', redirected.redirectPath)),
+      ]
+      return decisions.every(
+        (decision) =>
+          S.is(MockTargetSynthetic)(decision) ||
+          S.is(MockTargetRedirected)(decision) ||
+          S.is(MockTargetAutomocked)(decision),
+      )
+    },
+  )
 })

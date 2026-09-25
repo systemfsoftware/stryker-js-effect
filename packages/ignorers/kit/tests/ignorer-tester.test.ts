@@ -1,6 +1,6 @@
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { type IgnorerCases, testIgnorer } from '@systemfsoftware/stryker-ignorer-kit/tester'
-import { assert, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 type TextLiteral = Extract<Node, { readonly type: 'Literal' }> & { readonly value: string }
 
@@ -208,7 +208,9 @@ describe('testIgnorer without runner globals', () => {
         ignored: [{ name: 'ancestors', code: 'if (a) { foo("x") }', ignores: [{ text: '"x"', reason: 'R' }] }],
       })).resolves.toBeUndefined()
     })
-    assert(captured !== undefined, 'recorder never consulted')
+    if (captured === undefined) {
+      throw new Error('recorder never consulted')
+    }
     expect(captured.map((one) => one.type)).toEqual([
       'CallExpression',
       'ExpressionStatement',
@@ -242,7 +244,9 @@ describe('testIgnorer registration', () => {
     })
     expect(suite).toBe('strings-ignored')
     expect(titles).toEqual(['sibling stays green', 'sabotage goes red'])
-    assert(greenFn !== undefined && redFn !== undefined, 'registration missing')
+    if (greenFn === undefined || redFn === undefined) {
+      throw new Error('registration missing')
+    }
     await expect(greenFn()).resolves.toBeUndefined()
     await expect(redFn()).rejects.toThrow(/was not ignored/)
   })

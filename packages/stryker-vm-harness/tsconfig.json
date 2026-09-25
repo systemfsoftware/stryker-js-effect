@@ -4,7 +4,7 @@
     "customConditions": ["@systemfsoftware/source"],
     "outDir": "dist",
     "rootDir": ".",
-    "types": ["node"]
+    "types": ["node", "vitest/importMeta"]
   },
   "include": ["src", "tests"],
   "exclude": ["node_modules", "dist"]

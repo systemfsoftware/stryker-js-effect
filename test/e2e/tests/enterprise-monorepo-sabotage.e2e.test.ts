@@ -1,7 +1,8 @@
 import { RunEvent } from '@systemfsoftware/stryker-js'
+import { it } from '@systemfsoftware/vitest'
+import { Effect } from 'effect'
 import * as S from 'effect/Schema'
-import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
+import { bddStep, prepareFixture } from './__fixtures__/microvm-harness.js'
 
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 
@@ -20,29 +21,37 @@ const lastEvent = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.RunEvent 
   return event
 }
 
-test(
+it.live(
   'sabotage verification: failing the break threshold on survived mutants causes non-zero process exit',
-  { timeout: 900_000 },
-  async ({ bdd, expect, prepareFixture }) => {
-    let fixture: PreparedFixture
-    let run: ExecResult
-    let events: ReadonlyArray<RunEvent.RunEvent>
+  function*({ expect }) {
+    const fixture = yield* bddStep(
+      'Given',
+      'a packaged enterprise workspace in the container',
+      prepareFixture(ENTERPRISE_FIXTURE_URL, 'enterprise-monorepo-fixture'),
+    )
+    const run = yield* bddStep(
+      'When',
+      'the CLI executes with an active break threshold on an imperfect suite',
+      Effect.promise(() => fixture.run(['run', 'stryker.sabotage.config.ts'])),
+    )
+    const events = parseEventStream(run.stdout)
+    const terminal = lastEvent(events)
 
-    await bdd.given('a packaged enterprise workspace in the container', async () => {
-      fixture = await prepareFixture(ENTERPRISE_FIXTURE_URL, 'enterprise-monorepo-fixture')
-    })
-
-    await bdd.when('the CLI executes with an active break threshold on an imperfect suite', async () => {
-      run = await fixture.run(['run', 'stryker.sabotage.config.ts'])
-      events = parseEventStream(run.stdout)
-    })
-
-    await bdd.thenAssert('the CLI detects the surviving mutant, breaches the threshold, and exits non-zero', () => {
-      const terminal = lastEvent(events)
-      expect.soft(run.exitCode).toBe(1)
-      expect.soft(terminal._tag).toBe('verdict')
-      expect.soft(terminal._tag === 'verdict' ? terminal.counts.survived : -1).toBeGreaterThan(0)
-      expect.soft(terminal._tag === 'verdict' ? terminal.thresholds.break : null).toBe(100)
-    })
+    yield* bddStep(
+      'Then',
+      'the CLI detects the surviving mutant, breaches the threshold, and exits non-zero',
+      expect({
+        exitCode: run.exitCode,
+        terminalTag: terminal._tag,
+        survivedIsPositive: terminal._tag === 'verdict' ? terminal.counts.survived > 0 : false,
+        breakThreshold: terminal._tag === 'verdict' ? terminal.thresholds.break : null,
+      }).toStrictEqual({
+        exitCode: 1,
+        terminalTag: 'verdict',
+        survivedIsPositive: true,
+        breakThreshold: 100,
+      }),
+    )
   },
+  { timeout: 900_000 },
 )

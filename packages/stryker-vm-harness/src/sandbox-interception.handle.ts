@@ -1,4 +1,4 @@
-import { Cell } from '@systemfsoftware/effect-cell-types'
+import { Cell, Handle } from '@systemfsoftware/effect-cell-types'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
@@ -7,7 +7,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as Semaphore from 'effect/Semaphore'
 
-import { harnessSourceFor, harnessUrlForSpecifier } from './harness-sources.handle.js'
+import { harnessSourceFor, harnessUrlForSpecifier } from './harness-sources.js'
 import type {
   ActivateSandboxCommand,
   HarnessModuleBuiltin,
@@ -41,6 +41,9 @@ const SCOPED_PACKAGE_PREFIX = '@'
 
 const SERVED_SPECIFIERS: ReadonlyArray<string> = ['vitest', '@effect/vitest', '@systemfsoftware/effect-gherkin-spec']
 
+export const TypeId = Symbol.for('~systemfsoftware/stryker-vm-harness/SandboxInterception')
+export type TypeId = typeof TypeId
+
 interface ActiveSandbox {
   readonly prefix: string
 }
@@ -52,15 +55,23 @@ interface InterceptionState {
   hooks: { readonly deregister: () => void } | undefined
 }
 
-const interceptionState: InterceptionState = {
+const Interception = Handle.make<Record<string, never>, InterceptionState>()(TypeId)
+
+export type Interception = Handle.Of<typeof Interception>
+
+export const isSandboxInterception = Interception.is
+
+const interception = Interception.make({}, {
   activeSandboxes: [],
   runtime: undefined,
   installed: false,
   hooks: undefined,
-}
+})
+
+const interceptionStateOf = (): InterceptionState => Interception.slot(interception)
 
 const activeSandbox = (): ActiveSandbox | undefined =>
-  interceptionState.activeSandboxes[interceptionState.activeSandboxes.length - 1]
+  interceptionStateOf().activeSandboxes[interceptionStateOf().activeSandboxes.length - 1]
 
 const parentUrlOf = (context: { readonly parentURL?: string | undefined }): string =>
   Option.getOrElse(Option.fromNullishOr(context.parentURL), () => '')
@@ -134,7 +145,7 @@ interface ProjectForBag {
 }
 
 const projectBag = (): ProjectForBag | undefined =>
-  interceptionState.runtime?.host.state.read<ProjectForBag>(VM_VITEST_BAG_KEY)
+  interceptionStateOf().runtime?.host.state.read<ProjectForBag>(VM_VITEST_BAG_KEY)
 
 const rootFromProject = (projectFor: ProjectForBag['projectFor'], parent: string): string | undefined =>
   Result.match(
@@ -289,7 +300,7 @@ const resolveThroughPlugins = (
   context: ResolveHookContext,
   nativeResolve: VmResolveTerminal,
 ): ResolveFnOutput => {
-  const runtime = interceptionState.runtime
+  const runtime = interceptionStateOf().runtime
   return runtime === undefined
     ? nativeResolve(specifier, context)
     : runResolveStage(runtime.plugins, runtime.host, specifier, context, nativeResolve)
@@ -304,7 +315,7 @@ const hostResolvedOutput = (
   nextResolve: VmResolveTerminal,
   sandbox: ActiveSandbox,
 ): ResolveFnOutput =>
-  Match.value(interceptionState.runtime?.host).pipe(
+  Match.value(interceptionStateOf().runtime?.host).pipe(
     Match.when(Match.undefined, () => {
       throw cause
     }),
@@ -461,7 +472,7 @@ const loadThroughPlugins = (
   context: LoadHookContext,
   nextLoad: VmLoadTerminal,
 ): LoadFnOutput =>
-  Match.value(interceptionState.runtime).pipe(
+  Match.value(interceptionStateOf().runtime).pipe(
     Match.when(Match.undefined, () => nextLoad(url, context)),
     Match.orElse((runtime) =>
       runLoadStage(runtime.plugins, runtime.host, url, context, saltedLoadTerminalOf(nextLoad))
@@ -479,20 +490,20 @@ const sandboxGate = Semaphore.makeUnsafe(1)
 const installInterceptionCell: Cell.Cell<InstallInterceptionCommand, void> = Cell.mapInput(
   Cell.fromEffect(Effect.void),
   (command: InstallInterceptionCommand) => {
-    if (!interceptionState.installed) {
-      interceptionState.hooks = command.nodeModule.registerHooks({ resolve: resolveWithin, load: loadWithin })
-      interceptionState.installed = true
+    if (!interceptionStateOf().installed) {
+      interceptionStateOf().hooks = command.nodeModule.registerHooks({ resolve: resolveWithin, load: loadWithin })
+      interceptionStateOf().installed = true
     }
-    interceptionState.runtime = command.runtime
+    interceptionStateOf().runtime = command.runtime
     return undefined
   },
 )
 
 const uninstallInterceptionCell: Cell.Cell<void, void> = Cell.fromEffect(
   Effect.sync(() => {
-    interceptionState.hooks?.deregister()
-    interceptionState.hooks = undefined
-    interceptionState.installed = false
+    interceptionStateOf().hooks?.deregister()
+    interceptionStateOf().hooks = undefined
+    interceptionStateOf().installed = false
   }),
 )
 
@@ -501,7 +512,7 @@ const activateSandboxCell: Cell.Cell<ActivateSandboxCommand, void> = Cell.mapInp
   (command: ActivateSandboxCommand) => {
     Effect.runSync(
       Effect.sync(() => {
-        interceptionState.activeSandboxes.push({ prefix: command.prefix })
+        interceptionStateOf().activeSandboxes.push({ prefix: command.prefix })
       }).pipe(sandboxGate.withPermits(1)),
     )
     return undefined
@@ -510,7 +521,7 @@ const activateSandboxCell: Cell.Cell<ActivateSandboxCommand, void> = Cell.mapInp
 
 const deactivateSandboxCell: Cell.Cell<void, void> = Cell.fromEffect(
   Effect.sync(() => {
-    interceptionState.activeSandboxes.pop()
+    interceptionStateOf().activeSandboxes.pop()
   }),
 )
 
@@ -523,7 +534,7 @@ export const installInterception = dual<
 
 export const uninstallInterception = (): void => {
   Effect.runSync(uninstallInterceptionCell.run(undefined))
-  interceptionState.runtime = undefined
+  interceptionStateOf().runtime = undefined
 }
 
 export const activateSandbox = (prefix: string): void => {

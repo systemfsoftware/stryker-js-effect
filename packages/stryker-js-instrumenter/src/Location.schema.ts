@@ -1,7 +1,6 @@
 /// <reference types="vitest/importMeta" />
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
-import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
@@ -114,7 +113,7 @@ const positionOf = (lineStarts: Arr.NonEmptyReadonlyArray<number>, offset: numbe
 }
 
 if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
+  const { it } = await import('@systemfsoftware/vitest')
   const { Schema } = await import('effect')
   const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
 
@@ -125,97 +124,69 @@ if (import.meta.vitest !== void 0) {
     (fragments) => fragments.join(''),
   )
 
-  const offsetIn = (text: string) =>
-    Arbitrary.map(
-      Arbitrary.schema(Schema.Int),
-      (draw) => ((draw % (text.length + 1)) + text.length + 1) % (text.length + 1),
-    )
+  const offsetWithin = (text: string, draw: number): number =>
+    ((draw % (text.length + 1)) + text.length + 1) % (text.length + 1)
 
   const textWithOffset = Arbitrary.flatMap(
     textArbitrary,
-    (text) => Arbitrary.map(offsetIn(text), (offset) => ({ text, offset })),
+    (text) => Arbitrary.map(Arbitrary.schema(Schema.Int), (draw) => ({ text, offset: offsetWithin(text, draw) })),
   )
+
+  const terminatorEndsOf = (
+    text: string,
+  ): ReadonlyArray<number> => [0, ...[...text.matchAll(LINE_TERMINATOR)].map((match) => endOfMatch(match))]
 
   const comparePositions = (a: Position, b: Position): number => {
     const lineDelta = a.line - b.line
-    return Boolean.match(lineDelta !== 0, {
-      onTrue: () => lineDelta,
-      onFalse: () => a.column - b.column,
-    })
+    return lineDelta !== 0 ? lineDelta : a.column - b.column
   }
-  const positionStartsItsLine = (table: LineTable, position: Position, offset: number): boolean =>
-    Arr.get(table.lineStarts, position.line - 1).pipe(
-      Option.exists((start) => start + position.column - 1 === offset),
-    )
 
-  const terminatorEndsAtOrBefore = (text: string, offset: number): number =>
-    [...text.matchAll(LINE_TERMINATOR)].filter((match) => endOfMatch(match) <= offset).length
-
-  const conservedAt = (text: string, offset: number) =>
-    Effect.map(
-      S.decodeEffect(LineTableFromText)(text),
-      (table) => {
-        const position = table.positionAt(offset)
-        return [
-          positionStartsItsLine(table, position, offset),
-          position.column >= 1,
-          position.line - 1 === terminatorEndsAtOrBefore(text, offset),
-        ].every((condition) => condition)
-      },
-    )
-
-  it.effect.prop(
-    '∀to_Offset→Position≡Model∧ConservesOffset',
-    [textWithOffset],
-    ([{ text, offset }]) => conservedAt(text, offset).pipe(Effect.orDie),
+  it.prop(
+    '∀text_LineStarts_=TerminatorEnds',
+    { of: [textArbitrary], subject: lineStartsOf },
+    (subject, [text]) => subject(text).lineStarts.join(',') === terminatorEndsOf(text).join(','),
   )
 
-  const crlfCountsOneLine = (fragments: ReadonlyArray<string>) =>
-    Effect.gen(function*() {
+  it.prop(
+    '∀text_CrlfLines_=UnixLines',
+    { of: [Arbitrary.array(Arbitrary.schema(FRAGMENTS))], subject: lineStartsOf },
+    (subject, [fragments]) => {
       const text = fragments.join('')
-      const table = yield* S.decodeEffect(LineTableFromText)(text)
-      const sameLengthUnixEndings = yield* S.decodeEffect(LineTableFromText)(text.replaceAll('\r\n', ' \n'))
-      return table.lineStarts.join(',') === sameLengthUnixEndings.lineStarts.join(',')
-    })
-
-  it.effect.prop(
-    '∀t_CRLF_CountsOneLine',
-    [Arbitrary.array(Arbitrary.schema(FRAGMENTS))],
-    ([fragments]) => crlfCountsOneLine(fragments).pipe(Effect.orDie),
+      return subject(text).lineStarts.join(',') === subject(text.replaceAll('\r\n', ' \n')).lineStarts.join(',')
+    },
   )
 
-  const lineStartsRiseFromZero = (text: string) =>
-    Effect.map(
-      S.decodeEffect(LineTableFromText)(text),
-      (table) =>
-        Option.getOrElse(Arr.head(table.lineStarts), () => -1) === 0 &&
-        table.lineStarts.every((start, index) => index === 0 || start > positionLineStartAt(table, index - 1)),
-    )
-  const positionLineStartAt = (table: LineTable, index: number): number =>
-    Option.getOrElse(Arr.get(table.lineStarts, index), () => 0)
-
-  it.effect.prop(
-    '∀t_LineStarts_StrictlyRisingFromZero',
-    [textArbitrary],
-    ([text]) => lineStartsRiseFromZero(text).pipe(Effect.orDie),
-  )
-
-  const locationStartsBeforeItEnds = (text: string, offset: number, draw: number) =>
-    Effect.gen(function*() {
-      const table = yield* S.decodeEffect(LineTableFromText)(text)
-      const limit = text.length
-      const first = ((draw % (limit + 1)) + limit + 1) % (limit + 1)
-      const sorted = [first, offset].sort((left, right) => left - right)
-      const location = table.locationAt({
-        start: Option.getOrElse(Arr.get(sorted, 0), () => first),
-        end: Option.getOrElse(Arr.get(sorted, 1), () => offset),
+  it.prop(
+    '∀sample_Position_≡ConservesOffset',
+    { of: [textWithOffset], subject: zeroBasedPositionOf },
+    (subject, [{ text, offset }]) => {
+      const lineStarts = lineStartsOf(text).lineStarts
+      const position = subject(lineStarts, offset)
+      const start = Option.fromUndefinedOr(lineStarts[position.line])
+      const next = Option.fromUndefinedOr(lineStarts[position.line + 1])
+      return Option.match(start, {
+        onNone: () => false,
+        onSome: (lineStart) =>
+          Arr.every(
+            [
+              lineStart + position.column === offset,
+              position.column >= 0,
+              Option.match(next, { onNone: () => true, onSome: (nextStart) => nextStart > offset }),
+            ],
+            (verdict) => verdict,
+          ),
       })
-      return comparePositions(location.start, location.end) <= 0
-    })
+    },
+  )
 
-  it.effect.prop(
-    '∀st_Location_Start≤End',
-    [textWithOffset, Schema.Int],
-    ([{ text, offset }, draw]) => locationStartsBeforeItEnds(text, offset, draw).pipe(Effect.orDie),
+  it.prop(
+    '∀span_Position_≤End',
+    { of: [textWithOffset, Schema.Int], subject: zeroBasedPositionOf },
+    (subject, [{ text, offset }, draw]) => {
+      const lineStarts = lineStartsOf(text).lineStarts
+      const low = Math.min(offsetWithin(text, draw), offset)
+      const high = Math.max(offsetWithin(text, draw), offset)
+      return comparePositions(subject(lineStarts, low), subject(lineStarts, high)) <= 0
+    },
   )
 }

@@ -1,8 +1,7 @@
 import { NodeFileSystem } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
-import { expect } from 'vitest'
 
 import { type ShapeEntry, shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
@@ -43,9 +42,10 @@ const R8_PAIRS: Record<string, true> = {
 
 const pairOf = (entry: ShapeEntry): string => `${entry.module}.${entry.operation}`
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Keeping the Effect concurrency faults off unless a run asks for them')
+  .live('reads fixture files from disk and parses real source with the oxc parser')
   .withLayer(NodeFileSystem.layer)
   .body(({ scenario }) => {
     scenario(
@@ -65,17 +65,16 @@ Feature('Keeping the Effect concurrency faults off unless a run asks for them')
         ),
         Then('the report names no concurrency mutator, and no fixture came out empty')((
           { fixtures, result }: { fixtures: readonly FixtureFile[]; result: Instrument.InstrumentResult },
+          expect,
         ) =>
-          Effect.sync(() => {
-            const concurrencyMutants = result.mutants
+          expect({
+            concurrencyMutants: result.mutants
               .filter((mutant) => OPT_IN_MUTATOR_NAMES.includes(mutant.mutatorName))
-              .map((mutant) => `${mutant.fileName}:${mutant.location.start.line} ${mutant.mutatorName}`)
-            expect(concurrencyMutants).toStrictEqual([])
-            const emptyFiles = fixtures
+              .map((mutant) => `${mutant.fileName}:${mutant.location.start.line} ${mutant.mutatorName}`),
+            emptyFiles: fixtures
               .filter((fixture) => !result.mutants.some((mutant) => mutant.fileName === fixture.name))
-              .map((fixture) => fixture.name)
-            expect(emptyFiles).toStrictEqual([])
-          })
+              .map((fixture) => fixture.name),
+          }).toEqual({ concurrencyMutants: [], emptyFiles: [] })
         ),
       ),
     )
@@ -93,12 +92,8 @@ Feature('Keeping the Effect concurrency faults off unless a run asks for them')
         ),
         Then('they match the contract lists exactly, nothing more and nothing missing')((
           { pairs }: { pairs: readonly string[] },
-        ) =>
-          Effect.sync(() => {
-            const required = Object.keys({ ...R6_PAIRS, ...R7_PAIRS, ...R8_PAIRS }).sort()
-            expect(pairs).toStrictEqual(required)
-          })
-        ),
+          expect,
+        ) => expect(pairs).toEqual(Object.keys({ ...R6_PAIRS, ...R7_PAIRS, ...R8_PAIRS }).sort())),
       ),
     )
   })

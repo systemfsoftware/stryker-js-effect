@@ -1,8 +1,9 @@
+import { Handle } from '@systemfsoftware/effect-cell-types'
 import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 
-import { STATE_KEY } from './harness-sources.handle.js'
+import { STATE_KEY } from './harness-sources.js'
 import type { RunnerTest } from './registry.schema.js'
 import type { ProvidedValue, VmRunnerGlobalState } from './sandbox.schema.js'
 import type { VitestModuleNamespace } from './session-plugin.js'
@@ -12,15 +13,38 @@ type AnyDecoded<A = unknown> = A
 
 export type { ProvidedValue } from './sandbox.schema.js'
 
+export const TypeId = Symbol.for('~systemfsoftware/stryker-vm-harness/SandboxState')
+export type TypeId = typeof TypeId
+
+interface SandboxStateSlot {
+  envWrites: ReadonlyArray<EnvWriteOriginal> | undefined
+  hostWorkerState: EnclosingWorkerState | undefined
+  hostWorkerStateCaptured: boolean
+}
+
+const SandboxState = Handle.make<{ readonly stateKey: symbol }, SandboxStateSlot>()(TypeId)
+
+export type SandboxState = Handle.Of<typeof SandboxState>
+
+export const isSandboxState = SandboxState.is
+
+const sandboxState = SandboxState.make({ stateKey: STATE_KEY }, {
+  envWrites: undefined,
+  hostWorkerState: undefined,
+  hostWorkerStateCaptured: false,
+})
+
+const slotOf = (): SandboxStateSlot => SandboxState.slot(sandboxState)
+
 const isGlobalState = (value: AnyDecoded): value is VmRunnerGlobalState => Predicate.isObject(value)
 
 export const readGlobalState = (): VmRunnerGlobalState | undefined => {
-  const stored: AnyDecoded = Reflect.get(globalThis, STATE_KEY)
+  const stored: AnyDecoded = Reflect.get(globalThis, sandboxState.stateKey)
   return Option.getOrUndefined(Option.liftPredicate(isGlobalState)(stored))
 }
 
 export const writeGlobalState = (state: VmRunnerGlobalState | undefined): void => {
-  Reflect.set(globalThis, STATE_KEY, state)
+  Reflect.set(globalThis, sandboxState.stateKey, state)
 }
 
 export const globalConfigOf = (): VmProjectConfig | undefined => readGlobalState()?.projectConfig
@@ -183,18 +207,18 @@ interface EnvWriteOriginal {
   readonly name: string
   readonly original: string | undefined
 }
-let envWrites: ReadonlyArray<EnvWriteOriginal> | undefined
+const previousEnvWrites = (): ReadonlyArray<EnvWriteOriginal> => slotOf().envWrites ?? []
 
-const previousEnvWrites = (): ReadonlyArray<EnvWriteOriginal> => envWrites ?? []
-
-const alreadyRecordedEnvWrite = (name: string): boolean =>
-  envWrites !== undefined && envWrites.some((entry) => entry.name === name)
+const alreadyRecordedEnvWrite = (name: string): boolean => {
+  const writes = slotOf().envWrites ?? []
+  return writes.some((entry) => entry.name === name)
+}
 
 const recordEnvWrite = (name: string): void => {
   if (alreadyRecordedEnvWrite(name)) {
     return
   }
-  envWrites = [...previousEnvWrites(), { name, original: processEnvOf()[name] }]
+  slotOf().envWrites = [...previousEnvWrites(), { name, original: processEnvOf()[name] }]
 }
 
 const restoreEnvWrite = (
@@ -214,7 +238,7 @@ const restoreEnvWrites = (): void => {
   for (const entry of previousEnvWrites()) {
     restoreEnvWrite(env, entry.name, entry.original)
   }
-  envWrites = undefined
+  slotOf().envWrites = undefined
 }
 
 const orFallback = <A>(value: A | undefined, fallback: A): A => value ?? fallback
@@ -283,23 +307,20 @@ const isWorkerState = (value: AnyDecoded): value is EnclosingWorkerState => Pred
 export const workerStateOf = (): EnclosingWorkerState | undefined =>
   Option.getOrUndefined(Option.liftPredicate(isWorkerState)(Reflect.get(globalThis, '__vitest_worker__')))
 
-let hostWorkerState: EnclosingWorkerState | undefined
-let hostWorkerStateCaptured = false
-
 export const restoreHostWorkerState = (): void => {
-  if (hostWorkerStateCaptured) {
-    Reflect.set(globalThis, '__vitest_worker__', hostWorkerState)
-    hostWorkerStateCaptured = false
-    hostWorkerState = undefined
+  if (slotOf().hostWorkerStateCaptured) {
+    Reflect.set(globalThis, '__vitest_worker__', slotOf().hostWorkerState)
+    slotOf().hostWorkerStateCaptured = false
+    slotOf().hostWorkerState = undefined
   }
 }
 
 const captureHostWorkerState = (enclosing: EnclosingWorkerState | undefined): void => {
-  if (hostWorkerStateCaptured) {
+  if (slotOf().hostWorkerStateCaptured) {
     return
   }
-  hostWorkerState = enclosing
-  hostWorkerStateCaptured = true
+  slotOf().hostWorkerState = enclosing
+  slotOf().hostWorkerStateCaptured = true
 }
 
 const enclosingFieldOf = <K extends 'rpc' | 'onCancel', A>(

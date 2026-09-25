@@ -5,10 +5,25 @@
 ```ts
 
 // @public (undocumented)
+export namespace Judge {
+    export { BailHidesKillers, JointlyDeletable, JudgeTestContribution, NoKillCredited, NotJointlyDeletable, RunReviewed, RunUnjudged, TestContributionDecision, judgeTestContribution };
+}
+
+// @public (undocumented)
 export const strykerPlugins: readonly {
     readonly kind: 'Evaluator';
     readonly name: string;
 }[];
+
+// @public (undocumented)
+export namespace TestContribution {
+    export { ContributionEntry, ReportView, TestFileContribution, TestFileContributionSchema };
+}
+
+// @public (undocumented)
+export namespace TestContributionEvaluator {
+    export { makeTestContributionEvaluatorService, testContributionEvaluatorLayer };
+}
 
 // (No @packageDocumentation comment for this package)
 

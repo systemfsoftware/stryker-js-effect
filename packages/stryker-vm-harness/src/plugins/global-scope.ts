@@ -1,4 +1,4 @@
-import { STATE_KEY } from '../harness-sources.handle.js'
+import { STATE_KEY } from '../harness-sources.js'
 import type { VmSessionPlugin } from '../session-plugin.js'
 
 const MANAGED_GLOBAL = /^__(?:stryker|vitest)/

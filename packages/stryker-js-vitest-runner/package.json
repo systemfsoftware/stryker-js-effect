@@ -56,7 +56,6 @@
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
-    "@effect/vitest": "catalog:",
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
@@ -73,6 +72,7 @@
     "@systemfsoftware/stryker-test-contribution": "catalog:stryker",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
+    "@systemfsoftware/vitest": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "@vitest/browser-playwright": "catalog:",
@@ -113,7 +113,7 @@
     "@opentelemetry/sdk-trace-base": "2.11.0",
     "@opentelemetry/sdk-trace-node": "2.11.0",
     "@opentelemetry/semantic-conventions": "1.43.0",
-    "@systemfsoftware/effect-cell-types": "10.1.1",
+    "@systemfsoftware/effect-cell-types": "10.2.0",
     "effect": "4.0.0-rc.117",
     "oxc-parser": "0.150.0",
     "ws": "8.21.3"

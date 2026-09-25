@@ -317,47 +317,53 @@ export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOu
 }
 
 if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
+  const { it } = await import('@systemfsoftware/vitest')
   const Equal = await import('effect/Equal')
 
   const severityOf = (exitClass: Plugin.ExitClass): number => Plugin.ExitClass.literals.indexOf(exitClass)
 
-  it.prop('∀text_runOutcomeCommandOf_PrimitiveFailureBecomesDiagnostic', [S.String], ([text]) => {
-    const command = RunOutcomeCommand.fromExit({ exit: Exit.fail(text), argv: [] })
-    const observed = [
-      command.succeeded,
-      command.interrupted,
-      command.cliError,
-      command.helpErrorCount,
-      command.unrecognized,
-      command.highestExitClass,
-      command.configDetail,
-      command.diagnostic,
-    ]
-    const expected = [
-      false,
-      false,
-      false,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      text === UNKNOWN_FAILURE ? undefined : text,
-    ]
-    return observed.every((field, index) => field === expected[index])
-  })
-
-  it.prop('∀deeperList_runOutcomeCommandOf_FindsConfigDetail', [S.NonEmptyString], ([detail]) => {
-    const exit = Exit.fail({ exitClass: 'ConfigError', reason: detail })
-    return RunOutcomeCommand.fromExit({ exit, argv: [] }).configDetail === detail
-  })
+  it.prop(
+    '∀text_RunOutcomeCommand_≡PrimitiveFailureDiagnostic',
+    { of: [S.String], subject: runOutcomeCommandOf },
+    (subject, [text]) => {
+      const command = subject({ exit: Exit.fail(text), argv: [] })
+      const observed = [
+        command.succeeded,
+        command.interrupted,
+        command.cliError,
+        command.helpErrorCount,
+        command.unrecognized,
+        command.highestExitClass,
+        command.configDetail,
+        command.diagnostic,
+      ]
+      const expected = [
+        false,
+        false,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        text === UNKNOWN_FAILURE ? undefined : text,
+      ]
+      return observed.every((field, index) => field === expected[index])
+    },
+  )
 
   it.prop(
-    '∀leftMiddleRight_runOutcomeCommandOf_KeepsHighestExitClass',
-    [Plugin.ExitClass, Plugin.ExitClass, Plugin.ExitClass],
-    ([left, middle, right]) => {
+    '∀detail_RunOutcomeCommand_≡ConfigDetail',
+    { of: [S.NonEmptyString], subject: runOutcomeCommandOf },
+    (subject, [detail]) =>
+      subject({ exit: Exit.fail({ exitClass: 'ConfigError', reason: detail }), argv: [] }).configDetail === detail,
+  )
+
+  it.prop(
+    '∀ec_RunOutcomeCommand_≡HighestExitClass',
+    { of: [Plugin.ExitClass, Plugin.ExitClass, Plugin.ExitClass], subject: runOutcomeCommandOf },
+    (subject, [left, middle, right]) => {
       const exit = Exit.fail({ exitClass: left, cause: { exitClass: middle, cause: { exitClass: right } } })
-      const command = RunOutcomeCommand.fromExit({ exit, argv: [] })
+      const command = subject({ exit, argv: [] })
       return Equal.equals(
         Option.map(Option.fromUndefinedOr(command.highestExitClass), severityOf),
         Option.some(Math.max(severityOf(left), severityOf(middle), severityOf(right))),

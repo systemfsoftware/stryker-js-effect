@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -22,9 +22,13 @@ const hasBrand = (decision: FileSkipDecision): boolean =>
   Object.getOwnPropertySymbols(decision).includes(ExplainFileSkipTypeId)
 
 describe('explainFileSkip', () => {
-  it.prop('∀d_Brand_∈Decision', [FileSkipDecision], ([decision]) => hasBrand(decision))
+  it.prop(
+    '∀d_Brand_∈Decision',
+    { of: [FileSkipDecision], subject: explainFileSkip },
+    (subject, [decision]) => hasBrand(decision),
+  )
 
-  it.prop('∀s_Solo_≡Known', [SoloCase], ([input]) => {
+  it.prop('∀s_Solo_≡Known', { of: [SoloCase], subject: explainFileSkip }, (subject, [input]) => {
     const command = ExplainFileSkipCommand.make({
       extension: input.extension,
       claimants: [
@@ -36,7 +40,7 @@ describe('explainFileSkip', () => {
         },
       ],
     })
-    const result = explainFileSkip(command)
+    const result = subject(command)
     if (Result.isFailure(result)) {
       return false
     }
@@ -48,14 +52,14 @@ describe('explainFileSkip', () => {
     )
   })
 
-  it.prop('∀u_Stranger_≡Unknown', [StrangerCase], ([input]) => {
+  it.prop('∀u_Stranger_≡Unknown', { of: [StrangerCase], subject: explainFileSkip }, (subject, [input]) => {
     const command = ExplainFileSkipCommand.make({
       extension: input.extension,
       claimants: input.strangers
         .filter((stranger) => stranger.decoy !== input.extension)
         .map((stranger) => ({ package: stranger.package, extensions: [stranger.decoy] })),
     })
-    const result = explainFileSkip(command)
+    const result = subject(command)
     if (Result.isFailure(result)) {
       return false
     }
@@ -66,7 +70,7 @@ describe('explainFileSkip', () => {
     )
   })
 
-  it.prop('∀m_Crowd_≡Order', [CrowdCase], ([input]) => {
+  it.prop('∀m_Crowd_≡Order', { of: [CrowdCase], subject: explainFileSkip }, (subject, [input]) => {
     const command = ExplainFileSkipCommand.make({
       extension: input.extension,
       claimants: [
@@ -76,7 +80,7 @@ describe('explainFileSkip', () => {
         { package: input.last, extensions: [input.extension] },
       ],
     })
-    const result = explainFileSkip(command)
+    const result = subject(command)
     if (Result.isFailure(result)) {
       return false
     }

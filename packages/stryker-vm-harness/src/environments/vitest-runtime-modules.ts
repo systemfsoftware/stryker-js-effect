@@ -3,7 +3,7 @@ import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
 
-import { nativeImport } from '../native-import.handle.js'
+import { nativeImport } from '../native-import.js'
 import type { GlobalTarget } from './global-descriptors.js'
 import type { VitestNamespaceSurface } from './harness-globals.js'
 import type { FileEnvironment, PackageEnvironment } from './resolve-environment.workflow.js'

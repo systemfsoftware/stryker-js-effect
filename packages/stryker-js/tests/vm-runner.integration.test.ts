@@ -1,5 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Configuration, Plugin, Worker } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
@@ -12,10 +13,8 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import { expect } from 'vitest'
-import { Configuration, Plugin, Worker } from '../src/mod.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const workerCanary = Layer.succeed(
   Worker.WorkerLauncher,
@@ -360,9 +359,9 @@ const suiteFailure = (
     Effect.ensuring(removeSuite(fixture.directory)),
   )
 
-Feature('Verifying mutants without spawning a child process')
+Feature('Verifying mutants without spawning a child process', { timeout: 180_000 })
   .withLayer(Layer.empty)
-  .liveClock()
+  .live('the runner starts a real worker thread and reads and writes suite files on the host filesystem')
   .body(({ scenario }) => {
     scenario(
       'A suite that notices the mutant is reported as catching it',
@@ -375,11 +374,11 @@ Feature('Verifying mutants without spawning a child process')
           'outcome',
           (s) => runSuite(s.suite),
         ),
-        Then('the initial run passes and the mutant is caught')((s) =>
-          Effect.sync(() => {
-            expect(s.outcome.dryRun.status).toBe('complete')
-            expect(s.outcome.mutantRun.status).toBe('killed')
-          })
+        Then('the initial run passes and the mutant is caught')((s, expect) =>
+          expect({
+            dryRunStatus: s.outcome.dryRun.status,
+            mutantStatus: s.outcome.mutantRun.status,
+          }).toEqual({ dryRunStatus: 'complete', mutantStatus: 'killed' })
         ),
       ),
     )
@@ -395,11 +394,11 @@ Feature('Verifying mutants without spawning a child process')
           'outcome',
           (s) => runSuite(s.suite),
         ),
-        Then('the initial run passes and the mutant is reported as surviving')((s) =>
-          Effect.sync(() => {
-            expect(s.outcome.dryRun.status).toBe('complete')
-            expect(s.outcome.mutantRun.status).toBe('survived')
-          })
+        Then('the initial run passes and the mutant is reported as surviving')((s, expect) =>
+          expect({
+            dryRunStatus: s.outcome.dryRun.status,
+            mutantStatus: s.outcome.mutantRun.status,
+          }).toEqual({ dryRunStatus: 'complete', mutantStatus: 'survived' })
         ),
       ),
     )
@@ -415,16 +414,18 @@ Feature('Verifying mutants without spawning a child process')
           'attempt',
           (s) => suiteFailure(s.suite),
         ),
-        Then('the run reports both tests as passing')((s) =>
-          Effect.sync(() => {
-            expect(Exit.isSuccess(s.attempt)).toBe(true)
-            if (Exit.isSuccess(s.attempt) && s.attempt.value.status === 'complete') {
-              const tests = s.attempt.value.tests
-              expect(tests.map((test) => test.name)).toEqual(['registers a finalizer', 'observes the finalizer ran'])
-              expect(tests.every((test) => test.status === 'success')).toBe(true)
-            }
+        Then('the run reports both tests as passing')((s, expect) => {
+          const tests = Exit.isSuccess(s.attempt) && s.attempt.value.status === 'complete' ? s.attempt.value.tests : []
+          return expect({
+            runCompleted: Exit.isSuccess(s.attempt) && s.attempt.value.status === 'complete',
+            testNames: tests.map((test) => test.name),
+            everyTestPassed: tests.length > 0 && tests.every((test) => test.status === 'success'),
+          }).toEqual({
+            runCompleted: true,
+            testNames: ['registers a finalizer', 'observes the finalizer ran'],
+            everyTestPassed: true,
           })
-        ),
+        }),
       ),
     )
 
@@ -439,25 +440,23 @@ Feature('Verifying mutants without spawning a child process')
           'attempt',
           (s) => suiteFailure(s.suite),
         ),
-        Then('the run fails with a typed failure that names the malformed file')((s) =>
-          Effect.sync(() => {
-            expect(Exit.isFailure(s.attempt)).toBe(true)
-            if (Exit.isFailure(s.attempt)) {
-              const failure = Cause.findErrorOption(s.attempt.cause)
-              const described = Match.value(failure).pipe(
-                Match.when(Option.isNone, () => 'no failure was reported'),
-                Match.orElse((reported) =>
-                  Match.value(reported.value).pipe(
-                    Match.tag('TestRunnerFailed', (typed) => `${typed.phase}: ${typed.cause}`),
-                    Match.orElse(() => 'a different failure was reported'),
-                  )
-                ),
+        Then('the run fails with a typed failure that names the malformed file')((s, expect) => {
+          const failure = Exit.isFailure(s.attempt) ? Cause.findErrorOption(s.attempt.cause) : Option.none()
+          const described = Match.value(failure).pipe(
+            Match.when(Option.isNone, () => 'no failure was reported'),
+            Match.orElse((reported) =>
+              Match.value(reported.value).pipe(
+                Match.tag('TestRunnerFailed', (typed) => `${typed.phase}: ${typed.cause}`),
+                Match.orElse(() => 'a different failure was reported'),
               )
-              expect(described).toContain('init')
-              expect(described).toContain('malformed.test.ts')
-            }
-          })
-        ),
+            ),
+          )
+          return expect({
+            runFailed: Exit.isFailure(s.attempt),
+            describedNamesInit: described.includes('init'),
+            describedNamesFile: described.includes('malformed.test.ts'),
+          }).toEqual({ runFailed: true, describedNamesInit: true, describedNamesFile: true })
+        }),
       ),
     )
 
@@ -476,27 +475,27 @@ Feature('Verifying mutants without spawning a child process')
               (runner) => runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }),
             ).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
         ),
-        Then('every test is reported separately with its own outcome and hook history')((s) =>
-          Effect.sync(() => {
-            const outcome = s.outcome
-            expect(outcome.status).toBe('complete')
-            if (outcome.status !== 'complete') {
-              throw new Error('the dry run did not complete')
-            }
-            const byName = new Map(outcome.tests.map((test) => [test.name, test]))
-            expect(byName.get('math > adds numbers')).toMatchObject({ status: 'success' })
-            expect(byName.get('math > rejects a wrong async sum')).toMatchObject({
-              status: 'failed',
-              failureMessage: 'expected the async sum to be three',
-            })
-            expect(byName.get('lifecycle > saw the hook run once per test so far')).toMatchObject({ status: 'success' })
-            const ids = outcome.tests.map((test) => test.id)
-            expect(new Set(ids).size).toBe(ids.length)
-            for (const id of ids) {
-              expect(id).toContain('#')
-            }
+        Then('every test is reported separately with its own outcome and hook history')((s, expect) => {
+          const outcome = s.outcome
+          const tests = outcome.status === 'complete' ? outcome.tests : []
+          const byName = new Map(tests.map((test) => [test.name, test]))
+          const ids = tests.map((test) => test.id)
+          return expect({
+            completed: outcome.status === 'complete',
+            addsNumbers: byName.get('math > adds numbers'),
+            rejectsAsync: byName.get('math > rejects a wrong async sum'),
+            lifecycle: byName.get('lifecycle > saw the hook run once per test so far'),
+            uniqueIds: new Set(ids).size === ids.length,
+            idsCarryHash: ids.length > 0 && ids.every((id) => id.includes('#')),
+          }).toMatchObject({
+            completed: true,
+            addsNumbers: { status: 'success' },
+            rejectsAsync: { status: 'failed', failureMessage: 'expected the async sum to be three' },
+            lifecycle: { status: 'success' },
+            uniqueIds: true,
+            idsCarryHash: true,
           })
-        ),
+        }),
       ),
     )
 
@@ -511,11 +510,11 @@ Feature('Verifying mutants without spawning a child process')
           'outcome',
           (s) => runSuite(s.suite),
         ),
-        Then('the second run starts from clean module state and the change survives')((s) =>
-          Effect.sync(() => {
-            expect(s.outcome.dryRun.status).toBe('complete')
-            expect(s.outcome.mutantRun.status).toBe('survived')
-          })
+        Then('the second run starts from clean module state and the change survives')((s, expect) =>
+          expect({
+            dryRunStatus: s.outcome.dryRun.status,
+            mutantStatus: s.outcome.mutantRun.status,
+          }).toEqual({ dryRunStatus: 'complete', mutantStatus: 'survived' })
         ),
       ),
     )
@@ -535,10 +534,8 @@ Feature('Verifying mutants without spawning a child process')
               (runner) => runner.dryRun({ timeout: 200, coverageAnalysis: 'off', disableBail: false }),
             ).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
         ),
-        Then('the run is reported as timed out rather than hanging forever')((s) =>
-          Effect.sync(() => {
-            expect(s.outcome.status).toBe('timeout')
-          })
+        Then('the run is reported as timed out rather than hanging forever')((s, expect) =>
+          expect(s.outcome.status).toEqual('timeout')
         ),
       ),
     )
@@ -558,22 +555,22 @@ Feature('Verifying mutants without spawning a child process')
               (runner) => runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }),
             ).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
         ),
-        Then('the run reports the late failure even though its test passed')((s) =>
-          Effect.sync(() => {
-            const outcome = s.outcome
-            expect(outcome.status).toBe('complete')
-            if (outcome.status !== 'complete') {
-              throw new Error('the dry run did not complete')
-            }
-            expect(outcome.tests.find((test) => test.name === 'emits a late rejection')).toMatchObject({
-              status: 'success',
-            })
-            expect(outcome.tests.some((test) =>
+        Then('the run reports the late failure even though its test passed')((s, expect) => {
+          const outcome = s.outcome
+          const tests = outcome.status === 'complete' ? outcome.tests : []
+          return expect({
+            completed: outcome.status === 'complete',
+            passedTest: tests.find((test) => test.name === 'emits a late rejection'),
+            lateFailureReported: tests.some((test) =>
               test.status === 'failed' && typeof test.failureMessage === 'string' &&
               test.failureMessage.includes('the late rejection arrived')
-            )).toBe(true)
+            ),
+          }).toMatchObject({
+            completed: true,
+            passedTest: { status: 'success' },
+            lateFailureReported: true,
           })
-        ),
+        }),
       ),
     )
 
@@ -588,18 +585,22 @@ Feature('Verifying mutants without spawning a child process')
           'outcome',
           (s) => runSuite(s.suite),
         ),
-        Then('the run is killed by exactly the guarding test')((s) =>
-          Effect.sync(() => {
-            expect(s.outcome.dryRun.status).toBe('complete')
-            const killed = s.outcome.mutantRun
-            expect(killed.status).toBe('killed')
-            if (killed.status !== 'killed') {
-              throw new Error('the change was not killed')
-            }
-            expect(killed.killedBy).toHaveLength(1)
-            expect(killed.killedBy[0]?.endsWith('#guards > catches the change')).toBe(true)
+        Then('the run is killed by exactly the guarding test')((s, expect) => {
+          const killed = s.outcome.mutantRun
+          return expect({
+            dryRunStatus: s.outcome.dryRun.status,
+            mutantStatus: killed.status,
+            killedCount: killed.status === 'killed' ? killed.killedBy.length : -1,
+            killedByGuardingTest: killed.status === 'killed' &&
+              killed.killedBy.length === 1 &&
+              (killed.killedBy[0]?.endsWith('#guards > catches the change') ?? false),
+          }).toEqual({
+            dryRunStatus: 'complete',
+            mutantStatus: 'killed',
+            killedCount: 1,
+            killedByGuardingTest: true,
           })
-        ),
+        }),
       ),
     )
 
@@ -614,26 +615,29 @@ Feature('Verifying mutants without spawning a child process')
           'attempt',
           (s) => suiteFailure(s.suite, []),
         ),
-        Then('the run is refused with guidance to point the runner at test files')((s) =>
-          Effect.sync(() => {
-            expect(Exit.isFailure(s.attempt)).toBe(true)
-            if (Exit.isFailure(s.attempt)) {
-              const failure = Cause.findErrorOption(s.attempt.cause)
-              const described = Match.value(failure).pipe(
-                Match.when(Option.isNone, () => 'no failure was reported'),
-                Match.orElse((reported) =>
-                  Match.value(reported.value).pipe(
-                    Match.tag('TestRunnerFailed', (typed) => `${typed.phase}: ${typed.cause}`),
-                    Match.orElse(() => 'a different failure was reported'),
-                  )
-                ),
+        Then('the run is refused with guidance to point the runner at test files')((s, expect) => {
+          const failure = Exit.isFailure(s.attempt) ? Cause.findErrorOption(s.attempt.cause) : Option.none()
+          const described = Match.value(failure).pipe(
+            Match.when(Option.isNone, () => 'no failure was reported'),
+            Match.orElse((reported) =>
+              Match.value(reported.value).pipe(
+                Match.tag('TestRunnerFailed', (typed) => `${typed.phase}: ${typed.cause}`),
+                Match.orElse(() => 'a different failure was reported'),
               )
-              expect(described).toContain('init')
-              expect(described).toContain('"vm"')
-              expect(described).toContain('testFiles')
-            }
+            ),
+          )
+          return expect({
+            runFailed: Exit.isFailure(s.attempt),
+            describedNamesInit: described.includes('init'),
+            describedNamesRunner: described.includes('"vm"'),
+            describedNamesTestFiles: described.includes('testFiles'),
+          }).toEqual({
+            runFailed: true,
+            describedNamesInit: true,
+            describedNamesRunner: true,
+            describedNamesTestFiles: true,
           })
-        ),
+        }),
       ),
     )
 
@@ -648,25 +652,23 @@ Feature('Verifying mutants without spawning a child process')
           'attempt',
           (s) => suiteFailure(s.suite),
         ),
-        Then('the run stops with an initialization failure naming the second file')((s) =>
-          Effect.sync(() => {
-            expect(Exit.isFailure(s.attempt)).toBe(true)
-            if (Exit.isFailure(s.attempt)) {
-              const failure = Cause.findErrorOption(s.attempt.cause)
-              const described = Match.value(failure).pipe(
-                Match.when(Option.isNone, () => 'no failure was reported'),
-                Match.orElse((reported) =>
-                  Match.value(reported.value).pipe(
-                    Match.tag('TestRunnerFailed', (typed) => `${typed.phase}: ${typed.cause}`),
-                    Match.orElse(() => 'a different failure was reported'),
-                  )
-                ),
+        Then('the run stops with an initialization failure naming the second file')((s, expect) => {
+          const failure = Exit.isFailure(s.attempt) ? Cause.findErrorOption(s.attempt.cause) : Option.none()
+          const described = Match.value(failure).pipe(
+            Match.when(Option.isNone, () => 'no failure was reported'),
+            Match.orElse((reported) =>
+              Match.value(reported.value).pipe(
+                Match.tag('TestRunnerFailed', (typed) => `${typed.phase}: ${typed.cause}`),
+                Match.orElse(() => 'a different failure was reported'),
               )
-              expect(described).toContain('init')
-              expect(described).toContain('mixed-1.test.ts')
-            }
-          })
-        ),
+            ),
+          )
+          return expect({
+            runFailed: Exit.isFailure(s.attempt),
+            describedNamesInit: described.includes('init'),
+            describedNamesSecondFile: described.includes('mixed-1.test.ts'),
+          }).toEqual({ runFailed: true, describedNamesInit: true, describedNamesSecondFile: true })
+        }),
       ),
     )
 
@@ -681,21 +683,23 @@ Feature('Verifying mutants without spawning a child process')
           'attempt',
           (s) => suiteFailure(s.suite),
         ),
-        Then('the run completes and reports the load failure as its own failed test')((s) =>
-          Effect.sync(() => {
-            expect(Exit.isSuccess(s.attempt)).toBe(true)
-            if (Exit.isSuccess(s.attempt) && s.attempt.value.status === 'complete') {
-              const tests = s.attempt.value.tests
-              const loadFailure = tests.find((test) => test.name.endsWith('.test.ts (load error)'))
-              expect(loadFailure).toBeDefined()
-              expect(loadFailure?.status).toBe('failed')
-              if (loadFailure?.status === 'failed') {
-                expect(loadFailure.failureMessage).toContain('boom at import time')
-              }
-              expect(tests.some((test) => test.name === 'math > adds numbers')).toBe(true)
-            }
+        Then('the run completes and reports the load failure as its own failed test')((s, expect) => {
+          const completed = Exit.isSuccess(s.attempt) && s.attempt.value.status === 'complete'
+          const tests = Exit.isSuccess(s.attempt) && s.attempt.value.status === 'complete' ? s.attempt.value.tests : []
+          const loadFailure = tests.find((test) => test.name.endsWith('.test.ts (load error)'))
+          return expect({
+            runCompleted: completed,
+            loadFailure,
+            loadFailureNamesError: loadFailure?.status === 'failed' &&
+              loadFailure.failureMessage.includes('boom at import time'),
+            ranMathTest: tests.some((test) => test.name === 'math > adds numbers'),
+          }).toMatchObject({
+            runCompleted: true,
+            loadFailure: { status: 'failed' },
+            loadFailureNamesError: true,
+            ranMathTest: true,
           })
-        ),
+        }),
       ),
     )
 
@@ -722,14 +726,13 @@ Feature('Verifying mutants without spawning a child process')
               return { first, second }
             }).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
         ),
-        Then('each run is reported as timed out and the runner recovers between them')((s) =>
-          Effect.sync(() => {
-            const firstTimedOut = Exit.isSuccess(s.attempts.first)
+        Then('each run is reported as timed out and the runner recovers between them')((s, expect) =>
+          expect({
+            firstTimedOut: Exit.isSuccess(s.attempts.first)
               ? s.attempts.first.value.status === 'timeout'
-              : false
-            expect(firstTimedOut).toBe(true)
-            expect(s.attempts.second.status).toBe('timeout')
-          })
+              : false,
+            secondTimedOut: s.attempts.second.status === 'timeout',
+          }).toEqual({ firstTimedOut: true, secondTimedOut: true })
         ),
       ),
     )
@@ -761,15 +764,18 @@ Feature('Verifying mutants without spawning a child process')
               return { first, second }
             }).pipe(Effect.ensuring(removeSuite(s.suite.directory))),
         ),
-        Then('the first run is reported as an error and the second passes from a fresh start')((s) =>
-          Effect.sync(() => {
-            expect(Exit.isSuccess(s.attempts.first)).toBe(true)
-            if (Exit.isSuccess(s.attempts.first) && s.attempts.first.value.status !== 'complete') {
-              expect(s.attempts.first.value.status).toBe('error')
-            }
-            expect(s.attempts.second.status).toBe('complete')
+        Then('the first run is reported as an error and the second passes from a fresh start')((s, expect) => {
+          const firstStatus = Exit.isSuccess(s.attempts.first) ? s.attempts.first.value.status : 'not-success'
+          return expect({
+            firstSucceeded: Exit.isSuccess(s.attempts.first),
+            firstStatusIsCompleteOrError: firstStatus === 'complete' || firstStatus === 'error',
+            secondStatus: s.attempts.second.status,
+          }).toEqual({
+            firstSucceeded: true,
+            firstStatusIsCompleteOrError: true,
+            secondStatus: 'complete',
           })
-        ),
+        }),
       ),
     )
 
@@ -806,18 +812,18 @@ Feature('Verifying mutants without spawning a child process')
               })),
             ),
         ),
-        Then('both checks pass and the two test bodies ran at the same time')((s) =>
-          Effect.sync(() => {
-            expect(s.checked.results.every((result) => result.status === 'complete')).toBe(true)
-            const moments: ReadonlyArray<readonly number[]> = s.checked.stamps.map((lines) =>
-              lines.map((line) => Number(line.split(' ')[1]))
-            )
-            expect(moments.map((times) => times.length)).toEqual([2, 2])
-            const first = moments[0] ?? []
-            const second = moments[1] ?? []
-            expect(Math.max(first[0] ?? 0, second[0] ?? 0)).toBeLessThan(Math.min(first[1] ?? 0, second[1] ?? 0))
-          })
-        ),
+        Then('both checks pass and the two test bodies ran at the same time')((s, expect) => {
+          const moments: ReadonlyArray<readonly number[]> = s.checked.stamps.map((lines) =>
+            lines.map((line) => Number(line.split(' ')[1]))
+          )
+          const first = moments[0] ?? []
+          const second = moments[1] ?? []
+          return expect({
+            allCompleted: s.checked.results.every((result) => result.status === 'complete'),
+            stampCounts: moments.map((times) => times.length),
+            bodiesOverlapped: Math.max(first[0] ?? 0, second[0] ?? 0) < Math.min(first[1] ?? 0, second[1] ?? 0),
+          }).toEqual({ allCompleted: true, stampCounts: [2, 2], bodiesOverlapped: true })
+        }),
       ),
     )
 
@@ -839,13 +845,11 @@ Feature('Verifying mutants without spawning a child process')
               (runner) => runner.dryRun({ timeout: COMPLETION_BUDGET_MS, coverageAnalysis: 'off', disableBail: false }),
             ).pipe(Effect.ensuring(removeSuite(s.suites.directory))),
         ),
-        Then('both files pass, so the hook stayed with the file that declared it')((s) =>
-          Effect.sync(() => {
-            expect(s.outcome.status).toBe('complete')
-            if (s.outcome.status === 'complete') {
-              expect(s.outcome.tests.map((test) => test.status)).toEqual(['success', 'success'])
-            }
-          })
+        Then('both files pass, so the hook stayed with the file that declared it')((s, expect) =>
+          expect({
+            completed: s.outcome.status === 'complete',
+            testStatuses: s.outcome.status === 'complete' ? s.outcome.tests.map((test) => test.status) : [],
+          }).toEqual({ completed: true, testStatuses: ['success', 'success'] })
         ),
       ),
     )
@@ -861,11 +865,15 @@ Feature('Verifying mutants without spawning a child process')
           'lifetime',
           (s) => workerLifetime(s.suite),
         ),
-        Then('the worker the runner started is gone')((s) =>
-          Effect.sync(() => {
-            expect(s.lifetime.dryRun.status).toBe('complete')
-            expect(s.lifetime.during.length).toBeGreaterThan(s.lifetime.before.length)
-            expect(s.lifetime.after).toEqual(s.lifetime.before)
+        Then('the worker the runner started is gone')((s, expect) =>
+          expect({
+            dryRunStatus: s.lifetime.dryRun.status,
+            workerAppeared: s.lifetime.during.length > s.lifetime.before.length,
+            workersAfter: s.lifetime.after,
+          }).toEqual({
+            dryRunStatus: 'complete',
+            workerAppeared: true,
+            workersAfter: s.lifetime.before,
           })
         ),
       ),

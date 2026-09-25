@@ -1,4 +1,4 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -26,26 +26,30 @@ const expectedTotal = (concurrency: number | string | undefined, availableParall
 }
 
 describe('resolveConcurrency', () => {
-  it.prop('∀c_Command_≡R4Split', [ResolveConcurrency], ([command]) => {
-    const result = resolveConcurrency(command)
-    if (Result.isFailure(result)) {
-      return false
-    }
-    const total = expectedTotal(command.concurrency, command.availableParallelism)
-    if (command.checkerCount === 0) {
+  it.prop(
+    '∀c_Command_≡R4Split',
+    { of: [ResolveConcurrency], subject: resolveConcurrency },
+    (subject, [command]) => {
+      const result = subject(command)
+      if (Result.isFailure(result)) {
+        return false
+      }
+      const total = expectedTotal(command.concurrency, command.availableParallelism)
+      if (command.checkerCount === 0) {
+        return (
+          S.is(TestRunnersOnly)(result.success) &&
+          result.success.total === total &&
+          result.success.testRunners === total &&
+          result.success.isPercentage === isPercentageText(command.concurrency)
+        )
+      }
       return (
-        S.is(TestRunnersOnly)(result.success) &&
+        S.is(TestRunnersAndCheckers)(result.success) &&
         result.success.total === total &&
-        result.success.testRunners === total &&
+        result.success.checkers === Math.max(Math.ceil(total / 2), 1) &&
+        result.success.testRunners === Math.max(Math.floor(total / 2), 1) &&
         result.success.isPercentage === isPercentageText(command.concurrency)
       )
-    }
-    return (
-      S.is(TestRunnersAndCheckers)(result.success) &&
-      result.success.total === total &&
-      result.success.checkers === Math.max(Math.ceil(total / 2), 1) &&
-      result.success.testRunners === Math.max(Math.floor(total / 2), 1) &&
-      result.success.isPercentage === isPercentageText(command.concurrency)
-    )
-  })
+    },
+  )
 })

@@ -1,8 +1,7 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
-import { expect } from 'vitest'
 
 const PROBE_SOURCE = `export function price(n) {
   if (n > 10) {
@@ -95,9 +94,10 @@ const countByMutator = (mutants: readonly Mutant[]): Record<string, number> => {
 
 const isActive = (mutant: Mutant): boolean => mutant.status !== 'Ignored'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Instrumenter characterization')
+  .live('parses real source with the oxc parser loaded at run time')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
@@ -114,21 +114,21 @@ Feature('Instrumenter characterization')
         ),
         Then('the total and per-mutator counts match the baseline')((
           { result }: { result: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            const active = result.mutants.filter(isActive)
-            const counts = countByMutator(active)
-            expect(active.length).toBe(13)
-            expect(counts).toEqual({
+          expect,
+        ) => {
+          const active = result.mutants.filter(isActive)
+          return expect({ activeLength: active.length, counts: countByMutator(active) }).toEqual({
+            activeLength: 13,
+            counts: {
               ArithmeticOperator: 1,
               BlockStatement: 2,
               BooleanLiteral: 2,
               ConditionalExpression: 4,
               EqualityOperator: 3,
               StringLiteral: 1,
-            })
+            },
           })
-        ),
+        }),
       ),
     )
 
@@ -152,15 +152,13 @@ Feature('Instrumenter characterization')
         ),
         Then('the guard yields its mutants across all four families')((
           { result }: { result: Instrument.InstrumentResult },
+          expect,
         ) =>
-          Effect.sync(() => {
-            const active = result.mutants.filter(isActive)
-            expect(countByMutator(active)).toEqual({
-              BlockStatement: 2,
-              BooleanLiteral: 1,
-              ConditionalExpression: 2,
-              StringLiteral: 2,
-            })
+          expect(countByMutator(result.mutants.filter(isActive))).toEqual({
+            BlockStatement: 2,
+            BooleanLiteral: 1,
+            ConditionalExpression: 2,
+            StringLiteral: 2,
           })
         ),
       ),
@@ -186,16 +184,14 @@ Feature('Instrumenter characterization')
         ),
         Then('the guard yields its mutants across all five families')((
           { result }: { result: Instrument.InstrumentResult },
+          expect,
         ) =>
-          Effect.sync(() => {
-            const active = result.mutants.filter(isActive)
-            expect(countByMutator(active)).toEqual({
-              BlockStatement: 2,
-              BooleanLiteral: 1,
-              ConditionalExpression: 2,
-              OptionalChaining: 1,
-              StringLiteral: 2,
-            })
+          expect(countByMutator(result.mutants.filter(isActive))).toEqual({
+            BlockStatement: 2,
+            BooleanLiteral: 1,
+            ConditionalExpression: 2,
+            OptionalChaining: 1,
+            StringLiteral: 2,
           })
         ),
       ),
@@ -220,13 +216,11 @@ Feature('Instrumenter characterization')
         ),
         Then('the table yields mutants on itself and on every literal')((
           { result }: { result: Instrument.InstrumentResult },
+          expect,
         ) =>
-          Effect.sync(() => {
-            const active = result.mutants.filter(isActive)
-            expect(countByMutator(active)).toEqual({
-              ObjectLiteral: 1,
-              StringLiteral: 3,
-            })
+          expect(countByMutator(result.mutants.filter(isActive))).toEqual({
+            ObjectLiteral: 1,
+            StringLiteral: 3,
           })
         ),
       ),
@@ -258,15 +252,14 @@ Feature('Instrumenter characterization')
         ),
         Then('the file is instrumented with a mutant that removes the empty "js" case')((
           { result }: { result: Instrument.InstrumentResult },
+          expect,
         ) =>
-          Effect.sync(() => {
-            expect(result.files).toHaveLength(1)
-            expect(
-              result.mutants.filter(isActive).some((mutant) =>
-                mutant.mutatorName === 'ConditionalExpression' && mutant.replacement === ''
-              ),
-            ).toBe(true)
-          })
+          expect({
+            fileCount: result.files.length,
+            hasEmptyCaseMutant: result.mutants.filter(isActive).some((mutant) =>
+              mutant.mutatorName === 'ConditionalExpression' && mutant.replacement === ''
+            ),
+          }).toEqual({ fileCount: 1, hasEmptyCaseMutant: true })
         ),
       ),
     )
@@ -292,18 +285,15 @@ export const b = 2 + 2
         ),
         Then('the plus under the directive is ignored with the reason, and the sibling stays live')((
           { result }: { result: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            const arithmetic = result.mutants.filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
-            expect(arithmetic.length).toBe(2)
-            const ignored = arithmetic.filter((mutant) => mutant.status === 'Ignored')
-            expect(ignored.length).toBe(1)
-            for (const mutant of ignored) {
-              expect(mutant.statusReason).toBe('consecutive run')
-              expect(mutant.replacement).toBe('2 - 2')
-            }
-          })
-        ),
+          expect,
+        ) => {
+          const arithmetic = result.mutants.filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
+          const ignored = arithmetic.filter((mutant) => mutant.status === 'Ignored')
+          return expect({
+            arithmeticCount: arithmetic.length,
+            ignored: ignored.map((mutant) => [mutant.statusReason, mutant.replacement]),
+          }).toEqual({ arithmeticCount: 2, ignored: [['consecutive run', '2 - 2']] })
+        }),
       ),
     )
 
@@ -327,18 +317,17 @@ export const b = 2 + 2
         ),
         Then('every active mutant id is tested in the emitted content')((
           { result }: { result: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            const content = result.files[0]?.content ?? ''
-            const hash = content.match(/stryMutAct_([0-9a-f]+)/)?.[1]
-            expect(hash).toBeDefined()
-            const activeIds = result.mutants.filter(isActive).map((mutant) => mutant.id)
-            expect(activeIds.length).toBe(13)
-            for (const id of activeIds) {
-              expect(content).toContain(`stryMutAct_${hash}("${id}")`)
-            }
-          })
-        ),
+          expect,
+        ) => {
+          const content = result.files[0]?.content ?? ''
+          const hash = content.match(/stryMutAct_([0-9a-f]+)/)?.[1]
+          const activeIds = result.mutants.filter(isActive).map((mutant) => mutant.id)
+          return expect({
+            hashIsDefined: hash !== undefined,
+            activeIdCount: activeIds.length,
+            everyIdTested: activeIds.every((id) => content.includes(`stryMutAct_${hash}("${id}")`)),
+          }).toEqual({ hashIsDefined: true, activeIdCount: 13, everyIdTested: true })
+        }),
       ),
     )
 
@@ -369,39 +358,30 @@ export const b = 2 + 2
             baseline: Instrument.InstrumentResult
             excluded: Instrument.InstrumentResult
           },
-        ) =>
-          Effect.sync(() => {
-            // Exclusion does NOT delete a mutant: it marks it `Ignored` and
-            // attaches a human-readable reason, so the report can show the row
-            // and say why it scored nothing. Deleting them instead would make
-            // the mutant vanish from the report AND drop it from the score
-            // denominator with no trace — a silently better number.
-            const excludedArithmetic = excluded.mutants.filter(
-              (mutant) => mutant.mutatorName === 'ArithmeticOperator',
-            )
-            expect(excludedArithmetic.length).toBe(1)
-            for (const mutant of excludedArithmetic) {
-              expect(mutant.status).toBe('Ignored')
-              expect(mutant.statusReason).toBe(
-                'Ignored because of excluded mutation "ArithmeticOperator"',
-              )
-            }
-
-            // The active population shrinks by exactly the excluded mutants.
-            const baselineActive = baseline.mutants.filter(isActive)
-            const excludedActive = excluded.mutants.filter(isActive)
-            expect(excludedActive.length).toBe(baselineActive.length - 1)
-            expect(excludedActive.some((m) => m.mutatorName === 'ArithmeticOperator')).toBe(false)
-
-            // Control: every other mutator is untouched, so the assertions
-            // above respond to the exclusion and not to instrumentation drift.
-            const baselineCounts = countByMutator(baselineActive)
-            const excludedCounts = countByMutator(excludedActive)
-            delete baselineCounts['ArithmeticOperator']
-            expect(excludedCounts).toEqual(baselineCounts)
-            expect(excludedCounts['EqualityOperator']).toBe(3)
+          expect,
+        ) => {
+          const excludedArithmetic = excluded.mutants.filter(
+            (mutant) => mutant.mutatorName === 'ArithmeticOperator',
+          )
+          const baselineActive = baseline.mutants.filter(isActive)
+          const excludedActive = excluded.mutants.filter(isActive)
+          const baselineCounts = countByMutator(baselineActive)
+          delete baselineCounts['ArithmeticOperator']
+          const excludedCounts = countByMutator(excludedActive)
+          return expect({
+            excludedArithmetic: excludedArithmetic.map((mutant) => [mutant.status, mutant.statusReason]),
+            activeShrink: baselineActive.length - excludedActive.length,
+            hasArithmeticActive: excludedActive.some((mutant) => mutant.mutatorName === 'ArithmeticOperator'),
+            counts: excludedCounts,
+            equalityOperator: excludedCounts['EqualityOperator'],
+          }).toEqual({
+            excludedArithmetic: [['Ignored', 'Ignored because of excluded mutation "ArithmeticOperator"']],
+            activeShrink: 1,
+            hasArithmeticActive: false,
+            counts: baselineCounts,
+            equalityOperator: 3,
           })
-        ),
+        }),
       ),
     )
 
@@ -430,22 +410,27 @@ export const b = 2 + 2
             selected: Instrument.InstrumentResult
             unselected: Instrument.InstrumentResult
           },
-        ) =>
-          Effect.sync(() => {
-            const arith = (mutants: readonly Mutant[], replacement: string) =>
-              mutants.filter((m) => m.mutatorName === 'ArithmeticOperator' && m.replacement === replacement)
-            const selectedKeep = arith(selected.mutants, 'x - 1')
-            const selectedSibling = arith(selected.mutants, 'a - b')
-            expect(selectedKeep.some(isActive)).toBe(true)
-            expect(selectedSibling.length).toBeGreaterThan(0)
-            for (const mutant of selectedSibling) {
-              expect(mutant.status).toBe('Ignored')
-              expect(mutant.statusReason).toBe(OUTSIDE_KEEP)
-            }
-            expect(arith(unselected.mutants, 'x - 1').some(isActive)).toBe(true)
-            expect(arith(unselected.mutants, 'a - b').some(isActive)).toBe(true)
+          expect,
+        ) => {
+          const arith = (mutants: readonly Mutant[], replacement: string) =>
+            mutants.filter((mutant) =>
+              mutant.mutatorName === 'ArithmeticOperator' && mutant.replacement === replacement
+            )
+          const selectedKeep = arith(selected.mutants, 'x - 1')
+          const selectedSibling = arith(selected.mutants, 'a - b')
+          return expect({
+            selectedKeepActive: selectedKeep.some(isActive),
+            selectedSiblingIgnored: selectedSibling.length > 0 &&
+              selectedSibling.every((mutant) => mutant.status === 'Ignored' && mutant.statusReason === OUTSIDE_KEEP),
+            unselectedKeepActive: arith(unselected.mutants, 'x - 1').some(isActive),
+            unselectedSiblingActive: arith(unselected.mutants, 'a - b').some(isActive),
+          }).toEqual({
+            selectedKeepActive: true,
+            selectedSiblingIgnored: true,
+            unselectedKeepActive: true,
+            unselectedSiblingActive: true,
           })
-        ),
+        }),
       ),
     )
 
@@ -472,15 +457,21 @@ export function price(n) {
         ),
         Then('the printed file still carries every comment and the hashbang')((
           { result }: { result: { files: readonly { content: string }[] } },
-        ) =>
-          Effect.sync(() => {
-            const content = result.files[0]?.content ?? ''
-            expect(content.startsWith('#!/usr/bin/env node')).toBe(true)
-            expect(content).toContain('// leading file comment')
-            expect(content).toContain('/* block lead */')
-            expect(content).toContain('// trailing on return')
+          expect,
+        ) => {
+          const content = result.files[0]?.content ?? ''
+          return expect({
+            startsWithHashbang: content.startsWith('#!/usr/bin/env node'),
+            hasLeadingComment: content.includes('// leading file comment'),
+            hasBlockLead: content.includes('/* block lead */'),
+            hasTrailingReturn: content.includes('// trailing on return'),
+          }).toEqual({
+            startsWithHashbang: true,
+            hasLeadingComment: true,
+            hasBlockLead: true,
+            hasTrailingReturn: true,
           })
-        ),
+        }),
       ),
     )
     scenario(
@@ -497,20 +488,20 @@ export function price(n) {
         ),
         Then('the plus inside the flag block is ignored and the sibling plus is live')((
           { result }: { result: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            const arith = (replacement: string) =>
-              result.mutants.filter((m) => m.mutatorName === 'ArithmeticOperator' && m.replacement === replacement)
-            const sibling = arith('a - b')
-            const inner = arith('1 - 1')
-            expect(sibling.some(isActive)).toBe(true)
-            expect(inner.length).toBeGreaterThan(0)
-            for (const mutant of inner) {
-              expect(mutant.status).toBe('Ignored')
-              expect(mutant.statusReason).toBe(INSIDE_FLAG)
-            }
-          })
-        ),
+          expect,
+        ) => {
+          const arith = (replacement: string) =>
+            result.mutants.filter((mutant) =>
+              mutant.mutatorName === 'ArithmeticOperator' && mutant.replacement === replacement
+            )
+          const sibling = arith('a - b')
+          const inner = arith('1 - 1')
+          return expect({
+            siblingActive: sibling.some(isActive),
+            innerIgnored: inner.length > 0 &&
+              inner.every((mutant) => mutant.status === 'Ignored' && mutant.statusReason === INSIDE_FLAG),
+          }).toEqual({ siblingActive: true, innerIgnored: true })
+        }),
       ),
     )
     scenario(
@@ -527,14 +518,14 @@ export function price(n) {
         ),
         Then('every mutant is ignored with the ignorer reason')((
           { result }: { result: Instrument.InstrumentResult },
+          expect,
         ) =>
-          Effect.sync(() => {
-            expect(result.mutants.length).toBe(13)
-            for (const mutant of result.mutants) {
-              expect(mutant.status).toBe('Ignored')
-              expect(mutant.statusReason).toBe(OUTSIDE_KEEP)
-            }
-          })
+          expect({
+            mutantCount: result.mutants.length,
+            everyIgnored: result.mutants.every((mutant) =>
+              mutant.status === 'Ignored' && mutant.statusReason === OUTSIDE_KEEP
+            ),
+          }).toEqual({ mutantCount: 13, everyIgnored: true })
         ),
       ),
     )
@@ -553,15 +544,15 @@ export function price(n) {
         ),
         Then('the first ignorer reason wins even where both match')((
           { result }: { result: Instrument.InstrumentResult },
+          expect,
         ) =>
-          Effect.sync(() => {
-            expect(result.mutants.length).toBeGreaterThan(0)
-            for (const mutant of result.mutants) {
-              expect(mutant.status).toBe('Ignored')
-              expect(mutant.statusReason).toBe(OUTSIDE_KEEP)
-              expect(mutant.statusReason).not.toBe(INSIDE_FLAG)
-            }
-          })
+          expect({
+            atLeastOne: result.mutants.length > 0,
+            everyIgnoredOutsideKeep: result.mutants.every((mutant) =>
+              mutant.status === 'Ignored' && mutant.statusReason === OUTSIDE_KEEP
+            ),
+            noneInsideFlag: result.mutants.every((mutant) => mutant.statusReason !== INSIDE_FLAG),
+          }).toEqual({ atLeastOne: true, everyIgnoredOutsideKeep: true, noneInsideFlag: true })
         ),
       ),
     )
@@ -579,11 +570,14 @@ export function price(n) {
         ),
         Then('the run stops naming the file and carrying the rule failure')((
           { error }: { error: Instrument.InstrumentError },
+          expect,
         ) =>
-          Effect.sync(() => {
-            expect(error.message).toContain('/tmp/failing-rule.ts')
-            expect(error.cause instanceof Error ? error.cause.message : '').toContain('the rule refuses to decide')
-          })
+          expect({
+            namesFile: error.message.includes('/tmp/failing-rule.ts'),
+            namesReason: (error.cause instanceof Error ? error.cause.message : '').includes(
+              'the rule refuses to decide',
+            ),
+          }).toEqual({ namesFile: true, namesReason: true })
         ),
       ),
     )

@@ -1,12 +1,11 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { And, Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 import { FileSystem, Path, PlatformError } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const PACKAGES_ROOT = decodeURIComponent(new URL('../../', import.meta.url).pathname).replace(/\/$/, '')
 const FIXTURE_ROOT = `${PACKAGES_ROOT}/stryker-js/testResources/vm-parity/mocking`
@@ -90,7 +89,7 @@ const filesOf = (suite: string): readonly string[] =>
 
 Feature('Module mocks behave under the in-memory runner exactly as they do under Vitest')
   .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
-  .liveClock()
+  .live('the sandbox copies a real fixture tree and spawns the in-memory runner over it')
   .body(({ scenarioOutline }) => {
     scenarioOutline(
       'A suite where <mock> replays with the same passing outcomes in memory',
@@ -119,15 +118,12 @@ Feature('Module mocks behave under the in-memory runner exactly as they do under
             'outcome',
             (s) => replayOf(s.sandbox, filesOf(row.suite)),
           ),
-          Then('the replay finishes with every test passing')((s) => {
+          Then('the replay finishes with every test passing and keeps every one of its tests')((s, expect) => {
             if (s.outcome.status !== 'complete') {
               throw new Error(`the replay ended in ${s.outcome.status}: ${s.outcome.message ?? 'without a message'}`)
             }
             const failing = s.outcome.results.filter((test) => test.status !== 'success')
-            expect(failing).toEqual([])
-          }),
-          And(`the suite keeps all ${row.tests} of its tests`)((s) => {
-            expect(s.outcome.results.map((test) => test.name)).toHaveLength(row.tests)
+            return expect({ failing, count: s.outcome.results.length }).toEqual({ failing: [], count: row.tests })
           }),
         ),
     )

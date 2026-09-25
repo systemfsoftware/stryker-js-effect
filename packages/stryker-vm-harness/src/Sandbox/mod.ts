@@ -1,5 +1,5 @@
-export { harnessSourceFor, harnessUrlForSpecifier } from '../harness-sources.handle.js'
-export { nativeImport } from '../native-import.handle.js'
+export { harnessSourceFor, harnessUrlForSpecifier } from '../harness-sources.js'
+export { nativeImport } from '../native-import.js'
 export {
   activateSandbox,
   deactivateSandbox,

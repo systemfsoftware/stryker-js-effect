@@ -1,4 +1,5 @@
 import type * as Oxc from '@oxc-project/types'
+import { Handle } from '@systemfsoftware/effect-cell-types'
 import type {
   BindingPattern,
   BlockStatement,
@@ -19,8 +20,6 @@ import * as Boolean from 'effect/Boolean'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type { Pipeable } from 'effect/Pipeable'
-import { Prototype } from 'effect/Pipeable'
 import * as Predicate from 'effect/Predicate'
 import type { SpannedComment } from './Ast.schema.js'
 import type { LineTable } from './Location.schema.js'
@@ -31,15 +30,16 @@ import type { Ast } from './Ast.schema.js'
 
 export const formatKeyOf = (ast: Ast): string => (ast.format === 'embedded' ? ast.formatId : ast.format)
 
-const TypeId = Symbol.for('~systemfsoftware/stryker-js-instrumenter/Ast')
-type TypeId = typeof TypeId
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js-instrumenter/Ast')
+export type TypeId = typeof TypeId
 
-export interface AstHandle extends Pipeable {
-  readonly [TypeId]: typeof TypeId
-  readonly root: Program | Node
-}
+const AstHandleDef = Handle.make<{ readonly root: Program | Node }>()(TypeId)
 
-export const make = (root: Program | Node): AstHandle => ({ [TypeId]: TypeId, root, ...Prototype })
+export type AstHandle = Handle.Of<typeof AstHandleDef>
+
+export const isAstHandle = AstHandleDef.is
+
+export const make = (root: Program | Node): AstHandle => AstHandleDef.make({ root })
 
 const EXPRESSION_KINDS: Readonly<Record<string, true>> = {
   ArrayExpression: true,

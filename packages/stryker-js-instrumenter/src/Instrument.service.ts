@@ -4,9 +4,9 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 import { disableTypeChecksCell } from './disable-type-checks.cell.js'
-import { coreFormatRegistry } from './Format.handle.js'
+import { coreFormatRegistry, optInMutationsOf } from './Format.js'
 import type { FormatRegistry } from './Format.schema.js'
-import { instrumentFilesCell, optInMutationsOf } from './instrument-files.cell.js'
+import { instrumentFilesCell } from './instrument-files.cell.js'
 import {
   type FileDescription,
   FileSchema,

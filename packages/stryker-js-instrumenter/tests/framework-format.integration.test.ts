@@ -1,7 +1,6 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
-import { expect } from 'vitest'
 
 import { failingFramework, fixtureDocument, fixtureFramework } from './__fixtures__/framework.js'
 import { instrument } from './__fixtures__/instrument.js'
@@ -11,9 +10,10 @@ const OPTIONS = { ignorers: [], excludedMutations: [] }
 const registryWith = (framework: typeof fixtureFramework) =>
   Format.registerEntries(Format.coreFormatRegistry, [Format.frameworkEntryOf('fixture-plugin', framework)])
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Instrumenting files in formats a framework plugin teaches')
+  .live('parses real source with the oxc parser loaded at run time')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
@@ -31,22 +31,25 @@ Feature('Instrumenting files in formats a framework plugin teaches')
         ),
         Then('the addition inside the region is mutated at its place in the document')((
           { result }: { result: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            const oneBased = (index: number): number => index + 1
-            const regionFirst = oneBased(fixtureDocument.indexOf('{{'))
-            const regionLast = oneBased(fixtureDocument.indexOf('}}') + '}}'.length)
-            const column = oneBased(fixtureDocument.indexOf('n + 1'))
-            const arithmetic = result.mutants.filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
-            expect(arithmetic.map((mutant) => [mutant.replacement, mutant.location])).toStrictEqual([
-              ['n - 1', { start: { line: 1, column }, end: { line: 1, column: column + 'n + 1'.length } }],
-            ])
-            expect(result.mutants.every((mutant) =>
+          expect,
+        ) => {
+          const oneBased = (index: number): number => index + 1
+          const regionFirst = oneBased(fixtureDocument.indexOf('{{'))
+          const regionLast = oneBased(fixtureDocument.indexOf('}}') + '}}'.length)
+          const column = oneBased(fixtureDocument.indexOf('n + 1'))
+          const arithmetic = result.mutants.filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
+          return expect({
+            arithmetic: arithmetic.map((mutant) => [mutant.replacement, mutant.location]),
+            everyMutantInsideRegion: result.mutants.every((mutant) =>
               mutant.location.start.column >= regionFirst && mutant.location.end.column <= regionLast
-            )).toBe(true)
-            expect(result.skipped).toStrictEqual([])
+            ),
+            skipped: result.skipped,
+          }).toEqual({
+            arithmetic: [['n - 1', { start: { line: 1, column }, end: { line: 1, column: column + 'n + 1'.length } }]],
+            everyMutantInsideRegion: true,
+            skipped: [],
           })
-        ),
+        }),
       ),
     )
 
@@ -68,15 +71,13 @@ Feature('Instrumenting files in formats a framework plugin teaches')
         ),
         Then('the mini document is reported as skipped and the script file still gets mutants')((
           { result }: { result: Instrument.InstrumentResult },
+          expect,
         ) =>
-          Effect.sync(() => {
-            expect(result.skipped.map((skip) => [skip.file, skip.extension])).toStrictEqual([[
-              '/tmp/page.mini',
-              '.mini',
-            ]])
-            expect(result.mutants.map((mutant) => mutant.fileName)).toContain('/tmp/add.js')
-            expect(result.mutants.map((mutant) => mutant.fileName)).not.toContain('/tmp/page.mini')
-          })
+          expect({
+            skipped: result.skipped.map((skip) => [skip.file, skip.extension]),
+            hasAdd: result.mutants.some((mutant) => mutant.fileName === '/tmp/add.js'),
+            hasMini: result.mutants.some((mutant) => mutant.fileName === '/tmp/page.mini'),
+          }).toEqual({ skipped: [['/tmp/page.mini', '.mini']], hasAdd: true, hasMini: false })
         ),
       ),
     )
@@ -96,11 +97,11 @@ Feature('Instrumenting files in formats a framework plugin teaches')
         ),
         Then('instrumentation fails naming the file and the plugin reason')(({ error }: {
           error: Instrument.InstrumentError
-        }) =>
-          Effect.sync(() => {
-            expect(error.message).toContain('/tmp/page.mini')
-            expect(error.message).toContain('fixture refuses this document')
-          })
+        }, expect) =>
+          expect({
+            namesFile: error.message.includes('/tmp/page.mini'),
+            namesReason: error.message.includes('fixture refuses this document'),
+          }).toEqual({ namesFile: true, namesReason: true })
         ),
       ),
     )
@@ -128,13 +129,12 @@ Feature('Instrumenting files in formats a framework plugin teaches')
         ),
         Then('the mini document carries the marker before its region and the unknown file is unchanged')((
           { files }: { files: readonly Instrument.File[] },
+          expect,
         ) =>
-          Effect.sync(() => {
-            expect(files.map((file) => file.content)).toStrictEqual([
-              'before // @ts-nocheck\n{{ n + 1 }} after',
-              'n + 1',
-            ])
-          })
+          expect(files.map((file) => file.content)).toEqual([
+            'before // @ts-nocheck\n{{ n + 1 }} after',
+            'n + 1',
+          ])
         ),
       ),
     )

@@ -1,8 +1,7 @@
 import { NodeFileSystem } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
-import { expect } from 'vitest'
 
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
 import { instrument } from './__fixtures__/instrument.js'
@@ -94,9 +93,10 @@ const mutantLinesOf = (result: Instrument.InstrumentResult): readonly string[] =
     ].join(' ')
   )
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Choosing extra concurrency mutations by name')
+  .live('reads fixture files from disk and parses real source with the oxc parser')
   .withLayer(NodeFileSystem.layer)
   .body(({ scenario }) => {
     scenario(
@@ -114,11 +114,8 @@ Feature('Choosing extra concurrency mutations by name')
         ),
         Then('the run fails, and the message names the entry it does not have')((
           { failure }: { failure: Instrument.InstrumentError },
-        ) =>
-          Effect.sync(() => {
-            expect(failure.message).toContain(UNKNOWN_MUTATOR_NAME)
-          })
-        ),
+          expect,
+        ) => expect(failure.message).toContain(UNKNOWN_MUTATOR_NAME)),
       ),
     )
 
@@ -145,14 +142,23 @@ Feature('Choosing extra concurrency mutations by name')
         ),
         Then('neither report holds a concurrency fault, and both hold the same ordinary mutants')((
           { unlisted, emptyList }: { unlisted: Instrument.InstrumentResult; emptyList: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            expect(concurrencyMutantsIn(unlisted)).toStrictEqual([])
-            expect(concurrencyMutantsIn(emptyList)).toStrictEqual([])
-            expect(mutantLinesOf(unlisted).length).toBeGreaterThan(0)
-            expect(mutantLinesOf(emptyList)).toStrictEqual(mutantLinesOf(unlisted))
+          expect,
+        ) => {
+          const unlistedLines = mutantLinesOf(unlisted)
+          const emptyLines = mutantLinesOf(emptyList)
+          return expect({
+            unlistedConcurrency: concurrencyMutantsIn(unlisted),
+            emptyListConcurrency: concurrencyMutantsIn(emptyList),
+            unlistedNonEmpty: unlistedLines.length > 0,
+            emptyEqualsUnlisted: emptyLines.length === unlistedLines.length &&
+              emptyLines.every((line, index) => line === unlistedLines[index]),
+          }).toEqual({
+            unlistedConcurrency: [],
+            emptyListConcurrency: [],
+            unlistedNonEmpty: true,
+            emptyEqualsUnlisted: true,
           })
-        ),
+        }),
       ),
     )
 
@@ -190,19 +196,19 @@ Feature('Choosing extra concurrency mutations by name')
         ),
         Then('every choice proposes exactly the faults it named, beside the same ordinary faults')((
           { runs }: { runs: SelectionRun },
+          expect,
         ) =>
-          Effect.sync(() => {
-            expect(runs.plainOrdinary.length).toBeGreaterThan(0)
-            const surprises = runs.choices.flatMap((choice) => [
+          expect({
+            plainOrdinaryNonEmpty: runs.plainOrdinary.length > 0,
+            surprises: runs.choices.flatMap((choice) => [
               ...(sameNames(choice.enabled, choice.named)
                 ? []
                 : [`${choice.label} enabled ${choice.enabled.join(', ')}`]),
               ...(sameNames(choice.ordinary, runs.plainOrdinary)
                 ? []
                 : [`${choice.label} turned the ordinary faults into ${choice.ordinary.join(', ')}`]),
-            ])
-            expect(surprises).toStrictEqual([])
-          })
+            ]),
+          }).toEqual({ plainOrdinaryNonEmpty: true, surprises: [] })
         ),
       ),
     )
@@ -232,12 +238,8 @@ Feature('Choosing extra concurrency mutations by name')
         ),
         Then('both runs propose the identical faults')((
           { runs }: { runs: readonly [Instrument.InstrumentResult, Instrument.InstrumentResult] },
-        ) =>
-          Effect.sync(() => {
-            const [once, twice] = runs
-            expect(mutantLinesOf(twice)).toStrictEqual(mutantLinesOf(once))
-          })
-        ),
+          expect,
+        ) => expect(mutantLinesOf(runs[1])).toStrictEqual(mutantLinesOf(runs[0]))),
       ),
     )
 
@@ -258,11 +260,8 @@ Feature('Choosing extra concurrency mutations by name')
         ),
         Then('the run goes through, and none of the concurrency faults is proposed')((
           { report }: { report: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            expect(concurrencyMutantsIn(report)).toStrictEqual([])
-          })
-        ),
+          expect,
+        ) => expect(concurrencyMutantsIn(report)).toStrictEqual([])),
       ),
     )
   })

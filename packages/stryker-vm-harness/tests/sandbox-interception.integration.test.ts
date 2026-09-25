@@ -1,5 +1,5 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { EffectAdapter, Registry, Sandbox } from '@systemfsoftware/stryker-vm-harness'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -7,7 +7,6 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
-import { expect } from 'vitest'
 const nodeRegisterHooks = globalThis.process.getBuiltinModule('node:module').registerHooks
 const trackedBuiltin = (events: string[]): Sandbox.HarnessModuleBuiltin => ({
   registerHooks: (hooks) => {
@@ -21,7 +20,7 @@ const trackedBuiltin = (events: string[]): Sandbox.HarnessModuleBuiltin => ({
     }
   },
 })
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const VITEST_PACKAGE = 'vitest'
 const VITEST_HARNESS_ADDRESS = Sandbox.harnessUrlForSpecifier(VITEST_PACKAGE) ?? 'vmrunner-harness:vitest'
@@ -89,11 +88,13 @@ interface SandboxRun {
   readonly testName: string
 }
 
+const quietExpect = (value: object): object => value
+
 const sandboxRunFor = (prefix: string, suiteName: string, testName: string, directory: string): SandboxRun => {
   const registry = Registry.createRegistry()
   const state: Sandbox.VmRunnerGlobalState = {
     api: Registry.createHarnessApi(registry),
-    expect,
+    expect: quietExpect,
     vi: undefined,
     effectVitest: undefined,
     projectConfig: undefined,
@@ -137,7 +138,7 @@ const runSandboxSession = (run: SandboxRun): Effect.Effect<SessionOutcome> =>
 
 Feature('Intercepting module resolution for an in-memory sandbox')
   .withScenarioLayer(suiteFileLayer)
-  .liveClock()
+  .live('the interception installs real node loader hooks and loads served modules over them')
   .body(({ scenario }) => {
     scenario(
       'Installing interception and activating a sandbox lets the served runner module register its suites',
@@ -181,15 +182,24 @@ Feature('Intercepting module resolution for an in-memory sandbox')
         ),
         Then('the visit registered its hooks, published its state, and the registry holds exactly its suite and test')((
           s,
+          expect,
         ) =>
-          Effect.sync(() => {
-            expect(s.visited.hooksRegistered).toBe(true)
-            expect(s.visited.published).toBe(s.run.state)
-            expect(s.visited.sourceLength).toBeGreaterThan(0)
-            expect(s.visited.described).toBe('function')
-            expect(s.visited.declared).toBe('function')
-            expect(s.visited.suiteCount).toBe(1)
-            expect(s.visited.testNames).toEqual(['a declared test'])
+          expect({
+            hooksRegistered: s.visited.hooksRegistered,
+            publishedIsState: Object.is(s.visited.published, s.run.state),
+            sourcePresent: s.visited.sourceLength > 0,
+            described: s.visited.described,
+            declared: s.visited.declared,
+            suiteCount: s.visited.suiteCount,
+            testNames: s.visited.testNames,
+          }).toEqual({
+            hooksRegistered: true,
+            publishedIsState: true,
+            sourcePresent: true,
+            described: 'function',
+            declared: 'function',
+            suiteCount: 1,
+            testNames: ['a declared test'],
           })
         ),
       ),
@@ -225,12 +235,12 @@ Feature('Intercepting module resolution for an in-memory sandbox')
               return { whileActive, afterRelease: Sandbox.readGlobalState() }
             }),
         ),
-        Then('nothing stays published and the installed hooks were deregistered')((s) =>
-          Effect.sync(() => {
-            expect(s.outcome.whileActive).toBe(s.release.run.state)
-            expect(s.outcome.afterRelease).toBeUndefined()
-            expect(s.release.events).toEqual(['register', 'deregister'])
-          })
+        Then('nothing stays published and the installed hooks were deregistered')((s, expect) =>
+          expect({
+            whileActiveIsState: Object.is(s.outcome.whileActive, s.release.run.state),
+            afterRelease: s.outcome.afterRelease,
+            events: s.release.events,
+          }).toEqual({ whileActiveIsState: true, afterRelease: undefined, events: ['register', 'deregister'] })
         ),
       ),
     )
@@ -265,19 +275,37 @@ Feature('Intercepting module resolution for an in-memory sandbox')
               }
             }),
         ),
-        Then('each run holds only its own suite and neither stays published')((s) =>
-          Effect.sync(() => {
-            expect(s.sessions.first.suiteCount).toBe(1)
-            expect(s.sessions.first.testNames).toEqual(['the first test'])
-            expect(s.sessions.first.published).toBe(s.runs.first.state)
-            expect(s.sessions.first.afterRelease).toBeUndefined()
-            expect(s.sessions.first.hookEvents).toEqual(['register', 'deregister'])
-
-            expect(s.sessions.second.suiteCount).toBe(1)
-            expect(s.sessions.second.testNames).toEqual(['the second test'])
-            expect(s.sessions.second.published).toBe(s.runs.second.state)
-            expect(s.sessions.second.afterRelease).toBeUndefined()
-            expect(s.sessions.second.hookEvents).toEqual(['register', 'deregister'])
+        Then('each run holds only its own suite and neither stays published')((s, expect) =>
+          expect({
+            first: {
+              suiteCount: s.sessions.first.suiteCount,
+              testNames: s.sessions.first.testNames,
+              publishedIsState: Object.is(s.sessions.first.published, s.runs.first.state),
+              afterRelease: s.sessions.first.afterRelease,
+              hookEvents: s.sessions.first.hookEvents,
+            },
+            second: {
+              suiteCount: s.sessions.second.suiteCount,
+              testNames: s.sessions.second.testNames,
+              publishedIsState: Object.is(s.sessions.second.published, s.runs.second.state),
+              afterRelease: s.sessions.second.afterRelease,
+              hookEvents: s.sessions.second.hookEvents,
+            },
+          }).toEqual({
+            first: {
+              suiteCount: 1,
+              testNames: ['the first test'],
+              publishedIsState: true,
+              afterRelease: undefined,
+              hookEvents: ['register', 'deregister'],
+            },
+            second: {
+              suiteCount: 1,
+              testNames: ['the second test'],
+              publishedIsState: true,
+              afterRelease: undefined,
+              hookEvents: ['register', 'deregister'],
+            },
           })
         ),
       ),
@@ -316,6 +344,13 @@ Feature('Intercepting module resolution for an in-memory sandbox')
                 }
                 return { signal: sandboxSignal, task: registered.task, onTestFinished: () => undefined }
               }
+              const outcomeOfRun = (name: string): Promise<string> =>
+                Promise.resolve(
+                  s.harness.registry.tests.find((candidate) => candidate.name === name)?.fn?.(contextOf(name)),
+                ).then(
+                  (value) => (value === undefined ? 'undefined' : 'non-undefined'),
+                  (cause: Error) => cause.message,
+                )
               let passed = false
               s.harness.methods.effect('a passing effect test', () =>
                 Effect.sync(() => {
@@ -323,15 +358,12 @@ Feature('Intercepting module resolution for an in-memory sandbox')
                 }))
               const declaredAfterPass = s.harness.registry.tests.length
               const passName = s.harness.registry.tests[0]?.name
-              yield* Effect.promise(() =>
-                Promise.resolve(s.harness.registry.tests[0]?.fn?.(contextOf('a passing effect test')))
-              )
+              yield* Effect.promise(() => outcomeOfRun('a passing effect test'))
               s.harness.methods.effect('a failing effect test', () =>
                 Effect.fail({ _tag: 'IntentionalFailure', message: 'intentional failure' }))
               const declaredAfterFailure = s.harness.registry.tests.length
-              const failure = s.harness.registry.tests[1]
-              yield* Effect.promise(() =>
-                expect(failure?.fn?.(contextOf('a failing effect test'))).rejects.toThrow('intentional failure')
+              const failureMessage = yield* Effect.promise(() =>
+                outcomeOfRun('a failing effect test')
               )
 
               class GreetingService
@@ -343,16 +375,16 @@ Feature('Intercepting module resolution for an in-memory sandbox')
               const GreetingLive = Layer.succeed(
                 GreetingService,
                 GreetingService.of({
-                  greet: (name: string) =>
-                    `Hello, ${name}!`,
+                  greet: (name: string) => `Hello, ${name}!`,
                 }),
               )
               let greeted = false
+              let greetResult: string | undefined
               s.harness.methods.layer(GreetingLive)('a layered block', (withLayer) => {
                 withLayer.effect('greets through the provided service', () =>
                   Effect.gen(function*() {
                     const service = yield* GreetingService
-                    expect(service.greet('Stryker')).toBe('Hello, Stryker!')
+                    greetResult = service.greet('Stryker')
                     greeted = true
                   }))
               })
@@ -367,19 +399,10 @@ Feature('Intercepting module resolution for an in-memory sandbox')
               const falsified = s.harness.registry.tests.find((registered) =>
                 registered.name === 'every sampled number is non-negative'
               )
-              yield* Effect.promise(() =>
-                expect(falsified?.fn?.(contextOf('every sampled number is non-negative'))).rejects.toThrow(
-                  'Property falsified',
-                )
-              )
+              const falsifiedMessage = yield* Effect.promise(() => outcomeOfRun('every sampled number is non-negative'))
 
               s.harness.methods.prop('every sampled number equals itself', S.Finite, (n: number) => n === n)
-              const sound = s.harness.registry.tests.find((registered) =>
-                registered.name === 'every sampled number equals itself'
-              )
-              yield* Effect.promise(() =>
-                expect(sound?.fn?.(contextOf('every sampled number equals itself'))).resolves.toBeUndefined()
-              )
+              const soundOutcome = yield* Effect.promise(() => outcomeOfRun('every sampled number equals itself'))
 
               return {
                 passed,
@@ -387,20 +410,40 @@ Feature('Intercepting module resolution for an in-memory sandbox')
                 declaredAfterPass,
                 declaredAfterFailure,
                 greeted,
+                greetResult,
                 layeredDeclared: layered !== undefined,
                 falsifiedDeclared: falsified !== undefined,
+                failureMessage,
+                falsifiedMessage,
+                soundOutcome,
               }
             }),
         ),
-        Then('the registry carries every declared test and each run reports its own outcome')((s) =>
-          Effect.sync(() => {
-            expect(s.reported.declaredAfterPass).toBe(1)
-            expect(s.reported.passName).toBe('a passing effect test')
-            expect(s.reported.passed).toBe(true)
-            expect(s.reported.declaredAfterFailure).toBe(2)
-            expect(s.reported.layeredDeclared).toBe(true)
-            expect(s.reported.greeted).toBe(true)
-            expect(s.reported.falsifiedDeclared).toBe(true)
+        Then('the registry carries every declared test and each run reports its own outcome')((s, expect) =>
+          expect({
+            declaredAfterPass: s.reported.declaredAfterPass,
+            passName: s.reported.passName,
+            passed: s.reported.passed,
+            declaredAfterFailure: s.reported.declaredAfterFailure,
+            layeredDeclared: s.reported.layeredDeclared,
+            greeted: s.reported.greeted,
+            greetResult: s.reported.greetResult,
+            falsifiedDeclared: s.reported.falsifiedDeclared,
+            refusalNamesFailure: s.reported.failureMessage.includes('intentional failure'),
+            falsificationNamesProperty: s.reported.falsifiedMessage.includes('Property falsified'),
+            soundOutcome: s.reported.soundOutcome,
+          }).toEqual({
+            declaredAfterPass: 1,
+            passName: 'a passing effect test',
+            passed: true,
+            declaredAfterFailure: 2,
+            layeredDeclared: true,
+            greeted: true,
+            greetResult: 'Hello, Stryker!',
+            falsifiedDeclared: true,
+            refusalNamesFailure: true,
+            falsificationNamesProperty: true,
+            soundOutcome: 'undefined',
           })
         ),
       ),

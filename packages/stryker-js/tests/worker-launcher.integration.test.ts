@@ -1,4 +1,5 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Worker } from '@systemfsoftware/stryker-js'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -7,8 +8,6 @@ import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { expect } from 'vitest'
-import { Worker } from '../src/mod.js'
 
 import {
   type ChildBehaviour,
@@ -18,7 +17,7 @@ import {
   WORKER_PID,
 } from './__fixtures__/substituted-worker.fixture.js'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const WORKING_DIRECTORY = '/project/.stryker-tmp/sandbox-1'
 const EXEC_ARGV: readonly string[] = ['--enable-source-maps']
@@ -102,7 +101,7 @@ const readingOf = (decision: Worker.ClassifyWorkerExitDecision): string =>
 
 Feature('Running each plugin worker as its own process')
   .withLayer(Layer.empty)
-  .liveClock()
+  .live('the host connects to its plugin worker over a socket and exchanges RPC frames, which the kernel cannot settle')
   .body(({ scenario, scenarioOutline }) => {
     scenario(
       'A plugin worker comes up on its own entry and answers the host',
@@ -115,25 +114,40 @@ Feature('Running each plugin worker as its own process')
           'seen',
           (s) => Effect.sync(() => ({ answer: bootAnswer(s.boot), spawns: s.boot.spawns })),
         ),
-        Then('the worker answers over the connection, and the host started it by the entry the plugin resolved')((s) =>
+        Then('the worker answers over the connection, and the host started it by the entry the plugin resolved')((
+          s,
+          expect,
+        ) =>
           Effect.gen(function*() {
-            expect(s.seen.answer).toBe('pong:boot')
-            expect(s.seen.spawns).toHaveLength(1)
-            const handedToWorker = yield* Option.match(Option.fromNullishOr(s.seen.spawns.at(0)), {
+            const spawn = yield* Option.match(Option.fromNullishOr(s.seen.spawns.at(0)), {
               onNone: () => Effect.die('the host never started the substituted worker'),
-              onSome: (spawn) =>
-                Effect.map(
-                  S.decodeUnknownEffect(Options.StrykerOptionsSchema)(JSON.parse(spawn.optionsJson)),
-                  (options) => ({ spawn, options }),
-                ),
+              onSome: (started) => Effect.succeed(started),
             })
-            expect(handedToWorker.options).toStrictEqual(s.boot.options)
-            expect(handedToWorker.spawn.entrypoint).toBe(WORKER_ENTRYPOINT)
-            expect(handedToWorker.spawn.workingDirectory).toBe(WORKING_DIRECTORY)
-            expect(handedToWorker.spawn.execArgv).toStrictEqual(EXEC_ARGV)
-            expect(handedToWorker.spawn.tempDirPrefix).toBe(TEMP_DIR_PREFIX)
-            expect(handedToWorker.spawn.env).toBeUndefined()
-          })
+            const handedOptions = yield* S.decodeEffect(S.fromJsonString(Options.StrykerOptionsSchema))(
+              spawn.optionsJson,
+            )
+            return {
+              answer: s.seen.answer,
+              spawnCount: s.seen.spawns.length,
+              handedOptions,
+              entrypoint: spawn.entrypoint,
+              workingDirectory: spawn.workingDirectory,
+              execArgv: spawn.execArgv,
+              tempDirPrefix: spawn.tempDirPrefix,
+              env: spawn.env,
+            }
+          }).pipe(Effect.map((facts) =>
+            expect(facts).toEqual({
+              answer: 'pong:boot',
+              spawnCount: 1,
+              handedOptions: s.boot.options,
+              entrypoint: WORKER_ENTRYPOINT,
+              workingDirectory: WORKING_DIRECTORY,
+              execArgv: EXEC_ARGV,
+              tempDirPrefix: TEMP_DIR_PREFIX,
+              env: undefined,
+            })
+          ))
         ),
       ),
     )
@@ -149,10 +163,8 @@ Feature('Running each plugin worker as its own process')
           'timeout',
           (s) => Effect.sync(() => timeoutOf(s.boot)),
         ),
-        Then('the host reports that the worker never came up, naming the child it started')((s) =>
-          Effect.sync(() => {
-            expect(s.timeout.pid).toBe(WORKER_PID)
-          })
+        Then('the host reports that the worker never came up, naming the child it started')((s, expect) =>
+          expect(s.timeout.pid).toEqual(WORKER_PID)
         ),
       ),
     )
@@ -173,19 +185,20 @@ Feature('Running each plugin worker as its own process')
             'failure',
             (s) => Effect.sync(() => bootFailure(s.boot)),
           ),
-          Then(`the host reports ${row.reported}, keeping the ending the process itself had`)((s) =>
-            Effect.sync(() => {
-              if (row.killed) {
-                const outOfMemory = memoryOf(s.boot)
-                expect(outOfMemory.pid).toBe(WORKER_PID)
-                expect(outOfMemory.exitCode).toBe(137)
-                return
-              }
-              const crashed = crashOf(s.boot)
-              expect(crashed.pid).toBe(WORKER_PID)
-              expect(crashed.exit).toStrictEqual({ _tag: 'Code', code: 9 })
+          Then(`the host reports ${row.reported}, keeping the ending the process itself had`)((s, expect) => {
+            if (row.killed) {
+              const outOfMemory = memoryOf(s.boot)
+              return expect({ pid: outOfMemory.pid, exitCode: outOfMemory.exitCode }).toEqual({
+                pid: WORKER_PID,
+                exitCode: 137,
+              })
+            }
+            const crashed = crashOf(s.boot)
+            return expect({ pid: crashed.pid, exit: crashed.exit }).toEqual({
+              pid: WORKER_PID,
+              exit: { _tag: 'Code', code: 9 },
             })
-          ),
+          }),
         ),
     )
 
@@ -208,16 +221,14 @@ Feature('Running each plugin worker as its own process')
               )
             ),
         ),
-        Then('the memory signals are reported as memory exhaustion and the others as a crash')((s) =>
-          Effect.sync(() => {
-            expect(s.readings.map(readingOf)).toStrictEqual([
-              'memory exhaustion at exit 137',
-              'memory exhaustion at exit 134',
-              'a crash',
-              'a crash',
-              'a crash',
-            ])
-          })
+        Then('the memory signals are reported as memory exhaustion and the others as a crash')((s, expect) =>
+          expect(s.readings.map(readingOf)).toEqual([
+            'memory exhaustion at exit 137',
+            'memory exhaustion at exit 134',
+            'a crash',
+            'a crash',
+            'a crash',
+          ])
         ),
       ),
     )
