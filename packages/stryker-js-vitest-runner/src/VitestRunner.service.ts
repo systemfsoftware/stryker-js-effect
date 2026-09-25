@@ -339,7 +339,9 @@ const makeRunner = (input: VitestSessionInput) =>
 
     const dryRunFilter = (options: TestRunner.DryRunOptions): RunFilter => {
       const relatedFiles = Option.getOrUndefined(
-        Option.map(Option.fromNullishOr(options.files), (files) => [...files]),
+        Option.map(Option.filter(Option.fromNullishOr(options.files), (files) => files.length > 0), (files) => [
+          ...files,
+        ]),
       )
       return Boolean.match(options.testFiles !== undefined && options.testFiles.length > 0, {
         onFalse: () => ({ relatedFiles }),

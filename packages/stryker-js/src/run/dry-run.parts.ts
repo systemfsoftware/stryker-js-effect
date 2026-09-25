@@ -66,9 +66,14 @@ const optionalSandboxPathsOf = (command: InstrumentDone) =>
     onFalse: () => sandboxPathsOf(command.sandbox, command.project.testFiles),
   })
 
+const mutatedFileNamesOf = (command: InstrumentDone): readonly string[] => {
+  const mutated = MutableHashSet.fromIterable(command.mutants.map((mutant) => mutant.fileName))
+  return [...MutableHashMap.keys(command.project.filesToMutate)].filter((name) => MutableHashSet.has(mutated, name))
+}
+
 const buildDryRunFiles = (command: InstrumentDone) =>
   Result.flatMap(
-    sandboxPathsOf(command.sandbox, [...MutableHashMap.keys(command.project.filesToMutate)]),
+    sandboxPathsOf(command.sandbox, mutatedFileNamesOf(command)),
     (files) => Result.map(optionalSandboxPathsOf(command), (testFiles) => ({ files, testFiles })),
   )
 
