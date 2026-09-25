@@ -14,8 +14,8 @@ import type { MergeReportsRequest } from './Cli.schema.js'
 import { DuplicatePackageLabel, MergeReportPartsCommand, MissingPackages } from './merge-report-parts.workflow.js'
 import { MergeReportsFailed, PartMetaSchema } from './merge-reports.schema.js'
 import type { OutputMode } from './output-mode.schema.js'
+import { reportFromStream } from './report-from-stream.steps.js'
 import { MetricsResultFromReport } from './reporting/metrics-from-report.schema.js'
-import { reportFromStream } from './stream-report.js'
 
 const PART_MARKER = 'mutation-part.json'
 const PART_REPORT = 'mutation-report.json'
@@ -161,7 +161,7 @@ const expectedPackages = (raw: string | undefined) =>
       }),
   })
 
-const decodeMerge = (raw: {
+export const decodeMerge = (raw: {
   readonly packagesRaw: string | undefined
   readonly bytes: readonly {
     readonly dir: string

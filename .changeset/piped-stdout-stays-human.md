@@ -7,3 +7,5 @@ A piped `stdout` now gets human output, exactly like a terminal. Machine consume
 Every run also writes those wire records to `reports/mutation-stream.jsonl` in human mode too, so a job that shows a readable log still produces the artifact `stryker merge-reports` rebuilds a shard's report from.
 
 If a script or CI step read NDJSON from a piped run without requesting it, pass `--json` (or set `STRYKER_MODE=machine`) there.
+
+Custom `RunEventDrain` implementations must accept a required `toStdout` argument in `drainFramed`; pass-throughs can ignore it.

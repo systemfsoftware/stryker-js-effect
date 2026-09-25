@@ -7,14 +7,19 @@ import { dirname, join } from '@std/path'
 import {
   buildRequireError,
   buildSummary,
+  type CombinedPart,
   combineParts,
+  decodeJson,
   type Entry,
   type Job,
+  JobOrNullSchema,
+  JobsSchema,
   loadState,
   type Outcome,
   type Part,
   type PartMeta,
-  type Report,
+  PartMetaSchema,
+  ReportSchema,
   type Shard,
   slugOf,
   type StagedPart,
@@ -27,9 +32,6 @@ const incrementalFileOf = (shard: Shard | undefined): string =>
 
 const labelOf = (dir: string, shard: Shard | undefined): string =>
   shard === undefined ? dir : `${dir} (${shard.index}/${shard.count})`
-
-const shardOfJob = (job: Job): Shard | undefined =>
-  job.shard === undefined ? undefined : { index: job.shard.index, count: job.shard.count }
 
 const readText = (path: string): Promise<string> => Deno.readTextFile(path)
 
@@ -77,7 +79,7 @@ const strykerUnderCap = async (name: string, shard: Shard | undefined, capSecond
 }
 
 const runJob = async (job: Job, capSeconds: number, budgetSeconds: number): Promise<boolean> => {
-  const shard = shardOfJob(job)
+  const shard = job.shard
   const incrementalFile = incrementalFileOf(shard)
   const entries: Entry[] = []
   const jobStarted = Date.now()
@@ -88,13 +90,14 @@ const runJob = async (job: Job, capSeconds: number, budgetSeconds: number): Prom
     const started = Date.now()
     const cap = Math.min(capSeconds, budgetSeconds - Math.round((started - jobStarted) / 1000))
     let exitCode: number | null = null
+    await removeOutputsOfEarlierRun(join(dir, 'reports'))
     if (cap > 0) {
-      await removeOutputsOfEarlierRun(join(dir, 'reports'))
       console.log(`::group::mutation ${labelOf(dir, shard)}`)
       exitCode = await strykerUnderCap(name, shard, cap)
       console.log('::endgroup::')
     } else {
       console.log(`${name}: skipped, the job's ${budgetSeconds}s budget is spent`)
+      ok = false
     }
     if (exitCode !== null) {
       entries.push({
@@ -111,9 +114,10 @@ const runJob = async (job: Job, capSeconds: number, budgetSeconds: number): Prom
     }
     const outcome: Outcome = exitCode === 0 ? 'success' : 'failure'
     const reportsDir = join(dir, 'reports')
-    const input = { package: labelOf(dir, shard), outcome, reportsDir, readFile: readText }
-    console.log(await buildSummary(input))
-    const missing = buildRequireError(input, await loadState(reportsDir, readText))
+    const input = { package: labelOf(dir, shard), outcome, reportsDir }
+    const state = await loadState(reportsDir, readText)
+    console.log(buildSummary(input, state))
+    const missing = buildRequireError(input, state)
     if (missing !== null) {
       console.log(missing)
       ok = false
@@ -138,21 +142,19 @@ const readStagedParts = async (root: string): Promise<StagedPart[]> => {
   const parts: StagedPart[] = []
   for await (const marker of expandGlob('**/mutation-part.json', { root })) {
     const dir = dirname(marker.path)
-    const report = await readIfPresent(join(dir, 'mutation-report.json'))
+    const reportPath = join(dir, 'mutation-report.json')
+    const report = await readIfPresent(reportPath)
     const stream = await readIfPresent(join(dir, 'mutation-stream.jsonl'))
     parts.push({
-      meta: JSON.parse(await Deno.readTextFile(marker.path)) as PartMeta,
-      ...(report === undefined ? {} : { report: JSON.parse(report) as Report }),
+      meta: decodeJson(PartMetaSchema, await Deno.readTextFile(marker.path), marker.path),
+      ...(report === undefined ? {} : { report: decodeJson(ReportSchema, report, reportPath) }),
       ...(stream === undefined ? {} : { stream }),
     })
   }
   return parts
 }
 
-const writeCombined = async (
-  out: string,
-  combined: ReadonlyMap<string, { meta: PartMeta; report?: Report; stream?: string }>,
-): Promise<void> => {
+const writeCombined = async (out: string, combined: ReadonlyMap<string, CombinedPart>): Promise<void> => {
   for (const [dir, part] of combined) {
     const target = join(out, slugOf(dir))
     await Deno.mkdir(target, { recursive: true })
@@ -168,7 +170,7 @@ const main = async (): Promise<void> => {
   const [command, ...rest] = Deno.args
   const args = parseArgs(rest, { string: ['cap-seconds', 'budget-seconds', 'parts', 'out'] })
   if (command === 'run') {
-    const job = JSON.parse(Deno.env.get('JOB') ?? 'null') as Job | null
+    const job = decodeJson(JobOrNullSchema, Deno.env.get('JOB') ?? 'null', 'JOB')
     if (job === null) throw new Error('run needs JOB, one job from `mutation-timings.ts plan`')
     if (args['cap-seconds'] === undefined || args['budget-seconds'] === undefined) {
       throw new Error('run needs --cap-seconds and --budget-seconds')
@@ -178,7 +180,7 @@ const main = async (): Promise<void> => {
   }
   if (command === 'combine') {
     if (args.parts === undefined || args.out === undefined) throw new Error('combine needs --parts and --out')
-    const jobs = JSON.parse(Deno.env.get('JOBS') ?? '[]') as Job[]
+    const jobs = decodeJson(JobsSchema, Deno.env.get('JOBS') ?? '[]', 'JOBS')
     await writeCombined(args.out, combineParts(await readStagedParts(args.parts)))
     const envFile = Deno.env.get('GITHUB_ENV')
     const packages = JSON.stringify(plannedPackages(jobs))

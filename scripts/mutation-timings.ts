@@ -4,42 +4,53 @@ import { parseArgs } from '@std/cli/parse-args'
 import { expandGlob } from '@std/fs/expand-glob'
 import { dirname, join, relative } from '@std/path'
 import { parse } from '@std/yaml'
+import * as Option from 'effect/Option'
 
 import {
+  decodeInput,
+  decodeJson,
+  decodeJsonOption,
   emptyRecord,
   mergeRecord,
   minutes,
   type MutationPackage,
+  PackageManifestSchema,
   type Part,
+  PartSchema,
   planJobs,
+  PnpmWorkspaceSchema,
   summaryTable,
   type TimingRecord,
+  TimingRecordSchema,
 } from './lib/mutation-plan.ts'
 
-const readJson = async <T>(path: string, fallback: T): Promise<T> => {
+const readIfPresent = async (path: string): Promise<string | null> => {
   try {
-    return JSON.parse(await Deno.readTextFile(path)) as T
+    return await Deno.readTextFile(path)
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) return fallback
+    if (error instanceof Deno.errors.NotFound) return null
     throw error
   }
 }
 
 const readRecord = async (path: string | undefined): Promise<TimingRecord> => {
   if (path === undefined) return emptyRecord
-  const found = await readJson<Partial<TimingRecord>>(path, {})
-  return found.version === 1 && typeof found.packages === 'object' ? found as TimingRecord : emptyRecord
+  const text = await readIfPresent(path)
+  if (text === null) return emptyRecord
+  const decoded = decodeJsonOption(TimingRecordSchema, text)
+  return Option.isSome(decoded) ? decoded.value : emptyRecord
 }
 
 const workspacePackagesWithMutation = async (root: string): Promise<MutationPackage[]> => {
-  const doc = parse(await Deno.readTextFile(join(root, 'pnpm-workspace.yaml'))) as { packages?: string[] }
+  const doc = decodeInput(
+    PnpmWorkspaceSchema,
+    parse(await Deno.readTextFile(join(root, 'pnpm-workspace.yaml'))),
+    'pnpm-workspace.yaml',
+  )
   const found: MutationPackage[] = []
-  for (const glob of doc.packages ?? []) {
+  for (const glob of doc.packages) {
     for await (const manifest of expandGlob(join(glob, 'package.json'), { root, exclude: ['**/node_modules/**'] })) {
-      const json = JSON.parse(await Deno.readTextFile(manifest.path)) as {
-        name?: string
-        scripts?: Record<string, string>
-      }
+      const json = decodeJson(PackageManifestSchema, await Deno.readTextFile(manifest.path), manifest.path)
       if (json.name === undefined || json.scripts?.['mutation'] === undefined) continue
       found.push({ name: json.name, dir: relative(root, dirname(manifest.path)) })
     }
@@ -51,7 +62,7 @@ const readParts = async (dir: string): Promise<Part[]> => {
   const parts: Part[] = []
   try {
     for await (const entry of expandGlob('**/*.json', { root: dir })) {
-      parts.push(await readJson<Part>(entry.path, { job: entry.name, entries: [] }))
+      parts.push(decodeJson(PartSchema, await Deno.readTextFile(entry.path), entry.path))
     }
   } catch (error) {
     if (!(error instanceof Deno.errors.NotFound)) throw error

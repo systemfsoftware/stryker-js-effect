@@ -1510,9 +1510,21 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1
+      '@systemfsoftware/vitest':
+        specifier: 'catalog:'
+        version: 0.1.0(effect@4.0.0-rc.117)(vitest@5.0.1)
+      '@systemfsoftware/vitest-config':
+        specifier: workspace:^
+        version: link:../vitest-config
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.117
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/toolchain/tsdown-config:
     devDependencies:

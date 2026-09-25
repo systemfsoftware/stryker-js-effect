@@ -19,12 +19,20 @@ interface FormatFlags {
 
 type ProbeInput = (typeof ResolveModeCommand)['Encoded']
 
-const JSON_FLAG = '--json'
 const FORMAT_FLAG = '--format'
+
+const JSON_ARGUMENTS: Record<string, true> = {
+  '--json': true,
+  '--json=true': true,
+  '--json=yes': true,
+  '--json=on': true,
+  '--json=1': true,
+  '--json=y': true,
+}
 
 const formatFlagsOf = (argv: readonly string[]): FormatFlags => ({
   text: argv.some((argument) => argument === FORMAT_FLAG || argument.startsWith(`${FORMAT_FLAG}=`)),
-  json: argv.includes(JSON_FLAG),
+  json: argv.some((argument) => JSON_ARGUMENTS[argument] === true),
 })
 
 const resolvedMode = (
@@ -118,3 +126,36 @@ const OutputModeProbe = OutputModeProbeTag
 export { OutputModeProbe }
 
 export const OutputModeProbeLive = OutputModeProbe.layer
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Schema = await import('effect/Schema')
+
+  const Argv = Schema.Array(
+    Schema.Literals([
+      '--json',
+      '--json=true',
+      '--json=false',
+      '--format',
+      'text',
+      '--format=text',
+      '--config=x',
+      'run',
+      '',
+    ]),
+  )
+
+  it.prop(
+    '∀argv_FormatFlags_≡ParsedFromTheRunArguments',
+    { of: [Argv], subject: formatFlagsOf },
+    (subject, [argv]) => {
+      const textPrefix = `${FORMAT_FLAG}=`
+      const expected = {
+        text: argv.some((argument) => argument === FORMAT_FLAG || argument.startsWith(textPrefix)),
+        json: argv.some((argument) => JSON_ARGUMENTS[argument] === true),
+      }
+      const actual = subject(argv)
+      return actual.text === expected.text && actual.json === expected.json
+    },
+  )
+}

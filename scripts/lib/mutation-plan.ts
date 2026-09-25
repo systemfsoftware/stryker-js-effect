@@ -1,42 +1,71 @@
-export type Shard = { readonly index: number; readonly count: number }
+import * as Option from 'effect/Option'
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
-export type Measured = { readonly seconds: number; readonly sha: string }
+export const ShardSchema = S.Struct({ index: S.Int, count: S.Int })
+export type Shard = S.Schema.Type<typeof ShardSchema>
 
-export type TimingRecord = {
-  readonly version: 1
-  readonly packages: Readonly<Record<string, Measured>>
-}
+export const MeasuredSchema = S.Struct({ seconds: S.Number, sha: S.String })
+export type Measured = S.Schema.Type<typeof MeasuredSchema>
 
-export type Entry = {
-  readonly package: string
-  readonly seconds: number
-  readonly exitCode: number | null
-  readonly shard?: Shard
-}
+export const TimingRecordSchema = S.Struct({
+  version: S.Literal(1),
+  packages: S.Record(S.String, MeasuredSchema),
+})
+export type TimingRecord = S.Schema.Type<typeof TimingRecordSchema>
 
-export type Part = { readonly job: string; readonly entries: readonly Entry[] }
+export const EntrySchema = S.Struct({
+  package: S.String,
+  seconds: S.Number,
+  exitCode: S.Union([S.Int, S.Null]),
+  shard: S.optional(ShardSchema),
+})
+export type Entry = S.Schema.Type<typeof EntrySchema>
+
+export const PartSchema = S.Struct({ job: S.String, entries: S.Array(EntrySchema) })
+export type Part = S.Schema.Type<typeof PartSchema>
 
 export type MutationPackage = { readonly name: string; readonly dir: string }
 
-export type Job = {
-  readonly id: string
-  readonly name: string
-  readonly packages: readonly string[]
-  readonly dirs: readonly string[]
-  readonly filters: string
-  readonly predicted: number
-  readonly shard?: Shard & { readonly package: string; readonly dir: string; readonly slug: string }
-}
+export const JobSchema = S.Struct({
+  id: S.String,
+  name: S.String,
+  packages: S.Array(S.String),
+  dirs: S.Array(S.String),
+  filters: S.String,
+  predicted: S.Number,
+  shard: S.optional(ShardSchema),
+})
+export type Job = S.Schema.Type<typeof JobSchema>
+export const JobsSchema = S.Array(JobSchema)
+export const JobOrNullSchema = S.NullOr(JobSchema)
 
 export type Plan = { readonly jobs: readonly Job[] }
 
 export type PlanOptions = { readonly target: number; readonly maxJobs: number; readonly unknownSeconds: number }
 
-export type Outcome = 'success' | 'failure'
+export const OutcomeSchema = S.Literals(['success', 'failure'] as const)
+export type Outcome = S.Schema.Type<typeof OutcomeSchema>
 
-export type PartMeta = { readonly package: string; readonly outcome: Outcome; readonly shard?: Shard }
+export const PartMetaSchema = S.Struct({
+  package: S.String,
+  outcome: OutcomeSchema,
+  shard: S.optional(ShardSchema),
+})
+export type PartMeta = S.Schema.Type<typeof PartMetaSchema>
 
-export type Report = { readonly files: Readonly<Record<string, unknown>>; readonly [key: string]: unknown }
+export const ReportSchema = S.StructWithRest(
+  S.Struct({ schemaVersion: S.String, files: S.Record(S.String, S.Unknown) }),
+  [S.Record(S.String, S.Unknown)],
+)
+export type Report = S.Schema.Type<typeof ReportSchema>
+
+export const PnpmWorkspaceSchema = S.Struct({ packages: S.Array(S.String) })
+
+export const PackageManifestSchema = S.Struct({
+  name: S.optional(S.String),
+  scripts: S.optional(S.Record(S.String, S.String)),
+})
 
 export type StagedPart = { readonly meta: PartMeta; readonly report?: Report; readonly stream?: string }
 
@@ -47,6 +76,27 @@ export type CombinedPart = {
 }
 
 export const emptyRecord: TimingRecord = { version: 1, packages: {} }
+
+export const decodeInput = <Schema extends S.ConstraintDecoder<unknown>>(
+  schema: Schema,
+  input: unknown,
+  source: string,
+): Schema['Type'] =>
+  Result.getOrThrowWith(
+    S.decodeUnknownResult(schema)(input),
+    (error) => new Error(`${source}: ${error.message}`),
+  )
+
+export const decodeJson = <Schema extends S.ConstraintDecoder<unknown>>(
+  schema: Schema,
+  text: string,
+  source: string,
+): Schema['Type'] => decodeInput(S.fromJsonString(schema), text, source)
+
+export const decodeJsonOption = <Schema extends S.ConstraintDecoder<unknown>>(
+  schema: Schema,
+  text: string,
+): Option.Option<Schema['Type']> => S.decodeUnknownOption(S.fromJsonString(schema))(text)
 
 export const slugOf = (name: string): string => name.replace(/^@[^/]+\//, '')
 
@@ -90,7 +140,7 @@ export const planJobs = (
         dirs: [pkg.dir],
         filters: `--filter=${pkg.name}`,
         predicted: Math.round(seconds / count),
-        shard: { index, count, package: pkg.name, dir: pkg.dir, slug },
+        shard: { index, count },
       })
     }
   }
@@ -160,7 +210,7 @@ const tagOf = (value: unknown): unknown => {
   return value._tag
 }
 
-export const countMutantLines = (text: string): number => {
+const countMutantLines = (text: string): number => {
   let n = 0
   for (const raw of text.split('\n')) {
     const line = raw.trim()
@@ -176,7 +226,7 @@ export const countMutantLines = (text: string): number => {
   return n
 }
 
-export const isCompleteReport = (text: string): boolean => {
+const isCompleteReport = (text: string): boolean => {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
@@ -203,13 +253,11 @@ export const loadState = async (
 
 export interface SummaryInput {
   readonly package: string
-  readonly outcome: string
+  readonly outcome: Outcome
   readonly reportsDir: string
-  readonly readFile: (path: string) => Promise<string>
 }
 
-export const buildSummary = async (input: SummaryInput): Promise<string> => {
-  const state = await loadState(input.reportsDir, input.readFile)
+export const buildSummary = (input: SummaryInput, state: ReportState): string => {
   const reportPath = `${input.reportsDir}/mutation-report.json`
   const streamPath = `${input.reportsDir}/mutation-stream.jsonl`
   const lines = [`#### Mutation · **${input.package}**`, '', `- **Stryker outcome**: **${input.outcome}**`]
@@ -222,11 +270,6 @@ export const buildSummary = async (input: SummaryInput): Promise<string> => {
         `- **Report**: **${reportPath}** present but not a valid Stryker report (missing schemaVersion or files) — the report job will fail on this part.`,
       )
     }
-    return `${lines.join('\n')}\n`
-  }
-
-  if (input.outcome === 'cancelled' || input.outcome === 'skipped') {
-    lines.push(`- **Result**: the mutation step did not run (**${input.outcome}**); no report produced.`)
     return `${lines.join('\n')}\n`
   }
 

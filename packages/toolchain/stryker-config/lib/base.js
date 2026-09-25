@@ -1,5 +1,6 @@
 import { globSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const isAgent = process.env['AGENT'] !== undefined
@@ -60,6 +61,26 @@ function sliceFiles(files, packageName, shard) {
 }
 
 /**
+ * @param {unknown} cause
+ * @returns {string}
+ */
+const reason = (cause) => (cause instanceof Error ? cause.message : String(cause))
+
+/**
+ * The `name` of the `package.json` beside the Stryker config, or a `shardMutate`
+ * diagnostic naming the path it looked for and the cause it hit.
+ * @returns {string}
+ */
+function readPackageName() {
+  const path = resolve('package.json')
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')).name
+  } catch (cause) {
+    throw new Error(`shardMutate needs package.json next to the Stryker config at ${path}: ${reason(cause)}`, { cause })
+  }
+}
+
+/**
  * `patterns` for the shard `STRYKER_SHARD=<index>/<count>` names; unchanged when
  * it is unset.
  *
@@ -80,7 +101,7 @@ export function shardMutate(patterns) {
   const include = patterns.filter((pattern) => !pattern.startsWith('!'))
   const exclude = patterns.filter((pattern) => pattern.startsWith('!')).map((pattern) => pattern.slice(1))
   const files = globSync(include, { exclude })
-  const owned = new Set(sliceFiles(files, JSON.parse(readFileSync('package.json', 'utf8')).name, shard))
+  const owned = new Set(sliceFiles(files, readPackageName(), shard))
   return [...patterns, ...files.filter((file) => !owned.has(file)).map((file) => `!${file}`)]
 }
 
