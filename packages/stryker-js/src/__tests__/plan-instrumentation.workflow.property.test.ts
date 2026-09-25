@@ -6,7 +6,6 @@ import {
   EphemeralInstrument,
   InPlaceInstrument,
   InstrumentCommand,
-  InstrumentError,
   planInstrumentation,
 } from '../plan-instrumentation.workflow.js'
 
@@ -16,9 +15,6 @@ describe('planInstrumentation', () => {
     { of: [InstrumentCommand], subject: planInstrumentation },
     (subject, [command]) => {
       const result = subject(command)
-      if (command.fileCount === 0) {
-        return Result.isFailure(result) && S.is(InstrumentError)(result.failure)
-      }
       if (command.inPlace) {
         return (
           Result.isSuccess(result) &&
@@ -31,6 +27,15 @@ describe('planInstrumentation', () => {
         S.is(EphemeralInstrument)(result.success) &&
         result.success.fileCount === command.fileCount
       )
+    },
+  )
+
+  it.prop(
+    '∀inPlace_EmptyFileSet_≡DryRunWithoutMutants',
+    { of: [S.Boolean, S.Finite], subject: planInstrumentation },
+    (subject, [inPlace, pluginCount]) => {
+      const result = subject(InstrumentCommand.make({ fileCount: 0, inPlace, pluginCount }))
+      return Result.isSuccess(result) && result.success.fileCount === 0
     },
   )
 })

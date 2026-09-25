@@ -529,7 +529,11 @@ const determineExitCode = (input: MutationReportingInput) => (metrics: Report.Me
       Option.fromNullishOr(
         Result.match(
           classifyExit(
-            ClassifyExitCommand.make({ pending: [], score: mutationScore, breakingThreshold: breaking }),
+            ClassifyExitCommand.make({
+              pending: [],
+              score: Option.getOrNull(Option.filter(Option.some(mutationScore), Number.isFinite)),
+              breakingThreshold: breaking,
+            }),
           ),
           {
             onFailure: (refused) => refused,

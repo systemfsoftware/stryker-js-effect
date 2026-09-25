@@ -6,7 +6,11 @@ import * as S from 'effect/Schema'
 export class DryRunError extends S.TaggedError<DryRunError>()('DryRunError', {
   stage: S.Literals(['dryRun', 'dryRunNoTests']),
   reason: S.String,
-}) {}
+}) {
+  override get message(): string {
+    return this.reason
+  }
+}
 
 export class FailedTestSummary extends S.Class<FailedTestSummary>('FailedTestSummary')({
   name: S.String,

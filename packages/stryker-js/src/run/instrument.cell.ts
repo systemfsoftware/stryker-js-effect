@@ -8,7 +8,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import { InstrumentCommand, InstrumentError, planInstrumentation } from '../plan-instrumentation.workflow.js'
+import { InstrumentCommand, planInstrumentation } from '../plan-instrumentation.workflow.js'
 import { ProjectFiles } from '../project-files.service.js'
 import type { Project, ProjectFile } from '../Project.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
@@ -153,11 +153,6 @@ export const instrumentCell: Cell.Cell<
 ).decide(planInstrumentation).write({
   InPlaceInstrument: (_decision, raw) => writeInstrument(raw),
   EphemeralInstrument: (_decision, raw) => writeInstrument(raw),
-  InstrumentError: ({ stage, reason }, raw) =>
-    enteringInstrumentPhase(
-      raw,
-      Effect.fail(StageError.make({ stage, reason, cause: InstrumentError.make({ stage, reason }) })),
-    ),
   CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'instrument', reason: issue })),
 })
 

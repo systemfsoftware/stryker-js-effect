@@ -8,7 +8,11 @@ import { MutationTestCommand } from './MutationTest.schema.js'
 export class MutationTestError extends S.TaggedError<MutationTestError>()('MutationTestError', {
   stage: S.Literal('mutationTest'),
   reason: S.String,
-}) {}
+}) {
+  override get message(): string {
+    return this.reason
+  }
+}
 
 const MutationTestDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutationTestDecision')
 type MutationTestDecisionTypeId = typeof MutationTestDecisionTypeId

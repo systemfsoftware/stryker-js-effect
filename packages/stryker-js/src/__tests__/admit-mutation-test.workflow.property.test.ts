@@ -29,4 +29,13 @@ describe('admitMutationTest', () => {
       return Result.isSuccess(result) && S.is(MutationTestProceed)(result.success)
     },
   )
+
+  it.prop(
+    '∀r_MutationTestError_≡MessageIsReason',
+    {
+      of: [S.String],
+      subject: (reason: string): string => MutationTestError.make({ stage: 'mutationTest', reason }).message,
+    },
+    (messageOf, [reason]) => messageOf(reason) === reason,
+  )
 })
