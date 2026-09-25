@@ -137,6 +137,12 @@ export const RunEventDrainLive = RunEventDrain.layer
 
 const encodeUtf8 = (line: string) => new TextEncoder().encode(line)
 
+const runToSink = <E>(stdio: Stdio.Stdio, lines: Stream.Stream<string, E>, toStdout: boolean) =>
+  Boolean.match(toStdout, {
+    onTrue: () => Stream.run(lines, stdio.stdout({ endOnDone: true })),
+    onFalse: () => Stream.runDrain(lines),
+  })
+
 const drainToSinks = (
   fs: FileSystem.FileSystem,
   path: Path.Path,
@@ -153,10 +159,7 @@ const drainToSinks = (
         const withFile = framed.pipe(
           Stream.tap((line) => handle.writeAll(encodeUtf8(line)).pipe(Effect.flatMap(() => handle.sync))),
         )
-        yield* Boolean.match(toStdout, {
-          onTrue: () => Stream.run(withFile, stdio.stdout({ endOnDone: true })),
-          onFalse: () => Stream.runDrain(withFile),
-        }).pipe(Effect.ignore)
+        yield* runToSink(stdio, withFile, toStdout).pipe(Effect.ignore)
       }),
     )
   }).pipe(Effect.orDie)
@@ -178,10 +181,7 @@ const drainFileOf = (stdio: Stdio.Stdio, fs: FileSystem.FileSystem, path: Path.P
   })
 
 const drainOf = (stdio: Stdio.Stdio, framed: Stream.Stream<string>, toStdout: boolean) =>
-  Boolean.match(toStdout, {
-    onTrue: () => Stream.run(framed, stdio.stdout({ endOnDone: true })),
-    onFalse: () => Stream.runDrain(framed),
-  }).pipe(
+  runToSink(stdio, framed, toStdout).pipe(
     Effect.withSpan('stryker.output.drain'),
     Effect.tapCause((cause) => Effect.logError('stryker.output.drain_failed', cause)),
     Effect.ignoreCause,
