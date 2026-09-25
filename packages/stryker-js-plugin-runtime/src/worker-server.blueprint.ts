@@ -1,3 +1,4 @@
+import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -34,7 +35,10 @@ export interface WorkerServerParams<Rpcs extends Rpc.Any, HE, R = never> {
   readonly schemaServices: Layer.Layer<Rpc.ServicesServer<Rpcs>, never, never>
 }
 
-export const workerServerLayer = <Rpcs extends Rpc.Any, HE, R>(params: WorkerServerParams<Rpcs, HE, R>) =>
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js-plugin-runtime/WorkerServer')
+export type TypeId = typeof TypeId
+
+const workerServerLayerOf = <Rpcs extends Rpc.Any, HE, R>(params: WorkerServerParams<Rpcs, HE, R>) =>
   Layer.unwrap(
     Effect.gen(function*() {
       const socket = yield* SocketServer.SocketServer
@@ -48,3 +52,12 @@ export const workerServerLayer = <Rpcs extends Rpc.Any, HE, R>(params: WorkerSer
       )
     }),
   )
+
+const WorkerServers = Blueprint.make<WorkerServerParams<Rpc.Any, never, never>>()(TypeId).steps({
+  steps: {},
+  targets: { layer: workerServerLayerOf },
+})
+
+export const isWorkerServer = WorkerServers.is
+
+export const workerServerLayer = workerServerLayerOf

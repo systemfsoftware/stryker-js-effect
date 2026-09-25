@@ -7,7 +7,16 @@ export const HitLimitReasonPrefix = S.Literal('Hit limit reached')
 
 export const WallClockTimeoutReason = S.Literal('wall-clock-timeout')
 
-export const HitLimitReasonText = S.String.check(S.isStartsWith(HitLimitReasonPrefix.literal))
+const HIT_LIMIT_REASON_PREFIX = HitLimitReasonPrefix.literal
+
+export const HitLimitReasonText = S.String.check(
+  S.isStartsWith(HIT_LIMIT_REASON_PREFIX, {
+    arbitraryConstraint: {
+      patterns: [{ source: `^${HIT_LIMIT_REASON_PREFIX}[\\s\\S]*$`, flags: '' }],
+      minLength: HIT_LIMIT_REASON_PREFIX.length + 2,
+    },
+  }),
+)
 
 const HIT_LIMIT_REASON_SHAPE = /^Hit limit reached \((\d+)\/(\d+)\)$/
 

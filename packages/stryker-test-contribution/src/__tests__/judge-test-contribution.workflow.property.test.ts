@@ -1,16 +1,20 @@
-import { describe, it } from '@effect/vitest'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
-import { JudgeTestContribution, judgeTestContribution } from '../judge-test-contribution.workflow.js'
-
-const decidedOf = (command: JudgeTestContribution) => judgeTestContribution(command).pipe(Result.merge)
+import {
+  JudgeTestContribution,
+  judgeTestContribution,
+  type TestContributionDecision,
+} from '../judge-test-contribution.workflow.js'
 
 const contributionKeysOf = (command: JudgeTestContribution): readonly string[] =>
   Object.keys(command.report.testFiles ?? {})
 
-const verdictOfLaw = (command: JudgeTestContribution): boolean => {
-  const decision = decidedOf(command)
+const decisionOf = (result: Result.Result<TestContributionDecision, never>): TestContributionDecision =>
+  result.pipe(Result.merge)
+
+const verdictOfLaw = (decision: TestContributionDecision, command: JudgeTestContribution): boolean => {
   const suffixes = command.suffixes.join(', ')
   return Match.value(decision).pipe(
     Match.tag('RunUnjudged', (verdict) => verdict.message.includes(suffixes)),
@@ -31,8 +35,7 @@ const verdictOfLaw = (command: JudgeTestContribution): boolean => {
   )
 }
 
-const ruleOrderOfLaw = (command: JudgeTestContribution): boolean => {
-  const decision = decidedOf(command)
+const ruleOrderOfLaw = (decision: TestContributionDecision, command: JudgeTestContribution): boolean => {
   const inScopeCount =
     decision.contribution.filter(([fileName]) => command.suffixes.some((suffix) => fileName.endsWith(suffix))).length
   const everyKillerRecorded = command.everyKillerRecorded
@@ -54,31 +57,55 @@ const ruleOrderOfLaw = (command: JudgeTestContribution): boolean => {
 }
 
 describe('judgeTestContribution', () => {
-  it.prop('∀c_Command_≡NeverThrows', [JudgeTestContribution], ([command]) => {
-    const decision = decidedOf(command)
-    return typeof decision.failed === 'boolean' && typeof decision.message === 'string'
-  })
-  it.prop('∀c_Command_≡ContributionKeys', [JudgeTestContribution], ([command]) => {
-    const decision = decidedOf(command)
-    const keys = contributionKeysOf(command)
-    return decision.contribution.length === keys.length &&
-      decision.contribution.every(([fileName]) => keys.includes(fileName))
-  })
-  it.prop('∀c_Command_≡ToothlessInScope', [JudgeTestContribution], ([command]) => {
-    const decision = decidedOf(command)
-    const keys = contributionKeysOf(command)
-    return decision.toothless.every(
-      (fileName) => keys.includes(fileName) && command.suffixes.some((suffix) => fileName.endsWith(suffix)),
-    )
-  })
-  it.prop('∀c_Command_≡ContributionOrder', [JudgeTestContribution], ([command]) => {
-    const decision = decidedOf(command)
-    return decision.contribution.every(
-      ([, entry]) =>
-        entry.soleKills <= entry.totalKills &&
-        (!entry.coversUnattributedKill || entry.killableCovered > 0),
-    )
-  })
-  it.prop('∀c_Command_≡Verdict', [JudgeTestContribution], ([command]) => verdictOfLaw(command))
-  it.prop('∀c_Command_≡RuleOrder', [JudgeTestContribution], ([command]) => ruleOrderOfLaw(command))
+  it.prop(
+    '∀c_Command_≡NeverThrows',
+    { of: [JudgeTestContribution], subject: judgeTestContribution },
+    (subject, [command]) => {
+      const decision = decisionOf(subject(command))
+      return typeof decision.failed === 'boolean' && typeof decision.message === 'string'
+    },
+  )
+  it.prop(
+    '∀c_Command_≡ContributionKeys',
+    { of: [JudgeTestContribution], subject: judgeTestContribution },
+    (subject, [command]) => {
+      const decision = decisionOf(subject(command))
+      const keys = contributionKeysOf(command)
+      return decision.contribution.length === keys.length &&
+        decision.contribution.every(([fileName]) => keys.includes(fileName))
+    },
+  )
+  it.prop(
+    '∀c_Command_≡ToothlessInScope',
+    { of: [JudgeTestContribution], subject: judgeTestContribution },
+    (subject, [command]) => {
+      const decision = decisionOf(subject(command))
+      const keys = contributionKeysOf(command)
+      return decision.toothless.every(
+        (fileName) => keys.includes(fileName) && command.suffixes.some((suffix) => fileName.endsWith(suffix)),
+      )
+    },
+  )
+  it.prop(
+    '∀c_Command_≡ContributionOrder',
+    { of: [JudgeTestContribution], subject: judgeTestContribution },
+    (subject, [command]) => {
+      const decision = decisionOf(subject(command))
+      return decision.contribution.every(
+        ([, entry]) =>
+          entry.soleKills <= entry.totalKills &&
+          (!entry.coversUnattributedKill || entry.killableCovered > 0),
+      )
+    },
+  )
+  it.prop(
+    '∀c_Command_≡Verdict',
+    { of: [JudgeTestContribution], subject: judgeTestContribution },
+    (subject, [command]) => verdictOfLaw(decisionOf(subject(command)), command),
+  )
+  it.prop(
+    '∀c_Command_≡RuleOrder',
+    { of: [JudgeTestContribution], subject: judgeTestContribution },
+    (subject, [command]) => ruleOrderOfLaw(decisionOf(subject(command)), command),
+  )
 })

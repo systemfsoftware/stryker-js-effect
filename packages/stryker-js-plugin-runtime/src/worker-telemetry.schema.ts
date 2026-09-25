@@ -14,8 +14,14 @@ const tracesUrlOf = (endpoint: string) =>
   )
 
 const canonicalTracesUrl = S.String.pipe(
-  S.check(S.isPattern(/\/v1\/traces$/u)),
-  S.check(S.isPattern(/[^/]$/u)),
+  S.check(
+    S.isPattern(/\/v1\/traces$/u, {
+      arbitraryConstraint: {
+        patterns: [{ source: '\\/v1\\/traces$', flags: 'u' }],
+        minLength: TRACES_SUFFIX.length + 2,
+      },
+    }),
+  ),
 )
 export type TracesUrl = typeof canonicalTracesUrl.Type
 

@@ -1,6 +1,6 @@
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
@@ -8,9 +8,8 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
-import { expect } from 'vitest'
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 const MARKER = 'html-factory-pin-7d2c'
 
@@ -167,6 +166,7 @@ function toStream(events: readonly Reporter.ReporterEvent[]): AsyncIterable<Repo
 Feature('Writing the html mutation report').withLayer(nodeFsPathLayer).body(({ scenario }) => {
   scenario(
     'A completed run writes a self-contained report',
+    { live: 'the scenario creates a real temporary directory and reads real files' },
     Gherkin.Do.pipe(
       Given('an output directory beside an unrelated bundle file')('output', () =>
         Effect.gen(function*() {
@@ -187,19 +187,23 @@ Feature('Writing the html mutation report').withLayer(nodeFsPathLayer).body(({ s
             yield* Effect.promise(() => removeDir(s.output.dir))
           }
         })),
-      Then('the written document embeds the run result')((s) => {
-        expect(s.html).toContain(MARKER)
-        expect(s.html).toContain('mutation-test-report-app')
-      }),
-      Then('the document carries its own bundle, not the neighbouring file or a host path')((s) => {
-        expect(s.html).not.toContain('DECOY-BUNDLE')
-        expect(s.html).not.toContain(s.output.dir)
-      }),
+      Then('the written document embeds the run result and its own bundle, not the neighbouring file or a host path')((
+        s,
+        expect,
+      ) =>
+        expect({
+          marker: s.html.includes(MARKER),
+          app: s.html.includes('mutation-test-report-app'),
+          decoy: s.html.includes('DECOY-BUNDLE'),
+          hostPath: s.html.includes(s.output.dir),
+        }).toEqual({ marker: true, app: true, decoy: false, hostPath: false })
+      ),
     ),
   )
 
   scenario(
     'The same run writes the same document twice',
+    { live: 'the scenario creates real temporary directories and reads real files' },
     Gherkin.Do.pipe(
       Given('a completed run')('run', () =>
         Effect.succeed({
@@ -228,12 +232,9 @@ Feature('Writing the html mutation report').withLayer(nodeFsPathLayer).body(({ s
             yield* Effect.promise(() => removeDir(dirB))
           }
         })),
-      Then('a report is written')((s) => {
-        expect(s.documents.existed).toBe(true)
-      }),
-      Then('both documents are identical')((s) => {
-        expect(s.documents.a).toBe(s.documents.b)
-      }),
+      Then('a report is written and both documents are identical')((s, expect) =>
+        expect({ existed: s.documents.existed, b: s.documents.b }).toEqual({ existed: true, b: s.documents.a })
+      ),
     ),
   )
 })

@@ -4,37 +4,29 @@ import * as Effect from 'effect/Effect'
 import * as S from 'effect/Schema'
 export const TraceparentHeader = S.Literal('traceparent')
 export const TracestateHeader = S.Literal('tracestate')
+const VERSION = S.String.pipe(S.check(S.isPattern(/^([0-9a-e][0-9a-f]|[0-9a-f][0-9a-e])$/)))
+const TRACE_ID = S.String.pipe(
+  S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
+  S.check(S.isLengthBetween(32, 32)),
+)
+const SPAN_ID = S.String.pipe(
+  S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
+  S.check(S.isLengthBetween(16, 16)),
+)
+
 export const TraceContextPartsSchema = S.Struct({
-  version: S.String.pipe(
-    S.check(S.isPattern(/^[0-9a-f]{2}$/)),
-    S.check(S.isPattern(/^([0-9a-e][0-9a-f]|[0-9a-f][0-9a-e])$/)),
-  ),
-  traceId: S.String.pipe(
-    S.check(S.isPattern(/^[0-9a-f]{32}$/)),
-    S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
-  ),
-  spanId: S.String.pipe(
-    S.check(S.isPattern(/^[0-9a-f]{16}$/)),
-    S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
-  ),
+  version: VERSION,
+  traceId: TRACE_ID,
+  spanId: SPAN_ID,
   traceFlags: S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
   traceState: S.optional(S.String),
 })
 export type TraceContextParts = typeof TraceContextPartsSchema.Type
 
 const TraceparentPartsSchema = S.Struct({
-  version: S.String.pipe(
-    S.check(S.isPattern(/^[0-9a-f]{2}$/)),
-    S.check(S.isPattern(/^([0-9a-e][0-9a-f]|[0-9a-f][0-9a-e])$/)),
-  ),
-  traceId: S.String.pipe(
-    S.check(S.isPattern(/^[0-9a-f]{32}$/)),
-    S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
-  ),
-  spanId: S.String.pipe(
-    S.check(S.isPattern(/^[0-9a-f]{16}$/)),
-    S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
-  ),
+  version: VERSION,
+  traceId: TRACE_ID,
+  spanId: SPAN_ID,
   traceFlags: S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
 })
 

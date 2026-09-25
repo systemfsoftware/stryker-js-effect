@@ -82,11 +82,12 @@ export type RenderHtmlReportRead = (typeof RenderHtmlReport)['Encoded'] & {
 const readRenderCommand = (input: {
   readonly fileName: string
   readonly report: Reporter.MutationTestReportReady['report']
+  readonly inlinedBundle?: string
 }): Effect.Effect<RenderHtmlReportRead> =>
   Effect.succeed({
     _tag: 'RenderHtmlReport',
     fileName: input.fileName,
-    inlinedBundle: inlinedBundle(),
+    inlinedBundle: input.inlinedBundle,
     report: input.report,
   })
 
@@ -114,7 +115,10 @@ const failAsHtmlReporter = <A = unknown>(cause: A) =>
 const drainEvents = (fileName: string, events: AsyncIterable<Reporter.ReporterEvent>) =>
   Stream.runForEach(
     Stream.fromAsyncIterable(events, failAsHtmlReporter).pipe(Stream.filter(S.is(Reporter.MutationTestReportReady))),
-    (ready) => writeHtmlReport.run({ fileName, report: ready.report }).pipe(Effect.mapError(failAsHtmlReporter)),
+    (ready) =>
+      writeHtmlReport.run({ fileName, report: ready.report, inlinedBundle: inlinedBundle() }).pipe(
+        Effect.mapError(failAsHtmlReporter),
+      ),
   )
 
 export const makeHtmlReporter = dual<

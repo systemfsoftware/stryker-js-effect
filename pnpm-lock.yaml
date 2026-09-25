@@ -1055,6 +1055,9 @@ importers:
       '@opentelemetry/api':
         specifier: 'catalog:'
         version: 1.9.1
+      '@systemfsoftware/effect-cell-types':
+        specifier: 'catalog:'
+        version: 10.2.0(effect@4.0.0-rc.117)
       '@systemfsoftware/stryker-js-plugin-interface':
         specifier: workspace:^
         version: link:../stryker-js-plugin-interface
@@ -1522,6 +1525,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.117
       fast-check:
         specifier: 'catalog:'
         version: 4.9.0
@@ -1567,6 +1573,9 @@ importers:
       '@opentelemetry/sdk-trace-base':
         specifier: 'catalog:'
         version: 2.11.0(@opentelemetry/api@1.9.1)
+      '@systemfsoftware/effect-cell-types':
+        specifier: 'catalog:'
+        version: 10.2.0(effect@4.0.0-rc.117)
       '@systemfsoftware/effect-microsandbox':
         specifier: 'catalog:'
         version: 3.1.0(effect@4.0.0-rc.117)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)
@@ -5695,7 +5704,7 @@ snapshots:
     dependencies:
       '@eslint-community/regexpp': 4.12.2
       '@oxc-project/types': 0.150.0
-      '@systemfsoftware/effect-cell-types': 10.1.1(effect@4.0.0-rc.117)
+      '@systemfsoftware/effect-cell-types': 10.2.0(effect@4.0.0-rc.117)
       '@systemfsoftware/stryker-framework-interface': 0.0.0
       effect: 4.0.0-rc.117
       oxc-parser: 0.150.0
@@ -5800,7 +5809,7 @@ snapshots:
   '@systemfsoftware/stryker-vm-harness@3.0.0(effect@4.0.0-rc.117)(redis@6.2.1(@opentelemetry/api@1.9.1))(vitest@5.0.1)':
     dependencies:
       '@effect/platform-node': 4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@systemfsoftware/effect-cell-types': 10.1.1(effect@4.0.0-rc.117)
+      '@systemfsoftware/effect-cell-types': 10.2.0(effect@4.0.0-rc.117)
       effect: 4.0.0-rc.117
       vitest: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
     transitivePeerDependencies:
