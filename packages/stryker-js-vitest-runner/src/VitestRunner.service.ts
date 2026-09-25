@@ -92,12 +92,40 @@ const collectTestsFromSuite = (suite: RunnerTestSuite): readonly RunnerTestCase[
     })
   )
 
+const messageOfError = (error: { readonly message?: string }): Option.Option<string> =>
+  Option.filter(Option.fromNullishOr(error.message), (message) => message.length > 0)
+
+const fileFailureMessages = (file: RunnerTestFile): readonly string[] =>
+  Option.match(Option.fromNullishOr(file.result?.errors), {
+    onNone: (): readonly string[] => [],
+    onSome: (errors) => errors.flatMap((error) => Option.toArray(messageOfError(error))),
+  })
+
+const fileFailureMessage = (file: RunnerTestFile): string => {
+  const messages = fileFailureMessages(file)
+  return messages.length === 0 ? 'StrykerJS: the test file failed to load' : messages.join('\n')
+}
+
+const SKIPPED_TEST_MODES: ReadonlySet<string> = new Set(['skip', 'todo'])
+
+const isCollectableTest = (test: RunnerTestCase): boolean =>
+  Match.value(test.result !== undefined).pipe(
+    Match.when(true, () => true),
+    Match.orElse(() => SKIPPED_TEST_MODES.has(test.mode)),
+  )
+
+const fileFailedWithoutFailingTest = (
+  file: RunnerTestFile,
+  tests: readonly RunnerTestCase[],
+): boolean =>
+  Boolean.match(file.result?.state === 'fail', {
+    onTrue: () => !tests.some((test) => test.result?.state === 'fail'),
+    onFalse: () => false,
+  })
+
 const VITEST_ERROR_CODES = Object.freeze({
   FILES_NOT_FOUND: 'VITEST_FILES_NOT_FOUND',
 })
-
-const isErrorCodeError = (error: unknown): error is Error & { code: string } =>
-  error instanceof Error && typeof Reflect.get(error, 'code') === 'string'
 
 export interface RunFilter {
   testIds?: string[]
@@ -148,8 +176,7 @@ const runFilterPlan = (filter: RunFilter, projectRoot: string, pathService: Path
   }
 }
 
-const isMissingTestFilesCause = <E>(cause: E): boolean =>
-  isErrorCodeError(cause) && cause.code.includes(VITEST_ERROR_CODES.FILES_NOT_FOUND)
+const isMissingTestFilesCause = (cause: string): boolean => cause.includes(VITEST_ERROR_CODES.FILES_NOT_FOUND)
 
 const mergeHitCount = (to: Mutant.CoverageData, mutantId: string, hitCount: number) =>
   Option.match(Option.fromNullishOr(to[mutantId]), {
@@ -271,22 +298,29 @@ const makeRunner = (input: VitestSessionInput) =>
           'stryker.vitest.start_filter_count': plan.testFiles === undefined ? -1 : plan.testFiles.length,
         })
         const allFiles = files(self)
-        const rawTests = allFiles
-          .flatMap((file) =>
-            Option.getOrElse(
-              Option.map(Option.liftPredicate(file, isRunnerTestSuite), collectTestsFromSuite),
-              () => [],
-            )
-          )
-          .filter((test) => test.result !== undefined)
+        const collected = allFiles.map((file) => ({
+          file,
+          tests: Option.getOrElse(
+            Option.map(Option.liftPredicate(file, isRunnerTestSuite), collectTestsFromSuite),
+            () => [],
+          ).filter(isCollectableTest),
+        }))
+        const rawTests = collected.flatMap((entry) => entry.tests)
+        const fileFailures = collected.flatMap(({ file, tests }) =>
+          fileFailedWithoutFailingTest(file, tests)
+            ? [{ fileName: file.filepath, message: fileFailureMessage(file) }]
+            : []
+        )
         const externalError = hasExternalErrors(self)
         yield* Effect.annotateCurrentSpan({
           'stryker.vitest.file_count': allFiles.length,
           'stryker.vitest.raw_test_count': rawTests.length,
+          'stryker.vitest.failed_file_count': fileFailures.length,
           'stryker.vitest.has_external_error': externalError,
         })
         return {
           rawTests,
+          fileFailures,
           hasExternalError: externalError,
           externalErrorText: Boolean.match(externalError, { onTrue: () => externalErrorText(self), onFalse: () => '' }),
         }
@@ -335,14 +369,14 @@ const makeRunner = (input: VitestSessionInput) =>
     const dryRun = (options: TestRunner.DryRunOptions) =>
       session.setMode('dry-run').pipe(
         Effect.andThen(Effect.gen(function*() {
-          const { rawTests, hasExternalError, externalErrorText: errorText } = yield* collectRaw(
+          const { rawTests, fileFailures, hasExternalError, externalErrorText: errorText } = yield* collectRaw(
             dryRunFilter(options),
           )
           const decision = interpretVitestDryRun(
             yield* S.decodeEffect(VitestDryRunCommand)({
               _tag: 'VitestDryRunCommand',
               projectRoot,
-              tests: { projectRoot, records: rawTests },
+              tests: { projectRoot, records: rawTests, fileFailures },
               hasExternalError,
               externalErrorText: errorText,
             }),

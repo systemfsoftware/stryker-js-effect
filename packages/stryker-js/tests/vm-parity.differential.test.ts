@@ -1,7 +1,9 @@
 import { Differential } from '@systemfsoftware/differential-spec'
 import { Configuration, Engine, Plugin, Worker } from '@systemfsoftware/stryker-js'
 import type { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { strykerPlugins as vmRunnerPlugins } from '@systemfsoftware/stryker-js-vm-runner'
 import * as TestTelemetry from '@systemfsoftware/vitest-config/telemetry'
+import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -208,7 +210,7 @@ const realTestOutcomes = (
   })
 
 const contextFor = (defaults: Options.StrykerOptions, directory: string): Plugin.TestRunnerBuildContext => ({
-  options: { ...defaults, testRunner: 'vm' },
+  options: { ...defaults, testRunner: 'vm', disableBail: true },
   fileDescriptions: {},
   sandboxWorkingDirectory: directory,
   idGenerator: { next: Effect.succeed(1) },
@@ -219,13 +221,17 @@ const contextFor = (defaults: Options.StrykerOptions, directory: string): Plugin
 const vmChildRunner = (
   context: Plugin.TestRunnerBuildContext,
 ): Effect.Effect<Plugin.PooledTestRunner, Plugin.PooledTestRunnerError, Scope.Scope | Worker.WorkerLauncher> =>
-  Plugin.makeChildProcessTestRunner({
-    options: context.options,
-    fileDescriptions: context.fileDescriptions,
-    sandboxWorkingDirectory: context.sandboxWorkingDirectory,
-    workerEntrypoint: new URL('./main.mjs', Plugin.vmRunnerPluginUrl()).href,
-    idGenerator: context.idGenerator,
-  })
+  Effect.flatMap(
+    Effect.orDie(Effect.fromOption(Arr.head(vmRunnerPlugins))),
+    (runner) =>
+      Plugin.makeChildProcessTestRunner({
+        options: context.options,
+        fileDescriptions: context.fileDescriptions,
+        sandboxWorkingDirectory: context.sandboxWorkingDirectory,
+        workerEntrypoint: runner.workerEntry,
+        idGenerator: context.idGenerator,
+      }),
+  )
 
 const withVmRunner = <A, R>(
   directory: string,
@@ -255,7 +261,7 @@ const vmTestOutcomes = (
       serialized(
         withVmRunner(subroot === '.' ? root : path.join(root, subroot), (runner) =>
           Effect.gen(function*() {
-            const dry = yield* runner.dryRun({ timeout: 180_000, coverageAnalysis: 'off', disableBail: false }).pipe(
+            const dry = yield* runner.dryRun({ timeout: 180_000, coverageAnalysis: 'off', disableBail: true }).pipe(
               Effect.orDie,
             )
             if (dry.status !== 'complete') {

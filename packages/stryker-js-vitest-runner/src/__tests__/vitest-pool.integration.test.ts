@@ -2,6 +2,7 @@ import { NodeCrypto, NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Cause from 'effect/Cause'
+import * as Crypto from 'effect/Crypto'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
@@ -20,7 +21,10 @@ const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto
 const WITH_POOL = { plugin: 'vitest-runner-under-test', options: { pool: 'threads' } } as const
 const WITHOUT_POOL = { plugin: 'vitest-runner-under-test' } as const
 
-type RunnerConfig = typeof WITH_POOL | typeof WITHOUT_POOL
+interface RunnerConfig {
+  readonly plugin: string
+  readonly options?: Record<string, unknown>
+}
 
 const refusalTextOf = (exit: Exit.Exit<unknown, unknown>): string =>
   Exit.isFailure(exit) ? Cause.pretty(exit.cause) : ''
@@ -36,7 +40,7 @@ const withSandbox = <A, E, R>(
       yield* fs.copy(FIXTURE_ROOT, directory, { overwrite: true })
       yield* fs.symlink(path.join(PACKAGE_ROOT, 'node_modules'), path.join(directory, 'node_modules'))
       return directory
-    }),
+    }).pipe(Effect.orDie),
     use,
     (directory) =>
       FileSystem.FileSystem.pipe(
@@ -61,7 +65,7 @@ const initRunner = (
   directory: string,
   testRunner: RunnerConfig,
   configFile?: string,
-): Effect.Effect<TestRunner.DryRunResult | undefined, never> =>
+): Effect.Effect<TestRunner.DryRunResult | undefined, never, Crypto.Crypto | FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const runnerLayer = yield* runnerLayerOf(directory, testRunner, configFile)
     return yield* Effect.gen(function*() {
@@ -71,7 +75,7 @@ const initRunner = (
         Effect.orElseSucceed(() => undefined),
       )
     }).pipe(Effect.provide(runnerLayer), Effect.scoped, Effect.orDie)
-  })
+  }).pipe(Effect.orDie)
 
 const attemptInit = (directory: string, testRunner: RunnerConfig, configFile?: string) =>
   Effect.gen(function*() {

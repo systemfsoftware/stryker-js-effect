@@ -37,11 +37,22 @@ interface RunFilterInput {
   readonly testNamePattern: RegExp | undefined
 }
 
+const isErrorWithCode = (value: unknown): value is { readonly code: string } =>
+  typeof Reflect.get(Object(value), 'code') === 'string'
+
+const errorCodeOf = <A>(cause: A): Option.Option<string> =>
+  Option.map(Option.liftPredicate(cause, isErrorWithCode), (value) => value.code)
+
 const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
   new TestRunner.TestRunnerFailed({
     runnerName: 'vitest',
     phase,
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: `${
+      Option.getOrElse(
+        Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text),
+        () => '',
+      )
+    }${Option.match(errorCodeOf(cause), { onNone: () => '', onSome: (code) => ` (code: ${code})` })}`,
   })
 
 const disableScreenshotFailures = <A>(value: A) =>
