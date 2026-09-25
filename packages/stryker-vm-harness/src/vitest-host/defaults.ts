@@ -35,6 +35,7 @@ export const defaultProjectConfig = (root: string): VmProjectConfig => ({
   strictTags: true,
   sequence: { concurrent: false, shuffle: false, hooks: 'stack', setupFiles: 'parallel' },
   allowOnly: false,
+  passWithNoTests: false,
 })
 
 export const defaultVitestConfig = (root: string): VmVitestConfig => ({

@@ -26,7 +26,8 @@ export { isStageError } from './dry-run.parts.js'
 
 export const dryRunCell = Sandwich.named('stryker.dry_run')(readDryRun).decide(dryRun).write({
   DryRunPassed: (_decision, raw) => writeDryRunPassed(raw),
-  DryRunFailed: ({ testCount, failedTestCount }, _raw) => writeDryRunFailed({ testCount, failedTestCount }),
+  DryRunFailed: ({ testCount, failedTestCount, failedTests }, _raw) =>
+    writeDryRunFailed({ testCount, failedTestCount, failedTests }),
   DryRunError: ({ stage, reason }) =>
     Effect.fail(StageError.make({ stage, reason, cause: DryRunError.make({ stage, reason }) })),
   CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'dryRun', reason: issue })),

@@ -8,10 +8,16 @@ export class DryRunError extends S.TaggedError<DryRunError>()('DryRunError', {
   reason: S.String,
 }) {}
 
+export class FailedTestSummary extends S.Class<FailedTestSummary>('FailedTestSummary')({
+  name: S.String,
+  failureMessage: S.String,
+}) {}
+
 export class DryRunCommand extends S.TaggedClass<DryRunCommand>()('DryRunCommand', {
   status: S.Literals(['Complete', 'Error', 'Timeout']),
   testCount: S.Finite,
   failedTestCount: S.Finite,
+  failedTests: S.Array(FailedTestSummary),
   allowEmpty: S.Boolean,
   errorMessage: S.optional(S.String),
   reason: S.optional(S.String),
@@ -36,6 +42,7 @@ export class DryRunPassed extends S.TaggedClass<DryRunPassed>()('DryRunPassed', 
 export class DryRunFailed extends S.TaggedClass<DryRunFailed>()('DryRunFailed', {
   testCount: S.Finite,
   failedTestCount: S.Finite,
+  failedTests: S.Array(FailedTestSummary),
 }) {
   readonly [DryRunDecisionTypeId] = DryRunDecisionTypeId
 }
@@ -56,6 +63,7 @@ const decideComplete = (command: DryRunCommand): Result.Result<DryRunDecision, D
     outcome: completeOutcomeOf(command),
     testCount: command.testCount,
     failedTestCount: command.failedTestCount,
+    failedTests: command.failedTests,
   }).pipe(
     Match.when({ outcome: 'noTests' }, () =>
       Result.fail(
@@ -64,11 +72,12 @@ const decideComplete = (command: DryRunCommand): Result.Result<DryRunDecision, D
           reason: 'No tests were executed. Stryker will exit prematurely. Please check your configuration.',
         }),
       )),
-    Match.when({ outcome: 'failed' }, ({ testCount, failedTestCount }) =>
+    Match.when({ outcome: 'failed' }, ({ testCount, failedTestCount, failedTests }) =>
       Result.succeed(
         DryRunFailed.make({
           testCount,
           failedTestCount,
+          failedTests,
         }),
       )),
     Match.when({ outcome: 'passed' }, ({ testCount }) =>

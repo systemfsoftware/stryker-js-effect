@@ -3,7 +3,11 @@ import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/ef
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 
-import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
+import {
+  effectConcurrencyFixtureFiles,
+  effectConcurrencySelectionFixtureFiles,
+  type FixtureFile,
+} from './__fixtures__/effect-concurrency-files.js'
 import { instrument } from './__fixtures__/instrument.js'
 
 const ATOMIC_UPDATE_SPLIT = 'AtomicUpdateSplit'
@@ -165,9 +169,11 @@ Feature('Choosing extra concurrency mutations by name')
     scenario(
       'A run that names some concurrency mutators turns on exactly the ones it named and nothing else',
       Gherkin.Do.pipe(
-        Given('every Effect concurrency fixture has been read from disk')(
+        Given(
+          'the fixtures holding a placement site for each concurrency mutator, and a bare update holding none, have been read from disk',
+        )(
           'fixtures',
-          () => effectConcurrencyFixtureFiles,
+          () => effectConcurrencySelectionFixtureFiles,
         ),
         When('the fixtures are instrumented once without extras and once for every choice of concurrency mutators')(
           'runs',

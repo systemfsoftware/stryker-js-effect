@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { type ConfigEnv, StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { type ConfigEnv, defineConfig, mergeConfig } from '@systemfsoftware/stryker-js/config'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 
@@ -20,7 +20,7 @@ Feature('Authoring a Stryker configuration with the published helper')
         ),
         When('the author hands it to the helper')(
           'received',
-          (s) => Effect.succeed(StrykerConfig.define(s.written)),
+          (s) => Effect.succeed(defineConfig(s.written)),
         ),
         Then('the run receives exactly the configuration that was written')((s, expect) =>
           expect(s.received).toBe(s.written)
@@ -46,7 +46,7 @@ Feature('Authoring a Stryker configuration with the published helper')
         ),
         When('the author hands the deriving configuration to the helper')(
           'received',
-          (s) => Effect.succeed(StrykerConfig.define(s.derived.factory)),
+          (s) => Effect.succeed(defineConfig(s.derived.factory)),
         ),
         Then('the run receives that same configuration, still uncalled, and it resolves the run it is given')(
           (s, expect) => {
@@ -74,7 +74,7 @@ Feature('Authoring a Stryker configuration with the published helper')
         ),
         When('an override naming another plugin and a higher threshold is composed onto the preset')(
           'composed',
-          (s) => Effect.succeed(StrykerConfig.merge(s.preset, { plugins: ['@acme/mine'], thresholds: { high: 70 } })),
+          (s) => Effect.succeed(mergeConfig(s.preset, { plugins: ['@acme/mine'], thresholds: { high: 70 } })),
         ),
         Then('the thresholds are merged and the plugin list is the override’s own')((s, expect) =>
           expect({ thresholds: s.composed.thresholds, plugins: s.composed.plugins }).toEqual({

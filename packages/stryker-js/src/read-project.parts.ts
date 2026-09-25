@@ -15,7 +15,7 @@ import type { PlatformError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 
 import { AdmitIncrementalReportCommand } from './admit-incremental-report.workflow.js'
-import { StrykerConfig } from './config/stryker-config.schema.js'
+import { defaultOptions } from './config/default-options.js'
 import { IncrementalReportSchema } from './IncrementalReport.schema.js'
 import { IgnoreRule } from './matching.schema.js'
 import { type MutationRangeSpecifier, MutationRangeSpecifierSchema } from './MutationRange.schema.js'
@@ -696,7 +696,7 @@ export const readProjectCommand = (input: ReadProjectInput) =>
     const mutatePatterns: readonly string[] = input.options.mutate
     const { testFileIgnores, testFilePatterns } = testFileSelectionOf(input.options)
     const inputFileNames = yield* resolveInputFileNames(ignoreRulesOf(input.options), input.basePath)
-    const defaults = yield* StrykerConfig.defaultOptions
+    const defaults = yield* defaultOptions
     const decision = selectFiles(
       selectionOf(
         inputFileNames,

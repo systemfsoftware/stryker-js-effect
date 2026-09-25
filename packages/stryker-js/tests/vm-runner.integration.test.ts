@@ -180,19 +180,34 @@ const EXITING_SUITE = [
   '})',
 ].join('\n')
 
-const OVERLAPPING_SUITE = (marker: string): string =>
+const RENDEZVOUS_BUDGET_MS = 10_000
+const RENDEZVOUS_POLL_MS = 10
+const RENDEZVOUS_TEST_TIMEOUT_MS = RENDEZVOUS_BUDGET_MS + 5_000
+
+const OVERLAPPING_SUITE = (marker: string, siblingStampFile: string): string =>
   [
-    "import { test } from 'vitest'",
-    "import { appendFileSync } from 'node:fs'",
+    "import { test, vi } from 'vitest'",
+    "import { appendFileSync, readFileSync } from 'node:fs'",
     "import { dirname, join } from 'node:path'",
     '',
     'const workerFile = (globalThis as { __vitest_worker__?: { filepath?: string } }).__vitest_worker__?.filepath ?? globalThis.process.cwd()',
     `const stampFile = join(dirname(workerFile), ${JSON.stringify(`${marker}.stamps`)})`,
-    `test(${JSON.stringify(`overlaps ${marker}`)}, async () => {`,
-    '  const { promise, resolve } = Promise.withResolvers<void>()',
-    '  setTimeout(resolve, 300)',
+    `const siblingStampFile = ${JSON.stringify(siblingStampFile)}`,
+    'const siblingStarted = () => {',
+    '  try {',
+    "    return readFileSync(siblingStampFile, 'utf8').includes('start')",
+    '  } catch {',
+    '    return false',
+    '  }',
+    '}',
+    `const rendezvousOptions = { timeout: ${RENDEZVOUS_BUDGET_MS}, interval: ${RENDEZVOUS_POLL_MS} }`,
+    `test(${JSON.stringify(`overlaps ${marker}`)}, { timeout: ${RENDEZVOUS_TEST_TIMEOUT_MS} }, async () => {`,
     '  appendFileSync(stampFile, `start ${performance.now()}\\n`)',
-    '  await promise',
+    '  try {',
+    '    await vi.waitUntil(siblingStarted, rendezvousOptions)',
+    '  } catch {',
+    "    throw new Error('the other runner never reached its body while this one was running, so the two checks waited for each other')",
+    '  }',
     '  appendFileSync(stampFile, `end ${performance.now()}\\n`)',
     '})',
   ].join('\n')
@@ -238,6 +253,42 @@ const writeEmptyProject = (): Effect.Effect<SuiteFixture, never, FileSystem.File
     const directory = yield* fs.makeTempDirectory()
     return { directory, file: directory, files: [] }
   }).pipe(Effect.orDie)
+const writeSuiteIn = (
+  directory: string,
+  prefix: string,
+  source: string,
+): Effect.Effect<SuiteFixture, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const file = path.join(directory, `${prefix}.test.ts`)
+    yield* fs.writeFileString(file, source)
+    return { directory, file }
+  }).pipe(Effect.orDie)
+const writeOverlappingSuites = (): Effect.Effect<
+  readonly [SuiteFixture, SuiteFixture],
+  never,
+  FileSystem.FileSystem | Path.Path
+> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const aDirectory = yield* fs.makeTempDirectory()
+    const bDirectory = yield* fs.makeTempDirectory()
+    yield* linkSandboxDependencies(aDirectory)
+    yield* linkSandboxDependencies(bDirectory)
+    const a = yield* writeSuiteIn(
+      aDirectory,
+      'slow-a',
+      OVERLAPPING_SUITE('slow-a', path.join(bDirectory, 'slow-b.stamps')),
+    )
+    const b = yield* writeSuiteIn(
+      bDirectory,
+      'slow-b',
+      OVERLAPPING_SUITE('slow-b', path.join(aDirectory, 'slow-a.stamps')),
+    )
+    return [a, b] as const
+  }).pipe(Effect.orDie)
 const readStamps = (
   directory: string,
   marker: string,
@@ -263,7 +314,7 @@ const buildContextFor = (
   testFilesOverride?: readonly string[],
 ): Effect.Effect<Plugin.TestRunnerBuildContext> =>
   Effect.gen(function*() {
-    const defaults = yield* Configuration.StrykerConfig.createDefaultOptions
+    const defaults = yield* Configuration.createDefaultOptions
     return {
       options: { ...defaults, testRunner: 'vm' },
       fileDescriptions: {},
@@ -782,13 +833,9 @@ Feature('Verifying mutants without spawning a child process', { timeout: 180_000
     scenario(
       'Two runners checked at the same time do not wait for each other',
       Gherkin.Do.pipe(
-        Given('two written suites whose only test stamps when its body runs')(
+        Given('two written suites whose only test waits for the other suite to reach its body')(
           'suites',
-          () =>
-            Effect.all([
-              writeSuite('slow-a', OVERLAPPING_SUITE('slow-a')).pipe(Effect.provide(suiteFileLayer)),
-              writeSuite('slow-b', OVERLAPPING_SUITE('slow-b')).pipe(Effect.provide(suiteFileLayer)),
-            ]),
+          () => writeOverlappingSuites().pipe(Effect.provide(suiteFileLayer)),
         ),
         When('each runner checks its own suite and both checks run side by side')(
           'checked',
@@ -818,11 +865,14 @@ Feature('Verifying mutants without spawning a child process', { timeout: 180_000
           )
           const first = moments[0] ?? []
           const second = moments[1] ?? []
+          const failedTests = s.checked.results.flatMap((result) => result.status === 'complete' ? result.tests : [])
+            .filter((test) => test.status === 'failed').map((test) => `${test.name}: ${test.failureMessage}`)
           return expect({
             allCompleted: s.checked.results.every((result) => result.status === 'complete'),
             stampCounts: moments.map((times) => times.length),
             bodiesOverlapped: Math.max(first[0] ?? 0, second[0] ?? 0) < Math.min(first[1] ?? 0, second[1] ?? 0),
-          }).toEqual({ allCompleted: true, stampCounts: [2, 2], bodiesOverlapped: true })
+            failedTests,
+          }).toEqual({ allCompleted: true, stampCounts: [2, 2], bodiesOverlapped: true, failedTests: [] })
         }),
       ),
     )

@@ -967,6 +967,12 @@ const createSession = (
     populated: ReadonlySet<string>,
   ): boolean => discovered.has(file) && !populated.has(file)
 
+  const passWithNoTestsFlagOf = (runtime: VmVitestRuntime | undefined, file: string): boolean | undefined =>
+    runtime?.projectFor(file).passWithNoTests
+
+  const passWithNoTestsFor = (runtime: VmVitestRuntime | undefined, file: string): boolean =>
+    passWithNoTestsFlagOf(runtime, file) ?? false
+
   const isEmptySuiteCandidate = (
     file: string,
     discovered: ReadonlySet<string>,
@@ -974,11 +980,16 @@ const createSession = (
     loadFailureFile: string | undefined,
   ): boolean => file !== loadFailureFile && isUnpopulatedDiscovered(file, discovered, populated)
 
-  const emptySuiteTests = (loaded: LoadedGraph, loadFailureFile: string | undefined): VmTestResult[] => {
+  const emptySuiteTests = (
+    runtime: VmVitestRuntime | undefined,
+    loaded: LoadedGraph,
+    loadFailureFile: string | undefined,
+  ): VmTestResult[] => {
     const discovered = new Set(discoveredFiles() ?? [])
     const populated = new Set(loaded.registry.tests.map((test) => test.file))
     return loaded.files
       .filter((file) => isEmptySuiteCandidate(file, discovered, populated, loadFailureFile))
+      .filter((file) => !passWithNoTestsFor(runtime, file))
       .map(emptySuiteTestOf)
   }
 
@@ -1034,7 +1045,7 @@ const createSession = (
   const completeResponse = (context: ResponseContext, drained: DrainedCompletion): VmRunResponse => {
     const tests = drainedTestsOf(drained)
     tests.push(...loadFailureTests(context.failure))
-    tests.push(...emptySuiteTests(context.loaded, loadFailureFileOf(context.failure)))
+    tests.push(...emptySuiteTests(vitestRuntimeOf(), context.loaded, loadFailureFileOf(context.failure)))
     const mutantCoverage = mutantCoverageOf(context)
     return mutantCoverage === undefined
       ? { status: 'complete', tests }

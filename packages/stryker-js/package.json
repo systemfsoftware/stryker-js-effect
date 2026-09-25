@@ -50,11 +50,6 @@
   "peerDependencies": {
     "effect": "catalog:"
   },
-  "peerDependenciesMeta": {
-    "effect": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",

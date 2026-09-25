@@ -1,8 +1,11 @@
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
+import { NodeChildProcessSpawner, NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Effect, Layer } from 'effect'
+
+import { Effect, Layer, Stream } from 'effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
+import * as ChildProcess from 'effect/unstable/process/ChildProcess'
+import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
 import { Session } from '@systemfsoftware/stryker-vm-harness'
 
@@ -11,9 +14,13 @@ const Feature = makeFeature({ it })
 const stripViteFilePrefix = (pathname: string): string =>
   pathname.startsWith('/@fs/') ? pathname.slice('/@fs'.length) : pathname
 
-const NODE_MODULES_LINK_SOURCE = stripViteFilePrefix(
-  decodeURIComponent(new URL('../../stryker-js/node_modules', import.meta.url).pathname),
-)
+const filePathOf = (url: string): string => stripViteFilePrefix(decodeURIComponent(url.replace(/^file:\/\//, '')))
+
+const parentOf = (entry: string): string => entry.slice(0, entry.lastIndexOf('/'))
+
+const HARNESS_ROOT = parentOf(parentOf(filePathOf(import.meta.url)))
+
+const NODE_MODULES_LINK_SOURCE = `${parentOf(HARNESS_ROOT)}/stryker-js/node_modules`
 
 type ProjectFiles = Readonly<Record<string, string>>
 
@@ -56,6 +63,121 @@ const hostOver = (root: string): Session.VmPluginHost => ({
 })
 
 const configFileOf = (root: string): string => `${root}/vitest.config.ts`
+
+const childEnv = (): Record<string, string> => {
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(globalThis.process.env)) {
+    if (value === undefined || key === 'NODE_PATH') continue
+    env[key] = value
+  }
+  return env
+}
+
+interface GuestOutcome {
+  readonly files: ReadonlyArray<string>
+}
+
+interface GuestRun {
+  readonly away: string
+  readonly project: string
+  readonly harnessRoot: string
+  readonly sourcesOnly: boolean
+}
+
+const guestScriptFor = (run: GuestRun): string =>
+  `const harnessRoot = ${JSON.stringify(run.harnessRoot)}
+const project = ${JSON.stringify(run.project)}
+const sourcesOnly = ${JSON.stringify(run.sourcesOnly)}
+const { createRequire } = await import('node:module')
+const { existsSync } = await import('node:fs')
+const { writeFile } = await import('node:fs/promises')
+const { join } = await import('node:path')
+const { pathToFileURL } = await import('node:url')
+
+try {
+  createRequire(join(process.cwd(), 'noop.js')).resolve('@systemfsoftware/stryker-vm-harness/package.json')
+  console.error('the harness package resolves from this working directory')
+  process.exit(3)
+} catch {
+  // expected: the working directory cannot see the harness package
+}
+if (sourcesOnly && existsSync(join(harnessRoot, 'dist'))) {
+  console.error('the harness sources carry a dist build')
+  process.exit(3)
+}
+const distEntry = join(harnessRoot, 'dist', 'index.mjs')
+const loaded = existsSync(distEntry)
+  ? await import(pathToFileURL(distEntry).href)
+  : await import(pathToFileURL(join(harnessRoot, 'src', 'vitest-host', 'bridge.ts')).href)
+const createRuntime = 'Session' in loaded ? loaded.Session.createVmVitestRuntime : loaded.createVmVitestRuntime
+const handle = createRuntime({ sandboxWorkingDirectory: project, configFile: undefined })
+const files = await handle.listTestFiles()
+await handle.close()
+await writeFile(join(process.cwd(), 'report.txt'), [...files].join('\\n'))
+`
+
+const createBareDirectory = (): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const root = yield* fs.realPath(yield* fs.makeTempDirectory())
+    yield* fs.writeFileString(path.join(root, 'package.json'), '{"type":"module"}\n')
+    return root
+  }).pipe(Effect.orDie)
+
+const copyHarnessSources = (): Effect.Effect<{ readonly root: string }, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const root = yield* fs.realPath(yield* fs.makeTempDirectory())
+    yield* fs.makeDirectory(path.join(root, 'src'), { recursive: true })
+    yield* fs.copy(path.join(HARNESS_ROOT, 'package.json'), path.join(root, 'package.json'))
+    yield* fs.copy(path.join(HARNESS_ROOT, 'src', 'vitest-host'), path.join(root, 'src', 'vitest-host'))
+    yield* fs.copy(path.join(HARNESS_ROOT, 'src', 'native-import.ts'), path.join(root, 'src', 'native-import.ts'))
+    yield* fs.symlink(NODE_MODULES_LINK_SOURCE, path.join(root, 'node_modules'))
+    return { root }
+  }).pipe(Effect.orDie)
+
+const GUEST_FAILED_MESSAGE = 'the guest process failed to start the host worker'
+
+const filesFrom = (report: string): ReadonlyArray<string> => {
+  const trimmed = report.trim()
+  return trimmed.length === 0 ? [] : trimmed.split('\n')
+}
+
+const startHostFrom = (
+  run: GuestRun,
+): Effect.Effect<
+  GuestOutcome,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      yield* fs.writeFileString(path.join(run.away, 'guest.mjs'), guestScriptFor(run))
+      const guestLoader = yield* path.toFileUrl(
+        path.join(run.harnessRoot, 'src', 'vitest-host', 'ts-source-loader.ts'),
+      )
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      const guest = yield* spawner.spawn(
+        ChildProcess.make(globalThis.process.execPath, ['--import', guestLoader.href, 'guest.mjs'], {
+          cwd: run.away,
+          env: childEnv(),
+        }),
+      )
+      const [stderr, exitCode] = yield* Effect.all(
+        [Stream.runCollect(Stream.decodeText(guest.stderr)), guest.exitCode] as const,
+        { concurrency: 'unbounded' },
+      )
+      const failure = stderr.join('')
+      if (exitCode !== 0) {
+        return yield* Effect.die(new Error(`${GUEST_FAILED_MESSAGE}: exit ${exitCode}\n${failure}`))
+      }
+      return { files: filesFrom(yield* fs.readFileString(path.join(run.away, 'report.txt'))) }
+    }),
+  ).pipe(Effect.orDie)
 
 const projectsConfig = (root: string): string =>
   `import { defineConfig } from 'vitest/config'
@@ -192,14 +314,51 @@ test('the project plugin rewrote the module value', () => {
 })
 `
 
-const resolveInMemory = (
+const markerTextsTest = [
+  "import { expect, test } from 'vitest'",
+  '',
+  'function probe() {',
+  '  // comment keeps import.meta.vitest untouched',
+  "  return 'import.meta.vitest'",
+  '}',
+  '',
+  "const expected = ['import', 'meta', 'vitest'].join('.')",
+  'const fromTemplate = `template keeps import.meta.vitest untouched`',
+  'const expectedTemplate = `template keeps ${expected} untouched`',
+  'const fromSubstitution = `${typeof import.meta.vitest?.it}`',
+  '',
+  "test('string, template and comment texts keep the marker', () => {",
+  '  expect(probe()).toBe(expected)',
+  "  expect(probe.toString()).toContain('// comment keeps ' + expected + ' untouched')",
+  '  expect(fromTemplate).toBe(expectedTemplate)',
+  "  expect(fromSubstitution).toBe('function')",
+  '})',
+  '',
+].join('\n')
+
+const inSourceModule = [
+  'const api = import.meta.vitest',
+  'if (api) {',
+  "  api.it('an in-source guard registers and passes', () => undefined)",
+  '}',
+  '',
+].join('\n')
+
+const markerTextsConfig = `import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: { includeSource: ['src/**/*.ts'] },
+})
+`
+
+const resolveFilesInMemory = (
   root: string,
-  testFile: string,
+  testFiles: ReadonlyArray<string>,
   plugins: ReadonlyArray<Session.VmSessionPlugin>,
 ): Effect.Effect<Session.VmRunResponse, never, never> =>
   Effect.gen(function*() {
     const session = yield* Effect.promise(() =>
-      Session.createVmSession({ sandboxWorkingDirectory: root, testFiles: [testFile] }, plugins)
+      Session.createVmSession({ sandboxWorkingDirectory: root, testFiles: [...testFiles] }, plugins)
     )
     const response = yield* Effect.promise(() =>
       session.run({ kind: 'dry', timeoutMs: 30000, reloadEnvironment: true })
@@ -207,6 +366,12 @@ const resolveInMemory = (
     yield* Effect.promise(() => session.dispose())
     return response
   })
+
+const resolveInMemory = (
+  root: string,
+  testFile: string,
+  plugins: ReadonlyArray<Session.VmSessionPlugin>,
+): Effect.Effect<Session.VmRunResponse, never, never> => resolveFilesInMemory(root, [testFile], plugins)
 
 interface RunSummary {
   readonly status: string
@@ -231,8 +396,12 @@ const summarizeRun = (response: Session.VmRunResponse): RunSummary =>
 
 const passingRun = { status: 'complete', testCount: 1, failures: [] }
 
+const portsLayer = NodeChildProcessSpawner.layer.pipe(
+  Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)),
+)
+
 Feature('Loading a Vitest project in memory')
-  .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
+  .withLayer(portsLayer)
   .live('the sandbox writes real project files and loads them through a real Vitest runtime')
   .body(({ scenario, scenarioOutline }) => {
     scenario(
@@ -504,6 +673,48 @@ Feature('Loading a Vitest project in memory')
       ),
     )
 
+    scenarioOutline(
+      'A test file keeps marker text in its literals <config>',
+      [
+        { config: 'with a config file', configFile: markerTextsConfig },
+        { config: 'without a config file', configFile: undefined },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given(
+            `a sandbox project ${row.config} whose test file mentions the in-source marker in text`,
+          )(
+            'project',
+            () =>
+              createProject(() => ({
+                ...(row.configFile === undefined ? {} : { 'vitest.config.ts': row.configFile }),
+                'src/in-source.ts': inSourceModule,
+                'marker.test.ts': markerTextsTest,
+              })),
+          ),
+          When('the suite runs in the in-memory vm runner')(
+            'response',
+            (s) =>
+              resolveFilesInMemory(s.project, [`${s.project}/marker.test.ts`, `${s.project}/src/in-source.ts`], [
+                Session.vitestConfigPlugin,
+                Session.transformPlugin,
+                Session.runnerStatePlugin,
+              ]),
+          ),
+          Then('the marker texts are unchanged and the guarded suite passes')((s, expect) => {
+            const names = s.response.status === 'complete' ? s.response.tests.map((test) => test.name) : []
+            const check = expect({
+              run: summarizeRun(s.response),
+              registersGuard: names.some((name) => name.includes('an in-source guard registers and passes')),
+            }).toEqual({
+              run: { status: 'complete', testCount: 2, failures: [] },
+              registersGuard: true,
+            })
+            return removeProject(s.project).pipe(Effect.as(check))
+          }),
+        ),
+    )
+
     scenario(
       'Browser mode refuses to start in memory',
       Gherkin.Do.pipe(
@@ -532,6 +743,75 @@ Feature('Loading a Vitest project in memory')
           }).toEqual({ failed: true, namesVitestRunner: true })
           return removeProject(s.prepared.root).pipe(Effect.as(check))
         }),
+      ),
+    )
+
+    scenario(
+      'The host worker starts from a working directory that cannot resolve the harness package',
+      Gherkin.Do.pipe(
+        Given('a sandbox project with a test file and no config file')(
+          'project',
+          () =>
+            createProject(() => ({
+              'src/mathy.test.ts': "import { test } from 'vitest'\ntest('math', () => undefined)\n",
+            })),
+        ),
+        Given('a bare working directory without a node_modules tree above it')('away', createBareDirectory),
+        When('the host worker is started by a real child process from the bare directory')(
+          'outcome',
+          (s) =>
+            startHostFrom({
+              away: s.away,
+              project: s.project,
+              harnessRoot: HARNESS_ROOT,
+              sourcesOnly: false,
+            }),
+        ),
+        Then('the child resolves the harness from its own module and lists the sandbox test file')((s, expect) => {
+          const check = expect(s.outcome).toEqual({ files: [`${s.project}/src/mathy.test.ts`] })
+          return removeProject(s.project).pipe(
+            Effect.andThen(removeProject(s.away)),
+            Effect.as(check),
+          )
+        }),
+      ),
+    )
+
+    scenario(
+      'The source tree without a dist build still starts the host worker',
+      Gherkin.Do.pipe(
+        Given('a copy of the harness sources carrying the workspace dependency links')(
+          'sources',
+          copyHarnessSources,
+        ),
+        Given('a sandbox project with a test file and no config file')(
+          'project',
+          () =>
+            createProject(() => ({
+              'src/mathy.test.ts': "import { test } from 'vitest'\ntest('math', () => undefined)\n",
+            })),
+        ),
+        Given('a bare working directory without a node_modules tree above it')('away', createBareDirectory),
+        When('the host worker is started by a real child process against the source copy')(
+          'outcome',
+          (s) =>
+            startHostFrom({
+              away: s.away,
+              project: s.project,
+              harnessRoot: s.sources.root,
+              sourcesOnly: true,
+            }),
+        ),
+        Then('the source copy starts the worker without a dist build and lists the sandbox test file')(
+          (s, expect) => {
+            const check = expect(s.outcome).toEqual({ files: [`${s.project}/src/mathy.test.ts`] })
+            return removeProject(s.project).pipe(
+              Effect.andThen(removeProject(s.sources.root)),
+              Effect.andThen(removeProject(s.away)),
+              Effect.as(check),
+            )
+          },
+        ),
       ),
     )
   })

@@ -55,7 +55,7 @@ For deep comparison of execution models, read `references/decision-guide.md` (ha
   check: pnpm exec stryker run --dryRunOnly succeeds without PluginLoadFailedError
 - id: STRYK-R2
   title: Dual-Engine Workflow (In-Process vm Locally, Isolated CI Vitest)
-  do: use the `isCi` parameter in `StrykerConfig.define(({ isCi }) => ...)` to set `testRunner: isCi ? 'vitest' : 'vm'`
+  do: use the `isCi` parameter in `defineConfig(({ isCi }) => ...)` to set `testRunner: isCi ? 'vitest' : 'vm'`
   dont: run heavy child-process test runners for fast local iteration when the in-process `vm` runner is applicable
   harm: developers suffer 5-10x latency overhead locally, discouraging frequent mutation testing
   check: stryker.config.ts switches runner based on isCi
@@ -100,15 +100,15 @@ pnpm add -D @systemfsoftware/stryker-js \
 ```yaml
 - id: W3
   title: Author stryker.config.ts
-  do: generate configuration using StrykerConfig.define with bare plugin package names and negative mutate globs
+  do: generate configuration using defineConfig with bare plugin package names and negative mutate globs
   dont: hand-craft JSON configuration files or omit type checking
   check: test -f stryker.config.ts
 ```
 
 ```ts
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
-export default StrykerConfig.define(({ isCi }) => ({
+export default defineConfig(({ isCi }) => ({
   testRunner: isCi ? 'vitest' : 'vm',
   checkers: ['typescript'],
   plugins: [

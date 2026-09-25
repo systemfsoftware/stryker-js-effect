@@ -19,7 +19,7 @@ import * as Stream from 'effect/Stream'
 
 import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
-import { StrykerConfig } from './config/stryker-config.schema.js'
+import { defaultOptions } from './config/default-options.js'
 import {
   frameRunEvent,
   FrameRunEventCommand,
@@ -281,7 +281,7 @@ const emitNullScoreVerdictWhenOpen = (
     Boolean.match(open, {
       onTrue: () =>
         Effect.gen(function*() {
-          const defaults = yield* StrykerConfig.defaultOptions
+          const defaults = yield* defaultOptions
           yield* emitNullScoreVerdict({
             stream,
             mode,

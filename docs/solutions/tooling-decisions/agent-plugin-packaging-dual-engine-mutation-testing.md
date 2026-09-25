@@ -32,9 +32,9 @@ $$\text{Runner}(E) = \begin{cases} \text{In-Process Worker-Thread `vm`}, & E \ne
 - **CI (`testRunner: 'vitest'`)**: Executes within isolated worker processes, capturing comprehensive per-test coverage analysis and supporting complete mock/DOM environments.
 
 ```ts
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
-export default StrykerConfig.define(({ isCi }) => ({
+export default defineConfig(({ isCi }) => ({
   testRunner: isCi ? 'vitest' : 'vm',
   checkers: ['typescript'],
   plugins: [
@@ -52,7 +52,7 @@ export default StrykerConfig.define(({ isCi }) => ({
 Installed packages take the bare name, resolved from the project under test. A `file://` URL to a local build stays accepted:
 
 ```ts
-export default StrykerConfig.define({
+export default defineConfig({
   plugins: ['@systemfsoftware/stryker-js-vitest-runner'],
 })
 ```

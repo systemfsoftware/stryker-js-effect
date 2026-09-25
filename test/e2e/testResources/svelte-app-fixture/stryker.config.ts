@@ -1,6 +1,6 @@
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
-export default StrykerConfig.define({
+export default defineConfig({
   testRunner: 'vitest',
   plugins: ['@systemfsoftware/stryker-js-vitest-runner', '@systemfsoftware/stryker-js-svelte'],
   testFiles: ['src/**/*.test.ts'],

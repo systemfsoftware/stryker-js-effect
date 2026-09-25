@@ -8,6 +8,7 @@ import { bddStep, prepareFixture } from './__fixtures__/microvm-harness.js'
 
 const FAILING_DRY_RUN_RUNTIME_ERROR_CODE = 3
 const FAILING_FIXTURE_URL = new URL('../testResources/failing-fixture', import.meta.url)
+const FAILING_TEST_NAME = 'isEven reports three as even'
 
 const parseEventStream = (stdout: string): ReadonlyArray<RunEvent.RunEvent> =>
   stdout
@@ -55,6 +56,18 @@ const verifyStreamCleanliness = (expect: Expect, events: ReadonlyArray<RunEvent.
     everyTagIsAString: events.every((event) => typeof event._tag === 'string'),
   }).toStrictEqual({ hasEvents: true, everyTagIsAString: true })
 
+const verifyErrorDocumentNamesTheFailingTest = (
+  expect: Expect,
+  events: ReadonlyArray<RunEvent.RunEvent>,
+): Check => {
+  const terminal = lastEvent(events)
+  const errorText = terminal._tag === 'error' ? terminal.error : ''
+  return expect({
+    namesFailingTest: errorText.includes(FAILING_TEST_NAME),
+    carriesFailureMessage: /\S/.test(errorText) && errorText.includes('expected'),
+  }).toStrictEqual({ namesFailingTest: true, carriesFailureMessage: true })
+}
+
 it.live('failing a run at the process boundary', function*({ expect }) {
   const fixture = yield* bddStep(
     'Given',
@@ -73,6 +86,11 @@ it.live('failing a run at the process boundary', function*({ expect }) {
     'And',
     'the run emits a structured error document and no verdict',
     verifyTypedErrorDocument(expect, events),
+  )
+  yield* bddStep(
+    'And',
+    'the error document names the failing test with its failure message',
+    verifyErrorDocumentNamesTheFailingTest(expect, events),
   )
   yield* bddStep('And', 'every machine event is a tagged record', verifyStreamCleanliness(expect, events))
 })

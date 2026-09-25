@@ -107,14 +107,14 @@ const inThreadTestFiles = (sandboxWorkingDirectory: string): ReadonlyArray<strin
 }
 
 const workerEntry = (): { readonly url: URL; readonly execArgv: ReadonlyArray<string> } => {
-  const requireFromCwd = createRequire(join(globalThis.process.cwd(), 'noop.js'))
-  const packageJsonPath = requireFromCwd.resolve('@systemfsoftware/stryker-vm-harness/package.json')
+  const requireFromSelf = createRequire(import.meta.url)
+  const packageJsonPath = requireFromSelf.resolve('@systemfsoftware/stryker-vm-harness/package.json')
   const packageRoot = dirname(packageJsonPath)
   const distEntry = join(packageRoot, 'dist', 'vitest-host-worker.mjs')
   if (existsSync(distEntry)) {
     return { url: pathToFileURL(distEntry), execArgv: [] }
   }
-  const hostDirectory = join(packageRoot, 'src', 'shell', 'vitest-host')
+  const hostDirectory = join(packageRoot, 'src', 'vitest-host')
   return {
     url: pathToFileURL(join(hostDirectory, 'host-thread.ts')),
     execArgv: ['--import', pathToFileURL(join(hostDirectory, 'ts-source-loader.ts')).href],
