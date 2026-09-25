@@ -952,9 +952,10 @@ export const close = (self: TSCompiler): Effect.Effect<void> => {
     const released = yield* Option.match(Option.fromUndefinedOr(state.api), {
       onNone: () => Effect.succeed(true),
       onSome: (api) =>
-        Effect.promise(() => api.close()).pipe(
+        Effect.tryPromise(() => api.close()).pipe(
           Effect.timeoutOption(CLOSE_GRACE),
-          Effect.map(Option.isSome),
+          Effect.tapError((error) => Effect.annotateCurrentSpan('typescript.server.close_error', error.message)),
+          Effect.match({ onFailure: () => false, onSuccess: Option.isSome }),
         ),
     })
     yield* Effect.annotateCurrentSpan('typescript.server.released', released)
@@ -1138,7 +1139,6 @@ if (import.meta.vitest !== void 0) {
     return Arr.every(pairs, ([left, right]) => !relatedNodes(left, right))
   })
 
-  const { expect } = await import('vitest')
   const { Arbitrary } = await import('effect/unstable/arbitrary')
 
   type JsonValue = string | boolean | number | null | ReadonlyArray<JsonValue> | { readonly [key: string]: JsonValue }
@@ -1295,25 +1295,61 @@ if (import.meta.vitest !== void 0) {
       onSuccess: () => false,
     })
 
-  it('parseTsConfig keeps refusing malformed tsconfig documents', () => {
-    const malformed: ReadonlyArray<readonly [label: string, jsonText: string]> = [
-      ['root is a string', '"not an object"'],
-      ['root is a number', '42'],
-      ['root is null', 'null'],
-      ['root is an array', '[]'],
-      ['references is a string', '{"references": "./lib"}'],
-      ['a references item lacks path', '{"references": [{}]}'],
-      ['a references item path is a number', '{"references": [{"path": 1}]}'],
-      ['compilerOptions is a number', '{"compilerOptions": 42}'],
-      ['compilerOptions is an array', '{"compilerOptions": []}'],
-      ['the document is not JSON', '{'],
-    ]
-    for (const [label, jsonText] of malformed) {
-      expect(refusedAsParseError(jsonText), label).toBe(true)
-    }
-    expect(
-      Result.isSuccess(parseTsConfig('tsconfig.json', '{"include":["src"],"extends":"./base.json"}')),
-      'a document with only preserved keys still parses',
-    ).toBe(true)
+  const NonObjectRoot = S.Union([S.String, S.Boolean, S.Null, S.Int, S.Array(JsonValueSchema)])
+
+  const MalformedReferences = S.Struct({
+    references: S.Union([
+      S.String,
+      S.Int,
+      S.Boolean,
+      S.Null,
+      S.NonEmptyArray(S.String),
+      S.NonEmptyArray(S.Struct({ path: S.Boolean })),
+    ]),
   })
+
+  const MalformedCompilerOptions = S.Struct({
+    compilerOptions: S.Union([S.String, S.Int, S.Boolean, S.Null, S.Array(S.String)]),
+  })
+
+  const UnparseableJson = S.Literals(['{', '[', '"unterminated', '{"references":}'])
+
+  const PreservedTsConfig = S.Struct({
+    extends: S.Union([S.String, S.Array(S.String)]).pipe(S.optional),
+    include: S.Array(S.String).pipe(S.optional),
+    exclude: S.Array(S.String).pipe(S.optional),
+    files: S.Array(S.String).pipe(S.optional),
+    references: S.Struct({ path: S.String }).pipe(S.Array, S.optional),
+    compilerOptions: S.optional(JsonRecordSchema),
+  })
+
+  it.prop(
+    '∀nonObjectRoot_∉TsConfig_⇒ParseError',
+    [Arbitrary.schema(NonObjectRoot)],
+    ([root]) => refusedAsParseError(JSON.stringify(root)),
+  )
+
+  it.prop(
+    '∀referencesNotPathArray_∉TsConfig_⇒ParseError',
+    [Arbitrary.schema(MalformedReferences)],
+    ([document]) => refusedAsParseError(JSON.stringify(document)),
+  )
+
+  it.prop(
+    '∀compilerOptionsNotObject_∉TsConfig_⇒ParseError',
+    [Arbitrary.schema(MalformedCompilerOptions)],
+    ([document]) => refusedAsParseError(JSON.stringify(document)),
+  )
+
+  it.prop(
+    '∀unparseableJson_⇒ParseError',
+    [Arbitrary.schema(UnparseableJson)],
+    ([jsonText]) => refusedAsParseError(jsonText),
+  )
+
+  it.prop(
+    '∀preservedKeysDocument_∈TsConfig',
+    [Arbitrary.schema(PreservedTsConfig)],
+    ([document]) => Result.isSuccess(parseTsConfig('tsconfig.json', JSON.stringify(document))),
+  )
 }
