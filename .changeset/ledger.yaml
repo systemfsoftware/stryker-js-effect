@@ -243,7 +243,9 @@
   dir: packages/stryker-js-typescript-checker
   intents:
     - cell-telemetry-spans
+    - checker-async-typescript-api
     - mutant-location-base-typescript-checker
+    - tsconfig-rewrite-preserves-fields
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -279,6 +281,7 @@
     - cell-telemetry-spans
     - rationalize-effect-peer-dependencies
     - stryker-js-vitest-runner-describe-kills
+    - stryker-js-vitest-runner-related-file-resolution
     - vitest-5-peer-floor
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
@@ -325,6 +328,7 @@
     - vm-runner-host-surface
     - vm-runner-speed
     - vm-runner-vitest-features
+    - worker-rpc-settles-dropped-connection
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
