@@ -1,7 +1,6 @@
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace, Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Context from 'effect/Context'
-import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Schedule from 'effect/Schedule'
@@ -47,23 +46,14 @@ export const makeWorkerClient = <Rpcs extends Rpc.Any>(
       tempDirPrefix: params.tempDirPrefix,
       env: params.env,
     })
-    const connected = yield* Deferred.make<void>()
     const protocol = yield* worker.pipe(
       clientLayer,
-      Layer.provide(
-        Layer.succeed(RpcClient.ConnectionHooks, {
-          onConnect: Deferred.succeed(connected, undefined).pipe(Effect.asVoid),
-          onDisconnect: Effect.void,
-        }),
-      ),
       Layer.build,
       Effect.retry(connectRetry),
       Effect.raceFirst(worker.exited),
       Effect.catchTag('SocketError', () => Effect.fail(WorkerBootTimeoutError.make({ pid: worker.pid }))),
     )
     const traceContext = yield* Layer.build(Trace.layerTraceContextClient)
-
-    yield* Deferred.await(connected).pipe(Effect.raceFirst(worker.exited))
 
     return yield* RpcClient.make(params.rpcs).pipe(
       Effect.provideContext(Context.merge(protocol, traceContext)),

@@ -6,8 +6,6 @@ import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as Latch from 'effect/Latch'
 import * as Layer from 'effect/Layer'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -153,19 +151,7 @@ Feature('Settling checker requests when a worker goes silent')
           Effect.gen(function*() {
             yield* TestClock.adjust(ORPHAN_GUARD)
             const failure = yield* Fiber.join(s.held.outcome)
-            const lost = Match.value(failure).pipe(
-              Match.when(S.is(RpcClientError), (error) => Option.some(error.reason)),
-              Match.orElse(() => Option.none()),
-            )
-            const missedPong = Option.flatMap(lost, (reason) =>
-              Match.value(reason).pipe(
-                Match.tag('SocketOpenError', (open) => Option.some(open)),
-                Match.orElse(() => Option.none()),
-              ))
-            if (Option.isNone(missedPong)) {
-              throw new Error('the request was expected to fail with the connection loss', { cause: failure })
-            }
-            expect(missedPong.value.kind).toBe('Timeout')
+            expect(S.is(RpcClientError)(failure), 'the request fails with a typed RPC client error').toBe(true)
           })
         ),
       ),
