@@ -50,6 +50,7 @@ interface ActiveSandbox {
 
 interface InterceptionState {
   readonly activeSandboxes: ActiveSandbox[]
+  readonly runModules: Set<string>
   runtime: InterceptionRuntime | undefined
   installed: boolean
   hooks: { readonly deregister: () => void } | undefined
@@ -63,6 +64,7 @@ export const isSandboxInterception = Interception.is
 
 const interception = Interception.make({}, {
   activeSandboxes: [],
+  runModules: new Set<string>(),
   runtime: undefined,
   installed: false,
   hooks: undefined,
@@ -82,12 +84,28 @@ const isSandboxFile = (url: string | undefined, prefix: string): boolean =>
 const withinSandbox = (sandbox: ActiveSandbox | undefined, url: string | undefined): boolean =>
   Option.exists(Option.fromNullishOr(sandbox), (active) => isSandboxFile(url, active.prefix))
 
+const withinAnySandbox = (url: string): boolean =>
+  interceptionStateOf().activeSandboxes.some((active) => isSandboxFile(url, active.prefix))
+
 const saltOf = (url: string | undefined): string | null => {
   const found = Option.flatMap(Option.fromNullishOr(url), (present) => Option.fromNullishOr(SALT_QUERY.exec(present)))
   return Option.match(found, {
     onNone: () => null,
     onSome: (match) => Option.getOrNull(Option.fromNullishOr(match[1])),
   })
+}
+
+const isSaltOwned = (parent: string): boolean => saltOf(parent) !== null
+
+const isFileUrl = (url: string): boolean => url.startsWith('file:')
+
+const isRunModule = (parent: string): boolean =>
+  Boolean.or(withinAnySandbox(parent), Boolean.or(isSaltOwned(parent), interceptionStateOf().runModules.has(parent)))
+
+const recordRunModule = (resolved: ResolveFnOutput, parent: string): void => {
+  if (Boolean.and(isFileUrl(resolved.url), isRunModule(parent))) {
+    interceptionStateOf().runModules.add(resolved.url)
+  }
 }
 
 const stripSaltQuery = (url: string): string => {
@@ -359,7 +377,7 @@ const scopedHarnessUrl = (
   sandbox: ActiveSandbox | undefined,
 ): Option.Option<string> =>
   Option.flatMap(
-    Option.filter(Option.fromNullishOr(sandbox), (active) => isSandboxFile(parent, active.prefix)),
+    Option.filter(Option.fromNullishOr(sandbox), () => isRunModule(parent)),
     () =>
       Option.map(
         Option.fromNullishOr(harnessUrlForSpecifier(specifier)),
@@ -418,11 +436,13 @@ const resolveHarnessSpecifier = (
 const resolveWithin: ResolveHookSync = (specifier, context, nextResolve) => {
   const parent = parentUrlOf(context)
   const sandbox = activeSandbox()
-  return Match.value(parent.startsWith(HARNESS_PREFIX)).pipe(
+  const resolved = Match.value(parent.startsWith(HARNESS_PREFIX)).pipe(
     Match.when(true, () => resolveFromHarness(specifier, context, nextResolve, sandbox)),
     Match.when(false, () => resolveHarnessSpecifier(specifier, context, nextResolve, sandbox, parent)),
     Match.exhaustive,
   )
+  recordRunModule(resolved, parent)
+  return resolved
 }
 
 const harnessModuleSource = (url: string): string | undefined => {
@@ -493,6 +513,7 @@ const installInterceptionCell: Cell.Cell<InstallInterceptionCommand, void> = Cel
     if (!interceptionStateOf().installed) {
       interceptionStateOf().hooks = command.nodeModule.registerHooks({ resolve: resolveWithin, load: loadWithin })
       interceptionStateOf().installed = true
+      interceptionStateOf().runModules.clear()
     }
     interceptionStateOf().runtime = command.runtime
     return undefined
@@ -504,6 +525,7 @@ const uninstallInterceptionCell: Cell.Cell<void, void> = Cell.fromEffect(
     interceptionStateOf().hooks?.deregister()
     interceptionStateOf().hooks = undefined
     interceptionStateOf().installed = false
+    interceptionStateOf().runModules.clear()
   }),
 )
 

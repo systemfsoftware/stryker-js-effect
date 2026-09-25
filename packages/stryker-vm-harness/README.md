@@ -42,6 +42,15 @@ file URL), so each file gets fresh module state. When your Vitest config sets
 `isolate: false`, all files share one salt. Files under `node_modules` are
 never salted and stay shared.
 
+The harness-served `vitest` (and the `@effect/vitest` /
+`@systemfsoftware/effect-gherkin-spec` shims) is handed to every module the
+run loads that imports it, whatever its location: test files and helpers
+inside the project, setup files and helpers in a sibling directory, and
+workspace packages reached through a `node_modules` link or a package-manager
+store. A setup file outside the project root registers its hooks against the
+current test file's runner, so its `beforeEach` runs before each of that
+file's tests.
+
 Discovery: with no `testFiles` configured, the session asks your installed
 `vitest` for its resolved test-file glob instead of guessing.
 
