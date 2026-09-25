@@ -25,7 +25,7 @@ const createProject = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const root = yield* fs.makeTempDirectory()
+    const root = yield* fs.realPath(yield* fs.makeTempDirectory())
     for (const name of Object.keys(files)) {
       const content = files[name]
       if (content === undefined) continue
