@@ -146,12 +146,15 @@ const statusOf = (task: RunnerTestCase): TestRunner.TestStatus => {
   return task.result?.state === 'pass' ? 'success' : 'skipped'
 }
 
+const FILE_FAILED_WITHOUT_FAILING_TEST = '<the file failed with no failing test>'
+
 const captureFile = (
   file: RunnerTestFile,
   path: Path.Path,
   directory: string,
 ): readonly (readonly [string, string])[] => {
   const captured: Array<readonly [string, string]> = []
+  const relativeFile = path.relative(directory, file.filepath)
   const visit = (task: RunnerTask, ancestors: readonly string[]): void => {
     if (task.type === 'suite') {
       const nested = [...ancestors, task.name]
@@ -160,13 +163,13 @@ const captureFile = (
       }
       return
     }
-    captured.push([
-      `${path.relative(directory, file.filepath)}#${[...ancestors, task.name].join(' > ')}`,
-      statusOf(task),
-    ])
+    captured.push([`${relativeFile}#${[...ancestors, task.name].join(' > ')}`, statusOf(task)])
   }
   for (const task of file.tasks) {
     visit(task, [])
+  }
+  if (file.result?.state === 'fail' && !captured.some(([, status]) => status === 'failed')) {
+    captured.push([`${relativeFile}#${FILE_FAILED_WITHOUT_FAILING_TEST}`, 'failed'])
   }
   return captured
 }
@@ -259,9 +262,10 @@ const vmTestOutcomes = (
 ): Effect.Effect<Outcomes> =>
   Effect.forEach(
     subroots,
-    (subroot) =>
-      serialized(
-        withVmRunner(subroot === '.' ? root : path.join(root, subroot), (runner) =>
+    (subroot) => {
+      const directory = subroot === '.' ? root : path.join(root, subroot)
+      return serialized(
+        withVmRunner(directory, (runner) =>
           Effect.gen(function*() {
             const dry = yield* runner.dryRun({ timeout: 180_000, coverageAnalysis: 'off', disableBail: true }).pipe(
               Effect.orDie,
@@ -272,10 +276,12 @@ const vmTestOutcomes = (
             return dry.tests.map((test): readonly [string, string] => {
               const hash = test.id.lastIndexOf('#')
               const file = hash === -1 ? '' : test.id.slice(0, hash)
-              return [subroot === '.' ? `${file}#${test.name}` : `${subroot}/${file}#${test.name}`, test.status]
+              const name = test.name === path.join(directory, file) ? FILE_FAILED_WITHOUT_FAILING_TEST : test.name
+              return [subroot === '.' ? `${file}#${name}` : `${subroot}/${file}#${name}`, test.status]
             })
           })),
-      ),
+      )
+    },
     { concurrency: 1 },
   ).pipe(Effect.map((rows) => recordOf(rows.flat())))
 
