@@ -25,31 +25,74 @@ const RUN_FAILED = RunEvent.RunFailed.make({
   reason: null,
 })
 
-interface StreamFixture {
+interface CapturedStream {
   readonly stream: RunEvent.RunEventStream
-  readonly lines: Ref.Ref<ReadonlyArray<string>>
+  readonly stdout: Ref.Ref<ReadonlyArray<string>>
+  readonly stderr: Ref.Ref<ReadonlyArray<string>>
 }
 
-const collectorDrain = (lines: Ref.Ref<ReadonlyArray<string>>): Layer.Layer<RunEvent.RunEventDrain> =>
+interface RecordedSinks {
+  readonly file: ReadonlyArray<string>
+  readonly stdout: ReadonlyArray<string>
+}
+
+interface RecordedStream {
+  readonly stream: RunEvent.RunEventStream
+  readonly recorded: Ref.Ref<RecordedSinks>
+}
+
+const EMPTY_SINKS: RecordedSinks = { file: [], stdout: [] }
+
+const chunkText = (chunk: string | Uint8Array): string =>
+  typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk)
+
+const capturingStdio = (
+  stdout: Ref.Ref<ReadonlyArray<string>>,
+  stderr: Ref.Ref<ReadonlyArray<string>>,
+): Layer.Layer<Stdio.Stdio> =>
+  Stdio.layerTest({
+    stdout: () =>
+      Sink.forEach((chunk: string | Uint8Array) => Ref.update(stdout, (lines) => [...lines, chunkText(chunk)])),
+    stderr: () =>
+      Sink.forEach((chunk: string | Uint8Array) => Ref.update(stderr, (lines) => [...lines, chunkText(chunk)])),
+  })
+
+const capturingFixture = (mode: 'machine' | 'human'): Effect.Effect<CapturedStream, never, never> =>
+  Effect.gen(function*() {
+    const stdout = yield* Ref.make<ReadonlyArray<string>>([])
+    const stderr = yield* Ref.make<ReadonlyArray<string>>([])
+    const stdio = capturingStdio(stdout, stderr)
+    const stream = yield* RunEvent.makeRunEventStream({ mode, signal: 'tty' }).pipe(
+      Effect.provide(Layer.mergeAll(stdio, RunEvent.RunEventDrainLive.pipe(Layer.provide(stdio)))),
+    )
+    return { stream, stdout, stderr }
+  })
+
+const collectorDrain = (recorded: Ref.Ref<RecordedSinks>): Layer.Layer<RunEvent.RunEventDrain> =>
   Layer.succeed(
     RunEvent.RunEventDrain,
     RunEvent.RunEventDrain.of({
-      drainFramed: (framed) =>
-        Effect.gen(function*() {
-          const collected = yield* Stream.runCollect(framed)
-          yield* Ref.set(lines, Array.from(collected))
-        }),
+      drainFramed: (framed, toStdout) =>
+        Stream.runCollect(framed).pipe(
+          Effect.map((collected) => Array.from(collected)),
+          Effect.flatMap((lines) =>
+            Ref.update(recorded, (previous) => ({
+              file: [...previous.file, ...lines],
+              stdout: toStdout ? [...previous.stdout, ...lines] : previous.stdout,
+            }))
+          ),
+        ),
       setProgressStreamFile: () => Effect.void,
     }),
   )
 
-const streamingFixture = (mode: 'machine' | 'human'): Effect.Effect<StreamFixture, never, never> =>
+const recordingFixture = (mode: 'machine' | 'human'): Effect.Effect<RecordedStream, never, never> =>
   Effect.gen(function*() {
-    const lines = yield* Ref.make<ReadonlyArray<string>>([])
+    const recorded = yield* Ref.make<RecordedSinks>(EMPTY_SINKS)
     const stream = yield* RunEvent.makeRunEventStream({ mode, signal: 'tty' }).pipe(
-      Effect.provide(Layer.merge(Stdio.layerTest({}), collectorDrain(lines))),
+      Effect.provide(Layer.merge(Stdio.layerTest({}), collectorDrain(recorded))),
     )
-    return { stream, lines }
+    return { stream, recorded }
   })
 
 const offerAll = (
@@ -57,8 +100,6 @@ const offerAll = (
   events: ReadonlyArray<RunEvent.RunEvent>,
 ): Effect.Effect<void, never, never> =>
   Effect.forEach(events, (event) => Queue.offer(stream.queue, event)).pipe(Effect.asVoid)
-
-const rawLinesOf = (fixture: StreamFixture): Effect.Effect<ReadonlyArray<string>> => Ref.get(fixture.lines)
 
 const decodedEventAt = (lines: ReadonlyArray<string>, index: number): Option.Option<RunEvent.RunEvent> =>
   Option.all(lines.map((line) => S.decodeOption(RunEvent.RunEventWireLine)(line))).pipe(
@@ -75,6 +116,8 @@ const parseLinesAsEvents = (lines: ReadonlyArray<string>): ReadonlyArray<RunEven
   throw new Error(`Failed to decode JSONL event stream:\n${lines.join('\n')}`)
 }
 
+const stderrLinesOf = (stderr: ReadonlyArray<string>): ReadonlyArray<string> => stderr.map((line) => line.trim())
+
 Feature('Streaming a run to machine readers')
   .withLayer(Layer.empty)
   .live(
@@ -82,29 +125,33 @@ Feature('Streaming a run to machine readers')
   )
   .body(({ scenario }) => {
     scenario(
-      'A machine run reports its opening header and sequential lifecycle events ended by newlines',
+      'A machine run reports its opening header and sequential lifecycle events on stdout, and keeps stderr free of human status lines',
       Gherkin.Do.pipe(
         Given('a run configured to emit machine-readable events to stdout')(
           'fixture',
-          () => streamingFixture('machine'),
+          () => capturingFixture('machine'),
         ),
         When('the stream opens, receives lifecycle progress events, and closes gracefully')(
-          'lines',
+          'result',
           (s) =>
             Effect.gen(function*() {
               yield* s.fixture.stream.open
               yield* offerAll(s.fixture.stream, [PLAN_KNOWN, PHASE_ENTERED, HEARTBEAT, HELP_RENDERED])
               yield* s.fixture.stream.closeAndDrain
-              return yield* rawLinesOf(s.fixture)
+              return {
+                stdout: yield* Ref.get(s.fixture.stdout),
+                stderr: yield* Ref.get(s.fixture.stderr),
+              }
             }),
         ),
         Then(
-          'the consumer receives all framed lines in chronological sequence, each newline-terminated, opening with machine session metadata',
+          'every stdout line decodes as a wire record in chronological sequence, each newline-terminated, opening with machine session metadata',
         )((s, expect) => {
-          const opening = Option.filter(decodedEventAt(s.lines, 0), S.is(RunEvent.RunStarted))
+          const opening = Option.filter(decodedEventAt(s.result.stdout, 0), S.is(RunEvent.RunStarted))
           return expect({
-            tags: parseLinesAsEvents(s.lines).map(tagOf),
-            newlineTerminated: s.lines.every((line) => line.endsWith('\n')),
+            tags: parseLinesAsEvents(s.result.stdout).map(tagOf),
+            newlineTerminated: s.result.stdout.every((line) => line.endsWith('\n')),
+            stderr: stderrLinesOf(s.result.stderr),
             opening: Option.match(opening, {
               onNone: () => null,
               onSome: (started) => ({
@@ -117,6 +164,7 @@ Feature('Streaming a run to machine readers')
           }).toEqual({
             tags: ['stream', 'plan', 'phase', 'tick', 'help'],
             newlineTerminated: true,
+            stderr: [],
             opening: { mode: 'machine', signal: 'tty', schemaVersion: '1.1', runIdIsNonEmpty: true },
           })
         }),
@@ -124,23 +172,88 @@ Feature('Streaming a run to machine readers')
     )
 
     scenario(
-      'A human run streams nothing to the machine reader',
+      'A human run keeps stdout free of the wire and reports its progress as status lines on stderr',
       Gherkin.Do.pipe(
-        Given('a run streaming in human mode')('fixture', () => streamingFixture('human')),
+        Given('a run streaming in human mode')('fixture', () => capturingFixture('human')),
         When('the run opens and fails')(
           'result',
           (s) =>
             Effect.gen(function*() {
               yield* s.fixture.stream.open
-              yield* offerAll(s.fixture.stream, [RUN_FAILED])
+              yield* offerAll(s.fixture.stream, [PLAN_KNOWN, PHASE_ENTERED, RUN_FAILED])
               yield* s.fixture.stream.closeAndDrain
-              const lines = yield* rawLinesOf(s.fixture)
               const open = yield* s.fixture.stream.isOpen
-              return { lines, open }
+              return {
+                stdout: yield* Ref.get(s.fixture.stdout),
+                stderr: yield* Ref.get(s.fixture.stderr),
+                open,
+              }
             }),
         ),
-        Then('the reader receives no lines and the stream is closed')((s, expect) =>
-          expect({ lines: s.result.lines, open: s.result.open }).toEqual({ lines: [], open: false })
+        Then('the machine reader receives no lines on stdout and the operator receives the status lines')((s, expect) =>
+          expect({
+            stdout: s.result.stdout,
+            stderr: stderrLinesOf(s.result.stderr),
+            open: s.result.open,
+          }).toEqual({
+            stdout: [],
+            stderr: ['plan 4 mutants', 'phase dry-run', 'error x'],
+            open: false,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A human run still writes the wire records to the progress stream file that merge-reports rebuilds from',
+      Gherkin.Do.pipe(
+        Given('a human run whose sinks are recorded')('fixture', () => recordingFixture('human')),
+        When('the run opens, reports progress, and closes')(
+          'result',
+          (s) =>
+            Effect.gen(function*() {
+              yield* s.fixture.stream.open
+              yield* offerAll(s.fixture.stream, [PLAN_KNOWN, PHASE_ENTERED, RUN_FAILED])
+              yield* s.fixture.stream.closeAndDrain
+              return yield* Ref.get(s.fixture.recorded)
+            }),
+        ),
+        Then('the file sink holds every newline-terminated wire record while the stdout sink stays empty')((
+          s,
+          expect,
+        ) =>
+          expect({
+            tags: parseLinesAsEvents(s.result.file).map(tagOf),
+            newlineTerminated: s.result.file.every((line) => line.endsWith('\n')),
+            stdout: s.result.stdout,
+          }).toEqual({
+            tags: ['plan', 'phase', 'error'],
+            newlineTerminated: true,
+            stdout: [],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A machine run mirrors the wire records to stdout as well as the progress stream file',
+      Gherkin.Do.pipe(
+        Given('a machine run whose sinks are recorded')('fixture', () => recordingFixture('machine')),
+        When('the run opens, reports progress, and closes')(
+          'result',
+          (s) =>
+            Effect.gen(function*() {
+              yield* s.fixture.stream.open
+              yield* offerAll(s.fixture.stream, [PHASE_ENTERED])
+              yield* s.fixture.stream.closeAndDrain
+              return yield* Ref.get(s.fixture.recorded)
+            }),
+        ),
+        Then('the file sink and the stdout sink received the same wire records')((s, expect) =>
+          expect({
+            tags: parseLinesAsEvents(s.result.stdout).map(tagOf),
+            stdoutMatchesFile: s.result.stdout.join('') === s.result.file.join(''),
+          }).toEqual({ tags: ['stream', 'phase'], stdoutMatchesFile: true })
         ),
       ),
     )
@@ -148,7 +261,7 @@ Feature('Streaming a run to machine readers')
     scenario(
       'A terminal failure closes the stream and suppresses subsequent events',
       Gherkin.Do.pipe(
-        Given('a run streaming in machine mode')('fixture', () => streamingFixture('machine')),
+        Given('a run streaming in machine mode')('fixture', () => capturingFixture('machine')),
         When('a fatal error occurs followed by trailing heartbeat ticks before drain')(
           'result',
           (s) =>
@@ -156,17 +269,16 @@ Feature('Streaming a run to machine readers')
               yield* s.fixture.stream.open
               yield* offerAll(s.fixture.stream, [RUN_FAILED, HEARTBEAT])
               yield* s.fixture.stream.closeAndDrain
-              const lines = yield* rawLinesOf(s.fixture)
               const open = yield* s.fixture.stream.isOpen
-              return { lines, open }
+              return { stdout: yield* Ref.get(s.fixture.stdout), open }
             }),
         ),
         Then(
           'the consumer receives only the opening header and the error document, which carries the failure code, error message, and remediation guidance, and the stream is permanently closed',
         )((s, expect) => {
-          const failure = Option.filter(decodedEventAt(s.result.lines, 1), S.is(RunEvent.RunFailed))
+          const failure = Option.filter(decodedEventAt(s.result.stdout, 1), S.is(RunEvent.RunFailed))
           return expect({
-            tags: parseLinesAsEvents(s.result.lines).map(tagOf),
+            tags: parseLinesAsEvents(s.result.stdout).map(tagOf),
             failure: Option.match(failure, {
               onNone: () => null,
               onSome: (failed) => ({
@@ -195,7 +307,7 @@ Feature('Streaming a run to machine readers')
             const capturing = Logger.make((options) => {
               messages.push(String(options.message))
             })
-            const lines = yield* Ref.make<ReadonlyArray<string>>([])
+            const stdout = yield* Ref.make<ReadonlyArray<string>>([])
             const failingStdio = Stdio.layerTest({
               stdout: () => Sink.die(new Error('the report sink broke')),
             })
@@ -204,7 +316,7 @@ Feature('Streaming a run to machine readers')
                 Layer.mergeAll(failingStdio, RunEvent.RunEventDrainLive.pipe(Layer.provide(failingStdio))),
               ),
             )
-            return { stream, lines, messages, logging: Logger.layer([capturing]) }
+            return { stream, stdout, messages, logging: Logger.layer([capturing]) }
           })),
         When('the run opens, reports a failure, and closes')(
           'result',
@@ -213,15 +325,14 @@ Feature('Streaming a run to machine readers')
               yield* s.fixture.stream.open
               yield* offerAll(s.fixture.stream, [RUN_FAILED])
               yield* s.fixture.stream.closeAndDrain
-              const lines = yield* rawLinesOf(s.fixture)
-              return { lines, messages: s.fixture.messages }
+              return { stdout: yield* Ref.get(s.fixture.stdout), messages: s.fixture.messages }
             }).pipe(Effect.provide(s.fixture.logging)),
         ),
         Then('the stream failure is logged without aborting or crashing the run')((s, expect) =>
           expect({
             drainFailureLogged: s.result.messages.join('\n').includes('stryker.output.drain_failed'),
-            lines: s.result.lines,
-          }).toEqual({ drainFailureLogged: true, lines: [] })
+            stdout: s.result.stdout,
+          }).toEqual({ drainFailureLogged: true, stdout: [] })
         ),
       ),
     )

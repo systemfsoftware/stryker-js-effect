@@ -139,18 +139,12 @@ const formatStderrEvent = (event: RunEvent): string | null =>
   )
 
 const stderrLineFor = (state: FramingState, event: RunEvent): string | null =>
-  Match.value(state.terminalSeen).pipe(
-    Match.when(true, () => null),
-    Match.when(false, () => formatStderrEvent(event)),
-    Match.exhaustive,
+  Match.value(state).pipe(
+    Match.when({ mode: 'human', terminalSeen: false }, () => formatStderrEvent(event)),
+    Match.orElse(() => null),
   )
 
-const shouldFrame = (state: FramingState): boolean =>
-  Match.value(state.mode).pipe(
-    Match.when('machine', () => !state.terminalSeen),
-    Match.when('human', () => false),
-    Match.exhaustive,
-  )
+const shouldFrame = (state: FramingState): boolean => !state.terminalSeen
 
 const decideFrame = (
   command: FrameRunEventCommand,

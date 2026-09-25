@@ -19,6 +19,14 @@ interface FormatFlags {
 
 type ProbeInput = (typeof ResolveModeCommand)['Encoded']
 
+const JSON_FLAG = '--json'
+const FORMAT_FLAG = '--format'
+
+const formatFlagsOf = (argv: readonly string[]): FormatFlags => ({
+  text: argv.some((argument) => argument === FORMAT_FLAG || argument.startsWith(`${FORMAT_FLAG}=`)),
+  json: argv.includes(JSON_FLAG),
+})
+
 const resolvedMode = (
   mode: OutputMode,
   signal: ModeSignal,
@@ -99,11 +107,8 @@ class OutputModeProbeTag extends Context.Service<
     OutputModeProbeTag,
     Effect.map(Stdio.Stdio, (stdio) =>
       OutputModeProbeTag.of({
-        detectMode: Effect.provideService(
-          detectModeWithProbe({}),
-          Stdio.Stdio,
-          stdio,
-        ),
+        detectMode: Effect.flatMap(stdio.args, (argv) =>
+          detectModeWithProbe(formatFlagsOf(argv)).pipe(Effect.provideService(Stdio.Stdio, stdio))),
       })),
   )
 }

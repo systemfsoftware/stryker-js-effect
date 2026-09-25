@@ -326,8 +326,19 @@ const runArgs = {
   configFile: Argument.optional(Argument.String('configFile')),
 }
 
+const formatOptions = {
+  json: Flag.map(optional(Flag.Boolean('json')), absentWhenFalse).pipe(
+    Flag.withDescription('Write the machine-readable NDJSON event stream to stdout, and nothing else'),
+  ),
+  format: Flag.Literals('format', ['text']).pipe(
+    Flag.withDescription('Write human-readable output on stdout (the only supported format)'),
+    optional,
+  ),
+}
+
 const runConfig = {
   ...runOptions,
+  ...formatOptions,
   ...runArgs,
 }
 
@@ -427,7 +438,7 @@ const makeStrykerCommand = (requestRef: Ref.Ref<Option.Option<CliRequest>>) => {
 
   const mergeReportsCommand = Command.make(
     'merge-reports',
-    mergeReportsOptions,
+    { ...mergeReportsOptions, ...formatOptions },
     (config): Effect.Effect<void, CliError.CliError, never> =>
       Effect.gen(function*() {
         const fromEnvironment = yield* Config.String('PACKAGES').pipe(Effect.option)

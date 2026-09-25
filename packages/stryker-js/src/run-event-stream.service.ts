@@ -92,7 +92,10 @@ const framedEventOf = (decision: Option.Option<FrameRunEventDecision>) =>
       ),
   })
 
-export type FramedDrain = (framed: Stream.Stream<string, never, never>) => Effect.Effect<void, never, never>
+export type FramedDrain = (
+  framed: Stream.Stream<string, never, never>,
+  toStdout: boolean,
+) => Effect.Effect<void, never, never>
 
 const DEFAULT_PROGRESS_STREAM_FILE = 'reports/mutation-stream.jsonl'
 
@@ -109,7 +112,7 @@ export class RunEventDrain extends Context.Service<RunEventDrain, RunEventDrainS
     Effect.gen(function*() {
       const stdio = yield* Stdio.Stdio
       return RunEventDrain.of({
-        drainFramed: (framed) => drainOf(stdio, framed),
+        drainFramed: (framed, toStdout) => drainOf(stdio, framed, toStdout),
         setProgressStreamFile: () => Effect.void,
       })
     }),
@@ -134,11 +137,12 @@ export const RunEventDrainLive = RunEventDrain.layer
 
 const encodeUtf8 = (line: string) => new TextEncoder().encode(line)
 
-const drainStdoutAndFile = (
+const drainToSinks = (
   fs: FileSystem.FileSystem,
   path: Path.Path,
   stdio: Stdio.Stdio,
   fileName: string,
+  toStdout: boolean,
   framed: Stream.Stream<string>,
 ): Effect.Effect<void, never, never> =>
   Effect.gen(function*() {
@@ -149,7 +153,10 @@ const drainStdoutAndFile = (
         const withFile = framed.pipe(
           Stream.tap((line) => handle.writeAll(encodeUtf8(line)).pipe(Effect.flatMap(() => handle.sync))),
         )
-        yield* Stream.run(withFile, stdio.stdout({ endOnDone: true })).pipe(Effect.ignore)
+        yield* Boolean.match(toStdout, {
+          onTrue: () => Stream.run(withFile, stdio.stdout({ endOnDone: true })),
+          onFalse: () => Stream.runDrain(withFile),
+        }).pipe(Effect.ignore)
       }),
     )
   }).pipe(Effect.orDie)
@@ -158,10 +165,10 @@ const drainFileOf = (stdio: Stdio.Stdio, fs: FileSystem.FileSystem, path: Path.P
   Effect.gen(function*() {
     const fileNameRef = yield* Ref.make(DEFAULT_PROGRESS_STREAM_FILE)
     return RunEventDrain.of({
-      drainFramed: (framed) =>
+      drainFramed: (framed, toStdout) =>
         Effect.gen(function*() {
           const fileName = yield* Ref.get(fileNameRef)
-          yield* drainStdoutAndFile(fs, path, stdio, fileName, framed)
+          yield* drainToSinks(fs, path, stdio, fileName, toStdout, framed)
         }).pipe(
           Effect.tapCause((cause) => Effect.logError('stryker.output.drain_file_failed', cause)),
           Effect.ignoreCause,
@@ -170,8 +177,11 @@ const drainFileOf = (stdio: Stdio.Stdio, fs: FileSystem.FileSystem, path: Path.P
     })
   })
 
-const drainOf = (stdio: Stdio.Stdio, framed: Stream.Stream<string>) =>
-  Stream.run(framed, stdio.stdout({ endOnDone: true })).pipe(
+const drainOf = (stdio: Stdio.Stdio, framed: Stream.Stream<string>, toStdout: boolean) =>
+  Boolean.match(toStdout, {
+    onTrue: () => Stream.run(framed, stdio.stdout({ endOnDone: true })),
+    onFalse: () => Stream.runDrain(framed),
+  }).pipe(
     Effect.withSpan('stryker.output.drain'),
     Effect.tapCause((cause) => Effect.logError('stryker.output.drain_failed', cause)),
     Effect.ignoreCause,
@@ -447,7 +457,8 @@ export const makeRunEventStream = (resolved: ResolvedModeInput) =>
         yield* Option.match(yield* Ref.get(drainFiberRef), {
           onNone: () =>
             Effect.gen(function*() {
-              const drainFiber = yield* drain.drainFramed(framed).pipe(Effect.forkDetach)
+              const mode = (yield* Ref.get(stateRef)).mode
+              const drainFiber = yield* drain.drainFramed(framed, mode === 'machine').pipe(Effect.forkDetach)
               yield* Ref.set(drainFiberRef, Option.some(drainFiber))
             }),
           onSome: () => Effect.void,

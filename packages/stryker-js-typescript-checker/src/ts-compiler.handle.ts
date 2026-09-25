@@ -416,13 +416,15 @@ const annotateDiagnosticSample = (diagnostics: readonly Diagnostic[]): Effect.Ef
       }),
   })
 
-const importSpecifierOf = (
+const carriesModuleSpecifier = (statement: SourceFile['statements'][number]): boolean =>
+  statement.kind === SyntaxKind.ImportDeclaration || statement.kind === SyntaxKind.ExportDeclaration
+
+const moduleSpecifierOf = (
   statement: SourceFile['statements'][number],
   sourceFile: SourceFile,
 ): Option.Option<string> =>
-  Boolean.match(statement.kind !== SyntaxKind.ImportDeclaration, {
-    onTrue: () => Option.none<string>(),
-    onFalse: () => {
+  Boolean.match(carriesModuleSpecifier(statement), {
+    onTrue: () => {
       const children: Array<Node> = []
       statement.forEachChild((child) => {
         children.push(child)
@@ -432,6 +434,7 @@ const importSpecifierOf = (
         (literal) => literal.getText(sourceFile),
       )
     },
+    onFalse: () => Option.none<string>(),
   })
 
 const keepSome = <A>(option: Option.Option<A>): Result.Result<A, void> =>
@@ -441,7 +444,7 @@ const keepSome = <A>(option: Option.Option<A>): Result.Result<A, void> =>
   })
 
 const importsOf = (sourceFile: SourceFile): ReadonlyArray<string> => [
-  ...Arr.filterMap(sourceFile.statements, (statement) => keepSome(importSpecifierOf(statement, sourceFile))),
+  ...Arr.filterMap(sourceFile.statements, (statement) => keepSome(moduleSpecifierOf(statement, sourceFile))),
   ...Arr.map(sourceFile.referencedFiles, (reference) => reference.fileName),
   ...Arr.map(sourceFile.typeReferenceDirectives, (reference) => reference.fileName),
 ]
@@ -821,19 +824,113 @@ export const init = (self: TSCompiler): Effect.Effect<readonly Diagnostic[], Com
     const api = new API({ fs: rt.sourceFileSystem })
     const snapshot = yield* Effect.promise(() => api.updateSnapshot({ openProjects: Array.from(walk.files) }))
     yield* Ref.update(rt.state, (prev) => ({ ...prev, api, snapshot }))
-    yield* buildGraph(rt, yield* programsOf(rt))
-    return yield* check(self, [])
+    const programs = yield* programsOf(rt)
+    yield* buildGraph(rt, programs)
+    return yield* dryRunDiagnostics(programs)
   })
 }
 
-const diagnosticsOf = (program: Program): Effect.Effect<readonly Diagnostic[]> =>
-  Effect.promise(() =>
-    Promise.all([
-      program.getConfigFileParsingDiagnostics(),
-      program.getSemanticDiagnostics(),
-      program.getProgramDiagnostics(),
-    ]).then(([config, semantic, programWide]) => [...config, ...semantic, ...programWide])
+const DIAGNOSTIC_BATCH_SIZE = 64
+
+type Dependents = MutableHashMap.MutableHashMap<string, MutableHashSet.MutableHashSet<string>>
+
+const dependentsSetOf = (dependents: Dependents, imported: string): MutableHashSet.MutableHashSet<string> =>
+  Option.getOrElse(MutableHashMap.get(dependents, imported), () => {
+    const created = MutableHashSet.empty<string>()
+    MutableHashMap.set(dependents, imported, created)
+    return created
+  })
+
+const recordDependent = (dependents: Dependents, imported: string, fileName: string): void => {
+  MutableHashSet.add(dependentsSetOf(dependents, imported), fileName)
+}
+
+const dependentsOf = (sourceFiles: SourceFiles): Dependents => {
+  const dependents: Dependents = MutableHashMap.empty()
+  Arr.forEach(
+    Arr.fromIterable(sourceFiles),
+    ([fileName, file]) =>
+      Arr.forEach(Arr.fromIterable(file.imports), (imported) => recordDependent(dependents, imported, fileName)),
   )
+  return dependents
+}
+
+const dependentsOfFile = (dependents: Dependents, fileName: string): ReadonlyArray<string> =>
+  Arr.fromIterable(Option.getOrElse(MutableHashMap.get(dependents, fileName), MutableHashSet.empty<string>))
+
+const closeOverDependents = (dependents: Dependents, affected: ReadonlySet<string>): ReadonlySet<string> => {
+  const grown = new Set([
+    ...affected,
+    ...Arr.flatMap([...affected], (fileName) => dependentsOfFile(dependents, fileName)),
+  ])
+  return Boolean.match(grown.size === affected.size, {
+    onTrue: () => grown,
+    onFalse: () => closeOverDependents(dependents, grown),
+  })
+}
+
+const affectedFileNames = (sourceFiles: SourceFiles, mutatedFileNames: readonly string[]): ReadonlySet<string> =>
+  closeOverDependents(dependentsOf(sourceFiles), new Set(mutatedFileNames))
+
+const requestedFileNames = (
+  fileNames: ReadonlySet<string>,
+  presentFileNames: readonly string[],
+): ReadonlyArray<string> => Arr.filter(presentFileNames, (fileName) => fileNames.has(fileName))
+
+const diagnosticBatchesOf = (fileNames: ReadonlyArray<string>): ReadonlyArray<ReadonlyArray<string>> =>
+  Arr.chunksOf(fileNames, DIAGNOSTIC_BATCH_SIZE)
+
+const semanticDiagnosticsOf = (
+  program: Program,
+  fileNames: ReadonlySet<string>,
+): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.gen(function*() {
+    const presentFileNames = yield* Effect.promise(() => program.getSourceFileNames())
+    const perBatch = yield* Effect.forEach(
+      diagnosticBatchesOf(requestedFileNames(fileNames, presentFileNames)),
+      (batch) =>
+        Effect.map(
+          Effect.promise(() => Promise.all(Arr.map(batch, (fileName) => program.getSemanticDiagnostics(fileName)))),
+          (perFile) => Arr.flatten(perFile),
+        ),
+      { concurrency: 1 },
+    )
+    return [...perBatch].flat()
+  })
+
+const programWideDiagnosticsOf = (program: Program): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.promise(() =>
+    Promise.all([program.getConfigFileParsingDiagnostics(), program.getProgramDiagnostics()]).then(
+      ([config, programWide]) => [...config, ...programWide],
+    )
+  )
+
+const affectedDiagnosticsOf = (
+  program: Program,
+  fileNames: ReadonlySet<string>,
+): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.all([programWideDiagnosticsOf(program), semanticDiagnosticsOf(program, fileNames)], { concurrency: 2 }).pipe(
+    Effect.map(([programWide, semantic]) => [...semantic, ...programWide]),
+  )
+
+const wholeProgramDiagnosticsOf = (program: Program): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.all(
+    [programWideDiagnosticsOf(program), Effect.promise(() => program.getSemanticDiagnostics())],
+    { concurrency: 2 },
+  ).pipe(Effect.map(([programWide, semantic]) => [...semantic, ...programWide]))
+
+const dryRunDiagnostics = (programs: ReadonlyArray<Program>): Effect.Effect<readonly Diagnostic[]> =>
+  Effect.map(
+    Effect.forEach(programs, (program) => wholeProgramDiagnosticsOf(program)),
+    (perProgram) => errorDiagnosticsOf(Arr.flatten(perProgram)),
+  ).pipe(
+    Effect.withSpan('typescript-checker.compiler.dryRun', {
+      attributes: { 'typescript.projects.count': programs.length },
+    }),
+  )
+
+const errorDiagnosticsOf = (diagnostics: readonly Diagnostic[]): readonly Diagnostic[] =>
+  Arr.filter(diagnostics, (diagnostic) => diagnostic.category === DiagnosticCategory.Error)
 
 export const check: {
   (
@@ -863,12 +960,15 @@ export const check: {
         lastMutants: [...mutants],
         lastMutatedFileNames: mutatedFileNames,
       }))
+      const affected = affectedFileNames(state.sourceFiles, mutatedFileNames)
       const programs = yield* programsOf(rt)
-      const diagnostics = Arr.filter(
-        Arr.flatten(yield* Effect.forEach(programs, (program) => diagnosticsOf(program))),
-        (diagnostic) => diagnostic.category === DiagnosticCategory.Error,
+      const diagnostics = errorDiagnosticsOf(
+        Arr.flatten(yield* Effect.forEach(programs, (program) => affectedDiagnosticsOf(program, affected))),
       )
-      yield* Effect.annotateCurrentSpan({ 'typescript.diagnostics.count': diagnostics.length })
+      yield* Effect.annotateCurrentSpan({
+        'typescript.diagnostics.count': diagnostics.length,
+        'typescript.files.count': affected.size,
+      })
       yield* annotateDiagnosticSample(diagnostics)
       return diagnostics
     }).pipe(
@@ -1155,6 +1255,127 @@ if (import.meta.vitest !== void 0) {
           return Arr.every(pairs, ([left, right]) => !relatedNodes(left, right))
         },
       })
+    },
+  )
+
+  const sourceFilesOfEdges = (edges: ReadonlyArray<readonly [number, number]>): SourceFiles => {
+    const size = 1 + Arr.reduce(edges, 0, (largest, [child, parent]) => Math.max(largest, child, parent))
+    return MutableHashMap.fromIterable(
+      Arr.map(
+        Arr.range(0, size - 1),
+        (
+          index,
+        ): readonly [
+          string,
+          { readonly fileName: string; readonly imports: MutableHashSet.MutableHashSet<string> },
+        ] => [
+          fileNameOf(index),
+          {
+            fileName: fileNameOf(index),
+            imports: MutableHashSet.fromIterable(
+              Arr.map(Arr.filter(edges, ([, parent]) => parent === index), ([child]) => fileNameOf(child)),
+            ),
+          },
+        ],
+      ),
+    )
+  }
+
+  const propagateDependents = (
+    affected: ReadonlySet<string>,
+    [child, parent]: readonly [number, number],
+  ): ReadonlySet<string> =>
+    Boolean.match(affected.has(fileNameOf(child)), {
+      onTrue: () => new Set([...affected, fileNameOf(parent)]),
+      onFalse: () => affected,
+    })
+
+  const expectedAffected = (
+    edges: ReadonlyArray<readonly [number, number]>,
+    mutatedFileNames: ReadonlyArray<string>,
+  ): ReadonlyArray<string> => {
+    const seed: ReadonlySet<string> = new Set(mutatedFileNames)
+    return [
+      ...Arr.reduce(
+        Arr.range(0, edges.length + 1),
+        seed,
+        (affected) => Arr.reduce(edges, affected, propagateDependents),
+      ),
+    ].sort()
+  }
+
+  const affectedFor = (edges: ReadonlyArray<readonly [number, number]>, fileIndexes: readonly number[]) =>
+    affectedFileNames(sourceFilesOfEdges(edges), Arr.map(fileIndexes, fileNameOf))
+
+  it.prop(
+    '∀graph_Mutants_≡AffectedDependents',
+    { of: [EdgesSchema, MutantsSchema], subject: affectedFor },
+    (subject, [edges, fileIndexes]) =>
+      Equal.equals([...subject(edges, fileIndexes)].sort(), expectedAffected(edges, Arr.map(fileIndexes, fileNameOf))),
+  )
+
+  it.prop(
+    '∀graph_Mutants_⊆Affected',
+    { of: [EdgesSchema, MutantsSchema], subject: affectedFor },
+    (subject, [edges, fileIndexes]) => {
+      const affected = subject(edges, fileIndexes)
+      return Arr.every(Arr.map(fileIndexes, fileNameOf), (fileName) => affected.has(fileName))
+    },
+  )
+
+  it.prop(
+    '∀graph_Mutants_⊆Files∪Mutants',
+    { of: [EdgesSchema, MutantsSchema], subject: affectedFor },
+    (subject, [edges, fileIndexes]) => {
+      const known = new Set([
+        ...Arr.map(Arr.range(0, FILE_INDEX_LIMIT), fileNameOf),
+        ...Arr.map(fileIndexes, fileNameOf),
+      ])
+      return Arr.every([...subject(edges, fileIndexes)], (fileName) => known.has(fileName))
+    },
+  )
+
+  const requestedFor = (presentFileNames: ReadonlyArray<string>, fileNames: ReadonlyArray<string>) =>
+    requestedFileNames(new Set(fileNames), presentFileNames)
+
+  it.prop(
+    '∀files_Requested_⊆Present∩Affected',
+    { of: [S.Array(S.String), S.Array(S.String)], subject: requestedFor },
+    (subject, [presentFileNames, fileNames]) =>
+      Arr.every(
+        subject(presentFileNames, fileNames),
+        (fileName) => presentFileNames.includes(fileName) && fileNames.includes(fileName),
+      ),
+  )
+
+  it.prop(
+    '∀files_Requested_⊇DistinctAffected',
+    { of: [S.Array(S.String), S.Array(S.String)], subject: requestedFor },
+    (subject, [presentFileNames, fileNames]) => {
+      const requested = subject(presentFileNames, fileNames)
+      return Arr.every(
+        Arr.dedupe(Arr.filter(presentFileNames, (fileName) => fileNames.includes(fileName))),
+        (fileName) => requested.includes(fileName),
+      )
+    },
+  )
+
+  const batchesFor = (fileNames: ReadonlyArray<string>) =>
+    Arr.map(diagnosticBatchesOf(fileNames), (batch) => [...batch])
+
+  it.prop(
+    '∀files_Batches_≡PartitionWithinBatchSize',
+    { of: [S.Array(S.String).check(S.isMaxLength(200))], subject: batchesFor },
+    (subject, [fileNames]) => {
+      const batches = subject(fileNames)
+      return Arr.every(
+        [
+          Equal.equals(Arr.flatten(batches), fileNames),
+          Arr.every(batches, (batch) => batch.length > 0 && batch.length <= DIAGNOSTIC_BATCH_SIZE),
+          batches.length === Math.ceil(fileNames.length / DIAGNOSTIC_BATCH_SIZE),
+        ],
+        (holds) => holds,
+      )
     },
   )
 
