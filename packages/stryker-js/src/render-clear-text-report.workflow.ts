@@ -454,9 +454,15 @@ const mutantReportSection = (
     onFalse: () => EMPTY_SECTIONS,
   })
 
+const hasFullScore = (metrics: Report.MetricsResult['metrics']): boolean =>
+  Match.valueTags(metrics.mutationScore, {
+    Scored: ({ percentage }) => percentage === 100,
+    Unscored: () => false,
+  })
+
 const partialScoresVisible = (metrics: Report.MetricsResult, render: ClearTextRenderOptions): boolean =>
   Boolean.match(render.skipFull, {
-    onTrue: () => metrics.childResults.some((child) => child.metrics.mutationScore !== 100),
+    onTrue: () => metrics.childResults.some((child) => !hasFullScore(child.metrics)),
     onFalse: () => true,
   })
 
@@ -468,28 +474,29 @@ const drawsScoreTable = (metrics: Report.MetricsResult, render: ClearTextRenderO
 
 type ScoreType = 'total' | 'covered'
 
-const mutationScoreOf = (scoreType: ScoreType, metrics: Report.MetricsResult['metrics']): number =>
+const mutationScoreOf = (scoreType: ScoreType, metrics: Report.MetricsResult['metrics']): Report.MutationScore =>
   Match.value(scoreType).pipe(
     Match.when('total', () => metrics.mutationScore),
     Match.when('covered', () => metrics.mutationScoreBasedOnCoveredCode),
     Match.exhaustive,
   )
 
-const scoreText = (scoreType: ScoreType, row: Report.MetricsResult): string => {
-  const score = mutationScoreOf(scoreType, row.metrics)
-  return Boolean.match(Number.isNaN(score), {
-    onTrue: () => 'n/a',
-    onFalse: () => score.toFixed(2),
+const scoreText = (scoreType: ScoreType, row: Report.MetricsResult): string =>
+  Match.valueTags(mutationScoreOf(scoreType, row.metrics), {
+    Scored: ({ percentage }) => percentage.toFixed(2),
+    Unscored: () => 'n/a',
   })
-}
 
-const thresholdTone = (thresholds: Options.MutationScoreThresholds, score: number): Tone =>
-  Match.value(score).pipe(
-    Match.when((present: number) => Number.isNaN(present), (): Tone => 'muted'),
-    Match.when((present) => present >= thresholds.high, (): Tone => 'positive'),
-    Match.when((present) => present >= thresholds.low, (): Tone => 'warning'),
-    Match.orElse((): Tone => 'negative'),
-  )
+const thresholdTone = (thresholds: Options.MutationScoreThresholds, score: Report.MutationScore): Tone =>
+  Match.valueTags(score, {
+    Scored: ({ percentage }) =>
+      Match.value(percentage).pipe(
+        Match.when((value) => value >= thresholds.high, (): Tone => 'positive'),
+        Match.when((value) => value >= thresholds.low, (): Tone => 'warning'),
+        Match.orElse((): Tone => 'negative'),
+      ),
+    Unscored: (): Tone => 'muted',
+  })
 
 const scoreTone = (
   thresholds: Options.MutationScoreThresholds,
@@ -620,7 +627,7 @@ const leafHeaders = (columns: readonly GroupColumn[]): readonly ReportLine[] =>
 
 const fullRowVisible = (render: ClearTextRenderOptions, row: Report.MetricsResult): boolean =>
   Boolean.match(render.skipFull, {
-    onTrue: () => row.metrics.mutationScore !== 100,
+    onTrue: () => !hasFullScore(row.metrics),
     onFalse: () => true,
   })
 

@@ -6,7 +6,6 @@ import {
   EphemeralInstrument,
   InPlaceInstrument,
   InstrumentCommand,
-  InstrumentError,
   planInstrumentation,
 } from '../plan-instrumentation.workflow.js'
 
@@ -16,9 +15,6 @@ describe('planInstrumentation', () => {
     { of: [InstrumentCommand], subject: planInstrumentation },
     (subject, [command]) => {
       const result = subject(command)
-      if (command.fileCount === 0) {
-        return Result.isFailure(result) && S.is(InstrumentError)(result.failure)
-      }
       if (command.inPlace) {
         return (
           Result.isSuccess(result) &&

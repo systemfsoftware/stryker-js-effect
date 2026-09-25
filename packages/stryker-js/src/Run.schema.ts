@@ -39,4 +39,8 @@ const STAGE_PRESENTATION: Record<
 export class PrepareError extends S.TaggedError<PrepareError>()('PrepareError', {
   stage: S.Literal('prepare'),
   reason: S.String,
-}) {}
+}) {
+  override get message(): string {
+    return this.reason
+  }
+}

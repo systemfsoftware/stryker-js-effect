@@ -15,6 +15,7 @@ const SURVIVOR_STATUSES: Record<string, true> = { Survived: true, NoCoverage: tr
 
 const SCORE_INCOMPLETE = 'incomplete'
 const SCORE_ABSENT = 'no report'
+const SCORE_UNSCORED = 'n/a'
 const SCORE_PERFECT = '100.00'
 const VERDICT_OK = '✅'
 const VERDICT_FAIL = '❌'
@@ -89,7 +90,7 @@ type ReportPartValue = S.Schema.Type<typeof ReportPart>
 type PartWithReport = ReportPartValue & { readonly report: Report.MutationTestResult }
 
 interface Score {
-  readonly mutationScore: number
+  readonly mutationScore: Report.MutationScore
   readonly cells: readonly string[]
 }
 
@@ -211,10 +212,10 @@ const mergeParts = (parts: readonly PartWithReport[]): Report.MutationTestResult
 const commonProjectRoot = (roots: readonly string[]): string | undefined =>
   Option.getOrUndefined(Option.map(Option.liftPredicate(roots, Arr.isReadonlyArrayNonEmpty), commonBasePath))
 
-const mutationScoreOf = (totalDetected: number, totalValid: number): number =>
-  Match.value(totalValid === 0).pipe(
-    Match.when(true, () => 0),
-    Match.when(false, () => (totalDetected / totalValid) * 100),
+const mutationScoreOf = (totalDetected: number, totalValid: number): Report.MutationScore =>
+  Match.value(totalValid > 0).pipe(
+    Match.when(true, (): Report.MutationScore => ({ _tag: 'Scored', percentage: (totalDetected / totalValid) * 100 })),
+    Match.when(false, (): Report.MutationScore => ({ _tag: 'Unscored' })),
     Match.exhaustive,
   )
 
@@ -241,24 +242,28 @@ const incompleteVerdict = (outcome: string | undefined): string =>
     Match.exhaustive,
   )
 
-const passingVerdict = (score: Score, outcome: string | undefined): string =>
-  Match.value({ perfect: score.mutationScore === PERFECT_MUTATION_SCORE, passing: outcome === PASSING_OUTCOME }).pipe(
+const scoredVerdict = (percentage: number, outcome: string | undefined): string =>
+  Match.value({ perfect: percentage === PERFECT_MUTATION_SCORE, passing: outcome === PASSING_OUTCOME }).pipe(
     Match.when({ perfect: true, passing: true }, () => VERDICT_OK),
     Match.orElse(() => VERDICT_FAIL),
   )
 
-const renderedScore = (mutationScore: number): string =>
-  Match.value(mutationScore).pipe(
+const renderedScore = (percentage: number): string =>
+  Match.value(percentage).pipe(
     Match.when(PERFECT_MUTATION_SCORE, () => SCORE_PERFECT),
-    Match.orElse(() => mutationScore.toFixed(2)),
+    Match.orElse(() => percentage.toFixed(2)),
   )
 
-const scoredRow = (label: string, score: Score, outcome: string | undefined): VerdictRow => ({
-  label,
-  score: renderedScore(score.mutationScore),
-  cells: score.cells,
-  verdict: passingVerdict(score, outcome),
-})
+const scoredRow = (label: string, score: Score, outcome: string | undefined): VerdictRow =>
+  Match.valueTags(score.mutationScore, {
+    Scored: ({ percentage }) => ({
+      label,
+      score: renderedScore(percentage),
+      cells: score.cells,
+      verdict: scoredVerdict(percentage, outcome),
+    }),
+    Unscored: () => ({ label, score: SCORE_UNSCORED, cells: score.cells, verdict: incompleteVerdict(outcome) }),
+  })
 
 const completeRow = (label: string, score: Score | undefined, outcome: string | undefined): VerdictRow =>
   Option.match(Option.fromUndefinedOr(score), {

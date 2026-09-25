@@ -631,7 +631,7 @@ Feature('Framework plugins joining a mutation run')
             skippedExtension: row?.extension,
             skippedReason: row?.reason,
           }).toEqual({
-            runFailed: true,
+            runFailed: false,
             skippedExtension: '.fixture',
             skippedReason:
               'No loaded framework claims ".fixture". Add fixture-framework to "plugins" to instrument it.',
