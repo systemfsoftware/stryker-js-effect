@@ -11,10 +11,10 @@ export interface GuestJobsShape {
   readonly job: (
     cmd: readonly [string, ...Array<string>],
     mounts: ReadonlyArray<MicroVM.Mount>,
-  ) => MicroVM.JobResource
+  ) => MicroVM.JobBlueprint
   readonly requireCleanExit: (
     step: string,
-    job: MicroVM.JobResource,
+    job: MicroVM.JobBlueprint,
   ) => Effect.Effect<
     void,
     ExitFailure | GuestJobFailure | GuestSignaledFailure,
@@ -43,7 +43,7 @@ export class GuestJobs
           MicroVM.job(GuestJobs.BASE_IMAGE, cmd).withMemoryLimit(GuestJobs.GUEST_MEMORY_MIB),
         )
 
-      const runGuestJob = (step: string, job: MicroVM.JobResource) =>
+      const runGuestJob = (step: string, job: MicroVM.JobBlueprint) =>
         Effect.scoped(job.run).pipe(
           Effect.mapError((cause) => new GuestJobFailure({ step, cause })),
           seamSpan(SpanNames.guestJob, { 'e2e.job.step': step }),
@@ -63,7 +63,7 @@ export class GuestJobs
           Match.exhaustive,
         )
 
-      const requireCleanExit = (step: string, job: MicroVM.JobResource) =>
+      const requireCleanExit = (step: string, job: MicroVM.JobBlueprint) =>
         Effect.flatMap(
           runGuestJob(step, job),
           (completion) =>
