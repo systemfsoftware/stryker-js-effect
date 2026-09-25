@@ -8,6 +8,6 @@ export default StrykerConfig.define({
       plugin: import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
     },
   ],
-  tsconfigFile: 'tsconfig.references.json',
+  tsconfigFile: 'tsconfig.preservation.json',
   mutate: ['src/order.ts'],
 })

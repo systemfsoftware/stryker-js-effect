@@ -2,12 +2,12 @@ import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
 export default StrykerConfig.define({
   testRunner: 'vm',
-  testFiles: ['src/order.vm.test.ts'],
+  testFiles: ['src/first.vm.test.ts'],
   checkers: [
     {
       plugin: import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
     },
   ],
-  tsconfigFile: 'tsconfig.references.json',
-  mutate: ['src/order.ts'],
+  tsconfigFile: 'tsconfig.extends.json',
+  mutate: ['src/first.ts'],
 })

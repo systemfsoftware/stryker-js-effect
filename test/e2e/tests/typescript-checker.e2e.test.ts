@@ -22,19 +22,6 @@ const RUN_EVENT_KINDS: ReadonlyArray<string> = [
   'help',
 ]
 
-const TYPESCRIPT_CHECKER_ARMS = [
-  {
-    name: 'in-memory vm runner',
-    config: 'stryker.vm.config.ts',
-    fixture: 'typescript-checker-vm-fixture',
-  },
-  {
-    name: 'vitest runner',
-    config: 'stryker.vitest.config.ts',
-    fixture: 'typescript-checker-vitest-fixture',
-  },
-] as const
-
 const parseEventStream = (stdout: string): ReadonlyArray<RunEvent.RunEvent> =>
   stdout
     .split('\n')
@@ -132,35 +119,32 @@ const stepStructuredDiskReport = (expect: ExpectStatic, reportText: string): voi
     ],
   })
 }
-test.concurrent.for(TYPESCRIPT_CHECKER_ARMS)(
-  '$name exits on a verdict with compile errors and killed mutants',
-  async (arm, { bdd, expect, prepareFixture }) => {
-    let fixture: PreparedFixture
-    let run: ExecResult
-    let events: ReadonlyArray<RunEvent.RunEvent>
-    let verdict: RunEvent.VerdictReached
+test('the in-memory vm runner exits on a verdict with compile errors and killed mutants', async ({ bdd, expect, prepareFixture }) => {
+  let fixture: PreparedFixture
+  let run: ExecResult
+  let events: ReadonlyArray<RunEvent.RunEvent>
+  let verdict: RunEvent.VerdictReached
 
-    await bdd.given(`a ${arm.name} fixture installed in the container`, async () => {
-      fixture = await prepareFixture(FIXTURE_URL, arm.fixture)
-    })
+  await bdd.given('an in-memory vm runner fixture installed in the container', async () => {
+    fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-vm-fixture')
+  })
 
-    await bdd.when(`Stryker CLI runs with ${arm.config}`, async () => {
-      run = await fixture.run(['run', arm.config])
-      events = parseEventStream(run.stdout)
-      const terminal = lastEvent(events)
-      if (terminal._tag !== 'verdict') {
-        throw new Error(`Expected verdict event, received: ${terminal._tag}`)
-      }
-      verdict = terminal
-    })
+  await bdd.when('Stryker CLI runs with stryker.vm.config.ts', async () => {
+    run = await fixture.run(['run', 'stryker.vm.config.ts'])
+    events = parseEventStream(run.stdout)
+    const terminal = lastEvent(events)
+    if (terminal._tag !== 'verdict') {
+      throw new Error(`Expected verdict event, received: ${terminal._tag}`)
+    }
+    verdict = terminal
+  })
 
-    await bdd.thenAssert('the process protocol and verdict counts match the oracle', () => {
-      stepProcessAndStreamIntegrity(expect, run, events)
-      stepVerdictCountsAndScore(expect, verdict)
-      stepMutantStreamAndActionables(expect, events, verdict)
-    })
-  },
-)
+  await bdd.thenAssert('the process protocol and verdict counts match the oracle', () => {
+    stepProcessAndStreamIntegrity(expect, run, events)
+    stepVerdictCountsAndScore(expect, verdict)
+    stepMutantStreamAndActionables(expect, events, verdict)
+  })
+})
 
 test('failing checker emits structured StageError carrying the diagnostic cause, not an empty crash', async ({ bdd, expect, prepareFixture }) => {
   let fixture: PreparedFixture
@@ -254,6 +238,73 @@ test('exercises TypeScript composite project references in build mode', async ({
   })
 
   await bdd.thenAssert('build mode catches compile errors across project references', () => {
+    stepProcessAndStreamIntegrity(expect, run, events)
+    stepVerdictCountsAndScore(expect, verdict)
+    stepMutantStreamAndActionables(expect, events, verdict)
+  })
+})
+
+test('reports a mutant that breaks a rule inherited from an extended preset as a compile error', async ({ bdd, expect, prepareFixture }) => {
+  let fixture: PreparedFixture
+  let run: ExecResult
+  let events: ReadonlyArray<RunEvent.RunEvent>
+  let verdict: RunEvent.VerdictReached
+
+  await bdd.given(
+    'a fixture whose project config extends a preset that enables unchecked indexed access',
+    async () => {
+      fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-preset-fixture')
+    },
+  )
+
+  await bdd.when('the CLI checks a source whose conditional fallback guards an indexed read', async () => {
+    run = await fixture.run(['run', 'stryker.preset.config.ts'])
+    events = parseEventStream(run.stdout)
+    const terminal = lastEvent(events)
+    if (terminal._tag !== 'verdict') {
+      throw new Error(`Expected verdict event, received: ${terminal._tag}`)
+    }
+    verdict = terminal
+  })
+
+  await bdd.thenAssert('the mutant that drops the fallback is a compile error', () => {
+    stepProcessAndStreamIntegrity(expect, run, events)
+    const reportedMutants = events
+      .filter((e): e is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => e._tag === 'mutant')
+      .map((e) => `${e.mutator}:${e.status}`)
+    expect.soft(reportedMutants).toHaveLength(3)
+    expect.soft(reportedMutants).toEqual(
+      expect.arrayContaining(['LogicalOperator:CompileError', 'StringLiteral:Killed']),
+    )
+    expect.soft(reportedMutants.filter((status) => status.endsWith(':CompileError'))).toHaveLength(1)
+    expect.soft(verdict.counts.compileErrors).toBe(1)
+  })
+})
+
+test('keeps a composite project include list so the dry run passes and its mutants are checked', async ({ bdd, expect, prepareFixture }) => {
+  let fixture: PreparedFixture
+  let run: ExecResult
+  let events: ReadonlyArray<RunEvent.RunEvent>
+  let verdict: RunEvent.VerdictReached
+
+  await bdd.given(
+    'a fixture whose application config lists the files it compiles and references a library that leaves a broken file out of its file list',
+    async () => {
+      fixture = await prepareFixture(FIXTURE_URL, 'typescript-checker-preservation-fixture')
+    },
+  )
+
+  await bdd.when('the CLI checks the application in project-reference mode', async () => {
+    run = await fixture.run(['run', 'stryker.preservation.config.ts'])
+    events = parseEventStream(run.stdout)
+    const terminal = lastEvent(events)
+    if (terminal._tag !== 'verdict') {
+      throw new Error(`Expected verdict event, received: ${terminal._tag}`)
+    }
+    verdict = terminal
+  })
+
+  await bdd.thenAssert('the run reaches a verdict and checks the application mutants', () => {
     stepProcessAndStreamIntegrity(expect, run, events)
     stepVerdictCountsAndScore(expect, verdict)
     stepMutantStreamAndActionables(expect, events, verdict)

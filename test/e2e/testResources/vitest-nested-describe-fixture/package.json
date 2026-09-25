@@ -1,0 +1,8 @@
+{
+  "name": "vitest-nested-describe-fixture",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "vitest": "catalog:"
+  }
+}
