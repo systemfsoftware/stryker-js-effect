@@ -222,16 +222,17 @@ const contextFor = (defaults: Options.StrykerOptions, directory: string): Plugin
 const vmChildRunner = (
   context: Plugin.TestRunnerBuildContext,
 ): Effect.Effect<Plugin.PooledTestRunner, Plugin.PooledTestRunnerError, Scope.Scope | Worker.WorkerLauncher> =>
-  Effect.flatMap(
-    Effect.orDie(Effect.fromOption(Arr.head(vmRunnerPlugins))),
-    (runner) =>
+  Arr.head(vmRunnerPlugins).pipe(
+    Option.map((runner) =>
       Plugin.makeChildProcessTestRunner({
         options: context.options,
         fileDescriptions: context.fileDescriptions,
         sandboxWorkingDirectory: context.sandboxWorkingDirectory,
         workerEntrypoint: runner.workerEntry,
         idGenerator: context.idGenerator,
-      }),
+      })
+    ),
+    Option.getOrElse(() => Effect.die(new Error('the vm runner plugin descriptor is missing'))),
   )
 
 const withVmRunner = <A, R>(

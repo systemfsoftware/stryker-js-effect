@@ -20,7 +20,7 @@ import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js
 import { StageError } from '../Run.schema.js'
 import { originalFileFor, sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.blueprint.js'
-import { testRunnerConfigOf } from '../VmRunner.blueprint.js'
+import { testRunnerConfigOf } from '../vm-runner.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { DryRunDone, DryRunRaw } from './dry-run.cell.js'
 import type { InstrumentDone } from './instrument.cell.js'

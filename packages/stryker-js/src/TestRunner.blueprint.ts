@@ -20,7 +20,7 @@ import {
   withTimeout,
 } from './pooled-test-runner.handle.js'
 import type { PooledTestRunnerError } from './TestRunner.schema.js'
-import { testRunnerConfigOf } from './VmRunner.blueprint.js'
+import { testRunnerConfigOf } from './vm-runner.js'
 import { makeWorkerClient } from './worker-client.blueprint.js'
 import type { WorkerBootError } from './Worker.schema.js'
 import type { IdGeneratorShape } from './Worker.service.js'

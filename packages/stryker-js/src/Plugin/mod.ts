@@ -27,4 +27,4 @@ export {
 export type { TestRunnerBuildContext } from '../TestRunner.blueprint.js'
 export { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.blueprint.js'
 export type { PooledTestRunnerError } from '../TestRunner.schema.js'
-export { isVmRunner, testRunnerConfigOf, vmRunnerPluginUrl, vmTestRunnerConfig } from '../VmRunner.blueprint.js'
+export { isVmRunner, testRunnerConfigOf, vmRunnerPluginUrl, vmTestRunnerConfig } from '../vm-runner.js'
