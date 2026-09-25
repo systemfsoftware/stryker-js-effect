@@ -1,7 +1,6 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
-import { expect } from 'vitest'
 
 const OBJECT_PROTOTYPE_MEMBERS: readonly string[] = [
   'toString',
@@ -17,9 +16,10 @@ const SOURCE = OBJECT_PROTOTYPE_MEMBERS
   .map((member, index) => `export const v${index} = String(globalThis).${member}()`)
   .join('\n')
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Mutating a method named after an Object.prototype member')
+  .live('parses real source with the oxc parser loaded at run time')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
@@ -36,12 +36,8 @@ Feature('Mutating a method named after an Object.prototype member')
         ),
         Then('instrumentation succeeds and proposes no method replacement')((
           { result }: { result: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            const methodMutants = result.mutants.filter((mutant) => mutant.mutatorName === 'MethodExpression')
-            expect(methodMutants).toEqual([])
-          })
-        ),
+          expect,
+        ) => expect(result.mutants.filter((mutant) => mutant.mutatorName === 'MethodExpression')).toEqual([])),
       ),
     )
   })

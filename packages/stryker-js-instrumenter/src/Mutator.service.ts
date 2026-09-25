@@ -65,9 +65,9 @@ import {
   unaryExpression,
   updateExpression,
 } from './Ast.handle.js'
-import { atomicUpdateSplitMutator } from './AtomicUpdateSplit.handle.js'
-import { finalizerEscapeMutator } from './FinalizerEscape.handle.js'
-import { synchronizationRemovalMutator } from './SynchronizationRemoval.handle.js'
+import { atomicUpdateSplitMutator } from './AtomicUpdateSplit.js'
+import { finalizerEscapeMutator } from './FinalizerEscape.js'
+import { synchronizationRemovalMutator } from './SynchronizationRemoval.js'
 
 export type { Node }
 /**

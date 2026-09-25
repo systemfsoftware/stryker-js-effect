@@ -1,14 +1,8 @@
-import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 
 import { type LocatedDirective, LocatedDirectiveSchema } from '../directives/directive.schema.js'
-import {
-  DisableFolded,
-  type FoldedRule,
-  foldRule,
-  FoldRuleCommand,
-  RestoreFolded,
-} from '../directives/fold-rule.workflow.js'
+import { type FoldedRule, foldRule, FoldRuleCommand } from '../directives/fold-rule.workflow.js'
 import { planMutants, PlanMutantsCommand } from '../plan-mutants.workflow.js'
 
 const RuleFoldTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-instrumenter/RuleFold')
@@ -20,8 +14,12 @@ const acted = (located: LocatedDirective, action: 'disable' | 'restore'): Locate
   directive: { ...located.directive, action },
 })
 
-const foldedOnto = (rule: readonly LocatedDirective[], directive: LocatedDirective): readonly LocatedDirective[] => {
-  const decided = foldRule(FoldRuleCommand.make({ rule, directive }))
+const folding = (
+  fold: typeof foldRule,
+  rule: readonly LocatedDirective[],
+  directive: LocatedDirective,
+): readonly LocatedDirective[] => {
+  const decided = fold(FoldRuleCommand.make({ rule, directive }))
   return Result.isSuccess(decided) ? decided.success.rule : rule
 }
 
@@ -54,44 +52,57 @@ const silencingReason = (
 
 describe('foldRule', () => {
   it.prop(
-    '∀d_Brand_∈Decision',
-    [DisableFolded, RestoreFolded],
-    ([disable, restore]) => hasBrand(disable) && hasBrand(restore),
+    '∀c_Directive_∈BrandedFold',
+    { of: [LocatedDirectiveSchema], subject: foldRule },
+    (subject, [directive]) => {
+      const decided = subject(FoldRuleCommand.make({ rule: [], directive }))
+      return Result.isSuccess(decided) && hasBrand(decided.success)
+    },
   )
 
-  it.prop('∀d_Restore_≡FoldedOntoTheEmptyRuleSilencesNoNameItNames', [LocatedDirectiveSchema], ([drawn]) => {
-    const restore = acted(drawn, 'restore')
-    const name = reachedNameOf(restore)
-    return name !== undefined && silencingReason(foldedOnto([], restore), name, restore.governedLine) === undefined
-  })
+  it.prop(
+    '∀d_Restore_≡FoldedOntoTheEmptyRuleSilencesNoNameItNames',
+    { of: [LocatedDirectiveSchema], subject: foldRule },
+    (subject, [drawn]) => {
+      const restore = acted(drawn, 'restore')
+      const name = reachedNameOf(restore)
+      return name !== undefined &&
+        silencingReason(folding(subject, [], restore), name, restore.governedLine) === undefined
+    },
+  )
 
-  it.prop('∀d_Disable_≡FoldedOntoTheEmptyRuleSilencesItsNamesWithItsOwnReason', [LocatedDirectiveSchema], ([drawn]) => {
-    const disable = acted(drawn, 'disable')
-    const name = reachedNameOf(disable)
-    return name !== undefined &&
-      silencingReason(foldedOnto([], disable), name, disable.governedLine) === disable.directive.reason
-  })
+  it.prop(
+    '∀d_Disable_≡FoldedOntoTheEmptyRuleSilencesItsNamesWithItsOwnReason',
+    { of: [LocatedDirectiveSchema], subject: foldRule },
+    (subject, [drawn]) => {
+      const disable = acted(drawn, 'disable')
+      const name = reachedNameOf(disable)
+      return name !== undefined &&
+        silencingReason(folding(subject, [], disable), name, disable.governedLine) === disable.directive.reason
+    },
+  )
 
-  it.prop('∀dd_Directives_≡FoldedInOrderTheLaterReachingDirectiveIsInForce', [
-    LocatedDirectiveSchema,
-    LocatedDirectiveSchema,
-  ], ([earlier, later]) => {
-    const name = reachedNameOf(earlier)
-    if (name === undefined) {
-      return false
-    }
-    const { at, governedLine } = earlier
-    const first: LocatedDirective = {
-      directive: { ...earlier.directive, scope: 'block', mutatorNames: [name] },
-      at,
-      governedLine,
-    }
-    const second: LocatedDirective = {
-      directive: { ...later.directive, scope: 'block', mutatorNames: [name] },
-      at,
-      governedLine,
-    }
-    const expected = second.directive.action === 'disable' ? second.directive.reason : undefined
-    return silencingReason(foldedOnto(foldedOnto([], first), second), name, governedLine) === expected
-  })
+  it.prop(
+    '∀dd_Directives_≡FoldedInOrderTheLaterReachingDirectiveIsInForce',
+    { of: [LocatedDirectiveSchema, LocatedDirectiveSchema], subject: foldRule },
+    (subject, [earlier, later]) => {
+      const name = reachedNameOf(earlier)
+      if (name === undefined) {
+        return false
+      }
+      const { at, governedLine } = earlier
+      const first: LocatedDirective = {
+        directive: { ...earlier.directive, scope: 'block', mutatorNames: [name] },
+        at,
+        governedLine,
+      }
+      const second: LocatedDirective = {
+        directive: { ...later.directive, scope: 'block', mutatorNames: [name] },
+        at,
+        governedLine,
+      }
+      const expected = second.directive.action === 'disable' ? second.directive.reason : undefined
+      return silencingReason(folding(subject, folding(subject, [], first), second), name, governedLine) === expected
+    },
+  )
 })

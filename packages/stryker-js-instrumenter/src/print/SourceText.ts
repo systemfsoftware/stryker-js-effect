@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import type {
   AccessorProperty,
   ArrayExpression,
@@ -2196,7 +2197,7 @@ interface CommentHost {
 }
 
 if (import.meta.vitest !== void 0) {
-  const { it } = await import('@effect/vitest')
+  const { it } = await import('@systemfsoftware/vitest')
   const { Schema } = await import('effect')
   const oxc = await import('oxc-parser')
 
@@ -2260,23 +2261,29 @@ if (import.meta.vitest !== void 0) {
     ]),
   )
 
-  const printed = (source: string, lang: 'ts' | 'tsx'): string => {
+  const reparseStable = (subject: typeof printProgram, source: string, lang: 'ts' | 'tsx'): boolean => {
     const parsed = oxc.parseSync('law.ts', source, { lang, range: true })
-    return printProgram(parsed.program, { comments: parsed.comments, hashbang: null })
+    const once = subject(parsed.program, { comments: parsed.comments, hashbang: null })
+    const reparsed = oxc.parseSync('law.ts', once, { lang, range: true })
+    return subject(reparsed.program, { comments: reparsed.comments, hashbang: null }) === once &&
+      reparsed.program.body.length === parsed.program.body.length
   }
 
-  it.prop('∀src_TemplateTypePrint_≡Reparse', [TEMPLATE_TYPE_FRAGMENTS], ([fragments]) => {
-    const once = printed(fragments.join('\n'), 'ts')
-    return printed(once, 'ts') === once
-  })
+  it.prop(
+    '∀src_TemplateTypePrint_≡Reparse',
+    { of: [TEMPLATE_TYPE_FRAGMENTS], subject: printProgram },
+    (subject, [fragments]) => reparseStable(subject, fragments.join('\n'), 'ts'),
+  )
 
-  it.prop('∀src_TsProgramPrint_≡Reparse', [TS_FRAGMENTS], ([fragments]) => {
-    const once = printed(fragments.join('\n'), 'ts')
-    return printed(once, 'ts') === once
-  })
+  it.prop(
+    '∀src_TsProgramPrint_≡Reparse',
+    { of: [TS_FRAGMENTS], subject: printProgram },
+    (subject, [fragments]) => reparseStable(subject, fragments.join('\n'), 'ts'),
+  )
 
-  it.prop('∀src_TsxProgramPrint_≡Reparse', [TSX_FRAGMENTS], ([fragments]) => {
-    const once = printed(fragments.join('\n'), 'tsx')
-    return printed(once, 'tsx') === once
-  })
+  it.prop(
+    '∀src_TsxProgramPrint_≡Reparse',
+    { of: [TSX_FRAGMENTS], subject: printProgram },
+    (subject, [fragments]) => reparseStable(subject, fragments.join('\n'), 'tsx'),
+  )
 }

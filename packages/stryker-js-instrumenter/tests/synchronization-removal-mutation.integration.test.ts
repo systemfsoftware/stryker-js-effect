@@ -1,8 +1,7 @@
 import { NodeFileSystem } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
-import { expect } from 'vitest'
 
 import { shapes } from '../testResources/effect-concurrency/shapes.js'
 import {
@@ -130,9 +129,10 @@ const removalCount = (result: Instrument.InstrumentResult): number =>
 const removalMutantsOf = (result: Instrument.InstrumentResult): readonly Mutant.Mutant[] =>
   result.mutants.filter((mutant) => mutant.mutatorName === SYNCHRONIZATION_REMOVAL)
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Exposing unguarded concurrency by removing synchronization from effects')
+  .live('reads fixture files from disk and parses real source with the oxc parser')
   .withLayer(NodeFileSystem.layer)
   .body(({ scenario }) => {
     const countsScenario = (
@@ -150,9 +150,10 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
             ({ sources }: { sources: readonly string[] }) =>
               Effect.forEach(sources, (source) => Effect.map(instrumentSource(source), removalCount)),
           ),
-          Then('the proposed mutants match the expectation exactly')(({ counts }: { counts: readonly number[] }) =>
-            Effect.sync(() => expect(counts).toStrictEqual(expectedCounts))
-          ),
+          Then('the proposed mutants match the expectation exactly')((
+            { counts }: { counts: readonly number[] },
+            expect,
+          ) => expect(counts).toStrictEqual(expectedCounts)),
         ),
       )
 
@@ -179,43 +180,38 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           'every promised guard sits inside its own exported block, every file totals its promises, and no replacement hides behind a cast or a suppression',
         )((
           { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            const contentByFile = new Map(
-              fixtures.map((fixture) => [`effect-concurrency/${fixture.name}`, fixture.content]),
+          expect,
+        ) => {
+          const contentByFile = new Map(
+            fixtures.map((fixture) => [`effect-concurrency/${fixture.name}`, fixture.content]),
+          )
+          const mutantsIn = (fileName: string): readonly Mutant.Mutant[] =>
+            report.mutants.filter(
+              (mutant) => mutant.mutatorName === SYNCHRONIZATION_REMOVAL && mutant.fileName === fileName,
             )
-            const mutantsIn = (fileName: string): readonly Mutant.Mutant[] =>
-              report.mutants.filter(
-                (mutant) => mutant.mutatorName === SYNCHRONIZATION_REMOVAL && mutant.fileName === fileName,
-              )
-            for (const entry of tableEntries) {
-              const content = contentByFile.get(entry.file) ?? ''
-              const range = exportLineRange(content, entry.exportName)
-              const located = mutantsIn(entry.file).filter((mutant) => {
-                const sourceLine = mutant.location.start.line
-                return range.firstLine <= sourceLine && sourceLine <= range.lastLine
-              })
-              expect(
-                { module: `${entry.file} ${entry.exportName}`, mutants: located.length },
-              ).toStrictEqual({ module: `${entry.file} ${entry.exportName}`, mutants: entry.expectedMutants })
-            }
-            for (const fixture of fixtures) {
-              expect({
-                module: fixture.name,
-                mutants: mutantsIn(`effect-concurrency/${fixture.name}`).length,
-              }).toStrictEqual({
-                module: fixture.name,
-                mutants: expectedTotalFor(`effect-concurrency/${fixture.name}`),
-              })
-            }
-            const forbidden = report.mutants.flatMap((mutant) =>
-              ['@ts-ignore', '@ts-expect-error', 'as any', 'as unknown'].flatMap((suppression) =>
-                mutant.replacement.includes(suppression) ? [`${mutant.id} contains ${suppression}`] : []
-              )
-            )
-            expect(forbidden).toStrictEqual([])
+          const mismatches = tableEntries.flatMap((entry) => {
+            const content = contentByFile.get(entry.file) ?? ''
+            const range = exportLineRange(content, entry.exportName)
+            const located = mutantsIn(entry.file).filter((mutant) => {
+              const sourceLine = mutant.location.start.line
+              return range.firstLine <= sourceLine && sourceLine <= range.lastLine
+            })
+            return located.length === entry.expectedMutants
+              ? []
+              : [`${entry.file} ${entry.exportName}: ${located.length} != ${entry.expectedMutants}`]
           })
-        ),
+          const totals = fixtures.flatMap((fixture) => {
+            const actual = mutantsIn(`effect-concurrency/${fixture.name}`).length
+            const expected = expectedTotalFor(`effect-concurrency/${fixture.name}`)
+            return actual === expected ? [] : [`${fixture.name}: ${actual} != ${expected}`]
+          })
+          const forbidden = report.mutants.flatMap((mutant) =>
+            ['@ts-ignore', '@ts-expect-error', 'as any', 'as unknown'].flatMap((suppression) =>
+              mutant.replacement.includes(suppression) ? [`${mutant.id} contains ${suppression}`] : []
+            )
+          )
+          return expect({ mismatches, totals, forbidden }).toEqual({ mismatches: [], totals: [], forbidden: [] })
+        }),
       ),
     )
 
@@ -242,10 +238,10 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), removalMutantsOf),
         ),
         Then('the single mutant is the guarded effect, word for word')(
-          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
-            Effect.sync(() => {
-              expect(mutants.length).toBe(1)
-              expect(mutants[0]?.replacement).toBe(GUARDED_REPLACEMENT)
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }, expect) =>
+            expect({ count: mutants.length, replacement: mutants[0]?.replacement }).toEqual({
+              count: 1,
+              replacement: GUARDED_REPLACEMENT,
             }),
         ),
       ),
@@ -263,10 +259,10 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), removalMutantsOf),
         ),
         Then('the single mutant hands each piped effect straight back, word for word')(
-          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
-            Effect.sync(() => {
-              expect(mutants.length).toBe(1)
-              expect(mutants[0]?.replacement).toBe(FROZEN_PIPE_REPLACEMENT)
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }, expect) =>
+            expect({ count: mutants.length, replacement: mutants[0]?.replacement }).toEqual({
+              count: 1,
+              replacement: FROZEN_PIPE_REPLACEMENT,
             }),
         ),
       ),
@@ -284,10 +280,10 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), removalMutantsOf),
         ),
         Then('the single mutant defers the callback and hands it an always-restoring region, word for word')(
-          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
-            Effect.sync(() => {
-              expect(mutants.length).toBe(1)
-              expect(mutants[0]?.replacement).toBe(MASKED_REPLACEMENT)
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }, expect) =>
+            expect({ count: mutants.length, replacement: mutants[0]?.replacement }).toEqual({
+              count: 1,
+              replacement: MASKED_REPLACEMENT,
             }),
         ),
       ),
@@ -314,16 +310,17 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
         ),
         Then('the one proposed mutant sits on the mask inside the leader lock, word for word')((
           { content, mutants }: { content: string; mutants: readonly Mutant.Mutant[] },
-        ) =>
-          Effect.sync(() => {
-            expect(mutants.length).toBe(1)
-            const [maskMutant] = mutants
-            expect(maskMutant?.replacement.startsWith('Effect.suspend(')).toBe(true)
-            const range = exportLineRange(content, 'leaderLockScopeClose')
-            const sourceLine = maskMutant?.location.start.line ?? Number.NaN
-            expect(range.firstLine <= sourceLine && sourceLine <= range.lastLine).toBe(true)
-          })
-        ),
+          expect,
+        ) => {
+          const [maskMutant] = mutants
+          const range = exportLineRange(content, 'leaderLockScopeClose')
+          const sourceLine = maskMutant?.location.start.line ?? Number.NaN
+          return expect({
+            count: mutants.length,
+            startsWithSuspend: maskMutant?.replacement.startsWith('Effect.suspend('),
+            insideLeaderLock: range.firstLine <= sourceLine && sourceLine <= range.lastLine,
+          }).toEqual({ count: 1, startsWithSuspend: true, insideLeaderLock: true })
+        }),
       ),
     )
 
@@ -339,13 +336,14 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           ({ source }: { source: string }) => instrumentSource(source),
         ),
         Then('the single mutant is reported as skipped, carrying the comment reason')(
-          ({ report }: { report: Instrument.InstrumentResult }) =>
-            Effect.sync(() => {
-              const mutants = removalMutantsOf(report)
-              expect(mutants.length).toBe(1)
-              expect(mutants[0]?.status).toBe('Ignored')
-              expect(mutants[0]?.statusReason).toBe('the race is proven by the lock suite')
-            }),
+          ({ report }: { report: Instrument.InstrumentResult }, expect) => {
+            const mutants = removalMutantsOf(report)
+            return expect({
+              count: mutants.length,
+              status: mutants[0]?.status,
+              reason: mutants[0]?.statusReason,
+            }).toEqual({ count: 1, status: 'Ignored', reason: 'the race is proven by the lock suite' })
+          },
         ),
       ),
     )

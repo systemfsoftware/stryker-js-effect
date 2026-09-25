@@ -1,8 +1,7 @@
 import { NodeFileSystem } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
-import { expect } from 'vitest'
 
 import { importStyles, shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
@@ -201,9 +200,10 @@ const atomicCount = (result: Instrument.InstrumentResult): number =>
 const atomicMutantsOf = (result: Instrument.InstrumentResult): readonly Mutant.Mutant[] =>
   result.mutants.filter((mutant) => mutant.mutatorName === ATOMIC_UPDATE_SPLIT)
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Exposing lost ref updates by splitting atomic ref updates')
+  .live('reads fixture files from disk and parses real source with the oxc parser')
   .withLayer(NodeFileSystem.layer)
   .body(({ scenario }) => {
     const countsScenario = (
@@ -221,9 +221,10 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
             ({ sources }: { sources: readonly string[] }) =>
               Effect.forEach(sources, (source) => Effect.map(instrumentSource(source), atomicCount)),
           ),
-          Then('the proposed mutants match the expectation exactly')(({ counts }: { counts: readonly number[] }) =>
-            Effect.sync(() => expect(counts).toStrictEqual(expectedCounts))
-          ),
+          Then('the proposed mutants match the expectation exactly')((
+            { counts }: { counts: readonly number[] },
+            expect,
+          ) => expect(counts).toStrictEqual(expectedCounts)),
         ),
       )
 
@@ -250,45 +251,38 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           'every table entry counts its mutants inside its own export, every file totals its table, and no replacement hides behind a cast or a suppression',
         )((
           { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            const contentByFile = new Map(
-              fixtures.map((fixture) => [`effect-concurrency/${fixture.name}`, fixture.content]),
+          expect,
+        ) => {
+          const contentByFile = new Map(
+            fixtures.map((fixture) => [`effect-concurrency/${fixture.name}`, fixture.content]),
+          )
+          const mutantsIn = (fileName: string): readonly Mutant.Mutant[] =>
+            report.mutants.filter(
+              (mutant) => mutant.mutatorName === ATOMIC_UPDATE_SPLIT && mutant.fileName === fileName,
             )
-            const mutantsIn = (fileName: string): readonly Mutant.Mutant[] =>
-              report.mutants.filter(
-                (mutant) => mutant.mutatorName === ATOMIC_UPDATE_SPLIT && mutant.fileName === fileName,
-              )
-            for (const entry of uniqueTableEntries()) {
-              const content = contentByFile.get(entry.file) ?? ''
-              const range = exportLineRange(content, entry.exportName)
-              const located = mutantsIn(entry.file).filter(
-                (mutant) => {
-                  const sourceLine = mutant.location.start.line
-                  return range.firstLine <= sourceLine && sourceLine <= range.lastLine
-                },
-              )
-              expect(
-                { module: `${entry.file} ${entry.exportName}`, mutants: located.length },
-              ).toStrictEqual({ module: `${entry.file} ${entry.exportName}`, mutants: entry.expectedMutants })
-            }
-            for (const fixture of fixtures) {
-              expect({
-                module: fixture.name,
-                mutants: mutantsIn(`effect-concurrency/${fixture.name}`).length,
-              }).toStrictEqual({
-                module: fixture.name,
-                mutants: expectedTotalFor(`effect-concurrency/${fixture.name}`),
-              })
-            }
-            const forbidden = report.mutants.flatMap((mutant) =>
-              ['@ts-ignore', '@ts-expect-error', 'as any', 'as unknown'].flatMap((suppression) =>
-                mutant.replacement.includes(suppression) ? [`${mutant.id} contains ${suppression}`] : []
-              )
-            )
-            expect(forbidden).toStrictEqual([])
+          const mismatches = uniqueTableEntries().flatMap((entry) => {
+            const content = contentByFile.get(entry.file) ?? ''
+            const range = exportLineRange(content, entry.exportName)
+            const located = mutantsIn(entry.file).filter((mutant) => {
+              const sourceLine = mutant.location.start.line
+              return range.firstLine <= sourceLine && sourceLine <= range.lastLine
+            })
+            return located.length === entry.expectedMutants
+              ? []
+              : [`${entry.file} ${entry.exportName}: ${located.length} != ${entry.expectedMutants}`]
           })
-        ),
+          const totals = fixtures.flatMap((fixture) => {
+            const actual = mutantsIn(`effect-concurrency/${fixture.name}`).length
+            const expected = expectedTotalFor(`effect-concurrency/${fixture.name}`)
+            return actual === expected ? [] : [`${fixture.name}: ${actual} != ${expected}`]
+          })
+          const forbidden = report.mutants.flatMap((mutant) =>
+            ['@ts-ignore', '@ts-expect-error', 'as any', 'as unknown'].flatMap((suppression) =>
+              mutant.replacement.includes(suppression) ? [`${mutant.id} contains ${suppression}`] : []
+            )
+          )
+          return expect({ mismatches, totals, forbidden }).toEqual({ mismatches: [], totals: [], forbidden: [] })
+        }),
       ),
     )
 
@@ -364,10 +358,10 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), atomicMutantsOf),
         ),
         Then('the single mutant replaces the call with the snapshot split, word for word')(
-          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
-            Effect.sync(() => {
-              expect(mutants.length).toBe(1)
-              expect(mutants[0]?.replacement).toBe(DATA_FIRST_REPLACEMENT)
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }, expect) =>
+            expect({ count: mutants.length, replacement: mutants[0]?.replacement }).toEqual({
+              count: 1,
+              replacement: DATA_FIRST_REPLACEMENT,
             }),
         ),
       ),
@@ -382,10 +376,10 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), atomicMutantsOf),
         ),
         Then('the single mutant replaces the call with the piped snapshot split, word for word')(
-          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
-            Effect.sync(() => {
-              expect(mutants.length).toBe(1)
-              expect(mutants[0]?.replacement).toBe(DATA_LAST_REPLACEMENT)
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }, expect) =>
+            expect({ count: mutants.length, replacement: mutants[0]?.replacement }).toEqual({
+              count: 1,
+              replacement: DATA_LAST_REPLACEMENT,
             }),
         ),
       ),
@@ -403,10 +397,10 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), atomicMutantsOf),
         ),
         Then('the replacement binds suffixed names and leaves the captured names untouched, word for word')(
-          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
-            Effect.sync(() => {
-              expect(mutants.length).toBe(1)
-              expect(mutants[0]?.replacement).toBe(BINDER_CAPTURE_REPLACEMENT)
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }, expect) =>
+            expect({ count: mutants.length, replacement: mutants[0]?.replacement }).toEqual({
+              count: 1,
+              replacement: BINDER_CAPTURE_REPLACEMENT,
             }),
         ),
       ),
@@ -424,13 +418,14 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           ({ source }: { source: string }) => instrumentSource(source),
         ),
         Then('the single mutant is reported as ignored, carrying the comment reason')(
-          ({ report }: { report: Instrument.InstrumentResult }) =>
-            Effect.sync(() => {
-              const mutants = atomicMutantsOf(report)
-              expect(mutants.length).toBe(1)
-              expect(mutants[0]?.status).toBe('Ignored')
-              expect(mutants[0]?.statusReason).toBe('race proven elsewhere')
-            }),
+          ({ report }: { report: Instrument.InstrumentResult }, expect) => {
+            const mutants = atomicMutantsOf(report)
+            return expect({
+              count: mutants.length,
+              status: mutants[0]?.status,
+              reason: mutants[0]?.statusReason,
+            }).toEqual({ count: 1, status: 'Ignored', reason: 'race proven elsewhere' })
+          },
         ),
       ),
     )
@@ -449,13 +444,18 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
             }),
         ),
         Then('the single mutant is reported as ignored for the exclusion')(
-          ({ report }: { report: Instrument.InstrumentResult }) =>
-            Effect.sync(() => {
-              const mutants = atomicMutantsOf(report)
-              expect(mutants.length).toBe(1)
-              expect(mutants[0]?.status).toBe('Ignored')
-              expect(mutants[0]?.statusReason).toBe(`Ignored because of excluded mutation "${ATOMIC_UPDATE_SPLIT}"`)
-            }),
+          ({ report }: { report: Instrument.InstrumentResult }, expect) => {
+            const mutants = atomicMutantsOf(report)
+            return expect({
+              count: mutants.length,
+              status: mutants[0]?.status,
+              reason: mutants[0]?.statusReason,
+            }).toEqual({
+              count: 1,
+              status: 'Ignored',
+              reason: `Ignored because of excluded mutation "${ATOMIC_UPDATE_SPLIT}"`,
+            })
+          },
         ),
       ),
     )

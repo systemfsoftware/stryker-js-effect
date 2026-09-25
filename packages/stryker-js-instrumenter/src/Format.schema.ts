@@ -5,7 +5,7 @@ import type { Ast, ScriptFormat } from './Ast.schema.js'
 import type { InstrumentError } from './Instrument.schema.js'
 import type { ParseFailed } from './Parser.schema.js'
 import type { ParserContext } from './Parser.service.js'
-import type { PrinterContext } from './Printer.handle.js'
+import type { PrinterContext } from './Printer.js'
 import type { AstTransformer } from './Transformer.service.js'
 
 export type FormatKind = 'script' | 'embedded'

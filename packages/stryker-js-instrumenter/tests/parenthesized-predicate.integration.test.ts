@@ -1,7 +1,6 @@
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
-import { expect } from 'vitest'
 
 const WORKFLOW_BODY = `import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Match from 'effect/Match'
@@ -26,9 +25,10 @@ export const workflow = Workflow.make({} as never, (command) =>
 )
 `
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Parenthesized type predicates in make bodies')
+  .live('parses real source with the oxc parser loaded at run time')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
@@ -45,11 +45,8 @@ Feature('Parenthesized type predicates in make bodies')
         ),
         Then('instrumentation succeeds with a non-empty mutant population')((
           { result }: { result: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            expect(result.mutants.length).toBeGreaterThan(0)
-          })
-        ),
+          expect,
+        ) => expect(result.mutants.length).toBeGreaterThan(0)),
       ),
     )
   })

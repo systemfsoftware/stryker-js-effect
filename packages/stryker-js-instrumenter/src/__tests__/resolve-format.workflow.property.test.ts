@@ -1,4 +1,4 @@
-import { describe, it } from '@systemfsoftware/effect-gherkin-spec'
+import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -46,31 +46,38 @@ const hasBrand = (decision: FormatResolutionDecision): boolean =>
 
 describe('resolveFormat', () => {
   it.prop(
-    '∀d_Brand_∈Decision',
-    [FormatAssigned, FormatSkipped],
-    ([assigned, skipped]) => hasBrand(assigned) && hasBrand(skipped),
+    '∀c_Command_∈BrandedDecision',
+    { of: [FormatResolutionCommand], subject: resolveFormat },
+    (subject, [command]) => {
+      const decided = subject(command)
+      return Result.isSuccess(decided) ? hasBrand(decided.success) : S.is(FormatOverrideUnclaimed)(decided.failure)
+    },
   )
 
-  it.prop('∀c_Command_≡AssignedClaimsCoverTheFile', [FormatResolutionCommand], ([command]) => {
-    const covering = coveringClaimOf(command)
-    const result = resolveFormat(command)
-    if (Result.isFailure(result)) {
-      return (
-        S.is(FormatOverrideUnclaimed)(result.failure) && isPinned(command) &&
-        result.failure.formatId === command.formatId && covering === undefined
-      )
-    }
-    const decision = result.success
-    if (S.is(FormatSkipped)(decision)) {
-      return decision.extension === command.extension && !isPinned(command) && covering === undefined
-    }
-    return covering !== undefined && decision.formatId === covering.formatId &&
-      decision.language === covering.language && decision.kind === covering.kind
-  })
+  it.prop(
+    '∀c_Command_≡AssignedClaimsCoverTheFile',
+    { of: [FormatResolutionCommand], subject: resolveFormat },
+    (subject, [command]) => {
+      const covering = coveringClaimOf(command)
+      const result = subject(command)
+      if (Result.isFailure(result)) {
+        return (
+          S.is(FormatOverrideUnclaimed)(result.failure) && isPinned(command) &&
+          result.failure.formatId === command.formatId && covering === undefined
+        )
+      }
+      const decision = result.success
+      if (S.is(FormatSkipped)(decision)) {
+        return decision.extension === command.extension && !isPinned(command) && covering === undefined
+      }
+      return covering !== undefined && decision.formatId === covering.formatId &&
+        decision.language === covering.language && decision.kind === covering.kind
+    },
+  )
 
   it.prop(
     '∀c_Command_≡VerdictIgnoresClaimOrder',
-    [FormatResolutionCommand],
-    ([command]) => verdictOf(resolveFormat(command), resolveFormat(reversedCommand(command))),
+    { of: [FormatResolutionCommand], subject: resolveFormat },
+    (subject, [command]) => verdictOf(subject(command), subject(reversedCommand(command))),
   )
 })

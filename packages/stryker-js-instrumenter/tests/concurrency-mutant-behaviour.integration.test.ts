@@ -1,6 +1,7 @@
 import { NodeFileSystem } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { afterAll, beforeAll } from '@systemfsoftware/vitest'
 import {
   Cause,
   Deferred,
@@ -16,7 +17,6 @@ import {
   Semaphore,
   SynchronizedRef,
 } from 'effect'
-import { afterAll, beforeAll, expect } from 'vitest'
 
 import type { Form, Module, ScenarioKind, ShapeEntry } from '../testResources/effect-concurrency/shapes.js'
 import { shapes } from '../testResources/effect-concurrency/shapes.js'
@@ -1495,17 +1495,18 @@ beforeAll(() =>
 
 afterAll(() => Effect.runPromise(Effect.provide(removeScratch, NodeFileSystem.layer)))
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Keeping single-fiber behaviour while exposing races in Effect concurrency')
+  .live('the harness writes real instrumented modules to disk and loads them at run time')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
       'Every shape with scenarios maps to exactly the mutants its entry promises',
       Gherkin.Do.pipe(
         Given('the frozen shape table')('mismatches', () => Effect.sync(mappingMismatches)),
-        Then('every shape finds exactly the mutants inside its own export')(({ mismatches }) =>
-          Effect.sync(() => expect(mismatches).toStrictEqual([]))
+        Then('every shape finds exactly the mutants inside its own export')(({ mismatches }, expect) =>
+          expect(mismatches).toStrictEqual([])
         ),
       ),
     )
@@ -1514,15 +1515,19 @@ Feature('Keeping single-fiber behaviour while exposing races in Effect concurren
       'Every live opt-in fault covers the shapes that name it',
       Gherkin.Do.pipe(
         Given('the live opt-in registry')('coverage', () => Effect.succeed(coverageReport())),
-        Then('every opt-in fault is live and every naming shape carries scenarios')(({ coverage }) =>
-          Effect.sync(() => {
-            expect(coverage.live).toStrictEqual(['AtomicUpdateSplit', 'FinalizerEscape', 'SynchronizationRemoval'])
-            expect(coverage.notLive).toStrictEqual([])
-            expect(coverage.shapesPerFault).toStrictEqual({
+        Then('every opt-in fault is live and every naming shape carries scenarios')(({ coverage }, expect) =>
+          expect({
+            live: coverage.live,
+            notLive: coverage.notLive,
+            shapesPerFault: coverage.shapesPerFault,
+          }).toStrictEqual({
+            live: ['AtomicUpdateSplit', 'FinalizerEscape', 'SynchronizationRemoval'],
+            notLive: [],
+            shapesPerFault: {
               AtomicUpdateSplit: 37,
               FinalizerEscape: 19,
               SynchronizationRemoval: 11,
-            })
+            },
           })
         ),
       ),
@@ -1546,15 +1551,16 @@ Feature('Keeping single-fiber behaviour while exposing races in Effect concurren
                     ),
                 ),
             ),
-            Then('each run matches the outcome this specification states')((s) =>
-              Effect.sync(() => {
-                const sides = sideFor(s.subject)
-                expect(s.report.withoutFault, 'without the fault').toStrictEqual(sides.withoutFault.expected)
-                expect(s.report.withFault, 'with each fault active one at a time').toStrictEqual(
-                  sides.withFault.map((side) => side.expected),
-                )
+            Then('each run matches the outcome this specification states')((s, expect) => {
+              const sides = sideFor(s.subject)
+              return expect({
+                withoutFault: s.report.withoutFault,
+                withFault: s.report.withFault,
+              }).toStrictEqual({
+                withoutFault: sides.withoutFault.expected,
+                withFault: sides.withFault.map((side) => side.expected),
               })
-            ),
+            }),
           ),
         )
       }

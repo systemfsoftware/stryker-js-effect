@@ -5,7 +5,7 @@ import * as Predicate from 'effect/Predicate'
 import { formatKeyOf } from './Ast.handle.js'
 import { type Ast, type AstRoot, type JSAst, type TSAst, type TsxAst } from './Ast.schema.js'
 import type { EntryForFormat, FormatEntry } from './Format.schema.js'
-import { type Hashbang, printProgram } from './print/SourceText.handle.js'
+import { type Hashbang, printProgram } from './print/SourceText.js'
 
 export type Printer<T extends Ast = Ast> = (file: T, context: PrinterContext) => string
 

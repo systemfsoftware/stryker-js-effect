@@ -14,11 +14,11 @@ import { type Ast, type EmbeddedAst, type EmbeddedScript, type ScriptAst } from 
 import { ErrorText } from './ErrorText.schema.js'
 import type { EmbeddedFormatEntry, FormatClaim } from './Format.schema.js'
 import { InstrumentError } from './Instrument.schema.js'
-import { instrumentationHeader } from './InstrumentHeader.handle.js'
+import { instrumentationHeader } from './InstrumentHeader.js'
 import { type LineTable, LineTableFromText, type Position } from './Location.schema.js'
 import { ParseFailed } from './Parser.schema.js'
 import { loadOxc, type Oxc } from './Parser.service.js'
-import { printProgram } from './print/SourceText.handle.js'
+import { printProgram } from './print/SourceText.js'
 
 const toOneBasedOrigin = (origin: Position): Position => ({ line: origin.line + 1, column: origin.column })
 

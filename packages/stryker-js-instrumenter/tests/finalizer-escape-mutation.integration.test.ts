@@ -1,8 +1,7 @@
 import { NodeFileSystem } from '@effect/platform-node'
-import { Gherkin, Given, it, layer, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
-import { expect } from 'vitest'
 
 import { shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
@@ -202,9 +201,10 @@ const finalizerCount = (result: Instrument.InstrumentResult): number =>
 const finalizerMutantsOf = (result: Instrument.InstrumentResult): readonly Mutant.Mutant[] =>
   result.mutants.filter((mutant) => mutant.mutatorName === FINALIZER_ESCAPE)
 
-const Feature = makeFeature({ it, layer })
+const Feature = makeFeature({ it })
 
 Feature('Exposing missing cleanup after interruptions by letting finalizers escape')
+  .live('reads fixture files from disk and parses real source with the oxc parser')
   .withLayer(NodeFileSystem.layer)
   .body(({ scenario, scenarioOutline }) => {
     scenario(
@@ -230,46 +230,39 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
           'every table entry counts its mutants inside its own export, every file totals its table, and no replacement hides behind a cast or a suppression',
         )((
           { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrument.InstrumentResult },
-        ) =>
-          Effect.sync(() => {
-            const contentByFile = new Map(
-              fixtures.map((fixture) => [`effect-concurrency/${fixture.name}`, fixture.content]),
+          expect,
+        ) => {
+          const contentByFile = new Map(
+            fixtures.map((fixture) => [`effect-concurrency/${fixture.name}`, fixture.content]),
+          )
+          const mutantsIn = (fileName: string): readonly Mutant.Mutant[] =>
+            report.mutants.filter(
+              (mutant) => mutant.mutatorName === FINALIZER_ESCAPE && mutant.fileName === fileName,
             )
-            const mutantsIn = (fileName: string): readonly Mutant.Mutant[] =>
-              report.mutants.filter(
-                (mutant) => mutant.mutatorName === FINALIZER_ESCAPE && mutant.fileName === fileName,
-              )
-            for (const pair of coveredPairs) {
-              const content = contentByFile.get(pair.file) ?? ''
-              const range = exportLineRange(content, pair.exportName)
-              const located = mutantsIn(pair.file).filter((mutant) => {
-                const sourceLine = mutant.location.start.line
-                return range.firstLine <= sourceLine && sourceLine <= range.lastLine
-              })
-              expect(
-                { module: `${pair.file} ${pair.exportName}`, mutants: located.length },
-              ).toStrictEqual({
-                module: `${pair.file} ${pair.exportName}`,
-                mutants: expectedInRange(pair.file, pair.exportName),
-              })
-            }
-            for (const fixture of fixtures) {
-              expect({
-                module: fixture.name,
-                mutants: mutantsIn(`effect-concurrency/${fixture.name}`).length,
-              }).toStrictEqual({
-                module: fixture.name,
-                mutants: expectedTotalFor(`effect-concurrency/${fixture.name}`),
-              })
-            }
-            const forbidden = report.mutants.flatMap((mutant) =>
-              ['@ts-ignore', '@ts-expect-error', 'as any', 'as unknown'].flatMap((suppression) =>
-                mutant.replacement.includes(suppression) ? [`${mutant.id} contains ${suppression}`] : []
-              )
-            )
-            expect(forbidden).toStrictEqual([])
+          const mismatches = coveredPairs.flatMap((pair) => {
+            const content = contentByFile.get(pair.file) ?? ''
+            const range = exportLineRange(content, pair.exportName)
+            const located = mutantsIn(pair.file).filter((mutant) => {
+              const sourceLine = mutant.location.start.line
+              return range.firstLine <= sourceLine && sourceLine <= range.lastLine
+            })
+            const expected = expectedInRange(pair.file, pair.exportName)
+            return located.length === expected
+              ? []
+              : [`${pair.file} ${pair.exportName}: ${located.length} != ${expected}`]
           })
-        ),
+          const totals = fixtures.flatMap((fixture) => {
+            const actual = mutantsIn(`effect-concurrency/${fixture.name}`).length
+            const expected = expectedTotalFor(`effect-concurrency/${fixture.name}`)
+            return actual === expected ? [] : [`${fixture.name}: ${actual} != ${expected}`]
+          })
+          const forbidden = report.mutants.flatMap((mutant) =>
+            ['@ts-ignore', '@ts-expect-error', 'as any', 'as unknown'].flatMap((suppression) =>
+              mutant.replacement.includes(suppression) ? [`${mutant.id} contains ${suppression}`] : []
+            )
+          )
+          return expect({ mismatches, totals, forbidden }).toEqual({ mismatches: [], totals: [], forbidden: [] })
+        }),
       ),
     )
 
@@ -284,10 +277,10 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
             ({ source }: { source: string }) => Effect.map(instrumentSource(source), finalizerMutantsOf),
           ),
           Then('the one proposed mutant spells the promised replacement word for word')(
-            ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
-              Effect.sync(() => {
-                expect(mutants.length).toBe(1)
-                expect(mutants[0]?.replacement).toBe(row.replacement)
+            ({ mutants }: { mutants: readonly Mutant.Mutant[] }, expect) =>
+              expect({ count: mutants.length, replacement: mutants[0]?.replacement }).toEqual({
+                count: 1,
+                replacement: row.replacement,
               }),
           ),
         ),
@@ -305,7 +298,8 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
           ),
           Then('no mutant is proposed')((
             { count }: { count: number },
-          ) => Effect.sync(() => expect(count).toBe(0))),
+            expect,
+          ) => expect(count).toBe(0)),
         ),
     )
 
@@ -321,12 +315,12 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), finalizerMutantsOf),
         ),
         Then('exactly one proposed replacement guards the error handler, and exactly one guards the final cleanup')(
-          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
-            Effect.sync(() => {
-              expect(mutants.length).toBe(2)
-              expect(mutants.filter((mutant) => mutant.replacement.includes('.onErrorIf(')).length).toBe(1)
-              expect(mutants.filter((mutant) => mutant.replacement.includes('.onExitIf(')).length).toBe(1)
-            }),
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }, expect) =>
+            expect({
+              count: mutants.length,
+              onErrorIf: mutants.filter((mutant) => mutant.replacement.includes('.onErrorIf(')).length,
+              onExitIf: mutants.filter((mutant) => mutant.replacement.includes('.onExitIf(')).length,
+            }).toEqual({ count: 2, onErrorIf: 1, onExitIf: 1 }),
         ),
       ),
     )
@@ -343,12 +337,12 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), finalizerMutantsOf),
         ),
         Then('the single mutant is reported as ignored, carrying the comment reason')(
-          ({ mutants }: { mutants: readonly Mutant.Mutant[] }) =>
-            Effect.sync(() => {
-              expect(mutants.length).toBe(1)
-              expect(mutants[0]?.status).toBe('Ignored')
-              expect(mutants[0]?.statusReason).toBe('cleanup proven by concurrency tests')
-            }),
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }, expect) =>
+            expect({
+              count: mutants.length,
+              status: mutants[0]?.status,
+              reason: mutants[0]?.statusReason,
+            }).toEqual({ count: 1, status: 'Ignored', reason: 'cleanup proven by concurrency tests' }),
         ),
       ),
     )

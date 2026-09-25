@@ -14,7 +14,7 @@ import {
   onlyWhen,
   type ResolvedEffectCall,
   resolveEffectCall,
-} from './EffectCall.handle.js'
+} from './EffectCall.js'
 import type { Mutator } from './Mutator.service.js'
 
 const NO_MUTANTS: readonly Node[] = []
