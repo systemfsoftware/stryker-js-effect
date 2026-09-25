@@ -34,7 +34,7 @@ import type { TestCoverage } from '../test-coverage.schema.js'
 
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { scoped } from '../Checker/Checker.blueprint.js'
-import { checkGroupedPlans } from '../Checker/Checker.cell.js'
+import { checkPlans, groupPlans } from '../Checker/Checker.cell.js'
 import type { CheckerCrash, CheckerResourceService } from '../Checker/Checker.handle.js'
 import { CheckerMutantFromMutant, UndescribableMutant } from '../Checker/Checker.schema.js'
 import {
@@ -648,27 +648,50 @@ const invalidateSlot = <A, E, I>(
   pool: Pool.Pool<A, I>,
   slot: A,
   error: E,
-): Effect.Effect<never, E, Scope.Scope> => Effect.flatMap(Pool.invalidate(pool, slot), () => Effect.fail(error))
+): Effect.Effect<never, E> => Effect.flatMap(Pool.invalidate(pool, slot), () => Effect.fail(error))
 
-const checkSlotPlans = (
+const onCheckerSlot = <A>(
   pool: Pool.Pool<CheckerSlot, StageError | CheckerCrash>,
-  slot: CheckerSlot,
-  checker: CheckerResourceService,
+  checkerIndex: number,
+  run: (
+    checker: CheckerResourceService,
+  ) => Effect.Effect<A, CheckerCrash | Checker.CheckerFailed | CheckerContractBroken>,
+): Effect.Effect<A, StageError | CheckerCrash> =>
+  Pool.use(pool, (slot) =>
+    Option.match(Option.fromUndefinedOr(slot[checkerIndex]), {
+      onNone: () => Effect.die(new Error(`checker slot has no entry at index ${checkerIndex}`)),
+      onSome: ({ checker }) =>
+        run(checker).pipe(
+          Effect.catchTags({
+            OutOfMemoryError: (error) => invalidateSlot(pool, slot, error),
+            ChildProcessCrashedError: (error) => invalidateSlot(pool, slot, error),
+            CheckerFailed: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
+            CheckerAnsweredUnrequested: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
+            CheckerSkippedRequested: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
+          }),
+        ),
+    }))
+
+const checkGroupsConcurrently = (
+  pool: Pool.Pool<CheckerSlot, StageError | CheckerCrash>,
+  checkerIndex: number,
   checkerName: string,
   currentPlans: readonly Mutant.MutantRunPlan[],
 ): Effect.Effect<
   readonly (readonly [Mutant.MutantRunPlan, Checker.CheckResult])[],
-  StageError | CheckerCrash,
-  Scope.Scope
+  StageError | CheckerCrash
 > =>
-  checkGroupedPlans(checker, checkerName, currentPlans).pipe(
-    Effect.catchTags({
-      OutOfMemoryError: (error) => invalidateSlot(pool, slot, error),
-      ChildProcessCrashedError: (error) => invalidateSlot(pool, slot, error),
-      CheckerFailed: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
-      CheckerAnsweredUnrequested: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
-      CheckerSkippedRequested: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
-    }),
+  Effect.flatMap(
+    onCheckerSlot(pool, checkerIndex, (checker) => groupPlans(checker, checkerName, currentPlans)),
+    (groups) =>
+      Effect.map(
+        Effect.forEach(
+          groups,
+          (group) => onCheckerSlot(pool, checkerIndex, (checker) => checkPlans(checker, checkerName, group)),
+          { concurrency: 'unbounded' },
+        ),
+        (perGroup) => perGroup.flat(),
+      ),
   )
 
 const isFailedCheck = (
@@ -693,13 +716,12 @@ const splitCheckedPlans = (
 
 const stepOneChecker = (
   pool: Pool.Pool<CheckerSlot, StageError | CheckerCrash>,
-  slot: CheckerSlot,
-  checker: CheckerResourceService,
+  checkerIndex: number,
   checkerName: string,
   currentPlans: readonly Mutant.MutantRunPlan[],
   reporting: MutationReportingService,
 ) =>
-  checkSlotPlans(pool, slot, checker, checkerName, currentPlans).pipe(
+  checkGroupsConcurrently(pool, checkerIndex, checkerName, currentPlans).pipe(
     Effect.flatMap((checked) => splitCheckedPlans(checked, reporting)),
   )
 
@@ -710,19 +732,21 @@ const runConfiguredCheckers = (
   plans: readonly Mutant.MutantRunPlan[],
   reporting: MutationReportingService,
 ): Effect.Effect<CheckedPlans, StageError | CheckerCrash> =>
-  Effect.scoped(
-    Effect.gen(function*() {
-      const slot = yield* Pool.get(pool)
-      return yield* Effect.reduce(
-        slot,
+  Effect.flatMap(
+    Pool.use(pool, (slot) => Effect.succeed(slot.map(({ checkerName }) => checkerName))),
+    (checkerNames) =>
+      Effect.reduce(
+        checkerNames,
         () => ({ passedPlans: plans, checkerResults: emptyRunResults }),
-        (acc, { checkerName, checker }) =>
-          Effect.map(stepOneChecker(pool, slot, checker, checkerName, acc.passedPlans, reporting), (split) => ({
-            passedPlans: split.passed,
-            checkerResults: [...acc.checkerResults, ...split.results],
-          })),
-      )
-    }),
+        (acc, checkerName, checkerIndex) =>
+          Effect.map(
+            stepOneChecker(pool, checkerIndex, checkerName, acc.passedPlans, reporting),
+            (split) => ({
+              passedPlans: split.passed,
+              checkerResults: [...acc.checkerResults, ...split.results],
+            }),
+          ),
+      ),
   )
 
 const checkPlansWithConfiguredCheckers = (

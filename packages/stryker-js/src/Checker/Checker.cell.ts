@@ -110,6 +110,55 @@ const checkGroupedCell = groupCell.pipe(
   ),
 )
 
+type CheckerCellError = CheckerCrash | Checker.CheckerFailed | CheckerContractBroken
+
+type GroupedPlansResult = readonly (readonly Mutant.RunPlan[])[]
+
+type CheckedPlansResult = readonly (readonly [Mutant.RunPlan, Checker.CheckResult])[]
+
+const checkRequestOf = (
+  checker: CheckerResourceService,
+  checkerName: string,
+  plans: readonly Mutant.RunPlan[],
+): CheckerRequest => ({
+  checker,
+  checkerName,
+  plans,
+  lookup: lookupOf(partitionMutantsForWire(plans)),
+})
+
+export const groupPlans: {
+  (
+    checker: CheckerResourceService,
+    checkerName: string,
+    plans: readonly Mutant.RunPlan[],
+  ): Effect.Effect<GroupedPlansResult, CheckerCellError>
+  (
+    checkerName: string,
+    plans: readonly Mutant.RunPlan[],
+  ): (checker: CheckerResourceService) => Effect.Effect<GroupedPlansResult, CheckerCellError>
+} = dual(
+  3,
+  (checker: CheckerResourceService, checkerName: string, plans: readonly Mutant.RunPlan[]) =>
+    groupCell.run(checkRequestOf(checker, checkerName, plans)),
+)
+
+export const checkPlans: {
+  (
+    checker: CheckerResourceService,
+    checkerName: string,
+    plans: readonly Mutant.RunPlan[],
+  ): Effect.Effect<CheckedPlansResult, CheckerCellError>
+  (
+    checkerName: string,
+    plans: readonly Mutant.RunPlan[],
+  ): (checker: CheckerResourceService) => Effect.Effect<CheckedPlansResult, CheckerCellError>
+} = dual(
+  3,
+  (checker: CheckerResourceService, checkerName: string, plans: readonly Mutant.RunPlan[]) =>
+    checkCell.run(checkRequestOf(checker, checkerName, plans)),
+)
+
 export const checkGroupedPlans: {
   (
     checker: CheckerResourceService,
@@ -131,10 +180,5 @@ export const checkGroupedPlans: {
 } = dual(
   3,
   (checker: CheckerResourceService, checkerName: string, plans: readonly Mutant.RunPlan[]) =>
-    checkGroupedCell.run({
-      checker,
-      checkerName,
-      plans,
-      lookup: lookupOf(partitionMutantsForWire(plans)),
-    }),
+    checkGroupedCell.run(checkRequestOf(checker, checkerName, plans)),
 )
