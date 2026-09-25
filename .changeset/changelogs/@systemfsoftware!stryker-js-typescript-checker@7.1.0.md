@@ -1,17 +1,7 @@
 ## 7.1.0
 
-### Minor Changes
-
-- Each run stage, checker call, report write and test-runner mutant run now records an OpenTelemetry span named after its cell. The span has `.read` and `.write` child spans and an `app.<name>.decision` or `app.<name>.failure` attribute holding the outcome. It also feeds an `app.<name>.duration` histogram labelled `result_class`.
-
 ### Patch Changes
 
-- The checker now applies each mutant at the position the mutant reports, since
-  those positions are 1-based lines. A mutated line other than the first was
-  previously rewritten further down the file, so the checker compiled something
-  other than the mutant it was given and could report the wrong verdict for it.
+- The checker no longer looks dead while it type-checks. A check that runs longer than the host's connection patience window used to leave the checker unable to answer the host, dropping its connection mid-run; long checks are now answered and the connection survives them.
 
-- Updated dependencies:
-  - @systemfsoftware/stryker-js-instrumenter@9.0.0
-  - @systemfsoftware/stryker-js-plugin-interface@8.0.0
-  - @systemfsoftware/stryker-js-plugin-runtime@6.0.0
+- The typescript checker no longer discards `include`, `exclude`, `files`, `extends`, and any other unrecognized top-level key from the tsconfig it rewrites. Projects that list files outside the default include patterns, import their own package manifest, or extend a shared preset now type-check during mutation runs the same way they do under `tsc`; only the compiler options the checker intentionally overrides still differ, and single-project mode alone drops `references`. Referenced projects are covered too: every tsconfig a build-mode project references is rewritten with those same overrides, so a library that opts into `noUnusedLocals` (or any option the checker overrides) is checked under the checker's settings instead of its own.
