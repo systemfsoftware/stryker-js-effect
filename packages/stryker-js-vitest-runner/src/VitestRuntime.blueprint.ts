@@ -12,6 +12,12 @@ import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
+import {
+  dispose as disposeStandbyThreads,
+  initializer as standbyThreadsInitializer,
+  make as makeStandbyThreadsPool,
+  type StandbyThreadsPool,
+} from './StandbyThreadsPool.handle.js'
 import { type RawVitestRecord } from './vitest-run-command.schema.js'
 import {
   type ExportEntry,
@@ -209,7 +215,7 @@ export interface VitestRuntimeInput {
   readonly path: Path.Path
 }
 
-const createVitestConfig = (input: VitestRuntimeInput) => ({
+const createVitestConfig = (input: VitestRuntimeInput, standbyThreads: StandbyThreadsPool) => ({
   config: input.vitestOptions.configFile,
   coverage: { enabled: false },
   maxWorkers: 1,
@@ -222,7 +228,7 @@ const createVitestConfig = (input: VitestRuntimeInput) => ({
   ),
   ...Option.match(
     Option.fromNullishOr(input.vitestOptions.pool),
-    { onNone: () => ({}), onSome: (pool) => ({ pool }) },
+    { onNone: () => ({}), onSome: () => ({ pool: standbyThreadsInitializer(standbyThreads) }) },
   ),
   bail: input.bail,
   onConsoleLog: () => false,
@@ -253,14 +259,16 @@ const acquire = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRu
     const { createVitest } = yield* input.resolver(input.projectRoot).pipe(
       Effect.catchDefect((cause) => Effect.fail(failRuntime('init')(cause))),
     )
+    const standbyThreads = makeStandbyThreadsPool()
     const driver = yield* Effect.tryPromise({
       try: () =>
-        createVitest('test', createVitestConfig(input), {
+        createVitest('test', createVitestConfig(input, standbyThreads), {
           resolve: { alias: [...aliases], conditions: ['import'] },
           plugins: [sandboxSelfPlugin(aliases)],
         }),
       catch: (cause) => failRuntime('init')(cause),
     })
+    driver.onClose(() => disposeStandbyThreads(standbyThreads))
     const refusal = input.vitestOptions.pool === undefined ? Option.none<string>() : browserRefusalOf(driver)
     yield* Option.match(refusal, {
       onNone: () => Effect.void,
