@@ -6,6 +6,7 @@ import * as FileSystem from 'effect/FileSystem'
 import type { ExecResult } from './guest-job.schema.js'
 import { GuestJobs } from './guest-job.service.js'
 import type { HarnessError } from './harness-failure.schema.js'
+import { seamSpan, SpanNames } from './harness-telemetry.service.js'
 
 const RUN_CLI_STEP = 'run the stryker CLI in its microVM'
 
@@ -44,7 +45,7 @@ const runStrykerCli = (args: ReadonlyArray<string>, cwd: string) =>
       stdout: new TextDecoder().decode(completion.stdout),
       stderr: new TextDecoder().decode(completion.stderr),
     }
-  })
+  }).pipe(seamSpan(SpanNames.cliRun, { 'e2e.cli.args': args.join(' ') }))
 
 export interface StrykerCliRunnerShape {
   readonly run: (

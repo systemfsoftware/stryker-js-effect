@@ -13,10 +13,12 @@ import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import { Readiness } from '@systemfsoftware/effect-readiness'
 import { RunEvent } from '@systemfsoftware/stryker-js'
 
+import type { BakeOutcome } from '../src/Harness/bake-key.schema.js'
 import { BakedFixtureCache } from '../src/Harness/fixture-cache.service.js'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { GuestJobs } from '../src/Harness/guest-job.service.js'
 import type { HarnessError } from '../src/Harness/harness-failure.schema.js'
+import { layer as harnessTelemetryLayer } from '../src/Harness/harness-telemetry.service.js'
 import { StrykerCliRunner } from '../src/Harness/stryker-cli-runner.service.js'
 import {
   type BaselineCounts,
@@ -365,6 +367,8 @@ async function blessSlice(runtime: HarnessRuntime, slice: OracleSliceId, verify:
   console.log(`[${slice}] total wall=${(Date.now() - wallStartMs) / 1000}s`)
 }
 
+let bakeOutcome: BakeOutcome | undefined
+
 const selfBakingHarness = Layer.mergeAll(
   BakedFixtureCache.layer,
   StrykerCliRunner.layer,
@@ -374,12 +378,20 @@ const selfBakingHarness = Layer.mergeAll(
     ConfigProvider.layerAdd(
       Effect.map(
         BakedFixtureCache.bakeProgram,
-        (root) => ConfigProvider.fromUnknown({ [BakedFixtureCache.BAKED_ROOT_ENV]: root }),
+        (outcome) => {
+          bakeOutcome = outcome
+          return ConfigProvider.fromUnknown({
+            [BakedFixtureCache.BAKED_ROOT_ENV]: outcome.root,
+            [BakedFixtureCache.BAKED_KEYS_ENV]: JSON.stringify(outcome.keys),
+          })
+        },
       ),
       { asPrimary: true },
     ),
   ),
-  Layer.provideMerge(Layer.mergeAll(GuestJobs.layer, nodeServicesLayer, Readiness.NodeHostProber.layer)),
+  Layer.provideMerge(
+    Layer.mergeAll(GuestJobs.layer, nodeServicesLayer, Readiness.NodeHostProber.layer, harnessTelemetryLayer),
+  ),
 )
 
 async function main(): Promise<void> {
@@ -394,6 +406,9 @@ async function main(): Promise<void> {
       await blessSlice(runtime, known, args.verify)
     }
   } finally {
+    if (bakeOutcome !== undefined) {
+      await runtime.runPromiseExit(BakedFixtureCache.teardownProgram(bakeOutcome))
+    }
     await runtime.dispose()
   }
 }

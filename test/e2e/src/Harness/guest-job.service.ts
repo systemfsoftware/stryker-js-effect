@@ -5,6 +5,7 @@ import * as Crypto from 'effect/Crypto'
 import * as FileSystem from 'effect/FileSystem'
 
 import { ExitFailure, GuestJobFailure, GuestSignaledFailure } from './harness-failure.schema.js'
+import { seamSpan, SpanNames } from './harness-telemetry.service.js'
 
 export interface GuestJobsShape {
   readonly job: (
@@ -55,7 +56,10 @@ export class GuestJobs
         )
 
       const runGuestJob = (step: string, job: MicroVM.JobResource) =>
-        Effect.scoped(job.run).pipe(Effect.mapError((cause) => new GuestJobFailure({ step, cause })))
+        Effect.scoped(job.run).pipe(
+          Effect.mapError((cause) => new GuestJobFailure({ step, cause })),
+          seamSpan(SpanNames.guestJob, { 'e2e.job.step': step }),
+        )
 
       const requireExited = (step: string, completion: MicroVM.JobCompletion) =>
         Match.value(completion.status).pipe(
