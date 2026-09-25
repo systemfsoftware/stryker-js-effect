@@ -38,7 +38,13 @@ import {
   type TSFiles,
   tsFileSystem,
 } from './ts-files.handle.js'
-import { type TsConfig, TsConfigNotFoundError, TsConfigParseError, TsConfigSchema } from './Tsconfig.schema.js'
+import {
+  PathAliasesSchema,
+  type TsConfig,
+  TsConfigNotFoundError,
+  TsConfigParseError,
+  TsConfigSchema,
+} from './Tsconfig.schema.js'
 
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSCompiler')
 export type TypeId = typeof TypeId
@@ -76,6 +82,7 @@ interface CompilerState {
   lastMutants: Checker.CheckerMutantWire[]
   lastMutatedFileNames: string[]
   allTSConfigFiles: MutableHashSet.MutableHashSet<string>
+  aliases: ReadonlyArray<PathAlias>
   tsconfigFile: string
 }
 
@@ -119,6 +126,7 @@ export const make: {
       nodes: HashMap.empty(),
       lastMutants: [],
       lastMutatedFileNames: [],
+      aliases: [],
       allTSConfigFiles: MutableHashSet.fromIterable([tsconfigFile]),
       tsconfigFile,
     }
@@ -282,7 +290,26 @@ interface TsConfigWalk {
   readonly overrides: MutableHashMap.MutableHashMap<string, string>
   readonly files: MutableHashSet.MutableHashSet<string>
   readonly processed: MutableHashSet.MutableHashSet<string>
+  readonly aliases: ReadonlyArray<PathAlias>
 }
+
+const aliasEntriesOf = (
+  compilerOptions: TsConfig['compilerOptions'],
+): ReadonlyArray<readonly [string, ReadonlyArray<string>]> =>
+  Object.entries(
+    Option.getOrElse(
+      Option.flatMap(Option.fromUndefinedOr(compilerOptions), (options) =>
+        S.decodeUnknownOption(PathAliasesSchema)(options['paths'])),
+      (): S.Schema.Type<typeof PathAliasesSchema> => ({}),
+    ),
+  )
+
+const pathAliasesOf = (pathService: Path.Path, fileName: string, config: TsConfig): ReadonlyArray<PathAlias> =>
+  aliasEntriesOf(config.compilerOptions ?? {}).map(([pattern, targets]): PathAlias => ({
+    pattern,
+    targets,
+    baseDir: pathService.dirname(fileName),
+  }))
 
 const recordTsConfig = (
   rt: TSCompilerRuntime,
@@ -295,6 +322,7 @@ const recordTsConfig = (
     onFailure: () => ({ ...walk, overrides: MutableHashMap.set(walk.overrides, fileName, jsonText) }),
     onSuccess: (config) => ({
       overrides: MutableHashMap.set(walk.overrides, fileName, overrideOptions(config, buildMode)),
+      aliases: [...walk.aliases, ...pathAliasesOf(rt.pathService, fileName, config)],
       files: Arr.reduce(
         referencedProjectsOf(rt, config, rt.pathService.dirname(fileName)),
         walk.files,
@@ -485,6 +513,66 @@ const resolutionCandidates = (rt: TSCompilerRuntime, resolved: string): Readonly
   })
 }
 
+interface PathAlias {
+  readonly pattern: string
+  readonly targets: ReadonlyArray<string>
+  readonly baseDir: string
+}
+
+const prefixOf = (pattern: string): string => pattern.slice(0, Math.max(0, pattern.indexOf('*')))
+
+const suffixOf = (pattern: string): string => pattern.slice(pattern.indexOf('*') + 1)
+
+const stripPrefix = (specifier: string, prefix: string): Option.Option<string> =>
+  Option.map(
+    Option.liftPredicate(specifier, (candidate) => candidate.startsWith(prefix)),
+    (candidate) => candidate.slice(prefix.length),
+  )
+
+const stripSuffix = (specifier: string, suffix: string): Option.Option<string> =>
+  Option.map(
+    Option.liftPredicate(specifier, (candidate) => candidate.endsWith(suffix)),
+    (candidate) => candidate.slice(0, candidate.length - suffix.length),
+  )
+
+const exactCaptureOf = (alias: PathAlias, specifier: string): Option.Option<string> =>
+  Option.map(Option.liftPredicate(specifier, (candidate) => candidate === alias.pattern), () => '')
+
+const wildcardCaptureOf = (alias: PathAlias, specifier: string): Option.Option<string> =>
+  Option.flatMap(stripPrefix(specifier, prefixOf(alias.pattern)), (rest) => stripSuffix(rest, suffixOf(alias.pattern)))
+
+const captureOf = (alias: PathAlias, specifier: string): Option.Option<string> =>
+  Boolean.match(alias.pattern.includes('*'), {
+    onTrue: () => wildcardCaptureOf(alias, specifier),
+    onFalse: () => exactCaptureOf(alias, specifier),
+  })
+
+const aliasTargetPaths = (
+  rt: TSCompilerRuntime,
+  aliases: ReadonlyArray<PathAlias>,
+  specifier: string,
+): ReadonlyArray<string> =>
+  Arr.flatMap(aliases, (alias) =>
+    Option.match(captureOf(alias, specifier), {
+      onNone: () => [],
+      onSome: (capture) =>
+        Arr.map(
+          alias.targets,
+          (target) => normalizeFileName(rt.pathService.resolve(alias.baseDir, target.replace('*', capture))),
+        ),
+    }))
+
+const resolveAliasedSpecifier = (
+  rt: TSCompilerRuntime,
+  sourceFiles: SourceFiles,
+  specifier: string,
+): Option.Option<string> =>
+  Option.firstSomeOf(
+    Arr.map(aliasTargetPaths(rt, Ref.getUnsafe(rt.state).aliases, specifier), (target) =>
+      Arr.findFirst(resolutionCandidates(rt, target), (candidate) =>
+        MutableHashMap.has(sourceFiles, candidate))),
+  )
+
 const resolveSpecifier = (
   rt: TSCompilerRuntime,
   sourceFiles: SourceFiles,
@@ -493,7 +581,7 @@ const resolveSpecifier = (
 ): Option.Option<string> => {
   const cleaned = specifier.replace(CLEAN_SPECIFIER_PATTERN, '')
   return Boolean.match(relativeSpecifierPattern.test(cleaned), {
-    onFalse: () => Option.none<string>(),
+    onFalse: () => resolveAliasedSpecifier(rt, sourceFiles, cleaned),
     onTrue: () => {
       const resolved = normalizeFileName(rt.pathService.resolve(rt.pathService.dirname(fileName), cleaned))
       return Option.filter(
@@ -816,11 +904,12 @@ export const init = (self: TSCompiler): Effect.Effect<readonly Diagnostic[], Com
         files: MutableHashSet.fromIterable([tsconfigFile]),
         overrides: MutableHashMap.empty(),
         processed: MutableHashSet.empty(),
+        aliases: [],
       },
       [tsconfigFile],
     )
     yield* setOverrides(rt.files, walk.overrides)
-    yield* Ref.update(rt.state, (prev) => ({ ...prev, allTSConfigFiles: walk.files }))
+    yield* Ref.update(rt.state, (prev) => ({ ...prev, allTSConfigFiles: walk.files, aliases: walk.aliases }))
     const api = new API({ fs: rt.sourceFileSystem })
     const snapshot = yield* Effect.promise(() => api.updateSnapshot({ openProjects: Array.from(walk.files) }))
     yield* Ref.update(rt.state, (prev) => ({ ...prev, api, snapshot }))
@@ -1377,6 +1466,28 @@ if (import.meta.vitest !== void 0) {
         (holds) => holds,
       )
     },
+  )
+
+  const aliasFor = (pattern: string): PathAlias => ({ pattern, targets: [], baseDir: '/project' })
+
+  const exactCaptureFor = (pattern: string, specifier: string): string | undefined =>
+    Option.getOrUndefined(captureOf(aliasFor(pattern), specifier))
+
+  const ExactAliasPattern = S.String.check(S.isPattern(/^[^*]*$/))
+
+  it.prop(
+    '∀alias_ExactSpecifier_≡EmptyOrNone',
+    { of: [ExactAliasPattern, S.String], subject: exactCaptureFor },
+    (subject, [pattern, specifier]) => subject(pattern, specifier) === (specifier === pattern ? '' : undefined),
+  )
+
+  const wildcardCaptureFor = (prefix: string, suffix: string, middle: string): string | undefined =>
+    Option.getOrUndefined(captureOf(aliasFor(prefix + '*' + suffix), prefix + middle + suffix))
+
+  it.prop(
+    '∀alias_WildcardSpecifier_≡MiddleSegment',
+    { of: [ExactAliasPattern, S.String.check(S.isMinLength(1)), S.String], subject: wildcardCaptureFor },
+    (subject, [prefix, suffix, middle]) => subject(prefix, suffix, middle) === middle,
   )
 
   const { Arbitrary } = await import('effect/unstable/arbitrary')

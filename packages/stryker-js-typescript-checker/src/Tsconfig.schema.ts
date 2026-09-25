@@ -24,6 +24,8 @@ export class TsConfigNotFoundError extends S.TaggedError<TsConfigNotFoundError>(
   }
 }
 
+export const PathAliasesSchema = S.Record(S.String, S.Array(S.String))
+
 const InternalTsConfigSchema = S.Struct({
   references: S.optional(S.Array(S.Struct({ path: S.String }))),
   compilerOptions: S.optional(S.Record(S.String, S.Unknown)),
