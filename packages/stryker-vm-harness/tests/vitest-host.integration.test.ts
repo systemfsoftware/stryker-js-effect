@@ -192,14 +192,51 @@ test('the project plugin rewrote the module value', () => {
 })
 `
 
-const resolveInMemory = (
+const markerTextsTest = [
+  "import { expect, test } from 'vitest'",
+  '',
+  'function probe() {',
+  '  // comment keeps import.meta.vitest untouched',
+  "  return 'import.meta.vitest'",
+  '}',
+  '',
+  "const expected = ['import', 'meta', 'vitest'].join('.')",
+  'const fromTemplate = `template keeps import.meta.vitest untouched`',
+  'const expectedTemplate = `template keeps ${expected} untouched`',
+  'const fromSubstitution = `${typeof import.meta.vitest?.it}`',
+  '',
+  "test('string, template and comment texts keep the marker', () => {",
+  '  expect(probe()).toBe(expected)',
+  "  expect(probe.toString()).toContain('// comment keeps ' + expected + ' untouched')",
+  '  expect(fromTemplate).toBe(expectedTemplate)',
+  "  expect(fromSubstitution).toBe('function')",
+  '})',
+  '',
+].join('\n')
+
+const inSourceModule = [
+  'const api = import.meta.vitest',
+  'if (api) {',
+  "  api.it('an in-source guard registers and passes', () => undefined)",
+  '}',
+  '',
+].join('\n')
+
+const markerTextsConfig = `import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: { includeSource: ['src/**/*.ts'] },
+})
+`
+
+const resolveFilesInMemory = (
   root: string,
-  testFile: string,
+  testFiles: ReadonlyArray<string>,
   plugins: ReadonlyArray<Session.VmSessionPlugin>,
 ): Effect.Effect<Session.VmRunResponse, never, never> =>
   Effect.gen(function*() {
     const session = yield* Effect.promise(() =>
-      Session.createVmSession({ sandboxWorkingDirectory: root, testFiles: [testFile] }, plugins)
+      Session.createVmSession({ sandboxWorkingDirectory: root, testFiles: [...testFiles] }, plugins)
     )
     const response = yield* Effect.promise(() =>
       session.run({ kind: 'dry', timeoutMs: 30000, reloadEnvironment: true })
@@ -207,6 +244,12 @@ const resolveInMemory = (
     yield* Effect.promise(() => session.dispose())
     return response
   })
+
+const resolveInMemory = (
+  root: string,
+  testFile: string,
+  plugins: ReadonlyArray<Session.VmSessionPlugin>,
+): Effect.Effect<Session.VmRunResponse, never, never> => resolveFilesInMemory(root, [testFile], plugins)
 
 interface RunSummary {
   readonly status: string
@@ -502,6 +545,48 @@ Feature('Loading a Vitest project in memory')
           return removeProject(s.project).pipe(Effect.as(check))
         }),
       ),
+    )
+
+    scenarioOutline(
+      'A test file keeps marker text in its literals <config>',
+      [
+        { config: 'with a config file', configFile: markerTextsConfig },
+        { config: 'without a config file', configFile: undefined },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given(
+            `a sandbox project ${row.config} whose test file mentions the in-source marker in text`,
+          )(
+            'project',
+            () =>
+              createProject(() => ({
+                ...(row.configFile === undefined ? {} : { 'vitest.config.ts': row.configFile }),
+                'src/in-source.ts': inSourceModule,
+                'marker.test.ts': markerTextsTest,
+              })),
+          ),
+          When('the suite runs in the in-memory vm runner')(
+            'response',
+            (s) =>
+              resolveFilesInMemory(s.project, [`${s.project}/marker.test.ts`, `${s.project}/src/in-source.ts`], [
+                Session.vitestConfigPlugin,
+                Session.transformPlugin,
+                Session.runnerStatePlugin,
+              ]),
+          ),
+          Then('the marker texts are unchanged and the guarded suite passes')((s, expect) => {
+            const names = s.response.status === 'complete' ? s.response.tests.map((test) => test.name) : []
+            const check = expect({
+              run: summarizeRun(s.response),
+              registersGuard: names.some((name) => name.includes('an in-source guard registers and passes')),
+            }).toEqual({
+              run: { status: 'complete', testCount: 2, failures: [] },
+              registersGuard: true,
+            })
+            return removeProject(s.project).pipe(Effect.as(check))
+          }),
+        ),
     )
 
     scenario(

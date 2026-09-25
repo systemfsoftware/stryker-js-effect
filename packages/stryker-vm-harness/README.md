@@ -69,7 +69,9 @@ installed `vitest`; the harness only owns test registration. Supported:
 - projects with per-project environments and setup files; `provide`/`inject`
 - node, jsdom, and happy-dom environments; `setupFiles`; `globals: true`
 - transforms: TypeScript/JSX, `.tsx`, Vue/Svelte/MDX, CSS and asset imports,
-  JSON, aliases, `define`, `import.meta.env`, custom file extensions
+  JSON, aliases, `define`, `import.meta.env`, in-source `import.meta.vitest`
+  tests (only real member expressions are rewritten; string, template, comment
+  and regex text keeps its bytes), custom file extensions
 - per-test mutant coverage for the dry run; timeout per run
 
 ## Unsupported

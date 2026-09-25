@@ -16,6 +16,7 @@ import type {
   VmSessionPlugin,
 } from '../session-plugin.js'
 import { applyAlias } from '../vitest-host/alias.js'
+import { replaceCodeToken } from '../vitest-host/code-rewrite.js'
 import { recordDocblock } from '../vitest-host/docblock-cache.js'
 import { hasImportMetaEnv, replaceImportMetaEnvView } from '../vitest-host/import-meta-env.js'
 import {
@@ -203,15 +204,31 @@ const sourceTextOf = (source: LoadFnOutput['source']): string | undefined =>
 
 const conditionsOf = (conditions: ReadonlyArray<string> | undefined): ReadonlyArray<string> => conditions ?? []
 
-const IMPORT_META_VITEST_TEST = /\bimport\.meta\.vitest\b/
-const IMPORT_META_VITEST_GLOBAL = /\bimport\.meta\.vitest\b/g
+const IMPORT_META_VITEST_MARKER = 'import.meta.vitest'
+const IMPORT_META_TEST_CALL = 'IMPORT_META_TEST()'
 
-const importMetaVitestSource = (code: string, path: string): string => {
-  if (!IMPORT_META_VITEST_TEST.test(code)) return code
-  const rewritten = code.replace(IMPORT_META_VITEST_GLOBAL, () => 'IMPORT_META_TEST()')
-  const filename = path.split('"').join('\\"')
-  return `${rewritten};\nfunction IMPORT_META_TEST() { if (typeof __vitest_worker__ === 'undefined' || __vitest_worker__.filepath !== "${filename}") return undefined; const state = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]; if (state === undefined || state.api === undefined) return __vitest_worker__.vitestIndex; return { ...__vitest_worker__.vitestIndex, test: state.api.it, it: state.api.it, describe: state.api.describe, suite: state.api.suite, expect: state.expect ?? __vitest_worker__.vitestIndex?.expect, vi: state.vi ?? __vitest_worker__.vitestIndex?.vi, beforeAll: state.api.beforeAll, afterAll: state.api.afterAll, beforeEach: state.api.beforeEach, afterEach: state.api.afterEach }; }`
+interface CodeRewrite {
+  readonly code: string
+  readonly replaced: boolean
 }
+
+const NO_CODE_REWRITE: CodeRewrite = { code: '', replaced: false }
+
+const markerRewriteOf = (code: string): CodeRewrite =>
+  code.includes(IMPORT_META_VITEST_MARKER)
+    ? replaceCodeToken(code, IMPORT_META_VITEST_MARKER, IMPORT_META_TEST_CALL)
+    : NO_CODE_REWRITE
+
+const importMetaTestFunction = (filename: string): string =>
+  `;\nfunction IMPORT_META_TEST() { if (typeof __vitest_worker__ === 'undefined' || __vitest_worker__.filepath !== "${filename}") return undefined; const state = globalThis[Symbol.for("@systemfsoftware/stryker-js/vm-runner")]; if (state === undefined || state.api === undefined) return __vitest_worker__.vitestIndex; return { ...__vitest_worker__.vitestIndex, test: state.api.it, it: state.api.it, describe: state.api.describe, suite: state.api.suite, expect: state.expect ?? __vitest_worker__.vitestIndex?.expect, vi: state.vi ?? __vitest_worker__.vitestIndex?.vi, beforeAll: state.api.beforeAll, afterAll: state.api.afterAll, beforeEach: state.api.beforeEach, afterEach: state.api.afterEach }; }`
+
+const withImportMetaTest = (rewrite: CodeRewrite, code: string, path: string): string => {
+  if (!rewrite.replaced) return code
+  return `${rewrite.code}${importMetaTestFunction(path.split('"').join('\\"'))}`
+}
+
+const importMetaVitestSource = (code: string, path: string): string =>
+  withImportMetaTest(markerRewriteOf(code), code, path)
 
 const importMetaEnvSource = (code: string): string => replaceImportMetaEnvView(code)
 
