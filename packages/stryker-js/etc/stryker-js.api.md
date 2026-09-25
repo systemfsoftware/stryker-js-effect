@@ -11,7 +11,7 @@ export namespace Checker {
 
 // @public (undocumented)
 export namespace Configuration {
-    export { ConfigDocumentSchema, ConfigError, ConfigFileInvalidError, ConfigFileNotFoundError, ConfigFileUnreadableError, ConfigFileUnsupportedError, ConfigInvocation, ExtendsRefusalReason, ExtendsStepDecision, ExtendsStepDocument, ExtendsStepDocumentSchema, ExtendsStepDone, ExtendsStepRead, ExtendsStepRefused, ExtendsStepResolve, ExtendsStepState, ExtendsStepStateSchema, FileMatcher, Immutable, ImmutablePrimitive, ImportedModuleSchema, MergeCommand, MergeResult, Primitive, ReadConfigCommand, StrykerConfig, ValidationSchemaDocument, decideExtendsStep, describeErrors, extendsPropertySchema, forkCoreSchema, forkOptionsSchema, importModule, initialExtendsStepState, loadConfigCell, mergeConfigs, readConfig, survivorsPriorReport, validateOptions };
+    export { ConfigDocumentSchema, ConfigError, ConfigFileInvalidError, ConfigFileNotFoundError, ConfigFileUnreadableError, ConfigFileUnsupportedError, ConfigInvocation, ExtendsRefusalReason, ExtendsStepDecision, ExtendsStepDocument, ExtendsStepDocumentSchema, ExtendsStepDone, ExtendsStepRead, ExtendsStepRefused, ExtendsStepResolve, ExtendsStepState, ExtendsStepStateSchema, FileMatcher, Immutable, ImmutablePrimitive, ImportedModuleSchema, MergeCommand, MergeResult, Primitive, ReadConfigCommand, ValidationSchemaDocument, createDefaultOptions, decideExtendsStep, defaultOptions, describeErrors, extendsPropertySchema, forkCoreSchema, forkOptionsSchema, importModule, initialExtendsStepState, loadConfigCell, mergeConfigs, readConfig, survivorsPriorReport, validateOptions };
 }
 
 // @public (undocumented)

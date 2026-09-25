@@ -23,7 +23,8 @@ import {
   forkOptionsSchema,
   ImportedModuleSchema,
 } from '../Config.schema.js'
-import { type ConfigEnv, StrykerConfig } from '../config/stryker-config.schema.js'
+import { mergeConfig } from '../config/merge-config.js'
+import { type ConfigEnv } from '../config/stryker-config.schema.js'
 import {
   ResolveWarningEnabledCommand,
   WarningDisabled,
@@ -398,7 +399,7 @@ const applyConfigFactory = <A = unknown>(factory: ConfigFactory<A>, configEnv: C
 /**
  * Settle a config module's default export into the object the document schema decodes.
  *
- * `./config` types `StrykerConfig.define` as accepting the config object, a promise of it,
+ * `./config` types `defineConfig` as accepting the config object, a promise of it,
  * or a factory receiving `ConfigEnv`, so the loader accepts all three. The factory
  * is invoked here because this is the only place that knows the invocation the
  * config is being read for; the promise is awaited here because a promise is a
@@ -1238,7 +1239,7 @@ export const readLoadConfig = (input: {
     return yield* loadOptionsFromConfigFile(cliRecord, configEnv).pipe(
       Effect.map((fileOptions) =>
         LoadConfigCommand.make({
-          document: StrykerConfig.merge(Option.getOrElse(fileOptions, () => ({})), cliRecord),
+          document: mergeConfig(Option.getOrElse(fileOptions, () => ({})), cliRecord),
           fileFound: Option.isSome(fileOptions),
         })
       ),

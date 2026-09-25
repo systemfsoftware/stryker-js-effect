@@ -20,7 +20,7 @@ export type {
   ExtendsStepDocument,
   ExtendsStepState,
 } from '../Config.schema.js'
-export { StrykerConfig } from '../config/stryker-config.schema.js'
+export { createDefaultOptions, defaultOptions } from '../config/default-options.js'
 export type { Immutable, ImmutablePrimitive, Primitive } from '../config/stryker-config.schema.js'
 export {
   ConfigError,

@@ -263,7 +263,7 @@ const buildContextFor = (
   testFilesOverride?: readonly string[],
 ): Effect.Effect<Plugin.TestRunnerBuildContext> =>
   Effect.gen(function*() {
-    const defaults = yield* Configuration.StrykerConfig.createDefaultOptions
+    const defaults = yield* Configuration.createDefaultOptions
     return {
       options: { ...defaults, testRunner: 'vm' },
       fileDescriptions: {},

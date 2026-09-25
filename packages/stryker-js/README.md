@@ -24,9 +24,9 @@ pnpm add -D @systemfsoftware/stryker-js \
 Create `stryker.config.ts` in your project root:
 
 ```ts
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
-export default StrykerConfig.define({
+export default defineConfig({
   testRunner: 'vitest',
   checkers: ['typescript'],
   plugins: [
@@ -64,9 +64,9 @@ Set `testFiles` explicitly, or pick one of the runners below, to take control.
 Execute any test suite without extra plugins:
 
 ```ts
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
-export default StrykerConfig.define({
+export default defineConfig({
   testRunner: 'command',
   commandRunner: {
     command: 'npm test',
@@ -80,9 +80,9 @@ export default StrykerConfig.define({
 Runs Vitest suites in-process, in one worker thread per test runner, loading each test file as native ESM through Node's module hooks. No child process and no bundler step. Each file gets its own module state by default; your `vitest.config.*` (environment, setup files, globals, projects) is picked up through your project's `vitest` install. Vitest browser-mode suites are refused with an error naming `testRunner: 'vitest'`; pick the `vitest` runner for those.
 
 ```ts
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
-export default StrykerConfig.define({
+export default defineConfig({
   testRunner: 'vm',
   testFiles: ['test/**/*.test.ts'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
@@ -91,18 +91,18 @@ export default StrykerConfig.define({
 
 ## Configuration API (`@systemfsoftware/stryker-js/config`)
 
-The `./config` subpath exports the typed configuration authoring surface:
+The `./config` subpath exports the typed configuration authoring surface, including the `StrykerConfig` type naming the partial options a config file writes: a config annotated `const config: StrykerConfig = defineConfig({ ... })` typechecks and loads.
 
 ```ts
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig, type StrykerConfig } from '@systemfsoftware/stryker-js/config'
 ```
 
-### `StrykerConfig.define(options | configFactory)`
+### `defineConfig(options | configFactory)`
 
 Identity function providing strict autocompletion and type checking without runtime dependencies. Can take a configuration object or a factory receiving `ConfigEnv`:
 
 ```ts
-export default StrykerConfig.define(({ isCi, command }) => ({
+export default defineConfig(({ isCi, command }) => ({
   testRunner: 'vitest',
   plugins: ['@systemfsoftware/stryker-js-vitest-runner'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
@@ -110,15 +110,15 @@ export default StrykerConfig.define(({ isCi, command }) => ({
 }))
 ```
 
-### `StrykerConfig.merge(base, overrides)`
+### `mergeConfig(base, overrides)`
 
 Deeply merges configuration presets. Keys in records merge recursively; scalar values and arrays in `overrides` completely replace base values:
 
 ```ts
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import baseConfig from './stryker.base.config.ts'
 
-export default StrykerConfig.merge(baseConfig, {
+export default mergeConfig(baseConfig, {
   concurrency: 8,
   mutate: ['packages/core/src/**/*.ts'],
 })
@@ -180,11 +180,11 @@ console.log(`Mutation score: ${verdict.score}%`)
 
 ## Published Subpaths
 
-| Subpath      | Description                                                        |
-| ------------ | ------------------------------------------------------------------ |
-| `.`          | Main entry point: `strykerCell`, runtime layers, and error schemas |
-| `./config`   | `StrykerConfig` authoring surface (`define`, `merge`)              |
-| `./promises` | `run()` wrapper returning standard JavaScript promises             |
+| Subpath      | Description                                                               |
+| ------------ | ------------------------------------------------------------------------- |
+| `.`          | Main entry point: `strykerCell`, runtime layers, and error schemas        |
+| `./config`   | Config authoring surface (`defineConfig`, `mergeConfig`, `StrykerConfig`) |
+| `./promises` | `run()` wrapper returning standard JavaScript promises                    |
 
 ## License
 

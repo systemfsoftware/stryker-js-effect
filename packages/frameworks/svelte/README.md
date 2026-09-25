@@ -17,9 +17,9 @@ pnpm add -D @systemfsoftware/stryker-js-svelte
 Add the package name to `plugins` in your StrykerJS config:
 
 ```ts
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
-export default StrykerConfig.define({
+export default defineConfig({
   testRunner: 'vitest',
   plugins: ['@systemfsoftware/stryker-js-svelte'],
   mutate: ['src/**/*.svelte'],

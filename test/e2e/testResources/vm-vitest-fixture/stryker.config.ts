@@ -1,6 +1,6 @@
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
-export default StrykerConfig.define({
+export default defineConfig({
   testRunner: 'vm',
   testFiles: ['src/**/*.test.ts'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],

@@ -130,9 +130,9 @@ NodeRuntime.runMain(
 ## 5. Registering in `stryker.config.ts`
 
 ```ts
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
-export default StrykerConfig.define({
+export default defineConfig({
   testRunner: 'my-custom-runner',
   plugins: [import.meta.resolve('./packages/my-custom-runner/dist/index.js')],
 })

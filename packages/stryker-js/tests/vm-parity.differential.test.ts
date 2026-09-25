@@ -224,7 +224,7 @@ const withVmRunner = <A, R>(
   use: (runner: Plugin.PooledTestRunner) => Effect.Effect<A, never, R>,
 ): Effect.Effect<A, never, R> =>
   Effect.gen(function*() {
-    const defaults = yield* Configuration.StrykerConfig.createDefaultOptions
+    const defaults = yield* Configuration.createDefaultOptions
     const neverSpawned = Effect.die(new Error('the child-process runner was built for a vm-parity dry run'))
     return yield* Effect.flatMap(Plugin.buildTestRunner(contextFor(defaults, directory), neverSpawned), use)
   }).pipe(

@@ -114,9 +114,9 @@ await testIgnorer(strykerIgnorers[0], {
 In your `stryker.config.ts`, declare the plugin module in `plugins` and its `name` in `ignorers`. Published packages take the bare name (resolved from your project); a local build takes a `file://` URL:
 
 ```ts
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
-export default StrykerConfig.define({
+export default defineConfig({
   plugins: [
     import.meta.resolve('./packages/my-custom-ignorer/dist/index.js'),
   ],

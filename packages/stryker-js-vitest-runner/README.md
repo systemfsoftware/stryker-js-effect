@@ -22,9 +22,9 @@ pnpm add -D @systemfsoftware/stryker-js-vitest-runner vitest
 Plugins in Stryker 5.0 take bare package names resolved from your project — no `import.meta.resolve()` needed:
 
 ```ts
-import { StrykerConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
-export default StrykerConfig.define({
+export default defineConfig({
   testRunner: 'vitest',
   plugins: ['@systemfsoftware/stryker-js-vitest-runner'],
   mutate: [
@@ -42,7 +42,7 @@ export default StrykerConfig.define({
 3. **Vitest Config**: By default, Stryker automatically discovers your `vitest.config.ts` or `vite.config.ts`. If your configuration is located elsewhere, specify it in your config:
 
 ```ts
-export default StrykerConfig.define({
+export default defineConfig({
   testRunner: 'vitest',
   plugins: ['@systemfsoftware/stryker-js-vitest-runner'],
   vitest: {
@@ -60,7 +60,7 @@ pnpm add -D @systemfsoftware/stryker-ignorer-in-source-vitest-block
 ```
 
 ```ts
-export default StrykerConfig.define({
+export default defineConfig({
   testRunner: {
     plugin: '@systemfsoftware/stryker-js-vitest-runner',
   },
