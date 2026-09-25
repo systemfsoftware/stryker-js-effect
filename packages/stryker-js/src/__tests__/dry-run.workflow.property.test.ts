@@ -1,4 +1,5 @@
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Equal from 'effect/Equal'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -36,7 +37,9 @@ describe('dryRun', () => {
           Result.isSuccess(result) &&
           S.is(DryRunFailed)(result.success) &&
           result.success.testCount === command.testCount &&
-          result.success.failedTestCount === command.failedTestCount
+          result.success.failedTestCount === command.failedTestCount &&
+          Array.isArray(result.success.failedTests) &&
+          Equal.equals(result.success.failedTests, command.failedTests)
         )
       }
       return (

@@ -13,7 +13,7 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import { RunEvents } from '../run-events.service.js'
 
-import { DryRunCommand, DryRunFailed } from '../dry-run.workflow.js'
+import { DryRunCommand, DryRunFailed, FailedTestSummary } from '../dry-run.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
@@ -78,6 +78,13 @@ const resolveDryRunFiles = (command: InstrumentDone) =>
 type FailedDryRun = Extract<TestRunner.DryRunResult, { readonly status: 'error' }>
 type TimedOutDryRun = Extract<TestRunner.DryRunResult, { readonly status: 'timeout' }>
 
+const failedTestSummariesOf = (
+  tests: readonly TestRunner.TestResult[],
+): readonly FailedTestSummary[] =>
+  tests
+    .filter((test): test is TestRunner.FailedTestResult => test.status === 'failed')
+    .map((test) => FailedTestSummary.make({ name: test.name, failureMessage: test.failureMessage }))
+
 const commandEncodedComplete = (
   complete: TestRunner.CompleteDryRunResult,
   allowEmpty: boolean,
@@ -86,6 +93,7 @@ const commandEncodedComplete = (
   status: 'Complete',
   testCount: complete.tests.length,
   failedTestCount: complete.tests.filter((test) => test.status === 'failed').length,
+  failedTests: failedTestSummariesOf(complete.tests),
   allowEmpty,
 })
 
@@ -97,6 +105,7 @@ const commandEncodedFailed = (
   status: 'Error',
   testCount: 0,
   failedTestCount: 0,
+  failedTests: [],
   allowEmpty,
   errorMessage: failed.errorMessage,
 })
@@ -109,6 +118,7 @@ const commandEncodedTimedOut = (
   status: 'Timeout',
   testCount: 0,
   failedTestCount: 0,
+  failedTests: [],
   allowEmpty,
   ...(Option.match(Option.fromNullishOr(timedOut.reason), {
     onNone: () => ({}),
@@ -397,12 +407,24 @@ export const writeDryRunPassed = (raw: DryRunRaw): Effect.Effect<
       }),
   )
 
+const FAILED_TESTS_REASON = 'There were failed tests in the initial test run.'
+
+const failedTestsDetail = (failedTests: readonly FailedTestSummary[]): string =>
+  failedTests
+    .map((test) => `  ${test.name}${test.failureMessage.length > 0 ? `: ${test.failureMessage}` : ''}`)
+    .join('\n')
+
+const reasonWithFailedTests = (detail: string): string =>
+  detail.length > 0 ? `${FAILED_TESTS_REASON}\n${detail}` : FAILED_TESTS_REASON
+
 export const writeDryRunFailed = ({
   testCount,
   failedTestCount,
+  failedTests,
 }: {
   readonly testCount: number
   readonly failedTestCount: number
+  readonly failedTests: readonly FailedTestSummary[]
 }): Effect.Effect<DryRunDone, StageError, RunEnvironment | RunEvents> =>
   withPhaseSpan(
     'dryRun',
@@ -410,10 +432,14 @@ export const writeDryRunFailed = ({
     () =>
       Effect.gen(function*() {
         yield* phaseEntered('dry-run')
+        const detail = failedTestsDetail(failedTests)
+        yield* Effect.logError(
+          `Initial test run failed. ${failedTestCount} of ${testCount} test(s) failed:\n${detail}`,
+        )
         return yield* StageError.make({
           stage: 'dryRun',
-          reason: 'There were failed tests in the initial test run.',
-          cause: DryRunFailed.make({ testCount, failedTestCount }),
+          reason: reasonWithFailedTests(detail),
+          cause: DryRunFailed.make({ testCount, failedTestCount, failedTests }),
         })
       }),
   )
