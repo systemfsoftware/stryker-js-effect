@@ -185,6 +185,7 @@
     - namespace-roots
     - plugin-interface-codecs
     - stryker-js-plugin-interface-bare-package-specifiers
+    - vm-runner-default-zero-config
 "@systemfsoftware/stryker-js-plugin-runtime@5.0.0":
   dir: packages/stryker-js-plugin-runtime
   intents:
@@ -276,7 +277,9 @@
   dir: packages/stryker-js-vitest-runner
   intents:
     - cell-telemetry-spans
+    - rationalize-effect-peer-dependencies
     - stryker-js-vitest-runner-describe-kills
+    - vitest-5-peer-floor
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
@@ -309,6 +312,7 @@
     - cell-telemetry-spans
     - mutant-location-base-stryker-js
     - namespace-roots
+    - rationalize-effect-peer-dependencies
     - stryker-js-config-and-exports
     - stryker-js-file-matcher
     - stryker-js-framework-plugins
@@ -317,6 +321,10 @@
     - stryker-js-framework-stream
     - stryker-js-prototype-keys
     - stryker-js-survivors-refusal
+    - vm-runner-default-zero-config
+    - vm-runner-host-surface
+    - vm-runner-speed
+    - vm-runner-vitest-features
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
@@ -361,6 +369,7 @@
 "@systemfsoftware/stryker-test-contribution@4.0.0":
   dir: packages/stryker-test-contribution
   intents:
+    - rationalize-effect-peer-dependencies
     - test-contribution-decision
 "@systemfsoftware/stryker-vm-harness@1.0.0":
   dir: packages/stryker-vm-harness
@@ -370,3 +379,11 @@
   dir: packages/stryker-vm-harness
   intents:
     - stryker-vm-harness-namespace-root
+"@systemfsoftware/stryker-vm-harness@3.0.0":
+  dir: packages/stryker-vm-harness
+  intents:
+    - vitest-5-peer-floor
+    - vm-harness-dispatching-expect
+    - vm-harness-session-surface
+    - vm-harness-symlinked-project
+    - vm-runner-speed
