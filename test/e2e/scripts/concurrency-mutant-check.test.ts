@@ -1,6 +1,7 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { describe } from '@systemfsoftware/vitest'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -11,7 +12,6 @@ import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
-import { describe, expect, it } from 'vitest'
 import {
   CheckerRuntime,
   type CheckerRuntimeShape,
@@ -177,46 +177,51 @@ const illTypedControl = (wires: ReadonlyArray<Checker.CheckerMutantWire>): Optio
     (wire) => ({ ...wire, replacement: '1' }),
   )
 
-describe('The TypeScript checker accepting opted-in concurrency faults', () => {
-  it('the untouched definitions project is accepted without a complaint', () =>
-    Effect.runPromise(
-      Effect.gen(function*() {
-        const rig = yield* Effect.flatMap(fixtureLayout, checkerRig)
-        expect(startComplaints(rig.start)).toEqual([])
-        const inspected: Record<string, true> = {}
-        rig.projectFiles.forEach((fileName) => {
-          inspected[fileName] = true
-        })
-        expect(rig.layout.definitionFiles.filter((fileName) => inspected[fileName] !== true)).toEqual([])
-      }).pipe(Effect.scoped, Effect.provide(runLayer)),
-    ))
+describe('The TypeScript checker accepting opted-in concurrency faults', (it) => {
+  it.live('the untouched definitions project is accepted without a complaint', function*({ expect }) {
+    const observed = yield* Effect.gen(function*() {
+      const rig = yield* Effect.flatMap(fixtureLayout, checkerRig)
+      const inspected: Record<string, true> = {}
+      rig.projectFiles.forEach((fileName) => {
+        inspected[fileName] = true
+      })
+      return {
+        startComplaints: startComplaints(rig.start),
+        uninspectedDefinitionFiles: rig.layout.definitionFiles.filter((fileName) => inspected[fileName] !== true),
+      }
+    }).pipe(Effect.scoped, Effect.provide(runLayer))
 
-  it('every proposed concurrency fault compiles like the code it replaces', () =>
-    Effect.runPromise(
-      Effect.gen(function*() {
-        const rig = yield* Effect.flatMap(fixtureLayout, checkerRig)
-        const wires = yield* instrumentedWires(rig.layout)
-        const results = yield* withChecker(rig, (checker) => checker.check(wires))
-        expect(wires.length).toBe(expectedMutantCount())
-        expect(problemReports(wires, results)).toEqual([])
-      }).pipe(Effect.scoped, Effect.provide(runLayer)),
-    ))
+    yield* expect(observed).toStrictEqual({ startComplaints: [], uninspectedDefinitionFiles: [] })
+  })
 
-  it('a fault that breaks the typing is refused as a compile problem', () =>
-    Effect.runPromise(
-      Effect.gen(function*() {
-        const rig = yield* Effect.flatMap(fixtureLayout, checkerRig)
-        const wires = yield* instrumentedWires(rig.layout)
-        const refusals = yield* Option.match(illTypedControl(wires), {
-          onNone: () =>
-            Effect.fail(
-              MissingControlFault.make({ reason: 'no fault on an effect-returning expression was proposed' }),
-            ),
-          onSome: (control) =>
-            Effect.map(withChecker(rig, (checker) => checker.check([control])), (results) =>
-              refusalReports([control], results)),
-        })
-        expect(refusals).toHaveLength(1)
-      }).pipe(Effect.scoped, Effect.provide(runLayer)),
-    ))
+  it.live('every proposed concurrency fault compiles like the code it replaces', function*({ expect }) {
+    const observed = yield* Effect.gen(function*() {
+      const rig = yield* Effect.flatMap(fixtureLayout, checkerRig)
+      const wires = yield* instrumentedWires(rig.layout)
+      const results = yield* withChecker(rig, (checker) => checker.check(wires))
+      return { wireCount: wires.length, problemReports: problemReports(wires, results) }
+    }).pipe(Effect.scoped, Effect.provide(runLayer))
+
+    yield* expect(observed).toStrictEqual({ wireCount: expectedMutantCount(), problemReports: [] })
+  })
+
+  it.live('a fault that breaks the typing is refused as a compile problem', function*({ expect }) {
+    const observed = yield* Effect.gen(function*() {
+      const rig = yield* Effect.flatMap(fixtureLayout, checkerRig)
+      const wires = yield* instrumentedWires(rig.layout)
+      return yield* Option.match(illTypedControl(wires), {
+        onNone: () =>
+          Effect.fail(
+            MissingControlFault.make({ reason: 'no fault on an effect-returning expression was proposed' }),
+          ),
+        onSome: (control) =>
+          Effect.map(
+            withChecker(rig, (checker) => checker.check([control])),
+            (results) => refusalReports([control], results),
+          ),
+      })
+    }).pipe(Effect.scoped, Effect.provide(runLayer))
+
+    yield* expect(observed).toStrictEqual([expect.stringMatching(/\S/)])
+  })
 })

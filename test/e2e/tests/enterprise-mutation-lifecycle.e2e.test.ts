@@ -1,9 +1,16 @@
 import { RunEvent } from '@systemfsoftware/stryker-js'
+import { it } from '@systemfsoftware/vitest'
+import type { Check, Expect } from '@systemfsoftware/vitest'
+import { Effect } from 'effect'
 import * as S from 'effect/Schema'
-import type { ExpectStatic } from 'vitest'
-import { normalizeCounts, normalizeTally, withoutClockStatuses } from '../scripts/oracle/normalize.js'
+import {
+  normalizeCounts,
+  type NormalizedCounts,
+  normalizeTally,
+  withoutClockStatuses,
+} from '../scripts/oracle/normalize.js'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
+import { bddStep, prepareFixture } from './__fixtures__/microvm-harness.js'
 import { pollWindowSpans, type TraceSpan } from './__fixtures__/tempo.js'
 
 const SERVICE_NAME = process.env['OTEL_SERVICE_NAME'] ?? 'stryker-e2e'
@@ -94,6 +101,7 @@ const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = [
   'skipped',
 ]
 const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutant', 'verdict']
+const ACTIONABLE_STATUSES: ReadonlyArray<string> = ['Survived', 'Timeout', 'NoCoverage', 'RuntimeError']
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)
 
 const parseEventStream = (stdout: string): ReadonlyArray<RunEvent.RunEvent> =>
@@ -128,170 +136,228 @@ const tallyReported = (reported: ReadonlyArray<string>): Readonly<Record<string,
 const tallySumOf = (tally: Readonly<Record<string, number>>): number =>
   Object.values(tally).reduce((sum, n) => sum + n, 0)
 
-const stepVerifyStreamAndExit = (
-  expect: ExpectStatic,
+const stripClockDimensions = (
+  counts: NormalizedCounts,
+): Omit<NormalizedCounts, 'killedOrTimeout' | 'survived'> => {
+  const { killedOrTimeout: _killedOrTimeout, survived: _survived, ...exact } = counts
+  return exact
+}
+
+const countedSumOf = (counts: RunEvent.VerdictReached['counts']): number =>
+  counts.killed +
+  counts.survived +
+  counts.compileErrors +
+  counts.runtimeErrors +
+  counts.timeout +
+  counts.noCoverage +
+  counts.ignored +
+  counts.pending
+
+const verifyStreamAndExit = (
+  expect: Expect,
   run: ExecResult,
   events: ReadonlyArray<RunEvent.RunEvent>,
-): void => {
-  const kinds = events.map((e) => e._tag)
+): Check => {
+  const kinds: ReadonlyArray<string> = events.map((event) => event._tag)
   const preceding = kinds.slice(0, -1)
 
-  expect.soft(run.exitCode).toBe(0)
-  expect.soft(terminalIndexesIn(kinds)).toEqual([kinds.length - 1])
-  expect.soft(kinds.at(-1)).toBe('verdict')
-  expect.soft(run.stdout).not.toMatch(ANSI_ESCAPE)
-  expect.soft(preceding.length).toBeGreaterThan(0)
-  expect.soft(preceding.filter((k) => !NON_TERMINAL_RUN_KINDS.includes(k))).toEqual([])
-  expect.soft(kinds).toEqual(expect.arrayContaining([...REQUIRED_EVENT_KINDS]))
+  return expect({
+    exitCode: run.exitCode,
+    terminalIndexes: terminalIndexesIn(kinds),
+    lastKind: kinds.at(-1),
+    ansiMatch: run.stdout.match(ANSI_ESCAPE),
+    precedingIsNonEmpty: preceding.length > 0,
+    strayPrecedingKinds: preceding.filter((kind) => !NON_TERMINAL_RUN_KINDS.includes(kind)),
+    missingRequiredKinds: REQUIRED_EVENT_KINDS.filter((kind) => !kinds.includes(kind)),
+  }).toStrictEqual({
+    exitCode: 0,
+    terminalIndexes: [kinds.length - 1],
+    lastKind: 'verdict',
+    ansiMatch: null,
+    precedingIsNonEmpty: true,
+    strayPrecedingKinds: [],
+    missingRequiredKinds: [],
+  })
 }
 
-const stepVerifyOracleCounts = (expect: ExpectStatic, verdict: RunEvent.VerdictReached): void => {
-  expect.soft(verdict.thresholds.break).toBeNull()
-  const { survived: _survived, killedOrTimeout: _killedOrTimeout, ...observedExact } = normalizeCounts(verdict.counts)
-  const { survived: _expectedSurvived, killedOrTimeout: _expectedKilled, ...expectedExact } = LIFECYCLE_COUNTS
-  expect.soft(observedExact).toEqual(expectedExact)
-}
+const verifyOracleCounts = (expect: Expect, verdict: RunEvent.VerdictReached): Check =>
+  expect({
+    breakThreshold: verdict.thresholds.break,
+    observedExact: stripClockDimensions(normalizeCounts(verdict.counts)),
+  }).toStrictEqual({
+    breakThreshold: null,
+    observedExact: stripClockDimensions(LIFECYCLE_COUNTS),
+  })
 
-const stepVerifyMutatorTallies = (
-  expect: ExpectStatic,
+const verifyMutatorTallies = (
+  expect: Expect,
   events: ReadonlyArray<RunEvent.RunEvent>,
   verdict: RunEvent.VerdictReached,
-): void => {
+): Check => {
   const reported = events
     .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map((m) => `${m.mutator}:${m.status}`)
-
-  expect.soft(reported).toHaveLength(LIFECYCLE_TOTAL)
+    .map((mutant) => `${mutant.mutator}:${mutant.status}`)
   const reportedTally = normalizeTally(tallyReported(reported))
-  expect.soft(withoutClockStatuses(reportedTally)).toEqual(withoutClockStatuses(LIFECYCLE_MUTATOR_TALLY))
-  expect.soft(tallySumOf(reportedTally)).toBe(LIFECYCLE_TOTAL)
   const envelopeActionable = verdict.counts.survived +
     verdict.counts.timeout +
     verdict.counts.noCoverage +
     verdict.counts.runtimeErrors
-  expect.soft(verdict.mutants).toHaveLength(envelopeActionable)
-  expect.soft(verdict.mutants.every((mutant) =>
-    mutant.status === 'Survived' ||
-    mutant.status === 'Timeout' ||
-    mutant.status === 'NoCoverage' ||
-    mutant.status === 'RuntimeError'
-  )).toBe(true)
-  const countsSum = verdict.counts.killed +
-    verdict.counts.survived +
-    verdict.counts.compileErrors +
-    verdict.counts.runtimeErrors +
-    verdict.counts.timeout +
-    verdict.counts.noCoverage +
-    verdict.counts.ignored +
-    verdict.counts.pending
-  expect.soft(countsSum).toBe(LIFECYCLE_TOTAL)
+
+  return expect({
+    reportedCount: reported.length,
+    observedTally: withoutClockStatuses(reportedTally),
+    reportedTallySum: tallySumOf(reportedTally),
+    envelopeActionableCount: verdict.mutants.length,
+    expectedActionableCount: envelopeActionable,
+    unexpectedActionableStatuses: verdict.mutants
+      .map((mutant) => mutant.status)
+      .filter((status) => !ACTIONABLE_STATUSES.includes(status)),
+    countsSum: countedSumOf(verdict.counts),
+  }).toStrictEqual({
+    reportedCount: LIFECYCLE_TOTAL,
+    observedTally: withoutClockStatuses(LIFECYCLE_MUTATOR_TALLY),
+    reportedTallySum: LIFECYCLE_TOTAL,
+    envelopeActionableCount: envelopeActionable,
+    expectedActionableCount: envelopeActionable,
+    unexpectedActionableStatuses: [],
+    countsSum: LIFECYCLE_TOTAL,
+  })
 }
 
-const stepVerifyRunIdConsistency = (
-  expect: ExpectStatic,
+const verifyRunIdConsistency = (
+  expect: Expect,
   events: ReadonlyArray<RunEvent.RunEvent>,
   verdict: RunEvent.VerdictReached,
-): void => {
+): Check => {
   const runIds = events
     .map((event) => ('runId' in event && typeof event.runId === 'string' ? event.runId : undefined))
     .filter((runId): runId is string => runId !== undefined)
 
-  expect.soft(runIds.length).toBeGreaterThanOrEqual(2)
-  expect.soft(new Set(runIds).size).toBe(1)
-  expect.soft(verdict.runId).toBe(runIds.at(0))
+  return expect({
+    carriesAtLeastTwoRunIds: runIds.length >= 2,
+    distinctRunIds: new Set(runIds).size,
+    verdictRunIdMatchesFirst: verdict.runId === runIds.at(0),
+  }).toStrictEqual({
+    carriesAtLeastTwoRunIds: true,
+    distinctRunIds: 1,
+    verdictRunIdMatchesFirst: true,
+  })
 }
 
-const stepVerifyPersistedReport = async (
-  expect: ExpectStatic,
-  fixture: PreparedFixture,
+interface PersistedMutant {
+  readonly status: string
+}
+
+const verifyPersistedReport = (
+  expect: Expect,
+  reportText: string,
   verdict: RunEvent.VerdictReached,
-): Promise<void> => {
-  const reportText = await fixture.readFile('reports/mutation/mutation.json')
+): Check => {
   const report = JSON.parse(reportText) as {
     schemaVersion?: string
-    files?: Record<string, {
-      mutants?: Record<string, {
-        id: string
-        status: string
-        mutatorName: string
-        replacement?: string
-        killedBy?: readonly string[]
-      }>
-    }>
+    files?: Record<string, { mutants?: Record<string, PersistedMutant> }>
   }
-  expect.soft(report.schemaVersion).toBe('1.0')
-  expect.soft(report.files).toBeDefined()
-
   const allReportedMutants = Object.values(report.files ?? {}).flatMap((file) => Object.values(file.mutants ?? {}))
-  expect.soft(allReportedMutants).toHaveLength(LIFECYCLE_TOTAL)
 
-  const killedInReport = allReportedMutants.filter((m) => m.status === 'Killed').length
-  const survivedInReport = allReportedMutants.filter((m) => m.status === 'Survived').length
-  const compileErrorsInReport = allReportedMutants.filter((m) => m.status === 'CompileError').length
-
-  expect.soft(killedInReport).toBe(verdict.counts.killed)
-  expect.soft(survivedInReport).toBe(verdict.counts.survived)
-  expect.soft(compileErrorsInReport).toBe(verdict.counts.compileErrors)
+  return expect({
+    schemaVersion: report.schemaVersion,
+    filesArePresent: report.files !== undefined,
+    reportedMutantCount: allReportedMutants.length,
+    killedInReport: allReportedMutants.filter((mutant) => mutant.status === 'Killed').length,
+    survivedInReport: allReportedMutants.filter((mutant) => mutant.status === 'Survived').length,
+    compileErrorsInReport: allReportedMutants.filter((mutant) => mutant.status === 'CompileError').length,
+  }).toStrictEqual({
+    schemaVersion: '1.0',
+    filesArePresent: true,
+    reportedMutantCount: LIFECYCLE_TOTAL,
+    killedInReport: verdict.counts.killed,
+    survivedInReport: verdict.counts.survived,
+    compileErrorsInReport: verdict.counts.compileErrors,
+  })
 }
 
-const stepVerifyTracePropagation = (expect: ExpectStatic, spans: readonly TraceSpan[]): void => {
+const verifyTracePropagation = (expect: Expect, spans: readonly TraceSpan[]): Check => {
   const workerTraceIds = new Set(spans.filter(isWorkerSpan).map((span) => span.traceId))
   const hostTraceIds = new Set(spans.filter(isHostPhaseSpan).map((span) => span.traceId))
 
-  expect.soft(hostTraceIds.size).toBeGreaterThan(0)
-  expect.soft(spans.some(isCheckerSpan)).toBe(true)
-  expect.soft(workerTraceIds.size).toBeGreaterThan(0)
-  expect.soft([...workerTraceIds].every((traceId) => hostTraceIds.has(traceId))).toBe(true)
+  return expect({
+    hostTraceIdsArePresent: hostTraceIds.size > 0,
+    checkerSpanIsPresent: spans.some(isCheckerSpan),
+    workerTraceIdsArePresent: workerTraceIds.size > 0,
+    everyWorkerTraceIsHosted: [...workerTraceIds].every((traceId) => hostTraceIds.has(traceId)),
+  }).toStrictEqual({
+    hostTraceIdsArePresent: true,
+    checkerSpanIsPresent: true,
+    workerTraceIdsArePresent: true,
+    everyWorkerTraceIsHosted: true,
+  })
 }
 
-test(
+it.live(
   'enterprise journey: mutation lifecycle, modern syntax idioms, and report persistence',
-  { timeout: 2_400_000 },
-  async ({ bdd, expect, prepareFixture }) => {
-    let fixture: PreparedFixture
-    let run: ExecResult
-    let events: ReadonlyArray<RunEvent.RunEvent>
-    let verdict: RunEvent.VerdictReached
-    let startedSeconds: number
+  function*({ expect }) {
+    const fixture = yield* bddStep(
+      'Given',
+      'an enterprise fixture in an isolated lifecycle container directory',
+      prepareFixture(ENTERPRISE_FIXTURE_URL, 'enterprise-lifecycle-fixture'),
+    )
+    const startedSeconds = Math.floor(Date.now() / 1000) - 5
+    const run = yield* bddStep(
+      'When',
+      'the CLI executes the full lifecycle mutation run',
+      Effect.promise(() => fixture.run(['run'])),
+    )
+    const events = parseEventStream(run.stdout)
+    const terminal = lastEvent(events)
+    if (terminal._tag !== 'verdict') {
+      throw new Error(`Expected terminal verdict event, received: ${terminal._tag}`)
+    }
 
-    await bdd.given('an enterprise fixture in an isolated lifecycle container directory', async () => {
-      fixture = await prepareFixture(ENTERPRISE_FIXTURE_URL, 'enterprise-lifecycle-fixture')
-    })
-
-    await bdd.when('the CLI executes the full lifecycle mutation run', async () => {
-      startedSeconds = Math.floor(Date.now() / 1000) - 5
-      run = await fixture.run(['run'])
-      events = parseEventStream(run.stdout)
-      const terminal = lastEvent(events)
-      if (terminal._tag !== 'verdict') {
-        throw new Error(`Expected terminal verdict event, received: ${terminal._tag}`)
-      }
-      verdict = terminal
-    })
-
-    await bdd.thenAssert('the process stream protocol invariants hold', () => {
-      stepVerifyStreamAndExit(expect, run, events)
-    })
-
-    await bdd.and('the verdict matches the mathematical oracle', () => {
-      stepVerifyOracleCounts(expect, verdict)
-      stepVerifyMutatorTallies(expect, events, verdict)
-      stepVerifyRunIdConsistency(expect, events, verdict)
-    })
-
-    await bdd.and('persisted report JSON is saved to disk and matches the verdict counts', async () => {
-      await stepVerifyPersistedReport(expect, fixture, verdict)
-    })
+    yield* bddStep(
+      'Then',
+      'the process stream protocol invariants hold',
+      verifyStreamAndExit(expect, run, events),
+    )
+    yield* bddStep(
+      'And',
+      'the verdict matches the mathematical oracle',
+      verifyOracleCounts(expect, terminal),
+    )
+    yield* bddStep(
+      'And',
+      'the reported mutant tallies match the lifecycle oracle',
+      verifyMutatorTallies(expect, events, terminal),
+    )
+    yield* bddStep(
+      'And',
+      'every event carries the verdict run id',
+      verifyRunIdConsistency(expect, events, terminal),
+    )
+    yield* bddStep(
+      'And',
+      'persisted report JSON is saved to disk and matches the verdict counts',
+      Effect.gen(function*() {
+        const reportText = yield* Effect.promise(() => fixture.readFile('reports/mutation/mutation.json'))
+        return yield* verifyPersistedReport(expect, reportText, terminal)
+      }),
+    )
 
     if (telemetryEnabled) {
-      await bdd.and('distributed telemetry spans propagate across execution', async () => {
-        const spans = await pollWindowSpans({
-          startSeconds: startedSeconds,
-          serviceName: SERVICE_NAME,
-          isSettled: (seen) => seen.some(isWorkerSpan) && seen.some(isHostPhaseSpan),
-        })
-        stepVerifyTracePropagation(expect, spans)
-      })
+      yield* bddStep(
+        'And',
+        'distributed telemetry spans propagate across execution',
+        Effect.gen(function*() {
+          const spans = yield* Effect.promise(() =>
+            pollWindowSpans({
+              startSeconds: startedSeconds,
+              serviceName: SERVICE_NAME,
+              isSettled: (seen) => seen.some(isWorkerSpan) && seen.some(isHostPhaseSpan),
+            })
+          )
+          return yield* verifyTracePropagation(expect, spans)
+        }),
+      )
     }
   },
+  { timeout: 2_400_000 },
 )

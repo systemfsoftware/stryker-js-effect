@@ -1,8 +1,10 @@
 import { RunEvent } from '@systemfsoftware/stryker-js'
+import { it } from '@systemfsoftware/vitest'
+import type { Check, Expect } from '@systemfsoftware/vitest'
+import { Effect } from 'effect'
 import * as S from 'effect/Schema'
-import type { ExpectStatic } from 'vitest'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
+import { bddStep, prepareFixture } from './__fixtures__/microvm-harness.js'
 
 const VM_VITEST_ORACLE = {
   killed: 7,
@@ -46,8 +48,21 @@ const tallyOf = (
     {},
   )
 
-const stepVerifyCounts = (expect: ExpectStatic, verdict: RunEvent.VerdictReached): void => {
-  expect.soft({
+interface ReportMutant {
+  readonly mutatorName: string
+  readonly status: string
+  readonly killedBy?: ReadonlyArray<string>
+  readonly location?: { readonly start?: { readonly line?: number } }
+}
+
+interface MutationReport {
+  readonly files: Record<string, { readonly mutants: ReadonlyArray<ReportMutant> }>
+}
+
+const verifyReachesVerdict = (expect: Expect, run: ExecResult): Check => expect(run.exitCode).toBe(0)
+
+const verifyCounts = (expect: Expect, verdict: RunEvent.VerdictReached): Check =>
+  expect({
     compileErrors: verdict.counts.compileErrors,
     ignored: verdict.counts.ignored,
     killed: verdict.counts.killed,
@@ -56,7 +71,7 @@ const stepVerifyCounts = (expect: ExpectStatic, verdict: RunEvent.VerdictReached
     runtimeErrors: verdict.counts.runtimeErrors,
     survived: verdict.counts.survived,
     timeout: verdict.counts.timeout,
-  }).toEqual({
+  }).toStrictEqual({
     compileErrors: 0,
     ignored: 0,
     killed: VM_VITEST_ORACLE.killed,
@@ -66,87 +81,95 @@ const stepVerifyCounts = (expect: ExpectStatic, verdict: RunEvent.VerdictReached
     survived: VM_VITEST_ORACLE.survived,
     timeout: 0,
   })
-}
 
-const stepVerifyMutantTally = (expect: ExpectStatic, events: ReadonlyArray<RunEvent.RunEvent>): void => {
+const verifyMutantTally = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check => {
   const reported = events
     .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map((m) => `${m.mutator}:${m.status}`)
-  expect.soft(reported).toHaveLength(11)
-  expect.soft(tallyOf(Object.keys(VM_VITEST_ORACLE.mutantStatusTally), reported)).toEqual(
-    VM_VITEST_ORACLE.mutantStatusTally,
-  )
+    .map((mutant) => `${mutant.mutator}:${mutant.status}`)
+
+  return expect({
+    reportedCount: reported.length,
+    tally: tallyOf(Object.keys(VM_VITEST_ORACLE.mutantStatusTally), reported),
+  }).toStrictEqual({
+    reportedCount: 11,
+    tally: VM_VITEST_ORACLE.mutantStatusTally,
+  })
 }
 
-test('running a vitest-syntax suite through the in-memory runner', async ({ bdd, expect, prepareFixture }) => {
-  let fixture: PreparedFixture
-  let run: ExecResult
-  let events: ReadonlyArray<RunEvent.RunEvent>
-  let verdict: RunEvent.VerdictReached
+const verifyReportAttribution = (
+  expect: Expect,
+  mutants: ReadonlyArray<ReportMutant>,
+  addMutant: ReportMutant,
+): Check => {
+  const killed = mutants.filter((mutant) => mutant.status === 'Killed')
+  const survivors = mutants.filter((mutant) => mutant.status === 'Survived')
+  const unkillableMutant = mutants.find((mutant) =>
+    mutant.mutatorName === 'ArithmeticOperator' && mutant.status === 'Survived' &&
+    mutant.location?.start?.line === 14
+  )
 
-  await bdd.given('a fixture whose suite is written against vitest and verified in memory', async () => {
-    fixture = await prepareFixture(VM_FIXTURE_URL, 'vm-vitest-fixture')
+  return expect({
+    killedCount: killed.length,
+    everyKillNamesATest: killed.every((mutant) => (mutant.killedBy?.length ?? 0) > 0),
+    everySurvivorNamesNoTest: survivors.every((mutant) => (mutant.killedBy?.length ?? 0) === 0),
+    unkillableMutantIsPresent: unkillableMutant !== undefined,
+    addMutantKilledByCount: addMutant.killedBy?.length,
+  }).toStrictEqual({
+    killedCount: VM_VITEST_ORACLE.killed,
+    everyKillNamesATest: true,
+    everySurvivorNamesNoTest: true,
+    unkillableMutantIsPresent: true,
+    addMutantKilledByCount: 1,
   })
+}
 
-  await bdd.when('the CLI is executed with the in-memory runner', async () => {
-    run = await fixture.run(['run'])
-    events = await parseEventStream(run.stdout)
-    const terminal = lastEvent(events)
-    if (terminal._tag !== 'verdict') {
-      throw new Error(`Expected terminal verdict event, received: ${terminal._tag}`)
-    }
-    verdict = terminal
-  })
+it.live('running a vitest-syntax suite through the in-memory runner', function*({ expect }) {
+  const fixture = yield* bddStep(
+    'Given',
+    'a fixture whose suite is written against vitest and verified in memory',
+    prepareFixture(VM_FIXTURE_URL, 'vm-vitest-fixture'),
+  )
+  const run = yield* bddStep(
+    'When',
+    'the CLI is executed with the in-memory runner',
+    Effect.promise(() => fixture.run(['run'])),
+  )
+  const events = yield* Effect.promise(() => parseEventStream(run.stdout))
+  const terminal = lastEvent(events)
+  if (terminal._tag !== 'verdict') {
+    throw new Error(`Expected terminal verdict event, received: ${terminal._tag}`)
+  }
 
-  await bdd.thenAssert('the run reaches a verdict with every mutant classified', () => {
-    expect.soft(run.exitCode).toBe(0)
-  })
+  yield* bddStep('Then', 'the run reaches a verdict with every mutant classified', verifyReachesVerdict(expect, run))
+  yield* bddStep(
+    'And',
+    'the tallies match the vitest-runner oracle',
+    verifyCounts(expect, terminal),
+  )
+  yield* bddStep(
+    'And',
+    'every reported mutant lands in the vitest-runner oracle tally',
+    verifyMutantTally(expect, events),
+  )
+  const reportFile = terminal.reportFile
+  if (reportFile === null || reportFile === '') {
+    throw new Error('verdict carries no report file reference')
+  }
+  const reportText = yield* bddStep(
+    'And',
+    'the report attributes every kill to a concrete test',
+    Effect.promise(() => fixture.readFile(reportFile)),
+  )
+  const report = JSON.parse(reportText) as MutationReport
+  const mutants = Object.values(report.files).flatMap((file) => file.mutants)
+  const addMutant = mutants.find((mutant) => mutant.mutatorName === 'ArithmeticOperator' && mutant.status === 'Killed')
+  if (addMutant === undefined) {
+    throw new Error('report carries no killed ArithmeticOperator mutant')
+  }
 
-  await bdd.and('the tallies match the vitest-runner oracle', () => {
-    stepVerifyCounts(expect, verdict)
-    stepVerifyMutantTally(expect, events)
-  })
-
-  await bdd.and('the report attributes every kill to a concrete test', async () => {
-    if (verdict.reportFile === null || verdict.reportFile === '') {
-      throw new Error('verdict carries no report file reference')
-    }
-    const report = JSON.parse(await fixture.readFile(verdict.reportFile)) as {
-      files: Record<
-        string,
-        {
-          mutants: ReadonlyArray<
-            {
-              mutatorName: string
-              status: string
-              killedBy?: ReadonlyArray<string>
-              location?: { start?: { line?: number } }
-            }
-          >
-        }
-      >
-    }
-    const mutants = Object.values(report.files).flatMap((file) => file.mutants)
-    const killed = mutants.filter((mutant) => mutant.status === 'Killed')
-    expect.soft(killed).toHaveLength(VM_VITEST_ORACLE.killed)
-    for (const mutant of killed) {
-      expect.soft(mutant.killedBy?.length ?? 0).toBeGreaterThan(0)
-    }
-    const survivors = mutants.filter((mutant) => mutant.status === 'Survived')
-    for (const mutant of survivors) {
-      expect.soft(mutant.killedBy?.length ?? 0).toBe(0)
-    }
-    const neverMutant = mutants.find((mutant) =>
-      mutant.mutatorName === 'ArithmeticOperator' && mutant.status === 'Survived' &&
-      mutant.location?.start?.line === 14
-    )
-    expect.soft(neverMutant).toBeDefined()
-    const addMutant = mutants.find((mutant) =>
-      mutant.mutatorName === 'ArithmeticOperator' && mutant.status === 'Killed'
-    )
-    if (addMutant === undefined) {
-      throw new Error('report carries no killed ArithmeticOperator mutant')
-    }
-    expect.soft(addMutant.killedBy).toHaveLength(1)
-  })
+  yield* bddStep(
+    'And',
+    'the report names a killer for every kill and none for a survivor',
+    verifyReportAttribution(expect, mutants, addMutant),
+  )
 })

@@ -1,8 +1,10 @@
 import { RunEvent } from '@systemfsoftware/stryker-js'
+import { it } from '@systemfsoftware/vitest'
+import type { Check, Expect } from '@systemfsoftware/vitest'
+import { Effect } from 'effect'
 import * as S from 'effect/Schema'
-import type { ExpectStatic } from 'vitest'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { type PreparedFixture, test } from './__fixtures__/microvm-harness.js'
+import { bddStep, prepareFixture } from './__fixtures__/microvm-harness.js'
 
 const SVELTE_APP_ORACLE = {
   killed: 11,
@@ -46,8 +48,40 @@ const lastEvent = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.RunEvent 
   return event
 }
 
-const stepVerifyCounts = (expect: ExpectStatic, verdict: RunEvent.VerdictReached): void => {
-  expect.soft({
+const verifyReachesVerdict = (expect: Expect, run: ExecResult): Check => expect(run.exitCode).toBe(0)
+
+const verifyFormats = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check => {
+  const formats = events.find((event): event is Extract<RunEvent.RunEvent, { _tag: 'formats' }> =>
+    event._tag === 'formats'
+  )
+  if (formats === undefined) {
+    throw new Error('the stream carries no formats event')
+  }
+  return expect(formats.rows).toContainEqual({
+    extension: '.svelte',
+    formatId: 'svelte',
+    ownerModule: '@systemfsoftware/stryker-js-svelte',
+    language: 'svelte',
+  })
+}
+
+const verifyNoSvelteSkipped = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check => {
+  const skipped = events.find((event): event is Extract<RunEvent.RunEvent, { _tag: 'skipped' }> =>
+    event._tag === 'skipped'
+  )
+  return expect(skipped?.files.filter((file) => file.file.endsWith('.svelte')) ?? []).toEqual([])
+}
+
+const verifyMutants = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check => {
+  const reported = events
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
+    .map((mutant) => `${mutant.file}:${mutant.location.start.line}:${mutant.mutator}:${mutant.status}`)
+    .toSorted()
+  return expect(reported).toEqual([...SVELTE_APP_ORACLE.mutants].toSorted())
+}
+
+const verifyCounts = (expect: Expect, verdict: RunEvent.VerdictReached): Check =>
+  expect({
     compileErrors: verdict.counts.compileErrors,
     ignored: verdict.counts.ignored,
     killed: verdict.counts.killed,
@@ -56,7 +90,7 @@ const stepVerifyCounts = (expect: ExpectStatic, verdict: RunEvent.VerdictReached
     runtimeErrors: verdict.counts.runtimeErrors,
     survived: verdict.counts.survived,
     timeout: verdict.counts.timeout,
-  }).toEqual({
+  }).toStrictEqual({
     compileErrors: 0,
     ignored: 0,
     killed: SVELTE_APP_ORACLE.killed,
@@ -66,79 +100,39 @@ const stepVerifyCounts = (expect: ExpectStatic, verdict: RunEvent.VerdictReached
     survived: SVELTE_APP_ORACLE.survived,
     timeout: 0,
   })
-}
 
-const stepVerifyFormats = (expect: ExpectStatic, events: ReadonlyArray<RunEvent.RunEvent>): void => {
-  const formats = events.find((event): event is Extract<RunEvent.RunEvent, { _tag: 'formats' }> =>
-    event._tag === 'formats'
-  )
-  if (formats === undefined) {
-    throw new Error('the stream carries no formats event')
-  }
-  expect.soft(formats.rows).toContainEqual({
-    extension: '.svelte',
-    formatId: 'svelte',
-    ownerModule: '@systemfsoftware/stryker-js-svelte',
-    language: 'svelte',
-  })
-}
-
-const stepVerifyNoSvelteSkipped = (expect: ExpectStatic, events: ReadonlyArray<RunEvent.RunEvent>): void => {
-  const skipped = events.find((event): event is Extract<RunEvent.RunEvent, { _tag: 'skipped' }> =>
-    event._tag === 'skipped'
-  )
-  expect.soft(skipped?.files.filter((file) => file.file.endsWith('.svelte')) ?? []).toEqual([])
-}
-
-const stepVerifyMutants = (expect: ExpectStatic, events: ReadonlyArray<RunEvent.RunEvent>): void => {
-  const reported = events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map((mutant) => `${mutant.file}:${mutant.location.start.line}:${mutant.mutator}:${mutant.status}`)
-    .toSorted()
-  expect.soft(reported).toEqual([...SVELTE_APP_ORACLE.mutants].toSorted())
-}
-
-test(
+it.live(
   'running a vitest suite through the svelte framework plugin',
-  { timeout: 300_000 },
-  async ({ bdd, expect, prepareFixture }) => {
-    let fixture: PreparedFixture
-    let run: ExecResult
-    let events: ReadonlyArray<RunEvent.RunEvent>
-    let verdict: RunEvent.VerdictReached
+  function*({ expect }) {
+    const fixture = yield* bddStep(
+      'Given',
+      'a real Svelte 5 application with tests mounted through testing-library',
+      prepareFixture(SVELTE_FIXTURE_URL, 'svelte-app-fixture'),
+    )
+    const run = yield* bddStep(
+      'When',
+      'the packed CLI runs it with the vitest runner and the svelte plugin',
+      Effect.promise(() => fixture.run(['run'])),
+    )
+    const events = yield* Effect.promise(() => parseEventStream(run.stdout))
+    const terminal = lastEvent(events)
+    if (terminal._tag !== 'verdict') {
+      throw new Error(`Expected terminal verdict event, received: ${terminal._tag}`)
+    }
 
-    await bdd.given('a real Svelte 5 application with tests mounted through testing-library', async () => {
-      fixture = await prepareFixture(SVELTE_FIXTURE_URL, 'svelte-app-fixture')
-    })
-
-    await bdd.when('the packed CLI runs it with the vitest runner and the svelte plugin', async () => {
-      run = await fixture.run(['run'])
-      events = await parseEventStream(run.stdout)
-      const terminal = lastEvent(events)
-      if (terminal._tag !== 'verdict') {
-        throw new Error(`Expected terminal verdict event, received: ${terminal._tag}`)
-      }
-      verdict = terminal
-    })
-
-    await bdd.thenAssert('the run reaches a verdict instead of a run failure', () => {
-      expect.soft(run.exitCode).toBe(0)
-    })
-
-    await bdd.and('the formats registry attributes .svelte to the svelte plugin', () => {
-      stepVerifyFormats(expect, events)
-    })
-
-    await bdd.and('no skipped event names a .svelte file', () => {
-      stepVerifyNoSvelteSkipped(expect, events)
-    })
-
-    await bdd.and('every mutant lands on its authored line with its authored status', () => {
-      stepVerifyMutants(expect, events)
-    })
-
-    await bdd.and('the per-status tally matches the svelte-app oracle', () => {
-      stepVerifyCounts(expect, verdict)
-    })
+    yield* bddStep('Then', 'the run reaches a verdict instead of a run failure', verifyReachesVerdict(expect, run))
+    yield* bddStep(
+      'And',
+      'the formats registry attributes .svelte to the svelte plugin',
+      verifyFormats(expect, events),
+    )
+    yield* bddStep('And', 'no skipped event names a .svelte file', verifyNoSvelteSkipped(expect, events))
+    yield* bddStep(
+      'And',
+      'every mutant lands on its authored line with its authored status',
+      verifyMutants(expect, events),
+    )
+    yield* bddStep('And', 'the per-status tally matches the svelte-app oracle', verifyCounts(expect, terminal))
   },
+  { timeout: 300_000 },
 )

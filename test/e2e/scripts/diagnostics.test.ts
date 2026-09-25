@@ -1,5 +1,5 @@
+import { describe } from '@systemfsoftware/vitest'
 import { Project } from 'ts-morph'
-import { describe, expect, it } from 'vitest'
 import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
 import { determineCompileErrorsWithDiagnostics, evaluateWithProjects } from './oracle/diagnostics.js'
 import { type CompileErrorFlags, deriveStaticOracleSlice } from './oracle/status-derivation.js'
@@ -26,8 +26,8 @@ function buildInMemoryComposite(files: Readonly<Record<string, string>>): Mutabl
   return { project, getOrCreate }
 }
 
-describe('composite per-package diagnostics', () => {
-  it('happy: a downstream type-contract break surfaces the imported-file diagnostic', () => {
+describe('composite per-package diagnostics', (it) => {
+  it('happy: a downstream type-contract break surfaces the imported-file diagnostic', function*({ expect }) {
     const providerText = [
       'export interface User {',
       '  readonly id: string;',
@@ -47,8 +47,7 @@ describe('composite per-package diagnostics', () => {
 
     const providerInventory = analyzeFileWithTsMorph(providerText, [])
     const candidate = providerInventory.mutants.find((m) => m.mutatorName === 'ObjectLiteral')
-    expect(candidate).toBeDefined()
-    if (candidate === undefined) return
+    if (candidate === undefined) throw new Error('expected an ObjectLiteral mutant in the provider inventory')
 
     const composite = buildInMemoryComposite({
       '/proj/src/provider.ts': providerText,
@@ -72,16 +71,13 @@ describe('composite per-package diagnostics', () => {
       [candidate],
     )
 
-    expect(result).toBeDefined()
-    if (result === undefined) return
-    expect(result.compileError).toBeDefined()
-    if (result.compileError === undefined) return
-
-    expect(result.compileError.code).toBe(2739)
-    expect(result.compileError.message.toLowerCase()).toContain('missing the following properties')
+    yield* expect({ candidate, compileError: result?.compileError }).toMatchObject({
+      candidate: expect.objectContaining({ mutatorName: 'ObjectLiteral' }),
+      compileError: { code: 2739, message: expect.stringMatching(/missing the following properties/i) },
+    })
   })
 
-  it('happy: single-file path still surfaces the in-place diagnostic', () => {
+  it('happy: single-file path still surfaces the in-place diagnostic', function*({ expect }) {
     const code = [
       'export const calculate = (x: number): number => {',
       '  if (x > 0) {',
@@ -97,10 +93,11 @@ describe('composite per-package diagnostics', () => {
     const bodyBlockMutant = withDiagnostics.find(
       (m) => m.mutatorName === 'BlockStatement' && m.line === 1,
     )
-    expect(bodyBlockMutant?.compileError?.code).toBe(2355)
+
+    yield* expect(bodyBlockMutant?.compileError?.code).toBe(2355)
   })
 
-  it('edge: a Stryker disable next-line mutant is Ignored and never diagnosed', () => {
+  it('edge: a Stryker disable next-line mutant is Ignored and never diagnosed', function*({ expect }) {
     const code = [
       '// Stryker disable next-line EqualityOperator',
       'export const eq = (a: number, b: number): boolean => a === b;',
@@ -108,36 +105,52 @@ describe('composite per-package diagnostics', () => {
 
     const inventory = analyzeFileWithTsMorph(code, [])
     const eqMutant = inventory.mutants.find((m) => m.mutatorName === 'EqualityOperator')
-    expect(eqMutant).toBeDefined()
-    if (eqMutant === undefined) return
-    expect(eqMutant.status).toBe('Ignored')
+    if (eqMutant === undefined) throw new Error('expected an Ignored EqualityOperator mutant')
 
     const flags: CompileErrorFlags = { codesByMutator: {} }
     const withDiagnostics = determineCompileErrorsWithDiagnostics(code, [eqMutant])
-    expect(withDiagnostics[0]?.compileError).toBeUndefined()
-
     const slice = deriveStaticOracleSlice(inventory, flags)
-    expect(slice.ignoredCount).toBe(1)
-    expect(slice.compileErrorCount).toBe(0)
-    expect(slice.familyTally).toEqual({})
+
+    yield* expect({
+      status: eqMutant.status,
+      diagnosed: withDiagnostics[0]?.compileError,
+      ignoredCount: slice.ignoredCount,
+      compileErrorCount: slice.compileErrorCount,
+      familyTally: slice.familyTally,
+    }).toStrictEqual({
+      status: 'Ignored',
+      diagnosed: undefined,
+      ignoredCount: 1,
+      compileErrorCount: 0,
+      familyTally: {},
+    })
   })
 
-  it('edge: zero-valid-mutant file produces an empty tally (NaN-score guard)', () => {
+  it('edge: zero-valid-mutant file produces an empty tally (NaN-score guard)', function*({ expect }) {
     const code = 'export const nothing: number = 1;'
 
     const inventory = analyzeFileWithTsMorph(code, [])
-    expect(inventory.mutants).toHaveLength(0)
-    expect(inventory.activeCount).toBe(0)
-
     const flags: CompileErrorFlags = { codesByMutator: {} }
     const slice = deriveStaticOracleSlice(inventory, flags)
-    expect(slice.familyTally).toEqual({})
-    expect(slice.compileErrorCount).toBe(0)
-    expect(slice.ignoredCount).toBe(0)
-    expect(slice.blockers).toEqual([])
+
+    yield* expect({
+      mutants: inventory.mutants,
+      activeCount: inventory.activeCount,
+      familyTally: slice.familyTally,
+      compileErrorCount: slice.compileErrorCount,
+      ignoredCount: slice.ignoredCount,
+      blockers: slice.blockers,
+    }).toEqual({
+      mutants: [],
+      activeCount: 0,
+      familyTally: {},
+      compileErrorCount: 0,
+      ignoredCount: 0,
+      blockers: [],
+    })
   })
 
-  it('error: excludedMutations family is still tallied as Ignored in the static slice', () => {
+  it('error: excludedMutations family is still tallied as Ignored in the static slice', function*({ expect }) {
     const code = [
       'export const eq = (a: number, b: number): boolean => a === b;',
       'export const cond = (a: number, b: number): number => (a > b) ? a : b;',
@@ -145,18 +158,30 @@ describe('composite per-package diagnostics', () => {
 
     const excluded = ['EqualityOperator', 'ConditionalExpression', 'ArrowFunction']
     const inventory = analyzeFileWithTsMorph(code, excluded)
-    expect(inventory.mutants.every((m) => m.status === 'Ignored')).toBe(true)
-    expect(inventory.ignoredCount).toBeGreaterThan(0)
 
     const flags: CompileErrorFlags = { codesByMutator: {} }
     const slice = deriveStaticOracleSlice(inventory, flags)
-    expect(slice.ignoredCount).toBe(inventory.ignoredCount)
-    expect(slice.familyTally).toEqual({})
-    expect(slice.compileErrorCount).toBe(0)
-    expect(slice.blockers).toEqual([])
+
+    yield* expect({
+      statuses: [...new Set(inventory.mutants.map((m) => m.status))],
+      ignoredCount: inventory.ignoredCount,
+      sliceIgnoredCount: slice.ignoredCount,
+      familyTally: slice.familyTally,
+      compileErrorCount: slice.compileErrorCount,
+      blockers: slice.blockers,
+    }).toSatisfy(
+      (observed) =>
+        observed.statuses.join(',') === 'Ignored' &&
+        observed.ignoredCount > 0 &&
+        observed.sliceIgnoredCount === observed.ignoredCount &&
+        Object.keys(observed.familyTally).length === 0 &&
+        observed.compileErrorCount === 0 &&
+        observed.blockers.length === 0,
+      'every excluded family is Ignored and the static slice tallies them identically with no compile errors',
+    )
   })
 
-  it('passes Ignored mutants straight through evaluateWithProjects without diagnosing', () => {
+  it('passes Ignored mutants straight through evaluateWithProjects without diagnosing', function*({ expect }) {
     const code = [
       '// Stryker disable next-line EqualityOperator',
       'export const eq = (a: number, b: number): boolean => a === b;',
@@ -164,8 +189,7 @@ describe('composite per-package diagnostics', () => {
 
     const inventory = analyzeFileWithTsMorph(code, [])
     const ignored = inventory.mutants.find((m) => m.mutatorName === 'EqualityOperator')
-    expect(ignored?.status).toBe('Ignored')
-    if (ignored === undefined) return
+    if (ignored === undefined) throw new Error('expected an Ignored EqualityOperator mutant')
 
     const composite = buildInMemoryComposite({ '/proj/src/x.ts': code })
     const projects = [{
@@ -175,8 +199,11 @@ describe('composite per-package diagnostics', () => {
     }]
 
     const [result] = evaluateWithProjects(projects, '/proj/src/x.ts', code, [ignored])
-    expect(result).toBeDefined()
-    if (result === undefined) return
-    expect(result.compileError).toBeUndefined()
+
+    yield* expect({
+      status: ignored.status,
+      resultDefined: result !== undefined,
+      compileError: result?.compileError,
+    }).toStrictEqual({ status: 'Ignored', resultDefined: true, compileError: undefined })
   })
 })

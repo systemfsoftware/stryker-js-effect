@@ -1,14 +1,14 @@
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { describe } from '@systemfsoftware/vitest'
 import * as Effect from 'effect/Effect'
-import * as fc from 'fast-check'
+import * as S from 'effect/Schema'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 import * as fs from 'node:fs'
 import { Project } from 'ts-morph'
-import { describe, expect, it } from 'vitest'
 import { defaultMutators } from '../../../packages/stryker-js-instrumenter/src/Mutator.service.js'
 import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
 import { determineCompileErrorsWithDiagnostics } from './oracle/diagnostics.js'
 import {
-  CONTRACT_CLAUSES,
   dualizeBooleanArithmetic,
   injectDeadCode,
   injectDisableNextLine,
@@ -16,104 +16,158 @@ import {
   shuffleIndependentStatements,
 } from './oracle/metamorphic.js'
 import { DECLARED_GAPS, MUTATOR_REGISTRY } from './oracle/mutator-registry.js'
+import type { IndependentInventory } from './oracle/types.js'
 
-const RESERVED_WORDS = new Set([
-  'do',
-  'if',
-  'in',
-  'for',
-  'let',
-  'new',
-  'try',
-  'var',
-  'case',
-  'else',
-  'enum',
-  'eval',
-  'null',
-  'this',
-  'true',
-  'void',
-  'with',
-  'await',
-  'break',
-  'catch',
-  'class',
-  'const',
-  'false',
-  'super',
-  'throw',
-  'while',
-  'yield',
-  'delete',
-  'export',
-  'import',
-  'public',
-  'return',
-  'static',
-  'switch',
-  'typeof',
-  'default',
-  'extends',
-  'finally',
-  'package',
-  'private',
-  'continue',
-  'debugger',
-  'function',
-  'arguments',
-  'interface',
-  'protected',
-  'implements',
-  'instanceof',
+const RESERVED_WORDS: Readonly<Record<string, true>> = {
+  'do': true,
+  'if': true,
+  'in': true,
+  'for': true,
+  'let': true,
+  'new': true,
+  'try': true,
+  'var': true,
+  'case': true,
+  'else': true,
+  'enum': true,
+  'eval': true,
+  'null': true,
+  'this': true,
+  'true': true,
+  'void': true,
+  'with': true,
+  'await': true,
+  'break': true,
+  'catch': true,
+  'class': true,
+  'const': true,
+  'false': true,
+  'super': true,
+  'throw': true,
+  'while': true,
+  'yield': true,
+  'delete': true,
+  'export': true,
+  'import': true,
+  'public': true,
+  'return': true,
+  'static': true,
+  'switch': true,
+  'typeof': true,
+  'default': true,
+  'extends': true,
+  'finally': true,
+  'package': true,
+  'private': true,
+  'continue': true,
+  'debugger': true,
+  'function': true,
+  'arguments': true,
+  'interface': true,
+  'protected': true,
+  'implements': true,
+  'instanceof': true,
+}
+
+const IDENTIFIER_PATTERN = /^[a-z][a-zA-Z0-9_]{0,8}$/
+
+const IdentifierSchema = S.String.check(S.isPattern(IDENTIFIER_PATTERN))
+const Identifier = Arbitrary.schema(IdentifierSchema).pipe(
+  Arbitrary.filter((identifier) => RESERVED_WORDS[identifier] === undefined),
+)
+
+const BinaryOperator = S.Literals(['===', '!==', '==', '!=', '<', '<=', '>', '>=', '+', '-', '*', '/'])
+
+const CompoundOperator = S.Literals(['+=', '-=', '*=', '/='])
+const LogicalAssignOperator = S.Literals(['&&=', '||=', '??='])
+
+const BoundedInteger = S.Int.check(S.isBetween({ minimum: -100, maximum: 100 }))
+const PositiveHundred = S.Int.check(S.isBetween({ minimum: 1, maximum: 100 }))
+const PositiveFifty = S.Int.check(S.isBetween({ minimum: 1, maximum: 50 }))
+
+const LiteralSchema = S.Union([BoundedInteger, S.Boolean, S.String.check(S.isMaxLength(8))])
+type LiteralValue = typeof LiteralSchema.Type
+
+const renderLiteral = (value: LiteralValue): string =>
+  typeof value === 'boolean' || typeof value === 'number' ? String(value) : JSON.stringify(value)
+
+const Literal = Arbitrary.schema(LiteralSchema).pipe(Arbitrary.map(renderLiteral))
+
+const StatementSchema = S.Union([
+  S.Tuple([S.Literals(['assign']), IdentifierSchema, LiteralSchema]),
+  S.Tuple([S.Literals(['binary']), IdentifierSchema, IdentifierSchema, BinaryOperator, LiteralSchema]),
+  S.Tuple([S.Literals(['conditional']), IdentifierSchema, LiteralSchema, LiteralSchema]),
+  S.Tuple([S.Literals(['compound']), IdentifierSchema, CompoundOperator, LiteralSchema]),
+  S.Tuple([S.Literals(['logical']), IdentifierSchema, LogicalAssignOperator, LiteralSchema]),
+  S.Tuple([S.Literals(['optional']), IdentifierSchema, IdentifierSchema, IdentifierSchema]),
+  S.Tuple([S.Literals(['object']), IdentifierSchema, LiteralSchema, LiteralSchema]),
+  S.Tuple([S.Literals(['class']), IdentifierSchema, LiteralSchema]),
+  S.Tuple([S.Literals(['function']), IdentifierSchema]),
 ])
+type Statement = typeof StatementSchema.Type
 
-const arbIdentifier = fc
-  .stringMatching(/^[a-z][a-zA-Z0-9_]{0,8}$/)
-  .filter((id) => !RESERVED_WORDS.has(id))
+const identifiersOf = (statement: Statement): ReadonlyArray<string> => {
+  switch (statement[0]) {
+    case 'assign':
+      return [statement[1]]
+    case 'binary':
+      return [statement[1], statement[2]]
+    case 'conditional':
+      return [statement[1]]
+    case 'compound':
+      return [statement[1]]
+    case 'logical':
+      return [statement[1]]
+    case 'optional':
+      return [statement[1], statement[2], statement[3]]
+    case 'object':
+      return [statement[1]]
+    case 'class':
+      return [statement[1]]
+    case 'function':
+      return [statement[1]]
+  }
+}
 
-const arbBinaryOp = fc.constantFrom('===', '!==', '==', '!=', '<', '<=', '>', '>=', '+', '-', '*', '/')
+const renderStatement = (statement: Statement): string => {
+  switch (statement[0]) {
+    case 'assign':
+      return `const ${statement[1]} = ${renderLiteral(statement[2])};`
+    case 'binary':
+      return `const ${statement[1]} = ${statement[2]} ${statement[3]} ${renderLiteral(statement[4])};`
+    case 'conditional':
+      return `const ${statement[1]} = (${statement[1]} !== null) ? ${renderLiteral(statement[2])} : ${
+        renderLiteral(statement[3])
+      };`
+    case 'compound':
+      return `let mutable_${statement[1]} = 0; mutable_${statement[1]} ${statement[2]} ${renderLiteral(statement[3])};`
+    case 'logical':
+      return `let logical_${statement[1]} = true; logical_${statement[1]} ${statement[2]} ${
+        renderLiteral(statement[3])
+      };`
+    case 'optional':
+      return `const ${statement[1]} = ${statement[2]}?.${statement[3]} ?? ${statement[2]}?.[0] ?? ${statement[2]}?.();`
+    case 'object':
+      return `const obj_${statement[1]} = { a: ${renderLiteral(statement[2])}, b: [${renderLiteral(statement[3])}] };`
+    case 'class':
+      return `class Cls_${statement[1]} { #secret = ${
+        renderLiteral(statement[2])
+      }; get secret() { return this.#secret; } }`
+    case 'function':
+      return `function fn_${statement[1]}(x: number) { let count = x; count++; return --count; }`
+  }
+}
 
-const arbCompoundOp = fc.constantFrom('+=', '-=', '*=', '/=')
-const arbLogicalAssignOp = fc.constantFrom('&&=', '||=', '??=')
-
-const arbLiteral = fc.oneof(
-  fc.integer({ min: -100, max: 100 }).map((n) => n.toString()),
-  fc.boolean().map((b) => b.toString()),
-  fc.string({ maxLength: 8 }).map((s) => JSON.stringify(s)),
+const StatementArbitrary = Arbitrary.schema(StatementSchema).pipe(
+  Arbitrary.filter((statement) =>
+    identifiersOf(statement).every((identifier) => RESERVED_WORDS[identifier] === undefined)
+  ),
+  Arbitrary.map(renderStatement),
 )
 
-const arbStatement = fc.oneof(
-  fc.tuple(arbIdentifier, arbLiteral).map(([id, lit]) => `const ${id} = ${lit};`),
-  fc.tuple(arbIdentifier, arbIdentifier, arbBinaryOp, arbLiteral).map(
-    ([dest, left, op, right]) => `const ${dest} = ${left} ${op} ${right};`,
-  ),
-  fc.tuple(arbIdentifier, arbLiteral, arbLiteral).map(
-    ([id, a, b]) => `const ${id} = (${id} !== null) ? ${a} : ${b};`,
-  ),
-  fc.tuple(arbIdentifier, arbCompoundOp, arbLiteral).map(
-    ([id, op, lit]) => `let mutable_${id} = 0; mutable_${id} ${op} ${lit};`,
-  ),
-  fc.tuple(arbIdentifier, arbLogicalAssignOp, arbLiteral).map(
-    ([id, op, lit]) => `let logical_${id} = true; logical_${id} ${op} ${lit};`,
-  ),
-  fc.tuple(arbIdentifier, arbIdentifier, arbIdentifier).map(
-    ([dest, obj, prop]) => `const ${dest} = ${obj}?.${prop} ?? ${obj}?.[0] ?? ${obj}?.();`,
-  ),
-  fc.tuple(arbIdentifier, arbLiteral, arbLiteral).map(
-    ([id, a, b]) => `const obj_${id} = { a: ${a}, b: [${b}] };`,
-  ),
-  fc.tuple(arbIdentifier, arbLiteral).map(
-    ([name, val]) => `class Cls_${name} { #secret = ${val}; get secret() { return this.#secret; } }`,
-  ),
-  fc.tuple(arbIdentifier).map(
-    ([id]) => `function fn_${id}(x: number) { let count = x; count++; return --count; }`,
-  ),
+const SourceCode = Arbitrary.array(StatementArbitrary, { minLength: 1, maxLength: 6 }).pipe(
+  Arbitrary.map((statements) => statements.join('\n')),
 )
-
-const arbSourceCode = fc
-  .array(arbStatement, { minLength: 1, maxLength: 6 })
-  .map((stmts) => stmts.join('\n'))
 
 const AST_MATCHED_FAMILIES = [
   'BlockStatement',
@@ -129,6 +183,103 @@ const AST_MATCHED_FAMILIES = [
   'OptionalChaining',
 ]
 
+const FamilyMask = S.Tuple(AST_MATCHED_FAMILIES.map(() => S.Boolean))
+
+const ExcludedFamilies = Arbitrary.schema(FamilyMask).pipe(
+  Arbitrary.map((mask) => AST_MATCHED_FAMILIES.filter((_family, index) => mask[index] === true)),
+  Arbitrary.filter((families) => families.length > 0),
+)
+
+const ReachableStatement = Arbitrary.all([Identifier, Literal]).pipe(
+  Arbitrary.map(([identifier, literal]) => `const ${identifier} = ${literal};`),
+)
+
+const IndependentDeclaration = Arbitrary.all([Identifier, Literal]).pipe(
+  Arbitrary.map(([identifier, literal]) => `const const_${identifier} = ${literal};`),
+)
+
+const IndependentPair = Arbitrary.all([IndependentDeclaration, IndependentDeclaration])
+
+const DualityInput = Arbitrary.all([Identifier, Arbitrary.schema(S.Literals(['&&', '||'])), Identifier])
+
+const TargetStatement = Arbitrary.all([Identifier, Arbitrary.schema(PositiveHundred)]).pipe(
+  Arbitrary.map(([identifier, value]) => `const ${identifier} = ${value} + 1;`),
+)
+
+const SurroundingStatement = Arbitrary.all([Identifier, Arbitrary.schema(PositiveHundred)]).pipe(
+  Arbitrary.map(([identifier, value]) => `const post_${identifier} = ${value} + 2;`),
+)
+
+const SubsumptionInput = S.Tuple([PositiveFifty, PositiveFifty, PositiveFifty, PositiveFifty])
+
+const snippet = (code: string, family: string, expectedReplacement: string) =>
+  S.Struct({
+    code: S.Literals([code]),
+    family: S.Literals([family]),
+    expectedReplacement: S.Literals([expectedReplacement]),
+  })
+
+const ReplaceableSnippet = S.Union([
+  snippet('const s = "HELLO".toLowerCase();', 'MethodExpression', '"HELLO".toUpperCase()'),
+  snippet('const s = "hello".toUpperCase();', 'MethodExpression', '"hello".toLowerCase()'),
+  snippet('const a = arr.filter(x => x);', 'MethodExpression', 'arr()'),
+  snippet('const r = /a+/;', 'Regex', '/a/'),
+  snippet('const r = /\\d/;', 'Regex', '/\\D/'),
+  snippet('const r = /^abc$/;', 'Regex', '/abc$/'),
+  snippet('const u = +a;', 'UnaryOperator', '-a'),
+  snippet('const u = -a;', 'UnaryOperator', '+a'),
+  snippet('const u = ~a;', 'UnaryOperator', 'a'),
+  snippet('const b = !a;', 'BooleanLiteral', 'a'),
+  snippet('const b = !isReady;', 'BooleanLiteral', 'isReady'),
+])
+
+const OptionalChainingSnippet = S.Literals(['const o = a?.b;', 'const o = a?.[0];', 'const o = a?.();'])
+
+const analyzeCode = (code: string, excluded: ReadonlyArray<string> = []): IndependentInventory =>
+  analyzeFileWithTsMorph(code, excluded)
+
+const countOfFamily = (mutants: ReadonlyArray<{ readonly mutatorName: string }>, family: string): number =>
+  mutants.filter((mutant) => mutant.mutatorName === family).length
+
+const coveredFamilies = (
+  registry: Readonly<Record<string, { readonly covered: boolean }>>,
+): Readonly<Record<string, true>> => {
+  const covered: Record<string, true> = {}
+  for (const [name, entry] of Object.entries(registry)) {
+    if (entry.covered) covered[name] = true
+  }
+  return covered
+}
+
+const checkFamilyExhaustiveness = (
+  family: string,
+  covered: Readonly<Record<string, true>>,
+  declaredGaps: Readonly<Record<string, true>>,
+): boolean => {
+  if (covered[family] !== true && declaredGaps[family] !== true) {
+    throw new Error(`Uncovered and undeclared mutator family in registry: ${family}`)
+  }
+  return true
+}
+
+const stubRegistry: Record<string, unknown> = {
+  ...defaultMutators,
+  SyntheticMutator: () => [],
+}
+const stubCovered = coveredFamilies(MUTATOR_REGISTRY)
+
+const contractContent = fs.readFileSync(new URL('./oracle/mutator-contract.md', import.meta.url), 'utf-8')
+
+const contractHeadingFor = (family: string): string | undefined => {
+  const entry = MUTATOR_REGISTRY[family]
+  if (entry === undefined) {
+    return undefined
+  }
+  const anchor = entry.contractSection.replace(/^#/, '')
+  const headingRegex = new RegExp(`^#{2,3}\\s+.*\\b(${family}|${anchor})\\b`, 'm')
+  return headingRegex.exec(contractContent)?.[0]
+}
+
 function alphaRename(sourceText: string, suffix: string): string {
   const project = new Project({ useInMemoryFileSystem: true })
   const sourceFile = project.createSourceFile('alpha.ts', sourceText)
@@ -143,465 +294,255 @@ function alphaRename(sourceText: string, suffix: string): string {
   return sourceFile.getFullText()
 }
 
-const instrumentOxc = (code: string) =>
-  Effect.runPromise(
-    Instrument.instrument([{ name: 'synthetic.ts', content: code, mutate: true }], {
-      excludedMutations: [],
-      ignorers: [],
-    }),
+const instrumentOxcCode = (code: string) =>
+  Instrument.instrument([{ name: 'synthetic.ts', content: code, mutate: true }], {
+    excludedMutations: [],
+    ignorers: [],
+  })
+
+describe('SOTA Metamorphic & Differential Oracle Properties', (it) => {
+  it.prop(
+    'Metamorphic Invariant 1: α-Conversion Invariance (Total & Tally are invariant under variable renaming)',
+    { of: [SourceCode], subject: analyzeCode, runs: 300 },
+    (subject, [code]) => {
+      const baseline = subject(code)
+      const renamed = subject(alphaRename(code, 'renamed'))
+
+      if (baseline.mutants.length !== renamed.mutants.length) {
+        return false
+      }
+
+      return Object.entries(baseline.mutatorTally).every(([mutator, count]) => renamed.mutatorTally[mutator] === count)
+    },
   )
 
-describe('SOTA Metamorphic & Differential Oracle Properties (fast-check)', () => {
-  it('Metamorphic Invariant 1: α-Conversion Invariance (Total & Tally are invariant under variable renaming)', () => {
-    return fc.assert(
-      fc.property(arbSourceCode, (code) => {
-        const baseline = analyzeFileWithTsMorph(code, [])
-        const renamedCode = alphaRename(code, 'renamed')
-        const renamed = analyzeFileWithTsMorph(renamedCode, [])
+  it.prop(
+    'Metamorphic Invariant 2: Monotonic Subtraction (Excluded mutators strictly subtract from active)',
+    { of: [SourceCode, ExcludedFamilies], subject: analyzeCode, runs: 300 },
+    (subject, [code, excluded]) => {
+      const baseline = subject(code)
+      const withExclusions = subject(code, excluded)
 
-        if (baseline.mutants.length !== renamed.mutants.length) {
+      if (withExclusions.mutants.length !== baseline.mutants.length) {
+        return false
+      }
+
+      const expectedActiveDrop = excluded.reduce((total, mutator) => total + (baseline.mutatorTally[mutator] ?? 0), 0)
+
+      return baseline.activeCount - withExclusions.activeCount === expectedActiveDrop &&
+        withExclusions.ignoredCount - baseline.ignoredCount === expectedActiveDrop
+    },
+  )
+
+  it.effect.prop(
+    'Differential Equivalence 3: oxc vs ts-morph Differential Agreement across all shared mutators',
+    { of: [SourceCode], subject: instrumentOxcCode, runs: 200 },
+    (subject, [code]) =>
+      Effect.gen(function*() {
+        const oxc = yield* subject(code)
+        const tsMorph = analyzeFileWithTsMorph(code, [])
+
+        return AST_MATCHED_FAMILIES.every((family) =>
+          countOfFamily(oxc.mutants, family) === countOfFamily(tsMorph.mutants, family)
+        )
+      }),
+  )
+
+  it.effect.prop(
+    'Differential Equivalence 3b (R3 staged): single-mutant replacements and replacement spans',
+    { of: [ReplaceableSnippet], subject: instrumentOxcCode, runs: 100 },
+    (subject, [chosen]) =>
+      Effect.gen(function*() {
+        const oxc = yield* subject(chosen.code)
+        const tsMorph = analyzeFileWithTsMorph(chosen.code, [])
+        const oxcMutants = oxc.mutants.filter((mutant) => mutant.mutatorName === chosen.family)
+        const tsMorphMutants = tsMorph.mutants.filter((mutant) => mutant.mutatorName === chosen.family)
+
+        if (oxcMutants.length !== tsMorphMutants.length) {
           return false
         }
 
-        for (const [mutator, count] of Object.entries(baseline.mutatorTally)) {
-          if (renamed.mutatorTally[mutator] !== count) {
-            return false
-          }
-        }
-
-        return true
+        const only = tsMorphMutants.length === 1 ? tsMorphMutants[0] : undefined
+        return only === undefined || only.replacement === chosen.expectedReplacement
       }),
-      { numRuns: 300 },
-    )
-  })
+  )
 
-  it('Metamorphic Invariant 2: Monotonic Subtraction (Excluded mutators strictly subtract from active)', () => {
-    return fc.assert(
-      fc.property(
-        arbSourceCode,
-        fc.subarray(AST_MATCHED_FAMILIES, { minLength: 1 }),
-        (code, excluded) => {
-          const baseline = analyzeFileWithTsMorph(code, [])
-          const withExclusions = analyzeFileWithTsMorph(code, excluded)
+  it.prop(
+    'Differential Equivalence 3b (R3 staged): OptionalChaining replacement spans stay within the question-dot',
+    { of: [OptionalChainingSnippet], subject: analyzeCode, runs: 100 },
+    (subject, [code]) => {
+      const optMutants = subject(code).mutants.filter((mutant) => mutant.mutatorName === 'OptionalChaining')
+      const only = optMutants.length === 1 ? optMutants[0] : undefined
 
-          if (withExclusions.mutants.length !== baseline.mutants.length) {
-            return false
-          }
+      return only !== undefined && ['.', '[', '('].includes(only.replacement)
+    },
+  )
 
-          let expectedActiveDrop = 0
-          for (const mutator of excluded) {
-            expectedActiveDrop += baseline.mutatorTally[mutator] ?? 0
-          }
+  it.prop(
+    'A Priori Semantic Invariant 4: CompileError classification matches ts.getPreEmitDiagnostics',
+    {
+      of: [S.Literals([[
+        'export const calculate = (x: number): number => {',
+        '  if (x > 0) {',
+        '    return x + 1;',
+        '  }',
+        '  return 0;',
+        '};',
+        'export const getMessage = async (): Promise<string> => {',
+        '  return "hello";',
+        '};',
+      ].join('\n')])],
+      subject: analyzeCode,
+      runs: 100,
+    },
+    (subject, [code]) => {
+      const withDiagnostics = determineCompileErrorsWithDiagnostics(code, subject(code).mutants)
 
-          const activeDropped = baseline.activeCount - withExclusions.activeCount === expectedActiveDrop
-          const ignoredGrew = withExclusions.ignoredCount - baseline.ignoredCount === expectedActiveDrop
-
-          return activeDropped && ignoredGrew
-        },
-      ),
-      { numRuns: 300 },
-    )
-  })
-
-  it('Differential Equivalence 3: oxc vs ts-morph Differential Agreement across all shared mutators', async () => {
-    await fc.assert(
-      fc.asyncProperty(arbSourceCode, async (code) => {
-        const oxcResult = await instrumentOxc(code)
-        const tsMorphResult = analyzeFileWithTsMorph(code, [])
-        for (const family of AST_MATCHED_FAMILIES) {
-          const oxcCount = oxcResult.mutants.filter((m) => m.mutatorName === family).length
-          const tsMorphCount = tsMorphResult.mutants.filter((m) => m.mutatorName === family).length
-
-          if (oxcCount !== tsMorphCount) {
-            return false
-          }
-        }
-
-        return true
-      }),
-      { numRuns: 200 },
-    )
-  })
-
-  it('Differential Equivalence 3b (R3 staged): single-mutant replacements and OptionalChaining replacement spans', async () => {
-    const arbMethodCall = fc.constantFrom(
-      {
-        code: 'const s = "HELLO".toLowerCase();',
-        family: 'MethodExpression',
-        expectedReplacement: '"HELLO".toUpperCase()',
-      },
-      {
-        code: 'const s = "hello".toUpperCase();',
-        family: 'MethodExpression',
-        expectedReplacement: '"hello".toLowerCase()',
-      },
-      { code: 'const a = arr.filter(x => x);', family: 'MethodExpression', expectedReplacement: 'arr()' },
-    )
-    const arbRegexSnippet = fc.constantFrom(
-      { code: 'const r = /a+/;', family: 'Regex', expectedReplacement: '/a/' },
-      { code: 'const r = /\\d/;', family: 'Regex', expectedReplacement: '/\\D/' },
-      { code: 'const r = /^abc$/;', family: 'Regex', expectedReplacement: '/abc$/' },
-    )
-    const arbUnarySnippet = fc.constantFrom(
-      { code: 'const u = +a;', family: 'UnaryOperator', expectedReplacement: '-a' },
-      { code: 'const u = -a;', family: 'UnaryOperator', expectedReplacement: '+a' },
-      { code: 'const u = ~a;', family: 'UnaryOperator', expectedReplacement: 'a' },
-    )
-    const arbBooleanPrefix = fc.constantFrom(
-      { code: 'const b = !a;', family: 'BooleanLiteral', expectedReplacement: 'a' },
-      { code: 'const b = !isReady;', family: 'BooleanLiteral', expectedReplacement: 'isReady' },
-    )
-    const arbOptionalSnippet = fc.constantFrom(
-      'const o = a?.b;',
-      'const o = a?.[0];',
-      'const o = a?.();',
-    )
-
-    const arbExtendedSingleSnippet = fc.oneof(
-      arbMethodCall,
-      arbRegexSnippet,
-      arbUnarySnippet,
-      arbBooleanPrefix,
-    )
-
-    await fc.assert(
-      fc.asyncProperty(arbExtendedSingleSnippet, async ({ code, family, expectedReplacement }) => {
-        const oxcResult = await instrumentOxc(code)
-        const tsMorphResult = analyzeFileWithTsMorph(code, [])
-
-        const oxcMutants = oxcResult.mutants.filter((m) => m.mutatorName === family)
-        const tsMorphMutants = tsMorphResult.mutants.filter((m) => m.mutatorName === family)
-
-        if (oxcMutants.length !== tsMorphMutants.length) {
-          throw new Error(
-            `Count mismatch for family ${family}: oxc=${oxcMutants.length} vs tsMorph=${tsMorphMutants.length} in: ${code}`,
-          )
-        }
-        if (tsMorphMutants.length === 1 && oxcMutants.length === 1) {
-          if (tsMorphMutants[0]!.replacement !== expectedReplacement) {
-            throw new Error(
-              `ts-morph replacement mismatch for ${family}: expected ${expectedReplacement} but got ${
-                tsMorphMutants[0]!.replacement
-              }`,
-            )
-          }
-        }
-        return true
-      }),
-      { numRuns: 100 },
-    )
-
-    await fc.assert(
-      fc.asyncProperty(arbOptionalSnippet, async (code) => {
-        const tsMorphResult = analyzeFileWithTsMorph(code, [])
-        const optMutants = tsMorphResult.mutants.filter((m) => m.mutatorName === 'OptionalChaining')
-        if (optMutants.length !== 1) {
-          throw new Error(`Expected 1 OptionalChaining mutant, found ${optMutants.length} in ${code}`)
-        }
-        const rep = optMutants[0]!.replacement
-        if (rep !== '.' && rep !== '[' && rep !== '(') {
-          throw new Error(
-            `OptionalChaining replacement at question-dot span must be '.', '[', or '(', got '${rep}' in ${code}`,
-          )
-        }
-        return true
-      }),
-      { numRuns: 100 },
-    )
-  })
-
-  it('A Priori Semantic Invariant 4: CompileError classification matches ts.getPreEmitDiagnostics', () => {
-    const code = [
-      'export const calculate = (x: number): number => {',
-      '  if (x > 0) {',
-      '    return x + 1;',
-      '  }',
-      '  return 0;',
-      '};',
-      'export const getMessage = async (): Promise<string> => {',
-      '  return "hello";',
-      '};',
-    ].join('\n')
-
-    const inventory = analyzeFileWithTsMorph(code, [])
-    const withDiagnostics = determineCompileErrorsWithDiagnostics(code, inventory.mutants)
-
-    const emptyBlockMutant = withDiagnostics.find(
-      (m) => m.mutatorName === 'BlockStatement' && m.line === 7,
-    )
-    expect(emptyBlockMutant?.compileError?.code).toBe(2355)
-
-    const arithMutant = withDiagnostics.find(
-      (m) => m.mutatorName === 'ArithmeticOperator' && m.replacement === '-',
-    )
-    expect(arithMutant?.compileError).toBeUndefined()
-  })
-
-  function checkFamilyExhaustiveness(
-    family: string,
-    coveredFamilies: Readonly<Record<string, boolean>>,
-    declaredGaps: Readonly<Record<string, true>>,
-  ): boolean {
-    if (coveredFamilies[family] !== true && declaredGaps[family] !== true) {
-      throw new Error(`Uncovered and undeclared mutator family in registry: ${family}`)
-    }
-    return true
-  }
-
-  it('Registry Exhaustiveness Invariant 5: defaultMutators registry families are either covered or declared gaps', () => {
-    const coveredMap: Record<string, boolean> = {}
-    for (const [name, entry] of Object.entries(MUTATOR_REGISTRY)) {
-      if (entry.covered) {
-        coveredMap[name] = true
-      }
-    }
-
-    return fc.assert(
-      fc.property(fc.constantFrom(...Object.keys(defaultMutators)), (family) => {
-        return checkFamilyExhaustiveness(family, coveredMap, DECLARED_GAPS)
-      }),
-    )
-  })
-
-  it('Registry Exhaustiveness: injecting a synthetic 17th family into a stubbed registry fails with the family named', () => {
-    const stubbedRegistry: Record<string, unknown> = {
-      ...defaultMutators,
-      SyntheticMutator: () => [],
-    }
-    const coveredMap: Record<string, boolean> = {}
-    for (const [name, entry] of Object.entries(MUTATOR_REGISTRY)) {
-      if (entry.covered) {
-        coveredMap[name] = true
-      }
-    }
-
-    expect(() => {
-      fc.assert(
-        fc.property(fc.constantFrom(...Object.keys(stubbedRegistry)), (family) => {
-          return checkFamilyExhaustiveness(family, coveredMap, DECLARED_GAPS)
-        }),
+      const emptyBlockMutant = withDiagnostics.find(
+        (mutant) => mutant.mutatorName === 'BlockStatement' && mutant.line === 7,
       )
-    }).toThrow(/SyntheticMutator/)
-  })
+      const arithmeticMutant = withDiagnostics.find(
+        (mutant) => mutant.mutatorName === 'ArithmeticOperator' && mutant.replacement === '-',
+      )
 
-  it('Count-Equality Property 6: covered mutator registry rows equal analyzer placement counts and replacements', () => {
-    const arbCoveredFamily = fc.constantFrom(...Object.keys(MUTATOR_REGISTRY))
-    return fc.assert(
-      fc.property(arbCoveredFamily, (familyName) => {
-        const entry = MUTATOR_REGISTRY[familyName]
-        if (!entry) return false
-        const inventory = analyzeFileWithTsMorph(entry.snippet, [])
-        const familyMutants = inventory.mutants.filter((m) => m.mutatorName === familyName)
+      return emptyBlockMutant?.compileError?.code === 2355 && arithmeticMutant?.compileError === undefined
+    },
+  )
 
-        const countMatches = familyMutants.length === entry.placementCount
-        const replacementsMatch = familyMutants.length === entry.replacements.length &&
-          familyMutants.every((m, idx) => m.replacement === entry.replacements[idx])
+  it.prop(
+    'Registry Exhaustiveness Invariant 5: defaultMutators registry families are either covered or declared gaps',
+    { of: [S.Literals(Object.keys(defaultMutators))], subject: checkFamilyExhaustiveness, runs: 100 },
+    (subject, [family]) => subject(family, coveredFamilies(MUTATOR_REGISTRY), DECLARED_GAPS),
+  )
 
-        return countMatches && replacementsMatch
-      }),
-    )
-  })
-  it('Contract Sync 7: every registry table row cites a section heading in mutator-contract.md', () => {
-    const contractPath = new URL('./oracle/mutator-contract.md', import.meta.url)
-    const contractContent = fs.readFileSync(contractPath, 'utf-8')
+  it.prop(
+    'Registry Exhaustiveness: injecting a synthetic 17th family into a stubbed registry fails with the family named',
+    { of: [S.Literals(Object.keys(stubRegistry))], subject: checkFamilyExhaustiveness, runs: 100 },
+    (subject, [family]) => {
+      try {
+        subject(family, stubCovered, DECLARED_GAPS)
+        return family !== 'SyntheticMutator'
+      } catch (error) {
+        return family === 'SyntheticMutator' && String(error).includes('SyntheticMutator')
+      }
+    },
+  )
 
-    for (const [familyName, entry] of Object.entries(MUTATOR_REGISTRY)) {
-      const rawAnchor = entry.contractSection.replace(/^#/, '')
-      const headingRegex = new RegExp(`^#{2,3}\\s+.*\\b(${familyName}|${rawAnchor})\\b`, 'm')
-      expect(
-        headingRegex.test(contractContent),
-        `Heading for family ${familyName} with anchor ${entry.contractSection} not found in mutator-contract.md`,
-      ).toBe(true)
-    }
-  })
+  it.prop(
+    'Count-Equality Property 6: covered mutator registry rows equal analyzer placement counts and replacements',
+    { of: [S.Literals(Object.keys(MUTATOR_REGISTRY))], subject: analyzeCode, runs: 100 },
+    (subject, [familyName]) => {
+      const entry = MUTATOR_REGISTRY[familyName]
+      if (entry === undefined) {
+        return false
+      }
+      const familyMutants = subject(entry.snippet).mutants.filter((mutant) => mutant.mutatorName === familyName)
 
-  it('Metamorphic Invariant 8: Dead-Code Invariance (Mutants placed in unreachable blocks follow contract)', () => {
-    const arbReachableStmt = fc.tuple(arbIdentifier, arbLiteral).map(
-      ([id, lit]) => `const ${id} = ${lit};`,
-    )
-    return fc.assert(
-      fc.property(arbReachableStmt, (stmt) => {
-        const baseInventory = analyzeFileWithTsMorph(stmt, [])
+      return familyMutants.length === entry.placementCount &&
+        familyMutants.length === entry.replacements.length &&
+        familyMutants.every((mutant, index) => mutant.replacement === entry.replacements[index])
+    },
+  )
 
-        const { transformedSource: codeWithDeadCode } = injectDeadCode(stmt)
-        const deadInventory = analyzeFileWithTsMorph(codeWithDeadCode, [])
+  it.prop(
+    'Contract Sync 7: every registry table row cites a section heading in mutator-contract.md',
+    { of: [S.Literals(Object.keys(MUTATOR_REGISTRY))], subject: contractHeadingFor, runs: 100 },
+    (subject, [family]) => {
+      const heading = subject(family)
 
-        const expectedArithmeticGrowth = 1
-        const actualArithmeticGrowth = (deadInventory.mutatorTally['ArithmeticOperator'] ?? 0) -
-          (baseInventory.mutatorTally['ArithmeticOperator'] ?? 0)
+      return heading !== undefined && heading.toLowerCase().includes(family.toLowerCase())
+    },
+  )
 
-        if (actualArithmeticGrowth !== expectedArithmeticGrowth) {
-          throw new Error(
-            `Dead-Code Invariance violated [${CONTRACT_CLAUSES.DEAD_CODE}]: expected ArithmeticOperator growth of ${expectedArithmeticGrowth}, got ${actualArithmeticGrowth}`,
-          )
-        }
+  it.prop(
+    'Metamorphic Invariant 8: Dead-Code Invariance (Mutants placed in unreachable blocks follow contract)',
+    { of: [ReachableStatement], subject: analyzeCode, runs: 200 },
+    (subject, [statement]) => {
+      const baseInventory = subject(statement)
 
-        const { transformedSource: codeWithDisabledDeadCode } = injectDeadCode(stmt, { disabled: true })
-        const disabledDeadInventory = analyzeFileWithTsMorph(codeWithDisabledDeadCode, [])
+      const { transformedSource: codeWithDeadCode } = injectDeadCode(statement)
+      const deadInventory = analyzeFileWithTsMorph(codeWithDeadCode, [])
 
-        if (disabledDeadInventory.ignoredCount <= baseInventory.ignoredCount) {
-          throw new Error(
-            `Dead-Code Invariance violated [${CONTRACT_CLAUSES.DEAD_CODE}]: disabled dead code did not increase ignoredCount`,
-          )
-        }
+      const expectedArithmeticGrowth = 1
+      const actualArithmeticGrowth = (deadInventory.mutatorTally['ArithmeticOperator'] ?? 0) -
+        (baseInventory.mutatorTally['ArithmeticOperator'] ?? 0)
 
-        return true
-      }),
-      { numRuns: 200 },
-    )
-  })
+      if (actualArithmeticGrowth !== expectedArithmeticGrowth) {
+        return false
+      }
 
-  it('Metamorphic Invariant 9: Statement Commutativity (Order-independent statements yield identical tallies)', () => {
-    const arbIndependentDecl = fc.tuple(arbIdentifier, arbLiteral).map(
-      ([id, lit]) => `const const_${id} = ${lit};`,
-    )
-    const arbIndependentPair = fc.tuple(arbIndependentDecl, arbIndependentDecl)
+      const { transformedSource: codeWithDisabledDeadCode } = injectDeadCode(statement, { disabled: true })
+      const disabledDeadInventory = analyzeFileWithTsMorph(codeWithDisabledDeadCode, [])
 
-    return fc.assert(
-      fc.property(arbIndependentPair, ([first, second]) => {
-        const original = [first, second]
-        const { shuffled } = shuffleIndependentStatements(original)
+      return disabledDeadInventory.ignoredCount > baseInventory.ignoredCount
+    },
+  )
 
-        const originalSource = original.join('\n')
-        const shuffledSource = shuffled.join('\n')
+  it.prop(
+    'Metamorphic Invariant 9: Statement Commutativity (Order-independent statements yield identical tallies)',
+    { of: [IndependentPair], subject: analyzeCode, runs: 200 },
+    (subject, [[first, second]]) => {
+      const original = [first, second]
+      const { shuffled } = shuffleIndependentStatements(original)
 
-        const baseline = analyzeFileWithTsMorph(originalSource, [])
-        const reordered = analyzeFileWithTsMorph(shuffledSource, [])
+      const baseline = subject(original.join('\n'))
+      const reordered = analyzeFileWithTsMorph(shuffled.join('\n'), [])
 
-        if (baseline.mutants.length !== reordered.mutants.length) {
-          throw new Error(
-            `Statement Commutativity violated [${CONTRACT_CLAUSES.STATEMENT_COMMUTATIVITY}]: mutant count mismatch ${baseline.mutants.length} !== ${reordered.mutants.length}`,
-          )
-        }
+      if (baseline.mutants.length !== reordered.mutants.length) {
+        return false
+      }
 
-        for (const [mutator, count] of Object.entries(baseline.mutatorTally)) {
-          if (reordered.mutatorTally[mutator] !== count) {
-            throw new Error(
-              `Statement Commutativity violated [${CONTRACT_CLAUSES.STATEMENT_COMMUTATIVITY}]: tally mismatch for ${mutator}: ${count} !== ${
-                reordered.mutatorTally[mutator]
-              }`,
-            )
-          }
-        }
+      return Object.entries(baseline.mutatorTally).every(([mutator, count]) =>
+        reordered.mutatorTally[mutator] === count
+      )
+    },
+  )
 
-        return true
-      }),
-      { numRuns: 200 },
-    )
-  })
+  it.prop(
+    'Metamorphic Invariant 10: Boolean & Arithmetic Duality (De Morgan duality preserves contract tallies)',
+    { of: [DualityInput], subject: analyzeCode, runs: 200 },
+    (subject, [[left, op, right]]) => {
+      const { originalExpr, dualExpr, originalLogicalCount, dualLogicalCount, dualPrefixBangCount } =
+        dualizeBooleanArithmetic(left, op, right)
 
-  it('Metamorphic Invariant 10: Boolean & Arithmetic Duality (De Morgan duality preserves contract tallies)', () => {
-    const arbDualityInput = fc.tuple(
-      arbIdentifier,
-      fc.constantFrom<'&&' | '||'>('&&', '||'),
-      arbIdentifier,
-    )
+      const origInventory = subject(`const _b = ${originalExpr};`)
+      const dualInventory = analyzeFileWithTsMorph(`const _b = ${dualExpr};`, [])
 
-    return fc.assert(
-      fc.property(arbDualityInput, ([left, op, right]) => {
-        const { originalExpr, dualExpr, originalLogicalCount, dualLogicalCount, dualPrefixBangCount } =
-          dualizeBooleanArithmetic(left, op, right)
+      const origLogical = origInventory.mutatorTally['LogicalOperator'] ?? 0
+      const dualLogical = dualInventory.mutatorTally['LogicalOperator'] ?? 0
+      const dualBool = dualInventory.mutatorTally['BooleanLiteral'] ?? 0
 
-        const originalCode = `const _b = ${originalExpr};`
-        const dualCode = `const _b = ${dualExpr};`
+      return origLogical === originalLogicalCount && dualLogical === dualLogicalCount && dualBool >= dualPrefixBangCount
+    },
+  )
 
-        const origInventory = analyzeFileWithTsMorph(originalCode, [])
-        const dualInventory = analyzeFileWithTsMorph(dualCode, [])
+  it.prop(
+    'Metamorphic Invariant 11: Directive Scope Invariance (disable next-line does not leak across boundaries)',
+    { of: [TargetStatement, SurroundingStatement], subject: analyzeCode, runs: 200 },
+    (subject, [targetStatement, afterStatement]) => {
+      const codeWithDisabled = injectDisableNextLine(targetStatement, [], [afterStatement], true)
+      const inventory = subject(codeWithDisabled)
 
-        const origLogical = origInventory.mutatorTally['LogicalOperator'] ?? 0
-        const dualLogical = dualInventory.mutatorTally['LogicalOperator'] ?? 0
-        const dualBool = dualInventory.mutatorTally['BooleanLiteral'] ?? 0
+      const targetIgnored = inventory.mutants.some((mutant) => mutant.status === 'Ignored' && mutant.line === 2)
+      const afterActive = inventory.mutants.some((mutant) => mutant.status === 'Active' && mutant.line === 4)
 
-        if (origLogical !== originalLogicalCount) {
-          throw new Error(
-            `Boolean Duality violated [${CONTRACT_CLAUSES.BOOLEAN_ARITHMETIC_DUALITY}]: original LogicalOperator count ${origLogical} !== ${originalLogicalCount}`,
-          )
-        }
-        if (dualLogical !== dualLogicalCount) {
-          throw new Error(
-            `Boolean Duality violated [${CONTRACT_CLAUSES.BOOLEAN_ARITHMETIC_DUALITY}]: dual LogicalOperator count ${dualLogical} !== ${dualLogicalCount}`,
-          )
-        }
-        if (dualBool < dualPrefixBangCount) {
-          throw new Error(
-            `Boolean Duality violated [${CONTRACT_CLAUSES.BOOLEAN_ARITHMETIC_DUALITY}]: expected at least ${dualPrefixBangCount} BooleanLiteral prefix-! collapses, got ${dualBool}`,
-          )
-        }
+      return targetIgnored && afterActive
+    },
+  )
 
-        return true
-      }),
-      { numRuns: 200 },
-    )
-  })
+  it.prop(
+    'Metamorphic Invariant 12: Mutation Subsumption bounded (Nested const-initializers place independent mutants)',
+    { of: [SubsumptionInput], subject: analyzeCode, runs: 200 },
+    (subject, [[a, b, c, d]]) => {
+      const { sourceCode, totalArithmeticPlacements } = nestSubsumingExpressions(
+        { left: a, op: '+', right: b },
+        '*',
+        { left: c, op: '+', right: d },
+      )
 
-  it('Metamorphic Invariant 11: Directive Scope Invariance (disable next-line does not leak across boundaries)', () => {
-    const arbTargetStmt = fc.tuple(arbIdentifier, fc.integer({ min: 1, max: 100 })).map(
-      ([id, n]) => `const ${id} = ${n} + 1;`,
-    )
-    const arbSurroundingStmt = fc.tuple(arbIdentifier, fc.integer({ min: 1, max: 100 })).map(
-      ([id, n]) => `const post_${id} = ${n} + 2;`,
-    )
+      const arithMutants = subject(sourceCode).mutants.filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
 
-    return fc.assert(
-      fc.property(
-        arbTargetStmt,
-        arbSurroundingStmt,
-        (targetStmt, afterStmt) => {
-          const codeWithDisabled = injectDisableNextLine(targetStmt, [], [afterStmt], true)
-          const inventory = analyzeFileWithTsMorph(codeWithDisabled, [])
-
-          const activeMutants = inventory.mutants.filter((m) => m.status === 'Active')
-          const ignoredMutants = inventory.mutants.filter((m) => m.status === 'Ignored')
-
-          const targetIgnored = ignoredMutants.some((m) => m.line === 2)
-          const afterActive = activeMutants.some((m) => m.line === 4)
-
-          if (!targetIgnored) {
-            throw new Error(
-              `Directive Scope Invariance violated [${CONTRACT_CLAUSES.DIRECTIVE_SCOPE}]: line 2 mutant should be Ignored`,
-            )
-          }
-          if (!afterActive) {
-            throw new Error(
-              `Directive Scope Invariance violated [${CONTRACT_CLAUSES.DIRECTIVE_SCOPE}]: line 4 mutant should be Active after restore`,
-            )
-          }
-
-          return true
-        },
-      ),
-      { numRuns: 200 },
-    )
-  })
-
-  it('Metamorphic Invariant 12: Mutation Subsumption bounded (Nested const-initializers place independent mutants)', () => {
-    const arbSubsumptionTuple = fc.tuple(
-      fc.integer({ min: 1, max: 50 }),
-      fc.integer({ min: 1, max: 50 }),
-      fc.integer({ min: 1, max: 50 }),
-      fc.integer({ min: 1, max: 50 }),
-    )
-
-    return fc.assert(
-      fc.property(arbSubsumptionTuple, ([a, b, c, d]) => {
-        const { sourceCode, totalArithmeticPlacements } = nestSubsumingExpressions(
-          { left: a, op: '+', right: b },
-          '*',
-          { left: c, op: '+', right: d },
-        )
-
-        const inventory = analyzeFileWithTsMorph(sourceCode, [])
-        const arithMutants = inventory.mutants.filter((m) => m.mutatorName === 'ArithmeticOperator')
-
-        if (arithMutants.length !== totalArithmeticPlacements) {
-          throw new Error(
-            `Mutation Subsumption violated [${CONTRACT_CLAUSES.MUTATION_SUBSUMPTION}]: expected ${totalArithmeticPlacements} arithmetic mutants, got ${arithMutants.length}`,
-          )
-        }
-
-        return true
-      }),
-      { numRuns: 200 },
-    )
-  })
+      return arithMutants.length === totalArithmeticPlacements
+    },
+  )
 })

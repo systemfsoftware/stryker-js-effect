@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe } from '@systemfsoftware/vitest'
 import { type BlessedBaseline, formatDriftLine, reconcileSlice } from './reconcile-oracle.js'
 
 function makeBaseline(overrides: Partial<BlessedBaseline> = {}): BlessedBaseline {
@@ -21,13 +21,15 @@ function makeBaseline(overrides: Partial<BlessedBaseline> = {}): BlessedBaseline
   }
 }
 
-function makeStaticSlice(overrides: Partial<{
-  familyTally: Readonly<Record<string, number>>
-  placementTally: Readonly<Record<string, number>>
-  ignoredCount: number
-  compileErrorCount: number
-  compileErrorCodes: Readonly<Record<number, number>>
-}> = {}) {
+function makeStaticSlice(
+  overrides: Partial<{
+    familyTally: Readonly<Record<string, number>>
+    placementTally: Readonly<Record<string, number>>
+    ignoredCount: number
+    compileErrorCount: number
+    compileErrorCodes: Readonly<Record<number, number>>
+  }> = {},
+) {
   return {
     familyTally: {},
     placementTally: {},
@@ -39,8 +41,8 @@ function makeStaticSlice(overrides: Partial<{
   }
 }
 
-describe('reconcileSlice — happy path', () => {
-  it('reports zero findings when baseline matches recomputation', () => {
+describe('reconcileSlice — happy path', (it) => {
+  it('reports zero findings when baseline matches recomputation', function*({ expect }) {
     const baseline = makeBaseline({
       counts: {
         compileErrors: 3,
@@ -62,12 +64,15 @@ describe('reconcileSlice — happy path', () => {
       compileErrorCount: 3,
     })
     const report = reconcileSlice('lifecycle', baseline, staticSlice)
-    expect(report.slice).toBe('lifecycle')
-    expect(report.findings).toEqual([])
-    expect(report.staticMatched).toBe(true)
+
+    yield* expect({ slice: report.slice, findings: report.findings, staticMatched: report.staticMatched }).toEqual({
+      slice: 'lifecycle',
+      findings: [],
+      staticMatched: true,
+    })
   })
 
-  it('ignores execution tally rows when static projection is clean', () => {
+  it('ignores execution tally rows when static projection is clean', function*({ expect }) {
     const baseline = makeBaseline({
       counts: {
         compileErrors: 0,
@@ -86,13 +91,16 @@ describe('reconcileSlice — happy path', () => {
     })
     const staticSlice = makeStaticSlice()
     const report = reconcileSlice('lifecycle', baseline, staticSlice)
-    expect(report.findings).toEqual([])
-    expect(report.staticMatched).toBe(true)
+
+    yield* expect({ findings: report.findings, staticMatched: report.staticMatched }).toEqual({
+      findings: [],
+      staticMatched: true,
+    })
   })
 })
 
-describe('reconcileSlice — static drift', () => {
-  it('emits count finding when counts.ignored differs', () => {
+describe('reconcileSlice — static drift', (it) => {
+  it('emits count finding when counts.ignored differs', function*({ expect }) {
     const baseline = makeBaseline({
       counts: {
         compileErrors: 0,
@@ -108,13 +116,11 @@ describe('reconcileSlice — static drift', () => {
     const staticSlice = makeStaticSlice()
     const report = reconcileSlice('lifecycle', baseline, staticSlice)
     const countFinding = report.findings.find((f) => f.kind === 'count' && f.key === 'ignored')
-    expect(countFinding).toBeDefined()
-    if (countFinding?.kind !== 'count') throw new Error('expected count finding')
-    expect(countFinding.baseline).toBe(2)
-    expect(countFinding.recomputed).toBe(0)
+
+    yield* expect(countFinding).toMatchObject({ kind: 'count', key: 'ignored', baseline: 2, recomputed: 0 })
   })
 
-  it('treats engine-recorded compileErrors as engine-owned, not statically recomputable', () => {
+  it('treats engine-recorded compileErrors as engine-owned, not statically recomputable', function*({ expect }) {
     const baseline = makeBaseline({
       counts: {
         compileErrors: 5,
@@ -129,24 +135,29 @@ describe('reconcileSlice — static drift', () => {
     })
     const staticSlice = makeStaticSlice({ compileErrorCount: 3 })
     const report = reconcileSlice('lifecycle', baseline, staticSlice)
-    expect(report.findings).toEqual([])
-    expect(report.staticMatched).toBe(true)
+
+    yield* expect({ findings: report.findings, staticMatched: report.staticMatched }).toEqual({
+      findings: [],
+      staticMatched: true,
+    })
   })
 })
 
-describe('reconcileSlice — unblessed slice', () => {
-  it('emits an unblessed finding when baseline is undefined', () => {
+describe('reconcileSlice — unblessed slice', (it) => {
+  it('emits an unblessed finding when baseline is undefined', function*({ expect }) {
     const staticSlice = makeStaticSlice({ compileErrorCount: 3, familyTally: { BlockStatement: 3 } })
     const report = reconcileSlice('edge', undefined, staticSlice)
-    expect(report.slice).toBe('edge')
-    expect(report.findings).toHaveLength(1)
-    expect(report.findings[0]?.kind).toBe('unblessed')
-    expect(report.staticMatched).toBe(false)
+
+    yield* expect({ slice: report.slice, findings: report.findings, staticMatched: report.staticMatched }).toEqual({
+      slice: 'edge',
+      findings: [expect.objectContaining({ kind: 'unblessed' })],
+      staticMatched: false,
+    })
   })
 })
 
-describe('formatDriftLine', () => {
-  it('renders an ignored-count drift in the canonical ORACLE-DRIFT format', () => {
+describe('formatDriftLine', (it) => {
+  it('renders an ignored-count drift in the canonical ORACLE-DRIFT format', function*({ expect }) {
     const baseline = makeBaseline({
       slice: 'lifecycle',
       counts: {
@@ -163,16 +174,12 @@ describe('formatDriftLine', () => {
     const staticSlice = makeStaticSlice()
     const report = reconcileSlice('lifecycle', baseline, staticSlice)
     const finding = report.findings[0]
-    expect(finding).toBeDefined()
-    if (finding === undefined) throw new Error('expected finding')
-    const line = formatDriftLine(finding)
-    expect(line.startsWith('ORACLE-DRIFT lifecycle ')).toBe(true)
-    expect(line).toContain('count:ignored')
-    expect(line).toContain('2 -> 0')
+    if (finding === undefined) throw new Error('expected a drift finding')
+
+    yield* expect(formatDriftLine(finding)).toMatch(/^ORACLE-DRIFT lifecycle count:ignored 2 -> 0$/)
   })
 
-  it('renders an unblessed finding as ORACLE-DRIFT <slice> unblessed', () => {
-    const line = formatDriftLine({ kind: 'unblessed', slice: 'edge' })
-    expect(line).toBe('ORACLE-DRIFT edge unblessed')
+  it('renders an unblessed finding as ORACLE-DRIFT <slice> unblessed', function*({ expect }) {
+    yield* expect(formatDriftLine({ kind: 'unblessed', slice: 'edge' })).toBe('ORACLE-DRIFT edge unblessed')
   })
 })
