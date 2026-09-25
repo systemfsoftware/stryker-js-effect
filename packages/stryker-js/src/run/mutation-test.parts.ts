@@ -11,6 +11,8 @@ import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
+import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Metric from 'effect/Metric'
@@ -840,7 +842,9 @@ export const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
     yield* phaseEntered('mutation-test')
     const idGenerator = yield* IdGenerator
     const env = yield* RunEnvironment
-    const checkerPool = yield* makeCheckerPool(prev, env.basePath)
+    const checkerScope = yield* Scope.make()
+    yield* Effect.addFinalizer(() => Scope.close(checkerScope, Exit.void))
+    const checkerPool = yield* makeCheckerPool(prev, env.basePath).pipe(Scope.provide(checkerScope))
     const testFiles = yield* Effect.map(
       sandboxFilesOf(prev.sandbox, configuredTestFilesOf(prev)),
       (pairs) => pairs.map(([, sandboxFileName]) => sandboxFileName),
@@ -935,6 +939,9 @@ export const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       checkerPool,
       sortedPlans,
       reporting,
+    )
+    const checkerClose = yield* Scope.close(checkerScope, Exit.void).pipe(
+      Effect.forkScoped({ uninterruptible: true }),
     )
     const testRunnerStream = Stream.fromIterable(passedPlans)
     const plannedTotal = sortedPlans.length + noCoverageResults.length + rememberedResults.length
@@ -1113,6 +1120,7 @@ export const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
       ...runResults,
     ]
     const outcomeResult = yield* reporting.reportAll(reportingInputOf(prev, env, allResults))
+    yield* Fiber.await(checkerClose)
     const doneNow = yield* Clock.currentTimeMillis
     const elapsed = Duration.millis(doneNow - env.runStartedAt)
     yield* Effect.logInfo(`Done in ${Duration.format(elapsed)}.`)
