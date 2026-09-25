@@ -2,8 +2,8 @@ import * as Context from 'effect/Context'
 
 import type { TSCompiler } from './ts-compiler.handle.js'
 
-export interface TypeScriptCompiler extends Context.Service<TypeScriptCompiler, TSCompiler> {}
+export interface TypeScriptCompilerShape extends TSCompiler {}
 
-export const TypeScriptCompiler: TypeScriptCompiler = Context.Service<TypeScriptCompiler, TSCompiler>(
+export class TypeScriptCompiler extends Context.Service<TypeScriptCompiler, TypeScriptCompilerShape>()(
   '@systemfsoftware/stryker-js-typescript-checker/ts-compiler.service/TypeScriptCompiler',
-)
+) {}
