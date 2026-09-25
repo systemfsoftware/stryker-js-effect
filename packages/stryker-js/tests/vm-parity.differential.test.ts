@@ -1,6 +1,7 @@
 import { Differential } from '@systemfsoftware/differential-spec'
 import { Configuration, Engine, Plugin, Worker } from '@systemfsoftware/stryker-js'
-import type { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { strykerPlugins as vmRunnerPlugins } from '@systemfsoftware/stryker-js-vm-runner'
 import * as TestTelemetry from '@systemfsoftware/vitest-config/telemetry'
 import * as Arr from 'effect/Array'
@@ -496,7 +497,7 @@ const realMutantVerdicts = (fixture: Fixture): Effect.Effect<Outcomes> =>
   )
 
 const RUNAWAY_VERDICT = 'Killed/runaway'
-const RUNAWAY_REASON_PREFIX = 'Stryker: Hit count limit reached'
+const RUNAWAY_REASON_PREFIX = TestRunner.HitLimitReasonPrefix.literal
 
 const candidateVerdictOf = (mutant: MutantRecord): string =>
   mutant.status === 'Killed' && (mutant.statusReason?.startsWith(RUNAWAY_REASON_PREFIX) ?? false)
