@@ -1,0 +1,44 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+deleted file mode 100644
+index 926d54a79ef78e33aaf17c0e9e5d07b8eda9f9d0..0000000000000000000000000000000000000000
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 12b3da214408110f624f28eac4f8da7ece629023..15e37551a41fceee9d584de2634ab6f7c1104e21 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -60,6 +60,12 @@ const attemptOn = (run, schedule, oracle) => disagrees(run, oracle) ? {
+ 	run,
+ 	schedule
+ } : void 0;
++const hostBoundOf = (comparison) => comparison.options?.hostBound !== void 0;
++const hostBoundRunsOf = (program) => Kernel.run(program, { external: "await" }).then((order) => ({
++	order,
++	seeded: order
++}));
++const caseRunsFor = (comparison, program, seed) => hostBoundOf(comparison) ? hostBoundRunsOf(program) : caseRunsOf(program, seed);
+ const caseRunsOf = (program, seed) => Kernel.run(program).then((order) => {
+ 	const options = { choose: Kernel.pick({
+ 		seed,
+@@ -151,7 +157,7 @@ const programOf = (comparison, input) => {
+ const caseHolds = (comparison, input, seed) => {
+ 	const program = programOf(comparison, input);
+ 	if (program === void 0) return Promise.resolve(false);
+-	return caseRunsOf(program, seed).then((runs) => disagreementOf(runs, seed, comparison.oracle) === void 0);
++	return caseRunsFor(comparison, program, seed).then((runs) => disagreementOf(runs, seed, comparison.oracle) === void 0);
+ };
+ const renderThrown = (thrown) => {
+ 	if (thrown instanceof Error) return `${thrown.name}: ${thrown.message}`;
+@@ -182,7 +188,13 @@ const caseReportOf = (comparison, details, described, seed, program, runs) => {
+ 		isFailure: (run) => disagrees(run, comparison.oracle)
+ 	}).then((shrunk) => disparityOf(details, described, attempt.schedule, shrunk));
+ };
+-const shrunkReportOf = (comparison, details, described, seed, program) => caseRunsOf(program, seed).then((runs) => Kernel.search(program, {
++const HOST_ORDER_SCHEDULE = "effect order, host awaited";
++const hostBoundReportOf = (comparison, details, described, seed, program) => hostBoundRunsOf(program).then((runs) => disagrees(runs.order, comparison.oracle) ? disparityOf(details, described, HOST_ORDER_SCHEDULE, {
++	result: runs.order,
++	deviations: 0,
++	path: []
++}) : contradictionReport(details, described, runs));
++const shrunkReportOf = (comparison, details, described, seed, program) => hostBoundOf(comparison) ? hostBoundReportOf(comparison, details, described, seed, program) : caseRunsOf(program, seed).then((runs) => Kernel.search(program, {
+ 	preemptions: 1,
+ 	isFailure: (run) => disagrees(run, comparison.oracle)
+ }).then((outcome) => {
